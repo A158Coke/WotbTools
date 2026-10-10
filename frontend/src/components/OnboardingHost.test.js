@@ -17,7 +17,7 @@ function controller(mode = 'idle') {
     hintVisible: ref(false), canResume: ref(false), resume: vi.fn(), dismissHint: vi.fn(),
     isSignedIn: ref(false),
     currentStage: computed(() => steps.value[index.value].stages[stageIndex.value]),
-    begin: vi.fn(), next: vi.fn(), back: vi.fn(), skip: vi.fn(), retry: vi.fn(), interrupt: vi.fn(), start: vi.fn(), openDirectory: vi.fn(), useOwnReplay: vi.fn() }
+    begin: vi.fn(), next: vi.fn(), back: vi.fn(), skip: vi.fn(), retry: vi.fn(), interrupt: vi.fn(), start: vi.fn(), openDirectory: vi.fn(), useOwnReplay: vi.fn(), loginAiGuide: vi.fn() }
 }
 function render(guide, locale = 'zh') {
   const wrapper = mount(OnboardingHost, { attachTo: document.body, props: { onboarding: guide },
@@ -85,6 +85,41 @@ describe('OnboardingHost', () => {
       wrapper.unmount()
       wrappers = wrappers.filter(value => value !== wrapper)
     }
+  })
+  it('offers compact optional guides only after the core, with AI explicitly requiring login', async () => {
+    const guide = controller('finish')
+    render(guide)
+    await flushPromises()
+    expect(document.querySelectorAll('[data-testid="onboarding-follow-ups"] .onboarding-topic')).toHaveLength(5)
+    const ai = document.querySelector('[data-testid="onboarding-follow-up-ai"]')
+    expect(ai.textContent).toContain(messages.zh.onboarding.aiLoginRequired)
+    ai.click()
+    expect(guide.start).toHaveBeenCalledWith('ai')
+    guide.topic.value = 'hof'
+    await flushPromises()
+    expect(document.querySelector('[data-testid="onboarding-follow-ups"]')).toBeNull()
+  })
+  it('offers login instead of starting an anonymous AI example tutorial', async () => {
+    const guide = controller('welcome')
+    guide.topic.value = 'ai'
+    render(guide)
+    await flushPromises()
+    expect(document.querySelector('[data-testid="onboarding-begin"]')).toBeNull()
+    document.querySelector('[data-testid="onboarding-ai-login"]').click()
+    expect(guide.loginAiGuide).toHaveBeenCalledOnce()
+    expect(guide.begin).not.toHaveBeenCalled()
+  })
+  it('identifies a core action inside its node without repeating an indistinguishable counter', async () => {
+    const guide = controller('tour')
+    guide.index.value = 3
+    button('playback-annotation-entry')
+    button('playback-annotation-tools')
+    render(guide)
+    await settle()
+    expect(document.querySelector('.onboarding-progress').textContent).toContain('操作 1/2')
+    guide.stageIndex.value = 1
+    await settle()
+    expect(document.querySelector('.onboarding-progress').textContent).toContain('操作 2/2')
   })
   it('exposes all ten function guides in all three languages, with the actual topic count', async () => {
     for (const locale of ['zh', 'en', 'ru']) {
@@ -298,8 +333,8 @@ describe('OnboardingHost', () => {
     const escape = vi.fn()
     modal.addEventListener('keydown', escape)
     const guide = controller('tour')
-    guide.index.value = 6
-    guide.stageIndex.value = 1
+    guide.topic.value = 'shots'
+    guide.index.value = 1
     render(guide)
     await settle()
     close.focus()

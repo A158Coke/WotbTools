@@ -3032,6 +3032,16 @@ async function runOnboardingScenario(env, scenario) {
       }
       await hit('[data-testid="onboarding-next"]')
       await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })
+      await page.waitFor(() => !!document.querySelector('[data-tour="shots-first-shot"]') && !document.querySelector('.onboarding-status'),
+        { timeout: 60_000, label: 'actual sample shooting lesson prepared' })
+      check(failures, await page.evaluate('document.querySelector("[data-testid=shots-shooter-select]")?.value') === 'own', 'shooting lesson resets the recorder filter')
+      await hit('[data-tour="shots-first-shot"]')
+      await page.waitFor(() => !!document.querySelector('[data-testid="shot-inspector"]'), { label: 'actual sample shot inspector' })
+      if (scenario.width < 900) {
+        await hit('[data-testid="shot-detail-close"]')
+      }
+      check(failures, await page.evaluate('document.querySelector("[data-testid=onboarding-card]")?.dataset.anchor') === 'shots-first-shot',
+        'core shot selection must not silently become another final node')
       await hit('[data-testid="onboarding-skip"]')
       check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-layer]")'),
         `skip must remove overlay: ${JSON.stringify(await page.evaluate('({click:window.__wsInput.click,primary:window.__wsInput.primary,pointers:window.__wsInput.pointers.slice(-3)})'))}`)
@@ -3049,7 +3059,14 @@ async function runOnboardingScenario(env, scenario) {
       await hit('[data-testid="onboarding-next"]')
     }
     await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-finish"]'), { label: 'manual tutorial completion' })
-    await hit('[data-testid="onboarding-finish-directory"]')
+    await captureMobileReview(page, scenario, 'onboarding-complete')
+    check(failures, await page.evaluate('document.querySelectorAll("[data-testid=onboarding-follow-ups] .onboarding-topic").length') === 5, 'core completion directly exposes five optional guides')
+    await hit('[data-testid="onboarding-follow-up-ai"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-ai-login"]') && !document.querySelector('[data-testid="onboarding-begin"]'), { label: 'anonymous AI tutorial requires login before preparation' })
+    await hit('[data-testid="onboarding-skip-welcome"]')
+    await page.goto(url)
+    await page.waitFor(() => !!document.querySelector('[data-testid="home-onboarding"]'), { label: 'homepage feature directory after completion' })
+    await hit('[data-testid="home-onboarding"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-directory"]'), { label: 'manual guide directory' })
     check(failures, await page.evaluate('document.querySelectorAll(".onboarding-topic").length') === 10, 'directory covers ten public topics')
   } catch (error) {
@@ -3057,7 +3074,8 @@ async function runOnboardingScenario(env, scenario) {
       title:document.querySelector('#onboarding-step-title')?.textContent,click:window.__wsInput?.click,
       primary:window.__wsInput?.primary,pointers:window.__wsInput?.pointers?.slice(-6),route:location.search,
       dialogs:[...document.querySelectorAll('[role="dialog"]')].map(el=>({test:el.dataset.testid,text:el.textContent?.slice(0,300),visible:el.getBoundingClientRect().height>0})),
-      receipt:localStorage.getItem('wotbtools-onboarding'),source:document.querySelector('.workspace-source')?.textContent?.slice(0,300)})`).catch(() => null)
+      receipt:localStorage.getItem('wotbtools-onboarding'),source:document.querySelector('.workspace-source')?.textContent?.slice(0,300),
+      shotClose:(()=>{const el=document.querySelector('[data-testid=shot-detail-close]');if(!el)return null;const r=el.getBoundingClientRect();return {rect:r.toJSON(),hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML?.slice(0,300),scrollY,innerHeight};})()})`).catch(() => null)
     throw new Error(`${error.message}; ${JSON.stringify(detail)}; ${page.consoleErrors.join(' | ')}`)
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })

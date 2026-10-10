@@ -656,7 +656,13 @@
       "anonymousFinished": "示例会留在工作台。使用自己的回放，或回首页重开新手教程。",
       "exitFullscreenNext": "退出全屏并继续",
       "exitFullscreenFailed": "退出全屏失败，可以重试或跳过引导。",
-      "exitFullscreenBack": "退出全屏并返回"
+      "exitFullscreenBack": "退出全屏并返回",
+      "mainGuide": "主线 · 两分钟入门",
+      "sideGuide": "支线 · 按需探索",
+      "stageProgress": "操作 {current}/{total}",
+      "mainFinishedTitle": "主线完成，继续探索",
+      "followUpDescription": "入门已经完成。下面的支线可以按需查看，也可以直接关闭。",
+      "aiLoginRequired": "AI 示例复盘也需要登录"
     }
   },
   "en": {
@@ -1316,7 +1322,13 @@
       "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen Getting started from Home.",
       "exitFullscreenNext": "Exit fullscreen & continue",
       "exitFullscreenFailed": "Could not exit fullscreen. Retry or skip the guide.",
-      "exitFullscreenBack": "Exit fullscreen & back"
+      "exitFullscreenBack": "Exit fullscreen & back",
+      "mainGuide": "Core · Quick start",
+      "sideGuide": "Optional · Explore more",
+      "stageProgress": "Action {current}/{total}",
+      "mainFinishedTitle": "Quick start complete",
+      "followUpDescription": "You have finished the basics. Pick an optional guide or close this window.",
+      "aiLoginRequired": "AI sample reviews also require sign-in"
     }
   },
   "ru": {
@@ -1976,7 +1988,13 @@
       "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте «Первое знакомство» на главной странице.",
       "exitFullscreenNext": "Выйти и продолжить",
       "exitFullscreenFailed": "Не удалось выйти из полноэкранного режима. Повторите попытку или пропустите руководство.",
-      "exitFullscreenBack": "Выйти и вернуться"
+      "exitFullscreenBack": "Выйти и вернуться",
+      "mainGuide": "Основное · Быстрый старт",
+      "sideGuide": "Дополнительно · Другие функции",
+      "stageProgress": "Действие {current}/{total}",
+      "mainFinishedTitle": "Быстрый старт завершён",
+      "followUpDescription": "Основное руководство завершено. Выберите дополнительную тему или закройте окно.",
+      "aiLoginRequired": "Для ИИ-разбора примера тоже нужен вход"
     }
   }
 }

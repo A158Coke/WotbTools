@@ -60,6 +60,7 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = ResizeObserverStub
 
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import ReplayShotsPane from './ReplayShotsPane.vue'
 import { assetProvider } from '../scene/assetProvider.js'
 import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
@@ -769,6 +770,26 @@ describe('ReplayShotsPane recorder-first review', () => {
     await wrapper.setProps({ active: true })
     expect(wrapper.get('#shots-shooter-select').element.value).toBe('all')
     expect(rows()).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('prepares a cached shooting lesson by restoring own shots and closing the previous inspector', async () => {
+    parseAgentShotsFromBytes.mockResolvedValue({ shots: [{ ...own }, { ...enemy }], author_eid: 7 })
+    const registerSurface = vi.fn()
+    const wrapper = mount(ReplayShotsPane, { props: { file: mkFile(), active: true },
+      global: { mocks: { $t: i18n.t }, provide: { [ONBOARDING_KEY]: { registerSurface } } }, attachTo: document.body })
+    await vi.waitFor(() => expect(wrapper.findAll('.shot-row')).toHaveLength(1))
+    await wrapper.get('#shots-shooter-select').setValue('all')
+    await wrapper.get('[data-testid="shot-row-2"]').trigger('click')
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(true)
+    const surface = registerSurface.mock.calls[0][1]
+    expect(surface.ready()).toBe(true)
+    await surface.prepare()
+    await nextTick()
+    expect(surface.ready()).toBe(false)
+    expect(wrapper.get('#shots-shooter-select').element.value).toBe('own')
+    expect(wrapper.find('[data-testid="shot-inspector"]').exists()).toBe(false)
+    expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
