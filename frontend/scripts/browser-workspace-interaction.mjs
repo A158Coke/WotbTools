@@ -152,6 +152,29 @@ function capabilityStateProbe() {
   }
 }
 
+/** 能力栏的真实几何：五个入口与完整标签都在容器内，所有按钮中心可直接命中。 */
+function capabilityLayoutProbe() {
+  const buttons = [...document.querySelectorAll('[data-testid="ws-tab"]')]
+  const group = buttons[0]?.parentElement
+  if (!group) return null
+  const bounds = group.getBoundingClientRect()
+  return {
+    rows: new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size,
+    overflow: group.scrollWidth > group.clientWidth + 1,
+    buttons: buttons.map(button => {
+      const rect = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+      return {
+        cap: button.dataset.cap,
+        inside: rect.left >= bounds.left && rect.right <= bounds.right + 1
+          && rect.top >= bounds.top && rect.bottom <= bounds.bottom + 1,
+        labelFits: button.scrollWidth <= button.clientWidth + 1 && button.scrollHeight <= button.clientHeight + 1,
+        hit: hit === button || button.contains(hit),
+      }
+    }),
+  }
+}
+
 function playbackControlProbe() {
   const play = document.querySelector('[data-test="pb-play"]')
   const root = document.querySelector('[data-test="battle-playback"]')
@@ -499,6 +522,16 @@ const APP_SCENARIOS = [
   // Admin 与普通登录用户能力集合相同。
   { name: 'admin-1600x900-desktop', width: 1600, height: 900, touch: false, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
   { name: 'admin-390x844-portrait-coarse', width: 390, height: 844, touch: true, authenticated: true, login: 'resolve', roles: ['wotbtools-admin'] },
+  ...['zh', 'en', 'ru'].flatMap(locale => ['showcase', 'classic'].flatMap(profile => [
+    { width: 320, height: 812, touch: true },
+    { width: 390, height: 844, touch: true },
+    { width: 767, height: 900, touch: true },
+    { width: 1024, height: 900, touch: false },
+    { width: 1600, height: 900, touch: false },
+  ].map(viewport => ({
+    ...viewport, name: `capability-wrap-${locale}-${profile}-${viewport.width}`,
+    locale, profile, authenticated: true, login: 'resolve',
+  })))),
 ]
 
 const AUTH_CAPABILITY_SCENARIOS = [
@@ -1648,6 +1681,11 @@ async function runAppScenario(env, scenario) {
     : ''
   const roleParams = scenario.roles?.length ? `&ws-roles=${encodeURIComponent(scenario.roles.join(','))}` : ''
   const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${roleParams}`
+  if (scenario.locale) {
+    await page.client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `localStorage.setItem('wotb-lang', ${JSON.stringify(scenario.locale)}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)});`,
+    }, page.sessionId)
+  }
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
@@ -1673,6 +1711,16 @@ async function runAppScenario(env, scenario) {
   check(failures, hit.pageScrollWidth <= hit.viewportWidth + 1, `page-level horizontal overflow: scrollWidth=${hit.pageScrollWidth} viewport=${hit.viewportWidth}`)
   if (scenario.touch) {
     check(failures, hit.coarsePointer && hit.hoverNone, `device emulation missed pointer:coarse/hover:none (coarse=${hit.coarsePointer} hoverNone=${hit.hoverNone})`)
+  }
+  const layout = await page.probe(capabilityLayoutProbe)
+  check(failures, layout?.buttons.length === 5 && !layout.overflow,
+    `five capability buttons must fit without horizontal scrolling: ${JSON.stringify(layout)}`)
+  check(failures, layout?.buttons.every(button => button.inside && button.labelFits && button.hit),
+    `every capability label must be visible and its button directly reachable: ${JSON.stringify(layout)}`)
+  if (scenario.width <= 390) {
+    check(failures, layout?.rows > 1, `portrait capability bar must wrap: ${JSON.stringify(layout)}`)
+  } else if (scenario.width >= 768) {
+    check(failures, layout?.rows === 1, `wide capability bar must stay on one row: ${JSON.stringify(layout)}`)
   }
 
   // —— A/C. 真实点击 ——
