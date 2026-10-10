@@ -278,6 +278,8 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 - **登录不是 replay 的前置条件**：本机分析在本机完成，未登录同样可打开、解析与导出；认证失败 / 取消
   不会让已接收的 pending replay 失效。
 
+手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定 HTTPS stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
+
 细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。
 
 ## WebView 安全（规格 §28–§29 / §86–§88）

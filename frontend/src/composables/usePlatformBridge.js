@@ -7,7 +7,8 @@ import { isAndroidRuntime } from '../platform/runtime.js'
  * 普通浏览器 / 非 Android 场景下不存在该对象，所有方法回退到 Web 默认（null / false）。
  *
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询、pending replay 交接
- * 与 native-auth 会话调用，绝不借此调用任何系统能力（readFile / http / execute / launch）。
+ * 与 native-auth 会话调用，以及 capability-gated 的用户目录选择。
+ * 不提供任意路径 readFile / http / execute / launch；目录文件只经固定 Native resource 读取。
  * Vue 业务用 supports() 能力探测。
  *
  * `callBridge` 是**唯一**的 RPC transport（一份实现 / 一份监听注册 / 一个序号计数器），

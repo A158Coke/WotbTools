@@ -38,3 +38,8 @@ export const NATIVE_CONNECTIVITY_CHANGED_GLOBAL = 'wotbtoolsOnConnectivityChange
 /** Exact Native-owned resource; must never become an arbitrary remote fetch. */
 export const NATIVE_REPLAY_RESOURCE_URL =
   'https://appassets.androidplatform.net/__native/replay-pending'
+
+/** Optional v2 capability: manual SAF directory selection, independent of external replay pending. */
+export const NATIVE_REPLAY_FOLDER_CAPABILITY = 'replay-folder-picker'
+export const NATIVE_REPLAY_FOLDER_RESOURCE_URL =
+  'https://appassets.androidplatform.net/__native/replay-folder'
