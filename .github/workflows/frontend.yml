@@ -21,6 +21,8 @@ on:
       - deploy/tx/nginx/**
       - deploy/check-production-freshness.sh
       - deploy/tx/build-frontend-from-gitee.sh
+      - deploy/tx/sponsor-fingerprint.sh
+      - deploy/sponsor/**
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
       - deploy/tx/with-deploy-lock.sh
@@ -51,6 +53,8 @@ env:
     deploy/tx/nginx/**
     deploy/check-production-freshness.sh
     deploy/tx/build-frontend-from-gitee.sh
+    deploy/tx/sponsor-fingerprint.sh
+    deploy/sponsor/**
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
     deploy/tx/with-deploy-lock.sh
@@ -413,9 +417,12 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: |
             set -eu
-            root=/opt/wotb-tx
-            mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
-            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            root="${WOTB_TX_ROOT:-/opt/wotb-tx}"
+            mkdir -p "$root/deploy.incoming/deploy"
+            # 本次不再传输的目录必须一并清掉：删除 sponsor pin 后旧 content.json 若残留，
+            # 远端会继续按陈旧指纹算 identity（2026-10-10 复审 P2）。`WOTB_TX_ROOT` 只为
+            # 本地回归注入（默认路径不变，见 deploy/test_frontend_image_identity.py）。
+            rm -rf -- "$root/deploy.incoming/deploy/tx" "$root/deploy.incoming/deploy/sponsor"
             mkdir -p "$root/deploy.incoming/deploy/tx"
 
       - name: Stage TX runtime files
@@ -426,6 +433,21 @@ jobs:
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           source: deploy/tx
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+
+      - name: Stage sponsor pin when present
+        # 可选 staging：pin 被删除时整个 deploy/sponsor 目录不存在，合并进必选 scp 会让步骤失败；
+        # 与"无 pin ⇒ 无赞助内容"的发布路径对齐（2026-10-10 复审 P2）。target 与必选步骤一致，
+        # 保证远端路径仍是 deploy.incoming/deploy/sponsor/content.json（identity 派生依赖它）。
+        if: ${{ hashFiles('deploy/sponsor/content.json') != '' }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/sponsor
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
 
@@ -458,7 +480,14 @@ jobs:
             export WOTB_DEPLOY_CONFIG_SHA='${{ github.sha }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
             source_sha='${{ github.sha }}'
-            identity="$(printf '%s\n%s' "$source_sha" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
+            # 不可变 tag 与 TX1 构建脚本**同公式同输入**（公式唯一定义见
+            # deploy/tx/build-frontend-from-gitee.sh，三处口径由 deploy/test_frontend_image_identity.py
+            # 看护）：sha256(source_sha + ASSET_BASE_URL + sponsor 内容指纹)[0:12]。
+            # identity 必须在此就地重算、不得走 job outputs（契约见 scripts/ci/test-workflow-contract.sh：
+            # GitHub 会把形似密钥的 SHA/digest 打码）——2026-10-10 事故：此处漏掉 sponsor 指纹
+            # ⇒ 每次都 `:sha-<另一枚> : not found`。指纹由随包 stage 的 pin 派生（同 SHA 同值）。
+            sponsor_fingerprint="$(bash /opt/wotb-tx/deploy.incoming/deploy/tx/sponsor-fingerprint.sh /opt/wotb-tx/deploy.incoming)"
+            identity="$(printf '%s\n%s\n%s' "$source_sha" "$ASSET_BASE_URL" "$sponsor_fingerprint" | sha256sum | cut -c1-12)"
             immutable_ref="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-frontend:sha-$identity"
             digest="$(timeout --kill-after=30s 60s docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_ref")"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {

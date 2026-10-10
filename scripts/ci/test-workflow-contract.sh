@@ -357,8 +357,15 @@ frontend_script = frontend_deploy["with"]["script"]
 assert "with-deploy-lock.sh bash -s <<'LOCKED'" in frontend_script
 assert "exec 9>/opt/wotb-tx/.deploy.lock" not in frontend_script
 assert "flock -n 9" not in frontend_script
+# Release identity = 与 TX1 构建脚本**同公式同输入**：
+# sha256(source_sha + ASSET_BASE_URL + sponsor 内容指纹)[0:12]。
+# 2026-10-10 事故：构建脚本纳入第三输入（sponsor 指纹）后，Frontend deploy 与 Frontend
+# Replica 仍是两输入副本 ⇒ 每次 main 部署 `:sha-<另一枚> : not found`（CI 绿、部署红 ——
+# 本契约当时抄的也是两输入，与实现一起漂移）。公式唯一定义见
+# deploy/tx/build-frontend-from-gitee.sh；三处口径由 deploy/test_frontend_image_identity.py 看护。
 for invariant in (
-    "identity=\"$(printf '%s\\n%s' \"$source_sha\" \"$ASSET_BASE_URL\" | sha256sum | cut -c1-12)\"",
+    "sponsor_fingerprint=\"$(bash /opt/wotb-tx/deploy.incoming/deploy/tx/sponsor-fingerprint.sh /opt/wotb-tx/deploy.incoming)\"",
+    "identity=\"$(printf '%s\\n%s\\n%s' \"$source_sha\" \"$ASSET_BASE_URL\" \"$sponsor_fingerprint\" | sha256sum | cut -c1-12)\"",
     "wotbtools-frontend:sha-$identity",
     "docker buildx imagetools inspect --format '{{.Manifest.Digest}}'",
     'export TX_FRONTEND_IMAGE_REF="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-frontend@$digest"',

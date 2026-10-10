@@ -28,16 +28,13 @@ jobs:
     timeout-minutes: 35
     environment: tx-production
     steps:
-      - name: Resolve published Frontend artifact
-        id: artifact
+      - name: Resolve Frontend source SHA
+        id: source
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           MANUAL_SOURCE_SHA: ${{ inputs.source_sha }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
-          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
-          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = workflow_run ]; then
@@ -49,25 +46,37 @@ jobs:
             echo "Invalid Frontend source SHA: $source_sha" >&2
             exit 1
           }
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.source.outputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Resolve published Frontend artifact identity
+        id: artifact
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
+          TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
+          TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
+        run: |
+          set -euo pipefail
           [ -n "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL is required.' >&2; exit 1; }
           case "$TCR_REGISTRY" in *.tencentyun.com) ;; *) echo 'TCR_REGISTRY must be a Tencent TCR host.' >&2; exit 1 ;; esac
           [[ "$TCR_NAMESPACE" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || { echo 'TCR_NAMESPACE is invalid.' >&2; exit 1; }
 
-          # This identity is intentionally identical to the Frontend workflow's TX1
-          # release identity. A successful Frontend run has already mirrored GitHub
-          # to Gitee, built this source on TX1 and published this immutable tag to TCR.
-          identity="$(printf '%s\n%s' "$source_sha" "$ASSET_BASE_URL" | sha256sum | cut -c1-12)"
+          # 与 TX1 构建脚本的 release identity 完全同输入同序（含 sponsor 内容指纹——见
+          # deploy/tx/build-frontend-from-gitee.sh；2026-10-10 事故：漏掉该输入 ⇒ 永远 not found，
+          # 门禁 deploy/test_frontend_image_identity.py）。成功的前端 run 已按该 tag 发布到 TCR。
+          sponsor_fingerprint="$(bash deploy/tx/sponsor-fingerprint.sh "$PWD")"
+          identity="$(printf '%s\n%s\n%s' "$SOURCE_SHA" "$ASSET_BASE_URL" "$sponsor_fingerprint" | sha256sum | cut -c1-12)"
           immutable_ref="$TCR_REGISTRY/$TCR_NAMESPACE/wotbtools-frontend:sha-$identity"
           {
-            echo "source_sha=$source_sha"
             echo "immutable_ref=$immutable_ref"
           } >> "$GITHUB_OUTPUT"
           echo "TX2 will pull the Frontend artifact directly from TCR: $immutable_ref"
-
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ steps.artifact.outputs.source_sha }}
-          fetch-depth: 1
 
       - name: Configure TX2 SSH
         shell: bash
