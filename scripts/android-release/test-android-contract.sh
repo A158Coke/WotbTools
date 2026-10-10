@@ -89,7 +89,7 @@ assert contract_result(remote_contract, untrusted_origin)["breaking"]
 with tempfile.TemporaryDirectory() as temp:
     native = Path(temp) / "Native.kt"
     declarations = '\n'.join(f'"{item}"' for item in [*base["methods"], *base["allowedOrigins"], *base["capabilities"], *auth_globals])
-    native.write_text(declarations + '\nconst val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"\nconst val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"\n"X-Wotb-Pending-Id"', encoding="utf-8")
+    native.write_text(declarations + '\nconst val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"\nconst val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"\n"X-Wotb-Pending-Id"\nconst val FOLDER_STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-folder"\n"X-Wotb-Folder-Selection-Id"\n"X-Wotb-Folder-File-Id"', encoding="utf-8")
     validate_native_sources(base, [str(native)])
     native.write_text(native.read_text(encoding="utf-8").replace('/__native/replay-pending', '/__native/wrong'), encoding="utf-8")
     try:
@@ -98,6 +98,14 @@ with tempfile.TemporaryDirectory() as temp:
         pass
     else:
         raise AssertionError("wrong canonical replay resource path was accepted")
+
+# Optional directory capability/method/resource additions preserve the existing v2 wire surface.
+without_folder = json.loads(json.dumps(base))
+without_folder["capabilities"].remove("replay-folder-picker")
+for method in ("pickReplayFolder", "cancelReplayFolderPicker", "releaseReplayFolderSelection"):
+    del without_folder["methods"][method]
+del without_folder["syntheticResources"]["folderReplay"]
+assert not contract_result(without_folder, base)["breaking"]
 
 base["bridgeVersion"] = 1
 

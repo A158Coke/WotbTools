@@ -72,7 +72,12 @@
     "single_only": "单文件模式：一次只接受一个回放文件。",
     "reject_size_hint": "单个回放最大允许 20 MB。",
     "reject_count": "一次最多选择 {max} 个回放，当前 {current} 个。",
-    "reject_total": "当前批次 {size}，最大允许 {max}。"
+    "reject_total": "当前批次 {size}，最大允许 {max}。",
+    "reading_folder": "读取文件夹…",
+    "folder_read_error": "读取文件夹失败，已有回放保持不变。请重试或选择较小的文件夹。",
+    "files_only_hint": "支持一次选择多个回放文件",
+    "files_only_multi": "支持多选文件",
+    "folder_ambiguous_paths": "文件夹中有路径相同的回放，无法可靠区分。请重命名文件或分别选择，已有回放保持不变。"
   },
   "action": {
     "preview": "解析预览",
