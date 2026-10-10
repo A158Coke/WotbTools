@@ -40,7 +40,7 @@ function formatDamage(value) { return String(Math.round(value)).replace(/\B(?=(\
         <h1>{{ $t('app.title') }}</h1>
         <p class="hero-subtitle">{{ $t('app.subtitle') }}</p>
         <div class="hero-actions">
-          <AppButton v-if="onboarding" class="hero-btn hero-guide" size="lg" data-testid="home-onboarding" aria-describedby="home-onboarding-hint" @click="onboarding.start()"><Compass :size="18" aria-hidden="true" />{{ $t('onboarding.newbie') }}</AppButton>
+          <AppButton v-if="onboarding" class="hero-btn hero-guide" size="lg" data-testid="home-onboarding" aria-describedby="home-onboarding-hint" @click="onboarding.openDirectory()"><Compass :size="18" aria-hidden="true" />{{ $t('onboarding.newbie') }}</AppButton>
           <AppButton class="hero-btn primary" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="16" aria-hidden="true" /></AppButton>
           <AppButton class="hero-btn secondary" size="lg" href="/?view=ai-review">{{ $t('home.aiReview') }}</AppButton>
           <AppButton class="hero-btn secondary" size="lg" href="/?view=battle-playback">{{ $t('home.battlePlayback') }}</AppButton>

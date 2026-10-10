@@ -61,9 +61,10 @@ describe('HomePage information architecture — single replay entry point', () =
     api.hofList.mockReset()
     api.hofList.mockResolvedValue({ items: [] })
   })
-  it('shows a prominent manual newbie tutorial button and keeps file upload available', async () => {
+  it('opens the complete feature directory from the prominent homepage tutorial button', async () => {
     const start = vi.fn()
-    const wrapper = mountPage({ start })
+    const openDirectory = vi.fn()
+    const wrapper = mountPage({ start, openDirectory })
     const tutorial = wrapper.get('[data-testid="home-onboarding"]')
     expect(tutorial.text()).toBe('onboarding.newbie')
     expect(tutorial.classes()).toContain('hero-guide')
@@ -71,7 +72,8 @@ describe('HomePage information architecture — single replay entry point', () =
     expect(wrapper.findAll('.hero-actions .is-primary')).toHaveLength(1)
     expect(wrapper.find('.hero-guide-hint').text()).toBe('onboarding.newbieHint')
     await tutorial.trigger('click')
-    expect(start).toHaveBeenCalledTimes(1)
+    expect(openDirectory).toHaveBeenCalledTimes(1)
+    expect(start).not.toHaveBeenCalled()
     expect(wrapper.find('a[href="/?view=replay"]').exists()).toBe(true)
     wrapper.unmount()
   })

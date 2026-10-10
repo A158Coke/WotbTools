@@ -331,7 +331,7 @@ watch(() => props.initialCapability, (val) => {
     <PageHeader :title="$t('workspace.title')">
       <template #actions>
         <ReplayCapabilityTabs data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
-        <AppButton v-if="onboarding && authenticated" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
+        <AppButton v-if="onboarding" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
           <CircleHelp :size="16" aria-hidden="true" />{{ $t('onboarding.help') }}
         </AppButton>
       </template>

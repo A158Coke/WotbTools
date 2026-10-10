@@ -2947,10 +2947,13 @@ async function runOnboardingScenario(env, scenario) {
     await page.waitFor(() => !!document.querySelector('[data-testid="home-onboarding"]'), { label: 'anonymous homepage tutorial button' })
     check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-welcome]")'), 'anonymous visit must not auto-open tutorial')
     await hit('[data-testid="home-onboarding"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-directory"]'), { label: 'homepage opens the complete feature directory' })
+    await hit('[data-testid="onboarding-restart"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-welcome"]'), { label: 'explicit tutorial request' })
     await hit('[data-testid="onboarding-begin"]')
     await page.waitFor(() => !!document.querySelector('[data-testid="workspace-demo-label"]') && !!document.querySelector('[data-tour="data-toolbar"]'),
       { timeout: 60000, label: 'real sample locally analyzed' })
+    check(failures, await page.evaluate('!!document.querySelector("[data-tour=workspace-help]")'), 'anonymous replay workspace keeps the feature guide entry')
     const anchors = ['workspace-demo', 'data-toolbar', 'playback-transport', 'playback-annotation-entry', 'playback-declutter']
     let skippedInFullscreen = false
     for (let node = 0; node < anchors.length; node++) {
@@ -3038,6 +3041,7 @@ async function runOnboardingScenario(env, scenario) {
     await page.installInputTrace()
     check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-welcome]")'), 'same-epoch skip must suppress fresh invitation')
     await hit('[data-testid="home-onboarding"]')
+    await hit('[data-testid="onboarding-restart"]')
     await hit('[data-testid="onboarding-begin"]')
     for (let node = 1; node <= 7; node++) {
       await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.step', value => Number(value) === node,
