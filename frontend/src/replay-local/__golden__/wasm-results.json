@@ -1719,7 +1719,7 @@
         "n_hits_dealt": 0,
         "n_penetrations_dealt": 0,
         "damage_dealt": 0,
-        "damage_received": 0,
+        "damage_received": null,
         "victory_points_earned": null,
         "victory_points_seized": null,
         "hitpoints_left": 1850,

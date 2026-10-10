@@ -284,9 +284,20 @@ describe('playbackScene 会话代数契约', () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const parked = track(deferred())
     vi.spyOn(assetProvider, 'bytes').mockImplementation(() => parked.promise)
-    vi.spyOn(assetProvider, 'json').mockResolvedValue(null)
+    // 部件守卫（本分支新增："部位/枢轴链不全 ⇒ 保留代理车"）要求模型带 `turret_N`/`gun_N` 节点，
+    // 且 `/tank/<id>.json`（service data）给出 model_origins.track/turret；此处按该契约构造最小桩。
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: { x: 0, y: 0, z: 0 }, turret: { x: 0, y: 0, z: 0 } }, configs: [] }
+        : null))
     const model = new THREE.Group()
     model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()))
+    const turretNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    turretNode.name = 'turret_0'
+    model.add(turretNode)
+    const gunNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    gunNode.name = 'gun_0'
+    model.add(gunNode)
     vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, onLoad) => onLoad({ scene: model }))
     const data = minimalData()
     data.meta.samples = 1
@@ -729,9 +740,13 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.loading).toBe(true)
     parkedGround.resolve({ ok: false })
     await loadB
-    const terrain = window.__scene.children.find((o) => o.isMesh && o.geometry.type === 'PlaneGeometry' && o.geometry.attributes.position.count > 4)
+    // 地形网格 2026-10-09 起为**客户端同构**的 BufferGeometry（texel 原位取原值、几何直接
+    // 建在场景系）⇒ 高度在 **Y** 分量（此前 PlaneGeometry + rotation(-π/2) 时在 Z）。
+    // 用内核诊断钩子取网格身份（?debug 下挂 window.__terrain）——按几何形状猜会误抓
+    // 其它 4 顶点小网格（基地盘/贴花）。
+    const terrain = window.__terrain
     expect(terrain).toBeDefined()
-    expect(terrain.geometry.attributes.position.getZ(0)).toBeCloseTo(20)
+    expect(terrain.geometry.attributes.position.getY(0)).toBeCloseTo(20)
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
   })

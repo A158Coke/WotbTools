@@ -38,6 +38,9 @@ export function collectInstanceEntries(root) {
       material: node.material,
       matrix: world,
       x: e[12], y: e[13], z: e[14],
+      // 烘焙光照图的逐实例 UV 变换 [sx, sy, ox, oy]（导出器节点 extras.lm；
+      // 客户端 `varTexCoord1 = uvScale*texcoord1 + uvOffset` 是逐材质实例的）
+      lm: (node.userData && Array.isArray(node.userData.lm)) ? node.userData.lm : null,
     })
   }
   return out
@@ -78,6 +81,30 @@ export function groupInstanceBatches(entries, cellSize = Infinity) {
  *  实例，用几何自身球会按原点剔错（远处实例整批消失）。 */
 export function buildInstancedMesh(batch) {
   const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, batch.items.length)
+  // 烘焙光照图的逐实例 UV 变换：材质（extras.lightmap）按客户端公式
+  // `albedo(UV0) × lightmap(UV1×uvScale+uvOffset) × 2` 采样，变换必须逐实例给
+  //（放材质键会让同一网格每实例各建一份几何，实测膨胀 2.3–11.3×），故走实例属性。
+  // 批内任一实例带 lm 即挂属性；缺失实例填单位变换（fail-closed：宁可按原 UV1 采样，
+  // 也不静默用邻居的变换）。
+  if (batch.items.some((it) => it.lm)) {
+    const arr = new Float32Array(batch.items.length * 4)
+    batch.items.forEach((it, i) => {
+      const v = it.lm || [1, 1, 0, 0]
+      arr[i * 4] = v[0]; arr[i * 4 + 1] = v[1]; arr[i * 4 + 2] = v[2]; arr[i * 4 + 3] = v[3]
+    })
+    const attr = new THREE.InstancedBufferAttribute(arr, 4)
+    attr.setUsage(THREE.StaticDrawUsage)
+    // 几何**不能**就地 setAttribute：几何是跨批次零拷贝复用的，两个批次挂不同数组会
+    // 互相覆盖。用"薄包装几何"——属性对象**原样引用**（three 按属性对象建 GPU 缓冲，
+    // 引用同一对象即零重复上传），只额外挂 aLm（16 B/实例）。不用 geometry.clone()：
+    // clone 会复制属性对象 → 顶点缓冲被重复上传（实测 +4~8 MB/图）。
+    const g = new THREE.BufferGeometry()
+    for (const name in batch.geometry.attributes) g.setAttribute(name, batch.geometry.attributes[name])
+    if (batch.geometry.index) g.setIndex(batch.geometry.index)
+    g.setAttribute('aLm', attr)
+    mesh.geometry = g
+    mesh.userData.lmInstances = batch.items.length
+  }
   // 树倒 / 换模翻转是运行期唯一改写路径：DynamicDrawUsage 允许局部上传，静态批不付代价
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
   batch.items.forEach((it, i) => mesh.setMatrixAt(i, it.matrix))

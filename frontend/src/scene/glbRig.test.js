@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as THREE from 'three'
-import { dropDuplicateGunMasks, neutralizeDefaultMetalness } from './glbRig.js'
+import {
+  dropDuplicateGunMasks, neutralizeDefaultMetalness,
+  poseFromYPR, yprScene, poseLocalBetween,
+  terrainPitchRoll, clampHullAttitude, SUSP_TRAVEL_M,
+} from './glbRig.js'
 
 // 复刻 GLTFLoader 的赋值：省略 metallicFactor 时取 glTF 规范默认 1.0（three 自己的
 // MeshStandardMaterial 默认是 0.0，所以必须显式设成 1 才是真实的装载结果）；
@@ -230,5 +234,67 @@ describe('dropDuplicateGunMasks · 几何副本去重（Maus mask_01 ↔ gun_01_
 
   it('空输入安全（无模型时返回 0）', () => {
     expect(dropDuplicateGunMasks(null)).toBe(0)
+  })
+})
+
+
+describe('悬挂准备件（当前无调用方）：地形姿态 / 限幅残差 / 逆合成', () => {
+  // ⚠️ 2026-10-10：下面三组函数是纯函数准备件，**场景内核已不引用**——
+  // 「根吃地形局部平面 + 车体收限幅残差」的近似整段回退（车体恢复记录位姿，客户端同构；
+  // 见 playbackScene.poseGlb 头注）。保留测试因函数仍导出、下一步逐轮悬挂可能复用；
+  // 届时若确定不用，实现与测试一并删除。
+  // 合成斜面高度场 h(x,z) = gx·x + gz·z（场景系），用于锁符号域（pitch 正=车头下坡、
+  // roll 正=车体向左倾——与回放 type=10 同域，实测残差中位 0.06°/0.53° 即由此验证）
+  const plane = (gx, gz) => (x, z) => gx * x + gz * z
+
+  it('地形姿态与记录姿态同域：前方低 → pitch 正；右侧低 → roll 负（左倾才为正）', () => {
+    // 车头沿 +x（yaw = π/2 ⇒ 场景前向 (sinθ,cosθ) = (1,0)；右舷 = (−cosθ,sinθ) = (0,1)）
+    const downX = terrainPitchRoll(plane(-0.2, 0), 0, 0, Math.PI / 2)
+    expect(downX.pitch).toBeGreaterThan(0.05)
+    expect(Math.abs(downX.roll)).toBeLessThan(1e-9)
+    // 同上但车头沿 −x（yaw = −π/2）：斜面改成沿 −x 降，前方低同样 pitch 正
+    const downX2 = terrainPitchRoll(plane(+0.2, 0), 0, 0, -Math.PI / 2)   // 沿 −x 下降 = 前方低
+    expect(downX2.pitch).toBeGreaterThan(0.05)
+    // 斜面沿 +z 降（yaw = π/2 时 +z 是**右舷**）⇒ 右侧低 ⇒ 向左倾为负
+    const downZ = terrainPitchRoll(plane(0, -0.2), 0, 0, Math.PI / 2)
+    expect(downZ.roll).toBeLessThan(-0.05)
+    // 水平面 → 两者恒 0（不引入伪姿态）
+    const flat = terrainPitchRoll(() => 7.5, 3, -4, 1.234)
+    expect(flat.pitch).toBe(0)
+    expect(flat.roll).toBe(0)
+  })
+
+  it('限幅：残差超行程时按行程截断，未超时原样保留；dy 同样限幅', () => {
+    const terr = { pitch: 0, roll: 0 }
+    // 记录姿态 20° 远大于行程角（atan(0.25/3.3) ≈ 4.33°）
+    const big = clampHullAttitude(20 * Math.PI / 180, 0, 5, terr, 0)
+    expect(big.pitch).toBeLessThan(5 * Math.PI / 180)
+    expect(big.pitch).toBeGreaterThan(4 * Math.PI / 180)
+    expect(big.dy).toBeCloseTo(SUSP_TRAVEL_M, 9)
+    // 小残差（1°）不被改动
+    const small = clampHullAttitude(Math.PI / 180, -Math.PI / 180, 0.1, terr, 0)
+    expect(small.pitch).toBeCloseTo(Math.PI / 180, 9)
+    expect(small.roll).toBeCloseTo(-Math.PI / 180, 9)
+    expect(small.dy).toBeCloseTo(0.1, 9)
+    // 负向同样限幅
+    const neg = clampHullAttitude(-20 * Math.PI / 180, 0, -5, terr, 0)
+    expect(neg.pitch).toBeGreaterThan(-5 * Math.PI / 180)
+    expect(neg.dy).toBeCloseTo(-SUSP_TRAVEL_M, 9)
+  })
+
+  it('poseLocalBetween = 父子世界朝向的逆合成；yprScene 不含 z-up→y-up 帧变换', () => {
+    const parent = poseFromYPR(-0.7, 0.12, -0.2)
+    const child = poseFromYPR(-0.7, 0.18, -0.2)
+    const local = poseLocalBetween(parent, child)
+    // parent · local === child（残差乘回父朝向即得子世界朝向）
+    const back = parent.clone().multiply(local)
+    expect(back.angleTo(child)).toBeLessThan(1e-6)
+    // 同姿态 → 单位残差
+    expect(poseLocalBetween(parent, parent.clone()).angleTo(new (parent.constructor)())).toBeLessThan(1e-6)
+    // yprScene 与 poseFromYPR 的差 = 帧变换（两者混用会把模型翻倒）
+    const a = yprScene(0, 0, 0)
+    const b = poseFromYPR(0, 0, 0)
+    expect(a.angleTo(b)).toBeGreaterThan(0.5)
+    expect(yprScene(-0.4, 0.1, -0.1).angleTo(poseFromYPR(-0.4, 0.1, -0.1))).toBeGreaterThan(0.5)
   })
 })
