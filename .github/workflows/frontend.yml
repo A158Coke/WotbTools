@@ -21,6 +21,8 @@ on:
       - deploy/tx/nginx/**
       - deploy/check-production-freshness.sh
       - deploy/tx/build-frontend-from-gitee.sh
+      - deploy/tx/sponsor-fingerprint.sh
+      - deploy/sponsor/**
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
       - deploy/tx/with-deploy-lock.sh
@@ -51,6 +53,8 @@ env:
     deploy/tx/nginx/**
     deploy/check-production-freshness.sh
     deploy/tx/build-frontend-from-gitee.sh
+    deploy/tx/sponsor-fingerprint.sh
+    deploy/sponsor/**
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
     deploy/tx/with-deploy-lock.sh
@@ -111,12 +115,6 @@ jobs:
     environment: tx-production
     permissions:
       contents: read
-    # 本次构建实际发布的不可变镜像 ref（远端 `RESULT image=`）：deploy 只能消费它，
-    # 不得各自重算 identity —— 2026-10-10 事故：deploy 侧两输入公式漏了 sponsor 内容指纹，
-    # 每次部署都以 `:sha-<另一枚> : not found` 失败（公式定义见
-    # deploy/tx/build-frontend-from-gitee.sh，一致性由 deploy/test_frontend_image_identity.py 看护）。
-    outputs:
-      image: ${{ steps.remote_build.outputs.image }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -431,7 +429,9 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          source: deploy/tx
+          # deploy/sponsor 一并 stage：远端就地重算 release identity 时需要从**同一 source commit
+          # 的 pin** 派生 sponsor 内容指纹（deploy/tx/sponsor-fingerprint.sh；2026-10-10 事故修复）。
+          source: deploy/tx,deploy/sponsor
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
 
@@ -463,18 +463,16 @@ jobs:
             export WOTB_DEPLOY_SERVICE=frontend
             export WOTB_DEPLOY_CONFIG_SHA='${{ github.sha }}'
             export TX_IMAGE_REGISTRY_PREFIX='${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}'
-            # 不可变 tag = 本次 build job 实产（公式唯一权威在 deploy/tx/build-frontend-from-gitee.sh：
-            # sha256(source_sha + ASSET_BASE_URL + sponsor 内容指纹)[0:12]）。此处不得就地重算——
-            # 2026-10-10 事故：两输入公式漏 sponsor 指纹 ⇒ 每次都 not found（门禁：
-            # deploy/test_frontend_image_identity.py）。
-            immutable_ref='${{ needs.build.outputs.image }}'
-            case "$immutable_ref" in
-              "$TX_IMAGE_REGISTRY_PREFIX/wotbtools-frontend:sha-"*) ;;
-              *)
-                echo "Unexpected build image ref: $immutable_ref" >&2
-                exit 1
-                ;;
-            esac
+            source_sha='${{ github.sha }}'
+            # 不可变 tag 与 TX1 构建脚本**同公式同输入**（公式唯一定义见
+            # deploy/tx/build-frontend-from-gitee.sh，三处口径由 deploy/test_frontend_image_identity.py
+            # 看护）：sha256(source_sha + ASSET_BASE_URL + sponsor 内容指纹)[0:12]。
+            # identity 必须在此就地重算、不得走 job outputs（契约见 scripts/ci/test-workflow-contract.sh：
+            # GitHub 会把形似密钥的 SHA/digest 打码）——2026-10-10 事故：此处漏掉 sponsor 指纹
+            # ⇒ 每次都 `:sha-<另一枚> : not found`。指纹由随包 stage 的 pin 派生（同 SHA 同值）。
+            sponsor_fingerprint="$(bash /opt/wotb-tx/deploy.incoming/deploy/tx/sponsor-fingerprint.sh /opt/wotb-tx/deploy.incoming)"
+            identity="$(printf '%s\n%s\n%s' "$source_sha" "$ASSET_BASE_URL" "$sponsor_fingerprint" | sha256sum | cut -c1-12)"
+            immutable_ref="$TX_IMAGE_REGISTRY_PREFIX/wotbtools-frontend:sha-$identity"
             digest="$(timeout --kill-after=30s 60s docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_ref")"
             [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || {
               echo "Invalid frontend TCR digest for $immutable_ref" >&2
