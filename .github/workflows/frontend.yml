@@ -417,9 +417,12 @@ jobs:
           key: ${{ secrets.TX_VPS_SSH_KEY }}
           script: |
             set -eu
-            root=/opt/wotb-tx
-            mkdir -p "$root/deploy.incoming/deploy" "$root/deploy.incoming/deploy/tx"
-            rm -rf -- "$root/deploy.incoming/deploy/tx"
+            root="${WOTB_TX_ROOT:-/opt/wotb-tx}"
+            mkdir -p "$root/deploy.incoming/deploy"
+            # 本次不再传输的目录必须一并清掉：删除 sponsor pin 后旧 content.json 若残留，
+            # 远端会继续按陈旧指纹算 identity（2026-10-10 复审 P2）。`WOTB_TX_ROOT` 只为
+            # 本地回归注入（默认路径不变，见 deploy/test_frontend_image_identity.py）。
+            rm -rf -- "$root/deploy.incoming/deploy/tx" "$root/deploy.incoming/deploy/sponsor"
             mkdir -p "$root/deploy.incoming/deploy/tx"
 
       - name: Stage TX runtime files
@@ -429,9 +432,22 @@ jobs:
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          # deploy/sponsor 一并 stage：远端就地重算 release identity 时需要从**同一 source commit
-          # 的 pin** 派生 sponsor 内容指纹（deploy/tx/sponsor-fingerprint.sh；2026-10-10 事故修复）。
-          source: deploy/tx,deploy/sponsor
+          source: deploy/tx
+          target: /opt/wotb-tx/deploy.incoming
+          overwrite: true
+
+      - name: Stage sponsor pin when present
+        # 可选 staging：pin 被删除时整个 deploy/sponsor 目录不存在，合并进必选 scp 会让步骤失败；
+        # 与"无 pin ⇒ 无赞助内容"的发布路径对齐（2026-10-10 复审 P2）。target 与必选步骤一致，
+        # 保证远端路径仍是 deploy.incoming/deploy/sponsor/content.json（identity 派生依赖它）。
+        if: ${{ hashFiles('deploy/sponsor/content.json') != '' }}
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          source: deploy/sponsor
           target: /opt/wotb-tx/deploy.incoming
           overwrite: true
 
