@@ -276,9 +276,13 @@ class Page {
     })
   }
 
-  async enable() {
+  async enable({ locale = 'zh', profile = 'showcase' } = {}) {
     await this.client.send('Runtime.enable', {}, this.sessionId)
     await this.client.send('Page.enable', {}, this.sessionId)
+    // 页面共享 origin 的 localStorage；每个场景都在首屏前设置自己的偏好，避免矩阵污染后续场景。
+    await this.client.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `localStorage.setItem('wotb-lang', ${JSON.stringify(locale)}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(profile)});`,
+    }, this.sessionId)
   }
 
   async evaluate(expression) {
@@ -1673,7 +1677,7 @@ async function runAppScenario(env, scenario) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
-  await page.enable()
+  await page.enable(scenario)
   await page.emulate(scenario)
 
   const authParams = scenario.authInit
@@ -1681,11 +1685,6 @@ async function runAppScenario(env, scenario) {
     : ''
   const roleParams = scenario.roles?.length ? `&ws-roles=${encodeURIComponent(scenario.roles.join(','))}` : ''
   const url = `${env.origin}/?view=replay&ws-auth=${scenario.authenticated ? 1 : 0}&ws-login=${scenario.login}${authParams}${roleParams}`
-  if (scenario.locale) {
-    await page.client.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `localStorage.setItem('wotb-lang', ${JSON.stringify(scenario.locale)}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)});`,
-    }, page.sessionId)
-  }
   await page.goto(url)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-tab"][data-cap="playback"]'), { label: 'capability tabs' })
 
@@ -1717,7 +1716,8 @@ async function runAppScenario(env, scenario) {
     `five capability buttons must fit without horizontal scrolling: ${JSON.stringify(layout)}`)
   check(failures, layout?.buttons.every(button => button.inside && button.labelFits && button.hit),
     `every capability label must be visible and its button directly reachable: ${JSON.stringify(layout)}`)
-  if (scenario.width <= 390) {
+  // 最窄夹具验证换行；375/390px 的中文标签在 Linux 字体下可能刚好容纳一行。
+  if (scenario.width === 320) {
     check(failures, layout?.rows > 1, `portrait capability bar must wrap: ${JSON.stringify(layout)}`)
   } else if (scenario.width >= 768) {
     check(failures, layout?.rows === 1, `wide capability bar must stay on one row: ${JSON.stringify(layout)}`)
