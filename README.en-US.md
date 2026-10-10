@@ -1,5 +1,7 @@
 # WoTBTools
 
+The skippable guide runs on the real pages. The official replay lets anonymous visitors try data, 2D/3D playback and shot inspection; personal replays keep their login requirements. Completion can sync with the signed-in account, and ordinary content updates do not restart the core guide. See [the onboarding contract](docs/features/onboarding.md).
+
 A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, the Hall of Fame (damage board for Random & Rating battles), battle performance metrics (contribution / KAST / Impact and other derived metrics), AI tactical review (player / team), and Keycloak authentication.
 
 Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://github.com/A158Coke/WotbTools](https://github.com/A158Coke/WotbTools)

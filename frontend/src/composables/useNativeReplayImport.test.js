@@ -79,6 +79,19 @@ function stubFetchBlob() {
 
 describe('useNativeReplayImport', () => {
 
+  it('reports the actual import as busy while reading bytes and releases it after failure', async () => {
+    stubNative(PENDING_A)
+    let resolveRead
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { resolveRead = resolve })))
+    const { consumePendingWhenReady, importing } = useNativeReplayImport({ isReady: () => true })
+    const consumption = consumePendingWhenReady()
+    expect(importing.value).toBe(true)
+    await vi.waitFor(() => expect(resolveRead).toBeTypeOf('function'))
+    resolveRead({ ok: false, status: 503 })
+    await expect(consumption).resolves.toBe(false)
+    expect(importing.value).toBe(false)
+  })
+
   it.each([null, 1, 3])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
     const native = stubNative(PENDING_A, true, bridgeVersion)
     const fetchMock = vi.fn()

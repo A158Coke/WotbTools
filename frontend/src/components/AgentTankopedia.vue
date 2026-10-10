@@ -266,7 +266,7 @@ onMounted(() => {
         </header>
 
         <!-- 装甲查看器入口：装甲数值 / 热力 / 等效判定以查看器为准（唯一装甲事实源）；查看器匿名可用，入口对全员开放 -->
-        <section class="tp-card-section" data-testid="tank-open3d-card">
+        <section class="tp-card-section" data-testid="tank-open3d-card" data-tour="tankopedia-detail">
           <h2 class="tp-section-title">{{ t('agentTanks.open3d_title') }}</h2>
           <label v-if="cfgs.length > 1" class="tp-field tp-field-inline">
             <span class="tp-field-label">{{ t('agentTanks.select_config') }}</span>
@@ -275,7 +275,7 @@ onMounted(() => {
             </select>
           </label>
           <div>
-            <AppButton variant="primary" data-testid="tank-open3d" @click="open3d">
+            <AppButton variant="primary" data-testid="tank-open3d" data-tour="tankopedia-armor" @click="open3d">
               <Box :size="16" aria-hidden="true" />
               {{ t('agentTanks.open3d') }}
             </AppButton>
@@ -341,14 +341,14 @@ onMounted(() => {
           <input
             v-model="searchText"
             type="search"
-            data-testid="tank-search"
+            data-testid="tank-search" data-tour="tankopedia-search"
             :aria-label="t('agentTanks.search_label')"
             :placeholder="t('agentTanks.search_ph')"
             autocomplete="off"
             enterkeyhint="search"
           >
         </label>
-        <FilterChips v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="key => writeState({ [key]: '' })" />
+        <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="key => writeState({ [key]: '' })" />
       </div>
 
       <div v-if="isCompact && sheetOpen" class="tp-sheet-scrim" aria-hidden="true" @click="closeSheet"></div>
@@ -358,7 +358,7 @@ onMounted(() => {
         :class="{ 'is-sheet': isCompact }"
         :role="isCompact ? 'dialog' : undefined"
         :aria-label="isCompact ? t('filters.title') : undefined"
-        data-testid="tank-filters"
+        data-testid="tank-filters" data-tour="tankopedia-filters"
         @keydown.esc="isCompact && closeSheet()"
       >
         <div v-if="isCompact" class="tp-sheet-head">
@@ -431,7 +431,7 @@ onMounted(() => {
       </EmptyState>
 
       <template v-else>
-        <ul class="tp-grid" data-testid="tank-grid">
+        <ul class="tp-grid" data-testid="tank-grid" data-tour="tankopedia-list">
           <li v-for="tank in visible" :key="tank.id">
             <button
               type="button"

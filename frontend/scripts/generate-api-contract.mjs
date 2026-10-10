@@ -61,7 +61,8 @@ function responseDefinitions(root) {
 }
 for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings', 'TournamentDayView',
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
-  'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState']) {
+  'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
+  'OnboardingReceipt', 'SaveOnboardingReceipt']) {
   if (!components[name]) continue
   const id = `tournament-${name}`
   ajv.addSchema({ $schema: schema.$schema, $id: id, $ref: `#/$defs/${name}`, $defs: responseDefinitions(name) }, id)

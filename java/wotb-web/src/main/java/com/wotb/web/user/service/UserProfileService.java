@@ -1,6 +1,7 @@
 package com.wotb.web.user.service;
 
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.dto.OnboardingReceiptDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import com.wotb.web.util.ConstraintViolations;
@@ -42,6 +43,33 @@ public class UserProfileService {
     @Transactional(readOnly = true)
     public Optional<UserProfileDto> findByKeycloakUserId(final String keycloakUserId) {
         return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public OnboardingReceiptDto readOnboardingReceipt(final String keycloakUserId) {
+        return repository.findByKeycloakUserId(keycloakUserId)
+                .map(mapper::toOnboardingReceipt)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+    }
+
+    /** Serialize receipts with the existing profile lock: newer epochs win, then completion at the same epoch. */
+    @Transactional
+    public OnboardingReceiptDto saveOnboardingReceipt(final String keycloakUserId,
+                                                       final int coreEpoch, final String disposition) {
+        if (coreEpoch < 1 || !("COMPLETED".equals(disposition) || "SKIPPED".equals(disposition))) {
+            throw new IllegalArgumentException("INVALID_REQUEST");
+        }
+        final UserProfile profile = repository.findByKeycloakUserIdForUpdate(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
+        if (coreEpoch > profile.getOnboardingCoreEpoch()
+                || (coreEpoch == profile.getOnboardingCoreEpoch()
+                && "COMPLETED".equals(disposition)
+                && !"COMPLETED".equals(profile.getOnboardingDisposition()))) {
+            profile.setOnboardingCoreEpoch(coreEpoch);
+            profile.setOnboardingDisposition(disposition);
+            repository.save(profile);
+        }
+        return mapper.toOnboardingReceipt(profile);
     }
 
     /**

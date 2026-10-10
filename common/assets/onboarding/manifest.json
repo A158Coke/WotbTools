@@ -1,0 +1,19 @@
+{
+  "id": "official-replay",
+  "revision": 2,
+  "path": "/onboarding/replay-2.wotbreplay",
+  "filename": "championship-maus-example.wotbreplay",
+  "bytes": 1772807,
+  "sha256": "35dceae9278e9e9ffae41525b8ee66ecfec484cefd54a52f3b61ee7d73d58b14",
+  "mapCode": "plant",
+  "cue": {
+    "playbackSeconds": 126.4279165390625,
+    "rawBattleStartSeconds": 13.4037485,
+    "shotRawSeconds": 139.8316650390625,
+    "vehicleEid": 280695450,
+    "shotId": 43127338,
+    "shooterEid": 280695450,
+    "targetEid": 280828258
+  },
+  "verifiedParserRef": "37960fbf0ef269fe6df09a8111a41ca7eaff91ac"
+}

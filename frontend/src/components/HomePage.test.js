@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 
 const api = vi.hoisted(() => ({
   hofList: vi.fn(() => Promise.resolve({ items: [] }))
@@ -10,10 +11,11 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../utils/api.js', () => api)
 
-function mountPage() {
+function mountPage(onboarding = null) {
   return mount(HomePage, {
     global: {
       mocks: { $t: key => key },
+      provide: { [ONBOARDING_KEY]: onboarding },
       stubs: {
         RouterLink: {
           props: ['to'],
@@ -58,6 +60,22 @@ describe('HomePage information architecture — single replay entry point', () =
   beforeEach(() => {
     api.hofList.mockReset()
     api.hofList.mockResolvedValue({ items: [] })
+  })
+  it('opens the complete feature directory from the prominent homepage tutorial button', async () => {
+    const start = vi.fn()
+    const openDirectory = vi.fn()
+    const wrapper = mountPage({ start, openDirectory })
+    const tutorial = wrapper.get('[data-testid="home-onboarding"]')
+    expect(tutorial.text()).toBe('onboarding.newbie')
+    expect(tutorial.classes()).toContain('hero-guide')
+    expect(tutorial.classes()).toContain('is-secondary')
+    expect(wrapper.findAll('.hero-actions .is-primary')).toHaveLength(1)
+    expect(wrapper.find('.hero-guide-hint').text()).toBe('onboarding.newbieHint')
+    await tutorial.trigger('click')
+    expect(openDirectory).toHaveBeenCalledTimes(1)
+    expect(start).not.toHaveBeenCalled()
+    expect(wrapper.find('a[href="/?view=replay"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('hero primary CTA is Upload Replay → replay view', () => {

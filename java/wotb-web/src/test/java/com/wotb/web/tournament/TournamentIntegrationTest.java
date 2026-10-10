@@ -78,7 +78,7 @@ class TournamentIntegrationTest {
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("30",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("31",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));

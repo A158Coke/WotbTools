@@ -66,6 +66,7 @@ function openPicker(input) {
   if (props.loading || props.disabled || pickingFolder.value) return
   input?.click?.()
 }
+defineExpose({ chooseFiles: () => openPicker(filesInput.value) })
 
 async function openFolderPicker(input) {
   if (props.loading || props.disabled || pickingFolder.value) return

@@ -1,4 +1,5 @@
 import { onUnmounted } from 'vue'
+import { isOfficialDemo } from '../replay-local/demo.js'
 import type { Composer } from 'vue-i18n'
 import { parseReplayFiles, ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import { analyzeReplayBatch } from '../replay-local/analyzeReplays.js'
@@ -44,11 +45,22 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     inFlight = null
   }
 
-  function updateFiles(next: File[]): void {
+  function resetAnalysis(): void {
     abortInFlight()
     lastParsed = []
     lastDataset = null
+  }
+
+  function updateFiles(next: File[]): void {
+    resetAnalysis()
     replaceSelection(next)
+  }
+
+  function updateDemoFile(file: File): void {
+    // Validate before cancelling the existing user's analysis or replacing their selection.
+    if (!isOfficialDemo(file)) throw new Error('Unverified official replay')
+    resetAnalysis()
+    session.replaceDemoSelection(file)
   }
 
   async function analyze(): Promise<AnalyzeResult> {
@@ -129,6 +141,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
 
   return {
     updateFiles,
+    updateDemoFile,
     analyze,
     cancel,
     dismiss,

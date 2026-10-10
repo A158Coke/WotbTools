@@ -23,7 +23,7 @@ bash scripts/fetch-agent-wasm.sh
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`）。五种回放能力始终可见；3D / shots / armor / AI 用普通账号登录，无需 `?admin=1`。
+浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`）。五种回放能力始终可见；个人回放的 3D / shots 与全部 AI 用普通账号登录，无需 `?admin=1`。已验证的官方示例可匿名使用 3D / shots，装甲查看器也匿名可用。
 
 ## 1. 系统构成（先理解数据从哪来）
 
@@ -92,7 +92,7 @@ npm run dev
 ——这是 `frontend/src/composables/useAuth.js` 里**已入库**的 dev-gated 实现（`DEV_ADMIN_ROLES`），
 不是本机补丁，也不是可回退的临时改动。
 
-管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名保留目标并显示 Login Gate，普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
+管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名个人回放的 3D / shots 保留目标并显示 Login Gate，已验证的官方示例额外匿名放行这两个能力，装甲查看器匿名可用。普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
 
 - 生效条件：`import.meta.env.DEV` 且 URL 存在 `admin` 参数（实现为 `.has('admin')`，value 不参与
   判定；模块加载时读取，不持久化，每次都要带）；生产构建该表达式在 build 期折叠为恒 false、参数
@@ -103,7 +103,7 @@ npm run dev
 
 ## 5. 能力分层：本地能全用什么，什么要真角色
 
-**普通登录用户即可使用**（数据链全在本机，无需 admin role）：3D 回放、射击分析 / 复现。**装甲查看器匿名可用**（Tankopedia 详情入口卡对全员开放，深链不设登录门）。匿名可用数据、2D 与装甲查看器，并可看到全部五个 tab；匿名进入受限能力不会加载实际 pane、解析或资产。
+**普通登录用户即可使用**（数据链全在本机，无需 admin role）：3D 回放、射击分析 / 复现。**装甲查看器匿名可用**（Tankopedia 详情入口卡对全员开放，深链不设登录门）。匿名可用数据、2D 与装甲查看器，并可看到全部五个 tab；已验证的官方示例额外匿名放行 3D / 射击，仍受各自连通性门禁约束，普通重选、追加、清空与 Android 导入撤销示例资格。匿名个人回放进入受限能力不会加载实际 pane、对应解析或资产；全部 AI（包括官方示例）仍要求真实登录，示例资格不放行服务端写操作。
 
 **需要真实 realm 角色**（前端旁路只解决可见性，后端按 token 鉴权）：
 

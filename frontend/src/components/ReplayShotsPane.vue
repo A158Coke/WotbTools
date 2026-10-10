@@ -11,7 +11,9 @@
  * 焦点在打开时进入面板、Esc / 关闭后回到触发它的那一行。
  * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
@@ -45,6 +47,15 @@ const props = defineProps({
   navigate: { type: Function, default: null },
 })
 const { t } = useI18n()
+const onboarding = inject(ONBOARDING_KEY, null)
+onMounted(() => onboarding?.registerSurface('shots', {
+  ready: () => props.active && selectedShot.value != null,
+  prepare: () => { closeDetail(); shooter.value = 'own'; return decoding },
+  setGuideInset: pixels => { guideInset.value = Math.max(0, pixels) },
+  cleanup: () => { guideInset.value = 0 },
+  failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
+}))
+onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
 const { requireFeature } = useFeatureGate()
 
 const shots = ref([])
@@ -56,10 +67,12 @@ const shooter = ref('own')
 const authorEid = ref(null)
 const recorderTankName = ref('')
 const selectedIndex = ref(null)
+const guideInset = ref(0)
 /** 已解析的文件：同一文件不重复解码 */
 let parsedFile = null
 /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
 let parseSeq = 0
+let decoding = Promise.resolve()
 
 /**
  * 弹种使用 bundled shellKinds，俯仰锚定/配置顺序使用 common/shot-tank-data.json。
@@ -290,7 +303,7 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
   if (!active || !file || blocked) return
   if (parsedFile === file) return
   parsedFile = file
-  decode(file)
+  decoding = decode(file)
 }, { immediate: true })
 
 const shellBadge = (s) => {
@@ -431,6 +444,9 @@ const summaryStats = computed(() => {
 
 const selectedShot = computed(() =>
   selectedIndex.value == null ? null : shots.value.find((s) => s.index === selectedIndex.value) || null)
+const guideShot = computed(() => (isOfficialDemo(props.file)
+  ? filteredShots.value.find(shot => shot.shot_id === OFFICIAL_DEMO.cue.shotId)
+  : null) || filteredShots.value.find(rowHas3d))
 
 /** 弹道两点距离（米）：只做展示，不参与任何判定 */
 function trajectoryLength(s) {
@@ -451,8 +467,9 @@ function rowHas3d(s) {
  */
 const paneRoot = ref(null)
 const layout = ref('expanded')
+const guideLayout = computed(() => guideInset.value > 0 ? 'compact' : layout.value)
 const detailOpen = computed(() => selectedIndex.value != null)
-const isOverlay = computed(() => layout.value === 'compact')
+const isOverlay = computed(() => guideLayout.value === 'compact')
 
 let observer = null
 const detailPane = ref(null)
@@ -640,7 +657,7 @@ onBeforeUnmount(() => {
         <p>{{ $t(shooter === 'own' ? 'agentShots.no_own_shots' : 'agentShots.no_filtered_shots') }}</p>
         <AppButton v-if="shooter === 'own' && shots.length" @click="shooter = 'all'">{{ $t('agentShots.browse_all_shots') }}</AppButton>
       </div>
-      <div v-else class="shots-split" :class="[`is-${layout}`, { 'has-detail': detailOpen }]">
+      <div v-else class="shots-split" :class="[`is-${guideLayout}`, { 'has-detail': detailOpen }]">
         <div class="shot-master">
           <div class="shot-list-heading"><h3>{{ $t('agentShots.shot_sequence') }}</h3><span>{{ $t('agentShots.shot_count', { count: filteredShots.length }) }}</span></div>
         <ul class="shot-list" :aria-label="$t('agentShots.title')">
@@ -651,6 +668,7 @@ onBeforeUnmount(() => {
               :class="{ 'is-selected': selectedIndex === s.index }"
               :aria-current="selectedIndex === s.index ? 'true' : undefined"
               :data-testid="`shot-row-${s.index}`"
+              :data-tour="s === guideShot ? 'shots-first-shot' : undefined"
               @click="selectShot(s.index, $event)"
             >
               <span class="shot-time"><span class="shot-ordinal">{{ position + 1 }}</span><span class="shot-clock">{{ formatPlaybackClock(s.time_s) }}</span></span>
@@ -680,6 +698,8 @@ onBeforeUnmount(() => {
           class="shot-detail"
           tabindex="-1"
           data-testid="shot-inspector"
+          data-tour="shots-inspector"
+          :style="guideInset > 0 ? { insetBlockEnd: `${guideInset}px` } : undefined"
           :role="isOverlay ? 'dialog' : undefined"
           :aria-modal="isOverlay ? 'true' : undefined"
           :aria-label="$t('agentShots.inspector_title')"
@@ -721,6 +741,7 @@ onBeforeUnmount(() => {
             v-if="rowHas3d(selectedShot)"
             variant="primary"
             data-testid="shot-open-viewer"
+            data-tour="shot-open-viewer"
             @click="openInViewer(selectedShot)"
           >{{ $t('agentShots.open_viewer') }}</AppButton>
           <dl class="shot-detail-grid">
@@ -893,6 +914,7 @@ onBeforeUnmount(() => {
 .shots-split.is-compact .shot-detail {
   position: fixed;
   inset: 0;
+  inset-block-start: var(--header-h);
   z-index: var(--z-sheet);
   align-content: start;
   padding: var(--space-4);

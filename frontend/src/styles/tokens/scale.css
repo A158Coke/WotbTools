@@ -30,6 +30,8 @@
     --column-panel-width: 440px;
     --column-panel-max-height: 680px;
     --shot-detail-width: 360px;
+    --onboarding-card-width: 360px;
+    --onboarding-outline: 2px solid var(--color-accent);
     /* A table scroll container establishes its own isolated stacking context. */
     --table-z-row: 1;
     --table-z-head: 2;
