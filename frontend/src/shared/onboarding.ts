@@ -26,6 +26,7 @@ export type OnboardingSurfaceId = 'playback' | 'annotations' | '3d' | 'shots' | 
 export interface OnboardingContext {
   start(topic?: OnboardingTopic): void
   openDirectory(): void
+  sampleOpened(): void
   registerWorkspace(workspace: OnboardingWorkspace | null): void
   registerSurface(id: OnboardingSurfaceId, surface: OnboardingSurface | null): void
 }
