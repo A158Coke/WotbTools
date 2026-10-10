@@ -17,7 +17,7 @@ function controller(mode = 'idle') {
     hintVisible: ref(false), canResume: ref(false), resume: vi.fn(), dismissHint: vi.fn(),
     isSignedIn: ref(false),
     currentStage: computed(() => steps.value[index.value].stages[stageIndex.value]),
-    begin: vi.fn(), next: vi.fn(), back: vi.fn(), skip: vi.fn(), retry: vi.fn(), interrupt: vi.fn(), start: vi.fn(), openDirectory: vi.fn(), useOwnReplay: vi.fn(), loginAiGuide: vi.fn() }
+    begin: vi.fn(), next: vi.fn(), back: vi.fn(), skip: vi.fn(), retry: vi.fn(), interrupt: vi.fn(), start: vi.fn(), openDirectory: vi.fn(), useOwnReplay: vi.fn(), loginAiGuide: vi.fn(), reserveShotGuideSpace: vi.fn() }
 }
 function render(guide, locale = 'zh') {
   const wrapper = mount(OnboardingHost, { attachTo: document.body, props: { onboarding: guide },

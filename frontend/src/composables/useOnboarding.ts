@@ -10,7 +10,7 @@ import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, Onboard
 import type { ReplayCapability } from '../types/workspace.js'
 
 /** Increment epoch only when existing users need the core guide again. Copy/anchor changes use revision. */
-const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 3 })
+const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 4 })
 export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
 export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
 const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
@@ -72,7 +72,9 @@ const replay3d = step('3d', '3d', [
   stage('replay3d-camera', 'replay3dCamera', { surface: '3d', interactionAnchor: 'replay3d-workspace' }),
 ])
 const shots = step('shots', 'shots', [
-  stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, interactionAnchor: 'shots-inspector' }),
+  stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true }),
+  stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true, interactionAnchor: 'shots-inspector' }),
+  stage('armor-workspace', 'armor', { surface: 'armor' }),
 ])
 
 /** One registry is shared by the short core guide and the optional function guides. */
@@ -83,7 +85,7 @@ export const ONBOARDING_GUIDES: Record<OnboardingTopic, GuideStep[]> = {
   annotations: [annotations, step('drawing', 'playback', [stage('playback-annotation-tools', 'drawing', { surface: 'annotations', prepare: true, interactionAnchor: 'playback-map' })]), declutter],
   '3d': [replay3d, step('camera', '3d', [stage('replay3d-camera', 'camera', { surface: '3d', interactionAnchor: 'replay3d-workspace' })]), step('3dDisplay', '3d', [stage('playback-display', 'display', { interactionAnchor: 'playback-display-options' })])],
   shots: [step('shotList', 'shots', [stage('shots-first-shot', 'shots', { surface: 'shots', prepare: true, advanceOnReady: true })]),
-    step('shotOpen', 'shots', [stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true })]),
+    step('shotOpen', 'shots', [stage('shot-open-viewer', 'shotViewer', { surface: 'armor', advanceOnReady: true, interactionAnchor: 'shots-inspector' })]),
     { id: 'armor', stages: [stage('armor-workspace', 'armor', { surface: 'armor' })] }],
   ai: [step('aiFiles', 'ai', [stage('workspace-file-controls', 'aiFiles')]), step('aiStart', 'ai', [stage('ai-review-start', 'aiStart')]), step('aiReport', 'ai', [stage('ai-review-report', 'aiReport')])],
   tankopedia: [
@@ -501,9 +503,12 @@ export function useOnboarding(options: {
     interrupt()
     return auth.login('ai-review')
   }
+  function reserveShotGuideSpace(pixels: number) {
+    surfaces.value.shots?.setGuideInset?.(pixels)
+  }
   const context: OnboardingContext = { start, openDirectory, sampleOpened, registerWorkspace, registerSurface }
   return { ...context, context, mode, topic, index, stageIndex, issue, currentStep, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn,
-    begin, next, back, skip, interrupt, useOwnReplay, loginAiGuide, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry: () => demoFailed.value ? begin(canResume.value) : prepareStep() }
+    begin, next, back, skip, interrupt, useOwnReplay, loginAiGuide, reserveShotGuideSpace, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry: () => demoFailed.value ? begin(canResume.value) : prepareStep() }
 }
 
 export type OnboardingController = ReturnType<typeof useOnboarding>
