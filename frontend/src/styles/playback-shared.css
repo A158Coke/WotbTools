@@ -1,9 +1,17 @@
-/* Shared 2D presentation. Macro battlefield geometry belongs to playback-workspace.css. */
+/* Shared 2D chrome; geometry remains owned by playback-workspace.css. */
 .battle-playback { min-width: 0; }
 .battle-playback .pb-main { position: relative; min-width: 0; }
 .battle-playback .pb-map-stage { position: relative; min-width: 0; }
-/* Playable-area outline overlays the existing raster/SVG frame without affecting geometry. */
-.battle-playback .pb-svg { box-shadow: inset 0 0 0 2px #e0301e; }
-.battle-playback .pb-annotation-surface { min-width: 0; }
-.battle-playback .pb-panel-options { display: grid; gap: var(--space-2); font-size: .82rem; }
-.battle-playback .pb-panel-options label { display: flex; align-items: center; gap: var(--space-2); }
+/* The playable area is information, not a permanently alarming frame. */
+.battle-playback .pb-svg { box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+.battle-playback .pb-annotation-surface { min-width: 0; margin-block-start: var(--space-2); }
+.battle-playback .pb-panel-options { display: grid; gap: var(--space-2); font: var(--type-caption); }
+.battle-playback .pb-panel-options label { display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-h-md); }
+.pb-replay-mode-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-2); border-block-end: 1px solid var(--color-border-subtle); }
+.pb-replay-mode-bar button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-block-size: var(--control-h-lg); padding: var(--space-1) var(--space-3); border: 1px solid var(--color-accent); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; cursor: pointer; }
+.pb-replay-mode-bar button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-on-accent); }
+.pb-replay-mode-bar button:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.pb-replay-mode-bar > span { flex: 1; color: var(--color-text-secondary); font: var(--type-caption); }
+@media (width < 768px) {
+  .pb-replay-mode-bar > span { display: none; }
+}

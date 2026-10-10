@@ -161,7 +161,7 @@ function linkAttrs(id) {
   overflow-x: hidden;
   overflow-y: auto;
   border-inline-end: 1px solid var(--color-border-subtle);
-  background: var(--color-canvas);
+  background: var(--color-surface-1);
 }
 
 .sidebar-brand {
@@ -178,22 +178,22 @@ function linkAttrs(id) {
 .sidebar-logo { flex: none; height: 28px; }
 /* 图标栏内宽约 64px：品牌图形（约 2.1:1）收小，避免撑出栏宽 */
 .is-rail .sidebar-logo { height: 24px; }
-.sidebar-brand-name { font: var(--type-h3); font-weight: 800; white-space: nowrap; }
+.sidebar-brand-name { font: var(--type-h3); font-weight: 700; white-space: nowrap; }
 .sidebar-brand-accent { color: var(--color-accent-text); }
 
 .sidebar-dev-notice {
   padding: var(--space-1) var(--space-2);
   overflow: hidden;
-  border: 1px solid var(--color-warning);
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
-  color: var(--color-warning);
+  color: var(--color-text-tertiary);
   font: var(--type-caption);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-nav { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); }
+.sidebar-nav { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-4); }
 .sidebar-list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 
 .sidebar-group-title {
@@ -226,8 +226,9 @@ function linkAttrs(id) {
   gap: var(--space-3);
   width: 100%;
   min-height: var(--control-h-lg);
-  padding: 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 0;
+  border-inline-start: var(--space-1) solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
@@ -236,13 +237,15 @@ function linkAttrs(id) {
   text-align: start;
   text-decoration: none;
   cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
 
 .sidebar-link > svg { flex: none; }
 .sidebar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sidebar-link.is-active {
-  background: color-mix(in oklab, var(--color-accent) 16%, var(--color-canvas));
+  background: color-mix(in oklab, var(--color-accent) 12%, var(--color-surface-1));
+  border-inline-start-color: var(--color-accent);
   color: var(--color-accent-text);
 }
 
@@ -257,8 +260,9 @@ function linkAttrs(id) {
 .is-rail .sidebar-link {
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  padding: var(--space-1) 0;
+  gap: var(--space-1);
+  min-height: var(--control-h-lg);
+  padding: var(--space-2) 0;
   font: var(--type-caption);
   font-weight: 600;
   text-align: center;
@@ -274,6 +278,8 @@ function linkAttrs(id) {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+.is-rail .sidebar-link { border-inline-start: 0; }
 
 .sidebar-collapse { color: var(--color-text-tertiary); }
 

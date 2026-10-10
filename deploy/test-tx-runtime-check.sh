@@ -95,9 +95,8 @@ grep -Eiq '(drop|truncate|delete[[:space:]]+from|create[[:space:]]+database|alte
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/config/sponsor" "$WORK/runtime/android-release"
+mkdir -p "$WORK/deploy" "$WORK/bin" "$WORK/runtime/android-release"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$WORK/deploy/docker-compose.yml"
-printf '{}\n' > "$WORK/runtime/config/sponsor-config.json"
 cat > "$WORK/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -459,12 +458,11 @@ grep -Fq 'Container deploy-health-probe-run-test Creating' <<< "$stderr_noise_ou
 # Exercise the actual promoted TX layout: the wrapper and deploy helper are
 # siblings under runtime/deploy, with no repository checkout or source root.
 RELOCATED_ROOT="$WORK/relocated-root"
-mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/config/sponsor" "$RELOCATED_ROOT/android-release"
+mkdir -p "$RELOCATED_ROOT/deploy" "$RELOCATED_ROOT/android-release"
 cp "$ROOT/deploy/tx/runtime-check.sh" "$RELOCATED_ROOT/deploy/runtime-check.sh"
 cp "$ROOT/deploy/tx/deploy.sh" "$RELOCATED_ROOT/deploy/deploy.sh"
 cp "$ROOT/deploy/tx/runtime-check-lib.sh" "$RELOCATED_ROOT/deploy/runtime-check-lib.sh"
 cp "$ROOT/deploy/tx/docker-compose.yml" "$RELOCATED_ROOT/deploy/docker-compose.yml"
-printf '{}\n' > "$RELOCATED_ROOT/config/sponsor-config.json"
 printf 'tx-local-opentofu-business-postgres\n' > "$RELOCATED_ROOT/business-postgres.tofu-provisioned"
 
 relocated_ready_output="$(run_check "" "$RELOCATED_ROOT/deploy/runtime-check.sh")"

@@ -55,15 +55,14 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   z-index: var(--z-header);
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   height: calc(var(--header-h) + env(safe-area-inset-top));
   padding: env(safe-area-inset-top) var(--gutter) 0;
   border-bottom: 1px solid var(--color-border-subtle);
-  background: color-mix(in oklab, var(--color-canvas) 92%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--color-surface-1);
 }
 
-.brand { display: inline-flex; align-items: center; flex: none; }
+.brand { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: var(--control-h-lg); }
 .brand-logo { height: 24px; }
 
 .section-title {
@@ -79,13 +78,14 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: var(--hit-min);
-  min-height: var(--hit-min);
+  min-width: var(--control-h-lg);
+  min-height: var(--control-h-lg);
+  border-radius: var(--radius-md);
   margin-inline-start: auto;
   color: var(--color-text-secondary);
 }
 
-.account-link.is-active { color: var(--color-accent-text); }
+.account-link.is-active { background: var(--color-surface-2); color: var(--color-accent-text); }
 
 .account-link:focus-visible,
 .brand:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
@@ -93,9 +93,9 @@ const devEnvironmentNoticeKey = import.meta.env.MODE === 'production-remote'
 .dev-notice {
   margin-inline-start: auto;
   padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-warning);
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
-  color: var(--color-warning);
+  color: var(--color-text-secondary);
   font: var(--type-caption);
   white-space: nowrap;
 }

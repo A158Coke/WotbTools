@@ -38,12 +38,14 @@ anti-future-leak 或现有 tank-marker 资产契约。
   `FULL_RELATIVE`、`EXACT`、`PARTIAL`、`UNKNOWN` 语义保持不变。
 - 2D / 3D 共用中心栈（2D 取最大正方形，3D 横屏铺满可用宽高）：地图/时间、HP/比分与 compact 基地 metadata 的持久 HUD → Stage → Transport。击杀流是独立的有界 overlay（2D 最多保留最新 2 条、3D 最多 3 条），不参与 HUD 高度预算，因此条目变化不会牵动 Stage / Transport 重排。
 - 主控件共用 `PlaybackTransport.vue`，顺序为 `-5 / Play-Pause / +5 / 当前速度 / 全屏 / Display`，速度档位按需展开，六个触控目标至少 44px。
-- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；战场血量数值置于加厚血条内，不重复显示百分比。2D Stage 同时受中心可用宽度和实测可用高度约束；3D 横屏画布铺满中心列可用宽高，相机比例随容器更新，竖屏保持正方形。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
+- 侧车道以 workspace 宽度作 fluid sizing，并保持可读下限；桌面左 / 中 / 右列约为 25% / 50% / 25%，短横屏保留主控件所需列宽。HUD 铺满中心列，桌面放大字号与血条厚度；名册与战场标签的装填条均与 HP 条等宽且更细；横条模式的战场血量数值置于加厚血条内，不重复显示百分比。2D Stage 同时受中心可用宽度和实测可用高度约束；3D 横屏画布铺满中心列可用宽高，相机比例随容器更新，竖屏保持正方形。容量按**视口**算（`视口高 − 顶栏/底栏 − 实测 HUD − 实测 Transport − 间距`），刻意不用根元素的内容高度，也就不用按断点各写一套固定扣减。
 - Display 由 `PlaybackDisplaySurface.vue` 锚定 Gear，优先向上、空间不足换边并夹紧；竖屏采用有界 inline 面。Details 仍为独立的 workspace 级可拖动上下文窗；首次落位不压中心栏（HUD / Stage / Transport 同一列，以 Transport 的左右边为准）：侧边车道比浮窗窄时（如 1280 宽桌面）把浮窗收窄到侧边可用宽度，侧边不足 240px 或名册关闭时不收窄（`usePlaybackDetailsPlacement`）。
 - **2D / 3D 同一战斗时钟**：播放条、顶栏计时与 Details 都以开战（canonical `clock.startRaw`）为 0、总长 `durationSec`，同一时刻在 2D / 3D 显示同一个时间；顶栏计时是已过时间（不是游戏内的剩余倒计时）。3D 的战斗时间轴 `[START, END]` 由**场景引擎**唯一持有（发布为 `store.startTime` / `store.duration`）：会话从开战时刻开始，`seekTo` / `seekBy`（±5）/ `seekFraction`、进度比例与自动停止全部夹在里面，准备 / 倒计时阶段回不去。时钟来源按优先级：工作台 canonical 的 clock（`Replay3DPane` 在 canonical 就绪 / 失败 / 换会话时经 `setBattleClock` 交给引擎，引擎重定范围并把当前 T 夹回去、越过新终点即停播）→ 场景按同一 `resolveReplayClock` 从自身 periods 推出的时钟 → 数据范围（`t_start` → `battleEnd.js`）。
 - 形态判定（`shared/breakpoints` 的 `PLAYBACK_MOBILE_QUERY`）：Mobile = 宽 `<768px` 或触屏且高 `≤500px`（手机横屏）；`768–1199px` 一律 Tablet、`≥1200px` 一律 PC。布局只看可用空间，触屏只放大控件点击区域（44px），iPad / Android 平板拿 Tablet 形态。
 - 不抢页面：滚轮只在全屏、按住 Ctrl/⌘ 或刚在地图上按下后才缩放，否则交给页面滚动并短暂提示；地图未放大、非全屏、未标注时 `touch-action: pan-y`，单指纵向滑动滚动页面；`active=false`（隐藏的模式 / KeepAlive 停用）时暂停并不响应空格 / 方向键。地图高度扣掉固定顶栏，手机横屏按可用高度封顶。
-- 两队阵容属于 Stage 两侧的有界车道；点玩家打开独立 Details，未选车时不预留详情列。
+- 两队阵容属于 Stage 两侧的有界车道；地图快捷条提供显眼的「收起名单 / 展开名单」，与 Display 共用 `uiPrefs.showRoster`，不改变选车、跟随或播放时间。收起后把车道宽度交还地图；2D 保持完整正方形，已受视口高度限制时不会强行拉伸或裁图。点玩家打开独立 Details，未选车时不预留详情列。
+- 2D / 3D 的「一键防遮」复用 `usePlaybackPreferences`：开启后保留车型名，车辆替换为类型符号，并隐藏玩家名、装填条、状态装饰与轨迹；2D 同时保留环形血量，3D 沿用隐藏血条的呈现；再按一次恢复开启前的配置。预设是临时状态，不覆盖持久化偏好；手动更改显示选项则退出预设并保存当前组合。名单开关独立于预设。Display 保留「坦克类型图标」「状态标记」单独开关。
+- 实际车辆和战术标记统一使用 `TankClassIcon.vue` / `utils/tankClassIcon.js` 的 LT 单菱形、MT 双分段菱形、HT 三分段菱形和 TD 倒三角；未知车型不猜类别，使用中性圆形。3D 类型符号由既有投影标签层呈现并可选车，场景只隐藏车模绘制节点，保留位置、可见性事实与拾取代理。手机短横屏把标记入口并入地图快捷条，保留 44px 触控区域。
 - Display 与 Events 从 Gear 按需打开，Vehicle 由选车打开 Details；Events 只呈现
   `DAMAGE`、`KILL`、`DESTROYED`，点击事件执行 seek + pause，纯时间轴不承载事件标记。
 - 标注工具默认折叠，绘图不暂停 battle clock。画标注时整层车辆不接指针（从车辆上起笔只画线、不选中车辆）；地图上的鼠标拖动（平移 / 画标注）不触发浏览器的文本 / 图片选择。Fullscreen 继续保持同一组件实例的
@@ -268,14 +270,21 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
      长度仍随地图坐标）；
      网格/区域/出生点（A/B/C 基地）属地图内容，随缩放。**战局回放视图不再渲染车辆路线**
      （用户 2026-08-14 确认去除；路线数据仍仅作为位置插值与炮线端点的内部输入）。
-   - **地图标注（画笔/形状/文字，2026-08-16 新增）**：纯前端临时标注，不持久化、不调后端——
-     刷新/切文件/切离战局回放视图即清空（切文件经 `BattlePlayback` `watch(overview)` 重置，
-     切视图经 v-if 卸载）。工具栏提供画笔/橡皮擦/箭头/直线/矩形/圆/文字 + 9 色固定色板（含纯黑） +
-     粗细滑块（1–12）+ 撤回/重做/清空/显隐开关；绘制需显式选工具（未选工具保持原有缩放/平移/
-     选车交互；绘制中车标按钮 `pointer-events:none` 防误触，双指捏合/滚轮缩放保留）。几何一律存
-     **语义坐标**（x=回放 x，y=回放 z），渲染经 `createMapView.toX/toY`（新增 `fromX/fromY`
-     逆映射）→ SVG 像素，随 viewport transform 缩放/平移锚定不漂移；线宽/字号/半径按 x/y 轴比例
-     换算成 SVG 单位（随地图缩放）。
+   - **标记模式（2D 独立战术编辑，2026-10-08 更新）**：默认关闭且没有预置标记，优先展示真实对局过程。
+     播放区的一级「标记模式」按钮打开工具并暂停，默认选中「选择」，不会因点击地图误画；退出不自动播放，
+     主动播放会退出编辑并保留已完成标记。标注仍为纯前端临时状态，不持久化、不调后端，不与 3D 互通——
+     刷新/切文件/卸载战局回放即清空（切文件经 `watch(overview)` 重置，同时关闭编辑）。
+     工具栏同级提供 LT / MT / HT / TD（坦歼），用共享实心兵种符号、虚线圈及「计划」标签与真实车辆区分；
+     路线按地图点击添加途经点，至少两点后点「完成路线」或 Enter 提交，Esc / 取消按钮丢弃草稿。
+     这些路线表达用户战术意图，不是车辆实际行驶轨迹。选择后可拖动整体移动，兵种/路线/文字可改名，
+     所有对象可改色、删除、撤回；属性只在选中时显示在工具条内，不设常驻右侧栏。
+     保留画笔/橡皮擦/箭头/直线/矩形/圆/文字 + 9 色固定色板（含纯黑）+ 粗细（1–12）+
+     撤回/重做/清空/显隐。模式外保留原有平移/选车；模式内车标不抢点击，双指捏合和滚轮缩放保留。
+     第二指加入或 pointercancel 取消当前单指编辑，避免捏合意外生成标记；输入框和 IME 合成不劫持快捷键。
+     几何一律存 **语义坐标**（x=回放 x，y=回放 z），经既有 `createMapView` / 地形投影渲染；
+     没有引入第二套 ReplaySession、parser 事实或持久化 schema。手机横屏（含全屏）工具条为一行横向滚动，
+     退出固定靠左、路线完成和选中属性优先显示；开启期间暂收起播放控制/时间轴与入口行，为地图保留高度，
+     HUD 仍显示当前时间；退出恢复同一播放器控件及暂停状态，不清除标注。竖屏和桌面仍保留完整播放控制及分行工具。
      **屏幕↔语义换算（CSS px ≠ SVG unit，2026-08-16 修复）**：`.pb-map` 渲染宽度为容器 66.7%
      （移动端 100%），CSS 渲染尺寸 ≠ viewBox W/H，禁止把 CSS px 当 SVG unit。正链：client px →
      相对 `.pb-map` 的 CSS px（`screenPoint`）→ 撤销 viewport translate/scale → 未缩放 CSS px
@@ -354,11 +363,11 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ### 2D Local / 3D Remote 运行时渲染契约
 
-- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的游戏客户端原图，由 `mapImages.js` 静态 import 随站点发布；当前原图 intrinsic raster resolution 为 2024×2024。它只描述文件解码像素，不等于页面的 logical map frame。
+- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的已验收 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随站点发布；当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
 - `mapImages.width/height` 保持既有 logical/render-frame dimensions（约 754–783），由 `createMapView()` 生成 `mapView.W/H`，作为 `coordinateBounds`、terrain projection、SVG `viewBox`、车辆/基地/轨迹/标注及 pointer conversion 的共同坐标空间；不得用图片实际像素替换。
 - Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；`.pb-svg` 承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera frame。底图和 SVG 按 `mapView.W / mapView.H` 的 frame `fill`，保持既有 overlay 对齐。
 - 运行时 raster capacity 以 `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足；维持现有 1×→4× camera contract，不用滤镜弥补源图细节。
-- 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。此次退役增强地图不改变 3D provider、缓存策略或资产托管。
+- 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。2D 底图资源更新不改变 3D provider、缓存策略或资产托管。
 - 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
   失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
   （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
@@ -822,3 +831,17 @@ Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型
 该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
 
 - 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry，与播放条 / 顶栏同一个原点）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。
+
+### 2D 车辆血量显示
+
+Display 的「血量显示方式」提供横条 / 环形，默认横条；偏好与显示血量开关由
+`usePlaybackPreferences` 持有并持久化，旧版本偏好自动补为横条。
+环形围绕当前车模或类型图标，用剩余弧长表示已知血量比例，我方绿色、敌方红色；
+位置或血量进入最后已知状态时变灰，不推测实时视野。未知血量 / 未知容量显示中性虚线，
+开局相对满血仍按已有投影语义显示完整环，阵亡车不画血量环。
+环形模式不显示血量数字和装填条；切回横条会恢复用户原本的装填开关。
+车型图标的环保持屏幕尺寸，车模的环跟随模型大小，线宽及周围间距不随地图缩放增加。
+环直径与模型、标签碰撞布局共用尺寸计算，不改变车辆的真实坐标、伤害或观测事实。
+
+标记模式选择工具下，点击未被计划标记占用的车辆仍可打开车辆详情；绘图与拖动操作不触发检查。
+2D 详情摘要的血量、百分比与车辆标识来自同一条当前时间投影，拖动时间轴会同步更新，不取最终结算。

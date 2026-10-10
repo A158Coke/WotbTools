@@ -711,6 +711,31 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('direct declutter and roster controls preserve the current session and restore preferences', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const store = playback.api.store
+    store.time = 52
+    const parseCount = playback.api.loadData.mock.calls.length
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
+      enabled: true, showPlayerName: false, showTankName: true, showHp: false, showReload: false,
+      classIcons: true, showStatus: false,
+    })
+    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    expect(wrapper.find('[data-testid="roster-surface"]').exists()).toBe(true)
+    await wrapper.get('[data-test="pb-declutter"]').trigger('click')
+    expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith(expect.objectContaining({ classIcons: false, showHp: true, showReload: true, showStatus: true }))
+    expect(store.time).toBe(52)
+    expect(playback.api.loadData).toHaveBeenCalledTimes(parseCount)
+    wrapper.unmount()
+  })
+
   it('共享标签偏好推给场景：enabled + 四行开关，面板改动即时下发', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
@@ -718,6 +743,7 @@ describe('Replay3DPane', () => {
     // 建场景时补推一次（内核在 initPlayback 之后才有 setLabelPrefs）
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: false, showTankName: true, showHp: true, showReload: true,
+      classIcons: false, showStatus: true,
     })
     // 工具条只在 HUD 有数据时渲染
     playback.api.store.hasData = true
@@ -731,6 +757,7 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: true, showReload: true,
+      classIcons: false, showStatus: true,
     })
     expect(wrapper.get('[data-test="pb-label-player"]').text()).toBe('Recorder昵称')
     await wrapper.get('[data-testid="disp-player"]').setValue(false)
@@ -740,6 +767,7 @@ describe('Replay3DPane', () => {
     await nextTick()
     expect(playback.api.setLabelPrefs).toHaveBeenLastCalledWith({
       enabled: true, showPlayerName: true, showTankName: true, showHp: false, showReload: true,
+      classIcons: false, showStatus: true,
     })
     wrapper.unmount()
   })

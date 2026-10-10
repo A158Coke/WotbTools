@@ -18,8 +18,8 @@ fi
 
 grep -Fq 'TX1_FRONTEND="${TX1_FRONTEND:-http://10.20.0.1:8081}"' "$preflight"
 grep -Fq 'TX2_FRONTEND="${TX2_FRONTEND:-http://10.20.0.3:8081}"' "$preflight"
-grep -Fq 'sponsor-config.json' "$preflight"
-grep -Fq '/sponsor-assets/' "$preflight"
+# Sponsor QR 内容不再是 host runtime content（已在对象存储资产面），预检不得再比对它。
+! grep -Fiq 'sponsor' "$preflight"
 grep -Fq '/download/android/version.json' "$preflight"
 grep -Fq 'apkUrl' "$preflight"
 grep -Fq 'K7C_FRONTEND_CUTOVER_PREFLIGHT=PASS' "$preflight"

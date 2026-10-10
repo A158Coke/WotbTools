@@ -646,7 +646,7 @@ desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小�
 
 K7C 才完成第一次真实 workload cutover。Frontend 现在由两个实例共同提供生产服务：TX1 约 20%，TX2 约 80%，由仍运行在 TX1 的 Caddy 做 weighted round-robin 与 `/version.json` active health check。Business API、Keycloak、PostgreSQL 与 AI placement 在这次切换中保持不变。
 
-Frontend 发布也因此从“一台主机上的容器”升级为多实例 Artifact Contract：TX1 构建并发布不可变 TCR artifact，TX1 与 TX2 最终运行同一 digest；TX2 不从 TX1 当前容器复制镜像状态。Sponsor 配置、Sponsor 资源与当前 Android 下载面等 host-owned runtime content，则按独立契约复制到 TX2 自己的本地 runtime root。
+Frontend 发布也因此从“一台主机上的容器”升级为多实例 Artifact Contract：TX1 构建并发布不可变 TCR artifact，TX1 与 TX2 最终运行同一 digest；TX2 不从 TX1 当前容器复制镜像状态。Sponsor 配置、Sponsor 资源与当前 Android 下载面等 host-owned runtime content，则按独立契约复制到 TX2 自己的本地 runtime root。（2026-10-09 起 Sponsor QR 改为 pin 住的发布资产、构建期注入并随 Frontend 镜像与 APK 一起发布，不再属于 host-owned runtime content。）
 
 **这一步把此前“TX 是一台生产服务器”的理解改成了“TX1 拥有公网入口与核心业务 authority，TX1/TX2 共同承担 Frontend runtime，Yecao 承担 AI、Observability 与 Komodo Core”。Frontend 已有 workload redundancy，但 TX1 Caddy 仍是公网入口单点。**
 

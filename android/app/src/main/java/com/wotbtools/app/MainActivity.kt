@@ -7,6 +7,10 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -30,9 +34,14 @@ import androidx.webkit.WebViewCompat
 import com.wotbtools.app.auth.AuthFailureReason
 import com.wotbtools.app.auth.AuthManager
 import com.wotbtools.app.auth.AuthResult
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Bundled Vue local-first shell. Native owns OIDC and replay ingress; Vue Router owns views.
@@ -44,10 +53,19 @@ class MainActivity : Activity() {
     companion object {
         internal const val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"
         internal const val LOCAL_APP_ENTRY = LOCAL_APP_ORIGIN + "/index.html"
+        internal const val REPLAY_FOLDER_STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-folder"
+        internal const val REPLAY_FOLDER_SELECTION_IDENTITY_HEADER = "X-Wotb-Folder-Selection-Id"
+        internal const val REPLAY_FOLDER_FILE_IDENTITY_HEADER = "X-Wotb-Folder-File-Id"
         // replay canonical view 的 marker 由 ReplayDispatchPolicy 拥有：分发决策所判断的 URL 与这里导航到的
         // URL 共用同一常量，避免两处字面量漂移。
         private const val REPLAY_URL = LOCAL_APP_ENTRY + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
         private const val FILE_CHOOSER_REQUEST = 1001
+        private const val REPLAY_FOLDER_REQUEST_MIN = 0x2000
+        private const val REPLAY_FOLDER_REQUEST_MAX = 0xffff
+        // Never reuse a folder request code within a process, including Activity recreation.
+        private val nextFolderRequestCode = AtomicInteger(REPLAY_FOLDER_REQUEST_MIN)
+        private const val REPLAY_FOLDER_LIFETIME_MS = 9L * 60 * 1000
+        private const val REPLAY_FOLDER_SCAN_TIMEOUT_MS = 60L * 1000
         private const val BRIDGE_NAME = "WotbNative"
 
         /** 日志 tag（导航 / replay / auth 诊断共用）。 */
@@ -101,6 +119,22 @@ class MainActivity : Activity() {
     private var versionCheckInFlight = false
     @Volatile private var downloadedApk: File? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private val replayFolderPicker = ReplayFolderPicker()
+    private var folderPickRequest: FolderPickRequest? = null
+    private val folderTimeoutHandler = Handler(Looper.getMainLooper())
+
+    private class FolderPickRequest(
+        val generation: Long,
+        val clientRequestId: String,
+        val requestCode: Int,
+        val reply: (JSONObject) -> Unit
+    ) {
+        val cancellation = CancellationSignal()
+        var pickerOpen = false
+        var lifetimeTimeout: Runnable? = null
+        var scanTimeout: Runnable? = null
+        var scanTask: Future<*>? = null
+    }
     @Volatile private var awaitingUnknownSourcesPermission = false
 
     /** WebView 是否已销毁：晚到的 bridge 回复 / JS 通知都必须先看这一位。 */
@@ -219,6 +253,10 @@ class MainActivity : Activity() {
                 // 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
                 // Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
                 // Native Bridge → local synthetic fetch → shared local parser.
+                if (fileChooserCallback != null || folderPickRequest != null || destroyedWebView) {
+                    callback.onReceiveValue(null)
+                    return true
+                }
                 val intent = try {
                     params.createIntent()
                 } catch (_: Exception) {
@@ -285,6 +323,25 @@ class MainActivity : Activity() {
                 if (request.isForMainFrame && !isLocalAppUrl(request.url.toString())) {
                     return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
                         mapOf("Cache-Control" to "no-store"), null)
+                }
+                if (request.url.toString() == ReplayFolderPicker.STREAM_URL) {
+                    val selectionId = request.requestHeaders.entries.firstOrNull {
+                        it.key.equals(ReplayFolderPicker.SELECTION_IDENTITY_HEADER, ignoreCase = true)
+                    }?.value
+                    val fileId = request.requestHeaders.entries.firstOrNull {
+                        it.key.equals(ReplayFolderPicker.FILE_IDENTITY_HEADER, ignoreCase = true)
+                    }?.value
+                    val response = replayFolderPicker.interceptFolderResource(
+                        request.url.toString(), selectionId, fileId, request.method
+                    ) { treeUri, documentId ->
+                        contentResolver.openInputStream(
+                            DocumentsContract.buildDocumentUriUsingTree(Uri.parse(treeUri), documentId)
+                        )
+                    } ?: error("Synthetic folder resource must be Native-owned")
+                    return WebResourceResponse(
+                        "application/octet-stream", null, response.status, response.reason,
+                        mapOf("Cache-Control" to "no-store"), response.data
+                    )
                 }
                 if (request.url.toString() != ReplayIntentHandler.STREAM_URL) {
                     if (!isLocalAppUrl(request.url.toString())) return null
@@ -707,7 +764,7 @@ class MainActivity : Activity() {
     fun bridgeVersion(): Int = BuildConfig.NATIVE_BRIDGE_VERSION
 
     fun bridgeCapabilities(): List<String> =
-        listOf("native-auth", "replay-share", "replay-open", "app-update", "connectivity")
+        listOf("native-auth", "replay-share", "replay-open", "app-update", "connectivity", "replay-folder-picker")
 
     /**
      * 连通性状态 token（`connectivityGetState` 的 result）：Android 系统 `ConnectivityManager` 的
@@ -761,6 +818,163 @@ class MainActivity : Activity() {
                 true
             }
         }
+    }
+
+    /** Dedicated SAF directory picker; never pass a tree URI through WebView's file callback. */
+    fun bridgePickReplayFolder(requestId: String?, reply: (JSONObject) -> Unit) {
+        runOnUiThread {
+            val clientRequestId = requestId?.takeIf { ReplayFolderPicker.validClientRequestId(it) }
+            if (clientRequestId == null || destroyedWebView || isDestroyed || fileChooserCallback != null) {
+                reply(folderPickJson("failed"))
+                return@runOnUiThread
+            }
+            val generation = replayFolderPicker.begin()
+            if (generation == null) {
+                reply(folderPickJson("failed"))
+                return@runOnUiThread
+            }
+            val requestCode = nextFolderRequestCode.getAndIncrement()
+            if (requestCode !in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+                replayFolderPicker.complete(generation, null)
+                reply(folderPickJson("failed"))
+                return@runOnUiThread
+            }
+            val request = FolderPickRequest(generation, clientRequestId, requestCode, reply)
+            folderPickRequest = request
+            request.lifetimeTimeout = Runnable { expireFolderPick(request) }.also {
+                folderTimeoutHandler.postDelayed(it, REPLAY_FOLDER_LIFETIME_MS)
+            }
+            request.pickerOpen = true
+            try {
+                startActivityForResult(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                    request.requestCode
+                )
+            } catch (_: Exception) {
+                finishFolderPick(request, "failed")
+            }
+        }
+    }
+
+    /** Cancelling a page-owned request immediately frees the Native picker without touching completed files. */
+    fun bridgeCancelReplayFolderPicker(requestId: String?, reply: (Boolean) -> Unit) {
+        runOnUiThread {
+            val request = folderPickRequest
+            if (request == null || destroyedWebView || isDestroyed ||
+                !ReplayFolderPicker.ownsClientRequest(request.clientRequestId, requestId)
+            ) {
+                reply(false)
+                return@runOnUiThread
+            }
+            reply(abortFolderPick(request, "cancelled"))
+        }
+    }
+
+    fun bridgeReleaseReplayFolderSelection(selectionId: String?): Boolean =
+        replayFolderPicker.release(selectionId)
+
+    /** Android cursor adapter emits rows directly; traversal applies its bound before retaining each. */
+    private fun scanReplayFolder(treeUri: Uri, request: FolderPickRequest): ReplayFolderPicker.Selection {
+        if (treeUri.scheme != "content" || !DocumentsContract.isTreeUri(treeUri)) {
+            throw IOException("Invalid directory selection")
+        }
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+        )
+        return ReplayFolderPicker.enumerate(
+            treeUri.toString(), DocumentsContract.getTreeDocumentId(treeUri),
+            visitChildren = { documentId, emit ->
+                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+                val cursor = contentResolver.query(
+                    childrenUri, columns, null, null, null, request.cancellation
+                ) ?: throw IOException("Directory query unavailable")
+                cursor.use {
+                    val idColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    val sizeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+                    val modifiedColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                    while (it.moveToNext()) {
+                        request.cancellation.throwIfCanceled()
+                        val mime = it.getString(mimeColumn)
+                            ?: throw IOException("Document type unavailable")
+                        emit(ReplayFolderPicker.Document(
+                            it.getString(idColumn) ?: throw IOException("Document identity unavailable"),
+                            it.getString(nameColumn) ?: throw IOException("Document name unavailable"),
+                            mime == DocumentsContract.Document.MIME_TYPE_DIR,
+                            if (it.isNull(sizeColumn)) null else it.getLong(sizeColumn),
+                            if (it.isNull(modifiedColumn)) 0L else it.getLong(modifiedColumn)
+                        ))
+                    }
+                }
+            },
+            cancelled = { request.cancellation.isCanceled || !replayFolderPicker.isActive(request.generation) }
+        )
+    }
+
+    /** UI-thread compare-and-complete makes destroy/late worker responses harmless. */
+    private fun finishFolderPick(
+        request: FolderPickRequest,
+        status: String,
+        selection: ReplayFolderPicker.Selection? = null
+    ): Boolean {
+        if (folderPickRequest !== request || destroyedWebView || isDestroyed) return false
+        if (!replayFolderPicker.complete(request.generation, selection)) return false
+        folderPickRequest = null
+        cancelFolderPickWork(request)
+        request.reply(folderPickJson(status, selection))
+        return true
+    }
+
+    /** A hung provider cannot keep later bridge calls busy after the bounded RPC lifetime. */
+    private fun expireFolderPick(request: FolderPickRequest) {
+        abortFolderPick(request, "failed")
+    }
+
+    /** Client cancellation and deadline expiry share exact native-generation/child-Activity cleanup. */
+    private fun abortFolderPick(request: FolderPickRequest, status: String): Boolean {
+        val closePicker = request.pickerOpen
+        if (!finishFolderPick(request, status)) return false
+        if (closePicker) {
+            try {
+                // Close only the child Activity started for this exact folder request.
+                finishActivity(request.requestCode)
+            } catch (_: Exception) {
+                // Its result may already be queued; request-code ownership will reject that result.
+            }
+        }
+        return true
+    }
+
+    private fun cancelFolderPickWork(request: FolderPickRequest) {
+        request.lifetimeTimeout?.let { folderTimeoutHandler.removeCallbacks(it) }
+        request.scanTimeout?.let { folderTimeoutHandler.removeCallbacks(it) }
+        request.lifetimeTimeout = null
+        request.scanTimeout = null
+        request.scanTask?.cancel(true)
+        request.scanTask = null
+        request.cancellation.cancel()
+    }
+
+    private fun folderPickJson(status: String, selection: ReplayFolderPicker.Selection? = null): JSONObject {
+        val files = JSONArray()
+        selection?.files?.forEach { file ->
+            files.put(JSONObject()
+                .put("fileId", file.fileId)
+                .put("name", file.name)
+                .put("relativePath", file.relativePath)
+                .put("size", file.size ?: JSONObject.NULL)
+                .put("lastModified", file.lastModified))
+        }
+        return JSONObject()
+            .put("status", status)
+            .put("selectionId", selection?.selectionId ?: JSONObject.NULL)
+            .put("files", files)
     }
 
     fun bridgeCheckForUpdate(): Boolean {
@@ -885,8 +1099,41 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent，
-        // 但只要 intent 里带响应/异常就按授权结果处理（同一份逻辑，不重复实现）。
+        if (requestCode in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+            val request = folderPickRequest ?: return
+            // Expired requests and duplicate provider results must never belong to a retry.
+            if (request.requestCode != requestCode || !request.pickerOpen) return
+            request.pickerOpen = false
+            if (resultCode != RESULT_OK) {
+                finishFolderPick(request, "cancelled")
+                return
+            }
+            val treeUri = data?.data
+            if (treeUri == null) {
+                finishFolderPick(request, "failed")
+                return
+            }
+            request.scanTimeout = Runnable { expireFolderPick(request) }.also {
+                folderTimeoutHandler.postDelayed(it, REPLAY_FOLDER_SCAN_TIMEOUT_MS)
+            }
+            try {
+                request.scanTask = executor.submit {
+                    val selection = try {
+                        scanReplayFolder(treeUri, request)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    runOnUiThread {
+                        finishFolderPick(request, if (selection == null) "failed" else "selected", selection)
+                    }
+                }
+            } catch (_: Exception) {
+                finishFolderPick(request, "failed")
+            }
+            return
+        }
+        // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent。
+        // Folder request codes have their own owner, even if a late result carries unrelated extras.
         if (handleAuthorizationIntent(data)) return
         if (requestCode == FILE_CHOOSER_REQUEST && fileChooserCallback != null) {
             val uris = when {
@@ -895,8 +1142,9 @@ class MainActivity : Activity() {
                 resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
                 else -> null
             }
-            fileChooserCallback?.onReceiveValue(uris)
+            val callback = fileChooserCallback
             fileChooserCallback = null
+            callback?.onReceiveValue(uris)
         }
     }
 
@@ -911,6 +1159,13 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
         destroyedWebView = true
+        val folderRequest = folderPickRequest
+        folderPickRequest = null
+        replayFolderPicker.destroy()
+        folderRequest?.let { cancelFolderPickWork(it) }
+        val callback = fileChooserCallback
+        fileChooserCallback = null
+        callback?.onReceiveValue(null)
         connectivityMonitor.stop()
         authManager.removeListener(authChangedListener)
         webViewContainer.removeAllViews()

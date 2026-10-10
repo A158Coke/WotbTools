@@ -7,8 +7,6 @@ import './styles/showcase.css'
 import './styles/showcase-workspaces.css'
 import './styles/showcase-pages.css'
 import './styles/showcase-rankings.css'
-import './styles/showcase-backgrounds.css'
-import './styles/showcase-backgrounds-v3.css'
 import './styles/showcase-cohesion.css'
 import './styles/showcase-regressions.css'
 import './styles/app-shell.css'
@@ -21,8 +19,9 @@ import './styles/playback-mobile.css'
 import './styles/playback-workspace.css'
 import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
-import router from './app/router.js'
 import { sectionTitleKey, viewFromRoute } from './app/navigation.js'
+import { useAuth } from './composables/useAuth.js'
+import { isAndroidApp } from './composables/usePlatformBridge.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
 // 避免"我刚部署了"式猜测（对应同源 /version.json 可查）。
@@ -31,6 +30,16 @@ console.info('[build] commit=' + __BUILD_COMMIT__ + ' time=' + __BUILD_TIME__)
 const previewHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
 async function bootstrap() {
+  // A Web login return belongs to keycloak-js before any history/route rewrite.
+  // Only inspect parameter presence here; the adapter alone validates state/PKCE and
+  // consumes the callback. Ordinary visits keep rendering during check-sso, and APK
+  // auth remains Native-owned without blocking its local tools on the bridge.
+  const hasAuthReturn = [window.location.search, window.location.hash.slice(1)].some(value => {
+    const params = new URLSearchParams(value)
+    return params.has('state') && (params.has('code') || params.has('error'))
+  })
+  if (!isAndroidApp() && hasAuthReturn) await useAuth().initPromise
+
   // Local preview intentionally starts on Home while production defaults to Replay.
   const previewParams = new URLSearchParams(window.location.search)
   if (previewHost && !previewParams.has('view')) {
@@ -39,6 +48,9 @@ async function bootstrap() {
     window.history.replaceState({}, '', previewUrl.toString())
   }
 
+  // createWebHistory snapshots the current URL; even importing the router before
+  // callback consumption would retain stale OIDC parameters in route state.
+  const { default: router } = await import('./app/router.js')
   const { default: App } = await import('./App.vue')
   const i18n = createI18n({
     locale: localStorage.getItem('wotb-lang') || 'zh',

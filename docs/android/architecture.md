@@ -11,8 +11,13 @@ Android App
    ├── AuthManager → external user-agent → Keycloak → QQ / WG
    └── WebView → https://appassets.androidplatform.net/index.html
         ├── self: APK assets/web (Vue, WASM, 2D assets)
-        └── HTTPS API / remote 3D assets: reviewed production origins
+        ├── self: /agent-assets → AgentAssetProxy → 对象存储（3D 资产）
+        └── HTTPS API / download surface: reviewed production origins
 ```
+
+Sponsor runtime content（`/sponsor-config.json` + `/sponsor-assets/*`）**随构建进 APK bundle**：
+构建期由 pin 住的 Release 资产注入 publicDir（`common/assets/`），Vite 拷进 `dist-android`，由本机 origin
+同源伺服（离线可用）。它不是资产面读取，也不经生产网关（见 `docs/operations/sponsor-runtime-content.md`）。
 
 Android bundling 和生产 Web deploy 是独立发布产物。更改 Android 使用的 bundled Vue 或 Native runtime
 都需要重新构建 APK；生产 Web frontend 不再是 Android 启动或发布的 runtime dependency。
@@ -161,7 +166,7 @@ catch-all 404）：页面带「返回 WotBTools App」按钮——把本页持�
 ### 2D 离线地图派生（Phase 10）
 
 APK 里随包携带 29 张 2D 离线底图（`frontend/src/assets/maps/*.webp`，canonical
-2024×2024、合计约 32.8 MiB，Web 构建继续使用 canonical 原图）。Android 构建在
+AI 增强 WebP q90，1254×1254、合计约 18.3 MiB，Web 构建继续使用 canonical 资源）。Android 构建在
 `frontend/scripts/build-android-bundle.mjs` 内先派生出缩小副本，再让 android 模式的
 Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-android-map-derivatives`
 插件）——**不维护第二份人工源**，也不改任何源码 import：
@@ -170,7 +175,7 @@ Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-a
 src/assets/maps/*.webp（canonical，Web 用）
   --python3 scripts/optimize-android-maps.py（Pillow，等比缩放到最长边 1024、WebP q72、剥元数据）-->
     frontend/dist-android-maps/*.webp（构建产物，gitignored）
-  --Vite 别名-->  APK assets（29 张合计 ≈ 4.2 MiB，原 32.8 MiB）
+  --Vite 别名-->  APK assets（当前 29 张约 7.37 MiB，单张 ≤500 KiB / 全套 ≤10 MiB）
 ```
 
 - 参数与预算单点声明在 `frontend/scripts/lib/mapAssetInvariants.mjs`
@@ -277,6 +282,8 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
   （stale）一律不清理，保证 exactly-once 且绝不误清新 pending。
 - **登录不是 replay 的前置条件**：本机分析在本机完成，未登录同样可打开、解析与导出；认证失败 / 取消
   不会让已接收的 pending replay 失效。
+
+手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定 HTTPS stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
 
 细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。
 

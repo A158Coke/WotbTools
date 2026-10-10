@@ -269,7 +269,6 @@ export function computeLabelLayout(items, opts = {}) {
   const result = new Map()
   if (!Array.isArray(items)) return result
 
-  const coreHalf = coreSize / 2
   const tankH = LABEL_LINE_H.tank + LABEL_PAD_Y
   const playerH = LABEL_LINE_H.player + LABEL_PAD_Y
   /** 身份块 = 名称两行（顺序同 DOM：player 在上、tank 在下）。 */
@@ -286,9 +285,11 @@ export function computeLabelLayout(items, opts = {}) {
       continue
     }
 
+    const itemCoreSize = Number.isFinite(it.coreSize) && it.coreSize > 0 ? it.coreSize : coreSize
+    const coreHalf = itemCoreSize / 2
     const markerTop = it.y - coreHalf
     const markerBottom = it.y + coreHalf
-    const coreBox = { x: it.x - coreHalf, y: markerTop, w: coreSize, h: coreSize }
+    const coreBox = { x: it.x - coreHalf, y: markerTop, w: itemCoreSize, h: itemCoreSize }
     const destroyedBox = it.destroyed === true
       ? { x: it.x - DESTROYED_X_PX / 2, y: it.y - DESTROYED_X_PX / 2, w: DESTROYED_X_PX, h: DESTROYED_X_PX }
       : null
@@ -312,7 +313,7 @@ export function computeLabelLayout(items, opts = {}) {
       : null
 
     // 身份块底边 = combat block 顶边 − identity gap（tank 在下、player 在上）。
-    const identityBottom = combatTop - IDENTITY_TO_COMBAT_GAP_PX
+    const identityBottom = combatTop - (it.hpRing === true ? 0 : IDENTITY_TO_COMBAT_GAP_PX)
     const identityTop = identityBottom - identityBlockH
     const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
     const tankBox = showTank && tankW > 0

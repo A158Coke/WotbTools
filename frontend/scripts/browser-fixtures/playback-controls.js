@@ -10,8 +10,6 @@ import '../../src/styles/showcase.css'
 import '../../src/styles/showcase-workspaces.css'
 import '../../src/styles/showcase-pages.css'
 import '../../src/styles/showcase-rankings.css'
-import '../../src/styles/showcase-backgrounds.css'
-import '../../src/styles/showcase-backgrounds-v3.css'
 import '../../src/styles/showcase-cohesion.css'
 import '../../src/styles/showcase-regressions.css'
 import '../../src/styles/app-shell.css'
@@ -49,8 +47,9 @@ if (players > 0) {
     const maxHp = 1950 - index * 50
     const currentHp = index === 0 ? 0 : maxHp - index * 120
     return {
-      accountId, playerName: `T${team}_Player_${index + 1}`, tankId: 10 + index,
-      tankName: ['Kranvagn', 'SPHT', 'Chieftain Mk. 6', 'Maus', 'IS-7', 'T-62A', 'E 100'][index % 7],
+      // Stress min-content sizing with long CJK and unbroken Latin labels on both sides.
+      accountId, playerName: index === 0 ? `T${team}_连续中文昵称LongUnbrokenPlayerNameForRosterRegression` : `T${team}_Player_${index + 1}`, tankId: 10 + index,
+      tankName: ['Panzerkampfwagen超级征服者长车型名称', 'SPHT', 'Chieftain Mk. 6', 'Maus', 'IS-7', 'T-62A', 'E 100'][index % 7],
       tankClass: '', tankTier: null, team, friendly: false, loadout: null,
       positionSegments: [{ knowledge: 'OBSERVED', interpolationAllowed: true, startSec: 0, endSec: 60,
         samples: [{ timeSec: 0, x, y: spread }, { timeSec: 60, x: x * 0.5, y: spread }] }],

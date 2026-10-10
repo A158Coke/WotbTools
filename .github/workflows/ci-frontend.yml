@@ -105,6 +105,9 @@ jobs:
           # 进程内资产源 + 构造的 hull/turret_01/gun_01 GLB），不需要真实资产、不 SKIP。
           - label: Armor viewer aiming interaction
             script: test:browser-armor-aiming
+          # 初始化、选弹、失败重试与销毁生命周期；同样自带夹具资产包，不需要真实资产。
+          - label: Armor viewer shot readiness
+            script: test:browser-armor-shot-readiness
     steps:
       - uses: actions/checkout@v5
         with:

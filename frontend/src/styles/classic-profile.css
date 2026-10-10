@@ -11,7 +11,7 @@
  * 3) namespace 覆盖:对 showcase*.css 里写死的深色 hex/rgba/color-mix 叠加有限的
  *    [data-ui-profile="classic"] 规则(表单/表格 sticky/管理表；应用外壳只用设计语言 token，无需覆盖),用比
  *    展示层更高的 specificity 覆盖,不重排现有 showcase 全局样式。
- * 4) 关闭全屏 AI/装饰性展示层(沿用原「从简」规则)与 Home 四张 AI 装饰卡图。
+ * 4) 已迁移的 Home / Contact / 回放通用控件由其语义 token owner 提供两档颜色，不再增加 profile 覆盖。
  *
  * 约束(对应
  * 禁 display:none 隐藏业务;禁 filter:invert / 全局 opacity / html *;不 fork 业务组件。
@@ -114,29 +114,6 @@ html[data-ui-profile="classic"] {
   --showcase-tactical-soft-2: rgba(255, 255, 255, .85);
 }
 
-/* 3) namespace 覆盖:写死深色的高层级展示面(topbar / 菜单 / 表单 / 表格 / 管理表) */
-[data-ui-profile="classic"] .layout-content :is(input, select, textarea),
-[data-ui-profile="classic"] .layout-data-workspace :is(input, select, textarea) {border-color: #c8cec5 !important; background: #ffffff !important; color: #2a2f28 !important}
-[data-ui-profile="classic"] .layout-data-workspace table thead th {background: color-mix(in srgb, var(--bg-card2) 94%, #e3e6e1) !important}
-[data-ui-profile="classic"] .modal {border-color: #d9dde3 !important}
-
-/* 4) 关闭全屏 AI 路景背景(::after)与 readability 渐变遮罩(::before) */
-[data-ui-profile="classic"] :is(.layout-content, .layout-data-workspace, .admin-page, .profile-page, .contact-page, .lb-wrap, .hof-admin, .homepage-showcase)::after,
-[data-ui-profile="classic"] :is(.layout-content, .layout-data-workspace, .admin-page, .profile-page, .contact-page, .lb-wrap, .hof-admin, .homepage-showcase)::before {content: none}
-
-/* 5) 装饰性 hero / 上传 / profile-hero 表面:去掉 AI 图,落回浅色(保留结构) */
-[data-ui-profile="classic"] .profile-page .profile-hero {background: none !important; box-shadow: none !important}
-
-/* 6) showcase-cohesion.css 的装饰性 ::after/::before 叠加层 */
-
-/* 7) 首页 Home:Classic 去掉四张 AI 装饰卡片图 + 装饰渐变,保留卡片/标题/编号/跳转结构 */
-[data-ui-profile="classic"] .homepage-showcase .showcase-hero {background: var(--bg-card) !important}
-[data-ui-profile="classic"] .homepage-showcase .showcase-hero::before {content: none}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual {background: var(--bg-card) !important}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual::after {content: none}
-[data-ui-profile="classic"] .homepage-showcase .feature-visual img {visibility: hidden}
-
-
 /* =====================================================================
  * 8) 逐页 namespace 覆盖：清掉写死的深色面/浅色文字（Blocker 1/2）
  *    用 html[data-ui-profile="classic"] 前缀提高 specificity，碾压组件 scoped
@@ -146,11 +123,6 @@ html[data-ui-profile="classic"] {
 /* ---- 全局：页面根文字 / tabs / 卡片 / 表单 / modal / sticky / 状态 ---- */
 html[data-ui-profile="classic"] .layout-content,
 html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}
-
-html[data-ui-profile="classic"] .tabs {background: var(--bg-card) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button {color: var(--text-sub) !important; background: var(--bg-card) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .tabs button:hover:not(.active) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .tabs button.active {background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)) !important; border-color: color-mix(in srgb, var(--accent) 45%, var(--border)) !important; color: var(--accent-dark) !important; border-bottom-color: var(--accent) !important}
 
 html[data-ui-profile="classic"] :is(.card, .panel, .profile-card, .modal, .tooltip) {border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
 html[data-ui-profile="classic"] .modal {background: var(--bg-card) !important; color: var(--text) !important}
@@ -165,47 +137,7 @@ html[data-ui-profile="classic"] .pagination button {border-color: var(--border) 
 html[data-ui-profile="classic"] .pagination button:hover:not(:disabled) {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 html[data-ui-profile="classic"] .pagination button:disabled {opacity: .45}
 
-/* ---- Home（HomePage.vue scoped 深色文字/硬编码背景） ---- */
-html[data-ui-profile="classic"] .showcase-hero {background: var(--bg-card) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .hero-copy {color: var(--text) !important}
-html[data-ui-profile="classic"] .showcase-hero h1 {color: var(--text-heading) !important; text-shadow: none !important}
-html[data-ui-profile="classic"] .hero-subtitle {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .hero-kicker {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .hero-btn.secondary {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; backdrop-filter: none}
-html[data-ui-profile="classic"] .hero-btn.secondary:hover {color: var(--accent-dark) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .record-card {background: var(--bg-card) !important; color: var(--text-heading) !important; border-color: var(--border-rating) !important; box-shadow: var(--surface-shadow) !important; backdrop-filter: none}
-html[data-ui-profile="classic"] .record-card > span {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .record-card > strong {color: var(--accent) !important}
-html[data-ui-profile="classic"] .record-meta {border-top-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .record-meta small {color: var(--text-muted) !important}
-html[data-ui-profile="classic"] .mini-action {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .mini-action:hover {color: var(--accent-dark) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .mini-action.primary {background: var(--accent) !important; color: var(--accent-text) !important}
-html[data-ui-profile="classic"] .feature-visual {background: var(--bg-elevated) !important; border-bottom-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .feature-visual:after {background: none !important}
-html[data-ui-profile="classic"] .feature-action {color: var(--accent-dark) !important}
-html[data-ui-profile="classic"] .feature-card {border-color: var(--showcase-tactical-border) !important}
-
-/* ---- Replay 上传区（showcase-cohesion/workspaces 写死浅字/深底） ---- */
-html[data-ui-profile="classic"] .layout-data-workspace {color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .filebtn {background: linear-gradient(180deg, var(--accent-light), var(--accent)) !important; border-color: var(--accent) !important; color: var(--accent-text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost,
-html[data-ui-profile="classic"] .layout-data-workspace button.ghost {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .filebtn.ghost:hover,
-html[data-ui-profile="classic"] .layout-data-workspace button.ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .chip {background: color-mix(in srgb, var(--accent) 6%, var(--bg-chip)) !important; border-color: color-mix(in srgb, var(--accent) 22%, var(--border)) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .tablewrap {background: var(--bg-card) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important; color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace table thead th,
-html[data-ui-profile="classic"] .layout-data-workspace table thead th:first-child {background: var(--bg-card2) !important; color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .layout-data-workspace table tbody td {color: var(--text) !important}
-html[data-ui-profile="classic"] .layout-data-workspace table tbody tr {background: var(--bg-card) !important}
-html[data-ui-profile="classic"] .layout-data-workspace table tbody tr:hover {background: var(--bg-list-hover) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .error {background: var(--status-err-bg) !important; color: var(--status-err-fg) !important; border-color: var(--error) !important}
-html[data-ui-profile="classic"] .layout-data-workspace .warn {background: var(--status-warn-bg) !important; color: var(--status-warn-fg) !important; border-color: var(--border-warn) !important}
-
 /* ---- League Rating / Radar / Column Picker（Player Drawer 已迁到设计语言 token，不再覆盖） ---- */
-html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t1 td:first-child {background: color-mix(in srgb, var(--bg-t1) 64%, var(--bg-card)) !important}
-html[data-ui-profile="classic"] .layout-data-workspace table tbody tr.t2 td:first-child {background: color-mix(in srgb, var(--bg-t2) 64%, var(--bg-card)) !important}
 html[data-ui-profile="classic"] .column-picker {background: var(--bg-card) !important; border-color: var(--border) !important}
 
 
@@ -252,15 +184,9 @@ html[data-ui-profile="classic"] :is(.approved) {background: var(--status-ok-bg) 
 
 
 /* ---- 管理 / Profile / Admin Users / Version / Contact / Rating Docs ---- */
-html[data-ui-profile="classic"] :is(.profile-page, .contact-page, .rating-docs-page) {color: var(--text) !important}
+html[data-ui-profile="classic"] :is(.profile-page, .rating-docs-page) {color: var(--text) !important}
 html[data-ui-profile="classic"] :is(.rating-docs-page) pre,
 html[data-ui-profile="classic"] :is(.rating-docs-page) code {background: var(--bg-elevated) !important; color: var(--text-code) !important; border-color: var(--border-light) !important}
-html[data-ui-profile="classic"] .contact-page {color: var(--text) !important}
-html[data-ui-profile="classic"] .contact-title {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .contact-subtitle {color: var(--text-sub) !important}
-html[data-ui-profile="classic"] .contact-card {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important; box-shadow: var(--surface-shadow) !important}
-html[data-ui-profile="classic"] .contact-card :is(h2, h3) {color: var(--text-heading) !important}
-html[data-ui-profile="classic"] .contact-hint {color: var(--text-sub) !important}
 html[data-ui-profile="classic"] .rating-docs-page {color: var(--text) !important}
 html[data-ui-profile="classic"] .rating-docs-page :is(h1, h2, h3) {color: var(--text-heading) !important}
 html[data-ui-profile="classic"] .rating-docs-page p, html[data-ui-profile="classic"] .rating-docs-page li {color: var(--text) !important}
@@ -274,15 +200,10 @@ html[data-ui-profile="classic"] .profile-page .btn-ghost {border-color: var(--bo
 html[data-ui-profile="classic"] .profile-page .btn-ghost:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 html[data-ui-profile="classic"] .profile-page .btn-ghost:disabled {background: var(--bg-list-hover) !important}
 
-/* ---- ContactPage copy 按钮（scoped 写死深底/深 hover，Classic 补覆盖） ---- */
-html[data-ui-profile="classic"] .contact-page .copy-btn {background: var(--bg-card) !important; color: var(--text) !important; border-color: var(--border) !important}
-html[data-ui-profile="classic"] .contact-page .copy-btn:hover {background: var(--bg-list-hover) !important; color: var(--text-heading) !important; border-color: var(--accent) !important}
 
 /* ---- Classic 对比度收尾：组件 scoped 写死的浅色文字落在浅色面上（Contact / Profile；Admin Users / HoF Admin 已迁到设计语言 token） ---- */
 
 
-/* ContactPage：.contact-value 浅灰字（#d8d5cd）落浅色软面（classic --showcase-tactical-soft-2≈白）≈1.4:1 */
-html[data-ui-profile="classic"] .contact-page .contact-value {color: var(--text-code) !important}
 
 
 /* Profile：info/security/account 行 label、表单 label、状态与 meta 浅字（#a3a6a0 / #9aa09c / #f0a42b / #ff8f86）落浅色卡。

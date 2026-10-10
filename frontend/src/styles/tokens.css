@@ -121,30 +121,14 @@
   --enemy-fg: #1a0606;
 }
 
-/* ── V2 Layout Primitives ────────────────────────────────────
- * 页面必须从以下四种布局原语中选择，禁止页面自行定义随机 max-width。
- *   layout-content         → Profile / Settings / 普通内容页（1200–1280px）
- *   layout-wide            → 名人堂 / Rating / 数据页（1440–1600px）
- *   layout-data-workspace  → Replay Parser / 大型统计表（近全宽）
- *   layout-full-workspace  → Battle Reconstruction / Map / Strategy（100%）
- * ------------------------------------------------------------ */
-.layout-content {
-  max-width: var(--content-max);
+/* Shared layout primitives; retained class names avoid splitting page structure by profile. */
+.layout-content, .layout-wide, .layout-data-workspace {
+  position: relative;
+  isolation: isolate;
+  width: min(var(--layout-content-max), calc(100% - var(--gutter) * 2));
   margin: 0 auto;
-  padding: 24px 20px 64px;
+  padding: var(--space-6) 0 var(--space-12);
 }
-.layout-wide {
-  max-width: var(--wide-max);
-  margin: 0 auto;
-  padding: 24px 20px 64px;
-}
-.layout-data-workspace {
-  width: calc(100vw - var(--workspace-gutter) * 2);
-  margin: 0 auto;
-  padding: 24px 0 64px;
-}
-.layout-full-workspace {
-  width: 100%;
-  height: calc(100vh - var(--topbar-h));
-  overflow: hidden;
-}
+.layout-wide { width: min(var(--layout-wide-max), calc(100% - var(--gutter) * 2)); }
+.layout-data-workspace { width: min(var(--layout-workspace-max), calc(100% - var(--gutter) * 2)); }
+.layout-full-workspace { width: 100%; height: calc(100dvh - var(--header-h) - var(--tabbar-h)); overflow: hidden; }

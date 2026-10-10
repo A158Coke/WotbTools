@@ -51,7 +51,7 @@ function readWebpDimensions(file) {
 }
 
 describe('2D Local basemap asset contract', () => {
-  it('registers every original WebP exactly once and decodes its dimensions', () => {
+  it('registers every canonical WebP exactly once and decodes its dimensions', () => {
     const images = Object.values(mapImages)
     const files = images.map(image => {
       expect(image.src).toContain('/assets/maps/')

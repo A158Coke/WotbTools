@@ -24,6 +24,8 @@
  */
 import { computed } from 'vue'
 import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
+import TankClassIcon from './TankClassIcon.vue'
+import { healthRingDiameter } from '../utils/vehicleMarkerSizing'
 import {
   markerTurretAssemblyTransform,
   markerTurretImageTransform,
@@ -34,6 +36,8 @@ const props = defineProps({
   marker: { type: Object, required: true },
   /** 是否选中（selectedAccountId === accountId） */
   selected: { type: Boolean, default: false },
+  classIcons: Boolean,
+  showStatus: { type: Boolean, default: true },
   /** PR4 §26–§35：标签显示/碰撞结果（BattlePlayback 计算，本组件只渲染） */
   label: {
     type: Object,
@@ -45,6 +49,7 @@ const props = defineProps({
   hp: { type: Object, default: null },
   /** HP HUD 开关（关闭后隐藏数字/bar/ghost，不影响其余 combat feedback） */
   hpVisible: { type: Boolean, default: true },
+  hpMode: { type: String, default: 'bar', validator: value => ['bar', 'ring'].includes(value) },
   /** lost-HP ghost：{prevPct,nextPct}|null（§11；同阵营色浅版，约 600ms 消退） */
   hpGhost: { type: Object, default: null },
   /** 受击 hit flash（§10.3；约 280ms 短暂亮起） */
@@ -122,10 +127,27 @@ const genericTurretStyle = computed(() =>
 const overlayInv = computed(() =>
   Number.isFinite(st.value.overlayInverse) && st.value.overlayInverse > 0 ? st.value.overlayInverse : 1,
 )
+const ringMode = computed(() => props.hpMode === 'ring')
+const ringDiameter = computed(() => healthRingDiameter(st.value, props.classIcons))
+const ringPct = computed(() => {
+  if (props.hp?.state === 'UNKNOWN') return null
+  if (Number.isFinite(props.hp?.pct)) return Math.max(0, Math.min(100, props.hp.pct))
+  return props.hp?.state === 'RELATIVE_FULL' ? 100 : null
+})
+const ringStyle = computed(() => ({
+  width: `${ringDiameter.value}px`, height: `${ringDiameter.value}px`,
+  transform: `translate(-50%, -50%) ${st.value.overlayInverseScale || ''}`,
+}))
 const hitboxStyle = computed(() => {
   const size = st.value.hitTargetSize
   if (size && Number.isFinite(size.width) && Number.isFinite(size.height)) {
-    return { width: `${size.width}px`, height: `${size.height}px` }
+    const ringSize = ringMode.value && props.hpVisible && props.hp && !st.value.destroyed
+      ? ringDiameter.value * overlayInv.value : 0
+    return { width: `${Math.max(size.width, ringSize)}px`, height: `${Math.max(size.height, ringSize)}px` }
+  }
+  if (ringMode.value && props.hpVisible && props.hp && !st.value.destroyed) {
+    const size = ringDiameter.value * overlayInv.value
+    return { width: `${size}px`, height: `${size}px` }
   }
   return {
     width: Math.round((st.value.hitbox ? st.value.hitbox.w : 0.9) * 100) + '%',
@@ -172,7 +194,11 @@ const selectedMarkStyle = computed(() => {
 const labelsStyle = computed(() => ({
   transform: `translateX(-50%) ${st.value.overlayInverseScale}`,
   // tankDy（screen px）→ layout px（×overlayInv）；碰撞位移只作用于标签块，不影响车体
-  bottom: `calc(100% + ${LABEL_ANCHOR_PX - props.label.tankDy * overlayInv.value}px)`,
+  bottom: ringMode.value && props.hpVisible && props.hp && !st.value.destroyed
+    ? `calc(50% + ${(ringDiameter.value / 2 + LABEL_ANCHOR_PX - props.label.tankDy) * overlayInv.value}px)`
+    : props.classIcons
+    ? `calc(50% + (var(--space-5) / 2 + var(--space-1) - ${props.label.tankDy}px) * ${overlayInv.value})`
+    : `calc(100% + ${LABEL_ANCHOR_PX - props.label.tankDy * overlayInv.value}px)`,
 }))
 const recorderBadgeStyle = computed(() => ({
   transform: `translate(-50%, -50%) rotate(45deg) ${st.value.overlayInverseScale}`,
@@ -210,10 +236,22 @@ const stateClasses = computed(() => ({
       :style="hitboxStyle"
       aria-hidden="true"
     ></span>
+    <svg v-if="ringMode && hpVisible && hp && !st.destroyed" class="pb-hp-ring" data-test="pb-hp-ring"
+      :class="{ 'is-stale': st.lastKnown || hp.state === 'LAST_KNOWN', 'is-unknown': ringPct == null, 'is-flashing': hpFlash, 'no-transition': hpNoTransition }"
+      :style="ringStyle" :data-hp-pct="ringPct" viewBox="0 0 100 100" aria-hidden="true">
+      <title v-if="t">{{ hp.state === 'RELATIVE_FULL' ? t('recon.map.playback.hp_full_spawn') : ringPct == null ? t('recon.map.playback.hp_unknown') : `${t('recon.map.playback.current_hp')}: ${hp.current ?? '—'}` }}</title>
+      <circle class="pb-hp-ring-track" cx="50" cy="50" r="46" />
+      <circle class="pb-hp-ring-fill" cx="50" cy="50" r="46" pathLength="100"
+        :stroke-dasharray="ringPct == null ? '3 5' : `${ringPct} ${100 - ringPct}`" transform="rotate(-90 50 50)" />
+    </svg>
     <!-- 车型视觉层容器：destroyed/last-known 的 opacity/grayscale/team 光晕精确作用于此处
          （而非整个 button）——pb-death ✕ / pb-selected-mark / pb-recorder-badge / pb-labels
          是 button 直接子元素、在容器外，保持完整强度（parent opacity 无法被子元素抵消）。 -->
-    <div class="pb-graphics" :style="graphicsStyle">
+    <div v-if="classIcons" class="pb-class-symbol" :class="{ 'is-selected': selected }"
+      :style="{ transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }" aria-hidden="true">
+      <TankClassIcon :tank-class="st.vehicle.tankClass" />
+    </div>
+    <div v-else class="pb-graphics" :style="graphicsStyle">
       <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
            （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
@@ -277,7 +315,7 @@ const stateClasses = computed(() => ({
          容器外完整强度，不随 .pb-graphics grayscale/opacity 变淡；
          overlayInverseScale 反缩放 → 不随地图 zoom 异常放大，保持屏幕恒定 -->
     <span
-      v-if="st.destroyed"
+      v-if="showStatus && st.destroyed"
       class="pb-death"
       aria-hidden="true"
       :style="{ color: '#ff4d4f', fontSize: '30px', fontWeight: '800', zIndex: 6, transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }"
@@ -287,7 +325,7 @@ const stateClasses = computed(() => ({
          阵亡车切换克制变体（pb-selected-restrained：更小 + 更淡，destroyed > selected，
          仍可辨认被选中） -->
     <span
-      v-if="selected"
+      v-if="showStatus && selected"
       class="pb-selected-mark"
       :class="{ 'pb-selected-restrained': st.destroyed }"
       aria-hidden="true"
@@ -296,7 +334,7 @@ const stateClasses = computed(() => ({
 
     <!-- PR3 §23 Recorder：空心菱形（tank 下方居中、地图 friendly 色、静态） -->
     <span
-      v-if="st.recorder"
+      v-if="showStatus && st.recorder"
       class="pb-recorder-badge"
       aria-hidden="true"
       :style="recorderBadgeStyle"
@@ -308,7 +346,7 @@ const stateClasses = computed(() => ({
         :destroyed="st.destroyed" :last-known="st.lastKnown"
         :show-player-name="label.showPlayer && !label.blockHidden"
         :show-tank-name="label.showTank && !label.blockHidden"
-        :show-hp="hpVisible && !label.hpHidden" :show-reload="label.showReload !== false"
+        :show-hp="!ringMode && hpVisible && !label.hpHidden" :show-reload="!ringMode && label.showReload !== false"
         :hp="hp" :reload="st.reloadShells" :hp-ghost="hpGhost" :hp-flash="hpFlash" :hp-no-transition="hpNoTransition"
         :hp-title="hp?.state === 'RELATIVE_FULL' && t ? t('recon.map.playback.hp_full_spawn') : ''"
         name-tooltips
@@ -325,6 +363,31 @@ const stateClasses = computed(() => ({
   perspective: 96px;
   transform-style: preserve-3d;
 }
+.pb-hp-ring { position: absolute; inset-inline-start: 50%; inset-block-start: 50%; overflow: visible; pointer-events: none; color: var(--color-team-neutral); z-index: var(--pb-z-hud); }
+.pb-friendly .pb-hp-ring { color: var(--color-team-ally); }
+.pb-enemy .pb-hp-ring { color: var(--color-team-enemy); }
+.pb-hp-ring.is-stale, .pb-hp-ring.is-unknown { color: var(--color-team-neutral); }
+.pb-hp-ring circle { fill: none; stroke-width: calc(var(--space-1) * .75); vector-effect: non-scaling-stroke; }
+.pb-hp-ring-track { stroke: var(--color-canvas); opacity: .6; }
+.pb-hp-ring-fill { stroke: currentColor; transition: stroke-dasharray 120ms linear; }
+.pb-hp-ring.is-flashing .pb-hp-ring-fill { filter: drop-shadow(0 0 var(--space-1) currentColor); }
+.pb-hp-ring.no-transition .pb-hp-ring-fill { transition: none; }
+@media (prefers-reduced-motion: reduce) { .pb-hp-ring-fill { transition: none; } }
+.pb-class-symbol {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-team-neutral);
+}
+.pb-class-symbol :deep(svg) { inline-size: var(--space-5); block-size: var(--space-5); }
+.pb-class-symbol :deep(path) { stroke: var(--color-canvas); stroke-width: 1; paint-order: stroke; }
+.pb-friendly .pb-class-symbol { color: var(--pb-team-text, var(--color-team-ally)); }
+.pb-enemy .pb-class-symbol { color: var(--pb-enemy-text, var(--color-team-enemy)); }
+.pb-destroyed .pb-class-symbol { color: var(--color-playback-label-destroyed); opacity: .55; }
+.pb-last-known .pb-class-symbol { opacity: .65; }
+.pb-class-symbol.is-selected { outline: 2px solid var(--color-accent); outline-offset: var(--space-1); border-radius: var(--radius-sm); }
 .pb-hull, .pb-turret {
   position: absolute;
   left: 50%;

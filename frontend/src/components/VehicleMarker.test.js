@@ -54,6 +54,86 @@ function mountMarker(marker, selected = false) {
   return mount(VehicleMarker, { props: { marker, selected } })
 }
 
+describe('2D HP rings', () => {
+  const hp = { current: 250, pct: 25, state: 'CURRENT' }
+  const ring = (extra = {}) => mount(VehicleMarker, { props: {
+    marker: { ...genericMarker, markerSize: { renderBox: { width: 30, height: 30 } } }, hp, hpMode: 'ring', ...extra,
+  } })
+
+  it('represents remaining health, suppresses bars/reload, and restores reload when returning to bars', async () => {
+    const wrapper = ring({ marker: { ...genericMarker, friendly: true, reloadShells: [{ state: 'full' }] } })
+    expect(wrapper.get('.pb-hp-ring-fill').attributes('stroke-dasharray')).toBe('25 75')
+    expect(wrapper.find('[data-test="pb-hp-hud"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-reload"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-label-tank"]').text()).toBe('Maus')
+    await wrapper.setProps({ hpMode: 'bar' })
+    expect(wrapper.find('.pb-hp-ring').exists()).toBe(false)
+    expect(wrapper.find('[data-test="pb-hp-hud"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="pb-reload"]').exists()).toBe(true)
+  })
+
+  it('grays last-known observations without replacing their recorded health percentage', async () => {
+    const wrapper = ring({ marker: { ...genericMarker, friendly: false, lastKnown: true } })
+    expect(wrapper.get('.pb-hp-ring').classes()).toContain('is-stale')
+    expect(wrapper.get('.pb-hp-ring').attributes('data-hp-pct')).toBe('25')
+    await wrapper.setProps({ marker: { ...genericMarker, friendly: false, lastKnown: false } })
+    expect(wrapper.get('.pb-hp-ring').classes()).not.toContain('is-stale')
+    await wrapper.setProps({ hp: { ...hp, state: 'LAST_KNOWN' } })
+    expect(wrapper.get('.pb-hp-ring').classes()).toContain('is-stale')
+  })
+
+  it('shows unknown HP as a neutral dashed ring and respects relative-full and destroyed facts', async () => {
+    const wrapper = ring({ hp: { current: null, pct: null, state: 'UNKNOWN' } })
+    expect(wrapper.get('.pb-hp-ring').classes()).toContain('is-unknown')
+    expect(wrapper.get('.pb-hp-ring-fill').attributes('stroke-dasharray')).toBe('3 5')
+    await wrapper.setProps({ hp: { current: null, pct: null, state: 'RELATIVE_FULL' } })
+    expect(wrapper.get('.pb-hp-ring-fill').attributes('stroke-dasharray')).toBe('100 0')
+    await wrapper.setProps({ hp: { current: 0, pct: 0, state: 'CURRENT' } })
+    expect(wrapper.get('.pb-hp-ring-fill').attributes('stroke-dasharray')).toBe('0 100')
+    await wrapper.setProps({ marker: { ...genericMarker, destroyed: true } })
+    expect(wrapper.find('.pb-hp-ring').exists()).toBe(false)
+  })
+
+  it.each([genericMarker, dedicatedMarker, turretlessMarker])('surrounds artwork and class icons with a screen-space gap', async marker => {
+    const wrapper = ring({ marker: { ...marker, markerSize: { renderBox: { width: 30, height: 30 } }, overlayInverse: .5, overlayInverseScale: 'scale(0.5)' } })
+    expect(wrapper.get('.pb-hp-ring').element.style.width).toBe('68px')
+    expect(wrapper.get('.pb-hp-ring').element.style.transform).toContain('scale(0.5)')
+    await wrapper.setProps({ classIcons: true })
+    expect(wrapper.get('.pb-hp-ring').element.style.width).toBe('38px')
+    expect(wrapper.find('.tank-class-icon').exists()).toBe(true)
+    await wrapper.setProps({ hpVisible: false })
+    expect(wrapper.find('.pb-hp-ring').exists()).toBe(false)
+  })
+})
+
+describe('tank class presentation', () => {
+  it.each(['LT', 'MT', 'HT', 'TD'])('replaces artwork with %s while preserving tank name, facts and selection', async (tankClass) => {
+    const marker = { ...dedicatedMarker, vehicle: { ...dedicatedMarker.vehicle, tankClass }, recorder: true, destroyed: true }
+    const wrapper = mount(VehicleMarker, { props: {
+      marker, selected: true, classIcons: true, showStatus: false, hpVisible: false,
+      hp: { current: 0, pct: 0, state: 'DESTROYED' },
+      label: { showPlayer: false, showTank: true, showReload: false, tankDy: 0 },
+    } })
+    expect(wrapper.findAll('img')).toHaveLength(0)
+    expect(wrapper.get('[data-tank-class]').attributes('data-tank-class')).toBe(tankClass)
+    expect(wrapper.text()).toBe('Maus')
+    expect(wrapper.find('.pb-label-player').exists()).toBe(false)
+    expect(wrapper.find('.pb-hp-hud').exists()).toBe(false)
+    expect(wrapper.find('.pb-recorder-badge').exists()).toBe(false)
+    expect(wrapper.find('.pb-death').exists()).toBe(false)
+    expect(wrapper.find('.pb-selected-mark').exists()).toBe(false)
+    expect(wrapper.classes()).toContain('pb-destroyed')
+    expect(wrapper.get('.pb-class-symbol').classes()).toContain('is-selected')
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('select')).toHaveLength(1)
+    expect(marker.destroyed).toBe(true)
+    await wrapper.setProps({ classIcons: false, showStatus: true })
+    expect(wrapper.find('img').exists()).toBe(true)
+    expect(wrapper.find('.pb-death').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
+
 describe('generic（非 Tier X / fallback）', () => {
   it('渲染 hull + turret 双层 PNG，共同 pivot 居中旋转（translate(-50%,-50%) rotate）', () => {
     const w = mountMarker(genericMarker)
