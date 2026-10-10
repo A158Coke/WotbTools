@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_QUADS, PATCH_QUADS, SUBDIVISION_METRICS, buildAdaptiveTerrain, morphFunc, subdivisionMetrics,
-  subdivMorphOf, terrainLodStale,
+  subdivMorphOf, terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 
 // 自适应地形网格（客户端 `LandscapeSubdivision` 同构）契约。偏离的后果：要么地形把贴地薄结构
@@ -65,12 +65,50 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     // 回归（2026-10-10 用户"铁轨被地形遮挡，转动/缩放后时不时变正常"）：旧实现是双向 25% 滞回 ⇒
     // 网格会长期停在"更远视距"的**更粗**层级（同一相机位置可比客户端判据允许的更粗），
     // 粗格插值把地形抬到贴地薄结构之上，且随重建时机时有时无。
-    expect(terrainLodStale(0, 100, 0)).toBe(true)          // 首帧必建
-    expect(terrainLodStale(100, 96, 500)).toBe(false)      // 拉近 4% < 5% 阈值 ⇒ 不建
-    expect(terrainLodStale(100, 90, 500)).toBe(true)       // 拉近 10% ⇒ 立即细化
-    expect(terrainLodStale(100, 90, 50)).toBe(false)       // 但受 120 ms 节流
-    expect(terrainLodStale(100, 110, 500)).toBe(false)     // 拉远仅 10% ⇒ 允许（仍够细）
-    expect(terrainLodStale(100, 150, 500)).toBe(true)      // 拉远 ≥40% ⇒ 可变粗
+    // 纯径向移动（相机沿视轴推拉）：位置与视距同步变化，侧向分量 = 0。
+    const st = (o = {}) => ({
+      d: 100, px: 0, py: 100, pz: 0, ux: 0, uy: 1, uz: 0, fovY: 0.8, aspect: 16 / 9, ...o,
+    })
+    expect(terrainLodStale(null, st(), 0)).toBe(true)             // 首帧必建
+    expect(terrainLodStale(st(), st({ d: 96, py: 96 }), 500)).toBe(false)   // 拉近 4% < 5% ⇒ 不建
+    expect(terrainLodStale(st(), st({ d: 90, py: 90 }), 500)).toBe(true)    // 拉近 10% ⇒ 立即细化
+    expect(terrainLodStale(st(), st({ d: 90, py: 90 }), 50)).toBe(false)    // 但受 120 ms 节流
+    expect(terrainLodStale(st(), st({ d: 110, py: 110 }), 500)).toBe(false) // 拉远仅 10% ⇒ 允许（仍够细）
+    expect(terrainLodStale(st(), st({ d: 150, py: 150 }), 500)).toBe(true)  // 拉远 ≥40% ⇒ 可变粗
+  })
+
+  it('terrainLodState 快照：视距/位置/视轴/FOV/aspect —— 判据读什么，滞回就比什么', () => {
+    const s = terrainLodState({ position: { x: 0, y: 100, z: 0 }, fov: 45 }, { x: 0, y: 0, z: 0 }, 21 / 9)
+    expect(s.d).toBeCloseTo(100, 12)
+    expect([s.px, s.py, s.pz]).toEqual([0, 100, 0])
+    expect([s.ux, s.uy, s.uz]).toEqual([0, 1, 0])          // 视轴 target → camera
+    expect(s.fovY).toBeCloseTo((45 * Math.PI) / 180, 12)
+    expect(s.aspect).toBeCloseTo(21 / 9, 12)
+    // 相机与目标重合（d=0）：视轴退化为 0，不产出 NaN（滞回按首帧处理，见下一用例）
+    const z = terrainLodState({ position: { x: 1, y: 2, z: 3 }, fov: 30 }, { x: 1, y: 2, z: 3 }, 16 / 9)
+    expect(z.d).toBe(0)
+    expect([z.ux, z.uy, z.uz]).toEqual([0, 0, 0])
+  })
+
+  it('地形 LOD 判据与构建同源：绕转（视距不变）/FOV/aspect 变化都必须重建（review P2 回归锁）', () => {
+    // 缺陷场景（2026-10-10 review）：滞回只看视距 ⇒ "相机绕目标水平旋转、视距恒等"时永远
+    // 跳过重建，而 buildAdaptiveTerrain 的判据读相机三维位置 ⇒ 网格停在旧相机位置的 LOD
+    // 分布上（近处该细的贴片保持粗格），违反"永不比客户端更粗"。onResize 同理只改投影不重建。
+    const st = (o = {}) => ({
+      d: 100, px: 0, py: 100, pz: 0, ux: 0, uy: 1, uz: 0, fovY: 0.8, aspect: 16 / 9, ...o,
+    })
+    // 绕转：视距 100 不变，相机在水平面移动（视轴 ∥ +y ⇒ 位移全是侧向分量）
+    expect(terrainLodStale(st(), st({ px: 4 }), 500)).toBe(false)   // 侧向 4 m < 5%·100 ⇒ 不建
+    expect(terrainLodStale(st(), st({ px: 6 }), 500)).toBe(true)    // 侧向 6 m ≥ 5 m ⇒ 重建
+    expect(terrainLodStale(st(), st({ px: 6 }), 50)).toBe(false)    // 同样受 120 ms 节流
+    // 沿视轴的分量不算侧向：纯径向拉远 10%（位置与视距同步）仍允许不重建
+    expect(terrainLodStale(st(), st({ px: 0, py: 110, d: 110 }), 500)).toBe(false)
+    // 斜向：侧向分量按垂直于视轴投影（px=6、py=106 ⇒ 侧向 6，径向 6）⇒ 重建
+    expect(terrainLodStale(st(), st({ px: 6, py: 106, d: Math.hypot(6, 106) }), 500)).toBe(true)
+    // FOV（阈值随水平 FOV 插值）与 aspect（投影系数）：超过 0.1% 相对变化即重建
+    expect(terrainLodStale(st(), st({ fovY: 0.8004 }), 500)).toBe(false)   // +0.05% < 0.1%
+    expect(terrainLodStale(st(), st({ fovY: 0.9 }), 500)).toBe(true)       // +12.5%
+    expect(terrainLodStale(st(), st({ aspect: 21 / 9 }), 500)).toBe(true)  // 16:9 → 21:9
   })
 
   it('morphFunc / subdivMorph：客户端 `Landscape.cpp:1213` 与 `SubdividePatch` 末尾的直译', () => {

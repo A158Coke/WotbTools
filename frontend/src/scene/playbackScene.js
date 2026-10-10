@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildAdaptiveTerrain, terrainLodStale } from './terrainMesh.js'
+import { buildAdaptiveTerrain, terrainLodState, terrainLodStale } from './terrainMesh.js'
 import { applyTerrainCover } from './terrainCover.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
@@ -810,7 +810,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     mapTexture = null; mapMetaInfo = null; heightField = null; renderField = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
     shoreLevels = null;
-    terrainLodDist = 0;
+    terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
     // 地面加载方式由画质档决定（低=小地图底图、中=高清烘焙底图、高=分层地表），3D 地形有高度场即开启
@@ -1721,16 +1721,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     g.computeBoundingSphere();
     return g;
   }
-  let terrainLodDist = 0, terrainLodAt = 0;
-  /** 视距变化时重建地形几何（**单向滞回**，见 terrainMesh.js `terrainLodStale`）：拉近立即细化、
-   *  拉远才允许变粗（≥40%），两次重建至少隔 120 ms。保证网格**永不比客户端判据（同一相机位置）
-   *  允许的层级更粗**——否则粗格插值会把地形抬到贴地薄结构之上（2026-10-10 用户"铁轨被盖、转视角
-   *  又正常"）。重建成本 ≈ 一次四叉遍历（~18 ms/帧预算内节流）。 */
+  let terrainLodPrev = null, terrainLodAt = 0;
+  /** 相机姿态变化时重建地形几何（见 terrainMesh.js `terrainLodStale`——滞回输入与
+   *  `buildAdaptiveTerrain` 的判据同源：相机位置/视距/FOV/aspect）。视距单向滞回（拉近立即细化、
+   *  拉远 ≥40% 才允许变粗）+ 侧向绕转（≥5% 视距）与 FOV/aspect 变化按新相机位置重算，两次重建
+   *  至少隔 120 ms。保证网格**永不比客户端判据（同一相机位置）允许的层级更粗**——否则粗格插值会
+   *  把地形抬到贴地薄结构之上（2026-10-10 用户"铁轨被盖、转视角又正常"）。重建成本 ≈ 一次四叉
+   *  遍历（~18 ms/帧预算内节流）。 */
   function maybeRebuildTerrainLod(now = performance.now()) {
     if (!terrainMesh || !heightField || !camera || !controls) return;
-    const d = camera.position.distanceTo(controls.target);
-    if (!terrainLodStale(terrainLodDist, d, now - terrainLodAt)) return;
-    terrainLodDist = d;
+    const cur = terrainLodState(camera, controls.target, camera.aspect);
+    if (!terrainLodStale(terrainLodPrev, cur, now - terrainLodAt)) return;
+    terrainLodPrev = cur;
     terrainLodAt = now;
     const old = terrainMesh.geometry;
     terrainMesh.geometry = buildTerrainGeometry();
@@ -3639,7 +3641,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
     const perfT1 = PERF ? performance.now() : 0;
-    maybeRebuildTerrainLod();   // 地形 LOD 跟随视距（<25% 变化内部跳过）
+    maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
     renderer.render(scene, camera);
     // 伤害飘字覆盖层：同 renderer 的第二次 render；车辆标签由 HTML overlay 呈现。
     // labelScene 只装飘字精灵（爆散在主场景）——无存活飘字时整遍跳过：空场景 render

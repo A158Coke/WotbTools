@@ -419,7 +419,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 向外探出 0.5–1.3 m，俯瞰下穿出挡土墙贴面（2026-10-09 用户报障）。
 
     // ⚠️ 断言只看代码（src 已剥注释）——用代码锚点，不要在注释文本上定位
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
     expect(src).toMatch(/field: renderField \|\| heightField, n, span,/)
@@ -427,8 +427,9 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodStale \} from '\.\/terrainMesh\.js'/)
-    expect(src).toMatch(/if \(!terrainLodStale\(terrainLodDist, d, now - terrainLodAt\)\) return;/)
+    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
+    expect(src).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
     expect(src).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
     // sampleHeight 采引擎口径（除 n，非 n−1）
     expect(src).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
@@ -1077,5 +1078,20 @@ describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () 
     const again = makeBillboardMaterial(gltfMaterial)
     expect(again).not.toBe(m1)
     clearSceneryMatCache()
+  })
+})
+
+describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () => {
+  // 缺陷（2026-10-10 review）：maybeRebuildTerrainLod 只把"相机到 controls.target 的视距"
+  // 喂给滞回，而 buildAdaptiveTerrain 的判据读相机三维位置/FOV/aspect ⇒ 绕目标水平旋转
+  // （视距恒等）时网格永远不重建，停在旧相机位置的 LOD 分布上。onResize 同理只改投影
+  // 不重建地形。守卫：重建入口必须传相机姿态快照（terrainLodState），不得退回只比视距。
+  it('maybeRebuildTerrainLod 消费 terrainLodState(camera, controls.target, camera.aspect)', () => {
+    const start = src.indexOf('function maybeRebuildTerrainLod')
+    expect(start).toBeGreaterThan(0)
+    const fn = src.slice(start, src.indexOf('\n  }', start))
+    expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
+    expect(fn).not.toMatch(/terrainLodDist/)
+    expect(fn).toMatch(/terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)/)
   })
 })
