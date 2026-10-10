@@ -234,7 +234,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m\) && !\/sky\/i\.test\(o\.name \|\| ''\)/)
     expect(src).toMatch(/\n\s*&& !underWater\(o\)\) \{/)
     expect(src).toMatch(/if \(atlas && o\.geometry\.attributes\.uv1\) \{/)
-    expect(src).toMatch(/return makeLightmappedMaterial\(m, atlas,/)
+    // 材质**缓存共享**（review P2：逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）；
+    // 逐实例光照图变换走 aLm 实例属性，与材质无关 ⇒ 按输入指纹复用同一份材质
+    expect(src).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
+    expect(src).toMatch(/makeLightmappedMaterial\(m, atlas,/)
     // 环境反射：判据是**绑了掩码+立方图两个槽**（旗标只在部分实例上，不可作判据）
     expect(src).toMatch(/et \? \{ maskTex: et\[0\], cubeTex: et\[1\], props \} : null,/)
     expect(src).toMatch(/getDependency\('texture', ex\.envCube\)/)
@@ -265,7 +268,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 接线：extras.detail → 依赖预解析 → lightmapped 分支实参；非光照图批次走 Lambert 补丁
     expect(src).toMatch(/getDependency\('texture', ex\.detail\.texture\)/);
     expect(src).toMatch(/const detailTexOf = \(m\) => texOf\(m, detailTexByMatIndex\);/);
-    expect(src).toMatch(/dtex \? \{ tex: dtex, scale: ud\.detail\.scale \} : null\);/);
+    expect(src).toMatch(/dtex \? \{ tex: dtex, scale: ud\.detail\.scale \} : null\)\);/);
     expect(src).toMatch(/patchSceneryDetail\(nm, dtex, m\.userData\.detail\.scale\);/);
     // convMat 缓存键含 detail 身份（贴图 uuid + scale），否则同图不同砖纹串用
     expect(src).toMatch(/const t = detailTexOf\(m\);/);
@@ -419,7 +422,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 向外探出 0.5–1.3 m，俯瞰下穿出挡土墙贴面（2026-10-09 用户报障）。
 
     // ⚠️ 断言只看代码（src 已剥注释）——用代码锚点，不要在注释文本上定位
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    expect(src).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
     expect(src).toMatch(/field: renderField \|\| heightField, n, span,/)
@@ -427,10 +430,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    expect(src).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
     // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
     expect(src).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
     expect(src).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
+    // 回退/低档底图 UV（review P1）：几何必须带 uv——分层着色在片元反推 UV，
+    // 但回退材质 `MeshBasicMaterial({ map })` 吃几何属性，缺了整张底图退化成单 texel
+    expect(src).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(\s*groundMapUv\(positions, span, mapMetaInfo\?\.x \|\| 0, mapMetaInfo\?\.z \|\| 0\), 2\)\)/)
     // sampleHeight 采引擎口径（除 n，非 n−1）
     expect(src).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
     // 几何已建在场景系：不得再有 PlaneGeometry 地形 + sampleHeight 位移 + 旋转/平移放置
@@ -1093,5 +1099,41 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
     expect(fn).toMatch(/terrainLodState\(camera, controls\.target, camera\.aspect\)/)
     expect(fn).not.toMatch(/terrainLodDist/)
     expect(fn).toMatch(/terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)/)
+  })
+})
+
+describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () => {
+  it('纹理依赖 await 之后、共享状态写入之前复查会话失效', () => {
+    // `getDependency('texture', …)` 逐个 await：期间切场后恢复执行不得把旧场 GLB 挂进新场。
+    expect(src).toMatch(/光照图图集解析失败（回退原口径）[\s\S]{0,260}?if \(stale\(\)\) \{ disposeObject3D\(gltf\.scene\); return; \}/)
+  })
+
+  it('履带 UV 回退分支引用有效变量（v0tankId 未定义会抛 ReferenceError，半初始化装配）', () => {
+    expect(src).not.toMatch(/v0tankId/)
+    expect(src).toMatch(/花纹停滚）tank=' \+ \(tankId \|\| '\?'\)/)
+  })
+
+  it('光照图材质按输入指纹缓存共享（逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）', () => {
+    expect(src).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
+    // 不得退回"每 mesh 直接新建"的写法（同分支内不允许裸 return makeLightmappedMaterial）
+    const start = src.indexOf("ud.lightmap !== undefined && !isWaterNode")
+    expect(start).toBeGreaterThan(0)
+    const seg = src.slice(start, start + 1400)
+    expect(seg).not.toMatch(/return makeLightmappedMaterial\(m, atlas,/)
+  })
+
+  it('关闭 GLB 时在清引用前释放该车悬挂克隆几何（反复开关不累积 GPU 缓冲）', () => {
+    const start = src.indexOf('function applyGlbToggle')
+    expect(start).toBeGreaterThan(0)
+    const seg = src.slice(start, src.indexOf('\n  }', src.indexOf('setLowPoly(v, true);', start)))
+    expect(seg).toMatch(/if \(v\.suspParts && v\.suspParts\.disposables\) \{[\s\S]{0,80}?g\.dispose\(\);/)
+    // disposables 释放必须发生在清空引用之前
+    expect(seg.indexOf('disposables')).toBeLessThan(seg.indexOf('v.suspParts = null'))
+  })
+
+  it('履带形变下发按解算链判定（只比最大幅度会漏"幅度相同、分布不同"）', () => {
+    expect(src).toMatch(/chainChanged\(tg\.appliedChainZ, tg\.chainZ\)/)
+    expect(src).toMatch(/tg\.appliedChainZ\.set\(tg\.chainZ\)/)
+    expect(src).not.toMatch(/appliedAbs/)
   })
 })

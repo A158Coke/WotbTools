@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildAdaptiveTerrain, terrainLodState, terrainLodStale } from './terrainMesh.js'
+import { buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
 import { applyTerrainCover } from './terrainCover.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
@@ -49,7 +49,7 @@ import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, sideTravel,
+  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
@@ -1125,6 +1125,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
         } catch (e) { console.warn('混合层掩码/光照图图集解析失败（回退原口径）:', e); }
+        // 会话失效复查（2026-10-10 review P2）：上面逐个 `getDependency('texture', …)` 都是
+        // await 点——期间用户可能已切到另一场；恢复执行后**任何共享状态写入前**必须重验，
+        // 否则旧场的 GLB/水位表会挂进新场 scene（后面的守卫已经太晚）。
+        if (stale()) { disposeObject3D(gltf.scene); return; }
         const texOf = (m, table) => {
           const assoc = gltf.parser && gltf.parser.associations && gltf.parser.associations.get(m);
           const idx = assoc && assoc.materials;
@@ -1407,9 +1411,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                 const props = (m.userData && m.userData.env) || {};
                 // 细节层（B1）：与光照图/环境反射可共存（实测 398/453 同时是光照图批次）
                 const dtex = ud.detail ? detailTexOf(m) : null;
-                return makeLightmappedMaterial(m, atlas,
+                // ⚠️ 逐 mesh 新建 ShaderMaterial 会让 `groupInstanceBatches`（按 geometry+material
+                // 分组）把本该合批的实例拆成 count=1 的单实例批（2026-10-10 review P2：大地图
+                // draw call / 逐帧遍历随光照图件数线性膨胀）。逐实例的光照图 UV 变换走 `aLm`
+                // 实例属性（见 buildInstancedMesh），与材质无关 ⇒ 按输入指纹缓存共享（同 glTF
+                // 材质的多节点实例拿到**同一份**材质）。
+                return cachedSceneryMat(['LM', m.uuid, atlas.uuid,
+                  et ? [et[0].uuid, et[1].uuid, JSON.stringify(props)].join('|') : '',
+                  dtex ? [dtex.uuid, JSON.stringify(ud.detail.scale || null)].join('|') : ''].join('#'),
+                () => makeLightmappedMaterial(m, atlas,
                   et ? { maskTex: et[0], cubeTex: et[1], props } : null,
-                  dtex ? { tex: dtex, scale: ud.detail.scale } : null);
+                  dtex ? { tex: dtex, scale: ud.detail.scale } : null));
               }
             }
             const maskTex = ud.blendLayer ? maskTexOf(m) : null;
@@ -1716,6 +1728,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     });   // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    // 底图 UV：低档 / 分层材质不可用的回退档把 ground.webp（或最低档 mini.webp）直接摊在地形上
+    // （`MeshBasicMaterial({ map: mapTexture })`）——分层着色的 UV 在片元由世界坐标反推，但回退
+    // 材质吃几何的 `uv` 属性，缺了它整张图退化成单 texel 常量（2026-10-10 review P1）。
+    // 朝向契约与旧 `PlaneGeometry+rotπ` 逐点等价（详见 terrainMesh.js `groundMapUv`）。
+    g.setAttribute('uv', new THREE.BufferAttribute(
+      groundMapUv(positions, span, mapMetaInfo?.x || 0, mapMetaInfo?.z || 0), 2));
     g.setIndex(new THREE.BufferAttribute(indices, 1));
     g.computeVertexNormals();
     g.computeBoundingSphere();
@@ -2663,7 +2681,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           parts.push({ mesh, posAttr, basePos, params, axis3: [localAxis.x, localAxis.y, localAxis.z],
-                       uvAttr, uvBase, appliedAbs: -1, appliedUv: 0, normalAbs: 0 });
+                       uvAttr, uvBase, appliedUv: 0, normalAbs: 0, normalMean: 0 });
         }
         if (!parts.length) return null;
         // 花纹滚动速率：**网格实测**沿带 dV/ds（客户端形式 textureScale/chunkLength 实测偏快
@@ -2673,13 +2691,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const uvFit = measureBeltUvSlope(uvSamples);
         const dvPerM = uvFit.ok ? chainBottomRunDir(chain2) * uvFit.slope : 0;
         if (!uvFit.ok) {
-          console.warn('[playback] 履带 UV 沿带斜率不可测（花纹停滚）tank=' + (v0tankId || '?')
+          console.warn('[playback] 履带 UV 沿带斜率不可测（花纹停滚）tank=' + (tankId || '?')
             + ' pairs=' + uvFit.pairs);
         }
         tracks.push({
           node, parts, chain: chain2, restZ, attach, wheelCfg, lateral,
           groundDrop: new Float64Array(chain2.length),
           chainZ: new Float64Array(chain2.length),
+          appliedChainZ: null,   // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
           dvPerM, uv: 0,
         });
       }
@@ -2757,20 +2776,37 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const uv = (dS && tg.dvPerM)
           ? (tg.uv = treadScrollStep(tg.uv, dS, tg.dvPerM))
           : tg.uv;
-        for (const gp of tg.parts) {
-          const dmax = applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
-                                            tg.chainZ, tg.restZ, gp.axis3);
-          if (Math.abs(dmax - gp.appliedAbs) > 3e-3 || snap) {
+        // 顶点输出 = f(chainZ, basePos, params, restZ, axis)（纯函数）⇒ **按解算链**判定是否下发：
+        // 只比形变最大幅度会漏"幅度相同、分布不同"的形变（2026-10-10 review P2：把 0.1 的形变
+        // 从一处挪到另一处时 max 不变、顶点已变但 `version` 仍是 1，GPU 停在旧形状；法线同理）。
+        // 逐链路点（~40）比较比逐顶点指纹便宜且**恰好充分**：链相同 ⇒ 顶点逐点相同。
+        const chainMoved = snap || !tg.appliedChainZ || chainChanged(tg.appliedChainZ, tg.chainZ);
+        if (chainMoved) {
+          let dmax = 0, dsum = 0;
+          for (let i = 0; i < n; i++) {
+            const ad = Math.abs(tg.chainZ[i] - tg.restZ[i]);
+            if (ad > dmax) dmax = ad;
+            dsum += ad;
+          }
+          const dmean = n ? dsum / n : 0;
+          for (const gp of tg.parts) {
+            applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
+                                 tg.chainZ, tg.restZ, gp.axis3);
             gp.posAttr.needsUpdate = true;
-            gp.appliedAbs = dmax;
-            // 法线只在形变明显变化时重算（逐帧重算 = 每车每帧一次全顶点遍历）
-            if (Math.abs(dmax - gp.normalAbs) > 0.02 || snap) {
+            // 法线只在形变**幅度或分布**明显变化时重算（逐帧重算 = 每车每帧一次全顶点遍历）
+            if (snap || Math.abs(dmax - gp.normalAbs) > 0.02 || Math.abs(dmean - gp.normalMean) > 0.02) {
               gp.normalAbs = dmax;
+              gp.normalMean = dmean;
               gp.mesh.geometry.computeVertexNormals();
               const na = gp.mesh.geometry.getAttribute('normal');
               if (na) na.needsUpdate = true;
             }
           }
+          if (!tg.appliedChainZ) tg.appliedChainZ = new Float64Array(n);
+          tg.appliedChainZ.set(tg.chainZ);
+        }
+        // 花纹与形变解耦：UV 只随累计滚动量变（链静止时也照样滚），故独立于上面的形变闸门
+        for (const gp of tg.parts) {
           if (gp.uvAttr && gp.uvBase && Math.abs(uv - gp.appliedUv) > 1e-3) {
             gp.appliedUv = uv;
             // 取模只作用于**偏移**（整带同相）：逐顶点取模会破坏跨 wrap 图元的 UV 插值
@@ -2887,7 +2923,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       });
     } else {
       for (const v of V) {
-        if (v.glb) { scene.remove(v.glb); v.glb = null; v.glbParts = null; v.suspParts = null; }
+        if (v.glb) {
+          scene.remove(v.glb);            // clone 与模板共享资源：不在此 dispose（与 teardown 同口径）
+          // 悬挂求解为逐车 clone 的履带几何（见 collectSuspensionParts 的 disposables）
+          // ——清引用前必须释放，否则反复开关 GLB 逐次累积 GPU 缓冲（2026-10-10 review P2）。
+          if (v.suspParts && v.suspParts.disposables) {
+            for (const g of v.suspParts.disposables) g.dispose();
+          }
+          v.glb = null; v.glbParts = null; v.suspParts = null;
+        }
         setLowPoly(v, true);
       }
     }

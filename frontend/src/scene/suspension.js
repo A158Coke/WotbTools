@@ -244,6 +244,16 @@ export function vertexChainParams(pos, rest) {
  * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
  * @returns {number} 本帧最大 |位移|（m）
  */
+/** 两条解算链是否等价（逐点严格比较）。顶点输出是链的纯函数（见 `applyChainToVertices`）：
+ *  链相同 ⇒ 顶点逐点相同、无需重传 GPU。形变"下发判定"用它而不是最大幅度——
+ *  幅度相同但分布不同（如把 0.1 的形变从一处挪到另一处）时 max 不变、顶点已变
+ *  （2026-10-10 review P2）。空/长度不符视为变化（首帧 fail-safe）。 */
+export function chainChanged(prev, cur) {
+  if (!prev || !cur || prev.length !== cur.length) return true;
+  for (let i = 0; i < cur.length; i++) if (prev[i] !== cur[i]) return true;
+  return false;
+}
+
 export function applyChainToVertices(out, base, params, chainZ, restZ, axis) {
   const nv = out.length / 3;
   const { seg, t } = params;
