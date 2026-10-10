@@ -63,6 +63,20 @@ const PINNED_ASSAULT_RESET_ROWS: Record<string, number> = {
 }
 
 /**
+ * 放行的 `loadout` 差异（上游 **v0.4.3**：Type5 物化尾部配件串改变长解析）——线路串是
+ * `0B <n>` + nB（n=1..=9 = 实装件数、空槽省略）；Java 基线与旧解析器只认定长 9 件，
+ * 凡不满 9 件的玩家**整条 loadout 丢弃**（canonical 判 null）。现按实装件数解析，这些
+ * 玩家拿到自己的 loadout（`confidence` 由描述符 wire 是否可映射决定）。允许**且仅允许**
+ * 「Java null → 本地非 null」这一方向（其余字段仍逐字段相等），条数按 fixture 冻结——
+ * 数字变化必须重新核对（变多 = 又有新来源；变少 = 基线不再覆盖该形态）。
+ */
+const PINNED_LOADOUT_UPGRADES: Record<string, number> = {
+  'random-battle-example.wotbreplay': 5,
+  'cw-training-15-14-example.wotbreplay': 0,
+  'tournament-14-14-example.wotbreplay': 1,
+}
+
+/**
  * fixture 三切面 → canonical dataset。经 [`requireFixtures`] 严格读取：被 trust boundary 拒绝的
  * producer 输出在此抛出**原始 validation error**，而不是降级成 `null.meta` 的二次症状。
  */
@@ -160,7 +174,23 @@ describe('2D 战局回放 canonical 语义 ↔ Java golden', () => {
           accountId: v.accountId, playerName: v.playerName, tankId: v.tankId, tankName: v.tankName,
           tankClass: v.tankClass, tankTier: v.tankTier, team: v.team, friendly: v.friendly, loadout: v.loadout,
         }))
-        expect(roster(l)).toEqual(roster(j))
+        const jr = roster(j)
+        const lr = roster(l)
+        expect(lr.map((x) => x.accountId)).toEqual(jr.map((x) => x.accountId))
+        const upgrades: number[] = []
+        for (let i = 0; i < jr.length; i++) {
+          const a = jr[i]
+          const b = lr[i]
+          // 唯一放行类别（见 PINNED_LOADOUT_UPGRADES）：Java null → 本地有 loadout。
+          if (a.loadout === null && b.loadout !== null) {
+            upgrades.push(a.accountId)
+            expect({ ...b, loadout: null }).toEqual(a) // loadout 之外不允许任何差异
+            continue
+          }
+          expect(b).toEqual(a)
+        }
+        expect(upgrades, `loadout 升级清单（Java null → 本地有值）变化：${JSON.stringify(upgrades)}`)
+          .toHaveLength(PINNED_LOADOUT_UPGRADES[file] ?? 0)
       })
 
       it('位置 / 朝向 knowledge：每个整秒帧一致（仅固定差异放行）', () => {
