@@ -24,12 +24,15 @@ TX1 构建脚本的 identity 纳入 sponsor 内容指纹（第三个输入）后
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER = ROOT / "deploy/tx/build-frontend-from-gitee.sh"
@@ -38,7 +41,7 @@ REPLICA_WF = ROOT / ".github/workflows/frontend-replica.yml"
 FINGERPRINT_SCRIPT = ROOT / "deploy/tx/sponsor-fingerprint.sh"
 
 ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
-# 数据点来自两个真实 run 的构建日志（`RESULT image=...:sha-<12>`）：
+# 数据点来自真实 run 的构建日志（`RESULT image=...:sha-<12>`）：
 #   76cf8acb… = Merge PR #581（Frontend run 38060016028 / build 侧 tag f52430fb1b7f）
 #   e3ba28f0… = 事故期间的 main 提交（run 38046307993 / build 侧 tag ff0a703af8f8）
 SPONSOR_FINGERPRINT = "75cdd72f1e1714cacd81cc6ce97e7918a58eb9657a2a224d965ca28d7578b2bf"
@@ -46,6 +49,11 @@ DATA_POINTS = [
     ("76cf8acbdfbcf9c53970d6e680cf039fb2fd34a7", "sha-f52430fb1b7f"),
     ("e3ba28f0a103ae345197978e51549345e7ca5359", "sha-ff0a703af8f8"),
 ]
+# 无 pin 数据点（复审复现，2026-10-10）：同一 source SHA 下 builder 归一化为空串得
+# `sha-f1698ee92506`；若第三输入取 `-` 则得 `sha-6d521aeadd3e`（deploy/replica 曾算出后者）。
+NO_PIN_SHA = "f84f49833c8251b81288c782c393d4fab8994e7e"
+NO_PIN_BUILDER_TAG = "sha-f1698ee92506"
+NO_PIN_DASH_TAG = "sha-6d521aeadd3e"
 
 # printf 的格式串（`%s\n%s\n%s`）与参数列表一起提取：参数顺序即 identity 输入顺序。
 IDENTITY_RE = re.compile(
@@ -93,6 +101,24 @@ class IdentityFormula(unittest.TestCase):
         for source_sha, tag in DATA_POINTS:
             self.assertEqual(expected_identity(source_sha, SPONSOR_FINGERPRINT), tag)
 
+    def test_no_pin_identity_matches_builder_cli_normalization(self) -> None:
+        """无 pin 时第三输入 = 构建器 CLI 归一化后的值（空串），不得是占位符 `-`。
+
+        复审复现（2026-10-10）：同一 source SHA 下 builder=sha-f1698ee92506、
+        deploy/replica=sha-6d521aeadd3e——两枚 tag 的真实值在此锁定。
+        """
+        builder_text = BUILDER.read_text(encoding="utf-8")
+        # 归一化规则必须仍在构建器 CLI 入口（`-` ⇒ 空串），我们从源码解析而不是抄一份。
+        self.assertRegex(
+            builder_text,
+            r'\[ "\$sponsor_fingerprint" != "-" \] \|\| sponsor_fingerprint=""',
+            "构建器 CLI 的缺失值归一化规则改变了，identity 口径需重新对齐",
+        )
+        self.assertIn("<sponsor-fingerprint|->", builder_text,
+                      "构建器 usage 里的 `-` 占位约定改变了")
+        self.assertEqual(expected_identity(NO_PIN_SHA, ""), NO_PIN_BUILDER_TAG)
+        self.assertNotEqual(expected_identity(NO_PIN_SHA, ""), NO_PIN_DASH_TAG)
+
     def test_dropping_any_input_changes_identity(self) -> None:
         sha = DATA_POINTS[0][0]
         full = expected_identity(sha, SPONSOR_FINGERPRINT)
@@ -123,9 +149,19 @@ class FrontendWorkflowDeployFormula(unittest.TestCase):
         self.assertIn("deploy/tx/sponsor-fingerprint.sh", self.deploy_body)
         self.assertIn("/opt/wotb-tx/deploy.incoming", self.deploy_body)
 
-    def test_sponsor_pin_is_staged_to_tx(self) -> None:
-        self.assertIn("source: deploy/tx,deploy/sponsor", self.text,
-                      "deploy job 必须把 deploy/sponsor（pin）一并 stage，否则远端派生不出指纹")
+    def test_sponsor_pin_staging_is_split_and_guarded(self) -> None:
+        # pin 可被删除：可选目录不能并入必选 scp（否则步骤失败），且必须单独拷到与必选步骤
+        # 相同的 target（远端路径 deploy.incoming/deploy/sponsor/content.json 是 identity 输入）。
+        self.assertNotIn("source: deploy/tx,deploy/sponsor", self.text,
+                         "sponsor staging 不得合并进必选步骤（pin 缺失时整个目录不存在）")
+        sponsor_step = self.text.split("- name: Stage sponsor pin when present", 1)
+        self.assertEqual(len(sponsor_step), 2, "缺少独立且带守卫的 sponsor staging 步骤")
+        body = sponsor_step[1].split("\n      - ", 1)[0]
+        self.assertIn("if: ${{ hashFiles('deploy/sponsor/content.json') != '' }}", body)
+        self.assertIn("source: deploy/sponsor", body)
+        self.assertIn("target: /opt/wotb-tx/deploy.incoming", body)
+        mandatory = self.text.split("- name: Stage TX runtime files", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("source: deploy/tx\n", mandatory)
 
     def test_staged_identity_inputs_are_declared_production_inputs(self) -> None:
         # 远端派生 fingerprint 依赖的两个路径（新脚本 + pin）必须登记为生产输入：
@@ -148,16 +184,23 @@ class FrontendWorkflowDeployFormula(unittest.TestCase):
 
 
 class FingerprintScript(unittest.TestCase):
-    def test_missing_pin_prints_dash(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out = subprocess.run(["bash", str(FINGERPRINT_SCRIPT), tmp],
-                                 check=True, capture_output=True, text=True).stdout
-            self.assertEqual(out, "-\n")
-
     def test_pin_prints_artifact_sha(self) -> None:
         out = subprocess.run(["bash", str(FINGERPRINT_SCRIPT), str(ROOT)],
                              check=True, capture_output=True, text=True).stdout
         self.assertEqual(out.strip(), SPONSOR_FINGERPRINT)
+
+    def test_missing_pin_matches_builder_absent_token(self) -> None:
+        """无 pin 时输出必须等于构建器 CLI 归一化后的第三输入（空串）——不是占位符 `-`。
+
+        复审 P2（2026-10-10）：曾返回 `-`，同一 source SHA 下 deploy/replica 得到
+        `sha-6d521aeadd3e`，而构建实产 `sha-f1698ee92506` ⇒ 永远 not found。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            out = subprocess.run(["bash", str(FINGERPRINT_SCRIPT), tmp],
+                                 check=True, capture_output=True, text=True).stdout
+            self.assertEqual(out, "\n", "无 pin 的指纹必须是空串（构建器 CLI 的归一化值）")
+            self.assertEqual(out.strip(), "")
+            self.assertNotEqual(out.strip(), "-")
 
     def test_incomplete_pin_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -168,6 +211,41 @@ class FingerprintScript(unittest.TestCase):
                                   capture_output=True, text=True)
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("incomplete artifact metadata", proc.stderr)
+
+
+class StagingContinuity(unittest.TestCase):
+    """'有 pin → 删除 pin' 的连续部署：远端不得残留旧 pin（复审 P2，2026-10-10）。"""
+
+    def _prepare_step_script(self) -> str:
+        workflow = yaml.safe_load(FRONTEND_WF.read_text(encoding="utf-8"))
+        step = next(s for s in workflow["jobs"]["deploy"]["steps"]
+                    if s.get("name") == "Prepare TX staging directories")
+        return step["with"]["script"]
+
+    def test_prepare_removes_removed_sponsor_pin(self) -> None:
+        script = self._prepare_step_script()
+        self.assertIn("WOTB_TX_ROOT", script,
+                      "准备步骤需允许本地回归注入 root（默认路径不变）")
+        with tempfile.TemporaryDirectory() as tmp:
+            # 上一轮部署留下的旧文件：sponsor pin + tx 运行时文件
+            stale_pin = Path(tmp) / "deploy.incoming/deploy/sponsor/content.json"
+            stale_tx = Path(tmp) / "deploy.incoming/deploy/tx/deploy.sh"
+            for path in (stale_pin, stale_tx):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("stale\n", encoding="utf-8")
+
+            subprocess.run(["bash", "-c", script], check=True,
+                           env={**os.environ, "WOTB_TX_ROOT": tmp})
+
+            self.assertFalse(stale_pin.exists(), "旧 sponsor pin 必须被清掉")
+            self.assertFalse(stale_tx.exists(), "旧 tx 文件必须被清掉")
+            self.assertTrue((Path(tmp) / "deploy.incoming/deploy/tx").is_dir(),
+                            "必选 tx 目录需重建（供必选 scp 落位）")
+            # 清理后远端派生出的指纹 = 无 pin 值（与构建侧同一发布路径）
+            out = subprocess.run(["bash", str(FINGERPRINT_SCRIPT),
+                                  str(Path(tmp) / "deploy.incoming")],
+                                 check=True, capture_output=True, text=True).stdout
+            self.assertEqual(out.strip(), "")
 
 
 if __name__ == "__main__":
