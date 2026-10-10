@@ -1,6 +1,7 @@
 package com.wotb.web.user.service;
 
 import com.wotb.web.user.dto.UserProfileDto;
+import com.wotb.web.user.dto.OnboardingReceiptDto;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.repository.UserProfileRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -72,6 +73,42 @@ class UserProfileServiceTest {
         when(repository.findByKeycloakUserId("kc-user"))
                 .thenReturn(Optional.of(wgProfile("CN", 0L, null, null)));
         assertTrue(service.currentWotbIdentity("kc-user").isEmpty());
+    }
+
+    @Test
+    void onboardingStartsWithZeroNoneWithoutChangingTheProfileTransport() {
+        final UserProfile profile = cnProfile(10L, "Player", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+        assertEquals(new OnboardingReceiptDto(0, "NONE"), service.readOnboardingReceipt("kc-user"));
+    }
+
+    @Test
+    void onboardingMergeIsMonotonicAndCompletionWinsAtTheSameEpoch() {
+        final UserProfile profile = cnProfile(10L, "Player", null);
+        when(repository.findByKeycloakUserIdForUpdate("kc-user")).thenReturn(Optional.of(profile));
+        assertEquals(new OnboardingReceiptDto(2, "SKIPPED"), service.saveOnboardingReceipt("kc-user", 2, "SKIPPED"));
+        assertEquals(new OnboardingReceiptDto(2, "SKIPPED"), service.saveOnboardingReceipt("kc-user", 1, "COMPLETED"));
+        assertEquals(new OnboardingReceiptDto(2, "COMPLETED"), service.saveOnboardingReceipt("kc-user", 2, "COMPLETED"));
+        assertEquals(new OnboardingReceiptDto(2, "COMPLETED"), service.saveOnboardingReceipt("kc-user", 2, "SKIPPED"));
+        assertEquals(new OnboardingReceiptDto(2, "COMPLETED"), service.saveOnboardingReceipt("kc-user", 2, "COMPLETED"));
+        assertEquals(new OnboardingReceiptDto(3, "SKIPPED"), service.saveOnboardingReceipt("kc-user", 3, "SKIPPED"));
+        assertEquals(10L, profile.getWotbAccountId());
+        assertEquals("Player", profile.getWotbNickname());
+    }
+
+    @Test
+    void onboardingRequiresExistingProfileAndAValidTerminalReceipt() {
+        assertEquals("PROFILE_NOT_FOUND", assertThrows(IllegalArgumentException.class,
+                () -> service.readOnboardingReceipt("kc-user")).getMessage());
+        assertEquals("PROFILE_NOT_FOUND", assertThrows(IllegalArgumentException.class,
+                () -> service.saveOnboardingReceipt("kc-user", 1, "COMPLETED")).getMessage());
+        assertEquals("INVALID_REQUEST", assertThrows(IllegalArgumentException.class,
+                () -> service.saveOnboardingReceipt("kc-user", 0, "COMPLETED")).getMessage());
+        for (final String disposition : new String[]{null, "NONE", "completed", ""}) {
+            assertEquals("INVALID_REQUEST", assertThrows(IllegalArgumentException.class,
+                    () -> service.saveOnboardingReceipt("kc-user", 1, disposition)).getMessage());
+        }
+        verify(repository, never()).saveAndFlush(any());
     }
 
     private static void loginWithWgClaims(final String region, final boolean verified,

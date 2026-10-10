@@ -47,8 +47,10 @@ function normalizeId(id) {
   return process.platform === 'win32' ? forward.toLowerCase() : forward
 }
 
-function authBoundaryStubPlugin() {
-  const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS].map(([from, to]) => [normalizeId(from), to]))
+function authBoundaryStubPlugin({ realReplay = false } = {}) {
+  const normalizedStubs = new Map([...AUTH_BOUNDARY_STUBS]
+    .filter(([, to]) => !realReplay || /use-(auth|business-user-bootstrap)-stub\.js$/.test(to))
+    .map(([from, to]) => [normalizeId(from), to]))
   return {
     name: 'wotb-browser-fixture-boundary',
     enforce: 'pre',
@@ -65,14 +67,14 @@ function authBoundaryStubPlugin() {
 
 const delay = (ms) => new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
 
-async function startFixtureServer() {
+async function startFixtureServer({ realReplay = false } = {}) {
   const server = await createServer({
     configFile: resolve(frontendRoot, 'vite.config.js'),
     root: frontendRoot,
     // Stubbed dependency graphs must not invalidate an already-running developer server.
     cacheDir: resolve(frontendRoot, 'node_modules/.vite-browser-interaction'),
     logLevel: 'error',
-    plugins: [authBoundaryStubPlugin()],
+    plugins: [authBoundaryStubPlugin({ realReplay })],
     // Keep the production WASM pin and safe dev artifact middleware from the real Vite config.
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
@@ -2917,6 +2919,148 @@ async function captureMobileReview(page, scenario, state = 'battlefield') {
 
 /* ------------------------------------------------------------------ main */
 
+const ONBOARDING_SCENARIOS = [...['zh', 'en', 'ru'].flatMap(language => ['showcase', 'classic'].flatMap(profile =>
+  [{ width: 1600, height: 1000, touch: false }, { width: 1024, height: 900, touch: false }, { width: 390, height: 844, touch: true }]
+    .map(viewport => ({ ...viewport, language, profile, name: `onboarding-${language}-${profile}-${viewport.width}` })))),
+  { name: 'onboarding-fullscreen-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true },
+  { name: 'onboarding-fullscreen-transition-844', width: 844, height: 390, touch: true, language: 'zh', profile: 'showcase', fullscreen: true, fullscreenTransition: true }]
+let onboardingServer = null
+async function runOnboardingScenario(env, scenario) {
+  // Actual pinned WASM and the actual sample: only the external auth/profile boundary is stubbed.
+  if (!onboardingServer) onboardingServer = await startFixtureServer({ realReplay: true })
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  const failures = []
+  try {
+    await page.enable()
+    await page.emulate(scenario)
+    await env.chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source:
+      `localStorage.setItem('wotb-lang', ${JSON.stringify(scenario.language)}); localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)});` }, sessionId)
+    const url = `${onboardingServer.origin}/?view=home&ws-auth=0&ws-onboarding=${scenario.name}`
+    await page.goto(url)
+    await page.installInputTrace()
+    const hit = async selector => {
+      const center = await page.waitForValue(clickCenterExpression(selector), value => value != null,
+        { label: `guide hit target ${selector}` })
+      await page.tap({ ...center, touch: scenario.touch })
+    }
+    await page.waitFor(() => !!document.querySelector('[data-testid="home-onboarding"]'), { label: 'anonymous homepage tutorial button' })
+    check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-welcome]")'), 'anonymous visit must not auto-open tutorial')
+    await hit('[data-testid="home-onboarding"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-welcome"]'), { label: 'explicit tutorial request' })
+    await hit('[data-testid="onboarding-begin"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="workspace-demo-label"]') && !!document.querySelector('[data-tour="data-toolbar"]'),
+      { timeout: 60000, label: 'real sample locally analyzed' })
+    const anchors = ['workspace-demo', 'data-toolbar', 'playback-transport', 'playback-annotation-entry', 'playback-declutter']
+    let skippedInFullscreen = false
+    for (let node = 0; node < anchors.length; node++) {
+      const anchor = anchors[node]
+      await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.step',
+        value => Number(value) === node + 1, { label: `guide node ${node + 1}` })
+      await page.waitForValue(`(() => {
+        const card = document.querySelector('[data-testid="onboarding-card"]');
+        const target = [...document.querySelectorAll('[data-tour=${JSON.stringify(anchor)}]')].find(el => el.getBoundingClientRect().width > 0);
+        return card && target && !!document.querySelector('[data-testid="onboarding-cutout"]');
+      })()`, value => value === true, { label: `real anchored guide ${node + 1}` })
+      await page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      const geometry = await page.evaluate(`(() => {
+        const card=document.querySelector('[data-testid="onboarding-card"]').getBoundingClientRect();
+        const navigation=document.querySelector('.onboarding-card-actions').getBoundingClientRect();
+        const target=[...document.querySelectorAll('[data-tour=${JSON.stringify(anchor)}]')].find(el=>el.getBoundingClientRect().width>0).getBoundingClientRect();
+        return { overflow:document.documentElement.scrollWidth>innerWidth+1,
+          cardOut:card.left<0||card.right>innerWidth+1||card.top<0||card.bottom>innerHeight+1,
+          covered:Math.min(card.right,target.right)>Math.max(card.left,target.left)&&Math.min(card.bottom,target.bottom)>Math.max(card.top,target.top),
+          navigationCovered:Math.min(navigation.right,target.right)>Math.max(navigation.left,target.left)&&Math.min(navigation.bottom,target.bottom)>Math.max(navigation.top,target.top),
+          navigationOut:navigation.left<0||navigation.right>innerWidth+1||navigation.top<0||navigation.bottom>innerHeight+1 };
+      })()`)
+      check(failures, !geometry.overflow && !geometry.cardOut && !geometry.covered && !geometry.navigationCovered && !geometry.navigationOut,
+        `node ${node + 1} target/card geometry: ${JSON.stringify(geometry)}`)
+      if (node === 2) {
+        if (scenario.fullscreen) {
+          await hit('[data-test="pb-fullscreen"]')
+          await page.waitFor(() => !!document.fullscreenElement, { label: 'actual 2D fullscreen' })
+          const fullscreenGeometry = await page.evaluate(`(() => {
+            const target=document.querySelector('[data-tour="playback-transport"]').getBoundingClientRect();
+            const navigation=document.querySelector('.onboarding-card-actions').getBoundingClientRect();
+            return {target:{left:target.left,top:target.top,right:target.right,bottom:target.bottom},navigation:{left:navigation.left,top:navigation.top,right:navigation.right,bottom:navigation.bottom},
+              covered:Math.min(navigation.right,target.right)>Math.max(navigation.left,target.left)&&Math.min(navigation.bottom,target.bottom)>Math.max(navigation.top,target.top),
+              hostOwned:document.fullscreenElement.contains(document.querySelector('[data-testid="onboarding-host"]'))};
+          })()`)
+          if (fullscreenGeometry.covered || !fullscreenGeometry.hostOwned) throw new Error(`fullscreen guide geometry ${JSON.stringify(fullscreenGeometry)}`)
+        }
+        await hit('[data-test="pb-play"]')
+        check(failures, await page.evaluate('window.__wsInput.click?.test') === 'pb-play', 'guide must admit the actual play button')
+        await hit('[data-test="pb-play"]')
+        if (scenario.fullscreen && !scenario.fullscreenTransition) {
+          await hit('[data-testid="onboarding-skip"]')
+          check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-layer]")'), 'skip inside actual fullscreen removes teaching overlay')
+          await hit('[data-test="pb-fullscreen"]')
+          await page.waitFor(() => !document.fullscreenElement, { label: 'actual 2D fullscreen exit' })
+          skippedInFullscreen = true
+          break
+        }
+      }
+      if (node === 3) {
+        await hit(`[data-tour="${anchor}"]`)
+        await page.waitFor(() => !!document.querySelector('[data-tour="playback-annotation-tools"]'), { label: 'real annotation toolbar' })
+        check(failures, await page.evaluate('!!document.querySelector("[data-test=pb-annot-arrow]")'), 'drawing tools available during guide')
+      }
+      if (node === 4) {
+        await hit(`[data-tour="${anchor}"]`)
+        check(failures, await page.evaluate('document.querySelector("[data-tour=playback-declutter]").getAttribute("aria-pressed") === "true"'),
+          'real declutter preference changed through guide cutout')
+      }
+      await hit('[data-testid="onboarding-next"]')
+      check(failures, await page.evaluate('window.__wsInput.click?.testId') === 'onboarding-next',
+        `node ${node + 1} Next click must reach the teaching card`)
+    }
+    // 3D remains explicitly user-started; browser gate checks teaching/navigation, not GPU appearance.
+    if (!skippedInFullscreen) {
+      await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-replay', { label: '3D guide destination' })
+      if (scenario.fullscreenTransition) {
+        await page.waitFor(() => !!document.querySelector('[data-tour="replay3d-start"]'), { label: 'real 3D start controls mounted' })
+        const handoff = await page.evaluate(`(() => {
+          const start=document.querySelector('[data-tour="replay3d-start"]'),root=document.fullscreenElement;
+          return {fullscreen:!!root,fullscreenOwner:root?.dataset.tour,
+            startInsideOwner:!root||root.contains(start),startWidth:start.getBoundingClientRect().width,
+            guideWidth:document.querySelector('[data-testid="onboarding-card"]')?.getBoundingClientRect().width};
+        })()`)
+        if (!handoff.startInsideOwner || !handoff.startWidth || !handoff.guideWidth) throw new Error(`fullscreen capability handoff trapped the guide ${JSON.stringify(handoff)}`)
+      }
+      await hit('[data-testid="onboarding-next"]')
+      await page.waitForValue('new URLSearchParams(location.search).get("view")', value => value === 'agent-shots', { label: 'shots guide destination' })
+      await hit('[data-testid="onboarding-skip"]')
+      check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-layer]")'),
+        `skip must remove overlay: ${JSON.stringify(await page.evaluate('({click:window.__wsInput.click,primary:window.__wsInput.primary,pointers:window.__wsInput.pointers.slice(-3)})'))}`)
+    }
+    await page.goto(url)
+    await page.waitFor(() => !!document.querySelector('[data-testid="home-onboarding"]'), { label: 'homepage after reload' })
+    await page.installInputTrace()
+    check(failures, await page.evaluate('!document.querySelector("[data-testid=onboarding-welcome]")'), 'same-epoch skip must suppress fresh invitation')
+    await hit('[data-testid="home-onboarding"]')
+    await hit('[data-testid="onboarding-begin"]')
+    for (let node = 1; node <= 7; node++) {
+      await page.waitForValue('document.querySelector("[data-testid=onboarding-card]")?.dataset.step', value => Number(value) === node,
+        { label: `manual restart node ${node}` })
+      await hit('[data-testid="onboarding-next"]')
+    }
+    await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-finish"]'), { label: 'manual tutorial completion' })
+    await hit('[data-testid="onboarding-finish-directory"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="onboarding-directory"]'), { label: 'manual guide directory' })
+    check(failures, await page.evaluate('document.querySelectorAll(".onboarding-topic").length') === 10, 'directory covers ten public topics')
+  } catch (error) {
+    const detail = await page.evaluate(`({step:document.querySelector('[data-testid="onboarding-card"]')?.dataset.step,
+      title:document.querySelector('#onboarding-step-title')?.textContent,click:window.__wsInput?.click,
+      primary:window.__wsInput?.primary,pointers:window.__wsInput?.pointers?.slice(-6),route:location.search,
+      dialogs:[...document.querySelectorAll('[role="dialog"]')].map(el=>({test:el.dataset.testid,text:el.textContent?.slice(0,300),visible:el.getBoundingClientRect().height>0})),
+      receipt:localStorage.getItem('wotbtools-onboarding'),source:document.querySelector('.workspace-source')?.textContent?.slice(0,300)})`).catch(() => null)
+    throw new Error(`${error.message}; ${JSON.stringify(detail)}; ${page.consoleErrors.join(' | ')}`)
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: scenario.name, failures: [...failures, ...page.consoleErrors], viewport: `${scenario.width}x${scenario.height}` })
+}
+
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 let chromeCdp = null
@@ -2934,6 +3078,7 @@ try {
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
+    ...ONBOARDING_SCENARIOS.map((scenario) => ({ scenario, run: () => runOnboardingScenario(env, scenario) })),
     { scenario: { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }, run: () => runRosterGeometryScenario(env, { ...ROSTER_GEOMETRY_SCENARIOS[0], name: 'roster-geometry-recorder-team2-desktop', recorder: 2 }) },
     ...ROSTER_GEOMETRY_SCENARIOS.map((scenario) => ({ scenario, run: () => runRosterGeometryScenario(env, scenario) })),
     ...LIFECYCLE_SCENARIOS.map((scenario) => ({ scenario, run: () => runParseLifecycleScenario(env, scenario) })),
@@ -2965,6 +3110,10 @@ try {
     // 单个场景抛错（例如等不到元素）不得吞掉整轮结果：记为该场景的失败后继续。
     try {
       await run()
+      if (scenario.name.startsWith('onboarding-')) {
+        const completed = results.at(-1)
+        console.log(`[browser-interaction-progress] ${scenario.name} ${completed?.failures.length ? 'FAILED' : 'OK'}`)
+      }
     } catch (error) {
       results.push({
         name: scenario.name,
@@ -2972,6 +3121,7 @@ try {
         viewport: `${scenario.width}x${scenario.height}`,
         xfail: scenario.xfail,
       })
+      if (scenario.name.startsWith('onboarding-')) console.error(`[browser-interaction-progress] ${scenario.name} FAILED: ${error.message}`)
     }
   }
 
@@ -3024,5 +3174,6 @@ try {
 } finally {
   // Chrome 启动失败时也必须关掉 Vite server，否则脚本会挂在未释放的监听上而不是报错退出。
   if (chromeCdp) await chromeCdp.close()
+  if (onboardingServer) await onboardingServer.server.close()
   await server.close()
 }

@@ -1,0 +1,19 @@
+{
+  "id": "official-replay",
+  "revision": 1,
+  "path": "/onboarding/replay-1.wotbreplay",
+  "filename": "random-battle-example.wotbreplay",
+  "bytes": 1632348,
+  "sha256": "917d99b36273805a13dbd9e7199f2e9388a39b398390c16e654b33859a661477",
+  "mapCode": "rift",
+  "cue": {
+    "playbackSeconds": 59.807150078125005,
+    "rawBattleStartSeconds": 21.309305,
+    "shotRawSeconds": 81.116455078125,
+    "vehicleEid": 283127376,
+    "shotId": 74740189,
+    "shooterEid": 283127376,
+    "targetEid": 283127381
+  },
+  "verifiedParserRef": "cc1cf587e383bd3934fd86d829d4c6756dc6b4f6"
+}

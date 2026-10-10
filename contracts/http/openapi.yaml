@@ -1469,6 +1469,39 @@ paths:
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '409': { description: The WotB account is already bound to another user, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '500': { description: Profile bootstrap invariant violated, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+  /api/users/onboarding:
+    get:
+      operationId: getCurrentUserOnboarding
+      summary: Read the authenticated user's core onboarding receipt
+      description: >-
+        Identity comes solely from the bearer token subject. Profile bootstrap must have
+        succeeded first; this resource never creates a profile. A fresh profile returns 0/NONE.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Current onboarding receipt, content: { application/json: { schema: { $ref: '#/components/schemas/OnboardingReceipt' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '500': { description: Unexpected server error, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+    put:
+      operationId: saveCurrentUserOnboarding
+      summary: Idempotently merge a core onboarding completion or skip receipt
+      description: >-
+        The maximum coreEpoch wins; at the same epoch COMPLETED takes precedence over SKIPPED.
+        Older devices cannot overwrite a newer receipt. Only terminal receipts are accepted.
+        Identity comes solely from the bearer token subject; no user identifier is accepted.
+        This resource never creates a profile and does not change profile ensure semantics.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveOnboardingReceipt' }
+      responses:
+        '200': { description: Persisted merged onboarding receipt, content: { application/json: { schema: { $ref: '#/components/schemas/OnboardingReceipt' } } } }
+        '400': { description: Invalid onboarding receipt, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '404': { description: Profile not provisioned yet, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '500': { description: Unexpected server error, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/admin/hof/hundred/submissions:
     get:
       operationId: listHundredAdminSubmissions
@@ -2731,6 +2764,20 @@ components:
         deleted: { type: integer }
         failed: { type: integer }
         results: { type: array, items: { $ref: '#/components/schemas/BulkDeleteItemResult' } }
+    OnboardingReceipt:
+      type: object
+      additionalProperties: false
+      required: [coreEpoch, disposition]
+      properties:
+        coreEpoch: { type: integer, format: int32, minimum: 0, maximum: 2147483647 }
+        disposition: { type: string, enum: [NONE, COMPLETED, SKIPPED] }
+    SaveOnboardingReceipt:
+      type: object
+      additionalProperties: false
+      required: [coreEpoch, disposition]
+      properties:
+        coreEpoch: { type: integer, format: int32, minimum: 1, maximum: 2147483647 }
+        disposition: { type: string, enum: [COMPLETED, SKIPPED] }
     UserProfile:
       type: object
       additionalProperties: false

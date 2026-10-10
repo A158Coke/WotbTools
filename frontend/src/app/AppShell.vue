@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, provide, watch } from 'vue'
+import { computed, onMounted, provide, watch } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { shouldEnsureBusinessUser, useBusinessUserBootstrap } from '../composables/useBusinessUserBootstrap.js'
@@ -8,15 +8,18 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
+import { useOnboarding } from '../composables/useOnboarding.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from './featureCapabilities.js'
-import { locationForView } from './navigation.js'
+import { locationForView, viewFromRoute } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
 import AppSidebar from './AppSidebar.vue'
 import GlobalErrorDialog from './GlobalErrorDialog.vue'
 import ConnectivityNoticeDialog from './ConnectivityNoticeDialog.vue'
 import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
+import OnboardingHost from '../components/OnboardingHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
 const router = useRouter()
@@ -108,10 +111,16 @@ function navigate(target) {
       ? locationForView(target, route)
       : { path: route.path, query: { ...route.query, ...target.query } },
   )
-  if (destination.fullPath !== route.fullPath) router.push(destination)
+  if (destination.fullPath !== route.fullPath) return router.push(destination)
 }
 
 provide(NAVIGATE_VIEW_KEY, navigate)
+const onboarding = useOnboarding({
+  navigate,
+  view: computed(() => viewFromRoute(route)),
+  canInvite: computed(() => !showGlobalError.value && !connectivityNotice.value && !failed.value),
+})
+provide(ONBOARDING_KEY, onboarding.context)
 </script>
 
 <template>
@@ -154,6 +163,7 @@ provide(NAVIGATE_VIEW_KEY, navigate)
     @close="closeConnectivityNotice"
   />
   <ConfirmDialogHost />
+  <OnboardingHost :onboarding="onboarding" />
 </template>
 
 <style scoped>

@@ -1,13 +1,16 @@
 <script setup>
-import { computed, inject, nextTick, onMounted, ref, useId, watch } from 'vue'
+import { computed, inject, nextTick, onActivated, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronUp, Files } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, CircleHelp, Files, Play } from 'lucide-vue-next'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { loadOfficialDemo } from '../replay-local/demo.js'
 import { mapLabel } from '../utils/helpers.js'
 import { defineLazyModule, reloadForFreshBundle } from '../utils/lazyModule.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
+import { useConfirm } from '../composables/useConfirm.js'
 import { useReplayWorkspace } from '../composables/useReplayWorkspace.js'
 import { useNativeReplayImport } from '../composables/useNativeReplayImport.js'
 import { useMountedWhenActive } from '../composables/useMountedWhenActive.js'
@@ -48,6 +51,8 @@ const props = defineProps({
 })
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
+const onboarding = inject(ONBOARDING_KEY, null)
+const { confirm } = useConfirm()
 const { t, locale } = useI18n()
 const { authenticated } = useAuth()
 const { availability, requireFeature } = useFeatureGate()
@@ -65,9 +70,70 @@ const aiBlocked = computed(() => !aiAvailability.value.available ? t(aiAvailabil
 const workspace = useReplayWorkspace(props.initialCapability || 'data')
 
 const {
-  files, loading, error, resp, updateFiles,
+  files, loading, error, resp, updateFiles, updateDemoFile, isDemoSelection, selectionRevision,
   analysis, analyze, cancelAnalysis, dismissAnalysis,
 } = workspace.replay
+
+const demoLoading = ref(false)
+const demoError = ref('')
+let demoController = null
+let disposed = false
+
+/** Reuse the existing session. A confirmation never authorizes a later changed selection. */
+async function loadDemo(signal) {
+  if (isDemoSelection.value && resp.value && analysis.value.phase === 'ready') {
+    await setCapability('data')
+    return
+  }
+  if (demoLoading.value || loading.value) throw new Error('Replay workspace is busy')
+  const revision = selectionRevision.value
+  const controller = new AbortController()
+  demoController = controller
+  const abort = () => controller.abort()
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
+  demoLoading.value = true
+  demoError.value = ''
+  try {
+    controller.signal.throwIfAborted()
+    if (files.value.length && !isDemoSelection.value && !(await confirm({
+      title: t('onboarding.demo_replace_title'), message: t('onboarding.demo_replace_message'),
+      confirmLabel: t('onboarding.demo_replace_confirm'), cancelLabel: t('onboarding.demo_replace_cancel'),
+    }))) throw new DOMException('Official replay cancelled', 'AbortError')
+    controller.signal.throwIfAborted()
+    if (!isDemoSelection.value) {
+      const file = await loadOfficialDemo(controller.signal)
+      controller.signal.throwIfAborted()
+      if (disposed || selectionRevision.value !== revision) throw new DOMException('Official replay superseded', 'AbortError')
+      // The synchronous selection commit must not abort its own completed download.
+      demoController = null
+      updateDemoFile(file)
+    }
+    const demoRevision = selectionRevision.value
+    await setCapability('data')
+    controller.signal.throwIfAborted()
+    const result = await analyze()
+    controller.signal.throwIfAborted()
+    if (disposed || selectionRevision.value !== demoRevision) throw new DOMException('Official replay superseded', 'AbortError')
+    if (!result?.completed || !resp.value) throw new Error('Official replay analysis failed')
+  } catch (e) {
+    if (e?.name !== 'AbortError') demoError.value = t('onboarding.demo_failed')
+    throw e
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    if (demoController === controller) demoController = null
+    demoLoading.value = false
+  }
+}
+
+async function onDemoClick() {
+  try { await loadDemo() } catch { /* Visible error above; cancelled replacement keeps the current selection. */ }
+}
+
+watch(selectionRevision, () => {
+  demoController?.abort()
+  demoError.value = ''
+}, { flush: 'sync' })
 
 /**
  * Android 外部 replay 完整自动解析契约：
@@ -85,7 +151,7 @@ async function importPendingFile(file) {
   return result?.completed === true
 }
 
-const { consumePendingWhenReady } = useNativeReplayImport({
+const { consumePendingWhenReady, importing: nativeImporting } = useNativeReplayImport({
   isReady: () => true,
   onPendingFile: importPendingFile,
   onReadError: (reason) => {
@@ -96,7 +162,7 @@ const { consumePendingWhenReady } = useNativeReplayImport({
 })
 
 /**
- * 五个能力始终公开显示。数据 / 2D 匿名可用；3D / 射击 / AI 登录后使用，
+ * 五个能力始终公开显示。数据 / 2D 匿名可用；官方示例额外开放 3D / 射击，AI 仍要求登录，
  * 管理员角色不改变工作台能力。登录门禁位于实际解析与场景挂载之前。
  */
 const capabilityOptions = [
@@ -110,15 +176,15 @@ const capabilityOptions = [
 /**
  * 能力面板首次进入时才挂载（代码块按需加载、不进主包），之后切走只隐藏：
  * 停渲染但不销毁会话——切回不重新要求文件、不重新解析、保留 timeline / 相机。
- * 退出登录卸载受保护面板，工作台持有的 replay selection / 数据结果继续保留。
+ * 失去登录且没有可信示例时卸载受保护面板，selection / 数据结果继续保留。
  */
 const activeCapability = workspace.activeWorkspaceTab
+const canUseDemoCapabilities = computed(() => authenticated.value || isDemoSelection.value)
 const playbackMounted = useMountedWhenActive(() => activeCapability.value === 'playback')
-// 远端能力同时受两条独立门禁约束：登录（main：3D / 射击 / AI 登录后使用）与连通性（本分支：
-// ONLINE_REQUIRED 功能在非-online 时连挂载都不做）。两者都必须成立才挂载。
+// 3D / 射击的登录或可信示例资格与连通性独立；示例不能绕过 ONLINE_REQUIRED 门禁。
 const threeMounted = useMountedWhenActive(() =>
-  authenticated.value && activeCapability.value === '3d' && threeAvailability.value.available)
-const shotsMounted = useMountedWhenActive(() => authenticated.value && activeCapability.value === 'shots')
+  canUseDemoCapabilities.value && activeCapability.value === '3d' && threeAvailability.value.available)
+const shotsMounted = useMountedWhenActive(() => canUseDemoCapabilities.value && activeCapability.value === 'shots')
 const aiMounted = useMountedWhenActive(() =>
   authenticated.value && activeCapability.value === 'ai' && aiAvailability.value.available)
 
@@ -164,6 +230,7 @@ const targetFile = computed(() => workspace.currentTargetFile.value)
 
 // Only presentation is collapsible; the uploader and selection keep their existing owner.
 const fileControlsOpen = ref(false)
+const sourcePicker = ref(null)
 const sourceId = useId()
 const canCollapseSource = computed(() => !!resp.value && files.value.length > 0 && activeCapability.value !== 'data')
 const sourceCollapsed = computed(() => canCollapseSource.value && !fileControlsOpen.value && !loading.value && !error.value)
@@ -171,8 +238,8 @@ const showBattlePicker = computed(() => {
   const cap = activeCapability.value
   if (cap === 'data' || battleOptions.value.length < 2) return false
   if (cap === 'playback') return !playbackLoadError.value
-  if (cap === '3d') return authenticated.value && threeAvailability.value.available && !threeLoadError.value
-  if (cap === 'shots') return authenticated.value && !shotsLoadError.value
+  if (cap === '3d') return canUseDemoCapabilities.value && threeAvailability.value.available && !threeLoadError.value
+  if (cap === 'shots') return canUseDemoCapabilities.value && !shotsLoadError.value
   return aiAvailability.value.available && !aiLoadError.value
 })
 const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
@@ -224,6 +291,29 @@ function onFilesUpdate(next) {
 /** 挂载后消费 Android pending replay（本机分析，不依赖登录状态）。 */
 onMounted(() => nextTick(() => consumePendingWhenReady()))
 
+const onboardingWorkspace = {
+  hasFiles: () => files.value.length > 0,
+  busy: () => loading.value || demoLoading.value || nativeImporting?.value === true,
+  selectionIdentity: () => selectionRevision.value,
+  loadDemo,
+  setCapability,
+  chooseOwnReplay: async () => {
+    if (isDemoSelection.value) clearSelection()
+    fileControlsOpen.value = true
+    await setCapability('data')
+    await nextTick()
+    sourcePicker.value?.chooseFiles()
+  },
+}
+function registerOnboarding() { onboarding?.registerWorkspace(onboardingWorkspace) }
+onMounted(registerOnboarding)
+onActivated(registerOnboarding)
+onUnmounted(() => {
+  disposed = true
+  demoController?.abort()
+  onboarding?.registerWorkspace(null)
+})
+
 watch(() => props.initialCapability, (val) => {
   if (val) {
     workspace.setWorkspaceTab(val)
@@ -237,7 +327,10 @@ watch(() => props.initialCapability, (val) => {
   <div class="layout-data-workspace replay-workspace">
     <PageHeader :title="$t('workspace.title')">
       <template #actions>
-        <ReplayCapabilityTabs :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+        <ReplayCapabilityTabs data-tour="workspace-capabilities" :options="capabilityOptions" :active-capability="activeCapability" @select="setCapability" />
+        <AppButton v-if="onboarding && authenticated" variant="ghost" size="sm" data-tour="workspace-help" @click="onboarding.openDirectory()">
+          <CircleHelp :size="16" aria-hidden="true" />{{ $t('onboarding.help') }}
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -266,8 +359,16 @@ watch(() => props.initialCapability, (val) => {
     </div>
 
     <div class="workspace-source">
-      <div v-show="!sourceCollapsed" :id="sourceId" data-testid="workspace-file-controls">
+      <div class="workspace-demo-actions">
+        <AppButton size="sm" data-tour="workspace-demo" data-testid="workspace-demo" :disabled="demoLoading || loading" @click="onDemoClick">
+          <Play :size="16" aria-hidden="true" />{{ $t(demoLoading ? 'onboarding.demo_loading' : 'onboarding.demo_action') }}
+        </AppButton>
+        <span v-if="isDemoSelection" class="workspace-demo-label" data-testid="workspace-demo-label">{{ $t('onboarding.demo_label') }}</span>
+      </div>
+      <Banner v-if="demoError" tone="danger" data-testid="workspace-demo-error"><p>{{ demoError }}</p></Banner>
+      <div v-show="!sourceCollapsed" :id="sourceId" data-tour="workspace-file-controls" data-testid="workspace-file-controls">
         <FileDrop
+          ref="sourcePicker"
           :files="files"
           :loading="loading"
           :confirm-remove="!!resp"
@@ -326,12 +427,12 @@ watch(() => props.initialCapability, (val) => {
           </Banner>
         </template>
         <ReplayCapabilityAuthGate
-          v-else-if="!authenticated && activeCapability === '3d'"
+          v-else-if="!canUseDemoCapabilities && activeCapability === '3d'"
           :title="$t('workspace.tab_3d')"
           :description="$t('workspace.login_required_3d')"
           login-destination="agent-replay"
         />
-        <Banner v-else-if="authenticated && threeLoadError" tone="danger" data-testid="ws-3d-load-error">
+        <Banner v-else-if="canUseDemoCapabilities && threeLoadError" tone="danger" data-testid="ws-3d-load-error">
           <p>{{ $t(threeLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-3d-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
@@ -339,7 +440,7 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <Replay3DPane
-          v-if="authenticated && threeMounted && !threeLoadError"
+          v-if="canUseDemoCapabilities && threeMounted && !threeLoadError"
           :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === '3d' && threeAvailability.available"
@@ -348,12 +449,12 @@ watch(() => props.initialCapability, (val) => {
       </div>
       <div v-show="activeCapability === 'shots'" class="capability-pane" data-testid="ws-shots">
         <ReplayCapabilityAuthGate
-          v-if="!authenticated && activeCapability === 'shots'"
+          v-if="!canUseDemoCapabilities && activeCapability === 'shots'"
           :title="$t('workspace.tab_shots')"
           :description="$t('workspace.login_required_shots')"
           login-destination="agent-shots"
         />
-        <Banner v-else-if="authenticated && shotsLoadError" tone="danger" data-testid="ws-shots-load-error">
+        <Banner v-else-if="canUseDemoCapabilities && shotsLoadError" tone="danger" data-testid="ws-shots-load-error">
           <p>{{ $t(shotsLoadError) }}</p>
           <template #actions>
             <AppButton size="sm" data-testid="ws-shots-load-reload" @click="reloadForFreshBundle">{{ $t('workspace.pane_reload') }}</AppButton>
@@ -361,7 +462,7 @@ watch(() => props.initialCapability, (val) => {
           </template>
         </Banner>
         <ReplayShotsPane
-          v-if="authenticated && shotsMounted && !shotsLoadError"
+          v-if="canUseDemoCapabilities && shotsMounted && !shotsLoadError"
           :file="targetFile"
           :active="activeCapability === 'shots'"
           :blocked-reason="blockedReason"
@@ -397,6 +498,8 @@ watch(() => props.initialCapability, (val) => {
 <style scoped>
 .replay-workspace { padding-right: var(--pd-drawer-offset, 0px); }
 .workspace-source { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
+.workspace-demo-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.workspace-demo-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .capability-pane { margin-top: var(--space-1); }
 /* A single compact session row serves every single-battle capability. */
 .workspace-sessionbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }

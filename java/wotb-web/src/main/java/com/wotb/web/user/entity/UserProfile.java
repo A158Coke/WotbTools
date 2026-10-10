@@ -8,11 +8,14 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.OffsetDateTime;
 
 /** WotBTools 业务用户资料。Keycloak 负责认证，本表负责轻量业务数据。 */
 @Entity
+// Independent profile writes must not overwrite a receipt read before a concurrent onboarding save.
+@DynamicUpdate
 @Table(
     name = "user_profile",
     uniqueConstraints = @UniqueConstraint(
@@ -49,6 +52,12 @@ public class UserProfile {
 
     @Column(name = "wotb_account_verified_at")
     private OffsetDateTime wotbAccountVerifiedAt;
+
+    @Column(name = "onboarding_core_epoch", nullable = false)
+    private int onboardingCoreEpoch;
+
+    @Column(name = "onboarding_disposition", nullable = false, length = 16)
+    private String onboardingDisposition = "NONE";
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false)
@@ -93,6 +102,14 @@ public class UserProfile {
     }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
+    public int getOnboardingCoreEpoch() { return onboardingCoreEpoch; }
+    public void setOnboardingCoreEpoch(final int onboardingCoreEpoch) {
+        this.onboardingCoreEpoch = onboardingCoreEpoch;
+    }
+    public String getOnboardingDisposition() { return onboardingDisposition; }
+    public void setOnboardingDisposition(final String onboardingDisposition) {
+        this.onboardingDisposition = onboardingDisposition;
+    }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(final OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

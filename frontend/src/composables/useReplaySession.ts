@@ -1,4 +1,5 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, toRaw, watch } from 'vue'
+import { isOfficialDemo } from '../replay-local/demo.js'
 import { sourceId as makeSourceId } from '../types/replay.js'
 import type { Battle, ColumnDef, ReplayResult, SourceId } from '../types/replay.js'
 import type { DataViewMode, ReplayAnalysis, ReplayCapability } from '../types/workspace.js'
@@ -18,6 +19,9 @@ export type PendingRemove =
 export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   const files = ref<File[]>([])
   const selectionRevision = ref(0)
+  const demoFile = shallowRef<File | null>(null)
+  const isDemoSelection = computed(() => demoFile.value != null
+    && files.value.length === 1 && toRaw(files.value[0]) === demoFile.value && isOfficialDemo(demoFile.value))
   const loading = ref(false)
   const error = ref('')
   const resp = ref<ReplayResult | null>(null)
@@ -70,6 +74,7 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
 
   /** 选择变化的原子提交：先由 useReplay 停止副作用，再调用本方法。 */
   function replaceSelection(next: File[]) {
+    demoFile.value = null
     files.value = next
     selectionRevision.value++
     resp.value = null
@@ -78,6 +83,13 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
     loading.value = false
     currentBattleId.value = null
     dataViewMode.value = 'SUMMARY'
+  }
+
+  /** Only the verified loader can supply this identity. Ordinary selection always revokes it. */
+  function replaceDemoSelection(file: File) {
+    if (!isOfficialDemo(file)) throw new Error('Unverified official replay')
+    replaceSelection([file])
+    demoFile.value = toRaw(file)
   }
 
   function commitReadyResult(result: ReplayResult) {
@@ -126,13 +138,13 @@ export function useReplaySession(initialCapability: ReplayCapability = 'data') {
   }, { immediate: true })
 
   return {
-    files, selectionRevision, loading, error, resp, activeTab, pendingRemove,
+    files, selectionRevision, isDemoSelection, loading, error, resp, activeTab, pendingRemove,
     analysis, analysisActive,
     playerCols, aggCols, aggStats,
     replayBatch, parsedBattles, singleReplay, currentBattleId, dataViewMode,
     activeWorkspaceTab, currentBattle, currentBattleIndex,
     currentTargetBattleId, currentSourceId, currentTargetFile,
-    replaceSelection, commitReadyResult,
+    replaceSelection, replaceDemoSelection, commitReadyResult,
     setWorkspaceTab, selectBattle, setDataViewMode,
   }
 }

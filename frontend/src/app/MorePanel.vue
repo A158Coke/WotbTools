@@ -5,7 +5,7 @@
 // Teleport 到 body：侧边栏是 fixed + z-index 的层叠上下文，面板留在里面会被页面里更高的层
 // （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ExternalLink, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, ExternalLink, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -21,7 +21,7 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide } = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -82,7 +82,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   >
     <section class="more-panel-section" aria-labelledby="more-panel-display">
       <h2 id="more-panel-display" class="more-panel-title">{{ $t('more.sections.display') }}</h2>
-      <div class="more-panel-setting">
+      <div class="more-panel-setting" data-tour="settings-theme">
         <span class="more-panel-label">{{ $t('uiProfile.title') }}</span>
         <SegmentedControl
           :model-value="uiProfilePreference"
@@ -92,7 +92,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
           @update:model-value="setUiProfile"
         />
       </div>
-      <div class="more-panel-setting">
+      <div class="more-panel-setting" data-tour="settings-language">
         <span class="more-panel-label">{{ $t('more.language') }}</span>
         <SegmentedControl
           :model-value="$i18n.locale"
@@ -107,6 +107,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
     <section class="more-panel-section" aria-labelledby="more-panel-about">
       <h2 id="more-panel-about" class="more-panel-title">{{ $t('more.sections.about') }}</h2>
       <ul class="more-panel-links">
+        <li v-if="openGuide">
+          <button type="button" class="more-panel-link" data-testid="more-link-guide" @click="close(); openGuide()"><BookOpen :size="18" aria-hidden="true" /><span>{{ $t('onboarding.directory') }}</span></button>
+        </li>
         <li v-for="link in aboutLinks" :key="link.view">
           <button type="button" class="more-panel-link" :data-testid="`more-link-${link.view}`" @click="go(link.view)">
             <component :is="link.icon" :size="18" aria-hidden="true" />

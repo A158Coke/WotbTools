@@ -11,7 +11,9 @@
  * 焦点在打开时进入面板、Esc / 关闭后回到触发它的那一行。
  * 窄档详情支持左右滑动 / 方向键在**当前筛选结果内**切换上一发 / 下一发（首尾不循环）。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
@@ -45,6 +47,12 @@ const props = defineProps({
   navigate: { type: Function, default: null },
 })
 const { t } = useI18n()
+const onboarding = inject(ONBOARDING_KEY, null)
+onMounted(() => onboarding?.registerSurface('shots', {
+  ready: () => props.active && selectedShot.value != null,
+  failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
+}))
+onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
 const { requireFeature } = useFeatureGate()
 
 const shots = ref([])
@@ -431,6 +439,9 @@ const summaryStats = computed(() => {
 
 const selectedShot = computed(() =>
   selectedIndex.value == null ? null : shots.value.find((s) => s.index === selectedIndex.value) || null)
+const guideShot = computed(() => (isOfficialDemo(props.file)
+  ? filteredShots.value.find(shot => shot.shot_id === OFFICIAL_DEMO.cue.shotId)
+  : null) || filteredShots.value.find(rowHas3d))
 
 /** 弹道两点距离（米）：只做展示，不参与任何判定 */
 function trajectoryLength(s) {
@@ -651,6 +662,7 @@ onBeforeUnmount(() => {
               :class="{ 'is-selected': selectedIndex === s.index }"
               :aria-current="selectedIndex === s.index ? 'true' : undefined"
               :data-testid="`shot-row-${s.index}`"
+              :data-tour="s === guideShot ? 'shots-first-shot' : undefined"
               @click="selectShot(s.index, $event)"
             >
               <span class="shot-time"><span class="shot-ordinal">{{ position + 1 }}</span><span class="shot-clock">{{ formatPlaybackClock(s.time_s) }}</span></span>
@@ -721,6 +733,7 @@ onBeforeUnmount(() => {
             v-if="rowHas3d(selectedShot)"
             variant="primary"
             data-testid="shot-open-viewer"
+            data-tour="shot-open-viewer"
             @click="openInViewer(selectedShot)"
           >{{ $t('agentShots.open_viewer') }}</AppButton>
           <dl class="shot-detail-grid">

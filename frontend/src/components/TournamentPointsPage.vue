@@ -115,16 +115,16 @@ onScopeDispose(() => { generation++; controller.abort() })
 <template>
   <div class="tournament-page tournament-stack">
     <PageHeader :title="$t('tournament.title')"><template #actions>
-      <MenuButton :label="$t(exporting ? 'tournament.exporting' : 'tournament.export')" :items="exportItems" :disabled="exportDisabled" data-testid="tournament-export" @select="exportBoard" />
+      <MenuButton :label="$t(exporting ? 'tournament.exporting' : 'tournament.export')" :items="exportItems" :disabled="exportDisabled" data-testid="tournament-export" data-tour="tournament-export" @select="exportBoard" />
       <AppButton :disabled="loading || !network.available" @click="eventId ? loadBoard() : loadEvents(true)">{{ $t('tournament.refresh') }}</AppButton>
     </template></PageHeader>
     <Banner v-if="!network.available">{{ $t(network.messageKey || 'featureOffline.tournamentPoints') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="exportMessage" role="status">{{ exportMessage }}</Banner>
-    <TournamentEventSelect v-model="eventId" :events="events" :disabled="loading" />
+    <TournamentEventSelect data-tour="tournament-event" v-model="eventId" :events="events" :disabled="loading" />
     <p v-if="loading" role="status">{{ $t('tournament.loading') }}</p>
     <p v-else-if="!events.length" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
     <p v-else-if="!eventId" class="tournament-muted">{{ $t(noInitialStandings ? 'tournament.empty' : 'tournament.selectEvent') }}</p>
-    <TournamentPointsTable v-if="standings" :standings="standings" />
+    <TournamentPointsTable data-tour="tournament-standings" v-if="standings" :standings="standings" />
   </div>
 </template>

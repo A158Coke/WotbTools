@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { ChevronRight, ExternalLink, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, ChevronRight, ExternalLink, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
@@ -10,7 +10,7 @@ import SegmentedControl from './SegmentedControl.vue'
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 坦克百科是主导航栏目，不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks, openGuide } = useMoreMenu()
 
 const groups = computed(() => [
   { id: 'tools', titleKey: 'more.sections.tools', links: replayToolLinks },
@@ -22,11 +22,14 @@ const groups = computed(() => [
 <template>
   <div class="more-page layout-content" data-testid="more-page">
     <PageHeader :title="$t('more.title')" />
+    <section v-if="openGuide" class="more-section">
+      <div class="more-card"><button type="button" class="more-row" data-testid="more-link-guide" @click="openGuide"><BookOpen :size="20" aria-hidden="true" /><span class="more-row-label">{{ $t('onboarding.directory') }}</span><ChevronRight :size="20" aria-hidden="true" /></button></div>
+    </section>
 
     <section class="more-section" aria-labelledby="more-display">
       <h2 id="more-display" class="more-section-title">{{ $t('more.sections.display') }}</h2>
       <div class="more-card">
-        <div class="more-setting">
+        <div class="more-setting" data-tour="settings-theme">
           <span class="more-setting-label">{{ $t('uiProfile.title') }}</span>
           <SegmentedControl
             scrollable
@@ -37,7 +40,7 @@ const groups = computed(() => [
             @update:model-value="setUiProfile"
           />
         </div>
-        <div class="more-setting">
+        <div class="more-setting" data-tour="settings-language">
           <span class="more-setting-label">{{ $t('more.language') }}</span>
           <SegmentedControl
             scrollable

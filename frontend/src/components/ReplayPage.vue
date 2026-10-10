@@ -576,7 +576,7 @@ function openRatingDocs() {
         </Banner>
         </div>
 
-        <div class="data-toolbar" data-testid="data-toolbar">
+        <div class="data-toolbar" data-testid="data-toolbar" data-tour="data-toolbar">
           <SegmentedControl
             v-if="hasSummaryView && hasSingleView"
             :model-value="isSummaryView ? 'SUMMARY' : 'SINGLE'"
@@ -605,11 +605,11 @@ function openRatingDocs() {
             <AppButton v-if="leagueMode" variant="ghost" size="sm" data-testid="league-docs-btn" @click="openRatingDocs">
               <BookOpen :size="16" aria-hidden="true" />{{ $t('workspace.rating_docs') }}
             </AppButton>
-            <AppButton variant="ghost" size="sm" data-testid="column-picker-btn" :aria-expanded="showColPicker" @click="toggleColPicker">
+            <AppButton variant="ghost" size="sm" data-testid="column-picker-btn" data-tour="data-columns" :aria-expanded="showColPicker" @click="toggleColPicker">
               <Columns3 :size="16" aria-hidden="true" />{{ $t('workspace.columns_count', columnCounts) }}
             </AppButton>
             <Teleport to="body">
-              <ColumnPicker v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
+              <ColumnPicker data-tour="data-column-options" v-if="showColPicker" :scope="pickerScope" :order="currentOrder"
                 :visible="pickerScope === 'agg' ? aggVisibleKeys : pickerScope === 'cw' ? cwVisibleKeys : visibleKeys"
                 :fixed-keys="(pickerScope === 'cw' || (pickerScope === 'player' && leagueMode)) ? ['nickname', 'league_rating'] : []"
                 @close="showColPicker = false" @toggle="toggleCol"
@@ -620,7 +620,7 @@ function openRatingDocs() {
               :icon="Download"
               :items="exportItems"
               :disabled="loading || exportingPng"
-              data-testid="export-menu"
+              data-testid="export-menu" data-tour="data-export"
               @select="onExport"
             />
           </div>

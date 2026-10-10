@@ -121,7 +121,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" @pointerdown.stop @click.stop>
+  <section v-if="open" ref="panel" class="pb-display-surface" :class="{ 'pb-display-portrait': portrait }" :style="portrait ? undefined : placement" role="dialog" tabindex="-1" :aria-label="$t('recon.map.playback.panel_display')" data-testid="display-panel" data-tour="playback-display-options" @pointerdown.stop @click.stop>
     <slot />
   </section>
 </template>

@@ -367,7 +367,7 @@ defineExpose({ __classify: classify })
       <Banner v-if="!canUseAiReview" tone="warning" data-testid="ai-permission-required">
         <p>{{ $t('recon.permission_missing') }}</p>
       </Banner>
-      <div v-else class="ai-action-row">
+      <div v-else class="ai-action-row" data-tour="ai-review-start">
         <ReplayAnalysisAction :analyzing="analyzing" :disabled="!projectionReady" @analyze="runAnalyze" @cancel="cancelAnalyze" />
       </div>
 
@@ -418,7 +418,7 @@ defineExpose({ __classify: classify })
         {{ partialAnalysis }}
       </div>
 
-      <AnalysisResultPanel v-if="analysisResult" :result="analysisResult" />
+      <AnalysisResultPanel v-if="analysisResult" data-tour="ai-review-report" :result="analysisResult" />
       <Banner v-if="limitedTimelineNote" tone="warning" data-test="ai-capability-limited">
         <p>{{ limitedTimelineNote }}</p>
       </Banner>

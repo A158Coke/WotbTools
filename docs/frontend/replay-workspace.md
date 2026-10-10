@@ -4,13 +4,15 @@
 
 ## 当前实现
 
+- 工作台的官方示例与帮助复用同一 Replay session。示例经固定 manifest 与 SHA-256 验证后，匿名可用 3D/射击；普通文件选择立即撤销示例资格，AI 与服务端写操作仍使用真实登录。真实页面教学与维护规则见 [onboarding.md](../features/onboarding.md)。
+
 - 回放优先的页面组织：能力切换放在页头操作区；单场能力共用紧凑选局行。数据 / 2D / 3D 支持一次选择多个文件，先分析再选局。完成分析后，2D / 3D / 射击 / AI 可收起文件区，文件选择器仍挂载并保持会话；解析中或出错时自动显示，数据页始终保留文件区。
 - 2D 默认无标注且关闭编辑，播放区提供直接的“标记模式”入口。进入时暂停，退出不自动继续；已完成标注常驻，可手动隐藏，切局或刷新清空。LT / MT / HT / TD、多点路线及编辑沿用现有 annotation owner，不与 3D 同步。具体行为见 [battle-playback.md](../features/battle-playback.md)。
 - 2D / 3D 共用时间轴在上、主要播放按钮在下的传输控件。3D 开始前仍直接选择画质，额外性能选项默认收在原生折叠区；相机与模型查看仍在单独的工具行。此轮不新增 3D 标记系统。
 
 - `frontend/src/components/ReplayWorkspace.vue` 是 `data`、`playback`、`3d`、`shots`、`ai` **五种能力**的统一工作台：选择一次文件，能力之间切换不重新选文件、不重建 session。
 - Workspace 页面本身是 orchestration layer：`PageHeader` 负责页面标题，`ReplayCapabilityTabs.vue` 负责能力切换（数据 · 2D 回放 · 3D 回放 · 射击分析 · AI 复盘，五种能力对所有用户可见，`wotbtools-admin` 不改变能力集合；五个能力都在本工作台内，没有"导航去另一个页面"的能力），`FileDrop.vue` 是全站唯一的上传面（空 / 已选择 / 解析完成三种状态，解析完成后折叠为一行，清空需确认，是唯一的清空入口），`BattlePicker.vue`（可搜索的场次选择器）在四个单场能力上方选择当前场次。它们只接收 Workspace 派生状态并发出显式命令，不复制 session owner。
-- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
+- 五个能力面板都由工作台按需异步加载、首次激活才挂载（`composables/useMountedWhenActive.js`）：3D / shots 还必须已登录或使用可信官方示例，3D / AI 还要求 capability 可用（连通性）；满足条件后切走只 `v-show` 隐藏：`BattlePlaybackPanel.vue`（2D）、`Replay3DPane.vue`（3D）、`ReplayShotsPane.vue`（射击）、`AiReviewWorkspacePane.vue`（AI）。四个面板共用 `file` / `active` / `blockedReason` props 契约；`active=false` 时停渲染不销毁会话（3D 场景 `setPaused` 停 rAF），切回保留 timeline / 相机且不重新解析。`BattlePlaybackPanel.vue` 直接接收目标文件，本机 `parseLocalPlayback` 得到 2D 数据与地图概览；多文件未选场次时四个面板显示同一份 `workspace.single_replay_required`。
 - 3D 面板按「待开播 → 开始」两步进入播放：文件由工作台派生后就位，但解析与资产加载都要等用户在面板里按「开始」（卡片上先选画质档——内核 `startPlayback()` 惰性创建渲染器、首帧按当前档位定型，所以档位不能事后在加载中再改）。换场次 / 清空先 `reset()` 撤下上一场：`reset` 与 `destroy` 同等作废在途加载（`sessionEpoch` / `loadGeneration`），被撤下的解析 / 资产续体不得再回写 store，也不得把上一场继续画在待开播面板后面。
 - **画质四档**（2026-10-07 重分档，SSOT 是 `scene/playbackScene.js` 的 `QUALITY_PRESETS`，UI 文案走 `agentReplay.q_*` 三语键）：`low 流畅`（盒代理 + 小地图底图，弱机/省电）→ `mid 均衡`（真车模 GLB + **俯视烘焙底图**（上游 tools/bake_ground_roofs.py 把屋顶/树冠/草丛烘进地形图）+ MSAA/DPR 1.25，**不拉 11–67MB 场景 GLB**——移动/Tauri 默认档）→ `high 高清`（场景 GLB + 分层地表 + DPR 1.5，桌面默认）→ `ultra 极致`（DPR 2 + 地形 512，4K/Retina 显式选择）。档位阶梯 = 相邻档各跨一个真实成本断崖（车模 / 场景下载 / 填充率）；URL `?q=` 覆盖，localStorage `pb_quality` 键名四档全兼容（旧三档值语义随重分档轻微漂移，随发版说明）。 同一节另有 `?dynres=1` 动态分辨率（显式 A/B 开关）：持续超帧预算按 0.25 步长降 pixel ratio、有余量升回档位上限（迟滞 + 冷却防振荡，纯函数状态机 `scene/dynRes.js` 单测锁定）；`?perf` 报告带 pixel ratio 分位数供对比。
 - 解析任务的**生命周期归当前会话所有**（P0）：`Replay3DPane` 持有 per-load 的 `AbortController`，清空 / 换场次 / 销毁经 `sceneApi.loadData({ signal })` 透传到 `scene/replaySource.js` 的解析边界——被撤下的解析立即以 `AbortError` 结束并让出 Worker 队列（仍在 Worker 上时整体 terminate），不再无限排队。`replaySource` 的每个解析请求带看门狗（120s 不回包也不报错 → terminate + 在途全部失败，下次请求重建 Worker）；WASM 装载链（fingerprint 拉取 / 产物 JS dynamic import / wasm 初始化）有 20s 看门狗——浏览器 fetch / import 没有默认超时，网络停滞曾让会话级缓存里的悬 Promise 把 3D Worker 与 Data 批量解析（同一装载链）永久钉在「解析中」。装载超时后 dynamic import 换带序号的 specifier 强制全新装载（浏览器模块表按 URL 去重，同 URL 重试只会拿回同一个悬着的模块记录）。
@@ -50,7 +52,7 @@
 - **手机横屏名册可访问性**：触屏侧栏保留 64px 行高；高度不足时列表内部滚动，昵称 / 车型 / HP 不被压扁裁切，末行可滚动到达。
 - **名册事实与地图可见性独立**：HP / 装填从完整 V2 车队投影，未被发现或没有当前位置的敌车仍保留已知血量；缺失血量继续显示 `—`。
 - **名册行**：共享 `PlaybackRoster`，信息为玩家 / 车型 / 当前 HP / 百分比 / 阵亡；**HP 血条内呈现当前数值或百分比**。百分比在没有可信上限时显示 `—` 而不是 `0%`。信息不减，密度由调用方按形态给（2D 只在手机形态用 `compact`，3D 在非竖屏一律 `compact`）。
-- **选中 ≠ 详情可见 ≠ 跟随**：选车 → `selected = 车` 且 `detailsOpen = true`；详情 × 只把 `detailsOpen` 置 false，选中（名册高亮 / 标记）、跟随、相机、时间、倍速、名册都不动；再点同一台或另一台 → 同一个详情窗重新打开 / 换内容，永远只有一个窗。名册行与场景点击都只选中，从不自动 Follow。
+- **选中 ≠ 详情可见 ≠ 跟随**：选车 → `selected = 车` 且 `detailsOpen = true`；详情 × 只把 `detailsOpen` 置 false，选中（名册高亮 / 标记）、跟随、相机、时间、倍速、名册都不动；再点同一台或另一台 → 同一个详情窗重新打开 / 换内容，永远只有一个窗。2D 的名册行与场景点击打开详情；3D 名册行直接跟随，场景点击打开详情。
 - **详情**：同一个 `VehicleDetailsPanel`。宽档 / 横屏是**整个战场 workspace** 顶层的可拖动浮窗（2D 宿主 `.pb-main`，3D 宿主 `.pb-root`；浮窗是宿主的直接子元素，定位、夹紧与拖动同一坐标系），可以拖到 Team 1 / Stage / Team 2 任意一栏之上；边界 = workspace 内容盒（左右 / 上内边距不算，那里是 workspace 的留白与顶部 HUD）减去受保护的传输控件。位置归 `usePlaybackDetailsPlacement.js` 独占，不持久化；同一次打开内换车不重置用户拖过的位置，关闭后重开是新的一次。未拖过时的初始落位：点左车道 → 右侧，点右车道 → 左侧，点场景里的车 → 与它相对的一侧。手机竖屏是 `presentation="inline"`，排在传输控件之后、名册之前。名册与详情互不影响。
 - **全屏**：不引入第二套布局模型，只改变容器尺寸；`document.fullscreenElement` 是权威状态。3D 进出全屏不重建场景、不丢选中 / 跟随 / 时间。
 - **Display**：`PlaybackDisplaySurface.vue` 是 gear 锚定的配置面（不可拖动），与可拖动的 Details 语义分离。宽档 / 横屏是绝对定位浮层，优先开在 gear 上方、右侧空间不足向左平移、上方高度不足改用下方，并夹在 workspace 内；竖屏是 100% 宽的流内面（有界内部滚动），顺序由宿主自己给——2D 的 `.pb-main` 竖屏下就是文档流，3D 的 `.portrait-flow` 有显式 order 阶梯。
@@ -60,10 +62,10 @@
 
 - Playback 2D/3D 共用 `usePlaybackPhoneForm()` / `PLAYBACK_MOBILE_QUERY`：844×390 coarse 手机横屏仍用 compact transport 与二级面板；3D CSS 由根 `.phone-form` 驱动，不单凭宽度切回 tablet。真正平板保留 tablet。共享 `usePlaybackFullscreen` 只在当前 target 拥有 `document.fullscreenElement` 时报告全屏；另一个 keep-alive 面板不冒认或退出别人的全屏。landscape orientation 尝试只属于 phone 的自身全屏。
 - 3D 名册没有「临时名册面」：竖屏走纵向流，其余一律两侧常驻车道（见上表）。`uiPrefs.showRoster` 是唯一的呈现偏好，隐藏不能清空名册、selection、follow 或播放时刻。
-- `Replay3DPane` 独占 selected vehicle；场景 raycast 与 roster 行只报告/执行选择并打开共享 `VehicleDetailsPanel.vue`，不自动 Follow。相机模式与 follow target 独立，Follow 必须显式请求，Free/Top 不清 selection。2D 详情传完整 evidence，3D 传身份/权威 HP/阵亡/时刻子集，不伪造缺失伤害统计；详情开关不重建场景或重新解析。（`selected` 与 `followed` 是两个独立状态：行点击 = 选中 + 详情，跟随是相机动作，两者可以同时成立。）
+- `Replay3DPane` 独占 selected vehicle；场景 raycast 执行选择并打开共享 `VehicleDetailsPanel.vue`；3D roster 行执行明确的跟随命令。相机模式与 follow target 独立，Follow 必须显式请求，Free/Top 不清 selection。2D 详情传完整 evidence，3D 传身份/权威 HP/阵亡/时刻子集，不伪造缺失伤害统计；详情开关不重建场景或重新解析。（`selected` 与 `followed` 是独立状态；3D 行点击选择并跟随，场景点击打开详情。）
 
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
-- 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，由能力层显示登录门禁。
+- 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，个人回放由能力层显示登录门禁，已验证的官方示例可匿名进入。
 - AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录）：联网能力先经 `useFeatureGate` 判定，离线/unknown/degraded/service-unavailable 先给 connectivity 提示，绝不启动登录；在线且未登录沿用 native/browser auth。可用深链挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束；前端已无维护状态卡（提交 `83884790`，`ai_maintenance` 三语 key 无消费者）。切换 capability 不重新分析数据模式的结果。
 - 射击分析默认选择录像者（「我的射击」），汇总与列表仅统计当前射击者；「全部玩家」及其他玩家是可选筛选。录像者依次使用 shot facet 的 `author_eid`、playback meta、名册 `is_author`、逐发 `is_author`，不按昵称猜测。自己没有记录时保留诚实空态，并提供查看全部玩家入口。
 - 射击条目与详情突出双方车型及类型符号，昵称作为次要身份信息。车型名优先使用 playback roster，缺失时从已有本地 tankopedia 补全；名字解析不调用远程资产服务。`utils/shotPresentation.js` 是车型呈现与记录结果徽标的共享 owner，不重算伤害或击穿。
@@ -79,7 +81,7 @@
 
 ## 匿名访问
 
-服务器没有 parser：解析、汇总、导出与 2D 回放全部在本机进行，工作台挂载即可用、不等登录、没有登录门禁，也不发出任何回放相关的后端请求。3D 回放、射击分析 / 复现、AI 复盘以及名人堂等写操作需要登录。
+服务器没有 parser：解析、汇总、导出与 2D 回放全部在本机进行，工作台挂载即可用、不等登录、没有登录门禁，也不发出任何回放相关的后端请求。个人回放的 3D、射击分析 / 复现以及 AI 复盘、名人堂等写操作需要登录；官方示例只对 3D/射击放行。
 
 - Android pending 字节通过固定同源 HTTPS Native resource 读取；header 校验 pending identity，响应不缓存。fetch/blob 失败复用 Replay 错误区与重试，不分析、不 ACK。
 - Android pending replay 在工作台挂载后消费；ACK 边界是「本机分析已完成」（`analyze()` 返回 `{ completed: true }`，无论有没有有效场次）；回放引擎装载失败返回 `{ completed: false, reason: 'ENGINE_UNAVAILABLE' }`，Native pending 原样保留可重试（见 [`docs/android/replay-intent.md`](../android/replay-intent.md)）。
