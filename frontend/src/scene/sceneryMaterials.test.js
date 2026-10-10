@@ -1134,6 +1134,9 @@ describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () 
   it('履带形变下发按解算链判定（只比最大幅度会漏"幅度相同、分布不同"）', () => {
     expect(src).toMatch(/chainChanged\(tg\.appliedChainZ, tg\.chainZ\)/)
     expect(src).toMatch(/tg\.appliedChainZ\.set\(tg\.chainZ\)/)
-    expect(src).not.toMatch(/appliedAbs/)
+    // 法线闸门必须与**上次重算法线时的链**逐点比较（review 复审 P2：dmax/dmean 漏"分布变化"）
+    expect(src).toMatch(/chainDrift\(tg\.normalChainZ, tg\.chainZ\)/)
+    expect(src).toMatch(/tg\.normalChainZ\.set\(tg\.chainZ\)/)
+    expect(src).not.toMatch(/appliedAbs|normalMean|normalAbs/)
   })
 })

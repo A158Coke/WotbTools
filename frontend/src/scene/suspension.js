@@ -244,6 +244,19 @@ export function vertexChainParams(pos, rest) {
  * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
  * @returns {number} 本帧最大 |位移|（m）
  */
+/** 两条解算链的**逐点最大偏差**（米）。用途：履带**法线**重算闸门——与"上次重算法线时的链"
+ *  比较。累计统计量（最大幅度 / 均值）表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时
+ *  两者都不变、而法线必须重算（2026-10-10 review 复审 P2）。空 / 长度不符 ⇒ Infinity（fail-safe）。 */
+export function chainDrift(prev, cur) {
+  if (!prev || !cur || prev.length !== cur.length) return Infinity;
+  let m = 0;
+  for (let i = 0; i < cur.length; i++) {
+    const d = Math.abs(cur[i] - prev[i]);
+    if (d > m) m = d;
+  }
+  return m;
+}
+
 /** 两条解算链是否等价（逐点严格比较）。顶点输出是链的纯函数（见 `applyChainToVertices`）：
  *  链相同 ⇒ 顶点逐点相同、无需重传 GPU。形变"下发判定"用它而不是最大幅度——
  *  幅度相同但分布不同（如把 0.1 的形变从一处挪到另一处）时 max 不变、顶点已变

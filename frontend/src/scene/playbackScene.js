@@ -49,7 +49,7 @@ import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, sideTravel,
+  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
@@ -2681,7 +2681,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           parts.push({ mesh, posAttr, basePos, params, axis3: [localAxis.x, localAxis.y, localAxis.z],
-                       uvAttr, uvBase, appliedUv: 0, normalAbs: 0, normalMean: 0 });
+                       uvAttr, uvBase, appliedUv: 0 });
         }
         if (!parts.length) return null;
         // 花纹滚动速率：**网格实测**沿带 dV/ds（客户端形式 textureScale/chunkLength 实测偏快
@@ -2698,7 +2698,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           node, parts, chain: chain2, restZ, attach, wheelCfg, lateral,
           groundDrop: new Float64Array(chain2.length),
           chainZ: new Float64Array(chain2.length),
-          appliedChainZ: null,   // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
+          appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
+          normalChainZ: null,     // 上次**重算法线**时的链（法线闸门逐点比较用）
           dvPerM, uv: 0,
         });
       }
@@ -2782,25 +2783,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 逐链路点（~40）比较比逐顶点指纹便宜且**恰好充分**：链相同 ⇒ 顶点逐点相同。
         const chainMoved = snap || !tg.appliedChainZ || chainChanged(tg.appliedChainZ, tg.chainZ);
         if (chainMoved) {
-          let dmax = 0, dsum = 0;
-          for (let i = 0; i < n; i++) {
-            const ad = Math.abs(tg.chainZ[i] - tg.restZ[i]);
-            if (ad > dmax) dmax = ad;
-            dsum += ad;
-          }
-          const dmean = n ? dsum / n : 0;
+          // 法线闸门：与**上次重算法线时的链**逐点比较取最大偏差（2026-10-10 review 复审 P2——
+          // dmax/dmean 这类累计统计量表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时两者
+          // 都不变，法线却必须重算）。2 cm 阈值仍是成本刹车：行驶中偏差累积到 2 cm 才重算一次，
+          // 而非逐帧重算（逐帧 = 每车每帧一次全顶点遍历）。
+          const dNorm = (snap || !tg.normalChainZ) ? Infinity : chainDrift(tg.normalChainZ, tg.chainZ);
+          const redoNormals = dNorm > 0.02;
           for (const gp of tg.parts) {
             applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
                                  tg.chainZ, tg.restZ, gp.axis3);
             gp.posAttr.needsUpdate = true;
-            // 法线只在形变**幅度或分布**明显变化时重算（逐帧重算 = 每车每帧一次全顶点遍历）
-            if (snap || Math.abs(dmax - gp.normalAbs) > 0.02 || Math.abs(dmean - gp.normalMean) > 0.02) {
-              gp.normalAbs = dmax;
-              gp.normalMean = dmean;
+            if (redoNormals) {
               gp.mesh.geometry.computeVertexNormals();
               const na = gp.mesh.geometry.getAttribute('normal');
               if (na) na.needsUpdate = true;
             }
+          }
+          if (redoNormals) {
+            if (!tg.normalChainZ) tg.normalChainZ = new Float64Array(n);
+            tg.normalChainZ.set(tg.chainZ);
           }
           if (!tg.appliedChainZ) tg.appliedChainZ = new Float64Array(n);
           tg.appliedChainZ.set(tg.chainZ);
