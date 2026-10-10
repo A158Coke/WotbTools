@@ -23,7 +23,6 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
-import { applyTerrainCover } from './terrainCover.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
@@ -212,9 +211,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
-  // 渲染用高度场：默认与 heightField 同一引用；有"地形让位掩码"时是它的副本（见下）。
-  // **查询/放置一律用 heightField（真值）**，只有网格构建用 renderField。
-  let renderField = null;
+  // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
+  // 概念）已随数据面造高度一起撤销（2026-10-11）。
+  // 贴地结构脚印（上游 tools/bake_ground_structs.py → 包内 structs.u8.bin，1 = 贴地结构 texel）：
+  // 地形网格构建（buildAdaptiveTerrain `structures`）的第五判据输入——与脚印相交的补片强制细分
+  // 到 1 texel，只影响 tessellation、不改任何高度。缺脚印/旧包 ⇒ null（fail-open，纯三判据）。
+  let structFootprint = null;
   let waterTexDispose = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
   let shoreLevels = null;       // 岸线标高表（水面/水下薄板；地形网格第四条判据用，见 terrainMesh.js）
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
@@ -807,7 +809,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     destruct = null;
     destructPickList = null;
     meshOwner = null;
-    mapTexture = null; mapMetaInfo = null; heightField = null; renderField = null; heightMeta = null;
+    mapTexture = null; mapMetaInfo = null; heightField = null; structFootprint = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
     shoreLevels = null;
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
@@ -949,30 +951,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const zmin = meta.zmin || 0;
           const k = ((meta.zmax || 100) - zmin) / 65535;
           for (let i = 0; i < u16.length; i++) heightField[i] = u16[i] * k + zmin;
-          renderField = heightField;   // 无掩码时同一引用（零拷贝）
         }
       }
-      // 地形让位掩码（上游 `tools/bake_terrain_cover.py` → 包内 `cover.u16.bin`）：
-      // 贴地结构（吸附齐平的铺装/压顶/铁轨基板等）覆盖处，把**渲染用**高度场夹到结构面之下
-      // （压低量烘焙时已限 ≤0.4 m 并在 20 texel 内线性收尾）。查询/放置仍走 heightField ⇒
-      // 拾取、贴地、贴花位置不受影响。缺掩码/旧包 ⇒ fail-open 保持原样。
-      if (heightField && heightMeta && heightMeta.cover) {
+      // 贴地结构脚印（上游 `tools/bake_ground_structs.py` → 包内 `structs.u8.bin`）：
+      // 地形网格第五判据的输入——脚印带内强制细分到 1 texel（见 terrainMesh.js）。
+      // **不改变任何高度**：heightField 一份到底，渲染/查询/放置同源（客户端同构）。
+      // 缺脚印/旧包 ⇒ fail-open 保持原样（纯客户端三判据 LOD）。
+      if (heightField && heightMeta && heightMeta.structs) {
         try {
-          const covUrl = mapStaticUrl('cover', undefined, resolvedKey);
-          const cr = covUrl ? await assetProvider.fetch(covUrl) : null;
+          const stUrl = mapStaticUrl('structs', undefined, resolvedKey);
+          const sr = stUrl ? await assetProvider.fetch(stUrl) : null;
           if (stale()) return;
-          if (cr && cr.ok) {
-            const cb = await cr.arrayBuffer();
+          if (sr && sr.ok) {
+            const sb = await sr.arrayBuffer();
             const n2 = heightMeta.size || 512;
-            if (cb.byteLength === n2 * n2 * 2) {
-              const cu = new Uint16Array(cb);
-              const zmin = heightMeta.zmin || 0;
-              const k = ((heightMeta.zmax || 100) - zmin) / 65535;
-              const { field: rf, changed } = applyTerrainCover(renderField, cu, k, zmin);
-              if (changed) renderField = rf;               // 真值场（heightField）未被改动
+            if (sb.byteLength === n2 * n2) {
+              structFootprint = new Uint8Array(sb);
             }
           }
-        } catch (e) { console.warn('地形让位掩码加载失败（按无掩码继续）:', e); }
+        } catch (e) { console.warn('贴地结构脚印加载失败（按无脚印继续）:', e); }
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
     if (stale()) return;
@@ -1255,14 +1252,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }
         if (DEBUG) window.__degradedSkipped = degradedMeshes.length;
         // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
-        // **渲染用**高度场（含让位掩码，与深度缓冲里的地形一致）做成可线性滤波的浮点纹理。
+        // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
         // 跨度取 terrainSpanOf() —— 与地形网格同源同式。
         let waterCoast = null;
-        if (renderField && heightMeta) {
+        if (heightField && heightMeta) {
           try {
             const hn = heightMeta.size || 512;
-            if (renderField.length === hn * hn) {
-              const htex = new THREE.DataTexture(renderField, hn, hn, THREE.RedFormat, THREE.FloatType);
+            if (heightField.length === hn * hn) {
+              const htex = new THREE.DataTexture(heightField, hn, hn, THREE.RedFormat, THREE.FloatType);
               htex.minFilter = THREE.LinearFilter;
               htex.magFilter = THREE.LinearFilter;
               htex.wrapS = THREE.ClampToEdgeWrapping;
@@ -1720,11 +1717,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
     const { positions, indices } = buildAdaptiveTerrain({
-      field: renderField || heightField, n, span,   // 渲染场（含让位掩码）；查询仍用 heightField
+      field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
-      shores: shoreLevels,   // 第四条判据：水陆交界细分到 1 texel（见 terrainMesh.js）
+      shores: shoreLevels,          // 第四条判据：水陆交界细分到 1 texel（见 terrainMesh.js）
+      structures: structFootprint,  // 第五条判据：贴地结构带细分到 1 texel（不改高度，见上）
     });   // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -4137,7 +4135,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (envTexture) { envTexture.dispose(); envTexture = null; }
     if (groundLayers) { for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.(); }
     groundLayers = null;
-    heightField = null; heightMeta = null; mapMetaInfo = null;
+    heightField = null; heightMeta = null; mapMetaInfo = null; structFootprint = null;
     // GLB 模板缓存（session-scoped）：unique shared resources dispose 一次并清缓存。
     // 未决 Promise 逐个挂 then(dispose)——迟到模板到达即销毁（未渲染未上传 GPU，
     // 不泄漏）；teardown 之后才创建的迟到 Promise 不在册，随旧缓存对象 GC
