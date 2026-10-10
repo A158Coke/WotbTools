@@ -1,23 +1,28 @@
 /**
- * 悬挂求解纯函数单测（客户端同构；公式出处 = 上游 docs/tank-suspension-client-re.md §六）。
+ * 悬挂求解纯函数单测（客户端同构；公式出处 = 上游 docs/tank-suspension-client-re.md §6.6–§6.7）。
  *
  * 锁的都是"少一行就退化成另一个东西"的口径：
  *  · 行程夹紧/限速/首帧吸附（客户端 `copysign(min(|Δ|, rate·dt), Δ)` + `[−b, +a]`）
  *  · 自转方向与半径换算（θ += −Δs/r，绕局部 X）
- *  · 花纹每米 V = textureScale / chunkLength
- *  · 链路解算三步顺序（逐轮偏移 → 垂弧 → 铺地）与**方向性**：
- *    铺地只抬不压（地面在下方时履带悬空）、垂弧向下、包轮只约束轮顶以上
- *  · 顶点 → 链路的映射与位移方向（网格带旋转时沿局部等效轴）
+ *  · 相位累加器（clamp01(phase ± dS·speed·100)，符号由 frontDriveWheel × 行驶方向）
+ *  · 段系数 kind 表（1=upperFactor 不翻转；2=frontFactor 翻转 ⇔ frontDrive；
+ *    3=backFactor；0/4=×1.0）与铺放权重五参数公式
+ *  · 段生成：相邻挂接点 span 绕环闭合 + 包围盒分带（0 底 / 1 顶 / 2·3 前后坡，首中即停）
+ *  · 2D 链解算：贴地跨帧收敛（1.2·dt 限速 + 5 mm 死区 + 挂接点排除）、顶段弦等距铺开、
+ *    垂弧向下（(−sign(ux)·uy, −|ux|)·w·(t−t²)）、包轮 max + wLay
+ *  · 顶点弧长重参数化：沿带滑动 + 法向厚度保持 + 逆旋转回局部系
  */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
 import {
   applyWheelSpin,
-  clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
+  clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep,
+  attachChainToWheels, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
-  SUSP_FALLBACK,
+  trackPhaseStep, bendFactor, layWeight, deriveTrackSegments, chainPointAtArc,
+  solveTrackChain2D, vertexArcParams, placeVerticesOnChain, wheelGroundMax,
+  SUSP_FALLBACK, CHASE_RATE,
 } from './suspension.js'
 
 describe('轮自转位姿：枢轴补偿（导出的轮节点在原点，几何烘进顶点）', () => {
@@ -167,13 +172,7 @@ describe('花纹滚动：每米 V = 网格实测 dV/ds（≠ 客户端形式常�
   })
 })
 
-describe('地形折算与侧位移', () => {
-  it('groundDropLocal：除以车体 up 的世界 y 分量；倾倒过大 ⇒ 0（停摆而非发散）', () => {
-    expect(groundDropLocal(10, 9.5, 1)).toBeCloseTo(0.5, 12)
-    expect(groundDropLocal(10, 9.5, 0.5)).toBeCloseTo(1.0, 12)
-    expect(groundDropLocal(10, 9.5, 0.1)).toBe(0)
-  })
-
+describe('侧位移投影', () => {
   it('sideTravel：带符号的纵向投影（倒车为负）', () => {
     expect(sideTravel(0, 0, 1, 0, 1, 0)).toBeCloseTo(1, 12)
     expect(sideTravel(0, 0, -1, 0, 1, 0)).toBeCloseTo(-1, 12)
@@ -182,75 +181,316 @@ describe('地形折算与侧位移', () => {
   })
 })
 
-// 合成链路：底段（z=0）—— 前端弧 —— 上段（z=1）—— 后端弧，闭环
-// 纵向 x 与高度 z 都不同，用于检验"底段/上段同纵向位置"的挂接消歧
+describe('相位累加器（§6.7：侧实体 [实体+0xac]，clamp01(phase ± dS·speed·100)）', () => {
+  it('非前驱（frontDrive=false）：前进加、倒车减；步长 = |dS|·speed·100', () => {
+    expect(trackPhaseStep(0, 0.002, 1.0, false)).toBeCloseTo(0.2, 12)    // 0.002·1·100
+    expect(trackPhaseStep(0.5, 0.002, 1.0, false)).toBeCloseTo(0.7, 12)
+    expect(trackPhaseStep(0.5, -0.002, 1.0, false)).toBeCloseTo(0.3, 12)
+  })
+
+  it('前驱（frontDrive=true）：符号反转', () => {
+    expect(trackPhaseStep(0.5, 0.002, 1.0, true)).toBeCloseTo(0.3, 12)
+    expect(trackPhaseStep(0.5, -0.002, 1.0, true)).toBeCloseTo(0.7, 12)
+  })
+
+  it('clamp [0,1]：越界截断；speed 缺失回落 1.0', () => {
+    expect(trackPhaseStep(0.99, 0.01, 1.0, false)).toBe(1)
+    expect(trackPhaseStep(0.01, -0.01, 1.0, false)).toBe(0)
+    expect(trackPhaseStep(0, 0.002, NaN, false)).toBeCloseTo(0.2, 12)
+  })
+})
+
+describe('段系数（0x82ee40 直译：f = (upperMin + phase·B_kind)·dist^lengthPower）', () => {
+  const bend = {
+    upper_min: 0.28, upper_factor: 0.59, front_factor: 0.4, back_factor: 0.25,
+    length_power: 0.5, front_drive_wheel: false,
+  }
+
+  it('kind1（顶带）：upperFactor，无相位翻转', () => {
+    const f = bendFactor(1, 0.5, bend, 4)
+    expect(f).toBeCloseTo((0.28 + 0.5 * 0.59) * Math.pow(4, 0.5), 9)
+  })
+
+  it('kind2/3（前后坡）：frontFactor/backFactor；相位翻转 ⇔ frontDriveWheel == (kind===2)', () => {
+    // frontDrive=false：kind2 不翻转、kind3 翻转（1−phase）
+    expect(bendFactor(2, 0.5, bend, 1)).toBeCloseTo(0.28 + 0.5 * 0.4, 9)
+    expect(bendFactor(3, 0.5, bend, 1)).toBeCloseTo(0.28 + 0.5 * 0.25, 9)
+    const fd = { ...bend, front_drive_wheel: true }
+    expect(bendFactor(2, 0.5, fd, 1)).toBeCloseTo(0.28 + 0.5 * 0.4, 9)   // 翻转：1−0.5 = 0.5（对称值）
+    expect(bendFactor(2, 0.7, fd, 1)).toBeCloseTo(0.28 + 0.3 * 0.4, 9)   // 1−0.7 = 0.3
+  })
+
+  it('kind0（底带）与 kind4（铺放节点）：系数 1.0；kind4 的翻转 ⇔ !frontDrive', () => {
+    expect(bendFactor(0, 0.5, bend, 1)).toBeCloseTo(0.28 + 0.5, 9)       // frontDrive=false ⇒ 翻转（对称）
+    expect(bendFactor(4, 0.7, bend, 1)).toBeCloseTo(0.28 + 0.3, 9)       // 1−0.7
+    expect(bendFactor(4, 0.7, { ...bend, front_drive_wheel: true }, 1)).toBeCloseTo(0.28 + 0.7, 9)
+  })
+
+  it('幂次作用于弦长；bend 缺失 ⇒ 0（fail-closed，不猜）', () => {
+    expect(bendFactor(1, 0, { upper_min: 0.5, length_power: 2 }, 3)).toBeCloseTo(0.5 * 9, 9)
+    expect(bendFactor(1, 0, null, 1)).toBe(0)
+    expect(bendFactor(0, 0.9, null, 1)).toBe(0)                          // kind0 也不能在无数据时垂
+  })
+})
+
+describe('铺放权重（0x838380 直译：bF·dist^lP / count^pP · maxDrop^prP · fBend^pr2P）', () => {
+  const laying = {
+    bending_factor: 0.744, length_power: 0.92, point_count_power: 0.918,
+    pressure_power: 0.26, primary_power: 0.67,
+  }
+
+  it('五参数逐项生效（IS-7 实测值手算对照）', () => {
+    const w = layWeight(2, 6, 0.1, 0.28, laying)
+    const expectW = 0.744 * Math.pow(2, 0.92) / Math.pow(6, 0.918)
+      * Math.pow(0.1, 0.26) * Math.pow(0.28, 0.67)
+    expect(w).toBeCloseTo(expectW, 12)
+    expect(w).toBeGreaterThan(0)
+  })
+
+  it('结构性方向：接触数越多越紧（除）、离地越深权重越大（乘）', () => {
+    const base = layWeight(2, 6, 0.1, 0.28, laying)
+    expect(layWeight(2, 12, 0.1, 0.28, laying)).toBeLessThan(base)       // count ↑ ⇒ w ↓
+    expect(layWeight(2, 6, 0.4, 0.28, laying)).toBeGreaterThan(base)     // maxDrop ↑ ⇒ w ↑
+  })
+
+  it('缺失 laying → 0（无加性项，fail-closed）', () => {
+    expect(layWeight(2, 6, 0.1, 0.28, null)).toBe(0)
+  })
+})
+
+// 合成环链：底段（z=0，0..6，车尾→车头）—— 前坡 —— 顶段（z=0.55，骑在轮顶，车头→车尾）—— 后坡
+// 轮在 x = −2/0/2（正下方）：底点距轮心 0.25（|0.25−0.3|=0.05 ≤ tol）、顶点距轮心 0.30（err=0）
 function makeLoop() {
   const pts = []
   for (let i = 0; i <= 6; i++) pts.push([-3 + i, 0])          // 底段 0..6
-  pts.push([3.4, 0.3], [3.6, 0.7])                            // 前端弧 7..8
-  for (let i = 0; i <= 6; i++) pts.push([3.6 - i * 0.9, 1.0]) // 上段 9..15
-  pts.push([-3.2, 0.6], [-3.1, 0.2])                          // 后端弧 16..17
+  pts.push([3.3, 0.2], [3.4, 0.4])                            // 前坡 7..8
+  for (let i = 0; i <= 6; i++) pts.push([3 - i, 0.55])        // 顶段 9..15（x=3..−3）
+  pts.push([-3.4, 0.4], [-3.3, 0.2])                          // 后坡 16..17
   return pts
 }
 
-describe('链路解算：三步顺序与方向性（逐轮偏移 → 垂弧 → 铺地）', () => {
+const LOOP_WHEELS = [
+  { longitudinal: -2, centerZ: 0.25, radius: 0.3 },
+  { longitudinal: 0, centerZ: 0.25, radius: 0.3 },
+  { longitudinal: 2, centerZ: 0.25, radius: 0.3 },
+]
+
+describe('段生成（0x708770 直译：相邻挂接点 span 绕环闭合 + 包围盒分带）', () => {
+  it('锚点 = 挂接点（底/顶都算）；span 绕环闭合（末锚→首锚）', () => {
+    const chain = makeLoop()
+    const attach = attachChainToWheels(chain, LOOP_WHEELS)
+    const anchors = []
+    for (let i = 0; i < chain.length; i++) if (attach[i] >= 0) anchors.push(i)
+    expect(anchors).toEqual([1, 3, 5, 10, 12, 14])                 // 底 3 + 顶 3
+    const segs = deriveTrackSegments(chain, attach)
+    expect(segs.length).toBe(anchors.length)                       // 绕环闭合
+    expect(segs[0].i0).toBe(anchors[0])
+    expect(segs[segs.length - 1].i1).toBe(anchors[0])              // 闭合回首锚
+  })
+
+  it('kind 分带：底带 0 / 顶带 1 / 纵向中线两侧 2·3（首中即停 0→1→2→3）', () => {
+    const chain = makeLoop()
+    const attach = new Int32Array(chain.length).fill(-1)
+    attach[1] = 0; attach[3] = 1; attach[5] = 2      // 底段三锚（x=−2/0/2）
+    attach[10] = 0; attach[12] = 1; attach[14] = 2   // 顶段三锚（x=2/0/−2，骑轮顶）
+    const segs = deriveTrackSegments(chain, attach)
+    // spans: (1,3) (3,5) (5,10) (10,12) (12,14) (14→1)
+    expect(segs.map((s) => s.kind)).toEqual([0, 0, 2, 1, 1, 3])
+  })
+
+  it('锚点不足 2 个 ⇒ 无段（fail-closed）', () => {
+    const chain = makeLoop()
+    const attach = new Int32Array(chain.length).fill(-1)
+    attach[3] = 1
+    expect(deriveTrackSegments(chain, attach)).toEqual([])
+  })
+})
+
+describe('chainPointAtArc：按弧长取点 + 朝下法向', () => {
+  const xs = new Float64Array([0, 2, 4])
+  const ys = new Float64Array([0, 0, 0])
+  const cum = new Float64Array([0, 2, 4])
+
+  it('直链中点取 (1,0)，法向朝下 (0,−1)', () => {
+    const p = chainPointAtArc(cum, xs, ys, 1)
+    expect(p.x).toBeCloseTo(1, 9)
+    expect(p.y).toBeCloseTo(0, 9)
+    expect(p.nx).toBeCloseTo(0, 9)
+    expect(p.ny).toBeCloseTo(-1, 9)
+  })
+
+  it('弧长越界夹到两端', () => {
+    expect(chainPointAtArc(cum, xs, ys, -1).x).toBeCloseTo(0, 9)
+    expect(chainPointAtArc(cum, xs, ys, 99).x).toBeCloseTo(4, 9)
+  })
+})
+
+describe('2D 链解算（solveTrackChain2D：贴地收敛 / 顶段铺开 / 垂弧 / 包轮）', () => {
   const chain = makeLoop()
-  const wheels = [
-    { longitudinal: -2.0, centerZ: 0.25, radius: 0.3 },
-    { longitudinal: 0.0, centerZ: 0.25, radius: 0.3 },
-    { longitudinal: 2.0, centerZ: 0.25, radius: 0.3 },
-  ]
-  const attach = attachChainToWheels(chain, wheels)
-  const zeros = [0, 0, 0]
+  const n = chain.length
+  const restX = new Float64Array(chain.map((p) => p[0]))
+  const restY = new Float64Array(chain.map((p) => p[1]))
+  const attach = new Int32Array(n).fill(-1)
+  attach[1] = 0; attach[3] = 1; attach[5] = 2      // 底段三锚（轮 0/1/2）
+  attach[10] = 0; attach[12] = 1; attach[14] = 2   // 顶段三锚（骑轮顶）
+  const segs = deriveTrackSegments(chain, attach)
+  const mkState = () => ({
+    curX: new Float64Array(n), curY: new Float64Array(n),
+    chaseY: new Float64Array(n), mask: new Uint8Array(n),
+  })
+  const zeros = new Float64Array([0, 0, 0])
+  const step = (st, groundY, delta, dt, phase, bend, laying) =>
+    solveTrackChain2D(st.curX, st.curY, restX, restY, attach, delta, st.chaseY,
+                      segs, groundY, dt, phase, bend, laying, LOOP_WHEELS, st.mask)
 
-  it('挂接：只挂底段的近轮点；同纵向的上段点不挂（高度消歧）', () => {
-    // 底段点（z=0）中 x=−2/0/2 处应各挂到一个轮
-    expect(attach[1]).toBe(0)   // x=−2
-    expect(attach[3]).toBe(1)   // x=0
-    expect(attach[5]).toBe(2)   // x=2
-    // 上段与底段同纵向（如 x≈0 的上段点）不得挂接——它在轮心上方 0.75 m
-    const upperIdx = 9 + 3      // 上段 x = 3.6−2.7 = 0.9 ⇒ 找最近的
-    expect(chain[upperIdx][1]).toBe(1.0)
-    expect(attach[9 + 4]).toBe(-1)   // 上段 x=0 → 若误挂会把上段拉到轮上
+  it('贴地：底带点跨帧收敛到地形（1.2·dt 限速），顶带与挂接点不动', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(-0.3)     // 沟底：全链地面 −0.3
+    const dt = 1 / 60
+    step(st, groundY, zeros, dt, 0, null, null)
+    // 一帧：底带非挂接点走 1.2·dt = 0.02
+    expect(st.curY[0]).toBeCloseTo(-CHASE_RATE * dt, 9)
+    // 挂接点（1/3/5）不 chase：绝对跟轮（行程 0 ⇒ 原地）
+    expect(st.curY[1]).toBeCloseTo(0, 9)
+    expect(st.curY[3]).toBeCloseTo(0, 9)
+    // 顶带点不 chase（0.55 > miny+0.1·range）
+    expect(st.curY[9]).toBeCloseTo(restY[9], 9)
+    // 多帧后收敛到地面（限速累积；bend=null ⇒ 无垂弧干扰）
+    for (let f = 0; f < 120; f++) step(st, groundY, zeros, dt, 0, null, null)
+    expect(st.curY[0]).toBeCloseTo(-0.3, 6)
+    expect(st.curY[2]).toBeCloseTo(-0.3, 6)
+    expect(st.curY[4]).toBeCloseTo(-0.3, 6)
   })
 
-  it('逐轮偏移：挂接点随轮移动（含负向）—— 地面在下方，允许下垂', () => {
-    const out = new Float64Array(chain.length)
-    solveChain(out, chain, attach, [-0.1, 0, 0.2], new Array(chain.length).fill(-1),
-               wheels, { upper_factor: 0, length_power: 0.5 })
-    expect(out[1]).toBeCloseTo(-0.1, 9)
-    expect(out[3]).toBeCloseTo(0, 9)
-    expect(out[5]).toBeCloseTo(0.2, 9)
+  it('死区 5 mm：地面差 ≤ 死区不追', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(-0.004)   // 4 mm < 5 mm 死区
+    step(st, groundY, zeros, 1 / 60, 0, null, null)
+    expect(st.curY[0]).toBeCloseTo(0, 9)
   })
 
-  it('铺地只抬不压：地面在下方（drop<0）时履带保持原高度（悬空）', () => {
-    const out = new Float64Array(chain.length)
-    const up = new Array(chain.length).fill(0.05)     // 地面高于链点 5 cm ⇒ 抬到地面
-    const down = new Array(chain.length).fill(-0.5)   // 地面在下方 0.5 m ⇒ 不跟下去
-    solveChain(out, chain, attach, zeros, up, wheels, { upper_factor: 0, length_power: 0.5 })
-    expect(out[3]).toBeCloseTo(0.05, 9)
-    solveChain(out, chain, attach, zeros, down, wheels, { upper_factor: 0, length_power: 0.5 })
-    expect(out[3]).toBeCloseTo(0, 9)
+  it('挂接点绝对跟轮（静止锚点 + 轮行程）；dt=0（seek）时贴地不动', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(-0.3)
+    const delta = new Float64Array([0.1, 0, -0.1])
+    step(st, groundY, delta, 0, 0, null, null)
+    expect(st.curY[1]).toBeCloseTo(0.1, 9)     // rest 0 + 行程 0.1
+    expect(st.curY[5]).toBeCloseTo(-0.1, 9)
+    expect(st.curY[0]).toBeCloseTo(0, 9)       // dt=0 ⇒ chase 不动
   })
 
-  it('垂弧：支承点之间向下垂，峰在跨度中点、幅度 = upperFactor·span^lengthPower/4', () => {
-    const out = new Float64Array(chain.length)
-    const bend = { upper_factor: 0.4, length_power: 1.0 }
-    solveChain(out, chain, attach, zeros, new Array(chain.length).fill(-1), wheels, bend)
-    // 支承点 1（x=−2）与 3（x=0）之间只有点 2（x=−1，t=0.5）；span = 2 m
-    const expectedSag = 0.4 * Math.pow(2, 1.0) * (0.5 - 0.25)
-    expect(out[2]).toBeCloseTo(-expectedSag, 9)
-    expect(out[1]).toBeCloseTo(0, 9)                  // 支承点本身不动
-    expect(out[3]).toBeCloseTo(0, 9)
+  it('顶段铺开：kind1 段内部点落在端点弦线的等分点上（纵向+高度双分量）', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(0)
+    step(st, groundY, zeros, 0, 0, null, null)
+    // 顶段 span (10→12)：内部点 11 落在弦中点（等距分母 = 内部点数+1 = 2）
+    expect(st.curX[11]).toBeCloseTo((restX[10] + restX[12]) / 2, 6)
+    expect(st.curY[11]).toBeCloseTo((restY[10] + restY[12]) / 2, 6)
   })
 
-  it('包轮约束只作用于轮顶以上：底段（轮心以下）不被顶到轮顶', () => {
-    const out = new Float64Array(chain.length)
-    solveChain(out, chain, attach, [-0.3, -0.3, -0.3], new Array(chain.length).fill(-1), wheels,
-               { upper_factor: 0, length_power: 0.5 })
-    // 底段点（z 由 0 降到 −0.3）必须仍是负值——若误用 max(y, cy+√(r²−dx²)) 会被抬到 ≈0.55
-    expect(out[1]).toBeLessThan(0)
-    expect(out[3]).toBeLessThan(0)
+  it('垂弧：底段（kind0）内部点向下垂，幅度 = w·(t−t²)，w = (upperMin+phase)·len^P', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(0)
+    const bend = { upper_min: 0.28, upper_factor: 0.59, front_factor: 0.4,
+                   back_factor: 0.25, length_power: 0.5, front_drive_wheel: false }
+    step(st, groundY, zeros, 0, 0.5, bend, null)
+    // 底段 span (1→3)：len = 2、内部点 2（t=0.5）；kind0 且 frontDrive=false ⇒ 翻转 1−0.5
+    const w = (0.28 + 0.5) * Math.pow(2, 0.5)
+    const expectDrop = w * (0.5 - 0.25) * 1        // dirY = −|ux| = −1
+    expect(st.curY[2]).toBeCloseTo(-expectDrop, 6)
+    expect(st.curY[2]).toBeLessThan(0)
+    // 端点（挂接点）绝对跟轮（t=0/t=1 处垂弧位移为 0）
+    expect(st.curY[1]).toBeCloseTo(0, 9)
+    expect(st.curY[3]).toBeCloseTo(0, 9)
+  })
+
+  it('包轮：顶段挂接点被 max 抬到轮圆 + wLay', () => {
+    const st = mkState()
+    const groundY = new Float64Array(n).fill(0)
+    const laying = { bending_factor: 0.05, length_power: 1, point_count_power: 0,
+                     pressure_power: 0, primary_power: 0 }
+    step(st, groundY, zeros, 0, 0, null, laying)
+    // 顶锚 10/12/14 在轮正上方（dx=0）：y ≥ cz+r；wLay > 0 ⇒ 严格高于轮顶
+    for (const idx of [10, 12, 14]) {
+      expect(st.curY[idx]).toBeGreaterThanOrEqual(0.55)
+    }
+    expect(st.curY[12]).toBeGreaterThan(0.55)      // wLay 加性项把它顶到轮圆之上
+  })
+})
+
+describe('顶点弧长重参数化（沿带滑动 + 法向厚度保持）', () => {
+  const rest = [[0, 0], [2, 0], [4, 0]]
+  const cum = new Float64Array([0, 2, 4])
+  // 顶点：横向 0、纵向 1、高度 0.2（带内衬厚度）——模型根系 = 局部系（identity）
+  const pos = new Float32Array([0, 1, 0.2])
+  const identity = new Float64Array([1, 0, 0, 0, 1, 0, 0, 0, 1])
+
+  it('投影：s = 弧长 1、d = 有符号法向偏移（朝下法向 ⇒ 链上方为负）', () => {
+    const arc = vertexArcParams(pos, rest, cum)
+    expect(arc.s[0]).toBeCloseTo(1, 6)
+    expect(arc.d[0]).toBeCloseTo(-0.2, 6)      // 顶点在链上方 0.2、法向朝下 ⇒ d = −0.2
+    expect(arc.restLong[0]).toBeCloseTo(1, 6)
+    expect(arc.restH[0]).toBeCloseTo(0.2, 6)
+  })
+
+  it('链不变 ⇒ 顶点不动（位移恒等）', () => {
+    const arc = vertexArcParams(pos, rest, cum)
+    const out = new Float32Array(3)
+    placeVerticesOnChain(out, pos, arc, cum, new Float64Array([0, 2, 4]),
+                         new Float64Array([0, 0, 0]), identity)
+    expect(out[1]).toBeCloseTo(1, 6)
+    expect(out[2]).toBeCloseTo(0.2, 6)
+  })
+
+  it('链起伏 ⇒ 顶点沿带滑动（纵向也变）且保持法向厚度', () => {
+    const arc = vertexArcParams(pos, rest, cum)
+    const out = new Float32Array(3)
+    // 链中点抬到 0.5：顶点 s=1 处的链点 ≈ (0.9701, 0.2425)，随链倾斜
+    placeVerticesOnChain(out, pos, arc, cum, new Float64Array([0, 2, 4]),
+                         new Float64Array([0, 0.5, 0]), identity)
+    const dx = out[1], dz = out[2]
+    // 法向厚度保持：顶点到链的**有符号距离**（朝下法向）仍 = d（−0.2，顶点在上方）
+    const segLen = Math.hypot(2, 0.5)
+    const t = (dx * 2 + dz * 0.5) / (segLen * segLen)
+    const px = 2 * t, pz = 0.5 * t
+    const dist = (dx - px) * (0.5 / segLen) + (dz - pz) * (-2 / segLen)
+    expect(dist).toBeCloseTo(-0.2, 5)
+    // 纵向确实滑动了（弧长参数化的核心不变量）
+    expect(Math.abs(dx - 1)).toBeGreaterThan(1e-3)
+  })
+
+  it('网格带旋转：位移经逆旋转回局部系（root +z = 局部 +y）', () => {
+    const arc = vertexArcParams(pos, rest, cum)
+    // 先跑 identity 得到根系位移（Δlong, Δh）
+    const ref = new Float32Array(3)
+    placeVerticesOnChain(ref, pos, arc, cum, new Float64Array([0, 2, 4]),
+                         new Float64Array([0, 0.5, 0]), identity)
+    const dLong = ref[1] - pos[1]
+    const dH = ref[2] - pos[2]
+    // invRot：root (x,y,z) → local (x, z, −y)：行主序 [[1,0,0],[0,0,1],[0,−1,0]]
+    const invRot = new Float64Array([1, 0, 0, 0, 0, 1, 0, -1, 0])
+    const out = new Float32Array(3)
+    placeVerticesOnChain(out, pos, arc, cum, new Float64Array([0, 2, 4]),
+                         new Float64Array([0, 0.5, 0]), invRot)
+    expect(out[0]).toBeCloseTo(pos[0], 6)                 // 横向不动
+    expect(out[1]).toBeCloseTo(pos[1] + dH, 6)            // root 高度位移 → local y
+    expect(out[2]).toBeCloseTo(pos[2] - dLong, 6)         // root 纵向位移 → local −z
+  })
+})
+
+describe('轮贴地三采样（客户端射线口径的高度场版）', () => {
+  it('平地：45° 侧样本更宽松（垂向行程损失），取竖直采样值', () => {
+    const h = wheelGroundMax(() => 5, 0, 0, 1, 0, 0.3)
+    expect(h).toBeCloseTo(5, 9)
+  })
+
+  it('前上方陡升：侧样本（减 (1−cos45°)·r）比轮心采样早发现坎沿', () => {
+    let calls = 0
+    const h = wheelGroundMax((x) => { calls++; return x > 0.1 ? 5.2 : 5 }, 0, 0, 1, 0, 0.3)
+    expect(calls).toBe(3)
+    const drop = 0.3 * (1 - Math.SQRT1_2)
+    expect(h).toBeCloseTo(5.2 - drop, 9)           // 5.112 > 5 ⇒ 坎沿被侧样本抓到
+    expect(h).toBeGreaterThan(5)
   })
 })
 
@@ -281,41 +521,6 @@ describe('花纹偏移写 V：取模只作用于偏移（保护跨 wrap 图元�
     const c = base.slice();
     writeUvOffsetV(c, base, -0.25);
     expect(c[1]).toBeCloseTo(base[1] + 0.75, 5);
-  })
-})
-
-describe('顶点形变：映射 + 位移方向', () => {
-  it('顶点→段落映射取最近段，位移在段内线性插值', () => {
-    const rest = [[0, 0], [2, 0], [4, 0]]
-    // 顶点 (x, y, z)：链路平面用 (y, z) —— 纵向=y、高度=z
-    const pos = new Float32Array([
-      0, 0, 1,     // 纵向 0 → 段 0 t=0
-      0, 1, 1,     // 纵向 1 → 段 0 t=0.5
-      0, 2.5, 1,   // 纵向 2.5 → 段 1 t=0.25
-    ])
-    const params = vertexChainParams(pos, rest)
-    expect(Array.from(params.seg)).toEqual([0, 0, 1])
-    expect(params.t[0]).toBeCloseTo(0, 6)
-    expect(params.t[1]).toBeCloseTo(0.5, 6)
-    expect(params.t[2]).toBeCloseTo(0.25, 6)
-    const out = new Float32Array(pos.length)
-    const chainZ = [0.5, 0.5, 0.5]      // 链整体上抬 0.5
-    const restZ = [0, 0, 0]
-    const maxAbs = applyChainToVertices(out, pos, params, chainZ, restZ, [0, 0, 1])
-    expect(maxAbs).toBeCloseTo(0.5, 6)
-    expect(out[0]).toBeCloseTo(0, 6)     // x 不动
-    expect(out[1]).toBeCloseTo(0, 6)     // y（纵向）不动
-    expect(out[2]).toBeCloseTo(1.5, 6)   // z = 静止 1 + 位移 0.5
-  })
-
-  it('网格带旋转时沿"局部等效轴"位移（模型 +z = 局部 +y 的四元数）', () => {
-    const rest = [[0, 0], [1, 0]]
-    const pos = new Float32Array([0, 0, 0])   // (纵向 0, 高度 0) → 段 0 t=0
-    const params = vertexChainParams(pos, rest)
-    const out = new Float32Array(3)
-    applyChainToVertices(out, pos, params, [0.25, 0.25], [0, 0], [0, 1, 0])
-    expect(out[1]).toBeCloseTo(0.25, 6)
-    expect(out[2]).toBeCloseTo(0, 6)
   })
 })
 

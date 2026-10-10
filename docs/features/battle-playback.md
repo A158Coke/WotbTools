@@ -481,7 +481,18 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   + 铺地 → 每帧 2D 链路，花纹按 `chassis.textureScale / chunkLength` 每米滚动；履带**不**采样
   地形（接触来自负重轮）。我们包内模型已带履带材质贴图，可直接在既有履带网格上形变，不必
   复刻客户端的实例化架构。
-- **轮/带解算已接线（2026-10-10，T1+T2+T3）**：数据 = 包内 `suspension/<tank_id>.json`
+- **履带/悬挂完全对齐客户端（2026-10-11，2D 链 + 弧长重参数化；依据 = 上游 `WoT-Blitz-Agent/docs/tank-suspension-client-re.md` §6.6–§6.7 第三/四轮反汇编）**：求解器重写为客户端同构流水线，替代 T1–T3 的 1D 近似（旧条目留档于下）：
+  ① **链路 2D**：链点 = (纵向, 高度)，与导出折线同系；
+  ② **段生成**（`deriveTrackSegments`，0x708770 直译）：相邻轮挂接点 span 绕环闭合，kind 按链包围盒分带（两端 <10% 线=底带 0，>60% 线=顶带 1，纵向中线两侧=前后坡 2/3，首中即停 0→1→2→3）；
+  ③ **相位累加器**（每侧，客户端侧实体 [+※ac]）：`clamp01(phase ± dS·speed·100)`，符号由 `front_drive_wheel` × 行驶方向；
+  ④ **链解算**（`solveTrackChain2D`，客户端 Process 每侧次序）：状态装配（挂接点绝对跟轮 = 静止锚 + 轮行程；其余点 = 静止 + 持久贴地偏移 `chaseY`）→ 底带限速贴地（**双向**，1.2·dt m/帧 ≈ 1.2 m/s，5 mm 死区，底带按当前链包围盒下 10% 带现判；这是修"履带悬空"的主项）→ 顶段弦等距铺开（0x8366e0）→ 全段向下垂弧（`(?−sign(ux)·uy, ?−|ux|)·w·(t−t²)`，w = `(upperMin+phase·B_kind)·dist^lengthPower`，kind 表：1→upperFactor/无翻转、2→frontFactor/翻转⇔frontDrive、3→backFactor、0·4→×1.0；完整直译在 `bendFactor`）→ 顶段包轮 max（`y = max(y, cz+√(r²−dx²)+wLay)`，`wLay = layWeight(...)` 用 `track_laying` 五参数完整公式）；
+  ⑤ **顶点弧长重参数化**（`vertexArcParams`/`placeVerticesOnChain`）：预计算每顶点 (弧长 s, 法向偏移 d)，逐帧摆到当前 2D 链的 s 处 + 法向·d，位移经网格逆旋转回局部系——**链节真的沿带滑动**（替代旧 ( 段,t ) 绑死映射 + 只写 +z）；
+  ⑥ **轮贴地三采样**（`wheelGroundMax`）：轮底 + 前后 ±45°（水平偏移 r·sin45°），侧样本等效高度 = 地形 − r(1−cos45°)（45° 射线垂向行程更短故更宽松，只在陡升处占优——上游 §6.2"两侧样本抬" 系速记方向，物理正确形为减）；
+  ⑦ **状态复位**：seek 与不可见复位时 `chaseY`/phase 清零，履带从静止重新贴地缓动（与客户端跳转一致）。
+  保留不动：轮行程夹紧/限速/吸附、自转+枢轴补偿、花纹 dV/ds 实测与 UV 整带同相（下列 2026-10-10 勘误成果）、fail-closed 回落刚体。
+  **引擎限制（非设计近似）**：客户端射线/足迹经 Bullet 物理世界（含静态物件），本实现只有高度场——跨桥/残骸姿态差异保留；客户端解算链在实体上的持久化细节未逐行钉死，按"持久 chaseY + 每帢 rest+chase 重算"建模，可观测行为一致。
+  测试：`suspension.test.js` 48 项（相位/系数表/权重/分带/贴地收敛/铺开/垂弧/包轮/弧长滑动/三采样）；守卫 `sceneryMaterials.test.js` 同步 2D 链名。
+- **（留档，已被上条 2026-10-11 完全对齐版替代）轮/带解算已接线（2026-10-10，T1+T2+T3）**：数据 = 包内 `suspension/<tank_id>.json`
   （上游 `tools/export_tank_suspension.py`，725/735 辆）；求解器 = 独立纯函数模块
   `scene/suspension.js`（单测 `suspension.test.js` 19 项），`playbackScene.js` 只做容器与写入：
   ① 负重轮按**局部 +z 平移**贴地（夹紧 `[−b, +a]`、`wheelsReactionSpeed·dt` 限速、seek 跳变

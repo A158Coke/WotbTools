@@ -48,10 +48,12 @@ import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
-  clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
+  clampTravel, rateLimitTravel, spinStep, treadScrollStep,
+  attachChainToWheels, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
+  trackPhaseStep, deriveTrackSegments, solveTrackChain2D, chainPointAtArc,
+  vertexArcParams, placeVerticesOnChain, wheelGroundMax,
 } from './suspension.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -2562,7 +2564,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const SUSP_SPIN_AXIS = new THREE.Vector3(1, 0, 0); // 轮局部 X（车宽）——自转轴（客户端同款）
   const _spQ = new THREE.Quaternion(), _spQ2 = new THREE.Quaternion();
   const _spV = new THREE.Vector3(), _spP = new THREE.Vector3(), _spC = new THREE.Vector3();
-  const _spUp = new THREE.Vector3(), _spFwd = new THREE.Vector3();
+  const _spFwd = new THREE.Vector3();
   const _spUpW = new THREE.Vector3(), _spBox = new THREE.Box3(), _spBox2 = new THREE.Box3();
   let suspDt = 0;          // 本帧 dt（0 = seek/跳变 ⇒ 行程限速退化为吸附）
   let suspSnap = false;    // 本 tick 为跳变（seek）：行程吸附、侧位移不积分
@@ -2638,20 +2640,23 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         });
         if (!meshes.length || _spBox.isEmpty()) return null;
         const lateral = _spBox.getCenter(new THREE.Vector3()).x;   // 履带中心线（模型系横向）
-        const chain2 = chain.map((pt) => [pt[0], pt[1]]);           // [纵向 y, 高度 z]
-        const restZ = chain.map((pt) => pt[1]);
-        // 段弧长（花纹速率与顶点弧长参数用）
-        const segArc = [];
-        const cumArc = [0];
-        for (let i = 0; i + 1 < chain2.length; i++) {
-          segArc.push(Math.hypot(chain2[i + 1][0] - chain2[i][0], chain2[i + 1][1] - chain2[i][1]));
-          cumArc.push(cumArc[cumArc.length - 1] + segArc[i]);
+        const chain2 = chain.map((pt) => [pt[0], pt[1]]);           // [纵向, 高度]
+        const nChain = chain2.length;
+        // 静止链 2D 数组 + 累计弧长（弧长重参数化与 UV 速率样本共用）
+        const restX = new Float64Array(nChain), restY = new Float64Array(nChain);
+        for (let i = 0; i < nChain; i++) { restX[i] = chain2[i][0]; restY[i] = chain2[i][1]; }
+        const cumArcRest = new Float64Array(nChain);
+        for (let i = 1; i < nChain; i++) {
+          cumArcRest[i] = cumArcRest[i - 1]
+            + Math.hypot(restX[i] - restX[i - 1], restY[i] - restY[i - 1]);
         }
         const uvSamples = [];
         const wheelCfg = wheels.map((w) => ({
           longitudinal: w.centerHull.y, centerZ: w.centerHull.z, radius: w.radius,
         }));
         const attach = attachChainToWheels(chain2, wheelCfg);
+        // 段表（客户端 GenerateSuspensionSegments 直译：相邻挂接点 span 绕环闭合 + 分带）
+        const segs = deriveTrackSegments(chain2, attach);
         const parts = [];
         for (const mesh of meshes) {
           mesh.geometry = mesh.geometry.clone();      // 形变逐车独立（模板几何共享）
@@ -2660,28 +2665,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (!posAttr) continue;
           const basePos = new Float32Array(posAttr.array);
           const nv = basePos.length / 3;
-          // 顶点 → 链路映射在**模型根系**里做（链路即模型根系的纵剖面折线）
+          // 顶点弧长参数在**模型根系**里算（链路即模型根系纵剖面折线）：
+          // (弧长 s, 法向偏移 d) + 静止纵横坐标；逐帧摆到当前链 s 处 + 法向·d（链节沿带滑动）
           const rootPos = new Float32Array(basePos.length);
           const m = mesh.matrixWorld;
           for (let vi = 0; vi < nv; vi++) {
             _spV.set(basePos[vi * 3], basePos[vi * 3 + 1], basePos[vi * 3 + 2]).applyMatrix4(m);
             rootPos[vi * 3] = _spV.x; rootPos[vi * 3 + 1] = _spV.y; rootPos[vi * 3 + 2] = _spV.z;
           }
-          const params = vertexChainParams(rootPos, chain2);
-          // 位移方向：模型根 +z 在该网格局部系里的方向（网格可能带旋转）
-          const localAxis = SUSP_AXIS.clone().applyQuaternion(mesh.quaternion.clone().invert());
+          const arc = vertexArcParams(rootPos, chain2, cumArcRest);
+          // 根系 → 网格局部的**逆旋转**（3×3 行主序；位移转回局部系，平移抵消）
+          const invE = m.clone().invert().elements;   // three 列主序
+          const invRot = new Float64Array([invE[0], invE[4], invE[8],
+                                           invE[1], invE[5], invE[9],
+                                           invE[2], invE[6], invE[10]]);
           const uvAttr = mesh.geometry.getAttribute('uv');
           const uvBase = uvAttr ? new Float32Array(uvAttr.array) : null;
-          // 花纹速率样本：[沿带弧长, V]（沿带弧长由顶点→链路映射给出）
+          // 花纹速率样本：[沿带弧长, V]（弧长由顶点弧长参数直接给出）
           if (uvAttr) {
             for (let vi = 0; vi < nv; vi++) {
-              const sg = params.seg[vi];
-              const arc = cumArc[sg] + params.t[vi] * segArc[sg];
-              uvSamples.push([arc, uvAttr.array[vi * 2 + 1]]);
+              uvSamples.push([arc.s[vi], uvAttr.array[vi * 2 + 1]]);
             }
           }
-          parts.push({ mesh, posAttr, basePos, params, axis3: [localAxis.x, localAxis.y, localAxis.z],
-                       uvAttr, uvBase, appliedUv: 0 });
+          parts.push({ mesh, posAttr, basePos, arc, invRot, uvAttr, uvBase, appliedUv: 0 });
         }
         if (!parts.length) return null;
         // 花纹滚动速率：**网格实测**沿带 dV/ds（客户端形式 textureScale/chunkLength 实测偏快
@@ -2695,11 +2701,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             + ' pairs=' + uvFit.pairs);
         }
         tracks.push({
-          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral,
-          groundDrop: new Float64Array(chain2.length),
-          chainZ: new Float64Array(chain2.length),
-          appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
-          normalChainZ: null,     // 上次**重算法线**时的链（法线闸门逐点比较用）
+          node, parts, restX, restY, cumArcRest, attach, segs, wheelCfg, lateral,
+          curX: new Float64Array(nChain), curY: new Float64Array(nChain),
+          groundY: new Float64Array(nChain),       // 逐点地形高度（链坐标系，每帧现采）
+          chaseY: new Float64Array(nChain),        // 持久贴地偏移（跨帧累积；seek 清零）
+          maskScratch: new Uint8Array(nChain),
+          curArc: new Float64Array(nChain),        // 当前链累计弧长（逐帧重算）
+          appliedX: null, appliedY: null,          // 已下发的解算链（2D，顶点输出唯一形状输入）
+          normalX: null, normalY: null,            // 上次**重算法线**时的链（法线闸门）
           dvPerM, uv: 0,
         });
       }
@@ -2709,25 +2718,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       sides[side] = {
         wheels, tracks, wheelDelta: new Float64Array(wheels.length),
         halfW: tracks.length ? sum / tracks.length : 0, prev: null,
+        phase: 0,     // 铺放相位累加器（客户端侧实体 [实体+0xac]，§6.7）
       };
     }
     return {
       sides, disposables, bend: susp.track_bending || null,
+      laying: susp.track_laying || null,
       chunkLength: chainAverageSegment(susp.chains.left[0]),   // 仅供调试/观察（不再驱动花纹）
     };
   }
 
-  // 逐帧：贴地（轮）→ 自转 → 链路解算 → 逐顶点形变 + 花纹滚动
+  // 逐帧：贴地（轮，三采样）→ 自转 → 相位 → 2D 链路解算 → 弧长重参数化顶点形变 + 花纹滚动
   function suspensionStep(v) {
     const sp = v.suspParts;
     if (!sp || !v.glb) return;
     _spQ.copy(v.glb.quaternion);                       // 车体系（模型系）→ 世界
-    _spUp.set(0, 0, 1).applyQuaternion(_spQ);          // 车体 up 的世界向量
-    const upY = _spUp.y;
     _spFwd.set(0, 1, 0).applyQuaternion(_spQ);         // 车体前向（世界）
     const snap = suspSnap;
     const dt = suspDt;
     const reaction = Number.isFinite(v.def && v.def.suspReaction) ? v.def.suspReaction : 1.0;
+    const bend = sp.bend;
     for (const key of ['L', 'R']) {
       const side = sp.sides[key];
       if (!side) continue;
@@ -2739,12 +2749,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       if (!side.prev) side.prev = new THREE.Vector3();
       side.prev.copy(_spP);
-      // 逐轮：贴地行程 + 自转
+      // 相位（客户端侧实体累加器，§6.7）：clamp01(phase ± dS·speed·100)
+      side.phase = trackPhaseStep(side.phase, dS, bend && bend.speed, !!(bend && bend.front_drive_wheel));
+      // 逐轮：贴地行程（三采样 max，客户端射线口径的高度场版）+ 自转
       for (let wi = 0; wi < side.wheels.length; wi++) {
         const w = side.wheels[wi];
         if (w.flag) {
           _spC.copy(w.centerHull).applyQuaternion(_spQ).add(v.glb.position);
-          const terr = sampleHeight(_spC.x, _spC.z);
+          // 轮底 + 前后 ±45° 三采样取 max（客户端轮射线口径；高度场近似——静态物件差异见文档）
+          const terr = wheelGroundMax(sampleHeight, _spC.x, _spC.z, _spFwd.x, _spFwd.z, w.radius);
           _spUpW.copy(w.upHull).applyQuaternion(_spQ);
           const upw = Math.abs(_spUpW.y) > 0.25 ? _spUpW.y : 0;
           if (upw) {
@@ -2764,34 +2777,40 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                        _spQ2, w.travelAxis, w.travel);
         side.wheelDelta[wi] = w.travel;
       }
-      // 履带：链路解算 + 形变 + 花纹
+      // 履带：2D 链路解算 + 弧长重参数化顶点形变 + 花纹
       for (const tg of side.tracks) {
-        const n = tg.chain.length;
+        const n = tg.restX.length;
+        // 逐点地形高度（链点世界 (x,z) 处采样；与轮同一张高度场）
         for (let i = 0; i < n; i++) {
-          _spP.set(tg.lateral, tg.chain[i][0], tg.chain[i][1]).applyQuaternion(_spQ).add(v.glb.position);
-          const terr = sampleHeight(_spP.x, _spP.z);
-          tg.groundDrop[i] = groundDropLocal(terr, _spP.y, upY);
+          _spP.set(tg.lateral, tg.restX[i], tg.restY[i]).applyQuaternion(_spQ).add(v.glb.position);
+          tg.groundY[i] = sampleHeight(_spP.x, _spP.z);
         }
-        solveChain(tg.chainZ, tg.chain, tg.attach, side.wheelDelta, tg.groundDrop, tg.wheelCfg, sp.bend);
+        solveTrackChain2D(tg.curX, tg.curY, tg.restX, tg.restY, tg.attach, side.wheelDelta,
+                          tg.chaseY, tg.segs, tg.groundY, dt, side.phase,
+                          bend, sp.laying, tg.wheelCfg, tg.maskScratch);
+        // 当前链累计弧长（顶点弧长摆放置用）
+        tg.curArc[0] = 0;
+        for (let i = 1; i < n; i++) {
+          tg.curArc[i] = tg.curArc[i - 1]
+            + Math.hypot(tg.curX[i] - tg.curX[i - 1], tg.curY[i] - tg.curY[i - 1]);
+        }
         // 花纹：每米 V 变化 = 网格实测 dV/ds（见收集期注释）
         const uv = (dS && tg.dvPerM)
           ? (tg.uv = treadScrollStep(tg.uv, dS, tg.dvPerM))
           : tg.uv;
-        // 顶点输出 = f(chainZ, basePos, params, restZ, axis)（纯函数）⇒ **按解算链**判定是否下发：
-        // 只比形变最大幅度会漏"幅度相同、分布不同"的形变（2026-10-10 review P2：把 0.1 的形变
-        // 从一处挪到另一处时 max 不变、顶点已变但 `version` 仍是 1，GPU 停在旧形状；法线同理）。
-        // 逐链路点（~40）比较比逐顶点指纹便宜且**恰好充分**：链相同 ⇒ 顶点逐点相同。
-        const chainMoved = snap || !tg.appliedChainZ || chainChanged(tg.appliedChainZ, tg.chainZ);
+        // 顶点输出 = f(curX, curY, arc)（纯函数）⇒ **按解算链（2D）**判定是否下发：
+        // 只比形变最大幅度会漏"幅度相同、分布不同"的形变（2026-10-10 review P2）。
+        // 逐链路点比较比逐顶点指纹便宜且恰好充分：链相同（纵横皆同）⇒ 顶点逐点相同。
+        const chainMoved = snap || !tg.appliedX
+          || chainChanged(tg.appliedX, tg.curX) || chainChanged(tg.appliedY, tg.curY);
         if (chainMoved) {
-          // 法线闸门：与**上次重算法线时的链**逐点比较取最大偏差（2026-10-10 review 复审 P2——
-          // dmax/dmean 这类累计统计量表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时两者
-          // 都不变，法线却必须重算）。2 cm 阈值仍是成本刹车：行驶中偏差累积到 2 cm 才重算一次，
-          // 而非逐帧重算（逐帧 = 每车每帧一次全顶点遍历）。
-          const dNorm = (snap || !tg.normalChainZ) ? Infinity : chainDrift(tg.normalChainZ, tg.chainZ);
-          const redoNormals = dNorm > 0.02;
+          // 法线闸门：纵横两分量都与上次重算法线时的链比较（2 cm 阈值 = 成本刹车）
+          const dNormX = (snap || !tg.normalX) ? Infinity : chainDrift(tg.normalX, tg.curX);
+          const dNormY = (snap || !tg.normalY) ? Infinity : chainDrift(tg.normalY, tg.curY);
+          const redoNormals = dNormX > 0.02 || dNormY > 0.02;
           for (const gp of tg.parts) {
-            applyChainToVertices(gp.posAttr.array, gp.basePos, gp.params,
-                                 tg.chainZ, tg.restZ, gp.axis3);
+            placeVerticesOnChain(gp.posAttr.array, gp.basePos, gp.arc,
+                                 tg.curArc, tg.curX, tg.curY, gp.invRot);
             gp.posAttr.needsUpdate = true;
             if (redoNormals) {
               gp.mesh.geometry.computeVertexNormals();
@@ -2800,11 +2819,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             }
           }
           if (redoNormals) {
-            if (!tg.normalChainZ) tg.normalChainZ = new Float64Array(n);
-            tg.normalChainZ.set(tg.chainZ);
+            if (!tg.normalX) {
+              tg.normalX = new Float64Array(n);
+              tg.normalY = new Float64Array(n);
+            }
+            tg.normalX.set(tg.curX);
+            tg.normalY.set(tg.curY);
           }
-          if (!tg.appliedChainZ) tg.appliedChainZ = new Float64Array(n);
-          tg.appliedChainZ.set(tg.chainZ);
+          if (!tg.appliedX) {
+            tg.appliedX = new Float64Array(n);
+            tg.appliedY = new Float64Array(n);
+          }
+          tg.appliedX.set(tg.curX);
+          tg.appliedY.set(tg.curY);
         }
         // 花纹与形变解耦：UV 只随累计滚动量变（链静止时也照样滚），故独立于上面的形变闸门
         for (const gp of tg.parts) {
@@ -3561,7 +3588,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.wasDead = false;
       // 悬挂积分复位：不可见期间不累积侧位移（复现时首帧吸附，不跳变）
       if (v.suspParts) {
-        for (const k of ['L', 'R']) if (v.suspParts.sides[k]) v.suspParts.sides[k].prev = null;
+        if (v.suspParts) {
+          for (const k of ['L', 'R']) {
+            const sd = v.suspParts.sides[k];
+            if (!sd) continue;
+            sd.prev = null;
+            sd.phase = 0;                      // 相位累加器复位（§6.7）
+            for (const tg of sd.tracks) tg.chaseY.fill(0);  // 贴地偏移复位：跳转后履带从静止重新贴地
+          }
+        }
       }
       return;
     }
@@ -3925,6 +3960,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     rebuildFeed();
     resetScore();     // 比分为单调游标，seek 后必须从头推进（否则分数不回落）
     winnerShown = false; store.banner = null;
+    // 跳变后地形/姿态全变：贴地偏移与相位复位，履带从静止重新贴地缓动（与客户端跳转一致）
+    for (const v of V) {
+      if (!v.suspParts) continue;
+      for (const k of ['L', 'R']) {
+        const sd = v.suspParts.sides[k];
+        if (!sd) continue;
+        sd.phase = 0;
+        for (const tg of sd.tracks) tg.chaseY.fill(0);
+      }
+    }
     suspSnap = true;  // 跳变：行程吸附到目标、侧位移不积分（客户端"首次可见直接吸附"同款）
     suspDt = 0;
     tick();
