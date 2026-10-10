@@ -68,6 +68,7 @@ frontend:
   - 'deploy/tx/nginx/**'
   - 'deploy/check-production-freshness.sh'
   - 'deploy/tx/build-frontend-from-gitee.sh'
+  - 'deploy/test_frontend_builder.py'
   - 'deploy/tx/frontend.compose.yml'
   - 'deploy/tx/frontend-shadow.compose.yml'
   - 'deploy/tx/k7c-sync-runtime-content.sh'
