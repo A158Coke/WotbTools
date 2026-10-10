@@ -343,7 +343,9 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(maxGap).toBeLessThanOrEqual(1e-4)
   })
 
-  it('无空洞且全朝上：采样点必被覆盖、三角形法线恒 +y（混排层级下网格仍是完整地图）', () => {
+  // 超时放宽：本用例刻意铺满整张 128×128 混排层级地图（覆盖/法线逐采样点复查），
+  // 本机 ~2 s，但共享 CI runner 曾超 5 s 默认值（2026-10-10 `gh run` 38043907258 计时超时）。
+  it('无空洞且全朝上：采样点必被覆盖、三角形法线恒 +y（混排层级下网格仍是完整地图）', { timeout: 30000 }, () => {
     const n = 128, span = 600
     const field = make(n, 20, (i, j) => 20 + 8 * Math.sin(i / 5) * Math.cos(j / 5) + (j > 80 ? 6 : 0))
     const m = build(field, n, span, { x: 0, y: 240, z: 60 })
