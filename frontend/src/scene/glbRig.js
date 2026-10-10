@@ -22,6 +22,34 @@ const Q_FRAME = new THREE.Quaternion()
 const _qYaw = new THREE.Quaternion()
 const _qPitch = new THREE.Quaternion()
 const _qRoll = new THREE.Quaternion()
+const _qTmpA = new THREE.Quaternion()
+const _qTmpB = new THREE.Quaternion()
+
+/**
+ * 场景系 YPR（**不含** z-up→y-up 帧变换）——给"节点已经在场景系"的场合用
+ * （低模代理车的 group/hullGroup；GLB 内部节点请用 {@link poseLocalBetween} 的逆合成，
+ * 不要手推轴号）。语义与 {@link poseFromYPR} 的前半段逐字一致。
+ */
+export function yprScene(yaw, pitch, roll, out) {
+  const q = out || new THREE.Quaternion()
+  _qYaw.setFromAxisAngle(AXIS_Y, yaw || 0)
+  _qPitch.setFromAxisAngle(AXIS_X, pitch || 0)
+  _qRoll.setFromAxisAngle(AXIS_Z, roll || 0)
+  return q.copy(_qYaw).multiply(_qPitch).multiply(_qRoll)
+}
+
+/**
+ * 局部残差四元数：把"父节点已按 parentW 摆好"时的子节点局部旋转算成
+ * `local = parentW⁻¹ · childW`（两侧都是**世界/场景系**朝向）。
+ *
+ * 用途（骨架拆分）：父（车根）按**地形局部平面**摆、车体子树按**记录姿态**摆，两者之差
+ * 就是子树的局部残差——用逆合成而不是手推"绕 −X/−Z"轴号，避免坐标系（GLB 内部系
+ * x右/y前/z上 vs 场景系 y 上）混用出错。
+ */
+export function poseLocalBetween(parentW, childW, out) {
+  const q = out || new THREE.Quaternion()
+  return q.copy(parentW).invert().multiply(childW)
+}
 
 /**
  * GLB 根节点四元数：yaw/pitch/roll（场景系）× z-up→y-up 帧变换。
@@ -33,6 +61,60 @@ export function poseFromYPR(yaw, pitch, roll, out) {
   _qPitch.setFromAxisAngle(AXIS_X, pitch || 0)
   _qRoll.setFromAxisAngle(AXIS_Z, roll || 0)
   return q.copy(_qYaw).multiply(_qPitch).multiply(_qRoll).multiply(Q_FRAME)
+}
+
+// ---------------------------------------------------------------- 骨架拆分（车体 vs 履带）
+
+/** 悬挂行程（米）：车体相对履带/地面可吸收的位移上限。
+ *
+ * 客户端是**车体收记录姿态 + 悬挂逐轮把履带贴到地形**（SPHT 等模型里 `chassis_track_L/R`
+ * + 22 个 `chassis_wheel_*` 就是为此存在的独立节点）；我们的刚体没有悬挂，只能把
+ * 「记录车体姿态」与「脚下地形平面」的差**限幅**后放在车体上，履带仍随地形贴地。
+ * 0.25 m 是常见重型坦克悬挂行程量级（非实证值——客户端悬挂常数未逆向）。 */
+export const SUSP_TRAVEL_M = 0.25
+
+/** 采样地形用的半长/半宽（米）：车轴方向取到履带端部附近（SPHT 实测履带 y∈[−3.44,+3.26]）。 */
+export const TERRAIN_PROBE_HALF_LEN = 3.3
+export const TERRAIN_PROBE_HALF_WID = 1.5
+
+/**
+ * 地形局部姿态（**与回放姿态同一符号域**：pitch 正 = 车头下坡、roll 正 = 车体向左倾）。
+ * 在 (x, z) 沿车头/右舷各取两点高度场（场景系：前向 = (sinθ, cosθ)、右舷 = forward × up
+ * = (−cosθ, sinθ)，θ = 前端传入的解镜像偏航），差分得坡度角。返回 {pitch, roll}。
+ *
+ * 与记录姿态相减即"车体相对地面的残差"——两者同域，故可直接相减、无需换轴。
+ */
+export function terrainPitchRoll(sampleHeight, x, z, yaw, out,
+                                 halfLen = TERRAIN_PROBE_HALF_LEN,
+                                 halfWid = TERRAIN_PROBE_HALF_WID) {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw)
+  const rx = -Math.cos(yaw), rz = Math.sin(yaw)
+  const hF = sampleHeight(x + fx * halfLen, z + fz * halfLen)
+  const hB = sampleHeight(x - fx * halfLen, z - fz * halfLen)
+  const hR = sampleHeight(x + rx * halfWid, z + rz * halfWid)
+  const hL = sampleHeight(x - rx * halfWid, z - rz * halfWid)
+  const o = out || { pitch: 0, roll: 0 }
+  o.pitch = Math.atan2(hB - hF, 2 * halfLen)   // 前低 → 正（= 数据里的"车头下坡"）
+  o.roll = Math.atan2(hR - hL, 2 * halfWid)    // 左低 → 正（= 数据里的"向左倾"）
+  return o
+}
+
+/**
+ * 车体限幅：把记录姿态对地形残差限到悬挂行程内，并返回车体相对地面的高度差（同样限幅）。
+ * `recPitch/recRoll` = 回放记录（数据域），`terr` = {@link terrainPitchRoll} 的结果。
+ * 返回 {pitch, roll, dy}：**限幅后的车体世界俯仰/侧倾**（数据域）与竖直偏移（米）。
+ */
+export function clampHullAttitude(recPitch, recRoll, recY, terr, terrY, out,
+                                  halfLen = TERRAIN_PROBE_HALF_LEN,
+                                  halfWid = TERRAIN_PROBE_HALF_WID) {
+  const maxP = Math.atan2(SUSP_TRAVEL_M, halfLen)
+  const maxR = Math.atan2(SUSP_TRAVEL_M, halfWid)
+  const cl = (v, m) => Math.max(-m, Math.min(m, v))
+  const o = out || { pitch: 0, roll: 0, dy: 0 }
+  o.pitch = terr.pitch + cl(recPitch - terr.pitch, maxP)
+  o.roll = terr.roll + cl(recRoll - terr.roll, maxR)
+  o.dy = cl(recY - terrY, SUSP_TRAVEL_M)
+  return o
 }
 
 /** 逐值比较两个顶点属性（`BufferAttribute` / `InterleavedBufferAttribute` 都实现
