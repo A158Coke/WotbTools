@@ -50,6 +50,7 @@ const { t } = useI18n()
 const onboarding = inject(ONBOARDING_KEY, null)
 onMounted(() => onboarding?.registerSurface('shots', {
   ready: () => props.active && selectedShot.value != null,
+  prepare: () => { closeDetail(); shooter.value = 'own'; return decoding },
   failed: () => !!err.value || !!props.blockedReason || (!parsing.value && parsedFile === props.file && !filteredShots.value.some(rowHas3d)),
 }))
 onBeforeUnmount(() => onboarding?.registerSurface('shots', null))
@@ -68,6 +69,7 @@ const selectedIndex = ref(null)
 let parsedFile = null
 /** 在途解析的认领序号：文件切换后迟到的结果一律丢弃 */
 let parseSeq = 0
+let decoding = Promise.resolve()
 
 /**
  * 弹种使用 bundled shellKinds，俯仰锚定/配置顺序使用 common/shot-tank-data.json。
@@ -298,7 +300,7 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
   if (!active || !file || blocked) return
   if (parsedFile === file) return
   parsedFile = file
-  decode(file)
+  decoding = decode(file)
 }, { immediate: true })
 
 const shellBadge = (s) => {
@@ -692,6 +694,7 @@ onBeforeUnmount(() => {
           class="shot-detail"
           tabindex="-1"
           data-testid="shot-inspector"
+          data-tour="shots-inspector"
           :role="isOverlay ? 'dialog' : undefined"
           :aria-modal="isOverlay ? 'true' : undefined"
           :aria-label="$t('agentShots.inspector_title')"
@@ -906,6 +909,7 @@ onBeforeUnmount(() => {
 .shots-split.is-compact .shot-detail {
   position: fixed;
   inset: 0;
+  inset-block-start: var(--header-h);
   z-index: var(--z-sheet);
   align-content: start;
   padding: var(--space-4);

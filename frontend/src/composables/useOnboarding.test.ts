@@ -52,7 +52,7 @@ beforeEach(() => {
   localStorage.clear()
   sessionStorage.clear()
   boundary.epoch = 1
-  boundary.auth = { authenticated: ref(false), authInitState: ref('unauthenticated'), tokenParsed: ref(null), loginInFlight: ref(false), authEpoch: () => boundary.epoch }
+  boundary.auth = { authenticated: ref(false), authInitState: ref('unauthenticated'), tokenParsed: ref(null), login: vi.fn(), loginInFlight: ref(false), authEpoch: () => boundary.epoch }
   boundary.connectivity = ref('online')
   boundary.bootstrap = { state: ref('ready') }
   boundary.read.mockReset().mockResolvedValue({ coreEpoch: 0, disposition: 'NONE' })
@@ -561,19 +561,43 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
 
-  it('returns to the real shot row after its inspector closes, without a synthetic click', async () => {
+  it('keeps the final core node on the real shot row after selection, then completes once', async () => {
     const h = harness({ files: true })
-    const selected = ref(false)
-    h.controller.registerSurface('shots', { ready: () => selected.value })
+    const selected = ref(true), staleFilter = ref(true)
+    const prepare = vi.fn(() => { selected.value = false; staleFilter.value = false })
+    h.controller.registerSurface('shots', { ready: () => selected.value, failed: () => staleFilter.value, prepare })
     h.controller.start()
-    await h.controller.begin(false)
+    await h.controller.begin()
     for (let i = 0; i < 6; i++) { h.controller.next(); await flushPromises() }
+    expect(prepare).toHaveBeenCalledTimes(1)
+    expect(selected.value).toBe(false)
+    expect(h.controller.issue.value).toBe('')
     selected.value = true
     await nextTick()
-    expect(h.controller.currentStage.value.anchor).toBe('shot-open-viewer')
-    selected.value = false
-    await nextTick()
     expect(h.controller.currentStage.value.anchor).toBe('shots-first-shot')
+    expect(h.controller.currentStep.value.stages).toHaveLength(1)
+    h.controller.next()
+    expect(h.controller.mode.value).toBe('finish')
+    expect(cache().anonymous.disposition).toBe('COMPLETED')
+    h.wrapper.unmount()
+  })
+
+  it('requires sign-in before preparing even an official AI sample guide', async () => {
+    const h = harness()
+    h.controller.start('ai')
+    await h.controller.begin()
+    expect(h.controller.mode.value).toBe('welcome')
+    expect(h.loadDemo).not.toHaveBeenCalled()
+    expect(h.route.value).toBe('home')
+    h.controller.loginAiGuide()
+    expect(boundary.auth.login).toHaveBeenCalledWith('ai-review')
+    expect(h.controller.mode.value).toBe('idle')
+    account('signed-in')
+    await flushPromises()
+    h.controller.start('ai')
+    await h.controller.begin()
+    expect(h.loadDemo).toHaveBeenCalledTimes(1)
+    expect(h.controller.mode.value).toBe('tour')
     h.wrapper.unmount()
   })
   it('advances the optional shot guide from real row selection to the real armor handoff', async () => {

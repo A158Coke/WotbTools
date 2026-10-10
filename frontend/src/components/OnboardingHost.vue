@@ -9,6 +9,7 @@ import { ONBOARDING_GUIDES, ONBOARDING_TOPICS } from '../composables/useOnboardi
 import type { GuideStage, OnboardingController } from '../composables/useOnboarding.js'
 import { guideCardPosition, guideCutout, guideMasks } from '../utils/onboardingGeometry.js'
 import type { GuideRect } from '../utils/onboardingGeometry.js'
+import type { OnboardingTopic } from '../shared/onboarding.js'
 
 const props = defineProps<{ onboarding: OnboardingController }>()
 const { mode, topic, index, issue, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn } = props.onboarding
@@ -30,6 +31,7 @@ const compact = ref(false)
 const masks = computed(() => guideMasks(cutout.value, viewport.value))
 const missingTarget = computed(() => !target.value && issue.value !== 'loading')
 const needsReplay = computed(() => steps.value.some(step => step.capability))
+const followUpTopics: OnboardingTopic[] = ['tankopedia', 'hof', 'ai', 'tournament', 'shots']
 function requiresFullscreenExit(direction: 'next' | 'back') {
   const destination = steps.value[index.value + (direction === 'next' ? 1 : -1)]
   const current = steps.value[index.value]
@@ -47,6 +49,8 @@ const renderedIndex = computed(() => cardGesture.value?.index ?? index.value)
 const renderedStage = computed(() => cardGesture.value?.stage ?? currentStage.value)
 const renderedIssue = computed(() => cardGesture.value?.issue ?? issue.value)
 const renderedMissing = computed(() => cardGesture.value?.missing ?? missingTarget.value)
+const renderedStages = computed(() => steps.value[renderedIndex.value]?.stages || [])
+const renderedStageIndex = computed(() => renderedStages.value.indexOf(renderedStage.value!))
 let resizeObserver: ResizeObserver | null = null
 let mutationObserver: MutationObserver | null = null
 let opener: HTMLElement | null = null
@@ -285,11 +289,13 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
         <div class="onboarding-intro-icon"><Compass :size="28" aria-hidden="true" /></div>
         <p>{{ topic === 'core' ? $t('onboarding.welcomeDescription') : $t(`onboarding.topics.${topic}.description`) }}</p>
         <p class="onboarding-note">{{ $t(isSignedIn ? 'onboarding.welcomeHint' : 'onboarding.anonymousHint') }}</p>
+        <p v-if="topic === 'ai'" class="onboarding-note">{{ $t('onboarding.aiLoginRequired') }}</p>
         <p v-if="needsReplay && hasFiles" class="onboarding-note">{{ $t('onboarding.replaceWarning') }}</p>
         <template #actions>
           <AppButton variant="ghost" data-testid="onboarding-skip-welcome" @click="onboarding.skip">{{ $t('onboarding.later') }}</AppButton>
           <AppButton v-if="canResume" variant="primary" data-testid="onboarding-resume" @click="onboarding.resume">{{ $t('onboarding.resume') }}</AppButton>
-          <AppButton :variant="canResume ? 'secondary' : 'primary'" data-testid="onboarding-begin" @click="onboarding.begin()">
+          <AppButton v-if="topic === 'ai' && !isSignedIn" variant="primary" data-testid="onboarding-ai-login" @click="onboarding.loginAiGuide">{{ $t('app.login') }}</AppButton>
+          <AppButton v-else :variant="canResume ? 'secondary' : 'primary'" data-testid="onboarding-begin" @click="onboarding.begin()">
             {{ needsReplay ? $t(hasFiles ? 'onboarding.replaceDemo' : 'onboarding.tryDemo') : $t('onboarding.begin') }}
             <ArrowRight :size="16" aria-hidden="true" />
           </AppButton>
@@ -311,9 +317,10 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
           tabindex="-1"
           data-testid="onboarding-card"
           :data-step="index + 1"
+          :data-anchor="renderedStage?.anchor"
         >
           <header class="onboarding-card-head">
-            <span class="onboarding-progress">{{ $t('onboarding.progress', { current: renderedIndex + 1, total: steps.length }) }}</span>
+            <span class="onboarding-progress">{{ $t(topic === 'core' ? 'onboarding.mainGuide' : 'onboarding.sideGuide') }} · {{ $t('onboarding.progress', { current: renderedIndex + 1, total: steps.length }) }}<small v-if="renderedStages.length > 1"> · {{ $t('onboarding.stageProgress', { current: renderedStageIndex + 1, total: renderedStages.length }) }}</small></span>
             <button class="onboarding-close" type="button" :aria-label="$t('onboarding.skip')" data-testid="onboarding-skip" @click="onboarding.skip"><X :size="18" aria-hidden="true" /></button>
           </header>
           <div class="onboarding-meter" aria-hidden="true"><span :style="{ width: `${(renderedIndex + 1) / steps.length * 100}%` }" /></div>
@@ -331,9 +338,19 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
         </section>
       </div>
 
-      <AppDialog :open="mode === 'finish'" :title="$t('onboarding.finishedTitle')" size="sm" data-testid="onboarding-finish" @close="onboarding.interrupt">
+      <AppDialog :open="mode === 'finish'" :title="$t(topic === 'core' ? 'onboarding.mainFinishedTitle' : 'onboarding.finishedTitle')" size="sm" data-testid="onboarding-finish" @close="onboarding.interrupt">
         <div class="onboarding-intro-icon"><Check :size="28" aria-hidden="true" /></div>
         <p>{{ $t(isSignedIn ? 'onboarding.finishedDescription' : 'onboarding.anonymousFinished') }}</p>
+        <section v-if="topic === 'core'" class="onboarding-follow-ups" data-testid="onboarding-follow-ups" aria-labelledby="onboarding-follow-ups-title">
+          <h3 id="onboarding-follow-ups-title">{{ $t('onboarding.sideGuide') }}</h3>
+          <p class="onboarding-note">{{ $t('onboarding.followUpDescription') }}</p>
+          <div class="onboarding-follow-up-grid">
+            <button v-for="guide in followUpTopics" :key="guide" class="onboarding-topic" type="button" :data-testid="`onboarding-follow-up-${guide}`" @click="onboarding.start(guide)">
+              <strong>{{ $t(`onboarding.topics.${guide}.title`) }}</strong>
+              <small>{{ $t(guide === 'ai' ? 'onboarding.aiLoginRequired' : 'onboarding.topicSteps', { count: ONBOARDING_GUIDES[guide].length }) }}</small>
+            </button>
+          </div>
+        </section>
         <template #actions>
           <AppButton data-testid="onboarding-finish-directory" @click="onboarding.openDirectory"><BookOpen :size="16" aria-hidden="true" />{{ $t('onboarding.directory') }}</AppButton>
           <AppButton data-testid="onboarding-explore" @click="onboarding.interrupt">{{ $t('onboarding.explore') }}</AppButton>
@@ -343,12 +360,15 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 
       <AppDialog :open="mode === 'directory'" :title="$t('onboarding.directory')" size="lg" data-testid="onboarding-directory" @close="onboarding.interrupt">
         <p>{{ $t('onboarding.directoryDescription') }}</p>
+        <h3>{{ $t('onboarding.mainGuide') }}</h3>
         <AppButton variant="primary" class="onboarding-core-link" data-testid="onboarding-restart" @click="onboarding.start()"><Compass :size="18" aria-hidden="true" />{{ $t('onboarding.restart') }}</AppButton>
+        <h3>{{ $t('onboarding.sideGuide') }}</h3>
         <div class="onboarding-directory-grid">
           <button v-for="guide in ONBOARDING_TOPICS" :key="guide" class="onboarding-topic" type="button" :data-testid="`onboarding-topic-${guide}`" @click="onboarding.start(guide)">
             <strong>{{ $t(`onboarding.topics.${guide}.title`) }}</strong>
             <span>{{ $t(`onboarding.topics.${guide}.description`) }}</span>
             <small>{{ $t('onboarding.topicSteps', { count: ONBOARDING_GUIDES[guide].length }) }}</small>
+            <small v-if="guide === 'ai'">{{ $t('onboarding.aiLoginRequired') }}</small>
           </button>
         </div>
       </AppDialog>
@@ -383,6 +403,10 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-note { font: var(--type-caption); }
 .onboarding-core-link { margin-block: var(--space-2) var(--space-4); }
 .onboarding-directory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.onboarding-follow-up-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.onboarding-follow-ups { margin-block-start: var(--space-4); }
+.onboarding-follow-up-grid .onboarding-topic { gap: var(--space-1); padding: var(--space-3); }
+.onboarding-follow-up-grid .onboarding-topic strong { font: var(--type-body); font-weight: 600; }
 .onboarding-topic { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-4); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-align: start; overflow-wrap: anywhere; cursor: pointer; }
 .onboarding-topic strong { font: var(--type-h3); }
 .onboarding-topic span { color: var(--color-text-secondary); }
