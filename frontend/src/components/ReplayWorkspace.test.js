@@ -206,11 +206,14 @@ describe('ReplayWorkspace', () => {
     expect(onboarding.registerWorkspace).toHaveBeenLastCalledWith(null)
   })
 
-  it('keeps the anonymous demo available while tutorial entry is homepage-only', async () => {
-    const wrapper = mountWorkspace('data', { onboarding: guideContext(), authenticated: false })
+  it('lets anonymous users open the complete feature directory from replay help', async () => {
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding, authenticated: false })
     await flushPromises()
-    expect(wrapper.find('[data-tour="workspace-help"]').exists()).toBe(false)
+    await wrapper.get('[data-tour="workspace-help"]').trigger('click')
+    expect(onboarding.openDirectory).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-tour="workspace-demo"]').exists()).toBe(true)
+    expect(authState.login).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
