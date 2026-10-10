@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import {
   applyWheelSpin,
   clampTravel, rateLimitTravel, spinStep, wrapSpin, treadScrollStep, groundDropLocal,
-  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, sideTravel,
+  attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
   SUSP_FALLBACK,
@@ -329,5 +329,23 @@ describe('chainChanged（履带形变 = 链的纯函数；下发判定按下发�
     expect(chainChanged(null, a)).toBe(true)   // 首帧
     expect(chainChanged(a, null)).toBe(true)
     expect(chainChanged(a, new Float64Array([1, 2, 3]))).toBe(true)
+  })
+})
+
+describe('chainDrift（法线闸门：与上次重算法线时的链逐点比较）', () => {
+  it('最大幅度与均值相同、形变位置不同 ⇒ 也必须检出（旧口径漏报的形态）', () => {
+    const a = new Float64Array([0.1, 0, 0, 0])
+    const b = new Float64Array([0, 0.1, 0, 0])
+    // 两个"累计统计量"完全相同——这正是 dmax/dmean 闸门漏报的场景（review 复审 P2 复现）
+    const max = (v) => Math.max(...v)
+    const mean = (v) => v.reduce((s, x) => s + Math.abs(x), 0) / v.length
+    expect(max(a)).toBeCloseTo(max(b), 12)
+    expect(mean(a)).toBeCloseTo(mean(b), 12)
+    // 逐点比较能看到 0.1 m 的位移（> 2 cm 阈值 ⇒ 重算法线）
+    expect(chainDrift(a, b)).toBeCloseTo(0.1, 12)
+    expect(chainDrift(a, Float64Array.from(a))).toBe(0)
+    // fail-safe：首帧 / 长度不符 ⇒ Infinity（必重算）
+    expect(chainDrift(null, a)).toBe(Infinity)
+    expect(chainDrift(a, new Float64Array([0.1]))).toBe(Infinity)
   })
 })

@@ -159,7 +159,11 @@ function projectSession({ isAuthenticated: isAuthed, parsedToken, state }) {
     projectedIdentity = nextIdentity
     authIdentityEpoch += 1
   }
-  authenticated.value = isAuthed
+  // ⚠️ [本机验收旁路·不提交] 与既有 DEV_ADMIN_ROLES（?admin=1，见下方角色旁路注释）同源：
+  // 本机验收时登录态也视为已持有，3D / shots 的登录门直接放行——无本机后端（8087）
+  // 也不想跳生产 Keycloak 时用。后端仍按真实 token 鉴权，越权 /api 调用照样 401；
+  // 生产构建与 vitest（无 query）恒为 false，产品行为不变。**永不提交**。
+  authenticated.value = isAuthed || DEV_ADMIN_ROLES
   tokenParsed.value = parsedToken || null
   authInitState.value = state || (isAuthed ? 'authenticated' : 'unauthenticated')
 }
