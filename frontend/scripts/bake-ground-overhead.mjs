@@ -43,7 +43,7 @@ addEventListener('unhandledrejection',(e)=>window.__bakeErr.push('reject: '+Stri
 import * as THREE from '/node_modules/three/build/three.module.js'
 import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
 // 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
-import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE, disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
+import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE, disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
 import { pruneForeignVariants } from '/src/scene/variantFilter.js'
 
 const SIZE = ${SIZE}
@@ -124,16 +124,35 @@ async function load(key, span = 600, mapId = null) {
   for (const o of degenerate) o.removeFromParent()
   // 材质转换：与 3D 运行时同一实现（SSOT 场景材质模块）。键组成必须与
   // playbackScene 的 convMat 逐字一致——同 key 同材质、跨端观感一致（守卫锁定）。
+  // 本页不做 extras 贴图解析（光照图/环境反射/细节层都不进俯视底图——见该页头部说明）；
+  // 保留同名取纹理入口以维持与内核键**逐字同构**（守卫锁定），恒 null 不改变键的形态
+  const detailTexOf = () => null;
   const convMat = (m, isCard) => cachedSceneryMat(
     [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
      m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
      m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
      !!m.vertexColors,
-     (m.userData && m.userData.occMean) || ''].join('|'),
+     (m.userData && m.userData.occMean) || '',
+     (m.userData && m.userData.blendLayer) || '',
+     (m.userData && m.userData.alphaBlend) || '',
+     // 细节层（B1）：补丁逐材质注入 detail 贴图/平铺倍率——不同 detail 的材质
+     // 若串用缓存会互相采错贴图（同图不同砖纹的实例）
+     (() => {
+       const d = m.userData && m.userData.detail;
+       if (!d) return '';
+       const t = detailTexOf(m);
+       return 'D|' + (t ? t.uuid : '') + '|' + (Array.isArray(d.scale) ? d.scale.join(',') : '');
+     })()].join('|'),
     () => (isCard ? makeBillboardMaterial(m) : (() => {
       const opaqueEnough = (m.opacity ?? 1) >= 0.99;
       if ((m.name || '').startsWith('ST|')) { return makeSpeedtreeStaticMaterial(m, opaqueEnough); }
-      const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99;
+      if (m.userData && m.userData.blendByAngle) { return makeBlendByAngleMaterial(m, m.userData.blendByAngle); }
+      // 真混合层（extras.blendLayer，烟雾/瀑布/浪）保留软 alpha：与内核同约定，
+      // 不得把"不透明度≈1 的伪透明"分流套到它身上（详见 playbackScene convMat 注释）
+      const blendLayer = !!(m.userData && m.userData.blendLayer);
+      // 软混合效果片（extras.alphaBlend；如视角淡出片）同样不得被伪透明启发式削成硬边
+      const softAlpha = !!(m.userData && m.userData.alphaBlend);
+      const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99 && !blendLayer && !softAlpha;
       const nm = new THREE.MeshLambertMaterial({
         map: m.map || null,
         color: (m.color ? m.color.clone() : new THREE.Color(0xffffff)).multiplyScalar(SCENERY_LAMBERT_EXPOSURE),
@@ -144,7 +163,9 @@ async function load(key, span = 600, mapId = null) {
       if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
       if (pseudoOpaque) nm.alphaTest = Math.max(nm.alphaTest || 0, 0.33);
       if (nm.transparent) nm.depthWrite = false;
-      nm.flatShading = true;
+      // 法线用几何自带的 NORMAL（导出器 authored 法线）；内核 2026-10-09 同步删掉了
+      // flatShading（旧行为丢掉 NORMAL、抹平硬边）。本页与内核共用约定，保持逐字一致：
+      // 下次重烘（须随资产包重导 + COS 同步）后，均衡档底图与 3D 档观感继续同源。
       return nm;
     })()))
   gltf.scene.traverse((o) => {
