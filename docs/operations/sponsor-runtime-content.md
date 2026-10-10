@@ -40,6 +40,7 @@ gh release create sponsor-runtime-content-v2 --repo A158Coke/WotbTools \
 - **注入期**（`scripts/ci/inject-sponsor-runtime-content.sh`）：tar 只接受 `sponsor-config.json` 与 `sponsor-assets/` 下的普通文件/目录（拒绝符号链接、绝对路径、`..` 逃逸）；`image` 必须逐字匹配前端 `normalizeSponsorConfig` 的 `ASSET_PATH` 正则（`/sponsor-assets/<字母数字开头、[A-Za-z0-9._-]>.<png|jpg|jpeg|webp>`）；图片按**内容**判型并验完整性（PNG 必须收在 IEND、JPEG 必须收在 FFD9、WebP 的 RIFF 尺寸字段必须等于真实长度 ⇒ 截断与「扩展名说谎」都被拒）。刻意不做全解码：构建链不引入 Pillow。
 - **镜像身份含内容指纹**：`deploy/tx/build-frontend-from-gitee.sh` 把 pin 的 sha256 纳入 immutable tag ⇒ 换码必然新 tag/重建，不会被 tag 复用悄悄吞掉；内容未变则照常复用（可复现）。
 - **构建后校验**：镜像内的赞助文件集**以 staged 包实际声明的文件集为准**（`enabled:false` 的包只有 `sponsor-config.json`，没有 `sponsor-assets/`）——文件集必须完全相同且逐文件 sha256 一致；未注入的构建里**不得**出现它们（防陈旧注入物随复用 tag 混入）。
+- **构建临时目录**：构建成功、复用镜像或构建失败后，均清理临时 worktree 和赞助解压目录；解压失败同样清理，失败退出码保留。PR CI 使用本地临时仓库与模拟构建验证这些退出路径，不访问生产环境。
 - **APK 校验**：pin 存在时 release APK 必须带 `assets/web/sponsor-config.json`，且**配置引用的每一张图**都在包里并与 pin 资产逐字节 sha256 一致（不是「至少一张图」就算过）；`enabled:true` 而 methods 为空同样失败（`android-release.yml`）。
 - **页面降级**：加载失败的方式逐个隐藏；全部不可用回落「暂未配置」，绝不显示 broken image。
 

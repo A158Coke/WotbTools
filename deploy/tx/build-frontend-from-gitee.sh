@@ -344,14 +344,19 @@ build_publish() {
 
   if [ -n "$sponsor_fingerprint" ]; then
     sponsor_tmp="$(mktemp -d)"
-    unpack_sponsor_bundle "$sponsor_bundle" "$sponsor_tmp"
   fi
   cleanup_build_leftovers() {
+    local worktree="$1" sponsor_tmp="$2"
     git -C "$REPO_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
     rm -rf -- "$worktree"
     [ -z "$sponsor_tmp" ] || rm -rf -- "$sponsor_tmp"
   }
-  trap cleanup_build_leftovers EXIT
+  # Capture quoted paths now: EXIT runs after build_publish's locals leave scope.
+  trap "$(printf 'cleanup_build_leftovers %q %q' "$worktree" "$sponsor_tmp")" EXIT
+
+  if [ -n "$sponsor_fingerprint" ]; then
+    unpack_sponsor_bundle "$sponsor_bundle" "$sponsor_tmp"
+  fi
 
   wait_for_gitee_sha "$source_sha"
 
