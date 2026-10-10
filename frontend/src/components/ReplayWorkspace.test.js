@@ -175,6 +175,14 @@ function analyzeDemo() {
 function guideContext() {
   return { registerWorkspace: vi.fn(), openDirectory: vi.fn() }
 }
+// Vue's queue flush does not await Node's real WebCrypto hash of the bundled sample.
+async function waitForDemoReady(wrapper) {
+  await vi.waitFor(() => {
+    expect(replayState.analysis.value.phase).toBe('ready')
+    expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false)
+  }, { timeout: 4000 })
+  await flushPromises()
+}
 afterEach(() => {
   vi.unstubAllGlobals()
   useConfirmHost().settle(false)
@@ -211,7 +219,7 @@ describe('ReplayWorkspace', () => {
     analyzeDemo()
     const wrapper = mountWorkspace('data', { authenticated: false })
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
-    await flushPromises()
+    await waitForDemoReady(wrapper)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
     expect(replayState.analyze).toHaveBeenCalledTimes(1)
@@ -242,7 +250,7 @@ describe('ReplayWorkspace', () => {
     const wrapper = mountWorkspace('data')
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
     useConfirmHost().settle(true)
-    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true), { timeout: 4000 })
     expect(wrapper.get('[data-testid="workspace-demo-error"]').text()).toContain('onboarding.demo_failed')
     expect(replayState.files.value).toBe(files)
     expect(replayState.resp.value).toBe(result)
@@ -251,7 +259,7 @@ describe('ReplayWorkspace', () => {
     analyzeDemo()
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
     useConfirmHost().settle(true)
-    await flushPromises()
+    await waitForDemoReady(wrapper)
     expect(replayState.isDemoSelection.value).toBe(true)
     expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
     wrapper.unmount()
@@ -289,13 +297,16 @@ describe('ReplayWorkspace', () => {
     })
     const wrapper = mountWorkspace('data', { authenticated: false })
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
-    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false)
+    }, { timeout: 4000 })
     const files = replayState.files.value
     const revision = replayState.selectionRevision.value
     expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true)
     analyzeDemo()
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
-    await flushPromises()
+    await waitForDemoReady(wrapper)
     expect(replayState.files.value).toBe(files)
     expect(replayState.selectionRevision.value).toBe(revision)
     expect(fetch).toHaveBeenCalledTimes(1)
@@ -356,6 +367,7 @@ describe('ReplayWorkspace', () => {
     const latest = new File(['latest'], 'latest.wotbreplay')
     wrapper.findComponent(FileDrop).vm.$emit('update:files', [latest])
     finishDownload({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) })
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false), { timeout: 4000 })
     await flushPromises()
     expect(replayState.files.value).toEqual([latest])
     expect(replayState.updateDemoFile).not.toHaveBeenCalled()
