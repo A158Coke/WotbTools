@@ -130,7 +130,9 @@ import sys, tarfile
 with tarfile.open(sys.argv[1], "r:gz") as archive:
     for member in archive.getmembers():
         name = member.name
-        if not (name == "sponsor-config.json" or name.startswith("sponsor-assets/")):
+        # GNU tar 会为目录写一条**不带尾随斜杠**的条目（`sponsor-assets`），与
+        # scripts/ci/inject-sponsor-runtime-content.sh 的白名单保持一致。
+        if not (name == "sponsor-config.json" or name == "sponsor-assets" or name.startswith("sponsor-assets/")):
             raise SystemExit(f"unexpected entry in sponsor bundle: {name}")
         if not (member.isfile() or member.isdir()):
             raise SystemExit(f"unsupported entry type in sponsor bundle: {name}")
