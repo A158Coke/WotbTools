@@ -267,14 +267,9 @@ stage_and_validate() {
       || die "staged TX Alloy config validation failed; live TX deployment was not changed."
   fi
   if is_selected wotb-frontend; then
-    # Sponsor assets and Android releases are optional runtime content. The
-    # sponsor config itself is a file bind mount: if Docker ever created the
-    # source path as a directory, fail before Compose can silently serve 404.
-    mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
-    if [ -e "$TX_RUNTIME_ROOT/config/sponsor-config.json" ] \
-       && [ ! -f "$TX_RUNTIME_ROOT/config/sponsor-config.json" ]; then
-      die "TX sponsor config must be a regular file: $TX_RUNTIME_ROOT/config/sponsor-config.json"
-    fi
+    # Android releases are optional runtime content. Sponsor QR content is not a
+    # host mount anymore (published to the object-storage asset plane).
+    mkdir -p "$TX_RUNTIME_ROOT/android-release"
   fi
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"

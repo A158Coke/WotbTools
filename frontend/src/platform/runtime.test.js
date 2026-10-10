@@ -17,7 +17,9 @@ describe('Android local resource / remote service boundary', () => {
     vi.stubEnv('MODE', 'android')
     expect(resolveApiUrl('/api/ai/reviews')).toBe(`${PRODUCTION_API_ORIGIN}/api/ai/reviews`)
     expect(resolveApiUrl('/download/android/version.json')).toBe(`${PRODUCTION_API_ORIGIN}/download/android/version.json`)
-    for (const path of ['/assets/chunk.js', '/wasm/ref/parser.wasm', '/maps/map.png', '/__native/replay-pending']) expect(resolveApiUrl(path)).toBe(path)
+    // Sponsor 配置与二维码随构建进 bundle（Web 由镜像 nginx 同源伺服，APK 由本机 origin
+    // 伺服），**不得**改道生产网关——一旦出现在这条白名单里，APK 会去 wotbtools.com 取。
+    for (const path of ['/assets/chunk.js', '/wasm/ref/parser.wasm', '/maps/map.png', '/__native/replay-pending', '/sponsor-config.json', '/sponsor-assets/alipay.jpg']) expect(resolveApiUrl(path)).toBe(path)
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
     await apiFetch('/api/hof', { headers: { Authorization: 'Bearer native-token' }, credentials: 'include' })

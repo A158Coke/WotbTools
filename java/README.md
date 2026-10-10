@@ -30,7 +30,7 @@
 `deploy/test-keycloak-tofu.sh` 在 disposable PostgreSQL、Keycloak 与 local OpenTofu
 state 中独立验证，不访问 production state。
 
-赞助页从 `/sponsor-config.json` 读取运行时配置。生产配置保存在 `/opt/wotb-tx/config/sponsor-config.json`，二维码保存在 `/opt/wotb-tx/config/sponsor/`，以只读方式挂载到前端容器；仓库仅提供 disabled 示例配置，不包含个人收款二维码。
+赞助页（`/sponsor`）的运行时配置与收款码作为 pin 住的 Release 资产存放，构建期注入并随 Frontend 镜像与 APK bundle 发布（Git 历史里没有明文副本）；轮换与不变量见 `docs/operations/sponsor-runtime-content.md`。
 
 ### CI/CD 与部署所有权
 

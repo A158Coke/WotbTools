@@ -32,12 +32,10 @@ Komodo keeps the TX2 Stack definition as reviewed declarative metadata and runti
 
 ## Runtime-content ownership
 
-The frontend image is not the whole production surface. Sponsor content and the current Android public download surface are host-owned runtime content.
+The frontend image is not the whole production surface. The current Android public download surface is host-owned runtime content. (Sponsor QR content is not: it is injected at build time from a pinned Release asset and ships inside the Frontend image / APK — see `docs/operations/sponsor-runtime-content.md`.)
 
 K7C replicates only the **current public production surface** to TX2 local storage at `/opt/wotb-tx2/runtime-content`:
 
-- `sponsor-config.json`;
-- sponsor assets actually referenced by that config;
 - Android `version.json`;
 - the APK actually referenced by that manifest.
 
@@ -52,11 +50,9 @@ Before public cutover, the read-only K7C preflight required:
 1. TX1/TX2 frontend roots return HTTP 200.
 2. TX2 SPA fallback and `/api/health` return HTTP 200.
 3. TX1/TX2 `/` and `/version.json` are byte-identical.
-4. `sponsor-config.json` is byte-identical.
-5. every sponsor asset referenced by the authoritative sponsor config is byte-identical.
-6. Android `version.json` is byte-identical.
-7. the APK referenced by authoritative Android `version.json` is byte-identical.
-8. Caddy still targets the reviewed pre-cutover frontend placement.
+4. Android `version.json` is byte-identical.
+5. the APK referenced by authoritative Android `version.json` is byte-identical.
+6. Caddy still targets the reviewed pre-cutover frontend placement.
 
 Production evidence recorded during K7C:
 

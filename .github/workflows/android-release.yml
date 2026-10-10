@@ -274,6 +274,54 @@ jobs:
       # （build-android-map-assets.mjs 内部会跑 determinism 复核）。
       - name: Install pinned Pillow for the map derivative pipeline
         run: python3 -m pip install --disable-pip-version-check 'Pillow==12.3.0'
+      # Sponsor 运行时内容（收款码 + 配置）不进 Git 历史：它作为 GitHub Release 资产发布，
+      # 由 deploy/sponsor/content.json 钉住 release/asset/sha256。下载校验后注入 publicDir
+      # （common/assets/），Vite 原样拷进 dist-android ⇒ APK 由本机 origin 同源伺服（离线可用）。
+      - name: Download and inject pinned sponsor runtime content
+        id: sponsor
+        if: steps.preflight.outputs.releaseAction == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$GITHUB_WORKSPACE/deploy/sponsor/content.json"
+          if [ ! -f "$pin" ]; then
+            echo "state=absent" >> "$GITHUB_OUTPUT"
+            echo "bundle=" >> "$GITHUB_OUTPUT"
+            echo "no sponsor content pin: building the APK without sponsor runtime content"
+            exit 0
+          fi
+          eval "$(python3 - "$pin" <<'PY'
+          import json, shlex, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          artifact = data.get("artifact") or {}
+          repo = data.get("repo", "")
+          release = artifact.get("release", "")
+          asset = artifact.get("asset", "")
+          sha = artifact.get("sha256", "")
+          if not (repo and release and asset and len(sha) == 64):
+              raise SystemExit("deploy/sponsor/content.json has incomplete artifact metadata")
+          base = repo if repo.startswith("http") else "https://github.com/" + repo
+          values = {
+              "SPONSOR_URL": f"{base}/releases/download/{release}/{asset}",
+              "SPONSOR_ASSET": asset,
+              "SPONSOR_SHA": sha,
+          }
+          for key, value in values.items():
+              print(f"{key}={shlex.quote(value)}")
+          PY
+          )"
+          bundle="$RUNNER_TEMP/$SPONSOR_ASSET"
+          curl --fail --silent --show-error --location --retry 3 "$SPONSOR_URL" -o "$bundle"
+          printf '%s  %s\n' "$SPONSOR_SHA" "$bundle" | sha256sum -c --quiet
+          state="$(SPONSOR_BUNDLE="$bundle" bash "$GITHUB_WORKSPACE/scripts/ci/inject-sponsor-runtime-content.sh")"
+          case "$state" in
+            sponsorRuntimeContent=injected) ;;
+            *) echo "::error::unexpected sponsor injection result: $state" >&2; exit 1 ;;
+          esac
+          {
+            echo "state=injected"
+            echo "bundle=$bundle"
+          } >> "$GITHUB_OUTPUT"
       - name: Build the local-first frontend bundle into APK assets
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
@@ -419,6 +467,50 @@ jobs:
               exit 1
             }
           done
+          # Sponsor 运行时内容：pin 存在时 APK 必须逐文件带上配置**与配置引用的每一张图**，
+          # 且与 pin 住的资产包逐字节一致（不是「至少有一张图」就算过）。
+          if [ "${{ steps.sponsor.outputs.state }}" = "injected" ]; then
+            python3 - "$APK" "$listing_file" "${{ steps.sponsor.outputs.bundle }}" <<'PY'
+          import hashlib, json, sys, tarfile, zipfile
+
+          apk_path, listing_path, bundle_path = sys.argv[1], sys.argv[2], sys.argv[3]
+          listed = set(open(listing_path, encoding="utf-8", errors="replace").read().split())
+
+          with zipfile.ZipFile(apk_path) as apk:
+              entries = set(apk.namelist())
+              if "assets/web/sponsor-config.json" not in listed or "assets/web/sponsor-config.json" not in entries:
+                  raise SystemExit("::error::release APK 缺少 assets/web/sponsor-config.json（pin 存在却没进 bundle）")
+              try:
+                  config = json.loads(apk.read("assets/web/sponsor-config.json").decode("utf-8"))
+              except ValueError as error:
+                  raise SystemExit(f"::error::release APK 内 sponsor-config.json 不是合法 JSON：{error}")
+              methods = config.get("methods") or []
+              if config.get("enabled") is True and not methods:
+                  raise SystemExit("::error::release APK 内 sponsor-config.json 声明 enabled 却没有任何 methods")
+
+              verified = 0
+              with tarfile.open(bundle_path, "r:gz") as bundle:
+                  for method in methods:
+                      image = (method or {}).get("image") or ""
+                      if not image.startswith("/sponsor-assets/"):
+                          raise SystemExit(f"::error::release APK 配置里的图片路径不合法：{image!r}")
+                      entry = "assets/web" + image
+                      if entry not in entries:
+                          raise SystemExit(f"::error::release APK 缺少配置引用的图片：{entry}")
+                      member = bundle.extractfile(image.lstrip("/"))
+                      if member is None:
+                          raise SystemExit(f"::error::pinned 赞助资产包缺少 {image}")
+                      apk_sha = hashlib.sha256(apk.read(entry)).hexdigest()
+                      bundle_sha = hashlib.sha256(member.read()).hexdigest()
+                      if apk_sha != bundle_sha:
+                          raise SystemExit(
+                              f"::error::APK 内 {entry} 与 pin 住的赞助资产包不一致（{apk_sha[:12]} != {bundle_sha[:12]}）"
+                          )
+                      verified += 1
+                      print(f"sponsor asset verified: {entry} sha256={apk_sha[:12]}")
+              print(f"sponsor runtime content verified: {verified} image(s) + sponsor-config.json")
+          PY
+          fi
           AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)"
           test -x "$AAPT"
           "$AAPT" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"

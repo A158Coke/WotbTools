@@ -41,24 +41,6 @@ compare_url_bytes "/version.json" "version.json"
 
 echo
 echo "=== K7C runtime content ==="
-compare_runtime_file "$TX_RUNTIME_ROOT/config/sponsor-config.json" "/sponsor-config.json" "sponsor-config.json"
-python3 - "$TX_RUNTIME_ROOT/config/sponsor-config.json" <<'PY' > "$tmp/sponsor.paths"
-import json,sys
-x=json.load(open(sys.argv[1])); seen=set()
-def walk(v):
-    if isinstance(v,dict):
-        for y in v.values(): walk(y)
-    elif isinstance(v,list):
-        for y in v: walk(y)
-    elif isinstance(v,str) and v.startswith('/sponsor-assets/'):
-        n=v.removeprefix('/sponsor-assets/')
-        if not n or '/' in n or n in ('.','..'): raise SystemExit(f'unsafe sponsor asset: {v}')
-        seen.add(n)
-walk(x)
-for n in sorted(seen): print(n)
-PY
-while IFS= read -r name; do [ -z "$name" ] || compare_runtime_file "$TX_RUNTIME_ROOT/config/sponsor/$name" "/sponsor-assets/$name" "sponsor-assets/$name"; done < "$tmp/sponsor.paths"
-
 compare_runtime_file "$TX_RUNTIME_ROOT/android-release/version.json" "/download/android/version.json" "android-release/version.json"
 apk_path="$(python3 - "$TX_RUNTIME_ROOT/android-release/version.json" <<'PY'
 import json,sys,urllib.parse
