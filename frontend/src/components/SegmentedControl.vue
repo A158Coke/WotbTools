@@ -1,13 +1,15 @@
 <script setup>
 // 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
-// Home / End 跳首尾（WAI-ARIA 单选组的标准键盘模型）；超宽时横向滚动，窄屏不换行。
+// Home / End 跳首尾（WAI-ARIA 单选组的标准键盘模型）；溢出策略由 scrollable / wrap 显式选择。
 const props = defineProps({
   modelValue: { type: String, required: true },
   /** [{ value, label, testid?, data? }]；data 是附加到按钮上的 data-* 键值（如 data-cap） */
   options: { type: Array, required: true },
   ariaLabel: { type: String, required: true },
-  /** 撑满可用宽度并按需横向滚动（工作台能力切换这类选项较多、可能溢出的场景） */
+  /** 撑满可用宽度并按需横向滚动，保持单行。 */
   scrollable: { type: Boolean, default: false },
+  /** 按可用宽度换行，窄屏各行填满宽度，长标签仍完整可见。 */
+  wrap: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -42,7 +44,7 @@ function onKeydown(event) {
 <template>
   <div
     class="segmented"
-    :class="{ 'is-scrollable': scrollable }"
+    :class="{ 'is-scrollable': scrollable && !wrap, 'is-wrapping': wrap }"
     role="radiogroup"
     :aria-label="ariaLabel"
     @keydown="onKeydown"
@@ -85,6 +87,12 @@ function onKeydown(event) {
 
 .segmented.is-scrollable::-webkit-scrollbar { display: none; }
 
+.segmented.is-wrapping {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 .segmented-option {
   flex: none;
   min-height: var(--control-h-sm);
@@ -107,13 +115,26 @@ function onKeydown(event) {
 
 .segmented-option:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
+.segmented.is-wrapping .segmented-option {
+  flex-shrink: 1;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (width < 768px) {
+  .segmented.is-wrapping .segmented-option {
+    flex-grow: 1;
+    padding: var(--space-2) var(--space-3);
+  }
+}
+
 @media (hover: hover) {
   .segmented-option:not(.is-active):hover { color: var(--color-text-primary); }
 }
 
 /* 触屏：点击区域抬到 --hit-min（design-language §5；coarse 档 token = 44px）。
-   注意选项必须 `flex: none`（见上）——否则 flex-shrink 会把 44px 压到 42px，
-   表现为「token 没生效」，实际是布局把它挤小了。 */
+   单行滚动模式禁止收缩；换行模式的长标签可收缩，但仍守住触控下限。 */
 @media (pointer: coarse) {
   .segmented-option { min-height: var(--hit-min); min-width: var(--hit-min); }
 }
