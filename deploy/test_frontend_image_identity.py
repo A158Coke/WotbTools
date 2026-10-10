@@ -14,10 +14,10 @@ TX1 构建脚本的 identity 纳入 sponsor 内容指纹（第三个输入）后
 
 1. **唯一公式**（`deploy/tx/build-frontend-from-gitee.sh`，构建脚本是 tag 的定义者）：
    `sha256(source_sha + "\\n" + asset_base_url + "\\n" + sponsor_fingerprint)[0:12]`
-2. **Frontend deploy**（`frontend.yml`）**不得**重算 identity —— 只能消费 build job 实产的
-   镜像 ref（job outputs `image`）。就地重算是本事故的形态，静态禁止回归。
-3. **Frontend Replica**（`frontend-replica.yml`）与公式同输入同序，sponsor 指纹必须经
-   `deploy/tx/sponsor-fingerprint.sh` 派生（与构建侧同一语义）。
+2. **Frontend deploy**（`frontend.yml` 的 reconcile 块）**同公式同输入**，且 identity **就地重算**
+   ——不得走 job outputs（契约见 `scripts/ci/test-workflow-contract.sh`：GitHub 会把形似密钥的
+   SHA/digest 打码）。sponsor 指纹经随包 stage 的 pin + `deploy/tx/sponsor-fingerprint.sh` 派生。
+3. **Frontend Replica**（`frontend-replica.yml`）同样同输入同序，指纹经同一脚本派生。
 4. **真实运行数据点**（两个历史 run 的 `RESULT image=` 实测值）验证公式语义；并断言
    任意单个输入缺失都会得到不同 tag（这正是 deploy 侧两输入公式永远 not-found 的直接原因）。
 """
@@ -103,22 +103,48 @@ class IdentityFormula(unittest.TestCase):
         self.assertNotEqual(full, replaced, "换 sponsor 内容必须换 tag（immutable 复用不得吞掉）")
 
 
-class DeployConsumesPublishedImage(unittest.TestCase):
+class FrontendWorkflowDeployFormula(unittest.TestCase):
+    """deploy 与 replica 都必须与构建脚本同公式同输入（就地重算，且不得跨 job outputs）。"""
+
     def setUp(self) -> None:
         self.text = FRONTEND_WF.read_text(encoding="utf-8")
-        # build job 的 job-level outputs（声明的位置无关，按整份文件断言这两条同时存在）。
-        self.assertIn("image: ${{ steps.remote_build.outputs.image }}", self.text,
-                      "build job 必须把实产镜像 ref 暴露为 job output")
+        self.deploy_block = self.text.split("- name: Reconcile only Frontend under the TX host lock", 1)
+        self.assertEqual(len(self.deploy_block), 2, "deploy 的 reconcile 步骤未找到")
+        self.deploy_body = self.deploy_block[1].split("\n      - ", 1)[0]
 
-    def test_deploy_reference_is_build_output(self) -> None:
-        self.assertIn("immutable_ref='${{ needs.build.outputs.image }}'", self.text)
+    def test_deploy_matches_builder_formula(self) -> None:
+        fmt, names = identity_inputs(self.deploy_body)
+        builder_fmt, builder_names = identity_inputs(BUILDER.read_text(encoding="utf-8"))
+        self.assertEqual(fmt, builder_fmt)
+        self.assertEqual(names, builder_names)
 
-    def test_deploy_does_not_recompute_identity(self) -> None:
-        deploy_block = self.text.split("- name: Reconcile only Frontend under the TX host lock", 1)
-        self.assertEqual(len(deploy_block), 2, "deploy 的 reconcile 步骤未找到")
-        body = deploy_block[1].split("\n      - ", 1)[0]
-        self.assertNotIn("cut -c1-12", body,
-                         "deploy 不得就地重算 identity（2026-10-10 事故形态：漏 sponsor 指纹输入）")
+    def test_deploy_derives_sponsor_fingerprint_on_tx(self) -> None:
+        # 指纹必须由随包 stage 的 pin 就地派生（同一 source commit 的同一值），不得来自 runner 侧传递。
+        self.assertIn("deploy/tx/sponsor-fingerprint.sh", self.deploy_body)
+        self.assertIn("/opt/wotb-tx/deploy.incoming", self.deploy_body)
+
+    def test_sponsor_pin_is_staged_to_tx(self) -> None:
+        self.assertIn("source: deploy/tx,deploy/sponsor", self.text,
+                      "deploy job 必须把 deploy/sponsor（pin）一并 stage，否则远端派生不出指纹")
+
+    def test_staged_identity_inputs_are_declared_production_inputs(self) -> None:
+        # 远端派生 fingerprint 依赖的两个路径（新脚本 + pin）必须登记为生产输入：
+        # push.paths 与 PRODUCTION_INPUT_PATHS 逐条相等（scripts/ci/test-workflow-contract.sh），
+        # 且被 owner 过滤器覆盖（.github/ci-owner-paths.yml）。
+        push_paths = self.text.split("    paths:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
+        for entry in ("deploy/tx/sponsor-fingerprint.sh", "deploy/sponsor/**"):
+            self.assertIn(entry, push_paths)
+            self.assertIn(entry, self.text.split("  PRODUCTION_INPUT_PATHS: |\n", 1)[1].split("concurrency:", 1)[0])
+        owner_paths = (ROOT / ".github/ci-owner-paths.yml").read_text(encoding="utf-8")
+        for entry in ("deploy/tx/sponsor-fingerprint.sh", "deploy/sponsor/**"):
+            self.assertIn(f"'{entry}'", owner_paths)
+
+    def test_identity_does_not_cross_job_outputs(self) -> None:
+        # scripts/ci/test-workflow-contract.sh 的既有契约：GitHub 会对形似密钥的 SHA/digest 打码，
+        # release identity 不得跨 job-output 边界（本地再挡一层，避免两处口径反向漂移）。
+        self.assertNotIn("needs.build.outputs", self.text)
+        build_block = self.text.split("\n  build:", 1)[1].split("\n  deploy:", 1)[0]
+        self.assertNotIn("\n    outputs:", build_block)
 
 
 class FingerprintScript(unittest.TestCase):
