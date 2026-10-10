@@ -1,8 +1,9 @@
 # Android Replay Intent
 
-## 支持通道（V1 单个）
+## 支持通道
 
-- **App 内选择**：现有 Vue `<input type="file" accept=".wotbreplay">`（`FileDrop.vue`）。
+- **App 内选择文件**：Vue `<input type="file" accept=".wotbreplay">`（`FileDrop.vue`），保留多文件选择。
+- **App 内选择目录**：具备 `replay-folder-picker` 能力时走原生 `ACTION_OPEN_DOCUMENT_TREE`，见下节；旧 APK 仅显示文件多选。
 - **Share to WotBTools**：`ACTION_SEND`，`content://` URI。
 - **Open With WotBTools**：`ACTION_VIEW`，文件管理器 → `content://` URI。
 
@@ -10,7 +11,21 @@
 20 MiB / 100 文件 / 200 MiB）沿用现有 `frontend/src/utils/replayUpload.js` 与后端 validator
 （Kotlin 不复制，规格 §40）。
 
-## 单一交接通道（唯一 ingress，不依赖 Base64，规格 §38/§39）
+## App 手动目录导入（独立于 external pending）
+
+目录入口不再依赖 WebView 的 `webkitdirectory`／`FileChooserParams.createIntent()`：后者在 Android 16 设备上实际发出普通 `ACTION_GET_CONTENT`，选目录会被文件管理器拒绝。普通 Web 浏览器继续使用 HTML 目录选择；Android 文件多选仍走既有 input。
+
+- Bridge v2 追加可选 `replay-folder-picker` capability；`pickReplayFolder(requestId)` 启动系统 SAF 目录选择，取消不修改既有文件；`cancelReplayFolderPicker(requestId)` 只关闭／取消该调用者尚未完成的选择或扫描，不会影响新请求。`releaseReplayFolderSelection(selectionId)` 只释放匹配的瞬时选择。
+- 系统只授权所选目录，App 不调用 `takePersistableUriPermission`，不申请 broad storage permission。Android 11+ 的根目录、Download 根及 Android/data 等限制由系统执行，不绕过。
+- 原生在后台逐行递归目录，最多扫描 10,000 个文档条目（含重复／循环），保留不可变的文档引用，累计 metadata／相对路径限 1,000,000 字符；原生不是业务过滤／校验 owner。目录选择总等待 9 分钟、扫描 60 秒，失败／取消／销毁关闭本次请求，迟到 Activity 结果和扫描不得替换新选择。
+- Web 收到 metadata（fileId、name、relativePath、size 可未知、lastModified），不会收到真实 content URI。FileDrop 使用既有回放筛选、去重和 100 文件／20 MiB 单文件／200 MiB 总量规则预检，再读取回放；嵌套目录的相对路径避免同名文件互相覆盖；提供者若返回路径完全相同的多个回放，则明确拒绝整个批次，不静默覆盖。
+- 固定 `https://appassets.androidplatform.net/__native/replay-folder` 只响应 GET，使用 `X-Wotb-Folder-Selection-Id` 与 `X-Wotb-Folder-File-Id` 两个身份 header。不存在、错身份、旧选择、读失败必须由 Native 返回错误，绝不落到网络；响应 no-store。读取同时复核所有权，Native 沿用 25 MiB 基础设施单文件上限，前端再按实际字节执行业务上限（不信 provider SIZE）。
+- 前端读取阶段最多 2 分钟；离开组件或既有选择被新导入替换时，通过请求身份取消 Native picker／扫描及读取。只有完整成功的 File 批次才交给既有候选入口，错误不部分导入；成功／拒绝／读失败／取消后的迟到回复均释放本次 Native 选择。
+- 这是手动、瞬时的文件选择：不自动解析、不写 durable pending、不改变 share/open 的 analysis/ACK 语义。进程结束后用户重新选择目录，没有常驻目录监听。
+
+真机验收：目录含多个回放、嵌套同名回放和非回放 → 仅回放进入现有批次；取消／空目录／超限／失去权限 → 旧批次不变；普通多选、Web 目录、图片选择及 external share/open 不回归。
+
+## 单一交接通道（唯一 external ingress，不依赖 Base64，规格 §38/§39）
 
 ### HTTPS pending resource（2026-09-10 hotfix）
 
