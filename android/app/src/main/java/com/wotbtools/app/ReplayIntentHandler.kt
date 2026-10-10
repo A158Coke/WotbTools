@@ -104,7 +104,7 @@ object ReplayIntentHandler {
     private const val CACHE_DIR = "replay"
     private const val BUFFER = 8192
     // infra safety hard ceiling（单文件），高于业务 20 MiB；不是业务 validator。
-    private const val MAX_BYTES = 25L * 1024 * 1024
+    internal const val MAX_BYTES = 25L * 1024 * 1024
 
     /** pending metadata 存储（app private SharedPreferences，single slot）。 */
     private const val PREFS_NAME = "replay_pending"
