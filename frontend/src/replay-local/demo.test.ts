@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isOfficialDemo, loadOfficialDemo, OFFICIAL_DEMO } from './demo.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
-import { fixtureFacets, requireFixtures, shotsViaPinnedWasm } from './__golden__/agentWasmNode.js'
+import { replayFacets, requireFixtures, shotsViaPinnedWasm } from './__golden__/agentWasmNode.js'
 import { resolveReplayClock } from './canonical/facts.js'
 
-const sampleBytes = readFileSync(new URL('../../../common/assets/onboarding/replay-1.wotbreplay', import.meta.url))
+const samplePath = new URL(`../../../common/assets${OFFICIAL_DEMO.path}`, import.meta.url)
+const sampleBytes = readFileSync(samplePath)
 
 function serve(bytes = sampleBytes) {
   const fetchMock = vi.fn(async () => new Response(bytes))
@@ -73,8 +75,9 @@ describe('bundled sample teaching cues', () => {
   // This integration case boots pinned WASM and decodes a real replay under concurrent CI;
   // the provenance policy cases above retain the ordinary test timeout.
   it('resolves the published time and shot identity with the pinned real parser', async () => {
-    const parsed = requireFixtures(await fixtureFacets(OFFICIAL_DEMO.filename))
+    const parsed = requireFixtures(await replayFacets(fileURLToPath(samplePath)))
     expect(Buffer.from(parsed.bytes)).toEqual(sampleBytes)
+    expect(parsed.result.map_key).toBe(OFFICIAL_DEMO.mapCode)
     const clock = resolveReplayClock(parsed.aiReview.battle.periods, parsed.result, parsed.playback.meta.duration)
     const outcome = await shotsViaPinnedWasm(parsed.bytes)
     const shot = outcome.shots.find(s => s.shot_id === OFFICIAL_DEMO.cue.shotId)
