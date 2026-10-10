@@ -54,28 +54,46 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         resetViewerGlobals();
         const L = {
             loading: 'Loading tank model...',
+            shellUnavailable: 'Shell data is missing or invalid.',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
             tier: (tier) => 'Tier ' + tier,
             type: (value) => value,
             nation: (value) => value,
             showCollision: 'Show Collision',
             hideCollision: 'Hide Collision',
-            worldHint: 'Drag to rotate · Scroll to zoom · Right-drag: pan',
+            partName: (name) => name, resultName: (result) => result,
             shotDamage: 'damage',
             shotRicochetSeg: 'ricochet (-25% penetration)',
             shotLoss: 'loss',
             shotNominal: 'nominal',
             shotBlocked: 'blocked',
+            heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
+            technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
+            selectShooter: 'Choose firing tank', selectTarget: 'Choose target tank',
+            allTiers: 'All tiers', allNations: 'All nations', allTypes: 'All types',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
+        const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         const cleanups = [];
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
-        let initDone = false;    // 渲染器与名册就绪后 retry 才能只重载目标坦克
+        // Navigation between shots replaces the scene before delayed shell/trajectory work can finish.
+        const pendingTimers = new Set();
+        const setTimeout = (callback, delay) => {
+            const timer = globalThis.setTimeout(() => {
+                pendingTimers.delete(timer);
+                if (!destroyed) callback();
+            }, delay);
+            pendingTimers.add(timer);
+            return timer;
+        };
+        cleanups.push(() => { pendingTimers.forEach(globalThis.clearTimeout); pendingTimers.clear(); });
+        let initPhase = 'tank list';
+        let initDone = false;    // 名册与弹药就绪后 retry 才能只重载目标坦克
         // 加载状态上报（宿主页进度条 / 错误态）；宿主回调异常不影响场景
         const reportLoad = (state) => {
             if (destroyed || typeof onLoadState !== 'function') return;
@@ -85,6 +103,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             : (error && (error.message || error.statusText || String(error))) || 'unknown';
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
+        let shooterLoadGen = 0;
+        let shooterLoading = false;
         let targetLoadGen = 0;   // target JSON requests can finish out of order when users switch tanks quickly
         const modelProgress = createLoadProgress((snap) => reportLoad({ state: 'loading', progress: snap.fraction }));
         const onWin = (type, fn) => {
@@ -577,14 +597,17 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 调试信息窗口：坐标等调试文字集中展示在窗口行内（颜色点 = 对应 3D 标记），不再往场景挂 sprite 标签
         function fmt3(x, y, z) { return '(' + x.toFixed(1) + ', ' + y.toFixed(1) + ', ' + z.toFixed(1) + ')'; }
         // dbgReset 在 world 分支入口重建窗口（清上一发残留行）；dbgInfo 惰性建行并更新文本
-        function dbgReset(title) {
+        function dbgReset() {
             let w = document.getElementById('debug-info');
             if (!w) {
                 w = document.createElement('div');
                 w.id = 'debug-info';
                 (document.getElementById('corner-tr') || document.body).appendChild(w);
             }
-            w.innerHTML = '<h4>' + title + '</h4>';
+            w.replaceChildren();
+            const heading = document.createElement('h4');
+            heading.textContent = L.technicalEvidence;
+            w.appendChild(heading);
         }
         function dbgInfo(id, color, name, text) {
             const w = document.getElementById('debug-info');
@@ -599,11 +622,26 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }
             r.querySelector('.dbg-val').textContent = text;
         }
-        // 调试模式开关工厂（原命中/脱靶两分支各建一份几乎相同的 __debugSetVisible + 调试按钮）：
+        // 命中/脱靶共用的开发诊断配置：仅 ?debug=1 开启，不提供用户界面入口。
         // 收纳 World View 面板 + 调试信息窗口 + 全部调试标记；extraRefresh = 分支附加刷新
         // （命中分支传 __updateAnchorMarkers 刷新基准点标记，脱靶分支传 null）。
-        // URL debug=1 的自动开启时序两分支不同，留在各自调用点处理
-        function makeDebugToggle(extraRefresh) {
+        // URL debug=1 的开启时序两分支不同，留在各自调用点处理
+        function setupShotDebug(extraRefresh) {
+            // Group raw protocol and geometry evidence for the explicit developer URL mode.
+            const panel = document.getElementById('turret-controls');
+            if (panel) {
+                const evidence = document.createElement('details');
+                evidence.className = 'armor-evidence';
+                const summary = document.createElement('summary');
+                summary.textContent = L.technicalEvidence;
+                evidence.appendChild(summary);
+                for (const row of [...panel.children]) {
+                    if (!row.querySelector('#time-scrub')) evidence.appendChild(row);
+                }
+                const coordinates = document.getElementById('debug-info');
+                if (coordinates) evidence.appendChild(coordinates);
+                panel.appendChild(evidence);
+            }
             window.__debugOn = false;
             window.__debugSetVisible = function(on) {
                 window.__debugOn = on;
@@ -615,23 +653,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 面板与移动标注复选框仅在调试模式可交互
                 const st = document.getElementById('turret-controls');
                 if (st) st.style.display = on ? 'block' : 'none';
-                // 调试信息窗口随开关显隐（内容行由各标记更新函数写入）
+                // 开发诊断窗口随模式显隐（内容行由各标记更新函数写入）
                 const di = document.getElementById('debug-info');
                 if (di) di.style.display = on ? 'block' : 'none';
             };
-            const btn = document.createElement('button');
-            btn.id = 'debug-toggle';
-            btn.textContent = '调试标注';
-            btn.style.cssText = 'padding:6px 14px;background:var(--panel);color:var(--accent);' +
-                'border:1px solid var(--border);border-radius:var(--radius-sm);' +
-                'font-size:0.85em;cursor:pointer;backdrop-filter:blur(12px);';
-            btn.onclick = function() {
-                window.__debugSetVisible(!window.__debugOn);
-                this.textContent = window.__debugOn ? '隐藏调试标注' : '调试标注';
-            };
-            // 挂右下角栈：按钮贴角、操作提示在其上方，不重叠
-            (document.getElementById('corner-br') || document.body).appendChild(btn);
-            return btn;
         }
         // segment 弹种全局 id 解码（type=32 / method0x07 同源编码）：
         // 全局 = (shells.xml 局部 id << 8) | 国家基数字节（nation_id×16+10）
@@ -1530,7 +1555,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         document.getElementById('penetration-btn').addEventListener('click', function() {
             penetrationMode = !penetrationMode;
             this.classList.toggle('active', penetrationMode);
-            this.textContent = penetrationMode ? '关闭热力图' : '穿透热力图';
+            this.textContent = penetrationMode ? L.hideHeatmap : L.heatmap;
+            this.setAttribute('aria-pressed', String(penetrationMode));
             applyPenetrationMode(penetrationMode);
             refreshPenetrationResolution();
         });
@@ -1724,7 +1750,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             window.__LOAD__ = 'start';
             clearModels();
             const gen = ++loadGen;
-            const current = () => gen === loadGen;
+            const current = () => !destroyed && gen === loadGen;
             let failed = false;
             modelProgress.reset();
             modelProgress.expect('armor');
@@ -1741,11 +1767,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             };
             const loader = new GLTFLoader();
             const fail = (phase) => (error) => {
+                if (!current()) return;
                 const msg = errorMessage(error);
                 window.__LOAD__ = 'fail:' + phase + ':' + msg;
                 console.error('Failed to load ' + phase + ':', error);
                 document.getElementById('loading').textContent = loadFailed(phase, msg);
-                if (!current()) return;
                 failed = true;
                 reportLoad({ state: 'error', message: loadFailed(phase, msg) });
             };
@@ -1851,6 +1877,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
             urlApplied = true;
+            // 普通检视同车型时，applyConfig 已切到展示配置弹表。两个模型都完成后
+            // 再恢复 URL 下标，避免任一模型回调重建下拉框把选弹重置；手动切配置不重套 URL。
+            // 射击复现的弹表/选弹由射手 scfg 与回放 shell_id 所有，不在此覆盖。
+            if (!QP.get('shot')) {
+                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
+                if (penetrationMode && selectedShell) {
+                    updatePenetrationUniforms(selectedShell);
+                    updateSpacedUniforms(selectedShell);
+                }
+            }
             const num = (k) => { const v = parseFloat(QP.get(k)); return isNaN(v) ? null : v; };
             const yaw = num('yaw'), pitch = num('pitch');
             if (yaw !== null || pitch !== null) {
@@ -1859,10 +1895,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 document.getElementById('turret-val').textContent = currentTurretDeg.toFixed(0) + '°';
                 document.getElementById('gun-val').textContent = currentGunDeg.toFixed(0) + '°';
                 updateTurretGun(currentTurretDeg, currentGunDeg);
-            }
-            const shooterTank = parseInt(QP.get('shooter'), 10);
-            if (!isNaN(shooterTank) && shooterTank > 0) {
-                loadShooter(shooterTank);
             }
             const view = QP.get('view');
             const azOv = num('az'), distOv = num('dist'), hOv = num('h');
@@ -1894,7 +1926,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (QP.get('heatmap') === '1' && !penetrationMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
-                btn.classList.add('active'); btn.textContent = '关闭热力图';
+                btn.classList.add('active'); btn.textContent = L.hideHeatmap; btn.setAttribute('aria-pressed', 'true');
                 applyPenetrationMode(true);
                 refreshPenetrationResolution();
             }
@@ -1903,11 +1935,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (isShotReplay) {
                 // 数据来源：射击复现表经 sessionStorage 交接（WotBTools 纯客户端链），
                 // 无交接回退 Agent 自托管 /api/replay_shot（agentData.fetchReplayShots）
+                const shotGen = loadGen;
+                const currentShot = () => !destroyed && shotGen === loadGen;
                 fetchReplayShots().then(d => {
+                    if (!currentShot()) return;
                     const shots = d.shots || d;
                     const s = (Array.isArray(shots) ? shots : []).find(x => x.index === shotNo);
                     if (!s) { showShotError('shot #' + shotNo + ' 不存在（接口返回 ' + (Array.isArray(shots) ? shots.length : 0) + ' 发）'); return; }
-                    window.__autoRelView = true;   // 默认相对视角（沿入射方向）
                     // 场景原生米制（1 单位 = 1 米，模型不缩放）：回放数据为真实米，直通使用
                     if (!armorPivotGun) { showShotError('炮管枢轴未安装（模型装配异常）'); return; }
                     // ===== 模型保持默认朝向（车头 -Z），相机做相对调整 =====
@@ -1969,7 +2003,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     }
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
-                     window.__worldServerInfo = null;
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
                          segArmorGroup: s.armor_group || 0,
@@ -2100,14 +2133,19 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // 硬编码 /glb/ 在 Web 下 404）；/api/tank 不手动拼前缀——viewer_index_html
                         // 已对字面量 '/api/ 加前缀，手动拼会双重前缀 404。
                         const shooterGlbUrl = assetProvider.url(tankData.visual_model_url.replace(/\/glb\/\d+\//, '/glb/' + tid + '/'));
+                        // 目标重试会恢复射手模型；同一射手的车辆 JSON 已随弹药加载，直接复用。
+                        // 射手正在切换或本发属于另一辆车时，仍按本发车型独立获取。
+                        const reuseShooterData = shooterData && selectedShell && !shooterLoading
+                            && String(currentShooterId) === String(tid);
                         return Promise.all([
-                            fetchTankData(tid).catch(() => null),
+                            reuseShooterData ? Promise.resolve(shooterData) : fetchTankData(tid).catch(() => null),
                             new Promise(function(res) {
                                 new GLTFLoader().load(shooterGlbUrl,
                                     function(g) { res(g); }, undefined, function() { res(null); });
                             }),
                         ]).then(function(arr) {
                             const sd = arr[0], gltf = arr[1];
+                            if (!currentShot()) { disposeDetachedModel(gltf?.scene); return null; }
                             if (!gltf) { console.warn(logTag + ' shooter model load failed'); return null; }
                             const sModel = gltf.scene;
                             sModel.scale.setScalar(1);
@@ -2158,8 +2196,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
                         controls.screenSpacePanning = false;
                         window.__worldPan = true;
-                        const hintEl = document.getElementById('controls-hint');
-                        if (hintEl) hintEl.textContent = L.worldHint;
                         // ===== 脱靶弹分支：无目标模型，仅射手 + 弹道 + 落点/材质标注 =====
                         // terrain_impact（method 0x1b）提供精确落点与弹道末段起点。
                         const isMiss = !s.target_name;
@@ -2170,7 +2206,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             const shooterPos2 = sHit2 ? sHit2.pos : s.shooter_pos;
                             const ba = s.ball_a || null, bb = s.ball_b || null;
                             if (!ba || !bb || !(ba[0] || ba[1] || ba[2])) { showShotError('脱靶弹缺少弹道数据（ball_a/ball_b）'); return; }
-                            dbgReset('调试信息 — Shot #' + s.index + '（脱靶）');
+                            dbgReset();
                             // 场景中心 = 弹道弦中点（模型为参照物的最小摆放）
                             const mcx = (ba[0] + bb[0]) / 2, mcy = (ba[1] + bb[1]) / 2, mcz = (ba[2] + bb[2]) / 2;
                             // 目标模型加载但隐藏：viewer 主流程依赖 tankModel/armorModel 存在
@@ -2189,7 +2225,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                         window.__shooterFix = new THREE.Vector3(0, 0, 0);
                                     },
                                 }).then(function(res) {
-                                    if (!res) return;
+                                    if (!res || !currentShot()) return;
                                     const sd = res.sd, sModel = res.sModel, breechGunLocal2 = res.breechGunLocal;
                                     const sYaw2 = sHit2 ? sHit2.yaw : 0;
                                     // 脱靶分支同命中分支：显式 rel（镜像系相减还原 −rel）；prop2
@@ -2353,14 +2389,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                 (s.quality && s.quality.shell_from_terrain ? ' · <span style="color:var(--blue);">弹种来自 0x1b 地形广播</span>' : '') +
                                 '</div>'; }
                             // 脱靶弹分支同样受调试开关收纳:默认隐藏面板与标注
-                            const dbgBtnM = makeDebugToggle(null);
+                            setupShotDebug(null);
                             // URL debug=1 自动开启（与命中分支同语义）
                             window.__debugSetVisible(QP.get('debug') === '1');
-                            dbgBtnM.textContent = window.__debugOn ? '隐藏调试标注' : '调试标注';
                             return;
                         }
                         if (s.target_name) {
-                        dbgReset('调试信息 — Shot #' + s.index);
+                        dbgReset();
                         const tPos = s.target_pos;           // 目标命中时刻位置（世界系绝对坐标）
                         const sTS = s.shooter_tick_samples || [];
                         // 射手开火时刻采样：优先 |dt| 最小者（首条 |dt|<0.1 可能是更早样本，
@@ -2426,7 +2461,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     window.__shooterFix = new THREE.Vector3(0, 0, 0);
                                 },
                             }).then(function(res) {
-                                if (!res) return;
+                                if (!res || !currentShot()) return;
                                 const sd = res.sd, sModel = res.sModel, breechGunLocal = res.breechGunLocal;
                                 // 姿态源 = 渲染锚点（与车体摆放同一渲染层）；炮塔相对角 = 显式
                                 // rel（镜像系：shooter_turret_yaw 与 shooter_ang 均已被 mirror
@@ -2815,14 +2850,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                         };
                                         window.__worldSegMk = { update: updSeg, p1: mkP1, p2: mkP2 };
                                         updSeg(!!window.__debugOn);
-                                        // 立即以 P1→P2 射线重跑判定：armorModel 异步加载，seg 块晚于
-                                        // 600ms 的弦判定计时器——以新基准覆盖其结果（penSeq 丢弃旧响应）
-                                        if (window.__segRay && window.__worldPenMode) {
-                                            __shotRayOrigin = ctxLaunch.clone();
-                                            __shotRayTarget = ctxLaunch.clone().addScaledVector(ctxLvDir, ctxRayFar);
-                                            doPenetrationCheck(0, 0);
-                                            __shotRayOrigin = null; __shotRayTarget = null;
-                                        }
+                                        // 初始判定统一在本发姿态、选弹和面板安装完毕后执行。
                                         // 诊断挂钩：盒/量化字节（静止局部），供控制台校准轴序
                                         window.__segDiag = {
                                             hb: hb, sPart: sPart2, partFallback: partFallback,
@@ -2832,6 +2860,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                         };
                                         // debug=1 自动开启晚于本块——延迟补一次刷新（消除加载期位姿竞态残值）
                                         setTimeout(function() {
+                                            if (!currentShot()) return;
                                             if (!window.__worldSegMk) return;
                                             window.__worldSegMk.update(!!window.__debugOn);
                                             if (window.__worldImpactMk) {
@@ -2881,23 +2910,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // check 内部把世界系交点/射线经 worldToLocal 换算成模型局部米制，结果与相对模式同源。
                         window.__worldPenMode = true;
                         window.__shotIsHit = true;   // 0 armor hits 时 doPenetrationCheck 走报错分支
-                        window.__worldServerInfo = (function() {
-                            return { cls: shotResultClass(s), result: s.game_hit_result };
-                        })();
-                        // 自动初始判定（用户要求锁定）：命中弹 = DecodeShotSegment
-                        // P1→P2 射线（准确命中位置与弹向），脱靶弹 = 弹道弦；
-                        // 结果锁定，点击不触发判定（onClick 拦截）。
-                        if (ctxLvDir && ctxLaunch) {
-                            __shotRayOrigin = ctxLaunch.clone();
-                            __shotRayTarget = ctxLaunch.clone().addScaledVector(ctxLvDir, ctxRayFar);
-                            setTimeout(() => {
-                                doPenetrationCheck(0, 0);
-                                __shotRayOrigin = null; __shotRayTarget = null;
-                            }, 600);
-                        } else {
-                            __shotRayOrigin = null; __shotRayTarget = null;
-                        }
-
                         // ===== tick 位移方向标注（默认开启，"移动方向"复选框可关）=====
                         // 车体底部平面（type10 高度 +0.1m）：青线 = 相邻 tick 位移路径；同一基点并排
                         // 两支箭头（消除透视视差）：青 = 位移方向，绿/橙/黄 = 履带朝向（按位移方向着色）。
@@ -3015,16 +3027,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         window.__worldTickCtx = {
                             launch: ctxLaunch, lvDir: ctxLvDir, lvSpd: ctxLvSpd, rayFar: ctxRayFar,
                         };
-                        // 进入射击复现默认相对视角（相机沿入射方向回退看向命中点）；
-                        // armorModel 未就绪时留待后续 tick 重试
-                        if (window.__autoRelView) {
-                            if (armorModel) {
-                                window.__autoRelView = false;
-                                const rb = document.getElementById('rel-view-toggle');
-                                if (rb) rb.click();
-                            }
-                        }
-
                         const st = document.getElementById('turret-controls');
                         const cls2 = shotResultClass(s) === 'MISS' ? 'MISS'
                             : (shotResultClass(s) === 'RICOCHET') ? 'RICO'
@@ -3042,15 +3044,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             window.__worldShellSlot = (typeof s.shell_slot === 'number') ? s.shell_slot : null;
                             window.__worldIsHE = !!(s.hit_flags & 0x1000);
                             window.__worldShellId = (typeof s.shell_id === 'number' && s.shell_id) ? s.shell_id : null;
-                            setTimeout(function() {
+                            {
                                 const sel = document.getElementById('shell-select');
-                                if (!sel) return;
-                                let want = null;
+                                let want = -1;
                                 if (window.__worldIsHE) {
                                     want = (shooterShells || []).findIndex(sh =>
                                         shellTypeOf(sh) === 'he' || (sh && sh.explosion_radius > 0));
                                 }
-                                if (want == null || want < 0 && window.__worldShellId) {
+                                if (want < 0 && window.__worldShellId) {
                                     // 射手配置弹表全局 id：configs[].shell_global_ids（与弹表
                                     // 同源同序）。优先 &scfg=（射手实际搭载配置，下拉表即其
                                     // shells，下标同域）；未命中再全配置扫（顶级偏好）
@@ -3071,16 +3072,18 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     }
                                 }
                                 // 槽位兜底仅在完全无 shell_id 时使用
-                                if ((want == null || want < 0) && window.__worldShellId == null) {
+                                if (want < 0 && window.__worldShellId == null) {
                                     want = window.__worldShellSlot;
                                 }
                                 if (want != null && want >= 0 && want < sel.options.length) {
-                                    if (sel.value !== String(want)) {
-                                        sel.value = String(want);
-                                        sel.dispatchEvent(new Event('change'));
+                                    sel.value = String(want);
+                                    selectedShell = shooterShells[want];
+                                    if (penetrationMode) {
+                                        updatePenetrationUniforms(selectedShell);
+                                        updateSpacedUniforms(selectedShell);
                                     }
                                 }
-                            }, 800);
+                            }
                         }
                         if (st) { st.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
                             (function() {
@@ -3090,7 +3093,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     (s.target_equipment || s.game_hit_result !== undefined ? ' · 目标 ' + eqBadge(s.target_equipment) : '') + '</div>';
                             })() +
                             '<div class="ctrl-row">DMG ' + s.damage + ' · ' + cls2 + ' · ' + (s.target_name || '—') + '</div>' +
-                            '<div class="ctrl-row" id="world-pen-cmp" style="font-size:10px;"></div>' +
                             (function() {
                                 const sp3 = shellIdParts(s.shell_id);
                                 if (!sp3) return '';
@@ -3162,59 +3164,70 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         if (mt2) mt2.onchange = function() {
                             if (window.__moveAnno) window.__moveAnno.visible = this.checked;
                         };
-                        // ===== 调试模式开关（默认关闭）：收纳 World View 面板 + 全部调试标注 =====
+                        // ===== 开发诊断（默认关闭）：收纳 World View 面板 + 全部调试标注 =====
                         // 可见性集中挂 window.__debugSetVisible。
                         const stEl = document.getElementById('turret-controls');
                         if (stEl) stEl.style.display = 'none';
-                        const dbgBtn = makeDebugToggle(function() {
+                        setupShotDebug(function() {
                             // 基准点标注可见性（位置由 __updateAnchorMarkers 维护）
                             if (window.__updateAnchorMarkers) window.__updateAnchorMarkers();
                         });
                         // 相对视角按钮：相机 = 当前位姿的弦命中点沿入射反方向回退 15m（与
                         // showTrajectory 轨迹原点回退距离同语义），看向命中点；弦未命中当前位姿
-                        // 时看向车体中心。再点一次恢复世界全景。判定/标注不受影响（弦判定与相机无关）。
-                        let __relViewOn = false, __savedCam = null;
+                        // 时看向车体中心。「双方位置」恢复全景。判定/标注不受影响（弦判定与相机无关）。
+                        let impactViewOn = false, savedOverview = null;
+                        const viewSwitch = document.createElement('div');
+                        viewSwitch.className = 'armor-shot-view-switch';
+                        viewSwitch.setAttribute('role', 'group');
+                        viewSwitch.setAttribute('aria-label', L.shotView);
                         const relBtn = document.createElement('button');
                         relBtn.id = 'rel-view-toggle';
-                        relBtn.textContent = '相对视角';
-                        relBtn.style.cssText = 'padding:6px 14px;background:var(--panel);color:var(--accent);' +
-                            'border:1px solid var(--border);border-radius:var(--radius-sm);' +
-                            'font-size:0.85em;cursor:pointer;backdrop-filter:blur(12px);';
-                        relBtn.onclick = function() {
-                            if (!__relViewOn) {
-                                __savedCam = { pos: camera.position.clone(), target: controls.target.clone() };
+                        relBtn.textContent = L.relativeView;
+                        relBtn.type = 'button';
+                        relBtn.className = 'armor-scene-button';
+                        const worldBtn = document.createElement('button');
+                        worldBtn.id = 'world-view-toggle';
+                        worldBtn.textContent = L.worldView;
+                        worldBtn.type = 'button';
+                        worldBtn.className = 'armor-scene-button';
+                        function setImpactView(on) {
+                            if (on === impactViewOn) return;
+                            if (on) {
                                 const ctx = window.__worldTickCtx;
-                                if (ctx && ctx.launch && ctx.lvDir) {
-                                    const dir = ctx.lvDir.clone().normalize();
-                                    let aim = tankModel.position.clone();
-                                    const rc = new THREE.Raycaster(ctx.launch.clone(), dir);
-                                    rc.far = ctx.rayFar;
-                                    const hits = rc.intersectObject(armorModel, true)
-                                        .filter(h => h.object.userData.armorSection !== 'deco');
-                                    if (hits.length) aim = hits[0].point.clone();
-                                    camera.position.copy(aim.clone().addScaledVector(dir, -15));
-                                    controls.target.copy(aim);
-                                    controls.update();
-                                }
-                                __relViewOn = true;
-                                this.textContent = '世界视角';
-                            } else {
-                                if (__savedCam) {
-                                    camera.position.copy(__savedCam.pos);
-                                    controls.target.copy(__savedCam.target);
-                                    controls.update();
-                                }
-                                __relViewOn = false;
-                                this.textContent = '相对视角';
+                                if (!ctx?.launch || !ctx.lvDir || !armorModel || !tankModel) return;
+                                savedOverview = { pos: camera.position.clone(), target: controls.target.clone() };
+                                const dir = ctx.lvDir.clone().normalize();
+                                let aim = tankModel.position.clone();
+                                const rc = new THREE.Raycaster(ctx.launch.clone(), dir);
+                                rc.far = ctx.rayFar;
+                                const hits = rc.intersectObject(armorModel, true)
+                                    .filter(h => h.object.userData.armorSection !== 'deco');
+                                if (hits.length) aim = hits[0].point.clone();
+                                camera.position.copy(aim.clone().addScaledVector(dir, -15));
+                                controls.target.copy(aim);
+                            } else if (savedOverview) {
+                                camera.position.copy(savedOverview.pos);
+                                controls.target.copy(savedOverview.target);
                             }
-                        };
-                        (document.getElementById('corner-br') || document.body).appendChild(relBtn);
+                            controls.update();
+                            impactViewOn = on;
+                            relBtn.setAttribute('aria-pressed', String(on));
+                            worldBtn.setAttribute('aria-pressed', String(!on));
+                        }
+                        relBtn.setAttribute('aria-pressed', 'false');
+                        worldBtn.setAttribute('aria-pressed', 'true');
+                        relBtn.disabled = !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
+                        relBtn.onclick = () => setImpactView(true);
+                        worldBtn.onclick = () => setImpactView(false);
+                        viewSwitch.append(relBtn, worldBtn);
+                        (document.getElementById('corner-br') || document.body).appendChild(viewSwitch);
+                        // Context and controls now exist: focus directly instead of clicking a not-yet-created button.
+                        setImpactView(true);
                         // 初始即按撤回状态隐藏全部标注（须在 debug=1 自动开启之前，否则被覆盖）
                         window.__debugSetVisible(false);
-                        // URL debug=1 自动开启调试标注（与开关按钮同一状态,可再手动关闭）
+                        // URL debug=1 显式开启开发诊断标注
                         if (QP.get('debug') === '1') {
                             window.__debugSetVisible(true);
-                            dbgBtn.textContent = '隐藏调试标注';
                         }
                         // ===== 时间滑块：连续插值双模型位置/姿态（报告 §4.7 渲染层锚点可视化） =====
                         const timeSlider = document.getElementById('time-scrub');
@@ -3419,6 +3432,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                     if (timeSlider.__penTimer) clearTimeout(timeSlider.__penTimer);
                                     timeSlider.__penTimer = setTimeout(function() {
                                         timeSlider.__penTimer = null;
+                                        if (!currentShot()) return;
                                         const wc2 = window.__worldTickCtx;
                                         if (!wc2 || !wc2.lvDir || !armorModel) return;
                                         __shotRayOrigin = wc2.launch.clone();
@@ -3429,9 +3443,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                 }
                             };
                         }
+                        // 弹药已在 init 中就绪；等姿态、射线、选弹与结果面板全部安装后再判定。
+                        if (ctxLvDir && ctxLaunch) {
+                            __shotRayOrigin = ctxLaunch.clone();
+                            __shotRayTarget = ctxLaunch.clone().addScaledVector(ctxLvDir, ctxRayFar);
+                            doPenetrationCheck(0, 0);
+                            __shotRayOrigin = null; __shotRayTarget = null;
+                        }
                         return;
                     }
-                }).catch(e => showShotError('射击复现数据加载失败: ' + e));
+                }).catch(e => { if (currentShot()) showShotError('射击复现数据加载失败: ' + e); });
             }
             if (QP.get('clean') === '1' && !isShotReplay) {
                 ['info-panel','shell-selector','view-toggle','tank-selectors','turret-controls','controls-hint','loading'].forEach(id => {
@@ -3450,6 +3471,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         async function loadTarget(tid) {
             const gen = ++targetLoadGen;
+            loadGen++; // 立即使旧模型/射击 continuation 失效，不等新 JSON 返回
+            __penCheckSeq++;
+            urlApplied = false;
             tidyTrajectory();
             reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
             const nextTankData = await fetchTankData(tid);
@@ -3522,7 +3546,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 shooterShells = cfg.shells || [];
                 shooterCaliber = cfg.caliber || shooterCaliber;
                 populateShellSelector(shooterShells);
-                selectedShell = shooterShells.length ? shooterShells[0] : null;
             }
 
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
@@ -3553,7 +3576,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
         }
 
-        function populateShellSelector(shells) {
+        function populateShellSelector(shells, requestedIndex = 0) {
             const sel = document.getElementById('shell-select');
             sel.innerHTML = '';
             shells.forEach((s, i) => {
@@ -3562,55 +3585,80 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 opt.textContent = shellOptionText(s);
                 sel.appendChild(opt);
             });
-            selectedShell = shells.length > 0 ? shells[0] : null;
+            const index = Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < shells.length
+                ? requestedIndex : 0;
+            sel.value = String(index);
+            selectedShell = shells[index] || null;
             document.getElementById('shell-selector').style.display = shells.length > 0 ? 'block' : 'none';
         }
 
         async function loadShooter(tid) {
             if (destroyed) return;
-            const data = await fetchTankData(tid);
-            if (destroyed) return;
-            shooterData = data;
-            // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
-            // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
-            // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
-            // 无 scfg（旧链接）回退顶层 shells（stock 表，仅单配置坦克正确）
-            const scfg = parseInt(QP.get('scfg'), 10);
-            const cfgArr = shooterData.configs || [];
-            let shells = null, caliber = null;
-            if (!isNaN(scfg) && scfg >= 0 && scfg < cfgArr.length && (cfgArr[scfg].shells || []).length) {
-                shells = cfgArr[scfg].shells;
-                caliber = cfgArr[scfg].caliber;
-            }
-            if (!shells || shells.length === 0) {
-                shells = shooterData.shells || [];
-                caliber = shooterData.caliber || 120;
-            }
-            if (!shells || shells.length === 0) {
-                const data = await fetchShells(tid);
+            const gen = ++shooterLoadGen;
+            shooterLoading = true;
+            selectedShell = null;
+            __penCheckSeq++;
+            try {
+                const data = await fetchTankData(tid);
                 if (destroyed) return;
-                if (Array.isArray(data)) {
-                    shells = data;
-                } else {
-                    shells = data.shells || [];
-                    caliber = data.caliber || 120;
+                if (gen !== shooterLoadGen) return;
+                shooterData = data;
+                // 射手实际搭载配置弹表（&scfg= = shooter_config_idx，射击复现表注入）：
+                // 多炮坦克 stock 弹表与发射炮的穿深/弹种清单不同（KV-1 发射 85mm F-30 AP
+                // 120mm，stock ZiS-5 表只有 86/102/20），选择器必须用发射炮的表；
+                // 无 scfg 先取顶层 shells；普通同车型检视随后由 applyConfig 接管展示配置弹表。
+                const scfg = parseInt(QP.get('scfg'), 10);
+                const cfgArr = shooterData.configs || [];
+                let shells = null, caliber = null;
+                if (!isNaN(scfg) && scfg >= 0 && scfg < cfgArr.length && (cfgArr[scfg].shells || []).length) {
+                    shells = cfgArr[scfg].shells;
+                    caliber = cfgArr[scfg].caliber;
                 }
-            }
-            shooterShells = shells.map(s => (s && s.caliber == null)
-                ? Object.assign({}, s, { caliber: caliber }) : s);
-            shooterCaliber = caliber;
-            populateShellSelector(shooterShells);
-            // &shell= = 射手配置内弹下标（射击复现表 resolveShellIdx 同域）
-            const si = parseInt(QP.get('shell'), 10);
-            if (!isNaN(si) && si >= 0 && si < shooterShells.length) {
-                const sel = document.getElementById('shell-select');
-                if (sel) sel.value = String(si);
-                selectedShell = shooterShells[si];
-            }
-            // 切换射击坦克后同步热力图 uniforms（口径/穿深/跳弹角/转正角），否则判定沿用旧数据
-            if (penetrationMode) {
-                const sh = selectedShell || null;
-                if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
+                if (!shells || shells.length === 0) {
+                    shells = shooterData.shells || [];
+                    caliber = shooterData.caliber || 120;
+                }
+                if (!shells || shells.length === 0) {
+                    const data = await fetchShells(tid);
+                    if (destroyed) return;
+                    if (gen !== shooterLoadGen) return;
+                    if (Array.isArray(data)) {
+                        shells = data;
+                    } else {
+                        shells = data.shells || [];
+                        caliber = data.caliber || 120;
+                    }
+                }
+                shooterShells = shells.map(s => (s && s.caliber == null)
+                    ? Object.assign({}, s, { caliber: caliber }) : s);
+                shooterCaliber = caliber;
+                // 射击复现的 &shell= 属于射手配置；普通检视在配置完成后重新恢复该下标。
+                populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
+                if (!selectedShell || !shellTypeOf(selectedShell)
+                    || !Number.isFinite(selectedShell.penetration) || !Number.isFinite(selectedShell.damage)) {
+                    selectedShell = null;
+                    throw new Error(L.shellUnavailable);
+                }
+                // 切换射击坦克后同步热力图 uniforms（口径/穿深/跳弹角/转正角），否则判定沿用旧数据
+                if (penetrationMode) {
+                    const sh = selectedShell || null;
+                    if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
+                }
+                shooterLoading = false;
+                const wc = window.__worldTickCtx;
+                if (urlApplied && wc?.launch && wc.lvDir && window.__worldPenMode) {
+                    __shotRayOrigin = wc.launch.clone();
+                    __shotRayTarget = wc.launch.clone().addScaledVector(wc.lvDir, wc.rayFar);
+                    doPenetrationCheck(0, 0);
+                    __shotRayOrigin = null; __shotRayTarget = null;
+                }
+            } catch (error) {
+                if (!destroyed && gen === shooterLoadGen) {
+                    selectedShell = null;
+                    throw error;
+                }
+            } finally {
+                if (gen === shooterLoadGen) shooterLoading = false;
             }
         }
 
@@ -3636,13 +3684,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     sel.appendChild(o);
                 });
             };
-            addOpts('tp-tier', tiers, v => 'Tier ' + v, 'Tier');
-            addOpts('tp-nation', nations, v => v, 'Nation');
-            addOpts('tp-type', types,
-                v => ({lightTank:'Light', mediumTank:'Medium', heavyTank:'Heavy', 'AT-SPG':'TD'}[v] || v), 'Type');
+            addOpts('tp-tier', tiers, L.tier, L.allTiers);
+            addOpts('tp-nation', nations, L.nation, L.allNations);
+            addOpts('tp-type', types, L.type, L.allTypes);
         }
 
-        const TYPE_LABEL = { lightTank:'Light', mediumTank:'Medium', heavyTank:'Heavy', 'AT-SPG':'TD' };
 
         function getFiltered() {
             const q = document.getElementById('tp-search').value.trim().toLowerCase();
@@ -3660,7 +3706,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let renderChunk = null;   // { list, rendered, selId }
 
         function makeCard(t, selId) {
-            const card = document.createElement('div');
+            const card = document.createElement('button');
+            card.type = 'button';
             card.className = 'tank-card' + (String(t.id) === String(selId) ? ' sel' : '');
             card.dataset.id = String(t.id);
 
@@ -3682,10 +3729,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             tier.textContent = 'T' + t.tier;
             const typ = document.createElement('span');
             typ.className = 'tc-type';
-            typ.textContent = TYPE_LABEL[t.type] || t.type;
+            typ.textContent = L.type(t.type);
             const nat = document.createElement('span');
             nat.className = 'tc-nation';
-            nat.textContent = t.nation;
+            nat.textContent = L.nation(t.nation);
             meta.append(tier, typ, nat);
 
             body.append(nm, meta);
@@ -3706,13 +3753,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         const CHUNK = 90;
         function loadMoreCards() {
-            if (!renderChunk) return;
+            if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
             const grid = document.getElementById('tp-grid');
-            const end = Math.min(renderChunk.rendered + CHUNK, renderChunk.list.length);
-            for (let i = renderChunk.rendered; i < end; i++) {
-                grid.appendChild(makeCard(renderChunk.list[i], renderChunk.selId));
-            }
-            renderChunk.rendered = end;
+            do {
+                const end = Math.min(renderChunk.rendered + CHUNK, renderChunk.list.length);
+                for (let i = renderChunk.rendered; i < end; i++) {
+                    grid.appendChild(makeCard(renderChunk.list[i], renderChunk.selId));
+                }
+                renderChunk.rendered = end;
+                // A visible grid must overflow or exhaust its roster; a hidden picker still renders one chunk.
+            } while (renderChunk.rendered < renderChunk.list.length && grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight);
         }
 
         function updateTankLabels() {
@@ -3720,26 +3770,36 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const s = find(currentShooterId), t = find(currentTargetId);
             document.getElementById('shooter-select').textContent = s ? s.name : '—';
             document.getElementById('target-select').textContent = t ? t.name : '—';
+            document.getElementById('shooter-select').disabled = !initDone;
+            document.getElementById('target-select').disabled = !initDone;
+            document.getElementById('tank-selection-status').hidden = initDone;
         }
 
         function openPicker(mode) {
+            if (!initDone) return;
             pickerMode = mode;
             document.getElementById('tp-title').textContent =
-                (mode === 'shooter' ? 'Shooter' : 'Target') + ' — Select Tank';
-            renderGrid();
+                mode === 'shooter' ? L.selectShooter : L.selectTarget;
             document.getElementById('tank-picker').classList.add('open');
+            renderGrid();
+            document.getElementById('tp-search').focus();
         }
 
         function closePicker() {
             document.getElementById('tank-picker').classList.remove('open');
+            document.getElementById(pickerMode === 'shooter' ? 'shooter-select' : 'target-select').focus();
         }
 
         function selectFromPicker(id) {
+            // 首次弹药初始化由 init 独占；防止过期 init continuation 越过新选择。
+            if (!initDone) { closePicker(); return; }
             id = parseInt(id);
             if (pickerMode === 'shooter') {
                 currentShooterId = id;
                 updateTankLabels();
-                loadShooter(id);
+                loadShooter(id).catch((e) => {
+                    if (currentShooterId === id) reportLoad({ state: 'error', message: loadFailed('shell data', errorMessage(e)) });
+                });
             } else {
                 currentTargetId = id;
                 updateTankLabels();
@@ -3810,6 +3870,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function setupEventHandlers() {
             document.getElementById('shell-select').addEventListener('change', function() {
+                if (destroyed || shooterLoading) return;
                 const idx = parseInt(this.value);
                 if (shooterShells && idx < shooterShells.length) {
                     selectedShell = shooterShells[idx];
@@ -3851,7 +3912,25 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             document.getElementById('shooter-select').addEventListener('click', function() { openPicker('shooter'); });
 
             document.getElementById('tp-close').addEventListener('click', closePicker);
-            document.getElementById('tp-grid').addEventListener('click', function() {
+            onWin('keydown', (event) => {
+                const picker = document.getElementById('tank-picker');
+                if (!picker?.classList.contains('open')) return;
+                if (event.key === 'Escape') { event.preventDefault(); closePicker(); return; }
+                if (event.key !== 'Tab') return;
+                const focusable = [...picker.querySelectorAll('button, input, select')].filter(el => !el.disabled);
+                const first = focusable[0], last = focusable[focusable.length - 1];
+                if (event.shiftKey && (document.activeElement === first || !picker.contains(document.activeElement))) {
+                    event.preventDefault(); last?.focus();
+                } else if (!event.shiftKey && (document.activeElement === last || !picker.contains(document.activeElement))) {
+                    event.preventDefault(); first?.focus();
+                }
+            });
+            document.getElementById('tp-grid').addEventListener('scroll', function() {
+                if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
+                // Keep one viewport of cards ahead without rendering the whole roster at once.
+                if (this.scrollTop + this.clientHeight >= this.scrollHeight - this.clientHeight) {
+                    loadMoreCards();
+                }
             });
             document.getElementById('tp-search').addEventListener('input', renderGrid);
             document.getElementById('tp-tier').addEventListener('change', renderGrid);
@@ -3865,6 +3944,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 collisionMode = !collisionMode;
                 this.classList.toggle('active', collisionMode);
                 this.textContent = collisionMode ? L.hideCollision : L.showCollision;
+                this.setAttribute('aria-pressed', String(collisionMode));
                 if (!armorModel) return;
                 applyArmorViewStyle(collisionMode);
             });
@@ -3879,13 +3959,24 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
             document.getElementById('turret-controls').style.display = 'block';
 
-            onWin('resize', function() {
+            const resizeView = () => {
+                if (destroyed) return;
                 const view = document.getElementById('canvas-container');
+                if (!view?.clientWidth || !view.clientHeight) return;
                 camera.aspect = view.clientWidth / view.clientHeight;
                 camera.updateProjectionMatrix();
                 renderer.setSize(view.clientWidth, view.clientHeight);
                 refreshPenetrationResolution();
-                });
+                const grid = document.getElementById('tp-grid');
+                if (grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight) loadMoreCards();
+            };
+            onWin('resize', resizeView);
+            // The recorded-shot header can wrap without a window resize (locale / error message).
+            if (typeof ResizeObserver === 'function') {
+                const observer = new ResizeObserver(resizeView);
+                observer.observe(document.getElementById('canvas-container'));
+                cleanups.push(() => observer.disconnect());
+            }
         }
 
         async function init() {
@@ -3896,19 +3987,27 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
             if (destroyed) return;
+            // 模型回调可立即恢复射击并判定，因此弹药必须先完成，不能靠定时器猜网络耗时。
+            initPhase = 'shell data';
+            await loadShooter(initShooterId);
+            if (destroyed) return;
             initDone = true;
+            updateTankLabels();
+            initPhase = 'tank data';
             await loadTarget(initTargetId);
             if (destroyed) return;
-            await loadShooter(initShooterId);
             if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
         }
 
-        /// 宿主页"重试"：名册已就绪时只重载当前目标坦克；否则返回 false，由宿主整体重建
+        /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
         function retry() {
             if (destroyed || !initDone || currentTargetId == null) return false;
-            loadTarget(currentTargetId)
+            let phase = 'shell data';
+            const ready = selectedShell && !shooterLoading
+                ? Promise.resolve() : loadShooter(currentShooterId);
+            ready.then(() => { phase = 'tank data'; if (!destroyed) return loadTarget(currentTargetId); })
                 .then(() => { if (!destroyed && !rafId) animate(); })   // 首次加载失败时渲染循环尚未启动
-                .catch((e) => reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) }));
+                .catch((e) => reportLoad({ state: 'error', message: loadFailed(phase, errorMessage(e)) }));
             return true;
         }
 
@@ -4126,6 +4225,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let __penCheckSeq = 0;        // 判定代数序号：滑块连续重跑判定时丢弃过期的 /api/penetrate 响应
         // 射击复现错误面板（模块级：doPenetrationCheck 等顶层函数也要调用）
         function showShotError(msg) {
+            if (destroyed) return;
             console.error('[shot-replay] ' + msg);
             const st = document.getElementById('turret-controls');
             if (st) {
@@ -4175,7 +4275,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
 
         function doPenetrationCheck(ndcX, ndcY) {
-            if (!armorModel) return;
+            if (destroyed || !armorModel || shooterLoading) return;
+            if (!selectedShell || !shellTypeOf(selectedShell)
+                || !Number.isFinite(selectedShell.penetration) || !Number.isFinite(selectedShell.damage)) {
+                showShotError(L.shellUnavailable);
+                return;
+            }
+            // 首次判定可能早于首帧渲染；raycast 必须使用已恢复的当前姿态。
+            scene.updateMatrixWorld(true);
             judgmentCount++;
             // 代数序号：仅最新一次判定的响应可上屏（滑块拖动会连续触发判定）
             const penSeq = ++__penCheckSeq;
@@ -4262,9 +4369,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             + 'white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">'
                             + '当前 tick 位姿与弹道弦不相交（命中前采样，坦克未到命中点）— 切换 tick 查看命中判定</div>';
                         trajInfoPos = controls.target.clone();
-                        // 对比面板同步置中性：否则残留上一次判定的"✓ 一致/✗ 不一致"误导
-                        const cmpEl = document.getElementById('world-pen-cmp');
-                        if (cmpEl) cmpEl.innerHTML = '<span style="color:var(--muted);">— 当前位姿弹道弦未命中装甲，无判定</span>';
                     } else {
                         showShotError('服务器判定命中但射线未命中任何装甲板——弹道/模型几何错位');
                     }
@@ -4382,7 +4486,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
             judgePenetration(req).then(res => {
-                if (penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
+                if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 let trajLayers = res.layers.map(l => {
                     const ah = hitsForCheck.find(ah => ah.partName === l.part_name);
                     return {
@@ -4437,13 +4541,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             };
                             judgePenetration(ricReq)
                                 .then(ricRes => {
-                                    if (penSeq !== __penCheckSeq) return;   // 过期响应丢弃
+                                    if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应丢弃
                                     if (ricRes) {
                                         const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, angle: l.angle_deg != null ? l.angle_deg : null, seg: 1 }));
                                         const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
                                         showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0);
                                     } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); }
-                                }).catch(() => { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); });
+                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); });
                             return;
                         }
                     }
@@ -4451,7 +4555,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
                 showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0);
             }).catch(err => {
-                if (penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
+                if (destroyed || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
                 showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0);
             });
@@ -4461,29 +4565,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let trajGroup = null;
         let trajInfoPos = null;
         function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt) {
-            // world 复现模式：本地内核预测 vs 服务器判定（method38 位图 + game_hit_result）
-            if (window.__worldPenMode && window.__worldServerInfo) {
-                const el = document.getElementById('world-pen-cmp');
-                if (el) {
-                    const srv = window.__worldServerInfo;
-                    // 服务器等价类：跳弹↔RICOCHET；击穿/HE↔PENETRATION；未穿/间隙止↔BLOCKED
-                    const srvEq = srv.cls === 'RICOCHET' ? 'RICOCHET'
-                        : (srv.cls === 'PENETRATION' || srv.cls === 'HE BLAST') ? 'PENETRATION'
-                        : (srv.cls === 'MISS' ? 'MISS' : 'BLOCKED');
-                    // 本地预测等价类：HE 爆炸有伤害内核报 PENETRATION；HE 被装甲挡住报 BLOCKED
-                    const locEq = result === 'RICOCHET' ? 'RICOCHET'
-                        : result === 'PENETRATION' ? 'PENETRATION'
-                        : (result === 'BLOCKED' || result === 'ERROR') ? 'BLOCKED' : 'OTHER';
-                    const agree = srvEq !== 'MISS' && locEq !== 'OTHER' && srvEq === locEq;
-                    const RES_TXT2 = {0:'无结果',1:'未击穿',2:'间隙止',3:'有伤害',4:'跳弹'};
-                    el.innerHTML = '<span style="color:' + (agree ? '#5fbf7a' : '#ff6b6b') + ';">'
-                        + (agree ? '✓ 一致' : '✗ 不一致') + '</span>'
-                        + ' · 本地: ' + result
-                        + ' · 服务器: ' + srv.cls
-                        + (typeof srv.result === 'number' && srv.result !== 255
-                            ? ' (' + (RES_TXT2[srv.result] || srv.result) + ')' : '');
-                }
-            }
+            if (destroyed) return;
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
 
@@ -4566,7 +4648,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             const titleHtml = (st) => {
                 const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
-                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${st}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
+                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${escapeText(L.resultName(st))}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
             };
             html += titleHtml(segments[0]);
             let layerNo = 0;
@@ -4608,7 +4690,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 html += `<div style="font-size:13px;line-height:20px;">`;
                 html += `<span style="display:inline-block;width:14px;color:${pc};">●</span>`;
                 html += `<span style="color:var(--muted);display:inline-block;min-width:20px;">${idx}</span>`;
-                html += `<span style="color:var(--txt);">${l.name}</span>`;
+                html += `<span style="color:var(--txt);" title="${escapeText(l.name)}">${escapeText(L.partName(l.name))}</span>`;
                 html += `<span style="color:${pc};margin-left:14px;">${main}</span>`;
                 if (sub) html += `<span style="color:var(--muted);margin-left:14px;">${sub}</span>`;
                 html += `</div>`;
@@ -4711,6 +4793,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         /// canvas 由 ArmorView 的容器 DOM 一并移除，这里只处理 JS 侧句柄。
         function destroy() {
             destroyed = true;
+            shooterLoadGen++;
+            __penCheckSeq++;
             targetLoadGen++; // invalidate in-flight target JSON before it can mutate the destroyed/current viewer
             loadGen++;   // invalidate any in-flight GLTF callbacks before releasing the live scene
             resetViewerGlobals();
@@ -4728,7 +4812,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         init().catch((e) => {
             console.error('tank viewer init failed:', e);
-            reportLoad({ state: 'error', message: loadFailed(initDone ? 'tank data' : 'tank list', errorMessage(e)) });
+            reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
         return { destroy, retry };
     }

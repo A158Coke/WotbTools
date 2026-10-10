@@ -32,16 +32,14 @@ Komodo keeps the TX2 Stack definition as reviewed declarative metadata and runti
 
 ## Runtime-content ownership
 
-The frontend image is not the whole production surface. Sponsor content and the current Android public download surface are host-owned runtime content.
+The frontend image is not the whole production surface. The current Android public download surface is host-owned runtime content. (Sponsor QR content is not: it is injected at build time from a pinned Release asset and ships inside the Frontend image / APK — see `docs/operations/sponsor-runtime-content.md`.)
 
 K7C replicates only the **current public production surface** to TX2 local storage at `/opt/wotb-tx2/runtime-content`:
 
-- `sponsor-config.json`;
-- sponsor assets actually referenced by that config;
 - Android `version.json`;
 - the APK actually referenced by that manifest.
 
-Historical APKs and `*.staging.json` evidence are deliberately not copied. TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly; it owns a local replicated runtime-content root.
+Historical APKs are deliberately not copied, and the published `version.json` + its APK stay the only replicated *published* surface. The single exception is `*.staging.json` records: the android-release stage installs a **staged-but-unpublished** release identity into this same tree (atomically, under `/opt/wotb-tx2/.deploy.lock`) and its publish phase re-reads it through the public URL, which load-balances across TX1/TX2 — so the sync carries any existing record over while it holds that same lock, which is what makes install and tree-rebuild mutually exclusive (2026-10-09: without the lock and the carry-over, the record was deleted on TX2 before publish and the public URL became a per-origin coin flip). See [android/release-process.md](../android/release-process.md) §证据的存续. TX2 never bind-mounts `/opt/wotb-tx` and never reads the TX1 filesystem directly; it owns a local replicated runtime-content root.
 
 The production Frontend Replica workflow refreshes this runtime content before TX2 is accepted after a frontend release.
 
@@ -52,11 +50,9 @@ Before public cutover, the read-only K7C preflight required:
 1. TX1/TX2 frontend roots return HTTP 200.
 2. TX2 SPA fallback and `/api/health` return HTTP 200.
 3. TX1/TX2 `/` and `/version.json` are byte-identical.
-4. `sponsor-config.json` is byte-identical.
-5. every sponsor asset referenced by the authoritative sponsor config is byte-identical.
-6. Android `version.json` is byte-identical.
-7. the APK referenced by authoritative Android `version.json` is byte-identical.
-8. Caddy still targets the reviewed pre-cutover frontend placement.
+4. Android `version.json` is byte-identical.
+5. the APK referenced by authoritative Android `version.json` is byte-identical.
+6. Caddy still targets the reviewed pre-cutover frontend placement.
 
 Production evidence recorded during K7C:
 

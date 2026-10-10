@@ -79,7 +79,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 - **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
 - 跨层联动必须执行 `wotb-sync`。
-- **UI Profile（展示风格，非主题）**：`showcase`（沉浸，默认）/ `classic`（简约）是 Presentation Profile，共用同一套业务组件/状态/API；Classic 只通过 `frontend/src/styles/classic-profile.css`（`[data-ui-profile="classic"]`）去掉全屏 AI/装饰背景与视觉噪音，不改结构/密度/布局。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
+- **UI Profile（展示风格）**：`showcase`（深色，默认）/ `classic`（浅色）共用同一套业务组件、布局、状态与 API；`auto` 偏好按系统深浅色解析到其中一种。共享外壳和已迁移页面使用语义 token，Classic 在 `frontend/src/styles/classic-profile.css` 中提供浅色映射。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
 
 ---
 
@@ -283,11 +283,11 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 **`data-theme` 不是独立主题偏好，而是 UI Profile 唯一派生。**
 
-- `showcase` → `data-ui-profile="showcase"` + `data-theme="dark"` + `color-scheme:dark`（默认，保持生产深色沉浸视觉：AI 背景/渐变/阴影）。
+- `showcase` → `data-ui-profile="showcase"` + `data-theme="dark"` + `color-scheme:dark`（默认，深色纯色表面与克制的强调色）。
 - `classic` → `data-ui-profile="classic"` + `data-theme="light"` + `color-scheme:light`（真浅色简约：浅灰底/白卡片/深色文字/浅边框/轻阴影/橙金强调）。
 - `frontend/index.html` 首屏内联脚本按 `wotb-ui-profile` 同时设置 `data-ui-profile` 与派生的 `data-theme`（无 FOUC）；`src/styles/tokens.css :root` 仍是 dark 基础视觉 token 单一事实源，Classic 由 `styles/classic-profile.css` 的 `html[data-ui-profile="classic"]` 覆盖浅色语义 token + namespace 覆盖（该文件必须最后导入）。
-- 唯一持久化状态 `wotb-ui-profile`（只存 profile，不存主题）；不读取 `prefers-color-scheme`；不保存独立 `wotbtools-theme` cookie/localStorage；不存在独立 `useTheme` / `utils/theme.js`。
-- 当前 Showcase Topbar 高度为 **60px**，`--topbar-h` 也必须保持 60px；full-workspace viewport 依赖这个 token。
+- 唯一持久化偏好 `wotb-ui-profile` 支持 `showcase` / `classic` / `auto`；`auto` 读取并监听 `prefers-color-scheme`。不保存独立主题状态，实际 Profile 与 `data-theme` 由 `useUiProfile` 派生。
+- 手机顶栏高度使用 `--header-h`（48px，另加安全区）；平板 / 桌面使用左侧导航。旧 `--topbar-h` 只是兼容别名，不能作为独立布局 authority。
 - Sponsor 页面使用 `/sponsor` Vue Router path，在共享 AppShell 中消费主题和三语 locale。
 
 约定：`data-theme` 由 `useUiProfile.themeForProfile` 派生；禁止手工 set `data-theme` 或另立 theme 状态；Classic 只改 Presentation 层，不改 layout/density/spacing/结构/业务组件；禁止 `filter:invert` / 全局 opacity / `html *` / 双套业务组件 / `:key="uiProfile"` 触发重建。
@@ -322,7 +322,7 @@ messages.js
 
 Replay/管理宽表必须保持高 information density；允许横向滚动，但不能因为页面容器过窄而制造无意义滚动。
 
-Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regressions.css`，该文件最后加载，只用于布局/叠层 regression guard，不承载主题状态。
+全站使用统一页面标题、按钮、提示与表格样式；首页内容按正常文档流排列，更多页复用可滚动分段导航，文档页限制阅读宽度并允许代码 / 表格局部横滚。全屏装饰背景已移除。`showcase-regressions.css` 只保留既有布局 guard；共享外壳与回放样式在其后导入，`classic-profile.css` 最后提供 Profile 映射。新增规则应写入实际组件或样式 owner，避免继续叠加全局覆盖。
 
 ### Replay capabilities
 
@@ -360,6 +360,8 @@ Showcase Topbar 为 60px。跨页面高优先级修复集中在 `showcase-regres
 
 旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` canonicalize 到 `replay`；旧 `?view=reconstruction` canonicalize 到 `battle-playback`。
 
+Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router：启动入口仅判断 query / fragment 是否同时存在 `state` 和 `code` / `error`，不自行校验或信任其值。认证落定后才构造 history、转换旧 view，避免重定向丢掉原回调或 Router 留下已消费的认证参数。生产 SDK 仍使用默认 fragment 模式；query 形状检测只是保守等待，不代表新增 query-mode 支持。落定信号也不承诺清理所有畸形或超时 URL。失败 / 12s watchdog 后正常挂载原有失败恢复界面；普通访问与 APK 不等待此 Web 回程路径。旧 view 转换保留 query 上下文与 hash。回归入口为 `frontend/src/main.test.js`、`frontend/src/App.test.js`；职责详见 [`frontend/architecture.md`](frontend/architecture.md)。
+
 ### AI Review / Battle Playback
 
 `ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不再是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 是唯一映射点）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
@@ -375,6 +377,8 @@ Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact appas
 先响应匿名 OPTIONS。Android 远端 3D 资产固定使用 `/agent-assets/` 网关（固定 reviewed COS upstream），
 不接受 Web 的 `?assets=` override；本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取。
 Native 过期 token 无法离线刷新时保留 encrypted session；前端只清 API token，离线不会清 replay selection。
+
+**Android 手动目录导入**：`FileDrop` 按可选 Native bridge v2 capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`；后台有界枚举后通过固定同源 Native stream 读取，既有前端规则负责过滤／去重／完整批次校验。取消、超限或读取失败保留当前回放，目录不会触发自动分析或写 external pending，授权不持久化。旧 APK 隐藏目录按钮但保留文件多选，普通 Web 继续 `webkitdirectory`。契约见 `contracts/android-native-bridge.json`，生命周期、限制与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
 
 **Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
@@ -657,7 +661,7 @@ Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurre
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
-Sponsor QR 不进仓库/镜像：生产使用 `/opt/wotb-tx/config/sponsor-config.json` 与 `/opt/wotb-tx/config/sponsor/{alipay,wechat}.png` 只读挂载，Vue 页面从 `/sponsor-config.json` 按 no-store 读取运行时配置。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
+Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发布，由 `deploy/sponsor/content.json` 钉住 release/asset/sha256（与 Agent WASM 同一模式），构建期下载校验后注入 publicDir（`common/assets/`），随 **Frontend 镜像**（Web 同源伺服）与 **APK bundle**（本机 origin，离线可用）两个发布面一起出去；TX 不挂载也不下发。轮换步骤、不变量与回滚见 `docs/operations/sponsor-runtime-content.md`。二维码加载失败时页面必须隐藏失败方式；全部方式不可用时回退到“暂未配置”，不得显示 broken image。
 
 ---
 

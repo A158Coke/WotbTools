@@ -15,17 +15,6 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    location = /sponsor-config.json {
-        default_type application/json;
-        add_header Cache-Control "no-store, max-age=0" always;
-        try_files $uri =404;
-    }
-
-    location ^~ /sponsor-assets/ {
-        add_header Cache-Control "no-store, max-age=0" always;
-        try_files $uri =404;
-    }
-
     location = /index.html {
         add_header Cache-Control "no-cache, no-store, must-revalidate" always;
         try_files $uri =404;

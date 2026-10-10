@@ -22,6 +22,18 @@
     --gutter: 16px;
     /* Minimum readable form field before wrapping a fluid toolbar. */
     --form-field-min: 160px;
+    --layout-content-max: 1420px;
+    --layout-wide-max: 1720px;
+    --layout-workspace-max: 1760px;
+    --reading-measure: 72ch;
+    --dialog-width: 600px;
+    --column-panel-width: 440px;
+    --column-panel-max-height: 680px;
+    --shot-detail-width: 360px;
+    /* A table scroll container establishes its own isolated stacking context. */
+    --table-z-row: 1;
+    --table-z-head: 2;
+    --table-z-corner: 3;
 
     /* 应用外壳（§9）：顶栏 / 底部 Tab 栏高度。所有吸顶偏移都读 --header-h */
     --header-h: 48px;

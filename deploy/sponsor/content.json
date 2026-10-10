@@ -1,0 +1,8 @@
+{
+  "repo": "https://github.com/A158Coke/WotbTools",
+  "artifact": {
+    "release": "sponsor-runtime-content-v1",
+    "asset": "sponsor-runtime-content.tar.gz",
+    "sha256": "75cdd72f1e1714cacd81cc6ce97e7918a58eb9657a2a224d965ca28d7578b2bf"
+  }
+}

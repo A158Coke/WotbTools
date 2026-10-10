@@ -458,7 +458,7 @@ TX1 Caddy
         active health check: /version.json
 ~~~
 
-Frontend 的 release identity 仍由 Git commit / immutable TCR artifact 决定。TX1 从镜像源构建并发布不可变 TCR artifact；TX2 直接拉取同一 artifact，不从 TX1 运行容器“复制当前状态”。Sponsor 与 Android public download 等 host-owned runtime content 通过明确的同步契约复制到 TX2 本地 root。
+Frontend 的 release identity 仍由 Git commit / immutable TCR artifact 决定。TX1 从镜像源构建并发布不可变 TCR artifact；TX2 直接拉取同一 artifact，不从 TX1 运行容器“复制当前状态”。Android public download 等 host-owned runtime content 通过明确的同步契约复制到 TX2 本地 root（Sponsor QR 自 2026-10-09 起不再属于 host content——它由 pin 住的发布资产在构建期注入、随 Frontend 镜像与 APK 一起发布，不需要 TX 侧复制或运行时下发）。
 
 因此 Komodo 的长期角色是：**提供声明式资源、主机/Stack 可见性与受控 workload lifecycle；但 release provenance、immutable artifact、owner workflow、业务数据库 authority 与公网入口 ownership 仍由各自系统持有。** K7C 增加了 Frontend workload redundancy，但没有消除 TX1 Caddy 这个公网 ingress single point of failure。
 

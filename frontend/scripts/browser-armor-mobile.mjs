@@ -1,6 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { FIXTURE_TANK_CACHE, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -17,9 +18,8 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  *     全部 CSS）在手机 / 平板 / 桌面三档设备指标下的几何与真实触摸接线。
  *
  * 环境前提与三处显式让位（都不影响被测契约）：
- *   1. 门禁不带资产包：坦克数据会加载失败，场景脚本弹出**全屏阻塞**错误遮罩——测量前
- *      先移除状态遮罩（它是环境产物，不是被测对象）。资产包若恰好在跑，页面直接进入
- *      正常态，同样兼容。
+ *   1. 正常态使用与瞄准/加载门禁共用的确定性夹具资产包，等待实际初始化完成再测量。
+ *      资产不可达场景显式使用不可达 origin，测量前移除错误遮罩，只验证外壳与禁用入口。
  *   2. 加载态布局（顶栏单行 / 弹种不截断 / 面板控件 ≥44px）用 `applyLoadedFixture`
  *      注入 worst-case 内容后测量——不依赖资产，避免"退化态下空跑"（评审 BLOCKER 2）。
  *   3. 3D 画面本身不在断言之列（视觉归属用户，见 .agents/AGENTS.md）；这里只断言
@@ -179,7 +179,7 @@ function applyLoadedFixture() {
   return true
 }
 
-/** 资产缺失时场景脚本的阻塞遮罩是环境产物：测量前移除（见文件头「环境前提」）。 */
+/** 资产不可达场景测量外壳前移除遮罩；真实失败状态由加载门禁覆盖。 */
 async function dismissStatusOverlays(page) {
   await page.evaluate(`(() => {
     const nodes = document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]')
@@ -252,17 +252,16 @@ async function runMobileScenario(env, scenario) {
   const label = scenario.name
   // assetless 场景显式把资产源指向不可达端口：无论本机有没有跑资产包，都稳定复现
   // 「资产加载失败」态（CI 环境本来就没有资产源）
-  const assetQuery = scenario.assetless ? '&assets=http://127.0.0.1:1/' : ''
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1${assetQuery}`)
+  const assetQuery = '&assets=' + encodeURIComponent(scenario.assetless ? 'http://127.0.0.1:1/' : env.assets)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}${assetQuery}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  // 等内核**做完**（成功或失败）：loading 遮罩消失才算 settled——否则注入的夹具会被
-  // 迟到的真实加载结果覆盖，测量变成"看运气"。
-  await page.waitFor(() => {
-    const loading = document.querySelector('[data-testid="scene3d-loading"]')
-    const error = document.querySelector('[data-testid="scene3d-error"]')
-    return !loading || !!error
-  }, { label: 'scene settled' })
-  await dismissStatusOverlays(page)
+  // 正常场景必须加载成功，不能用后续的布局文案夹具掩盖目标模型加载失败。
+  if (scenario.assetless) {
+    await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'), { label: 'assetless failure' })
+    await dismissStatusOverlays(page)
+  } else {
+    await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized' })
+  }
   await delay(150)
 
   if (scenario.touch) {
@@ -381,6 +380,13 @@ async function runMobileScenario(env, scenario) {
   const expanded = await page.probe(armorLayoutProbe)
   check(failures, expanded.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见，无法打开选车弹窗`)
   await page.tap({ x: expanded.targetSelect.left + Math.round(expanded.targetSelect.width / 2), y: expanded.targetSelect.top + Math.round(expanded.targetSelect.height / 2), touch: scenario.touch })
+  if (scenario.assetless) {
+    check(failures, await page.evaluate(`document.querySelector('#target-select').disabled && !document.querySelector('#tank-picker.open')`),
+      `${label}: 初始化失败时选车入口应保持禁用且不能打开弹窗`)
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+    results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+    return
+  }
   const picker = await page.waitForValue(`!!document.querySelector('#tank-picker.open')`, (value) => value === true, { timeout: 5000, label: 'tank picker opened' })
     .then(() => page.probe(armorLayoutProbe))
     .catch(() => null)
@@ -423,14 +429,14 @@ async function runMobileBackScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=1`
+  const url = `${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`
   await page.goto(url)
   // 模拟「从射击分析 / 坦克百科经路由打开」：history.state.back 存在 → 返回键出现
   await page.evaluate(`history.replaceState({ back: '/', current: location.href, forward: null }, '', location.href)`)
   await env.chrome.client.send('Page.reload', {}, sessionId)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage after reload' })
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-back"]'), { label: 'armor back button' })
-  await dismissStatusOverlays(page)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized after reload' })
   await delay(150)
 
   const layout = await page.probe(armorLayoutProbe)
@@ -466,10 +472,9 @@ async function runDesktopScenario(env, scenario) {
   await page.enable()
   await page.emulate(scenario)
 
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=1`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
-  await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"], [data-testid="scene3d-loading"], #info-panel'), { label: 'scene settled' })
-  await dismissStatusOverlays(page)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled, { label: 'viewer initialized' })
   await delay(150)
 
   const label = scenario.name
@@ -493,10 +498,239 @@ async function runDesktopScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/** Real scene + deterministic GLB: verify default camera and the prominent shot controls without inspecting pixels. */
+const SHOT_SCENARIOS = [
+  { name: 'armor-shot-actions-mobile', width: 390, height: 844, touch: true },
+  { name: 'armor-shot-actions-tablet', width: 1024, height: 768, touch: false },
+  { name: 'armor-shot-actions-desktop', width: 1280, height: 800, touch: false },
+]
+async function runShotActionsScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`(async () => {
+    localStorage.setItem('wotb-lang', 'zh')
+    const { storeShotsForViewer } = await import('/src/scene/agentData.js')
+    const shot = {
+      index: 1, time_s: 12, shooter_eid: 7, target_eid: 8, is_author: true,
+      shooter_tank_id: ${FIXTURE_TANK_ID}, target_tank_id: ${FIXTURE_TANK_ID},
+      shooter_name: 'Shooter', target_name: 'Target', shooter_tank_name: 'Fixture tank', target_tank_name: 'Fixture tank',
+      shell_slot: 0, damage: 100, hit_flags: 16, game_hit_result: 3,
+      shooter_pos: [0, 0, 60], target_pos: [0, 0, 0], shooter_ang: [0, 0, 0], target_ang: [0, 0, 0],
+      ball_a: [0, 1, 60], ball_b: [0, 1, 0], launch_velocity: [0, 0, -1000],
+      tick_samples: [{ dt: 0, pos: [0, 0, 0], yaw: 0, pitch: 0, roll: 0 }],
+      shooter_tick_samples: [{ dt: 0, pos: [0, 0, 60], yaw: 0, pitch: 0, roll: 0 }],
+    }
+    storeShotsForViewer([shot, { ...shot, index: 2, time_s: 24, damage: 200 }])
+  })()`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&shot=1&world=1&assets=${encodeURIComponent(env.assets)}`)
+  await page.waitFor(() => !!document.querySelector('#world-view-toggle'), { timeout: 30000, label: 'real shot scene controls' })
+  const state = `(() => ({
+    impact: document.querySelector('#rel-view-toggle')?.getAttribute('aria-pressed'),
+    overview: document.querySelector('#world-view-toggle')?.getAttribute('aria-pressed'),
+    distance: window.__armorRicochet?.aimingState()?.cameraDistance,
+    details: !!document.querySelector('#debug-toggle'),
+  }))()`
+  const initial = await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
+    { timeout: 15000, label: 'default impact camera is active at 15m' })
+  check(failures, initial.overview === 'false' && initial.details === false, 'impact must be selected by default, without the analysis-details entry')
+  const help = await page.evaluate(`(() => {
+    const el = document.querySelector('[data-testid="armor-interaction-help"]')
+    const r = el.getBoundingClientRect(), stage = document.querySelector('.armor-stage').getBoundingClientRect()
+    const header = document.querySelector('[data-testid="armor-shot-header"]').getBoundingClientRect()
+    return { text: el.textContent, belowHeader: r.top >= header.bottom - 1, aboveStage: r.bottom <= stage.top + 1, inside: r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1, height: r.height }
+  })()`)
+  const expectedGestures = scenario.touch ? ['单指拖动', '双指捏合', '双指拖动'] : ['左键拖动', '滚轮', '右键拖动']
+  check(failures, ['操作说明', '旋转视角', '缩放视角', '平移视角', ...expectedGestures].every(text => help.text.includes(text)),
+    `gesture help must describe the current input: ${JSON.stringify(help)}`)
+  check(failures, help.belowHeader && help.aboveStage && help.inside && help.height > 0, `gesture help must sit below the page header and above the canvas without overlap: ${JSON.stringify(help)}`)
+  const analysis = await page.waitForValue(`document.querySelector('#traj-info')?.textContent`, value => value?.includes('车体装甲板'),
+    { timeout: 15000, label: 'localized armor layer in real shot analysis' })
+  check(failures, !/Hull Plate|PENETRATION|BLOCKED/.test(analysis), `analysis must translate part names and results: ${analysis}`)
+  const tapControl = async selector => {
+    const target = await page.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2
+      const hit = document.elementFromPoint(x, y)
+      return { x, y, width: r.width, height: r.height, hit: hit === el || el.contains(hit), inside: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight }
+    })()`)
+    check(failures, target.hit && target.inside && target.width >= 44 && target.height >= 44,
+      `${selector} must be visible and reachable at 44px: ${JSON.stringify(target)}`)
+    await page.tap({ x: target.x, y: target.y, touch: scenario.touch })
+  }
+  await tapControl('#rel-view-toggle')
+  await tapControl('#world-view-toggle')
+  const overview = await page.waitForValue(state, value => value.overview === 'true' && value.distance > 20,
+    { label: 'overview camera restored after selecting the already-active impact option' })
+  check(failures, overview.impact === 'false', 'view selection must be mutually exclusive')
+  await tapControl('#rel-view-toggle')
+  await page.waitForValue(state, value => value.impact === 'true' && Math.abs(value.distance - 15) < .1,
+    { label: 'return to impact camera' })
+  check(failures, await page.evaluate(`!document.querySelector('#world-pen-cmp') && document.querySelector('#turret-controls').style.display === 'none'`),
+    'legacy agreement comparison is removed and developer diagnostics stay hidden')
+  await tapControl('[data-testid="armor-tools"]')
+  for (const selector of ['#shell-select', '#collision-btn', '#penetration-btn']) {
+    const target = await page.evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)}), r = el.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      return { height: r.height, width: r.width, reachable: hit === el || el.contains(hit) }
+    })()`)
+    check(failures, target.reachable && target.width >= 44 && target.height >= 44,
+      `expanded settings must remain reachable above the shot toolbar: ${selector} ${JSON.stringify(target)}`)
+  }
+  await tapControl('#collision-btn')
+  await tapControl('#collision-btn')
+  await tapControl('[data-testid="armor-tools"]')
+  check(failures, await page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'shot toolbar must not create horizontal overflow')
+  // After integrating the readiness fix, real next/previous inputs must rebuild the scene and calculate once.
+  for (const { label, index, damage } of [
+    { label: '下一发', index: '2', damage: '200' },
+    { label: '上一发', index: '1', damage: '100' },
+  ]) {
+    await page.evaluate('window.__navigationPreviousApi = window.__armorRicochet')
+    await tapControl('[aria-label="' + label + '"]')
+    const navigated = await page.waitForValue(`(() => ({
+      shot: new URLSearchParams(location.search).get('shot'),
+      fresh: !!window.__armorRicochet && window.__armorRicochet !== window.__navigationPreviousApi,
+      judgments: window.__armorRicochet?.info().judgments,
+      ready: !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]'),
+      result: document.querySelector('#traj-info')?.textContent,
+      header: document.querySelector('[data-testid="armor-shot-header"]')?.textContent,
+    }))()`, value => value.shot === index && value.fresh && value.ready && value.judgments === 1 && value.result?.includes('车体装甲板'),
+    { timeout: 30000, label: 'shot navigation rebuilds the ready scene' })
+    check(failures, navigated.header.includes(damage), `${label}: recorded damage follows the selected shot`)
+  }
+  await page.evaluate('delete window.__navigationPreviousApi')
+  check(failures, page.consoleErrors.length === 0, `JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
+// A real roster response drives makeCard/loadMoreCards; do not synthesize card DOM or change product CSS.
+const PICKER_TANK_CACHE = {
+  ...FIXTURE_TANK_CACHE,
+  ...Object.fromEntries(Array.from({ length: 120 }, (_, index) => {
+    const id = 10000 + index
+    return [id, { ...FIXTURE_TANK_CACHE[FIXTURE_TANK_ID], id, name: `Picker Medium ${String(index).padStart(3, '0')}` }]
+  })),
+}
+const PICKER_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
+  { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
+  { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
+  { name: `armor-picker-1440x900-${profile}`, width: 1440, height: 900, touch: false, profile },
+  { name: `armor-picker-3840x2160-${profile}`, width: 3840, height: 2160, deviceScaleFactor: 1, touch: false, profile, fillViewport: true },
+  { name: `armor-picker-resize-${profile}`, width: 1440, height: 900, deviceScaleFactor: 1, touch: false, profile, resize: true },
+])
+function pickerCardsProbe() {
+  const grid = document.querySelector('#tp-grid')
+  const cards = [...grid.querySelectorAll('.tank-card')]
+  const clipped = cards.filter(card => {
+    const outer = card.getBoundingClientRect()
+    const children = [...card.querySelectorAll('.tc-img, .tc-name, .tc-meta')]
+    return children.length !== 3 || children.some(child => {
+      const inner = child.getBoundingClientRect(), style = getComputedStyle(child)
+      return inner.width <= 0 || inner.height <= 0 || style.visibility === 'hidden'
+        || inner.top < outer.top - 1 || inner.bottom > outer.bottom + 1
+    })
+  })
+  const first = cards[0], outer = first?.getBoundingClientRect(), name = first?.querySelector('.tc-name')?.getBoundingClientRect()
+  const hit = name ? document.elementFromPoint(name.left + name.width / 2, name.top + name.height / 2) : null
+  const last = cards.at(-1), lastName = last?.querySelector('.tc-name')?.getBoundingClientRect()
+  const lastHit = lastName ? document.elementFromPoint(lastName.left + lastName.width / 2, lastName.top + lastName.height / 2) : null
+  const rect = grid.getBoundingClientRect()
+  return {
+    count: cards.length, clipped: clipped.length, clippedNames: clipped.slice(0, 3).map(card => card.textContent.trim()),
+    firstHeight: outer?.height, firstNameHit: !!first && !!hit && first.contains(hit),
+    lastNameHit: !!last && !!lastHit && last.contains(lastHit),
+    scrollTop: grid.scrollTop, scrollHeight: grid.scrollHeight, clientHeight: grid.clientHeight,
+    pageScroll: { x: scrollX, y: scrollY },
+    overflowX: grid.scrollWidth > grid.clientWidth + 1 || document.documentElement.scrollWidth > innerWidth + 1,
+    wheel: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
+  }
+}
+async function runPickerCardsScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable(); await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=home&ws-auth=1`)
+  await page.evaluate(`localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)})`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.pickerAssets)}`)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && document.querySelector('#target-select')?.disabled === false,
+    { timeout: 30000, label: 'picker fixture initialized' })
+  if (scenario.touch) {
+    const tools = await page.probe(armorLayoutProbe)
+    await page.tap({ ...tools.tools.center, touch: true })
+  }
+  const controls = await page.probe(armorLayoutProbe)
+  await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
+  await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 90,
+    { timeout: 5000, label: 'first roster chunk' })
+  const initial = await page.probe(pickerCardsProbe)
+  check(failures, await page.evaluate('document.documentElement.dataset.uiProfile') === scenario.profile,
+    `${scenario.name}: requested presentation profile must be active`)
+  check(failures, initial.clipped === 0 && initial.firstNameHit,
+    `${scenario.name}: picker clips image/name/metadata or hides the name hit target: ${JSON.stringify(initial)}`)
+  check(failures, initial.scrollHeight > initial.clientHeight && !initial.overflowX,
+    `${scenario.name}: roster must scroll vertically without horizontal overflow: ${JSON.stringify(initial)}`)
+  check(failures, scenario.fillViewport ? initial.count > 90 : initial.count === 90,
+    `${scenario.name}: fill a large viewport while retaining ordinary chunking: ${JSON.stringify(initial)}`)
+  if (failures.length === 0) {
+    if (scenario.resize) {
+      await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
+        { timeout: 5000, label: 'resize refills the visible picker before scrolling' })
+    }
+    const beforeScroll = await page.probe(pickerCardsProbe)
+    await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...beforeScroll.wheel, deltaX: 0, deltaY: beforeScroll.scrollHeight }, sessionId)
+    await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
+      { timeout: 5000, label: 'scroll loads the remaining roster chunk' })
+    if (scenario.fillViewport) {
+      await env.chrome.client.send('Input.insertText', { text: 'Picker' }, sessionId)
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === 120,
+        { timeout: 5000, label: 'filter refills the large visible picker' })
+    }
+    const loaded = await page.probe(pickerCardsProbe)
+    await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...loaded.wheel, deltaX: 0, deltaY: loaded.scrollHeight }, sessionId)
+    await page.waitForValue(`(${pickerCardsProbe.toString()})().lastNameHit`, hit => hit === true,
+      { timeout: 5000, label: 'last roster card can be reached' })
+    const scrolled = await page.probe(pickerCardsProbe)
+    check(failures, scrolled.scrollTop > 0 && scrolled.clipped === 0 && scrolled.lastNameHit && !scrolled.overflowX,
+      `${scenario.name}: appended roster cards must remain whole after real scrolling: ${JSON.stringify(scrolled)}`)
+    const close = (await page.probe(armorLayoutProbe)).pickerClose
+    await page.installInputTrace()
+    await page.evaluate(`(() => {
+      window.__pickerCloseClick = null
+      document.addEventListener('click', event => {
+        window.__pickerCloseClick = { trusted: event.isTrusted, button: event.target.closest('button')?.id || null }
+      }, { once: true, capture: true })
+    })()`)
+    await page.tap({ x: close.left + close.width / 2, y: close.top + close.height / 2, touch: scenario.touch })
+    const closed = await page.waitFor(() => !document.querySelector('#tank-picker.open'), { timeout: 5000, label: 'picker closed after raw input' }).then(() => true).catch(() => false)
+    const trace = await page.inputTrace()
+    const closeClick = await page.evaluate('window.__pickerCloseClick')
+    const pageScroll = await page.evaluate('({ x: scrollX, y: scrollY })')
+    check(failures, scrolled.pageScroll.x === initial.pageScroll.x && scrolled.pageScroll.y === initial.pageScroll.y
+      && pageScroll.x === initial.pageScroll.x && pageScroll.y === initial.pageScroll.y,
+      `${scenario.name}: scrolling at the roster boundary must not move the outer page: ${JSON.stringify({ initial: initial.pageScroll, beforeClose: scrolled.pageScroll, afterClose: pageScroll })}`)
+    check(failures, closed && trace.clickCount === 1 && closeClick?.trusted && closeClick.button === 'tp-close',
+      `${scenario.name}: picker close requires a trusted click on the close button and closed state: ${JSON.stringify({ trace, closeClick })}`)
+  }
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
+const assets = await startFixtureAssetPack()
+const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 let chromeCdp = null
 
 try {
@@ -510,12 +744,14 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin }
   const runs = [
+    ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
+    ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
   const nameFilter = process.argv.slice(2).find((arg) => !arg.startsWith('-'))
   const selected = nameFilter ? runs.filter(({ scenario }) => scenario.name.includes(nameFilter)) : runs
@@ -551,4 +787,6 @@ try {
 } finally {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
+  await assets.close()
+  await pickerAssets.close()
 }

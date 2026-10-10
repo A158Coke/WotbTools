@@ -121,7 +121,7 @@ const floatingStyle = computed(() => (floating.value && pos.value
         <dd data-test="pb-sb-state">{{ $t('recon.map.playback.state_destroyed') }}</dd>
       </template>
       <template v-if="props.health">
-        <dt>{{ $t('recon.map.playback.current_hp') }}</dt>
+        <dt>{{ $t(props.health.state === 'LAST_KNOWN' ? 'recon.map.playback.last_known_hp' : props.health.state === 'RELATIVE_FULL' ? 'recon.map.playback.hp_full_spawn' : 'recon.map.playback.current_hp') }}</dt>
         <dd data-test="pb-sb-hp">
           <template v-if="props.selectedState.destroyed">{{ $t('recon.map.playback.state_destroyed') }}</template>
           <template v-else>

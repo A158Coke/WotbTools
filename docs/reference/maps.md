@@ -8,42 +8,42 @@
 
 | 内部 code（meta.json mapName） | 中文名 | 英文名 | 语义 mapId | 素材（WxH） | 状态 |
 |---|---|---|---|---|---|
-| amigosville | 乡间溪流 | Falls Creek | 05_amigosville_am | falls-creek.webp (2024x2024) | ✅ 有素材 |
-| canal | 运河尽头 | Canal | 18_canal_cn | canal.webp (2024x2024) | ✅ 有素材 |
-| canyon | 夺命峡谷 | Canyon | 25_canyon_ca | canyon.webp (2024x2024) | ✅ 有素材 |
-| desert_train | 黄沙荒漠 | Desert Sands | 02_desert_train_dt | desert-sands.webp (2024x2024) | ✅ 有素材 |
-| erlenberg | 米德尔堡 | Middleburg | 03_erlenberg_er | middleburg.webp (2024x2024) | ✅ 有素材 |
-| faust | 浮士德 | Faust | 32_faust_fa_night | faust.webp (2024x2024) | ✅ 有素材 |
-| forgecity | 都市港口 | New Bay | 34_forgecity_fc | new-bay.webp (2024x2024) | ✅ 有素材 |
-| fort | 绝望堡垒 | Fort Despair | 07_fort_ft | fort-despair.webp (2024x2024) | ✅ 有素材 |
-| himmelsdorf | 锡默尔斯多夫 | Himmelsdorf | 19_himmelsdorf_hm | himmelsdorf.webp (2024x2024) | ✅ 有素材 |
-| holland | 莫伦迪克 | Molendijk | 16_holland_hl | molendijk.webp (2024x2024) | ✅ 有素材 |
-| holmeisk | 废弃之地 | Wasteland | 26_holmeisk_hk | wasteland.webp (2024x2024) | ✅ 有素材 |
-| idle | 峪崆 | Yukon | 08_idle_id | yukon.webp (2024x2024) | ✅ 有素材 |
-| italy | 葡萄庄园 | Vineyards | 22_italy_it | vineyards.webp (2024x2024) | ✅ 有素材 |
-| karelia | 乱石荒野 | Rockfield | 17_karelia_ka | rockfield.webp (2024x2024) | ✅ 有素材 |
-| karieri | 铜矿采集场 | Copperfield | 23_karieri_kr | copperfield.webp (2024x2024) | ✅ 有素材 |
-| lagoon | 海岸礁湖 | Lagoon | 15_lagoon_ln | lagoon.webp (2024x2024) | ✅ 有素材 |
-| lumber | 山麓角逐 | Horrorstadt | 31_lumber_lm | horrorstadt.webp (2024x2024) | ✅ 有素材 |
-| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.webp (2024x2024) | ✅ 有素材 |
-| medvedkovo | 废弃轨道 | Dead Rail | 04_medvedkovo_md | dead-rail.webp (2024x2024) | ✅ 有素材 |
-| milbase | 落日军港 | Yamato Harbor | 24_milibase_mlb | yamato-harbor.webp (2024x2024) | ✅ 有素材 |
-| mountain | 暗金矿窑 | Black Goldville | 21_mountain_mnt | black-goldville.webp (2024x2024) | ✅ 有素材 |
-| neptune | 滩涂阵地 | Normandy | 33_neptune_nt | normandy.webp (2024x2024) | ✅ 有素材 |
-| plant | 幽灵工厂 | Ghost Factory | 11_plant_pn | ghost-factory.webp (2024x2024) | ✅ 有素材 |
-| pliego | 卡斯提拉 | Castilla | 13_pliego_pl | castilla.webp (2024x2024) | ✅ 有素材 |
-| port | 港湾小镇 | Port Bay | 14_port_pt | port-bay.webp (2024x2024) | ✅ 有素材 |
-| rift | 海拉斯 | Hellas | 35_rift_rt | hellas.webp (2024x2024) | ✅ 有素材 |
-| rock | 古老秘境 | Mayan Ruins | 28_rock_rc | mayan-ruins.webp (2024x2024) | ✅ 有素材 |
-| savanna | 沙漠之心 | Oasis Palms | 09_savanna_sv | oasis-palms.webp (2024x2024) | ✅ 有素材 |
-| skit | 海防前沿 | Naval Frontier | 29_skit_sk | naval-frontier.webp (2024x2024) | ✅ 有素材 |
+| amigosville | 乡间溪流 | Falls Creek | 05_amigosville_am | falls-creek.webp (1254x1254) | ✅ 有素材 |
+| canal | 运河尽头 | Canal | 18_canal_cn | canal.webp (1254x1254) | ✅ 有素材 |
+| canyon | 夺命峡谷 | Canyon | 25_canyon_ca | canyon.webp (1254x1254) | ✅ 有素材 |
+| desert_train | 黄沙荒漠 | Desert Sands | 02_desert_train_dt | desert-sands.webp (1254x1254) | ✅ 有素材 |
+| erlenberg | 米德尔堡 | Middleburg | 03_erlenberg_er | middleburg.webp (1254x1254) | ✅ 有素材 |
+| faust | 浮士德 | Faust | 32_faust_fa_night | faust.webp (1254x1254) | ✅ 有素材 |
+| forgecity | 都市港口 | New Bay | 34_forgecity_fc | new-bay.webp (1254x1254) | ✅ 有素材 |
+| fort | 绝望堡垒 | Fort Despair | 07_fort_ft | fort-despair.webp (1254x1254) | ✅ 有素材 |
+| himmelsdorf | 锡默尔斯多夫 | Himmelsdorf | 19_himmelsdorf_hm | himmelsdorf.webp (1254x1254) | ✅ 有素材 |
+| holland | 莫伦迪克 | Molendijk | 16_holland_hl | molendijk.webp (1254x1254) | ✅ 有素材 |
+| holmeisk | 废弃之地 | Wasteland | 26_holmeisk_hk | wasteland.webp (1254x1254) | ✅ 有素材 |
+| idle | 峪崆 | Yukon | 08_idle_id | yukon.webp (1254x1254) | ✅ 有素材 |
+| italy | 葡萄庄园 | Vineyards | 22_italy_it | vineyards.webp (1254x1254) | ✅ 有素材 |
+| karelia | 乱石荒野 | Rockfield | 17_karelia_ka | rockfield.webp (1254x1254) | ✅ 有素材 |
+| karieri | 铜矿采集场 | Copperfield | 23_karieri_kr | copperfield.webp (1254x1254) | ✅ 有素材 |
+| lagoon | 海岸礁湖 | Lagoon | 15_lagoon_ln | lagoon.webp (1254x1254) | ✅ 有素材 |
+| lumber | 山麓角逐 | Horrorstadt | 31_lumber_lm | horrorstadt.webp (1254x1254) | ✅ 有素材 |
+| malinovka | 马利诺夫卡 | Winter Malinovka | 12_malinovka_ma | winter-malinovka.webp (1254x1254) | ✅ 有素材 |
+| medvedkovo | 废弃轨道 | Dead Rail | 04_medvedkovo_md | dead-rail.webp (1254x1254) | ✅ 有素材 |
+| milbase | 落日军港 | Yamato Harbor | 24_milibase_mlb | yamato-harbor.webp (1254x1254) | ✅ 有素材 |
+| mountain | 暗金矿窑 | Black Goldville | 21_mountain_mnt | black-goldville.webp (1254x1254) | ✅ 有素材 |
+| neptune | 滩涂阵地 | Normandy | 33_neptune_nt | normandy.webp (1254x1254) | ✅ 有素材 |
+| plant | 幽灵工厂 | Ghost Factory | 11_plant_pn | ghost-factory.webp (1254x1254) | ✅ 有素材 |
+| pliego | 卡斯提拉 | Castilla | 13_pliego_pl | castilla.webp (1254x1254) | ✅ 有素材 |
+| port | 港湾小镇 | Port Bay | 14_port_pt | port-bay.webp (1254x1254) | ✅ 有素材 |
+| rift | 海拉斯 | Hellas | 35_rift_rt | hellas.webp (1254x1254) | ✅ 有素材 |
+| rock | 古老秘境 | Mayan Ruins | 28_rock_rc | mayan-ruins.webp (1254x1254) | ✅ 有素材 |
+| savanna | 沙漠之心 | Oasis Palms | 09_savanna_sv | oasis-palms.webp (1254x1254) | ✅ 有素材 |
+| skit | 海防前沿 | Naval Frontier | 29_skit_sk | naval-frontier.webp (1254x1254) | ✅ 有素材 |
 
 ## 命名与维护约定
 
 - **内部 code**（meta.json 的 `mapName`，如 `neptune`/`erlenberg`/`rock`）是**不可变键**：由游戏客户端回放元数据发出，语义文件 `mapCodes`、`mapImages.js` 的 key 都以它为准。**不要改名**，否则真实回放解析会失配。
 - **展示名**（zh/en/ru）来自 `common/map_names.json`（游戏客户端名称）。注意内部 code 与英文名常不一致（如 `neptune`=Normandy、`erlenberg`=Middleburg、`rock`=Mayan Ruins），这是正常的，两套分别对应"解析键"与"用户可见名"。
 - **素材文件名**：统一为**英文展示名小写中划线**（如 Normandy → `normandy.webp`，Middleburg → `middleburg.webp`，Winter Malinovka → `winter-malinovka.webp`）。文件位于 `frontend/src/assets/maps/`。
-- **唯一权威**：素材与尺寸只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
+- **唯一权威**：素材引用、逻辑尺寸与坐标边界只在 `frontend/src/data/mapImages.js` 维护（后端 `MapOverview.image` 恒 null）。新增/修改素材只需改这一处 + 本表。
 - **渲染坐标边界**：每条素材配置 `coordinateBounds`（图片对应的世界坐标范围，取自语义 JSON 的
   `coordinateSystem.worldBounds`；当前 29 张均为 -300..300）。渲染统一用它换算像素，
   分析网格仍用 `playableBounds`——两者分离，逐图可独立校准。
@@ -97,8 +97,15 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 ## 2D Local / 3D Remote 资产边界
 
-- 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp` 的游戏客户端原图，由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。
-- 原图实际 raster 尺寸与本表一致（当前 29 张均为 2024×2024）。`mapImages.width/height` 是既有 logical frame 尺寸，与 raster 尺寸分开维护；更新图片不得改变地图坐标、车辆、基地与标注对齐。
-- `frontend/src/data/mapAssets.test.js` 校验注册表与本地原图的一一对应及实际 WebP 尺寸；真实浏览器布局回归覆盖底图加载与 overlay 对齐。
-- 3D 模型、纹理与地图资产继续由 `frontend/src/scene/assetProvider.js` 从已配置的 remote asset origin（生产 COS）读取；2D 原图不进入该 provider。
-- 原始客户端地图是唯一 2D 来源，不维护 AI 增强副本、生成 manifest 或增强 QA 工具。
+- 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp` 的 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。
+- 底图实际 raster 尺寸与本表一致（当前 29 张均为 1254×1254）。`mapImages.width/height` 是既有 logical frame 尺寸，与 raster 尺寸分开维护；更新图片不得改变地图坐标、车辆、基地与标注对齐。
+- `frontend/src/data/mapAssets.test.js` 校验注册表与本地底图的一一对应及实际 WebP 尺寸；真实浏览器布局回归覆盖底图加载与 overlay 对齐。
+- 3D 模型、纹理与地图资产继续由 `frontend/src/scene/assetProvider.js` 从已配置的 remote asset origin（生产 COS）读取；2D 底图不进入该 provider。
+- canonical 目录只维护一套已验收的 2D 底图；AI 无损母版、对照工具和原版离线备份不进入运行时或前端镜像。
+
+## 2026-10-09 底图资源更新
+
+- 29 张客户端原图经过 AI 增强后，统一以 1254×1254、WebP q90 / method 6 发布；总量从 32.83 MiB 降为 18.28 MiB。
+- `mapImages.js` 的逻辑 width / height、内部 code 与 coordinateBounds 保持原值；只替换同名 WebP 文件，不新增资源服务或运行时切换。
+- 原版等比采样后与增强图配准，原有投影的 261 个正反映射检查一致。马利诺夫卡、暗金矿窑、港湾小镇、绝望堡垒、沙漠之心的全局拟合偏移触发初筛，最大约 6.95px（1254px 尺度下约 3.33m）；用户已通过对照页接受本批偏移，不做自动几何校正。投影检查不代表每处补绘地形严格一致。
+- 原版 2024×2024 文件可从替换前 Git 提交 `51cf93de99f88fa388c84da3810e2fbaba8d14de` 恢复，本次另有按 SHA-256 核验的离线 ZIP 备份。回退图片时须同步恢复 canonical 尺寸校验和本文尺寸；Android 版本仍需递增。

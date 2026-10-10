@@ -267,14 +267,9 @@ stage_and_validate() {
       || die "staged TX Alloy config validation failed; live TX deployment was not changed."
   fi
   if is_selected wotb-frontend; then
-    # Sponsor assets and Android releases are optional runtime content. The
-    # sponsor config itself is a file bind mount: if Docker ever created the
-    # source path as a directory, fail before Compose can silently serve 404.
-    mkdir -p "$TX_RUNTIME_ROOT/config/sponsor" "$TX_RUNTIME_ROOT/android-release"
-    if [ -e "$TX_RUNTIME_ROOT/config/sponsor-config.json" ] \
-       && [ ! -f "$TX_RUNTIME_ROOT/config/sponsor-config.json" ]; then
-      die "TX sponsor config must be a regular file: $TX_RUNTIME_ROOT/config/sponsor-config.json"
-    fi
+    # Android releases are optional runtime content. Sponsor QR content is not a
+    # host mount anymore (published to the object-storage asset plane).
+    mkdir -p "$TX_RUNTIME_ROOT/android-release"
   fi
   export TX_RUNTIME_ROOT
   export TX_BACKEND_UPSTREAM="$BACKEND_UPSTREAM_VALUE"
@@ -629,7 +624,11 @@ tx_alloy_health() {
     || { FAILED_SERVICE=alloy-tx; return 1; }
   # A 404 is expected and proves the real frontend nginx access-log path; the
   # Android dashboard counts only status=200, so a 404 never inflates usage.
-  probe_http frontend-canary "http://caddy/_wotb/frontend/download/android/$frontend_apk" >/dev/null 2>&1 || true
+  # 直连**本机** frontend 容器，而不是经 Caddy 的 2:8 加权池：合金只采集本机容器日志，
+  # 而加权探针约 80% 落 TX2 —— 那台的事件永远到不了本机合金，检查自 2026-10-07 K7C
+  # 加权上线后必然失败（10-10 实测 12 次探针仅 2 次落 TX1），失败处理还会把合金停机。
+  # 带生产 Host 头直连，保证 404 事件落在被采集的那一台。
+  probe_http frontend-canary "http://wotb-frontend/download/android/$frontend_apk" 'Host: wotbtools.com' >/dev/null 2>&1 || true
   FAILED_SERVICE=alloy-tx
 
   loki_query_body() {

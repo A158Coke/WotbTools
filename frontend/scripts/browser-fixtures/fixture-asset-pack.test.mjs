@@ -133,6 +133,22 @@ describe('夹具 tank JSON / 名册契约', () => {
 })
 
 describe('夹具资产服务器', () => {
+    it('名册覆盖按实例隔离，不改变默认名册或车辆数据', async () => {
+        const tankCache = { ...FIXTURE_TANK_CACHE, 9002: { ...FIXTURE_TANK_CACHE[FIXTURE_TANK_ID], id: 9002, name: 'Second Medium' } }
+        const custom = await startFixtureAssetPack({ tankCache })
+        const original = await startFixtureAssetPack()
+        try {
+            const cache = async pack => (await fetch(`${pack.origin}/data/tank_cache.json`)).json()
+            expect(await cache(custom)).toEqual(tankCache)
+            expect(await cache(original)).toEqual(FIXTURE_TANK_CACHE)
+            const tank = await (await fetch(`${custom.origin}/tank/${FIXTURE_TANK_ID}.json`)).json()
+            expect(tank).toEqual(FIXTURE_TANK_DATA)
+        } finally {
+            await custom.close()
+            await original.close()
+        }
+    })
+
     it('四条路由可达 + CORS 放行；未知路径 404（不静默返回空）', async () => {
         const pack = await startFixtureAssetPack()
         try {

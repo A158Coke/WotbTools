@@ -20,7 +20,7 @@ const groups = computed(() => [
 </script>
 
 <template>
-  <div class="more-page" data-testid="more-page">
+  <div class="more-page layout-content" data-testid="more-page">
     <PageHeader :title="$t('more.title')" />
 
     <section class="more-section" aria-labelledby="more-display">
@@ -29,6 +29,7 @@ const groups = computed(() => [
         <div class="more-setting">
           <span class="more-setting-label">{{ $t('uiProfile.title') }}</span>
           <SegmentedControl
+            scrollable
             :model-value="uiProfilePreference"
             :options="uiProfileOptions($t)"
             :aria-label="$t('uiProfile.title')"
@@ -39,6 +40,7 @@ const groups = computed(() => [
         <div class="more-setting">
           <span class="more-setting-label">{{ $t('more.language') }}</span>
           <SegmentedControl
+            scrollable
             :model-value="$i18n.locale"
             :options="LANGUAGES"
             :aria-label="$t('more.language')"
@@ -83,10 +85,7 @@ const groups = computed(() => [
 
 <style scoped>
 .more-page {
-  width: 100%;
-  max-width: 760px;
-  margin-inline: auto;
-  padding: var(--space-6) var(--gutter) var(--space-12);
+  max-width: calc(var(--reading-measure) + var(--gutter) * 2);
 }
 
 .more-section + .more-section { margin-top: var(--space-6); }
@@ -125,7 +124,7 @@ const groups = computed(() => [
 
 .more-row:first-child { border-top: 0; }
 .more-row > svg { flex: none; color: var(--color-text-secondary); }
-.more-row-label { flex: 1 1 auto; min-width: 0; }
+.more-row-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .more-row:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
 
 .more-setting {
@@ -138,7 +137,7 @@ const groups = computed(() => [
 }
 
 .more-setting + .more-setting { border-top: 1px solid var(--color-border-subtle); }
-.more-setting-label { color: var(--color-text-primary); font: var(--type-body); }
+.more-setting-label { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 
 @media (hover: hover) {
   .more-row:hover { background: var(--color-surface-2); }

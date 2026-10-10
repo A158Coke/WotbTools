@@ -14,6 +14,7 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
+import FileDrop from './FileDrop.vue'
 
 // useReplay mock 返回的可变 state 占位：每次 beforeEach 用 buildState() 以真实 Vue ref 重建。
 const hold = vi.hoisted(() => ({ state: null }))
@@ -76,14 +77,6 @@ vi.mock('./BattlePlaybackPanel.vue', () => paneMock('BattlePlaybackPanelMock', '
 vi.mock('./Replay3DPane.vue', () => paneMock('Replay3DPaneMock', 'ws-3d-pane'))
 vi.mock('./ReplayShotsPane.vue', () => paneMock('ReplayShotsPaneMock', 'ws-shots-pane'))
 vi.mock('./AiReviewWorkspacePane.vue', () => paneMock('AiReviewPaneMock', 'ws-ai-pane'))
-vi.mock('./FileDrop.vue', () => ({
-  default: {
-    name: 'FileDropMock',
-    props: ['files', 'allowFolder'],
-    emits: ['update:files', 'preview'],
-    template: '<button data-test="drop" :data-allow-folder="String(allowFolder)">drop</button>',
-  },
-}))
 vi.mock('./ReplayProcessingPanel.vue', () => ({
   default: {
     name: 'ReplayProcessingPanelMock',
@@ -129,11 +122,12 @@ function buildState() {
 
 let replayState = null
 
-function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn() } = {}) {
+function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false } = {}) {
   authState.authenticated.value = authenticated
   nav.navigate = navigate
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
+    attachTo: attached ? document.body : undefined,
     global: {
       provide: { [NAVIGATE_VIEW_KEY]: navigate },
       mocks: { $t: (k) => k },
@@ -160,6 +154,38 @@ function withBattles(count) {
 }
 
 describe('ReplayWorkspace', () => {
+  it('parsed single-battle views collapse files without remounting playback or hiding analysis failures', async () => {
+    withBattles(2)
+    const wrapper = mountWorkspace('playback', { attached: true })
+    await flushPromises()
+    const pane = wrapper.get('[data-test="ws-playback-pane"]').element
+    const controls = () => wrapper.get('[data-testid="workspace-file-controls"]')
+    const toggle = () => wrapper.get('[data-testid="workspace-files-toggle"]')
+    expect(controls().isVisible()).toBe(false)
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    await toggle().trigger('click')
+    expect(controls().isVisible()).toBe(true)
+    await toggle().trigger('click')
+    expect(controls().isVisible()).toBe(false)
+    expect(wrapper.get('[data-test="ws-playback-pane"]').element).toBe(pane)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    replayState.loading.value = true
+    await flushPromises()
+    expect(controls().isVisible()).toBe(true)
+    expect(toggle().element.disabled).toBe(true)
+    replayState.loading.value = false
+    replayState.error.value = 'parse failure'
+    await flushPromises()
+    expect(controls().isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="ws-error"]').text()).toContain('parse failure')
+    replayState.error.value = ''
+    await switchTo(wrapper, 'data')
+    expect(controls().isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-files-toggle"]').exists()).toBe(false)
+    expect(replayState.files.value).toHaveLength(2)
+    wrapper.unmount()
+  })
+
   it('shows native read failures in the replay error surface and retries without starting analysis', async () => {
     const wrapper = mountWorkspace('data')
     await flushPromises()
@@ -508,7 +534,7 @@ describe('ReplayWorkspace', () => {
   it('匿名数据能力立即渲染投放区与数据面板，不请求登录', async () => {
     const wrapper = mountWorkspace('data', { authenticated: false })
     expect(wrapper.find('[data-testid="ws-auth-loading"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="drop"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="select-files-input"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="ws-data"]').exists()).toBe(true)
     await flushPromises()
     expect(authState.login).not.toHaveBeenCalled()
@@ -525,15 +551,88 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('FileDrop allowFolder 只在数据能力打开（单场能力一次只收一份回放）', async () => {
+  it('数据与 2D/3D 共用批量导入，射击与 AI 保留单文件入口', async () => {
     replayState.files.value = [new File(['x'], 'a.wotbreplay')]
     const wrapper = mountWorkspace('data')
     await flushPromises()
-    expect(wrapper.findComponent({ name: 'FileDropMock' }).props('allowFolder')).toBe(true)
-    for (const cap of ['playback', '3d', 'shots', 'ai']) {
+    for (const cap of ['data', 'playback', '3d', 'shots', 'ai']) {
       await switchTo(wrapper, cap)
-      expect(wrapper.findComponent({ name: 'FileDropMock' }).props('allowFolder')).toBe(false)
+      const batchImport = ['data', 'playback', '3d'].includes(cap)
+      expect(wrapper.get('[data-testid="select-files-input"]').element.multiple).toBe(batchImport)
+      expect(wrapper.find('[data-testid="select-folder-input"]').exists()).toBe(batchImport)
     }
+    wrapper.unmount()
+  })
+
+  it.each(['playback', '3d'])('%s 直接批量选文件、解析并切局；追加去重后可重新解析和清空', async (cap) => {
+    const wrapper = mountWorkspace(cap, { attached: true })
+    await flushPromises()
+    const a = new File(['a'], 'a.wotbreplay')
+    const b = new File(['b'], 'b.wotbreplay')
+    const c = new File(['c'], 'c.wotbreplay')
+    const pickerId = cap === '3d' ? 'replay3d-battle-picker' : 'playback-battle-picker'
+    const pane = () => wrapper.get(`[data-test="ws-${cap}-pane"]`)
+    // 只替代分析结果边界；上传控件、Workspace、session 和场次选择器都使用真实实现。
+    replayState.analyze.mockImplementation(async () => {
+      replayState.session.commitReadyResult({
+        leagueMode: false,
+        aggregate: [],
+        battles: replayState.files.value.map((file, i) => ({
+          sourceId: `r${i}`, sourceName: file.name, mapName: 'Lagoon', players: [],
+        })),
+      })
+      return { completed: true }
+    })
+    const pick = async (testId, files) => {
+      const input = wrapper.get(`[data-testid="${testId}"]`)
+      expect(input.element.multiple).toBe(true)
+      Object.defineProperty(input.element, 'files', { value: files, configurable: true })
+      await input.trigger('change')
+      await flushPromises()
+    }
+    const analyze = async () => {
+      await wrapper.findComponent(FileDrop).findAll('button')
+        .find(button => button.text().includes('action.preview')).trigger('click')
+      await flushPromises()
+    }
+
+    await pick('select-files-input', [b, a])
+    expect(replayState.files.value).toEqual([a, b])
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    expect(pane().text()).toContain('workspace.single_replay_required')
+    await analyze()
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(tab(wrapper, cap).classes()).toContain('is-active')
+    expect(pane().text()).toContain('a.wotbreplay')
+    await wrapper.get(`[data-testid="${pickerId}"]`).trigger('click')
+    await wrapper.get('[data-testid="battle-picker-option"][data-value="r1"]').trigger('click')
+    await flushPromises()
+    expect(pane().text()).toContain('b.wotbreplay')
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+
+    expect(wrapper.get('[data-testid="workspace-file-controls"]').isVisible()).toBe(false)
+    await wrapper.get('[data-testid="workspace-files-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="workspace-file-controls"]').isVisible()).toBe(true)
+    await pick('compact-add-files-input', [b, c])
+    expect(replayState.files.value).toEqual([a, b, c])
+    expect(replayState.resp.value).toBeNull()
+    expect(replayState.currentTargetFile.value).toBeNull()
+    expect(pane().text()).not.toContain('b.wotbreplay')
+    await analyze()
+    await wrapper.get(`[data-testid="${pickerId}"]`).trigger('click')
+    expect(wrapper.findAll('[data-testid="battle-picker-option"]')).toHaveLength(3)
+    await wrapper.get('[data-testid="battle-picker-option"][data-value="r2"]').trigger('click')
+    await flushPromises()
+    expect(pane().text()).toContain('c.wotbreplay')
+
+    await wrapper.get('[data-testid="compact-clear"]').trigger('click')
+    expect(replayState.files.value).toHaveLength(3)
+    await wrapper.get('[data-testid="compact-clear-confirm"]').trigger('click')
+    await flushPromises()
+    expect(replayState.files.value).toEqual([])
+    expect(replayState.currentTargetFile.value).toBeNull()
+    expect(wrapper.find(`[data-testid="${pickerId}"]`).exists()).toBe(false)
+    expect(pane().text()).not.toContain('.wotbreplay')
     wrapper.unmount()
   })
 
@@ -543,7 +642,7 @@ describe('ReplayWorkspace', () => {
     replayState.analysis.value = { phase: 'parsing', done: 1, total: 2, failure: null }
     await flushPromises()
 
-    wrapper.findComponent({ name: 'FileDropMock' }).vm.$emit('preview')
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
     await flushPromises()
     expect(replayState.analyze).toHaveBeenCalledTimes(1)
 
@@ -557,12 +656,12 @@ describe('ReplayWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('Playback 主动选择新 single replay → updateFiles 收到仅该 replay', async () => {
+  it('上传区的 selection 变更交给工作台唯一 session owner', async () => {
     withBattles(34)
     const wrapper = mountWorkspace('playback')
     await flushPromises()
     const single = new File(['x'], 'single.wotbreplay')
-    wrapper.findComponent({ name: 'FileDropMock' }).vm.$emit('update:files', [single])
+    wrapper.findComponent(FileDrop).vm.$emit('update:files', [single])
     await flushPromises()
     expect(replayState.updateFiles).toHaveBeenCalledWith([single])
     wrapper.unmount()

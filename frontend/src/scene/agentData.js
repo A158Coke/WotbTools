@@ -114,6 +114,37 @@ export async function judgePenetration(req) {
 const SHOTS_KEY = 'wotb_agent_shots'
 const SHOTS_TTL_MS = 30 * 60 * 1000
 
+/** Both the shot list and viewer navigation must resolve the same mounted gun / shell pair. */
+export async function shotViewerQuery(shot) {
+  const shooterTank = shot.shooter_tank_id || 0
+  const tank = shot.target_tank_id || shooterTank
+  if (!tank) return null
+  let hit = null
+  if (shot.shell_id && shooterTank) {
+    try {
+      const data = await fetchLocalShotTankData(shooterTank)
+      const configs = data.configs || []
+      const pinned = Number.isInteger(shot.shooter_config_idx) ? configs[shot.shooter_config_idx] : null
+      const pinnedShell = (pinned?.shell_global_ids || []).indexOf(shot.shell_id)
+      if (pinnedShell >= 0) hit = { cfg: shot.shooter_config_idx, idx: pinnedShell }
+      for (let ci = configs.length - 1; !hit && ci >= 0; ci--) {
+        const idx = (configs[ci].shell_global_ids || []).indexOf(shot.shell_id)
+        if (idx >= 0) hit = { cfg: ci, idx }
+      }
+    } catch { /* Keep the existing slot fallback when local inputs are unavailable. */ }
+  }
+  const shellIdx = hit ? hit.idx : (shot.is_author && shot.shell_slot != null) ? shot.shell_slot : null
+  return {
+    view: 'agent-armor', tank: String(tank),
+    ...(shooterTank ? { shooter: String(shooterTank) } : {}),
+    shot: String(shot.index),
+    ...(shellIdx != null ? { shell: String(shellIdx) } : {}),
+    ...(hit ? { scfg: String(hit.cfg) } : {}),
+    ...(shot.target_config_idx != null ? { config: String(shot.target_config_idx) } : {}),
+    world: '1', heatmap: '1',
+  }
+}
+
 /**
  * 射击复现表把 parseShotReplays 的 shots 数组存入本地交接通道。
  * localStorage 为主（跨窗口同源共享，新开查看器窗口必定可取）；

@@ -176,11 +176,11 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 }
 
 .app-footer a {
-  color: var(--text-sub);
+  color: var(--color-text-tertiary);
 }
 
 .app-footer-disclaimer {
-  color: var(--text-sub);
+  color: var(--color-text-tertiary);
 }
 
 .app-footer-filings {
@@ -188,19 +188,19 @@ provide(NAVIGATE_VIEW_KEY, navigate)
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
 }
 
 .app-footer-public-security {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .app-footer-public-security img {
-  width: 16px;
-  height: 16px;
+  width: var(--space-4);
+  height: var(--space-4);
   object-fit: contain;
 }
 
@@ -211,7 +211,7 @@ provide(NAVIGATE_VIEW_KEY, navigate)
 
 @media (width < 768px) {
   .app-footer-filings {
-    column-gap: 6px;
+    column-gap: var(--space-2);
   }
 }
 </style>

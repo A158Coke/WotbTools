@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { createMapView } from './mapView.js'
 import {
   ANNOT_COLORS,
+  ANNOT_TANK_CLASSES,
+  hitTestAnnotation,
+  translateAnnotation,
   ANNOT_FONT_SIZE,
   ANNOT_WIDTH_MAX,
   ANNOT_WIDTH_MIN,
@@ -233,5 +236,37 @@ describe('snapshot undo/redo', () => {
     expect(history).toHaveLength(UNDO_LIMIT)
     expect(index).toBe(UNDO_LIMIT - 1)
     expect(history[index]).toEqual([UNDO_LIMIT + 4])
+  })
+})
+
+
+describe('tactical annotation geometry', () => {
+  it('selects the topmost unit class including TD and erases it as a whole object', () => {
+    for (const tank of ANNOT_TANK_CLASSES) {
+      const unit = { type: 'unit', tankClass: tank.key, x: 30, y: 40, radius: 16, color: '#fff' }
+      expect(hitTestAnnotation([unit], { x: 40, y: 40 }, 0)).toBe(0)
+      expect(hitTestAnnotation([unit], { x: 100, y: 40 }, 5)).toBe(-1)
+      expect(applyEraser([unit], [{ x: 30, y: 40 }], 3)).toEqual([])
+    }
+    const line = { type: 'line', x1: 0, y1: 0, x2: 20, y2: 20 }
+    expect(hitTestAnnotation([line, line], { x: 10, y: 10 }, 2)).toBe(1)
+  })
+
+  it('selects and translates the whole route, preserving immutable vertices and history', () => {
+    const route = { type: 'route', points: [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }], width: 3 }
+    expect(hitTestAnnotation([route], { x: 15, y: 5 }, 1)).toBe(0)
+    expect(hitTestAnnotation([route], { x: 15, y: 20 }, 1)).toBe(-1)
+    const moved = translateAnnotation(route, 20, 30)
+    expect(moved.points).toEqual([{ x: 20, y: 30 }, { x: 30, y: 40 }, { x: 40, y: 30 }])
+    expect(route.points[0]).toEqual({ x: 0, y: 0 })
+    const state = commit([[route]], 0, [moved])
+    expect(state.history[undo(state.history, state.index).index][0]).toBe(route)
+    expect(applyEraser([route], [{ x: 15, y: 5 }], 2)).toEqual([])
+  })
+
+  it('translates existing drawings without changing their dimensions', () => {
+    expect(translateAnnotation({ type: 'rect', x: 2, y: 3, w: 4, h: 5 }, 10, 20)).toEqual({ type: 'rect', x: 12, y: 23, w: 4, h: 5 })
+    expect(translateAnnotation({ type: 'circle', cx: 2, cy: 3, r: 4 }, 10, 20)).toEqual({ type: 'circle', cx: 12, cy: 23, r: 4 })
+    expect(translateAnnotation({ type: 'arrow', x1: 2, y1: 3, x2: 4, y2: 5 }, 10, 20)).toEqual({ type: 'arrow', x1: 12, y1: 23, x2: 14, y2: 25 })
   })
 })

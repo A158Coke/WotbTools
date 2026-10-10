@@ -234,6 +234,96 @@ describe('playbackScene 会话代数契约', () => {
     expect(source.loadPlaybackData).not.toHaveBeenCalled()
   })
 
+  it('class-icon presentation preserves factual visibility, raycast roots and HP, then restores artwork', async () => {
+    const store = createPlaybackStore()
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, account_id: 77, team: 1, is_author: true, nickname: 'Recorder', tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [[42, 2048]], coverage: [42, 100], death_t: null }]
+    const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: { dataset: { vehicles: [{ accountId: 77, tankClass: 'Heavy tank' }] } } }) }
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'icons.wotbreplay'), session })
+    api.setPlaying(false)
+    const vehicle = window.__pbV[0]
+    const beforeHp = store.roster.team1[0].hp
+    const beforePosition = vehicle.group.position.clone()
+    expect(vehicle.meshHull.visible).toBe(true)
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].tankClass).toBe('Heavy tank')
+    api.setLabelPrefs({ classIcons: true, showStatus: false })
+    expect(vehicle.group.visible).toBe(true)
+    expect(vehicle.group.position.equals(beforePosition)).toBe(true)
+    expect(vehicle.group.children.every(child => !child.visible)).toBe(true)
+    vehicle.group.updateMatrixWorld(true)
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, -1, 0))
+    expect(ray.intersectObjects([vehicle.group], true).length).toBeGreaterThan(0)
+    expect(store.roster.team1[0].hp).toBe(beforeHp)
+    // H hides screen labels, so the original model remains available in clean scene mode.
+    api.setLabelPrefs({ enabled: false, classIcons: true, showStatus: false })
+    expect(vehicle.meshHull.visible).toBe(true)
+    api.setLabelPrefs({ classIcons: false, showStatus: true })
+    expect(vehicle.group.children.every(child => child.visible)).toBe(true)
+    api.seekTime(60)
+    expect(vehicle.meshHull.visible).toBe(true)
+    expect(vehicle.group.visible).toBe(true)
+    api.setLabelPrefs({ classIcons: true, showStatus: false })
+    api.reset()
+    await api.loadData({ kind: 'local', file: new File(['next'], 'next.wotbreplay'), session })
+    const nextVehicle = window.__pbV[0]
+    expect(nextVehicle).not.toBe(vehicle)
+    expect(nextVehicle.group.visible).toBe(true)
+    expect(nextVehicle.group.children.every(child => !child.visible)).toBe(true)
+    api.setLabelPrefs({ classIcons: false, showStatus: true })
+    expect(nextVehicle.meshHull.visible).toBe(true)
+    expect(store.hasData).toBe(true)
+  })
+
+  it('a late GLB obeys class-icon mode during attach, seek and restoration', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockImplementation(() => parked.promise)
+    // 部件守卫（本分支新增："部位/枢轴链不全 ⇒ 保留代理车"）要求模型带 `turret_N`/`gun_N` 节点，
+    // 且 `/tank/<id>.json`（service data）给出 model_origins.track/turret；此处按该契约构造最小桩。
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: { x: 0, y: 0, z: 0 }, turret: { x: 0, y: 0, z: 0 } }, configs: [] }
+        : null))
+    const model = new THREE.Group()
+    model.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()))
+    const turretNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    turretNode.name = 'turret_0'
+    model.add(turretNode)
+    const gunNode = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial())
+    gunNode.name = 'gun_0'
+    model.add(gunNode)
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, onLoad) => onLoad({ scene: model }))
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, tank_id: 6929, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [], coverage: [42, 100], death_t: null }]
+    source.loadPlaybackData.mockResolvedValue(data)
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['model'], 'glb.wotbreplay') })
+    api.setPlaying(false)
+    api.setGlb(true)
+    api.setLabelPrefs({ classIcons: true, showStatus: false })
+    parked.resolve(new Uint8Array())
+    await vi.waitFor(() => expect(window.__pbV[0].glb).toBeTruthy())
+    const vehicle = window.__pbV[0]
+    expect(vehicle.glb.visible).toBe(false)
+    expect(vehicle.meshHull.visible).toBe(false)
+    api.seekTime(60)
+    expect(vehicle.glb.visible).toBe(false)
+    api.setLabelPrefs({ classIcons: false, showStatus: true })
+    expect(vehicle.glb.visible).toBe(true)
+    expect(vehicle.meshHull.visible).toBe(false)
+    api.setGlb(false)
+    expect(vehicle.meshHull.visible).toBe(true)
+  })
+
   it('战场标签使用回放 nickname 字段', async () => {
     const store = createPlaybackStore()
     const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
