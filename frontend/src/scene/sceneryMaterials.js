@@ -622,7 +622,7 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
  *    让位给地形/冰面 ⇒ 无硬边、无逐像素翻转），**深水（远大于精度）任何角度都满反射**（含俯视）。
  *    ⚠️ 曾用 `2·(水面高−地形高)/(相机高−水面高)`（由客户端等式反推）：相机越高分母越大 ⇒
  *    **俯视时深水也被压成透明**（2026-10-10 用户"从上往下看水面基本都是透明的，只有视角接近
- *    水面才反射"）——该口径已废，勿回退。地形高取**渲染用**高度场（含让位掩码）；缺则 fail-open。
+ *    水面才反射"）——该口径已废，勿回退。地形高取高度场（真值一份到底；让位掩码已撤销）；缺则 fail-open。
  *    `coast = { heightTex, mapSpan, near, far, depthUlp }`。 */
 export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }) {
   const map = m.map || null;
