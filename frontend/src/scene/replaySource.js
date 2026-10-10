@@ -361,8 +361,16 @@ export function mapStaticUrl(kind, layer, mapKey) {
     case 'map': return f('ground.webp')
     case 'map-mini': return f('mini.webp')
     case 'terrain': return f('terrain.u16.bin')
+    // 地形让位掩码（上游 tools/bake_terrain_cover.py；0 = 无覆盖）。缺失 ⇒ 前端按无掩码继续。
+    case 'cover': return f('cover.u16.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')
+    // 逐图光照参数（上游 tools/export_map_lighting.py：太阳方向/色/强度 + 环境色 + 雾 + IBL）。
+    // 缺失（旧包）→ 3D 侧保留硬编码灯光，不阻断加载。
+    case 'lighting': return f('lighting.json')
+    // 逐图 IBL 环境贴图（上游 tools/export_map_ibl.py：等距柱状投影，喂 scene.environment）。
+    // 缺失（旧包）→ 不设环境贴图（坦克仍按 neutralizeDefaultMetalness 的金属度归零口径渲染）
+    case 'ibl': return f('ibl.webp')
     // 可破坏物清单（逆向总集 §5.4 的 (cell,slot) 联表；缺失时 3D 侧静默禁用该特性）
     case 'destructibles': return f('destructibles.json')
     case 'groundmeta': return f('ground.layers.json')
