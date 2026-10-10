@@ -38,7 +38,33 @@ function battle(sourceId, mapName = 'Lagoon') {
 }
 
 describe('useReplayWorkspace', () => {
-  it('scene readiness resolves while canonical stays pending; concurrent consumers decode/project once', async () => {
+  it('opens local 2D without starting network-dependent scene parsing', async () => {
+    const ws = useReplayWorkspace()
+    const file = makeFiles(1)[0]
+    const canonical = await ws.playbackSession.loadCanonical(file)
+    expect(canonical.dataset).toBeTruthy()
+    expect(parser.raw).not.toHaveBeenCalled()
+    expect(ws.playbackSession.getState(file).sceneState).toBe('idle')
+  })
+
+  it('canonical is ready while a concurrently requested scene is still waiting on assets', async () => {
+    const ws = useReplayWorkspace()
+    const file = makeFiles(1)[0]
+    let finishScene
+    parser.raw.mockImplementationOnce(() => new Promise(resolve => { finishScene = resolve }))
+    const scene = ws.playbackSession.loadScene(file)
+    await vi.waitFor(() => expect(finishScene).toBeTypeOf('function'))
+    const canonical = await ws.playbackSession.loadCanonical(file)
+    expect(canonical).toBeTruthy()
+    expect(ws.playbackSession.getState(file).sceneState).toBe('loading')
+    expect(ws.playbackSession.getState(file).canonicalState).toBe('ready')
+    finishScene({ vehicles: [] })
+    await scene
+    expect(await ws.playbackSession.loadCanonical(file)).toBe(canonical)
+    expect(parser.project).toHaveBeenCalledTimes(1)
+  })
+
+  it('scene readiness resolves while canonical stays pending; each readiness caches concurrent consumers', async () => {
     const ws = useReplayWorkspace()
     const file = makeFiles(1)[0]
     let finish
@@ -57,7 +83,7 @@ describe('useReplayWorkspace', () => {
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(1)
     // 规范投影现在经 canonicalRuntime 线程外入口（Worker 优先）：测试环境无 Worker →
-    // 回退主线程解析，入参是**原始字节**（Worker 需要能独立解析，故不再复用 scene 结果）
+    // 回退主线程解析，入参是原始字节；尚未就绪的 scene 不阻塞本地投影。
     expect(parser.project.mock.calls[0][0]).toBeInstanceOf(Uint8Array)
     finish({ dataset: { vehicles: [] }, clock: { startRaw: 42 }, reloadTelemetry: null })
     expect(await canonical).toBe(state.canonical)
@@ -87,6 +113,7 @@ describe('useReplayWorkspace', () => {
     parser.project.mockRejectedValueOnce(new Error('AI unavailable'))
     const raw = await ws.playbackSession.loadScene(file)
     expect(await ws.playbackSession.loadCanonical(file)).toBeNull()
+    expect(parser.project.mock.calls[0][1].playback).toBe(raw)
     const state = ws.playbackSession.getState(file)
     expect(state.sceneState).toBe('ready')
     expect(state.canonicalState).toBe('error')
@@ -146,7 +173,7 @@ describe('useReplayWorkspace', () => {
     holder.state.session.replaceSelection([a])
     await ws.playbackSession.loadScene(a)
     expect(await ws.playbackSession.loadCanonical(a)).toBeTruthy()
-    expect(parser.raw).toHaveBeenCalledTimes(2)
+    expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(3)
   })
 

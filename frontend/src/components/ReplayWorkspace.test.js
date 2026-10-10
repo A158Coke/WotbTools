@@ -173,7 +173,7 @@ function analyzeDemo() {
   })
 }
 function guideContext() {
-  return { registerWorkspace: vi.fn(), openDirectory: vi.fn() }
+  return { registerWorkspace: vi.fn(), openDirectory: vi.fn(), sampleOpened: vi.fn() }
 }
 // Vue's queue flush does not await Node's real WebCrypto hash of the bundled sample.
 async function waitForDemoReady(wrapper) {
@@ -217,12 +217,14 @@ describe('ReplayWorkspace', () => {
   it('loads the official File once through existing analysis, anonymously opens 3D/shots, and leaves AI locked', async () => {
     const fetch = serveDemo()
     analyzeDemo()
-    const wrapper = mountWorkspace('data', { authenticated: false })
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { authenticated: false, onboarding })
     await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
     await waitForDemoReady(wrapper)
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
     expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(onboarding.sampleOpened).toHaveBeenCalledTimes(1)
     expect(wrapper.get('[data-testid="workspace-demo-label"]').text()).toBe('onboarding.demo_label')
     const selected = replayState.files.value
     for (const capability of ['3d', 'shots']) {
@@ -239,6 +241,7 @@ describe('ReplayWorkspace', () => {
     expect(tab(wrapper, 'data').classes()).toContain('is-active')
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(onboarding.sampleOpened).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

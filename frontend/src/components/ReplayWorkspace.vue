@@ -127,7 +127,10 @@ async function loadDemo(signal) {
 }
 
 async function onDemoClick() {
-  try { await loadDemo() } catch { /* Visible error above; cancelled replacement keeps the current selection. */ }
+  try {
+    await loadDemo()
+    onboarding?.sampleOpened()
+  } catch { /* Visible error above; cancelled replacement keeps the current selection. */ }
 }
 
 watch(selectionRevision, () => {

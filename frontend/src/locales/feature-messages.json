@@ -439,9 +439,8 @@
       "welcomeTitle": "新手教程",
       "welcomeDescription": "用一份官方示例，试试数据、2D、标记、防遮、3D 和射击分析。直接在这些真实按钮上操作。",
       "welcomeHint": "全程可跳过。完成或跳过后，只有重大引导更新才会再次邀请。",
-      "replaceWarning": "当前已经选了回放。打开示例会替换它，也可以继续用自己的回放。",
+      "replaceWarning": "教程使用官方示例，将替换当前回放。完成或跳过后可以使用自己的回放。",
       "later": "先跳过",
-      "useCurrent": "使用当前回放",
       "replaceDemo": "替换为示例",
       "tryDemo": "体验示例回放",
       "begin": "开始引导",
@@ -516,7 +515,7 @@
       "steps": {
         "demo": {
           "title": "从一份示例开始",
-          "description": "这份回放已在当前工作台打开。这里也能随时重新载入示例；自己的回放从文件区选择。"
+          "description": "当前使用已打开的官方示例回放。教程阶段仅查看这份示例，无需登录。点高亮按钮或“下一步”，了解战局数据；完成或跳过后可以使用自己的回放。"
         },
         "data": {
           "title": "单局与汇总都在这里",
@@ -1100,9 +1099,8 @@
       "welcomeTitle": "Getting started",
       "welcomeDescription": "Try data, 2D, annotations, declutter, 3D and shot analysis with an official sample. You will use the real controls.",
       "welcomeHint": "Skip at any time. Once finished or skipped, only a major guide update will invite you again.",
-      "replaceWarning": "You already have a replay selected. The sample will replace it, or you can keep using your replay.",
+      "replaceWarning": "This guide uses the official sample, replacing your current replay. You can use your own replay after finishing or skipping.",
       "later": "Skip for now",
-      "useCurrent": "Use current replay",
       "replaceDemo": "Replace with sample",
       "tryDemo": "Try sample replay",
       "begin": "Start guide",
@@ -1177,7 +1175,7 @@
       "steps": {
         "demo": {
           "title": "Start with a sample",
-          "description": "The sample is open in your workspace. This button reloads it; select your own replay from the file area."
+          "description": "The official sample is already open. During this guide, you use only this sample, with no sign-in required. Click the highlighted button or Next to explore battle data. After finishing or skipping, you can use your own replay."
         },
         "data": {
           "title": "Battles and summaries",
@@ -1761,9 +1759,8 @@
       "welcomeTitle": "Первое знакомство",
       "welcomeDescription": "Попробуйте данные, 2D, отметки, скрытие интерфейса, 3D и анализ выстрелов на официальном примере. Вы используете настоящие кнопки.",
       "welcomeHint": "Можно пропустить в любой момент. После завершения или пропуска приглашение появится только при крупном обновлении руководства.",
-      "replaceWarning": "У вас уже выбран реплей. Пример заменит его; можно продолжить со своим реплеем.",
+      "replaceWarning": "Руководство использует официальный пример вместо текущего реплея. После завершения или пропуска можно открыть свой реплей.",
       "later": "Пропустить",
-      "useCurrent": "Использовать выбранный",
       "replaceDemo": "Заменить примером",
       "tryDemo": "Попробовать пример",
       "begin": "Начать",
@@ -1838,7 +1835,7 @@
       "steps": {
         "demo": {
           "title": "Начните с примера",
-          "description": "Пример уже открыт. Эта кнопка загрузит его снова; свой реплей можно выбрать в области файлов."
+          "description": "Официальный пример уже открыт. В этом руководстве используется только он, без входа в аккаунт. Нажмите выделенную кнопку или «Далее», чтобы изучить данные боя. После завершения или пропуска можно открыть свой реплей."
         },
         "data": {
           "title": "Бои и сводка",

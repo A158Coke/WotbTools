@@ -424,7 +424,7 @@ export function useOnboarding(options: {
     } catch { if (owns()) issue.value = 'unavailable' }
   }
 
-  async function begin(useDemo = false, resume = false) {
+  async function begin(resume = false) {
     demoFailed.value = false
     index.value = resume && canResume.value ? Math.min(receipt.value.coreStep || 0, steps.value.length - 1) : 0
     stageIndex.value = 0
@@ -438,10 +438,8 @@ export function useOnboarding(options: {
         await ensureReplayView()
         const owner = await waitForValue(() => workspace.value, signal)
         if (generation !== runGeneration || mode.value !== 'tour') return
-        if (useDemo || !owner.hasFiles()) {
-          preparingDemo = true
-          try { await owner.loadDemo(signal) } finally { preparingDemo = false }
-        }
+        preparingDemo = true
+        try { await owner.loadDemo(signal) } finally { preparingDemo = false }
         if (generation !== runGeneration || mode.value !== 'tour') return
       } catch {
         if (generation === runGeneration && mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
@@ -496,9 +494,12 @@ export function useOnboarding(options: {
       await owner.chooseOwnReplay()
     } catch { /* The workspace owns picker errors; canceling this handoff keeps the terminal receipt. */ }
   }
-  const context: OnboardingContext = { start, openDirectory, registerWorkspace, registerSurface }
+  function sampleOpened() {
+    if (mode.value === 'tour' && currentStep.value.id === 'demo' && issue.value === '') next()
+  }
+  const context: OnboardingContext = { start, openDirectory, sampleOpened, registerWorkspace, registerSurface }
   return { ...context, context, mode, topic, index, stageIndex, issue, currentStep, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn,
-    begin, next, back, skip, interrupt, useOwnReplay, resume: () => begin(false, true), dismissHint: () => { hintVisible.value = false }, retry: () => demoFailed.value ? begin(true, canResume.value) : prepareStep() }
+    begin, next, back, skip, interrupt, useOwnReplay, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry: () => demoFailed.value ? begin(canResume.value) : prepareStep() }
 }
 
 export type OnboardingController = ReturnType<typeof useOnboarding>

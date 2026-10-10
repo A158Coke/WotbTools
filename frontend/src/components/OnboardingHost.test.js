@@ -62,6 +62,15 @@ afterEach(() => {
 })
 
 describe('OnboardingHost', () => {
+  it('offers only the official sample during a replay tutorial, even with a current file', async () => {
+    const guide = controller('welcome')
+    guide.hasFiles.value = true
+    render(guide)
+    await settle()
+    expect(document.body.textContent).not.toContain('使用当前回放')
+    document.querySelector('[data-testid="onboarding-begin"]').click()
+    expect(guide.begin).toHaveBeenCalledWith()
+  })
   it('makes the original own-replay picker the completion card primary action in all languages', async () => {
     for (const locale of ['zh', 'en', 'ru']) {
       const guide = controller('finish')

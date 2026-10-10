@@ -288,9 +288,8 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
         <p v-if="needsReplay && hasFiles" class="onboarding-note">{{ $t('onboarding.replaceWarning') }}</p>
         <template #actions>
           <AppButton variant="ghost" data-testid="onboarding-skip-welcome" @click="onboarding.skip">{{ $t('onboarding.later') }}</AppButton>
-          <AppButton v-if="needsReplay && hasFiles" @click="onboarding.begin(false)">{{ $t('onboarding.useCurrent') }}</AppButton>
           <AppButton v-if="canResume" variant="primary" data-testid="onboarding-resume" @click="onboarding.resume">{{ $t('onboarding.resume') }}</AppButton>
-          <AppButton :variant="canResume ? 'secondary' : 'primary'" data-testid="onboarding-begin" @click="onboarding.begin(needsReplay)">
+          <AppButton :variant="canResume ? 'secondary' : 'primary'" data-testid="onboarding-begin" @click="onboarding.begin()">
             {{ needsReplay ? $t(hasFiles ? 'onboarding.replaceDemo' : 'onboarding.tryDemo') : $t('onboarding.begin') }}
             <ArrowRight :size="16" aria-hidden="true" />
           </AppButton>
@@ -362,7 +361,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-available { position: fixed; inset-block-start: calc(var(--header-h) + var(--space-3)); inset-inline-end: var(--space-3); z-index: var(--z-menu); display: flex; align-items: center; gap: var(--space-2); max-width: calc(100dvw - var(--sidebar-w) - var(--space-6)); padding: var(--space-2); border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); box-shadow: var(--elevation-2); font: var(--type-caption); }
 .onboarding-available > span { min-width: 0; overflow-wrap: anywhere; }
 .onboarding-layer { position: fixed; inset: 0; z-index: var(--z-dialog); pointer-events: none; }
-.onboarding-mask { position: fixed; background: var(--color-scrim); backdrop-filter: grayscale(1); pointer-events: none; }
+.onboarding-mask { position: fixed; background: var(--color-onboarding-scrim); pointer-events: none; }
 .onboarding-cutout { position: fixed; border: var(--onboarding-outline); border-radius: var(--radius-md); box-shadow: var(--elevation-3); pointer-events: none; }
 .onboarding-card { position: fixed; display: flex; flex-direction: column; gap: var(--space-2); max-height: calc(100dvh - var(--space-6)); overflow-y: auto; padding: var(--space-4); border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); box-shadow: var(--elevation-3); pointer-events: auto; outline: 0; }
 .onboarding-card > * { flex-shrink: 0; }

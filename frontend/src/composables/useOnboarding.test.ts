@@ -61,6 +61,35 @@ beforeEach(() => {
 })
 
 describe('onboarding receipt policy', () => {
+  it('uses the sample when starting or resuming with existing files', async () => {
+    const h = harness({ files: true })
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.loadDemo).toHaveBeenCalledTimes(1)
+    h.controller.next()
+    await flushPromises()
+    h.controller.interrupt()
+    await h.controller.resume()
+    expect(h.loadDemo).toHaveBeenCalledTimes(2)
+    expect(h.controller.index.value).toBe(1)
+    h.wrapper.unmount()
+  })
+
+  it('advances from the prepared sample only after its actual workspace button is used', async () => {
+    const h = harness()
+    h.controller.sampleOpened()
+    expect(h.controller.mode.value).toBe('idle')
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.index.value).toBe(0)
+    h.controller.sampleOpened()
+    await flushPromises()
+    expect(h.controller.index.value).toBe(1)
+    h.controller.sampleOpened()
+    expect(h.controller.index.value).toBe(1)
+    h.wrapper.unmount()
+  })
+
   it('preserves newer epochs and same-epoch completion', () => {
     expect(mergeOnboardingReceipts({ coreEpoch: 2, disposition: 'OFFERED' }, { coreEpoch: 1, disposition: 'COMPLETED' })).toEqual({ coreEpoch: 2, disposition: 'OFFERED' })
     expect(mergeOnboardingReceipts({ coreEpoch: 1, disposition: 'COMPLETED' }, { coreEpoch: 1, disposition: 'SKIPPED' }).disposition).toBe('COMPLETED')
@@ -388,7 +417,7 @@ describe('real lesson lifecycle', () => {
   it('ignores a late Back action after an external interruption', async () => {
     const h = harness()
     h.controller.start()
-    await h.controller.begin(true)
+    await h.controller.begin()
     h.controller.next()
     await flushPromises()
     h.controller.interrupt()
@@ -403,7 +432,7 @@ describe('real lesson lifecycle', () => {
   it('opens the original workspace picker after completion without downgrading its receipt', async () => {
     const h = harness()
     h.controller.start()
-    await h.controller.begin(true)
+    await h.controller.begin()
     for (let i = 0; i < 7; i++) { h.controller.next(); await flushPromises() }
     h.route.value = 'agent-armor'
     await h.controller.useOwnReplay()
@@ -437,7 +466,7 @@ describe('real lesson lifecycle', () => {
   it('records completion only when the core guide reaches its last explicit Next', async () => {
     const h = harness()
     h.controller.start()
-    await h.controller.begin(true)
+    await h.controller.begin()
     for (let i = 0; i < 6; i++) { h.controller.next(); await flushPromises() }
     expect(cache().anonymous.disposition).toBe('OFFERED')
     h.controller.next()
@@ -449,7 +478,7 @@ describe('real lesson lifecycle', () => {
   it('keeps the interrupted core node locally and resumes it from the manual welcome', async () => {
     const h = harness()
     h.controller.start()
-    await h.controller.begin(true)
+    await h.controller.begin()
     for (let i = 0; i < 4; i++) { h.controller.next(); await flushPromises() }
     h.controller.interrupt()
     expect(cache().anonymous.coreStep).toBe(4)
@@ -468,7 +497,7 @@ describe('real lesson lifecycle', () => {
     const pending = deferred<void>()
     h.loadDemo.mockImplementation(() => pending.promise)
     h.controller.start()
-    const beginning = h.controller.begin(true)
+    const beginning = h.controller.begin()
     await flushPromises()
     const signal = h.loadDemo.mock.calls[0][0]
     expect(signal).toBeInstanceOf(AbortSignal)
@@ -485,7 +514,7 @@ describe('real lesson lifecycle', () => {
   it('accepts its own demo selection change but interrupts an outside replacement without marking completion', async () => {
     const h = harness()
     h.controller.start()
-    await h.controller.begin(true)
+    await h.controller.begin()
     expect(h.controller.mode.value).toBe('tour')
     expect(h.loadDemo).toHaveBeenCalledTimes(1)
     h.revision.value++
