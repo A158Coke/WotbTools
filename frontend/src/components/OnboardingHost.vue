@@ -318,7 +318,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
         </template>
       </AppDialog>
 
-      <div v-if="mode === 'tour' && !suspended" class="onboarding-layer" :class="{ 'is-fullscreen': teleportTarget !== 'body' }" data-testid="onboarding-layer">
+      <div v-if="mode === 'tour' && !suspended" class="onboarding-layer" :class="{ 'is-fullscreen': teleportTarget !== 'body', 'is-inspecting-shot': inspectingShot }" data-testid="onboarding-layer">
         <div v-for="(mask, number) in masks" :key="number" class="onboarding-mask" :style="styleRect(mask)" aria-hidden="true" />
         <div v-if="highlight" class="onboarding-cutout" :style="styleRect(highlight)" data-testid="onboarding-cutout" aria-hidden="true" />
         <section
@@ -406,6 +406,7 @@ onBeforeUnmount(() => { detach(); document.removeEventListener('fullscreenchange
 .onboarding-close { display: grid; place-items: center; min-width: var(--control-h-md); min-height: var(--control-h-md); padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-secondary); cursor: pointer; }
 .onboarding-close:focus-visible, .onboarding-topic:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .onboarding-card .onboarding-close { position: fixed; inset-block-start: max(var(--space-3), env(safe-area-inset-top)); inset-inline-end: max(var(--space-3), env(safe-area-inset-right)); border: 1px solid var(--color-border-subtle); background: var(--color-surface-1); }
+.onboarding-layer.is-inspecting-shot .onboarding-close { position: static; flex-shrink: 0; }
 .onboarding-meter { height: var(--space-1); overflow: hidden; border-radius: var(--radius-full); background: var(--color-surface-3); }
 .onboarding-meter > span { display: block; height: 100%; background: var(--color-accent); transition: width var(--duration-base) var(--ease-standard); }
 .onboarding-card h2 { margin: var(--space-1) 0 0; font: var(--type-h3); }
