@@ -25,8 +25,8 @@ The initial K7B shadow used immutable build `sha-473495ec07e7`. Before K7C, TX2 
 
 ## Runtime content boundary
 
-TX1 currently mounts sponsor configuration/assets and Android release files from `/opt/wotb-tx`. They are optional content surfaces, not part of the Frontend application container. K7B intentionally does **not** copy or mount those TX1 host paths on TX2.
-Sponsor runtime content and Android release artifact parity are mandatory preconditions for K7C public cutover.
+TX1 currently mounts Android release files from `/opt/wotb-tx`. They are optional content surfaces, not part of the Frontend application container. K7B intentionally does **not** copy or mount those TX1 host paths on TX2.
+Android release artifact parity is a mandatory precondition for K7C public cutover. Sponsor QR content is *not* host runtime content either: it is injected at build time from a pinned Release asset and ships inside the Frontend image / APK (`docs/operations/sponsor-runtime-content.md`), so it needs no TX-side replication and no runtime delivery.
 
 ## Manual apply and deployment
 
@@ -51,7 +51,7 @@ Stop if the diff proposes another Stack, a different server, any deletion, an au
 - `/api/health` succeeds through Frontend -> TX1 Business API.
 - TX1 Caddy remains configured to `10.20.0.1:8081`.
 - no second production service is created on TX2.
-- sponsor/APK absence is recorded as expected shadow-only behavior, not hidden as production parity.
+- APK absence is recorded as expected shadow-only behavior, not hidden as production parity.
 
 When these checks are evidenced, record `TX2_FRONTEND_SHADOW_READY`.
 K7B does not authorize K7C. Public traffic stays on TX1 until runtime-content parity and the separate Caddy placement cutover are reviewed.

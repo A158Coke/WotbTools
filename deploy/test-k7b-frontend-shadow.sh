@@ -45,12 +45,10 @@ assert str(port.get("published")) == "8081", f"unexpected published port: {port!
 assert int(port.get("target")) == 80, f"unexpected target port: {port!r}"
 
 volumes = service.get("volumes", [])
-assert len(volumes) == 4, f"expected template + 3 K7C runtime mounts, found: {volumes!r}"
+assert len(volumes) == 2, f"expected template + 1 K7C runtime mount, found: {volumes!r}"
 by_target = {m.get("target"): m for m in volumes}
 expected = {
     "/etc/nginx/templates/default.conf.template": pathlib.Path(sys.argv[1]).resolve(),
-    "/usr/share/nginx/html/sponsor-config.json": pathlib.Path("/opt/wotb-tx2/runtime-content/sponsor-config.json"),
-    "/usr/share/nginx/html/sponsor-assets": pathlib.Path("/opt/wotb-tx2/runtime-content/sponsor"),
     "/usr/share/nginx/html/download/android": pathlib.Path("/opt/wotb-tx2/runtime-content/android-release"),
 }
 for target, source in expected.items():

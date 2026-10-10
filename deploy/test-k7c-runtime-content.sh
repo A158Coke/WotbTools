@@ -22,9 +22,10 @@ done
 grep -Fq 'K7C_RUNTIME_CONTENT_READY=PASS' "$sync"
 grep -Fq 'http://10.20.0.1:8081' "$sync"
 grep -Fq '/opt/wotb-tx2/runtime-content' "$sync"
-grep -Fq 'sponsor-config.json' "$sync"
 grep -Fq 'apkUrl' "$sync"
 ! grep -Eq 'rsync|scp|ssh' "$sync"
+# Sponsor QR 内容已迁到对象存储资产面，不再是 host runtime content：同步脚本里再出现它即失败。
+! grep -Fq 'sponsor-config.json' "$sync"
 
 # staging evidence 的例外必须保持窄：树里只延续身份记录，不累积历史 APK（当前 APK 仍按
 # version.json 现拉），且复制点必须早于整树替换——晚于 swap 等于没做。
@@ -89,9 +90,9 @@ for s in straight:
 print(f"served-tree uploads are manifest-only: {len(straight)} step(s)")
 PY
 
-grep -Fq '/opt/wotb-tx2/runtime-content/sponsor-config.json:/usr/share/nginx/html/sponsor-config.json:ro' "$compose"
-grep -Fq '/opt/wotb-tx2/runtime-content/sponsor:/usr/share/nginx/html/sponsor-assets:ro' "$compose"
 grep -Fq '/opt/wotb-tx2/runtime-content/android-release:/usr/share/nginx/html/download/android:ro' "$compose"
+# 赞助内容不再由影子栈挂载（资产面对象，见 docs/operations/agent-asset-origin.md）。
+! grep -Fiq 'sponsor' "$compose"
 
 # ============================ 行为（真实执行） ============================
 
@@ -111,7 +112,6 @@ apk_sha="$(sha256sum "$source_root/download/android/wotbtools-android-v2.1.18.ap
 python3 - "$source_root" "$apk_sha" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-(root / "sponsor-config.json").write_text("{}", encoding="utf-8")
 (root / "download/android/version.json").write_text(json.dumps({
     "schemaVersion": 1, "latestVersionCode": 2001018, "latestVersionName": "2.1.18",
     "apkUrl": "https://wotbtools.com/download/android/wotbtools-android-v2.1.18.apk",

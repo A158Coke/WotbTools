@@ -62,4 +62,33 @@ describe('SponsorPage', () => {
     expect(wrapper.find('[data-testid="sponsor-unconfigured"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('hides only the failing method and never leaves a broken image', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        enabled: true,
+        methods: [
+          { type: 'alipay', image: '/sponsor-assets/alipay.png' },
+          { type: 'wechat', image: '/sponsor-assets/wechat.webp' },
+        ],
+      }),
+    }))
+
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.findAll('img')).toHaveLength(2)
+
+    await wrapper.findAll('img')[0].trigger('error')
+    await flushPromises()
+
+    // 单张失败只隐藏该方式：另一张仍在，且不出现「暂未配置」兜底。
+    const remaining = wrapper.findAll('img')
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].attributes('src')).toBe('/sponsor-assets/wechat.webp')
+    expect(wrapper.text()).toContain('微信支付')
+    expect(wrapper.text()).not.toContain('支付宝')
+    expect(wrapper.find('[data-testid="sponsor-unconfigured"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })
