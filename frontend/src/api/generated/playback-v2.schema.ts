@@ -1858,6 +1858,53 @@ export default {
         }
       }
     },
+    "OnboardingReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreEpoch",
+        "disposition"
+      ],
+      "properties": {
+        "coreEpoch": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "NONE",
+            "COMPLETED",
+            "SKIPPED"
+          ]
+        }
+      }
+    },
+    "SaveOnboardingReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coreEpoch",
+        "disposition"
+      ],
+      "properties": {
+        "coreEpoch": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "COMPLETED",
+            "SKIPPED"
+          ]
+        }
+      }
+    },
     "UserProfile": {
       "type": "object",
       "additionalProperties": false,

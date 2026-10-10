@@ -48,7 +48,7 @@ onBeforeUnmount(endDrag)
 </script>
 
 <template>
-  <div class="pb-progress" data-test="pb-progress" @pointerdown.stop @click.stop>
+  <div class="pb-progress" data-test="pb-progress" data-tour="playback-timeline" @pointerdown.stop @click.stop>
     <input
       class="pb-range"
       type="range"

@@ -174,7 +174,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
-- **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，3D / 射击分析与复现 / AI 登录后使用；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [Replay Workspace](frontend/replay-workspace.md)。
+- **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，个人回放的 3D / 射击分析与复现 / AI 登录后使用；已验证的官方示例开放匿名 3D/射击；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [Replay Workspace](frontend/replay-workspace.md)。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 是 Java 删除前在仓库 fixture 上的最后输出（只读），CI 常驻断言客户端全链路逐字段一致；上游升级后重新导出 `wasm-*` 再跑同一组测试。
 - **缺字段**：一律向上游要（改上游 → 发版 → 升级 `source.json`），不在客户端启发式推导，也不在服务端解析。
 
@@ -278,6 +278,8 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 ---
 
 ## 前端架构
+
+新手引导与匿名官方示例见 [`features/onboarding.md`](features/onboarding.md)。AppShell 持有唯一 `useOnboarding`，Replay session 持有可信示例选择；真实页面通过 typed `ONBOARDING_KEY` 和稳定锚点参与。完成/跳过由当前用户 `GET/PUT /api/users/onboarding` 同步，内容修订与再次邀请代际分开。
 
 ### UI Profile 与主题（showcase=dark, classic=light）
 

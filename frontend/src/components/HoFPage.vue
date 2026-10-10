@@ -1263,12 +1263,12 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 </script>
 
 <template>
-  <div ref="boardTop" class="lb-wrap">
+  <div ref="boardTop" class="lb-wrap" data-tour="hof-workspace">
     <Banner v-if="!hofAvailability.pending && !hofAvailability.available" tone="info" data-testid="hof-connectivity">
       <p>{{ $t(hofAvailability.messageKey) }}</p>
     </Banner>
     <div v-if="isCompact && filterSheet" class="lb-sheet-scrim" aria-hidden="true" @click="closeFilterSheet"></div>
-    <div class="tabs">
+    <div class="tabs" data-tour="hof-tabs">
       <button type="button" :class="{ active: activeTab === 'single' }" @click="switchTab('single')">{{ $t('hof.singleTab') }}</button>
       <button type="button" :class="{ active: activeTab === 'hundred' }" @click="switchTab('hundred')">{{ $t('hundred.tab') }}</button>
       <button type="button" :class="{ active: activeTab === 'mark3' }" @click="switchTab('mark3')">{{ $t('mark3.tab') }}</button>
@@ -1282,7 +1282,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </header>
 
       <div class="lb-submit-row">
-        <button type="button" class="filebtn" @click="showUploadModal = true">
+        <button type="button" class="filebtn" data-tour="hof-submit" @click="showUploadModal = true">
           <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hof.submit_entry') }}
         </button>
         <span v-if="uploadMsg" class="lb-upload-msg" :class="{ err: !uploadOk }">{{ uploadMsg }}</span>
@@ -1315,8 +1315,8 @@ watch(() => hofAvailability.value.available, (available, previous) => {
           </section>
       </AppDialog>
 
-      <FilterChips v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
-      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="singleChips" :open="filterSheet === 'single'" @toggle="toggleFilterSheet('single')" @remove="removeSingleFilter" />
+      <div v-if="!isCompact || filterSheet === 'single'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1382,7 +1382,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       <p v-if="error" class="error">{{ $t('hof.error') }}: {{ error }}</p>
       <p v-else-if="loading && !rows.length" class="muted">{{ $t('hof.loading') }}</p>
       <p v-else-if="!rows.length" class="muted">{{ $t('hof.empty') }}</p>
-      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': loading }" :aria-busy="loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board data-tour="hof-records" :class="{ 'is-stale': loading }" :aria-busy="loading">
         <table>
           <thead>
             <tr>
@@ -1437,7 +1437,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
         </table>
       </div>
       <!-- 手机：卡片列表（审计 PG-05：10 列表格在 375 宽下要横向滚动，下载按钮被挤到屏幕外） -->
-      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
+      <ol v-else class="lb-cards" data-hof-board data-tour="hof-records" :class="{ 'is-stale': loading }" :aria-busy="loading" data-testid="hof-cards">
         <li v-for="r in rows" :key="r.id" class="lb-card">
           <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
           <div class="lb-card-main">
@@ -1476,13 +1476,13 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 
       <!-- 审计 BZ-16：三个榜的提交入口统一放在页头下方同一位置 -->
       <div class="lb-submit-row">
-        <button type="button" class="filebtn h100-submit-btn" :disabled="!!currentPending || h100Loading" @click="openSubmit">
+        <button type="button" class="filebtn h100-submit-btn" data-tour="hof-submit" :disabled="!!currentPending || h100Loading" @click="openSubmit">
           <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('hundred.submit') }}
         </button>
       </div>
 
-      <FilterChips v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
-      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="hundredChips" :open="filterSheet === 'hundred'" @toggle="toggleFilterSheet('hundred')" @remove="removeHundredFilter" />
+      <div v-if="!isCompact || filterSheet === 'hundred'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1537,7 +1537,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
         <p class="lb-empty-title">{{ $t(h100VehicleId ? 'hundred.empty' : 'hundred.emptyDefault') }}</p>
         <p class="lb-empty-how">{{ $t('hofHowTo.hundred', { action: $t('hundred.submit') }) }}</p>
       </div>
-      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board data-tour="hof-records" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading">
         <table>
           <thead>
             <tr>
@@ -1561,7 +1561,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
           </tbody>
         </table>
       </div>
-      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading" data-testid="hundred-cards">
+      <ol v-else class="lb-cards" data-hof-board data-tour="hof-records" :class="{ 'is-stale': h100Loading }" :aria-busy="h100Loading" data-testid="hundred-cards">
         <li v-for="r in h100Rows" :key="r.id" class="lb-card">
           <span class="rk" :class="rankClass(r.rank)">{{ r.rank }}</span>
           <div class="lb-card-main">
@@ -1587,14 +1587,14 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </header>
 
       <div class="lb-submit-row">
-        <button type="button" class="filebtn h100-submit-btn mark3-submit-btn"
+        <button type="button" class="filebtn h100-submit-btn mark3-submit-btn" data-tour="hof-submit"
                 :disabled="!!selectedMark3Current || !!selectedMark3Pending || mark3Loading" @click="openMark3Submit">
           <svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg>{{ $t('mark3.submit') }}
         </button>
       </div>
 
-      <FilterChips v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
-      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
+      <FilterChips data-tour="hof-filters" v-if="isCompact" :chips="mark3Chips" :open="filterSheet === 'mark3'" @toggle="toggleFilterSheet('mark3')" @remove="removeMark3Filter" />
+      <div v-if="!isCompact || filterSheet === 'mark3'" class="lb-toolbar-host" :data-tour="isCompact ? 'hof-filter-options' : 'hof-filters'" :class="{ 'is-sheet': isCompact }" :role="isCompact ? 'dialog' : undefined" :aria-label="isCompact ? $t('filters.title') : undefined" @keydown.esc="isCompact && closeFilterSheet()">
         <div v-if="isCompact" class="lb-sheet-head">
           <strong>{{ $t('filters.title') }}</strong>
           <AppButton size="sm" variant="primary" data-testid="filter-done" @click="closeFilterSheet">{{ $t('filters.done') }}</AppButton>
@@ -1660,7 +1660,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
         <p class="lb-empty-title">{{ $t(mark3VehicleId ? 'mark3.empty' : 'mark3.emptyDefault') }}</p>
         <p class="lb-empty-how">{{ $t('hofHowTo.mark3', { action: $t('mark3.submit') }) }}</p>
       </div>
-      <div v-else-if="!isCompact" class="tablewrap" data-hof-board :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading">
+      <div v-else-if="!isCompact" class="tablewrap" data-hof-board data-tour="hof-records" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading">
         <table>
           <thead>
             <tr>
@@ -1686,7 +1686,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
           </tbody>
         </table>
       </div>
-      <ol v-else class="lb-cards" data-hof-board :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading" data-testid="mark3-cards">
+      <ol v-else class="lb-cards" data-hof-board data-tour="hof-records" :class="{ 'is-stale': mark3Loading }" :aria-busy="mark3Loading" data-testid="mark3-cards">
         <li v-for="row in mark3Rows" :key="row.id" class="lb-card">
           <span class="rk" :class="rankClass(row.rank)">{{ row.rank }}</span>
           <div class="lb-card-main">

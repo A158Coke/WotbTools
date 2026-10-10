@@ -1,3 +1,5 @@
+import { isAndroidRuntime } from '../platform/runtime.js'
+
 export const ANDROID_PATH = '/download/android'
 export const SPONSOR_PATH = '/sponsor'
 
@@ -21,7 +23,7 @@ export const ALLOWED_VIEWS = Object.freeze([
  * - 平板 / 桌面：左侧边栏渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
  *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持），不再是一个整页。
  * 账户（个人中心 / 登录登出）不在主导航里：手机在顶栏右侧，平板 / 桌面在侧边栏底部。
- * `homeHostOnly`：首页只在 wotbtools.com 上存在（本地开发默认进入回放）。
+ * `homeHostOnly`：公开站与 APK 提供首页；本地 Web 开发仍默认进入回放。
  */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
@@ -68,7 +70,7 @@ export function primarySection(view) {
 }
 
 export function primaryNavItems(hostname = window.location.hostname) {
-  return PRIMARY_NAV.filter(item => !item.homeHostOnly || isHomeHost(hostname))
+  return PRIMARY_NAV.filter(item => !item.homeHostOnly || isHomeHost(hostname) || isAndroidRuntime())
 }
 
 export function isAndroidPath(path) {

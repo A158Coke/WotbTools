@@ -62,6 +62,7 @@
     --color-objective: #ffc24b;
 
     --color-scrim: rgb(0 0 0 / .6);
+    --color-onboarding-scrim: rgb(0 0 0 / .18);
 
     /* 暗色：层级靠表面亮度，阴影只作辅助 */
     --elevation-1: none;
@@ -103,6 +104,7 @@
     --color-objective: #ffc24b;
 
     --color-scrim: rgb(0 0 0 / .35);
+    --color-onboarding-scrim: rgb(0 0 0 / .12);
 
     --elevation-1: 0 1px 2px rgb(0 0 0 / .06);
     --elevation-2: 0 4px 12px rgb(0 0 0 / .10);

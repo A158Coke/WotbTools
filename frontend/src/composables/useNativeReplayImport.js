@@ -1,3 +1,4 @@
+import { readonly, ref } from 'vue'
 import {
   consumePendingReplay,
   getNativeBridgeVersion,
@@ -40,7 +41,7 @@ import { NATIVE_REPLAY_RESOURCE_URL } from '../platform/nativeBridgeContract.js'
  *        业务受理结果：`true` = 本机分析已完成（可 ACK Native），否则不得 ACK。
  */
 export function useNativeReplayImport({ isReady = () => false, onPendingFile, onReadError } = {}) {
-  let inflight = false
+  const inflight = ref(false)
   let rerunRequested = false
   const consumedIds = new Set()
 
@@ -125,11 +126,11 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
    * 由当前循环在结束后立即再 drain 一次（coalesce），保证 inflight 期间的 Native 通知不丢。
    */
   async function consumePendingWhenReady() {
-    if (inflight) {
+    if (inflight.value) {
       rerunRequested = true
       return false
     }
-    inflight = true
+    inflight.value = true
     try {
       let handled = false
       do {
@@ -139,7 +140,7 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
       } while (rerunRequested)
       return handled
     } finally {
-      inflight = false
+      inflight.value = false
     }
   }
 
@@ -151,5 +152,5 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
   }
 
   registerGlobalHandler()
-  return { consumePendingWhenReady, registerGlobalHandler }
+  return { consumePendingWhenReady, registerGlobalHandler, importing: readonly(inflight) }
 }

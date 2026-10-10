@@ -39,7 +39,7 @@ const tools = [
 </script>
 
 <template>
-  <div v-if="props.open" ref="toolbarEl" class="pb-annotation-toolbar" :class="{ 'pb-annot-compact': props.compact }" data-test="pb-annot-toolbar" @pointerdown.stop @click.stop>
+  <div v-if="props.open" ref="toolbarEl" class="pb-annotation-toolbar" :class="{ 'pb-annot-compact': props.compact }" data-test="pb-annot-toolbar" data-tour="playback-annotation-tools" @pointerdown.stop @click.stop>
     <div class="pb-annot-tools" role="group" :aria-label="$t('recon.map.playback.annot.tools')">
       <button v-for="tool in tools.slice(0, 2)" :key="tool.key" type="button" class="pb-annot-btn" :class="{ active: props.activeTool === tool.key }" :aria-pressed="props.activeTool === tool.key" :data-test="'pb-annot-' + tool.key" @click="emit('toggle-tool', tool.key)">
         <component :is="tool.icon" :size="18" aria-hidden="true" />{{ $t('recon.map.playback.annot.' + tool.key) }}

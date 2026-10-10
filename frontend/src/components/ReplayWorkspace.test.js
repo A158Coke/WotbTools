@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { URL as NodeURL } from 'node:url'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises as flushVue, mount } from '@vue/test-utils'
 
 /** 能力面板是异步组件：每次 flush 同时等动态 import 完成。 */
@@ -13,6 +15,9 @@ import { useError } from '../composables/useError.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
+import { useConfirmHost } from '../composables/useConfirm.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 import FileDrop from './FileDrop.vue'
 
@@ -86,13 +91,13 @@ vi.mock('./ReplayProcessingPanel.vue', () => ({
   },
 }))
 vi.mock('./RemoveConfirmModal.vue', () => ({ default: { template: '<div data-test="modal" />' } }))
-const nativeImportState = vi.hoisted(() => ({ onPendingFile: null, onReadError: null, isReady: null, retry: vi.fn() }))
+const nativeImportState = vi.hoisted(() => ({ onPendingFile: null, onReadError: null, isReady: null, retry: vi.fn(), importing: { value: false } }))
 vi.mock('../composables/useNativeReplayImport.js', () => ({
   useNativeReplayImport: (opts) => {
     nativeImportState.onPendingFile = opts?.onPendingFile ?? null
     nativeImportState.isReady = opts?.isReady ?? null
     nativeImportState.onReadError = opts?.onReadError ?? null
-    return { consumePendingWhenReady: nativeImportState.retry }
+    return { consumePendingWhenReady: nativeImportState.retry, importing: nativeImportState.importing }
   },
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k) => k, te: () => true, locale: { value: 'en' } }) }))
@@ -106,6 +111,7 @@ function buildState() {
     updateFiles: vi.fn((next) => {
       session.replaceSelection(next)
     }),
+    updateDemoFile: vi.fn(file => session.replaceDemoSelection(file)),
     analyze: vi.fn(() => {
       session.error.value = ''
       return Promise.resolve({ completed: true })
@@ -122,14 +128,14 @@ function buildState() {
 
 let replayState = null
 
-function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false } = {}) {
+function mountWorkspace(capability = 'data', { authenticated = true, navigate = vi.fn(), attached = false, onboarding = null } = {}) {
   authState.authenticated.value = authenticated
   nav.navigate = navigate
   return mount(ReplayWorkspace, {
     props: { initialCapability: capability },
     attachTo: attached ? document.body : undefined,
     global: {
-      provide: { [NAVIGATE_VIEW_KEY]: navigate },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding },
       mocks: { $t: (k) => k },
     },
   })
@@ -153,7 +159,245 @@ function withBattles(count) {
   }
 }
 
+const demoBytes = readFileSync(new NodeURL(`../../../common/assets${OFFICIAL_DEMO.path}`, import.meta.url))
+function serveDemo() {
+  const fetch = vi.fn(async () => ({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) }))
+  vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+function analyzeDemo() {
+  replayState.analyze.mockImplementation(async () => {
+    replayState.session.commitReadyResult({ battles: [{ sourceId: 'r0', sourceName: replayState.files.value[0].name, mapName: 'rift', players: [] }], aggregate: [] })
+    replayState.analysis.value = { phase: 'ready', done: 1, total: 1, failure: null }
+    return { completed: true }
+  })
+}
+function guideContext() {
+  return { registerWorkspace: vi.fn(), openDirectory: vi.fn(), sampleOpened: vi.fn() }
+}
+// Vue's queue flush does not await Node's real WebCrypto hash of the bundled sample.
+async function waitForDemoReady(wrapper) {
+  await vi.waitFor(() => {
+    expect(replayState.analysis.value.phase).toBe('ready')
+    expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false)
+  }, { timeout: 4000 })
+  await flushPromises()
+}
+afterEach(() => {
+  vi.unstubAllGlobals()
+  useConfirmHost().settle(false)
+})
+
 describe('ReplayWorkspace', () => {
+  it('registers real workspace commands and keeps help available; final unmount unregisters', async () => {
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding, authenticated: true })
+    await flushPromises()
+    const commands = onboarding.registerWorkspace.mock.calls[0][0]
+    expect(commands.hasFiles()).toBe(false)
+    expect(commands.selectionIdentity()).toBe(0)
+    nativeImportState.importing.value = true
+    expect(commands.busy()).toBe(true)
+    nativeImportState.importing.value = false
+    expect(commands.busy()).toBe(false)
+    await wrapper.get('[data-tour="workspace-help"]').trigger('click')
+    expect(onboarding.openDirectory).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    expect(onboarding.registerWorkspace).toHaveBeenLastCalledWith(null)
+  })
+
+  it('lets anonymous users open the complete feature directory from replay help', async () => {
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding, authenticated: false })
+    await flushPromises()
+    await wrapper.get('[data-tour="workspace-help"]').trigger('click')
+    expect(onboarding.openDirectory).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[data-tour="workspace-demo"]').exists()).toBe(true)
+    expect(authState.login).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('loads the official File once through existing analysis, anonymously opens 3D/shots, and leaves AI locked', async () => {
+    const fetch = serveDemo()
+    analyzeDemo()
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { authenticated: false, onboarding })
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    await waitForDemoReady(wrapper)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(onboarding.sampleOpened).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-testid="workspace-demo-label"]').text()).toBe('onboarding.demo_label')
+    const selected = replayState.files.value
+    for (const capability of ['3d', 'shots']) {
+      await switchTo(wrapper, capability)
+      expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(false)
+      expect(wrapper.find(`[data-test="ws-${capability}-pane"]`).exists()).toBe(true)
+    }
+    await switchTo(wrapper, 'ai')
+    expect(wrapper.find('[data-test="ws-ai-pane"]').exists()).toBe(false)
+    expect(authState.login).not.toHaveBeenCalled()
+    expect(replayState.files.value).toBe(selected)
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    await flushPromises()
+    expect(tab(wrapper, 'data').classes()).toContain('is-active')
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(onboarding.sampleOpened).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('a failed official download leaves existing results intact and permits a successful retry', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })))
+    withBattles(1)
+    const files = replayState.files.value
+    const result = replayState.resp.value
+    const wrapper = mountWorkspace('data')
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    useConfirmHost().settle(true)
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true), { timeout: 4000 })
+    expect(wrapper.get('[data-testid="workspace-demo-error"]').text()).toContain('onboarding.demo_failed')
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.resp.value).toBe(result)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    serveDemo()
+    analyzeDemo()
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    useConfirmHost().settle(true)
+    await waitForDemoReady(wrapper)
+    expect(replayState.isDemoSelection.value).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('clicking the spotlighted sample after guide preload preserves selection identity and ready analysis', async () => {
+    const fetch = serveDemo()
+    analyzeDemo()
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding, authenticated: false })
+    await flushPromises()
+    const commands = onboarding.registerWorkspace.mock.calls[0][0]
+    await commands.loadDemo()
+    await flushPromises()
+    const identity = commands.selectionIdentity()
+    const files = replayState.files.value
+    const result = replayState.resp.value
+    await wrapper.get('[data-tour="workspace-demo"]').trigger('click')
+    await flushPromises()
+    expect(commands.selectionIdentity()).toBe(identity)
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.resp.value).toBe(result)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(useConfirmHost().request.value).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('retries failed sample analysis with the same verified File and stable selection identity', async () => {
+    const fetch = serveDemo()
+    replayState.analyze.mockImplementationOnce(async () => {
+      replayState.analysis.value = { phase: 'failed', done: 0, total: 1, failure: 'ENGINE_UNAVAILABLE' }
+      return { completed: false, reason: 'ENGINE_UNAVAILABLE' }
+    })
+    const wrapper = mountWorkspace('data', { authenticated: false })
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    await vi.waitFor(() => {
+      expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false)
+    }, { timeout: 4000 })
+    const files = replayState.files.value
+    const revision = replayState.selectionRevision.value
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(true)
+    analyzeDemo()
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    await waitForDemoReady(wrapper)
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.selectionRevision.value).toBe(revision)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(replayState.updateDemoFile).toHaveBeenCalledTimes(1)
+    expect(replayState.analyze).toHaveBeenCalledTimes(2)
+    expect(replayState.analysis.value.phase).toBe('ready')
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['private', 'mixed', 'same-demo', 'clear'])('revokes mounted anonymous sample panes on ordinary %s selection', async change => {
+    serveDemo()
+    const demo = await loadOfficialDemo()
+    replayState.session.replaceDemoSelection(demo)
+    const wrapper = mountWorkspace('3d', { authenticated: false })
+    await flushPromises()
+    await switchTo(wrapper, 'shots')
+    expect(wrapper.find('[data-test="ws-3d-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(true)
+    const privateFile = new File(['private'], 'private.wotbreplay')
+    const next = { private: [privateFile], mixed: [demo, privateFile], 'same-demo': [demo], clear: [] }[change]
+    wrapper.findComponent(FileDrop).vm.$emit('update:files', next)
+    await flushPromises()
+    expect(replayState.isDemoSelection.value).toBe(false)
+    expect(wrapper.find('[data-test="ws-3d-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="ws-shots-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="capability-auth-gate"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('prompts before replacing existing files and preserves them when the user cancels', async () => {
+    const fetch = serveDemo()
+    withBattles(1)
+    const files = replayState.files.value
+    const wrapper = mountWorkspace('data')
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    await flushPromises()
+    expect(useConfirmHost().request.value).toMatchObject({ title: 'onboarding.demo_replace_title' })
+    expect(replayState.files.value).toBe(files)
+    expect(fetch).not.toHaveBeenCalled()
+    useConfirmHost().settle(false)
+    await flushPromises()
+    expect(replayState.files.value).toBe(files)
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('requires confirmed replacement and does not overwrite a selection changed during download', async () => {
+    let finishDownload
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { finishDownload = resolve })))
+    withBattles(1)
+    const wrapper = mountWorkspace('data')
+    await wrapper.get('[data-testid="workspace-demo"]').trigger('click')
+    useConfirmHost().settle(true)
+    await flushPromises()
+    expect(replayState.updateDemoFile).not.toHaveBeenCalled()
+    const latest = new File(['latest'], 'latest.wotbreplay')
+    wrapper.findComponent(FileDrop).vm.$emit('update:files', [latest])
+    finishDownload({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) })
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="workspace-demo"]').element.disabled).toBe(false), { timeout: 4000 })
+    await flushPromises()
+    expect(replayState.files.value).toEqual([latest])
+    expect(replayState.updateDemoFile).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="workspace-demo-error"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('guide cancellation aborts the pending sample before selecting or analyzing it', async () => {
+    let finishDownload
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { finishDownload = resolve })))
+    const onboarding = guideContext()
+    const wrapper = mountWorkspace('data', { onboarding })
+    await flushPromises()
+    const commands = onboarding.registerWorkspace.mock.calls[0][0]
+    const controller = new AbortController()
+    const loading = commands.loadDemo(controller.signal)
+    controller.abort()
+    finishDownload({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) })
+    await expect(loading).rejects.toMatchObject({ name: 'AbortError' })
+    expect(replayState.files.value).toEqual([])
+    expect(replayState.analyze).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('parsed single-battle views collapse files without remounting playback or hiding analysis failures', async () => {
     withBattles(2)
     const wrapper = mountWorkspace('playback', { attached: true })

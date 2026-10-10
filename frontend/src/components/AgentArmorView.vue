@@ -8,7 +8,8 @@
  * 普通同车型检视：shell 是当前展示 config 的弹表下标；无效下标回退第一项。
  * 射击复现：shell 属于射手 scfg 弹表，回放 shell_id 自动匹配优先于 URL 选弹。
  */
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, X } from 'lucide-vue-next'
@@ -87,6 +88,12 @@ let viewer = null
 const webgl = detectWebGL()
 /** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
 const load = ref({ state: 'loading', progress: null, message: '' })
+const onboarding = inject(ONBOARDING_KEY, null)
+onMounted(() => onboarding?.registerSurface('armor', {
+    ready: () => load.value.state === 'ready',
+    failed: () => !webgl.supported || load.value.state === 'error',
+}))
+onBeforeUnmount(() => onboarding?.registerSurface('armor', null))
 /** 重建场景 DOM 的计数：整体重试时换 key，让 tankViewer 拿到全新的按 ID 查找的节点 */
 const attempt = ref(0)
 const PHASE_KEY = { 'armor model': 'armor_model', 'tank model': 'tank_model', 'tank data': 'tank_data', 'tank list': 'tank_list', 'shell data': 'shell_data' }
@@ -187,7 +194,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-<div class="armor-view" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack && !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
+<div class="armor-view" data-tour="armor-workspace" :class="{ 'is-unsupported': !webgl.supported, 'has-back': canGoBack && !isShotPage, 'is-shot': isShotPage, 'is-clean': cleanQuery }">
     <button v-if="canGoBack && !isShotPage" type="button" class="armor-back" data-testid="armor-back" :aria-label="$t('armor.back')" @click="router.back()"><ArrowLeft :size="16" aria-hidden="true" /><span class="armor-back-label">{{ $t('armor.back') }}</span></button>
     <header v-if="isShotPage && !cleanQuery" class="armor-shot-header" data-testid="armor-shot-header">
         <button type="button" class="armor-shot-back" :aria-label="$t('armor.back_to_shots')" @click="backToShots"><ArrowLeft :size="18" aria-hidden="true" /><span>{{ $t('armor.back_to_shots') }}</span></button>
