@@ -21,6 +21,8 @@ jobs:
           ref: ${{ inputs.head_sha }}
       - name: TX frontend builder exit cleanup regression
         run: python3 deploy/test_frontend_builder.py
+      - name: Frontend image identity consistency regression
+        run: python3 deploy/test_frontend_image_identity.py
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
