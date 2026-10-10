@@ -16,7 +16,7 @@ import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useReplaySession } from '../composables/useReplaySession.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
-import { loadOfficialDemo } from '../replay-local/demo.js'
+import { loadOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { useConfirmHost } from '../composables/useConfirm.js'
 import ReplayWorkspace from './ReplayWorkspace.vue'
 import FileDrop from './FileDrop.vue'
@@ -159,7 +159,7 @@ function withBattles(count) {
   }
 }
 
-const demoBytes = readFileSync(new NodeURL('../../../common/assets/onboarding/replay-1.wotbreplay', import.meta.url))
+const demoBytes = readFileSync(new NodeURL(`../../../common/assets${OFFICIAL_DEMO.path}`, import.meta.url))
 function serveDemo() {
   const fetch = vi.fn(async () => ({ ok: true, arrayBuffer: async () => demoBytes.buffer.slice(demoBytes.byteOffset, demoBytes.byteOffset + demoBytes.byteLength) }))
   vi.stubGlobal('fetch', fetch)

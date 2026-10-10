@@ -1,19 +1,19 @@
 {
   "id": "official-replay",
-  "revision": 1,
-  "path": "/onboarding/replay-1.wotbreplay",
-  "filename": "random-battle-example.wotbreplay",
-  "bytes": 1632348,
-  "sha256": "917d99b36273805a13dbd9e7199f2e9388a39b398390c16e654b33859a661477",
-  "mapCode": "rift",
+  "revision": 2,
+  "path": "/onboarding/replay-2.wotbreplay",
+  "filename": "championship-maus-example.wotbreplay",
+  "bytes": 1772807,
+  "sha256": "35dceae9278e9e9ffae41525b8ee66ecfec484cefd54a52f3b61ee7d73d58b14",
+  "mapCode": "plant",
   "cue": {
-    "playbackSeconds": 59.807150078125005,
-    "rawBattleStartSeconds": 21.309305,
-    "shotRawSeconds": 81.116455078125,
-    "vehicleEid": 283127376,
-    "shotId": 74740189,
-    "shooterEid": 283127376,
-    "targetEid": 283127381
+    "playbackSeconds": 126.4279165390625,
+    "rawBattleStartSeconds": 13.4037485,
+    "shotRawSeconds": 139.8316650390625,
+    "vehicleEid": 280695450,
+    "shotId": 43127338,
+    "shooterEid": 280695450,
+    "targetEid": 280828258
   },
   "verifiedParserRef": "cc1cf587e383bd3934fd86d829d4c6756dc6b4f6"
 }

@@ -10,7 +10,7 @@ import type { OnboardingContext, OnboardingSurface, OnboardingSurfaceId, Onboard
 import type { ReplayCapability } from '../types/workspace.js'
 
 /** Increment epoch only when existing users need the core guide again. Copy/anchor changes use revision. */
-const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 2 })
+const ONBOARDING_RELEASE = Object.freeze({ enabled: true, coreEpoch: 1, contentRevision: 3 })
 export const ONBOARDING_STORAGE_KEY = 'wotbtools-onboarding'
 export const ONBOARDING_PENDING_LOGIN_KEY = 'wotbtools-onboarding-pending-login'
 const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
