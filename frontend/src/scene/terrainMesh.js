@@ -22,18 +22,14 @@
  *   · 细分判据（`SubdividePatch`，`:252-258`）三条**任一命中即细分**；误差量 = 补片内 8×8 个四边形
  *     各自的"一步细分误差"（下一层采样点真值 vs 本层角点均值）的最大值 **及其发生位置**：
  *       ① 屏幕半径 `radius / (patchDistance · tanFovY) ≥ maxPatchRadiusError`
- *          （`radius` = 补片包围盒对角半长；`patchDistance` = 到包围盒中心）——**近处必须细**，
- *          这条是"贴着地面的薄结构（铁轨/路缘/贴花）不被地形盖住"的保证；
+ *          （`radius` = 补片包围盒对角半长；`patchDistance` = 到包围盒中心）；
  *       ② 屏幕高度 `|maxError| / (errorDistance · tanFovY) ≥ maxHeightError`——距离取**最差样本
  *          位置**（不是补片中心）；
  *       ③ 绝对高度 `|maxError| > maxAbsoluteHeightError`（3 m，与距离无关）。
- *     之外另有两条**特征解析**判据——把作者数据里真实存在的特征细分到 1 texel，**不改变任何
- *     高度**（细分只影响 tessellation 密度，顶点高度恒取真值场）；均 fail-open：无数据 ⇒ 退回
- *     纯客户端三判据：
- *       ④ 岸线（`shores`，见 `buildAdaptiveTerrain` @param）；
- *       ⑤ 贴地结构脚印（`structures`，同下；2026-10-11 替代已撤销的让位掩码——掩码是数据面
- *         造高度的有意偏离，本判据只把"有贴地薄构件处"的网格细到与客户端近景同级的 1 texel，
- *         网格即真值，铁轨/压顶/铺装在任意视距都不被粗格插值盖住）。
+ *     之外另有一条**岸线特征**判据（`shores`，④；见 `buildAdaptiveTerrain` @param，2026-10-10
+ *     用户定案）；**没有**任何"贴地结构/脚印"类判据——2026-10-11 用户裁示"不要自行发明处理方法，
+ *     和客户端对齐"：贴地薄构件在远视距被粗格盖住是客户端同机位的忠实结果（它靠贴地相机从不
+ *     看到），让位掩码 / 脚印细分 / morph 修补三类补偿已全部撤销。
  *     阈值随 fov 在 zoom/normal 两套预设间线性插值（`PrepareSubdivision`；引擎 `Camera::GetFOV()` 是
  *     **水平** fov）；`tanFovY = tanf(fov/2)/aspect` ≡ `tan(vfov/2)`（竖直半角正切）。
  *   · 层级交界的 T 型接缝由顶点着色器的 neighbour-morph 缝合——**离线网格必须自己解决**
@@ -183,17 +179,9 @@ export function subdivMorphOf(heightError, radiusError, heightError0, radiusErro
  *                与手工补偿无关：判据只用数据里真实存在的标高，且细分终点是数据自身的分辨率。
  *                跨步判定用补片格点范围——**与发射几何同源**（发射的顶点高度也取这些 texel 值），
  *                故"格点不跨步 ⇒ 发射面不跨步"，不需要任何余量常数。
- * @param structures Uint8Array(n*n) 贴地结构脚印（上游 `tools/bake_ground_structs.py` → 包内
- *                `structs.u8.bin`，1 = 贴地结构 texel，烘焙时已膨胀）——**第五条判据**：补片矩形
- *                与脚印相交 ⇒ 一路细分到 `minStep`。理由（2026-10-11 撤销让位掩码时定案）：贴地
- *                薄构件（铁轨基板 0.3 m/压顶/铺装）在远视距会被客户端三判据**合法地**放行的粗格
- *                插值盖住（实测同机位 250 m +0.56 m）；客户端自己靠贴地相机（3–15 m，网格天然
- *                1 texel 级）让它不显形。判据只消费数据里真实存在的脚印、不造任何高度（误判的
- *                代价只是三角形），与④同类；烘焙侧已膨胀 4 texel ⇒ 细/粗缝合边（顶点取粗侧值）
- *                落在脚印外围、不会把结构顶点抬回粗格插值。缺脚印/旧包 ⇒ 不启用（fail-open）。
  * @returns { positions, indices, quads, overBudget, sizeAt }
  */
-export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1, shores = null, structures = null }) {
+export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1, shores = null }) {
   if (!field || !Number.isFinite(n) || n < 2) throw new Error('buildAdaptiveTerrain: 需 field 与 n ≥ 2')
   const H = (i, j) => field[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
   const wx = (j) => (j / n - 0.5) * span;
@@ -296,40 +284,15 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     }
     return false;
   };
-  // 贴地结构脚印判定（第五条判据）：补片 texel 矩形与脚印相交 ⇒ 强制细分。
-  // 脚印是逐 texel 的 0/1，用一次构建的 summed-area table 把每个补片的相交测试降到 O(1)
-  // （每次 LOD 重建都跑一遍全遍历 ⇒ 判定必须便宜）。
-  let structSat = null;
-  if (structures && structures.length === n * n) {
-    structSat = new Int32Array((n + 1) * (n + 1));
-    for (let i = 0; i < n; i++) {
-      let run = 0;
-      const prev = i * (n + 1), cur = (i + 1) * (n + 1);
-      for (let j = 0; j < n; j++) {
-        if (structures[i * n + j]) run++;
-        structSat[cur + j + 1] = structSat[prev + j + 1] + run;
-      }
-    }
-  }
-  const structHit = (i0, j0, step) => {
-    if (!structSat) return false;
-    const i1 = Math.min(i0 + PATCH_QUADS * step, n), j1 = Math.min(j0 + PATCH_QUADS * step, n);
-    const W = n + 1;
-    return (structSat[i1 * W + j1] - structSat[i0 * W + j1]
-          - structSat[i1 * W + j0] + structSat[i0 * W + j0]) > 0;
-  };
   const patches = [];        // 终止补片及其判据值（诊断/测试：直接验证三条判据）
   // *Err0 = 父补片同名误差（引擎把当前层的 heightError/radiusError 传给子层当 *0；
   // 根调用传阈值本身 ⇒ 根补片 error0Delta = 0 ⇒ subdivMorph = 0，与引擎 SubdividePatch 首调一致）。
-  // `forced` = 本补片（或任一祖先）因**特征判据**（岸线④/脚印⑤）被强制细分。
-  const rec = (i0, j0, step, hErr0 = M.maxHeightError, rErr0 = M.maxPatchRadiusError, forced = false) => {
+  const rec = (i0, j0, step, hErr0 = M.maxHeightError, rErr0 = M.maxPatchRadiusError) => {
     const roomLeft = leaves.length + PATCH_QUADS * PATCH_QUADS <= MAX_QUADS;
     let hErr = 0, rErr = 0;
-    let feature = false;
     if (step > minStep && roomLeft) {
       const p = probePatch(i0, j0, step);
-      feature = shoreHit(i0, j0, step, p.minY, p.maxY) || structHit(i0, j0, step);
-      if (p.subdivide || feature) {
+      if (p.subdivide || shoreHit(i0, j0, step, p.minY, p.maxY)) {
         const h = step >> 1;
         // fail-closed：奇数 step 无法二等分（子补片跨度 8·h 对不上父补片 8·step ⇒ 会留空洞）。
         // 根步长已取 2 的幂（见下），本支实际不可达；保留只为杜绝"细分出洞"的可能。
@@ -338,14 +301,13 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
           patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
         } else {
           for (const [di, dj] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
-            rec(i0 + di * PATCH_QUADS * h, j0 + dj * PATCH_QUADS * h, h, p.heightError, p.radiusError, forced || feature);
+            rec(i0 + di * PATCH_QUADS * h, j0 + dj * PATCH_QUADS * h, h, p.heightError, p.radiusError);
           }
           return;
         }
-      } else {
-        hErr = p.heightError; rErr = p.radiusError;
-        patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
       }
+      hErr = p.heightError; rErr = p.radiusError;
+      patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
     } else {
       if (!roomLeft) overBudget = true;
       // 最细层（或预算用尽）：仍取半径误差（引擎该项恒有），高度误差按最细层 = 0；
@@ -355,13 +317,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
       rErr = p ? p.radiusError : 0;
       patches.push({ i0, j0, step, floored: step <= minStep, radiusError: rErr });
     }
-    // **特征强制的补片：morph 归零** ⇒ 带内顶点取 accurate 通道原值（真值场）。
-    // 理由（2026-10-11 plant wall_03 "地面塌陷"诊断）：悬崖带父补片的高程误差超阈值 ⇒ 客户端
-    // 公式给全部更细子层恒 >0 的 subdivMorph ⇒ 强制细分的 1-texel 顶点被 blend ~44% 向"双抽头
-    // 均值"通道 ⇒ 悬崖处均值 ≈ 坎中值 ⇒ 带内偏离真值最多 0.8 m（实测 Δ=−0.804 m @ morphRaw
-    // 0.286）。强制细分的契约是"带内网格 = 真值高度场、不造高度"，morph（LOD 过渡平滑）与之
-    // 冲突，故归零；**判据驱动的细分不受影响**（客户端 morph 原样保留）。
-    curMorph = (forced || feature) ? 0 : subdivMorphOf(hErr, rErr, hErr0, rErr0, M);
+    curMorph = subdivMorphOf(hErr, rErr, hErr0, rErr0, M);
     emitPatch(i0, j0, step);
   };
   // 根补片：step = n / PATCH_QUADS（引擎 level 0 同式）；**取不超过它的 2 的幂**——细分链是

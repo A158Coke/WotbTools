@@ -446,7 +446,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
-      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, shores = null, structures = null \}\)/)
+      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, shores = null \}\)/)
     expect(meshSrc).toMatch(/export function subdivisionMetrics\(fovYRad, aspect = 16 \/ 9, tolScale = 1\)/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
@@ -472,20 +472,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 共面接缝不设任何人工补偿（?poff / ?seamfix 均已于 2026-10-10 撤除，理由见下一条用例）
     expect(src).not.toMatch(/scenerySeamLift|instanceSeamLift|TERRAIN_SEAM_BAND/)
     expect(src).not.toMatch(/get\('poff'\)|get\('seamfix'\)|get\('terrainlod'\)/)
-    // 贴地结构脚印（2026-10-11 替代已撤销的让位掩码）：**只作细分判据**（terrainMesh 第五判据，
-    // 补片与脚印相交 ⇒ 细分到 1 texel，不改任何高度）——高度场一份到底，渲染/查询/放置全用
-    // 真值 heightField；让位掩码的双场概念（renderField）与 terrainCover 模块禁止复活
+    // 高度场一份到底（2026-10-11 用户裁示"只对齐客户端"：让位掩码与贴地结构脚印判据均已
+    // 撤销，渲染/查询/放置全用真值 heightField）；双场概念（renderField）与 terrainCover、
+    // structs 脚印管线禁止复活
     expect(src).not.toMatch(/applyTerrainCover|terrainCover/)
     expect(src).not.toMatch(/renderField/)
-    expect(src).toMatch(/structures: structFootprint,/)
+    expect(src).not.toMatch(/structFootprint|structs\.u8\.bin/)
     // sampleHeight 读 heightField（唯一场）；拾取/贴地/贴花与渲染同源（客户端同构）
     const shAt = src.indexOf('function sampleHeight')
     expect(shAt).toBeGreaterThan(-1)
     const shBody = src.slice(shAt, src.indexOf('function ', shAt + 10))   // 只到下一个函数为止
     expect(shBody).toMatch(/heightField/)
-    // 脚印 URL（缺脚印/旧包 ⇒ fail-open 不阻断）
-    const rsSrc = readFileSync(resolve(here, 'replaySource.js'), 'utf8')
-    expect(rsSrc).toMatch(/case 'structs': return f\('structs\.u8\.bin'\)/)
   })
 
   it('贴花材质（客户端 MATERIAL_DECAL）：UV1 采 colormap、不受光、×2.0，且接线在受光兜底之前', () => {

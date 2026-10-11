@@ -149,14 +149,14 @@ export function formatPickReport(r) {
   }
   // 地形诊断（2026-10-11 塌陷排查工具；**出现本行 = 跑的是带诊断的报告器**）：
   // truth = 真值高度场，mesh = 命中点正下方的渲染网格高度（Δ = mesh − truth），
-  // structs = 贴地脚印，size = 发射四边形顶点间距(texel)，morph = subdivMorph（未整形），
+  // size = 发射四边形顶点间距(texel)，morph = subdivMorph（未整形），
   // quads/overB = 本次地形构建规模。Δ 大而 truth 正常 ⇒ 渲染侧问题；truth 本身异常 ⇒ 数据侧。
   if (r.terrain) {
     const t = r.terrain
     const d = (t.meshH != null && Number.isFinite(t.truth)) ? ` Δ=${(t.meshH - t.truth).toFixed(3)}` : ''
     L.push(`  terrain: truth=${Number.isFinite(t.truth) ? t.truth.toFixed(3) : '?'}`
       + ` mesh=${t.meshH != null ? t.meshH.toFixed(3) : '?'}${d}`
-      + ` structs=${t.structs ?? '?'} size=${t.sizeAt ?? '?'} morph=${t.morph != null ? t.morph.toFixed(2) : '?'}`
+      + ` size=${t.sizeAt ?? '?'} morph=${t.morph != null ? t.morph.toFixed(2) : '?'}`
       + ` quads=${t.quads ?? '?'} overB=${t.overBudget ?? '?'}`)
   }
   return L.join('\n')
