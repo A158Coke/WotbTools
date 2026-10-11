@@ -712,6 +712,16 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   我们的分层地面复刻按开启状态导出（`ground.layers.json height_blend=true`）⇒ 已对齐。
   纹理档（各向异性/分辨率）与 PBR 路径属材质档，与地形网格无关。
 
+  **场景材质 TEST_OCCLUSION（"土包"真凶，数据面修复；2026-10-11）**：用户"客户端墙面上没有
+  土包、我们 3D 回放里有"（任何机位不变）。排除了地形数据（客户端遥测 459/459 帧吻合、315 棵
+  作者摆树吻合）、方法差异（坎位 mask/hmap/colormap 逐字节一致）与机位（射线：土包像素处地形
+  坎面与墙盖板件沿视线仅相差 0.01–0.55m）后，定位到 `wall_03` 的 colormap 盖板件与
+  **`materials-fp.sl:187-192` 的 `TEST_OCCLUSION` 分支**：带该旗标的材质客户端按
+  `rgb = albedo.rgb × albedo.a` 采样——plant 五件盖板（albedo=plant_colormap_test、alpha
+  区 15–111/255）在客户端是**近黑暗色覆盖层**（读作墙脚阴影），我们此前按满色渲染 ⇒
+  "亮褐土包"。**上游导出器已将 `rgb×a` 烘进贴图（客户端同式），本前端无需改动**；plant
+  scenery.glb 重导随包（manifest 4284.9MB）。见上游 index.md 同名条目。
+
   **地形细分差分验证 + 全包重导（2026-10-11）**：把引擎 `UpdatePatchInfo`/`SubdividePatch` 用
   Python **独立重写**一份参考实现（逐行对着 `dava.engine` 源码），与 `terrainMesh.js` 在同一张 plant
   上逐补片对比**终止补片集 + 每补片误差 + morph**：三个机位（贴地 26m / 270m / 425m）全部**集合
