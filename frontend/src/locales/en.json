@@ -1468,6 +1468,8 @@
     "camera": "Camera",
     "glb": "Real models (GLB)",
     "tread_marks": "Track marks (treads)",
+    "glb_forced_hint": "This quality tier always uses real models (GLB)",
+    "tread_gate_hint": "Track marks are only available on High and Ultra tiers",
     "glb_gate_hint": "Real vehicle models unavailable at low quality (mid and up only)",
     "display": "Display",
     "display_battlefield": "Battlefield UI",

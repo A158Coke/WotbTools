@@ -281,7 +281,9 @@ describe('playbackScene 会话代数契约', () => {
   })
 
   it('a late GLB obeys class-icon mode during attach, seek and restoration', async () => {
-    window.history.replaceState(null, '', '/?debug&q=high')
+    // q=mid：本测试主题是"迟到 GLB 附着 + 用户开关恢复"生命周期；高清/极致已按
+    // 2026-10-11 裁示强制 GLB（setGlb(false) 被忽略），强制契约由下面的专属测试锁定。
+    window.history.replaceState(null, '', '/?debug&q=mid')
     const parked = track(deferred())
     vi.spyOn(assetProvider, 'bytes').mockImplementation(() => parked.promise)
     // 部件守卫（本分支新增："部位/枢轴链不全 ⇒ 保留代理车"）要求模型带 `turret_N`/`gun_N` 节点，
@@ -322,6 +324,31 @@ describe('playbackScene 会话代数契约', () => {
     expect(vehicle.meshHull.visible).toBe(false)
     api.setGlb(false)
     expect(vehicle.meshHull.visible).toBe(true)
+  })
+
+  it('高/极致画质档强制 GLB：setGlb(false) 被忽略、开关停用（2026-10-11 裁示）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { store, api } = createScene()
+    const data = minimalData()
+    data.meta.samples = 1
+    data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+      hp: [], coverage: [42, 100], death_t: null }]
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'forced.wotbreplay') })
+    // applyGlbGate：强制档把 GLB 打开 + 开关停用 + 履带印放行
+    expect(store.glbOn).toBe(true)
+    expect(store.glbAllowed).toBe(false)
+    expect(store.treadAllowed).toBe(true)
+    api.setGlb(false)
+    expect(store.glbOn).toBe(true)          // 关闭被忽略（轨距一致性）
+    // 低档镜像：履带印不放行
+    window.history.replaceState(null, '', '/?debug&q=low')
+    const store2 = createPlaybackStore()
+    const api2 = initPlayback(mountContainer(), store2, { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() })
+    created.push(api2)
+    await api2.loadData({ kind: 'local', file: new File(['replay'], 'low.wotbreplay'), session: { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null }) } })
+    expect(store2.treadAllowed).toBe(false)
   })
 
   it('战场标签使用回放 nickname 字段', async () => {
