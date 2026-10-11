@@ -204,8 +204,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/tex\.mapping = THREE\.EquirectangularReflectionMapping;/)
     expect(src).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)
     expect(src).toMatch(/scene\.environmentIntensity = envMultiplier;/)
-    // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）
-    expect(src).toMatch(/envMultiplier = Number\.isFinite\(m\) \? m : 1;/)
+    // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）；
+    // 2026-10-11 起在 applyMapLighting 内随太阳强度归一（authored 读取 + /expo，
+    // 高太阳图 IBL 不再被输出曝光压暗——mountain 报障"坦克非常暗"）
+    expect(src).toMatch(/const envAuthored = L && L\.ibl && L\.ibl\['ibl\.environmentMultiplier'\];/)
+    expect(src).toMatch(/envMultiplier = \(Number\.isFinite\(envAuthored\) \? envAuthored : 1\) \/ expo;/)
     // 时序：资产阶段可早于 initScene（scene 未创建）→ 加载时判空 + initScene 末尾补挂
     expect(src).toMatch(/if \(scene\) \{/)
     expect(src).toMatch(/scene\.environment = tex;/)

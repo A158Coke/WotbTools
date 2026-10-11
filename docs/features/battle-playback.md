@@ -575,6 +575,16 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   客户端的曝光是**运行时自动曝光**（`[auto] property float exposure`），全客户端数据里没有一个静态值
   可抄 ⇒ 任何替代参数都只能靠手工调，属"无客户端依据"。**已知缺口**：自动曝光本身尚未实现，故
   画面整体亮度与客户端可能有系统性差异——这是**如实记录的缺口**，而不是用一个手调参数盖过去。**2026-10-10 落点（用户裁示“保色相、归亮度”）**：逐图太阳的 intensity（36 图 3–14）是配客户端**自动曝光**的，我们照搬强度会让走 three 内建管线的材质（受光场景件 = 河床/铺装等 Lambert 件、坦克）过曝 2–5×（米德尔堡地面“发白偏橙”报障）⇒ 现按 `toneMappingExposure = DEFAULT_SUN_INTENSITY / sun.intensity`（钳 0.05–4）把整图亮度归一到基准档：同图内 太阳:环境:IBL 相对关系不变（夜图/冷图氛围保留），绝对亮度钉回基准；客户端的动态自动曝光仍是有记录的缺口。守卫见 `sceneryMaterials.test.js`。
+  **2026-10-11 补全（mountain 报障"坦克非常暗、反射不对"）**：首版只归一了**太阳项**
+  （`sunLight.intensity` 保持 authored 14、靠输出曝光 0.214 压回 3.0），而环境两项
+  （HemisphereLight 环境光、`scene.environmentIntensity` 的 IBL 反射）输入未归一、却被同一
+  输出曝光整体压暗——mountain（intensity 14 = 36 图最高）坦克净光照 太阳 3.0 / hemi 0.51 /
+  IBL 0.28，vs 基线图 3.0 / 0.9 / 0.49：PBR 坦克的反射/环境占大头 ⇒ 整车暗 2~4.7×。现把
+  hemi 与 IBL 倍率同样除以 expo（`DEFAULT_HEMI_INTENSITY/expo`、`envAuthored/expo`），三通道
+  输出端净值与基线图逐项相同；基线图（太阳≈3）逐像素不变（实测工厂图 sun 8 / expo 0.375：
+  hemi 6.4 / envIntensity 3.467，净值 2.4 / 1.3 与修复前一致）。注意尾部兜底赋值必须以
+  "是否走过归一"为门（首版无条件覆盖，env 归一被 authored 值打回，实测 envIntensity 恒 1.3）。
+  守卫：`sceneryMaterials.test.js` IBL 倍率读取 + 归一两条源码锁。
   另：出屏曲线/曝光只作用于走 three 内建管线的材质（坦克）——**这不是遗漏**：C3 核实（下条）legacy
   类材质在客户端也 raw 写出、不经出屏变换；装甲查看器（`tankViewer.js`）仍用 ACES + 1.15，未动。
   守卫见 `src/scene/sceneryMaterials.test.js`。
