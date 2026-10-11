@@ -387,6 +387,51 @@ describe('playbackScene 会话代数契约', () => {
     expect(r.rTotal).toBe(274)
   })
 
+  it('履带印 AoI 空洞断链：出空洞从新锚开始、无跨空洞桥接（review blocker 回归，2026-10-11）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    // 5 m/s 直线 15 s；coverage 两段：可见 0–5 s → 空洞 5–10 s → 可见 10–15 s
+    const t0 = 42, n = 150
+    const pos = new Array(n * 3)
+    for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
+    const data = minimalData(t0)
+    data.meta.samples = n
+    data.meta.duration = t0 + 15
+    data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos, hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      hp: [], coverage: [t0, t0 + 5, t0 + 10, t0 + 15], death_t: null }]
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
+      Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
+    vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'gap.wotbreplay') })
+    await new Promise((r) => setTimeout(r, 0))
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    api.setPlaying(false)
+    const read = () => {
+      const v = window.__pbV[0]
+      return { total: v.trail.L.total, segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1 })) }
+    }
+    api.seekTime(t0 + 4)                         // 可见段内推进（≈19 戳）
+    expect(read().total).toBeGreaterThan(10)
+    api.seekTime(t0 + 11)                        // 跨空洞：进入时空洞首帧必须复位，出空洞从新锚开始
+    const r = read()
+    // 桥接形态（旧缺陷）会留下“空洞前 19 戳 + 一段横跨 ~25 m 的长戳（约 25 个边界）”；
+    // 正确形态只剩空洞后 1 s 的 ~5 戳（场景系 x 取镜像负号，空洞后区间 x ≈ −50…−55）
+    expect(r.total).toBeGreaterThanOrEqual(3)
+    expect(r.total).toBeLessThanOrEqual(8)
+    for (const sg of r.segs) {
+      expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)   // 无横跨空洞的长戳
+      expect(Math.abs(sg.x0)).toBeGreaterThan(45)                // 空洞前区间的戳已被复位清掉
+    }
+    // 新锚起点：最早一戳紧贴出空洞时刻（中心 x ≈ −50，L 带横向偏移 +0.9 ⇒ ≈ −49.1），
+    // 而不是从空洞前末位（中心 −25 / L −24.1）续接
+    const minAbs = Math.min(...r.segs.map((sg) => Math.abs(sg.x0)))
+    expect(minAbs).toBeLessThan(51)
+    expect(minAbs).toBeGreaterThan(48.5)
+  })
+
   it('高/极致画质档强制 GLB：setGlb(false) 被忽略、开关停用（2026-10-11 裁示）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const { store, api } = createScene()
