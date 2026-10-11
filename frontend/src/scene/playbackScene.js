@@ -2494,6 +2494,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           };
           ensureTreadMesh(v, v.tread);
           invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
+        }).catch((e) => {
+          // fail-soft：资产源未配置（assetProvider.url 抛错）/贴图装配异常 ⇒ 该车无印记，
+          // 绝不冒未处理拒绝（2026-10-11 CI 复盘：vitest 以 unhandled error 判失败——本机
+          // .env.local 掩盖了无资产源形态；会话/地图资产链路本身有各自的错误呈现）。
+          console.warn('[playback] 履带印装配失败（该车无印记）tank=' + def.tank_id + ':', e);
         });
       }
       scene.add(g);
