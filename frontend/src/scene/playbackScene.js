@@ -580,9 +580,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
-    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度 / 脚印与
-    // 细分状态。渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
+    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度。
+    // 渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
+    // ⚠️ 两个诊断变量都声明在 if 外——return 在 if 外引用它们（作用域错误曾致
+    // ReferenceError: render is not defined，表现为"点击无反应"）。
     let terrain = null;
+    let render = null;
     if (heightField && heightMeta) {
       try {
         const n = heightMeta.size || 512;
@@ -619,7 +622,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       } catch (_) { terrain = null; }
       // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
       // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
-      let render = null;
       try {
         const o = hit.object;
         const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);

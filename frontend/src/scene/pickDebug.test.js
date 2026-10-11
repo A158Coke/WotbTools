@@ -216,3 +216,16 @@ describe('nearestInstance', () => {
     expect(nearestInstance(null, 0, 0, 3)).toBeNull()
   })
 })
+
+describe('拾取报告诊断行接线（playbackScene 源级守卫）', () => {
+  // 2026-10-11 回归：诊断变量曾声明在 `if (heightField && heightMeta)` 块内、return 在块外
+  // 引用 ⇒ ReferenceError: render is not defined ⇒ 整个拾取面板"点击没反应"。锁定共声明。
+  it('terrain / render 诊断变量在 buildPickReport 函数作用域共声明（return 可达）', () => {
+    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    expect(src).toMatch(/let terrain = null;\s*\r?\n\s*let render = null;/)
+  })
+  it('拾取失败必须可见（禁止静默 catch）', () => {
+    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    expect(src).toMatch(/showPickPanel\(`\[scene-pick\] failed:/)
+  })
+})
