@@ -361,9 +361,6 @@ export function mapStaticUrl(kind, layer, mapKey) {
     case 'map': return f('ground.webp')
     case 'map-mini': return f('mini.webp')
     case 'terrain': return f('terrain.u16.bin')
-    // 贴地结构脚印（上游 tools/bake_ground_structs.py；1 = 贴地结构 texel）。
-    // 2026-10-11 替代已撤销的让位掩码 cover.u16.bin。缺失 ⇒ 前端按无脚印继续（fail-open）。
-    case 'structs': return f('structs.u8.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')
     // 逐图光照参数（上游 tools/export_map_lighting.py：太阳方向/色/强度 + 环境色 + 雾 + IBL）。
