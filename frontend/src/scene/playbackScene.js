@@ -2611,11 +2611,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
     const pendL = [], pendR = [];
     let broken = false;
+    // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
+    // 复位一律由调用点在"断链时刻"显式执行（2026-10-11 review blocker：旧写法把复位藏在
+    // flush 的 `if (broken)` 里，而进入空洞的首帧 broken 还是 false ⇒ 不复位 ⇒ 出空洞的
+    // 首点仍挂空洞前的旧锚，桥接出一段横跨空洞的长印记，违背"跨空洞不连铺"契约）。
     const flush = () => {
       if (pendL.length) advanceTrail(tr.L, pendL, space, TRAIL_CAP_PER_SIDE);
       if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE);
       pendL.length = 0; pendR.length = 0;
-      if (broken) { resetTrailState(tr.L); resetTrailState(tr.R); }
     };
     // 自适应子步：步内弧长 ≤ ~0.6 m（高速时 0.1 s 网格步会到 2 m+，段方向成弦切角）
     let tA = t0;
@@ -2642,7 +2645,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const deathT = v.def.death_t;
         if (deathT != null && tt >= deathT) continue;          // 阵亡：静止残骸不再出段（不断链）
         if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
-          if (!broken) { flush(); broken = true; }
+          if (!broken) {
+            flush();
+            resetTrailState(tr.L);                              // 显式复位：出空洞从新锚开始
+            resetTrailState(tr.R);
+            broken = true;
+          }
           continue;
         }
         broken = false;
