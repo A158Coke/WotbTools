@@ -361,7 +361,7 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 18)
     let r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 18, total: 89, rTotal: 89, quads: 178 })
-    expect(r.youngAlpha).toBeCloseTo(1.0)      // 新戳全不透明（TREAD_OPACITY=1.0，客户端同构）
+    expect(r.youngAlpha).toBeCloseTo(0.8)      // 新戳全不透明 × TREAD_OPACITY（目视两点校准）
     // seek 后退：全量重建到更早时刻（存量随之收缩，无残留）
     api.seekTime(t0 + 8)
     r = readTrail()
@@ -370,9 +370,9 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 28)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 28, total: 139, rTotal: 139, quads: 278 })
-    // 淡出：最老段年龄 28 s > after(10)+dur(10) ⇒ alpha 0；最新段仍 1.0
+    // 淡出：最老段年龄 28 s > after(10)+dur(10) ⇒ alpha 0；最新段仍 0.8
     expect(r.oldAlpha).toBe(0)
-    expect(r.youngAlpha).toBeCloseTo(1.0)
+    expect(r.youngAlpha).toBeCloseTo(0.8)
     // 16× 快进等价于一次大步 seek（同一泵路径）：跳到末端不炸、无残留
     api.seekTime(t0 + 55)
     r = readTrail()
