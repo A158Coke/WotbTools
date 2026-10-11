@@ -4281,6 +4281,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function applyMapLighting(L) {
     const sun = L && L.sun;
     if (!sunLight || !hemiLight) return;
+    // IBL 倍率（逐图 0.8–4.0）：authored 值先取，太阳块内按 expo 归一（见下）
+    const envAuthored = L && L.ibl && L.ibl['ibl.environmentMultiplier'];
+    let normalized = false;
     const d = sun && sun.direction_scene;
     if (Array.isArray(d) && d.length === 3 && d.every(Number.isFinite)) {
       const n = Math.hypot(d[0], d[1], d[2]) || 1;
@@ -4295,11 +4298,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 是配**它的自动曝光**用的；我们的渲染器没有自动曝光（如实记录的缺口），照搬强度会让
       // 走 three 内建管线的材质（受光场景件 = 河床/铺装等 Lambert 件、坦克）过曝 2–5× ⇒ 米德尔堡
       // 地面"发白偏橙"（用户报障）。这里按**该图太阳强度**把整图曝光归一到已调好的基准
-      // （DEFAULT_SUN_INTENSITY，与兜底灯同档）：同一图内"太阳:环境:IBL"的相对关系不变
-      // （夜图/冷图的氛围保留），只是把绝对亮度钉回基准——等价于用固定曝光模拟客户端的自动曝光。
+      // （DEFAULT_SUN_INTENSITY，与兜底灯同档）——等价于用固定曝光模拟客户端的自动曝光。
+      //
+      // ⚠️ 归一必须覆盖**全部三个光照通道**（2026-10-11 补全，mountain 报障"坦克非常暗、
+      // 反射不对"）：exposure 在输出端乘一切内建材质，只把太阳项除回来（sunLight.intensity
+      // 保持 authored 14）的话，环境两项（hemi 环境光 + scene.environment 反射）被白白压暗
+      // —— mountain（intensity 14 ⇒ expo 0.214）实测净光照 太阳 3.0 / hemi 0.51 / IBL 0.28，
+      // vs 基线图 3.0 / 0.9 / 0.49：PBR 坦克的反射/环境占大头 ⇒ 整车暗 2~4.7×。修法 =
+      // hemi 与 IBL 基准同样除以 expo（即强度 ×authored 太阳/3.0），三通道在输出端净值
+      // 与基线图逐项相同；基线图（太阳≈3，expo≈1）逐像素不变。
       if (Number.isFinite(sun.intensity) && sun.intensity > 0) {
         const expo = THREE.MathUtils.clamp(DEFAULT_SUN_INTENSITY / sun.intensity, 0.05, 4.0);
         renderer.toneMappingExposure = expo;
+        hemiLight.intensity = DEFAULT_HEMI_INTENSITY / expo;
+        envMultiplier = (Number.isFinite(envAuthored) ? envAuthored : 1) / expo;
+        if (scene) scene.environmentIntensity = envMultiplier;   // env 贴图若已挂，即时生效
+        normalized = true;
         if (DEBUG) window.__mapExposure = expo;
       }
       // 环境反射的高光项要 lightColor0（= color × intensity）与传播方向：写入共享 uniform
@@ -4314,9 +4328,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       if (DEBUG) window.__mapLighting = { direction: d.slice(), color: sun.color, intensity: sun.intensity, ambient: sun.ambient };
     }
-    // IBL 倍率（逐图 0.8–4.0）：环境贴图加载后经 scene.environmentIntensity 施加
-    const m = L && L.ibl && L.ibl['ibl.environmentMultiplier'];
-    envMultiplier = Number.isFinite(m) ? m : 1;
+    // IBL 倍率：未走太阳归一（该图没有可用的太阳方向块）——authored 值原样生效
+    // （expo=1 的基线口径，与 resetMapLighting 一致）。**不可无条件覆盖**：
+    // 太阳块已把三通道一起归一，这里再赋 authored 会把 IBL 打回未归一值
+    // （首版实测：hemi 6.4 / exposure 0.375 归一生效、envIntensity 却是 authored 1.3）。
+    if (!normalized) envMultiplier = Number.isFinite(envAuthored) ? envAuthored : 1;
   }
   function resetMapLighting() {
     if (hemiLight) {
