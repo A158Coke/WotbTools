@@ -26,12 +26,18 @@ export const TREAD_FADE = { after: 10, dur: 10 };
 
 /** 全局不透明度系数：顶点色 alpha = 淡出系数 × 本值。
  *
- * 客户端口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支，2026-10-11 取证）：
- * `parameters.x` 是**印记出生时间**，透明度 = 距离淡出（treadsNear/FarFadeDistance）
- * × 时间淡出（smoothstep(fadeOutTimeStartEnd)）——**没有额外的整体压暗**，印记在寿命
- * 窗口内以贴图原色足量呈现。故本系数 = 1.0（曾取 0.55 是针对旧的"重复发射+段重叠
- * 双重合成"问题的过度保守，那两个根因修复后应回满）。 */
-export const TREAD_OPACITY = 1.0;
+ * 客户端着色器口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支，2026-10-11 取证）：
+ * `parameters.x` 是**印记出生时间**，透明度 = 距离淡出（`treadsNear/FarFadeDistance`）
+ * × 时间淡出（`smoothstep(fadeOutTimeStartEnd)`）——着色器里**没有**额外的整体压暗。
+ * 但直接把本系数设 1.0 后实测比游戏**更黑**（用户目视），0.55 时则偏淡 ⇒ 客户端还有
+ * 两处未复刻的减淡机制（二者都在同一着色器族里有实证，具体数值在游戏层代码、尚未逆向）：
+ *   ① 距离淡出（`[auto] property float treadsNearFadeDistance/treadsFarFadeDistance`，
+ *      随相机距离 smoothstep 淡出——旁观/俯瞰视距下客户端会比我们淡）；
+ *   ② 贴花调色分支 `#if GLOBAL_TINT: rgb *= globalFlatColor.rgb * 2.0`（同族着色器，
+ *      铁轨贴花已证实该分支在贴花实例上启用；若履带印亦然，客户端标记色比纹理原色亮）。
+ * 本值 = **用户目视两点校准**（0.55 偏淡 / 1.0 偏黑，目标介于其间），待上述任一机制
+ * 逆向定案后以其精确口径替换。 */
+export const TREAD_OPACITY = 0.8;
 
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
