@@ -353,45 +353,23 @@ describe('playbackScene 会话代数契约', () => {
       return {
         builtT: v.trail.builtT, total: v.trail.L.total, rTotal: v.trail.R.total,
         quads: v.treadMesh ? v.treadMesh.geometry.drawRange.count / 6 : 0,
-        colLen: col ? col.length : null,
-        colIsArray: col ? Array.isArray(col) : null,
-        youngAlpha: (col && v.trail.L.total > 0 && col.length > ((v.trail.L.total - 1) % 1536) * 32 + 3)
-          ? +col[((v.trail.L.total - 1) % 1536) * 32 + 3].toFixed(2) : 'none',
+        youngAlpha: (col && v.trail.L.total > 0) ? +col[((v.trail.L.total - 1) % 1536) * 32 + 3].toFixed(2) : 'none',
         oldAlpha: (col && v.trail.L.total > 0) ? +col[3].toFixed(2) : 'none',
       }
     }
-    // 前进到 t0+18（行驶 90 m → 每侧 90 段，间距 1 m）
+    // 前进到 t0+18（行驶 90 m → 每侧 89 段：首点锚点 + 浮点界）
     api.seekTime(t0 + 18)
-    // eslint-disable-next-line no-console
-    console.log('TRAIL_SEEK_DIAG', JSON.stringify({
-      storeTreadOn: store.treadOn, storePlaying: store.playing, time: store.time,
-      builtT: window.__pbV[0].trail.builtT, tread: !!window.__pbV[0].tread,
-      mesh: !!window.__pbV[0].treadMesh, total: window.__pbV[0].trail.L.total,
-    }))
     let r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 18, total: 89, rTotal: 89, quads: 178 })   // 18 m 累计的浮点界 = 89 段（确定性）
+    expect(r).toMatchObject({ builtT: t0 + 18, total: 89, rTotal: 89, quads: 178 })
     expect(r.youngAlpha).toBeCloseTo(0.55)      // 新段全不透明 × TREAD_OPACITY
-    expect(typeof r.youngAlpha).toBe('number')
-    // seek 后退：全量重建到更早时刻（存量随之收缩，无 13.4 式残留）
+    // seek 后退：全量重建到更早时刻（存量随之收缩，无残留）
     api.seekTime(t0 + 8)
-    // eslint-disable-next-line no-console
-    console.log('TRAIL_BACK_DIAG', JSON.stringify({
-      builtT: window.__pbV[0].trail.builtT, Ltotal: window.__pbV[0].trail.L.total,
-      written: window.__pbV[0].trail.L.written, head: window.__pbV[0].trail.L.head,
-      quads: window.__pbV[0].treadMesh.geometry.drawRange.count / 6,
-    }))
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 8, total: 39, rTotal: 39, quads: 78 })   // 8 s × 5 m/s = 40 m（浮点界 39 段）
-    // 再前进越过原位置：增量生长，确定性一致
-    for (const tt of [t0 + 12, t0 + 16, t0 + 20, t0 + 24, t0 + 28]) {
-      api.seekTime(tt)
-      const d = readTrail()
-      // eslint-disable-next-line no-console
-      console.log('TRAIL_STEP', tt - t0, d.total)
-    }
+    expect(r).toMatchObject({ builtT: t0 + 8, total: 39, rTotal: 39, quads: 78 })
+    // 再前进越过原位置：增量生长（80 m → +100 段），确定性一致
     api.seekTime(t0 + 28)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 28, total: 139, rTotal: 139, quads: 278 })   // 28 s × 5 m/s = 140 m
+    expect(r).toMatchObject({ builtT: t0 + 28, total: 139, rTotal: 139, quads: 278 })
     // 淡出：最老段年龄 28 s > after(10)+dur(10) ⇒ alpha 0；最新段仍 0.55
     expect(r.oldAlpha).toBe(0)
     expect(r.youngAlpha).toBeCloseTo(0.55)
@@ -399,8 +377,8 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 55)
     r = readTrail()
     expect(r.builtT).toBe(t0 + 55)
-    expect(r.total).toBe(274)     // 55 s × 5 m/s = 275 m（浮点界 274 段）
-    expect(Number.isFinite(r.total)).toBe(true)
+    expect(r.total).toBe(274)     // 55 s × 5 m/s = 275 m（首点锚点 + 浮点界 274 段）
+    expect(r.rTotal).toBe(274)
   })
 
   it('高/极致画质档强制 GLB：setGlb(false) 被忽略、开关停用（2026-10-11 裁示）', async () => {

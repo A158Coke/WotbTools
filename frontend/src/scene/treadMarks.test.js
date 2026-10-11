@@ -78,6 +78,21 @@ describe('advanceTrail', () => {
     expect(big.segs.length).toBe(st.segs.length)
     expect(Math.abs(big.segs[0].x - st.segs[0].x)).toBeLessThanOrEqual(0.5 + 1e-9)
   })
+  it('边界抖动防护：步长带 ~1e-10 抖动时同一整数界不得重复出段（2026-10-11 定案）', () => {
+    // 复现现场：插值点位使每步 d = 0.5 − 1e-10（累计 acc 落在整数界下 1e-9 内）——
+    // 旧实现 floor(acc/space)+1 对下一个半步仍算出同一 j，配合 +1e-9 容差把同一段发两次
+    // （实测 20 m 窗口发 27~29 段、轨迹出现不规则双段/深浅不均）。修复后每边界只发一次。
+    const st = createTrailState()
+    const step = 0.5 - 1e-10
+    const pts = []
+    for (let i = 0; i < 10; i++) pts.push({ x: i * step, z: 0, t: i })
+    const added = advanceTrail(st, pts, 1.0, 1e9)
+    // 总里程 = 9 × (0.5 − 1e-10) ≈ 4.5 − 1e-9 ⇒ 精确跨越边界 1..4
+    expect(added).toBe(4)
+    expect(st.total).toBe(4)
+    expect(st.segs.every((sg) => Number.isFinite(sg.x))).toBe(true)
+  })
+
   it('环形上限：覆写最老槽位（槽位 = 绝对序号 % cap），total 持续累计', () => {
     const st = createTrailState()
     const added = advanceTrail(st, line(0, 0, 1, 0, 1, 12), 1.0, 10)

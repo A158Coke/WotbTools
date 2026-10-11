@@ -120,7 +120,11 @@ export function advanceTrail(st, pts, space, cap) {
     if (!(d > 1e-6)) continue;
     const ux = dx / d, uz = dz / d;
     const accEnd = st.acc + d;
-    for (let j = Math.floor(st.acc / space) + 1; j * space <= accEnd + 1e-9; j++) {
+    // ⚠️ floor 前必须加静差（2026-10-11 定案）：点位来自插值，步长带 ~1e-10 抖动；当 accEnd
+    // 落在整数界下 1e-9 内时，`floor(acc/space)+1` 对**下一个**半步仍算出同一个 j，配合
+    // 条件里的 +1e-9 容差 ⇒ **同一段被相邻两步重复发出**（实测 20 m 窗口发 29/27 段、L/R
+    // 因抖动不对称、轨迹上出现不规则双段/深浅不均）。floor 内加静差后同一边界只能跨过一次。
+    for (let j = Math.floor((st.acc + 1e-9) / space) + 1; j * space <= accEnd + 1e-9; j++) {
       const at = j * space - st.acc;          // 本采样步内的里程位置 ∈ (0, d]
       const back = Math.min(space / 2, at);   // 段中心相对步进点的回退（首段钳到步起点）
       pushSeg(st, { x: p.x - ux * back, z: p.z - uz * back, dx: ux, dz: uz, len: space, t: p.t || 0 }, cap);
