@@ -1034,6 +1034,30 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
   })
 
+  it('标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色', () => {
+    // 2026-10-11 用户报"作者圆环 / 地图边界红线在加了光照后变深"：逐图曝光
+    // （toneMappingExposure = 基准太阳强度/该图强度）经 three 内建通路作用于**一切未排除
+    // 的材质**，未设 toneMapped:false 的标记材质会随图变深（山地图 expo≈0.21）。
+    // 炮线/轨迹线早已遵循此约定（见其注释），本守卫把同类标记逐点锁死。
+    const sites = [
+      [/color: BOUNDARY_COLOR[\s\S]{0,200}toneMapped: false/, '地图边界线'],
+      [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
+      [/color: baseColors\.neutral[\s\S]{0,200}toneMapped: false/, '基地环'],
+      [/map: tex, side: THREE\.DoubleSide[\s\S]{0,160}toneMapped: false/, '基地圆盘'],
+      [/color: 0xffa53a[\s\S]{0,160}toneMapped: false/, '击毁爆散'],
+      [/SpriteMaterial\(\{[\s\S]{0,180}toneMapped: false/, '伤害飘字'],
+    ]
+    for (const [re, label] of sites) expect(src, label).toMatch(re)
+    // 弹着三处（IMPACT_WHITE）全部直出
+    // 弹着三处（IMPACT_WHITE）逐点检查：其后 160 字符内必须出现 toneMapped: false
+    //（不用正则字面量：转义层曾在写入时把控制字符变成真换行，2026-10-11）
+    let impactFree = 0
+    for (let i = src.indexOf('IMPACT_WHITE'); i !== -1; i = src.indexOf('IMPACT_WHITE', i + 1)) {
+      if (src.slice(i, i + 160).includes('toneMapped: false')) impactFree++
+    }
+    expect(impactFree).toBeGreaterThanOrEqual(3)
+  })
+
   it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
     expect(src).toMatch(/function prewarmShaders\(\)/)
     expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
