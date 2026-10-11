@@ -586,9 +586,14 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **左右槽位交错**（2026-10-11 修"只有左侧履带有印记"）：第 k 对段占槽 `2k`(L)/`2k+1`(R)，
     `drawRange = 2×min(L,R)×6`——首版把 R 整块放在 `[cap,2cap)` 而 drawRange 从 0 数起，
     R 区间永远在绘制窗口外。
-  - **回落**（无 authored json 的 424 辆，产品近似、上游 feasibility §四）：通用贴图
-    `Tread.webp` + 宽 0.6 / 间距 1.0 m；左右横距优先取 suspension 解析的 `halfW`
-    （模型实测），无悬挂回落 0.9 m。
+  - **回落与"统一深浅"（2026-10-11 用户报"215b 比 Kranvagn 黑"后重做）**：包内现在
+    **全部 735 辆都有 `tread/<id>.json`** —— 424 辆无作者块的车按**国别主贴图**回落
+    （`fallback:true`；Kranvagn→`European_01_tread`，与 GB 同族深色；此前回落浅色通用张
+    `Tread.webp` 使墨量差约 3 倍）；其 `manual_width:null` 由前端**从模型履带盒实测**
+    （`suspParts.beltW` 均值 → 常量 0.6 兜底），对应该类车"从履带几何现算"的客户端语义。
+    另：`/tread/textures.json` 的 **per-stem alpha 归一化系数**（导出器按全库中位归一、
+    钳位 [0.65, 1.8]）乘入印记不透明度——authored 贴图间密度差 1.7~4×（RGB/色调本已
+    一致），按用户裁示统一。左右横距优先取 suspension `halfW`，无悬挂回落 0.9 m。
   - **开关**：显示面板「地面履带印」（`store.treadOn`，唯一 owner = 场景；
     `setTreadMarks` API，会话级不持久化）。客户端 Windows 默认档 `TankTreads=false`
     ——默认开的决定是产品裁示（2026-10-11 用户要求做并验收）。

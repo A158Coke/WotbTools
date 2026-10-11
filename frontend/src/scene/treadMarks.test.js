@@ -4,8 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState,
-  resetTrailState, resolveTreadParams, trailStampCorners, treadAlphaAt,
-  TRAIL_LIFT, TREAD_FADE,
+  resetTrailState, resolveTreadParams, textureStemOf,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE,
 } from './treadMarks.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -50,6 +50,31 @@ describe('resolveTreadParams', () => {
     expect(p.width).toBe(TREAD_FALLBACK.width)
     expect(p.space).toBe(TREAD_FALLBACK.space)
     expect(p.authored).toBe(true)
+  })
+  it('国别回落车（manual_width null / fallback:true）：width 保持 null 透出，供模型实测', () => {
+    const p = resolveTreadParams({ texture: 'tread/textures/European_01_tread.webp',
+      manual_width: null, manual_space: 1.0, fallback: true })
+    expect(p.width).toBeNull()
+    expect(p.texture).toBe('/tread/textures/European_01_tread.webp')
+    expect(p.authored).toBe(false)
+  })
+})
+
+describe('textureStemOf / treadScaleFor（alpha 归一化）', () => {
+  it('stem 解析：取文件名去 .webp；异常输入返回空串/1', () => {
+    expect(textureStemOf('/tread/textures/GB_01_tread.webp')).toBe('GB_01_tread')
+    expect(textureStemOf('tread/textures/USSR_01_tread.WEBP')).toBe('USSR_01_tread')
+    expect(textureStemOf(null)).toBe('')
+  })
+  it('scale 取 per-stem 值；缺失/异常一律 1（fail-open 到原贴图）', () => {
+    const meta = { textures: { GB_01_tread: { alpha_mean: 114.7, scale: 0.8652 },
+                               USSR_01_tread: { alpha_mean: 127.6, scale: 0.7778 } } }
+    expect(treadScaleFor(meta, '/tread/textures/GB_01_tread.webp')).toBeCloseTo(0.8652)
+    expect(treadScaleFor(meta, '/tread/textures/USSR_01_tread.webp')).toBeCloseTo(0.7778)
+    expect(treadScaleFor(meta, '/tread/textures/Japan_01_tread.webp')).toBe(1)
+    expect(treadScaleFor({}, '/tread/textures/GB_01_tread.webp')).toBe(1)
+    expect(treadScaleFor(null, null)).toBe(1)
+    expect(treadScaleFor({ textures: { X: { scale: 0 } } }, '/tread/textures/X.webp')).toBe(1)
   })
 })
 

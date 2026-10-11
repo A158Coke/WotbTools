@@ -340,11 +340,13 @@ describe('playbackScene 会话代数契约', () => {
       pos, hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
       turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
       hp: [], coverage: [t0, t0 + 58], death_t: null }]
+    // tread 资产确定性 mock（本车无 tank_id → 参数走回落；归一化表给空 → scale=1）：
+    // 不依赖真实网络往返，保证 v.tread/v.treadMesh 在首个 seekTime tick 前就位
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
+      Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
     source.loadPlaybackData.mockResolvedValue(data)
     await api.loadData({ kind: 'local', file: new File(['replay'], 'trail.wotbreplay') })
-    // tread 参数是异步回落（本车无 tank_id → key 0 fallback promise）：微任务冲洗，
-    // 确保 v.tread/v.treadMesh 在首个 seekTime tick 前就位（真实运行由后续帧自然覆盖）
-    await new Promise((r) => setTimeout(r, 0))   // fetch 失败链（→ 回落参数）需要真宏任务
+    await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
     api.setPlaying(false)   // 停掉 rAF 时钟：印记存量只由显式 seek 驱动（确定性断言的前提）
     const readTrail = () => {
