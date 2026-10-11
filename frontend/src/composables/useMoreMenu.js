@@ -1,10 +1,11 @@
-import { computed, getCurrentInstance } from 'vue'
+import { computed, getCurrentInstance, inject } from 'vue'
 import {
   Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 
 /**
  * "更多"的唯一内容源：手机的"更多"页（MorePage）与平板 / 桌面侧边栏底部的"更多"弹出面板（MorePanel）
@@ -20,7 +21,8 @@ export const LANGUAGES = Object.freeze([
 ])
 
 export function useMoreMenu() {
-  const { isAdmin, isHofAdmin, isTournamentAdmin } = useAuth()
+  const onboarding = inject(ONBOARDING_KEY, null)
+  const { isAdmin, isHofAdmin, isTournamentAdmin, authenticated } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
@@ -63,5 +65,6 @@ export function useMoreMenu() {
     !isAndroidApp() && { view: 'android', labelKey: 'android.nav', icon: Download },
   ].filter(Boolean))
 
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks }
+  const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks, openGuide }
 }

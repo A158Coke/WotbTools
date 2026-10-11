@@ -321,6 +321,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 10. 状态与反馈
 
+新手引导通过独立中性遮罩与真实目标聚焦呈现；短卡、焦点范围和当前 fullscreen 宿主由 `OnboardingHost` 所有。它复用语义 token、Dialog 与 reduced-motion，不对工作区整体加滤镜，不克隆真实按钮。详见 [新手引导](../features/onboarding.md)。
+
 **依据：** Nielsen 可用性原则第 1 条"系统状态可见"。任何等待超过 1s 的操作都要有反馈，任何失败都要有提示。
 
 | 场景 | 必须做到 |

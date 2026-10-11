@@ -1059,6 +1059,18 @@ function closeAnnotation() {
   activeTool.value = null
   selectedAnnotationIndex.value = -1
 }
+
+// The workspace's guide requests real actions; drawing and clock state stay here.
+defineExpose({
+  pause,
+  annotationsOpen: () => annotationOpen.value,
+  openAnnotations: () => {
+    if (annotationOpen.value) return false
+    toggleAnnotation()
+    return true
+  },
+  closeAnnotations: closeAnnotation,
+})
 function replaceAnnotations(next) {
   const s = commit(history.value, historyIndex.value, next)
   history.value = s.history
@@ -2243,18 +2255,19 @@ const mapStyle = computed(() => ({
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <div v-if="!uiHidden" class="pb-quick-actions pb-map-quick-actions">
-          <button v-if="phoneLandscape && !annotationOpen" type="button" class="pb-quick-action pb-annotation-entry" data-test="pb-annotation-entry" :aria-pressed="false" @click="toggleAnnotation">
+          <button v-if="phoneLandscape && !annotationOpen" type="button" class="pb-quick-action pb-annotation-entry" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="false" @click="toggleAnnotation">
             <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
           </button>
           <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
             <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
             {{ $t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
           </button>
-          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter()">
+          <button type="button" class="pb-quick-action" data-test="pb-declutter" data-tour="playback-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter()">
             <ScanEye :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.declutter') }}
           </button>
         </div>
         <BattleMap
+          data-tour="playback-map"
           ref="mapComponent"
           :image="image"
           :map-view="mapView"
@@ -2334,7 +2347,7 @@ const mapStyle = computed(() => ({
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
         <div ref="transportEl" class="pb-transport-slot" data-test="pb-transport-slot">
         <div v-if="!phoneLandscape" class="pb-replay-mode-bar">
-          <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
+          <button type="button" class="pb-annotation-entry" :class="{ active: annotationOpen }" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="annotationOpen" @click="toggleAnnotation">
             <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
           </button>
           <span>{{ $t(annotationOpen ? 'recon.map.playback.annot.mode_hint' : 'recon.map.playback.annot.watch_hint') }}</span>

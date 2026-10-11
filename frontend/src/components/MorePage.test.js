@@ -3,10 +3,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
+import { ref } from 'vue'
 import { messages } from '../locales/messages.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import MorePage from './MorePage.vue'
-const menuRole = vi.hoisted(() => ({ tournament: false }))
+const menuRole = vi.hoisted(() => ({ tournament: false, authenticated: null }))
 
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
@@ -15,11 +17,12 @@ vi.mock('../composables/useAuth.js', async () => {
       isAdmin: ref(false),
       isHofAdmin: ref(false),
       isTournamentAdmin: ref(menuRole.tournament),
+      authenticated: menuRole.authenticated,
     }),
   }
 })
 
-function mountPage(navigate = vi.fn()) {
+function mountPage(navigate = vi.fn(), onboarding = null) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -28,7 +31,7 @@ function mountPage(navigate = vi.fn()) {
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
-      provide: { [NAVIGATE_VIEW_KEY]: navigate },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding },
     },
   })
   return { wrapper, i18n }
@@ -38,6 +41,20 @@ describe('MorePage language switcher', () => {
   beforeEach(() => {
     localStorage.clear()
     menuRole.tournament = false
+    menuRole.authenticated = ref(false)
+  })
+  it('shows More guides only while signed in and reacts to login/logout', async () => {
+    const openDirectory = vi.fn()
+    const { wrapper } = mountPage(vi.fn(), { openDirectory })
+    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
+    menuRole.authenticated.value = true
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="more-link-guide"]').trigger('click')
+    expect(openDirectory).toHaveBeenCalledTimes(1)
+    menuRole.authenticated.value = false
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('public tool links navigate directly without initiating login in the menu', async () => {
