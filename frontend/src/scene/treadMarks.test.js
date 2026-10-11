@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState,
-  resetTrailState, resolveTreadParams, trailQuadCorners, TRAIL_LIFT, TRAIL_OVERLAP,
+  resetTrailState, resolveTreadParams, trailQuadCorners, treadAlphaAt,
+  TRAIL_LIFT, TRAIL_OVERLAP, TREAD_FADE,
 } from './treadMarks.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -24,10 +25,10 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
   })
 })
 
-/** 直线路径采样点：从 (x0,z0) 沿单位方向 (dx,dz) 走 step × n 米 */
+/** 直线路径采样点：从 (x0,z0) 沿单位方向 (dx,dz) 走 step × n 米（t = 采样序号） */
 function line(x0, z0, dx, dz, step, n) {
   const pts = []
-  for (let i = 0; i <= n; i++) pts.push({ x: x0 + dx * step * i, z: z0 + dz * step * i })
+  for (let i = 0; i <= n; i++) pts.push({ x: x0 + dx * step * i, z: z0 + dz * step * i, t: i })
   return pts
 }
 
@@ -59,6 +60,7 @@ describe('advanceTrail', () => {
     expect(added).toBe(10)
     expect(st.segs.map((s) => s.x)).toEqual([0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5])
     for (const s of st.segs) { expect(s.dx).toBeCloseTo(1); expect(s.dz).toBeCloseTo(0); expect(s.len).toBe(1.0) }
+    expect(st.segs[0].t).toBe(1)          // 段携带出段时刻（寿命淡出用）
   })
   it('首步只作锚点不出段；累积凑满 space 后出一段', () => {
     const st = createTrailState()
@@ -111,6 +113,20 @@ describe('advanceTrail', () => {
     expect(b.segs).toEqual(a.segs)
     expect(b.total).toBe(a.total)
     expect(b.written).toBe(0)                     // 复位归零消费侧书签
+  })
+})
+
+describe('treadAlphaAt', () => {
+  it('after 前恒 1；after→after+dur 线性降；之后 0', () => {
+    expect(treadAlphaAt(0)).toBe(1)
+    expect(treadAlphaAt(TREAD_FADE.after)).toBe(1)
+    const mid = TREAD_FADE.after + TREAD_FADE.dur / 2
+    expect(treadAlphaAt(mid)).toBeCloseTo(0.5)
+    expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur)).toBe(0)
+    expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur + 100)).toBe(0)
+  })
+  it('负年龄（seek 边界时钟早于出段）按 1 处理（fail-safe 不闪烁）', () => {
+    expect(treadAlphaAt(-5)).toBe(1)
   })
 })
 

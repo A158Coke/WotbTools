@@ -19,6 +19,21 @@
 export const TREAD_FALLBACK = { width: 0.6, space: 1.0 };
 export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
 
+/** 印记寿命（回放时钟）：`after` 秒内全显，随后 `dur` 秒线性淡出到 0（共 90 s 消失）。
+ * 客户端 TreadSystem 有同类的淡出-消失行为（用户对照），但具体时长未逆向——本组常数
+ * 是**产品决定**（上游 feasibility §四 的自定参数项），不是客户端数据。 */
+export const TREAD_FADE = { after: 60, dur: 30 };
+
+/**
+ * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
+ * 输入负数（时钟早于出段时刻，seek 边界）按 1 处理（fail-safe：宁可多显不闪烁）。
+ */
+export function treadAlphaAt(age, fade = TREAD_FADE) {
+  if (!(age > fade.after)) return 1;
+  const a = 1 - (age - fade.after) / fade.dur;
+  return a > 0 ? a : 0;
+}
+
 /**
  * `tread/<tank_id>.json`（或缺省 null）→ 消费参数。
  * 坏数值逐字段回落（不整条拒绝——authored 的一半坏不该抹掉另一半）。
@@ -75,7 +90,8 @@ export function resetTrailState(st) {
  * - 返回本次新增段数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
  *
  * @param {ReturnType<createTrailState>} st 路径累积态（就地变更）
- * @param {Array<{x:number, z:number}>} pts 采样点（世界系；可见性断链由调用方传空/复位处理）
+ * @param {Array<{x:number, z:number, t?:number}>} pts 采样点（世界系 + 回放时刻；
+ *   可见性断链由调用方传空/复位处理；`t` 随出段写入 `seg.t` 供寿命淡出用）
  * @param {number} space 铺段间距（m，authored `manual_space`）
  * @param {number} cap 段缓存上限
  * @returns {number} 新增段数
@@ -98,7 +114,7 @@ export function advanceTrail(st, pts, space, cap) {
     for (let j = Math.floor(st.acc / space) + 1; j * space <= accEnd + 1e-9; j++) {
       const at = j * space - st.acc;          // 本采样步内的里程位置 ∈ (0, d]
       const back = Math.min(space / 2, at);   // 段中心相对步进点的回退（首段钳到步起点）
-      pushSeg(st, { x: p.x - ux * back, z: p.z - uz * back, dx: ux, dz: uz, len: space }, cap);
+      pushSeg(st, { x: p.x - ux * back, z: p.z - uz * back, dx: ux, dz: uz, len: space, t: p.t || 0 }, cap);
       added++;
     }
     st.acc = accEnd;
