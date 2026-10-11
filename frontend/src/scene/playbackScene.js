@@ -57,7 +57,8 @@ import {
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
 import {
   advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
-  trailStampCorners, treadAlphaAt, TREAD_FADE, TREAD_OPACITY,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE, TREAD_OPACITY,
+  TREAD_FALLBACK,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -218,6 +219,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // feasibility §四），**不视为失败**——缓存正结果，避免逐帧重试 404。
   const treadParamCache = new Map();
   const treadTexCache = new Map();   // texture 相对路径 → THREE.Texture（逐会话共享、逐会话释放）
+  let treadMetaPromise = null;       // /tread/textures.json（alpha 归一化系数表；失败 → {} 即全 1）
   let classIcons = false, showMarkerStatus = true;
   const classIconsVisible = () => classIcons && store.labelsOn;
   let mapPlane = null;
@@ -2438,10 +2440,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       v.trail = { L: createTrailState(), R: createTrailState(), builtT: -Infinity };
       v.tread = null; v.treadMesh = null;
       if (Q.treadMarks) {
-        treadParamsFor(def.tank_id).then((tp) => {
+        Promise.all([treadParamsFor(def.tank_id), treadMetaFor()]).then(([tp, meta]) => {
           if (destroyed || !v.trail) return;
-          v.tread = tp;
-          ensureTreadMesh(v, tp);
+          // 宽度解析（客户端语义：forceManualWidth=false ⇒ 从履带几何现算）：
+          // authored → 模型履带盒实测（suspParts.beltW）→ 常量回落
+          const beltW = beltWidthOf(v);
+          v.tread = {
+            ...tp,
+            width: tp.width != null ? tp.width : (beltW > 1e-3 ? beltW : TREAD_FALLBACK.width),
+            texScale: treadScaleFor(meta, tp.texture),
+          };
+          ensureTreadMesh(v, v.tread);
           invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
         });
       }
@@ -2477,6 +2486,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       treadParamCache.set(key, p);
     }
     return p;
+  }
+
+  function treadMetaFor() {
+    if (!treadMetaPromise) {
+      treadMetaPromise = assetProvider.json('/tread/textures.json').catch(() => ({}));
+    }
+    return treadMetaPromise;
+  }
+
+  /** 模型履带条宽（两侧履带盒横向尺寸均值；无 suspension 数据 → 0 ⇒ 调用方回落常量） */
+  function beltWidthOf(v) {
+    const sp = v.suspParts && v.suspParts.sides;
+    if (!sp) return 0;
+    let sum = 0, n = 0;
+    for (const key of ['L', 'R']) {
+      const s = sp[key];
+      if (s && s.beltW > 1e-3) { sum += s.beltW; n++; }
+    }
+    return n ? sum / n : 0;
   }
 
   function ensureTreadMesh(v, tp) {
@@ -2612,7 +2640,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (!seg) continue;
         if (!trailStampCorners(seg, width, h, c12)) continue;
         parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
-        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY;
+        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1);
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
@@ -2662,7 +2690,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       for (let k = lo; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
-        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY;
+        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1);
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {
@@ -2974,7 +3002,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             + ' pairs=' + uvFit.pairs);
         }
         tracks.push({
-          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral,
+          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral, beltW,
           groundDrop: new Float64Array(chain2.length),
           chainZ: new Float64Array(chain2.length),
           appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
@@ -2982,12 +3010,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           dvPerM, uv: 0,
         });
       }
-      // 侧接触线横向偏移：履带中心线 |x| 的均值
-      let sum = 0;
-      for (const tg of tracks) sum += Math.abs(tg.lateral);
+      // 侧接触线横向偏移：履带中心线 |x| 的均值；同时累计履带条宽（beltW 均值）
+      let sum = 0, wsum = 0;
+      for (const tg of tracks) { sum += Math.abs(tg.lateral); wsum += tg.beltW || 0; }
       sides[side] = {
         wheels, tracks, wheelDelta: new Float64Array(wheels.length),
-        halfW: tracks.length ? sum / tracks.length : 0, prev: null,
+        halfW: tracks.length ? sum / tracks.length : 0,
+        beltW: tracks.length ? wsum / tracks.length : 0, prev: null,
       };
     }
     return {

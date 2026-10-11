@@ -68,10 +68,31 @@ export function resolveTreadParams(json) {
   }
   return {
     texture: texPath(json.texture),
-    width: num(json.manual_width, TREAD_FALLBACK.width),
+    // `manual_width: null`（国别回落车）= 未 authored：**保持 null 透出**，调用方按
+    // "客户端 forceManualWidth=false 语义"从模型履带盒实测（最后一跳才是常量回落）。
+    width: json.manual_width == null ? null : num(json.manual_width, TREAD_FALLBACK.width),
     space: num(json.manual_space, TREAD_FALLBACK.space),
-    authored: true,
+    authored: json.fallback !== true,
   };
+}
+
+/** 贴图路径 → stem（`/tread/textures/GB_01_tread.webp` → `GB_01_tread`）。 */
+export function textureStemOf(path) {
+  if (typeof path !== 'string') return '';
+  const name = path.split('/').pop() || '';
+  return name.replace(/\.webp$/i, '');
+}
+
+/**
+ * alpha 归一化系数：`/tread/textures.json` 的 per-stem `scale`（导出器按全库中位数
+ * 归一，消除跨贴图 1.7~4× 的密度差——2026-10-11 用户裁示"统一颜色深浅"）。
+ * 缺失/异常一律 1（fail-open 到原始贴图观感）。
+ */
+export function treadScaleFor(meta, texturePath) {
+  const stem = textureStemOf(texturePath);
+  const v = meta && meta.textures && stem ? meta.textures[stem] : null;
+  const s = v && Number.isFinite(v.scale) && v.scale > 0 ? v.scale : 1;
+  return s;
 }
 
 /** 单侧履带的路径累积态。
