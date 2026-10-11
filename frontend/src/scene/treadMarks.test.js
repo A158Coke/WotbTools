@@ -31,9 +31,11 @@ function line(x0, z0, dx, dz, step, n) {
 }
 
 describe('resolveTreadParams', () => {
-  it('authored json 逐字段透出', () => {
+  it('authored json 逐字段透出，texture 归一化为带前导斜杠的资产路径', () => {
     const p = resolveTreadParams({ texture: 'tread/textures/USSR_01_tread.webp', manual_width: 0.835616, manual_space: 1.0 })
-    expect(p).toEqual({ texture: 'tread/textures/USSR_01_tread.webp', width: 0.835616, space: 1.0, authored: true })
+    expect(p).toEqual({ texture: '/tread/textures/USSR_01_tread.webp', width: 0.835616, space: 1.0, authored: true })
+    // 已带斜杠的形状不双写
+    expect(resolveTreadParams({ texture: '/tread/textures/X.webp' }).texture).toBe('/tread/textures/X.webp')
   })
   it('无数据 → 客户端通用贴图 + 产品回落值', () => {
     expect(resolveTreadParams(null)).toEqual({

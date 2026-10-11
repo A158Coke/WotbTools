@@ -17,19 +17,27 @@
 /** 无 authored 数据车辆的产品回落（上游 feasibility §四：回落本身无客户端依据）：
  * 贴图用客户端通用张 `Tread`（数据面在场），宽度/间距取 311 辆 authored 值的中位量级。 */
 export const TREAD_FALLBACK = { width: 0.6, space: 1.0 };
-export const GENERIC_TREAD_TEXTURE = 'tread/textures/Tread.webp';
+export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
 
 /**
  * `tread/<tank_id>.json`（或缺省 null）→ 消费参数。
  * 坏数值逐字段回落（不整条拒绝——authored 的一半坏不该抹掉另一半）。
+ *
+ * ⚠️ `texture` 归一化成 **带前导斜杠** 的资产路径：json 里存的是包相对路径
+ * （`tread/textures/X.webp`，数据面口径），而 `assetProvider.url()` 是
+ * `requireBase() + path` 的**裸拼接**，所有调用方约定传 `/glb/…` 形的路径——
+ * 丢斜杠会拼出 `http://host:8123tread/…`，Image 立即失败、`tex.image` 永远为空，
+ * 空纹理采样 (0,0,0,0) 在透明混合下**完全隐形**（2026-10-11 测试页实测报障的根因）。
  */
 export function resolveTreadParams(json) {
   const num = (v, fb) => (Number.isFinite(v) && v > 1e-3 ? v : fb);
+  const texPath = (v) =>
+    (typeof v === 'string' && v ? '/' + v.replace(/^\/+/, '') : GENERIC_TREAD_TEXTURE);
   if (!json || typeof json !== 'object') {
     return { texture: GENERIC_TREAD_TEXTURE, width: TREAD_FALLBACK.width, space: TREAD_FALLBACK.space, authored: false };
   }
   return {
-    texture: typeof json.texture === 'string' && json.texture ? json.texture : GENERIC_TREAD_TEXTURE,
+    texture: texPath(json.texture),
     width: num(json.manual_width, TREAD_FALLBACK.width),
     space: num(json.manual_space, TREAD_FALLBACK.space),
     authored: true,
