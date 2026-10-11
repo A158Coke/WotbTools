@@ -12,7 +12,8 @@
  */
 import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useI18n } from 'vue-i18n'
@@ -53,6 +54,12 @@ const props = defineProps({
 })
 
 const { t, locale } = useI18n()
+const onboarding = inject(ONBOARDING_KEY, null)
+onMounted(() => onboarding?.registerSurface('3d', {
+  ready: () => props.active && store.hasData,
+  failed: () => !webgl.supported || !!store.err || (!online.value.pending && !online.value.available),
+}))
+onBeforeUnmount(() => onboarding?.registerSurface('3d', null))
 const { availability, requireFeature } = useFeatureGate()
 const online = computed(() => availability(Feature.PLAYBACK_3D))
 
@@ -592,7 +599,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
                             宽档、平板、手机横屏、手机全屏横屏都是这一条；
            `portrait-flow` = 手机竖屏纵向流：HUD / Stage / 传输控件 / 详情 / Team 1 / Team 2。
          名册关闭时两者都没有车道，横屏场景铺满整个根，竖屏仍为正方形。 -->
-    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root">
+    <div v-else class="pb-root playback-workspace" ref="rootEl" :class="{ 'phone-form': isPhone, 'portrait-flow': portraitFlow, 'roster-side': showRoster && !portraitFlow }" data-testid="replay3d-root" data-tour="replay3d-workspace">
       <!-- 名牌覆盖层与 canvas 共用**同一个画布盒子**：场景内核按 canvas（.scene）尺寸算锚点，
            覆盖层必须与它同原点，否则三段式下名牌会整体偏一条车道宽。 -->
       <div class="pb-stage" data-testid="replay3d-stage">
@@ -696,7 +703,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         >
         </PlaybackTransport>
         <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
-        <div class="tool-row" data-testid="replay3d-toolrow">
+        <div class="tool-row" data-testid="replay3d-toolrow" data-tour="replay3d-camera">
           <span class="dim">{{ t('agentReplay.camera') }}</span>
           <SegmentedControl
             class="camera-control"
@@ -751,7 +758,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
       <!-- 待开播：画质先定型再解析 + 拉资产（内核在 startPlayback 惰性建渲染器、首帧按当前档位） -->
       <div v-if="!uiHidden && file !== startedFile" class="pre-start" data-test="replay3d-pending">
-        <div class="pre-start-card">
+        <div class="pre-start-card" data-tour="replay3d-start">
           <h3>{{ t('agentReplay.title') }}</h3>
           <p class="pre-start-file">{{ t('agentReplay.ready_file', { name: file.name || 'replay' }) }}</p>
           <SegmentedControl

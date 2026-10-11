@@ -65,6 +65,8 @@
 
 ## Features（功能契约）
 
+- [新手引导与官方示例](features/onboarding.md)：真实页面教学、匿名示例、邀请版本与账号完成记录。
+
 | 文档 | 何时读 |
 |---|---|
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |

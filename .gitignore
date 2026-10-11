@@ -3,6 +3,7 @@ common/data/
 *.wotbreplay
 !common/fixtures/replays/*.wotbreplay
 !common/fixtures/leaderboard/*.wotbreplay
+!common/assets/onboarding/*.wotbreplay
 
 # 构建产物
 dist/

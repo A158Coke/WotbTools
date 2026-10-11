@@ -69,7 +69,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     @drag-end="emit('scrub-end')"
     @seek="emit('seek', $event)"
   />
-  <div class="pb-controls" :class="{ 'phone-form': props.compact }" data-test="pb-controls" @pointerdown.stop @click.stop>
+  <div class="pb-controls" :class="{ 'phone-form': props.compact }" data-test="pb-controls" data-tour="playback-transport" @pointerdown.stop @click.stop>
     <button v-if="props.stepSeconds > 0" type="button" class="pb-btn" data-test="pb-back5" :disabled="!timelineUsable" :aria-label="$t('recon.map.playback.back_seconds', { seconds: props.stepSeconds })" @click="emit('step', -props.stepSeconds)">−{{ props.stepSeconds }}</button>
     <button
       type="button"
@@ -108,7 +108,7 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     <button v-if="props.fullscreenSupported" type="button" class="pb-btn pb-fullscreen-btn" data-test="pb-fullscreen" data-testid="playback-fullscreen" :aria-pressed="props.isFullscreen" :aria-label="$t(props.isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')" @click="emit('toggle-fullscreen')">
       <component :is="props.isFullscreen ? Minimize2 : Maximize2" :size="16" aria-hidden="true" />
     </button>
-    <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
+    <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" data-tour="playback-display" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
       <SlidersHorizontal :size="16" aria-hidden="true" />
     </button>
     <span class="pb-time" data-test="pb-time">{{ props.formatClock(elapsed) }} / {{ props.formatClock(total) }}</span>

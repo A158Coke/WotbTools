@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_VIEWS,
   defaultView,
@@ -44,6 +44,14 @@ describe('primary navigation', () => {
   it('only offers Home on the production home host', () => {
     expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
     expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
+  })
+
+  it('keeps Home reachable in the APK for the anonymous homepage tutorial without changing replay startup', () => {
+    vi.stubEnv('MODE', 'android')
+    try {
+      expect(primaryNavItems('appassets.androidplatform.net').map(item => item.id)).toContain('home')
+      expect(defaultView('appassets.androidplatform.net')).toBe('replay')
+    } finally { vi.unstubAllEnvs() }
   })
 
   it('resolves the public league deep link to its own selected section and title', () => {

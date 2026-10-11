@@ -3,7 +3,9 @@
   replay-local/playback），服务器没有 parser。本组件只维护解析生命周期、竞态序号与显式 UI 状态机。
 -->
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { parseLocalPlayback } from '../replay-local/playback/index.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
 import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../types/playback-v2.js'
@@ -23,6 +25,9 @@ const props = defineProps({
 })
 
 const mapOverview = ref<Record<string, any> | null>(null)
+const onboarding = inject(ONBOARDING_KEY, null)
+const playbackView = ref<InstanceType<typeof BattlePlayback> | null>(null)
+let guideOpenedAnnotations = false
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
 /** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
@@ -119,6 +124,34 @@ watch(() => props.seekTo, async (sec) => {
 
 onBeforeUnmount(() => {
   parseSeq++
+  onboarding?.registerSurface('playback', null)
+  onboarding?.registerSurface('annotations', null)
+})
+onMounted(() => {
+  onboarding?.registerSurface('playback', {
+    ready: () => props.active && !!mapPlaybackV2.value && !!playbackView.value,
+    failed: () => ['ERROR', 'UNAVAILABLE'].includes(playbackV2State.value) || !!props.blockedReason,
+    prepare: async () => {
+      playbackView.value?.pause()
+      if (isOfficialDemo(props.file as File)) {
+        mapSeek.value = null
+        await nextTick()
+        mapSeek.value = OFFICIAL_DEMO.cue.playbackSeconds
+      }
+    },
+  })
+  onboarding?.registerSurface('annotations', {
+    ready: () => props.active && playbackView.value?.annotationsOpen() === true,
+    failed: () => ['ERROR', 'UNAVAILABLE'].includes(playbackV2State.value) || !!props.blockedReason,
+    prepare: async () => {
+      guideOpenedAnnotations = playbackView.value?.openAnnotations() === true || guideOpenedAnnotations
+      await nextTick()
+    },
+    cleanup: () => {
+      if (guideOpenedAnnotations) playbackView.value?.closeAnnotations()
+      guideOpenedAnnotations = false
+    },
+  })
 })
 </script>
 
@@ -139,6 +172,7 @@ onBeforeUnmount(() => {
         <template v-if="playbackV2State === 'FULL' || playbackV2State === 'PARTIAL'">
           <p v-if="playbackV2State === 'PARTIAL'" class="pb-capability-note" data-test="pb-capability-partial">{{ $t('recon.playback.partial') }}</p>
           <BattlePlayback
+            ref="playbackView"
             v-if="pbOverview"
             :overview="pbOverview || undefined"
             :playback-v2="mapPlaybackV2 || undefined"

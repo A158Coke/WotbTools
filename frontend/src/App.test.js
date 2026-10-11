@@ -49,6 +49,7 @@ vi.mock('./components/AgentTankopedia.vue', () => agentViewMock('view-agent-tank
 vi.mock('./components/AgentArmorView.vue', () => agentViewMock('view-agent-armor', 'AgentArmorView'))
 
 const authState = vi.hoisted(() => ({
+  epoch: 0,
   authenticated: false,
   authenticatedRef: null,
   authInitState: null,
@@ -70,6 +71,7 @@ vi.mock('./composables/useAuth.js', () => ({
     initPromise: authState.initPromise,
     authenticated: authState.authenticatedRef,
     authInitState: authState.authInitState,
+    authEpoch: () => authState.epoch,
     tokenParsed: { value: null },
     login: authState.login, logout: authState.logout, isAuthenticated: () => authState.authenticated,
     displayName: computed(() => authState.displayName),
@@ -96,6 +98,7 @@ vi.mock('./composables/useBreakpoint.js', async () => {
 })
 
 function setAuthState(state, isAuthenticated = state === 'authenticated', initPromise = Promise.resolve(isAuthenticated)) {
+  authState.epoch += 1
   authState.authInitState.value = state
   authState.authenticated = isAuthenticated
   authState.authenticatedRef.value = isAuthenticated
@@ -106,6 +109,12 @@ function setAuthState(state, isAuthenticated = state === 'authenticated', initPr
 const bootstrapApi = vi.hoisted(() => ({ ensureUserProfile: vi.fn() }))
 vi.mock('./utils/api-user.js', () => ({
   ensureUserProfile: bootstrapApi.ensureUserProfile,
+}))
+
+// Route/bootstrap tests keep the real guide owner, but receipt transport belongs to its own tests.
+vi.mock('./api/onboarding.js', () => ({
+  readOnboardingReceipt: vi.fn(async () => ({ coreEpoch: 1, disposition: 'COMPLETED' })),
+  saveOnboardingReceipt: vi.fn(async receipt => receipt),
 }))
 
 /** 非落地页是异步组件（审计 PF-02）：等动态 import 完成后再断言。 */

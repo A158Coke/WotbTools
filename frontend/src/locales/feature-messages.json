@@ -434,6 +434,235 @@
       "serviceUnavailableTitle": "在线服务暂不可用",
       "serviceUnavailable": "在线服务当前暂不可用，请稍后重试。",
       "retry": "请检查网络连接后重试。"
+    },
+    "onboarding": {
+      "welcomeTitle": "新手教程",
+      "welcomeDescription": "用一份官方示例，试试数据、2D、标记、防遮、3D 和射击分析。直接在这些真实按钮上操作。",
+      "welcomeHint": "全程可跳过。完成或跳过后，只有重大引导更新才会再次邀请。",
+      "replaceWarning": "教程使用官方示例，将替换当前回放。完成或跳过后可以使用自己的回放。",
+      "later": "先跳过",
+      "replaceDemo": "替换为示例",
+      "tryDemo": "体验示例回放",
+      "begin": "开始引导",
+      "directory": "功能指南",
+      "directoryDescription": "选一个功能，在它的真实页面上边看边试。自己的回放沿用各功能的登录要求。",
+      "restart": "重看两分钟入门",
+      "help": "功能指南",
+      "topicSteps": "{count} 个简短步骤",
+      "progress": "{current} / {total}",
+      "skip": "跳过引导",
+      "back": "上一步",
+      "next": "下一步",
+      "finish": "完成引导",
+      "retry": "重试",
+      "loading": "正在准备当前页面。也可以直接进入下一步。",
+      "unavailable": "当前功能暂不可用。可重试，或跳过这一步继续。",
+      "missingTarget": "这个控件还没出现，可能需要先选数据或完成上面的操作。可以重试或继续。",
+      "optionalAction": "可以点高亮控件试一试，也可以直接继续。",
+      "finishedTitle": "接下来，自由探索",
+      "finishedDescription": "示例会留在工作台。随时从“功能指南”重开引导，或选择自己的回放。",
+      "explore": "继续探索",
+      "demo_action": "打开示例回放",
+      "demo_loading": "正在加载示例…",
+      "demo_label": "官方示例 · 匿名可体验 3D / 射击",
+      "demo_failed": "示例加载失败，请重试。",
+      "demo_replace_title": "替换当前回放？",
+      "demo_replace_message": "打开官方示例会替换当前选择的回放。",
+      "demo_replace_confirm": "打开示例",
+      "demo_replace_cancel": "保留当前回放",
+      "topics": {
+        "data": {
+          "title": "数据与导出",
+          "description": "看单局、汇总、Rating，选择列并导出 Excel 或图片。"
+        },
+        "playback": {
+          "title": "2D 回放",
+          "description": "控制时间、速度和地图信息，寻找战局转折。"
+        },
+        "annotations": {
+          "title": "标记与防遮",
+          "description": "画路线、箭头和区域，减少界面对地图的遮挡。"
+        },
+        "3d": {
+          "title": "3D 回放",
+          "description": "选画质，进入场景，切换自由、跟随与俯视相机。"
+        },
+        "shots": {
+          "title": "射击分析与装甲",
+          "description": "逐发看射击细节，把真实命中交给装甲查看器。"
+        },
+        "ai": {
+          "title": "AI 复盘",
+          "description": "登录后主动生成复盘，阅读证据和改进建议。"
+        },
+        "tankopedia": {
+          "title": "坦克百科",
+          "description": "搜索坦克，查参数，再打开装甲查看器。"
+        },
+        "hof": {
+          "title": "名人堂",
+          "description": "筛选榜单、查看记录，登录后提交自己的成绩。"
+        },
+        "tournament": {
+          "title": "赛事积分",
+          "description": "选赛事，看公开排名，导出积分表。"
+        },
+        "settings": {
+          "title": "显示、语言与账号",
+          "description": "切换主题和语言，管理自己的账号资料。"
+        }
+      },
+      "steps": {
+        "demo": {
+          "title": "从一份示例开始",
+          "description": "当前使用已打开的官方示例回放。教程阶段仅查看这份示例，无需登录。点高亮按钮或“下一步”，了解战局数据；完成或跳过后可以使用自己的回放。"
+        },
+        "data": {
+          "title": "单局与汇总都在这里",
+          "description": "切换单局或汇总，查看伤害、Rating 和队伍表现。上方切换功能，文件会继续共用。"
+        },
+        "playback": {
+          "title": "让战局动起来",
+          "description": "点播放，调整速度，或暂停在关键时刻。地图上的坦克与战斗信息会跟着同一条时间线更新。"
+        },
+        "annotationEntry": {
+          "title": "打开标记工具",
+          "description": "点画笔按钮展开工具栏。可以为路线、交火方向和关键区域添加标记。"
+        },
+        "annotationTools": {
+          "title": "选工具，在地图上画",
+          "description": "选画笔、箭头或区域，再在地图上操作。颜色、撤销和清空也在这里；标记不会改动原回放。"
+        },
+        "declutter": {
+          "title": "把地图让出来",
+          "description": "点防遮切换，减少战斗信息对画面的遮挡。需要看细节时再切回来，播放状态不受影响。"
+        },
+        "replay3dStart": {
+          "title": "自己选择画质，再开始",
+          "description": "选择适合设备的画质，然后点开始。3D 需要联网和设备支持；示例无需登录，自己的回放需要登录。"
+        },
+        "replay3dCamera": {
+          "title": "换个视角看这场战斗",
+          "description": "在相机选项中切换自由、跟随和俯视。拖动场景调整视角，再用播放控件回到同一个关键时刻。"
+        },
+        "shots": {
+          "title": "从真实的一发开始",
+          "description": "点高亮的射击记录打开细节。这里按回放记录逐发查看，不需要凭印象猜测。"
+        },
+        "shotViewer": {
+          "title": "把这一发打开到装甲查看器",
+          "description": "点查看器入口，带着这一发的坦克、炮弹和命中信息打开场景。需要时按原入口返回射击分析。"
+        },
+        "armor": {
+          "title": "观察命中与入射角",
+          "description": "拖动查看命中位置与角度，结合装甲和炮弹信息理解这一发。装甲查看器也能从坦克百科打开。"
+        },
+        "columns": {
+          "title": "只显示需要的列",
+          "description": "打开列选择，勾选要比较的数据。表格会按选择更新，长表也更容易读。"
+        },
+        "export": {
+          "title": "导出当前结果",
+          "description": "打开导出菜单，选择汇总 Excel、每局 Excel 或图片。引导不会替你开始下载。"
+        },
+        "timeline": {
+          "title": "直接跳到关键时刻",
+          "description": "拖动或点击时间线定位。暂停后可以慢慢读地图和车辆信息，再继续播放。"
+        },
+        "display": {
+          "title": "按需要调整显示",
+          "description": "打开显示选项，选择画面上要保留的信息。设置只影响显示，不改变回放里的事实。"
+        },
+        "drawing": {
+          "title": "路线与标记可以修改",
+          "description": "选中已有标记可修改它；用撤销、重做或清空整理画面。切局或刷新会清空这些临时标记。"
+        },
+        "camera": {
+          "title": "跟随与自由视角各有所长",
+          "description": "跟随适合观察一辆车，自由视角适合看交火关系，俯视适合看整体位置。按当前关注点切换。"
+        },
+        "aiFiles": {
+          "title": "先选择要复盘的回放",
+          "description": "AI 复盘需要登录和联网。选择自己的回放，确认当前战局；官方示例只匿名解锁 3D 和射击体验。"
+        },
+        "aiStart": {
+          "title": "由你决定何时生成",
+          "description": "确认选项后点开始复盘才会发起请求。引导不会自动生成报告或替你提交。"
+        },
+        "aiReport": {
+          "title": "把建议与证据对照着看",
+          "description": "生成完成后在报告里阅读关键判断与建议，再回到回放核对时刻。还没有报告时可以跳过这一步。"
+        },
+        "tankFilters": {
+          "title": "先找到一辆坦克",
+          "description": "输入名称搜索，也可按等级、国家和类型筛选。列表会显示符合条件的坦克。"
+        },
+        "tankDetail": {
+          "title": "打开坦克详情",
+          "description": "点列表中的坦克卡片，查看性能与配置。选好坦克后，下一步会指出装甲查看器入口。"
+        },
+        "tankArmor": {
+          "title": "进入装甲查看器",
+          "description": "点打开 3D，检查装甲、炮弹与角度。这个查看器匿名也可用；当前需要先打开一辆坦克的详情。"
+        },
+        "hofFilters": {
+          "title": "让榜单回答你的问题",
+          "description": "选择坦克、玩家或战斗类型等筛选条件，查看对应的公开记录。需要联网。"
+        },
+        "hofRecords": {
+          "title": "比较公开记录",
+          "description": "这里查看榜单成绩。单场榜可点车型继续筛选，有回放附件的记录可自行下载；百场和三环按各自指标排名。"
+        },
+        "hofSubmit": {
+          "title": "提交你自己的成绩",
+          "description": "登录后从这里提交。单场用回放，百场和三环还需要截图；弹窗会说明材料与审核规则，引导不会代替你提交。"
+        },
+        "tournamentEvent": {
+          "title": "选择一项公开赛事",
+          "description": "用赛事选择器切换到想看的比赛。没有公开赛事或离线时，可以先跳过。"
+        },
+        "tournamentStandings": {
+          "title": "查看队伍排名与积分",
+          "description": "表格呈现选中赛事的公开积分，展开已有详情核对成绩。赛事数据由其管理人员维护。"
+        },
+        "tournamentExport": {
+          "title": "导出赛事积分表",
+          "description": "打开导出菜单，按需要保存当前积分表。先选择有积分数据的赛事；引导不会自动下载。"
+        },
+        "settingsTheme": {
+          "title": "选择舒服的界面",
+          "description": "在沉浸、简约和跟随系统之间切换。所有主题使用同一套功能和数据。"
+        },
+        "settingsLanguage": {
+          "title": "随时切换语言",
+          "description": "选择中文、English 或 Русский。页面和引导文案会一起切换，选择会保存在本机。"
+        },
+        "settingsAccount": {
+          "title": "账号资料在这里管理",
+          "description": "登录后查看和管理个人资料。引导的完成与跳过记录也会同步到当前账号。"
+        },
+        "hofBoards": {
+          "title": "选择一个榜单",
+          "description": "切换单场、百场或三环榜。每种榜单的指标与提交材料不同；下一步再选筛选条件。"
+        }
+      },
+      "availableHint": "新版功能指南已就绪",
+      "viewGuide": "查看",
+      "resume": "继续上次引导",
+      "ownReplay": "使用自己的回放",
+      "newbie": "新手教程",
+      "newbieHint": "无需登录，可跳过。",
+      "anonymousHint": "可随时跳过。想重看时，回首页点“新手教程”。",
+      "anonymousFinished": "示例会留在工作台。使用自己的回放，或回首页重开新手教程。",
+      "exitFullscreenNext": "退出全屏并继续",
+      "exitFullscreenFailed": "退出全屏失败，可以重试或跳过引导。",
+      "exitFullscreenBack": "退出全屏并返回",
+      "mainGuide": "主线 · 两分钟入门",
+      "sideGuide": "支线 · 按需探索",
+      "stageProgress": "操作 {current}/{total}",
+      "mainFinishedTitle": "主线完成，继续探索",
+      "followUpDescription": "入门已经完成。下面的支线可以按需查看，也可以直接关闭。",
+      "aiLoginRequired": "AI 示例复盘也需要登录"
     }
   },
   "en": {
@@ -871,6 +1100,235 @@
       "serviceUnavailableTitle": "Online service unavailable",
       "serviceUnavailable": "The online service is temporarily unavailable. Please try again later.",
       "retry": "Check your connection and try again."
+    },
+    "onboarding": {
+      "welcomeTitle": "Getting started",
+      "welcomeDescription": "Try data, 2D, annotations, declutter, 3D and shot analysis with an official sample. You will use the real controls.",
+      "welcomeHint": "Skip at any time. Once finished or skipped, only a major guide update will invite you again.",
+      "replaceWarning": "This guide uses the official sample, replacing your current replay. You can use your own replay after finishing or skipping.",
+      "later": "Skip for now",
+      "replaceDemo": "Replace with sample",
+      "tryDemo": "Try sample replay",
+      "begin": "Start guide",
+      "directory": "Feature guides",
+      "directoryDescription": "Choose a feature and try it on its real page. Your own replays keep each feature’s sign-in requirements.",
+      "restart": "Restart the quick introduction",
+      "help": "Feature guides",
+      "topicSteps": "{count} short steps",
+      "progress": "{current} / {total}",
+      "skip": "Skip guide",
+      "back": "Back",
+      "next": "Next",
+      "finish": "Finish guide",
+      "retry": "Retry",
+      "loading": "Preparing this page. You can also continue to the next step.",
+      "unavailable": "This feature is unavailable right now. Retry or skip this step.",
+      "missingTarget": "This control has not appeared yet. Select data or try the action described above, then retry or continue.",
+      "optionalAction": "Try the highlighted control, or continue when you are ready.",
+      "finishedTitle": "Keep exploring",
+      "finishedDescription": "The sample stays in your workspace. Reopen a guide from Feature guides or select your own replay.",
+      "explore": "Explore",
+      "demo_action": "Open sample replay",
+      "demo_loading": "Loading sample…",
+      "demo_label": "Official sample · Try 3D / shots without sign-in",
+      "demo_failed": "The sample could not be loaded. Please retry.",
+      "demo_replace_title": "Replace the current replay?",
+      "demo_replace_message": "Opening the official sample replaces your selected replays.",
+      "demo_replace_confirm": "Open sample",
+      "demo_replace_cancel": "Keep current replay",
+      "topics": {
+        "data": {
+          "title": "Data and export",
+          "description": "Inspect battles, summaries and Rating; choose columns and export Excel or an image."
+        },
+        "playback": {
+          "title": "2D playback",
+          "description": "Control time, speed and map information to find turning points."
+        },
+        "annotations": {
+          "title": "Annotations and declutter",
+          "description": "Draw routes, arrows and areas, and reduce interface clutter."
+        },
+        "3d": {
+          "title": "3D playback",
+          "description": "Choose quality, enter the scene and switch between free, follow and top cameras."
+        },
+        "shots": {
+          "title": "Shots and armor",
+          "description": "Inspect individual shots and open their impacts in the armor viewer."
+        },
+        "ai": {
+          "title": "AI Review",
+          "description": "Sign in to request a review, then read the evidence and improvement tips."
+        },
+        "tankopedia": {
+          "title": "Tankopedia",
+          "description": "Find a tank, inspect its stats and open the armor viewer."
+        },
+        "hof": {
+          "title": "Hall of Fame",
+          "description": "Filter leaderboards, inspect records and sign in to submit your own."
+        },
+        "tournament": {
+          "title": "Tournament points",
+          "description": "Choose an event, view public standings and export the points table."
+        },
+        "settings": {
+          "title": "Display, language and account",
+          "description": "Switch themes and language, and manage your account."
+        }
+      },
+      "steps": {
+        "demo": {
+          "title": "Start with a sample",
+          "description": "The official sample is already open. During this guide, you use only this sample, with no sign-in required. Click the highlighted button or Next to explore battle data. After finishing or skipping, you can use your own replay."
+        },
+        "data": {
+          "title": "Battles and summaries",
+          "description": "Switch between a battle and its summary to inspect damage, Rating and team performance. Other tools share the same files."
+        },
+        "playback": {
+          "title": "Play the battle",
+          "description": "Press Play, adjust speed or pause at a key moment. Tanks and battle information follow the same timeline."
+        },
+        "annotationEntry": {
+          "title": "Open annotation tools",
+          "description": "Press the pencil to open the toolbar. Mark routes, firing directions and important areas."
+        },
+        "annotationTools": {
+          "title": "Choose a tool and draw",
+          "description": "Choose a pen, arrow or shape, then draw on the map. Color, undo and clear are here too; the replay file stays intact."
+        },
+        "declutter": {
+          "title": "Give the map more room",
+          "description": "Toggle declutter to reduce information covering the scene. Toggle it back for details; playback keeps its state."
+        },
+        "replay3dStart": {
+          "title": "Choose quality, then start",
+          "description": "Choose quality for your device and press Start. 3D needs a connection and device support. The sample needs no sign-in; your own replay does."
+        },
+        "replay3dCamera": {
+          "title": "See the battle from another angle",
+          "description": "Switch between free, follow and top cameras. Drag the scene to adjust the view, then use playback controls to revisit a moment."
+        },
+        "shots": {
+          "title": "Start with a recorded shot",
+          "description": "Select the highlighted shot to open its details. Each row comes from the replay’s shot records."
+        },
+        "shotViewer": {
+          "title": "Open this shot in the armor viewer",
+          "description": "Use the viewer button to open the scene with this shot’s tanks, shell and impact data. Return to shot analysis when you are ready."
+        },
+        "armor": {
+          "title": "Inspect the impact and angle",
+          "description": "Drag to inspect the impact position and angle alongside armor and shell information. Tankopedia also opens this viewer."
+        },
+        "columns": {
+          "title": "Show the columns you need",
+          "description": "Open the column selector and choose what to compare. The table updates to your selection."
+        },
+        "export": {
+          "title": "Export your results",
+          "description": "Open the export menu for summary Excel, per-battle Excel or an image. Choose an option when you want the download."
+        },
+        "timeline": {
+          "title": "Jump to a key moment",
+          "description": "Drag or click the timeline to seek. Pause to inspect the map and vehicle details, then resume."
+        },
+        "display": {
+          "title": "Adjust what is displayed",
+          "description": "Open Display to choose the information shown in the scene. These settings affect presentation only."
+        },
+        "drawing": {
+          "title": "Edit routes and annotations",
+          "description": "Select an annotation to edit it. Undo, redo or clear to tidy the map. Switching battles or refreshing clears these temporary marks."
+        },
+        "camera": {
+          "title": "Choose the camera for your question",
+          "description": "Follow focuses on one tank, Free reveals firing relationships, and Top shows overall positions. Switch as needed."
+        },
+        "aiFiles": {
+          "title": "Choose a replay for review",
+          "description": "AI Review needs sign-in and a connection. Select your replay and confirm the battle. The sample’s anonymous access covers 3D and shots."
+        },
+        "aiStart": {
+          "title": "Request the review when ready",
+          "description": "Confirm the options and press Start Review to send a request. The guide never submits a review automatically."
+        },
+        "aiReport": {
+          "title": "Compare advice with the evidence",
+          "description": "Read the completed report, then revisit the moments in the replay. Skip this step if you have not generated a report."
+        },
+        "tankFilters": {
+          "title": "Find a tank",
+          "description": "Search by name or filter by tier, nation and type. The list shows matching tanks."
+        },
+        "tankDetail": {
+          "title": "Open tank details",
+          "description": "Choose a tank card to inspect stats and configurations. The next step highlights its armor viewer button."
+        },
+        "tankArmor": {
+          "title": "Open the armor viewer",
+          "description": "Press Open 3D to inspect armor, shells and angles. No sign-in is needed; open a tank’s details first."
+        },
+        "hofFilters": {
+          "title": "Make the board answer your question",
+          "description": "Filter by tank, player or battle type to find matching public records. An internet connection is required."
+        },
+        "hofRecords": {
+          "title": "Compare public records",
+          "description": "Read the standings here. On the single-battle board, click a tank to filter or download an available replay; Hundred and Mark 3 use their own ranking metrics."
+        },
+        "hofSubmit": {
+          "title": "Submit your own result",
+          "description": "Sign in to submit here. Single battles use a replay; Hundred and Mark 3 also need screenshots. The dialog explains evidence and review rules. The guide never submits for you."
+        },
+        "tournamentEvent": {
+          "title": "Choose a public event",
+          "description": "Use the event selector to choose a tournament. Skip this step if there are no public events or you are offline."
+        },
+        "tournamentStandings": {
+          "title": "Read standings and points",
+          "description": "The table shows public points for the selected event. Inspect available details to check results; event administrators maintain the data."
+        },
+        "tournamentExport": {
+          "title": "Export the points table",
+          "description": "Open Export to save the current standings. Select an event with data first; the guide does not download automatically."
+        },
+        "settingsTheme": {
+          "title": "Choose your interface",
+          "description": "Switch between Showcase, Classic and System. Every theme uses the same tools and data."
+        },
+        "settingsLanguage": {
+          "title": "Switch language at any time",
+          "description": "Choose 中文, English or Русский. Pages and guides change together; your choice is saved on this device."
+        },
+        "settingsAccount": {
+          "title": "Manage your account here",
+          "description": "Sign in to view and manage your profile. Guide completion and skip status sync to your current account."
+        },
+        "hofBoards": {
+          "title": "Choose a leaderboard",
+          "description": "Switch between single-battle, Hundred and Mark 3 boards. Each has different metrics and evidence requirements; filters come next."
+        }
+      },
+      "availableHint": "New feature guides are ready",
+      "viewGuide": "View",
+      "resume": "Continue guide",
+      "ownReplay": "Use my own replay",
+      "newbie": "Getting started",
+      "newbieHint": "No sign-in needed. Skip at any time.",
+      "anonymousHint": "Skip at any time. Reopen Getting started from Home.",
+      "anonymousFinished": "The sample stays in your workspace. Select your own replay or reopen Getting started from Home.",
+      "exitFullscreenNext": "Exit fullscreen & continue",
+      "exitFullscreenFailed": "Could not exit fullscreen. Retry or skip the guide.",
+      "exitFullscreenBack": "Exit fullscreen & back",
+      "mainGuide": "Core · Quick start",
+      "sideGuide": "Optional · Explore more",
+      "stageProgress": "Action {current}/{total}",
+      "mainFinishedTitle": "Quick start complete",
+      "followUpDescription": "You have finished the basics. Pick an optional guide or close this window.",
+      "aiLoginRequired": "AI sample reviews also require sign-in"
     }
   },
   "ru": {
@@ -1308,6 +1766,235 @@
       "serviceUnavailableTitle": "Онлайн-сервис недоступен",
       "serviceUnavailable": "Онлайн-сервис временно недоступен. Повторите попытку позже.",
       "retry": "Проверьте подключение и повторите попытку."
+    },
+    "onboarding": {
+      "welcomeTitle": "Первое знакомство",
+      "welcomeDescription": "Попробуйте данные, 2D, отметки, скрытие интерфейса, 3D и анализ выстрелов на официальном примере. Вы используете настоящие кнопки.",
+      "welcomeHint": "Можно пропустить в любой момент. После завершения или пропуска приглашение появится только при крупном обновлении руководства.",
+      "replaceWarning": "Руководство использует официальный пример вместо текущего реплея. После завершения или пропуска можно открыть свой реплей.",
+      "later": "Пропустить",
+      "replaceDemo": "Заменить примером",
+      "tryDemo": "Попробовать пример",
+      "begin": "Начать",
+      "directory": "Руководства по функциям",
+      "directoryDescription": "Выберите функцию и попробуйте её на настоящей странице. Для своих реплеев действуют обычные требования входа.",
+      "restart": "Повторить краткое знакомство",
+      "help": "Руководства",
+      "topicSteps": "{count} коротких шага",
+      "progress": "{current} / {total}",
+      "skip": "Пропустить руководство",
+      "back": "Назад",
+      "next": "Далее",
+      "finish": "Завершить",
+      "retry": "Повторить",
+      "loading": "Страница готовится. Можно перейти к следующему шагу.",
+      "unavailable": "Функция сейчас недоступна. Повторите попытку или пропустите шаг.",
+      "missingTarget": "Этот элемент ещё не появился. Выберите данные или выполните описанное действие, затем повторите попытку или продолжите.",
+      "optionalAction": "Попробуйте выделенную кнопку или просто продолжите.",
+      "finishedTitle": "Продолжайте исследовать",
+      "finishedDescription": "Пример останется в рабочей области. Откройте руководство снова или выберите свой реплей.",
+      "explore": "Продолжить",
+      "demo_action": "Открыть пример реплея",
+      "demo_loading": "Загрузка примера…",
+      "demo_label": "Официальный пример · 3D и выстрелы без входа",
+      "demo_failed": "Не удалось загрузить пример. Повторите попытку.",
+      "demo_replace_title": "Заменить выбранный реплей?",
+      "demo_replace_message": "Официальный пример заменит выбранные реплеи.",
+      "demo_replace_confirm": "Открыть пример",
+      "demo_replace_cancel": "Оставить выбранный",
+      "topics": {
+        "data": {
+          "title": "Данные и экспорт",
+          "description": "Смотрите бои, сводку и Rating; выбирайте столбцы и экспортируйте Excel или изображение."
+        },
+        "playback": {
+          "title": "2D-реплей",
+          "description": "Управляйте временем, скоростью и сведениями на карте, чтобы найти поворотные моменты."
+        },
+        "annotations": {
+          "title": "Отметки и скрытие интерфейса",
+          "description": "Рисуйте маршруты, стрелки и области, убирайте лишние элементы."
+        },
+        "3d": {
+          "title": "3D-реплей",
+          "description": "Выберите качество, запустите сцену и переключайте свободную камеру, слежение и вид сверху."
+        },
+        "shots": {
+          "title": "Выстрелы и броня",
+          "description": "Изучайте каждый выстрел и открывайте попадания в просмотрщике брони."
+        },
+        "ai": {
+          "title": "AI-разбор",
+          "description": "Войдите и запросите разбор, затем изучите факты и рекомендации."
+        },
+        "tankopedia": {
+          "title": "Танкопедия",
+          "description": "Найдите танк, изучите характеристики и откройте просмотрщик брони."
+        },
+        "hof": {
+          "title": "Зал славы",
+          "description": "Фильтруйте таблицы, смотрите рекорды и войдите, чтобы отправить свои результаты."
+        },
+        "tournament": {
+          "title": "Очки турнира",
+          "description": "Выберите турнир, смотрите публичный рейтинг и экспортируйте таблицу очков."
+        },
+        "settings": {
+          "title": "Интерфейс, язык и аккаунт",
+          "description": "Выберите тему и язык, управляйте своим аккаунтом."
+        }
+      },
+      "steps": {
+        "demo": {
+          "title": "Начните с примера",
+          "description": "Официальный пример уже открыт. В этом руководстве используется только он, без входа в аккаунт. Нажмите выделенную кнопку или «Далее», чтобы изучить данные боя. После завершения или пропуска можно открыть свой реплей."
+        },
+        "data": {
+          "title": "Бои и сводка",
+          "description": "Переключайте отдельный бой и сводку, смотрите урон, Rating и результаты команды. Все инструменты используют те же файлы."
+        },
+        "playback": {
+          "title": "Запустите бой",
+          "description": "Нажмите воспроизведение, измените скорость или остановитесь на важном моменте. Танки и сведения о бое следуют общей шкале времени."
+        },
+        "annotationEntry": {
+          "title": "Откройте инструменты отметок",
+          "description": "Нажмите карандаш. Отмечайте маршруты, направления огня и важные области."
+        },
+        "annotationTools": {
+          "title": "Выберите инструмент и рисуйте",
+          "description": "Выберите перо, стрелку или фигуру и рисуйте на карте. Здесь же цвет, отмена и очистка; файл реплея не меняется."
+        },
+        "declutter": {
+          "title": "Освободите карту",
+          "description": "Включите скрытие лишних элементов. Верните их, когда понадобятся подробности; состояние воспроизведения сохранится."
+        },
+        "replay3dStart": {
+          "title": "Выберите качество и начните",
+          "description": "Выберите качество для своего устройства и нажмите старт. Нужны сеть и поддержка устройства. Для примера вход не нужен; для своего реплея нужен."
+        },
+        "replay3dCamera": {
+          "title": "Посмотрите с другого ракурса",
+          "description": "Переключайте свободную камеру, слежение и вид сверху. Перетаскивайте сцену и возвращайтесь к нужному моменту кнопками воспроизведения."
+        },
+        "shots": {
+          "title": "Начните с записанного выстрела",
+          "description": "Выберите выделенный выстрел, чтобы открыть подробности. Каждая строка основана на записи реплея."
+        },
+        "shotViewer": {
+          "title": "Откройте выстрел в просмотрщике брони",
+          "description": "Кнопка открывает сцену с танками, снарядом и попаданием этого выстрела. Затем можно вернуться к анализу."
+        },
+        "armor": {
+          "title": "Изучите попадание и угол",
+          "description": "Перетаскивайте сцену, изучайте место и угол попадания вместе с бронёй и снарядом. Просмотрщик доступен и из Танкопедии."
+        },
+        "columns": {
+          "title": "Оставьте нужные столбцы",
+          "description": "Откройте выбор столбцов и отметьте нужные показатели. Таблица обновится по вашему выбору."
+        },
+        "export": {
+          "title": "Экспортируйте результаты",
+          "description": "Откройте меню для сводного Excel, Excel по боям или изображения. Загрузка начнётся только после вашего выбора."
+        },
+        "timeline": {
+          "title": "Перейдите к важному моменту",
+          "description": "Перетащите или нажмите шкалу времени. На паузе изучите карту и сведения о технике, затем продолжите."
+        },
+        "display": {
+          "title": "Настройте отображение",
+          "description": "Откройте параметры отображения и выберите нужные сведения. Это меняет только интерфейс."
+        },
+        "drawing": {
+          "title": "Редактируйте маршруты и отметки",
+          "description": "Выберите отметку для изменения. Используйте отмену, повтор и очистку. Смена боя или обновление страницы удаляет временные отметки."
+        },
+        "camera": {
+          "title": "Выберите камеру под задачу",
+          "description": "Слежение показывает один танк, свободная камера — взаимодействие, вид сверху — общую расстановку. Переключайтесь по необходимости."
+        },
+        "aiFiles": {
+          "title": "Выберите реплей для разбора",
+          "description": "AI-разбор требует входа и сети. Выберите свой реплей и бой. Анонимный доступ к примеру включает только 3D и выстрелы."
+        },
+        "aiStart": {
+          "title": "Запросите разбор, когда готовы",
+          "description": "Проверьте параметры и нажмите начало разбора. Руководство не отправляет запрос автоматически."
+        },
+        "aiReport": {
+          "title": "Сверяйте советы с фактами",
+          "description": "Читайте готовый отчёт и возвращайтесь к моментам в реплее. Если отчёта пока нет, пропустите этот шаг."
+        },
+        "tankFilters": {
+          "title": "Найдите танк",
+          "description": "Ищите по названию или фильтруйте по уровню, стране и типу. Список покажет подходящую технику."
+        },
+        "tankDetail": {
+          "title": "Откройте сведения о танке",
+          "description": "Выберите карточку, чтобы посмотреть характеристики и комплектации. Следующий шаг покажет вход в просмотрщик брони."
+        },
+        "tankArmor": {
+          "title": "Откройте просмотрщик брони",
+          "description": "Нажмите открыть 3D и изучайте броню, снаряды и углы. Вход не нужен; сначала откройте сведения о танке."
+        },
+        "hofFilters": {
+          "title": "Найдите нужные результаты",
+          "description": "Выберите фильтры по танку, игроку или типу боя, чтобы найти публичные записи. Требуется интернет."
+        },
+        "hofRecords": {
+          "title": "Сравните публичные результаты",
+          "description": "Здесь показаны места и результаты. В рейтинге отдельных боёв нажмите на танк для фильтрации или скачайте доступный реплей; остальные рейтинги используют свои показатели."
+        },
+        "hofSubmit": {
+          "title": "Отправьте свой результат",
+          "description": "Для подачи войдите в аккаунт. Для одного боя нужен реплей, для сотни и трёх отметок — также скриншоты. Окно объяснит материалы и проверку; обучение ничего не отправляет за вас."
+        },
+        "tournamentEvent": {
+          "title": "Выберите публичный турнир",
+          "description": "Выберите соревнование в списке. Если открытых турниров нет или вы офлайн, пропустите шаг."
+        },
+        "tournamentStandings": {
+          "title": "Смотрите места и очки",
+          "description": "Таблица показывает публичные очки выбранного турнира. Изучайте доступные подробности; данные ведут организаторы."
+        },
+        "tournamentExport": {
+          "title": "Экспортируйте таблицу очков",
+          "description": "Откройте экспорт для сохранения текущих результатов. Сначала выберите турнир с данными; автоматической загрузки не будет."
+        },
+        "settingsTheme": {
+          "title": "Выберите оформление",
+          "description": "Переключайте насыщенную, простую и системную тему. Функции и данные во всех темах одинаковы."
+        },
+        "settingsLanguage": {
+          "title": "Меняйте язык в любой момент",
+          "description": "Выберите 中文, English или Русский. Страницы и руководство переключатся вместе; выбор сохранится на устройстве."
+        },
+        "settingsAccount": {
+          "title": "Управляйте своим аккаунтом",
+          "description": "Войдите, чтобы смотреть и изменять профиль. Завершение или пропуск руководства синхронизируется с текущим аккаунтом."
+        },
+        "hofBoards": {
+          "title": "Выберите рейтинг",
+          "description": "Переключайтесь между отдельными боями, сотней боёв и тремя отметками. Показатели и материалы для подачи отличаются; далее выберите фильтры."
+        }
+      },
+      "availableHint": "Доступны новые руководства",
+      "viewGuide": "Открыть",
+      "resume": "Продолжить руководство",
+      "ownReplay": "Открыть свой реплей",
+      "newbie": "Первое знакомство",
+      "newbieHint": "Без входа. Можно пропустить.",
+      "anonymousHint": "Можно пропустить в любой момент. Откройте «Первое знакомство» снова на главной странице.",
+      "anonymousFinished": "Пример останется в рабочей области. Выберите свой реплей или откройте «Первое знакомство» на главной странице.",
+      "exitFullscreenNext": "Выйти и продолжить",
+      "exitFullscreenFailed": "Не удалось выйти из полноэкранного режима. Повторите попытку или пропустите руководство.",
+      "exitFullscreenBack": "Выйти и вернуться",
+      "mainGuide": "Основное · Быстрый старт",
+      "sideGuide": "Дополнительно · Другие функции",
+      "stageProgress": "Действие {current}/{total}",
+      "mainFinishedTitle": "Быстрый старт завершён",
+      "followUpDescription": "Основное руководство завершено. Выберите дополнительную тему или закройте окно.",
+      "aiLoginRequired": "Для ИИ-разбора примера тоже нужен вход"
     }
   }
 }
