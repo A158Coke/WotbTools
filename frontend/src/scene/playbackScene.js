@@ -539,6 +539,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const text = formatPickReport(rep);
       console.log(text);
       try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
+      try { window.__pbPickMesh = hit ? hit.object : null; } catch (_) {}   // 诊断：命中网格本体（控制台实时改材质用）
       showPickPanel(text);
       if (hit) movePickMarker(hit.point);
     } catch (err) {
