@@ -615,6 +615,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           overBudget: build ? build.overBudget : null,
         };
       } catch (_) { terrain = null; }
+      // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
+      // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
+      let render = null;
+      try {
+        const o = hit.object;
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        const worldPos = new THREE.Vector3();
+        o.getWorldPosition(worldPos);
+        let instScale = null;
+        if (o.isInstancedMesh && hit.instanceId != null) {
+          const im = new THREE.Matrix4();
+          o.getMatrixAt(hit.instanceId, im);
+          instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
+        }
+        render = {
+          type: o.type,
+          name: o.name || null,
+          matName: mats.map((x) => x.name || '?').join('|') || null,
+          matType: mats.map((x) => x.type).join('|') || null,
+          matVisible: mats.map((x) => x.visible).join(',') || null,
+          transparent: mats.map((x) => x.transparent).join(',') || null,
+          opacity: mats.map((x) => Number(x.opacity != null ? x.opacity : 1)).join(',') || null,
+          alphaTest: mats.map((x) => x.alphaTest || 0).join(',') || null,
+          depthWrite: mats.map((x) => x.depthWrite).join(',') || null,
+          objVisible: o.visible,
+          frustumCulled: o.frustumCulled,
+          instanceId: hit.instanceId != null ? hit.instanceId : null,
+          instScale,
+          world: [worldPos.x, worldPos.y, worldPos.z].map((v) => Number(v.toFixed(1))),
+          sphere: o.geometry && o.geometry.boundingSphere ? {
+            c: [o.geometry.boundingSphere.center.x, o.geometry.boundingSphere.center.y,
+              o.geometry.boundingSphere.center.z].map((v) => Number(v.toFixed(1))),
+            r: Number(o.geometry.boundingSphere.radius.toFixed(1)),
+          } : null,
+        };
+      } catch (_) { render = null; }
     }
     return {
       clock: T,
@@ -628,6 +664,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       serverIdKnown: !!(inst && inst.serverId),
       vis: st ? stateVisualLabel(st) : null,
       terrain,
+      render,
     };
   }
   function showPickPanel(text) {

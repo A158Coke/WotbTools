@@ -159,5 +159,18 @@ export function formatPickReport(r) {
       + ` size=${t.sizeAt ?? '?'} morph=${t.morph != null ? t.morph.toFixed(2) : '?'}`
       + ` quads=${t.quads ?? '?'} overB=${t.overBudget ?? '?'}`)
   }
+  // 渲染身份（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
+  // 射线拾取只查对象可见链 ⇒ "可拾取但不可见"的差异在材质/实例矩阵/剔除里现形。
+  if (r.render) {
+    const d = r.render
+    L.push(`  render: ${d.type}(${d.name ?? '?'}) mat=${d.matName ?? '?'}[${d.matType}]`
+      + ` matVisible=${d.matVisible} transparent=${d.transparent} opacity=${d.opacity}`
+      + ` alphaTest=${d.alphaTest} depthWrite=${d.depthWrite}`)
+    L.push(`    obj.visible=${d.objVisible} frustumCulled=${d.frustumCulled}`
+      + ` instanceId=${d.instanceId ?? '-'}`
+      + ` instScale=${d.instScale ? '[' + d.instScale.map((v) => v.toFixed(2)).join(',') + ']' : '-'}`
+      + ` world=[${d.world}]`
+      + ` sphere=${d.sphere ? `c[${d.sphere.c}] r=${d.sphere.r}` : '?'}`)
+  }
   return L.join('\n')
 }
