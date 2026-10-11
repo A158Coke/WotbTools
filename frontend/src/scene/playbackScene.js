@@ -2603,6 +2603,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const c12 = new Float32Array(12);
     // 环形覆写后可用槽位封顶在 2×cap：越界 drawRange 是未定义的 GPU 行为
     const pairs = Math.min(tr.L.total, tr.R.total, TRAIL_CAP_PER_SIDE);
+    let wrote = false;
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
       for (let k = st.written; k < st.total; k++) {
@@ -2616,12 +2617,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
           carr[co + q * 4 + 2] = 1; carr[co + q * 4 + 3] = a;
         }
+        wrote = true;
       }
       st.written = st.total;
     }
     geo.setDrawRange(0, pairs * 2 * 6);
-    posAttr.needsUpdate = true;
-    colAttr.needsUpdate = true;
+    // 门控上传：本帧没有新段就不传（静止/暂停时零 GPU 上传；此前每帧无条件全量上传
+    // position+color 两个缓冲，车辆停着也在烧带宽——2026-10-11）
+    if (wrote) { posAttr.needsUpdate = true; colAttr.needsUpdate = true; }
   }
 
   /** 寿命老化扫描：把"年龄落在淡出窗口内"的段的 alpha 刷新进顶点色。
@@ -2644,6 +2647,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const mid = (lo + hi) >> 1;
         const seg = st.segs[mid % TRAIL_CAP_PER_SIDE];
         if (seg && seg.t >= cutoff) hi = mid; else lo = mid + 1;
+      }
+      // [有效域起点, lo) = 已过寿命的段：**显式清零**。大步 seek 前进时这些段一步跨出
+      // 淡出窗口，否则停留在跨步前的旧 alpha（实测残留 0.55 全亮——"该消失的印记还在"，
+      // 2026-10-11 定案）。只写变化的槽位（静止时零写入）。
+      for (let k = Math.max(0, st.total - TRAIL_CAP_PER_SIDE); k < lo; k++) {
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
+        if (carr[co] !== 0) {
+          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
+          dirty = true;
+        }
       }
       for (let k = lo; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
