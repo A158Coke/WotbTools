@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   PHASE_AMMO_COUNT, PHASE_DRUM_SHELL, PHASE_DURATION_CHANGE, PHASE_MAG_INTERVAL, PHASE_START, fillOf, groupByVehicle,
   hasReloadTelemetry, hasPerShellReloads, isTimedAmmoPhase, magazineSizeForVehicle, magazineSizeOfVehicle,
-  reloadViewAt, resolveMountedConfig,
-  createReloadStateResolver, reloadVisualKey, shellStatesAt, usablePhases,
+  resolveMountedConfig,
+  createReloadStateResolver, shellStatesAt, usablePhases,
 } from './reloadBar.js'
 
 // 相位条目（facet `reloads` 的形状）：{ clock, eid, phase, duration_s, count }
@@ -120,23 +120,6 @@ describe('reloadBar · 相位语义与筛选', () => {
     const ev = [{ clock: 1, eid: 7, phase: 5, duration_s: null, count: 1 }]
     expect(hasReloadTelemetry(ev)).toBe(false)
     expect(shellStatesAt(ev, [], 100, 1)).toBeNull()
-  })
-})
-
-describe('reloadBar · 重绘视觉签名', () => {
-  it('aggregate fill 同为 100% 时仍区分整条 loading 与完成后的 N 格 full', () => {
-    const loading = [{ state: 'loading', progress: 0.996 }]
-    const full = Array.from({ length: 3 }, () => ({ state: 'full', progress: 1 }))
-    expect(Math.round(fillOf(loading) * 100)).toBe(100)
-    expect(Math.round(fillOf(full) * 100)).toBe(100)
-    expect(reloadVisualKey(loading)).not.toBe(reloadVisualKey(full))
-  })
-
-  it('loading 进度在同一 1% 桶内保持稳定，跨桶才变化', () => {
-    expect(reloadVisualKey([{ state: 'loading', progress: 0.501 }]))
-      .toBe(reloadVisualKey([{ state: 'loading', progress: 0.504 }]))
-    expect(reloadVisualKey([{ state: 'loading', progress: 0.504 }]))
-      .not.toBe(reloadVisualKey([{ state: 'loading', progress: 0.506 }]))
   })
 })
 
@@ -447,13 +430,12 @@ describe('reloadBar · 无遥测不得伪造满弹（fake-full 回归）', () =>
     expect(hasReloadTelemetry([])).toBe(false)
     expect(shellStatesAt([], [], 100, 1)).toBeNull()
     expect(shellStatesAt([], [], 100, 3)).toBeNull()
-    // 聚合视图同样不给出可绘制状态（shells = null）
-    expect(reloadViewAt([], [], 100, 3).shells).toBeNull()
+    // 无遥测的聚合 fill 口径（仅显示域）：fillOf(null) = 1
+    expect(fillOf(null)).toBe(1)
   })
 
   it('events = [] 但 fires > 0 → 同样不得伪造满弹（开火不能凭空造出弹量）', () => {
     expect(shellStatesAt([], [10, 20, 30], 100, 3)).toBeNull()
-    expect(reloadViewAt([], [10], 100, 3).active).toBe(false)
   })
 
   it('有真实遥测且当前确实满弹 → 仍正常显示 full（不误伤）', () => {
@@ -478,9 +460,4 @@ describe('reloadBar · 无遥测不得伪造满弹（fake-full 回归）', () =>
     expect(mid[2].progress).toBeCloseTo((46.0 - 42.56) / 6.56, 6)
   })
 
-  it('视觉签名区分"不画"与任何真实状态（隐藏装填条也会触发重绘）', () => {
-    expect(reloadVisualKey(null)).toBe('none')
-    expect(reloadVisualKey([{ state: 'full', progress: 1 }])).not.toBe('none')
-    expect(fillOf(null)).toBe(1)
-  })
 })

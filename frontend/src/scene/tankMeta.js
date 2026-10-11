@@ -39,12 +39,7 @@ export function tankFuzzyScore(name, q) {
   return total
 }
 
-export const TYPE_LABEL = { lightTank: 'Light', mediumTank: 'Medium', heavyTank: 'Heavy', 'AT-SPG': 'TD' }
 export const TYPE_CLS = { lightTank: 't-light', mediumTank: 't-medium', heavyTank: 't-heavy', 'AT-SPG': 't-td' }
-export const NATION_LABEL = {
-  ussr: 'USSR', usa: 'USA', germany: 'Germany', uk: 'UK', japan: 'Japan',
-  china: 'China', france: 'France', european: 'EU', other: 'Other',
-}
 
 // 弹种显示名（开发名 ap_cr/hc_premium → APCR/HEAT）
 export const normType = (t) => {
@@ -58,16 +53,6 @@ export const normType = (t) => {
 export const shellLabel = (s) => normType(s.type).toUpperCase()
 export const isPremiumShell = (s) => /premium/i.test(s.type || '')
 
-// 装甲厚度热力色：20–300mm 映射 红→黄→绿（HSL 色相 0→120；上游 tankStats 同式）
-export function armorColorStyle(mm) {
-  if (mm == null) return {}
-  const t = Math.max(0, Math.min(1, (mm - 20) / 280))
-  const hue = Math.round(t * 120)
-  return {
-    background: `hsla(${hue},58%,46%,0.22)`,
-    color: `hsl(${hue},68%,${68 - t * 8}%)`,
-  }
-}
 
 export const fmt = (v, d = 0) => (v != null ? Number(v).toFixed(d) : '-')
 

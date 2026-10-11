@@ -40,8 +40,12 @@ window.__bakeErr=[];
 addEventListener('error',(e)=>window.__bakeErr.push('error: '+(e.message||e.type||'?')+' @'+String(e.filename||'').split('/').pop()+':'+(e.lineno||0)));
 addEventListener('unhandledrejection',(e)=>window.__bakeErr.push('reject: '+String(e.reason)));
 </script><script type="module">
-import * as THREE from '/node_modules/three/build/three.module.js'
-import { GLTFLoader } from '/node_modules/three/examples/jsm/loaders/GLTFLoader.js'
+// 三处 three 导入用**裸符**（Vite 6 经 transformIndexHtml 抽成虚拟模块后改写为预打包 URL）；
+// 此前写死的 '/node_modules/three/...' 原始路径会被 Vite 原样返回，其内部裸 'three'
+// 在浏览器侧无法解析（Vite 6 起不再对 node_modules 深层路径做 import 改写）——
+// 症状：/bake 页 12s 未就绪、错误仅一行 "Failed to resolve module specifier \"three\""。
+import * as THREE from 'three'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 // 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
 import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE, disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
 import { pruneForeignVariants } from '/src/scene/variantFilter.js'
@@ -246,6 +250,8 @@ async function startServer() {
     configFile: false,
     root: frontendRoot,
     logLevel: 'error',
+    // 内联页的裸导入（three / GLTFLoader 深路径）需预打包才能被改写成浏览器可解析的 URL
+    optimizeDeps: { include: ['three', 'three/examples/jsm/loaders/GLTFLoader.js'] },
     plugins: [{
       name: 'bake-pack-server',
       configureServer(server) {
@@ -259,7 +265,8 @@ async function startServer() {
         })
         server.middlewares.use('/bake', (_req, res) => {
           res.setHeader('content-type', 'text/html')
-          res.end(BAKE_HTML)
+          // transformIndexHtml：内联 module 脚本 → vite 虚拟模块（裸导入才有改写的机会，见 BAKE_HTML 注释）
+          server.transformIndexHtml('/bake', BAKE_HTML).then((html) => res.end(html))
         })
         server.middlewares.use('/pixel-upload', (req, res) => {
           mkdirSync(join(PACK, 'overhead'), { recursive: true })

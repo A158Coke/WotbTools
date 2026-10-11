@@ -5,13 +5,11 @@ import {
   eventsCrossed,
   formatClock,
   KILL_FEED_MS,
-  lastKnownPosition,
   normalizeDeg,
   positionAt,
   pushFeed,
   recentPositionTrails,
   screenRotation,
-  shortestArcDeg,
   teamPointsAt,
   transientsActive,
   tracerLines,
@@ -152,32 +150,6 @@ describe('formatClock', () => {
   })
 })
 
-describe('lastKnownPosition', () => {
-  const points = [
-    { x: 0, y: 0, timeSec: 10 },
-    { x: 100, y: 50, timeSec: 15 },
-    { x: 300, y: 50, timeSec: 40 }
-  ]
-  it('returns the latest trusted point <= t', () => {
-    expect(lastKnownPosition(points, 20)).toEqual({ x: 100, y: 50, timeSec: 15 })
-    expect(lastKnownPosition(points, 60)).toEqual({ x: 300, y: 50, timeSec: 40 })
-  })
-  it('returns null before the first point (never observed)', () => {
-    expect(lastKnownPosition(points, 5)).toBeNull()
-    expect(lastKnownPosition(null, 15)).toBeNull()
-    expect(lastKnownPosition([], 15)).toBeNull()
-  })
-  it('skips non-finite coordinates', () => {
-    const mixed = [
-      { x: 0, y: 0, timeSec: 10 },
-      { x: Number.NaN, y: 10, timeSec: 12 },
-      { x: 5, y: 5, timeSec: 14 }
-    ]
-    expect(lastKnownPosition(mixed, 13)).toEqual({ x: 0, y: 0, timeSec: 10 })
-  })
-})
-
-
 describe('direction utilities', () => {
   it('normalizeDeg wraps into [-180,180)', () => {
     expect(normalizeDeg(0)).toBe(0)
@@ -186,13 +158,6 @@ describe('direction utilities', () => {
     expect(normalizeDeg(-180)).toBe(-180)
     expect(normalizeDeg(270)).toBe(-90)
     expect(normalizeDeg(540)).toBe(-180)
-  })
-
-  it('shortestArcDeg handles 359° -> 1° and cross-zero interpolation', () => {
-    expect(shortestArcDeg(1, 359)).toBe(2)
-    expect(shortestArcDeg(359, 1)).toBe(-2)
-    expect(shortestArcDeg(-179, 179)).toBe(2)
-    expect(shortestArcDeg(179, -179)).toBe(-2)
   })
 
   it('screenRotation maps the four cardinal map yaws to screen rotations', () => {

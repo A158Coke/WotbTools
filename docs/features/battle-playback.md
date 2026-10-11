@@ -636,7 +636,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   反射**在岸线带里与地形逐像素抢深度（|地形−水面| < 该视距深度分辨率的区间翻转）＋"水面片盖在
   岸上"的硬边（所报"水面" = `env_ma_ice02_*` 冰面片，60×60 m×25 片、统一 12.260，有相当比例
   盖在岸上；每片正下方 1 cm 另有不透明冰 `env_ma_ice01_*`，客户端 `ro.flags` 含
-  `VISIBLE_REFRACTION`）。本实现对等但**不需要额外深度 pass**：把**渲染用高度场**（含让位掩码，
+  `VISIBLE_REFRACTION`）。本实现对等但**不需要额外深度 pass**：把高度场（真值一份到底，
   跨度与网格同源 `terrainSpanOf()`）做成可线性滤波的 `DataTexture`
   （`RedFormat`/`FloatType`/`NoColorSpace`，一次性建好、随会话释放）传给水面材质，片元里按同一条
   改用本渲染器自己的深度分辨率表达同一现象（`dNdcZ = 2fn/((f−n)z²)·Δz_沿视线`，
@@ -668,31 +668,35 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   ≈(0.92,1.0,0.97)，≤4% 色调，未随包导出）；② 只是**部分**淹没的件（桥/沉船）仍按主通道
   渲染（客户端按水面裁剪逐像素分属两个通道）。守卫见 `src/scene/sceneryMaterials.test.js`；
   本改动**纯前端**（包/COS 不动）。
-- **岸线特征细分（2026-10-10，修"和地形的交接处还是锯齿状"）**：上一条把冰面刷亮之后，剩下的
-  锯齿经用户两个观测定案——**拉近之后锯齿变细、旋转时形状固定** ⇒ 是**网格量化**（不是深度抢闪：
-  那会闪；也不是数据噪声：那与视距无关）。机理：岸线在源数据里是 **2–5 cm/texel 的平缓坡**，
-  客户端的 TPS 相机始终贴近地面 ⇒ 它那里网格天然落到 1 texel 级、岸线细致；我们的回放相机常在
-  数百米外 ⇒ 客户端那三条判据（同一相机位置）**合法地**给出粗格 ⇒ 平缓坡被插值成米级台阶
-  （同类差异见让位掩码：客户端看得清、我们从远处看不清）。实现 = **第四条细分判据**
-  （`terrainMesh.js` 的 `shores`）：补片矩形与某片水面占地相交、且该补片**格点高度范围跨越其标高**
-  ⇒ 一路细分到 `minStep`（1 texel）。跨步判定与发射几何**同源**（发射的顶点高度也取同一批 texel 值）
-  ⇒ "格点不跨步 ⇒ 发射面不跨步"，**不需要任何余量常数**；细分终点 = 数据自身的分辨率（1 texel）。
-  标高表来源（`playbackScene.js`）：**水面片本身** + 水下薄板（冰面等，可能比水面低几厘米）；
-  坐标随前端 group 旋转换算到世界系。地形首建发生在 GLB 装载前、拿不到标高 ⇒ **装载后立即重建一次**
-  （后续 LOD 重建沿用同一表；会话 teardown 清理）。**真图实测**（malinovka，300 m 相机）：无判据时
-  渲染岸线 51 行有岸线、其中 **22 行**来回摆动（行间跳变 max 18 格 ≈ 10.5 m）；有判据后 **45 行 /
-  7 行**，与**原始场（客户端最细口径）完全一致**（45/7）；三角形 17k → 70k（只在水陆带加密）。
-  顺带修掉一个潜伏 bug：根补片步长原取 `floor(n/8)`，非 2 的幂时（如 n=96 ⇒ 12→6→3→1）
-  二等分对不上父补片跨度 ⇒ 整片未铺（空洞）；现取**不超过它的 2 的幂**并加 fail-closed 守卫
-  （常规 n=512 ⇒ 64，逐位不变）。**同日并修一条（上游数据面）**：让位掩码曾把水面片/水下薄板
-  （冰面）当"贴地结构"、把地形压到它们之下 ⇒ **可见岸线被整体挪走 2–4 texel（局部 5.9 m）并留下
-  台阶**（生产环境无掩码，故线上部署版没有这个现象）——掩码现把这两类面片排除出贴地判定
-  （`bake_terrain_cover.py` 的 `water_surfaces_of`/`submerged_faces`，与前端 `underWater` 同口径）；
-  水下件的粗格保护由本条的岸线细分承担，两者互补。掩码在**上游包**（`cover.u16.bin`）里，本地 dev
-  直接读磁盘即生效，生产需 COS 同步。**地面分层混合的 uniform 类型对齐（2026-10-10）**：用户"米德尔堡地面贴图颜色还是不对"（= erlenberg，display=Middleburg）——真因是 `groundShaderMaterial` 片元里 `uHbSoft` 被误写成 `uniform float`（应为 `vec4`，线上 remote 版即为 vec4），而 JS 侧下发 `Vector4` ⇒ three 按声明类型上传（值变 NaN）⇒ 开 `HEIGHT_BLEND` 的 9 图（desert_train/erlenberg/holland/idle/lagoon/plant/pliego/rift/rudniki）高度分层混合权重全废、地面取错层色。着色器门禁抓不到（`vec4 − float` 是合法标量广播，编译通过），已加**类型对齐守卫**（声明类型必须与 JS 下发值一致）。地面贴图/层定义/高度场与线上**逐字节相同**，光照（另一条）与本地地形网格无关本条。
-  **已知差异**：拉近到 1 texel 级后仍有的细小起伏是**数据自身**的
-  岸线噪声，客户端同样有（用户"拉近变细但没完全平滑"）。守卫见 `terrainMesh.test.js` 岸线用例
-  与 `sceneryMaterials.test.js` 接线用例；前端侧无数据面改动。
+- **岸线特征细分（2026-10-10 加；2026-10-11 PR 评审删除）**：加它的理由——用户两个观测定案
+  （"拉近之后锯齿变细、旋转时形状固定"）⇒ 是**网格量化**（不是深度抢闪：那会闪；也不是数据
+  噪声：那与视距无关）：岸线在源数据里是 **2–5 cm/texel 的平缓坡**，客户端 TPS 相机贴地 ⇒
+  那里网格天然 1 texel 级；回放相机常在数百米外 ⇒ 客户端三条判据（同一相机位置）**合法地**
+  给出粗格。当时的实现 = **第四条细分判据**（`terrainMesh.js` 的 `shores`）：补片矩形与水面
+  标高占地相交且格点高度范围跨其标高 ⇒ 细分到 1 texel（真图实测 malinovka 300 m：摆动行
+  22 → 7 行 = 与原始场（客户端最细口径）一致；三角形 17k → 70k）；标高表 = 水面片 + 水下薄板
+  （冰面），装载后立即重建一次。
+  **删除（2026-10-11 PR 评审，Blocker）**：DAVA `SubdividePatch` 只有三条判据——`shores` 是
+  与"纯客户端三判据"目标直接冲突的自研第四条（评审：代码与 PR 核心设计目标实际不一致）。
+  已整体删除：`buildAdaptiveTerrain` 不再收 `shores`；`playbackScene.js` 不再计算/传递标高表
+  （水面片/水下薄板的 `underWater` 识别仍供材质分派用）；负向守卫锁死
+  `shores`/`shoreLevels`/`shoreHit` 不复活。岸线视觉继续由水材质 `coastLine`（本节上一条）
+  处理，**不改地形 tessellation**；远相机下岸线的网格量化与客户端同相机位置一致，如实接受。
+  保留的附带修复：根补片步长取 2 的幂（非 2 的幂时 `step>>1` 会留空洞，n=96 实测）——
+  与判据无关。**历史教训（上游数据面，2026-10-10）**：让位掩码曾把水面片/水下薄板（冰面）
+  当"贴地结构"、把地形压到它们之下 ⇒ 可见岸线被整体挪走 2–4 texel（局部 5.9 m）；掩码与脚印
+  机制已于 2026-10-11 整体撤销（见下节）。
+- **地面分层混合的 uniform 类型对齐（2026-10-10）**：用户"米德尔堡地面贴图颜色还是不对"
+  （= erlenberg，display='Middleburg'）。实况：`groundShaderMaterial` 的片元里 `uHbSoft` 被写成
+  `uniform float`（应为 `vec4`，线上 remote 版即为 vec4），而 JS 侧下发 `Vector4` ⇒ three 按
+  **声明类型**上传（uniform1f 收到对象 ⇒ NaN）⇒ 开 `HEIGHT_BLEND` 的 9 图
+  （desert_train/erlenberg/holland/idle/lagoon/plant/pliego/rift/rudniki）高度分层混合权重全废、
+  地面取错层色。着色器门禁只编译（`vec4 − float` 是合法标量广播）⇒ 抓不到，故加类型对齐守卫
+  （声明类型必须与 JS 下发值一致）。地面贴图/层定义/高度场与线上**逐字节相同**，光照（另一条）
+  与本地地形网格无关本条。
+  **已知差异**：岸线在 1 texel 级仍有的细小起伏是**数据自身**的噪声，客户端同样有
+  （用户"拉近变细但没完全平滑"）。守卫见 `terrainMesh.test.js`（三条判据 + 删除锁定负向用例）
+  与 `sceneryMaterials.test.js`（签名/接线）；前端侧无数据面改动。
 
 - **地形网格客户端同构（2026-10-09，修"不规则地形穿出石板面"）**：引擎里 `Landscape` 渲染
   对象只有 `hmap`+`bbox`（**程序化生成**，无网格），`LandscapeSubdivision.cpp:133-136` 的顶点全部
@@ -772,20 +776,67 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   网格**永不比客户端同一相机位置允许的层级更粗**，且"时有时无"消失。守卫 +单测锁该契约。
   **滞回输入与构建判据同源（2026-10-10 review P2）**：滞回此前只读"相机到 controls.target 的视距"，而 `buildAdaptiveTerrain` 的判据读相机三维位置/FOV/aspect ⇒ **绕目标水平旋转、视距恒等时网格永远跳过重建**，停在旧相机位置的 LOD 分布上（近处该细的补片保持粗格）；`onResize` 也只改 `camera.aspect` 不重建地形。现滞回输入改为相机姿态快照 `terrainLodState`（位置/视距/视轴/FOV/aspect）：侧向绕转 ≥5% 视距、FOV/aspect 相对变化 >0.1% 都触发重建，同受 120 ms 节流（上限 ≈1 次/120 ms，成本同原先拉近场景）。守卫（`sceneryMaterials.test.js` 源码接线）+ 单测（`terrainMesh.test.js` 绕转/FOV/aspect 用例）锁该契约。
   **评审批修复（2026-10-10，基线 1da7b4e9）**：①**P1** 自适应地形几何补回 `uv`——低档/均衡档与分层材质不可用时底图（`ground.webp`/`mini.webp`）走 `MeshBasicMaterial({map})`，缺 uv 整图退化成单 texel 常量；朝向取旧 `PlaneGeometry+rotπ` 契约（`u = 0.5−(X−cx)/span`、`v = 0.5+(Z−cz)/span`，与合成器「顶行=+Z」一致；实测梯度结构相关在 erlenberg/medvedkovo/malinovka 三图唯一命中该式，`cm.webp` 是另一套 v（两文件导出侧 v 互翻，公式不可互换））。②场景纹理依赖 `getDependency('texture')` 全部 await 之后、任何共享状态写入前复查会话失效。③履带 UV 回退分支未定义变量（`v0tankId`→`tankId`，否则 ReferenceError 中断装配、留下半初始化状态）。④光照图材质改按输入指纹 `cachedSceneryMat` 共享（逐 mesh 新建会把 (几何,材质) 合批拆成 count=1 单实例批；逐实例光照图变换本就走 `aLm` 实例属性）。⑤履带形变下发判定改为比较**解算链**（`chainChanged`，顶点输出是链的纯函数）——只比最大幅度会漏"幅度相同、分布不同"的形变；**法线闸门**同样按链判定（`chainDrift`：与上次重算法线时的链逐点取最大偏差，2 cm 阈值兼作成本刹车）——累计统计量（最大幅度/均值）表达不了空间分布（复审曾据此漏报一次：把 0.1 m 的形变从一处挪到另一处，两项统计量都不变、法线却必须重算）。⑥关闭 GLB 时先释放该车悬挂克隆几何（`suspParts.disposables`）再清引用，反复开关不累积 GPU 缓冲。守卫见 `sceneryMaterials.test.js`「场景装配的会话/资源卫生」与 `terrainMesh.test.js` 的 `groundMapUv` 用例；纯前端，无数据面改动。
-  **地形让位掩码（2026-10-10，用户定案：走数据面）**：薄贴地构件（铁轨基板 0.3 m、压顶、铺装）
-  在远视距下会被**客户端同源**的自适应 LOD 合法盖住——实测铁轨可见带逐 2 m 采样 157 点：60 m 1 /
-  150 m 2 / 250 m 12（+15 cm）/ 300 m 50（+35 cm）/ 450 m 97（+43.5 cm），**细真值恒定 0**；
-  客户端判据在同一相机位置给出的层级与我们一致 ⇒ 渲染端已无"客户端依据"可对齐（此前的 `?poff`
-  与 `?seamfix` 两处人工补偿已按该原则撤除）。现改为**数据面**：上游 `tools/bake_terrain_cover.py`
-  逐 texel 烘焙贴地结构面高度（只取朝上面片；非对称贴地带 [地形−0.15, +0.5] m；压低 ≤0.5 m、
-  **留 0.1 m 几何间隙**并在 20 texel 内线性收尾——压到结构面上会让两者**共面 z-fight 闪烁**，
-  首版即犯此错（用户"交叠闪烁反而更严重了"），留间隙后带内地形处处干净低于结构面；`cover.u16.bin`，
-  0 = 无覆盖），前端 `terrainCover.js`（纯函数，3 用例）只做
-  `渲染高度 = min(原高度, 天花板)`，且**只夹渲染用高度场**——`sampleHeight`（拾取/贴地/贴花/查询）
-  继续用真值场（守卫锁：该函数体内不得出现 `renderField`）。实测（同一固定视距）：60 m **1 → 0**、
-  150 m **2 → 0**、250 m **12 → 0**、300 m 50 → 7、450 m 97 → 78；**用户观看区间（≤~250 m）
-  整体消除且零共面**，300 m 以上残余为"地形本身高于基板"的粗格合法桥接（客户端亦同）。缺掩码/旧包 ⇒
-  fail-open（按无掩码渲染）。
+  **地形 LOD 逐行对齐引擎源码（2026-10-11）**：用户"同距下客户端两侧平整、我们台阶分界处下陷/上浮"后，
+  从 dava.engine 源码镜像（github `the-tuxedo-cat/dava.engine`，`Sources/Internal/Render/Highlevel/`
+  `LandscapeSubdivision.{h,cpp}` + `Landscape.{h,cpp}` + `Scene3D/Systems/LandscapeSystem.cpp`）逐行
+  对照，修复三处转写偏差（均使旧实现比客户端更粗/更糊）：①`maxError` 必须自底向上**聚合整棵子树**
+  （`UpdatePatchInfo` 把子补片 maxError/positionOfMaxError 并入父补片；我们此前只算本层 8×8×5 样本
+  ⇒ 采样漏掉的细节误差被低估）；②`radius` 的 bbox 同样并入全部子补片（`AddAABBox`）；③两通道均值
+  的对角配对——引擎 odd-odd 用**反对角** `(x+step,y−step)&(x−step,y+step)`（`CreateHeightTextureData`），
+  我们误写主对角。实现改为 `buildPatchTableAscending`（`UpdatePatchInfo` 直译，相机无关，按 field
+  备忘——LOD 重建只走相机遍历、不再逐次重采样）；`morphFunc`/`subdivMorph`/`DrawPatchInstancing`
+  的映射逐字核对**无偏差**；`EngineSettings.yaml` = `Landscape.RenderMode.Morphing`（morph 开启）；
+  `forceMaxSubdiv` 仅编辑器使用（游戏内无此开关）。**实测（plant 墙基两级平台）**：修复前后该露台
+  逐视距 morphRaw 一致（半径判据主导）：30/100m 平台平整（morphFunc 0.47 仅影响坎带 ±2 texel）、
+  300m morphFunc=0.95、400m=0.63——大视距的羽化是**引擎 morph 的自身输出**（客户端贴地相机不可达；
+  同机位渲染与客户端逐式一致）。聚合修复在"细节被本层采样漏掉"的地形上使细分/羽化与客户端一致。
+
+  **画质档与地形：细分/几何不随档位变化（2026-10-11 核查）**：`LandscapeSystem::AddEntity` 会用
+  **landscape 画质预设**覆盖细分阈值，但本版客户端 `Data/quality.yaml`（= 引擎加载的
+  `~res:/quality.yaml`）**没有 `landscape:` 块** ⇒ `GetLandscapeQuality()` 返回 nullptr ⇒
+  阈值恒为出厂默认；wotblitz.exe 里那组默认值立即数（70/6.5、0.014/0.45/3、0.03/0.9/3）与
+  开源 .h 逐字一致 ⇒ **任何画质档下地形网格生成用同一组阈值**（与我们的实现相同）；
+  morph 开关来自 `EngineSettings.yaml = Landscape.RenderMode.Morphing`（非档位控制）。
+  画质档真正影响地形的是**材质层**：`TileMaskAllQualities.material` 的
+  QualityDependentUniqueDefines（ULTRA/HIGH = `LANDSCAPE_RELAXMAP + LANDSCAPE_HEIGHT_BLEND_ALLOWED`、
+  MEDIUM 空）——①RELAXMAP 需 landscape 材质绑 `relaxmap` 槽（`LANDSCAPE_USE_RELAXMAP`）才生效，
+  plant/forgecity 均无该槽 ⇒ 本图空转；②HEIGHT_BLEND 在 plant/forgecity 等图 ULTRA/HIGH 实际开启，
+  我们的分层地面复刻按开启状态导出（`ground.layers.json height_blend=true`）⇒ 已对齐。
+  纹理档（各向异性/分辨率）与 PBR 路径属材质档，与地形网格无关。
+
+  **场景材质 TEST_OCCLUSION（"土包"真凶，数据面修复；2026-10-11）**：用户"客户端墙面上没有
+  土包、我们 3D 回放里有"（任何机位不变）。排除了地形数据（客户端遥测 459/459 帧吻合、315 棵
+  作者摆树吻合）、方法差异（坎位 mask/hmap/colormap 逐字节一致）与机位（射线：土包像素处地形
+  坎面与墙盖板件沿视线仅相差 0.01–0.55m）后，定位到 `wall_03` 的 colormap 盖板件与
+  **`materials-fp.sl:187-192` 的 `TEST_OCCLUSION` 分支**：带该旗标的材质客户端按
+  `rgb = albedo.rgb × albedo.a` 采样——plant 五件盖板（albedo=plant_colormap_test、alpha
+  区 15–111/255）在客户端是**近黑暗色覆盖层**（读作墙脚阴影），我们此前按满色渲染 ⇒
+  "亮褐土包"。**上游导出器已将 `rgb×a` 烘进贴图（客户端同式），本前端无需改动**；plant
+  scenery.glb 重导随包（manifest 4284.9MB）。见上游 index.md 同名条目。
+
+  **地形细分差分验证 + 全包重导（2026-10-11）**：把引擎 `UpdatePatchInfo`/`SubdividePatch` 用
+  Python **独立重写**一份参考实现（逐行对着 `dava.engine` 源码），与 `terrainMesh.js` 在同一张 plant
+  上逐补片对比**终止补片集 + 每补片误差 + morph**：三个机位（贴地 26m / 270m / 425m）全部**集合
+  零差**（262/262、532/532、151/151），数值差 ≤ float32 精度（1.4e-3），morph 差 ≤ 0.0009 ——
+  地形细分实现与引擎**可证明等价**。**资产面**：全包按修正后的 alpha 判据重导 scenery（36 图、74s；
+  其余 35 图共 15 个材质由误判 MASK 转不透明），包内替换 + manifest 重算；**COS 未同步**。
+  **墙/压顶 vs 地形越顶量（数据面实测）**：plant 墙板覆盖的 2161 texel 中 41.9% 地形高于板面
+  >2cm（主墙迹 +88/+120mm，墙台地带最大数米）——该交叉在**客户端自己的数据里**（同一高度图/
+  同一网格/同一变换），客户端靠贴地相机 + 墙自身遮挡不可见，俯瞰视角会看到地形色带越过板面。
+  此为"高度分界处"唯一存留的数据面差异，与算法无关。
+
+  **地形-结构交叠：最终态 = 只对齐客户端（2026-10-11 用户裁示"不要自行发明处理方法"）**：
+  薄贴地构件（铁轨基板 0.3 m、压顶、铺装）在远视距下会被**客户端同源**的自适应 LOD 合法盖住
+  ——实测铁轨可见带逐 2 m 采样 157 点：60 m 1 / 150 m 2 / 250 m 12（+15 cm）/ 300 m 50
+  （+35 cm）/ 450 m 97（+43.5 cm），**细真值恒定 0**。三代处理全部撤销：①让位掩码
+  （2026-10-10，数据面造高度）；②贴地结构脚印判据（2026-10-11，scenery 扫描 → structs.u8.bin
+  → 第五条细分判据）及其两层派生修补（特征强制带 morph 归零、缝合边陡坎吸收）——均无客户端
+  依据。客户端机制穷尽核实（地形顶点着色器直出高度图、材质 52/52 无 DepthBias、36 图场景组件
+  无协调件、引擎二进制地形系统全是"往地上画"的叠加层）：它没有交叠/塌陷问题**全靠贴地相机**
+  （3–15 m ⇒ 网格天然 1 texel 级）。**最终形态 = 纯客户端三判据 LOD + 两通道 morph + 真值
+  高度场一份到底**；远距相机下薄构件被盖住是客户端同机位的忠实结果（客户端的贴地相机从不看到），
+  如实接受、不再补偿。高度场一份到底（渲染/查询/放置同源）与 renderField/terrainCover/structs
+  管线禁止复活的守卫保留。
   **共面接缝：找到并实现了客户端自己的机制（2026-10-10 定案；此前两处手调手法已撤除）**：
   ① 事实（数据层逐点实测）——铺装（地形）与挡土墙顶/建筑基础在客户端是**吸附齐平**的：沿墙顶缝 92%
   的采样 |地形−结构| ≤1 cm、地形略高者 75% ≤2 cm / 98% ≤5 cm；用户报障那处

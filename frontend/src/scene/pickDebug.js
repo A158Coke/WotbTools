@@ -80,27 +80,7 @@ export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
   return out
 }
 
-/**
- * 点击位置 → 最近的 destructible 状态（st.inst.pos 距离判定）。
- * 装配层应优先做「命中网格 ∈ 该状态的 pivot/intactMeshes/deadMeshes」的精确归属，
- * 本函数只做位置兜底（网格成员查询需要 three 对象图，放装配层）。
- * 超出 radiusM / 空 states → null（调用方按「非可破坏物」呈现）。
- */
-export function nearestDestructibleState(states, sx, sy, radiusM = 3) {
-  if (!Array.isArray(states)) return null
-  let best = null
-  let bestD = radiusM
-  for (const st of states) {
-    const p = st?.inst?.pos
-    if (!p) continue
-    const d = Math.hypot(p[0] - sx, p[1] - sy)
-    if (d <= bestD) {
-      best = st
-      bestD = d
-    }
-  }
-  return best
-}
+
 
 /**
  * 命中状态 → 当前视觉状态标签（读装配层的实时对象图，非回放指针推断）：
@@ -146,6 +126,31 @@ export function formatPickReport(r) {
     const pl = r.vis ? ` 当前=${r.vis.label}(prop=${r.vis.prop}${PROP_LABEL[r.vis.prop] ? '/' + PROP_LABEL[r.vis.prop] : ''})` : ''
     if (pl) L.push(`  state:${pl}`)
     if (r.inst.pos) L.push(`  inst.pos: (${r.inst.pos.map((v) => Number(v).toFixed(1)).join(', ')})`)
+  }
+  // 地形诊断（2026-10-11 塌陷排查工具；**出现本行 = 跑的是带诊断的报告器**）：
+  // truth = 真值高度场，mesh = 命中点正下方的渲染网格高度（Δ = mesh − truth），
+  // size = 发射四边形顶点间距(texel)，morph = subdivMorph（未整形），
+  // quads/overB = 本次地形构建规模。Δ 大而 truth 正常 ⇒ 渲染侧问题；truth 本身异常 ⇒ 数据侧。
+  if (r.terrain) {
+    const t = r.terrain
+    const d = (t.meshH != null && Number.isFinite(t.truth)) ? ` Δ=${(t.meshH - t.truth).toFixed(3)}` : ''
+    L.push(`  terrain: truth=${Number.isFinite(t.truth) ? t.truth.toFixed(3) : '?'}`
+      + ` mesh=${t.meshH != null ? t.meshH.toFixed(3) : '?'}${d}`
+      + ` size=${t.sizeAt ?? '?'} morph=${t.morph != null ? t.morph.toFixed(2) : '?'}`
+      + ` quads=${t.quads ?? '?'} overB=${t.overBudget ?? '?'}`)
+  }
+  // 渲染身份（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
+  // 射线拾取只查对象可见链 ⇒ "可拾取但不可见"的差异在材质/实例矩阵/剔除里现形。
+  if (r.render) {
+    const d = r.render
+    L.push(`  render: ${d.type}(${d.name ?? '?'}) mat=${d.matName ?? '?'}[${d.matType}]`
+      + ` matVisible=${d.matVisible} transparent=${d.transparent} opacity=${d.opacity}`
+      + ` alphaTest=${d.alphaTest} depthWrite=${d.depthWrite}`)
+    L.push(`    obj.visible=${d.objVisible} frustumCulled=${d.frustumCulled}`
+      + ` instanceId=${d.instanceId ?? '-'}`
+      + ` instScale=${d.instScale ? '[' + d.instScale.map((v) => v.toFixed(2)).join(',') + ']' : '-'}`
+      + ` world=[${d.world}]`
+      + ` sphere=${d.sphere ? `c[${d.sphere.c}] r=${d.sphere.r}` : '?'}`)
   }
   return L.join('\n')
 }

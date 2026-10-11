@@ -429,7 +429,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
-    expect(src).toMatch(/field: renderField \|\| heightField, n, span,/)
+    expect(src).toMatch(/field: heightField, n, span,/)
     expect(src).toMatch(/maybeRebuildTerrainLod\(\);/)
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
@@ -450,7 +450,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
-      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, shores = null \}\)/)
+      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1 \}\)/)
     expect(meshSrc).toMatch(/export function subdivisionMetrics\(fovYRad, aspect = 16 \/ 9, tolScale = 1\)/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
@@ -476,20 +476,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 共面接缝不设任何人工补偿（?poff / ?seamfix 均已于 2026-10-10 撤除，理由见下一条用例）
     expect(src).not.toMatch(/scenerySeamLift|instanceSeamLift|TERRAIN_SEAM_BAND/)
     expect(src).not.toMatch(/get\('poff'\)|get\('seamfix'\)|get\('terrainlod'\)/)
-    // 地形让位掩码（上游 tools/bake_terrain_cover.py）：**只夹渲染用高度场**，查询/放置走真值场
-    expect(src).toMatch(/import \{ applyTerrainCover \} from '\.\/terrainCover\.js'/)
-    expect(src).toMatch(/const \{ field: rf, changed \} = applyTerrainCover\(renderField, cu, k, zmin\);/)
-    expect(src).toMatch(/if \(changed\) renderField = rf;/)
-    expect(src).toMatch(/field: renderField \|\| heightField, n, span,/)
-    // sampleHeight 必须读 heightField（真值）；若被改成 renderField，拾取/贴地/贴花会随掩码错位
+    // 高度场一份到底（2026-10-11 用户裁示"只对齐客户端"：让位掩码与贴地结构脚印判据均已
+    // 撤销，渲染/查询/放置全用真值 heightField）；双场概念（renderField）与 terrainCover、
+    // structs 脚印管线禁止复活
+    expect(src).not.toMatch(/applyTerrainCover|terrainCover/)
+    expect(src).not.toMatch(/renderField/)
+    expect(src).not.toMatch(/structFootprint|structs\.u8\.bin/)
+    // sampleHeight 读 heightField（唯一场）；拾取/贴地/贴花与渲染同源（客户端同构）
     const shAt = src.indexOf('function sampleHeight')
     expect(shAt).toBeGreaterThan(-1)
     const shBody = src.slice(shAt, src.indexOf('function ', shAt + 10))   // 只到下一个函数为止
     expect(shBody).toMatch(/heightField/)
-    expect(shBody).not.toMatch(/renderField/)
-    // 掩码 URL（缺掩码/旧包 ⇒ fail-open 不阻断）
-    const rsSrc = readFileSync(resolve(here, 'replaySource.js'), 'utf8')
-    expect(rsSrc).toMatch(/case 'cover': return f\('cover\.u16\.bin'\)/)
   })
 
   it('贴花材质（客户端 MATERIAL_DECAL）：UV1 采 colormap、不受光、×2.0，且接线在受光兜底之前', () => {
@@ -629,19 +626,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).not.toMatch(/underWater\(o\) \|\| true/)
   })
 
-  it('岸线特征接线：水面/水下薄板标高表 → 地形网格第四条判据，装载后立即重建一次', () => {
-    // 用户实测判据（2026-10-10）："拉近之后锯齿变细、旋转时形状固定" ⇒ 网格量化而非深度抢闪。
-    // 修法见 terrainMesh.js `shores`：补片与水面占地相交且格点高度跨其标高 ⇒ 细到 1 texel。
-    // 真图实测（malinovka，300 m 相机）：无判据时渲染岸线 51 行/22 行来回摆动，有判据时
-    // 45 行/7 行 —— 与原始场（客户端最细口径）**完全一致**；三角形 17k → 70k。
-    expect(src).toMatch(/const sh = \[\];/)
-    expect(src).toMatch(/sh\.push\(\{ y: w\.h, x0: -w\.x1, x1: -w\.x0, z0: w\.y0, z1: w\.y1 \}\);/)
-    expect(src).toMatch(/shoreLevels = sh\.length \? sh : null;/)
-    expect(src).toMatch(/shoreLevels = null;\s*\n/)                              // 会话 teardown 清理
-    expect(src).toMatch(/if \(shoreLevels && terrainMesh && heightField\) \{/)
-    expect(src).toMatch(/terrainMesh\.geometry = buildTerrainGeometry\(\);/)
-    expect(src).toMatch(/shores: shoreLevels,/)
-    expect(src).toMatch(/let shoreLevels = null;/)
+  it('细分判据回到客户端三条：playbackScene 不再计算/传递岸线标高表（第四条判据 2026-10-11 评审删除）', () => {
+    // 2026-10-10 曾以"岸线特征"第四条判据把水陆交界一路细到 1 texel（真图实测过收益）；
+    // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条判据，与"纯客户端三判据"目标冲突 ⇒
+    // 整体删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。
+    // 本守卫锁死删除：`shores`/`shoreLevels`/`shoreHit` 均不得再现于两个模块。
+    expect(src).not.toMatch(/shores:/)
+    expect(src).not.toMatch(/shoreLevels/)
+    const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
+    expect(meshSrc).not.toMatch(/shores/)
+    expect(meshSrc).not.toMatch(/shoreHit/)
+    expect(src).toMatch(/buildAdaptiveTerrain\(\{/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {
@@ -787,7 +782,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
 
 })
 
-describe('__hullGroup 挂点（车体 = 记录位姿；逐轮悬挂待实现）', () => {
+describe('__hullGroup 挂点（车体 = 记录位姿；逐轮悬挂见下方「悬挂接线」组）', () => {
   it('底盘（chassis_track_*/chassis_wheel_*）与车体子树分离，挂点恒归单位；命名不符则回落整台刚体', () => {
     // 2026-10-10 回退：「根吃地形局部平面 + 车体收限幅残差」的近似已撤——车体恢复客户端同构的
     // **记录位姿**摆放（poseGlb 直摆记录 yaw/pitch/roll）；__hullGroup 仅作后续悬挂实现的挂点。
