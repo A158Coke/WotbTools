@@ -49,7 +49,7 @@ import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from '
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
   attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
-  parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
+  parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
 import { assetProvider } from './assetProvider.js'
@@ -2771,7 +2771,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     return {
       sides, disposables, bend: susp.track_bending || null,
-      chunkLength: chainAverageSegment(susp.chains.left[0]),   // 仅供调试/观察（不再驱动花纹）
     };
   }
 

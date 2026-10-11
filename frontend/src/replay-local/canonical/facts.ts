@@ -586,11 +586,6 @@ export function displayCapacityAt(facts: CanonicalReplayFacts, entityId: number,
   return max > 0 ? max : null
 }
 
-/** 实体最早出现时刻（Java `EntityIndex.firstObserved` 的血量/物化分量） */
-export function firstHpObservation(facts: CanonicalReplayFacts, entityId: number): number | null {
-  return facts.hpSamples.get(entityId)?.[0]?.t ?? null
-}
-
 /** Java `EntityIndex.lastPositionAtOrBefore`：≤ t 的最后一个原始观测下标；无 → -1 */
 export function lastPoseIndexAtOrBefore(track: { t: number[] } | undefined, t: number): number {
   if (!track) return -1
