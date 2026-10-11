@@ -2945,6 +2945,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         });
         if (!meshes.length || _spBox.isEmpty()) return null;
         const lateral = _spBox.getCenter(new THREE.Vector3()).x;   // 履带中心线（模型系横向）
+        const beltW = _spBox.getSize(new THREE.Vector3()).x;        // 履带条宽（回落实测宽度用）
         const chain2 = chain.map((pt) => [pt[0], pt[1]]);           // [纵向 y, 高度 z]
         const restZ = chain.map((pt) => pt[1]);
         // 段弧长（花纹速率与顶点弧长参数用）

@@ -816,6 +816,11 @@ describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
     expect(src).toMatch(/assetProvider\.json\(`\/suspension\/\$\{tankId\}\.json`\)\.catch\(\(\) => null\)/)
     expect(src).toMatch(/v\.suspParts = collectSuspensionParts\(inst, loaded\.susp, v\.def\.tank_id\)/)
     expect(src).toMatch(/v\.def\.suspReaction = loaded\.susp \? loaded\.susp\.wheels_reaction_speed : null/)
+    // 履带印宽度回落链的源码级守卫（2026-10-11 事故：tracks.push 引用了未声明的
+    // beltW 简写——两次补丁只落了引用侧——运行时报 "beltW is not defined"）
+    expect(src).toMatch(/const beltW = _spBox\.getSize\(new THREE\.Vector3\(\)\)\.x;/)
+    expect(src).toMatch(/tracks\.push\(\{[\s\S]{0,120}beltW,/)
+    expect(src).toMatch(/beltW: tracks\.length \? wsum \/ tracks\.length : 0/)
   })
 
   it('每帧在 poseGlb 里解算；seek 跳变吸附；不可见时侧位移积分复位', () => {
