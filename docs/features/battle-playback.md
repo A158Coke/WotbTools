@@ -684,6 +684,21 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   网格**永不比客户端同一相机位置允许的层级更粗**，且"时有时无"消失。守卫 +单测锁该契约。
   **滞回输入与构建判据同源（2026-10-10 review P2）**：滞回此前只读"相机到 controls.target 的视距"，而 `buildAdaptiveTerrain` 的判据读相机三维位置/FOV/aspect ⇒ **绕目标水平旋转、视距恒等时网格永远跳过重建**，停在旧相机位置的 LOD 分布上（近处该细的补片保持粗格）；`onResize` 也只改 `camera.aspect` 不重建地形。现滞回输入改为相机姿态快照 `terrainLodState`（位置/视距/视轴/FOV/aspect）：侧向绕转 ≥5% 视距、FOV/aspect 相对变化 >0.1% 都触发重建，同受 120 ms 节流（上限 ≈1 次/120 ms，成本同原先拉近场景）。守卫（`sceneryMaterials.test.js` 源码接线）+ 单测（`terrainMesh.test.js` 绕转/FOV/aspect 用例）锁该契约。
   **评审批修复（2026-10-10，基线 1da7b4e9）**：①**P1** 自适应地形几何补回 `uv`——低档/均衡档与分层材质不可用时底图（`ground.webp`/`mini.webp`）走 `MeshBasicMaterial({map})`，缺 uv 整图退化成单 texel 常量；朝向取旧 `PlaneGeometry+rotπ` 契约（`u = 0.5−(X−cx)/span`、`v = 0.5+(Z−cz)/span`，与合成器「顶行=+Z」一致；实测梯度结构相关在 erlenberg/medvedkovo/malinovka 三图唯一命中该式，`cm.webp` 是另一套 v（两文件导出侧 v 互翻，公式不可互换））。②场景纹理依赖 `getDependency('texture')` 全部 await 之后、任何共享状态写入前复查会话失效。③履带 UV 回退分支未定义变量（`v0tankId`→`tankId`，否则 ReferenceError 中断装配、留下半初始化状态）。④光照图材质改按输入指纹 `cachedSceneryMat` 共享（逐 mesh 新建会把 (几何,材质) 合批拆成 count=1 单实例批；逐实例光照图变换本就走 `aLm` 实例属性）。⑤履带形变下发判定改为比较**解算链**（`chainChanged`，顶点输出是链的纯函数）——只比最大幅度会漏"幅度相同、分布不同"的形变；**法线闸门**同样按链判定（`chainDrift`：与上次重算法线时的链逐点取最大偏差，2 cm 阈值兼作成本刹车）——累计统计量（最大幅度/均值）表达不了空间分布（复审曾据此漏报一次：把 0.1 m 的形变从一处挪到另一处，两项统计量都不变、法线却必须重算）。⑥关闭 GLB 时先释放该车悬挂克隆几何（`suspParts.disposables`）再清引用，反复开关不累积 GPU 缓冲。守卫见 `sceneryMaterials.test.js`「场景装配的会话/资源卫生」与 `terrainMesh.test.js` 的 `groundMapUv` 用例；纯前端，无数据面改动。
+  **地形 LOD 逐行对齐引擎源码（2026-10-11）**：用户"同距下客户端两侧平整、我们台阶分界处下陷/上浮"后，
+  从 dava.engine 源码镜像（github `the-tuxedo-cat/dava.engine`，`Sources/Internal/Render/Highlevel/`
+  `LandscapeSubdivision.{h,cpp}` + `Landscape.{h,cpp}` + `Scene3D/Systems/LandscapeSystem.cpp`）逐行
+  对照，修复三处转写偏差（均使旧实现比客户端更粗/更糊）：①`maxError` 必须自底向上**聚合整棵子树**
+  （`UpdatePatchInfo` 把子补片 maxError/positionOfMaxError 并入父补片；我们此前只算本层 8×8×5 样本
+  ⇒ 采样漏掉的细节误差被低估）；②`radius` 的 bbox 同样并入全部子补片（`AddAABBox`）；③两通道均值
+  的对角配对——引擎 odd-odd 用**反对角** `(x+step,y−step)&(x−step,y+step)`（`CreateHeightTextureData`），
+  我们误写主对角。实现改为 `buildPatchTableAscending`（`UpdatePatchInfo` 直译，相机无关，按 field
+  备忘——LOD 重建只走相机遍历、不再逐次重采样）；`morphFunc`/`subdivMorph`/`DrawPatchInstancing`
+  的映射逐字核对**无偏差**；`EngineSettings.yaml` = `Landscape.RenderMode.Morphing`（morph 开启）；
+  `forceMaxSubdiv` 仅编辑器使用（游戏内无此开关）。**实测（plant 墙基两级平台）**：修复前后该露台
+  逐视距 morphRaw 一致（半径判据主导）：30/100m 平台平整（morphFunc 0.47 仅影响坎带 ±2 texel）、
+  300m morphFunc=0.95、400m=0.63——大视距的羽化是**引擎 morph 的自身输出**（客户端贴地相机不可达；
+  同机位渲染与客户端逐式一致）。聚合修复在"细节被本层采样漏掉"的地形上使细分/羽化与客户端一致。
+
   **地形-结构交叠：最终态 = 只对齐客户端（2026-10-11 用户裁示"不要自行发明处理方法"）**：
   薄贴地构件（铁轨基板 0.3 m、压顶、铺装）在远视距下会被**客户端同源**的自适应 LOD 合法盖住
   ——实测铁轨可见带逐 2 m 采样 157 点：60 m 1 / 150 m 2 / 250 m 12（+15 cm）/ 300 m 50
