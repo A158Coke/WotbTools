@@ -26,10 +26,10 @@
  *       ② 屏幕高度 `|maxError| / (errorDistance · tanFovY) ≥ maxHeightError`——距离取**最差样本
  *          位置**（不是补片中心）；
  *       ③ 绝对高度 `|maxError| > maxAbsoluteHeightError`（3 m，与距离无关）。
- *     之外另有一条**岸线特征**判据（`shores`，④；见 `buildAdaptiveTerrain` @param，2026-10-10
- *     用户定案）；**没有**任何"贴地结构/脚印"类判据——2026-10-11 用户裁示"不要自行发明处理方法，
- *     和客户端对齐"：贴地薄构件在远视距被粗格盖住是客户端同机位的忠实结果（它靠贴地相机从不
- *     看到），让位掩码 / 脚印细分 / morph 修补三类补偿已全部撤销。
+ *     **只有这三条**——没有任何额外"岸线/贴地结构/脚印"类判据（2026-10-11 用户裁示"不要自行
+ *     发明处理方法，和客户端对齐"：岸线在客户端同样由这三条判据决定网格，其视觉由水材质处理、
+ *     不改地形 tessellation；贴地薄构件在远视距被粗格盖住是客户端同机位的忠实结果）。让位掩码 /
+ *     脚印细分 / 岸线强制细分 / morph 修补四类补偿已全部撤销（岸线判据于 2026-10-11 PR 评审删除）。
  *     阈值随 fov 在 zoom/normal 两套预设间线性插值（`PrepareSubdivision`；引擎 `Camera::GetFOV()` 是
  *     **水平** fov）；`tanFovY = tanf(fov/2)/aspect` ≡ `tan(vfov/2)`（竖直半角正切）。
  *   · 层级交界的 T 型接缝由顶点着色器的 neighbour-morph 缝合——**离线网格必须自己解决**
@@ -169,16 +169,6 @@ export function subdivMorphOf(heightError, radiusError, heightError0, radiusErro
  * @param aspect  宽/高（阈值插值与投影系数用）
  * @param minStep 最细顶点间距（texel；1 = 引擎最细层）
  * @param tolScale 阈值系数（1 = 客户端口径）
- * @param shores  水面/水下薄板标高表 `[{ y, x0, x1, z0, z1 }]`（世界系）——**第四条判据**：
- *                补片矩形与某片水面的占地相交、且该补片的格点高度范围跨越其标高 ⇒ 一路细分到
- *                `minStep`（=1 texel），即"把水陆交界当特征解析"。理由（2026-10-10 用户"和地形的
- *                交接处还是锯齿状：拉近变细、旋转时形状固定"）：岸线在源数据里是**平缓坡**（2–5 cm
- *                /texel），客户端相机始终很近 ⇒ 它那里的网格天然是 1 texel 级、岸线细致；我们的
- *                回放相机常在数百米外 ⇒ 三条客户端判据（同一相机位置）**合法地**给出粗格 ⇒ 平缓坡
- *                被量化成米级台阶。这是"客户端看得清、我们从远处看不清"的同一类差异（与⑤同类），
- *                与手工补偿无关：判据只用数据里真实存在的标高，且细分终点是数据自身的分辨率。
- *                跨步判定用补片格点范围——**与发射几何同源**（发射的顶点高度也取这些 texel 值），
- *                故"格点不跨步 ⇒ 发射面不跨步"，不需要任何余量常数。
  * @returns { positions, indices, quads, overBudget, sizeAt }
  */
 // 补片表（相机无关，按 field 备忘——LOD 重建不重算；约 1.75M 次 texel 采样/图，一次性）。
@@ -199,7 +189,6 @@ function buildPatchTableAscending(field, n, span, rootStepNow) {
       minX: new Float32Array(count), maxX: new Float32Array(count),
       minZ: new Float32Array(count), maxZ: new Float32Array(count),
       minH: new Float32Array(count), maxH: new Float32Array(count),
-      ownMinH: new Float32Array(count), ownMaxH: new Float32Array(count),
       radius: new Float32Array(count),
     });
   }
@@ -212,7 +201,7 @@ function buildPatchTableAscending(field, n, span, rootStepNow) {
       for (let ix = 0; ix < lv.perAxis; ix++) {
         const idx = iy * lv.perAxis + ix;
         const i0 = iy * lv.patchSize, j0 = ix * lv.patchSize;
-        // own 包围盒 = 9×9 格点（引擎只加四边形四角）；own 高度范围供岸线判据
+        // own 包围盒 = 9×9 格点（引擎只加四边形四角）
         let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
         let mnH = Infinity, mxH = -Infinity;
         for (let a = 0; a <= PATCH_QUADS; a++) {
@@ -227,7 +216,6 @@ function buildPatchTableAscending(field, n, span, rootStepNow) {
         lv.minX[idx] = mnX; lv.maxX[idx] = mxX;
         lv.minZ[idx] = mnZ; lv.maxZ[idx] = mxZ;
         lv.minH[idx] = mnH; lv.maxH[idx] = mxH;
-        lv.ownMinH[idx] = mnH; lv.ownMaxH[idx] = mxH;
         if (!deepest) {
           const h = step >> 1;
           let best = 0, bi = i0, bj = j0;
@@ -297,7 +285,7 @@ function patchTableFor(field, n, span, rootStep) {
   return built;
 }
 
-export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1, shores = null }) {
+export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1 }) {
   if (!field || !Number.isFinite(n) || n < 2) throw new Error('buildAdaptiveTerrain: 需 field 与 n ≥ 2')
   const H = (i, j) => field[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
   const wx = (j) => (j / n - 0.5) * span;
@@ -359,20 +347,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     const subdivide = radiusError >= M.maxPatchRadiusError
       || heightError >= M.maxHeightError
       || err > M.maxAbsoluteHeightError;
-    return { subdivide, err, heightError, radiusError, ownMinH: lv.ownMinH[idx], ownMaxH: lv.ownMaxH[idx] };
-  };
-  // 岸线特征判定（第四条判据，2026-10-10 用户定案保留）：补片 (x,z) 矩形与某片水面占地相交、
-  // 且该补片**自身格点**高度范围跨越其标高（own 高度范围——与发射几何同源，无余量常数）。
-  const shoreHit = (i0, j0, step, minY, maxY) => {
-    if (!shores || !shores.length) return false;
-    const x0 = wx(j0), x1 = wx(Math.min(j0 + PATCH_QUADS * step, n));
-    const z0 = wz(i0), z1 = wz(Math.min(i0 + PATCH_QUADS * step, n));
-    for (let s = 0; s < shores.length; s++) {
-      const sh = shores[s];
-      if (x1 < sh.x0 || x0 > sh.x1 || z1 < sh.z0 || z0 > sh.z1) continue;
-      if (minY <= sh.y && sh.y <= maxY) return true;
-    }
-    return false;
+    return { subdivide, err, heightError, radiusError };
   };
   const patches = [];        // 终止补片及其判据值（诊断/测试：直接验证三条判据）
   // *Err0 = 父补片同名误差（引擎把当前层的 heightError/radiusError 传给子层当 *0；
@@ -382,7 +357,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     let hErr = 0, rErr = 0;
     if (step > minStep && roomLeft) {
       const p = patchProbe(i0, j0, step, level);
-      if (p.subdivide || shoreHit(i0, j0, step, p.ownMinH, p.ownMaxH)) {
+      if (p.subdivide) {
         const h = step >> 1;
         // fail-closed：奇数 step 无法二等分（子补片跨度 8·h 对不上父补片 8·step ⇒ 会留空洞）。
         // 根步长已取 2 的幂（见下），本支实际不可达；保留只为杜绝"细分出洞"的可能。
@@ -412,12 +387,7 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   };
   // 根补片：step = n / PATCH_QUADS（引擎 level 0 同式）；**取不超过它的 2 的幂**——细分链是
   // step>>1，奇步长（如 n=96 时的 12→6→3）无法二等分，子补片跨度对不上父补片 ⇒ 会留空洞
-  // （2026-10-10 岸线用例实测：n=96 时 j≥88 整片未铺）。取 2 的幂后链条恒可二等分；
-  // 余下不足一个根补片的边角由 emitPatch 的 `st = min(step, n−ci, n−cj)` 夹取铺满。
-  // n 为 8·2^k 的常规图（512 → 64）结果与旧式逐位相同，不受影响。
-  // 根补片：step = n / PATCH_QUADS（引擎 level 0 同式）；**取不超过它的 2 的幂**——细分链是
-  // step>>1，奇步长（如 n=96 时的 12→6→3）无法二等分，子补片跨度对不上父补片 ⇒ 会留空洞
-  // （2026-10-10 岸线用例实测：n=96 时 j≥88 整片未铺）。取 2 的幂后链条恒可二等分；
+  // （2026-10-10 实测用例：n=96 时 j≥88 整片未铺）。取 2 的幂后链条恒可二等分；
   // 余下不足一个根补片的边角由 emitPatch 的 `st = min(step, n−ci, n−cj)` 夹取铺满。
   // n 为 8·2^k 的常规图（512 → 64）结果与旧式逐位相同，不受影响。
   for (let i = 0; i < n; i += rootStep * PATCH_QUADS) {

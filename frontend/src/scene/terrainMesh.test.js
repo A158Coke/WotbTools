@@ -320,52 +320,24 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(worst).toBeLessThanOrEqual(17.27 + 0.05)
   })
 
-  it('岸线特征（`shores`，第四条判据）：与水面标高相交的补片细到 1 texel，远处也把水陆交界解析出来', () => {
-    // 2026-10-10 用户"和地形的交接处还是锯齿状：拉近之后锯齿变细、旋转时形状固定" ⇒ 定案为
-    // **网格量化**（不是深度抢闪、不是数据噪声）：岸线在源数据里是 2–5 cm/texel 的平缓坡，
-    // 客户端相机近 ⇒ 天然 1 texel 级；我们的回放相机常在上百米外 ⇒ 三条客户端判据（同一相机
-    // 位置）合法地给粗格 ⇒ 平缓坡被量化成米级台阶。第四条判据：补片与水面占地相交且格点高度
-    // 范围跨越其标高 ⇒ 细分到底（1 texel）；跨界判定与发射几何同源（同一批 texel 值）⇒ 无需余量常数。
-    const n = 96, span = 96, step = span / n          // 1 m/texel
-    const level = 12.25
-    // 平缓坡：h = 10 + 0.03·j（跨 level 于 j≈75）
+  it('细分判据只有客户端三条：传"岸线标高表"不再改变 tessellation（第四条判据已删，2026-10-11 评审）', () => {
+    // 背景：2026-10-10 曾加过第四条"岸线特征"判据（与水面标高相交的补片强制细分到底）。
+    // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条——"纯客户端三判据"的目标不允许自研
+    // 判据 ⇒ 已删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。本用例锁定删除：
+    // 传入额外的 `shores` 字段（旧 API 形状）必须被忽略，几何与不传时逐字节一致。
+    const n = 96, span = 96
     const field = make(n, 10, (i, j) => 10 + 0.03 * j)
     const far = { x: 0, y: 400, z: 0 }
-    const shore = [{ y: level, x0: -span / 2, x1: span / 2, z0: -span / 2, z1: span / 2 }]
-    const coarse = build(field, n, span, far)
-    const fine = buildAdaptiveTerrain({ field, n, span, cam: far, fovY: FOV, aspect: ASPECT, shores: shore })
+    const base = build(field, n, span, far)
+    const withShores = buildAdaptiveTerrain({
+      field, n, span, cam: far, fovY: FOV, aspect: ASPECT,
+      shores: [{ y: 12.25, x0: -span / 2, x1: span / 2, z0: -span / 2, z1: span / 2 }],
+    })
+    expect(Array.from(withShores.sizeAt)).toEqual(Array.from(base.sizeAt))
+    expect(withShores.quads).toBe(base.quads)
     const mid = Math.floor(n / 2)
-    const jCross = Math.ceil((level - 10) / 0.03)      // ≈ 75
-    // 远相机下：无岸线判据 ⇒ 交界处是粗格；有判据 ⇒ 1 texel
-    expect(coarse.sizeAt[mid * n + jCross]).toBeGreaterThan(1)
-    expect(fine.sizeAt[mid * n + jCross]).toBe(1)
-    // 只是**特征带**细分：远离标高（h 远低于/高于 level）的补片仍按客户端判据给粗格
-    expect(fine.sizeAt[mid * n + 5]).toBeGreaterThan(1)
-    expect(fine.sizeAt[mid * n + n - 2]).toBeGreaterThan(1)
-    // 三角形数与预算：带内细、带外粗，且不触顶
-    expect(fine.quads).toBeGreaterThan(coarse.quads)
-    expect(fine.overBudget).toBe(false)
-    // 混排（跨级）后仍无裂缝：共享边两侧逐点同高（口径同下一条用例）
-    const S = fine.sizeAt
-    const boundaries = new Set()
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-      const s = S[i * n + j]; if (!s) continue
-      if (i > 0 && S[(i - 1) * n + j] && S[(i - 1) * n + j] !== s) boundaries.add(`h:${i}`)
-      if (j > 0 && S[i * n + j - 1] && S[i * n + j - 1] !== s) boundaries.add(`v:${j}`)
-    }
-    let samples = 0, maxGap = 0
-    for (const b of boundaries) {
-      const [kind, at] = b.split(':')
-      const fixed = (Number(at) / n) * span - span / 2
-      for (let t = -span / 2 + step / 8; t < span / 2 - 1e-9; t += step / 4) {
-        const p = kind === 'h' ? [t, fixed] : [fixed, t]
-        const r = surfaceAt(fine, p[0], p[1])
-        if (!r) continue
-        samples++; maxGap = Math.max(maxGap, r[1] - r[0])
-      }
-    }
-    expect(samples).toBeGreaterThan(20)
-    expect(maxGap).toBeLessThanOrEqual(1e-4)
+    const jCross = Math.ceil((12.25 - 10) / 0.03)      // ≈ 75：旧判据曾在此细到 1 texel
+    expect(withShores.sizeAt[mid * n + jCross]).toBeGreaterThan(1)   // 三判据下合法地给粗格
   })
 
   it('无裂缝：相邻四边形混排尺寸（含跨级 LOD）+ 交界两侧逐点同高（几何检查）', () => {

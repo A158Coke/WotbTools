@@ -214,7 +214,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
   let waterTexDispose = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
-  let shoreLevels = null;       // 岸线标高表（水面/水下薄板；地形网格第四条判据用，见 terrainMesh.js）
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
   // 可破坏地形（契约 additive：destructible_areas/events + map/destructibles.json）。
   // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
@@ -621,42 +620,44 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           overBudget: build ? build.overBudget : null,
         };
       } catch (_) { terrain = null; }
-      // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
-      // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
-      try {
-        const o = hit.object;
-        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
-        const worldPos = new THREE.Vector3();
-        o.getWorldPosition(worldPos);
-        let instScale = null;
-        if (o.isInstancedMesh && hit.instanceId != null) {
-          const im = new THREE.Matrix4();
-          o.getMatrixAt(hit.instanceId, im);
-          instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
-        }
-        render = {
-          type: o.type,
-          name: o.name || null,
-          matName: mats.map((x) => x.name || '?').join('|') || null,
-          matType: mats.map((x) => x.type).join('|') || null,
-          matVisible: mats.map((x) => x.visible).join(',') || null,
-          transparent: mats.map((x) => x.transparent).join(',') || null,
-          opacity: mats.map((x) => Number(x.opacity != null ? x.opacity : 1)).join(',') || null,
-          alphaTest: mats.map((x) => x.alphaTest || 0).join(',') || null,
-          depthWrite: mats.map((x) => x.depthWrite).join(',') || null,
-          objVisible: o.visible,
-          frustumCulled: o.frustumCulled,
-          instanceId: hit.instanceId != null ? hit.instanceId : null,
-          instScale,
-          world: [worldPos.x, worldPos.y, worldPos.z].map((v) => Number(v.toFixed(1))),
-          sphere: o.geometry && o.geometry.boundingSphere ? {
-            c: [o.geometry.boundingSphere.center.x, o.geometry.boundingSphere.center.y,
-              o.geometry.boundingSphere.center.z].map((v) => Number(v.toFixed(1))),
-            r: Number(o.geometry.boundingSphere.radius.toFixed(1)),
-          } : null,
-        };
-      } catch (_) { render = null; }
     }
+    // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
+    // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
+    // ⚠️ 不依赖 heightField/heightMeta——terrain 下载失败/元数据缺失/降级时（恰是最值得排障的
+    // 一类场景）本段仍必须出报告（2026-10-11 PR 评审 P3：此前被错误地包在 terrain 可用性里）。
+    try {
+      const o = hit.object;
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      const worldPos = new THREE.Vector3();
+      o.getWorldPosition(worldPos);
+      let instScale = null;
+      if (o.isInstancedMesh && hit.instanceId != null) {
+        const im = new THREE.Matrix4();
+        o.getMatrixAt(hit.instanceId, im);
+        instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
+      }
+      render = {
+        type: o.type,
+        name: o.name || null,
+        matName: mats.map((x) => x.name || '?').join('|') || null,
+        matType: mats.map((x) => x.type).join('|') || null,
+        matVisible: mats.map((x) => x.visible).join(',') || null,
+        transparent: mats.map((x) => x.transparent).join(',') || null,
+        opacity: mats.map((x) => Number(x.opacity != null ? x.opacity : 1)).join(',') || null,
+        alphaTest: mats.map((x) => x.alphaTest || 0).join(',') || null,
+        depthWrite: mats.map((x) => x.depthWrite).join(',') || null,
+        objVisible: o.visible,
+        frustumCulled: o.frustumCulled,
+        instanceId: hit.instanceId != null ? hit.instanceId : null,
+        instScale,
+        world: [worldPos.x, worldPos.y, worldPos.z].map((v) => Number(v.toFixed(1))),
+        sphere: o.geometry && o.geometry.boundingSphere ? {
+          c: [o.geometry.boundingSphere.center.x, o.geometry.boundingSphere.center.y,
+            o.geometry.boundingSphere.center.z].map((v) => Number(v.toFixed(1))),
+          r: Number(o.geometry.boundingSphere.radius.toFixed(1)),
+        } : null,
+      };
+    } catch (_) { render = null; }
     return {
       clock: T,
       kind: 'scenery',
@@ -888,7 +889,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     meshOwner = null;
     mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
-    shoreLevels = null;
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
@@ -1371,27 +1371,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           }
           return false;
         };
-        // 岸线标高表（第四条细分判据的输入，见 terrainMesh.js `shores`）：**水面片本身** + 水下薄板
-        // （冰面等，可能比水面低几厘米）——地形网格据此把水陆交界一路细到 1 texel。坐标同步换到
-        // 世界系（前端 group 旋转：世界 x = −场景 x、世界 y = 场景 z、世界 z = 场景 y）。
-        const sh = [];
-        for (const w of waterSurfaces) {
-          sh.push({ y: w.h, x0: -w.x1, x1: -w.x0, z0: w.y0, z1: w.y1 });
-        }
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.material || !o.geometry) return;
-          const bb = new THREE.Box3().setFromObject(o);
-          if (bb.isEmpty() || !underWater(o)) return;
-          sh.push({ y: bb.max.z, x0: -bb.max.x, x1: -bb.min.x, z0: bb.min.y, z1: bb.max.y });
-        });
-        shoreLevels = sh.length ? sh : null;
-        // 水陆交界是特征：此刻水面片已知 ⇒ 立即重建一次地形几何（此前的首建在 GLB 装载前，
-        // 拿不到标高表；后续 LOD 重建沿用同一 shoreLevels）。见 terrainMesh.js `shores`。
-        if (shoreLevels && terrainMesh && heightField) {
-          const oldGeo = terrainMesh.geometry;
-          terrainMesh.geometry = buildTerrainGeometry();
-          oldGeo.dispose();
-        }
         gltf.scene.traverse((o) => {
           if (!o.isMesh || !o.material) return;
           // 天空穹（节点名 SkyFlattenSphere/Sky_sphere_*/sky_dome 等）：走 makeSkyMaterial
@@ -1780,7 +1759,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
-      shores: shoreLevels,          // 第四条判据：水陆交界细分到 1 texel（见 terrainMesh.js）
     });   // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));

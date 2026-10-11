@@ -446,7 +446,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
-      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, shores = null \}\)/)
+      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1 \}\)/)
     expect(meshSrc).toMatch(/export function subdivisionMetrics\(fovYRad, aspect = 16 \/ 9, tolScale = 1\)/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
@@ -622,19 +622,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).not.toMatch(/underWater\(o\) \|\| true/)
   })
 
-  it('岸线特征接线：水面/水下薄板标高表 → 地形网格第四条判据，装载后立即重建一次', () => {
-    // 用户实测判据（2026-10-10）："拉近之后锯齿变细、旋转时形状固定" ⇒ 网格量化而非深度抢闪。
-    // 修法见 terrainMesh.js `shores`：补片与水面占地相交且格点高度跨其标高 ⇒ 细到 1 texel。
-    // 真图实测（malinovka，300 m 相机）：无判据时渲染岸线 51 行/22 行来回摆动，有判据时
-    // 45 行/7 行 —— 与原始场（客户端最细口径）**完全一致**；三角形 17k → 70k。
-    expect(src).toMatch(/const sh = \[\];/)
-    expect(src).toMatch(/sh\.push\(\{ y: w\.h, x0: -w\.x1, x1: -w\.x0, z0: w\.y0, z1: w\.y1 \}\);/)
-    expect(src).toMatch(/shoreLevels = sh\.length \? sh : null;/)
-    expect(src).toMatch(/shoreLevels = null;\s*\n/)                              // 会话 teardown 清理
-    expect(src).toMatch(/if \(shoreLevels && terrainMesh && heightField\) \{/)
-    expect(src).toMatch(/terrainMesh\.geometry = buildTerrainGeometry\(\);/)
-    expect(src).toMatch(/shores: shoreLevels,/)
-    expect(src).toMatch(/let shoreLevels = null;/)
+  it('细分判据回到客户端三条：playbackScene 不再计算/传递岸线标高表（第四条判据 2026-10-11 评审删除）', () => {
+    // 2026-10-10 曾以"岸线特征"第四条判据把水陆交界一路细到 1 texel（真图实测过收益）；
+    // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条判据，与"纯客户端三判据"目标冲突 ⇒
+    // 整体删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。
+    // 本守卫锁死删除：`shores`/`shoreLevels`/`shoreHit` 均不得再现于两个模块。
+    expect(src).not.toMatch(/shores:/)
+    expect(src).not.toMatch(/shoreLevels/)
+    const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
+    expect(meshSrc).not.toMatch(/shores/)
+    expect(meshSrc).not.toMatch(/shoreHit/)
+    expect(src).toMatch(/buildAdaptiveTerrain\(\{/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {
