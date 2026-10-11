@@ -699,6 +699,19 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   300m morphFunc=0.95、400m=0.63——大视距的羽化是**引擎 morph 的自身输出**（客户端贴地相机不可达；
   同机位渲染与客户端逐式一致）。聚合修复在"细节被本层采样漏掉"的地形上使细分/羽化与客户端一致。
 
+  **画质档与地形：细分/几何不随档位变化（2026-10-11 核查）**：`LandscapeSystem::AddEntity` 会用
+  **landscape 画质预设**覆盖细分阈值，但本版客户端 `Data/quality.yaml`（= 引擎加载的
+  `~res:/quality.yaml`）**没有 `landscape:` 块** ⇒ `GetLandscapeQuality()` 返回 nullptr ⇒
+  阈值恒为出厂默认；wotblitz.exe 里那组默认值立即数（70/6.5、0.014/0.45/3、0.03/0.9/3）与
+  开源 .h 逐字一致 ⇒ **任何画质档下地形网格生成用同一组阈值**（与我们的实现相同）；
+  morph 开关来自 `EngineSettings.yaml = Landscape.RenderMode.Morphing`（非档位控制）。
+  画质档真正影响地形的是**材质层**：`TileMaskAllQualities.material` 的
+  QualityDependentUniqueDefines（ULTRA/HIGH = `LANDSCAPE_RELAXMAP + LANDSCAPE_HEIGHT_BLEND_ALLOWED`、
+  MEDIUM 空）——①RELAXMAP 需 landscape 材质绑 `relaxmap` 槽（`LANDSCAPE_USE_RELAXMAP`）才生效，
+  plant/forgecity 均无该槽 ⇒ 本图空转；②HEIGHT_BLEND 在 plant/forgecity 等图 ULTRA/HIGH 实际开启，
+  我们的分层地面复刻按开启状态导出（`ground.layers.json height_blend=true`）⇒ 已对齐。
+  纹理档（各向异性/分辨率）与 PBR 路径属材质档，与地形网格无关。
+
   **地形细分差分验证 + 全包重导（2026-10-11）**：把引擎 `UpdatePatchInfo`/`SubdividePatch` 用
   Python **独立重写**一份参考实现（逐行对着 `dava.engine` 源码），与 `terrainMesh.js` 在同一张 plant
   上逐补片对比**终止补片集 + 每补片误差 + morph**：三个机位（贴地 26m / 270m / 425m）全部**集合
