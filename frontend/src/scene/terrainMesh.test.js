@@ -409,6 +409,32 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(withFp.overBudget).toBe(false)
   })
 
+  it('脚印带内有悬崖：强制带内顶点取真值原值（morph 归零，2026-10-11 plant wall_03 "地面塌陷"回归）', () => {
+    // 现场诊断：悬崖带父补片的高程误差超阈值 ⇒ 客户端公式给全部更细子层恒 >0 的 subdivMorph
+    // ⇒ 强制细分的 1-texel 顶点被 blend ~44% 向"双抽头均值"⇒ 悬崖处均值 ≈ 坎中值 ⇒ 带内偏离
+    // 真值最多 0.8 m（用户报"地面塌陷、客户端没有"）。强制细分的契约是"带内网格 = 真值高度场"，
+    // morph 与之冲突 ⇒ 特征强制的子树 morph 归零；判据驱动的细分不受影响。
+    const n = 128, span = 128
+    // 2.5 m 悬崖沿 j=64（西低东高），脚印横跨悬崖两侧
+    const field = make(n, 20, (i, j) => (j < 64 ? 20 : 22.5))
+    const structures = new Uint8Array(n * n)
+    for (let i = 56; i < 72; i++) for (let j = 58; j < 70; j++) structures[i * n + j] = 1
+    const cam = { x: 0, y: 170, z: 0 }   // 悬崖误差会命中高度判据 ⇒ 祖先 morph 链 >0（修复前带内被拉偏）
+    const m = buildAdaptiveTerrain({ field, n, span, cam, fovY: FOV, aspect: ASPECT, structures })
+    let worst = 0, samples = 0
+    for (let i = 56; i < 72; i++) {
+      for (let j = 58; j < 70; j++) {
+        const r = surfaceAt(m, (j / n - 0.5) * span, (i / n - 0.5) * span)
+        if (!r) continue
+        samples++
+        worst = Math.max(worst, Math.abs(r[1] - field[i * n + j]))
+      }
+    }
+    expect(samples).toBeGreaterThan(100)
+    expect(worst).toBeLessThanOrEqual(1e-3)   // 带内 = 真值（修复前实测 0.8 m 量级）
+    // 判据驱动的细分保持客户端 morph：带外曲面补片的 morphRaw 仍可为正（这里只锁带内）
+  })
+
   it('无裂缝：相邻四边形混排尺寸（含跨级 LOD）+ 交界两侧逐点同高（几何检查）', () => {
     // 回归（2026-10-09 用户"这次引入了横竖条纹"）：共享边两侧顶点密度不同 ⇒ T 型接缝。
     // 口径：顶点高度 = 该处最粗相邻四边形所在层级的**边界直线**值（端点递归）⇒ 同一 (i,j) 恒同高、

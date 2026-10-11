@@ -321,12 +321,15 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   const patches = [];        // 终止补片及其判据值（诊断/测试：直接验证三条判据）
   // *Err0 = 父补片同名误差（引擎把当前层的 heightError/radiusError 传给子层当 *0；
   // 根调用传阈值本身 ⇒ 根补片 error0Delta = 0 ⇒ subdivMorph = 0，与引擎 SubdividePatch 首调一致）。
-  const rec = (i0, j0, step, hErr0 = M.maxHeightError, rErr0 = M.maxPatchRadiusError) => {
+  // `forced` = 本补片（或任一祖先）因**特征判据**（岸线④/脚印⑤）被强制细分。
+  const rec = (i0, j0, step, hErr0 = M.maxHeightError, rErr0 = M.maxPatchRadiusError, forced = false) => {
     const roomLeft = leaves.length + PATCH_QUADS * PATCH_QUADS <= MAX_QUADS;
     let hErr = 0, rErr = 0;
+    let feature = false;
     if (step > minStep && roomLeft) {
       const p = probePatch(i0, j0, step);
-      if (p.subdivide || shoreHit(i0, j0, step, p.minY, p.maxY) || structHit(i0, j0, step)) {
+      feature = shoreHit(i0, j0, step, p.minY, p.maxY) || structHit(i0, j0, step);
+      if (p.subdivide || feature) {
         const h = step >> 1;
         // fail-closed：奇数 step 无法二等分（子补片跨度 8·h 对不上父补片 8·step ⇒ 会留空洞）。
         // 根步长已取 2 的幂（见下），本支实际不可达；保留只为杜绝"细分出洞"的可能。
@@ -335,13 +338,14 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
           patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
         } else {
           for (const [di, dj] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
-            rec(i0 + di * PATCH_QUADS * h, j0 + dj * PATCH_QUADS * h, h, p.heightError, p.radiusError);
+            rec(i0 + di * PATCH_QUADS * h, j0 + dj * PATCH_QUADS * h, h, p.heightError, p.radiusError, forced || feature);
           }
           return;
         }
+      } else {
+        hErr = p.heightError; rErr = p.radiusError;
+        patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
       }
-      hErr = p.heightError; rErr = p.radiusError;
-      patches.push({ i0, j0, step, err: p.err, heightError: hErr, radiusError: rErr });
     } else {
       if (!roomLeft) overBudget = true;
       // 最细层（或预算用尽）：仍取半径误差（引擎该项恒有），高度误差按最细层 = 0；
@@ -351,8 +355,14 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
       rErr = p ? p.radiusError : 0;
       patches.push({ i0, j0, step, floored: step <= minStep, radiusError: rErr });
     }
-    curMorph = subdivMorphOf(hErr, rErr, hErr0, rErr0, M);
-    emitPatch(i0, j0, step);   // 终止（或预算用尽）⇒ 按当前层出几何；始终铺满、不留空洞
+    // **特征强制的补片：morph 归零** ⇒ 带内顶点取 accurate 通道原值（真值场）。
+    // 理由（2026-10-11 plant wall_03 "地面塌陷"诊断）：悬崖带父补片的高程误差超阈值 ⇒ 客户端
+    // 公式给全部更细子层恒 >0 的 subdivMorph ⇒ 强制细分的 1-texel 顶点被 blend ~44% 向"双抽头
+    // 均值"通道 ⇒ 悬崖处均值 ≈ 坎中值 ⇒ 带内偏离真值最多 0.8 m（实测 Δ=−0.804 m @ morphRaw
+    // 0.286）。强制细分的契约是"带内网格 = 真值高度场、不造高度"，morph（LOD 过渡平滑）与之
+    // 冲突，故归零；**判据驱动的细分不受影响**（客户端 morph 原样保留）。
+    curMorph = (forced || feature) ? 0 : subdivMorphOf(hErr, rErr, hErr0, rErr0, M);
+    emitPatch(i0, j0, step);
   };
   // 根补片：step = n / PATCH_QUADS（引擎 level 0 同式）；**取不超过它的 2 的幂**——细分链是
   // step>>1，奇步长（如 n=96 时的 12→6→3）无法二等分，子补片跨度对不上父补片 ⇒ 会留空洞
