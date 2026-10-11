@@ -26,12 +26,12 @@ export const TREAD_FADE = { after: 10, dur: 10 };
 
 /** 全局不透明度系数：顶点色 alpha = 淡出系数 × 本值。
  *
- * 为什么需要：各类贴图的 authored alpha 强弱差异极大（可见覆盖率 USSR 87% / USA 81% /
- * GB 95% / 通用 Tread 55%，GB 平顶 p90 238），且段间还有 TRAIL_OVERLAP 重叠——alpha
- * 直接透出时 GB 类近实心黑（可见区 RGB 亮度只有 ~30/255，alpha 238 ⇒ 地面被压到 ~12%
- * 亮度的 88% 不透明覆盖，用户报"过于黑"）。客户端 deferred-decal 路径带每实例
- * `opacity` 参数（动态值，未逆向）⇒ 本常数即该参数的静态产品替身，可调。 */
-export const TREAD_OPACITY = 0.55;
+ * 客户端口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支，2026-10-11 取证）：
+ * `parameters.x` 是**印记出生时间**，透明度 = 距离淡出（treadsNear/FarFadeDistance）
+ * × 时间淡出（smoothstep(fadeOutTimeStartEnd)）——**没有额外的整体压暗**，印记在寿命
+ * 窗口内以贴图原色足量呈现。故本系数 = 1.0（曾取 0.55 是针对旧的"重复发射+段重叠
+ * 双重合成"问题的过度保守，那两个根因修复后应回满）。 */
+export const TREAD_OPACITY = 1.0;
 
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
@@ -76,10 +76,14 @@ export function resolveTreadParams(json) {
  * `written` 是消费侧书签（已写进 GPU 的绝对段数），本模块不解释它、只随复位归零。
  */
 export function createTrailState() {
-  return { hasLast: false, x: 0, z: 0, acc: 0, segs: [], head: 0, total: 0, written: 0 };
+  // lastMark = 上一横截面 {x, z, yaw, t}——印记戳 = 相邻两横截面之间的**扫掠四边形**
+  // （客户端同构：每戳由"上一戳时刻的履带横截面 → 当前时刻的横截面"围成，相邻戳共享
+  // 整条接缝边 ⇒ 转弯处天生无缝；deferred-decal-vp.sl 的剪切参数 y→y·z+w 即这一几何）。
+  return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0, acc: 0, segs: [], head: 0, total: 0, written: 0,
+           lastMark: { x: 0, z: 0, yaw: 0, t: 0 } };
 }
 
-/** 复位（seek 后退 / 会话复用）：路径累积与段缓存全部作废。 */
+/** 复位（seek 后退 / 会话复用）：路径累积与戳缓存全部作废。 */
 export function resetTrailState(st) {
   st.hasLast = false;
   st.acc = 0;
@@ -89,21 +93,30 @@ export function resetTrailState(st) {
   st.written = 0;
 }
 
+/** 角度插值（最短弧，rad）——横截面在步内取交会点时用。 */
+function lerpAngle(a, b, f) {
+  let d = b - a;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return a + d * f;
+}
+
 /**
- * 沿采样点序列推进一侧履带的路径累积，按 `space`（米）铺段。
+ * 沿采样点序列推进一侧履带的路径累积，按 `space`（米）打**横截面戳**。
  *
- * - 段 = `{x, z, dx, dz, len}`：段**中心**、单位方向（水平面内）、段长。方向取本采样步的
- *   位移方向——印记跟随实际运动方向，不经 yaw 符号约定（镜像系换算由调用方完成）。
- * - 采样步长建议 = 位姿网格步（0.1 s）：8 m/s 下 0.8 m/步，对 1 m 段 granularity 足够。
+ * - 戳 = 相邻两横截面的扫掠四边形（`{x0,z0,yaw0,x1,z1,yaw1,t}`；t = 后一横截面时刻）。
+ *   横截面 = 该时刻履带中心线处、垂直于车体朝向的宽度线——**相邻戳共享整条接缝边**
+ *   （前一戳的 (x1,z1,yaw1) 即后一戳的 (x0,z0,yaw0)），转弯处无楔形缝（客户端同构）。
+ * - 采样点 = `{x, z, t, yaw}`（世界系 + 回放时刻 + 车体朝向）；步内交会点按距离分数插值
+ *   （朝向走最短弧）。
  * - 大步进（seek 跨越数百米）按同方向连续铺满——确定性输出，seek 重算与连续播放同形。
- * - 返回本次新增段数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
+ * - 返回本次新增戳数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
  *
  * @param {ReturnType<createTrailState>} st 路径累积态（就地变更）
- * @param {Array<{x:number, z:number, t?:number}>} pts 采样点（世界系 + 回放时刻；
- *   可见性断链由调用方传空/复位处理；`t` 随出段写入 `seg.t` 供寿命淡出用）
- * @param {number} space 铺段间距（m，authored `manual_space`）
- * @param {number} cap 段缓存上限
- * @returns {number} 新增段数
+ * @param {Array<{x:number, z:number, t?:number, yaw?:number}>} pts 采样点
+ * @param {number} space 打戳间距（m，authored `manual_space`）
+ * @param {number} cap 戳缓存上限
+ * @returns {number} 新增戳数
  */
 export function advanceTrail(st, pts, space, cap) {
   if (!(space > 1e-3)) return 0;
@@ -112,30 +125,37 @@ export function advanceTrail(st, pts, space, cap) {
     const p = pts[i];
     if (!st.hasLast) {
       st.hasLast = true;
-      st.x = p.x; st.z = p.z; st.acc = 0;
+      st.x = p.x; st.z = p.z; st.yaw = p.yaw || 0; st.t = p.t || 0; st.acc = 0;
+      st.lastMark.x = p.x; st.lastMark.z = p.z; st.lastMark.yaw = st.yaw; st.lastMark.t = st.t;
       continue;
     }
     const dx = p.x - st.x, dz = p.z - st.z;
     const d = Math.hypot(dx, dz);
     if (!(d > 1e-6)) continue;
-    const ux = dx / d, uz = dz / d;
+    const pyaw = p.yaw || 0;
+    const pt = p.t || 0;
     const accEnd = st.acc + d;
     // ⚠️ floor 前必须加静差（2026-10-11 定案）：点位来自插值，步长带 ~1e-10 抖动；当 accEnd
     // 落在整数界下 1e-9 内时，`floor(acc/space)+1` 对**下一个**半步仍算出同一个 j，配合
-    // 条件里的 +1e-9 容差 ⇒ **同一段被相邻两步重复发出**（实测 20 m 窗口发 29/27 段、L/R
-    // 因抖动不对称、轨迹上出现不规则双段/深浅不均）。floor 内加静差后同一边界只能跨过一次。
+    // 条件里的 +1e-9 容差 ⇒ **同一戳被相邻两步重复发出**（实测 20 m 窗口发 29/27 戳、L/R
+    // 因抖动不对称、轨迹上出现不规则双戳）。floor 内加静差后同一边界只能跨过一次。
     for (let j = Math.floor((st.acc + 1e-9) / space) + 1; j * space <= accEnd + 1e-9; j++) {
-      const at = j * space - st.acc;          // 本采样步内的里程位置 ∈ (0, d]
-      const back = Math.min(space / 2, at);   // 段中心相对步进点的回退（首段钳到步起点）
-      pushSeg(st, { x: p.x - ux * back, z: p.z - uz * back, dx: ux, dz: uz, len: space, t: p.t || 0 }, cap);
+      const f = (j * space - st.acc) / d;      // 步内交会分数 ∈ (0, 1]
+      const m = st.lastMark;
+      const mk = {
+        x: st.x + dx * f, z: st.z + dz * f,
+        yaw: lerpAngle(st.yaw, pyaw, f),
+        t: st.t + (pt - st.t) * f,
+      };
+      pushSeg(st, { x0: m.x, z0: m.z, yaw0: m.yaw, x1: mk.x, z1: mk.z, yaw1: mk.yaw, t: mk.t }, cap);
+      m.x = mk.x; m.z = mk.z; m.yaw = mk.yaw; m.t = mk.t;
       added++;
     }
     st.acc = accEnd;
-    st.x = p.x; st.z = p.z;
+    st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
   }
   return added;
 }
-
 function pushSeg(st, seg, cap) {
   if (st.segs.length < cap) st.segs.push(seg);
   else {
@@ -150,46 +170,41 @@ function pushSeg(st, seg, cap) {
  * 粗格网格与真值面可差 5~15 cm（铁轨 D4 同族问题），0.06 时实测成片被网格盖住
  * （印记"被地面挡住且断续可见"的根因）⇒ 取 0.12；近距平地上略微悬空，观感可接受。 */
 export const TRAIL_LIFT = 0.12;
-/** 段长系数：**1.0 = 首尾精确相接，不重叠**。
- *
- * 为什么不能 >1（2026-10-11 二次勘误，用户报"深浅不均、有一小段深色"）：重叠区 alpha
- * **双重合成**——贴图沿长度方向是周期图案（GB 行 alpha 88↔162，每 ~1/8 纹理一节距），
- * 重叠带宽 12% 恒定落在段末 v≈0.88-1 与下一段 v≈0-0.12 的同一相位上 ⇒ 每 1 m 一条
- * 固定的深带（接缝合成 alpha ≈0.76 vs 段内 0.55×行均值）。客户端无此现象：它的
- * deferred decal 走**深度测试的 decal buffer，每像素单写**、重叠盒不叠加。转弯曲率
- * 造成的毫米级外缘缝远不如周期深带显眼，如实接受。
- * （u 横向两端 alpha 渐隐保留——软边不因相接而改变；v 两端无渐隐、行值连续，相接处
- * 图案自然延续。） */
-export const TRAIL_OVERLAP = 1.0;
-
 /**
- * 段 → 贴地四边形的 **4 个角**（世界系，逐角独立采样地形高度 + 抬升）。
+ * 戳（扫掠四边形）→ 贴地**4 个角**（世界系，逐角独立采样地形高度 + 抬升）。
  *
- * 为什么逐角而不是"中心高度 + 法线倾斜的单平面"：印记必须贴合**渲染网格**，而网格是
- * LOD 分片线性面、与真值场的双线性面存在随视距增大的残差——单平面只有 3 个自由度，
- * 在 1 m 弦上仍会一头扎进网格里；四角各自落到 `heightAt`（真值场）+ 抬升上，随坡
- * 双向弯折，残差只剩"角点采样 vs 网格插值"一项，由 TRAIL_LIFT 统一盖住。
- * 横向基矢取水平面内垂直于段方向即可（坡度已由逐角高度消化，无需法线投影）。
+ * 几何 = 客户端同构：两个横截面（各为过中心线、垂直于当时车体朝向的宽度线）之间的
+ * 扫掠四边形——角序 `[L0, R0, R1, L1]`（L/R = 横截面两端，0/1 = 先后两个横截面），
+ * uv 固定 `(0,0)(1,0)(1,1)(0,1)`（u = 横向、v = 沿戳方向一次完整条带，调用方预填）。
+ * **相邻戳共享整条接缝边**（前戳的 L1/R1 ≡ 后戳的 L0/R0，两侧横截面由同一次采样插值
+ * 产生）⇒ 转弯处无楔形缝（2026-10-11 用户报"仍不连续"的根因，客户端 deferred-decal
+ * 的剪切几何同款）。
  *
- * @param {{x:number, z:number, dx:number, dz:number, len:number}} seg 段
+ * 逐角高度：印记必须贴合**渲染网格**（LOD 分片线性面，与真值场双线性面残差随视距
+ * 增大）——四角各自落到 `heightAt` + `TRAIL_LIFT` 上，随坡双向弯折；单平面只 3 个
+ * 自由度，会在 1 m 弦上一头扎进网格（2026-10-11 前车之鉴）。
+ *
+ * @param {{x0:number,z0:number,yaw0:number,x1:number,z1:number,yaw1:number}} seg 戳
  * @param {number} width 印记条带宽（m，authored `manual_width`）
  * @param {(x:number, z:number)=>number} heightAt 地形高度采样（场景 `sampleHeight`）
- * @param {Float32Array|number[]} out 长度 ≥12 的输出数组（就地写 [x,y,z]×4，
- *   顺序 (-横,-纵) (+横,-纵) (+横,+纵) (-横,+纵)；uv 固定 (0,0)(1,0)(1,1)(0,1)，由调用方预填）
- * @returns {boolean} 是否写入（false = 段方向退化，调用方跳过该段）
+ * @param {Float32Array|number[]} out 长度 ≥12 的输出数组（就地写 [x,y,z]×4）
+ * @returns {boolean} 是否写入（false = 戳退化，调用方跳过）
  */
-export function trailQuadCorners(seg, width, heightAt, out) {
-  const dl = Math.hypot(seg.dx, seg.dz);
-  if (!(dl > 1e-6)) return false;
-  const ux = seg.dx / dl, uz = seg.dz / dl;
-  const rx = -uz, rz = ux;                      // 水平面内横向（左右对称，符号无语义）
+export function trailStampCorners(seg, width, heightAt, out) {
   const hw = width / 2;
-  const hl = (seg.len * TRAIL_OVERLAP) / 2;
-  const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  // 横截面两端：中心 ± 横向量·半宽。横向量取车队 heading 的水平右向（与旧实现同一
+  // 约定：fwd=(−sin yaw, cos yaw) → right=(−cos yaw, −sin yaw)，左右对称无语义）。
+  const fx0 = -Math.sin(seg.yaw0), fz0 = Math.cos(seg.yaw0);
+  const rx0 = -fz0, rz0 = fx0;
+  const fx1 = -Math.sin(seg.yaw1), fz1 = Math.cos(seg.yaw1);
+  const rx1 = -fz1, rz1 = fx1;
+  const p0 = [seg.x0 - rx0 * hw, seg.z0 - rz0 * hw, seg.x0 + rx0 * hw, seg.z0 + rz0 * hw];
+  const p1 = [seg.x1 - rx1 * hw, seg.z1 - rz1 * hw, seg.x1 + rx1 * hw, seg.z1 + rz1 * hw];
+  // 角序 [L0, R0, R1, L1]
+  const cs = [p0[0], p0[1], p0[2], p0[3], p1[2], p1[3], p1[0], p1[1]];
   for (let i = 0; i < 4; i++) {
-    const [a, b] = cs[i];
-    const x = seg.x + rx * hw * a + ux * hl * b;
-    const z = seg.z + rz * hw * a + uz * hl * b;
+    const x = cs[i * 2], z = cs[i * 2 + 1];
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
     out[i * 3] = x;
     out[i * 3 + 1] = heightAt(x, z) + TRAIL_LIFT;
     out[i * 3 + 2] = z;
