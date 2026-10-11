@@ -57,7 +57,7 @@ import {
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
 import {
   advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
-  trailQuadCorners, treadAlphaAt, TREAD_FADE, TREAD_OPACITY,
+  trailStampCorners, treadAlphaAt, TREAD_FADE, TREAD_OPACITY,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -2484,7 +2484,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const SLOTS = TRAIL_CAP_PER_SIDE * 2;
     const geo = new THREE.BufferGeometry();
     // 逐段 4 顶点的**动态合并几何**（不是 InstancedMesh）：四角必须各自独立贴地
-    // （trailQuadCorners），单个实例矩阵表达不了四角异高——正是首版"单平面 + 中心梯度"
+    // （trailStampCorners），单个实例矩阵表达不了四角异高——正是首版"单平面 + 中心梯度"
     // 被粗格地形网格盖住（印记断续可见）的根因。position 逐段写；uv/index 全槽位恒定。
     const pos = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 3), 3);
     pos.setUsage(THREE.DynamicDrawUsage);
@@ -2575,8 +2575,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const yaw = yawAt(v, tt);
         const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
         const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
-        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt });
-        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt });
+        // yaw 随点携带：横截面戳按"该时刻车体朝向"定向（相邻戳共享横截面 ⇒ 转弯无缝）
+        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt, yaw });
+        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt, yaw });
       }
       pA.x = bx; pA.z = bz;
       t = tB;
@@ -2609,7 +2610,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       for (let k = st.written; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
-        if (!trailQuadCorners(seg, width, h, c12)) continue;
+        if (!trailStampCorners(seg, width, h, c12)) continue;
         parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
         const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY;
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
