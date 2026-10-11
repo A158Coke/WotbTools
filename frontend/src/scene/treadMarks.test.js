@@ -16,7 +16,22 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     expect(sceneSrc).toMatch(/updateDestructibles\(T\);\s*\n\s*updateTrails\(\);/)
   })
   it('开关必须经场景 API 落到 store.treadOn（唯一 owner，不得在组件里另立状态）', () => {
-    expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{ store\.treadOn = !!on; invalidate\(\); \}/)
+    expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{\s*store\.treadOn = !!on;/)
+  })
+  it('暂停态开关必须立即生效：setter 内同步驱动游标泵（review P2 2026-10-11）', () => {
+    // 只改 store + invalidate 时，暂停（animate 不 tick）下 mesh.visible/重算要等继续
+    // 播放或 seek 才更新——实测 setTreadMarks(false) 后 mesh.visible 仍为 true。
+    expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{[\s\S]{0,700}?updateTrails\(\);/)
+  })
+  it('绘制窗口取较长侧并显式隐藏较短侧空槽（review P2 2026-10-11：转弯 L≠R 不截长边）', () => {
+    expect(sceneSrc).toMatch(/Math\.min\(Math\.max\(tr\.L\.total, tr\.R\.total\), TRAIL_CAP_PER_SIDE\)/)
+    expect(sceneSrc).toMatch(/for \(let k = st\.total; k < pairs; k\+\+\)/)
+  })
+  it('关断重开必须复位两侧路径态（不只回退 builtT；review P2 2026-10-11）', () => {
+    expect(sceneSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
+  })
+  it('alpha 比较必须走 Math.fround 量化门控（review P3 2026-10-11：double 严格比较恒为脏）', () => {
+    expect(sceneSrc).toMatch(/const a = Math\.fround\(treadAlphaAt\(T - seg\.t\) \* TREAD_OPACITY/)
   })
   it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
     expect(sceneSrc).toMatch(/v\.treadMesh\.geometry\.dispose\(\)/)
@@ -39,15 +54,17 @@ describe('resolveTreadParams', () => {
     // 已带斜杠的形状不双写
     expect(resolveTreadParams({ texture: '/tread/textures/X.webp' }).texture).toBe('/tread/textures/X.webp')
   })
-  it('无数据 → 客户端通用贴图 + 产品回落值', () => {
+  it('无数据 → 客户端通用贴图 + 产品回落；宽度透出 null（未 authored，调用方模型实测）', () => {
     expect(resolveTreadParams(null)).toEqual({
-      texture: GENERIC_TREAD_TEXTURE, width: TREAD_FALLBACK.width, space: TREAD_FALLBACK.space, authored: false,
+      texture: GENERIC_TREAD_TEXTURE, width: null, space: TREAD_FALLBACK.space, authored: false,
     })
   })
-  it('坏数值逐字段回落（不整条拒绝）', () => {
+  it('坏数值逐字段回落（不整条拒绝）；manual_width 非法按未 authored（null）透出', () => {
     const p = resolveTreadParams({ texture: '', manual_width: -1, manual_space: Number.NaN })
     expect(p.texture).toBe(GENERIC_TREAD_TEXTURE)
-    expect(p.width).toBe(TREAD_FALLBACK.width)
+    // 非法宽度不落常量（常量只存在于场景 resolveTreadWidth 一处）：透出 null ⇒ 调用方可
+    // 继续走"模型履带盒实测"；早先在这里填常量会让 authoredWidth 误判为真、永久锁死
+    expect(p.width).toBeNull()
     expect(p.space).toBe(TREAD_FALLBACK.space)
     expect(p.authored).toBe(true)
   })
@@ -158,6 +175,38 @@ describe('advanceTrail', () => {
     const st = createTrailState()
     expect(advanceTrail(st, line(0, 0, 1, 0, 1, 5), 0, 1e9)).toBe(0)
     expect(advanceTrail(st, [{ x: 3, z: 0 }, { x: 3, z: 0 }], 1.0, 1e9)).toBe(0)
+  })
+  it('停车再起步：静止样本推进采样时刻（新戳出生时刻不倒退到停车前；review P2 2026-10-11）', () => {
+    // 复现现场：走到 0.8 m（t≈0.16）后停在原地到 t=100（位姿采样继续、位置不变），
+    // 再走到 1.3（t=100.1）。旧实现零位移直接 continue ⇒ st.t 冻在 0.16，跨过 1.0 m
+    // 打戳边界时在 0.16→100.1 之间插值，出生时刻被算成 40.1 s（实际 100.04 s）⇒
+    // 那一刻 alpha=0，新印记一出生就不可见。
+    const st = createTrailState()
+    const added = advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 0.8, z: 0, t: 0.16, yaw: 0 },
+      { x: 0.8, z: 0, t: 100, yaw: 0 },
+      { x: 1.3, z: 0, t: 100.1, yaw: 0 },
+    ], 0.5, 64)
+    expect(added).toBe(2)                        // 0.5 m 与 1.0 m 两戳（静止段不出戳）
+    const last = st.segs[st.total - 1]
+    expect(last.t).toBeCloseTo(100.04, 6)        // 1.0 m 界在 0.8→1.3 步内 f=0.4：100 + 0.1×0.4
+  })
+  it('静止期间的原地转向：停顿不新出戳，转向扫掠落在跨转向的那一戳上（扭转四边形）', () => {
+    const st = createTrailState()
+    advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 1.0, z: 0, t: 1, yaw: 0 },
+      { x: 1.0, z: 0, t: 2, yaw: Math.PI / 2 },   // 原地转 90°（零位移）
+      { x: 1.0, z: 1.0, t: 3, yaw: Math.PI / 2 },
+    ], 0.5, 64)
+    expect(st.total).toBe(4)                     // 0.5 / 1.0 / 1.5 / 2.0 m：转向段不额外出戳
+    expect(st.segs[1].yaw0).toBeCloseTo(0)       // 1.0 m 戳（转向之前）朝向未变
+    expect(st.segs[1].yaw1).toBeCloseTo(0)
+    // 跨转向的戳从旧朝向横截面扫到新朝向横截面（覆盖原地转向掠过的区域）
+    expect(st.segs[2].yaw0).toBeCloseTo(0)
+    expect(st.segs[2].yaw1).toBeCloseTo(Math.PI / 2)
+    expect(st.segs[3].yaw0).toBeCloseTo(Math.PI / 2)
   })
   it('seek 重算确定性：全量一次 == （走到 k、复位、重走到 k）', () => {
     const a = createTrailState()

@@ -2485,11 +2485,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         Promise.all([treadParamsFor(def.tank_id), treadMetaFor()]).then(([tp, meta]) => {
           if (destroyed || !v.trail) return;
           // 宽度解析（客户端语义：forceManualWidth=false ⇒ 从履带几何现算）：
-          // authored → 模型履带盒实测（suspParts.beltW）→ 常量回落
-          const beltW = beltWidthOf(v);
+          // authored → 模型履带盒实测（suspParts.beltW）→ 常量回落。
+          // ⚠️ 此刻 suspension 往往还没就位（参数 JSON 早于 GLB 到达），未 authored 车会先
+          // 落到常量回落；`authoredWidth:false` 标记让 updateTrails 在 beltW 就位后**重解析
+          // 并全量重建**（review P2 2026-10-11：旧写法把宽度永久锁成 0.6）。
           v.tread = {
             ...tp,
-            width: tp.width != null ? tp.width : (beltW > 1e-3 ? beltW : TREAD_FALLBACK.width),
+            authoredWidth: tp.width != null,
+            width: tp.width != null ? tp.width : resolvedTreadWidth(v),
             texScale: treadScaleFor(meta, tp.texture),
           };
           ensureTreadMesh(v, v.tread);
@@ -2554,6 +2557,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return n ? sum / n : 0;
   }
 
+  /** 未 authored 车（`manual_width: null`，客户端 forceManualWidth=false 语义）的当前宽度：
+   *  模型履带盒实测 beltW → 常量回落。authored 车恒用 manual_width、不走这里。 */
+  function resolvedTreadWidth(v) {
+    const beltW = beltWidthOf(v);
+    return beltW > 1e-3 ? beltW : TREAD_FALLBACK.width;
+  }
+
   function ensureTreadMesh(v, tp) {
     if (v.treadMesh || !scene) return;
     const SLOTS = TRAIL_CAP_PER_SIDE * 2;
@@ -2580,7 +2590,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);               // 未写段的位置是全零：drawRange 挡住 + seek 回退缩窗口
-    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, vertexColors: true });
+    // 双面（review P2 2026-10-11）：戳的角序 [L0,R0,R1,L1] 跟车体朝向走，**倒车**时位移
+    // 反向 ⇒ 固定索引产生朝下法线，默认 FrontSide 下被背面剔除（实测倒车印记从地面以上
+    // 完全不可见：从上方向下 Raycaster 命中 0 三角形，DoubleSide 后命中）。贴地覆盖层
+    // 走 MeshBasicMaterial 无光照，双面零代价。
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, vertexColors: true,
+                                              side: THREE.DoubleSide });
     let tex = treadTexCache.get(tp.texture);
     if (!tex) {
       tex = new THREE.TextureLoader().load(assetProvider.url(tp.texture));
@@ -2605,10 +2620,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return s && s.halfW > 1e-3 ? s.halfW : TREAD_HALF_GAUGE;
   }
 
-  /** 采样 [t0,T] 的两侧接地点序列并推进路径态（coverage 空洞断链；阵亡后静止不再出段） */
+  /**
+   * 采样 [t0,T] 的两侧接地点序列并推进路径态（coverage 空洞断链；阵亡后静止不再出段）。
+   *
+   * **固定网格喂样**（review P2 2026-10-11）：只喂**完整 0.1 s 网格片**（片界按 [START] 对齐），
+   * 且首点固定为 t0 时刻的横截面——片内交会点的插值只依赖片界样本 ⇒ seek 重算与逐帧连续
+   * 播放**逐值一致**。旧实现从任意帧的 builtT 重切网格、首锚取第一次子步的 tt：首锚随帧
+   * 时刻漂移（实测同一直线同终点：一次 seek 首锚 z=0.5/t=0.3，60fps 泵 z=0.083/t=0.217，
+   * 转弯处几何还有差异）。不足整片的尾巴**留待下次**：返回值为最后已喂的网格时刻（不是 T），
+   * 调用方以此作 builtT——尾巴在网格片完成前不上屏，语义与"逐帧推进"等价。
+   *
+   * @returns {number} 已喂到的回放时刻（网格对齐；无完整片可喂时 = t0）
+   */
   function feedTrail(v, tr, t0) {
     const space = v.tread.space;
     const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
+    const deathT = v.def.death_t;
     const pendL = [], pendR = [];
     let broken = false;
     // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
@@ -2620,52 +2647,52 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE);
       pendL.length = 0; pendR.length = 0;
     };
-    // 自适应子步：步内弧长 ≤ ~0.6 m（高速时 0.1 s 网格步会到 2 m+，段方向成弦切角）
-    let tA = t0;
-    const pA = posAt(v, tA, tmpV).clone();   // clone：子步循环里 tmpV 会被反复覆写
-    for (let t = t0; t < T; ) {
-      const step = Math.min(GRID_DT, T - t);
-      const tB = t + step;
-      const pB = posAt(v, tB, tmpV);
-      const bx = pB.x, bz = pB.z;            // 先取值：子步里的 posAt 会覆写 tmpV（= pB 本体）
-      const segLen = Math.hypot(bx - pA.x, bz - pA.z);
+    /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
+    const pushPoint = (tt) => {
+      if (deathT != null && tt >= deathT) return;             // 阵亡：静止残骸不再出段（不断链）
+      if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
+        if (!broken) {
+          flush();
+          resetTrailState(tr.L);                              // 显式复位：出空洞从新锚开始
+          resetTrailState(tr.R);
+          broken = true;
+        }
+        return;
+      }
+      broken = false;
+      posAt(v, tt, tmpV);
+      const yaw = yawAt(v, tt);
+      const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
+      const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
+      pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt, yaw });
+      pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt, yaw });
+    };
+    // 首锚 = t0 横截面（固定起始面；t0 落在空洞/阵亡内时由出空洞的首个可见点建锚）
+    pushPoint(t0);
+    const k0 = Math.round((t0 - START) / GRID_DT);
+    const kEnd = Math.floor((T - START) / GRID_DT + 1e-9);
+    let fedTo = t0;
+    for (let k = Math.max(0, k0); k < kEnd; k++) {
+      const tA2 = START + k * GRID_DT, tB2 = START + (k + 1) * GRID_DT;
+      const pa = posAt(v, tA2, tmpV); const ax = pa.x, az = pa.z;
+      const pb = posAt(v, tB2, tmpV); const bx = pb.x, bz = pb.z;   // 先取值：子步 posAt 覆写 tmpV
+      const segLen = Math.hypot(bx - ax, bz - az);
       if (segLen > 2.5) {
         // 大步 = 断链（出生摆放 / AoI 传送 / pose_kf 保持-跳变）：跨过去不铺印，
         // 否则位姿折线被 stamp 成一小段斜折线（用户报"刚进入对局时印记有一小段折线"）
         flush();
         resetTrailState(tr.L);
         resetTrailState(tr.R);
-        pA.x = bx; pA.z = bz;
-        t = tB;
+        fedTo = tB2;          // 断链片已消费：不补点，下一片的点从新锚开始
         continue;
       }
+      // 自适应子步：步内弧长 ≤ ~0.6 m（高速时 0.1 s 网格步会到 2 m+，段方向成弦切角）
       const nSub = Math.min(6, Math.max(1, Math.ceil(segLen / 0.6)));
-      for (let k = 1; k <= nSub; k++) {
-        const tt = t + (step * k) / nSub;
-        const deathT = v.def.death_t;
-        if (deathT != null && tt >= deathT) continue;          // 阵亡：静止残骸不再出段（不断链）
-        if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
-          if (!broken) {
-            flush();
-            resetTrailState(tr.L);                              // 显式复位：出空洞从新锚开始
-            resetTrailState(tr.R);
-            broken = true;
-          }
-          continue;
-        }
-        broken = false;
-        posAt(v, tt, tmpV);
-        const yaw = yawAt(v, tt);
-        const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
-        const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
-        // yaw 随点携带：横截面戳按"该时刻车体朝向"定向（相邻戳共享横截面 ⇒ 转弯无缝）
-        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt, yaw });
-        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt, yaw });
-      }
-      pA.x = bx; pA.z = bz;
-      t = tB;
+      for (let s = 1; s <= nSub; s++) pushPoint(tA2 + (GRID_DT * s) / nSub);
+      fedTo = tB2;
     }
     flush();
+    return fedTo;
   }
 
   /**
@@ -2673,8 +2700,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
    *
    * 槽位 = **左右交错**：第 k 对段占槽 `2k`（L）/ `2k+1`（R）——首版把 R 整块放在
    * `[cap, 2cap)` 而 drawRange 只从 0 数起 `(L+R)×6` 个索引，R 区间永远落在绘制窗口外
-   * （实测"只有左侧履带有印记"）。左右同点序列同间距成对出段 ⇒ 槽位致密、
-   * `drawRange = 2×min(L,R)×6` 恰好覆盖（万一失配，min 侧隐藏而非错乱）。
+   * （实测"只有左侧履带有印记"）。
+   *
+   * 绘制窗口取**较长侧**（review P2 2026-10-11）：左右中心线在转弯时弧长不同、段数本就
+   * 不成对，min(L,R) 会把较长侧最新段截在窗口外（实测 R=12 / L=15 时 L 最新 3 段全不可
+   * 见，转得越久落后越多）。较短侧落在窗口内的空槽（k ≥ 该侧 total，环形里可能残留上一轮
+   * 更长运行的旧段）**显式隐藏**（alpha 置 0），不靠"位置全零即退化"的偶然性。
    * `written` = 该侧已写入 GPU 的绝对段数；环形覆写只重写被覆盖的那个槽。
    */
   function writeTrailQuads(v, tr) {
@@ -2686,7 +2717,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const width = v.tread.width;
     const c12 = new Float32Array(12);
     // 环形覆写后可用槽位封顶在 2×cap：越界 drawRange 是未定义的 GPU 行为
-    const pairs = Math.min(tr.L.total, tr.R.total, TRAIL_CAP_PER_SIDE);
+    const pairs = Math.min(Math.max(tr.L.total, tr.R.total), TRAIL_CAP_PER_SIDE);
     let wrote = false;
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
@@ -2695,7 +2726,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (!seg) continue;
         if (!trailStampCorners(seg, width, h, c12)) continue;
         parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
-        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1);
+        // alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——老化扫描
+        // 必须按同一量化值比较（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick
+        // 重新上传）
+        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
@@ -2704,6 +2738,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         wrote = true;
       }
       st.written = st.total;
+      // 空槽显式隐藏：本侧没有第 k 段（k ∈ [total, pairs)）却在窗口内——清 alpha
+      for (let k = st.total; k < pairs; k++) {
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
+        if (carr[co] !== 0 || carr[co + 4] !== 0 || carr[co + 8] !== 0 || carr[co + 12] !== 0) {
+          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
+          wrote = true;
+        }
+      }
     }
     geo.setDrawRange(0, pairs * 2 * 6);
     // 门控上传：本帧没有新段就不传（静止/暂停时零 GPU 上传；此前每帧无条件全量上传
@@ -2745,7 +2787,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       for (let k = lo; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
-        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1);
+        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，若拿
+        // double 的 a 严格比较，`carr[i] !== 0.8` 永远成立（读回 0.8000000119）⇒ 时钟没动
+        // 也每 tick 标脏重传。量化后同一 alpha 的重复 tick 不再置 dirty。
+        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {
@@ -2766,18 +2811,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (!tr) continue;
       if (v.treadMesh) v.treadMesh.visible = on;
       if (!on) {
-        // 关断期间不推进游标：重开时从 START 全量补铺（印记 = 全程确定性重算）
-        if (tr.builtT !== -Infinity) tr.builtT = -Infinity;
+        // 关断期间不推进游标：重开时从 START 全量补铺（印记 = 全程确定性重算）。
+        // ⚠️ 路径态必须**一起复位**（review P2 2026-10-11）：旧写法只回退 builtT，重开时
+        // 整条路径被追加到旧末端——反向桥接、重复段、出生时刻非单调，后面的时间二分也失去
+        // 前提（实测同一 t=52 关→seek→开→seek 后每侧段数 49 → 148）。
+        if (tr.builtT !== -Infinity || tr.L.total || tr.R.total) {
+          resetTrailState(tr.L); resetTrailState(tr.R);
+          tr.builtT = -Infinity;
+        }
         continue;
       }
       if (!v.tread || !v.treadMesh) continue;   // 参数/网格未就绪：builtT 保持 -∞，就绪后全量补铺
+      // 宽度晚到（review P2 2026-10-11）：参数 JSON 通常早于 GLB 到达，未 authored 车首解析
+      // 时无 suspension 实测（beltW=0）⇒ 宽度被锁成常量回落。模型挂载实测就位后在此重解析，
+      // 变了就复位全量重建（旧段是按旧宽度铺的，混宽会视觉分层）。authored 车恒用 manual_width。
+      if (!v.tread.authoredWidth) {
+        const w = resolvedTreadWidth(v);
+        if (Math.abs(w - v.tread.width) > 1e-3) {
+          v.tread.width = w;
+          resetTrailState(tr.L); resetTrailState(tr.R);
+          tr.builtT = -Infinity;
+        }
+      }
       if (T < tr.builtT) {                       // seek 后退：全量重算（destructibles 同构）
         resetTrailState(tr.L); resetTrailState(tr.R);   // written 随复位归零 ⇒ 全量重写实例
         tr.builtT = -Infinity;
       }
       const t0 = Math.max(tr.builtT, START);
-      feedTrail(v, tr, t0);
-      tr.builtT = T;
+      tr.builtT = feedTrail(v, tr, t0);          // 返回最后已喂网格时刻；不足整片的尾巴留待下次
       writeTrailQuads(v, tr);
       ageTrailAlphas(v, tr);
     }
@@ -4804,7 +4865,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setFollow,
     setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) applyGlbToggle(on); invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
-    setTreadMarks: (on) => { store.treadOn = !!on; invalidate(); },
+    setTreadMarks: (on) => {
+      store.treadOn = !!on;
+      // 立即同步（review P2 2026-10-11）：writeTrailQuads/可见性只由 tick 驱动，而暂停时
+      // animate 不 tick——只改 store 的话，暂停态 setTreadMarks(false) 后 mesh.visible 仍是
+      // true（实测），必须继续播放或 seek 才更新。这里直接跑一次游标泵（幂等：同 T 重入
+      // 不产生新段，全量重建也由 builtT=-∞ 路径确定性收敛）。
+      updateTrails();
+      invalidate();
+    },
     /**
      * 共享标签偏好（唯一 owner = usePlaybackPreferences）。契约：
      * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，
