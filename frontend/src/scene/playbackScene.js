@@ -709,7 +709,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!pickMarker) {
       pickMarker = new THREE.Mesh(
         new THREE.SphereGeometry(0.5, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9 }),
+        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9,
+                                      toneMapped: false }),
       );
       pickMarker.renderOrder = 999;
     }
@@ -790,8 +791,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    // 标记/反馈层约定：`toneMapped: false` 字面色直出——逐图曝光（toneMappingExposure =
+    // 基准太阳强度/该图强度）只服务受光内容，不得让 UI 语义色的标记随图变深
+    //（2026-10-11 用户报"作者圆环与边界红线在加了光照后变深"：山地图 expo≈0.21 会压到 1/5）。
     const mat = new THREE.MeshBasicMaterial({
-      color: BOUNDARY_COLOR, side: THREE.DoubleSide,
+      color: BOUNDARY_COLOR, side: THREE.DoubleSide, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // 防与地形 z-fighting
     });
     const g = new THREE.Group();
@@ -2074,7 +2078,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const ring = new THREE.Mesh(
       makeGroundedRing(gx, gz, r),
       new THREE.MeshBasicMaterial({ color: baseColors.neutral, side: THREE.DoubleSide,
-                                    transparent: true, opacity: 0.9, depthWrite: false,
+                                    transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
                                     polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
     scene.add(ring);
     const canvas = document.createElement('canvas'); canvas.width = BASE_TEX; canvas.height = BASE_TEX;
@@ -2082,6 +2086,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const disc = new THREE.Mesh(
       makeGroundedDisc(gx, gz, r * 0.9),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+                                    toneMapped: false,
                                     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     scene.add(disc);
     const b = { baseId, kind, gx, gz, r, ring, disc, canvas, ctx: canvas.getContext('2d'), tex,
@@ -2465,7 +2470,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       g.add(tracks); g.add(hullG);
       if (def.is_author) {
         const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 4.3, 32),
-          new THREE.MeshBasicMaterial({ color: 0xe8b23c, side: THREE.DoubleSide, transparent: true, opacity: .85 }));
+          new THREE.MeshBasicMaterial({ color: 0xe8b23c, side: THREE.DoubleSide, transparent: true,
+                                        opacity: .85, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
         ring.userData.keepWithGlb = true;   // GLB 模式下保留作者标记环
         g.add(ring);
@@ -3424,9 +3430,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function makeImpactFx(kind) {
     const g = new THREE.Group();
     const ball = new THREE.Mesh(new THREE.SphereGeometry(kind === 'nonpen' ? 0.42 : 0.72, 10, 10),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 20),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true }));
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true, toneMapped: false }));
     ring.rotation.x = -Math.PI / 2;
     g.add(ball); g.add(ring);
     const sparks = [];
@@ -3434,7 +3440,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 侧向 sparks（两段短射线沿弹道法向散开）；局部偏移在 spawn 时按弹道方向设
       for (const _sgn of [1, -1]) {
         const sp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2),
-          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
+          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
         g.add(sp); sparks.push(sp);
       }
     }
@@ -3571,7 +3577,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1,
+      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1, toneMapped: false,
     }));
     sp.renderOrder = 1001;                 // 反馈层内的绘制顺序
     return { sp, tex, cv, ctx: cv.getContext('2d') };
@@ -3622,7 +3628,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function makeBurstFx() {
     const g = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
     });
     const rings = [];
     for (const r0 of [0.8, 1.6]) {
