@@ -24,6 +24,15 @@ export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
  * 但具体时长未逆向——本组常数是**产品决定**（上游 feasibility §四 的自定参数项）。 */
 export const TREAD_FADE = { after: 10, dur: 10 };
 
+/** 全局不透明度系数：顶点色 alpha = 淡出系数 × 本值。
+ *
+ * 为什么需要：各类贴图的 authored alpha 强弱差异极大（可见覆盖率 USSR 87% / USA 81% /
+ * GB 95% / 通用 Tread 55%，GB 平顶 p90 238），且段间还有 TRAIL_OVERLAP 重叠——alpha
+ * 直接透出时 GB 类近实心黑（可见区 RGB 亮度只有 ~30/255，alpha 238 ⇒ 地面被压到 ~12%
+ * 亮度的 88% 不透明覆盖，用户报"过于黑"）。客户端 deferred-decal 路径带每实例
+ * `opacity` 参数（动态值，未逆向）⇒ 本常数即该参数的静态产品替身，可调。 */
+export const TREAD_OPACITY = 0.55;
+
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
  * 输入负数（时钟早于出段时刻，seek 边界）按 1 处理（fail-safe：宁可多显不闪烁）。
@@ -137,9 +146,10 @@ function pushSeg(st, seg, cap) {
  * 粗格网格与真值面可差 5~15 cm（铁轨 D4 同族问题），0.06 时实测成片被网格盖住
  * （印记"被地面挡住且断续可见"的根因）⇒ 取 0.12；近距平地上略微悬空，观感可接受。 */
 export const TRAIL_LIFT = 0.12;
-/** 段长放大系数：相邻段重叠 ~25%，盖住转弯处相邻段方向突变留下的楔形缝
- * （直线段重叠区 alpha 叠加略深，软边贴图下不可见）。 */
-export const TRAIL_OVERLAP = 1.25;
+/** 段长放大系数：相邻段重叠 ~12%，盖住转弯处相邻段方向突变留下的楔形缝。
+ * ⚠️ 不宜过大：重叠区 alpha 双重合成（TREAD_OPACITY 之上再叠一次），25% 时强 alpha 类
+ * （GB）重叠带近实心黑（2026-10-11 用户报"FV215b 印记过于黑"的成因之一）。 */
+export const TRAIL_OVERLAP = 1.12;
 
 /**
  * 段 → 贴地四边形的 **4 个角**（世界系，逐角独立采样地形高度 + 抬升）。

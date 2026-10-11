@@ -57,7 +57,7 @@ import {
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
 import {
   advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
-  trailQuadCorners, treadAlphaAt, TREAD_FADE,
+  trailQuadCorners, treadAlphaAt, TREAD_FADE, TREAD_OPACITY,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -2551,6 +2551,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const pB = posAt(v, tB, tmpV);
       const bx = pB.x, bz = pB.z;            // 先取值：子步里的 posAt 会覆写 tmpV（= pB 本体）
       const segLen = Math.hypot(bx - pA.x, bz - pA.z);
+      if (segLen > 2.5) {
+        // 大步 = 断链（出生摆放 / AoI 传送 / pose_kf 保持-跳变）：跨过去不铺印，
+        // 否则位姿折线被 stamp 成一小段斜折线（用户报"刚进入对局时印记有一小段折线"）
+        flush();
+        resetTrailState(tr.L);
+        resetTrailState(tr.R);
+        pA.x = bx; pA.z = bz;
+        t = tB;
+        continue;
+      }
       const nSub = Math.min(6, Math.max(1, Math.ceil(segLen / 0.6)));
       for (let k = 1; k <= nSub; k++) {
         const tt = t + (step * k) / nSub;
@@ -2600,7 +2610,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (!seg) continue;
         if (!trailQuadCorners(seg, width, h, c12)) continue;
         parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
-        const a = treadAlphaAt(T - seg.t);
+        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY;
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
@@ -2638,7 +2648,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       for (let k = lo; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
-        const a = treadAlphaAt(T - seg.t);
+        const a = treadAlphaAt(T - seg.t) * TREAD_OPACITY;
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {
@@ -4591,6 +4601,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
+    if (glbOn) {
+      const attach = applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
+      if (Q.forceGlb) {
+        // 高/极致（2026-10-11 用户裁示）：进地图前**全部**车辆模型就绪——此前 GLB 在
+        // 开始播放后才并发下载，开局数秒是盒子代理，且履带印轨距（suspension 模型
+        // halfW）随挂载跳变，起步印记出现侧向折线
+        store.assetStage = true;
+        try { await attach; } finally { if (current()) store.assetStage = false; }
+        if (!current()) return false;
+      }
+    }
     buildRoster();
     // 会话级 mounted-configs 缓存（tank_id → tank/{id}.json）：先建 Map 再建 resolver——
     // resolver 闭包持有同一引用，异步填充后自动生效
@@ -4622,7 +4643,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     T = START;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
-    if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
     prewarmShaders();
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = START;

@@ -1039,7 +1039,11 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
     expect(src).toMatch(/renderer\.compile\(labelScene, camera\);/)
     // 会话启动路径必须调用（GLB 恢复之后、开播之前）
-    expect(src).toMatch(/if \(glbOn\) applyGlbToggle\(true\);[\s\S]{0,60}prewarmShaders\(\);/)
+    // GLB 恢复挂载已前移到 buildVehicles 之后（2026-10-11）：高/极致在 assetStage 内
+    // await 全部模型就绪才开播（用户裁示"进地图前加载完双方坦克模型"）
+    expect(src).toMatch(/const attach = applyGlbToggle\(true\);[\s\S]{0,80}if \(Q\.forceGlb\) \{/)
+    expect(src).toMatch(/try \{ await attach; \} finally \{ if \(current\(\)\) store\.assetStage = false; \}/)
+    expect(src).toMatch(/prewarmShaders\(\);/)
   })
 
   it('性能探针带主线程停顿看门狗（抓帧循环之外的长任务）', () => {
