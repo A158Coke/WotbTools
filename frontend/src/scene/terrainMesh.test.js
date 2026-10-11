@@ -37,6 +37,125 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     return lo === null ? null : [lo, hi]
   }
 
+  // ---- 缩小版参考对照（2026-10-11 PR 评审遗留项）----
+  // 按引擎 `LandscapeSubdivision` 语义**独立**重写细分判定（不复用模块的补片表/递归），与
+  // `buildAdaptiveTerrain` 的终止补片集逐补片对比——锁定三处逐行对齐修复（子树误差聚合 /
+  // 包围盒聚合 / 反对角平均）不被后续改动悄悄破坏。只对照"判定"，morph 不在内。
+  // 仅收规整四叉树（每层 perAxis 恰为 2 倍，n=64/128 即此）；非整倍 n 的夹取口径由既有
+  // 行为用例（无空洞 / 混排无裂缝）看护。
+  const refTerminatedPatches = (field, n, span, cam, fovY, aspect) => {
+    const H = (i, j) => field[Math.min(i, n - 1) * n + Math.min(j, n - 1)]
+    const wx = (j) => (j / n - 0.5) * span
+    const wz = (i) => (i / n - 0.5) * span
+    const M = subdivisionMetrics(fovY, aspect)
+    const rootStep = Math.max(1, 2 ** Math.floor(Math.log2(Math.max(1, Math.floor(n / PATCH_QUADS)))))
+    const K = Math.round(Math.log2(rootStep)) + 1
+    const levels = []
+    for (let L = 0; L < K; L++) {
+      const patchSize = PATCH_QUADS * (rootStep >> L)
+      levels.push({
+        patchSize, perAxis: Math.max(1, Math.ceil(n / patchSize)),
+        step: patchSize / PATCH_QUADS, err: [], pos: [], box: [],
+      })
+    }
+    // ① 各层 own 采样：8×8 四边形 × 5 样本（引擎 UpdatePatchInfo；最细层不采样 ⇒ 0）
+    for (let L = 0; L < K; L++) {
+      const lv = levels[L], deepest = L === K - 1, step = lv.step, h = step >> 1
+      for (let iy = 0; iy < lv.perAxis; iy++) {
+        for (let ix = 0; ix < lv.perAxis; ix++) {
+          const i0 = iy * lv.patchSize, j0 = ix * lv.patchSize
+          let err = 0, pi = i0, pj = j0
+          let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity, mnH = Infinity, mxH = -Infinity
+          for (let a = 0; a <= PATCH_QUADS; a++) {
+            const ii = Math.min(i0 + a * step, n), z = wz(ii)
+            if (z < mnZ) mnZ = z
+            if (z > mxZ) mxZ = z
+            for (let b = 0; b <= PATCH_QUADS; b++) {
+              const jj = Math.min(j0 + b * step, n), x = wx(jj), y = H(ii, jj)
+              if (x < mnX) mnX = x
+              if (x > mxX) mxX = x
+              if (y < mnH) mnH = y
+              if (y > mxH) mxH = y
+            }
+          }
+          if (!deepest) {
+            for (let a = 0; a < PATCH_QUADS; a++) {
+              for (let b = 0; b < PATCH_QUADS; b++) {
+                const ci = i0 + a * step, cj = j0 + b * step
+                if (ci >= n || cj >= n) continue
+                const p00 = H(ci, cj), p01 = H(ci, cj + step)
+                const p10 = H(ci + step, cj), p11 = H(ci + step, cj + step)
+                for (const [qi, qj, ap] of [
+                  [ci, cj + h, (p00 + p01) / 2],
+                  [ci + h, cj, (p00 + p10) / 2],
+                  [ci + h, cj + h, (p00 + p11) / 2],   // 双奇对角 = 反对角两点（p00/p11）
+                  [ci + step, cj + h, (p10 + p11) / 2],
+                  [ci + h, cj + step, (p01 + p11) / 2],
+                ]) {
+                  const e = H(qi, qj) - ap
+                  if (Math.abs(e) > Math.abs(err)) { err = e; pi = qi; pj = qj }
+                }
+              }
+            }
+          }
+          const idx = iy * lv.perAxis + ix
+          lv.err[idx] = err; lv.pos[idx] = [pi, pj]
+          lv.box[idx] = [mnX, mxX, mnZ, mxZ, mnH, mxH]
+        }
+      }
+    }
+    // ② 自底向上：子的误差（含其子树）与包围盒并入父（子索引 = 2×父 + 象限）
+    for (let L = K - 2; L >= 0; L--) {
+      const lv = levels[L], ch = levels[L + 1]
+      for (let iy = 0; iy < lv.perAxis; iy++) {
+        for (let ix = 0; ix < lv.perAxis; ix++) {
+          const idx = iy * lv.perAxis + ix
+          for (const [di, dj] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+            const cidx = (2 * iy + di) * ch.perAxis + (2 * ix + dj)
+            if (Math.abs(ch.err[cidx]) > Math.abs(lv.err[idx])) { lv.err[idx] = ch.err[cidx]; lv.pos[idx] = ch.pos[cidx] }
+            const pb = lv.box[idx], cb = ch.box[cidx]
+            pb[0] = Math.min(pb[0], cb[0]); pb[1] = Math.max(pb[1], cb[1])
+            pb[2] = Math.min(pb[2], cb[2]); pb[3] = Math.max(pb[3], cb[3])
+            pb[4] = Math.min(pb[4], cb[4]); pb[5] = Math.max(pb[5], cb[5])
+          }
+        }
+      }
+    }
+    // ③ 三条判据（半径 / 屏幕高度 / 绝对 3 m）+ 递归
+    const out = []
+    const rec = (i0, j0, step, level) => {
+      let subdivide = false
+      if (step > 1) {
+        const lv = levels[level]
+        const idx = Math.floor(i0 / lv.patchSize) * lv.perAxis + Math.floor(j0 / lv.patchSize)
+        const errAbs = Math.abs(lv.err[idx])
+        const [pi, pj] = lv.pos[idx]
+        const heightError = errAbs / (Math.hypot(cam.x - wx(pj), cam.y - H(pi, pj), cam.z - wz(pi)) * M.tanFovY)
+        const b = lv.box[idx]
+        const bx = (b[0] + b[1]) / 2, by = (b[4] + b[5]) / 2, bz = (b[2] + b[3]) / 2
+        const radius = Math.sqrt((b[1] - bx) ** 2 + (b[5] - by) ** 2 + (b[3] - bz) ** 2)
+        const radiusError = radius / (Math.hypot(cam.x - bx, cam.y - by, cam.z - bz) * M.tanFovY)
+        subdivide = radiusError >= M.maxPatchRadiusError
+          || heightError >= M.maxHeightError
+          || errAbs > M.maxAbsoluteHeightError
+      }
+      if (subdivide) {
+        const h2 = step >> 1
+        if (h2 * 2 === step) {
+          for (const [di, dj] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+            rec(i0 + di * PATCH_QUADS * h2, j0 + dj * PATCH_QUADS * h2, h2, level + 1)
+          }
+          return
+        }
+      }
+      out.push([i0, j0, step])
+    }
+    for (let i = 0; i < n; i += rootStep * PATCH_QUADS) {
+      for (let j = 0; j < n; j += rootStep * PATCH_QUADS) rec(i, j, rootStep, 0)
+    }
+    return out
+  }
+
   it('阈值口径：tanFovY = tan(vfov/2)、阈值随（水平）fov 在 zoom/normal 预设间插值', () => {
     // 客户端 `PrepareSubdivision`：fovLerp 用**水平** fov（引擎 Camera::GetFOV() 口径）；
     // 阈值 = zoom + (normal − zoom)·fovLerp；tanFovY = tanf(fov/2)/aspect ≡ tan(vfov/2)。
@@ -320,52 +439,24 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(worst).toBeLessThanOrEqual(17.27 + 0.05)
   })
 
-  it('岸线特征（`shores`，第四条判据）：与水面标高相交的补片细到 1 texel，远处也把水陆交界解析出来', () => {
-    // 2026-10-10 用户"和地形的交接处还是锯齿状：拉近之后锯齿变细、旋转时形状固定" ⇒ 定案为
-    // **网格量化**（不是深度抢闪、不是数据噪声）：岸线在源数据里是 2–5 cm/texel 的平缓坡，
-    // 客户端相机近 ⇒ 天然 1 texel 级；我们的回放相机常在上百米外 ⇒ 三条客户端判据（同一相机
-    // 位置）合法地给粗格 ⇒ 平缓坡被量化成米级台阶。第四条判据：补片与水面占地相交且格点高度
-    // 范围跨越其标高 ⇒ 细分到底（1 texel）；跨界判定与发射几何同源（同一批 texel 值）⇒ 无需余量常数。
-    const n = 96, span = 96, step = span / n          // 1 m/texel
-    const level = 12.25
-    // 平缓坡：h = 10 + 0.03·j（跨 level 于 j≈75）
+  it('细分判据只有客户端三条：传"岸线标高表"不再改变 tessellation（第四条判据已删，2026-10-11 评审）', () => {
+    // 背景：2026-10-10 曾加过第四条"岸线特征"判据（与水面标高相交的补片强制细分到底）。
+    // 2026-10-11 PR 评审：DAVA `SubdividePatch` 没有这条——"纯客户端三判据"的目标不允许自研
+    // 判据 ⇒ 已删除（岸线视觉由水材质/coastLine 处理，不改地形 tessellation）。本用例锁定删除：
+    // 传入额外的 `shores` 字段（旧 API 形状）必须被忽略，几何与不传时逐字节一致。
+    const n = 96, span = 96
     const field = make(n, 10, (i, j) => 10 + 0.03 * j)
     const far = { x: 0, y: 400, z: 0 }
-    const shore = [{ y: level, x0: -span / 2, x1: span / 2, z0: -span / 2, z1: span / 2 }]
-    const coarse = build(field, n, span, far)
-    const fine = buildAdaptiveTerrain({ field, n, span, cam: far, fovY: FOV, aspect: ASPECT, shores: shore })
+    const base = build(field, n, span, far)
+    const withShores = buildAdaptiveTerrain({
+      field, n, span, cam: far, fovY: FOV, aspect: ASPECT,
+      shores: [{ y: 12.25, x0: -span / 2, x1: span / 2, z0: -span / 2, z1: span / 2 }],
+    })
+    expect(Array.from(withShores.sizeAt)).toEqual(Array.from(base.sizeAt))
+    expect(withShores.quads).toBe(base.quads)
     const mid = Math.floor(n / 2)
-    const jCross = Math.ceil((level - 10) / 0.03)      // ≈ 75
-    // 远相机下：无岸线判据 ⇒ 交界处是粗格；有判据 ⇒ 1 texel
-    expect(coarse.sizeAt[mid * n + jCross]).toBeGreaterThan(1)
-    expect(fine.sizeAt[mid * n + jCross]).toBe(1)
-    // 只是**特征带**细分：远离标高（h 远低于/高于 level）的补片仍按客户端判据给粗格
-    expect(fine.sizeAt[mid * n + 5]).toBeGreaterThan(1)
-    expect(fine.sizeAt[mid * n + n - 2]).toBeGreaterThan(1)
-    // 三角形数与预算：带内细、带外粗，且不触顶
-    expect(fine.quads).toBeGreaterThan(coarse.quads)
-    expect(fine.overBudget).toBe(false)
-    // 混排（跨级）后仍无裂缝：共享边两侧逐点同高（口径同下一条用例）
-    const S = fine.sizeAt
-    const boundaries = new Set()
-    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-      const s = S[i * n + j]; if (!s) continue
-      if (i > 0 && S[(i - 1) * n + j] && S[(i - 1) * n + j] !== s) boundaries.add(`h:${i}`)
-      if (j > 0 && S[i * n + j - 1] && S[i * n + j - 1] !== s) boundaries.add(`v:${j}`)
-    }
-    let samples = 0, maxGap = 0
-    for (const b of boundaries) {
-      const [kind, at] = b.split(':')
-      const fixed = (Number(at) / n) * span - span / 2
-      for (let t = -span / 2 + step / 8; t < span / 2 - 1e-9; t += step / 4) {
-        const p = kind === 'h' ? [t, fixed] : [fixed, t]
-        const r = surfaceAt(fine, p[0], p[1])
-        if (!r) continue
-        samples++; maxGap = Math.max(maxGap, r[1] - r[0])
-      }
-    }
-    expect(samples).toBeGreaterThan(20)
-    expect(maxGap).toBeLessThanOrEqual(1e-4)
+    const jCross = Math.ceil((12.25 - 10) / 0.03)      // ≈ 75：旧判据曾在此细到 1 texel
+    expect(withShores.sizeAt[mid * n + jCross]).toBeGreaterThan(1)   // 三判据下合法地给粗格
   })
 
   it('无裂缝：相邻四边形混排尺寸（含跨级 LOD）+ 交界两侧逐点同高（几何检查）', () => {
@@ -439,5 +530,28 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(m.overBudget).toBe(false)
     expect(m.metrics.tanFovY).toBeCloseTo(Math.tan(FOV / 2), 12)
     expect(m.patches.length).toBeGreaterThan(0)
+  })
+
+  it('参考对照（引擎语义独立重写）：终止补片集逐补片一致——锁定三处转写修复不被改坏', () => {
+    // 2026-10-11 PR 评审遗留项：原验证（Python 参考移植逐补片比较）在仓外、无法持续复现 ⇒
+    // 固化一个**缩小版**参照：同一判据按引擎语义独立重写（5 样本 / 四叉树自底向上聚合 /
+    // 三条判据），与实现逐补片对比。若未来有人改坏子树误差聚合 / 包围盒聚合 / 反对角平均
+    // （或把自研判据塞回递归），本用例先于行为用例翻红。
+    const cases = [
+      { n: 64, span: 600, cam: { x: 0, y: 240, z: 60 }, gen: (i, j) => 20 + 8 * Math.sin(i / 5) * Math.cos(j / 5) },
+      { n: 64, span: 600, cam: { x: 200, y: 500, z: -150 }, gen: (i, j) => 20 + 0.4 * j + (i > 32 ? 4 : 0) },
+      { n: 128, span: 600, cam: { x: -40, y: 90, z: 30 }, gen: (i, j) => 12 + 20 * Math.exp(-(((i - 64) ** 2 + (j - 50) ** 2) / 1500)) },
+      { n: 128, span: 600, cam: { x: 0, y: 40, z: 0 }, gen: (i, j) => 20 + 3 * Math.sin(i / 11) + 2 * Math.cos(j / 7) },
+    ]
+    for (const c of cases) {
+      const field = make(c.n, 0, c.gen)
+      const m = build(field, c.n, c.span, c.cam)
+      expect(m.overBudget).toBe(false)              // 预算未触顶 ⇒ 递归口径与参考一致
+      const key = (p) => `${p[0]}:${p[1]}:${p[2]}`
+      const got = m.patches.map((p) => [p.i0, p.j0, p.step]).map(key).sort()
+      const want = refTerminatedPatches(field, c.n, c.span, c.cam, FOV, ASPECT).map(key).sort()
+      expect(got.length).toBeGreaterThan(8)         // 非空转：确有终止补片参与比较
+      expect(got).toEqual(want)
+    }
   })
 })

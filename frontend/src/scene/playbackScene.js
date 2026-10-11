@@ -23,7 +23,6 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import { buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
-import { applyTerrainCover } from './terrainCover.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
@@ -50,7 +49,7 @@ import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from '
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
   attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
-  parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
+  parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
 import { assetProvider } from './assetProvider.js'
@@ -212,11 +211,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 缺失（未导出/404）时回退整图烘焙底图
   let groundLayers = null;
   let terrainMesh = null, heightField = null, heightMeta = null;  // 3D 地形
-  // 渲染用高度场：默认与 heightField 同一引用；有"地形让位掩码"时是它的副本（见下）。
-  // **查询/放置一律用 heightField（真值）**，只有网格构建用 renderField。
-  let renderField = null;
+  // 高度场只有一份（客户端同构：渲染/查询/放置全用真值场）。让位掩码（v0.4.2 的"渲染场"副本
+  // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
   let waterTexDispose = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
-  let shoreLevels = null;       // 岸线标高表（水面/水下薄板；地形网格第四条判据用，见 terrainMesh.js）
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
   // 可破坏地形（契约 additive：destructible_areas/events + map/destructibles.json）。
   // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
@@ -541,10 +538,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const text = formatPickReport(rep);
       console.log(text);
       try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
+      try { window.__pbPickMesh = hit ? hit.object : null; } catch (_) {}   // 诊断：命中网格本体（控制台实时改材质用）
       showPickPanel(text);
       if (hit) movePickMarker(hit.point);
     } catch (err) {
+      // 失败必须可见（禁止静默）：面板直接显示错误，否则表现为"点击没反应"难排查
       console.warn('[scene-pick] failed:', err);
+      try { showPickPanel(`[scene-pick] failed: ${(err && (err.stack || err.message)) || err}`); } catch (_) {}
     }
   }
   function buildPickReport(hit) {
@@ -580,6 +580,84 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
+    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度。
+    // 渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
+    // ⚠️ 两个诊断变量都声明在 if 外——return 在 if 外引用它们（作用域错误曾致
+    // ReferenceError: render is not defined，表现为"点击无反应"）。
+    let terrain = null;
+    let render = null;
+    if (heightField && heightMeta) {
+      try {
+        const n = heightMeta.size || 512;
+        const span = terrainSpanOf();
+        // truth = 真值场在命中点的**双线性插值**（与网格的连续表面对同一口径）——
+        // 不能拿最近格点值当基准：坡面上连续点 vs 格点值的差是比法误差，不是渲染缺陷
+        //（2026-10-11 plant wall_03 Δ=+0.234 假警报的教训：该点在两格点之间、坡度 1 m/texel）。
+        const fx = (hit.point.x / span + 0.5) * n;
+        const fz = (hit.point.z / span + 0.5) * n;
+        const j0 = Math.min(Math.max(Math.floor(fx), 0), n - 1), j1 = Math.min(j0 + 1, n - 1);
+        const i0 = Math.min(Math.max(Math.floor(fz), 0), n - 1), i1 = Math.min(i0 + 1, n - 1);
+        const tx = Math.min(Math.max(fx - j0, 0), 1), tz = Math.min(Math.max(fz - i0, 0), 1);
+        const H = (i, j) => heightField[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
+        const truth = (H(i0, j0) * (1 - tx) + H(i0, j1) * tx) * (1 - tz)
+                    + (H(i1, j0) * (1 - tx) + H(i1, j1) * tx) * tz;
+        const jj = Math.min(Math.max(Math.round(fx), 0), n - 1);
+        const ii = Math.min(Math.max(Math.round(fz), 0), n - 1);
+        let meshH = null;
+        if (terrainMesh) {
+          const rc = new THREE.Raycaster(
+            new THREE.Vector3(hit.point.x, 600, hit.point.z), new THREE.Vector3(0, -1, 0));
+          const th = rc.intersectObject(terrainMesh, false);
+          if (th.length) meshH = th[0].point.y;
+        }
+        const build = terrainMesh?.geometry?.userData?.terrainBuild || null;
+        terrain = {
+          truth,
+          meshH,
+          sizeAt: build ? build.sizeAt[ii * n + jj] : null,
+          morph: build ? build.morphRaw[ii * n + jj] : null,
+          quads: build ? build.quads : null,
+          overBudget: build ? build.overBudget : null,
+        };
+      } catch (_) { terrain = null; }
+    }
+    // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
+    // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
+    // ⚠️ 不依赖 heightField/heightMeta——terrain 下载失败/元数据缺失/降级时（恰是最值得排障的
+    // 一类场景）本段仍必须出报告（2026-10-11 PR 评审 P3：此前被错误地包在 terrain 可用性里）。
+    try {
+      const o = hit.object;
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      const worldPos = new THREE.Vector3();
+      o.getWorldPosition(worldPos);
+      let instScale = null;
+      if (o.isInstancedMesh && hit.instanceId != null) {
+        const im = new THREE.Matrix4();
+        o.getMatrixAt(hit.instanceId, im);
+        instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
+      }
+      render = {
+        type: o.type,
+        name: o.name || null,
+        matName: mats.map((x) => x.name || '?').join('|') || null,
+        matType: mats.map((x) => x.type).join('|') || null,
+        matVisible: mats.map((x) => x.visible).join(',') || null,
+        transparent: mats.map((x) => x.transparent).join(',') || null,
+        opacity: mats.map((x) => Number(x.opacity != null ? x.opacity : 1)).join(',') || null,
+        alphaTest: mats.map((x) => x.alphaTest || 0).join(',') || null,
+        depthWrite: mats.map((x) => x.depthWrite).join(',') || null,
+        objVisible: o.visible,
+        frustumCulled: o.frustumCulled,
+        instanceId: hit.instanceId != null ? hit.instanceId : null,
+        instScale,
+        world: [worldPos.x, worldPos.y, worldPos.z].map((v) => Number(v.toFixed(1))),
+        sphere: o.geometry && o.geometry.boundingSphere ? {
+          c: [o.geometry.boundingSphere.center.x, o.geometry.boundingSphere.center.y,
+            o.geometry.boundingSphere.center.z].map((v) => Number(v.toFixed(1))),
+          r: Number(o.geometry.boundingSphere.radius.toFixed(1)),
+        } : null,
+      };
+    } catch (_) { render = null; }
     return {
       clock: T,
       kind: 'scenery',
@@ -591,6 +669,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       inst: inst || null,
       serverIdKnown: !!(inst && inst.serverId),
       vis: st ? stateVisualLabel(st) : null,
+      terrain,
+      render,
     };
   }
   function showPickPanel(text) {
@@ -807,9 +887,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     destruct = null;
     destructPickList = null;
     meshOwner = null;
-    mapTexture = null; mapMetaInfo = null; heightField = null; renderField = null; heightMeta = null;
+    mapTexture = null; mapMetaInfo = null; heightField = null; heightMeta = null;
     if (waterTexDispose) { waterTexDispose.dispose(); waterTexDispose = null; }
-    shoreLevels = null;
     terrainLodPrev = null;   // 会话场景失效：下一场首帧必重建地形 LOD
     occlGrid = null;   // 标签遮挡候选格属于会话场景，随场景一起失效
     groundLayers = null;
@@ -949,30 +1028,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const zmin = meta.zmin || 0;
           const k = ((meta.zmax || 100) - zmin) / 65535;
           for (let i = 0; i < u16.length; i++) heightField[i] = u16[i] * k + zmin;
-          renderField = heightField;   // 无掩码时同一引用（零拷贝）
         }
-      }
-      // 地形让位掩码（上游 `tools/bake_terrain_cover.py` → 包内 `cover.u16.bin`）：
-      // 贴地结构（吸附齐平的铺装/压顶/铁轨基板等）覆盖处，把**渲染用**高度场夹到结构面之下
-      // （压低量烘焙时已限 ≤0.4 m 并在 20 texel 内线性收尾）。查询/放置仍走 heightField ⇒
-      // 拾取、贴地、贴花位置不受影响。缺掩码/旧包 ⇒ fail-open 保持原样。
-      if (heightField && heightMeta && heightMeta.cover) {
-        try {
-          const covUrl = mapStaticUrl('cover', undefined, resolvedKey);
-          const cr = covUrl ? await assetProvider.fetch(covUrl) : null;
-          if (stale()) return;
-          if (cr && cr.ok) {
-            const cb = await cr.arrayBuffer();
-            const n2 = heightMeta.size || 512;
-            if (cb.byteLength === n2 * n2 * 2) {
-              const cu = new Uint16Array(cb);
-              const zmin = heightMeta.zmin || 0;
-              const k = ((heightMeta.zmax || 100) - zmin) / 65535;
-              const { field: rf, changed } = applyTerrainCover(renderField, cu, k, zmin);
-              if (changed) renderField = rf;               // 真值场（heightField）未被改动
-            }
-          }
-        } catch (e) { console.warn('地形让位掩码加载失败（按无掩码继续）:', e); }
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
     if (stale()) return;
@@ -1255,14 +1311,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }
         if (DEBUG) window.__degradedSkipped = degradedMeshes.length;
         // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
-        // **渲染用**高度场（含让位掩码，与深度缓冲里的地形一致）做成可线性滤波的浮点纹理。
+        // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
         // 跨度取 terrainSpanOf() —— 与地形网格同源同式。
         let waterCoast = null;
-        if (renderField && heightMeta) {
+        if (heightField && heightMeta) {
           try {
             const hn = heightMeta.size || 512;
-            if (renderField.length === hn * hn) {
-              const htex = new THREE.DataTexture(renderField, hn, hn, THREE.RedFormat, THREE.FloatType);
+            if (heightField.length === hn * hn) {
+              const htex = new THREE.DataTexture(heightField, hn, hn, THREE.RedFormat, THREE.FloatType);
               htex.minFilter = THREE.LinearFilter;
               htex.magFilter = THREE.LinearFilter;
               htex.wrapS = THREE.ClampToEdgeWrapping;
@@ -1315,27 +1371,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           }
           return false;
         };
-        // 岸线标高表（第四条细分判据的输入，见 terrainMesh.js `shores`）：**水面片本身** + 水下薄板
-        // （冰面等，可能比水面低几厘米）——地形网格据此把水陆交界一路细到 1 texel。坐标同步换到
-        // 世界系（前端 group 旋转：世界 x = −场景 x、世界 y = 场景 z、世界 z = 场景 y）。
-        const sh = [];
-        for (const w of waterSurfaces) {
-          sh.push({ y: w.h, x0: -w.x1, x1: -w.x0, z0: w.y0, z1: w.y1 });
-        }
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.material || !o.geometry) return;
-          const bb = new THREE.Box3().setFromObject(o);
-          if (bb.isEmpty() || !underWater(o)) return;
-          sh.push({ y: bb.max.z, x0: -bb.max.x, x1: -bb.min.x, z0: bb.min.y, z1: bb.max.y });
-        });
-        shoreLevels = sh.length ? sh : null;
-        // 水陆交界是特征：此刻水面片已知 ⇒ 立即重建一次地形几何（此前的首建在 GLB 装载前，
-        // 拿不到标高表；后续 LOD 重建沿用同一 shoreLevels）。见 terrainMesh.js `shores`。
-        if (shoreLevels && terrainMesh && heightField) {
-          const oldGeo = terrainMesh.geometry;
-          terrainMesh.geometry = buildTerrainGeometry();
-          oldGeo.dispose();
-        }
         gltf.scene.traverse((o) => {
           if (!o.isMesh || !o.material) return;
           // 天空穹（节点名 SkyFlattenSphere/Sky_sphere_*/sky_dome 等）：走 makeSkyMaterial
@@ -1719,12 +1754,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
-    const { positions, indices } = buildAdaptiveTerrain({
-      field: renderField || heightField, n, span,   // 渲染场（含让位掩码）；查询仍用 heightField
+    const { positions, indices, sizeAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
+      field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
-      shores: shoreLevels,   // 第四条判据：水陆交界细分到 1 texel（见 terrainMesh.js）
     });   // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -1735,6 +1769,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     g.setAttribute('uv', new THREE.BufferAttribute(
       groundMapUv(positions, span, mapMetaInfo?.x || 0, mapMetaInfo?.z || 0), 2));
     g.setIndex(new THREE.BufferAttribute(indices, 1));
+    // 拾取诊断用：本次构建的逐 texel 发射间距 / subdivMorph / 规模（pickDebug 的 terrain 行）
+    g.userData.terrainBuild = { sizeAt, morphRaw, quads, overBudget, span };
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
@@ -2713,7 +2749,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     return {
       sides, disposables, bend: susp.track_bending || null,
-      chunkLength: chainAverageSegment(susp.chains.left[0]),   // 仅供调试/观察（不再驱动花纹）
     };
   }
 

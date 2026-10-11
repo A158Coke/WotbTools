@@ -1270,17 +1270,6 @@ export function normalizeAgentShotIndices(shots: AgentShotReplay[]): AgentShotRe
 }
 
 /**
- * 射击复现能力：.wotbreplay 字节 → 全员射击链（time_s 排序 + 全局重编号）。
- * `pitchLimits` 可选：俯仰锚定表 {昵称: {dep, ele, front?, back?, transition?}}
- * （GunPitchRange serde 形状，消费方由资产面 tank/{id}.json 的 pitch_limits 组装
- * dep=max、ele=−min）——注入后 prop2 俯仰按车型极限解码（服务端同级质量）；
- * 缺省空表时俯仰降级标记如实透传（客户端路径数据边界，非错误）。
- * `shellTable` 可选：全局弹种反解表（dump-shell-kinds 富表，AgentShellTable）——
- * 注入后带 shell_id 的弹补齐 `shell_kind` 与 `shell`（完整弹数据，服务端
- * /api/replay/shots 注入语义同构）；缺省时无弹种反解（旧产物兼容路径由
- * 消费组件自行富化）。
- */
-/**
  * 射击复现能力：.wotbreplay 字节 → 射击链包装（time_s 排序 + 全局重编号）。
  * 输出形状见 [`AgentShotsOutcome`]（上游 v0.1.9：author_path fail-visible；
  * 旧裸数组产物自动归一化）。

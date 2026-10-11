@@ -164,9 +164,8 @@ export function resolveMountedConfig(vehicle, tankJson) {
  */
 export function magazineSizeForVehicle(vehicle, tankJson) {
   const cfg = resolveMountedConfig(vehicle, tankJson);
-  const b = Number(cfg && cfg.burst_size);
-  if (Number.isFinite(b) && b > 1) return Math.min(MAX_PLAUSIBLE_MAG, Math.round(b));
-  return magazineSizeOfVehicle(vehicle);
+  const fromCfg = magazineSizeOfVehicle({ burst_size: cfg && cfg.burst_size });
+  return fromCfg > 1 ? fromCfg : magazineSizeOfVehicle(vehicle);
 }
 
 /** 相位条目是否参与时间归并（带正时长；f2=7 也参与——它会打断/接续装填节奏） */
@@ -479,23 +478,3 @@ export function fillOf(states) {
   return sum / states.length;
 }
 
-/**
- * 逐格视觉签名：状态拓扑 + loading 的 1% 进度桶。
- * 不能只用 aggregate fill 做重绘门控：例如整夹 loading=99.6% 与完成后的 A|A|A
- * 都会把聚合 fill 四舍五入到 100%，但前者是一整条、后者是 N 个分格，必须重绘。
- * 无遥测（`null`）→ `'none'`：与任何真实状态都不同，保证"隐藏装填条"也会触发重绘。
- */
-export function reloadVisualKey(states) {
-  if (!states || !states.length) return 'none';
-  return states.map((s) => {
-    const state = s && s.state ? s.state : 'empty';
-    return state === 'loading' ? `loading:${Math.round(clamp01(Number(s.progress)) * 100)}` : state;
-  }).join('|');
-}
-
-/** 聚合视图（兼容/诊断）：{ active, fill, kind, shells }；无遥测 → shells = null（不画） */
-export function reloadViewAt(events, fires, t, size = 1) {
-  const shells = shellStatesAt(events, fires, t, size);
-  const anyLoading = !!shells && shells.some((s) => s.state === 'loading');
-  return { active: anyLoading, fill: fillOf(shells), kind: anyLoading ? 'loading' : null, shells };
-}

@@ -61,11 +61,6 @@ export function normalizeDeg(a) {
   return (((a + 180) % 360) + 360) % 360 - 180
 }
 
-/** 最短圆弧差（度，[-180,180]）：359° → 1° 的正确跨 0 处理。 */
-export function shortestArcDeg(a, b) {
-  return normalizeDeg(a - b)
-}
-
 /**
  * 地图 yaw → 屏幕旋转角（CSS/SVG rotate，正值=屏幕顺时针）。
  * 地图约定：yaw 从北(+Z)起顺时针为正；屏幕：+Y 向下。两次翻转（Z→−Y 镜像与 y-down 顺时针）抵消，
@@ -82,22 +77,6 @@ export function turretWorldYawDeg(hullYawDeg, turretRelativeYawDeg) {
 
 /** 秒 → MM:SS：实现在 playbackClock.ts（2D / 3D 共用），这里保留原名导出。 */
 export { formatPlaybackClock as formatClock } from './playbackClock'
-
-/**
- * 最后可信位置：t 之前（含）最近一个有限坐标的点；
- * t 早于首点返回 null（从未可信，不显示）。
- * 用于 gap/失察/阵亡时淡化停驻，不参与插值。
- */
-export function lastKnownPosition(points, t) {
-  if (!points || points.length === 0 || !Number.isFinite(t)) return null
-  let best = null
-  for (const p of points) {
-    if (!Number.isFinite(p.timeSec) || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
-    if (p.timeSec > t + 1e-6) break
-    best = { x: p.x, y: p.y, timeSec: p.timeSec }
-  }
-  return best
-}
 
 /**
  * 事件时刻严格可信位置：仅当 t 落在该车路线首末点之间、所在相邻点 gap ≤ LEGACY_OBSERVED_GAP_SEC

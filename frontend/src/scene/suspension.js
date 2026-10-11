@@ -15,23 +15,16 @@ import * as THREE from 'three'
  *      垂弧形状 = 客户端 `(t − t²)` 抛物线，幅度用 `upperFactor · span^lengthPower`
  *      （`lengthPower` 是幂次已确定；`upperMin/frontFactor/backFactor` 的逐项落位未定，
  *      本实现按统一幅度近似——上游 §五.4）。
- *   4) 花纹滚动：每米 V 变化 = `chassis.textureScale / chunkLength`（客户端口径，
- *      负值分支在本实现里由调用方取逐车 dV/ds——见 `treadScrollStep`）。
+ *   4) 花纹滚动：每米 V 变化 = 该带**网格实测**的沿带斜率 dV/ds（`measureBeltUvSlope`），
+ *      使花纹线速度恰等于履带速度——见 `treadScrollStep` 及其 2026-10-10 勘误（客户端形式
+ *      常数 `textureScale / chunkLength` 比网格真实斜率大 3.4~19×，不可用）。
  *
- * 本模块不依赖 three.js：入参是普通数组/标量，便于单测；场景侧只做容器与写入。
+ * 求解层不依赖 three.js（入参是普通数组/标量，便于单测）；仅位姿写入 `applyWheelSpin`
+ * 触 three（场景侧做容器与写入）。
  */
 
 /** 客户端 `wheels` 记录缺省（数据缺失时的兜底；正常路径不用） */
 export const SUSP_FALLBACK = { travelUp: 0.08, travelDown: 0.08, reaction: 1.0 };
-
-/** 垂弧上限：`(t − t²)` 抛物线的形状常数（峰在 t=0.5，值 0.25） */
-export const SAG_SHAPE_PEAK = 0.25;
-
-/** 铺地判定余量（m）：链点高出地面不足该值即视为接触，参与"支承点"集合 */
-export const GROUND_CONTACT_EPS = 0.01;
-
-/** 形变脏阈值（m）：逐顶点重写前的位移闸门（静止帧零上传） */
-export const DEFORM_EPS = 0.003;
 
 /**
  * 行程夹紧：`clamp(Δ, −down, +up)`（客户端 `[pz − b, pz + a]` 的等价形）。
@@ -232,18 +225,6 @@ export function vertexChainParams(pos, rest) {
   return { seg, t };
 }
 
-/**
- * 把链路位移应用到顶点（只动"高度"分量 = 模型系 +z；客户端链路也只解纵剖面）。
- * `out` 与 `base` 同为顶点数组（xyz 交错）；本函数只写 z 分量。
- *
- * @param {Float32Array} out 目标顶点位置（会被就地写）
- * @param {Float32Array} base 静止顶点位置（模板，只读）
- * @param {{seg:Int32Array, t:Float32Array}} params 顶点 → 链路映射
- * @param {Float64Array|number[]} chainZ 解算后的链路高度
- * @param {number[]} restZ 静止链路高度
- * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
- * @returns {number} 本帧最大 |位移|（m）
- */
 /** 两条解算链的**逐点最大偏差**（米）。用途：履带**法线**重算闸门——与"上次重算法线时的链"
  *  比较。累计统计量（最大幅度 / 均值）表达不了空间分布：把 0.1 m 的形变从一处挪到另一处时
  *  两者都不变、而法线必须重算（2026-10-10 review 复审 P2）。空 / 长度不符 ⇒ Infinity（fail-safe）。 */
@@ -267,6 +248,18 @@ export function chainChanged(prev, cur) {
   return false;
 }
 
+/**
+ * 把链路位移应用到顶点（只动"高度"分量 = 模型系 +z；客户端链路也只解纵剖面）。
+ * `out` 与 `base` 同为顶点数组（xyz 交错）；本函数只写 z 分量。
+ *
+ * @param {Float32Array} out 目标顶点位置（会被就地写）
+ * @param {Float32Array} base 静止顶点位置（模板，只读）
+ * @param {{seg:Int32Array, t:Float32Array}} params 顶点 → 链路映射
+ * @param {Float64Array|number[]} chainZ 解算后的链路高度
+ * @param {number[]} restZ 静止链路高度
+ * @param {number[]} [axis] 位移方向（网格局部系里的"模型 +z"；缺省 [0,0,1]）
+ * @returns {number} 本帧最大 |位移|（m）
+ */
 export function applyChainToVertices(out, base, params, chainZ, restZ, axis) {
   const nv = out.length / 3;
   const { seg, t } = params;

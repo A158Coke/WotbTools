@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
-  nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
+  nameChainOf, nearestInstance, chainVisible,
   buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
 
@@ -35,24 +35,6 @@ describe('nameChainOf', () => {
   })
 })
 
-describe('nearestDestructibleState', () => {
-  const states = [
-    { inst: { id: 1, pos: [10, 10, 0] } },
-    { inst: { id: 2, pos: [12, 10, 0] } },
-    { inst: { id: 3, pos: [100, 100, 0] } },
-  ]
-  it('半径内取最近实例', () => {
-    expect(nearestDestructibleState(states, 11, 10, 3)?.inst.id).toBe(2)
-  })
-  it('半径外 / 空 states → null', () => {
-    expect(nearestDestructibleState(states, 50, 50, 3)).toBeNull()
-    expect(nearestDestructibleState([], 0, 0, 3)).toBeNull()
-    expect(nearestDestructibleState(null, 0, 0, 3)).toBeNull()
-  })
-  it('inst 缺 pos 的状态被跳过（不抛错）', () => {
-    expect(nearestDestructibleState([{ inst: {} }, ...states], 11, 10, 3)?.inst.id).toBe(2)
-  })
-})
 
 describe('stateVisualLabel', () => {
   it('prop=3：fallQuat 偏离恒等 = fallen，恒等/缺失 = standing（实例化槽位模型）', () => {
@@ -214,5 +196,18 @@ describe('nearestInstance', () => {
     expect(nearestInstance(insts, 50, 50, 3)).toBeNull()
     expect(nearestInstance([], 0, 0, 3)).toBeNull()
     expect(nearestInstance(null, 0, 0, 3)).toBeNull()
+  })
+})
+
+describe('拾取报告诊断行接线（playbackScene 源级守卫）', () => {
+  // 2026-10-11 回归：诊断变量曾声明在 `if (heightField && heightMeta)` 块内、return 在块外
+  // 引用 ⇒ ReferenceError: render is not defined ⇒ 整个拾取面板"点击没反应"。锁定共声明。
+  it('terrain / render 诊断变量在 buildPickReport 函数作用域共声明（return 可达）', () => {
+    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    expect(src).toMatch(/let terrain = null;\s*\r?\n\s*let render = null;/)
+  })
+  it('拾取失败必须可见（禁止静默 catch）', () => {
+    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    expect(src).toMatch(/showPickPanel\(`\[scene-pick\] failed:/)
   })
 })
