@@ -160,7 +160,6 @@ describe('playbackScene 会话代数契约', () => {
     }
     const session = { loadScene: vi.fn().mockResolvedValue(data), getState: () => ({ canonical: null, canonicalState: 'idle' }) }
     await api.loadData({ kind: 'local', file: new File(['x'], 'clock.wotbreplay'), session })
-    // 场景按 canonical 同一 resolver 从 periods 推出：开战 55，结束 300
     expect(store.startTime).toBe(55)
     expect(store.duration).toBe(300)
     expect(store.time).toBeGreaterThanOrEqual(55)
@@ -189,7 +188,6 @@ describe('playbackScene 会话代数契约', () => {
     await api.loadData({ kind: 'local', file: new File(['x'], 'late.wotbreplay'), session })
     api.setPlaying(false)
     api.seekTime(55)
-    // canonical 的开战略晚、时长取结算（比 period 4 短）：起点 / 终点都跟着变，T 被夹进新范围
     api.setBattleClock({ startRaw: 56, durationSec: 200 })
     expect(store.startTime).toBe(56)
     expect(store.duration).toBe(256)
@@ -198,7 +196,6 @@ describe('playbackScene 会话代数契约', () => {
     expect(store.time).toBe(256)
     api.seekBy(-1000)
     expect(store.time).toBe(56)
-    // canonical 撤下：回到场景自推的时钟，T 仍在范围内则不动
     api.seekTime(100)
     api.setBattleClock(null)
     expect(store.startTime).toBe(55)
@@ -260,7 +257,6 @@ describe('playbackScene 会话代数契约', () => {
     const ray = new THREE.Raycaster(new THREE.Vector3(0, 100, 0), new THREE.Vector3(0, -1, 0))
     expect(ray.intersectObjects([vehicle.group], true).length).toBeGreaterThan(0)
     expect(store.roster.team1[0].hp).toBe(beforeHp)
-    // H hides screen labels, so the original model remains available in clean scene mode.
     api.setLabelPrefs({ enabled: false, classIcons: true, showStatus: false })
     expect(vehicle.meshHull.visible).toBe(true)
     api.setLabelPrefs({ classIcons: false, showStatus: true })
@@ -281,13 +277,9 @@ describe('playbackScene 会话代数契约', () => {
   })
 
   it('a late GLB obeys class-icon mode during attach, seek and restoration', async () => {
-    // q=mid：本测试主题是"迟到 GLB 附着 + 用户开关恢复"生命周期；高清/极致已按
-    // 2026-10-11 裁示强制 GLB（setGlb(false) 被忽略），强制契约由下面的专属测试锁定。
     window.history.replaceState(null, '', '/?debug&q=mid')
     const parked = track(deferred())
     vi.spyOn(assetProvider, 'bytes').mockImplementation(() => parked.promise)
-    // 部件守卫（本分支新增："部位/枢轴链不全 ⇒ 保留代理车"）要求模型带 `turret_N`/`gun_N` 节点，
-    // 且 `/tank/<id>.json`（service data）给出 model_origins.track/turret；此处按该契约构造最小桩。
     vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
       String(path).startsWith('/tank/')
         ? { model_origins: { track: { x: 0, y: 0, z: 0 }, turret: { x: 0, y: 0, z: 0 } }, configs: [] }
@@ -329,22 +321,16 @@ describe('playbackScene 会话代数契约', () => {
   it('履带印游标泵：seek 后退 = 全量重建、前进 = 增量，深浅/存量无残留（用户验收项）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const { store, api } = createScene()
-    // 5 m/s 直线行驶 58 s：pos = 0.5 m/网格步（GRID_DT=0.1），coverage 全程
     const t0 = 42, n = 580
     const pos = new Array(n * 3)
     for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
     const data = minimalData(t0)
     data.meta.samples = n
-    data.meta.duration = t0 + 58   // 无 canonical clock 时 END = battleEndTime：coverage 端点即战斗结束
+    data.meta.duration = t0 + 58
     data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
       pos, hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
       turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
       hp: [], coverage: [t0, t0 + 58], death_t: null }]
-    // tread 资产确定性 mock（本车无 tank_id → 参数走回落；归一化表给空 → scale=1）：
-    // 不依赖真实网络往返，保证 v.tread/v.treadMesh 在首个 seekTime tick 前就位。
-    // ⚠️ `url` 也必须 stub：无资产源配置时 `assetProvider.url()` 会抛错（CI 没有
-    // .env.local，本机有 ⇒ 曾只在 CI 失败：ensureTreadMesh 抛错 → treadMesh 未建 →
-    // builtT 永远 -Infinity，2026-10-11 Required Gate 复盘）。
     vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
       Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
     vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
@@ -352,7 +338,7 @@ describe('playbackScene 会话代数契约', () => {
     await api.loadData({ kind: 'local', file: new File(['replay'], 'trail.wotbreplay') })
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
-    api.setPlaying(false)   // 停掉 rAF 时钟：印记存量只由显式 seek 驱动（确定性断言的前提）
+    api.setPlaying(false)
     const readTrail = () => {
       const v = window.__pbV[0]
       const col = v.treadMesh ? v.treadMesh.geometry.getAttribute('color').array : null
@@ -363,36 +349,28 @@ describe('playbackScene 会话代数契约', () => {
         oldAlpha: (col && v.trail.L.total > 0) ? +col[3].toFixed(2) : 'none',
       }
     }
-    // 前进到 t0+18（行驶 90 m → 每侧 90 段）。首锚 = **窗口起点 t0 的横截面**（review P2
-    // 2026-10-11：固定起始面使 seek 重算与逐帧连续播放逐值一致；旧实现首锚取第一个子步
-    // 的 tt，锚点随帧时刻漂移，同一直线同终点会得出 89 与不同的首戳时刻）
     api.seekTime(t0 + 18)
     let r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, quads: 180 })
-    expect(r.youngAlpha).toBeCloseTo(0.8)      // 新戳全不透明 × TREAD_OPACITY（目视两点校准）
-    // seek 后退：全量重建到更早时刻（存量随之收缩，无残留）
+    expect(r.youngAlpha).toBeCloseTo(0.8)
     api.seekTime(t0 + 8)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, quads: 80 })
-    // 再前进越过原位置：增量生长（80 m → +100 段），确定性一致
     api.seekTime(t0 + 28)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, quads: 280 })
-    // 淡出：最老段年龄 28 s > after(10)+dur(10) ⇒ alpha 0；最新段仍 0.8
     expect(r.oldAlpha).toBe(0)
     expect(r.youngAlpha).toBeCloseTo(0.8)
-    // 16× 快进等价于一次大步 seek（同一泵路径）：跳到末端不炸、无残留
     api.seekTime(t0 + 55)
     r = readTrail()
     expect(r.builtT).toBe(t0 + 55)
-    expect(r.total).toBe(275)     // 55 s × 5 m/s = 275 m（1 m 打戳，逐值确定）
+    expect(r.total).toBe(275)
     expect(r.rTotal).toBe(275)
   })
 
-  it('履带印 AoI 空洞断链：出空洞从新锚开始、无跨空洞桥接（review blocker 回归，2026-10-11）', async () => {
+  it('履带印 AoI 空洞断链：历史印记保留、出空洞从新锚开始且无跨空洞桥接（review blocker 回归，2026-10-11）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     const { api } = createScene()
-    // 5 m/s 直线 15 s；coverage 两段：可见 0–5 s → 空洞 5–10 s → 可见 10–15 s
     const t0 = 42, n = 150
     const pos = new Array(n * 3)
     for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
@@ -415,40 +393,30 @@ describe('playbackScene 会话代数契约', () => {
       const v = window.__pbV[0]
       return { total: v.trail.L.total, segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1 })) }
     }
-    api.seekTime(t0 + 4)                         // 可见段内推进（≈19 戳）
-    expect(read().total).toBeGreaterThan(10)
-    api.seekTime(t0 + 11)                        // 跨空洞：进入时空洞首帧必须复位，出空洞从新锚开始
+    api.seekTime(t0 + 4)
+    const before = read()
+    expect(before.total).toBeGreaterThan(10)
+    api.seekTime(t0 + 11)
     const r = read()
-    // 桥接形态（旧缺陷）会留下“空洞前 19 戳 + 一段横跨 ~25 m 的长戳（约 25 个边界）”；
-    // 正确形态只剩空洞后 1 s 的 ~5 戳（场景系 x 取镜像负号，空洞后区间 x ≈ −50…−55）
-    expect(r.total).toBeGreaterThanOrEqual(3)
-    expect(r.total).toBeLessThanOrEqual(8)
-    for (const sg of r.segs) {
-      expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)   // 无横跨空洞的长戳
-      expect(Math.abs(sg.x0)).toBeGreaterThan(45)                // 空洞前区间的戳已被复位清掉
-    }
-    // 新锚起点：最早一戳紧贴出空洞时刻（中心 x ≈ −50，L 带横向偏移 +0.9 ⇒ ≈ −49.1），
-    // 而不是从空洞前末位（中心 −25 / L −24.1）续接
-    const minAbs = Math.min(...r.segs.map((sg) => Math.abs(sg.x0)))
-    expect(minAbs).toBeLessThan(51)
-    expect(minAbs).toBeGreaterThan(48.5)
+    expect(r.total).toBeGreaterThan(before.total)
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)
+    const postGap = r.segs.slice(before.total)
+    expect(postGap.length).toBeGreaterThanOrEqual(3)
+    expect(postGap.length).toBeLessThanOrEqual(8)
+    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
+    for (const sg of postGap) expect(Math.abs(sg.x0)).toBeGreaterThan(45)
+    const minPostGapAbs = Math.min(...postGap.map((sg) => Math.abs(sg.x0)))
+    expect(minPostGapAbs).toBeLessThan(51)
+    expect(minPostGapAbs).toBeGreaterThan(48.5)
   })
 
-  /**
-   * PR #587 review 回归（2026-10-11）：倒车绕序、转弯绘制窗口、关断重开、暂停态开关、
-   * 宽度晚到、喂样确定性、alpha 量化门控。纯函数层（静止样本推进采样时刻）在
-   * treadMarks.test.js 的 advanceTrail 组。
-   */
   describe('履带印 review 回归', () => {
-    /** 履带印测试公共桩：单辆 5 m/s 车 + tread 资产确定性 mock，加载完成即停表
-     *  （印记存量只由显式 seek 驱动 ⇒ 断言可确定；与上方游标泵测试同一姿态） */
     async function setupTrail({ n = 580, pos, hull_yaw, yaw = 0, duration = 58 }) {
       window.history.replaceState(null, '', '/?debug&q=high')
       const { store, api } = createScene()
       const data = minimalData(42)
       data.meta.samples = n
-      data.meta.duration = 42 + duration   // 无 canonical clock 时 duration 是**绝对**结束时刻
-                                           // （同上方游标泵测试：END = battleEndTime = 覆盖端点）
+      data.meta.duration = 42 + duration
       data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
         pos, hull_yaw: hull_yaw || new Array(n).fill(yaw), hull_pitch: new Array(n).fill(0),
         turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
@@ -463,13 +431,11 @@ describe('playbackScene 会话代数契约', () => {
       api.setPlaying(false)
       return { store, api, v: window.__pbV[0] }
     }
-    /** 直线位姿：数据 x = 0.5i（5 m/s @10Hz）；场景系 x 取镜像负号 ⇒ 场景朝 −x 行驶 */
     const linePos = (n) => {
       const p = new Array(n * 3)
       for (let i = 0; i < n; i++) { p[i * 3] = i * 0.5; p[i * 3 + 1] = 0; p[i * 3 + 2] = 0 }
       return p
     }
-    /** 最新一戳的首三角形法线 y（只取 x/z 分量：贴地抬升不改水平投影） */
     const normalY = (mesh, st, quad) => {
       const p = mesh.geometry.getAttribute('position').array
       const o = ((st.total - 1) % 1536) * 24 + quad * 12
@@ -477,7 +443,6 @@ describe('playbackScene 会话代数契约', () => {
       const bx = p[o + 6] - p[o], bz = p[o + 8] - p[o + 2]
       return az * bx - ax * bz
     }
-    /** 从最新一戳中心正上方射向地面的命中数（FrontSide 下背面剔除 ⇒ 绕序翻转的戳命中 0） */
     const raycastFromAbove = (mesh, st, quad) => {
       const p = mesh.geometry.getAttribute('position').array
       const o = ((st.total - 1) % 1536) * 24 + quad * 12
@@ -489,9 +454,6 @@ describe('playbackScene 会话代数契约', () => {
     }
 
     it('倒车印记可见：绕序翻转的戳在双面材质下仍被从上方的射线命中（review P2 2026-10-11）', async () => {
-      // 同向行驶（场景 −x），只差车体朝向：yaw=+π/2 ⇒ 前向 = 行驶方向（正车）；
-      // yaw=−π/2 ⇒ 前向与行驶方向相反（倒车）⇒ 戳的固定索引产生朝下法线（review 复现：
-      // yaw=0、z:0→−1 时 normal.y=−0.6，FrontSide 下从上方 Raycaster 命中 0 个三角形）
       const fwd = await setupTrail({ n: 200, pos: linePos(200), yaw: Math.PI / 2 })
       fwd.api.seekTime(42 + 10)
       expect(fwd.v.treadMesh.material.side).toBe(THREE.DoubleSide)
@@ -500,15 +462,11 @@ describe('playbackScene 会话代数契约', () => {
       const rev = await setupTrail({ n: 200, pos: linePos(200), yaw: -Math.PI / 2 })
       rev.api.seekTime(42 + 10)
       expect(rev.v.treadMesh.material.side).toBe(THREE.DoubleSide)
-      expect(normalY(rev.v.treadMesh, rev.v.trail.L, 0)).toBeLessThan(0)   // 绕序确实翻转
+      expect(normalY(rev.v.treadMesh, rev.v.trail.L, 0)).toBeLessThan(0)
       expect(raycastFromAbove(rev.v.treadMesh, rev.v.trail.L, 0)).toBeGreaterThan(0)
     })
 
     it('转弯：左右弧长不同（L≠R）时绘制窗口覆盖较长侧，较短侧空槽显式隐藏（review P2 2026-10-11）', async () => {
-      // 圆轨迹半径 5 m、ω=1 rad/s（中心 5 m/s）：外侧履带 5.9 m/s、内侧 4.1 m/s ⇒ 18 s 后
-      // 两侧段数差 ≈32（review 复现为半径 10 m 的 L=15/R=12；性质相同：段数本就不成对）。
-      // yaw = π/2 − θ 使前向与速度同向（车体朝向随路径旋转——写反镜像会得到恒定偏移向量，
-      // 两侧路径同长，测不出弧长差）
       const n = 580
       const pos = new Array(n * 3), yaw = new Array(n)
       for (let i = 0; i < n; i++) {
@@ -520,14 +478,11 @@ describe('playbackScene 会话代数契约', () => {
       const colArr = () => v.treadMesh.geometry.getAttribute('color').array
       api.seekTime(42 + 18)
       const L18 = v.trail.L.total, R18 = v.trail.R.total
-      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)              // 弧长差 ⇒ 段数不成对
+      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)
       expect(v.treadMesh.geometry.drawRange.count / 6).toBe(2 * Math.max(L18, R18))
-      // 长边最新段 alpha > 0（旧实现被 min(L,R) 截在窗口外，永不绘制）
       const longIsL = L18 > R18
       const longTotal = longIsL ? L18 : R18
       expect(colArr()[((longTotal - 1) % 1536) * 32 + (longIsL ? 0 : 16) + 3]).toBeGreaterThan(0)
-      // 先跑更长一轮（两侧槽位都写满），再 seek 后退全量重建：较短侧落在窗口内的空槽
-      // （环形残留上一轮旧段）必须被显式清零，而不是靠"位置全零"的偶然
       api.seekTime(42 + 30)
       expect(v.trail.L.total).toBeGreaterThan(L18)
       expect(v.trail.R.total).toBeGreaterThan(R18)
@@ -549,13 +504,13 @@ describe('playbackScene 会话代数契约', () => {
       expect(count).toBe(60)
       const segs = v.trail.L.segs.map((s) => ({ ...s }))
       api.setTreadMarks(false)
-      api.seekTime(42 + 12)                      // 关断期间 seek：不铺
+      api.seekTime(42 + 12)
       api.setTreadMarks(true)
       api.seekTime(42 + 12)
       expect(store.treadOn).toBe(true)
-      expect(v.trail.L.total).toBe(count)        // 旧缺陷：追加到旧末端 ⇒ 49 变 148 同款
+      expect(v.trail.L.total).toBe(count)
       expect(v.trail.R.total).toBe(count)
-      expect(v.trail.L.segs.map((s) => ({ ...s }))).toEqual(segs)   // 出生时刻逐值一致
+      expect(v.trail.L.segs.map((s) => ({ ...s }))).toEqual(segs)
     })
 
     it('暂停态开关立即生效：不依赖继续播放或 seek（review P2 2026-10-11）', async () => {
@@ -563,40 +518,34 @@ describe('playbackScene 会话代数契约', () => {
       api.seekTime(42 + 10)
       expect(v.treadMesh.visible).toBe(true)
       expect(v.trail.L.total).toBe(50)
-      api.setTreadMarks(false)                   // 桩内已 setPlaying(false)：没有帧在跑
-      expect(v.treadMesh.visible).toBe(false)    // 旧缺陷：仍为 true，要等 tick/seek 才更新
+      api.setTreadMarks(false)
+      expect(v.treadMesh.visible).toBe(false)
       api.setTreadMarks(true)
       expect(v.treadMesh.visible).toBe(true)
-      expect(v.trail.L.total).toBe(50)           // 重开即全量补铺到当前 T
+      expect(v.trail.L.total).toBe(50)
     })
 
     it('宽度晚到：suspension（GLB）就位后未 authored 宽度重解析并全量重建（review P2 2026-10-11）', async () => {
-      // 参数 JSON 早于车模到达：首解析无 suspension 实测 ⇒ 宽度先落常量回落 0.6；
-      // 车模挂载后（此处注入 suspension 姿态数据）更新到模型实测 1.2 并重建旧段。
       const { api, v } = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
       api.seekTime(42 + 10)
       expect(v.tread.width).toBeCloseTo(0.6)
       v.suspParts = { sides: { L: { beltW: 1.2, halfW: 0.7 }, R: { beltW: 1.2, halfW: 0.7 } } }
       api.seekTime(42 + 11)
       expect(v.tread.width).toBeCloseTo(1.2)
-      expect(v.trail.L.total).toBe(55)           // 宽度变了 ⇒ 复位全量重建（旧段按旧宽度铺的）
-      // 几何核对：L 槽 0 的四个角横向（z）= 中心线横距 0.7 ± 半宽 0.6 = {0.1, 1.3}
+      expect(v.trail.L.total).toBe(55)
       const p = v.treadMesh.geometry.getAttribute('position').array
       const zs = [0, 1, 2, 3].map((q) => +p[q * 3 + 2].toFixed(6)).sort((a, b) => a - b)
       expect(zs).toEqual([0.1, 0.1, 1.3, 1.3])
     })
 
     it('喂样确定性：一次 seek 与 60fps 连续推进到同一终点逐值一致（review P2 2026-10-11）', async () => {
-      // 同一直线、同一终点：一次 seek 与每帧 ≤0.1 s 的增量泵必须得出逐值相同的戳
-      // （坐标 + 出生时刻）——固定网格片 + 固定 t0 横截面锚定是前提；旧实现从任意帧的
-      // builtT 重切网格、首锚取第一次子步（实测首锚 z=0.5/t=0.3 vs z=0.083/t=0.217）。
       const grab = (v) => ({ L: v.trail.L.segs.map((s) => ({ ...s })),
                              R: v.trail.R.segs.map((s) => ({ ...s })) })
       const once = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
       once.api.seekTime(42 + 18)
       const oneShot = grab(once.v)
       const pump = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
-      for (let i = 1; i <= 1080; i++) pump.api.seekTime(42 + i / 60)   // 18 s @60fps
+      for (let i = 1; i <= 1080; i++) pump.api.seekTime(42 + i / 60)
       const pumped = grab(pump.v)
       expect(pumped.L.length).toBe(oneShot.L.length)
       expect(pumped).toEqual(oneShot)
@@ -607,9 +556,9 @@ describe('playbackScene 会话代数契约', () => {
       api.seekTime(42 + 10)
       const version = () => v.treadMesh.geometry.getAttribute('color').version
       const v1 = version()
-      api.seekTime(42 + 10)                      // 同一 T：无新段、无老化变化
-      expect(version()).toBe(v1)                 // 旧缺陷：f32 读回 0.8000000119 ≠ 0.8 ⇒ 每 tick 上传
-      api.seekTime(42 + 11)                      // 时钟推进（最老段进入淡出窗口）⇒ 必须上传
+      api.seekTime(42 + 10)
+      expect(version()).toBe(v1)
+      api.seekTime(42 + 11)
       expect(version()).toBeGreaterThan(v1)
     })
   })
@@ -624,13 +573,11 @@ describe('playbackScene 会话代数契约', () => {
       hp: [], coverage: [42, 100], death_t: null }]
     source.loadPlaybackData.mockResolvedValue(data)
     await api.loadData({ kind: 'local', file: new File(['replay'], 'forced.wotbreplay') })
-    // applyGlbGate：强制档把 GLB 打开 + 开关停用 + 履带印放行
     expect(store.glbOn).toBe(true)
     expect(store.glbAllowed).toBe(false)
     expect(store.treadAllowed).toBe(true)
     api.setGlb(false)
-    expect(store.glbOn).toBe(true)          // 关闭被忽略（轨距一致性）
-    // 低档镜像：履带印不放行
+    expect(store.glbOn).toBe(true)
     window.history.replaceState(null, '', '/?debug&q=low')
     const store2 = createPlaybackStore()
     const api2 = initPlayback(mountContainer(), store2, { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() })
@@ -663,24 +610,17 @@ describe('playbackScene 会话代数契约', () => {
     source.loadPlaybackData
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise)
-
     const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.loading).toBe(true)
     expect(store.hasData).toBe(false)
-
-    // 新会话被接受：仍是 loading，且不得继承上一会话的就绪态
     const loadB = api.loadData({ kind: 'local', file: new File(['b'], 'b.wotbreplay') })
     expect(store.loading).toBe(true)
     expect(store.hasData).toBe(false)
-
-    // A 迟到完成（gen 落后两代）：owned 状态必须纹丝不动
     first.reject(new Error('stale A failed'))
     await loadA
     expect(store.loading).toBe(true)
     expect(store.hasData).toBe(false)
     expect(store.err).toBe('')
-
-    // B 完成才允许落下 loading（数据源拒绝 → 走错误路径，但其 finally 仍属最新代）
     second.reject(new Error('B failed'))
     await loadB
     expect(store.loading).toBe(false)
@@ -691,11 +631,9 @@ describe('playbackScene 会话代数契约', () => {
   it('新 loadData 被接受的那一刻即落下就绪态（解析/资产阶段的旧 UI 不得仍是 ready）', async () => {
     const { store, api } = createScene()
     source.loadPlaybackData.mockImplementation(() => new Promise(() => {}))
-
     expect(store.hasData).toBe(false)
     void api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.loading).toBe(true)
-    // 关键：不是等解析结束才清，而是接受新会话即清
     expect(store.hasData).toBe(false)
   })
 
@@ -703,44 +641,33 @@ describe('playbackScene 会话代数契约', () => {
     const { store, api } = createScene()
     store.hasData = true
     store.loading = false
-
     api.destroy()
     expect(store.hasData).toBe(false)
     expect(store.loading).toBe(false)
   })
 })
 
-/**
- * 跨实例竞态（review blocker 1）：真实 Workspace 生命周期是
- * 「file=null / blocked → destroy A → file=B → initPlayback B」，A 与 B 是**同一个 store**
- * 上的两个实例，各自持有自己的 `loadGeneration` 闭包。
- */
 describe('playbackScene 被销毁实例不得再写共享 store', () => {
   it('destroy A → init B（同一 store）→ A 迟到结束：不得清 B 的 loading / 不得写 B 的 err', async () => {
     const store = createPlaybackStore()
     const lateA = track(deferred())
     source.loadPlaybackData
-      .mockImplementationOnce(() => lateA.promise)     // A 的加载
-      .mockImplementationOnce(() => new Promise(() => {}))   // B 的加载保持挂起
-
+      .mockImplementationOnce(() => lateA.promise)
+      .mockImplementationOnce(() => new Promise(() => {}))
     const apiA = createInstance(store)
     const loadA = apiA.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.loading).toBe(true)
-
-    // 工作台销毁 A（file=null / blocked），随后用同一 store 建 B 并开始加载
     apiA.destroy()
     const apiB = createInstance(store)
     void apiB.loadData({ kind: 'local', file: new File(['b'], 'b.wotbreplay') })
     expect(store.loading).toBe(true)
     expect(store.hasData).toBe(false)
     api = apiB
-
-    // A 迟到结束（reject）：被销毁实例的续体不得触碰共享 store
     lateA.reject(new Error('stale A after destroy'))
     await loadA
-    expect(store.loading).toBe(true)          // B 仍在加载
+    expect(store.loading).toBe(true)
     expect(store.hasData).toBe(false)
-    expect(store.err).toBe('')                // 旧 A 的错误不得落上来
+    expect(store.err).toBe('')
   })
 
   it('destroy A → init B → A 迟到「成功」：不得把 B 的就绪态/播放态写坏', async () => {
@@ -749,16 +676,12 @@ describe('playbackScene 被销毁实例不得再写共享 store', () => {
     source.loadPlaybackData
       .mockImplementationOnce(() => lateA.promise)
       .mockImplementationOnce(() => new Promise(() => {}))
-
     const apiA = createInstance(store)
     const loadA = apiA.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
-
     apiA.destroy()
     const apiB = createInstance(store)
     void apiB.loadData({ kind: 'local', file: new File(['b'], 'b.wotbreplay') })
     api = apiB
-
-    // A 的数据迟到就位：不得继续资产阶段、不得标 ready、不得启动播放
     lateA.resolve(minimalData())
     await loadA
     expect(store.loading).toBe(true)
@@ -768,30 +691,23 @@ describe('playbackScene 被销毁实例不得再写共享 store', () => {
   })
 })
 
-/** 真实驱动 loadMapImage 内部 await，外层预解析立即返回。 */
 describe('playbackScene 资产阶段过期续体', () => {
   it.each(['same instance', 'destroy and recreate'])('A 的内部地图解析不得改写 B（%s）', async (mode) => {
     const store = createPlaybackStore()
-    // A / B 使用可区分的地图名与时间轴起点：任何一处标记出现，就证明过期续体跑到了尾部
     source.loadPlaybackData
       .mockImplementationOnce(() => Promise.resolve(minimalData(917, 'map_a')))
       .mockImplementationOnce(() => Promise.resolve(minimalData(431, 'map_b')))
       .mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
-    // 第一次是 startPlayback 预解析，第二次才是 loadMapImage 内部解析
     const parkedA = track(deferred())
     source.resolveMapKey
       .mockResolvedValueOnce('map_a')
       .mockImplementationOnce(() => parkedA.promise)
       .mockResolvedValue('map_b')
-
     const apiA = createInstance(store)
     const loadA = apiA.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
-    // 等 A 停进资产阶段（A 在挂起点之前已写 mapName）
     await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
     expect(store.assetStage).toBe(true)
     expect(store.loading).toBe(true)
-
-    // A 被销毁（工作台切走 / file=null 的真实路径），随后 B 完整跑完
     if (mode === 'destroy and recreate') apiA.destroy()
     const apiB = mode === 'same instance' ? apiA : createInstance(store)
     await apiB.loadData({ kind: 'local', file: new File(['b'], 'b.wotbreplay') })
@@ -799,12 +715,9 @@ describe('playbackScene 资产阶段过期续体', () => {
     expect(store.startTime).toBe(431)
     expect(store.mapKey).toBe('map_b')
     expect(store.hasData).toBe(true)
-
-    // 放行 A 的资产续体：会话身份已过期，必须立刻放弃
     parkedA.resolve('map_a')
     await loadA
-    // 过期续体必须放弃：A 的两个专属标记都不得被写回（B 已写完并保持）
-    expect(store.mapName).toBe('map_b')      // 不是 'map_a'
+    expect(store.mapName).toBe('map_b')
     expect(store.startTime).toBe(431)
     expect(store.mapKey).toBe('map_b')
     expect(store.hasData).toBe(true)
@@ -814,72 +727,50 @@ describe('playbackScene 资产阶段过期续体', () => {
     const store = createPlaybackStore()
     source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData()))
     source.resolveMapKey.mockImplementation(() => Promise.resolve(null))
-
     const only = createInstance(store)
     api = only
     await only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
-    // 正常路径（未被取代）必须真的落成：loading 落下 + ready 立起。
-    // 若代数复核误伤正常加载，这里会抓到。
     expect(store.loading).toBe(false)
     expect(store.hasData).toBe(true)
     expect(store.startTime).toBe(42)
   })
 
-  /**
-   * 过期会话不得启动播放：`startPlayback` 尾部（setPlaying/tick/writeHud）之前必须再复核一次
-   * 会话身份。这里直接操纵内核暴露的状态让「当前会话」作废，锁住那道复核——
-   * 否则被取代的会话会在资产加载返回后自行开始 tick、把旧 HUD 复活到新会话上。
-   */
   it('会话作废后 startPlayback 尾部不得启动播放（不写 mapName / startTime / playing）', async () => {
     const store = createPlaybackStore()
     source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
-    // 资产阶段挂起，拿到句柄后再让「会话作废」，最后放行，模拟被取代的时序
     const parked = track(deferred())
     source.resolveMapKey
       .mockResolvedValueOnce('map_a')
       .mockImplementationOnce(() => parked.promise)
       .mockResolvedValue(null)
-
     const only = createInstance(store)
     api = only
     const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
     expect(store.assetStage).toBe(true)
-    expect(store.mapName).toBe('map_a')       // 已过入口复核、进入资产阶段
-
-    // 会话作废（等价于新的 loadData / destroy 换掉会话身份），然后才放行资产阶段
+    expect(store.mapName).toBe('map_a')
     only.destroy()
     const epochBefore = store.startTime
     parked.resolve('map_a')
     await load
-
-    // 过期续体必须放弃：尾部写入一个都不许落地
-    expect(store.startTime).toBe(epochBefore)  // 不是 917
-    expect(store.playing).toBe(false)          // 不得自行开始播放
+    expect(store.startTime).toBe(epochBefore)
+    expect(store.playing).toBe(false)
     expect(store.hasData).toBe(false)
   })
 })
 
-/**
- * `reset()`（工作台清空选择 / 换选场次）也落在**加载途中**：撤下必须让在途续体整体作废，
- * 而不是等它自己跑完。否则旧场解析完成会绕过 reset 把旧场景画回来，还会把 `DATA` 占住。
- */
 describe('playbackScene reset：撤下当前回放', () => {
   it('解析途中撤下：迟到解析不得落成会话，也不得把 DATA 留给下一场', async () => {
     const store = createPlaybackStore()
     const late = track(deferred())
     source.loadPlaybackData.mockImplementationOnce(() => late.promise)
-
     const only = createInstance(store)
     api = only
     const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.loading).toBe(true)
-
     only.reset()
     expect(store.loading).toBe(false)
     expect(store.hasData).toBe(false)
-
-    // 旧场解析迟到完成：不得落成会话、不得改写等待态
     late.resolve(minimalData(917, 'map_a'))
     await load
     expect(store.hasData).toBe(false)
@@ -887,9 +778,6 @@ describe('playbackScene reset：撤下当前回放', () => {
     expect(store.mapName).toBe('')
     expect(store.startTime).toBe(0)
     expect(store.err).toBe('')
-
-    // DATA 也不得被旧场占用：画质选择必须仍是「就地生效」，
-    // 而不是走 `if (DATA)` 的「已在播放 → 整页重载」分支
     expect(store.qualityKey).toBe('low')
     only.setQuality('mid')
     expect(store.qualityKey).toBe('mid')
@@ -897,47 +785,33 @@ describe('playbackScene reset：撤下当前回放', () => {
 
   it('资产途中撤下：迟到续体不得触场景，也不得把内部异常当「加载失败」写给用户', async () => {
     source.loadPlaybackData.mockImplementation(() => Promise.resolve(minimalData(917, 'map_a')))
-    // 第一次是 startPlayback 预解析，第二次（挂起）在资产阶段内部
     const parked = track(deferred())
     source.resolveMapKey
       .mockResolvedValueOnce('map_a')
       .mockImplementationOnce(() => parked.promise)
       .mockResolvedValue(null)
-
     const store = createPlaybackStore()
     const only = createInstance(store)
     api = only
     const load = only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     await vi.waitFor(() => expect(source.resolveMapKey).toHaveBeenCalledTimes(2))
     expect(store.assetStage).toBe(true)
-
     only.reset()
     expect(store.assetStage).toBe(false)
     expect(store.mapName).toBe('')
-
     parked.resolve('map_a')
     await load
-    expect(store.mapName).toBe('')       // 不是 'map_a'
-    expect(store.startTime).toBe(0)      // 不是 917
+    expect(store.mapName).toBe('')
+    expect(store.startTime).toBe(0)
     expect(store.playing).toBe(false)
     expect(store.hasData).toBe(false)
     expect(store.assetStage).toBe(false)
-    // 关键：续体必须「安静地」放弃。撤下已 teardown 掉 DATA（= null），若让它继续跑
-    // buildVehicles，会在 DATA.vehicles 上抛错并把 TypeError 当成「加载失败」写给用户。
     expect(store.err).toBe('')
   })
 })
 
-/**
- * 场景未初始化（渲染器/时钟惰性创建前）的 HUD API 调用安全：待开播 / 解析期间切走能力
- * 再切回，面板会对 `setPaused(false)`——此时 `clock` 还不存在，恢复分支不得触场景内部
- * 对象（线上实测 TypeError: Cannot read properties of undefined (reading 'getDelta')）。
- */
 describe('playbackScene 场景未初始化时的调用安全', () => {
   it('initScene 之前 pause → resume 会重新挂起被取消的 rAF，且场景 API 不炸', async () => {
-    // 精确锁定线上路径：待开播时 initPlayback 已有一个空转 rAF；切走会 cancel，
-    // 切回时 clock/renderer 仍不存在，但必须重新挂回 rAF。否则之后 Start 虽能 ready，
-    // animation loop 仍是 0，画面与时间永久停死。
     const raf = vi.fn()
       .mockReturnValueOnce(101)
       .mockReturnValueOnce(102)
@@ -945,21 +819,16 @@ describe('playbackScene 场景未初始化时的调用安全', () => {
     const cancel = vi.fn()
     vi.stubGlobal('requestAnimationFrame', raf)
     vi.stubGlobal('cancelAnimationFrame', cancel)
-
-    const { store, api } = createScene()   // 只 initPlayback：clock/renderer 尚不存在
+    const { store, api } = createScene()
     expect(raf).toHaveBeenCalledTimes(1)
     expect(() => api.setPaused(true)).not.toThrow()
     expect(cancel).toHaveBeenCalledWith(101)
-
     expect(() => api.setPaused(false)).not.toThrow()
-    expect(raf).toHaveBeenCalledTimes(2)   // pre-init resume 必须重新 arm animation loop
-
-    // 后续正常 Start / initScene 仍可落成 ready；不能只是“不抛异常”。
+    expect(raf).toHaveBeenCalledTimes(2)
     source.loadPlaybackData.mockResolvedValueOnce(minimalData())
     await api.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
-
     expect(() => api.setPlaying(false)).not.toThrow()
     expect(() => api.togglePlay()).not.toThrow()
     expect(store.playing).toBe(true)
@@ -973,17 +842,13 @@ describe('playbackScene 场景未初始化时的调用安全', () => {
     const only = createInstance(store)
     await only.loadData({ kind: 'local', file: new File(['a'], 'a.wotbreplay') })
     expect(store.hasData).toBe(true)
-
     expect(() => only.setPaused(true)).not.toThrow()
     expect(() => only.setPaused(false)).not.toThrow()
-    // 会话未被闸门破坏：就绪态保持、无错误（minimalData 的 END==t_start，加载完成即播完，
-    // playing 落回 false 属正常，不在此断言播放态）
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
   })
 })
 
-/** 同一实例替换：B 的资源引用与高度场不得被 A 的迟到结果覆盖。 */
 describe('playbackScene 资产发布顺序', () => {
   function prepareAssets(kinds) {
     source.loadPlaybackData.mockResolvedValue(minimalData())
@@ -1013,7 +878,6 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(true)
     const groundB = window.__scene.children.find((o) => o.material?.map === textureB)
     expect(groundB).toBeDefined()
-
     parked.resolve(textureA)
     await loadA
     expect(disposeA).toHaveBeenCalledTimes(1)
@@ -1022,8 +886,6 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2)
-    // 当前贴图同时被地面材质与会话引用持有，teardown 会分别释放它。
-    // 若旧续体把 mapTexture 置 null，第二次释放就缺失。
     api.destroy()
     expect(disposeB).toHaveBeenCalledTimes(2)
     created = []
@@ -1055,10 +917,6 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.loading).toBe(true)
     parkedGround.resolve({ ok: false })
     await loadB
-    // 地形网格 2026-10-09 起为**客户端同构**的 BufferGeometry（texel 原位取原值、几何直接
-    // 建在场景系）⇒ 高度在 **Y** 分量（此前 PlaneGeometry + rotation(-π/2) 时在 Z）。
-    // 用内核诊断钩子取网格身份（?debug 下挂 window.__terrain）——按几何形状猜会误抓
-    // 其它 4 顶点小网格（基地盘/贴花）。
     const terrain = window.__terrain
     expect(terrain).toBeDefined()
     expect(terrain.geometry.attributes.position.getY(0)).toBeCloseTo(20)
@@ -1067,7 +925,6 @@ describe('playbackScene 资产发布顺序', () => {
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
-    // 场景 GLB 是高清/极致档行为（2026-10-07 四档重分档后均衡档不再拉场景）
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
     const gltfA = new THREE.Group()
@@ -1178,7 +1035,6 @@ describe('playbackScene 资产发布顺序', () => {
   })
 })
 
-
 describe('scene vehicle selection intent', () => {
   it('raycast click reports selection without moving the camera into Follow', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
@@ -1195,7 +1051,6 @@ describe('scene vehicle selection intent', () => {
     container.querySelector('canvas').releasePointerCapture = vi.fn()
     const beforeCamera = window.__camera.position.clone()
     container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
-    // 第二个参数是原始指针事件：面板据此把详情浮窗落在与这台车相对的一侧
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
@@ -1217,18 +1072,15 @@ describe('scene vehicle selection intent', () => {
     const canvas = container.querySelector('canvas')
     canvas.setPointerCapture = vi.fn()
     canvas.releasePointerCapture = vi.fn()
-    // 空处原地单击（位移 0）→ eid=null 上报一次
     canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 40, clientY: 50 }))
-    expect(onVehicleSelect).not.toHaveBeenCalled()   // down 不报（等待判定单击/拖拽）
+    expect(onVehicleSelect).not.toHaveBeenCalled()
     canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 40, clientY: 50 }))
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBeNull()
     onVehicleSelect.mockClear()
-    // 空处拖拽（轨道旋转）→ 位移超阈值，不报
     canvas.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 40, clientY: 50 }))
     canvas.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 90, clientY: 70 }))
     expect(onVehicleSelect).not.toHaveBeenCalled()
-    // 命中坦克后紧随的 pointerup 不产生空处上报
     const object = new THREE.Object3D()
     object.userData.eid = 11
     vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object }])
@@ -1238,7 +1090,6 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
   })
 })
-
 
 describe('scene container geometry', () => {
   it('resizes projection and canvas on container changes and disconnects on destroy', async () => {
@@ -1274,16 +1125,7 @@ describe('scene container geometry', () => {
   })
 })
 
-/**
- * 线上故障：名册行索引登记的是**原始**对象，updateRoster 改的也是原始对象——store 是 reactive()，
- * 只有经代理的写入才通知 Vue。于是顶栏总血量与击杀数照常推进，两侧名册却停在满血，直到选中行
- * 之类的无关状态碰巧触发重绘。原始写入自 3D 内核平移起就存在：旧页面在模板里直接读 store，
- * 随 10Hz HUD 整页重绘顺带读到新值而被掩盖；名册改经复制行的 computed / 子组件渲染后暴露。
- * 这里用 Vue effect 读取 store.roster（与 PlaybackRoster 渲染同一读取路径），驱动真实内核的
- * seek、播放帧、暂停与换相机；组件测试经代理直接写 store，覆盖不到内核这条写入路径。
- */
 describe('playbackScene 名册运行时状态对 Vue 可见', () => {
-  /** 最小可渲染车辆：单采样位姿 + 全程可见 */
   const vehicle = (def) => ({
     pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
     coverage: [42, 300], death_t: null, hp: [], ...def,
@@ -1293,7 +1135,6 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     data.meta = { ...data.meta, duration: 300, samples: 1 }
     return data
   }
-  /** 不自动跑帧：帧只在测试显式调用时发生（返回已排队的帧回调） */
   function manualFrames() {
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -1302,7 +1143,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
   }
 
   it('seek 到更晚时刻：effect 观察到名册行的 hp / dead，而不是停在满血', async () => {
-    manualFrames()   // 没有帧在跑：名册只能由 seek 自己的强制写入投影（等同暂停后拖动进度条）
+    manualFrames()
     const { store, api } = createScene()
     source.loadPlaybackData.mockResolvedValue(rosterData([
       vehicle({ eid: 1, team: 1, nickname: 'CHRD-A158布丁', tank_name: 'Maus', max_hp: 3074,
@@ -1310,7 +1151,6 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       vehicle({ eid: 2, team: 2, nickname: 'Enemy', tank_name: 'E 100', max_hp: 2700, hp: [[70, 1500]] }),
     ]))
     await api.loadData({ kind: 'local', file: new File(['x'], 'roster.wotbreplay') })
-
     let seen = null
     const stop = watchEffect(() => {
       seen = [...store.roster.team1, ...store.roster.team2].map(({ eid, hp, maxHp, dead }) => ({ eid, hp, maxHp, dead }))
@@ -1320,15 +1160,13 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       { eid: 2, hp: 2700, maxHp: 2700, dead: false },
     ]
     expect(seen).toEqual(atStart)
-
     api.seekTime(268)
-    expect(store.hpFriend).toBe(0)   // 顶栏已在新 T（故障现场正是「HUD 对、名册旧」）
+    expect(store.hpFriend).toBe(0)
     expect(seen).toEqual([
       { eid: 1, hp: 0, maxHp: 3074, dead: true },
       { eid: 2, hp: 1500, maxHp: 2700, dead: false },
     ])
-
-    api.seekTime(50)   // 状态在时刻：seek 回开局同样可见地回退
+    api.seekTime(50)
     expect(seen).toEqual(atStart)
     stop()
   })
@@ -1338,16 +1176,12 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const { store, api } = createScene()
-    // 帧级时间尺度：己方车开局后 0.25s 掉血、0.45s 阵亡，敌方车 0.6s 掉血。HP 只给单条采样——
-    // 不产生伤害飘字（飘字要 2D canvas，happy-dom 没有）。己方车带装填遥测：resolver 每次
-    // 返回新数组，逐帧投影会让名册每帧都触发重绘。
     source.loadPlaybackData.mockResolvedValue(rosterData([
       vehicle({ eid: 1, team: 1, max_hp: 3074, hp: [[42.25, 1000]], death_t: 42.45 }),
       vehicle({ eid: 2, team: 2, max_hp: 2700, hp: [[42.6, 1500]] }),
     ], { reloads: [{ eid: 1, clock: 40, phase: 3, duration_s: 10 }] }))
     await api.loadData({ kind: 'local', file: new File(['x'], 'play.wotbreplay') })
     expect(store.playing).toBe(true)
-
     let runs = 0
     let seen = null
     const stop = watchEffect(() => {
@@ -1359,20 +1193,15 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
       { eid: 1, hp: 3074, dead: false, reload: 'loading' },
       { eid: 2, hp: 2700, dead: false, reload: null },
     ])
-
     const frame = (ms) => { now += ms; frames.at(-1)() }
     runs = 0
-    frame(30); frame(30); frame(30)   // 同一 HUD 节流窗口（<100ms）：名册一次都不重写
+    frame(30); frame(30); frame(30)
     expect(runs).toBe(0)
-
-    for (let i = 0; i < 5; i++) frame(100)   // 再播 0.5s（T≈42.56）：跨过己方掉血与阵亡时刻
+    for (let i = 0; i < 5; i++) frame(100)
     expect(seen).toEqual([
       { eid: 1, hp: 1000, dead: true, reload: null },
       { eid: 2, hp: 2700, dead: false, reload: null },
     ])
-
-    // 敌方掉血落在节流窗口内（T≈42.61，距上次 HUD 写入 50ms），此时尚未上屏；随即暂停——
-    // 之后不再有帧，停播必须把名册补写到当前 T，否则最后这次掉血永远不上屏
     frame(50)
     expect(seen[1].hp).toBe(2700)
     api.setPlaying(false)
@@ -1401,7 +1230,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
   })
 
   it('暂停时切换跟随：名册行的 followed 立即可见（不等下次播放 / seek）', async () => {
-    manualFrames()   // 没有帧在跑：followed 只能由换相机自己的投影更新
+    manualFrames()
     const { store, api } = createScene()
     source.loadPlaybackData.mockResolvedValue(rosterData([
       vehicle({ eid: 1, team: 1, max_hp: 3074 }),
@@ -1409,17 +1238,14 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     ]))
     await api.loadData({ kind: 'local', file: new File(['x'], 'follow.wotbreplay') })
     api.setPlaying(false)
-
     let followed = null
     const stop = watchEffect(() => {
       followed = [...store.roster.team1, ...store.roster.team2].filter((row) => row.followed).map((row) => row.eid)
     }, { flush: 'sync' })
     expect(followed).toEqual([])
-
     api.setFollow(2)
     expect(store.cam).toBe('follow')
     expect(followed).toEqual([2])
-
     api.setCam('free')
     expect(followed).toEqual([])
     stop()
@@ -1438,10 +1264,7 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
     }))
     await api.loadData({ kind: 'local', file: new File(['x'], 'tracer.wotbreplay') })
     expect(store.playing).toBe(true)
-
     const frame = (ms) => { now += ms; frames.at(-1)() }
-    // T 42 → ≈42.8：跨过 t_fire=42.2，每帧都走折线推进 + 弧长尾巴窗口（t1≈43.2 未到，
-    // 不混入弹着特效路径）
     for (let i = 0; i < 8; i++) frame(100)
     expect(store.time).toBeGreaterThan(42.5)
     expect(store.time).toBeLessThan(43.2)
@@ -1449,8 +1272,6 @@ describe('playbackScene 名册运行时状态对 Vue 可见', () => {
 })
 
 describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
-  // 档位阶梯 = 相邻档各跨一个真实成本断崖（见 QUALITY_PRESETS 注释）。这里锁定
-  // 表形状而非数值细节：键序即 UI 档位顺序、成本阶梯单调、内容开关按档位语义分布。
   it('四档键序固定，成本阶梯单调，内容开关按档位分布', () => {
     const keys = Object.keys(QUALITY_PRESETS)
     expect(keys).toEqual(['low', 'mid', 'high', 'ultra'])
@@ -1459,30 +1280,23 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(ladder).toEqual([...ladder].sort((a, b) => a - b))
     }
     for (const t of keys) {
-      expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')            // 低档盒代理
-      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')      // 场景下载税=高清起
-      expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra') // 分层地表=高清起
-      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')             // 小地图底图=仅低档（均衡档起用俯视烘焙底图）
-      expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')           // MSAA=均衡起
+      expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')
+      expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')
+      expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
+      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')
+      expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
     }
   })
 })
 
 describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
   it('impact-* 池的 JS 包装对象不炸：解包 g 后 dispose，同 root 去重', async () => {
-    // issue #556：切换回放清理上一局对象池时，impact-* 条目是 JS 包装对象
-    // ({ g, ball, ring, sparks })——对它直接 disposeObject3D 调 .traverse 抛
-    // TypeError 中断会话切换。接口契约：disposeFxPool 只接受 Object3D 或
-    // 「带 .g 的包装」，其余跳过不抛。
     const { createPlaybackStore } = await import('./playbackStore.js')
     const sceneMod = await import('./playbackScene.js')
     const store = createPlaybackStore()
     const container = document.createElement('div')
     document.body.appendChild(container)
     const api = sceneMod.initPlayback(container, store)
-    // 不解析回放——实例销毁路径必然经过 disposeFxPool（池为空时也走同一条链），
-    // 这里锁「destroy 全程无异常」的接口契约；包装对象的真机回归由 issue 描述的
-    // 场景（多回放切换）覆盖
     expect(() => api.destroy()).not.toThrow()
     container.remove()
   })
