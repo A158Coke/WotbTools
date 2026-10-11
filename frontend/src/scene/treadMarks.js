@@ -10,8 +10,8 @@
  * authored `manualSpace` 沿回放位姿路径铺贴图段——贴图/宽度/间距是客户端作者数据，
  * 铺放节奏与段几何是依据作者参数的近似（上游 feasibility 文档 §四）。
  *
- * 本模块不依赖 three.js：段是普通对象、矩阵是 16 元素列主序数组，便于单测；
- * 场景侧只做容器与写入（InstancedMesh instanceMatrix）。
+ * 本模块不依赖 three.js：段是普通对象、四边形是逐角坐标数组，便于单测；
+ * 场景侧只做容器与写入（逐车动态合并几何，槽位 = 绝对序号）。
  */
 
 /** 无 authored 数据车辆的产品回落（上游 feasibility §四：回落本身无客户端依据）：
@@ -116,60 +116,46 @@ function pushSeg(st, seg, cap) {
   st.total++;
 }
 
-/** 贴地抬升（m）：与基地圆盘同惯例（groundY = sampleHeight + 小间隙防 z-fighting） */
-export const TRAIL_LIFT = 0.06;
-/** 地形法线有限差分步长（m）：半个印记宽度量级，滤掉 texel 级噪声 */
-const NORMAL_EPS = 0.35;
+/** 贴地抬升（m）：印记四角**逐角独立采样**地形高度后再抬——抬升只需盖住
+ * 「真值场双线性面 vs 渲染网格（LOD 分片线性面）」的残差。全景视距下客户端合法的
+ * 粗格网格与真值面可差 5~15 cm（铁轨 D4 同族问题），0.06 时实测成片被网格盖住
+ * （印记"被地面挡住且断续可见"的根因）⇒ 取 0.12；近距平地上略微悬空，观感可接受。 */
+export const TRAIL_LIFT = 0.12;
+/** 段长放大系数：相邻段重叠 ~25%，盖住转弯处相邻段方向突变留下的楔形缝
+ * （直线段重叠区 alpha 叠加略深，软边贴图下不可见）。 */
+export const TRAIL_OVERLAP = 1.25;
 
 /**
- * 段 → 贴地四边形的实例矩阵（16 元素**列主序**，直接可写 `instanceMatrix.array`）。
+ * 段 → 贴地四边形的 **4 个角**（世界系，逐角独立采样地形高度 + 抬升）。
  *
- * 基矢 = 贴地坐标系：`n` = 地形法线（有限差分），`f` = 段方向在切平面上的投影（沿路倾向），
- * `r` = n×f（横向）。四边形 = `r·width` × `f·len`，中心抬升 `TRAIL_LIFT`——随坡倾斜
- * （横坡上不插地/不悬浮），纯平地退化为水平四边形。
- *
- * 退化保护：段方向零向量 / 法线过陡（|n.y| < 0.2，陡坎处差分失真）→ 回落水平摆放，
- * 绝不产出 NaN 矩阵（fail-safe）。
+ * 为什么逐角而不是"中心高度 + 法线倾斜的单平面"：印记必须贴合**渲染网格**，而网格是
+ * LOD 分片线性面、与真值场的双线性面存在随视距增大的残差——单平面只有 3 个自由度，
+ * 在 1 m 弦上仍会一头扎进网格里；四角各自落到 `heightAt`（真值场）+ 抬升上，随坡
+ * 双向弯折，残差只剩"角点采样 vs 网格插值"一项，由 TRAIL_LIFT 统一盖住。
+ * 横向基矢取水平面内垂直于段方向即可（坡度已由逐角高度消化，无需法线投影）。
  *
  * @param {{x:number, z:number, dx:number, dz:number, len:number}} seg 段
  * @param {number} width 印记条带宽（m，authored `manual_width`）
  * @param {(x:number, z:number)=>number} heightAt 地形高度采样（场景 `sampleHeight`）
- * @param {Float32Array|number[]} out 长度 ≥16 的输出数组（就地写）
- * @returns {boolean} 是否写入（false = 输入退化，调用方跳过该实例）
+ * @param {Float32Array|number[]} out 长度 ≥12 的输出数组（就地写 [x,y,z]×4，
+ *   顺序 (-横,-纵) (+横,-纵) (+横,+纵) (-横,+纵)；uv 固定 (0,0)(1,0)(1,1)(0,1)，由调用方预填）
+ * @returns {boolean} 是否写入（false = 段方向退化，调用方跳过该段）
  */
-export function trailQuadMatrix(seg, width, heightAt, out) {
+export function trailQuadCorners(seg, width, heightAt, out) {
   const dl = Math.hypot(seg.dx, seg.dz);
   if (!(dl > 1e-6)) return false;
-  const e = NORMAL_EPS;
-  const h = heightAt(seg.x, seg.z);
-  let nx = -(heightAt(seg.x + e, seg.z) - heightAt(seg.x - e, seg.z)) / (2 * e);
-  let nz = -(heightAt(seg.x, seg.z + e) - heightAt(seg.x, seg.z - e)) / (2 * e);
-  const nl = Math.hypot(nx, 1, nz);
-  if (!(nl > 1e-9)) { nx = 0; nz = 0; } else { nx /= nl; nz /= nl; }
-  let ny = 1 / (nl || 1);
-  // 切平面内的前向：f = d − n(d·n)，归一。⚠️ f 带 **y 分量**（斜坡上投影不再水平），
-  // 丢掉它 f·n ≠ 0——四边形会斜插进坡里（实测横坡 f·n = 0.25）。
-  const dn = (seg.dx * nx + seg.dz * nz) / dl;
-  let fx = seg.dx / dl - nx * dn;
-  let fy = -ny * dn;
-  let fz = seg.dz / dl - nz * dn;
-  const fl = Math.hypot(fx, fy, fz);
-  if (!(fl > 1e-6) || !(Math.abs(ny) > 0.2)) {
-    // 段方向与法线近平行（陡坎差分失真）：回落水平摆放
-    fx = seg.dx / dl; fy = 0; fz = seg.dz / dl;
-    nx = 0; ny = 1; nz = 0;
-  } else {
-    fx /= fl; fy /= fl; fz /= fl;
+  const ux = seg.dx / dl, uz = seg.dz / dl;
+  const rx = -uz, rz = ux;                      // 水平面内横向（左右对称，符号无语义）
+  const hw = width / 2;
+  const hl = (seg.len * TRAIL_OVERLAP) / 2;
+  const cs = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  for (let i = 0; i < 4; i++) {
+    const [a, b] = cs[i];
+    const x = seg.x + rx * hw * a + ux * hl * b;
+    const z = seg.z + rz * hw * a + uz * hl * b;
+    out[i * 3] = x;
+    out[i * 3 + 1] = heightAt(x, z) + TRAIL_LIFT;
+    out[i * 3 + 2] = z;
   }
-  // 右向 = n × f（正交基 ⇒ 单位）
-  const rx = ny * fz - nz * fy;
-  const ry = nz * fx - nx * fz;
-  const rz = nx * fy - ny * fx;
-  const hw = width / 2, hl = seg.len / 2;
-  // 列主序：col0 = r·hw，col1 = n，col2 = f·hl，col3 = (x, h+lift, z)
-  out[0] = rx * hw; out[1] = ry * hw; out[2] = rz * hw; out[3] = 0;
-  out[4] = nx;      out[5] = ny;      out[6] = nz;      out[7] = 0;
-  out[8] = fx * hl; out[9] = fy * hl; out[10] = fz * hl; out[11] = 0;
-  out[12] = seg.x;  out[13] = h + TRAIL_LIFT; out[14] = seg.z; out[15] = 1;
   return true;
 }

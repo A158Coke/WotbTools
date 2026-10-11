@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState,
-  resetTrailState, resolveTreadParams, trailQuadMatrix, TRAIL_LIFT,
+  resetTrailState, resolveTreadParams, trailQuadCorners, TRAIL_LIFT, TRAIL_OVERLAP,
 } from './treadMarks.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -17,8 +17,9 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
   it('开关必须经场景 API 落到 store.treadOn（唯一 owner，不得在组件里另立状态）', () => {
     expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{ store\.treadOn = !!on; invalidate\(\); \}/)
   })
-  it('teardown 必须释放逐车 treadMesh 与会话级贴图缓存（显存生命周期同会话）', () => {
-    expect(sceneSrc).toMatch(/v\.treadMesh\.dispose\(\)/)
+  it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
+    expect(sceneSrc).toMatch(/v\.treadMesh\.geometry\.dispose\(\)/)
+    expect(sceneSrc).toMatch(/v\.treadMesh\.material\.dispose\(\)/)
     expect(sceneSrc).toMatch(/for \(const tex of treadTexCache\.values\(\)\) tex\.dispose\(\)/)
   })
 })
@@ -113,54 +114,44 @@ describe('advanceTrail', () => {
   })
 })
 
-describe('trailQuadMatrix', () => {
+describe('trailQuadCorners', () => {
   const flat = () => 0
-  it('平地：单位正交基、四角 = 中心 ± 横/纵半宽、抬升 TRAIL_LIFT', () => {
-    const out = new Float32Array(16)
-    const ok = trailQuadMatrix({ x: 5, z: 7, dx: 0, dz: 1, len: 1.0 }, 0.8, flat, out)
+  it('平地：四角 = 中心 ± 横/纵半宽，逐角 y = 地形 + TRAIL_LIFT', () => {
+    const out = new Float32Array(12)
+    const ok = trailQuadCorners({ x: 5, z: 7, dx: 0, dz: 1, len: 1.0 }, 0.8, flat, out)
     expect(ok).toBe(true)
-    // 列主序：col0 = 横向半宽，col2 = 纵向半长，col3 = 中心
-    expect(out[0]).toBeCloseTo(0.4)           // r = n×f = (+1,0,0)（n=up, f=+z 的右手基）
-    expect(out[5]).toBeCloseTo(1)             // col1 = 法线 (0,1,0)
-    expect(out[9]).toBeCloseTo(0)             // 平地 f 无 y 分量
-    expect(out[10]).toBeCloseTo(0.5)          // f·len/2 = +z·0.5
-    expect(out[12]).toBeCloseTo(5)
-    expect(out[13]).toBeCloseTo(TRAIL_LIFT)
-    expect(out[14]).toBeCloseTo(7)
-    expect(out[15]).toBe(1)
-    // 正交性：r·f = 0、|n| = 1
-    expect(out[0] * out[8] + out[1] * out[9] + out[2] * out[10]).toBeCloseTo(0)
+    const hl = 1.0 * TRAIL_OVERLAP / 2
+    // 角序 (-横,-纵) (+横,-纵) (+横,+纵) (-横,+纵)；横向 r = (−uz, ux) = (−1,0)
+    const expectCorner = (i, dx, dz) => {
+      expect(out[i * 3]).toBeCloseTo(5 + dx)
+      expect(out[i * 3 + 1]).toBeCloseTo(TRAIL_LIFT)
+      expect(out[i * 3 + 2]).toBeCloseTo(7 + dz)
+    }
+    expectCorner(0, 0.4, -hl)
+    expectCorner(1, -0.4, -hl)
+    expectCorner(2, -0.4, hl)
+    expectCorner(3, 0.4, hl)
   })
-  it('横坡（h=x）：法线随坡倾斜、f 仍在切平面（f·n=0）', () => {
-    const out = new Float32Array(16)
-    trailQuadMatrix({ x: 0, z: 0, dx: 0, dz: 1, len: 1.0 }, 0.8, (x) => x, out)
-    const n = [out[4], out[5], out[6]]
-    const f = [out[8], out[9], out[10]]
-    const r = [out[0], out[1], out[2]]
-    // n ∝ (−1,1,0)/√2（h 随 +x 抬升 ⇒ 法线朝 −x 倾）
-    expect(n[0]).toBeLessThan(0)
-    expect(Math.abs(n[0] + n[1])).toBeLessThan(1e-6)   // 归一化的 (−1,1,0)/√2 两分量互为相反数
-    // f·n = 0（沿路方向贴合坡面）且 f 保持 +z
-    expect(f[0] * n[0] + f[1] * n[1] + f[2] * n[2]).toBeCloseTo(0)
-    expect(f[2]).toBeGreaterThan(0)
-    // r·f = 0、|r| = 1
-    expect(r[0] * f[0] + r[1] * f[1] + r[2] * f[2]).toBeCloseTo(0)
-    expect(Math.hypot(r[0], r[1], r[2])).toBeCloseTo(0.4)   // col0 = r·hw（hw=0.4）
+  it('横坡（h=x）：四角各自落到所在位置的地形高度——随坡双向弯折', () => {
+    const out = new Float32Array(12)
+    trailQuadCorners({ x: 0, z: 0, dx: 0, dz: 1, len: 1.0 }, 0.8, (x) => x, out)
+    // +x 侧两角比 −x 侧两角高一个坡度 × 宽度（横向 r = (−uz,ux) = (−1,0) ⇒ 角0 在 +x 侧）
+    expect(out[1] - out[4]).toBeCloseTo(0.8)   // 角1(−横,x=−0.4) − 角0(+横,x=+0.4)
+    expect(out[10] - out[7]).toBeCloseTo(0.8)  // 角3(−横) − 角2(+横)
+    // 纵向两端高度随各自 x 采样（弯坡也不插地）
+    for (let i = 0; i < 4; i++) expect(out[i * 3 + 1]).toBeCloseTo(out[i * 3] + TRAIL_LIFT)
+  })
+  it('段长重叠：几何半长 = len × TRAIL_OVERLAP / 2（盖住转弯楔形缝）', () => {
+    const out = new Float32Array(12)
+    trailQuadCorners({ x: 0, z: 0, dx: 1, dz: 0, len: 1.0 }, 0.8, flat, out)
+    // dir=(1,0) ⇒ 纵向 = x 分量：角0/角1 在 x 上 ±hl；横向 = z 分量 ±hw
+    expect(out[0]).toBeCloseTo(-0.5 * TRAIL_OVERLAP)   // 角0 纵向 −hl
+    expect(out[6]).toBeCloseTo(0.5 * TRAIL_OVERLAP)    // 角2 (+横,+纵)：纵向 +hl
+    expect(Math.abs(out[2])).toBeCloseTo(0.4)          // 角0 横向 ±hw
   })
   it('退化输入：零方向段返回 false，不写 NaN', () => {
-    const out = new Float32Array(16)
-    expect(trailQuadMatrix({ x: 0, z: 0, dx: 0, dz: 0, len: 1 }, 0.8, flat, out)).toBe(false)
+    const out = new Float32Array(12)
+    expect(trailQuadCorners({ x: 0, z: 0, dx: 0, dz: 0, len: 1 }, 0.8, flat, out)).toBe(false)
     expect(out.every((v) => Number.isFinite(v))).toBe(true)
-  })
-  it('16 元素列主序可被 three.js Matrix4.fromArray 复原（形状契约）', async () => {
-    const { Matrix4 } = await import('three')
-    const out = new Float32Array(16)
-    trailQuadMatrix({ x: 1, z: 2, dx: 1, dz: 0, len: 1.2 }, 0.9, flat, out)
-    const m = new Matrix4().fromArray(out)
-    const e = m.elements
-    expect(e[12]).toBeCloseTo(1)
-    expect(e[13]).toBeCloseTo(TRAIL_LIFT)
-    expect(e[14]).toBeCloseTo(2)
-    expect(m.determinant()).toBeCloseTo(0.45 * 0.6)   // det = hw·hl（正交基，width/len 乘入列）
   })
 })

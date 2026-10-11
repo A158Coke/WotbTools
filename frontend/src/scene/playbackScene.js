@@ -55,7 +55,7 @@ import {
 } from './suspension.js'
 // 地面履带印（TreadSystem 碾压痕）：生成/摆放纯函数；数据面 = 包内 tread/（上游
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
-import { advanceTrail, createTrailState, resetTrailState, resolveTreadParams, trailQuadMatrix } from './treadMarks.js'
+import { advanceTrail, createTrailState, resetTrailState, resolveTreadParams, trailQuadCorners } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -2468,16 +2468,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function ensureTreadMesh(v, tp) {
     if (v.treadMesh || !scene) return;
+    const SLOTS = TRAIL_CAP_PER_SIDE * 2;
     const geo = new THREE.BufferGeometry();
-    // 单位四边形（矩阵列0 = 横向右矢·半宽、列2 = 前向·半长）：x 横向 / z 纵向
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5,
-    ]), 3));
-    // 贴图 u = 横向（alpha 两端渐隐）、v = 纵向（一段一次完整条带，ClampToEdge）
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
-      0, 0, 1, 0, 1, 1, 0, 1,
-    ]), 2));
-    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    // 逐段 4 顶点的**动态合并几何**（不是 InstancedMesh）：四角必须各自独立贴地
+    // （trailQuadCorners），单个实例矩阵表达不了四角异高——正是首版"单平面 + 中心梯度"
+    // 被粗格地形网格盖住（印记断续可见）的根因。position 逐段写；uv/index 全槽位恒定。
+    const pos = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 3), 3);
+    pos.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', pos);
+    const uvArr = new Float32Array(SLOTS * 4 * 2);
+    for (let s = 0; s < SLOTS; s++) uvArr.set([0, 0, 1, 0, 1, 1, 0, 1], s * 8);
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    const idx = new Uint32Array(SLOTS * 6);
+    for (let s = 0; s < SLOTS; s++) {
+      const b = s * 4, o = s * 6;
+      idx[o] = b; idx[o + 1] = b + 1; idx[o + 2] = b + 2;
+      idx[o + 3] = b; idx[o + 4] = b + 2; idx[o + 5] = b + 3;
+    }
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.setDrawRange(0, 0);               // 未写段的位置是全零：drawRange 挡住 + seek 回退缩窗口
     const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
     let tex = treadTexCache.get(tp.texture);
     if (!tex) {
@@ -2488,13 +2497,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     mat.map = tex;
     mat.needsUpdate = true;
-    const mesh = new THREE.InstancedMesh(geo, mat, TRAIL_CAP_PER_SIDE * 2);
-    mesh.count = 0;
-    mesh.frustumCulled = false;           // 实例遍布全场：包围球无意义
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;           // 段遍布全场：包围球无意义
     mesh.renderOrder = 2;                 // 地形/底图之后
     mesh.matrixAutoUpdate = false;
     mesh.visible = store.treadOn;
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(mesh);
     v.treadMesh = mesh;
   }
@@ -2549,29 +2556,29 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     flush();
   }
 
-  /** 路径态 → 实例矩阵。槽位 = 绝对序号 % cap（环形不搬动）⇒ 永远只写新增段；
-   * `written` = 该侧已写入 GPU 的绝对段数（-∞ 语义不适用：复位后 total 归零自然全量重写）。 */
-  function writeTrailInstances(v, tr) {
-    const mesh = v.treadMesh;
-    const arr = mesh.instanceMatrix.array;
+  /** 路径态 → 四边形顶点。槽位 = 绝对序号 % cap（环形不搬动）⇒ 永远只写新增段的 4 角；
+   * `written` = 该侧已写入 GPU 的绝对段数（复位随 total 归零 ⇒ 窗口自然缩回全量重写）。 */
+  function writeTrailQuads(v, tr) {
+    const geo = v.treadMesh.geometry;
+    const posAttr = geo.getAttribute('position');
+    const arr = posAttr.array;
     const h = heightField ? sampleHeight : () => 0;
     const width = v.tread.width;
-    const m16 = new Float32Array(16);
-    let count = 0;
+    const c12 = new Float32Array(12);
+    let quads = 0;
     for (const st of [tr.L, tr.R]) {
+      const base = st === tr.L ? 0 : TRAIL_CAP_PER_SIDE;
       for (let k = st.written; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
-        if (!trailQuadMatrix(seg, width, h, m16)) continue;
-        const slot = (k % TRAIL_CAP_PER_SIDE) * 16
-          + (st === tr.L ? 0 : TRAIL_CAP_PER_SIDE * 16);
-        for (let e = 0; e < 16; e++) arr[slot + e] = m16[e];
+        if (!trailQuadCorners(seg, width, h, c12)) continue;
+        arr.set(c12, (base + (k % TRAIL_CAP_PER_SIDE)) * 12);
       }
       st.written = st.total;
-      count += Math.min(st.total, TRAIL_CAP_PER_SIDE);
+      quads += Math.min(st.total, TRAIL_CAP_PER_SIDE);
     }
-    mesh.count = count;
-    mesh.instanceMatrix.needsUpdate = true;
+    geo.setDrawRange(0, quads * 6);
+    posAttr.needsUpdate = true;
   }
 
   function updateTrails() {
@@ -2594,7 +2601,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const t0 = Math.max(tr.builtT, START);
       feedTrail(v, tr, t0);
       tr.builtT = T;
-      writeTrailInstances(v, tr);
+      writeTrailQuads(v, tr);
     }
   }
 
@@ -4298,7 +4305,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         scene.remove(v.treadMesh);
         v.treadMesh.geometry.dispose();
         v.treadMesh.material.dispose();
-        v.treadMesh.dispose();
         v.treadMesh = null;
       }
       v.tread = null;

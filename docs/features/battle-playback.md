@@ -531,10 +531,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **生成** = `scene/treadMarks.js` 纯函数（单测 17 项）：沿位姿路径按 authored
     `manualSpace` 铺段，段方向跟随实际位移（不经 yaw 符号约定）；coverage 空洞断链、
     阵亡静止不出段；固定槽位环形缓冲（`segs[k % cap]` = 绝对序号，实例索引永不搬动）。
-  - **呈现** = 每车一个 InstancedMesh（两侧槽位各 1536 段 ≈ 1.5 km 履带程，环形覆写最老），
-    段四边形经 `trailQuadMatrix` 贴地（地形法线有限差分，随坡倾斜 + 6 cm 抬升；
-    陡坎/退化输入回落水平摆放），`MeshBasicMaterial` 不受光 + alpha blend +
-    `depthWrite=false`（logdepth 下与基地圆盘同一贴地惯例）。
+  - **呈现** = 每车一个动态合并几何 Mesh（两侧槽位各 1536 段 ≈ 1.5 km 履带程，环形覆写
+    最老，`drawRange` 控制绘制数）；段四边形经 `trailQuadCorners` **逐角独立贴地**
+    （四角各自采样真值场高度 + 12 cm 抬升，随坡双向弯折）。首版"InstancedMesh 单平面 +
+    中心梯度"被粗格地形网格成片盖住（全景视距下合法 LOD 网格与真值双线性面差 5~15 cm，
+    印记断续可见）——单矩阵表达不了四角异高，是换合并几何的原因；段长 ×1.25 重叠盖住
+    转弯楔形缝。`MeshBasicMaterial` 不受光 + alpha blend + `depthWrite=false`。
   - **生命周期**：游标增量泵（`tick → updateTrails`）；seek 后退 = 路径态复位从 START
     **全量重算**（输出与连续播放逐值一致——destructibles"后退全量"同构）；开关关断
     期间 `builtT` 退回 -∞，重开即全程补铺（印记 = 回放数据的确定性函数，与播放路径无关）。
