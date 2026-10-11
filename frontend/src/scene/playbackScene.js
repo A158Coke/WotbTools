@@ -585,8 +585,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try {
         const n = heightMeta.size || 512;
         const span = terrainSpanOf();
-        const jj = Math.min(Math.max(Math.round((hit.point.x / span + 0.5) * n), 0), n - 1);
-        const ii = Math.min(Math.max(Math.round((hit.point.z / span + 0.5) * n), 0), n - 1);
+        // truth = 真值场在命中点的**双线性插值**（与网格的连续表面对同一口径）——
+        // 不能拿最近格点值当基准：坡面上连续点 vs 格点值的差是比法误差，不是渲染缺陷
+        //（2026-10-11 plant wall_03 Δ=+0.234 假警报的教训：该点在两格点之间、坡度 1 m/texel）。
+        const fx = (hit.point.x / span + 0.5) * n;
+        const fz = (hit.point.z / span + 0.5) * n;
+        const j0 = Math.min(Math.max(Math.floor(fx), 0), n - 1), j1 = Math.min(j0 + 1, n - 1);
+        const i0 = Math.min(Math.max(Math.floor(fz), 0), n - 1), i1 = Math.min(i0 + 1, n - 1);
+        const tx = Math.min(Math.max(fx - j0, 0), 1), tz = Math.min(Math.max(fz - i0, 0), 1);
+        const H = (i, j) => heightField[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
+        const truth = (H(i0, j0) * (1 - tx) + H(i0, j1) * tx) * (1 - tz)
+                    + (H(i1, j0) * (1 - tx) + H(i1, j1) * tx) * tz;
+        const jj = Math.min(Math.max(Math.round(fx), 0), n - 1);
+        const ii = Math.min(Math.max(Math.round(fz), 0), n - 1);
         let meshH = null;
         if (terrainMesh) {
           const rc = new THREE.Raycaster(
@@ -596,7 +607,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         }
         const build = terrainMesh?.geometry?.userData?.terrainBuild || null;
         terrain = {
-          truth: heightField[ii * n + jj],
+          truth,
           meshH,
           sizeAt: build ? build.sizeAt[ii * n + jj] : null,
           morph: build ? build.morphRaw[ii * n + jj] : null,
