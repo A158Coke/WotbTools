@@ -119,11 +119,14 @@ async function mapLimit(items, limit, fn) {
 // 建筑的档位也要看到真实场景俯视内容；下载 ~5-6MB/图）。
 // 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
 // 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
+// treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
+// **强制** GLB 真实车模——印记的左右轨距取自 suspension 解析的模型实测 halfW，
+// 低模回落常数与之不同，允许中途切车模会让同一车前后的印记轨距突变。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true },
 }
 
 /**
@@ -337,10 +340,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     apply();
   }
-  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）
+  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）；
+  // 高/极致反向强制 GLB（履带印轨距一致性，见 QUALITY_PRESETS 注）
   function applyGlbGate() {
-    store.glbAllowed = Q.allowGlb;
-    if (!Q.allowGlb) {
+    store.glbAllowed = Q.allowGlb && !Q.forceGlb;   // 强制档：开关停用（UI disabled + 提示）
+    store.treadAllowed = !!Q.treadMarks;
+    if (Q.forceGlb) {
+      store.glbOn = true;
+      if (!glbOn) applyGlbToggle(true);
+    } else if (!Q.allowGlb) {
       store.glbOn = false;
       if (glbOn) applyGlbToggle(false);
     }
@@ -2429,12 +2437,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算）
       v.trail = { L: createTrailState(), R: createTrailState(), builtT: -Infinity };
       v.tread = null; v.treadMesh = null;
-      treadParamsFor(def.tank_id).then((tp) => {
-        if (destroyed || !v.trail) return;
-        v.tread = tp;
-        ensureTreadMesh(v, tp);
-        invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
-      });
+      if (Q.treadMarks) {
+        treadParamsFor(def.tank_id).then((tp) => {
+          if (destroyed || !v.trail) return;
+          v.tread = tp;
+          ensureTreadMesh(v, tp);
+          invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
+        });
+      }
       scene.add(g);
       V.push(v);
       setLowPoly(v, true);
@@ -2643,7 +2653,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function updateTrails() {
     if (!DATA) return;
-    const on = store.treadOn;
+    const on = store.treadOn && !!Q.treadMarks;   // 仅高清/极致（低档车模轨距与印记口径不一致）
     for (const v of V) {
       const tr = v.trail;
       if (!tr) continue;
@@ -4658,7 +4668,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setBattleClock,
     setCam,
     setFollow,
-    setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },
+    setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) applyGlbToggle(on); invalidate(); },
     // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
     setTreadMarks: (on) => { store.treadOn = !!on; invalidate(); },
     /**

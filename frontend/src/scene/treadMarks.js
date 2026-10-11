@@ -19,10 +19,10 @@
 export const TREAD_FALLBACK = { width: 0.6, space: 1.0 };
 export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
 
-/** 印记寿命（回放时钟）：`after` 秒内全显，随后 `dur` 秒线性淡出到 0（共 90 s 消失）。
- * 客户端 TreadSystem 有同类的淡出-消失行为（用户对照），但具体时长未逆向——本组常数
- * 是**产品决定**（上游 feasibility §四 的自定参数项），不是客户端数据。 */
-export const TREAD_FADE = { after: 60, dur: 30 };
+/** 印记寿命（回放时钟）：`after` 秒内全显，随后 `dur` 秒线性淡出到 0（共 20 s 消失；
+ * 2026-10-11 用户定值 10+10）。客户端 TreadSystem 有同类的淡出-消失行为（用户对照），
+ * 但具体时长未逆向——本组常数是**产品决定**（上游 feasibility §四 的自定参数项）。 */
+export const TREAD_FADE = { after: 10, dur: 10 };
 
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。

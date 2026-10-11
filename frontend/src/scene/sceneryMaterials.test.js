@@ -399,10 +399,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(matSrc).not.toMatch(/SRGBColorSpace/);      // 材质模块内零 sRGB 解码
     expect(matSrc).toMatch(/NoColorSpace/);            // 且确有显式原样采样
     // 场景侧的 sRGB 只许是**显示内容**（画布贴图 / 底图 / IBL 等距柱状）：
-    // 底图 mapTexture、IBL envTexture、基地标记画布、伤害飘字画布 —— 恰好 4 处。
+    // 底图 mapTexture、IBL envTexture、基地标记画布、伤害飘字画布、履带印贴图 —— 恰好 5 处。
+    // （履带印 = 客户端 albedo 贴图的显示内容解码，DDS→webp 保像素转码；2026-10-11）
     // 新增一处（尤其给地面分层 texs[k] 加）会改这个数 ⇒ 必须先想清楚它属于哪一类。
     const sites = [...src.matchAll(/colorSpace = THREE\.SRGBColorSpace/g)]
-    expect(sites.length).toBe(4)
+    expect(sites.length).toBe(5)
     expect(src).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
     expect(src).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
   })
