@@ -55,7 +55,10 @@ import {
 } from './suspension.js'
 // 地面履带印（TreadSystem 碾压痕）：生成/摆放纯函数；数据面 = 包内 tread/（上游
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
-import { advanceTrail, createTrailState, resetTrailState, resolveTreadParams, trailQuadCorners } from './treadMarks.js'
+import {
+  advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
+  trailQuadCorners, treadAlphaAt, TREAD_FADE,
+} from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -2479,6 +2482,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const uvArr = new Float32Array(SLOTS * 4 * 2);
     for (let s = 0; s < SLOTS; s++) uvArr.set([0, 0, 1, 0, 1, 1, 0, 1], s * 8);
     geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    // RGBA 顶点色：rgb 恒 1，a = 寿命淡出系数（treadAlphaAt，按回放时钟老化）——
+    // 初始 0（未写槽位不可见；drawRange 之外本就不画，这里是防御）
+    const col = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 4), 4);
+    col.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('color', col);
     const idx = new Uint32Array(SLOTS * 6);
     for (let s = 0; s < SLOTS; s++) {
       const b = s * 4, o = s * 6;
@@ -2487,7 +2495,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.setDrawRange(0, 0);               // 未写段的位置是全零：drawRange 挡住 + seek 回退缩窗口
-    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, vertexColors: true });
     let tex = treadTexCache.get(tp.texture);
     if (!tex) {
       tex = new THREE.TextureLoader().load(assetProvider.url(tp.texture));
@@ -2547,8 +2555,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const yaw = yawAt(v, tt);
         const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
         const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
-        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL });
-        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR });
+        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt });
+        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt });
       }
       pA.x = bx; pA.z = bz;
       t = tB;
@@ -2556,29 +2564,81 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     flush();
   }
 
-  /** 路径态 → 四边形顶点。槽位 = 绝对序号 % cap（环形不搬动）⇒ 永远只写新增段的 4 角；
-   * `written` = 该侧已写入 GPU 的绝对段数（复位随 total 归零 ⇒ 窗口自然缩回全量重写）。 */
+  /**
+   * 路径态 → 四边形顶点 + 寿命 alpha。
+   *
+   * 槽位 = **左右交错**：第 k 对段占槽 `2k`（L）/ `2k+1`（R）——首版把 R 整块放在
+   * `[cap, 2cap)` 而 drawRange 只从 0 数起 `(L+R)×6` 个索引，R 区间永远落在绘制窗口外
+   * （实测"只有左侧履带有印记"）。左右同点序列同间距成对出段 ⇒ 槽位致密、
+   * `drawRange = 2×min(L,R)×6` 恰好覆盖（万一失配，min 侧隐藏而非错乱）。
+   * `written` = 该侧已写入 GPU 的绝对段数；环形覆写只重写被覆盖的那个槽。
+   */
   function writeTrailQuads(v, tr) {
     const geo = v.treadMesh.geometry;
     const posAttr = geo.getAttribute('position');
-    const arr = posAttr.array;
+    const colAttr = geo.getAttribute('color');
+    const parr = posAttr.array, carr = colAttr.array;
     const h = heightField ? sampleHeight : () => 0;
     const width = v.tread.width;
     const c12 = new Float32Array(12);
-    let quads = 0;
+    // 环形覆写后可用槽位封顶在 2×cap：越界 drawRange 是未定义的 GPU 行为
+    const pairs = Math.min(tr.L.total, tr.R.total, TRAIL_CAP_PER_SIDE);
     for (const st of [tr.L, tr.R]) {
-      const base = st === tr.L ? 0 : TRAIL_CAP_PER_SIDE;
+      const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
       for (let k = st.written; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
         if (!seg) continue;
         if (!trailQuadCorners(seg, width, h, c12)) continue;
-        arr.set(c12, (base + (k % TRAIL_CAP_PER_SIDE)) * 12);
+        parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
+        const a = treadAlphaAt(T - seg.t);
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        for (let q = 0; q < 4; q++) {
+          carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
+          carr[co + q * 4 + 2] = 1; carr[co + q * 4 + 3] = a;
+        }
       }
       st.written = st.total;
-      quads += Math.min(st.total, TRAIL_CAP_PER_SIDE);
     }
-    geo.setDrawRange(0, quads * 6);
+    geo.setDrawRange(0, pairs * 2 * 6);
     posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+  }
+
+  /** 寿命老化扫描：把"年龄落在淡出窗口内"的段的 alpha 刷新进顶点色。
+   *
+   * ⚠️ 窗口起点必须**按时间二分**（段按 `t` 有序），不能按"最近 N 段"数——段密度是
+   * 速度的函数（1 m 间距 @7 m/s ≈ 7 段/s，92 段只有 13 s），按段数取窗会让 60 s 前
+   * 的段提前出窗、alpha 永远停在 1（实测"不淡出"）。出窗瞬间最后写入的 alpha ≤ 3%
+   * （90 s 边界的一个 tick 内），无可见残留；暂停时时钟冻结 ⇒ 淡出冻结。
+   */
+  function ageTrailAlphas(v, tr) {
+    const colAttr = v.treadMesh.geometry.getAttribute('color');
+    const carr = colAttr.array;
+    const cutoff = T - (TREAD_FADE.after + TREAD_FADE.dur);
+    let dirty = false;
+    for (const st of [tr.L, tr.R]) {
+      const quad = st === tr.L ? 0 : 1;
+      // 二分最小 k：segs[k].t ≥ cutoff（环内有效域 [total-cap, total)）
+      let lo = Math.max(0, st.total - TRAIL_CAP_PER_SIDE), hi = st.total;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        const seg = st.segs[mid % TRAIL_CAP_PER_SIDE];
+        if (seg && seg.t >= cutoff) hi = mid; else lo = mid + 1;
+      }
+      for (let k = lo; k < st.total; k++) {
+        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
+        if (!seg) continue;
+        const a = treadAlphaAt(T - seg.t);
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        for (let q = 0; q < 4; q++) {
+          if (carr[co + q * 4 + 3] !== a) {
+            carr[co + q * 4 + 3] = a;
+            dirty = true;
+          }
+        }
+      }
+    }
+    if (dirty) colAttr.needsUpdate = true;
   }
 
   function updateTrails() {
@@ -2602,6 +2662,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       feedTrail(v, tr, t0);
       tr.builtT = T;
       writeTrailQuads(v, tr);
+      ageTrailAlphas(v, tr);
     }
   }
 
