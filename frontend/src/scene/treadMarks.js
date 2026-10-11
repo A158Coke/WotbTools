@@ -41,9 +41,12 @@ export const TREAD_OPACITY = 0.8;
 
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
- * 输入负数（时钟早于出段时刻，seek 边界）按 1 处理（fail-safe：宁可多显不闪烁）。
+ * 真正的负年龄表示回放时钟早于该段出生时刻（例如 seek 到首个 coverage 之前）：必须隐藏，
+ * 否则延迟 hard-reset 尚未拿到新 anchor 时会短暂显示“未来的履带印”。仅给 1e-9 的浮点
+ * 边界容差，避免刚好在出生时刻因数值抖动闪烁。
  */
 export function treadAlphaAt(age, fade = TREAD_FADE) {
+  if (age < -1e-9) return 0;
   if (!(age > fade.after)) return 1;
   const a = 1 - (age - fade.after) / fade.dur;
   return a > 0 ? a : 0;
