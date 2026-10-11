@@ -53,6 +53,12 @@ export function treadAlphaAt(age, fade = TREAD_FADE) {
  * `tread/<tank_id>.json`（或缺省 null）→ 消费参数。
  * 坏数值逐字段回落（不整条拒绝——authored 的一半坏不该抹掉另一半）。
  *
+ * ⚠️ `width` 的契约：**只有有效 authored 数值才透出数字**；`manual_width` 缺失/为 null
+ * （国别回落车）/非法，或无 json（404）一律透出 `null` = "未 authored"——调用方按
+ * 客户端 `forceManualWidth=false` 语义从模型履带盒实测，最后一跳才是 `TREAD_FALLBACK.width`。
+ * 常量只存在于消费侧一处（场景 `resolvedTreadWidth`）：早先在这里兜底填常量，会让调用方
+ * 无从区分"真 authored"与"正在等模型"，宽度被永久锁死（2026-10-11 review P2）。
+ *
  * ⚠️ `texture` 归一化成 **带前导斜杠** 的资产路径：json 里存的是包相对路径
  * （`tread/textures/X.webp`，数据面口径），而 `assetProvider.url()` 是
  * `requireBase() + path` 的**裸拼接**，所有调用方约定传 `/glb/…` 形的路径——
@@ -60,18 +66,18 @@ export function treadAlphaAt(age, fade = TREAD_FADE) {
  * 空纹理采样 (0,0,0,0) 在透明混合下**完全隐形**（2026-10-11 测试页实测报障的根因）。
  */
 export function resolveTreadParams(json) {
-  const num = (v, fb) => (Number.isFinite(v) && v > 1e-3 ? v : fb);
   const texPath = (v) =>
     (typeof v === 'string' && v ? '/' + v.replace(/^\/+/, '') : GENERIC_TREAD_TEXTURE);
+  const widthOf = (v) => (Number.isFinite(v) && v > 1e-3 ? v : null);
   if (!json || typeof json !== 'object') {
-    return { texture: GENERIC_TREAD_TEXTURE, width: TREAD_FALLBACK.width, space: TREAD_FALLBACK.space, authored: false };
+    return { texture: GENERIC_TREAD_TEXTURE, width: null, space: TREAD_FALLBACK.space, authored: false };
   }
   return {
     texture: texPath(json.texture),
-    // `manual_width: null`（国别回落车）= 未 authored：**保持 null 透出**，调用方按
-    // "客户端 forceManualWidth=false 语义"从模型履带盒实测（最后一跳才是常量回落）。
-    width: json.manual_width == null ? null : num(json.manual_width, TREAD_FALLBACK.width),
-    space: num(json.manual_space, TREAD_FALLBACK.space),
+    // 数字 → authored 宽度；null/缺失/非法 → null（未 authored，调用方模型实测）
+    width: widthOf(json.manual_width),
+    space: Number.isFinite(json.manual_space) && json.manual_space > 1e-3
+      ? json.manual_space : TREAD_FALLBACK.space,
     authored: json.fallback !== true,
   };
 }
@@ -136,6 +142,9 @@ function lerpAngle(a, b, f) {
  *   （前一戳的 (x1,z1,yaw1) 即后一戳的 (x0,z0,yaw0)），转弯处无楔形缝（客户端同构）。
  * - 采样点 = `{x, z, t, yaw}`（世界系 + 回放时刻 + 车体朝向）；步内交会点按距离分数插值
  *   （朝向走最短弧）。
+ * - 零位移样本（停车 / 原地转向）**推进采样时刻与朝向但不累加里程**（2026-10-11 review：
+ *   不推进的话，重新起步的新戳出生时刻在「停车前」与「起步后」之间插值——实测 40.1 s
+ *   而实际 100 s，新印记一出即过期）。
  * - 大步进（seek 跨越数百米）按同方向连续铺满——确定性输出，seek 重算与连续播放同形。
  * - 返回本次新增戳数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
  *
@@ -158,9 +167,17 @@ export function advanceTrail(st, pts, space, cap) {
     }
     const dx = p.x - st.x, dz = p.z - st.z;
     const d = Math.hypot(dx, dz);
-    if (!(d > 1e-6)) continue;
     const pyaw = p.yaw || 0;
     const pt = p.t || 0;
+    if (!(d > 1e-6)) {
+      // 静止样本：不累加里程、不打戳（st.x/z 本就不变），但**采样时刻与朝向必须推进**——
+      // 停车期间（速度 0 但有采样点、可能原地转向）若把 t 冻在停车前，重新起步跨过下一个
+      // 打戳边界时出生时刻会在「停车前」与「起步后」之间插值（review 复现：实际 100.1 s
+      // 的戳被算成 40.1 s ⇒ 当前 alpha=0，新印记一出生就不可见）。
+      st.t = pt;
+      st.yaw = pyaw;
+      continue;
+    }
     const accEnd = st.acc + d;
     // ⚠️ floor 前必须加静差（2026-10-11 定案）：点位来自插值，步长带 ~1e-10 抖动；当 accEnd
     // 落在整数界下 1e-9 内时，`floor(acc/space)+1` 对**下一个**半步仍算出同一个 j，配合

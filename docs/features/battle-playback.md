@@ -528,18 +528,27 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `tread/textures/*.webp`（13 张客户端 DDS 无损转码；`Tread.webp` 为通用回落张）——
   可行性定案与 fail-closed 边界见上游 `docs/feasibility-track-marks.md`（2026-10-10
   "地面贴花不做"对碾压痕一支的翻案；弹坑/血迹仍无源）。实现：
-  - **生成** = `scene/treadMarks.js` 纯函数（单测 17 项）：沿位姿路径按 authored
-    `manualSpace` 铺段，段方向跟随实际位移（不经 yaw 符号约定）；coverage 空洞断链、
-    阵亡静止不出段；固定槽位环形缓冲（`segs[k % cap]` = 绝对序号，实例索引永不搬动）。
+  - **生成** = `scene/treadMarks.js` 纯函数（单测 29 项）：沿位姿路径按 authored
+    `manualSpace` 铺段，段方向跟随实际位移（不经 yaw 符号约定）；零位移样本（停车/原地
+    转向）推进采样时刻与朝向但不累加里程；coverage 空洞断链、阵亡静止不出段；固定槽位
+    环形缓冲（`segs[k % cap]` = 绝对序号，实例索引永不搬动）。
   - **呈现** = 每车一个动态合并几何 Mesh（两侧槽位各 1536 段 ≈ 1.5 km 履带程，环形覆写
-    最老，`drawRange` 控制绘制数）；段四边形经 `trailQuadCorners` **逐角独立贴地**
+    最老，`drawRange` 控制绘制数）；段四边形经 `trailStampCorners` **逐角独立贴地**
     （四角各自采样真值场高度 + 12 cm 抬升，随坡双向弯折）。首版"InstancedMesh 单平面 +
     中心梯度"被粗格地形网格成片盖住（全景视距下合法 LOD 网格与真值双线性面差 5~15 cm，
-    印记断续可见）——单矩阵表达不了四角异高，是换合并几何的原因；段长 ×1.25 重叠盖住
-    转弯楔形缝。`MeshBasicMaterial` 不受光 + alpha blend + `depthWrite=false`。
+    印记断续可见）——单矩阵表达不了四角异高，是换合并几何的原因。`MeshBasicMaterial`
+    不受光 + alpha blend + `depthWrite=false` + **`DoubleSide`**（扫掠戳的角序跟车体朝向
+    走，倒车时位移反向 ⇒ 固定索引产生朝下法线，FrontSide 下倒车印记被背面剔除、地面以上
+    完全不可见——2026-10-11 review P2；贴地覆盖层无光照，双面零代价）。
   - **生命周期**：游标增量泵（`tick → updateTrails`）；seek 后退 = 路径态复位从 START
-    **全量重算**（输出与连续播放逐值一致——destructibles"后退全量"同构）；开关关断
-    期间 `builtT` 退回 -∞，重开即全程补铺（印记 = 回放数据的确定性函数，与播放路径无关）。
+    **全量重算**。喂样走**固定 0.1 s 网格片**（片界按 START 对齐）且首锚 = 窗口起点 t0 的
+    横截面，不足整片的尾巴留待下次（`builtT` 记最后已喂网格时刻）——片内交会点插值只依赖
+    片界样本 ⇒ **seek 重算与逐帧连续播放逐值一致**（2026-10-11 review P2；旧实现从任意帧
+    的 builtT 重切网格、首锚取第一次子步，同一直线同终点会得出不同的首锚与出生时刻）。
+    开关关断 = 路径态与游标**一起复位**（只回退 builtT 会让重开后的整条路径追加到旧末端：
+    反向桥接、重复段、出生时刻非单调），重开即全程补铺（印记 = 回放数据的确定性函数，
+    与播放路径无关）；`setTreadMarks` 在 setter 内直接驱动游标泵——暂停（animate 不 tick）
+    时开关也**立即**生效。
   - **淡出-消失（2026-10-11 补，用户对照客户端提出）**：段记录出段时刻 `t`，RGBA 顶点色
     的 alpha = `treadAlphaAt(T − t)`——回放时钟 **10 s 全显 → 10 s 线性淡出 → 消失**
     （`TREAD_FADE`，用户定值；客户端 TreadSystem 的真实时长未逆向）；老化扫描窗口起点
@@ -583,20 +592,43 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **大步断链（2026-10-11 用户报"刚进入对局时印记有一小段折线"）**：feedTrail 遇单步
     位移 > 2.5 m（出生摆放 / AoI 传送 / pose_kf 保持-跳变）即复位该侧路径态，跨步不铺印
     ——位姿折线不再被 stamp 成斜折线（实测起步折线段消失）。
-  - **左右槽位交错**（2026-10-11 修"只有左侧履带有印记"）：第 k 对段占槽 `2k`(L)/`2k+1`(R)，
-    `drawRange = 2×min(L,R)×6`——首版把 R 整块放在 `[cap,2cap)` 而 drawRange 从 0 数起，
-    R 区间永远在绘制窗口外。
+  - **左右槽位交错**（2026-10-11 修"只有左侧履带有印记"）：第 k 对段占槽 `2k`(L)/`2k+1`(R)
+    ——首版把 R 整块放在 `[cap,2cap)` 而 drawRange 从 0 数起，R 区间永远在绘制窗口外。
+    绘制窗口取**较长侧**（`max(L,R)`，2026-10-11 review P2）：左右中心线在转弯时弧长不同、
+    段数本就不成对，`min(L,R)` 会把较长侧最新段截在窗口外（实测 R=12/L=15 时 L 最新 3 段
+    全不可见，转得越久落后越多）；较短侧落在窗口内的空槽（环形残留上一轮更长运行的旧段）
+    **显式清零 alpha**，不靠"位置全零即退化"的偶然。
   - **回落与"统一深浅"（2026-10-11 用户报"215b 比 Kranvagn 黑"后重做）**：包内现在
     **全部 735 辆都有 `tread/<id>.json`** —— 424 辆无作者块的车按**国别主贴图**回落
     （`fallback:true`；Kranvagn→`European_01_tread`，与 GB 同族深色；此前回落浅色通用张
     `Tread.webp` 使墨量差约 3 倍）；其 `manual_width:null` 由前端**从模型履带盒实测**
     （`suspParts.beltW` 均值 → 常量 0.6 兜底），对应该类车"从履带几何现算"的客户端语义。
+    **宽度晚到（2026-10-11 review P2）**：参数 JSON 通常早于 GLB 到达（此时 `beltW=0`），
+    未 authored 宽度先落常量回落，GLB 挂载实测就位后 `updateTrails` 重解析并**复位全量
+    重建**（旧段按旧宽度铺的，混宽会视觉分层）。`resolveTreadParams` 的 `width` 契约：
+    只有有效 authored 数值透出数字，`manual_width` null/非法/无 json 一律透出 `null`
+    = 未 authored——常量只存在于场景解析函数一处，不存在"被兜底值永久锁死"。
     另：`/tread/textures.json` 的 **per-stem alpha 归一化系数**（导出器按全库中位归一、
     钳位 [0.65, 1.8]）乘入印记不透明度——authored 贴图间密度差 1.7~4×（RGB/色调本已
     一致），按用户裁示统一。左右横距优先取 suspension `halfW`，无悬挂回落 0.9 m。
   - **开关**：显示面板「地面履带印」（`store.treadOn`，唯一 owner = 场景；
     `setTreadMarks` API，会话级不持久化）。客户端 Windows 默认档 `TankTreads=false`
-    ——默认开的决定是产品裁示（2026-10-11 用户要求做并验收）。
+    ——默认开的决定是产品裁示（2026-10-11 用户要求做并验收）。**暂停态即时生效**
+    （2026-10-11 review P2）：setter 内直接驱动游标泵（可见性与重算不等继续播放/seek）。
+  - **review 修复（2026-10-11，审查基线 8be30e25f）**：①Android `wotbVersion` 相对
+    base 未动（#586 已把 2.2.0→2.2.1 用掉、本 PR 的 diff 缺该文件 ⇒ main push 不触发
+    APK staging）——本 PR 递增到 **2.2.2**；②倒车绕序（DoubleSide，见上）；③转弯
+    L≠R 截断（窗口取较长侧 + 空槽清零，见上）；④关断重开只回退游标 ⇒ 段数翻倍
+    （49→148 复现）——两侧路径态一起复位；⑤暂停态开关不生效（setter 内驱动）；⑥宽度
+    晚到锁死兜底值（惰性重解析 + 重建）；⑦静止样本不推进时刻 ⇒ 停车再起步的新戳出生
+    时刻倒退（实测 100.1 s 被算成 40.1 s，alpha=0 一出生即不可见）——零位移仍推进
+    t/yaw 不累加里程；⑧首锚与采样网格依赖播放步长（同一直线同终点：一次 seek 首锚
+    z=0.5/t=0.3，60fps 泵 z=0.083/t=0.217）——固定 0.1 s 网格片 + t0 锚定（见上）；
+    ⑨Float32 alpha 与 double 严格比较 ⇒ 未变化缓冲每 tick 标脏重传（color.version
+    4→5 复现）——alpha 一律 `Math.fround` 量化门控。回归：`playbackScene.test.js`
+    「履带印 review 回归」7 项（含 60fps 泵与一次 seek **逐值比较坐标+出生时刻**、
+    倒车 raycast 命中、转弯空槽 alpha=0 等）+ `treadMarks.test.js` 2 项（停车再起步
+    出生时刻、原地转向扫掠）。
   接线守卫：`treadMarks.test.js`（tick 泵 / API→store owner / teardown 释放三条源码级）。
 - **空场景占位件不参与绘制（2026-10-09）**：`buildWorld` 的占位地面（深色底板）与占位网格
   （`THREE.GridHelper`，y=0.02）都落在真实地形/水面同层附近——**网格正好压在半透明水面（y=0）

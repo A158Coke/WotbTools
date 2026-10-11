@@ -363,19 +363,21 @@ describe('playbackScene 会话代数契约', () => {
         oldAlpha: (col && v.trail.L.total > 0) ? +col[3].toFixed(2) : 'none',
       }
     }
-    // 前进到 t0+18（行驶 90 m → 每侧 89 段：首点锚点 + 浮点界）
+    // 前进到 t0+18（行驶 90 m → 每侧 90 段）。首锚 = **窗口起点 t0 的横截面**（review P2
+    // 2026-10-11：固定起始面使 seek 重算与逐帧连续播放逐值一致；旧实现首锚取第一个子步
+    // 的 tt，锚点随帧时刻漂移，同一直线同终点会得出 89 与不同的首戳时刻）
     api.seekTime(t0 + 18)
     let r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 18, total: 89, rTotal: 89, quads: 178 })
+    expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, quads: 180 })
     expect(r.youngAlpha).toBeCloseTo(0.8)      // 新戳全不透明 × TREAD_OPACITY（目视两点校准）
     // seek 后退：全量重建到更早时刻（存量随之收缩，无残留）
     api.seekTime(t0 + 8)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 8, total: 39, rTotal: 39, quads: 78 })
+    expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, quads: 80 })
     // 再前进越过原位置：增量生长（80 m → +100 段），确定性一致
     api.seekTime(t0 + 28)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 28, total: 139, rTotal: 139, quads: 278 })
+    expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, quads: 280 })
     // 淡出：最老段年龄 28 s > after(10)+dur(10) ⇒ alpha 0；最新段仍 0.8
     expect(r.oldAlpha).toBe(0)
     expect(r.youngAlpha).toBeCloseTo(0.8)
@@ -383,8 +385,8 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 55)
     r = readTrail()
     expect(r.builtT).toBe(t0 + 55)
-    expect(r.total).toBe(274)     // 55 s × 5 m/s = 275 m（首点锚点 + 浮点界 274 段）
-    expect(r.rTotal).toBe(274)
+    expect(r.total).toBe(275)     // 55 s × 5 m/s = 275 m（1 m 打戳，逐值确定）
+    expect(r.rTotal).toBe(275)
   })
 
   it('履带印 AoI 空洞断链：出空洞从新锚开始、无跨空洞桥接（review blocker 回归，2026-10-11）', async () => {
@@ -430,6 +432,186 @@ describe('playbackScene 会话代数契约', () => {
     const minAbs = Math.min(...r.segs.map((sg) => Math.abs(sg.x0)))
     expect(minAbs).toBeLessThan(51)
     expect(minAbs).toBeGreaterThan(48.5)
+  })
+
+  /**
+   * PR #587 review 回归（2026-10-11）：倒车绕序、转弯绘制窗口、关断重开、暂停态开关、
+   * 宽度晚到、喂样确定性、alpha 量化门控。纯函数层（静止样本推进采样时刻）在
+   * treadMarks.test.js 的 advanceTrail 组。
+   */
+  describe('履带印 review 回归', () => {
+    /** 履带印测试公共桩：单辆 5 m/s 车 + tread 资产确定性 mock，加载完成即停表
+     *  （印记存量只由显式 seek 驱动 ⇒ 断言可确定；与上方游标泵测试同一姿态） */
+    async function setupTrail({ n = 580, pos, hull_yaw, yaw = 0, duration = 58 }) {
+      window.history.replaceState(null, '', '/?debug&q=high')
+      const { store, api } = createScene()
+      const data = minimalData(42)
+      data.meta.samples = n
+      data.meta.duration = 42 + duration   // 无 canonical clock 时 duration 是**绝对**结束时刻
+                                           // （同上方游标泵测试：END = battleEndTime = 覆盖端点）
+      data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
+        pos, hull_yaw: hull_yaw || new Array(n).fill(yaw), hull_pitch: new Array(n).fill(0),
+        turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+        hp: [], coverage: [42, 42 + duration], death_t: null }]
+      vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
+        Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
+      vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
+      source.loadPlaybackData.mockResolvedValue(data)
+      await api.loadData({ kind: 'local', file: new File(['replay'], 'tread-review.wotbreplay') })
+      await new Promise((r) => setTimeout(r, 0))
+      for (let i = 0; i < 6; i++) await Promise.resolve()
+      api.setPlaying(false)
+      return { store, api, v: window.__pbV[0] }
+    }
+    /** 直线位姿：数据 x = 0.5i（5 m/s @10Hz）；场景系 x 取镜像负号 ⇒ 场景朝 −x 行驶 */
+    const linePos = (n) => {
+      const p = new Array(n * 3)
+      for (let i = 0; i < n; i++) { p[i * 3] = i * 0.5; p[i * 3 + 1] = 0; p[i * 3 + 2] = 0 }
+      return p
+    }
+    /** 最新一戳的首三角形法线 y（只取 x/z 分量：贴地抬升不改水平投影） */
+    const normalY = (mesh, st, quad) => {
+      const p = mesh.geometry.getAttribute('position').array
+      const o = ((st.total - 1) % 1536) * 24 + quad * 12
+      const ax = p[o + 3] - p[o], az = p[o + 5] - p[o + 2]
+      const bx = p[o + 6] - p[o], bz = p[o + 8] - p[o + 2]
+      return az * bx - ax * bz
+    }
+    /** 从最新一戳中心正上方射向地面的命中数（FrontSide 下背面剔除 ⇒ 绕序翻转的戳命中 0） */
+    const raycastFromAbove = (mesh, st, quad) => {
+      const p = mesh.geometry.getAttribute('position').array
+      const o = ((st.total - 1) % 1536) * 24 + quad * 12
+      let sx = 0, sz = 0
+      for (let q = 0; q < 4; q++) { sx += p[o + q * 3]; sz += p[o + q * 3 + 2] }
+      mesh.updateMatrixWorld(true)
+      const ray = new THREE.Raycaster(new THREE.Vector3(sx / 4, 50, sz / 4), new THREE.Vector3(0, -1, 0))
+      return ray.intersectObject(mesh, false).length
+    }
+
+    it('倒车印记可见：绕序翻转的戳在双面材质下仍被从上方的射线命中（review P2 2026-10-11）', async () => {
+      // 同向行驶（场景 −x），只差车体朝向：yaw=+π/2 ⇒ 前向 = 行驶方向（正车）；
+      // yaw=−π/2 ⇒ 前向与行驶方向相反（倒车）⇒ 戳的固定索引产生朝下法线（review 复现：
+      // yaw=0、z:0→−1 时 normal.y=−0.6，FrontSide 下从上方 Raycaster 命中 0 个三角形）
+      const fwd = await setupTrail({ n: 200, pos: linePos(200), yaw: Math.PI / 2 })
+      fwd.api.seekTime(42 + 10)
+      expect(fwd.v.treadMesh.material.side).toBe(THREE.DoubleSide)
+      expect(normalY(fwd.v.treadMesh, fwd.v.trail.L, 0)).toBeGreaterThan(0)
+      expect(raycastFromAbove(fwd.v.treadMesh, fwd.v.trail.L, 0)).toBeGreaterThan(0)
+      const rev = await setupTrail({ n: 200, pos: linePos(200), yaw: -Math.PI / 2 })
+      rev.api.seekTime(42 + 10)
+      expect(rev.v.treadMesh.material.side).toBe(THREE.DoubleSide)
+      expect(normalY(rev.v.treadMesh, rev.v.trail.L, 0)).toBeLessThan(0)   // 绕序确实翻转
+      expect(raycastFromAbove(rev.v.treadMesh, rev.v.trail.L, 0)).toBeGreaterThan(0)
+    })
+
+    it('转弯：左右弧长不同（L≠R）时绘制窗口覆盖较长侧，较短侧空槽显式隐藏（review P2 2026-10-11）', async () => {
+      // 圆轨迹半径 5 m、ω=1 rad/s（中心 5 m/s）：外侧履带 5.9 m/s、内侧 4.1 m/s ⇒ 18 s 后
+      // 两侧段数差 ≈32（review 复现为半径 10 m 的 L=15/R=12；性质相同：段数本就不成对）。
+      // yaw = π/2 − θ 使前向与速度同向（车体朝向随路径旋转——写反镜像会得到恒定偏移向量，
+      // 两侧路径同长，测不出弧长差）
+      const n = 580
+      const pos = new Array(n * 3), yaw = new Array(n)
+      for (let i = 0; i < n; i++) {
+        const th = i * 0.1
+        pos[i * 3] = 5 * Math.sin(th); pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 5 - 5 * Math.cos(th)
+        yaw[i] = Math.PI / 2 - th
+      }
+      const { api, v } = await setupTrail({ n, pos, hull_yaw: yaw })
+      const colArr = () => v.treadMesh.geometry.getAttribute('color').array
+      api.seekTime(42 + 18)
+      const L18 = v.trail.L.total, R18 = v.trail.R.total
+      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)              // 弧长差 ⇒ 段数不成对
+      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(2 * Math.max(L18, R18))
+      // 长边最新段 alpha > 0（旧实现被 min(L,R) 截在窗口外，永不绘制）
+      const longIsL = L18 > R18
+      const longTotal = longIsL ? L18 : R18
+      expect(colArr()[((longTotal - 1) % 1536) * 32 + (longIsL ? 0 : 16) + 3]).toBeGreaterThan(0)
+      // 先跑更长一轮（两侧槽位都写满），再 seek 后退全量重建：较短侧落在窗口内的空槽
+      // （环形残留上一轮旧段）必须被显式清零，而不是靠"位置全零"的偶然
+      api.seekTime(42 + 30)
+      expect(v.trail.L.total).toBeGreaterThan(L18)
+      expect(v.trail.R.total).toBeGreaterThan(R18)
+      api.seekTime(42 + 18)
+      expect(v.trail.L.total).toBe(L18)
+      expect(v.trail.R.total).toBe(R18)
+      const pairs = Math.max(L18, R18)
+      for (const [st, quad] of [[v.trail.L, 0], [v.trail.R, 1]]) {
+        for (let k = st.total; k < pairs; k++) {
+          expect(colArr()[(k % 1536) * 32 + quad * 16 + 3]).toBe(0)
+        }
+      }
+    })
+
+    it('关断重开：路径态与游标一起复位——同 T 的段数不翻倍（review P2 2026-10-11）', async () => {
+      const { store, api, v } = await setupTrail({ n: 580, pos: linePos(580) })
+      api.seekTime(42 + 12)
+      const count = v.trail.L.total
+      expect(count).toBe(60)
+      const segs = v.trail.L.segs.map((s) => ({ ...s }))
+      api.setTreadMarks(false)
+      api.seekTime(42 + 12)                      // 关断期间 seek：不铺
+      api.setTreadMarks(true)
+      api.seekTime(42 + 12)
+      expect(store.treadOn).toBe(true)
+      expect(v.trail.L.total).toBe(count)        // 旧缺陷：追加到旧末端 ⇒ 49 变 148 同款
+      expect(v.trail.R.total).toBe(count)
+      expect(v.trail.L.segs.map((s) => ({ ...s }))).toEqual(segs)   // 出生时刻逐值一致
+    })
+
+    it('暂停态开关立即生效：不依赖继续播放或 seek（review P2 2026-10-11）', async () => {
+      const { api, v } = await setupTrail({ n: 580, pos: linePos(580) })
+      api.seekTime(42 + 10)
+      expect(v.treadMesh.visible).toBe(true)
+      expect(v.trail.L.total).toBe(50)
+      api.setTreadMarks(false)                   // 桩内已 setPlaying(false)：没有帧在跑
+      expect(v.treadMesh.visible).toBe(false)    // 旧缺陷：仍为 true，要等 tick/seek 才更新
+      api.setTreadMarks(true)
+      expect(v.treadMesh.visible).toBe(true)
+      expect(v.trail.L.total).toBe(50)           // 重开即全量补铺到当前 T
+    })
+
+    it('宽度晚到：suspension（GLB）就位后未 authored 宽度重解析并全量重建（review P2 2026-10-11）', async () => {
+      // 参数 JSON 早于车模到达：首解析无 suspension 实测 ⇒ 宽度先落常量回落 0.6；
+      // 车模挂载后（此处注入 suspension 姿态数据）更新到模型实测 1.2 并重建旧段。
+      const { api, v } = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
+      api.seekTime(42 + 10)
+      expect(v.tread.width).toBeCloseTo(0.6)
+      v.suspParts = { sides: { L: { beltW: 1.2, halfW: 0.7 }, R: { beltW: 1.2, halfW: 0.7 } } }
+      api.seekTime(42 + 11)
+      expect(v.tread.width).toBeCloseTo(1.2)
+      expect(v.trail.L.total).toBe(55)           // 宽度变了 ⇒ 复位全量重建（旧段按旧宽度铺的）
+      // 几何核对：L 槽 0 的四个角横向（z）= 中心线横距 0.7 ± 半宽 0.6 = {0.1, 1.3}
+      const p = v.treadMesh.geometry.getAttribute('position').array
+      const zs = [0, 1, 2, 3].map((q) => +p[q * 3 + 2].toFixed(6)).sort((a, b) => a - b)
+      expect(zs).toEqual([0.1, 0.1, 1.3, 1.3])
+    })
+
+    it('喂样确定性：一次 seek 与 60fps 连续推进到同一终点逐值一致（review P2 2026-10-11）', async () => {
+      // 同一直线、同一终点：一次 seek 与每帧 ≤0.1 s 的增量泵必须得出逐值相同的戳
+      // （坐标 + 出生时刻）——固定网格片 + 固定 t0 横截面锚定是前提；旧实现从任意帧的
+      // builtT 重切网格、首锚取第一次子步（实测首锚 z=0.5/t=0.3 vs z=0.083/t=0.217）。
+      const grab = (v) => ({ L: v.trail.L.segs.map((s) => ({ ...s })),
+                             R: v.trail.R.segs.map((s) => ({ ...s })) })
+      const once = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
+      once.api.seekTime(42 + 18)
+      const oneShot = grab(once.v)
+      const pump = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
+      for (let i = 1; i <= 1080; i++) pump.api.seekTime(42 + i / 60)   // 18 s @60fps
+      const pumped = grab(pump.v)
+      expect(pumped.L.length).toBe(oneShot.L.length)
+      expect(pumped).toEqual(oneShot)
+    })
+
+    it('alpha 量化门控：时钟不变的重复 tick 不再标脏重传（review P3 2026-10-11）', async () => {
+      const { api, v } = await setupTrail({ n: 580, pos: linePos(580) })
+      api.seekTime(42 + 10)
+      const version = () => v.treadMesh.geometry.getAttribute('color').version
+      const v1 = version()
+      api.seekTime(42 + 10)                      // 同一 T：无新段、无老化变化
+      expect(version()).toBe(v1)                 // 旧缺陷：f32 读回 0.8000000119 ≠ 0.8 ⇒ 每 tick 上传
+      api.seekTime(42 + 11)                      // 时钟推进（最老段进入淡出窗口）⇒ 必须上传
+      expect(version()).toBeGreaterThan(v1)
+    })
   })
 
   it('高/极致画质档强制 GLB：setGlb(false) 被忽略、开关停用（2026-10-11 裁示）', async () => {
