@@ -341,9 +341,13 @@ describe('playbackScene 会话代数契约', () => {
       turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
       hp: [], coverage: [t0, t0 + 58], death_t: null }]
     // tread 资产确定性 mock（本车无 tank_id → 参数走回落；归一化表给空 → scale=1）：
-    // 不依赖真实网络往返，保证 v.tread/v.treadMesh 在首个 seekTime tick 前就位
+    // 不依赖真实网络往返，保证 v.tread/v.treadMesh 在首个 seekTime tick 前就位。
+    // ⚠️ `url` 也必须 stub：无资产源配置时 `assetProvider.url()` 会抛错（CI 没有
+    // .env.local，本机有 ⇒ 曾只在 CI 失败：ensureTreadMesh 抛错 → treadMesh 未建 →
+    // builtT 永远 -Infinity，2026-10-11 Required Gate 复盘）。
     vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
       Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
+    vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
     source.loadPlaybackData.mockResolvedValue(data)
     await api.loadData({ kind: 'local', file: new File(['replay'], 'trail.wotbreplay') })
     await new Promise((r) => setTimeout(r, 0))
