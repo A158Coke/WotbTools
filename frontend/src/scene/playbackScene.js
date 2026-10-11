@@ -53,6 +53,9 @@ import {
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents, chainAverageSegment,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
+// 地面履带印（TreadSystem 碾压痕）：生成/摆放纯函数；数据面 = 包内 tread/（上游
+// tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
+import { advanceTrail, createTrailState, resetTrailState, resolveTreadParams, trailQuadMatrix } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -204,6 +207,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let labelScene = null;
   let sizeObserver = null;
   let glbCache = new Map(), glbOn = false;
+  // 履带印（tread/）逐车参数与贴图缓存：会话域（与 glbCache 同生命周期）。
+  // 缺 json（424/735 辆无 authored 块）→ resolveTreadParams(null) 的产品回落（上游
+  // feasibility §四），**不视为失败**——缓存正结果，避免逐帧重试 404。
+  const treadParamCache = new Map();
+  const treadTexCache = new Map();   // texture 相对路径 → THREE.Texture（逐会话共享、逐会话释放）
   let classIcons = false, showMarkerStatus = true;
   const classIconsVisible = () => classIcons && store.labelsOn;
   let mapPlane = null;
@@ -2415,9 +2423,178 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       const v = { def, group: g, turretG, gunPivot, meshHull: hull, hullGroup: hullG };
       v.labelAnchor = new THREE.Vector3();
+      // 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算）
+      v.trail = { L: createTrailState(), R: createTrailState(), builtT: -Infinity };
+      v.tread = null; v.treadMesh = null;
+      treadParamsFor(def.tank_id).then((tp) => {
+        if (destroyed || !v.trail) return;
+        v.tread = tp;
+        ensureTreadMesh(v, tp);
+        invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
+      });
       scene.add(g);
       V.push(v);
       setLowPoly(v, true);
+    }
+  }
+
+  // ---------- 地面履带印（TreadSystem 碾压痕） ----------
+  // 数据面：包内 tread/<tank_id>.json（authored 311/735 辆）+ tread/textures/*.webp。
+  // 生成 = 沿位姿路径按 authored manualSpace 铺段（treadMarks.js 纯函数）；呈现 =
+  // 每车一个 InstancedMesh（两侧各自环形槽位），四边形经 trailQuadMatrix 贴地（随坡倾斜）。
+  // seek 后退 = 复位路径态从 START 全量重算（与 destructibles 的"后退全量"同构）；
+  // 前进 = 游标增量泵。开关关 → 网格整体隐藏且 builtT 退回 -∞（重开即全量补铺，语义 =
+  // 印记由回放数据确定性生成，与播放/开关路径无关）。
+
+  /** 每侧段缓存上限（段 ≈ manualSpace 米长；1536 段 ≈ 1.5 km 履带程，覆盖最长场的走位） */
+  const TRAIL_CAP_PER_SIDE = 1536;
+  /** 无 suspension 数据时的履带中心线横距（m）：低模履带盒半宽量级（产品回落，上游 feasibility §四） */
+  const TREAD_HALF_GAUGE = 0.9;
+
+  function treadParamsFor(tankId) {
+    // tank_id 缺失/非法（车队识别失败等）：不发请求，直接产品回落（键 0 共享一个正结果）
+    const key = Number.isFinite(tankId) && tankId > 0 ? tankId : 0;
+    let p = treadParamCache.get(key);
+    if (!p) {
+      p = key > 0
+        ? assetProvider.json(`/tread/${key}.json`)
+          .then((j) => resolveTreadParams(j))
+          .catch(() => resolveTreadParams(null))
+        : Promise.resolve(resolveTreadParams(null));
+      treadParamCache.set(key, p);
+    }
+    return p;
+  }
+
+  function ensureTreadMesh(v, tp) {
+    if (v.treadMesh || !scene) return;
+    const geo = new THREE.BufferGeometry();
+    // 单位四边形（矩阵列0 = 横向右矢·半宽、列2 = 前向·半长）：x 横向 / z 纵向
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5,
+    ]), 3));
+    // 贴图 u = 横向（alpha 两端渐隐）、v = 纵向（一段一次完整条带，ClampToEdge）
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+      0, 0, 1, 0, 1, 1, 0, 1,
+    ]), 2));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
+    let tex = treadTexCache.get(tp.texture);
+    if (!tex) {
+      tex = new THREE.TextureLoader().load(assetProvider.url(tp.texture));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Q.anisotropy;
+      treadTexCache.set(tp.texture, tex);
+    }
+    mat.map = tex;
+    mat.needsUpdate = true;
+    const mesh = new THREE.InstancedMesh(geo, mat, TRAIL_CAP_PER_SIDE * 2);
+    mesh.count = 0;
+    mesh.frustumCulled = false;           // 实例遍布全场：包围球无意义
+    mesh.renderOrder = 2;                 // 地形/底图之后
+    mesh.matrixAutoUpdate = false;
+    mesh.visible = store.treadOn;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(mesh);
+    v.treadMesh = mesh;
+  }
+
+  /** 单侧履带中心线的世界横距：suspension 解析出的 halfW 优先（模型实测），低模/无悬挂回落常数 */
+  function trailHalfGauge(v, side) {
+    const s = v.suspParts && v.suspParts.sides[side];
+    return s && s.halfW > 1e-3 ? s.halfW : TREAD_HALF_GAUGE;
+  }
+
+  /** 采样 [t0,T] 的两侧接地点序列并推进路径态（coverage 空洞断链；阵亡后静止不再出段） */
+  function feedTrail(v, tr, t0) {
+    const space = v.tread.space;
+    const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
+    const pendL = [], pendR = [];
+    let broken = false;
+    const flush = () => {
+      if (pendL.length) advanceTrail(tr.L, pendL, space, TRAIL_CAP_PER_SIDE);
+      if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE);
+      pendL.length = 0; pendR.length = 0;
+      if (broken) { resetTrailState(tr.L); resetTrailState(tr.R); }
+    };
+    // 自适应子步：步内弧长 ≤ ~0.6 m（高速时 0.1 s 网格步会到 2 m+，段方向成弦切角）
+    let tA = t0;
+    const pA = posAt(v, tA, tmpV).clone();   // clone：子步循环里 tmpV 会被反复覆写
+    for (let t = t0; t < T; ) {
+      const step = Math.min(GRID_DT, T - t);
+      const tB = t + step;
+      const pB = posAt(v, tB, tmpV);
+      const bx = pB.x, bz = pB.z;            // 先取值：子步里的 posAt 会覆写 tmpV（= pB 本体）
+      const segLen = Math.hypot(bx - pA.x, bz - pA.z);
+      const nSub = Math.min(6, Math.max(1, Math.ceil(segLen / 0.6)));
+      for (let k = 1; k <= nSub; k++) {
+        const tt = t + (step * k) / nSub;
+        const deathT = v.def.death_t;
+        if (deathT != null && tt >= deathT) continue;          // 阵亡：静止残骸不再出段（不断链）
+        if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
+          if (!broken) { flush(); broken = true; }
+          continue;
+        }
+        broken = false;
+        posAt(v, tt, tmpV);
+        const yaw = yawAt(v, tt);
+        const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
+        const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
+        pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL });
+        pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR });
+      }
+      pA.x = bx; pA.z = bz;
+      t = tB;
+    }
+    flush();
+  }
+
+  /** 路径态 → 实例矩阵。槽位 = 绝对序号 % cap（环形不搬动）⇒ 永远只写新增段；
+   * `written` = 该侧已写入 GPU 的绝对段数（-∞ 语义不适用：复位后 total 归零自然全量重写）。 */
+  function writeTrailInstances(v, tr) {
+    const mesh = v.treadMesh;
+    const arr = mesh.instanceMatrix.array;
+    const h = heightField ? sampleHeight : () => 0;
+    const width = v.tread.width;
+    const m16 = new Float32Array(16);
+    let count = 0;
+    for (const st of [tr.L, tr.R]) {
+      for (let k = st.written; k < st.total; k++) {
+        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
+        if (!seg) continue;
+        if (!trailQuadMatrix(seg, width, h, m16)) continue;
+        const slot = (k % TRAIL_CAP_PER_SIDE) * 16
+          + (st === tr.L ? 0 : TRAIL_CAP_PER_SIDE * 16);
+        for (let e = 0; e < 16; e++) arr[slot + e] = m16[e];
+      }
+      st.written = st.total;
+      count += Math.min(st.total, TRAIL_CAP_PER_SIDE);
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  function updateTrails() {
+    if (!DATA) return;
+    const on = store.treadOn;
+    for (const v of V) {
+      const tr = v.trail;
+      if (!tr) continue;
+      if (v.treadMesh) v.treadMesh.visible = on;
+      if (!on) {
+        // 关断期间不推进游标：重开时从 START 全量补铺（印记 = 全程确定性重算）
+        if (tr.builtT !== -Infinity) tr.builtT = -Infinity;
+        continue;
+      }
+      if (!v.tread || !v.treadMesh) continue;   // 参数/网格未就绪：builtT 保持 -∞，就绪后全量补铺
+      if (T < tr.builtT) {                       // seek 后退：全量重算（destructibles 同构）
+        resetTrailState(tr.L); resetTrailState(tr.R);   // written 随复位归零 ⇒ 全量重写实例
+        tr.builtT = -Infinity;
+      }
+      const t0 = Math.max(tr.builtT, START);
+      feedTrail(v, tr, t0);
+      tr.builtT = T;
+      writeTrailInstances(v, tr);
     }
   }
 
@@ -3809,6 +3986,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const v of V) applyPose(v);
     suspSnap = false;   // 跳变标志只作用于本 tick
     updateDestructibles(T);
+    updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     updateScore();
     // HUD → store
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
@@ -4115,9 +4293,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         for (const g of v.suspParts.disposables) g.dispose();
       }
       v.suspParts = null;
+      // 履带印：几何/材质逐车持有，贴图会话共享（treadTexCache 统一释放）
+      if (v.treadMesh) {
+        scene.remove(v.treadMesh);
+        v.treadMesh.geometry.dispose();
+        v.treadMesh.material.dispose();
+        v.treadMesh.dispose();
+        v.treadMesh = null;
+      }
+      v.tread = null;
+      v.trail = null;
       if (v.group) { scene.remove(v.group); disposeObject3D(v.group); }
     }
     V = [];
+    treadParamCache.clear();
+    for (const tex of treadTexCache.values()) tex.dispose();
+    treadTexCache.clear();
     labelOverlay?.clear();
     labelsTime = null; labelsWrittenMs = -Infinity;
     reloadStateAt = () => null;
@@ -4401,6 +4592,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setCam,
     setFollow,
     setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },
+    // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
+    setTreadMarks: (on) => { store.treadOn = !!on; invalidate(); },
     /**
      * 共享标签偏好（唯一 owner = usePlaybackPreferences）。契约：
      * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，

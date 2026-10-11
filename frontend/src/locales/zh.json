@@ -1467,6 +1467,7 @@
     "cam_follow": "跟随",
     "camera": "镜头",
     "glb": "真实车模（GLB）",
+    "tread_marks": "地面履带印",
     "glb_gate_hint": "低画质档不加载真实车模（均衡档及以上可用）",
     "display": "显示",
     "display_battlefield": "战场 UI",
