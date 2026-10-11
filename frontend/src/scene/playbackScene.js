@@ -542,7 +542,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       showPickPanel(text);
       if (hit) movePickMarker(hit.point);
     } catch (err) {
+      // 失败必须可见（禁止静默）：面板直接显示错误，否则表现为"点击没反应"难排查
       console.warn('[scene-pick] failed:', err);
+      try { showPickPanel(`[scene-pick] failed: ${(err && (err.stack || err.message)) || err}`); } catch (_) {}
     }
   }
   function buildPickReport(hit) {
