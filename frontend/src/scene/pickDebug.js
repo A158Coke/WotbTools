@@ -80,27 +80,7 @@ export function buildMeshOwnerMap(instances, findMeshes, out = new Map()) {
   return out
 }
 
-/**
- * 点击位置 → 最近的 destructible 状态（st.inst.pos 距离判定）。
- * 装配层应优先做「命中网格 ∈ 该状态的 pivot/intactMeshes/deadMeshes」的精确归属，
- * 本函数只做位置兜底（网格成员查询需要 three 对象图，放装配层）。
- * 超出 radiusM / 空 states → null（调用方按「非可破坏物」呈现）。
- */
-export function nearestDestructibleState(states, sx, sy, radiusM = 3) {
-  if (!Array.isArray(states)) return null
-  let best = null
-  let bestD = radiusM
-  for (const st of states) {
-    const p = st?.inst?.pos
-    if (!p) continue
-    const d = Math.hypot(p[0] - sx, p[1] - sy)
-    if (d <= bestD) {
-      best = st
-      bestD = d
-    }
-  }
-  return best
-}
+
 
 /**
  * 命中状态 → 当前视觉状态标签（读装配层的实时对象图，非回放指针推断）：

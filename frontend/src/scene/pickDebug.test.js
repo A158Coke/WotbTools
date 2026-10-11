@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import {
-  nameChainOf, nearestDestructibleState, nearestInstance, chainVisible,
+  nameChainOf, nearestInstance, chainVisible,
   buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport,
 } from './pickDebug.js'
 
@@ -35,24 +35,6 @@ describe('nameChainOf', () => {
   })
 })
 
-describe('nearestDestructibleState', () => {
-  const states = [
-    { inst: { id: 1, pos: [10, 10, 0] } },
-    { inst: { id: 2, pos: [12, 10, 0] } },
-    { inst: { id: 3, pos: [100, 100, 0] } },
-  ]
-  it('半径内取最近实例', () => {
-    expect(nearestDestructibleState(states, 11, 10, 3)?.inst.id).toBe(2)
-  })
-  it('半径外 / 空 states → null', () => {
-    expect(nearestDestructibleState(states, 50, 50, 3)).toBeNull()
-    expect(nearestDestructibleState([], 0, 0, 3)).toBeNull()
-    expect(nearestDestructibleState(null, 0, 0, 3)).toBeNull()
-  })
-  it('inst 缺 pos 的状态被跳过（不抛错）', () => {
-    expect(nearestDestructibleState([{ inst: {} }, ...states], 11, 10, 3)?.inst.id).toBe(2)
-  })
-})
 
 describe('stateVisualLabel', () => {
   it('prop=3：fallQuat 偏离恒等 = fallen，恒等/缺失 = standing（实例化槽位模型）', () => {
