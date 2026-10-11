@@ -106,24 +106,40 @@ export function treadScaleFor(meta, texturePath) {
  * `segs` 是**固定槽位环形**缓冲：槽位 = 绝对序号 % cap（`total` = 累计出段数），
  * 即 `segs[k % cap]` 永远是绝对序号 k 的段——调用方（InstancedMesh 实例）按同一
  * 槽位公式写入，环形覆写只动被覆盖的那一个槽，**不搬动任何已写实例的索引**。
- * `written` 是消费侧书签（已写进 GPU 的绝对段数），本模块不解释它、只随复位归零。
+ * `written` 是消费侧书签（已写进 GPU 的绝对段数）。
  */
 export function createTrailState() {
   // lastMark = 上一横截面 {x, z, yaw, t}——印记戳 = 相邻两横截面之间的**扫掠四边形**
   // （客户端同构：每戳由"上一戳时刻的履带横截面 → 当前时刻的横截面"围成，相邻戳共享
   // 整条接缝边 ⇒ 转弯处天生无缝；deferred-decal-vp.sl 的剪切参数 y→y·z+w 即这一几何）。
   return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0, acc: 0, segs: [], head: 0, total: 0, written: 0,
+           breakPending: false, lastSegT: -Infinity,
            lastMark: { x: 0, z: 0, yaw: 0, t: 0 } };
 }
 
-/** 复位（seek 后退 / 会话复用）：路径累积与戳缓存全部作废。 */
+/**
+ * 断开路径连续性，但**保留已经生成的历史履带印**。
+ *
+ * 调用方在两类场景都复用这个入口：
+ * - AoI/coverage 空洞、pose 大跳：下一可见点应成为新 anchor，历史 decal 继续按寿命淡出；
+ * - seek 后退、关断重开、宽度变化：调用方随后会从 START 重喂。`advanceTrail()` 看到
+ *   新 anchor 时刻不晚于最后历史段，会把它识别为真正的全量重建并清历史。
+ *
+ * 这样避免把“断链”错误实现成“删除历史印记”（#587 review blocker）。
+ */
 export function resetTrailState(st) {
   st.hasLast = false;
   st.acc = 0;
+  st.breakPending = true;
+}
+
+function clearTrailHistory(st) {
   st.segs.length = 0;
   st.head = 0;
   st.total = 0;
   st.written = 0;
+  st.lastSegT = -Infinity;
+  st.breakPending = false;
 }
 
 /** 角度插值（最短弧，rad）——横截面在步内取交会点时用。 */
@@ -145,7 +161,8 @@ function lerpAngle(a, b, f) {
  * - 零位移样本（停车 / 原地转向）**推进采样时刻与朝向但不累加里程**（2026-10-11 review：
  *   不推进的话，重新起步的新戳出生时刻在「停车前」与「起步后」之间插值——实测 40.1 s
  *   而实际 100 s，新印记一出即过期）。
- * - 大步进（seek 跨越数百米）按同方向连续铺满——确定性输出，seek 重算与连续播放同形。
+ * - `resetTrailState()` 后若下一 anchor 的时间**晚于**最后历史段：视作 AoI/传送断链，只重锚；
+ *   若不晚于最后历史段：视作 seek/重开/参数变化的全量重建，先清历史再重放。
  * - 返回本次新增戳数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
  *
  * @param {ReturnType<createTrailState>} st 路径累积态（就地变更）
@@ -160,8 +177,14 @@ export function advanceTrail(st, pts, space, cap) {
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
     if (!st.hasLast) {
+      const pt = Number.isFinite(p.t) ? p.t : 0;
+      // resetTrailState 同时承担“断链”和“即将全量重建”的入口。真正区别在下一 anchor：
+      // AoI/传送恢复一定向前走（pt > lastSegT）⇒ 保留历史；seek/重开从 START 重喂
+      // （pt <= lastSegT）⇒ 清历史。容差只吸收网格边界浮点噪声。
+      if (st.breakPending && st.total > 0 && pt <= st.lastSegT + 1e-9) clearTrailHistory(st);
+      st.breakPending = false;
       st.hasLast = true;
-      st.x = p.x; st.z = p.z; st.yaw = p.yaw || 0; st.t = p.t || 0; st.acc = 0;
+      st.x = p.x; st.z = p.z; st.yaw = p.yaw || 0; st.t = pt; st.acc = 0;
       st.lastMark.x = p.x; st.lastMark.z = p.z; st.lastMark.yaw = st.yaw; st.lastMark.t = st.t;
       continue;
     }
@@ -207,6 +230,7 @@ function pushSeg(st, seg, cap) {
     st.head = (st.head + 1) % cap;
   }
   st.total++;
+  st.lastSegT = seg.t;
 }
 
 /** 贴地抬升（m）：印记四角**逐角独立采样**地形高度后再抬——抬升只需盖住
