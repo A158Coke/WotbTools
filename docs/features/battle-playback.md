@@ -522,6 +522,29 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   标注「当前无调用方」；若下一步不用，实现与测试一并删）。接线守卫：
   `sceneryMaterials.test.js`（两条位姿路径都按记录位姿 + 横滚符号、`__hullGroup` 恒归单位、
   内核不得再引用那三个准备件）。
+- **地面履带印（TreadSystem 碾压痕，2026-10-11）**：坦克开过后地面上的暗色泥痕条带。
+  数据面 = 包内 `tread/<tank_id>.json`（上游 `tools/export_tank_tread.py`，authored
+  **311/735** 辆：印记宽/间距 + 贴图引用，客户端 `treadParameters` 块）+
+  `tread/textures/*.webp`（13 张客户端 DDS 无损转码；`Tread.webp` 为通用回落张）——
+  可行性定案与 fail-closed 边界见上游 `docs/feasibility-track-marks.md`（2026-10-10
+  "地面贴花不做"对碾压痕一支的翻案；弹坑/血迹仍无源）。实现：
+  - **生成** = `scene/treadMarks.js` 纯函数（单测 17 项）：沿位姿路径按 authored
+    `manualSpace` 铺段，段方向跟随实际位移（不经 yaw 符号约定）；coverage 空洞断链、
+    阵亡静止不出段；固定槽位环形缓冲（`segs[k % cap]` = 绝对序号，实例索引永不搬动）。
+  - **呈现** = 每车一个 InstancedMesh（两侧槽位各 1536 段 ≈ 1.5 km 履带程，环形覆写最老），
+    段四边形经 `trailQuadMatrix` 贴地（地形法线有限差分，随坡倾斜 + 6 cm 抬升；
+    陡坎/退化输入回落水平摆放），`MeshBasicMaterial` 不受光 + alpha blend +
+    `depthWrite=false`（logdepth 下与基地圆盘同一贴地惯例）。
+  - **生命周期**：游标增量泵（`tick → updateTrails`）；seek 后退 = 路径态复位从 START
+    **全量重算**（输出与连续播放逐值一致——destructibles"后退全量"同构）；开关关断
+    期间 `builtT` 退回 -∞，重开即全程补铺（印记 = 回放数据的确定性函数，与播放路径无关）。
+  - **回落**（无 authored json 的 424 辆，产品近似、上游 feasibility §四）：通用贴图
+    `Tread.webp` + 宽 0.6 / 间距 1.0 m；左右横距优先取 suspension 解析的 `halfW`
+    （模型实测），无悬挂回落 0.9 m。
+  - **开关**：显示面板「地面履带印」（`store.treadOn`，唯一 owner = 场景；
+    `setTreadMarks` API，会话级不持久化）。客户端 Windows 默认档 `TankTreads=false`
+    ——默认开的决定是产品裁示（2026-10-11 用户要求做并验收）。
+  接线守卫：`treadMarks.test.js`（tick 泵 / API→store owner / teardown 释放三条源码级）。
 - **空场景占位件不参与绘制（2026-10-09）**：`buildWorld` 的占位地面（深色底板）与占位网格
   （`THREE.GridHelper`，y=0.02）都落在真实地形/水面同层附近——**网格正好压在半透明水面（y=0）
   之上**，会在地图、水面与地图外沿画出一层蓝灰线，并透出深色底板掩盖水的 alpha 效果。两者统一

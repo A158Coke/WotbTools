@@ -42,6 +42,7 @@ export function createPlaybackStore() {
     glbOn: false,
     glbAllowed: true,
     labelsOn: true,
+    treadOn: true,   // 地面履带印（TreadSystem 碾压痕；数据面 tread/，上游 feasibility-track-marks.md）
     // 渲染性能偏好（初值是内核 prefOf 解析前的占位；initPlayback 会按
     // URL > localStorage > 默认（logdepth 关 / dynres 开）覆写，见 playbackScene）
     logdepth: false,

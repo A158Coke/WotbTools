@@ -724,6 +724,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
              没有第二套状态）：高频动作之外的设置不该永久占着战场高度。
              常驻快捷按钮与这里的名册开关共用 uiPrefs.showRoster。 -->
           <p class="dp-title">{{ t('agentReplay.display_battlefield') }}</p>
+        <label class="toggle"><input type="checkbox" data-testid="disp-tread" :checked="store.treadOn" @change="sceneApi.setTreadMarks($event.target.checked)"> {{ t('agentReplay.tread_marks') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-topbar" :checked="uiPrefs.showTopbar" @change="uiPrefs.showTopbar = $event.target.checked"> {{ t('agentReplay.display_topbar') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-roster" :checked="uiPrefs.showRoster" @change="uiPrefs.showRoster = $event.target.checked"> {{ t('agentReplay.display_roster') }}</label>
         <label class="toggle"><input type="checkbox" data-testid="disp-killfeed" :checked="uiPrefs.showKillfeed" @change="uiPrefs.showKillfeed = $event.target.checked"> {{ t('agentReplay.display_killfeed') }}</label>

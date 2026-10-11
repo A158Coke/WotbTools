@@ -1467,6 +1467,7 @@
     "cam_follow": "Follow",
     "camera": "Camera",
     "glb": "Real models (GLB)",
+    "tread_marks": "Track marks (treads)",
     "glb_gate_hint": "Real vehicle models unavailable at low quality (mid and up only)",
     "display": "Display",
     "display_battlefield": "Battlefield UI",
