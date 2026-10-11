@@ -230,8 +230,9 @@ describe('treadAlphaAt', () => {
     expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur)).toBe(0)
     expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur + 100)).toBe(0)
   })
-  it('负年龄（seek 边界时钟早于出段）按 1 处理（fail-safe 不闪烁）', () => {
-    expect(treadAlphaAt(-5)).toBe(1)
+  it('负年龄代表未来出生的段：seek 到其出生前必须隐藏；仅容忍极小浮点抖动', () => {
+    expect(treadAlphaAt(-5)).toBe(0)
+    expect(treadAlphaAt(-1e-10)).toBe(1)
   })
 })
 
@@ -288,4 +289,3 @@ describe('trailStampCorners（扫掠四边形，客户端同构）', () => {
     expect(out.every((v) => Number.isFinite(v))).toBe(true)
   })
 })
-
