@@ -582,6 +582,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const inst = (owner && owner.inst)
       || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
     const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
+    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度 / 脚印与
+    // 细分状态。渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
+    let terrain = null;
+    if (heightField && heightMeta) {
+      try {
+        const n = heightMeta.size || 512;
+        const span = terrainSpanOf();
+        const jj = Math.min(Math.max(Math.round((hit.point.x / span + 0.5) * n), 0), n - 1);
+        const ii = Math.min(Math.max(Math.round((hit.point.z / span + 0.5) * n), 0), n - 1);
+        let meshH = null;
+        if (terrainMesh) {
+          const rc = new THREE.Raycaster(
+            new THREE.Vector3(hit.point.x, 600, hit.point.z), new THREE.Vector3(0, -1, 0));
+          const th = rc.intersectObject(terrainMesh, false);
+          if (th.length) meshH = th[0].point.y;
+        }
+        const build = terrainMesh?.geometry?.userData?.terrainBuild || null;
+        terrain = {
+          truth: heightField[ii * n + jj],
+          meshH,
+          structs: structFootprint ? structFootprint[ii * n + jj] : null,
+          sizeAt: build ? build.sizeAt[ii * n + jj] : null,
+          morph: build ? build.morphRaw[ii * n + jj] : null,
+          quads: build ? build.quads : null,
+          overBudget: build ? build.overBudget : null,
+        };
+      } catch (_) { terrain = null; }
+    }
     return {
       clock: T,
       kind: 'scenery',
@@ -593,6 +621,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       inst: inst || null,
       serverIdKnown: !!(inst && inst.serverId),
       vis: st ? stateVisualLabel(st) : null,
+      terrain,
     };
   }
   function showPickPanel(text) {
@@ -1716,7 +1745,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
-    const { positions, indices } = buildAdaptiveTerrain({
+    const { positions, indices, sizeAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
       field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
@@ -1733,6 +1762,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     g.setAttribute('uv', new THREE.BufferAttribute(
       groundMapUv(positions, span, mapMetaInfo?.x || 0, mapMetaInfo?.z || 0), 2));
     g.setIndex(new THREE.BufferAttribute(indices, 1));
+    // 拾取诊断用：本次构建的逐 texel 发射间距 / subdivMorph / 规模（pickDebug 的 terrain 行）
+    g.userData.terrainBuild = { sizeAt, morphRaw, quads, overBudget, span };
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
