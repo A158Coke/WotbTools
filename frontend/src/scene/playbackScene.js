@@ -2650,8 +2650,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // flush 的 `if (broken)` 里，而进入空洞的首帧 broken 还是 false ⇒ 不复位 ⇒ 出空洞的
     // 首点仍挂空洞前的旧锚，桥接出一段横跨空洞的长印记，违背"跨空洞不连铺"契约）。
     const flush = () => {
-      if (pendL.length) advanceTrail(tr.L, pendL, space, TRAIL_CAP_PER_SIDE);
-      if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE);
+      if (pendL.length) advanceTrail(tr.L, pendL, space, TRAIL_CAP_PER_SIDE, v.tread.width);
+      if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE, v.tread.width);
       pendL.length = 0; pendR.length = 0;
     };
     /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */

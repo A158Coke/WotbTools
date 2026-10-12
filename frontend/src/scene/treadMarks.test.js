@@ -267,13 +267,12 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     expect(open2).not.toBeNull()
     expect(open2.t).toBeGreaterThan(t - 1)             // 出生时刻 ≈ 当前（未过期）
   })
-  it('同一条带往返不叠层：回压覆写上一槽，回压槽位不累积（review P2 2026-10-12）', () => {
-    // 评审复现形态：同一条 3 m 路段 2.4 s 内往返 4 次。旧实现每次落锚 push 新槽，
-    // 同一地面被 4 个可见槽叠 4 层（半透明像素 alpha 0.5 → 1−(1−0.5)^4 = 0.9375）；
-    // 修复后"新戳往回走（点积<0）"覆写上一槽 ⇒ 同地带任一时刻只有 1~2 个可见槽。
+  it('同一条带往返：正常累积（无空间去重；重叠由 7.62s 淡出自然收敛）', () => {
+    // 2026-10-12 方向收敛（A158Coke）：客户端反汇编无"几何去重"证据，印记是短寿命对象
+    // （最多 7.62 s）。往返碾压在淡出窗内会有短暂自然重叠——这是移除自创去重层的既定
+    // 代价；本测试锁定"正常追加、槽位环形滚动"的基础行为。
     const st = createTrailState()
     const pts = []
-    // 3 m 直线、0.5 m/步、0.2 s/步；第 4 步起每 3 步掉头（覆盖同一 0..3 m 条带 4 趟）
     for (let leg = 0; leg < 4; leg++) {
       for (let k = 1; k <= 6; k++) {
         const forward = leg % 2 === 0
@@ -282,129 +281,62 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
       }
     }
     advanceTrail(st, pts, 1.0, 50)
-    // 条带内任一位置同一时刻至多被「前一戳 + 活戳（若已提交则为当前槽）」覆盖：
-    // 数每个槽的覆盖区间，要求任意点被 > 2 个已提交戳覆盖为 0（叠层必须不可达）
-    const iv = st.segs.filter(Boolean).map((g) => [Math.min(g.x0, g.x1), Math.max(g.x0, g.x1)])
-    for (let probe = 0; probe <= 30; probe++) {
-      const x = probe / 10
-      const covers = iv.filter(([a, b]) => x >= a - 1e-9 && x <= b + 1e-9).length
-      expect(covers).toBeLessThanOrEqual(2)
+    expect(st.total).toBe(8)                           // 0.5m 步 / space 1.0：每 leg 2 锚 ×4
+    expect(st.segs.length).toBe(8)
+    for (let k = 1; k < st.segs.length; k++) {
+      // 接缝不变量保持：环内相邻提交仍共享接缝边
+      expect(st.segs[k].x0).toBe(st.segs[k - 1].x1)
     }
-    expect(st.total).toBeLessThan(24)                  // 往返未新增满配额（回压覆写生效）
-    console.log('DBG total', st.total, 'iv', JSON.stringify(iv))
   })
-  it('掉头（锐角折返）仍新增戳：回压判定只压"往回走"的戳', () => {
-    // 90° 掉头：新戳起点 = 上一戳终点（disp=1），点积 = 逆向前向·新前向 < 0？
-    // 取掉头后往回走 → 上一戳 (0,0)→(1,0)，新戳 (1,0)→(1,1)（转向）：b·d = (1,0)·(0,1)=0
-    // 不 < 0 ⇒ 正常新增；真·回退 (1,0)→(0.2,0) 才覆写。
+  it('回退/折返路径也正常入环（无去重：所有新戳都是普通追加）', () => {
     const st = createTrailState()
     advanceTrail(st, [
       { x: 0, z: 0, t: 0, yaw: 0 },
-      { x: 1, z: 0, t: 1, yaw: 0 },                    // 提交 (0,0)→(1,0)
-      { x: 1, z: 1, t: 2, yaw: Math.PI / 2 },          // 满 space：提交 (1,0)→(1,1)
+      { x: 1, z: 0, t: 1, yaw: 0 },
+      { x: 1, z: 1, t: 2, yaw: Math.PI / 2 },
     ], 1.0, 50)
     expect(st.total).toBe(2)
-    const st2 = createTrailState()
-    advanceTrail(st2, [
-      { x: 0, z: 0, t: 0, yaw: 0 },
-      { x: 1, z: 0, t: 1, yaw: 0 },                    // 提交 (0,0)→(1,0)
-      { x: -0.2, z: 0, t: 2, yaw: Math.PI },           // 回退 1.2 m 满 space：重占上一槽
-    ], 1.0, 50)
-    expect(st2.total).toBe(1)                          // 未新增（重占）
-    expect(st2.segs[0].x0).toBeCloseTo(1)              // 槽里是回退戳（时刻已刷新）
-    expect(st2.segs[0].x1).toBeCloseTo(-0.2)
+    advanceTrail(st, [{ x: -0.2, z: 1.0, t: 3, yaw: Math.PI }], 1.0, 50)
+    expect(st.total).toBe(3)
+    expect(st.segs.every(Boolean)).toBe(true)
   })
-  it('平行但分离的车道不是同一地带：回压不重占、历史保留（review P2 2026-10-12 复现）', () => {
-    // 评审复现：先铺 (0,0)→(1,0)；断链保留历史；再在相隔 10 m 的平行车道反向铺
-    // (1,10)→(0,10)。平行 ≠ 共线（垂距 10 m > 0）⇒ 不得重占/清空 z=0 的历史印记。
+  it('平行车道与共线往返都正常共存（无空间判定；重叠由淡出收敛）', () => {
     const st = createTrailState()
     advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
-    expect(st.total).toBe(1)
     resetTrailState(st)
     advanceTrail(st, [{ x: 1, z: 10, t: 20, yaw: Math.PI }], 1.0, 50)
     advanceTrail(st, [{ x: 0, z: 10, t: 21, yaw: Math.PI }], 1.0, 50)
-    expect(st.total).toBe(2)                           // 未重占：新增（历史 [0→1] 仍在）
-    expect(st.segs[0].x0).toBeCloseTo(0)
-    expect(st.segs[0].x1).toBeCloseTo(1)               // 原印记完好（还在淡出窗内）
-    expect(st.segs[1].z0).toBeCloseTo(10)              // 新车道戳正常入环
-    // 反向平行车道回压穿越原车道方向，但几何分离 ⇒ 两者共存
+    expect(st.total).toBe(2)
+    expect(st.segs[0].x1).toBeCloseTo(1)
+    expect(st.segs[1].z0).toBeCloseTo(10)
   })
-  it('重占旧槽后新戳不被老化清零：老化逐槽独立（review P2 2026-10-12 复现）', () => {
-    // 评审复现：三槽出生 [1,2,3]；t=10.1 回压重占第一槽 → [10.1,2,3]。若老化仍按
-    // "序号有序"二分（cutoff=2.48），新戳会被当过期前缀清 0——刚生成就不可见。
-    // 语义锁：老化必须逐槽按自身 t 独立计算（接线守卫 + 此处行为）
+  it('老化逐槽独立：无序出生时刻的槽各自按自身 t 老化（评审 P2 二轮复现形态）', () => {
+    // 无去重后环内时间天然单调（新戳总在后面），但该不变量依赖重放路径——老化实现
+    // 仍须逐槽独立（接线守卫锁定），不依赖有序假设。
     const st = createTrailState()
     advanceTrail(st, [{ x: 0, z: 0, t: 1, yaw: 0 }, { x: 1, z: 0, t: 2, yaw: 0 }], 1.0, 50)
     advanceTrail(st, [{ x: 2, z: 0, t: 3, yaw: 0 }], 1.0, 50)
-    expect(st.total).toBe(2)
-    advanceTrail(st, [{ x: 0.6, z: 0, t: 10.1, yaw: Math.PI }], 1.0, 50)   // 回退 1.4 m：回压重占
-    const times = st.segs.filter(Boolean).map((g) => g.t)
-    expect(Math.max(...times)).toBeCloseTo(10.1)       // 重占槽的时间已刷新
-    expect(times.filter((t) => t < 5).length).toBeGreaterThan(0)   // 其余旧戳保留
-    expect(treadAlphaAt(10.1 - Math.max(...times))).toBe(1)        // 新戳在淡出窗内 ⇒ 可见
+    expect(st.segs.map((g) => g.t)).toEqual([2, 3])
+    expect(treadAlphaAt(10.1 - st.segs[0].t)).toBe(0)  // 老戳 age 8.1 > 7.62 ⇒ 已消失
+    expect(treadAlphaAt(10.1 - st.segs[1].t)).toBeLessThan(0.2)   // 后戳 age 7.1：渐隐尾段
   })
-  it('垂直交叉不是完全覆盖：交叉地带外的历史保留（review 三轮 P2 2026-10-12 复现）', () => {
-    // 评审复现：先铺竖向 (0.5,−0.5)→(0.5,0.5)，再横向 (0,0)→(1,0)，再沿横向回压
-    // (1,0)→(0,0)。竖向槽与回压戳垂直交叉（只有交叉区域被覆盖）⇒ 竖向历史槽必须保留
-    // （旧版一维投影把 b 两端投影 = 交叉点误判 covered ⇒ 竖向整槽被清）。
+  it('垂直交叉的两条带共存（无空间判定）', () => {
     const st = createTrailState()
     advanceTrail(st, [{ x: 0.5, z: -0.5, t: 0, yaw: 0 }, { x: 0.5, z: 0.5, t: 1, yaw: 0 }], 1.0, 50)
-    expect(st.total).toBe(1)
-    const vertical = st.segs[0]
     resetTrailState(st)
     advanceTrail(st, [{ x: 0, z: 0, t: 2, yaw: 0 }, { x: 1, z: 0, t: 3, yaw: 0 }], 1.0, 50)
-    advanceTrail(st, [{ x: 0, z: 0, t: 4, yaw: Math.PI }], 1.0, 50)   // 回压（横向全覆盖横向槽）
-    expect(st.segs.filter(Boolean).length).toBeGreaterThanOrEqual(2)
-    // 竖向历史槽未被清空（对象仍在其槽位、几何未变）
-    const survived = st.segs.filter(Boolean).find((g) => Math.abs(g.x0 - 0.5) < 1e-9 && Math.abs(g.z0 + 0.5) < 1e-9)
-    expect(survived).toBeTruthy()
-    expect(survived.z0).toBeCloseTo(-0.5)
-    expect(survived.z1).toBeCloseTo(0.5)
-    void vertical
+    expect(st.total).toBe(2)
+    expect(st.segs[0].z1).toBeCloseTo(0.5)
+    expect(st.segs[1].x1).toBeCloseTo(1)
   })
-  it('部分共线重叠不整槽覆写：旧槽未覆盖的尾段保留（review 三轮 P2 2026-10-12 复现）', () => {
-    // 评审复现：旧段 x=0→1；断链保留历史后新回压段 x=0.6→−0.4（共线同 z，重叠 [0,0.6]）。
-    // 旧段尾段 [0.6,1] 未被覆盖 ⇒ 必须保留（旧版整槽覆写后 x=0.8 的印记消失，且旧印记
-    // 还在淡出窗内）。新语义：partial 保守不覆写 ⇒ 旧槽完好、新戳正常追加。
+  it('部分共线重叠共存（无去重：旧尾段保留 + 新戳追加）', () => {
     const st = createTrailState()
     advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
-    expect(st.total).toBe(1)
-    const oldSeg = { ...st.segs[0] }
     resetTrailState(st)
     advanceTrail(st, [{ x: 0.6, z: 0, t: 10, yaw: Math.PI }, { x: -0.4, z: 0, t: 11, yaw: Math.PI }], 1.0, 50)
-    expect(st.total).toBe(2)                           // 旧槽未被覆写；新戳正常追加
-    expect(st.segs[0].x0).toBeCloseTo(oldSeg.x0)       // 旧印记 [0→1] 完好
-    expect(st.segs[0].x1).toBeCloseTo(oldSeg.x1)
-    expect(st.segs[0].t).toBeCloseTo(1)                // 出生时刻未被刷新（未重占）
-    // 尾段 x=0.8 仍被旧槽覆盖
-    expect(0.8 >= Math.min(st.segs[0].x0, st.segs[0].x1) - 1e-9).toBe(true)
-    expect(0.8 <= Math.max(st.segs[0].x0, st.segs[0].x1) + 1e-9).toBe(true)
-  })
-  it('往返短戳完全落在长槽内：同为完全重叠，重占不叠层（对称包含语义）', () => {
-    // 自查补的形态：a ⊂ b（回程短戳完全落在更长的旧槽内）——与 b ⊆ a 同为"同一条带上的
-    // 完全重叠"，必须同样重占（否则往返碾压叠二层）。
-    const st = createTrailState()
-    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 2, z: 0, t: 2, yaw: 0 }], 1.0, 50)
-    expect(st.segs[0].x0).toBeCloseTo(0)
-    expect(st.segs[0].x1).toBeCloseTo(2)
-    const oldT = st.segs[0].t
-    resetTrailState(st)
-    advanceTrail(st, [{ x: 1.8, z: 0, t: 10, yaw: Math.PI }, { x: 0.6, z: 0, t: 11, yaw: Math.PI }], 1.0, 50)
-    expect(st.total).toBe(1)                           // 重占（a ⊂ b）
-    expect(st.segs[0].x0).toBeCloseTo(1.8)             // 槽里是回程戳
-    expect(st.segs[0].x1).toBeCloseTo(0.6)
-    expect(st.segs[0].t).toBeCloseTo(11)               // 时刻已刷新（锚点时刻贴住当前采样）
-    void oldT
-  })
-  it('共线但分离的两段互不影响（垂距 0 但投影不相交）', () => {
-    // 自查：同一直线上相隔 > 0 的两段（先走 0→1，断链后从 5→6 反向）——不重占不删除。
-    const st = createTrailState()
-    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
-    resetTrailState(st)
-    advanceTrail(st, [{ x: 6, z: 0, t: 20, yaw: Math.PI }, { x: 5, z: 0, t: 21, yaw: Math.PI }], 1.0, 50)
     expect(st.total).toBe(2)
-    expect(st.segs[0].x0).toBeCloseTo(0)               // 历史完好
-    expect(st.segs[1].x1).toBeCloseTo(5)               // 新段正常
+    expect(st.segs[0].x1).toBeCloseTo(1)
+    expect(st.segs[1].x0).toBeCloseTo(0.6)
   })
   it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()
