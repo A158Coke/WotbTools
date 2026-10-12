@@ -34,8 +34,12 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     expect(sceneSrc).toMatch(/const open = openStampOf\(st\);/)
     expect(sceneSrc).toMatch(/hideQuads\(/)
   })
-  it('淡出窗 = 客户端引擎常数（TREAD_FADE.start/end；老化扫描同源）', () => {
-    expect(sceneSrc).toMatch(/const cutoff = T - TREAD_FADE\.end;/)
+  it('淡出窗 = 客户端引擎常数（TREAD_FADE.start/end；老化逐槽独立、无有序假设）', () => {
+    // review P2 2026-10-12：回压重占改单槽 t + null 清空槽 ⇒ "按序号时间有序"的二分老化
+    // 前提不成立（重占后的新戳会被当过期前缀清 0）——老化必须是逐槽按自身 t 独立计算。
+    expect(sceneSrc).not.toMatch(/const cutoff = T - TREAD_FADE\.end;/)
+    expect(sceneSrc).toMatch(/逐槽独立老化，不做任何时间有序假设/)
+    expect(sceneSrc).toMatch(/const a = seg \? Math\.fround\(treadAlphaAt\(T - seg\.t\)/)
   })
   it('关断重开必须复位两侧路径态（不只回退 builtT；review P2 2026-10-11）', () => {
     expect(sceneSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
@@ -309,6 +313,35 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     expect(st2.total).toBe(1)                          // 未新增（重占）
     expect(st2.segs[0].x0).toBeCloseTo(1)              // 槽里是回退戳（时刻已刷新）
     expect(st2.segs[0].x1).toBeCloseTo(-0.2)
+  })
+  it('平行但分离的车道不是同一地带：回压不重占、历史保留（review P2 2026-10-12 复现）', () => {
+    // 评审复现：先铺 (0,0)→(1,0)；断链保留历史；再在相隔 10 m 的平行车道反向铺
+    // (1,10)→(0,10)。平行 ≠ 共线（垂距 10 m > 0）⇒ 不得重占/清空 z=0 的历史印记。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(st.total).toBe(1)
+    resetTrailState(st)
+    advanceTrail(st, [{ x: 1, z: 10, t: 20, yaw: Math.PI }], 1.0, 50)
+    advanceTrail(st, [{ x: 0, z: 10, t: 21, yaw: Math.PI }], 1.0, 50)
+    expect(st.total).toBe(2)                           // 未重占：新增（历史 [0→1] 仍在）
+    expect(st.segs[0].x0).toBeCloseTo(0)
+    expect(st.segs[0].x1).toBeCloseTo(1)               // 原印记完好（还在淡出窗内）
+    expect(st.segs[1].z0).toBeCloseTo(10)              // 新车道戳正常入环
+    // 反向平行车道回压穿越原车道方向，但几何分离 ⇒ 两者共存
+  })
+  it('重占旧槽后新戳不被老化清零：老化逐槽独立（review P2 2026-10-12 复现）', () => {
+    // 评审复现：三槽出生 [1,2,3]；t=10.1 回压重占第一槽 → [10.1,2,3]。若老化仍按
+    // "序号有序"二分（cutoff=2.48），新戳会被当过期前缀清 0——刚生成就不可见。
+    // 语义锁：老化必须逐槽按自身 t 独立计算（接线守卫 + 此处行为）
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 1, yaw: 0 }, { x: 1, z: 0, t: 2, yaw: 0 }], 1.0, 50)
+    advanceTrail(st, [{ x: 2, z: 0, t: 3, yaw: 0 }], 1.0, 50)
+    expect(st.total).toBe(2)
+    advanceTrail(st, [{ x: 0.6, z: 0, t: 10.1, yaw: Math.PI }], 1.0, 50)   // 回退 1.4 m：回压重占
+    const times = st.segs.filter(Boolean).map((g) => g.t)
+    expect(Math.max(...times)).toBeCloseTo(10.1)       // 重占槽的时间已刷新
+    expect(times.filter((t) => t < 5).length).toBeGreaterThan(0)   // 其余旧戳保留
+    expect(treadAlphaAt(10.1 - Math.max(...times))).toBe(1)        // 新戳在淡出窗内 ⇒ 可见
   })
   it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()

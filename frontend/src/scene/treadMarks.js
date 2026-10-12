@@ -238,14 +238,50 @@ export function advanceTrail(st, pts, space, cap) {
   return added;
 }
 /**
+ * 线段 a 与线段 b 的地带关系（2D，含平行/共线分支）。返回：
+ *   'none'      不重叠（平行但分离 / 不相交）
+ *   'partial'   相交（非平行且交点落两段内）
+ *   'covered'   b 完全落在 a 的地带内（共线时按投影；非平行时按交点分割两段内）
+ * 判定含**垂直距离**：平行（denom≈0）必须垂距 ≈ 0 才算共线（平行车道不是同一地带——
+ * 2026-10-12 review P2：旧版把"平行"当"共线"，相隔 10 m 的平行车道被误重占/误删）。
+ */
+function segRelation(ax0, az0, ax1, az1, bx0, bz0, bx1, bz1) {
+  const bax = ax1 - ax0, baz = az1 - az0;
+  const gax = bx1 - bx0, gaz = bz1 - bz0;
+  const denom = bax * gaz - baz * gax;
+  const fLen = Math.hypot(bax, baz);
+  const rx = bx0 - ax0, rz = bz0 - az0;
+  if (Math.abs(denom) < 1e-12 * Math.max(1, fLen)) {
+    if (fLen < 1e-9) return 'none';
+    // 平行：垂距（r 在法向上的分量 / |b|）
+    const perp = (rx * gaz - rz * gax) / fLen;
+    if (Math.abs(perp) > 1e-6) return 'none';           // 平行但分离：不同地带
+    const p0 = (rx * bax + rz * baz) / (fLen * fLen);
+    const p1 = ((bx1 - ax0) * bax + (bz1 - az0) * baz) / (fLen * fLen);
+    const lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+    return (hi >= -1e-9 && lo <= 1 + 1e-9)
+      ? (lo >= -1e-9 && hi <= 1 + 1e-9 ? 'covered' : 'partial')
+      : 'none';
+  }
+  const tSeg = (rx * gaz - rz * gax) / denom;
+  const tG = (rx * baz - rz * bax) / denom;
+  if (tSeg < -1e-9 || tSeg > 1 + 1e-9 || tG < -1e-9 || tG > 1 + 1e-9) return 'none';
+  // 非平行相交：交点落在两段内（'partial'）；b 是否被 a 完全盖住按 b 两端对 a 的投影
+  const pB0 = (rx * bax + rz * baz) / (fLen * fLen);
+  const pB1 = ((bx1 - ax0) * bax + (bz1 - az0) * baz) / (fLen * fLen);
+  const coveredB = Math.min(pB0, pB1) >= -1e-9 && Math.max(pB0, pB1) <= 1 + 1e-9;
+  return coveredB ? 'covered' : 'partial';
+}
+
+/**
  * 提交一枚戳进环。
  *
- * **回压重占（空间去重，2026-10-12 review P2）**：新戳"往回走"（点积 < 0 ⇒ 地带与已
- * 有戳重叠）时，**沿环从最新往回找第一枚地带重叠的可见戳并重占该槽**（写新戳、刷新
- * `lastSegT`、回退 `written` 保证重传）——客户端同一块地面只由当前持有它的槽位表达
- * （重复碾压 = 槽位重新落锚 + 刷新时刻，结构上不叠墨）。找不到重叠槽（理论不可达，
- * 防御分支）则正常追加。前进方向（点积 ≥ 0，含锐角折返/转弯）不触发去重——那是真实的
- * 新地带。
+ * **回压重占（空间去重，2026-10-12 review P2）**：新戳"往回走"（方向相反 + 锚点在后方，
+ * 双条件防圆周/转弯误伤）且地带与已有戳重叠（`segRelation`：共线投影、垂直距离、一般
+ * 相交三分支）时，**重占该槽**（写新戳、刷新 `lastSegT`、回退 `written` 保证重传），并把
+ * **被新戳完全覆盖（'covered'）的其它槽清空**（写 `null`，写盘时显式隐藏）——同一块地面
+ * 任一时刻只由当前持有它的槽位表达，往返碾压不叠墨。平行但分离的车道（垂距 > 0）不是
+ * 同一地带，历史保留。前进方向（方向点积 ≥ 0，含锐角折返/转弯）不触发去重。
  */
 function pushSeg(st, seg, cap) {
   const bax = seg.x1 - seg.x0, baz = seg.z1 - seg.z0;
@@ -258,59 +294,30 @@ function pushSeg(st, seg, cap) {
       const g = st.segs[idx];
       if (!g) continue;
       const gax = g.x1 - g.x0, gaz = g.z1 - g.z0;
-      const denom0 = bax * gaz - baz * gax;
-      const gax0 = gax, gaz0 = gaz;
-      // 回退判定（两条件都要满足，防圆周/转弯误伤）：
+      // 回退判定（双条件防圆周/转弯误伤）：
       // ① 方向相反：新戳方向与该槽方向点积 < 0（圆周前进相邻槽夹角小，恒 ≥ 0）；
       // ② 位置在后：新锚点相对该槽起点落在新戳行进方向的反侧。
       const back = (bax * gax + baz * gaz) < 0
         && (bax * (seg.x0 - g.x0) + baz * (seg.z0 - g.z0)) < 0;
-      if (back) {
-        // 重叠校验（投影到新戳轴）：该槽线段与新戳地带相交才重占（避免误伤平行车道）
-        const denom = denom0;
-        let overlap;
-        if (Math.abs(denom) < 1e-12) {
-          // 共线：把该槽两端投影到新戳轴上，任一端落入 [0,1]（或新戳起点落入槽区间）⇒ 重叠
-          const p0 = ((g.x0 - seg.x0) * bax + (g.z0 - seg.z0) * baz) / (fLen * fLen);
-          const p1 = ((g.x1 - seg.x0) * bax + (g.z1 - seg.z0) * baz) / (fLen * fLen);
-          const lo = Math.min(p0, p1), hi = Math.max(p0, p1);
-          overlap = hi >= -1e-9 && lo <= 1 + 1e-9;
-        } else {
-          const rx = g.x0 - seg.x0, rz = g.z0 - seg.z0;
-          const tSeg = (rx * gaz - rz * gax) / denom;
-          const tG = (rx * baz - rz * bax) / denom;
-          overlap = tSeg >= -1e-9 && tSeg <= 1 + 1e-9 && tG >= -1e-9 && tG <= 1 + 1e-9;
-        }
-        if (overlap) {
-          st.segs[idx] = seg;                           // 重占该槽：刷新时刻、不叠层
-          st.lastSegT = seg.t;
-          if (st.written > latest - k) st.written = latest - k;   // 覆写槽重传
-          // 完全落在回压地带内的其它旧槽一并清空（同一个地带只留当前这一枚——客户端
-          // 槽位语义：地面归一个槽所有；否则镜像重合的往返戳会留两三层）
-          for (let j = 1; j <= len; j++) {
-            if (j === k) continue;
-            const jdx = (latest - j) % cap;
-            const o = st.segs[jdx];
-            if (!o) continue;
-            let covered;
-            if (Math.abs(denom0) < 1e-12) {
-              const q0 = ((o.x0 - seg.x0) * bax + (o.z0 - seg.z0) * baz) / (fLen * fLen);
-              const q1 = ((o.x1 - seg.x0) * bax + (o.z1 - seg.z0) * baz) / (fLen * fLen);
-              covered = Math.min(q0, q1) >= -1e-9 && Math.max(q0, q1) <= 1 + 1e-9;
-            } else {
-              const orx = o.x0 - seg.x0, orz = o.z0 - seg.z0;
-              const ot0 = (orx * gaz0 - orz * gax0) / denom0;
-              const ot1 = (orx * baz - orz * bax) / denom0;
-              covered = ot0 >= -1e-9 && ot0 <= 1 + 1e-9 && ot1 >= -1e-9 && ot1 <= 1 + 1e-9;
-            }
-            if (covered) {
-              st.segs[jdx] = null;
-              if (st.written > latest - j) st.written = latest - j;
-            }
-          }
-          return;
+      if (!back) continue;
+      const rel = segRelation(seg.x0, seg.z0, seg.x1, seg.z1, g.x0, g.z0, g.x1, g.z1);
+      if (rel === 'none') continue;                     // 平行但分离 / 不相交：历史保留
+      st.segs[idx] = seg;                               // 重占该槽：刷新时刻、不叠层
+      st.lastSegT = seg.t;
+      if (st.written > latest - k) st.written = latest - k;   // 覆写槽重传
+      // 被新戳**完全覆盖**的其它旧槽一并清空（每个槽独立按自身几何判定——不复用第一枚
+      // 的方向/denom；部分相交（'partial'）保留：那是折返处的真实几何）
+      for (let j = 1; j <= len; j++) {
+        if (j === k) continue;
+        const jdx = (latest - j) % cap;
+        const o = st.segs[jdx];
+        if (!o) continue;
+        if (segRelation(seg.x0, seg.z0, seg.x1, seg.z1, o.x0, o.z0, o.x1, o.z1) === 'covered') {
+          st.segs[jdx] = null;
+          if (st.written > latest - j) st.written = latest - j;
         }
       }
+      return;
     }
   }
   if (st.segs.length < cap) st.segs.push(seg);

@@ -2790,45 +2790,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (wrote) { posAttr.needsUpdate = true; colAttr.needsUpdate = true; }
   }
 
-  /** 寿命老化扫描：把"年龄落在淡出窗口内"的段的 alpha 刷新进顶点色。
+  /** 寿命老化扫描：把每槽的 alpha 按其**自身**出生时刻刷新进顶点色。
    *
-   * ⚠️ 窗口起点必须**按时间二分**（段按 `t` 有序），不能按"最近 N 段"数——段密度是
-   * 速度的函数（1 m 间距 @7 m/s ≈ 7 段/s，92 段只有 13 s），按段数取窗会让 60 s 前
-   * 的段提前出窗、alpha 永远停在 1（实测"不淡出"）。出窗瞬间最后写入的 alpha ≤ 3%
-   * （90 s 边界的一个 tick 内），无可见残留；暂停时时钟冻结 ⇒ 淡出冻结。
+   * ⚠️ **逐槽独立老化，不做任何时间有序假设**（2026-10-12 review P2）：回压重占只改
+   * 被重占槽的 `t`（不动绝对序号）、其它槽又可能被写成 `null` ⇒ "按 k 的出生时刻单调
+   * 递增"的二分前提不成立（复现：三槽 [1,2,3]，t=10.1 重占第一槽 → [10.1,2,3]，二分把
+   * 新戳当过期前缀清 0——刚生成就不可见）。环只有 51 槽/侧，逐槽全扫与二分同量级。
+   * null 槽（回压清空）显式隐藏。暂停时时钟冻结 ⇒ 淡出冻结。
    */
   function ageTrailAlphas(v, tr) {
     const colAttr = v.treadMesh.geometry.getAttribute('color');
     const carr = colAttr.array;
-    const cutoff = T - TREAD_FADE.end;
     let dirty = false;
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;
-      // 二分最小 k：segs[k].t ≥ cutoff（环内有效域 [total-cap, total)）
-      let lo = Math.max(0, st.total - TRAIL_CAP_PER_SIDE), hi = st.total;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        const seg = st.segs[mid % TRAIL_CAP_PER_SIDE];
-        if (seg && seg.t >= cutoff) hi = mid; else lo = mid + 1;
-      }
-      // [有效域起点, lo) = 已过寿命的段：**显式清零**。大步 seek 前进时这些段一步跨出
-      // 淡出窗口，否则停留在跨步前的旧 alpha（实测残留 0.55 全亮——"该消失的印记还在"，
-      // 2026-10-11 定案）。只写变化的槽位（静止时零写入）。
-      for (let k = Math.max(0, st.total - TRAIL_CAP_PER_SIDE); k < lo; k++) {
-        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
-        if (carr[co] !== 0) {
-          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
-          dirty = true;
-        }
-      }
-      for (let k = lo; k < st.total; k++) {
-        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
-        if (!seg) continue;
-        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，若拿
-        // double 的 a 严格比较，`carr[i] !== 0.8` 永远成立（读回 0.8000000119）⇒ 时钟没动
-        // 也每 tick 标脏重传。量化后同一 alpha 的重复 tick 不再置 dirty。
-        const a = Math.fround(treadAlphaAt(T - seg.t) * (v.tread.texScale || 1));
+      const k0 = Math.max(0, st.total - TRAIL_CAP_PER_SIDE);
+      for (let k = k0; k < st.total; k++) {
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
+        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，拿
+        // double 严格比较恒不相等 ⇒ 时钟没动也每 tick 标脏重传。
+        const a = seg ? Math.fround(treadAlphaAt(T - seg.t) * (v.tread.texScale || 1)) : 0;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {
             carr[co + q * 4 + 3] = a;
