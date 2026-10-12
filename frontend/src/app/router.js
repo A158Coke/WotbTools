@@ -38,8 +38,9 @@ export function createAppRouter(history = createWebHistory()) {
 
   router.beforeEach((to) => {
     const view = to.query.view
-    const isLandingPath = to.path === '/' || to.path === '/index.html'
-    if (isAndroidRuntime() && isLandingPath && view === 'home') {
+    // Home is not an Android destination. Strip stale Home query state universally so the
+    // current path regains authority: / => Replay, /download/android => Android page, /sponsor => Sponsor.
+    if (isAndroidRuntime() && view === 'home') {
       const query = { ...to.query }
       delete query.view
       return { path: to.path, query, hash: to.hash, replace: true }
