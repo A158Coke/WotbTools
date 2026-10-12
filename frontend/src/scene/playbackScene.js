@@ -2734,14 +2734,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
-      // 环满时活戳槽（write = total % cap）与最老已提交槽（head = total - cap）是同一个
-      // 槽——客户端语义：活戳激活即"顶掉"最老戳（0x727b80 落锚后 write 前进覆盖它）。
-      // 提交循环跳过该槽（其显示权归活戳；提交循环在活戳块之前跑，不跳会把活戳 alpha
-      // 顶回旧戳值）。
+      // 环满时的显示权切换点 = **active 激活**（open != null，即净位移已达 0.3 m），
+      // 不是上一次提交完成时——客户端 0x3632a54 的语义：< 0.3 m 时 active 不占 write 槽
+      // 的显示权，最老 committed 槽继续显示（第 50 次提交后仍应有 50 个可见槽）。
+      // open 存在时 write 槽（= total % cap）才切给活戳并顶掉最老 committed 槽；
+      // 提交循环跳过该槽（否则会把活戳 alpha 顶回旧戳值）。（四轮 review P2 边界）
       const writeSlot = ((st.total % TRAIL_CAP_PER_SIDE) + TRAIL_CAP_PER_SIDE) % TRAIL_CAP_PER_SIDE;
+      const openActive = !!openStampOf(st);
       for (let k = st.written; k < st.total; k++) {
         const slot = k % TRAIL_CAP_PER_SIDE;
-        if (slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;
+        if (openActive && slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;
         const seg = st.segs[slot];
         if (!seg) {
           // 防御：未定型槽（理论不可达——total 只计已提交）显式隐藏
@@ -2763,8 +2765,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         wrote = true;
       }
       st.written = st.total;
-      // 环内空槽显式隐藏（k ∈ [total, cap)：环形里可能残留上一轮更长运行的旧戳）
+      // 环内空槽显式隐藏（k ∈ [total, cap)：环形里可能残留上一轮更长运行的旧戳）。
+      // openSlot（若 active 存在）跳过——否则先清 0 再被活戳块写回，paused/static tick
+      // 也会无意义地标脏重传（四轮 review P3）。
+      const openSlotNow = st.total % TRAIL_CAP_PER_SIDE;
       for (let k = Math.min(st.total, TRAIL_CAP_PER_SIDE); k < TRAIL_CAP_PER_SIDE; k++) {
+        if (openActive && k === openSlotNow) continue;
         hideQuads((k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16);
       }
       // 活戳 = write 槽（= total % cap，50 槽含 active——客户端 0x727b80 同构，无第 51 槽）。
@@ -2813,9 +2819,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const quad = st === tr.L ? 0 : 1;
       const k0 = Math.max(0, st.total - TRAIL_CAP_PER_SIDE);
       const writeSlot = st.total % TRAIL_CAP_PER_SIDE;
+      const openActive = !!openStampOf(st);
       for (let k = k0; k < st.total; k++) {
         const slot = k % TRAIL_CAP_PER_SIDE;
-        if (slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;   // 活戳槽：显示权在活戳
+        // 活戳槽：**仅当 active 已激活**显示权才切给活戳（四轮 review P2 边界：
+        // open == null 时该槽仍显示最老 committed，老化照常按旧戳计算）
+        if (openActive && slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;
         const co = slot * 32 + quad * 16;
         const seg = st.segs[slot];
         // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，拿
