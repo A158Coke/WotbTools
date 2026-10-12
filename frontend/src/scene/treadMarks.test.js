@@ -121,9 +121,9 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
       expect(st.segs[k].z0).toBe(st.segs[k - 1].z1)
       expect(st.segs[k].yaw0).toBe(st.segs[k - 1].yaw1)
     }
-    // 出生时刻 = 锚点时刻（落锚即出生；客户端槽位时间随重新落锚刷新同款）
-    expect(st.segs[0].t).toBeCloseTo(0)
-    expect(st.segs[1].t).toBeCloseTo(1)
+    // 出生时刻 = 锚点时刻，而锚点时刻始终贴住当前采样时刻（时间门控：停车/低速不冻结）
+    expect(st.segs[0].t).toBeCloseTo(1)
+    expect(st.segs[1].t).toBeCloseTo(2)
   })
   it('前沿跟随：未满 space 不出戳，活戳末端始终拉伸到当前采样点', () => {
     const st = createTrailState()
@@ -134,7 +134,7 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     let open = openStampOf(st)
     expect(open.x0).toBeCloseTo(0)
     expect(open.x1).toBeCloseTo(0.3)                   // 活戳 = 锚点 → 当前点
-    expect(open.t).toBeCloseTo(0)                      // 出生 = 锚点时刻
+    expect(open.t).toBeCloseTo(1)                      // 出生 = 锚点时刻（贴住当前采样时刻）
     advanceTrail(st, [{ x: 0.6, z: 0, t: 2, yaw: 0 }], 1.0, 50)
     expect(st.total).toBe(0)                           // 仍不满 1 m
     open = openStampOf(st)
@@ -217,9 +217,12 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
       { x: 1.3, z: 0, t: 100.1, yaw: 0 },    // 再走 0.5 ⇒ 落锚
     ], 0.5, 64)
     expect(added).toBe(2)
-    expect(st.segs[0].t).toBeCloseTo(0, 9)
+    expect(st.segs[0].t).toBeCloseTo(0.16, 9)
     expect(st.segs[0].x1).toBeCloseTo(0.8)
-    expect(st.segs[1].t).toBeCloseTo(0.16, 9)     // = 锚点时刻（不是插值 / 停车后时刻）
+    // 锚点时间门控（P2-1 修复）：锚点时刻贴住当前采样时刻——起步后提交的戳出生在 ~100 s
+    // 而不是冻在停车前的 0.16（否则淡出窗 7.62 s 早就把它收掉，起步印记不可见）
+    expect(st.segs[1].t).toBeCloseTo(100.1, 6)   // = 最后一个采样时刻（锚点时间贴住当下）
+    expect(st.segs[1].t).toBeGreaterThan(90)
     expect(st.segs[1].x0).toBeCloseTo(0.8)
     expect(st.segs[1].x1).toBeCloseTo(1.3)
   })
@@ -237,6 +240,75 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     // 跨转向的戳从旧朝向横截面扫到新朝向横截面（覆盖原地转向掠过的区域）
     expect(st.segs[1].yaw0).toBeCloseTo(0)
     expect(st.segs[1].yaw1).toBeCloseTo(Math.PI / 2)
+  })
+  it('淡出后起步/低速：锚点时间门控保证新印记可见（review P2 2026-10-12 复现场景）', () => {
+    // 评审复现：space=1，(0,0)→(0.2,1)→停到 10 s→起步到 (0.4,10.1)。旧实现锚点 t 冻在 0
+    // ⇒ 活戳长 0.4 m 但 alpha=0（淡出窗 7.62 s 早已收掉）；修复后锚点时刻贴住当前采样
+    // 时刻 ⇒ 活戳出生 ~10 s，当前可见。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.2, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    advanceTrail(st, [{ x: 0.2, z: 0, t: 10, yaw: 0 }], 1.0, 50)        // 停车
+    advanceTrail(st, [{ x: 0.4, z: 0, t: 10.1, yaw: 0 }], 1.0, 50)      // 起步（未满 space）
+    expect(st.total).toBe(0)
+    const open = openStampOf(st)
+    expect(open).not.toBeNull()
+    expect(Math.hypot(open.x1 - open.x0, open.z1 - open.z0)).toBeCloseTo(0.4)
+    expect(open.t).toBeGreaterThan(7.62)               // 出生在淡出窗内 ⇒ treadAlphaAt > 0
+    expect(treadAlphaAt(10.1 - open.t)).toBeGreaterThan(0)
+    // 低速爬行（每步 0.15 m，永不落锚）：活戳持续被时间门控保鲜
+    const st2 = createTrailState()
+    let x = 0, t = 0
+    for (let i = 0; i < 60; i++) { x += 0.15; t += 0.1; advanceTrail(st2, [{ x, z: 0, t, yaw: 0 }], 1.0, 50) }
+    const open2 = openStampOf(st2)
+    expect(open2).not.toBeNull()
+    expect(open2.t).toBeGreaterThan(t - 1)             // 出生时刻 ≈ 当前（未过期）
+  })
+  it('同一条带往返不叠层：回压覆写上一槽，回压槽位不累积（review P2 2026-10-12）', () => {
+    // 评审复现形态：同一条 3 m 路段 2.4 s 内往返 4 次。旧实现每次落锚 push 新槽，
+    // 同一地面被 4 个可见槽叠 4 层（半透明像素 alpha 0.5 → 1−(1−0.5)^4 = 0.9375）；
+    // 修复后"新戳往回走（点积<0）"覆写上一槽 ⇒ 同地带任一时刻只有 1~2 个可见槽。
+    const st = createTrailState()
+    const pts = []
+    // 3 m 直线、0.5 m/步、0.2 s/步；第 4 步起每 3 步掉头（覆盖同一 0..3 m 条带 4 趟）
+    for (let leg = 0; leg < 4; leg++) {
+      for (let k = 1; k <= 6; k++) {
+        const forward = leg % 2 === 0
+        const pos = forward ? k * 0.5 : 3 - k * 0.5
+        pts.push({ x: pos, z: 0, t: (leg * 6 + k) * 0.2, yaw: 0 })
+      }
+    }
+    advanceTrail(st, pts, 1.0, 50)
+    // 条带内任一位置同一时刻至多被「前一戳 + 活戳（若已提交则为当前槽）」覆盖：
+    // 数每个槽的覆盖区间，要求任意点被 > 2 个已提交戳覆盖为 0（叠层必须不可达）
+    const iv = st.segs.filter(Boolean).map((g) => [Math.min(g.x0, g.x1), Math.max(g.x0, g.x1)])
+    for (let probe = 0; probe <= 30; probe++) {
+      const x = probe / 10
+      const covers = iv.filter(([a, b]) => x >= a - 1e-9 && x <= b + 1e-9).length
+      expect(covers).toBeLessThanOrEqual(2)
+    }
+    expect(st.total).toBeLessThan(24)                  // 往返未新增满配额（回压覆写生效）
+    console.log('DBG total', st.total, 'iv', JSON.stringify(iv))
+  })
+  it('掉头（锐角折返）仍新增戳：回压判定只压"往回走"的戳', () => {
+    // 90° 掉头：新戳起点 = 上一戳终点（disp=1），点积 = 逆向前向·新前向 < 0？
+    // 取掉头后往回走 → 上一戳 (0,0)→(1,0)，新戳 (1,0)→(1,1)（转向）：b·d = (1,0)·(0,1)=0
+    // 不 < 0 ⇒ 正常新增；真·回退 (1,0)→(0.2,0) 才覆写。
+    const st = createTrailState()
+    advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 1, z: 0, t: 1, yaw: 0 },                    // 提交 (0,0)→(1,0)
+      { x: 1, z: 1, t: 2, yaw: Math.PI / 2 },          // 满 space：提交 (1,0)→(1,1)
+    ], 1.0, 50)
+    expect(st.total).toBe(2)
+    const st2 = createTrailState()
+    advanceTrail(st2, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 1, z: 0, t: 1, yaw: 0 },                    // 提交 (0,0)→(1,0)
+      { x: -0.2, z: 0, t: 2, yaw: Math.PI },           // 回退 1.2 m 满 space：重占上一槽
+    ], 1.0, 50)
+    expect(st2.total).toBe(1)                          // 未新增（重占）
+    expect(st2.segs[0].x0).toBeCloseTo(1)              // 槽里是回退戳（时刻已刷新）
+    expect(st2.segs[0].x1).toBeCloseTo(-0.2)
   })
   it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()

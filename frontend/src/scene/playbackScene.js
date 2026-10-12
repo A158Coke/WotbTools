@@ -2738,7 +2738,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
       for (let k = st.written; k < st.total; k++) {
         const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
-        if (!seg) continue;
+        if (!seg) {
+          // 回压去重清掉的槽（null）：显式隐藏该槽（位置可能是旧戳的残影）
+          const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+          if (carr[co + 3] !== 0) {
+            carr[co + 3] = 0; carr[co + 7] = 0; carr[co + 11] = 0; carr[co + 15] = 0;
+            wrote = true;
+          }
+          continue;
+        }
         if (!trailStampCorners(seg, width, h, c12)) continue;
         parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
         const a = alphaAt(seg.t);
