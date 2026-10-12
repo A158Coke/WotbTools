@@ -349,8 +349,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/__tankAmbientFixed/)                       // 幂等：重复遍历不重打
     expect(fn).toMatch(/'\|tank-noambient'/)                       // 程序缓存键带标记（否则复用未打补丁程序）
     // 接线：坦克装配点（禁区外）调用；不改 scenery 侧任何材质
-    expect(src).toMatch(/applyTankLightingFix\(v\.glb\);/)
-    expect(src).toMatch(/import \{ applyMaterialTextureAnisotropy, applyTankLightingFix,/)
+    expect(src).toMatch(/v\.glbVisual = prepareTankDestroyedVisual\(v\.glb\);/)
   })
 
   it('出屏口径（A2）：线性 × 曝光 1.0 → sRGB 编码 = 客户端口径；不引入调参旋钮', () => {

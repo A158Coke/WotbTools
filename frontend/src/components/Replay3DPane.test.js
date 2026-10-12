@@ -711,6 +711,24 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('canonical life replacement refreshes the paused scene even when the clock object is unchanged', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const store = playback.api.store
+    const clock = { startRaw: 42, durationSec: 200 }
+    const state = shallowReactive({ canonical: { dataset: { vehicles: [] }, clock } })
+    store.playbackSession = state
+    store.hasData = true
+    store.playing = false
+    await nextTick()
+    playback.api.setBattleClock.mockClear()
+    state.canonical = { dataset: { vehicles: [{ accountId: 77, lifeTransitions: [{ timeSec: 10, lifeState: 'DESTROYED' }] }] }, clock }
+    await nextTick()
+    expect(playback.api.setBattleClock).toHaveBeenCalledTimes(1)
+    expect(playback.api.setBattleClock).toHaveBeenCalledWith(clock)
+    wrapper.unmount()
+  })
+
   it('direct declutter and roster controls preserve the current session and restore preferences', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
