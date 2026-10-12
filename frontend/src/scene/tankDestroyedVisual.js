@@ -36,14 +36,15 @@ export function prepareTankDestroyedVisual(root, { cloneMaterials = true } = {})
         shader.uniforms.uDestroyedAmount = uniform
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uDestroyedAmount;')
-          .replace('#include <opaque_fragment>', `
-float destroyedLuma = dot(outgoingLight, vec3(0.2126, 0.7152, 0.0722));
-outgoingLight = mix(outgoingLight, vec3(destroyedLuma), uDestroyedAmount)
-  * mix(1.0, 0.30, uDestroyedAmount);
-#include <opaque_fragment>`)
+          // The design's 30% is display brightness, not 30% linear radiance
+          // (sRGB would make that much brighter). Fog must not wash a wreck white.
+          .replace('#include <fog_fragment>', `#include <fog_fragment>
+vec3 destroyedDisplayColor = clamp(gl_FragColor.rgb, 0.0, 1.0);
+float destroyedLuma = dot(destroyedDisplayColor, vec3(0.2126, 0.7152, 0.0722));
+gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(destroyedLuma * 0.30), uDestroyedAmount);`)
       }
       material.customProgramCacheKey = function () {
-        return previousKey.call(this) + '|tank-destroyed-v1'
+        return previousKey.call(this) + '|tank-destroyed-v2'
       }
       material.needsUpdate = true
       materials.push({
@@ -69,8 +70,8 @@ export function applyTankDestroyedVisual(visual, amount) {
   for (const entry of visual.materials) {
     const { material, uniform, roughness, metalness, emissive } = entry
     uniform.value = next
-    if (Number.isFinite(roughness)) material.roughness = roughness + (Math.min(1, roughness + 0.20) - roughness) * next
-    if (Number.isFinite(metalness)) material.metalness = metalness * (1 - 0.70 * next)
+    if (Number.isFinite(roughness)) material.roughness = roughness + (Math.min(1, Math.max(0.90, roughness + 0.20)) - roughness) * next
+    if (Number.isFinite(metalness)) material.metalness = metalness * (1 - 0.95 * next)
     if (emissive) material.emissive.copy(emissive).multiplyScalar(1 - next)
   }
 }

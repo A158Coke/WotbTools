@@ -416,16 +416,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const [ht, hv] of hp) { if (ht <= t) cur = hv; else break; }
     return cur;
   }
+  function canonicalLifeTrack(v, canonical) {
+    const tracks = canonical.dataset.vehicles;
+    if (tracks !== lifeTracks) {
+      lifeTracks = tracks;
+      lifeTracksByAccount = new Map(tracks.map(track => [track.accountId, track]));
+    }
+    return lifeTracksByAccount.get(v.def.account_id);
+  }
   /** Canonical life uses battle-relative seconds; this render boundary returns raw seconds like T. */
   function sceneLifeAt(v, t) {
     const canonical = store.playbackSession?.canonical;
-    const tracks = canonical?.dataset?.vehicles;
-    if (tracks && Number.isFinite(canonical.clock?.startRaw)) {
-      if (tracks !== lifeTracks) {
-        lifeTracks = tracks;
-        lifeTracksByAccount = new Map(tracks.map(track => [track.accountId, track]));
-      }
-      const life = lifeAt(lifeTracksByAccount.get(v.def.account_id), t - canonical.clock.startRaw);
+    if (canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw)) {
+      const life = lifeAt(canonicalLifeTrack(v, canonical), t - canonical.clock.startRaw);
       if (!life) return null;
       return {
         lifeState: life.lifeState,
@@ -3644,13 +3647,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
   let floatDmgs = [];          // { sp, tex, born, baseY, group }
-  let burstFx = [];            // { g, born, rings, ball }
+  let burstFx = [];            // pooled burst objects: geometry/materials stay together
   let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
 
-  // 事件源：伤害 = 血量链相邻下降幅值（幅值即丢失血量；无逐段伤害归属时仍可判
-  // "谁掉了多少"）；击毁 = kills（死亡终态 × 击杀播报归属增强）。
+  // 伤害来自血量链下降；击毁特效与模型共用生命事实，不要求 killer/kill 归属。
   function buildTransientSources() {
     dmgEvents = [];
     for (const def of DATA.vehicles || []) {
@@ -3661,12 +3663,26 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
     }
     dmgEvents.sort((a, b) => a.t - b.t);
-    // kills 按 t 升序排一次：击杀流游标与比分游标都以「升序 + 单调推进」为前提
-    // （此前只在 burstEvents 的副本上排序，DATA.kills 自身依赖上游产出顺序）
+    // 击杀流和比分需要升序输入；爆炸独立按生命事实生成，不要求击杀归属。
     if (DATA.kills) DATA.kills.sort((a, b) => a.t - b.t);
-    burstEvents = (DATA.kills || []).map((k) => ({ t: k.t, eid: k.victim_eid }))
-      .sort((a, b) => a.t - b.t);
+    buildBurstSources();
     dmgPtr = 0; burstPtr = 0;
+  }
+
+  function buildBurstSources() {
+    const canonical = store.playbackSession?.canonical;
+    const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
+    burstEvents = [];
+    for (const v of V) {
+      let t = v.def.death_t;
+      if (hasCanonicalLife) {
+        const transition = canonicalLifeTrack(v, canonical)?.lifeTransitions?.find(life => life.lifeState === 'DESTROYED');
+        t = transition && Number.isFinite(transition.timeSec)
+          ? transition.timeSec + canonical.clock.startRaw : null;
+      }
+      if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
+    }
+    burstEvents.sort((a, b) => a.t - b.t);
   }
 
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
@@ -3727,35 +3743,102 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     labelsTime = null;   // feedback expires independently of playback time
   }
 
-  // 击毁爆散：双层扩散环 + 中心球，基准 700ms × FX_SCALE 内扩张并淡出
+  // Short, bounded destruction effect: hot core, ground shockwaves, sparks and rising soot.
+  // Materials/textures are allocated only when the pool grows; all drawing remains depth-tested.
+  const BURST_SPARK_COUNT = 28;
+  const BURST_SMOKE_COUNT = 10;
+  const BURST_TEXTURE_SIZE = 32;
+  const BURST_GOLDEN_ANGLE = 2.39996323;
+  const BURST_FLASH_COLOR = new THREE.Color(0xffefd0);
+  const BURST_FIRE_COLOR = new THREE.Color(0xffa53a);
   function makeBurstFx() {
-    const g = new THREE.Group();
+    const g = new THREE.Group(); g.name = 'vehicle-destruction-burst';
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+      blending: THREE.AdditiveBlending,
     });
     const rings = [];
-    for (const r0 of [0.8, 1.6]) {
-      const mesh = new THREE.Mesh(new THREE.RingGeometry(r0, r0 + 0.45, 28), mat.clone());
-      mesh.rotation.x = -Math.PI / 2;
+    for (const r0 of [1.2, 2.0]) {
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(r0, r0 + 0.50, 32), mat.clone());
+      mesh.rotation.x = -Math.PI / 2; mesh.position.y = 0.18;
       g.add(mesh); rings.push(mesh);
     }
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 10), mat.clone());
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), mat);
     g.add(ball);
-    return { g, rings, ball };
+    // A soft radial alpha map, not an external asset; shared only inside this pool object.
+    const pixels = new Uint8Array(BURST_TEXTURE_SIZE * BURST_TEXTURE_SIZE * 4);
+    for (let y = 0; y < BURST_TEXTURE_SIZE; y++) for (let x = 0; x < BURST_TEXTURE_SIZE; x++) {
+      const r = Math.hypot((x + 0.5) * 2 / BURST_TEXTURE_SIZE - 1, (y + 0.5) * 2 / BURST_TEXTURE_SIZE - 1);
+      const i = (y * BURST_TEXTURE_SIZE + x) * 4;
+      pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
+      pixels[i + 3] = Math.round(255 * Math.max(0, 1 - r * r) ** 2);
+    }
+    const map = new THREE.DataTexture(pixels, BURST_TEXTURE_SIZE, BURST_TEXTURE_SIZE);
+    map.minFilter = map.magFilter = THREE.LinearFilter; map.needsUpdate = true;
+    const particles = (count, color, size, additive) => {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
+      const material = new THREE.PointsMaterial({
+        map, color, size, transparent: true, depthWrite: false, toneMapped: false,
+        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      });
+      const points = new THREE.Points(geometry, material);
+      points.frustumCulled = false;   // expanding positions have no static bounding sphere
+      g.add(points);
+      return points;
+    };
+    const sparks = particles(BURST_SPARK_COUNT, 0xffb65c, 0.32, true);
+    const smoke = particles(BURST_SMOKE_COUNT, 0x252322, 2.4, false);
+    const velocities = new Float32Array(BURST_SPARK_COUNT * 3);
+    for (let i = 0; i < BURST_SPARK_COUNT; i++) {
+      const angle = i * BURST_GOLDEN_ANGLE;   // golden-angle spread: deterministic and no random frame noise
+      const speed = 3 + i % 5;
+      velocities[i * 3] = Math.cos(angle) * speed;
+      velocities[i * 3 + 1] = 4 + i % 4;
+      velocities[i * 3 + 2] = Math.sin(angle) * speed;
+    }
+    return { g, rings, ball, sparks, smoke, velocities, born: 0 };
+  }
+
+  function updateBurstFx(fx, k) {
+    const flame = Math.min(1, k / 0.55);
+    fx.ball.position.y = 2.5 + k;
+    fx.ball.scale.setScalar(0.35 + 1.65 * Math.sin(flame * Math.PI / 2));
+    fx.ball.material.opacity = 0.95 * (1 - flame) ** 1.2;
+    fx.ball.material.color.lerpColors(BURST_FLASH_COLOR, BURST_FIRE_COLOR, Math.min(1, k / 0.18));
+    for (let j = 0; j < fx.rings.length; j++) {
+      fx.rings[j].scale.setScalar(1 + k * (2.8 + j * 0.6));
+      fx.rings[j].material.opacity = 0.90 * (1 - k) ** 1.2;
+    }
+    const secs = k * (BURST_MS * FX_SCALE) / 1000;
+    const sparks = fx.sparks.geometry.attributes.position;
+    for (let i = 0; i < sparks.count; i++) {
+      sparks.setXYZ(i, fx.velocities[i * 3] * secs,
+        Math.max(0.20, 2.4 + fx.velocities[i * 3 + 1] * secs - 4.9 * secs * secs),
+        fx.velocities[i * 3 + 2] * secs);
+    }
+    sparks.needsUpdate = true;
+    fx.sparks.material.opacity = 0.95 * (1 - k) ** 2;
+    const smoke = fx.smoke.geometry.attributes.position;
+    for (let i = 0; i < smoke.count; i++) {
+      const angle = i * BURST_GOLDEN_ANGLE, spread = (0.35 + k * 2.0) * (0.5 + (i % 3) * 0.25);
+      smoke.setXYZ(i, Math.cos(angle) * spread, 2.2 + k * (4.5 + i % 3), Math.sin(angle) * spread);
+    }
+    smoke.needsUpdate = true;
+    fx.smoke.material.size = 2.4 + k * 3;
+    fx.smoke.material.opacity = Math.min(1, k / 0.18) * 0.65 * (1 - k) ** 1.3;
   }
 
   function spawnBurst(eid) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
     const fx = fxTake('burst', makeBurstFx);
-    const g = fx.g, rings = fx.rings, ball = fx.ball;
-    // 重置为出生状态（池复用：上一次的扩散/淡出必须归位）
-    for (const rr of rings) { rr.scale.setScalar(1); rr.material.opacity = 0.85; }
-    ball.scale.setScalar(1); ball.material.opacity = 0.7;
-    g.visible = true;
-    g.position.copy(v.group.position);
-    scene.add(g);
-    burstFx.push({ g, born: performance.now(), rings, ball });
+    fx.born = performance.now();
+    updateBurstFx(fx, 0);   // reset every reused parameter, including particle positions
+    fx.g.visible = true;
+    fx.g.position.copy(v.group.position);
+    scene.add(fx.g);
+    burstFx.push(fx);
   }
 
   function updateTransients() {
@@ -3800,16 +3883,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const k = (now - b.born) / (BURST_MS * FX_SCALE);
       if (k >= 1) {
         scene.remove(b.g);
-        fxGive('burst', { g: b.g, rings: b.rings, ball: b.ball });
+        fxGive('burst', b);
         burstFx.splice(i, 1);
         continue;
       }
-      for (let j = 0; j < b.rings.length; j++) {
-        b.rings[j].scale.setScalar(1 + k * (2.2 + j * 1.6));
-        b.rings[j].material.opacity = 0.85 * (1 - k);
-      }
-      b.ball.scale.setScalar(1 + k * 1.5);
-      b.ball.material.opacity = 0.7 * (1 - k);
+      updateBurstFx(b, Math.max(0, k));
     }
   }
 
@@ -3822,7 +3900,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     floatDmgs.length = 0;
     for (const b of burstFx) {
       scene.remove(b.g);
-      fxGive('burst', { g: b.g, rings: b.rings, ball: b.ball });
+      fxGive('burst', b);
     }
     burstFx.length = 0;
     ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
@@ -4237,6 +4315,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     while (shotPtr < shots.length && shots[shotPtr].t_fire <= T) { spawnShot(shots[shotPtr]); shotPtr++; }
     updateTracers();
     advanceKills();
+    // Visibility/position at this T must precede feedback: a newly destroyed vehicle
+    // can become visible again after coverage ended, so last frame's visibility is stale.
+    for (const v of V) applyPose(v);
+    suspSnap = false;   // pose has consumed the seek snap for this tick
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
@@ -4245,8 +4327,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
       spawnBurst(burstEvents[burstPtr++].eid);
     }
-    for (const v of V) applyPose(v);
-    suspSnap = false;   // 跳变标志只作用于本 tick
     updateDestructibles(T);
     updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     updateScore();
@@ -4346,6 +4426,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     canonicalClock = clock && Number.isFinite(clock.startRaw) ? { startRaw: clock.startRaw, durationSec: clock.durationSec } : null;
     if (!DATA) return;
     [START, END] = battleRange();
+    buildBurstSources();
+    burstPtr = firstIndexAfter(burstEvents, T);   // late canonical never replays past explosions
     store.startTime = START;
     store.duration = END;
     const t = Math.max(START, Math.min(END, T));
@@ -4820,6 +4902,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     sceneClock = resolveReplayClock(DATA.periods || [], null, DATA.meta.duration);
     [START, END] = battleRange();
     T = START;
+    burstPtr = firstIndexAfter(burstEvents, T);
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     prewarmShaders();
