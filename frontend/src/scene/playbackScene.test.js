@@ -589,6 +589,51 @@ describe('playbackScene 会话代数契约', () => {
       expect(pumped).toEqual(oneShot)
     })
 
+    it('环满边界：ownership 切换点 = 激活而非提交完成（review 五轮 P2 复现）', async () => {
+      const { api, v } = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
+      const alphaAt = (k) => v.treadMesh.geometry.getAttribute('color').array[k * 32 + 3]
+      const smooth = (age) => {
+        const start = 5.45, end = 7.62
+        if (age < -1e-9) return 0
+        if (!(age > start)) return 1
+        if (age >= end) return 0
+        const x = (age - start) / (end - start)
+        return 1 - x * x * (3 - 2 * x)
+      }
+      // seek(42+10)：total=50（环满）、未再移动 ⇒ open=null（< 0.3m 门未过）。
+      // write 槽（slot 0 = 最老戳槽）必须**继续显示最老 committed 的自然淡出 alpha**，
+      // 不得被 ownership 提前清 0（评审复现的"实际只显示 49 个"）。
+      api.seekTime(42 + 10)
+      expect(v.trail.L.total).toBe(50)
+      expect(v.trail.L.open).toBeNull()
+      const oldest = v.trail.L.segs[0]
+      const expectedOldest = Math.fround(
+        smooth(10 - (oldest.t - 42)) * (v.tread.texScale || 1))
+      expect(alphaAt(0)).toBe(expectedOldest)
+      // 52.05（尾巴 0.05s，不足整片不喂样）：游标停在 52.0，open 维持 null、
+      // write 槽仍归旧 committed（"小于激活门不顶掉最老槽"的行为由激活门纯函数
+      // 用例 + 此处 52.0 态共同覆盖）
+      api.seekTime(42 + 10.05)
+      expect(v.trail.L.open).toBeNull()
+      const oldest2 = v.trail.L.segs[0]
+      expect(alphaAt(0)).toBe(Math.fround(
+        smooth(10 - (oldest2.t - 42)) * (v.tread.texScale || 1)))
+      // +0.30m：激活 ⇒ write 槽切给活戳：alpha = 活戳（texScale × 1.0）
+      //（注意 feedTrail 只喂完整 0.1s 网格片：+0.06s 不足一片，须跳过片界再回来）
+      // 激活探针取**网格点** 52.1（52.0 + 整片；52.06 的尾巴 0.06s 按"不足整片留待下次"
+      // 的既定语义不喂样）：0.5 m ≥ 0.3 ⇒ 激活。
+      api.seekTime(42 + 10.1)
+      expect(v.trail.L.open).not.toBeNull()
+      expect(alphaAt(0)).toBe(Math.fround(1 * (v.tread.texScale || 1)))
+      // 再走 1 m（52.1 → 52.2 是 0.5m？不：0.1s×5m/s = 0.5m…… total 50→51 说明
+      // 52.1 重放时 total=50 是"50.5m 取整"，52.2 = 51m ⇒ 第 51 锚落锚（>0.3 激活后
+      // 累计满 1m）。落锚后新 write 槽待重新激活（open=null）——客户端语义。
+      api.seekTime(42 + 10.2)
+      expect(v.trail.L.total).toBe(51)
+      expect(v.trail.L.open).toBeNull()
+      expect(alphaAt(0)).toBe(Math.fround(1 * (v.tread.texScale || 1)))
+    })
+
     it('alpha 量化门控：时钟不变的重复 tick 不再标脏重传（review P3 2026-10-11）', async () => {
       const { api, v } = await setupTrail({ n: 580, pos: linePos(580) })
       api.seekTime(42 + 10)
