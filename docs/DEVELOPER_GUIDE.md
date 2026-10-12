@@ -112,7 +112,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 
 ### HTTP Contract workflow
 
-HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。服务端 Playback artifact 已退役，客户端投影继续使用 generated schema 校验；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
+HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。服务端 Playback artifact 已退役，客户端投影继续使用 generated schema 校验；HTTP status 依具体 endpoint 契约解释，本地 Playback unavailable 与 schema violation 必须区分。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
 ### PR CI validation gate
 
@@ -648,8 +648,7 @@ Komodo 域名 DNSPod 记录由独立 `infra/tofu/komodo` root 管理。旧 Yecao
 
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
-`wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流
-禁止通过输入参数覆盖版本，并把版本、bridge version、源 commit SHA 写入
+`wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；stage 不允许输入覆盖源码版本；publish 的 version 输入只选择已 staged 的不可变候选，不重建或改写其版本。发布将版本、bridge version、源 commit SHA 写入
 `version.json`。`contracts/android-native-bridge.json` 是 Native/Web bridge
 契约 SSOT；运行时变更必须 bump Android 版本，breaking bridge 变更必须同步 bump
 bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 的版本与契约，

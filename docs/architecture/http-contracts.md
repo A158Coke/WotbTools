@@ -36,7 +36,7 @@ OpenAPI → generated FE transport → BE serialization/mapper → runtime valid
 
 - Domain enum 与 wire enum 必须显式映射。客户端 Playback 投影输出契约中的 `HIGH/MEDIUM/LOW/UNKNOWN`，不得同时接受两套值来掩盖 producer violation。
 - 服务端 Playback 端点、持久化 artifact 与 `ReplayArtifactWriter` 已退役；当前数据由客户端 `replay-local/playback` 生成并经 generated validator 校验。历史 artifact 的 normalization 不再是当前运行链路。
-- `204` 表示 capability unavailable，不是 JSON schema failure；`200` response 无法通过 schema 才是 transport contract failure。
+- HTTP status 按具体 endpoint 的 OpenAPI 定义解释：当前 `204` 可表示删除完成或 AI 取消成功，不能统一解释为 capability unavailable。旧 Playback HTTP 的 unavailable 已退役，当前本地 `dataset=null` / `overview=null` 与数据形状校验失败仍是不同状态；带 JSON 的成功响应无法通过对应 schema 才是 transport contract failure。
 - ApiError 使用统一 envelope：稳定 `errorCode`、HTTP/body status、`retryable`、安全 `details`、timestamp 与诊断 `id`。SSE 是另一种传输形状，后续单独建模，不把它伪装成 JSON response。
 
 ## CORS
