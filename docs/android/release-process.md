@@ -188,6 +188,29 @@ publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/downl
 Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-Encoding、Accept；
 Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于这条发布链。
 
+## 强制更新门槛（minSupportedVersionCode）的抬升
+
+门槛值来自 GitHub Actions variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（**不在仓库内**，见
+`gh variable list`），但它**只能随一次"严格更新版本"的 publish 写进 version.json**：
+`classify_prod` 把 `minSupportedVersionCode` 计入同版本一致性判定，对 production 同版本直接注入
+新门槛会得到 `prod_equal_conflict`（fail-closed）——同位改写被刻意禁止，抬门槛必然伴随一次
+新版本发布。最小动作三步：
+
+1. 递增 `android/gradle.properties:wotbVersion`（Version-as-Code，普通 PR）→ 合并 main 自动 stage；
+2. 把变量设为目标门槛值（`guard_min_supported` 校验 ≤ 新版本 code）；
+3. `workflow_dispatch(mode=publish, version=<新版本>)` 写新 manifest（publish 身份核验不变）。
+
+客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：
+`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；
+`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
+
+历次门槛：
+- 2001012（2.1.12；2026-10-07 设定，至 2026-10-12 生效值）；
+- **2002002（2.2.2；2026-10-12 抬升，由 2.2.3 版本携带发布）** —— 所有低于 2.2.2 的客户端
+  强制更新到当时最新版本：2.2.2 是首个携带新 WASM 引擎（Agent v0.4.4：作者车 type=10 接收
+  突发时间轴重建）与履带印数据面/运行时口径的版本，旧客户端不再受支持。2.2.2 客户端只收到
+  可选更新提示（不强制）。
+
 ## Rollout 与验证
 
 先上线 production API exact-origin CORS、reviewed asset gateway 与 Keycloak client，再 stage。
