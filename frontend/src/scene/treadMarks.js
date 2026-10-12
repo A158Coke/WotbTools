@@ -14,7 +14,7 @@
  *   ⇒ 印记长度天然有界（约 ring × space 米），环形覆写而不是无限累积；
  * - **锚点/提交语义**：每个槽位的戳 = 「上次落锚点 → 当前触地点」的扫掠四边形；触地点与锚点
  *   距离满阈值（`0x83d4ca-0x83d507` 的距离平方门控）才**就地重新落锚**（锚点 = 当前点，不做
- *   精确倍数插值）——因此重复碾压同一块地面 = 槽位重新落锚 + 刷新出生时刻，**不叠墨**；
+ *   精确倍数插值）——槽位是滑动窗口，印记随 7.62 s 淡出自然消失；
  * - **边界抖动退休**：戳长 ∈ [space, space + 步长]，不存在"整数边界"可被重复跨越；
  * - **时间门控/淡出窗**：`now > slot.t + 7.62`、`+5.45`（常数 0x4010f98 / 0x4010f94）——
  *   与着色器 `1 − smoothstep(fadeOutTimeStartEnd)` 的形态一致，取作本实现的淡出窗；
@@ -232,118 +232,17 @@ export function advanceTrail(st, pts, space, cap) {
   return added;
 }
 /**
- * 线段 a（新戳）与线段 b（旧槽）的地带关系（2D，三分支）。返回：
- *   'none'      无有效重叠（平行但分离 / 不相交）
- *   'partial'   相交但 **b 未被完全覆盖**（垂直/斜向交叉、部分共线重叠——b 有残留地带）
- *   'covered'   **b 整段落在 a 的地带内**：b 两端到 a 直线的垂距都 ≈ 0（b 与 a 共线）
- *               且 b 两端在 a 轴上的投影都 ∈ [0,1]。垂直/斜向交叉时 b 两端垂距 = 交叉点
- *               两侧的真实距离 ≠ 0 ⇒ 'partial'（2026-10-12 三轮 review P2：一维投影
- *               单独会把垂直交叉判成 covered，误删交叉地带外的历史）
- * 共线分支含**垂直距离**：平行（denom≈0）必须垂距 ≈ 0 才算共线（平行车道不是同一地带，
- * 2026-10-12 一轮 review P2）。**"相交"与"完整覆盖"是两个判定**，混用会误删历史
- * （三轮 review P2 ×2）。
- */
-function segRelation(ax0, az0, ax1, az1, bx0, bz0, bx1, bz1) {
-  const bax = ax1 - ax0, baz = az1 - az0;
-  const gax = bx1 - bx0, gaz = bz1 - bz0;
-  const denom = bax * gaz - baz * gax;
-  const fLen = Math.hypot(bax, baz);
-  const rx = bx0 - ax0, rz = bz0 - az0;
-  if (Math.abs(denom) < 1e-12 * Math.max(1, fLen)) {
-    if (fLen < 1e-9) return 'none';
-    // 平行：垂距（r 在 b 的法向分量 / |b|）
-    const perp = (rx * gaz - rz * gax) / fLen;
-    if (Math.abs(perp) > 1e-6) return 'none';           // 平行但分离：不同地带
-    const gLen = Math.hypot(gax, gaz);
-    if (gLen < 1e-9) return 'none';
-    const p0 = (rx * bax + rz * baz) / (fLen * fLen);
-    const p1 = ((bx1 - ax0) * bax + (bz1 - az0) * baz) / (fLen * fLen);
-    const lo = Math.min(p0, p1), hi = Math.max(p0, p1);
-    if (hi < -1e-9 || lo > 1 + 1e-9) return 'none';     // 共线但分离
-    // covered = **双向包含其一**：b ⊆ a（b 两端投影 ∈ [0,1]）或 a ⊆ b（a 两端投影 ∈ b 轴
-    // [0,1]）——同一条带上的完全重叠（往返碾压的主流形态：回程短戳完全落在去程长槽内）
-    // 都算同地带，重占语义一致；仅部分搭接才 'partial'。
-    const q0 = -(rx * gax + rz * gaz) / (gLen * gLen);
-    const q1 = ((ax1 - bx0) * gax + (az1 - bz0) * gaz) / (gLen * gLen);
-    const bInA = lo >= -1e-9 && hi <= 1 + 1e-9;
-    const aInB = Math.min(q0, q1) >= -1e-9 && Math.max(q0, q1) <= 1 + 1e-9;
-    return (bInA || aInB) ? 'covered' : 'partial';
-  }
-  const tSeg = (rx * gaz - rz * gax) / denom;
-  const tG = (rx * baz - rz * bax) / denom;
-  if (tSeg < -1e-9 || tSeg > 1 + 1e-9 || tG < -1e-9 || tG > 1 + 1e-9) return 'none';
-  // 非平行相交：**b 完全覆盖 = b 两端到 a 直线的垂距都 ≈ 0 且投影 ∈ [0,1]**——垂直/
-  // 斜向交叉时 b 的两端垂距是交叉点两侧的真实距离（不为 0），绝不判 covered
-  // （评审复现：竖向 [0.5,±0.5] 被横向回压整槽清掉，点 (0.5,0.4) 在横条带外）。
-  // 一维投影单独不充分：垂直交叉时 b 两端的 a 轴投影都等于交叉点位置。
-  const nLen = Math.hypot(baz, bax) || 1e-12;          // a 的法向长度（|a|）
-  const d0 = Math.abs(rx * baz - rz * bax) / nLen;
-  const d1 = Math.abs((bx1 - ax0) * baz - (bz1 - az0) * bax) / nLen;
-  const pB0 = (rx * bax + rz * baz) / (fLen * fLen);
-  const pB1 = ((bx1 - ax0) * bax + (bz1 - az0) * baz) / (fLen * fLen);
-  const bOnLine = d0 <= 1e-6 && d1 <= 1e-6;            // b 两端都在 a 直线上（共线续段）
-  const bIn = Math.min(pB0, pB1) >= -1e-9 && Math.max(pB0, pB1) <= 1 + 1e-9;
-  if (!bOnLine) return 'partial';                      // 垂直/斜向交叉：只有交叉区被覆盖
-  // 共线续段：与共线分支同判（双向包含其一）
-  const gLen2v = Math.hypot(gax, gaz);
-  const q0 = -(rx * gax + rz * gaz) / (gLen2v * gLen2v);
-  const q1 = ((ax1 - bx0) * gax + (az1 - bz0) * gaz) / (gLen2v * gLen2v);
-  const aIn = Math.min(q0, q1) >= -1e-9 && Math.max(q0, q1) <= 1 + 1e-9;
-  return (bIn || aIn) ? 'covered' : 'partial';
-}
-
-/**
- * 提交一枚戳进环。
+ * 提交一枚戳进环（普通追加；环形覆写只替换 `segs[k % cap]` 槽位内容）。
  *
- * **回压重占（空间去重，2026-10-12 review P2；三轮修判定）**：新戳"往回走"（方向相反 +
- * 锚点在后方，双条件防圆周/转弯误伤）且**完全覆盖**某已有槽（`segRelation` = 'covered'，
- * 双向投影防垂直交叉误判）时，**重占该槽**（写新戳、刷新 `lastSegT`、回退 `written` 保证
- * 重传），并把**被完全覆盖的其它槽清空**（写 `null`，写盘时显式隐藏）——同一块地面任一
- * 时刻只由当前持有它的槽位表达，往返碾压不叠墨。'partial'（垂直/斜向交叉、部分共线重叠）
- * **保守不覆写**——覆写会丢旧槽未覆盖的尾段（评审复现：旧 [0→1] 被回压 [0.6→−0.4] 整槽
- * 替换，尾段 [0.6,1] 消失）；短暂重叠随旧槽自然淡出收敛。平行但分离（垂距 > 0）历史保留；
- * 前进方向（方向点积 ≥ 0，含锐角折返/转弯）不触发去重。
+ * **无空间去重（2026-10-12 方向收敛，A158Coke 裁示）**：客户端反汇编只证明了
+ * 「50 槽环 + 槽位时间随落锚刷新 + 7.62 s 淡出」——印记是短寿命对象（最多 7.62 s），
+ * 反汇编证据里**没有**“同地带重占/几何去重”的提交规则（0xe79050 是整批重发，槽位就是
+ * 滑动窗口本身）。此前自创的 `segRelation`/回压重占层数轮评审持续引入真实 bug
+ * （平行车道误伤、交叉误判、partial 覆写丢尾段、a⊂b 丢两端），收益（消除 7.62 s 内的
+ * 短暂重叠）远低于代价，整层移除：重叠由自然淡出收敛。若后续反汇编确认客户端确有
+ * 去重提交规则，再按其真实机制实现。
  */
 function pushSeg(st, seg, cap) {
-  const bax = seg.x1 - seg.x0, baz = seg.z1 - seg.z0;
-  const fLen = Math.hypot(bax, baz);
-  if (st.segs.length > 0 && fLen > 1e-9) {
-    const latest = st.total;                            // 环内有效域 [total-len, total)
-    const len = Math.min(st.segs.length, cap);
-    for (let k = 1; k <= len; k++) {
-      const idx = (latest - k) % cap;
-      const g = st.segs[idx];
-      if (!g) continue;
-      const gax = g.x1 - g.x0, gaz = g.z1 - g.z0;
-      // 回退判定（双条件防圆周/转弯误伤）：
-      // ① 方向相反：新戳方向与该槽方向点积 < 0（圆周前进相邻槽夹角小，恒 ≥ 0）；
-      // ② 位置在后：新锚点相对该槽起点落在新戳行进方向的反侧。
-      const back = (bax * gax + baz * gaz) < 0
-        && (bax * (seg.x0 - g.x0) + baz * (seg.z0 - g.z0)) < 0;
-      if (!back) continue;
-      // **重占与清空同条件：只有完全覆盖（'covered'）才动旧槽**——'partial'（垂直/斜向
-      // 交叉、部分共线重叠）保守不覆写、正常追加：覆写会丢旧槽未覆盖的尾段（三轮 review
-      // P2 复现：旧 [0→1] 被回压 [0.6→−0.4] 整槽替换，尾段 [0.6,1] 无故消失）；而追加的
-      // 短暂重叠会随旧槽自然淡出收敛（不叠墨是槽位语义，不靠这一次写盘强保证）。
-      // 'none'（平行但分离 / 不相交）同样不动——历史保留。
-      if (segRelation(seg.x0, seg.z0, seg.x1, seg.z1, g.x0, g.z0, g.x1, g.z1) !== 'covered') continue;
-      st.segs[idx] = seg;                               // 重占该槽：刷新时刻、不叠层
-      st.lastSegT = seg.t;
-      if (st.written > latest - k) st.written = latest - k;   // 覆写槽重传
-      // 被新戳**完全覆盖**的其它旧槽一并清空（每槽独立按自身几何判定）
-      for (let j = 1; j <= len; j++) {
-        if (j === k) continue;
-        const jdx = (latest - j) % cap;
-        const o = st.segs[jdx];
-        if (!o) continue;
-        if (segRelation(seg.x0, seg.z0, seg.x1, seg.z1, o.x0, o.z0, o.x1, o.z1) === 'covered') {
-          st.segs[jdx] = null;
-          if (st.written > latest - j) st.written = latest - j;
-        }
-      }
-      return;
-    }
-  }
   if (st.segs.length < cap) st.segs.push(seg);
   else {
     st.segs[st.head] = seg;
