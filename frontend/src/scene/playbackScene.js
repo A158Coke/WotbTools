@@ -2794,7 +2794,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             wrote = true;
           }
         }
-      } else {
+      } else if (openActive || st.total < TRAIL_CAP_PER_SIDE) {
+        // ownership 三态：active 已激活但几何无效，或环未满且无 active 时，这个 write 槽
+        // 不属于历史 committed，必须隐藏；环已满 + open==null 时 write 槽仍由最老
+        // committed 占有，不能在这里清零（review 七轮 P2）。
         hideQuads(col0);
       }
     }
