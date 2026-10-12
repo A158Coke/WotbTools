@@ -24,7 +24,7 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 
 `.agents/skills/`：grill-me（需求澄清）· plan-designer（方案设计）· plan-executer ·
 prompt-repair-executor（基于现成修复提示词增量修复）· review-fix · review-with-docs · code-smell ·
-column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
+product-qa（真实浏览器黑盒产品 QA）· column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
 
 ## 文档入口
 
