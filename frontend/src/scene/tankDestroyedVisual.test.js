@@ -48,7 +48,7 @@ describe('per-vehicle destroyed material ownership', () => {
     expect(shader.uniforms.uDestroyedAmount.value).toBe(0.5)
     applyTankDestroyedVisual(va, 1)
     expect(ma.roughness).toBe(1)
-    expect(ma.metalness).toBeCloseTo(0.24)
+    expect(ma.metalness).toBeCloseTo(0.04)
     expect(ma.emissive.getHex()).toBe(0)
     expect(ma.opacity).toBe(0.8)
     expect(ma.color.equals(source.color)).toBe(true)
@@ -82,8 +82,12 @@ describe('per-vehicle destroyed material ownership', () => {
     expect(shader.fragmentShader.match(/irradiance = vec3/g)).toHaveLength(1)
     expect(shader.fragmentShader).toContain('uniform float uDestroyedAmount;')
     expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeGreaterThan(shader.fragmentShader.indexOf('vec3 outgoingLight'))
-    expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeLessThan(shader.fragmentShader.indexOf('#include <opaque_fragment>'))
-    expect(material.customProgramCacheKey()).toBe('existing-variant|tank-noambient|tank-destroyed-v1')
+    expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeGreaterThan(shader.fragmentShader.indexOf('#include <colorspace_fragment>'))
+    expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeGreaterThan(shader.fragmentShader.indexOf('#include <fog_fragment>'))
+    expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeLessThan(shader.fragmentShader.indexOf('#include <premultiplied_alpha_fragment>'))
+    expect(shader.fragmentShader).toContain('vec3(destroyedLuma * 0.30)')
+    expect(shader.fragmentShader).not.toContain('outgoingLight = mix(')
+    expect(material.customProgramCacheKey()).toBe('existing-variant|tank-noambient|tank-destroyed-v2')
     expect(source.onBeforeCompile).not.toBe(material.onBeforeCompile)
   })
 
@@ -104,6 +108,19 @@ describe('per-vehicle destroyed material ownership', () => {
     expect(visual.materials).toHaveLength(1)
     applyTankDestroyedVisual(visual, NaN)
     expect(shader.uniforms.uDestroyedAmount.value).toBe(0)
+  })
+
+  it('matte charcoal suppresses highlights and low roughness is restored on rewind', () => {
+    const source = new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 1 })
+    const root = model(source)
+    const visual = prepareTankDestroyedVisual(root)
+    const material = root.children[0].material
+    applyTankDestroyedVisual(visual, 1)
+    expect(material.roughness).toBeCloseTo(0.9)
+    expect(material.metalness).toBeCloseTo(0.05)
+    applyTankDestroyedVisual(visual, 0)
+    expect(material.roughness).toBe(0.2)
+    expect(material.metalness).toBe(1)
   })
 
   it('disposes each owned clone once and leaves borrowed textures/geometry/template intact', () => {

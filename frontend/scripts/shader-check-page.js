@@ -6,6 +6,7 @@ import {
   makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, makeWaterMaterial,
   makeDecalMaterial, patchTankMaterial,
 } from '../src/scene/sceneryMaterials.js'
+import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
 
 window.__step = 'module-start'
 const log = []
@@ -58,6 +59,14 @@ async function groundMaterialCase() {
 const groundVar = { mat: null }
 try { groundVar.mat = await groundMaterialCase() } catch (e) { console.error('[gate] 地面着色器抽取失败:', e) }
 
+function destroyedTankMaterial(material) {
+  const root = new THREE.Group()
+  const mesh = new THREE.Mesh(geo(), material)
+  root.add(mesh)
+  applyTankDestroyedVisual(prepareTankDestroyedVisual(root), 1)
+  return mesh.material
+}
+
 const cases = [
   ['lightmapped', () => makeLightmappedMaterial(fakeMat(), T), geo()],
   ['lightmapped+detail(B1)', () => makeLightmappedMaterial(fakeMat(), T, null, { tex: T, scale: [3.6, 2.4] }), geo()],
@@ -72,6 +81,8 @@ const cases = [
   // 坦克 PBR：打了环境隔离补丁的 MeshStandardMaterial 必须能编译（补丁注入点在 three 的
   // lights_fragment_begin 之后；门禁场景里有半球光 ⇒ NUM_HEMI_LIGHTS>0 的真实编译路径）
   ['tank-pbr(ambient-isolated)', () => patchTankMaterial(fakeMat()), geo({ uv1: false })],
+  ['tank-pbr(destroyed-charcoal)', () => destroyedTankMaterial(fakeMat()), geo({ uv1: false })],
+  ['tank-proxy(destroyed-charcoal)', () => destroyedTankMaterial(new THREE.MeshLambertMaterial()), geo({ uv1: false })],
   ['blend-by-angle', () => makeBlendByAngleMaterial(fakeMat(), { bounds: [0, 1], power: 1, inversion: 0 }), geo({ uv1: false })],
   ['sky', () => makeSkyMaterial(fakeMat()), geo({ uv1: false })],
   ['billboard', () => makeBillboardMaterial(fakeMat({ color: new THREE.Color(1.77, 1.77, 1.77) })), geo({ corner: true })],

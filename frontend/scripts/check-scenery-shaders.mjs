@@ -30,6 +30,7 @@ async function main() {
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
+    cacheDir: 'node_modules/.vite-shader-check',  // isolate from the user's running preview
     logLevel: 'error',
     plugins: [{
       name: 'shader-check-page',
