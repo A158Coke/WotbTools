@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState,
+  GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState, openStampOf,
   resetTrailState, resolveTreadParams, textureStemOf,
-  trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE, TREAD_RING,
+  TREAD_ACTIVATE,
 } from './treadMarks.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -23,15 +24,36 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     // 播放或 seek 才更新——实测 setTreadMarks(false) 后 mesh.visible 仍为 true。
     expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{[\s\S]{0,700}?updateTrails\(\);/)
   })
-  it('绘制窗口取较长侧并显式隐藏较短侧空槽（review P2 2026-10-11：转弯 L≠R 不截长边）', () => {
-    expect(sceneSrc).toMatch(/Math\.min\(Math\.max\(tr\.L\.total, tr\.R\.total\), TRAIL_CAP_PER_SIDE\)/)
-    expect(sceneSrc).toMatch(/for \(let k = st\.total; k < pairs; k\+\+\)/)
+  it('客户端槽位模型接线：50 槽含活戳（write 槽）+ 全窗口显式隐藏（0x727b80 同构）', () => {
+    // 反汇编定案（落锚函数 0x727b80）：`head=write; write=(write+1)%50; count 封顶 50`
+    // ——活戳占 write 槽（= total % cap），**没有独立第 51 槽**。
+    expect(sceneSrc).toMatch(/const TRAIL_CAP_PER_SIDE = TREAD_RING;/)
+    expect(sceneSrc).not.toMatch(/TRAIL_OPEN_SLOT/)
+    expect(sceneSrc).toMatch(/const TRAIL_SLOTS = TRAIL_CAP_PER_SIDE \* 2;/)
+    expect(sceneSrc).toMatch(/const openSlot = st\.total % TRAIL_CAP_PER_SIDE;/)
+    // 绘制窗口 = 全部槽位（不再按 min/max(L,R) 取窗互相截断），无效槽显式隐藏
+    expect(sceneSrc).toMatch(/geo\.setDrawRange\(0, TRAIL_SLOTS \* 6\);/)
+    expect(sceneSrc).toMatch(/const open = openStampOf\(st\);/)
+    expect(sceneSrc).toMatch(/hideQuads\(/)
+  })
+  it('激活门 = 客户端 0x3632a54（0.3 m 净位移才开始拉伸活戳）', () => {
+    expect(TREAD_ACTIVATE).toBeCloseTo(0.3, 6)
+  })
+  it('淡出窗 = 客户端引擎常数（TREAD_FADE.start/end；老化逐槽独立、无有序假设）', () => {
+    // review P2 2026-10-12：回压重占改单槽 t + null 清空槽 ⇒ "按序号时间有序"的二分老化
+    // 前提不成立（重占后的新戳会被当过期前缀清 0）——老化必须是逐槽按自身 t 独立计算。
+    expect(sceneSrc).not.toMatch(/const cutoff = T - TREAD_FADE\.end;/)
+    expect(sceneSrc).toMatch(/逐槽独立老化，不做任何时间有序假设/)
+    expect(sceneSrc).toMatch(/const a = seg \? Math\.fround\(treadAlphaAt\(T - seg\.t\)/)
   })
   it('关断重开必须复位两侧路径态（不只回退 builtT；review P2 2026-10-11）', () => {
     expect(sceneSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
   })
   it('alpha 比较必须走 Math.fround 量化门控（review P3 2026-10-11：double 严格比较恒为脏）', () => {
-    expect(sceneSrc).toMatch(/const a = Math\.fround\(treadAlphaAt\(T - seg\.t\) \* TREAD_OPACITY/)
+    // 客户端口径：alpha = 淡出系数 × per-stem 归一化，**无全局压暗系数**（2026-10-12 裁示）
+    expect(sceneSrc).toMatch(/Math\.fround\(treadAlphaAt\(T - t\) \* \(v\.tread\.texScale \|\| 1\)\)/)
+    expect(sceneSrc).not.toMatch(/TREAD_OPACITY/)
+    expect(sceneSrc).toMatch(/parr\[pos0 \+ i\] !== Math\.fround\(c12\[i\]\)/)
   })
   it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
     expect(sceneSrc).toMatch(/v\.treadMesh\.geometry\.dispose\(\)/)
@@ -95,120 +117,268 @@ describe('textureStemOf / treadScaleFor（alpha 归一化）', () => {
   })
 })
 
-describe('advanceTrail', () => {
-  it('直线 10 m / space 1.0 → 10 戳，横截面依次落在 1..10（相邻戳共享边）', () => {
+describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）', () => {
+  it('直线 10 m / space 1.0 → 10 戳，锚点落在采样点、相邻戳共享接缝边', () => {
     const st = createTrailState()
     const added = advanceTrail(st, line(0, 0, 1, 0, 1, 10), 1.0, 1e9)
     expect(added).toBe(10)
     expect(st.segs.map((s) => s.x1)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(st.segs.map((s) => s.x0)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     for (let k = 1; k < st.segs.length; k++) {
-      // 不变量：前戳的远端 = 后戳的近端（共享整条横截面）
+      // 不变量：前戳的远端 = 后戳的近端（共享整条横截面）⇒ 单趟内零重叠
       expect(st.segs[k].x0).toBe(st.segs[k - 1].x1)
       expect(st.segs[k].z0).toBe(st.segs[k - 1].z1)
       expect(st.segs[k].yaw0).toBe(st.segs[k - 1].yaw1)
     }
-    expect(st.segs[0].t).toBeCloseTo(1)   // 戳携带出生时刻（寿命淡出用）
+    // 出生时刻 = 锚点时刻，而锚点时刻始终贴住当前采样时刻（时间门控：停车/低速不冻结）
+    expect(st.segs[0].t).toBeCloseTo(1)
+    expect(st.segs[1].t).toBeCloseTo(2)
   })
-  it('首步只作锚点不出戳；累积跨过 space 后出一戳（远端 = 交会点，步内插值）', () => {
+  it('前沿跟随：未满 space 不出戳，活戳末端始终拉伸到当前采样点', () => {
+    const st = createTrailState()
+    expect(advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }], 1.0, 50)).toBe(0)
+    expect(openStampOf(st)).toBeNull()                 // 刚起步：活戳退化（长度为 0）
+    advanceTrail(st, [{ x: 0.3, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(st.total).toBe(0)
+    let open = openStampOf(st)
+    expect(open.x0).toBeCloseTo(0)
+    expect(open.x1).toBeCloseTo(0.3)                   // 活戳 = 锚点 → 当前点
+    expect(open.t).toBeCloseTo(1)                      // 出生 = 锚点时刻（贴住当前采样时刻）
+    advanceTrail(st, [{ x: 0.6, z: 0, t: 2, yaw: 0 }], 1.0, 50)
+    expect(st.total).toBe(0)                           // 仍不满 1 m
+    open = openStampOf(st)
+    expect(open.x1).toBeCloseTo(0.6)                   // 同一活戳继续拉伸（不新增槽位）
+  })
+  it('落锚 = 当前位置（不做精确倍数插值）：戳长 ∈ [space, space+步长]', () => {
     const st = createTrailState()
     expect(advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.6, z: 0, t: 1, yaw: 0 }], 1.0, 1e9)).toBe(0)
     expect(advanceTrail(st, [{ x: 1.2, z: 0, t: 2, yaw: 0 }], 1.0, 1e9)).toBe(1)
-    // 交会点 = 累计 1.0 处：本步 0.6→1.2 内 f=(1.0−0.6)/0.6 → x = 0.6+0.6·(1/3)… 精确 1.0
+    // 满 1 m 的是 1.2 这一点本身（不在 0.6→1.2 内插值出 1.0）——客户端 0x83d4ca 同款
     expect(st.segs[0].x0).toBeCloseTo(0)
-    expect(st.segs[0].x1).toBeCloseTo(1.0)
-    const n = line(0, 0, 1, 0, 1, 10)
+    expect(st.segs[0].x1).toBeCloseTo(1.2)
+    expect(st.anchor.x).toBeCloseTo(1.2)               // 就地重锚
     const st2 = createTrailState()
-    advanceTrail(st2, n, 1.0, 1e9)
+    advanceTrail(st2, line(0, 0, 1, 0, 1, 10), 1.0, 1e9)
     for (let k = 1; k < st2.segs.length; k++) expect(st2.segs[k].x0).toBe(st2.segs[k - 1].x1)
   })
-  it('采样粒度不影响戳数与横截面位置（交会点插值使其精确一致）', () => {
+  it('采样粒度：小步与单步在 1 m 采样上同形（锚点只落在采样点）', () => {
     const st = createTrailState()
     advanceTrail(st, line(0, 0, 1, 0, 0.1, 10), 1.0, 1e9)           // 10 小步走 1 m
     const big = createTrailState()
     advanceTrail(big, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 1e9)
-    expect(big.segs.length).toBe(st.segs.length)
-    expect(big.segs[0].x1).toBeCloseTo(st.segs[0].x1)   // 交会点由距离分数决定 ⇒ 与步长无关
+    expect(big.segs.length).toBe(st.segs.length)                     // 都只落 1 戳
+    expect(big.segs[0].x1).toBeCloseTo(st.segs[0].x1)
   })
-  it('边界抖动防护：步长带 ~1e-10 抖动时同一整数界不得重复出段（2026-10-11 定案）', () => {
-    // 复现现场：插值点位使每步 d = 0.5 − 1e-10（累计 acc 落在整数界下 1e-9 内）——
-    // 旧实现 floor(acc/space)+1 对下一个半步仍算出同一 j，配合 +1e-9 容差把同一段发两次
-    // （实测 20 m 窗口发 27~29 段、轨迹出现不规则双段/深浅不均）。修复后每边界只发一次。
+  it('无整数边界 ⇒ 无重复戳（旧 floor+静差防抖机制随之退休）', () => {
+    // 旧模型按 floor(acc/space)+1 找整数边界，步长抖动会把同一戳发两次（实测 20 m 发
+    // 29/27 戳）；新模型锚点直接落在采样点，不存在可被重复跨越的边界。
     const st = createTrailState()
     const step = 0.5 - 1e-10
     const pts = []
     for (let i = 0; i < 10; i++) pts.push({ x: i * step, z: 0, t: i })
     const added = advanceTrail(st, pts, 1.0, 1e9)
-    // 总里程 = 9 × (0.5 − 1e-10) ≈ 4.5 − 1e-9 ⇒ 精确跨越边界 1..4
+    // 阈值带 1e-9 容差（浮点欠冲）：i=2（2s = 0.9999999998 ≥ 1−1e-9）落锚，此后每 2 步一戳
+    // ⇒ i=2,4,6,8 共 4 戳、无重复（旧模型的 4 戳结论保持，但机制换成锚点距离门控）
     expect(added).toBe(4)
     expect(st.total).toBe(4)
     expect(st.segs.every((sg) => Number.isFinite(sg.x0) && Number.isFinite(sg.x1))).toBe(true)
+    for (let k = 1; k < st.segs.length; k++) expect(st.segs[k].x0).toBe(st.segs[k - 1].x1)
   })
-
-  it('环形上限：覆写最老槽位（槽位 = 绝对序号 % cap），total 持续累计', () => {
+  it('环形上限（客户端 50 槽同构）：覆写最老槽位，total 持续累计', () => {
     const st = createTrailState()
     const added = advanceTrail(st, line(0, 0, 1, 0, 1, 12), 1.0, 10)
     expect(added).toBe(12)
     expect(st.total).toBe(12)
     expect(st.segs.length).toBe(10)
-    expect(st.head).toBe(2)                       // 下一覆写槽 = 12 % 10
-    // 槽位不变量：segs[k % cap] = 绝对序号 k 的戳（老戳被覆写、新戳照常可寻址）
+    expect(st.total % 10).toBe(2)                 // 下一定型槽 = 12 % 10（write 由 total 隐式表达）
     expect(st.segs[0].x1).toBeCloseTo(11)          // 槽 0 已被绝对序号 10 覆写（远端 = 11 m）
     expect(st.segs[1].x1).toBeCloseTo(12)          // 槽 1 = 绝对序号 11
     expect(st.segs[7].x1).toBeCloseTo(8)           // 槽 7 仍是绝对序号 7
+    expect(TREAD_RING).toBe(50)                    // 生产环 = 客户端反汇编值（0x32）
   })
-  it('转向：横截面位置沿路径、朝向随点携带（在段内插值）', () => {
+  it('转向：锚点沿路径、朝向随点携带（长戳覆盖整个弧段）', () => {
     const st = createTrailState()
     advanceTrail(st, [
       { x: 0, z: 0, t: 0, yaw: 0 },
       { x: 2, z: 0, t: 2, yaw: 0 },
       { x: 2, z: 2, t: 4, yaw: Math.PI / 2 },
     ], 1.0, 1e9)
-    expect(st.total).toBe(4)
+    expect(st.total).toBe(2)
     const last = st.segs[st.segs.length - 1]
-    expect(last.z1).toBeCloseTo(2)         // 最后一戳远端落在 z=2
-    expect(last.x1).toBeCloseTo(2)
-    // 朝向在 0→90° 段内插值：末戳 yaw1 = 90°
-    expect(last.yaw1).toBeCloseTo(Math.PI / 2)
+    expect(last.x0).toBeCloseTo(2); expect(last.z0).toBeCloseTo(0)
+    expect(last.x1).toBeCloseTo(2); expect(last.z1).toBeCloseTo(2)
+    expect(last.yaw0).toBeCloseTo(0)              // 锚点时刻朝向
+    expect(last.yaw1).toBeCloseTo(Math.PI / 2)    // 当前朝向：扫掠覆盖转向
   })
-  it('space 非法 / 零位移步 → 不出段不漂移', () => {
+  it('space 非法 / 零位移步 → 不出戳不漂移', () => {
     const st = createTrailState()
     expect(advanceTrail(st, line(0, 0, 1, 0, 1, 5), 0, 1e9)).toBe(0)
     expect(advanceTrail(st, [{ x: 3, z: 0 }, { x: 3, z: 0 }], 1.0, 1e9)).toBe(0)
   })
-  it('停车再起步：静止样本推进采样时刻（新戳出生时刻不倒退到停车前；review P2 2026-10-11）', () => {
-    // 复现现场：走到 0.8 m（t≈0.16）后停在原地到 t=100（位姿采样继续、位置不变），
-    // 再走到 1.3（t=100.1）。旧实现零位移直接 continue ⇒ st.t 冻在 0.16，跨过 1.0 m
-    // 打戳边界时在 0.16→100.1 之间插值，出生时刻被算成 40.1 s（实际 100.04 s）⇒
-    // 那一刻 alpha=0，新印记一出生就不可见。
+  it('停车再起步：静止不落锚；出生时刻 = 锚点时刻（不存在插值出的怪值）', () => {
+    // 旧模型在停车后的跨边界戳会把出生时刻在「停车前」与「起步后」之间插值（实测 40.136
+    // 而实际 100.1）；新模型出生 = 锚点时刻，同客户端的槽位时间语义。
     const st = createTrailState()
     const added = advanceTrail(st, [
       { x: 0, z: 0, t: 0, yaw: 0 },
-      { x: 0.8, z: 0, t: 0.16, yaw: 0 },
-      { x: 0.8, z: 0, t: 100, yaw: 0 },
-      { x: 1.3, z: 0, t: 100.1, yaw: 0 },
+      { x: 0.8, z: 0, t: 0.16, yaw: 0 },     // 满 0.5 ⇒ 落锚
+      { x: 0.8, z: 0, t: 100, yaw: 0 },      // 停车 100 s（零位移不落锚）
+      { x: 1.3, z: 0, t: 100.1, yaw: 0 },    // 再走 0.5 ⇒ 落锚
     ], 0.5, 64)
-    expect(added).toBe(2)                        // 0.5 m 与 1.0 m 两戳（静止段不出戳）
-    const last = st.segs[st.total - 1]
-    expect(last.t).toBeCloseTo(100.04, 6)        // 1.0 m 界在 0.8→1.3 步内 f=0.4：100 + 0.1×0.4
+    expect(added).toBe(2)
+    expect(st.segs[0].t).toBeCloseTo(0.16, 9)
+    expect(st.segs[0].x1).toBeCloseTo(0.8)
+    // 锚点时间门控（P2-1 修复）：锚点时刻贴住当前采样时刻——起步后提交的戳出生在 ~100 s
+    // 而不是冻在停车前的 0.16（否则淡出窗 7.62 s 早就把它收掉，起步印记不可见）
+    expect(st.segs[1].t).toBeCloseTo(100.1, 6)   // = 最后一个采样时刻（锚点时间贴住当下）
+    expect(st.segs[1].t).toBeGreaterThan(90)
+    expect(st.segs[1].x0).toBeCloseTo(0.8)
+    expect(st.segs[1].x1).toBeCloseTo(1.3)
   })
-  it('静止期间的原地转向：停顿不新出戳，转向扫掠落在跨转向的那一戳上（扭转四边形）', () => {
+  it('静止期间的原地转向：不新出戳；转向扫掠落在跨转向的那一戳上（扭转四边形）', () => {
     const st = createTrailState()
     advanceTrail(st, [
       { x: 0, z: 0, t: 0, yaw: 0 },
-      { x: 1.0, z: 0, t: 1, yaw: 0 },
-      { x: 1.0, z: 0, t: 2, yaw: Math.PI / 2 },   // 原地转 90°（零位移）
-      { x: 1.0, z: 1.0, t: 3, yaw: Math.PI / 2 },
-    ], 0.5, 64)
-    expect(st.total).toBe(4)                     // 0.5 / 1.0 / 1.5 / 2.0 m：转向段不额外出戳
-    expect(st.segs[1].yaw0).toBeCloseTo(0)       // 1.0 m 戳（转向之前）朝向未变
-    expect(st.segs[1].yaw1).toBeCloseTo(0)
+      { x: 1.0, z: 0, t: 1, yaw: 0 },               // 满 space ⇒ 落锚
+      { x: 1.0, z: 0, t: 2, yaw: Math.PI / 2 },     // 原地转 90°（零位移；活戳末端随朝向）
+      { x: 1.0, z: 1.0, t: 3, yaw: Math.PI / 2 },   // 再走 1 m ⇒ 落锚
+    ], 1.0, 64)
+    expect(st.total).toBe(2)                        // 只有两次落锚，转向段不额外出戳
+    expect(st.segs[0].yaw0).toBeCloseTo(0)
+    expect(st.segs[0].yaw1).toBeCloseTo(0)          // 第一戳（转向之前）
     // 跨转向的戳从旧朝向横截面扫到新朝向横截面（覆盖原地转向掠过的区域）
-    expect(st.segs[2].yaw0).toBeCloseTo(0)
-    expect(st.segs[2].yaw1).toBeCloseTo(Math.PI / 2)
-    expect(st.segs[3].yaw0).toBeCloseTo(Math.PI / 2)
+    expect(st.segs[1].yaw0).toBeCloseTo(0)
+    expect(st.segs[1].yaw1).toBeCloseTo(Math.PI / 2)
   })
-  it('seek 重算确定性：全量一次 == （走到 k、复位、重走到 k）', () => {
+  it('淡出后起步/低速：锚点时间门控保证新印记可见（review P2 2026-10-12 复现场景）', () => {
+    // 评审复现：space=1，(0,0)→(0.2,1)→停到 10 s→起步到 (0.4,10.1)。旧实现锚点 t 冻在 0
+    // ⇒ 活戳长 0.4 m 但 alpha=0（淡出窗 7.62 s 早已收掉）；修复后锚点时刻贴住当前采样
+    // 时刻 ⇒ 活戳出生 ~10 s，当前可见。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.2, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    advanceTrail(st, [{ x: 0.2, z: 0, t: 10, yaw: 0 }], 1.0, 50)        // 停车
+    advanceTrail(st, [{ x: 0.4, z: 0, t: 10.1, yaw: 0 }], 1.0, 50)      // 起步（未满 space）
+    expect(st.total).toBe(0)
+    const open = openStampOf(st)
+    expect(open).not.toBeNull()
+    expect(Math.hypot(open.x1 - open.x0, open.z1 - open.z0)).toBeCloseTo(0.4)
+    expect(open.t).toBeGreaterThan(7.62)               // 出生在淡出窗内 ⇒ treadAlphaAt > 0
+    expect(treadAlphaAt(10.1 - open.t)).toBeGreaterThan(0)
+    // 低速爬行（每步 0.15 m，永不落锚）：活戳持续被时间门控保鲜
+    const st2 = createTrailState()
+    let x = 0, t = 0
+    for (let i = 0; i < 60; i++) { x += 0.15; t += 0.1; advanceTrail(st2, [{ x, z: 0, t, yaw: 0 }], 1.0, 50) }
+    const open2 = openStampOf(st2)
+    expect(open2).not.toBeNull()
+    expect(open2.t).toBeGreaterThan(t - 1)             // 出生时刻 ≈ 当前（未过期）
+  })
+  it('同一条带往返：正常累积（无空间去重；重叠由 7.62s 淡出自然收敛）', () => {
+    // 2026-10-12 方向收敛（A158Coke）：客户端反汇编无"几何去重"证据，印记是短寿命对象
+    // （最多 7.62 s）。往返碾压在淡出窗内会有短暂自然重叠——这是移除自创去重层的既定
+    // 代价；本测试锁定"正常追加、槽位环形滚动"的基础行为。
+    const st = createTrailState()
+    const pts = []
+    for (let leg = 0; leg < 4; leg++) {
+      for (let k = 1; k <= 6; k++) {
+        const forward = leg % 2 === 0
+        const pos = forward ? k * 0.5 : 3 - k * 0.5
+        pts.push({ x: pos, z: 0, t: (leg * 6 + k) * 0.2, yaw: 0 })
+      }
+    }
+    advanceTrail(st, pts, 1.0, 50)
+    expect(st.total).toBe(8)                           // 0.5m 步 / space 1.0：每 leg 2 锚 ×4
+    expect(st.segs.length).toBe(8)
+    for (let k = 1; k < st.segs.length; k++) {
+      // 接缝不变量保持：环内相邻提交仍共享接缝边
+      expect(st.segs[k].x0).toBe(st.segs[k - 1].x1)
+    }
+  })
+  it('回退/折返路径也正常入环（无去重：所有新戳都是普通追加）', () => {
+    const st = createTrailState()
+    advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 1, z: 0, t: 1, yaw: 0 },
+      { x: 1, z: 1, t: 2, yaw: Math.PI / 2 },
+    ], 1.0, 50)
+    expect(st.total).toBe(2)
+    advanceTrail(st, [{ x: -0.2, z: 1.0, t: 3, yaw: Math.PI }], 1.0, 50)
+    expect(st.total).toBe(3)
+    expect(st.segs.every(Boolean)).toBe(true)
+  })
+  it('平行车道与共线往返都正常共存（无空间判定；重叠由淡出收敛）', () => {
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    resetTrailState(st)
+    advanceTrail(st, [{ x: 1, z: 10, t: 20, yaw: Math.PI }], 1.0, 50)
+    advanceTrail(st, [{ x: 0, z: 10, t: 21, yaw: Math.PI }], 1.0, 50)
+    expect(st.total).toBe(2)
+    expect(st.segs[0].x1).toBeCloseTo(1)
+    expect(st.segs[1].z0).toBeCloseTo(10)
+  })
+  it('老化逐槽独立：无序出生时刻的槽各自按自身 t 老化（评审 P2 二轮复现形态）', () => {
+    // 无去重后环内时间天然单调（新戳总在后面），但该不变量依赖重放路径——老化实现
+    // 仍须逐槽独立（接线守卫锁定），不依赖有序假设。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 1, yaw: 0 }, { x: 1, z: 0, t: 2, yaw: 0 }], 1.0, 50)
+    advanceTrail(st, [{ x: 2, z: 0, t: 3, yaw: 0 }], 1.0, 50)
+    expect(st.segs.map((g) => g.t)).toEqual([2, 3])
+    expect(treadAlphaAt(10.1 - st.segs[0].t)).toBe(0)  // 老戳 age 8.1 > 7.62 ⇒ 已消失
+    expect(treadAlphaAt(10.1 - st.segs[1].t)).toBeLessThan(0.2)   // 后戳 age 7.1：渐隐尾段
+  })
+  it('垂直交叉的两条带共存（无空间判定）', () => {
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0.5, z: -0.5, t: 0, yaw: 0 }, { x: 0.5, z: 0.5, t: 1, yaw: 0 }], 1.0, 50)
+    resetTrailState(st)
+    advanceTrail(st, [{ x: 0, z: 0, t: 2, yaw: 0 }, { x: 1, z: 0, t: 3, yaw: 0 }], 1.0, 50)
+    expect(st.total).toBe(2)
+    expect(st.segs[0].z1).toBeCloseTo(0.5)
+    expect(st.segs[1].x1).toBeCloseTo(1)
+  })
+  it('部分共线重叠共存（无去重：旧尾段保留 + 新戳追加）', () => {
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 1, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    resetTrailState(st)
+    advanceTrail(st, [{ x: 0.6, z: 0, t: 10, yaw: Math.PI }, { x: -0.4, z: 0, t: 11, yaw: Math.PI }], 1.0, 50)
+    expect(st.total).toBe(2)
+    expect(st.segs[0].x1).toBeCloseTo(1)
+    expect(st.segs[1].x0).toBeCloseTo(0.6)
+  })
+  it('激活门（客户端 0x3632a54 = 0.3m）：蹭动不画，达阈后活戳出现并正常落锚', () => {
+    // 0→+0.15→0→−0.15（净位移最大 0.15 < 0.3）⇒ 全程无活戳、无戳提交；
+    // 0→+0.35 ⇒ 活戳出现（0.35 ≥ 0.3）；继续到 1.0 ⇒ 正常落锚。
+    const st = createTrailState()
+    advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 0.15, z: 0, t: 1, yaw: 0 },
+      { x: 0, z: 0, t: 2, yaw: 0 },
+      { x: -0.15, z: 0, t: 3, yaw: 0 },
+    ], 1.0, 50)
+    expect(st.total).toBe(0)
+    expect(openStampOf(st)).toBeNull()               // 蹭动：什么都不画
+    const st2 = createTrailState()
+    advanceTrail(st2, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.35, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    let open = openStampOf(st2)
+    expect(open).not.toBeNull()                       // 0.35 ≥ 0.3 ⇒ 激活
+    expect(open.x1).toBeCloseTo(0.35)
+    advanceTrail(st2, [{ x: 1.0, z: 0, t: 2, yaw: 0 }], 1.0, 50)
+    expect(st2.total).toBe(1)                         // 满 1m 正常落锚
+  })
+  it('激活门浮点容差：数学上恰好 0.3m 必须激活（review 六轮 P2 复现）', () => {
+    // 0.7 − 0.4 = 0.29999999999999993（浮点欠冲）——不容差会让"数学上恰好 0.3m"的
+    // 采样点不激活、推迟到下一步（与 manualSpace 门控的同型缺陷，同口径修复）。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0.4, z: 0, t: 0, yaw: 0 }, { x: 0.7, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st)).not.toBeNull()
+    expect(openStampOf(st).x1).toBeCloseTo(0.7)
+    // 边界锁定：0.299999（真欠 1e-6）不激活；0.3（锚 0，采样 0.3）激活
+    const st2 = createTrailState()
+    advanceTrail(st2, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.299999, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st2)).toBeNull()
+    const st3 = createTrailState()
+    advanceTrail(st3, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.3, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st3)).not.toBeNull()
+  })
+  it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()
     advanceTrail(a, line(0, 0, 0.6, 0.8, 0.7, 20), 1.0, 1e9)
     const b = createTrailState()
@@ -221,14 +391,22 @@ describe('advanceTrail', () => {
   })
 })
 
-describe('treadAlphaAt', () => {
-  it('after 前恒 1；after→after+dur 线性降；之后 0', () => {
+describe('treadAlphaAt（客户端淡出窗：1 − smoothstep(start, end, age)）', () => {
+  it('start 前恒 1；start→end 平滑降；end 后 0；曲线为 smoothstep（非线性）', () => {
     expect(treadAlphaAt(0)).toBe(1)
-    expect(treadAlphaAt(TREAD_FADE.after)).toBe(1)
-    const mid = TREAD_FADE.after + TREAD_FADE.dur / 2
-    expect(treadAlphaAt(mid)).toBeCloseTo(0.5)
-    expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur)).toBe(0)
-    expect(treadAlphaAt(TREAD_FADE.after + TREAD_FADE.dur + 100)).toBe(0)
+    expect(treadAlphaAt(TREAD_FADE.start)).toBe(1)
+    const mid = (TREAD_FADE.start + TREAD_FADE.end) / 2
+    expect(treadAlphaAt(mid)).toBeCloseTo(0.5)          // smoothstep 中点 = 0.5
+    expect(treadAlphaAt(TREAD_FADE.end)).toBe(0)
+    expect(treadAlphaAt(TREAD_FADE.end + 100)).toBe(0)
+    const q1 = TREAD_FADE.start + (TREAD_FADE.end - TREAD_FADE.start) * 0.25
+    const q3 = TREAD_FADE.start + (TREAD_FADE.end - TREAD_FADE.start) * 0.75
+    expect(treadAlphaAt(q1)).toBeGreaterThan(0.75)      // 前段压得住（smoothstep 特性）
+    expect(treadAlphaAt(q3)).toBeLessThan(0.25)         // 尾段快速收掉
+  })
+  it('淡出窗取值 = 客户端引擎常数（反汇编 0x4010f94 / 0x4010f98）', () => {
+    expect(TREAD_FADE.start).toBeCloseTo(5.45, 6)
+    expect(TREAD_FADE.end).toBeCloseTo(7.62, 6)
   })
   it('负年龄代表未来出生的段：seek 到其出生前必须隐藏；仅容忍极小浮点抖动', () => {
     expect(treadAlphaAt(-5)).toBe(0)
@@ -261,8 +439,7 @@ describe('trailStampCorners（扫掠四边形，客户端同构）', () => {
       { x: 0, z: 1, t: 1, yaw: 0 },
       { x: 1, z: 1, t: 2, yaw: Math.PI / 2 },
     ]
-    const st = { hasLast: false, acc: 0, segs: [], head: 0, total: 0, written: 0,
-                 lastMark: { x: 0, z: 0, yaw: 0, t: 0 } }
+    const st = createTrailState()
     advanceTrail(st, marks, 1.0, 1e9)
     expect(st.total).toBe(2)
     const a = new Float32Array(12), b = new Float32Array(12)

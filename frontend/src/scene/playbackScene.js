@@ -55,9 +55,9 @@ import {
 // 地面履带印（TreadSystem 碾压痕）：生成/摆放纯函数；数据面 = 包内 tread/（上游
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
 import {
-  advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
-  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE, TREAD_OPACITY,
-  TREAD_FALLBACK,
+  advanceTrail, createTrailState, openStampOf, resetTrailState, resolveTreadParams,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE,
+  TREAD_FALLBACK, TREAD_RING,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -2518,8 +2518,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 前进 = 游标增量泵。开关关 → 网格整体隐藏且 builtT 退回 -∞（重开即全量补铺，语义 =
   // 印记由回放数据确定性生成，与播放/开关路径无关）。
 
-  /** 每侧段缓存上限（段 ≈ manualSpace 米长；1536 段 ≈ 1.5 km 履带程，覆盖最长场的走位） */
-  const TRAIL_CAP_PER_SIDE = 1536;
+  /** 每侧戳环槽数 = 客户端 TreadSystem 的固定环（反汇编 `(i+0x32)%0x32`，50 槽/侧）。
+   *  ⚠️ **50 槽含 active/open 槽**（落锚函数 0x727b80：`head=write; write=(write+1)%50;
+   *  count 封顶 50`）——逐帧拉伸的活戳占 write 槽（= total % cap），落锚后定型并推进，
+   *  **没有独立的第 51 槽**。印记长度预算 = 50 × manualSpace 米，车后滚动收尾。 */
+  const TRAIL_CAP_PER_SIDE = TREAD_RING;
+  /** 槽位总数（左右交错）：50 槽/侧（含活戳）。 */
+  const TRAIL_SLOTS = TRAIL_CAP_PER_SIDE * 2;
   /** 无 suspension 数据时的履带中心线横距（m）：低模履带盒半宽量级（产品回落，上游 feasibility §四） */
   const TREAD_HALF_GAUGE = 0.9;
 
@@ -2566,7 +2571,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function ensureTreadMesh(v, tp) {
     if (v.treadMesh || !scene) return;
-    const SLOTS = TRAIL_CAP_PER_SIDE * 2;
+    const SLOTS = TRAIL_SLOTS;                    // 50 槽/侧（含活戳，客户端 0x727b80 同构）
     const geo = new THREE.BufferGeometry();
     // 逐段 4 顶点的**动态合并几何**（不是 InstancedMesh）：四角必须各自独立贴地
     // （trailStampCorners），单个实例矩阵表达不了四角异高——正是首版"单平面 + 中心梯度"
@@ -2696,17 +2701,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   /**
-   * 路径态 → 四边形顶点 + 寿命 alpha。
+   * 路径态 → 四边形顶点 + 寿命 alpha（客户端槽位模型，2026-10-12）。
    *
-   * 槽位 = **左右交错**：第 k 对段占槽 `2k`（L）/ `2k+1`（R）——首版把 R 整块放在
-   * `[cap, 2cap)` 而 drawRange 只从 0 数起 `(L+R)×6` 个索引，R 区间永远落在绘制窗口外
-   * （实测"只有左侧履带有印记"）。
+   * 槽位 = **左右交错**：第 k 个已提交戳占槽 `2k`（L）/ `2k+1`（R）——首版把 R 整块放在
+   * `[cap, 2cap)` 而 drawRange 只从 0 数起，R 区间永远落在绘制窗口外（"只有左侧履带有
+   * 印记"）。额外一对槽 `2cap`/`2cap+1` = 两侧各自的**活戳槽**（逐帧拉伸到车辆当前位置的
+   * 那一戳，客户端每帧重发同款）。
    *
-   * 绘制窗口取**较长侧**（review P2 2026-10-11）：左右中心线在转弯时弧长不同、段数本就
-   * 不成对，min(L,R) 会把较长侧最新段截在窗口外（实测 R=12 / L=15 时 L 最新 3 段全不可
-   * 见，转得越久落后越多）。较短侧落在窗口内的空槽（k ≥ 该侧 total，环形里可能残留上一轮
-   * 更长运行的旧段）**显式隐藏**（alpha 置 0），不靠"位置全零即退化"的偶然性。
-   * `written` = 该侧已写入 GPU 的绝对段数；环形覆写只重写被覆盖的那个槽。
+   * 绘制窗口=全部槽位（50×2 个四边形，索引开销可忽略），**无效槽一律显式隐藏**（alpha 0）：
+   * 环里的空槽（k ≥ total，残留上一轮旧戳）、无活戳时的活戳槽，都清零。此前按 min/max(L,R)
+   * 取窗口只解决了一半（review P2 2026-10-11：左右弧长不同会互相截断）——显式隐藏没有这个
+   * 耦合，也不再依赖"位置全零即退化"的偶然。
+   * `written` = 该侧已写入 GPU 的绝对戳数；环形覆写只重写被覆盖的那个槽。
    */
   function writeTrailQuads(v, tr) {
     const geo = v.treadMesh.geometry;
@@ -2716,21 +2722,42 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const h = heightField ? sampleHeight : () => 0;
     const width = v.tread.width;
     const c12 = new Float32Array(12);
-    // 环形覆写后可用槽位封顶在 2×cap：越界 drawRange 是未定义的 GPU 行为
-    const pairs = Math.min(Math.max(tr.L.total, tr.R.total), TRAIL_CAP_PER_SIDE);
     let wrote = false;
+    // 槽位 alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——比较必须
+    // 按同一量化值（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick 重新上传）
+    const alphaAt = (t) => Math.fround(treadAlphaAt(T - t) * (v.tread.texScale || 1));
+    const hideQuads = (co) => {
+      if (carr[co + 3] !== 0 || carr[co + 7] !== 0 || carr[co + 11] !== 0 || carr[co + 15] !== 0) {
+        carr[co + 3] = 0; carr[co + 7] = 0; carr[co + 11] = 0; carr[co + 15] = 0;
+        wrote = true;
+      }
+    };
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
+      // 环满时的显示权切换点 = **active 激活**（open != null，即净位移已达 0.3 m），
+      // 不是上一次提交完成时——客户端 0x3632a54 的语义：< 0.3 m 时 active 不占 write 槽
+      // 的显示权，最老 committed 槽继续显示（第 50 次提交后仍应有 50 个可见槽）。
+      // open 存在时 write 槽（= total % cap）才切给活戳并顶掉最老 committed 槽；
+      // 提交循环跳过该槽（否则会把活戳 alpha 顶回旧戳值）。（四轮 review P2 边界）
+      const writeSlot = ((st.total % TRAIL_CAP_PER_SIDE) + TRAIL_CAP_PER_SIDE) % TRAIL_CAP_PER_SIDE;
+      const openActive = !!openStampOf(st);
       for (let k = st.written; k < st.total; k++) {
-        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
-        if (!seg) continue;
+        const slot = k % TRAIL_CAP_PER_SIDE;
+        if (openActive && slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;
+        const seg = st.segs[slot];
+        if (!seg) {
+          // 防御：未定型槽（理论不可达——total 只计已提交）显式隐藏
+          const co = slot * 32 + quad * 16;
+          if (carr[co + 3] !== 0) {
+            carr[co + 3] = 0; carr[co + 7] = 0; carr[co + 11] = 0; carr[co + 15] = 0;
+            wrote = true;
+          }
+          continue;
+        }
         if (!trailStampCorners(seg, width, h, c12)) continue;
-        parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
-        // alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——老化扫描
-        // 必须按同一量化值比较（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick
-        // 重新上传）
-        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
-        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        parr.set(c12, slot * 24 + quad * 12);
+        const a = alphaAt(seg.t);
+        const co = slot * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
           carr[co + q * 4 + 2] = 1; carr[co + q * 4 + 3] = a;
@@ -2738,60 +2765,74 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         wrote = true;
       }
       st.written = st.total;
-      // 空槽显式隐藏：本侧没有第 k 段（k ∈ [total, pairs)）却在窗口内——清 alpha
-      for (let k = st.total; k < pairs; k++) {
-        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
-        if (carr[co] !== 0 || carr[co + 4] !== 0 || carr[co + 8] !== 0 || carr[co + 12] !== 0) {
-          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
-          wrote = true;
+      // 环内空槽显式隐藏（k ∈ [total, cap)：环形里可能残留上一轮更长运行的旧戳）。
+      // openSlot（若 active 存在）跳过——否则先清 0 再被活戳块写回，paused/static tick
+      // 也会无意义地标脏重传（四轮 review P3）。
+      const openSlotNow = st.total % TRAIL_CAP_PER_SIDE;
+      for (let k = Math.min(st.total, TRAIL_CAP_PER_SIDE); k < TRAIL_CAP_PER_SIDE; k++) {
+        if (openActive && k === openSlotNow) continue;
+        hideQuads((k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16);
+      }
+      // 活戳 = write 槽（= total % cap，50 槽含 active——客户端 0x727b80 同构，无第 51 槽）。
+      // 逐帧写入拉伸中的活戳（位置 + alpha），位置按 fround 变化检测——静止且时钟未动时
+      // 零上传（与环槽同一门控）；无活戳（未起步/未激活/已复位）则隐藏该槽。
+      const openSlot = st.total % TRAIL_CAP_PER_SIDE;
+      const pos0 = openSlot * 24 + quad * 12;
+      const col0 = openSlot * 32 + quad * 16;
+      const open = openStampOf(st);
+      if (open && trailStampCorners(open, width, h, c12)) {
+        let changed = false;
+        for (let i = 0; i < 12; i++) {
+          if (parr[pos0 + i] !== Math.fround(c12[i])) { changed = true; break; }
         }
+        if (changed) { parr.set(c12, pos0); wrote = true; }
+        const a = alphaAt(open.t);
+        for (let q = 0; q < 4; q++) {
+          const ci = col0 + q * 4;
+          if (carr[ci] !== 1 || carr[ci + 1] !== 1 || carr[ci + 2] !== 1 || carr[ci + 3] !== a) {
+            carr[ci] = 1; carr[ci + 1] = 1; carr[ci + 2] = 1; carr[ci + 3] = a;
+            wrote = true;
+          }
+        }
+      } else if (openActive || st.total < TRAIL_CAP_PER_SIDE) {
+        // ownership 三态：active 已激活但几何无效，或环未满且无 active 时，这个 write 槽
+        // 不属于历史 committed，必须隐藏；环已满 + open==null 时 write 槽仍由最老
+        // committed 占有，不能在这里清零（review 七轮 P2）。
+        hideQuads(col0);
       }
     }
-    geo.setDrawRange(0, pairs * 2 * 6);
-    // 门控上传：本帧没有新段就不传（静止/暂停时零 GPU 上传；此前每帧无条件全量上传
-    // position+color 两个缓冲，车辆停着也在烧带宽——2026-10-11）
+    geo.setDrawRange(0, TRAIL_SLOTS * 6);
+    // 门控上传：本帧没有变化就不传（静止/暂停时零 GPU 上传——2026-10-11）
     if (wrote) { posAttr.needsUpdate = true; colAttr.needsUpdate = true; }
   }
 
-  /** 寿命老化扫描：把"年龄落在淡出窗口内"的段的 alpha 刷新进顶点色。
+  /** 寿命老化扫描：把每槽的 alpha 按其**自身**出生时刻刷新进顶点色。
    *
-   * ⚠️ 窗口起点必须**按时间二分**（段按 `t` 有序），不能按"最近 N 段"数——段密度是
-   * 速度的函数（1 m 间距 @7 m/s ≈ 7 段/s，92 段只有 13 s），按段数取窗会让 60 s 前
-   * 的段提前出窗、alpha 永远停在 1（实测"不淡出"）。出窗瞬间最后写入的 alpha ≤ 3%
-   * （90 s 边界的一个 tick 内），无可见残留；暂停时时钟冻结 ⇒ 淡出冻结。
+   * ⚠️ **逐槽独立老化，不做任何时间有序假设**（2026-10-12 review P2）：回压重占只改
+   * 被重占槽的 `t`（不动绝对序号）、其它槽又可能被写成 `null` ⇒ "按 k 的出生时刻单调
+   * 递增"的二分前提不成立（复现：三槽 [1,2,3]，t=10.1 重占第一槽 → [10.1,2,3]，二分把
+   * 新戳当过期前缀清 0——刚生成就不可见）。环只有 51 槽/侧，逐槽全扫与二分同量级。
+   * null 槽（回压清空）显式隐藏。暂停时时钟冻结 ⇒ 淡出冻结。
    */
   function ageTrailAlphas(v, tr) {
     const colAttr = v.treadMesh.geometry.getAttribute('color');
     const carr = colAttr.array;
-    const cutoff = T - (TREAD_FADE.after + TREAD_FADE.dur);
     let dirty = false;
     for (const st of [tr.L, tr.R]) {
       const quad = st === tr.L ? 0 : 1;
-      // 二分最小 k：segs[k].t ≥ cutoff（环内有效域 [total-cap, total)）
-      let lo = Math.max(0, st.total - TRAIL_CAP_PER_SIDE), hi = st.total;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        const seg = st.segs[mid % TRAIL_CAP_PER_SIDE];
-        if (seg && seg.t >= cutoff) hi = mid; else lo = mid + 1;
-      }
-      // [有效域起点, lo) = 已过寿命的段：**显式清零**。大步 seek 前进时这些段一步跨出
-      // 淡出窗口，否则停留在跨步前的旧 alpha（实测残留 0.55 全亮——"该消失的印记还在"，
-      // 2026-10-11 定案）。只写变化的槽位（静止时零写入）。
-      for (let k = Math.max(0, st.total - TRAIL_CAP_PER_SIDE); k < lo; k++) {
-        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
-        if (carr[co] !== 0) {
-          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
-          dirty = true;
-        }
-      }
-      for (let k = lo; k < st.total; k++) {
-        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
-        if (!seg) continue;
-        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，若拿
-        // double 的 a 严格比较，`carr[i] !== 0.8` 永远成立（读回 0.8000000119）⇒ 时钟没动
-        // 也每 tick 标脏重传。量化后同一 alpha 的重复 tick 不再置 dirty。
-        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
-        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+      const k0 = Math.max(0, st.total - TRAIL_CAP_PER_SIDE);
+      const writeSlot = st.total % TRAIL_CAP_PER_SIDE;
+      const openActive = !!openStampOf(st);
+      for (let k = k0; k < st.total; k++) {
+        const slot = k % TRAIL_CAP_PER_SIDE;
+        // 活戳槽：**仅当 active 已激活**显示权才切给活戳（四轮 review P2 边界：
+        // open == null 时该槽仍显示最老 committed，老化照常按旧戳计算）
+        if (openActive && slot === writeSlot && st.total >= TRAIL_CAP_PER_SIDE) continue;
+        const co = slot * 32 + quad * 16;
+        const seg = st.segs[slot];
+        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，拿
+        // double 严格比较恒不相等 ⇒ 时钟没动也每 tick 标脏重传。
+        const a = seg ? Math.fround(treadAlphaAt(T - seg.t) * (v.tread.texScale || 1)) : 0;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {
             carr[co + q * 4 + 3] = a;
