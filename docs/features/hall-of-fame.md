@@ -20,7 +20,7 @@
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
 - **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
-- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行可由客户端重新解析附件后修正）。
+- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的附件可供客户端重新解析核验，但当前无修改 replay-derived facts 的接口；需要纠正时走审核治理/删除重提流程）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
   | 模式 | raw arenaBonusType | 归一值 | 证据 | 名人堂 |
@@ -108,7 +108,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | 三项取交集：全空为全站 CURRENT Top 10；仅分类时为分类交集 Top 10；选择车辆后为该车独立分页排行，competition rank 始终基于相同筛选上下文 |
-| `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
+| `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5/facts×5（结算 JSON，与 replays 同序）） |
 | `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人账号） | 撤销 PENDING；归属按当前绑定的 `(区服, WotB 账号)` 判定，区服或账号任一不符、或未绑定账号 → 403 `HUNDRED_FORBIDDEN` |
 | `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆均可独立使用并取交集 |
@@ -164,7 +164,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | Tier X 三环公开榜；国家/系别、车种和车辆取交集，按三环场数升序 competition rank |
-| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays；全局 replay 容量满时 503 `REPLAY_BUSY` |
+| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays + 5 份同序 facts JSON；全局 replay 容量满时 503 `REPLAY_BUSY` |
 | `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人账号） | 撤销自己的 PENDING；归属按当前绑定的 `(区服, WotB 账号)` 判定，区服或账号任一不符、或未绑定账号 → 403 `MARK3_FORBIDDEN` |
 | `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆独立筛选并取交集 |

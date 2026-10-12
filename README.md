@@ -1,6 +1,6 @@
 # WoTBTools
 
-《坦克世界闪击战》（World of Tanks Blitz）回放工具集：解析 `.wotbreplay` 战斗数据，提供 Excel 导出、在线伤害排行榜、战斗表现分析（贡献度 / KAST / Impact 等派生指标）、AI 战术复盘（个人 / 团队）与 Keycloak 认证。
+《坦克世界闪击战》（World of Tanks Blitz）回放工具集：解析 `.wotbreplay` 战斗数据，提供 Excel 导出、在线伤害排行榜、战斗统计、多伤率与 League Rating、AI 战术复盘（个人 / 团队）与 Keycloak 认证。
 
 入口：[https://wotbtools.com](https://wotbtools.com) · 仓库：[https://github.com/A158Coke/WotbTools](https://github.com/A158Coke/WotbTools)
 
@@ -15,7 +15,7 @@ Android 从文件管理器打开回放后即可自动在本机解析（无需登
 - **回放解析与 Excel 导出**：浏览器本机解析 `.wotbreplay`（上游 Rust Core WASM，文件不上传），提取权威结算（伤害 / 承伤 / 助攻 / 格挡 / 击杀 / 死亡时刻）与事件流特征（走位 / 交火 / 九宫格区域）。
 - **名人堂**：随机战与评级战单场伤害排行；Tier X 百场生涯场均榜统一使用截图 + 5 回放人工审核。
 - **积分赛榜单**：按年份、区服和季赛配置每轮积分规则；联赛管理员上传小组排名截图、核对 AI 识别并发布累计积分，支持共享草稿、赛后修正、历史积分表导入和公开榜单 Excel / PDF 导出。详见 [功能契约](docs/features/tournament-points.md)。
-- **战斗表现**：基于统一回放事实计算的派生指标（贡献度、KAST、Impact、潜在伤害、协助、击杀、多伤率、存活率、互换击杀），不再输出任何综合评分。
+- **战斗表现**：基于统一回放事实展示伤害、协助、击杀、命中 / 击穿、存活等统计；跨场表现派生列为多伤率，训练赛 / 联赛提供 League Rating 与七维评分。贡献度、KAST、Impact 等旧公共列已退役。
 - **AI 战术复盘**：赛前预测 + 证据链复盘；团队复盘以结构化结果展示关键战术 episode、训练建议、重点复查与高贡献者，SSE 逐段/分阶段展示；复盘期间切换页面或后台化浏览器标签不中断（含团队长复盘约 1100 秒预算，返回后直接看到结果或进度）；点数胜负写明结束方式（时间耗尽 / 达到 1000 分提前结束），点数局势分析基于可证明信号（击杀换分项时间线 / 占领点存在 / 推进窗口——击杀换分项不等于整体比分，不编造中间比分），掉血描述带时间范围与攻击者数（单一攻击者不称集火；总跨度 ≤15 秒且有 ≥2 个不同攻击者才可作多车集火证据）；结果页含独立「地图鸟瞰」区块（双阵营热力 + 路线筛选（含仅玩家）+ 战局回放（进度条回放 / 事件跳转 / AI 报告时间点击跳转 / 双层车体炮塔标记按车头与炮口方向独立旋转，图标上方常显坦克型号名、无行驶路线线、激光样式炮线约 1 秒（亮白内芯 + 阵营色光晕 + 命中闪光））+ 随地图明暗自适应配色，28 张地图素材）——进入「战局回放」capability 时自动准备 / 复用同一解析 Dataset（不重新上传 / 不重新满解析）、不依赖 AI 复盘，另有一键「复制」复盘正文按钮。
 - **认证与业务**：Keycloak（QQ + Wargaming.net ASIA / EU / NA）。
 
@@ -33,7 +33,7 @@ flowchart LR
 
 ## AI 证据链
 
-回放 → **权威结算**（`battle_results.dat`：伤害 / 承伤 / 死亡时刻）与**事件流**（`data.wotreplay`：走位 / 交火 / 伤害事件 / 九宫格）→ 确定性特征（阶段边界「至阶段末」存活人数、双方逐车死亡时间线、交火与集火证据）→ Prompt 只注入后端证据 → AI 对照赛前基线复盘（时间统一 X分XX秒、九宫格区域、我方/对方视角）→ 结果页逐段流式展示 + 团队剖析（MVP / 战犯）。
+回放 → **权威结算**（`battle_results.dat`：伤害 / 承伤 / 死亡时刻）与**事件流**（`data.wotreplay`：走位 / 交火 / 伤害事件 / 九宫格）→ 确定性特征（阶段边界「至阶段末」存活人数、双方逐车死亡时间线、交火与集火证据）→ 客户端提交 canonical AI projection → 服务端校验并装配确定性证据 → Prompt 注入该证据 → AI 对照赛前基线复盘（时间统一 X分XX秒、九宫格区域、我方/对方视角）→ 结果页流式展示个人复盘；团队复盘使用 `TeamAiReviewResult` v0.5（`summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`）与 `teamPlayers` 身份映射，不含第三次模型调用或 Team Autopsy。
 
 ## 核心工程取舍
 
@@ -57,6 +57,6 @@ flowchart LR
 - 测试与质量门禁：见 [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - 更新车辆库：手动触发 GitHub Actions `Update Tankopedia`；本地跑 `cd common/python && python update_tankopedia.py`（详见 DEVELOPER_GUIDE）
 
-## 已上线工具
+## 当前工具
 
-回放解析与 Excel 导出 · 在线排行榜 · 战斗表现分析 · AI 战术复盘（个人 / 团队）· Keycloak 认证（QQ + Wargaming.net ASIA/EU/NA）· 陪练与打手管理
+回放解析与 Excel 导出 · 在线排行榜 · 战斗表现分析 · AI 战术复盘（个人 / 团队）· Keycloak 认证（QQ + Wargaming.net ASIA/EU/NA）· 积分赛榜单 · 2D / 3D 回放 · 射击分析 · 装甲查看器

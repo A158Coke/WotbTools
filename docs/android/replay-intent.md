@@ -8,8 +8,8 @@
 - **Open With WotBTools**：`ACTION_VIEW`，文件管理器 → `content://` URI。
 
 `ReplayIntentHandler` 只提取 `name/uri/size`，**不解析 replay**；业务校验（`.wotbreplay`、
-20 MiB / 100 文件 / 200 MiB）沿用现有 `frontend/src/utils/replayUpload.js` 与后端 validator
-（Kotlin 不复制，规格 §40）。
+20 MiB / 100 文件 / 200 MiB）由现有 `frontend/src/utils/replayUpload.js` 拥有
+（Kotlin 不复制，规格 §40；本地解析入口没有后端 replay validator）。
 
 ## App 手动目录导入（独立于 external pending）
 
@@ -30,7 +30,7 @@
 ### HTTPS pending resource（2026-09-10 hotfix）
 
 旧链路在 `allowContentAccess=false` 的 WebView 中 `fetch(content://...)`，登录成功后可能无法读取字节，
-因此无法创建 Processing Job。修复保留 `allowFileAccess=false` / `allowContentAccess=false`。
+因此无法把 pending 字节交给前端分析。Processing Job 是已退役的历史链路。修复保留 `allowFileAccess=false` / `allowContentAccess=false`。
 
 - Bridge 的 `uri` 固定为 `https://appassets.androidplatform.net/__native/replay-pending`；这是 Native resource，不是后端 API。
   App canonical origin 是 `https://appassets.androidplatform.net`；URL 不含 query、pendingId、文件名、本地路径或凭据。

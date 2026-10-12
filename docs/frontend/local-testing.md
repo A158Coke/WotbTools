@@ -70,7 +70,7 @@ npm run dev
    | 命令 | `/api` 指向 | 用途 |
    |---|---|---|
    | `npm run dev` | 本机 `http://localhost:8087` | 本地后端开发 |
-   | `npm run dev:production-remote` | 生产站点 | 生产数据/真实登录；Topbar 有非模态提示；只用获批账号与数据 |
+   | `npm run dev:production-remote` | 生产站点 | 生产数据/真实登录；手机标题栏与平板/桌面侧栏有非模态提示；只用获批账号与数据 |
 
 3. URL 参数（模块加载时读取，**每次都要带在 URL 上**；建议存书签）：
 
@@ -140,7 +140,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 同上但 `.env.local` 明明是对的 | URL/localStorage 里残留非空 `?assets=` | 带一次空 `?assets=` 清除 |
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
-| 直连 `?view=agent-armor` 显示登录提示 | 当前未登录 | 普通账号登录；返回保留原场景 query |
+| 个人回放直连 `?view=agent-replay` / `agent-shots` 显示登录提示 | 当前未登录且所选文件不是已验证官方示例 | 普通账号登录，或选择官方示例；`agent-armor` 本身匿名可用，不能靠 `?admin=1` 取得登录态 |
 | admin 页面能打开但数据 401/403 | 后端按真实 token 鉴权 | §5（需要真角色；本地绕不过，也不应绕） |
 
 ## 8. 自动化测试与门禁
