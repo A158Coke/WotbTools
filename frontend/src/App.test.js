@@ -177,11 +177,11 @@ describe('App routing', () => {
       setAuthState('unauthenticated', false)
     })
 
-    it.each([false, true])('shows 3D and shots tools in 更多 (admin=%s)', async admin => {
+    it.each([false, true])('does not duplicate 3D and shots tools in 更多 (admin=%s)', async admin => {
       authState.isAdminRef.value = admin
       const { wrapper } = await mountApp('/?view=more')
       for (const view of ['agent-replay', 'agent-shots']) {
-        expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(true)
+        expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
       }
       expect(wrapper.find('[data-testid="nav-tankopedia"]').exists()).toBe(true)
     })
@@ -325,7 +325,7 @@ describe('App routing', () => {
     }
   })
 
-  it('登出（authenticated true→false）收敛到首页：不保留登出前的 view', async () => {
+  it('登出（authenticated true→false）收敛到当前运行面的默认落点：不保留登出前的 view', async () => {
     authState.authenticatedRef.value = true
     try {
       const { wrapper, router } = await mountApp('/?view=profile')
@@ -335,8 +335,9 @@ describe('App routing', () => {
       authState.authenticatedRef.value = false
       await settle()
 
-      // Phase 5.3：登出落点固定 HOME——不是保留 ?view=profile
-      expect(router.currentRoute.value.query.view ?? 'home').toBe('home')
+      // happy-dom 的 localhost 与 Android 一样以 Replay 为默认落点。
+      expect(router.currentRoute.value.query.view).toBe('replay')
+      expect(wrapper.find('[data-test="view-replay"]').exists()).toBe(true)
       wrapper.unmount()
     } finally {
       authState.authenticatedRef.value = false
@@ -615,7 +616,7 @@ describe('App shell navigation, 更多 and account', () => {
       expect(wrapper.find('[data-testid="nav-tournament-points-admin"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="nav-admin-users"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(false)
-    } finally { authState.isTournamentAdminRef.value = false }
+    } finally { authState.isAdminRef.value = false }
   })
 
   it.each([['tournament-points-config', 'view-tournament-config'], ['tournament-points-admin', 'view-tournament-admin']])('admits a tournament-only administrator at the %s page gate', async (view, testId) => {
