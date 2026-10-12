@@ -363,6 +363,21 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     advanceTrail(st2, [{ x: 1.0, z: 0, t: 2, yaw: 0 }], 1.0, 50)
     expect(st2.total).toBe(1)                         // 满 1m 正常落锚
   })
+  it('激活门浮点容差：数学上恰好 0.3m 必须激活（review 六轮 P2 复现）', () => {
+    // 0.7 − 0.4 = 0.29999999999999993（浮点欠冲）——不容差会让"数学上恰好 0.3m"的
+    // 采样点不激活、推迟到下一步（与 manualSpace 门控的同型缺陷，同口径修复）。
+    const st = createTrailState()
+    advanceTrail(st, [{ x: 0.4, z: 0, t: 0, yaw: 0 }, { x: 0.7, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st)).not.toBeNull()
+    expect(openStampOf(st).x1).toBeCloseTo(0.7)
+    // 边界锁定：0.299999（真欠 1e-6）不激活；0.3（锚 0，采样 0.3）激活
+    const st2 = createTrailState()
+    advanceTrail(st2, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.299999, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st2)).toBeNull()
+    const st3 = createTrailState()
+    advanceTrail(st3, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.3, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    expect(openStampOf(st3)).not.toBeNull()
+  })
   it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()
     advanceTrail(a, line(0, 0, 0.6, 0.8, 0.7, 20), 1.0, 1e9)
