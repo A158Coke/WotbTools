@@ -36,9 +36,9 @@ state 中独立验证，不访问 production state。
 
 `ci-gate.yml` 是唯一的 Pull Request 验证入口，并负责 `CI / Required Gate`。它按变更选择后端、前端、契约、Android、部署和 OpenTofu 验证，不读取生产凭据，也不执行生产部署。
 
-推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml` 和 `ai-service.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。两个 PostgreSQL root、COS 和 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
+推送到 `main` 后由独立 workflow 负责各自服务：`business-api.yml`、`frontend.yml`、`keycloak.yml` 和 `ai-service.yml` 分别构建或复用并部署一个精确镜像身份。`caddy.yml` 单独保证 TX 网关可用。两个 PostgreSQL root 与 Observability 也各有独立 owner workflow。三个数据更新 workflow 继续独立运行，并为生成的精确 head 创建或更新 PR，再触发 CI 验证。
 
-Online diagnostics remain available through prod-diagnostics.yml. Yecao runs only the parser worker and observability stack; Business API, Keycloak, Business PostgreSQL, Frontend, and Caddy run on TX.
+线上诊断由 `prod-diagnostics.yml` 提供。Yecao 承载独立 AI Service、Observability 与 Komodo Core；服务器没有 parser worker。Business API、Keycloak、Business PostgreSQL 与 Caddy 在 TX1，Frontend 运行于 TX1 / TX2。
 
 ## 本地开发
 
@@ -48,7 +48,7 @@ OpenTofu state；不需要 production secrets。
 
 ```bash
 cd java
-set JAVA_HOME=%USERPROFILE%\.jdks\jdk-21.0.1
+set JAVA_HOME=<JDK 25 安装目录>
 mvn -s settings.xml test
 ```
 
@@ -135,7 +135,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - **已知遗留（区服维度）**：单场 `hall_of_fame_record` 只按 `account_id` 归属，**没有区服维度**；`GET /api/users/profile/records` → `recordsByAccountId(profile.wotbAccountId(), 50)` 也只按账号 ID 匹配，去重键仍是 `(arena_id, account_id)`。因此跨服同号（`(CN, 123456)` 与 `(EU, 123456)`）在单场域仍可能被视作同一人。V22 只让百场/三环变成 `(区服, 账号)` 归属，**不要据此认为三个域都已区服安全**；补齐单场属于独立 follow-up。
 - **百场（Hundred Battles）**：Tier X 车辆独立的生涯场均伤害排行榜，所有用户统一使用人工证据审核（`com.wotb.web.hundred` 域）：
   - `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；三项交集：全空为全站 CURRENT Top 10，仅分类为分类交集 Top 10，具体车辆为该车独立分页；competition ranking 与筛选上下文一致）。
-  - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5）。硬门禁：Tier X authoritative 校验、5 个 replay 全部解析成功且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
+  - `POST /api/hof/hundred/submissions` — 提交百场成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/averageDamage/battleCount/screenshot(base64)/replays×5/facts×5（客户端结算 JSON，与 replays 同序））。硬门禁：Tier X authoritative 校验、5 份客户端结算 facts 均通过结构校验且 gameId/vehicleId 匹配、5 场不同 battle；任一失败整单拒绝不进入 PENDING。同车已有 PENDING → 409 `HUNDRED_PENDING_EXISTS`；新成绩未严格高于 CURRENT → 409 `HUNDRED_NOT_HIGHER`。
   - `POST /api/hof/hundred/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。归属按当前登录用户绑定的 `(区服, WotB 账号)` 判定：区服或账号任一不匹配、或未绑定账号 → 403 `HUNDRED_FORBIDDEN`；记录创建后改绑到别的区服/账号时记录仍属原 `(区服, 账号)`，不可再取消。
   - `GET /api/users/hundred/status` — 个人中心百场状态（CURRENT / PENDING / 最近拒绝；**需登录**）；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空。
   - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆可独立筛选并取交集；摘要返回通过后的 approved 值）、`GET .../submissions/{id}`（所有状态详情，PENDING 返回 proof）、`GET .../submissions/{id}/replays`（PENDING 回放证据 metadata）、`GET .../submissions/{submissionId}/replays/{replayId}`（下载原始 .wotbreplay，ownership 校验 + UTF-8 filename）、`POST .../{id}/approve`（无请求体；校验证据后以 MANUAL 原申报值原子替换 CURRENT）、`POST .../{id}/reject`（原因强制）、`POST .../{id}/delete`（仅 CURRENT，原因强制，不恢复 SUPERSEDED）、`POST /api/admin/hof/hundred/submissions/bulk-delete`（body `{ids, reason, reasonText}`；逐条复用单条删除语义、每条独立事务，允许 partial success，去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；非 CURRENT / 不存在逐条以 `HUNDRED_NOT_CURRENT` / `HUNDRED_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录；reason 是批次级参数，先整体校验一次）。
@@ -143,7 +143,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 - **三环（Mark 3）**：Tier X 单车最速三环排行榜，仅走人工审核（`com.wotb.web.mark3` 域）：
   - `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` — 公开排行榜（匿名；与百场相同的国家/系别、车种、车辆交集；全空或仅分类时为 CURRENT Top 10，选择车辆后为该车独立分页；按 approvedBattleCount ASC，场数相同为 competition rank，稳定展示按 approvedAt ASC、id ASC）。
-  - `POST /api/hof/mark3/submissions` — 提交三环成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/battleCount/averageDamage/winRate/proofScreenshots×1–2（单张不超过 4 MiB 的 base64 `data:image/`）/replays×5）。仅 authoritative Tier X；胜率为 0–100 的百分数且最多两位小数；5 个回放均须解析成功、匹配账号与车辆且 arenaId 不重复。读取/解析/落盘/事务全程通过全局 `ReplayCapacityLimiter`，容量满在解析前返回 503 `REPLAY_BUSY`。截图只校验图片数量/格式：从 0 场开始打三环的新车可 1 张，其他申请由管理员核验 0% 与 95% 起止截图。
+  - `POST /api/hof/mark3/submissions` — 提交三环成绩（**需登录** + Profile gameId/nickname 已配置；multipart：vehicleId/battleCount/averageDamage/winRate/proofScreenshots×1–2（单张不超过 4 MiB 的 base64 `data:image/`）/replays×5/facts×5（客户端结算 JSON，与 replays 同序））。仅 authoritative Tier X；胜率为 0–100 的百分数且最多两位小数；5 份客户端结算 facts 均须通过结构校验、匹配账号与车辆且 arenaId 不重复。附件读取/结构校验/落盘/事务全程通过全局 `ReplayCapacityLimiter`，容量满在附件处理前返回 503 `REPLAY_BUSY`。截图只校验图片数量/格式：从 0 场开始打三环的新车可 1 张，其他申请由管理员核验 0% 与 95% 起止截图。
   - `POST /api/hof/mark3/submissions/{id}/cancel` — 用户撤销自己的 PENDING（**需登录**）。归属按当前登录用户绑定的 `(区服, WotB 账号)` 判定：区服或账号任一不匹配、或未绑定账号 → 403 `MARK3_FORBIDDEN`。
   - `GET /api/users/mark3/status` — 个人中心三环状态（CURRENT / PENDING / 最近拒绝；**需登录**）；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空。
   - 管理后台（**需 `HoF-admin` 或 `wotbtools-admin`**）：`GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=`（状态/国家/车种/车辆交集筛选）、`GET .../submissions/{id}`（详情与 PENDING proof）、`GET .../submissions/{id}/replays` 与 `GET .../submissions/{submissionId}/replays/{replayId}`（仅 PENDING 回放证据）、`POST .../{id}/approve`（无请求体，冻结原申报数据）、`POST .../{id}/reject`、`POST .../{id}/delete`（原因强制）、`POST /api/admin/hof/mark3/submissions/bulk-delete`（body `{ids, reason, reasonText}`；逐条复用单条删除语义、每条独立事务，允许 partial success，去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；非 CURRENT / 不存在逐条以 `MARK3_NOT_CURRENT` / `MARK3_SUBMISSION_NOT_FOUND` 失败且不阻塞其他记录）。管理员不能改写场数、场均或胜率。
@@ -170,7 +170,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `GET /api/admin/users/{keycloakUserId}` — 用户详情（本地 profile + Keycloak 信息）；Keycloak 用户不存在时返回 `KEYCLOAK_USER_NOT_FOUND` warning。
 - `DELETE /api/admin/users?confirm=true` — 删除用户：**请求体是 Keycloak sub 的 JSON 数组**（删除单个用户就是长度为 1 的数组，因此没有单独的批量端点，也没有单条 `/{keycloakUserId}` 删除端点）。每个 id 都先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 整个请求 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；**每个用户独立事务**，允许 **partial success**，返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
 
-**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（`on delete cascade` 只出现在 replay processing 权威状态的域内组合关系上），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
+**删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（业务证据表的内部外键不会将游戏账号成绩归属绑定到登录用户资料），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 
 ## 测试
 

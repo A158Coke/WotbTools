@@ -23,7 +23,8 @@
 | 新增 Replay Workspace 能力 | `../frontend/replay-workspace.md` | `../../frontend/src/composables/useReplay*.ts`、`useLocalReplayAnalysis.ts`、`../../frontend/src/replay-local/`、Replay 相关页面组件 |
 | 改名人堂 / Hundred / Mark3 | 对应 `../features/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/hof`、`hundred`、`mark3`，以及前端对应页面 |
 | 改登录、用户档案、WG 账号绑定 | `../auth/*.md` | `../../java/wotb-web/src/main/java/com/wotb/web/user`、Keycloak 配置、`../../frontend/src/composables/useAuth.js` |
-| 新增前端页面或视图 | `../frontend/architecture.md` | `../../frontend/src/app/router.js`、`../../frontend/src/components/*Page.vue`、`../../frontend/src/locales/*.json` |
+| 新增前端页面或视图 | `../frontend/architecture.md` | `../../frontend/src/app/viewRegistry.js`（组件与能力映射）、`navigation.js`（allowlist / 导航 / query 契约）、`router.js`、`../../frontend/src/components/`、`../../frontend/src/locales/*.json` |
+| 改新手引导或官方示例 | `../features/onboarding.md` | `../../frontend/src/composables/useOnboarding.ts`、`../../frontend/src/components/OnboardingHost.vue`、typed `shared/onboarding.ts`、`../../common/assets/onboarding/manifest.json` 与版本化示例 |
 | 新增静态数据或资源 | `../architecture/tankopedia-reference-data.md` 或相关 assets 文档 | `../../common/`、`../../frontend/public/`、`../assets/...`；避免多处手写同一份映射 |
 
 ## Backend map
@@ -34,7 +35,7 @@
 
 ## Frontend map
 
-前端页面入口从 `../../frontend/src/app/router.js` 和 `../../frontend/src/components/*Page.vue` 开始。共享状态与业务组合逻辑优先放 `../../frontend/src/composables/`，接口边界放 `../../frontend/src/api/` 或现有 `../../frontend/src/utils/api*.js`，多语言文本同步维护 `../../frontend/src/locales/zh.json`、`en.json`、`ru.json` 和 `feature-messages.json`。
+前端页面从 `../../frontend/src/app/viewRegistry.js`、`navigation.js` 与 `router.js` 定位，再沿 `ViewHost.vue` 到对应 `../../frontend/src/components/`。回放五条深链复用 `ReplayWorkspace.vue`，不另建 3D / 射击页面；官方示例的匿名资格由 `replay-local/demo.ts` 验证 File 身份，并由 `useReplaySession.ts` 持有，不能按路由或文件名放行。共享状态与业务组合逻辑优先放 `../../frontend/src/composables/`，接口边界放 `../../frontend/src/api/` 或现有 `../../frontend/src/utils/api*.js`，多语言文本同步维护 `../../frontend/src/locales/zh.json`、`en.json`、`ru.json` 和 `feature-messages.json`。
 
 生成代码目录 `../../frontend/src/api/generated/` 不手工编辑；OpenAPI 变更后通过契约生成流程刷新。
 

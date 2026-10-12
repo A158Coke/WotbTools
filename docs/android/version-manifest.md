@@ -2,6 +2,9 @@
 
 位置：`https://wotbtools.com/download/android/version.json`（同源静态文件）。
 
+以下是字段结构示例，不代表当前 production 版本或门槛。当前源码版本读取
+`android/gradle.properties`，线上版本与门槛读取这份 manifest。
+
 ```json
 {
   "schemaVersion": 1,
@@ -25,12 +28,12 @@
    （逐跳 SHA-256 校验，见 [release-process.md](release-process.md)）→ 建 tag，并写一份 staging evidence
    `/download/android/wotbtools-android-v<版本>.staging.json`（记录 versionCode/versionName/
    sourceSha/tag/apkUrl/sha256/stagedAt）；**此时 production `version.json` 不变**。
-2. **publish**（真机 A14 验证后手工 `mode=publish, version=<已 staged 版本>`）：以 **staged release
+2. **publish**（真机 B13/B14 验证后手工 `mode=publish, version=<已 staged 版本>`）：以 **staged release
    身份**为发布权威 —— 显式版本决定 immutable tag 与 APK/evidence 名，tag target 的源码给出
    versionCode/bridge/Agent pin，再与 staging evidence、线上 APK 字节逐一比对（绝不重建、
-   绝不 repoint tag、绝不改 evidence），并校验 Keycloak 的 `wotbtools-android` 可用、production
-   frontend 支持本次 bridge 版本 + `native-auth` 且 ancestry 满足
-   `staged source ─ frontend build ─ main`、`minSupportedVersionCode` 覆盖 breaking bridge cutover，
+   绝不 repoint tag、绝不改 evidence），并校验 Keycloak 的 `wotbtools-android` 可用、staged APK 中的本地 bundle 与
+   Native runtime/bridge/Agent 身份一致、生产 API exact-origin CORS 和对象存储可读、
+   `minSupportedVersionCode` 覆盖 breaking bridge cutover，
    全部成立后才写 `version.json`（`sourceSha` 记录 **APK 的 staged source**，不是发布当刻的 main
    HEAD）并回读核验。真机验证期间 main 前进不会作废已 staged 的版本：当前 main 只提供策略与
    历史，发布候选来自操作者给出的版本。
@@ -56,6 +59,7 @@
 | `publishedAt` | ✓ | ISO-8601 UTC |
 | `releaseNotes` | ✗ | 展示用发布说明 |
 
-production 比较为：仓库版本大于 manifest 才发布；相同版本验证不可变 APK 后 no-op；仓库版本
-小于 production 直接拒绝。`forceUpdate` 不属于契约，强制更新由
+production 比较为：候选版本（stage 来自 committed source，publish 来自显式版本的 immutable tag）
+大于 manifest 才发布；相同版本核验不可变 APK 与 manifest 一致性后 no-op；候选版本
+小于 production 直接拒绝。production Web frontend build 不再是 Android runtime dependency。`forceUpdate` 不属于契约，强制更新由
 `installedVersionCode < minSupportedVersionCode` 派生。
