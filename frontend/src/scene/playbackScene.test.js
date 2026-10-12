@@ -339,27 +339,31 @@ describe('playbackScene 会话代数契约', () => {
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
     api.setPlaying(false)
+    // 客户端槽位模型：环 50 槽/侧（覆写最老）+ 活戳独立槽（下标 50）+ 固定绘制窗口
+    // （TRAIL_SLOTS = 51×2 = 102 个四边形，无效槽由显式隐藏处理）
     const readTrail = () => {
       const v = window.__pbV[0]
       const col = v.treadMesh ? v.treadMesh.geometry.getAttribute('color').array : null
       return {
         builtT: v.trail.builtT, total: v.trail.L.total, rTotal: v.trail.R.total,
+        live: v.trail.L.segs.length,       // 环内活戳数 = min(total, 50)
         quads: v.treadMesh ? v.treadMesh.geometry.drawRange.count / 6 : 0,
-        youngAlpha: (col && v.trail.L.total > 0) ? +col[((v.trail.L.total - 1) % 1536) * 32 + 3].toFixed(2) : 'none',
+        youngAlpha: (col && v.trail.L.total > 0) ? +col[((v.trail.L.total - 1) % 50) * 32 + 3].toFixed(2) : 'none',
         oldAlpha: (col && v.trail.L.total > 0) ? +col[3].toFixed(2) : 'none',
       }
     }
     api.seekTime(t0 + 18)
     let r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, quads: 180 })
+    // 落锚每 1 m 一戳（0.2 s/戳）：18 s → 90 戳；环只保留最近 50
+    expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, live: 50, quads: 102 })
     expect(r.youngAlpha).toBeCloseTo(0.8)
     api.seekTime(t0 + 8)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, quads: 80 })
+    expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, live: 40, quads: 102 })
     api.seekTime(t0 + 28)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, quads: 280 })
-    expect(r.oldAlpha).toBe(0)
+    expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, live: 50, quads: 102 })
+    expect(r.oldAlpha).toBe(0)          // 环里最老戳（出生 20 s 前）早已出淡出窗（≤7.62 s）
     expect(r.youngAlpha).toBeCloseTo(0.8)
     api.seekTime(t0 + 55)
     r = readTrail()
@@ -479,7 +483,10 @@ describe('playbackScene 会话代数契约', () => {
       expect(raycastFromAbove(rev.v.treadMesh, rev.v.trail.L, 0)).toBeGreaterThan(0)
     })
 
-    it('转弯：左右弧长不同（L≠R）时绘制窗口覆盖较长侧，较短侧空槽显式隐藏（review P2 2026-10-11）', async () => {
+    it('转弯：左右弧长不同（L≠R）各自独立；固定绘制窗口 + 环外空槽显式隐藏（客户端槽位模型）', async () => {
+      // 圆轨迹半径 5 m、ω=1 rad/s（中心 5 m/s）：外侧履带 5.9 m/s、内侧 4.1 m/s ⇒ 18 s 后
+      // 两侧落锚数差 ≈32（左右弧长不同是常态：不能假设成对，也不按 min/max 互相截断——
+      // 绘制窗口现为固定全槽位 + 无效槽显式隐藏）。
       const n = 580
       const pos = new Array(n * 3), yaw = new Array(n)
       for (let i = 0; i < n; i++) {
@@ -491,23 +498,39 @@ describe('playbackScene 会话代数契约', () => {
       const colArr = () => v.treadMesh.geometry.getAttribute('color').array
       api.seekTime(42 + 18)
       const L18 = v.trail.L.total, R18 = v.trail.R.total
-      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)
-      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(2 * Math.max(L18, R18))
-      const longIsL = L18 > R18
-      const longTotal = longIsL ? L18 : R18
-      expect(colArr()[((longTotal - 1) % 1536) * 32 + (longIsL ? 0 : 16) + 3]).toBeGreaterThan(0)
-      api.seekTime(42 + 30)
-      expect(v.trail.L.total).toBeGreaterThan(L18)
-      expect(v.trail.R.total).toBeGreaterThan(R18)
-      api.seekTime(42 + 18)
-      expect(v.trail.L.total).toBe(L18)
-      expect(v.trail.R.total).toBe(R18)
-      const pairs = Math.max(L18, R18)
+      expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)          // 弧长差 ⇒ 落锚数不同
+      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(102)     // TRAIL_SLOTS（51×2）
+      // 两侧最新戳都在窗口内且可见（固定窗口不再互相截断）
+      expect(colArr()[((L18 - 1) % 50) * 32 + 0 + 3]).toBeGreaterThan(0)
+      expect(colArr()[((R18 - 1) % 50) * 32 + 16 + 3]).toBeGreaterThan(0)
+      // 先跑更长一轮（环写满），再 seek 后退全量重建：环外空槽（k ∈ [total, 50)）里残留的
+      // 旧戳必须被显式清零——不靠"位置全零即退化"的偶然
+      api.seekTime(42 + 40)
+      expect(v.trail.L.total).toBeGreaterThan(50)
+      expect(v.trail.R.total).toBeGreaterThan(50)
+      api.seekTime(42 + 2)
+      expect(v.trail.L.total).toBeLessThan(50)                       // 环未满：存在"应清空"的槽
       for (const [st, quad] of [[v.trail.L, 0], [v.trail.R, 1]]) {
-        for (let k = st.total; k < pairs; k++) {
-          expect(colArr()[(k % 1536) * 32 + quad * 16 + 3]).toBe(0)
+        for (let k = st.total; k < 50; k++) {
+          expect(colArr()[(k % 50) * 32 + quad * 16 + 3]).toBe(0)
         }
+        expect(colArr()[((st.total - 1) % 50) * 32 + quad * 16 + 3]).toBeGreaterThan(0)
       }
+    })
+
+    it('前沿跟随：活戳槽末端 = 车辆当前车位（客户端每帧重发同款；滞后 ≤ 一个网格步）', async () => {
+      const { api, v } = await setupTrail({ n: 580, pos: linePos(580), yaw: Math.PI / 2 })
+      api.seekTime(42 + 10.1)
+      const posAttr = v.treadMesh.geometry.getAttribute('position').array
+      const col = v.treadMesh.geometry.getAttribute('color').array
+      const g = v.group.position
+      // L 活戳槽（交错槽：L 偶 → 下标 50×2）位置偏移 = 50*24 + 0*12
+      const o = 50 * 24
+      const midX = (posAttr[o + 2 * 3] + posAttr[o + 3 * 3]) / 2      // 远端横截面两点中点
+      const midZ = (posAttr[o + 2 * 3 + 2] + posAttr[o + 3 * 3 + 2]) / 2
+      // yaw=π/2 ⇒ 前向 = −x、L 横向 = +z（trailHalfGauge 回落 0.9）
+      expect(Math.hypot(midX - g.x, midZ - (g.z + 0.9))).toBeLessThanOrEqual(0.55)
+      expect(col[50 * 32 + 3]).toBeGreaterThan(0)                     // 活戳可见（新鲜）
     })
 
     it('关断重开：路径态与游标一起复位——同 T 的段数不翻倍（review P2 2026-10-11）', async () => {

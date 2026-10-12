@@ -4,14 +4,26 @@
  * 数据面 = 上游 `tools/export_tank_tread.py` 产出的包内 `tread/<tank_id>.json`
  * （客户端 `treadParameters` 块：印记条带宽/间距 + 贴图引用）与 `tread/textures/*.webp`
  * （客户端 DDS 无损转码）。可行性与 fail-closed 边界见上游
- * `docs/feasibility-track-marks.md`；本模块只管"沿路径铺段 + 段→贴地四边形"两件事。
+ * `docs/feasibility-track-marks.md`；本模块只管"沿路径推进戳 + 戳→贴地四边形"两件事。
  *
- * 与客户端的关系（诚实记录）：客户端 TreadSystem 的逐帧铺放算法未逆向，本实现按
- * authored `manualSpace` 沿回放位姿路径铺贴图段——贴图/宽度/间距是客户端作者数据，
- * 铺放节奏与段几何是依据作者参数的近似（上游 feasibility 文档 §四）。
+ * ## 与客户端的关系（2026-10-12 反汇编定案，全面对齐）
  *
- * 本模块不依赖 three.js：段是普通对象、四边形是逐角坐标数组，便于单测；
- * 场景侧只做容器与写入（逐车动态合并几何，槽位 = 绝对序号）。
+ * `wotblitz.exe`（32 位，base 0x400000）里的 TreadSystem 证据链：
+ * - 逐帧 `TreadSystem::Process` @0x83ecc0 → 每车 `0x83f820` → 每侧铺放 `0x83d410`；
+ * - **每侧固定环 50 槽**：槽位索引运算 `(i + 0x32) % 0x32`（0x83d460）——活戳上界 = 50/侧×车数
+ *   ⇒ 印记长度天然有界（约 ring × space 米），环形覆写而不是无限累积；
+ * - **锚点/提交语义**：每个槽位的戳 = 「上次落锚点 → 当前触地点」的扫掠四边形；触地点与锚点
+ *   距离满阈值（`0x83d4ca-0x83d507` 的距离平方门控）才**就地重新落锚**（锚点 = 当前点，不做
+ *   精确倍数插值）——因此重复碾压同一块地面 = 槽位重新落锚 + 刷新出生时刻，**不叠墨**；
+ * - **边界抖动退休**：戳长 ∈ [space, space + 步长]，不存在"整数边界"可被重复跨越；
+ * - **时间门控/淡出窗**：`now > slot.t + 7.62`、`+5.45`（常数 0x4010f98 / 0x4010f94）——
+ *   与着色器 `1 − smoothstep(fadeOutTimeStartEnd)` 的形态一致，取作本实现的淡出窗；
+ * - 几何（扫掠剪切 `y→y·z+w`）、透明度（贴图 alpha × 距离淡出 × 时间淡出，无整体压暗）、
+ *   每图设置（`mtsc.color`/`treadBlending`）见 upstream feasibility §四 与 WotbTools
+ *   `docs/features/battle-playback.md`。
+ *
+ * 本模块不依赖 three.js：戳是普通对象、四边形是逐角坐标数组，便于单测；
+ * 场景侧只做容器与写入（逐车动态合并几何，槽位 = 绝对序号 % ring）。
  */
 
 /** 无 authored 数据车辆的产品回落（上游 feasibility §四：回落本身无客户端依据）：
@@ -19,37 +31,39 @@
 export const TREAD_FALLBACK = { width: 0.6, space: 1.0 };
 export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
 
-/** 印记寿命（回放时钟）：`after` 秒内全显，随后 `dur` 秒线性淡出到 0（共 20 s 消失；
- * 2026-10-11 用户定值 10+10）。客户端 TreadSystem 有同类的淡出-消失行为（用户对照），
- * 但具体时长未逆向——本组常数是**产品决定**（上游 feasibility §四 的自定参数项）。 */
-export const TREAD_FADE = { after: 10, dur: 10 };
+/** 每侧活戳环槽数：客户端反汇编 `(i + 0x32) % 0x32`（0x83d460，0x32 = 50）。
+ *  **这是"印记长度预算"**（环里最老槽被新戳覆写 ⇒ 轨迹在车后滚动收尾），不是我们的旧值
+ *  1536（那只是显存上限、不约束可见长度）。 */
+export const TREAD_RING = 50;
+
+/** 淡出窗（回放秒）：客户端引擎时间常数 5.45 / 7.62（反汇编 0x4010f94 / 0x4010f98，
+ *  参与槽位时间门控；与着色器 `fadeOutTimeStartEnd` 的 `1 − smoothstep(start, end, age)`
+ *  同源推断）。旧值 10 + 10 s 是**产品自定**（2026-10-11 用户裁示），本次按客户端口径替换。 */
+export const TREAD_FADE = { start: 5.45, end: 7.62 };
 
 /** 全局不透明度系数：顶点色 alpha = 淡出系数 × 本值。
  *
- * 客户端着色器口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支，2026-10-11 取证）：
- * `parameters.x` 是**印记出生时间**，透明度 = 距离淡出（`treadsNear/FarFadeDistance`）
- * × 时间淡出（`smoothstep(fadeOutTimeStartEnd)`）——着色器里**没有**额外的整体压暗。
- * 但直接把本系数设 1.0 后实测比游戏**更黑**（用户目视），0.55 时则偏淡 ⇒ 客户端还有
- * 两处未复刻的减淡机制（二者都在同一着色器族里有实证，具体数值在游戏层代码、尚未逆向）：
- *   ① 距离淡出（`[auto] property float treadsNearFadeDistance/treadsFarFadeDistance`，
- *      随相机距离 smoothstep 淡出——旁观/俯瞰视距下客户端会比我们淡）；
- *   ② 贴花调色分支 `#if GLOBAL_TINT: rgb *= globalFlatColor.rgb * 2.0`（同族着色器，
- *      铁轨贴花已证实该分支在贴花实例上启用；若履带印亦然，客户端标记色比纹理原色亮）。
- * 本值 = **用户目视两点校准**（0.55 偏淡 / 1.0 偏黑，目标介于其间），待上述任一机制
- * 逆向定案后以其精确口径替换。 */
+ * 客户端着色器口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支）：透明度 = 距离淡出
+ * （`treadsNear/FarFadeDistance`）× 时间淡出（`smoothstep(fadeOutTimeStartEnd)`），
+ * **没有**额外的整体压暗。但直接把本系数设 1.0 后实测比游戏更黑（用户目视两点校准：
+ * 0.55 偏淡 / 1.0 偏黑）⇒ 客户端还有两处未复刻的减淡机制（具体数值在游戏层、未逆向）：
+ *   ① 距离淡出（`treadsNear/FarFadeDistance`，随相机距离 smoothstep 淡出）；
+ *   ② 贴花调色分支 `#if GLOBAL_TINT: rgb *= globalFlatColor.rgb * 2.0`（同族着色器）。
+ * **保留 0.8 是刻意的产品决定**（用户校准值；槽位模型落地后它对"重压变深"的补偿作用已
+ * 消失，可随时按客户端口径（1.0）做一次目视 A/B）。 */
 export const TREAD_OPACITY = 0.8;
 
 /**
- * 印记年龄（回放秒）→ 不透明度系数 [0,1]：`after` 前恒 1，之后线性降 0。
- * 真正的负年龄表示回放时钟早于该段出生时刻（例如 seek 到首个 coverage 之前）：必须隐藏，
- * 否则延迟 hard-reset 尚未拿到新 anchor 时会短暂显示“未来的履带印”。仅给 1e-9 的浮点
- * 边界容差，避免刚好在出生时刻因数值抖动闪烁。
+ * 印记年龄（回放秒）→ 不透明度系数 [0,1]：客户端同款 `1 − smoothstep(start, end, age)`
+ * ——`start` 前恒 1，`start→end` 平滑降 0，之后 0。
+ * 负年龄 = 回放时钟早于该戳出生时刻（seek 到其出生前）：隐藏（0），只容忍 1e-9 浮点抖动。
  */
 export function treadAlphaAt(age, fade = TREAD_FADE) {
   if (age < -1e-9) return 0;
-  if (!(age > fade.after)) return 1;
-  const a = 1 - (age - fade.after) / fade.dur;
-  return a > 0 ? a : 0;
+  if (!(age > fade.start)) return 1;
+  if (age >= fade.end) return 0;
+  const x = (age - fade.start) / (fade.end - fade.start);
+  return 1 - x * x * (3 - 2 * x);          // 1 − smoothstep(start, end, age)
 }
 
 /**
@@ -104,20 +118,19 @@ export function treadScaleFor(meta, texturePath) {
   return s;
 }
 
-/** 单侧履带的路径累积态。
+/** 单侧履带的路径累积态（客户端槽位模型）。
  *
- * `segs` 是**固定槽位环形**缓冲：槽位 = 绝对序号 % cap（`total` = 累计出段数），
- * 即 `segs[k % cap]` 永远是绝对序号 k 的段——调用方（InstancedMesh 实例）按同一
- * 槽位公式写入，环形覆写只动被覆盖的那一个槽，**不搬动任何已写实例的索引**。
- * `written` 是消费侧书签（已写进 GPU 的绝对段数）。
+ * - `anchor` = 当前活戳的起点横截面（落锚点：位置 + 朝向 + 出生时刻）；
+ * - `open` = 当前活戳的**末端横截面**（逐帧拉伸到车辆当前位置；`null` = 尚无活戳）；
+ * - `segs` = **固定槽位环形**缓冲（`segs[k % cap]` = 绝对序号 k 的已提交戳，`total` 累计）；
+ *   调用方按同一槽位公式写入：已提交戳占 `k % cap`，活戳占独立槽位 `cap`；
+ * - `written` = 消费侧书签（已写进 GPU 的绝对戳数）。
  */
 export function createTrailState() {
-  // lastMark = 上一横截面 {x, z, yaw, t}——印记戳 = 相邻两横截面之间的**扫掠四边形**
-  // （客户端同构：每戳由"上一戳时刻的履带横截面 → 当前时刻的横截面"围成，相邻戳共享
-  // 整条接缝边 ⇒ 转弯处天生无缝；deferred-decal-vp.sl 的剪切参数 y→y·z+w 即这一几何）。
-  return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0, acc: 0, segs: [], head: 0, total: 0, written: 0,
-           breakPending: false, lastSegT: -Infinity,
-           lastMark: { x: 0, z: 0, yaw: 0, t: 0 } };
+  return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0,
+           anchor: { x: 0, z: 0, yaw: 0, t: 0 }, open: null,
+           segs: [], head: 0, total: 0, written: 0,
+           breakPending: false, lastSegT: -Infinity };
 }
 
 /**
@@ -126,14 +139,14 @@ export function createTrailState() {
  * 调用方在两类场景都复用这个入口：
  * - AoI/coverage 空洞、pose 大跳：下一可见点应成为新 anchor，历史 decal 继续按寿命淡出；
  * - seek 后退、关断重开、宽度变化：调用方随后会从 START 重喂。`advanceTrail()` 看到
- *   新 anchor 时刻不晚于最后历史段，会把它识别为真正的全量重建并清历史。
+ *   新 anchor 时刻不晚于最后历史戳，会把它识别为真正的全量重建并清历史。
  *
  * 这样避免把“断链”错误实现成“删除历史印记”（#587 review blocker）。
  */
 export function resetTrailState(st) {
   st.hasLast = false;
-  st.acc = 0;
   st.breakPending = true;
+  st.open = null;
 }
 
 function clearTrailHistory(st) {
@@ -145,84 +158,69 @@ function clearTrailHistory(st) {
   st.breakPending = false;
 }
 
-/** 角度插值（最短弧，rad）——横截面在步内取交会点时用。 */
-function lerpAngle(a, b, f) {
-  let d = b - a;
-  while (d > Math.PI) d -= 2 * Math.PI;
-  while (d < -Math.PI) d += 2 * Math.PI;
-  return a + d * f;
-}
-
 /**
- * 沿采样点序列推进一侧履带的路径累积，按 `space`（米）打**横截面戳**。
+ * 沿采样点序列推进一侧履带（客户端槽位模型）。
  *
- * - 戳 = 相邻两横截面的扫掠四边形（`{x0,z0,yaw0,x1,z1,yaw1,t}`；t = 后一横截面时刻）。
- *   横截面 = 该时刻履带中心线处、垂直于车体朝向的宽度线——**相邻戳共享整条接缝边**
- *   （前一戳的 (x1,z1,yaw1) 即后一戳的 (x0,z0,yaw0)），转弯处无楔形缝（客户端同构）。
- * - 采样点 = `{x, z, t, yaw}`（世界系 + 回放时刻 + 车体朝向）；步内交会点按距离分数插值
- *   （朝向走最短弧）。
- * - 零位移样本（停车 / 原地转向）**推进采样时刻与朝向但不累加里程**（2026-10-11 review：
- *   不推进的话，重新起步的新戳出生时刻在「停车前」与「起步后」之间插值——实测 40.1 s
- *   而实际 100 s，新印记一出即过期）。
- * - `resetTrailState()` 后若下一 anchor 的时间**晚于**最后历史段：视作 AoI/传送断链，只重锚；
- *   若不晚于最后历史段：视作 seek/重开/参数变化的全量重建，先清历史再重放。
- * - 返回本次新增戳数（`total` 差值）；环形覆写只替换 `segs[k % cap]` 槽位内容。
+ * - 活戳 = 「锚点横截面 → 当前横截面」的扫掠四边形；每来一个移动样本就**把末端拉到该样本**
+ *   （前沿跟随车辆当前位置，真机同款），锚点与末端距离满 `space` 时**提交**该戳并就地重新
+ *   落锚（锚点 = 当前点；不做精确倍数插值）。
+ * - 提交的戳 `t` = **锚点时刻**（出生 = 落锚，与客户端"槽位时间随重新落锚刷新"一致）；
+ *   相邻戳共享整条接缝边（前戳 (x1,z1,yaw1) ≡ 后戳 (x0,z0,yaw0)）⇒ 单趟内零重叠、转弯无缝。
+ * - 零位移样本（停车 / 原地转向）推进采样时刻与朝向但不累加里程；原地转向时活戳末端
+ *   横截面**跟随朝向**（打转覆盖的扫掠面）。
+ * - `resetTrailState()` 后若下一 anchor 的时刻**晚于**最后历史戳：视作 AoI/传送断链，只重锚
+ *   （历史保留）；否则视作 seek/重开/参数变化的全量重建，先清历史再重放。
+ * - 返回本次**提交**的戳数；环形覆写只替换 `segs[k % cap]` 槽位内容（cap = 客户端 50 槽）。
  *
  * @param {ReturnType<createTrailState>} st 路径累积态（就地变更）
  * @param {Array<{x:number, z:number, t?:number, yaw?:number}>} pts 采样点
- * @param {number} space 打戳间距（m，authored `manual_space`）
- * @param {number} cap 戳缓存上限
- * @returns {number} 新增戳数
+ * @param {number} space 落锚间距（m，authored `manual_space`）
+ * @param {number} cap 戳环槽数（TREAD_RING）
+ * @returns {number} 本次提交的戳数
  */
 export function advanceTrail(st, pts, space, cap) {
   if (!(space > 1e-3)) return 0;
   let added = 0;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
+    const pyaw = p.yaw || 0;
+    const pt = Number.isFinite(p.t) ? p.t : 0;
     if (!st.hasLast) {
-      const pt = Number.isFinite(p.t) ? p.t : 0;
       // resetTrailState 同时承担“断链”和“即将全量重建”的入口。真正区别在下一 anchor：
       // AoI/传送恢复一定向前走（pt > lastSegT）⇒ 保留历史；seek/重开从 START 重喂
       // （pt <= lastSegT）⇒ 清历史。容差只吸收网格边界浮点噪声。
       if (st.breakPending && st.total > 0 && pt <= st.lastSegT + 1e-9) clearTrailHistory(st);
       st.breakPending = false;
       st.hasLast = true;
-      st.x = p.x; st.z = p.z; st.yaw = p.yaw || 0; st.t = pt; st.acc = 0;
-      st.lastMark.x = p.x; st.lastMark.z = p.z; st.lastMark.yaw = st.yaw; st.lastMark.t = st.t;
+      st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
+      st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw; st.anchor.t = pt;
+      st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
       continue;
     }
-    const dx = p.x - st.x, dz = p.z - st.z;
-    const d = Math.hypot(dx, dz);
-    const pyaw = p.yaw || 0;
-    const pt = p.t || 0;
+    const d = Math.hypot(p.x - st.x, p.z - st.z);
     if (!(d > 1e-6)) {
-      // 静止样本：不累加里程、不打戳（st.x/z 本就不变），但**采样时刻与朝向必须推进**——
-      // 停车期间（速度 0 但有采样点、可能原地转向）若把 t 冻在停车前，重新起步跨过下一个
-      // 打戳边界时出生时刻会在「停车前」与「起步后」之间插值（review 复现：实际 100.1 s
-      // 的戳被算成 40.1 s ⇒ 当前 alpha=0，新印记一出生就不可见）。
+      // 静止样本：里程不推进；但采样时刻与朝向必须推进（停车期间重新起步时，新戳的锚点
+      // 时刻才不会是停车前），原地转向时活戳末端横截面跟随朝向。
       st.t = pt;
       st.yaw = pyaw;
+      if (st.open && st.open.yaw1 !== pyaw) st.open.yaw1 = pyaw;
       continue;
     }
-    const accEnd = st.acc + d;
-    // ⚠️ floor 前必须加静差（2026-10-11 定案）：点位来自插值，步长带 ~1e-10 抖动；当 accEnd
-    // 落在整数界下 1e-9 内时，`floor(acc/space)+1` 对**下一个**半步仍算出同一个 j，配合
-    // 条件里的 +1e-9 容差 ⇒ **同一戳被相邻两步重复发出**（实测 20 m 窗口发 29/27 戳、L/R
-    // 因抖动不对称、轨迹上出现不规则双戳）。floor 内加静差后同一边界只能跨过一次。
-    for (let j = Math.floor((st.acc + 1e-9) / space) + 1; j * space <= accEnd + 1e-9; j++) {
-      const f = (j * space - st.acc) / d;      // 步内交会分数 ∈ (0, 1]
-      const m = st.lastMark;
-      const mk = {
-        x: st.x + dx * f, z: st.z + dz * f,
-        yaw: lerpAngle(st.yaw, pyaw, f),
-        t: st.t + (pt - st.t) * f,
-      };
-      pushSeg(st, { x0: m.x, z0: m.z, yaw0: m.yaw, x1: mk.x, z1: mk.z, yaw1: mk.yaw, t: mk.t }, cap);
-      m.x = mk.x; m.z = mk.z; m.yaw = mk.yaw; m.t = mk.t;
+    st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
+    if (st.open) { st.open.x1 = p.x; st.open.z1 = p.z; st.open.yaw1 = pyaw; }
+    // 落锚门控：当前位置与锚点距离满 space ⇒ 提交活戳、就地重新落锚（客户端 0x83d4ca 同款：
+    // 距离平方门控 + 锚点直接设为当前点）。戳长 ∈ [space, space + 步长]，无整数边界可重复跨越
+    // ⇒ 旧的 floor+静差防抖机制不再需要。
+    // ⚠️ 阈值带 1e-9 容差：采样点是网格线性插值的产物，恰好落在 space 倍数上的点会以
+    // 0.9999999999999998 的形态出现（浮点欠冲）——不容差会让落锚被推迟一个采样，戳长在
+    // 1.0/1.5 m 间交替、平均间距 1.25 m（实测 12 s 只落 48 戳而非 60）。
+    if (Math.hypot(p.x - st.anchor.x, p.z - st.anchor.z) >= space - 1e-9) {
+      pushSeg(st, { x0: st.anchor.x, z0: st.anchor.z, yaw0: st.anchor.yaw,
+                    x1: p.x, z1: p.z, yaw1: pyaw, t: st.anchor.t }, cap);
+      st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw; st.anchor.t = pt;
+      st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
       added++;
     }
-    st.acc = accEnd;
-    st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
   }
   return added;
 }
@@ -236,6 +234,14 @@ function pushSeg(st, seg, cap) {
   st.lastSegT = seg.t;
 }
 
+/** 活戳是否可画（长度非退化）——场景侧写活戳槽位前判退化用。 */
+export function openStampOf(st) {
+  if (!st.open) return null;
+  if (!(Math.hypot(st.open.x1 - st.anchor.x, st.open.z1 - st.anchor.z) > 1e-6)) return null;
+  return { x0: st.anchor.x, z0: st.anchor.z, yaw0: st.anchor.yaw,
+           x1: st.open.x1, z1: st.open.z1, yaw1: st.open.yaw1, t: st.anchor.t };
+}
+
 /** 贴地抬升（m）：印记四角**逐角独立采样**地形高度后再抬——抬升只需盖住
  * 「真值场双线性面 vs 渲染网格（LOD 分片线性面）」的残差。全景视距下客户端合法的
  * 粗格网格与真值面可差 5~15 cm（铁轨 D4 同族问题），0.06 时实测成片被网格盖住
@@ -247,9 +253,7 @@ export const TRAIL_LIFT = 0.12;
  * 几何 = 客户端同构：两个横截面（各为过中心线、垂直于当时车体朝向的宽度线）之间的
  * 扫掠四边形——角序 `[L0, R0, R1, L1]`（L/R = 横截面两端，0/1 = 先后两个横截面），
  * uv 固定 `(0,0)(1,0)(1,1)(0,1)`（u = 横向、v = 沿戳方向一次完整条带，调用方预填）。
- * **相邻戳共享整条接缝边**（前戳的 L1/R1 ≡ 后戳的 L0/R0，两侧横截面由同一次采样插值
- * 产生）⇒ 转弯处无楔形缝（2026-10-11 用户报"仍不连续"的根因，客户端 deferred-decal
- * 的剪切几何同款）。
+ * **相邻戳共享整条接缝边**（前戳的 L1/R1 ≡ 后戳的 L0/R0）⇒ 转弯处无楔形缝。
  *
  * 逐角高度：印记必须贴合**渲染网格**（LOD 分片线性面，与真值场双线性面残差随视距
  * 增大）——四角各自落到 `heightAt` + `TRAIL_LIFT` 上，随坡双向弯折；单平面只 3 个
@@ -263,8 +267,7 @@ export const TRAIL_LIFT = 0.12;
  */
 export function trailStampCorners(seg, width, heightAt, out) {
   const hw = width / 2;
-  // 横截面两端：中心 ± 横向量·半宽。横向量取车队 heading 的水平右向（与旧实现同一
-  // 约定：fwd=(−sin yaw, cos yaw) → right=(−cos yaw, −sin yaw)，左右对称无语义）。
+  // 横截面两端：中心 ± 横向量·半宽。横向量取车队 heading 的水平右向（左右对称无语义）。
   const fx0 = -Math.sin(seg.yaw0), fz0 = Math.cos(seg.yaw0);
   const rx0 = -fz0, rz0 = fx0;
   const fx1 = -Math.sin(seg.yaw1), fz1 = Math.cos(seg.yaw1);
