@@ -204,8 +204,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/tex\.mapping = THREE\.EquirectangularReflectionMapping;/)
     expect(src).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)
     expect(src).toMatch(/scene\.environmentIntensity = envMultiplier;/)
-    // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）
-    expect(src).toMatch(/envMultiplier = Number\.isFinite\(m\) \? m : 1;/)
+    // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）；
+    // 2026-10-11 起在 applyMapLighting 内随太阳强度归一（authored 读取 + /expo，
+    // 高太阳图 IBL 不再被输出曝光压暗——mountain 报障"坦克非常暗"）
+    expect(src).toMatch(/const envAuthored = L && L\.ibl && L\.ibl\['ibl\.environmentMultiplier'\];/)
+    expect(src).toMatch(/envMultiplier = \(Number\.isFinite\(envAuthored\) \? envAuthored : 1\) \/ expo;/)
     // 时序：资产阶段可早于 initScene（scene 未创建）→ 加载时判空 + initScene 末尾补挂
     expect(src).toMatch(/if \(scene\) \{/)
     expect(src).toMatch(/scene\.environment = tex;/)
@@ -399,10 +402,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(matSrc).not.toMatch(/SRGBColorSpace/);      // 材质模块内零 sRGB 解码
     expect(matSrc).toMatch(/NoColorSpace/);            // 且确有显式原样采样
     // 场景侧的 sRGB 只许是**显示内容**（画布贴图 / 底图 / IBL 等距柱状）：
-    // 底图 mapTexture、IBL envTexture、基地标记画布、伤害飘字画布 —— 恰好 4 处。
+    // 底图 mapTexture、IBL envTexture、基地标记画布、伤害飘字画布、履带印贴图 —— 恰好 5 处。
+    // （履带印 = 客户端 albedo 贴图的显示内容解码，DDS→webp 保像素转码；2026-10-11）
     // 新增一处（尤其给地面分层 texs[k] 加）会改这个数 ⇒ 必须先想清楚它属于哪一类。
     const sites = [...src.matchAll(/colorSpace = THREE\.SRGBColorSpace/g)]
-    expect(sites.length).toBe(4)
+    expect(sites.length).toBe(5)
     expect(src).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
     expect(src).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
   })
@@ -807,6 +811,11 @@ describe('悬挂接线（轮/带逐帧解算，客户端同构）', () => {
     expect(src).toMatch(/assetProvider\.json\(`\/suspension\/\$\{tankId\}\.json`\)\.catch\(\(\) => null\)/)
     expect(src).toMatch(/v\.suspParts = collectSuspensionParts\(inst, loaded\.susp, v\.def\.tank_id\)/)
     expect(src).toMatch(/v\.def\.suspReaction = loaded\.susp \? loaded\.susp\.wheels_reaction_speed : null/)
+    // 履带印宽度回落链的源码级守卫（2026-10-11 事故：tracks.push 引用了未声明的
+    // beltW 简写——两次补丁只落了引用侧——运行时报 "beltW is not defined"）
+    expect(src).toMatch(/const beltW = _spBox\.getSize\(new THREE\.Vector3\(\)\)\.x;/)
+    expect(src).toMatch(/tracks\.push\(\{[\s\S]{0,120}beltW,/)
+    expect(src).toMatch(/beltW: tracks\.length \? wsum \/ tracks\.length : 0/)
   })
 
   it('每帧在 poseGlb 里解算；seek 跳变吸附；不可见时侧位移积分复位', () => {
@@ -1025,12 +1034,40 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).not.toMatch(/Math\.max\(0\.22, s\.flight_secs\)/)
   })
 
+  it('标记/反馈层材质字面色直出（toneMapped:false）——逐图曝光不得压深 UI 语义色', () => {
+    // 2026-10-11 用户报"作者圆环 / 地图边界红线在加了光照后变深"：逐图曝光
+    // （toneMappingExposure = 基准太阳强度/该图强度）经 three 内建通路作用于**一切未排除
+    // 的材质**，未设 toneMapped:false 的标记材质会随图变深（山地图 expo≈0.21）。
+    // 炮线/轨迹线早已遵循此约定（见其注释），本守卫把同类标记逐点锁死。
+    const sites = [
+      [/color: BOUNDARY_COLOR[\s\S]{0,200}toneMapped: false/, '地图边界线'],
+      [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
+      [/color: baseColors\.neutral[\s\S]{0,200}toneMapped: false/, '基地环'],
+      [/map: tex, side: THREE\.DoubleSide[\s\S]{0,160}toneMapped: false/, '基地圆盘'],
+      [/color: 0xffa53a[\s\S]{0,160}toneMapped: false/, '击毁爆散'],
+      [/SpriteMaterial\(\{[\s\S]{0,180}toneMapped: false/, '伤害飘字'],
+    ]
+    for (const [re, label] of sites) expect(src, label).toMatch(re)
+    // 弹着三处（IMPACT_WHITE）全部直出
+    // 弹着三处（IMPACT_WHITE）逐点检查：其后 160 字符内必须出现 toneMapped: false
+    //（不用正则字面量：转义层曾在写入时把控制字符变成真换行，2026-10-11）
+    let impactFree = 0
+    for (let i = src.indexOf('IMPACT_WHITE'); i !== -1; i = src.indexOf('IMPACT_WHITE', i + 1)) {
+      if (src.slice(i, i + 160).includes('toneMapped: false')) impactFree++
+    }
+    expect(impactFree).toBeGreaterThanOrEqual(3)
+  })
+
   it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
     expect(src).toMatch(/function prewarmShaders\(\)/)
     expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
     expect(src).toMatch(/renderer\.compile\(labelScene, camera\);/)
     // 会话启动路径必须调用（GLB 恢复之后、开播之前）
-    expect(src).toMatch(/if \(glbOn\) applyGlbToggle\(true\);[\s\S]{0,60}prewarmShaders\(\);/)
+    // GLB 恢复挂载已前移到 buildVehicles 之后（2026-10-11）：高/极致在 assetStage 内
+    // await 全部模型就绪才开播（用户裁示"进地图前加载完双方坦克模型"）
+    expect(src).toMatch(/const attach = applyGlbToggle\(true\);[\s\S]{0,80}if \(Q\.forceGlb\) \{/)
+    expect(src).toMatch(/try \{ await attach; \} finally \{ if \(current\(\)\) store\.assetStage = false; \}/)
+    expect(src).toMatch(/prewarmShaders\(\);/)
   })
 
   it('性能探针带主线程停顿看门狗（抓帧循环之外的长任务）', () => {

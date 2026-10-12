@@ -52,6 +52,13 @@ import {
   parseWheelNodeName, parseTrackNodeName, wheelRadiusFromExtents,
   applyWheelSpin, measureBeltUvSlope, chainBottomRunDir, writeUvOffsetV,
 } from './suspension.js'
+// 地面履带印（TreadSystem 碾压痕）：生成/摆放纯函数；数据面 = 包内 tread/（上游
+// tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
+import {
+  advanceTrail, createTrailState, resetTrailState, resolveTreadParams,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE, TREAD_OPACITY,
+  TREAD_FALLBACK,
+} from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
@@ -112,11 +119,14 @@ async function mapLimit(items, limit, fn) {
 // 建筑的档位也要看到真实场景俯视内容；下载 ~5-6MB/图）。
 // 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
 // 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
+// treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
+// **强制** GLB 真实车模——印记的左右轨距取自 suspension 解析的模型实测 halfW，
+// 低模回落常数与之不同，允许中途切车模会让同一车前后的印记轨距突变。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true },
 }
 
 /**
@@ -203,6 +213,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let labelScene = null;
   let sizeObserver = null;
   let glbCache = new Map(), glbOn = false;
+  // 履带印（tread/）逐车参数与贴图缓存：会话域（与 glbCache 同生命周期）。
+  // 缺 json（424/735 辆无 authored 块）→ resolveTreadParams(null) 的产品回落（上游
+  // feasibility §四），**不视为失败**——缓存正结果，避免逐帧重试 404。
+  const treadParamCache = new Map();
+  const treadTexCache = new Map();   // texture 相对路径 → THREE.Texture（逐会话共享、逐会话释放）
+  let treadMetaPromise = null;       // /tread/textures.json（alpha 归一化系数表；失败 → {} 即全 1）
   let classIcons = false, showMarkerStatus = true;
   const classIconsVisible = () => classIcons && store.labelsOn;
   let mapPlane = null;
@@ -323,10 +339,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     apply();
   }
-  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）
+  // 低档强制盒子代理（14 车 ×数 MB GLB 下载 + PBR 填充率是移动端主要瓶颈之一）；
+  // 高/极致反向强制 GLB（履带印轨距一致性，见 QUALITY_PRESETS 注）
   function applyGlbGate() {
-    store.glbAllowed = Q.allowGlb;
-    if (!Q.allowGlb) {
+    store.glbAllowed = Q.allowGlb && !Q.forceGlb;   // 强制档：开关停用（UI disabled + 提示）
+    store.treadAllowed = !!Q.treadMarks;
+    if (Q.forceGlb) {
+      store.glbOn = true;
+      if (!glbOn) applyGlbToggle(true);
+    } else if (!Q.allowGlb) {
       store.glbOn = false;
       if (glbOn) applyGlbToggle(false);
     }
@@ -688,7 +709,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!pickMarker) {
       pickMarker = new THREE.Mesh(
         new THREE.SphereGeometry(0.5, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9 }),
+        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9,
+                                      toneMapped: false }),
       );
       pickMarker.renderOrder = 999;
     }
@@ -769,8 +791,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    // 标记/反馈层约定：`toneMapped: false` 字面色直出——逐图曝光（toneMappingExposure =
+    // 基准太阳强度/该图强度）只服务受光内容，不得让 UI 语义色的标记随图变深
+    //（2026-10-11 用户报"作者圆环与边界红线在加了光照后变深"：山地图 expo≈0.21 会压到 1/5）。
     const mat = new THREE.MeshBasicMaterial({
-      color: BOUNDARY_COLOR, side: THREE.DoubleSide,
+      color: BOUNDARY_COLOR, side: THREE.DoubleSide, toneMapped: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // 防与地形 z-fighting
     });
     const g = new THREE.Group();
@@ -2053,7 +2078,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const ring = new THREE.Mesh(
       makeGroundedRing(gx, gz, r),
       new THREE.MeshBasicMaterial({ color: baseColors.neutral, side: THREE.DoubleSide,
-                                    transparent: true, opacity: 0.9, depthWrite: false,
+                                    transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
                                     polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
     scene.add(ring);
     const canvas = document.createElement('canvas'); canvas.width = BASE_TEX; canvas.height = BASE_TEX;
@@ -2061,6 +2086,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const disc = new THREE.Mesh(
       makeGroundedDisc(gx, gz, r * 0.9),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false,
+                                    toneMapped: false,
                                     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     scene.add(disc);
     const b = { baseId, kind, gx, gz, r, ring, disc, canvas, ctx: canvas.getContext('2d'), tex,
@@ -2444,16 +2470,377 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       g.add(tracks); g.add(hullG);
       if (def.is_author) {
         const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 4.3, 32),
-          new THREE.MeshBasicMaterial({ color: 0xe8b23c, side: THREE.DoubleSide, transparent: true, opacity: .85 }));
+          new THREE.MeshBasicMaterial({ color: 0xe8b23c, side: THREE.DoubleSide, transparent: true,
+                                        opacity: .85, toneMapped: false }));
         ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06;
         ring.userData.keepWithGlb = true;   // GLB 模式下保留作者标记环
         g.add(ring);
       }
       const v = { def, group: g, turretG, gunPivot, meshHull: hull, hullGroup: hullG };
       v.labelAnchor = new THREE.Vector3();
+      // 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算）
+      v.trail = { L: createTrailState(), R: createTrailState(), builtT: -Infinity };
+      v.tread = null; v.treadMesh = null;
+      if (Q.treadMarks) {
+        Promise.all([treadParamsFor(def.tank_id), treadMetaFor()]).then(([tp, meta]) => {
+          if (destroyed || !v.trail) return;
+          // 宽度解析（客户端语义：forceManualWidth=false ⇒ 从履带几何现算）：
+          // authored → 模型履带盒实测（suspParts.beltW）→ 常量回落。
+          // ⚠️ 此刻 suspension 往往还没就位（参数 JSON 早于 GLB 到达），未 authored 车会先
+          // 落到常量回落；`authoredWidth:false` 标记让 updateTrails 在 beltW 就位后**重解析
+          // 并全量重建**（review P2 2026-10-11：旧写法把宽度永久锁成 0.6）。
+          v.tread = {
+            ...tp,
+            authoredWidth: tp.width != null,
+            width: tp.width != null ? tp.width : resolvedTreadWidth(v),
+            texScale: treadScaleFor(meta, tp.texture),
+          };
+          ensureTreadMesh(v, v.tread);
+          invalidate();   // 参数晚到：下一帧从 -∞ 全量补铺（builtT 未推进过，无空洞）
+        }).catch((e) => {
+          // fail-soft：资产源未配置（assetProvider.url 抛错）/贴图装配异常 ⇒ 该车无印记，
+          // 绝不冒未处理拒绝（2026-10-11 CI 复盘：vitest 以 unhandled error 判失败——本机
+          // .env.local 掩盖了无资产源形态；会话/地图资产链路本身有各自的错误呈现）。
+          console.warn('[playback] 履带印装配失败（该车无印记）tank=' + def.tank_id + ':', e);
+        });
+      }
       scene.add(g);
       V.push(v);
       setLowPoly(v, true);
+    }
+  }
+
+  // ---------- 地面履带印（TreadSystem 碾压痕） ----------
+  // 数据面：包内 tread/<tank_id>.json（authored 311/735 辆）+ tread/textures/*.webp。
+  // 生成 = 沿位姿路径按 authored manualSpace 铺段（treadMarks.js 纯函数）；呈现 =
+  // 每车一个 InstancedMesh（两侧各自环形槽位），四边形经 trailQuadMatrix 贴地（随坡倾斜）。
+  // seek 后退 = 复位路径态从 START 全量重算（与 destructibles 的"后退全量"同构）；
+  // 前进 = 游标增量泵。开关关 → 网格整体隐藏且 builtT 退回 -∞（重开即全量补铺，语义 =
+  // 印记由回放数据确定性生成，与播放/开关路径无关）。
+
+  /** 每侧段缓存上限（段 ≈ manualSpace 米长；1536 段 ≈ 1.5 km 履带程，覆盖最长场的走位） */
+  const TRAIL_CAP_PER_SIDE = 1536;
+  /** 无 suspension 数据时的履带中心线横距（m）：低模履带盒半宽量级（产品回落，上游 feasibility §四） */
+  const TREAD_HALF_GAUGE = 0.9;
+
+  function treadParamsFor(tankId) {
+    // tank_id 缺失/非法（车队识别失败等）：不发请求，直接产品回落（键 0 共享一个正结果）
+    const key = Number.isFinite(tankId) && tankId > 0 ? tankId : 0;
+    let p = treadParamCache.get(key);
+    if (!p) {
+      p = key > 0
+        ? assetProvider.json(`/tread/${key}.json`)
+          .then((j) => resolveTreadParams(j))
+          .catch(() => resolveTreadParams(null))
+        : Promise.resolve(resolveTreadParams(null));
+      treadParamCache.set(key, p);
+    }
+    return p;
+  }
+
+  function treadMetaFor() {
+    if (!treadMetaPromise) {
+      treadMetaPromise = assetProvider.json('/tread/textures.json').catch(() => ({}));
+    }
+    return treadMetaPromise;
+  }
+
+  /** 模型履带条宽（两侧履带盒横向尺寸均值；无 suspension 数据 → 0 ⇒ 调用方回落常量） */
+  function beltWidthOf(v) {
+    const sp = v.suspParts && v.suspParts.sides;
+    if (!sp) return 0;
+    let sum = 0, n = 0;
+    for (const key of ['L', 'R']) {
+      const s = sp[key];
+      if (s && s.beltW > 1e-3) { sum += s.beltW; n++; }
+    }
+    return n ? sum / n : 0;
+  }
+
+  /** 未 authored 车（`manual_width: null`，客户端 forceManualWidth=false 语义）的当前宽度：
+   *  模型履带盒实测 beltW → 常量回落。authored 车恒用 manual_width、不走这里。 */
+  function resolvedTreadWidth(v) {
+    const beltW = beltWidthOf(v);
+    return beltW > 1e-3 ? beltW : TREAD_FALLBACK.width;
+  }
+
+  function ensureTreadMesh(v, tp) {
+    if (v.treadMesh || !scene) return;
+    const SLOTS = TRAIL_CAP_PER_SIDE * 2;
+    const geo = new THREE.BufferGeometry();
+    // 逐段 4 顶点的**动态合并几何**（不是 InstancedMesh）：四角必须各自独立贴地
+    // （trailStampCorners），单个实例矩阵表达不了四角异高——正是首版"单平面 + 中心梯度"
+    // 被粗格地形网格盖住（印记断续可见）的根因。position 逐段写；uv/index 全槽位恒定。
+    const pos = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 3), 3);
+    pos.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', pos);
+    const uvArr = new Float32Array(SLOTS * 4 * 2);
+    for (let s = 0; s < SLOTS; s++) uvArr.set([0, 0, 1, 0, 1, 1, 0, 1], s * 8);
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    // RGBA 顶点色：rgb 恒 1，a = 寿命淡出系数（treadAlphaAt，按回放时钟老化）——
+    // 初始 0（未写槽位不可见；drawRange 之外本就不画，这里是防御）
+    const col = new THREE.BufferAttribute(new Float32Array(SLOTS * 4 * 4), 4);
+    col.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('color', col);
+    const idx = new Uint32Array(SLOTS * 6);
+    for (let s = 0; s < SLOTS; s++) {
+      const b = s * 4, o = s * 6;
+      idx[o] = b; idx[o + 1] = b + 1; idx[o + 2] = b + 2;
+      idx[o + 3] = b; idx[o + 4] = b + 2; idx[o + 5] = b + 3;
+    }
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.setDrawRange(0, 0);               // 未写段的位置是全零：drawRange 挡住 + seek 回退缩窗口
+    // 双面（review P2 2026-10-11）：戳的角序 [L0,R0,R1,L1] 跟车体朝向走，**倒车**时位移
+    // 反向 ⇒ 固定索引产生朝下法线，默认 FrontSide 下被背面剔除（实测倒车印记从地面以上
+    // 完全不可见：从上方向下 Raycaster 命中 0 三角形，DoubleSide 后命中）。贴地覆盖层
+    // 走 MeshBasicMaterial 无光照，双面零代价。
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, vertexColors: true,
+                                              side: THREE.DoubleSide });
+    let tex = treadTexCache.get(tp.texture);
+    if (!tex) {
+      tex = new THREE.TextureLoader().load(assetProvider.url(tp.texture));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Q.anisotropy;
+      treadTexCache.set(tp.texture, tex);
+    }
+    mat.map = tex;
+    mat.needsUpdate = true;
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;           // 段遍布全场：包围球无意义
+    mesh.renderOrder = 2;                 // 地形/底图之后
+    mesh.matrixAutoUpdate = false;
+    mesh.visible = store.treadOn;
+    scene.add(mesh);
+    v.treadMesh = mesh;
+  }
+
+  /** 单侧履带中心线的世界横距：suspension 解析出的 halfW 优先（模型实测），低模/无悬挂回落常数 */
+  function trailHalfGauge(v, side) {
+    const s = v.suspParts && v.suspParts.sides[side];
+    return s && s.halfW > 1e-3 ? s.halfW : TREAD_HALF_GAUGE;
+  }
+
+  /**
+   * 采样 [t0,T] 的两侧接地点序列并推进路径态（coverage 空洞断链；阵亡后静止不再出段）。
+   *
+   * **固定网格喂样**（review P2 2026-10-11）：只喂**完整 0.1 s 网格片**（片界按 [START] 对齐），
+   * 且首点固定为 t0 时刻的横截面——片内交会点的插值只依赖片界样本 ⇒ seek 重算与逐帧连续
+   * 播放**逐值一致**。旧实现从任意帧的 builtT 重切网格、首锚取第一次子步的 tt：首锚随帧
+   * 时刻漂移（实测同一直线同终点：一次 seek 首锚 z=0.5/t=0.3，60fps 泵 z=0.083/t=0.217，
+   * 转弯处几何还有差异）。不足整片的尾巴**留待下次**：返回值为最后已喂的网格时刻（不是 T），
+   * 调用方以此作 builtT——尾巴在网格片完成前不上屏，语义与"逐帧推进"等价。
+   *
+   * @returns {number} 已喂到的回放时刻（网格对齐；无完整片可喂时 = t0）
+   */
+  function feedTrail(v, tr, t0) {
+    const space = v.tread.space;
+    const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
+    const deathT = v.def.death_t;
+    const pendL = [], pendR = [];
+    let broken = false;
+    // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
+    // 复位一律由调用点在"断链时刻"显式执行（2026-10-11 review blocker：旧写法把复位藏在
+    // flush 的 `if (broken)` 里，而进入空洞的首帧 broken 还是 false ⇒ 不复位 ⇒ 出空洞的
+    // 首点仍挂空洞前的旧锚，桥接出一段横跨空洞的长印记，违背"跨空洞不连铺"契约）。
+    const flush = () => {
+      if (pendL.length) advanceTrail(tr.L, pendL, space, TRAIL_CAP_PER_SIDE);
+      if (pendR.length) advanceTrail(tr.R, pendR, space, TRAIL_CAP_PER_SIDE);
+      pendL.length = 0; pendR.length = 0;
+    };
+    /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
+    const pushPoint = (tt) => {
+      if (deathT != null && tt >= deathT) return;             // 阵亡：静止残骸不再出段（不断链）
+      if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
+        if (!broken) {
+          flush();
+          resetTrailState(tr.L);                              // 显式复位：出空洞从新锚开始
+          resetTrailState(tr.R);
+          broken = true;
+        }
+        return;
+      }
+      broken = false;
+      posAt(v, tt, tmpV);
+      const yaw = yawAt(v, tt);
+      const fx = -Math.sin(yaw), fz = Math.cos(yaw);          // 场景系前向（group.rotation.y = −yaw）
+      const rx = -fz, rz = fx;                                // 横向（左右对称，命名不承载语义）
+      pendL.push({ x: tmpV.x - rx * hwL, z: tmpV.z - rz * hwL, t: tt, yaw });
+      pendR.push({ x: tmpV.x + rx * hwR, z: tmpV.z + rz * hwR, t: tt, yaw });
+    };
+    // 首锚 = t0 横截面（固定起始面；t0 落在空洞/阵亡内时由出空洞的首个可见点建锚）
+    pushPoint(t0);
+    const k0 = Math.round((t0 - START) / GRID_DT);
+    const kEnd = Math.floor((T - START) / GRID_DT + 1e-9);
+    let fedTo = t0;
+    for (let k = Math.max(0, k0); k < kEnd; k++) {
+      const tA2 = START + k * GRID_DT, tB2 = START + (k + 1) * GRID_DT;
+      const pa = posAt(v, tA2, tmpV); const ax = pa.x, az = pa.z;
+      const pb = posAt(v, tB2, tmpV); const bx = pb.x, bz = pb.z;   // 先取值：子步 posAt 覆写 tmpV
+      const segLen = Math.hypot(bx - ax, bz - az);
+      if (segLen > 2.5) {
+        // 大步 = 断链（出生摆放 / AoI 传送 / pose_kf 保持-跳变）：跨过去不铺印，
+        // 否则位姿折线被 stamp 成一小段斜折线（用户报"刚进入对局时印记有一小段折线"）
+        flush();
+        resetTrailState(tr.L);
+        resetTrailState(tr.R);
+        fedTo = tB2;          // 断链片已消费：不补点，下一片的点从新锚开始
+        continue;
+      }
+      // 自适应子步：步内弧长 ≤ ~0.6 m（高速时 0.1 s 网格步会到 2 m+，段方向成弦切角）
+      const nSub = Math.min(6, Math.max(1, Math.ceil(segLen / 0.6)));
+      for (let s = 1; s <= nSub; s++) pushPoint(tA2 + (GRID_DT * s) / nSub);
+      fedTo = tB2;
+    }
+    flush();
+    return fedTo;
+  }
+
+  /**
+   * 路径态 → 四边形顶点 + 寿命 alpha。
+   *
+   * 槽位 = **左右交错**：第 k 对段占槽 `2k`（L）/ `2k+1`（R）——首版把 R 整块放在
+   * `[cap, 2cap)` 而 drawRange 只从 0 数起 `(L+R)×6` 个索引，R 区间永远落在绘制窗口外
+   * （实测"只有左侧履带有印记"）。
+   *
+   * 绘制窗口取**较长侧**（review P2 2026-10-11）：左右中心线在转弯时弧长不同、段数本就
+   * 不成对，min(L,R) 会把较长侧最新段截在窗口外（实测 R=12 / L=15 时 L 最新 3 段全不可
+   * 见，转得越久落后越多）。较短侧落在窗口内的空槽（k ≥ 该侧 total，环形里可能残留上一轮
+   * 更长运行的旧段）**显式隐藏**（alpha 置 0），不靠"位置全零即退化"的偶然性。
+   * `written` = 该侧已写入 GPU 的绝对段数；环形覆写只重写被覆盖的那个槽。
+   */
+  function writeTrailQuads(v, tr) {
+    const geo = v.treadMesh.geometry;
+    const posAttr = geo.getAttribute('position');
+    const colAttr = geo.getAttribute('color');
+    const parr = posAttr.array, carr = colAttr.array;
+    const h = heightField ? sampleHeight : () => 0;
+    const width = v.tread.width;
+    const c12 = new Float32Array(12);
+    // 环形覆写后可用槽位封顶在 2×cap：越界 drawRange 是未定义的 GPU 行为
+    const pairs = Math.min(Math.max(tr.L.total, tr.R.total), TRAIL_CAP_PER_SIDE);
+    let wrote = false;
+    for (const st of [tr.L, tr.R]) {
+      const quad = st === tr.L ? 0 : 1;      // 交错槽：L 占偶数槽（2k）、R 占奇数槽（2k+1）
+      for (let k = st.written; k < st.total; k++) {
+        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
+        if (!seg) continue;
+        if (!trailStampCorners(seg, width, h, c12)) continue;
+        parr.set(c12, (k % TRAIL_CAP_PER_SIDE) * 24 + quad * 12);
+        // alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——老化扫描
+        // 必须按同一量化值比较（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick
+        // 重新上传）
+        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        for (let q = 0; q < 4; q++) {
+          carr[co + q * 4] = 1; carr[co + q * 4 + 1] = 1;
+          carr[co + q * 4 + 2] = 1; carr[co + q * 4 + 3] = a;
+        }
+        wrote = true;
+      }
+      st.written = st.total;
+      // 空槽显式隐藏：本侧没有第 k 段（k ∈ [total, pairs)）却在窗口内——清 alpha
+      for (let k = st.total; k < pairs; k++) {
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
+        if (carr[co] !== 0 || carr[co + 4] !== 0 || carr[co + 8] !== 0 || carr[co + 12] !== 0) {
+          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
+          wrote = true;
+        }
+      }
+    }
+    geo.setDrawRange(0, pairs * 2 * 6);
+    // 门控上传：本帧没有新段就不传（静止/暂停时零 GPU 上传；此前每帧无条件全量上传
+    // position+color 两个缓冲，车辆停着也在烧带宽——2026-10-11）
+    if (wrote) { posAttr.needsUpdate = true; colAttr.needsUpdate = true; }
+  }
+
+  /** 寿命老化扫描：把"年龄落在淡出窗口内"的段的 alpha 刷新进顶点色。
+   *
+   * ⚠️ 窗口起点必须**按时间二分**（段按 `t` 有序），不能按"最近 N 段"数——段密度是
+   * 速度的函数（1 m 间距 @7 m/s ≈ 7 段/s，92 段只有 13 s），按段数取窗会让 60 s 前
+   * 的段提前出窗、alpha 永远停在 1（实测"不淡出"）。出窗瞬间最后写入的 alpha ≤ 3%
+   * （90 s 边界的一个 tick 内），无可见残留；暂停时时钟冻结 ⇒ 淡出冻结。
+   */
+  function ageTrailAlphas(v, tr) {
+    const colAttr = v.treadMesh.geometry.getAttribute('color');
+    const carr = colAttr.array;
+    const cutoff = T - (TREAD_FADE.after + TREAD_FADE.dur);
+    let dirty = false;
+    for (const st of [tr.L, tr.R]) {
+      const quad = st === tr.L ? 0 : 1;
+      // 二分最小 k：segs[k].t ≥ cutoff（环内有效域 [total-cap, total)）
+      let lo = Math.max(0, st.total - TRAIL_CAP_PER_SIDE), hi = st.total;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        const seg = st.segs[mid % TRAIL_CAP_PER_SIDE];
+        if (seg && seg.t >= cutoff) hi = mid; else lo = mid + 1;
+      }
+      // [有效域起点, lo) = 已过寿命的段：**显式清零**。大步 seek 前进时这些段一步跨出
+      // 淡出窗口，否则停留在跨步前的旧 alpha（实测残留 0.55 全亮——"该消失的印记还在"，
+      // 2026-10-11 定案）。只写变化的槽位（静止时零写入）。
+      for (let k = Math.max(0, st.total - TRAIL_CAP_PER_SIDE); k < lo; k++) {
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16 + 3;
+        if (carr[co] !== 0) {
+          carr[co] = 0; carr[co + 4] = 0; carr[co + 8] = 0; carr[co + 12] = 0;
+          dirty = true;
+        }
+      }
+      for (let k = lo; k < st.total; k++) {
+        const seg = st.segs[k % TRAIL_CAP_PER_SIDE];
+        if (!seg) continue;
+        // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，若拿
+        // double 的 a 严格比较，`carr[i] !== 0.8` 永远成立（读回 0.8000000119）⇒ 时钟没动
+        // 也每 tick 标脏重传。量化后同一 alpha 的重复 tick 不再置 dirty。
+        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
+        const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
+        for (let q = 0; q < 4; q++) {
+          if (carr[co + q * 4 + 3] !== a) {
+            carr[co + q * 4 + 3] = a;
+            dirty = true;
+          }
+        }
+      }
+    }
+    if (dirty) colAttr.needsUpdate = true;
+  }
+
+  function updateTrails() {
+    if (!DATA) return;
+    const on = store.treadOn && !!Q.treadMarks;   // 仅高清/极致（低档车模轨距与印记口径不一致）
+    for (const v of V) {
+      const tr = v.trail;
+      if (!tr) continue;
+      if (v.treadMesh) v.treadMesh.visible = on;
+      if (!on) {
+        // 关断期间不推进游标：重开时从 START 全量补铺（印记 = 全程确定性重算）。
+        // ⚠️ 路径态必须**一起复位**（review P2 2026-10-11）：旧写法只回退 builtT，重开时
+        // 整条路径被追加到旧末端——反向桥接、重复段、出生时刻非单调，后面的时间二分也失去
+        // 前提（实测同一 t=52 关→seek→开→seek 后每侧段数 49 → 148）。
+        if (tr.builtT !== -Infinity || tr.L.total || tr.R.total) {
+          resetTrailState(tr.L); resetTrailState(tr.R);
+          tr.builtT = -Infinity;
+        }
+        continue;
+      }
+      if (!v.tread || !v.treadMesh) continue;   // 参数/网格未就绪：builtT 保持 -∞，就绪后全量补铺
+      // 宽度晚到（review P2 2026-10-11）：参数 JSON 通常早于 GLB 到达，未 authored 车首解析
+      // 时无 suspension 实测（beltW=0）⇒ 宽度被锁成常量回落。模型挂载实测就位后在此重解析，
+      // 变了就复位全量重建（旧段是按旧宽度铺的，混宽会视觉分层）。authored 车恒用 manual_width。
+      if (!v.tread.authoredWidth) {
+        const w = resolvedTreadWidth(v);
+        if (Math.abs(w - v.tread.width) > 1e-3) {
+          v.tread.width = w;
+          resetTrailState(tr.L); resetTrailState(tr.R);
+          tr.builtT = -Infinity;
+        }
+      }
+      if (T < tr.builtT) {                       // seek 后退：全量重算（destructibles 同构）
+        resetTrailState(tr.L); resetTrailState(tr.R);   // written 随复位归零 ⇒ 全量重写实例
+        tr.builtT = -Infinity;
+      }
+      const t0 = Math.max(tr.builtT, START);
+      tr.builtT = feedTrail(v, tr, t0);          // 返回最后已喂网格时刻；不足整片的尾巴留待下次
+      writeTrailQuads(v, tr);
+      ageTrailAlphas(v, tr);
     }
   }
 
@@ -2674,6 +3061,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         });
         if (!meshes.length || _spBox.isEmpty()) return null;
         const lateral = _spBox.getCenter(new THREE.Vector3()).x;   // 履带中心线（模型系横向）
+        const beltW = _spBox.getSize(new THREE.Vector3()).x;        // 履带条宽（回落实测宽度用）
         const chain2 = chain.map((pt) => [pt[0], pt[1]]);           // [纵向 y, 高度 z]
         const restZ = chain.map((pt) => pt[1]);
         // 段弧长（花纹速率与顶点弧长参数用）
@@ -2731,7 +3119,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             + ' pairs=' + uvFit.pairs);
         }
         tracks.push({
-          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral,
+          node, parts, chain: chain2, restZ, attach, wheelCfg, lateral, beltW,
           groundDrop: new Float64Array(chain2.length),
           chainZ: new Float64Array(chain2.length),
           appliedChainZ: null,    // 已下发的解算链（顶点输出的唯一形状输入，见 suspensionStep）
@@ -2739,12 +3127,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           dvPerM, uv: 0,
         });
       }
-      // 侧接触线横向偏移：履带中心线 |x| 的均值
-      let sum = 0;
-      for (const tg of tracks) sum += Math.abs(tg.lateral);
+      // 侧接触线横向偏移：履带中心线 |x| 的均值；同时累计履带条宽（beltW 均值）
+      let sum = 0, wsum = 0;
+      for (const tg of tracks) { sum += Math.abs(tg.lateral); wsum += tg.beltW || 0; }
       sides[side] = {
         wheels, tracks, wheelDelta: new Float64Array(wheels.length),
-        halfW: tracks.length ? sum / tracks.length : 0, prev: null,
+        halfW: tracks.length ? sum / tracks.length : 0,
+        beltW: tracks.length ? wsum / tracks.length : 0, prev: null,
       };
     }
     return {
@@ -3115,9 +3504,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function makeImpactFx(kind) {
     const g = new THREE.Group();
     const ball = new THREE.Mesh(new THREE.SphereGeometry(kind === 'nonpen' ? 0.42 : 0.72, 10, 10),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 20),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true }));
+      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true, toneMapped: false }));
     ring.rotation.x = -Math.PI / 2;
     g.add(ball); g.add(ring);
     const sparks = [];
@@ -3125,7 +3514,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 侧向 sparks（两段短射线沿弹道法向散开）；局部偏移在 spawn 时按弹道方向设
       for (const _sgn of [1, -1]) {
         const sp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2),
-          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true }));
+          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
         g.add(sp); sparks.push(sp);
       }
     }
@@ -3262,7 +3651,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1,
+      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1, toneMapped: false,
     }));
     sp.renderOrder = 1001;                 // 反馈层内的绘制顺序
     return { sp, tex, cv, ctx: cv.getContext('2d') };
@@ -3313,7 +3702,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function makeBurstFx() {
     const g = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
     });
     const rings = [];
     for (const r0 of [0.8, 1.6]) {
@@ -3844,6 +4233,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const v of V) applyPose(v);
     suspSnap = false;   // 跳变标志只作用于本 tick
     updateDestructibles(T);
+    updateTrails();     // 履带印游标泵（seek 后退 = 全量重算，前进 = 增量）
     updateScore();
     // HUD → store
     // 顶栏：争霸实时点数——**每 tick 确定性重算**（无采样也写 null）：从争霸场切到普通场时
@@ -4060,6 +4450,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function applyMapLighting(L) {
     const sun = L && L.sun;
     if (!sunLight || !hemiLight) return;
+    // IBL 倍率（逐图 0.8–4.0）：authored 值先取，太阳块内按 expo 归一（见下）
+    const envAuthored = L && L.ibl && L.ibl['ibl.environmentMultiplier'];
+    let normalized = false;
     const d = sun && sun.direction_scene;
     if (Array.isArray(d) && d.length === 3 && d.every(Number.isFinite)) {
       const n = Math.hypot(d[0], d[1], d[2]) || 1;
@@ -4074,11 +4467,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 是配**它的自动曝光**用的；我们的渲染器没有自动曝光（如实记录的缺口），照搬强度会让
       // 走 three 内建管线的材质（受光场景件 = 河床/铺装等 Lambert 件、坦克）过曝 2–5× ⇒ 米德尔堡
       // 地面"发白偏橙"（用户报障）。这里按**该图太阳强度**把整图曝光归一到已调好的基准
-      // （DEFAULT_SUN_INTENSITY，与兜底灯同档）：同一图内"太阳:环境:IBL"的相对关系不变
-      // （夜图/冷图的氛围保留），只是把绝对亮度钉回基准——等价于用固定曝光模拟客户端的自动曝光。
+      // （DEFAULT_SUN_INTENSITY，与兜底灯同档）——等价于用固定曝光模拟客户端的自动曝光。
+      //
+      // ⚠️ 归一必须覆盖**全部三个光照通道**（2026-10-11 补全，mountain 报障"坦克非常暗、
+      // 反射不对"）：exposure 在输出端乘一切内建材质，只把太阳项除回来（sunLight.intensity
+      // 保持 authored 14）的话，环境两项（hemi 环境光 + scene.environment 反射）被白白压暗
+      // —— mountain（intensity 14 ⇒ expo 0.214）实测净光照 太阳 3.0 / hemi 0.51 / IBL 0.28，
+      // vs 基线图 3.0 / 0.9 / 0.49：PBR 坦克的反射/环境占大头 ⇒ 整车暗 2~4.7×。修法 =
+      // hemi 与 IBL 基准同样除以 expo（即强度 ×authored 太阳/3.0），三通道在输出端净值
+      // 与基线图逐项相同；基线图（太阳≈3，expo≈1）逐像素不变。
       if (Number.isFinite(sun.intensity) && sun.intensity > 0) {
         const expo = THREE.MathUtils.clamp(DEFAULT_SUN_INTENSITY / sun.intensity, 0.05, 4.0);
         renderer.toneMappingExposure = expo;
+        hemiLight.intensity = DEFAULT_HEMI_INTENSITY / expo;
+        envMultiplier = (Number.isFinite(envAuthored) ? envAuthored : 1) / expo;
+        if (scene) scene.environmentIntensity = envMultiplier;   // env 贴图若已挂，即时生效
+        normalized = true;
         if (DEBUG) window.__mapExposure = expo;
       }
       // 环境反射的高光项要 lightColor0（= color × intensity）与传播方向：写入共享 uniform
@@ -4093,9 +4497,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       if (DEBUG) window.__mapLighting = { direction: d.slice(), color: sun.color, intensity: sun.intensity, ambient: sun.ambient };
     }
-    // IBL 倍率（逐图 0.8–4.0）：环境贴图加载后经 scene.environmentIntensity 施加
-    const m = L && L.ibl && L.ibl['ibl.environmentMultiplier'];
-    envMultiplier = Number.isFinite(m) ? m : 1;
+    // IBL 倍率：未走太阳归一（该图没有可用的太阳方向块）——authored 值原样生效
+    // （expo=1 的基线口径，与 resetMapLighting 一致）。**不可无条件覆盖**：
+    // 太阳块已把三通道一起归一，这里再赋 authored 会把 IBL 打回未归一值
+    // （首版实测：hemi 6.4 / exposure 0.375 归一生效、envIntensity 却是 authored 1.3）。
+    if (!normalized) envMultiplier = Number.isFinite(envAuthored) ? envAuthored : 1;
   }
   function resetMapLighting() {
     if (hemiLight) {
@@ -4150,9 +4556,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         for (const g of v.suspParts.disposables) g.dispose();
       }
       v.suspParts = null;
+      // 履带印：几何/材质逐车持有，贴图会话共享（treadTexCache 统一释放）
+      if (v.treadMesh) {
+        scene.remove(v.treadMesh);
+        v.treadMesh.geometry.dispose();
+        v.treadMesh.material.dispose();
+        v.treadMesh = null;
+      }
+      v.tread = null;
+      v.trail = null;
       if (v.group) { scene.remove(v.group); disposeObject3D(v.group); }
     }
     V = [];
+    treadParamCache.clear();
+    for (const tex of treadTexCache.values()) tex.dispose();
+    treadTexCache.clear();
     labelOverlay?.clear();
     labelsTime = null; labelsWrittenMs = -Infinity;
     reloadStateAt = () => null;
@@ -4342,6 +4760,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     if (!current()) return false;   // 地图资产期间被取代：后面全是 DATA 派生的会话状态
     buildVehicles();
+    if (glbOn) {
+      const attach = applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
+      if (Q.forceGlb) {
+        // 高/极致（2026-10-11 用户裁示）：进地图前**全部**车辆模型就绪——此前 GLB 在
+        // 开始播放后才并发下载，开局数秒是盒子代理，且履带印轨距（suspension 模型
+        // halfW）随挂载跳变，起步印记出现侧向折线
+        store.assetStage = true;
+        try { await attach; } finally { if (current()) store.assetStage = false; }
+        if (!current()) return false;
+      }
+    }
     buildRoster();
     // 会话级 mounted-configs 缓存（tank_id → tank/{id}.json）：先建 Map 再建 resolver——
     // resolver 闭包持有同一引用，异步填充后自动生效
@@ -4373,7 +4802,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     T = START;
     shotPtr = 0; killPtr = 0;
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
-    if (glbOn) applyGlbToggle(true);   // 会话切换后按用户偏好恢复 GLB 车模
     prewarmShaders();
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）
     store.startTime = START;
@@ -4435,7 +4863,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     setBattleClock,
     setCam,
     setFollow,
-    setGlb: (on) => { if (Q.allowGlb || !on) applyGlbToggle(on); invalidate(); },
+    setGlb: (on) => { if (!Q.forceGlb && (Q.allowGlb || !on)) applyGlbToggle(on); invalidate(); },
+    // 地面履带印开关（会话级，不持久化；关→开从 START 全量补铺，见 updateTrails）
+    setTreadMarks: (on) => {
+      store.treadOn = !!on;
+      // 立即同步（review P2 2026-10-11）：writeTrailQuads/可见性只由 tick 驱动，而暂停时
+      // animate 不 tick——只改 store 的话，暂停态 setTreadMarks(false) 后 mesh.visible 仍是
+      // true（实测），必须继续播放或 seek 才更新。这里直接跑一次游标泵（幂等：同 T 重入
+      // 不产生新段，全量重建也由 builtT=-∞ 路径确定性收敛）。
+      updateTrails();
+      invalidate();
+    },
     /**
      * 共享标签偏好（唯一 owner = usePlaybackPreferences）。契约：
      * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，
