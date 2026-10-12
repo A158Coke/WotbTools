@@ -101,14 +101,38 @@ Wargaming IdP representation 与 Keycloak runtime 共用**同一个**已存在�
    JWT mapper 已存在。
 2. 由 OpenTofu 创建 `wargaming-asia`、`wargaming-eu`、`wargaming-na` 三个实例（`provider_id=wargaming`，
    `client_id` = 同一 `WG_APPLICATION_ID`），并在 Keycloak runtime 继续注入 `WG_APPLICATION_ID` 供自定义 SPI 读取。
-3. 镜像构建 `keycloak-qq-provider` 与 `keycloak-wargaming-provider`；运行时验收必须确认
-   `keycloak-qq-provider.jar` 存在且 Keycloak 已以 `start --optimized` 启动。仓库只 vendored
-   这两个 provider 的源码（镜像内不存在第三个 QQ provider），历史聚合 provider 已完全退役。
+3. 镜像构建 `keycloak-qq-provider`、`keycloak-wargaming-provider` 与 `keycloak-session-provider`；
+   运行时验收必须确认三个 JAR 存在且 Keycloak 已以 `start --optimized` 启动。第三个模块是
+   Web 持久会话 authenticator，不是另一套 QQ IdP；历史聚合 QQ provider 已完全退役。
 4. OpenTofu 创建唯一官方 QQ alias `idp-qq`（provider id `qq`，enabled）；TX 不创建
    任何聚合 QQ fallback，也不创建裸 alias `qq`。固定 production broker callback 为
    `https://auth.wotbtools.com/realms/wotbtools/broker/idp-qq/endpoint`；QQ Open Platform 与
    所有客户端（Web 与 Android 原生 OIDC 的外部浏览器）都走这一个 callback，不得引入
    `/qq/endpoint` 或 `idp-qq-v2`。Android 侧不再有 QQ 专用 App Link / callback 重写机制。
+
+## 当前会话策略（Web 与 Android 共用 realm）
+
+`infra/tofu/keycloak/realm.tf` 是会话时长 SSOT，Web/Android client 不声明独立 session timeout：
+
+| 设置 | 当前声明 | 含义 |
+|---|---|---|
+| access token lifespan | `30m` | API token 有效期；不等于用户必须重新登录的间隔 |
+| SSO idle（普通 / remember-me） | `720h` | 30 天未活跃后会话过期；有效 refresh 会延续活跃状态 |
+| SSO max（普通 / remember-me） | `8760h` | 365 天绝对上限；持续使用仍受此上限约束 |
+| remember-me | `true` | realm 开启记住登录能力；post-broker flow 为 Web broker 登录设置 remember-me，浏览器仍须接受并保留 cookie |
+
+`infra/tofu/keycloak/authentication-flow.tf` 声明 post-broker flow，QQ 与三个 WG IdP 都在
+`identity-providers.tf` 引用它。`keycloak-session-provider` 的
+`PersistentBrowserSessionAuthenticator` 只为 `wotbtools-web` 写 `Details.REMEMBER_ME=true`，
+不改 Android 认证交易；无需用户在 broker 登录页额外勾选。
+
+因此当前实现不是每 30 天固定强制重登，也不是无限滑动会话。realm 设置同时约束浏览器
+`wotbtools-web` 与原生 `wotbtools-android`；Web token 在 keycloak-js 内存中，重新打开页面由
+`frontend/src/platform/browserAuthProvider.js` 的 `check-sso` 恢复 SSO，不把 token 写入
+localStorage。Web refresh 失败暂时扣住 API token、保留登录投影供后续重试；Native 则由
+`AuthManager.kt` 加密持久化会话、单飞 refresh，永久 token 拒绝才清会话，瞬时离线失败保留缓存。
+SSO 登录 cookie 与一次 broker 登录的 auth-session cookie 是不同生命周期；后者错误按
+[Web QQ 登录诊断](web-qq-diagnostics.md) 取证，不靠增大 SSO timeout 消除。
 
 ## wotbtools-web 浏览器客户端生产对齐
 

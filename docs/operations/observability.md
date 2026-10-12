@@ -1,6 +1,6 @@
 # WotBTools 观测系统（Observability）运维文档
 
-> 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI/Replay 指标、Prometheus + Loki + Grafana + Alloy**。
+> 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI 指标（回放解析在客户端）、Prometheus + Loki + Grafana + Alloy**。
 > 当前实现包含 6 个 Dashboard（生产总览 / JVM 与基础设施 / HTTP 与事故诊断 / 回放与 AI 诊断 / 使用统计与 Android / Keycloak）、AI 指标在服务边界统计、日志安全与保留策略。
 
 ---
@@ -8,7 +8,8 @@
 ## Build-to-Learn：部署前配置核对记录
 
 2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：backend 业务端口为 `8087`，management
-端口为 `8088`；frontend 的 host port 也是 `8088:80`，因此不能把两者混用。Prometheus 与部署 gate
+端口为 `8088`；当时 frontend 的 host port 为 `8088:80`。该 frontend 映射已退役，
+当前 TX frontend service plane 使用 `10.20.0.1:8081 → 80`，见下节。Prometheus 与部署 gate
 统一抓取 TX WireGuard 专用管理端点 `10.20.0.1:8088/actuator/prometheus`，业务健康检查仍访问 backend 的
 `8087/api/health`。完整
 Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
@@ -44,44 +45,16 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 ## 1. 架构总览
 
-```
-                        ┌────────────────────────────────────────────┐
-                        │            Host Caddy / Nginx              │
-                        │   (TLS 终止, 仓库外由管理员维护)             │
-                        └───────┬──────────────┬─────────────────────┘
-                                │              │
-              monitor.wotbtools.com    wotbtools.com / auth.wotbtools.com
-                                │              │
-                                ▼              ▼
-                     ┌──────────────────┐  ┌──────────────────────┐
-                     │   wotb-frontend  │  │   wotb-frontend      │
-                     │  (nginx 容器)     │  │   (nginx 容器)        │
-                     │  server_name     │  │   /api → backend:8087 │
-                     │  monitor.* →     │  └──────────────────────┘
-                     │  grafana:3000    │
-                     └────────┬─────────┘
-                              │ Docker 内部网络（compose 默认网络）
-        ┌─────────────────────┼───────────────────────┐
-        │                     │                       │
-        ▼                     ▼                       ▼
-┌──────────────┐    ┌──────────────┐         ┌──────────────┐
-│   Prometheus │    │     Loki     │         │    Grafana   │
-│    :9090     │    │    :3100     │         │    :3000     │
-│ 指标抓取     │    │ 日志存储     │         │ 看板/查询    │
-└──────┬───────┘    └──────▲───────┘         └──────────────┘
-       │                   │                       ▲
-       │ 抓取 :8088        │ 推送日志               │ Datasource (provisioning)
-       │  /actuator/       │                       │
-       ▼  prometheus       │                       │
-┌──────────────────┐       │          ┌────────────┐
-│   wotb-backend   │◄──────┼──────────┤    Alloy   │
-│  :8087 业务 / :8088 管理│  │          │    :12345  │
-│                  │       └──────────┘ 采集 docker │
-└──────────────────┘                  sock 容器日志  │
-                                                      │
-                                                      ▼
-                                              Loki (7 天保留)
-```
+| 路径 | 当前部署与配置 |
+|---|---|
+| 公网 Grafana | TX Caddy（`deploy/tx/Caddyfile`）→ WireGuard `10.20.0.2:3000` → Yecao Grafana |
+| 业务指标 | Yecao Prometheus → WireGuard `10.20.0.1:8088/actuator/prometheus` → TX business-api |
+| AI 指标 | Yecao Prometheus → Docker `ai-service:8080/actuator/prometheus` |
+| TX 日志 | TX alloy-tx → WireGuard `10.20.0.2:3100` → Yecao Loki |
+| Yecao 日志 | 本机 Alloy → Loki；backend/keycloak/frontend selectors 为部署 canary，当前没有 ai-service selector |
+| Grafana 查询 | Docker 内网 Prometheus `:9090` / Loki `:3100`；datasource file provisioning、dashboard OpenTofu API ownership |
+
+生产入口由仓库内 owner workflows 管理，不能沿旧单机拓扑绕过 staged 校验手工改公网代理。
 
 **组件职责**
 
@@ -90,7 +63,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 | `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 业务 HTTP 使用容器端口 `8087`；dedicated management / Actuator 使用容器端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
 | Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 TX Backend、Yecao `ai-service`、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
 | Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
-| Alloy | `grafana/alloy:v1.4.2` | 通过 docker.sock 采集 `wotb-backend` 与 `keycloak` 容器 stdout/stderr → Loki，使用低基数标签 |
+| Alloy | `grafana/alloy:v1.4.2` | TX alloy-tx 按 Compose service 采集业务/Keycloak/frontend/Caddy；Yecao Alloy 保留部署 canary selectors，使用低基数标签 |
 | Grafana | `grafana/grafana:11.6.16` | 可视化；Datasource 由 file provisioning 配置，Dashboard API 对象由 OpenTofu 管理 |
 | node-exporter | `prom/node-exporter:v1.12.1` | 仅 Docker 内部网络提供 CPU、RAM、Disk、Load 主机指标；不映射宿主机端口 |
 | Grafana MCP server（已下线） | 已移除 | 2026-08-11 因公网匿名访问风险（MCP 缺少调用者认证）且使用频率低，已从生产与本地 compose 移除；宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account 由人工清理 |
@@ -99,7 +72,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 - Yecao Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100` 只发布到 WireGuard；Prometheus、Alloy、node-exporter 无宿主端口映射。TX1 Backend app `10.20.0.1:8087` 与 management `10.20.0.1:8088` 分开；frontend 为 `10.20.0.1:8081 → 80`，Keycloak 保留 loopback `127.0.0.1:18080` 并增加 `10.20.0.1:8080`。禁止公网或 wildcard service-plane bind；完整 K6A 契约见 [TX service plane](tx-service-plane.md)。生产观测不配置或依赖独立的 Keycloak management 端点。
 - 公网通过 `monitor.wotbtools.com`（TX Caddy → `10.20.0.2:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
-- `/actuator/**` 不通过公网域名暴露（nginx 只代理 `/api/` 与 `monitor.*` 到 Grafana）。
+- `/actuator/**` 不通过公网域名暴露（TX frontend nginx 代理 `/api/`；monitor 由 TX Caddy 直接反代 Grafana）。
 
 **Grafana MCP 下线记录（2026-08-11，P0）**
 
@@ -112,7 +85,7 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
   2. GitHub 仓库 Settings → Secrets：删除 `GRAFANA_MCP_TOKEN`（代码已停止引用）。
   3. 轮换 Grafana admin 密码（2026-08-11 排障时一次命令参数错误曾将 `GRAFANA_ADMIN_PASSWORD` 输出到终端日志）。
 
-**生产 Caddy 运维注意（2026-08-11 实战教训）**
+**历史 Caddy 运维记录（2026-08-11；路径和容器名不适用于当前 TX owner）**
 
 - `wotb-caddy` 由 `/opt/caddy/docker-compose.yml` 管理（`caddy:2`，host 网络），`/opt/caddy/Caddyfile` 以 bind mount 挂载到容器 `/etc/caddy/Caddyfile`。
 - **禁止用 `sed -i` 编辑挂载文件**：`sed -i` 通过重命名替换文件，会破坏 bind mount 的 inode 关联，容器内会继续读到旧内容（`docker cp` 也会因 unlink busy 失败）。必须原地写入（`vi` / `tee` / `cp`）。
@@ -124,48 +97,19 @@ Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 sm
 
 ## 2. `monitor.wotbtools.com`：DNS、HTTPS、反向代理
 
-> **2026-09 迁移后**：本节前半部分描述的是旧 Yecao 单机架构（frontend nginx server 块 + host 级
-> Caddy）的历史实现，容器已随业务退役。现行路径见第 0 节：DNS 指向 TX，TLS 由 TX Caddy 终止，
-> 上游是 Yecao 的 WireGuard-only Grafana `10.20.0.2:3000`；仓库内配置为 `deploy/tx/Caddyfile` 的
-> `monitor.wotbtools.com` 站点块。`GF_SERVER_ROOT_URL` 契约不变。
+公网 monitor 由 `deploy/tx/Caddyfile` 的站点块直接反代 Yecao WireGuard-only Grafana：
 
-仓库内已完成的部分：
+```caddy
+monitor.wotbtools.com {
+    reverse_proxy 10.20.0.2:3000
+}
+```
 
-- `deploy/nginx/nginx.conf`：新增 `server_name monitor.wotbtools.com` 的 server 块，使用 Docker embedded DNS `127.0.0.11` 在请求运行时解析 `grafana:3000`，并透传 `X-Forwarded-*`、支持 WebSocket（Grafana Live）。
-- Grafana 环境变量 `GF_SERVER_ROOT_URL=https://monitor.wotbtools.com`（`GRAFANA_ROOT_URL`，见 `.env.example` / `docker-compose`）。
-
-**仍需管理员在生产服务器手动完成**（仓库外）：
-
-1. **DNS**：添加 `monitor.wotbtools.com` A/AAAA 记录指向生产服务器公网 IP（与 `wotbtools.com` 相同）。
-2. **TLS 终止**：生产 VPS 的 host 级 Caddy/Nginx 已为 `wotbtools.com`、`auth.wotbtools.com` 配置 HTTPS；为 `monitor.wotbtools.com` 增加同款 server（443），反代到 `http://127.0.0.1:8088`（frontend 容器 80 端口映射）。Caddy 示例：
-
-   ```caddy
-   monitor.wotbtools.com {
-       reverse_proxy 127.0.0.1:8088
-   }
-   ```
-
-   或 Nginx host 级示例：
-
-   ```nginx
-   server {
-       listen 443 ssl;
-       server_name monitor.wotbtools.com;
-       # ssl_certificate / ssl_certificate_key ...（同 wotbtools.com）
-       location / {
-           proxy_pass http://127.0.0.1:8088;
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           proxy_set_header X-Forwarded-Proto $scheme;
-       }
-   }
-   ```
-
-3. **GitHub Secrets**（生产部署 CI 使用）：在仓库 Settings → Secrets and variables → Actions 配置：
-   - `GRAFANA_ADMIN_USER`：Grafana 管理员用户名（如 `admin`）
-   - `GRAFANA_ADMIN_PASSWORD`：强密码
-   - 生成密码示例：`openssl rand -base64 24`
-   - `.github/workflows/observability.yml` 将凭据写入生产服务器 `/opt/wotb/.env`（`chmod 600`），compose 使用 `required` 语法引用，**Grafana 密码不落入 compose 文件本身**；密码为空时部署脚本中断。
+DNS 指向 TX 公网入口；TLS 与 Caddy 生命周期属于 `.github/workflows/caddy.yml`，不能用
+旧 Yecao host Caddy / frontend monitor server 的手工步骤替代。Grafana 的
+`GF_SERVER_ROOT_URL=https://monitor.wotbtools.com` 仍由 `.env.example` / production Compose
+约定。`.github/workflows/observability.yml` 接收 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`，
+Yecao deploy 将其写入受限 runtime `.env`，Compose 使用 required 引用；缺失则 fail-closed。
 
 ---
 
@@ -210,8 +154,10 @@ RabbitMQ / MinIO / parser-worker 已删除）。观测组件、datasource/
 dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
 workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
 
-main 是应用部署的唯一目标状态。各 owner workflow 构建、发布所属镜像的 `latest`，
-发布前确认 source SHA 仍为远端 main HEAD；旧 workflow 被新 main 取消。生产实际运行镜像与
+main 是应用部署的唯一目标状态。TX business-api/frontend 从 exact source SHA 本机构建、
+发布 immutable TCR tag 并回读 digest，生产分别消费 `TX_BUSINESS_API_IMAGE_REF` /
+`TX_FRONTEND_IMAGE_REF` 的 `repo@sha256:<digest>`，禁止 latest 回退。Keycloak 与 Yecao ai-service
+仍沿各自 latest/freshness 契约。发布前确认 source SHA 仍为远端 main HEAD；旧 workflow 被新 main 取消。生产实际运行镜像与
 `BUILD_COMMIT` 可用 `docker inspect` 核对。固定基础设施独立管理持久 volume 与 OpenTofu state。
 
 
@@ -222,8 +168,8 @@ migration ceiling=<version>`。排查 schema/image 不匹配时，在 TX 日志�
 
 ### 单目标人工操作与数据库边界
 
-事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是当前 workflow 明确
-发布的 `latest`；没有 `all` 选择器。schema 回退不是部署能力；
+事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是所属 workflow 当前 release contract 的产物（business-api/frontend 为 exact digest；
+Keycloak/ai-service 保留各自 latest/freshness 契约）；没有 `all` 选择器。schema 回退不是部署能力；
 Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；Keycloak PostgreSQL 归档必须与 Business PostgreSQL 工具隔离处理。
 `database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
 
@@ -242,7 +188,7 @@ docker compose start prometheus loki alloy grafana node-exporter
 
 > **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
 
-> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口重新部署当前 main 的 `latest`；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
+> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口重新部署当前 main 的所属 owner 镜像（business-api/frontend 为 exact digest）；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
 
 ---
 
@@ -305,13 +251,13 @@ docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/
 - `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
 - Volume 重启后数据持久化（7 天保留）
 - `docker stats` 实际资源占用（空闲约 1GB 目标）
-- 公网无法访问 8088/9090/9100/3100/3000/12345；Keycloak 应用 `8080` 也只绑定宿主机 loopback
+- 公网无法访问 8088/9090/9100/3100/3000/12345；Keycloak 应用 `8080` 仅发布到 `127.0.0.1:18080` 与 `10.20.0.1:8080`
 
 ---
 
 ## 6. Grafana 登录与 Dashboard
 
-1. 浏览器访问 `https://monitor.wotbtools.com`（或本地 `http://localhost:3000`，需临时 `docker run -p 3000:3000` 映射）。
+1. 浏览器访问 `https://monitor.wotbtools.com`（受控本地访问可用 SSH tunnel 到 `10.20.0.2:3000`；不增加 wildcard port 映射）。
 2. 使用 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` 登录（匿名访问已禁用：`GF_AUTH_ANONYMOUS_ENABLED=false`）。
 3. 首次启动后，provisioning 自动创建：
    - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）；部署 gate 会调用两个 datasource health API。
@@ -358,7 +304,7 @@ Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会
 **生产总览面板清单**
 
 1. 生产状态、HTTP 5xx/P95/吞吐与主机/依赖健康
-2. Replay 处理中、等待中、完成与失败
+2. 六类观测 target 健康；没有服务端 Replay processing/job 队列面板
 3. AI 执行中、等待队列、成功与失败
 4. CPU、内存、磁盘与主机负载
 
@@ -398,11 +344,15 @@ Grafana → Explore → 选 Loki：
 
 ### 查询 AI Review 错误
 
-Loki：
+当前 AI 生产日志由 Yecao `ai-service` 输出：
 
-```logql
-{container_name="wotb-backend"} | json | message=~"AI provider failure.*"
+```bash
+# 在 Yecao 的 production Compose 目录执行
+docker compose logs ai-service --since 30m
 ```
+
+当前 Yecao Alloy 没有 `ai-service` discovery selector；不能用
+`{container_name="wotb-backend"}` 查询代替 AI 服务日志，也不把 AI Loki ingestion 描述为已实现。
 
 Prometheus（错误分类计数，固定枚举）：
 
@@ -421,8 +371,9 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 
 > 随 AI Review JSON Output 任务（见 docs/architecture/ai-review.md）落地：AI Review 全链路结构化事件日志，
 > 统一格式 `event=<eventName> correlationId=<id> key=value key=value`，与 logstash structured logging 兼容，
-> Loki 可直接按字段过滤。**一次 AI Review 从进入 backend 到结束可用单个 correlationId 重建完整时间线**
->（correlationId 即前端 cancel 用的请求 id，见 `ReconstructionController`）。
+> 当前在 Yecao ai-service 日志中按 correlationId 过滤；Alloy 尚未声明 AI 采集路径，
+> 不把此时间线描述为 Loki 已有数据。**一次 AI Review 从进入 ai-service 到结束可用单个 correlationId 重建完整时间线**
+>（correlationId 即前端 cancel 用的请求 id，见 `java/wotb-ai/src/main/java/com/wotb/ai/AiReviewController.java`）。
 >
 > 日志纪律：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
 > Authorization / 回放原始内容 / 用户上传文件内容 / 明文昵称（身份用 account hash / vehicle id）。
@@ -435,14 +386,10 @@ sum by (type) (rate(wotb_ai_review_errors_total[5m]))
 #### 追一单
 
 ```bash
-docker compose logs wotb-backend --since 30m 2>&1 | grep "correlationId=<id>"
+docker compose logs ai-service --since 30m 2>&1 | rg "correlationId=<id>"
 ```
 
-或 Loki：
-
-```logql
-{container_name="wotb-backend"} | json | message=~"correlationId=<id>.*"
-```
+该命令在 Yecao 上执行。当前 Alloy 未声明 AI 采集路径，不能据 TX backend 的 Loki 流重建 AI 时间线。
 
 以下仅列**当前在 `java/*/src/main/**` 有生产者**的事件；已随 2026-10 legacy 契约收敛删除或当前无生产者的事件见下文「当前无生产者的事件」。
 

@@ -9,7 +9,7 @@
 
 **这不是旧 Rating V2 综合评分**：Rating V2 已随「战斗表现」重构移除；本功能是全新的、只消费
 当前上传回放可证明事实的内存级评分，与排行榜、名人堂、AI 复盘均无关系。
-> 生产状态：死亡时刻精度 degrade 被接受（UNKNOWN≠非法，允许整场评分）；不做 legacy 死亡启发式。
+> 生产状态：阵亡者必须具备有效 settlement lifeTime；缺失或非法结算寿命拒绝评分。Live 死亡精度不参与 eligibility，不做 legacy 死亡启发式。
 
 ## 适用范围
 
@@ -43,8 +43,8 @@ protocol.md）、`HallOfFameBattleTypePolicy`（单一事实源）、`docs/refer
 - **Rating 计算不用** Tankopedia HP / 期望值、XP/Credits、AI、历史上传、
   外部 API 或全服统计。表现派生指标列（contribution/kast/impact）已随 B6 退役，
   Radar 只允许七维 League Rating（见「Excel 导出」与「Build-to-Learn」）。
-- 全部结果（评分、战队名称覆盖、MVP）只存在于当前 HTTP 请求与前端页面内存中；
-  刷新 / 重新上传 / 服务重启后不保留。不写数据库、localStorage、服务端文件。
+- 全部结果（评分、战队名称覆盖、MVP）只存在于当前本地分析批次与前端页面内存中；
+  刷新 / 重新上传后不保留。不写数据库、localStorage、服务端文件。
 - 复用 `TradeFacts`（V4.1 directional 互换窗口：玩家死亡后 `[0, +5]` 秒内存在敌方死亡，
   时间窗口启发式，非精确 killer attribution）。
 
@@ -66,7 +66,7 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
 
 **protobuf 零值策略**：身份/队伍/车辆/胜方等结构字段按真实存在性 fail-closed（0/非法值拒绝）；
 伤害/助攻/阻挡/击杀/占点等统计字段**合法为 0**——proto 未编码字段解码为 0 与真实 0 不可区分
-（`PlayerResult.raw` 保留字段存在性但不作统计字段的完整性要求），缺失与零值同等对待，
+（当前 `battleFacts.ts` 将 `PlayerResult.raw` 置 null，不依赖 raw presence 判定统计完整性），缺失与零值同等对待，
 绝不把「字段缺失」误判为损坏。某一场不满足门槛 → 该场不评分，在失败列表返回
 文件名 + arenaId + 稳定错误码（如 `LEAGUE_NOT_SEVEN_VS_SEVEN` / `LEAGUE_NO_DECISIVE_WINNER`），
 批量中其他合法同类型回放继续。不允许管理员强制绕过。
@@ -288,11 +288,11 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   胜方 ×1.05 与 1000 封顶、MVP/队内最佳/重复徽标、战队七人平均、七维满分总和=1000、
   争霸点数不影响 Rating（points independence）。
 - 完整性：标准 7v7、13/15 人、非 7/7、重复账号、缺 tankId、roster 不完整、队伍冲突、
-  未知胜方、平局、死亡时间 UNKNOWN（`survivalTimeSec == 0`）不阻塞评分、负数/NaN/Infinity/
+  未知胜方、平局、阵亡者 settlementLifeTimeSec 缺失/非正拒绝评分、负数/NaN/Infinity/
   超时长死亡时间拒绝、合法零值、protobuf 缺失字段不误拒、非法数值关系、
   arenaId 重复一致/冲突、UNKNOWN 不得推断 trade。
 - 模式：单普通/单训练/单联赛/随机/游戏内评级、Training+Tournament 允许、Training+Random
-  与 Tournament+评级 整体 400、preview/合并导出/每场导出规则一致。
+  与 Tournament+评级 为 `MIXED_UNSUPPORTED`，保留普通分析结果但不聚合 League、preview/合并导出/每场导出规则一致。
 - API 契约：普通模式响应兼容、League 含 typed 数据、League playerColumns/aggregateColumns
   为 canonical 列集（汇总仅 `multi_damage_rate` 为表现派生列）、账号/车辆 ID 走响应行结构化
   身份字段、总 Rating 固定列元数据、七维度 max、leagueMode 显式标记

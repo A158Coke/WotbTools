@@ -1,5 +1,7 @@
 # WotbTools：训练房 / 联赛 Team-Level AI 战术复盘 — 设计文档
 
+> 当前模式入口以 `BattleCategoryUtils.fromArenaBonusType` 为准：1=个人、2=团队、3..10 也映射为团队（包含 raw 7 评级战）。这是现行宽范围分类行为，不代表 3..10 均经协议证明为联赛；League 与 HoF 另有独立 policy。见 [AI 架构的分类限制](../architecture/ai-review.md#raw-模式分类的实现限制)。
+
 ## Quality harness v1（0-token CI + 手动真实回放）
 
 ### Team AI Review v0.6：战术因果推理深度

@@ -35,7 +35,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   timeline/`（统一事实/投影/时间线语义）、`ai/`（prompt 规划/预算/token 估算）、`util/`（格式化助手）。
   确定性战斗语义只放这里。
 - **wotb-web**：Spring Boot 4（入口 `WotbWebApplication`）。**domain 分包**：`user/ hof/ replay/ admin/`
-  （+ `hundred/ mark3/`），每域内 `controller/ service/ entity/ repository/ dto/`
+  （+ `hundred/ mark3/ tournament/`），每域内 `controller/ service/ entity/ repository/ dto/`
   （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
   `util/`、`exceptionhandler/`（GlobalExceptionHandler）、`replayfile/`（跨域回放文件存储/锁/DTO）。
   禁止层分包。
@@ -62,7 +62,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入是客户端 canonical AI projection（`AiReviewRequest = {locale, correlationId, battle, projection}`，required 恰为这四个字段），由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）装配成内存 `ReplayReconstruction`。前端已无维护门（提交 `83884790` 解除；`ai_maintenance` 三语 key 无消费者），AI tab / 深链直接挂载 `AiReviewPanel.vue`。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
 
-- 单文件策略：`POST /api/ai/reviews` 每次请求只承载一场战斗（一个 `battle` + 一个 `reconstruction`），结构上不存在多文件/多视角批量形态；多文件批量端点 `/process`、`/reconstruct-batch` 仍 410，批量分析模式 `MULTI_*` 已删除。
+- 单文件策略：`POST /api/ai/reviews` wire request 只承载一场战斗（一个 `battle` + 一个 `projection`）；Controller 验证投影后才生成内部 `AiReviewRequest.reconstruction`，结构上不存在多文件/多视角批量形态；旧多文件批量端点 `/process`、`/reconstruct-batch` 已无 Controller 映射，批量分析模式 `MULTI_*` 已删除。
 - 编排归属：`AiReviewController` 直接注入领域服务，不存在兼容 facade。随机战双 Call 在 `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` → `TacticalReviewPromptBuilder` → Call #2）；团队复盘在 `TeamReplayAnalysisService.analyzeTeam` → `analyzeTeamContexts`（timeline hard gate）→ `callSingleTeamContext` → `callStructuredTeamReview`，contract 失败时恰好一次 `recoverTeamReview`（`SINGLE_TEAM_BATTLE_RECOVERY`）。Team Call #2 的结果契约是 `TeamAiReviewResult` + `TeamAiReviewResultParser`（含确定性 salvage / normalization）；生产链没有第三次模型调用、没有 Team Autopsy、没有 legacy envelope / claims validator。
 - Team AI Review v0.6 只升级 prompt 的 tactical reasoning order 与 causal contract：先权威事实/信息状态/目标义务，再 local participation、episode propagation 与 HP 下游验证；v0.5 wire schema 保持不变，不新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 episode 模型。
 - transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-ai/src/main/resources/prompts/**/*.zh.md`（`common/`、`player/`、`prebattle/`、`team/`、`tactical-skills/`；`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/reasoning-contract`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
@@ -73,7 +73,7 @@ AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载�
 ### Live external-service tests
 
 - 普通 test 不得调用 DeepSeek 或其他付费外部 AI provider。
-- 所有真实 AI provider test 必须使用 `@Tag("ai-live")`，并由 `wotb-web` Maven Surefire 默认排除；`AI_API_KEY` 的存在不能作为唯一隔离机制。
+- 所有真实 AI provider test 必须使用 `@Tag("ai-live")`，并由 `wotb-ai` Maven Surefire 默认排除；`AI_API_KEY` 的存在不能作为唯一隔离机制。
 - Agent 执行 targeted/module/full test 时不得主动解除 `ai-live` exclusion；只有用户明确要求运行 real AI probe 时，才可同时显式选择测试、清空 `-Dai.probe.excludedGroups=` 并通过环境变量提供 key。
 - 不得把真实 API key 写入 repo、test resource、命令记录或日志；普通 CI 不注入 DeepSeek secret，也不新增 paid/live AI job。
 - `AiEvalHarnessTest`、prompt contract/eval 和 fake/mock/loopback gateway tests 是 deterministic 测试，不属于 `ai-live`，继续随普通 CI 执行。

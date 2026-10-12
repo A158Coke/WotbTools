@@ -2,9 +2,10 @@
 
 > 这里只记录尚未完成或仍在研究的产品方向。已完成的历史演进见 `../HISTORY.md`；具体工程任务以 GitHub Issues / Pull Requests 为准。
 
+当前架构基线：Replay Engine 迁移已于 2026-10-02 完成，解析 / 汇总 / 评分 / 导出在客户端；架构事实见 `architecture/replay-pipeline.md`，后续解析字段向上游 Rust Core 补齐。
+
 ## Now
 
-- 客户端 Replay Engine 迁移已完成（2026-10-02）：服务器没有 parser，唯一解析器是上游 [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) Rust Core 的 WASM 产物（`deploy/agent/source.json`）；工作台、导出、2D 回放、名人堂、Android 全部本机解析，汇总 / 评分 / 导出也在客户端（见 `architecture/replay-pipeline.md`）。后续只向上游补字段，不在服务端补。
 - 持续降低 Replay 事实模型中的 UNKNOWN / heuristic 范围，但只在存在可验证证据时提升语义等级。
 - 完成当前认证入口与生产身份配置的稳定化，保持普通用户通过受控 IdP 登录。
 
