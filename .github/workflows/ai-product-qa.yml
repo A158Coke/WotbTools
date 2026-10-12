@@ -1,0 +1,98 @@
+name: AI / Product QA
+
+run-name: "AI QA / ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'desktop-exploratory' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Black-box scenario
+        required: true
+        type: choice
+        default: desktop-exploratory
+        options:
+          - desktop-exploratory
+          - mobile-exploratory
+          - smoke
+      model:
+        description: OpenAI model
+        required: true
+        type: choice
+        default: gpt-6-astra
+        options:
+          - gpt-6-astra
+          - gpt-6.1-sol
+      create_issues:
+        description: Create GitHub issues for high-confidence reproduced bugs
+        required: true
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ai-product-qa
+  cancel-in-progress: false
+
+jobs:
+  black-box-qa:
+    name: Black-box browser QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      AI_QA_TARGET_URL: https://wotbtools.com
+      AI_QA_SCENARIO: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario || 'desktop-exploratory' }}
+      AI_QA_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'gpt-6-astra' }}
+      AI_QA_CREATE_ISSUES: ${{ github.event_name == 'workflow_dispatch' && inputs.create_issues && 'true' || 'false' }}
+      AI_QA_MAX_TURNS: ${{ github.event_name == 'workflow_dispatch' && inputs.scenario == 'smoke' && '10' || '20' }}
+      AI_QA_OUTPUT_DIR: artifacts/ai-qa
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Require OpenAI API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$OPENAI_API_KEY" || {
+            echo "::error::Missing repository secret OPENAI_API_KEY"
+            exit 1
+          }
+
+      - name: Install isolated browser runtime
+        run: |
+          set -euo pipefail
+          QA_NODE="$RUNNER_TEMP/ai-qa-node"
+          mkdir -p "$QA_NODE"
+          npm install --prefix "$QA_NODE" --no-save --ignore-scripts playwright@1.64.0
+          "$QA_NODE/node_modules/.bin/playwright" install --with-deps chromium
+          echo "AI_QA_NODE_PATH=$QA_NODE/node_modules" >> "$GITHUB_ENV"
+
+      - name: Run AI product QA
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_QA_REPOSITORY: ${{ github.repository }}
+          AI_QA_RUN_ID: ${{ github.run_id }}
+          AI_QA_RUN_ATTEMPT: ${{ github.run_attempt }}
+          NODE_PATH: ${{ env.AI_QA_NODE_PATH }}
+        run: node scripts/ai-qa/run.cjs
+
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-qa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ai-qa
+          if-no-files-found: warn
+          retention-days: 14
