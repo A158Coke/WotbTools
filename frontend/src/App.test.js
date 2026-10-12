@@ -616,7 +616,7 @@ describe('App shell navigation, 更多 and account', () => {
       expect(wrapper.find('[data-testid="nav-tournament-points-admin"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="nav-admin-users"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(false)
-    } finally { authState.isAdminRef.value = false }
+    } finally { authState.isTournamentAdminRef.value = false }
   })
 
   it.each([['tournament-points-config', 'view-tournament-config'], ['tournament-points-admin', 'view-tournament-admin']])('admits a tournament-only administrator at the %s page gate', async (view, testId) => {
