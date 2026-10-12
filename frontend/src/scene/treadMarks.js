@@ -165,7 +165,8 @@ function clearTrailHistory(st) {
  * - 活戳 = 「锚点横截面 → 当前横截面」的扫掠四边形；每来一个移动样本就**把末端拉到该样本**
  *   （前沿跟随车辆当前位置，真机同款），锚点与末端距离满 `space` 时**提交**该戳并就地重新
  *   落锚（锚点 = 当前点；不做精确倍数插值）。
- * - 提交的戳 `t` = **锚点时刻**（出生 = 落锚，与客户端"槽位时间随重新落锚刷新"一致）；
+ * - 提交的戳 `t` = **锚点时刻**；锚点时刻**始终贴住当前采样时刻**（含停车/低速）——落锚
+ *   即"槽位时间刷新"，槽位存续由淡出窗按该时刻判定（客户端 0x83d410 的槽位时间门控同款）；
  *   相邻戳共享整条接缝边（前戳 (x1,z1,yaw1) ≡ 后戳 (x0,z0,yaw0)）⇒ 单趟内零重叠、转弯无缝。
  * - 零位移样本（停车 / 原地转向）推进采样时刻与朝向但不累加里程；原地转向时活戳末端
  *   横截面**跟随朝向**（打转覆盖的扫掠面）。
@@ -199,9 +200,14 @@ export function advanceTrail(st, pts, space, cap) {
       continue;
     }
     const d = Math.hypot(p.x - st.x, p.z - st.z);
+    // 锚点时间门控（客户端 0x83d410 的槽位时间语义）：锚点的“出生时刻”必须始终贴住当前
+    // 采样时刻——停车（零位移）与低速移动都不例外。否则锚点在淡出窗（7.62 s）过后仍是旧
+    // 时刻：停车后起步、或慢速爬行时，活戳与“跨过阈值时提交的那一戳”alpha=0（评审复现：
+    // (0,0)→(0.2,1)→停到 10 s→(0.4,10.1)，活戳长 0.4 m 而出生 t=0）。位置/朝向不动时
+    // 只推进 anchor.t，不动 anchor 几何。
+    st.anchor.t = pt;
     if (!(d > 1e-6)) {
-      // 静止样本：里程不推进；但采样时刻与朝向必须推进（停车期间重新起步时，新戳的锚点
-      // 时刻才不会是停车前），原地转向时活戳末端横截面跟随朝向。
+      // 静止样本：里程不推进；朝向仍推进（原地转向时活戳末端横截面跟随朝向）。
       st.t = pt;
       st.yaw = pyaw;
       if (st.open && st.open.yaw1 !== pyaw) st.open.yaw1 = pyaw;
@@ -215,17 +221,98 @@ export function advanceTrail(st, pts, space, cap) {
     // ⚠️ 阈值带 1e-9 容差：采样点是网格线性插值的产物，恰好落在 space 倍数上的点会以
     // 0.9999999999999998 的形态出现（浮点欠冲）——不容差会让落锚被推迟一个采样，戳长在
     // 1.0/1.5 m 间交替、平均间距 1.25 m（实测 12 s 只落 48 戳而非 60）。
+    // 落锚门控：当前位置与锚点距离满 space ⇒ 提交活戳、就地重新落锚（客户端 0x83d4ca 同款：
+    // 距离平方门控 + 锚点直接设为当前点）。戳长 ∈ [space, space + 步长]，无整数边界可重复跨越
+    // ⇒ 旧的 floor+静差防抖机制不再需要。
+    // ⚠️ 阈值带 1e-9 容差：采样点是网格线性插值的产物，恰好落在 space 倍数上的点会以
+    // 0.9999999999999998 的形态出现（浮点欠冲）——不容差会让落锚被推迟一个采样，戳长在
+    // 1.0/1.5 m 间交替、平均间距 1.25 m（实测 12 s 只落 48 戳而非 60）。
     if (Math.hypot(p.x - st.anchor.x, p.z - st.anchor.z) >= space - 1e-9) {
       pushSeg(st, { x0: st.anchor.x, z0: st.anchor.z, yaw0: st.anchor.yaw,
                     x1: p.x, z1: p.z, yaw1: pyaw, t: st.anchor.t }, cap);
-      st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw; st.anchor.t = pt;
+      st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw;
       st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
       added++;
     }
   }
   return added;
 }
+/**
+ * 提交一枚戳进环。
+ *
+ * **回压重占（空间去重，2026-10-12 review P2）**：新戳"往回走"（点积 < 0 ⇒ 地带与已
+ * 有戳重叠）时，**沿环从最新往回找第一枚地带重叠的可见戳并重占该槽**（写新戳、刷新
+ * `lastSegT`、回退 `written` 保证重传）——客户端同一块地面只由当前持有它的槽位表达
+ * （重复碾压 = 槽位重新落锚 + 刷新时刻，结构上不叠墨）。找不到重叠槽（理论不可达，
+ * 防御分支）则正常追加。前进方向（点积 ≥ 0，含锐角折返/转弯）不触发去重——那是真实的
+ * 新地带。
+ */
 function pushSeg(st, seg, cap) {
+  const bax = seg.x1 - seg.x0, baz = seg.z1 - seg.z0;
+  const fLen = Math.hypot(bax, baz);
+  if (st.segs.length > 0 && fLen > 1e-9) {
+    const latest = st.total;                            // 环内有效域 [total-len, total)
+    const len = Math.min(st.segs.length, cap);
+    for (let k = 1; k <= len; k++) {
+      const idx = (latest - k) % cap;
+      const g = st.segs[idx];
+      if (!g) continue;
+      const gax = g.x1 - g.x0, gaz = g.z1 - g.z0;
+      const denom0 = bax * gaz - baz * gax;
+      const gax0 = gax, gaz0 = gaz;
+      // 回退判定（两条件都要满足，防圆周/转弯误伤）：
+      // ① 方向相反：新戳方向与该槽方向点积 < 0（圆周前进相邻槽夹角小，恒 ≥ 0）；
+      // ② 位置在后：新锚点相对该槽起点落在新戳行进方向的反侧。
+      const back = (bax * gax + baz * gaz) < 0
+        && (bax * (seg.x0 - g.x0) + baz * (seg.z0 - g.z0)) < 0;
+      if (back) {
+        // 重叠校验（投影到新戳轴）：该槽线段与新戳地带相交才重占（避免误伤平行车道）
+        const denom = denom0;
+        let overlap;
+        if (Math.abs(denom) < 1e-12) {
+          // 共线：把该槽两端投影到新戳轴上，任一端落入 [0,1]（或新戳起点落入槽区间）⇒ 重叠
+          const p0 = ((g.x0 - seg.x0) * bax + (g.z0 - seg.z0) * baz) / (fLen * fLen);
+          const p1 = ((g.x1 - seg.x0) * bax + (g.z1 - seg.z0) * baz) / (fLen * fLen);
+          const lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+          overlap = hi >= -1e-9 && lo <= 1 + 1e-9;
+        } else {
+          const rx = g.x0 - seg.x0, rz = g.z0 - seg.z0;
+          const tSeg = (rx * gaz - rz * gax) / denom;
+          const tG = (rx * baz - rz * bax) / denom;
+          overlap = tSeg >= -1e-9 && tSeg <= 1 + 1e-9 && tG >= -1e-9 && tG <= 1 + 1e-9;
+        }
+        if (overlap) {
+          st.segs[idx] = seg;                           // 重占该槽：刷新时刻、不叠层
+          st.lastSegT = seg.t;
+          if (st.written > latest - k) st.written = latest - k;   // 覆写槽重传
+          // 完全落在回压地带内的其它旧槽一并清空（同一个地带只留当前这一枚——客户端
+          // 槽位语义：地面归一个槽所有；否则镜像重合的往返戳会留两三层）
+          for (let j = 1; j <= len; j++) {
+            if (j === k) continue;
+            const jdx = (latest - j) % cap;
+            const o = st.segs[jdx];
+            if (!o) continue;
+            let covered;
+            if (Math.abs(denom0) < 1e-12) {
+              const q0 = ((o.x0 - seg.x0) * bax + (o.z0 - seg.z0) * baz) / (fLen * fLen);
+              const q1 = ((o.x1 - seg.x0) * bax + (o.z1 - seg.z0) * baz) / (fLen * fLen);
+              covered = Math.min(q0, q1) >= -1e-9 && Math.max(q0, q1) <= 1 + 1e-9;
+            } else {
+              const orx = o.x0 - seg.x0, orz = o.z0 - seg.z0;
+              const ot0 = (orx * gaz0 - orz * gax0) / denom0;
+              const ot1 = (orx * baz - orz * bax) / denom0;
+              covered = ot0 >= -1e-9 && ot0 <= 1 + 1e-9 && ot1 >= -1e-9 && ot1 <= 1 + 1e-9;
+            }
+            if (covered) {
+              st.segs[jdx] = null;
+              if (st.written > latest - j) st.written = latest - j;
+            }
+          }
+          return;
+        }
+      }
+    }
+  }
   if (st.segs.length < cap) st.segs.push(seg);
   else {
     st.segs[st.head] = seg;
