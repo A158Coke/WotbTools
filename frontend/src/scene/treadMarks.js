@@ -227,8 +227,11 @@ export function advanceTrail(st, pts, space, cap) {
     st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
     // 激活门：相对锚点净位移 ≥ TREAD_ACTIVATE（客户端 0x3632a54）才开始拉伸活戳——
     // 小范围蹭动（< 0.3 m）什么都不画（既不建 open 也不占 GPU）。
+    // ⚠️ 与下方 manualSpace 门控同口径带 1e-9 容差：插值采样点恰好落在阈值上会以
+    // 0.29999999999999993 的形态出现（0.7 − 0.4 的浮点欠冲）——不容差会把激活推迟
+    // 一个采样步（review 六轮 P2 复现）。
     const anchorDist = Math.hypot(p.x - st.anchor.x, p.z - st.anchor.z);
-    if (!st.open && anchorDist >= TREAD_ACTIVATE) {
+    if (!st.open && anchorDist >= TREAD_ACTIVATE - 1e-9) {
       st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
     }
     if (st.open) { st.open.x1 = p.x; st.open.z1 = p.z; st.open.yaw1 = pyaw; }
