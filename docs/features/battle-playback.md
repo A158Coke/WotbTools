@@ -374,6 +374,18 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条/名册按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- **3D 击毁车辆视觉**：保留原车模与击毁爆散，死亡后 0.30 秒开始去饱和和压暗，
+  0.80 秒完成暗灰残骸状态，保持到回放结束。低模和真实 GLB 同一语义，保留车体细节、
+  不改变透明度；作者标记环、标签与独立爆炸不参与材质灰化。roughness / metalness /
+  emissive 随过渡改变，倒带恢复原参数；不增加残骸资产、贴图、几何或 draw call。
+  模型、名牌与名册共用 canonical `lifeAt` 的死亡判据；canonical 时间以 `clock.startRaw`
+  换算到场景 raw 秒，禁止用 HP=0 推断死亡。canonical 未就绪/失败时沿用场景权威
+  `death_t`；canonical 已就绪但缺生命事实保持未知；已确认死亡但无死亡时刻直接显示终态。
+  过渡只按回放时间求值，暂停、倍速、seek 和 GLB 迟到/重开均在当前时间投影。
+  GLB 每车只克隆材质、同车复用原材质对应的副本；共享模板纹理/几何不由车辆释放。
+  材质 shader 组合既有坦克光照补丁，渐变只改 uniform/PBR 参数，不逐帧重编译。
+  自动回归覆盖材质隔离、时钟、倒带与资源生命周期；亮/暗图、同型号一生一死、爆炸、
+  近远镜头与手机帧率由用户在真实回放中验收。
 - 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
   上限（未知阵营不计入任一方，unknown ≠ enemy），`playbackScene` 在 HUD 节流写 store，
   `Replay3DPane.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」；数值用完整整数（§11 禁止
@@ -387,8 +399,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   2D / 3D 名册均将己方放左、敌方放右；录像者属于 Team 2 时交换车道。名册 HP、圆点与
   行边框使用 `--color-team-ally` / `--color-team-enemy`，未知视角使用中性色，未知阵营独立分组。
 - **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
-  开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
-  按当前回放时刻**纯函数**投影（`reload` 复用场景的 reload resolver），`playbackScene.updateRoster()`
+  开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t, isDestroyed)`
+  按当前回放时刻**纯函数**投影（死亡 resolver 与模型/名牌共享）（`reload` 复用场景的 reload resolver），`playbackScene.updateRoster()`
   只写变化过的字段；行由与 2D 共用的 `PlaybackRoster.vue` 呈现（见 `docs/frontend/replay-workspace.md`）。
   **写入必须经响应式代理**：`store` 是 `reactive()`，eid → 行索引登记的是读回 `store.roster` 得到的
   代理，不是建行时的原始对象——改原始对象 Vue 收不到通知，名册会停在满血，直到选中行之类的无关

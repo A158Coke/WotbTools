@@ -288,7 +288,8 @@ const battleTimeLabel = computed(() => formatPlaybackClock(store.time - store.st
 // Details 查的是 canonical track：canonical 在时必须按它自己的 clock.startRaw 换算（canonical 数据就按这个原点索引）；
 // 引擎接管 canonical clock 后与 store.startTime 是同一个值，canonical 之前才用引擎发布的原点。
 const detailTime = computed(() => Math.max(0, store.time - (detailPlayback.value?.clock?.startRaw ?? store.startTime)))
-watch(() => detailPlayback.value?.clock ?? null, (clock) => sceneApi?.setBattleClock?.(clock))
+// Refresh life facts too when canonical finishes at an unchanged clock/time.
+watch(detailPlayback, (canonical) => sceneApi?.setBattleClock?.(canonical?.clock ?? null))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)

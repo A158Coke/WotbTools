@@ -1314,3 +1314,170 @@ describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
     container.remove()
   })
 })
+
+describe('destroyed vehicle visuals in the real scene lifecycle', () => {
+  const vehicle = (overrides = {}) => ({
+    eid: 1, account_id: 77, tank_id: 6929, team: 1, max_hp: 1000, is_author: true,
+    pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+    hp: [[42, 1000]], coverage: [42, 300], death_t: 99, ...overrides,
+  })
+  const dataFor = (vehicles) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles })
+  const canonicalFor = (tracks) => ({ clock: { startRaw: 42, durationSec: 200 }, dataset: { vehicles: tracks } })
+  const deadTrack = (timestamp = 10) => ({ accountId: 77, lifeTransitions: [{ timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: timestamp }] })
+
+  async function load(vehicles, canonical = null) {
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    const store = createPlaybackStore()
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const state = { canonical }
+    const session = { loadScene: vi.fn().mockResolvedValue(dataFor(vehicles)), getState: () => state }
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'wreck.wotbreplay'), session })
+    api.setPlaying(false)
+    return { api, store, overlay, frames, vehicles: window.__pbV }
+  }
+
+  it('converts canonical battle seconds, keeps labels/roster/model consistent and rewinds without HP inference', async () => {
+    const tracks = [deadTrack(), { accountId: 88, lifeTransitions: [{ timeSec: 0, lifeState: 'ALIVE' }] }]
+    const { api, store, overlay, vehicles } = await load([
+      vehicle(), vehicle({ eid: 2, account_id: 88, is_author: false, hp: [[42, 0]], death_t: 45 }),
+    ], canonicalFor(tracks))
+    const [a, b] = vehicles
+    const ring = a.group.children.find(child => child.userData.keepWithGlb)
+    const ringColor = ring.material.color.clone()
+    expect(a.proxyVisual.materials[0].material).not.toBe(b.proxyVisual.materials[0].material)
+    api.seekTime(51)
+    expect(a.proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+    api.seekTime(52.30)
+    expect(a.proxyVisual.amount).toBeCloseTo(0)
+    expect(store.roster.team1[0].dead).toBe(true)
+    expect(overlay.setLabels.mock.calls.at(-1)[0].map(row => row.destroyed)).toEqual([true, false])
+    api.seekTime(52.55)
+    expect(a.proxyVisual.amount).toBeCloseTo(0.5)
+    api.seekTime(52.80)
+    expect(a.proxyVisual.amount).toBe(1)
+    expect(b.proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[1].dead).toBe(false)
+    expect(ring.material.color.equals(ringColor)).toBe(true)
+    api.seekTime(51)
+    expect(a.proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+  })
+
+  it('canonical arriving/removing while paused replaces fallback immediately at the unchanged time', async () => {
+    const { api, store, vehicles, overlay } = await load([vehicle({ death_t: 45 })])
+    api.seekTime(60)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    store.playbackSession.canonical = canonicalFor([{ accountId: 77, lifeTransitions: [{ timeSec: 0, lifeState: 'ALIVE' }] }])
+    api.setBattleClock(store.playbackSession.canonical.clock)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+    expect(overlay.setLabels.mock.calls.at(-1)[0][0].destroyed).toBe(false)
+    store.playbackSession.canonical = canonicalFor([deadTrack(null)])
+    api.setBattleClock(store.playbackSession.canonical.clock)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    store.playbackSession.canonical = canonicalFor([])
+    api.setBattleClock(store.playbackSession.canonical.clock)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    store.playbackSession.canonical = null
+    api.setBattleClock(null)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+  })
+
+  it.each([0.5, 1, 2, 4, 8])('transition advances only on the playback clock at speed %s', async (speed) => {
+    const { api, frames, vehicles } = await load([vehicle({ death_t: 52 })])
+    api.seekTime(52.30)
+    frames.shift()()
+    expect(vehicles[0].proxyVisual.amount).toBeCloseTo(0)
+    api.setSpeed(speed)
+    api.setPlaying(true)
+    frames.shift()()
+    const progress = Math.min(1, (0.1 * speed) / 0.5)
+    expect(vehicles[0].proxyVisual.amount).toBeCloseTo(progress * progress * (3 - 2 * progress))
+    api.setPlaying(false)
+    const frozen = vehicles[0].proxyVisual.amount
+    frames.shift()()
+    expect(vehicles[0].proxyVisual.amount).toBe(frozen)
+  })
+
+  it('late same-model GLBs attach at paused T, isolate materials and dispose clones across toggles/session replacement', async () => {
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockReturnValue(parked.promise)
+    vi.spyOn(assetProvider, 'json').mockImplementation(path => Promise.resolve(
+      String(path).startsWith('/tank/') ? { model_origins: { track: [0, 0, 0], turret: [0, 0, 0] }, configs: [] } : null))
+    const texture = new THREE.Texture()
+    const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 })
+    const geometry = new THREE.BoxGeometry()
+    const template = new THREE.Group()
+    for (const name of ['hull', 'turret_0', 'gun_0']) {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.name = name
+      template.add(mesh)
+    }
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, done) => done({ scene: template }))
+    const texDispose = vi.spyOn(texture, 'dispose'), geoDispose = vi.spyOn(geometry, 'dispose'), templateDispose = vi.spyOn(material, 'dispose')
+    const { api, vehicles, store } = await load([
+      vehicle({ death_t: 52 }), vehicle({ eid: 2, account_id: 88, death_t: null, is_author: false }),
+    ])
+    api.seekTime(60)
+    api.setGlb(true)
+    parked.resolve(new Uint8Array([1]))
+    await vi.waitFor(() => expect(vehicles.every(v => v.glb)).toBe(true))
+    const [a, b] = vehicles
+    expect(a.glbVisual.amount).toBe(1)
+    expect(b.glbVisual.amount).toBe(0)
+    expect(a.glbVisual.materials[0].material.roughness).toBeCloseTo(0.6)
+    expect(b.glbVisual.materials[0].material.roughness).toBe(0.4)
+    expect(material.roughness).toBe(0.4)
+    const disposes = vehicles.map(v => vi.spyOn(v.glbVisual.materials[0].material, 'dispose'))
+    api.setGlb(false)
+    for (const dispose of disposes) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(texDispose).not.toHaveBeenCalled()
+    expect(geoDispose).not.toHaveBeenCalled()
+    expect(templateDispose).not.toHaveBeenCalled()
+    api.setGlb(true)
+    await vi.waitFor(() => expect(vehicles.every(v => v.glb)).toBe(true))
+    expect(a.glbVisual.amount).toBe(1)
+    api.seekTime(51)
+    expect(a.glbVisual.amount).toBe(0)
+    const activeDisposes = vehicles.map(v => vi.spyOn(v.glbVisual.materials[0].material, 'dispose'))
+    const proxyDisposes = vehicles.map(v => vi.spyOn(v.proxyVisual.materials[0].material, 'dispose'))
+    const nextSession = { loadScene: vi.fn().mockResolvedValue(dataFor([vehicle({ tank_id: 0, death_t: null })])), getState: () => ({ canonical: null }) }
+    await api.loadData({ kind: 'local', file: new File(['next'], 'next.wotbreplay'), session: nextSession })
+    await Promise.resolve()
+    for (const dispose of [...activeDisposes, ...proxyDisposes]) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(texDispose).toHaveBeenCalledTimes(1)
+    expect(geoDispose).toHaveBeenCalledTimes(1)
+    expect(templateDispose).toHaveBeenCalledTimes(1)
+    expect(window.__pbV[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+  })
+
+  it('GLB completion after session replacement cannot attach or allocate instance material clones', async () => {
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockReturnValue(parked.promise)
+    vi.spyOn(assetProvider, 'json').mockResolvedValue(null)
+    const material = new THREE.MeshStandardMaterial(), geometry = new THREE.BoxGeometry()
+    const template = new THREE.Group()
+    template.add(new THREE.Mesh(geometry, material))
+    const clone = vi.spyOn(material, 'clone'), dispose = vi.spyOn(material, 'dispose')
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, done) => done({ scene: template }))
+    const { api, vehicles } = await load([vehicle()])
+    api.setGlb(true)
+    const nextSession = { loadScene: vi.fn().mockResolvedValue(dataFor([])), getState: () => ({ canonical: null }) }
+    await api.loadData({ kind: 'local', file: new File(['next'], 'next.wotbreplay'), session: nextSession })
+    parked.resolve(new Uint8Array([1]))
+    await vi.waitFor(() => expect(dispose).toHaveBeenCalledTimes(1))
+    expect(clone).not.toHaveBeenCalled()
+    expect(vehicles[0].glb).toBeUndefined()
+    expect(window.__pbV).toHaveLength(0)
+  })
+})
