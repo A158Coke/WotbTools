@@ -56,7 +56,7 @@ import {
 // tools/export_tank_tread.py），可行性与回落口径见上游 docs/feasibility-track-marks.md
 import {
   advanceTrail, createTrailState, openStampOf, resetTrailState, resolveTreadParams,
-  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE, TREAD_OPACITY,
+  trailStampCorners, treadAlphaAt, treadScaleFor, TREAD_FADE,
   TREAD_FALLBACK, TREAD_RING,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
@@ -2727,7 +2727,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     let wrote = false;
     // 槽位 alpha 统一走 fround：carr 是 Float32Array，写 0.8 读回 0.8000000119——比较必须
     // 按同一量化值（review P3 2026-10-11：double 严格比较让未变化缓冲每 tick 重新上传）
-    const alphaAt = (t) => Math.fround(treadAlphaAt(T - t) * TREAD_OPACITY * (v.tread.texScale || 1));
+    const alphaAt = (t) => Math.fround(treadAlphaAt(T - t) * (v.tread.texScale || 1));
     const hideQuads = (co) => {
       if (carr[co + 3] !== 0 || carr[co + 7] !== 0 || carr[co + 11] !== 0 || carr[co + 15] !== 0) {
         carr[co + 3] = 0; carr[co + 7] = 0; carr[co + 11] = 0; carr[co + 15] = 0;
@@ -2819,7 +2819,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 与写入侧同口径的 f32 量化（review P3 2026-10-11）：carr 是 Float32Array，若拿
         // double 的 a 严格比较，`carr[i] !== 0.8` 永远成立（读回 0.8000000119）⇒ 时钟没动
         // 也每 tick 标脏重传。量化后同一 alpha 的重复 tick 不再置 dirty。
-        const a = Math.fround(treadAlphaAt(T - seg.t) * TREAD_OPACITY * (v.tread.texScale || 1));
+        const a = Math.fround(treadAlphaAt(T - seg.t) * (v.tread.texScale || 1));
         const co = (k % TRAIL_CAP_PER_SIDE) * 32 + quad * 16;
         for (let q = 0; q < 4; q++) {
           if (carr[co + q * 4 + 3] !== a) {

@@ -41,17 +41,18 @@ export const TREAD_RING = 50;
  *  同源推断）。旧值 10 + 10 s 是**产品自定**（2026-10-11 用户裁示），本次按客户端口径替换。 */
 export const TREAD_FADE = { start: 5.45, end: 7.62 };
 
-/** 全局不透明度系数：顶点色 alpha = 淡出系数 × 本值。
+/* 顶点色 alpha = 淡出系数 × per-stem alpha 归一化（`treadScaleFor`）。
  *
- * 客户端着色器口径（deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支）：透明度 = 距离淡出
+ * ⚠️ **没有全局压暗系数**（2026-10-12 按用户裁示对齐客户端口径）：客户端着色器
+ * （deferred-decal-vp.sl 的 FADE_OUT_WITH_TIME 分支）里透明度 = 贴图 alpha × 距离淡出
  * （`treadsNear/FarFadeDistance`）× 时间淡出（`smoothstep(fadeOutTimeStartEnd)`），
- * **没有**额外的整体压暗。但直接把本系数设 1.0 后实测比游戏更黑（用户目视两点校准：
- * 0.55 偏淡 / 1.0 偏黑）⇒ 客户端还有两处未复刻的减淡机制（具体数值在游戏层、未逆向）：
+ * 无任何整体阻尼；此前的 0.8 是目视两点校准（补偿下述未复刻机制），已随槽位模型一起退役。
+ * 客户端仍有两处未复刻的**减淡**机制（具体数值在游戏层、未逆向，如实记录的缺口）：
  *   ① 距离淡出（`treadsNear/FarFadeDistance`，随相机距离 smoothstep 淡出）；
  *   ② 贴花调色分支 `#if GLOBAL_TINT: rgb *= globalFlatColor.rgb * 2.0`（同族着色器）。
- * **保留 0.8 是刻意的产品决定**（用户校准值；槽位模型落地后它对"重压变深"的补偿作用已
- * 消失，可随时按客户端口径（1.0）做一次目视 A/B）。 */
-export const TREAD_OPACITY = 0.8;
+ * 因此近距满景下本实现的印记可能比客户端略深——这是缺口的直接后果，不是新增阻尼的理由。
+ * per-stem alpha 归一化（`/tread/textures.json`）保留：那是"统一跨贴图深浅"的用户裁示
+ * （跨贴图密度差 1.7~4×），与全局压暗无关。 */
 
 /**
  * 印记年龄（回放秒）→ 不透明度系数 [0,1]：客户端同款 `1 − smoothstep(start, end, age)`
