@@ -48,7 +48,7 @@ android/
           AuthSessionStore.kt     # 已建立的会话（AppAuth AuthState JSON，纯逻辑）
           AuthSession.kt          # 当前会话快照 + 过期判定（纯逻辑）
           OidcConfiguration.kt    # issuer / clientId / redirect URIs / scope
-          OidcRedirectStrategy.kt # HTTPS App Link vs private scheme（纯决策 + API31 探测）
+          OidcRedirectStrategy.kt # 固定 private scheme 回程（HTTPS 仅兼容旧交易）
           AuthResponseGuard.kt    # 事务归属校验（state / redirect / code / error，纯逻辑）
           AuthResult.kt           # 显式 result / error 模型
       res/
@@ -311,7 +311,10 @@ Bridge v2 / native-auth / offline authority，以及 external content Intent →
 分析 → Data 结果 → identity ACK 清 pending。这是模拟器运行证据，不能代替物理设备的 provider、
 文件分享和视觉验收。
 
-## PR B 人工交接（2026-10-03）
+## PR B 历史验收快照（2026-10-03）
+
+以下状态和测试计数仅属于当次 PR B，不代表当前源码或线上发布状态。当前版本由
+`android/gradle.properties`、Agent pin 由 `deploy/agent/source.json` 决定；每次发布重新记录真机证据。
 
 Automated B13/B14 已验证；Physical B13/B14 为 **PENDING HUMAN VALIDATION**。
 模拟器为 API34，Native JVM 98 项、真实 local Vue/Intent/WASM/ACK 与过期缓存角色 smoke 2 项通过。
@@ -340,7 +343,7 @@ WebView 无 runtime eval/new Function。Bundle URL graph/CSS references/APK 文�
 | 5 bridge | 仅 appassets、https://wotbtools.com、https://www.wotbtools.com，main frame；合同/JVM。 |
 | 6–8 API/CORS/Bearer | Android absolute API；Caddy exact-origin 匿名预检与真实响应；Native Bearer、omit cookies；实际 Caddy HTTP。 |
 | 9 offline auth | capability 先于 login/API，browser matrix 零离线 login，Native transient failure 保留 cached session。 |
-| 10 parser | APK commit-addressed JS/WASM，与 deploy/agent/source.json v0.3.11 pin 一致。 |
+| 10 parser | APK commit-addressed JS/WASM，与当次 deploy/agent/source.json v0.3.11 pin 一致（历史值；当前 pin 以该文件为准）。 |
 | 11–13 pending | exact local synthetic GET、无网络回退；full UUID/compare-clear ACK；JVM 持久恢复与 emulator Activity recreation。完整 OS process-death 属真机矩阵。 |
 | 14–17 local | Result/Rating/2D bundled，shots compact tank parameters/shell table bundled；真实 WASM offline matrix。 |
 | 18–20 remote offline | AI/HoF/3D 在 mount/login/data/dispatch 前门控，matrix 零业务 HTTP/远程资产。 |

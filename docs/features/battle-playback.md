@@ -7,6 +7,8 @@
 >
 > **2026-10-02 起数据在本机生成**（服务器没有 parser）：`frontend/src/replay-local/playback/` 把上游 Rust Core
 > `parsePlayback`（+ `parseResult`、`parseAiReview` 伤害事件）转换为同一份 `BattlePlaybackDataset` / `MapOverview`。
+> 工作台通过 `useReplayWorkspace.ts` 的共享 playback session 调用 `parseLocalPlaybackOffThread`，
+> 优先在 `canonical.worker.ts` 生成 canonical 数据；仅线程设施故障回退主线程，解析失败保持错误。3D scene ready 不等待 canonical，Details 后台增强。
 > 原服务端 `battle-playback-v2` / `map-overview` 端点、`BattlePlaybackProjector`、`MapOverviewQueryService` 已删除；
 > 下文中「后端 / artifact / projector」描述的数据语义由本机转换层继承，与 Java 输出的对比数字见
 > `frontend/src/replay-local/playback/playback.golden.test.ts`。

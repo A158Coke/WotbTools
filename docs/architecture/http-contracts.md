@@ -6,7 +6,7 @@
 
 边界保持分离：
 
-- 回放事实的权威是上游 Rust Core（客户端 WASM）；`java/wotb-core` 只保留共享模型，Web 层通过显式 mapper 投影到 HTTP DTO。
+- 回放事实的权威是上游 Rust Core（客户端 WASM）；`java/wotb-core` 保留共享模型、参考数据与 AI 投影分析能力；业务 Web 层通过显式 mapper 投影到 HTTP DTO。
 - `BattlePlaybackDataset` 等 schema component 在端点删除后保留，作为客户端本机数据的形状契约。
 - Vue 组件消费 generated transport types，经 adapter/runtime validation 后再进入 view/application model。
 
@@ -34,14 +34,14 @@ OpenAPI → generated FE transport → BE serialization/mapper → runtime valid
 
 ## Compatibility rules
 
-- Domain enum 与 wire enum 必须显式映射。Playback 的 `DecodeConfidence` 只能通过 mapper 转为 `HIGH/MEDIUM/LOW/UNKNOWN`；FE 不得同时接受两套值来掩盖 producer violation。
-- 旧 persisted playback artifact 只在 `ReplayArtifactWriter` 读取边界做有限、可证明的 normalization；新写入和 live HTTP response 必须直接符合 OpenAPI。
+- Domain enum 与 wire enum 必须显式映射。客户端 Playback 投影输出契约中的 `HIGH/MEDIUM/LOW/UNKNOWN`，不得同时接受两套值来掩盖 producer violation。
+- 服务端 Playback 端点、持久化 artifact 与 `ReplayArtifactWriter` 已退役；当前数据由客户端 `replay-local/playback` 生成并经 generated validator 校验。历史 artifact 的 normalization 不再是当前运行链路。
 - `204` 表示 capability unavailable，不是 JSON schema failure；`200` response 无法通过 schema 才是 transport contract failure。
 - ApiError 使用统一 envelope：稳定 `errorCode`、HTTP/body status、`retryable`、安全 `details`、timestamp 与诊断 `id`。SSE 是另一种传输形状，后续单独建模，不把它伪装成 JSON response。
 
 ## CORS
 
-Web 仍由 nginx `/api/` 反代到 `wotb-backend`（`deploy/nginx/nginx.conf`），本地走 Vite dev proxy（`changeOrigin: true`）。Android bundled Vue 的文档 origin 是 `https://appassets.androidplatform.net`，业务请求由 `src/platform/runtime.js` 解析为 `https://wotbtools.com/api/**`，使用 Native Bearer，credentials 为 omit。
+Web 由 nginx `/api/` 反代到 `BACKEND_UPSTREAM` 指定的 TX Business API，`/api/ai/` 使用独立 `AI_UPSTREAM`（`deploy/tx/nginx/frontend.conf.template`、`deploy/tx/frontend.compose.yml`），本地走 Vite dev proxy（`changeOrigin: true`）。Android bundled Vue 的文档 origin 是 `https://appassets.androidplatform.net`，业务请求由 `src/platform/runtime.js` 解析为 `https://wotbtools.com/api/**`，使用 Native Bearer，credentials 为 omit。
 
 公共 ingress `deploy/tx/Caddyfile` 是这条跨源边界的唯一 CORS owner：精确 appassets origin，允许实际 HTTP methods 及 Authorization/Content-Type/Content-Encoding/Accept；匿名 OPTIONS 在 proxy/auth 前直接返回 204，真实响应也携带 CORS，暴露 Content-Disposition/X-Request-ID/X-Map-Meta。不启用 credentialed CORS，也不新增 controller `@CrossOrigin` 或第二份 backend CORS 配置。固定 `/agent-assets/*` gateway 同样受此边界保护。发布前 readiness 探测验证 preflight、真实 profile 401 和 asset index JSON。
 

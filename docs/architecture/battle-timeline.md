@@ -2,16 +2,18 @@
 
 > 本文档描述 V2 引入的唯一权威时间线模型：com.wotb.core.replay.timeline。
 > Battle Playback / Personal AI Review / Team AI Review 共享同一套战场事实，禁止各模块
-> 自行重新解释 raw events 形成互相不同的事实模型（见本文件 §1/§43）。
+> 自行重新解释 raw events 形成互相不同的事实模型。
+> 2026-10-02 客户端解析迁移后，Java `BattleTimeline` 用于 AI 下游；Playback 的 canonical facts 与稀疏投影在 `frontend/src/replay-local/` 生成，二者用 fixture parity 锁定语义，不是同一个运行时实例。下文 § 编号来自历史 V2 设计章节。
 
 ## Battle Playback V2（Canonical Replay Truth Convergence）
 
-`contracts/http/openapi.yaml` 只定义序列化后的 HTTP wire shape；canonical domain truth 仍由
-`com.wotb.core.replay.timeline` 持有。Playback 的 domain→transport mapping 与旧 artifact
-兼容边界必须显式实现，避免把 `DecodeConfidence` 或未来的 view model 泄漏到 API。
+`contracts/http/openapi.yaml` 定义序列化的契约形状；领域事实语义由
+客户端 `replay-local/canonical` 与 AI 的 `com.wotb.core.replay.timeline` 各自消费同一 canonical 语义。
+Playback HTTP 端点已删除，OpenAPI schema component 继续作为本地 `BattlePlaybackDataset` 的类型与运行时校验来源。
 
-> 自 2026-08 起，Battle Playback 增加 V2 稀疏投影 `BattlePlaybackDataset`，由
-> `BattlePlaybackProjector.project` 从 canonical `BattleTimeline` + canonical facts 直接投影。
+> 自 2026-08 起，Battle Playback 增加 V2 稀疏投影 `BattlePlaybackDataset`。
+> 历史 `BattlePlaybackProjector.project` 从 canonical `BattleTimeline` + canonical facts 直接投影；该 Java projector 已删除。
+> 当前 `frontend/src/replay-local/playback/toBattlePlaybackDataset.ts` 从客户端 canonical facts 投影。
 > 目标原则：**Replay truth is decoded once, canonicalized once, and projected many times**。
 
 ### 事实层（新增 canonical facts）
@@ -30,8 +32,8 @@
   `baseHp` 属 `VehicleReferenceMetadata`（tankopedia 参考展示）。新增
   `HealthKnowledge(CURRENT/LAST_KNOWN)`；无 HP fact 由空 transition track 表达，
   己方相对满血证明由独立的 `relativeFull` sparse fact 表达；
-  presentation-only `displayCapacityHp` 与 backend 投影的 `relativeFull`
-  （= 截至 t 的真实可信 currentHp 最大值，**anti-future-leak**，绝非 canonical max HP）。
+  presentation-only `displayCapacityHp` = 截至 t 的真实可信 currentHp 最大值（**anti-future-leak**，绝非 canonical max HP）；
+  `relativeFull` 是独立的本方相对满血事实，不等同于容量数值。
 - **FrameOrientation**：新增 `OrientationKnowledge` + `ageSec`；敌方离开 AoI 后方向
   `CURRENT → LAST_KNOWN`，不得继续表现为实时炮塔方向。无 orientation fact 不生成 HTTP
   segment；HTTP wire 只保留 `CURRENT/LAST_KNOWN`，domain 的 `UNKNOWN` 仅表示内部无事实。
@@ -52,18 +54,11 @@ consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解
 
 ## 数据流
 
-    Replay archive
-          ↓
-    Parser / Decoder → ReplayEvent
-          ↓
-    BattleStateReconstructor（checkpoint 状态重建）
-          ↓
-    BattleTimelineBuilder
-          ↓
-    Canonical BattleTimeline（battle-relative · 1 秒 BattleFrame · 精确事件保留）
-          ├── BattlePlaybackProjector → BattlePlaybackDataset (HTTP)
-          ├── PersonalAiContextCompiler → Call #2 TACTICAL TIMELINE
-          └── TeamAiContextCompiler → 团队 Episode 上下文
+1. 用户设备：锁定 Agent WASM → typed facets → `replay-local/canonical`。
+2. Playback：`useReplayWorkspace.playbackSession.loadCanonical` → `canonicalRuntime.parseLocalPlaybackOffThread` → `canonical.worker.ts` → 本地 `BattlePlaybackDataset` / `MapOverview`；复用已解析的 Playback 切面。
+3. AI：客户端 canonical AI projection → `POST /api/ai/reviews` → `ClientAiProjectionAdapter` → `BattleStateReconstructor` → `BattleTimelineBuilder` → 1 秒 `BattleFrame` 与精确事件 → Personal / Team AI context compiler。
+
+服务器不读取 Replay 字节。Java `BattlePlaybackProjector`、`ReplayArtifactWriter` 与 Playback HTTP artifact 端点均已退役。
 
 ## 核心不变量
 
@@ -93,15 +88,15 @@ consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解
 | BattleTimeline | 入口 record：mapCode / durationSec / battleStartRawClockSec / clockResolution / frames / events / validation / limitations；frameAt(t) 确定性查询 |
 | BattleFrame | second / stateAtSec / world / vehicles / events / deltas / tacticalState |
 | FrameVehicle | identity（entityId/accountId/nickname/tankId/tankName/tankClass/tankTier/team/friendly）+ lifeState + health + position + orientation + mapState + knowledgeState + 累计伤害 + destroyedKnownAtSec |
-| FrameHealth | currentHp(+observedAt/age/source) 与 baseHp/effectiveMaxHp 严格分开（§7）：tankopedia base 绝不冒充本场 maxHp |
+| FrameHealth | currentHp / observedAtSec / ageSec / source / knowledge / displayCapacityHp / confidence；不含 baseHp/effectiveMaxHp，参考血量不冒充本场 maxHp |
 | FramePosition | position(+observedAt/age) + knowledge(CURRENT/LAST_KNOWN/UNKNOWN) + source(OBSERVED_EVENT/CARRIED_FORWARD) |
 | FrameMapState | gridRegion / areaId / semanticTags / elevation / cover zone 候选；禁止 exact LOS 断言（§16.2） |
 | WorldSummary | 双方存活 / enemyKnown / enemyLastKnown / enemyUnknown / enemyDestroyedKnown / 争霸点数 |
 | BattleTimelineValidationResult | 错误码见下；valid=false → 拒绝 AI Review |
 | BattleDeltaEngine | 帧间确定性 delta（§15）：POSITION_CHANGE / FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED / HP_CHANGE / HP_GAP_DELTA / DESTROYED / ALIVE_COUNT_CHANGE / LOCAL_FORCE_CHANGE / POINTS_CHANGE / ENGAGEMENT_ACTIVITY |
 | EpisodeDetector | 确定性章节切分（§23）：强信号（首次接敌/阵亡/存活变化/点数变化/HP 空窗）优先，首选 15–45s、硬最小 8s、硬最大 60s，覆盖整场、连续、无重叠；禁止固定 30 秒切块。**state/event boundary contract（PR #102）**：segment 半开秒区间 [start, end)，second=start 的 delta 属于本段；BEFORE = frameWorld(max(0, start−1))（frame(start) 已消费该秒事件，不能用作 BEFORE），首段 start=0 钳制到 0（t=0 前无状态取初始帧），AFTER = 最后包含秒 —— 保证 BEFORE → EVENTS → AFTER 因果顺序 |
-| BattlePlaybackProjector | 从 canonical timeline/facts 直接投影 `BattlePlaybackDataset`（tracks、segments、transitions、events）；不生成前端 compatibility view |
-| ReplayArtifactWriter normalization | 仅作为旧 persisted playback artifact 的读取边界兼容层；非 current Battle Playback 数据源 |
+| `toBattlePlaybackDataset`（TypeScript） | 当前 Playback 投影：从客户端 canonical facts 生成 tracks、segments、transitions、events |
+| `BattlePlaybackProjector` / `ReplayArtifactWriter`（历史） | 已删除，不是当前读取或写入边界 |
 
 ## Validation 错误码（§4）
 
@@ -147,8 +142,8 @@ consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解
 | XYZ 位置 | PROVEN / EXACT（位置流） | type-10；LAST_KNOWN 时降级 |
 | hullYaw | PROVEN / EXACT | type-10 yaw（弧度→度） |
 | turretRelativeYaw | PROVEN / EXACT | type-7 propId=2（u16*360/65536-180） |
-| currentHp | PROVEN / EXACT | type-7 propId=3（signed i16；sentinel 归一化） |
-| effectiveMaxHp | PARTIAL | 仅本场观测证明；禁止 tankopedia base 冒充 |
+| currentHp | PROVEN / EXACT | Type5 物化 / type-7 prop3 / Vehicle method1 的可信 HP；原始 u16 经 `HpRawState` 分类，0xFFFD 只证明终态，不伪造 HP=0 |
+| displayCapacityHp | DERIVED（presentation） | 截至当前时刻的观测 HP 最大值；不是实际 maxHp，不读未来采样 |
 | destroyed（world fact） | PROVEN / EXACT | EXACT alive=false / 死亡 sentinel |
 | damage / points | PROVEN / EXACT | type-8 伤害；type-8 subtype48 root field12（争霸实时点数） |
 | observation / SPOTTED | NOT_ALLOWED_FOR_AI | Type-5 未证明；仅位置流覆盖语义 |
