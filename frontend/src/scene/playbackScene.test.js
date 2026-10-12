@@ -356,7 +356,7 @@ describe('playbackScene 会话代数契约', () => {
     let r = readTrail()
     // 落锚每 1 m 一戳（0.2 s/戳）：18 s → 90 戳；环只保留最近 50
     expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, live: 50, quads: 102 })
-    expect(r.youngAlpha).toBeCloseTo(0.8)
+    expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
     api.seekTime(t0 + 8)
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, live: 40, quads: 102 })
@@ -364,7 +364,7 @@ describe('playbackScene 会话代数契约', () => {
     r = readTrail()
     expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, live: 50, quads: 102 })
     expect(r.oldAlpha).toBe(0)          // 环里最老戳（出生 20 s 前）早已出淡出窗（≤7.62 s）
-    expect(r.youngAlpha).toBeCloseTo(0.8)
+    expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
     api.seekTime(t0 + 55)
     r = readTrail()
     expect(r.builtT).toBe(t0 + 55)

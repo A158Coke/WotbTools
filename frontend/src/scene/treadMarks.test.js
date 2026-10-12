@@ -41,7 +41,9 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     expect(sceneSrc).toMatch(/if \(tr\.builtT !== -Infinity \|\| tr\.L\.total \|\| tr\.R\.total\) \{\s*resetTrailState\(tr\.L\); resetTrailState\(tr\.R\);/)
   })
   it('alpha 比较必须走 Math.fround 量化门控（review P3 2026-10-11：double 严格比较恒为脏）', () => {
-    expect(sceneSrc).toMatch(/Math\.fround\(treadAlphaAt\(T - t\) \* TREAD_OPACITY/)
+    // 客户端口径：alpha = 淡出系数 × per-stem 归一化，**无全局压暗系数**（2026-10-12 裁示）
+    expect(sceneSrc).toMatch(/Math\.fround\(treadAlphaAt\(T - t\) \* \(v\.tread\.texScale \|\| 1\)\)/)
+    expect(sceneSrc).not.toMatch(/TREAD_OPACITY/)
     expect(sceneSrc).toMatch(/parr\[pos0 \+ i\] !== Math\.fround\(c12\[i\]\)/)
   })
   it('teardown 必须释放逐车 treadMesh 几何/材质与会话级贴图缓存（显存生命周期同会话）', () => {
