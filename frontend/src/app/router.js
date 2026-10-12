@@ -38,7 +38,8 @@ export function createAppRouter(history = createWebHistory()) {
 
   router.beforeEach((to) => {
     const view = to.query.view
-    if (isAndroidRuntime() && view === 'home') {
+    const isLandingPath = to.path === '/' || to.path === '/index.html'
+    if (isAndroidRuntime() && isLandingPath && view === 'home') {
       const query = { ...to.query }
       delete query.view
       return { path: to.path, query, hash: to.hash, replace: true }
