@@ -389,9 +389,11 @@ describe('playbackScene 会话代数契约', () => {
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
     api.setPlaying(false)
+    const gapStart = t0 + 5, gapEnd = t0 + 10
     const read = () => {
       const v = window.__pbV[0]
-      return { total: v.trail.L.total, segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1 })) }
+      return { total: v.trail.L.total,
+               segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1, t: sg.t })) }
     }
     api.seekTime(t0 + 4)
     const before = read()
@@ -399,11 +401,22 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 11)
     const r = read()
     expect(r.total).toBeGreaterThan(before.total)
-    expect(r.segs.slice(0, before.total)).toEqual(before.segs)
-    const postGap = r.segs.slice(before.total)
-    expect(postGap.length).toBeGreaterThanOrEqual(3)
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)   // 历史段逐值保留
+    // 空洞本身零出戳（跨空洞不连铺的最小不变量：没有任何戳出生在洞内）
+    expect(r.segs.every((sg) => !(sg.t > gapStart && sg.t < gapEnd))).toBe(true)
+    // ⚠️ 洞前尾巴（seek 目标 t0+4 → 空洞起点 t0+5 之间仍可见的 1 s）也出生在空洞之前，
+    // 不能按 `slice(before.total)` 计数切进"洞后"桶——before 是在 t0+4 取的，尾巴在它之后
+    // 才铺出来。按**出生时刻**过滤：< gapEnd = 洞前（含尾巴），≥ gapEnd = 洞后新锚段。
+    const tail = r.segs.slice(before.total).filter((sg) => sg.t < gapEnd)
+    const postGap = r.segs.slice(before.total).filter((sg) => sg.t >= gapEnd)
+    expect(tail.length).toBeGreaterThanOrEqual(4)               // t0+4→t0+5 的 5 m ≈ 5 戳
+    expect(tail.length).toBeLessThanOrEqual(6)
+    const tailAbs = tail.map((sg) => Math.abs(sg.x0))
+    expect(Math.min(...tailAbs)).toBeGreaterThan(19)            // 路径 21~25 m（L 带 +0.9 横偏）
+    expect(Math.max(...tailAbs)).toBeLessThan(25)
+    expect(postGap.length).toBeGreaterThanOrEqual(3)            // 洞后 1 s：锚点 + ~5 戳
     expect(postGap.length).toBeLessThanOrEqual(8)
-    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
+    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)   // 无长桥接戳
     for (const sg of postGap) expect(Math.abs(sg.x0)).toBeGreaterThan(45)
     const minPostGapAbs = Math.min(...postGap.map((sg) => Math.abs(sg.x0)))
     expect(minPostGapAbs).toBeLessThan(51)
