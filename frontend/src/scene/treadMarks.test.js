@@ -6,6 +6,7 @@ import {
   GENERIC_TREAD_TEXTURE, TREAD_FALLBACK, advanceTrail, createTrailState, openStampOf,
   resetTrailState, resolveTreadParams, textureStemOf,
   trailStampCorners, treadAlphaAt, treadScaleFor, TRAIL_LIFT, TREAD_FADE, TREAD_RING,
+  TREAD_ACTIVATE,
 } from './treadMarks.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -23,16 +24,20 @@ describe('treadMarks 接线守卫（playbackScene 源码级，sceneryMaterials.t
     // 播放或 seek 才更新——实测 setTreadMarks(false) 后 mesh.visible 仍为 true。
     expect(sceneSrc).toMatch(/setTreadMarks: \(on\) => \{[\s\S]{0,700}?updateTrails\(\);/)
   })
-  it('客户端槽位模型接线：环 50 槽（TREAD_RING）+ 活戳独立槽 + 全窗口显式隐藏', () => {
-    // 反汇编 0x83d460 `(i+0x32)%0x32`（0x32 = 50）⇒ 每侧活戳环 = 50 槽；活戳（未提交、
-    // 逐帧拉伸）占独立槽位，不与环槽混用。
+  it('客户端槽位模型接线：50 槽含活戳（write 槽）+ 全窗口显式隐藏（0x727b80 同构）', () => {
+    // 反汇编定案（落锚函数 0x727b80）：`head=write; write=(write+1)%50; count 封顶 50`
+    // ——活戳占 write 槽（= total % cap），**没有独立第 51 槽**。
     expect(sceneSrc).toMatch(/const TRAIL_CAP_PER_SIDE = TREAD_RING;/)
-    expect(sceneSrc).toMatch(/const TRAIL_OPEN_SLOT = TRAIL_CAP_PER_SIDE;/)
-    expect(sceneSrc).toMatch(/const TRAIL_SLOTS = \(TRAIL_CAP_PER_SIDE \+ 1\) \* 2;/)
+    expect(sceneSrc).not.toMatch(/TRAIL_OPEN_SLOT/)
+    expect(sceneSrc).toMatch(/const TRAIL_SLOTS = TRAIL_CAP_PER_SIDE \* 2;/)
+    expect(sceneSrc).toMatch(/const openSlot = st\.total % TRAIL_CAP_PER_SIDE;/)
     // 绘制窗口 = 全部槽位（不再按 min/max(L,R) 取窗互相截断），无效槽显式隐藏
     expect(sceneSrc).toMatch(/geo\.setDrawRange\(0, TRAIL_SLOTS \* 6\);/)
     expect(sceneSrc).toMatch(/const open = openStampOf\(st\);/)
     expect(sceneSrc).toMatch(/hideQuads\(/)
+  })
+  it('激活门 = 客户端 0x3632a54（0.3 m 净位移才开始拉伸活戳）', () => {
+    expect(TREAD_ACTIVATE).toBeCloseTo(0.3, 6)
   })
   it('淡出窗 = 客户端引擎常数（TREAD_FADE.start/end；老化逐槽独立、无有序假设）', () => {
     // review P2 2026-10-12：回压重占改单槽 t + null 清空槽 ⇒ "按序号时间有序"的二分老化
@@ -185,7 +190,7 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     expect(added).toBe(12)
     expect(st.total).toBe(12)
     expect(st.segs.length).toBe(10)
-    expect(st.head).toBe(2)                       // 下一覆写槽 = 12 % 10
+    expect(st.total % 10).toBe(2)                 // 下一定型槽 = 12 % 10（write 由 total 隐式表达）
     expect(st.segs[0].x1).toBeCloseTo(11)          // 槽 0 已被绝对序号 10 覆写（远端 = 11 m）
     expect(st.segs[1].x1).toBeCloseTo(12)          // 槽 1 = 绝对序号 11
     expect(st.segs[7].x1).toBeCloseTo(8)           // 槽 7 仍是绝对序号 7
@@ -337,6 +342,26 @@ describe('advanceTrail（客户端槽位模型：锚点/提交 + 前沿拉伸）
     expect(st.total).toBe(2)
     expect(st.segs[0].x1).toBeCloseTo(1)
     expect(st.segs[1].x0).toBeCloseTo(0.6)
+  })
+  it('激活门（客户端 0x3632a54 = 0.3m）：蹭动不画，达阈后活戳出现并正常落锚', () => {
+    // 0→+0.15→0→−0.15（净位移最大 0.15 < 0.3）⇒ 全程无活戳、无戳提交；
+    // 0→+0.35 ⇒ 活戳出现（0.35 ≥ 0.3）；继续到 1.0 ⇒ 正常落锚。
+    const st = createTrailState()
+    advanceTrail(st, [
+      { x: 0, z: 0, t: 0, yaw: 0 },
+      { x: 0.15, z: 0, t: 1, yaw: 0 },
+      { x: 0, z: 0, t: 2, yaw: 0 },
+      { x: -0.15, z: 0, t: 3, yaw: 0 },
+    ], 1.0, 50)
+    expect(st.total).toBe(0)
+    expect(openStampOf(st)).toBeNull()               // 蹭动：什么都不画
+    const st2 = createTrailState()
+    advanceTrail(st2, [{ x: 0, z: 0, t: 0, yaw: 0 }, { x: 0.35, z: 0, t: 1, yaw: 0 }], 1.0, 50)
+    let open = openStampOf(st2)
+    expect(open).not.toBeNull()                       // 0.35 ≥ 0.3 ⇒ 激活
+    expect(open.x1).toBeCloseTo(0.35)
+    advanceTrail(st2, [{ x: 1.0, z: 0, t: 2, yaw: 0 }], 1.0, 50)
+    expect(st2.total).toBe(1)                         // 满 1m 正常落锚
   })
   it('seek 重算确定性：全量一次 ==（走到 k、复位、重走到 k）', () => {
     const a = createTrailState()

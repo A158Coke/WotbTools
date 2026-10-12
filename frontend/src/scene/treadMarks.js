@@ -12,9 +12,10 @@
  * - 逐帧 `TreadSystem::Process` @0x83ecc0 → 每车 `0x83f820` → 每侧铺放 `0x83d410`；
  * - **每侧固定环 50 槽**：槽位索引运算 `(i + 0x32) % 0x32`（0x83d460）——活戳上界 = 50/侧×车数
  *   ⇒ 印记长度天然有界（约 ring × space 米），环形覆写而不是无限累积；
- * - **锚点/提交语义**：每个槽位的戳 = 「上次落锚点 → 当前触地点」的扫掠四边形；触地点与锚点
- *   距离满阈值（`0x83d4ca-0x83d507` 的距离平方门控）才**就地重新落锚**（锚点 = 当前点，不做
- *   精确倍数插值）——槽位是滑动窗口，印记随 7.62 s 淡出自然消失；
+ * - **锚点/提交语义**：active 槽（write）逐帧拉伸，触地点与锚点距离满阈值
+ *   （`0x83d4ca-0x83d507`）才**定型并推进** `head=write; write=(write+1)%50; count 封顶 50`
+ *   （落锚函数 0x727b80）——50 槽**含** active，没有独立第 51 槽；印记随 7.62 s 淡出消失；
+ * - **激活门**：净位移 ≥ 0.3 m（`0x3632a54`）才开始拉伸/显示活戳，小范围蹭动不画；
  * - **边界抖动退休**：戳长 ∈ [space, space + 步长]，不存在"整数边界"可被重复跨越；
  * - **时间门控/淡出窗**：`now > slot.t + 7.62`、`+5.45`（常数 0x4010f98 / 0x4010f94）——
  *   与着色器 `1 − smoothstep(fadeOutTimeStartEnd)` 的形态一致，取作本实现的淡出窗；
@@ -31,10 +32,18 @@
 export const TREAD_FALLBACK = { width: 0.6, space: 1.0 };
 export const GENERIC_TREAD_TEXTURE = '/tread/textures/Tread.webp';
 
-/** 每侧活戳环槽数：客户端反汇编 `(i + 0x32) % 0x32`（0x83d460，0x32 = 50）。
- *  **这是"印记长度预算"**（环里最老槽被新戳覆写 ⇒ 轨迹在车后滚动收尾），不是我们的旧值
- *  1536（那只是显存上限、不约束可见长度）。 */
+/** 每侧环槽数：客户端反汇编 `(i + 0x32) % 0x32`（0x83d460，0x32 = 50）。
+ *  ⚠️ **50 槽含 open/active 槽**（2026-10-12 定案，落锚函数 0x727b80）：侧状态
+ *  { head(最老槽), write(当前 active 槽), count(封顶 50) }，逐帧拉伸写在 write 槽上，
+ *  落锚后 write 定型并推进 `head=write; write=(write+1)%50; count=min(count+1,50)`
+ *  ——**没有独立的第 51 槽**。印记长度预算 = 50 × manualSpace 米，车后滚动收尾。 */
 export const TREAD_RING = 50;
+
+/** open stamp 激活门（m）：客户端 `0x843030` 的位移门 `0x3632a54 = 0.3`（相对 write 槽
+ *  锚点的净位移 ≥ 0.3 才开始拉伸/显示活戳；< 0.3 的小范围蹭动什么都不画）。另有两个
+ *  已确认的伴随门：沉积累加 ≥ 0.05（`0x363a068`）、以及"位移 < 1.0 时改判沉积 ≥ 0.5"
+ *  的复合条件——回放喂样按净位移门控即可覆盖其产品语义。 */
+export const TREAD_ACTIVATE = 0.3;
 
 /** 淡出窗（回放秒）：客户端引擎时间常数 5.45 / 7.62（反汇编 0x4010f94 / 0x4010f98，
  *  参与槽位时间门控；与着色器 `fadeOutTimeStartEnd` 的 `1 − smoothstep(start, end, age)`
@@ -119,18 +128,19 @@ export function treadScaleFor(meta, texturePath) {
   return s;
 }
 
-/** 单侧履带的路径累积态（客户端槽位模型）。
+/** 单侧履带的路径累积态（客户端槽位模型，0x727b80 同构）。
  *
- * - `anchor` = 当前活戳的起点横截面（落锚点：位置 + 朝向 + 出生时刻）；
- * - `open` = 当前活戳的**末端横截面**（逐帧拉伸到车辆当前位置；`null` = 尚无活戳）；
- * - `segs` = **固定槽位环形**缓冲（`segs[k % cap]` = 绝对序号 k 的已提交戳，`total` 累计）；
- *   调用方按同一槽位公式写入：已提交戳占 `k % cap`，活戳占独立槽位 `cap`；
+ * - `anchor` = 当前活戳（write 槽）的起点横截面（落锚点：位置 + 朝向 + 出生时刻）；
+ * - `open` = 活戳的**末端横截面**（逐帧拉伸到车辆当前位置；`null` = 尚无活戳）；
+ * - `segs` = **固定槽位环（50 槽含活戳）**：`segs[k % cap]` = 绝对序号 k 的戳；
+ *   `total` = 已提交（定型）数，活戳占 `total % cap`（= write 槽），落锚时定型并推进；
+ *   环满（count = cap）后覆写 head 槽（`total - cap`）；
  * - `written` = 消费侧书签（已写进 GPU 的绝对戳数）。
  */
 export function createTrailState() {
   return { hasLast: false, x: 0, z: 0, yaw: 0, t: 0,
            anchor: { x: 0, z: 0, yaw: 0, t: 0 }, open: null,
-           segs: [], head: 0, total: 0, written: 0,
+           segs: [], total: 0, written: 0,
            breakPending: false, lastSegT: -Infinity };
 }
 
@@ -152,7 +162,6 @@ export function resetTrailState(st) {
 
 function clearTrailHistory(st) {
   st.segs.length = 0;
-  st.head = 0;
   st.total = 0;
   st.written = 0;
   st.lastSegT = -Infinity;
@@ -196,7 +205,9 @@ export function advanceTrail(st, pts, space, cap) {
       st.hasLast = true;
       st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
       st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw; st.anchor.t = pt;
-      st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
+      // 激活门（客户端 0x3632a54 = 0.3）：落锚即建 write 槽，但**拉伸/显示**要等净位移
+      // 达到 TREAD_ACTIVATE——首点位移 0，尚无活戳末端。
+      st.open = null;
       continue;
     }
     const d = Math.hypot(p.x - st.x, p.z - st.z);
@@ -214,6 +225,12 @@ export function advanceTrail(st, pts, space, cap) {
       continue;
     }
     st.x = p.x; st.z = p.z; st.yaw = pyaw; st.t = pt;
+    // 激活门：相对锚点净位移 ≥ TREAD_ACTIVATE（客户端 0x3632a54）才开始拉伸活戳——
+    // 小范围蹭动（< 0.3 m）什么都不画（既不建 open 也不占 GPU）。
+    const anchorDist = Math.hypot(p.x - st.anchor.x, p.z - st.anchor.z);
+    if (!st.open && anchorDist >= TREAD_ACTIVATE) {
+      st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
+    }
     if (st.open) { st.open.x1 = p.x; st.open.z1 = p.z; st.open.yaw1 = pyaw; }
     // 落锚门控：当前位置与锚点距离满 space ⇒ 提交活戳、就地重新落锚（客户端 0x83d4ca 同款：
     // 距离平方门控 + 锚点直接设为当前点）。戳长 ∈ [space, space + 步长]，无整数边界可重复跨越
@@ -221,11 +238,11 @@ export function advanceTrail(st, pts, space, cap) {
     // ⚠️ 阈值带 1e-9 容差：采样点是网格线性插值的产物，恰好落在 space 倍数上的点会以
     // 0.9999999999999998 的形态出现（浮点欠冲）——不容差会让落锚被推迟一个采样，戳长在
     // 1.0/1.5 m 间交替、平均间距 1.25 m（实测 12 s 只落 48 戳而非 60）。
-    if (Math.hypot(p.x - st.anchor.x, p.z - st.anchor.z) >= space - 1e-9) {
+    if (anchorDist >= space - 1e-9) {
       pushSeg(st, { x0: st.anchor.x, z0: st.anchor.z, yaw0: st.anchor.yaw,
                     x1: p.x, z1: p.z, yaw1: pyaw, t: st.anchor.t }, cap);
       st.anchor.x = p.x; st.anchor.z = p.z; st.anchor.yaw = pyaw;
-      st.open = { x1: p.x, z1: p.z, yaw1: pyaw };
+      st.open = null;   // 新 write 槽待激活（≥ 0.3 m 后再拉伸）
       added++;
     }
   }
@@ -243,11 +260,11 @@ export function advanceTrail(st, pts, space, cap) {
  * 去重提交规则，再按其真实机制实现。
  */
 function pushSeg(st, seg, cap) {
+  // 环内绝对序号 k 占槽 k % cap（活戳 = 未定型的 total 槽）；count 封顶 cap 后
+  // 覆写最老槽（head = total - cap）——与客户端 0x727b80 的
+  // `count=min(count+1,50); head=write; write=(write+1)%50` 同构。
   if (st.segs.length < cap) st.segs.push(seg);
-  else {
-    st.segs[st.head] = seg;
-    st.head = (st.head + 1) % cap;
-  }
+  else st.segs[st.total % cap] = seg;
   st.total++;
   st.lastSegT = seg.t;
 }

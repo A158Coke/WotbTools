@@ -339,8 +339,8 @@ describe('playbackScene 会话代数契约', () => {
     await new Promise((r) => setTimeout(r, 0))
     for (let i = 0; i < 6; i++) await Promise.resolve()
     api.setPlaying(false)
-    // 客户端槽位模型：环 50 槽/侧（覆写最老）+ 活戳独立槽（下标 50）+ 固定绘制窗口
-    // （TRAIL_SLOTS = 51×2 = 102 个四边形，无效槽由显式隐藏处理）
+    // 客户端槽位模型：环 50 槽/侧（**含活戳**，覆写最老）+ 固定绘制窗口
+    // （TRAIL_SLOTS = 50×2 = 100 个四边形，无效槽由显式隐藏处理）
     const readTrail = () => {
       const v = window.__pbV[0]
       const col = v.treadMesh ? v.treadMesh.geometry.getAttribute('color').array : null
@@ -355,14 +355,14 @@ describe('playbackScene 会话代数契约', () => {
     api.seekTime(t0 + 18)
     let r = readTrail()
     // 落锚每 1 m 一戳（0.2 s/戳）：18 s → 90 戳；环只保留最近 50
-    expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, live: 50, quads: 102 })
+    expect(r).toMatchObject({ builtT: t0 + 18, total: 90, rTotal: 90, live: 50, quads: 100 })
     expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
     api.seekTime(t0 + 8)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, live: 40, quads: 102 })
+    expect(r).toMatchObject({ builtT: t0 + 8, total: 40, rTotal: 40, live: 40, quads: 100 })
     api.seekTime(t0 + 28)
     r = readTrail()
-    expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, live: 50, quads: 102 })
+    expect(r).toMatchObject({ builtT: t0 + 28, total: 140, rTotal: 140, live: 50, quads: 100 })
     expect(r.oldAlpha).toBe(0)          // 环里最老戳（出生 20 s 前）早已出淡出窗（≤7.62 s）
     expect(r.youngAlpha).toBeCloseTo(1)   // 客户端口径：无全局压暗（texScale 表 stub 为空 ⇒ 1.0）
     api.seekTime(t0 + 55)
@@ -499,7 +499,7 @@ describe('playbackScene 会话代数契约', () => {
       api.seekTime(42 + 18)
       const L18 = v.trail.L.total, R18 = v.trail.R.total
       expect(Math.abs(L18 - R18)).toBeGreaterThanOrEqual(2)          // 弧长差 ⇒ 落锚数不同
-      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(102)     // TRAIL_SLOTS（51×2）
+      expect(v.treadMesh.geometry.drawRange.count / 6).toBe(100)     // TRAIL_SLOTS（50×2，含活戳）
       // 两侧最新戳都在窗口内且可见（固定窗口不再互相截断）
       expect(colArr()[((L18 - 1) % 50) * 32 + 0 + 3]).toBeGreaterThan(0)
       expect(colArr()[((R18 - 1) % 50) * 32 + 16 + 3]).toBeGreaterThan(0)
@@ -512,6 +512,8 @@ describe('playbackScene 会话代数契约', () => {
       expect(v.trail.L.total).toBeLessThan(50)                       // 环未满：存在"应清空"的槽
       for (const [st, quad] of [[v.trail.L, 0], [v.trail.R, 1]]) {
         for (let k = st.total; k < 50; k++) {
+          // 活戳槽（= total % 50）可能持有正在拉伸的活戳（alpha>0）——跳过
+          if (k === st.total % 50) continue
           expect(colArr()[(k % 50) * 32 + quad * 16 + 3]).toBe(0)
         }
         expect(colArr()[((st.total - 1) % 50) * 32 + quad * 16 + 3]).toBeGreaterThan(0)
@@ -524,13 +526,13 @@ describe('playbackScene 会话代数契约', () => {
       const posAttr = v.treadMesh.geometry.getAttribute('position').array
       const col = v.treadMesh.geometry.getAttribute('color').array
       const g = v.group.position
-      // L 活戳槽（交错槽：L 偶 → 下标 50×2）位置偏移 = 50*24 + 0*12
-      const o = 50 * 24
+      // L 活戳槽 = write 槽（total % 50，交错槽：L 偶）位置偏移 = (total%50)*24
+      const o = (v.trail.L.total % 50) * 24
       const midX = (posAttr[o + 2 * 3] + posAttr[o + 3 * 3]) / 2      // 远端横截面两点中点
       const midZ = (posAttr[o + 2 * 3 + 2] + posAttr[o + 3 * 3 + 2]) / 2
       // yaw=π/2 ⇒ 前向 = −x、L 横向 = +z（trailHalfGauge 回落 0.9）
       expect(Math.hypot(midX - g.x, midZ - (g.z + 0.9))).toBeLessThanOrEqual(0.55)
-      expect(col[50 * 32 + 3]).toBeGreaterThan(0)                     // 活戳可见（新鲜）
+      expect(col[(v.trail.L.total % 50) * 32 + 3]).toBeGreaterThan(0) // 活戳可见（新鲜）
     })
 
     it('关断重开：路径态与游标一起复位——同 T 的段数不翻倍（review P2 2026-10-11）', async () => {
