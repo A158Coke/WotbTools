@@ -10,6 +10,7 @@ import Banner from './Banner.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
+import { localizedDayLabel } from '../utils/tournamentPointsExport.js'
 import '../styles/tournament-points.css'
 const { t, te } = useI18n()
 const { events, eventId, config, form, round, ruleInputs, rule, ruleDays, busy, error, stale, notice, allowed, refresh, saveConfig, saveRules, removeEvent, newEvent } = useTournamentPointsConfig()
@@ -57,7 +58,7 @@ async function deleteConfirmed() { await removeEvent(); deleteOpen.value = false
         <p class="tournament-muted">{{ $t('tournament.ruleHint') }}</p>
         <Banner v-if="rule?.locked">{{ $t('tournament.rulesLocked') }}</Banner>
         <section v-for="day in config.event.daysPerRound" :key="day" class="tournament-stack">
-          <h3>{{ config.event.dayLabels[day - 1] }}</h3>
+          <h3>{{ localizedDayLabel(config.event.dayLabels[day - 1], day, t) }}</h3>
           <div class="tournament-toolbar"><label v-for="rank in 5" :key="rank" class="tournament-field">
             <span>{{ $t('tournament.place', { number: rank }) }}<template v-if="rank === 5"> · {{ $t('tournament.optional') }}</template></span>
             <input v-if="ruleInputs[day - 1]" v-model="ruleInputs[day - 1][rank - 1]" type="number" min="0" max="1000000" step="1" :required="rank < 5" :disabled="busy || rule?.locked" :data-testid="`rule-${day}-${rank}`" />
