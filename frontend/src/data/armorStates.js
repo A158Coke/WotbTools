@@ -73,6 +73,29 @@ export function dynamicArmorDeclaration(tankName) {
   return key ? ARMOR_STATES[key] : null
 }
 
+/**
+ * tank_id（list.xml 编码，与装甲查看器 `?tank=` / 回放 roster 同域）→ item_defs stem。
+ * 来源：上游 `data/tank_id_bridge.json` 的 6 辆动态装甲车（2026-10-13 取值）。
+ */
+export const DYNAMIC_TANK_IDS = {
+  8305: 'Oth28_Sturmfeur_HW',
+  9073: 'Oth30_T54MS',
+  12657: 'Oth44_Charioteer_T',
+  17777: 'Oth71_Titan_Strife',
+  22385: 'Oth92_JagdPantherII_Titan',
+  24945: 'Oth98_AMX_50_100_Titan'
+}
+
+/**
+ * 按 tank_id 取动态装甲声明；非动态车 / 非法 id 返回 null。
+ * @param {number|string|null|undefined} tankId
+ * @returns {{ file: string, states: Array<object> }|null}
+ */
+export function dynamicDeclarationByTankId(tankId) {
+  const stem = DYNAMIC_TANK_IDS[Number(tankId)]
+  return stem ? dynamicArmorDeclaration(stem) : null
+}
+
 const SECTION_RE = /^(hull|turret|gun)(?:_\d+)?\.armor_(\d+)$/
 
 /** `hull.armor_10` / `gun_01.armor_11` → `{ section: 'gun', plateId: '11' }`；其余 null */
