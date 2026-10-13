@@ -2415,7 +2415,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         ? v.def.team === friendlyTeam : null;
       const ghost = ghostByEid.get(v.def.eid);
       return {
-        eid: v.def.eid, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
+        eid: v.def.eid, accountId: v.def.account_id, playerName: v.def.nickname || '', tankName: v.def.tank_name || '',
         tankClass: classByAccount.get(v.def.account_id) || '',
         friendly, destroyed, lastKnown: false,
         hp: { current, pct, state: destroyed ? 'DESTROYED' : 'CURRENT' },
@@ -3784,90 +3784,117 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     labelsTime = null;   // feedback expires independently of playback time
   }
 
-  // Short, bounded destruction effect: hot core, ground shockwaves, sparks and rising soot.
-  // Materials/textures are allocated only when the pool grows; all drawing remains depth-tested.
-  const BURST_SPARK_COUNT = 28;
-  const BURST_SMOKE_COUNT = 10;
-  const BURST_TEXTURE_SIZE = 32;
+  // Brief irregular flame, then rising soot: no hard sphere or concentric shockwave rings.
+  // Allocate only when the pool grows; textures and all particles stay with the pooled object.
+  const BURST_SPARK_COUNT = 12;
+  const BURST_FLAME_COUNT = 5;
+  const BURST_SMOKE_COUNT = 8;
+  const BURST_TEXTURE_SIZE = 64;
   const BURST_GOLDEN_ANGLE = 2.39996323;
-  const BURST_FLASH_COLOR = new THREE.Color(0xffefd0);
-  const BURST_FIRE_COLOR = new THREE.Color(0xffa53a);
+  const BURST_FLASH_COLOR = new THREE.Color(0xffedc4);
+  const BURST_FIRE_COLOR = new THREE.Color(0xe97825);
+  const BURST_SOOT_COLOR = new THREE.Color(0x3c3832);
+  const BURST_SMOKE_COLOR = new THREE.Color(0x706a60);
   function makeBurstFx() {
     const g = new THREE.Group(); g.name = 'vehicle-destruction-burst';
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xffa53a, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const rings = [];
-    for (const r0 of [1.2, 2.0]) {
-      const mesh = new THREE.Mesh(new THREE.RingGeometry(r0, r0 + 0.50, 32), mat.clone());
-      mesh.rotation.x = -Math.PI / 2; mesh.position.y = 0.18;
-      g.add(mesh); rings.push(mesh);
-    }
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), mat);
-    g.add(ball);
-    // A soft radial alpha map, not an external asset; shared only inside this pool object.
-    const pixels = new Uint8Array(BURST_TEXTURE_SIZE * BURST_TEXTURE_SIZE * 4);
-    for (let y = 0; y < BURST_TEXTURE_SIZE; y++) for (let x = 0; x < BURST_TEXTURE_SIZE; x++) {
-      const r = Math.hypot((x + 0.5) * 2 / BURST_TEXTURE_SIZE - 1, (y + 0.5) * 2 / BURST_TEXTURE_SIZE - 1);
-      const i = (y * BURST_TEXTURE_SIZE + x) * 4;
-      pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
-      pixels[i + 3] = Math.round(255 * Math.max(0, 1 - r * r) ** 2);
-    }
-    const map = new THREE.DataTexture(pixels, BURST_TEXTURE_SIZE, BURST_TEXTURE_SIZE);
-    map.minFilter = map.magFilter = THREE.LinearFilter; map.needsUpdate = true;
-    const particles = (count, color, size, additive) => {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3).setUsage(THREE.DynamicDrawUsage));
-      const material = new THREE.PointsMaterial({
-        map, color, size, transparent: true, depthWrite: false, toneMapped: false,
-        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      });
-      const points = new THREE.Points(geometry, material);
-      points.frustumCulled = false;   // expanding positions have no static bounding sphere
-      g.add(points);
-      return points;
+    // Fixed low-frequency turbulence breaks circular silhouettes. No per-frame random noise.
+    const makeMap = (soot) => {
+      const pixels = new Uint8Array(BURST_TEXTURE_SIZE * BURST_TEXTURE_SIZE * 4);
+      for (let y = 0; y < BURST_TEXTURE_SIZE; y++) for (let x = 0; x < BURST_TEXTURE_SIZE; x++) {
+        const u = (x + 0.5) * 2 / BURST_TEXTURE_SIZE - 1;
+        const v = (y + 0.5) * 2 / BURST_TEXTURE_SIZE - 1;
+        const turbulence = Math.sin(u * 9 + Math.sin(v * 7)) * Math.cos(v * 11 - u * 4)
+          + 0.5 * Math.sin(u * 19 + v * 13);
+        const r = Math.hypot(u, v);
+        const edge = Math.max(0, 1 - r * r);
+        const density = Math.max(0, 1 - r * (1.12 + 0.16 * turbulence));
+        const alpha = soot ? edge * density * (0.65 + 0.20 * turbulence) : edge * edge * density;
+        const i = (y * BURST_TEXTURE_SIZE + x) * 4;
+        pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
+        pixels[i + 3] = Math.round(255 * Math.max(0, Math.min(1, alpha)));
+      }
+      const map = new THREE.DataTexture(pixels, BURST_TEXTURE_SIZE, BURST_TEXTURE_SIZE);
+      map.minFilter = map.magFilter = THREE.LinearFilter; map.needsUpdate = true;
+      return map;
     };
-    const sparks = particles(BURST_SPARK_COUNT, 0xffb65c, 0.32, true);
-    const smoke = particles(BURST_SMOKE_COUNT, 0x252322, 2.4, false);
+    const flameMap = makeMap(false), smokeMap = makeMap(true);
+    let puffGeometry = null;
+    const puffs = (count, map, name, additive) => Array.from({ length: count }, (_, i) => {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map, color: additive ? BURST_FIRE_COLOR : BURST_SOOT_COLOR,
+        transparent: true, depthWrite: false, toneMapped: false,
+        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+        rotation: i * BURST_GOLDEN_ANGLE,
+      }));
+      // Sprite's default quad is global; this pool object owns one clone for teardown.
+      puffGeometry ||= sprite.geometry.clone();
+      sprite.geometry = puffGeometry;
+      sprite.name = name;
+      g.add(sprite);
+      return sprite;
+    });
+    const flames = puffs(BURST_FLAME_COUNT, flameMap, 'destruction-flame', true);
+    const smoke = puffs(BURST_SMOKE_COUNT, smokeMap, 'destruction-smoke', false);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BURST_SPARK_COUNT * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    const sparks = new THREE.Points(geometry, new THREE.PointsMaterial({
+      map: flameMap, color: 0xffbf70, size: 0.14, transparent: true,
+      depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
+    }));
+    sparks.frustumCulled = false;
+    g.add(sparks);
     const velocities = new Float32Array(BURST_SPARK_COUNT * 3);
     for (let i = 0; i < BURST_SPARK_COUNT; i++) {
-      const angle = i * BURST_GOLDEN_ANGLE;   // golden-angle spread: deterministic and no random frame noise
-      const speed = 3 + i % 5;
+      const angle = i * BURST_GOLDEN_ANGLE + Math.sin(i * 1.7);
+      const speed = 1.6 + (i % 5) * 0.35;
       velocities[i * 3] = Math.cos(angle) * speed;
-      velocities[i * 3 + 1] = 4 + i % 4;
+      velocities[i * 3 + 1] = 2.8 + (i % 4) * 0.45;
       velocities[i * 3 + 2] = Math.sin(angle) * speed;
     }
-    return { g, rings, ball, sparks, smoke, velocities, born: 0 };
+    return { g, flames, sparks, smoke, velocities, born: 0 };
   }
 
   function updateBurstFx(fx, k) {
-    const flame = Math.min(1, k / 0.55);
-    fx.ball.position.y = 2.5 + k;
-    fx.ball.scale.setScalar(0.35 + 1.65 * Math.sin(flame * Math.PI / 2));
-    fx.ball.material.opacity = 0.95 * (1 - flame) ** 1.2;
-    fx.ball.material.color.lerpColors(BURST_FLASH_COLOR, BURST_FIRE_COLOR, Math.min(1, k / 0.18));
-    for (let j = 0; j < fx.rings.length; j++) {
-      fx.rings[j].scale.setScalar(1 + k * (2.8 + j * 0.6));
-      fx.rings[j].material.opacity = 0.90 * (1 - k) ** 1.2;
-    }
     const secs = k * (BURST_MS * FX_SCALE) / 1000;
+    for (let i = 0; i < fx.flames.length; i++) {
+      const sprite = fx.flames[i];
+      const age = secs - i * 0.018;
+      // One 120 ms flash, then four staggered 280 ms tongues confined to the vehicle.
+      const life = Math.max(0, Math.min(1, age / (i === 0 ? 0.12 : 0.28)));
+      const angle = i * BURST_GOLDEN_ANGLE;
+      const spread = i === 0 ? 0 : 0.45 + life * 0.35;
+      sprite.position.set(Math.cos(angle) * spread, 1.8 + life * (0.6 + (i % 3) * 0.2), Math.sin(angle) * spread);
+      const size = (i === 0 ? 2.1 : 1.2 + (i % 3) * 0.25) * (0.70 + life * 0.70);
+      sprite.scale.set(size, size * (i === 0 ? 0.8 : 1.35), 1);
+      sprite.material.color.lerpColors(BURST_FLASH_COLOR, BURST_FIRE_COLOR, i === 0 ? life : 0.65 + life * 0.35);
+      sprite.material.opacity = age < 0 ? 0 : (i === 0 ? 0.9 : 0.65) * (1 - life) ** 1.5;
+      sprite.visible = sprite.material.opacity > 0;
+    }
+    const sparkLife = Math.min(1, secs / 0.55);
     const sparks = fx.sparks.geometry.attributes.position;
     for (let i = 0; i < sparks.count; i++) {
       sparks.setXYZ(i, fx.velocities[i * 3] * secs,
-        Math.max(0.20, 2.4 + fx.velocities[i * 3 + 1] * secs - 4.9 * secs * secs),
+        Math.max(0.20, 1.8 + fx.velocities[i * 3 + 1] * secs - 4.9 * secs * secs),
         fx.velocities[i * 3 + 2] * secs);
     }
     sparks.needsUpdate = true;
-    fx.sparks.material.opacity = 0.95 * (1 - k) ** 2;
-    const smoke = fx.smoke.geometry.attributes.position;
-    for (let i = 0; i < smoke.count; i++) {
-      const angle = i * BURST_GOLDEN_ANGLE, spread = (0.35 + k * 2.0) * (0.5 + (i % 3) * 0.25);
-      smoke.setXYZ(i, Math.cos(angle) * spread, 2.2 + k * (4.5 + i % 3), Math.sin(angle) * spread);
+    fx.sparks.material.opacity = 0.7 * (1 - sparkLife) ** 2;
+    fx.sparks.visible = sparkLife < 1;
+    for (let i = 0; i < fx.smoke.length; i++) {
+      const sprite = fx.smoke[i];
+      const delay = 0.025 * i;
+      const age = Math.max(0, secs - delay);
+      const life = Math.min(1, age / ((BURST_MS * FX_SCALE) / 1000 - delay));
+      const angle = i * BURST_GOLDEN_ANGLE;
+      const spread = (0.30 + life * 1.1) * (0.6 + (i % 3) * 0.2);
+      sprite.position.set(Math.cos(angle) * spread + age * 0.3,
+        1.9 + age * (1.5 + (i % 3) * 0.4), Math.sin(angle) * spread);
+      const size = 1.0 + (i % 4) * 0.18 + life * 1.9;
+      sprite.scale.set(size, size * (1.1 + (i % 3) * 0.1), 1);
+      sprite.material.color.lerpColors(BURST_SOOT_COLOR, BURST_SMOKE_COLOR, life);
+      sprite.material.opacity = Math.min(1, age / 0.12) * 0.48 * (1 - life) ** 1.2;
+      sprite.visible = sprite.material.opacity > 0;
     }
-    smoke.needsUpdate = true;
-    fx.smoke.material.size = 2.4 + k * 3;
-    fx.smoke.material.opacity = Math.min(1, k / 0.18) * 0.65 * (1 - k) ** 1.3;
   }
 
   function spawnBurst(eid) {

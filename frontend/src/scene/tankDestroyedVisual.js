@@ -36,15 +36,15 @@ export function prepareTankDestroyedVisual(root, { cloneMaterials = true } = {})
         shader.uniforms.uDestroyedAmount = uniform
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uDestroyedAmount;')
-          // The design's 30% is display brightness, not 30% linear radiance
-          // (sRGB would make that much brighter). Fog must not wash a wreck white.
+          // Balance the two reviewed looks in display space; a small lift keeps
+          // shaded armour readable. Fog must not wash the wreck white.
           .replace('#include <fog_fragment>', `#include <fog_fragment>
 vec3 destroyedDisplayColor = clamp(gl_FragColor.rgb, 0.0, 1.0);
 float destroyedLuma = dot(destroyedDisplayColor, vec3(0.2126, 0.7152, 0.0722));
-gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(destroyedLuma * 0.30), uDestroyedAmount);`)
+gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.035 + destroyedLuma * 0.45), uDestroyedAmount);`)
       }
       material.customProgramCacheKey = function () {
-        return previousKey.call(this) + '|tank-destroyed-v2'
+        return previousKey.call(this) + '|tank-destroyed-v3'
       }
       material.needsUpdate = true
       materials.push({
