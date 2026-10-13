@@ -276,6 +276,20 @@ describe('createBattleFx 粒子批次', () => {
     }
   })
 
+  it('命中烟每团叠一层小一号的同心烟芯（单团贴图太淡，实机读不出）', () => {
+    const fx = createBattleFx(FX_BUDGETS.high)
+    fx.spawnImpact('nonpen', at(0, 2, 0), at(1, 0, 0), null, 0, 4)
+    fx.frame(400, camera([0, 4, 8]), 720)
+    const puffs = instances(meshNamed(fx, 'battle-fx-smoke'))
+    expect(puffs).toHaveLength(FX_BUDGETS.high.impactSmoke * 2)
+    // 烟芯 = 0.6 倍大小、同一不透明度，与外团在同一条视线上（各自朝相机挪半个自身尺寸）
+    const cam = camera([0, 4, 8]).position
+    const cores = puffs.filter((p) => puffs.some((q) => Math.abs(p.w - q.w * 0.6) < 1e-4 && Math.abs(p.alpha - q.alpha) < 1e-4
+      && at(p.x, p.y, p.z).sub(cam).normalize().distanceTo(at(q.x, q.y, q.z).sub(cam).normalize()) < 1e-3))
+    expect(cores).toHaveLength(FX_BUDGETS.high.impactSmoke)
+    for (const p of puffs) expect(p.alpha).toBeGreaterThan(0.5)
+  })
+
   it('壁钟寿命到期自动移除；clearTransients 立即清空且不补播', () => {
     const fx = createBattleFx(FX_BUDGETS.mid)
     fx.spawnBurst(at(0, 0, 0), 1000, 1)

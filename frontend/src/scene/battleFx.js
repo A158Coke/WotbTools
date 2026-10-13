@@ -268,7 +268,7 @@ const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d), WRECK_TOP = C(0x
 const DUST0 = C(0x8c7c63), DUST1 = C(0x6f685e)
 const SPARK0 = C(0xfff0c0), SPARK1 = C(0xff6a1a)
 const FLASH = C(0xfff0cc), GROUND_GLOW = C(0xff8a3a), MUZZLE = C(0xffc777), WHITE = C(0xffffff)
-const PEN_SMOKE0 = C(0x3b3733), PEN_SMOKE1 = C(0x5b5751), GREY0 = C(0x8e897f), GREY1 = C(0x77736b)
+const PEN_SMOKE0 = C(0x48433d), PEN_SMOKE1 = C(0x6c6660), GREY0 = C(0x9d978d), GREY1 = C(0x847e76)
 const MUZZLE_SMOKE = C(0xa29c92), DEBRIS = C(0x23201d)
 const TRACER_HOT = C(0xff4d0f)
 
@@ -604,22 +604,25 @@ export function createBattleFx(budget) {
       pushTowardCamera(glow, x - dx * 0.15 * zoom, y - dy * 0.15 * zoom, z - dz * 0.15 * zoom, 0, s, s, GLOW_TILE,
         kind === 'pen' ? ORA : YEL, 0.9 * (1 - a / glowSecs) ** 1.5)
     }
-    // 烟：击穿暗烟、其余中灰（浅灰在灰色车体 / 亮地面上读不出），团大且不透明度高
+    // 烟：击穿深灰、其余中灰。单团烟贴图平均不透明度只有 ~0.2，暗烟叠在深灰车体上实机几乎
+    // 看不出（像素回读：命中点附近中位只压暗 ~13/255），所以每团再叠一层小一号的烟芯，颜色取中灰，
+    // 在深色车体与亮地面上都有对比。
     const smokeSecs = IMPACT_SMOKE_SECS[kind]
     const nSmoke = kind === 'ricochet' ? Math.ceil(budget.impactSmoke / 2) : budget.impactSmoke
-    const peak = kind === 'pen' ? 0.9 : kind === 'nonpen' ? 0.8 : 0.55
+    const peak = kind === 'pen' ? 1 : kind === 'nonpen' ? 0.9 : 0.6
     for (let i = 0; i < nSmoke; i++) {
       const t = a - (0.03 + rnd(seed, i, 10) * 0.12), life = t / smokeSecs
       if (t < 0 || life >= 1) continue
       const spread = (0.4 + t) * zoom, back = (0.4 + t * 0.3) * zoom
-      const s = (0.8 + rnd(seed, i, 11) * 0.5) * (1 + 2.4 * easeOut(life)) * zoom
+      const s = (1.0 + rnd(seed, i, 11) * 0.6) * (1 + 2.6 * easeOut(life)) * zoom
       if (kind === 'pen') _c.lerpColors(PEN_SMOKE0, PEN_SMOKE1, life)
       else _c.lerpColors(GREY0, GREY1, life)
-      pushTowardCamera(smoke, x - dx * back + (rnd(seed, i, 12) - 0.5) * 0.8 * spread,
-        y - dy * back + t * (0.9 + rnd(seed, i, 13) * 0.8) * zoom,
-        z - dz * back + (rnd(seed, i, 14) - 0.5) * 0.8 * spread,
-        rnd(seed, i, 15) * TAU + t * 0.4, s, s, SOOT_TILES[i % 2], _c,
-        Math.min(1, t / 0.08) * peak * (1 - life) ** 1.4)
+      const px = x - dx * back + (rnd(seed, i, 12) - 0.5) * 0.8 * spread
+      const py = y - dy * back + t * (0.9 + rnd(seed, i, 13) * 0.8) * zoom
+      const pz = z - dz * back + (rnd(seed, i, 14) - 0.5) * 0.8 * spread
+      const rot = rnd(seed, i, 15) * TAU + t * 0.4, alpha = Math.min(1, t / 0.08) * peak * (1 - life) ** 1.4
+      pushTowardCamera(smoke, px, py, pz, rot, s, s, SOOT_TILES[i % 2], _c, alpha)
+      pushTowardCamera(smoke, px, py, pz, rot + 2.1, s * 0.6, s * 0.6, SOOT_TILES[(i + 1) % 2], _c, alpha)
     }
     if (a < IMPACT_SPARK_SECS) {
       const head = kind === 'pen' ? ORA : SPARK0
