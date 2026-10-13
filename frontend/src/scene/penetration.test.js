@@ -1,4 +1,4 @@
-// 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测 12 例逐例对齐。
+// 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
 import { calculate, isPrimary, ArmorSection } from './penetration.js'
@@ -104,6 +104,66 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(r.result).toBe('BLOCKED')
     expect(r.layers.some((l) => l.part_name.startsWith('Gap'))).toBe(true)
     expect(r.layers[r.layers.length - 1].penetrated).toBe(false)
+  })
+
+  it('distance_decay_applies_beyond_100m_for_ap', () => {
+    // near 400 / far 300（guns.xml piercingPower 口径）：d≤100 → 400；
+    // d=300 → 350；d=500 → far=300；d=1000 → 175（线性继续外推，不截断插值）。
+    // 判定翻转：300m 剩 350 > 250 → 穿透；1000m 剩 175 < 250 → blocked。
+    const mk = (d) =>
+      calculate(
+        req('ap', 400.0, 100.0, [hit(ArmorSection.HULL, 250.0, [0, 0, 0])], {
+          distance_m: d,
+          penetration_far: 300.0,
+        }),
+      )
+    expect(Math.abs(mk(50).layers[0].remaining_before - 400)).toBeLessThan(1e-3)
+    expect(Math.abs(mk(100).layers[0].remaining_before - 400)).toBeLessThan(1e-3)
+    expect(Math.abs(mk(300).layers[0].remaining_before - 350)).toBeLessThan(1e-3)
+    expect(Math.abs(mk(500).layers[0].remaining_before - 300)).toBeLessThan(1e-3)
+    expect(Math.abs(mk(1000).layers[0].remaining_before - 175)).toBeLessThan(1e-3)
+    expect(mk(300).result).toBe('PENETRATION')
+    expect(mk(1000).result).toBe('BLOCKED')
+  })
+
+  it('distance_decay_he_is_exempt', () => {
+    // HE 豁免（客户端 flag 分支 = kind==kHighExplosive）：远 300 仍给 near。
+    const r = calculate(
+      req('he', 400.0, 100.0, [hit(ArmorSection.HULL, 250.0, [0, 0, 0])], {
+        distance_m: 1000,
+        penetration_far: 300.0,
+      }),
+    )
+    expect(Math.abs(r.layers[0].remaining_before - 400)).toBeLessThan(1e-3)
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('distance_decay_heat_flat_when_far_equals_near', () => {
+    // HEAT 数据 far==near（全量统计 96%+）→ 飞行段恒平，其专属衰减是间隙项；
+    // 无 penetration_far 字段 → 不衰减（旧行为）。
+    const r = calculate(
+      req('heat', 300.0, 100.0, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], {
+        distance_m: 1000,
+        penetration_far: 300.0,
+      }),
+    )
+    expect(Math.abs(r.layers[0].remaining_before - 300)).toBeLessThan(1e-3)
+    const r2 = calculate(
+      req('ap', 400.0, 100.0, [hit(ArmorSection.HULL, 250.0, [0, 0, 0])], { distance_m: 1000 }),
+    )
+    expect(Math.abs(r2.layers[0].remaining_before - 400)).toBeLessThan(1e-3)
+  })
+
+  it('distance_decay_clamps_at_zero_and_maps_to_dash', () => {
+    // 大距离外推穿零 → max(0)；穿零后按既有语义映射 "-"（blitzkit：pen>0 才 BLOCKED）。
+    const r = calculate(
+      req('ap', 400.0, 100.0, [hit(ArmorSection.HULL, 50.0, [0, 0, 0])], {
+        distance_m: 2000,
+        penetration_far: 300.0,
+      }),
+    )
+    expect(Math.abs(r.layers[0].remaining_before - 0)).toBeLessThan(1e-3)
+    expect(r.result).toBe('-')
   })
 
   it('he_track_only_splashes_like_game', () => {
