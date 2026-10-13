@@ -4220,12 +4220,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             controls.dampingFactor = 0.05;
             controls.rotateSpeed = 0.35;   // 降低旋转灵敏度（默认 1.0 过快，精细对位困难）
             controls.minDistance = 3;
-            controls.maxDistance = 30;
+            controls.maxDistance = 500;   // 交战距离上限 500m（dolly-zoom 保持车体视角尺寸，见 applyLongRangeCompensation）
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.DOLLY,
                 RIGHT: null,
             };
+
 
             const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f6e, 2.2);
             scene.add(hemi);
@@ -5166,11 +5167,38 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }
         }
 
+        // ===== 远距离检视（相机可达 500m 交战距离）：dolly-zoom =====
+        // Armor Inspector 式透视：相机拉远时 FOV 按 tan(fov/2) = tan(25°)×(30/d) 收窄，
+        // 车体屏幕尺寸保持不变（30m 处 = 原生视角比例）；雾带与近远裁剪面随 k=d/30
+        // 等比缩放，保持同等雾化观感与深度精度。d≤30 时全部还原原生（k=1）。
+        const DOLLY_REF_DIST = 30;    // 基准距离 = 旧 maxDistance（原生视觉比例）
+        const DOLLY_BASE_FOV = 50;    // 原生 FOV
+        const DOLLY_MIN_FOV = 1.0;    // FOV 下限（约 1600m 处触底，其后车体才开始变小）
+        function applyLongRangeCompensation() {
+            const d = camera.position.distanceTo(controls.target);
+            const k = Math.max(1, d / DOLLY_REF_DIST);
+            const fov = Math.max(DOLLY_MIN_FOV,
+                2 * Math.atan(Math.tan(DOLLY_BASE_FOV * Math.PI / 360) / k) * 180 / Math.PI);
+            let dirty = false;
+            if (Math.abs(camera.fov - fov) > 0.005) { camera.fov = fov; dirty = true; }
+            const near = 0.1 * k;
+            const far = Math.max(1000, d * 3);
+            if (Math.abs(camera.near - near) > 1e-4 || Math.abs(camera.far - far) > 1) {
+                camera.near = near; camera.far = far; dirty = true;
+            }
+            if (dirty) camera.updateProjectionMatrix();
+            if (scene.fog) {
+                scene.fog.near = 15 * k;
+                scene.fog.far = 50 * k;
+            }
+        }
+
         function animate() {
             if (destroyed) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
+            applyLongRangeCompensation();   // dolly-zoom：远距拉远时收窄 FOV，车体视角尺寸不变
             trackCameraMotion();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {
