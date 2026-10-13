@@ -255,6 +255,32 @@ WotBTools
   旧的「2D 异步拉坦克数据 / 3D 相位推断+异步覆盖」两段式维护已移除。
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `config_idx?` / `burst_size?` 逐字对应。
 
+## 4i. 动态装甲 armorsStates（`armor_states[]` / `shots[].target_armor_state`，PlaybackData additive；上游待发版，pin 待随下一 Release 更新）
+
+- **协议定案**（上游 2026-10-13，Oth71_Titan_Strife 实战样本行为学闭环）：Vehicle 实体
+  **type=7 prop0、载荷 1 字节 u8 = 动态装甲当前状态号**。客户端数据源为车辆 XML
+  `<extras><armorsStatesController>`（全库仅 **6 辆**：T54MS 9073 / Charioteer_T 12657 /
+  Titan Strife 17777 / JagdPanther II Titan 22385 / AMX 50 100 Titan 24945 /
+  Sturmfeur HW 8305）；`armorMover` 消耗品每次使用产生一条更新。propID 0 ↔
+  `Vehicle::armorsStates` 的命名映射为行为学归因（def 注册表反汇编未定证）。
+- `armor_states[]`: `{eid, t: number[], state: number[]}`（列式，两列等长，按 eid 升序）。
+  **skip-when-empty**：静态装甲车（绝大多数）字段整体省略——旧产物与静态场零扰动。
+- `shots[].target_armor_state?: number` —— 受击方**弹着时刻**（`t_fire + flight_secs`）
+  的状态号；`None`/缺省 = 受击车无状态流或弹着早于首次切换（**初态域**——初态是声明里
+  `default: true` 的 state，不经状态流，不猜）。
+- **消费方门控（fail-closed）**：状态语义的唯一权威 = 上游 `data/armor_states.json`
+  （前端 vendored 于 `frontend/src/data/armorStates.js`）：每态 `armors` = 该态**激活**的
+  `<part>.<armor_N>` 集合；可控板 = 各态并集；`state ∉ 声明集` 的更新丢弃；时间线缺省 →
+  声明初态。
+- **前端接线**（`frontend/src/data/armorStates.js` + `scene/tankViewer.js`）：装甲模型
+  装载后按声明初态摘除非激活可控板（**deco 口径**——与穿透判定/点击分类/跳弹枚举的保留面
+  过滤同源，一处摘除全链生效；可控板中未激活板不计入等效装甲）；射击复现进入时按
+  `shots[].target_armor_state` 切换（`setArmorState`，声明外值拒绝）。恢复两段式：
+  `retagSpacedSections` 先按 `armorSectionOrig` 还原（含 spaced 重判），再摘除非激活——
+  顺序不可换；恢复 visible 时不得复活 `configHidden` 的配置变体。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `armor_states?` /
+  `shots[].target_armor_state?` 逐字对应。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——

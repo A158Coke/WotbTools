@@ -333,6 +333,15 @@ export interface AgentReloadEffectiveEvent {
   duration_s: number
 }
 
+/** 动态装甲 armorsStates 轨道（列式；上游 additive，skip-when-empty——静态车缺省）。
+ *  状态语义 = 车辆 XML `<armorsStatesController>` 声明（上游 data/armor_states.json，
+ *  前端 vendored 于 `src/data/armorStates.js`）；值 ∉ 声明集的更新由消费端门控丢弃。 */
+export interface AgentArmorStateTrack {
+  eid: number
+  t: number[]
+  state: number[]
+}
+
 export interface AgentPlaybackFacet {
   version: number
   meta: AgentPlaybackMeta
@@ -363,6 +372,8 @@ export interface AgentPlaybackFacet {
   reloads?: AgentReloadEvent[]
   /** v0.3.9：method 35 当前生效完整装填时长（仅本方） */
   reload_effective?: AgentReloadEffectiveEvent[]
+  /** 动态装甲 armorsStates 时间线（上游待发版 additive；仅 6 辆声明车非空，静态车缺省） */
+  armor_states?: AgentArmorStateTrack[]
   /** 可破坏地形（上游 2026-10-05 起 additive；旧产物缺失 = 特性禁用） */
   destructible_areas?: { eid: number; x: number; z: number }[]
   destructible_events?: {
@@ -671,6 +682,23 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
   if (pb.reload_effective !== undefined) {
     const events = assertArray(pb.reload_effective, 'playback.reload_effective')
     events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
+  }
+  if (pb.armor_states !== undefined) {
+    const tracks = assertArray(pb.armor_states, 'playback.armor_states')
+    tracks.forEach((track, i) => {
+      const ctx = `playback.armor_states[${i}]`
+      assertObject(track, ctx)
+      assertArray(track.t, `${ctx}.t`)
+      assertArray(track.state, `${ctx}.state`)
+      if (track.t.length !== track.state.length) {
+        throw new Error(`agent facets: ${ctx} 列长不一致（列式契约）`)
+      }
+      for (const v of track.state) {
+        if (!Number.isInteger(v) || v < 0 || v > 255) {
+          throw new Error(`agent facets: ${ctx}.state 必须是 u8 状态号`)
+        }
+      }
+    })
   }
   // 目标存在性必须是布尔（跳空键按"无已证实目标"解读，与 assaultObjectivePresent 同义）
   if (pb.assault_objective_present !== undefined && typeof pb.assault_objective_present !== 'boolean') {
