@@ -120,6 +120,17 @@ HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/s
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
 
+### Workflow 清理与历史记录
+
+当前保留 37 个 workflow：唯一 PR 入口、15 个 reusable owner CI，以及 21 个发布、部署、运维和数据更新入口。
+持续使用的手动诊断、TX runtime gate、备份、镜像清理和数据更新 workflow 不按运行次数判定为一次性任务。
+Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退役；正式构建与 TCR 发布由
+`business-api.yml` / `frontend.yml` 及其 `build-*-from-gitee.sh` 脚本负责。
+
+删除 `.github/workflows/` 中的 YAML 不等于删除 GitHub Actions 历史记录。判断入口是否仍存在，应以当前
+`main` 的文件和调用关系为准；旧记录（包含失败记录）保留作审计证据，不在代码清理 PR 中删除。
+清理前核对 `workflow_call` / `workflow_run`、脚本、owner 路由和文档引用；`CI / Required Gate` 的名称与职责保持不变。
+
 ### CI/CD owner 依赖清单
 
 `ci-gate.yml` 读取 `.github/ci-owner-paths.yml` 作为 PR 路由表；生产 owner workflow 的 `on.push.paths` 与 `PRODUCTION_INPUT_PATHS` 必须逐项相同。共享输入按真实依赖 fan-out，未列出的普通文档变更只执行 PR gate。下表是维护边界索引，具体路径以 workflow 为准。
