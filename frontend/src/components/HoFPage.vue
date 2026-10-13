@@ -231,6 +231,7 @@ async function upload(file) {
   uploading.value = true
   uploadMsg.value = ''
   uploadOk.value = false
+  let uploaded = false
   try {
     const result = await api.hofUpload(file)
     if (result.status === 'skipped') {
@@ -239,17 +240,23 @@ async function upload(file) {
           ? t(`hof.reason.${result.reasonCode}`)
           : t('hof.upload_skipped_default'),
       })
+    } else if (result.status === 'already_recorded') {
+      // 同一场战斗 + 同一回放早已上榜：不是失败，但也不是「新上榜」
+      uploadMsg.value = t('hof.upload_already_recorded')
+      uploadOk.value = true
     } else {
       uploadMsg.value = t('hof.upload_success')
       uploadOk.value = true
     }
     if (fileInput.value) fileInput.value.value = ''
-    await load()
+    uploaded = true
   } catch (e) {
     uploadMsg.value = apiErrorLabel(t, te, e)
   } finally {
+    // 结果提示出现时按钮必须已恢复；刷新榜单在其后进行（不再与「上传中…」并存）
     uploading.value = false
   }
+  if (uploaded) await load()
 }
 
 async function download(id) {
