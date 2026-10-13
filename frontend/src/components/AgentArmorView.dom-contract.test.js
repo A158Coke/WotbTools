@@ -65,3 +65,44 @@ describe('armor adjacent-shot teardown ownership', () => {
     expect(kernel).toMatch(/function showShotError\(msg\) \{\s*if \(destroyed\) return;/)
   })
 })
+
+// dolly-zoom 作用域守卫（review P2）：两车 world 总览按射手/目标取景，不适用单车 dolly-zoom。
+// 修前每帧无条件应用：reviewer 实测 400m 直线回放相机 (-200,88,120) 对两车中点（距 249.3m），
+// FOV 50°→6.4238°，受击锚点 NDC-y 0.317→2.633（出视锥）。
+describe('dolly-zoom world-overview scope guard', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('animate 按 __worldPenMode 门控；关闭态以 k=1 幂等还原原生', () => {
+    expect(kernel).toMatch(/applyLongRangeCompensation\(!window\.__worldPenMode\)/)
+    expect(kernel).toMatch(/const k = enabled \? Math\.max\(1, d \/ DOLLY_REF_DIST\) : 1;/)
+  })
+  it('dollyZoomFov 纯函数与视锥锚点回归', async () => {
+    const { dollyZoomFov } = await import('../scene/tankViewer.js')
+    expect(dollyZoomFov(30, true)).toBeCloseTo(50, 6)       // 基准距离 = 原生视角
+    expect(dollyZoomFov(249.3, false)).toBeCloseTo(50, 6)   // world 总览恒原生
+    const fovOn = dollyZoomFov(249.3, true)
+    expect(fovOn).toBeCloseTo(6.4238, 2)                    // reviewer 实测值（k=8.31）
+    // 垂直 NDC-y = tan(偏心角)/tan(fov/2)：同一 8.41° 偏心锚点，原生在视锥内、误套补偿越界
+    const ndcY = (offDeg, fovDeg) => Math.tan(offDeg * Math.PI / 180) / Math.tan(fovDeg * Math.PI / 360)
+    expect(ndcY(8.41, 50)).toBeLessThan(1)                  // ≈0.317（reviewer 实测）
+    expect(ndcY(8.41, fovOn)).toBeGreaterThan(2)            // ≈2.63（越界）
+  })
+})
+
+// 交战距离结果行本地化（review P3）：标签/单位走 labels（三语），不用硬编码中文。
+describe('engagement-distance result line localization', () => {
+  const kernel = read('../scene/tankViewer.js')
+  const view = read('./AgentArmorView.vue')
+  it('结果卡距离行插值 L.shotDistance / L.distanceUnit', () => {
+    expect(kernel).toMatch(/\$\{escapeText\(L\.shotDistance\)\}: \$\{fmtNum\(distVal\)\} \$\{escapeText\(L\.distanceUnit\)\}/)
+    expect(kernel).not.toMatch(/交战距离: \$\{fmtNum/)
+  })
+  it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
+    expect(view).toContain("shotDistance: t('armor.distance')")
+    expect(view).toContain("distanceUnit: t('armor.distance_unit')")
+    const locales = JSON.parse(read('../locales/feature-messages.json'))
+    expect(locales.en.armor.distance).toBe('Engagement distance')
+    expect(locales.ru.armor.distance).toBe('Дистанция боя')
+    expect(locales.en.armor.distance_unit).toBe('m')
+    expect(locales.ru.armor.distance_unit).toBe('м')
+  })
+})

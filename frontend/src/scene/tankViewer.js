@@ -53,6 +53,17 @@ function resetViewerGlobals() {
     }
 }
 
+/**
+ * dolly-zoom FOV（纯函数，内核与单测共用）：enabled 时按 k=max(1,d/refDist) 收窄 FOV，
+ * 使 refDist 处定标的车体在任意 k 倍距离上屏幕尺寸不变；enabled=false 恒原生（k=1）。
+ * 两车 world 总览（__worldPenMode）必须传 false——总览取景由射手/目标决定，
+ * 套单车 dolly-zoom 会把远距受击车裁出视锥（review P2 回归锚点）。
+ */
+export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1) {
+    const k = enabled ? Math.max(1, distanceM / refDistM) : 1;
+    return Math.max(minFovDeg, 2 * Math.atan(Math.tan(baseFovDeg * Math.PI / 360) / k) * 180 / Math.PI);
+}
+
 export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         resetViewerGlobals();
         const L = {
@@ -70,6 +81,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             shotLoss: 'loss',
             shotNominal: 'nominal',
             shotBlocked: 'blocked',
+            shotDistance: 'Engagement distance', distanceUnit: 'm',
             heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
             technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
             selectShooter: 'Choose firing tank', selectTarget: 'Choose target tank',
@@ -5036,9 +5048,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const segments = result.split('→').map(x => x.trim()).filter(Boolean);
             const colorHex = '#' + color.toString(16).padStart(6, '0');
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
-            // 交战距离（射线起点→命中点，米）——距离衰减判定的输入参数，随面板展示
+            // 交战距离（射线起点→命中点）——距离衰减判定的输入参数，随面板展示；
+            // 标签与单位走 labels（三语，review P3）
             if (distVal > 0) {
-                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">交战距离: ${fmtNum(distVal)} m</div>`;
+                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}</div>`;
             }
             const titleHtml = (st) => {
                 const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
@@ -5165,14 +5178,15 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // Armor Inspector 式透视：相机拉远时 FOV 按 tan(fov/2) = tan(25°)×(30/d) 收窄，
         // 车体屏幕尺寸保持不变（30m 处 = 原生视角比例）；雾带与近远裁剪面随 k=d/30
         // 等比缩放，保持同等雾化观感与深度精度。d≤30 时全部还原原生（k=1）。
+        // enabled=false（两车 world 总览）以 k=1 幂等还原原生全组值——总览按射手/目标
+        // 取景，套单车 dolly-zoom 会把远距受击车裁出视锥（review P2）。
         const DOLLY_REF_DIST = 30;    // 基准距离 = 旧 maxDistance（原生视觉比例）
         const DOLLY_BASE_FOV = 50;    // 原生 FOV
         const DOLLY_MIN_FOV = 1.0;    // FOV 下限（约 1600m 处触底，其后车体才开始变小）
-        function applyLongRangeCompensation() {
+        function applyLongRangeCompensation(enabled) {
             const d = camera.position.distanceTo(controls.target);
-            const k = Math.max(1, d / DOLLY_REF_DIST);
-            const fov = Math.max(DOLLY_MIN_FOV,
-                2 * Math.atan(Math.tan(DOLLY_BASE_FOV * Math.PI / 360) / k) * 180 / Math.PI);
+            const k = enabled ? Math.max(1, d / DOLLY_REF_DIST) : 1;
+            const fov = dollyZoomFov(d, enabled, DOLLY_BASE_FOV, DOLLY_REF_DIST, DOLLY_MIN_FOV);
             let dirty = false;
             if (Math.abs(camera.fov - fov) > 0.005) { camera.fov = fov; dirty = true; }
             const near = 0.1 * k;
@@ -5192,7 +5206,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
-            applyLongRangeCompensation();   // dolly-zoom：远距拉远时收窄 FOV，车体视角尺寸不变
+            // dolly-zoom：静态单车检视远距拉远时收窄 FOV（车体视角尺寸不变）；
+            // 两车 world 总览传 false → k=1 幂等原生（review P2：总览不适用单车补偿）
+            applyLongRangeCompensation(!window.__worldPenMode);
             trackCameraMotion();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {

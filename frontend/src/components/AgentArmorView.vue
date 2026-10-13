@@ -137,6 +137,8 @@ function startViewer() {
             shotLoss: t('armor.shot_loss'),
             shotNominal: t('armor.shot_nominal'),
             shotBlocked: t('armor.shot_blocked'),
+            shotDistance: t('armor.distance'),
+            distanceUnit: t('armor.distance_unit'),
             armorStateLabel: t('armor.armor_state'),
             armorStateDefaultSuffix: t('armor.armor_state_default'),
             armorStateAutoTitle: t('armor.armor_state_auto'),
