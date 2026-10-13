@@ -684,7 +684,7 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
     events.forEach((event, i) => validateReloadEffectiveEvent(event, `playback.reload_effective[${i}]`))
   }
   if (pb.armor_states !== undefined) {
-    const tracks = assertArray(pb.armor_states, 'playback.armor_states')
+    const tracks = assertArray(pb.armor_states, 'playback.armor_states') as AgentArmorStateTrack[]
     tracks.forEach((track, i) => {
       const ctx = `playback.armor_states[${i}]`
       assertObject(track, ctx)
