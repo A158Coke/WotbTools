@@ -241,8 +241,12 @@ export function calculate(req) {
         break
       }
 
+      // 转正只作用于**首个装甲层**（WG 语义，用户 2026-10-13 裁示）：击穿第一层后炮弹保持
+      // 出射方向，后续层不再转正（跳弹同理——threeCalibersRule 的 layerIndex>0 已置位）。
+      // 与 BlitzKit 的逐层转正有意分歧，注释存档。
+      const effNormalization = layerIndex > 0 ? 0.0 : normalization
       // blitzkit 对所有弹种统一应用 shell.normalization（HEAT/HE 数据即为 0）
-      const finalAngle = Math.max(angleRad - normalization * DEG, 0.0)
+      const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
       // blitzkit 无下限钳制；1e-6 仅防 90° 时 cos 变负（f64 下 blitzkit 为正）
       eff = thickness / Math.max(Math.cos(finalAngle), 1e-6)
 

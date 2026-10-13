@@ -106,3 +106,26 @@ describe('engagement-distance result line localization', () => {
     expect(locales.ru.armor.distance_unit).toBe('м')
   })
 })
+
+// 间隙板首层跳弹上屏（用户 2026-10-13 报告）：SPACED_FRAG 写 G=跳弹标志，PBR_FRAG 据此把间隙板
+// 跳弹渲染为跳弹色（紫）并跑续飞；二层（underSpaced 的主装甲）不再转正——与点击链 layerIndex>0 同规则。
+describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
+  const kernel = read('../scene/tankViewer.js')
+  const pen = read('../scene/penetration.js')
+  it('SPACED_FRAG 写 G 标志且 R 语义不变（跳弹 = 1.0 全额消耗）', () => {
+    expect(kernel).toMatch(/ricocheted \? 1\.0 : finalThick \/ penetration,/)
+    expect(kernel).toMatch(/ricocheted \? 1\.0 : 0\.0, 0\.0, 1\.0\)/)
+  })
+  it('PBR_FRAG 间隙跳弹分支：跳弹色 + 续飞（RC_RICO_MUL）；二层 norm 归零', () => {
+    expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedData\.g > 0\.5;/)
+    const start = kernel.indexOf('if (gapRicochet) {')
+    expect(start).toBeGreaterThan(-1)
+    const seg = kernel.slice(start, start + 800)
+    expect(seg).toContain('ricocheted = true;')
+    expect(seg).toContain('rcContinue(wPosR, reflR, penetration * RC_RICO_MUL')
+    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)
+  })
+  it('点击链：转正只作用于首个装甲层（layerIndex>0 → 0）', () => {
+    expect(pen).toMatch(/const effNormalization = layerIndex > 0 \? 0\.0 : normalization/)
+  })
+})

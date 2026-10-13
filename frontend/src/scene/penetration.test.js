@@ -94,6 +94,23 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r2.layers[0].effective - 87.18)).toBeLessThan(0.1)
   })
 
+  it('normalization_applies_only_to_first_armor_layer', () => {
+    // WG 语义（用户 2026-10-13 裁示）：转正只作用于首个装甲层，击穿第一层后不再转正。
+    // 层0 = 间隙板 20mm（30° 入射，2× overmatch 增强转正 17.5°）→ eff0 = 20/cos(12.5°)
+    // 层1 = 主装甲 100mm（同 30°）→ 不转正 eff1 = 100/cos(30°)；逐层转正（旧行为）给 100/cos(25°)
+    const a = 30 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [0, 0, 0], { normal }),
+      hit(ArmorSection.HULL, 100.0, [0, 0.5, 0], { normal }),
+    ]
+    const r = calculate(req('ap', 500.0, 100.0, hits, { normalization_deg: 5 }))
+    expect(r.layers).toHaveLength(2)
+    expect(Math.abs(r.layers[0].effective - 20.0 / Math.cos(12.5 * Math.PI / 180))).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(a))).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(25 * Math.PI / 180))).toBeGreaterThan(1.0)
+  })
+
   it('heat_gap_decay_blocks_across_large_gap', () => {
     // 200m 间隙：剩余穿深 ×0.5^200 → 0 → gap 层 blocked → BLOCKED
     const hits = [
