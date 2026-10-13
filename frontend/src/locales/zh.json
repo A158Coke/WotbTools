@@ -208,6 +208,7 @@
     "error": "名人堂加载失败",
     "upload_hint": "仅支持随机战斗和评级战斗回放",
     "upload_success": "上传成功！已进入名人堂",
+    "upload_already_recorded": "该战斗已在名人堂中，无需重复上传",
     "upload_title": "上传回放以进入名人堂",
     "submit_entry": "提交记录",
     "upload_btn": "选择回放文件",
