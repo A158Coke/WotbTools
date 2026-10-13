@@ -142,7 +142,10 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
     // 厚度通道：按状态通道深度辨首层；只写 R（G/B 归零，不再累加）
     expect(thickness).toMatch(/uniform highp sampler2D spacedStateDepth;/)
-    expect(thickness).toMatch(/bool isFirstSpaced = stateD > 0\.0/)
+    // 首层判定 = 线性米制视深比较（固定窗口深度差在远距会把 0.2m 相隔板误判为首层，
+    // review 2026-10-13）——容差 0.05m 全视距一致
+    expect(thickness).toMatch(/float linState = \(2\.0 \* camNear \* camFar\)/)
+    expect(thickness).toMatch(/bool isFirstSpaced = hasState && abs\(viewDepth - linState\) < 0\.05;/)
     expect(thickness).toMatch(/float norm = isFirstSpaced/)
     expect(thickness).toMatch(/ricocheted \? 1\.0 : eff \/ penetration, 0\.0, 0\.0, 1\.0\)/)
     // 状态通道：就地续飞（自身几何）+ 最近板独占 + R=跳弹标志 / G=续飞编码
@@ -169,6 +172,31 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(iThick).toBeGreaterThan(iState)
     expect(pass).toContain('spacedStateDepth.value = srt.depthTexture')
     expect(pass).toContain('spacedStateBuffer.value = srt.texture')
+    expect(pass).toContain('camNearUniform.value = camera.near')   // 线性化基准每帧同步
+  })
+  it('状态场景：模块深度先于间隙板写入（更近模块不留过期状态，review 2026-10-13）', () => {
+    expect(kernel).toMatch(/addClone\(spacedStateScene, node, omitMaterial, 1\)/)
+  })
+  it('强化装甲厚度刷新覆盖状态场景（两通道三倍口径阈值一致，review 2026-10-13）', () => {
+    expect(kernel).toMatch(/apply\(spacedArmorScene\); apply\(spacedStateScene\); apply\(primaryArmorScene\);/)
+  })
+  it('首层容差全视距一致（固定窗口深度差的反例 + 线性米制还原，review 2026-10-13）', () => {
+    // 相机 near=.1 / far=1000：30m 与 30.2m 两板的窗口深度差 2.2e-5 < 旧固定容差 1e-4
+    // → 旧实现两块都判首层；线性米制差 0.2m > 0.05m 容差 → 正确区分。远距（dolly-zoom
+    // 缩放近面后）同样成立。
+    const winDepth = (viewZ, near, far) =>
+      ((far + near - (2 * near * far) / viewZ) / (far - near) + 1) / 2
+    const linViewZ = (w, near, far) =>
+      (2 * near * far) / (far + near - (2 * w - 1) * (far - near))
+    const near0 = 0.1, far0 = 1000
+    const w1 = winDepth(30, near0, far0), w2 = winDepth(30.2, near0, far0)
+    expect(Math.abs(w1 - w2)).toBeLessThan(1e-4)                       // 旧窗口容差失效（判别）
+    expect(Math.abs(linViewZ(w1, near0, far0) - linViewZ(w2, near0, far0))).toBeCloseTo(0.2, 2)
+    expect(Math.abs(linear32(w2, near0, far0) - 30.2)).toBeLessThan(0.01)
+    // 400m 处相隔 0.2m（dolly-zoom 使 near≈1.33 / far=1200）
+    const w3 = winDepth(400, 1.33, 1200), w4 = winDepth(400.2, 1.33, 1200)
+    expect(Math.abs(linViewZ(w3, 1.33, 1200) - linViewZ(w4, 1.33, 1200))).toBeCloseTo(0.2, 2)
+    function linear32(w, near, far) { return linViewZ(w, near, far) }
   })
   it('rcContinue 双实现：转正仅首层（hitIdx == 0 / hitIdx === 0）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')
