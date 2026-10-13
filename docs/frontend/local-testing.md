@@ -43,6 +43,10 @@ npm run dev
    - 脚本从上游 Release 直取 ZIP，sha256 + fingerprint 双重校验后落位 `common/assets/wasm/<ref>/`。
    - **何时重跑**：`deploy/agent/source.json` 变化（上游 pin bump）后必须重跑。不重跑的症状：
      dev 下 `/wasm/<ref>/…` 404 → 3D 回放 / 射击复现 / 装甲查看器"引擎加载失败"，其余功能正常。
+   - **重跑后必须重启 `npm run dev`**：Vite dev 在**服务启动时**把 define 表
+     （`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__` 等）序列化进
+     `/node_modules/vite/dist/client/env.mjs` 并注入页面全局——**只刷新浏览器不会换 ref**，
+     页面会继续加载旧 ref 的 WASM（表现为"修复明明已落位但行为还是旧的"）。
    - 旧 ref 目录可留可删，互不干扰。
 3. **资产包**（Agent 仓）：确认 `release/asset_pack/` 存在（根部有 `index.json` / `manifest.json`）。
    缺了用 `python scripts/export_asset_pack.py --map-index map_index.json` 生成（需游戏客户端产出 map index）。
@@ -140,6 +144,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 同上但 `.env.local` 明明是对的 | URL/localStorage 里残留非空 `?assets=` | 带一次空 `?assets=` 清除 |
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
+| pin 与产物都已更新，浏览器里却仍按**旧 ref** 跑（修复"不生效"） | Vite dev 的 define 表在**服务启动时**固化进 client/env.mjs 与页面全局；F5 只刷新页面不换 ref | 重启 `npm run dev`；可用 `/node_modules/vite/dist/client/env.mjs` 内的 `__AGENT_WASM_COMMIT__` 值核验当前 ref |
 | 个人回放直连 `?view=agent-replay` / `agent-shots` 显示登录提示 | 当前未登录且所选文件不是已验证官方示例 | 普通账号登录，或选择官方示例；`agent-armor` 本身匿名可用，不能靠 `?admin=1` 取得登录态 |
 | admin 页面能打开但数据 401/403 | 后端按真实 token 鉴权 | §5（需要真角色；本地绕不过，也不应绕） |
 
