@@ -40,6 +40,17 @@ export function tankFuzzyScore(name, q) {
 }
 
 export const TYPE_CLS = { lightTank: 't-light', mediumTank: 't-medium', heavyTank: 't-heavy', 'AT-SPG': 't-td' }
+const TYPE_SLUG = { lightTank: 'light', mediumTank: 'medium', heavyTank: 'heavy', 'AT-SPG': 'td' }
+
+// 车型 / 国籍显示名（审计 3D-16：不直接显示 china / heavyTank 等原始值）。坦克百科与装甲查看器共用这一份。
+export function tankNationLabel(t, te, nation) {
+  const key = `agentTanks.nations.${nation}`
+  return te(key) ? t(key) : nation
+}
+export function tankTypeLabel(t, te, type) {
+  const key = `agentTanks.types.${TYPE_SLUG[type] || type}`
+  return te(key) ? t(key) : type
+}
 
 // 弹种显示名（开发名 ap_cr/hc_premium → APCR/HEAT）
 export const normType = (t) => {
