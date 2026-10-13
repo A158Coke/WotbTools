@@ -247,7 +247,8 @@ describe('canonical event statistics', () => {
     expect(cumulativeStatsAtV2(events, recorder, 40, [recorder, victim])).toEqual({ dealt: 1200, received: 0, kills: 1 })
     // Seek backwards queries the same evidence timeline rather than retaining the later total.
     expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim]).dealt).toBe(900)
-    expect(cumulativeStatsAtV2(events, victim, 40, [recorder, victim]).received).toBe(1100)
+    // 30s 的 900 → 800 是 HP 条上的可信下降（没有对应 DamageLoss，例如 materialization 读数）：承受伤害按 HP 条计
+    expect(cumulativeStatsAtV2(events, victim, 40, [recorder, victim]).received).toBe(1200)
   })
 
   it('preserves an observed zero and ignores malformed or future totals', () => {
@@ -257,6 +258,36 @@ describe('canonical event statistics', () => {
       { timeSec: NaN, total: 7777 },
     ] }
     expect(cumulativeStatsAtV2(events, recorder, 15, [recorder, victim]).dealt).toBe(0)
+  })
+
+  it('received matches the HP bar: a drop first seen on a materialization read still counts (issue: 承受伤害漏算)', () => {
+    // 点亮时 materialization 满血 3536，首发命中后第一条 prop3 = 3067（Java 口径没有 DamageLoss）
+    const track = {
+      accountId: 9,
+      healthTransitions: [
+        { ...lh(0, 3350, 'CURRENT', 3350), source: 'TANKOPEDIA_BASE_PROVISIONAL', confidence: 'MEDIUM' },
+        lh(92, 3536, 'CURRENT', 3536),
+        lh(95, 3067, 'CURRENT', 3536),
+        lh(110, 2608, 'CURRENT', 3536),
+      ],
+      damageLosses: [{ fromSec: 95, toSec: 110, hpLoss: 459, attackerAccountId: 1, attackerReliable: true, damageEventCount: 1 }],
+    }
+    expect(cumulativeStatsAtV2([], track, 90).received).toBe(0)
+    // provisional 种子不作下降起点（3350 → 3536 是量程修正，不是回血也不是掉血）
+    expect(cumulativeStatsAtV2([], track, 95).received).toBe(469)
+    expect(cumulativeStatsAtV2([], track, 110).received).toBe(928)
+  })
+
+  it('a provisional seed above the first observed HP is never counted as damage', () => {
+    const track = {
+      accountId: 9,
+      healthTransitions: [
+        { ...lh(0, 3700, 'CURRENT', 3700), source: 'TANKOPEDIA_BASE_PROVISIONAL', confidence: 'MEDIUM' },
+        lh(50, 3570, 'CURRENT', 3570),
+      ],
+      damageLosses: [],
+    }
+    expect(cumulativeStatsAtV2([], track, 60).received).toBe(0)
   })
 
   it('does not treat LAST_KNOWN as a new received-damage sample', () => {
