@@ -1641,9 +1641,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (primaryArmorScene) apply(primaryArmorScene);
         }
 
-        /** 交战距离衰减（每帧）：对主图 + spaced clone 逐板计算炮口/相机→板中心距离，
+        /** 交战距离衰减（每帧）：对主图 + spaced clone 逐板计算相机→**板心**距离，
          *  按 0x719740 衰减式刷新 pen uniform（d≤100 或 HE 恒 near；d>100 非 HE 线性至 far，
-         *  clamp≥0；HEAT 数据 far==near 天然恒平）。相机旋转/移动即实时更新。 */
+         *  clamp≥0；HEAT 数据 far==near 天然恒平）。相机旋转/移动即实时更新。
+         *  距离取样 = 几何包围球中心经**源网格**当前世界矩阵变换——装甲网格节点原点在
+         *  模块枢轴（整块车体/炮塔共点），直接用节点原点是模块级距离而非板级；
+         *  源矩阵帧内新鲜（同 syncCloneMatrices 的 updateWorldMatrix 口径）。 */
         function updatePenetrationDistanceUniforms() {
             if (!selectedShell) return;
             const near = selectedShell.penetration || 0;
@@ -1652,13 +1655,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const isHE = shellTypeOf(selectedShell) === 'he';
             const { penMul } = equipmentCoeffs();
             const origin = camera.position;
-            const v = new THREE.Vector3();
+            const world = new THREE.Vector3();
             const apply = (scene) => {
                 if (!scene) return;
                 scene.traverse(function(node) {
                     if (!node.isMesh || !node.material || !node.material.uniforms || !node.material.uniforms.penetration) return;
-                    v.setFromMatrixPosition(node.matrixWorld);
-                    const d = origin.distanceTo(v);
+                    const src = node.userData && node.userData._src;
+                    if (src) {
+                        const g = node.geometry;
+                        if (!g.boundingSphere) g.computeBoundingSphere();
+                        src.updateWorldMatrix(true, false);
+                        world.copy(g.boundingSphere.center).applyMatrix4(src.matrixWorld);
+                    } else {
+                        world.setFromMatrixPosition(node.matrixWorld);
+                    }
+                    const d = origin.distanceTo(world);
                     let pen = near;
                     if (!isHE && d > 100.0) {
                         pen = near + (far - near) * (d - 100.0) / 400.0;
@@ -2119,6 +2130,34 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                                    visible: n.visible,
                                                    th: n.userData._baseThickness });
                                     }
+                                });
+                            };
+                            grab(primaryArmorScene, 'P');
+                            grab(spacedArmorScene, 'S');
+                            return out;
+                        },
+                        penProbe: function() {
+                            const out = [];
+                            const world = new THREE.Vector3();
+                            const grab = (scene, tag) => {
+                                if (!scene) return;
+                                scene.traverse(function(n) {
+                                    if (!n.isMesh || !n.material || !n.material.uniforms || !n.material.uniforms.penetration) return;
+                                    const src = n.userData && n.userData._src;
+                                    if (src) {
+                                        const g = n.geometry;
+                                        if (!g.boundingSphere) g.computeBoundingSphere();
+                                        src.updateWorldMatrix(true, false);
+                                        world.copy(g.boundingSphere.center).applyMatrix4(src.matrixWorld);
+                                    } else {
+                                        world.setFromMatrixPosition(n.matrixWorld);
+                                    }
+                                    out.push({
+                                        tag: tag, key: (n.userData && n.userData._armorStateKey) || null,
+                                        d: Math.round(camera.position.distanceTo(world) * 10) / 10,
+                                        pen: Math.round(n.material.uniforms.penetration.value * 100) / 100,
+                                        vis: n.visible,
+                                    });
                                 });
                             };
                             grab(primaryArmorScene, 'P');
