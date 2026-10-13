@@ -2,6 +2,7 @@
 // 玩家卡片列表（design-language §7 DataTable：窄屏自动切换为卡片列表）。
 // 三张玩家表（单场 / 普通汇总 / CW 汇总）共用：各表按自己的格式化规则生成 items，这里只负责呈现、排序控件与选中。
 import { useI18n } from 'vue-i18n'
+import GunMarksBadge from './GunMarksBadge.vue'
 import { ArrowDownWideNarrow, ArrowUpNarrowWide } from 'lucide-vue-next'
 
 defineProps({
@@ -64,7 +65,7 @@ const { t } = useI18n()
           <span class="card-head">
             <span class="card-identity">
               <span class="card-title">{{ item.title }}</span>
-              <span v-if="item.subtitle" class="card-subtitle">{{ item.subtitle }}</span>
+              <span v-if="item.subtitle" class="card-subtitle">{{ item.subtitle }} <GunMarksBadge :marks="item.gunMarks" /></span>
             </span>
             <span v-if="item.primary" class="card-primary">
               <span class="card-primary-value">{{ item.primary.value }}</span>

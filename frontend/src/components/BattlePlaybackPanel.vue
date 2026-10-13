@@ -8,6 +8,7 @@ import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { isOfficialDemo, OFFICIAL_DEMO } from '../replay-local/demo.js'
 import { parseLocalPlayback } from '../replay-local/playback/index.js'
 import { ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
+import type { AgentBattleResult } from '../api/agent-replay-facets.js'
 import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../types/playback-v2.js'
 import MapOverview from './MapOverview.vue'
 import BattlePlayback from './BattlePlayback.vue'
@@ -30,6 +31,7 @@ const playbackView = ref<InstanceType<typeof BattlePlayback> | null>(null)
 let guideOpenedAnnotations = false
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
+const result = ref<AgentBattleResult | null>(null)
 /** LOADING | FULL | PARTIAL | UNAVAILABLE | ERROR */
 const playbackV2State = ref('LOADING')
 const playbackV2Error = ref('')
@@ -61,6 +63,7 @@ function reset() {
   mapOverview.value = null
   mapPlaybackV2.value = null
   reloadTelemetry.value = null
+  result.value = null
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
   panelView.value = 'playback'
@@ -79,6 +82,7 @@ async function load() {
     if (!canonical) throw props.playbackSession.getState(file as File).canonicalError
     const { dataset, overview, reloadTelemetry: telemetry } = canonical
     if (seq !== parseSeq) return
+    result.value = canonical.result
     mapPlaybackV2.value = dataset
     reloadTelemetry.value = telemetry
     mapOverview.value = overview as Record<string, any> | null
@@ -90,6 +94,7 @@ async function load() {
     parsedFile = null
     mapPlaybackV2.value = null
     reloadTelemetry.value = null
+    result.value = null
     playbackV2State.value = 'ERROR'
     playbackV2Error.value = e instanceof ReplayEngineUnavailableError
       ? 'recon.playback.engine_unavailable'
@@ -176,6 +181,7 @@ onMounted(() => {
             v-if="pbOverview"
             :overview="pbOverview || undefined"
             :playback-v2="mapPlaybackV2 || undefined"
+            :result="result || undefined"
             :reload-telemetry="reloadTelemetry || undefined"
             :seek-to="mapSeek ?? undefined"
             :active="active && panelView === 'playback'"

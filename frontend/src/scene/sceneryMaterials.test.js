@@ -349,8 +349,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/__tankAmbientFixed/)                       // 幂等：重复遍历不重打
     expect(fn).toMatch(/'\|tank-noambient'/)                       // 程序缓存键带标记（否则复用未打补丁程序）
     // 接线：坦克装配点（禁区外）调用；不改 scenery 侧任何材质
-    expect(src).toMatch(/applyTankLightingFix\(v\.glb\);/)
-    expect(src).toMatch(/import \{ applyMaterialTextureAnisotropy, applyTankLightingFix,/)
+    expect(src).toMatch(/v\.glbVisual = prepareTankDestroyedVisual\(v\.glb\);/)
   })
 
   it('出屏口径（A2）：线性 × 曝光 1.0 → sRGB 编码 = 客户端口径；不引入调参旋钮', () => {
@@ -1039,12 +1038,12 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     // （toneMappingExposure = 基准太阳强度/该图强度）经 three 内建通路作用于**一切未排除
     // 的材质**，未设 toneMapped:false 的标记材质会随图变深（山地图 expo≈0.21）。
     // 炮线/轨迹线早已遵循此约定（见其注释），本守卫把同类标记逐点锁死。
+    // 击毁特效的 toneMapped 在 playbackScene 生命周期测试中检查实际材质。
     const sites = [
       [/color: BOUNDARY_COLOR[\s\S]{0,200}toneMapped: false/, '地图边界线'],
       [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
       [/color: baseColors\.neutral[\s\S]{0,200}toneMapped: false/, '基地环'],
       [/map: tex, side: THREE\.DoubleSide[\s\S]{0,160}toneMapped: false/, '基地圆盘'],
-      [/color: 0xffa53a[\s\S]{0,160}toneMapped: false/, '击毁爆散'],
       [/SpriteMaterial\(\{[\s\S]{0,180}toneMapped: false/, '伤害飘字'],
     ]
     for (const [re, label] of sites) expect(src, label).toMatch(re)

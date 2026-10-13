@@ -2,7 +2,7 @@
  * 端到端 parity：上游 Rust Core parseResult（wasm-results.json）→ toBattleFacts → 批次计算 → Preview，
  * 与服务端 Java 全链路（ReplayParser → finalizeBatch → Mapper）的 java-preview.json 逐字段相等。
  *
- * 唯一归一化：失败条目的错误文本（两个解析器对同一损坏文件的报错措辞不同，文件名与位置必须一致）。
+ * 失败文本只比较文件名；客户端新增的环线列以原始 WASM 字段扩展期望值，Java 历史基准保持只读。
  */
 import { describe, expect, it } from 'vitest'
 import { analyzeReplays } from './analyzeReplays.js'
@@ -38,6 +38,12 @@ function normalizeFailures<T extends { failures: string[][] }>(preview: T): T {
 describe('客户端全链路 ↔ 服务端 Java 全链路（golden）', () => {
   it.each(Object.entries(batches as Record<string, string[]>))('%s', (name, paths) => {
     const actual = JSON.parse(JSON.stringify(analyzeReplays(parsedFiles(paths), tankopedia)))
-    expect(normalizeFailures(actual)).toStrictEqual(normalizeFailures(previews[name]))
+    const expected = structuredClone(previews[name]) as typeof actual
+    expected.playerColumns.splice(expected.playerColumns.findIndex((c: { key: string }) => c.key === 'rank') + 1, 0, { key: 'gun_marks', num: true })
+    for (const battle of expected.battles) {
+      const marks = new Map(wasm[battle.sourceName].players.map(p => [p.account_id, p.gun_marks ?? null]))
+      for (const player of battle.players) player.cells.gun_marks = marks.get(player.accountId) ?? null
+    }
+    expect(normalizeFailures(actual)).toStrictEqual(normalizeFailures(expected))
   })
 })

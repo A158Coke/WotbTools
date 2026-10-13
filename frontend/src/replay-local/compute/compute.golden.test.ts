@@ -28,7 +28,10 @@ describe('replay-local compute ↔ Java golden', () => {
 
   it.each(specs)('%s', (name, paths) => {
     const actual = toPreviewResponse(finalizeBatch(entriesFor(paths), tankopedia), tankopedia)
-    expect(JSON.parse(JSON.stringify(actual))).toStrictEqual(previews[name])
+    const expected = structuredClone(previews[name]) as typeof actual
+    expected.playerColumns.splice(expected.playerColumns.findIndex(c => c.key === 'rank') + 1, 0, { key: 'gun_marks', num: true })
+    for (const battle of expected.battles) for (const player of battle.players) player.cells.gun_marks = null
+    expect(JSON.parse(JSON.stringify(actual))).toStrictEqual(expected)
   })
 
   it('不修改调用方传入的 Battle', () => {
