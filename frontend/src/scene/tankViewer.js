@@ -280,6 +280,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             uniform sampler2D spacedArmorBuffer;   // R=外部/间隙甲 thickness/penetration, alpha!=0 表示有覆盖
             uniform highp sampler2D spacedArmorDepth; // 深度（HE 溅射用）
             uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
+            uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时禁止在其上退差额；半浮点下恒 0
             uniform mat4 inverseProjectionMatrix;
             #include <clipping_planes_pars_fragment>
             float getDist(vec2 coord, float depth) {
@@ -362,8 +363,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 float rem = penetration;
                 if (underSpaced) {
                   // 厚度通道 = 全板裸 LOS 之和；状态通道 B = 最近层转正差额 → 修正总消费
-                  // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）
-                  float spacedThick = max(0.0, spacedData.r - spacedState.b) * penetration;
+                  // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）。
+                  // 累计格式契约（review 2026-10-13 P2 饱和回归）：Σ裸LOS/pen 与差额/pen 都可能
+                  // >1——半浮点 RT 保留未饱和总量，此处代数恒等成立；8 位回退格式下 R 先被钳到 1
+                  // （超额已丢失），不得再在饱和 R 上退差额（spacedSatGuard=1，按整穿深计）。
+                  highp float rawTotal = spacedData.r;
+                  highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
+                    ? 1.0 : max(0.0, rawTotal - spacedState.b);
+                  float spacedThick = totalConsume * penetration;
                   rem -= spacedThick;
                   if (isExplosive && rem > 0.0) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
@@ -420,16 +427,27 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
         let penetrationRT = null;
         let spacedStateRT = null;
+        // 累计格式能力（review 2026-10-13 P2 饱和回归）：R=Σ裸LOS/pen 与 B=差额/pen 都可能 >1，
+        // 8 位 unorm 在逐片元 additive 累计时会先钳到 1——差额修正就落在已饱和的值上。优先请求
+        // 可保留 >1 且支持混合的半浮点可渲染格式（RGBA16F；其混合不需要 EXT_float_blend）；
+        // 无 EXT_color_buffer_{float,half_float} 时回退 8 位，PBR 侧以 spacedSatGuard 禁止对饱和 R 退差额。
+        function spacedRTFloatCapable() {
+            return renderer.extensions.has('EXT_color_buffer_float')
+                || renderer.extensions.has('EXT_color_buffer_half_float');
+        }
         function ensurePenetrationRT() {
+            const rtType = spacedRTFloatCapable() ? THREE.HalfFloatType : THREE.UnsignedByteType;
             if (!penetrationRT) {
                 const c = renderer.domElement;
                 penetrationRT = new THREE.WebGLRenderTarget(c.width, c.height, {
+                    type: rtType,
                     depthTexture: new THREE.DepthTexture(c.width, c.height),
                 });
             }
             if (!spacedStateRT) {
                 const c = renderer.domElement;
                 spacedStateRT = new THREE.WebGLRenderTarget(c.width, c.height, {
+                    type: rtType,
                     depthTexture: new THREE.DepthTexture(c.width, c.height),
                 });
             }
@@ -621,6 +639,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     spacedArmorBuffer: { value: emptySpacedTexture() },
                     spacedArmorDepth: { value: null },
                     spacedStateBuffer: { value: emptySpacedTexture() },
+                    spacedSatGuard: { value: 0 },
                     inverseProjectionMatrix: { value: null },
                     rcThickMul: rcUniforms.rcThickMul,
                     rcEnabled: rcUniforms.rcEnabled,
@@ -675,6 +694,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // （review 2026-10-13：任何"距离最近层 < δ"的推断都不是身份）。首层身份与转正差额
         // 由状态通道（RT1，深度独占的精确最近层）携带，PBR 侧做代数修正：
         //   总消费 = Σ裸LOS − RT1.差额(最近层) = 转正首层 + 其余各层裸 LOS
+        //   该恒等要求累计值保留 >1 的总量：RT 用半浮点格式；8 位仅在无扩展回退时钳位 + PBR 饱和守卫。
         const SPACED_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
@@ -716,7 +736,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               // B = 首层（= 本最近层）转正差额/穿深 = (裸LOS − 转正后)/pen ≥ 0。
               // 厚度通道全板按裸 LOS 累计，PBR 用本差额把最近层的贡献修正为转正后值
               // ——身份 = 深度独占的精确最近层（GPU 逐片元深度测试），无任何容差阈值。
-              float delta = clamp(max(0.0, losThick - normThick) / max(penetration, 1.0), 0.0, 1.0);
+              // 不做上钳：差额 >1（转正节省超过整穿深）在浮点格式下须精确参与 r−b 恒等；
+              // 8 位回退格式由硬件钳位，PBR 饱和守卫兜底（review 2026-10-13 P2）。
+              float delta = max(0.0, losThick - normThick) / max(penetration, 1.0);
               float bCode = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -1877,10 +1899,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 renderer.render(spacedStateScene, camera);
             }
             // ② 厚度通道：全板 additive（裸 LOS 累计，无身份判定）；状态缓冲整体留给 PBR 解读
+            const rtIsFloat = spacedRTFloatCapable();
             const inject = (obj) => { obj.traverse(function(node){
                 if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.spacedArmorBuffer) {
                     node.material.uniforms.spacedArmorBuffer.value = rt.texture;
                     if (node.material.uniforms.spacedStateBuffer) node.material.uniforms.spacedStateBuffer.value = srt.texture;
+                    if (node.material.uniforms.spacedSatGuard) node.material.uniforms.spacedSatGuard.value = rtIsFloat ? 0 : 1;
                     if (node.material.uniforms.spacedArmorDepth && rt.depthTexture) node.material.uniforms.spacedArmorDepth.value = rt.depthTexture;
                     if (node.material.uniforms.inverseProjectionMatrix) node.material.uniforms.inverseProjectionMatrix.value = camera.projectionMatrixInverse;
                 }
