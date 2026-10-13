@@ -35,7 +35,7 @@ import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
-import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, trailOpacityAt } from './battleFx.js'
+import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
@@ -212,6 +212,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let CAM = 'free', FOLLOW_EID = 0;
   let shotPtr = 0, killPtr = 0;
   const tracers = [];
+  const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
   let renderer = null, scene, camera, controls, clock, raycaster;
   let hemiLight = null, sunLight = null;   // 逐图光照（applyMapLighting 覆盖，见 load 流程）
   let animLayerMats = [];                  // 动画混合层材质（uTime 每帧写回放秒数）
@@ -3385,8 +3386,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播，
     // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
     // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
-    // tick 与 render 之间没有车辆世界矩阵读者（标签投影用位姿插值坐标、遮挡射线只打静态
-    // 场景网格），删之无观察者可见差异。
+    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它只在开火的
+    // tick 自行刷新射手一台；标签投影用位姿插值坐标、遮挡射线只打静态场景网格。
   }
 
   async function applyGlbToggle(on) {
@@ -3540,7 +3541,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (dir.lengthSq() > 1e-8) dir.normalize(); else dir.set(0, 0, 1);
     // 跳弹出射方向 = 折线下一段方向（缺省由 battleFx 按来弹方向上挑）
     const out = pts3.length > 2 ? new THREE.Vector3().fromArray(pts3[2]).sub(impactPos) : null;
-    fx.spawnMuzzle(from, dir, performance.now(), seed);
+    pendingMuzzles.push({ eid: s.shooter_eid, from, dir, seed });
     tracers.push({ mesh: fx.takeRibbon('tracer'), points: pts3, legEnds, arcEnds: legArcEnds(pts3),
       t0: s.t_fire, t1, shot: s, color, seed, impactPos, dir, out, head: from.clone(), hit: false });
     // 弹道光迹（逐段一条：折线在跳弹处拐弯）：段起点时刻起随弹头显现，弹头走完全程后
@@ -3553,6 +3554,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       mesh.visible = false;
       trajLines.push({ mesh, a, b, start: k === 0 ? s.t_fire : legEnds[k - 1], end: legEnds[k], t1, color });
     }
+  }
+  // 炮口火光 / 炮口烟放在炮管末端：回放记录的开火起点是火炮枢轴（在炮塔 / 炮盾里），直接放会被
+  // 车模挡住（2026-10-13 实机近景）。射手炮管要等本 tick 的 applyPose 摆完才是 T 时刻的姿态，
+  // 所以 spawnShot 只登记，这里再定位发射。只刷新射手一台车模的世界矩阵；没有可见车模
+  // （代理车 / 兵种图标 / 不可见）时用记录起点。
+  const _muzzleTip = new THREE.Vector3();
+  function flushMuzzles() {
+    for (const m of pendingMuzzles) {
+      const v = V.find((x) => x.def.eid === m.eid);
+      const parts = v && v.group.visible && v.glb && v.glb.visible ? v.glbParts : null;
+      if (parts) v.glb.updateMatrixWorld(true);
+      const at = parts ? muzzleTipOf(parts.gunNodes, m.from, m.dir, _muzzleTip) : m.from;
+      battleFx.spawnMuzzle(at, m.dir, performance.now(), m.seed);
+    }
+    pendingMuzzles.length = 0;
   }
   // 阵营色（唯一规则：按射手阵营 → green / red / white）。炮线用**亮色板**
   // （TRACER_FRIENDLY/ENEMY，见顶部注释）；未知阵营仍为白（unknown ≠ enemy）。
@@ -4212,6 +4228,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // can become visible again after coverage ended, so last frame's visibility is stale.
     for (const v of V) applyPose(v);
     suspSnap = false;   // pose has consumed the seek snap for this tick
+    flushMuzzles();     // 炮口特效要等本 tick 炮管摆到 T 时刻姿态后再定位
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
@@ -4418,6 +4435,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     tracers.length = 0;
     for (const tl of trajLines) battleFx.giveRibbon(tl.mesh);
     trajLines.length = 0;
+    pendingMuzzles.length = 0;
     clearTransients();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { BURST_SECS, FX_BUDGETS, TRAIL_FADE_SECS, TRAIL_HOLD_SECS, createBattleFx, trailOpacityAt } from './battleFx.js'
+import { BURST_SECS, FX_BUDGETS, TRAIL_FADE_SECS, TRAIL_HOLD_SECS, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
 
 const TIERS = ['low', 'mid', 'high', 'ultra']
 const CHUNK_TILE = 6
@@ -62,6 +62,50 @@ describe('trailOpacityAt 弹道光迹停留与淡出（回放秒）', () => {
     expect(trailOpacityAt(TRAIL_HOLD_SECS + TRAIL_FADE_SECS)).toBe(0)
     expect(trailOpacityAt(99)).toBe(0)
     expect(TRAIL_HOLD_SECS + TRAIL_FADE_SECS).toBe(4)
+  })
+})
+
+describe('muzzleTipOf 炮口定位（开火起点在火炮枢轴，火光要放到炮管末端）', () => {
+  // GLB 炮管：局部 +z 为炮管轴，炮尾伸进炮塔 0.6 m、炮口在枢轴前 4.4 m；外层组摆到世界弹道方向
+  function gun(pivot, dir, { breech = 0.6, muzzle = 4.4, mantlet = true } = {}) {
+    const node = new THREE.Group()
+    node.position.copy(pivot)
+    node.quaternion.setFromUnitVectors(at(0, 0, 1), dir)
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, breech + muzzle).translate(0, 0, (muzzle - breech) / 2))
+    node.add(barrel)
+    if (mantlet) node.add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.5)))   // 炮盾在枢轴处
+    node.updateMatrixWorld(true)
+    return node
+  }
+  const pivot = at(12, 3, -7)
+  const dir = at(1, 0.2, -0.5).normalize()
+
+  it('沿弹道推到炮管末端（炮盾等近处网格不影响）', () => {
+    const tip = muzzleTipOf([gun(pivot, dir)], pivot, dir)
+    expect(tip.distanceTo(pivot.clone().addScaledVector(dir, 4.4))).toBeLessThan(1e-4)
+  })
+
+  it('起点不在炮管轴上时仍落在弹道线上（光迹与火光对齐）', () => {
+    const from = pivot.clone().add(at(0, -0.3, 0.1))
+    const tip = muzzleTipOf([gun(pivot, dir)], from, dir)
+    const along = tip.clone().sub(from)
+    expect(along.clone().cross(dir).length()).toBeLessThan(1e-4)
+    expect(along.dot(dir)).toBeGreaterThan(4)
+  })
+
+  it('没有炮管节点、炮管与弹道对不上或长得离谱：回落到记录起点', () => {
+    const side = at(-dir.z, 0, dir.x).normalize()
+    expect(muzzleTipOf(null, pivot, dir).equals(pivot)).toBe(true)
+    expect(muzzleTipOf([], pivot, dir).equals(pivot)).toBe(true)
+    expect(muzzleTipOf([gun(pivot, side, { breech: 0.1, mantlet: false })], pivot, dir).equals(pivot)).toBe(true)
+    expect(muzzleTipOf([gun(pivot, dir, { muzzle: 40 })], pivot, dir).equals(pivot)).toBe(true)
+  })
+
+  it('写入 out 并返回它，不改动入参', () => {
+    const out = new THREE.Vector3()
+    const from = pivot.clone()
+    expect(muzzleTipOf([gun(pivot, dir)], from, dir, out)).toBe(out)
+    expect(from.equals(pivot)).toBe(true)
   })
 })
 
