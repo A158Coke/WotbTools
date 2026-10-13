@@ -49,6 +49,21 @@ function mountInspector(timeSec, locale = 'zh', trackObj = track()) {
 }
 
 describe('V2VehicleInspector', () => {
+  it('renders earned marks independently of replay time, and clears the badge on vehicle changes', async () => {
+    const w = mountInspector(120)
+    await w.setProps({ gunMarks: 2 })
+    expect(w.get('[data-test="v2-inspector-gun-marks"] [data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+    await w.setProps({ timeSec: 90 })
+    expect(w.get('[data-test="v2-inspector-gun-marks"]').text()).toContain('2 环')
+    await w.setProps({ track: { ...track(), accountId: 3003 }, gunMarks: null })
+    expect(w.get('[data-test="v2-inspector-gun-marks"]').text()).toContain('—')
+    expect(w.find('[data-test="v2-inspector-gun-marks"] svg').exists()).toBe(false)
+    await w.setProps({ gunMarks: 0 })
+    expect(w.get('[data-test="v2-inspector-gun-marks"]').text()).toContain('0 环')
+    expect(w.find('[data-test="v2-inspector-gun-marks"] svg').exists()).toBe(false)
+    w.unmount()
+  })
+
   it('renders anti-future-leak HP + last-known knowledge during hidden interval', () => {
     const w = mountInspector(120)
     const hp = w.get('[data-test="v2-inspector-hp"]').text()

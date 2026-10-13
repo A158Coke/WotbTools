@@ -142,9 +142,10 @@ export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = nu
  * 逐车投影 t 时刻的运行时状态。
  * @param {Array<{def:{eid:number, hp:Array<[number,number]>, max_hp:number, death_t:number|null}}>} vehicles
  * @param {number} t 回放时刻（秒）
+ * @param {Function|null} isDestroyed scene-owned canonical/fallback life resolver
  * @returns {Map<number, {hp:number, maxHp:number, dead:boolean}>} 按 eid
  */
-export function projectRoster(vehicles, t) {
+export function projectRoster(vehicles, t, isDestroyed = null) {
   const out = new Map();
   for (const v of vehicles || []) {
     const def = (v && v.def) || {};
@@ -152,7 +153,7 @@ export function projectRoster(vehicles, t) {
     out.set(def.eid, {
       hp: hpAtSeries(def.hp, def.max_hp, t),
       maxHp: Number(def.max_hp) || 0,
-      dead: def.death_t == null ? false : t >= def.death_t,
+      dead: isDestroyed ? isDestroyed(v, t) : Number.isFinite(def.death_t) && t >= def.death_t,
     });
   }
   return out;

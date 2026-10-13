@@ -6,6 +6,8 @@ import {
   makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, makeWaterMaterial,
   makeDecalMaterial, patchTankMaterial,
 } from '../src/scene/sceneryMaterials.js'
+import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
+import { FX_BUDGETS, createBattleFx } from '../src/scene/battleFx.js'
 
 window.__step = 'module-start'
 const log = []
@@ -58,6 +60,14 @@ async function groundMaterialCase() {
 const groundVar = { mat: null }
 try { groundVar.mat = await groundMaterialCase() } catch (e) { console.error('[gate] 地面着色器抽取失败:', e) }
 
+function destroyedTankMaterial(material) {
+  const root = new THREE.Group()
+  const mesh = new THREE.Mesh(geo(), material)
+  root.add(mesh)
+  applyTankDestroyedVisual(prepareTankDestroyedVisual(root), 1)
+  return mesh.material
+}
+
 const cases = [
   ['lightmapped', () => makeLightmappedMaterial(fakeMat(), T), geo()],
   ['lightmapped+detail(B1)', () => makeLightmappedMaterial(fakeMat(), T, null, { tex: T, scale: [3.6, 2.4] }), geo()],
@@ -72,6 +82,8 @@ const cases = [
   // 坦克 PBR：打了环境隔离补丁的 MeshStandardMaterial 必须能编译（补丁注入点在 three 的
   // lights_fragment_begin 之后；门禁场景里有半球光 ⇒ NUM_HEMI_LIGHTS>0 的真实编译路径）
   ['tank-pbr(ambient-isolated)', () => patchTankMaterial(fakeMat()), geo({ uv1: false })],
+  ['tank-pbr(destroyed-charcoal)', () => destroyedTankMaterial(fakeMat()), geo({ uv1: false })],
+  ['tank-proxy(destroyed-charcoal)', () => destroyedTankMaterial(new THREE.MeshLambertMaterial()), geo({ uv1: false })],
   ['blend-by-angle', () => makeBlendByAngleMaterial(fakeMat(), { bounds: [0, 1], power: 1, inversion: 0 }), geo({ uv1: false })],
   ['sky', () => makeSkyMaterial(fakeMat()), geo({ uv1: false })],
   ['billboard', () => makeBillboardMaterial(fakeMat({ color: new THREE.Color(1.77, 1.77, 1.77) })), geo({ corner: true })],
@@ -110,8 +122,30 @@ try {
     scene.add(mesh)
     built.push(name)
   }
+  // 战斗特效（battleFx）：两个实例化粒子批次 + 火星线段 + 曳光/光迹条带。自定义 shader 手挂
+  // logdepthbuf 代码块——线性深度与 ?logdepth=1 两种渲染器各编一遍（漏 <common> 只在后者炸）。
+  function battleFxScene() {
+    const fx = createBattleFx(FX_BUDGETS.ultra)
+    const at = (x, y, z) => new THREE.Vector3(x, y, z)
+    fx.spawnBurst(at(0, -1, 0), 0, 1)
+    fx.spawnMuzzle(at(-2, 0, 0), at(1, 0, 0), 0, 2)
+    fx.spawnImpact('pen', at(2, 0, 0), at(1, 0, 0), null, 0, 3)
+    fx.setTracer(fx.takeRibbon('tracer'), at(-3, 0.5, 0), at(3, 0.5, 0), 0x3ee08a)
+    fx.setTrail(fx.takeRibbon('trail'), at(-3, -0.5, 0), at(3, -0.5, 0), 0xff5a45, 1)
+    fx.frame(100, camera, 64, (emit) => { emit.wreck(0, -1, -2, 0, 5, 1, 4); emit.headGlow(at(3, 0.5, 0), 0x3ee08a) })
+    return fx
+  }
+  scene.add(battleFxScene().root)
+  built.push('battle-fx(glow/smoke/sparks/tracer/trail)')
   renderer.render(scene, camera)
-  const programs = (renderer.info.programs || []).map((p) => ({
+  const logRenderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true })
+  logRenderer.setSize(64, 64)
+  document.body.appendChild(logRenderer.domElement)
+  const fxScene = new THREE.Scene()
+  fxScene.add(battleFxScene().root)
+  logRenderer.render(fxScene, camera)
+  built.push('battle-fx(logdepth)')
+  const programs = [...(renderer.info.programs || []), ...(logRenderer.info.programs || [])].map((p) => ({
     name: p.name,
     diag: p.diagnostics ? {
       runnable: p.diagnostics.runnable,

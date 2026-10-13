@@ -477,3 +477,13 @@ describe('BattleTable 卡片模式（手机）', () => {
     expect(wrapper.get('[data-testid="player-card"]').element.tagName).toBe('DIV')
   })
 })
+
+it('shows the dedicated mark beside tank identity in desktop rows and mobile cards', async () => {
+  const wrapper = mountTable(makeBattle([{ team: 1, accountId: 7, cells: { nickname: 'You', tank_name: 'Maus', gun_marks: 2 } }]), [{ key: 'tank_name', num: false }])
+  expect(wrapper.get('td [data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+  await wrapper.setProps({ layout: 'cards' })
+  expect(wrapper.get('.card-subtitle [data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+  await wrapper.setProps({ battle: makeBattle([{ team: 1, accountId: 8, cells: { nickname: 'Other', tank_name: 'Tiger' } }]) })
+  expect(wrapper.find('.card-subtitle [data-gun-marks]').exists()).toBe(false)
+  wrapper.unmount()
+})

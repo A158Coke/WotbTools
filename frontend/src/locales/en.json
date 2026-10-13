@@ -619,6 +619,9 @@
     }
   },
   "player_labels": {
+    "gun_marks": "Gun Marks",
+    "gun_marks_count": "{count} Gun Marks",
+    "gun_marks_tip": "Earned marks on this vehicle, not its current exact percentile.",
     "nickname": "Player",
     "clan": "Clan",
     "tank_name": "Tank",
