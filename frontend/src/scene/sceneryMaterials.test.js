@@ -899,14 +899,17 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
   })
 
   it('特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放', () => {
-    // 回归：每发/每次命中/每次击毁新建 geometry+material 再 dispose → 交火高峰分配尖峰
+    // 回归：每发/每次命中/每次击毁新建 geometry+material 再 dispose → 交火高峰分配尖峰。
+    // 伤害飘字留在场景自己的池；炮线/光迹借还 battleFx 的条带池，命中/开火/爆炸写进
+    // battleFx 的粒子批次（资源唯一 owner 与释放见 battleFx.test.js）。
     expect(src).toMatch(/function fxTake\(key, make\)/)
     expect(src).toMatch(/function disposeFxPool\(\)/)
-    for (const key of ['tracer', 'traj', 'burst', 'floatDmg']) {
-      expect(src.includes(`fxGive('${key}'`)).toBe(true)
-    }
-    expect(src).toMatch(/fxGive\('impact-' \+ im\.kind/)
-    // 热路径不得再出现逐次 dispose（geometry/material 的释放只在 disposeFxPool 内）
+    expect(src.includes("fxGive('floatDmg'")).toBe(true)
+    expect(src).toMatch(/fx\.takeRibbon\('tracer'\)/)
+    expect(src).toMatch(/fx\.takeRibbon\('trail'\)/)
+    expect(src).toMatch(/battleFx\.giveRibbon\(tl\.mesh\);/)
+    expect(src).toMatch(/battleFx\?\.dispose\(\);/)
+    // 热路径不得再出现逐次 dispose（geometry/material 的释放只在会话结束时）
     const hot = src.slice(src.indexOf('function spawnShot'), src.indexOf('function updateBases'))
     expect(hot).not.toMatch(/\.geometry\.dispose\(\)/)
     expect(hot).not.toMatch(/\.material\.dispose\(\)/)
@@ -956,8 +959,10 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch', () => {
     // 回退后（记录位姿）：根 = 记录 yaw/pitch/roll 一次合成，无高度场参与
-    expect(src).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)\);/)
-    expect(src).toMatch(/v\.glb\.position\.copy\(v\.group\.position\);/)
+    // 纯姿态 poseGlbRig(v, t, pos)：每帧以 (T, 本帧位置) 调用；开火定位炮口时临时以 t_fire 调用再摆回
+    expect(src).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)\);/)
+    expect(src).toMatch(/v\.glb\.position\.copy\(pos\);/)
+    expect(src).toMatch(/poseGlbRig\(v, T, v\.group\.position\);\s*suspensionStep\(v\);/)
     const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
     expect(glb).not.toMatch(/terrainPitchRoll|clampHullAttitude|sampleHeight/)
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
@@ -971,7 +976,7 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(animate).toMatch(/const busy = PLAYING/)
     expect(animate).toMatch(/\|\| cameraMoved/)
     expect(animate).toMatch(/\|\| frameDirty/)
-    expect(animate).toMatch(/tracers\.length > 0 \|\| impacts\.length > 0 \|\| floatDmgs\.length > 0 \|\| burstFx\.length > 0/)
+    expect(animate).toMatch(/tracers\.length > 0 \|\| floatDmgs\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
     expect(animate).toMatch(/ghostByEid\.size > 0 \|\| flashByEid\.size > 0;/)
     expect(animate).toMatch(/if \(!busy\) return;/)
   })
@@ -984,7 +989,7 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
     // GLB 路径：记录 roll 取负进 poseFromYPR（客户端同构，见 glbRig.js 符号约定）
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)/)
     // 低模路径：同一口径的记录位姿（y=-yaw / x=pitch / z=-roll）
     expect(src).toMatch(/v\.group\.rotation\.y = -yawAt\(v, T\);/)
     expect(src).toMatch(/v\.group\.rotation\.x = hullPitchAt\(v, T\);/)
@@ -1000,18 +1005,10 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 })
 
 describe('炮线渲染守卫（阵营语义色直出）', () => {
-  it('炮线与全弹道轨迹线都跳过出屏曲线与曝光（toneMapped: false）', () => {
-    // 出屏曲线 / 曝光乘子（three 的 tone mapping 与 exposure）会改字面色——
-    // UI 语义色必须直出，否则深色阵营色被二次压暗（2026-10-05 实测"亮度限制"根因）。
-    // 注释在 src 里已被剥离：按材质实参断言（两处：飞行段 + 全弹道轨迹线）
-    expect(src).toMatch(/new THREE\.MeshBasicMaterial\(\{ color, toneMapped: false \}\)/)
-    expect(src).toMatch(/opacity: TRAJ_OPACITY, depthWrite: false,\s*toneMapped: false,/)
-  })
-
-  it('轨迹线透明度低于 0.5 会发灰：基准必须 ≥ 0.5（当前 0.6）', () => {
-    const m = src.match(/const TRAJ_OPACITY = ([0-9.]+);/)
-    expect(m).toBeTruthy()
-    expect(Number(m[1])).toBeGreaterThanOrEqual(0.5)
+  it('炮线与弹道光迹的外观只在 battleFx：场景按射手阵营色调用（直出、亮度、粗细层级由 battleFx.test.js 按真实材质锁定）', () => {
+    expect(src).toMatch(/battleFx\.setTracer\(tr\.mesh, _tpB, _tpA, tr\.color\);/)
+    expect(src).toMatch(/battleFx\.setTrail\(tl\.mesh, _tpA\.copy\(tl\.a\)\.lerp\(tl\.b, f0\), _tpB\.copy\(tl\.a\)\.lerp\(tl\.b, f\), tl\.color, opacity\);/)
+    expect(src).not.toMatch(/TRAJ_OPACITY|TRACER_RADIUS|TRAJ_RADIUS/)
   })
 
   it('飞行段时长 = 真实飞行时长（不得再有"最小显示时长"拖慢炮弹）', async () => {
@@ -1047,14 +1044,7 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
       [/SpriteMaterial\(\{[\s\S]{0,180}toneMapped: false/, '伤害飘字'],
     ]
     for (const [re, label] of sites) expect(src, label).toMatch(re)
-    // 弹着三处（IMPACT_WHITE）全部直出
-    // 弹着三处（IMPACT_WHITE）逐点检查：其后 160 字符内必须出现 toneMapped: false
-    //（不用正则字面量：转义层曾在写入时把控制字符变成真换行，2026-10-11）
-    let impactFree = 0
-    for (let i = src.indexOf('IMPACT_WHITE'); i !== -1; i = src.indexOf('IMPACT_WHITE', i + 1)) {
-      if (src.slice(i, i + 160).includes('toneMapped: false')) impactFree++
-    }
-    expect(impactFree).toBeGreaterThanOrEqual(3)
+    // 炮线 / 光迹 / 命中 / 开火 / 爆炸的材质在 battleFx：其 toneMapped=false 由 battleFx.test.js 按真实材质断言
   })
 
   it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
@@ -1083,13 +1073,6 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
     expect(src).toMatch(/if \(PERF\) perfFrame\(perfT1 - perfT0, performance\.now\(\) - perfT1\);/)
   })
 
-  it('炮线粗细：飞行段 ≥ 轨迹线（层级不变），且都不低于加粗后的下限', () => {
-    const tr = Number(src.match(/const TRACER_RADIUS = ([0-9.]+);/)?.[1])
-    const tj = Number(src.match(/const TRAJ_RADIUS = ([0-9.]+);/)?.[1])
-    expect(tr).toBeGreaterThanOrEqual(0.36)
-    expect(tj).toBeGreaterThanOrEqual(0.18)
-    expect(tr).toBeGreaterThan(tj)
-  })
 })
 
 describe('disposeSceneGroup —— 双图资源生命周期（评审 P2）', () => {
