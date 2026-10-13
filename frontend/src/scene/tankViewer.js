@@ -253,6 +253,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               vec2 sc = gl_FragCoord.xy / resolution;
               vec4 spacedData = texture2D(spacedArmorBuffer, sc);
               bool underSpaced = spacedData.a != 0.0;
+              bool gapRicochet = underSpaced && spacedData.g > 0.5;   // 首层间隙板跳弹（SPACED_FRAG 写 G）
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
 
@@ -271,7 +272,17 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               int contCls = 0;
               highp float contChance = 0.0;
               highp float rcDiag = 0.0;
-              if (!threeCal && mayRicochet) {
+              if (gapRicochet) {
+                // 首层间隙板跳弹：炮弹不再接触本主装甲（与点击链同结果）——像素渲染跳弹色；
+                // 续飞与主装甲跳弹同机（反射方向按平行板假设用本面法线；起点在本面 ≈ 间隙板
+                // 出射点，相差一个间隔距离，对续飞求交量级可忽略）。
+                penChance = 0.0; ricocheted = true;
+                if (rcMode >= 1) {
+                  contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
+                  if (contCls == 1) { penChance = contChance; ricocheted = false; contPen = true; }   // 续飞击穿→绿
+                  else if (contCls == 2) { ricocheted = false; }                                      // 续飞被挡→红
+                }
+              } else if (!threeCal && mayRicochet) {
                 penChance = 0.0; ricocheted = true;
                 // 跳弹续飞（GPU 求交）：反射线在打包碰撞几何上做出射段判定，
                 // 语义 = 点击判定跳弹后的 judgePenetration 二次判定（强制不跳弹）。
@@ -290,7 +301,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
                 bool twoCal = ratio > 2.0;
-                float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
+                // 转正只作用于首个装甲层：已有间隙板覆盖（= 已穿透首层）时不再转正——
+                // 与点击链 layerIndex>0 同规则（WG 语义，用户 2026-10-13 裁示）
+                float norm = underSpaced ? 0.0
+                  : (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization);
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
                 if (underSpaced) {
@@ -342,7 +356,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // ===== 穿透热力图：对齐 BlitzKit SpacedArmorScene（Armor/index.tsx useFrame）=====
         // spacedArmorScene 在【单次】gl.render 内按 renderOrder 排序：
         //   0 主装甲 omit(colorWrite:false, depthWrite:true，仅供 RT 遮挡)；
-        //   1-2 间隙甲 additive(R=thickness/penetration)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   1-2 间隙甲 additive(R=thickness/penetration, G=首层跳弹标志)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
         // 结果写入 RT，primaryArmorScene(renderOrder 1) 读 RT 着色到屏幕。
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
@@ -583,12 +597,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             void main() {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              // 首层全效应（跳弹 + 3×/2× overmatch + 转正）——与点击链 layer 0 同式
               bool threeCal = caliber > thickness * 3.0;
-              if (!threeCal && angle >= ricochet) { gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return; }
+              bool ricocheted = !threeCal && angle >= ricochet;
               bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
               float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
               float finalThick = thickness / cos(max(0.0, angle - norm));
-              gl_FragColor = vec4(finalThick / penetration, 0.0, 0.0, 1.0);
+              // R = 厚度/穿深（二层消耗数据：跳弹 = 1.0 全额消耗）；G = 首层跳弹标志——
+              // 屏幕侧（PBR_FRAG）据此把「间隙板跳弹」渲染成跳弹色，而不是算成「被挡」红
+              gl_FragColor = vec4(ricocheted ? 1.0 : finalThick / penetration,
+                                  ricocheted ? 1.0 : 0.0, 0.0, 1.0);
             }
         `;
         function spacedMaterial(thickness, penetration) {
