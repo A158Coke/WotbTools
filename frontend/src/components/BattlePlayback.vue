@@ -1443,11 +1443,6 @@ function suppressHpTransition() {
   }
 }
 
-function togglePlay() {
-  if (playing.value) pause()
-  else play()
-}
-
 /** 拖动进度条：按下即暂停，拖动中实时 seek，松开时若原先在播放则自动继续（与 3D 共用 usePlaybackTransport）。 */
 function dragStart() {
   transport.scrubStart()
@@ -1489,6 +1484,8 @@ const transport = usePlaybackTransport({
   play,
   pause,
   step,
+  isAtEnd: () => duration.value > 0 && currentTime.value >= duration.value,
+  restart: () => seek(0),
   isActive: () => props.active && lifecycleVisible.value,
 }, { keyboard: false })
 
@@ -2362,7 +2359,7 @@ const mapStyle = computed(() => ({
           :is-fullscreen="isFullscreen"
           :display-open="displayOpen"
           :format-clock="formatClock"
-          @toggle-play="togglePlay"
+          @toggle-play="transport.togglePlay()"
           @step="step"
           @set-speed="setSpeed"
           @toggle-fullscreen="toggleFullscreen"

@@ -35,6 +35,8 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -210,10 +212,25 @@ public class WebApiTest {
                 .andReturn().getResponse().getContentAsString();
     }
 
+    /**
+     * 本类测试共享同一个数据库且不按方法清理：先删掉该夹具回放（按 replay hash）已有的单场记录，
+     * 否则方法执行顺序会把「首次上传」变成重复上传（重复上传返回 already_recorded）。
+     */
+    private void clearHofRecordsOf(final Path replay) throws Exception {
+        final String hash = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(replay)));
+        final List<HallOfFameRecord> rows = hallOfFameRecordRepository.findAll().stream()
+                .filter(r -> hash.equals(r.getReplayHash()))
+                .toList();
+        hallOfFameRecordRepository.deleteAll(rows);
+        hallOfFameRecordRepository.flush();
+    }
+
     @Test
     void hofUploadPersistsReplayAndAllowsByteIdenticalDownload() throws Exception {
         // HoF 只接受随机战（arenaBonusType=1）；fixtures 含 CW 训练房，必须显式选随机战样本
         final Path replay = standardRandomFixture();
+        clearHofRecordsOf(replay);
         final String json = hofUpload(replay);
         final JsonNode n = om.readTree(json);
         assertEquals("ok", n.get("status").asText());
@@ -239,12 +256,14 @@ public class WebApiTest {
     @Test
     void hofUploadIdempotentForSameFile() throws Exception {
         final Path replay = standardRandomFixture();
-        hofUpload(replay);
+        clearHofRecordsOf(replay);
+        assertEquals("ok", om.readTree(hofUpload(replay)).get("status").asText());
         final long filesAfterFirst = Files.list(REPLAY_DIR)
                 .filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count();
 
+        // 同一场 + 同一文件：幂等（不新增记录 / 文件），但明确告知已在名人堂中，不冒充新上榜
         final String json2 = hofUpload(replay);
-        assertEquals("ok", om.readTree(json2).get("status").asText());
+        assertEquals("already_recorded", om.readTree(json2).get("status").asText());
         final long filesAfterSecond = Files.list(REPLAY_DIR)
                 .filter(p -> p.getFileName().toString().endsWith(".wotbreplay")).count();
         assertEquals(filesAfterFirst, filesAfterSecond, "同文件二次上传不得新增磁盘文件");

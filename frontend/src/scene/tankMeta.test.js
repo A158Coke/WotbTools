@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import messages from '../locales/feature-messages.json'
-import { armorPartLabel, armorResultLabel } from './tankMeta.js'
+import { armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from './tankMeta.js'
 
-const { t } = createI18n({ legacy: false, locale: 'zh', messages }).global
+const { t, te } = createI18n({ legacy: false, locale: 'zh', messages }).global
 
 describe('armor analysis display labels', () => {
   it.each([
@@ -27,5 +27,20 @@ describe('armor analysis display labels', () => {
     expect(armorResultLabel('UNKNOWN', t)).toBe('UNKNOWN')
     expect(armorPartLabel(null, t)).toBe('')
     expect(armorResultLabel(null, t)).toBe('')
+  })
+})
+
+describe('tank nation / type display labels (Tankopedia + armor viewer)', () => {
+  it('maps raw tank data values to localized names instead of echoing them', () => {
+    expect(tankTypeLabel(t, te, 'heavyTank')).toBe('重坦')
+    expect(tankTypeLabel(t, te, 'mediumTank')).toBe('中坦')
+    expect(tankTypeLabel(t, te, 'AT-SPG')).not.toBe('AT-SPG')
+    expect(tankNationLabel(t, te, 'germany')).toBe('德国')
+    expect(tankNationLabel(t, te, 'china')).toBe('中国')
+  })
+
+  it('falls back to the raw value only when no translation exists', () => {
+    expect(tankTypeLabel(t, te, 'unknownClass')).toBe('unknownClass')
+    expect(tankNationLabel(t, te, 'atlantis')).toBe('atlantis')
   })
 })

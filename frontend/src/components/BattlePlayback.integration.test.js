@@ -2193,6 +2193,8 @@ describe('Blocker 修复回归（review B1-1 / B1-2 / B1-3 / B2）', () => {
     ds.vehicles[0].damageLosses = [
       { fromSec: 12, toSec: 14, hpLoss: 200, attackerAccountId: 2001, attackerReliable: true, damageEventCount: 1 },
     ]
+    // 真实数据里 DamageLoss 来自两条可信读数，HP 条必然同时下降；承受伤害按 HP 条计
+    ds.vehicles[0].healthTransitions.push({ timeSec: 14, currentHp: 1300, knowledge: 'CURRENT', displayCapacityHp: 1500, relativeFull: false, source: 'EXACT_BATTLE_EVENT', confidence: 'HIGH' })
     const wrapper = mountPlayback(overview, 18, ds)
     await flushPromises()
     await wrapper.find('[data-test="pb-marker-1001"]').trigger('click')

@@ -16,7 +16,7 @@ import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
-import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum } from '../scene/tankMeta.js'
+import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
 import {
@@ -31,7 +31,6 @@ const VIEW = 'agent-tankopedia'
 const PAGE_SIZE = 48
 const SEARCH_DEBOUNCE_MS = 250
 /** 车种枚举 → i18n 键（AT-SPG 含连字符，不直接作键） */
-const TYPE_SLUG = { lightTank: 'light', mediumTank: 'medium', heavyTank: 'heavy', 'AT-SPG': 'td' }
 
 const { t, te } = useI18n()
 const { isCompact } = useBreakpoint()
@@ -64,14 +63,8 @@ onBeforeUnmount(() => clearTimeout(searchTimer))
 const filterState = computed(() => ({ ...urlState.value, q: searchText.value }))
 
 // ---------- 显示名（审计 3D-16：不直接显示 china / heavyTank 等原始值） ----------
-function nationLabel(nation) {
-  const key = `agentTanks.nations.${nation}`
-  return te(key) ? t(key) : nation
-}
-function typeLabel(type) {
-  const key = `agentTanks.types.${TYPE_SLUG[type] || type}`
-  return te(key) ? t(key) : type
-}
+const nationLabel = nation => tankNationLabel(t, te, nation)
+const typeLabel = type => tankTypeLabel(t, te, type)
 const tierLabel = tier => t('agentTanks.tier_n', { tier })
 
 // ---------- 列表态 ----------
