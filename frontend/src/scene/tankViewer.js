@@ -64,6 +64,48 @@ export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30,
     return Math.max(minFovDeg, 2 * Math.atan(Math.tan(baseFovDeg * Math.PI / 360) / k) * 180 / Math.PI);
 }
 
+/**
+ * 世界镜像校正（数据入口一次性变换：x/yaw/roll 取反）。
+ * 回放坐标系(BigWorld)与 three.js 右手系在水平面上手性相反：直接渲染左右舷互换。
+ * 镜像 = x 取反、yaw/roll 取反（pitch 不变——绕 x 轴旋转在 x 镜像下不变），
+ * 模型网格不动，经共轭旋转自动呈正确手性。
+ *
+ * 纯数据变换（无闭包依赖），导出供单测做**镜像不变性**回归：弹道折线
+ * ball_a + via[] + ball_b 必须整链同变——只镜像端点会把镜像后的端点与原坐标系
+ * 中间点混算（review 2026-10-13：1615 第 3 发 405.959668m 被算成 497.83m，
+ * 衰减后基础穿深少 3.16mm；点击距离与热力图距离共用该长度源）。
+ */
+export function mirrorShotData(s) {
+        if (s.__worldMirrored) return;
+        s.__worldMirrored = true;
+        const negX = (a) => { if (Array.isArray(a) && a.length >= 3) a[0] = -a[0]; };
+        const negAng = (a) => { if (Array.isArray(a) && a.length >= 3) { a[0] = -a[0]; a[2] = -a[2]; } };
+        negX(s.ball_a); negX(s.ball_b); negX(s.launch_velocity);
+    if (Array.isArray(s.via)) for (const p of s.via) negX(p);   // 折线中间点同链镜像（review：只镜像端点会混坐标系）
+        negX(s.shooter_pos); negX(s.target_pos);
+        negX(s.aim_point); negX(s.launch_point_rel);
+        // 炮塔相对角时间线：透传不取反（存游戏系原始值）。
+        // 镜像场景的【节点旋转角】须取负（−rel，镜像翻转旋转方向），
+        // 该取反在使用点完成——同初始摆放 turretDegT = 镜像炮塔角−镜像车体角 = −rel
+        const mirTL = (tl) => { if (Array.isArray(tl)) for (const t of tl) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; } };
+        mirTL(s.target_render_timeline); mirTL(s.shooter_render_timeline);
+        negAng(s.shooter_ang); negAng(s.target_ang);
+        if (typeof s.shooter_turret_yaw === 'number') s.shooter_turret_yaw = -s.shooter_turret_yaw;
+        if (typeof s.target_turret_yaw === 'number') s.target_turret_yaw = -s.target_turret_yaw;
+        for (const t of (s.tick_samples || [])) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; }
+        for (const t of (s.shooter_tick_samples || [])) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; }
+        if (s.terrain_impact) { negX(s.terrain_impact.impact_point); negX(s.terrain_impact.terminal_dir); }
+        if (s.shooter_aim && typeof s.shooter_aim.turret_rel_yaw === 'number') {
+            s.shooter_aim.turret_rel_yaw = -s.shooter_aim.turret_rel_yaw;
+        }
+        // 渲染锚点与时间线同规则镜像：pos.x / yaw / roll 取反（pitch 不变）。
+        // 此前漏取反 roll——初始摆放（锚点）与滑块 dt=0（时间线，已取反）在
+        // 有侧倾的移动目标上姿态差一个侧倾符号，拖动滑块才"恢复"。
+        if (s.target_render) { negX(s.target_render.pos); negAng(s.target_render.ang); }
+        if (s.shooter_render) { negX(s.shooter_render.pos); negAng(s.shooter_render.ang); }
+    
+}
+
 export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         resetViewerGlobals();
         const L = {
@@ -152,6 +194,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let shooterShells = [], shooterCaliber = 120;
         let selectedShell = null;
         let penetrationMode = false;   // 实时穿透热力图模式开关（animate/切弹/按钮共用）
+        // 射击复现 world 总览（命中/脱靶【同置】）——dolly-zoom 补偿的门控。
+        // 不能复用 __worldPenMode：它只在命中路径置位（脱靶在弹道标注后提前返回），
+        // 且还兼管判定坐标转换（review 2026-10-13：脱靶回放曾误套单车补偿致落点裁出视锥）。
+        let worldOverviewMode = false;
         let collisionMode = false;     // 碰撞模型显示开关（按钮与热力图退出恢复共用）
         let moduleMeshes = [];
 
@@ -1335,6 +1381,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     poseDirty: ricochetPoseDirty,
                     reason: ricochetPackReason,
                     judgments: judgmentCount,
+                    // 相机/视图诊断：门禁据此断言 dolly 补偿门控（world 总览——命中/脱靶
+                    // 同规则——必须保持原生 50°；静态单车检视才允许补偿）
+                    view: {
+                        fov: camera.fov,
+                        near: camera.near,
+                        worldOverview: worldOverviewMode,
+                        cameraDistance: camera.position.distanceTo(controls.target),
+                    },
                 };
             },
             simulate(bouncePos, reflDir) {
@@ -2319,7 +2373,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     const ta = s.target_ang || [0, 0, 0];
                     // ===== world=1 模式：双模型世界坐标渲染 =====
                     const isWorld = true;   // 世界模式 = 射击复现主视图（旧装甲查看器主视图已删除，world=1 参数兼容但不再需要）
-                    if (isWorld) mirrorShotData(s);   // 函数声明提升，定义见下
+                    if (isWorld) mirrorShotData(s);   // 模块级纯函数（定义见文件头）
                     // ===== 命中冲击姿态滤波（必须在 mirror【之后】构造）=====
                     // 实测命中时刻 type10 姿态含冲击晃动（0.1s 内 roll 突变 ~12°），弹丸命中的是
                     // 冲击【前】车体 → 命中 tick(dt≈0) 的 pitch/roll 用最近 dt<0 采样替代（yaw 保留）。
@@ -2338,40 +2392,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     const taF = [ (ta[0]||0),
                         (hitAtt ? hitAtt.pitch : (ta[1]||0)),
                         (hitAtt ? hitAtt.roll : (ta[2]||0)) ];
-                    // ===== 世界镜像校正（数据入口一次性变换：x/yaw/roll 取反）=====
-                    // 回放坐标系(BigWorld)与 three.js 右手系在水平面上手性相反：直接渲染左右舷互换。
-                    // 镜像 = x 取反、yaw/roll 取反（pitch 不变——绕 x 轴旋转在 x 镜像下不变），
-                    // 模型网格不动，经共轭旋转自动呈正确手性。
-                    function mirrorShotData(s) {
-                        if (s.__worldMirrored) return;
-                        s.__worldMirrored = true;
-                        const negX = (a) => { if (Array.isArray(a) && a.length >= 3) a[0] = -a[0]; };
-                        const negAng = (a) => { if (Array.isArray(a) && a.length >= 3) { a[0] = -a[0]; a[2] = -a[2]; } };
-                        negX(s.ball_a); negX(s.ball_b); negX(s.launch_velocity);
-                        negX(s.shooter_pos); negX(s.target_pos);
-                        negX(s.aim_point); negX(s.launch_point_rel);
-                        // 炮塔相对角时间线：透传不取反（存游戏系原始值）。
-                        // 镜像场景的【节点旋转角】须取负（−rel，镜像翻转旋转方向），
-                        // 该取反在使用点完成——同初始摆放 turretDegT = 镜像炮塔角−镜像车体角 = −rel
-                        const mirTL = (tl) => { if (Array.isArray(tl)) for (const t of tl) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; } };
-                        mirTL(s.target_render_timeline); mirTL(s.shooter_render_timeline);
-                        negAng(s.shooter_ang); negAng(s.target_ang);
-                        if (typeof s.shooter_turret_yaw === 'number') s.shooter_turret_yaw = -s.shooter_turret_yaw;
-                        if (typeof s.target_turret_yaw === 'number') s.target_turret_yaw = -s.target_turret_yaw;
-                        for (const t of (s.tick_samples || [])) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; }
-                        for (const t of (s.shooter_tick_samples || [])) { negX(t.pos); t.yaw = -t.yaw; t.roll = -t.roll; }
-                        if (s.terrain_impact) { negX(s.terrain_impact.impact_point); negX(s.terrain_impact.terminal_dir); }
-                        if (s.shooter_aim && typeof s.shooter_aim.turret_rel_yaw === 'number') {
-                            s.shooter_aim.turret_rel_yaw = -s.shooter_aim.turret_rel_yaw;
-                        }
-                        // 渲染锚点与时间线同规则镜像：pos.x / yaw / roll 取反（pitch 不变）。
-                        // 此前漏取反 roll——初始摆放（锚点）与滑块 dt=0（时间线，已取反）在
-                        // 有侧倾的移动目标上姿态差一个侧倾符号，拖动滑块才"恢复"。
-                        if (s.target_render) { negX(s.target_render.pos); negAng(s.target_render.ang); }
-                        if (s.shooter_render) { negX(s.shooter_render.pos); negAng(s.shooter_render.ang); }
-                    }
+                    // ===== 世界镜像校正 =====
+                    // 模块级纯函数（导出供单测镜像不变性回归）；定义见文件头 mirrorShotData。
+
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
+                     worldOverviewMode = false;   // 命中/脱靶分支各自置位（见下）
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
                          // 弹道长度源（射击复现的"交战距离"= 服务器解码弹道折线总长）
@@ -2589,6 +2615,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // terrain_impact（method 0x1b）提供精确落点与弹道末段起点。
                         const isMiss = !s.target_name;
                         if (isMiss) {
+                            // 脱靶同样是 world 总览：dolly 补偿必须关闭（review：此前只在命中
+                            // 路径置 __worldPenMode，MISS 提前返回漏置 → 远距落点裁出视锥）
+                            worldOverviewMode = true;
                             const sTS2 = s.shooter_tick_samples || [];
                             const sHit2 = sTS2.reduce((a, b) =>
                                 (Math.abs(b.dt) < Math.abs(a.dt)) ? b : a, sTS2[0]);
@@ -3298,6 +3327,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         // 真实炮口射线 → doPenetrationCheck → /api/penetrate。worldPenMode 开启后
                         // check 内部把世界系交点/射线经 worldToLocal 换算成模型局部米制，结果与相对模式同源。
                         window.__worldPenMode = true;
+                        worldOverviewMode = true;   // 命中 world 同置（补偿门控，review 2026-10-13）
                         window.__shotIsHit = true;   // 0 armor hits 时 doPenetrationCheck 走报错分支
                         // ===== tick 位移方向标注（默认开启，"移动方向"复选框可关）=====
                         // 车体底部平面（type10 高度 +0.1m）：青线 = 相邻 tick 位移路径；同一基点并排
@@ -5225,8 +5255,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             rafId = requestAnimationFrame(animate);
             controls.update();
             // dolly-zoom：静态单车检视远距拉远时收窄 FOV（车体视角尺寸不变）；
-            // 两车 world 总览传 false → k=1 幂等原生（review P2：总览不适用单车补偿）
-            applyLongRangeCompensation(!window.__worldPenMode);
+            // world 总览（命中/脱靶同置 worldOverviewMode）传 false → k=1 幂等原生
+            // （review P2：总览不适用单车补偿；MISS 路径同规则）
+            applyLongRangeCompensation(!worldOverviewMode);
             trackCameraMotion();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {
