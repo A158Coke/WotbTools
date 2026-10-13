@@ -28,6 +28,14 @@ export function errorCategory(search) {
   return error
 }
 
+/** Presence only: the SDK owns state, nonce and PKCE validation. */
+export function hasAuthReturn(location = window.location) {
+  return [location.search, location.hash.slice(1)].some(value => {
+    const params = new URLSearchParams(value)
+    return params.has('state') && (params.has('code') || params.has('error'))
+  })
+}
+
 /** URL 参数存在性布尔（只读存在性，永不复制参数值）。 */
 export function returnParamFacts(search) {
   const params = new URLSearchParams(search || '')
