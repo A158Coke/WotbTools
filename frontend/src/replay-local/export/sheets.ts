@@ -61,6 +61,7 @@ const PLAYER_PRESENTATION: Readonly<Record<string, TitleWidth>> = {
   n_penetrations_received: ['被击穿', 7],
   n_enemies_damaged: ['击伤', 9],
   rank: ['军阶', 6],
+  gun_marks: ['环线', 7],
 }
 
 /** 汇总表 presentation（Java `AggregateSheets.SUMMARY_PRESENTATION`）。 */

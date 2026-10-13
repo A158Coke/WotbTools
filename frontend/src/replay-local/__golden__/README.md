@@ -16,7 +16,12 @@
 中间件，而是由 `agentWasmNode.ts` 现场运行 `deploy/agent/source.json` 锁定版本的上游 WASM 解析 fixture 回放（产物版本与
 pin 不符即失败）；AI 投影的永久 golden 在 `common/fixtures/ai-projection/`（Java 侧 `ClientAiProjectionParityTest` 读取）。
 
-Java 已删除：`java-*` 文件只读、不再重新生成。上游 pin 升级后（在 `frontend/` 下运行）：
+Java 已删除：`java-*` 文件只读、不再重新生成。客户端新增字段须在 parity 测试中显式扩展期望值：
+环线 `gun_marks` 按单场 `sourceName` 和玩家账号从 `wasm-results.json` 取值，不修改历史 JSON；
+AI golden 同时包含 `toBattleFacts` 的 Battle，新增事实字段也必须重生成，并确认差异仅为新增字段、
+`projection` 和引擎 provenance 不变。
+
+上游 pin 升级后（在 `frontend/` 下运行）：
 `bash ../scripts/fetch-agent-wasm.sh` 拉取 pin 版本 → `node scripts/export-wasm-results.mjs` 重新导出
 `wasm-results.json`，`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/` 重生成 AI 投影 golden，
 再跑全部 replay-local 测试与 `ClientAiProjectionParityTest`，确认仍与 Java 基线一致。

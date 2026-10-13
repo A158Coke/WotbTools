@@ -8,7 +8,7 @@ import { createTankopedia } from '../compute/tankopedia.js'
 import { validateBattlePlaybackDataset } from '../../api/contract-runtime.js'
 import { fixtureFacets, requireFixtures } from '../__golden__/agentWasmNode.js'
 import { createReloadStateResolver } from '../../scene/reloadBar.js'
-import { resolveReplayClock } from '../canonical/facts.js'
+import { buildCanonicalReplayFacts, entityFirstSeenByAccount, resolveReplayClock } from '../canonical/facts.js'
 
 const facets = vi.hoisted(() => ({
   parseAgentResultFromBytes: vi.fn(),
@@ -58,6 +58,9 @@ describe('parseLocalPlayback', () => {
     expect(facets.parseAgentPlaybackFromBytes).not.toHaveBeenCalled()
     expect(out.clock?.startRaw).toBe(resolveReplayClock(f.aiReview!.battle.periods, f.result, f.playback!.meta.duration)?.startRaw)
     expect(out.dataset).toBeTruthy()
+    const facts = buildCanonicalReplayFacts({ result: f.result, aiReview: f.aiReview, streamEndRaw: f.playback.meta.duration })!
+    expect(out.entityStartsByAccount).toEqual(entityFirstSeenByAccount(facts))
+    expect(structuredClone(out.entityStartsByAccount)).toEqual(out.entityStartsByAccount)
   })
 
   it('AiReview 入口失败 → 整体失败（fail closed：血量 / 归属 / 终态证据缺失时不降级成弱证据回放）', async () => {

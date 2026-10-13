@@ -682,3 +682,30 @@ function laterEvidence(current: TerminalEvidence, incoming: TerminalEvidence): T
   if (terminal.kind === 'DROWNING' || terminal.kind === 'DEATH_SENTINEL_FFFD') return terminal
   return incoming.order >= current.order ? incoming : current
 }
+
+/** Canonical first identity evidence, in battle-relative seconds; unknown starts remain explicit. */
+export function entityFirstSeenByAccount(facts: CanonicalReplayFacts): Map<number, Map<number, number | null>> {
+  return new Map([...facts.entityIdsByAccount].map(([accountId, ids]) => [accountId, new Map(ids.map(id => {
+    const starts = [facts.poses.get(id)?.t[0], facts.hpSamples.get(id)?.[0]?.t, facts.observation.get(id)?.[0]?.fromSec]
+      .filter((t): t is number => typeof t === 'number' && Number.isFinite(t))
+    return [id, starts.length ? Math.min(...starts) : null]
+  }))]))
+}
+
+/** Most recently entered entity at t; numeric IDs never determine order. Ties/missing evidence stay unknown. */
+export function activeEntityAt(firstSeen: ReadonlyMap<number, number | null>, t: number): number | null {
+  if (!Number.isFinite(t)) return null
+  let latest = -Infinity
+  for (const first of firstSeen.values()) {
+    if (first === null || !Number.isFinite(first)) return null
+    if (first <= t + EPS) latest = Math.max(latest, first)
+  }
+  let owner: number | null = null
+  for (const [id, first] of firstSeen) {
+    if (first !== null && first <= t + EPS && Math.abs(first - latest) <= EPS) {
+      if (owner !== null) return null
+      owner = id
+    }
+  }
+  return owner
+}

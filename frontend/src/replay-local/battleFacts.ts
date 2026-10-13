@@ -4,7 +4,8 @@
  *
  * 服务器没有 parser：这里是客户端唯一的「解析结果 → 计算输入」边界。每个字段的口径都与 Java
  * 逐字段对齐过（`tools/parity`，`__golden__/java-battles.json` 回归），缺字段一律向上游要，不在这里
- * 启发式推导。仅有的几条规则都是 Java 自身的投影规则，原样搬过来：
+ * 启发式推导。gunMarks 为客户端新增的回放成就字段，直接保留上游 gun_marks，未知不归零。
+ * 旧字段的几条规则是 Java 自身的投影规则，原样搬过来：
  * - 结算缺省的计数字段（承受伤害 / 胜利点 / 经验 / 银币）按 0——Java 用 `firstLong(..., 0)` 读取；
  * - 时长：结算整秒 > 0 优先，否则 meta 口径；都封顶 420 秒；
  * - 无胜方（上游 0）→ null；
@@ -12,6 +13,7 @@
  */
 import type { AgentBattleResult, AgentResultPlayer } from '../api/agent-replay-facets.js'
 import type { Battle, PlayerResult } from './compute/index.js'
+import { gunMarksCount } from '../utils/gunMarks.js'
 
 /** 结算时长封顶（与 Java ReplayParser 一致：异常长的时长不进入派生指标） */
 const MAX_DURATION_SEC = 420
@@ -58,6 +60,7 @@ function playerFacts(p: AgentResultPlayer, durationS: number | null): PlayerResu
     clan: p.clan_tag ?? '',
     prebattleGroupId: p.platoon_id ?? null,
     rank: p.rank ?? null,
+    gunMarks: gunMarksCount(p.gun_marks),
     settlementResultEntityId: p.result_id ?? 0,
     settlementLifeTimeSec: lifeTime,
     settlementKillerResultEntityId: p.killer_id ?? null,
