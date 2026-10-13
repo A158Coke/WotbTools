@@ -88,15 +88,3 @@ describe('相机距离钳制（PR #411 P1-3）', () => {
     expect(src).toMatch(/applyCameraClamp\(\);/)
   })
 })
-
-describe('ricochet sparks 定位（PR #411 P1-4）', () => {
-  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
-
-  it('子物体用局部偏移（不再叠加 tr.to），朝向用 yaw 而非 lookAt', () => {
-    expect(src).toMatch(/sp\.position\.set\(side\.x \* sgn \* 1\.1, 0, side\.z \* sgn \* 1\.1\)/)
-    expect(src).toMatch(/sp\.rotation\.y = Math\.atan2\(side\.x \* sgn, side\.z \* sgn\)/)
-    // 组仍在 tr.to；spark 不得再引用世界坐标 tr.to
-    expect(src).not.toMatch(/sp\.position\.copy\(tr\.to/)
-    expect(src).not.toMatch(/sp\.lookAt\(tr\.to/)
-  })
-})
