@@ -71,9 +71,34 @@ describe('armor adjacent-shot teardown ownership', () => {
 // FOV 50°→6.4238°，受击锚点 NDC-y 0.317→2.633（出视锥）。
 describe('dolly-zoom world-overview scope guard', () => {
   const kernel = read('../scene/tankViewer.js')
-  it('animate 按 __worldPenMode 门控；关闭态以 k=1 幂等还原原生', () => {
-    expect(kernel).toMatch(/applyLongRangeCompensation\(!window\.__worldPenMode\)/)
+  it('animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态以 k=1 幂等还原原生', () => {
+    expect(kernel).toMatch(/applyLongRangeCompensation\(!worldOverviewMode\)/)
+    expect(kernel).not.toMatch(/applyLongRangeCompensation\(!window\.__worldPenMode\)/)   // 旧门控仅命中置位，MISS 漏置
     expect(kernel).toMatch(/const k = enabled \? Math\.max\(1, d \/ DOLLY_REF_DIST\) : 1;/)
+  })
+  it('worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）', () => {
+    // 脱靶分支入口置位（结构锚点：isMiss 分支首行）——此前 MISS 在弹道标注后提前返回，漏置
+    const missStart = kernel.indexOf('const isMiss = !s.target_name;')
+    expect(missStart).toBeGreaterThan(-1)
+    expect(kernel.slice(missStart, missStart + 400)).toContain('worldOverviewMode = true;')
+    // 命中 world 路径同置（紧随穿透判定标志）
+    expect(kernel).toMatch(/window\.__worldPenMode = true;\s*worldOverviewMode = true;/)
+    // 每发进入射击复现重置
+    expect(kernel).toMatch(/window\.__worldPenMode = false;\s*worldOverviewMode = false;/)
+  })
+  it('mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）', async () => {
+    const { mirrorShotData } = await import('../scene/tankViewer.js')
+    const { shotBallisticLength } = await import('../scene/agentData.js')
+    const shot = {
+      ball_a: [12, 1.5, 4], ball_b: [-90, 0.4, 30],
+      via: [[180, 22, -6], [-3.5, 8, 12]],
+    }
+    const before = shotBallisticLength(shot)
+    expect(before).toBeGreaterThan(0)
+    mirrorShotData(shot)
+    expect(shot.via[0][0]).toBeCloseTo(-180, 9)   // via 确实随镜像（review：曾只镜像端点）
+    expect(shot.via[1][0]).toBeCloseTo(3.5, 9)
+    expect(shotBallisticLength(shot)).toBeCloseTo(before, 9)
   })
   it('dollyZoomFov 纯函数与视锥锚点回归', async () => {
     const { dollyZoomFov } = await import('../scene/tankViewer.js')
