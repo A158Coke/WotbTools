@@ -1651,7 +1651,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const far = (typeof farRaw === 'number' && farRaw > 0) ? farRaw : near;
             const isHE = shellTypeOf(selectedShell) === 'he';
             const { penMul } = equipmentCoeffs();
-            const origin = gunMuzzleWorld || camera.position;
+            const origin = camera.position;
             const v = new THREE.Vector3();
             const apply = (scene) => {
                 if (!scene) return;
@@ -4824,11 +4824,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
             // 命中距离（米）：射击复现 = 真实炮口(method29 launchPoint) → 命中点，
             // × worldMetersPerUnit 换算回真实米数；其他模式回退炮管几何/相机距离。
-            const dist = (__shotRayOrigin
-                ? point.distanceTo(__shotRayOrigin)
-                : gunMuzzleWorld
-                ? point.distanceTo(gunMuzzleWorld)
-                : point.distanceTo(camera.position)) * (worldMetersPerUnit || 1);
+            // 交战距离（米）= 相机 → 命中点（用户裁定：判定与距离衰减统一以相机为
+            // 射击起点，含射击复现初始判定），× worldMetersPerUnit 换算真实米数。
+            const dist = point.distanceTo(camera.position) * (worldMetersPerUnit || 1);
 
             const shellType = shellTypeOf(selectedShell);
             const pen = selectedShell ? (selectedShell.penetration || 0) : 0;
