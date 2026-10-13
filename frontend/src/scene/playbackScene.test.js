@@ -1628,6 +1628,71 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
   })
 
+  it('attributes one death to the re-entry entity, keeps old/future entities alive, and restores visibility on rewind', async () => {
+    const { api, frames, vehicles, store, overlay } = await load([
+      vehicle({ eid: 20, coverage: [42, 48], death_t: 52 }),
+      vehicle({ eid: 10, pos: [100, 0, 0], coverage: [49, 51], death_t: 52, is_author: false }),
+      vehicle({ eid: 30, coverage: [60, 90], death_t: 52, is_author: false }),
+    ], canonicalFor([deadTrack()]))
+    const [old, active, future] = vehicles
+    api.seekTime(47)
+    expect(vehicles.map(v => v.group.visible)).toEqual([true, false, false])
+    api.seekTime(51.9)
+    expect(vehicles.map(v => v.group.visible)).toEqual([false, false, false])
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(activeBursts()).toHaveLength(1)
+    expect(activeBursts()[0].position.x).toBe(active.group.position.x)
+    expect(vehicles.map(v => v.group.visible)).toEqual([false, true, false])
+    expect(overlay.setLabels.mock.calls.at(-1)[0].map(row => row.destroyed)).toEqual([false, true, false])
+    expect(store.roster.team1.map(row => row.dead)).toEqual([false, true, false])
+    api.seekTime(53)
+    expect([old.proxyVisual.amount, active.proxyVisual.amount, future.proxyVisual.amount]).toEqual([0, 1, 0])
+    api.seekTime(61)
+    expect(future.proxyVisual.amount).toBe(0)
+    expect(old.group.visible).toBe(false)
+    api.seekTime(47)
+    expect(activeBursts()).toHaveLength(0)
+    expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, 0, 0])
+    expect(vehicles.map(v => v.group.visible)).toEqual([true, false, false])
+    // Unknown exact death time still uses the authoritative transition for entity identity.
+    store.playbackSession.canonical = canonicalFor([deadTrack(null)])
+    api.setBattleClock(store.playbackSession.canonical.clock)
+    api.seekTime(53)
+    expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, 1, 0])
+  })
+
+  it('attributes delayed death confirmation by the actual death time, not the later transition time', async () => {
+    const track = { accountId: 77, lifeTransitions: [{ timeSec: 20, lifeState: 'DESTROYED', destroyedKnownAtSec: 10 }] }
+    const { api, frames, vehicles } = await load([
+      vehicle({ eid: 20, pos: [100, 0, 0], coverage: [42, 51] }),
+      vehicle({ eid: 10, pos: [200, 0, 0], coverage: [60, 90], is_author: false }),
+    ], canonicalFor([track]))
+    api.seekTime(61.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(activeBursts()).toHaveLength(1)
+    expect(activeBursts()[0].position.x).toBe(vehicles[0].group.position.x)
+    expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([1, 0])
+  })
+
+  it('withholds account death and bursts when re-entry ownership is ambiguous', async () => {
+    const { api, frames, vehicles } = await load([
+      vehicle({ eid: 10, coverage: [42, 51] }),
+      vehicle({ eid: 20, coverage: [42, 51], is_author: false }),
+    ], canonicalFor([deadTrack()]))
+    api.seekTime(51.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(activeBursts()).toHaveLength(0)
+    api.seekTime(53)
+    expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, 0])
+    expect(vehicles.map(v => v.group.visible)).toEqual([false, false])
+  })
+
   it('late canonical only schedules future explosions; HP zero/unknown life and canonical ALIVE do not explode', async () => {
     const { api, frames, store } = await load([vehicle({ death_t: null, hp: [[42, 0]] })])
     api.seekTime(60)

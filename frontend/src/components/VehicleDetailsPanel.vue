@@ -121,8 +121,10 @@ const floatingStyle = computed(() => (floating.value && pos.value
       <img :src="props.selectedPortraitUrl" :alt="props.selectedState.vehicle.tankName || String(props.selectedState.vehicle.tankId)" />
     </div>
     <dl class="pb-sb-grid">
-      <dt>{{ $t('player_labels.gun_marks') }}</dt>
-      <dd data-test="pb-sb-gun-marks"><GunMarksBadge :marks="gunMarks" show-count /></dd>
+      <template v-if="!props.selectedTrack">
+        <dt>{{ $t('player_labels.gun_marks') }}</dt>
+        <dd data-test="pb-sb-gun-marks"><GunMarksBadge :marks="gunMarks" show-count /></dd>
+      </template>
       <dt>{{ $t('recon.map.playback.team') }}</dt>
       <dd>
         <span data-test="pb-sb-team">{{ $t(props.selectedState.vehicle.team === 1 ? 'agentReplay.team1' : props.selectedState.vehicle.team === 2 ? 'agentReplay.team2' : 'agentReplay.teamUnknown') }}</span>
@@ -171,6 +173,7 @@ const floatingStyle = computed(() => (floating.value && pos.value
       data-test="pb-sb-v2-inspector"
       :track="props.selectedTrack"
       :time-sec="props.currentTime"
+      :gun-marks="gunMarks"
     />
     <template v-if="props.selDamageLog?.length">
       <div class="pb-sb-section">{{ $t('recon.map.playback.damage_log') }}</div>
