@@ -57,7 +57,7 @@ vi.mock('three', async (importOriginal) => {
 })
 
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
-import { FX_BUDGETS } from './battleFx.js'
+import { BURST_SECS, FX_BUDGETS } from './battleFx.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
  *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
@@ -1578,7 +1578,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     frames.shift()()
     expect(activeBursts()).toHaveLength(1)
     expect(smoke.geometry.instanceCount).toBeGreaterThan(0)  // smoke outlives the fireball
-    now += 2000
+    now += BURST_SECS * 1000 - 1500
     frames.shift()()
     expect(activeBursts()).toHaveLength(0)
     expect(glow.visible).toBe(false)

@@ -49,7 +49,7 @@ export const FX_BUDGETS = Object.freeze({
 })
 
 /** 击毁爆炸壁钟寿命（秒）。3D 专用，不再由 2D 的 `BURST_MS` 推导。 */
-export const BURST_SECS = 3.4
+export const BURST_SECS = 4.2
 /** 弹道光迹：弹头走完全程后停留 / 淡出（回放秒）。 */
 export const TRAIL_HOLD_SECS = 2.5
 export const TRAIL_FADE_SECS = 1.5
@@ -225,7 +225,7 @@ void main() {
 // ---------- 颜色（three 线性空间；shader 末尾转输出色彩空间） ----------
 const C = (hex) => new THREE.Color(hex)
 const HOT = C(0xfff4dc), YEL = C(0xffc864), ORA = C(0xff7f2a), RED = C(0xa6381a)
-const LIT = C(0x7a4526), SOOT = C(0x29241f), ASH = C(0x5d5851)
+const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d)
 const DUST0 = C(0x8c7c63), DUST1 = C(0x6f685e)
 const SPARK0 = C(0xfff0c0), SPARK1 = C(0xff6a1a)
 const FLASH = C(0xfff0cc), GROUND_GLOW = C(0xff8a3a), MUZZLE = C(0xffc777), WHITE = C(0xffffff)
@@ -422,9 +422,9 @@ export function createBattleFx(budget) {
 
   function emitBurst(e, a) {
     const { x, y, z, seed } = e
-    if (a < 0.16) {
-      const s = 7 + 6 * easeOut(a / 0.1)
-      glow.push(x, y + 1.7, z, 0.4, s, s, STAR_TILE, FLASH, (1 - a / 0.16) ** 2)
+    if (a < 0.22) {
+      const s = 9 + 8 * easeOut(a / 0.12)
+      glow.push(x, y + 1.7, z, 0.4, s, s, STAR_TILE, FLASH, (1 - a / 0.22) ** 2)
     }
     if (a < 0.8) {
       // 贴地光斑：压扁的大光晕，模拟爆炸照亮地面
@@ -433,11 +433,11 @@ export function createBattleFx(budget) {
     }
     const nFire = budget.burstFire, fireScale = (MAX_FIRE / nFire) ** 0.35
     for (let i = 0; i < nFire; i++) {
-      const t = a - (i === 0 ? 0 : 0.01 + rnd(seed, i, 0) * 0.07), life = t / 0.85
+      const t = a - (i === 0 ? 0 : 0.01 + rnd(seed, i, 0) * 0.07), life = t / 1.0
       if (t < 0 || life >= 1) continue
       const th = rnd(seed, i, 1) * TAU, el = Math.asin(0.15 + rnd(seed, i, 2) * 0.85)
       const grow = easeOut(t / 0.3), r = 0.25 + 1.9 * grow
-      const size = (1.5 + rnd(seed, i, 4) * 1.3) * fireScale * (0.45 + 1.75 * grow) * (1 + 0.25 * life)
+      const size = (2.0 + rnd(seed, i, 4) * 1.7) * fireScale * (0.45 + 1.75 * grow) * (1 + 0.25 * life)
       if (life < 0.1) _c.lerpColors(HOT, YEL, life / 0.1)
       else if (life < 0.45) _c.lerpColors(YEL, ORA, (life - 0.1) / 0.35)
       else _c.lerpColors(ORA, RED, (life - 0.45) / 0.55)
@@ -455,7 +455,7 @@ export function createBattleFx(budget) {
       if (t < 0 || life >= 1) continue
       const th = rnd(seed, i, 11) * TAU, el = Math.asin(0.15 + rnd(seed, i, 12) * 0.85)
       const spread = 0.5 + 1.5 * easeOut(life)
-      const size = (1.5 + rnd(seed, i, 13) + t * (1.4 + rnd(seed, i, 14) * 1.2)) * smokeScale
+      const size = (2.0 + rnd(seed, i, 13) * 1.2 + t * (1.8 + rnd(seed, i, 14) * 1.4)) * smokeScale
       if (t < 0.35) _c.lerpColors(LIT, SOOT, t / 0.35)
       else _c.lerpColors(SOOT, ASH, (t - 0.35) / (L - 0.35))
       smoke.push(
@@ -463,7 +463,7 @@ export function createBattleFx(budget) {
         y + 1.6 + t * (1.6 + rnd(seed, i, 15) * 1.5) * (1 - 0.3 * life),
         z + Math.sin(th) * Math.cos(el) * spread,
         rnd(seed, i, 16) * TAU + (rnd(seed, i, 17) - 0.5) * 0.5 * t,
-        size, size * 1.08, SOOT_TILES[i % 2], _c, Math.min(1, t / 0.15) * 0.72 * (1 - life) ** 1.3)
+        size, size * 1.08, SOOT_TILES[i % 2], _c, Math.min(1, t / 0.15) * 0.95 * (1 - life) ** 0.9)
     }
     const nDust = budget.burstDust
     for (let i = 0; i < nDust; i++) {
@@ -493,7 +493,7 @@ export function createBattleFx(budget) {
     if (a < 3.4) {
       const fade = 1 - smooth((a - 2.6) / 0.8)
       for (let i = 0; i < budget.burstDebris; i++) {
-        const th = rnd(seed, i, 40) * TAU, h = 2.5 + rnd(seed, i, 41) * 6, size = 0.2 + rnd(seed, i, 42) * 0.35
+        const th = rnd(seed, i, 40) * TAU, h = 2.5 + rnd(seed, i, 41) * 6, size = 0.3 + rnd(seed, i, 42) * 0.45
         const vy0 = 4 + rnd(seed, i, 43) * 7
         const tHit = (vy0 + Math.sqrt(vy0 * vy0 + 2 * G * 1.5)) / G
         const t = Math.min(a, tHit)
@@ -529,7 +529,7 @@ export function createBattleFx(budget) {
         const s = 0.7 + 2.6 * easeOut(m / 1.4)
         smoke.push(x + (dx * fwd + sx * lat) * d, y + dy * fwd * d + up * d + m * 0.4, z + (dz * fwd + sz * lat) * d,
           rnd(seed, i, 14) * TAU + m * 0.3, s, s, SOOT_TILES[i % 2], MUZZLE_SMOKE,
-          Math.min(1, m / 0.04) * 0.42 * (1 - life) ** 1.5)
+          Math.min(1, m / 0.04) * 0.55 * (1 - life) ** 1.3)
       }
     }
   }
@@ -552,7 +552,7 @@ export function createBattleFx(budget) {
     }
     const smokeSecs = IMPACT_SMOKE_SECS[kind]
     const nSmoke = kind === 'ricochet' ? Math.ceil(budget.impactSmoke / 2) : budget.impactSmoke
-    const peak = kind === 'pen' ? 0.62 : kind === 'nonpen' ? 0.5 : 0.35
+    const peak = kind === 'pen' ? 0.8 : kind === 'nonpen' ? 0.65 : 0.45
     for (let i = 0; i < nSmoke; i++) {
       const t = a - (0.03 + rnd(seed, i, 10) * 0.12), life = t / smokeSecs
       if (t < 0 || life >= 1) continue
@@ -607,11 +607,11 @@ export function createBattleFx(budget) {
         const ph = (phase * 0.2 + i / n + offset) % 1, age = ph * 5
         const lx = (rnd(seed, i, 51) - 0.5) * 0.8 + age * (0.7 + rnd(seed, i, 52) * 0.6) * 0.7
         const lz = -1.6 + (rnd(seed, i, 53) - 0.5) * 0.8 + age * 0.25
-        const size = 1.0 + ph * 4.4
+        const size = 1.4 + ph * 5.5
         _c.lerpColors(SOOT, ASH, ph)
         smoke.push(x + lx * cos + lz * sin, y + 1.7 + ph * 11, z - lx * sin + lz * cos,
           i * 2.39996323 + ph * 0.9, size, size * 1.1, SOOT_TILES[i % 2], _c,
-          ramp * smooth(ph / 0.12) * (1 - ph) ** 1.6 * 0.55)
+          ramp * smooth(ph / 0.12) * (1 - ph) ** 1.3 * 0.85)
       }
     }
     if (budget.wreckEmbers) {
