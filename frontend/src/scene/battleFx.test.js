@@ -187,7 +187,9 @@ describe('createBattleFx 粒子批次', () => {
     fx.frame(20, camera(), 720)
     const glow = meshNamed(fx, 'battle-fx-glow')
     expect(glow.geometry.instanceCount).toBe(FX_BUDGETS.low.capacity)
-    expect(glow.geometry.attributes.iA.array[0]).toBeCloseTo(-100.2)   // 第一颗 = 命中火光（沿来弹方向退 0.2 m）
+    // 第一颗 = 命中火光：沿来弹方向退 0.2 m（远镜头下随屏幕尺寸下限放大，最多 3 倍）
+    expect(glow.geometry.attributes.iA.array[0]).toBeLessThan(-100.1)
+    expect(glow.geometry.attributes.iA.array[0]).toBeGreaterThan(-100.7)
     expect(meshNamed(fx, 'battle-fx-smoke').geometry.instanceCount).toBeLessThanOrEqual(FX_BUDGETS.low.capacity)
   })
 
@@ -221,20 +223,41 @@ describe('createBattleFx 粒子批次', () => {
       fx.spawnImpact(kind, at(0, 2, 0), at(1, 0, 0), out, 0, 4)
       return fx
     }
+    const close = camera([0, 4, 8])   // 近距离：命中特效保持世界尺寸（屏幕下限不触发）
     const pen = run('pen')
-    pen.frame(500, camera(), 720)
+    pen.frame(500, close, 720)
     const penGlow = instances(meshNamed(pen, 'battle-fx-glow'))
     expect(penGlow.some((p) => near(p.w, 0.9))).toBe(true)   // 余火仍在
     const nonpen = run('nonpen')
-    nonpen.frame(500, camera(), 720)
+    nonpen.frame(500, close, 720)
     expect(instances(meshNamed(nonpen, 'battle-fx-glow')).some((p) => near(p.w, 0.6))).toBe(false)   // 0.4 s 已灭
     const ric = run('ricochet', at(0, 0, 1))
-    ric.frame(150, camera(), 720)
-    const heads = instances(meshNamed(ric, 'battle-fx-glow')).filter((p) => near(p.w, 0.28))
+    ric.frame(150, close, 720)
+    const heads = instances(meshNamed(ric, 'battle-fx-glow')).filter((p) => near(p.w, 0.36))
     expect(heads.length).toBeGreaterThan(0)
     expect(heads.every((p) => p.z > 0.5)).toBe(true)
     expect(() => run('miss')).not.toThrow()
     expect(run('miss').active()).toBe(false)
+  })
+
+  it('命中特效有屏幕尺寸下限：镜头拉远时等比放大（最多 3 倍），近处保持世界尺寸', () => {
+    const shot = (camPos) => {
+      const fx = createBattleFx(FX_BUDGETS.high)
+      fx.spawnImpact('nonpen', at(0, 2, 0), at(1, 0, 0), null, 0, 4)
+      fx.frame(1, camera(camPos), 720)
+      const flash = Math.max(...instances(meshNamed(fx, 'battle-fx-glow')).map((p) => p.w))
+      fx.frame(400, camera(camPos), 720)
+      const smoke = Math.max(...instances(meshNamed(fx, 'battle-fx-smoke')).map((p) => p.w))
+      fx.dispose()
+      return { flash, smoke }
+    }
+    const pxPerM = (dist) => 720 / (dist * 2 * Math.tan(THREE.MathUtils.degToRad(55) / 2))
+    const close = shot([0, 4, 8]), app = shot([0, 20, 40]), far = shot([0, 300, 600])
+    // 应用最近缩放距离量级（~44 m）：火光约 30 px，而不是世界尺寸下的十几像素
+    expect(app.flash * pxPerM(Math.hypot(18, 40))).toBeGreaterThan(28)
+    expect(close.flash * pxPerM(Math.hypot(2, 8))).toBeGreaterThan(app.flash * pxPerM(Math.hypot(18, 40)))
+    expect(far.flash / close.flash).toBeCloseTo(3, 4)
+    expect(far.smoke / close.smoke).toBeCloseTo(3, 4)
   })
 
   it('壁钟寿命到期自动移除；clearTransients 立即清空且不补播', () => {
