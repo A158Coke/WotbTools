@@ -74,6 +74,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             selectShooter: 'Choose firing tank', selectTarget: 'Choose target tank',
             allTiers: 'All tiers', allNations: 'All nations', allTypes: 'All types',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
+            armorStateLabel: 'Armor state',
+            armorStateDefaultSuffix: ' (default)',
+            armorStateAutoTitle: 'Replay-detected (armor state at impact)',
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
@@ -1497,6 +1500,68 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
             updateHeatmapThickness();
             refreshPenetrationResolution();
+            // [flicker-diag 临时诊断，勿提交] 每帧采样可控板 clone 的可见性/世界位，
+            // 位移突变（>5cm）与重建/翻面事件入 window.__flickerLog
+            window.__flickerLog = window.__flickerLog || [];
+            (function startFlickerSampler() {
+                if (window.__flickerSamplerOn) return;
+                window.__flickerSamplerOn = true;
+                let prev = null;
+                const tick = () => {
+                    try {
+                        const sample = {};
+                        const grab = (scene, tag) => {
+                            if (!scene) return;
+                            scene.traverse(function(node) {
+                                const key = node.userData && node.userData._armorStateKey;
+                                if (!key) return;
+                                const e = node.matrixWorld.elements;
+                                const rec = {
+                                    v: node.visible ? 1 : 0,
+                                    p: [e[12].toFixed(2), e[13].toFixed(2), e[14].toFixed(2)].join(','),
+                                };
+                                sample[tag + ':' + key] = rec;
+                            });
+                        };
+                        grab(primaryArmorScene, 'P');
+                        grab(spacedArmorScene, 'S');
+                        const t = performance.now();
+                        let visCount = 0;
+                        const countVis = (scene) => { if (scene) scene.traverse(function(node) {
+                            if (node.isMesh && node.visible && node.userData._armorStateKey) visCount++;
+                        }); };
+                        countVis(primaryArmorScene); countVis(spacedArmorScene);
+                        const entry = { t: Math.round(t), frame: sample, rc: {
+                            enabled: rcUniforms.rcEnabled.value, dirty: ricochetPoseDirty,
+                            pack: !!ricochetPack, reason: ricochetPackReason,
+                        }, vis: visCount, calls: renderer.info.render.calls,
+                           tris: renderer.info.render.triangles };
+                        if (prev) {
+                            for (const k of Object.keys(sample)) {
+                                const a = prev.frame[k]; const b = sample[k];
+                                if (!a || !b) { entry['jump:' + k] = { from: a || null, to: b || null }; continue; }
+                                if (a.v !== b.v) { entry['vis:' + k] = { from: a.v, to: b.v }; continue; }
+                                if (a.p !== b.p) {
+                                    const dx = Math.abs(parseFloat(a.p.split(',')[0]) - parseFloat(b.p.split(',')[0]));
+                                    const dy = Math.abs(parseFloat(a.p.split(',')[1]) - parseFloat(b.p.split(',')[1]));
+                                    if (dx > 0.05 || dy > 0.05) entry['mv:' + k] = { from: a.p, to: b.p };
+                                }
+                            }
+                            for (const k of Object.keys(prev.frame)) {
+                                if (!sample[k]) entry['gone:' + k] = prev.frame[k];
+                            }
+                        }
+                        const hasEvent = Object.keys(entry).some(k => k.startsWith('jump:') || k.startsWith('gone:') || k.startsWith('vis:'));
+                        if (hasEvent || entry.rc.dirty || (prev && prev.rc.pack !== entry.rc.pack)) {
+                            window.__flickerLog.push(entry);
+                            if (window.__flickerLog.length > 800) window.__flickerLog.shift();
+                        }
+                        prev = entry;
+                    } catch (e) { /* 诊断采样不影响主流程 */ }
+                    requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            })();
         }
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
@@ -1686,7 +1751,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             for (const st of armorStateDecl.states) {
                 const opt = document.createElement('option');
                 opt.value = String(st.id);
-                opt.textContent = '状态 ' + st.id + (st.default ? '（默认）' : '');
+                opt.textContent = L.armorStateLabel + ' ' + st.id + (st.default ? L.armorStateDefaultSuffix : '');
                 opt.title = st.armors.join(' + ');
                 sel.appendChild(opt);
             }
@@ -1737,6 +1802,19 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     node.visible = !node.userData.configHidden;
                     node.userData.armorSection =
                         spacedLike ? 'spaced' : m[1];
+                    // 同步当前视图材质（review P2-2）：deco 分支没初始化材质，
+                    // 新激活板沿用原 GLTF 材质——普通模式不透明、碰撞模式不上厚度色。
+                    // 热力图模式下装甲本体走透明覆盖层（着色在 clone 场景），同普通模式。
+                    node.material = collisionMode
+                        ? new THREE.MeshStandardMaterial({
+                            color: thicknessToColor(node.userData.armorThickness),
+                            metalness: 0.4, roughness: 0.6,
+                            transparent: true, opacity: 0.95, depthWrite: true,
+                        })
+                        : new THREE.MeshStandardMaterial({
+                            color: 0x444444, metalness: 0.3, roughness: 0.8,
+                            transparent: true, opacity: 0, depthWrite: false,
+                        });
                 }
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
@@ -1746,7 +1824,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // 全在 .matrix 里）——不清回来就是「炮塔回默认位」（热力图 clones 经
             // syncCloneMatrices 如实镜像该错误姿态，即击穿视图闪烁后回默认的现象）。
             alignArmorModules();
-            updateTurretGun(currentTurretDeg, currentGunDeg);
+            // 重放**最近实际应用**的姿态（回放弹着态会设非零炮塔/炮管角——
+            // currentTurretDeg 只跟踪手动瞄准/URL，用它会把回放姿态打回 0°，review P2-1）
+            updateTurretGun(lastAppliedTurretDeg, lastAppliedGunDeg);
         }
 
         /** 切换到声明内的状态号；∉ 声明集的值拒绝（消费方门控的最后防线）。 */
@@ -2177,7 +2257,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                      if (stSel) {
                          if (Number.isInteger(s.target_armor_state)) {
                              stSel.disabled = true;
-                             stSel.title = '回放自动判定（弹着时刻 armorsStates）';
+                             stSel.title = L.armorStateAutoTitle;
                          } else if (armorStateDecl) {
                              stSel.disabled = false;
                              stSel.title = '';
@@ -4261,10 +4341,15 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             }
         }
 
+        // 最近一次实际应用的炮塔/炮管角（回放姿态、滑块、手动瞄准三种来源统一记录）——
+        // 装甲状态应用重放姿态时的权威取值（review：回放设非零角后切态不得回 0）
+        let lastAppliedTurretDeg = 0, lastAppliedGunDeg = 0;
         function updateTurretGun(turretDeg, gunDeg) {
             if (!tankModel) return;
             if (!origMatrices) collectTurretGunNodes();
             if (!origMatrices) return;
+            lastAppliedTurretDeg = turretDeg;
+            lastAppliedGunDeg = gunDeg;
             ricochetPoseDirty = true;   // 炮塔/炮管旋转 → 世界系网格重建（下一帧类通道前）
 
             // 旋转枢轴 = models.pb 原点链（alignArmorModules 写入：track+turret / track+turret+gun）
@@ -4329,7 +4414,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
                     for (const [node, orig] of armorOrigMatrices) {
                         const name = node.name || '';
-                        if (/^gun_\d+_armor_/.test(name)) {
+                        // 正则容忍动态装甲的 state_XX 段（gun_01_state_00_armor_11 等）——
+                        // 否则状态炮盾走 mAT（仅炮塔旋转）漏掉炮管俯仰 mAG（review P2-3）
+                        if (/^gun_\d+(?:_state_\d+)?_armor_/.test(name)) {
                             const m = mAG.clone();
                             m.multiply(orig);
                             node.matrix.copy(m);
