@@ -8,10 +8,12 @@
  * game-version 数据的前端 vendored 常量（仅 6 车 / ~2KB，不值得走 COS 资产包渠道）。
  *
  * 运行时语义（上游 PlaybackData / AiReviewFacet 的 additive 字段 `armor_states`）：
- * Vehicle 实体 type=7 prop0 载荷 1 字节 = 当前状态号；值域 = 本表声明的 state id 集。
+ * Vehicle 实体 propID 16 `armorsStates` 载荷 = `[u8 n][n × u32 LE 状态描述符]`
+ * （n = 状态数；描述符仅 bit0/bit16，bit16 = 该状态当前激活），解码 = 激活组下标
+ * = 本表声明的 state id。时间线首样本 = 入视野 create 表 materialize 快照（含
+ * "入视野前已切换"的正确值）；更早区间用 `default: true` 的 state 兜底。
  * 每态 `armors` = 该态**激活**的 `<part>.<armor_N>` 集合——可切换板中未列出的 = 隐藏；
- * 从未出现在任何 state 的装甲板 = 常驻板，不受状态控制。初始态 = `default: true` 的
- * state（不经状态流，回放的 armor_states 时间线首样本之前用它）。
+ * 从未出现在任何 state 的装甲板 = 常驻板，不受状态控制。
  *
  * 消费方门控（fail-closed）：armor_states 时间线里的 state 值 ∉ 本表状态集的更新丢弃。
  */
