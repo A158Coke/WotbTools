@@ -1564,7 +1564,10 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(burst.children.filter(object => object.isMesh)).toHaveLength(0)
     expect(flames[0].position.y).toBeGreaterThan(1.5)
     expect(flames[0].material.blending).toBe(THREE.AdditiveBlending)
-    for (const object of burst.children) expect(object.material.depthTest).toBe(true)
+    for (const object of burst.children) {
+      expect(object.material.depthTest).toBe(true)
+      expect(object.material.toneMapped).toBe(false)  // per-map exposure must not alter flame/spark colours
+    }
     expect(sparks.geometry.attributes.position.count).toBe(12)
     const map = smoke[0].material.map
     expect(smoke.every(puff => puff.material.map === map)).toBe(true)
