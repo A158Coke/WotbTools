@@ -257,17 +257,24 @@ WotBTools
 
 ## 4i. 动态装甲 armorsStates（`armor_states[]` / `shots[].target_armor_state`，PlaybackData additive；上游待发版，pin 待随下一 Release 更新）
 
-- **协议定案**（上游 2026-10-13，Oth71_Titan_Strife 实战样本行为学闭环）：Vehicle 实体
-  **type=7 prop0、载荷 1 字节 u8 = 动态装甲当前状态号**。客户端数据源为车辆 XML
+- **协议定案**（上游 2026-10-13 两回放交叉实证：0954/1615 样本闭环）：Vehicle 实体
+  **propID 16 `armorsStates`，载荷 = `[u8 n][n × u32 LE 状态描述符]`**（n = 该车声明的
+  状态数；描述符仅 bit0/bit16 两位，**bit16 = 该状态当前激活**）——解码 = 激活组下标。
+  初始态经 ON_ENTITY_CREATE(type=5) 属性表 materialize（含"入视野前已切换"的快照）；
+  此后 `armorMover` 消耗品每次使用伴随恰一条 prop16 更新。静态车 create 表 prop16 为
+  空表（n=0）。前作"type=7 prop0 u8"已被证伪（prop0 = 全车皆有的交替布尔，与装甲状态
+  无关；反例存档见上游 `RawArmorStateTrack` 文档）。客户端数据源为车辆 XML
   `<extras><armorsStatesController>`（全库仅 **6 辆**：T54MS 9073 / Charioteer_T 12657 /
   Titan Strife 17777 / JagdPanther II Titan 22385 / AMX 50 100 Titan 24945 /
-  Sturmfeur HW 8305）；`armorMover` 消耗品每次使用产生一条更新。propID 0 ↔
-  `Vehicle::armorsStates` 的命名映射为行为学归因（def 注册表反汇编未定证）。
+  Sturmfeur HW 8305）。
 - `armor_states[]`: `{eid, t: number[], state: number[]}`（列式，两列等长，按 eid 升序）。
   **skip-when-empty**：静态装甲车（绝大多数）字段整体省略——旧产物与静态场零扰动。
 - `shots[].target_armor_state?: number` —— 受击方**弹着时刻**（`t_fire + flight_secs`）
-  的状态号；`None`/缺省 = 受击车无状态流或弹着早于首次切换（**初态域**——初态是声明里
-  `default: true` 的 state，不经状态流，不猜）。
+  的状态号；`None`/缺省 = 受击车无状态流或弹着早于首个样本（**快照前区间**——用声明里
+  `default: true` 的 state 兜底，不猜）。
+- **回归锚点**（上游测试 `armor_state_timeline.rs`，1615 样本）：首弹（t_fire 68.95，
+  战报"未击穿"）受击车在 [57.44, 79.95) = state1——该弹命中板 `hull.armor_15` 仅存于
+  state1；79.95s 切回后各弹 = state0。修复前 facet 误报全 0（prop0 误判所致）。
 - **消费方门控（fail-closed）**：状态语义的唯一权威 = 上游 `data/armor_states.json`
   （前端 vendored 于 `frontend/src/data/armorStates.js`）：每态 `armors` = 该态**激活**的
   `<part>.<armor_N>` 集合；可控板 = 各态并集；`state ∉ 声明集` 的更新丢弃；时间线缺省 →
