@@ -1005,7 +1005,7 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 describe('炮线渲染守卫（阵营语义色直出）', () => {
   it('炮线与弹道光迹的外观只在 battleFx：场景按射手阵营色调用（直出、亮度、粗细层级由 battleFx.test.js 按真实材质锁定）', () => {
     expect(src).toMatch(/battleFx\.setTracer\(tr\.mesh, _tpB, _tpA, tr\.color\);/)
-    expect(src).toMatch(/battleFx\.setTrail\(tl\.mesh, tl\.a, _tpB\.copy\(tl\.a\)\.lerp\(tl\.b, f\), tl\.color, opacity\);/)
+    expect(src).toMatch(/battleFx\.setTrail\(tl\.mesh, _tpA\.copy\(tl\.a\)\.lerp\(tl\.b, f0\), _tpB\.copy\(tl\.a\)\.lerp\(tl\.b, f\), tl\.color, opacity\);/)
     expect(src).not.toMatch(/TRAJ_OPACITY|TRACER_RADIUS|TRAJ_RADIUS/)
   })
 
