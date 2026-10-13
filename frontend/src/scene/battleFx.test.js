@@ -187,9 +187,9 @@ describe('createBattleFx 粒子批次', () => {
     fx.frame(20, camera(), 720)
     const glow = meshNamed(fx, 'battle-fx-glow')
     expect(glow.geometry.instanceCount).toBe(FX_BUDGETS.low.capacity)
-    // 第一颗 = 命中火光：沿来弹方向退 0.2 m（远镜头下随屏幕尺寸下限放大，最多 3 倍）
-    expect(glow.geometry.attributes.iA.array[0]).toBeLessThan(-100.1)
-    expect(glow.geometry.attributes.iA.array[0]).toBeGreaterThan(-100.7)
+    // 第一颗 = 命中火光（在命中点附近；爆炸都在 x ≥ 0）
+    const [fx0, fy0, fz0] = glow.geometry.attributes.iA.array
+    expect(Math.hypot(fx0 + 100, fy0 - 1.5, fz0)).toBeLessThan(6)
     expect(meshNamed(fx, 'battle-fx-smoke').geometry.instanceCount).toBeLessThanOrEqual(FX_BUDGETS.low.capacity)
   })
 
@@ -258,6 +258,22 @@ describe('createBattleFx 粒子批次', () => {
     expect(close.flash * pxPerM(Math.hypot(2, 8))).toBeGreaterThan(app.flash * pxPerM(Math.hypot(18, 40)))
     expect(far.flash / close.flash).toBeCloseTo(3, 4)
     expect(far.smoke / close.smoke).toBeCloseTo(3, 4)
+  })
+
+  it('命中火光与烟沿视线朝相机挪出车体：屏幕位置不变，离相机近半个粒子尺寸', () => {
+    const cam = camera([0, 4, 8])
+    const fx = createBattleFx(FX_BUDGETS.high)
+    fx.spawnImpact('pen', at(0, 2, 0), at(1, 0, 0), null, 0, 4)
+    fx.frame(1, cam, 720)
+    const flash = instances(meshNamed(fx, 'battle-fx-glow'))[0]
+    const drawn = at(flash.x, flash.y, flash.z), anchor = at(-0.2, 2, 0)   // 命中点沿来弹方向退 0.2 m
+    const ndcA = drawn.clone().project(cam), ndcB = anchor.clone().project(cam)   // 只比屏幕 xy（深度本来就变近）
+    expect(Math.hypot(ndcA.x - ndcB.x, ndcA.y - ndcB.y)).toBeLessThan(1e-4)
+    expect(anchor.distanceTo(cam.position) - drawn.distanceTo(cam.position)).toBeCloseTo(flash.w / 2, 4)
+    fx.frame(400, cam, 720)
+    for (const puff of instances(meshNamed(fx, 'battle-fx-smoke'))) {
+      expect(at(puff.x, puff.y, puff.z).distanceTo(cam.position)).toBeLessThan(cam.position.distanceTo(at(0, 2, 0)))
+    }
   })
 
   it('壁钟寿命到期自动移除；clearTransients 立即清空且不补播', () => {

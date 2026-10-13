@@ -574,6 +574,16 @@ export function createBattleFx(budget) {
     }
   }
 
+  // 命中点就在车体表面：面向相机的火光 / 烟四边形有一半插进车体，被深度测试裁掉（实机近景里
+  // 暗烟完全看不见、火光被切掉一块）。沿视线朝相机挪半个粒子尺寸：屏幕位置不变，只把四边形
+  // 从车体里拉出来。
+  function pushTowardCamera(batch, x, y, z, rot, w, h, tile, color, alpha) {
+    const vx = camPos.x - x, vy = camPos.y - y, vz = camPos.z - z
+    const d = Math.hypot(vx, vy, vz)
+    const k = d > 1e-3 ? Math.min(0.5 * w, 0.5 * d) / d : 0
+    batch.push(x + vx * k, y + vy * k, z + vz * k, rot, w, h, tile, color, alpha)
+  }
+
   function emitImpact(e, a) {
     const { kind, x, y, z, dx, dy, dz, seed } = e
     // 屏幕尺寸下限（见 IMPACT_MIN_PX）：zoom ≥ 1 时大小与散布等比放大
@@ -584,14 +594,14 @@ export function createBattleFx(budget) {
       const f = a / flashSecs
       const s = (kind === 'pen' ? 1.5 : kind === 'nonpen' ? 1.1 : 0.9) * (1 + 0.5 * easeOut(f * 2)) * zoom
       _c.lerpColors(HOT, kind === 'pen' ? ORA : YEL, f)
-      glow.push(x - dx * 0.2 * zoom, y - dy * 0.2 * zoom, z - dz * 0.2 * zoom, rnd(seed, 0, 0) * TAU, s, s,
-        FLAME_TILES[0], _c, (1 - f) ** 1.5)
+      pushTowardCamera(glow, x - dx * 0.2 * zoom, y - dy * 0.2 * zoom, z - dz * 0.2 * zoom, rnd(seed, 0, 0) * TAU,
+        s, s, FLAME_TILES[0], _c, (1 - f) ** 1.5)
     }
     // 命中点余火：击穿留一点橙色火光，未击穿只闪一下亮点；跳弹不留
     const glowSecs = kind === 'pen' ? 0.9 : kind === 'nonpen' ? 0.4 : 0
     if (a < glowSecs) {
       const s = (kind === 'pen' ? 0.9 : 0.6) * zoom
-      glow.push(x - dx * 0.15 * zoom, y - dy * 0.15 * zoom, z - dz * 0.15 * zoom, 0, s, s, GLOW_TILE,
+      pushTowardCamera(glow, x - dx * 0.15 * zoom, y - dy * 0.15 * zoom, z - dz * 0.15 * zoom, 0, s, s, GLOW_TILE,
         kind === 'pen' ? ORA : YEL, 0.9 * (1 - a / glowSecs) ** 1.5)
     }
     // 烟：击穿暗烟、其余中灰（浅灰在灰色车体 / 亮地面上读不出），团大且不透明度高
@@ -605,7 +615,7 @@ export function createBattleFx(budget) {
       const s = (0.8 + rnd(seed, i, 11) * 0.5) * (1 + 2.4 * easeOut(life)) * zoom
       if (kind === 'pen') _c.lerpColors(PEN_SMOKE0, PEN_SMOKE1, life)
       else _c.lerpColors(GREY0, GREY1, life)
-      smoke.push(x - dx * back + (rnd(seed, i, 12) - 0.5) * 0.8 * spread,
+      pushTowardCamera(smoke, x - dx * back + (rnd(seed, i, 12) - 0.5) * 0.8 * spread,
         y - dy * back + t * (0.9 + rnd(seed, i, 13) * 0.8) * zoom,
         z - dz * back + (rnd(seed, i, 14) - 0.5) * 0.8 * spread,
         rnd(seed, i, 15) * TAU + t * 0.4, s, s, SOOT_TILES[i % 2], _c,
