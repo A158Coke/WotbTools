@@ -61,6 +61,15 @@ const MUZZLE_SMOKE_SECS = 1.8
 const IMPACT_FLASH_SECS = { pen: 0.18, nonpen: 0.13, ricochet: 0.1 }
 const IMPACT_SMOKE_SECS = { pen: 1.8, nonpen: 1.4, ricochet: 1.2 }
 const IMPACT_SPARK_SECS = 0.8
+/**
+ * 命中特效最小屏幕尺寸。应用相机最近也在视点 max(20 m, 地图尺寸×0.08) 之外，2 m 的命中火光
+ * 只有十几像素，余火与烟几乎看不见（2026-10-13 实机近景）。参考尺寸 IMPACT_REF_M 至少占
+ * IMPACT_MIN_PX 像素：镜头拉远时整套命中特效（火光、余火、烟、火星的大小与散布）等比放大，
+ * 最多 IMPACT_MAX_ZOOM 倍；离得近时保持世界尺寸。
+ */
+const IMPACT_REF_M = 2
+const IMPACT_MIN_PX = 56
+const IMPACT_MAX_ZOOM = 3
 const MAX_FIRE = FX_BUDGETS.ultra.burstFire
 const MAX_SMOKE = FX_BUDGETS.ultra.burstSmoke
 const MAX_DUST = FX_BUDGETS.ultra.burstDust
@@ -259,7 +268,7 @@ const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d), WRECK_TOP = C(0x
 const DUST0 = C(0x8c7c63), DUST1 = C(0x6f685e)
 const SPARK0 = C(0xfff0c0), SPARK1 = C(0xff6a1a)
 const FLASH = C(0xfff0cc), GROUND_GLOW = C(0xff8a3a), MUZZLE = C(0xffc777), WHITE = C(0xffffff)
-const PEN_SMOKE0 = C(0x3b3733), PEN_SMOKE1 = C(0x5b5751), GREY0 = C(0xa7a197), GREY1 = C(0x8d887f)
+const PEN_SMOKE0 = C(0x3b3733), PEN_SMOKE1 = C(0x5b5751), GREY0 = C(0x8e897f), GREY1 = C(0x77736b)
 const MUZZLE_SMOKE = C(0xa29c92), DEBRIS = C(0x23201d)
 const TRACER_HOT = C(0xff4d0f)
 
@@ -404,6 +413,7 @@ export function createBattleFx(budget) {
   const teamColors = new Map()
   const bursts = [], muzzles = [], impacts = []
   const _c = new THREE.Color()
+  const camPos = new THREE.Vector3()
 
   function makeRibbon(kind) {
     const additive = kind === 'tracer'
@@ -445,8 +455,8 @@ export function createBattleFx(budget) {
   }
 
   /** 加色粒子 + 拖尾线段组成的一颗火星。 */
-  function spark(x, y, z, vx, vy, vz, color, k, tail) {
-    glow.push(x, y, z, 0, 0.28, 0.28, GLOW_TILE, color, k)
+  function spark(x, y, z, vx, vy, vz, color, k, tail, size = 0.28) {
+    glow.push(x, y, z, 0, size, size, GLOW_TILE, color, k)
     sparks.push(x, y, z, x - vx * tail, y - vy * tail, z - vz * tail, color, k)
   }
 
@@ -566,32 +576,37 @@ export function createBattleFx(budget) {
 
   function emitImpact(e, a) {
     const { kind, x, y, z, dx, dy, dz, seed } = e
+    // 屏幕尺寸下限（见 IMPACT_MIN_PX）：zoom ≥ 1 时大小与散布等比放大
+    const zoom = Math.min(IMPACT_MAX_ZOOM, Math.max(1,
+      IMPACT_MIN_PX * Math.hypot(x - camPos.x, y - camPos.y, z - camPos.z) * pxScale.value / IMPACT_REF_M))
     const flashSecs = IMPACT_FLASH_SECS[kind]
     if (a < flashSecs) {
       const f = a / flashSecs
-      const s = (kind === 'pen' ? 1.5 : kind === 'nonpen' ? 1.1 : 0.9) * (1 + 0.5 * easeOut(f * 2))
+      const s = (kind === 'pen' ? 1.5 : kind === 'nonpen' ? 1.1 : 0.9) * (1 + 0.5 * easeOut(f * 2)) * zoom
       _c.lerpColors(HOT, kind === 'pen' ? ORA : YEL, f)
-      glow.push(x - dx * 0.2, y - dy * 0.2, z - dz * 0.2, rnd(seed, 0, 0) * TAU, s, s, FLAME_TILES[0], _c, (1 - f) ** 1.5)
+      glow.push(x - dx * 0.2 * zoom, y - dy * 0.2 * zoom, z - dz * 0.2 * zoom, rnd(seed, 0, 0) * TAU, s, s,
+        FLAME_TILES[0], _c, (1 - f) ** 1.5)
     }
     // 命中点余火：击穿留一点橙色火光，未击穿只闪一下亮点；跳弹不留
     const glowSecs = kind === 'pen' ? 0.9 : kind === 'nonpen' ? 0.4 : 0
     if (a < glowSecs) {
-      const s = kind === 'pen' ? 0.9 : 0.6
-      glow.push(x - dx * 0.15, y - dy * 0.15, z - dz * 0.15, 0, s, s, GLOW_TILE, kind === 'pen' ? ORA : YEL,
-        0.9 * (1 - a / glowSecs) ** 1.5)
+      const s = (kind === 'pen' ? 0.9 : 0.6) * zoom
+      glow.push(x - dx * 0.15 * zoom, y - dy * 0.15 * zoom, z - dz * 0.15 * zoom, 0, s, s, GLOW_TILE,
+        kind === 'pen' ? ORA : YEL, 0.9 * (1 - a / glowSecs) ** 1.5)
     }
+    // 烟：击穿暗烟、其余中灰（浅灰在灰色车体 / 亮地面上读不出），团大且不透明度高
     const smokeSecs = IMPACT_SMOKE_SECS[kind]
     const nSmoke = kind === 'ricochet' ? Math.ceil(budget.impactSmoke / 2) : budget.impactSmoke
-    const peak = kind === 'pen' ? 0.8 : kind === 'nonpen' ? 0.65 : 0.45
+    const peak = kind === 'pen' ? 0.9 : kind === 'nonpen' ? 0.8 : 0.55
     for (let i = 0; i < nSmoke; i++) {
       const t = a - (0.03 + rnd(seed, i, 10) * 0.12), life = t / smokeSecs
       if (t < 0 || life >= 1) continue
-      const spread = 0.4 + t, back = 0.4 + t * 0.3
-      const s = (0.6 + rnd(seed, i, 11) * 0.4) * (1 + 2.2 * easeOut(life))
+      const spread = (0.4 + t) * zoom, back = (0.4 + t * 0.3) * zoom
+      const s = (0.8 + rnd(seed, i, 11) * 0.5) * (1 + 2.4 * easeOut(life)) * zoom
       if (kind === 'pen') _c.lerpColors(PEN_SMOKE0, PEN_SMOKE1, life)
       else _c.lerpColors(GREY0, GREY1, life)
       smoke.push(x - dx * back + (rnd(seed, i, 12) - 0.5) * 0.8 * spread,
-        y - dy * back + t * (0.9 + rnd(seed, i, 13) * 0.8),
+        y - dy * back + t * (0.9 + rnd(seed, i, 13) * 0.8) * zoom,
         z - dz * back + (rnd(seed, i, 14) - 0.5) * 0.8 * spread,
         rnd(seed, i, 15) * TAU + t * 0.4, s, s, SOOT_TILES[i % 2], _c,
         Math.min(1, t / 0.08) * peak * (1 - life) ** 1.4)
@@ -619,8 +634,9 @@ export function createBattleFx(budget) {
         if (life >= 1) continue
         // 命中点在车体上、地面高度未知：不做落地钳制（寿命 ≤0.65 s，落到地下的部分由深度测试遮住）
         _c.lerpColors(head, SPARK1, life)
-        spark(x + vx * a, y + vy0 * a - 0.5 * G * a * a, z + vz * a, vx, vy0 - G * a, vz, _c,
-          (1 - life) ** 1.4, kind === 'ricochet' ? 0.06 : 0.035)
+        spark(x + vx * a * zoom, y + (vy0 * a - 0.5 * G * a * a) * zoom, z + vz * a * zoom,
+          vx * zoom, (vy0 - G * a) * zoom, vz * zoom, _c,
+          (1 - life) ** 1.4, kind === 'ricochet' ? 0.06 : 0.035, 0.36 * zoom)
       }
     }
   }
@@ -751,12 +767,13 @@ export function createBattleFx(budget) {
      */
     frame(nowMs, camera, viewportHeightPx, emitReplay) {
       pxScale.value = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) / Math.max(1, viewportHeightPx)
+      camera.updateMatrixWorld()
+      camPos.setFromMatrixPosition(camera.matrixWorld)
       glow.begin(); smoke.begin(); sparks.begin()
       expireAndEmit(impacts, impactLife, nowMs, emitImpact)
       expireAndEmit(muzzles, muzzleLife, nowMs, emitMuzzle)
       expireAndEmit(bursts, burstLife, nowMs, emitBurst)
       if (emitReplay) emitReplay(replayEmit)
-      camera.updateMatrixWorld()
       smoke.finish(camera.matrixWorldInverse.elements)
       glow.finish()
       sparks.finish()
