@@ -35,13 +35,14 @@ import { pruneForeignVariants } from './variantFilter.js'
 import { sampleChannel, sampleKeyframes } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
+import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
 import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
-import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
+import { FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
@@ -124,11 +125,13 @@ async function mapLimit(items, limit, fn) {
 // treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
 // **强制** GLB 真实车模——印记的左右轨距取自 suspension 解析的模型实测 halfW，
 // 低模回落常数与之不同，允许中途切车模会让同一车前后的印记轨距突变。
+// fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
+// 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
 }
 
 /**
@@ -208,7 +211,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let lifeTracks = null, lifeTracksByAccount = new Map();
   let CAM = 'free', FOLLOW_EID = 0;
   let shotPtr = 0, killPtr = 0;
-  const tracers = [], impacts = [];
+  const tracers = [];
+  const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
   let renderer = null, scene, camera, controls, clock, raycaster;
   let hemiLight = null, sunLight = null;   // 逐图光照（applyMapLighting 覆盖，见 load 流程）
   let animLayerMats = [];                  // 动画混合层材质（uTime 每帧写回放秒数）
@@ -3343,19 +3347,24 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 上游 docs/tank-suspension-client-re.md），已整段回退。`__hullGroup` 保留但**恒归单位**：
   // 它是下一步"逐轮贴地 + 履带分段"的挂点，现在不参与摆放。
   function poseGlb(v) {
-    v.glb.position.copy(v.group.position);
-    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), hullPitchAt(v, T), -rollAt(v, T), _glbQuat));
+    poseGlbRig(v, T, v.group.position);
+    // 悬挂：轮带宽高/自转/履带形变（客户端同构；v.suspParts 缺失 = 整车刚体）。只读根位姿。
+    suspensionStep(v);
+  }
+  // 根位姿 + 炮塔 / 炮管：t 时刻的纯函数（不碰悬挂积分状态）。开火定位炮口时临时摆到 t_fire
+  // 量完再摆回 T（见 flushMuzzles）。
+  function poseGlbRig(v, t, pos) {
+    v.glb.position.copy(pos);
+    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, t), hullPitchAt(v, t), -rollAt(v, t), _glbQuat));
     const p = v.glbParts;
     if (p && p.hullGroup) {
       p.hullGroup.quaternion.identity();
       p.hullGroup.position.set(0, 0, 0);
     }
-    // 悬挂：轮带宽高/自转/履带形变（客户端同构；v.suspParts 缺失 = 整车刚体）
-    suspensionStep(v);
     if (!p) return;
-    const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
+    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
     const tr = -rel;                       // 镜像系节点旋转角 = −rel
-    const gr = gunPitchAt(v, T);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
+    const gr = gunPitchAt(v, t);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
     if (p.itr) {
       // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
       // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
@@ -3382,8 +3391,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 世界矩阵不在此强制刷新：renderer.render 的 scene.updateMatrixWorld() 从根向下传播，
     // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
     // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
-    // tick 与 render 之间没有车辆世界矩阵读者（标签投影用位姿插值坐标、遮挡射线只打静态
-    // 场景网格），删之无观察者可见差异。
+    // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它只在开火的
+    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿插值坐标、遮挡射线
+    // 只打静态场景网格。
   }
 
   async function applyGlbToggle(on) {
@@ -3460,29 +3470,33 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   // ---------- 弹道 ----------
-  const TRACER_LEN = 9;
-  // 全弹道轨迹线按 replay clock 保留；impact 单独使用 wall-clock transient（见 updateImpacts）。
-  // 透明度（2026-10-05 提高可读性：原 0.35 与背景混合后明显发灰；淡出在其上再乘）。
-  // 0.85（二次提高）：用户反馈炮线整体偏暗——轨迹线是长条半透明几何，混合后亮度远低于
-  // 字面色，提高不透明度是最直接的补救；淡出阶段仍按比例衰减。
-  const TRAJ_OPACITY = 0.85;
-  // 粗细（2026-10-05 加粗 ~64%：原 0.22/0.11 在 4K/远视角下几乎不可见，用户实测反馈）：
-  // 飞行段与全弹道轨迹线同比例加粗，保持「飞行段更粗」的层级不变。
-  const TRACER_RADIUS = 0.36;   // 飞行段粗细
-  const TRAJ_RADIUS = 0.18;     // 轨迹线粗细
-  // 战斗反馈显示时长倍率（**只作用于 3D 场景**）：炮线（全弹道轨迹线）、命中特效、
-  // 掉血飘字、HP 条幽灵/受击闪、击毁爆散统一乘这个系数——回放里这些反馈需要更长的可读
-  // 时间，否则 1x 下弹道/数字一闪即逝。乘在下面 transient 段的 2D SSOT 常量之上，
-  // 因此 **2D 回放时序不受影响**；1 = 与 2D 逐值一致。
-  // 不作用于飞行段（tracers：位置由 t_fire/flight_secs 决定，拉长会让炮弹看起来变慢）。
+  // 飞行中的炮弹 = 阵营色曳光（白热弹头 + 阵营色渐隐尾迹，长 TRACER_STREAK_M）；全弹道
+  // = 阵营色细光迹（弹头飞过才显现，走完全程后停留 TRAIL_HOLD_SECS、再淡出 TRAIL_FADE_SECS，
+  // 回放时钟）。外观、粗细与屏幕像素下限都在 battleFx.js；这里只管时序（何时开火、飞到哪、
+  // 何时命中），2D 激光炮线不受影响。
+  // 战斗反馈显示时长倍率（**只作用于 3D 场景**）：掉血飘字、HP 条幽灵/受击闪乘这个系数——
+  // 回放里这些反馈需要更长的可读时间。乘在 transient 段的 2D SSOT 常量之上，因此 **2D 回放
+  // 时序不受影响**；1 = 与 2D 逐值一致。爆炸 / 开火 / 命中 / 光迹的 3D 时长是 battleFx.js 的
+  // 独立常量（2026-10-13 写实化），不再由 2D 常量推导。
   const FX_SCALE = 2;
+  // 战斗特效（会话拥有，按当局画质档预算创建；teardownSession 释放）
+  let battleFx = null;
+  function ensureBattleFx() {
+    if (!battleFx) {
+      battleFx = createBattleFx(Q.fx);
+      scene.add(battleFx.root);
+      if (DEBUG) window.__battleFx = battleFx;   // 诊断钩子（仅 ?debug；会话结束 / destroy 时清除）
+    }
+    return battleFx;
+  }
+  // 残骸烟翻滚相位：只在播放时按壁钟累计（倍速不加快，暂停冻结 → 不需要额外重绘）
+  let wreckClock = 0;
   let trajLines = [];
 
-  // ---------- 特效对象池 ----------
-  // 此前每发炮线/每次命中/每次击毁都新建 geometry+material 再 dispose（伤害飘字还新建
-  // canvas+CanvasTexture）：FX_SCALE=2 让同时在场数量翻倍，交火高峰即 GPU buffer 分配
-  // 与 GC 的尖峰。池按几何规格复用整套对象（含材质与贴图）：取出时重置颜色/透明度/缩放，
-  // 归还只从场景移除、不 dispose；真正的释放只在会话结束时做一次（disposeFxPool）。
+  // ---------- 特效对象池（伤害飘字） ----------
+  // 飘字是最高频的反馈事件：canvas + CanvasTexture + Sprite 整套复用，取出时重置内容与
+  // 透明度，归还只从场景移除、不 dispose；真正的释放只在会话结束时做一次（disposeFxPool）。
+  // 炮线 / 光迹 / 命中 / 爆炸的对象与批次由 battleFx 自己池化。
   const fxPool = new Map();
   function fxTake(key, make) {
     const p = fxPool.get(key);
@@ -3495,38 +3509,23 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     p.push(obj);
   }
   function disposeFxPool() {
-    // 池条目两类：three 对象（tracer/traj 的 Mesh）与 JS 包装对象（impact-* =
-    // { g, ball, ring, sparks }——issue #556：对包装对象直接 disposeObject3D 调
-    // .traverse 抛 TypeError，切换回放清理上一局时中断会话）。解包后统一走
-    // disposeObject3D，共享 Set 去重跨条目的几何/材质/纹理（池内同 key 复用
-    // 同一批对象，逐条独立 dispose 会重复释放共享资源）。
-    const disposed = new Set();
-    const rootOf = (o) => (o && o.isObject3D) ? o : (o && o.g && o.g.isObject3D ? o.g : null);
+    // 池里只剩伤害飘字（JS 包装 { sp, tex, cv, ctx }；炮线/命中/爆炸已移交 battleFx，
+    // 由 battleFx.dispose 释放）。Sprite 的四边形几何是 three 全局共享的，不随会话释放；
+    // 逐条释放材质与画布贴图（此前 rootOf 只认 Object3D / { g }，飘字贴图从未释放）。
     for (const list of fxPool.values()) {
       for (const o of list) {
-        const root = rootOf(o);
-        if (!root) continue;
-        if (disposed.has(root)) continue;
-        disposed.add(root);
-        disposeObject3D(root, disposed);
+        o?.sp?.material?.dispose();
+        o?.tex?.dispose();
       }
     }
     fxPool.clear();
   }
 
-  function spawnShot(s) {
+  function spawnShot(s, seed) {
     // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
     // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
     const color = shotTeamColor(s);
-    // toneMapped: false —— 任何出屏曲线（?tonemap=aces 的 ACES 压缩降饱和；默认 linear 的
-    // 曝光乘子同理）都不该动 UI 语义色：深色阵营色会被进一步压暗（"亮度限制"的来源）。
-    // 炮线是 UI 语义色，与地表/场景材质同策略：直出字面色（见 ground/scenery 的 toneMapped: false）。
-    const mesh = fxTake('tracer', () => new THREE.Mesh(
-      new THREE.BoxGeometry(TRACER_RADIUS, TRACER_RADIUS, TRACER_LEN),
-      new THREE.MeshBasicMaterial({ color, toneMapped: false })));
-    mesh.material.color.setHex(color);
-    mesh.visible = true;
-    scene.add(mesh);
+    const fx = ensureBattleFx();
     // 飞行段时长 = **真实飞行时长**（直射弹 = |终点−炮口|/弹速；跳弹/穿透弹 = 各折线段
     // 时长之和，见 shotPath.js）。此处曾设 0.22s 最小时长"保证可见性"——但实测 68% 的射击
     // 真飞行时长 <0.22s（J39 样本 155 发：中位 0.16s、p10 0.04s），那些炮弹被放慢最多 11×，
@@ -3540,38 +3539,64 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const legSecs = legSecsOf(s, tracerSpanSecs(s.flight_secs));
     const legEnds = legEndTimes(legSecs, s.t_fire);
     const t1 = legEnds[legEnds.length - 1];
-    // 弹着特效落点 = **抵达点**（有跳弹 = via[0]，即镜像后的 pts3[1]；直射 = 服务器终点）
+    const from = new THREE.Vector3().fromArray(pts3[0]);
+    // 弹着特效落点 = **抵达点**（有跳弹 = via[0]，即镜像后的 pts3[1]；直射 = 服务器终点），
+    // 命中时刻 = 抵达点时刻 legEnds[0]（跳弹后弹头继续沿出射段飞，特效不等它飞完）
     const impactPos = new THREE.Vector3().fromArray(pts3[1]);
-    // `from`/`to` 供弹着特效（跳弹火花方向）使用：to = **抵达点**（跳弹点/终点），
-    // from = 炮口——`spawnImpact` 依赖这两个字段，折线改造时漏掉会让 ricochet 分支抛异常
-    // （整帧中断 → 画面卡住一帧且弹着特效不生成）。
-    tracers.push({ mesh, points: pts3, legEnds, arcEnds: legArcEnds(pts3), t0: s.t_fire, t1, shot: s, color,
-      from: new THREE.Vector3().fromArray(pts3[0]), to: impactPos.clone(), impactPos });
-    // 全弹道轨迹线（队伍色：友军蓝/敌军红，与飞行段的命中结果色区分）：
-    // 开火即显整条弹道（逐段一盒：折线在跳弹处拐弯）；消失节奏与弹着点特效同步——
-    // 基准 t1+1.1s 移除、最后 0.6s 淡出，二者同乘 FX_SCALE（=2 → t1+2.2s 移除、最后 1.2s 淡出）。
-    // 2026-10-05 用户反馈显示太久 → 时长减半（1.0/2.2 → 0.5/1.1）。
-    // 单位长盒 + scale.z＝段长：几何可池化（半径不变、长度每段不同）
+    const dir = impactPos.clone().sub(from);
+    if (dir.lengthSq() > 1e-8) dir.normalize(); else dir.set(0, 0, 1);
+    // 跳弹出射方向 = 折线下一段方向（缺省由 battleFx 按来弹方向上挑）
+    const out = pts3.length > 2 ? new THREE.Vector3().fromArray(pts3[2]).sub(impactPos) : null;
+    // s0 = 可见起点弧长：炮管里那一段（起点 → 炮口）不画曳光与光迹，由 flushMuzzles 填入
+    const tracer = { mesh: fx.takeRibbon('tracer'), points: pts3, legEnds, arcEnds: legArcEnds(pts3),
+      t0: s.t_fire, t1, shot: s, color, seed, impactPos, dir, out, head: from.clone(), hit: false,
+      s0: 0, inBarrel: false };
+    tracers.push(tracer);
+    // 弹道光迹（逐段一条：折线在跳弹处拐弯）：段起点时刻起随弹头显现，弹头走完全程后
+    // 停留再淡出（trailOpacityAt，回放时钟；暂停时一直留着，seek 清空）。
+    let firstTrail = null;
     for (let k = 0; k + 1 < pts3.length; k++) {
       const a = new THREE.Vector3().fromArray(pts3[k]);
       const b = new THREE.Vector3().fromArray(pts3[k + 1]);
-      const trajLen = a.distanceTo(b);
-      if (!(trajLen > 1e-3)) continue;
-      const traj = fxTake('traj', () => new THREE.Mesh(
-        new THREE.BoxGeometry(TRAJ_RADIUS, TRAJ_RADIUS, 1),
-        new THREE.MeshBasicMaterial({
-          color: shotTeamColor(s), transparent: true, opacity: TRAJ_OPACITY, depthWrite: false,
-          toneMapped: false,   // 同上：全弹道轨迹线同样直出字面色
-        })));
-      traj.material.color.setHex(shotTeamColor(s));
-      traj.material.opacity = TRAJ_OPACITY;
-      traj.scale.set(1, 1, trajLen);
-      traj.visible = true;
-      traj.position.copy(a.clone().add(b).multiplyScalar(0.5));
-      traj.lookAt(b);
-      scene.add(traj);
-      trajLines.push({ mesh: traj, until: t1 + 0.5 * FX_SCALE, fadeEnd: t1 + 1.1 * FX_SCALE, base: TRAJ_OPACITY });
+      const len = a.distanceTo(b);
+      if (!(len > 1e-3)) continue;
+      const mesh = fx.takeRibbon('trail');
+      mesh.visible = false;
+      const tl = { mesh, a, b, len, start: k === 0 ? s.t_fire : legEnds[k - 1], end: legEnds[k], t1, color, s0: 0 };
+      trajLines.push(tl);
+      if (k === 0) firstTrail = tl;
     }
+    pendingMuzzles.push({ eid: s.shooter_eid, tFire: s.t_fire, from, dir, seed, tracer, firstTrail });
+  }
+  // 炮口火光 / 炮口烟放在炮管末端：回放记录的开火起点是火炮枢轴（在炮塔 / 炮盾里），直接放会被
+  // 车模挡住（2026-10-13 实机近景）。没有可见车模（代理车 / 兵种图标 / 不可见）时用记录起点。
+  // 同一段距离也是曳光与第一段光迹的可见起点（s0）：炮管里那截不画，否则光迹会贴着炮管
+  // 露出一条线；弹道折线与计时不变，最多截到抵达点（贴脸射击时整段都在炮管里）。
+  // 炮管按**开火时刻** t_fire 的姿态量：处理这一 tick 时 T 已晚于 t_fire（掉帧 / 倍速），射手
+  // 早已前移或转动，用 T 时刻的炮管会把这段位移混进固定弹道的起点，同一发炮弹的光迹起点随
+  // 倍速 / 帧间隔变化（PR #613 审查：10 m/s 射手、100 ms 帧，1×/2×/4×/8× 起点 5/6/8/12 m，
+  // 应为 4.5 m）。所以把射手一台临时摆到 t_fire（纯姿态，不碰悬挂积分），量完摆回 T。
+  // 在 applyPose 之后调用：摆回用的是本 tick 的 T 时刻位置。
+  const _muzzleTip = new THREE.Vector3(), _firePos = new THREE.Vector3();
+  function flushMuzzles() {
+    for (const m of pendingMuzzles) {
+      const v = V.find((x) => x.def.eid === m.eid);
+      const parts = v && v.group.visible && v.glb && v.glb.visible ? v.glbParts : null;
+      if (parts) {
+        poseGlbRig(v, m.tFire, posAt(v, m.tFire, _firePos));
+        v.glb.updateMatrixWorld(true);
+      }
+      const at = muzzleTipOf(parts ? parts.gunNodes : null, m.from, m.dir, _muzzleTip);
+      if (parts) {
+        poseGlbRig(v, T, v.group.position);
+        v.glb.updateMatrixWorld(true);
+      }
+      const s0 = Math.min(at.distanceTo(m.from), m.tracer.arcEnds[0] || 0);
+      m.tracer.s0 = s0;
+      if (m.firstTrail) m.firstTrail.s0 = s0;
+      battleFx.spawnMuzzle(at, m.dir, performance.now(), m.seed);
+    }
+    pendingMuzzles.length = 0;
   }
   // 阵营色（唯一规则：按射手阵营 → green / red / white）。炮线用**亮色板**
   // （TRACER_FRIENDLY/ENEMY，见顶部注释）；未知阵营仍为白（unknown ≠ enemy）。
@@ -3582,115 +3607,75 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if ((t !== 1 && t !== 2) || (ft !== 1 && ft !== 2)) return COLOR_UNKNOWN;
     return t === ft ? TRACER_FRIENDLY : TRACER_ENEMY;
   }
-  // 命中类型 → impact（评审批准语义，与上游 Agent 同式；全部 transient，无 decal/弹孔）：
-  //   pen（击穿）= 白色球 + 小环；nonpen = 更大的球 + 明显 shock ring；ricochet = 侧向 sparks；
-  //   miss（无 target）/未知结果 = 不生成 target impact（不伪造）
-  const IMPACT_WHITE = 0xffffff;
+  // 命中类型 → 写实命中特效（全部 transient，无 decal/弹孔；外观见 battleFx.js）：
+  //   pen（击穿）= 小火光 + 橙色余火 + 暗烟；nonpen = 亮白火花回溅 + 灰烟；
+  //   ricochet = 火花顺出射方向划过 + 淡烟；miss（无 target）/未知结果 = 不生成（不伪造）。
   // impactKind 见 ./impactKind.js（纯函数，可单测）：game_hit_result 枚举里没有"跳弹"
   // 取值（1=未击穿、2=间隙止），只有作者 hit_flags & 0x0008 才是跳弹证据。
-  // 命中特效三变体（球径/是否带 sparks 不同）各自成池 key；组内子物体随组复用
-  function makeImpactFx(kind) {
-    const g = new THREE.Group();
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(kind === 'nonpen' ? 0.42 : 0.72, 10, 10),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.15, 20),
-      new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, side: THREE.DoubleSide, transparent: true, toneMapped: false }));
-    ring.rotation.x = -Math.PI / 2;
-    g.add(ball); g.add(ring);
-    const sparks = [];
-    if (kind === 'ricochet') {
-      // 侧向 sparks（两段短射线沿弹道法向散开）；局部偏移在 spawn 时按弹道方向设
-      for (const _sgn of [1, -1]) {
-        const sp = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 2.2),
-          new THREE.MeshBasicMaterial({ color: IMPACT_WHITE, transparent: true, toneMapped: false }));
-        g.add(sp); sparks.push(sp);
-      }
-    }
-    return { g, ball, ring, sparks };
-  }
-
+  // 寿命按真实壁钟计（UI feedback transient）：0.5x / 16x 下可读时长一致；暂停时自然播完；
+  // seek 由 clearEffects 直接清空。
   function spawnImpact(tr) {
     const kind = impactKind(tr.shot);
     if (!kind) return;
-    const fx = fxTake('impact-' + kind, () => makeImpactFx(kind));
-    const g = fx.g, ball = fx.ball, ring = fx.ring, sparks = fx.sparks;
-    // 重置为出生状态（池复用：上一次的淡出/缩放必须归位）
-    ball.material.opacity = 1;
-    ring.material.opacity = 1; ring.scale.setScalar(1);
-    for (const sp of sparks) sp.material.opacity = 1;
-    if (kind === 'ricochet') {
-      const dir = tr.to.clone().sub(tr.from).normalize();
-      const side = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
-      // 局部偏移：群组已置于 tr.to，子物体不得再叠加一次世界坐标（否则成 2*tr.to + offset）
-      for (let i = 0; i < sparks.length; i++) {
-        const sgn = i === 0 ? 1 : -1;
-        const sp = sparks[i];
-        sp.position.set(side.x * sgn * 1.1, 0, side.z * sgn * 1.1);
-        // 盒体沿 +Z、朝水平 ±side：直接给 yaw，不依赖 lookAt 对父子变换的处理
-        sp.rotation.y = Math.atan2(side.x * sgn, side.z * sgn);
-      }
-    }
-    g.position.copy(tr.impactPos);
-    g.visible = true;
-    scene.add(g);
-    // impact 属于 UI feedback transient：寿命按真实壁钟计，而不是 replay clock。
-    // 这样 0.5x / 16x 下可读时长一致；暂停时自然淡出；seek 由 clearEffects 直接清空。
-    const durationMs = (kind === 'nonpen' ? 650 : kind === 'ricochet' ? 550 : 450) * FX_SCALE;
-    impacts.push({ g, bornMs: performance.now(), durationMs, ball, ring, sparks, kind });
-  }
-
-  function updateImpacts() {
-    const now = performance.now();
-    for (let i = impacts.length - 1; i >= 0; i--) {
-      const im = impacts[i];
-      const k = Math.max(0, Math.min(1, (now - im.bornMs) / im.durationMs));
-      if (k >= 1) {
-        scene.remove(im.g);
-        fxGive('impact-' + im.kind, { g: im.g, ball: im.ball, ring: im.ring, sparks: im.sparks || [] });
-        impacts.splice(i, 1);
-        continue;
-      }
-      const op = 1 - k;
-      im.ball.material.opacity = op;
-      im.ring.material.opacity = op * 0.8;
-      im.ring.scale.setScalar(1 + k * (im.kind === 'nonpen' ? 2.2 : 1.6));
-      if (im.sparks) for (const sp of im.sparks) sp.material.opacity = op * 0.7;
-    }
+    battleFx.spawnImpact(kind, tr.impactPos, tr.dir, tr.out, performance.now(), tr.seed);
   }
 
   function updateTracers() {
     for (let i = tracers.length - 1; i >= 0; i--) {
       const tr = tracers[i];
       if (T < tr.t0) continue;
-      // 沿折线推进：头部按时间落在当前段（段内匀速），尾部 = 头部**弧长位置**回退 TRACER_LEN 米
-      // （跳弹拐角时尾巴跟着折线弯，与客户端沿折线推进的观感一致）。零分配：into 变体
-      // 直写模块级 scratch（此前每帧每弹 2 个新数组 + 1 次 clone）。
+      // 沿折线推进：头部按时间落在当前段（段内匀速），尾部 = 头部**弧长位置**回退
+      // TRACER_STREAK_M 米（跳弹拐角时尾巴跟着折线弯）。零分配：into 变体直写 scratch。
       pointAtInto(tr.points, tr.legEnds, T, tr.t0, _tpA);
       const sHead = arcAtTime(tr.points, tr.legEnds, tr.arcEnds, T, tr.t0);
-      pointAtArcInto(tr.points, tr.arcEnds, sHead - TRACER_LEN, _tpB);
-      tr.mesh.position.copy(_tpA).add(_tpB).multiplyScalar(0.5);
-      tr.mesh.lookAt(_tpA);
-      tr.mesh.scale.z = Math.max(0.001, Math.hypot(_tpA.x - _tpB.x, _tpA.y - _tpB.y, _tpA.z - _tpB.z) / TRACER_LEN);
+      // 弹头还在炮管里（没过炮口 s0）：曳光与弹头光晕都不画；尾部不早于炮口
+      tr.inBarrel = sHead <= tr.s0;
+      tr.mesh.visible = !tr.inBarrel;
+      pointAtArcInto(tr.points, tr.arcEnds, Math.max(sHead - TRACER_STREAK_M, tr.s0), _tpB);
+      battleFx.setTracer(tr.mesh, _tpB, _tpA, tr.color);
+      tr.head.copy(_tpA);
+      if (!tr.hit && T >= tr.legEnds[0]) { tr.hit = true; spawnImpact(tr); }
       // 完成判定 = **时间到终点**（折线改造曾误留旧变量 `f >= 1`——f 已不存在，
       // 每帧 ReferenceError 中断整个 tick：不渲染、位姿/HUD 全停，且该炮线永远走不到
       // 移除分支 → 持续抛到暂停为止。这就是此前"播放中卡死、暂停即止"的根因。）
       if (T >= tr.t1) {
-        // 归还对象池（几何/材质留待复用）；真正的释放见 disposeFxPool（会话结束时一次）
-        scene.remove(tr.mesh);
-        fxGive('tracer', tr.mesh);
+        battleFx.giveRibbon(tr.mesh);   // 归还条带池；真正的释放在会话结束（battleFx.dispose）
         tracers.splice(i, 1);
-        spawnImpact(tr);
       }
     }
-    // 全弹道轨迹线：命中后延迟停留，再线性淡出并释放
+    // 弹道光迹：随弹头显现 → 停留 → 淡出 → 归还
     for (let i = trajLines.length - 1; i >= 0; i--) {
       const tl = trajLines[i];
-      if (T >= tl.fadeEnd) {
-        scene.remove(tl.mesh); fxGive('traj', tl.mesh);
+      const opacity = trailOpacityAt(T - tl.t1);
+      if (opacity <= 0) {
+        battleFx.giveRibbon(tl.mesh);
         trajLines.splice(i, 1); continue;
       }
-      tl.mesh.material.opacity = T <= tl.until ? tl.base
-        : tl.base * Math.max(0, 1 - (T - tl.until) / (tl.fadeEnd - tl.until));
+      const f = tl.end > tl.start ? Math.min(1, (T - tl.start) / (tl.end - tl.start)) : 1;
+      const f0 = Math.min(1, tl.s0 / tl.len);   // 炮管内那段不画（见 flushMuzzles）
+      tl.mesh.visible = T >= tl.start && f > f0;
+      if (!tl.mesh.visible) continue;
+      battleFx.setTrail(tl.mesh, _tpA.copy(tl.a).lerp(tl.b, f0), _tpB.copy(tl.a).lerp(tl.b, f), tl.color, opacity);
+    }
+  }
+
+  // 战斗特效逐帧写入（render 前；按需渲染下只在真正重绘的帧执行）。回放时钟驱动的粒子：
+  // 在飞炮弹的弹头光晕、残骸持续烟（存在与否看场景唯一死亡判据 sceneLifeAt，倒带到死亡前
+  // 即消失；未知死亡时刻按已渐入处理）。
+  function updateBattleFx() {
+    if (!battleFx) return;
+    battleFx.frame(performance.now(), camera, container.clientHeight, emitReplayFx);
+  }
+  function emitReplayFx(emit) {
+    for (const tr of tracers) if (T >= tr.t0 && !tr.inBarrel) emit.headGlow(tr.head, tr.color);
+    if (!battleFx.budget.wreckSmoke) return;
+    for (const v of V) {
+      if (!v.group.visible) continue;
+      const life = sceneLifeAt(v, T);
+      if (life?.lifeState !== 'DESTROYED') continue;
+      const since = Number.isFinite(life.destroyedKnownAtSec) ? T - life.destroyedKnownAtSec : Infinity;
+      const p = v.group.position;
+      emit.wreck(p.x, p.y, p.z, v.group.rotation.y, since, wreckClock, v.def.eid);
     }
   }
 
@@ -3698,12 +3683,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 关键语义：**壁钟（真实 ms）寿命**，而非回放时钟——任意倍速下可读时长相近
   // （2D battlePlayback.js 同款常量与注释）。因用壁钟，暂停时 transient 自然走完，
   // 无需特殊处理；seek 则清空并重置事件游标（不补播历史动画）。
-  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS / BURST_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
+  // FLOAT_DMG_MS / GHOST_MS / FLASH_MS 来自 ../utils/battlePlayback.js（2D SSOT）；
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
   let floatDmgs = [];          // { sp, tex, born, baseY, group }
-  let burstFx = [];            // pooled burst objects: geometry/materials stay together
   let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
@@ -3801,129 +3785,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     labelsTime = null;   // feedback expires independently of playback time
   }
 
-  // Brief irregular flame, then rising soot: no hard sphere or concentric shockwave rings.
-  // Allocate only when the pool grows; textures and all particles stay with the pooled object.
-  const BURST_SPARK_COUNT = 12;
-  const BURST_FLAME_COUNT = 5;
-  const BURST_SMOKE_COUNT = 8;
-  const BURST_TEXTURE_SIZE = 64;
-  const BURST_GOLDEN_ANGLE = 2.39996323;
-  const BURST_FLASH_COLOR = new THREE.Color(0xffedc4);
-  const BURST_FIRE_COLOR = new THREE.Color(0xe97825);
-  const BURST_SOOT_COLOR = new THREE.Color(0x3c3832);
-  const BURST_SMOKE_COLOR = new THREE.Color(0x706a60);
-  function makeBurstFx() {
-    const g = new THREE.Group(); g.name = 'vehicle-destruction-burst';
-    // Fixed low-frequency turbulence breaks circular silhouettes. No per-frame random noise.
-    const makeMap = (soot) => {
-      const pixels = new Uint8Array(BURST_TEXTURE_SIZE * BURST_TEXTURE_SIZE * 4);
-      for (let y = 0; y < BURST_TEXTURE_SIZE; y++) for (let x = 0; x < BURST_TEXTURE_SIZE; x++) {
-        const u = (x + 0.5) * 2 / BURST_TEXTURE_SIZE - 1;
-        const v = (y + 0.5) * 2 / BURST_TEXTURE_SIZE - 1;
-        const turbulence = Math.sin(u * 9 + Math.sin(v * 7)) * Math.cos(v * 11 - u * 4)
-          + 0.5 * Math.sin(u * 19 + v * 13);
-        const r = Math.hypot(u, v);
-        const edge = Math.max(0, 1 - r * r);
-        const density = Math.max(0, 1 - r * (1.12 + 0.16 * turbulence));
-        const alpha = soot ? edge * density * (0.65 + 0.20 * turbulence) : edge * edge * density;
-        const i = (y * BURST_TEXTURE_SIZE + x) * 4;
-        pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
-        pixels[i + 3] = Math.round(255 * Math.max(0, Math.min(1, alpha)));
-      }
-      const map = new THREE.DataTexture(pixels, BURST_TEXTURE_SIZE, BURST_TEXTURE_SIZE);
-      map.minFilter = map.magFilter = THREE.LinearFilter; map.needsUpdate = true;
-      return map;
-    };
-    const flameMap = makeMap(false), smokeMap = makeMap(true);
-    let puffGeometry = null;
-    const puffs = (count, map, name, additive) => Array.from({ length: count }, (_, i) => {
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map, color: additive ? BURST_FIRE_COLOR : BURST_SOOT_COLOR,
-        transparent: true, depthWrite: false, toneMapped: false,
-        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-        rotation: i * BURST_GOLDEN_ANGLE,
-      }));
-      // Sprite's default quad is global; this pool object owns one clone for teardown.
-      puffGeometry ||= sprite.geometry.clone();
-      sprite.geometry = puffGeometry;
-      sprite.name = name;
-      g.add(sprite);
-      return sprite;
-    });
-    const flames = puffs(BURST_FLAME_COUNT, flameMap, 'destruction-flame', true);
-    const smoke = puffs(BURST_SMOKE_COUNT, smokeMap, 'destruction-smoke', false);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BURST_SPARK_COUNT * 3), 3).setUsage(THREE.DynamicDrawUsage));
-    const sparks = new THREE.Points(geometry, new THREE.PointsMaterial({
-      map: flameMap, color: 0xffbf70, size: 0.14, transparent: true,
-      depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending,
-    }));
-    sparks.frustumCulled = false;
-    g.add(sparks);
-    const velocities = new Float32Array(BURST_SPARK_COUNT * 3);
-    for (let i = 0; i < BURST_SPARK_COUNT; i++) {
-      const angle = i * BURST_GOLDEN_ANGLE + Math.sin(i * 1.7);
-      const speed = 1.6 + (i % 5) * 0.35;
-      velocities[i * 3] = Math.cos(angle) * speed;
-      velocities[i * 3 + 1] = 2.8 + (i % 4) * 0.45;
-      velocities[i * 3 + 2] = Math.sin(angle) * speed;
-    }
-    return { g, flames, sparks, smoke, velocities, born: 0 };
-  }
-
-  function updateBurstFx(fx, k) {
-    const secs = k * (BURST_MS * FX_SCALE) / 1000;
-    for (let i = 0; i < fx.flames.length; i++) {
-      const sprite = fx.flames[i];
-      const age = secs - i * 0.018;
-      // One 120 ms flash, then four staggered 280 ms tongues confined to the vehicle.
-      const life = Math.max(0, Math.min(1, age / (i === 0 ? 0.12 : 0.28)));
-      const angle = i * BURST_GOLDEN_ANGLE;
-      const spread = i === 0 ? 0 : 0.45 + life * 0.35;
-      sprite.position.set(Math.cos(angle) * spread, 1.8 + life * (0.6 + (i % 3) * 0.2), Math.sin(angle) * spread);
-      const size = (i === 0 ? 2.1 : 1.2 + (i % 3) * 0.25) * (0.70 + life * 0.70);
-      sprite.scale.set(size, size * (i === 0 ? 0.8 : 1.35), 1);
-      sprite.material.color.lerpColors(BURST_FLASH_COLOR, BURST_FIRE_COLOR, i === 0 ? life : 0.65 + life * 0.35);
-      sprite.material.opacity = age < 0 ? 0 : (i === 0 ? 0.9 : 0.65) * (1 - life) ** 1.5;
-      sprite.visible = sprite.material.opacity > 0;
-    }
-    const sparkLife = Math.min(1, secs / 0.55);
-    const sparks = fx.sparks.geometry.attributes.position;
-    for (let i = 0; i < sparks.count; i++) {
-      sparks.setXYZ(i, fx.velocities[i * 3] * secs,
-        Math.max(0.20, 1.8 + fx.velocities[i * 3 + 1] * secs - 4.9 * secs * secs),
-        fx.velocities[i * 3 + 2] * secs);
-    }
-    sparks.needsUpdate = true;
-    fx.sparks.material.opacity = 0.7 * (1 - sparkLife) ** 2;
-    fx.sparks.visible = sparkLife < 1;
-    for (let i = 0; i < fx.smoke.length; i++) {
-      const sprite = fx.smoke[i];
-      const delay = 0.025 * i;
-      const age = Math.max(0, secs - delay);
-      const life = Math.min(1, age / ((BURST_MS * FX_SCALE) / 1000 - delay));
-      const angle = i * BURST_GOLDEN_ANGLE;
-      const spread = (0.30 + life * 1.1) * (0.6 + (i % 3) * 0.2);
-      sprite.position.set(Math.cos(angle) * spread + age * 0.3,
-        1.9 + age * (1.5 + (i % 3) * 0.4), Math.sin(angle) * spread);
-      const size = 1.0 + (i % 4) * 0.18 + life * 1.9;
-      sprite.scale.set(size, size * (1.1 + (i % 3) * 0.1), 1);
-      sprite.material.color.lerpColors(BURST_SOOT_COLOR, BURST_SMOKE_COLOR, life);
-      sprite.material.opacity = Math.min(1, age / 0.12) * 0.48 * (1 - life) ** 1.2;
-      sprite.visible = sprite.material.opacity > 0;
-    }
-  }
-
+  // 击毁爆炸（外观见 battleFx.js：强闪光 + 地面光斑、湍流火球、黑烟柱、火星；高档加碎片与
+  // 地面尘浪）。权威死亡触发一次（buildBurstSources），壁钟寿命 BURST_SECS，seek 不补播。
   function spawnBurst(eid) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
-    const fx = fxTake('burst', makeBurstFx);
-    fx.born = performance.now();
-    updateBurstFx(fx, 0);   // reset every reused parameter, including particle positions
-    fx.g.visible = true;
-    fx.g.position.copy(v.group.position);
-    scene.add(fx.g);
-    burstFx.push(fx);
+    ensureBattleFx().spawnBurst(v.group.position, performance.now(), eid);
   }
 
   function updateTransients() {
@@ -3963,17 +3830,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       f.sp.scale.set(s * DMG_ASPECT, s, 1);
       f.sp.material.opacity = opacity;
     }
-    for (let i = burstFx.length - 1; i >= 0; i--) {
-      const b = burstFx[i];
-      const k = (now - b.born) / (BURST_MS * FX_SCALE);
-      if (k >= 1) {
-        scene.remove(b.g);
-        fxGive('burst', b);
-        burstFx.splice(i, 1);
-        continue;
-      }
-      updateBurstFx(b, Math.max(0, k));
-    }
   }
 
   function clearTransients() {
@@ -3983,11 +3839,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       fxGive('floatDmg', { sp: f.sp, tex: f.tex, cv: f.cv, ctx: f.cv.getContext('2d') });
     }
     floatDmgs.length = 0;
-    for (const b of burstFx) {
-      scene.remove(b.g);
-      fxGive('burst', b);
-    }
-    burstFx.length = 0;
+    battleFx?.clearTransients();   // 爆炸 / 开火 / 命中：seek 后不补播
     ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
     dmgPtr = 0; burstPtr = 0;                 // 游标重置：seek 后不补播历史动画
   }
@@ -4216,6 +4068,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (DATA && PLAYING) {
       // 推进 + 钳制合并到纯函数里（NaN/负增量不会污染时钟）；终点是比赛结束 END，不是录像流结束
       T = advancePlaybackTime(T, END, dt * 1000, SPEED);
+      wreckClock += dt;
       suspDt = dt;          // 行程限速用的逐帧 dt（客户端同源：按帧步长限速）
       suspSnap = false;
       tick();
@@ -4265,7 +4118,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || cameraMoved
       || frameDirty
       || (destruct && destruct.animating)
-      || tracers.length > 0 || impacts.length > 0 || floatDmgs.length > 0 || burstFx.length > 0
+      || tracers.length > 0 || floatDmgs.length > 0 || (battleFx && battleFx.active())
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) return;
     frameDirty = false;
@@ -4285,8 +4138,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const perfT0 = PERF ? performance.now() : 0;
     updateLabels();
     updateBases();
-    updateImpacts();      // wall-clock transient：暂停时也继续自然淡出
     updateTransients();
+    updateBattleFx();     // 战斗特效（壁钟特效暂停时也继续自然播完）
     const perfT1 = PERF ? performance.now() : 0;
     maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
     renderer.render(scene, camera);
@@ -4321,8 +4174,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const calls = renderer ? renderer.info.render.calls : 0;
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
       dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
-      tracers: tracers.length, traj: trajLines.length, impacts: impacts.length,
-      dmg: floatDmgs.length, burst: burstFx.length,
+      tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
+      dmg: floatDmgs.length, burst: battleFx ? battleFx.stats().bursts : 0,
       veh: V.filter((v) => v.group.visible).length };
     perfRingN++;
     if (dt > 33) {
@@ -4389,21 +4242,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function prewarmShaders() {
     try {
       camera.updateMatrixWorld();
-      renderer.compile(scene, camera);
-      renderer.compile(labelScene, camera);
+      // 战斗特效的批次与条带平时按需隐藏：预热期间临时显示，避免首发开火时才编译
+      ensureBattleFx().prewarm(() => {
+        renderer.compile(scene, camera);
+        renderer.compile(labelScene, camera);
+      });
     } catch (e) { console.warn('着色器预热失败（忽略）:', e); }
   }
 
   function tick() {
     // 弹道推进
     const shots = DATA.shots;
-    while (shotPtr < shots.length && shots[shotPtr].t_fire <= T) { spawnShot(shots[shotPtr]); shotPtr++; }
-    updateTracers();
+    while (shotPtr < shots.length && shots[shotPtr].t_fire <= T) { spawnShot(shots[shotPtr], shotPtr); shotPtr++; }
     advanceKills();
     // Visibility/position at this T must precede feedback: a newly destroyed vehicle
     // can become visible again after coverage ended, so last frame's visibility is stale.
     for (const v of V) applyPose(v);
     suspSnap = false;   // pose has consumed the seek snap for this tick
+    // 炮口要等本 tick 炮管摆到 T 时刻姿态后再定位；曳光 / 光迹的可见起点（炮口）由它填入，
+    // 所以弹道推进排在它之后
+    flushMuzzles();
+    updateTracers();
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
@@ -4603,23 +4462,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     for (const g of geos) g.dispose();
   }
 
-  // 动态层（弹道/弹着点/轨迹线）清除：与 seekTo 共用一条 dispose 路径
+  // 动态层（弹道/弹着点/轨迹线）清除：与 seekTo 共用一条路径
   function clearEffects() {
-    // 与 clearTransients 同款：归池（对象留待复用），会话结束时由 disposeFxPool 统一释放
-    for (const tr of tracers) {
-      scene.remove(tr.mesh);
-      fxGive('tracer', tr.mesh);
-    }
+    // 条带归还 battleFx 的池（对象留待复用），会话结束时由 battleFx.dispose 统一释放
+    for (const tr of tracers) battleFx.giveRibbon(tr.mesh);
     tracers.length = 0;
-    for (const im of impacts) {
-      scene.remove(im.g);
-      fxGive('impact-' + im.kind, { g: im.g, ball: im.ball, ring: im.ring, sparks: im.sparks || [] });
-    }
-    impacts.length = 0;
-    for (const tl of trajLines) {
-      scene.remove(tl.mesh); fxGive('traj', tl.mesh);
-    }
+    for (const tl of trajLines) battleFx.giveRibbon(tl.mesh);
     trajLines.length = 0;
+    pendingMuzzles.length = 0;
     clearTransients();   // 战斗反馈（飘字/爆散/幽灵段/受击闪）：seek 后不补播
   }
 
@@ -4713,7 +4563,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();
-    disposeFxPool();   // 特效池（几何/材质/飘字画布贴图）随会话一次性释放
+    disposeFxPool();   // 特效池（飘字画布贴图）随会话一次性释放
+    battleFx?.dispose();   // 战斗特效（粒子批次 / 条带 / 图集）随会话一次性释放
+    battleFx = null;
+    if (DEBUG) delete window.__battleFx;
     // 可破坏物拾取/动画状态随会话释放：meshOwner 持 mesh 引用、destructPickList
     // 持实例引用、destruct.states 持 pivot/网格组——不置空则 reset 后仍被持有
     destruct = null;
@@ -5118,7 +4971,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       sizeObserver = null;
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
-        delete window.__pbV; delete window.__gdbg;
+        delete window.__pbV; delete window.__gdbg; delete window.__battleFx;
         delete window.__destructStage; delete window.__degradedSkipped; delete window.__destructDebug;
         delete window.__waterCoast;
       }
