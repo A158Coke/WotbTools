@@ -255,6 +255,39 @@ WotBTools
   旧的「2D 异步拉坦克数据 / 3D 相位推断+异步覆盖」两段式维护已移除。
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `config_idx?` / `burst_size?` 逐字对应。
 
+## 4i. 动态装甲 armorsStates（`armor_states[]` / `shots[].target_armor_state`，PlaybackData additive；上游待发版，pin 待随下一 Release 更新）
+
+- **协议定案**（上游 2026-10-13 两回放交叉实证：0954/1615 样本闭环）：Vehicle 实体
+  **propID 16 `armorsStates`，载荷 = `[u8 n][n × u32 LE 状态描述符]`**（n = 该车声明的
+  状态数；描述符仅 bit0/bit16 两位，**bit16 = 该状态当前激活**）——解码 = 激活组下标。
+  初始态经 ON_ENTITY_CREATE(type=5) 属性表 materialize（含"入视野前已切换"的快照）；
+  此后 `armorMover` 消耗品每次使用伴随恰一条 prop16 更新。静态车 create 表 prop16 为
+  空表（n=0）。前作"type=7 prop0 u8"已被证伪（prop0 = 全车皆有的交替布尔，与装甲状态
+  无关；反例存档见上游 `RawArmorStateTrack` 文档）。客户端数据源为车辆 XML
+  `<extras><armorsStatesController>`（全库仅 **6 辆**：T54MS 9073 / Charioteer_T 12657 /
+  Titan Strife 17777 / JagdPanther II Titan 22385 / AMX 50 100 Titan 24945 /
+  Sturmfeur HW 8305）。
+- `armor_states[]`: `{eid, t: number[], state: number[]}`（列式，两列等长，按 eid 升序）。
+  **skip-when-empty**：静态装甲车（绝大多数）字段整体省略——旧产物与静态场零扰动。
+- `shots[].target_armor_state?: number` —— 受击方**弹着时刻**（`t_fire + flight_secs`）
+  的状态号；`None`/缺省 = 受击车无状态流或弹着早于首个样本（**快照前区间**——用声明里
+  `default: true` 的 state 兜底，不猜）。
+- **回归锚点**（上游测试 `armor_state_timeline.rs`，1615 样本）：首弹（t_fire 68.95，
+  战报"未击穿"）受击车在 [57.44, 79.95) = state1——该弹命中板 `hull.armor_15` 仅存于
+  state1；79.95s 切回后各弹 = state0。修复前 facet 误报全 0（prop0 误判所致）。
+- **消费方门控（fail-closed）**：状态语义的唯一权威 = 上游 `data/armor_states.json`
+  （前端 vendored 于 `frontend/src/data/armorStates.js`）：每态 `armors` = 该态**激活**的
+  `<part>.<armor_N>` 集合；可控板 = 各态并集；`state ∉ 声明集` 的更新丢弃；时间线缺省 →
+  声明初态。
+- **前端接线**（`frontend/src/data/armorStates.js` + `scene/tankViewer.js`）：装甲模型
+  装载后按声明初态摘除非激活可控板（**deco 口径**——与穿透判定/点击分类/跳弹枚举的保留面
+  过滤同源，一处摘除全链生效；可控板中未激活板不计入等效装甲）；射击复现进入时按
+  `shots[].target_armor_state` 切换（`setArmorState`，声明外值拒绝）。恢复两段式：
+  `retagSpacedSections` 先按 `armorSectionOrig` 还原（含 spaced 重判），再摘除非激活——
+  顺序不可换；恢复 visible 时不得复活 `configHidden` 的配置变体。
+- 与 `frontend/src/api/agent-replay-facets.ts` 的 `armor_states?` /
+  `shots[].target_armor_state?` 逐字对应。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——

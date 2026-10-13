@@ -198,6 +198,7 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     bool anyPrimary = false;           // 前端门：整条射线存在主装甲原始命中（ricHasPrimary）
     bool blocked = false;              // 链中途被挡（待定：anyPrimary→红 否则紫）
     highp float rem = remIn;
+    int hitIdx = 0;                    // 已处理命中计数（点击链 layerIndex 同口径：外部模块也计）
     int variantSeen = 0;
     int prevTri = -1;                  // 同三角形跨 cell 重复列表去重（凸区域连续出现）
     int L = 0;
@@ -241,6 +242,7 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
                 if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
                 variantSeen |= vbit;
+                hitIdx++;                       // 计入"此前已有命中"（点击链 layerIndex 同口径）
                 if (rem > th) { rem -= th; tCur = bestT + RC_ADV_EPS; continue; }          // 穿过模块（不计层）
                 blocked = true;                         // 模块挡下：余下只查主装甲存在性
                 tCur = bestT + RC_ADV_EPS; continue;
@@ -251,9 +253,14 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             highp float cosA = min(abs(dot(nW, reflDir)), 1.0);
             highp float angle = acos(cosA);
             bool twoCal = caliber > th * 2.0;
-            highp float normR = twoCal ? (RC_TWO_CAL * normalization * caliber) / (2.0 * th) : normalization;
+            // 转正只作用于**首个命中层**（hitIdx==0）——击穿/越过后不再转正（WG 语义，用户裁示；
+            // 与 penetration.js calculate 的 layerIndex>0 → 0 及 JS 参考同规则；review 2026-10-13）
+            highp float normR = (hitIdx == 0)
+                ? (twoCal ? (RC_TWO_CAL * normalization * caliber) / (2.0 * th) : normalization)
+                : 0.0;
             highp float finA = max(angle - normR, 0.0);
             highp float eff = th / max(cos(finA), RC_COS_EPS);
+            hitIdx++;                                   // 本命中已计入（点击链 layerIndex 同口径）
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
             if (sec <= 2) {                             // 主装甲 = 末层，定结论
                 if (layPen) {
@@ -714,6 +721,7 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     // 模拟（allowRicochet=false 动能出射段）
     const { remIn, caliber, normalizationRad, thickMul } = params;
     let rem = remIn;
+    let hitIdx = 0;
     const layers = [];
     for (const h of collected) {
         const th = h.thickness * thickMul;
@@ -726,11 +734,15 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
             const angle = Math.acos(cosA);
             const twoCal = caliber > th * 2;
-            const normR = twoCal ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th) : normalizationRad;
+            // 转正只作用于首个命中层（hitIdx===0）——与 calculate layerIndex>0 及 GLSL 同规则
+            const normR = hitIdx === 0
+              ? (twoCal ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th) : normalizationRad)
+              : 0;
             const finA = Math.max(angle - normR, 0);
             eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
             layPen = rem > eff;
         }
+        hitIdx++;
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
         if (layPen) {
             rem -= eff;

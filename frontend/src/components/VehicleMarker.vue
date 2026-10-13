@@ -342,7 +342,7 @@ const stateClasses = computed(() => ({
 
     <div class="pb-presentation" :style="labelsStyle">
       <PlaybackVehicleLabel
-        :player-name="st.playerName" :tank-name="st.tankName" :friendly="st.friendly"
+        :player-name="st.playerName" :tank-name="st.tankName" :gun-marks="st.gunMarks" :friendly="st.friendly"
         :destroyed="st.destroyed" :last-known="st.lastKnown"
         :show-player-name="label.showPlayer && !label.blockHidden"
         :show-tank-name="label.showTank && !label.blockHidden"

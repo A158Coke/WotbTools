@@ -33,7 +33,10 @@ describe('toBattleFacts —— 与 Java ReplayParser 逐字段一致（golden）
     for (const p of players) {
       const jp = javaPlayers.get(p.accountId)
       expect(jp, `player ${p.accountId}`).toBeDefined()
-      expect(p).toEqual(pick(jp!, Object.keys(p)))
+      const { gunMarks, ...legacy } = p
+      expect(legacy).toEqual(pick(jp!, Object.keys(legacy)))
+      const raw = wasm[file].players.find(player => player.account_id === p.accountId)?.gun_marks
+      expect(gunMarks).toBe(raw == null ? null : raw)
     }
   })
 
@@ -64,4 +67,16 @@ describe('toBattleFacts —— 与 Java ReplayParser 逐字段一致（golden）
     expect(mine.damageReceived).toBe(0)
     expect(Number.isFinite(mine.damageReceived)).toBe(true)
   })
+})
+
+it('projects earned marks independently of rank and preserves unknown evidence', () => {
+  const file = Object.keys(wasm).find(name => !wasm[name].error)!
+  for (const value of [0, 1, 2, 3, undefined, -1, 4, 1.5]) {
+    const input = structuredClone(wasm[file])
+    input.players[0].gun_marks = value
+    input.players[0].rank = 30
+    const player = toBattleFacts(input).players.find(p => p.accountId === input.players[0].account_id)!
+    expect(player.gunMarks).toBe(value != null && Number.isInteger(value) && value >= 0 && value <= 3 ? value : null)
+    expect(player.rank).toBe(30)
+  }
 })

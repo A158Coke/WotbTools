@@ -2588,7 +2588,7 @@ async function runWorkspace2DScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
 
@@ -2624,6 +2624,56 @@ async function runWorkspace2DScenario(env, scenario) {
   }
 
   await captureMobileReview(page, scenario)
+  await page.waitFor(() => document.querySelector('[data-gun-marks] svg image')?.getAttribute('href')?.startsWith('data:image/png;base64,'),
+    { label: 'self-contained Gun Marks atlas' })
+  const marks = await page.evaluate(`(() => {
+    const badges = [...document.querySelectorAll('[data-gun-marks] svg')]
+    return {
+      counts: [...new Set(badges.map(svg => Number(svg.parentElement.dataset.gunMarks)))].sort(),
+      badgeCount: badges.length,
+      fit: badges.every(svg => { const r = svg.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height <= 22 })
+    }
+  })()`)
+  check(failures, marks.counts.join(',') === '1,2,3' && marks.badgeCount >= 10,
+    `recorded mark badges missing: ${JSON.stringify(marks)}`)
+  check(failures, marks.fit, `mark badge exceeds its fixed screen footprint: ${JSON.stringify(marks)}`)
+  if (scenario.name === 'ws2d-1600x900-desktop') {
+    const pixels = await page.evaluate(`(async () => {
+      const { default: html2canvas } = await import('/node_modules/html2canvas/dist/html2canvas.esm.js')
+      const { computeExportDimensions } = await import('/src/utils/exportReplayPng.js')
+      const { default: externalAtlas } = await import('/src/assets/gun-marks/gun-marks.png?url')
+      const sample = async (count, external = false) => {
+        const host = document.createElement('div')
+        host.style.cssText = 'position:fixed;left:-9999px;top:0;width:16px;height:20px;background:white'
+        const svg = document.querySelector('[data-gun-marks="' + count + '"] svg').cloneNode(true)
+        svg.style.cssText = 'display:block;width:16px;height:20px'
+        if (external) svg.querySelector('image').setAttribute('href', externalAtlas)
+        host.appendChild(svg)
+        document.body.appendChild(host)
+        try {
+          const dims = computeExportDimensions({ width: 16, height: 20 })
+          const rendered = await html2canvas(host, { scale: dims.scale, useCORS: true, backgroundColor: '#ffffff', width: dims.width, height: dims.height })
+          // Decode the actual PNG, rather than inspecting only the intermediate canvas.
+          const png = new Image()
+          png.src = rendered.toDataURL('image/png')
+          await png.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = png.width; canvas.height = png.height
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(png, 0, 0)
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+          let colored = 0
+          for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 0 && data[i] + data[i + 1] + data[i + 2] < 735) colored++
+          return colored
+        } finally { host.remove() }
+      }
+      return { counts: await Promise.all([1, 2, 3].map(n => sample(n))), external: await sample(3, true) }
+    })()`)
+    check(failures, pixels.counts.every(n => n > 20) && pixels.counts[0] < pixels.counts[1] && pixels.counts[1] < pixels.counts[2],
+      `Gun Marks PNG pixels missing or wrong cells: ${JSON.stringify(pixels)}`)
+    check(failures, pixels.external === 0, `external-image negative control unexpectedly rendered: ${JSON.stringify(pixels)}`)
+    console.log(`[gun-marks-png] ${JSON.stringify(pixels)}`)
+  }
   const g = await page.probe(workspace2dProbe)
   const result = () => results.push({ name: scenario.name, failures, viewport })
   check(failures, g.width === scenario.width && g.height === scenario.height,
