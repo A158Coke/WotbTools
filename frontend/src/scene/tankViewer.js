@@ -1641,6 +1641,35 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (primaryArmorScene) apply(primaryArmorScene);
         }
 
+        /** 交战距离衰减（每帧）：对主图 + spaced clone 逐板计算炮口/相机→板中心距离，
+         *  按 0x719740 衰减式刷新 pen uniform（d≤100 或 HE 恒 near；d>100 非 HE 线性至 far，
+         *  clamp≥0；HEAT 数据 far==near 天然恒平）。相机旋转/移动即实时更新。 */
+        function updatePenetrationDistanceUniforms() {
+            if (!selectedShell) return;
+            const near = selectedShell.penetration || 0;
+            const farRaw = selectedShell.penetration_far;
+            const far = (typeof farRaw === 'number' && farRaw > 0) ? farRaw : near;
+            const isHE = shellTypeOf(selectedShell) === 'he';
+            const { penMul } = equipmentCoeffs();
+            const origin = gunMuzzleWorld || camera.position;
+            const v = new THREE.Vector3();
+            const apply = (scene) => {
+                if (!scene) return;
+                scene.traverse(function(node) {
+                    if (!node.isMesh || !node.material || !node.material.uniforms || !node.material.uniforms.penetration) return;
+                    v.setFromMatrixPosition(node.matrixWorld);
+                    const d = origin.distanceTo(v);
+                    let pen = near;
+                    if (!isHE && d > 100.0) {
+                        pen = near + (far - near) * (d - 100.0) / 400.0;
+                        if (pen < 0) pen = 0;
+                    }
+                    node.material.uniforms.penetration.value = pen * penMul;
+                });
+            };
+            apply(primaryArmorScene);
+            apply(spacedArmorScene);
+        }
         function renderSpacedArmorPass() {
             if (!spacedArmorScene) return;
             const rt = syncPenetrationRT();
@@ -4254,11 +4283,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (!armorStateDecl) return;   // 静态车无声明：不得读 states（review P2 崩溃点）
                 setArmorState(this.checked ? nonDefaultStateId(armorStateDecl) : defaultStateId(armorStateDecl));
             });
-            // 距离手动输入后停止自动跟随真实弹道距离（dataset.dirty，见 doPenetrationCheck）
-            const armorDistEl = document.getElementById('armor-distance');
-            if (armorDistEl) {
-                armorDistEl.addEventListener('input', function() { armorDistEl.dataset.dirty = '1'; });
-            }
 
             document.getElementById('config-select').addEventListener('change', function() {
                 applyConfig(parseInt(this.value));
@@ -4814,17 +4838,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const isHE = shellType === 'he';
             const eqCal = !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
             const eqEnh = !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
-            // 距离衰减（对齐客户端指示器 0x719740）：射击复现（真实炮口射线）默认跟随
-            // 真实弹道距离并同步回面板；用户手动改过（dataset.dirty）后以手动值为准；
-            // 静态检视默认 100m（≤100 不衰减，行为与旧版一致）。
-            const distEl = document.getElementById('armor-distance');
-            const manualDist = distEl ? parseFloat(distEl.value) : NaN;
-            const realShot = !!__shotRayOrigin;
-            let effDistM = (!Number.isNaN(manualDist) && manualDist > 0) ? manualDist : 100.0;
-            if (realShot && distEl && distEl.dataset.dirty !== '1' && !Number.isNaN(dist)) {
-                effDistM = dist;
-                distEl.value = String(Math.round(dist));
-            }
+            // 距离衰减（对齐客户端指示器 0x719740）：交战距离 = 射线起点（射击复现 =
+            // 真实炮口；静态检视 = 炮管几何/相机）到命中点，全模式自动检测。
+            // d≤100m 或 HE 恒 near；d>100m 非 HE 线性衰减至 far。
+            const effDistM = dist;
             const penDisp = pen * shellPenMul(selectedShell);
             const mpu = worldMetersPerUnit || 1;
             // 每发弹参数（blitzkit：normalization ?? 0；ricochet 仅非 explosive 弹使用）
@@ -5026,6 +5043,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const segments = result.split('→').map(x => x.trim()).filter(Boolean);
             const colorHex = '#' + color.toString(16).padStart(6, '0');
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            // 交战距离（射线起点→命中点，米）——距离衰减判定的输入参数，随面板展示
+            if (distVal > 0) {
+                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">交战距离: ${fmtNum(distVal)} m</div>`;
+            }
             const titleHtml = (st) => {
                 const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
                 return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${escapeText(L.resultName(st))}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
@@ -5157,6 +5178,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (SESS && heatFrames < 5) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
+                updatePenetrationDistanceUniforms();   // 交战距离衰减（相机/炮口→命中板，每帧刷 pen uniform）
                 renderSpacedArmorPass();
                 // 全分辨率逐像素续飞（v5.3）：姿态变化时重建世界网格（相机移动无需重建）
                 if (ricochetPoseDirty && ricochetPack) {
