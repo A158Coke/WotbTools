@@ -470,6 +470,40 @@ describe('HoFPage', () => {
     expect(wrapper.text()).toContain('hof.upload_success')
   })
 
+  it('an already-recorded battle is reported as such, not as a new Hall of Fame entry', async () => {
+    lbApi.hofUpload.mockResolvedValueOnce({ status: 'already_recorded', arenaId: 'a1' })
+    const wrapper = mountPage()
+    await flushPromises()
+    await openSingleUpload(wrapper)
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
+    const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    const msg = wrapper.find('.lb-upload-msg')
+    expect(msg.text()).toBe('hof.upload_already_recorded')
+    expect(msg.classes()).not.toContain('err')
+    expect(wrapper.text()).not.toContain('hof.upload_success')
+  })
+
+  it('the upload button is reset when the result message appears, even while the leaderboard reloads', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await openSingleUpload(wrapper)
+    let finishReload
+    lbApi.hofList.mockImplementationOnce(() => new Promise((resolve) => { finishReload = resolve }))
+    const input = wrapper.find('.hof-upload-modal input[type="file"]')
+    const file = new File([new Uint8Array([1, 2, 3])], 'battle.wotbreplay', { type: 'application/octet-stream' })
+    Object.defineProperty(input.element, 'files', { value: [file] })
+    await input.trigger('change')
+    await flushPromises()
+    // 榜单刷新仍在进行：成功提示已出现，按钮不得仍是「上传中…」
+    expect(wrapper.text()).toContain('hof.upload_success')
+    expect(wrapper.text()).not.toContain('hof.uploading')
+    finishReload({ items: [], page: 1, size: 50, totalItems: 0, totalPages: 0 })
+    await flushPromises()
+  })
+
   it('shows UNSUPPORTED_BATTLE_TYPE business error, never network error', async () => {
     lbApi.hofUpload.mockRejectedValue(new ApiError('UNSUPPORTED_BATTLE_TYPE', 400))
     const wrapper = mountPage()

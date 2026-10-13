@@ -1,6 +1,24 @@
 import type { TournamentStandings } from '../api/tournament-points.js'
 import { sanitizeFilename } from './exportReplayPng.js'
 import printStyles from '../styles/tokens/tournament-print.css?inline'
+import tournamentMessages from '../locales/tournament-messages.json'
+
+/**
+ * 「小组赛 / 决赛圈」预设在创建赛事时按**当时的界面语言**落库（TournamentPointsConfigPage.chooseNaming）。
+ * 显示 / 导出时把任一语言的预设文本识别回预设，再按当前语言重新翻译；管理员自定义的名称原样保留。
+ */
+const STAGE_PRESET_KEYS = ['groupStage', 'finalStage'] as const
+const STAGE_PRESETS = new Map<string, (typeof STAGE_PRESET_KEYS)[number]>(
+  Object.values(tournamentMessages)
+    .flatMap(messages => STAGE_PRESET_KEYS.map(key => [messages.tournament[key], key] as const))
+    .filter(([text]) => text.length > 0),
+)
+
+export function localizedDayLabel(configured: string | null | undefined, day: number, t: Translate): string {
+  if (!configured || /^Day \d+$/.test(configured)) return t('tournament.day', { number: day })
+  const preset = STAGE_PRESETS.get(configured.trim())
+  return preset ? t('tournament.' + preset) : configured
+}
 
 type Translate = (key: string, params?: { number: number }) => string
 type Cell = number | string | null
@@ -31,8 +49,7 @@ export function projectTournamentPoints(standings: TournamentStandings, locale: 
   ]
   for (let round = 1; round <= event.roundCount; round++) {
     for (let day = 1; day <= event.daysPerRound; day++) {
-      const configured = event.dayLabels[day - 1]
-      const dayLabel = !configured || /^Day \d+$/.test(configured) ? t('tournament.day', { number: day }) : configured
+      const dayLabel = localizedDayLabel(event.dayLabels[day - 1], day, t)
       columns.push({ key: `round_${round}_day_${day}_points`, label: `${t('tournament.round', { number: round })} · ${dayLabel}`, kind: 'day' })
     }
     columns.push({ key: `round_${round}_total_points`, label: t('tournament.roundTotal', { number: round }), kind: 'round-total' })

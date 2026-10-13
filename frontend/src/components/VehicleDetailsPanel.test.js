@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
 import { defineComponent, h } from 'vue'
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 
 const inspectorStub = defineComponent({
@@ -150,5 +150,35 @@ describe('VehicleDetailsPanel', () => {
     await wrapper.setProps({ selectedState })
     await wrapper.find('[data-test="pb-sb-close"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+})
+
+describe('VehicleDetailsPanel inline (phone / portrait) selection feedback', () => {
+  it('scrolls the inline details into view when a vehicle is selected or changed; floating never scrolls', async () => {
+    const scrollIntoView = vi.fn()
+    const original = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scrollIntoView
+    try {
+      const inline = mountPanel({ presentation: 'inline' })
+      await flushPromises()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest' })
+      // 同一台车的时间推进 / 统计刷新不触发滚动
+      await inline.setProps({ currentTime: 99, selCurStats: { dealt: 1, received: 2, kills: 0 } })
+      await flushPromises()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      await inline.setProps({ selectedState: { ...selectedState, vehicle: { ...selectedState.vehicle, accountId: 8 } } })
+      await flushPromises()
+      expect(scrollIntoView).toHaveBeenCalledTimes(2)
+      inline.unmount()
+
+      scrollIntoView.mockClear()
+      const floating = mountPanel({ presentation: 'floating' })
+      await flushPromises()
+      expect(scrollIntoView).not.toHaveBeenCalled()
+      floating.unmount()
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original
+    }
   })
 })

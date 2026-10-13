@@ -341,6 +341,19 @@ describe('AdminUsersPage', () => {
     expect(rows()[0].findAll('.cell-actions button')[0].attributes('disabled')).toBeUndefined()
   })
 
+  it('a local profile without a game account is shown as unbound, not bound (same rule as the profile page)', async () => {
+    api.searchUsers.mockResolvedValue(pageResult([
+      kcUser('kc-profile-only', { profileId: 3, displayName: 'test', hasLocalProfile: true, wotbAccountId: null }),
+      kcUser('kc-bound', { profileId: 4, displayName: 'Bound', hasLocalProfile: true, wotbAccountId: 3115055801, wotbNickname: 'Nick', wotbServer: 'CN' }),
+    ], 0, 25, 2, 1))
+    wrapper = mountPage()
+    await flushPromises()
+    expect(rows()[0].text()).toContain('admin.unbound')
+    expect(rows()[0].text()).not.toContain('admin.bound')
+    expect(rows()[1].text()).toContain('admin.bound')
+    expect(rows()[1].text()).not.toContain('admin.unbound')
+  })
+
   // —— PG-09 / PG-10：详情与删除确认统一 AppDialog；操作列与复选框在手机上可达 ——
   it('opens user detail in an accessible dialog and closes it with Escape', async () => {
     api.getUser.mockResolvedValue({ profile: null, keycloak: { id: 'kc-a', username: 'kc-a-name', email: 'a@example.com', enabled: true }, warnings: [] })
