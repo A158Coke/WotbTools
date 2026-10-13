@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { stringifyQuery } from 'vue-router'
 import { NATIVE_AUTH_CAPABILITY } from '../platform/nativeBridgeContract.js'
 import { createBrowserAuthProvider } from '../platform/browserAuthProvider.js'
+import { hasAuthReturn } from '../platform/authDiagnostics.js'
 import {
   createAndroidAuthProvider,
   createUnsupportedAuthProvider,
@@ -115,7 +116,8 @@ function markFailed(transaction, error, reason) {
   clearTimeout(transaction.pendingLog)
   initialized.value = true
   projectSession({ isAuthenticated: false, parsedToken: null, state: 'failed' })
-  initError.value = error
+  // Some SDK failures (including nonce rejection) reject without an error value.
+  initError.value = error || new Error('AUTH_INIT_FAILED')
   initFailureReason.value = reason
   if (reason === 'init-timeout' && !transaction.timeoutLogged) {
     console.warn(
@@ -301,19 +303,26 @@ async function retryAuth() {
 /** 浏览器登录目的地：同一 view 保留上下文，也接受完整 router location（仅本站）。 */
 function loginRedirectUri(destination) {
   const current = new URL(window.location.href)
+  let url
   if (typeof destination === 'string') {
-    const url = current.searchParams.get('view') === destination
+    url = current.searchParams.get('view') === destination
       ? current
       : new URL(current.origin + current.pathname)
     url.searchParams.set('view', destination)
-    return url.toString()
+  } else if (!destination) {
+    url = current
+  } else {
+    url = new URL(destination.path || current.pathname, current.origin)
+    if (url.origin !== current.origin) throw new Error('AUTH_REDIRECT_ORIGIN_MISMATCH')
+    url.search = stringifyQuery(destination.query || {})
+    url.hash = destination.hash || ''
   }
-  if (!destination) return current.toString()
-
-  const url = new URL(destination.path || current.pathname, current.origin)
-  if (url.origin !== current.origin) throw new Error('AUTH_REDIRECT_ORIGIN_MISMATCH')
-  url.search = stringifyQuery(destination.query || {})
-  url.hash = destination.hash || ''
+  // Explicit restart must not carry an unconsumed query callback into its new redirect.
+  // Preserve product context and ordinary anchors; the SDK owns the new transaction.
+  if (hasAuthReturn({ search: url.search, hash: '' })) {
+    for (const key of ['code', 'state', 'session_state', 'iss', 'error', 'error_description',
+      'error_uri', 'kc_action_status', 'kc_action']) url.searchParams.delete(key)
+  }
   return url.toString()
 }
 

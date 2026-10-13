@@ -1,5 +1,5 @@
 import Keycloak from 'keycloak-js'
-import { record, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
+import { hasAuthReturn, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
 
 const KEYCLOAK_CONFIG = Object.freeze({
   url: 'https://auth.wotbtools.com',
@@ -39,8 +39,12 @@ export function createBrowserAuthProvider() {
     async init({ mode } = {}) {
       // 回程取证（2.1.0 Phase 2.5）：整页登录回来后，URL 上的 OIDC 参数存在性是
       // 「断在哪一跳」的关键事实——放在 adapter init 之前，失败路径也留痕。
-      recordReturnFacts(window.location.search)
-      const options = mode === 'login-recovery'
+      recordReturnFacts(hasAuthReturn({ search: '', hash: window.location.hash })
+        ? window.location.hash.slice(1) : window.location.search)
+      const returning = hasAuthReturn()
+      // An unrelated SSO session must not hide an uncompleted incoming transaction.
+      // The SDK alone consumes and validates a callback; no callback-store access here.
+      const options = mode === 'login-recovery' || returning
         ? {
             pkceMethod: 'S256',
             checkLoginIframe: false,
@@ -52,6 +56,9 @@ export function createBrowserAuthProvider() {
             checkLoginIframe: false,
           }
       await adapter().init(options)
+      if (returning && mode !== 'login-recovery' && !adapter().authenticated) {
+        throw Object.assign(new Error('AUTH_RETURN_NOT_COMPLETED'), { code: 'AUTH_RETURN_NOT_COMPLETED' })
+      }
     },
 
     get authenticated() {

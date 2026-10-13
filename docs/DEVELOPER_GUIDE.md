@@ -439,6 +439,9 @@ recorderAccountId（客户端 parseResult.author_account_id）
 
 昵称相同不通过；账号只是出现在同局名册里不通过。录像者 accountId 来自客户端，理论上可伪造——已验证状态只用于个人主页徽章，**不授予任何权限**；若将来要依赖它，应附带回放附件供管理员抽检。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证；与账号身份无关的编辑（例如昵称刷新、`ensure`）不清空。
 
+账户页区分认证初始化失败与资料加载失败：已认证时 PUT/GET 资料发生非认证错误只重试资料，不重新授权。
+Android 网页 QQ 跨浏览器回跳的安全恢复与人工验收见 [`auth/web-qq-diagnostics.md`](auth/web-qq-diagnostics.md) §5。
+
 ### 身份两层与 profile self-heal
 
 ```text
@@ -458,6 +461,7 @@ Keycloak 认证成功
   → 已有 profile 原样返回；没有则按 canonical provisioning 创建
 ```
 
+- **身份隔离**：全局 bootstrap 的缓存/在途请求按 `authEpoch` 作废；登出和直接切换账号均清理账户页旧投影，迟到成功/失败不得覆盖当前身份。
 - **canonical owner 只有全局 bootstrap**（`frontend/src/composables/useBusinessUserBootstrap.js`）。页面只等待其结果，不得各自实现「读不到资料 → 自己创建」。
 - **个人中心区分连通性与业务失败**：`whenBusinessUserSettled` 返回 false 时，`ACCOUNT_PROFILE` 不可用进入中性 connectivity 状态；仍可用则显示资料错误与显式重试，不停在 loading，也不自动循环重试。只有连通性不可用状态恢复可用时自动加载一次。等待 bootstrap、解绑/撤销确认或本地回放解析后，真正调用 backend 前再次检查对应 capability；回放解析仍完全本地。
 - **KC-only 是允许的临时/历史状态**：broker 刚注册但浏览器还没回站、用户回站前关掉浏览器、bootstrap 暂时失败、历史 legacy 数据、管理员手工建 KC user。任何 KC-only 用户下一次成功进入 WotBTools 都会被自动补齐。

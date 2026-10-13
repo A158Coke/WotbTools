@@ -53,20 +53,16 @@ onMounted(() => {
  * 这里会因 connectivity 变化再次求值并自动补一次（`ensure()` 自身的 ready / in-flight 去重保证
  * 不重复请求，也没有任何 retry 循环）。
  */
-const { authInitState, authenticated } = useAuth()
+const { authInitState, authenticated, tokenParsed, authEpoch } = useAuth()
 const { failed, ensure, retry } = useBusinessUserBootstrap()
 
-watch([authInitState, authenticated, connectivity], ([state, isLoggedIn, currentConnectivity]) => {
-  if (!shouldEnsureBusinessUser({
-    authInitState: state,
-    authenticated: isLoggedIn,
-    connectivity: currentConnectivity,
-  })) return
+watch([authInitState, authenticated, connectivity, () => tokenParsed.value?.sub], ([state, isLoggedIn, currentConnectivity]) => {
   // Auth generation changes are authoritative; ensure itself deduplicates ready/in-flight work.
   void ensure({
     authInitState: state,
     authenticated: isLoggedIn,
     connectivity: currentConnectivity,
+    authEpoch: authEpoch(),
   })
 }, { immediate: true })
 
@@ -81,6 +77,7 @@ function retryBusinessBootstrap() {
     authInitState: authInitState.value,
     authenticated: authenticated.value,
     connectivity: connectivity.value,
+    authEpoch: authEpoch(),
   }
   if (!shouldEnsureBusinessUser(context)) {
     requireFeature(Feature.ACCOUNT_PROFILE)
