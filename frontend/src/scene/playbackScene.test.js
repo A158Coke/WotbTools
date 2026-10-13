@@ -1607,8 +1607,13 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     const { api, frames } = await load(vehicles, null, { ...dataFor(vehicles), shots: [shot] })
     api.seekTime(49.95)
     api.setPlaying(true)
+    const muzzle = vi.spyOn(window.__battleFx, 'spawnMuzzle')
     frames.shift()()   // T 50.05: fired, in flight
     expect(fxStats()).toMatchObject({ muzzles: 1, impacts: 0, ribbons: 2 })   // tracer + trail
+    // no GLB on the shooter (proxy vehicle): muzzle effects fall back to the recorded origin
+    expect(muzzle).toHaveBeenCalledTimes(1)
+    expect(muzzle.mock.calls[0][0].toArray()).toEqual([-0, 2, 0])
+    expect(muzzle.mock.calls[0][1].toArray()).toEqual([1, 0, 0])
     const tracer = window.__battleFx.root.children.find(object => object.name === 'battle-fx-tracer')
     expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0x3ee08a)   // friendly shooter: green tracer
     frames.shift()()

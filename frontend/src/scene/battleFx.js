@@ -73,6 +73,36 @@ export function trailOpacityAt(secsAfterFlight) {
   return Math.max(0, 1 - (secsAfterFlight - TRAIL_HOLD_SECS) / TRAIL_FADE_SECS)
 }
 
+/** 炮管末端到开火起点的合理距离（米）：超出说明炮管姿态与弹道对不上，回落到记录起点。 */
+const MUZZLE_REACH_M = [0.3, 15]
+const _corner = new THREE.Vector3()
+/**
+ * 炮口位置。回放记录的开火起点在火炮枢轴（炮塔 / 炮盾里），火光与炮口烟放在那里会被车模挡住
+ * （2026-10-13 实机近景）。取炮管节点下各网格包围盒 8 个角点（世界系；调用方保证 matrixWorld
+ * 已是开火时刻的姿态）沿弹道方向的最远投影，把起点沿弹道推到炮管末端；没有网格或投影超出
+ * 合理范围时返回起点。
+ * @param {THREE.Object3D[]|null} barrelNodes 炮管节点（GLB `gun_NN` / `gun_NN_mask`）
+ * @param {THREE.Vector3} from 开火起点
+ * @param {THREE.Vector3} dir 弹道方向（单位向量）
+ */
+export function muzzleTipOf(barrelNodes, from, dir, out = new THREE.Vector3()) {
+  let reach = -Infinity
+  for (const node of barrelNodes || []) {
+    node.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+      const { min, max } = o.geometry.boundingBox
+      for (let i = 0; i < 8; i++) {
+        _corner.set(i & 1 ? max.x : min.x, i & 2 ? max.y : min.y, i & 4 ? max.z : min.z).applyMatrix4(o.matrixWorld)
+        reach = Math.max(reach, _corner.sub(from).dot(dir))
+      }
+    })
+  }
+  out.copy(from)
+  if (reach >= MUZZLE_REACH_M[0] && reach <= MUZZLE_REACH_M[1]) out.addScaledVector(dir, reach)
+  return out
+}
+
 const clamp01 = (x) => Math.max(0, Math.min(1, x))
 const easeOut = (x) => 1 - (1 - clamp01(x)) ** 3
 const smooth = (x) => { const t = clamp01(x); return t * t * (3 - 2 * t) }
