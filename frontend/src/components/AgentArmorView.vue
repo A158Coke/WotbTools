@@ -246,8 +246,8 @@ onBeforeUnmount(() => {
                     <label>{{ $t('armor.equip') }}</label>
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
+                    <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
-                <div class="sel-row" id="armor-state-row" style="display:none;"><label for="armor-state-select">{{ $t('armor.armor_state') }}</label><select id="armor-state-select"></select></div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled>—</button></div>
                 <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled>—</button></div>
                 <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
