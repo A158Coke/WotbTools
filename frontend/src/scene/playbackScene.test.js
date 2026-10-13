@@ -56,6 +56,21 @@ vi.mock('three', async (importOriginal) => {
   return { ...actual, WebGLRenderer: StubWebGLRenderer }
 })
 
+/**
+ * 炮口定位：测试车没有 GLB（代理车），真实 muzzleTipOf 总是回落到记录起点。用例要验证
+ * "炮管里那段不画"时把 `muzzleTip.reach` 设成炮管长度，模拟炮口在起点前方 reach 米处。
+ */
+const muzzleTip = vi.hoisted(() => ({ reach: 0 }))
+vi.mock('./battleFx.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    muzzleTipOf: (nodes, from, dir, out) => (muzzleTip.reach > 0
+      ? out.copy(from).addScaledVector(dir, muzzleTip.reach)
+      : actual.muzzleTipOf(nodes, from, dir, out)),
+  }
+})
+
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
 import { BURST_SECS, FX_BUDGETS } from './battleFx.js'
 
@@ -120,6 +135,7 @@ afterEach(async () => {
   document.body.innerHTML = ''
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  muzzleTip.reach = 0
   window.history.replaceState(null, '', '/')
 })
 
@@ -1636,6 +1652,46 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(fxStats()).toMatchObject({ muzzles: 1, ribbons: 2 })
     api.seekTime(49)
     expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 0 })   // seek clears and never replays history
+  })
+
+  it('barrel: muzzle effects at the barrel tip; tracer and trail stay hidden inside the barrel and start at the muzzle', async () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    muzzleTip.reach = 8   // muzzle 8 m ahead of the recorded origin (gun pivot)
+    const vehicles = shotPair()
+    // 100 m in 2 s = 5 m per 0.1 s frame; a second point-blank shot lands 3 m out, inside the barrel
+    const shots = [
+      { t_fire: 50, shooter_eid: 1, target_eid: 2, from: [0, 2, 0], to: [-100, 2, 0], flight_secs: 2, game_hit_result: 3 },
+      { t_fire: 60, shooter_eid: 1, target_eid: 2, from: [0, 2, 0], to: [-3, 2, 0], flight_secs: 0.3, game_hit_result: 3 },
+    ]
+    const { api, frames } = await load(vehicles, null, { ...dataFor(vehicles), shots })
+    const fx = window.__battleFx
+    const muzzle = vi.spyOn(fx, 'spawnMuzzle')
+    const named = (name) => fx.root.children.filter((o) => o.name === name && o.visible)
+    api.seekTime(49.95)
+    api.setPlaying(true)
+    frames.shift()()   // T 50.05: head 2.5 m out, still in the barrel
+    expect(muzzle.mock.calls[0][0].toArray()).toEqual([8, 2, 0])
+    expect(fxStats()).toMatchObject({ muzzles: 1, ribbons: 2 })
+    expect(named('battle-fx-tracer')).toHaveLength(0)
+    expect(named('battle-fx-trail')).toHaveLength(0)
+    frames.shift()()   // T 50.15: 7.5 m, still in the barrel
+    expect(named('battle-fx-tracer')).toHaveLength(0)
+    frames.shift()()   // T 50.25: 12.5 m, out of the muzzle; tail clamped to the muzzle, not 14 m back
+    const [tracer] = named('battle-fx-tracer')
+    expect(tracer.material.uniforms.uA.value.x).toBeCloseTo(8, 5)
+    expect(tracer.material.uniforms.uB.value.x).toBeCloseTo(12.5, 5)
+    const [trail] = named('battle-fx-trail')
+    expect(trail.material.uniforms.uA.value.x).toBeCloseTo(8, 5)
+    expect(trail.material.uniforms.uB.value.x).toBeCloseTo(12.5, 5)
+    api.setPlaying(false)
+    api.seekTime(59.95)
+    api.setPlaying(true)
+    for (let i = 0; i < 5; i++) frames.shift()()   // point-blank: the whole 3 m path is inside the barrel
+    expect(named('battle-fx-tracer')).toHaveLength(0)
+    expect(named('battle-fx-trail')).toHaveLength(0)
+    expect(muzzle.mock.calls[1][0].toArray()).toEqual([8, 2, 0])   // the flash still sits at the barrel tip
+    expect(fxStats().impacts).toBe(1)                              // and the hit still lands on arrival
   })
 
   it('ricochet: the impact fires when the shell reaches the hit point while the tracer continues along the exit leg', async () => {

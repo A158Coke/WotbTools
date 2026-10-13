@@ -3541,31 +3541,43 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (dir.lengthSq() > 1e-8) dir.normalize(); else dir.set(0, 0, 1);
     // 跳弹出射方向 = 折线下一段方向（缺省由 battleFx 按来弹方向上挑）
     const out = pts3.length > 2 ? new THREE.Vector3().fromArray(pts3[2]).sub(impactPos) : null;
-    pendingMuzzles.push({ eid: s.shooter_eid, from, dir, seed });
-    tracers.push({ mesh: fx.takeRibbon('tracer'), points: pts3, legEnds, arcEnds: legArcEnds(pts3),
-      t0: s.t_fire, t1, shot: s, color, seed, impactPos, dir, out, head: from.clone(), hit: false });
+    // s0 = 可见起点弧长：炮管里那一段（起点 → 炮口）不画曳光与光迹，由 flushMuzzles 填入
+    const tracer = { mesh: fx.takeRibbon('tracer'), points: pts3, legEnds, arcEnds: legArcEnds(pts3),
+      t0: s.t_fire, t1, shot: s, color, seed, impactPos, dir, out, head: from.clone(), hit: false,
+      s0: 0, inBarrel: false };
+    tracers.push(tracer);
     // 弹道光迹（逐段一条：折线在跳弹处拐弯）：段起点时刻起随弹头显现，弹头走完全程后
     // 停留再淡出（trailOpacityAt，回放时钟；暂停时一直留着，seek 清空）。
+    let firstTrail = null;
     for (let k = 0; k + 1 < pts3.length; k++) {
       const a = new THREE.Vector3().fromArray(pts3[k]);
       const b = new THREE.Vector3().fromArray(pts3[k + 1]);
-      if (!(a.distanceTo(b) > 1e-3)) continue;
+      const len = a.distanceTo(b);
+      if (!(len > 1e-3)) continue;
       const mesh = fx.takeRibbon('trail');
       mesh.visible = false;
-      trajLines.push({ mesh, a, b, start: k === 0 ? s.t_fire : legEnds[k - 1], end: legEnds[k], t1, color });
+      const tl = { mesh, a, b, len, start: k === 0 ? s.t_fire : legEnds[k - 1], end: legEnds[k], t1, color, s0: 0 };
+      trajLines.push(tl);
+      if (k === 0) firstTrail = tl;
     }
+    pendingMuzzles.push({ eid: s.shooter_eid, from, dir, seed, tracer, firstTrail });
   }
   // 炮口火光 / 炮口烟放在炮管末端：回放记录的开火起点是火炮枢轴（在炮塔 / 炮盾里），直接放会被
   // 车模挡住（2026-10-13 实机近景）。射手炮管要等本 tick 的 applyPose 摆完才是 T 时刻的姿态，
   // 所以 spawnShot 只登记，这里再定位发射。只刷新射手一台车模的世界矩阵；没有可见车模
-  // （代理车 / 兵种图标 / 不可见）时用记录起点。
+  // （代理车 / 兵种图标 / 不可见）时 muzzleTipOf 返回记录起点。
+  // 同一段距离也是曳光与第一段光迹的可见起点（s0）：炮管里那截不画，否则光迹会贴着炮管
+  // 露出一条线；弹道折线与计时不变，最多截到抵达点（贴脸射击时整段都在炮管里）。
   const _muzzleTip = new THREE.Vector3();
   function flushMuzzles() {
     for (const m of pendingMuzzles) {
       const v = V.find((x) => x.def.eid === m.eid);
       const parts = v && v.group.visible && v.glb && v.glb.visible ? v.glbParts : null;
       if (parts) v.glb.updateMatrixWorld(true);
-      const at = parts ? muzzleTipOf(parts.gunNodes, m.from, m.dir, _muzzleTip) : m.from;
+      const at = muzzleTipOf(parts ? parts.gunNodes : null, m.from, m.dir, _muzzleTip);
+      const s0 = Math.min(at.distanceTo(m.from), m.tracer.arcEnds[0] || 0);
+      m.tracer.s0 = s0;
+      if (m.firstTrail) m.firstTrail.s0 = s0;
       battleFx.spawnMuzzle(at, m.dir, performance.now(), m.seed);
     }
     pendingMuzzles.length = 0;
@@ -3600,7 +3612,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // TRACER_STREAK_M 米（跳弹拐角时尾巴跟着折线弯）。零分配：into 变体直写 scratch。
       pointAtInto(tr.points, tr.legEnds, T, tr.t0, _tpA);
       const sHead = arcAtTime(tr.points, tr.legEnds, tr.arcEnds, T, tr.t0);
-      pointAtArcInto(tr.points, tr.arcEnds, sHead - TRACER_STREAK_M, _tpB);
+      // 弹头还在炮管里（没过炮口 s0）：曳光与弹头光晕都不画；尾部不早于炮口
+      tr.inBarrel = sHead <= tr.s0;
+      tr.mesh.visible = !tr.inBarrel;
+      pointAtArcInto(tr.points, tr.arcEnds, Math.max(sHead - TRACER_STREAK_M, tr.s0), _tpB);
       battleFx.setTracer(tr.mesh, _tpB, _tpA, tr.color);
       tr.head.copy(_tpA);
       if (!tr.hit && T >= tr.legEnds[0]) { tr.hit = true; spawnImpact(tr); }
@@ -3620,10 +3635,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         battleFx.giveRibbon(tl.mesh);
         trajLines.splice(i, 1); continue;
       }
-      tl.mesh.visible = T >= tl.start;
-      if (!tl.mesh.visible) continue;
       const f = tl.end > tl.start ? Math.min(1, (T - tl.start) / (tl.end - tl.start)) : 1;
-      battleFx.setTrail(tl.mesh, tl.a, _tpB.copy(tl.a).lerp(tl.b, f), tl.color, opacity);
+      const f0 = Math.min(1, tl.s0 / tl.len);   // 炮管内那段不画（见 flushMuzzles）
+      tl.mesh.visible = T >= tl.start && f > f0;
+      if (!tl.mesh.visible) continue;
+      battleFx.setTrail(tl.mesh, _tpA.copy(tl.a).lerp(tl.b, f0), _tpB.copy(tl.a).lerp(tl.b, f), tl.color, opacity);
     }
   }
 
@@ -3635,7 +3651,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     battleFx.frame(performance.now(), camera, container.clientHeight, emitReplayFx);
   }
   function emitReplayFx(emit) {
-    for (const tr of tracers) if (T >= tr.t0) emit.headGlow(tr.head, tr.color);
+    for (const tr of tracers) if (T >= tr.t0 && !tr.inBarrel) emit.headGlow(tr.head, tr.color);
     if (!battleFx.budget.wreckSmoke) return;
     for (const v of V) {
       if (!v.group.visible) continue;
@@ -4222,13 +4238,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 弹道推进
     const shots = DATA.shots;
     while (shotPtr < shots.length && shots[shotPtr].t_fire <= T) { spawnShot(shots[shotPtr], shotPtr); shotPtr++; }
-    updateTracers();
     advanceKills();
     // Visibility/position at this T must precede feedback: a newly destroyed vehicle
     // can become visible again after coverage ended, so last frame's visibility is stale.
     for (const v of V) applyPose(v);
     suspSnap = false;   // pose has consumed the seek snap for this tick
-    flushMuzzles();     // 炮口特效要等本 tick 炮管摆到 T 时刻姿态后再定位
+    // 炮口要等本 tick 炮管摆到 T 时刻姿态后再定位；曳光 / 光迹的可见起点（炮口）由它填入，
+    // 所以弹道推进排在它之后
+    flushMuzzles();
+    updateTracers();
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
