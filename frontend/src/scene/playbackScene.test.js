@@ -19,6 +19,10 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
 import { createPlaybackStore } from './playbackStore.js'
+import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agentWasmNode.js'
+import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
+import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlaybackDataset.js'
+import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
@@ -1386,7 +1390,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
   const canonicalFor = (tracks) => ({ clock: { startRaw: 42, durationSec: 200 }, dataset: { vehicles: tracks } })
   const deadTrack = (timestamp = 10) => ({ accountId: 77, lifeTransitions: [{ timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: timestamp }] })
 
-  async function load(vehicles, canonical = null) {
+  async function load(vehicles, canonical = null, sceneData = dataFor(vehicles)) {
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
@@ -1396,7 +1400,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api = initPlayback(mountContainer(), store, overlay)
     created.push(api)
     const state = { canonical }
-    const session = { loadScene: vi.fn().mockResolvedValue(dataFor(vehicles)), getState: () => state }
+    const session = { loadScene: vi.fn().mockResolvedValue(sceneData), getState: () => state }
     await api.loadData({ kind: 'local', file: new File(['replay'], 'wreck.wotbreplay'), session })
     api.setPlaying(false)
     return { api, store, overlay, frames, vehicles: window.__pbV }
@@ -1627,6 +1631,49 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
     expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
   })
+
+  it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
+    'real producer → scene re-entry %s → %s with prop3 %s and entry %s', async (oldId, newId, terminal, newEntry) => {
+      const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))
+      const result = validateAgentBattleResult({ ...f.result, author_account_id: 77, author_team: 1,
+        players: [{ ...f.result.players[0], account_id: 77, team: 1, survived: false, life_time_secs: 10 }] })
+      const aiReview = validateAgentAiReview({ ...f.aiReview,
+        battle: { ...f.aiReview.battle, duration_secs: 200, periods: [{ period: 3, clock: 42 }, { period: 4, clock: 242 }] },
+        rosters: [oldId, newId].map(eid => ({ eid, account_id: 77, team: 1, tank_id: 6929, tank_name: 'Maus', is_author: true })),
+        poses: [], turrets: [], settlements: [], events: [
+          { type: 'visibility', eid: oldId, t_in: 42, t_out: 48, hp_raw: 1000 },
+          { type: 'visibility', eid: newId, t_in: newEntry, t_out: 51, hp_raw: 1000 },
+          { type: 'health', eid: newId, t: 52, hp_raw: terminal },
+        ],
+      })
+      const definitions = [vehicle({ eid: oldId, coverage: [42, 48], death_t: null }),
+        // Deliberately equal render coverage starts: canonical evidence must determine identity.
+        vehicle({ eid: newId, pos: [100, 0, 0], coverage: [42, 51], death_t: null, is_author: false })]
+      const playback = validateAgentPlayback({ ...f.playback, meta: { ...f.playback.meta, samples: 1, t_start: 42, duration: 242 },
+        vehicles: definitions.map(def => ({ ...f.playback.vehicles[0], ...def, pose_kf: undefined, hull_roll: [0] })),
+        shots: [], kills: [], reloads: [], reload_effective: [],
+      })
+      const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
+      const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
+      const canonical = { dataset, clock: facts.clock, entityStartsByAccount: entityFirstSeenByAccount(facts) }
+      const destroyed = terminal !== 0xffff && newEntry > 42
+      expect(dataset.vehicles[0].lifeTransitions.some(life => life.lifeState === 'DESTROYED')).toBe(destroyed)
+      const { api, frames, vehicles, overlay } = await load(definitions, canonical, playback)
+      api.seekTime(51.9)
+      api.setPlaying(true)
+      frames.shift()()
+      api.setPlaying(false)
+      expect(activeBursts()).toHaveLength(destroyed ? 1 : 0)
+      if (destroyed) expect(activeBursts()[0].position.x).toBe(vehicles[1].group.position.x)
+      api.seekTime(53)
+      expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, destroyed ? 1 : 0])
+      expect(vehicles[0].group.visible).toBe(false)
+      expect(overlay.setLabels.mock.calls.at(-1)[0].map(row => row.destroyed)).toEqual([false, destroyed])
+      api.seekTime(47)
+      expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, 0])
+      expect(vehicles[0].group.visible).toBe(true)
+    },
+  )
 
   it('attributes one death to the re-entry entity, keeps old/future entities alive, and restores visibility on rewind', async () => {
     const { api, frames, vehicles, store, overlay } = await load([

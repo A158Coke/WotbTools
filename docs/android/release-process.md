@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-13，本仓源码为 **2.2.10 / 2002010**（`android/gradle.properties`）；
+截至 2026-10-13，本仓源码为 **2.2.11 / 2002011**（`android/gradle.properties`）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
