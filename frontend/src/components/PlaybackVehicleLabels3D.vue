@@ -6,6 +6,7 @@ import { LABEL_OCCLUDED_OPACITY } from '../utils/labelLayout.js'
 
 defineProps({
   labelPrefs: { type: Object, required: true },
+  gunMarks: { type: Map, default: () => new Map() },
   hpPrefs: { type: Object, required: true },
   markerPrefs: { type: Object, default: () => ({ classIcons: false }) },
   selectedEid: { type: Number, default: null },
@@ -49,7 +50,7 @@ defineExpose({ setLabels, setAnchor, clear })
     <div v-for="row in labels" :key="row.eid" :ref="el => bind(row.eid, el)"
       class="vehicle-label-anchor" :data-eid="row.eid" hidden>
       <PlaybackVehicleLabel
-        :player-name="row.playerName" :tank-name="row.tankName" :friendly="row.friendly"
+        :player-name="row.playerName" :tank-name="row.tankName" :gun-marks="gunMarks.get(row.accountId)" :friendly="row.friendly"
         :destroyed="row.destroyed" :last-known="row.lastKnown" :hp="row.hp" :reload="row.reload"
         :hp-ghost="row.hpGhost" :hp-flash="row.hpFlash" :hp-no-transition="true"
         :show-player-name="labelPrefs.showPlayerName" :show-tank-name="labelPrefs.showTankName"

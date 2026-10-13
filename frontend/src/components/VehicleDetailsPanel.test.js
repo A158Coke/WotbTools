@@ -182,3 +182,13 @@ describe('VehicleDetailsPanel inline (phone / portrait) selection feedback', () 
     }
   })
 })
+
+it('shows a selected vehicle mark and clears it on an unknown selection', async () => {
+  const wrapper = mountPanel({ gunMarks: 3 })
+  expect(wrapper.get('[data-test="pb-sb-tank"] [data-gun-marks]').attributes('data-gun-marks')).toBe('3')
+  expect(wrapper.get('[data-test="pb-sb-gun-marks"] [data-gun-marks]').attributes('data-gun-marks')).toBe('3')
+  await wrapper.setProps({ gunMarks: null })
+  expect(wrapper.get('[data-test="pb-sb-gun-marks"]').text()).toBe('—')
+  expect(wrapper.find('[data-test="pb-sb-tank"] [data-gun-marks]').exists()).toBe(false)
+  wrapper.unmount()
+})

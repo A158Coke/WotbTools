@@ -524,6 +524,7 @@ pickle: (arenaUniqueId: int, protobuf_bytes: bytes)
 | `nickname`                    | 文本  | `PlayerResult.nickname`                  | —     | 昵称（名册 #201→#2→#1）                                                               |
 | `clan`                        | 文本  | `PlayerResult.clan`                      | —     | 战队（名册 #201→#2→#5）                                                               |
 | `tank_name`                   | 文本  | `Tankopedia.info(tankId).name()`         | —     | 车辆名（查表）                                                                         |
+| `gun_marks` | 整数/空 | `PlayerResult.gunMarks` ← `parseResult.players[].gun_marks` | 环数 | 本车已获得 0～3 环；缺失／非法未知，不表示当前精确百分位，不参与跨车汇总 |
 | `tank_tier`                   | 整数  | `Tankopedia.info(tankId).tier()`         | 等级    | 车辆等级（查表）                                                                        |
 | `tank_type`                   | 文本  | `Tankopedia.info(tankId).type()`         | —     | API 稳定码：`HEAVY_TANK`/`MEDIUM_TANK`/`LIGHT_TANK`/`TANK_DESTROYER`/`OTHER`；导出使用中文 |
 | `tank_nation`                 | 文本  | `Tankopedia.info(tankId).nation()`       | —     | API 稳定国家码；导出使用中文                                                                |
@@ -621,3 +622,7 @@ EntityLeave / damage threshold 自行计算。
 - `#301→#2→#1` — 单独统计的点亮协助分量
 - `#150` — 丰富的分车统计/成就事件
 - `#302` — MVP 排行数据
+
+## 客户端环线展示与导出
+
+单场玩家列 `gun_marks` 来自上游结果的同名字段，保存该玩家在此车辆已获得的环数（整数 0～3，缺失或非法为未知）。数据表车型旁、手机卡片、单场选手／车辆详情、2D／3D 回放名册与车型标签共用专用标志；中文 Excel 的“环线”列导出原始数值，未知留空。用户自定义列保持原偏好，独立环线列可在列选择器开启。环数不在多车多场汇总中求平均，不以单场战绩或军阶推导，不显示虚假的当前精确百分位。当前仅是界面标志，未在炮管上添加贴花。

@@ -69,6 +69,7 @@ export const PLAYER_COLUMNS: readonly PlayerColumn[] = [
   { key: 'n_penetrations_received', num: true, get: ({ p }) => p.nPenetrationsReceived },
   { key: 'n_enemies_damaged', num: true, get: ({ p }) => p.nEnemiesDamaged },
   { key: 'rank', num: true, get: ({ p }) => p.rank },
+  { key: 'gun_marks', num: true, get: ({ p }) => p.gunMarks ?? null },
 ]
 
 interface CoreColumn {

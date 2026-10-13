@@ -6,6 +6,7 @@ import { replayValueLabel } from '../utils/display.js'
 import { stableSortRows } from '../utils/tableSort.js'
 import { useStickyColumns } from '../utils/stickyColumns.js'
 import PlayerCardList from './PlayerCardList.vue'
+import GunMarksBadge from './GunMarksBadge.vue'
 import StatStrip from './StatStrip.vue'
 
 const { locale, t, te } = useI18n()
@@ -207,6 +208,7 @@ const cardItems = computed(() => {
       key: String(row.accountId),
       title: row.cells.nickname ?? '--',
       subtitle: [row.cells.clan, row.cells.tank_name].filter(Boolean).join(' · '),
+      gunMarks: row.cells.tank_name ? row.cells.gun_marks : null,
       team: row.team,
       primary: ratingCol ? { label: t('player_labels.league_rating'), value: cellText(row, ratingCol) } : null,
       badge: flags.mvp ? t('league.mvp') : flags.teamBest ? t('league.team_best') : '',
@@ -292,7 +294,9 @@ function onCardSelect(accountId) {
             <td v-for="c in shownCols" :key="c.key"
                 :class="{ 'sticky-col': isStickyCol(c.key), 'sticky-t1': isStickyCol(c.key) && row.team === 1, 'sticky-t2': isStickyCol(c.key) && row.team === 2 }"
                 :style="colStyle(c.key)">
-              <span v-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
+              <span v-if="c.key === 'tank_name'">{{ row.cells[c.key] }} <GunMarksBadge :marks="row.cells.gun_marks" /></span>
+              <GunMarksBadge v-else-if="c.key === 'gun_marks'" :marks="row.cells.gun_marks" show-count />
+              <span v-else-if="c.key === 'survived_label'" :class="survivalClass(row.cells[c.key])">{{ survivalLabel(row.cells[c.key]) }}</span>
               <span v-else-if="c.key === 'survival_time'">{{ fmtDuration(row.cells[c.key], t) }}</span>
               <span v-else-if="LOCALIZED_VALUE_KEYS.has(c.key)">{{ replayValueLabel(t, te, row.cells[c.key]) }}</span>
               <span v-else-if="RATE_KEYS.has(c.key)">{{ rateCell(row.cells[c.key]) }}</span>

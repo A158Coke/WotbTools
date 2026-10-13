@@ -2588,7 +2588,7 @@ async function runWorkspace2DScenario(env, scenario) {
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}`)
+  await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
 
@@ -2624,6 +2624,19 @@ async function runWorkspace2DScenario(env, scenario) {
   }
 
   await captureMobileReview(page, scenario)
+  await page.waitFor(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/gun-marks.png')),
+    { label: 'Gun Marks atlas loaded' })
+  const marks = await page.evaluate(`(() => {
+    const badges = [...document.querySelectorAll('[data-gun-marks] svg')]
+    return {
+      counts: [...new Set(badges.map(svg => Number(svg.parentElement.dataset.gunMarks)))].sort(),
+      badgeCount: badges.length,
+      fit: badges.every(svg => { const r = svg.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.height <= 22 })
+    }
+  })()`)
+  check(failures, marks.counts.join(',') === '1,2,3' && marks.badgeCount >= 10,
+    `recorded mark badges missing: ${JSON.stringify(marks)}`)
+  check(failures, marks.fit, `mark badge exceeds its fixed screen footprint: ${JSON.stringify(marks)}`)
   const g = await page.probe(workspace2dProbe)
   const result = () => results.push({ name: scenario.name, failures, viewport })
   check(failures, g.width === scenario.width && g.height === scenario.height,

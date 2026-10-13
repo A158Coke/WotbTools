@@ -363,3 +363,14 @@ describe('ring label geometry', () => {
     expect(a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h).toBe(false)
   })
 })
+
+it('reserves fixed screen width for an identity badge without changing tank or combat geometry', () => {
+  const item = { accountId: 7, x: 200, y: 200, tankName: 'Maus' }
+  const plain = computeLabelLayout([item], { showTank: true }).get(7)
+  const marked = computeLabelLayout([{ ...item, tankNameExtraWidth: 16 }], { showTank: true }).get(7)
+  expect(marked.tankBox.w).toBe(plain.tankBox.w + 16)
+  expect(marked.tankBox.h).toBe(plain.tankBox.h)
+  expect(marked.coreBox).toEqual(plain.coreBox)
+  const hidden = computeLabelLayout([{ ...item, tankNameExtraWidth: 16 }], { showTank: false }).get(7)
+  expect(hidden.tankBox).toBeNull()
+})
