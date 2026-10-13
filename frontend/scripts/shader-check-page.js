@@ -7,6 +7,7 @@ import {
   makeDecalMaterial, patchTankMaterial,
 } from '../src/scene/sceneryMaterials.js'
 import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
+import { FX_BUDGETS, createBattleFx } from '../src/scene/battleFx.js'
 
 window.__step = 'module-start'
 const log = []
@@ -121,15 +122,30 @@ try {
     scene.add(mesh)
     built.push(name)
   }
-  // Destruction effects use camera-facing puffs and a bounded sparks batch.
-  for (const blending of [THREE.NormalBlending, THREE.AdditiveBlending]) {
-    scene.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: T, transparent: true, depthWrite: false, toneMapped: false, blending })))
-    built.push(blending === THREE.NormalBlending ? 'destruction-smoke(sprite)' : 'destruction-flame(sprite)')
+  // 战斗特效（battleFx）：两个实例化粒子批次 + 火星线段 + 曳光/光迹条带。自定义 shader 手挂
+  // logdepthbuf 代码块——线性深度与 ?logdepth=1 两种渲染器各编一遍（漏 <common> 只在后者炸）。
+  function battleFxScene() {
+    const fx = createBattleFx(FX_BUDGETS.ultra)
+    const at = (x, y, z) => new THREE.Vector3(x, y, z)
+    fx.spawnBurst(at(0, -1, 0), 0, 1)
+    fx.spawnMuzzle(at(-2, 0, 0), at(1, 0, 0), 0, 2)
+    fx.spawnImpact('pen', at(2, 0, 0), at(1, 0, 0), null, 0, 3)
+    fx.setTracer(fx.takeRibbon('tracer'), at(-3, 0.5, 0), at(3, 0.5, 0), 0x3ee08a)
+    fx.setTrail(fx.takeRibbon('trail'), at(-3, -0.5, 0), at(3, -0.5, 0), 0xff5a45, 1)
+    fx.frame(100, camera, 64, (emit) => { emit.wreck(0, -1, -2, 0, 5, 1, 4); emit.headGlow(at(3, 0.5, 0), 0x3ee08a) })
+    return fx
   }
-  scene.add(new THREE.Points(geo(), new THREE.PointsMaterial({ map: T, size: 0.14, transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })))
-  built.push('destruction-sparks(points)')
+  scene.add(battleFxScene().root)
+  built.push('battle-fx(glow/smoke/sparks/tracer/trail)')
   renderer.render(scene, camera)
-  const programs = (renderer.info.programs || []).map((p) => ({
+  const logRenderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true })
+  logRenderer.setSize(64, 64)
+  document.body.appendChild(logRenderer.domElement)
+  const fxScene = new THREE.Scene()
+  fxScene.add(battleFxScene().root)
+  logRenderer.render(fxScene, camera)
+  built.push('battle-fx(logdepth)')
+  const programs = [...(renderer.info.programs || []), ...(logRenderer.info.programs || [])].map((p) => ({
     name: p.name,
     diag: p.diagnostics ? {
       runnable: p.diagnostics.runnable,
