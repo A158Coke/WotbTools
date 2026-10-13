@@ -1785,6 +1785,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     node.userData.armorStateHidden = true;
                     node.userData.armorSection = 'deco';
                     node.visible = false;
+                    // 非激活板同样落声明厚度/orig（review P1：预建 clone 的
+                    // _baseThickness 缓存来源于此，留 0 会让切态初帧按 0mm 着色）
+                    node.userData.armorSectionOrig = m[1];
+                    node.userData.armorPlateId = m[2];
+                    node.userData.armorThickness = getPlateThickness(m[1], m[2]);
                 } else {
                     // 激活板升级为一等板：厚度按声明表重算（deco 分支留的是 0）、
                     // 补 armorSectionOrig（alignArmorModules/retag 依赖它）、按 spaced 表归类
@@ -2339,11 +2344,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                      const stOpt = document.getElementById('armor-state-opt');
                      const stBox = document.getElementById('armor-state-toggle');
                      if (stOpt && stBox) {
+                         // 仅动态装甲车（有声明）开放控件；静态车隐藏且禁用
+                         // （review P2：无声明时 change 回调读 null.states 崩溃）
+                         const dynamic = !!armorStateDecl;
+                         stOpt.style.display = dynamic ? '' : 'none';
                          const replayAuto = Number.isInteger(s.target_armor_state);
-                         stOpt.style.display = '';
-                         stBox.disabled = replayAuto;
+                         stBox.disabled = !dynamic || replayAuto;
                          stBox.title = replayAuto ? L.armorStateAutoTitle : '';
-                         syncArmorStateControl();
+                         if (dynamic) syncArmorStateControl();
                      }
                     // 射手炮塔/炮管姿态（回放原始数据）：炮塔 = type7 prop2 绝对朝向 − 模型偏航；
                     // 炮管俯仰 = launch_velocity 垂直分量反解（prop9 实测与真实弹道无关，弃用）。
@@ -4243,6 +4251,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             document.getElementById('eq-calibrated').addEventListener('change', onEquipmentChange);
             document.getElementById('eq-enhanced').addEventListener('change', onEquipmentChange);
             document.getElementById('armor-state-toggle').addEventListener('change', function() {
+                if (!armorStateDecl) return;   // 静态车无声明：不得读 states（review P2 崩溃点）
                 setArmorState(this.checked ? nonDefaultStateId(armorStateDecl) : defaultStateId(armorStateDecl));
             });
 
