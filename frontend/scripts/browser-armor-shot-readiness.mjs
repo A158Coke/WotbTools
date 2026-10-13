@@ -237,6 +237,40 @@ try {
   await assertShellTable(1, [200, 300])
   assert.equal(await page.evaluate('window.__armorRicochet.info().judgments'), 1)
   console.log('[shot-readiness] PASS: same-tank shot replay keeps shooter scfg and replay shell matching')
+  // review 2026-10-13：脱靶（MISS）world 总览同样不得套 dolly-zoom 补偿——此前
+  // worldOverviewMode 只在命中路径置位，MISS 在弹道标注后提前返回漏置 → 远距落点裁出视锥。
+  // 400m 弦 + 非零 x via：总览必须保持原生 50°；随后切回命中发仍 50°（命中/MISS 切换）。
+  {
+    const missShot = {
+      ...shot,
+      target_eid: null, target_name: '',
+      // 弹道几何整体离原点（脱靶守卫要求 ball_a 非全零）：发射点 (0,1,60) → 落点 (400,1,60)
+      target_pos: [400, 1, 60], ball_a: [0, 1, 60], ball_b: [400, 1, 60],
+      via: [[180, 25, 60]],
+      launch_velocity: [1000, 0, 0],
+      game_hit_result: 0, damage: 0, hit_flags: 0,
+      terrain_impact: { impact_point: [400, 1, 60], terminal_dir: [1, 0, 0], material: 1 },
+    }
+    const loadShot = async (value) => {
+      await page.goto(`${origin}/?view=home&ws-auth=1`)
+      await page.evaluate(`(async () => {
+        const { storeShotsForViewer } = await import('/src/scene/agentData.js');
+        storeShotsForViewer([${JSON.stringify(value)}]);
+      })()`)
+      await page.goto(plainUrl + '&shot=1&scfg=0&shell=0&config=0')
+      // 只断言 world 视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
+      // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
+      await page.waitFor(() => window.__armorRicochet?.info()?.view
+        && window.__armorRicochet.info().view.worldOverview === true, { timeout: 30000, label: 'world overview ready' })
+      return page.evaluate('window.__armorRicochet.info().view')
+    }
+    const missView = await loadShot(missShot)
+    assert.ok(Math.abs(missView.fov - 50) < 0.01, `MISS overview must keep native FOV (got ${missView.fov})`)
+    console.log('[shot-readiness] PASS: miss world overview keeps native FOV (no dolly compensation)')
+    const hitView = await loadShot(shot)
+    assert.ok(Math.abs(hitView.fov - 50) < 0.01, `HIT overview must keep native FOV (got ${hitView.fov})`)
+    console.log('[shot-readiness] PASS: hit/MISS switch keeps native overview FOV')
+  }
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)
 } catch (error) {

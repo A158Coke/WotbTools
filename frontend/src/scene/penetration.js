@@ -2,7 +2,11 @@
  * 统一击穿判定（客户端移植）：上游 src/wargaming/penetration.rs `calculate()` 的
  * 逐行 JS 移植，语义单点对齐 BlitzKit SpacedArmorSceneComponent shoot()——跳弹/
  * 转正/overmatch/多层消耗/外部模块 flat 抵消/HE 特殊/HEAT 间隙衰减（含 gap 层记录）/
- * 末层状态决定结果与伤害归属。穿深只取 near × 装备系数（无距离衰减）。
+ * 末层状态决定结果与伤害归属。基础穿深 = near × 装备系数；可选距离衰减
+ * （distance_m + penetration_far：d>100m 起 400m 区间线性到 far，HE 豁免）对齐
+ * 客户端装甲指示器 0x719740（证据链见上游 Agent 仓 investigation/...md §8.7）。
+ * HEAT 间隙衰减系数 0.5 为项目裁定（客户端 shells.xml 的 0.05 系数据错误，见 gap
+ * 分支注释）。
  *
  * 为什么客户端判定：装甲查看器/射击复现数据面是纯静态资产（契约 §13），无 Agent
  * 服务端可 POST /api/penetrate；判定输入（板厚/法线/口径/弹参）全部来自静态 tank
@@ -89,7 +93,7 @@ const DEG = Math.PI / 180
  * 击穿判定（上游 PenetrationRequest/PenetrationResult 的 wire 形状，snake_case 保持）。
  * @param {object} req { shell_type, penetration, caliber, view_dir, hits, damage?,
  *   explosion_radius?, calibrated_shells?, enhanced_armor?, normalization_deg?,
- *   ricochet_deg?, allow_ricochet? }
+ *   ricochet_deg?, allow_ricochet?, distance_m?, penetration_far? }
  * @returns {object} { result, total_effective, layers, first_armor_angle_deg,
  *   first_armor_norm_deg, ricochet, ricochet_remaining_pen, damage }。
  *   层另带 angle_deg（该层入射角，度；外部模块层无）——结果面板对照 BlitzKit
@@ -102,8 +106,16 @@ export function calculate(req) {
   const caliber = req.caliber
   // 装备修正（对齐 BlitzKit resolvePenetrationCoefficient）：Calibrated 穿深 +6%(动能)/+7%，Enhanced Armor 装甲 +4%
   const calibCoeff = req.calibrated_shells ? (isKinetic(shell) ? 1.06 : 1.07) : 1.0
-  // BlitzKit 仅使用 near 穿深（shell.penetration.near × 系数），无距离衰减
-  const pen = req.penetration * calibCoeff
+  // 基础穿深：near × 装备系数；提供 distance_m + penetration_far 时叠加客户端指示器的
+  // 距离衰减（d>100m 起 400m 区间线性到 far，不截断插值、最终 max(0)；HE 豁免——客户端
+  // flag 分支 = kind==kHighExplosive）。对齐 wotblitz.exe 0x719740（常量 100/400 反汇编
+  // 实测，证据链见上游 Agent 仓 investigation/blitz-client-protocol-and-replay.md §8.7）。
+  // 注意 HEAT 数据 far==near → 飞行段天然恒平，其专属衰减是间隙项（见下方 gap 分支）。
+  let basePen = req.penetration
+  if (!isHe && req.distance_m != null && req.penetration_far != null && req.distance_m > 100.0) {
+    basePen += (req.penetration_far - req.penetration) * (req.distance_m - 100.0) / 400.0
+  }
+  const pen = Math.max(basePen, 0.0) * calibCoeff
   const thicknessCoeff = req.enhanced_armor ? 1.04 : 1.0
   // 每发弹参数（blitzkit：normalization ?? 0；HEAT/HE 的 ricochet 上游即为 90°——永不跳弹）
   const normDeg = req.normalization_deg ?? 0
@@ -160,6 +172,11 @@ export function calculate(req) {
       const prevPoint = filteredHits[layerIndex - 1].point
       const distance = dist3(ah.point, prevPoint)
       const before = remainingPen
+      // 系数 0.5 为项目裁定（2026-10-13）：WG 客户端 shells.xml 的
+      // piercingPowerLossFactorByDistance=0.05（HEAT 全量）与实际判定不符，判定为数据
+      // 填写错误。客户端装甲指示器确实按 0.05/米计算（0x6b54da，反汇编证据见上游
+      // Agent 仓 investigation §8.7）——即客户端指示器偏乐观，实现以 BlitzKit 经验值
+      // 0.5/米为准。勿"对齐修正"回 0.05。
       remainingPen -= 0.5 * remainingPen * distance
       const gapBlocked = remainingPen <= 0.0
       layers.push({
@@ -224,8 +241,12 @@ export function calculate(req) {
         break
       }
 
+      // 转正只作用于**首个装甲层**（WG 语义，用户 2026-10-13 裁示）：击穿第一层后炮弹保持
+      // 出射方向，后续层不再转正（跳弹同理——threeCalibersRule 的 layerIndex>0 已置位）。
+      // 与 BlitzKit 的逐层转正有意分歧，注释存档。
+      const effNormalization = layerIndex > 0 ? 0.0 : normalization
       // blitzkit 对所有弹种统一应用 shell.normalization（HEAT/HE 数据即为 0）
-      const finalAngle = Math.max(angleRad - normalization * DEG, 0.0)
+      const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
       // blitzkit 无下限钳制；1e-6 仅防 90° 时 cos 变负（f64 下 blitzkit 为正）
       eff = thickness / Math.max(Math.cos(finalAngle), 1e-6)
 

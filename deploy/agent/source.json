@@ -1,9 +1,9 @@
 {
   "repo": "https://github.com/fanypcd/WoT-Blitz-Agent",
-  "ref": "36229a0eb30c04c46b3bac1cbf1667e3c50f5ddf",
+  "ref": "9a743528c14d32b6e133d1e089051356327f48d9",
   "artifact": {
-    "release": "v0.4.4",
-    "asset": "wotb-replay-wasm-v0.4.4.zip",
-    "sha256": "239930a1442cd6c8bf47d0e139fb251d3b0543b6dab50eaf792f8d5e6d66d27c"
+    "release": "v0.4.6",
+    "asset": "wotb-replay-wasm-v0.4.6.zip",
+    "sha256": "56a2dd14b83cc8efd4e6df338b1119d21ca456e561937324873ee59f24885e8b"
   }
 }
