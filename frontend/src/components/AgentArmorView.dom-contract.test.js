@@ -137,66 +137,39 @@ describe('engagement-distance result line localization', () => {
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   const kernel = read('../scene/tankViewer.js')
   const pen = read('../scene/penetration.js')
-  it('两通道分离：状态在 RT1（NoBlending+depthWrite 独占最近板），厚度通道只写 R（review 2026-10-13 重叠板）', () => {
+  it('无阈值首层：厚度通道零身份推断（全板裸 LOS），状态通道独占最近层并携带转正差额（review 2026-10-13 blocker）', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
     const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
-    // 厚度通道：按状态通道深度辨首层；只写 R（G/B 归零，不再累加）
-    expect(thickness).toMatch(/uniform highp sampler2D spacedStateDepth;/)
-    // 首层判定 = 线性米制视深比较（固定窗口深度差在远距会把 0.2m 相隔板误判为首层，
-    // review 2026-10-13）——容差 0.05m 全视距一致
-    expect(thickness).toMatch(/float linState = \(2\.0 \* camNear \* camFar\)/)
-    expect(thickness).toMatch(/bool isFirstSpaced = hasState && abs\(viewDepth - linState\) < 0\.05;/)
-    expect(thickness).toMatch(/float norm = isFirstSpaced/)
-    expect(thickness).toMatch(/ricocheted \? 1\.0 : eff \/ penetration, 0\.0, 0\.0, 1\.0\)/)
-    // 状态通道：就地续飞（自身几何）+ 最近板独占 + R=跳弹标志 / G=续飞编码
+    // 厚度通道：只写裸 LOS；不得含任何首层身份/容差推断（任何"距最近层 < δ"都会被合法小层距击穿）
+    expect(thickness).toMatch(/float losThick = thickness \/ max\(cos\(angle\), 1e-6\);/)
+    expect(thickness).toMatch(/gl_FragColor = vec4\(losThick \/ penetration, 0\.0, 0\.0, 1\.0\);/)
+    expect(thickness).not.toMatch(/isFirstSpaced|linState|stateD|camNear|camFar|0\.05/)
+    // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码 / B=转正差额
     expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
-    expect(state).toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
-    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, 0\.0, 1\.0\);/)
+    expect(state).toMatch(/float delta = clamp\(max\(0\.0, losThick - normThick\) \/ max\(penetration, 1\.0\), 0\.0, 1\.0\);/)
+    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, delta, 1\.0\);/)
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
-    // 屏幕侧只解读状态缓冲，不重算
+    // PBR：差额修正总消费；跳弹分支只解读状态
+    expect(kernel).toMatch(/float spacedThick = max\(0\.0, spacedData\.r - spacedState\.b\) \* penetration;/)
     expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5;/)
     const gapStart = kernel.indexOf('if (gapRicochet) {')
     expect(gapStart).toBeGreaterThan(-1)
     const gapSeg = kernel.slice(gapStart, gapStart + 900)
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
-    // 主装甲侧（二层）norm 归零（保留）
     expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)
   })
-  it('渲染顺序：状态通道先于厚度通道；注入 spacedStateDepth / spacedStateBuffer', () => {
-    const pass = kernel.slice(kernel.indexOf('function renderSpacedArmorPass'),
-      kernel.indexOf("document.getElementById('penetration-btn')"))
-    const iState = pass.indexOf('renderer.render(spacedStateScene, camera)')
-    const iThick = pass.indexOf('renderer.render(spacedArmorScene, camera)')
-    expect(iState).toBeGreaterThan(-1)
-    expect(iThick).toBeGreaterThan(iState)
-    expect(pass).toContain('spacedStateDepth.value = srt.depthTexture')
-    expect(pass).toContain('spacedStateBuffer.value = srt.texture')
-    expect(pass).toContain('camNearUniform.value = camera.near')   // 线性化基准每帧同步
-  })
-  it('状态场景：模块深度先于间隙板写入（更近模块不留过期状态，review 2026-10-13）', () => {
-    expect(kernel).toMatch(/addClone\(spacedStateScene, node, omitMaterial, 1\)/)
-  })
-  it('强化装甲厚度刷新覆盖状态场景（两通道三倍口径阈值一致，review 2026-10-13）', () => {
-    expect(kernel).toMatch(/apply\(spacedArmorScene\); apply\(spacedStateScene\); apply\(primaryArmorScene\);/)
-  })
-  it('首层容差全视距一致（固定窗口深度差的反例 + 线性米制还原，review 2026-10-13）', () => {
-    // 相机 near=.1 / far=1000：30m 与 30.2m 两板的窗口深度差 2.2e-5 < 旧固定容差 1e-4
-    // → 旧实现两块都判首层；线性米制差 0.2m > 0.05m 容差 → 正确区分。远距（dolly-zoom
-    // 缩放近面后）同样成立。
-    const winDepth = (viewZ, near, far) =>
-      ((far + near - (2 * near * far) / viewZ) / (far - near) + 1) / 2
-    const linViewZ = (w, near, far) =>
-      (2 * near * far) / (far + near - (2 * w - 1) * (far - near))
-    const near0 = 0.1, far0 = 1000
-    const w1 = winDepth(30, near0, far0), w2 = winDepth(30.2, near0, far0)
-    expect(Math.abs(w1 - w2)).toBeLessThan(1e-4)                       // 旧窗口容差失效（判别）
-    expect(Math.abs(linViewZ(w1, near0, far0) - linViewZ(w2, near0, far0))).toBeCloseTo(0.2, 2)
-    expect(Math.abs(linear32(w2, near0, far0) - 30.2)).toBeLessThan(0.01)
-    // 400m 处相隔 0.2m（dolly-zoom 使 near≈1.33 / far=1200）
-    const w3 = winDepth(400, 1.33, 1200), w4 = winDepth(400.2, 1.33, 1200)
-    expect(Math.abs(linViewZ(w3, 1.33, 1200) - linViewZ(w4, 1.33, 1200))).toBeCloseTo(0.2, 2)
-    function linear32(w, near, far) { return linViewZ(w, near, far) }
+  it('管线消费模型 = Σ裸LOS − 最近层差额（含 0.02m 合法小层距反例；review 2026-10-13 blocker）', () => {
+    // 两块 20mm@60°（相隔 0.02m——任何深度邻近阈值都会被它击穿）+ 100mm 主装甲@0°，AP 100/164/5°。
+    // 测试侧镜像管线代数：RT0 = Σ裸LOS；RT1.B = 最近层(裸−转正)/pen；PBR 做差 →
+    // 总消费 = 转正首层 + 其余裸 LOS，与 CPU 同判（27.1268 + 40 + 100 → BLOCKED）。
+    const raw = 20 / Math.cos(60 * Math.PI / 180)
+    const twoCalNorm = (1.4 * 5 * 100) / (2 * 20)
+    const normFirst = 20 / Math.cos(Math.max(0, 60 - twoCalNorm) * Math.PI / 180)
+    expect(Math.abs(normFirst - 27.1268)).toBeLessThan(0.02)
+    const pipeline = (raw + raw) - (raw - normFirst)
+    expect(Math.abs(pipeline - (normFirst + raw))).toBeLessThan(1e-9)
+    expect(pipeline + 100).toBeGreaterThan(164)   // → BLOCKED（与 CPU/点击链同判）
   })
   it('rcContinue 双实现：转正仅首层（hitIdx == 0 / hitIdx === 0）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')

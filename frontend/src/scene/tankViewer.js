@@ -361,7 +361,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
                 if (underSpaced) {
-                  float spacedThick = spacedData.r * penetration;
+                  // 厚度通道 = 全板裸 LOS 之和；状态通道 B = 最近层转正差额 → 修正总消费
+                  // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）
+                  float spacedThick = max(0.0, spacedData.r - spacedState.b) * penetration;
                   rem -= spacedThick;
                   if (isExplosive && rem > 0.0) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
@@ -409,7 +411,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // ===== 穿透热力图：对齐 BlitzKit SpacedArmorScene（Armor/index.tsx useFrame）=====
         // spacedArmorScene 在【单次】gl.render 内按 renderOrder 排序：
         //   0 主装甲 omit(colorWrite:false, depthWrite:true，仅供 RT 遮挡)；
-        //   1-2 间隙甲 additive(R=thickness/penetration, G=首层跳弹标志, B=续飞结果编码——间隙板
+        //   1-2 间隙甲 additive(R=裸 LOS 厚度/穿深累计)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        // 状态通道（RT1，独立 pass，NoBlending+depthWrite）：最近层独占写 R=跳弹标志 /
+        //   G=续飞编码 / B=首层转正差额——身份 = GPU 深度测试的精确最近层，无容差阈值。
         //   就地续飞在自身几何上算毕，屏幕侧只解读)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
         // 结果写入 RT，primaryArmorScene(renderOrder 1) 读 RT 着色到屏幕。
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
@@ -578,9 +582,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let ricochetPoseDirty = true;     // 几何姿态变化（炮塔/配置/模型）→ 需重建网格
         let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
         const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
-        // 共享相机近/远面（dolly-zoom 每帧变化；厚度通道线性化状态深度用）
-        const camNearUniform = { value: 0.1 };
-        const camFarUniform = { value: 1000 };
+
         const rcUniforms = {
             rcThickMul: { value: 1 },
             rcEnabled: { value: false },
@@ -668,42 +670,22 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 的最近间隙板/模块深度：|gl_FragCoord.z − stateDepth| < eps ⇒ 本片元即最近板。
         // 首层 → 全效应（3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
         // （与点击链 layerIndex>0 同规则；review 2026-10-13 重叠间隙板案例）。
+        // 厚度通道（RT0，additive）：**每块间隙板只贡献裸 LOS 厚度**（thickness/cos 入射角），
+        // 不做任何首层判定——本通道里没有任何浮点深度邻近阈值可被合法小层距反例击穿
+        // （review 2026-10-13：任何"距离最近层 < δ"的推断都不是身份）。首层身份与转正差额
+        // 由状态通道（RT1，深度独占的精确最近层）携带，PBR 侧做代数修正：
+        //   总消费 = Σ裸LOS − RT1.差额(最近层) = 转正首层 + 其余各层裸 LOS
         const SPACED_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
             varying vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
-            uniform float caliber;
-            uniform float ricochet;
-            uniform float normalization;
-            uniform vec2 resolution;
-            uniform highp sampler2D spacedStateDepth;   // 状态通道深度（最近间隙板/模块；空像素 = 1.0）
-            uniform float camNear;
-            uniform float camFar;
             void main() {
-              vec2 sc = gl_FragCoord.xy / resolution;
               float viewDistance = length(vViewPos);
-              float viewDepth = -vViewPos.z;            // 视空间深度（与深度缓冲同量纲）
-              float stateD = texture2D(spacedStateDepth, sc).r;
-              // 状态深度（非线性）→ **线性视距（米）**，与自身视深同量纲比较：容差 0.05m 在全
-              // 视距一致。固定窗口深度差在远距不可用——30m 处相隔 0.2m 的两板窗口深度差仅
-              // 2.2e-5 < 1e-4，会把第二块也判成首层（review 2026-10-13）。相机近/远面随
-              // dolly-zoom 每帧变化，用共享 uniform 注入。
-              float linState = (2.0 * camNear * camFar)
-                / (camFar + camNear - (2.0 * stateD - 1.0) * (camFar - camNear));
-              bool hasState = stateD > 0.0 && stateD < 0.99999;
-              bool isFirstSpaced = hasState && abs(viewDepth - linState) < 0.05;
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
-              bool threeCal = caliber > thickness * 3.0;
-              bool ricocheted = isFirstSpaced && !threeCal && angle >= ricochet;
-              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
-              float norm = isFirstSpaced
-                ? (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization)
-                : 0.0;
-              float eff = thickness / cos(max(0.0, angle - norm));
-              // R = 厚度/穿深（首层跳弹 = 1.0 全额消耗）；跳弹标志/续飞编码在 RT1 状态通道
-              gl_FragColor = vec4(ricocheted ? 1.0 : eff / penetration, 0.0, 0.0, 1.0);
+              float losThick = thickness / max(cos(angle), 1e-6);
+              gl_FragColor = vec4(losThick / penetration, 0.0, 0.0, 1.0);
             }
         `;
         // 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
@@ -727,6 +709,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
+              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
+              float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
+              float losThick = thickness / max(cos(angle), 1e-6);
+              float normThick = thickness / cos(max(0.0, angle - norm));
+              // B = 首层（= 本最近层）转正差额/穿深 = (裸LOS − 转正后)/pen ≥ 0。
+              // 厚度通道全板按裸 LOS 累计，PBR 用本差额把最近层的贡献修正为转正后值
+              // ——身份 = 深度独占的精确最近层（GPU 逐片元深度测试），无任何容差阈值。
+              float delta = clamp(max(0.0, losThick - normThick) / max(penetration, 1.0), 0.0, 1.0);
               float bCode = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -743,7 +733,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
                 if (rcDiag > 1e30) bCode = -1.0;
               }
-              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, 0.0, 1.0);
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, delta, 1.0);
             }
         `;
         /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
@@ -771,12 +761,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
                 depthWrite: false, depthTest: true,
                 blending: THREE.AdditiveBlending,
-                uniforms: Object.assign(spacedCommonUniforms(thickness, penetration), {
-                    resolution: resUniform,
-                    camNear: camNearUniform,
-                    camFar: camFarUniform,
-                    spacedStateDepth: { value: null },
-                }),
+                uniforms: spacedCommonUniforms(thickness, penetration),
             });
         }
         function spacedStateMaterial(thickness, penetration) {
@@ -1880,8 +1865,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (!spacedArmorScene) return;
             const rt = syncPenetrationRT();
             const srt = ensureSpacedStateRT();
-            camNearUniform.value = camera.near;   // dolly-zoom 每帧调整 → 线性化基准同步
-            camFarUniform.value = camera.far;
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
@@ -1893,15 +1876,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 renderer.setClearColor(0x000000, 0);
                 renderer.render(spacedStateScene, camera);
             }
-            // ② 厚度通道：全板 additive（R 累计）；spaced 材质按 ① 深度辨认真实首层
-            if (spacedStateScene) {
-                spacedArmorScene.traverse(function(node){
-                    if (node.isMesh && node.material && node.material.uniforms
-                        && node.material.uniforms.spacedStateDepth) {
-                        node.material.uniforms.spacedStateDepth.value = srt.depthTexture;
-                    }
-                });
-            }
+            // ② 厚度通道：全板 additive（裸 LOS 累计，无身份判定）；状态缓冲整体留给 PBR 解读
             const inject = (obj) => { obj.traverse(function(node){
                 if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.spacedArmorBuffer) {
                     node.material.uniforms.spacedArmorBuffer.value = rt.texture;
@@ -2310,108 +2285,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 scene.add(armorModel);
                 syncTransforms();
                 applyConfig(currentConfigIdx);
-                // [armor-debug 临时诊断，仅 ?debug=1 暴露；勿提交] 动态装甲判定/热力图一致性缺陷定位
-                const __diagQP = new URLSearchParams(location.search);
-                if (__diagQP.get('debug') === '1') {
-                    window.__armorDebug = {
-                        model: () => armorModel,
-                        camera: () => camera,
-                        renderer: () => renderer,
-                        plateList: function() {
-                            const out = [];
-                            const v = new THREE.Vector3();
-                            const cr = renderer.domElement.getBoundingClientRect();
-                            armorModel.updateMatrixWorld(true);
-                            armorModel.traverse(function(n) {
-                                if (!n.isMesh) return;
-                                v.setFromMatrixPosition(n.matrixWorld).project(camera);
-                                out.push({
-                                    name: n.name || '?', visible: n.visible,
-                                    section: n.userData.armorSection,
-                                    thickness: n.userData.armorThickness,
-                                    hidden: !!n.userData.armorStateHidden,
-                                    key: n.userData.armorStateKey || null,
-                                    sx: Math.round((v.x + 1) / 2 * cr.width + cr.left),
-                                    sy: Math.round((1 - v.y) / 2 * cr.height + cr.top),
-                                });
-                            });
-                            return out;
-                        },
-                        clones: function() {
-                            const out = [];
-                            const grab = (scene, tag) => {
-                                if (!scene) return;
-                                scene.traverse(function(n) {
-                                    if (n.isMesh && n.userData._armorStateKey) {
-                                        out.push({ scene: tag, key: n.userData._armorStateKey,
-                                                   visible: n.visible,
-                                                   th: n.userData._baseThickness });
-                                    }
-                                });
-                            };
-                            grab(primaryArmorScene, 'P');
-                            grab(spacedArmorScene, 'S');
-                            grab(spacedStateScene, 'SS');
-                            return out;
-                        },
-                        penProbe: function() {
-                            const out = [];
-                            const world = new THREE.Vector3();
-                            const grab = (scene, tag) => {
-                                if (!scene) return;
-                                scene.traverse(function(n) {
-                                    if (!n.isMesh || !n.material || !n.material.uniforms || !n.material.uniforms.penetration) return;
-                                    const src = n.userData && n.userData._src;
-                                    if (src) {
-                                        const g = n.geometry;
-                                        if (!g.boundingSphere) g.computeBoundingSphere();
-                                        src.updateWorldMatrix(true, false);
-                                        world.copy(g.boundingSphere.center).applyMatrix4(src.matrixWorld);
-                                    } else {
-                                        world.setFromMatrixPosition(n.matrixWorld);
-                                    }
-                                    out.push({
-                                        tag: tag, key: (n.userData && n.userData._armorStateKey) || null,
-                                        d: Math.round(camera.position.distanceTo(world) * 10) / 10,
-                                        pen: Math.round(n.material.uniforms.penetration.value * 100) / 100,
-                                        vis: n.visible,
-                                    });
-                                });
-                            };
-                            grab(primaryArmorScene, 'P');
-                            grab(spacedArmorScene, 'S');
-                            grab(spacedStateScene, 'SS');
-                            return out;
-                        },
-                        state: function() {
-                            return { armorStateCurrent: armorStateCurrent, decl: armorStateDecl,
-                                     collisionMode: collisionMode, penetrationMode: penetrationMode };
-                        },
-                        setToggle: function(on) {
-                            const box = document.getElementById('armor-state-toggle');
-                            if (!box) return 'no toggle';
-                            box.checked = !!on;
-                            box.dispatchEvent(new Event('change', { bubbles: true }));
-                            return 'ok';
-                        },
-                        clickPlate: function(name) {
-                            let hit = null;
-                            armorModel.updateMatrixWorld(true);
-                            armorModel.traverse(function(n) {
-                                if (!n.isMesh || n.name !== name || hit) return;
-                                const v = new THREE.Vector3().setFromMatrixPosition(n.matrixWorld).project(camera);
-                                const cr = renderer.domElement.getBoundingClientRect();
-                                const sx = Math.round((v.x + 1) / 2 * cr.width + cr.left);
-                                const sy = Math.round((1 - v.y) / 2 * cr.height + cr.top);
-                                const opts = { pointerId: 9, pointerType: 'mouse', button: 0, clientX: cr.left + sx, clientY: cr.top + sy, bubbles: true, isPrimary: true };
-                                renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', opts));
-                                renderer.domElement.dispatchEvent(new PointerEvent('pointerup', opts));
-                                hit = { name: name, sx: sx, sy: sy };
-                            });
-                            return hit || ('plate not found: ' + name);
-                        },
-                    };
-                }
                 applyArmorStateToModel();   // 动态装甲：按当前态摘除非激活可控板（初态 = 声明 default）
                 applyUrlOptionsOnce();
                 finish('armor');

@@ -94,6 +94,22 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r2.layers[0].effective - 87.18)).toBeLessThan(0.1)
   })
 
+  it('外部模块在前的层链：模块 flat、其后间隙甲裸 LOS（无跳弹/转正）——review 2026-10-13 用例', () => {
+    // 20mm 履带（flat）→ 40mm 间隙甲@75°（layer>0：不跳弹、不转正）→ 100mm 主装甲@0°，AP 100/200/5°。
+    // CPU：20 + 154.548 + 100 → BLOCKED（状态通道最近层=模块 → 无跳弹状态、差额 0，与管线一致）。
+    const a = 75 * Math.PI / 180
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 40.0, [0, 0.3, 0], { normal: [Math.sin(a), Math.cos(a), 0] }),
+      hit(ArmorSection.HULL, 100.0, [0, 0.6, 0]),
+    ]
+    const r = calculate(req('ap', 200.0, 100.0, hits, { normalization_deg: 5 }))
+    expect(Math.abs(r.layers[0].effective - 20)).toBeLessThan(0.02)
+    expect(Math.abs(r.layers[1].effective - 154.548)).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[2].effective - 100)).toBeLessThan(0.02)
+    expect(r.result).toBe('BLOCKED')
+  })
+
   it('多块重叠间隙板：首层转正、其后裸 LOS——两块 20mm@60° + 100mm 主装甲（review 2026-10-13）', () => {
     // AP 口径 100、穿深 164、转正 5°：层等效 = 27.1268（首层 2× 增强转正）+ 40（裸 LOS）+ 100 → BLOCKED。
     const a = 60 * Math.PI / 180
