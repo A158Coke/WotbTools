@@ -49,7 +49,8 @@ const items = primaryNavItems()
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
-  padding-inline: var(--space-1);
+  /* Leave a small optical gap between the active indicator and the icon row. */
+  padding: 2px var(--space-1) 0;
   min-width: var(--hit-min);
   color: var(--color-text-tertiary);
   text-decoration: none;
@@ -78,8 +79,8 @@ const items = primaryNavItems()
   -webkit-line-clamp: 2;
   font: var(--type-caption);
   font-weight: 600;
-  /* Reserve the icon, gap and borders before fitting two caption lines. */
-  line-height: min(var(--line-height-caption), calc((var(--tabbar-h) - var(--space-6) - var(--space-1) - 1px) / 2));
+  /* Reserve the icon, gap, optical top padding and borders before fitting two caption lines. */
+  line-height: min(var(--line-height-caption), calc((var(--tabbar-h) - var(--space-6) - var(--space-1) - 3px) / 2));
   text-align: center;
 }
 .tab:focus-visible { outline: var(--focus-outline); outline-offset: calc(var(--focus-outline-offset) * -1); }
