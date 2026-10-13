@@ -29,6 +29,8 @@ import {
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary } from './penetration.js'
+// 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
+import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../data/armorStates.js'
 
 /**
  * @param {object} [options]
@@ -130,6 +132,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let scene, camera, renderer, controls;
         let raycaster, mouse;
         let tankModel = null, armorModel = null, tankData;   // tankData = target tank (model/armor/info)
+        let armorStateDecl = null, armorStateCurrent = null; // 动态装甲声明与当前态（非动态车均 null）
         let shooterData = null;                              // shooter tank (caliber/shells)
         let shooterShells = [], shooterCaliber = 120;
         let selectedShell = null;
@@ -1610,6 +1613,51 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             retagSpacedSections(model);
         }
 
+        // —— 动态装甲（armorsStatesController，全库 6 车，声明见 src/data/armorStates.js）——
+        // 状态应用 = 可控板（各态 armors 并集）中非激活板按 **deco 口径**摘除（与穿透判定/
+        // 点击分类/跳弹枚举的保留面过滤同源，一处摘除全链生效）；常驻板不受状态控制。
+        // 恢复两段式：retag 先按 armorSectionOrig 还原（含 spaced 重判），再对非激活可控板
+        // 摘除——顺序不可换。上游 PlaybackShot.target_armor_state 已按弹着时刻预解析状态号，
+        // 本层不再持有时间线；换弹/重进复现时经 setArmorState 门控切换。
+
+        /** 换车时解析声明：动态车 → {decl, 初态}；静态车两者置 null（全链 no-op）。 */
+        function resolveArmorStateDecl(tankId) {
+            armorStateDecl = dynamicDeclarationByTankId(tankId);
+            armorStateCurrent = armorStateDecl ? defaultStateId(armorStateDecl) : null;
+        }
+
+        function applyArmorStateToModel() {
+            if (!armorModel || !armorStateDecl || armorStateCurrent == null) return;
+            retagSpacedSections(armorModel);   // 先整体还原（激活板可能带 spaced 标签）
+            const active = activePlateSet(armorStateDecl, armorStateCurrent);
+            const controllable = controllablePlateSet(armorStateDecl);
+            armorModel.traverse(function(node) {
+                if (!node.isMesh) return;
+                const orig = node.userData.armorSectionOrig;
+                if (orig !== 'hull' && orig !== 'turret' && orig !== 'gun') return;
+                const key = orig + ':' + String(node.userData.armorPlateId);
+                if (!controllable.has(key)) return;
+                const inactive = !active.has(key);
+                if (inactive) {
+                    node.userData.armorStateHidden = true;
+                    node.userData.armorSection = 'deco';
+                    node.visible = false;
+                } else if (node.userData.armorStateHidden) {
+                    // 只恢复自己隐藏过的板：visible 不得复活 configHidden 的配置变体
+                    node.userData.armorStateHidden = false;
+                    node.visible = !node.userData.configHidden;
+                }
+            });
+        }
+
+        /** 切换到声明内的状态号；∉ 声明集的值拒绝（消费方门控的最后防线）。 */
+        function setArmorState(stateId) {
+            if (!armorStateDecl) return;
+            if (!armorStateDecl.states.some(function(s) { return s.id === stateId; })) return;
+            armorStateCurrent = stateId;
+            applyArmorStateToModel();
+        }
+
         function tagModuleMeshes(model) {
             moduleMeshes = [];
             model.traverse(function(node) {
@@ -1806,6 +1854,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 scene.add(armorModel);
                 syncTransforms();
                 applyConfig(currentConfigIdx);
+                applyArmorStateToModel();   // 动态装甲：按当前态摘除非激活可控板（初态 = 声明 default）
                 applyUrlOptionsOnce();
                 finish('armor');
             }, onBytes('armor'), fail('armor model'));
@@ -2012,6 +2061,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                          eqTarget: s.target_equipment || null,
                      });
                      syncEquipmentCheckboxes(s);
+                     // 动态装甲：弹着时刻状态由上游按 PlaybackShot.target_armor_state 预解析
+                     // （None = 静态车/初态域——初态已在装甲模型装载时按声明 default 应用）
+                     if (Number.isInteger(s.target_armor_state)) {
+                         setArmorState(s.target_armor_state);
+                     }
                     // 射手炮塔/炮管姿态（回放原始数据）：炮塔 = type7 prop2 绝对朝向 − 模型偏航；
                     // 炮管俯仰 = launch_velocity 垂直分量反解（prop9 实测与真实弹道无关，弃用）。
                     // cfgIdx = 射手实际搭载配置下标（build_configs 数组序，回放数据注入）；
@@ -3479,6 +3533,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const nextTankData = await fetchTankData(tid);
             if (destroyed || gen !== targetLoadGen) return false;
             tankData = nextTankData;
+            resolveArmorStateDecl(tid);   // 动态装甲声明（非动态车 → null，全链 no-op）
             const q = new URLSearchParams(location.search);
             const wantCfg = parseInt(q.get('config'), 10);
             const configs = tankData.configs || [];
