@@ -399,7 +399,9 @@
         "touch_rotate": "单指拖动",
         "touch_zoom": "双指捏合",
         "touch_pan": "双指拖动"
-      }
+      },
+      "distance": "交战距离",
+      "distance_unit": "米"
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -1067,7 +1069,9 @@
         "touch_rotate": "One-finger drag",
         "touch_zoom": "Pinch",
         "touch_pan": "Two-finger drag"
-      }
+      },
+      "distance": "Engagement distance",
+      "distance_unit": "m"
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -1735,7 +1739,9 @@
         "touch_rotate": "Движение одним пальцем",
         "touch_zoom": "Сведение двух пальцев",
         "touch_pan": "Движение двумя пальцами"
-      }
+      },
+      "distance": "Дистанция боя",
+      "distance_unit": "м"
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",

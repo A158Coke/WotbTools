@@ -4254,6 +4254,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (!armorStateDecl) return;   // 静态车无声明：不得读 states（review P2 崩溃点）
                 setArmorState(this.checked ? nonDefaultStateId(armorStateDecl) : defaultStateId(armorStateDecl));
             });
+            // 距离手动输入后停止自动跟随真实弹道距离（dataset.dirty，见 doPenetrationCheck）
+            const armorDistEl = document.getElementById('armor-distance');
+            if (armorDistEl) {
+                armorDistEl.addEventListener('input', function() { armorDistEl.dataset.dirty = '1'; });
+            }
 
             document.getElementById('config-select').addEventListener('change', function() {
                 applyConfig(parseInt(this.value));
@@ -4809,6 +4814,17 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const isHE = shellType === 'he';
             const eqCal = !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
             const eqEnh = !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
+            // 距离衰减（对齐客户端指示器 0x719740）：射击复现（真实炮口射线）默认跟随
+            // 真实弹道距离并同步回面板；用户手动改过（dataset.dirty）后以手动值为准；
+            // 静态检视默认 100m（≤100 不衰减，行为与旧版一致）。
+            const distEl = document.getElementById('armor-distance');
+            const manualDist = distEl ? parseFloat(distEl.value) : NaN;
+            const realShot = !!__shotRayOrigin;
+            let effDistM = (!Number.isNaN(manualDist) && manualDist > 0) ? manualDist : 100.0;
+            if (realShot && distEl && distEl.dataset.dirty !== '1' && !Number.isNaN(dist)) {
+                effDistM = dist;
+                distEl.value = String(Math.round(dist));
+            }
             const penDisp = pen * shellPenMul(selectedShell);
             const mpu = worldMetersPerUnit || 1;
             // 每发弹参数（blitzkit：normalization ?? 0；ricochet 仅非 explosive 弹使用）
@@ -4827,6 +4843,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 normalization_deg: shellNormDeg,
                 ricochet_deg: shellRicoDeg,
                 allow_ricochet: true,
+                // 距离衰减（对齐客户端指示器 0x719740）：d>100 且 far>0 才生效；
+                // penetration_far 随 tank/{id}.json 透出（数据缺失 → undefined → 不衰减）
+                distance_m: effDistM > 0 ? effDistM : undefined,
+                penetration_far: (selectedShell && selectedShell.penetration_far > 0)
+                    ? selectedShell.penetration_far
+                    : undefined,
                 view_dir: [viewDir.x, viewDir.y, viewDir.z],
                 hits: hitsForCheck.map(ah => {
                     const lp = toLocalPt(ah.point);
@@ -5009,6 +5031,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${escapeText(L.resultName(st))}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
             };
             html += titleHtml(segments[0]);
+            // 距离衰减生效时（d>100）显示判定穿深（首层 remaining = 衰减后 × 装备系数）
+            if (distVal > 100 && layers.length > 0) {
+                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${fmtNum(layers[0].remainBefore)}mm @ ${Math.round(distVal)}m</div>`;
+            }
             let layerNo = 0;
             let outStarted = false;
             for (let i = 0; i < layers.length; i++) {
