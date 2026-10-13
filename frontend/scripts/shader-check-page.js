@@ -121,6 +121,13 @@ try {
     scene.add(mesh)
     built.push(name)
   }
+  // Destruction effects use camera-facing puffs and a bounded sparks batch.
+  for (const blending of [THREE.NormalBlending, THREE.AdditiveBlending]) {
+    scene.add(new THREE.Sprite(new THREE.SpriteMaterial({ map: T, transparent: true, depthWrite: false, toneMapped: false, blending })))
+    built.push(blending === THREE.NormalBlending ? 'destruction-smoke(sprite)' : 'destruction-flame(sprite)')
+  }
+  scene.add(new THREE.Points(geo(), new THREE.PointsMaterial({ map: T, size: 0.14, transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending })))
+  built.push('destruction-sparks(points)')
   renderer.render(scene, camera)
   const programs = (renderer.info.programs || []).map((p) => ({
     name: p.name,

@@ -85,9 +85,9 @@ describe('per-vehicle destroyed material ownership', () => {
     expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeGreaterThan(shader.fragmentShader.indexOf('#include <colorspace_fragment>'))
     expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeGreaterThan(shader.fragmentShader.indexOf('#include <fog_fragment>'))
     expect(shader.fragmentShader.indexOf('destroyedLuma')).toBeLessThan(shader.fragmentShader.indexOf('#include <premultiplied_alpha_fragment>'))
-    expect(shader.fragmentShader).toContain('vec3(destroyedLuma * 0.30)')
+    expect(shader.fragmentShader).toContain('vec3(0.035 + destroyedLuma * 0.45)')
     expect(shader.fragmentShader).not.toContain('outgoingLight = mix(')
-    expect(material.customProgramCacheKey()).toBe('existing-variant|tank-noambient|tank-destroyed-v2')
+    expect(material.customProgramCacheKey()).toBe('existing-variant|tank-noambient|tank-destroyed-v3')
     expect(source.onBeforeCompile).not.toBe(material.onBeforeCompile)
   })
 
