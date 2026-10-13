@@ -44,6 +44,8 @@ import type {
 } from '../../types/playback-v2.js'
 import {
   buildCanonicalReplayFacts,
+  activeEntityAt,
+  entityFirstSeenByAccount,
   displayCapacityAt,
   EPS,
   lastHpSampleAtOrBefore,
@@ -57,6 +59,8 @@ import type { Tankopedia } from '../compute/tankopedia.js'
 import { consumableItemId, consumableStateName, provisionItemId } from './itemCodes.js'
 
 export interface ToDatasetOptions {
+  /** Workspace parsing supplies the already built canonical facts; other callers build them here. */
+  canonicalFacts?: CanonicalReplayFacts | null
   /** 车辆库（车名/车种/等级/敌方开局血量）；缺省时车名回退结算名、车种「未知」、等级 null、敌方无开局种子 */
   tankopedia?: Tankopedia | null
   /** 位姿采样间隔（秒，battle-relative 对齐；默认 0.5，须整除 1 才含全部整秒帧） */
@@ -195,15 +199,6 @@ export function settlementInitialHp(player: AgentResultPlayer | undefined): numb
   return Math.max(left ?? 0, 0) + Math.max(received, 0)
 }
 
-/** 账号在 t 的活动实体（Java `vehicleInAny`：首个已出现的实体） */
-function activeEntityAt(facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, t: number): number | null {
-  for (const id of entityIds) {
-    const first = firstSeen.get(id)
-    if (first !== undefined && first <= t + 1e-9) return id
-  }
-  return null
-}
-
 /** 状态可能变化的时刻：血量采样、观测段起止、0（开战前事实并入 t=0） */
 function changePoints(facts: CanonicalReplayFacts, entityIds: number[], durationSec: number): number[] {
   const set = new Set<number>([0])
@@ -218,7 +213,7 @@ function changePoints(facts: CanonicalReplayFacts, entityIds: number[], duration
 }
 
 function healthTransitions(
-  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, durationSec: number,
+  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number | null>, durationSec: number,
   friendly: boolean, openingSeed: number | null,
 ): HealthTransition[] {
   const out: HealthTransition[] = []
@@ -233,7 +228,7 @@ function healthTransitions(
   }
   let replayCapacity: number | null = null
   for (const t of changePoints(facts, entityIds, durationSec)) {
-    const eid = activeEntityAt(facts, entityIds, firstSeen, t)
+    const eid = activeEntityAt(firstSeen, t)
     if (eid === null) continue
     const sample = lastHpSampleAtOrBefore(facts, eid, t)
     // 无可信血量（未观测 / 哨兵）= 保持上一 canonical 状态；绝不回落到车辆库种子
@@ -265,12 +260,12 @@ function sameHealth(a: HealthTransition | null, b: HealthTransition): boolean {
 
 /** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE */
 function lifeTransitions(
-  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number>, durationSec: number,
+  facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number | null>, durationSec: number,
 ): LifeTransition[] {
   const out: LifeTransition[] = []
   let previous: LifeTransition | null = null
   for (const t of changePoints(facts, entityIds, durationSec)) {
-    const eid = activeEntityAt(facts, entityIds, firstSeen, t)
+    const eid = activeEntityAt(firstSeen, t)
     if (eid === null) continue
     let destroyedAt: number | null = null
     for (const s of facts.hpSamples.get(eid) ?? []) {
@@ -442,9 +437,9 @@ export function toBattlePlaybackDataset(
   aiReview: AgentAiReviewFacet,
   options: ToDatasetOptions = {},
 ): BattlePlaybackDataset | null {
-  const facts = buildCanonicalReplayFacts({
+  const facts = options.canonicalFacts === undefined ? buildCanonicalReplayFacts({
     result, aiReview, streamEndRaw: pb.meta.duration,
-  })
+  }) : options.canonicalFacts
   if (!facts) return null
   const { clock } = facts
   const tankopedia = options.tankopedia ?? null
@@ -456,6 +451,7 @@ export function toBattlePlaybackDataset(
   const settlementPlayers = new Map<number, AgentResultPlayer>()
   for (const p of result?.players ?? []) if (p.account_id > 0) settlementPlayers.set(p.account_id, p)
 
+  const entityStarts = entityFirstSeenByAccount(facts)
   const tracks: VehiclePlaybackTrack[] = []
   for (const player of settlementPlayers.values()) {
     if (!(player.team > 0)) continue
@@ -466,16 +462,13 @@ export function toBattlePlaybackDataset(
     const friendly = friendlyTeam === null ? null : player.team === friendlyTeam
 
     // 每实体独立分段（Java 按 entityId 逐个投影后按起点合并）
-    const firstSeen = new Map<number, number>()
+    const firstSeen = entityStarts.get(player.account_id)!
     const posSegs: PositionSegment[] = []
     const oriSegs: OrientationSegment[] = []
     for (const id of entityIds) {
       const poses = poseSamplesOf(facts, id, times)
       posSegs.push(...positionSegments(facts, id, poses))
       oriSegs.push(...orientationSegments(facts, id, poses))
-      const firsts = [poses[0]?.observedAt, facts.hpSamples.get(id)?.[0]?.t, facts.observation.get(id)?.[0]?.fromSec]
-        .filter((x): x is number => typeof x === 'number')
-      if (firsts.length) firstSeen.set(id, Math.min(...firsts))
     }
     posSegs.sort((a, b) => a.startSec - b.startSec)
     oriSegs.sort((a, b) => a.startSec - b.startSec)

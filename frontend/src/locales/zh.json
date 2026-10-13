@@ -619,6 +619,9 @@
     }
   },
   "player_labels": {
+    "gun_marks": "环线",
+    "gun_marks_count": "{count} 环",
+    "gun_marks_tip": "该车辆已获得的环线，不代表当前精确百分位。",
     "nickname": "玩家",
     "clan": "战队",
     "tank_name": "车辆",

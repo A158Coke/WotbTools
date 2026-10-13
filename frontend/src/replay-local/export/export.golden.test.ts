@@ -15,6 +15,7 @@ import javaExport from '../__golden__/java-export.json'
 import { finalizeBatch } from '../compute/index.js'
 import { exportAggregateXlsx, exportEachZip, parseTeamNames, type ExportOptions } from './index.js'
 import { normalizeXlsx, type NormalizedWorkbook } from './normalize.js'
+import { columnLetter } from './format.js'
 
 interface GoldenWorkbook {
   activeTab: number
@@ -47,6 +48,27 @@ function expand(id: string): NormalizedWorkbook {
   }
 }
 
+function withGunMarks(wb: NormalizedWorkbook): NormalizedWorkbook {
+  for (const sheet of wb.sheets) {
+    const rank = sheet.rows[0]?.findIndex(cell => cell?.[0] === '军阶') ?? -1
+    if (rank < 0) continue
+    const index = rank + 1
+    const header = sheet.rows[0]!
+    const newCols: Record<string, number> = {}
+    for (const [key, width] of Object.entries(sheet.cols)) newCols[String(Number(key) >= index ? Number(key) + 1 : Number(key))] = width
+    newCols[String(index)] = 8
+    sheet.cols = newCols
+    header.splice(index, 0, ['环线', header[rank]![1]])
+    for (const row of sheet.rows.slice(1)) if (row) row.splice(index, 0, ['', row[rank]![1]])
+    if (sheet.autoFilter) sheet.autoFilter = sheet.autoFilter.replace(/:([A-Z]+)(\d+)$/, (_, letters, row) => {
+      let columnCount = 0
+      for (const letter of letters) columnCount = columnCount * 26 + letter.charCodeAt(0) - 64
+      return `:${columnLetter(columnCount)}${row}`
+    })
+  }
+  return wb
+}
+
 async function bytesOf(blob: Blob): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer())
 }
@@ -66,14 +88,14 @@ describe('replay-local export ↔ Java golden', () => {
 
     const aggregate = await exportAggregateXlsx(finalizeBatch(entriesFor(paths), tankopedia), tankopedia, options)
     expect(aggregate.filename).toBe(batch.aggregate.filename)
-    expect(await normalizeXlsx(await bytesOf(aggregate.blob))).toStrictEqual(expand(batch.aggregate.workbook))
+    expect(await normalizeXlsx(await bytesOf(aggregate.blob))).toStrictEqual(withGunMarks(expand(batch.aggregate.workbook)))
 
     const each = await exportEachZip(finalizeBatch(entriesFor(paths), tankopedia), tankopedia, options)
     expect(each.filename).toBe(batch.each.filename)
     const files = unzipSync(await bytesOf(each.blob))
     expect(Object.keys(files)).toEqual(batch.each.entries.map((e) => e.name))
     for (const entry of batch.each.entries) {
-      expect(await normalizeXlsx(files[entry.name])).toStrictEqual(expand(entry.workbook))
+      expect(await normalizeXlsx(files[entry.name])).toStrictEqual(withGunMarks(expand(entry.workbook)))
     }
   })
 })

@@ -376,6 +376,34 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；特效（炮线/命中/爆散/飘字）走对象池，
   仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条/名册按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- **3D 击毁车辆视觉**：复用原车模，死亡后 0.30 秒开始去饱和和压暗，0.80 秒完成
+  哑光炭灰残骸状态，保持到回放结束。完全去饱和，在显示颜色上取原明度的 45%，
+  再加 0.035 的暗部提亮，保留阴影里的装甲与履带细节；弱化金属反光（metalness 降至原值的 5%）、提高
+  roughness（至少 0.90，封顶 1），emissive 归零。低模和 GLB 同一语义，原装甲/履带
+  细节及透明度保留；作者标记环、标签与爆炸独立。倒带恢复原参数，不增加车辆
+  残骸资产、贴图、几何或 draw call。
+  模型、名牌与名册共用 canonical `lifeAt` 的死亡判据；canonical 时间以 `clock.startRaw`
+  换算到场景 raw 秒，禁止用 HP=0 推断死亡。canonical 未就绪/失败时沿用场景权威
+  `death_t`；canonical 已就绪但缺生命事实保持未知；已确认死亡但无死亡时刻直接显示终态。
+  同账号实体重入时，生产者与场景共用 canonical 首次身份观测和「最新已出现实体」规则，
+  不按 eid 数值排序选实体。`LocalPlayback.entityStartsByAccount` 是工作台内部的 battle-relative
+  身份证据，不进入 HTTP dataset；解析只构建一次 canonical facts。死亡按实际死亡时刻归属，
+  禁止广播给历史／未来实体；同刻首次观测或缺失而无法唯一归属时保持未知，不显示残骸或爆炸。
+  旧本地会话没有身份证据映射时仅以已记录 coverage 使用同一选择规则。
+  过渡只按回放时间求值，暂停、倍速、seek 和 GLB 迟到/重开均在当前时间投影。
+  GLB 每车只克隆材质、同车复用原材质对应的副本；共享模板纹理/几何不由车辆释放。
+  材质 shader 组合既有坦克光照补丁，渐变只改 uniform/PBR 参数，不逐帧重编译。
+- **3D 击毁爆炸**：权威死亡触发一次，不要求已知击杀者或 KILL 归属；先投影当前位姿
+  和可见性，避免 coverage 结束后爆炸被跳过。120ms 初闪与错峰柔边火焰在约 0.35 秒内
+  消散，少量火星在 0.55 秒内消散，随后由大小/方向不同的烟团上升收尾；使用不规则
+  透明纹理，保留场景遮挡。沿用约 1.4 秒壁钟生命周期，
+  暂停后自然消散；seek 清空、不补播历史爆炸，canonical 晚到也只安排未来事件。
+  特效对象池复用全部几何、材质及两张 64×64 程序化柔边贴图；每个存活爆炸最多
+  5 个火焰 billboard、8 个烟团 billboard 与一个包含 12 个火星的 Points 批次，
+  不再绘制硬球体和地面圆环；billboard 使用池对象拥有的几何副本，会话结束统一释放。
+  该瞬态特效与永久残骸材质分开，不引入永久火焰、烧焦蒙版或物理破坏。
+  自动回归覆盖材质隔离、时钟、死亡触发、倒带与资源生命周期；亮/暗图、同型号一生一死、
+  爆炸强度、近远镜头与手机帧率由用户在真实回放中验收。
 - 3D 顶栏双方总血量（2026-10-03 补回）：`scene/teamHpTotals.js` 按各队 `max_hp` 汇总剩余量与
   上限（未知阵营不计入任一方，unknown ≠ enemy），`playbackScene` 在 HUD 节流写 store，
   `Replay3DPane.vue` 顶栏第二行渲染「数值 + 阵营色条夹住比分」；数值用完整整数（§11 禁止
@@ -389,8 +417,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   2D / 3D 名册均将己方放左、敌方放右；录像者属于 Team 2 时交换车道。名册 HP、圆点与
   行边框使用 `--color-team-ally` / `--color-team-enemy`，未知视角使用中性色，未知阵营独立分组。
 - **3D 名册行状态在时刻投影**（`scene/rosterState.js`）：静态身份（eid / team / 昵称 / 车型）在会话
-  开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t)`
-  按当前回放时刻**纯函数**投影（`reload` 复用场景的 reload resolver），`playbackScene.updateRoster()`
+  开始时建一次；运行时状态（`hp` / `maxHp` / `dead` / `followed`）由 `projectRoster(vehicles, t, isDestroyed)`
+  按当前回放时刻**纯函数**投影（死亡 resolver 与模型/名牌共享）（`reload` 复用场景的 reload resolver），`playbackScene.updateRoster()`
   只写变化过的字段；行由与 2D 共用的 `PlaybackRoster.vue` 呈现（见 `docs/frontend/replay-workspace.md`）。
   **写入必须经响应式代理**：`store` 是 `reactive()`，eid → 行索引登记的是读回 `store.roster` 得到的
   代理，不是建行时的原始对象——改原始对象 Vue 收不到通知，名册会停在满血，直到选中行之类的无关
@@ -1069,3 +1097,11 @@ Display 的「血量显示方式」提供横条 / 环形，默认横条；偏好
 
 标记模式选择工具下，点击未被计划标记占用的车辆仍可打开车辆详情；绘图与拖动操作不触发检查。
 2D 详情摘要的血量、百分比与车辆标识来自同一条当前时间投影，拖动时间轴会同步更新，不取最终结算。
+
+### 回放环线身份标志
+
+车型名旁的一／二／三道杠为该玩家在本车已获得的 Gun Marks。数据表、手机卡片、车辆详情、2D／3D 名册与车型标签共用维护者供图提取的透明标志（`src/assets/gun-marks/`）；3D 炮管无贴花。事实读取 workspace 持有的 `LocalPlayback.result.players[].gun_marks`，通过账号联表，属于静态车辆成就，不按回放时钟升降，也不能用于推断本场获得时刻或当前精确百分位。暂停下 canonical 晚到会更新展示，切文件清除旧身份。0 环不画图标，缺失／非法保持未知；详情和独立列用占位符，Excel 留空。名牌标志固定屏幕尺寸并计入名称布局盒，保持既有 HP／reload 行高与选车接线。
+
+地图鸟瞰／回放的完整车辆检查器在车辆信息区显示同一环线徽章和环数；尚无 canonical track 时由简版详情显示，避免重复条目。切换车辆和回放时沿用 owner 结果按账号匹配，未知显示破折号。
+
+环线 SVG 内联透明 PNG 图集，导出图片保持自包含；既有 Chrome 交互门禁包含三档实际 PNG 解码后的像素检查与外链负对照。

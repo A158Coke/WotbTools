@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import GunMarksBadge from './GunMarksBadge.vue'
 import { useI18n } from 'vue-i18n'
 import {
   healthDisplayAt,
@@ -16,7 +17,8 @@ import { loadoutItemLabel } from '../data/loadoutItems.js'
  */
 const props = defineProps({
   track: { type: Object, required: true },
-  timeSec: { type: Number, required: true }
+  timeSec: { type: Number, required: true },
+  gunMarks: { default: null }
 })
 
 const { t, te, locale } = useI18n()
@@ -159,6 +161,11 @@ function moduleStateLabel(state) {
     <div class="v2-inspector-row" data-test="v2-inspector-knowledge">
       <span class="v2-inspector-key">{{ $t('recon.map.playback.vehicle_type') }}</span>
       <span class="v2-inspector-val">{{ tankClassLabel }}</span>
+    </div>
+
+    <div class="v2-inspector-row" data-test="v2-inspector-gun-marks">
+      <span class="v2-inspector-key">{{ $t('player_labels.gun_marks') }}</span>
+      <span class="v2-inspector-val"><GunMarksBadge :marks="gunMarks" show-count /></span>
     </div>
 
     <div class="v2-inspector-row" data-test="v2-inspector-tier">

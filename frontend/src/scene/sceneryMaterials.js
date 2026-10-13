@@ -894,17 +894,6 @@ export function patchSceneryDetail(m, detailTex, scale) {
   return m;
 }
 
-/** 递归给一棵坦克模型子树里的 PBR 材质打补丁；返回处理过的材质数（测试用）。 */
-export function applyTankLightingFix(root) {
-  if (!root || typeof root.traverse !== 'function') return 0;
-  const seen = new Set();
-  root.traverse((o) => {
-    const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
-    for (const m of ms) if (m && !seen.has(m)) { seen.add(m); patchTankMaterial(m); }
-  });
-  return seen.size;
-}
-
 /** 释放一组场景对象：几何 + 材质（去重）+ 材质**直接属性与 uniforms** 里的纹理。
  *  供烘焙页在 --all 批处理中逐图卸载——SpeedTree/叶卡的贴图在
  *  ShaderMaterial.uniforms.map.value，只枚举直接属性会漏掉（评审实测

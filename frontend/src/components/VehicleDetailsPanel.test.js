@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import VehicleDetailsPanel from './VehicleDetailsPanel.vue'
 
 const inspectorStub = defineComponent({
-  props: ['track', 'timeSec'],
+  props: ['track', 'timeSec', 'gunMarks'],
   setup(props) {
     return () => h('div', { 'data-test': 'pb-sb-v2-inspector' }, `inspector:${props.timeSec}`)
   },
@@ -181,4 +181,25 @@ describe('VehicleDetailsPanel inline (phone / portrait) selection feedback', () 
       HTMLElement.prototype.scrollIntoView = original
     }
   })
+})
+
+it('shows a selected vehicle mark and clears it on an unknown selection', async () => {
+  const wrapper = mountPanel({ gunMarks: 3 })
+  expect(wrapper.get('[data-test="pb-sb-tank"] [data-gun-marks]').attributes('data-gun-marks')).toBe('3')
+  expect(wrapper.get('[data-test="pb-sb-gun-marks"] [data-gun-marks]').attributes('data-gun-marks')).toBe('3')
+  await wrapper.setProps({ gunMarks: null })
+  expect(wrapper.get('[data-test="pb-sb-gun-marks"]').text()).toBe('—')
+  expect(wrapper.find('[data-test="pb-sb-tank"] [data-gun-marks]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('forwards marks into the full map inspector and shows the fallback row only without a track', async () => {
+  const wrapper = mountPanel({ gunMarks: 2, selectedTrack: { accountId: 7 } })
+  expect(wrapper.getComponent(inspectorStub).props('gunMarks')).toBe(2)
+  expect(wrapper.find('[data-test="pb-sb-gun-marks"]').exists()).toBe(false)
+  await wrapper.setProps({ gunMarks: null, selectedTrack: { accountId: 9 } })
+  expect(wrapper.getComponent(inspectorStub).props('gunMarks')).toBeNull()
+  await wrapper.setProps({ selectedTrack: null })
+  expect(wrapper.get('[data-test="pb-sb-gun-marks"]').text()).toBe('—')
+  wrapper.unmount()
 })

@@ -315,7 +315,8 @@ export function computeLabelLayout(items, opts = {}) {
     // 身份块底边 = combat block 顶边 − identity gap（tank 在下、player 在上）。
     const identityBottom = combatTop - (it.hpRing === true ? 0 : IDENTITY_TO_COMBAT_GAP_PX)
     const identityTop = identityBottom - identityBlockH
-    const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) : 0
+    const tankExtra = Number.isFinite(it.tankNameExtraWidth) ? Math.max(0, it.tankNameExtraWidth) : 0
+    const tankW = showTank ? estimateLabelWidth(it.tankName, 10, TANK_MAX_WIDTH_PX) + tankExtra : 0
     const tankBox = showTank && tankW > 0
       ? { x: it.x - tankW / 2, y: identityBottom - tankH, w: tankW, h: tankH }
       : null

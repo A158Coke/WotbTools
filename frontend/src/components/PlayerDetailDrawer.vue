@@ -1,4 +1,5 @@
 <script setup>
+import GunMarksBadge from './GunMarksBadge.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
@@ -278,6 +279,7 @@ const facts = computed(() => {
     rows.push([t('league.drawer.kills_avg'), num(p.cells?.kills_avg)])
     rows.push([t('league.drawer.earned_avg'), num(p.cells?.earned_avg)])
   } else {
+    rows.push([t('player_labels.gun_marks'), p.cells?.gun_marks == null ? '—' : t('player_labels.gun_marks_count', { count: p.cells.gun_marks })])
     rows.push([t('league.drawer.damage'), num(p.cells?.damage_dealt)])
     rows.push([t('league.drawer.assist'), num(p.cells?.damage_assisted)])
     rows.push([t('league.drawer.kills'), p.cells?.kills ?? '--'])
@@ -571,7 +573,7 @@ function ensureImageLoaded(url) {
                 <img v-if="vehiclePortrait" :src="vehiclePortrait" :alt="vehicle.tankName"
                      class="pd-vehicle-img" :title="vehicle.tankName" data-testid="player-vehicle-img" />
                 <div class="pd-vehicle-meta">
-                  <div class="pd-vehicle-name" :title="vehicle.tankName">{{ vehicle.tankName }}</div>
+                  <div class="pd-vehicle-name" :title="vehicle.tankName">{{ vehicle.tankName }} <GunMarksBadge v-if="!isSummary" :marks="player?.cells?.gun_marks" /></div>
                   <div v-if="vehicle.battleText || vehicle.rateText" class="pd-vehicle-stats">
                     <span v-if="vehicle.battleText" data-testid="player-vehicle-battles">{{ vehicle.battleText }}</span>
                     <span v-if="vehicle.rateText" data-testid="player-vehicle-rate"

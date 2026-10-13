@@ -1,4 +1,5 @@
 <script setup>
+import { gunMarksByAccount } from '../utils/gunMarks.js'
 /**
  * 3D 回放能力面板（回放工作台内）：目标回放在本机解析（上游 Rust Core WASM →
  * playbackScene 全场渲染），文件不出本机、不经服务端。
@@ -277,6 +278,7 @@ const selectedRow = computed(() => {
 
 // Scene and Details consume the same workspace-owned parse result.
 const detailPlayback = computed(() => store.hasData ? store.playbackSession?.canonical : null)
+const gunMarks = computed(() => gunMarksByAccount(detailPlayback.value?.result))
 // Canonical identity may finish after the scene facet. Refresh class symbols
 // even when the replay clock is paused at the same frame.
 watch(detailPlayback, pushLabelPrefs)
@@ -290,7 +292,8 @@ const battleTimeLabel = computed(() => formatPlaybackClock(store.time - store.st
 // Details 查的是 canonical track：canonical 在时必须按它自己的 clock.startRaw 换算（canonical 数据就按这个原点索引）；
 // 引擎接管 canonical clock 后与 store.startTime 是同一个值，canonical 之前才用引擎发布的原点。
 const detailTime = computed(() => Math.max(0, store.time - (detailPlayback.value?.clock?.startRaw ?? store.startTime)))
-watch(() => detailPlayback.value?.clock ?? null, (clock) => sceneApi?.setBattleClock?.(clock))
+// Refresh life facts too when canonical finishes at an unchanged clock/time.
+watch(detailPlayback, (canonical) => sceneApi?.setBattleClock?.(canonical?.clock ?? null))
 const selectedTrack = computed(() => detailPlayback.value?.dataset?.vehicles.find(track =>
   selectedRow.value?.accountId != null && track.accountId === selectedRow.value.accountId) || null)
 const selectedLife = computed(() => selectedTrack.value ? lifeAt(selectedTrack.value, detailTime.value) : null)
@@ -607,7 +610,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
       <div class="pb-stage" data-testid="replay3d-stage">
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
-          <PlaybackVehicleLabels3D ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
+          <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
         </div>
       </div>
 
@@ -644,6 +647,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         v-if="!uiHidden && detailsOpen && selectedRow"
         class="vehicle-details" data-testid="replay3d-details"
         :presentation="portraitFlow ? 'inline' : 'floating'"
+        :gun-marks="gunMarks.get(selectedRow.accountId) ?? null"
         :selected-state="selectedDetailState" :health="selectedHealth" :phone-form="portraitFlow"
         :selected-portrait-url="selectedPortraitUrl" :sel-last-known-sec="selLastKnownSec"
         :sel-cur-stats="selCurStats" :selected-track="selectedTrack" :sel-damage-log="selDamageLog"
@@ -659,10 +663,10 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
            uiPrefs.showRoster。行的渲染与 2D 共用同一个 `PlaybackRoster`。 -->
       <div v-if="store.hasData && showRoster" class="roster-surface" data-testid="roster-surface">
         <div class="team-lane side-left" data-testid="replay3d-lane-left">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
+          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :teams="rosterLanes.left" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
         <div class="team-lane side-right" data-testid="replay3d-lane-right">
-          <PlaybackRoster variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
+          <PlaybackRoster :gun-marks="gunMarks" variant="3d" :compact="!portraitFlow" :teams="rosterLanes.right" :friendly-team="store.friendlyTeam" :selected-id="selectedEid" @select="followFromRoster" />
         </div>
       </div>
 

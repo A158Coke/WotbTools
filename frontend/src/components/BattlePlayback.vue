@@ -1,4 +1,5 @@
 <script setup>
+import { gunMarksByAccount } from '../utils/gunMarks.js'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { usePlaybackPhoneForm } from '../composables/usePlaybackPhoneForm.js'
@@ -108,6 +109,7 @@ const props = defineProps({
   loop: { type: Boolean, default: false },
   /** V2 canonical battle-playback-dataset；未加载时为空。 */
   playbackV2: { type: Object, default: null },
+  result: { type: Object, default: null },
   /** Raw Playback reload evidence stays outside the generic canonical/HTTP dataset. */
   reloadTelemetry: { type: Object, default: null },
   /**
@@ -118,6 +120,7 @@ const props = defineProps({
 })
 
 const { t, locale } = useI18n()
+const gunMarks = computed(() => gunMarksByAccount(props.result))
 
 /**
  * 呈现元数据（Battle Playback PRIMARY 核心输入）：V2 canonical dataset 为权威源
@@ -1675,7 +1678,7 @@ const baseVehicleStates = computed(() => {
           markerSize?.footprint,
         )
         : null
-      return { ...state, terrainAttitude, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
+      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, terrainAttitude, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
     })
     .filter(Boolean)
 })
@@ -2081,6 +2084,8 @@ const labelLayout = computed(() => {
       x: p.x,
       y: p.y,
       tankName: st.tankName,
+      // Badge width (space-3) + inline gap (space-1), in fixed screen pixels.
+      tankNameExtraWidth: st.gunMarks > 0 ? 16 : 0,
       playerName: st.playerName,
       // PR #107 Blocker 4：HP footprint 是否存在 = DOM 是否实际渲染 HUD（showHp 开且
       // health selector 有结果），不是 current 是否为 null——relativeFull（current=null）
@@ -2248,7 +2253,7 @@ const mapStyle = computed(() => ({
            两侧车道只在「名册开着 且 非手机竖屏」时存在；关掉名册两侧整体消失，
            Stage 依然居中且保持正方形（绝不被拉宽填满）。 -->
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-left" data-test="pb-team-lane-left" :aria-label="$t('recon.map.team_friendly')">
-        <PlaybackRoster :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
         <div v-if="!uiHidden" class="pb-quick-actions pb-map-quick-actions">
@@ -2318,6 +2323,7 @@ const mapStyle = computed(() => ({
            宿主就是它的定位祖先 `.pb-main`（同一个坐标系）；位置/边界/初始落位由
            usePlaybackDetailsPlacement 独占（含「不得盖住传输控件」的保护边界）。 -->
       <VehicleDetailsPanel
+        :gun-marks="gunMarks.get(selectedAccountId) ?? null"
         v-if="!uiHidden && detailsFloating && detailsState"
         presentation="floating"
         :phone-form="false"
@@ -2338,7 +2344,7 @@ const mapStyle = computed(() => ({
       />
 
       <div v-if="rosterLanes" class="pb-team-lane pb-team-lane-right" data-test="pb-team-lane-right" :aria-label="$t('recon.map.team_enemy')">
-        <PlaybackRoster :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
+        <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.right" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
 
       <PlaybackMobileOverlay v-if="!uiHidden" ref="mobileOverlay" :paused="!playing">
@@ -2464,6 +2470,7 @@ const mapStyle = computed(() => ({
       <div v-if="!uiHidden && inlineStack && (detailsState || showRosterPresentation)" class="pb-inline-area" data-test="pb-inline-area">
         <!-- 竖屏的详情：同一个组件、同一份 props，只是换成流内呈现（没有拖动柄）。 -->
         <VehicleDetailsPanel
+          :gun-marks="gunMarks.get(selectedAccountId) ?? null"
           v-if="detailsState"
           presentation="inline"
           :phone-form="isMobileDevice"
@@ -2479,6 +2486,7 @@ const mapStyle = computed(() => ({
           @close="closeSidebar"
         />
         <PlaybackRoster
+          :gun-marks="gunMarks"
           v-if="showRosterPresentation"
           :teams="teamVehicles" :friendly-team="friendlyTeam"
           :destroyed="destroyedNow"
