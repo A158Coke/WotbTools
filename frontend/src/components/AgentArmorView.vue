@@ -15,11 +15,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, X } from 'lucide-vue-next'
 import { fetchReplayShots, shotViewerQuery } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
-import { shellLabel, armorPartLabel, armorResultLabel } from '../scene/tankMeta.js'
+import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
-import { replayValueLabel } from '../utils/display.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 
@@ -116,8 +115,8 @@ function startViewer() {
             shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
             tier: (tier) => `${t('armor.tier')} ${tier}`,
-            type: (value) => replayValueLabel(t, te, value),
-            nation: (value) => replayValueLabel(t, te, value),
+            type: (value) => tankTypeLabel(t, te, value),
+            nation: (value) => tankNationLabel(t, te, value),
             showCollision: t('armor.show_collision'),
             hideCollision: t('armor.hide_collision'),
             heatmap: t('armor.heatmap'),

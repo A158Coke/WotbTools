@@ -44,6 +44,23 @@ describe('usePlaybackTransport', () => {
     expect(adapter.play).not.toHaveBeenCalled()
   })
 
+  it('停在终点时按播放（按钮或空格）→ 先回到起点再播放；未到终点不回卷', () => {
+    const { state, adapter } = makeAdapter(false)
+    const atEnd = { value: true }
+    adapter.isAtEnd = () => atEnd.value
+    adapter.restart = vi.fn(() => { atEnd.value = false })
+    const t = usePlaybackTransport(adapter, { keyboard: false })
+    t.togglePlay()
+    expect(adapter.restart).toHaveBeenCalledTimes(1)
+    expect(adapter.restart.mock.invocationCallOrder[0]).toBeLessThan(adapter.play.mock.invocationCallOrder[0])
+    expect(state.playing).toBe(true)
+    t.togglePlay() // 播放中 → 暂停，不回卷
+    expect(state.playing).toBe(false)
+    t.handleKeydown(key({ code: 'Space', key: ' ' })) // 中途暂停后继续
+    expect(adapter.restart).toHaveBeenCalledTimes(1)
+    expect(state.playing).toBe(true)
+  })
+
   it('键盘：空格切换、←/→ ±5s，并阻止默认行为', () => {
     const { state, adapter } = makeAdapter(false)
     const t = usePlaybackTransport(adapter, { keyboard: false })

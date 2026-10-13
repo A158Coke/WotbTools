@@ -501,6 +501,7 @@ wotb_account_verified_at TIMESTAMPTZ
 ```text
 keycloak-wargaming-provider
 keycloak-qq-provider
+keycloak-session-provider
 
 （QQ provider 为已审计、固定版本的 vendor；禁止构建或运行时下载。）
 ```

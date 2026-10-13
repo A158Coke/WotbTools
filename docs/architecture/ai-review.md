@@ -417,6 +417,10 @@ POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao �
 - **观测伤害抑制**：事件流覆盖未达 100% 时 `DefaultTeam/PlayerBattleFeatureExtractor` 条件标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字（`TeamAiPromptBuilder.appendObserved` / 随机战交火段），以权威结算为唯一口径；覆盖补齐后自动恢复。
 - **赛前预测渲染**：`PreBattleSectionRenderer` 覆盖 TEAM 变体（A队/B队/A 队/队伍1 等）、AREA ID → 中文名 + 九宫格（复用 `MapTacticalSemanticsRegistry`）、composition 键值三语翻译。
 
+### Raw 模式分类的实现限制
+
+`BattleCategoryUtils.fromArenaBonusType` 当前将 1 / 2 / 3..10 分别映射为 RANDOM / TRAINING / TOURNAMENT，故 raw 7 的评级战也进入 TEAM_PERSPECTIVE；这与 League（只接受 2/4）及 HoF（1/7）各自的 policy 不同。该宽范围 switch 是当前代码行为，不能当作全部游戏模式均为锦标赛的协议证明。本文中的 TEAM_PERSPECTIVE 指此分类结果；进一步收敛分类需要独立代码变更。
+
 ## AI 复盘输入：client canonical AI projection（`AiReviewRequest`）
 
 ### 为什么不是「Agent JSON 直接上传」

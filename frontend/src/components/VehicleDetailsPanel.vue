@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { hpPercentText } from '../scene/rosterState.js'
 import { usePlaybackDetailsPlacement } from '../composables/usePlaybackDetailsPlacement.js'
 import V2VehicleInspector from './V2VehicleInspector.vue'
@@ -63,6 +63,14 @@ const { pos, maxPanelHeight, maxPanelWidth, onPointerDown, onSelectionChange } =
   initialVertical: computed(() => props.initialVertical),
 })
 watch([() => props.selectionKey, () => props.initialSide], onSelectionChange)
+/* 流内形态（竖屏 / 手机）：详情块插在名单之前。点名单里的车时用户正看着名单，浏览器的
+   scroll anchoring 会让名单保持原位，新出现的详情落到视野外——看起来点了没反应。
+   选中车辆变化时把详情块滚进视野（nearest：已可见就不动）。浮窗形态由拖动/落位逻辑负责。 */
+watch(() => props.selectedState?.vehicle?.accountId ?? null, async (accountId) => {
+  if (floating.value || accountId == null) return
+  await nextTick()
+  panelEl.value?.scrollIntoView?.({ block: 'nearest' })
+}, { immediate: true })
 const floatingStyle = computed(() => (floating.value && pos.value
   ? {
       left: `${pos.value.left}px`,

@@ -7,6 +7,8 @@
 >
 > **2026-10-02 起数据在本机生成**（服务器没有 parser）：`frontend/src/replay-local/playback/` 把上游 Rust Core
 > `parsePlayback`（+ `parseResult`、`parseAiReview` 伤害事件）转换为同一份 `BattlePlaybackDataset` / `MapOverview`。
+> 工作台通过 `useReplayWorkspace.ts` 的共享 playback session 调用 `parseLocalPlaybackOffThread`，
+> 优先在 `canonical.worker.ts` 生成 canonical 数据；仅线程设施故障回退主线程，解析失败保持错误。3D scene ready 不等待 canonical，Details 后台增强。
 > 原服务端 `battle-playback-v2` / `map-overview` 端点、`BattlePlaybackProjector`、`MapOverviewQueryService` 已删除；
 > 下文中「后端 / artifact / projector」描述的数据语义由本机转换层继承，与 Java 输出的对比数字见
 > `frontend/src/replay-local/playback/playback.golden.test.ts`。
@@ -995,8 +997,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   有真实 sample → 精确 current 数字；敌方无依据 → —。tankopedia base HP 是静态 metadata 不是本局
   最大 HP，不再展示「最大 HP / HP %」（除已证明 OBSERVED_EXACT 的 pct））/
   当前播放时间/已记录伤害（录像者优先取当前时刻之前的 Avatar prop10 累计伤害广播；
-  无该证据的车辆/旧数据集回退到 Σ 可 attribution 的权威掉血）/承受伤害（Σ 该车全部
-  掉血）/击杀数 + 最近伤害记录（权威掉血；incoming 在相邻可信 CURRENT HP 观测窗口内关联
+  无该证据的车辆/旧数据集回退到 Σ 可 attribution 的权威掉血）/承受伤害（Σ 该车 HP 条
+  可信读数的累计下降，与「当前 HP」同源——含点亮 / 重新进入视野时 materialization 读数参与的掉血；
+  车辆库 provisional 开局种子不作下降起点。canonical DamageLoss 仍按 Java 口径只用相邻 prop3，不作承受伤害）/击杀数 + 最近伤害记录（权威掉血；incoming 在相邻可信 CURRENT HP 观测窗口内关联
   `DAMAGE`，仅当唯一攻击者的全部可归因掉血恰好覆盖该窗口掉血时显示来源，否则显示「来源未知」）。
   「最终战绩」分区与协助伤害行已**删除**（整场结算不混入当前时间点面板）。
 - **KILL 广播 provenance（验证结论 + PR #107 Blocker 5 扩展）**：KILL 事件派生自 lethal

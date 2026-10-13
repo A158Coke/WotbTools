@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance, inject } from 'vue'
 import {
-  Box, Cpu, Crosshair, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
+  Cpu, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -38,15 +38,6 @@ export function useMoreMenu() {
     { value: 'auto', label: t('uiProfile.auto') },
   ]
 
-  /**
-   * 公开的回放工具入口：深链落到工作台，能力宿主负责登录门。
-   * 平板 / 桌面直接在工作台的能力切换里进，手机这一组是"更多"页的快捷入口。
-   */
-  const replayToolLinks = [
-    { view: 'agent-replay', labelKey: 'agentNav.replay', icon: Box },
-    { view: 'agent-shots', labelKey: 'agentNav.shots', icon: Crosshair },
-  ]
-
   /** 管理入口：平板 / 桌面在侧边栏管理组，手机在"更多"页。 */
   const adminLinks = computed(() => [
     isAdmin.value && { view: 'admin-users', labelKey: 'admin.title', icon: Users },
@@ -66,5 +57,5 @@ export function useMoreMenu() {
   ].filter(Boolean))
 
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, replayToolLinks, adminLinks, aboutLinks, openGuide }
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide }
 }

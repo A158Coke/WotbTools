@@ -1,5 +1,5 @@
 <script setup>
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import * as api from '../utils/api.js'
 import { ArrowRight, Compass } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
@@ -11,6 +11,8 @@ import cardSponsorImg from '../assets/showcase/home/card-sponsor-v1.webp'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { RouterLink } from 'vue-router'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
 
 const onboarding = inject(ONBOARDING_KEY, null)
 
@@ -20,7 +22,12 @@ const topDamageDisplay = computed(() => {
   return Number.isFinite(damage) ? formatDamage(damage) : '--'
 })
 
-onMounted(loadTopDamageRecord)
+// 首次连通性检测完成前 HoF 门禁按设计 fail-closed（useFeatureGate.requireFeature）：
+// 冷启动时 onMounted 直接请求会被拒绝，必须等名人堂真正可用再加载（与 HoFPage 同一模式）。
+const { availability } = useFeatureGate()
+watch(() => availability(Feature.HALL_OF_FAME).available, (available) => {
+  if (available && !topRecord.value) loadTopDamageRecord()
+}, { immediate: true })
 
 async function loadTopDamageRecord() {
   try {

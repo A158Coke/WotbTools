@@ -61,7 +61,7 @@ frontend/src/replay-local/
 |---|---|---|
 | 回放工作台 · 数据 | `composables/useLocalReplayAnalysis.ts` | 选择文件 → Worker 解析 → 批次计算 → 表格；失败只显示原因，不回退服务端 |
 | 回放工作台 · 导出 | 同上 `exportExcel(mode)` | 复用最近一次分析的批次结果，客户端生成 xlsx / zip |
-| 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 目标文件本机 `parseLocalPlayback`（三切面 → canonical facts），主线程一次性解析 |
+| 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 共享 playback session → `parseLocalPlaybackOffThread` → canonical Worker（三切面 → canonical facts）；线程设施失败才退回主线程 |
 | AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequest`（gzip）→ ai-service |
 | 3D 回放 / 射击分析 | `components/Replay3DPane.vue`、`components/ReplayShotsPane.vue`（回放工作台能力面板）、`scene/*` | 直接消费 WASM 时序 / 射击切面 |
 | 名人堂 / 百场 / 三环提交 | `utils/api.js` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
@@ -131,3 +131,7 @@ AI, HoF, remote Profile and remote 3D assets require connectivity before auth or
 The runtime URL boundary sends Android business requests to production with native Bearer and no cookies;
 ordinary Web requests retain their same-origin behavior. Release validates the APK's frontend identity,
 not the production Web deployment's commit. See `docs/android/architecture.md` and `release-process.md`.
+
+## Canonical 投影的线程边界
+
+`useReplayWorkspace.ts` 的 `playbackSession.loadCanonical` 是工作台 2D / 3D Details 的共享入口，调用 `canonicalRuntime.ts#parseLocalPlaybackOffThread`；`canonical.worker.ts` 执行 `parseLocalPlayback` 的 WASM 解码与 JS 投影。已有 scene Playback 切面通过请求复用，避免再解析一次；场景 ready 后才后台加载 canonical，3D scene 不等待 Details 事实。Worker 不存在、启动/传输失败或进程崩溃时才在主线程兜底；Worker 返回的业务解析错误直接传播，不重跑。该边界独立于数据批次 `parse.worker.ts` 与场景 `scene/playbackParse.worker.ts`。

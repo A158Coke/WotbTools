@@ -83,6 +83,10 @@ public class HallOfFameUploadService {
                 return hallOfFameService.recordRecorder(battle, tankopedia, meta);
             });
             final String arenaId = battle.arenaId == null ? "" : battle.arenaId;
+            // 同一场战斗 + 同一回放已在名人堂：仍按上面的路径落盘以自愈缺失文件，但不得以 "ok" 冒充新上榜
+            if (outcome == RecordOutcome.IDEMPOTENT) {
+                return Map.of("status", "already_recorded", "arenaId", arenaId);
+            }
             if (outcome.isSkipped()) {
                 return Map.of(
                         "status", "skipped",
