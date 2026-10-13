@@ -578,6 +578,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         let ricochetPoseDirty = true;     // 几何姿态变化（炮塔/配置/模型）→ 需重建网格
         let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
         const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
+        // 共享相机近/远面（dolly-zoom 每帧变化；厚度通道线性化状态深度用）
+        const camNearUniform = { value: 0.1 };
+        const camFarUniform = { value: 1000 };
         const rcUniforms = {
             rcThickMul: { value: 1 },
             rcEnabled: { value: false },
@@ -676,12 +679,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             uniform float normalization;
             uniform vec2 resolution;
             uniform highp sampler2D spacedStateDepth;   // 状态通道深度（最近间隙板/模块；空像素 = 1.0）
+            uniform float camNear;
+            uniform float camFar;
             void main() {
               vec2 sc = gl_FragCoord.xy / resolution;
-              float stateD = texture2D(spacedStateDepth, sc).r;
-              bool isFirstSpaced = stateD > 0.0 && stateD < 0.99999
-                && abs(gl_FragCoord.z - stateD) < 1.0e-4;
               float viewDistance = length(vViewPos);
+              float viewDepth = -vViewPos.z;            // 视空间深度（与深度缓冲同量纲）
+              float stateD = texture2D(spacedStateDepth, sc).r;
+              // 状态深度（非线性）→ **线性视距（米）**，与自身视深同量纲比较：容差 0.05m 在全
+              // 视距一致。固定窗口深度差在远距不可用——30m 处相隔 0.2m 的两板窗口深度差仅
+              // 2.2e-5 < 1e-4，会把第二块也判成首层（review 2026-10-13）。相机近/远面随
+              // dolly-zoom 每帧变化，用共享 uniform 注入。
+              float linState = (2.0 * camNear * camFar)
+                / (camFar + camNear - (2.0 * stateD - 1.0) * (camFar - camNear));
+              bool hasState = stateD > 0.0 && stateD < 0.99999;
+              bool isFirstSpaced = hasState && abs(viewDepth - linState) < 0.05;
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = isFirstSpaced && !threeCal && angle >= ricochet;
@@ -761,6 +773,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 blending: THREE.AdditiveBlending,
                 uniforms: Object.assign(spacedCommonUniforms(thickness, penetration), {
                     resolution: resUniform,
+                    camNear: camNearUniform,
+                    camFar: camFarUniform,
                     spacedStateDepth: { value: null },
                 }),
             });
@@ -979,7 +993,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     }
                 });
             };
-            apply(spacedArmorScene); apply(primaryArmorScene);
+            apply(spacedArmorScene); apply(spacedStateScene); apply(primaryArmorScene);
         }
         const externalDepthMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: true, depthTest: true });
         let _emptySpacedTex = null;
@@ -1064,7 +1078,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 const dmat = clipped
                     ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
                     : externalDepthMaterial;
-                const od = addClone(spacedStateScene, node, omitMaterial, 3);
+                // 模块深度**先于**间隙板写入（order 1 < 2，colorWrite=false 只写深度）：
+                // 更近的模块让后方间隙板的深度测试失败 → 不留下过期跳弹/续飞状态
+                // （review 2026-10-13：模块仅更新深度不清状态色，PBR 会读到陈旧状态）
+                const od = addClone(spacedStateScene, node, omitMaterial, 1);
                 od.material = dmat;
             });
         }
@@ -1863,6 +1880,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (!spacedArmorScene) return;
             const rt = syncPenetrationRT();
             const srt = ensureSpacedStateRT();
+            camNearUniform.value = camera.near;   // dolly-zoom 每帧调整 → 线性化基准同步
+            camFarUniform.value = camera.far;
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
