@@ -94,6 +94,22 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r2.layers[0].effective - 87.18)).toBeLessThan(0.1)
   })
 
+  it('多块重叠间隙板：首层转正、其后裸 LOS——两块 20mm@60° + 100mm 主装甲（review 2026-10-13）', () => {
+    // AP 口径 100、穿深 164、转正 5°：层等效 = 27.1268（首层 2× 增强转正）+ 40（裸 LOS）+ 100 → BLOCKED。
+    const a = 60 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [0, 0, 0], { normal }),
+      hit(ArmorSection.SPACED, 20.0, [0, 0.4, 0], { normal }),
+      hit(ArmorSection.HULL, 100.0, [0, 0.8, 0]),
+    ]
+    const r = calculate(req('ap', 164.0, 100.0, hits, { normalization_deg: 5 }))
+    expect(Math.abs(r.layers[0].effective - 27.1268)).toBeLessThan(0.02)
+    expect(Math.abs(r.layers[1].effective - 40)).toBeLessThan(0.02)
+    expect(Math.abs(r.layers[2].effective - 100)).toBeLessThan(0.02)
+    expect(r.result).toBe('BLOCKED')
+  })
+
   it('normalization_applies_only_to_first_armor_layer', () => {
     // WG 语义（用户 2026-10-13 裁示）：转正只作用于首个装甲层，击穿第一层后不再转正。
     // 层0 = 间隙板 20mm（30° 入射，2× overmatch 增强转正 17.5°）→ eff0 = 20/cos(12.5°)

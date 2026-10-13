@@ -279,6 +279,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             uniform float metersPerUnit;   // 视空间单位 → 米（场景原生米制，恒为 1，保留 uniform 兼容热力图管线）
             uniform sampler2D spacedArmorBuffer;   // R=外部/间隙甲 thickness/penetration, alpha!=0 表示有覆盖
             uniform highp sampler2D spacedArmorDepth; // 深度（HE 溅射用）
+            uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
             uniform mat4 inverseProjectionMatrix;
             #include <clipping_planes_pars_fragment>
             float getDist(vec2 coord, float depth) {
@@ -298,8 +299,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               #include <clipping_planes_fragment>
               vec2 sc = gl_FragCoord.xy / resolution;
               vec4 spacedData = texture2D(spacedArmorBuffer, sc);
+              vec4 spacedState = texture2D(spacedStateBuffer, sc);
               bool underSpaced = spacedData.a != 0.0;
-              bool gapRicochet = underSpaced && spacedData.g > 0.5;   // 首层间隙板跳弹（SPACED_FRAG 写 G）
+              bool gapRicochet = underSpaced && spacedState.r > 0.5;   // 首层跳弹标志（RT1，最近板独占）
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
 
@@ -323,7 +325,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 着色器**在其自身几何（真实起点/法线）上算毕并编码进 B——此处只解读，
                 // 不得在本面重算（review 2026-10-13：两块板无平行约束）。
                 //   0.0 = 无续飞结果 → 维持紫；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡 → 红
-                float code = spacedData.b;
+                float code = spacedState.g;
                 if (code <= 0.0) {
                   penChance = 0.0; ricocheted = true;
                 } else if (code >= 1.0) {
@@ -413,6 +415,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
         let penetrationRT = null;
+        let spacedStateRT = null;
         function ensurePenetrationRT() {
             if (!penetrationRT) {
                 const c = renderer.domElement;
@@ -420,9 +423,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     depthTexture: new THREE.DepthTexture(c.width, c.height),
                 });
             }
+            if (!spacedStateRT) {
+                const c = renderer.domElement;
+                spacedStateRT = new THREE.WebGLRenderTarget(c.width, c.height, {
+                    depthTexture: new THREE.DepthTexture(c.width, c.height),
+                });
+            }
             const cx = renderer.domElement;
             penetrationRT.setSize(cx.width, cx.height);
+            spacedStateRT.setSize(cx.width, cx.height);
             return penetrationRT;
+        }
+        /** 状态通道目标（与厚度通道同尺寸 + 自带深度纹理）。 */
+        function ensureSpacedStateRT() {
+            ensurePenetrationRT();
+            return spacedStateRT;
         }
         function syncPenetrationRT() {
             const rt = ensurePenetrationRT();
@@ -433,6 +448,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 rt.depthTexture = new THREE.DepthTexture(w, h);
             }
             rt.setSize(w, h);
+            const srt = spacedStateRT;
+            if (srt) {
+                if (!srt.depthTexture || srt.depthTexture.width !== w || srt.depthTexture.height !== h) {
+                    if (srt.depthTexture) srt.depthTexture.dispose();
+                    srt.depthTexture = new THREE.DepthTexture(w, h);
+                }
+                srt.setSize(w, h);
+            }
             return rt;
         }
 
@@ -592,6 +615,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     opacity: { value: 1 },
                     spacedArmorBuffer: { value: emptySpacedTexture() },
                     spacedArmorDepth: { value: null },
+                    spacedStateBuffer: { value: emptySpacedTexture() },
                     inverseProjectionMatrix: { value: null },
                     rcThickMul: rcUniforms.rcThickMul,
                     rcEnabled: rcUniforms.rcEnabled,
@@ -637,7 +661,45 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
         }
         const SPACED_VERT = PBR_VERT;
+        // 厚度通道（RT0，additive，R 累计）：只写 R/coverage；**首层判定**用状态通道（RT1）
+        // 的最近间隙板/模块深度：|gl_FragCoord.z − stateDepth| < eps ⇒ 本片元即最近板。
+        // 首层 → 全效应（3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
+        // （与点击链 layerIndex>0 同规则；review 2026-10-13 重叠间隙板案例）。
         const SPACED_FRAG = `
+            precision mediump float;
+            varying vec3 vNormal;
+            varying vec3 vViewPos;
+            uniform float thickness;
+            uniform float penetration;
+            uniform float caliber;
+            uniform float ricochet;
+            uniform float normalization;
+            uniform vec2 resolution;
+            uniform highp sampler2D spacedStateDepth;   // 状态通道深度（最近间隙板/模块；空像素 = 1.0）
+            void main() {
+              vec2 sc = gl_FragCoord.xy / resolution;
+              float stateD = texture2D(spacedStateDepth, sc).r;
+              bool isFirstSpaced = stateD > 0.0 && stateD < 0.99999
+                && abs(gl_FragCoord.z - stateD) < 1.0e-4;
+              float viewDistance = length(vViewPos);
+              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              bool threeCal = caliber > thickness * 3.0;
+              bool ricocheted = isFirstSpaced && !threeCal && angle >= ricochet;
+              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
+              float norm = isFirstSpaced
+                ? (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization)
+                : 0.0;
+              float eff = thickness / cos(max(0.0, angle - norm));
+              // R = 厚度/穿深（首层跳弹 = 1.0 全额消耗）；跳弹标志/续飞编码在 RT1 状态通道
+              gl_FragColor = vec4(ricocheted ? 1.0 : eff / penetration, 0.0, 0.0, 1.0);
+            }
+        `;
+        // 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
+        // 不可累加的跳弹标志/续飞编码与 R 厚度累计分离（review 2026-10-13：additive 下多块板
+        // 各写 B，0.8+0.8→1.6 被钳到 1，误进「被挡」红分支）。续飞就地执行，反射起点/法线 =
+        // 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；G = 续飞结果编码
+        // （0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
+        const SPACED_STATE_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
             varying vec3 vViewPos;
@@ -651,16 +713,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             void main() {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
-              // 首层全效应（跳弹 + 3×/2× overmatch + 转正）——与点击链 layer 0 同式
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
-              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
-              float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
-              float finalThick = thickness / cos(max(0.0, angle - norm));
-              // 首层跳弹 → **就地续飞**：反射起点/法线 = 本间隙板自身（vViewPos/vNormal）——
-              // 不得复用其后主装甲的数据（两块板无平行约束，反射方向可完全不同；review
-              // 2026-10-13）。结果黑盒编码进 B，屏幕侧只解读（PBR_FRAG gapRicochet 分支）：
-              //   0.0 = 无续飞结果（维持紫）；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡（红）
               float bCode = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -677,36 +731,46 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
                 if (rcDiag > 1e30) bCode = -1.0;
               }
-              // R = 厚度/穿深（二层消耗数据：跳弹 = 1.0 全额消耗）；G = 首层跳弹标志——
-              // 屏幕侧（PBR_FRAG）据此把「间隙板跳弹」渲染成跳弹色，而不是算成「被挡」红
-              gl_FragColor = vec4(ricocheted ? 1.0 : finalThick / penetration,
-                                  ricocheted ? 1.0 : 0.0, bCode, 1.0);
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, 0.0, 1.0);
             }
         `;
+        /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
+        function spacedCommonUniforms(thickness, penetration) {
+            return {
+                thickness: { value: thickness }, penetration: { value: penetration || 200 },
+                caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
+                rcThickMul: rcUniforms.rcThickMul,
+                rcEnabled: rcUniforms.rcEnabled,
+                rcMode: rcUniforms.rcMode,
+                rcWorldTris: rcUniforms.rcWorldTris,
+                rcTriRows: rcUniforms.rcTriRows,
+                rcGridCells: rcUniforms.rcGridCells,
+                rcGridEntries: rcUniforms.rcGridEntries,
+                rcGridMin: rcUniforms.rcGridMin,
+                rcCell: rcUniforms.rcCell,
+                rcGridDimsF: rcUniforms.rcGridDimsF,
+                rcCellRows: rcUniforms.rcCellRows,
+                rcEntryRows: rcUniforms.rcEntryRows,
+                rcEntryTotal: rcUniforms.rcEntryTotal,
+            };
+        }
         function spacedMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
                 depthWrite: false, depthTest: true,
                 blending: THREE.AdditiveBlending,
-                uniforms: {
-                    thickness: { value: thickness }, penetration: { value: penetration || 200 },
-                    caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
-                    // 与穿透材质**同一对象引用**共享续飞 uniforms（单点更新全体生效）：
-                    // 间隙板着色器就地跑 rcContinue，需要完整网格/模式变量
-                    rcThickMul: rcUniforms.rcThickMul,
-                    rcEnabled: rcUniforms.rcEnabled,
-                    rcMode: rcUniforms.rcMode,
-                    rcWorldTris: rcUniforms.rcWorldTris,
-                    rcTriRows: rcUniforms.rcTriRows,
-                    rcGridCells: rcUniforms.rcGridCells,
-                    rcGridEntries: rcUniforms.rcGridEntries,
-                    rcGridMin: rcUniforms.rcGridMin,
-                    rcCell: rcUniforms.rcCell,
-                    rcGridDimsF: rcUniforms.rcGridDimsF,
-                    rcCellRows: rcUniforms.rcCellRows,
-                    rcEntryRows: rcUniforms.rcEntryRows,
-                    rcEntryTotal: rcUniforms.rcEntryTotal,
-                },
+                uniforms: Object.assign(spacedCommonUniforms(thickness, penetration), {
+                    resolution: resUniform,
+                    spacedStateDepth: { value: null },
+                }),
+            });
+        }
+        function spacedStateMaterial(thickness, penetration) {
+            return new THREE.ShaderMaterial({
+                vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
+                // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
+                depthWrite: true, depthTest: true, blending: THREE.NoBlending,
+                uniforms: spacedCommonUniforms(thickness, penetration),
             });
         }
         function shellTypeOf(sh) {
@@ -929,6 +993,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         }
         let spacedArmorScene = null;
         let primaryArmorScene = null;
+        // 状态通道场景/目标（RT1）：只有最近间隙板能写状态（不可累加）——见 SPACED_STATE_FRAG
+        let spacedStateScene = null;
 
         // 穿透场景克隆工厂：原 addOmitClone/addColorClone/addDepthExcludeClone 三函数
         // 完全同构仅材质不同，合并为单一函数，调用点传各自材质
@@ -980,6 +1046,28 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 cm2.userData._baseThickness = t;
             });
         }
+        /** 状态通道场景：间隙板（状态材质——depthWrite 独占最近板）+ 外部模块（仅深度：
+         *  点击链把模块计入 layerIndex，模块在前的间隙板不得作为「首层」）。 */
+        function buildSpacedStateScene() {
+            if (!armorModel) return;
+            if (spacedStateScene) spacedStateScene.clear();
+            else spacedStateScene = new THREE.Scene();
+            const pen = ((selectedShell && selectedShell.penetration) || 200) * equipmentCoeffs().penMul;
+            spacedMeshes.forEach(function(node){
+                const t = node.userData.armorThickness || 0;
+                const sm = addClone(spacedStateScene, node, spacedStateMaterial(t, pen), 2);
+                sm.userData._baseThickness = t;
+                tagStateClone(sm, node);
+            });
+            externalMeshes.forEach(function(node){
+                const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
+                const dmat = clipped
+                    ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
+                    : externalDepthMaterial;
+                const od = addClone(spacedStateScene, node, omitMaterial, 3);
+                od.material = dmat;
+            });
+        }
         function buildPrimaryArmorScene() {
             if (!armorModel) return;
             if (primaryArmorScene) primaryArmorScene.clear();
@@ -1014,6 +1102,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             };
             apply(primaryArmorScene);
             apply(spacedArmorScene);
+            apply(spacedStateScene);
             const sh = selectedShell || (shooterShells[0]) || null;
             if (sh) {
                 updatePenetrationUniforms(sh);
@@ -1040,13 +1129,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // BlitzKit：degToRad(shell.normalization ?? 0)
             const norm = (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180;
             const rico = (isExplosive ? 90 : (sh.ricochet != null ? sh.ricochet : 70)) * Math.PI / 180;
-            spacedArmorScene.traverse(function(node){
-                if (!node.isMesh || !node.material || !node.material.uniforms) return;
-                const u = node.material.uniforms;
-                if (u.penetration) u.penetration.value = pen;
-                if (u.caliber) u.caliber.value = cal;
-                if (u.ricochet) u.ricochet.value = rico;
-                if (u.normalization) u.normalization.value = norm;
+            [spacedArmorScene, spacedStateScene].forEach(function(scene){
+                if (!scene) return;
+                scene.traverse(function(node){
+                    if (!node.isMesh || !node.material || !node.material.uniforms) return;
+                    const u = node.material.uniforms;
+                    if (u.penetration) u.penetration.value = pen;
+                    if (u.caliber) u.caliber.value = cal;
+                    if (u.ricochet) u.ricochet.value = rico;
+                    if (u.normalization) u.normalization.value = norm;
+                });
             });
         }
 
@@ -1072,6 +1164,12 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         function disposePenetrationResources() {
             disposeSceneMaterials(primaryArmorScene);
             disposeSceneMaterials(spacedArmorScene);
+            disposeSceneMaterials(spacedStateScene);
+            if (spacedStateRT) {
+                if (spacedStateRT.depthTexture) spacedStateRT.depthTexture.dispose();
+                spacedStateRT.dispose();
+                spacedStateRT = null;
+            }
             if (penetrationRT) {
                 if (penetrationRT.depthTexture) penetrationRT.depthTexture.dispose();
                 penetrationRT.dispose();
@@ -1630,6 +1728,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             collectPenetrationMeshes();
             rebuildRicochetPack();
             buildSpacedArmorScene();
+            buildSpacedStateScene();
             buildPrimaryArmorScene();
             const sh = selectedShell || (shooterShells[0]) || null;
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
@@ -1758,15 +1857,36 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             };
             apply(primaryArmorScene);
             apply(spacedArmorScene);
+            apply(spacedStateScene);
         }
         function renderSpacedArmorPass() {
             if (!spacedArmorScene) return;
             const rt = syncPenetrationRT();
+            const srt = ensureSpacedStateRT();
             syncCloneMatrices(spacedArmorScene);
+            syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
+            // ① 状态通道：最近间隙板独占写 G/B（NoBlending + depthWrite；外部模块只贡献深度），
+            //    并产出最近板深度 → ② 的「是否首层」判定依据（review 2026-10-13 重叠板）
+            if (spacedStateScene) {
+                renderer.autoClear = true;
+                renderer.setRenderTarget(srt);
+                renderer.setClearColor(0x000000, 0);
+                renderer.render(spacedStateScene, camera);
+            }
+            // ② 厚度通道：全板 additive（R 累计）；spaced 材质按 ① 深度辨认真实首层
+            if (spacedStateScene) {
+                spacedArmorScene.traverse(function(node){
+                    if (node.isMesh && node.material && node.material.uniforms
+                        && node.material.uniforms.spacedStateDepth) {
+                        node.material.uniforms.spacedStateDepth.value = srt.depthTexture;
+                    }
+                });
+            }
             const inject = (obj) => { obj.traverse(function(node){
                 if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.spacedArmorBuffer) {
                     node.material.uniforms.spacedArmorBuffer.value = rt.texture;
+                    if (node.material.uniforms.spacedStateBuffer) node.material.uniforms.spacedStateBuffer.value = srt.texture;
                     if (node.material.uniforms.spacedArmorDepth && rt.depthTexture) node.material.uniforms.spacedArmorDepth.value = rt.depthTexture;
                     if (node.material.uniforms.inverseProjectionMatrix) node.material.uniforms.inverseProjectionMatrix.value = camera.projectionMatrixInverse;
                 }
@@ -2212,6 +2332,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             };
                             grab(primaryArmorScene, 'P');
                             grab(spacedArmorScene, 'S');
+                            grab(spacedStateScene, 'SS');
                             return out;
                         },
                         penProbe: function() {
@@ -2240,6 +2361,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                             };
                             grab(primaryArmorScene, 'P');
                             grab(spacedArmorScene, 'S');
+                            grab(spacedStateScene, 'SS');
                             return out;
                         },
                         state: function() {
