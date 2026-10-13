@@ -57,6 +57,25 @@ describe('public standings export projection', () => {
   })
 })
 
+describe('stage preset day labels follow the viewer language', () => {
+  it.each([
+    ['en', 'Round 1 · Group stage', 'Round 1 · Finals'],
+    ['ru', 'Этап 1 · Групповой этап', 'Этап 1 · Финал'],
+  ])('%s: a Chinese-stored 小组赛 / 决赛圈 preset is shown in the current language', (locale, group, finals) => {
+    const table = projection(standings(), locale)
+    expect(table.columns[3].label).toBe(group)
+    expect(table.columns[4].label).toBe(finals)
+  })
+
+  it('keeps administrator custom names verbatim', () => {
+    const input = standings()
+    input.event.dayLabels = ['A 组', 'Grand Final']
+    const table = projection(input, 'en')
+    expect(table.columns[3].label).toBe('Round 1 · A 组')
+    expect(table.columns[4].label).toBe('Round 1 · Grand Final')
+  })
+})
+
 describe('real xlsx bytes', () => {
   it('keeps year, region code and localized season intact for Russian North America Fire Cup', async () => {
     const input = standings()

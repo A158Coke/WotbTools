@@ -16,6 +16,7 @@ import FileDrop from './FileDrop.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 import TournamentPointsTable from './TournamentPointsTable.vue'
 import TournamentGroupReview from './TournamentGroupReview.vue'
+import { localizedDayLabel } from '../utils/tournamentPointsExport.js'
 import '../styles/tournament-points.css'
 const { t, te } = useI18n()
 const owner = useTournamentPointsAdmin()
@@ -108,7 +109,7 @@ onScopeDispose(clearLocal)
       </section>
       <div v-if="config" class="tournament-toolbar">
         <label class="tournament-field"><span>{{ $t('tournament.rounds') }}</span><select v-model.number="round"><option v-for="value in config.event.roundCount" :key="value" :value="value">{{ $t('tournament.round', { number: value }) }}</option></select></label>
-        <label class="tournament-field"><span>{{ $t('tournament.days') }}</span><select v-model.number="day"><option v-for="value in config.event.daysPerRound" :key="value" :value="value">{{ config.event.dayLabels[value - 1] }}</option></select></label>
+        <label class="tournament-field"><span>{{ $t('tournament.days') }}</span><select v-model.number="day"><option v-for="value in config.event.daysPerRound" :key="value" :value="value">{{ localizedDayLabel(config.event.dayLabels[value - 1], value, t) }}</option></select></label>
       </div>
       <template v-if="dayState && config">
         <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span v-if="!historicalState?.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
