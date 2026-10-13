@@ -244,6 +244,48 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(Math.abs(sim.layers[0].eff - 100)).toBeLessThan(0.5)
     })
 
+    it('转正只作用于首个命中层：20mm 间隙@60° + 100mm 主装甲@60°（review 2026-10-13 数值锚点）', () => {
+        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× overmatch 增强转正 17.5°）：
+        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）**不再转正**：eff = 100/cos(60°) = 200。
+        // 修前逐层转正给 100/cos(55°) ≈ 174.34——同一射线 calculate(200) 与续飞(174) 分歧。
+        const { sim, oracle } = runCase([
+            { section: 'spaced', thickness: 20, x: 2, rotYDeg: -90 + 60 },
+            { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
+        ], { remIn: 220, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
+        expect(Math.abs(sim.layers[0].eff - 27.1268)).toBeLessThan(0.02)
+        expect(Math.abs(sim.layers[1].eff - 200)).toBeLessThan(0.01)
+        expect(sim.layers[1].eff).toBeGreaterThan(190)   // 判别：旧规则 ≈174.34
+        expect(sim.cls).toBe(2)
+        expect(oracle).toBe(2)                            // 与 calculate 平价（分歧已闭合）
+    })
+
+    it('非平行间隙板/主装甲：续飞按间隙板自身几何（review 2026-10-13 用例）', () => {
+        // 40mm 间隙板入射 75°：其反射线沿 XZ 面前行 0.5m 处放 100mm 主装甲（入射 0°，
+        // 与间隙板不平行）。续飞必须从**间隙板**的跳弹点与其法线出发：
+        // 正确反射 → 命中主装甲并穿透（点击链 RICOCHET→PENETRATION 同结论）；
+        // 误用主装甲法线反射（本面假设）→ 折返、无命中（cls 0）。
+        const gapAngle = 75 * Math.PI / 180
+        const gapNormal = new THREE.Vector3(-Math.cos(gapAngle), 0, Math.sin(gapAngle))
+        const bouncePos = new THREE.Vector3(2, 0, 0)
+        const gap = makeMesh(new THREE.PlaneGeometry(4, 4), 'spaced', 40, (m) => {
+            m.position.copy(bouncePos)
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), gapNormal)
+        })
+        const refl = X_DIR.clone().sub(gapNormal.clone().multiplyScalar(2 * X_DIR.dot(gapNormal))).normalize()
+        const mainNormal = refl.clone().negate()
+        const main = makeMesh(new THREE.PlaneGeometry(4, 4), 'hull', 100, (m) => {
+            m.position.copy(bouncePos.clone().addScaledVector(refl, 0.5))
+            m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), mainNormal)
+        })
+        const pack = packOf([gap, main])
+        const params = { remIn: 225, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 }
+        const sim = simulateContinuation(pack, bouncePos, refl, params)
+        expect(sim.cls).toBe(1)                                        // 命中主装甲并穿透
+        expect(oracleClass(pack, bouncePos, refl, params)).toBe(1)     // 与 calculate 平价
+        const wrongRefl = X_DIR.clone().sub(mainNormal.clone().multiplyScalar(2 * X_DIR.dot(mainNormal))).normalize()
+        expect(simulateContinuation(pack, bouncePos, wrongRefl, params).cls).toBe(0)
+    })
+
     it('间隙甲被挡但后方有主装甲：红（judge=BLOCKED）', () => {
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 300, x: 2 },

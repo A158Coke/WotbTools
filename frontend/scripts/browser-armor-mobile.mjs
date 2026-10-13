@@ -111,6 +111,8 @@ function armorLayoutProbe() {
       // scrollWidth 会大于 clientWidth（评审：EN/RU 文案在 58px 盒子里溢出重叠）
       const needed = requestRect && inputRect ? Math.round(inputRect.width + 3 + requestRect.width) : null
       return {
+        id: label.id || null,
+        visible: rect.width > 0 && rect.height > 0,
         text: label.textContent.trim(),
         width: Math.round(rect.width), height: Math.round(rect.height),
         left: Math.round(rect.left), right: Math.round(rect.right),
@@ -345,20 +347,28 @@ async function runMobileScenario(env, scenario) {
   check(failures, opened.selectors && opened.selectors.height <= opened.root.height * 0.46 + 2,
     `${label}: 参数面板高度 ${opened.selectors?.height}px 超过 46% 视口上限`)
   check(failures, opened.targetSelect?.visible === true, `${label}: 参数面板里没有可用的目标 / 选车按钮`)
-  // 参数面板内的真实交互控件 ≥44px（评审 BLOCKER 1：配置下拉 + 两个装备复选框 label）
+  // 参数面板内的真实交互控件 ≥44px（评审 BLOCKER 1：配置下拉 + 装备复选框 label）。
+  // 动态装甲项（#armor-state-opt）只在有 XML 声明车出现，静态夹具下按设计 display:none——
+  // 命中区/文案断言只对**可见**控件成立（隐藏项 0×0 不是违规），隐藏项按 id 单独锁定。
   if (!scenario.assetless) {
     check(failures, opened.configSelect?.visible === true && opened.configSelect.height >= 43.5,
       `${label}: 配置下拉缺失或命中区不足 44px（${JSON.stringify(opened.configSelect)}）`)
-    check(failures, opened.eqOpts.length === 2, `${label}: 装备复选框 label 数量 ${opened.eqOpts.length}，期望 2`)
-    for (const option of opened.eqOpts) {
+    const visibleEq = opened.eqOpts.filter((option) => option.visible)
+    check(failures, visibleEq.length === 2,
+      `${label}: 可见装备复选框 label 数量 ${visibleEq.length}，期望 2（校准弹 / 强化装甲）`)
+    check(failures, opened.eqOpts.length === 3
+      && opened.eqOpts.some((option) => !option.visible && option.id === 'armor-state-opt'),
+      `${label}: 静态夹具应恰有 1 个隐藏装备项（#armor-state-opt 动态装甲，无声明不显示），`
+      + `实测隐藏项 [${opened.eqOpts.filter((option) => !option.visible).map((option) => option.id || option.text).join(',')}]`)
+    for (const option of visibleEq) {
       check(failures, option.height >= 43.5,
         `${label}: 装备「${option.text}」label 命中区 ${option.width}x${option.height}，低于 44px`)
       // 文案盒不得被压窄（width:auto 被 `#tank-selectors label{width:58px}` 按优先级盖回过一轮）
       check(failures, option.clipped === false,
         `${label}: 装备「${option.text}」label 文案溢出盒子（width=${option.width} 需要 ≥${option.needed}）`)
     }
-    if (opened.eqOpts.length === 2) {
-      const [first, second] = opened.eqOpts
+    if (visibleEq.length === 2) {
+      const [first, second] = visibleEq
       check(failures, first.right <= second.left + 1,
         `${label}: 两个装备 label 重叠（第一个 right=${first.right} > 第二个 left=${second.left}）`)
     }
