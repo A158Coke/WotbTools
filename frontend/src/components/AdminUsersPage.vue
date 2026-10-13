@@ -437,6 +437,8 @@ function fmtTime(s) {
             <td>
               <span v-if="u.keycloakUserMissing" class="badge badge-warn">{{ $t('admin.kcUserMissing') }}</span>
               <span v-else-if="!u.hasLocalProfile" class="badge">{{ $t('admin.noLocalProfile') }}</span>
+              <!-- 本地资料在登录时即创建；真正的「绑定」是游戏账号（wotbAccountId），与个人资料页同一判据 -->
+              <span v-else-if="u.wotbAccountId == null" class="badge">{{ $t('admin.unbound') }}</span>
               <span v-else class="cell-time">{{ $t('admin.bound') }}</span>
             </td>
             <td class="cell-actions">
