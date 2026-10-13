@@ -25,6 +25,7 @@ import { resolveMountedConfig } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
+import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
 import { storeShotsForViewer, fetchLocalShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
@@ -66,6 +67,8 @@ const authorError = ref('')
 const shooter = ref('own')
 const authorEid = ref(null)
 const recorderTankName = ref('')
+/** 开战时刻的原始时钟：time_s 是原始回放时钟，减去它才与 2D / 3D 的 00:00 = 开战对齐 */
+const battleStartRaw = ref(0)
 const selectedIndex = ref(null)
 const guideInset = ref(0)
 /** 已解析的文件：同一文件不重复解码 */
@@ -211,6 +214,7 @@ async function decode(file) {
   shooter.value = 'own'
   authorEid.value = null
   recorderTankName.value = ''
+  battleStartRaw.value = 0
   shots.value = []
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
@@ -222,6 +226,8 @@ async function decode(file) {
     try {
       playback = await parseAgentPlaybackFromBytes(bytes)
       if (seq !== parseSeq) return
+      // 与 3D 场景同一推导（playbackScene.js：resolveReplayClock(DATA.periods, null, meta.duration)）
+      battleStartRaw.value = resolveReplayClock(playback.periods || [], null, playback.meta?.duration)?.startRaw ?? 0
       pitchLimits = await buildPitchLimits(playback.vehicles)
     } catch (e) {
       console.warn('pitch limits skipped:', e)
@@ -294,6 +300,7 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
     parsing.value = false
     shots.value = []
     recorderTankName.value = ''
+    battleStartRaw.value = 0
     authorEid.value = null
     selectedIndex.value = null
     shooter.value = 'own'
@@ -305,6 +312,9 @@ watch([() => props.active, () => props.file, () => props.blockedReason], ([activ
   parsedFile = file
   decoding = decode(file)
 }, { immediate: true })
+
+/** 射击时刻（开战相对）：与 2D / 3D 时间轴同一时钟 */
+const shotClock = (shot) => formatPlaybackClock(Math.max(0, shot.time_s - battleStartRaw.value))
 
 const shellBadge = (s) => {
   const kindOf = (value) => {
@@ -671,7 +681,7 @@ onBeforeUnmount(() => {
               :data-tour="s === guideShot ? 'shots-first-shot' : undefined"
               @click="selectShot(s.index, $event)"
             >
-              <span class="shot-time"><span class="shot-ordinal">{{ position + 1 }}</span><span class="shot-clock">{{ formatPlaybackClock(s.time_s) }}</span></span>
+              <span class="shot-time"><span class="shot-ordinal">{{ position + 1 }}</span><span class="shot-clock">{{ shotClock(s) }}</span></span>
               <span class="shot-path">
                 <span class="shot-names">
                   <span class="shot-vehicle"><span class="shot-name"><TankClassIcon :tank-class="s.shooter_tank_class" />{{ tankName(s, 'shooter') }}</span><span class="shot-player">{{ playerName(s.shooter_name) }}</span></span>
@@ -708,7 +718,7 @@ onBeforeUnmount(() => {
           @pointercancel="swipeStart = null"
         >
           <header class="shot-detail-head">
-            <div><h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3><p class="shot-detail-position">{{ $t('agentShots.shot_position', { current: selectedPosition + 1, total: filteredShots.length }) }} · {{ formatPlaybackClock(selectedShot.time_s) }}</p></div>
+            <div><h3 class="shot-detail-title">{{ $t('agentShots.inspector_title') }}</h3><p class="shot-detail-position">{{ $t('agentShots.shot_position', { current: selectedPosition + 1, total: filteredShots.length }) }} · {{ shotClock(selectedShot) }}</p></div>
             <div class="shot-detail-nav">
               <!-- 滑动是快捷方式，按钮是可发现 / 可键盘操作的等价路径（首尾各自 disabled，不循环） -->
               <button
@@ -745,7 +755,7 @@ onBeforeUnmount(() => {
             @click="openInViewer(selectedShot)"
           >{{ $t('agentShots.open_viewer') }}</AppButton>
           <dl class="shot-detail-grid">
-            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_time') }}</dt><dd>{{ formatPlaybackClock(selectedShot.time_s) }}</dd></div>
+            <div class="shot-detail-row"><dt>{{ $t('agentShots.col_time') }}</dt><dd>{{ shotClock(selectedShot) }}</dd></div>
             <div class="shot-detail-row"><dt>{{ $t('agentShots.col_shell') }}</dt><dd>
               <Badge v-if="shellBadge(selectedShot).label" :text="shellBadge(selectedShot).label" :tone="shellBadge(selectedShot).tone" />
               <span v-else class="shot-dim">{{ $t('agentShots.shell_unknown') }}</span>
