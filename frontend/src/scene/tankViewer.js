@@ -2359,9 +2359,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                      if (Number.isInteger(s.target_armor_state)) {
                          setArmorState(s.target_armor_state);
                      }
-                     if (Number.isInteger(s.target_armor_state)) {
-                         setArmorState(s.target_armor_state);
-                     }
                      const stOpt = document.getElementById('armor-state-opt');
                      const stBox = document.getElementById('armor-state-toggle');
                      if (stOpt && stBox) {
