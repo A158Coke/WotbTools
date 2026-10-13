@@ -432,7 +432,16 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             primaryMeshes = []; spacedMeshes = [];
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
-                if (node.visible === false || node.userData.configHidden) return;
+                if (node.userData.configHidden) return;
+                // 动态装甲可控板（含非激活态）：构建进热力图场景但 clone 初始隐藏——
+                // 切态只翻 clone 可见性，零材质/着色器重建（消除切态闪烁）；
+                // 点击/跳弹的源网格口径不受影响（deco + visible=false 照旧排除）
+                if (node.userData.armorStateHidden === true) {
+                    const sec2 = node.userData.armorStateSection || 'hull';
+                    (sec2 === 'spaced' ? spacedMeshes : primaryMeshes).push(node);
+                    return;
+                }
+                if (node.visible === false) return;
                 const sec = node.userData.armorSection;
                 if (sec === 'deco') return;
                 if (sec === 'spaced') spacedMeshes.push(node);
@@ -812,17 +821,29 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             return m;
         }
 
+        // 可控板 clone 打状态标记 + 按当前态设初始可见性（切态零重建的翻面入口）
+        function tagStateClone(clone, src) {
+            if (src && src.userData.armorStateKey) {
+                clone.userData._armorStateKey = src.userData.armorStateKey;
+                clone.visible = src.userData.armorStateHidden !== true;
+            }
+        }
         function buildSpacedArmorScene() {
             if (!armorModel) return;
             if (spacedArmorScene) spacedArmorScene.clear();
             else spacedArmorScene = new THREE.Scene();
             const pen = ((selectedShell && selectedShell.penetration) || 200) * equipmentCoeffs().penMul;
-            primaryMeshes.forEach(function(node){ addClone(spacedArmorScene, node, omitMaterial, 0); });
+            primaryMeshes.forEach(function(node){
+                const c = addClone(spacedArmorScene, node, omitMaterial, 0);
+                tagStateClone(c, node);
+            });
             spacedMeshes.forEach(function(node){
                 const t = node.userData.armorThickness || 0;
                 const cm = addClone(spacedArmorScene, node, spacedMaterial(t, pen), 2);
                 cm.userData._baseThickness = t;
-                addClone(spacedArmorScene, node, omitMaterial, 5);
+                tagStateClone(cm, node);
+                const od = addClone(spacedArmorScene, node, omitMaterial, 5);
+                tagStateClone(od, node);
             });
             externalMeshes.forEach(function(node){
                 const t = node.userData.armorThickness || 20;
@@ -843,12 +864,33 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             else primaryArmorScene = new THREE.Scene();
             primaryMeshes.forEach(function(node){
                 const t = node.userData.armorThickness;
-                addClone(primaryArmorScene, node, excludeMaterial, 0);                        // 正面深度遮罩
+                const d = addClone(primaryArmorScene, node, excludeMaterial, 0);               // 正面深度遮罩
                 const cm = addClone(primaryArmorScene, node, penetrationMaterial(t == null ? 0 : t), 1);  // 着色
                 cm.userData._baseThickness = t == null ? 0 : t;
+                tagStateClone(d, node);
+                tagStateClone(cm, node);
             });
         }
-        function syncCloneMatrices(obj) {
+        /** 切态零重建：按激活集翻可控板 clone 的可见性（主图 + spaced 覆盖层）。
+         *  翻面后必须重刷穿透/跳弹 uniforms——构建期 updatePenetrationUniforms 跳过
+         *  不可见 clone，新点亮板的穿深/口径还是构建期兜底值。 */
+        function applyArmorStateToHeatmapClones(activeSet) {
+            const apply = (scene) => {
+                if (!scene) return;
+                scene.traverse(function(node) {
+                    const key = node.userData && node.userData._armorStateKey;
+                    if (key) node.visible = activeSet.has(key);
+                });
+            };
+            apply(primaryArmorScene);
+            apply(spacedArmorScene);
+            const sh = selectedShell || (shooterShells[0]) || null;
+            if (sh) {
+                updatePenetrationUniforms(sh);
+                updateSpacedUniforms(sh);
+            }
+            updateHeatmapThickness();
+        }        function syncCloneMatrices(obj) {
             if (!obj) return;
             obj.traverse(function(node){
                 const src = node.userData && node.userData._src;
@@ -1676,6 +1718,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 const key = m[1] + ':' + m[2];
                 if (!controllable.has(key)) return;
                 const inactive = !active.has(key);
+                // 两个分支都登记 armorStateKey/armorStateSection：热力图构建时
+                // 非激活板也要入场景（clone 隐藏）——切态只翻 clone 可见性，零重建
+                node.userData.armorStateKey = key;
+                const spacedLike = spacedBySection[m[1]].has(m[2]);
+                node.userData.armorStateSection = spacedLike ? 'spaced' : m[1];
                 if (inactive) {
                     node.userData.armorStateHidden = true;
                     node.userData.armorSection = 'deco';
@@ -1689,7 +1736,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     node.userData.armorThickness = getPlateThickness(m[1], m[2]);
                     node.visible = !node.userData.configHidden;
                     node.userData.armorSection =
-                        spacedBySection[m[1]].has(m[2]) ? 'spaced' : m[1];
+                        spacedLike ? 'spaced' : m[1];
                 }
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
