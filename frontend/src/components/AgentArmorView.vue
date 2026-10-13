@@ -137,6 +137,11 @@ function startViewer() {
             shotLoss: t('armor.shot_loss'),
             shotNominal: t('armor.shot_nominal'),
             shotBlocked: t('armor.shot_blocked'),
+            shotDistance: t('armor.distance'),
+            distanceUnit: t('armor.distance_unit'),
+            armorStateLabel: t('armor.armor_state'),
+            armorStateDefaultSuffix: t('armor.armor_state_default'),
+            armorStateAutoTitle: t('armor.armor_state_auto'),
             phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
         },
         onLoadState: (next) => { if (alive && seq === navigationSeq) onLoadState(next) },
@@ -243,6 +248,7 @@ onBeforeUnmount(() => {
                     <label>{{ $t('armor.equip') }}</label>
                     <label class="eq-opt"><input type="checkbox" id="eq-calibrated"> <span class="eq-opt-label">{{ $t('armor.calibrated') }}</span></label>
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
+                    <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
                 <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled>—</button></div>
                 <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled>—</button></div>
