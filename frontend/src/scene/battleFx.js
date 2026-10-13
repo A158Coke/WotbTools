@@ -40,11 +40,11 @@ export const FX_BUDGETS = Object.freeze({
   }),
   high: Object.freeze({
     capacity: 1024, muzzleBrake: true, muzzleSmoke: 3, impactSparks: 16, impactSmoke: 4,
-    burstFire: 11, burstSmoke: 16, burstSparks: 56, burstDebris: 12, burstDust: 16, wreckSmoke: 8, wreckEmbers: false,
+    burstFire: 11, burstSmoke: 16, burstSparks: 56, burstDebris: 12, burstDust: 16, wreckSmoke: 10, wreckEmbers: false,
   }),
   ultra: Object.freeze({
     capacity: 1536, muzzleBrake: true, muzzleSmoke: 6, impactSparks: 16, impactSmoke: 6,
-    burstFire: 14, burstSmoke: 20, burstSparks: 80, burstDebris: 16, burstDust: 20, wreckSmoke: 12, wreckEmbers: true,
+    burstFire: 14, burstSmoke: 20, burstSparks: 80, burstDebris: 16, burstDust: 20, wreckSmoke: 14, wreckEmbers: true,
   }),
 })
 
@@ -225,7 +225,7 @@ void main() {
 // ---------- 颜色（three 线性空间；shader 末尾转输出色彩空间） ----------
 const C = (hex) => new THREE.Color(hex)
 const HOT = C(0xfff4dc), YEL = C(0xffc864), ORA = C(0xff7f2a), RED = C(0xa6381a)
-const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d)
+const LIT = C(0x6e3d22), SOOT = C(0x1f1b18), ASH = C(0x46423d), WRECK_TOP = C(0x5f5a54)
 const DUST0 = C(0x8c7c63), DUST1 = C(0x6f685e)
 const SPARK0 = C(0xfff0c0), SPARK1 = C(0xff6a1a)
 const FLASH = C(0xfff0cc), GROUND_GLOW = C(0xff8a3a), MUZZLE = C(0xffc777), WHITE = C(0xffffff)
@@ -607,11 +607,14 @@ export function createBattleFx(budget) {
         const ph = (phase * 0.2 + i / n + offset) % 1, age = ph * 5
         const lx = (rnd(seed, i, 51) - 0.5) * 0.8 + age * (0.7 + rnd(seed, i, 52) * 0.6) * 0.7
         const lz = -1.6 + (rnd(seed, i, 53) - 0.5) * 0.8 + age * 0.25
-        const size = 1.4 + ph * 5.5
-        _c.lerpColors(SOOT, ASH, ph)
-        smoke.push(x + lx * cos + lz * sin, y + 1.7 + ph * 11, z - lx * sin + lz * cos,
+        // 烟团大、升得慢、彼此重叠成连续烟柱：单团烟贴图中心 alpha 只有 ~0.6，稀疏摆放在亮图远景下
+        // 只剩一层看不出的薄灰（实机像素回读：峰值只压暗 ~1/3）。
+        // 底部炭黑（亮图上读得出）→ 顶部转灰（暗图上读得出）。
+        const size = 2.4 + ph * 6.5
+        _c.lerpColors(SOOT, WRECK_TOP, ph)
+        smoke.push(x + lx * cos + lz * sin, y + 1.6 + ph * 10, z - lx * sin + lz * cos,
           i * 2.39996323 + ph * 0.9, size, size * 1.1, SOOT_TILES[i % 2], _c,
-          ramp * smooth(ph / 0.12) * (1 - ph) ** 1.3 * 0.85)
+          ramp * smooth(ph / 0.08) * (1 - ph) ** 0.8)
       }
     }
     if (budget.wreckEmbers) {
