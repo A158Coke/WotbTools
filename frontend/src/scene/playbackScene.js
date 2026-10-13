@@ -45,7 +45,7 @@ import { BURST_MS, FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayb
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
-import { resolveReplayClock } from '../replay-local/canonical/facts'
+import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
@@ -424,21 +424,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     return lifeTracksByAccount.get(v.def.account_id);
   }
-  /** Re-entry replaces the prior entity from its first recorded coverage, not from its numeric eid.
-   * Attribute a death at that instant; later entities never inherit it. Ambiguous identity stays unknown. */
-  function canonicalDeathAppliesTo(v, rawDeath) {
-    if (!Number.isFinite(rawDeath)) return false;
-    let count = 0, owner = null, latestStart = -Infinity, unknown = false;
-    for (const candidate of V) {
-      if (candidate.def.account_id !== v.def.account_id) continue;
-      count++;
-      const first = candidate.def.coverage?.[0];
-      if (!Number.isFinite(first)) { unknown = true; continue; }
-      if (first > rawDeath) continue;
-      if (first > latestStart) { latestStart = first; owner = candidate; }
-      else if (first === latestStart) owner = null;
-    }
-    return count === 1 || (!unknown && owner === v);
+  /** Use the producer's canonical identity evidence; older local sessions retain coverage-based identity. */
+  function canonicalDeathAppliesTo(v, rawDeath, canonical) {
+    const starts = canonical.entityStartsByAccount?.get(v.def.account_id);
+    if (starts) return activeEntityAt(starts, rawDeath - canonical.clock.startRaw) === v.def.eid;
+    const siblings = V.filter(candidate => candidate.def.account_id === v.def.account_id);
+    if (siblings.length === 1) return Number.isFinite(rawDeath);
+    const legacyStarts = new Map(siblings.map(candidate => [candidate.def.eid, candidate.def.coverage?.[0] ?? null]));
+    return activeEntityAt(legacyStarts, rawDeath) === v.def.eid;
   }
   /** Canonical life uses battle-relative seconds; this render boundary returns raw seconds like T. */
   function sceneLifeAt(v, t) {
@@ -450,7 +443,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (life.lifeState === 'DESTROYED') {
         const transition = track.lifeTransitions.find(item => item.lifeState === 'DESTROYED');
         const death = (life.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
-        if (!canonicalDeathAppliesTo(v, death)) return null;
+        if (!canonicalDeathAppliesTo(v, death, canonical)) return null;
       }
       return {
         lifeState: life.lifeState,
@@ -3743,7 +3736,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         t = transition && Number.isFinite(transition.timeSec)
           ? transition.timeSec + canonical.clock.startRaw : null;
         const identityTime = (transition?.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
-        if (!canonicalDeathAppliesTo(v, identityTime)) t = null;
+        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) t = null;
       }
       if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
     }

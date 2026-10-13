@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import atlas from '../assets/gun-marks/gun-marks.png'
+import atlas from '../assets/gun-marks/gun-marks.png?inline'
 import { gunMarksCount } from '../utils/gunMarks.js'
 
 const props = defineProps({ marks: { default: null }, showCount: Boolean })
