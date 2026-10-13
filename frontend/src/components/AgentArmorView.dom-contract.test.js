@@ -137,18 +137,26 @@ describe('engagement-distance result line localization', () => {
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   const kernel = read('../scene/tankViewer.js')
   const pen = read('../scene/penetration.js')
-  it('SPACED_FRAG 写 G 标志且 R 语义不变（跳弹 = 1.0 全额消耗）', () => {
+  it('SPACED_FRAG 写 G 标志与 B 续飞编码且 R 语义不变（跳弹 = 1.0 全额消耗）', () => {
     expect(kernel).toMatch(/ricocheted \? 1\.0 : finalThick \/ penetration,/)
-    expect(kernel).toMatch(/ricocheted \? 1\.0 : 0\.0, 0\.0, 1\.0\)/)
+    expect(kernel).toMatch(/ricocheted \? 1\.0 : 0\.0, bCode, 1\.0\)/)
   })
-  it('PBR_FRAG 间隙跳弹分支：跳弹色 + 续飞（RC_RICO_MUL）；二层 norm 归零', () => {
+  it('续飞就地用间隙板自身几何（SPACED_FRAG），屏幕侧只解读 B 编码（review 2026-10-13）', () => {
+    const spaced = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('function spacedMaterial'))
+    expect(spaced).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
+    expect(spaced).toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
     expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedData\.g > 0\.5;/)
-    const start = kernel.indexOf('if (gapRicochet) {')
-    expect(start).toBeGreaterThan(-1)
-    const seg = kernel.slice(start, start + 800)
-    expect(seg).toContain('ricocheted = true;')
-    expect(seg).toContain('rcContinue(wPosR, reflR, penetration * RC_RICO_MUL')
-    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)
+    const gapStart = kernel.indexOf('if (gapRicochet) {')
+    expect(gapStart).toBeGreaterThan(-1)
+    const gapSeg = kernel.slice(gapStart, gapStart + 900)
+    expect(gapSeg).toMatch(/float code = spacedData\.b;/)
+    expect(gapSeg).not.toContain('rcContinue')   // 不得在本面重算（两块板无平行约束）
+    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)   // 二层 norm 归零（保留）
+  })
+  it('rcContinue 双实现：转正仅首层（hitIdx == 0 / hitIdx === 0）', () => {
+    const packSrc = read('../scene/armorCollisionPack.js')
+    expect(packSrc).toMatch(/highp float normR = \(hitIdx == 0\)/)
+    expect(packSrc).toMatch(/const normR = hitIdx === 0/)
   })
   it('点击链：转正只作用于首个装甲层（layerIndex>0 → 0）', () => {
     expect(pen).toMatch(/const effNormalization = layerIndex > 0 \? 0\.0 : normalization/)
