@@ -91,7 +91,7 @@ export function ratingCellText(value, key, maxByKey = {}) {
 
 const COL_GROUP_CAT = {
   nickname: 'identity', clan: 'identity',
-  tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
+  gun_marks: 'vehicle', tank_name: 'vehicle', tank_tier: 'vehicle', tank_type: 'vehicle', tank_nation: 'vehicle',
   survived_label: 'battle', survival_time: 'battle', kills: 'battle', damage_dealt: 'battle',
   damage_assisted: 'battle', damage_received: 'battle', damage_blocked: 'battle',
   n_shots: 'battle', n_hits_dealt: 'battle', n_penetrations_dealt: 'battle',

@@ -729,6 +729,30 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('paused late result marks refresh roster and selected details by account, then clear with the session', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    const store = playback.api.store
+    store.hasData = true
+    store.playing = false
+    store.roster = { team1: [{ eid: 9, accountId: 77, tankId: 101, tank: 'Maus', nick: 'You', team: 1, hp: 100, maxHp: 100 }], team2: [], unknown: [] }
+    const clock = { startRaw: 0, durationSec: 200 }
+    const state = shallowReactive({ canonical: { dataset: { vehicles: [] }, clock, result: null } })
+    store.playbackSession = state
+    await flush()
+    await openDetailsViaScene(9)
+    expect(wrapper.find('.roster-surface [data-gun-marks]').exists()).toBe(false)
+    state.canonical = { dataset: { vehicles: [] }, clock, result: { players: [{ account_id: 77, gun_marks: 2 }, { account_id: 9, gun_marks: 3 }] } }
+    await flush()
+    expect(wrapper.get('.roster-surface [data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+    expect(wrapper.get('[data-test="pb-sb-tank"] [data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+    store.playbackSession = null
+    await flush()
+    expect(wrapper.find('.roster-surface [data-gun-marks]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="pb-sb-gun-marks"]').text()).toBe('—')
+    wrapper.unmount()
+  })
+
   it('direct declutter and roster controls preserve the current session and restore preferences', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()

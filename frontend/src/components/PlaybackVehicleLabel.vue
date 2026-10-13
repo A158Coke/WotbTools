@@ -1,11 +1,13 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import GunMarksBadge from './GunMarksBadge.vue'
 
 // One presentation for map-positioned and camera-projected vehicles. Facts and
 // reload interpretation belong to the callers; this component only presents them.
 const props = defineProps({
   playerName: { type: String, default: '' },
   tankName: { type: String, default: '' },
+  gunMarks: { default: null },
   friendly: { default: null },
   destroyed: Boolean,
   lastKnown: Boolean,
@@ -54,7 +56,7 @@ const classes = computed(() => ({
     <div v-if="(showPlayerName && playerName) || showTankName" class="pb-labels">
       <span v-if="showPlayerName && playerName" ref="playerLine" class="pb-label-player" data-test="pb-label-player"
         :class="{ 'name-tooltip': nameTooltips }" :title="nameTooltips && playerTruncated ? playerName : undefined">{{ playerName }}</span>
-      <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }}</span>
+      <span v-if="showTankName" class="pb-label-tank pb-name" data-test="pb-label-tank">{{ tankName }} <GunMarksBadge :marks="gunMarks" /></span>
     </div>
     <!-- combat state block：HP（主要）在上、reload（次级瞬时）在下，两者视觉上属于同一块，
          但与上面的身份两行保持更大的间距。 -->
@@ -97,7 +99,7 @@ const classes = computed(() => ({
 .label-enemy { color: var(--pb-enemy-text, var(--color-team-enemy)); }
 .pb-combat-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
 .pb-labels { display: flex; flex-direction: column; align-items: center; padding: calc(var(--space-1) / 2) var(--space-1); border-radius: var(--radius-sm); background: color-mix(in oklab, var(--color-canvas) 45%, transparent); backdrop-filter: blur(var(--space-1)); }
-.pb-label-tank { white-space: nowrap; }
+.pb-label-tank { white-space: nowrap; --gun-marks-width: var(--space-3); --gun-marks-height: var(--space-4); }
 .pb-label-player { max-width: var(--pb-label-player-width); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .name-tooltip { pointer-events: auto; }
 .label-destroyed .pb-labels { color: var(--color-playback-label-destroyed); text-decoration: line-through; }

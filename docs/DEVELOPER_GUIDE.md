@@ -371,6 +371,7 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 
 **匿名可用**：服务器没有 parser，分析全部在本机，数据分析与 2D 挂载即可用，不等 Keycloak init。个人回放的 3D、射击与 AI 有登录门禁；可信官方示例可匿名使用 3D/射击，AI 仍需登录。3D 与 AI 还须满足对应的联网可用性门禁；名人堂等写操作另行鉴权。
 **能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
+**车辆环线**：已有 WASM `parseResult.players[].gun_marks` → `battleFacts.gunMarks` → 单场 `gun_marks` 列／中文 Excel；缺失和非法保留未知。专用标志共用于数据表、手机卡片、详情、2D／3D 名册与车型标签，回放读取 owner 的 `LocalPlayback.result` 按账号匹配，generic HTTP dataset 不增加字段。成就不按玩家跨车汇总，不推断精确百分位或获得时刻；3D 炮管贴花暂未实现。详见 [`字段字典`](reference/replay-parsed-fields.md#车辆环线gun-marks)。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
 **Android Local-First**：APK 从 `https://appassets.androidplatform.net/index.html` 启动同一 Vue 产品；
 `WebViewAssetLoader` 的 `/` 映射到 APK `assets/web/`，Vue Router 的 `/index.html` alias 与历史路由

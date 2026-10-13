@@ -3,7 +3,7 @@
  * 的 Jackson JSON 形状，camelCase；见 `__golden__/java-battles.json`）。
  *
  * 语义保持 Java 原样：primitive 字段（int/long/double/boolean）在 JSON 里恒存在，
- * 包装类型（Integer/Long/Double）可为 null。
+ * 包装类型（Integer/Long/Double）可为 null。新增客户端事实（如 gunMarks）不修改只读 Java 历史基准。
  */
 
 /** 进场满血量 provenance（Java `EntryHpSource`）。 */
@@ -35,6 +35,8 @@ export interface PlayerResult {
   clan: string
   prebattleGroupId: number | null
   rank: number | null
+  /** Persistent earned marks on this vehicle; absent in legacy inputs. */
+  gunMarks?: number | null
 
   tankName: string
 

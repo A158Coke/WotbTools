@@ -58,7 +58,14 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 | `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
 | `survivalTimeSec` | double | 派生 | 存活者=战斗时长；阵亡者=min(settlement lifeTime, 战斗时长) 的兼容投影（秒） | 仅兼容展示；业务死亡秒值读取 settlement `field24 lifeTime`，live reconstruction 不覆盖 |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
+| `gunMarks` | number? | 战绩 `#120`（11.19 已核验） | 本车已获得的环数，整数 0～3 | 缺失／非法为未知；客户端新增字段，单场列 `gun_marks`，与军阶和当前百分位独立 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
+
+### 车辆环线（Gun Marks）
+
+`parseResult.players[].gun_marks` 是该玩家在本车已获得的 0～3 环（Blitz 11.19 结算 `PlayerResults.field120`，加载名册 `wrapper1.player.field26` 为同类状态；版本边界见 [`field120-gun-marks`](../research/replay/field120-gun-marks.md)）。客户端通过 `battleFacts` 正规化为可空 `gunMarks`，单场列 key 为 `gun_marks`。只接受整数 0～3，缺失／非法为未知，不能跨版本把省略字段直接当零环。
+
+此字段是车辆成就，不是军阶 `rank`、单场新获得的精通勋章、评级分或当前精确百分位；也不记录本场获得环的时刻。回放身份展示直接消费同一 `LocalPlayback.result`，不增加 generic playback HTTP 字段。
 
 ## 2. 战斗层（`Battle`，来源按字段区分）
 

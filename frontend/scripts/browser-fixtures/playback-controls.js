@@ -79,9 +79,14 @@ const i18n = createI18n({
   messages,
 })
 
+// Opt-in Gun Marks facts travel beside the wire dataset, matching the production panel.
+const result = params.get('marks') === '1' ? {
+  players: dataset.vehicles.map((vehicle, index) => ({ account_id: vehicle.accountId, gun_marks: index % 4 })),
+} : null
+
 const Root = {
   name: 'PlaybackControlsFixture',
-  render: () => h(BattlePlayback, { playbackV2: dataset }),
+  render: () => h(BattlePlayback, { playbackV2: dataset, result }),
 }
 
 createApp(Root).use(i18n).mount('#app')

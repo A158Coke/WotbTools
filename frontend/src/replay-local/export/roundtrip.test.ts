@@ -50,3 +50,26 @@ describe('xlsx round-trip', () => {
     }
   })
 })
+
+it('exports recorded 0/1/2/3 marks as numeric cells, unknown as blank, without a summary mark average', async () => {
+  const entries = entriesFor(goldenBatches['mixed:random+cw'])
+  const players = entries[0].battle!.players
+  const marks = [0, 1, 2, 3, null]
+  for (let i = 0; i < players.length; i++) players[i].gunMarks = marks[i % marks.length]
+  const expected = new Map(players.map(p => [p.nickname, p.gunMarks]))
+  const data = finalizeBatch(entries, tankopedia)
+  const zip = await exportEachZip(data, tankopedia)
+  const files = unzipSync(new Uint8Array(await zip.blob.arrayBuffer()))
+  const wb = await load(Object.values(files)[0])
+  const ws = wb.worksheets[0]
+  const headers = ws.getRow(1).values as unknown[]
+  const col = headers.indexOf('环线')
+  expect(col).toBeGreaterThan(0)
+  for (let row = 2; row <= ws.actualRowCount; row++) {
+    const mark = expected.get(String(ws.getRow(row).getCell(1).value))
+    expect(ws.getRow(row).getCell(col).value).toBe(mark ?? '')
+  }
+  const aggregate = await exportAggregateXlsx(data, tankopedia)
+  const summary = await load(await aggregate.blob.arrayBuffer())
+  expect(summary.worksheets[0].getRow(1).values).not.toContain('环线')
+})

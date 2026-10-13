@@ -1,4 +1,5 @@
 <script setup>
+import GunMarksBadge from './GunMarksBadge.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { hpPercentText } from '../scene/rosterState.js'
 import { usePlaybackDetailsPlacement } from '../composables/usePlaybackDetailsPlacement.js'
@@ -7,6 +8,7 @@ import V2VehicleInspector from './V2VehicleInspector.vue'
 defineOptions({ name: 'VehicleDetailsPanel' })
 
 const props = defineProps({
+  gunMarks: { default: null },
   selectedState: { type: Object, default: null },
   selectedPortraitUrl: { type: String, default: null },
   selLastKnownSec: { type: Number, default: null },
@@ -105,12 +107,12 @@ const floatingStyle = computed(() => (floating.value && pos.value
       >
         <span class="pb-sb-grip" aria-hidden="true" />
         <span class="pb-sb-title">
-          <strong data-test="pb-sb-tank">{{ props.selectedState.vehicle.tankName || props.selectedState.vehicle.tankId || '—' }}</strong>
+          <strong data-test="pb-sb-tank">{{ props.selectedState.vehicle.tankName || props.selectedState.vehicle.tankId || '—' }} <GunMarksBadge :marks="gunMarks" /></strong>
           <span class="pb-sb-player" data-test="pb-sb-player">{{ props.selectedState.vehicle.playerName || '—' }}</span>
         </span>
       </span>
       <span v-else class="pb-sb-title">
-        <strong data-test="pb-sb-tank">{{ props.selectedState.vehicle.tankName || props.selectedState.vehicle.tankId || '—' }}</strong>
+        <strong data-test="pb-sb-tank">{{ props.selectedState.vehicle.tankName || props.selectedState.vehicle.tankId || '—' }} <GunMarksBadge :marks="gunMarks" /></strong>
         <span class="pb-sb-player" data-test="pb-sb-player">{{ props.selectedState.vehicle.playerName || '—' }}</span>
       </span>
       <button type="button" class="pb-close pb-sb-close" data-test="pb-sb-close" :aria-label="$t('recon.map.playback.close')" @click="emit('close')">&times;</button>
@@ -119,6 +121,8 @@ const floatingStyle = computed(() => (floating.value && pos.value
       <img :src="props.selectedPortraitUrl" :alt="props.selectedState.vehicle.tankName || String(props.selectedState.vehicle.tankId)" />
     </div>
     <dl class="pb-sb-grid">
+      <dt>{{ $t('player_labels.gun_marks') }}</dt>
+      <dd data-test="pb-sb-gun-marks"><GunMarksBadge :marks="gunMarks" show-count /></dd>
       <dt>{{ $t('recon.map.playback.team') }}</dt>
       <dd>
         <span data-test="pb-sb-team">{{ $t(props.selectedState.vehicle.team === 1 ? 'agentReplay.team1' : props.selectedState.vehicle.team === 2 ? 'agentReplay.team2' : 'agentReplay.teamUnknown') }}</span>

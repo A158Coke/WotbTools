@@ -35,7 +35,7 @@ function mountPanel(props = {}) {
       mocks: { $t: key => key },
       stubs: {
         MapOverview: { props: ['overview'], template: '<div class="map-stub" data-test="map-stub">{{ overview.mapCode }}</div>' },
-        BattlePlayback: { props: ['overview', 'playbackV2', 'reloadTelemetry'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
+        BattlePlayback: { props: ['overview', 'playbackV2', 'reloadTelemetry', 'result'], template: '<div data-test="pb-stub">{{ overview.mapCode }}</div>' },
         BattleMap3D: true,
         teleport: true,
       },
@@ -255,4 +255,22 @@ describe('BattlePlaybackPanel local playback parse', () => {
     expect(wrapper.text()).toContain('workspace.playback_empty')
     expect(playback.parseLocalPlayback).not.toHaveBeenCalled()
   })
+})
+
+it('passes result marks beside the dataset and rejects stale marks after replacing the file', async () => {
+  const first = deferred()
+  const second = deferred()
+  playback.parseLocalPlayback.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  const wrapper = mountPanel()
+  await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
+  const resultB = { players: [{ account_id: 42, gun_marks: 2 }] }
+  second.resolve({ dataset: dataset(), overview: null, result: resultB })
+  await flushPromises()
+  expect(wrapper.getComponent(BattlePlayback).props('result')).toEqual(resultB)
+  first.resolve({ dataset: dataset(), overview: null, result: { players: [{ account_id: 42, gun_marks: 3 }] } })
+  await flushPromises()
+  expect(wrapper.getComponent(BattlePlayback).props('result')).toEqual(resultB)
+  await wrapper.setProps({ file: null })
+  expect(wrapper.findComponent(BattlePlayback).exists()).toBe(false)
+  wrapper.unmount()
 })
