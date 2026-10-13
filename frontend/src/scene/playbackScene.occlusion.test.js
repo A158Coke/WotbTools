@@ -48,16 +48,17 @@ describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检�
     // 每帧 ReferenceError 中断整个 tick（不渲染、炮线永不回收），即"播放中卡死、暂停即止"。
     expect(src).toMatch(/if \(T >= tr\.t1\) \{/)
     expect(src).not.toMatch(/f >= 1/)
-    // 完成块必须仍然回收 + 生成弹着特效
-    expect(src).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}fxGive\('tracer', tr\.mesh\);[\s\S]{0,120}spawnImpact\(tr\);/)
+    // 完成块必须仍然归还曳光条带；命中特效在抵达点时刻（legEnds[0]）生成，只生成一次
+    expect(src).toMatch(/if \(T >= tr\.t1\) \{[\s\S]{0,220}battleFx\.giveRibbon\(tr\.mesh\);/)
+    expect(src).toMatch(/if \(!tr\.hit && T >= tr\.legEnds\[0\]\) \{ tr\.hit = true; spawnImpact\(tr\); \}/)
   })
 
-  it('炮线弹着特效所需的 from/to 字段仍在（折线改造曾漏掉 → ricochet 分支抛异常）', () => {
-    // from/to 现在从镜像后的点表构造（pts3[0] = 炮口、impactPos = 抵达点）
-    expect(src).toMatch(/from: new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\)/)
-    expect(src).toMatch(/to: impactPos\.clone\(\), impactPos/)
-    expect(src).toMatch(/const dir = tr\.to\.clone\(\)\.sub\(tr\.from\)\.normalize\(\)/)
-    expect(src).toMatch(/const dir = tr\.to\.clone\(\)\.sub\(tr\.from\)\.normalize\(\)/)
+  it('开火 / 命中特效的炮口、来弹与跳弹出射方向都取自镜像后的点表（折线改造曾漏字段 → 整帧抛异常）', () => {
+    // 炮口 = pts3[0]、抵达点 = pts3[1]、跳弹出射段 = pts3[2]（镜像后的场景系，不得再读原始坐标）
+    expect(src).toMatch(/const from = new THREE\.Vector3\(\)\.fromArray\(pts3\[0\]\);/)
+    expect(src).toMatch(/const dir = impactPos\.clone\(\)\.sub\(from\);/)
+    expect(src).toMatch(/const out = pts3\.length > 2 \? new THREE\.Vector3\(\)\.fromArray\(pts3\[2\]\)\.sub\(impactPos\) : null;/)
+    expect(src).toMatch(/battleFx\.spawnImpact\(kind, tr\.impactPos, tr\.dir, tr\.out,/)
   })
 })
 
