@@ -1624,6 +1624,34 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         function resolveArmorStateDecl(tankId) {
             armorStateDecl = dynamicDeclarationByTankId(tankId);
             armorStateCurrent = armorStateDecl ? defaultStateId(armorStateDecl) : null;
+            updateArmorStateControl();
+        }
+
+        /** 设置面板行（#armor-state-row）：动态车显示态下拉（label = 状态号 + 默认标记，
+         *  title = 激活板清单）；静态车整行隐藏并复位手动可编辑态。 */
+        function updateArmorStateControl() {
+            const row = document.getElementById('armor-state-row');
+            const sel = document.getElementById('armor-state-select');
+            if (!row || !sel) return;
+            if (!armorStateDecl) {
+                row.style.display = 'none';
+                sel.innerHTML = '';
+                sel.disabled = false;
+                sel.title = '';
+                return;
+            }
+            sel.innerHTML = '';
+            for (const st of armorStateDecl.states) {
+                const opt = document.createElement('option');
+                opt.value = String(st.id);
+                opt.textContent = '状态 ' + st.id + (st.default ? '（默认）' : '');
+                opt.title = st.armors.join(' + ');
+                sel.appendChild(opt);
+            }
+            sel.value = String(armorStateCurrent);
+            sel.disabled = false;
+            sel.title = '';
+            row.style.display = '';
         }
 
         function applyArmorStateToModel() {
@@ -1656,6 +1684,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (!armorStateDecl.states.some(function(s) { return s.id === stateId; })) return;
             armorStateCurrent = stateId;
             applyArmorStateToModel();
+            const sel = document.getElementById('armor-state-select');
+            if (sel && !sel.disabled) sel.value = String(stateId);   // 回放自动判定（disabled）时不覆盖显示
         }
 
         function tagModuleMeshes(model) {
@@ -2062,9 +2092,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                      });
                      syncEquipmentCheckboxes(s);
                      // 动态装甲：弹着时刻状态由上游按 PlaybackShot.target_armor_state 预解析
-                     // （None = 静态车/初态域——初态已在装甲模型装载时按声明 default 应用）
+                     // （None = 静态车/初态域——初态已在装甲模型装载时按声明 default 应用）。
+                     // 控件与校准弹/强化装甲同模式：回放数据在场 → 自动判定 + 禁用手动。
                      if (Number.isInteger(s.target_armor_state)) {
                          setArmorState(s.target_armor_state);
+                     }
+                     const stSel = document.getElementById('armor-state-select');
+                     if (stSel) {
+                         if (Number.isInteger(s.target_armor_state)) {
+                             stSel.disabled = true;
+                             stSel.title = '回放自动判定（弹着时刻 armorsStates）';
+                         } else if (armorStateDecl) {
+                             stSel.disabled = false;
+                             stSel.title = '';
+                         }
+                         if (armorStateCurrent != null) stSel.value = String(armorStateCurrent);
                      }
                     // 射手炮塔/炮管姿态（回放原始数据）：炮塔 = type7 prop2 绝对朝向 − 模型偏航；
                     // 炮管俯仰 = launch_velocity 垂直分量反解（prop9 实测与真实弹道无关，弃用）。
@@ -3959,6 +4001,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             };
             document.getElementById('eq-calibrated').addEventListener('change', onEquipmentChange);
             document.getElementById('eq-enhanced').addEventListener('change', onEquipmentChange);
+            document.getElementById('armor-state-select').addEventListener('change', function() {
+                const v = parseInt(this.value, 10);
+                if (Number.isInteger(v)) setArmorState(v);
+            });
 
             document.getElementById('config-select').addEventListener('change', function() {
                 applyConfig(parseInt(this.value));
