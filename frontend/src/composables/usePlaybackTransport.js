@@ -32,6 +32,8 @@ export function isInteractiveTarget(target) {
  * @param {(deltaSeconds: number) => void} adapter.step
  * @param {() => boolean} [adapter.isActive]  播放器当前是否可见 / 可交互（缺省视为可交互）
  * @param {() => boolean} [adapter.isReady]   时间轴是否已就绪（缺省视为就绪）
+ * @param {() => boolean} [adapter.isAtEnd]   是否停在时间轴终点（缺省视为否）
+ * @param {() => void} [adapter.restart]      回到时间轴起点（终点按播放时先调用）
  * @param {object} [options]
  * @param {boolean} [options.keyboard=true]   是否在组件生命周期内挂全局键盘监听
  */
@@ -40,8 +42,13 @@ export function usePlaybackTransport(adapter, { keyboard = true } = {}) {
   let scrubbing = false
 
   function togglePlay() {
-    if (adapter.isPlaying()) adapter.pause()
-    else adapter.play()
+    if (adapter.isPlaying()) {
+      adapter.pause()
+      return
+    }
+    // 停在终点时再按播放 = 从头重播（常见播放器语义）；否则 play 会在下一帧被夹回终点立即停止，看起来毫无反应
+    if (adapter.isAtEnd?.()) adapter.restart?.()
+    adapter.play()
   }
 
   function scrubStart() {

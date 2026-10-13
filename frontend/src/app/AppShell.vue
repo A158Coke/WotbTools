@@ -12,7 +12,7 @@ import { useOnboarding } from '../composables/useOnboarding.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from './featureCapabilities.js'
-import { locationForView, viewFromRoute } from './navigation.js'
+import { defaultView, locationForView, viewFromRoute } from './navigation.js'
 import AppTopBar from './AppTopBar.vue'
 import AppTabBar from './AppTabBar.vue'
 import AppSidebar from './AppSidebar.vue'
@@ -90,9 +90,9 @@ function retryBusinessBootstrap() {
 }
 
 /**
- * 登出 / 会话失效 → **HOME**（2.1.0 Phase 5.3/5.4）：authenticated true→false 时把本 SPA
- * 收敛到首页。浏览器端这一步发生在跳 Keycloak end-session 之前（local-first 已先清本地态）；
- * Android 端 WebView 不导航，这一跳就是它唯一的落点。
+ * 登出 / 会话失效 → 当前运行面的默认落地页（2.1.0 Phase 5.3/5.4）：
+ * Web production 回首页；Android 与本地 Web 回回放工作台。浏览器端这一步发生在跳 Keycloak
+ * end-session 之前（local-first 已先清本地态）；Android 端 WebView 不导航，这一跳就是它唯一的落点。
  * init 重建期间（authInitState=initializing）的中间态不是登出：不导航。
  */
 let previousAuthenticated = authenticated.value
@@ -101,7 +101,7 @@ watch(authenticated, (now) => {
   previousAuthenticated = now
   if (!was || now) return
   if (authInitState.value === 'initializing') return
-  navigate('home')
+  navigate(defaultView())
 })
 
 function navigate(target) {

@@ -298,6 +298,19 @@ describe('ReplayShotsPane Master–Detail 与可访问性', () => {
     author_path: 'ok', author_eid: 100, others: baseOthers,
   }
 
+  it('射击时间以开战为 00:00（与 2D / 3D 同一时钟），不显示原始回放时钟', async () => {
+    // 原始时钟 140.4s、开战（period 3）在 13.4s → 开战后 127s = 02:07
+    parseAgentPlaybackFromBytes.mockResolvedValue({ vehicles: [], periods: [{ clock: 13.4, period: 3 }], meta: { duration: 280 } })
+    parseAgentShotsFromBytes.mockResolvedValue({ ...oneShot, shots: [{ ...oneShot.shots[0], time_s: 140.4 }] })
+    const wrapper = await mountPane()
+    expect(wrapper.get('[data-testid="shot-row-7"] .shot-clock').text()).toBe('02:07')
+    await wrapper.get('[data-testid="shot-row-7"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="shot-inspector"]').text()).toContain('02:07')
+    expect(wrapper.get('[data-testid="shot-inspector"]').text()).not.toContain('02:20')
+    wrapper.unmount()
+  })
+
   it('点一行 → 出检视面板（弹种 / 穿深 / 命中 / 弹道长度），关闭后回到该行', async () => {
     parseAgentShotsFromBytes.mockResolvedValue(oneShot)
     const wrapper = await mountPane()

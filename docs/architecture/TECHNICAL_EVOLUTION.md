@@ -544,3 +544,60 @@ Git 历史能够证明 wotb-control 是 planned dual-cloud split 期间的独立
 - docs/operations/ai-service.md：独立 AI Service 的生产边界与验收。
 - docs/operations/komodo-*.md：Komodo Core / Periphery / ResourceSync / TX2 workload 与 K7C 的运行契约。
 - Git Commit / Pull Request：逐实现事实与原始证据。
+
+
+---
+
+## 17. 2026-10-05～10-12 — 用户反馈推动交付、会话与客户端还原边界继续收敛
+
+本节为追加记录，基于 `675df5e1`（PR #589）；既有章节保持其历史语境。产品动机经维护者确认，下面区分已合并实现、配置选择与尚未作出的产品决定。
+
+### 交付流量与发布权威分离
+
+这次调整的先后顺序是：宣传后的 APK 下载先挤占 TX 公网带宽，影响网站；下载分流后，再解决发布上传耗时。APK 的公网分发进入副本链路，Android 的 3D 资产由 `AgentAssetProxy.kt` 截获固定路径、直连对象存储并使用磁盘缓存。WebView 消费的受控路径与 Native 实际获取字节的网络路径因此不同，不能仅根据页面 URL 判断资产是否经过 TX 网关。
+
+APK stage 后续采用副本到两台 origin 的拉取链路，但 source、APK hash、staging evidence 与最终 `version.json` 的发布身份不交给分发副本决定。传输效率与发布真实性是两个不同问题。原子 no-clobber 落位避免校验与写入之间覆写不可变 APK；staging evidence 的并发问题继续按发布契约修复。
+
+同一周的缓存与连接修复也说明交付正确性不仅是“构建成功”：不存在的 hash asset/WASM 不能带一年 immutable 的 404，已被缓存的旧 CSS URL 需要内容身份轮换；未可用的 UDP 路径不能继续通过 Alt-Svc 广告 HTTP/3。
+
+**Git 证据：** PR #545、#547、#564、#569、#549、#550、#552；`AgentAssetProxy.kt` 与 Android release helpers。
+
+### 会话时长、持久登录与认证回程是三个边界
+
+`infra/tofu/keycloak/realm.tf` 声明 access token 30 分钟、SSO idle 30 天、SSO max 365 天，普通与 remember-me 会话采用相同时间策略。365 天用于实现足够长的会话，不应被解释为专门制定的年度强制登录政策，也不在本文提升为 Keycloak 所有配置的通用硬上限。
+
+只有延长 realm timeout，不能保证关闭浏览器后仍保留登录。`keycloak-session-provider` 通过 post-broker authenticator 为 `wotbtools-web` 设置 remember-me；Android 不由这个 authenticator 改写交易，而继续由 Native AppAuth 管理加密会话、刷新与缓存。Web token 留在 SDK 内存，重新打开页面依靠 SSO 恢复。
+
+登录回程另有路由时序边界：先由认证 owner 消费 OIDC callback，再加载 Router，避免路由初始化抢先改写回调参数。会话过期、cookie 持久性与 callback 路由竞态不能互相冒充根因。
+
+**Git 证据：** PR #541、#570；`realm.tf`、`authentication-flow.tf`、`PersistentBrowserSessionAuthenticator`、`browserAuthProvider.js`、`main.js`。
+
+### 易用性改进保留原有状态与事实权威
+
+UI 现代化与教程来自同一实际需求：用户反复询问登录、APK 下载和功能使用。共享外壳改善导航与跨设备体验；真实页面教学通过稳定锚点参与现有组件，而不是另造演示页面或业务状态。
+
+官方示例的匿名资格由可信示例文件身份建立，不能按文件名、路由或管理员角色推定。完成状态按账号同步，内容修订与重新邀请代际分开，避免普通文案更新重置用户教学进度。目录导入失败的修复同样复用已有 selection、读取与批次校验边界；本次修复不宣称已经实现默认目录记忆。
+
+积分赛扩展服务于国服联赛社区管理组记录成绩和输出积分表。专属权限、共享草稿、历史导入与正式发布围绕协作形成，AI 不获得积分计算或成绩发布权威。
+
+**Git 证据：** PR #568、#579、#580、#576、#540、#542、#543、#554。
+
+### 小资源回到构建产物，镜像身份覆盖真实输入
+
+两张 Sponsor 图片不值得维护独立运行时分发配置，因此由 `deploy/sponsor/content.json` 固定 Release asset 与 SHA-256，在构建期注入 Frontend 和 APK。运行时不再依赖 TX 挂载或单独下发；轮换需要重新构建发布，是这项简化的直接代价。
+
+资源进入构建产物后，仅 source SHA 与资产源 URL 已不足以完整表达 Frontend image identity，Sponsor bundle 指纹也必须贯穿 build、deploy 与 replica。包结构白名单和逐文件内容校验用于证明产物包含预期资源，而不是只证明下载过一个 archive。
+
+**Git 证据：** PR #574、#577、#583；`deploy/sponsor/content.json`、`deploy/tx/sponsor-fingerprint.sh`。
+
+### 客户端还原以可验证行为为目标，画质档承担设备成本差异
+
+不同画质档服务于不同设备，简化的是视觉成本，不是位置、时间、seek 与可见性的事实语义。实际搭载主炮、弹种身份和装甲命中门禁继续沿已证明的数据链处理，而不以车型默认配置或间隙甲单独命中冒充最终判定。
+
+地形专项撤销自创结构脚印与额外细分补偿，回到客户端判据，并用独立参考与差分测试验证终止补片集合。履带印随后采用每侧 50 槽、包含活戳的有界环，以及 0.3m 激活门、锚点提交与时间淡出；撤销没有客户端证据的空间去重层。回压覆写、倒带重建、出生时间隐藏与 AoI 空洞断链分别承担自己的语义，不用桥接未知位姿制造连续轨迹。
+
+这不是不计性能成本复制全部客户端实现，而是以客户端证据减少任意规则，再通过画质分档、实例化与有界数据结构控制用户设备成本。
+
+槽位模型收敛不代表完整复刻：当前履带印仍未实现客户端的相机距离淡出与 GLOBAL_TINT 调色分支；缺 authored 参数时也有模型测宽与通用贴图/间距回落。这些是已知消费侧边界，不能将回落值称为已证明的客户端事实。canonical Details 的整场投影则移入共享 Worker，场景先 ready、详情后台增强；只有线程设施故障才退回主线程，业务解析错误不重跑。两者分别控制渲染成本与主线程阻塞，不改变事实权威。
+
+**Git 证据：** PR #544、#563、#566、#567、#581、#586、#587、#589；`terrainMesh`、`treadMarks.js` 与对应回归测试。源码 Agent pin 为 v0.4.4，Android 源码版本为 2.2.3；stage/publish 与线上版本仍须另取发布证据。
