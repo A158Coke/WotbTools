@@ -57,6 +57,7 @@ vi.mock('three', async (importOriginal) => {
 })
 
 import { initPlayback, QUALITY_PRESETS } from './playbackScene.js'
+import { FX_BUDGETS } from './battleFx.js'
 
 /** 最小可用 PlaybackData：空车队 + 一张地图。资产阶段与空名册都不会因此抛错。
  *  t_start 用非 0 值：`startTime` 只在 startPlayback 尾部写入，可作为「过期续体是否
@@ -1363,12 +1364,13 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
       expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
+      expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
     }
   })
 })
 
 describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
-  it('impact-* 池的 JS 包装对象不炸：解包 g 后 dispose，同 root 去重', async () => {
+  it('会话销毁时特效池（伤害飘字的 JS 包装对象）与战斗特效释放不抛错', async () => {
     const { createPlaybackStore } = await import('./playbackStore.js')
     const sceneMod = await import('./playbackScene.js')
     const store = createPlaybackStore()
@@ -1546,9 +1548,10 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(window.__pbV).toHaveLength(0)
   })
 
-  const activeBursts = () => window.__scene.children.filter(object => object.name === 'vehicle-destruction-burst')
+  const activeBursts = () => window.__battleFx?.activeBursts() ?? []
+  const fxMesh = (name) => window.__battleFx.root.children.find(object => object.name === name)
 
-  it('authoritative raw death without a kill makes an elevated burst even after coverage ended; pool resets and frees every resource', async () => {
+  it('authoritative raw death without a kill makes a burst even after coverage ended; particles follow the wall clock and every FX resource is freed once', async () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const { api, frames, vehicles } = await load([vehicle({ death_t: 52, coverage: [42, 51] })])
@@ -1559,56 +1562,110 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
     expect(vehicles[0].group.visible).toBe(true)
     expect(activeBursts()).toHaveLength(1)
-    const burst = activeBursts()[0]
-    const flames = burst.children.filter(object => object.name === 'destruction-flame')
-    const smoke = burst.children.filter(object => object.name === 'destruction-smoke')
-    const sparks = burst.children.find(object => object.isPoints)
-    expect(flames).toHaveLength(5)
-    expect(smoke).toHaveLength(8)
-    expect(burst.children.filter(object => object.isMesh)).toHaveLength(0)
-    expect(flames[0].position.y).toBeGreaterThan(1.5)
-    expect(flames[0].material.blending).toBe(THREE.AdditiveBlending)
-    for (const object of burst.children) {
+    expect(activeBursts()[0].x).toBe(vehicles[0].group.position.x)
+    expect(window.__battleFx.budget).toBe(QUALITY_PRESETS.low.fx)   // the suite runs with ?q=low
+    const glow = fxMesh('battle-fx-glow'), smoke = fxMesh('battle-fx-smoke')
+    expect(glow.visible).toBe(true)   // flash + fireball are written in the death frame
+    expect(glow.material.blending).toBe(THREE.AdditiveBlending)
+    for (const object of window.__battleFx.root.children) {
       expect(object.material.depthTest).toBe(true)
       expect(object.material.toneMapped).toBe(false)  // per-map exposure must not alter flame/spark colours
     }
-    expect(sparks.geometry.attributes.position.count).toBe(12)
-    const map = smoke[0].material.map
-    expect(smoke.every(puff => puff.material.map === map)).toBe(true)
-    expect(flames[0].material.map).not.toBe(map)
-    expect(map.image.width).toBe(64)
-    expect(map.image.data[3]).toBe(0)  // transparent edges around irregular soot
-    const maps = new Set(burst.children.map(object => object.material.map))
-    const disposeMaps = [...maps].map(texture => vi.spyOn(texture, 'dispose'))
-    const resources = new Set(burst.children.flatMap(object => [object.geometry, object.material]))
+    const resources = new Set(window.__battleFx.root.children.flatMap(object => [object.geometry, object.material]))
+    resources.add(glow.material.uniforms.uMap.value)
     const disposes = [...resources].map(resource => vi.spyOn(resource, 'dispose'))
-    now += 250
-    frames.shift()()
-    expect(flames[0].visible).toBe(false)  // the initial flash has already ended
-    expect(smoke[0].material.opacity).toBeGreaterThan(0)
-    expect(smoke[0].position.y).toBeGreaterThan(1.9)
-    expect(new Set(smoke.map(puff => puff.scale.x)).size).toBeGreaterThan(1)
-    now += 400
-    frames.shift()()
-    expect(flames.every(puff => !puff.visible)).toBe(true)
-    expect(sparks.visible).toBe(false)
-    expect(smoke.some(puff => puff.visible)).toBe(true)  // smoke survives the flame
     now += 1500
     frames.shift()()
+    expect(activeBursts()).toHaveLength(1)
+    expect(smoke.geometry.instanceCount).toBeGreaterThan(0)  // smoke outlives the fireball
+    now += 2000
+    frames.shift()()
     expect(activeBursts()).toHaveLength(0)
-    for (const dispose of disposeMaps) expect(dispose).not.toHaveBeenCalled()
+    expect(glow.visible).toBe(false)
+    for (const dispose of disposes) expect(dispose).not.toHaveBeenCalled()
     api.seekTime(51.9)
     api.setPlaying(true)
     frames.shift()()
     api.setPlaying(false)
-    expect(activeBursts()).toEqual([burst])
-    expect(flames[0].material.color.getHex()).toBe(0xffedc4)
-    expect(flames[0].visible).toBe(true)
-    expect(smoke.every(puff => !puff.visible && puff.material.opacity === 0)).toBe(true)
-    expect(sparks.geometry.attributes.position.getX(0)).toBe(0)
+    expect(activeBursts()).toHaveLength(1)  // playing through the death again triggers it once more
     api.reset()
-    for (const dispose of disposeMaps) expect(dispose).toHaveBeenCalledTimes(1)
     for (const dispose of disposes) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(window.__battleFx).toBeUndefined()
+  })
+
+  const shotPair = () => [
+    vehicle({ death_t: null }),
+    vehicle({ eid: 2, account_id: 88, team: 2, is_author: false, pos: [100, 0, 0], death_t: null }),
+  ]
+  const fxStats = () => window.__battleFx.stats()
+
+  it('shots: muzzle at fire, impact on arrival, trail held on the replay clock while paused, expired after hold + fade, cleared by seek', async () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const vehicles = shotPair()
+    const shot = { t_fire: 50, shooter_eid: 1, target_eid: 2, from: [0, 2, 0], to: [-100, 2, 0], flight_secs: 0.2, game_hit_result: 3 }
+    const { api, frames } = await load(vehicles, null, { ...dataFor(vehicles), shots: [shot] })
+    api.seekTime(49.95)
+    api.setPlaying(true)
+    frames.shift()()   // T 50.05: fired, in flight
+    expect(fxStats()).toMatchObject({ muzzles: 1, impacts: 0, ribbons: 2 })   // tracer + trail
+    const tracer = window.__battleFx.root.children.find(object => object.name === 'battle-fx-tracer')
+    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0x3ee08a)   // friendly shooter: green tracer
+    frames.shift()()
+    frames.shift()()   // T 50.25 > arrival 50.2: impact, tracer returned
+    expect(fxStats()).toMatchObject({ impacts: 1, ribbons: 1 })
+    api.setPlaying(false)
+    now += 10_000
+    for (let i = 0; i < 3; i++) frames.shift()()   // wall clock runs on while the replay is paused
+    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 1 })   // trail waits on the replay clock
+    api.setPlaying(true)
+    for (let i = 0; i < 38; i++) frames.shift()()   // T ≈ 54.05 < arrival + 2.5 s hold + 1.5 s fade
+    expect(fxStats().ribbons).toBe(1)
+    for (let i = 0; i < 3; i++) frames.shift()()
+    expect(fxStats().ribbons).toBe(0)
+    api.setPlaying(false)
+    api.seekTime(49.95)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(fxStats()).toMatchObject({ muzzles: 1, ribbons: 2 })
+    api.seekTime(49)
+    expect(fxStats()).toMatchObject({ impacts: 0, muzzles: 0, ribbons: 0 })   // seek clears and never replays history
+  })
+
+  it('ricochet: the impact fires when the shell reaches the hit point while the tracer continues along the exit leg', async () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const vehicles = shotPair()
+    const shot = { t_fire: 50, shooter_eid: 2, target_eid: 1, is_author: true, hit_flags: 0x0008,
+      from: [-100, 2, 0], via: [[0, 2, 0]], leg_secs: [0.1, 0.5], to: [20, 40, 60], flight_secs: 0.6 }
+    const { api, frames } = await load(vehicles, null, { ...dataFor(vehicles), shots: [shot] })
+    api.seekTime(49.95)
+    api.setPlaying(true)
+    frames.shift()()   // T 50.05: first leg
+    expect(fxStats()).toMatchObject({ impacts: 0, ribbons: 3 })   // tracer + one trail per leg
+    frames.shift()()   // T 50.15: past the hit point, still flying the exit leg
+    api.setPlaying(false)
+    expect(fxStats()).toMatchObject({ impacts: 1, ribbons: 3 })
+    const tracer = window.__battleFx.root.children.find(object => object.name === 'battle-fx-tracer')
+    expect(tracer.material.uniforms.uCA.value.getHex()).toBe(0xff5a45)   // enemy shooter: red tracer
+  })
+
+  it('high tier: wreck smoke follows the life fact — present after death, gone on rewind — and adds no redraws while paused', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const vehicles = [vehicle({ death_t: 52, coverage: [42, 51] })]
+    const { api, frames } = await load(vehicles)
+    expect(window.__battleFx.budget).toBe(QUALITY_PRESETS.high.fx)
+    const smoke = () => window.__battleFx.root.children.find(object => object.name === 'battle-fx-smoke')
+    api.seekTime(60)
+    frames.shift()()
+    expect(smoke().geometry.instanceCount).toBeGreaterThan(0)
+    const render = vi.spyOn(window.__renderer, 'render')
+    frames.shift()()
+    expect(render).not.toHaveBeenCalled()   // paused, nothing transient alive: on-demand rendering stays idle
+    api.seekTime(51)
+    frames.shift()()
+    expect(smoke().geometry.instanceCount).toBe(0)
   })
 
   it('canonical death is timed with the same raw offset as the wreck, and repeated transitions do not spawn twice', async () => {
@@ -1664,7 +1721,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
       frames.shift()()
       api.setPlaying(false)
       expect(activeBursts()).toHaveLength(destroyed ? 1 : 0)
-      if (destroyed) expect(activeBursts()[0].position.x).toBe(vehicles[1].group.position.x)
+      if (destroyed) expect(activeBursts()[0].x).toBe(vehicles[1].group.position.x)
       api.seekTime(53)
       expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([0, destroyed ? 1 : 0])
       expect(vehicles[0].group.visible).toBe(false)
@@ -1690,7 +1747,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     frames.shift()()
     api.setPlaying(false)
     expect(activeBursts()).toHaveLength(1)
-    expect(activeBursts()[0].position.x).toBe(active.group.position.x)
+    expect(activeBursts()[0].x).toBe(active.group.position.x)
     expect(vehicles.map(v => v.group.visible)).toEqual([false, true, false])
     expect(overlay.setLabels.mock.calls.at(-1)[0].map(row => row.destroyed)).toEqual([false, true, false])
     expect(store.roster.team1.map(row => row.dead)).toEqual([false, true, false])
@@ -1721,7 +1778,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     frames.shift()()
     api.setPlaying(false)
     expect(activeBursts()).toHaveLength(1)
-    expect(activeBursts()[0].position.x).toBe(vehicles[0].group.position.x)
+    expect(activeBursts()[0].x).toBe(vehicles[0].group.position.x)
     expect(vehicles.map(v => v.proxyVisual.amount)).toEqual([1, 0])
   })
 
