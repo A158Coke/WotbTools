@@ -1693,8 +1693,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 }
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
-            // state_XX 段）——厚度/orig 就位后统一重装，否则位置错且不随炮塔旋转
+            // state_XX 段）——厚度/orig 就位后统一重装。随后**必须重放当前姿态**：
+            // installPivot 的 mesh.updateMatrix() 按 position 组合矩阵，会清掉
+            // updateTurretGun 写入的炮塔/炮管旋转（板为 matrixAutoUpdate=false、姿态
+            // 全在 .matrix 里）——不清回来就是「炮塔回默认位」（热力图 clones 经
+            // syncCloneMatrices 如实镜像该错误姿态，即击穿视图闪烁后回默认的现象）。
             alignArmorModules();
+            updateTurretGun(currentTurretDeg, currentGunDeg);
         }
 
         /** 切换到声明内的状态号；∉ 声明集的值拒绝（消费方门控的最后防线）。 */
