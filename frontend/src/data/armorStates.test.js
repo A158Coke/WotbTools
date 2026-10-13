@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ARMOR_STATES,
+  DYNAMIC_TANK_IDS,
   dynamicArmorDeclaration,
+  dynamicDeclarationByTankId,
   parseArmorRef,
   activePlateSet,
   controllablePlateSet,
@@ -33,6 +35,20 @@ describe('armorStates 声明与纯函数助手', () => {
     expect(dynamicArmorDeclaration('E-100')).toBeNull()
     expect(dynamicArmorDeclaration('')).toBeNull()
     expect(dynamicArmorDeclaration(null)).toBeNull()
+  })
+
+  it('dynamicDeclarationByTankId：tank_id 门控（6 辆实车 id + 非动态/非法 id）', () => {
+    expect(dynamicDeclarationByTankId(17777)?.states).toHaveLength(2)
+    expect(dynamicDeclarationByTankId('9073')?.states).toHaveLength(2)
+    expect(dynamicDeclarationByTankId(9001)).toBeNull()
+    expect(dynamicDeclarationByTankId(0)).toBeNull()
+    expect(dynamicDeclarationByTankId(null)).toBeNull()
+    // 表与声明互洽：每个 id 的 stem 都能解析回声明
+    for (const [id, stem] of Object.entries(DYNAMIC_TANK_IDS)) {
+      expect(dynamicArmorDeclaration(stem)).not.toBeNull()
+      expect(Number(id)).toBeGreaterThan(0)
+    }
+    expect(Object.keys(DYNAMIC_TANK_IDS)).toHaveLength(6)
   })
 
   it('parseArmorRef：部位序号剥离（gun_01→gun / turret_01→turret），未知部位 null', () => {
