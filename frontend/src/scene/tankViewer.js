@@ -1656,24 +1656,35 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function applyArmorStateToModel() {
             if (!armorModel || !armorStateDecl || armorStateCurrent == null) return;
-            retagSpacedSections(armorModel);   // 先整体还原（激活板可能带 spaced 标签）
+            retagSpacedSections(armorModel);   // 常驻板整体还原（含 spaced 重判）；可控板由下方接管
             const active = activePlateSet(armorStateDecl, armorStateCurrent);
             const controllable = controllablePlateSet(armorStateDecl);
+            const am = tankData.armor_model || {};
+            const cfg = currentConfig();
+            const spacedBySection = {
+                hull: new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String)),
+                turret: new Set((cfg?.turret_spaced ?? am.turret?.spaced ?? []).map(String)),
+                gun: new Set((cfg?.gun_spaced ?? am.gun?.spaced ?? []).map(String)),
+            };
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
-                const orig = node.userData.armorSectionOrig;
-                if (orig !== 'hull' && orig !== 'turret' && orig !== 'gun') return;
-                const key = orig + ':' + String(node.userData.armorPlateId);
+                // 可控板按**网格名**识别（含 state_XX 前缀命名，如 hull_state_01_armor_10）——
+                // 这类网格被 tagArmorPlates 的 /state_01/ 规则打成 deco 且无 armorSectionOrig，
+                // 依赖 orig 的过滤会漏掉它们（切态后永不被点亮，实测踩坑）。
+                const m = (node.name || '').match(/(hull|turret|gun)_\w*?_?armor_(\d+)/);
+                if (!m) return;
+                const key = m[1] + ':' + m[2];
                 if (!controllable.has(key)) return;
                 const inactive = !active.has(key);
                 if (inactive) {
                     node.userData.armorStateHidden = true;
                     node.userData.armorSection = 'deco';
                     node.visible = false;
-                } else if (node.userData.armorStateHidden) {
-                    // 只恢复自己隐藏过的板：visible 不得复活 configHidden 的配置变体
+                } else {
                     node.userData.armorStateHidden = false;
                     node.visible = !node.userData.configHidden;
+                    node.userData.armorSection =
+                        spacedBySection[m[1]].has(m[2]) ? 'spaced' : m[1];
                 }
             });
         }
