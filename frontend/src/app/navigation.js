@@ -23,7 +23,7 @@ export const ALLOWED_VIEWS = Object.freeze([
  * - 平板 / 桌面：左侧边栏渲染 PRIMARY_NAV 中除"更多"外的栏目 + 管理组（ADMIN_NAV）；
  *   "更多"在侧边栏底部是弹出面板（显示设置 + 关于与支持），不再是一个整页。
  * 账户（个人中心 / 登录登出）不在主导航里：手机在顶栏右侧，平板 / 桌面在侧边栏底部。
- * `homeHostOnly`：公开站与 APK 提供首页；本地 Web 开发仍默认进入回放。
+ * `homeHostOnly`：公开 Web 站提供首页；APK 与本地 Web 开发都直接以回放作为落地页，APK 不显示首页 Tab。
  */
 export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'home', view: 'home', labelKey: 'nav.home', homeHostOnly: true }),
@@ -70,7 +70,8 @@ export function primarySection(view) {
 }
 
 export function primaryNavItems(hostname = window.location.hostname) {
-  return PRIMARY_NAV.filter(item => !item.homeHostOnly || isHomeHost(hostname) || isAndroidRuntime())
+  const android = isAndroidRuntime()
+  return PRIMARY_NAV.filter(item => !item.homeHostOnly || (!android && isHomeHost(hostname)))
 }
 
 export function isAndroidPath(path) {
@@ -86,7 +87,7 @@ export function isHomeHost(hostname) {
 }
 
 export function defaultView(hostname = window.location.hostname) {
-  return isHomeHost(hostname) ? 'home' : 'replay'
+  return !isAndroidRuntime() && isHomeHost(hostname) ? 'home' : 'replay'
 }
 
 export function canonicalView(view) {
@@ -102,6 +103,7 @@ export function viewFromRoute(route) {
     ? 'sponsor'
     : route.query.view ?? (isAndroidPath(route.path) ? 'android' : null)
   const view = canonicalView(rawView)
+  if (isAndroidRuntime() && view === 'home') return 'replay'
   if (!ALLOWED_VIEWS.includes(view)) return defaultView()
   return view
 }

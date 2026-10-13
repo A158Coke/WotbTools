@@ -57,12 +57,10 @@ describe('MorePage language switcher', () => {
     wrapper.unmount()
   })
 
-  it('public tool links navigate directly without initiating login in the menu', async () => {
-    const navigate = vi.fn()
-    const { wrapper } = mountPage(navigate)
+  it('does not duplicate Replay capabilities in 更多', () => {
+    const { wrapper } = mountPage()
     for (const view of ['agent-replay', 'agent-shots']) {
-      await wrapper.get(`[data-testid="more-link-${view}"]`).trigger('click')
-      expect(navigate).toHaveBeenLastCalledWith(view)
+      expect(wrapper.find(`[data-testid="more-link-${view}"]`).exists()).toBe(false)
     }
     expect(wrapper.find('[data-testid="more-link-admin-users"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="more-link-tournament-points"]').exists()).toBe(false)

@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { isAndroidRuntime } from '../platform/runtime.js'
 import AppShell from './AppShell.vue'
 import ViewHost from './ViewHost.vue'
 import { canonicalView, LEGACY_VIEW_ALIASES, primarySection } from './navigation.js'
@@ -37,6 +38,14 @@ export function createAppRouter(history = createWebHistory()) {
 
   router.beforeEach((to) => {
     const view = to.query.view
+    // Home is not an Android destination. Strip stale Home query state universally so the
+    // current path regains authority: / => Replay, /download/android => Android page, /sponsor => Sponsor.
+    if (isAndroidRuntime() && view === 'home') {
+      const query = { ...to.query }
+      delete query.view
+      return { path: to.path, query, hash: to.hash, replace: true }
+    }
+
     const canonical = canonicalView(view)
     if (canonical !== view && LEGACY_VIEW_ALIASES[view]) {
       return { path: to.path, query: { ...to.query, view: canonical }, hash: to.hash, replace: true }
