@@ -137,21 +137,38 @@ describe('engagement-distance result line localization', () => {
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   const kernel = read('../scene/tankViewer.js')
   const pen = read('../scene/penetration.js')
-  it('SPACED_FRAG 写 G 标志与 B 续飞编码且 R 语义不变（跳弹 = 1.0 全额消耗）', () => {
-    expect(kernel).toMatch(/ricocheted \? 1\.0 : finalThick \/ penetration,/)
-    expect(kernel).toMatch(/ricocheted \? 1\.0 : 0\.0, bCode, 1\.0\)/)
-  })
-  it('续飞就地用间隙板自身几何（SPACED_FRAG），屏幕侧只解读 B 编码（review 2026-10-13）', () => {
-    const spaced = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('function spacedMaterial'))
-    expect(spaced).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
-    expect(spaced).toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
-    expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedData\.g > 0\.5;/)
+  it('两通道分离：状态在 RT1（NoBlending+depthWrite 独占最近板），厚度通道只写 R（review 2026-10-13 重叠板）', () => {
+    const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
+    const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
+    // 厚度通道：按状态通道深度辨首层；只写 R（G/B 归零，不再累加）
+    expect(thickness).toMatch(/uniform highp sampler2D spacedStateDepth;/)
+    expect(thickness).toMatch(/bool isFirstSpaced = stateD > 0\.0/)
+    expect(thickness).toMatch(/float norm = isFirstSpaced/)
+    expect(thickness).toMatch(/ricocheted \? 1\.0 : eff \/ penetration, 0\.0, 0\.0, 1\.0\)/)
+    // 状态通道：就地续飞（自身几何）+ 最近板独占 + R=跳弹标志 / G=续飞编码
+    expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
+    expect(state).toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
+    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, 0\.0, 1\.0\);/)
+    expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
+    // 屏幕侧只解读状态缓冲，不重算
+    expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5;/)
     const gapStart = kernel.indexOf('if (gapRicochet) {')
     expect(gapStart).toBeGreaterThan(-1)
     const gapSeg = kernel.slice(gapStart, gapStart + 900)
-    expect(gapSeg).toMatch(/float code = spacedData\.b;/)
-    expect(gapSeg).not.toContain('rcContinue')   // 不得在本面重算（两块板无平行约束）
-    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)   // 二层 norm 归零（保留）
+    expect(gapSeg).toMatch(/float code = spacedState\.g;/)
+    expect(gapSeg).not.toContain('rcContinue')
+    // 主装甲侧（二层）norm 归零（保留）
+    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)
+  })
+  it('渲染顺序：状态通道先于厚度通道；注入 spacedStateDepth / spacedStateBuffer', () => {
+    const pass = kernel.slice(kernel.indexOf('function renderSpacedArmorPass'),
+      kernel.indexOf("document.getElementById('penetration-btn')"))
+    const iState = pass.indexOf('renderer.render(spacedStateScene, camera)')
+    const iThick = pass.indexOf('renderer.render(spacedArmorScene, camera)')
+    expect(iState).toBeGreaterThan(-1)
+    expect(iThick).toBeGreaterThan(iState)
+    expect(pass).toContain('spacedStateDepth.value = srt.depthTexture')
+    expect(pass).toContain('spacedStateBuffer.value = srt.texture')
   })
   it('rcContinue 双实现：转正仅首层（hitIdx == 0 / hitIdx === 0）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')
