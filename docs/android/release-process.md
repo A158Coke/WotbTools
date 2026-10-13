@@ -217,6 +217,11 @@ Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于�
   （latestVersionCode = minSupportedVersionCode = 2002012）：已安装 2.2.12 的客户端两个判定
   条件都不成立，**不显示任何更新提示**（不强制）；此后若 latest 继续升高且门槛仍 ≤ 2002012，
   2.2.12 客户端才会收到可选更新提示。
+- **2003000（2.3.0；2026-10-13 抬升，由 2.3.0 自身携带发布）** —— 所有低于 2.3.0 的客户端
+  强制更新到 2.3.0（含 2.2.12）：该版本的内嵌运行时携带 3D 战斗特效写实化（弹道曳光/炮口焰/
+  命中烟/击毁爆炸，按画质分档）。本次发布 latest 即门槛（latestVersionCode =
+  minSupportedVersionCode = 2003000）：已安装 2.3.0 的客户端不显示任何更新提示（不强制）；
+  此后若 latest 继续升高且门槛仍 ≤ 2003000，2.3.0 客户端才会收到可选更新提示。
 
 ## Rollout 与验证
 
