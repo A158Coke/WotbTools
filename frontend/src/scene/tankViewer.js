@@ -1669,8 +1669,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 // 可控板按**网格名**识别（含 state_XX 前缀命名，如 hull_state_01_armor_10）——
-                // 这类网格被 tagArmorPlates 的 /state_01/ 规则打成 deco 且无 armorSectionOrig，
-                // 依赖 orig 的过滤会漏掉它们（切态后永不被点亮，实测踩坑）。
+                // 这类网格被 tagArmorPlates 的 /state_01/ 规则打成 deco 且无 armorSectionOrig/
+                // thickness=0，依赖 orig 的过滤会漏掉它们（切态后永不被点亮，实测踩坑）。
                 const m = (node.name || '').match(/(hull|turret|gun)_\w*?_?armor_(\d+)/);
                 if (!m) return;
                 const key = m[1] + ':' + m[2];
@@ -1681,12 +1681,20 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     node.userData.armorSection = 'deco';
                     node.visible = false;
                 } else {
+                    // 激活板升级为一等板：厚度按声明表重算（deco 分支留的是 0）、
+                    // 补 armorSectionOrig（alignArmorModules/retag 依赖它）、按 spaced 表归类
                     node.userData.armorStateHidden = false;
+                    node.userData.armorSectionOrig = m[1];
+                    node.userData.armorPlateId = m[2];
+                    node.userData.armorThickness = getPlateThickness(m[1], m[2]);
                     node.visible = !node.userData.configHidden;
                     node.userData.armorSection =
                         spacedBySection[m[1]].has(m[2]) ? 'spaced' : m[1];
                 }
             });
+            // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
+            // state_XX 段）——厚度/orig 就位后统一重装，否则位置错且不随炮塔旋转
+            alignArmorModules();
         }
 
         /** 切换到声明内的状态号；∉ 声明集的值拒绝（消费方门控的最后防线）。 */
@@ -1695,6 +1703,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             if (!armorStateDecl.states.some(function(s) { return s.id === stateId; })) return;
             armorStateCurrent = stateId;
             applyArmorStateToModel();
+            // 板集变了 → 热力图 clones 与跳弹几何必须按新板集重建（review P2）：
+            // rebuildHeatmapScenes 内部级联 rebuildRicochetPack（一次调用双重建）
+            if (penetrationMode && armorModel) rebuildHeatmapScenes();
             const sel = document.getElementById('armor-state-select');
             if (sel && !sel.disabled) sel.value = String(stateId);   // 回放自动判定（disabled）时不覆盖显示
         }
@@ -1789,9 +1800,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.traverse(n => {
                 if (!n.isMesh) return;
                 const nm = n.name || '';
-                if (/^turret_\d+_armor/.test(nm)) { installPivot(n, pTurret); }
-                else if (/^gun_\d+_armor/.test(nm)) { installPivot(n, pGun); }
-                else if (/^hull_armor/.test(nm)) { installPivot(n, pHull); }
+                // 正则容忍动态装甲的 state_XX 段（turret_01_state_01_armor_12 等）——
+                // 否则可控板装不上枢轴：位置错、不随炮塔旋转
+                if (/^turret_\d+(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pTurret); }
+                else if (/^gun_\d+(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pGun); }
+                else if (/^hull(?:_state_\d+)?_armor/.test(nm)) { installPivot(n, pHull); }
             });
             armorModel.updateMatrixWorld(true);
 
@@ -3657,6 +3670,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 populateShellSelector(shooterShells);
             }
 
+            // 动态装甲状态过滤必须在热力图重建**之前**：retagSpacedSections/
+            // applyArmorConfigVisible 会把可控板还原/重显（覆盖 deco）——visual 回调与
+            // 配置切换都经此汇入，漏挂或次序颠倒则初态/切态被覆盖或板集陈旧（review P1-1/P2）
+            applyArmorStateToModel();
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
         }
 
@@ -3669,8 +3686,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 const name = node.name || '';
-                const gm = name.match(/^(gun_\d+)_armor_/);
-                const tm = name.match(/^(turret_\d+)_armor_/);
+                const gm = name.match(/^(gun_\d+)(?:_state_\d+)?_armor_/);
+                const tm = name.match(/^(turret_\d+)(?:_state_\d+)?_armor_/);
                 if (gm) {
                     const visible = activeGun ? gm[1] === activeGun : true;
                     node.visible = visible;
@@ -4290,8 +4307,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 const name = node.name || '';
-                const gm = name.match(/^(gun_\d+)_armor_/);
-                const tm = name.match(/^(turret_\d+)_armor_/);
+                const gm = name.match(/^(gun_\d+)(?:_state_\d+)?_armor_/);
+                const tm = name.match(/^(turret_\d+)(?:_state_\d+)?_armor_/);
                 const isGun = gm && (!gunPrefix || gm[1] === gunPrefix);
                 const isTurret = tm && (!turretPrefix || tm[1] === turretPrefix);
                 if (isGun || isTurret) {
@@ -4311,9 +4328,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const gunSet = new Set(), turSet = new Set();
             if (armorModel) armorModel.traverse(n => {
                 const name = n.name || '';
-                const gm = name.match(/^(gun_\d+)_armor_/);
+                const gm = name.match(/^(gun_\d+)(?:_state_\d+)?_armor_/);
                 if (gm) gunSet.add(gm[1]);
-                const tm = name.match(/^(turret_\d+)_armor_/);
+                const tm = name.match(/^(turret_\d+)(?:_state_\d+)?_armor_/);
                 if (tm) turSet.add(tm[1]);
             });
             const sortPk = (set) => Array.from(set).sort((a,b) => (a.match(/\d+/)?.[0]|0)-(b.match(/\d+/)?.[0]|0));
