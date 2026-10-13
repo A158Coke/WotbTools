@@ -128,10 +128,10 @@ describe('rosterState · 投影接线守卫', () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
-  it('名册运行时状态由 projectRoster(V, T) 投影，不再由 hpAt/deathAt 在中途改写', () => {
+  it('名册 HP 由 projectRoster 投影，死亡判据复用场景 resolver', () => {
     const at = src.indexOf('function updateRoster()')
     const body = src.slice(at, at + 900)
-    expect(body).toMatch(/projectRoster\(V, T\)/)
+    expect(body).toMatch(/projectRoster\(V, T, deathAt\)/)
     expect(body).not.toMatch(/rosterEntry/)
   })
 

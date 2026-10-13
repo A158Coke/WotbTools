@@ -246,3 +246,13 @@ describe('PlaybackRoster', () => {
     compact.unmount()
   })
 })
+
+it('keeps earned marks bound to account identity in 2D/3D and clears them when the owning result changes', async () => {
+  const wrapper = mountRoster({ gunMarks: new Map([[1001, 2], [1002, 3]]) })
+  expect(wrapper.findAll('[data-gun-marks]').map(el => el.attributes('data-gun-marks'))).toEqual(['2', '3'])
+  await wrapper.setProps({ variant: '3d', teams: { team1: [{ eid: 9, accountId: 1001, nick: 'You', tank: 'Maus', team: 1 }], team2: [] } })
+  expect(wrapper.get('[data-gun-marks]').attributes('data-gun-marks')).toBe('2')
+  await wrapper.setProps({ gunMarks: new Map() })
+  expect(wrapper.find('[data-gun-marks]').exists()).toBe(false)
+  wrapper.unmount()
+})

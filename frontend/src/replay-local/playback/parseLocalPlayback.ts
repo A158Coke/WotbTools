@@ -21,13 +21,15 @@ import type { BattlePlaybackDataset, PlaybackReloadTelemetry } from '../../types
 import { loadTankopedia, type Tankopedia } from '../compute/tankopedia.js'
 import { toBattlePlaybackDataset } from './toBattlePlaybackDataset.js'
 import { indexMapGridProfiles, toMapOverview, type LocalMapOverview, type MapGridProfile } from './toMapOverview.js'
-import { resolveReplayClock } from '../canonical/facts.js'
+import { buildCanonicalReplayFacts, entityFirstSeenByAccount, resolveReplayClock } from '../canonical/facts.js'
 
 export interface LocalPlayback {
   /** null = 时间轴不可用（与服务端 204「unavailable」同义） */
   dataset: BattlePlaybackDataset | null
   /** null = 地图未收录 / 无位置（与服务端 map-overview 204 同义） */
   overview: LocalMapOverview | null
+  /** Workspace-only identity evidence; not part of the HTTP dataset. Battle-relative seconds. */
+  entityStartsByAccount?: Map<number, Map<number, number | null>>
   result: AgentBattleResult
   /** Raw scene seconds → canonical seconds; independent of reload presentation. */
   clock: ReturnType<typeof resolveReplayClock>
@@ -71,8 +73,10 @@ export async function parseLocalPlayback(
   const result = await parseAgentResultFromBytes(bytes)
   const playback = options.playback ?? await parseAgentPlaybackFromBytes(bytes)
   const aiReview = await parseAgentAiReviewFromBytes(bytes)
+  const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
+  const entityStartsByAccount = facts ? entityFirstSeenByAccount(facts) : new Map()
   const dataset = toBattlePlaybackDataset(playback, result, aiReview, {
-    tankopedia, sampleStepSec: options.sampleStepSec,
+    tankopedia, sampleStepSec: options.sampleStepSec, canonicalFacts: facts,
   })
   const overview = dataset ? toMapOverview(dataset, mapProfiles(), result) : null
   // The dataset's clock comes from AI event evidence. Do not substitute Playback meta.t_start:
@@ -90,5 +94,5 @@ export async function parseLocalPlayback(
     reload_effective: playback.reload_effective,
     shots: playback.shots,
   } : null
-  return { dataset, overview, result, reloadTelemetry, clock }
+  return { dataset, overview, result, reloadTelemetry, clock, entityStartsByAccount }
 }

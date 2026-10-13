@@ -4,6 +4,7 @@
  * HP presentation consumes current facts only; unknown HP never becomes a full bar.
  */
 import { computed } from 'vue'
+import GunMarksBadge from './GunMarksBadge.vue'
 import { useI18n } from 'vue-i18n'
 import { hpPresentationFor } from '../scene/rosterState.js'
 
@@ -16,6 +17,7 @@ const props = defineProps({
    */
   teams: { type: Object, required: true },
   friendlyTeam: { type: Number, default: null },
+  gunMarks: { type: Map, default: () => new Map() },
   /** 当前时刻已被击毁的集合（accountId 或 eid，按行 id 匹配） */
   destroyed: { type: Set, default: () => new Set() },
   /**
@@ -160,6 +162,7 @@ function listRows(rowCount) {
           <span v-if="variant === '3d'" class="dot" :style="{ background: row.teamColor }" aria-hidden="true" />
           <span class="nick pb-team-player" data-test="pb-roster-player">{{ row.player }}</span>
           <span class="tank pb-team-tank" data-test="pb-roster-tank">{{ row.tank }}</span>
+          <GunMarksBadge :marks="gunMarks.get(row.accountId)" />
           <span
             class="pb-roster-hpbar pb-roster-hp"
             :class="'hp-mode-' + row.hp.mode"
