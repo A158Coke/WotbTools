@@ -21,6 +21,7 @@ import {
     judgePenetration,
     tankImageUrl,
     assetProvider,
+    shotBallisticLength,
 } from './agentData.js'
 import { createLoadProgress } from './loadProgress.js'
 import {
@@ -657,61 +658,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 panel.appendChild(evidence);
             }
             window.__debugOn = false;
-            // [armor-debug 临时诊断，仅 ?debug=1 暴露；勿提交] 板清单/投影/raycast，
-            // 用于动态装甲判定与热力图一致性的缺陷定位
-            if (QP.get('debug') === '1') {
-                window.__armorDebug = {
-                    model: () => armorModel,
-                    camera: () => camera,
-                    plateList: function() {
-                        const out = [];
-                        const v = new THREE.Vector3();
-                        armorModel.updateMatrixWorld(true);
-                        const cr = renderer.domElement.getBoundingClientRect();
-                        armorModel.traverse(function(n) {
-                            if (!n.isMesh) return;
-                            v.setFromMatrixPosition(n.matrixWorld).project(camera);
-                            out.push({
-                                name: n.name || '?', visible: n.visible,
-                                section: n.userData.armorSection,
-                                thickness: n.userData.armorThickness,
-                                hidden: !!n.userData.armorStateHidden,
-                                key: n.userData.armorStateKey || null,
-                                sx: Math.round((v.x + 1) / 2 * cr.width + cr.left),
-                                sy: Math.round((1 - v.y) / 2 * cr.height + cr.top),
-                            });
-                        });
-                        return out;
-                    },
-                    state: function() {
-                        return { armorStateCurrent: armorStateCurrent, decl: armorStateDecl,
-                                 collisionMode: collisionMode, penetrationMode: penetrationMode };
-                    },
-                    setToggle: function(on) {
-                        const box = document.getElementById('armor-state-toggle');
-                        if (!box) return 'no toggle';
-                        box.checked = !!on;
-                        box.dispatchEvent(new Event('change', { bubbles: true }));
-                        return 'ok';
-                    },
-                    clickPlate: function(name) {
-                        let hit = null;
-                        armorModel.updateMatrixWorld(true);
-                        armorModel.traverse(function(n) {
-                            if (!n.isMesh || n.name !== name || hit) return;
-                            const v = new THREE.Vector3().setFromMatrixPosition(n.matrixWorld).project(camera);
-                            const cr = renderer.domElement.getBoundingClientRect();
-                            const sx = Math.round((v.x + 1) / 2 * cr.width + cr.left);
-                            const sy = Math.round((1 - v.y) / 2 * cr.height + cr.top);
-                            const opts = { pointerId: 9, pointerType: 'mouse', button: 0, clientX: cr.left + sx, clientY: cr.top + sy, bubbles: true, isPrimary: true };
-                            renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', opts));
-                            renderer.domElement.dispatchEvent(new PointerEvent('pointerup', opts));
-                            hit = { name: name, sx: sx, sy: sy };
-                        });
-                        return hit || ('plate not found: ' + name);
-                    },
-                };
-            }
             window.__debugSetVisible = function(on) {
                 window.__debugOn = on;
                 if (window.__worldAnno) window.__worldAnno.visible = on;
@@ -1656,6 +1602,11 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const { penMul } = equipmentCoeffs();
             const origin = camera.position;
             const world = new THREE.Vector3();
+            // 射击复现：弹道长度是单值事件量——逐板同值（板间差 ≤ 车体尺度 ~10m，
+            // 在 100→500m 衰减窗口内 ≤0.4mm；与判定同源，用户裁定 2026-10-13）。
+            // 静态检视：逐板 = 相机 → 板包围球中心。
+            const shotLenForUniforms = (window.__shotCtx && window.__shotCtx.shot)
+                ? shotBallisticLength(window.__shotCtx.shot) * (worldMetersPerUnit || 1) : 0;
             const apply = (scene) => {
                 if (!scene) return;
                 scene.traverse(function(node) {
@@ -1669,7 +1620,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     } else {
                         world.setFromMatrixPosition(node.matrixWorld);
                     }
-                    const d = origin.distanceTo(world);
+                    const d = shotLenForUniforms > 0 ? shotLenForUniforms : origin.distanceTo(world);
                     let pen = near;
                     if (!isHE && d > 100.0) {
                         pen = near + (far - near) * (d - 100.0) / 400.0;
@@ -2393,6 +2344,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                      window.__worldPenMode = false;
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
+                         // 弹道长度源（射击复现的"交战距离"= 服务器解码弹道折线总长）
+                         shot: s,
                          segArmorGroup: s.armor_group || 0,
                          segShellId: s.shell_id || 0,
                          segResult: (typeof s.game_hit_result === 'number') ? s.game_hit_result : 255,
@@ -4864,9 +4817,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
             // 命中距离（米）：射击复现 = 真实炮口(method29 launchPoint) → 命中点，
             // × worldMetersPerUnit 换算回真实米数；其他模式回退炮管几何/相机距离。
-            // 交战距离（米）= 相机 → 命中点（用户裁定：判定与距离衰减统一以相机为
-            // 射击起点，含射击复现初始判定），× worldMetersPerUnit 换算真实米数。
-            const dist = point.distanceTo(camera.position) * (worldMetersPerUnit || 1);
+            // 交战距离（米）：射击复现 = 服务器解码弹道长度（ball_a→via…→ball_b 折线总长，
+            // 跳弹链逐段计入——实弹飞行到命中点所走的距离，用户裁定 2026-10-13）；
+            // 静态检视 = 相机 → 命中点。均 × worldMetersPerUnit 换算真实米数。
+            const shotLenForDist = (window.__shotCtx && window.__shotCtx.shot)
+                ? shotBallisticLength(window.__shotCtx.shot) * (worldMetersPerUnit || 1) : 0;
+            const dist = shotLenForDist > 0
+                ? shotLenForDist
+                : point.distanceTo(camera.position) * (worldMetersPerUnit || 1);
 
             const shellType = shellTypeOf(selectedShell);
             const pen = selectedShell ? (selectedShell.penetration || 0) : 0;

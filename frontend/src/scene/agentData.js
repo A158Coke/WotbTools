@@ -151,6 +151,25 @@ export async function shotViewerQuery(shot) {
  * sessionStorage 镜像为辅（部分环境的新窗口会继承 opener 的会话存储）。
  * 30 分钟 TTL：过期条目视同不存在，防止陈旧数据渗入后续查看。
  */
+/**
+ * 服务器解码弹道长度（米）：`ball_a → via… → ball_b` 折线总长（跳弹/穿透续段逐段计入，
+ * 与飞行顺序一致）。射击复现的"交战距离"以此为准（实弹飞行到命中点所走的距离，
+ * 而非相机到命中点的直线距离——用户裁定 2026-10-13）。字段缺失/非法返回 0，
+ * 调用方回退相机距离。
+ */
+export function shotBallisticLength(shot) {
+  if (!shot) return 0
+  const pts = [shot.ball_a, ...(Array.isArray(shot.via) ? shot.via : []), shot.ball_b]
+  for (const p of pts) {
+    if (!Array.isArray(p) || p.length !== 3 || !p.every((v) => Number.isFinite(v))) return 0
+  }
+  let len = 0
+  for (let i = 1; i < pts.length; i++) {
+    len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2])
+  }
+  return len
+}
+
 export function storeShotsForViewer(shots) {
   const payload = JSON.stringify({ at: Date.now(), shots })
   try {

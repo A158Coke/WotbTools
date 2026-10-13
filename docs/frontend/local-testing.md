@@ -199,3 +199,7 @@ macOS 可指定 `CHROME_BIN='/Applications/Google Chrome.app/Contents/MacOS/Goog
   协议/控制台级。见 [`../../.agents/AGENTS.md`](../../.agents/AGENTS.md) §视觉验证归属。
 - **不提交**：`common/assets/wasm/`、Agent 仓 `release/asset_pack/`。
 - **生产远端模式**（`dev:production-remote`）只使用明确获准的账号与数据，不上传测试或敏感数据。
+
+## Engagement distance in shot replay
+
+Shot-replay engagement distance = server-decoded ballistic path length (`ball_a → via… → ball_b` polyline; ricochet legs counted), not camera distance. Static armor inspection keeps camera → hit-point. Injecting a fixture shot via `storeShotsForViewer()` is the quickest way to test it (see `scripts/browser-armor-shot-readiness.mjs`).
