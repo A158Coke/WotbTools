@@ -959,8 +959,10 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 
   it('GLB 位姿零分配：poseFromYPR 支持 out 参数，poseGlb 用模块级 scratch', () => {
     // 回退后（记录位姿）：根 = 记录 yaw/pitch/roll 一次合成，无高度场参与
-    expect(src).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)\);/)
-    expect(src).toMatch(/v\.glb\.position\.copy\(v\.group\.position\);/)
+    // 纯姿态 poseGlbRig(v, t, pos)：每帧以 (T, 本帧位置) 调用；开火定位炮口时临时以 t_fire 调用再摆回
+    expect(src).toMatch(/v\.glb\.quaternion\.copy\(poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)\);/)
+    expect(src).toMatch(/v\.glb\.position\.copy\(pos\);/)
+    expect(src).toMatch(/poseGlbRig\(v, T, v\.group\.position\);\s*suspensionStep\(v\);/)
     const glb = src.slice(src.indexOf('function poseGlb'), src.indexOf('async function applyGlbToggle'))
     expect(glb).not.toMatch(/terrainPitchRoll|clampHullAttitude|sampleHeight/)
     expect(glb).not.toMatch(/new THREE\.Matrix4\(\)/)     // 每帧不再新建矩阵
@@ -987,7 +989,7 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
     // GLB 路径：记录 roll 取负进 poseFromYPR（客户端同构，见 glbRig.js 符号约定）
-    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, T\), hullPitchAt\(v, T\), -rollAt\(v, T\), _glbQuat\)/)
+    expect(src).toMatch(/poseFromYPR\(-yawAt\(v, t\), hullPitchAt\(v, t\), -rollAt\(v, t\), _glbQuat\)/)
     // 低模路径：同一口径的记录位姿（y=-yaw / x=pitch / z=-roll）
     expect(src).toMatch(/v\.group\.rotation\.y = -yawAt\(v, T\);/)
     expect(src).toMatch(/v\.group\.rotation\.x = hullPitchAt\(v, T\);/)

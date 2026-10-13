@@ -3347,19 +3347,24 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 上游 docs/tank-suspension-client-re.md），已整段回退。`__hullGroup` 保留但**恒归单位**：
   // 它是下一步"逐轮贴地 + 履带分段"的挂点，现在不参与摆放。
   function poseGlb(v) {
-    v.glb.position.copy(v.group.position);
-    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, T), hullPitchAt(v, T), -rollAt(v, T), _glbQuat));
+    poseGlbRig(v, T, v.group.position);
+    // 悬挂：轮带宽高/自转/履带形变（客户端同构；v.suspParts 缺失 = 整车刚体）。只读根位姿。
+    suspensionStep(v);
+  }
+  // 根位姿 + 炮塔 / 炮管：t 时刻的纯函数（不碰悬挂积分状态）。开火定位炮口时临时摆到 t_fire
+  // 量完再摆回 T（见 flushMuzzles）。
+  function poseGlbRig(v, t, pos) {
+    v.glb.position.copy(pos);
+    v.glb.quaternion.copy(poseFromYPR(-yawAt(v, t), hullPitchAt(v, t), -rollAt(v, t), _glbQuat));
     const p = v.glbParts;
     if (p && p.hullGroup) {
       p.hullGroup.quaternion.identity();
       p.hullGroup.position.set(0, 0, 0);
     }
-    // 悬挂：轮带宽高/自转/履带形变（客户端同构；v.suspParts 缺失 = 整车刚体）
-    suspensionStep(v);
     if (!p) return;
-    const rel = wrapPi(turretAbsAt(v, T) - yawAt(v, T));
+    const rel = wrapPi(turretAbsAt(v, t) - yawAt(v, t));
     const tr = -rel;                       // 镜像系节点旋转角 = −rel
-    const gr = gunPitchAt(v, T);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
+    const gr = gunPitchAt(v, t);           // glb 系 Rx(θ)：θ>0 = 前向(+Y)抬向 +Z = 仰角
     if (p.itr) {
       // Euler 序 'ZYX'：yaw (Z) 最外层 → pitch/roll 补偿在炮塔局部系内执行。
       // 'XYZ' 会把 pitch 放在全局系，炮塔转开 90° 时 pitch 变成侧倾。
@@ -3387,7 +3392,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // v.glb 根 matrixAutoUpdate=true → updateMatrix 置脏 → force 覆盖 matrixAutoUpdate=false
     // 的炮塔/炮管节点，本行是每车全树一遍纯重复的 compose+multiply（14 车 ×60fps）。
     // tick 与 render 之间唯一的车辆世界矩阵读者是开火定位炮口（flushMuzzles），它只在开火的
-    // tick 自行刷新射手一台；标签投影用位姿插值坐标、遮挡射线只打静态场景网格。
+    // tick 把射手一台摆到 t_fire、刷新、量完再摆回 T 并刷新；标签投影用位姿插值坐标、遮挡射线
+    // 只打静态场景网格。
   }
 
   async function applyGlbToggle(on) {
@@ -3560,21 +3566,31 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       trajLines.push(tl);
       if (k === 0) firstTrail = tl;
     }
-    pendingMuzzles.push({ eid: s.shooter_eid, from, dir, seed, tracer, firstTrail });
+    pendingMuzzles.push({ eid: s.shooter_eid, tFire: s.t_fire, from, dir, seed, tracer, firstTrail });
   }
   // 炮口火光 / 炮口烟放在炮管末端：回放记录的开火起点是火炮枢轴（在炮塔 / 炮盾里），直接放会被
-  // 车模挡住（2026-10-13 实机近景）。射手炮管要等本 tick 的 applyPose 摆完才是 T 时刻的姿态，
-  // 所以 spawnShot 只登记，这里再定位发射。只刷新射手一台车模的世界矩阵；没有可见车模
-  // （代理车 / 兵种图标 / 不可见）时 muzzleTipOf 返回记录起点。
+  // 车模挡住（2026-10-13 实机近景）。没有可见车模（代理车 / 兵种图标 / 不可见）时用记录起点。
   // 同一段距离也是曳光与第一段光迹的可见起点（s0）：炮管里那截不画，否则光迹会贴着炮管
   // 露出一条线；弹道折线与计时不变，最多截到抵达点（贴脸射击时整段都在炮管里）。
-  const _muzzleTip = new THREE.Vector3();
+  // 炮管按**开火时刻** t_fire 的姿态量：处理这一 tick 时 T 已晚于 t_fire（掉帧 / 倍速），射手
+  // 早已前移或转动，用 T 时刻的炮管会把这段位移混进固定弹道的起点，同一发炮弹的光迹起点随
+  // 倍速 / 帧间隔变化（PR #613 审查：10 m/s 射手、100 ms 帧，1×/2×/4×/8× 起点 5/6/8/12 m，
+  // 应为 4.5 m）。所以把射手一台临时摆到 t_fire（纯姿态，不碰悬挂积分），量完摆回 T。
+  // 在 applyPose 之后调用：摆回用的是本 tick 的 T 时刻位置。
+  const _muzzleTip = new THREE.Vector3(), _firePos = new THREE.Vector3();
   function flushMuzzles() {
     for (const m of pendingMuzzles) {
       const v = V.find((x) => x.def.eid === m.eid);
       const parts = v && v.group.visible && v.glb && v.glb.visible ? v.glbParts : null;
-      if (parts) v.glb.updateMatrixWorld(true);
+      if (parts) {
+        poseGlbRig(v, m.tFire, posAt(v, m.tFire, _firePos));
+        v.glb.updateMatrixWorld(true);
+      }
       const at = muzzleTipOf(parts ? parts.gunNodes : null, m.from, m.dir, _muzzleTip);
+      if (parts) {
+        poseGlbRig(v, T, v.group.position);
+        v.glb.updateMatrixWorld(true);
+      }
       const s0 = Math.min(at.distanceTo(m.from), m.tracer.arcEnds[0] || 0);
       m.tracer.s0 = s0;
       if (m.firstTrail) m.firstTrail.s0 = s0;

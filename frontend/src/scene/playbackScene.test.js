@@ -1694,6 +1694,52 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(fxStats().impacts).toBe(1)                              // and the hit still lands on arrival
   })
 
+  it.each([1, 2, 4, 8])('moving shooter at %sx with 100 ms frames: muzzle flash and trail start come from the barrel at fire time', async (speed) => {
+    // PR #613 审查回归：真实 muzzleTipOf + 合成 GLB。射手 10 m/s 沿 +z 前进、t=50 过原点并开火，
+    // 炮管从枢轴向前 4.5 m；处理帧晚于开火（倍速 × 0.1 s 帧）时，起点不得混入开火后的位移。
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockReturnValue(parked.promise)
+    vi.spyOn(assetProvider, 'json').mockImplementation(path => Promise.resolve(
+      String(path).startsWith('/tank/') ? { model_origins: { track: [0, 0, 0], turret: [0, 0, 0] }, configs: [] } : null))
+    const template = new THREE.Group()
+    for (const [name, geometry] of [
+      ['hull', new THREE.BoxGeometry(3, 6, 2)],
+      ['turret_0', new THREE.BoxGeometry(2, 2, 1)],
+      ['gun_0', new THREE.BoxGeometry(0.2, 4.5, 0.2).translate(0, 2.25, 0)],   // GLB 系 +y = 车头
+    ]) {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial())
+      mesh.name = name
+      template.add(mesh)
+    }
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, done) => done({ scene: template }))
+    const n = 300, pos = []
+    for (let i = 0; i < n; i++) pos.push(0, 0, (42 + i * 0.1 - 50) * 10)
+    const zeros = new Array(n).fill(0)
+    const shooter = vehicle({ death_t: null, pos, hull_yaw: zeros, hull_pitch: zeros, turret_yaw: zeros, gun_pitch: zeros })
+    const data = dataFor([shooter])
+    data.meta.samples = n
+    data.shots = [{ t_fire: 50, shooter_eid: 1, target_eid: 2, from: [0, 0, 0], to: [0, 0, 100], flight_secs: 0.16, game_hit_result: 3 }]
+    const { api, frames, vehicles } = await load([shooter], null, data)
+    api.seekTime(49.95)
+    api.setGlb(true)
+    parked.resolve(new Uint8Array([1]))
+    await vi.waitFor(() => expect(vehicles[0].glb).toBeTruthy())
+    const muzzle = vi.spyOn(window.__battleFx, 'spawnMuzzle')
+    api.setSpeed(speed)
+    api.setPlaying(true)
+    frames.shift()()   // 一帧 0.1 s × 倍速：处理帧落在开火后 0.05 / 0.15 / 0.35 / 0.75 s
+    api.setPlaying(false)
+    expect(vehicles[0].group.position.z).toBeCloseTo((0.1 * speed - 0.05) * 10, 5)   // 射手确实已前移
+    expect(muzzle).toHaveBeenCalledTimes(1)
+    expect(muzzle.mock.calls[0][0].z).toBeCloseTo(4.5, 4)
+    const trail = window.__battleFx.root.children.find((o) => o.name === 'battle-fx-trail' && o.visible)
+    expect(trail.material.uniforms.uA.value.z).toBeCloseTo(4.5, 4)
+    // 摆回 T：开火定位后车模停在本帧姿态，没有留在开火时刻
+    vehicles[0].glb.updateMatrixWorld(true)
+    expect(vehicles[0].glb.position.z).toBeCloseTo(vehicles[0].group.position.z, 6)
+  })
+
   it('ricochet: the impact fires when the shell reaches the hit point while the tracer continues along the exit leg', async () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
