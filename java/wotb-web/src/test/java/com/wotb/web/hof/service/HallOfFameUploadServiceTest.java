@@ -258,7 +258,8 @@ class HallOfFameUploadServiceTest {
 
         final Map<String, Object> result = uploadService.upload(file(), facts());
 
-        assertEquals("ok", result.get("status"));
+        // 已存在的同一记录：仍落盘自愈，但明确告知「已在名人堂中」，不冒充新上榜
+        assertEquals("already_recorded", result.get("status"));
         verify(storage).store(any(byte[].class), anyString());
         verify(hofService).recordRecorder(any(), any(), any());
     }

@@ -30,14 +30,14 @@
    VITE_ASSET_BASE_URL=http://127.0.0.1:8123
    ```
 
-3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay`（回放能力只需登录）。
+3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay`（个人回放需普通账号登录；官方示例可匿名使用，均仍需连通性可用）。
    真管理入口（`admin-users` / `hof-admin`）按需加 `&admin=1`：管理视图可达性由角色决定，
    dev 构建下该参数把 admin 角色视为已持有，见 [`local-testing.md`](./local-testing.md) §4。
 
-优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
+Web 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，
 带一次空的 `?assets=`（`scene/assetBase.js` 的显式清除开关）。改 `.env.local` 后必须**重启 dev
-server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。
+server**（`import.meta.env.*` 在 transform 时内联，不是运行时读取）。APK 不使用这些 Web override，固定使用 `platform/runtime.js` 的 `ANDROID_ASSET_BASE`。
 
 自检（无需看画面）：开 `?debug` 后 `window.__gdbg.layers === true` 表示分层地表已就绪；
 `window.__pbV.filter(v => v.glb).length` 等于车辆数表示车模 GLB 全部挂上。
@@ -66,7 +66,7 @@ npm run dev
 
 - 前端继续复用现有生产 Keycloak 配置：`https://auth.wotbtools.com` / realm `wotbtools` / client `wotbtools-web`。
 - `http://localhost:5173/*` 必须已在 Keycloak client 的 Redirect URIs 中允许；登录完成后回到本地前端当前视图。
-- `production-remote` 启动时 Topbar 会显示非模态环境提示，提醒当前 `/api` 请求指向生产后端。
+- `production-remote` 启动时手机标题栏与平板 / 桌面侧栏会显示非模态环境提示，提醒当前 `/api` 请求指向生产后端。
 - 生产后端上的真实用户、回放和业务操作会产生真实影响；仅使用明确获准的账号和数据，不上传测试或敏感数据。
 - 该模式是开发服务器代理，不代表生产前端 bundle 或生产部署配置发生变化。
 

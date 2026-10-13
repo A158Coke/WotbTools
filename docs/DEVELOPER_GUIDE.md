@@ -6,7 +6,7 @@
 
 ## ✦ 给接手的一句话
 
-这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 25 core + Spring Boot 4 + Vue 3 + Keycloak + PostgreSQL。
+这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 25 + Spring Boot 4 业务与 AI 服务、Vue 3 Web/Android 客户端、上游 Rust/WASM 回放引擎、Keycloak + PostgreSQL。
 
 动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
 
@@ -41,11 +41,12 @@ Playback 2D/3D 的布局所有权与浏览器验收矩阵见 [`frontend/replay-w
 
 ```bash
 # Java 分层测试
-# Targeted（改单个 class/function）：mvn -pl wotb-core -Dtest=<TestClass> test
-# Module（单模块/一个 feature）：mvn -pl wotb-core test 或 mvn -pl wotb-web -am test
+# 以下 Maven 命令均从 java/ 执行，并使用 -s settings.xml。
+# Targeted（改单个 class/function）：mvn -s settings.xml -pl wotb-core -Dtest=<TestClass> test
+# Module（单模块/一个 feature）：mvn -s settings.xml -pl wotb-core test 或 mvn -s settings.xml -pl wotb-web -am test
 # Full（PR CI authoritative validation，Agent 默认不跑）：cd java && JAVA_HOME=<jdk25> mvn -s settings.xml test
 # JAVA_HOME 指向 JDK 25 安装目录（主工程 JDK 25；只有 keycloak provider 子工程用 JDK 21）。
-# 注意：wotb-web 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
+# 注意：wotb-ai 的真实外部 AI probe 标记为 ai-live，默认被 Surefire 排除；不要仅因环境存在 AI_API_KEY 就解除排除。
 
 # 前端分层测试
 # Targeted：cd frontend && npx vitest run <related-test-files>
@@ -89,7 +90,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 .
 ├── common/                     # 共享车辆/地图/资产/回放 fixture
 ├── contracts/                  # FE ↔ BE HTTP OpenAPI wire contract
-├── java/                       # Java Maven 根：contracts/core、Replay feature modules、control、web composition root
+├── java/                       # Java Maven 根：wotb-core、wotb-ai、wotb-web（以 java/pom.xml 为准）
 ├── frontend/                   # Vue 3 SPA（Sponsor 为 AppShell 内的 /sponsor 路由）
 │   ├── index.html
 │   ├── src/
@@ -98,7 +99,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 │   │   ├── components/
 │   │   ├── composables/        # useReplay / useColumns / useAuth 等
 │   │   ├── utils/
-│   │   ├── styles/             # dark-only tokens + Showcase 分层样式
+│   │   ├── styles/             # 共享语义 token、布局与 Classic 浅色映射
 │   │   ├── locales/            # 基础 zh/en/ru + feature message composition
 │   │   └── data/
 ├── docker/                     # backend/frontend/keycloak/ai-service 镜像与 Keycloak 主题
@@ -111,13 +112,24 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 
 ### HTTP Contract workflow
 
-HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。Playback 旧 artifact 的兼容处理只能放在读取边界；`204` capability unavailable 与 `200` schema violation 必须保持不同语义。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
+HTTP shape 变更遵循 `OpenAPI → generated FE transport → backend mapper/serialization → runtime validation → contract tests → affected tests → PR CI`。在 `frontend/` 使用 `npm run api:lint`、`npm run api:generate`、`npm run api:check`、`npm run api:fixture`；生成文件位于 `frontend/src/api/generated/`，不可手改。服务端 Playback artifact 已退役，客户端投影继续使用 generated schema 校验；HTTP status 依具体 endpoint 契约解释，本地 Playback unavailable 与 schema violation 必须区分。完整边界与兼容规则见 [`docs/architecture/http-contracts.md`](architecture/http-contracts.md)。
 
 ### PR CI validation gate
 
 `.github/workflows/ci-gate.yml` 是唯一 PR 入口：校验 PR/base/head SHA 身份，用 `dorny/paths-filter` 将变更映射到 owner，调用相应 reusable CI workflow，最后由稳定的 `CI / Required Gate` 汇总。未受影响的 owner 跳过；五个 OpenTofu root 只在各自 owner 受影响时验证。PR trigger 不设置 paths，确保 required check 始终产生。PR CI 不接触 production credentials、host、state 或 authenticated plan。
 
 三个数据更新 workflow 在创建/更新 PR 时分别执行来源数据的真实同步与验证，再 dispatch CI 验证精确 open PR head。生产发布继续由 service owner workflow 的原生路径规则独立触发。
+
+### Workflow 清理与历史记录
+
+当前保留 37 个 workflow：唯一 PR 入口、15 个 reusable owner CI，以及 21 个发布、部署、运维和数据更新入口。
+持续使用的手动诊断、TX runtime gate、备份、镜像清理和数据更新 workflow 不按运行次数判定为一次性任务。
+Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退役；正式构建与 TCR 发布由
+`business-api.yml` / `frontend.yml` 及其 `build-*-from-gitee.sh` 脚本负责。
+
+删除 `.github/workflows/` 中的 YAML 不等于删除 GitHub Actions 历史记录。判断入口是否仍存在，应以当前
+`main` 的文件和调用关系为准；旧记录（包含失败记录）保留作审计证据，不在代码清理 PR 中删除。
+清理前核对 `workflow_call` / `workflow_run`、脚本、owner 路由和文档引用；`CI / Required Gate` 的名称与职责保持不变。
 
 ### CI/CD owner 依赖清单
 
@@ -348,17 +360,17 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 - `?view=admin-users`：用户管理。
 - `?view=history`：项目历史，直接渲染仓库根 `HISTORY.md`。
 - `?view=contact`：联系页。
-  - `?view=rating-docs`：League Rating V6 算法说明页（构建期以 `?raw` 读取
+- `?view=rating-docs`：League Rating V6 算法说明页（构建期以 `?raw` 读取
   `docs/WotBTools_League_Rating_V6.md`，canonical 单一事实源；ReplayPage League 模式
   「算法说明」按钮跳转进入，返回时经 KeepAlive 保留解析状态）。
-- 玩家详情抽屉的 V6 七维雷达：`0→0 / 当前 Battle/Global Average→75 / 后端维度满分→150` 的分段线性标尺，
+- 玩家详情抽屉的 V6 七维雷达：`0→0 / 当前 Battle/Global Average→75 / 客户端维度满分→150` 的分段线性标尺，
   100 对应平均到满分区间的三分之一。玩家顶点显示 0–150 视觉分，明细默认分数并可切换原始值；共享图形支持
   50%–150% 缩放（只影响页面 SVG，窄屏由 radar viewport 横向滚动），桌面为可拖拽持久化侧栏。V6 Rating
   Profile PNG 同步 bounded geometry 但保持固定导出尺寸。移动端模态抽屉锁定 Tab 焦点，桌面非模态不锁。
 - 已退役（2026-10-02）：`?view=playback-qa`（隐藏 QA 页）与 `?view=rating-v2`（历史 Rating V2 灰度页，
   连同 `/api/admin/rating-v2/**` 与 `RatingV2Calculator`）。旧深链回落到默认视图。
 - `?view=ai-review` / `?view=battle-playback`：与 `?view=replay` 共用同一个 `ReplayWorkspace`，
-  仅默认 `activeCapability` 不同（ai / playback）。三者不是三个隔离业务页。
+  仅初始能力不同（ai / playback）；`agent-replay` 与 `agent-shots` 分别映射 3D 与射击。五个入口共享 session，不是隔离业务页。
 
 旧 `?view=leaderboard` canonicalize 到 `hof`；旧 `?view=extended` canonicalize 到 `replay`；旧 `?view=reconstruction` canonicalize 到 `battle-playback`。
 
@@ -366,10 +378,10 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 
 ### AI Review / Battle Playback
 
-`ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不再是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 是唯一映射点）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
+`ReplayWorkspace` 是回放**五种能力**（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）的唯一统一载体：这些能力不再是各自独立页面，深链只是能力入口（`app/viewRegistry.js` 的 `replayInitialCapability` 解析深链初始能力，`ReplayWorkspace.vue` 的 `viewFor` 为能力切换选择路由）。它通过唯一 `useReplay` 组合并消费 `useReplaySession` 持有的 selection / 分析状态 / 结果，分析生命周期由 `useLocalReplayAnalysis` 持有（Worker 解析 → 批次计算 → 提交结果；选择变化 / 取消即作废在途分析）。能力切换不重新选文件、不重建 session；能力面板首次激活才挂载（`useMountedWhenActive`）并按需异步加载，切走只隐藏（3D 停帧不销毁）。Workspace 的标题、能力切换、批次与当前回放 selector 分别由 `PageHeader`、`ReplayCapabilityTabs`、`FileDrop`、`BattlePicker` 展示（数据结果区的工具栏、系列赛概览与导出菜单在 `ReplayPage` 内）；这些子组件只接收派生状态并发出命令，session 仍是唯一 selection owner。`ReplayPage` 只作为 data 结果 tab 嵌入，渲染结果 / 列系统 / Export / Drawer。
 
-**匿名可用**：服务器没有 parser，分析全部在本机，工作台挂载即可用，不等 Keycloak init、没有登录门禁（只有 AI 复盘与名人堂等写操作需要登录）。
-**能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 pushState + popstate 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
+**匿名可用**：服务器没有 parser，分析全部在本机，数据分析与 2D 挂载即可用，不等 Keycloak init。个人回放的 3D、射击与 AI 有登录门禁；可信官方示例可匿名使用 3D/射击，AI 仍需登录。3D 与 AI 还须满足对应的联网可用性门禁；名人堂等写操作另行鉴权。
+**能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
 **Android Local-First**：APK 从 `https://appassets.androidplatform.net/index.html` 启动同一 Vue 产品；
 `WebViewAssetLoader` 的 `/` 映射到 APK `assets/web/`，Vue Router 的 `/index.html` alias 与历史路由
@@ -510,11 +522,11 @@ Prometheus/Loki datasource 仍由 file provisioning 管理。删除或替换必�
 Phase 1 将 `wotb-frontend`、`keycloak` 与其专用 `keycloak-postgres` 路由到
 TX；Yecao 宿主在 cutover 后只承载 AI service 与观测服务，不再运行任何业务应用（服务器没有 parser：解析执行面、MinIO、RabbitMQ 已于 2026-10-02 删除）。
 TX 的业务运行时是
-Compose 服务 `business-api`（Tencent TCR `<TCR_REGISTRY>/<TCR_NAMESPACE>/wotbtools-business-api` 的 immutable 镜像；GHCR 保留为 TX 恢复副本）：
+Compose 服务 `business-api`（Tencent TCR `<TCR_REGISTRY>/<TCR_NAMESPACE>/wotbtools-business-api` 的 digest-pinned 镜像；TX release 只发布 TCR，不声明 GHCR 恢复副本）：
 单个 Spring Boot 进程承载全部 public business endpoint（不再有任何回放解析 / 计算端点），
 app :8087 与 management :8088 分别发布在 TX1 WireGuard `10.20.0.1` 上；现有生产访问仍来自
 TX-internal frontend nginx、Caddy readiness surface 与 deployment-owned `health-probe`（app `/api/health` + management
-`/actuator/health`，管理端口 8088）。因此 release plan 把 backend 镜像路由到
+`/actuator/health`，管理端口 8088）。由 `business-api.yml` 独立 owner 部署
 `business-api`（target `tx`）；Yecao 侧的 `wotb-backend`/`wotb-frontend`/`keycloak`/`postgres`
 已随退役 PR 从 Compose 与 deploy 白名单中删除，不再是可选项。
 公开 API 路由由 TX service plane 终结：`wotb-frontend` 的 nginx upstream 通过
@@ -604,10 +616,10 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 `manage-users`、`query-users`、`view-realm`；secret 通过 write-only OpenTofu 输入传递，
 不写入 HCL/tfvars/log 或普通 state attribute。只有成功 apply 写入 provision marker
 后才允许 Keycloak/frontend 启动。TX 的 Caddy 是生产公网入口，默认在 TX 所有接口上监听
-80/443（tcp + http/3 udp；可用 `CADDY_HTTP_BIND` / `CADDY_HTTPS_BIND` 覆盖）；仓库不做
-任何 DNS 变更，也不会停止或删除 Yecao 服务。IdP 配置、
-`user_profile` dependency audit、DNS cutover 与旧服务退役均是受控的外部操作，分别
-需要相应人工批准；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
+80/443（Compose 保留 UDP 443 映射，但 `deploy/tx/Caddyfile` 只启用 h1/h2，HTTP/3 已关闭；
+可用 `CADDY_HTTP_BIND` / `CADDY_HTTPS_BIND` 覆盖）。应用 owner 不修改 DNS；
+Komodo 域名 DNSPod 记录由独立 `infra/tofu/komodo` root 管理。旧 Yecao 业务服务已退役，
+不把 Phase 1 的旧迁移审批清单作为当前启动步骤；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
 
 生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
@@ -615,13 +627,19 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
   `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
   OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
-  分别构建一个应用镜像。每个 workflow 保留 SHA tag 供诊断，并在确认 source SHA 仍为
-  远端 main HEAD 后发布 `latest`；部署只使用所属服务的 `latest`。服务级 concurrency 会取消旧 main
-  的工作流，Keycloak 在 runtime 后继续执行自己的 OpenTofu 与最终验证。
-- `frontend.yml` 的镜像发布按 BUILD → VERIFY → PUBLISH → PROMOTE 分段：构建只产出本地镜像，
-  内容校验在任何 registry 写入之前完成，immutable tag 的 `docker push` 有 per-attempt 超时与
-  有界瞬态重试，发布后只校验 digest 对应关系；每段独立步级超时，禁止把 push 合回构建步骤。
-  该 workflow 不使用 GHA 构建缓存（仅前端决策，不适用于其他应用 owner）。
+  分别拥有一个应用发布闭环。TX business-api/frontend 先主动 mirror exact GitHub SHA 到 Gitee，
+  再在 TX 从该 SHA 构建并发布 immutable TCR tag，生产只消费输出的 `repo@sha256:<digest>`
+  （`TX_BUSINESS_API_IMAGE_REF` / `TX_FRONTEND_IMAGE_REF`），禁止 `latest` 回退。
+  Keycloak 与 Yecao ai-service 仍保留各自 SHA tag + latest/freshness 契约；Keycloak runtime 后
+  继续执行自己的 OpenTofu 与最终验证。各应用的服务级 concurrency 会取消过期 main workflow。
+- `frontend.yml` 的 GitHub runner 只负责 release authority、Gitee mirror、下载校验 pinned Agent
+  WASM/可选 Sponsor bundle 与 staging；不在 GitHub 构建 Frontend Docker 镜像或上传 TCR 大镜像。
+  `deploy/tx/build-frontend-from-gitee.sh` 复用 Business API 的持久 Gitee clone 与 host build lock，
+  创建 exact-SHA worktree。镜像 identity 包含 source SHA、`ASSET_BASE_URL` 与 Sponsor bundle SHA256
+  （无 pin 为留空）；existing immutable tag 先 pull digest 并核验，缺失才执行本机 `docker build`。
+  内容/BUILD_COMMIT/Agent/Sponsor 校验全部在 registry 写入前完成；push 使用 per-attempt timeout
+  与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX 本地 Docker 缓存，
+  不设置 GHA build cache；build/publish 在同一 remote builder 调用中，deploy 是单独 job。
 - `.github/workflows/caddy.yml` 独立负责 TX 网关：staged Caddy 配置与 assets 校验后只 reconcile
   Caddy，并验证 trusted TLS、redirect、前端/API、Keycloak、auth asset 与 Komodo
   （`komodo.wotbtools.com` → `10.20.0.2:9120`，先验私有上游语义版本，再要求公网值与私有值一致，
@@ -634,24 +652,24 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 - 三个数据更新 workflow (`update-tankopedia.yml`、`update-equipment.yml`、`update-crew-skills.yml`)
   保持独立，生成 PR 后核对 open PR 的 main base、自动化 head branch 和精确 head SHA，再 dispatch
   `ci-gate.yml`；CI 通过只读 GitHub API 核对该 run 仍验证同一 PR head。它们不自动 merge。
-- main 是应用的唯一目标状态；生产镜像来自当前 main 的 `latest`。TX 服务定义按 owner 分离，
+- main 是应用的唯一目标状态；生产镜像按各 owner 契约选取：business-api/frontend 使用 exact digest，
+  Keycloak/ai-service 使用各自 latest/freshness。TX 服务定义按 owner 分离，
   各部署只渲染所属服务和通用探针。固定基础设施使用既有 volume、network 与 OpenTofu state，
   不读取应用镜像发布记录。运行中的版本通过 `docker inspect`、镜像 digest 与 `BUILD_COMMIT` 查询。
 
 
 Android 发布同样采用仓库内 Version-as-Code：`android/gradle.properties` 的
-`wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；发布工作流
-禁止通过输入参数覆盖版本，并把版本、bridge version、源 commit SHA 写入
+`wotbVersion` 是唯一版本来源，`versionCode` 由 SemVer 确定性计算；stage 不允许输入覆盖源码版本；publish 的 version 输入只选择已 staged 的不可变候选，不重建或改写其版本。发布将版本、bridge version、源 commit SHA 写入
 `version.json`。`contracts/android-native-bridge.json` 是 Native/Web bridge
 契约 SSOT；运行时变更必须 bump Android 版本，breaking bridge 变更必须同步 bump
 bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 的版本与契约，
 生产发布前还会校验 APK、manifest 和 `version.json` 的 SHA/版本一致性。
 
 发布分两阶段（`android-release.yml`）：main 合并后自动 **stage**（构建/签名/上传 immutable APK、
-建 tag、写 staging evidence，**不碰** production `version.json`）；真机 A14 验证通过后手工
+建 tag、写 staging evidence，**不碰** production `version.json`）；真机 B13/B14 验证通过后手工
 `workflow_dispatch(mode=publish, version=<已 staged 版本>)` **publish**（显式版本决定 tag/APK/evidence
 名，tag target 源码给出 versionCode/bridge/Agent pin，再校验 staged 身份 + Keycloak client +
-APK bundled frontend 身份/Bridge/native-auth + API/资产 exact-origin CORS 就绪 + minSupported
+APK bundled frontend 身份/Bridge/native-auth + API exact-origin CORS/对象存储匿名可读就绪 + minSupported
 至少 2000001 的 local-first cutover，最后才写 `version.json`）。候选身份与当前 main 分离：main 前进
 不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
@@ -659,7 +677,16 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
-Deploy、Tofu Apply 与 database backup 共用 `production-maintenance` concurrency，`cancel-in-progress: false`（`queue: max` 只排队、不丢弃已开始的生产写入）；服务器脚本另用 `flock` 串行化 production mutation。TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`（源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell 直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。Build 与 Release 不占用该队列，但每个 lane 都在 mutation 前核对 source 仍是当前 main。这不是 distributed lock。
+Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
+`production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
+自身仍使用 `deploy-<service>` + `cancel-in-progress: true`，因此新 main 可以取消旧应用 workflow；
+不能把 job 队列设置描述为绝不取消应用部署的保证。Business API/Frontend 的 mirror jobs 另共用
+`production-gitee-mirror`，TX build jobs 共用 `tx-production-build`，两者均不取消运行项并最大排队。
+TX builders 还共用 host build lock；production mutation 另由各宿主 deploy `flock` 串行化。
+应用 lane 在 mutation 前执行 current-main/freshness 校验，固定基础设施仍使用各自 maintenance 契约。
+TX 人工 mutation 必须通过 `bash /opt/wotb-tx/deploy/with-deploy-lock.sh <command...>`
+（源文件 `deploy/tx/with-deploy-lock.sh`）让锁 FD 只存在于命令进程树，禁止在交互 SSH shell
+直接 `exec 9>` 持锁；冲突时 wrapper 会输出当前 holder 诊断。这不是 distributed lock。
 
 生产数据库每日香港时间 03:15 由独立 `database-backup.yml` 调用 TX owner 的 `deploy/tx/business-postgres-backup.sh` 与 `deploy/tx/keycloak-postgres-backup.sh` 备份；两者只访问已运行的 owner service，并在 pg_dump 前核对固定 Compose project、卷标签与实际挂载卷。同一维护队列随后备份 TX/Yecao/Komodo 三个 owner-host local Tofu states 到本机 root-only 目录并生成 SHA-256（`deploy/tofu-local-state-backup.sh tx|yecao|komodo`）。Business PostgreSQL 归档只能用 `deploy/tx/business-postgres-restore.sh` 校验并恢复到经确认的 disposable 数据库；Keycloak PostgreSQL 归档不能传给 Business restore 工具。
 
@@ -691,7 +718,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
   不重复跑 repository-level full test；仓库级 full validation 由 PR CI 统一执行（authoritative gate）。
   仅当改动影响跨模块 / build / test infrastructure（`.agents/AGENTS.md` 的 Full-test 例外清单）时，
   Agent 才跑 `cd java && mvn -s settings.xml test` / `cd frontend && npm test && npm run build`。
-- `wotb-web` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 和 deterministic AI eval 仍属于普通测试。
+- `wotb-ai` 的真实 DeepSeek/provider probe 使用 `@Tag("ai-live")`，普通 `mvn test` 默认不执行；仅在明确选择 probe、清空 `-Dai.probe.excludedGroups=` 且通过环境变量提供 key 时手动运行。gateway mock、loopback 和 deterministic AI eval 仍属于普通测试。
 - 涉及 Docker/部署时同时跑对应 Docker build 与 deployment smoke；Deploy 不重复运行测试套件。
 
 ---
@@ -704,7 +731,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 | AI 复盘架构 | `docs/architecture/ai-review.md` |
 | 回放重建流水线 | `docs/architecture/replay-pipeline.md` |
 | 地图鸟瞰 / 战局回放 | `docs/features/battle-playback.md` |
-| 战斗表现 | `docs/features/performance.md` |
+| 战斗表现 | `docs/reference/replay-data.md`、`docs/features/league-rating.md` |
 | League Rating | `docs/features/league-rating.md` |
 | 名人堂 / 百场 | `docs/features/hall-of-fame.md` |
 | Team AI Review | `docs/features/team-ai-review.md` |

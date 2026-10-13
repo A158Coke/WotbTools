@@ -14,9 +14,9 @@
 
 | nested 字段 | 解析出口 | 当前解释 | 生产限制 |
 |---|---|---|---|
-| field1 | `rawField1` | 观察到 2 为 progress family，1 为 sibling family；私有枚举名 UNKNOWN | 只有值 2 允许提升 progress |
+| field1 | `rawField1` | 观察到 2 为 progress family，1 为 sibling family；私有枚举名 UNKNOWN | 当前提升不锁 field1；按 field2=1 + 显式 field3=0..100 |
 | field2 | `rawField2` | 观察到 1；精确 index/identifier 语义 UNKNOWN | 必须为 1，不解释为队伍 |
-| field3 | `rawField3` → canonical `captureProgress` | field1=2 / field2=1 下的实时占领进度；受控样本真实广播 1..100 | 显式值 0..100；缺失保持 raw-only，不生成 0 |
+| field3 | `rawField3` → canonical `captureProgress` | field1=2 / field2=1 下的实时占领进度；受控样本真实广播 1..100 | 显式值 0..100；缺失不是数值 0，active-to-idle 中断可由上游输出经证明的 reset |
 | field4 | `rawField4` | sibling family 观察到 1；精确语义 UNKNOWN | 不映射 capturingTeam / ownerTeam |
 
 上述已知字段只接受单个非负、无 Integer 溢出的 varint；错误 wire type、重复 scalar、malformed child
@@ -37,7 +37,7 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 | 字段 | 类型 | protobuf 来源 | 含义 | 备注 |
 |---|---|---|---|---|
 | `accountId` | long | 名册 | 玩家账号 ID | 身份主键（>0 可用） |
-| `nickname` | String | 名册 | 昵称 | 录像者按昵称匹配（无 accountId 兜底） |
+| `nickname` | String | 名册 | 昵称 | 当前 canonical 录像者身份使用上游 author_account_id；昵称只用于展示 |
 | `clan` | String | 名册 | 军团标签 | 团队标签 dominant clan（如 CHRD） |
 | `team` | int | 名册 | 原始队伍编号 1/2 | 只用于内部计算；prompt 禁止直出 |
 | `tankId` | long | 名册 | 坦克 ID | tankopedia 单一数据源映射 |
@@ -51,12 +51,12 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 | `kills` | int | 战绩 | 击杀数 | |
 | `victoryPointsEarned` | int | 战绩 `#32` | 占点得分 | supremacy 争霸赛逐人 |
 | `victoryPointsSeized` | int | 战绩 `#33` | 占点占领分 | supremacy 争霸赛逐人 |
-| `survived` | boolean | 派生 | 是否存活（= `settlementDeathReasonRaw == -1` 幸存 sentinel） | 由 field105 deathReason 派生，不是独立 survived 字段 |
+| `survived` | boolean | 派生 | 是否存活（客户端消费上游 `survived === true`；其结算依据为 field105 deathReason 的 -1 幸存 sentinel） | 由 field105 deathReason 派生，不是独立 survived 字段 |
 | `deathTimeMillis` | long | 派生 | 结算 field24 lifeTime 的毫秒兼容投影（11.19 corpus <b>无 #104</b>） | 只表示 settlement；live observation 不回写此字段 |
 | `settlementLifeTimeSec` | double | 战绩 `#24` | settlement lifeTime（秒；阵亡=结算死亡秒；幸存=整场时长） | raw settlement 证据，保留 |
 | `settlementKillerResultEntityId` | long? | 战绩 `#25` | 击杀者 result/entity-id（<b>非 accountId</b>，namespace == #301 outer field1） | 经 result/entity-id → accountId 映射得 `killerAccountId` |
 | `settlementDeathReasonRaw` | int? | 战绩 `#105` | deathReason 原始值（-1=幸存 sentinel；未证明值 raw 保留） | 已证明：5=drowning；其它 UNKNOWN |
-| `survivalTimeSec` | double | 派生 | settlement lifeTime 的兼容投影（秒） | 仅兼容展示；业务死亡秒值读取 settlement `field24 lifeTime`，live reconstruction 不覆盖 |
+| `survivalTimeSec` | double | 派生 | 存活者=战斗时长；阵亡者=min(settlement lifeTime, 战斗时长) 的兼容投影（秒） | 仅兼容展示；业务死亡秒值读取 settlement `field24 lifeTime`，live reconstruction 不覆盖 |
 | `xp` / `credits` | int | 战绩 | 经验/银币 | 展示用 |
 | `tankName` / `tankTier` / `tankType` / `tankNation` / `alphaDamage` | String | tankopedia 映射 | 展示派生字段 | 非回放原始值 |
 
@@ -64,17 +64,17 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `arenaId` | String | 地图/竞技场 ID（来源：`battle_results.dat`） |
+| `arenaId` | String | 单场战斗唯一竞技场 ID，供去重（不是地图 code；来源：`battle_results.dat`） |
 | `winnerTeam` | Integer | 获胜队伍原始编号；null=平局/未知（来源：`battle_results.dat`） |
 | `players` | List\<PlayerResult\> | 全部玩家战绩（来源：`battle_results.dat`） |
 | `rosterComplete` | Boolean | 结算阵容完整性证据（<b>严格 fail-closed 全局契约</b>）：名册(#201)与战绩(#301)账号集合完全一致且名册队伍(#201→#2→#3)（存在时）与结算队伍一致时为 true；null=未知/不完整（来源：上游 WASM `parseResult.roster_complete` → 客户端 `frontend/src/replay-local/battleFacts.ts`；原 Java `ReplayParser` 校验，2026-10-02 已退役）。<b>不参与 League Rating eligibility</b>：League Rating 以 #301 的 14 settled combatants 为 authority，#201 仅用于 metadata enrichment（缺失/extra 不阻塞评分）；`rosterComplete` 保留给全歼 / SURVIVOR_SETTLEMENT / pointsEndReason 等「完整逐人结算」推断的 fail-closed 前提；#201 存在无法证明为 spectator 的 extra（如 #201=4/#301=3）时不得视为完整 |
-| `version` | String | 游戏版本（来源：`meta.json`） |
+| `version` | String | 游戏版本（当前 `battleFacts.ts` 消费上游 `client_version`） |
 | `mapName` | String | 内部地图 code（如 `desert_train`；来源：`meta.json`） |
-| `durationS` | Double | 战斗时长（秒，来源：`meta.json#battleDuration`，上限 420） |
+| `durationS` | Double | 战斗时长（秒，优先上游 `result_duration_secs`，缺失/非正回退 `battle_duration_secs`，上限 420） |
 | `startTime` | Long | 战斗开始时间戳（来源：`meta.json`） |
-| `recorder` | String | 录像者昵称（meta 无 accountId，靠昵称匹配名册；来源：`meta.json#playerName`） |
+| `recorder` | String | 录像者展示昵称（上游 `author_nickname`；canonical 身份另用 `author_account_id`） |
 | `recorderVehicle` | String | 录像者坦克（来源：`meta.json#playerVehicleName`） |
-| `arenaBonusType` | Integer | 模式：1=随机战斗、2=训练房、3..10=联赛/锦标赛；null=未知（来源：`meta.json`） |
+| `arenaBonusType` | Integer | raw 模式号（来源：`meta.json`）；League 只接受 2/4、HoF 只接受 1/7；AI 的现行分类另见下文 |
 | `clientVersion` | String | 客户端版本（来源：`data.wotreplay` 事件流头部） |
 
 ## 3. 事件流层（`data.wotreplay` → `ReplayEvent` 子类）
@@ -94,10 +94,10 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 | `PositionChangedEvent` | `entityId`, `spaceId`, `attachmentParentEntityId`, `x/y/z`, `positionErrorX/Y/Z`, `yaw/pitch/roll`, `trailingStateRaw` | 位置更新（Type10 49B 当前版 EXACT） | 移动段、阵型簇、脱节/接应/图控、最后已知位置；`trailingStateRaw` 语义=UNKNOWN（绝非 onGround/isError） |
 | `DamageEvent` | `attackerEid`/`victimEid` (+`accountId`), `damage`, `lethal` | 单次伤害 | 交火段、集火候选、对炮明细、伤害贡献（非死亡权威） |
 | `HealthChangedEvent` | `entityId`, `currentHealth`, `maxHealth`, `alive` | HP 变化 | HP 动量（只取两端共同可靠观察） |
-| `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 击毁观测（非死亡权威；死亡仅 LIVE EXACT / SETTLEMENT / UNKNOWN） |
+| `VehicleDestroyedEvent` | `entityId`, `killerEid`, `inferred` | 车辆被击毁 | 击毁观测；业务死亡秒值仍以 settlement field24 lifeTime 为权威，不从观测事件回写 |
 | `ReplayStreamClosedEvent` | — | packet stream 关闭/停止 marker（Type14） | Type14 = stream close；不推导 winner / finish reason / battle start |
 | `EntityCreatedEvent` / `EntityRemovedEvent` | `entityId`（+未解析 `unknownInitData`） | 实体生命周期 | 覆盖统计 |
-| `UnknownReplayEvent` | — | 未解码包 | 覆盖率（decodedRatio） |
+| `UnknownReplayEvent` | — | 未解码包 | 历史 parser 的覆盖率；当前投影 adapter 无原始包分母，coverage=null / decodedPacketRatio=UNAVAILABLE |
 
 > **观测伤害边界**：事件流迄今只逆向出 sub3 直接伤害子类型（type 5/31/35/39 等未解），
 > 观测聚合 ≠ 权威结算时标记 `OBSERVED_DAMAGE_IS_PARTIAL`，prompt 层抑制观测数字。
@@ -124,7 +124,11 @@ STRONG CANDIDATE，不提升为跨版本占领胜利枚举；SC2 `controlpoint.t
 - **权威 vs 观测**：`battle_results` 是唯一可信口径；事件流数字只是观测子集。
 - **录像者**：只用于确定视角（PLAYER_FOCUSED 的个人复盘 / TEAM_PERSPECTIVE 的视角队伍），不参与团队结论权重。
 
-## 6. 相关文档
+## 6. 模式分类的现行边界
+
+`arenaBonusType` 是 raw 事实，各消费政策尚未统一：客户端 League `isLeagueBattle` 只接受 2 / 4；HoF policy 接受 1 / 7。AI 的 `BattleCategoryUtils.fromArenaBonusType` 当前把 1 映射 RANDOM、2 映射 TRAINING、3..10 全部映射 TOURNAMENT，因而 raw 7 也会进入 TEAM_PERSPECTIVE。该 switch 是现行实现事实，不是对 3..10 全部游戏模式的协议证明；需要改 AI 分类时应另开代码修正，不能只改字段字典来宣称已统一。
+
+## 7. 相关文档
 
 - `docs/reference/replay-data.md` — 文件结构、事件流格式、解析安全预算
 - `docs/research/replay/protocol.md` — 逆向记录

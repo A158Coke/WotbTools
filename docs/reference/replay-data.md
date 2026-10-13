@@ -313,11 +313,11 @@ PR147 authoritative settlement facts：
 | 6  | `playerVehicleName`     | string | —      | `"S16_Kranvagn"`        | 录像者车辆名                                                          | 是 → `Battle.recorderVehicle`           |
 | 7  | `mapName`               | string | —      | `"lagoon"`              | 地图内部名                                                           | 是 → `Battle.mapName`                   |
 | 8  | `arenaUniqueId`         | string | —      | `"1161909687528274499"` | 战斗唯一 ID（去重用）                                                    | 否（pickle tuple[0] 作为 `Battle.arenaId`） |
-| 9  | `battleDuration`        | number | 秒      | `306.19186`             | 战斗持续时长（浮点数）                                                     | 是 → `Battle.durationS`                 |
+| 9  | `battleDuration`        | number | 秒      | `306.19186`             | 战斗持续时长（浮点数）                                                     | 是 → `Battle.durationS` 的 fallback（优先结算 `result_duration_secs`） |
 | 10 | `vehicleCompDescriptor` | int    | —      | `4481`                  | 车辆组件描述符（== tankId，**不含炮/模块配置**）                                | 否                                      |
 | 11 | `camouflageId`          | int    | —      | `406`                   | 涂装 ID                                                           | 否                                      |
 | 12 | `mapId`                 | int    | —      | `26`                    | 地图数字 ID                                                         | 否（已移除）                                 |
-| 13 | `arenaBonusType`        | int    | —      | `1`                     | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（排行榜仅收 ==1） |
+| 13 | `arenaBonusType`        | int    | —      | `1`                     | 模式类型（**1=随机；2=训练房**；其他=娱乐/联赛等。经真实样本核实，早期"2=随机"系误标——当时分析的是训练房回放） | 是 → `Battle.arenaBonusType`（单场名人堂收 1=随机与 7=评级；不是仅收 1） |
 | 14 | `camouflageCustomData`  | string | —      | `""`                    | 自定义涂装数据                                                         | 否                                      |
 
 ---
@@ -613,7 +613,7 @@ EntityLeave / damage threshold 自行计算。
 
 ### 2. 战斗时长上限
 
-`meta.json#battleDuration` 已按标准随机战 7 分钟截断：`Math.min(val, 420)`。
+当前 `battleFacts.ts#durationOf` 优先使用上游 `result_duration_secs > 0`，否则用 `battle_duration_secs > 0`；两者均截断到 420 秒。Canonical 时钟在无结算时长时还可用 AFTERBATTLE/流末等证据（`canonical/facts.ts#resolveReplayClock`），不要把 metadata fallback 当唯一时长来源。
 
 ### 3. 未解析的潜在有用数据
 

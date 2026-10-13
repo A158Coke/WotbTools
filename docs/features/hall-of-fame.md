@@ -20,7 +20,7 @@
 
 - **数据库配置**：`application.yml` 始终启用 DataSource/JPA/Flyway，`ddl-auto: validate`；本地开发需提供 PostgreSQL 与 `POSTGRES_PASSWORD`。
 - **Schema 来源**：Flyway 迁移 `V1__init_leaderboard.sql` → `V15__add_leaderboard_replay_file.sql`（历史 immutable），`V16__rename_leaderboard_to_hall_of_fame.sql`（表/约束/索引 rename-in-place + battle_type/arena_bonus_type + backfill），`V17__create_hall_of_fame_admin_log.sql`（admin 审计表），`V18`–`V20`（百场申请、回放证据、WG 审核快照）、`V21__create_mark3_submission.sql`（三环申请与回放证据）以及 `V22__hof_ownership_by_wotb_account.sql`（百场/三环 ownership 由 Keycloak 身份切换为 **WotB 游戏账号 + 区服**：`game_account_id_snapshot` → `wotb_account_id`、新增 `wotb_server` 快照列、删除 `user_keycloak_id`、唯一索引与查询索引改按 `(wotb_server, wotb_account_id)`；迁移内含 fail-fast preflight，不做任何自动消解，详见下文「V22 迁移契约」）。**改表结构必须新增迁移**，不要改已应用的版本；实体列与迁移列**逐列对齐**，否则 `validate` 启动即失败。
-- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的行可由客户端重新解析附件后修正）。
+- **战斗模式数据模型**：`hall_of_fame_record` 同时保存 `battle_type varchar(16) NOT NULL`（业务归一值 `RANDOM`/`RATING`，CHECK 约束，非 PG ENUM）与 `arena_bonus_type integer NOT NULL`（replay 解析出的 authoritative raw integer，protocol provenance / 调试 / 未来扩展）。历史数据 backfill 为 `RANDOM/1`（旧系统 PR #97 前只允许 Random；PR #97 起允许 Rating，历史行无法逐行推导，统一按 `RANDOM/1`，带 replay_hash 的附件可供客户端重新解析核验，但当前无修改 replay-derived facts 的接口；需要纠正时走审核治理/删除重提流程）。
 - **支持的战斗模式**：判断集中在 `HallOfFameBattleTypePolicy`（`HallOfFameBattleType` 单一事实源，禁止散落两处漂移）。证据等级明确区分「本项目真实回放证据」与「外部 replay tooling 证据」：
 
   | 模式 | raw arenaBonusType | 归一值 | 证据 | 名人堂 |
@@ -34,7 +34,7 @@
 
   **fixture gap**：仓内暂无真实 Rating 回放 —— Rating=7 目前由已入库文档 + 外部 tooling 证据支撑（生产已随 PR #97 生效）；未来拿到真实当前版本 Rating replay 后补 parser → RATING → upload success 的真实 fixture integration 验证（follow-up，不阻塞）。
 - **录像者识别**：结算事实里录像者以 `Battle.recorder`（昵称）给出。`HallOfFameService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。成绩归**录像者（Player B）**；`uploadedBy` 只表示谁上传了回放，不覆盖成绩所有权。
-- **去重与 replay 状态机（DB 原子）**：唯一键 `(arena_id, account_id)`（不含 battle_type —— 同一场+同一玩家即一条真实 battle result；mode conflict 视为数据不一致，不允许双记录）。`recordRecorder` 返回 `RecordOutcome`：新建 → `SAVED`；已存在且 `replay_hash` NULL → 原子 conditional UPDATE → `ATTACHED`，败者 re-read winner 后分类；已存在且同 hash → `IDEMPOTENT`；已存在且异 hash → `SKIPPED_HASH_CONFLICT`（保留已有 hash，绝不覆盖）；insert unique 竞态 → re-read winner 重新分类。并发由 DB 行锁保证（多实例安全）。
+- **去重与 replay 状态机（DB 原子）**：唯一键 `(arena_id, account_id)`（不含 battle_type —— 同一场+同一玩家即一条真实 battle result；mode conflict 视为数据不一致，不允许双记录）。`recordRecorder` 返回 `RecordOutcome`：新建 → `SAVED`；已存在且 `replay_hash` NULL → 原子 conditional UPDATE → `ATTACHED`，败者 re-read winner 后分类；已存在且同 hash → `IDEMPOTENT`（仍落盘以自愈缺失文件；上传接口返回 `status: "already_recorded"`，前端提示「已在名人堂中」，不冒充新上榜）；已存在且异 hash → `SKIPPED_HASH_CONFLICT`（保留已有 hash，绝不覆盖）；insert unique 竞态 → re-read winner 重新分类。并发由 DB 行锁保证（多实例安全）。
 - **归属维度（已知遗留）**：单场 `hall_of_fame_record` 只按 `account_id` 归属，**没有区服维度**，`GET /api/users/profile/records` 同样只按账号 ID 返回个人成绩；跨服同号（`(CN, 123456)` 与 `(EU, 123456)`）在单场域仍可能被视作同一人。详见下文「单场 HoF 的区服限制（已知遗留 / follow-up debt）」。
 - **回放文件存储（V15 → hof）**：`HallOfFameReplayStorage` 内容寻址存储到 `{HOF_REPLAY_DIR:data/replays}/{sha256}.wotbreplay`（生产挂 `replay_data` volume → `/data/replays`）。流程：校验（复用 `ReplayUploadValidator`，类型+.wotbreplay+20MB）→ 登录（`JwtUtil.requireUserId`）→ 客户端事实结构校验（缺失 / 非法 400 `INVALID_REPLAY_FACTS`；浏览器本机解析失败在前端即报 `INVALID_REPLAY_FILE`，不会提交）→ **battle-type policy（不支持模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，在 SHA-256 / preflight / storage / DB 任何持久化之前拒绝，DB=0 / metadata=0 / 文件=0）** → SHA-256 → 临时文件 `.tmp/` → `ATOMIC_MOVE` 原子发布 → 记录入库。上传的「落盘 + 入库」与 admin delete 的「删除事务 + 文件清理」由 `ReplayHashLock`（PostgreSQL advisory lock，session 级，hash 前 16 hex 为 key）串行化，保证不变量：**任何记录引用 hash H → 物理 H.wotbreplay 必须存在**（delete/upload 同 hash 并发见 WebApiTest）。磁盘保护：`usable - incoming < HOF_REPLAY_MIN_FREE_BYTES`（默认 512MiB）→ 507 `REPLAY_STORAGE_FULL`；文件系统失败 → 500 `REPLAY_STORAGE_ERROR`。`replay_hash/file_name/size/uploaded_by` 四列可空（老记录 NULL → 无下载按钮，tolerance）。
 - **下载**：`GET /api/hof/{id}/replay`（需登录，任意已登录用户可下载任何带 replay 的记录；不要求 uploadedBy==current user 或 recorder==current user）。无 hash / 文件丢失（best-effort 语义）→ 404 `REPLAY_FILE_NOT_FOUND`；原始文件名仅进 `Content-Disposition`（UTF-8 安全编码，绝不参与路径）。前端用 authenticated fetch → blob → `createObjectURL` 触发下载（禁止裸 `<a href>`）。
@@ -108,7 +108,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | `GET /api/hof/hundred?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | 三项取交集：全空为全站 CURRENT Top 10；仅分类时为分类交集 Top 10；选择车辆后为该车独立分页排行，competition rank 始终基于相同筛选上下文 |
-| `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5） |
+| `POST /api/hof/hundred/submissions` | 登录 | multipart 提交（vehicleId/averageDamage/battleCount/screenshot/replays×5/facts×5（结算 JSON，与 replays 同序）） |
 | `POST /api/hof/hundred/submissions/{id}/cancel` | 登录（本人账号） | 撤销 PENDING；归属按当前绑定的 `(区服, WotB 账号)` 判定，区服或账号任一不符、或未绑定账号 → 403 `HUNDRED_FORBIDDEN` |
 | `GET /api/users/hundred/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/hundred/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆均可独立使用并取交集 |
@@ -164,7 +164,7 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 | 端点 | 权限 | 说明 |
 |---|---|---|
 | `GET /api/hof/mark3?nation=&vehicleType=&vehicleId=&page=&size=` | 匿名 | Tier X 三环公开榜；国家/系别、车种和车辆取交集，按三环场数升序 competition rank |
-| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays；全局 replay 容量满时 503 `REPLAY_BUSY` |
+| `POST /api/hof/mark3/submissions` | 登录 | multipart 提交：vehicleId、battleCount、averageDamage、winRate、1–2 张 base64 `data:image/` proofScreenshots、5 个 replays + 5 份同序 facts JSON；全局 replay 容量满时 503 `REPLAY_BUSY` |
 | `POST /api/hof/mark3/submissions/{id}/cancel` | 登录（本人账号） | 撤销自己的 PENDING；归属按当前绑定的 `(区服, WotB 账号)` 判定，区服或账号任一不符、或未绑定账号 → 403 `MARK3_FORBIDDEN` |
 | `GET /api/users/mark3/status` | 登录 | 个人中心：CURRENT / PENDING / 最近拒绝；按当前绑定的 `(区服, WotB 账号)` 查询，未绑定账号时三个列表均为空 |
 | `GET /api/admin/hof/mark3/submissions?status=&nation=&vehicleType=&vehicleId=&page=&size=` | HoF-admin/wotbtools-admin | 审核列表；状态、国家/系别、车种、车辆独立筛选并取交集 |

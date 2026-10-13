@@ -10,10 +10,10 @@
 - **地图三语名** `map_names.json`：内部名(小写) → {zh,en,ru}；客户端导出层 `frontend/src/replay-local/export/format.ts` 的 `mapNameCn()`（固定中文）与前端 `frontend/src/utils/helpers.js` 的 `mapLabel()`（按 locale）**同源读这一份**。
 - **地图语义** `map-semantics/*.semantic.json`：由 `map-semanticizer/` 生成（覆盖式）；**已人工核验的地图严禁整份重跑语义化器**（会覆盖手工修正），改语义 JSON 时同步 `docs/reference/maps.md` 与 `MapTacticalSemanticsRegistryTest` 断言。
 - **坦克战术画像** `tank_tactical_profiles.json`：AI 复盘注入用；十级车全覆盖有回归测试守卫。
-- `assets/`（logo/图标/silent-check-sso.html）：Dockerfile 构建时复制到 homepage + frontend/public。
+- `assets/`（logo/图标/silent-check-sso.html）：Vite 的 `publicDir` 直接指向 `common/assets`；`docker/Dockerfile.frontend` 构建时复制共享资源，最终 nginx 站点额外放置 logo / 图标，不维护 homepage 副本。
 
 ## 回放样本边界
 
 - `fixtures/replays/*.wotbreplay`：**提交入库**的夹具（CI 无条件执行）。
-- `data/`（gitignored）：本地扩展样本。重复场次/单练/特殊样本放 `data/` 子目录，避免与提交入库的 `fixtures/replays/*.wotbreplay` 夹具（CI 无条件执行）及客户端 golden 基线（`frontend/src/replay-local/__golden__/`）冲突；`*ProbeTest` 会递归发现 `data/` 下的样本（无样本自动跳过）。
+- `data/`（gitignored）：本地扩展样本。重复场次/单练/特殊样本放 `data/` 子目录，避免与提交入库的 `fixtures/replays/*.wotbreplay` 夹具（CI 无条件执行）及客户端 golden 基线（`frontend/src/replay-local/__golden__/`）冲突；是否消费本地样本由具体测试 / probe 显式决定，不假定存在自动递归发现入口。
 - 本地私人回放绝不提交进仓库。

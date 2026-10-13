@@ -11,6 +11,14 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../utils/api.js', () => api)
 
+const connectivityState = vi.hoisted(() => ({ state: null, settled: null }))
+vi.mock('../composables/useConnectivity.js', async () => {
+  const { ref } = await import('vue')
+  connectivityState.state = ref('online')
+  connectivityState.settled = ref(true)
+  return { useConnectivity: () => ({ connectivity: connectivityState.state, settled: connectivityState.settled, isSettled: () => connectivityState.settled.value, whenSettled: () => Promise.resolve() }) }
+})
+
 function mountPage(onboarding = null) {
   return mount(HomePage, {
     global: {
@@ -29,6 +37,26 @@ function mountPage(onboarding = null) {
 describe('HomePage highest damage record', () => {
   beforeEach(() => {
     api.hofList.mockReset()
+    connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
+  })
+
+  it('cold start: waits for the first connectivity check instead of showing -- forever', async () => {
+    // 冷启动：首次检测未完成，HoF 门禁 fail-closed —— 不得在此时请求（请求会被门禁拒绝）
+    connectivityState.state.value = 'unknown'
+    connectivityState.settled.value = false
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }] })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(api.hofList).not.toHaveBeenCalled()
+    expect(wrapper.find('.record-card strong').text()).toBe('--')
+    // 检测完成且在线 → 补加载一次
+    connectivityState.state.value = 'online'
+    connectivityState.settled.value = true
+    await flushPromises()
+    expect(api.hofList).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.record-card strong').text()).toBe('10 483')
+    wrapper.unmount()
   })
 
   it('formats the top damage record with thousands separators (regression: formatDamage regex)', async () => {

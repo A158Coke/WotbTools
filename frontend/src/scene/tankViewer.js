@@ -3517,7 +3517,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function updateInfoPanel() {
             document.getElementById('tank-name').textContent = tankData.name || '?';
-            document.getElementById('tank-tier').textContent = L.tier(tankData.tier || '?');
+            // 卡片该行已有「等级」行标题：值只写数字（L.tier 带前缀，留给选车下拉的选项文案）
+            document.getElementById('tank-tier').textContent = String(tankData.tier || '?');
             document.getElementById('tank-type').textContent = tankData.type ? L.type(tankData.type) : '?';
             document.getElementById('tank-nation').textContent = tankData.nation ? L.nation(tankData.nation) : '?';
             document.getElementById('info-panel').style.display = 'block';

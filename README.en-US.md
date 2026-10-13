@@ -2,19 +2,19 @@
 
 The skippable guide runs on the real pages. The official replay lets anonymous visitors try data, 2D/3D playback and shot inspection; personal replays keep their login requirements. Completion can sync with the signed-in account, and ordinary content updates do not restart the core guide. See [the onboarding contract](docs/features/onboarding.md).
 
-A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, the Hall of Fame (damage board for Random & Rating battles), battle performance metrics (contribution / KAST / Impact and other derived metrics), AI tactical review (player / team), and Keycloak authentication.
+A toolset for World of Tanks Blitz: parse `.wotbreplay` replays and export battle data to Excel, the Hall of Fame (damage board for Random & Rating battles), battle statistics, multi-damage rate and League Rating, AI tactical review (player / team), and Keycloak authentication.
 
 Entry: [https://wotbtools.com](https://wotbtools.com) · Repository: [https://github.com/A158Coke/WotbTools](https://github.com/A158Coke/WotbTools)
 
 ## What it does
 
-The Replay Workspace always displays Data, 2D Playback, 3D Playback, Shot Analysis and AI Review. Data and 2D are usable anonymously; 3D, shot analysis / armor reconstruction and AI require sign-in. Ordinary users and administrators have the same workspace capabilities.
+The Replay Workspace always displays Data, 2D Playback, 3D Playback, Shot Analysis and AI Review. Data and 2D are usable anonymously. Personal replays require sign-in for 3D, shot analysis / armor reconstruction and AI; verified official examples allow anonymous 3D and shot inspection. Ordinary users and administrators have the same workspace capabilities.
 
 - **Replay parsing & Excel export**: parse a `.wotbreplay` on your device (upstream Rust Core WASM; the file is not uploaded), extract authoritative settlement (damage / received / assisted / blocked / kills / death times) plus event-stream features (movement / engagements / 3x3 grid regions).
 - **Hall of Fame**: per-battle damage ranking for Random and Rating battles, plus Tier X career-average leaderboards through screenshot + 5-replay manual review.
 - **Tournament points**: season and region-specific round rules, administrator-reviewed AI extraction from group ranking screenshots, shared drafts, confirmed public standings, and audited corrections. See the [feature contract](docs/features/tournament-points.md) (Chinese; English translation pending).
-- **Battle performance**: derived metrics computed from a single authoritative replay-facts source (contribution, KAST, Impact, potential damage, assist, kills, multi-damage rate, survival rate, trades) — no composite rating anymore.
-- **AI tactical review**: pre-battle prediction + evidence-chain review, streamed token-by-token over SSE; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
+- **Battle performance**: damage, assist, kills, hit / penetration and survival statistics from a single authoritative replay-facts source. Multi-damage rate is the aggregate derived-performance column; training / league battles also provide League Rating and seven dimension scores. The old contribution, KAST and Impact public columns are retired.
+- **AI tactical review**: pre-battle prediction + evidence-chain review; team results use structured tactical episodes, training suggestions, review focus and high contributors, with SSE tokens and stage updates; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), user profile & account management.
 
 ## Architecture
@@ -31,7 +31,7 @@ flowchart LR
 
 ## AI evidence chain
 
-Replay → **authoritative settlement** (`battle_results.dat`: damage / received / death times) and **event stream** (`data.wotreplay`: movement / engagements / damage events / grid regions) → deterministic features (phase survival counts "at phase end", per-vehicle death timeline for both teams, engagement & focus-fire evidence) → the prompt contains backend evidence only → the AI reviews against the pre-battle baseline (times in Xm Xs, grid regions, our/opponent view) → results stream incrementally as a structured team review (`TeamAiReviewResult` v0.5: `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`), with `teamPlayers` carrying the authoritative `playerKey` → display identity mapping. The production chain has no third model call and no team autopsy.
+Replay → **authoritative settlement** (`battle_results.dat`: damage / received / death times) and **event stream** (`data.wotreplay`: movement / engagements / damage events / grid regions) → deterministic features (phase survival counts "at phase end", per-vehicle death timeline for both teams, engagement & focus-fire evidence) → the client submits a canonical AI projection, which the server validates and adapts into deterministic prompt evidence → the AI reviews against the pre-battle baseline (times in Xm Xs, grid regions, our/opponent view) → results stream incrementally as a structured team review (`TeamAiReviewResult` v0.5: `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors`), with `teamPlayers` carrying the authoritative `playerKey` → display identity mapping. The production chain has no third model call and no team autopsy.
 
 ## Key engineering trade-offs
 
@@ -55,6 +55,6 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 - Testing and quality gates: see [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - Updating the tank database: `cd common/python && python update_tankopedia.py` — generates the four per-tier files (see DEVELOPER_GUIDE)
 
-## Live Tools
+## Current Tools
 
-Replay parsing & Excel export · Hall of Fame · Battle performance metrics · AI tactical review (player / team) · Keycloak authentication · User profile & account management
+Replay parsing & Excel export · Hall of Fame · Battle performance metrics · AI tactical review (player / team) · Keycloak authentication · User profile & account management · Tournament points · 2D / 3D playback · Shot analysis · Armor viewer
