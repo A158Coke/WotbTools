@@ -20,6 +20,8 @@ The repository has one pull-request routing entry point and service-owned produc
 - Keep the stable `CI / Required Gate` as the only required PR check. Do not add heavy, non-gating jobs to every change or duplicate PR test suites inside production deployment workflows.
 - Do not restore discarded PR #380 content or architecture. It is not a source for this plan.
 
-## Workflow inventory (35)
+## Workflow inventory (37)
 
-`ci-gate.yml`, reusable `ci-<owner>.yml` workflows, `business-api.yml`, `frontend.yml`, `caddy.yml`, `keycloak.yml`, `ai-service.yml`, `business-postgres.yml`, `keycloak-postgres.yml`, `observability.yml`, `alloy-tx.yml`, `komodo-controller.yml`, `komodo-periphery.yml`, `tx-runtime-check.yml`, `android-release.yml`, `database-backup.yml`, `cleanup-images.yml`, `prod-diagnostics.yml`, `tx-gitee-build-path-validation.yml`, `update-tankopedia.yml`, `update-equipment.yml`, and `update-crew-skills.yml`.
+`ci-gate.yml`, 15 reusable `ci-<owner>.yml` workflows, `business-api.yml`, `frontend.yml`, `frontend-replica.yml`, `caddy.yml`, `keycloak.yml`, `ai-service.yml`, `business-postgres.yml`, `keycloak-postgres.yml`, `observability.yml`, `alloy-tx.yml`, `komodo-controller.yml`, `komodo-periphery.yml`, `production-worker.yml`, `tx-runtime-check.yml`, `android-release.yml`, `database-backup.yml`, `cleanup-images.yml`, `prod-diagnostics.yml`, `update-tankopedia.yml`, `update-equipment.yml`, and `update-crew-skills.yml`.
+
+The one-off `tx-gitee-build-path-validation.yml` benchmark is retired: Business API and Frontend own the production Gitee exact-SHA build/TCR publication path. Deleted workflow files can retain historical Actions runs; those records are not active entry points. Keep reusable owner CI, release, deployment, data-update and recurring/manual operations workflows based on their responsibility, not their run count.
