@@ -424,12 +424,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     return lifeTracksByAccount.get(v.def.account_id);
   }
+  /** Re-entry replaces the prior entity from its first recorded coverage, not from its numeric eid.
+   * Attribute a death at that instant; later entities never inherit it. Ambiguous identity stays unknown. */
+  function canonicalDeathAppliesTo(v, rawDeath) {
+    if (!Number.isFinite(rawDeath)) return false;
+    let count = 0, owner = null, latestStart = -Infinity, unknown = false;
+    for (const candidate of V) {
+      if (candidate.def.account_id !== v.def.account_id) continue;
+      count++;
+      const first = candidate.def.coverage?.[0];
+      if (!Number.isFinite(first)) { unknown = true; continue; }
+      if (first > rawDeath) continue;
+      if (first > latestStart) { latestStart = first; owner = candidate; }
+      else if (first === latestStart) owner = null;
+    }
+    return count === 1 || (!unknown && owner === v);
+  }
   /** Canonical life uses battle-relative seconds; this render boundary returns raw seconds like T. */
   function sceneLifeAt(v, t) {
     const canonical = store.playbackSession?.canonical;
     if (canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw)) {
-      const life = lifeAt(canonicalLifeTrack(v, canonical), t - canonical.clock.startRaw);
+      const track = canonicalLifeTrack(v, canonical);
+      const life = lifeAt(track, t - canonical.clock.startRaw);
       if (!life) return null;
+      if (life.lifeState === 'DESTROYED') {
+        const transition = track.lifeTransitions.find(item => item.lifeState === 'DESTROYED');
+        const death = (life.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
+        if (!canonicalDeathAppliesTo(v, death)) return null;
+      }
       return {
         lifeState: life.lifeState,
         destroyedKnownAtSec: Number.isFinite(life.destroyedKnownAtSec)
@@ -3720,6 +3742,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const transition = canonicalLifeTrack(v, canonical)?.lifeTransitions?.find(life => life.lifeState === 'DESTROYED');
         t = transition && Number.isFinite(transition.timeSec)
           ? transition.timeSec + canonical.clock.startRaw : null;
+        const identityTime = (transition?.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
+        if (!canonicalDeathAppliesTo(v, identityTime)) t = null;
       }
       if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
     }
