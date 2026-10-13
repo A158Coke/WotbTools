@@ -1,0 +1,353 @@
+From fa1e2b235a74abc476ecf213ad052eb9ca2b3a17 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 13 Oct 2026 17:59:05 +0000
+Subject: [PATCH] =?UTF-8?q?fix(map-assets):=20=E9=AB=98=E5=BA=A6=E5=9B=BE?=
+ =?UTF-8?q?=E5=88=97=E9=95=9C=E5=83=8F=E6=94=B9=20corner=20=E5=8F=A3?=
+ =?UTF-8?q?=E5=BE=84=EF=BC=8C=E4=BF=AE=E5=9C=B0=E5=BD=A2=E6=B2=BF=E5=9C=BA?=
+ =?UTF-8?q?=E6=99=AF=20=E2=88=92x=20=E5=81=8F=E4=B8=80=E6=A0=BC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+引擎顶点是 corner 口径（Heightmap::GetPoint：texel k 在 min + k/size·span；
+tilemask-vp.sl 同口径），parse_heightmap 按 size−1−c 离散翻转列后，第 c 列真实位置是
+((c+1)/size − 0.5)·span，而消费端按 c/size 摆 ⇒ 整张地形沿场景 −x 偏一格（600 m 图
+1.17 m），挡土墙低侧朝 −x 时路基被推出墙面（WotbTools 用户截图对照：墙前多出 1–2 m 土坡）。
+
+- parse_heightmap 改 out[c] = src[min(size−c, size−1)]（输出列 c = 场景 x 处的引擎顶点）
+- 新增 TERRAIN_LAYOUT = 2：X-Terrain-Meta / terrain.json 下发 terrainLayout
+- 提取缓存 / 手动覆盖文件名带版本，布局 1 旧缓存不会被打包并声明成布局 2
+- 单测锁 corner 镜像 + 边界列 + 元数据声明；docs/index.md 记录根因/证据/blast radius
+  并勘误旧"列翻转后逐字节一致"结论；data-inventory / game-data-sources 同步布局事实
+
+资产面待办：36 图 terrain 需 fetch-terrain 重提取 → 重打包 → COS 同步（未执行）。
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SX3gZzi5EmHsN14VaEiraQ
+---
+ docs/data-inventory.md       |  1 +
+ docs/game-data-sources.md    |  1 +
+ docs/index.md                | 42 ++++++++++++++++-
+ scripts/export_asset_pack.py | 18 +++++---
+ src/wargaming/map_assets.rs  | 88 +++++++++++++++++++++++++++++-------
+ 5 files changed, 126 insertions(+), 24 deletions(-)
+
+diff --git a/docs/data-inventory.md b/docs/data-inventory.md
+index 4303798..6556691 100644
+--- a/docs/data-inventory.md
++++ b/docs/data-inventory.md
+@@ -248,6 +248,7 @@ manifest 为准，每次重打包或改溯源戳后刷新本句**。2026-10-07 
+ 地图地形多一个 `terrain.json` sidecar（把 `X-Terrain-Meta` 头物化）；`index.json` /
+ `manifest.json` 均为生成物。另有 `--refresh-manifest` 模式：不重打包、按包目录现有内容重算
+ `manifest.json` 的逐文件 sha256（合成器改写 ground.webp 之后、上传之前跑，见下）。
++`terrain.u16.bin` 的列布局由 `terrain.json` / `X-Terrain-Meta` 的 `terrainLayout` 声明：**2** = 列 c 是场景 x `(c/512 − 0.5)·span` 处的引擎顶点（corner 口径列镜像，2026-10-13 起）；**缺字段 = 布局 1**（旧包，`size−1−c` 离散翻转、整张地形沿场景 −x 偏一格，消费端在读取边界补正）。提取缓存 / 手动覆盖文件名带版本（`data/cache/terrain/{key}.hm.v2.u16.bin`、`data/maps/{key}.heightmap.v2.u16.bin`），旧布局缓存不会进包。截至 2026-10-13：**线上包仍为布局 1、待重导并同步 COS**（见 [index.md](index.md)"地形高度场列镜像改 corner 口径"）。
+ 
+ **上传**：[tools/upload_asset_pack_cos.py](../tools/upload_asset_pack_cos.py)
+ （凭据只从环境变量 `COS_SECRET_ID` / `COS_SECRET_KEY` 读，不落盘）。跳过判定 = **桶内
+diff --git a/docs/game-data-sources.md b/docs/game-data-sources.md
+index a7520f8..380c3df 100644
+--- a/docs/game-data-sources.md
++++ b/docs/game-data-sources.md
+@@ -624,6 +624,7 @@ BlitzKit 把游戏模型名从 `tanks.pb` **field 2 移到 field 32**，field 2
+ 客户端之外的附加数据**——包内 `map/<key>/` 只含 `terrain.u16.bin` + `terrain.json`
+ （客户端高度图与元数据）+ 场景/地面资产；打包器在 sidecar 化时清除历史 cover/structs 字段。
+ 地形渲染 = 纯客户端口径（三判据 LOD + 两通道 morph，见 [index.md](index.md)）。
++`terrain.u16.bin` 的列布局由 `terrain.json` / `X-Terrain-Meta` 的 `terrainLayout` 声明：**2** = 列 c 是场景 x `(c/512 − 0.5)·span` 处的引擎顶点（corner 口径列镜像，2026-10-13 起）；**缺字段 = 布局 1**（旧包，`size−1−c` 离散翻转、整张地形沿场景 −x 偏一格，消费端在读取边界补正）。提取缓存 / 手动覆盖文件名带版本（`data/cache/terrain/{key}.hm.v2.u16.bin`、`data/maps/{key}.heightmap.v2.u16.bin`），旧布局缓存不会进包。截至 2026-10-13：**线上包仍为布局 1、待重导并同步 COS**（见 [index.md](index.md)"地形高度场列镜像改 corner 口径"）。
+ 
+ ## 七、许可
+ 
+diff --git a/docs/index.md b/docs/index.md
+index 4e0a857..3f3d8d7 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -244,6 +244,42 @@ v* tag 的 WASM 发行产物。**3D 回放 / 模型场景查看等视觉验证
+ | [docs/decoupling-status.md](decoupling-status.md) | **解耦的剩余决策与已定案差异**（2026-10-03 收敛；**2026-10-07 更新：GLB 自产管线已接线**——`data/cache/models/` 换为客户端解包导出，`cache/models` ≡ `local_models` 735/735）：已完成时间线；待决策口径（数据模型塌缩 / 25 辆无显示名 / `hull_traverse` 非同量）；封面图与 BK 复核为**同源同画**（旧 NCC 0.21/非同一幅画结论已撤销）；已定案的 BlitzKit 侧差异清单；对外沟通材料。进度/接线/分发现状见 [data-inventory.md](data-inventory.md) |
+ | [docs/local-model-export.md](local-model-export.md) | ✅ 已实施（2026-10-01，2026-10-02 补 §4 贴图实测）：报告 B 的几何替代做成 `tools/export_tank_glb.py`，验收口径从"按可达节点求和"收紧到**逐字节 + 节点顺序**——`collision.glb` **735/735**、`model.glb` **733/735** 等价（余 2 辆为 BlitzKit 侧行为、另 23 辆 2026-10-10 起**有意修正**（静态变换烘焙 / 状态过滤，等价数 710/735），见该文 §5/§5.1）；贴图槽位与 BlitzKit 完全对齐（731/735 图片数相同、无缺槽位）。§4 逐通道实测推翻了报告 B §3.3 的图源判断，并定下 `baseRMMap` 的**通道搬迁**（ch0→G 粗糙度、ch1→B 金属度）。**2026-10-07 起已替换运行期数据源**：`data/cache/models/` 换为本地导出（`cache/models` ≡ `local_models` 735/735，包与 COS 随发；见 [data-inventory.md](data-inventory.md) §一 #8） |
+ 
++### 地形高度场列镜像改 corner 口径（"墙前多出土坡"，2026-10-13，未发版）
++
++**现象**：WotbTools 用户给出同一处 plant（Ghost Factory）厂房坡道的**客户端截图**（贴地自由相机）与
++3D 回放画面——客户端挡土墙一直落到平地，3D 回放墙前多出 1–2 m 高的土坡盖住墙下半截。
++
++**根因（`parse_heightmap` 的列翻转与引擎顶点口径不符）**：引擎顶点是 corner 口径——
++`Heightmap::GetPoint`：`x = bbox.min.x + k/size·span`、高度取 texel k（`GetHeightClamp` 让第 size 个
++顶点取 texel size−1 ⇒ 每轴 size+1 个顶点）；`tilemask-vp.sl`：`vx_position = (relativePosition − 0.5)
++·bboxSize`、在 `relativePosition + 0.5/size` 取纹素，同一口径（dava.engine 源码逐行核对）。为"场景
++x = −游戏 x"，`parse_heightmap` 按 `out[c] = src[size−1−c]` **离散**翻转列；corner 口径下源列 size−1−c
++的游戏 x 是 `(0.5 − (c+1)/size)·span`，即输出第 c 列的真实场景位置是 `((c+1)/size − 0.5)·span`，而消费端
++（WotbTools 网格 / 采样 / 岸线，以及本仓冻结前端）都按 `(c/size − 0.5)·span` 摆 ⇒ **整张地形沿场景 −x
++（游戏 +x）偏 1 texel = span/512（600 m 图 1.17 m），行方向无偏，全部地图**。挡土墙贴着高度图台阶摆放：
++低侧朝场景 −x 的墙，墙后路基被推出墙面（截图里的土坡）；朝 +x 的墙则墙顶后方地形缩回一格。
++（"列翻转后与客户端高度图逐字节一致"本身没错——字节确实一致，错在翻转后的**样本位置**。）
++
++**证据**：①编辑器贴地实例（`PlacePoint` → `GetHeightAtPoint`，与渲染同口径）原点高度与地形相差 <1 cm
++的数量，只在"列偏 −1 格、行 0 格"时成峰：plant 9→**177**、karelia 5→**157**、italy 0→**301**、
++amigosville 8→**95**、malinovka 14→**71**、erlenberg 5→**39**（其余半格/±1/±2 偏移 ≤37；行偏 ±1 ≤16）；
++②plant 坡道侧墙（游戏 x≈−5.5、y −85…−55；墙后地形沿 +y 约 5° 爬升、墙前平地 22.08 m）竖直剖面：墙前
++0.3 m 处布局 1 的地形高出地面 **1.2–2.4 m**，corner 口径 **0–0.3 m**。
++
++**修复（本仓）**：`parse_heightmap` 改 corner 口径镜像 `out[c] = src[min(size−c, size−1)]`（输出列 c =
++场景 x `(c/size − 0.5)·span` 处的引擎顶点；源列 0 = 场景 +x 边界那一列顶点 n 列表示不下，丢弃——包围盒边缘、
++可玩区之外）；新增 `TERRAIN_LAYOUT = 2`，随 `X-Terrain-Meta` 与包内 `terrain.json` 下发 `terrainLayout: 2`；
++提取缓存 / 手动覆盖文件名带版本（`data/cache/terrain/{key}.hm.v2.u16.bin`、`data/maps/{key}.heightmap.v2.u16.bin`），
++**布局 1 的旧缓存不会被复制进包又被声明成布局 2**。消费端（WotbTools `terrainMesh.js::decodeTerrainField`）：
++`terrainLayout: 2` 原样用，缺字段（旧包）在读取边界平移一列补正，未知布局 fail-closed ⇒ 资产包重导前后都正确、
++不会双重补正。本仓冻结前端不改（不维护、不作验证依据）。守卫：`heightmap_parse_untile_and_flip`（corner 镜像 +
++边界列）、`terrain_meta_declares_layout`（元数据声明布局 + 缓存名带版本）。
++
++**blast radius / 待办**：全部 36 张图的 `terrain.u16.bin` + `terrain.json` 需按新布局重导并同步 COS：
++`wotb-agent fetch-terrain`（需游戏客户端；新缓存名不存在 ⇒ 全量重提取）→ `python scripts/export_asset_pack.py
++--map-index map_index.json` → 俯视重合成 + `--refresh-manifest` → `tools/upload_asset_pack_cos.py`（逐文件 sha256
++跳过未变文件）。**截至本条：未重导、COS 未同步**（线上仍是布局 1 旧包，由 WotbTools 读取边界补正）。
++
+ ### 回放对照调查：P1/P2 加固落地（2026-10-13，随 v0.4.5 发版）
+ 
+ **背景**：对 wotblitz.exe 11.20.0.887 的独立逆向（协议 + 消费链，报告在
+@@ -1386,7 +1422,8 @@ albedo 的嵌入像素**不只由路径决定**——`FLATCOLOR` 染色（`apply
+ 
+ **现象（用户报障 + 截图 + 两次 pick）**：新湾（forgecity）挡土墙处，实机来回点两次——一次落在
+ 墙上、一次落在"突出于石板面的不规则地形"上。逐层核到根因后确认：**不是数据错位**——包内
+-`terrain.u16.bin` 与客户端高度图**逐字节一致**（列翻转后 100% 相等）、141 个地面吸附建筑在
++`terrain.u16.bin` 与客户端高度图**逐字节一致**（列翻转后 100% 相等；⚠️ 2026-10-13 勘误：字节一致，但
++`size−1−c` 离散翻转让样本位置沿场景 −x 偏一格，见"地形高度场列镜像改 corner 口径"）、141 个地面吸附建筑在
+ 引擎公式下落位 Δ=0.00、墙的世界变换 = `.sc2` 的 `tc.worldTranslation`、用户点位的地形
+ （31.90 m）与墙顶（31.91 m）本就同高（挡土墙语义）——**而是我们的地形网格与客户端不是同一个格点**。
+ 
+@@ -1599,7 +1636,8 @@ morph 差 ≤ 0.0009 ⇒ 地形细分与引擎**可证明等价**。
+ 
+ **排查（全链路实测）**：①地形高度场本身无偏差——悬崖沿线全部顶点 Δ=0.000 vs texel 原值
+ （此前让位掩码/脚印/morph 三代补偿均与该现象无关：墙板才是元凶）；②提取链核查：
+-`map_assets.rs parse_heightmap` = 客户端高度图**原始 u16 逐字节拷贝 + 块重排 + 列翻转**，
++`map_assets.rs parse_heightmap` = 客户端高度图**原始 u16 逐字节拷贝 + 块重排 + 列翻转**（2026-10-13 起改
++corner 口径镜像，旧翻转偏一格，见"地形高度场列镜像改 corner 口径"），
+ 无任何插值/平滑（用户"提取是否做了平滑"的排查结论：没有）；③命中面 = walls.sc2
+ wall_03 的大板（30 顶点、跨 62m、恒等变换、顶点烘焙世界坐标，客户端 bbox 逐位吻合），
+ 可拾取但不可见（射线只查对象可见链，alphaTest 在材质层丢弃片元）。
+diff --git a/scripts/export_asset_pack.py b/scripts/export_asset_pack.py
+index 44ed4a5..307f333 100644
+--- a/scripts/export_asset_pack.py
++++ b/scripts/export_asset_pack.py
+@@ -19,7 +19,7 @@
+         │                               #   --base-dir data/cache/maps`，再 `--refresh-manifest`
+         ├── mini.webp                   # res=mini 的答案
+         ├── terrain.u16.bin             # /api/playback/terrain 的答案
+-        ├── terrain.json                # X-Terrain-Meta 头的 sidecar 化 {size,zmax,zmin,span}
++        ├── terrain.json                # X-Terrain-Meta 头的 sidecar 化 {size,zmax,zmin,span,terrainLayout}
+         ├── scenery.glb                 # 场景 GLB
+         ├── ground.layers.json          # groundmeta 的答案
+         └── ground/{cm,lm,tile0,tile1,mask0,mask1,hmap0,hmap1}.webp  # groundtex 的答案
+@@ -44,6 +44,9 @@ from pathlib import Path
+ 
+ PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ GROUND_LAYERS = ["cm", "lm", "tile0", "tile1", "mask0", "mask1", "hmap0", "hmap1"]
++# terrain.u16.bin 数据布局（与 src/wargaming/map_assets.rs 的 TERRAIN_LAYOUT 同值）：
++# 列 c = 场景 x (c/512 − 0.5)·span 处的引擎顶点（corner 口径列镜像）；缺字段的旧包 = 布局 1（列偏一格）
++TERRAIN_LAYOUT = 2
+ 
+ 
+ def sha256(p: Path) -> str:
+@@ -267,8 +270,10 @@ def main() -> None:
+             cp(cache_maps / f"{space}.minimap.webp", f"map/{key}/mini.webp")
+             got.append("mini")
+ 
+-        # terrain：手动覆盖 data/maps/{key}.heightmap.u16.bin
+-        #          → 缓存 data/cache/terrain/{key}.hm.u16.bin；
++        # terrain：手动覆盖 data/maps/{key}.heightmap.v2.u16.bin
++        #          → 缓存 data/cache/terrain/{key}.hm.v2.u16.bin（`wotb-agent fetch-terrain`）；
++        # 文件名带布局版本（TERRAIN_LAYOUT，map_assets.rs）：布局 1 的旧缓存列偏一格，
++        # 不得被复制进包又被 terrainLayout: 2 声明成新布局
+         # 尺度 = sidecar data/cache/maps/{space}.json 的 worldBounds（缺尺度不打包 terrain
+         # ——与服务端"错标尺度比 404 更糟"同一裁决），sidecar 物化为 terrain.json
+         scale_src = cache_maps / f"{space}.json"
+@@ -285,9 +290,10 @@ def main() -> None:
+                 scale = {"size": 512,
+                          "zmax": round(float(mx[2]), 1),
+                          "zmin": round(float(mn[2]), 1),
+-                         "span": round(span_h, 1)}
+-        terrain_srcs = [data / "maps" / f"{key}.heightmap.u16.bin",
+-                        terrain_cache / f"{key}.hm.u16.bin"]
++                         "span": round(span_h, 1),
++                         "terrainLayout": TERRAIN_LAYOUT}
++        terrain_srcs = [data / "maps" / f"{key}.heightmap.v{TERRAIN_LAYOUT}.u16.bin",
++                        terrain_cache / f"{key}.hm.v{TERRAIN_LAYOUT}.u16.bin"]
+         hit = copy_first(terrain_srcs, mdir / "terrain.u16.bin")
+         if hit and scale:
+             # terrain.json = X-Terrain-Meta 头的 sidecar 化：顶层必须是前端消费的
+diff --git a/src/wargaming/map_assets.rs b/src/wargaming/map_assets.rs
+index b7f356e..0224a89 100644
+--- a/src/wargaming/map_assets.rs
++++ b/src/wargaming/map_assets.rs
+@@ -450,11 +450,29 @@ fn map_response(bytes: Vec<u8>, content_type: &str, entry: Option<&MapEntry>) ->
+ //
+ // 格式：
+ //   8 字节头（u32 size=512、u32 tile=16）+ size²×2 字节 u16，按 tile×tile 块存储
+-//   （块行主序），块内行主序；存储行 0=南、列 0=东；高度 z = u16 * zMax / 65535；
+-//   覆盖世界 [-300,+300]²。输出统一列翻转（列 0=西），行序不变（行 0=南）。
++//   （块行主序），块内行主序；存储行 0=南、列 0=游戏 x 最小（场景 +x 侧）；
++//   高度 z = u16 * zMax / 65535；覆盖世界 [-300,+300]²。
++// 引擎顶点是 corner 口径：`Heightmap::GetPoint` 把 texel k 放在 `min + k/size·span`
++//   （`tilemask-vp.sl` 同口径：`vx_position = (relativePosition − 0.5)·bboxSize`），
++//   最外一圈顶点 k = size 经 `GetHeightClamp` 取 texel size−1 ⇒ 每轴 size+1 个顶点。
++// 输出（`TERRAIN_LAYOUT` = 2）：列按场景 x = −游戏 x 镜像，**输出列 c = 场景 x
++//   `(c/size − 0.5)·span` 处的引擎顶点** = 源列 `min(size − c, size − 1)`；行序不变（行 0=南）。
++//   源列 0（场景 +x 边界那一列顶点）n 列表示不下，丢弃（包围盒边缘、可玩区之外）。
++//   ⚠️ 布局 1（2026-10-13 前）按 `size−1−c` 离散翻转——corner 口径下整张地形沿场景 −x 偏一格
++//   （span/512），挡土墙前会多出被推出墙面的路基；见 docs/index.md 同名条目。
+ // zMax 来自导出器 sidecar（Landscape 世界包围盒）。
+ 
+-/// 一张图解码后的高度场：行 0=南、列 0=西（行主序 u16，米制换算系数见响应头 zmax）。
++/// `terrain.u16.bin` 的数据布局版本：随 `X-Terrain-Meta` / `terrain.json` 的 `terrainLayout` 下发，
++/// 消费端据此区分本布局与旧包（缺字段 = 布局 1）。
++pub const TERRAIN_LAYOUT: u32 = 2;
++
++/// 提取缓存的相对路径：文件名带布局版本，旧布局缓存不会被当作新数据伺服/打包。
++fn terrain_cache_rel(key: &str) -> String {
++    format!("terrain/{key}.hm.v{TERRAIN_LAYOUT}.u16.bin")
++}
++
++/// 一张图解码后的高度场：行 0=南，列 c = 场景 x `(c/size − 0.5)·span` 处的引擎顶点
++/// （行主序 u16，米制换算系数见响应头 zmax）。
+ pub struct TerrainGrid {
+     pub heights: Vec<u16>,
+ }
+@@ -504,7 +522,8 @@ fn terrain_scale(entry: &MapEntry) -> Option<TerrainScale> {
+     })
+ }
+ 
+-/// 解析标准契约高度图，返回行 0=南、列 0=西 的 u16 网格；size/tile 非预期值（老图）一律拒绝。
++/// 解析标准契约高度图，返回 `TERRAIN_LAYOUT` 布局的 u16 网格（见本节头注释）；
++/// size/tile 非预期值（老图）一律拒绝。
+ fn parse_heightmap(raw: &[u8]) -> Option<TerrainGrid> {
+     if raw.len() < 8 {
+         return None;
+@@ -534,11 +553,12 @@ fn parse_heightmap(raw: &[u8]) -> Option<TerrainGrid> {
+             }
+         }
+     }
+-    // 列翻转：存储列 0=东 → 输出列 0=西（行序不变）
++    // 列镜像（corner 口径）：输出列 c = 场景 x (c/size − 0.5)·span = 游戏 x (0.5 − c/size)·span
++    // 处的引擎顶点 = 源列 size − c（GetHeightClamp 夹到 size − 1）；行序不变
+     let mut out = vec![0u16; size * size];
+     for r in 0..size {
+         for c in 0..size {
+-            out[r * size + c] = grid[r * size + (size - 1 - c)];
++            out[r * size + c] = grid[r * size + (size - c).min(size - 1)];
+         }
+     }
+     Some(TerrainGrid { heights: out })
+@@ -577,7 +597,7 @@ pub fn cache_all_terrain(force: bool) -> (usize, usize, usize, Vec<String>) {
+     let mut cached = 0usize;
+     let mut failed = Vec::new();
+     for entry in &registry {
+-        let cache = crate::data::cache_path(&format!("terrain/{}.hm.u16.bin", entry.key));
++        let cache = crate::data::cache_path(&terrain_cache_rel(&entry.key));
+         if cache.exists() && !force {
+             cached += 1;
+             continue;
+@@ -631,7 +651,7 @@ pub fn cache_all_minimaps(force: bool) -> (usize, usize, usize, Vec<String>) {
+ }
+ 
+ /// GET /api/playback/terrain?name=<...>|?id=<n>：覆盖 → 缓存 → 游戏提取。
+-/// 响应体 = u16 LE 高度场，X-Terrain-Meta = {"size":..,"zmax":..,"zmin":..,"span":..}。
++/// 响应体 = u16 LE 高度场，X-Terrain-Meta = {"size":..,"zmax":..,"zmin":..,"span":..,"terrainLayout":2}。
+ /// 尺度（zmax/zmin/span）必须来自 sidecar 或手动 meta；两者皆缺时拒绝伺服
+ /// （u16 满量程换算无据，错标尺度比 404 更糟）。
+ pub fn terrain_response(map_param: &str) -> Response {
+@@ -669,8 +689,12 @@ fn terrain_serve(
+     span: f32,
+     playable: Option<PlayableBounds>,
+ ) -> Response {
+-    // 1) 手动覆盖：data/maps/<key>.heightmap.u16.bin（512×512 LE，行 0=南）
+-    let override_path = data_path(&format!("maps/{}.heightmap.u16.bin", entry.key));
++    // 1) 手动覆盖：data/maps/<key>.heightmap.v2.u16.bin（512×512 LE，`TERRAIN_LAYOUT` 布局；
++    //    文件名带版本，旧布局覆盖不会被误当新布局伺服）
++    let override_path = data_path(&format!(
++        "maps/{}.heightmap.v{TERRAIN_LAYOUT}.u16.bin",
++        entry.key
++    ));
+     if let Ok(bytes) = std::fs::read(&override_path) {
+         if bytes.len() == 512 * 512 * 2 {
+             return terrain_response_bytes(bytes, zmax, zmin, span, playable);
+@@ -683,7 +707,7 @@ fn terrain_serve(
+     }
+ 
+     // 2) 提取缓存
+-    let cache = crate::data::cache_path(&format!("terrain/{}.hm.u16.bin", entry.key));
++    let cache = crate::data::cache_path(&terrain_cache_rel(&entry.key));
+     if let Ok(bytes) = std::fs::read(&cache) {
+         if bytes.len() == 512 * 512 * 2 {
+             return terrain_response_bytes(bytes, zmax, zmin, span, playable);
+@@ -723,7 +747,9 @@ fn terrain_response_bytes(
+         ),
+         None => String::new(),
+     };
+-    let meta = format!(r#"{{"size":512,"zmax":{zmax:.1},"zmin":{zmin:.1},"span":{span:.1}{pb}}}"#);
++    let meta = format!(
++        r#"{{"size":512,"zmax":{zmax:.1},"zmin":{zmin:.1},"span":{span:.1},"terrainLayout":{TERRAIN_LAYOUT}{pb}}}"#
++    );
+     (
+         [
+             (
+@@ -909,7 +935,7 @@ mod tests {
+         assert!(resolve_map("no_such_map").is_none());
+     }
+ 
+-    /// 标准高度图解析：tile 重排 + 列翻转 + u16→米换算。
++    /// 标准高度图解析：tile 重排 + corner 口径列镜像（`TERRAIN_LAYOUT` 2）。
+     #[test]
+     fn heightmap_parse_untile_and_flip() {
+         let size = 512usize;
+@@ -933,17 +959,47 @@ mod tests {
+             raw[8 + i * 2..8 + i * 2 + 2].copy_from_slice(&v.to_le_bytes());
+         }
+         let t = parse_heightmap(&raw).expect("standard contract must parse");
+-        // 列翻转后：输出 [r,c] = 未翻转网格 [r, size-1-c]，即线性下标 r*size+(size-1-c)
+-        for (r, c) in [(0usize, 0usize), (100, 200), (511, 511), (256, 128)] {
+-            let expect = (r * size + (size - 1 - c)) as u16 % 65535;
++        // corner 口径镜像：输出 [r,c] = 场景 x (c/size−0.5)·span 处的引擎顶点 = 源 [r, min(size−c, size−1)]。
++        // 布局 1 的 `size−1−c` 离散翻转会让整张地形沿场景 −x 偏一格（2026-10-13 "墙前土坡"）。
++        let src_col = |c: usize| (size - c).min(size - 1);
++        for (r, c) in [
++            (0usize, 0usize),
++            (0, 1),
++            (100, 200),
++            (511, 511),
++            (256, 128),
++            (7, 2),
++        ] {
++            let expect = (r * size + src_col(c)) as u16 % 65535;
+             let got = t.heights[r * size + c];
+             assert_eq!(got, expect, "({r},{c}): {got} vs {expect}");
+         }
++        // 边界：列 0 与列 1 同为源列 size−1（GetHeightClamp），末列 = 源列 1（源列 0 n 列表示不下）
++        assert_eq!(t.heights[5 * size], t.heights[5 * size + 1]);
++        assert_eq!(
++            t.heights[5 * size + size - 1],
++            (5 * size + 1) as u16 % 65535
++        );
+         // 非标准契约（老图变体）拒绝
+         raw[4..8].copy_from_slice(&8u32.to_le_bytes());
+         assert!(parse_heightmap(&raw).is_none());
+     }
+ 
++    /// 地形元数据声明布局版本，缓存名随版本隔离（旧布局缓存不会被当新数据伺服/打包）。
++    #[test]
++    fn terrain_meta_declares_layout() {
++        let resp = terrain_response_bytes(vec![0u8; 512 * 512 * 2], 80.0, 0.0, 600.0, None);
++        let meta = resp
++            .headers()
++            .get("x-terrain-meta")
++            .and_then(|v| v.to_str().ok())
++            .expect("X-Terrain-Meta present");
++        let v: serde_json::Value = serde_json::from_str(meta).expect("meta is JSON");
++        assert_eq!(v["terrainLayout"].as_u64(), Some(TERRAIN_LAYOUT as u64));
++        assert_eq!(v["size"].as_u64(), Some(512));
++        assert_eq!(terrain_cache_rel("plant"), "terrain/plant.hm.v2.u16.bin");
++    }
++
+     /// 覆盖/标定文件名白名单（不拼路径）。
+     #[test]
+     fn meta_path_rejects_traversal() {
+-- 
+2.43.0
+
