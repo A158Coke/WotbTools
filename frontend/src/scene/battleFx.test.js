@@ -119,6 +119,23 @@ describe('createBattleFx 粒子批次', () => {
     expect(smoke.visible).toBe(false)
   })
 
+  it('残骸烟是连续浓烟柱：底部有高不透明烟团，相邻烟团上下重叠（亮图远景可读）', () => {
+    for (const tier of ['high', 'ultra']) {
+      for (const phase of [0, 1.3, 2.7, 4.1]) {
+        const fx = createBattleFx(FX_BUDGETS[tier])
+        fx.frame(0, camera(), 720, (emit) => emit.wreck(0, 10, 0, 0.7, Infinity, phase, 3))
+        const puffs = instances(meshNamed(fx, 'battle-fx-smoke')).sort((a, b) => a.y - b.y)
+        expect(puffs.length, `${tier}@${phase}`).toBeGreaterThanOrEqual(FX_BUDGETS[tier].wreckSmoke - 1)
+        expect(Math.max(...puffs.map((p) => p.alpha)), `${tier}@${phase}`).toBeGreaterThanOrEqual(0.8)
+        expect(puffs[0].y - 10, `${tier}@${phase}`).toBeLessThan(3)
+        for (let i = 1; i < puffs.length; i++) {
+          expect(puffs[i].y - puffs[i - 1].y, `${tier}@${phase}#${i}`).toBeLessThan(0.5 * Math.min(puffs[i].h, puffs[i - 1].h))
+        }
+        fx.dispose()
+      }
+    }
+  })
+
   it('容量封顶，命中特效优先于爆炸写入', () => {
     const fx = createBattleFx(FX_BUDGETS.low)
     for (let i = 0; i < 40; i++) fx.spawnBurst(at(i * 20, 0, 0), 0, i)
