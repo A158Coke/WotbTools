@@ -19,3 +19,23 @@ describe('shot viewer mounted-config handoff', () => {
     expect(await shotViewerQuery(base)).not.toHaveProperty('shell'); expect(await shotViewerQuery({ index: 10 })).toBeNull()
   })
 })
+
+describe('shotBallisticLength（射击复现交战距离 = 服务器解码弹道长度）', () => {
+  it('直线弹：ball_a → ball_b 直线距离', async () => {
+    const { shotBallisticLength } = await import('./agentData.js')
+    expect(shotBallisticLength({ ball_a: [0, 0, 0], ball_b: [0, 0, 300] })).toBeCloseTo(300, 6)
+  })
+  it('跳弹链：via 各段逐段计入（折线总长 > 直线）', async () => {
+    const { shotBallisticLength } = await import('./agentData.js')
+    const len = shotBallisticLength({ ball_a: [0, 0, 0], via: [[0, 0, 100], [0, 0, 150]], ball_b: [100, 0, 150] })
+    expect(len).toBeCloseTo(100 + 50 + 100, 6)
+  })
+  it('字段缺失/非法：返回 0（调用方回退相机距离）', async () => {
+    const { shotBallisticLength } = await import('./agentData.js')
+    expect(shotBallisticLength(null)).toBe(0)
+    expect(shotBallisticLength({})).toBe(0)
+    expect(shotBallisticLength({ ball_a: [0, 0, 0] })).toBe(0)
+    expect(shotBallisticLength({ ball_a: [0, 0, 0], ball_b: [0, NaN, 1] })).toBe(0)
+    expect(shotBallisticLength({ ball_a: [0, 0, 0], via: [[1, 2]], ball_b: [0, 0, 1] })).toBe(0)
+  })
+})
