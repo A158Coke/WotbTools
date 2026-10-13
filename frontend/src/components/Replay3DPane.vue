@@ -184,6 +184,8 @@ const transport = usePlaybackTransport({
   play: () => sceneApi?.setPlaying(true),
   pause: () => sceneApi?.setPlaying(false),
   step: (delta) => sceneApi?.seekBy(delta),
+  isAtEnd: () => store.hasData && store.duration > store.startTime && store.time >= store.duration,
+  restart: () => sceneApi?.seekTime(store.startTime),
   isReady: () => store.hasData,
   // 工作台切到别的能力时不再劫持空格 / 方向键（2D 回放面板同时激活会争抢）
   isActive: () => props.active,

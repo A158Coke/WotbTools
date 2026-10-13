@@ -46,11 +46,15 @@ describe('primary navigation', () => {
     expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
   })
 
-  it('keeps Home reachable in the APK for the anonymous homepage tutorial without changing replay startup', () => {
+  it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      expect(primaryNavItems('appassets.androidplatform.net').map(item => item.id)).toContain('home')
+      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'more']
+      expect(primaryNavItems('appassets.androidplatform.net').map(item => item.id)).toEqual(expected)
+      expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('appassets.androidplatform.net')).toBe('replay')
+      expect(defaultView('wotbtools.com')).toBe('replay')
+      expect(viewFromRoute({ path: '/', query: { view: 'home' } })).toBe('replay')
     } finally { vi.unstubAllEnvs() }
   })
 
