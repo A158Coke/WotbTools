@@ -319,14 +319,19 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               highp float contChance = 0.0;
               highp float rcDiag = 0.0;
               if (gapRicochet) {
-                // 首层间隙板跳弹：炮弹不再接触本主装甲（与点击链同结果）——像素渲染跳弹色；
-                // 续飞与主装甲跳弹同机（反射方向按平行板假设用本面法线；起点在本面 ≈ 间隙板
-                // 出射点，相差一个间隔距离，对续飞求交量级可忽略）。
-                penChance = 0.0; ricocheted = true;
-                if (rcMode >= 1) {
-                  contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
-                  if (contCls == 1) { penChance = contChance; ricocheted = false; contPen = true; }   // 续飞击穿→绿
-                  else if (contCls == 2) { ricocheted = false; }                                      // 续飞被挡→红
+                // 首层间隙板跳弹：炮弹不再接触本主装甲（与点击链同结果）。续飞已由**间隙板
+                // 着色器**在其自身几何（真实起点/法线）上算毕并编码进 B——此处只解读，
+                // 不得在本面重算（review 2026-10-13：两块板无平行约束）。
+                //   0.0 = 无续飞结果 → 维持紫；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡 → 红
+                float code = spacedData.b;
+                if (code <= 0.0) {
+                  penChance = 0.0; ricocheted = true;
+                } else if (code >= 1.0) {
+                  penChance = 0.0; ricocheted = false;
+                } else {
+                  penChance = clamp((code - 0.2) / 0.6, 0.0, 1.0);
+                  ricocheted = false;
+                  contPen = true;
                 }
               } else if (!threeCal && mayRicochet) {
                 penChance = 0.0; ricocheted = true;
@@ -402,7 +407,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
         // ===== 穿透热力图：对齐 BlitzKit SpacedArmorScene（Armor/index.tsx useFrame）=====
         // spacedArmorScene 在【单次】gl.render 内按 renderOrder 排序：
         //   0 主装甲 omit(colorWrite:false, depthWrite:true，仅供 RT 遮挡)；
-        //   1-2 间隙甲 additive(R=thickness/penetration, G=首层跳弹标志)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   1-2 间隙甲 additive(R=thickness/penetration, G=首层跳弹标志, B=续飞结果编码——间隙板
+        //   就地续飞在自身几何上算毕，屏幕侧只解读)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
         // 结果写入 RT，primaryArmorScene(renderOrder 1) 读 RT 着色到屏幕。
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
@@ -640,6 +646,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             uniform float caliber;
             uniform float ricochet;
             uniform float normalization;
+            ${RC_GLSL_CONST}
+            ${RC_GLSL_FUNCS}
             void main() {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
@@ -649,10 +657,30 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
               float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
               float finalThick = thickness / cos(max(0.0, angle - norm));
+              // 首层跳弹 → **就地续飞**：反射起点/法线 = 本间隙板自身（vViewPos/vNormal）——
+              // 不得复用其后主装甲的数据（两块板无平行约束，反射方向可完全不同；review
+              // 2026-10-13）。结果黑盒编码进 B，屏幕侧只解读（PBR_FRAG gapRicochet 分支）：
+              //   0.0 = 无续飞结果（维持紫）；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡（红）
+              float bCode = 0.0;
+              if (ricocheted && rcMode >= 1) {
+                highp mat3 vRotT = transpose(mat3(viewMatrix));
+                highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
+                highp vec3 incR = normalize(vViewPos);
+                highp vec3 nVR = normalize(vNormal);
+                highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
+                highp vec3 reflR = normalize(vRotT * rVR);
+                highp float contChance = 0.0;
+                highp float rcDiag = 0.0;
+                int contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
+                if (contCls == 1) bCode = 0.2 + 0.6 * clamp(contChance, 0.0, 1.0);
+                else if (contCls == 2) bCode = 1.0;
+                // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
+                if (rcDiag > 1e30) bCode = -1.0;
+              }
               // R = 厚度/穿深（二层消耗数据：跳弹 = 1.0 全额消耗）；G = 首层跳弹标志——
               // 屏幕侧（PBR_FRAG）据此把「间隙板跳弹」渲染成跳弹色，而不是算成「被挡」红
               gl_FragColor = vec4(ricocheted ? 1.0 : finalThick / penetration,
-                                  ricocheted ? 1.0 : 0.0, 0.0, 1.0);
+                                  ricocheted ? 1.0 : 0.0, bCode, 1.0);
             }
         `;
         function spacedMaterial(thickness, penetration) {
@@ -663,6 +691,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 uniforms: {
                     thickness: { value: thickness }, penetration: { value: penetration || 200 },
                     caliber: { value: 120 }, ricochet: { value: 70 * Math.PI / 180 }, normalization: { value: 0 },
+                    // 与穿透材质**同一对象引用**共享续飞 uniforms（单点更新全体生效）：
+                    // 间隙板着色器就地跑 rcContinue，需要完整网格/模式变量
+                    rcThickMul: rcUniforms.rcThickMul,
+                    rcEnabled: rcUniforms.rcEnabled,
+                    rcMode: rcUniforms.rcMode,
+                    rcWorldTris: rcUniforms.rcWorldTris,
+                    rcTriRows: rcUniforms.rcTriRows,
+                    rcGridCells: rcUniforms.rcGridCells,
+                    rcGridEntries: rcUniforms.rcGridEntries,
+                    rcGridMin: rcUniforms.rcGridMin,
+                    rcCell: rcUniforms.rcCell,
+                    rcGridDimsF: rcUniforms.rcGridDimsF,
+                    rcCellRows: rcUniforms.rcCellRows,
+                    rcEntryRows: rcUniforms.rcEntryRows,
+                    rcEntryTotal: rcUniforms.rcEntryTotal,
                 },
             });
         }
