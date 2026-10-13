@@ -657,6 +657,61 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 panel.appendChild(evidence);
             }
             window.__debugOn = false;
+            // [armor-debug 临时诊断，仅 ?debug=1 暴露；勿提交] 板清单/投影/raycast，
+            // 用于动态装甲判定与热力图一致性的缺陷定位
+            if (QP.get('debug') === '1') {
+                window.__armorDebug = {
+                    model: () => armorModel,
+                    camera: () => camera,
+                    plateList: function() {
+                        const out = [];
+                        const v = new THREE.Vector3();
+                        armorModel.updateMatrixWorld(true);
+                        const cr = renderer.domElement.getBoundingClientRect();
+                        armorModel.traverse(function(n) {
+                            if (!n.isMesh) return;
+                            v.setFromMatrixPosition(n.matrixWorld).project(camera);
+                            out.push({
+                                name: n.name || '?', visible: n.visible,
+                                section: n.userData.armorSection,
+                                thickness: n.userData.armorThickness,
+                                hidden: !!n.userData.armorStateHidden,
+                                key: n.userData.armorStateKey || null,
+                                sx: Math.round((v.x + 1) / 2 * cr.width + cr.left),
+                                sy: Math.round((1 - v.y) / 2 * cr.height + cr.top),
+                            });
+                        });
+                        return out;
+                    },
+                    state: function() {
+                        return { armorStateCurrent: armorStateCurrent, decl: armorStateDecl,
+                                 collisionMode: collisionMode, penetrationMode: penetrationMode };
+                    },
+                    setToggle: function(on) {
+                        const box = document.getElementById('armor-state-toggle');
+                        if (!box) return 'no toggle';
+                        box.checked = !!on;
+                        box.dispatchEvent(new Event('change', { bubbles: true }));
+                        return 'ok';
+                    },
+                    clickPlate: function(name) {
+                        let hit = null;
+                        armorModel.updateMatrixWorld(true);
+                        armorModel.traverse(function(n) {
+                            if (!n.isMesh || n.name !== name || hit) return;
+                            const v = new THREE.Vector3().setFromMatrixPosition(n.matrixWorld).project(camera);
+                            const cr = renderer.domElement.getBoundingClientRect();
+                            const sx = Math.round((v.x + 1) / 2 * cr.width + cr.left);
+                            const sy = Math.round((1 - v.y) / 2 * cr.height + cr.top);
+                            const opts = { pointerId: 9, pointerType: 'mouse', button: 0, clientX: cr.left + sx, clientY: cr.top + sy, bubbles: true, isPrimary: true };
+                            renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', opts));
+                            renderer.domElement.dispatchEvent(new PointerEvent('pointerup', opts));
+                            hit = { name: name, sx: sx, sy: sy };
+                        });
+                        return hit || ('plate not found: ' + name);
+                    },
+                };
+            }
             window.__debugSetVisible = function(on) {
                 window.__debugOn = on;
                 if (window.__worldAnno) window.__worldAnno.visible = on;
@@ -881,7 +936,15 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (!scene) return;
                 scene.traverse(function(node) {
                     const key = node.userData && node.userData._armorStateKey;
-                    if (key) node.visible = activeSet.has(key);
+                    if (!key) return;
+                    node.visible = activeSet.has(key);
+                    const src = node.userData && node.userData._src;
+                    if (src && typeof src.userData.armorThickness === 'number') {
+                        node.userData._baseThickness = src.userData.armorThickness;
+                        if (node.material && node.material.uniforms && node.material.uniforms.thickness) {
+                            node.material.uniforms.thickness.value = src.userData.armorThickness;
+                        }
+                    }
                 });
             };
             apply(primaryArmorScene);
@@ -1985,6 +2048,78 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 scene.add(armorModel);
                 syncTransforms();
                 applyConfig(currentConfigIdx);
+                // [armor-debug 临时诊断，仅 ?debug=1 暴露；勿提交] 动态装甲判定/热力图一致性缺陷定位
+                const __diagQP = new URLSearchParams(location.search);
+                if (__diagQP.get('debug') === '1') {
+                    window.__armorDebug = {
+                        model: () => armorModel,
+                        camera: () => camera,
+                        renderer: () => renderer,
+                        plateList: function() {
+                            const out = [];
+                            const v = new THREE.Vector3();
+                            const cr = renderer.domElement.getBoundingClientRect();
+                            armorModel.updateMatrixWorld(true);
+                            armorModel.traverse(function(n) {
+                                if (!n.isMesh) return;
+                                v.setFromMatrixPosition(n.matrixWorld).project(camera);
+                                out.push({
+                                    name: n.name || '?', visible: n.visible,
+                                    section: n.userData.armorSection,
+                                    thickness: n.userData.armorThickness,
+                                    hidden: !!n.userData.armorStateHidden,
+                                    key: n.userData.armorStateKey || null,
+                                    sx: Math.round((v.x + 1) / 2 * cr.width + cr.left),
+                                    sy: Math.round((1 - v.y) / 2 * cr.height + cr.top),
+                                });
+                            });
+                            return out;
+                        },
+                        clones: function() {
+                            const out = [];
+                            const grab = (scene, tag) => {
+                                if (!scene) return;
+                                scene.traverse(function(n) {
+                                    if (n.isMesh && n.userData._armorStateKey) {
+                                        out.push({ scene: tag, key: n.userData._armorStateKey,
+                                                   visible: n.visible,
+                                                   th: n.userData._baseThickness });
+                                    }
+                                });
+                            };
+                            grab(primaryArmorScene, 'P');
+                            grab(spacedArmorScene, 'S');
+                            return out;
+                        },
+                        state: function() {
+                            return { armorStateCurrent: armorStateCurrent, decl: armorStateDecl,
+                                     collisionMode: collisionMode, penetrationMode: penetrationMode };
+                        },
+                        setToggle: function(on) {
+                            const box = document.getElementById('armor-state-toggle');
+                            if (!box) return 'no toggle';
+                            box.checked = !!on;
+                            box.dispatchEvent(new Event('change', { bubbles: true }));
+                            return 'ok';
+                        },
+                        clickPlate: function(name) {
+                            let hit = null;
+                            armorModel.updateMatrixWorld(true);
+                            armorModel.traverse(function(n) {
+                                if (!n.isMesh || n.name !== name || hit) return;
+                                const v = new THREE.Vector3().setFromMatrixPosition(n.matrixWorld).project(camera);
+                                const cr = renderer.domElement.getBoundingClientRect();
+                                const sx = Math.round((v.x + 1) / 2 * cr.width + cr.left);
+                                const sy = Math.round((1 - v.y) / 2 * cr.height + cr.top);
+                                const opts = { pointerId: 9, pointerType: 'mouse', button: 0, clientX: cr.left + sx, clientY: cr.top + sy, bubbles: true, isPrimary: true };
+                                renderer.domElement.dispatchEvent(new PointerEvent('pointerdown', opts));
+                                renderer.domElement.dispatchEvent(new PointerEvent('pointerup', opts));
+                                hit = { name: name, sx: sx, sy: sy };
+                            });
+                            return hit || ('plate not found: ' + name);
+                        },
+                    };
+                }
                 applyArmorStateToModel();   // 动态装甲：按当前态摘除非激活可控板（初态 = 声明 default）
                 applyUrlOptionsOnce();
                 finish('armor');
