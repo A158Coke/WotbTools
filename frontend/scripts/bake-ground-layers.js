@@ -1,5 +1,6 @@
-// 俯视烘焙的分层地表读取（**页面侧**：由 scripts/bake-ground-overhead.mjs 的 /bake 页面以
-// vite 模块 URL 导入，同 shader-check-page.js；独立成文件是为了让读取策略可被 vitest 直接执行）。
+// 俯视烘焙地面 pass 的输入完整性：分层地表读取 + 地形配对判定（**页面侧**：由
+// scripts/bake-ground-overhead.mjs 的 /bake 页面以 vite 模块 URL 导入，同 shader-check-page.js；
+// 独立成文件是为了让读取/判定策略可被 vitest 直接执行）。
 //
 // fail-closed（PR #621 review blocker）：此前页面内联读取在 ground.layers.json 或任一
 // ground/<layer>.webp 缺失/解码失败时只 console.warn、留 groundLayers=null，随后仍以
@@ -42,4 +43,25 @@ export async function loadBakeGroundLayers({ base, fetchFn, loadTexture }) {
     throw e
   }
   return { layers, texs }
+}
+
+const httpOk = (s) => s >= 200 && s < 300
+
+/**
+ * 地形配对 fail-closed 判定（PR #621 re-review P2）：按 loadTerrain 回报的 HTTP 事实判定，不靠 meta 是否有键猜。
+ *   json 404 + bin 404 → 整图无地形：返回 false（无地面口径，ground=false）
+ *   json 有效 + field 解出 → 返回 true（渲染地面 pass）
+ *   其余一律抛出——尤其 json 缺而 bin 在：loadTerrain 会以缺省 size/layout/zmin/zmax 解码，field 非空也不可信。
+ * @param {{ field: Float32Array|null, metaStatus: number|null, binStatus: number|null }} t
+ * @returns {boolean} 是否有地形
+ */
+export function requireBakeTerrain({ field, metaStatus, binStatus }) {
+  if (httpOk(metaStatus) && field) return true
+  if (metaStatus === 404 && binStatus === 404) return false
+  if (!httpOk(metaStatus) && httpOk(binStatus)) {
+    throw new Error(`terrain 不完整: terrain.json 缺失（HTTP ${metaStatus}）但 terrain.u16.bin 存在——拒绝以缺省 size/layout/zmin/zmax 解码`)
+  }
+  if (!httpOk(metaStatus)) throw new Error(`terrain 不完整: terrain.json 读取失败（HTTP ${metaStatus}）`)
+  if (!httpOk(binStatus)) throw new Error(`terrain 不完整: terrain.json 存在但 terrain.u16.bin 缺失（HTTP ${binStatus}）`)
+  throw new Error('terrain 不完整: terrain.u16.bin 与 terrain.json 不配对（terrainBinSha256 不符或尺寸/布局无法解码）')
 }

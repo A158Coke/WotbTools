@@ -15,9 +15,10 @@
  *   node scripts/bake-ground-overhead.mjs --pack "..." --all
  * 产物：<pack>/overhead/<key>.rgba + .meta.json，
  * 随后 python tools/composite_overhead.py 逐图合成（见该文件）。
- * 地形（terrain.json 在而配对 terrain.u16.bin 缺/坏）或分层地表（ground.layers.json /
- * ground/<layer>.webp）不完整的图 fail-closed：该图输出 {key,error} 且不写产物
- * （meta.ground=true 只表示 .rgba 含完整分层地面 pass；无 terrain.json 的图 ground=false）。
+ * 地形（terrain.json / terrain.u16.bin 缺一或不配对）或分层地表（ground.layers.json /
+ * ground/<layer>.webp）不完整的图 fail-closed：该图输出 {key,error}，且该图上一轮的
+ * <key>.rgba / .meta.json 在本图开烘前即删除（失败 = 无产物，合成器不会读到旧成品）。
+ * meta.ground=true 只表示 .rgba 含完整分层地面 pass；json+bin 均缺的图 ground=false。
  */
 import { createServer } from 'vite'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from 'node:fs'
@@ -25,6 +26,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
+import { bakeKey } from './bake-overhead-key.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -37,6 +39,7 @@ const argOf = (name, def) => {
 const has = (name) => args.includes(`--${name}`)
 const PACK = resolve(argOf('pack', 'D:/Class/Rust/Project/release/asset_pack'))
 const SIZE = Number(argOf('size', 4096))
+const UPLOAD = join(PACK, 'overhead', 'upload.rgba')   // /pixel-upload 落盘点（bakeKey 读同一路径）
 
 const BAKE_HTML = `<!doctype html><html><body><script>
 window.__bakeErr=[];
@@ -71,7 +74,7 @@ import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from
 import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
          setupGroundTextures, buildCorridorRefineMask } from '/src/scene/groundPass.js'
 // 分层地表读取 = fail-closed（缺/坏任一份即抛出；键集仍是 groundPass.groundLayerKeys）
-import { loadBakeGroundLayers } from '/scripts/bake-ground-layers.js'
+import { loadBakeGroundLayers, requireBakeTerrain } from '/scripts/bake-ground-layers.js'
 import { CLIENT_NORMAL_CAMERA_FOV_H } from '/src/scene/terrainMesh.js'
 
 const SIZE = ${SIZE}
@@ -132,22 +135,20 @@ async function load(key, span = 600, mapId = null) {
   // （键集/上传契约共享）。faust 这类夜图此前"底图亮、3D 暗"的根因即本页不渲染该层：
   // 底图来自客户端自带地图图，而 3D 档地面是 cm×lm×tile/mask 的实时合成。
   const P = location.origin + '/pack/map/' + encodeURIComponent(key) + '/'
-  const { field, meta: tmeta } = await loadTerrain({
+  const { field, meta: tmeta, metaStatus, binStatus } = await loadTerrain({
     binUrl: P + 'terrain.u16.bin', metaUrl: P + 'terrain.json', fetchFn: (u) => fetch(u),
   })
-  // fail-closed：terrain.json 在、配对 bin 却缺失/sha 不符/解码失败（loadTerrain 皆回 field=null，
-  // meta 仅在 terrain.json 读到时才有键）⇒ 地形不完整，本图失败——不得静默退化成无地面口径。
-  // 整图无 terrain.json 才走无地面口径（ground=false）。
-  if (!field && Object.keys(tmeta).length) {
-    throw new Error('terrain 不完整: terrain.json 存在但 terrain.u16.bin 缺失/与 terrainBinSha256 不符/无法解码')
-  }
+  // fail-closed：地形配对按 HTTP 事实判定（requireBakeTerrain，见 bake-ground-layers.js）——json+bin
+  // 均 404 才走无地面口径（ground=false）；json 缺而 bin 在（loadTerrain 会按缺省参数解码，field 非空
+  // 也不可信）、json 在而 bin 缺/不配对、读取异常一律本图失败，不得静默退化或以错误标尺出图。
+  requireBakeTerrain({ field, metaStatus, binStatus })
   // 有效跨度：terrain.json 自愈后的 span（运行时 terrainSpanOf 同式）——相机与地面材质、
   // 水面海岸线必须同取这一个值，否则成像范围与 ground.webp 的图幅契约错位
   const effSpan = (tmeta && Number.isFinite(tmeta.span) && tmeta.span > 0) ? tmeta.span : span
   // fail-closed（PR #621 review blocker，见 scripts/bake-ground-layers.js 头部）：有地形 ⇒ 分层
-  // 地表必须完整，缺/坏任一份即抛出 → 本图烘焙失败（bakeKey 不写 .rgba/.meta.json；--all 逐图
+  // 地表必须完整，缺/坏任一份即抛出 → 本图烘焙失败（bakeKey 已删旧产物且不写新产物；--all 逐图
   // catch 照旧继续其它图）。烘焙侧没有回退底图：不得以 mapTexture:null（= 纯白地面）继续出图。
-  // 无地形（无 terrain.json）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
+  // 无地形（json+bin 均 404）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
   let groundLayers = null
   let groundReady = false            // 仅当分层地面网格真正建成后置 true——meta.ground 的唯一来源
   if (field) {
@@ -370,7 +371,7 @@ async function startServer() {
           req.on('data', (c) => { chunks.push(c); total += c.length })
           req.on('end', () => {
             const body = Buffer.concat(chunks, total)
-            writeFileSync(join(PACK, 'overhead', 'upload.rgba'), body)
+            writeFileSync(UPLOAD, body)
             res.end('ok:' + body.length)
           })
         })
@@ -416,24 +417,6 @@ function spanOf(key) {
   }
 }
 
-async function bakeKey(page, key, outDir, span) {
-  const t0 = Date.now()
-  const load = await page.evaluate(`window.__bake.load(${JSON.stringify(key)}, ${span}, ${primaryMapIdOf(key)})`)
-  // 有效跨度 = terrain.json 自愈后的 span（页面加载时确定；相机必须与地面材质/海岸线同值）
-  const spanEff = load && Number.isFinite(load.span) ? load.span : span
-  const stats = await page.evaluate(`window.__bake.render(${spanEff})`)
-  const total = SIZE * SIZE * 4
-  await page.evaluate(`fetch('/pixel-upload', { method: 'POST', body: window.__buf }).then(r => r.text())`)
-  const upload = join(PACK, 'overhead', 'upload.rgba')
-  if (!existsSync(upload)) throw new Error('pixel upload missing')
-  const raw = readFileSync(upload)
-  if (raw.length !== total) throw new Error(`pixel upload ${raw.length}B != expected ${total}B`)
-  writeFileSync(join(outDir, `${key}.rgba`), raw)
-  writeFileSync(join(outDir, `${key}.meta.json`),
-    JSON.stringify({ key, span: spanEff, size: SIZE, ground: !!(load && load.ground), ...stats }))
-  return { key, coverPct: stats.coverPct, mb: +(raw.length / 1048576).toFixed(1), ms: Date.now() - t0 }
-}
-
 const main = async () => {
   const outDir = join(PACK, 'overhead')
   mkdirSync(outDir, { recursive: true })
@@ -468,7 +451,8 @@ const main = async () => {
     console.error('bake origin:', origin, '| maps:', keys.length)
     for (const key of keys) {
       try {
-        console.log(JSON.stringify(await bakeKey(page, key, outDir, spans[key])))
+        console.log(JSON.stringify(await bakeKey({ page, key, outDir, span: spans[key], size: SIZE,
+                                                   mapId: primaryMapIdOf(key), uploadPath: UPLOAD })))
         if (process.env.PICK) {
           const n = await page.evaluate(`window.__bake.renderIdPass(${spans[key]})`)
           const pts = [[60, 60], [SIZE >> 1, 60], [SIZE - 60, 60], [60, SIZE >> 1], [SIZE >> 1, SIZE >> 1], [SIZE - 60, SIZE >> 1], [60, SIZE - 60], [SIZE >> 1, SIZE - 60], [SIZE - 60, SIZE - 60]]

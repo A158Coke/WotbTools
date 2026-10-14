@@ -45,16 +45,22 @@ export function setupGroundTextures(texs, anisotropy) {
  *   · span 自愈——sidecar 曾误写垂直高差（zmax−zmin），按自带 worldBounds 取 max(dx,dy)；
  *   · json/bin 必须同一次发布——bin 以 terrainBinSha256 作缓存键取、解码前核对字节
  *     （PR #615 review P2，见 terrainMesh.js `pairedTerrainBinUrl`）。
- * @returns {{ field: Float32Array|null, meta: object }} 缺数据/校验不过 ⇒ field=null（调用方回落）
+ * @returns {{ field: Float32Array|null, meta: object, metaStatus: number|null, binStatus: number|null }}
+ *   缺数据/校验不过 ⇒ field=null（调用方回落）。metaStatus/binStatus = 两次请求的 HTTP 状态（未发出 = null），
+ *   供需要严格配对的调用方（俯视烘焙 fail-closed）按事实判定——⚠️ terrain.json 缺失时仍会按缺省
+ *   size/layout/zmin/zmax 解码同名 bin，field 非空不代表配对完整。运行时只取 field/meta，行为不变。
  */
 export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => false }) {
   const meta = {};
-  if (!binUrl || !metaUrl) return { field: null, meta };
+  let metaStatus = null, binStatus = null;
+  const out = (field) => ({ field, meta, metaStatus, binStatus });
+  if (!binUrl || !metaUrl) return out(null);
   const m = await fetchFn(metaUrl);
-  if (stale()) return { field: null, meta };
+  metaStatus = m.status;
+  if (stale()) return out(null);
   if (m.ok) {
     Object.assign(meta, await m.json());
-    if (stale()) return { field: null, meta };
+    if (stale()) return out(null);
     const wb = meta.worldBounds;
     if (Array.isArray(wb?.min) && Array.isArray(wb?.max)) {
       const dx = wb.max[0] - wb.min[0];
@@ -63,14 +69,15 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
     }
   }
   const b = await fetchFn(pairedTerrainBinUrl(binUrl, meta));
-  if (stale()) return { field: null, meta };
+  binStatus = b.status;
+  if (stale()) return out(null);
   if (b.ok) {
     const tbuf = await b.arrayBuffer();
-    if (stale()) return { field: null, meta };
-    if (await terrainBinMatchesMeta(tbuf, meta)) return { field: decodeTerrainField(tbuf, meta), meta };
+    if (stale()) return out(null);
+    if (await terrainBinMatchesMeta(tbuf, meta)) return out(decodeTerrainField(tbuf, meta));
     console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退）');
   }
-  return { field: null, meta };
+  return out(null);
 }
 
 /** 地形几何装配（客户端同构自适应细分；算法与 UV 契约在 terrainMesh.js）。几何直接建在场景系。 */

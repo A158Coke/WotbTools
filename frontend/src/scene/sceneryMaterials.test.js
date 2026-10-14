@@ -671,7 +671,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(wSrc).toMatch(/uHmTexel: \{ value: coast && coast\.heightTex && coast\.heightTex\.image && coast\.heightTex\.image\.width > 0\s*\? 1 \/ coast\.heightTex\.image\.width : 0 \},/)
     // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份；
     // 读取在 groundPass.loadTerrain（俯视烘焙同一份）
-    expect(gpSrc).toMatch(/return \{ field: decodeTerrainField\(tbuf, meta\), meta \};/)
+    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\) return out\(decodeTerrainField\(tbuf, meta\)\);/)
     // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
     expect(src).toMatch(/fetchFn: \(u\) => assetProvider\.fetch\(u\),/)
     expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
