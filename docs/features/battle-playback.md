@@ -557,6 +557,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   **保留 `__hullGroup` 但恒归单位**：非底盘节点（hull*/turret*/gun*）收进该组、`chassis_*`
   留在根上（命名不符 → `hullGroup=null`，整台刚体 fail-safe），作为下一步「逐轮贴地 +
   履带分段形变」的挂点；identity 下与拆分前逐像素等价（低模侧同式）。
+  **固定战斗室车辆（歼击车）无 `turret_N` 节点也照常挂载（2026-10-14）**：客户端源模型
+  本就没有炮塔实体（T110E3/ISU-152/T28/SU-85/StuG…，资产包实测 44/735 辆全部如此；
+  导出器 `tools/export_tank_glb.py` 按源场景图忠实导出、不造节点），此前
+  `collectGlbParts` 无条件要求 `turret_N` → 这批车在 3D 回放里确定性退代理盒（用户实测
+  Faust 场两台敌 T110E3 全场盒子）。现按摆位证据放行：`model_origins`（track/turret 枢轴）
+  与炮管组齐备即挂载，`poseGlbRig` 里炮管组直接吃 `mG = mT·Rx(gr)`——绕 `track+turret`
+  枢轴的横转（含 `initial_turret_rotation` 补偿）与绕 `gun_origin` 的俯仰一并写入炮管组，
+  与客户端「TD 的炮塔 = 炮架横转」呈现同构；回转炮塔路径逐值不变。无炮塔**且**无炮管组的
+  模型无受姿部件，仍退代理车（fail-visible，warn 留痕）。
   **客户端结构（逆向，2026-10-10 复核；证据见上游 `docs/tank-suspension-client-re.md`）**：
   `SuspensionSystem` / `SuspensionWheelsSystem` / `SuspensionTrackSystem` 三个系统逐帧解算，
   逐车**数据是现成的**——`Data/3d/Tanks/Parameters/<nation>/<stem>.yaml` 的 `suspension:`
