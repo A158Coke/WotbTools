@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as THREE from 'three'
 import {
-  dropDuplicateGunMasks, neutralizeDefaultMetalness,
+  cloneDetachedTurret, dropDuplicateGunMasks, neutralizeDefaultMetalness,
   poseFromYPR, yprScene, poseLocalBetween,
   terrainPitchRoll, clampHullAttitude, SUSP_TRAVEL_M,
 } from './glbRig.js'
@@ -296,5 +296,32 @@ describe('悬挂准备件（当前无调用方）：地形姿态 / 限幅残差 
     const b = poseFromYPR(0, 0, 0)
     expect(a.angleTo(b)).toBeGreaterThan(0.5)
     expect(yprScene(-0.4, 0.1, -0.1).angleTo(poseFromYPR(-0.4, 0.1, -0.1))).toBeGreaterThan(0.5)
+  })
+})
+
+
+describe('cloneDetachedTurret: original mounted meshes and pivot', () => {
+  it('preserves nested bakes, separates gun pitch, excludes hull and borrows resources', () => {
+    const model = new THREE.Group()
+    const parent = new THREE.Group(); parent.position.set(4, 0, 0); model.add(parent)
+    const material = new THREE.MeshStandardMaterial(), geometry = new THREE.BoxGeometry()
+    const turret = new THREE.Mesh(geometry, material); turret.position.set(1, 2, 3); parent.add(turret)
+    const gun = new THREE.Mesh(geometry, material); gun.position.set(0, 2, 0); turret.add(gun)
+    const hidden = new THREE.Group(); hidden.visible = false
+    hidden.add(new THREE.Mesh(geometry, material)); turret.add(hidden)
+    model.add(new THREE.Mesh(geometry, material))
+    const parts = { turretNode: turret, gunNodes: [gun], tP: [5, 2, 3], gP: [5, 2, 3], itr: null }
+    const head = cloneDetachedTurret(model, parts, Math.PI / 2)
+    expect(head.children).toHaveLength(2) // nested gun once, hidden children stay hidden
+    const centre = new THREE.Vector3().setFromMatrixPosition(head.children[0].matrix)
+    expect(centre.length()).toBeCloseTo(0)
+    const barrel = new THREE.Vector3().setFromMatrixPosition(head.children[1].matrix)
+    expect(barrel.x).toBeCloseTo(0); expect(barrel.y).toBeCloseTo(0); expect(barrel.z).toBeCloseTo(2)
+    for (const mesh of head.children) {
+      expect(mesh.geometry).toBe(geometry); expect(mesh.material).toBe(material)
+      expect(mesh.matrixAutoUpdate).toBe(false)
+    }
+    expect(turret.parent).toBe(parent); expect(gun.parent).toBe(turret)
+    expect(head.quaternion.angleTo(poseFromYPR(0, 0, 0))).toBeCloseTo(0)
   })
 })
