@@ -648,6 +648,10 @@ export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }
       uHeightmap: { value: (coast && coast.heightTex) || map || normalTex || null },
       uHasHeightmap: { value: coast && coast.heightTex ? 1 : 0 },
       uMapSpan: { value: coast && Number.isFinite(coast.mapSpan) ? coast.mapSpan : 600 },
+      // 高度纹理 1 texel 的 UV 宽（1/n）：顶点 j 在 `j/n`（corner 口径），GPU 纹素中心在 `(j+0.5)/n`
+      // ⇒ 采样须加半个纹素，否则岸线高度沿 x/z 各偏半格（与地形网格错位）
+      uHmTexel: { value: coast && coast.heightTex && coast.heightTex.image && coast.heightTex.image.width > 0
+        ? 1 / coast.heightTex.image.width : 0 },
       uNear: { value: coast && Number.isFinite(coast.near) ? coast.near : 0.5 },
       uFar: { value: coast && Number.isFinite(coast.far) ? coast.far : 4000 },
       // 深度缓冲 1 ulp 的 NDC 值（= 2/2^depthBits，由 renderer 上下文实测传入；缺省 24bit）
@@ -687,6 +691,7 @@ export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }
       uniform sampler2D uHeightmap;
       uniform float uHasHeightmap;
       uniform float uMapSpan;
+      uniform float uHmTexel;
       uniform float uNear;
       uniform float uFar;
       uniform float uDepthUlp;
@@ -729,7 +734,7 @@ export function makeWaterMaterial(m, { normalTex, cubeTex, props, coast = null }
         // 于是岸线处既没有"水面 vs 地形"的硬边，也不受深度抢胜的逐像素翻转影响。
         float coastLine = 1.0;
         if (uHasHeightmap > 0.5) {
-          float terrainY = texture2D(uHeightmap, vWorldP.xz / uMapSpan + 0.5).r;
+          float terrainY = texture2D(uHeightmap, vWorldP.xz / uMapSpan + 0.5 + 0.5 * uHmTexel).r;
           vec3 toCam = vWorldP - cameraPosition;
           float zlen = max(length(toCam), 1e-3);
           float dzAlong = (vWorldP.y - terrainY) / max(abs(toCam.y) / zlen, 1e-3);   // 高差 → 沿视线差

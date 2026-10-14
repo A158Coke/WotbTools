@@ -140,6 +140,43 @@ export function groundMapUv(positions, span, cx = 0, cz = 0) {
   return uv;
 }
 
+/** `terrain.json` / `X-Terrain-Meta` 的 `terrainLayout`：当前唯一认可的数据布局。 */
+export const TERRAIN_LAYOUT_ENGINE_VERTEX = 2
+
+/**
+ * 解码 `terrain.u16.bin` → 米制高度场（行主序，索引 = row*n+col）。**输出口径 = 场景系引擎顶点**：
+ * 列 j / 行 i 恰是世界点 `((j/n − 0.5)·span, (i/n − 0.5)·span)` 处的引擎顶点高度——
+ * 引擎 `Heightmap::GetPoint` 与 `tilemask-vp.sl` 都是 corner 口径（顶点 k 在 `k/size`、取 texel k），
+ * 本文件网格（`wx`/`wz`）、`sampleHeight`、拾取诊断与水面岸线纹理都按这一口径读取。
+ *
+ * 布局（上游打包器 `map_assets.rs::parse_heightmap`；场景 x = −游戏 x 的镜像在列上做）：
+ *   · `terrainLayout: 2`：上游按 corner 口径镜像（`out[c] = src[min(size−c, size−1)]`）⇒ 原样使用；
+ *   · 缺省（旧包）：上游曾按 `out[c] = src[size−1−c]` 离散翻转——corner 口径下翻转后第 c 列的真实
+ *     位置是 `((c+1)/n − 0.5)·span`，**整张地形沿场景 −x 偏一格**（span/512，600 m 图 1.17 m；
+ *     2026-10-13 用户"墙前多出土包"——挡土墙低侧朝场景 −x 时路基被推出墙面）。读取边界在此平移
+ *     一列补正：`field[c] = 旧[max(c−1, 0)]`；
+ *   · 其余值：未知布局 ⇒ fail-closed 返回 null（宁可回退 2D，不画错位地形）。
+ * ponytail: 两种布局都丢掉场景 +x 边界那一列顶点（源列 0，n 列表示不下 n+1 个顶点）——该列在
+ *   地图包围盒边缘、可玩区之外；要逐点精确需把文件扩成 (n+1) 列（上游格式变更）。
+ * @returns Float32Array(n*n) | null（尺寸不符 / 未知布局）
+ */
+export function decodeTerrainField(buf, meta = {}) {
+  const n = meta.size || 512;
+  if (!buf || buf.byteLength !== n * n * 2) return null;
+  const layout = meta.terrainLayout ?? 1;
+  if (layout !== 1 && layout !== TERRAIN_LAYOUT_ENGINE_VERTEX) return null;
+  const shift = layout === 1 ? 1 : 0;
+  const u16 = new Uint16Array(buf);
+  const zmin = meta.zmin || 0;
+  const k = ((meta.zmax || 100) - zmin) / 65535;
+  const field = new Float32Array(n * n);
+  for (let r = 0; r < n; r++) {
+    const row = r * n;
+    for (let c = 0; c < n; c++) field[row + c] = u16[row + Math.max(c - shift, 0)] * k + zmin;
+  }
+  return field;
+}
+
 /** 引擎 `Landscape::morphFunc`（Landscape.cpp:1213）：4(1−x)⁵ − 5(1−x)⁴ + 1（x 夹到 [0,1]）。 */
 export function morphFunc(x) {
   const y = 1 - Math.max(0, Math.min(1, x));
@@ -161,7 +198,8 @@ export function subdivMorphOf(heightError, radiusError, heightError0, radiusErro
 /**
  * 构建自适应地形几何（无裂缝）。
  *
- * @param field   Float32Array(n*n)：行 0=南、列 0=西 的高度（米），索引 = row*n+col
+ * @param field   Float32Array(n*n)：`decodeTerrainField` 口径（列 j = 场景 x_j 处的引擎顶点高度，
+ *                行 0=南），索引 = row*n+col
  * @param n       高度图边长（texel 数，如 512；非 8·2^k 的退化值只影响层级嵌套，仍铺满）
  * @param span    世界跨度（米）；顶点世界坐标 = (i/n − 0.5)·span（角点口径，引擎同构）
  * @param cam     { x, y, z } 相机位置（场景系）
