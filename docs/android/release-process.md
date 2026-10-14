@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-13，本仓源码为 **2.3.0 / 2003000**（`android/gradle.properties`）；
+截至 2026-10-13，本仓源码为 **2.3.1 / 2003001**（`android/gradle.properties`）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -211,6 +211,17 @@ Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于�
   强制更新到当时最新版本：2.2.2 是首个携带新 WASM 引擎（Agent v0.4.4：作者车 type=10 接收
   突发时间轴重建）与履带印数据面/运行时口径的版本，旧客户端不再受支持。2.2.2 客户端只收到
   可选更新提示（不强制）。
+- **2002012（2.2.12；2026-10-13 抬升，由 2.2.12 自身携带发布）** —— 所有低于 2.2.12 的客户端
+  强制更新到 2.2.12：该版本的内嵌运行时携带 Agent v0.4.6（动态装甲 `armorsStates` 状态时间轴
+  按 propID 16 解码）与新版穿透热力图管线（含交战距离衰减）。本次发布 latest 即门槛
+  （latestVersionCode = minSupportedVersionCode = 2002012）：已安装 2.2.12 的客户端两个判定
+  条件都不成立，**不显示任何更新提示**（不强制）；此后若 latest 继续升高且门槛仍 ≤ 2002012，
+  2.2.12 客户端才会收到可选更新提示。
+- **2003000（2.3.0；2026-10-13 抬升，由 2.3.0 自身携带发布）** —— 所有低于 2.3.0 的客户端
+  强制更新到 2.3.0（含 2.2.12）：该版本的内嵌运行时携带 3D 战斗特效写实化（弹道曳光/炮口焰/
+  命中烟/击毁爆炸，按画质分档）。本次发布 latest 即门槛（latestVersionCode =
+  minSupportedVersionCode = 2003000）：已安装 2.3.0 的客户端不显示任何更新提示（不强制）；
+  此后若 latest 继续升高且门槛仍 ≤ 2003000，2.3.0 客户端才会收到可选更新提示。
 
 ## Rollout 与验证
 
