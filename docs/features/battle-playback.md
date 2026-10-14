@@ -883,6 +883,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   采样 / 拾取 / 岸线共用这一份）：`terrainLayout: 2` 原样用；**缺省（旧包）平移一列**
   `field[c] = 旧[max(c−1, 0)]`；未知布局 fail-closed 返回 null（回退 2D）⇒ 资产包重导前后都正确、不会
   双重补正。两种布局都丢掉场景 +x 边界那一列顶点（n 列表示不下 n+1 个顶点；在包围盒边缘、可玩区之外）。
+  ⚠️ **配对约束（review P2，2026-10-14）**：上面"重导前后都正确"只在 **json 与 bin 来自同一版本**时成立
+  ——`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两个独立请求，发布切换期可能错配：
+  旧 JSON+新 bin = 对已修正数据再平移一列（plant 新 bin+旧 JSON 实测 250019/262144 高度不同、最大差
+  5.607 m）；新 JSON+缓存旧 bin = 跳过所需补正（缓存窗口最长 1 h）。上游已在 `terrain.json` 写
+  **`terrainBinSha256`**（bin 的逐文件 sha256，与 manifest 同源；2026-10-14 起线上已有），前端后续按该
+  hash 对 bin URL 做缓存破坏即可根除；落地前的过渡约束 = **前端切换晚于 COS 发布 ≥ 1 h bin 缓存窗口**
+  （本次满足：COS 发布早于本 PR 部署，旧 bin 缓存已全部过期）。
   ③顺带修水面岸线高度纹理的半纹素偏移：`DataTexture` 纹素中心在 `(j+0.5)/n`、顶点在 `j/n` ⇒ 采样
   `xz/span + 0.5 + 0.5·uHmTexel`。守卫：`terrainMesh.test.js`（`decodeTerrainField`：两种布局解出同一张
   引擎顶点场、只动列不动行、米制换算、fail-closed）+ `sceneryMaterials.test.js`（解码接线 / 岸线半纹素）；
