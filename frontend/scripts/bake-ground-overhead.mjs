@@ -15,8 +15,9 @@
  *   node scripts/bake-ground-overhead.mjs --pack "..." --all
  * 产物：<pack>/overhead/<key>.rgba + .meta.json，
  * 随后 python tools/composite_overhead.py 逐图合成（见该文件）。
- * 有地形但分层地表（ground.layers.json / ground/<layer>.webp）不完整的图 fail-closed：
- * 该图输出 {key,error} 且不写产物（meta.ground=true 只表示 .rgba 含完整分层地面 pass）。
+ * 地形（terrain.json 在而配对 terrain.u16.bin 缺/坏）或分层地表（ground.layers.json /
+ * ground/<layer>.webp）不完整的图 fail-closed：该图输出 {key,error} 且不写产物
+ * （meta.ground=true 只表示 .rgba 含完整分层地面 pass；无 terrain.json 的图 ground=false）。
  */
 import { createServer } from 'vite'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from 'node:fs'
@@ -134,13 +135,19 @@ async function load(key, span = 600, mapId = null) {
   const { field, meta: tmeta } = await loadTerrain({
     binUrl: P + 'terrain.u16.bin', metaUrl: P + 'terrain.json', fetchFn: (u) => fetch(u),
   })
+  // fail-closed：terrain.json 在、配对 bin 却缺失/sha 不符/解码失败（loadTerrain 皆回 field=null，
+  // meta 仅在 terrain.json 读到时才有键）⇒ 地形不完整，本图失败——不得静默退化成无地面口径。
+  // 整图无 terrain.json 才走无地面口径（ground=false）。
+  if (!field && Object.keys(tmeta).length) {
+    throw new Error('terrain 不完整: terrain.json 存在但 terrain.u16.bin 缺失/与 terrainBinSha256 不符/无法解码')
+  }
   // 有效跨度：terrain.json 自愈后的 span（运行时 terrainSpanOf 同式）——相机与地面材质、
   // 水面海岸线必须同取这一个值，否则成像范围与 ground.webp 的图幅契约错位
   const effSpan = (tmeta && Number.isFinite(tmeta.span) && tmeta.span > 0) ? tmeta.span : span
   // fail-closed（PR #621 review blocker，见 scripts/bake-ground-layers.js 头部）：有地形 ⇒ 分层
   // 地表必须完整，缺/坏任一份即抛出 → 本图烘焙失败（bakeKey 不写 .rgba/.meta.json；--all 逐图
   // catch 照旧继续其它图）。烘焙侧没有回退底图：不得以 mapTexture:null（= 纯白地面）继续出图。
-  // 无地形（field=null）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
+  // 无地形（无 terrain.json）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
   let groundLayers = null
   let groundReady = false            // 仅当分层地面网格真正建成后置 true——meta.ground 的唯一来源
   if (field) {

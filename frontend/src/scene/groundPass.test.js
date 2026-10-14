@@ -138,6 +138,11 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // fail-closed：有地形即强制读取完整分层，读取失败直接冒泡（load reject → bakeKey 不写产物）；
     // 不得再有吞错退化分支
     expect(bakeSrc).toMatch(/if \(field\) \{\s*groundLayers = await loadBakeGroundLayers\(\{/)
+    // 地形同样 fail-closed：terrain.json 读到（meta 有键）而 field=null ⇒ 抛出，且先于分层读取/出图
+    const terrainGuard = /if \(!field && Object\.keys\(tmeta\)\.length\) \{\s*throw new Error\('terrain 不完整: /
+    expect(bakeSrc).toMatch(terrainGuard)
+    expect(bakeSrc.search(terrainGuard)).toBeGreaterThan(bakeSrc.indexOf('await loadTerrain({'))
+    expect(bakeSrc.search(terrainGuard)).toBeLessThan(bakeSrc.indexOf('await loadBakeGroundLayers({'))
     expect(bakeSrc).not.toMatch(/if \(field\) try/)
     expect(bakeSrc).not.toMatch(/分层地表缺失/)
     // 烘焙侧没有回退底图：地面材质不得带 mapTexture（null = 纯白 MeshBasicMaterial），也不得
