@@ -32,7 +32,7 @@ import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
-import { sampleChannel, sampleKeyframes } from './trackInterp.js'
+import { sampleChannel, sampleKeyframes, sampleDetachedPose } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
@@ -48,7 +48,7 @@ import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
+import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
   attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
@@ -2517,6 +2517,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         g.add(ring);
       }
       const v = { def, group: g, turretG, gunPivot, meshHull: hull, hullGroup: hullG };
+      // Capture clean proxy materials before the vehicle receives its wreck shader.
+      v.detachedTurrets = (DATA.detached_turrets || []).filter(track => track.vehicle_eid === def.eid).map(track => {
+        const root = new THREE.Group(); root.userData.eid = def.eid;
+        const proxy = turretG.clone();
+        proxy.position.set(0, 0, 0); proxy.quaternion.identity();
+        // turretG is constructed immediately above as [turret mesh, gunPivot].
+        proxy.children[1].rotation.x = -gunPitchAt(v, track.pose_kf.t[0]);
+        root.add(proxy); root.visible = false; scene.add(root);
+        return { track, root, proxy, proxyVisual: prepareTankDestroyedVisual(proxy), glb: null, glbVisual: null };
+      });
       v.proxyVisual = prepareTankDestroyedVisual(g, { cloneMaterials: false });
       v.labelAnchor = new THREE.Vector3();
       // 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算）
@@ -3429,6 +3439,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             scene.add(v.glb);
             // Clone before shader patching: templates keep shared textures/geometry only.
             // The material module composes the existing tank ambient-light isolation.
+            for (const head of v.detachedTurrets) {
+              head.glb = cloneDetachedTurret(inst, parts, gunPitchAt(v, head.track.pose_kf.t[0]));
+              head.glbVisual = prepareTankDestroyedVisual(head.glb);
+              head.root.add(head.glb);
+            }
             v.glbVisual = prepareTankDestroyedVisual(v.glb);
             applyPose(v);   // late attach while paused must reflect the current replay time
             invalidate();
@@ -3439,6 +3454,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else {
       for (const v of V) {
         if (v.glb) {
+          for (const head of v.detachedTurrets) {
+            head.root.remove(head.glb);
+            disposeTankDestroyedVisual(head.glbVisual);
+            head.glb = null; head.glbVisual = null;
+          }
           scene.remove(v.glb);            // borrowed geometry/textures stay with the template
           disposeTankDestroyedVisual(v.glbVisual);
           v.glbVisual = null;
@@ -3450,6 +3470,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           v.glb = null; v.glbParts = null; v.suspParts = null;
         }
         setLowPoly(v, true);
+        applyDetachedTurrets(v);
       }
     }
   }
@@ -4012,7 +4033,34 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
+  const detachedPose = {};
+  function applyDetachedTurrets(v) {
+    let separated = false;
+    for (const head of v.detachedTurrets) {
+      const known = T >= head.track.pose_kf.t[0];
+      separated ||= known;
+      head.root.visible = known && !classIconsVisible() && sampleDetachedPose(head.track, T, detachedPose);
+      if (head.root.visible) {
+        head.root.position.set(detachedPose.x, detachedPose.y, detachedPose.z);
+        yprScene(detachedPose.yaw, detachedPose.pitch, detachedPose.roll, head.root.quaternion);
+      }
+      head.proxy.visible = !head.glb;
+      if (head.glb) head.glb.visible = true;
+      // Detachment is itself known destruction evidence for this part, even if
+      // canonical vehicle life is still loading. Rewind simply hides the part.
+      const amount = destroyedVisualAmount({ lifeState: 'DESTROYED', destroyedKnownAtSec: head.track.pose_kf.t[0] }, T);
+      applyTankDestroyedVisual(head.proxyVisual, amount);
+      applyTankDestroyedVisual(head.glbVisual, amount);
+    }
+    v.turretG.visible = !separated;
+    if (v.glbParts) {
+      v.glbParts.turretNode.visible = !separated;
+      for (const node of v.glbParts.gunNodes) node.visible = !separated;
+    }
+  }
+
   function applyPose(v) {
+    applyDetachedTurrets(v);
     const life = sceneLifeAt(v, T);
     const dead = life?.lifeState === 'DESTROYED';
     const amount = destroyedVisualAmount(life, T);
@@ -4580,6 +4628,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
     currentMapBases = null;
     for (const v of V) {
+      for (const head of v.detachedTurrets) {
+        scene.remove(head.root);
+        disposeTankDestroyedVisual(head.proxyVisual);
+        disposeTankDestroyedVisual(head.glbVisual);
+      }
       if (v.glb) scene.remove(v.glb);          // only material clones are instance-owned
       disposeTankDestroyedVisual(v.glbVisual);
       v.glbVisual = null;
@@ -4926,6 +4979,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // replaced; projected icon buttons continue selecting the same entity.
       for (const v of V) {
         setLowPoly(v, !v.glb);
+        applyDetachedTurrets(v);
         if (v.glb) v.glb.visible = v.group.visible && !classIconsVisible();
       }
       for (const effect of floatDmgs) effect.sp.visible = showMarkerStatus;
