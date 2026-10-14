@@ -207,13 +207,6 @@ async function load(key, span = 600, mapId = null) {
   // 探针实证：保留后该处恢复为山体（(23,24,18)→(155,131,56)）。
   // 真天空穹已由规则模块的 /sky/ 判据（与运行时天空判据同式）剔除；本页的渲染集合自此
   // 与 3D 运行时逐件一致（水件/穹顶/地形块均保留）——"完全照搬运行时"的最后一处收敛。
-  // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）
-  group = new THREE.Group()
-  group.rotation.order = 'YXZ'
-  group.rotation.set(-Math.PI / 2, Math.PI, 0)
-  // 先挂进场景（与运行时 mapScenery 同序）：走廊掩码按世界矩阵取样 ⇒ 必须在掩码前完成
-  group.add(gltf.scene)
-  scene.add(group)
   // 退化几何剔除（与 3D 运行时同式：撕裂批次不渲染）
   const degenerate = []
   gltf.scene.traverse((o) => {
@@ -238,6 +231,15 @@ async function load(key, span = 600, mapId = null) {
     debug: false,
     onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
   })
+  // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）。必须在材质装配**之后**
+  // 挂载（与运行时 mapScenery 同序）：装配内的水面片收集/水下判定按 GLB 世界包围盒取 z 为高度、
+  // (x,y) 为占地——先挂 qFrame 时结果取决于组世界矩阵是否已更新，更新后高度变成 y，水下件
+  // 与水上件会互换材质（PR #621 review P2）。走廊掩码按场景系世界矩阵取样 ⇒ 挂载在掩码前。
+  group = new THREE.Group()
+  group.rotation.order = 'YXZ'
+  group.rotation.set(-Math.PI / 2, Math.PI, 0)
+  group.add(gltf.scene)
+  scene.add(group)
 
   // ---- 贴地薄构件走廊掩码 + 地面网格（两者都在合批前；掩码=共享实现）----
   // 运行时同款机制（2026-10-14 用户报"轨道被下方地形遮挡"）：粗 LOD 插值面在路堑处会高于

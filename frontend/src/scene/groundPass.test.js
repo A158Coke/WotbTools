@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { makeGroundMaterial } from './groundPass.js'
+import { assembleSceneryMaterials } from './sceneryAssembly.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const strip = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
@@ -125,6 +126,56 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   it('装配实参：真实 groundLayers（贴花不复落 Lambert）+ 水面 waterCoast 同运行时', () => {
     // 烘焙页为 CRLF 行尾：跨行断言一律 \s*（\n\s* 会被 \r 卡住）
     expect(bakeSrc).toMatch(/assembleSceneryMaterials\(gltf, \{\s*strictSurfaces,\s*masks,\s*groundLayers,\s*waterCoast,/)
+  })
+
+  it('材质装配先于 qFrame 挂载（两侧同序；PR #621 review P2：水下判定按 GLB z-up 世界包围盒）', () => {
+    // 源码顺序：运行时 assemble → mapScenery 挂载；烘焙 assemble → group 挂载 → 世界矩阵 → 走廊掩码
+    const rtAsm = src.indexOf('assembleSceneryMaterials(gltf, {')
+    expect(rtAsm).toBeGreaterThan(0)
+    expect(src.indexOf('mapScenery.add(gltf.scene)')).toBeGreaterThan(rtAsm)
+    const bkAsm = bakeSrc.indexOf('assembleSceneryMaterials(gltf, {')
+    const bkMount = bakeSrc.indexOf('group.add(gltf.scene)')
+    expect(bkAsm).toBeGreaterThan(0)
+    expect(bkMount).toBeGreaterThan(bkAsm)
+    expect(bakeSrc.indexOf('scene.add(group)')).toBeGreaterThan(bkAsm)
+    expect(bakeSrc.indexOf('group.updateMatrixWorld(true)')).toBeGreaterThan(bkMount)
+    expect(bakeSrc.indexOf('buildCorridorRefineMask({')).toBeGreaterThan(bakeSrc.indexOf('group.updateMatrixWorld(true)'))
+
+    // 行为：z=10 水面下的 2 m 石块 → 水下不受光（MeshBasicMaterial）；z=10.2 水上薄板 → 常规 Lambert
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const build = () => {
+      const root = new THREE.Group()
+      const waterMat = new THREE.MeshStandardMaterial({ name: 'water' })
+      waterMat.userData.water = true
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), waterMat)
+      water.position.set(0, 0, 10)
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ name: 'stone' }))
+      stone.position.set(0, 0, 8)
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 0.1), new THREE.MeshStandardMaterial({ name: 'plank' }))
+      plank.position.set(0, 0, 10.2)
+      root.add(water, stone, plank)
+      return { gltf: { scene: root }, stone, plank }
+    }
+    const qFrame = () => {
+      const g = new THREE.Group()
+      g.rotation.order = 'YXZ'
+      g.rotation.set(-Math.PI / 2, Math.PI, 0)
+      return g
+    }
+    // 现行顺序（两侧）：装配时 gltf.scene 尚未挂 qFrame
+    const a = build()
+    assembleSceneryMaterials(a.gltf, { strictSurfaces: true, masks })
+    expect(a.stone.material.isMeshBasicMaterial).toBe(true)
+    expect(a.plank.material.isMeshLambertMaterial).toBe(true)
+    // 反例（锁住"顺序承重"）：先挂 qFrame 且组世界矩阵已更新 ⇒ 高度轴变成 y，水上/水下互换
+    const b = build()
+    const g = qFrame()
+    g.add(b.gltf.scene)
+    g.updateMatrixWorld(true)
+    assembleSceneryMaterials(b.gltf, { strictSurfaces: true, masks })
+    expect(b.stone.material.isMeshBasicMaterial).toBeFalsy()
+    expect(b.plank.material.isMeshBasicMaterial).toBe(true)
   })
 
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
