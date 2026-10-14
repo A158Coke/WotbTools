@@ -546,6 +546,36 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   发糊闪烁；地面早就设了）。③ **法线用几何 authored NORMAL**：删掉 `flatShading=true`（它让渲染器改用屏幕
   导数现算面法线，把导出器 v0.4.1 起随导的 authored 法线整条作废）。俯视烘焙页与内核共用同一材质约定，
   已同步；**下次重烘前均衡档底图仍是旧观感**（差异仅限曲面明暗：天空不参与俯视、各向异性在正交俯视下无影响）。
+- **贴地薄构件走廊强制细分（B 方案，2026-10-14 用户裁定）**：贴地薄构件（铁轨基板这类，0.3 m 厚、钢条
+  净空仅 0.15–0.19 m）在远视距会被自适应粗格插值抬过顶面盖住（`PrepareSubdivision` 的判据只约束**相对**
+  误差 ≤ 0.014·d·tanFovY；真图实测 200/300/500 m 机位 rails_002 覆盖 1.8/7.0/72.7%、rails_005 0/0/70.6%），
+  被盖处露出的地形在客户端 colormap 里本身很亮 ⇒ 用户看到"拉远后部分铁轨被白色盖住"。
+  实现：**类判据筛件**（世界 AABB 高 ≤ 2.5 m 且底面贴地形真值、排除 `extras.water` 水面/水下片——统一
+  适用于每个网格，不做逐件统计判定；跨图验证：medvedkovo 的同类件是 lightmap 类，故判据不能绑材质标记）
+  → 按三角形沿边以 ≤1 texel 采足迹 → `terrainMesh.buildRefineMask`（`?debug=1` 下
+  `window.__terrainRefineMask` 报告命中件数与 texel 数）→ `buildAdaptiveTerrain({ refineMask })`：命中补片
+  **强制细分到最细层（1 texel）**，**不改任何高度值**；廊外层级与客户端口径一致，无裂缝口径保证不外扩，
+  掩码命中补片的同胞补片按客户端三条判据在更细层级重新判定。实测代价：forgecity 掩码占全图 1.57% texel、
+  五条轨在 200/300/500 m 的钢条覆盖全部 → **0.0%**（四边形 33.5k→47.1k / 27.5k→42.9k / 19.3k→35.8k）。
+  ⚠️ 这是 2026-10-11「只对齐客户端」之后一次**有意偏离**（与该轮撤销的"让位掩码/脚印细分"不同：这里既不改
+  高度值、也不全局改判据，只让走廊块分辨）；回归锁见 `terrainMesh.test.js`（掩码内必到 1 texel、掩码前被盖/
+  掩码后不被盖、不传掩码时逐字节一致）与 `sceneryMaterials.test.js`（取样先于实例化合批等接线）。
+- **海面材质判定改"语义先于名字" + 地形 LOD 阈值 fov 口径（2026-10-14，NewBay 抬视角"一片白"溯源）**：
+  ① `SkySeaSurface.sc2`（NewBay 的海面，场景里挂在 SkySphere 目录下）的材质就是**水材质**
+  （导出物 `extras.water` + normal/cube 槽；客户端 `WaterPerPixelCubemapAlphablend.material`），
+  此前 `/sky/i` 名字正则把它当天穹 ⇒ 整片海挂 `makeSkyMaterial`（unlit、平面 UV 拉一张贴图、
+  **深度钉远平面**）⇒ 海面永远画不出来、海床（colormap 浅土色）直接露出、远处只剩被拉平的贴图。
+  现按**材质标记先于名字**判：`extras.water` 命中即落水材质分支（源码级守卫随
+  `scene/sceneryMaterials.test.js`）。验证口径：`?debug=1` 下 `window.__waterCoast.materials` 在
+  forgecity 应 ≥ 1（此前恒 0）。
+  ② 地形自适应 LOD 的阈值按引擎 `LandscapeSubdivision::PrepareSubdivision` 口径取**相机配置的水平
+  fov**（`camera->GetFOV()`；宽高比只进投影项 `tanFovY = tanf(fov/2)/aspect`）：此前把「55° 竖直 ×
+  画布 aspect」折算成水平角喂进去 ⇒ 窄画布滑向狙击镜档（zoom 0.9/0.03，阈值最松 +78%）⇒ 同一机位
+  我们的网格比客户端更粗。现恒传客户端正常相机口径（`CLIENT_NORMAL_CAMERA_FOV_H` = 70°；回放自由相机
+  没有狙击镜档）。同批核实：`SubdividePatch` 的 `minSubdivLevel`/`forceMaxSubdiv` 在实例化+morph
+  路径恒 0/false，且 `Decal.material`/`TileMaskAllQualities.material` 无任何深度偏置——客户端对
+  贴地薄板的粗格越顶**没有**补偿机制（依据副本 `tmp_analysis/dava/`，见上游
+  `docs/index.md` 同名条目）。
 - **车体位姿 = 回放记录位姿（2026-10-10 回退定稿；客户端同构）**：整台车（含挂在其下的
   履带/负重轮节点）按记录的 yaw/pitch/roll + y 摆放——低模组走 `group.rotation`（YXZ，
   y=−yaw / x=pitch / z=−roll），GLB 根走 `poseFromYPR(−yaw, pitch, −roll)` 单次合成。

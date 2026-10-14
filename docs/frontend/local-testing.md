@@ -23,7 +23,7 @@ bash scripts/fetch-agent-wasm.sh
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`）。五种回放能力始终可见；个人回放的 3D / shots 与全部 AI 用普通账号登录，无需 `?admin=1`。已验证的官方示例可匿名使用 3D / shots，装甲查看器也匿名可用。
+浏览器打开 `http://localhost:5173/`（可加 `?view=agent-replay` / `agent-shots` / `agent-armor`；**本机验收免登录**按 §4.1 自备登录桩后加 `?localuser=1`）。五种回放能力始终可见；个人回放的 3D / shots 与全部 AI 用普通账号登录，无需 `?admin=1`。已验证的官方示例可匿名使用 3D / shots，装甲查看器也匿名可用。
 
 ## 1. 系统构成（先理解数据从哪来）
 
@@ -33,6 +33,7 @@ npm run dev
 | Agent 引擎 | `common/assets/wasm/<ref>/`（gitignored） | `<ref>` = `deploy/agent/source.json` 的 `.ref`；dev 下由 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件按 `/wasm/<ref>/…` 伺服 |
 | 地图 / 车模 / 坦克数据 / 封面 | **Agent 仓** `release/asset_pack/`（gitignored，约 2.8GB） | 本机静态服务 8123 提供；前端经 `assetProvider` + `VITE_ASSET_BASE_URL` 取 |
 | admin 视图可见性 | dev-gated 旁路（**已入库**） | `?admin=1`（dev 构建把 admin 角色视为已持有），见 §4 |
+| 本机免登录测试页 | **本机自备（不入库）** | 本地测试前按 §4.1 自备 dev-gated 登录桩（`?localuser=1`）；**提交时排除该改动** |
 | 后端 API / 登录 | 生产（或本机 8087 后端） | 按真实 Keycloak realm 角色鉴权，旁路绕不过，见 §5 |
 
 ## 2. 一次性准备
@@ -81,6 +82,7 @@ npm run dev
    | 参数 | 作用 |
    |---|---|
    | `?admin=1` | dev-only 旁路（已入库）：把 `wotbtools-admin` / `HoF-admin` 视为已持有（仅前端可见性；生产构建忽略）。**约定写法**——实际触发条件是 dev 构建下 URL 存在 `admin` 参数，value 当前不参与判定 |
+   | `?localuser=1` | **本机自备**测试参数（**不入库**）：按 §4.1 在本机 checkout 自备 dev-gated 登录桩后生效（"已登录的普通用户"）；不提供真实凭据。**约定写法**——触发条件是 dev 构建下 URL 存在 `localuser` 参数 |
    | `?view=<name>` | 直达视图（如 `agent-armor`、`agent-replay`） |
    | `?assets=<URL>` | 覆盖资产面；**非空值会持久化到 localStorage 并盖住 `.env.local`**；回默认要带一次空 `?assets=` |
    | `?debug` | 场景调试探针（见 §6） |
@@ -105,9 +107,68 @@ npm run dev
   入口因此可见（`isHofAdmin` 含 `isAdmin` 继承）。
 - 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403（见 §5）。
 
+### 4.1 本机免登录测试页（本地测试要求；**本机自备，不入库**）
+
+**要求**：本地前端测试（本仓）**必须给出免登录的测试页形态**——个人回放的 3D / 射击不再卡
+生产 Keycloak 登录（匿名仅对"已验证的官方示例"放行这两个能力，见 §5）。本页的修改**不是
+仓库代码**：测试者在本机 checkout 上自备一个 dev-gated 登录桩，只存在于本机、**随任何
+PR / commit 一律排除**（提交纪律见文末）。
+
+**做法（本机自备）**：在 `frontend/src/composables/useAuth.js` 加一个 dev-gated 登录桩——
+`resolveAuthProvider()` 顶部命中时返回本机桩 provider（替代 Keycloak）：`authenticated = true`、
+角色恰为 `['wotbtools-user']`（普通用户）、`sub` 固定 `local-dev`。URL 带 `?localuser=1`
+即挂载，个人回放的 3D / shots 门禁（`ReplayWorkspace.canUseDemoCapabilities`）随之解锁。
+参考实现（按此在本机重打；Agent 仓另留有本机补丁 `tmp_analysis/wotbtools_localuser_dev_stub.patch`，
+gitignored、不入库）：
+
+```js
+// useAuth.js —— dev 构建 + URL ?localuser 时以本机桩替代 Keycloak（本机自备，不入库）
+const DEV_LOCAL_USER = import.meta.env.DEV
+  && typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('localuser')
+
+function createLocalDevAuthProvider() {
+  const claims = Object.freeze({
+    sub: 'local-dev', preferred_username: 'local-dev', displayName: 'local-dev',
+    realm_access: Object.freeze({ roles: Object.freeze(['wotbtools-user']) }),
+  })
+  return {
+    name: 'local-dev', async init() {},
+    get authenticated() { return true }, get tokenParsed() { return claims },
+    token() { return '' }, login() { return Promise.resolve() }, logout() { return Promise.resolve() },
+    async ensureToken() { return false }, onAuthChanged() { return () => {} },
+  }
+}
+// resolveAuthProvider() 顶部：if (DEV_LOCAL_USER) return createLocalDevAuthProvider()
+```
+
+边界（刻意收紧，与 `?admin=1` 同原则）：
+
+- **不提供任何真实凭据**：桩的 `token()` 恒空、`ensureToken()` 恒 false ⇒ 一切需要真
+  实鉴权的后端调用（AI 复盘 / 上传 / 管理 API）照常 401，fail-closed 不变（§5）。解锁的
+  只是**纯本机**能力（3D / 射击：解析与资产全在本机）。
+- **不做任何权限升级**：角色仅 `wotbtools-user`；两个 admin 角色仍只归 `?admin=1`
+  （`DEV_ADMIN_ROLES`，已入库），`tournament-admin` 只认真实 claims（`tournamentAdminAllowed`）。
+  `?localuser` 与 `?admin` 相互独立，可分别或同时带。
+- 生效条件：`import.meta.env.DEV` 且 URL 存在 `localuser` 参数（实现为 `.has('localuser')`；
+  模块加载时读取，不持久化，每次都要带）；Keycloak 在本态下**完全不初始化**（不发
+  check-sso / 不触任何网络）。
+- 与历史旁路的区别：`?admin=1` 的回归用例（49d4f757 复盘）锁死"URL 参数不得伪造登录态"；
+  本桩是**独立命名、显式用途**的本机测试态（不是给 `admin` 加副作用）。建议随桩附带同规格
+  回归用例（断言"已登录普通用户 + Keycloak 未初始化 + 无凭据 + 无角色升级"四条同时成立），
+  该用例同样不入库。
+
+**提交纪律（硬要求）**：登录桩与其回归用例**不得随任何 PR / commit 提交**。提交前自查：
+
+```bash
+git diff --stat            # useAuth.js / useAuth.test.js 不应出现在待提交清单
+# 或提交前直接还原（补丁在 Agent 仓 tmp_analysis/ 有留存，可随时重打）：
+git checkout -- frontend/src/composables/useAuth.js frontend/src/composables/useAuth.test.js
+```
+
 ## 5. 能力分层：本地能全用什么，什么要真角色
 
-**普通登录用户即可使用**（数据链全在本机，无需 admin role）：3D 回放、射击分析 / 复现。**装甲查看器匿名可用**（Tankopedia 详情入口卡对全员开放，深链不设登录门）。匿名可用数据、2D 与装甲查看器，并可看到全部五个 tab；已验证的官方示例额外匿名放行 3D / 射击，仍受各自连通性门禁约束，普通重选、追加、清空与 Android 导入撤销示例资格。匿名个人回放进入受限能力不会加载实际 pane、对应解析或资产；全部 AI（包括官方示例）仍要求真实登录，示例资格不放行服务端写操作。
+**普通登录用户即可使用**（数据链全在本机，无需 admin role）：3D 回放、射击分析 / 复现。**装甲查看器匿名可用**（Tankopedia 详情入口卡对全员开放，深链不设登录门）。匿名可用数据、2D 与装甲查看器，并可看到全部五个 tab；已验证的官方示例额外匿名放行 3D / 射击，仍受各自连通性门禁约束，普通重选、追加、清空与 Android 导入撤销示例资格。匿名个人回放进入受限能力不会加载实际 pane、对应解析或资产；全部 AI（包括官方示例）仍要求真实登录，示例资格不放行服务端写操作。**本机验收免登录**见 §4.1（本机自备登录桩 + `?localuser=1`，仅 3D / shots 等纯本机能力；该改动不入库）。
 
 **需要真实 realm 角色**（前端旁路只解决可见性，后端按 token 鉴权）：
 
@@ -145,7 +206,7 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 | 3D 回放/射击/装甲查看器"引擎加载失败"，`/wasm/<ref>/…` 404 | `source.json` pin 与 `common/assets/wasm/` 不一致（bump 后没重跑） | `bash scripts/fetch-agent-wasm.sh` |
 | dev 下 `/wasm/*.js?import` 500 | Vite 拦截 publicDir 里的 .js（回归） | 检查 `vite.config.js` 的 `local-dev-public-wasm-as-module` 中间件 |
 | pin 与产物都已更新，浏览器里却仍按**旧 ref** 跑（修复"不生效"） | Vite dev 的 define 表在**服务启动时**固化进 client/env.mjs 与页面全局；F5 只刷新页面不换 ref | 重启 `npm run dev`；可用 `/node_modules/vite/dist/client/env.mjs` 内的 `__AGENT_WASM_COMMIT__` 值核验当前 ref |
-| 个人回放直连 `?view=agent-replay` / `agent-shots` 显示登录提示 | 当前未登录且所选文件不是已验证官方示例 | 普通账号登录，或选择官方示例；`agent-armor` 本身匿名可用，不能靠 `?admin=1` 取得登录态 |
+| 个人回放直连 `?view=agent-replay` / `agent-shots` 显示登录提示 | 当前未登录且所选文件不是已验证官方示例 | 普通账号登录，或选择官方示例；**本机验收免登录：按 §4.1 自备登录桩并加 `?localuser=1`（本机自备改动，不入库；仅解锁纯本机能力）**；`agent-armor` 本身匿名可用，不能靠 `?admin=1` 取得登录态 |
 | admin 页面能打开但数据 401/403 | 后端按真实 token 鉴权 | §5（需要真角色；本地绕不过，也不应绕） |
 
 ## 8. 自动化测试与门禁

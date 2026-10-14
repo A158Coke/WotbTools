@@ -23,13 +23,28 @@ import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, fol
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
 import {
-  buildAdaptiveTerrain, decodeTerrainField, groundMapUv, pairedTerrainBinUrl, terrainBinMatchesMeta,
+  CLIENT_NORMAL_CAMERA_FOV_H,
   terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
-import { applyMaterialTextureAnisotropy, cachedSceneryMat, clearSceneryMatCache, isWaterName, patchSceneryDetail, makeBillboardMaterial, makeBlendByAngleMaterial, makeBlendLayerMaterial, makeDecalMaterial, makeLightmappedMaterial, makeSkyMaterial, makeSpeedtreeStaticMaterial, makeWaterMaterial, SCENERY_LAMBERT_EXPOSURE, sunUniforms } from './sceneryMaterials.js'
+import { applyMaterialTextureAnisotropy, clearSceneryMatCache } from './sceneryMaterials.js'
+// 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
+// 分层地表材质、水面海岸线资源与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
+// 地图图，与 3D 档实时分层渲染在夜图/带 lm 图上差异显著（见该模块头部）
+import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
+         groundLayerKeys, setupGroundTextures, buildCorridorRefineMask } from './groundPass.js'
+// 装配规则 SSOT（2026-10-14 抽层）：水面语义判定与俯视烘焙共用同一份——
+// 此前烘焙自持一份名字启发式、未随本文件的"材质标记权威"修复同步而漂移（见该模块头部）
+import { strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
+// 场景装配 SSOT（extras 贴图解 + 逐节点材质分派；2026-10-14 抽层——本文件与俯视烘焙
+// 共用同一份，用户裁示"直接用它的代码"）：下方引用其 resolve/makeTexResolvers/assemble
+import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from './sceneryAssembly.js'
+// 逐图光照 SSOT（2026-10-14 抽层）：光照应用与俯视烘焙共用同一份——烘焙此前自持固定日光
+// 常量（白 3.0 + 半球 2.4 + ACES 1.15），未随逐图光照落地而同步（见该模块头部）
+import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore,
+         DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from './mapLighting.js'
 import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
@@ -88,10 +103,8 @@ const GRID_DT = 0.1
 // 或几何让步：客户端两条手法都没有——材质层 52/52 无 `DepthBias`/`SlopeScaleDepthBias`（见 docs），
 // 几何层同一份数据同样共面。我们俯瞰时缝上的逐像素抢胜与客户端同源，属**相机差异**而非实现差异；
 // 2026-10-10 按"只保留客户端有实际依据者"撤掉了此前的 `?poff` 与 `?seamfix` 两处人工补偿。
-const DEFAULT_HEMI_SKY = 0xbfd4e8
-const DEFAULT_HEMI_GROUND = 0x2a2f36
-const DEFAULT_HEMI_INTENSITY = 2.4
-const DEFAULT_SUN_INTENSITY = 3.0
+// 兜底灯光常量与逐图光照应用体自 2026-10-14 起在共享模块 mapLighting.js（SSOT，与俯视烘焙
+// 同一份）：DEFAULT_HEMI_* / DEFAULT_SUN_INTENSITY 见文件头导入。
 
 // 资产加载并发上限：全串行（9 张地表贴图 / 逐张 await）白等网络往返；无限并发
 // （14 台坦克 GLB 同时 fetch + 主线程 parse）会把主线程解析排满。取 4。
@@ -242,6 +255,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 概念）与"贴地结构脚印"细分判据均已撤销（2026-10-11 用户裁示：只对齐客户端，不自创补偿）。
   let waterTexDispose = null;   // 水面海岸线用的高度场纹理（会话 teardown 释放）
   let mapScenery = null;                              // 静态场景 GLB（建筑等）
+  // 贴地薄构件走廊掩码（terrainMesh.buildRefineMask 产物；随场景 GLB 一起失效）：
+  // 语义判据 = 材质 extras.decal（客户端 MATERIAL_DECAL，"objects colored with landscape"——
+  // 铁轨基板/压顶/铺装）。这些件只有 ~0.3 m 厚、净空常仅 3–30 cm，远视距会被自适应粗格插值
+  // 抬过顶面盖住（2026-10-14 用户报障"拉远后部分铁轨被白色盖住"：250 m 机位实测 rails_003
+  // 39.7% / rails_002 6.7% 的钢条顶点被盖）。2026-10-11 撤销的"让位掩码/脚印细分"是**改高度值**
+  // 或全局改判据；这里是用户 2026-10-14 重新裁定的 B 方案：**只对走廊块强制细分**——不改任何
+  // 高度值、廊外层级与客户端口径逐字节一致（回归锁见 terrainMesh.test.js）。
+  let terrainRefineMask = null;
   // 可破坏地形（契约 additive：destructible_areas/events + map/destructibles.json）。
   // scenery = { states, appliedPtr, lastT, meshIdx }；Pivot 挂在 gltf.scene 内随
   // mapScenery 一起 dispose（会话生命周期同场景 GLB，无独立 teardown）。
@@ -961,6 +982,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
     if (terrainMesh) { scene.remove(terrainMesh); terrainMesh = null; if (DEBUG) window.__terrain = null; }
     if (mapScenery) { scene.remove(mapScenery); mapScenery = null; }
+    terrainRefineMask = null;   // 走廊掩码属场景 GLB，随它失效
     destruct = null;
     destructPickList = null;
     meshOwner = null;
@@ -1066,48 +1088,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
     } catch (e) { console.warn('逐图 IBL 加载失败（不设环境贴图）:', e); }
     try {
-      // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D
-      const terrainBin = mapStaticUrl('terrain', undefined, resolvedKey);
-      let tmeta = {}; let tbuf = null;
-      if (terrainBin) {
-        const m = await assetProvider.fetch(mapStaticUrl('terrain-meta', undefined, resolvedKey));
-        if (stale()) return;
-        if (m.ok) {
-          tmeta = await m.json();
-          if (stale()) return;
-          // span = 水平世界跨度（服务端 terrain_scale 同式 max(dx,dy)，map_assets.rs）。
-          // 打包器 v0.1.7 sidecar 误写垂直高度差（zmax-zmin，malinovka=60）——按
-          // sidecar 自带的 worldBounds 自愈，否则地形被压成 span×span 小块、
-          // 高度采样坍缩（"地图未完全加载显示"的根因）
-          const wb = tmeta.worldBounds;
-          if (Array.isArray(wb?.min) && Array.isArray(wb?.max)) {
-            const dx = wb.max[0] - wb.min[0];
-            const dy = wb.max[1] - wb.min[1];
-            if (dx > 0 || dy > 0) tmeta.span = Math.max(dx, dy);
-          }
-        }
-        // json/bin 必须同一次发布（布局标记只对配对的 bin 成立，见 terrainMesh.js
-        // `pairedTerrainBinUrl`）：以 terrainBinSha256 作缓存键取 bin，解码前再核对字节
-        const b = await assetProvider.fetch(pairedTerrainBinUrl(terrainBin, tmeta));
-        if (stale()) return;
-        if (b.ok) {
-          tbuf = await b.arrayBuffer();
-          if (stale()) return;
-          const paired = await terrainBinMatchesMeta(tbuf, tmeta);
-          if (stale()) return;
-          if (!paired) {
-            console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退 2D）');
-            tbuf = null;
-          }
-        }
-      }
-      // 米制高度场 = 场景系引擎顶点口径（旧包的列翻转偏一格在此一次性补正，见
-      // terrainMesh.js `decodeTerrainField`）；网格 / sampleHeight / 拾取诊断 / 水面岸线全读这一份
-      if (tbuf) {
-        const field = decodeTerrainField(tbuf, tmeta);
-        if (field) { heightMeta = tmeta; heightField = field; }
-        else console.warn('地形数据尺寸或布局不认识（回退 2D）:', tmeta.size, tmeta.terrainLayout);
-      }
+      // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D。
+      // 读取与解码（span 自愈 / json-bin sha 配对 / 布局补正）在共享模块 groundPass.loadTerrain
+      // ——俯视烘焙同一份；本处只做宿主接线（assetProvider/stale/会话写回）。
+      // 米制高度场 = 场景系引擎顶点口径（见 terrainMesh.js `decodeTerrainField`）；
+      // 网格 / sampleHeight / 拾取诊断 / 水面岸线全读这一份
+      const { field, meta: tmeta } = await loadTerrain({
+        binUrl: mapStaticUrl('terrain', undefined, resolvedKey),
+        metaUrl: mapStaticUrl('terrain-meta', undefined, resolvedKey),
+        fetchFn: (u) => assetProvider.fetch(u),
+        stale,
+      });
+      if (stale()) return;
+      if (field) { heightMeta = tmeta; heightField = field; }
+      else if (tmeta.size !== undefined) console.warn('地形数据尺寸或布局不认识（回退 2D）:', tmeta.size, tmeta.terrainLayout);
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
     if (stale()) return;
     progress.complete('terrain');
@@ -1126,9 +1120,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (mresp.ok) {
         const L = await mresp.json();
         if (stale()) return;
-        const need = L.height_blend
-          ? ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1', 'hmap0', 'hmap1']
-          : ['cm', 'lm', 'tile0', 'tile1', 'mask0', 'mask1'];
+        // 纹理键集与上传契约在共享模块（groundPass：groundLayerKeys / setupGroundTextures）
+        // ——俯视烘焙同一份；本处只做宿主 I/O（assetProvider/进度/stale）
+        const need = groundLayerKeys(L);
         const texs = {};
         // 有限并发（4）：此前逐张 await 白等网络往返（6–8 张串行 = 6–8 个 RTT）。
         // 任一张失败仍整体回退（其余在飞的照常收下，失败分支统一 dispose）。
@@ -1166,14 +1160,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         const ok = loaded.every(Boolean);
         if (ok) {
           const ani = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
-          for (const k of ['tile0', 'tile1', 'hmap0', 'hmap1']) if (texs[k]) {
-            texs[k].wrapS = texs[k].wrapT = THREE.RepeatWrapping;
-            texs[k].anisotropy = ani;
-          }
-          // colormap/mask 也开各向异性：掠射角（坦克视角）下不糊
-          for (const k of ['cm', 'lm', 'mask0', 'mask1']) if (texs[k]) {
-            texs[k].anisotropy = ani;
-          }
+          // tile/hmap Repeat 平铺 + 全部各向异性（colormap/mask 也开：掠射角下不糊）——
+          // 契约实现见 groundPass.setupGroundTextures（两侧同一份）
+          setupGroundTextures(texs, ani);
           groundLayers = { layers: L, texs };
         } else {
           // 半途失效/缺失：已加载的分层纹理就地释放，不留悬挂 GPU 资源
@@ -1223,149 +1212,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 节点标签由导出器随 GLB extras 下发；无映射（旧包/单变体图）为空操作。
         const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
         if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
-        // 动画混合层（烟雾/瀑布/浪）的掩码贴图：导出器写在 material.extras.maskTexture
-        // （glTF **texture 下标**），GLTFLoader 的 texture 依赖是异步的、材质转换遍历是
-        // 同步的 —— 故先按 associations 的材质下标预解析成 Map，遍历时同步取用。
-        // 解析不到（旧包/无掩码）→ 走烘焙口径（掩码已在 alpha 里），行为与改前一致。
-        const maskTexByMatIndex = new Map();
-        const lmTexByMatIndex = new Map();
-        const detailTexByMatIndex = new Map(); // 细节层贴图（extras.detail.texture；B1）
-        const envTexByMatIndex = new Map();   // 环境反射：[遮罩, 立方图]（extras.envMask/envCube）
-        const waterTexByMatIndex = new Map(); // 水面：[法线, 立方图]（extras.water.normal / .cube）
-        try {
-          const jsonMats = (gltf.parser && gltf.parser.json && gltf.parser.json.materials) || [];
-          for (let i = 0; i < jsonMats.length; i++) {
-            const ex = (jsonMats[i] && jsonMats[i].extras) || {};
-            if (ex.maskTexture !== undefined) {
-              maskTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.maskTexture));
-            }
-            if (ex.lightmap !== undefined) {
-              lmTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.lightmap));
-            }
-            if (ex.detail && ex.detail.texture !== undefined) {
-              detailTexByMatIndex.set(i, await gltf.parser.getDependency('texture', ex.detail.texture));
-            }
-            if (ex.water && typeof ex.water === 'object' && ex.water.normal !== undefined) {
-              waterTexByMatIndex.set(i, [
-                await gltf.parser.getDependency('texture', ex.water.normal),
-                await gltf.parser.getDependency('texture', ex.water.cube),
-              ]);
-            }
-            if (ex.envMask !== undefined && ex.envCube !== undefined) {
-              envTexByMatIndex.set(i, [
-                await gltf.parser.getDependency('texture', ex.envMask),
-                await gltf.parser.getDependency('texture', ex.envCube),
-              ]);
-            }
-          }
-        } catch (e) { console.warn('混合层掩码/光照图图集解析失败（回退原口径）:', e); }
-        // 会话失效复查（2026-10-10 review P2）：上面逐个 `getDependency('texture', …)` 都是
-        // await 点——期间用户可能已切到另一场；恢复执行后**任何共享状态写入前**必须重验，
-        // 否则旧场的 GLB/水位表会挂进新场 scene（后面的守卫已经太晚）。
+        // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
+        const sceneryExtras = await resolveSceneryExtras(gltf);
         if (stale()) { disposeObject3D(gltf.scene); return; }
-        const texOf = (m, table) => {
-          const assoc = gltf.parser && gltf.parser.associations && gltf.parser.associations.get(m);
-          const idx = assoc && assoc.materials;
-          return idx === undefined ? null : (table.get(idx) || null);
-        };
-        const maskTexOf = (m) => texOf(m, maskTexByMatIndex);
-        const lmTexOf = (m) => texOf(m, lmTexByMatIndex);
-        const detailTexOf = (m) => texOf(m, detailTexByMatIndex);
-        // 水面判定：新包（asset.extras.surfaceFlags）以**材质级 water 标记**为权威——
-        // 导出器按材质文件 fxName 判定；旧包退回节点名启发式。名字启发式曾把含 "water"
-        // 的**建筑**误判成水面（水塔 bld_er_water_tower_pbr → 退回受光材质 → 整体发白，
-        // 2026-10-09 用户报障），故新包不再用它。
-        const strictSurfaces = !!(gltf.scene.userData && gltf.scene.userData.surfaceFlags);
-        const isWaterNode = (name, mat) => {
-          if (!strictSurfaces) return isWaterName(name);
-          const m0 = Array.isArray(mat) ? mat[0] : mat;
-          return !!(m0 && m0.userData && m0.userData.water);
-        };
-        const envTexOf = (m) => texOf(m, envTexByMatIndex);
-        const waterTexOf = (m) => texOf(m, waterTexByMatIndex);
-        // GLTFLoader 默认 MeshStandardMaterial（PBR）比场景 Lambert 光照吃光得多，
-        // 建筑会渲染成近黑——统一降级为 Lambert 并保留贴图/透明/平直着色。
-        // 几何含 _CORNER 属性的叶卡走 billboard 材质（见 makeBillboardMaterial）
-        const convMat = (m, isCard) => cachedSceneryMat(
-          // alphaTest/transparent 必须进键：GLTFLoader 不暴露 alphaMode，同 name+map
-          // 的 MASK 与 OPAQUE 材质只靠这两项区分，漏掉会串用（先建的赢）
-          // （`m.alphaMode` 当前恒为 undefined，保留仅作将来 GLTFLoader 补上时的保护）
-          // 染色值取原始分量而非 getHexString：后者会把 >1 的 SH(L0) 钳到 ffffff，
-          // 于是"同一张贴图、不同 SH 染色"的材质在键上无法区分（叶卡 uSH 就取它）。
-          [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
-           m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
-           m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
-           !!m.vertexColors,
-           (m.userData && m.userData.occMean) || '',
-           (m.userData && m.userData.blendLayer) || '',
-           (m.userData && m.userData.alphaBlend) || '',
-           // 细节层（B1）：补丁逐材质注入 detail 贴图/平铺倍率——不同 detail 的材质
-           // 若串用缓存会互相采错贴图（同图不同砖纹的实例）
-           (() => {
-             const d = m.userData && m.userData.detail;
-             if (!d) return '';
-             const t = detailTexOf(m);
-             return 'D|' + (t ? t.uuid : '') + '|' + (Array.isArray(d.scale) ? d.scale.join(',') : '');
-           })()].join('|'),
-          () => (isCard ? makeBillboardMaterial(m) : (() => {
-          // ST|（SpeedTree 树/灌木）：客户端 speedtree-materials-fp = albedo × SH，
-          // 无场景光照——用不受光材质（染色值经 baseColorFactor→color 传入）
-          // 客户端 SpeedTree = AlphaTest+AlphaBlend 双通道。但导出材质多为
-          // 【不透明度=1 的伪透明】（transparent 却 opacity 1）：这类走混合通道会进
-          // 透明渲染队列，大量重叠植被面按深度排序不稳定 → 成片闪烁。按不透明度分流：
-          //   不透明度≈1 → 不透明管线 + 裁切（排序无关，消除闪烁且更快）
-          //   真透明      → 混合 + 不写深度（减少互遮挡）
-          const opaqueEnough = (m.opacity ?? 1) >= 0.99;
-          if ((m.name || '').startsWith('ST|')) {
-            // 伽马直通（与叶卡同方程，见 makeSpeedtreeStaticMaterial 注释）；
-            // 不透明/混合分流沿用：不透明度≈1 走裁切（排序无关），真透明不写深度
-            return makeSpeedtreeStaticMaterial(m, opaqueEnough);
-          }
-          // 伪透明（BLEND 但不透明度≈1）一律转不透明 + 裁切，消除透明排序闪烁；
-          // 真透明保持混合但不写深度（避免互遮挡抖动）。
-          // 例外：导出器明确标记的**真混合层**（material.extras.blendLayer，烟雾/瀑布/
-          // 浪这类"动画 + 掩码"效果层）——其 alpha 是掩码烘出的软渐变，转不透明 + 裁切
-          // 0.33 会把它削成硬边卡片（2026-10-09 himmelsdorf 烟囱烟雾报障：掩码单通道值
-          // 一度烘成二值剪影）。旧包无此 extras ⇒ undefined ⇒ 行为与改前一致。
-          const blendLayer = !!(m.userData && m.userData.blendLayer);
-          // 导出器判定的软混合效果片（extras.alphaBlend；如视角淡出片）同样不得被
-          // "伪透明→裁切"启发式削成硬边
-          const softAlpha = !!(m.userData && m.userData.alphaBlend);
-          const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99 && !blendLayer && !softAlpha;
-          const nm = new THREE.MeshLambertMaterial({
-            map: m.map || null,
-            // 曝光修整：这套光照是按坦克 GLB 调的，场景降级到 Lambert 后朝上面过曝
-            // （岩石贴图 87.5/255 却渲染到 137/255、27% 像素近白）。只作用于本函数
-            // 建出的场景材质，代理车/GLB 车模不受影响。
-            color: (m.color ? m.color.clone() : new THREE.Color(0xffffff))
-              .multiplyScalar(SCENERY_LAMBERT_EXPOSURE),
-            transparent: !!m.transparent && !pseudoOpaque,
-            opacity: m.opacity ?? 1,
-            side: THREE.DoubleSide,
-          });
-          // 镂空材质必须继承 GLTFLoader 解析好的 alphaTest。GLTFLoader 不把 glTF 的
-          // alphaMode 挂到材质上——MASK 只体现为 alphaTest（alphaCutoff ?? 0.5），
-          // BLEND 只体现为 transparent。旧判据 `m.alphaMode === 'MASK'` 恒为 false
-          // （该属性不存在），重建材质又只拷了 map/color/opacity/side，于是 MASK 的
-          // 裁切被整个丢掉：铁丝网（wirebarricade）/藤蔓（ivy）/蕨/标牌这类镂空贴图
-          // 按整片方片照绘，背景没被剔除——那些贴图的背景恰是纯黑（实测 ivy 背景区
-          // 亮度 0.0），看上去就是一张实心黑片。
-          if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
-          if (pseudoOpaque) nm.alphaTest = Math.max(nm.alphaTest || 0, 0.33);
-          // 细节层（B1）：没有光照图但客户端开了 MATERIAL_DETAIL 的实例（实测 55 个，
-          // 如 neptune/plant 的墙裙）走不了 makeLightmappedMaterial，只能给 Lambert 打补丁
-          if (m.userData && m.userData.detail) {
-            const dtex = detailTexOf(m);
-            if (dtex) patchSceneryDetail(nm, dtex, m.userData.detail.scale);
-          }
-          if (nm.transparent) nm.depthWrite = false;
-          // 法线：用几何自带的 NORMAL（导出器 v0.4.1 起优先 authored 法线并带
-          // fail-closed 门槛：条数对齐 + 中位模长 1±10%，不合格才现算）。此前这里
-          // 设 flatShading=true 会**丢掉整个 NORMAL 属性**改由屏幕导数现算面法线——
-          // 等于把导出器的 authored 法线工作全部作废，硬边/烘焙法线被抹成同一张
-          // 多面体外观。客户端按 authored 法线着色，故删掉该行。
-          return nm;
-        })()));
+        const strictSurfaces = strictSurfacesOf(gltf.scene);
+        const isWaterNode = (name, mat) => isWaterNodeRule(name, mat, { strictSurfaces });
+        // 材质→贴图解析器（键 = gltf.parser.associations 的材质下标）：装配模块同源的
+        // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
+        const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
+          makeTexResolvers(gltf, sceneryExtras);
         // 退化几何隔离（防护）：旧版导出器把树的三角列表误判为 strip 解析，
         // 产生横跨整个模型的长条三角形（撕裂）并使面数虚高（实测 20–29 面/顶点，
         // 修正后同批树为 7–10）。阈值 15 恰好区分：已重导出的地图保留树，
@@ -1388,21 +1243,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           o.geometry.dispose();   // 每 mesh 独立几何；材质为共享（缓存）不在此释放
         }
         if (DEBUG) window.__degradedSkipped = degradedMeshes.length;
+        // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
+        // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
+        // 见 terrainRefineMask 声明处的方案说明。
+        const sceneryMeshes = [];
         // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
         // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
-        // 跨度取 terrainSpanOf() —— 与地形网格同源同式。
+        // 资源构造在共享模块 groundPass.makeWaterCoast（俯视烘焙同一份）；本处只探测
+        // 深度位深（上下文实测）与相机 near/far，并登记会话 teardown 释放。
         let waterCoast = null;
         if (heightField && heightMeta) {
           try {
             const hn = heightMeta.size || 512;
             if (heightField.length === hn * hn) {
-              const htex = new THREE.DataTexture(heightField, hn, hn, THREE.RedFormat, THREE.FloatType);
-              htex.minFilter = THREE.LinearFilter;
-              htex.magFilter = THREE.LinearFilter;
-              htex.wrapS = THREE.ClampToEdgeWrapping;
-              htex.wrapT = THREE.ClampToEdgeWrapping;
-              htex.colorSpace = THREE.NoColorSpace;      // 数据纹理（C3 口径：不加 sRGB 解码）
-              htex.needsUpdate = true;
               // 深度分辨率（海岸线淡出阈值的量纲）：由**上下文实测**的深度位深推 ulp，
               // near/far 取相机实际值（本渲染器 0.5/4000）——阈值全程无手调常数。
               let depthBits = 24;
@@ -1411,193 +1264,32 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                 const b = glc && glc.getParameter && glc.getParameter(glc.DEPTH_BITS);
                 if (Number.isFinite(b) && b >= 16 && b <= 32) depthBits = b;
               } catch (e) { /* 取不到按 24bit 缺省 */ }
-              waterCoast = {
-                heightTex: htex, mapSpan: terrainSpanOf(),
+              waterCoast = makeWaterCoast({
+                field: heightField, n: hn, span: terrainSpanOf(),
                 near: camera && Number.isFinite(camera.near) ? camera.near : 0.5,
                 far: camera && Number.isFinite(camera.far) ? camera.far : 4000,
-                depthUlp: 2 / Math.pow(2, depthBits),
-              };
-              waterTexDispose = htex;                    // 会话 teardown 释放
+                depthBits,
+              });
+              waterTexDispose = waterCoast.heightTex;    // 会话 teardown 释放
               // 诊断钩子（同一 ?debug 惯例）：确认"水面用的高度场/跨度"真的下发到了水面材质——
               // 用于把"画面没变化"区分为"页面跑的是旧包"与"另因"（控制台可读，不需目视）。
               if (DEBUG) window.__waterCoast = { present: true, span: waterCoast.mapSpan, materials: 0 };
             }
           } catch (e) { console.warn('水面海岸线高度场创建失败（按不淡出继续）:', e); }
         }
-        // "被水面完全盖住"的静态件（下面的 `underWater`）：此处预计算世界变换与各水面片的
-        // 占地面积/标高。GLB 仍是**场景系**（z = 高度，x/y = 地面；前端 group 旋转在后），
-        // 故这里的"高度"取 z、地面取 (x,y)，与导出器的 glb_world_xyz 同一约定。
-        gltf.scene.updateMatrixWorld(true);
-        const waterSurfaces = [];
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.material) return;
-          const ms = Array.isArray(o.material) ? o.material : [o.material];
-          if (!ms.some((m) => m && m.userData && m.userData.water)) return;
-          const bb = new THREE.Box3().setFromObject(o);
-          if (bb.isEmpty()) return;
-          waterSurfaces.push({ h: bb.max.z, x0: bb.min.x, x1: bb.max.x, y0: bb.min.y, y1: bb.max.y });
+        // ---- 逐节点材质分派（SSOT：src/scene/sceneryAssembly.js，与俯视烘焙同一份）----
+        // 内含：水面片收集/underWater 判据 → 天空穹（材质标记先于名字）→ 水/贴花/光照图
+        // （+env+detail）/混合层掩码/水下/convMat → 水面深度修整；onMesh 钩子即走廊掩码取样
+        // （必须在实例化合批前，本函数正处该阶段）。
+        const { animLayerMats: assembledAnimMats } = assembleSceneryMaterials(gltf, {
+          strictSurfaces,
+          masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
+          groundLayers, waterCoast, debug: DEBUG,
+          onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
         });
-        /** 该网格是否整个位于某片水面之下（含 0.5 m 边缘余量、5 cm 高度余量）。 */
-        const underWater = (o) => {
-          if (!waterSurfaces.length || !o.geometry) return false;
-          const bb = new THREE.Box3().setFromObject(o);
-          if (bb.isEmpty()) return false;
-          for (const w of waterSurfaces) {
-            if (bb.min.x >= w.x0 - 0.5 && bb.max.x <= w.x1 + 0.5
-                && bb.min.y >= w.y0 - 0.5 && bb.max.y <= w.y1 + 0.5
-                && bb.max.z <= w.h + 0.05) return true;
-          }
-          return false;
-        };
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh || !o.material) return;
-          // 天空穹（节点名 SkyFlattenSphere/Sky_sphere_*/sky_dome 等）：走 makeSkyMaterial
-          // 的"无限远"路径，不是普通场景几何（网格坐标是方向、深度钉远平面、unlit）。
-          // ⚠️ frustumCulled 必须关：天穹顶点在网格局部空间里只是一个 ~10m 的小球
-          // （实测 himmelsdorf ±9.9 / iceworld ±10），按真实包围球剔锥时镜头一转向
-          // 天就整片消失——客户端由 w=0 的无限远投影天然免疫。
-          if (/sky/i.test(o.name || '')) {
-            o.material = Array.isArray(o.material) ? o.material.map((m) => makeSkyMaterial(m))
-                                                   : makeSkyMaterial(o.material);
-            o.frustumCulled = false;
-            if (DEBUG) window.__skyMeshes = (window.__skyMeshes || 0) + 1;
-            return;
-          }
-          // GLTFLoader 会把自定义属性名转小写：GLB 里的 _CORNER → geometry._corner
-          const isCard = !!o.geometry.attributes._corner;
-          // 动画混合层（烟雾/瀑布/浪，导出器 extras.blendLayer + mascTexture + 网格
-          // TEXCOORD_1）：双采样器复刻"轮廓固定（掩码走 UV1）+ 内部纹理滚动（albedo 走
-          // UV0+位移）"。掩码贴图或 UV1 缺一（旧包）→ 回落 convMat 的烘焙口径
-          //（掩码当时在 alpha 里），行为与改前一致。
-          // 该网格是否整个位于水面之下（客户端只经折射通道看到它们；口径见 assignMat 内注释）
-          const uw = !!o.geometry && underWater(o);
-          const assignMat = (m) => {
-            const ud = (m && m.userData) || {};
-            // 水面（客户端 water-fp.sl 的 **MEDIUM 档** `!REAL_REFLECTION`：双层滚动法线 +
-            // UDN + 菲涅尔 alpha + cubemap×色调，见 makeWaterMaterial 注释）：导出器带数据时
-            // 走专用材质；旧包/无数据（water 仅 bool）落回 convMat + 下面的水面修整分支
-            if (ud.water && typeof ud.water === 'object') {
-              const wt = waterTexOf(m);
-              if (wt) {
-                if (DEBUG && window.__waterCoast) window.__waterCoast.materials++;   // 诊断钩子（见创建处）
-                return makeWaterMaterial(m, { normalTex: wt[0], cubeTex: wt[1], props: ud.water.props || {}, coast: waterCoast });
-              }
-            }
-            // 视角淡出软混合效果片（客户端 AlphaBlend 预设 + BLEND_BY_ANGLE，见
-            // makeBlendByAngleMaterial 注释）：rays.sc2 这类"白 RGB + 图案全在 alpha"的
-            // 光束/光柱片必须软混合——按裁切会把 95% 内容裁掉成硬边白块（2026-10-09 报障）
-            if (ud.blendByAngle) {
-              return makeBlendByAngleMaterial(m, ud.blendByAngle);
-            }
-            // 贴花（客户端 `MATERIAL_DECAL`，见 makeDecalMaterial）：`albedo(UV0) × 地图
-            // colormap(UV1) × 2.0`，**不受光**——落到 Lambert 会比客户端亮一档
-            // （2026-10-10 用户"铁轨贴图看起来太亮"）。前置条件：材质带 `extras.decal`
-            // （导出器判据 `decal_capable`）+ 几何带导出的 UV1 + 地表分层贴图在位。
-            if (ud.decal && groundLayers && o.geometry.attributes.uv1) {
-              const cmTex = groundLayers.texs.cm;
-              if (cmTex) {
-                const GL = groundLayers.layers || {};
-                return makeDecalMaterial(m, cmTex, groundLayers.texs.lm, {
-                  separateLm: !!GL.separate_lm,
-                  lmAdjust: ud.decalLmAdjust || null,
-                  globalTint: !!GL.flatcolor,
-                });
-              }
-            }
-            // 烘焙光照图：静态场景在客户端是**不受光**的（albedo × lightmap(UV1×变换) × 2）。
-            // 前置条件：图集可解析 + 几何带 UV1 + 非水/非天空（水与天空不进实例合批，
-            // 拿不到逐实例 aLm → 会采到图集错误区域，故不接）。
-            // ⚠️ 水面之下的静态件**不接光照图**（`underWater`，2026-10-10 用户"马利诺夫卡水面
-            // 边缘是黑色"）：客户端那片水面是**不透明**的（water-fp.sl 的 REAL_REFLECTION 分支
-            // `outColor.a = 1`）、岸线带里露出的是**折射通道**画面，而 `materials-fp.sl` 的 DRAW
-            // PHASE 里 `albedo × lightmap × 2` 只在 `#if MATERIAL_LIGHTMAP && VIEW_DIFFUSE` 下发生
-            // ——折射通道（ReflectionRefraction pass）不计漫反射光照，所以客户端**看不到**那层
-            // 光照图乘法。马利诺夫卡的 25 片冰面片（env_ma_ice01_*，水面片正下方 1 cm、客户端
-            // ro.flags 含 VISIBLE_REFRACTION）在水下，其光照图格恰是**未烘焙的黑区** ⇒ 我们按主
-            // 通道渲染成黑冰面；不接光照图（回落 Lambert/convMat）即对齐客户端可见结果。
-            // 判据纯几何（整个包围盒落在某片水面占地内且低于其标高），无调参。
-            if (ud.lightmap !== undefined && !isWaterNode(o.name, m) && !/sky/i.test(o.name || '')
-                && !underWater(o)) {
-              const atlas = lmTexOf(m);
-              if (atlas && o.geometry.attributes.uv1) {
-                const et = envTexOf(m);
-                const props = (m.userData && m.userData.env) || {};
-                // 细节层（B1）：与光照图/环境反射可共存（实测 398/453 同时是光照图批次）
-                const dtex = ud.detail ? detailTexOf(m) : null;
-                // ⚠️ 逐 mesh 新建 ShaderMaterial 会让 `groupInstanceBatches`（按 geometry+material
-                // 分组）把本该合批的实例拆成 count=1 的单实例批（2026-10-10 review P2：大地图
-                // draw call / 逐帧遍历随光照图件数线性膨胀）。逐实例的光照图 UV 变换走 `aLm`
-                // 实例属性（见 buildInstancedMesh），与材质无关 ⇒ 按输入指纹缓存共享（同 glTF
-                // 材质的多节点实例拿到**同一份**材质）。
-                return cachedSceneryMat(['LM', m.uuid, atlas.uuid,
-                  et ? [et[0].uuid, et[1].uuid, JSON.stringify(props)].join('|') : '',
-                  dtex ? [dtex.uuid, JSON.stringify(ud.detail.scale || null)].join('|') : ''].join('#'),
-                () => makeLightmappedMaterial(m, atlas,
-                  et ? { maskTex: et[0], cubeTex: et[1], props } : null,
-                  dtex ? { tex: dtex, scale: ud.detail.scale } : null));
-              }
-            }
-            const maskTex = ud.blendLayer ? maskTexOf(m) : null;
-            if (maskTex && o.geometry.attributes.uv1) return makeBlendLayerMaterial(m, maskTex);
-            // 水下静态件（无光照图那批之外的兜底口径，见上 `underWater` 注释）：客户端
-            // 折射通道 `VIEW_DIFFUSE=0` ⇒ `color = albedo`（不乘 2、不受光）——正是
-            // MeshBasicMaterial 的口径（与 convMat 同一条 three 内建通路，色彩管理/雾/
-            // 对数深度行为与既有场景件一致）。放在 convMat 之前、效果层之后。
-            if (uw) {
-              return cachedSceneryMat(['U', m.name || '', m.map ? m.map.uuid : '',
-                                       m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
-                                       !!m.transparent, m.opacity ?? 1, m.alphaTest ?? 0].join('|'),
-                () => {
-                  if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
-                  const nm = new THREE.MeshBasicMaterial({
-                    map: m.map || null,
-                    color: m.color ? m.color.clone() : new THREE.Color(0xffffff),
-                    transparent: !!m.transparent,
-                    opacity: m.opacity ?? 1,
-                    side: THREE.DoubleSide,
-                  });
-                  if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
-                  return nm;
-                });
-            }
-            return convMat(m, isCard);
-          };
-          o.material = Array.isArray(o.material) ? o.material.map(assignMat)
-                                                 : assignMat(o.material);
-          // 水体（海平面等半透明大面）：透明 + depthWrite=true + DoubleSide 会与
-          // 地形/自身共面产生 z-fighting 与透明互遮挡闪烁。实测（erlenberg）：水面为
-          // 恒定高度的水平面，与地形高度差 −6.9~+7.7m、无一采样点接近 0 → 并非与地形
-          // 共面；其几何极简（少数大三角形），depthWrite=false 时大三角形上的深度插值
-          // 精度不足，与 512² 地形逐像素比较会在大面积上帧间交替 → 闪。该面是无厚度
-          // 水平面（双面同深度、不自我遮挡）且为全场唯一透明物 → 让其正常写深度最稳。
-          if (isWaterNode(o.name, o.material)) {
-            const ms = Array.isArray(o.material) ? o.material : [o.material];
-            for (const mm of ms) {
-              if (!mm || !mm.transparent) continue;
-              mm.depthWrite = true;
-              mm.side = THREE.DoubleSide;
-              mm.depthTest = true;
-              mm.needsUpdate = true;
-            }
-            // 不设 renderOrder：交给 THREE 在透明队列内按摄像机距离排序
-            //（此前设 -1 让水面最先绘制，与其余半透明层遮挡关系错乱，接近时抖）
-          }
-          if (isCard) {
-            // 包围球按锚点计算，角点向外超出——扩 2m 防视锥剔除边缘闪没
-            if (o.geometry.boundingSphere) o.geometry.boundingSphere.radius += 2;
-          }
-        });
-        // 动画混合层材质登记：uTime 每帧写回放秒数（暂停即停、seek 后相位确定）。
-        // 掩码贴图与 UV 位移的语义见 makeBlendLayerMaterial。
-        animLayerMats = [];
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh) return;
-          const ms = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
-          for (const mm of ms) {
-            // 任何带 uTime 的材质都按回放时钟驱动（混合层的 uShiftRate、水面的 uShift0/1）
-            if (mm && mm.uniforms && mm.uniforms.uTime) animLayerMats.push(mm);
-          }
-        });
+
+        // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
+        animLayerMats = assembledAnimMats;
         if (DEBUG) window.__animLayerMats = animLayerMats.length;
 
         // 场景 GLB 贴图各向异性：地面（分层地表）早按画质档设了，场景侧此前漏设 ——
@@ -1611,6 +1303,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         mapScenery.rotation.set(-Math.PI / 2, Math.PI, 0);
         mapScenery.add(gltf.scene);
         scene.add(mapScenery);
+
+        // ---- 贴地薄构件走廊掩码（B：走廊强制细分）----
+        // 实现（类判据/足迹取样/掩码生成）在共享模块 groundPass.buildCorridorRefineMask——
+        // 俯视烘焙同一份（2026-10-14 用户报"轨道被下方地形遮挡"：烘焙此前未接入本机制）。
+        // 必须在"实例化合批"之前做（合批会换掉逐节点 Mesh）；掩码只影响细分层级、不改高度值；
+        // GLB 先于/后于地形加载都成立（后到时重建时取用）。
+        if (sceneryMeshes.length && heightField) try {
+          mapScenery.updateMatrixWorld(true);
+          const built = buildCorridorRefineMask({
+            meshes: sceneryMeshes, field: heightField,
+            n: heightMeta?.size || 512, span: heightMeta?.span || 600,
+          });
+          if (built) {
+            terrainRefineMask = built.mask;
+            if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
+            // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）
+            if (terrainMesh && camera && controls) { terrainLodPrev = null; maybeRebuildTerrainLod(); }
+          }
+        } catch (e) { console.warn('走廊掩码构建失败（地形保持客户端口径）:', e); }
 
         // 天穹在材质转换段已换成 makeSkyMaterial 的无限远实现（此前整节点隐藏 →
         // 背景纯色 0x11161d）。草地仍无：导出器不生成草系统网格（GLB 内只有
@@ -1828,30 +1539,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function terrainSpanOf() {
     return mapMetaInfo?.size_m || heightMeta?.span || 600;
   }
-  /** 构建/重建地形几何（客户端同构自适应细分；见 terrainMesh.js）。几何直接建在场景系。 */
+  /** 构建/重建地形几何（客户端同构自适应细分）。实现与 UV 契约在共享模块 groundPass.js
+   *  （buildGroundGeometry，俯视烘焙同一份）；本处只传相机/掩码等宿主参数。 */
   function buildTerrainGeometry() {
     const n = heightMeta?.size || 512;
     const span = terrainSpanOf();
-    const { positions, indices, sizeAt, morphRaw, quads, overBudget } = buildAdaptiveTerrain({
+    // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
+    return buildGroundGeometry({
       field: heightField, n, span,                  // 真值场一份到底（渲染/查询同源，客户端同构）
       cam: camera ? camera.position : { x: 0, y: 320, z: 0 },   // 兜底：原生相机距离量级
       fovY: camera && Number.isFinite(camera.fov) ? (camera.fov * Math.PI) / 180 : 0.8,
       aspect: camera && Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9,
-    });   // 不传 tolScale = 1 = 客户端原口径（该参数仅供单测）
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    // 底图 UV：低档 / 分层材质不可用的回退档把 ground.webp（或最低档 mini.webp）直接摊在地形上
-    // （`MeshBasicMaterial({ map: mapTexture })`）——分层着色的 UV 在片元由世界坐标反推，但回退
-    // 材质吃几何的 `uv` 属性，缺了它整张图退化成单 texel 常量（2026-10-10 review P1）。
-    // 朝向契约与旧 `PlaneGeometry+rotπ` 逐点等价（详见 terrainMesh.js `groundMapUv`）。
-    g.setAttribute('uv', new THREE.BufferAttribute(
-      groundMapUv(positions, span, mapMetaInfo?.x || 0, mapMetaInfo?.z || 0), 2));
-    g.setIndex(new THREE.BufferAttribute(indices, 1));
-    // 拾取诊断用：本次构建的逐 texel 发射间距 / subdivMorph / 规模（pickDebug 的 terrain 行）
-    g.userData.terrainBuild = { sizeAt, morphRaw, quads, overBudget, span };
-    g.computeVertexNormals();
-    g.computeBoundingSphere();
-    return g;
+      // 阈值插值的 fov 按**客户端口径**传：引擎 `GetFOV()` 是相机配置的水平 fov、与画面宽高比无关
+      // （宽高比只进投影项 tanFovY）。回放自由相机 = 客户端正常相机（无狙击镜档）⇒ 恒 normal。
+      // 不传这个的话，窄画布会把「55° 竖直 × aspect」折算成小水平角、阈值滑向狙击镜档（放宽 ~1.8×）。
+      hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
+      // 贴地薄构件走廊（B）：只在这些块强制细分到最细层，廊外层级与客户端口径逐字节一致。
+      refineMask: terrainRefineMask,
+      cx: mapMetaInfo?.x || 0, cz: mapMetaInfo?.z || 0,
+    });
   }
   let terrainLodPrev = null, terrainLodAt = 0;
   /** 相机姿态变化时重建地形几何（见 terrainMesh.js `terrainLodStale`——滞回输入与
@@ -1872,140 +1578,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）
-  // 客户端 Landscape/tilemask-fp.sl 非 PBR 路径的实时合成材质（离线着色器解码
-  // 逐分支核对）：GLOBAL_TINT（globalFlatColor×2 + lightmap 通道 brightness/
-  // contrast/gamma 调整）、SCALED_TILES（每通道各自 tileScale）、HEIGHT_BLEND
-  // （tilemaskWeight×(mask×2−1) + hMap×scale + offset，softness 归一加权）。
-  // UV 在片元由世界坐标反推（colormap 原始空间，分层贴图行序未翻转：
-  // u = 0.5−X/s、v = 0.5−Z/s）；tile/height 用 Repeat 平铺原生分辨率采样，
-  // 清晰度等同客户端。伽马空间直出（客户端着色器同为 sRGB 纹理直采直写）。
-  function groundShaderMaterial(L, texs, size, cx, cz) {
-    return new THREE.ShaderMaterial({
-      defines: {
-        GLOBAL_TINT: !!L.flatcolor,
-        SEPARATE_LM: !!L.separate_lm,
-        SCALED_TILES: !!L.scaled_tiles,
-        HEIGHT_BLEND: !!L.height_blend,
-      },
-      uniforms: {
-        uCM: { value: texs.cm }, uLM: { value: texs.lm },
-        uTile0: { value: texs.tile0 }, uTile1: { value: texs.tile1 },
-        uMask0: { value: texs.mask0 }, uMask1: { value: texs.mask1 },
-        uHMap0: { value: texs.hmap0 || texs.tile0 },
-        uHMap1: { value: texs.hmap1 || texs.tile1 },
-        uSize: { value: size }, uCenter: { value: new THREE.Vector2(cx, cz) },
-        uTiling: { value: new THREE.Vector2(L.tiling[0], L.tiling[1]) },
-        uTileScale: { value: new THREE.Vector4(L.tile_scale[0], L.tile_scale[1],
-                                               L.tile_scale[2], L.tile_scale[3]) },
-        uTC: { value: L.tile_colors.map((c) => new THREE.Vector3(c[0], c[1], c[2])) },
-        uFlatColor: { value: new THREE.Vector3(L.flat_color[0], L.flat_color[1], L.flat_color[2]) },
-        uLmAdjust: { value: new THREE.Vector3(L.lm_adjust[0], L.lm_adjust[1], L.lm_adjust[2]) },
-        uTmWeight: { value: L.tilemask_weight },
-        uHbScale: { value: new THREE.Vector4(L.hb_scale[0], L.hb_scale[1],
-                                             L.hb_scale[2], L.hb_scale[3]) },
-        uHbOffset: { value: new THREE.Vector4(L.hb_offset[0], L.hb_offset[1],
-                                              L.hb_offset[2], L.hb_offset[3]) },
-        uHbSoft: { value: new THREE.Vector4(L.hb_softness[0], L.hb_softness[1],
-                                            L.hb_softness[2], L.hb_softness[3]) },
-      },
-      vertexShader: `
-        // <common> 必须先于 logdepthbuf_vertex：后者调用的 isPerspectiveMatrix 定义
-        // 在 common 里，漏 include 会让整个材质 GLSL 编译失败（地形/叶卡整片消失）
-        #include <common>
-        varying vec2 vXZ;
-        #include <logdepthbuf_pars_vertex>
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vXZ = wp.xz;
-          gl_Position = projectionMatrix * viewMatrix * wp;
-          #include <logdepthbuf_vertex>
-        }`,
-      fragmentShader: `
-        uniform sampler2D uCM;
-        uniform sampler2D uLM;
-        uniform sampler2D uTile0;
-        uniform sampler2D uTile1;
-        uniform sampler2D uMask0;
-        uniform sampler2D uMask1;
-        uniform sampler2D uHMap0;
-        uniform sampler2D uHMap1;
-        uniform float uSize;
-        uniform vec2 uCenter;
-        uniform vec2 uTiling;
-        uniform vec4 uTileScale;
-        uniform vec3 uTC[4];
-        uniform vec3 uFlatColor;
-        uniform vec3 uLmAdjust;
-        uniform float uTmWeight;
-        uniform vec4 uHbScale;
-        uniform vec4 uHbOffset;
-        // ⚠️ 必须是 vec4（与 uHbScale/uHbOffset 及 JS 侧的 Vector4 一致、按通道软度）：
-        // 曾误写成 float ⇒ three 按声明类型上传（值却是 Vector4 ⇒ NaN）⇒ 高度分层混合权重
-        // 全废、地面取错层色（2026-10-10 用户"米德尔堡地面贴图颜色不对"；受影响 = 开
-        // HEIGHT_BLEND 的 9 张图：desert_train/erlenberg/holland/idle/lagoon/plant/pliego/rift/rudniki）。
-        // 着色器门禁抓不到这类滑落：vec4 − float 是合法 GLSL（标量广播）⇒ 编译通过，错在类型口径。
-        uniform vec4 uHbSoft;
-        varying vec2 vXZ;
-        #include <logdepthbuf_pars_fragment>
-
-        void main() {
-          #include <logdepthbuf_fragment>
-          vec2 tc = vec2(0.5 - (vXZ.x - uCenter.x) / uSize,
-                         0.5 - (vXZ.y - uCenter.y) / uSize);
-          vec3 colorAlbedo = texture2D(uCM, tc).rgb;
-          float lmA = texture2D(uLM, tc).r;
-          #ifdef GLOBAL_TINT
-          colorAlbedo *= uFlatColor * 2.0;
-          #ifdef SEPARATE_LM
-          lmA = pow(lmA, uLmAdjust.b);
-          lmA = (lmA - 0.5) * uLmAdjust.g + 0.5;
-          lmA += uLmAdjust.r;
-          #endif
-          #endif
-          #ifdef SEPARATE_LM
-          vec3 shadowColor = colorAlbedo * lmA;
-          #else
-          vec3 shadowColor = colorAlbedo;
-          #endif
-
-          vec4 mask = vec4(texture2D(uMask0, tc).rgb, texture2D(uMask1, tc).r);
-          vec2 tuv = tc * uTiling;
-          #ifdef SCALED_TILES
-          vec4 tileColor = vec4(
-            texture2D(uTile0, tuv * uTileScale.x).r,
-            texture2D(uTile0, tuv * uTileScale.y).g,
-            texture2D(uTile0, tuv * uTileScale.z).b,
-            texture2D(uTile1, tuv * uTileScale.w).r);
-          #else
-          vec4 tileColor = vec4(texture2D(uTile0, tuv).rgb, texture2D(uTile1, tuv).r);
-          #endif
-
-          #ifdef HEIGHT_BLEND
-          #ifdef SCALED_TILES
-          vec4 hMap = vec4(
-            texture2D(uHMap0, tuv * uTileScale.x).r,
-            texture2D(uHMap0, tuv * uTileScale.y).g,
-            texture2D(uHMap0, tuv * uTileScale.z).b,
-            texture2D(uHMap1, tuv * uTileScale.w).r);
-          #else
-          vec4 hMap = vec4(texture2D(uHMap0, tuv).rgb, texture2D(uHMap1, tuv).r);
-          #endif
-          vec4 mask2 = clamp(uTmWeight * (mask * 2.0 - 1.0)
-                             + hMap * uHbScale + uHbOffset, 0.0, 1.0);
-          float mx = max(max(mask2.x, mask2.y), max(mask2.z, mask2.w));
-          vec4 hb = max(mask2 - (vec4(mx) - uHbSoft), vec4(0.001));
-          vec3 detail = (tileColor.r * uTC[0] * hb.x + tileColor.g * uTC[1] * hb.y +
-                         tileColor.b * uTC[2] * hb.z + tileColor.a * uTC[3] * hb.w) /
-                        (hb.x + hb.y + hb.z + hb.w);
-          #else
-          vec3 detail = tileColor.r * mask.r * uTC[0] + tileColor.g * mask.g * uTC[1] +
-                        tileColor.b * mask.b * uTC[2] + tileColor.a * mask.a * uTC[3];
-          #endif
-
-          gl_FragColor = vec4(detail * shadowColor * 2.0, 1.0);
-        }`,
-    });
-  }
+  // 地面材质（客户端 Landscape/tilemask-fp.sl 非 PBR 路径的实时合成：GLOBAL_TINT /
+  // SCALED_TILES / HEIGHT_BLEND 逐分支离线核对）已迁至共享模块 groundPass.js
+  // `groundShaderMaterial`——3D 运行时与俯视烘焙共用同一份。
+  // 依据 mapTexture/heightField 重建地面（2D 平面或 3D 地形二选一）的宿主流程如下。
 
   function rebuildGround() {
     if (mapPlane) { scene.remove(mapPlane); mapPlane = null; }
@@ -2031,17 +1607,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       const geo = buildTerrainGeometry();
       // 分层地表（客户端 tilemask-fp.sl 实时合成，tile 原生分辨率平铺）优先；
       // 缺失时回退整图烘焙贴图（已含烘焙光照，不受光材质避免二次压暗；
-      // toneMapped=false 保持烘焙色彩逐像素对齐客户端）
-      let mat;
-      if (groundLayers) {
-        mat = groundShaderMaterial(groundLayers.layers, groundLayers.texs,
-          size, meta.x || 0, meta.z || 0);
-      } else {
-        mat = new THREE.MeshBasicMaterial({ map: mapTexture });
-        mat.toneMapped = false;
-      }
+      // toneMapped=false 保持烘焙色彩逐像素对齐客户端）。材质选择在共享模块
+      // groundPass.makeGroundMaterial（俯视烘焙同一份）。
       // 几何已直接建在场景系（顶点 = texel 中心的世界坐标）⇒ 不再旋转/平移
-      terrainMesh = new THREE.Mesh(geo, mat);
+      terrainMesh = new THREE.Mesh(geo, makeGroundMaterial({
+        layers: groundLayers && groundLayers.layers, texs: groundLayers && groundLayers.texs,
+        size, cx: meta.x || 0, cz: meta.z || 0, mapTexture,
+      }));
       scene.add(terrainMesh);
       if (DEBUG) window.__terrain = terrainMesh;   // 诊断/测试钩子：地形网格身份（免按几何猜）
     } else if (mapTexture) {
@@ -4550,84 +4122,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 方向语义：客户端给的是**传播**方向（源→地面，场景系）；three 的方向光从 position
   // 射向 target，故 position = −direction。强度按客户端公式直用：客户端
   // `diffuse = lightColor*intensity*NdotL/π`，three 物理光单位（r165+）同式。
+  // 应用体见共享模块 mapLighting.js（SSOT，与俯视烘焙同一份——见该模块头部 2026-10-14 说明）：
+  // 本页只保留本地签名与 envMultiplier 闭包回写（IBL 晚到的加载路径继续读该值）。
   function applyMapLighting(L) {
-    const sun = L && L.sun;
     if (!sunLight || !hemiLight) return;
-    // IBL 倍率（逐图 0.8–4.0）：authored 值先取，太阳块内按 expo 归一（见下）
-    const envAuthored = L && L.ibl && L.ibl['ibl.environmentMultiplier'];
-    let normalized = false;
-    const d = sun && sun.direction_scene;
-    if (Array.isArray(d) && d.length === 3 && d.every(Number.isFinite)) {
-      const n = Math.hypot(d[0], d[1], d[2]) || 1;
-      sunLight.position.set(-d[0] / n, -d[1] / n, -d[2] / n).multiplyScalar(1000);
-      sunLight.target.position.set(0, 0, 0);   // 平行光只方向有意义；距离仅作位置标量
-      sunLight.target.updateMatrixWorld();
-      if (Array.isArray(sun.color) && sun.color.every(Number.isFinite)) {
-        sunLight.color.setRGB(sun.color[0], sun.color[1], sun.color[2]);
-      }
-      if (Number.isFinite(sun.intensity)) sunLight.intensity = sun.intensity;
-      // 亮度归一（2026-10-10 用户裁示"保色相、归亮度"）：客户端那套 intensity（36 图 3–14）
-      // 是配**它的自动曝光**用的；我们的渲染器没有自动曝光（如实记录的缺口），照搬强度会让
-      // 走 three 内建管线的材质（受光场景件 = 河床/铺装等 Lambert 件、坦克）过曝 2–5× ⇒ 米德尔堡
-      // 地面"发白偏橙"（用户报障）。这里按**该图太阳强度**把整图曝光归一到已调好的基准
-      // （DEFAULT_SUN_INTENSITY，与兜底灯同档）——等价于用固定曝光模拟客户端的自动曝光。
-      //
-      // ⚠️ 归一必须覆盖**全部三个光照通道**（2026-10-11 补全，mountain 报障"坦克非常暗、
-      // 反射不对"）：exposure 在输出端乘一切内建材质，只把太阳项除回来（sunLight.intensity
-      // 保持 authored 14）的话，环境两项（hemi 环境光 + scene.environment 反射）被白白压暗
-      // —— mountain（intensity 14 ⇒ expo 0.214）实测净光照 太阳 3.0 / hemi 0.51 / IBL 0.28，
-      // vs 基线图 3.0 / 0.9 / 0.49：PBR 坦克的反射/环境占大头 ⇒ 整车暗 2~4.7×。修法 =
-      // hemi 与 IBL 基准同样除以 expo（即强度 ×authored 太阳/3.0），三通道在输出端净值
-      // 与基线图逐项相同；基线图（太阳≈3，expo≈1）逐像素不变。
-      if (Number.isFinite(sun.intensity) && sun.intensity > 0) {
-        const expo = THREE.MathUtils.clamp(DEFAULT_SUN_INTENSITY / sun.intensity, 0.05, 4.0);
-        renderer.toneMappingExposure = expo;
-        hemiLight.intensity = DEFAULT_HEMI_INTENSITY / expo;
-        envMultiplier = (Number.isFinite(envAuthored) ? envAuthored : 1) / expo;
-        if (scene) scene.environmentIntensity = envMultiplier;   // env 贴图若已挂，即时生效
-        normalized = true;
-        if (DEBUG) window.__mapExposure = expo;
-      }
-      // 环境反射的高光项要 lightColor0（= color × intensity）与传播方向：写入共享 uniform
-      sunUniforms.uSunDirScene.value.set(d[0] / n, d[1] / n, d[2] / n);
-      if (Array.isArray(sun.color) && Number.isFinite(sun.intensity)) {
-        sunUniforms.uSunColor.value.set(sun.color[0] * sun.intensity,
-                                        sun.color[1] * sun.intensity,
-                                        sun.color[2] * sun.intensity);
-      }
-      if (Array.isArray(sun.ambient) && sun.ambient.every(Number.isFinite)) {
-        hemiLight.color.setRGB(sun.ambient[0], sun.ambient[1], sun.ambient[2]);
-      }
-      if (DEBUG) window.__mapLighting = { direction: d.slice(), color: sun.color, intensity: sun.intensity, ambient: sun.ambient };
-    }
-    // IBL 倍率：未走太阳归一（该图没有可用的太阳方向块）——authored 值原样生效
-    // （expo=1 的基线口径，与 resetMapLighting 一致）。**不可无条件覆盖**：
-    // 太阳块已把三通道一起归一，这里再赋 authored 会把 IBL 打回未归一值
-    // （首版实测：hemi 6.4 / exposure 0.375 归一生效、envIntensity 却是 authored 1.3）。
-    if (!normalized) envMultiplier = Number.isFinite(envAuthored) ? envAuthored : 1;
+    envMultiplier = applyMapLightingCore({ renderer, scene, sunLight, hemiLight, lighting: L, debug: DEBUG }).envMultiplier;
   }
+  // 复位体见共享模块（含共享太阳 uniform 与曝光复位）；envMultiplier 闭包回写。
   function resetMapLighting() {
-    if (hemiLight) {
-      hemiLight.color.setHex(DEFAULT_HEMI_SKY);
-      hemiLight.groundColor.setHex(DEFAULT_HEMI_GROUND);
-      hemiLight.intensity = DEFAULT_HEMI_INTENSITY;
-    }
-    if (sunLight) {
-      sunLight.color.setHex(0xffffff);
-      sunLight.intensity = DEFAULT_SUN_INTENSITY;
-      sunLight.position.set(120, 260, 80);
-    }
+    resetMapLightingCore({ renderer, scene, sunLight, hemiLight, debug: DEBUG });
     envMultiplier = 1;
-    if (renderer) renderer.toneMappingExposure = 1.0;
-    sunUniforms.uSunDirScene.value.set(0, -1, 0);
-    sunUniforms.uSunColor.value.set(1, 1, 1);
-    if (DEBUG) delete window.__mapLighting;
   }
-
-  // 会话拆除：车辆/标签/GLB 克隆/地图与地表/特效/GLB 模板缓存全部移出场景并
-  // dispose 会话拥有的 GPU 资源；异步续体经 sessionGen 递增整体失效。
-  // 调用时序：loadData 拿到新数据且代数有效后、startPlayback 之前（load A → dispose
-  // A → load B）；destroy 亦走此路径（route/component destroy → dispose currentSession）。
   function teardownSession() {
     sessionGen++;
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）

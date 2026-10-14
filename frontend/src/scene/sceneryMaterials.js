@@ -512,8 +512,9 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
 //     "objects colored with landscape" 即此；
 //   · `decalTextureFetch = tex2D(decal, varTexCoord1)`；GLOBAL_TINT 时按
 //     `materialLightmapAdjustment` 做 `pow(gamma) → (x−0.5)·contrast+0.5 → +brightness`；
-//   · `LANDSCAPE_SEPARATE_LIGHTMAP_CHANNEL`（= 地表 `separate_lm`）⇒ `shadowColor *= .a`
-//     （colormap 的 alpha 通道；本包把它拆成 `ground/lm.webp` 的 R 通道）；
+//   · `LANDSCAPE_SEPARATE_LIGHTMAP_CHANNEL`（**逐实例 define**，导出器随
+//     `extras.decalSeparateLm` 下发布尔）⇒ `shadowColor *= .a`（decal 槽图 alpha；
+//     地表色图类在本包 = `ground/lm.webp` 的 R 通道）；
 //   · DRAW PHASE `color = albedo(UV0) × shadowColor × 2.0` —— **全程无光照项 ⇒ 不受光**。
 // 若落到受光材质（Lambert）会比客户端亮一档（2026-10-10 用户"铁轨贴图看起来太亮"报障：
 // forgecity `env_fs_rails_00X` / `env_fs_border_*`，fxName = `Decal.material`）。

@@ -57,15 +57,64 @@ export const SUBDIVISION_METRICS = Object.freeze({
 /** 节点数保护上限（异常 fov/距离下不炸内存；命中即停止细分、按当前层出几何，**不留空洞**）。 */
 export const MAX_QUADS = 400000
 
+/** 客户端"正常相机"（TPS / 回放自由相机）的**水平** fov = 引擎 `SubdivisionMetrics::normalFov`。
+ *
+ *  引擎 `PrepareSubdivision`（`LandscapeSubdivision.cpp`）用 `camera->GetFOV()` 直接做阈值插值
+ *  ——引擎口径下 `GetFOV()` 是**水平** fov（`tanFovY = tanf(fov/2)/aspect ≡ tan(vfov/2)` 的
+ *  推导只在该口径下自洽），而且它取自相机配置：**宽高比只进投影项 tanFovY，不影响 fovLerp**。
+ *  zoom 端（6.5°）是狙击镜档；回放自由相机没有该模式 ⇒ 本渲染器恒按 normal 档求阈值。
+ *  ⚠️ 若将来加真正的变焦/狙击相机，必须把该相机自己的**水平** fov 传进来。 */
+export const CLIENT_NORMAL_CAMERA_FOV_H = 70
+
+/** 贴地薄构件走廊的足迹采样点 → 逐 texel 细分掩码（B 方案「走廊强制细分」的输入）。
+ *
+ *  为什么需要：贴地薄构件（客户端 `MATERIAL_DECAL`，"objects colored with landscape"——
+ *  铁轨基板/压顶/铺装这类，导出物带 `extras.decal`）只有 0.3 m 上下厚度、净空常仅 3–30 cm，
+ *  而自适应网格在远处跨它们插值 ⇒ 插值面抬到构件顶面之上就把它盖住（2026-10-14 用户报障
+ *  "拉远后铁轨被白色盖住"：250 m 机位实测 rails_003 39.7% / rails_002 6.7% 的钢条顶点被盖）。
+ *  **判据是语义的**：材质 `extras.decal` 命中即整件标记（不按亮度/占比做统计判定）；掩码只用于
+ *  *强制细分*，不改任何高度值。
+ *
+ *  @param pointsXZ 足迹点列 `[x0, z0, x1, z1, …]`（**场景系**世界坐标；调用方按 ≤1 texel 间距
+ *                  取样构件的外缘与内部，自带轮廓覆盖）
+ *  @param n        高度场边长（texel）
+ *  @param span     地形世界跨度（米）
+ *  @param marginTexels 足迹外扩（texel；补片边界按"最粗相邻层"缝合，留 1–2 texel 让边界也落在细侧）
+ *  @returns `Uint8Array(n*n)`：1 = 该 texel 属于走廊（其所在补片将被强制细分到最细层）。 */
+export function buildRefineMask(pointsXZ, n, span, marginTexels = 2) {
+  const mask = new Uint8Array(n * n)
+  const m = Math.max(0, Math.floor(marginTexels))
+  for (let k = 0; k + 1 < pointsXZ.length; k += 2) {
+    const x = pointsXZ[k], z = pointsXZ[k + 1]
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue
+    const j = Math.round((x / span + 0.5) * n)
+    const i = Math.round((z / span + 0.5) * n)
+    for (let di = -m; di <= m; di++) {
+      const ii = i + di
+      if (ii < 0 || ii >= n) continue
+      for (let dj = -m; dj <= m; dj++) {
+        const jj = j + dj
+        if (jj >= 0 && jj < n) mask[ii * n + jj] = 1
+      }
+    }
+  }
+  return mask
+}
+
 /** 当前 fov 下的细分阈值与投影系数（客户端 `PrepareSubdivision` 的等价物）。
- *  @param fovYRad 相机**竖直** fov（three.js 口径，弧度）
+ *  @param fovYRad 相机**竖直** fov（three.js 口径，弧度）——只决定投影项 `tanFovY`
  *  @param aspect  宽/高
- *  @param tolScale 阈值系数（1 = 客户端原口径；越小越细——`?terrainlod`） */
-export function subdivisionMetrics(fovYRad, aspect = 16 / 9, tolScale = 1) {
+ *  @param tolScale 阈值系数（1 = 客户端原口径；越小越细——`?terrainlod`）
+ *  @param hFovDegOverride 阈值插值用的**水平** fov（引擎 `Camera::GetFOV()` 口径）；缺省由
+ *   fovY×aspect 折算（纯函数语义）。客户端该值来自相机配置、不随画布宽高比变化 ⇒ 运行时传
+ *   `CLIENT_NORMAL_CAMERA_FOV_H`（否则窄画布会把我们的水平角折算小、滑动到狙击镜档的宽阈值）。 */
+export function subdivisionMetrics(fovYRad, aspect = 16 / 9, tolScale = 1, hFovDegOverride = null) {
   const v = Number.isFinite(fovYRad) && fovYRad > 0 ? fovYRad : 0.96;
   const a = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
   const tanFovY = Math.tan(v / 2);
-  const hFovDeg = (2 * Math.atan(tanFovY * a) * 180) / Math.PI;
+  const hFovDeg = Number.isFinite(hFovDegOverride) && hFovDegOverride > 0
+    ? hFovDegOverride
+    : (2 * Math.atan(tanFovY * a) * 180) / Math.PI;
   const M = SUBDIVISION_METRICS;
   const fovLerp = Math.min(1, Math.max(0, (hFovDeg - M.zoomFov) / (M.normalFov - M.zoomFov)));
   const lerp = (z, nm) => z + (nm - z) * fovLerp;
@@ -355,12 +404,12 @@ function patchTableFor(field, n, span, rootStep) {
   return built;
 }
 
-export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1 }) {
+export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 9, minStep = 1, tolScale = 1, hFovDeg = null, refineMask = null }) {
   if (!field || !Number.isFinite(n) || n < 2) throw new Error('buildAdaptiveTerrain: 需 field 与 n ≥ 2')
   const H = (i, j) => field[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
   const wx = (j) => (j / n - 0.5) * span;
   const wz = (i) => (i / n - 0.5) * span;
-  const M = subdivisionMetrics(fovY, aspect, tolScale);
+  const M = subdivisionMetrics(fovY, aspect, tolScale, hFovDeg);
   const camX = Number.isFinite(cam?.x) ? cam.x : 0;
   const camY = Number.isFinite(cam?.y) ? cam.y : 0;
   const camZ = Number.isFinite(cam?.z) ? cam.z : 0;
@@ -400,6 +449,51 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
   // ⇒ subdivMorph 偏小（vertex 更靠 averaged 通道 = 台阶两侧下陷/上浮）+ 提前终止（更粗）。
   const rootStep = Math.max(1, 2 ** Math.floor(Math.log2(Math.max(1, Math.floor(n / PATCH_QUADS)))));
   const table = patchTableFor(field, n, span, rootStep);
+  // 走廊掩码金字塔（refineMask ⇒ 逐层"该补片区域内是否有标记 texel"）：第 L 层节点 = 该补片面
+  // （patchSize×patchSize texel），与 patchProbe 的行列索引同一口径。自底向上 any-OR（每层 1→4 子）
+  // ⇒ 一次 O(n²/64) 预计算，之后每个补片的判定是 O(1)。
+  const maskLevels = refineMask ? (() => {
+    const out = new Array(table.levels.length);
+    for (let L = table.levels.length - 1; L >= 0; L--) {     // 自最细层向根（any-OR 自底向上）
+      const lv = table.levels[L];
+      const per = lv.perAxis;
+      const arr = new Uint8Array(per * per);
+      if (L === table.levels.length - 1) {
+        const ps = lv.patchSize;
+        for (let i = 0; i < n; i++) {
+          for (let j = 0; j < n; j++) {
+            if (!refineMask[i * n + j]) continue;
+            const iy = Math.min(Math.floor(i / ps), per - 1), ix = Math.min(Math.floor(j / ps), per - 1);
+            arr[iy * per + ix] = 1;
+          }
+        }
+      } else {
+        const below = out[L + 1], perBelow = table.levels[L + 1].perAxis;
+        for (let y = 0; y < per; y++) {
+          for (let x = 0; x < per; x++) {
+            let hit = 0;
+            for (let dy = 0; dy < 2 && !hit; dy++) {
+              for (let dx = 0; dx < 2; dx++) {
+                const yy = y * 2 + dy, xx = x * 2 + dx;
+                if (yy < perBelow && xx < perBelow && below[yy * perBelow + xx]) { hit = 1; break; }
+              }
+            }
+            arr[y * per + x] = hit;
+          }
+        }
+      }
+      out[L] = arr;
+    }
+    return out;
+  })() : null;
+  /** 该补片是否命中走廊掩码（命中 ⇒ 强制细分，直至最细层）。 */
+  const corridorForced = (level, i0, j0) => {
+    if (!maskLevels) return false;
+    const lv = table.levels[level];
+    const iy = Math.min(Math.max(Math.floor(i0 / lv.patchSize), 0), lv.perAxis - 1);
+    const ix = Math.min(Math.max(Math.floor(j0 / lv.patchSize), 0), lv.perAxis - 1);
+    return maskLevels[level][iy * lv.perAxis + ix] === 1;
+  };
   // 相机相关判定 = 客户端 `SubdividePatch`（`:251-258`）：距离/投影换算 + 三条判据。
   // 返回的两个误差值必须一并传出——子补片的 `subdivMorph` 要用父补片的同名值（`error0Delta`）。
   const patchProbe = (i0, j0, step, level) => {
@@ -416,7 +510,10 @@ export function buildAdaptiveTerrain({ field, n, span, cam, fovY, aspect = 16 / 
     const radiusError = lv.radius[idx] / (dTo(bx, by, bz) * M.tanFovY);
     const subdivide = radiusError >= M.maxPatchRadiusError
       || heightError >= M.maxHeightError
-      || err > M.maxAbsoluteHeightError;
+      || err > M.maxAbsoluteHeightError
+      // 贴地薄构件走廊：**额外的第四条**，语义判据（材质 extras.decal 的足迹掩码），命中即细分到
+      // 最细层——只加细分、不改高度值，也不动其余区域的层级（廊外与不传掩码时逐字节一致）。
+      || corridorForced(level, i0, j0);
     return { subdivide, err, heightError, radiusError };
   };
   const patches = [];        // 终止补片及其判据值（诊断/测试：直接验证三条判据）
