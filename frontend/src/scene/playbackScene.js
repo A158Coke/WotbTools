@@ -22,7 +22,7 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
+import { buildAdaptiveTerrain, decodeTerrainField, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
@@ -930,7 +930,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 后端返回小地图贴图 + X-Map-Meta 铺设参数（size_m/x/z/rot90/flip_x）。
   // 方向约定：图上边 = 世界 +z，图右边 = 游戏 +x = 场景 −x（与 pos = (−x,y,z) 镜像自洽，
   // 故平面 rotation.z = π）。底图/高度场覆盖世界 [-300,+300]²（600m 方框，原点居中）。
-  // terrain 端点返回 u16 LE 高度场（行 0=南，行主序）+ X-Terrain-Meta（size/zmax/span）；
+  // terrain 端点返回 u16 LE 高度场（行 0=南，行主序）+ X-Terrain-Meta（size/zmax/span/terrainLayout，
+  // 列口径见 terrainMesh.js `decodeTerrainField`）；
   // 有高度场时用起伏地形替换 2D 平面，404 时保持 2D。
   // SpeedTree 叶卡 billboard 材质（客户端 speedtree-materials-vp.sl 同构）：
   // POSITION=锚点 pivot，_corner=(角点偏移, pivot.w)。客户端每帧在【视空间】把
@@ -1089,19 +1090,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (stale()) return;
         }
       }
-      {
-        const meta = tmeta;
-        const n = meta.size || 512;
-        const buf = tbuf;
-        if (buf && buf.byteLength === n * n * 2) {
-          const u16 = new Uint16Array(buf);
-          heightMeta = meta;
-          // 预转米制高度（行 0=南，行主序；zmin 缺省 0）
-          heightField = new Float32Array(n * n);
-          const zmin = meta.zmin || 0;
-          const k = ((meta.zmax || 100) - zmin) / 65535;
-          for (let i = 0; i < u16.length; i++) heightField[i] = u16[i] * k + zmin;
-        }
+      // 米制高度场 = 场景系引擎顶点口径（旧包的列翻转偏一格在此一次性补正，见
+      // terrainMesh.js `decodeTerrainField`）；网格 / sampleHeight / 拾取诊断 / 水面岸线全读这一份
+      if (tbuf) {
+        const field = decodeTerrainField(tbuf, tmeta);
+        if (field) { heightMeta = tmeta; heightField = field; }
+        else console.warn('地形数据尺寸或布局不认识（回退 2D）:', tmeta.size, tmeta.terrainLayout);
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
     if (stale()) return;
