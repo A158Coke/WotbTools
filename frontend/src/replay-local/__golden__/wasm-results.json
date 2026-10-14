@@ -555,7 +555,10 @@
         "credits": 74744,
         "result_id": 12183258
       }
-    ]
+    ],
+    "author_comp_descriptor_meta": 29985,
+    "author_comp_descriptor_settlement": 29985,
+    "author_comp_descriptor_mismatch": false
   },
   "random-battle-example.wotbreplay": {
     "file_name": "client.wotbreplay",
@@ -1112,7 +1115,10 @@
         "result_id": 283127377,
         "killer_account_id": 3115055801
       }
-    ]
+    ],
+    "author_comp_descriptor_meta": null,
+    "author_comp_descriptor_settlement": 15697,
+    "author_comp_descriptor_mismatch": null
   },
   "tournament-14-14-example.wotbreplay": {
     "file_name": "client.wotbreplay",
@@ -1668,7 +1674,10 @@
         "credits": 128248,
         "result_id": 12558551
       }
-    ]
+    ],
+    "author_comp_descriptor_meta": 29985,
+    "author_comp_descriptor_settlement": 29985,
+    "author_comp_descriptor_mismatch": false
   },
   "training-room-example.wotbreplay": {
     "file_name": "client.wotbreplay",
@@ -1740,6 +1749,9 @@
         "credits": 16632,
         "result_id": 270234323
       }
-    ]
+    ],
+    "author_comp_descriptor_meta": 4385,
+    "author_comp_descriptor_settlement": 4385,
+    "author_comp_descriptor_mismatch": false
   }
 }
