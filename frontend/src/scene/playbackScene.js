@@ -4069,7 +4069,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     v.turretG.visible = !separated;
     if (v.glbParts) {
-      v.glbParts.turretNode.visible = !separated;
+      // 固定战斗室（turretNode=null，歼击车）没有炮塔节点可摘——脱落时只藏炮管组
+      //（TD 的炮架横转就是它的「炮塔」，脱落件一并带走）。
+      if (v.glbParts.turretNode) v.glbParts.turretNode.visible = !separated;
       for (const node of v.glbParts.gunNodes) node.visible = !separated;
     }
   }
