@@ -2085,7 +2085,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
     hp: [[42, 1000]], coverage: [42, 300], death_t: null, ...overrides,
   })
-  const mkData = (vehicles) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles })
+  const mkData = (vehicles, detachedTurrets = []) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles, detached_turrets: detachedTurrets })
 
   /** 歼击车模板：hull + 炮管组（gun_0/gun_0_mask），无任何 turret_N 节点（T110E3 实测形态） */
   function stubTurretlessGlb({ withGun = true } = {}) {
@@ -2109,7 +2109,7 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
   }
 
-  async function loadTurretless(vehicles) {
+  async function loadTurretless(vehicles, detachedTurrets = []) {
     window.history.replaceState(null, '', '/?debug&q=high')
     const frames = []
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
@@ -2120,10 +2120,10 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     api = initPlayback(mountContainer(), store, overlay)
     created.push(api)
     const state = { canonical: null }
-    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles)), getState: () => state }
+    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles, detachedTurrets)), getState: () => state }
     await api.loadData({ kind: 'local', file: new File(['replay'], 'td.wotbreplay'), session })
     api.setPlaying(false)
-    return { store, frames, vehicles: window.__pbV }
+    return { api, store, frames, vehicles: window.__pbV }
   }
 
   it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
@@ -2143,5 +2143,27 @@ describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
     const { vehicles } = await loadTurretless([mkVehicle()])
     expect(vehicles).toHaveLength(1)
     expect(vehicles[0].glb).toBeFalsy()              // 保留代理车
+  })
+
+  it('turretless + 独立炮塔轨道：clone/分离/倒带全程不抛（cloneDetachedTurret 空炮塔回归锁）', async () => {
+    stubTurretlessGlb()
+    const detachedTrack = {
+      vehicle_eid: 1,
+      coverage: [50, 300],
+      pose_kf: { t: [50], pos: [1, 0, 0], yaw: [0.3], pitch: [0], roll: [0] },
+    }
+    const { api, vehicles } = await loadTurretless([mkVehicle()], [detachedTrack])
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()                       // 挂载阶段（clone 路径）不再踩 null.turretNode
+    expect(v.detachedTurrets).toHaveLength(1)
+    const head = v.detachedTurrets[0]
+    expect(head.glb).toBeTruthy()
+    expect(head.glb.children.length).toBeGreaterThan(0)   // 脱落件由炮管组构成
+    api.seekTime(55)                                 // T ≥ 分离已知时刻：分离态
+    expect(head.root.visible).toBe(true)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === false)).toBe(true)  // 车上炮管组隐藏
+    api.seekTime(45)                                 // 倒带到分离前：恢复
+    expect(head.root.visible).toBe(false)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === true)).toBe(true)
   })
 })
