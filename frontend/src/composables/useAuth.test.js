@@ -32,9 +32,13 @@ vi.mock('keycloak-js', () => ({
     }
     init = (options) => {
       kcInit(options)
+      const returnUrl = new URL(location.href)
       const settle = (value) => {
         this.authenticated = value === true
         this.tokenParsed = value === true ? kcScenario.tokenParsed : null
+        // A query-looking return cannot match the SDK's default fragment callback.
+        if (!this.authenticated && options.onLoad && returnUrl.searchParams.has('state')
+          && !new URLSearchParams(returnUrl.hash.slice(1)).has('state')) this.login()
         return value
       }
       if (kcScenario.initImpl) return Promise.resolve(kcScenario.initImpl()).then(settle)

@@ -152,9 +152,11 @@ IdP callback 配置、broker flow 配置、主题、部署/会话连续性。
 QQ 一键登录可能由系统默认浏览器接收，网页无法控制 QQ/Android 选择的接收应用。
 账户页在 Android 普通浏览器登录前提示：先在系统默认浏览器打开本站，再发起登录；APK 不显示此提示。
 
-SPA 收到 OIDC 回跳参数时，只执行原交易的 SDK 初始化，不再追加 `check-sso`。
-state、nonce、PKCE 与回跳消费继续全部由 keycloak-js 校验；若初始化结束仍未认证，
-显示无法在当前浏览器继续登录及恢复说明。接收浏览器已有 SSO 不能掩盖未完成的原交易。
+SPA 收到 OIDC 回跳参数时，原交易的校验与消费全部交给 keycloak-js（state、nonce、PKCE）。
+匹配原交易的 `prompt=none` 探测返回 `error=login_required` 时，SDK 正常完成初始化，
+账户页保留未登录说明与 Android 登录前提示。只有无法匹配原交易或 SDK 拒绝回跳时才显示恢复说明。
+回跳初始化期间拦截 SDK 自动发起的新登录，不创建静默 iframe，也不允许接收浏览器的已有 SSO 掩盖原交易失败；
+过期交互登录同样需用户显式重试。
 显式重启登录会从新的 redirect URI 清除已识别的 OIDC query 参数，保留产品上下文与普通页锚点，
 避免未消费的旧 query 随新交易带回、刷新后再次报错。普通无回跳访问仍使用原来的 `check-sso`；重新登录必须由用户点击，不自动循环授权。
 
