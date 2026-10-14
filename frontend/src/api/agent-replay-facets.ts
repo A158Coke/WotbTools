@@ -126,10 +126,11 @@ export interface AgentPlaybackMeta {
 /**
  * 位姿关键帧折线（上游 `pose_kf`，**additive**：旧产物缺省）。
  *
- * = 客户端 60Hz 渲染路径的**折点**序列（facet 层用贪心走廊拟合 60Hz 帧，容差 1cm/0.2°）：
+ * 车辆路径 = 客户端 60Hz 渲染路径的**折点**序列（facet 层走廊拟合）：
  * 在相邻关键帧间**线性插值**即复现客户端画面，含「保持-跳变」阶梯（滤波器刚进 AoI 数秒内
  * 的输出形态）。10Hz 网格重采样会把该阶梯混叠成速度摆动，故渲染以本列为准。
- * `yaw` 为解卷绕连续域（与 `hull_yaw` 网格同域）；端点外按端点**保持**。
+ * 车辆 `yaw` 为解卷绕连续域（与 `hull_yaw` 网格同域）；端点外按端点**保持**。
+ * 独立炮塔复用列式形状，但来自 Type5 初帧 / Type10 原始实体采样；覆盖段内插值，段间不可插值。
  */
 export interface AgentPoseKeyframes {
   /** 关键帧时刻（秒，回放时钟域，升序） */
@@ -138,6 +139,20 @@ export interface AgentPoseKeyframes {
   pos: number[]
   yaw: number[]
   pitch: number[]
+  /** 独立炮塔横滚（弧度）；车辆关键帧旧形状缺省 */
+  roll?: number[]
+}
+
+/** 独立炮塔实体：归属只来自 Type5 class 8 属性；不是按血量/空间距离推断的特效。 */
+export interface AgentDetachedTurretTrack {
+  /** 独立实体 ID（正 u32；与车辆实体不同） */
+  eid: number
+  /** 同一 PlaybackData 中的权威所属车辆实体 ID */
+  vehicle_eid: number
+  /** AoI 覆盖闭区间 [start,end,...]（raw 秒）；区间外位姿未知 */
+  coverage: number[]
+  /** Type5 开段位姿与 Type10 真实世界位姿；每段首帧必须位于该段起点，roll 必填 */
+  pose_kf: AgentPoseKeyframes & { roll: number[] }
 }
 
 /** 车辆全场时间线（列式网格；含花名册语义：nickname/tank_id/team/is_author） */
@@ -374,6 +389,8 @@ export interface AgentPlaybackFacet {
   reload_effective?: AgentReloadEffectiveEvent[]
   /** 动态装甲 armorsStates 时间线（上游待发版 additive；仅 6 辆声明车非空，静态车缺省） */
   armor_states?: AgentArmorStateTrack[]
+  /** 独立炮塔实体轨迹（additive）；缺省/空数组 = 没有可用的炮塔事实 */
+  detached_turrets?: AgentDetachedTurretTrack[]
   /** 可破坏地形（上游 2026-10-05 起 additive；旧产物缺失 = 特性禁用） */
   destructible_areas?: { eid: number; x: number; z: number }[]
   destructible_events?: {
@@ -729,6 +746,76 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       )
     }
   })
+  // 独立炮塔必须带完整的原始实体轨迹。只校验新字段与车辆 eid 的联表，保持旧车辆形状兼容。
+  if (pb.detached_turrets !== undefined) {
+    const tracks = assertArray(pb.detached_turrets, 'playback.detached_turrets')
+    const vehicleEids = new Set(vehicles.filter(isObject).map((vehicle) => vehicle.eid))
+    const turretEids = new Set<number>()
+    for (let i = 0; i < tracks.length; i++) {
+      const ctx = `playback.detached_turrets[${i}]`
+      const track = assertObject(tracks[i], ctx)
+      const eid = assertNonNegativeInteger(track.eid, `${ctx}.eid`, 0xffffffff)
+      const owner = assertNonNegativeInteger(track.vehicle_eid, `${ctx}.vehicle_eid`, 0xffffffff)
+      if (eid === 0 || owner === 0) {
+        throw new Error(`agent facets: ${ctx}.eid / vehicle_eid 必须是正 u32`)
+      }
+      if (turretEids.has(eid) || vehicleEids.has(eid) || eid === owner) {
+        throw new Error(`agent facets: ${ctx}.eid 重复或与车辆实体冲突`)
+      }
+      if (!vehicleEids.has(owner)) {
+        throw new Error(`agent facets: ${ctx}.vehicle_eid 未对应 playback.vehicles`)
+      }
+      turretEids.add(eid)
+
+      const coverage = assertArray(track.coverage, `${ctx}.coverage`)
+      if (coverage.length === 0 || coverage.length % 2 !== 0) {
+        throw new Error(`agent facets: ${ctx}.coverage 必须是非空区间对`)
+      }
+      let previousEnd = -Infinity
+      for (let j = 0; j < coverage.length; j += 2) {
+        const start = assertFiniteNumber(coverage[j], `${ctx}.coverage[${j}]`)
+        const end = assertFiniteNumber(coverage[j + 1], `${ctx}.coverage[${j + 1}]`)
+        if (start < 0 || end < start || start <= previousEnd) {
+          throw new Error(`agent facets: ${ctx}.coverage 区间必须有序且不重叠`)
+        }
+        previousEnd = end
+      }
+
+      const kf = assertObject(track.pose_kf, `${ctx}.pose_kf`)
+      const t = assertArray(kf.t, `${ctx}.pose_kf.t`)
+      if (t.length === 0) throw new Error(`agent facets: ${ctx}.pose_kf.t 必须至少有一帧`)
+      for (const key of ['pos', 'yaw', 'pitch', 'roll']) {
+        const column = assertArray(kf[key], `${ctx}.pose_kf.${key}`)
+        const expected = t.length * (key === 'pos' ? 3 : 1)
+        if (column.length !== expected) {
+          throw new Error(`agent facets: ${ctx}.pose_kf.${key} 列长不一致（期望 ${expected}）`)
+        }
+        for (let j = 0; j < column.length; j++) {
+          assertFiniteNumber(column[j], `${ctx}.pose_kf.${key}[${j}]`)
+        }
+      }
+      let previousTime = -Infinity
+      for (let j = 0; j < t.length; j++) {
+        const time = assertFiniteNumber(t[j], `${ctx}.pose_kf.t[${j}]`)
+        if (time < 0 || time <= previousTime) {
+          throw new Error(`agent facets: ${ctx}.pose_kf.t 必须严格升序`)
+        }
+        previousTime = time
+      }
+      // 每个 AoI 段由 Type5 初帧锚定；末帧后可在段内保持，但不可把未来首帧或段间插值当观测。
+      let sample = 0
+      for (let j = 0; j < coverage.length; j += 2) {
+        if (t[sample] !== coverage[j]) {
+          throw new Error(`agent facets: ${ctx}.pose_kf.t 必须由每个 coverage 起点开段`)
+        }
+        const end = coverage[j + 1] as number
+        while (sample < t.length && (t[sample] as number) <= end) sample++
+      }
+      if (sample !== t.length) {
+        throw new Error(`agent facets: ${ctx}.pose_kf.t 必须位于 coverage 内`)
+      }
+    }
+  }
   return value as unknown as AgentPlaybackFacet
 }
 

@@ -288,6 +288,30 @@ WotBTools
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `armor_states?` /
   `shots[].target_armor_state?` 逐字对应。
 
+## 4j. 独立炮塔实体（`detached_turrets[]`，PlaybackData v2 additive）
+
+- `detached_turrets?: { eid: number; vehicle_eid: number; coverage: number[]; pose_kf: { t: number[]; pos: number[]; yaw: number[]; pitch: number[]; roll: number[] } }[]`。
+  缺省或空数组 = **没有可用的独立炮塔事实**；不是「证明全场未发生殉爆」。旧产物仍可正常播放。
+- **身份与归属**：`eid` = Type5 class 8 独立炮塔实体的正 u32 ID；`vehicle_eid` = 同一 create
+  属性中明确给出的所属车辆 ID，必须能联到该 PlaybackData 的 `vehicles[].eid`。
+  不以低血量击杀、死亡原因、空间距离或最近车辆猜测飞头；炮塔 ID 不得与车辆 ID 相同、
+  自指或在数组中重复。所属车辆可以相同，独立实体身份不能合并。
+- **位姿来源**：每次进入 AoI 的 Type5 初始世界位姿与后续 Type10 世界位姿，**不经过车辆
+  60Hz AvatarFilter / PoseKF 拟合**。`t` = 回放 raw 秒；`pos` = `[x,y,z] × N`（游戏世界系，米）；
+  `yaw` / `pitch` / `roll` = 弧度，三轴完整保留。它复用 `AgentPoseKeyframes` 的列式形状，
+  其中 `roll` 对车辆关键帧可缺省，对独立炮塔**必填**。三轴解卷绕，同 clock 的 Type10 取文件序最后一帧，Type5 首快照保留。
+- **覆盖与插值**：`coverage` = 有序、互不重叠的 AoI **闭区间** `[start,end,...]`，有限端点、
+  `0 ≤ start ≤ end`，单帧允许 `start == end`；相邻区间须 `next.start > previous.end`。
+  每段都必须由 `t == start` 的初帧锚定，全部采样落在覆盖区间内。只在**同一段内**按
+  相邻真实帧插值，末帧至段末允许保持；区间外隐藏独立实体，不取未来首帧、不跨未知段插值。
+  AoI 消失不等于重新装回车体；车辆炮塔一旦有明确分离事实，回放后续保留分离状态，
+  倒退至首个实体出现之前时恢复原车辆节点。
+- **消费边界 fail closed**：字段出现时必须为数组，各轨迹必须为对象；ID / 归属与覆盖满足
+  上述约束；`N = t.length ≥ 1`，`t` 严格升序，`pos.length == 3N`，三轴角列长度均为 N，
+  所有数值有限。形状漂移在 `validateAgentPlayback` 拒绝，不能静默拿缺失轴或未知位姿造事实。
+  此新增校验不扩大既有 `vehicles[]` 字段的兼容边界，也不向 HTTP / canonical ReplayFacts
+  增加第二份飞头事实源。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——

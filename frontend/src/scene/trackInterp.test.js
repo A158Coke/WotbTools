@@ -1,3 +1,4 @@
+import { sampleDetachedPose } from './trackInterp.js'
 import { describe, it, expect } from 'vitest'
 import { keyframeAt, sampleKeyframes, segmentAt, sampleChannel } from './trackInterp.js'
 
@@ -62,5 +63,40 @@ describe('trackInterp：10Hz 网格回退路径（旧 facet / 无关键帧通道
     expect(sampleChannel((i) => a[i], a.length, 99, 0, 0.1)).toBeCloseTo(3, 12)
     expect(sampleChannel(() => 5, 1, 10, 0, 0.1)).toBe(5)
     expect(sampleChannel(() => 5, 0, 10, 0, 0.1)).toBe(0)
+  })
+})
+
+
+describe('sampleDetachedPose: recorded rigid bodies and AoI spans', () => {
+  const track = {
+    coverage: [10, 12, 20, 24],
+    pose_kf: { t: [10, 11, 20, 21], pos: [1, 2, 3, 3, 4, 5, 100, 200, 300, 102, 202, 302],
+      yaw: [0, 1, 2, 3], pitch: [0, 0.2, 0.4, 0.6], roll: [0, 0.4, 0.8, 1] },
+  }
+  it('mirrors position/yaw/roll once, keeps pitch and all recorded axes', () => {
+    const out = {}
+    expect(sampleDetachedPose(track, 10.5, out)).toBe(true)
+    expect(out).toEqual({ x: -2, y: 3, z: 4, yaw: -0.5, pitch: 0.1, roll: -0.2 })
+  })
+  it('holds the last known pose in its span and never interpolates across missing coverage', () => {
+    const out = {}
+    expect(sampleDetachedPose(track, 12, out)).toBe(true)
+    expect(out.x).toBe(-3)
+    expect(sampleDetachedPose(track, 15, out)).toBe(false)
+    expect(sampleDetachedPose(track, 19.999, out)).toBe(false)
+    expect(sampleDetachedPose(track, 20, out)).toBe(true)
+    expect(out.x).toBe(-100)
+    expect(sampleDetachedPose(track, 24, out)).toBe(true)
+    expect(out.x).toBe(-102)
+    expect(sampleDetachedPose(track, 24.001, out)).toBe(false)
+    expect(sampleDetachedPose(track, 9, out)).toBe(false)
+  })
+  it('supports a one-pose track and does not read a future first sample', () => {
+    const single = { coverage: [9, 12], pose_kf: { t: [10], pos: [1, 2, 3], yaw: [0], pitch: [1], roll: [2] } }
+    expect(sampleDetachedPose(single, 9.5, {})).toBe(false)
+    const out = {}
+    expect(sampleDetachedPose(single, 10, out)).toBe(true)
+    expect(out).toEqual({ x: -1, y: 2, z: 3, yaw: -0, pitch: 1, roll: -2 })
+    expect(sampleDetachedPose(single, 12, out)).toBe(true)
   })
 })
