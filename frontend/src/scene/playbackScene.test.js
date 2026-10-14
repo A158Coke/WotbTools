@@ -2078,3 +2078,92 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
   })
 
 })
+
+describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
+  const mkVehicle = (overrides = {}) => ({
+    eid: 1, account_id: 77, tank_id: 13857, team: 2, max_hp: 1000, is_author: false,
+    pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+    hp: [[42, 1000]], coverage: [42, 300], death_t: null, ...overrides,
+  })
+  const mkData = (vehicles, detachedTurrets = []) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles, detached_turrets: detachedTurrets })
+
+  /** 歼击车模板：hull + 炮管组（gun_0/gun_0_mask），无任何 turret_N 节点（T110E3 实测形态） */
+  function stubTurretlessGlb({ withGun = true } = {}) {
+    vi.spyOn(assetProvider, 'bytes').mockImplementation(() => Promise.resolve(new Uint8Array([1])))
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: [0, 0, 0], turret: [0, 0, 0] }, configs: [] }
+        : null))
+    const template = new THREE.Group()
+    for (const [name, geometry] of [
+      ['hull', new THREE.BoxGeometry(3, 6, 2)],
+      ...(withGun ? [
+        ['gun_0', new THREE.BoxGeometry(0.2, 4.5, 0.2).translate(0, 2.25, 0)],
+        ['gun_0_mask', new THREE.BoxGeometry(0.6, 1, 0.6)],
+      ] : []),
+    ]) {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial())
+      mesh.name = name
+      template.add(mesh)
+    }
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
+  }
+
+  async function loadTurretless(vehicles, detachedTurrets = []) {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    const store = createPlaybackStore()
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const state = { canonical: null }
+    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles, detachedTurrets)), getState: () => state }
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'td.wotbreplay'), session })
+    api.setPlaying(false)
+    return { api, store, frames, vehicles: window.__pbV }
+  }
+
+  it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
+    stubTurretlessGlb()
+    const { vehicles } = await loadTurretless([mkVehicle({ turret_yaw: [0.5], gun_pitch: [0.1] })])
+    expect(vehicles).toHaveLength(1)
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()                       // 不再是代理盒
+    expect(v.glbParts.turretNode).toBeNull()         // 无炮塔节点
+    expect(v.glbParts.gunNodes.length).toBe(2)       // 炮管 + 炮盾
+    expect(v.glbParts.gunNodes.every(gn => gn.matrixAutoUpdate === false)).toBe(true) // 姿态系统接管炮管组
+    expect(v.glb.visible).toBe(true)
+  })
+
+  it('无 turret_N 且无炮管组：无受姿部件，仍退代理车（fail-visible）', async () => {
+    stubTurretlessGlb({ withGun: false })
+    const { vehicles } = await loadTurretless([mkVehicle()])
+    expect(vehicles).toHaveLength(1)
+    expect(vehicles[0].glb).toBeFalsy()              // 保留代理车
+  })
+
+  it('turretless + 独立炮塔轨道：clone/分离/倒带全程不抛（cloneDetachedTurret 空炮塔回归锁）', async () => {
+    stubTurretlessGlb()
+    const detachedTrack = {
+      vehicle_eid: 1,
+      coverage: [50, 300],
+      pose_kf: { t: [50], pos: [1, 0, 0], yaw: [0.3], pitch: [0], roll: [0] },
+    }
+    const { api, vehicles } = await loadTurretless([mkVehicle()], [detachedTrack])
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()                       // 挂载阶段（clone 路径）不再踩 null.turretNode
+    expect(v.detachedTurrets).toHaveLength(1)
+    const head = v.detachedTurrets[0]
+    expect(head.glb).toBeTruthy()
+    expect(head.glb.children.length).toBeGreaterThan(0)   // 脱落件由炮管组构成
+    api.seekTime(55)                                 // T ≥ 分离已知时刻：分离态
+    expect(head.root.visible).toBe(true)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === false)).toBe(true)  // 车上炮管组隐藏
+    api.seekTime(45)                                 // 倒带到分离前：恢复
+    expect(head.root.visible).toBe(false)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === true)).toBe(true)
+  })
+})

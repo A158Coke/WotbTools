@@ -3033,8 +3033,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const barrelNodes = grp.filter(n => /^gun_\d+(_mask)?$/.test(n.name || ''));
     const gunNodes = barrelNodes.length ? barrelNodes : grp;
     const mo = sd && sd.model_origins;
-    if (!turretNode || !mo || !mo.track || !mo.turret) {
+    if (!mo || !mo.track || !mo.turret) {
       console.warn('[playback] glb parts incomplete: turret=' + !!turretNode + ' origins=' + !!(mo && mo.track));
+      return null;
+    }
+    // 固定战斗室车辆（歼击车，实测资产包 44/735：T110E3/ISU-152/T28/SU-85/StuG…）
+    // 客户端源模型**没有 turret_N 实体**——炮管组直接装在车体上，导出器按源场景图
+    // 忠实导出（tools/export_tank_glb.py 不造节点）。摆位证据其实齐全：track/turret
+    // 枢轴在 tank.json model_origins、炮管组在 GLB——照常挂载，炮塔横转由 poseGlbRig
+    // 施加到炮管组（mG 本就 = mT·Rx(gr)，与客户端「TD 的炮塔 = 炮架横转」同构）。
+    // 连炮管组都没有的模型无任何受姿部件，仍退代理车（fail-visible）。
+    if (!turretNode && !gunNodes.length) {
+      console.warn('[playback] GLB 部位不全，保留代理车（无炮塔且无炮管组）');
       return null;
     }
     const tP = [mo.track[0] + mo.turret[0], mo.track[1] + mo.turret[1], mo.track[2] + mo.turret[2]];
@@ -3395,9 +3405,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       .multiply(_mTmpC.makeRotationX(gr))
       .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
     const tn = p.turretNode;
-    tn.updateMatrix();
-    if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
-    tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
+    if (tn) {
+      // 回转炮塔：横转（含 itr 补偿）写炮塔节点；炮管随父链继承横转。
+      tn.updateMatrix();
+      if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
+      tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
+    }
+    // 固定战斗室（turretNode=null，歼击车）：炮管组直接吃 mG——mG = mT·Rx(gr)，
+    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮架横转」同构。
     for (const gn of p.gunNodes) {
       gn.updateMatrix();
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
@@ -4065,7 +4080,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     v.turretG.visible = !separated;
     if (v.glbParts) {
-      v.glbParts.turretNode.visible = !separated;
+      // 固定战斗室（turretNode=null，歼击车）没有炮塔节点可摘——脱落时只藏炮管组
+      //（TD 的炮架横转就是它的「炮塔」，脱落件一并带走）。
+      if (v.glbParts.turretNode) v.glbParts.turretNode.visible = !separated;
       for (const node of v.glbParts.gunNodes) node.visible = !separated;
     }
   }

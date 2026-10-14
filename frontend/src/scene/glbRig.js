@@ -272,7 +272,11 @@ export function cloneDetachedTurret(model, parts, gunPitch) {
   const gunMeshes = new Set()
   for (const node of gunNodes) node.traverseVisible(mesh => { if (mesh.isMesh) gunMeshes.add(mesh) })
   const meshes = new Set()
-  for (const node of [turretNode, ...gunNodes]) node.traverseVisible(mesh => { if (mesh.isMesh) meshes.add(mesh) })
+  // 固定战斗室（turretNode=null，歼击车）：独立「炮塔」件由当前选中炮管组构成——
+  // TD 的炮塔 = 炮架横转，脱落件即炮管组（与 playbackScene poseGlbRig 同一语义）。
+  // detached_turrets 契约只约束 vehicle_eid 关联，不保证 owner 有 turret_N 节点。
+  const assemblyNodes = turretNode ? [turretNode, ...gunNodes] : gunNodes
+  for (const node of assemblyNodes) node.traverseVisible(mesh => { if (mesh.isMesh) meshes.add(mesh) })
   for (const mesh of meshes) {
     const copy = mesh.clone(false)
     copy.matrixAutoUpdate = false
