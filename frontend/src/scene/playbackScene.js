@@ -22,7 +22,10 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildAdaptiveTerrain, decodeTerrainField, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
+import {
+  buildAdaptiveTerrain, decodeTerrainField, groundMapUv, pairedTerrainBinUrl, terrainBinMatchesMeta,
+  terrainLodState, terrainLodStale,
+} from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
@@ -1083,11 +1086,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             if (dx > 0 || dy > 0) tmeta.span = Math.max(dx, dy);
           }
         }
-        const b = await assetProvider.fetch(terrainBin);
+        // json/bin 必须同一次发布（布局标记只对配对的 bin 成立，见 terrainMesh.js
+        // `pairedTerrainBinUrl`）：以 terrainBinSha256 作缓存键取 bin，解码前再核对字节
+        const b = await assetProvider.fetch(pairedTerrainBinUrl(terrainBin, tmeta));
         if (stale()) return;
         if (b.ok) {
           tbuf = await b.arrayBuffer();
           if (stale()) return;
+          const paired = await terrainBinMatchesMeta(tbuf, tmeta);
+          if (stale()) return;
+          if (!paired) {
+            console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退 2D）');
+            tbuf = null;
+          }
         }
       }
       // 米制高度场 = 场景系引擎顶点口径（旧包的列翻转偏一格在此一次性补正，见

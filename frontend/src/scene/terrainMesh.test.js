@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   MAX_QUADS, PATCH_QUADS, SUBDIVISION_METRICS, TERRAIN_LAYOUT_ENGINE_VERTEX, buildAdaptiveTerrain,
   decodeTerrainField, morphFunc, subdivisionMetrics, groundMapUv, subdivMorphOf, terrainLodState,
-  terrainLodStale,
+  terrainLodStale, pairedTerrainBinUrl, terrainBinMatchesMeta,
 } from './terrainMesh.js'
+import { createHash } from 'node:crypto'
 
 // 自适应地形网格（客户端 `LandscapeSubdivision` 同构）契约。偏离的后果：要么地形把贴地薄结构
 // （铁轨/路缘/贴花）盖住（2026-10-09 用户报障），要么平缓区逐 texel 毛刺戳出齐平接缝（同日另一报障）。
@@ -610,5 +611,33 @@ describe('decodeTerrainField（高度场 = 场景系引擎顶点口径）', () =
     expect(decodeTerrainField(null, meta())).toBeNull()
     expect(decodeTerrainField(enginePack(), meta({ terrainLayout: 3 }))).toBeNull()
     expect(decodeTerrainField(enginePack(), meta({ terrainLayout: '2' }))).toBeNull()
+  })
+})
+
+// json/bin 配对（PR #615 review P2）：terrain.json（no-cache）与 bin（max-age=3600）独立请求，发布切换期
+// "新 json + 缓存旧 bin" 会跳过补正、"旧 json + 新 bin" 会再平移一列（实测 plant 250019/262144 个高度不同、
+// 最大差 5.6 m）。上游 terrain.json 带 terrainBinSha256 作配对锚点。
+describe('terrain json/bin 配对（terrainBinSha256）', () => {
+  const bytes = new Uint16Array([1, 2, 3, 4]).buffer
+  const sha = createHash('sha256').update(Buffer.from(bytes)).digest('hex')
+
+  it('bin URL 以 sha 作缓存键；无合法 sha（旧包）原样返回', () => {
+    expect(pairedTerrainBinUrl('/map/plant/terrain.u16.bin', { terrainBinSha256: sha }))
+      .toBe(`/map/plant/terrain.u16.bin?sha256=${sha}`)
+    expect(pairedTerrainBinUrl('/x.bin?a=1', { terrainBinSha256: sha })).toBe(`/x.bin?a=1&sha256=${sha}`)
+    expect(pairedTerrainBinUrl('/x.bin', {})).toBe('/x.bin')
+    expect(pairedTerrainBinUrl('/x.bin', { terrainBinSha256: 'not-a-sha' })).toBe('/x.bin')
+    expect(pairedTerrainBinUrl('/x.bin', { terrainBinSha256: sha.toUpperCase() })).toBe('/x.bin')
+  })
+
+  it('字节与声明 sha 一致才算配对；不一致 ⇒ false（调用方 fail-closed 回退 2D）', async () => {
+    expect(await terrainBinMatchesMeta(bytes, { terrainBinSha256: sha })).toBe(true)
+    const other = new Uint16Array([1, 2, 3, 5]).buffer
+    expect(await terrainBinMatchesMeta(other, { terrainBinSha256: sha })).toBe(false)
+  })
+
+  it('无从校验时沿用原行为：旧包无 sha / 环境无 WebCrypto ⇒ true', async () => {
+    expect(await terrainBinMatchesMeta(bytes, {})).toBe(true)
+    expect(await terrainBinMatchesMeta(bytes, { terrainBinSha256: sha }, null)).toBe(true)
   })
 })

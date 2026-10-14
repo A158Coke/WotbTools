@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { watchEffect } from 'vue'
+import { createHash } from 'node:crypto'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
@@ -1015,6 +1016,47 @@ describe('playbackScene 资产发布顺序', () => {
     const terrain = window.__terrain
     expect(terrain).toBeDefined()
     expect(terrain.geometry.attributes.position.getY(0)).toBeCloseTo(20)
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+
+  // json/bin 配对（PR #615 review P2）：布局标记只对同一次发布的 bin 成立——bin 以 terrainBinSha256 作缓存键
+  // 取回，解码前核对字节；不同批（发布进行中）fail-closed 回退 2D，不画错位一列的地形。
+  function terrainPairFetch(meta, bin) {
+    return vi.fn(async (url) => {
+      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ ...meta }) }
+      if (url.startsWith('/assets/terrain')) return { ok: true, arrayBuffer: async () => bin }
+      throw new Error('unexpected asset ' + url)
+    })
+  }
+  const sha256Hex = (buf) => createHash('sha256').update(Buffer.from(buf)).digest('hex')
+
+  it('terrain bin 以 terrainBinSha256 作缓存键取回，字节配对才建地形', async () => {
+    prepareAssets(['terrain', 'terrain-meta'])
+    window.__terrain = undefined
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const sha = sha256Hex(bin)
+    const fetchMock = terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha }, bin)
+    vi.stubGlobal('fetch', fetchMock)
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(`/assets/terrain?sha256=${sha}`)
+    expect(window.__terrain).toBeDefined()
+    expect(window.__terrain).not.toBeNull()
+    expect(store.hasData).toBe(true)
+  })
+
+  it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
+    prepareAssets(['terrain', 'terrain-meta'])
+    window.__terrain = undefined
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const otherSha = sha256Hex(new Uint16Array([1, 2, 3, 4]).buffer)
+    vi.stubGlobal('fetch', terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: otherSha }, bin))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(window.__terrain == null).toBe(true)
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('sha256 不符'))).toBe(true)
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
   })
