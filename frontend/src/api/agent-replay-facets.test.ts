@@ -295,6 +295,153 @@ describe('时序能力（PlaybackData 校验）', () => {
   })
 })
 
+describe('独立炮塔实体（PlaybackData additive，原始轨迹边界）', () => {
+  // 合成实体与坐标；不持久化用户回放中的实体/账号/轨迹。
+  function turret(): api.AgentDetachedTurretTrack {
+    return {
+      eid: 101,
+      vehicle_eid: 7,
+      coverage: [10, 12],
+      pose_kf: { t: [10, 11], pos: [1, 2, 3, 4, 5, 6], yaw: [0, 0.2], pitch: [0.1, 0.3], roll: [0, 0.4] },
+    }
+  }
+
+  function playback(track: unknown): Record<string, unknown> {
+    return { ...minimalPlayback(), vehicles: [{ eid: 7 }], detached_turrets: [track] }
+  }
+
+  it('旧产物缺省与空数组兼容，不提升原有车辆字段校验', () => {
+    const old = { ...minimalPlayback(), vehicles: [{ eid: 0, pose_kf: null }, null] }
+    expect(validateAgentPlayback(old).detached_turrets).toBeUndefined()
+    expect(validateAgentPlayback({ ...old, detached_turrets: [] }).detached_turrets).toEqual([])
+    const kf = { t: [0], pos: [0, 0, 0], yaw: [0], pitch: [0] }
+    expect(validateAgentPlayback({ ...minimalPlayback(), vehicles: [{ eid: 7, pose_kf: kf }] }).vehicles[0].pose_kf)
+      .toBe(kf)
+  })
+
+  it('合法多帧原样透传；段内末帧后保持不要求额外伪造末端帧', () => {
+    const track = turret()
+    const pb = playback(track)
+    expect(validateAgentPlayback(pb)).toBe(pb)
+    expect(validateAgentPlayback(pb).detached_turrets?.[0]).toBe(track)
+    expect(parseAgentPlaybackFromJson(JSON.stringify(pb)).detached_turrets?.[0]).toEqual(track)
+  })
+
+  it('单帧零长覆盖区间合法，正 u32 上界合法', () => {
+    const track = turret()
+    track.eid = 0xffffffff
+    track.coverage = [10, 10]
+    track.pose_kf = { t: [10], pos: [1, 2, 3], yaw: [0], pitch: [0], roll: [0] }
+    expect(validateAgentPlayback(playback(track)).detached_turrets?.[0]).toBe(track)
+  })
+
+  it('多 AoI 段分别由初帧锚定，空档不生成观测', () => {
+    const track = turret()
+    track.coverage = [10, 11, 20, 22]
+    track.pose_kf = {
+      t: [10, 10.5, 20, 21], pos: [1, 2, 3, 2, 3, 4, 8, 9, 10, 9, 10, 11],
+      yaw: [0, 0.2, 1, 1.2], pitch: [0, 0.1, 0.2, 0.3], roll: [0, 0.3, 0.4, 0.5],
+    }
+    expect(validateAgentPlayback(playback(track)).detached_turrets?.[0]).toEqual(track)
+  })
+
+  it.each([null, {}, 42, 'x'])('字段非数组 fail closed：%s', (value) => {
+    expect(() => validateAgentPlayback({ ...minimalPlayback(), detached_turrets: value }))
+      .toThrow(/agent facets: playback\.detached_turrets 必须是数组/)
+  })
+
+  it.each([null, [], 42, 'x'])('轨迹非对象 fail closed：%s', (value) => {
+    expect(() => validateAgentPlayback(playback(value))).toThrow(/detached_turrets\[0\] 必须是对象/)
+  })
+
+  it('对象通道中的稀疏数组也 fail closed，不跳过缺失元素', () => {
+    expect(() => validateAgentPlayback({ ...playback(turret()), detached_turrets: Array(1) }))
+      .toThrow(/detached_turrets\[0\] 必须是对象/)
+    for (const key of ['t', 'pos', 'yaw', 'pitch', 'roll'] as const) {
+      const track = turret()
+      delete track.pose_kf[key][1]
+      expect(() => validateAgentPlayback(playback(track))).toThrow(/必须是有限数值/)
+    }
+  })
+
+  it.each(['eid', 'vehicle_eid'] as const)('%s 必须为正 u32，不能用零/负数/浮点/非有限数/越界/字符串', (key) => {
+    for (const value of [0, -1, 1.5, NaN, Infinity, 0x100000000, '7', null, undefined]) {
+      const track = { ...turret(), [key]: value }
+      expect(() => validateAgentPlayback(playback(track)), `${key}=${String(value)}`).toThrow(/detached_turrets\[0\]/)
+    }
+  })
+
+  it('炮塔 ID 不得自指、冒充车辆或与另一炮塔重复；未知所属车辆拒绝', () => {
+    expect(() => validateAgentPlayback(playback({ ...turret(), eid: 7 }))).toThrow(/eid 重复或与车辆实体冲突/)
+    expect(() => validateAgentPlayback(playback({ ...turret(), vehicle_eid: 101 }))).toThrow(/eid 重复或与车辆实体冲突/)
+    expect(() => validateAgentPlayback(playback({ ...turret(), vehicle_eid: 8 }))).toThrow(/vehicle_eid 未对应 playback\.vehicles/)
+    expect(() => validateAgentPlayback({ ...playback(turret()), detached_turrets: [turret(), turret()] }))
+      .toThrow(/detached_turrets\[1\]\.eid 重复/)
+    expect(() => validateAgentPlayback({ ...playback(turret()), detached_turrets: [turret(), { ...turret(), eid: 102 }] }))
+      .toThrow(/vehicle_eid 对应多个独立炮塔/)
+    expect(() => validateAgentPlayback({ ...playback(turret()), vehicles: [{ eid: 7 }, { eid: 101 }] }))
+      .toThrow(/eid 重复或与车辆实体冲突/)
+  })
+
+  it.each([null, {}, [], [10], [10, 12, 20], [12, 10], [10, 12, 11, 13], [10, 12, 12, 13], [20, 22, 10, 12], [10, NaN], [10, Infinity], [-1, 12]])
+    ('coverage 必须是有限、有序、互不重叠的非空区间对：%s', (coverage) => {
+      expect(() => validateAgentPlayback(playback({ ...turret(), coverage }))).toThrow(/coverage/)
+    })
+
+  it.each([null, [], 42, undefined])('pose_kf 必须为对象：%s', (pose_kf) => {
+    expect(() => validateAgentPlayback(playback({ ...turret(), pose_kf }))).toThrow(/pose_kf 必须是对象/)
+  })
+
+  it.each(['t', 'pos', 'yaw', 'pitch', 'roll'] as const)('pose_kf.%s 缺省/非数组/非有限元素拒绝', (key) => {
+    for (const value of [undefined, null, 'x', [NaN], [Infinity], ['1']]) {
+      const track = turret()
+      track.pose_kf = { ...track.pose_kf, [key]: value } as never
+      expect(() => validateAgentPlayback(playback(track)), `${key}=${String(value)}`).toThrow(/pose_kf/)
+    }
+    for (const value of [NaN, Infinity, -Infinity]) {
+      const track = turret()
+      track.pose_kf[key][0] = value
+      expect(() => validateAgentPlayback(playback(track)), `${key}=${value}`).toThrow(/必须是有限数值/)
+    }
+  })
+
+  it.each(['pos', 'yaw', 'pitch', 'roll'] as const)('pose_kf.%s 长度必须严格对应 N', (key) => {
+    for (const delta of [-1, 1]) {
+      const track = turret()
+      const column = track.pose_kf[key]
+      if (delta < 0) column.pop()
+      else column.push(0)
+      expect(() => validateAgentPlayback(playback(track))).toThrow(/列长不一致/)
+    }
+  })
+
+  it('时间至少一帧、必须严格升序；不接受重复或倒序', () => {
+    const track = turret()
+    track.pose_kf.t = []
+    expect(() => validateAgentPlayback(playback(track))).toThrow(/至少有一帧/)
+    for (const t of [[10, 10], [11, 10]]) {
+      expect(() => validateAgentPlayback(playback({ ...turret(), pose_kf: { ...turret().pose_kf, t } })))
+        .toThrow(/必须严格升序/)
+    }
+  })
+
+  it('不接受开段未来首帧、段外采样、覆盖空段或跨未知段采样', () => {
+    const cases = [
+      { coverage: [9, 12], t: [10, 11] },
+      { coverage: [10.5, 12], t: [10, 11] },
+      { coverage: [10, 10.5], t: [10, 11] },
+      { coverage: [10, 12, 20, 22], t: [10, 11] },
+      { coverage: [10, 10.5, 20, 22], t: [10, 11] },
+    ]
+    for (const { coverage, t } of cases) {
+      const track = turret()
+      track.coverage = coverage
+      track.pose_kf.t = t
+      expect(() => validateAgentPlayback(playback(track))).toThrow(/pose_kf\.t 必须/)
+    }
+  })
+})
+
 describe('normalizeAgentShotIndices（/api/replay/shots 同规则全局重编号）', () => {
   it('time_s 排序 + index 从 1 起连续重编（作者/他人两路局部 index 收敛）', () => {
     const shots = [

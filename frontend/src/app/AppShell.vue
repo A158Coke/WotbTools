@@ -9,6 +9,7 @@ import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
+import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from './featureCapabilities.js'
@@ -22,6 +23,8 @@ import ConfirmDialogHost from '../components/ConfirmDialogHost.vue'
 import OnboardingHost from '../components/OnboardingHost.vue'
 import publicSecurityFilingIcon from '../assets/public-security-filing.png'
 
+const APP_ICP_FILING = '闽ICP备2026036303号-2A'
+const isAndroidAppRuntime = isAndroidApp()
 const router = useRouter()
 const route = useRoute()
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
@@ -132,10 +135,10 @@ provide(ONBOARDING_KEY, onboarding.context)
     <div class="app-footer-filings">
       <a
         href="https://beian.miit.gov.cn/"
-        target="_blank"
-        rel="noopener noreferrer"
+        :target="isAndroidAppRuntime ? null : '_blank'"
+        :rel="isAndroidAppRuntime ? null : 'noopener noreferrer'"
         data-testid="icp-filing-link"
-      >{{ $t('home.icpFiling') }}</a>
+      >{{ isAndroidAppRuntime ? APP_ICP_FILING : $t('home.icpFiling') }}</a>
       <span class="app-footer-separator" aria-hidden="true">|</span>
       <a
         class="app-footer-public-security"

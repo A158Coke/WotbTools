@@ -425,7 +425,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 向外探出 0.5–1.3 m，俯瞰下穿出挡土墙贴面（2026-10-09 用户报障）。
 
     // ⚠️ 断言只看代码（src 已剥注释）——用代码锚点，不要在注释文本上定位
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    expect(src).toMatch(/import \{[^}]*\bbuildAdaptiveTerrain\b[^}]*\bdecodeTerrainField\b[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
     expect(src).toMatch(/field: heightField, n, span,/)
@@ -433,7 +433,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
-    expect(src).toMatch(/import \{ buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale \} from '\.\/terrainMesh\.js'/)
+    expect(src).toMatch(/import \{[^}]*\bbuildAdaptiveTerrain\b[^}]*\bdecodeTerrainField\b[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
     // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
     expect(src).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
     expect(src).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
@@ -590,7 +590,15 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(wSrc).toMatch(/float dNdcZ = \(2\.0 \* uFar \* uNear \/ \(\(uFar - uNear\) \* zlen \* zlen\)\) \* dzAlong;/)
     expect(wSrc).toMatch(/coastLine = clamp\(dNdcZ \/ \(2\.0 \* uDepthUlp\), 0\.0, 1\.0\);/)
     expect(wSrc).toMatch(/float dzAlong = \(vWorldP\.y - terrainY\) \/ max\(abs\(toCam\.y\) \/ zlen, 1e-3\);/)
-    expect(wSrc).toMatch(/float terrainY = texture2D\(uHeightmap, vWorldP\.xz \/ uMapSpan \+ 0\.5\)\.r;/)
+    // 纹素中心在 `(j+0.5)/n`、地形顶点在 `j/n`（corner 口径）⇒ 采样加半个纹素，岸线高度才与网格同位
+    expect(wSrc).toMatch(/float terrainY = texture2D\(uHeightmap, vWorldP\.xz \/ uMapSpan \+ 0\.5 \+ 0\.5 \* uHmTexel\)\.r;/)
+    expect(wSrc).toMatch(/uHmTexel: \{ value: coast && coast\.heightTex && coast\.heightTex\.image && coast\.heightTex\.image\.width > 0\s*\? 1 \/ coast\.heightTex\.image\.width : 0 \},/)
+    // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份
+    expect(src).toMatch(/const field = decodeTerrainField\(tbuf, tmeta\);/)
+    // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
+    expect(src).toMatch(/assetProvider\.fetch\(pairedTerrainBinUrl\(terrainBin, tmeta\)\)/)
+    expect(src).toMatch(/const paired = await terrainBinMatchesMeta\(tbuf, tmeta\);/)
+    expect(src).not.toMatch(/heightField\[i\] = u16\[i\]/)
     expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
     expect(wSrc).not.toMatch(/max\(cameraPosition\.y - vWorldP\.y, 1e-3\)/)     // 旧"相机高"口径：禁止复活
