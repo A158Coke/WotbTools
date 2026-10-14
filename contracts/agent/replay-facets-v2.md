@@ -288,14 +288,14 @@ WotBTools
 - 与 `frontend/src/api/agent-replay-facets.ts` 的 `armor_states?` /
   `shots[].target_armor_state?` 逐字对应。
 
-## 4j. 独立炮塔实体（`detached_turrets[]`，PlaybackData v2 additive）
+## 4j. 独立炮塔实体（`detached_turrets[]`，PlaybackData v2 additive；上游 v0.4.7）
 
 - `detached_turrets?: { eid: number; vehicle_eid: number; coverage: number[]; pose_kf: { t: number[]; pos: number[]; yaw: number[]; pitch: number[]; roll: number[] } }[]`。
   缺省或空数组 = **没有可用的独立炮塔事实**；不是「证明全场未发生殉爆」。旧产物仍可正常播放。
 - **身份与归属**：`eid` = Type5 class 8 独立炮塔实体的正 u32 ID；`vehicle_eid` = 同一 create
   属性中明确给出的所属车辆 ID，必须能联到该 PlaybackData 的 `vehicles[].eid`。
   不以低血量击杀、死亡原因、空间距离或最近车辆猜测飞头；炮塔 ID 不得与车辆 ID 相同、
-  自指或在数组中重复。所属车辆可以相同，独立实体身份不能合并。
+  自指或在数组中重复；同一 owner 出现多个独立炮塔是归属冲突，上游不输出，消费边界也拒绝。
 - **位姿来源**：每次进入 AoI 的 Type5 初始世界位姿与后续 Type10 世界位姿，**不经过车辆
   60Hz AvatarFilter / PoseKF 拟合**。`t` = 回放 raw 秒；`pos` = `[x,y,z] × N`（游戏世界系，米）；
   `yaw` / `pitch` / `roll` = 弧度，三轴完整保留。它复用 `AgentPoseKeyframes` 的列式形状，

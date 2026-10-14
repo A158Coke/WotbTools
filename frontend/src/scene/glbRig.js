@@ -270,9 +270,9 @@ export function cloneDetachedTurret(model, parts, gunPitch) {
     .multiply(new THREE.Matrix4().makeRotationX(gunPitch))
     .multiply(new THREE.Matrix4().makeTranslation(-gP[0], -gP[1], -gP[2]))
   const gunMeshes = new Set()
-  for (const node of gunNodes) node.traverse(mesh => { if (mesh.isMesh) gunMeshes.add(mesh) })
+  for (const node of gunNodes) node.traverseVisible(mesh => { if (mesh.isMesh) gunMeshes.add(mesh) })
   const meshes = new Set()
-  for (const node of [turretNode, ...gunNodes]) node.traverse(mesh => { if (mesh.isMesh) meshes.add(mesh) })
+  for (const node of [turretNode, ...gunNodes]) node.traverseVisible(mesh => { if (mesh.isMesh) meshes.add(mesh) })
   for (const mesh of meshes) {
     const copy = mesh.clone(false)
     copy.matrixAutoUpdate = false

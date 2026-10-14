@@ -377,6 +377,8 @@ describe('独立炮塔实体（PlaybackData additive，原始轨迹边界）', (
     expect(() => validateAgentPlayback(playback({ ...turret(), vehicle_eid: 8 }))).toThrow(/vehicle_eid 未对应 playback\.vehicles/)
     expect(() => validateAgentPlayback({ ...playback(turret()), detached_turrets: [turret(), turret()] }))
       .toThrow(/detached_turrets\[1\]\.eid 重复/)
+    expect(() => validateAgentPlayback({ ...playback(turret()), detached_turrets: [turret(), { ...turret(), eid: 102 }] }))
+      .toThrow(/vehicle_eid 对应多个独立炮塔/)
     expect(() => validateAgentPlayback({ ...playback(turret()), vehicles: [{ eid: 7 }, { eid: 101 }] }))
       .toThrow(/eid 重复或与车辆实体冲突/)
   })

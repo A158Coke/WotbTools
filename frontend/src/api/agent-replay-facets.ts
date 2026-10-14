@@ -751,6 +751,7 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
     const tracks = assertArray(pb.detached_turrets, 'playback.detached_turrets')
     const vehicleEids = new Set(vehicles.filter(isObject).map((vehicle) => vehicle.eid))
     const turretEids = new Set<number>()
+    const ownerEids = new Set<number>()
     for (let i = 0; i < tracks.length; i++) {
       const ctx = `playback.detached_turrets[${i}]`
       const track = assertObject(tracks[i], ctx)
@@ -765,7 +766,11 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       if (!vehicleEids.has(owner)) {
         throw new Error(`agent facets: ${ctx}.vehicle_eid 未对应 playback.vehicles`)
       }
+      if (ownerEids.has(owner)) {
+        throw new Error(`agent facets: ${ctx}.vehicle_eid 对应多个独立炮塔，归属冲突`)
+      }
       turretEids.add(eid)
+      ownerEids.add(owner)
 
       const coverage = assertArray(track.coverage, `${ctx}.coverage`)
       if (coverage.length === 0 || coverage.length % 2 !== 0) {

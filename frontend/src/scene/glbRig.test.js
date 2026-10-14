@@ -307,10 +307,12 @@ describe('cloneDetachedTurret: original mounted meshes and pivot', () => {
     const material = new THREE.MeshStandardMaterial(), geometry = new THREE.BoxGeometry()
     const turret = new THREE.Mesh(geometry, material); turret.position.set(1, 2, 3); parent.add(turret)
     const gun = new THREE.Mesh(geometry, material); gun.position.set(0, 2, 0); turret.add(gun)
+    const hidden = new THREE.Group(); hidden.visible = false
+    hidden.add(new THREE.Mesh(geometry, material)); turret.add(hidden)
     model.add(new THREE.Mesh(geometry, material))
     const parts = { turretNode: turret, gunNodes: [gun], tP: [5, 2, 3], gP: [5, 2, 3], itr: null }
     const head = cloneDetachedTurret(model, parts, Math.PI / 2)
-    expect(head.children).toHaveLength(2)
+    expect(head.children).toHaveLength(2) // nested gun once, hidden children stay hidden
     const centre = new THREE.Vector3().setFromMatrixPosition(head.children[0].matrix)
     expect(centre.length()).toBeCloseTo(0)
     const barrel = new THREE.Vector3().setFromMatrixPosition(head.children[1].matrix)
