@@ -1914,7 +1914,9 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
         vehicle({ eid: newId, pos: [100, 0, 0], coverage: [42, 51], death_t: null, is_author: false })]
       const playback = validateAgentPlayback({ ...f.playback, meta: { ...f.playback.meta, samples: 1, t_start: 42, duration: 242 },
         vehicles: definitions.map(def => ({ ...f.playback.vehicles[0], ...def, pose_kf: undefined, hull_roll: [0] })),
-        shots: [], kills: [], reloads: [], reload_effective: [],
+        // The synthetic re-entry roster replaces every original vehicle ID.
+        // Its unrelated real-fixture turret owners must be removed with the roster.
+        detached_turrets: [], shots: [], kills: [], reloads: [], reload_effective: [],
       })
       const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
       const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
