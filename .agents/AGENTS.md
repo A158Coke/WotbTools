@@ -116,6 +116,7 @@
    `.agents/skills/review-with-docs/SKILL.md`（新增 abstraction 审查 gate）。
 13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 14. **Android Version-as-Code** — Android production runtime 改动必须递增 committed `android/gradle.properties:wotbVersion`；不得手工编辑 `versionCode` 或依赖 release workflow 版本参数。Native Bridge wire breaking change 必须同时更新 `contracts/android-native-bridge.json`、递增 `bridgeVersion`、更新 Native/FE，并在同一 PR 通过 deterministic compatibility tests；先让 FE 兼容旧/新协议，再发布 Native。
+    **版本号按变更等级递增（2026-10-14 用户裁示）**：① **major**（`2.3.3 → 3.0.0`）= breaking change（含 Native Bridge wire breaking）、重大功能、删除功能、中大型 bug 修复——**必须同时把强制更新门槛抬到该版本**（`ANDROID_MIN_SUPPORTED_VERSION_CODE` = 新 versionCode，随该版本 publish 写入）；② **minor**（`2.3.3 → 2.4.0`）= 增加中小功能，不抬门槛；③ **patch**（`2.3.3 → 2.3.4`）= 小 bug 修复，不抬门槛、不强制升级。一次变更跨多个等级取最高；等级拿不准（尤其 bug 是"中大型"还是"小"）由用户裁定；PR 描述与 `docs/android/releases/<版本>.md` 写明所选等级与理由。细则见 [`docs/android/release-process.md`](../docs/android/release-process.md)「版本号递增规则」。
 
 ## 视觉验证归属（2026-10-03）
 
