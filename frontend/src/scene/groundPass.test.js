@@ -55,7 +55,7 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(bakeSrc).toMatch(/from '\/src\/scene\/groundPass\.js'/)
     expect(bakeSrc).toMatch(/loadTerrain\(\{/)
     // 分层读取：页面导入 fail-closed 读取模块；键集仍取共享 groundLayerKeys（不复制层清单）
-    expect(bakeSrc).toMatch(/import \{ loadBakeGroundLayers \} from '\/scripts\/bake-ground-layers\.js'/)
+    expect(bakeSrc).toMatch(/import \{ loadBakeGroundLayers, requireBakeTerrain \} from '\/scripts\/bake-ground-layers\.js'/)
     expect(bakeLayersSrc).toMatch(/import \{ groundLayerKeys \} from '\.\.\/src\/scene\/groundPass\.js'/)
     expect(bakeLayersSrc).toMatch(/for \(const k of groundLayerKeys\(layers\)\) \{/)
     expect(bakeLayersSrc).not.toMatch(/'tile0'|'mask0'|'hmap0'/)
@@ -179,7 +179,12 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   })
 
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
-    expect(bakeSrc).toMatch(/JSON\.stringify\(\{ key, span: spanEff, size: SIZE, ground: !!\(load && load\.ground\), \.\.\.stats \}\)/)
+    // 逐图产物生命周期（删旧产物 / .tmp→rename / meta 内容）在 scripts/bake-overhead-key.mjs，
+    // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本
+    expect(bakeSrc).toMatch(/import \{ bakeKey \} from '\.\/bake-overhead-key\.mjs'/)
+    expect(bakeSrc).not.toMatch(/async function bakeKey\(/)
+    expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD \}\)/)
+    expect(bakeSrc).toMatch(/writeFileSync\(UPLOAD, body\)/)
     expect(bakeSrc).toMatch(/return \{ ok: true, degenerate: degenerate\.length, span: effSpan, ground: groundReady \}/)
   })
 
@@ -190,10 +195,13 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     // 不得再有吞错退化分支
     expect(bakeSrc).toMatch(/if \(field\) \{\s*groundLayers = await loadBakeGroundLayers\(\{/)
     // 地形同样 fail-closed：terrain.json 读到（meta 有键）而 field=null ⇒ 抛出，且先于分层读取/出图
-    const terrainGuard = /if \(!field && Object\.keys\(tmeta\)\.length\) \{\s*throw new Error\('terrain 不完整: /
-    expect(bakeSrc).toMatch(terrainGuard)
-    expect(bakeSrc.search(terrainGuard)).toBeGreaterThan(bakeSrc.indexOf('await loadTerrain({'))
-    expect(bakeSrc.search(terrainGuard)).toBeLessThan(bakeSrc.indexOf('await loadBakeGroundLayers({'))
+    // 地形配对按 loadTerrain 回报的 HTTP 事实判定（requireBakeTerrain，行为回归见 bake-ground-layers.test.js），
+    // 不得再靠 meta 是否有键猜——json 404 时 loadTerrain 仍会按缺省参数解码同名 bin
+    expect(bakeSrc).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
+    expect(bakeSrc).not.toMatch(/Object\.keys\(tmeta\)/)
+    const terrainAt = bakeSrc.indexOf('requireBakeTerrain({ field, metaStatus, binStatus })')
+    expect(terrainAt).toBeGreaterThan(bakeSrc.indexOf('await loadTerrain({'))
+    expect(terrainAt).toBeLessThan(bakeSrc.indexOf('await loadBakeGroundLayers({'))
     expect(bakeSrc).not.toMatch(/if \(field\) try/)
     expect(bakeSrc).not.toMatch(/分层地表缺失/)
     // 烘焙侧没有回退底图：地面材质不得带 mapTexture（null = 纯白 MeshBasicMaterial），也不得

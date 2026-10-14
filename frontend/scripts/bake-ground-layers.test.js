@@ -4,8 +4,9 @@
 // composite_overhead.py 覆盖 ground.webp。页面侧 ground 标志接线的源码守卫在 src/scene/groundPass.test.js。
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three'
-import { loadBakeGroundLayers } from './bake-ground-layers.js'
-import { buildGroundGeometry, groundLayerKeys, makeGroundMaterial } from '../src/scene/groundPass.js'
+import { createHash } from 'node:crypto'
+import { loadBakeGroundLayers, requireBakeTerrain } from './bake-ground-layers.js'
+import { buildGroundGeometry, groundLayerKeys, loadTerrain, makeGroundMaterial } from '../src/scene/groundPass.js'
 import { CLIENT_NORMAL_CAMERA_FOV_H } from '../src/scene/terrainMesh.js'
 
 const BASE = 'http://bake.test/pack/map/demo/'
@@ -143,5 +144,48 @@ describe('烘焙分层地表读取 fail-closed（缺/坏即抛出，不返回半
       expect(mesh.material.uniforms.uTile1.value).toBe(groundLayers.texs.tile1)
       expect(!!mesh.material.defines.HEIGHT_BLEND).toBe(heightBlend)
     }
+  })
+})
+
+describe('烘焙地形配对 fail-closed（真实 loadTerrain → requireBakeTerrain；PR #621 re-review P2）', () => {
+  const N = 512                                     // decodeTerrainField 的缺省 size：json 缺失时恰好可解
+  const BIN = new Uint8Array(N * N * 2)
+  const sha = createHash('sha256').update(BIN).digest('hex')
+  const META = { size: N, zmin: -5, zmax: 60, worldBounds: { min: [-400, -400], max: [400, 400] }, terrainBinSha256: sha }
+  /** json/bin：undefined = 404；数字 = 该 HTTP 状态；否则为响应体（json 对象自动序列化） */
+  async function terrainOf({ json, bin }) {
+    const respond = (body) => (body === undefined ? new Response('nf', { status: 404 })
+      : typeof body === 'number' ? new Response('err', { status: body })
+        : new Response(body instanceof Uint8Array ? body : JSON.stringify(body), { status: 200 }))
+    const fetchFn = async (url) => respond(url.includes('terrain.json') ? json : bin)
+    return loadTerrain({ binUrl: BASE + 'terrain.u16.bin', metaUrl: BASE + 'terrain.json', fetchFn })
+  }
+
+  it('json+bin 有效配对 ⇒ 有地形；json+bin 均 404 ⇒ 无地形（ground=false 口径）', async () => {
+    expect(requireBakeTerrain(await terrainOf({ json: META, bin: BIN }))).toBe(true)
+    const none = await terrainOf({})
+    expect(none.field).toBeNull()
+    expect(requireBakeTerrain(none)).toBe(false)
+  })
+
+  it('terrain.json 404 + 恰好 512²×2 的 bin ⇒ 抛出（loadTerrain 会按缺省参数解出 field，不可信）', async () => {
+    const t = await terrainOf({ bin: BIN })
+    expect(t.field).not.toBeNull()                  // 反方向漏洞的前提：field 非空、meta 为空
+    expect(t.meta).toEqual({})
+    expect(() => requireBakeTerrain(t)).toThrow(/^terrain 不完整: terrain\.json 缺失（HTTP 404）但 terrain\.u16\.bin 存在/)
+  })
+
+  it('json 在而 bin 缺 / sha 不符 / 尺寸不符 ⇒ 抛出', async () => {
+    const missing = await terrainOf({ json: META })
+    expect(() => requireBakeTerrain(missing)).toThrow(/terrain\.json 存在但 terrain\.u16\.bin 缺失（HTTP 404）/)
+    const shaMismatch = await terrainOf({ json: { ...META, terrainBinSha256: '0'.repeat(64) }, bin: BIN })
+    expect(() => requireBakeTerrain(shaMismatch)).toThrow(/不配对/)
+    const badSize = await terrainOf({ json: { ...META, terrainBinSha256: undefined }, bin: new Uint8Array(100) })
+    expect(() => requireBakeTerrain(badSize)).toThrow(/不配对/)
+  })
+
+  it('读取异常（json 500）不得当作"无地形"', async () => {
+    const t = await terrainOf({ json: 500 })
+    expect(() => requireBakeTerrain(t)).toThrow(/terrain\.json 读取失败（HTTP 500）/)
   })
 })
