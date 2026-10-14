@@ -2,22 +2,26 @@
 // 3D 回放的代码接入渲染"）：
 //   ① 地形数据/几何、分层地表材质、水面海岸线资源只有一处实现——3D 运行时（playbackScene）
 //      与俯视烘焙（scripts/bake-ground-overhead.mjs）两侧消费同一模块，本地不得复辟副本；
-//   ② 烘焙接入面完整：terrain.json/bin → loadTerrain；ground.layers.json → groundLayerKeys/
-//      setupGroundTextures；地面网格/材质进场景；水件保留（keepWater）并入装配；meta 携带
-//      ground 标志（合成器据它以"覆盖即替换"口径合并，tools/composite_overhead.py）。
+//   ② 烘焙接入面完整：terrain.json/bin → loadTerrain；ground.layers.json → fail-closed 读取
+//      （scripts/bake-ground-layers.js，键集 groundLayerKeys）/setupGroundTextures；地面网格/材质进场景；
+//      水件保留（keepWater）并入装配；meta 携带 ground 标志（合成器据它以"覆盖即替换"口径合并，
+//      tools/composite_overhead.py）——ground=true 只能来自分层地面网格真正建成。
 // 背景：抽层前烘焙不渲染地面——底图是客户端自带地图图（ground.webp），与 3D 档的实时分层
 // 渲染（cm×lm×tile/mask）在夜图/带 lm 图上差异显著（faust 用户报障"webp 与 3D 俯视图差
 // 别大"的直接来源）。
 import { describe, it, expect } from 'vitest'
+import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { makeGroundMaterial } from './groundPass.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const strip = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
+const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 
 describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地零副本', () => {
   it('模块导出五个共享入口（材质/几何/数据/海岸线/贴图契约）', () => {
@@ -49,8 +53,12 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
   it('烘焙侧：消费共享入口，本地不得复辟地面代码', () => {
     expect(bakeSrc).toMatch(/from '\/src\/scene\/groundPass\.js'/)
     expect(bakeSrc).toMatch(/loadTerrain\(\{/)
-    expect(bakeSrc).toMatch(/groundLayerKeys\(L\)/)
-    expect(bakeSrc).toMatch(/setupGroundTextures\(texs,/)
+    // 分层读取：页面导入 fail-closed 读取模块；键集仍取共享 groundLayerKeys（不复制层清单）
+    expect(bakeSrc).toMatch(/import \{ loadBakeGroundLayers \} from '\/scripts\/bake-ground-layers\.js'/)
+    expect(bakeLayersSrc).toMatch(/import \{ groundLayerKeys \} from '\.\.\/src\/scene\/groundPass\.js'/)
+    expect(bakeLayersSrc).toMatch(/for \(const k of groundLayerKeys\(layers\)\) \{/)
+    expect(bakeLayersSrc).not.toMatch(/'tile0'|'mask0'|'hmap0'/)
+    expect(bakeSrc).toMatch(/setupGroundTextures\(groundLayers\.texs,/)
     expect(bakeSrc).toMatch(/buildGroundGeometry\(\{/)
     expect(bakeSrc).toMatch(/makeGroundMaterial\(\{/)
     expect(bakeSrc).toMatch(/makeWaterCoast\(\{/)
@@ -121,7 +129,46 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
 
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
     expect(bakeSrc).toMatch(/JSON\.stringify\(\{ key, span: spanEff, size: SIZE, ground: !!\(load && load\.ground\), \.\.\.stats \}\)/)
-    expect(bakeSrc).toMatch(/return \{ ok: true, degenerate: degenerate\.length, span: effSpan, ground: !!field \}/)
+    expect(bakeSrc).toMatch(/return \{ ok: true, degenerate: degenerate\.length, span: effSpan, ground: groundReady \}/)
+  })
+
+  it('Test C：ground=true 只来自分层地面网格建成（PR #621 blocker：缺层 → 白地面 → ground=true 覆盖 ground.webp）', () => {
+    // 语义漂移禁令：ground 不得再等价于"有地形"
+    expect(bakeSrc).not.toMatch(/ground: !!field/)
+    // fail-closed：有地形即强制读取完整分层，读取失败直接冒泡（load reject → bakeKey 不写产物）；
+    // 不得再有吞错退化分支
+    expect(bakeSrc).toMatch(/if \(field\) \{\s*groundLayers = await loadBakeGroundLayers\(\{/)
+    expect(bakeSrc).not.toMatch(/if \(field\) try/)
+    expect(bakeSrc).not.toMatch(/分层地表缺失/)
+    // 烘焙侧没有回退底图：地面材质不得带 mapTexture（null = 纯白 MeshBasicMaterial），也不得
+    // 以可空的 groundLayers 取层（"groundLayers && groundLayers.layers" 即会落回回退档）
+    expect(bakeSrc).not.toMatch(/mapTexture/)
+    expect(bakeSrc).not.toMatch(/groundLayers && groundLayers\./)
+    expect(bakeSrc).toMatch(/makeGroundMaterial\(\{\s*layers: groundLayers\.layers, texs: groundLayers\.texs, size: effSpan,\s*\}\)/)
+    // groundReady 唯一置真点：在地面网格入场景 + 分层着色自检之后
+    expect(bakeSrc).toMatch(/let groundReady = false/)
+    expect(bakeSrc.match(/groundReady = true/g)).toHaveLength(1)
+    const addAt = bakeSrc.indexOf('scene.add(groundMesh)')
+    const checkAt = bakeSrc.indexOf('if (!groundMesh.material.isShaderMaterial) throw new Error(')
+    const readyAt = bakeSrc.indexOf('groundReady = true')
+    expect(addAt).toBeGreaterThan(0)
+    expect(checkAt).toBeGreaterThan(addAt)
+    expect(readyAt).toBeGreaterThan(checkAt)
+    // 逐图失败不改变批处理策略：bakeKey 抛出由主循环逐图 catch（输出 {key,error}，继续下一张）
+    expect(bakeSrc).toMatch(/console\.log\(JSON\.stringify\(\{ key, error: String\(e\)\.slice\(0, 300\) \}\)\)/)
+  })
+
+  it('makeGroundMaterial 共享回退档不变：3D 运行时的真实 mapTexture 仍是合法回退（修复只落烘焙宿主）', () => {
+    const mapTexture = new THREE.Texture()
+    const fallback = makeGroundMaterial({ size: 600, mapTexture })
+    expect(fallback.isMeshBasicMaterial).toBe(true)
+    expect(fallback.map).toBe(mapTexture)
+    expect(fallback.toneMapped).toBe(false)
+    // 对照：烘焙若沿用 mapTexture:null 得到的就是无贴图纯白材质——正是 bake 必须拒绝的形态
+    const white = makeGroundMaterial({ size: 600, mapTexture: null })
+    expect(white.isMeshBasicMaterial).toBe(true)
+    expect(white.map).toBeNull()
+    expect(white.color.getHex()).toBe(0xffffff)
   })
 
   it('逐图资源生命周期：地面网格/分层贴图/海岸线纹理随换图释放', () => {

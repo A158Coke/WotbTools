@@ -15,6 +15,8 @@
  *   node scripts/bake-ground-overhead.mjs --pack "..." --all
  * 产物：<pack>/overhead/<key>.rgba + .meta.json，
  * 随后 python tools/composite_overhead.py 逐图合成（见该文件）。
+ * 有地形但分层地表（ground.layers.json / ground/<layer>.webp）不完整的图 fail-closed：
+ * 该图输出 {key,error} 且不写产物（meta.ground=true 只表示 .rgba 含完整分层地面 pass）。
  */
 import { createServer } from 'vite'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from 'node:fs'
@@ -66,7 +68,9 @@ import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from
 // 此前本页不渲染地面（底图 = 客户端自带地图图），与 3D 档实时分层渲染在夜图/带 lm 图上
 // 差异显著（faust 用户报障"webp 和 3D 俯视图差别大"的直接来源）
 import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
-         groundLayerKeys, setupGroundTextures, buildCorridorRefineMask } from '/src/scene/groundPass.js'
+         setupGroundTextures, buildCorridorRefineMask } from '/src/scene/groundPass.js'
+// 分层地表读取 = fail-closed（缺/坏任一份即抛出；键集仍是 groundPass.groundLayerKeys）
+import { loadBakeGroundLayers } from '/scripts/bake-ground-layers.js'
 import { CLIENT_NORMAL_CAMERA_FOV_H } from '/src/scene/terrainMesh.js'
 
 const SIZE = ${SIZE}
@@ -133,22 +137,24 @@ async function load(key, span = 600, mapId = null) {
   // 有效跨度：terrain.json 自愈后的 span（运行时 terrainSpanOf 同式）——相机与地面材质、
   // 水面海岸线必须同取这一个值，否则成像范围与 ground.webp 的图幅契约错位
   const effSpan = (tmeta && Number.isFinite(tmeta.span) && tmeta.span > 0) ? tmeta.span : span
+  // fail-closed（PR #621 review blocker，见 scripts/bake-ground-layers.js 头部）：有地形 ⇒ 分层
+  // 地表必须完整，缺/坏任一份即抛出 → 本图烘焙失败（bakeKey 不写 .rgba/.meta.json；--all 逐图
+  // catch 照旧继续其它图）。烘焙侧没有回退底图：不得以 mapTexture:null（= 纯白地面）继续出图。
+  // 无地形（field=null）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
   let groundLayers = null
-  if (field) try {
-    const L = await fetch(P + 'ground.layers.json').then((r) => (r.ok ? r.json() : null))
-    if (L) {
-      const texs = {}
-      for (const k of groundLayerKeys(L)) {
-        const r = await fetch(P + 'ground/' + k + '.webp')
-        if (!r.ok) throw new Error('ground layer 缺失: ' + k)
-        const u = URL.createObjectURL(await r.blob())
-        try { texs[k] = await new THREE.TextureLoader().loadAsync(u) } finally { URL.revokeObjectURL(u) }
-      }
-      // 各向异性取高清档值（4）：正交俯拍下与 1 等效（近法向入射），只为与运行时的上传契约一致
-      setupGroundTextures(texs, Math.min(4, renderer.capabilities.getMaxAnisotropy()))
-      groundLayers = { layers: L, texs }
-    }
-  } catch (e) { console.warn('ground pass: 分层地表缺失（地形仍渲染，仅底色退化）:', e) }
+  let groundReady = false            // 仅当分层地面网格真正建成后置 true——meta.ground 的唯一来源
+  if (field) {
+    groundLayers = await loadBakeGroundLayers({
+      base: P, fetchFn: (u) => fetch(u),
+      loadTexture: async (blob) => {
+        const u = URL.createObjectURL(blob)
+        try { return await new THREE.TextureLoader().loadAsync(u) } finally { URL.revokeObjectURL(u) }
+      },
+    })
+    groundTexs = groundLayers.texs   // 立即登记：本图后续任一步失败，下一张 load 开头照常释放
+    // 各向异性取高清档值（4）：正交俯拍下与 1 等效（近法向入射），只为与运行时的上传契约一致
+    setupGroundTextures(groundLayers.texs, Math.min(4, renderer.capabilities.getMaxAnisotropy()))
+  }
   // 地面网格构建推迟到走廊掩码之后（掩码需要场景已置于 qFrame 组下并更新世界矩阵）
   // 水面海岸线资源：与运行时同一份构造（深度位深上下文实测 + 相机 near/far 口径）
   if (field) {
@@ -162,7 +168,6 @@ async function load(key, span = 600, mapId = null) {
       near: camera.near, far: camera.far, depthBits })
     waterCoastTex = waterCoast.heightTex
   }
-  if (groundLayers) groundTexs = groundLayers.texs
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer
@@ -246,10 +251,12 @@ async function load(key, span = 600, mapId = null) {
       hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
       refineMask: corridor ? corridor.mask : null,
     }), makeGroundMaterial({
-      layers: groundLayers && groundLayers.layers, texs: groundLayers && groundLayers.texs,
-      size: effSpan, mapTexture: null,
+      layers: groundLayers.layers, texs: groundLayers.texs, size: effSpan,
     }))
     scene.add(groundMesh)
+    // 不变量自检：分层着色才算地面 pass（回退档 MeshBasicMaterial 在烘焙侧无底图 = 纯白）
+    if (!groundMesh.material.isShaderMaterial) throw new Error('ground pass: 地面材质未走分层着色（拒绝以回退材质出图）')
+    groundReady = true
     console.log('corridor mask:', corridor ? JSON.stringify({ candidates: corridor.candidates, texels: corridor.texels }) : 'null')
   }
 
@@ -262,7 +269,7 @@ async function load(key, span = 600, mapId = null) {
   const batches = groupInstanceBatches(instEntries, cellSize)
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh) }
   for (const e of instEntries) e.node.removeFromParent()
-  return { ok: true, degenerate: degenerate.length, span: effSpan, ground: !!field }
+  return { ok: true, degenerate: degenerate.length, span: effSpan, ground: groundReady }
 }
 
 // 调试：对象 ID 拾取——每个 mesh 临时换唯一编码色渲染，读像素反查覆盖者
