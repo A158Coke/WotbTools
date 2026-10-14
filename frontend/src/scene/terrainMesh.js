@@ -177,6 +177,38 @@ export function decodeTerrainField(buf, meta = {}) {
   return field;
 }
 
+/**
+ * json/bin 配对（PR #615 review P2）：`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两次
+ * 独立请求，布局标记只对同一次发布的 bin 成立——发布切换期"新 json + 浏览器缓存的旧 bin"会跳过补正，
+ * "旧 json + 新 bin"会对已修正数据再平移一列。上游 `terrain.json` 带 `terrainBinSha256`（bin 的逐文件
+ * sha256，与 manifest 同源）：
+ *   · `pairedTerrainBinUrl`：以 sha 作 bin 的缓存键（浏览器 HTTP 缓存按完整 URL 区分；对象存储忽略该
+ *     查询参数、Android 原生资产代理按 path 取并逐次 ETag 复验）⇒ 不会复用上一次发布缓存的旧 bin；
+ *   · `terrainBinMatchesMeta`：解码前核对字节 sha256 ⇒ 发布进行中（json/bin 尚未同批）fail-closed。
+ * 无 `terrainBinSha256` 的旧包 / 无 WebCrypto 的非安全上下文：无从配对，沿用原行为。
+ */
+function terrainBinSha(meta) {
+  const s = meta && meta.terrainBinSha256;
+  return typeof s === 'string' && /^[0-9a-f]{64}$/.test(s) ? s : null;
+}
+
+/** bin URL 附 `sha256=<terrainBinSha256>` 作缓存键；meta 无合法 sha 时原样返回。 */
+export function pairedTerrainBinUrl(url, meta) {
+  const sha = terrainBinSha(meta);
+  if (!url || !sha) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}sha256=${sha}`;
+}
+
+/** bin 字节与 meta 声明的 sha256 是否一致（无声明 / 无 WebCrypto ⇒ true：无从校验）。 */
+export async function terrainBinMatchesMeta(buf, meta, subtle = globalThis.crypto?.subtle) {
+  const sha = terrainBinSha(meta);
+  if (!sha || !subtle || !buf) return true;
+  const digest = new Uint8Array(await subtle.digest('SHA-256', buf));
+  let hex = '';
+  for (const b of digest) hex += b.toString(16).padStart(2, '0');
+  return hex === sha;
+}
+
 /** 引擎 `Landscape::morphFunc`（Landscape.cpp:1213）：4(1−x)⁵ − 5(1−x)⁴ + 1（x 夹到 [0,1]）。 */
 export function morphFunc(x) {
   const y = 1 - Math.max(0, Math.min(1, x));

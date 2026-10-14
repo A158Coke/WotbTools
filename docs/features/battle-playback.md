@@ -893,9 +893,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   ——`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两个独立请求，发布切换期可能错配：
   旧 JSON+新 bin = 对已修正数据再平移一列（plant 新 bin+旧 JSON 实测 250019/262144 高度不同、最大差
   5.607 m）；新 JSON+缓存旧 bin = 跳过所需补正（缓存窗口最长 1 h）。上游已在 `terrain.json` 写
-  **`terrainBinSha256`**（bin 的逐文件 sha256，与 manifest 同源；2026-10-14 起线上已有），前端后续按该
-  hash 对 bin URL 做缓存破坏即可根除；落地前的过渡约束 = **前端切换晚于 COS 发布 ≥ 1 h bin 缓存窗口**
-  （本次满足：COS 发布早于本 PR 部署，旧 bin 缓存已全部过期）。
+  **`terrainBinSha256`**（bin 的逐文件 sha256，与 manifest 同源；2026-10-14 起线上已有）。
+  **前端已强制配对（2026-10-14）**：`terrainMesh.js` 的 `pairedTerrainBinUrl` 以该 sha 作 bin 的缓存键
+  （`terrain.u16.bin?sha256=<hex>`；浏览器 HTTP 缓存按完整 URL 区分，对象存储忽略该参数，Android 原生资产
+  代理按 path 取并逐次 ETag 复验）⇒ 不会复用上一次发布缓存的旧 bin；解码前 `terrainBinMatchesMeta` 用
+  WebCrypto 核对字节 sha256，不符（json/bin 不是同一次发布，只会出现在发布进行中）⇒ fail-closed 回退 2D，
+  不画错位一列的地形。无 `terrainBinSha256` 的旧包 / 无 WebCrypto 的非安全上下文：无从配对，沿用原行为。
+  守卫：`terrainMesh.test.js`（缓存键 / 字节核对 / 旧包与无 WebCrypto 兜底）+ `playbackScene.test.js`（场景层
+  真实加载：sha 键取回才建地形、不同批不建地形）。此前的过渡约束（前端切换晚于 COS 发布 ≥ 1 h bin 缓存窗口；
+  #615 部署满足）随之解除。
   ③顺带修水面岸线高度纹理的半纹素偏移：`DataTexture` 纹素中心在 `(j+0.5)/n`、顶点在 `j/n` ⇒ 采样
   `xz/span + 0.5 + 0.5·uHmTexel`。守卫：`terrainMesh.test.js`（`decodeTerrainField`：两种布局解出同一张
   引擎顶点场、只动列不动行、米制换算、fail-closed）+ `sceneryMaterials.test.js`（解码接线 / 岸线半纹素）；
