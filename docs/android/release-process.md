@@ -48,8 +48,9 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - 候选与线上**同 major** ⇒ 不得改动门槛（minor/patch 不强制）。
   - 包含 Native Bridge wire breaking 时，门槛还须满足 publish 现有的 bridge / cutover 守卫（以守卫为准）。
   现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选
-  versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch，
-  两种做法的门槛结果相同。
+  versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；
+  在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同，合并发布的 wire-breaking 候选仍以
+  守卫的实际要求为准。
 - **major 的发布动作**：合并（自动 stage）→ 把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为
   `X×1_000_000` → `publish(version=<候选>)`；变量必须在 publish 之前设置，步骤见下文
   「强制更新门槛（minSupportedVersionCode）的抬升」。
