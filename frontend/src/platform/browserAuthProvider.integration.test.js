@@ -28,10 +28,10 @@ class TokenRequest {
   }
 }
 
-async function startLogin() {
+async function startLogin(options = {}) {
   const sdk = new Keycloak(config)
   await sdk.init({ pkceMethod: 'S256', checkLoginIframe: false })
-  const url = new URL(await sdk.createLoginUrl({ redirectUri: `${window.location.origin}/?view=profile` }))
+  const url = new URL(await sdk.createLoginUrl({ redirectUri: `${window.location.origin}/?view=profile`, ...options }))
   nonce = url.searchParams.get('nonce')
   return url.searchParams.get('state')
 }
@@ -72,6 +72,36 @@ describe('browser callback recovery with real keycloak-js', () => {
     expect(requests[0].url).toBe(`${config.url}/realms/wotbtools/protocol/openid-connect/token`)
   })
 
+  it('a matching prompt=none login_required return completes as signed out', async () => {
+    returnToSite(await startLogin({ prompt: 'none' }), 'error=login_required')
+    const provider = createBrowserAuthProvider()
+    await expect(provider.init({ mode: 'normal' })).resolves.toBeUndefined()
+    expect(provider.authenticated).toBe(false)
+    expect(provider.token()).toBe('')
+    expect(window.location.hash).toBe('')
+    expect(requests).toHaveLength(0)
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
+  it('login_required from an interactive transaction remains rejected by the SDK', async () => {
+    returnToSite(await startLogin(), 'error=login_required')
+    const provider = createBrowserAuthProvider()
+    await expect(provider.init({ mode: 'normal' })).rejects.toMatchObject({ error: 'login_required' })
+    expect(provider.authenticated).toBe(false)
+    expect(window.location.hash).toBe('')
+    expect(requests).toHaveLength(0)
+  })
+
+  it('login_required without the original transaction cannot masquerade as a signed-out probe', async () => {
+    returnToSite('not-in-this-browser', 'error=login_required')
+    const provider = createBrowserAuthProvider()
+    await expect(provider.init({ mode: 'normal' })).rejects.toMatchObject({ code: 'AUTH_RETURN_NOT_COMPLETED' })
+    expect(provider.authenticated).toBe(false)
+    expect(window.location.hash).toBe('')
+    expect(requests).toHaveLength(0)
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
   it('missing state cannot use receiver SSO: no code exchange or check-sso iframe', async () => {
     returnToSite('not-in-this-browser')
     const provider = createBrowserAuthProvider()
@@ -97,6 +127,16 @@ describe('browser callback recovery with real keycloak-js', () => {
     await expect(provider.init({ mode: 'normal' })).rejects.toBeUndefined()
     expect(provider.authenticated).toBe(false)
     expect(provider.token()).toBe('')
+  })
+
+  it('an expired interactive return fails without the SDK restarting authorization', async () => {
+    returnToSite(await startLogin(), 'error=login_required&error_description=authentication_expired')
+    const provider = createBrowserAuthProvider()
+    await expect(provider.init({ mode: 'normal' })).rejects.toMatchObject({ code: 'AUTH_RETURN_NOT_COMPLETED' })
+    expect(provider.authenticated).toBe(false)
+    expect(window.location.hash).toBe('')
+    expect(requests).toHaveLength(0)
+    expect(document.querySelector('iframe')).toBeNull()
   })
 
   it('cancelled authorization remains rejected and permits a new transaction', async () => {

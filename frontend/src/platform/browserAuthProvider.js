@@ -33,7 +33,7 @@ export function createBrowserAuthProvider() {
     name: 'web',
 
     /**
-     * `normal`：check-sso —— 已有 SSO 会话时静默登录，未登录**不跳转**（保持迁移前语义）。
+     * `normal`：普通访问 check-sso；回跳消费原交易，合法匿名结果保持未登录。
      * `login-recovery`：watchdog 放弃上一代后的重建，不再重复 check-sso bootstrap。
      */
     async init({ mode } = {}) {
@@ -42,8 +42,6 @@ export function createBrowserAuthProvider() {
       recordReturnFacts(hasAuthReturn({ search: '', hash: window.location.hash })
         ? window.location.hash.slice(1) : window.location.search)
       const returning = hasAuthReturn()
-      // An unrelated SSO session must not hide an uncompleted incoming transaction.
-      // The SDK alone consumes and validates a callback; no callback-store access here.
       const options = mode === 'login-recovery' || returning
         ? {
             pkceMethod: 'S256',
@@ -55,9 +53,22 @@ export function createBrowserAuthProvider() {
             silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
             checkLoginIframe: false,
           }
-      await adapter().init(options)
-      if (returning && mode !== 'login-recovery' && !adapter().authenticated) {
-        throw Object.assign(new Error('AUTH_RETURN_NOT_COMPLETED'), { code: 'AUTH_RETURN_NOT_COMPLETED' })
+      const kc = adapter()
+      const login = kc.login
+      const guardReturn = returning && mode !== 'login-recovery'
+      if (guardReturn) {
+        // SDK-valid callbacks bypass onLoad, including prompt=none's signed-out result.
+        // An unmatched callback reaches check-sso's login instead: stop before a new
+        // transaction can hide the original failure. No silent iframe or store parsing.
+        options.onLoad = 'check-sso'
+        kc.login = () => {
+          throw Object.assign(new Error('AUTH_RETURN_NOT_COMPLETED'), { code: 'AUTH_RETURN_NOT_COMPLETED' })
+        }
+      }
+      try {
+        await kc.init(options)
+      } finally {
+        if (guardReturn) kc.login = login
       }
     },
 
