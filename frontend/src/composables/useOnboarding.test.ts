@@ -257,6 +257,31 @@ describe('account receipt ownership', () => {
     h.wrapper.unmount()
   })
 
+  it('a failing profile bootstrap never re-triggers itself through its own state flips', async () => {
+    account('A')
+    boundary.bootstrap.state = ref('idle')
+    // 复刻真实 bootstrap 的失败路径：一次尝试把状态推到 pending，再落到 failed，且失败**不是**
+    // 终态（下一次 ensure 仍会重试）。这正是后端不可用 / PUT 500 时控制台被
+    // `PUT /api/users/profile` 刷屏的输入。
+    boundary.settled.mockImplementation(async () => {
+      boundary.bootstrap.state.value = 'pending'
+      await new Promise(resolve => setTimeout(resolve, 0))
+      boundary.bootstrap.state.value = 'failed'
+      return false
+    })
+    const h = harness({ invite: true })
+    await flushPromises()
+    await flushPromises()
+    const calls = boundary.settled.mock.calls.length
+    expect(calls).toBeGreaterThan(0)
+    // 失败的 bootstrap 重试权属于 owner（认证 / 连通性变化、用户显式 retry）；synchronize 的
+    // 触发器不得把 bootstrap 的状态翻转当成新的触发源——否则 failed → ensure → pending → failed
+    // 自我维持（本机实测 ≈380 req/s 的请求风暴）。
+    for (let i = 0; i < 5; i++) await new Promise(resolve => setTimeout(resolve, 0))
+    expect(boundary.settled.mock.calls.length).toBe(calls)
+    h.wrapper.unmount()
+  })
+
   it('discards a late A-account read after B signs in', async () => {
     account('A')
     const a = deferred<any>(), b = deferred<any>()

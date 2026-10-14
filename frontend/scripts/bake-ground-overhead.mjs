@@ -15,6 +15,10 @@
  *   node scripts/bake-ground-overhead.mjs --pack "..." --all
  * 产物：<pack>/overhead/<key>.rgba + .meta.json，
  * 随后 python tools/composite_overhead.py 逐图合成（见该文件）。
+ * 地形（terrain.json / terrain.u16.bin 缺一或不配对）或分层地表（ground.layers.json /
+ * ground/<layer>.webp）不完整的图 fail-closed：该图输出 {key,error}，且该图上一轮的
+ * <key>.rgba / .meta.json 在本图开烘前即删除（失败 = 无产物，合成器不会读到旧成品）。
+ * meta.ground=true 只表示 .rgba 含完整分层地面 pass；json+bin 均缺的图 ground=false。
  */
 import { createServer } from 'vite'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, createReadStream } from 'node:fs'
@@ -22,6 +26,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
+import { bakeKey } from './bake-overhead-key.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -34,6 +39,7 @@ const argOf = (name, def) => {
 const has = (name) => args.includes(`--${name}`)
 const PACK = resolve(argOf('pack', 'D:/Class/Rust/Project/release/asset_pack'))
 const SIZE = Number(argOf('size', 4096))
+const UPLOAD = join(PACK, 'overhead', 'upload.rgba')   // /pixel-upload 落盘点（bakeKey 读同一路径）
 
 const BAKE_HTML = `<!doctype html><html><body><script>
 window.__bakeErr=[];
@@ -47,27 +53,56 @@ addEventListener('unhandledrejection',(e)=>window.__bakeErr.push('reject: '+Stri
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 // 材质 SSOT：与 3D 运行时（playbackScene）同一份实现——俯视烘焙的观感基准
-import { cachedSceneryMat, isWaterName, makeBillboardMaterial, makeBlendByAngleMaterial, makeSpeedtreeStaticMaterial, SCENERY_LAMBERT_EXPOSURE, disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
+import { disposeSceneGroup } from '/src/scene/sceneryMaterials.js'
+// 场景装配 SSOT（extras 贴图解 + 逐节点材质分派；与 3D 运行时同一份——2026-10-14 收编，
+// 用户裁示"直接用它的代码"：本页此前复制的 convMat/route/水面收集全部删除）
+import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from '/src/scene/sceneryAssembly.js'
+// 逐图光照 SSOT（与 3D 运行时同一份应用体；2026-10-14 抽层——本页此前自持固定日光常量，
+// 夜间图比 3D 档亮约 3 倍，见该模块头部说明）
+import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from '/src/scene/mapLighting.js'
+// 装配规则 SSOT：剔除/水面语义判定与运行时共用同一份（见该模块头部 2026-10-14 漂移事故说明）
+import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater } from '/src/scene/sceneryAssemblyRules.js'
 import { pruneForeignVariants } from '/src/scene/variantFilter.js'
+// 实例化合批：与 3D 运行时**同一模块同一序列**（sceneryInstancing.js；含 aLm 逐实例
+// 光照图变换的 InstancedBufferAttribute 口径）——此前本页手写的『单实例 InstancedMesh
+// + 几何克隆』是第二套实现，已删除（2026-10-14 收编，用户裁示"直接用它的代码"）
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from '/src/scene/sceneryInstancing.js'
+// 地面 pass SSOT（2026-10-14 收编，用户裁示"直接完全照搬 3D 回放的代码接入渲染"）：
+// 地形数据/几何、分层地表材质（cm×lm×tile/mask）、水面海岸线资源与 3D 运行时共用同一份——
+// 此前本页不渲染地面（底图 = 客户端自带地图图），与 3D 档实时分层渲染在夜图/带 lm 图上
+// 差异显著（faust 用户报障"webp 和 3D 俯视图差别大"的直接来源）
+import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
+         setupGroundTextures, buildCorridorRefineMask } from '/src/scene/groundPass.js'
+// 分层地表读取 = fail-closed（缺/坏任一份即抛出；键集仍是 groundPass.groundLayerKeys）
+import { loadBakeGroundLayers, requireBakeTerrain } from '/scripts/bake-ground-layers.js'
+import { CLIENT_NORMAL_CAMERA_FOV_H } from '/src/scene/terrainMesh.js'
 
 const SIZE = ${SIZE}
 let renderer, scene, camera, group
+let hemiLight = null, sunLight = null
+// 地面 pass 的逐图资源（地形网格/分层贴图/海岸线高度场纹理）——与 group 一起在换图时释放
+let groundMesh = null, groundTexs = null, waterCoast = null, waterCoastTex = null
 
-// 光照与 playbackScene.initScene 同参（半球 2.4 + 平行光 3.0 + ACES 1.15）：
-// 俯视图的观感基准是 3D 档的实际画面。
+// 光照：与 3D 运行时**同一份应用体**（mapLighting.js SSOT）——逐图 lighting.json 在 load 里
+// 应用（方向/色/强度 + "保色相、归亮度"曝光归一）；此处只建兜底灯（DEFAULT_* 与运行时同值）
+// 与出屏口径（LinearToneMapping + 曝光 1.0——客户端发布版无 filmic 曲线、屏幕级自动曝光，
+// 证据见 playbackScene 文件头 A2 注释；此前本页用 ACES 1.15 属旧基线）。
 async function init() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   renderer.setSize(SIZE, SIZE)
   renderer.setPixelRatio(1)
   renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.15
+  renderer.toneMapping = THREE.LinearToneMapping
+  renderer.toneMappingExposure = 1.0
   renderer.setClearColor(0x000000, 0)          // 透明清屏：alpha 即覆盖掩膜
   scene = new THREE.Scene()
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.4))
-  const sun = new THREE.DirectionalLight(0xffffff, 3.0)
-  sun.position.set(0, 1, 0)
-  scene.add(sun)
+  hemiLight = new THREE.HemisphereLight(DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY)
+  scene.add(hemiLight)
+  sunLight = new THREE.DirectionalLight(0xffffff, DEFAULT_SUN_INTENSITY)
+  sunLight.position.set(120, 260, 80)
+  scene.add(sunLight)
+  scene.add(sunLight.target)      // 平行光只认 position→target 方向；target 必须在场景图里
+  sunLight.target.position.set(0, 0, 0)
   camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 4000)
   camera.position.set(0, 1000, 0)
   camera.up.set(0, 0, -1)
@@ -84,38 +119,95 @@ async function load(key, span = 600, mapId = null) {
     disposeSceneGroup(group)         // （实测第 2 张起 coverPct 恒 100 的根因）。
     group = null                     // disposeSceneGroup 同时清 uniforms 纹理与
   }                                  // 材质缓存——共享 SpeedTree 贴图不回收会随图数累积显存（评审 P2）
+  // 地面 pass 资源逐图释放（地形网格 + 分层贴图 + 海岸线高度场；上一张的残留会累积显存）
+  if (groundMesh) { scene.remove(groundMesh); groundMesh.geometry.dispose(); groundMesh.material.dispose(); groundMesh = null }
+  if (groundTexs) { for (const k in groundTexs) groundTexs[k]?.dispose?.(); groundTexs = null }
+  if (waterCoastTex) { waterCoastTex.dispose(); waterCoastTex = null }
+  waterCoast = null
+  // 换图先复位兜底灯（避免上一张图的光照残留），再应用本图 lighting.json（缺数据 = 兜底）
+  resetMapLighting({ renderer, scene, sunLight, hemiLight })
+  const lighting = await fetch(location.origin + '/pack/map/' + encodeURIComponent(key) + '/lighting.json')
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null)
+  applyMapLighting({ renderer, scene, sunLight, hemiLight, lighting })
+  // ---- 地面 pass（与 3D 运行时同一份实现：src/scene/groundPass.js SSOT）----
+  // 地形：pack 内 terrain.json + 配对 terrain.u16.bin（共享 loadTerrain——span 自愈与
+  // json/bin sha 配对同运行时）；分层地表：ground.layers.json + ground/<layer>.webp
+  // （键集/上传契约共享）。faust 这类夜图此前"底图亮、3D 暗"的根因即本页不渲染该层：
+  // 底图来自客户端自带地图图，而 3D 档地面是 cm×lm×tile/mask 的实时合成。
+  const P = location.origin + '/pack/map/' + encodeURIComponent(key) + '/'
+  const { field, meta: tmeta, metaStatus, binStatus } = await loadTerrain({
+    binUrl: P + 'terrain.u16.bin', metaUrl: P + 'terrain.json', fetchFn: (u) => fetch(u),
+  })
+  // fail-closed：地形配对按 HTTP 事实判定（requireBakeTerrain，见 bake-ground-layers.js）——json+bin
+  // 均 404 才走无地面口径（ground=false）；json 缺而 bin 在（loadTerrain 会按缺省参数解码，field 非空
+  // 也不可信）、json 在而 bin 缺/不配对、读取异常一律本图失败，不得静默退化或以错误标尺出图。
+  requireBakeTerrain({ field, metaStatus, binStatus })
+  // 有效跨度：terrain.json 自愈后的 span（运行时 terrainSpanOf 同式）——相机与地面材质、
+  // 水面海岸线必须同取这一个值，否则成像范围与 ground.webp 的图幅契约错位
+  const effSpan = (tmeta && Number.isFinite(tmeta.span) && tmeta.span > 0) ? tmeta.span : span
+  // fail-closed（PR #621 review blocker，见 scripts/bake-ground-layers.js 头部）：有地形 ⇒ 分层
+  // 地表必须完整，缺/坏任一份即抛出 → 本图烘焙失败（bakeKey 已删旧产物且不写新产物；--all 逐图
+  // catch 照旧继续其它图）。烘焙侧没有回退底图：不得以 mapTexture:null（= 纯白地面）继续出图。
+  // 无地形（json+bin 均 404）路径不变：不建地面网格、ground=false（合成器不做覆盖替换）。
+  let groundLayers = null
+  let groundReady = false            // 仅当分层地面网格真正建成后置 true——meta.ground 的唯一来源
+  if (field) {
+    groundLayers = await loadBakeGroundLayers({
+      base: P, fetchFn: (u) => fetch(u),
+      loadTexture: async (blob) => {
+        const u = URL.createObjectURL(blob)
+        try { return await new THREE.TextureLoader().loadAsync(u) } finally { URL.revokeObjectURL(u) }
+      },
+    })
+    groundTexs = groundLayers.texs   // 立即登记：本图后续任一步失败，下一张 load 开头照常释放
+    // 各向异性取高清档值（4）：正交俯拍下与 1 等效（近法向入射），只为与运行时的上传契约一致
+    setupGroundTextures(groundLayers.texs, Math.min(4, renderer.capabilities.getMaxAnisotropy()))
+  }
+  // 地面网格构建推迟到走廊掩码之后（掩码需要场景已置于 qFrame 组下并更新世界矩阵）
+  // 水面海岸线资源：与运行时同一份构造（深度位深上下文实测 + 相机 near/far 口径）
+  if (field) {
+    let depthBits = 24
+    try {
+      const glc = renderer.getContext()
+      const b = glc.getParameter(glc.DEPTH_BITS)
+      if (Number.isFinite(b) && b >= 16 && b <= 32) depthBits = b
+    } catch { /* 取不到按 24bit 缺省（同运行时） */ }
+    waterCoast = makeWaterCoast({ field, n: tmeta.size || 512, span: effSpan,
+      near: camera.near, far: camera.far, depthBits })
+    waterCoastTex = waterCoast.heightTex
+  }
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer
   // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）
   pruneForeignVariants(gltf.scene, mapId)
-  // 排除规则与 python 管线一致：损毁态变体（D_/State N）、隐形墙、天空球、水面
-  //（地形图已含水系配色）、跨变体标记节点（extras.mdVariant——变体图共享底图，
-  // 只烘无标记节点，否则重新引入跨变体幻影物体的 bug）
+  // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
+  const sceneryExtras = await resolveSceneryExtras(gltf)
+  const masks = makeTexResolvers(gltf, sceneryExtras)
+  // 排除规则 = 共享规则模块（src/scene/sceneryAssemblyRules.js，与 3D 运行时同一份判定；
+  // 2026-10-14 抽层——此前本页自持一份 water|sea|river|lake 名字剔除，未随运行时的
+  // "水面语义优先"修复同步，出现双向错剔：水塔/探照灯被过剔、ocean/浮冰被当固体烘入。
+  // 语义优先：水面按 isWaterNode（strict 包 = 材质 extras.water 标记，名字仅旧包回退）；
+  // 名字只用于天空（/sky/，与运行时同式）/非完好态/隐形（用户报障"顶棚类没渲染"后收窄——
+  // 穹顶建筑/舱室/山体块此前被 dome/loonar/surroundings/^plane 名字启发式过剔）。
+  // keepWater：水语义件**渲染**（与 3D 运行时同源——地面 pass 落地后底图不再由客户端
+  // 地图图的水系配色承担；NewBay 海面 SkySeaSurface 这类"名字像天、材质是水"的节点
+  // 也按材质标记保留，见规则模块 keepWater 注释）。
+  const strictSurfaces = strictSurfacesOf(gltf.scene)
   const drop = []
   gltf.scene.traverse((o) => {
     const nm = o.name || ''
-    if (/^D_|State ?[1-9]|invisible|sky|dome|loonar|spacedome|stars|surroundings|^plane|water|sea|river|lake/i.test(nm) || (o.userData && o.userData.mdVariant)) drop.push(o)
+    if (bakeDropNode(nm, o.material,
+                     { strictSurfaces, mdVariant: !!(o.userData && o.userData.mdVariant),
+                       keepWater: true })) drop.push(o)
   })
   for (const o of drop) o.removeFromParent()
-  // 全幅环境壳剔除（名字黑名单兜底）：包围盒覆盖 ≥90% 图幅的顶层子树——天空穹顶/
-  // 远景板/隐形罩在真实场景里是环境壳（游戏内不可见或半透明），不是物体。
-  // moon 的穹顶就是「父节点 spacedome 有名、mesh 无名」结构，名字规则打不中。
-  const fullSpan = new THREE.Box3()
-  for (const child of [...gltf.scene.children]) {
-    const box = new THREE.Box3().setFromObject(child)
-    const w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z)
-    if (w >= span * 0.9) {
-      fullSpan.union(box)
-      child.removeFromParent()
-      drop.push(child)
-    }
-  }
-  void fullSpan
-  // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）
-  group = new THREE.Group()
-  group.rotation.order = 'YXZ'
-  group.rotation.set(-Math.PI / 2, Math.PI, 0)
+  // ⚠️ 2026-10-14 删除"≥90% 图幅环境壳"几何剔除（用户报"米德尔堡右上角黑块"）：该规则把
+  // **运行时正常渲染**的大件整块剔掉（erlenberg 外圈山体 mountain_3/land_main1 等、各图
+  // 边缘地貌带/大地壳），露出可玩区外那条客户端 colormap 的暗色边带 → webp 黑块。
+  // 探针实证：保留后该处恢复为山体（(23,24,18)→(155,131,56)）。
+  // 真天空穹已由规则模块的 /sky/ 判据（与运行时天空判据同式）剔除；本页的渲染集合自此
+  // 与 3D 运行时逐件一致（水件/穹顶/地形块均保留）——"完全照搬运行时"的最后一处收敛。
   // 退化几何剔除（与 3D 运行时同式：撕裂批次不渲染）
   const degenerate = []
   gltf.scene.traverse((o) => {
@@ -126,71 +218,68 @@ async function load(key, span = 600, mapId = null) {
     if (vc > 0 && (ic / 3) / vc > 15) degenerate.push(o)
   })
   for (const o of degenerate) o.removeFromParent()
-  // 材质转换：与 3D 运行时同一实现（SSOT 场景材质模块）。键组成必须与
-  // playbackScene 的 convMat 逐字一致——同 key 同材质、跨端观感一致（守卫锁定）。
-  // 本页不做 extras 贴图解析（光照图/环境反射/细节层都不进俯视底图——见该页头部说明）；
-  // 保留同名取纹理入口以维持与内核键**逐字同构**（守卫锁定），恒 null 不改变键的形态
-  const detailTexOf = () => null;
-  const convMat = (m, isCard) => cachedSceneryMat(
-    [isCard ? 'C' : 'M', m.name || '', m.map ? m.map.uuid : '',
-     m.color ? [m.color.r, m.color.g, m.color.b].map((v) => v.toFixed(4)).join(',') : '',
-     m.alphaMode || '', m.alphaTest ?? 0, !!m.transparent, m.opacity ?? 1,
-     !!m.vertexColors,
-     (m.userData && m.userData.occMean) || '',
-     (m.userData && m.userData.blendLayer) || '',
-     (m.userData && m.userData.alphaBlend) || '',
-     // 细节层（B1）：补丁逐材质注入 detail 贴图/平铺倍率——不同 detail 的材质
-     // 若串用缓存会互相采错贴图（同图不同砖纹的实例）
-     (() => {
-       const d = m.userData && m.userData.detail;
-       if (!d) return '';
-       const t = detailTexOf(m);
-       return 'D|' + (t ? t.uuid : '') + '|' + (Array.isArray(d.scale) ? d.scale.join(',') : '');
-     })()].join('|'),
-    () => (isCard ? makeBillboardMaterial(m) : (() => {
-      const opaqueEnough = (m.opacity ?? 1) >= 0.99;
-      if ((m.name || '').startsWith('ST|')) { return makeSpeedtreeStaticMaterial(m, opaqueEnough); }
-      if (m.userData && m.userData.blendByAngle) { return makeBlendByAngleMaterial(m, m.userData.blendByAngle); }
-      // 真混合层（extras.blendLayer，烟雾/瀑布/浪）保留软 alpha：与内核同约定，
-      // 不得把"不透明度≈1 的伪透明"分流套到它身上（详见 playbackScene convMat 注释）
-      const blendLayer = !!(m.userData && m.userData.blendLayer);
-      // 软混合效果片（extras.alphaBlend；如视角淡出片）同样不得被伪透明启发式削成硬边
-      const softAlpha = !!(m.userData && m.userData.alphaBlend);
-      const pseudoOpaque = !!m.transparent && (m.opacity ?? 1) >= 0.99 && !blendLayer && !softAlpha;
-      const nm = new THREE.MeshLambertMaterial({
-        map: m.map || null,
-        color: (m.color ? m.color.clone() : new THREE.Color(0xffffff)).multiplyScalar(SCENERY_LAMBERT_EXPOSURE),
-        transparent: !!m.transparent && !pseudoOpaque,
-        opacity: m.opacity ?? 1,
-        side: THREE.DoubleSide,
-      });
-      if (m.alphaTest > 0) nm.alphaTest = m.alphaTest;
-      if (pseudoOpaque) nm.alphaTest = Math.max(nm.alphaTest || 0, 0.33);
-      if (nm.transparent) nm.depthWrite = false;
-      // 法线用几何自带的 NORMAL（导出器 authored 法线）；内核 2026-10-09 同步删掉了
-      // flatShading（旧行为丢掉 NORMAL、抹平硬边）。本页与内核共用约定，保持逐字一致：
-      // 下次重烘（须随资产包重导 + COS 同步）后，均衡档底图与 3D 档观感继续同源。
-      return nm;
-    })()))
-  gltf.scene.traverse((o) => {
-    if (!o.isMesh || !o.material) return
-    const isCard = !!o.geometry.attributes._corner
-    o.material = Array.isArray(o.material) ? o.material.map((m) => convMat(m, isCard))
-                                           : convMat(o.material, isCard)
-    if (isWaterName(o.name)) {
-      const ms = Array.isArray(o.material) ? o.material : [o.material]
-      for (const mm of ms) {
-        if (!mm || !mm.transparent) continue
-        mm.depthWrite = true
-        mm.side = THREE.DoubleSide
-        mm.depthTest = true
-        mm.needsUpdate = true
-      }
-    }
+  // 逐节点材质分派 = 共享装配模块（与 3D 运行时同一份实现与同一顺序）：
+  //   水(对象)→blendByAngle→decal→lm(+env+detail)→混合层掩码→水下→convMat。
+  //   groundLayers 传**真实分层**（贴花件按 cm(UV1) 不受光渲染，同运行时——此前传 null
+  //   使 faust 等 5 支 decal 材质回落受光 Lambert）；waterCoast 同运行时（水面片保留渲染）。
+  // 场景网格清单（走廊掩码类筛选用；water = 材质带 extras.water）——与运行时同口径
+  const sceneryMeshes = []
+  assembleSceneryMaterials(gltf, {
+    strictSurfaces,
+    masks,
+    groundLayers,
+    waterCoast,
+    debug: false,
+    onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
   })
+  // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）。必须在材质装配**之后**
+  // 挂载（与运行时 mapScenery 同序）：装配内的水面片收集/水下判定按 GLB 世界包围盒取 z 为高度、
+  // (x,y) 为占地——先挂 qFrame 时结果取决于组世界矩阵是否已更新，更新后高度变成 y，水下件
+  // 与水上件会互换材质（PR #621 review P2）。走廊掩码按场景系世界矩阵取样 ⇒ 挂载在掩码前。
+  group = new THREE.Group()
+  group.rotation.order = 'YXZ'
+  group.rotation.set(-Math.PI / 2, Math.PI, 0)
   group.add(gltf.scene)
   scene.add(group)
-  return { ok: true, degenerate: degenerate.length }
+
+  // ---- 贴地薄构件走廊掩码 + 地面网格（两者都在合批前；掩码=共享实现）----
+  // 运行时同款机制（2026-10-14 用户报"轨道被下方地形遮挡"）：粗 LOD 插值面在路堑处会高于
+  // 真实地表而盖住贴地薄构件；正交俯视同样成立（遮挡取决于插值高度）⇒ 走廊 texel 强制最细。
+  group.updateMatrixWorld(true)
+  let corridor = null
+  try {
+    corridor = buildCorridorRefineMask({
+      meshes: sceneryMeshes, field,
+      n: (tmeta && tmeta.size) || 512, span: effSpan,
+    })
+  } catch (e) { console.warn('ground pass: 走廊掩码构建失败（地形保持缺省口径）:', e) }
+  if (field) {
+    // 相机参数（位置/fov）只决定细分成本；正交直下时着色是 (x,z) 的函数，细分级只影响遮挡
+    groundMesh = new THREE.Mesh(buildGroundGeometry({
+      field, n: tmeta.size || 512, span: effSpan,
+      cam: { x: 0, y: 1000, z: 0 }, fovY: 0.96, aspect: 1,
+      hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,
+      refineMask: corridor ? corridor.mask : null,
+    }), makeGroundMaterial({
+      layers: groundLayers.layers, texs: groundLayers.texs, size: effSpan,
+    }))
+    scene.add(groundMesh)
+    // 不变量自检：分层着色才算地面 pass（回退档 MeshBasicMaterial 在烘焙侧无底图 = 纯白）
+    if (!groundMesh.material.isShaderMaterial) throw new Error('ground pass: 地面材质未走分层着色（拒绝以回退材质出图）')
+    groundReady = true
+    console.log('corridor mask:', corridor ? JSON.stringify({ candidates: corridor.candidates, texels: corridor.texels }) : 'null')
+  }
+
+  // 实例化合批：与运行时**同一模块同一序列**（sceneryInstancing.js 的 collect → group →
+  // buildInstancedMesh；aLm 逐实例属性、几何薄包装零拷贝都在模块内）。原节点摘除，
+  // 批次挂回场景；D_ 损毁态/破坏匹配等运行时专属步骤本页无（相关节点已在剔除阶段移除）。
+  const instEntries = collectInstanceEntries(gltf.scene).filter((e) =>
+    !/sky/i.test(e.name) && !isWaterNode(e.name, e.material, { strictSurfaces }))
+  const cellSize = Math.max(75, span / 8)
+  const batches = groupInstanceBatches(instEntries, cellSize)
+  for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh) }
+  for (const e of instEntries) e.node.removeFromParent()
+  return { ok: true, degenerate: degenerate.length, span: effSpan, ground: groundReady }
 }
 
 // 调试：对象 ID 拾取——每个 mesh 临时换唯一编码色渲染，读像素反查覆盖者
@@ -260,7 +349,13 @@ async function startServer() {
           const file = join(PACK, rel)
           if (!file.startsWith(PACK) || !existsSync(file)) { res.statusCode = 404; return res.end('nf') }
           res.setHeader('access-control-allow-origin', '*')
-          res.setHeader('content-type', rel.endsWith('.glb') ? 'model/gltf-binary' : 'application/octet-stream')
+          // MIME 按扩展名：webp 交给 <img>/TextureLoader 需要 image/webp（octet-stream 下
+          // Chromium 的 blob 解码不可靠）；json 供 fetch().json()
+          const ct = rel.endsWith('.glb') ? 'model/gltf-binary'
+            : rel.endsWith('.webp') ? 'image/webp'
+            : rel.endsWith('.json') ? 'application/json'
+            : 'application/octet-stream'
+          res.setHeader('content-type', ct)
           createReadStream(file).pipe(res)
         })
         server.middlewares.use('/bake', (_req, res) => {
@@ -276,7 +371,7 @@ async function startServer() {
           req.on('data', (c) => { chunks.push(c); total += c.length })
           req.on('end', () => {
             const body = Buffer.concat(chunks, total)
-            writeFileSync(join(PACK, 'overhead', 'upload.rgba'), body)
+            writeFileSync(UPLOAD, body)
             res.end('ok:' + body.length)
           })
         })
@@ -322,21 +417,6 @@ function spanOf(key) {
   }
 }
 
-async function bakeKey(page, key, outDir, span) {
-  const t0 = Date.now()
-  await page.evaluate(`window.__bake.load(${JSON.stringify(key)}, ${span}, ${primaryMapIdOf(key)})`)
-  const stats = await page.evaluate(`window.__bake.render(${span})`)
-  const total = SIZE * SIZE * 4
-  await page.evaluate(`fetch('/pixel-upload', { method: 'POST', body: window.__buf }).then(r => r.text())`)
-  const upload = join(PACK, 'overhead', 'upload.rgba')
-  if (!existsSync(upload)) throw new Error('pixel upload missing')
-  const raw = readFileSync(upload)
-  if (raw.length !== total) throw new Error(`pixel upload ${raw.length}B != expected ${total}B`)
-  writeFileSync(join(outDir, `${key}.rgba`), raw)
-  writeFileSync(join(outDir, `${key}.meta.json`), JSON.stringify({ key, span, size: SIZE, ...stats }))
-  return { key, coverPct: stats.coverPct, mb: +(raw.length / 1048576).toFixed(1), ms: Date.now() - t0 }
-}
-
 const main = async () => {
   const outDir = join(PACK, 'overhead')
   mkdirSync(outDir, { recursive: true })
@@ -371,7 +451,8 @@ const main = async () => {
     console.error('bake origin:', origin, '| maps:', keys.length)
     for (const key of keys) {
       try {
-        console.log(JSON.stringify(await bakeKey(page, key, outDir, spans[key])))
+        console.log(JSON.stringify(await bakeKey({ page, key, outDir, span: spans[key], size: SIZE,
+                                                   mapId: primaryMapIdOf(key), uploadPath: UPLOAD })))
         if (process.env.PICK) {
           const n = await page.evaluate(`window.__bake.renderIdPass(${spans[key]})`)
           const pts = [[60, 60], [SIZE >> 1, 60], [SIZE - 60, 60], [60, SIZE >> 1], [SIZE >> 1, SIZE >> 1], [SIZE - 60, SIZE >> 1], [60, SIZE - 60], [SIZE >> 1, SIZE - 60], [SIZE - 60, SIZE - 60]]
