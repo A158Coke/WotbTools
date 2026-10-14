@@ -14,6 +14,20 @@ const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
 const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+// 逐图光照应用层（2026-10-14 抽层：运行时与俯视烘焙共用同一份——见 mapLighting.js 头部）
+const mlSrc = readFileSync(resolve(here, 'mapLighting.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+// 场景装配 SSOT（2026-10-14 抽层：extras 贴图解 + 逐节点材质分派 + 水面修整——运行时与
+// 俯视烘焙共用同一份，见 sceneryAssembly.js 头部；本节相关守卫随迁读取新源）
+const asmSrc = readFileSync(resolve(here, 'sceneryAssembly.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+// 地面 pass SSOT（2026-10-14 抽层：地形数据/几何、分层地表材质、水面海岸线资源——运行时与
+// 俯视烘焙共用同一份，见 groundPass.js 头部；地面相关守卫随迁读取新源）
+const gpSrc = readFileSync(resolve(here, 'groundPass.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
 
 // 场景内核依赖 WebGL，无法直接实例化；此仓已有源码级契约测试的先例（labelOcclusion.test.js）。
 // 本文件守卫「场景 GLB 材质管线」，即本轮从上游补齐的渲染实现——它们此前在本仓缺失，
@@ -21,11 +35,15 @@ const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
 describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('材质实例按 key 去重：convMat 经 cachedSceneryMat，键含 alphaTest/transparent', () => {
     // 回归：逐 mesh 各建一份材质 → 材质/着色器实例与 program 切换随 mesh 数线性膨胀
-    expect(src).toMatch(/const convMat = \(m, isCard\) => cachedSceneryMat\(/)
-    const key = src.slice(src.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
+    // 2026-10-14 抽层：convMat 在共享装配模块（asmSrc），运行时与烘焙同一份
+    expect(asmSrc).toMatch(/const convMat = \(m, isCard\) => cachedSceneryMat\(/)
+    const key = asmSrc.slice(asmSrc.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
     expect(key.slice(0, 900)).toMatch(/m\.alphaTest \?\? 0/)
     expect(key.slice(0, 900)).toMatch(/!!m\.transparent/)
     expect(key.slice(0, 900)).toMatch(/m\.map \? m\.map\.uuid : ''/)
+    // 运行时只消费装配模块导出的入口（本地不得再自建 convMat——防两套复辟）
+    expect(src).toMatch(/from '\.\/sceneryAssembly\.js'/)
+    expect(src).not.toMatch(/const convMat = \(m, isCard\)/)
   })
 
   it('disposeObject3D 经 collectMaterialTextures 回收纹理（含 ShaderMaterial uniforms）', () => {
@@ -65,26 +83,30 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('伪透明转不透明 + 裁切，真透明不写深度', () => {
     // 判据含 !blendLayer/!softAlpha：导出器标记的软混合层（烟雾/瀑布 extras.blendLayer、
     // 视角淡出片 extras.alphaBlend）都不走这条分流，保留软 alpha
-    expect(src).toMatch(/const pseudoOpaque = !!m\.transparent && \(m\.opacity \?\? 1\) >= 0\.99 && !blendLayer && !softAlpha;/)
-    expect(src).toMatch(/transparent: !!m\.transparent && !pseudoOpaque,/)
-    expect(src).toMatch(/if \(pseudoOpaque\) nm\.alphaTest = Math\.max\(nm\.alphaTest \|\| 0, 0\.33\);/)
-    expect(src).toMatch(/if \(nm\.transparent\) nm\.depthWrite = false;/)
+    // 2026-10-14 抽层：分流体在共享装配模块（asmSrc），运行时与烘焙同一份
+    expect(asmSrc).toMatch(/const pseudoOpaque = !!m\.transparent && \(m\.opacity \?\? 1\) >= 0\.99 && !blendLayer && !softAlpha;/)
+    expect(asmSrc).toMatch(/transparent: !!m\.transparent && !pseudoOpaque,/)
+    expect(asmSrc).toMatch(/if \(pseudoOpaque\) nm\.alphaTest = Math\.max\(nm\.alphaTest \|\| 0, 0\.33\);/)
+    expect(asmSrc).toMatch(/if \(nm\.transparent\) nm\.depthWrite = false;/)
     // 镂空贴图必须继承 GLTFLoader 解析好的 alphaTest（MASK 裁切，否则整片方片照绘）
-    expect(src).toMatch(/if \(m\.alphaTest > 0\) nm\.alphaTest = m\.alphaTest;/)
+    expect(asmSrc).toMatch(/if \(m\.alphaTest > 0\) nm\.alphaTest = m\.alphaTest;/)
+    expect(src).not.toMatch(/const pseudoOpaque = !!m\.transparent/)
   })
 
   it('真混合层（extras.blendLayer）保留软 alpha：不被伪透明分流削成硬边卡片', () => {
     // 回归：导出器标记的混合层（烟雾/瀑布/浪 = 动画 + 掩码）其 alpha 是掩码烘出的软渐变，
     // "BLEND 但不透明度≈1 → 转不透明 + alphaTest 0.33"会把霾削成硬边卡片
     //（2026-10-09 himmelsdorf 烟囱烟雾报障：掩码单通道值一度烘成二值剪影）。
-    expect(src).toMatch(/const blendLayer = !!\(m\.userData && m\.userData\.blendLayer\);/);
-    expect(src).toMatch(/const pseudoOpaque = !!m\.transparent && \(m\.opacity \?\? 1\) >= 0\.99 && !blendLayer && !softAlpha;/);
+    expect(asmSrc).toMatch(/const blendLayer = !!\(m\.userData && m\.userData\.blendLayer\);/);
+    expect(asmSrc).toMatch(/const pseudoOpaque = !!m\.transparent && \(m\.opacity \?\? 1\) >= 0\.99 && !blendLayer && !softAlpha;/);
     // 材质缓存键必须含该标记（否则同 name+map 的两种材质会串用，先建的赢）
-    expect(src).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
-    // 俯视烘焙页与内核同约定（SSOT 守卫：两侧键指纹与分流口径逐字一致）
+    expect(asmSrc).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
+    // 俯视烘焙页与内核同约定（SSOT 守卫：两侧消费**同一份装配模块**，键指纹与分流口径
+    // 只有一处实现——烘焙页本地不得再复辟任何分流/键组成代码）
     const bakeSrcBlend = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8');
-    expect(bakeSrcBlend).toMatch(/userData\.blendLayer/);
-    expect(bakeSrcBlend).toMatch(/>= 0\.99 && !blendLayer && !softAlpha;/);
+    expect(bakeSrcBlend).toMatch(/from '\/src\/scene\/sceneryAssembly\.js'/);
+    expect(bakeSrcBlend).toMatch(/assembleSceneryMaterials\(gltf, \{/);
+    expect(bakeSrcBlend).not.toMatch(/!blendLayer && !softAlpha/);
   });
 
   it('动画混合层：双采样器（albedo 走 UV0+位移 / 掩码走 UV1）+ 回放时钟驱动', () => {
@@ -101,12 +123,15 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/depthWrite: false,/)
     expect(fn).toMatch(/USE_INSTANCING/)                        // 合批批次的实例矩阵
     // 装配：掩码贴图经 GLTFLoader associations 预解析（texture 依赖异步、遍历同步）
-    expect(src).toMatch(/getDependency\('texture', ex\.maskTexture\)/)
-    expect(src).toMatch(/if \(maskTex && o\.geometry\.attributes\.uv1\) return makeBlendLayerMaterial\(m, maskTex\);/)
-    // 逐帧写 uTime（回放秒数）：暂停即停、seek 后相位确定
+    // ——2026-10-14 抽层后在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.maskTexture\)/)
+    expect(asmSrc).toMatch(/if \(maskTex && o\.geometry\.attributes\.uv1\) return makeBlendLayerMaterial\(m, maskTex\);/)
+    // 逐帧写 uTime（回放秒数）：暂停即停、seek 后相位确定——时钟驱动留在运行时
     expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/)
     expect(src).toMatch(/const secs = T \/ 1000;/)
-    expect(src).toMatch(/animLayerMats = \[\];/)
+    // 材质登记改由装配模块返回（asmSrc 收集带 uTime 的材质；运行时消费返回值）
+    expect(asmSrc).toMatch(/if \(mm && mm\.uniforms && mm\.uniforms\.uTime\) animLayerMats\.push\(mm\);/)
+    expect(src).toMatch(/animLayerMats = assembledAnimMats;/)
   })
 
   it('坦克 GLB 失败必须留痕（禁止静默 catch）+ 部位不全保持代理车', () => {
@@ -168,8 +193,9 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/#ifdef ENV_REFLECTION/);
     expect(fn).not.toMatch(/#if ENV_REFLECTION/);
     // 共享太阳 uniform（lightColor0 = color×intensity；playbackScene 换图时更新）
-    expect(src).toMatch(/sunUniforms\.uSunDirScene\.value\.set\(d\[0\] \/ n/);
-    expect(src).toMatch(/sunUniforms\.uSunColor\.value\.set\(sun\.color\[0\] \* sun\.intensity/);
+    // 2026-10-14 抽层：太阳 uniform 写入与环境倍率归一在共享模块 mapLighting.js（两侧同一份）
+    expect(mlSrc).toMatch(/sunUniforms\.uSunDirScene\.value\.set\(d\[0\] \/ n/);
+    expect(mlSrc).toMatch(/sunUniforms\.uSunColor\.value\.set\(sun\.color\[0\] \* sun\.intensity/);
   })
 
   it('水面（MEDIUM 档）：双层滚动法线 + UDN + 菲涅尔 alpha + 逐图立方图', () => {
@@ -189,11 +215,14 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/depthWrite: true,/);   // erlenberg 实测：水面不写深度会与地形逐像素闪
     expect(fn).not.toMatch(/albedoTex|decalTex|uReflectance|uDecalTint/);          // LOW 档字段零残留
     // 接线：水面数据经同一趟预解析；旧包（water 仅 bool）回落 convMat + 水面修整分支。
-    expect(src).toMatch(/getDependency\('texture', ex\.water\.normal\)/);
-    expect(src).toMatch(/if \(ud\.water && typeof ud\.water === 'object'\) \{/);
-    expect(src).toMatch(/return makeWaterMaterial\(m, \{ normalTex: wt\[0\], cubeTex: wt\[1\], props: ud\.water\.props \|\| \{\}, coast: waterCoast \}\);/);
-    // 回放时钟驱动：uTime（混合层的 uShiftRate、水面的 uShift0/1 都吃同一个时钟）
-    expect(src).toMatch(/if \(mm && mm\.uniforms && mm\.uniforms\.uTime\) animLayerMats\.push\(mm\);/);
+    // 2026-10-14 抽层：路由在共享装配模块（asmSrc），运行时与烘焙同一份
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.water\.normal\)/);
+    expect(asmSrc).toMatch(/if \(ud\.water && typeof ud\.water === 'object'\) \{/);
+    expect(asmSrc).toMatch(/return makeWaterMaterial\(m, \{ normalTex: wt\[0\], cubeTex: wt\[1\], props: ud\.water\.props \|\| \{\}, coast: waterCoast \}\);/);
+    // 回放时钟驱动：uTime（混合层的 uShiftRate、水面的 uShift0/1 都吃同一个时钟）。
+    // 材质登记（带 uTime 的收集）在装配模块；逐帧写入留在运行时。
+    expect(asmSrc).toMatch(/if \(mm && mm\.uniforms && mm\.uniforms\.uTime\) animLayerMats\.push\(mm\);/);
+    expect(src).toMatch(/for \(const mm of animLayerMats\) mm\.uniforms\.uTime\.value = secs;/);
   })
 
   it('逐图 IBL：等距柱状环境贴图 + 倍率 + 时序守卫 + 会话释放', () => {
@@ -207,8 +236,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 倍率来自 lighting.json 的 ibl.environmentMultiplier（逐图 0.8–4.0）；
     // 2026-10-11 起在 applyMapLighting 内随太阳强度归一（authored 读取 + /expo，
     // 高太阳图 IBL 不再被输出曝光压暗——mountain 报障"坦克非常暗"）
-    expect(src).toMatch(/const envAuthored = L && L\.ibl && L\.ibl\['ibl\.environmentMultiplier'\];/)
-    expect(src).toMatch(/envMultiplier = \(Number\.isFinite\(envAuthored\) \? envAuthored : 1\) \/ expo;/)
+    expect(mlSrc).toMatch(/const envAuthored = L && L\.ibl && L\.ibl\['ibl\.environmentMultiplier'\];/)
+    expect(mlSrc).toMatch(/envMultiplier = \(Number\.isFinite\(envAuthored\) \? envAuthored : 1\) \/ expo;/)
     // 时序：资产阶段可早于 initScene（scene 未创建）→ 加载时判空 + initScene 末尾补挂
     expect(src).toMatch(/if \(scene\) \{/)
     expect(src).toMatch(/scene\.environment = tex;/)
@@ -233,17 +262,18 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/USE_INSTANCING/);                                // 合批实例矩阵
     expect(fn).toMatch(/if \(uAlphaCut > 0\.0 && c\.a < uAlphaCut\) discard;/); // 镂空保留
     // 接线：图集经同一趟预解析；水/天空/水下件不接（水下件见下条用例：客户端折射通道口径）
-    expect(src).toMatch(/getDependency\('texture', ex\.lightmap\)/)
-    expect(src).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m\) && !\/sky\/i\.test\(o\.name \|\| ''\)/)
-    expect(src).toMatch(/\n\s*&& !underWater\(o\)\) \{/)
-    expect(src).toMatch(/if \(atlas && o\.geometry\.attributes\.uv1\) \{/)
+    // 2026-10-14 抽层：路由在共享装配模块（asmSrc），运行时与烘焙同一份
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.lightmap\)/)
+    expect(asmSrc).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m, \{ strictSurfaces \}\)/)
+    expect(asmSrc).toMatch(/&& !\/sky\/i\.test\(o\.name \|\| ''\) && !underWater\(o\)\) \{/)
+    expect(asmSrc).toMatch(/if \(atlas && o\.geometry\.attributes\.uv1\) \{/)
     // 材质**缓存共享**（review P2：逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）；
     // 逐实例光照图变换走 aLm 实例属性，与材质无关 ⇒ 按输入指纹复用同一份材质
-    expect(src).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
-    expect(src).toMatch(/makeLightmappedMaterial\(m, atlas,/)
+    expect(asmSrc).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
+    expect(asmSrc).toMatch(/makeLightmappedMaterial\(m, atlas,/)
     // 环境反射：判据是**绑了掩码+立方图两个槽**（旗标只在部分实例上，不可作判据）
-    expect(src).toMatch(/et \? \{ maskTex: et\[0\], cubeTex: et\[1\], props \} : null,/)
-    expect(src).toMatch(/getDependency\('texture', ex\.envCube\)/)
+    expect(asmSrc).toMatch(/et \? \{ maskTex: et\[0\], cubeTex: et\[1\], props \} : null,/)
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.envCube\)/)
     // 逐实例属性：薄包装几何（属性对象原样引用，零重复上传），不得用 geometry.clone()
     const instSrc = readFileSync(resolve(here, 'sceneryInstancing.js'), 'utf8')
     expect(instSrc).toMatch(/lm: \(node\.userData && Array\.isArray\(node\.userData\.lm\)\) \? node\.userData\.lm : null,/)
@@ -269,21 +299,24 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn.indexOf('uDetailTex, vDetailUv).rgb * 2.0;'))
       .toBeLessThan(fn.indexOf('gl_FragColor = vec4(color, 1.0);'));
     // 接线：extras.detail → 依赖预解析 → lightmapped 分支实参；非光照图批次走 Lambert 补丁
-    expect(src).toMatch(/getDependency\('texture', ex\.detail\.texture\)/);
-    expect(src).toMatch(/const detailTexOf = \(m\) => texOf\(m, detailTexByMatIndex\);/);
-    expect(src).toMatch(/dtex \? \{ tex: dtex, scale: ud\.detail\.scale \} : null\)\);/);
-    expect(src).toMatch(/patchSceneryDetail\(nm, dtex, m\.userData\.detail\.scale\);/);
+    // 2026-10-14 抽层：预约解析与路由都在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.detail\.texture\)/);
+    expect(asmSrc).toMatch(/detailTexOf: \(m\) => texOf\(m, maps\.detailTexByMatIndex\),/);
+    expect(asmSrc).toMatch(/dtex \? \{ tex: dtex, scale: ud\.detail\.scale \} : null\)\);/);
+    expect(asmSrc).toMatch(/patchSceneryDetail\(nm, dtex, m\.userData\.detail\.scale\);/);
     // convMat 缓存键含 detail 身份（贴图 uuid + scale），否则同图不同砖纹串用
-    expect(src).toMatch(/const t = detailTexOf\(m\);/);
-    expect(src).toMatch(/return 'D\|' \+ \(t \? t\.uuid : ''\) \+ '\|'/);
+    expect(asmSrc).toMatch(/const t = detailTexOf\(m\);/);
+    expect(asmSrc).toMatch(/return 'D\|' \+ \(t \? t\.uuid : ''\) \+ '\|'/);
     // Lambert 补丁本体：注入点 + program 缓存键标记（与坦克补丁同法，防串用未打补丁程序）
     const pat = matSrc.indexOf('export function patchSceneryDetail');
     const pfn = matSrc.slice(pat, matSrc.indexOf('export function', pat + 10));
     expect(pfn).toMatch(/diffuseColor\.rgb \*= texture2D\(uDetailTex, vDetailUv\)\.rgb \* 2\.0;/);
     expect(pfn).toMatch(/\|scenery-detail/);
-    // 烘焙页：键同构 + detailTexOf 桩（细节层不进俯视底图——该页不做 extras 贴图解析）
+    // 烘焙页：消费同一装配模块（细节层路由不可能再与内核漂移），本地不得自建 convMat/detail 桩
     const bake = readFileSync(resolve(here, '../../scripts/bake-ground-overhead.mjs'), 'utf8')
-    expect(bake).toMatch(/const detailTexOf = \(\) => null;/);
+    expect(bake).toMatch(/assembleSceneryMaterials\(gltf, \{/);
+    expect(bake).not.toMatch(/const convMat = \(m, isCard\)/);
+    expect(bake).not.toMatch(/const detailTexOf = \(\) => null;/);
   })
 
   it('逐图太阳：lighting.json 驱动方向/色/强度与半球环境色，缺失回落兜底', () => {
@@ -292,12 +325,14 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const rs = readFileSync(resolve(here, 'replaySource.js'), 'utf8')
     expect(rs).toMatch(/case 'lighting': return f\('lighting\.json'\)/)
     expect(src).toMatch(/applyMapLighting\(L\)/)
-    const fnStart = src.indexOf('function applyMapLighting');
-    const fn = src.slice(fnStart, src.indexOf('function resetMapLighting'));
+    // 应用体自 2026-10-14 抽到共享模块 mapLighting.js（SSOT，与俯视烘焙同一份——烘焙此前
+    // 自持固定日光常量，faust（夜图 intensity 8）等比 3D 档亮约 3 倍）；本页只保留委托。
+    expect(src).toMatch(/from '\.\/mapLighting\.js'/)
+    expect(src).toMatch(/envMultiplier = applyMapLightingCore\(\{ renderer, scene, sunLight, hemiLight, lighting: L, debug: DEBUG \}\)\.envMultiplier;/)
     // 客户端给"传播方向"，three 的方向光从 position 射向 target ⇒ position = −direction
-    expect(fn).toMatch(/sunLight\.position\.set\(-d\[0\] \/ n, -d\[1\] \/ n, -d\[2\] \/ n\)/)
-    expect(fn).toMatch(/sunLight\.intensity = sun\.intensity;/)
-    expect(fn).toMatch(/hemiLight\.color\.setRGB\(sun\.ambient\[0\]/)
+    expect(mlSrc).toMatch(/sunLight\.position\.set\(-d\[0\] \/ n, -d\[1\] \/ n, -d\[2\] \/ n\)/)
+    expect(mlSrc).toMatch(/sunLight\.intensity = sun\.intensity;/)
+    expect(mlSrc).toMatch(/hemiLight\.color\.setRGB\(sun\.ambient\[0\]/)
     // target 必须进场景图（否则矩阵不更新，方向滞留默认）
     expect(src).toMatch(/scene\.add\(sunLight\.target\);/)
     // 会话拆除复位，避免换图残留上一张的太阳（守卫读的是剥注释源码，别带注释）
@@ -307,7 +342,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('ST| 静态几何走伽马直通 ShaderMaterial（与叶卡同方程，防同树双色）', () => {
     // 回归：MeshBasicMaterial 的 sRGB 解码→编码往返把 SH 实际压成 SH^(1/2.2)，
     // 与 billboard 叶（直通）差约 28% → 同树固定叶/billboard 叶双色（erlenberg 实测）
-    const st = src.slice(src.indexOf("if ((m.name || '').startsWith('ST|'))"))
+    const st = asmSrc.slice(asmSrc.indexOf("if ((m.name || '').startsWith('ST|'))"))
     expect(st.slice(0, 400)).toMatch(/return makeSpeedtreeStaticMaterial\(m, opaqueEnough\);/)
     const fn = matSrc.slice(matSrc.indexOf('function makeSpeedtreeStaticMaterial'))
     // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
@@ -366,13 +401,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   })
 
   it('内联着色器的 varying 必须在**该段**声明（地面着色器是内联字符串，漏声明=整材质不画）', () => {
-    // 地面着色器在 playbackScene 里以内联字符串给出、不在 sceneryMaterials 的工厂覆盖范围内，
+    // 地面着色器以内联字符串给出（2026-10-14 起在共享模块 groundPass.js），
     // 且顶点/片元两段各自独立声明 varying——只写不声明/只声明不写都会让整材质编译失败，
     // 页面上只表现为"地形整片不渲染"（2026-10-09 实测踩过）。故做"用到即声明"检查：
     // 片元里出现的 vXxx 标识符都必须在**片元自己的**声明段里。
-    const at = src.indexOf('uniform sampler2D uCM;')
+    const at = gpSrc.indexOf('uniform sampler2D uCM;')
     expect(at).toBeGreaterThan(-1)
-    const frag = src.slice(at, src.indexOf('`', at))
+    const frag = gpSrc.slice(at, gpSrc.indexOf('`', at))
     const declPart = frag.slice(0, frag.indexOf('void main()'))
     const decls = new Set([...declPart.matchAll(/varying\s+\w+\s+(\w+)\s*;/g)].map((m) => m[1]))
     expect(decls.has('vXZ')).toBe(true)              // 地面片元真实用到的 varying
@@ -380,9 +415,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     for (const name of used) {
       expect(decls.has(name), `地面片元用到 ${name} 但未声明`).toBe(true)
     }
-    // 顶点段同样声明（link 契约）
-    const vat = src.indexOf('uniform vec4 uHbSoft;')   // 地面顶点段附近（类型见下方类型对齐守卫）
+    // 顶点段同样声明（link 契约）；运行时侧不得再内联地面着色器（单实现守卫）
+    const vat = gpSrc.indexOf('uniform vec4 uHbSoft;')   // 地面顶点段附近（类型见下方类型对齐守卫）
     expect(vat).toBeGreaterThan(-1)
+    expect(src).not.toMatch(/uniform sampler2D uCM;/)
+    expect(src).not.toMatch(/uniform vec4 uHbSoft;/)
   })
 
   it('采样空间（C3）：自定义材质一律原样采样；SRGB 解码只许出现在显示内容链', () => {
@@ -425,7 +462,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 向外探出 0.5–1.3 m，俯瞰下穿出挡土墙贴面（2026-10-09 用户报障）。
 
     // ⚠️ 断言只看代码（src 已剥注释）——用代码锚点，不要在注释文本上定位
-    expect(src).toMatch(/import \{[^}]*\bbuildAdaptiveTerrain\b[^}]*\bdecodeTerrainField\b[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
+    // 2026-10-14 地面 pass 抽层后：内核从 groundPass.js 引地形入口，地形内核（buildAdaptiveTerrain/
+    // decodeTerrainField/groundMapUv/配对）在 groundPass 内消费（份额单实现见 groundPass.test.js）
+    expect(src).toMatch(/import \{[^}]*\bloadTerrain\b[^}]*\bbuildGroundGeometry\b[^}]*\} from '\.\/groundPass\.js'/)
+    expect(src).toMatch(/import \{[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
+    expect(gpSrc).toMatch(/buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,/)
     expect(src).toMatch(/const geo = buildTerrainGeometry\(\);/)
     expect(src).toMatch(/function buildTerrainGeometry\(\) \{/)
     expect(src).toMatch(/field: heightField, n, span,/)
@@ -433,13 +474,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // LOD 单向滞回（拉近立即细化、拉远才允许变粗）：旧的双向 25% 滞回会让网格长期停在
     // "更远视距"的更粗层级 ⇒ 同一相机位置可比客户端判据允许的更粗 ⇒ 地形抬过贴地薄结构
     // （2026-10-10 用户"铁轨被盖、转/缩放后时有时无"）
-    expect(src).toMatch(/import \{[^}]*\bbuildAdaptiveTerrain\b[^}]*\bdecodeTerrainField\b[^}]*\bterrainLodState\b[^}]*\bterrainLodStale\b[^}]*\} from '\.\/terrainMesh\.js'/)
     // 滞回输入与构建判据同源（review P2：绕目标水平旋转视距不变时也必须重建）
     expect(src).toMatch(/if \(!terrainLodStale\(terrainLodPrev, cur, now - terrainLodAt\)\) return;/)
     expect(src).not.toMatch(/Math\.abs\(d - terrainLodDist\) \/ Math\.max\(1, d\) < 0\.25/)
     // 回退/低档底图 UV（review P1）：几何必须带 uv——分层着色在片元反推 UV，
     // 但回退材质 `MeshBasicMaterial({ map })` 吃几何属性，缺了整张底图退化成单 texel
-    expect(src).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(\s*groundMapUv\(positions, span, mapMetaInfo\?\.x \|\| 0, mapMetaInfo\?\.z \|\| 0\), 2\)\)/)
+    expect(gpSrc).toMatch(/setAttribute\('uv', new THREE\.BufferAttribute\(groundMapUv\(positions, span, cx, cz\), 2\)\)/)
     // sampleHeight 采引擎口径（除 n，非 n−1）
     expect(src).toMatch(/const fx = \(x \/ span \+ 0\.5\) \* n, fy = \(z \/ span \+ 0\.5\) \* n;/)
     // 几何已建在场景系：不得再有 PlaneGeometry 地形 + sampleHeight 位移 + 旋转/平移放置
@@ -449,18 +489,47 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
     const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
-      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1 \}\)/)
-    expect(meshSrc).toMatch(/export function subdivisionMetrics\(fovYRad, aspect = 16 \/ 9, tolScale = 1\)/)
+      /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, hFovDeg = null, refineMask = null \}\)/)
+    expect(meshSrc).toMatch(
+      /export function subdivisionMetrics\(fovYRad, aspect = 16 \/ 9, tolScale = 1, hFovDegOverride = null\)/)
+    // 贴地薄构件走廊掩码（B 方案，2026-10-14 用户裁定）：类判据（薄 + 贴地，统一适用）筛件 →
+    // 足迹取样 → buildRefineMask → 传进构建器；掩码**只加细分、不改高度值**，且在"实例化合批"前取样
+    expect(meshSrc).toMatch(/export function buildRefineMask\(pointsXZ, n, span, marginTexels = 2\)/)
+    expect(meshSrc).toMatch(/\|\| corridorForced\(level, i0, j0\);/)
+    // 水面样本随装配模块的 onMesh 钩子带回（water = 材质 extras.water 标记，装配模块判定）
+    expect(src).toMatch(/onMesh: \(o, waterMarked\) => \{ sceneryMeshes\.push\(\{ o, water: waterMarked \}\); \},/)
+    expect(asmSrc).toMatch(/const waterMarked = materialIsWater\(o\.material\);/)
+    expect(asmSrc).toMatch(/if \(onMesh\) onMesh\(o, waterMarked\);/)
+    expect(gpSrc).toMatch(/if \(box\.isEmpty\(\) \|\| box\.max\.y - box\.min\.y > 2\.5\) continue;/)
+    // 走廊掩码实现（类判据/足迹取样/mask 生成）在共享模块 groundPass（俯视烘焙同一份，
+    // 2026-10-14 用户报"轨道被地形遮挡"后收编）；运行时/烘焙只留宿主接线
+    expect(gpSrc).toMatch(/const mask = buildRefineMask\(pts, n, span, marginTexels\);/)
+    expect(src).toMatch(/terrainRefineMask = built\.mask;/)
+    expect(src).toMatch(/const built = buildCorridorRefineMask\(\{/) 
+    expect(src).toMatch(/refineMask: terrainRefineMask,/)
+    expect(src).toMatch(/terrainRefineMask = null;/)
+    expect(gpSrc).toMatch(/buildRefineMask,[\s\S]{0,200}from '\.\/terrainMesh\.js'/)
+    const maskAt = src.indexOf('const sceneryMeshes = []')
+    const instAt = src.indexOf('collectInstanceEntries(gltf.scene)')
+    expect(maskAt).toBeGreaterThan(-1)
+    expect(instAt).toBeGreaterThan(maskAt)                       // 掩码取样先于实例化合批
+    // 阈值 fov 按客户端口径传（`PrepareSubdivision` 吃 `camera->GetFOV()`，引擎口径下是**水平**
+    // fov 且取自相机配置，宽高比只进投影项 `tanFovY`）。回放自由相机没有狙击镜档（zoomFov 6.5°）
+    // ⇒ 运行时恒传客户端正常相机；不传的话窄画布把「55° 竖直 × aspect」折算成小水平角、阈值滑到
+    // 狙击镜档（放松最多 ~1.8×），同一机位我们的网格比客户端更粗（2026-10-14 用户报障）
+    expect(meshSrc).toMatch(/export const CLIENT_NORMAL_CAMERA_FOV_H = 70/)
+    expect(src).toMatch(/hFovDeg: CLIENT_NORMAL_CAMERA_FOV_H,/)
+    expect(src).toMatch(/import \{[^}]*\bCLIENT_NORMAL_CAMERA_FOV_H\b[^}]*\} from '\.\/terrainMesh\.js'/)
     // 引擎 `SubdivisionMetrics` 两套 fov 预设（LandscapeSubdivision.h:44-58）——阈值随 fov 插值
     expect(meshSrc).toMatch(/normalFov: 70, zoomFov: 6\.5/)
     expect(meshSrc).toMatch(
       /normalMaxHeightError: 0\.014, normalMaxPatchRadiusError: 0\.45, normalMaxAbsoluteHeightError: 3/)
     expect(meshSrc).toMatch(
       /zoomMaxHeightError: 0\.03, zoomMaxPatchRadiusError: 0\.9, zoomMaxAbsoluteHeightError: 3/)
-    // 三条判据（半径/屏幕高度/绝对 3 m）都在
+    // 三条判据（半径/屏幕高度/绝对 3 m）都在；第四条 = 贴地薄构件走廊掩码（语义判据，只加细分）
     expect(meshSrc).toMatch(/const subdivide = radiusError >= M\.maxPatchRadiusError/)
     expect(meshSrc).toMatch(/\|\| heightError >= M\.maxHeightError/)
-    expect(meshSrc).toMatch(/\|\| err > M\.maxAbsoluteHeightError;/)
+    expect(meshSrc).toMatch(/\|\| err > M\.maxAbsoluteHeightError\b/)
     // ⚠️ 两个误差值必须**一并返回**：子补片的 subdivMorph 要用父补片的误差（error0Delta）；
     // 曾因"半径判据命中就短路返回"导致 morph 恒 0（2026-10-10 实测报障点 morphRaw = 0）
     expect(meshSrc).not.toMatch(/return \{ subdivide: true \};/)
@@ -511,13 +580,17 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(decalSrc).toMatch(/decalRgb \+= uLmAdjust\.x;/)
     // ⑤ 仍带对数深度（漏了会整片不渲染/深度错）
     expect(decalSrc).toMatch(/#include <logdepthbuf_fragment>/)
-    // ⑥ 接线：先于光照图与受光兜底；要求 extras.decal + 几何 UV1 + 地表分层贴图在位
-    const wire = src.indexOf('if (ud.decal && groundLayers && o.geometry.attributes.uv1)')
+    // ⑥ 接线：先于光照图与受光兜底；要求 extras.decal + 几何 UV1 + 地表分层贴图在位。
+    // separateLm 为**逐实例**布尔（导出器 extras.decalSeparateLm，2026-10-14 起下发；
+    // 字段缺失的旧包回退逐图 separate_lm 近似）。2026-10-14 抽层后路由在共享装配模块（asmSrc）
+    const wire = asmSrc.indexOf('if (ud.decal && groundLayers && o.geometry.attributes.uv1)')
     expect(wire).toBeGreaterThan(-1)
-    expect(src.slice(wire, wire + 800)).toMatch(/makeDecalMaterial\(m, cmTex, groundLayers\.texs\.lm, \{/)
-    expect(src.slice(wire, wire + 800)).toMatch(/separateLm: !!GL\.separate_lm,/)
-    expect(wire).toBeLessThan(src.indexOf('if (ud.lightmap !== undefined'))
-    expect(src).toMatch(/makeDecalMaterial,/)
+    expect(asmSrc.slice(wire, wire + 1200)).toMatch(
+      /makeDecalMaterial\(m, cmTex, ownDecal \? null : groundLayers\.texs\.lm, \{/)
+    expect(asmSrc.slice(wire, wire + 1200)).toMatch(/ud\.decalSeparateLm !== undefined/)
+    expect(asmSrc.slice(wire, wire + 1200)).toMatch(/!ownDecal && !!GL\.separate_lm/)
+    expect(wire).toBeLessThan(asmSrc.indexOf('if (ud.lightmap !== undefined'))
+    expect(asmSrc).toMatch(/makeDecalMaterial,/)
   })
 
   it('共面接缝不做人工补偿（客户端无深度偏移、数据同样共面；2026-10-10 撤掉 ?poff 与 ?seamfix）', () => {
@@ -554,11 +627,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(fn).toMatch(/transparent: true,/);
     expect(fn).toMatch(/depthWrite: false,/);            // 客户端该预设 depthWrite: false
     // 接线：extras.blendByAngle → 专用材质；extras.alphaBlend 不得被"伪透明→裁切"启发式削掉
-    expect(src).toMatch(/if \(ud\.blendByAngle\) \{/);
-    expect(src).toMatch(/return makeBlendByAngleMaterial\(m, ud\.blendByAngle\);/);
-    expect(src).toMatch(/const softAlpha = !!\(m\.userData && m\.userData\.alphaBlend\);/);
-    expect(src).toMatch(/>= 0\.99 && !blendLayer && !softAlpha;/);
-    expect(src).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
+    // 2026-10-14 抽层：路由与分流在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/if \(ud\.blendByAngle\) \{/);
+    expect(asmSrc).toMatch(/return makeBlendByAngleMaterial\(m, ud\.blendByAngle\);/);
+    expect(asmSrc).toMatch(/const softAlpha = !!\(m\.userData && m\.userData\.alphaBlend\);/);
+    expect(asmSrc).toMatch(/>= 0\.99 && !blendLayer && !softAlpha;/);
+    expect(asmSrc).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
   })
 
   it('水面"海岸线"coastLine：按客户端 water-fp.sl 的相对深度差口径淡出反射（距离无关、随相机高低自适应）', () => {
@@ -577,9 +651,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     //    ⇒ coastLine = saturate(dNdcZ / (2·uDepthUlp))：淡出带 = 该视距下深度抢胜带（2 ulp）。
     //  ⚠️ 曾用"该视距下地形单元格上界"（∝视距）当淡出宽度：与客户端无关，且远景把水整片洗掉
     //  （用户"水面贴图也不太对了"）。此用例同时钉死正确口径并禁止那两个错误写法复活。
-    expect(src).toMatch(/coast: waterCoast \}\);/)
+    expect(asmSrc).toMatch(/coast: waterCoast \}\);/)
     expect(src).toMatch(/if \(waterTexDispose\) \{ waterTexDispose\.dispose\(\); waterTexDispose = null; \}/)
-    expect(src).toMatch(/waterCoast = \{/)
+    // 2026-10-14 地面 pass 抽层：资源构造与数据读取在 groundPass（俯视烘焙同一份）
+    expect(src).toMatch(/waterCoast = makeWaterCoast\(\{/)
+    expect(gpSrc).toMatch(/export function makeWaterCoast\(\{ field, n, span, near, far, depthBits = 24 \}\) \{/)
     expect(src).toMatch(/function terrainSpanOf\(\) \{/)
     expect(src).not.toMatch(/terrainCellBound\(1, camera/)          // 旧"单元格上界"口径：禁止复活
     const wSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
@@ -593,16 +669,18 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 纹素中心在 `(j+0.5)/n`、地形顶点在 `j/n`（corner 口径）⇒ 采样加半个纹素，岸线高度才与网格同位
     expect(wSrc).toMatch(/float terrainY = texture2D\(uHeightmap, vWorldP\.xz \/ uMapSpan \+ 0\.5 \+ 0\.5 \* uHmTexel\)\.r;/)
     expect(wSrc).toMatch(/uHmTexel: \{ value: coast && coast\.heightTex && coast\.heightTex\.image && coast\.heightTex\.image\.width > 0\s*\? 1 \/ coast\.heightTex\.image\.width : 0 \},/)
-    // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份
-    expect(src).toMatch(/const field = decodeTerrainField\(tbuf, tmeta\);/)
+    // 高度场唯一解码口径（场景系引擎顶点；旧包列翻转偏一格在读取边界补正）——网格/采样/岸线共用这一份；
+    // 读取在 groundPass.loadTerrain（俯视烘焙同一份）
+    expect(gpSrc).toMatch(/return \{ field: decodeTerrainField\(tbuf, meta\), meta \};/)
     // json/bin 配对（PR #615 review P2）：bin 以 terrainBinSha256 作缓存键、解码前核对字节
-    expect(src).toMatch(/assetProvider\.fetch\(pairedTerrainBinUrl\(terrainBin, tmeta\)\)/)
-    expect(src).toMatch(/const paired = await terrainBinMatchesMeta\(tbuf, tmeta\);/)
+    expect(src).toMatch(/fetchFn: \(u\) => assetProvider\.fetch\(u\),/)
+    expect(gpSrc).toMatch(/fetchFn\(pairedTerrainBinUrl\(binUrl, meta\)\)/)
+    expect(gpSrc).toMatch(/if \(await terrainBinMatchesMeta\(tbuf, meta\)\)/)
     expect(src).not.toMatch(/heightField\[i\] = u16\[i\]/)
     expect(wSrc).toMatch(/gl_FragColor = vec4\(refl, clamp\(fresnel, 0\.0, 1\.0\) \* coastLine\);/)
     expect(wSrc).not.toMatch(/uCoastCellPerDist|cellPerDist/)
     expect(wSrc).not.toMatch(/max\(cameraPosition\.y - vWorldP\.y, 1e-3\)/)     // 旧"相机高"口径：禁止复活
-    expect(src).toMatch(/depthUlp: 2 \/ Math\.pow\(2, depthBits\),/)
+    expect(gpSrc).toMatch(/depthUlp: 2 \/ Math\.pow\(2, depthBits\),/)
     expect(src).toMatch(/glc\.getParameter\(glc\.DEPTH_BITS\)/)
   })
 
@@ -621,16 +699,20 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     //  ④ 判据纯几何：整个包围盒落在某片水面占地内（0.5 m 余量）且低于其标高（5 cm 余量）
     //     ⇒ 不接光照图、走不受光 albedo。受灾面实测仅 2 图：malinovka 26 实例 / italy 1。
     // 断言防"水下件又乘回光照图"。GLB 仍是场景系（z=高度），判据里的高度即 z。
-    expect(src).toMatch(/gltf\.scene\.updateMatrixWorld\(true\);\s*\n\s*const waterSurfaces = \[\];/)
-    expect(src).toMatch(/const underWater = \(o\) => \{/)
-    expect(src).toMatch(/bb\.max\.z <= w\.h \+ 0\.05\) return true;/)
-    expect(src).toMatch(/const uw = !!o\.geometry && underWater\(o\);/)
-    expect(src).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m\) && !\/sky\/i\.test\(o\.name \|\| ''\)\s*\n\s*&& !underWater\(o\)\) \{/)
-    expect(src).toMatch(/if \(uw\) \{/)
-    expect(src).toMatch(/new THREE\.MeshBasicMaterial\(\{/)
-    expect(src).toMatch(/map: m\.map \|\| null,/)
+    // 2026-10-14 抽层：水面片收集 / underWater 判据 / 分派都在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/export function collectWaterSurfaces\(root\) \{\n\s*root\.updateMatrixWorld\(true\);\n\s*const waterSurfaces = \[\];/)
+    expect(asmSrc).toMatch(/export function makeUnderWater\(waterSurfaces\) \{\n\s*return \(o\) => \{/)
+    expect(asmSrc).toMatch(/bb\.max\.z <= w\.h \+ 0\.05\) return true;/)
+    expect(asmSrc).toMatch(/const uw = !!o\.geometry && underWater\(o\);/)
+    expect(asmSrc).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m, \{ strictSurfaces \}\)\s*\n\s*&& !\/sky\/i\.test\(o\.name \|\| ''\) && !underWater\(o\)\) \{/)
+    expect(asmSrc).toMatch(/if \(uw\) \{/)
+    expect(asmSrc).toMatch(/new THREE\.MeshBasicMaterial\(\{/)
+    expect(asmSrc).toMatch(/map: m\.map \|\| null,/)
     // 水上面向不走这条：判据只在"整个包围盒低于水面片标高"成立，且水/天空已排除
-    expect(src).not.toMatch(/underWater\(o\) \|\| true/)
+    expect(asmSrc).not.toMatch(/underWater\(o\) \|\| true/)
+    // 运行时调用共享装配时把水面海岸线资源传进去（水下判据不需要它，但水面材质吃）
+    expect(src).toMatch(/assembleSceneryMaterials\(gltf, \{/)
+    expect(src).toMatch(/groundLayers, waterCoast, debug: DEBUG,/)
   })
 
   it('细分判据回到客户端三条：playbackScene 不再计算/传递岸线标高表（第四条判据 2026-10-11 评审删除）', () => {
@@ -643,7 +725,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
-    expect(src).toMatch(/buildAdaptiveTerrain\(\{/)
+    expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
+    expect(src).toMatch(/buildGroundGeometry\(\{/)
   })
 
   it('地面分层混合 uniform 类型对齐：uHbSoft 必须 vec4（曾误写 float ⇒ 值 NaN ⇒ 地面取错层色）', () => {
@@ -653,11 +736,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // ⇒ 开 HEIGHT_BLEND 的 9 图（desert_train/erlenberg/holland/idle/lagoon/plant/pliego/rift/rudniki）
     // 高度分层混合权重全废、地面取错层色。着色器门禁只编译（`vec4 − float` 是合法标量广播）⇒ 抓不到，
     // 故此处用类型对齐守卫看护：声明类型必须与 JS 下发值一致。
-    expect(src).toMatch(/uniform vec4 uHbSoft;/)
-    expect(src).not.toMatch(/uniform float uHbSoft;/)
-    expect(src).toMatch(/uHbSoft: \{ value: new THREE\.Vector4\(L\.hb_softness\[0\], L\.hb_softness\[1\],/)
-    expect(src).toMatch(/uniform vec4 uHbScale;/)
-    expect(src).toMatch(/uniform vec4 uHbOffset;/)
+    // 2026-10-14 地面 pass 抽层：着色器声明与 JS 下发都在共享模块 groundPass（俯视烘焙同一份）
+    expect(gpSrc).toMatch(/uniform vec4 uHbSoft;/)
+    expect(gpSrc).not.toMatch(/uniform float uHbSoft;/)
+    expect(gpSrc).toMatch(/uHbSoft: \{ value: new THREE\.Vector4\(L\.hb_softness\[0\], L\.hb_softness\[1\],/)
+    expect(gpSrc).toMatch(/uniform vec4 uHbScale;/)
+    expect(gpSrc).toMatch(/uniform vec4 uHbOffset;/)
   })
 
   it('逐图光照亮度归一：保留方向/色相，曝光 = 基准太阳强度 / 该图太阳强度（模拟客户端自动曝光）', () => {
@@ -668,24 +752,29 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 保留 sun.direction/color（逐图氛围），曝光按该图太阳强度归一到 DEFAULT_SUN_INTENSITY 那一档
     // ——同一图内 太阳:环境:IBL 的相对关系不变，仅把绝对亮度钉回基准（≈ 固定曝光模拟自动曝光）。
     expect(src).toMatch(/renderer\.toneMapping = THREE\.LinearToneMapping;/)
-    expect(src).toMatch(/const expo = THREE\.MathUtils\.clamp\(DEFAULT_SUN_INTENSITY \/ sun\.intensity, 0\.05, 4\.0\);/)
-    expect(src).toMatch(/renderer\.toneMappingExposure = expo;/)
-    expect(src).toMatch(/if \(renderer\) renderer\.toneMappingExposure = 1\.0;/)
-    expect(src).toMatch(/sunLight\.color\.setRGB\(sun\.color\[0\], sun\.color\[1\], sun\.color\[2\]\);/)
-    expect(src).toMatch(/sunLight\.position\.set\(-d\[0\] \/ n, -d\[1\] \/ n, -d\[2\] \/ n\)\.multiplyScalar\(1000\);/)
+    // 归一与复位体在共享模块 mapLighting.js（2026-10-14 抽层；运行时与俯视烘焙同一份）
+    expect(mlSrc).toMatch(/const expo = THREE\.MathUtils\.clamp\(DEFAULT_SUN_INTENSITY \/ sun\.intensity, 0\.05, 4\.0\);/)
+    expect(mlSrc).toMatch(/renderer\.toneMappingExposure = expo;/)
+    expect(mlSrc).toMatch(/if \(renderer\) renderer\.toneMappingExposure = 1\.0;/)
+    expect(mlSrc).toMatch(/sunLight\.color\.setRGB\(sun\.color\[0\], sun\.color\[1\], sun\.color\[2\]\);/)
+    expect(mlSrc).toMatch(/sunLight\.position\.set\(-d\[0\] \/ n, -d\[1\] \/ n, -d\[2\] \/ n\)\.multiplyScalar\(1000\);/)
   })
 
   it('水体：透明面写深度 + 双面 + 不设 renderOrder', () => {
     expect(matSrc).toMatch(/const isWaterName = \(n\) => \/water\|sea\|lake\|river\|fountain\/i\.test\(n \|\| ''\);/)
     // 水面判定改为**材质级标记**驱动（新包 asset.extras.surfaceFlags ⇒ 读材质 extras.water；
     // 旧包退回名字启发式）——名字启发式曾把水塔 `bld_er_water_tower_pbr` 误判成水面，
-    // 使该建筑退回受光材质整体发白（2026-10-09 用户报障）。
-    expect(src).toMatch(/const strictSurfaces = !!\(gltf\.scene\.userData && gltf\.scene\.userData\.surfaceFlags\);/)
-    expect(src).toMatch(/return !!\(m0 && m0\.userData && m0\.userData\.water\);/)
+    // 使该建筑退回受光材质整体发白（2026-10-09 用户报障）。判定自 2026-10-14 抽为共享
+    // 规则模块（SSOT，与俯视烘焙**同一份**——烘焙此前复制名字启发式而漂移出双向错剔），
+    // 本页只保留委托与本地签名；判定本体与真名案例回归见 sceneryAssemblyRules.test.js。
+    expect(src).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\/sceneryAssemblyRules\.js'/)
+    expect(src).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
+    expect(src).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
     expect(src).toMatch(/!\/sky\/i\.test\(e\.name\) && !isWaterNode\(e\.name, e\.material\)\);/)
     // MEDIUM 档水面是半透明大面：逐材质修整（depthWrite/DoubleSide/depthTest）必须保留——
-    // 2026-10-09 随 LOW 档（不透明）删过一次，回退 MEDIUM 时一并恢复
-    const water = src.slice(src.indexOf('if (isWaterNode(o.name, o.material))'))
+    // 2026-10-09 随 LOW 档（不透明）删过一次，回退 MEDIUM 时一并恢复。
+    // 2026-10-14 抽层：修整体在共享装配模块（asmSrc），运行时与烘焙同一份
+    const water = asmSrc.slice(asmSrc.indexOf('if (isWaterNode(o.name, o.material, { strictSurfaces }))'))
     expect(water.slice(0, 900)).toMatch(/mm\.depthWrite = true;/)
     expect(water.slice(0, 900)).toMatch(/mm\.side = THREE\.DoubleSide;/)
     expect(water).not.toMatch(/mm\.renderOrder =/)
@@ -712,7 +801,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(billboard).toMatch(/#include <logdepthbuf_vertex>/)
     expect(billboard).toMatch(/#include <logdepthbuf_pars_fragment>/)
     expect(billboard).toMatch(/#include <logdepthbuf_fragment>/)
-    const ground = src.slice(src.indexOf('function groundShaderMaterial'), src.indexOf('function rebuildGround'))
+    const ground = gpSrc.slice(gpSrc.indexOf('export function groundShaderMaterial'), gpSrc.indexOf('export function', gpSrc.indexOf('export function groundShaderMaterial') + 10))
     expect(ground).toMatch(/#include <common>/)
     expect(ground).toMatch(/#include <logdepthbuf_pars_vertex>/)
     expect(ground).toMatch(/#include <logdepthbuf_vertex>/)
@@ -722,7 +811,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
 
   it('场景 Lambert 曝光修整只作用于 convMat 建出的材质', () => {
     expect(matSrc).toMatch(/const SCENERY_LAMBERT_EXPOSURE = 0\.75/)
-    expect(src).toMatch(/\.multiplyScalar\(SCENERY_LAMBERT_EXPOSURE\)/)
+    // 2026-10-14 抽层：Lambert 建造体在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/\.multiplyScalar\(SCENERY_LAMBERT_EXPOSURE\)/)
   })
 
   it('天空穹：unlit + 无限远方向投影 + 不写深度/不参与雾（此前整节点隐藏）', () => {
@@ -731,11 +821,18 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // —— w=0 丢弃平移，网格坐标本身就是方向（实测多数图天穹网格半径仅 ~10m，当普通几何
     // 渲染就是地图中心一个小球），深度靠 w 偏置推到最后，着色器无任何光照项。
     expect(src).not.toMatch(/o\.visible = false/);
-    const skyAt = src.indexOf('/sky/i.test(o.name');
+    // 2026-10-14 抽层：天空分派在共享装配模块（asmSrc），运行时与烘焙同一份
+    const skyAt = asmSrc.indexOf('/sky/i.test(o.name');
     expect(skyAt).toBeGreaterThan(-1);
-    const skyBranch = src.slice(skyAt, skyAt + 500);
+    const skyBranch = asmSrc.slice(skyAt, skyAt + 500);
     expect(skyBranch).toMatch(/makeSkyMaterial\(o\.material\)/);
     expect(skyBranch).toMatch(/o\.frustumCulled = false;/);
+    // 语义先于名字（2026-10-14 用户报障"抬视角整片发白"）：水材质标记命中时**不得**走天空路径。
+    // NewBay 的海面节点名 `SkySeaSurface.sc2` 含 "sky"，但材质是客户端水材质（导出物 `extras.water`，
+    // 客户端 `WaterPerPixelCubemapAlphablend.material`）——名字命中就抢走会让整片海挂上天空材质
+    // （深度钉远平面 + 平面 UV 拉一张贴图）⇒ 海面永远画不出来、海床直接露出、远处只剩一张被拉平的图。
+    expect(asmSrc).toMatch(/const waterMarked = materialIsWater\(o\.material\);/);
+    expect(asmSrc).toMatch(/if \(!waterMarked && \/sky\/i\.test\(o\.name/);
     const skyStart = matSrc.indexOf('export function makeSkyMaterial');
     const sky = matSrc.slice(skyStart, matSrc.indexOf('export function', skyStart + 10));
     expect(sky).toMatch(/vec4\(position, 0\.0\)/);                  // w=0：丢弃平移
@@ -773,18 +870,43 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(bakeSrcNormals).not.toMatch(/flatShading/);
   });
 
-  it('俯视烘焙页消费同一材质模块，且 convMat 键组成与内核逐字一致', () => {
+  it('俯视烘焙页消费同一装配 SSOT：convMat/键指纹/分派只有一处实现（两侧无本地副本）', () => {
     // bake-ground-overhead 的俯视烘焙以 3D 档观感为基准——材质实现与键指纹
-    // 若与内核漂移，同一材质在两侧会拆成不同实例/不同观感
+    // 若与内核漂移，同一材质在两侧会拆成不同实例/不同观感。
+    // 2026-10-14 抽层后两侧都消费 sceneryAssembly.js（convMat 唯一实现在 asmSrc），
+    // 逐字比对具体键组成既无对象也无可比副本——改为锁"单实现 + 两侧都消费 + 无本地副本"。
     const bakeSrc = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
       .replace(/\/\/[^\n]*/g, '')
     expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryMaterials\.js'/)
-    expect(bakeSrc).toMatch(/const convMat = \(m, isCard\) => cachedSceneryMat\(/)
-    const bakeKey = bakeSrc.slice(bakeSrc.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
-    const kernelKey = src.slice(src.indexOf('const convMat = (m, isCard) => cachedSceneryMat('))
-    // 缩进在两处上下文里天然不同（内核闭包 vs 烘焙 load），先折叠空白再比对前缀
-    const fingerprint = (t) => t.replace(/\s+/g, '').slice(0, 500)
-    expect(fingerprint(bakeKey)).toBe(fingerprint(kernelKey))
+    // 烘焙页消费共享装配（extras 解析 → 分派），本地不得再有 convMat/材质分派副本
+    expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryAssembly\.js'/)
+    expect(bakeSrc).toMatch(/resolveSceneryExtras\(gltf\)/)
+    expect(bakeSrc).toMatch(/makeTexResolvers\(gltf, sceneryExtras\)/)
+    expect(bakeSrc).toMatch(/assembleSceneryMaterials\(gltf, \{/)
+    expect(bakeSrc).not.toMatch(/const convMat = \(m, isCard\)/)
+    expect(bakeSrc).not.toMatch(/cachedSceneryMat\(/)
+    // 内核侧同样只有一处消费（import 装配模块；本地不得复辟 convMat）
+    expect(src).toMatch(/import \{ resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials \} from '\.\/sceneryAssembly\.js'/)
+    expect(src).not.toMatch(/const convMat = \(m, isCard\)/)
+    // 唯一实现（asmSrc）的键组成含 alphaTest/transparent（见首条用例）；此处再钉
+    // "分派顺序"：water → blendByAngle → decal → lightmap → blendLayer → 水下 → convMat
+    const order = ['if (ud.water && typeof ud.water === ', 'if (ud.blendByAngle) {',
+      'if (ud.decal && groundLayers && o.geometry.attributes.uv1) {',
+      'if (ud.lightmap !== undefined && ', 'const maskTex = ud.blendLayer ? maskTexOf(m) : null;',
+      'if (uw) {', 'return convMat(m, isCard);']
+    let prev = -1
+    for (const anchor of order) {
+      const at = asmSrc.indexOf(anchor)
+      expect(at, anchor).toBeGreaterThan(prev)
+      prev = at
+    }
+    // 装配规则 SSOT（2026-10-14 漂移事故后抽层）：两侧"剔不剔/算不算水面"委托同一规则
+    // 模块（sceneryAssemblyRules.js）；烘焙旧的名字剔除口径（漂移源）不得复活
+    expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryAssemblyRules\.js'/)
+    expect(bakeSrc).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\)/)
+    expect(bakeSrc).toMatch(/bakeDropNode\(nm, o\.material,/)
+    expect(bakeSrc).not.toMatch(/\|water\|sea\|river\|lake/)
+    expect(src).toMatch(/from '\.\/sceneryAssemblyRules\.js'/)
   })
 
 })
@@ -1126,8 +1248,10 @@ describe('地形 LOD 滞回与构建判据同源（review P2 回归锁）', () =
 
 describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () => {
   it('纹理依赖 await 之后、共享状态写入之前复查会话失效', () => {
-    // `getDependency('texture', …)` 逐个 await：期间切场后恢复执行不得把旧场 GLB 挂进新场。
-    expect(src).toMatch(/光照图图集解析失败（回退原口径）[\s\S]{0,260}?if \(stale\(\)\) \{ disposeObject3D\(gltf\.scene\); return; \}/)
+    // `getDependency('texture', …)` 逐个 await（共享装配模块的 resolveSceneryExtras）：
+    // 期间切场后恢复执行不得把旧场 GLB 挂进新场——await 返回后立即复查 stale()。
+    expect(asmSrc).toMatch(/getDependency\('texture', ex\.maskTexture\)/)
+    expect(src).toMatch(/const sceneryExtras = await resolveSceneryExtras\(gltf\);\s*\n\s*if \(stale\(\)\) \{ disposeObject3D\(gltf\.scene\); return; \}/)
   })
 
   it('履带 UV 回退分支引用有效变量（v0tankId 未定义会抛 ReferenceError，半初始化装配）', () => {
@@ -1136,11 +1260,12 @@ describe('场景装配的会话/资源卫生（2026-10-10 review P2 批）', () 
   })
 
   it('光照图材质按输入指纹缓存共享（逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）', () => {
-    expect(src).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
+    // 2026-10-14 抽层：LM 缓存分支在共享装配模块（asmSrc）
+    expect(asmSrc).toMatch(/return cachedSceneryMat\(\['LM', m\.uuid, atlas\.uuid,/)
     // 不得退回"每 mesh 直接新建"的写法（同分支内不允许裸 return makeLightmappedMaterial）
-    const start = src.indexOf("ud.lightmap !== undefined && !isWaterNode")
+    const start = asmSrc.indexOf("ud.lightmap !== undefined && !isWaterNode")
     expect(start).toBeGreaterThan(0)
-    const seg = src.slice(start, start + 1400)
+    const seg = asmSrc.slice(start, start + 1400)
     expect(seg).not.toMatch(/return makeLightmappedMaterial\(m, atlas,/)
   })
 

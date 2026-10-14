@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_QUADS, PATCH_QUADS, SUBDIVISION_METRICS, TERRAIN_LAYOUT_ENGINE_VERTEX, buildAdaptiveTerrain,
+  CLIENT_NORMAL_CAMERA_FOV_H, buildRefineMask,
   decodeTerrainField, morphFunc, subdivisionMetrics, groundMapUv, subdivMorphOf, terrainLodState,
   terrainLodStale, pairedTerrainBinUrl, terrainBinMatchesMeta,
 } from './terrainMesh.js'
@@ -180,6 +181,94 @@ describe('地形网格（客户端补片级自适应 LOD，引擎 LandscapeSubdi
     expect(half.maxHeightError).toBeCloseTo(wide.maxHeightError / 2, 12)
     expect(half.maxPatchRadiusError).toBeCloseTo(wide.maxPatchRadiusError / 2, 12)
     expect(half.maxAbsoluteHeightError).toBe(wide.maxAbsoluteHeightError)
+  })
+
+  it('阈值 fov 按客户端口径传入：水平 fov 来自相机配置，不随画布宽高比滑动', () => {
+    // 引擎 `PrepareSubdivision`：`fovLerp` 直接吃 `camera->GetFOV()`（**水平**口径，取自相机配置），
+    // 宽高比只进投影项 `tanFovY = tanf(fov/2)/aspect`。回放自由相机没有狙击镜档（zoomFov 6.5°）
+    // ⇒ 运行时恒传 `CLIENT_NORMAL_CAMERA_FOV_H`：否则窄画布把「55° 竖直 × aspect」折算成小水平角，
+    // 阈值滑向 zoom 端（放松最多 ~1.8×），同一机位我们的网格比客户端更粗——正是 2026-10-14 用户
+    // 「客户端可达机位仍被粗格盖住」的成因之一。
+    const portrait = 0.5
+    const derived = subdivisionMetrics(FOV, portrait)                      // 旧口径：由画布折算
+    expect(derived.fovLerp).toBeLessThan(0.9)
+    const clientWay = subdivisionMetrics(FOV, portrait, 1, CLIENT_NORMAL_CAMERA_FOV_H)
+    expect(clientWay.fovLerp).toBe(1)                                      // 恒 normal 档
+    const M = SUBDIVISION_METRICS
+    expect(clientWay.maxHeightError).toBeCloseTo(M.normalMaxHeightError, 12)
+    expect(clientWay.maxPatchRadiusError).toBeCloseTo(M.normalMaxPatchRadiusError, 12)
+    expect(clientWay.tanFovY).toBeCloseTo(derived.tanFovY, 12)             // 投影项仍是真实相机
+    expect(clientWay.maxAbsoluteHeightError).toBe(M.normalMaxAbsoluteHeightError)
+    // 非正/非法覆盖值一律回落「由 fovY×aspect 折算」的纯函数语义
+    expect(subdivisionMetrics(FOV, portrait, 1, 0).fovLerp).toBeCloseTo(derived.fovLerp, 12)
+    expect(subdivisionMetrics(FOV, portrait, 1, NaN).fovLerp).toBeCloseTo(derived.fovLerp, 12)
+    // 宽画布下两种口径本来就同为 normal 档 —— 这次收紧只影响窄画布
+    expect(subdivisionMetrics(FOV, ASPECT, 1, CLIENT_NORMAL_CAMERA_FOV_H).fovLerp)
+      .toBe(subdivisionMetrics(FOV, ASPECT).fovLerp)
+  })
+
+  it('走廊掩码（B）：掩码内强制到最细层，「粗格插值抬过贴地薄板」的覆盖清零', () => {
+    // 2026-10-14 用户裁定 B 方案。机制复刻：细分判据只约束**相对**误差（≤ 0.014·d·tanFovY），
+    // 而贴地薄板（extras.decal：铁轨基板/压顶/铺装）净空常仅 3–30 cm ⇒ 阈值内的残余插值误差
+    // 就能把它盖住（真图实测 250 m 机位 rails_003 39.7% / rails_002 6.7% 钢条顶点被盖）。
+    // 这里用合成场复现：缓沟 + 一条"贴地薄板"（板顶 = 真值 + 0.10 m，与铁轨基板同量级）。
+    const n = 128, span = 600, jc = n / 2, row = n / 2, sigma = 8, depth = 1.5
+    const field = new Float32Array(n * n)
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      field[i * n + j] = 20 - depth * Math.exp(-(((j - jc) / sigma) ** 2))
+    }
+    const truth = (j) => field[row * n + j]
+    // 覆盖判定：该处发射格（sizeAt）内的双线性面 ≥ 板顶 − 2 cm（与拾取/分析同口径的插值模型）
+    const covered = (res, j) => {
+      const st = res.sizeAt[row * n + j]
+      const j0 = Math.floor(j / st) * st, fj = (j - j0) / st
+      const h = field[row * n + j0] * (1 - fj) + field[row * n + Math.min(j0 + st, n - 1)] * fj
+      return h >= truth(j) + 0.10 - 0.02
+    }
+    const cam = { x: 0, y: 200, z: -1200 }                     // 视距 ~1200 m：格子粗到 8 texel
+    const base = buildAdaptiveTerrain({ field, n, span, cam, fovY: FOV, aspect: ASPECT })
+    let hitBase = 0
+    for (let j = jc - 2; j <= jc + 2; j++) if (covered(base, j)) hitBase++
+    expect(hitBase).toBeGreaterThan(0)                          // 前提：无掩码时确实被粗格盖住
+    const M = 2
+    const pts = []
+    for (let j = jc - M; j <= jc + M; j++) pts.push((j / n - 0.5) * span, 0)
+    const mask = buildRefineMask(pts, n, span, 2)
+    const withMask = buildAdaptiveTerrain({ field, n, span, cam, fovY: FOV, aspect: ASPECT, refineMask: mask })
+    let hitMask = 0
+    for (let j = jc - M; j <= jc + M; j++) if (covered(withMask, j)) hitMask++
+    expect(hitMask).toBe(0)                                     // 掩码后：走廊内不再被盖
+    let masked = 0
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      if (!mask[i * n + j]) continue
+      masked++
+      expect(withMask.sizeAt[i * n + j]).toBe(1)                // 掩码内 = 1 texel（真值分辨率）
+    }
+    expect(masked).toBeGreaterThan(0)
+    expect(withMask.quads).toBeGreaterThan(base.quads)          // 只加细分
+    // 掩码不参与判据的其它输入：不传掩码时与旧行为逐字节一致（同一相机两次构建）
+    const again = buildAdaptiveTerrain({ field, n, span, cam, fovY: FOV, aspect: ASPECT })
+    expect(Array.from(again.sizeAt)).toEqual(Array.from(base.sizeAt))
+    expect(again.quads).toBe(base.quads)
+  })
+
+  it('buildRefineMask：足迹点按 texel 标位、外扩按 margin、越界不越写', () => {
+    const n = 32, span = 320                                   // texel = 10 m
+    const pts = [0, 0, 100, 0]                                 // 世界 (0,0) 与 (100,0)
+    const m1 = buildRefineMask(pts, n, span, 1)
+    const at = (i, j) => m1[i * n + j]
+    // 场景系：x↔列 j、z↔行 i ⇒ (0,0) → (16,16)；(100,0) → (16,26)
+    for (const [i, j] of [[16, 16], [16, 26], [15, 15], [17, 27], [16, 25]]) expect(at(i, j), `i=${i} j=${j}`).toBe(1)
+    expect(at(14, 14)).toBe(0); expect(at(18, 18)).toBe(0)
+    // margin = 0 ⇒ 只标点自身
+    const m0 = buildRefineMask(pts, n, span, 0)
+    expect(m0[16 * n + 16]).toBe(1); expect(m0[15 * n + 16]).toBe(0)
+    // 外扩只在界内写：单点在最后一列（j = 31）、margin 2 ⇒ 3 列 × 5 行 = 15 个 texel
+    const mEdge = buildRefineMask([150, 0], n, span, 2)
+    expect(mEdge.reduce((a, b) => a + b, 0)).toBe(15)
+    // 完全越界的足迹点直接跳过；非有限值同样跳过
+    expect(buildRefineMask([-300, -300, 400, 400], n, span, 2).reduce((a, b) => a + b, 0)).toBe(0)
+    expect(buildRefineMask([NaN, 0, 0, Infinity], n, span, 1).reduce((a, b) => a + b, 0)).toBe(0)
   })
 
   it('地形 LOD 滞回是**单向**的：拉近一律细化，拉远才允许变粗，且有 120 ms 节流', () => {

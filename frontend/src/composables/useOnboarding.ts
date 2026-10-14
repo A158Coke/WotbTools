@@ -278,6 +278,12 @@ export function useOnboarding(options: {
       if (pendingLogin.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed) transferAnonymous(pendingLogin, identity.value)
       else { pendingLogin = null; writePendingLogin(null) }
     }
+    // `bootstrap.state` 是依赖，但**失败态不是触发源**：whenBusinessUserSettled 在非 ready 时会
+    // 主动 ensure，失败再落回 failed ⇒ 本 watcher 被自己的状态翻转反复唤醒 =
+    // failed → ensure → pending → failed 的请求风暴（本机实测 ≈380 req/s 的
+    // `PUT /api/users/profile`）。失败的重试权属于 owner：AppShell 的认证 / 连通性变化，
+    // 或用户在失败横幅上的显式 retry。bootstrap 转 ready 时本 watcher 仍会重跑并完成同步。
+    if (bootstrap.state.value === 'failed') return
     void synchronize()
   }, { immediate: true })
 
