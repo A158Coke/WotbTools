@@ -248,3 +248,44 @@ export function neutralizeDefaultMetalness(root) {
     if (material && !material.metalnessMap && material.metalness === 1) material.metalness = 0
   })
 }
+
+/** Clone only the mounted turret/gun meshes, centred on the turret entity's pivot.
+ * Call before animating the vehicle or patching its instance materials. Geometry and
+ * textures remain borrowed; prepareTankDestroyedVisual owns the new material clones.
+ * Flattening mesh transforms preserves nested GLB bakes without copying the hull.
+ */
+export function cloneDetachedTurret(model, parts, gunPitch) {
+  model.updateMatrixWorld(true)
+  const toModel = model.matrixWorld.clone().invert()
+  const { turretNode, gunNodes, tP, gP, itr } = parts
+  const assembly = new THREE.Group()
+  const centre = new THREE.Matrix4().makeTranslation(-tP[0], -tP[1], -tP[2])
+  if (itr) {
+    const fixed = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(
+      -THREE.MathUtils.degToRad(itr.pitch || 0), -THREE.MathUtils.degToRad(itr.roll || 0),
+      -THREE.MathUtils.degToRad(itr.yaw || 0), 'ZYX'))
+    centre.premultiply(fixed)
+  }
+  const gunRotation = new THREE.Matrix4().makeTranslation(...gP)
+    .multiply(new THREE.Matrix4().makeRotationX(gunPitch))
+    .multiply(new THREE.Matrix4().makeTranslation(-gP[0], -gP[1], -gP[2]))
+  const gunMeshes = new Set()
+  for (const node of gunNodes) node.traverseVisible(mesh => { if (mesh.isMesh) gunMeshes.add(mesh) })
+  const meshes = new Set()
+  // 固定战斗室（turretNode=null，歼击车）：独立「炮塔」件由当前选中炮管组构成——
+  // TD 的炮塔 = 炮架横转，脱落件即炮管组（与 playbackScene poseGlbRig 同一语义）。
+  // detached_turrets 契约只约束 vehicle_eid 关联，不保证 owner 有 turret_N 节点。
+  const assemblyNodes = turretNode ? [turretNode, ...gunNodes] : gunNodes
+  for (const node of assemblyNodes) node.traverseVisible(mesh => { if (mesh.isMesh) meshes.add(mesh) })
+  for (const mesh of meshes) {
+    const copy = mesh.clone(false)
+    copy.matrixAutoUpdate = false
+    copy.matrix.copy(centre)
+    if (gunMeshes.has(mesh)) copy.matrix.multiply(gunRotation)
+    copy.matrix.multiply(toModel).multiply(mesh.matrixWorld)
+    assembly.add(copy)
+  }
+  // GLB-local z-up to scene y-up; the parent receives only the recorded world YPR.
+  assembly.quaternion.copy(Q_FRAME)
+  return assembly
+}

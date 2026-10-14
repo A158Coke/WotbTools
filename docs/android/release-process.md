@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-14，本仓源码为 **2.3.1 / 2003001**（`android/gradle.properties`）；
+截至 2026-10-15，本仓源码为 **2.3.6 / 2003006**（`android/gradle.properties`）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -17,6 +17,47 @@ Native Bridge 保持 v2，Android 使用可信本地 origin `https://appassets.a
 
 PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计确认它没有 tag/release，
 公开 APK 与 staging evidence 均为 404；已 staged 的 2.0.0 属于 PR A，不能作为 local-first APK 发布。
+
+## 版本号递增规则（major / minor / patch）
+
+2026-10-14 用户裁示。每个改动 Android 运行时的 PR 递增 `wotbVersion` 时，按**变更等级**选位，
+而不是一律 +1 patch；强制更新门槛只随 major 抬升。
+
+| 等级 | 适用变更 | 示例（当前 2.3.3） | 强制更新门槛 |
+|---|---|---|---|
+| **major** | breaking change（含 Native Bridge wire breaking、需要新客户端才能正确工作的数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `3.0.0` | **必须抬到该 major 的 `X.0.0`**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = `X×1_000_000`（`3000000`），随 publish 写入 |
+| **minor** | 增加中小功能 | `2.4.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
+| **patch** | 小 bug 修复 | `2.3.4` | 不抬，不强制升级 |
+
+- **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
+- **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在
+  当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
+- **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、
+  数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时
+  由用户裁定——等级决定是否强制全部用户更新，是产品决策。
+- **记录**：PR 描述写明所选等级与理由；`docs/android/releases/<版本>.md` 的
+  `Minimum supported version` 行与等级一致（major 写 `raised to <新 versionCode> (<版本>)`，
+  minor/patch 写 `unchanged at …`）。
+- **门槛按发布候选相对线上版本判定（批量发布）**：两次 publish 之间可以合并多个 PR，最终只 publish
+  其中最新的候选。门槛义务看**候选 major 与线上 `version.json` 的 `latestVersionName` major** 的比较，
+  不看候选自身最后一次递增的等级：
+  - 候选 major **大于**线上 major（中间合并过尚未发布的 major）⇒ publish 前必须把门槛设为候选 major 的
+    `X.0.0`（`X×1_000_000`）——**即使候选本身是 minor/patch**。例：线上 2.3.3，先合并 3.0.0、再合并
+    3.0.1，只 publish 3.0.1 ⇒ 门槛 = `3000000`，旧客户端被强制更新到 3.0.1；未发布的 major 的强制义务
+    由最终候选继承，不会因为候选是 patch 而丢失。
+  - 候选与线上**同 major** ⇒ 不得改动门槛（minor/patch 不强制）。
+  - 包含 Native Bridge wire breaking 时，门槛还须满足 publish 现有的 bridge / cutover 守卫（以守卫为准）。
+  现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选
+  versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；
+  在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同，合并发布的 wire-breaking 候选仍以
+  守卫的实际要求为准。
+- **major 的发布动作**：合并（自动 stage）→ 把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为
+  `X×1_000_000` → `publish(version=<候选>)`；变量必须在 publish 之前设置，步骤见下文
+  「强制更新门槛（minSupportedVersionCode）的抬升」。
+- **发布说明**：继承门槛的 minor/patch 候选，`Minimum supported version` 行写
+  `raised to X000000 (X.0.0 floor, inherited from unpublished X.0.0)`。
+- **生效范围**：本规则自 2026-10-14 起生效；此前的版本（如 2.2.12、2.3.0 以 patch/minor 携带门槛抬升）
+  按当时口径保留，不追溯。
 
 ## 两阶段发布（stage → publish）
 
@@ -195,9 +236,9 @@ Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于�
 `gh variable list`），但它**只能随一次"严格更新版本"的 publish 写进 version.json**：
 `classify_prod` 把 `minSupportedVersionCode` 计入同版本一致性判定，对 production 同版本直接注入
 新门槛会得到 `prod_equal_conflict`（fail-closed）——同位改写被刻意禁止，抬门槛必然伴随一次
-新版本发布。最小动作三步：
+新版本发布。按「版本号递增规则」，抬门槛只在发布候选的 major 高于线上 major 时发生（含继承未发布 major 的 minor/patch 候选），门槛值为候选 major 的 `X.0.0`。最小动作三步：
 
-1. 递增 `android/gradle.properties:wotbVersion`（Version-as-Code，普通 PR）→ 合并 main 自动 stage；
+1. 按变更等级递增 `android/gradle.properties:wotbVersion`（major，或同一未发布 major 之后的 minor/patch 候选；Version-as-Code，普通 PR）→ 合并 main 自动 stage；
 2. 把变量设为目标门槛值（`guard_min_supported` 校验 ≤ 新版本 code）；
 3. `workflow_dispatch(mode=publish, version=<新版本>)` 写新 manifest（publish 身份核验不变）。
 
@@ -211,6 +252,17 @@ Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于�
   强制更新到当时最新版本：2.2.2 是首个携带新 WASM 引擎（Agent v0.4.4：作者车 type=10 接收
   突发时间轴重建）与履带印数据面/运行时口径的版本，旧客户端不再受支持。2.2.2 客户端只收到
   可选更新提示（不强制）。
+- **2002012（2.2.12；2026-10-13 抬升，由 2.2.12 自身携带发布）** —— 所有低于 2.2.12 的客户端
+  强制更新到 2.2.12：该版本的内嵌运行时携带 Agent v0.4.6（动态装甲 `armorsStates` 状态时间轴
+  按 propID 16 解码）与新版穿透热力图管线（含交战距离衰减）。本次发布 latest 即门槛
+  （latestVersionCode = minSupportedVersionCode = 2002012）：已安装 2.2.12 的客户端两个判定
+  条件都不成立，**不显示任何更新提示**（不强制）；此后若 latest 继续升高且门槛仍 ≤ 2002012，
+  2.2.12 客户端才会收到可选更新提示。
+- **2003000（2.3.0；2026-10-13 抬升，由 2.3.0 自身携带发布）** —— 所有低于 2.3.0 的客户端
+  强制更新到 2.3.0（含 2.2.12）：该版本的内嵌运行时携带 3D 战斗特效写实化（弹道曳光/炮口焰/
+  命中烟/击毁爆炸，按画质分档）。本次发布 latest 即门槛（latestVersionCode =
+  minSupportedVersionCode = 2003000）：已安装 2.3.0 的客户端不显示任何更新提示（不强制）；
+  此后若 latest 继续升高且门槛仍 ≤ 2003000，2.3.0 客户端才会收到可选更新提示。
 
 ## Rollout 与验证
 

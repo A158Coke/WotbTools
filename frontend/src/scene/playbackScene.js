@@ -22,7 +22,10 @@ import { orientDiscUv } from './baseDecal.js'
 import { ASSAULT_BASE_ID, SUPREMACY_BASE_IDS, baseView, foldAssaultProgress, foldSupremacyTransitions } from '../utils/baseStatus.js'
 import { mapBases } from '../data/mapBases.js'
 import { firstIndexAfter } from './seekPointer.js'
-import { buildAdaptiveTerrain, groundMapUv, terrainLodState, terrainLodStale } from './terrainMesh.js'
+import {
+  buildAdaptiveTerrain, decodeTerrainField, groundMapUv, pairedTerrainBinUrl, terrainBinMatchesMeta,
+  terrainLodState, terrainLodStale,
+} from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
 import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
@@ -32,7 +35,7 @@ import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
-import { sampleChannel, sampleKeyframes } from './trackInterp.js'
+import { sampleChannel, sampleKeyframes, sampleDetachedPose } from './trackInterp.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
@@ -48,7 +51,7 @@ import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
-import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
+import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
   attachChainToWheels, solveChain, vertexChainParams, applyChainToVertices, chainChanged, chainDrift, sideTravel,
@@ -930,7 +933,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 后端返回小地图贴图 + X-Map-Meta 铺设参数（size_m/x/z/rot90/flip_x）。
   // 方向约定：图上边 = 世界 +z，图右边 = 游戏 +x = 场景 −x（与 pos = (−x,y,z) 镜像自洽，
   // 故平面 rotation.z = π）。底图/高度场覆盖世界 [-300,+300]²（600m 方框，原点居中）。
-  // terrain 端点返回 u16 LE 高度场（行 0=南，行主序）+ X-Terrain-Meta（size/zmax/span）；
+  // terrain 端点返回 u16 LE 高度场（行 0=南，行主序）+ X-Terrain-Meta（size/zmax/span/terrainLayout，
+  // 列口径见 terrainMesh.js `decodeTerrainField`）；
   // 有高度场时用起伏地形替换 2D 平面，404 时保持 2D。
   // SpeedTree 叶卡 billboard 材质（客户端 speedtree-materials-vp.sl 同构）：
   // POSITION=锚点 pivot，_corner=(角点偏移, pivot.w)。客户端每帧在【视空间】把
@@ -1082,26 +1086,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             if (dx > 0 || dy > 0) tmeta.span = Math.max(dx, dy);
           }
         }
-        const b = await assetProvider.fetch(terrainBin);
+        // json/bin 必须同一次发布（布局标记只对配对的 bin 成立，见 terrainMesh.js
+        // `pairedTerrainBinUrl`）：以 terrainBinSha256 作缓存键取 bin，解码前再核对字节
+        const b = await assetProvider.fetch(pairedTerrainBinUrl(terrainBin, tmeta));
         if (stale()) return;
         if (b.ok) {
           tbuf = await b.arrayBuffer();
           if (stale()) return;
+          const paired = await terrainBinMatchesMeta(tbuf, tmeta);
+          if (stale()) return;
+          if (!paired) {
+            console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退 2D）');
+            tbuf = null;
+          }
         }
       }
-      {
-        const meta = tmeta;
-        const n = meta.size || 512;
-        const buf = tbuf;
-        if (buf && buf.byteLength === n * n * 2) {
-          const u16 = new Uint16Array(buf);
-          heightMeta = meta;
-          // 预转米制高度（行 0=南，行主序；zmin 缺省 0）
-          heightField = new Float32Array(n * n);
-          const zmin = meta.zmin || 0;
-          const k = ((meta.zmax || 100) - zmin) / 65535;
-          for (let i = 0; i < u16.length; i++) heightField[i] = u16[i] * k + zmin;
-        }
+      // 米制高度场 = 场景系引擎顶点口径（旧包的列翻转偏一格在此一次性补正，见
+      // terrainMesh.js `decodeTerrainField`）；网格 / sampleHeight / 拾取诊断 / 水面岸线全读这一份
+      if (tbuf) {
+        const field = decodeTerrainField(tbuf, tmeta);
+        if (field) { heightMeta = tmeta; heightField = field; }
+        else console.warn('地形数据尺寸或布局不认识（回退 2D）:', tmeta.size, tmeta.terrainLayout);
       }
     } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
     if (stale()) return;
@@ -2523,6 +2528,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         g.add(ring);
       }
       const v = { def, group: g, turretG, gunPivot, meshHull: hull, hullGroup: hullG };
+      // Capture clean proxy materials before the vehicle receives its wreck shader.
+      v.detachedTurrets = (DATA.detached_turrets || []).filter(track => track.vehicle_eid === def.eid).map(track => {
+        const root = new THREE.Group(); root.userData.eid = def.eid;
+        const proxy = turretG.clone();
+        proxy.position.set(0, 0, 0); proxy.quaternion.identity();
+        // turretG is constructed immediately above as [turret mesh, gunPivot].
+        proxy.children[1].rotation.x = -gunPitchAt(v, track.pose_kf.t[0]);
+        root.add(proxy); root.visible = false; scene.add(root);
+        return { track, root, proxy, proxyVisual: prepareTankDestroyedVisual(proxy), glb: null, glbVisual: null };
+      });
       v.proxyVisual = prepareTankDestroyedVisual(g, { cloneMaterials: false });
       v.labelAnchor = new THREE.Vector3();
       // 履带印路径累积态（左右各一条；builtT = 已铺到的回放时刻，-∞ = 待全量重算）
@@ -3018,8 +3033,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const barrelNodes = grp.filter(n => /^gun_\d+(_mask)?$/.test(n.name || ''));
     const gunNodes = barrelNodes.length ? barrelNodes : grp;
     const mo = sd && sd.model_origins;
-    if (!turretNode || !mo || !mo.track || !mo.turret) {
+    if (!mo || !mo.track || !mo.turret) {
       console.warn('[playback] glb parts incomplete: turret=' + !!turretNode + ' origins=' + !!(mo && mo.track));
+      return null;
+    }
+    // 固定战斗室车辆（歼击车，实测资产包 44/735：T110E3/ISU-152/T28/SU-85/StuG…）
+    // 客户端源模型**没有 turret_N 实体**——炮管组直接装在车体上，导出器按源场景图
+    // 忠实导出（tools/export_tank_glb.py 不造节点）。摆位证据其实齐全：track/turret
+    // 枢轴在 tank.json model_origins、炮管组在 GLB——照常挂载，炮塔横转由 poseGlbRig
+    // 施加到炮管组（mG 本就 = mT·Rx(gr)，与客户端「TD 的炮塔 = 炮架横转」同构）。
+    // 连炮管组都没有的模型无任何受姿部件，仍退代理车（fail-visible）。
+    if (!turretNode && !gunNodes.length) {
+      console.warn('[playback] GLB 部位不全，保留代理车（无炮塔且无炮管组）');
       return null;
     }
     const tP = [mo.track[0] + mo.turret[0], mo.track[1] + mo.turret[1], mo.track[2] + mo.turret[2]];
@@ -3380,9 +3405,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       .multiply(_mTmpC.makeRotationX(gr))
       .multiply(_mTmpD.makeTranslation(-p.gP[0], -p.gP[1], -p.gP[2]));
     const tn = p.turretNode;
-    tn.updateMatrix();
-    if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
-    tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
+    if (tn) {
+      // 回转炮塔：横转（含 itr 补偿）写炮塔节点；炮管随父链继承横转。
+      tn.updateMatrix();
+      if (!tn.userData.__bake) { tn.userData.__bake = tn.matrix.clone(); tn.matrixAutoUpdate = false; }
+      tn.matrix.copy(_mAcc.copy(mT).multiply(tn.userData.__bake));
+    }
+    // 固定战斗室（turretNode=null，歼击车）：炮管组直接吃 mG——mG = mT·Rx(gr)，
+    // 已含绕 tP 的横转（itr 补偿在内）与绕 gP 的俯仰，与客户端「TD 炮塔 = 炮架横转」同构。
     for (const gn of p.gunNodes) {
       gn.updateMatrix();
       if (!gn.userData.__bake) { gn.userData.__bake = gn.matrix.clone(); gn.matrixAutoUpdate = false; }
@@ -3435,6 +3465,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             scene.add(v.glb);
             // Clone before shader patching: templates keep shared textures/geometry only.
             // The material module composes the existing tank ambient-light isolation.
+            for (const head of v.detachedTurrets) {
+              head.glb = cloneDetachedTurret(inst, parts, gunPitchAt(v, head.track.pose_kf.t[0]));
+              head.glbVisual = prepareTankDestroyedVisual(head.glb);
+              head.root.add(head.glb);
+            }
             v.glbVisual = prepareTankDestroyedVisual(v.glb);
             applyPose(v);   // late attach while paused must reflect the current replay time
             invalidate();
@@ -3445,6 +3480,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     } else {
       for (const v of V) {
         if (v.glb) {
+          for (const head of v.detachedTurrets) {
+            head.root.remove(head.glb);
+            disposeTankDestroyedVisual(head.glbVisual);
+            head.glb = null; head.glbVisual = null;
+          }
           scene.remove(v.glb);            // borrowed geometry/textures stay with the template
           disposeTankDestroyedVisual(v.glbVisual);
           v.glbVisual = null;
@@ -3456,6 +3496,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           v.glb = null; v.glbParts = null; v.suspParts = null;
         }
         setLowPoly(v, true);
+        applyDetachedTurrets(v);
       }
     }
   }
@@ -4018,7 +4059,36 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 炮线折线求值 scratch（每帧多车并发，避免逐帧分配）
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
+  const detachedPose = {};
+  function applyDetachedTurrets(v) {
+    let separated = false;
+    for (const head of v.detachedTurrets) {
+      const known = T >= head.track.pose_kf.t[0];
+      separated ||= known;
+      head.root.visible = known && !classIconsVisible() && sampleDetachedPose(head.track, T, detachedPose);
+      if (head.root.visible) {
+        head.root.position.set(detachedPose.x, detachedPose.y, detachedPose.z);
+        yprScene(detachedPose.yaw, detachedPose.pitch, detachedPose.roll, head.root.quaternion);
+      }
+      head.proxy.visible = !head.glb;
+      if (head.glb) head.glb.visible = true;
+      // Detachment is itself known destruction evidence for this part, even if
+      // canonical vehicle life is still loading. Rewind simply hides the part.
+      const amount = destroyedVisualAmount({ lifeState: 'DESTROYED', destroyedKnownAtSec: head.track.pose_kf.t[0] }, T);
+      applyTankDestroyedVisual(head.proxyVisual, amount);
+      applyTankDestroyedVisual(head.glbVisual, amount);
+    }
+    v.turretG.visible = !separated;
+    if (v.glbParts) {
+      // 固定战斗室（turretNode=null，歼击车）没有炮塔节点可摘——脱落时只藏炮管组
+      //（TD 的炮架横转就是它的「炮塔」，脱落件一并带走）。
+      if (v.glbParts.turretNode) v.glbParts.turretNode.visible = !separated;
+      for (const node of v.glbParts.gunNodes) node.visible = !separated;
+    }
+  }
+
   function applyPose(v) {
+    applyDetachedTurrets(v);
     const life = sceneLifeAt(v, T);
     const dead = life?.lifeState === 'DESTROYED';
     const amount = destroyedVisualAmount(life, T);
@@ -4586,6 +4656,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
     currentMapBases = null;
     for (const v of V) {
+      for (const head of v.detachedTurrets) {
+        scene.remove(head.root);
+        disposeTankDestroyedVisual(head.proxyVisual);
+        disposeTankDestroyedVisual(head.glbVisual);
+      }
       if (v.glb) scene.remove(v.glb);          // only material clones are instance-owned
       disposeTankDestroyedVisual(v.glbVisual);
       v.glbVisual = null;
@@ -4932,6 +5007,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // replaced; projected icon buttons continue selecting the same entity.
       for (const v of V) {
         setLowPoly(v, !v.glb);
+        applyDetachedTurrets(v);
         if (v.glb) v.glb.visible = v.group.visible && !classIconsVisible();
       }
       for (const effect of floatDmgs) effect.sp.visible = showMarkerStatus;

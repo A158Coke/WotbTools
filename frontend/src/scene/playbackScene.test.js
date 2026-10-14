@@ -15,6 +15,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { watchEffect } from 'vue'
+import { createHash } from 'node:crypto'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { assetProvider } from './assetProvider.js'
@@ -1019,6 +1020,47 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.err).toBe('')
   })
 
+  // json/bin 配对（PR #615 review P2）：布局标记只对同一次发布的 bin 成立——bin 以 terrainBinSha256 作缓存键
+  // 取回，解码前核对字节；不同批（发布进行中）fail-closed 回退 2D，不画错位一列的地形。
+  function terrainPairFetch(meta, bin) {
+    return vi.fn(async (url) => {
+      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ ...meta }) }
+      if (url.startsWith('/assets/terrain')) return { ok: true, arrayBuffer: async () => bin }
+      throw new Error('unexpected asset ' + url)
+    })
+  }
+  const sha256Hex = (buf) => createHash('sha256').update(Buffer.from(buf)).digest('hex')
+
+  it('terrain bin 以 terrainBinSha256 作缓存键取回，字节配对才建地形', async () => {
+    prepareAssets(['terrain', 'terrain-meta'])
+    window.__terrain = undefined
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const sha = sha256Hex(bin)
+    const fetchMock = terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: sha }, bin)
+    vi.stubGlobal('fetch', fetchMock)
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(fetchMock.mock.calls.map((c) => c[0])).toContain(`/assets/terrain?sha256=${sha}`)
+    expect(window.__terrain).toBeDefined()
+    expect(window.__terrain).not.toBeNull()
+    expect(store.hasData).toBe(true)
+  })
+
+  it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
+    prepareAssets(['terrain', 'terrain-meta'])
+    window.__terrain = undefined
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const bin = new Uint16Array([0, 65535, 0, 65535]).buffer
+    const otherSha = sha256Hex(new Uint16Array([1, 2, 3, 4]).buffer)
+    vi.stubGlobal('fetch', terrainPairFetch({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2, terrainBinSha256: otherSha }, bin))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(window.__terrain == null).toBe(true)
+    expect(warn.mock.calls.some((c) => String(c[0]).includes('sha256 不符'))).toBe(true)
+    expect(store.hasData).toBe(true)
+    expect(store.err).toBe('')
+  })
+
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
@@ -1424,6 +1466,105 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     return { api, store, overlay, frames, vehicles: window.__pbV }
   }
 
+
+  const detachedTrack = () => ({ eid: 9, vehicle_eid: 1, coverage: [52, 60, 80, 100], pose_kf: {
+    t: [52, 54, 80, 82], pos: [1, 2, 3, 3, 4, 5, 20, 2, 30, 22, 2, 32],
+    yaw: [0, 1, 2, 3], pitch: [0, 0.2, 0.4, 0.6], roll: [0, 0.4, 0.8, 1],
+  } })
+
+  it('separates the original proxy head at the known entity time, seeks/rewinds and respects AoI gaps', async () => {
+    const sceneData = dataFor([vehicle({ death_t: 52 }), vehicle({ eid: 2, account_id: 88, hp: [[42, 0]], death_t: 52 })])
+    sceneData.detached_turrets = [detachedTrack()]
+    const { api, vehicles } = await load(sceneData.vehicles, null, sceneData)
+    const [owner, other] = vehicles, head = owner.detachedTurrets[0]
+    expect(head.root.visible).toBe(false); expect(owner.turretG.visible).toBe(true)
+    expect(other.detachedTurrets).toHaveLength(0)
+    api.seekTime(53)
+    expect(owner.turretG.visible).toBe(false); expect(other.turretG.visible).toBe(true)
+    expect(head.root.visible).toBe(true)
+    expect(head.root.position.toArray()).toEqual([-2, 3, 4])
+    expect(head.root.quaternion.angleTo(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.1, -0.5, -0.2, 'YXZ')))).toBeCloseTo(0)
+    api.seekTime(70)
+    expect(head.root.visible).toBe(false); expect(owner.turretG.visible).toBe(false)
+    api.seekTime(81)
+    expect(head.root.position.toArray()).toEqual([-21, 2, 31])
+    api.setLabelPrefs({ classIcons: true })
+    expect(head.root.visible).toBe(false)
+    api.setLabelPrefs({ classIcons: false })
+    expect(head.root.visible).toBe(true)
+    api.seekTime(51)
+    expect(head.root.visible).toBe(false); expect(owner.turretG.visible).toBe(true)
+    api.seekTime(53)
+    expect(head.root.position.toArray()).toEqual([-2, 3, 4])
+    const disposed = head.proxyVisual.materials.map(({ material }) => vi.spyOn(material, 'dispose'))
+    api.reset()
+    expect(window.__scene.children).not.toContain(head.root)
+    for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the same replay clock for pause and speed, with direct seek matching forward playback', async () => {
+    const sceneData = dataFor([vehicle({ death_t: 52 })]); sceneData.detached_turrets = [detachedTrack()]
+    const { api, vehicles, frames } = await load(sceneData.vehicles, null, sceneData)
+    const head = vehicles[0].detachedTurrets[0]
+    api.seekTime(52.8)
+    api.setSpeed(2); api.setPlaying(true)
+    frames.at(-1)()
+    expect(head.root.position.x).toBeCloseTo(-2)
+    const playedPosition = head.root.position.clone(), playedRotation = head.root.quaternion.clone()
+    api.setPlaying(false)
+    frames.at(-1)()
+    expect(head.root.position.equals(playedPosition)).toBe(true)
+    api.seekTime(51); api.seekTime(53)
+    expect(head.root.position.distanceTo(playedPosition)).toBeCloseTo(0)
+    expect(head.root.quaternion.angleTo(playedRotation)).toBeCloseTo(0)
+  })
+
+  it('late GLB replaces the detached proxy while paused and cleans only owned materials on toggle/replacement', async () => {
+    window.history.replaceState(null, '', '/?debug&q=mid')
+    const parked = track(deferred())
+    vi.spyOn(assetProvider, 'bytes').mockReturnValue(parked.promise)
+    vi.spyOn(assetProvider, 'json').mockImplementation(path => Promise.resolve(
+      String(path).startsWith('/tank/') ? { model_origins: { track: [0, 0, 0], turret: [0, 0, 2] }, configs: [] } : null))
+    const texture = new THREE.Texture(), geometry = new THREE.BoxGeometry()
+    const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.4 })
+    const template = new THREE.Group()
+    for (const name of ['hull', 'turret_0', 'gun_0']) {
+      const mesh = new THREE.Mesh(geometry, material); mesh.name = name; template.add(mesh)
+    }
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_bytes, _path, done) => done({ scene: template }))
+    const texDispose = vi.spyOn(texture, 'dispose'), geoDispose = vi.spyOn(geometry, 'dispose')
+    const sceneData = dataFor([vehicle({ death_t: 52 })]); sceneData.detached_turrets = [detachedTrack()]
+    const { api, vehicles } = await load(sceneData.vehicles, null, sceneData)
+    const owner = vehicles[0], head = owner.detachedTurrets[0]
+    api.seekTime(55); api.setGlb(true); parked.resolve(new Uint8Array([1]))
+    await vi.waitFor(() => expect(head.glb).toBeTruthy())
+    expect(owner.glbParts.turretNode.visible).toBe(false)
+    expect(owner.glbParts.gunNodes.every(n => !n.visible)).toBe(true)
+    expect(head.proxy.visible).toBe(false); expect(head.glb.visible).toBe(true)
+    expect(head.glb.children).toHaveLength(2)
+    expect(head.glbVisual.amount).toBe(1)
+    expect(head.glbVisual.materials[0].material).not.toBe(owner.glbVisual.materials[0].material)
+    expect(material.roughness).toBe(0.4)
+    const disposed = head.glbVisual.materials.map(({ material }) => vi.spyOn(material, 'dispose'))
+    api.setGlb(false)
+    expect(head.glb).toBeNull(); expect(head.proxy.visible).toBe(true)
+    expect(head.root.visible).toBe(true); expect(owner.turretG.visible).toBe(false)
+    for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(texDispose).not.toHaveBeenCalled(); expect(geoDispose).not.toHaveBeenCalled()
+    api.setGlb(true)
+    await vi.waitFor(() => expect(head.glb).toBeTruthy())
+    api.seekTime(51)
+    expect(owner.glbParts.turretNode.visible).toBe(true); expect(head.root.visible).toBe(false)
+    const activeDisposed = head.glbVisual.materials.map(({ material }) => vi.spyOn(material, 'dispose'))
+    const next = dataFor([vehicle({ tank_id: 0, death_t: null })])
+    await api.loadData({ kind: 'local', file: new File(['next'], 'next.wotbreplay'), session: { loadScene: vi.fn().mockResolvedValue(next), getState: () => ({ canonical: null }) } })
+    await Promise.resolve()
+    expect(window.__scene.children).not.toContain(head.root)
+    for (const dispose of activeDisposed) expect(dispose).toHaveBeenCalledTimes(1)
+    expect(texDispose).toHaveBeenCalledTimes(1); expect(geoDispose).toHaveBeenCalledTimes(1)
+    expect(window.__pbV[0].detachedTurrets).toHaveLength(0)
+  })
+
   it('converts canonical battle seconds, keeps labels/roster/model consistent and rewinds without HP inference', async () => {
     const tracks = [deadTrack(), { accountId: 88, lifeTransitions: [{ timeSec: 0, lifeState: 'ALIVE' }] }]
     const { api, store, overlay, vehicles } = await load([
@@ -1815,7 +1956,9 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
         vehicle({ eid: newId, pos: [100, 0, 0], coverage: [42, 51], death_t: null, is_author: false })]
       const playback = validateAgentPlayback({ ...f.playback, meta: { ...f.playback.meta, samples: 1, t_start: 42, duration: 242 },
         vehicles: definitions.map(def => ({ ...f.playback.vehicles[0], ...def, pose_kf: undefined, hull_roll: [0] })),
-        shots: [], kills: [], reloads: [], reload_effective: [],
+        // The synthetic re-entry roster replaces every original vehicle ID.
+        // Its unrelated real-fixture turret owners must be removed with the roster.
+        detached_turrets: [], shots: [], kills: [], reloads: [], reload_effective: [],
       })
       const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
       const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
@@ -1934,4 +2077,93 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(activeBursts()).toHaveLength(0)
   })
 
+})
+
+describe('turretless GLB（固定战斗室歼击车）挂载与摆姿', () => {
+  const mkVehicle = (overrides = {}) => ({
+    eid: 1, account_id: 77, tank_id: 13857, team: 2, max_hp: 1000, is_author: false,
+    pos: [0, 0, 0], hull_yaw: [0], hull_pitch: [0], turret_yaw: [0], gun_pitch: [0],
+    hp: [[42, 1000]], coverage: [42, 300], death_t: null, ...overrides,
+  })
+  const mkData = (vehicles, detachedTurrets = []) => ({ ...minimalData(), meta: { ...minimalData().meta, duration: 300, samples: 1 }, vehicles, detached_turrets: detachedTurrets })
+
+  /** 歼击车模板：hull + 炮管组（gun_0/gun_0_mask），无任何 turret_N 节点（T110E3 实测形态） */
+  function stubTurretlessGlb({ withGun = true } = {}) {
+    vi.spyOn(assetProvider, 'bytes').mockImplementation(() => Promise.resolve(new Uint8Array([1])))
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) => Promise.resolve(
+      String(path).startsWith('/tank/')
+        ? { model_origins: { track: [0, 0, 0], turret: [0, 0, 0] }, configs: [] }
+        : null))
+    const template = new THREE.Group()
+    for (const [name, geometry] of [
+      ['hull', new THREE.BoxGeometry(3, 6, 2)],
+      ...(withGun ? [
+        ['gun_0', new THREE.BoxGeometry(0.2, 4.5, 0.2).translate(0, 2.25, 0)],
+        ['gun_0_mask', new THREE.BoxGeometry(0.6, 1, 0.6)],
+      ] : []),
+    ]) {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial())
+      mesh.name = name
+      template.add(mesh)
+    }
+    vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementation((_b, _p, done) => done({ scene: template }))
+  }
+
+  async function loadTurretless(vehicles, detachedTurrets = []) {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const frames = []
+    vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    const store = createPlaybackStore()
+    api = initPlayback(mountContainer(), store, overlay)
+    created.push(api)
+    const state = { canonical: null }
+    const session = { loadScene: vi.fn().mockResolvedValue(mkData(vehicles, detachedTurrets)), getState: () => state }
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'td.wotbreplay'), session })
+    api.setPlaying(false)
+    return { api, store, frames, vehicles: window.__pbV }
+  }
+
+  it('无 turret_N 但有炮管组：进场即挂载真模型，炮塔角改写炮管组（不再退代理）', async () => {
+    stubTurretlessGlb()
+    const { vehicles } = await loadTurretless([mkVehicle({ turret_yaw: [0.5], gun_pitch: [0.1] })])
+    expect(vehicles).toHaveLength(1)
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()                       // 不再是代理盒
+    expect(v.glbParts.turretNode).toBeNull()         // 无炮塔节点
+    expect(v.glbParts.gunNodes.length).toBe(2)       // 炮管 + 炮盾
+    expect(v.glbParts.gunNodes.every(gn => gn.matrixAutoUpdate === false)).toBe(true) // 姿态系统接管炮管组
+    expect(v.glb.visible).toBe(true)
+  })
+
+  it('无 turret_N 且无炮管组：无受姿部件，仍退代理车（fail-visible）', async () => {
+    stubTurretlessGlb({ withGun: false })
+    const { vehicles } = await loadTurretless([mkVehicle()])
+    expect(vehicles).toHaveLength(1)
+    expect(vehicles[0].glb).toBeFalsy()              // 保留代理车
+  })
+
+  it('turretless + 独立炮塔轨道：clone/分离/倒带全程不抛（cloneDetachedTurret 空炮塔回归锁）', async () => {
+    stubTurretlessGlb()
+    const detachedTrack = {
+      vehicle_eid: 1,
+      coverage: [50, 300],
+      pose_kf: { t: [50], pos: [1, 0, 0], yaw: [0.3], pitch: [0], roll: [0] },
+    }
+    const { api, vehicles } = await loadTurretless([mkVehicle()], [detachedTrack])
+    const v = vehicles[0]
+    expect(v.glb).toBeTruthy()                       // 挂载阶段（clone 路径）不再踩 null.turretNode
+    expect(v.detachedTurrets).toHaveLength(1)
+    const head = v.detachedTurrets[0]
+    expect(head.glb).toBeTruthy()
+    expect(head.glb.children.length).toBeGreaterThan(0)   // 脱落件由炮管组构成
+    api.seekTime(55)                                 // T ≥ 分离已知时刻：分离态
+    expect(head.root.visible).toBe(true)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === false)).toBe(true)  // 车上炮管组隐藏
+    api.seekTime(45)                                 // 倒带到分离前：恢复
+    expect(head.root.visible).toBe(false)
+    expect(v.glbParts.gunNodes.every(gn => gn.visible === true)).toBe(true)
+  })
 })

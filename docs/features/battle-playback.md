@@ -437,7 +437,13 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     烟柱约 10 m 高，底部炭黑、顶部转灰；烟团大、底部不透明度接近 1、相邻烟团上下重叠，连成一根烟柱。
     烟贴图中心 alpha 只有约 0.6，稀疏摆放时实机亮图远景只剩一层看不出的薄灰（像素回读峰值只压暗
     约 1/3），单测锁定"底部 alpha ≥ 0.8、相邻烟团间距 < 半个烟团高"。
-    不做飞头 / 炮塔掀飞：弹药架殉爆只在录像者自己的炮弹结果（method38）里可证，其他击杀无证据。
+  - **独立炮塔**：新解析产物的 `detached_turrets` 提供炮塔实体、权威车辆归属、可见区间和位置 / yaw / pitch / roll。
+    实体首次已知后，原车模的选中炮塔及炮管隐藏；同一组模型部件以炮塔枢轴为原点，按独立实体的完整位姿
+    飞行、落地及后续移动。低模保持同一分离语义。直接 seek、倒带、暂停、倍速、GLB 迟到及模型开关均由
+    回放时钟确定；AoI 缺口隐藏独立部件，不跨缺口插值。旧产物缺少字段则保持完整原车模。
+    飞头实体是呈现依据，低血量、HP=0 或普通击杀不单独触发；不能由飞头反推弹药架殉爆死因。
+    样本协议范围为 11.20：本机 77 场回放中 83 次 class-8 创建的 owner 均对应真实车辆，私人回放不入库。
+    解析由上游 v0.4.7 提供，本仓正式 pin 已同步；观感由用户在真实资产和 GPU 上验收。
   - **画质档位预算**（`QUALITY_PRESETS[k].fx` 引用 `FX_BUDGETS[k]`；信息类元素四档都有，氛围元素按档裁剪；
     批次容量封顶，满了按「命中 → 开火 → 爆炸 → 回放驱动粒子」的优先级丢弃）：
 
@@ -551,6 +557,15 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   **保留 `__hullGroup` 但恒归单位**：非底盘节点（hull*/turret*/gun*）收进该组、`chassis_*`
   留在根上（命名不符 → `hullGroup=null`，整台刚体 fail-safe），作为下一步「逐轮贴地 +
   履带分段形变」的挂点；identity 下与拆分前逐像素等价（低模侧同式）。
+  **固定战斗室车辆（歼击车）无 `turret_N` 节点也照常挂载（2026-10-14）**：客户端源模型
+  本就没有炮塔实体（T110E3/ISU-152/T28/SU-85/StuG…，资产包实测 44/735 辆全部如此；
+  导出器 `tools/export_tank_glb.py` 按源场景图忠实导出、不造节点），此前
+  `collectGlbParts` 无条件要求 `turret_N` → 这批车在 3D 回放里确定性退代理盒（用户实测
+  Faust 场两台敌 T110E3 全场盒子）。现按摆位证据放行：`model_origins`（track/turret 枢轴）
+  与炮管组齐备即挂载，`poseGlbRig` 里炮管组直接吃 `mG = mT·Rx(gr)`——绕 `track+turret`
+  枢轴的横转（含 `initial_turret_rotation` 补偿）与绕 `gun_origin` 的俯仰一并写入炮管组，
+  与客户端「TD 的炮塔 = 炮架横转」呈现同构；回转炮塔路径逐值不变。无炮塔**且**无炮管组的
+  模型无受姿部件，仍退代理车（fail-visible，warn 留痕）。
   **客户端结构（逆向，2026-10-10 复核；证据见上游 `docs/tank-suspension-client-re.md`）**：
   `SuspensionSystem` / `SuspensionWheelsSystem` / `SuspensionTrackSystem` 三个系统逐帧解算，
   逐车**数据是现成的**——`Data/3d/Tanks/Parameters/<nation>/<stem>.yaml` 的 `suspension:`
@@ -863,6 +878,47 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （用户"拉近变细但没完全平滑"）。守卫见 `terrainMesh.test.js`（三条判据 + 删除锁定负向用例）
   与 `sceneryMaterials.test.js`（签名/接线）；前端侧无数据面改动。
 
+- **地形列对齐：整张地形沿场景 −x 偏一格（2026-10-13，修"墙前多出土包、游戏里没有"）**：用户给出同一处
+  plant 厂房坡道的**客户端截图**（贴地自由相机）与我们的 3D 画面——客户端挡土墙一直落到平地，我们墙前
+  多出 1–2 m 高的土坡盖住墙下半截。**根因（数据面 × 消费端口径错配）**：引擎顶点是 corner 口径
+  （`Heightmap::GetPoint`：`x = min + k/size·span`、高度取 texel k；`tilemask-vp.sl`：
+  `vx_position = (relativePosition − 0.5)·bboxSize`、在 `relativePosition + 0.5/size` 取纹素 = 同一口径）；
+  上游打包器 `map_assets.rs::parse_heightmap` 为"场景 x = −游戏 x"把列按 `out[c] = src[size−1−c]` 离散翻转
+  ——corner 口径下翻转后第 c 列的真实位置是 `((c+1)/n − 0.5)·span`，而网格 / `sampleHeight` / 拾取诊断 /
+  水面岸线都按 `(c/n − 0.5)·span` 摆 ⇒ **整张地形沿场景 −x（游戏 +x）偏 1 texel = span/512（600 m 图
+  1.17 m），行方向无偏，全部地图**。挡土墙贴着高度图台阶摆放 ⇒ 低侧朝场景 −x 的墙，墙后路基被推出墙面
+  （= 截图里的土包）；朝 +x 的墙则墙顶后方地形缩回一格。**证据**：①编辑器贴地实例（`PlacePoint` →
+  `GetHeightAtPoint`，与渲染同口径）原点高度与地形逐毫米吻合的数量只在"列偏 −1 格"时成峰，行恒在 0：
+  plant 9→**177**、karelia 5→**157**、italy 0→**301**、amigosville 8→**95**、malinovka 14→**71**、
+  erlenberg 5→**39**（其余半格/±1/±2 偏移 ≤37）；②plant 坡道侧墙（游戏 x≈−5.5、y −85…−55，墙后地形沿 +y
+  约 5° 爬升、墙前平地 22.08 m）竖直剖面：墙前 0.3 m 处我们的地形高出地面 **1.2–2.4 m**，引擎口径
+  **0–0.3 m**。**修复**：①上游（WoT-Blitz-Agent）`parse_heightmap` 改 corner 口径镜像
+  `out[c] = src[min(size−c, size−1)]`，`terrain.json` / `X-Terrain-Meta` 写 `terrainLayout: 2`，提取缓存
+  改名防旧缓存被当新数据打包；②本仓读取边界 `terrainMesh.js::decodeTerrainField`（唯一解码口径，网格 /
+  采样 / 拾取 / 岸线共用这一份）：`terrainLayout: 2` 原样用；**缺省（旧包）平移一列**
+  `field[c] = 旧[max(c−1, 0)]`；未知布局 fail-closed 返回 null（回退 2D）⇒ 资产包重导前后都正确、不会
+  双重补正。两种布局都丢掉场景 +x 边界那一列顶点（n 列表示不下 n+1 个顶点；在包围盒边缘、可玩区之外）。
+  ⚠️ **配对约束（review P2，2026-10-14）**：上面"重导前后都正确"只在 **json 与 bin 来自同一版本**时成立
+  ——`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两个独立请求，发布切换期可能错配：
+  旧 JSON+新 bin = 对已修正数据再平移一列（plant 新 bin+旧 JSON 实测 250019/262144 高度不同、最大差
+  5.607 m）；新 JSON+缓存旧 bin = 跳过所需补正（缓存窗口最长 1 h）。上游已在 `terrain.json` 写
+  **`terrainBinSha256`**（bin 的逐文件 sha256，与 manifest 同源；2026-10-14 起线上已有）。
+  **前端已强制配对（2026-10-14）**：`terrainMesh.js` 的 `pairedTerrainBinUrl` 以该 sha 作 bin 的缓存键
+  （`terrain.u16.bin?sha256=<hex>`；浏览器 HTTP 缓存按完整 URL 区分，对象存储忽略该参数，Android 原生资产
+  代理按 path 取并逐次 ETag 复验）⇒ 不会复用上一次发布缓存的旧 bin；解码前 `terrainBinMatchesMeta` 用
+  WebCrypto 核对字节 sha256，不符（json/bin 不是同一次发布，只会出现在发布进行中）⇒ fail-closed 回退 2D，
+  不画错位一列的地形。无 `terrainBinSha256` 的旧包 / 无 WebCrypto 的非安全上下文：无从配对，沿用原行为。
+  守卫：`terrainMesh.test.js`（缓存键 / 字节核对 / 旧包与无 WebCrypto 兜底）+ `playbackScene.test.js`（场景层
+  真实加载：sha 键取回才建地形、不同批不建地形）。此前的过渡约束（前端切换晚于 COS 发布 ≥ 1 h bin 缓存窗口；
+  #615 部署满足）随之解除。
+  ③顺带修水面岸线高度纹理的半纹素偏移：`DataTexture` 纹素中心在 `(j+0.5)/n`、顶点在 `j/n` ⇒ 采样
+  `xz/span + 0.5 + 0.5·uHmTexel`。守卫：`terrainMesh.test.js`（`decodeTerrainField`：两种布局解出同一张
+  引擎顶点场、只动列不动行、米制换算、fail-closed）+ `sceneryMaterials.test.js`（解码接线 / 岸线半纹素）；
+  着色器编译门禁 `scripts/check-scenery-shaders.mjs` 21 程序 0 失败。**人工核验**：同一机位看 plant 厂房
+  坡道侧墙，墙前土坡应消失、墙直落平地；反向朝向的墙（低侧朝场景 +x）墙顶后方不应出现缝。
+  ⚠️ 下文 2026-10-09～11 关于"墙/压顶越顶量""在客户端自己的数据里"的实测都是在这张偏一格的高度场上做的，
+  结论需按修正后的口径复测（见各段勘误）。
+
 - **地形网格客户端同构（2026-10-09，修"不规则地形穿出石板面"）**：引擎里 `Landscape` 渲染
   对象只有 `hmap`+`bbox`（**程序化生成**，无网格），`LandscapeSubdivision.cpp:133-136` 的顶点全部
   来自 `Heightmap::GetPoint(x, y)` —— 即**顶点落在高度图 texel 原位（`i/size·span` 角点口径）、
@@ -989,6 +1045,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   >2cm（主墙迹 +88/+120mm，墙台地带最大数米）——该交叉在**客户端自己的数据里**（同一高度图/
   同一网格/同一变换），客户端靠贴地相机 + 墙自身遮挡不可见，俯瞰视角会看到地形色带越过板面。
   此为"高度分界处"唯一存留的数据面差异，与算法无关。
+  ⚠️ **勘误（2026-10-13）**：该实测用的是列偏一格的高度场（见上文"地形列对齐"），"在客户端自己的数据里"
+  不成立——墙台地带数米级的越顶正是平移一格把路基推出墙面；修正后需复测。
 
   **地形-结构交叠：最终态 = 只对齐客户端（2026-10-11 用户裁示"不要自行发明处理方法"）**：
   薄贴地构件（铁轨基板 0.3 m、压顶、铺装）在远视距下会被**客户端同源**的自适应 LOD 合法盖住
@@ -1030,6 +1088,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   **要闭环需要一次客户端侧的对照**（同一机位同一视距的客户端画面，或客户端里的等效拾取信息）；
   在此之前我不再改动渲染端——已无客户端依据可依。若要**无论如何都看不见**，只能数据面有意偏离
   （地形在贴地结构覆盖处让位，烘焙掩码），见下段的决策项。
+  ⚠️ **勘误（2026-10-13）**：这里要的"客户端侧对照"已由用户截图给出（plant 厂房坡道，客户端墙前无土坡），
+  并据此定位到地形列偏一格（见上文"地形列对齐"）——本段的逐点高出量是在偏移的高度场上量的，修正后需复测。
 
 ### 单车血量 HUD / 战斗反馈 / 车辆详情面板（PR5）
 

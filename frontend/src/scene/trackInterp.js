@@ -86,3 +86,32 @@ export function sampleChannel(get, n, t, t0, dt) {
   const a = get(i)
   return a + (get(i + 1) - a) * f
 }
+
+/** Independent rigid-body sampling: never anticipate a pose or bridge an AoI gap.
+ * Tracks are validated at the facet boundary. Out is reused by the scene hot path.
+ */
+export function sampleDetachedPose(track, t, out) {
+  const spans = track.coverage, kf = track.pose_kf
+  let start, end
+  for (let i = 0; i < spans.length; i += 2) {
+    if (t >= spans[i] && t <= spans[i + 1]) { start = spans[i]; end = spans[i + 1]; break }
+  }
+  if (start === undefined) return false
+  const times = kf.t
+  // Binary search for the last known sample; a future-only span stays invisible.
+  let lo = 0, hi = times.length
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (times[mid] <= t) lo = mid + 1; else hi = mid }
+  const a = lo - 1
+  if (a < 0 || times[a] < start) return false
+  const b = a + 1 < times.length && times[a + 1] <= end ? a + 1 : a
+  const f = b === a ? 0 : (t - times[a]) / (times[b] - times[a])
+  const mix = (channel, stride, offset) => channel[a * stride + offset]
+    + (channel[b * stride + offset] - channel[a * stride + offset]) * f
+  out.x = -mix(kf.pos, 3, 0)
+  out.y = mix(kf.pos, 3, 1)
+  out.z = mix(kf.pos, 3, 2)
+  out.yaw = -mix(kf.yaw, 1, 0)
+  out.pitch = mix(kf.pitch, 1, 0)
+  out.roll = -mix(kf.roll, 1, 0)
+  return true
+}
