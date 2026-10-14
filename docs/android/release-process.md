@@ -18,6 +18,32 @@ Native Bridge 保持 v2，Android 使用可信本地 origin `https://appassets.a
 PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计确认它没有 tag/release，
 公开 APK 与 staging evidence 均为 404；已 staged 的 2.0.0 属于 PR A，不能作为 local-first APK 发布。
 
+## 版本号递增规则（major / minor / patch）
+
+2026-10-14 用户裁示。每个改动 Android 运行时的 PR 递增 `wotbVersion` 时，按**变更等级**选位，
+而不是一律 +1 patch；强制更新门槛只随 major 抬升。
+
+| 等级 | 适用变更 | 示例（当前 2.3.3） | 强制更新门槛 |
+|---|---|---|---|
+| **major** | breaking change（含 Native Bridge wire breaking、需要新客户端才能正确工作的数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `3.0.0` | **必须抬到本版本**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = 新 versionCode（`3000000`），随本版本 publish 写入（latest = 门槛） |
+| **minor** | 增加中小功能 | `2.4.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
+| **patch** | 小 bug 修复 | `2.3.4` | 不抬，不强制升级 |
+
+- **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
+- **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在
+  当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
+- **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、
+  数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时
+  由用户裁定——等级决定是否强制全部用户更新，是产品决策。
+- **记录**：PR 描述写明所选等级与理由；`docs/android/releases/<版本>.md` 的
+  `Minimum supported version` 行与等级一致（major 写 `raised to <新 versionCode> (<版本>)`，
+  minor/patch 写 `unchanged at …`）。
+- **major 的发布动作**：合并（自动 stage）→ 把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为新
+  versionCode → `publish(version=X.0.0)`；变量必须在 publish 之前设置，步骤见下文
+  「强制更新门槛（minSupportedVersionCode）的抬升」。minor/patch 发布前不得改动该变量。
+- **生效范围**：本规则自 2026-10-14 起生效；此前的版本（如 2.2.12、2.3.0 以 patch/minor 携带门槛抬升）
+  按当时口径保留，不追溯。
+
 ## 两阶段发布（stage → publish）
 
 `.github/workflows/android-release.yml` 的默认 mode 是 `stage`；`publish` 只能手工续跑。
@@ -195,9 +221,9 @@ Content-Encoding 用于 AI gzip。跨站 Cookie 和 WebView Keycloak 不属于�
 `gh variable list`），但它**只能随一次"严格更新版本"的 publish 写进 version.json**：
 `classify_prod` 把 `minSupportedVersionCode` 计入同版本一致性判定，对 production 同版本直接注入
 新门槛会得到 `prod_equal_conflict`（fail-closed）——同位改写被刻意禁止，抬门槛必然伴随一次
-新版本发布。最小动作三步：
+新版本发布。按「版本号递增规则」，抬门槛只随 **major** 版本发生。最小动作三步：
 
-1. 递增 `android/gradle.properties:wotbVersion`（Version-as-Code，普通 PR）→ 合并 main 自动 stage；
+1. 按 major 递增 `android/gradle.properties:wotbVersion`（Version-as-Code，普通 PR）→ 合并 main 自动 stage；
 2. 把变量设为目标门槛值（`guard_min_supported` 校验 ≤ 新版本 code）；
 3. `workflow_dispatch(mode=publish, version=<新版本>)` 写新 manifest（publish 身份核验不变）。
 
