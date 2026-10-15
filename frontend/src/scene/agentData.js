@@ -17,12 +17,20 @@ export async function fetchTankData(id) {
   return assetProvider.json(`/tank/${id}.json`)
 }
 
-/** Compact config inputs are bundled for local shooting inspection; never fall back to the network. */
-export async function fetchLocalShotTankData(id) {
-  const { default: snapshot } = await import('../../../common/shot-tank-data.json')
-  const tank = snapshot.tanks[String(id)]
-  if (!tank) throw new Error(`Local shooting inputs unavailable for tank ${id}`)
-  return tank
+/** 射击检视的紧凑搭载输入（config 原始顺序 / pitch_limits / shell_global_ids）：
+ *  与装甲查看器同源取资产包 tank/{id}.json，按射击链所需字段投影——内嵌快照已退役
+ *  （2026-10-15，随上游 shellKinds 一并改为 COS 获取，数据随包更新不再依赖前端发版）。
+ *  未知/超测车型由 assetProvider 抛 HTTP 404，调用方按各自降级语义处理。 */
+export async function fetchShotTankData(id) {
+  const data = await fetchTankData(id)
+  const configs = (Array.isArray(data?.configs) ? data.configs : []).map((config) => {
+    const compact = {}
+    for (const key of ['pitch_limits', 'shell_global_ids']) {
+      if (key in config) compact[key] = config[key]
+    }
+    return compact
+  })
+  return { configs }
 }
 
 // ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
@@ -122,7 +130,7 @@ export async function shotViewerQuery(shot) {
   let hit = null
   if (shot.shell_id && shooterTank) {
     try {
-      const data = await fetchLocalShotTankData(shooterTank)
+      const data = await fetchShotTankData(shooterTank)
       const configs = data.configs || []
       const pinned = Number.isInteger(shot.shooter_config_idx) ? configs[shot.shooter_config_idx] : null
       const pinnedShell = (pinned?.shell_global_ids || []).indexOf(shot.shell_id)

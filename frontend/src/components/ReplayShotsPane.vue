@@ -27,7 +27,7 @@ import { shotResultBadge } from '../utils/shotPresentation.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
-import { storeShotsForViewer, fetchLocalShotTankData, shotViewerQuery } from '../scene/agentData.js'
+import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
 import StatStrip from './StatStrip.vue'
@@ -78,17 +78,14 @@ let parseSeq = 0
 let decoding = Promise.resolve()
 
 /**
- * 弹种使用 bundled shellKinds，俯仰锚定/配置顺序使用 common/shot-tank-data.json。
- * 这份紧凑快照来自同一 reviewed Agent asset plane；射击检视从不请求远端数据。
- * 弹表只在首次解析时按需加载一次。
+ * 弹种表与搭载输入都来自资产包（/data/shellKinds.json 与 tank/{id}.json，COS 分发，
+ * 与上游 tanks.pb 同批刷新）：弹种表只在首次解析时按需加载一次，搭载输入逐车取。
+ * 资产源未配置 / 请求失败时按降级语义继续（弹种走槽位/id 兜底、俯仰如实降级标记）。
  */
 let shellTablePromise = null
 function loadShellTable() {
   if (!shellTablePromise) {
-    shellTablePromise = (async () => {
-      const mod = await import('../scene/shellKinds.json')
-      return mod.default
-    })()
+    shellTablePromise = assetProvider.json('/data/shellKinds.json')
     shellTablePromise.catch(() => { shellTablePromise = null })
   }
   return shellTablePromise
@@ -123,7 +120,7 @@ async function buildPitchLimits(vehicles) {
   }
   await Promise.all([...tankNames.keys()].map(async (tid) => {
     try {
-      const data = await fetchLocalShotTankData(tid)
+      const data = await fetchShotTankData(tid)
       const cfgs = data.configs || []
       const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
       if (pl && pl.max != null && pl.min != null) {
@@ -233,11 +230,14 @@ async function decode(file) {
       console.warn('pitch limits skipped:', e)
     }
     if (seq !== parseSeq) return
-    const shellTable = await loadShellTable().catch(() => undefined)
-    if (seq !== parseSeq) return
+    // 弹种表（COS /data/shellKinds.json）与解析**并行**取用，不在发布前 await——
+    // 已完成的本地解析不被资产平台的响应速度卡住（与下方 annotateMountedConfigs
+    // 同款异步增强契约）。表到位后按同款表原地补齐 shell/shell_kind（WASM 端未注入
+    // 时客户端补齐同构）；资产源未配置/失败 → undefined，弹种保持槽位/id 兜底。
+    const shellTablePromise = loadShellTable().catch(() => undefined)
     let outcome
     try {
-      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
+      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined)
     } catch (e) {
       console.warn('anchored parse failed, fallback:', e)
       if (seq !== parseSeq) return
@@ -255,11 +255,14 @@ async function decode(file) {
         console.warn('roster enrichment skipped:', e)
       }
     }
-    if (shellTable && parsedShots.some((s) => s.shell_id && !s.shell)) {
-      try { enrichShellFallback(parsedShots, shellTable) } catch (e) {
-        console.warn('shell enrichment skipped:', e)
+    shellTablePromise.then((shellTable) => {
+      if (seq !== parseSeq || !shellTable) return
+      if (parsedShots.some((s) => s.shell_id && !s.shell)) {
+        try { enrichShellFallback(parsedShots, shellTable) } catch (e) {
+          console.warn('shell enrichment skipped:', e)
+        }
       }
-    }
+    })
     if (seq !== parseSeq) return
     const tankopedia = await loadTankopedia().catch(() => null)
     if (seq !== parseSeq) return

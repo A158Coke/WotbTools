@@ -1,8 +1,29 @@
 import { describe, expect, it, vi } from 'vitest'
-import { shotViewerQuery } from './agentData.js'
-vi.mock('../../../common/shot-tank-data.json', () => ({ default: { tanks: { 101: {
-  configs: [{ shell_global_ids: [13, 42] }, { shell_global_ids: [42, 91] }],
-} } } }))
+import { shotViewerQuery, fetchShotTankData } from './agentData.js'
+import { assetProvider } from './assetProvider.js'
+
+// 射击检视搭载输入自 2026-10-15 起取资产包 tank/{id}.json（内嵌快照已退役）：
+// shotViewerQuery / fetchShotTankData 经 assetProvider 取数，这里按路径桩定。
+vi.mock('./assetProvider.js', () => ({
+  assetProvider: { json: vi.fn(async (path) => {
+    if (path === '/tank/101.json') {
+      return { configs: [{ pitch_limits: { max: 15, min: -7 }, shell_global_ids: [13, 42] }, { shell_global_ids: [42, 91] }] }
+    }
+    throw new Error(`asset ${path}: HTTP 404`)
+  }) },
+}))
+
+describe('fetchShotTankData（包内 tank/{id}.json 的紧凑投影）', () => {
+  it('只保留射击链所需字段（config 顺序 + pitch_limits + shell_global_ids）', async () => {
+    expect(await fetchShotTankData(101)).toEqual({
+      configs: [{ pitch_limits: { max: 15, min: -7 }, shell_global_ids: [13, 42] }, { shell_global_ids: [42, 91] }],
+    })
+  })
+  it('缺车按 assetProvider 的 404 如实拒绝（不静默造数据）', async () => {
+    await expect(fetchShotTankData('not-a-tank')).rejects.toThrow('HTTP 404')
+  })
+})
+
 describe('shot viewer mounted-config handoff', () => {
   it('keeps the mounted gun and shell index together', async () => {
     expect(await shotViewerQuery({ index: 6, shooter_tank_id: 101, target_tank_id: 202, shell_id: 42, shooter_config_idx: 0, target_config_idx: 3 }))
