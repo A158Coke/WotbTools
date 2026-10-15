@@ -293,9 +293,9 @@ OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地�
 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。实测 release APK 若
 超过 250 MB，先回到产品决策（例如只保留 arm64），不要只调超时。
 
-**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.2，自动 stage）→
+**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.3，自动 stage）→
 ③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
-`workflow_dispatch(mode=publish, version=3.0.2)`。
+`workflow_dispatch(mode=publish, version=3.0.3)`。
 
 **真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
 GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
@@ -307,6 +307,13 @@ select 打开时页面导航、选项更新后导航、file picker 打开时导�
 再用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」的出站流量：只应出现
 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，
 关不掉就阻塞发布。
+
+**blob 下载派发（发布阻塞项，CI 不覆盖）**：GeckoView 的下载先过
+`NavigationDelegate.onLoadRequest`，之后才进 `ContentDelegate.onExternalResponse`。仓库里的 JVM unit test
+只锁定 URL policy（`NavigationPolicy`）与响应体 ownership（`LocalRuntimeServer`），**没有** GeckoView
+instrumentation / runtime smoke，所以 **CI 绿灯不代表真机上的 blob 下载链路已验证**。发布前必须在真机
+逐项确认「网页 PNG blob 导出 / HoF replay 下载 / tournament XLSX 导出 → 保存成功」，并核对文件内容 /
+文件名 / MIME 正确、取消与失败后可重试；任一项不通过即阻塞发布。
 
 **GeckoView 升级**：只用 stable channel 与精确版本（`android/app/build.gradle.kts` 的 `geckoViewVersion`）。
 每次升级是一次独立的 Android minor 发布（至少每季度一次；遇关键安全修复立即），升级时同时检查 AAR 的

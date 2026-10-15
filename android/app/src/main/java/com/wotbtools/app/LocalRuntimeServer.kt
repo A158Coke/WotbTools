@@ -102,7 +102,7 @@ internal class LocalRuntimeServer(
                     }
                 }
                 val headOnly = parsed is Parsed.Ok && parsed.request.method == "HEAD"
-                write(BufferedOutputStream(it.getOutputStream()), response, headOnly)
+                sendResponse({ it.getOutputStream() }, response, headOnly)
             } catch (_: IOException) {
                 // 客户端提前断开 / 读超时：丢弃。
             }
@@ -160,19 +160,6 @@ internal class LocalRuntimeServer(
         }
     }
 
-    private fun write(output: OutputStream, response: ReplayIntentHandler.StreamResponse, headOnly: Boolean) {
-        val head = StringBuilder()
-            .append("HTTP/1.1 ").append(response.status).append(' ').append(response.reason).append("\r\n")
-            .append("Content-Type: ").append(response.contentType).append("\r\n")
-            .append("X-Content-Type-Options: nosniff\r\n")
-            .append("Connection: close\r\n")
-        response.headers.forEach { (name, value) -> head.append(name).append(": ").append(value).append("\r\n") }
-        head.append("\r\n")
-        output.write(head.toString().toByteArray(Charsets.US_ASCII))
-        response.data?.use { body -> if (!headOnly) body.copyTo(output, BUFFER) }
-        output.flush()
-    }
-
     internal companion object {
         const val HOST = "127.0.0.1"
 
@@ -183,6 +170,49 @@ internal class LocalRuntimeServer(
         private const val HEAD_BUFFER = 4 * 1024
         private const val BUFFER = 64 * 1024
         internal val NO_STORE = mapOf("Cache-Control" to "no-store")
+
+        /**
+         * [response] 的唯一 owner：`route()` 一旦返回 [ReplayIntentHandler.StreamResponse]，它的 `data`
+         * 就在本函数的 `finally` 里 close —— 恰好一次，覆盖 HEAD、打开输出流失败、header 写入失败、
+         * body copy 失败、flush 失败、客户端断开与任何意外异常。
+         *
+         * [open] 在受保护区内求值，因此 `getOutputStream()` 自己抛异常也不会漏掉 body（这就是它不接受
+         * 已打开的 [OutputStream] 的原因）。[write] 只负责写、不负责 lifetime，避免 double close 与
+         * 「谁该关」的歧义；body close 失败不掩盖正在传播的失败。
+         */
+        fun sendResponse(
+            open: () -> OutputStream,
+            response: ReplayIntentHandler.StreamResponse,
+            headOnly: Boolean
+        ) {
+            try {
+                write(BufferedOutputStream(open()), response, headOnly)
+            } finally {
+                closeQuietly(response.data)
+            }
+        }
+
+        private fun write(output: OutputStream, response: ReplayIntentHandler.StreamResponse, headOnly: Boolean) {
+            val head = StringBuilder()
+                .append("HTTP/1.1 ").append(response.status).append(' ').append(response.reason).append("\r\n")
+                .append("Content-Type: ").append(response.contentType).append("\r\n")
+                .append("X-Content-Type-Options: nosniff\r\n")
+                .append("Connection: close\r\n")
+            response.headers.forEach { (name, value) -> head.append(name).append(": ").append(value).append("\r\n") }
+            head.append("\r\n")
+            output.write(head.toString().toByteArray(Charsets.US_ASCII))
+            if (!headOnly) response.data?.copyTo(output, BUFFER)
+            output.flush()
+        }
+
+        /** close 失败时没有补救动作，也不允许它替换 `finally` 正在传播的异常。 */
+        private fun closeQuietly(body: InputStream?) {
+            try {
+                body?.close()
+            } catch (_: IOException) {
+                // 丢弃：连接即将关闭，body 已不可用。
+            }
+        }
 
         /**
          * origin-form target → 解码后的 path（去掉 query/fragment）。拒绝：非 `/` 开头（absolute-form 代理请求）、

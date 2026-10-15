@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
+import com.wotbtools.app.NavigationPolicy.MainFrameNavigation
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
@@ -29,7 +30,8 @@ import org.mozilla.geckoview.WebRequestError
  *
  * 所有权：进程级 [GeckoRuntime] + 内置 bridge 扩展（companion，懒创建，只在主进程）；Activity 级
  * [GeckoSession] 与 delegates（本类实例）。引擎只承载 [MainActivity.LOCAL_APP_ORIGIN] 一个 origin：
- * 外部 `https:` / `mailto:` 交系统浏览器，其余一律拒绝；权限请求一律拒绝。
+ * 外部 `https:` / `mailto:` 交系统浏览器，其余一律拒绝（唯一例外见 [NavigationPolicy]：内嵌 origin 等于
+ * 本机 origin 的 `blob:` 下载派发）；权限请求一律拒绝。
  *
  * Bridge：内置扩展的 content script 暴露与 v2 同形的 `window.WotbNative`，经 native messaging port 到这里；
  * 只接受「content script ∧ top frame ∧ 本 session ∧ exact local origin」的 port，消息原样交给
@@ -295,16 +297,32 @@ internal class GeckoWebRuntime(
             request: NavigationDelegate.LoadRequest
         ): GeckoResult<AllowOrDeny> {
             val uri = request.uri
-            if (MainActivity.isLocalAppUrl(uri) || uri == "about:blank") {
-                if (request.target != NavigationDelegate.TARGET_WINDOW_NEW) return GeckoResult.fromValue(AllowOrDeny.ALLOW)
-                // 没有多窗口：本机链接的 _blank / window.open 与 2.x 一样在当前页打开。
-                mainHandler.post { load(uri) }
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            return when (NavigationPolicy.classifyMainFrameNavigation(uri)) {
+                MainFrameNavigation.LOCAL, MainFrameNavigation.BLANK -> {
+                    if (request.target != NavigationDelegate.TARGET_WINDOW_NEW) {
+                        GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                    } else {
+                        // 没有多窗口：本机链接的 _blank / window.open 与 2.x 一样在当前页打开。
+                        mainHandler.post { load(uri) }
+                        GeckoResult.fromValue(AllowOrDeny.DENY)
+                    }
+                }
+                // blob 下载派发：Gecko 先过 onLoadRequest，再进 ContentDelegate.onExternalResponse，
+                // 因此这里必须 ALLOW，但绝不 load(uri)（它不是文档导航目标），也不进 Bridge 的 origin trust。
+                MainFrameNavigation.BLOB_DOWNLOAD -> {
+                    Log.d(TAG, "nav blob download")
+                    GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                }
+                MainFrameNavigation.EXTERNAL -> {
+                    Log.d(TAG, "nav external scheme=${uri.substringBefore(':', "").lowercase()}")
+                    host.onExternalNavigation(uri)
+                    GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
+                MainFrameNavigation.DENY -> {
+                    Log.d(TAG, "nav denied scheme=${uri.substringBefore(':', "").lowercase()}")
+                    GeckoResult.fromValue(AllowOrDeny.DENY)
+                }
             }
-            val scheme = uri.substringBefore(':', "").lowercase()
-            Log.d(TAG, "nav external scheme=$scheme")
-            if (scheme == "https" || scheme == "mailto") host.onExternalNavigation(uri)
-            return GeckoResult.fromValue(AllowOrDeny.DENY)
         }
 
         override fun onSubframeLoadRequest(
