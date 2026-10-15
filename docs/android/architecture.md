@@ -50,6 +50,14 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
 choice / file prompt 被 Gecko 关闭时均完成对应 result；文件 picker 使用进程内不复用的请求码，
 页面导航会清除旧 prompt 并关闭其 picker，迟到结果不会传给后续 prompt。
 
+GeckoView 的下载派发**先**经过 `NavigationDelegate.onLoadRequest`，之后才进 `onExternalResponse`，
+所以 `blob:` 下载 URL 必须在导航策略里放行（`NavigationPolicy.isTrustedLocalBlobUrl`：scheme `blob` +
+内嵌 URL exact 本机 origin + 单段 id，其它 host / port / scheme / malformed 一律拒绝）。它只是下载派发
+例外，**不是** application origin——Native Bridge 的 sender 校验仍是 `MainActivity.isLocalAppUrl`，
+blob URL 在那里恒为 false。本机 server 侧 `StreamResponse.data` 的 lifetime 由
+`LocalRuntimeServer.sendResponse` 唯一拥有：HEAD、打开输出流失败、header 写入失败、body copy 失败、
+flush 失败、客户端断开与意外异常都 close 恰好一次。
+
 ### 故障分级与诊断
 
 - content 进程 **crash**：首次自动重开 session 并重载当前页；60 s 内第二次进入 Native 错误页
@@ -351,9 +359,10 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 ## 运行时安全（GeckoView + LocalRuntimeServer）
 
-- **导航**：主文档只允许 exact `http://127.0.0.1:21653`（与 `about:blank`）；外部 `https:` / `mailto:` 交给
-  系统浏览器，其它 scheme 一律拒绝；新窗口拒绝；iframe 只允许本机 origin。生产 API、Keycloak 与 IdP
-  不在引擎内导航。
+- **导航**：主文档只允许 exact `http://127.0.0.1:21653`（与 `about:blank`）；唯一例外是内嵌 origin
+  等于本机 origin 的 `blob:` 下载派发（见「引擎」一节的下载说明与 `NavigationPolicy`）；外部
+  `https:` / `mailto:` 交给系统浏览器，其它 scheme 一律拒绝；新窗口拒绝；iframe 只允许本机 origin。
+  生产 API、Keycloak 与 IdP 不在引擎内导航。
 - **本机 server**：只 bind `127.0.0.1`；`Host` 必须等于 `127.0.0.1:21653`（防 DNS rebinding）；带 `Origin`
   的请求必须来自本机 origin（挡住设备上其它浏览器里的跨源页面）；只收 GET/HEAD，不读 body、不列目录、
   不做代理；拒绝 `..` / 编码分隔符 / 反斜杠 / 控制字符；请求头大小与读超时有上限。设备上其它 App 也能
