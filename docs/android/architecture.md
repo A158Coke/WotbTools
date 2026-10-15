@@ -37,6 +37,10 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
   native libs 压缩打包（`useLegacyPackaging`），优先减小侧载下载体积。
 - **设置**：只用公开 API——release 关闭 remote debugging / about:config / console 输出；Safe Browsing 关闭
   （只加载本机可信内容）；权限请求一律拒绝；`window.open` / 新窗口一律拒绝。
+- **原生弹窗**：GeckoView 的 `PromptDelegate` 默认实现一律「取消」。已实现的只有 HTML `<select>`
+  （`onChoicePrompt` → 原生单选 / 多选菜单，含 optgroup、disabled、页面侧关闭与选项更新）与
+  `<input type=file>`（`onFilePrompt` → 系统 picker）。`alert` / `confirm` / `prompt`、日期 / 颜色选择、
+  `beforeunload` 确认都未实现，页面确认框统一使用 `AppDialog`；以后新增这类原生输入前，先补对应 delegate。
 
 ### 故障分级与诊断
 
