@@ -601,6 +601,48 @@ describe('ProfilePage identity card', () => {
     expect(writeText).toHaveBeenLastCalledWith(keycloakUserId)
     expect(button.text()).toBe('profile.copied')
   })
+
+  it('A→B：A 时代在途的复制迟到完成，不得在 B 的按钮上显示「已复制」', async () => {
+    signInAs('user-a')
+    let finishCopyA
+    const writeText = vi.fn(() => new Promise((resolve) => { finishCopyA = resolve }))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-copy-user-id"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith(keycloakUserId)
+
+    const userIdB = '8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f'
+    currentProfile = { ...currentProfile, keycloakUserId: userIdB }
+    signInAs('user-b')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(userIdB)
+
+    // 剪贴板里是 A 的 ID：B 的按钮必须保持「复制」。
+    finishCopyA()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-copy-user-id"]').text()).toBe('profile.copy')
+  })
+
+  it('卸载后迟到完成的复制不再创建定时器', async () => {
+    signInAs('user-a')
+    let finishCopy
+    const writeText = vi.fn(() => new Promise((resolve) => { finishCopy = resolve }))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-copy-user-id"]').trigger('click')
+    wrapper.unmount()
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      finishCopy()
+      await flushPromises()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('ProfilePage verify with replay', () => {

@@ -283,6 +283,7 @@ const realmRoles = computed(() => {
 
 const userIdCopied = ref(false)
 let userIdCopiedTimer = null
+let unmounted = false
 
 function resetUserIdCopied() {
   clearTimeout(userIdCopiedTimer)
@@ -291,13 +292,21 @@ function resetUserIdCopied() {
 
 async function copyUserId() {
   const id = profile.value?.keycloakUserId
-  if (!id || !(await copyText(id))) return
+  if (!id) return
+  const epoch = authEpoch()
+  const copied = await copyText(id)
+  // 归属复核：A 时代在途的复制迟到完成时剪贴板里是 A 的 ID，不得在 B 的按钮上显示「已复制」；
+  // 卸载后的迟到结果也不再起定时器。
+  if (!copied || unmounted || !ownEpoch(epoch)) return
   userIdCopied.value = true
   clearTimeout(userIdCopiedTimer)
   userIdCopiedTimer = setTimeout(() => { userIdCopied.value = false }, 1500)
 }
 
-onBeforeUnmount(() => clearTimeout(userIdCopiedTimer))
+onBeforeUnmount(() => {
+  unmounted = true
+  clearTimeout(userIdCopiedTimer)
+})
 
 /** JWT 明确是 WG 登录（ASIA/EU/NA + 可信 verified + account_id），即使同步失败也据此只读。 */
 const isWargamingLogin = computed(() => {
