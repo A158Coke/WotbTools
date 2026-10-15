@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
@@ -52,6 +53,7 @@ internal class GeckoWebRuntime(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val session = GeckoSession()
     private var extension: WebExtension? = null
+    private var extensionRequested = false
     private var port: WebExtension.Port? = null
     private var pendingUri: String? = null
     private var killed = false
@@ -71,7 +73,10 @@ internal class GeckoWebRuntime(
     fun load(uri: String) {
         if (closed) return
         pendingUri = uri
-        if (extension == null) return
+        if (extension == null) {
+            requestExtension() // 安装失败后，错误页的「重新加载」从这里重试
+            return
+        }
         pendingUri = null
         session.loadUri(uri)
     }
@@ -116,6 +121,23 @@ internal class GeckoWebRuntime(
         if (!session.isOpen) session.open(runtime(context))
         attachBridge()
         load(uri)
+    }
+
+    private fun requestExtension() {
+        if (extension != null || extensionRequested || closed) return
+        extensionRequested = true
+        withExtension(context, { ext ->
+            extensionRequested = false
+            if (closed) return@withExtension
+            extension = ext
+            attachBridge()
+            pendingUri?.let { load(it) }
+        }, {
+            extensionRequested = false
+            if (closed) return@withExtension
+            lastFailure = "extension-install"
+            host.onRuntimeFailure(crashLoop = false)
+        })
     }
 
     private fun attachBridge() {
@@ -183,9 +205,12 @@ internal class GeckoWebRuntime(
             request: NavigationDelegate.LoadRequest
         ): GeckoResult<AllowOrDeny> {
             val uri = request.uri
-            if (request.target != NavigationDelegate.TARGET_WINDOW_NEW &&
-                (MainActivity.isLocalAppUrl(uri) || uri == "about:blank")
-            ) return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+            if (MainActivity.isLocalAppUrl(uri) || uri == "about:blank") {
+                if (request.target != NavigationDelegate.TARGET_WINDOW_NEW) return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                // 没有多窗口：本机链接的 _blank / window.open 与 2.x 一样在当前页打开。
+                mainHandler.post { load(uri) }
+                return GeckoResult.fromValue(AllowOrDeny.DENY)
+            }
             val scheme = uri.substringBefore(':', "").lowercase()
             Log.d(TAG, "nav external scheme=$scheme")
             if (scheme == "https" || scheme == "mailto") host.onExternalNavigation(uri)
@@ -236,8 +261,9 @@ internal class GeckoWebRuntime(
             killCount++
             lastFailure = "content-kill"
             port = null
-            killed = true
             Log.w(TAG, "content process killed count=$killCount")
+            // 通常发生在后台（低内存回收）：等回到前台再重载；若窗口正可见则立即重载，避免停在空白页。
+            if (view.windowVisibility == View.VISIBLE) reopen(currentUrl ?: return) else killed = true
         }
     }
 
@@ -262,7 +288,7 @@ internal class GeckoWebRuntime(
         ) = callback.reject()
     }
 
-    // 必须在所有 delegate 属性之后：扩展已缓存时 withExtension 会同步回调。
+    // 必须在所有 delegate 属性之后：扩展已缓存时 requestExtension 会同步回调。
     init {
         session.navigationDelegate = navigationDelegate()
         session.contentDelegate = contentDelegate()
@@ -275,14 +301,7 @@ internal class GeckoWebRuntime(
         session.permissionDelegate = denyAllPermissions
         session.open(runtime(context))
         view.setSession(session)
-        withExtension(context, { ext ->
-            extension = ext
-            attachBridge()
-            pendingUri?.let { load(it) }
-        }, {
-            lastFailure = "extension-install"
-            host.onRuntimeFailure(crashLoop = false)
-        })
+        requestExtension()
     }
 
     private companion object {

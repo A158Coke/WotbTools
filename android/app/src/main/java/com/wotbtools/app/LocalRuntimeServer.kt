@@ -1,5 +1,6 @@
 package com.wotbtools.app
 
+import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -90,7 +91,8 @@ internal class LocalRuntimeServer(
         client.use {
             try {
                 it.soTimeout = READ_TIMEOUT_MS
-                val parsed = parse(it.getInputStream())
+                // 缓冲读头：逐字节 read() 直接打在 socket 上会变成每字节一次系统调用。不读 body，多读的字节随连接关闭丢弃。
+                val parsed = parse(BufferedInputStream(it.getInputStream(), HEAD_BUFFER))
                 val response = when (parsed) {
                     is Parsed.Rejected -> parsed.response
                     is Parsed.Ok -> try {
@@ -178,6 +180,7 @@ internal class LocalRuntimeServer(
         private const val BACKLOG = 64
         private const val READ_TIMEOUT_MS = 15_000
         private const val MAX_HEAD_BYTES = 16 * 1024
+        private const val HEAD_BUFFER = 4 * 1024
         private const val BUFFER = 64 * 1024
         internal val NO_STORE = mapOf("Cache-Control" to "no-store")
 
