@@ -105,10 +105,17 @@ function enrichShellFallback(parsedShots, table) {
   }
 }
 
+/** 俯仰锚定表的等待上界（ms）。该表是解析期入参（`parseShotReplays` 的可选注入），
+ *  不能像弹表那样事后补齐，只能在解析前**有界等待**：到期用已到的部分表
+ *  （best effort）继续解析，避免单个资产请求挂起把整条列表拖死在解析中
+ *  （评审 P1，2026-10-15）。缺锚定 = 既有的如实降级态（俯仰降级标记透传）。 */
+const PITCH_ANCHOR_WAIT_MS = 1500
+
 /**
  * 俯仰锚定表：playback 名册 → tank_id → 顶级配置 pitch_limits，换算 GunPitchRange 形状
  * （dep = max 俯角上限、ele = −min 仰角上限）。注入后俯仰按车型极限解码，
- * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。
+ * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。**有界等待**：
+ * 逐车请求并行、结果随到随写，PITCH_ANCHOR_WAIT_MS 到期即以已到部分返回。
  */
 async function buildPitchLimits(vehicles) {
   const limits = {}
@@ -118,7 +125,8 @@ async function buildPitchLimits(vehicles) {
     if (v.nickname && v.tank_id && !tankNames.has(v.tank_id)) tankNames.set(v.tank_id, [])
     if (v.nickname && v.tank_id) tankNames.get(v.tank_id).push(v.nickname)
   }
-  await Promise.all([...tankNames.keys()].map(async (tid) => {
+  let timer = null
+  const pending = Promise.all([...tankNames.keys()].map(async (tid) => {
     try {
       const data = await fetchShotTankData(tid)
       const cfgs = data.configs || []
@@ -133,7 +141,11 @@ async function buildPitchLimits(vehicles) {
         })
       }
     } catch { /* 数据缺失：该玩家保持空锚定（如实降级） */ }
-  }))
+  })).finally(() => clearTimeout(timer))
+  await Promise.race([
+    pending,
+    new Promise((resolve) => { timer = setTimeout(resolve, PITCH_ANCHOR_WAIT_MS) }),
+  ])
   for (const [tid, names] of tankNames) {
     const range = tankRange.get(tid)
     if (!range) continue
@@ -255,14 +267,6 @@ async function decode(file) {
         console.warn('roster enrichment skipped:', e)
       }
     }
-    shellTablePromise.then((shellTable) => {
-      if (seq !== parseSeq || !shellTable) return
-      if (parsedShots.some((s) => s.shell_id && !s.shell)) {
-        try { enrichShellFallback(parsedShots, shellTable) } catch (e) {
-          console.warn('shell enrichment skipped:', e)
-        }
-      }
-    })
     if (seq !== parseSeq) return
     const tankopedia = await loadTankopedia().catch(() => null)
     if (seq !== parseSeq) return
@@ -277,6 +281,19 @@ async function decode(file) {
     // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
     // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
     shots.value = parsedShots
+    // 弹表迟到补齐（评审 P2）：回调注册于**发布之后**，经响应式视图写入以触发重绘
+    // （直接改原始数组 parsedShots 会绕过 Vue 代理，迟到补齐不重绘）；表已就绪时
+    // 回调也在微任务中晚于上面的赋值执行——shots.value 必为本文件的列表，
+    // 文件切换由 seq 隔离。
+    shellTablePromise.then((shellTable) => {
+      if (seq !== parseSeq || !shellTable) return
+      const list = shots.value
+      if (list && list.some((s) => s.shell_id && !s.shell)) {
+        try { enrichShellFallback(list, shellTable) } catch (e) {
+          console.warn('shell enrichment skipped:', e)
+        }
+      }
+    })
     if (playback) {
       annotateMountedConfigs(parsedShots, playback).catch((e) => {
         console.warn('mounted-config annotation skipped:', e)
