@@ -121,10 +121,10 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 ## Android bundled runtime
 
 Android runs the same ReplayWorkspace at `https://appassets.androidplatform.net/index.html`.
-Replay import, Rust/WASM parsing, Result/Rating, 2D maps and shooting inspection use bundled resources.
-`common/shot-tank-data.json` supplies the reviewed asset plane's compact pitch/config shell identity;
-`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset base>` regenerates it
-with cache/source hashes and rejects missing entries. It contains no second tankopedia or models.
+Replay import, Rust/WASM parsing, Result/Rating, 2D maps keep using bundled resources.
+Shooting-inspection inputs (compact pitch/config shell identity) and the shell-kind table are
+fetched from the asset pack at runtime since 2026-10-15 (`tank/{id}.json` projection +
+`/data/shellKinds.json`); the bundled snapshot `common/shot-tank-data.json` is retired.
 Pending intents stream only from the exact local `/__native/replay-pending` resource with UUID header
 and compare-and-clear ACK after analysis completion. Parser-load failure preserves pending for retry.
 AI, HoF, remote Profile and remote 3D assets require connectivity before auth or requests.

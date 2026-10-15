@@ -47,7 +47,7 @@ vi.mock('../scene/agentData.js', () => ({
   storeShotsForViewer: vi.fn(),
   shotViewerQuery: vi.fn(),
   fetchTankData: vi.fn(async () => ({ configs: [] })),
-  fetchLocalShotTankData: vi.fn(async () => ({ configs: [] })),
+  fetchShotTankData: vi.fn(async () => ({ configs: [] })),
 }))
 
 /** happy-dom 没有 ResizeObserver：记录回调以便按容器宽度驱动 Master–Detail 分档 */
@@ -63,7 +63,7 @@ globalThis.ResizeObserver = ResizeObserverStub
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import ReplayShotsPane from './ReplayShotsPane.vue'
 import { assetProvider } from '../scene/assetProvider.js'
-import { fetchLocalShotTankData, fetchTankData, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
+import { fetchShotTankData, fetchTankData, storeShotsForViewer, shotViewerQuery } from '../scene/agentData.js'
 
 function mkFile(name = 'cn.wotbreplay') {
   return new File([new Uint8Array([1, 2, 3, 4])], name)
@@ -142,8 +142,8 @@ describe('ReplayShotsPane unmount authorization boundary', () => {
 })
 afterEach(() => {
   // 用例内 mockImplementation（挂起的资产请求/弹表查询）不得泄漏到后续用例
-  fetchLocalShotTankData.mockReset()
-  fetchLocalShotTankData.mockImplementation(async () => ({ configs: [] }))
+  fetchShotTankData.mockReset()
+  fetchShotTankData.mockImplementation(async () => ({ configs: [] }))
   assetProvider.json.mockReset()
   assetProvider.json.mockImplementation(async () => { throw new Error('asset source unconfigured') })
   document.body.innerHTML = ''
@@ -684,24 +684,33 @@ describe('ReplayShotsPane → 装甲查看器交接', () => {
   })
 })
 
-it('bundled shooting inputs preserve config identity and all global shells without remote fallback', async () => {
-  const { default: snapshot } = await import('../../../common/shot-tank-data.json')
-  const { default: shellKinds } = await import('../scene/shellKinds.json')
-  const { fetchLocalShotTankData } = await vi.importActual('../scene/agentData.js')
-  const noNetwork = vi.fn(() => { throw new Error('shooting inspection attempted network') })
-  vi.stubGlobal('fetch', noNetwork)
-  try {
-    const [tankId, expected] = Object.entries(snapshot.tanks).find(([, tank]) => tank.configs.some(config => config.pitch_limits))
-    expect(await fetchLocalShotTankData(tankId)).toEqual(expected)
-    expect(expected.configs.some(config => Number.isFinite(config.pitch_limits?.max))).toBe(true)
-    for (const tank of Object.values(snapshot.tanks)) {
-      for (const config of tank.configs) {
-        for (const shellId of config.shell_global_ids || []) expect(shellKinds[String(shellId)], `global shell ${shellId}`).toBeDefined()
-      }
-    }
-    await expect(fetchLocalShotTankData('not-a-tank')).rejects.toThrow('Local shooting inputs unavailable')
-    expect(noNetwork).not.toHaveBeenCalled()
-  } finally { vi.unstubAllGlobals() }
+it('shooting inputs come from the asset pack: compact projection over tank/{id}.json + shell table fetch', async () => {
+  // 2026-10-15 起弹种表与搭载输入不再内嵌进前端构建，改由资产包分发
+  // （/data/shellKinds.json 与 tank/{id}.json，随上游 tanks.pb 同批更新）：
+  // 搭载输入 = fetchShotTankData 对包内 tank/{id}.json 的紧凑投影（config 顺序 +
+  // pitch_limits + shell_global_ids），缺车按 assetProvider 的 404 如实拒绝。
+  const { fetchShotTankData: realFetchShotTankData } = await vi.importActual('../scene/agentData.js')
+  const packTank = {
+    name: 'T-34', nation: 'ussr', is_premium: false,
+    configs: [
+      { pitch_limits: { max: 15, min: -7 }, shell_global_ids: [13, 42], armor: { hull_front: 50 } },
+      { shell_global_ids: [42, 91] },
+    ],
+  }
+  const requested = []
+  assetProvider.json.mockImplementation(async (path) => {
+    requested.push(path)
+    if (path === '/tank/101.json') return packTank
+    throw new Error(`asset ${path}: HTTP 404`)
+  })
+  expect(await realFetchShotTankData(101)).toEqual({
+    configs: [
+      { pitch_limits: { max: 15, min: -7 }, shell_global_ids: [13, 42] },
+      { shell_global_ids: [42, 91] },
+    ],
+  })
+  expect(requested).toEqual(['/tank/101.json'])
+  await expect(realFetchShotTankData('not-a-tank')).rejects.toThrow('HTTP 404')
 })
 
 describe('ReplayShotsPane viewer snapshot lifecycle', () => {
@@ -760,6 +769,73 @@ describe('ReplayShotsPane 搭载配置注解（评审 P1 回归）', () => {
     // 配置注解仍挂起，但本地射击列表必须已发布（有行 = 不被远端资产卡在解析中）
     expect(wrapper.find('[data-testid="shots-no-shots"]').exists()).toBe(false)
     expect(wrapper.findAll('.shot-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('俯仰锚定资产挂起：有界等待后降级发布，不被单个请求拖死（评审 P1：真实挂起路径）', async () => {
+    // 该表是解析期入参（不能事后补齐）——单个 /tank/{id}.json 永不返回时，
+    // 必须在 PITCH_ANCHOR_WAIT_MS 到期后以"已到部分"（此处为空表）继续解析并发布。
+    // 直挂载而非 mountPane：后者的 vi.waitFor 会自动推进假时钟，掩盖"仍停在等待上"的边界。
+    vi.useFakeTimers()
+    fetchShotTankData.mockImplementation(() => new Promise(() => {})) // 永不 resolve
+    parseAgentPlaybackFromBytes.mockResolvedValue({
+      vehicles: [{ eid: 7, nickname: 'A', team: 1, tank_id: 3649, is_author: true }],
+    })
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1, time_s: 5, damage: 100, target_name: 'B', is_kill: false,
+        shooter_eid: 7, shooter_tank_id: 3649, target_eid: 101, hit_flags: 0, game_hit_result: 255, shell_id: 5914,
+      }],
+      author_path: 'ok',
+      author_eid: 7,
+      others: baseOthers,
+    })
+    const wrapper = mount(ReplayShotsPane, {
+      props: { file: mkFile(), active: true },
+      global: { mocks: { $t: i18n.t } },
+      attachTo: document.body,
+    })
+    await vi.advanceTimersByTimeAsync(0) // 冲刷微任务：playback 已解析、停在有界等待上
+    expect(parseAgentShotsFromBytes).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1501) // 到期即降级继续
+    expect(parseAgentShotsFromBytes).toHaveBeenCalledTimes(1)
+    const limits = parseAgentShotsFromBytes.mock.calls.at(-1)[1]
+    expect(!limits || Object.keys(limits).length === 0).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    await nextTick()
+    expect(wrapper.findAll('.shot-row')).toHaveLength(1)
+    wrapper.unmount()
+  })
+})
+
+describe('ReplayShotsPane 弹表迟到补齐（评审 P2 回归）', () => {
+  it('迟到的弹表经响应式视图写入并触发重绘（修复前：原始数组写入不重绘）', async () => {
+    let resolveTable
+    assetProvider.json.mockImplementation((path) => (
+      path === '/data/shellKinds.json'
+        ? new Promise((resolve) => { resolveTable = resolve })
+        : Promise.reject(new Error('asset source unconfigured'))
+    ))
+    parseAgentShotsFromBytes.mockResolvedValue({
+      shots: [{
+        index: 1, time_s: 5, damage: 100, is_kill: false,
+        shooter_eid: 100, shooter_name: 'A', target_eid: 200, target_name: 'B',
+        hit_flags: 16, game_hit_result: 3, shell_id: 5914,
+      }],
+      author_path: 'ok', author_eid: 100, others: baseOthers,
+    })
+    const wrapper = await mountPane()
+    await wrapper.get('[data-testid="shot-row-1"]').trigger('click')
+    await flushPromises()
+    const inspector = () => wrapper.get('[data-testid="shot-inspector"]')
+    // 表未到：无弹种标签（槽位/id 兜底）
+    expect(inspector().text()).not.toContain('APCR')
+    // 表迟到返回（资产平台慢响应）→ 重绘后同一次检视即见弹种与穿深
+    resolveTable({ '5914': { type: 'apcr', penetration: 245, damage: 100 } })
+    await flushPromises()
+    await nextTick()
+    expect(inspector().text()).toContain('APCR')
+    expect(inspector().text()).toContain('245 mm')
     wrapper.unmount()
   })
 })
