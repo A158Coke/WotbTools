@@ -232,3 +232,25 @@ if PATH="$work/bin:$PATH" FAKE_PLAN_JSON="$work/delete.json" \
   echo 'Grafana datasource deletion was accepted.' >&2
   exit 1
 fi
+
+for actions in '["delete"]' '["delete","create"]' '["create","delete"]'; do
+  jq -n --argjson actions "$actions" '{resource_changes:[{address:"grafana_dashboard.managed[\"any_future_dashboard\"]",type:"grafana_dashboard",change:{actions:$actions}}]}' > "$work/dashboard.json"
+  PATH="$work/bin:$PATH" FAKE_PLAN_JSON="$work/dashboard.json" \
+    bash "$ROOT/infra/tofu/grafana/validate-plan.sh" "$work/plan.tfplan"
+done
+
+# The observability owner backs up state while already holding its host lock.
+# Exercise that path against an isolated owner directory, without production state.
+mkdir -p "$work/owner/grafana-tofu-state"
+printf '%s\n' '{"version":4,"resources":[]}' > "$work/owner/grafana-tofu-state/terraform.tfstate"
+printf '%s\n' local-tofu-state-bootstrap-v1 > "$work/owner/grafana-tofu-state/bootstrap-complete"
+sed "s|host_root=/opt/wotb$|host_root=$work/owner|" "$ROOT/deploy/tofu-local-state-backup.sh" > "$work/backup.sh"
+(
+  exec 9>"$work/owner/.deploy.lock"
+  flock -n 9
+  WOTB_DEPLOY_LOCK_FD=9 bash "$work/backup.sh" yecao
+)
+if (exec 9>/dev/null; WOTB_DEPLOY_LOCK_FD=9 bash "$work/backup.sh" yecao); then
+  echo 'State backup accepted a lock from the wrong owner.' >&2
+  exit 1
+fi

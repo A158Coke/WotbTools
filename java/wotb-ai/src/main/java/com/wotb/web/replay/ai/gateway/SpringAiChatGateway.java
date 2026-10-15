@@ -254,20 +254,23 @@ public class SpringAiChatGateway implements AiChatGateway {
                 final ScheduledFuture<?> watchdog =
                         scheduleBudgetWatchdog(context, remainingNanos);
                 AiUpstreamException failure = null;
+                boolean usageRecorded = false;
                 try {
                     attemptStartHook.beforeAttempt(context);
                     logUpstreamStarted(request, model, correlationId, retryCount + 1,
                             Math.max(0L, deadlineNanos - nanoTimeSource.getAsLong()));
                     final long attemptStartNanos = nanoTimeSource.getAsLong();
                     final ChatResponse response = chatModel.call(prompt);
+                    recordReceivedUsage(response, request.analysisMode(), correlationId);
+                    usageRecorded = true;
                     final AiChatResponse result = toResponse(response, request, model, correlationId);
                     if (context.isExpired() || nanoTimeSource.getAsLong() >= deadlineNanos) {
                         // The deadline passed during response conversion: never
-                        // report success, never record usage, end as AI_TIMEOUT.
+                        // report success, never record success metrics, end as AI_TIMEOUT.
                         failure = new AiUpstreamException("AI_TIMEOUT", null, correlationId);
                     } else if (context.isCancelled()) {
                         // Client aborted while the response was being converted:
-                        // never report success, never record usage.
+                        // never report success, never record success metrics.
                         failure = new AiUpstreamException("AI_CANCELLED", null, correlationId);
                     } else {
                         if (metrics) {
@@ -293,6 +296,9 @@ public class SpringAiChatGateway implements AiChatGateway {
                     logProviderFailure(null, failure.code(), request.analysisMode(),
                             correlationId, e.getClass().getSimpleName());
                 } finally {
+                    if (!usageRecorded) {
+                        recordReceivedUsage(null, request.analysisMode(), correlationId);
+                    }
                     watchdog.cancel(false);
                     if (cancellation != null) {
                         cancellation.detach(context);
@@ -396,6 +402,8 @@ public class SpringAiChatGateway implements AiChatGateway {
             activeContext.set(context);
             final ScheduledFuture<?> watchdog =
                     scheduleBudgetWatchdog(context, remainingNanos);
+            final AtomicReference<ChatResponse> receivedUsage = new AtomicReference<>();
+            final AiRequestContext.UsageTotals reviewUsage = AiRequestContext.usageTotals();
             try {
                 attemptStartHook.beforeAttempt(context);
                 logUpstreamStarted(request, model, correlationId, 1,
@@ -405,6 +413,10 @@ public class SpringAiChatGateway implements AiChatGateway {
                 final AtomicReference<ChatResponse> lastResponse = new AtomicReference<>();
                 chatModel.stream(prompt)
                         .doOnNext(response -> {
+                            if (hasReceivedUsage(response)) {
+                                recordReceivedUsage(response, request.analysisMode(), correlationId, reviewUsage,
+                                        receivedUsage.getAndSet(response));
+                            }
                             if (context.isExpired()
                                     || nanoTimeSource.getAsLong() >= deadlineNanos) {
                                 throw new StreamInterruptedMarker("AI_TIMEOUT");
@@ -447,7 +459,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                         .blockLast();
                 if (context.isExpired() || nanoTimeSource.getAsLong() >= deadlineNanos) {
                     // Deadline passed while the stream was being drained: never
-                    // report success, never record usage, end as AI_TIMEOUT.
+                    // report success, never record success metrics, end as AI_TIMEOUT.
                     throw new AiUpstreamException("AI_TIMEOUT", null, correlationId);
                 }
                 if (context.isCancelled()) {
@@ -496,6 +508,9 @@ public class SpringAiChatGateway implements AiChatGateway {
                         "AI_UPSTREAM_UNAVAILABLE", null, correlationId, e),
                         retryCount, request, metrics);
             } finally {
+                if (receivedUsage.get() == null) {
+                    recordReceivedUsage(null, request.analysisMode(), correlationId);
+                }
                 watchdog.cancel(false);
                 if (cancellation != null) {
                     cancellation.detach(context);
@@ -662,7 +677,6 @@ public class SpringAiChatGateway implements AiChatGateway {
         final String content = extractContent(response, request.analysisMode(), correlationId);
         final ChatResponseMetadata metadata = response.getMetadata();
         final Usage usage = metadata != null ? metadata.getUsage() : null;
-        logUsage(usage, model, request.analysisMode());
         return new AiChatResponse(
                 content,
                 PROVIDER_NAME,
@@ -783,6 +797,49 @@ public class SpringAiChatGateway implements AiChatGateway {
         } catch (final RuntimeException e) {
             return 0;
         }
+    }
+
+    private static boolean hasReceivedUsage(final ChatResponse response) {
+        if (response == null || response.getMetadata() == null) {
+            return false;
+        }
+        final Usage usage = response.getMetadata().getUsage();
+        // Spring AI supplies an empty Usage for chunks without provider usage.
+        return usage != null && (usage.getNativeUsage() instanceof CompletionUsage
+                || (usage.getTotalTokens() != null && usage.getTotalTokens() > 0));
+    }
+
+    private static void recordReceivedUsage(final ChatResponse response, final String mode,
+                                     final String correlationId) {
+        recordReceivedUsage(response, mode, correlationId, AiRequestContext.usageTotals(), null);
+    }
+
+    private static void recordReceivedUsage(final ChatResponse response, final String mode,
+                                     final String correlationId, final AiRequestContext.UsageTotals totals,
+                                     final ChatResponse previous) {
+        final boolean missing = !hasReceivedUsage(response);
+        final Usage usage = missing ? null : response.getMetadata().getUsage();
+        final Usage prior = previous == null ? null : previous.getMetadata().getUsage();
+        final int input = Math.max(0, (usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0)
+                - (prior != null && prior.getPromptTokens() != null ? prior.getPromptTokens() : 0));
+        final int output = Math.max(0, (usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0)
+                - (prior != null && prior.getCompletionTokens() != null ? prior.getCompletionTokens() : 0));
+        final int total = Math.max(0, (usage != null && usage.getTotalTokens() != null ? usage.getTotalTokens() : 0)
+                - (prior != null && prior.getTotalTokens() != null ? prior.getTotalTokens() : 0));
+        if (totals != null) {
+            if (previous == null) {
+                totals.add(input, output, total, missing);
+            } else {
+                totals.inputTokens += input;
+                totals.outputTokens += output;
+                totals.totalTokens += total;
+            }
+        }
+        LOGGER.info(AiReviewEventLog.line("ai_token_usage", correlationId,
+                "mode", mode, "inputTokens", input, "outputTokens", output,
+                "totalTokens", total, "usageMissing", missing ? 1 : 0,
+                "reasoningTokens", reasoningTokens(usage), "cacheHitTokens", cacheHitTokens(usage),
+                "cacheMissTokens", cacheMissTokens(usage)));
     }
 
     private void recordUsageMetrics(final ChatResponse response, final String mode) {
@@ -930,25 +987,6 @@ public class SpringAiChatGateway implements AiChatGateway {
                 correlationId,
                 AiSecretRedactor.redact(summary));
     }
-
-    private void logUsage(final Usage usage,
-                          final String model,
-                          final String analysisMode) {
-        if (usage == null) {
-            return;
-        }
-        LOGGER.info(
-                "AI usage model={} mode={} prompt_tokens={} completion_tokens={} "
-                        + "total_tokens={} reasoning_tokens={} cache_hit={} cache_miss={}",
-                model, analysisMode,
-                usage.getPromptTokens(),
-                usage.getCompletionTokens(),
-                usage.getTotalTokens(),
-                reasoningTokens(usage),
-                cacheHitTokens(usage),
-                cacheMissTokens(usage));
-    }
-
 
     // ===== AI Review 全链路事件日志 =====
 

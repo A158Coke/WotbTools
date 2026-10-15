@@ -12,6 +12,7 @@ services:
     # name is intentionally distinct from the retired Yecao runtime.
     image: ${TX_BUSINESS_API_IMAGE_REF:?TX_BUSINESS_API_IMAGE_REF is required}
     environment:
+      WOTB_OBSERVABILITY_HASH_KEY: ${WOTB_OBSERVABILITY_HASH_KEY:-}
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
       # administrator.
