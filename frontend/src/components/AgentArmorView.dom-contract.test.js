@@ -226,3 +226,23 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).toMatch(/const effNormalization = layerIndex > 0 \? 0\.0 : normalization/)
   })
 })
+
+// 坦克选择菜单封面图展示裁剪契约（2026-10-15）：卡片图按逐车内容框缩放定位，
+// 盒比例是变换数学的契约——内核常数与 .tc-img 的 aspect-ratio 必须一致，且盒子
+// 不再用固定高度（固定高会让比例随卡片宽度漂移、内容框换算失准）。
+describe('tank-picker cover crop wiring', () => {
+  const template = read('./AgentArmorView.vue')
+  const kernel = read('../scene/tankViewer.js')
+
+  it('卡片盒是固定 8:5 比例、无固定高度尺寸', () => {
+    expect(template).toMatch(/\.tc-img[^}]*aspect-ratio:\s*8\s*\/\s*5/)
+    expect(template).not.toMatch(/\.tc-img[^}]*block-size:\s*[0-9.]+rem/)
+  })
+  it('内核以同一比例常数应用内容框变换，并驱动迟到表补样式', () => {
+    expect(kernel).toMatch(/const TC_IMG_ASPECT = 8 \/ 5/)
+    expect(kernel).toMatch(/tankIconCropTransform\(iconCrops\?\.\[String\(tankId\)\], TC_IMG_ASPECT\)/)
+    expect(kernel).toMatch(/loadTankIconCrops\(\)\.then/)
+    expect(kernel).toMatch(/img\.dataset\.tankId = String\(t\.id\)/)
+    expect(kernel).toMatch(/img\.style\.transform = iconCropTransformFor\(t\.id\)/)
+  })
+})
