@@ -5,14 +5,17 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-15，本仓源码为 **2.4.0 / 2004000**（`android/gradle.properties`）；
+截至 2026-10-15，本仓源码为 **3.0.0 / 3000000**（`android/gradle.properties`；GeckoView 引擎迁移）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
-Native Bridge 保持 v2，Android 使用可信本地 origin `https://appassets.androidplatform.net`。
-新增受信任 origin 不改变 RPC schema；删除方法、改变参数/字段类型等真实 breaking 变更仍须
-递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、APK 或 staging evidence
+Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
+`http://127.0.0.1:21653`，transport 是 GeckoView 内置扩展；RPC 方法 / 参数 / 结果 / capability 与 v2 完全相同。
+v2 → v3 只因 origin 与 synthetic resource URL 改变（`android_contract.py` 把 origin 变化判为 breaking）。
+前端随 APK 打包、与 Native 同版本发布，因此只声明 `[3]`；`guard_bridge_covered` 因此要求 publish 时
+`ANDROID_MIN_SUPPORTED_VERSION_CODE ≥ 3000000`，与 major 规则一致。删除方法、改变参数/字段类型等
+breaking 变更仍须递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、APK 或 staging evidence
 后不能复用；修改 runtime 必须选新版本。
 
 PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计确认它没有 tag/release，
@@ -212,9 +215,12 @@ publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/downl
 所有探测只读且有超时，任何失败都阻止写 production version.json：
 
 1. Keycloak `wotbtools-android` public client 与 private-scheme redirect 可用，认证走 PKCE。
-2. `/api/users/profile` 真实 OPTIONS：Origin 为 appassets，Authorization 等请求头允许，
-   GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于 appassets，不能是 wildcard，
+2. `/api/users/profile` 真实 OPTIONS：Origin 为 staging evidence 的 `runtimeOrigin`（3.0 起
+   `http://127.0.0.1:21653`，2.x 为 appassets），Authorization 等请求头允许，
+   GET/POST/PUT/PATCH/DELETE/OPTIONS 允许；ACAO 必须精确等于该 origin，不能是 wildcard，
    不启用 credentialed CORS。无 Bearer 的同一路由 GET 必须返回 401 且携带正确 CORS，证明 backend 可达。
+   `deploy/tx/Caddyfile` 同时放行两个 exact origin（`@android` 与 `@androidLoopback`，字段逐一相同，
+   `validate-caddy-config.sh` 对两者做同样校验）；新 origin 的 Caddy 改动必须在 publish 前已部署。
 3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），
    由 Native `AgentAssetProxy` 直连对象存储——原生代码不受 CORS 约束，因此本项探测的是
    **对象存储匿名可读性**：`https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com/index.json`
@@ -277,8 +283,43 @@ publish 候选解析（staged 2.0.1 + main 已到 2.0.2 仍选中 2.0.1、缺版
 tag target 版本不符、staged 源码不自洽）。
 `scripts/ci/test-workflow-contract.sh` 校验 owner 与实际 workflow 接线（含显式 `version` 输入、
 publish 不读当前 main 版本、version.json 由 staged 身份写出）。
-CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle；真机仍负责实际 WebView、
+CI 还构建 debug APK，验证本地启动/Bridge/replay 合约及离线 bundle；真机仍负责实际 GeckoView 渲染、
 OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地回放全链路。
+
+## 3.0.0（GeckoView）发布与回滚
+
+**APK 体积**：自带 GeckoView 后 release APK 约 160 MiB（双 ARM ABI，native libs 压缩打包）+ 前端 bundle，
+是 2.x（≈15 MB）的十倍以上。`android-release.yml` 已按此放宽：stage job 120 分钟、清华上传显式
+`--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。实测 release APK 若
+超过 250 MB，先回到产品决策（例如只保留 arm64），不要只调超时。
+
+**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并 3.0.0（自动 stage）→
+③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
+`workflow_dispatch(mode=publish, version=3.0.0)`。
+
+**真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
+GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
+分享 / 打开 replay、目录导入；WASM 解析、统计、Rating、2D、3D / Armor / 贴图；fullscreen 进出与 Back；
+横竖屏；连续切换 replay；前后台切换（含被系统回收后恢复）；断网 / 恢复；QQ 登录 → 回跳 → 登出；
+检查更新 → 下载 → 安装（含 2.3.7 覆盖安装 3.0.0）；外链交系统浏览器；软键盘不遮挡输入。
+再用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」的出站流量：只应出现
+wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，
+关不掉就阻塞发布。
+
+**GeckoView 升级**：只用 stable channel 与精确版本（`android/app/build.gradle.kts` 的 `geckoViewVersion`）。
+每次升级是一次独立的 Android minor 发布（至少每季度一次；遇关键安全修复立即），升级时同时检查 AAR 的
+`minCompileSdk` 与 Kotlin metadata 版本是否要求工具链跟进。
+
+**回滚（3.0 发布后不能回到 2.x）**：floor 一旦为 3000000，2.x 不再是合法的生产回滚目标；
+`version.json` 也不能指回 2.x、不能复用 `android-v3.0.0` tag、不能手工上传 APK。
+
+- **Tier A（首选）**：只换引擎——写一个 System WebView 版适配器，加载同一 `http://127.0.0.1:21653`
+  （AndroidX `addWebMessageListener` 支持 IP + 端口的 origin rule），复用 LocalRuntimeServer 与全部 Native
+  能力，补 `onRenderProcessGone`。contract v3 / 前端 / CORS 都不变，因此不触发 bridge gate；以 3.0.1
+  发布，视严重程度把 floor 提到 3000001。
+- **Tier B（最后手段）**：恢复 2.4.0 runtime（appassets + WebViewAssetLoader）。contract 的 origin 再次改变，
+  必须 bridge 4、前端 `[4]`、floor 3000001，且依赖 Caddy 仍保留 appassets CORS（因此 3.0 之后不要急于删除
+  `@android`）。
 
 ## 签名与基础设施
 

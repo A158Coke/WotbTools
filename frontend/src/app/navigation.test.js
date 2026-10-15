@@ -50,9 +50,9 @@ describe('primary navigation', () => {
     vi.stubEnv('MODE', 'android')
     try {
       const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'more']
-      expect(primaryNavItems('appassets.androidplatform.net').map(item => item.id)).toEqual(expected)
+      expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
-      expect(defaultView('appassets.androidplatform.net')).toBe('replay')
+      expect(defaultView('127.0.0.1')).toBe('replay')
       expect(defaultView('wotbtools.com')).toBe('replay')
       expect(viewFromRoute({ path: '/', query: { view: 'home' } })).toBe('replay')
     } finally { vi.unstubAllEnvs() }

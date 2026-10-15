@@ -2,8 +2,8 @@ import { isAndroidRuntime } from '../platform/runtime.js'
 /**
  * 极薄的平台能力探测（origin-scoped）。
  *
- * Android WebView 壳经 AndroidX WebKit WebMessageListener 注入 `window.WotbNative`
- * （仅 appassets 和 reviewed production compatibility origins 的主 frame 可调）。
+ * Android 壳（GeckoView）由内置扩展的 content script 注入 `window.WotbNative`
+ * （仅 exact 本机 origin 的 top frame；Native 侧再按 sender 复核）。
  * 普通浏览器 / 非 Android 场景下不存在该对象，所有方法回退到 Web 默认（null / false）。
  *
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询、pending replay 交接

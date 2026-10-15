@@ -71,8 +71,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    # 构建 + 签名/上传约 35 分钟；staging 阶段不做任何线上就绪等待（那属于 publish）。
-    timeout-minutes: 60
+    # 3.0 起 APK 自带 GeckoView（双 ARM ABI，约 200 MB 量级），清华上传按实测 ~150–200 KB/s 约 20 分钟；
+    # staging 阶段不做任何线上就绪等待（那属于 publish）。
+    timeout-minutes: 120
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
@@ -341,7 +342,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         if: steps.preflight.outputs.releaseAction == 'publish'
         with:
-          gradle-version: "8.7"
+          gradle-version: "9.6.1"
 
       - name: Prepare staging directory (workspace-relative, 服务器路径严格)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -658,13 +659,13 @@ jobs:
           # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
           # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
           upload_rc=0
-          curl -sS -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+          curl -sS --connect-timeout 10 --max-time 2700 -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
             -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
           echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
 
           for attempt in 1 2 3 4 5; do
             sleep 3
-            if curl -fsSL --connect-timeout 5 --max-time 120 \
+            if curl -fsSL --connect-timeout 5 --max-time 900 \
                 -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
                 && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
               echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
@@ -780,7 +781,7 @@ jobs:
           for attempt in $(seq 1 "$ATTEMPTS"); do
             rm -f "$TMP_APK"
             VERIFY_URL="$URL?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}-$(date +%s%N)"
-            RESULT="$(curl -sS -L --connect-timeout 5 --max-time 60 \
+            RESULT="$(curl -sS -L --connect-timeout 5 --max-time 900 \
               -H 'Cache-Control: no-cache' \
               -o "$TMP_APK" -w '%{http_code} %{size_download}' "$VERIFY_URL" || true)"
             read -r HTTP_CODE SIZE <<< "$RESULT"
@@ -1015,7 +1016,8 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # publish 会经公网下载 staged APK（GeckoView 体积）做字节核验。
+    timeout-minutes: 90
     steps:
       - name: Checkout current main (current release policy + ancestry history)
         uses: actions/checkout@v5

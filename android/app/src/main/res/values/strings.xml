@@ -12,8 +12,10 @@
     <string name="update_downloading">下载中…</string>
     <string name="update_apk_unavailable">APK 暂不可用</string>
     <string name="update_unknown_source_hint">请在系统设置中允许「来自 WotBTools 的应用」安装后重试</string>
-    <string name="web_error_title">WotBTools 本地资源无法加载</string>
-    <string name="web_error_retry">重新加载</string>
-    <string name="webview_unsupported_title">WotBTools 需要更新 Android WebView（系统组件）\n\n当前系统 WebView 版本过旧，无法安全加载 WotBTools。请升级系统 WebView / Android 后重试。</string>
+    <string name="runtime_error_title">WotBTools 本地页面无法加载</string>
+    <string name="runtime_error_crash_title">WotBTools 页面引擎连续出错</string>
+    <string name="runtime_error_port_title">WotBTools 本机端口被占用\n\n可能有另一个 WotBTools 实例（如应用分身）正在运行，请关闭后重试。</string>
+    <string name="runtime_error_retry">重新加载</string>
+    <string name="runtime_error_open_browser">使用浏览器版</string>
     <string name="auth_login_failed_retry">登录失败，请重试</string>
 </resources>

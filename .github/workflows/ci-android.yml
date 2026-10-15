@@ -30,7 +30,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "9.6.1"
       - name: Test bounded CI network retry helper
         run: bash scripts/ci/test-network-retry.sh
       - name: Accept Android SDK licenses (best-effort)

@@ -385,18 +385,18 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 **能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
 **车辆环线**：已有 WASM `parseResult.players[].gun_marks` → `battleFacts.gunMarks` → 单场 `gun_marks` 列／中文 Excel；缺失和非法保留未知。专用标志共用于数据表、手机卡片、详情、2D／3D 名册与车型标签，回放读取 owner 的 `LocalPlayback.result` 按账号匹配，generic HTTP dataset 不增加字段。实体重入的活动身份选择与场景共用 canonical 首次观测映射（LocalPlayback 内部 sidecar），按时间而非 eid 排序；环线 SVG 显式内联图集以保留 PNG 导出。成就不按玩家跨车汇总，不推断精确百分位或获得时刻；3D 炮管贴花暂未实现。详见 [`字段字典`](reference/replay-parsed-fields.md#车辆环线gun-marks)。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
-**Android Local-First**：APK 从 `https://appassets.androidplatform.net/index.html` 启动同一 Vue 产品；
-`WebViewAssetLoader` 的 `/` 映射到 APK `assets/web/`，Vue Router 的 `/index.html` alias 与历史路由
-共用工作台。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
+**Android Local-First**：APK（3.0 起由自带的 GeckoView 渲染）从 `http://127.0.0.1:21653/index.html` 启动同一
+Vue 产品；Native `LocalRuntimeServer`（固定 loopback 端口）把 `/` 映射到 APK `assets/web/`，Vue Router 的
+`/index.html` alias 与历史路由共用工作台。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
 `src/platform/runtime.js` 只把 Android 业务 `/api/**` 与下载 metadata URL 解析为 `https://wotbtools.com`；
-Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact appassets origin 放行实际方法/headers、
+Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact 本机 origin（3.0+ loopback 与 2.x appassets）放行实际方法/headers、
 先响应匿名 OPTIONS。Android 远端 3D 资产固定使用 `/agent-assets/` 网关（固定 reviewed COS upstream），
 不接受 Web 的 `?assets=` override；本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取。
 Native 过期 token 无法离线刷新时保留 encrypted session；前端只清 API token，离线不会清 replay selection。
 
-**Android 手动目录导入**：`FileDrop` 按可选 Native bridge v2 capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`；后台有界枚举后通过固定同源 Native stream 读取，既有前端规则负责过滤／去重／完整批次校验。取消、超限或读取失败保留当前回放，目录不会触发自动分析或写 external pending，授权不持久化。旧 APK 隐藏目录按钮但保留文件多选，普通 Web 继续 `webkitdirectory`。契约见 `contracts/android-native-bridge.json`，生命周期、限制与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
+**Android 手动目录导入**：`FileDrop` 按可选 Native bridge capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`；后台有界枚举后通过固定同源 Native stream 读取，既有前端规则负责过滤／去重／完整批次校验。取消、超限或读取失败保留当前回放，目录不会触发自动分析或写 external pending，授权不持久化。旧 APK 隐藏目录按钮但保留文件多选，普通 Web 继续 `webkitdirectory`。契约见 `contracts/android-native-bridge.json`，生命周期、限制与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
 
-**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `LocalRuntimeServer` 以固定同源 `http://127.0.0.1:21653/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；页面从不直接读取 content URI。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与页面导航（Android 2.0 起原生 OIDC 在外部 user-agent 完成，页面引擎不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由

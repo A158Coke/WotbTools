@@ -50,8 +50,8 @@ function platformName() {
 /**
  * 运行时 provider 选择（**绝不回退**）：
  * - 没有 `window.WotbNative`（普通浏览器）→ BrowserAuthProvider（keycloak-js 仍在页面内）。
- * - Android 壳且 bridge v2 + 广告 `native-auth` → AndroidAuthProvider（Native 拥有 OIDC 会话）。
- * - Android 壳但 bridge v1 / 版本未知 / 缺能力 → unsupported provider：只暴露失败，
+ * - Android 壳且 bridge 版本在 SUPPORTED_NATIVE_BRIDGE_VERSIONS 内 + 广告 `native-auth` → AndroidAuthProvider（Native 拥有 OIDC 会话）。
+ * - Android 壳但 bridge 版本不受支持 / 版本未知 / 缺能力 → unsupported provider：只暴露失败，
  *   绝不退化成「WebView 里跑 keycloak-js」——那正是本次 cutover 要消灭的路径。
  */
 async function resolveAuthProvider() {
