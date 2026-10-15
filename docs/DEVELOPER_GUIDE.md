@@ -748,3 +748,7 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 | 观测运维 | `docs/operations/observability.md` |
 
 修改任何专项能力时，以对应专题文档 + 实际代码共同作为验收基线。
+
+## Product observability
+
+Grafana now has five TF-managed dashboards: Active users (home), Feature usage, Android downloads, AI token usage and Backend error logs. Client telemetry uses the bounded `/api/observability/events` contract; authenticated activity requires runtime-only `WOTB_OBSERVABILITY_HASH_KEY`. Yecao Alloy also collects ai-service logs. Dashboard deletes/replacements have no allowlist; datasource deletion remains protected. Queryable history is seven days, with asynchronous Loki deletion and size-based Docker raw-log rotation. See `docs/operations/observability.md` for exact counting, privacy, missing-usage and retention limits.

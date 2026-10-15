@@ -90,6 +90,38 @@ class AiReviewControllerTest {
                 "duration timer must stop on the failure path too");
     }
 
+    @Test
+    void failedReviewEmitsOneTerminalUsageSummaryAndClearsContext() {
+        final var logger = (ch.qos.logback.classic.Logger)
+                org.slf4j.LoggerFactory.getLogger(AiReviewController.class);
+        final var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        final TeamReplayAnalysisService service = mock(TeamReplayAnalysisService.class);
+        when(service.analyzeTeam(any(), any(), any(), any())).thenAnswer(invocation -> {
+            com.wotb.web.replay.ai.gateway.AiRequestContext.usageTotals().add(8, 2, 10, false);
+            com.wotb.web.replay.ai.gateway.AiRequestContext.usageTotals().add(0, 0, 0, true);
+            throw new IllegalStateException("private provider text");
+        });
+        try {
+            final AiReviewController subject = new AiReviewController(
+                    mock(TacticalReviewHarness.class), service, synchronousWorker(),
+                    new AiCancellationRegistry(), new SimpleMeterRegistry());
+            subject.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(),
+                    teamBattle(), teamReconstruction(), List.of()));
+            final var summaries = appender.list.stream().map(event -> event.getFormattedMessage())
+                    .filter(message -> message.startsWith("event=ai_review_usage ")).toList();
+            assertEquals(1, summaries.size());
+            org.junit.jupiter.api.Assertions.assertTrue(summaries.getFirst().contains("totalTokens=10 calls=2 missingUsageCalls=1 result=failure"));
+            org.junit.jupiter.api.Assertions.assertFalse(appender.list.stream()
+                    .anyMatch(event -> event.getFormattedMessage().contains("private provider text")));
+            org.junit.jupiter.api.Assertions.assertNull(com.wotb.web.replay.ai.gateway.AiRequestContext.usageTotals());
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
     private static AiReviewWorkerExecutor synchronousWorker() {
         final AiReviewWorkerExecutor executor = mock(AiReviewWorkerExecutor.class);
         doAnswer(invocation -> {

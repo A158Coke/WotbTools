@@ -1,0 +1,182 @@
+package com.wotb.web.observability.service;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+/** Bounded telemetry intake. No persistent identity, arbitrary text, or raw client exception logging. */
+@Service
+public class ObservabilityService {
+    private static final Logger log = LoggerFactory.getLogger(ObservabilityService.class);
+    private static final Set<String> FIELDS = Set.of("event_id", "event", "platform", "feature", "occurred_at",
+            "operation_id", "outcome", "error_code", "error_id");
+    private static final Set<String> FEATURES = Set.of("home", "replay_parse", "replay_2d", "replay_3d", "replay_shots",
+            "ai_review", "tankopedia", "armor", "hall_of_fame", "tournament", "android_download", "sponsor", "profile");
+    private static final Set<String> ERRORS = Set.of("PARSE_FAILED", "UNSUPPORTED_REPLAY", "INVALID_REPLAY",
+            "RESOURCE_UNAVAILABLE", "UNKNOWN");
+    private final ObjectMapper mapper;
+    private final String hashKey;
+    // Verified subject is an ephemeral rate-limit key only, never logged; cleared each minute.
+    private final Map<String, Integer> requests = new HashMap<>();
+    private long minute;
+    private int total;
+
+    public ObservabilityService(final ObjectMapper mapper,
+            @Value("${WOTB_OBSERVABILITY_HASH_KEY:}") final String hashKey) {
+        this.mapper = mapper;
+        this.hashKey = hashKey;
+    }
+
+    public void accept(final byte[] body, final Jwt jwt) {
+        if (body.length > 16_384) {
+            throw rejected(HttpStatus.PAYLOAD_TOO_LARGE);
+        }
+        limit(jwt == null ? null : jwt.getSubject());
+        final JsonNode root;
+        try {
+            root = mapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(body);
+        } catch (final RuntimeException exception) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        if (root == null || !root.isObject() || root.size() != 1 || !root.has("events")) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        final JsonNode events = root.get("events");
+        if (!events.isArray() || events.isEmpty() || events.size() > 20) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        final Instant now = Instant.now();
+        // Validate the entire batch first so a rejected request never partially contributes events.
+        for (final JsonNode event : events) {
+            validate(event, jwt, now);
+        }
+        for (final JsonNode event : events) {
+            log.info("event=product_telemetry telemetry_event={} event_id={} platform={} feature={} occurred_at={} operation_id={} outcome={} error_code={} error_id={} account_hash={}",
+                    text(event, "event"), text(event, "event_id"), text(event, "platform"), text(event, "feature"),
+                    text(event, "occurred_at"), text(event, "operation_id"), text(event, "outcome"),
+                    text(event, "error_code"), text(event, "error_id"),
+                    "active_user".equals(text(event, "event")) ? hash(jwt.getSubject()) : "");
+        }
+    }
+
+    private void validate(final JsonNode event, final Jwt jwt, final Instant now) {
+        if (!event.isObject() || !FIELDS.containsAll(event.propertyNames())) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        uuid(event, "event_id", true);
+        final String type = text(event, "event");
+        if (!Set.of("active_user", "feature_open", "replay_parse").contains(type)
+                || !Set.of("web", "android").contains(text(event, "platform"))
+                || !FEATURES.contains(text(event, "feature"))) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        try {
+            final Instant occurred = Instant.parse(text(event, "occurred_at"));
+            if (occurred.isBefore(now.minusSeconds(86_400)) || occurred.isAfter(now.plusSeconds(300))) {
+                throw rejected(HttpStatus.BAD_REQUEST);
+            }
+        } catch (final java.time.format.DateTimeParseException exception) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        if ("active_user".equals(type)) {
+            if (jwt == null || jwt.getSubject() == null || jwt.getSubject().isBlank()) {
+                throw rejected(HttpStatus.UNAUTHORIZED);
+            }
+            if (hashKey.length() < 32) {
+                throw rejected(HttpStatus.SERVICE_UNAVAILABLE);
+            }
+        }
+        if ("replay_parse".equals(type)) {
+            uuid(event, "operation_id", true);
+            if (!"replay_parse".equals(text(event, "feature"))
+                    || !Set.of("start", "success", "failure", "cancelled").contains(text(event, "outcome"))) {
+                throw rejected(HttpStatus.BAD_REQUEST);
+            }
+        } else if (event.has("outcome") || event.has("operation_id")) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        if (event.has("error_code") || event.has("error_id")) {
+            if (!"replay_parse".equals(type) || !"failure".equals(text(event, "outcome"))
+                    || (event.has("error_code") && !ERRORS.contains(text(event, "error_code")))) {
+                throw rejected(HttpStatus.BAD_REQUEST);
+            }
+            uuid(event, "error_id", false);
+        }
+    }
+
+    private synchronized void limit(final String subject) {
+        final long current = System.currentTimeMillis() / 60_000;
+        if (current != minute) {
+            requests.clear();
+            total = 0;
+            minute = current;
+        }
+        final int count = subject == null ? 0 : requests.getOrDefault(subject, 0);
+        if (++total > 6_000 || count >= 120 || (subject != null && !requests.containsKey(subject) && requests.size() >= 4_096)) {
+            throw rejected(HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (subject != null) {
+            requests.put(subject, count + 1);
+        }
+    }
+
+    private String hash(final String subject) {
+        if (hashKey.length() < 32 || subject == null) {
+            return "";
+        }
+        try {
+            final Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(hashKey.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(subject.getBytes(StandardCharsets.UTF_8)));
+        } catch (final GeneralSecurityException exception) {
+            throw new IllegalStateException("Telemetry hashing unavailable", exception);
+        }
+    }
+
+    private static void uuid(final JsonNode event, final String field, final boolean required) {
+        if (!required && !event.has(field)) {
+            return;
+        }
+        try {
+            final String value = text(event, field);
+            if (!UUID.fromString(value).toString().equalsIgnoreCase(value)) {
+                throw rejected(HttpStatus.BAD_REQUEST);
+            }
+        } catch (final IllegalArgumentException exception) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    private static String text(final JsonNode event, final String field) {
+        final JsonNode value = event.get(field);
+        if (value == null) {
+            return "";
+        }
+        if (!value.isString()) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        return value.asString();
+    }
+
+    private static ResponseStatusException rejected(final HttpStatus status) {
+        return new ResponseStatusException(status);
+    }
+}

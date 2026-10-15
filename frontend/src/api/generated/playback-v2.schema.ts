@@ -3,6 +3,108 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "ObservabilityEventsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/ObservabilityEvent"
+          }
+        }
+      }
+    },
+    "ObservabilityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event",
+        "platform",
+        "feature",
+        "occurred_at"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event": {
+          "type": "string",
+          "enum": [
+            "active_user",
+            "feature_open",
+            "replay_parse"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "web",
+            "android"
+          ]
+        },
+        "feature": {
+          "type": "string",
+          "enum": [
+            "home",
+            "replay_parse",
+            "replay_2d",
+            "replay_3d",
+            "replay_shots",
+            "ai_review",
+            "tankopedia",
+            "armor",
+            "hall_of_fame",
+            "tournament",
+            "android_download",
+            "sponsor",
+            "profile"
+          ]
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Required for replay_parse; one ID per file attempt shared by start and terminal."
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "start",
+            "success",
+            "failure",
+            "cancelled"
+          ],
+          "description": "Required only for replay_parse."
+        },
+        "error_code": {
+          "type": "string",
+          "enum": [
+            "PARSE_FAILED",
+            "UNSUPPORTED_REPLAY",
+            "INVALID_REPLAY",
+            "RESOURCE_UNAVAILABLE",
+            "UNKNOWN"
+          ],
+          "description": "Allowed only for failed replay_parse. Never raw exception text."
+        },
+        "error_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Allowed only for failed replay_parse."
+        }
+      }
+    },
     "TournamentEvent": {
       "type": "object",
       "additionalProperties": false,

@@ -138,3 +138,25 @@ loki.write "default" {
 		url = "http://loki:3100/loki/api/v1/push"
 	}
 }
+
+// Independent AI runtime: lifecycle failures and token usage share this stream.
+discovery.relabel "ai_service" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "ai-service"
+		action        = "keep"
+	}
+
+	rule {
+		target_label = "container_name"
+		replacement  = "ai-service"
+	}
+}
+
+loki.source.docker "ai_service" {
+	host       = "unix:///var/run/docker.sock"
+	targets    = discovery.relabel.ai_service.output
+	forward_to = [loki.write.default.receiver]
+}
