@@ -181,6 +181,19 @@ export interface AgentVehicleTrack {
   hp: Array<[number, number]>
   death_t: number | null
   killer_eid: number
+  /**
+   * 全部死亡时刻（升序；`death_times[0] == death_t`，**上游 2026-10-15 起产出，additive**）。
+   * **仅该车死亡 ≥2 次（复活模式，如爆燃）才输出**；单死/无死回放字段缺省。
+   * 缺省 = death_t 已完整表达生命史（死亡终态语义）。
+   */
+  death_times?: number[]
+  /**
+   * 复活时刻（升序；**上游 2026-10-15 起产出，additive，仅非空才输出**）。
+   * 生命状态重建：death_t 起 DESTROYED，至首个 ≥ 该时刻的复活点回 ALIVE，与后续死亡交替。
+   * 字段缺省 = 无复活证据 → 死亡终态（fail-closed，行为与既往一致）。上游契约见
+   * `crates/replay-core/src/replay/playback.rs` VehicleTrack。
+   */
+  resurrection_times?: number[]
   shell_ids: number[]
   turret_index: number | null
   gun_index: number | null

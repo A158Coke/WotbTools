@@ -1953,6 +1953,48 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
   })
 
+  it('respawn track: DESTROYED→ALIVE→DESTROYED — wreck un-fades on resurrection, roster follows (issue #622)', async () => {
+    const track = { accountId: 77, lifeTransitions: [
+      { timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: 10 },
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    ] }
+    const { api, store, vehicles } = await load([vehicle()], canonicalFor([track]))
+    api.seekTime(53)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+    api.seekTime(73)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+  })
+
+  it('respawn: distinct deaths each spawn one burst (canonical life has no ALIVE gap in normal battles)', async () => {
+    const track = deadTrack()
+    track.lifeTransitions.push(
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    )
+    const { api, frames } = await load([vehicle()], canonicalFor([track]))
+    const spawnBurst = vi.spyOn(window.__battleFx, 'spawnBurst')
+    api.seekTime(51.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(1)   // 第一次死亡
+    api.seekTime(71.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(2)   // 复活后的第二次死亡：独立爆焰
+    expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
+  })
+
   it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
     'real producer → scene re-entry %s → %s with prop3 %s and entry %s', async (oldId, newId, terminal, newEntry) => {
       const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))

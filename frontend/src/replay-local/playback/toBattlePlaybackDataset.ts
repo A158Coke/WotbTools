@@ -8,7 +8,8 @@
  *  - 血量：canonical 血量采样（prop3 + 每次物化快照）；哨兵 = 血量未知，不改写为 0、不产生迁移；
  *    友方开局 = 结算血量（HIGH），敌方开局 = 车辆库血量（MEDIUM、临时），首个回放血量后永久回放权威；
  *  - 掉血 / 归属 / 击杀者：canonical combat（method8 直击 = 证据，其它变体 = 冲突，fail-closed）；
- *  - 生命：prop3 alive=false（终态）→ DESTROYED；可信血量 / alive → ALIVE；
+ *  - 生命：上游复活轨道在场（≥2 死 / ≥1 复活，issue #622）→ 死亡/复活交替（SSOT）；
+ *    否则 prop3 alive=false（终态）→ DESTROYED；可信血量 / alive → ALIVE；
  *  - limitations：映射 / 时钟 / 车辆轨迹缺失 + 视角未解析 / 回放在战斗结束前截断（缺证据即 PARTIAL）。
  *
  * 与 Java 的已知口径差异（`playback.golden.test.ts` 逐项固定，`docs/features/battle-playback.md` 记录）：
@@ -258,23 +259,82 @@ function sameHealth(a: HealthTransition | null, b: HealthTransition): boolean {
     && a.displayCapacityHp === b.displayCapacityHp && a.relativeFull === b.relativeFull && a.confidence === b.confidence
 }
 
-/** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE */
-function lifeTransitions(
+/**
+ * 上游 additive 复活轨道（issue #622，2026-10-15）：eid → 战斗相对时刻的死亡/复活事件表。
+ * 仅当车辆声明 ≥2 死或 ≥1 复活时才有条目；字段缺省（旧上游产物 / 普通回放）= 空表，
+ * 生命投影走 prop3 采样路径，输出与既往逐位一致（golden 锁定）。
+ */
+type RespawnTrack = { deaths: number[]; resurrections: number[] }
+
+function respawnTracks(pb: AgentPlaybackFacet, clock: ReplayClock): Map<number, RespawnTrack> {
+  const out = new Map<number, RespawnTrack>()
+  for (const v of pb.vehicles) {
+    const declared = v.death_times ?? []
+    const resurrections = v.resurrection_times ?? []
+    if (declared.length <= 1 && resurrections.length === 0) continue
+    const deaths = (declared.length > 0 ? declared : v.death_t != null ? [v.death_t] : [])
+      .map((t) => t - clock.startRaw).sort((a, b) => a - b)
+    out.set(v.eid, {
+      deaths,
+      resurrections: resurrections.map((t) => t - clock.startRaw).sort((a, b) => a - b),
+    })
+  }
+  return out
+}
+
+/** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE。
+ *  上游复活轨道在场时（issue #622）它取代采样扫描成为死亡/复活时刻 SSOT：
+ *  死亡 → DESTROYED、复活 → ALIVE 交替（采样只兜底 ALIVE 证据），否则行为与既往逐位一致。 */
+export function lifeTransitions(
   facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number | null>, durationSec: number,
+  respawnByEid?: Map<number, RespawnTrack>,
 ): LifeTransition[] {
   const out: LifeTransition[] = []
   let previous: LifeTransition | null = null
-  for (const t of changePoints(facts, entityIds, durationSec)) {
+  const tracksOf = (eid: number): RespawnTrack | null => {
+    const track = respawnByEid?.get(eid)
+    return track && (track.deaths.length > 1 || track.resurrections.length > 0) ? track : null
+  }
+  const extraPoints: number[] = []
+  for (const id of entityIds) {
+    const track = tracksOf(id)
+    if (!track) continue
+    extraPoints.push(...track.deaths, ...track.resurrections)
+  }
+  const points = changePoints(facts, entityIds, durationSec)
+  if (extraPoints.length) {
+    const set = new Set(points)
+    for (const t of extraPoints) if (t >= 0) set.add(Math.min(t, durationSec + EPS))
+    points.length = 0
+    points.push(...set)
+    points.sort((a, b) => a - b)
+  }
+  for (const t of points) {
     const eid = activeEntityAt(firstSeen, t)
     if (eid === null) continue
     let destroyedAt: number | null = null
-    for (const s of facts.hpSamples.get(eid) ?? []) {
-      if (s.t > t) break
-      if (s.kind === 'PROP3' && s.exact && s.alive === false) destroyedAt = s.t
+    let resurrected = false
+    const track = tracksOf(eid)
+    if (track) {
+      let di = 0
+      let ri = 0
+      while (di < track.deaths.length || ri < track.resurrections.length) {
+        const d = di < track.deaths.length ? track.deaths[di] : Infinity
+        const r = ri < track.resurrections.length ? track.resurrections[ri] : Infinity
+        if (d <= t && d <= r) { destroyedAt = d; di += 1 }
+        else if (r <= t) { destroyedAt = null; resurrected = true; ri += 1 }
+        else break
+      }
+    } else {
+      for (const s of facts.hpSamples.get(eid) ?? []) {
+        if (s.t > t) break
+        if (s.kind === 'PROP3' && s.exact && s.alive === false) destroyedAt = s.t
+      }
     }
     const sample = lastHpSampleAtOrBefore(facts, eid, t)
+    const aliveBySample = sample != null && (sample.alive === true || (sample.hp !== null && sample.hp > 0))
     const lifeState = destroyedAt !== null ? 'DESTROYED'
-      : sample && (sample.alive === true || (sample.hp !== null && sample.hp > 0)) ? 'ALIVE' : null
+      : (resurrected || aliveBySample) ? 'ALIVE' : null
     if (lifeState === null) continue
     const next: LifeTransition = { timeSec: t, lifeState, destroyedKnownAtSec: destroyedAt }
     if (!previous || previous.lifeState !== next.lifeState || previous.destroyedKnownAtSec !== next.destroyedKnownAtSec) {
@@ -448,6 +508,7 @@ export function toBattlePlaybackDataset(
   const friendlyTeam = facts.perspectiveTeam
 
   const vehicleByEid = new Map(pb.vehicles.map((v) => [v.eid, v]))
+  const respawnByEid = respawnTracks(pb, clock)
   const settlementPlayers = new Map<number, AgentResultPlayer>()
   for (const p of result?.players ?? []) if (p.account_id > 0) settlementPlayers.set(p.account_id, p)
 
@@ -494,7 +555,7 @@ export function toBattlePlaybackDataset(
       positionSegments: posSegs,
       orientationSegments: oriSegs,
       healthTransitions: health,
-      lifeTransitions: lifeTransitions(facts, entityIds, firstSeen, clock.durationSec),
+      lifeTransitions: lifeTransitions(facts, entityIds, firstSeen, clock.durationSec, respawnByEid),
       damageLosses: losses.map((l): DamageLoss => ({
         ...l,
         displayCapacityHp: lossCapacity(facts, entityIds, l.toSec),
