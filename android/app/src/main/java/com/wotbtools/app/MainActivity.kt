@@ -12,6 +12,8 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.webkit.URLUtil
+import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -24,6 +26,7 @@ import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -52,11 +55,10 @@ class MainActivity : Activity() {
         // replay canonical view 的 marker 由 ReplayDispatchPolicy 拥有：分发决策所判断的 URL 与这里导航到的
         // URL 共用同一常量，避免两处字面量漂移。
         private const val REPLAY_URL = LOCAL_APP_ENTRY + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
-        private const val FILE_CHOOSER_REQUEST = 1001
-        private const val REPLAY_FOLDER_REQUEST_MIN = 0x2000
-        private const val REPLAY_FOLDER_REQUEST_MAX = 0xffff
-        // Never reuse a folder request code within a process, including Activity recreation.
-        private val nextFolderRequestCode = AtomicInteger(REPLAY_FOLDER_REQUEST_MIN)
+        private const val PICKER_REQUEST_MIN = 0x2000
+        private const val PICKER_REQUEST_MAX = 0xffff
+        // All native pickers share this allocator; never reuse a code, including Activity recreation.
+        private val nextPickerRequestCode = AtomicInteger(PICKER_REQUEST_MIN)
         private const val REPLAY_FOLDER_LIFETIME_MS = 9L * 60 * 1000
         private const val REPLAY_FOLDER_SCAN_TIMEOUT_MS = 60L * 1000
 
@@ -83,6 +85,35 @@ class MainActivity : Activity() {
             uri.scheme == "http" && uri.rawAuthority == LOCAL_APP_AUTHORITY
         } catch (_: Exception) {
             false
+        }
+
+        /** Own the input even when creating or writing the private temp file fails. */
+        internal fun spoolDownload(body: InputStream, directory: File): File {
+            var file: File? = null
+            try {
+                return body.use { input ->
+                    File.createTempFile("web-download-", ".tmp", directory).also {
+                        file = it
+                        it.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            } catch (error: Exception) {
+                file?.delete()
+                throw error
+            }
+        }
+
+        /** RFC 5987 filename* takes precedence over the legacy filename parameter. */
+        internal fun extendedDownloadName(disposition: String?): String? {
+            val match = disposition?.let {
+                Regex("""(?i)filename\*\s*=\s*(?:"([^"\r\n]*)"|([^;\r\n]*))""").find(it)
+            } ?: return null
+            val parts = (match.groups[1]?.value ?: match.groups[2]?.value)?.trim()
+                ?.split("'", limit = 3)?.takeIf { it.size == 3 } ?: return null
+            return try {
+                java.net.URLDecoder.decode(parts[2].replace("+", "%2B"), parts[0])
+                    .takeIf { it.isNotBlank() }
+            } catch (_: Exception) { null }
         }
 
     }
@@ -115,7 +146,9 @@ class MainActivity : Activity() {
     private var versionCheckInFlight = false
     @Volatile private var downloadedApk: File? = null
     /** 进行中的普通 `<input type=file>` 选择（Gecko PromptDelegate）；同一时刻只有一个。 */
-    private var filePrompt: Pair<PromptDelegate.FilePrompt, GeckoResult<PromptDelegate.PromptResponse>>? = null
+    private var filePrompt: Triple<Int, PromptDelegate.FilePrompt, GeckoResult<PromptDelegate.PromptResponse>>? = null
+    private var downloadInFlight = false
+    private var downloadSave: Pair<Int, File>? = null
     private val replayFolderPicker = ReplayFolderPicker()
     private var folderPickRequest: FolderPickRequest? = null
     private val folderTimeoutHandler = Handler(Looper.getMainLooper())
@@ -282,6 +315,8 @@ class MainActivity : Activity() {
         /** Main frame stays local; HTTPS/mailto external links use the system browser. */
         override fun onExternalNavigation(uri: String) = openExternal(uri)
 
+        override fun onExternalResponse(response: WebResponse) = saveExternalResponse(response)
+
         override fun onFullScreen(fullScreen: Boolean) {
             if (fullScreen) enterFullscreen() else exitFullscreen()
         }
@@ -294,7 +329,7 @@ class MainActivity : Activity() {
         override fun onFilePrompt(
             prompt: PromptDelegate.FilePrompt
         ): GeckoResult<PromptDelegate.PromptResponse> {
-            if (filePrompt != null || folderPickRequest != null || destroyedRuntime) {
+            if (filePrompt != null || folderPickRequest != null || downloadSave != null || destroyedRuntime) {
                 return GeckoResult.fromValue(prompt.dismiss())
             }
             val intent = Intent(Intent.ACTION_GET_CONTENT)
@@ -307,11 +342,24 @@ class MainActivity : Activity() {
                 intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             }
             val result = GeckoResult<PromptDelegate.PromptResponse>()
-            filePrompt = prompt to result
+            val requestCode = nextPickerRequestCode.getAndIncrement()
+            if (requestCode > PICKER_REQUEST_MAX) return GeckoResult.fromValue(prompt.dismiss())
+            val request = Triple(requestCode, prompt, result)
+            filePrompt = request
+            prompt.setDelegate(object : PromptDelegate.PromptInstanceDelegate {
+                override fun onPromptDismiss(dismissed: PromptDelegate.BasePrompt) {
+                    if (filePrompt !== request) return
+                    filePrompt = null
+                    prompt.setDelegate(null)
+                    result.complete(dismissed.dismiss())
+                    finishActivity(requestCode)
+                }
+            })
             try {
-                startActivityForResult(intent, FILE_CHOOSER_REQUEST)
+                startActivityForResult(intent, requestCode)
             } catch (_: Exception) {
                 filePrompt = null
+                prompt.setDelegate(null)
                 result.complete(prompt.dismiss())
             }
             return result
@@ -724,7 +772,7 @@ class MainActivity : Activity() {
     fun bridgePickReplayFolder(requestId: String?, reply: (JSONObject) -> Unit) {
         runOnUiThread {
             val clientRequestId = requestId?.takeIf { ReplayFolderPicker.validClientRequestId(it) }
-            if (clientRequestId == null || destroyedRuntime || isDestroyed || filePrompt != null) {
+            if (clientRequestId == null || destroyedRuntime || isDestroyed || filePrompt != null || downloadSave != null) {
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
             }
@@ -733,8 +781,8 @@ class MainActivity : Activity() {
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
             }
-            val requestCode = nextFolderRequestCode.getAndIncrement()
-            if (requestCode !in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+            val requestCode = nextPickerRequestCode.getAndIncrement()
+            if (requestCode !in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {
                 replayFolderPicker.complete(generation, null)
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
@@ -973,13 +1021,118 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
+    private fun saveExternalResponse(response: WebResponse) {
+        val body = response.body ?: run { toast(getString(R.string.download_failed)); return }
+        if (destroyedRuntime || downloadInFlight) {
+            try { body.close() } catch (_: IOException) { }
+            if (!destroyedRuntime) toast(getString(R.string.download_busy))
+            return
+        }
+        downloadInFlight = true
+        try {
+            executor.execute {
+                var file: File? = null
+                try {
+                    val ready = spoolDownload(body, cacheDir)
+                    file = ready
+                    val contentType = response.headers.entries.firstOrNull {
+                        it.key.equals("content-type", ignoreCase = true)
+                    }?.value?.substringBefore(';')?.trim()?.takeIf { '/' in it }
+                    val disposition = response.headers.entries.firstOrNull {
+                        it.key.equals("content-disposition", ignoreCase = true)
+                    }?.value
+                    val name = (extendedDownloadName(disposition) ?: URLUtil.guessFileName(response.uri, disposition, contentType))
+                        .replace(Regex("""[\\/\p{Cntrl}]"""), "_").trim().take(180)
+                        .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "download"
+                    val mime = contentType ?: MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+                    runOnUiThread {
+                        if (destroyedRuntime || filePrompt != null || folderPickRequest != null) {
+                            ready.delete()
+                            downloadInFlight = false
+                            if (!destroyedRuntime) toast(getString(R.string.download_busy))
+                            return@runOnUiThread
+                        }
+                        val code = nextPickerRequestCode.getAndIncrement()
+                        try {
+                            check(code <= PICKER_REQUEST_MAX)
+                            downloadSave = code to ready
+                            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                                .addCategory(Intent.CATEGORY_OPENABLE).setType(mime)
+                                .putExtra(Intent.EXTRA_TITLE, name), code)
+                        } catch (_: Exception) {
+                            downloadSave = null
+                            ready.delete()
+                            downloadInFlight = false
+                            toast(getString(R.string.download_failed))
+                        }
+                    }
+                } catch (_: Exception) {
+                    file?.delete()
+                    runOnUiThread {
+                        downloadInFlight = false
+                        if (!destroyedRuntime) toast(getString(R.string.download_failed))
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            try { body.close() } catch (_: IOException) { }
+            downloadInFlight = false
+            if (!destroyedRuntime) toast(getString(R.string.download_failed))
+        }
+    }
+
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+        if (requestCode == downloadSave?.first) {
+            val file = downloadSave!!.second
+            downloadSave = null
+            val uri = data?.data
+            if (resultCode != RESULT_OK || uri == null) {
+                file.delete()
+                downloadInFlight = false
+            } else {
+                executor.execute {
+                    try {
+                        contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                            file.inputStream().use { it.copyTo(output) }
+                        } ?: throw IOException("No document output stream")
+                        runOnUiThread { if (!destroyedRuntime) toast(getString(R.string.download_saved)) }
+                    } catch (_: Exception) {
+                        runOnUiThread { if (!destroyedRuntime) toast(getString(R.string.download_failed)) }
+                    } finally {
+                        file.delete()
+                        runOnUiThread { downloadInFlight = false }
+                    }
+                }
+            }
+            return
+        }
+        if (requestCode == filePrompt?.first) {
+            val (_, prompt, result) = filePrompt ?: return
+            filePrompt = null
+            prompt.setDelegate(null)
+            val uris = when {
+                resultCode == RESULT_OK && data?.clipData != null ->
+                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }.toTypedArray()
+                resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
+                else -> emptyArray()
+            }
+            result.complete(
+                when {
+                    uris.isEmpty() -> prompt.dismiss()
+                    prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE -> prompt.confirm(this, uris)
+                    else -> prompt.confirm(this, uris.first())
+                }
+            )
+            return
+        }
+        if (requestCode in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {
             val request = folderPickRequest ?: return
             // Expired requests and duplicate provider results must never belong to a retry.
             if (request.requestCode != requestCode || !request.pickerOpen) return
@@ -1013,25 +1166,8 @@ class MainActivity : Activity() {
             return
         }
         // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent。
-        // Folder request codes have their own owner, even if a late result carries unrelated extras.
-        if (handleAuthorizationIntent(data)) return
-        if (requestCode == FILE_CHOOSER_REQUEST) {
-            val (prompt, result) = filePrompt ?: return
-            filePrompt = null
-            val uris = when {
-                resultCode == RESULT_OK && data?.clipData != null ->
-                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }.toTypedArray()
-                resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
-                else -> emptyArray()
-            }
-            result.complete(
-                when {
-                    uris.isEmpty() -> prompt.dismiss()
-                    prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE -> prompt.confirm(this, uris)
-                    else -> prompt.confirm(this, uris.first())
-                }
-            )
-        }
+        // Picker codes have their own owners, even if a late result carries unrelated extras.
+        handleAuthorizationIntent(data)
     }
 
     override fun onBackPressed() {
@@ -1051,7 +1187,13 @@ class MainActivity : Activity() {
         folderPickRequest = null
         replayFolderPicker.destroy()
         folderRequest?.let { cancelFolderPickWork(it) }
-        filePrompt?.let { (prompt, result) -> result.complete(prompt.dismiss()) }
+        filePrompt?.let { (code, prompt, result) ->
+            prompt.setDelegate(null)
+            result.complete(prompt.dismiss())
+            finishActivity(code)
+        }
+        downloadSave?.let { (code, file) -> finishActivity(code); file.delete() }
+        downloadSave = null
         filePrompt = null
         connectivityMonitor.stop()
         authManager.removeListener(authChangedListener)

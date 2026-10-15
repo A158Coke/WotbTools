@@ -293,15 +293,17 @@ OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地�
 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。实测 release APK 若
 超过 250 MB，先回到产品决策（例如只保留 arm64），不要只调超时。
 
-**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并 3.0.0（自动 stage）→
+**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.1，自动 stage）→
 ③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
-`workflow_dispatch(mode=publish, version=3.0.0)`。
+`workflow_dispatch(mode=publish, version=3.0.1)`。
 
 **真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
 GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
 分享 / 打开 replay、目录导入；WASM 解析、统计、Rating、2D、3D / Armor / 贴图；fullscreen 进出与 Back；
 横竖屏；连续切换 replay；前后台切换（含被系统回收后恢复）；断网 / 恢复；QQ 登录 → 回跳 → 登出；
-检查更新 → 下载 → 安装（含 2.3.7 覆盖安装 3.0.0）；外链交系统浏览器；软键盘不遮挡输入。
+网页 PNG blob 导出、HoF replay 下载（核对文件内容 / 文件名 / MIME）、保存取消与失败后重试；
+select 打开时页面导航、选项更新后导航、file picker 打开时导航及迟到结果（新页面不可收到旧文件）；
+检查更新 → 下载 → 安装（含 2.3.7 覆盖安装当前 3.0.x）；外链交系统浏览器；软键盘不遮挡输入。
 再用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」的出站流量：只应出现
 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，
 关不掉就阻塞发布。

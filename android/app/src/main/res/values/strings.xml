@@ -18,4 +18,7 @@
     <string name="runtime_error_retry">重新加载</string>
     <string name="runtime_error_open_browser">使用浏览器版</string>
     <string name="auth_login_failed_retry">登录失败，请重试</string>
+    <string name="download_saved">文件已保存</string>
+    <string name="download_failed">文件保存失败，请重试</string>
+    <string name="download_busy">请先完成当前文件操作，再重试下载</string>
 </resources>
