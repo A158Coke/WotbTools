@@ -87,6 +87,23 @@ export function tankImageUrl(id) {
   return assetProvider.url(`/tank_images/${id}.webp`)
 }
 
+let tankIconCropsPromise = null
+
+/**
+ * 逐车封面图内容框（`tank_images/crops.json`，alpha>0 紧裁，canvas 像素坐标）。
+ * 客户端图标是原始画布（右侧/底部留白近半），展示层据此缩放定位以对齐旧紧裁口径
+ * （换算见 utils/tankIconCrop.js）。资产源缺该文件时返回 null——展示回退原始 contain。
+ */
+export function loadTankIconCrops() {
+  if (!tankIconCropsPromise) {
+    tankIconCropsPromise = assetProvider
+      .json('/tank_images/crops.json')
+      .then((doc) => doc?.icons ?? null)
+      .catch(() => null)
+  }
+  return tankIconCropsPromise
+}
+
 // ---------- 弹表（tank JSON configs 客户端构建） ----------
 
 /**

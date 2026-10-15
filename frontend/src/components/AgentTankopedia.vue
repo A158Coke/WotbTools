@@ -15,7 +15,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
-import { fetchTankEncyclopedia, fetchTankData, tankImageUrl } from '../scene/agentData.js'
+import { fetchTankEncyclopedia, fetchTankData, tankImageUrl, loadTankIconCrops } from '../scene/agentData.js'
+import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useIncrementalList } from '../composables/useIncrementalList.js'
@@ -210,6 +211,17 @@ function hideBrokenImage(event) {
   event.target.hidden = true
 }
 
+// 封面图展示裁剪：客户端图标是原始画布（坦克锚定左上、右侧/底部留白近半），
+// 按数据面的逐车内容框缩放定位（utils/tankIconCrop.js），视觉对齐旧紧裁口径；
+// 数据缺失（旧包/资产源未配置）时 transform 为空串 → 回退原始 contain 展示。
+const ICON_BOX_ASPECT = 8 / 5 // 与 .tp-media 的 aspect-ratio 一致
+const iconCrops = ref(null)
+loadTankIconCrops().then((crops) => { iconCrops.value = crops })
+function iconCropStyle(id) {
+  const transform = tankIconCropTransform(iconCrops.value?.[String(id)], ICON_BOX_ASPECT)
+  return transform ? { transform } : null
+}
+
 onMounted(() => {
   loadList()
   if (detailId.value != null) loadDetail(detailId.value)   // 详情直达（刷新 / 分享链接）
@@ -245,7 +257,7 @@ onMounted(() => {
       <template v-else-if="detail">
         <header class="tp-detail-head">
           <span class="tp-media tp-media-lg">
-            <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" @error="hideBrokenImage">
+            <img :src="tankImageUrl(detailId)" alt="" width="320" height="200" decoding="async" :style="iconCropStyle(detailId)" @error="hideBrokenImage">
           </span>
           <div class="tp-detail-title">
             <h1>{{ detail.name }}</h1>
@@ -434,7 +446,7 @@ onMounted(() => {
               @click="openDetail(tank.id)"
             >
               <span class="tp-media">
-                <img :src="tankImageUrl(tank.id)" alt="" loading="lazy" decoding="async" width="160" height="100" @error="hideBrokenImage">
+                <img :src="tankImageUrl(tank.id)" alt="" loading="lazy" decoding="async" width="160" height="100" :style="iconCropStyle(tank.id)" @error="hideBrokenImage">
               </span>
               <span class="tp-card-name" :title="tank.name">{{ tank.name }}</span>
               <span class="tp-badges">
