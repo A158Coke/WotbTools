@@ -2,7 +2,7 @@
 // ?raw Markdown）必须在 docker/Dockerfile.frontend 的 build 阶段 COPY 到同一相对位置，且未被 .dockerignore 排除。
 // 防「本地 / CI npm build 绿、生产 Docker build 红」（#447：Could not resolve common/tankopedia-tier7.json）。
 // 不复制第二份数据进 frontend——common/ 是唯一事实源，Docker 只是把它放到与仓库相同的相对路径。
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -82,5 +82,22 @@ describe('docker/Dockerfile.frontend build context contract', () => {
     const covered = copies.some(({ src, dest }) => dest === '/' + src && (path === src || path.startsWith(src + '/')))
     expect(covered, `${path} (imported by ${inputs.get(path)}) is not COPY'd to /${path} in docker/Dockerfile.frontend`).toBe(true)
     expect(dockerIgnored(path), `${path} is excluded by .dockerignore`).toBe(false)
+  })
+
+  // 反向护栏（2026-10-15）：DELETE 一个构建输入后，忘记同步删掉 Dockerfile 的 COPY
+  // 会让 `docker build` 在 "failed to compute cache key" 处炸掉，而上面的正向断言
+  //（引用了没 COPY）天然看不见这种"COPY 了不存在的源"。此断言锁死方向二。
+  it('every COPY source exists in the repo (no COPY of deleted inputs)', () => {
+    const docker = readFileSync(join(REPO, 'docker/Dockerfile.frontend'), 'utf8')
+    const sources = [...docker.matchAll(/^COPY\s+(?!--from)(.+)$/gm)].flatMap(([, args]) => {
+      const parts = args.trim().split(/\s+/)
+      parts.pop() // 末位 = 目标
+      return parts.map(raw => raw.replace(/\/$/, ''))
+    })
+    expect(sources.length).toBeGreaterThan(0)
+    for (const src of sources) {
+      expect(existsSync(join(REPO, src)),
+        `docker/Dockerfile.frontend COPY ${src} —— 源在仓库中不存在（文件已删除/改名？同步删掉这条 COPY）`).toBe(true)
+    }
   })
 })
