@@ -537,6 +537,72 @@ describe('ProfilePage as the account page', () => {
   })
 })
 
+describe('ProfilePage identity card', () => {
+  const keycloakUserId = '3f2b9c1e-7a4d-4e8b-9c1f-2d3e4f5a6b7c'
+
+  beforeEach(() => {
+    api.authenticated = true
+    profileFailures = 0
+    tokenRef.value = null
+    currentProfile = {
+      keycloakUserId,
+      wotbAccountSource: 'MANUAL',
+      wotbServer: 'CN',
+      wotbAccountId: null,
+      displayName: 'Player'
+    }
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.syncUserWotbAccountFromLogin.mockImplementation(() => Promise.resolve(null))
+  })
+
+  afterEach(() => {
+    delete navigator.clipboard
+  })
+
+  it('shows the Keycloak user id and business realm roles without Keycloak built-ins', async () => {
+    tokenRef.value = {
+      sub: keycloakUserId,
+      realm_access: { roles: ['wotbtools-user', 'offline_access', 'default-roles-wotbtools', 'HoF-admin', 'uma_authorization'] }
+    }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(keycloakUserId)
+    const roles = wrapper.get('[data-testid="profile-roles"]').findAll('.role-chip').map(chip => chip.text())
+    expect(roles).toEqual(['HoF-admin', 'wotbtools-user'])
+  })
+
+  it('shows a placeholder when the token carries only Keycloak built-in roles', async () => {
+    tokenRef.value = { sub: keycloakUserId, realm_access: { roles: ['offline_access', 'default-roles-wotbtools'] } }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-roles"]').text()).toBe('--')
+  })
+
+  it('copies the Keycloak user id and confirms only after the clipboard write succeeds', async () => {
+    tokenRef.value = { sub: keycloakUserId }
+    const writeText = vi.fn()
+      .mockRejectedValueOnce(new Error('denied'))
+      .mockResolvedValueOnce(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    const button = wrapper.get('[data-testid="profile-copy-user-id"]')
+
+    // writeText 拒绝且无 execCommand 降级可用：不得显示「已复制」。
+    await button.trigger('click')
+    await flushPromises()
+    expect(button.text()).toBe('profile.copy')
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith(keycloakUserId)
+    expect(button.text()).toBe('profile.copied')
+  })
+})
+
 describe('ProfilePage verify with replay', () => {
   const unverified = () => ({
     wotbAccountSource: 'MANUAL',

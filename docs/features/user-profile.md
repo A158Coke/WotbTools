@@ -4,6 +4,18 @@
 > `frontend/src/components/ProfilePage.vue`、`frontend/src/replay-local/submissionFacts.ts#replayRecorderAccountId`。
 > 绑定 / 解绑 / WG 登录同步的完整规则见 `docs/DEVELOPER_GUIDE.md`「绑定账号的验证状态」。
 
+## 身份信息卡
+
+「身份信息」卡展示展示名、认证服务、Keycloak 用户 ID 与 realm 角色，所有登录用户可见（只显示本人信息）：
+
+- **Keycloak 用户 ID**：取 `GET /api/users/profile` 的 `keycloakUserId`（= token `sub`），等宽显示并可复制；
+  复制成功才显示「已复制」。
+- **角色**：只读当前 access token 的 `realm_access.roles`（Keycloak 已展开 composite，持有 `wotbtools-admin`
+  会同时看到它包含的业务角色），隐藏 Keycloak 内置的 `default-roles-*` / `offline_access` / `uma_authorization`，
+  其余按原始 key 排序展示，不做 i18n 翻译；dev `?admin=1` 旁路不影响这里的展示。client 角色（`resource_access`）不展示。
+- **不展示 group**：realm 未定义 group（`infra/tofu/keycloak` 无 group 资源），token 也没有 group-membership mapper。
+  若以后启用 group，优先在 tofu 加 mapper 让前端读 token claim，而不是让资料接口依赖 Keycloak admin API。
+
 ## 「用回放验证」的信任模型（产品决策，2026-10）
 
 **这是客户端声称的便利徽章，不是身份证明。**

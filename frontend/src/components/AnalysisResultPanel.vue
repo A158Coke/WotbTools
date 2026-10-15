@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MarkdownContent from './MarkdownContent.vue'
+import { copyText } from '../utils/clipboard.js'
 
 // 普通用户页面只展示 AI 复盘正文/Team v0.5 结构化结果 + 可折叠的「赛前预测」区块。
 // 后端 SSE `done` 载荷返回个人 { analysis, preBattleSection? } 或团队 { teamReview, preBattleSection? }；
@@ -56,48 +57,12 @@ async function copyAnalysis() {
     : props.result.analysis
   if (!text) return
   const withFooter = text + '\n' + t('recon.copy_footer')
-  if (!(await copyTextWithFallback(withFooter))) return
+  if (!(await copyText(withFooter))) return
   copied.value = true
   clearTimeout(copyTimer)
   copyTimer = setTimeout(() => {
     copied.value = false
   }, 1500)
-}
-
-/** Clipboard API 优先；writeText 缺失或 reject 时降级 execCommand。复制成功返回 true。 */
-async function copyTextWithFallback(text) {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      // writeText 存在但失败 → 继续尝试 fallback
-    }
-  }
-  return fallbackCopy(text)
-}
-
-/**
- * execCommand 降级：textarea 通过 try/finally 保证移除；
- * execCommand 返回 false 或抛异常时视为失败（不显示「已复制」）。
- */
-function fallbackCopy(text) {
-  let textarea = null
-  try {
-    textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    return document.execCommand('copy')
-  } catch {
-    return false
-  } finally {
-    if (textarea) {
-      textarea.remove()
-    }
-  }
 }
 
 onBeforeUnmount(() => clearTimeout(copyTimer))
