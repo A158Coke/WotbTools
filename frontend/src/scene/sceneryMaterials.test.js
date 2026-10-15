@@ -4,28 +4,31 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
+// 源码读取统一 LF 归一（2026-10-15）：本机 core.autocrlf 检出为 CRLF 时，守卫里的 LF 锚点
+// （如大括号后紧跟换行的模式）会整片不匹配（CI 检出为 LF 才绿）——读取即归一，与检出风格无关。
+const readSrc = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 // 先剥注释：断言只看代码，注释里提到的反例写法（如 "写成 userData.extras.occMean 会…"）
 // 不得影响判据。
-const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+const src = readSrc(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 材质实现（billboard/speedtree/缓存/常量/isWaterName）已平移至专用模块（SSOT，
 // bake-ground-overhead 烘焙页共用同一实现），守卫随迁读取新源
-const matSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
+const matSrc = readSrc(resolve(here, 'sceneryMaterials.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 逐图光照应用层（2026-10-14 抽层：运行时与俯视烘焙共用同一份——见 mapLighting.js 头部）
-const mlSrc = readFileSync(resolve(here, 'mapLighting.js'), 'utf8')
+const mlSrc = readSrc(resolve(here, 'mapLighting.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 场景装配 SSOT（2026-10-14 抽层：extras 贴图解 + 逐节点材质分派 + 水面修整——运行时与
 // 俯视烘焙共用同一份，见 sceneryAssembly.js 头部；本节相关守卫随迁读取新源）
-const asmSrc = readFileSync(resolve(here, 'sceneryAssembly.js'), 'utf8')
+const asmSrc = readSrc(resolve(here, 'sceneryAssembly.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 // 地面 pass SSOT（2026-10-14 抽层：地形数据/几何、分层地表材质、水面海岸线资源——运行时与
 // 俯视烘焙共用同一份，见 groundPass.js 头部；地面相关守卫随迁读取新源）
-const gpSrc = readFileSync(resolve(here, 'groundPass.js'), 'utf8')
+const gpSrc = readSrc(resolve(here, 'groundPass.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 
@@ -103,7 +106,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(asmSrc).toMatch(/\(m\.userData && m\.userData\.alphaBlend\) \|\| '',/);
     // 俯视烘焙页与内核同约定（SSOT 守卫：两侧消费**同一份装配模块**，键指纹与分流口径
     // 只有一处实现——烘焙页本地不得再复辟任何分流/键组成代码）
-    const bakeSrcBlend = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8');
+    const bakeSrcBlend = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8');
     expect(bakeSrcBlend).toMatch(/from '\/src\/scene\/sceneryAssembly\.js'/);
     expect(bakeSrcBlend).toMatch(/assembleSceneryMaterials\(gltf, \{/);
     expect(bakeSrcBlend).not.toMatch(/!blendLayer && !softAlpha/);
@@ -228,7 +231,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('逐图 IBL：等距柱状环境贴图 + 倍率 + 时序守卫 + 会话释放', () => {
     // 客户端 IBLComponent：specular 立方图 → 上游转等距柱状（tools/export_map_ibl.py）。
     // 只影响 glTF PBR 材质（坦克）；自定义 ShaderMaterial 不吃 environment。
-    const rs = readFileSync(resolve(here, 'replaySource.js'), 'utf8')
+    const rs = readSrc(resolve(here, 'replaySource.js'), 'utf8')
     expect(rs).toMatch(/case 'ibl': return f\('ibl\.webp'\)/)
     expect(src).toMatch(/tex\.mapping = THREE\.EquirectangularReflectionMapping;/)
     expect(src).toMatch(/tex\.colorSpace = THREE\.SRGBColorSpace;/)
@@ -275,7 +278,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(asmSrc).toMatch(/et \? \{ maskTex: et\[0\], cubeTex: et\[1\], props \} : null,/)
     expect(asmSrc).toMatch(/getDependency\('texture', ex\.envCube\)/)
     // 逐实例属性：薄包装几何（属性对象原样引用，零重复上传），不得用 geometry.clone()
-    const instSrc = readFileSync(resolve(here, 'sceneryInstancing.js'), 'utf8')
+    const instSrc = readSrc(resolve(here, 'sceneryInstancing.js'), 'utf8')
     expect(instSrc).toMatch(/lm: \(node\.userData && Array\.isArray\(node\.userData\.lm\)\) \? node\.userData\.lm : null,/)
     expect(instSrc).toMatch(/new THREE\.InstancedBufferAttribute\(arr, 4\)/)
     expect(instSrc).toMatch(/g\.setAttribute\(name, batch\.geometry\.attributes\[name\]\)/)
@@ -313,7 +316,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(pfn).toMatch(/diffuseColor\.rgb \*= texture2D\(uDetailTex, vDetailUv\)\.rgb \* 2\.0;/);
     expect(pfn).toMatch(/\|scenery-detail/);
     // 烘焙页：消费同一装配模块（细节层路由不可能再与内核漂移），本地不得自建 convMat/detail 桩
-    const bake = readFileSync(resolve(here, '../../scripts/bake-ground-overhead.mjs'), 'utf8')
+    const bake = readSrc(resolve(here, '../../scripts/bake-ground-overhead.mjs'), 'utf8')
     expect(bake).toMatch(/assembleSceneryMaterials\(gltf, \{/);
     expect(bake).not.toMatch(/const convMat = \(m, isCard\)/);
     expect(bake).not.toMatch(/const detailTexOf = \(\) => null;/);
@@ -322,7 +325,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
   it('逐图太阳：lighting.json 驱动方向/色/强度与半球环境色，缺失回落兜底', () => {
     // 回归：目标光是硬编码的 (120,260,80)，与各图真实太阳无关——用 authored 法线后
     // 定向光真正塑形，错方位立刻显形（面向太阳的面反而暗，2026-10-09 用户报障）。
-    const rs = readFileSync(resolve(here, 'replaySource.js'), 'utf8')
+    const rs = readSrc(resolve(here, 'replaySource.js'), 'utf8')
     expect(rs).toMatch(/case 'lighting': return f\('lighting\.json'\)/)
     expect(src).toMatch(/applyMapLighting\(L\)/)
     // 应用体自 2026-10-14 抽到共享模块 mapLighting.js（SSOT，与俯视烘焙同一份——烘焙此前
@@ -487,7 +490,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).not.toMatch(/setZ\(k, sampleHeight\(-pos\.getX\(k\)/)
     // 自适应网格模块与测试在位（客户端同构 LOD：顶点=texel 原值 + 视距容差细分）
     expect(src).toMatch(/aspect: camera && Number\.isFinite\(camera\.aspect\)/)
-    const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
+    const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).toMatch(
       /export function buildAdaptiveTerrain\(\{ field, n, span, cam, fovY, aspect = 16 \/ 9, minStep = 1, tolScale = 1, hFovDeg = null, refineMask = null \}\)/)
     expect(meshSrc).toMatch(
@@ -658,7 +661,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(gpSrc).toMatch(/export function makeWaterCoast\(\{ field, n, span, near, far, depthBits = 24 \}\) \{/)
     expect(src).toMatch(/function terrainSpanOf\(\) \{/)
     expect(src).not.toMatch(/terrainCellBound\(1, camera/)          // 旧"单元格上界"口径：禁止复活
-    const wSrc = readFileSync(resolve(here, 'sceneryMaterials.js'), 'utf8')
+    const wSrc = readSrc(resolve(here, 'sceneryMaterials.js'), 'utf8')
     expect(wSrc).toMatch(/export function makeWaterMaterial\(m, \{ normalTex, cubeTex, props, coast = null \}\)/)
     expect(wSrc).toMatch(/uniform sampler2D uHeightmap;/)
     // 阈值量纲 = **本渲染器的深度分辨率**（2 ulp）：岸线带（差值小到缓冲分不开）淡出、
@@ -722,7 +725,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 本守卫锁死删除：`shores`/`shoreLevels`/`shoreHit` 均不得再现于两个模块。
     expect(src).not.toMatch(/shores:/)
     expect(src).not.toMatch(/shoreLevels/)
-    const meshSrc = readFileSync(resolve(here, 'terrainMesh.js'), 'utf8')
+    const meshSrc = readSrc(resolve(here, 'terrainMesh.js'), 'utf8')
     expect(meshSrc).not.toMatch(/shores/)
     expect(meshSrc).not.toMatch(/shoreHit/)
     expect(gpSrc).toMatch(/buildAdaptiveTerrain\(\{/)   // 地形构建入口在 groundPass（俯视烘焙同一份）
@@ -865,7 +868,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 硬边与烘焙法线被抹平。内核与俯视烘焙页（同一 SSOT 约定）都不得再设。
     expect(src).not.toMatch(/flatShading/);
     // 烘焙页同口径读法：先剥注释（注释里会提到反例写法，不得算作代码）
-    const bakeSrcNormals = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
+    const bakeSrcNormals = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
       .replace(/\/\/[^\n]*/g, '');
     expect(bakeSrcNormals).not.toMatch(/flatShading/);
   });
@@ -875,7 +878,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 若与内核漂移，同一材质在两侧会拆成不同实例/不同观感。
     // 2026-10-14 抽层后两侧都消费 sceneryAssembly.js（convMat 唯一实现在 asmSrc），
     // 逐字比对具体键组成既无对象也无可比副本——改为锁"单实现 + 两侧都消费 + 无本地副本"。
-    const bakeSrc = readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
+    const bakeSrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8')
       .replace(/\/\/[^\n]*/g, '')
     expect(bakeSrc).toMatch(/from '\/src\/scene\/sceneryMaterials\.js'/)
     // 烘焙页消费共享装配（extras 解析 → 分派），本地不得再有 convMat/材质分派副本
