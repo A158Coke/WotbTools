@@ -112,7 +112,7 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 
 断网不清空 replay、Result、Rating、native cached session 或本地检视。3D 断网销毁当前场景以作废在途 asset session（沿用场景 generation，不创建另一套 cancellation）；selection 仍属于工作台。用户停留在阻断的 3D 时，重连只恢复 controller 与待开播面板一次；沿用 main 的画质先选、明确 Start 后才解析/拉资产，后台重连不新建场景。AI 流沿用既有 AbortController 取消，断网取消不再发送 cancel HTTP；重连只恢复能力，不提交复盘。HoF 只在 availability 从不可用恢复可用时加载当前榜单一次，业务错误仍由明确重试处理。
 
-~~`common/shot-tank-data.json`~~ **已退役（2026-10-15）**：射击检视的搭载输入与弹种表改为运行期直读资产包——`fetchShotTankData` 对 `tank/{id}.json` 做 config 顺序 + `pitch_limits` + `shell_global_ids` 的紧凑投影，弹种表取 `/data/shellKinds.json`（与上游 tanks.pb 同批刷新，经 manifest sha256 差分发布）。资产源未配置或请求失败时按降级语义继续（pitch 如实降级、弹种走槽位/id 兜底），列表发布不被资产请求挂起阻塞。装甲查看器跳转属于联网 3D 动作，由装甲页面自身承载（匿名可用，无需登录）。
+~~`common/shot-tank-data.json`~~ **已退役（2026-10-15）**：射击检视的搭载输入与弹种表改为运行期直读资产包——`fetchShotTankData` 对 `tank/{id}.json` 做 config 顺序 + `pitch_limits` + `shell_global_ids` 的紧凑投影，弹种表取 `/data/shellKinds.json`（与上游 tanks.pb 同批刷新，经 manifest sha256 差分发布）。资产源未配置或请求失败时按降级语义继续（pitch 如实降级、弹种走槽位/id 兜底）；**列表发布不被资产请求挂起阻塞**：弹种表与解析并行、到位后经响应式视图原地补齐；俯仰锚定是解析期入参、改为**有界等待**（1.5s 到期用已到的部分表继续，单个请求挂起不拖死列表）。装甲查看器跳转属于联网 3D 动作，由装甲页面自身承载（匿名可用，无需登录）。
 
 `npm run test:browser-interaction` 包含真实 WASM offline scenario：冷启动/重启、fixture 手动导入/Result/Rating/2D/射击、AI/HoF/3D/Profile 深链、重连/断网与 local state 保持，并在网络边界记录和拒绝业务 HTTP（应为零）。这是自动运行门禁；3D 画面和 Android provider 真机验证仍由人工完成。
 
