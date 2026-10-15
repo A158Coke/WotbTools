@@ -410,7 +410,11 @@ onBeforeUnmount(() => {
 .armor-view #tp-grid { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--space-3); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); grid-auto-rows: max-content; gap: var(--space-3); align-content: start; }
 .armor-view .tank-card { padding: 0; min-inline-size: 0; overflow: hidden; background: var(--color-surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--txt); text-align: start; }
 .armor-view .tank-card:hover, .armor-view .tank-card.sel { border-color: var(--accent); }
-.armor-view .tank-card .tc-img { inline-size: 100%; block-size: 8rem; object-fit: contain; display: block; padding: var(--space-1); }
+/* 封面图盒 = 固定 8:5 比例（与坦克百科同款）：`tankViewer.js` 按该比例把逐车内容框
+ * （tank_images/crops.json）换算成 translate/scale 展示裁剪——盒比例是该数学的契约，
+ * 改这里必须同步内核的 TC_IMG_ASPECT（dom-contract 测试锁定两处一致）。
+ * 内边距用 margin 表达（显示区 = 元素盒，object-fit 的 contain 基准不被 padding 偏移）。 */
+.armor-view .tank-card .tc-img { inline-size: calc(100% - var(--space-1) * 2); margin: var(--space-1) auto; aspect-ratio: 8 / 5; block-size: auto; object-fit: contain; display: block; }
 .armor-view .tank-card .tc-body { padding: var(--space-2); }
 .armor-view .tank-card .tc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); }
 .armor-view .tank-card .tc-meta { display: flex; justify-content: space-between; gap: var(--space-1); margin-block-start: var(--space-1); font: var(--type-caption); color: var(--muted); }
@@ -490,7 +494,6 @@ onBeforeUnmount(() => {
     .armor-view #tp-search { order: 4; flex: 1 1 100%; min-inline-size: 0; }
     .armor-view #tp-header select { order: 5; flex: 1 1 28%; min-inline-size: 0; }
     .armor-view #tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: var(--space-2); gap: var(--space-2); }
-    .armor-view .tank-card .tc-img { block-size: 6rem; }
     .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
     .armor-view .armor-shot-back span { display: none; }
     .armor-view .armor-shot-context { flex-basis: calc(100% - 60px); }
