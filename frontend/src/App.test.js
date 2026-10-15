@@ -444,7 +444,7 @@ describe('Business user bootstrap', () => {
     expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
   })
 
-  it('does not provision again when authenticated is re-emitted by a later generation', async () => {
+  it('re-provisions after an unauthenticated identity boundary even when the account is unchanged', async () => {
     setAuthState('authenticated', true)
     bootstrapApi.ensureUserProfile.mockResolvedValue({ id: 1 })
 
@@ -458,7 +458,7 @@ describe('Business user bootstrap', () => {
     await nextTick()
     await settle()
 
-    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(1)
+    expect(bootstrapApi.ensureUserProfile).toHaveBeenCalledTimes(2)
   })
 
   it('surfaces a retryable failure instead of swallowing it', async () => {

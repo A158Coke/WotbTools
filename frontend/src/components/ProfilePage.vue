@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { useAuth } from '../composables/useAuth.js'
+import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
@@ -57,6 +58,9 @@ function epochArg(value) {
 }
 const profile = ref(null)
 const loginStarted = ref(false)
+const androidBrowser = !isAndroidApp() && /Android/i.test(navigator.userAgent)
+const authErrorKey = computed(() => initError.value?.code === 'AUTH_RETURN_NOT_COMPLETED'
+  ? 'profile.authReturnError' : 'profile.error')
 /**
  * 离线 / 状态未知时的中性提示文案（取自 capability 模型，不另造文案、不当成错误态）。
  * 实时派生而非进入时快照：首次检测未完成（pending）时不下结论，settle 后显示真实状态。
@@ -100,17 +104,18 @@ onMounted(async () => {
       phase.value = 'done'
       void loadProfile()
     } else if (initError.value) {
-      phase.value = 'error'
+      phase.value = 'auth-error'
     } else {
       // 未登录：显示账户说明卡与登录按钮（design-language §10），不自动跳转登录页。
       phase.value = 'signedOut'
     }
   } catch {
-    phase.value = 'error'
+    phase.value = 'auth-error'
   }
 })
 
 async function loadProfile() {
+  if (loading.value || !isAuthenticated()) return
   // 门禁必须在最前面：offline / unknown / degraded / service-unavailable 时**不发任何请求**
   // （既不 ensure 也不 get），进入中性的 connectivity-unavailable 状态而不是错误态。
   if (!requireProfileOnline()) {
@@ -121,6 +126,7 @@ async function loadProfile() {
   // A 时代的迟到结果（profile / records / hundred）一律不得写入。
   const epoch = authEpoch()
   loading.value = true
+  phase.value = 'done'
   try {
     // 等待全局 business bootstrap 完成 ensure；页面不再自己「读不到就创建」。
     // gated 版本在 backend 不可达时不会触发 ensure（见 useBusinessUserBootstrap）。
@@ -128,6 +134,7 @@ async function loadProfile() {
       authInitState: 'authenticated',
       authenticated: true,
       connectivity: connectivity.value,
+      authEpoch: epoch,
     })
     if (!ownEpoch(epoch)) return
     if (!settled) {
@@ -136,7 +143,7 @@ async function loadProfile() {
       } else {
         // 连通性仍可用：bootstrap 失败属于业务错误，等待用户显式重试。
         profile.value = null
-        phase.value = 'error'
+        phase.value = 'profile-error'
       }
       return
     }
@@ -151,7 +158,8 @@ async function loadProfile() {
   } catch {
     if (!ownEpoch(epoch)) return
     profile.value = null
-    phase.value = 'error'
+    if (availability(Feature.ACCOUNT_PROFILE).available) phase.value = 'profile-error'
+    else enterConnectivityUnavailable()
     return
   } finally {
     // P1（review）：pending 状态也要归属检查——A 的迟到响应不得把 B 正在进行的加载清掉，
@@ -195,14 +203,8 @@ watch(connectivity, () => {
  *   hundred / 同步与编辑状态 / 错误——不得等页面重挂或刷新。
  * 在途请求由 loadProfile 等各自的 epoch 复核丢弃（Phase 7.2）。
  */
-watch(authState, (now, before) => {
-  if (before === now) return
-  if (now) {
-    if (loading.value) return
-    phase.value = 'done'
-    void loadProfile()
-    return
-  }
+watch(() => [authState.value, tokenParsed.value?.sub], ([now, sub], [before, previousSub]) => {
+  if (before === now && sub === previousSub) return
   profile.value = null
   records.value = []
   recordsError.value = ''
@@ -213,10 +215,15 @@ watch(authState, (now, before) => {
   syncFromLoginPending.value = false
   syncFromLoginError.value = null
   editingAccount.value = false
+  editAccountId.value = null
+  editNickname.value = ''
   editError.value = ''
+  verifyPending.value = false
+  verifyError.value = ''
   loginStarted.value = false
   loading.value = false
-  phase.value = 'signedOut'
+  phase.value = now ? 'done' : 'signedOut'
+  if (now) void loadProfile()
 })
 
 /** WG 幂等同步（ASIA/EU/NA）：昵称变化时刷新；失败不再静默，保留错误状态供重试。 */
@@ -234,6 +241,7 @@ async function syncFromLogin(epochInput) {
       profile.value = synced
     }
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     // 保留后端业务错误码：同步失败时绝不回退为 CN 手动入口。
     syncFromLoginError.value = e
   } finally {
@@ -286,11 +294,16 @@ const serverLabel = computed(() => {
   return key ? t(key) : '--'
 })
 
-function doLogin() {
-  if (!loginStarted.value) {
-    loginStarted.value = true
-    // 登录完成后回到账户页
-    Promise.resolve(login('profile')).finally(() => { loginStarted.value = false })
+async function doLogin() {
+  if (loginStarted.value) return
+  const epoch = authEpoch()
+  loginStarted.value = true
+  try {
+    await login('profile')
+  } catch {
+    if (authEpoch() === epoch && !isAuthenticated()) phase.value = 'auth-error'
+  } finally {
+    if (authEpoch() === epoch) loginStarted.value = false
   }
 }
 
@@ -396,9 +409,9 @@ async function loadHundredStatus(epochInput) {
 /** 撤销当前待审核申请：确认后调用取消 API，成功后刷新状态。 */
 async function withdrawHundred(id) {
   if (!requireHofOnline()) return
-  if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
-  if (!requireHofOnline()) return
   const epoch = authEpoch()
+  if (!(await confirm({ title: t('hundred.withdrawConfirm'), confirmLabel: t('hundred.withdraw'), danger: true }))) return
+  if (!ownEpoch(epoch) || !requireHofOnline()) return
   hundredWithdrawingId.value = id
   hundredMessage.value = ''
   hundredError.value = ''
@@ -421,13 +434,17 @@ function formatTime(value) {
 
 async function removeAccount() {
   if (!requireProfileOnline()) return
+  const epoch = authEpoch()
   if (!(await confirm({ title: t('profile.unbindConfirm'), confirmLabel: t('profile.unbind'), danger: true }))) return
-  if (!requireProfileOnline()) return
+  if (!ownEpoch(epoch) || !requireProfileOnline()) return
   editError.value = ''
   try {
-    profile.value = await deleteUserWotbAccount()
+    const updated = await deleteUserWotbAccount()
+    if (!ownEpoch(epoch)) return
+    profile.value = updated
     records.value = []
   } catch (e) {
+    if (!ownEpoch(epoch)) return
     editError.value = apiError(e)
   }
 }
@@ -437,14 +454,15 @@ async function removeAccount() {
   <div class="profile-page" data-tour="settings-account">
     <div v-if="phase === 'init'" class="profile-empty">{{ $t('profile.loading') }}</div>
 
-    <div v-else-if="phase === 'error'" class="profile-card profile-message">
-      <p class="text-error">{{ $t('profile.error') }}</p>
-      <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
+    <div v-else-if="phase === 'auth-error' || phase === 'profile-error'" class="profile-card profile-message">
+      <p class="text-error">{{ $t(phase === 'profile-error' ? 'profile.loadError' : authErrorKey) }}</p>
+      <button class="btn-primary" data-testid="profile-retry" :disabled="loading || loginStarted" @click="retry">{{ $t(phase === 'auth-error' ? 'profile.retry' : 'profile.loadRetry') }}</button>
     </div>
 
     <div v-else-if="phase === 'signedOut'" class="profile-signed-out" data-testid="profile-signed-out">
       <h1 class="profile-signed-out-title">{{ $t('account.signedOutTitle') }}</h1>
       <p class="profile-signed-out-hint">{{ $t('account.signedOutHint') }}</p>
+      <p v-if="androidBrowser" class="text-sub" data-testid="profile-browser-login-hint">{{ $t('profile.androidBrowserLoginHint') }}</p>
       <AppButton variant="primary" size="lg" data-testid="profile-login" @click="doLogin">{{ $t('app.login') }}</AppButton>
     </div>
 
@@ -456,7 +474,7 @@ async function removeAccount() {
     <div v-else-if="phase === 'connectivity-unavailable'" class="profile-card profile-message" data-testid="profile-connectivity-unavailable">
       <template v-if="unavailableMessageKey">
         <p class="text-sub">{{ $t(unavailableMessageKey) }}</p>
-        <button class="btn-primary" data-testid="profile-retry" @click="retry">{{ $t('profile.retry') }}</button>
+        <button class="btn-primary" data-testid="profile-retry" :disabled="loading || loginStarted" @click="retry">{{ $t('profile.loadRetry') }}</button>
       </template>
     </div>
 
@@ -643,7 +661,7 @@ async function removeAccount() {
               </div>
               <p v-else class="profile-empty profile-empty-tight">{{ $t('hundred.noRejected') }}</p>
             </template>
-            <p v-else class="profile-empty profile-empty-tight">{{ $t('profile.loading') }}</p>
+            <p v-else class="profile-empty profile-empty-tight">{{ $t('profile.loadPending') }}</p>
           </div>
         </div>
 
@@ -661,7 +679,7 @@ async function removeAccount() {
       </div>
     </div>
 
-    <div v-else class="profile-empty">{{ $t('profile.loading') }}</div>
+    <div v-else class="profile-empty">{{ $t('profile.loadPending') }}</div>
   </div>
 </template>
 

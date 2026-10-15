@@ -33,23 +33,37 @@ const error = ref(null)
  * 因此一个 rejected Promise 绝不会锁死后续 retry。
  */
 let inFlight = null
+let ownerEpoch = 0
+let generation = 0
 
 async function run() {
+  const requestGeneration = generation
   state.value = 'pending'
   error.value = null
   try {
     await ensureUserProfile()
+    if (requestGeneration !== generation) return false
     state.value = 'ready'
     return true
   } catch (e) {
     // 真实身份冲突（如 WOTB_ACCOUNT_ALREADY_USED）也走这里，但保留原始 error 供调用方辨识；
     // 绝不吞掉、绝不把 authenticated 改成 false、绝不删除 Keycloak 用户。
+    if (requestGeneration !== generation) return false
     error.value = e
     state.value = 'failed'
     return false
   } finally {
-    inFlight = null
+    if (requestGeneration === generation) inFlight = null
   }
+}
+
+/** Identity changes invalidate cached and in-flight bootstrap results. */
+function selectIdentity(context) {
+  if (context.authEpoch !== undefined && context.authEpoch !== ownerEpoch) {
+    resetBusinessUserBootstrap()
+    ownerEpoch = context.authEpoch
+  }
+  return ownerEpoch
 }
 
 /** 业务资料功能当前的可用性（capability SSOT：ONLINE_REQUIRED）。 */
@@ -76,7 +90,7 @@ export function shouldEnsureBusinessUser(context = {}) {
  * （[ensureBusinessUserIfAllowed] / [whenBusinessUserSettled] / [retryBusinessUserIfAllowed]），
  * 否则离线时就会绕过 capability 策略直接打 backend。
  */
-export function ensureBusinessUser() {
+function ensureBusinessUser() {
   if (state.value === 'ready') return Promise.resolve(true)
   if (inFlight) return inFlight
   inFlight = run()
@@ -94,21 +108,23 @@ export function ensureBusinessUser() {
  * 触发一次 ensure —— 同一个 canonical 实现，不是第二套 provisioning。
  */
 export async function whenBusinessUserSettled(context = {}) {
+  const epoch = selectIdentity(context)
   if (!profileBackendAllowed(context)) return false
   if (state.value !== 'ready') {
     await ensureBusinessUser()
   }
-  return state.value === 'ready'
+  return epoch === ownerEpoch && state.value === 'ready'
 }
 
 /** gated ensure（页面 / 组件入口）：不允许时返回 false 且**不发请求**。 */
 export function ensureBusinessUserIfAllowed(context = {}) {
+  selectIdentity(context)
   if (!profileBackendAllowed(context)) return Promise.resolve(false)
   return ensureBusinessUser()
 }
 
 /** 显式重试（失败提示上的「重试」入口）；不做任何自动循环。raw primitive，页面用 gated 版本。 */
-export function retryBusinessUser() {
+function retryBusinessUser() {
   state.value = 'idle'
   error.value = null
   return ensureBusinessUser()
@@ -116,12 +132,15 @@ export function retryBusinessUser() {
 
 /** gated retry（失败横幅入口）：离线 / 状态未知时返回 false 且**不发请求**，也不重置状态机。 */
 export function retryBusinessUserIfAllowed(context = {}) {
+  selectIdentity(context)
   if (!profileBackendAllowed(context)) return Promise.resolve(false)
   return retryBusinessUser()
 }
 
-/** 仅供测试重置模块级状态。 */
+/** Reset cached and in-flight state at an identity boundary; also used by tests. */
 export function resetBusinessUserBootstrap() {
+  generation += 1
+  ownerEpoch = 0
   state.value = 'idle'
   error.value = null
   inFlight = null

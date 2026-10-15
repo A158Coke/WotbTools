@@ -25,3 +25,13 @@
 守卫：`ReplayVerificationBadgeBoundaryTest`（`wotbAccountVerifiedAt` 只允许出现在 user 域的实体 / DTO / Mapper /
 Service，任何授权代码读取它都会失败）、`UserProfileServiceTest#verificationIsAClientAssertedComparisonNotAReplayAuthenticityCheck`。
 想让徽章影响权限，必须先推翻本决策并重新设计验真机制——而服务器没有 parser。
+
+## 资料失败与认证失败
+
+认证初始化失败才显示认证恢复入口；仍已认证时，资料 ensure（PUT）或读取（GET）发生非认证错误时显示
+“账户资料加载失败 / 重试”。重试经全局 business bootstrap 再读资料，不重新发起 QQ 授权。
+真正的 HTTP 401 继续沿用 transport 的认证恢复，不把服务端拒绝误当成普通资料失败。
+请求进行中去重；离线、连接未知、降级与服务不可用继续使用 capability 的中性提示，恢复可用后补一次。
+
+全局 bootstrap 缓存与在途结果按 `authEpoch` 隔离；账户页同时观察登录态与 token 的 `sub`。
+登出或直接切换账号会清理旧投影，旧请求的成功、失败和 finally 都不能覆盖当前身份。
