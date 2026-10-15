@@ -1,0 +1,20 @@
+{
+  "manifest_version": 2,
+  "name": "WotBTools Native Bridge",
+  "version": "3.0.0",
+  "description": "Exposes the WotBTools Native Bridge (contracts/android-native-bridge.json) to the bundled local app only.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "native-bridge@wotbtools.com"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "permissions": ["nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons"]
+}

@@ -1,11 +1,13 @@
+import { ANDROID_APP_ORIGIN } from './runtime.js'
+
 // The JSON contract is authoritative. This is the FE compatibility declaration;
 // CI fails if it drifts from contracts/android-native-bridge.json.
 //
-// Bridge v2 is the native-auth bridge. Bridge v1 (Android 1.4.x, WebView-owned
-// auth) is deliberately NOT supported by this frontend: an Android shell that
-// reports it must show the upgrade requirement, never silently fall back to
-// keycloak-js inside the WebView.
-export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([2])
+// Bridge v3 = Android 3.0 GeckoView runtime（本机 loopback origin + 内置扩展 transport），
+// RPC 方法与 v2 完全相同。这份前端随 APK 打包、与 Native 同版本发布，因此只声明 [3]；
+// 旧 v2 客户端由 publish 的 minSupportedVersionCode 强制更新（guard_bridge_covered），
+// 绝不在页面里静默回退到 keycloak-js。
+export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([3])
 
 /** Capability that makes the native OIDC session (not the WebView) the auth owner. */
 export const NATIVE_AUTH_CAPABILITY = 'native-auth'
@@ -35,11 +37,12 @@ export const NATIVE_CONNECTIVITY_METHODS = Object.freeze({
 /** Native → Web connectivity change notification (mirrors the JSON contract `events`). */
 export const NATIVE_CONNECTIVITY_CHANGED_GLOBAL = 'wotbtoolsOnConnectivityChanged'
 
+/** Native → Web: pending replay arrived while the replay workspace is loaded (mirrors the JSON contract `events`). */
+export const NATIVE_REPLAY_GLOBAL = 'wotbtoolsOnReplay'
+
 /** Exact Native-owned resource; must never become an arbitrary remote fetch. */
-export const NATIVE_REPLAY_RESOURCE_URL =
-  'https://appassets.androidplatform.net/__native/replay-pending'
+export const NATIVE_REPLAY_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay-pending`
 
 /** Optional v2 capability: manual SAF directory selection, independent of external replay pending. */
 export const NATIVE_REPLAY_FOLDER_CAPABILITY = 'replay-folder-picker'
-export const NATIVE_REPLAY_FOLDER_RESOURCE_URL =
-  'https://appassets.androidplatform.net/__native/replay-folder'
+export const NATIVE_REPLAY_FOLDER_RESOURCE_URL = `${ANDROID_APP_ORIGIN}/__native/replay-folder`

@@ -773,3 +773,12 @@ Sponsor 的两张二维码图片体积很小，单独配置资源分发所增加
 （坦克锚定左上），坦克百科改按上游随包分发的逐车内容框（`tank_images/crops.json`）
 做 `translate/scale` 缩放定位，视觉对齐旧紧裁口径——不改图标字节，数据更新继续只走
 COS。
+
+## 2026-10-15 — Android 3.0：App 自带 GeckoView，不再依赖手机的系统 WebView
+
+Android 9 等旧设备上，系统 WebView 版本由 ROM 决定：页面样式错乱，渲染进程一崩整个 App 跟着退出。
+3.0 改为 APK 自带并固定版本的 GeckoView：用户运行的就是发布前验收过的引擎。APK 内的前端、本机 WASM
+解析、原生登录与回放导入全部保留；页面改由 App 自己的本机服务（固定 loopback 端口 `127.0.0.1:21653`）
+提供，Native Bridge 经内置扩展传递、RPC 不变（bridge v3 只是 origin 与 transport 的替换）。页面引擎崩溃
+从「App 闪退」变成可自动恢复、可诊断的故障。代价是 APK 体积约十倍、引擎安全补丁需要靠发版跟进，
+以及 2.x 页面偏好在升级时重置一次。

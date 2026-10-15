@@ -7,13 +7,51 @@ parser、2D 地图与图标资产；Native 只拥有系统能力、认证、外�
 ReplayWorkspace 仍是唯一回放编排器，selection 由现有 Vue store 持有，不建立 Android 业务分支。
 
 ```text
-Android App
+Android App（3.0 起）
    ├── AuthManager → external user-agent → Keycloak → QQ / WG
-   └── WebView → https://appassets.androidplatform.net/index.html
-        ├── self: APK assets/web (Vue, WASM, 2D assets)
-        ├── self: /agent-assets → AgentAssetProxy → 对象存储（3D 资产）
+   ├── LocalRuntimeServer → http://127.0.0.1:21653（固定端口，APK 内 bundle 的唯一 origin）
+   │    ├── /…                         APK assets/web (Vue, WASM, 2D assets)
+   │    ├── /__native/replay-pending   pending replay stream（identity header）
+   │    ├── /__native/replay-folder    目录选择 stream（selection + file identity header）
+   │    └── /agent-assets/*            AgentAssetProxy → 对象存储（3D 资产）
+   └── GeckoView（APK 自带、固定版本的 Web 引擎）→ http://127.0.0.1:21653/index.html
+        ├── 内置扩展 gecko-bridge → window.WotbNative → Native Bridge
         └── HTTPS API / download surface: reviewed production origins
 ```
+
+### 引擎：GeckoView（Android 3.0 起取代 System WebView）
+
+2.x 由设备的 System WebView 渲染，版本随 ROM / 应用商店漂移：Android 9 等旧设备出现 CSS 错乱，
+renderer 崩溃会直接带走整个 App（2.x 没有 `onRenderProcessGone`）。3.0 改为 APK 自带 Mozilla GeckoView
+stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`），用户运行的就是发布时验收的引擎。
+
+- **所有权**：`GeckoWebRuntime` companion 持有进程级 `GeckoRuntime`（每进程只能创建一次，只在主进程、
+  首次需要时创建）与内置 bridge 扩展；每个 Activity 一个 `GeckoSession` + delegates。没有 `Application` 子类。
+- **版本策略**：只用 stable channel、精确版本号；每次升级 GeckoView 就是一次独立的 Android minor 发布
+  （至少每季度一次，遇关键安全修复立即）。引擎随 APK 固定后，安全补丁只能靠发版——这是换来「可控引擎」的代价，
+  导航锁定在本机 origin 缩小了它的攻击面。
+- **工具链**：GeckoView 158 的 AAR 要求 `compileSdk 37.2` 与 Kotlin 2.4 metadata，因此 AGP 9.4 / Gradle 9.6 /
+  KGP 2.4（AGP 9 built-in Kotlin，KGP 版本经根 `build.gradle.kts` 的 buildscript classpath 提升）。
+  `targetSdk` 仍为 34（不随引擎迁移改变运行时行为），`minSdk` 26 与 GeckoView 一致。
+- **APK**：单个 APK，release 只含 `arm64-v8a` + `armeabi-v7a`（debug 另含 `x86_64` 供模拟器），
+  native libs 压缩打包（`useLegacyPackaging`），优先减小侧载下载体积。
+- **设置**：只用公开 API——release 关闭 remote debugging / about:config / console 输出；Safe Browsing 关闭
+  （只加载本机可信内容）；权限请求一律拒绝；`window.open` / 新窗口一律拒绝。
+
+### 故障分级与诊断
+
+- content 进程 **crash**：首次自动重开 session 并重载当前页；60 s 内第二次进入 Native 错误页
+  （「重新加载」/「使用浏览器版」），避免重启风暴。
+- content 进程被系统 **kill**（低内存回收）：不算故障，回到前台时静默重载被杀前的页面。
+- Gecko parent 进程运行在 App 进程内，它的 native crash 仍会结束 App——「不再闪退」的口径只覆盖 content 进程。
+- 错误页带一行可长按复制的诊断（GeckoView 版本、Android / API、厂商型号、ABI、bridge 版本、crash / kill 计数、
+  最近一次故障类型），同时写 logcat；不含账号、文件或回放信息。
+
+### 升级时的一次性重置
+
+2.x 的 localStorage（语言、列配置、回放偏好、onboarding、UI profile 等）属于 System WebView profile，
+3.0 的 Gecko profile 读不到，升级后这些偏好恢复默认一次。登录会话与 pending replay 由 Native 持有，不受影响。
+3.0 之后 origin 固定，偏好跨启动保留。
 
 Sponsor runtime content（`/sponsor-config.json` + `/sponsor-assets/*`）**随构建进 APK bundle**：
 构建期由 pin 住的 Release 资产注入 publicDir（`common/assets/`），Vite 拷进 `dist-android`，由本机 origin
@@ -30,11 +68,15 @@ android/
   build.gradle.kts            # plugin 版本
   gradle.properties           # Version-as-Code：wotbVersion / wotbNativeBridgeVersion
   app/
-    build.gradle.kts          # namespace com.wotbtools.app, minSdk 26, appauth
+    build.gradle.kts          # namespace com.wotbtools.app, minSdk 26, appauth, geckoview
     src/main/
       AndroidManifest.xml
+      assets/gecko-bridge/    # 内置 WebExtension：content script 暴露 window.WotbNative
       java/com/wotbtools/app/
-        MainActivity.kt       # Android 生命周期 / intent 分发 / WebView / bridge 接线
+        MainActivity.kt       # Android 生命周期 / intent 分发 / 本机路由 / 门禁与错误页 / bridge 接线
+        GeckoWebRuntime.kt    # GeckoRuntime / GeckoSession / delegates / bridge port / 故障分级
+        LocalRuntimeServer.kt # 127.0.0.1 固定端口 HTTP（GET/HEAD、Host/Origin/路径校验、MIME）
+        AgentAssetProxy.kt    # /agent-assets/* → 对象存储 + ETag 磁盘缓存
         StartupGate.kt        # bounded best-effort version.json discovery
         VersionManifest.kt    # version.json 解析
         ApkUpdater.kt         # 下载 / SHA-256 / installer
@@ -52,7 +94,7 @@ android/
           AuthResponseGuard.kt    # 事务归属校验（state / redirect / code / error，纯逻辑）
           AuthResult.kt           # 显式 result / error 模型
       res/
-        layout/activity_main.xml         # webView + versionGate + local webError
+        layout/activity_main.xml         # GeckoView + versionGate + runtimeError（含诊断行）
         values/{strings,colors,themes}.xml
         xml/file_paths.xml               # FileProvider cache-path
         mipmap-anydpi-v26/{ic_launcher,ic_launcher_round}.xml
@@ -60,22 +102,28 @@ android/
 
 ## 本地启动与更新
 
-`MainActivity.LOCAL_APP_ORIGIN` 是 `https://appassets.androidplatform.net`，`LOCAL_APP_ENTRY` 是
-`/index.html`；有 pending replay 时附加 `?view=replay`。Vue Router 继续拥有深链和 Back/Forward。
-`WebViewAssetLoader` 的 `/` handler 把 URL path 映射到 APK `assets/web/<path>`，与 Android Vite `base=/`
-一致。合成 pending replay exact URL 优先拦截，其次 bundled assets；缺失本地资产返回本地 404，绝不访问网络。
+`MainActivity.LOCAL_APP_ORIGIN` 是 `http://127.0.0.1:21653`（端口的唯一事实源；固定端口让 origin 跨启动稳定，
+localStorage 与生产 CORS 都依赖它），`LOCAL_APP_ENTRY` 是 `/index.html`；有 pending replay 时附加 `?view=replay`。
+Vue Router 继续拥有深链和 Back/Forward。`LocalRuntimeServer` 把 URL path 映射到 APK `assets/web/<path>`，
+与 Android Vite `base=/` 一致；无扩展名的未知路径回落 `index.html`（history 路由）。合成 replay resource 的
+exact URL 优先，其次 `/agent-assets/*`，其余是 bundled assets；缺失本地资产返回本地 404，绝不访问网络。
+端口被占用（例如应用分身同时运行）时显示 Native 错误页，「重新加载」会再试一次绑定。
+
+页面加载必须等内置扩展安装完成、message delegate 注册之后才开始，保证首屏前 `window.WotbNative` 已就绪；
+扩展用 `installBuiltIn`（每次进程启动都重装），升级 APK 后一定运行新的 `bridge.js`，不需要维护扩展版本号。
 
 启动先加载 bundled document，再在系统确认 online 时异步获取版本 manifest（connect/read 各 3 秒）。
 离线、manifest 获取失败或非法都不阻断本地界面；可达且有效的 manifest 仍执行
 `installed < minSupportedVersionCode` mandatory update，较新版本使用 existing optional update。
-恢复联网会触发一次 coalesced 检查，不 reload 页面或清空回放。Native WebError 只表示 local bundle/WebView
-加载失败；不存在 Network Gate 或远程 frontend retry-only 页面。
+恢复联网会触发一次 coalesced 检查，不 reload 页面或清空回放。Native 错误页只表示本机页面 / 引擎故障
+（加载失败、扩展安装失败、content 进程连续崩溃、端口被占用）；不存在 Network Gate 或远程 frontend retry-only 页面。
 
 ## 网络与业务边界
 
 Android API transport 从本地 origin 解析到 `https://wotbtools.com`，以 Native 短期 Bearer 调用；Web 保持
-同源 transport。生产 ingress 只为 exact `https://appassets.androidplatform.net` 允许所需 API CORS，
-不依赖 third-party cookies。Native Bridge RPC 不是任意 HTTP proxy。
+同源 transport。生产 ingress（`deploy/tx/Caddyfile`）为 exact `http://127.0.0.1:21653`（3.0+）与
+`https://appassets.androidplatform.net`（2.x 及回滚预案）两个 origin 允许所需 API CORS，不启用 credentialed
+CORS、不依赖 third-party cookies。Native Bridge RPC 不是任意 HTTP proxy。
 
 本地 import/parse、Data、deterministic Rating、2D 和 shots 可离线使用；AI、HoF、Profile backend 与
 3D remote assets 使用共享 ONLINE_REQUIRED capability gate，离线保留入口并在发请求前立即给连接提示。
@@ -92,15 +140,17 @@ Android API transport 从本地 origin 解析到 `https://wotbtools.com`，以 N
 Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability 业务状态机，
 这些由 Vue 提供。Android 只实现 Web 之外的系统能力：
 
-- 本地 WebView 加载、系统连通性、best-effort 更新、back、生命周期、本地错误屏
+- 本机 origin（LocalRuntimeServer）与 GeckoView 加载、系统连通性、best-effort 更新、back、生命周期、本地错误屏
 - 原生 OIDC 认证（Authorization Code + PKCE S256，外部 user-agent）与 token 生命周期
 - Replay 意图入口（ACTION_SEND / ACTION_VIEW → content URI）
 - Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/`checkForUpdate`/
   `startUpdate`/`authGetState`/`authLogin`/`authLogout`/`authGetAccessToken`；禁止
   readFile/http/execute/launch、禁止任何 refresh token 出口）——
-  **origin-scoped**：经 AndroidX WebKit `WebMessageListener`（`addWebMessageListener`），
-  仅 `https://appassets.androidplatform.net` / `https://wotbtools.com` / `https://www.wotbtools.com` 的主 frame 可调，不暴露给 Keycloak / IdP /
-  任意第三方 frame（替代 `addJavascriptInterface` 的全 frame 暴露）
+  **origin-scoped**：内置扩展的 content script 只在 `127.0.0.1` 的 top frame 暴露与 v2 同形的
+  `window.WotbNative`（`postMessage(string)` / `addEventListener('message')` / `removeEventListener`），经
+  native messaging port 交给 Native；Native 只接受「content script ∧ top frame ∧ 当前 session ∧ exact
+  `http://127.0.0.1:21653`」的 port，再交给不变的 `NativeBridge.handleMessage`。不暴露给 Keycloak / IdP /
+  任意第三方 frame；Native → Web 事件只会调用 contract `events` 列出的 global
 - APK 下载、SHA-256 校验、installer、未知来源授权
 - 复用 Web 的本机解析（上游 Rust Core WASM，服务器没有 parser；Android 不实现第二套解析，
   也不携带任何自有凭据）
@@ -113,8 +163,8 @@ wire contract 的 SSOT 是 `contracts/android-native-bridge.json`（`bridgeVersi
 
 ## Authentication Boundary（Android 2.0 起：Native owns auth）
 
-Android **不再**沿用 Web 的 keycloak-js 认证链：WebView 不参与 OIDC，也不存在 provider 级
-WebView navigation allowlist。
+Android **不再**沿用 Web 的 keycloak-js 认证链：页面引擎（2.x System WebView / 3.0 GeckoView）不参与 OIDC，
+也不存在 provider 级引擎 navigation allowlist。
 
 ```text
 Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
@@ -241,7 +291,7 @@ src/assets/maps/*.webp（canonical，Web 用）
   第三条硬规则：**陈旧 / 外来的回程不得作废新交易** —— 「登录 A → 用户返回 → 登录 B → 旧回程 A 到达」
   时，A 的回程（含库判定的 `STATE_MISMATCH`、读不出 `state` 的取消）对自身 fail closed，但 B 原样保留；
   异步 token 交换同样带着自己那笔交易的身份去消费，等待期间用户再次登录不会被成功回调抹掉。
-  明确禁止：明文 SharedPreferences refresh token、WebView localStorage refresh token、
+  明确禁止：明文 SharedPreferences refresh token、页面 localStorage refresh token、
   Cookie → Native token 复制、Native → JS refresh token 暴露。
 - **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 的永久 token 拒绝清空 Native 会话；离线/网络/服务失败保留加密 cached session 并回报
   `refresh-failed`（`authGetAccessToken` 的 `error` 字段），Web 侧清除不可用的 API token，但保留 Native cached session 的登录投影和本地回放状态。
@@ -252,7 +302,7 @@ src/assets/maps/*.webp（canonical，Web 用）
 
 ### 登录 / 登出语义
 
-- `authLogin()` 只启动外部 user-agent；**WebView 不导航、不重载**，登录完成后 Native 通知页面
+- `authLogin()` 只启动外部 user-agent；**页面不导航、不重载**，登录完成后 Native 通知页面
   （`window.wotbtoolsOnAuthChanged()`），SPA 保持在原视图并重新同步状态。
 - `authLogout()` = 清 Native 会话 + 发起 Keycloak OIDC end-session（带 id-token hint）。**不**删除 Chrome
   cookie、**不**强制登出 QQ / Wargaming、**不**操作 provider session：下一次登录时若系统浏览器仍保有
@@ -260,20 +310,20 @@ src/assets/maps/*.webp（canonical，Web 用）
 
 ### Bridge 是独立边界
 
-Native Bridge 与 OAuth 是两个独立安全边界。Bridge origins 严格限于 canonical local origin
-`https://appassets.androidplatform.net` 以及 bridge v2 生产兼容 origins `https://wotbtools.com` / `https://www.wotbtools.com`，不暴露给 Keycloak、QQ/IdP 或第三方 frame；禁止在 WebView 与系统浏览器
-之间同步 Cookie。
+Native Bridge 与 OAuth 是两个独立安全边界。Bridge v3 只接受 canonical local origin
+`http://127.0.0.1:21653` 的 top frame（v2 时代的 appassets / `wotbtools.com` 兼容 origins 已删除），
+不暴露给 Keycloak、QQ/IdP 或第三方 frame；禁止在引擎与系统浏览器之间同步 Cookie。
 
 ## Replay 意图与认证的导航边界
 
 外部 replay 是一个 **pending action**，不是特殊应用模式：Android 只负责安全接收、持久化与通知
 Web，绝不自行决定「是否解析」「是否绕过登录」。
 
-- **认证不再参与 navigation**：登录发生在外部浏览器，WebView 不承载 OIDC，因此 replay intent 与认证
+- **认证不再参与 navigation**：登录发生在外部浏览器，引擎不承载 OIDC，因此 replay intent 与认证
   之间没有所有权冲突 —— 登录期间收到 replay 正常持久化并按 `ReplayDispatchPolicy` 分发，正在进行的
-  OIDC 事务不会被 replay 打断。分发只在 WebView 容器被门禁 / 错误页 / 更新页接管时暂缓。
-- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 HTTPS synthetic
-  resource 一条路径；已删除 `onShowFileChooser` 对 pending replay 的注入分支。
+  OIDC 事务不会被 replay 打断。分发只在页面被门禁 / 错误页 / 更新页接管时暂缓。
+- **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 synthetic
+  resource（LocalRuntimeServer）一条路径；普通 file prompt 从不注入 pending replay。
 - **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
   active pending、再按引用清理 orphan cache。
 - **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在本机分析完成后调用
@@ -283,33 +333,39 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 - **登录不是 replay 的前置条件**：本机分析在本机完成，未登录同样可打开、解析与导出；认证失败 / 取消
   不会让已接收的 pending replay 失效。
 
-手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定 HTTPS stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
+手动目录选择与 external pending 不同：可选 `replay-folder-picker` capability 经 SAF 只保留瞬时目录引用，固定同源 stream 读取后释放；不自动解析、不跨进程保存目录授权。FileDrop 继续持有回放筛选与完整批次校验，普通文件多选保持原样。旧 v2 APK 缺少能力时隐藏目录入口，不能以 `allowFolder=false` 禁掉多选。详见 [`replay-intent.md`](replay-intent.md)「App 手动目录导入」。
 
 细节契约与日志白名单见 [`replay-intent.md`](replay-intent.md)。
 
-## WebView 安全（规格 §28–§29 / §86–§88）
+## 运行时安全（GeckoView + LocalRuntimeServer）
 
-- 主 frame 只留在 exact HTTPS local origin；外部 HTTPS / mailto 交给系统浏览器，其它 scheme 阻断。
-  生产 API origin、Keycloak 与 IdP 不在 WebView 中导航。
-- `usesCleartextTraffic=false`；`mixedContentMode=NEVER_ALLOW`；`allowFileAccess=false`；
-  `allowContentAccess=false`；`setGeolocationEnabled(false)`。
-- 禁用 `allowUniversalAccessFromFileURLs` / `ignoreSslErrors`；SSL 错误必须失败。
-- Native Bridge 只暴露给三个 reviewed exact origins 的主 frame，任意第三方页与 iframe 不可调用。
-- WebView third-party cookies 禁用；CookieManager 不承担认证语义，App 不读取、复制或持久化 Cookie。
+- **导航**：主文档只允许 exact `http://127.0.0.1:21653`（与 `about:blank`）；外部 `https:` / `mailto:` 交给
+  系统浏览器，其它 scheme 一律拒绝；新窗口拒绝；iframe 只允许本机 origin。生产 API、Keycloak 与 IdP
+  不在引擎内导航。
+- **本机 server**：只 bind `127.0.0.1`；`Host` 必须等于 `127.0.0.1:21653`（防 DNS rebinding）；带 `Origin`
+  的请求必须来自本机 origin（挡住设备上其它浏览器里的跨源页面）；只收 GET/HEAD，不读 body、不列目录、
+  不做代理；拒绝 `..` / 编码分隔符 / 反斜杠 / 控制字符；请求头大小与读超时有上限。设备上其它 App 也能
+  连到 loopback：静态 bundle 本就公开在 APK 里，replay 字节只经 `/__native/*`，仍要求不可猜的 UUID
+  identity header（pendingId / selectionId + fileId）。
+- `usesCleartextTraffic=false` 不变：Native 的 HTTPS 客户端（更新、资产代理、认证）仍禁止明文；
+  页面与本机 server 之间的 loopback HTTP 由 Gecko 自己的网络栈处理。
+- 页面 CSP 不变（`default-src 'none'`，脚本 / WASM 只允许 self，`connect-src` 只有 self + 生产 API）。
+- Native Bridge 只暴露给本机 origin 的 top frame，任意第三方页与 iframe 不可调用。
+- App 不读取、复制或持久化引擎 Cookie；认证只用 Native Bearer。
 
 ## 权限（least privilege，规格 §69）
 
 `INTERNET`、`ACCESS_NETWORK_STATE`、`REQUEST_INSTALL_PACKAGES` + FileProvider URI grant。
 不申请 `READ_EXTERNAL_STORAGE` / `MANAGE_EXTERNAL_STORAGE` / Contacts / Location / Camera / Microphone。
+GeckoView 库的 manifest 会合并进 `WAKE_LOCK` 与 `MODIFY_AUDIO_SETTINGS` 两个安装时 normal 权限（无运行时弹窗，
+引擎媒体播放需要）；页面发起的相机 / 麦克风 / 定位 / 通知等请求由 `PermissionDelegate` 一律拒绝。
 
-## 自动化 WebView smoke
+## 验证分工
 
-`gradle :app:connectedDebugAndroidTest --no-daemon` 使用系统 framework instrumentation runner，
-不增加 production test 依赖；test-only APK provider 从 `common/fixtures/replays` 读取同一匿名 fixture。
-测试临时启用飞行模式并恢复原设置，检查 local origin、真实 Vue shell 挂载、Activity restart、
-Bridge v2 / native-auth / offline authority，以及 external content Intent → private cache → bundled WASM
-分析 → Data 结果 → identity ACK 清 pending。这是模拟器运行证据，不能代替物理设备的 provider、
-文件分享和视觉验收。
+CI 覆盖 Native JVM 单测、前端单测、bridge contract 三方一致、release helpers 与 APK bundle 身份。
+2.x 的 WebView instrumentation smoke（基于 `WebView.evaluateJavascript`）随引擎迁移删除；
+引擎层的真实行为（冷启动 / 离线、replay 导入、3D、fullscreen、认证回跳、自更新、后台回收恢复）由
+发布前的真机验收负责（至少一台 Android 9 设备 + 一台 Android 13+ 设备），见 `release-process.md`。
 
 ## PR B 历史验收快照（2026-10-03）
 

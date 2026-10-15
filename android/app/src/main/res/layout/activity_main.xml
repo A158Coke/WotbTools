@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/webViewContainer"
+    android:id="@+id/runtimeContainer"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <WebView
-        android:id="@+id/webView"
+    <org.mozilla.geckoview.GeckoView
+        android:id="@+id/runtimeView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
@@ -73,7 +73,7 @@
     </LinearLayout>
 
     <LinearLayout
-        android:id="@+id/webErrorView"
+        android:id="@+id/runtimeErrorView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@color/bg"
@@ -83,19 +83,38 @@
         android:visibility="gone">
 
         <TextView
-            android:id="@+id/webErrorTitle"
+            android:id="@+id/runtimeErrorTitle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/web_error_title"
+            android:gravity="center"
+            android:text="@string/runtime_error_title"
             android:textColor="#F0F6FC"
             android:textSize="20sp"
             android:textStyle="bold" />
 
         <Button
-            android:id="@+id/webErrorRetryButton"
+            android:id="@+id/runtimeErrorRetryButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="@string/web_error_retry" />
+            android:text="@string/runtime_error_retry" />
+
+        <Button
+            android:id="@+id/runtimeErrorBrowserButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/runtime_error_open_browser" />
+
+        <!-- 诊断行（引擎 / 设备 / crash 计数），可长按选中复制，便于用户反馈问题。 -->
+        <TextView
+            android:id="@+id/runtimeErrorDiagnostics"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:gravity="center"
+            android:textColor="#8B949E"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
     </LinearLayout>
 </FrameLayout>

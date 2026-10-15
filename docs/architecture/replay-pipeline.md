@@ -120,7 +120,7 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 
 ## Android bundled runtime
 
-Android runs the same ReplayWorkspace at `https://appassets.androidplatform.net/index.html`.
+Android runs the same ReplayWorkspace at `http://127.0.0.1:21653/index.html` (bundled GeckoView + Native LocalRuntimeServer since 3.0).
 Replay import, Rust/WASM parsing, Result/Rating, 2D maps keep using bundled resources.
 Shooting-inspection inputs (compact pitch/config shell identity) and the shell-kind table are
 fetched from the asset pack at runtime since 2026-10-15 (`tank/{id}.json` projection +
