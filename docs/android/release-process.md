@@ -293,9 +293,9 @@ OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地�
 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。实测 release APK 若
 超过 250 MB，先回到产品决策（例如只保留 arm64），不要只调超时。
 
-**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.1，自动 stage）→
+**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.2，自动 stage）→
 ③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
-`workflow_dispatch(mode=publish, version=3.0.1)`。
+`workflow_dispatch(mode=publish, version=3.0.2)`。
 
 **真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
 GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
@@ -317,10 +317,12 @@ wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务
 
 - **Tier A（首选）**：只换引擎——写一个 System WebView 版适配器，加载同一 `http://127.0.0.1:21653`
   （AndroidX `addWebMessageListener` 支持 IP + 端口的 origin rule），复用 LocalRuntimeServer 与全部 Native
-  能力，补 `onRenderProcessGone`。contract v3 / 前端 / CORS 都不变，因此不触发 bridge gate；以 3.0.1
-  发布，视严重程度把 floor 提到 3000001。
+  能力，补 `onRenderProcessGone`。contract v3 / 前端 / CORS 都不变，因此不触发 bridge gate；
+  发布一个高于当前 production 的新版本，版本等级按实际修复严重度重新分类，floor 按上文版本规则计算；
+  同 major 的 minor/patch 不抬 floor，跨 major 的候选继承对应 major 的强制升级义务。
 - **Tier B（最后手段）**：恢复 2.4.0 runtime（appassets + WebViewAssetLoader）。contract 的 origin 再次改变，
-  必须 bridge 4、前端 `[4]`、floor 3000001，且依赖 Caddy 仍保留 appassets CORS（因此 3.0 之后不要急于删除
+  必须 bridge 4、前端 `[4]`；发布版本与 floor 按上文 wire breaking 的 major 规则计算，且依赖 Caddy
+  仍保留 appassets CORS（因此 3.0 之后不要急于删除
   `@android`）。
 
 ## 签名与基础设施

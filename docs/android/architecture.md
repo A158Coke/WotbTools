@@ -45,7 +45,8 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
 网页下载由 `ContentDelegate.onExternalResponse` 接管：后台消费并关闭 `WebResponse.body`（含 blob），
 流入私有 cache 临时文件，再通过 `ACTION_CREATE_DOCUMENT` 选择保存位置并流式写入。
 文件名优先 `Content-Disposition: filename*`，其次普通 filename / URL / MIME；路径分隔符与控制字符会被清理。
-同一 Activity 只处理一个下载，重复下载或与文件 picker 冲突时提示重试；取消、失败与销毁清理临时文件。
+同一 Activity 只处理一个下载；从开始 spool 到保存结束均与 file / folder picker 互斥，
+已有 picker 时下载在 spool 前拒绝并关闭 body；重复下载或操作冲突时提示重试。取消、失败与销毁清理临时文件。
 choice / file prompt 被 Gecko 关闭时均完成对应 result；文件 picker 使用进程内不复用的请求码，
 页面导航会清除旧 prompt 并关闭其 picker，迟到结果不会传给后续 prompt。
 

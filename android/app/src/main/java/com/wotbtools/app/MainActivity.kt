@@ -329,7 +329,7 @@ class MainActivity : Activity() {
         override fun onFilePrompt(
             prompt: PromptDelegate.FilePrompt
         ): GeckoResult<PromptDelegate.PromptResponse> {
-            if (filePrompt != null || folderPickRequest != null || downloadSave != null || destroyedRuntime) {
+            if (filePrompt != null || folderPickRequest != null || downloadInFlight || downloadSave != null || destroyedRuntime) {
                 return GeckoResult.fromValue(prompt.dismiss())
             }
             val intent = Intent(Intent.ACTION_GET_CONTENT)
@@ -772,7 +772,7 @@ class MainActivity : Activity() {
     fun bridgePickReplayFolder(requestId: String?, reply: (JSONObject) -> Unit) {
         runOnUiThread {
             val clientRequestId = requestId?.takeIf { ReplayFolderPicker.validClientRequestId(it) }
-            if (clientRequestId == null || destroyedRuntime || isDestroyed || filePrompt != null || downloadSave != null) {
+            if (clientRequestId == null || destroyedRuntime || isDestroyed || filePrompt != null || downloadInFlight || downloadSave != null) {
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
             }
@@ -1024,7 +1024,7 @@ class MainActivity : Activity() {
     /** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
     private fun saveExternalResponse(response: WebResponse) {
         val body = response.body ?: run { toast(getString(R.string.download_failed)); return }
-        if (destroyedRuntime || downloadInFlight) {
+        if (destroyedRuntime || downloadInFlight || filePrompt != null || folderPickRequest != null || downloadSave != null) {
             try { body.close() } catch (_: IOException) { }
             if (!destroyedRuntime) toast(getString(R.string.download_busy))
             return
