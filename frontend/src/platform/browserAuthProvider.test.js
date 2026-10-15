@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const kcInit = vi.fn()
+const kcInit = vi.fn(() => Promise.resolve(true))
 const kcLogin = vi.fn(() => Promise.resolve(true))
 const kcLogout = vi.fn(() => Promise.resolve(undefined))
 const kcUpdateToken = vi.fn(() => Promise.resolve(false))
@@ -17,10 +17,7 @@ vi.mock('keycloak-js', () => ({
       this.token = ''
       kcInstances.push(this)
     }
-    init = (options) => {
-      kcInit(options)
-      return Promise.resolve(true)
-    }
+    init = (options) => kcInit.call(this, options)
     login = kcLogin
     logout = kcLogout
     updateToken = kcUpdateToken
@@ -35,13 +32,14 @@ function lastAdapter() {
 
 describe('browserAuthProvider', () => {
   afterEach(() => {
-    kcInit.mockClear()
+    kcInit.mockReset().mockResolvedValue(true)
+    history.replaceState(null, '', '/')
     kcLogin.mockReset().mockImplementation(() => Promise.resolve(true))
     kcLogout.mockReset().mockImplementation(() => Promise.resolve(undefined))
     kcUpdateToken.mockReset().mockImplementation(() => Promise.resolve(false))
   })
 
-  it('使用生产 Keycloak issuer 配置，并保持 check-sso（未登录不跳转）语义', async () => {
+  it('使用生产 Keycloak issuer 配置，并保持普通访问 check-sso 初始化配置', async () => {
     const provider = createBrowserAuthProvider()
 
     await provider.init({ mode: 'normal' })
@@ -95,6 +93,23 @@ describe('browserAuthProvider', () => {
 
     await provider.logout('https://wotbtools.com/profile')
     expect(kcLogout).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/profile' })
+  })
+
+  it.each([false, true])('回跳初始化失败=%s 后用户仍可显式发起登录', async (fails) => {
+    history.replaceState(null, '', '/?view=profile#state=fixture-state&error=login_required')
+    kcInit.mockImplementationOnce(function () {
+      if (fails) this.login()
+      return Promise.resolve(false)
+    })
+    const provider = createBrowserAuthProvider()
+    if (fails) {
+      await expect(provider.init({ mode: 'normal' })).rejects.toMatchObject({ code: 'AUTH_RETURN_NOT_COMPLETED' })
+    } else {
+      await provider.init({ mode: 'normal' })
+    }
+    expect(kcLogin).not.toHaveBeenCalled()
+    await expect(provider.login('https://wotbtools.com/?view=profile')).resolves.toBe(true)
+    expect(kcLogin).toHaveBeenCalledWith({ redirectUri: 'https://wotbtools.com/?view=profile' })
   })
 
   it('ensureToken 未登录时不刷新，直接 false', async () => {

@@ -32,9 +32,13 @@ vi.mock('keycloak-js', () => ({
     }
     init = (options) => {
       kcInit(options)
+      const returnUrl = new URL(location.href)
       const settle = (value) => {
         this.authenticated = value === true
         this.tokenParsed = value === true ? kcScenario.tokenParsed : null
+        // A query-looking return cannot match the SDK's default fragment callback.
+        if (!this.authenticated && options.onLoad && returnUrl.searchParams.has('state')
+          && !new URLSearchParams(returnUrl.hash.slice(1)).has('state')) this.login()
         return value
       }
       if (kcScenario.initImpl) return Promise.resolve(kcScenario.initImpl()).then(settle)
@@ -272,6 +276,22 @@ describe('useAuth', () => {
     }
   })
 
+  it('explicit query-return recovery removes OIDC parameters from the new redirect and preserves product context', async () => {
+    history.replaceState(null, '', '/?view=profile&tank=13825&state=old-state&code=old-code&session_state=old-session&iss=old-issuer#details')
+    try {
+      const auth = useAuth()
+      await auth.retryAuth()
+      expect(auth.authInitState.value).toBe('failed')
+      await auth.login('profile')
+      const redirect = new URL(kcLogin.mock.calls.at(-1)[0].redirectUri)
+      expect(Object.fromEntries(redirect.searchParams)).toEqual({ view: 'profile', tank: '13825' })
+      expect(redirect.hash).toBe('#details')
+      expect(kcInit.mock.calls.at(-1)[0]).not.toHaveProperty('onLoad')
+    } finally {
+      history.replaceState(null, '', '/')
+    }
+  })
+
   it('login accepts a full armor scene location without losing any scene query', async () => {
     const auth = useAuth()
     await auth.retryAuth()
@@ -332,6 +352,16 @@ describe('useAuth', () => {
       redirectUri: expect.stringContaining('view=ai-review'),
     }))
     expect(auth.loginInFlight.value).toBe(false)
+  })
+
+  it('SDK rejection without an error still provides an explicit authentication failure', async () => {
+    kcScenario.initImpl = () => Promise.reject(undefined)
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initError.value).toBeInstanceOf(Error)
+    expect(auth.initError.value.message).toBe('AUTH_INIT_FAILED')
+    expect(auth.authenticated.value).toBe(false)
   })
 
   it('init reject becomes an explicit failed recovery state', async () => {

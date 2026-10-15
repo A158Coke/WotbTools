@@ -1,5 +1,5 @@
 import Keycloak from 'keycloak-js'
-import { record, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
+import { hasAuthReturn, recordLoginStart, recordReturnFacts } from './authDiagnostics.js'
 
 const KEYCLOAK_CONFIG = Object.freeze({
   url: 'https://auth.wotbtools.com',
@@ -33,14 +33,16 @@ export function createBrowserAuthProvider() {
     name: 'web',
 
     /**
-     * `normal`：check-sso —— 已有 SSO 会话时静默登录，未登录**不跳转**（保持迁移前语义）。
+     * `normal`：普通访问 check-sso；回跳消费原交易，合法匿名结果保持未登录。
      * `login-recovery`：watchdog 放弃上一代后的重建，不再重复 check-sso bootstrap。
      */
     async init({ mode } = {}) {
       // 回程取证（2.1.0 Phase 2.5）：整页登录回来后，URL 上的 OIDC 参数存在性是
       // 「断在哪一跳」的关键事实——放在 adapter init 之前，失败路径也留痕。
-      recordReturnFacts(window.location.search)
-      const options = mode === 'login-recovery'
+      recordReturnFacts(hasAuthReturn({ search: '', hash: window.location.hash })
+        ? window.location.hash.slice(1) : window.location.search)
+      const returning = hasAuthReturn()
+      const options = mode === 'login-recovery' || returning
         ? {
             pkceMethod: 'S256',
             checkLoginIframe: false,
@@ -51,7 +53,23 @@ export function createBrowserAuthProvider() {
             silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
             checkLoginIframe: false,
           }
-      await adapter().init(options)
+      const kc = adapter()
+      const login = kc.login
+      const guardReturn = returning && mode !== 'login-recovery'
+      if (guardReturn) {
+        // SDK-valid callbacks bypass onLoad, including prompt=none's signed-out result.
+        // An unmatched callback reaches check-sso's login instead: stop before a new
+        // transaction can hide the original failure. No silent iframe or store parsing.
+        options.onLoad = 'check-sso'
+        kc.login = () => {
+          throw Object.assign(new Error('AUTH_RETURN_NOT_COMPLETED'), { code: 'AUTH_RETURN_NOT_COMPLETED' })
+        }
+      }
+      try {
+        await kc.init(options)
+      } finally {
+        if (guardReturn) kc.login = login
+      }
     },
 
     get authenticated() {

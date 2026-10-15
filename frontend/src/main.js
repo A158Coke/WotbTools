@@ -21,6 +21,7 @@ import './styles/classic-profile.css'
 import { messages } from './locales/messages.js'
 import { sectionTitleKey, viewFromRoute } from './app/navigation.js'
 import { useAuth } from './composables/useAuth.js'
+import { hasAuthReturn } from './platform/authDiagnostics.js'
 import { isAndroidApp } from './composables/usePlatformBridge.js'
 
 // Build identity（vite define 注入）：生产环境可立即确认实际运行的 bundle 版本，
@@ -34,11 +35,7 @@ async function bootstrap() {
   // Only inspect parameter presence here; the adapter alone validates state/PKCE and
   // consumes the callback. Ordinary visits keep rendering during check-sso, and APK
   // auth remains Native-owned without blocking its local tools on the bridge.
-  const hasAuthReturn = [window.location.search, window.location.hash.slice(1)].some(value => {
-    const params = new URLSearchParams(value)
-    return params.has('state') && (params.has('code') || params.has('error'))
-  })
-  if (!isAndroidApp() && hasAuthReturn) await useAuth().initPromise
+  if (!isAndroidApp() && hasAuthReturn()) await useAuth().initPromise
 
   // Local preview intentionally starts on Home while production defaults to Replay.
   const previewParams = new URLSearchParams(window.location.search)

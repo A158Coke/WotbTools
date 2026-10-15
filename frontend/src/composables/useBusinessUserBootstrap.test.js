@@ -245,3 +245,50 @@ describe('business bootstrap entrypoints are connectivity-gated', () => {
     expect(bootstrap.retry).toBe(retryBusinessUserIfAllowed)
   })
 })
+
+
+describe('business bootstrap identity isolation', () => {
+  const context = authEpoch => ({ authInitState: 'authenticated', authenticated: true,
+    connectivity: ConnectivityState.ONLINE, authEpoch })
+  afterEach(() => {
+    resetBusinessUserBootstrap()
+    vi.mocked(ensureUserProfile).mockReset().mockResolvedValue({})
+  })
+
+  it('does not reuse ready state after identity changes', async () => {
+    await ensureBusinessUserIfAllowed(context(10))
+    await ensureBusinessUserIfAllowed(context(10))
+    await ensureBusinessUserIfAllowed(context(11))
+    expect(ensureUserProfile).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['resolve', 'reject'])('A late %s cannot change B pending state or clear its in-flight request', async outcome => {
+    let resolveA, rejectA, resolveB
+    vi.mocked(ensureUserProfile)
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { resolveA = resolve; rejectA = reject }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveB = resolve }))
+    const a = whenBusinessUserSettled(context(10))
+    const b = whenBusinessUserSettled(context(11))
+    if (outcome === 'resolve') resolveA({})
+    else rejectA(new Error('late A error'))
+    expect(await a).toBe(false)
+    expect(useBusinessUserBootstrap().state.value).toBe('pending')
+    expect(useBusinessUserBootstrap().error.value).toBeNull()
+    const deduped = ensureBusinessUserIfAllowed(context(11))
+    expect(ensureUserProfile).toHaveBeenCalledTimes(2)
+    resolveB({})
+    expect(await b).toBe(true)
+    expect(await deduped).toBe(true)
+  })
+
+  it('logout invalidates an old request without sending backend traffic', async () => {
+    let release
+    vi.mocked(ensureUserProfile).mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const old = whenBusinessUserSettled(context(10))
+    expect(await ensureBusinessUserIfAllowed({ ...context(11), authenticated: false })).toBe(false)
+    release({})
+    expect(await old).toBe(false)
+    expect(useBusinessUserBootstrap().state.value).toBe('idle')
+    expect(ensureUserProfile).toHaveBeenCalledTimes(1)
+  })
+})

@@ -26,6 +26,7 @@ const api = vi.hoisted(() => ({
 }))
 
 const authFlag = ref(true)
+const authInitError = ref(null)
 // 身份驱动代数（与生产 useAuth 同规则）：未登录→已登录、已登录→未登录、A→B（sub 变化）各前进一次。
 // 测试用 signInAs()/signOut() 改变会话身份，而不是手工 +1（review blocker 2 的测试口径）。
 let projectedIdentityKey = null
@@ -80,7 +81,7 @@ vi.mock('../composables/useAuth.js', () => ({
     isAuthenticated: () => api.authenticated,
     authenticated: authFlag,
     authEpoch: () => identityEpoch,
-    initError: ref(null),
+    initError: authInitError,
     tokenParsed: tokenRef,
     displayName: computed(() => tokenRef.value?.displayName || tokenRef.value?.preferred_username || '')
   })
@@ -162,6 +163,7 @@ beforeEach(async () => {
   // 每个用例都从「一次全新的 auth bootstrap」开始：init 交易只在第一次 useAuth() 时建立，
   // 之后（同一个用例内）跨挂载保持不变 —— 这正是 stale init 结果的来源。
   initSettlement = null
+  authInitError.value = null
   useConnectivity().stop()
   setOnline(true)
   await useConnectivity().start()
@@ -517,6 +519,9 @@ describe('ProfilePage as the account page', () => {
     currentProfile = wargamingProfile('ASIA', 1001)
     const wrapper = mountProfile()
     await flushPromises()
+    expect(wrapper.text()).toContain('profile.loadError')
+    expect(wrapper.get('[data-testid="profile-retry"]').text()).toBe('profile.loadRetry')
+    expect(wrapper.text()).not.toContain('profile.error')
     await wrapper.get('[data-testid="profile-retry"]').trigger('click')
     await flushPromises()
     expect(api.login).not.toHaveBeenCalled()
@@ -655,7 +660,7 @@ describe('ProfilePage connectivity gating', () => {
     // 中性状态（不是 error / 不是 signedOut），文案来自 capability 模型。
     expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('featureOffline.accountProfile')
-    expect(wrapper.text()).not.toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loadError')
   })
 
   it('offline retry stays gated: no request, connectivity notice instead of a business error', async () => {
@@ -670,7 +675,7 @@ describe('ProfilePage connectivity gating', () => {
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
     expect(useConnectivityNotice().visible.value).toBe(true)
     expect(useConnectivityNotice().notice.value.messageKey).toBe('featureOffline.accountProfile')
-    expect(wrapper.text()).not.toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loadError')
   })
 
   it('losing connectivity blocks every backend action the page would otherwise fire', async () => {
@@ -822,7 +827,7 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
     const wrapper = mountProfile()
     await flushPromises()
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('profile.error')
+    expect(wrapper.text()).toContain('profile.loadError')
     expect(wrapper.text()).not.toContain('profile.loading')
     expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(false)
     expect(useConnectivityNotice().visible.value).toBe(false)
@@ -837,14 +842,14 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
     await flushPromises()
     expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(1)
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('profile.error')
+    expect(wrapper.text()).toContain('profile.loadError')
 
     await wrapper.get('[data-testid="profile-retry"]').trigger('click')
     await flushPromises()
     expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(2)
     expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="profile-logout"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loadError')
     expect(useBusinessUserBootstrap().state.value).toBe('ready')
   })
 
@@ -859,7 +864,7 @@ describe('ProfilePage bootstrap failure and asynchronous connectivity changes', 
     await flushPromises()
     expect(userApi.getUserProfile).not.toHaveBeenCalled()
     expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loadError')
 
     setOnline(true)
     window.dispatchEvent(new Event('online'))
@@ -1108,4 +1113,186 @@ describe('ProfilePage logout 后重挂载（stale init 结果）', () => {
     expect(second.text()).toContain('profile.serverAsia')
     second.unmount()
   })
+})
+
+
+describe('Profile error classification and recovery (#572/#573)', () => {
+  beforeEach(() => {
+    resetBusinessUserBootstrap()
+    signInAs('user-a')
+    profileFailures = 0
+    currentProfile = wargamingProfile('ASIA', 1001)
+    for (const spy of Object.values(userApi)) spy.mockReset()
+    userApi.ensureUserProfile.mockResolvedValue(currentProfile)
+    userApi.getUserProfile.mockImplementation(async () => currentProfile)
+    userApi.getUserHofRecords.mockResolvedValue([])
+    api.login.mockReset().mockResolvedValue(undefined)
+    hundredApi.hofHundredMyStatus.mockReset().mockResolvedValue({ current: [], pending: [], rejected: [] })
+  })
+
+  afterEach(() => {
+    resetBusinessUserBootstrap()
+    vi.unstubAllGlobals()
+  })
+
+  it('authentication init failure offers login recovery without loading profile', async () => {
+    signOut()
+    authInitError.value = new Error('init failed')
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.error')
+    expect(wrapper.text()).not.toContain('profile.loadError')
+    expect(wrapper.get('[data-testid="profile-retry"]').text()).toBe('profile.retry')
+    expect(userApi.ensureUserProfile).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    expect(api.login).toHaveBeenCalledWith('profile')
+  })
+
+  it('an uncompleted return explains recovery and never restarts authorization automatically', async () => {
+    signOut()
+    authInitError.value = { code: 'AUTH_RETURN_NOT_COMPLETED' }
+    const wrapper = mountProfile()
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.authReturnError')
+    expect(api.login).not.toHaveBeenCalled()
+    expect(userApi.getUserProfile).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    expect(api.login).toHaveBeenCalledTimes(1)
+  })
+
+  it('Android browser gets the default-browser advice before login; desktop does not', async () => {
+    signOut()
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 16) Chrome/154', onLine: true })
+    const android = mountProfile()
+    await flushPromises()
+    expect(android.get('[data-testid="profile-browser-login-hint"]').text()).toBe('profile.androidBrowserLoginHint')
+    android.unmount()
+    vi.unstubAllGlobals()
+    const desktop = mountProfile()
+    await flushPromises()
+    expect(desktop.find('[data-testid="profile-browser-login-hint"]').exists()).toBe(false)
+  })
+
+  it('Native APK never shows browser-switch advice', async () => {
+    signOut()
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Linux; Android 16)', onLine: true })
+    window.WotbNative = { postMessage() {} }
+    try {
+      const wrapper = mountProfile()
+      await flushPromises()
+      expect(wrapper.find('[data-testid="profile-browser-login-hint"]').exists()).toBe(false)
+    } finally {
+      delete window.WotbNative
+    }
+  })
+
+  it('profile retry displays loading and deduplicates concurrent attempts', async () => {
+    profileFailures = 1
+    const wrapper = mountProfile()
+    await flushPromises()
+    let release
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const retry = wrapper.get('[data-testid="profile-retry"]')
+    await retry.trigger('click')
+    await retry.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.loadPending')
+    expect(wrapper.text()).not.toContain('profile.loadError')
+    expect(userApi.getUserProfile).toHaveBeenCalledTimes(1)
+    release(currentProfile)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-logout"]').exists()).toBe(true)
+    expect(api.login).not.toHaveBeenCalled()
+  })
+
+  it('direct A to B switch clears A and ignores A late GET failure', async () => {
+    let rejectA
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise((_, reject) => { rejectA = reject }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    currentProfile = wargamingProfile('EU', 2002)
+    signInAs('user-b')
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverEu')
+    expect(userApi.ensureUserProfile).toHaveBeenCalledTimes(2)
+    rejectA(new Error('late A profile failure'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverEu')
+    expect(wrapper.text()).not.toContain('profile.loadError')
+  })
+
+  it('logout ignores a late profile error and keeps the sign-in card', async () => {
+    let rejectA
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise((_, reject) => { rejectA = reject }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    signOut()
+    await flushPromises()
+    rejectA(new Error('late A profile failure'))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-signed-out"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('profile.loadError')
+  })
+
+  it('late WG sync error cannot replace the new account state', async () => {
+    tokenRef.value = { sub: 'user-a', wotb_region: 'ASIA', wotb_account_id: 1001, wotb_verified: true }
+    let rejectA
+    userApi.syncUserWotbAccountFromLogin.mockImplementationOnce(() => new Promise((_, reject) => { rejectA = reject }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    currentProfile = wargamingProfile('EU', 2002)
+    tokenRef.value = { sub: 'user-b' }
+    signInAs('user-b')
+    await flushPromises()
+    rejectA({ code: 'OLD_SYNC_ERROR' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.serverEu')
+    expect(wrapper.text()).not.toContain('OLD_SYNC_ERROR')
+  })
+
+  it('a failed GET after disconnect uses the neutral connectivity state', async () => {
+    let rejectGet
+    userApi.getUserProfile.mockImplementationOnce(() => new Promise((_, reject) => { rejectGet = reject }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    setOnline(false)
+    window.dispatchEvent(new Event('offline'))
+    await flushPromises()
+    rejectGet(new Error('offline'))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-connectivity-unavailable"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('profile.loadError')
+  })
+
+  it('failed login is visible and a second click can try again', async () => {
+    signOut()
+    api.login.mockRejectedValueOnce(new Error('login cancelled'))
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-login"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('profile.error')
+    expect(wrapper.get('[data-testid="profile-retry"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="profile-retry"]').trigger('click')
+    await flushPromises()
+    expect(api.login).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['unbind', 'withdraw'])('%s confirmation from A cannot execute under B', async action => {
+    currentProfile = { ...wargamingProfile('CN', 1001), wotbAccountSource: 'MANUAL' }
+    hundredApi.hofHundredMyStatus.mockResolvedValue({ current: [], pending: [{ id: 7, vehicleName: 'Tank', status: 'PENDING' }], rejected: [] })
+    let release
+    confirmDialog.confirm.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+    const wrapper = mountProfile()
+    await flushPromises()
+    const key = action === 'unbind' ? 'profile.unbind' : 'hundred.withdraw'
+    await wrapper.findAll('button').find(button => button.text() === key).trigger('click')
+    signInAs('user-b')
+    await flushPromises()
+    release(true)
+    await flushPromises()
+    expect(userApi.deleteUserWotbAccount).not.toHaveBeenCalled()
+    expect(hundredApi.hofHundredCancel).not.toHaveBeenCalled()
+  })
+
 })

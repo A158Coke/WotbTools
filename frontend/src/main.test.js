@@ -5,14 +5,17 @@ const scenario = vi.hoisted(() => ({ init: null, received: null, calls: 0, authO
 vi.mock('keycloak-js', () => ({
   default: class {
     authenticated = false
-    async init() {
+    async init(options) {
       scenario.calls++
       scenario.received = { search: location.search, hash: location.hash }
       // The adapter owns callback consumption; the application must not rewrite it first.
       const url = new URL(location.href)
-      if (new URLSearchParams(url.hash.slice(1)).has('state')) url.hash = ''
+      const fragmentCallback = new URLSearchParams(url.hash.slice(1)).has('state')
+      if (fragmentCallback) url.hash = ''
       history.replaceState(history.state, '', url)
       this.authenticated = await scenario.init()
+      // Default fragment-mode SDK falls through to onLoad for a query-looking return.
+      if (!this.authenticated && !fragmentCallback && url.searchParams.has('state') && options.onLoad) this.login()
     }
   },
 }))
@@ -85,6 +88,14 @@ describe('application startup preserves the authentication callback', () => {
     expect(scenario.calls).toBe(1)
   })
 
+  it('mounts signed out after the SDK completes a matching anonymous probe return', async () => {
+    history.replaceState(null, '', '/?view=profile#state=probe-state&error=login_required')
+    await import('./main.js')
+    await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('unauthenticated'))
+    expect(scenario.authOwner().initError.value).toBeNull()
+    expect(location.hash).toBe('')
+  })
+
   it('waits on a query-looking return without adding SDK query-mode support', async () => {
     history.replaceState(null, '', '/?view=extended&tank=13825&state=fixture-state&code=fixture-code#details')
     const pending = deferred()
@@ -94,7 +105,8 @@ describe('application startup preserves the authentication callback', () => {
     expect(scenario.received.search).toContain('code=fixture-code')
     expect(location.search).toContain('view=extended')
     pending.resolve(false)
-    await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('unauthenticated'))
+    await vi.waitFor(() => expect(shell()?.dataset.auth).toBe('failed'))
+    expect(scenario.authOwner().initError.value.code).toBe('AUTH_RETURN_NOT_COMPLETED')
     expect(new URLSearchParams(location.search).get('code')).toBe('fixture-code')
     expect(new URLSearchParams(location.search).get('state')).toBe('fixture-state')
     expect(new URLSearchParams(location.search).get('tank')).toBe('13825')

@@ -146,3 +146,23 @@ IdP callback 配置、broker flow 配置、主题、部署/会话连续性。
 
 **禁止**：disable 校验、忽略缺失 cookie、削弱 state 校验、disable PKCE、
 接受无效 first-login action——一切「为了让日志闭嘴」的改动。
+
+## 5. Android 网页跨浏览器回跳与恢复
+
+QQ 一键登录可能由系统默认浏览器接收，网页无法控制 QQ/Android 选择的接收应用。
+账户页在 Android 普通浏览器登录前提示：先在系统默认浏览器打开本站，再发起登录；APK 不显示此提示。
+
+SPA 收到 OIDC 回跳参数时，原交易的校验与消费全部交给 keycloak-js（state、nonce、PKCE）。
+匹配原交易的 `prompt=none` 探测返回 `error=login_required` 时，SDK 正常完成初始化，
+账户页保留未登录说明与 Android 登录前提示。只有无法匹配原交易或 SDK 拒绝回跳时才显示恢复说明。
+回跳初始化期间拦截 SDK 自动发起的新登录，不创建静默 iframe，也不允许接收浏览器的已有 SSO 掩盖原交易失败；
+过期交互登录同样需用户显式重试。
+显式重启登录会从新的 redirect URI 清除已识别的 OIDC query 参数，保留产品上下文与普通页锚点，
+避免未消费的旧 query 随新交易带回、刷新后再次报错。普通无回跳访问仍使用原来的 `check-sso`；重新登录必须由用户点击，不自动循环授权。
+
+此修复只提供可恢复流程，不宣称控制浏览器回跳或已定位 broker cookie 丢失。
+若失败停留在 Keycloak 页面，SPA 尚未收到回跳，仍按 §3 取证；不放宽服务端 cookie/state 校验。
+
+人工验收：Edge 发起/Chrome 默认，接收方分别有/无 SSO；Chrome/Edge/夸克同浏览器新标签页；
+QQ 授权取消与再次登录；候选 APK 的 QQ 回 App。记录每一跳所在应用与脱敏状态，
+以原交易完成或明确提示后在默认浏览器重新发起成功为准，不能以旧 SSO 账户页充当成功证据。
