@@ -20,9 +20,11 @@ import {
     fetchReplayShots,
     judgePenetration,
     tankImageUrl,
+    loadTankIconCrops,
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
+import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { createLoadProgress } from './loadProgress.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
@@ -4211,6 +4213,29 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         let renderChunk = null;   // { list, rendered, selId }
 
+        // 封面图展示裁剪（与坦克百科同款）：客户端封面画布留白近半（坦克锚定左上），
+        // 按逐车内容框（tank_images/crops.json）缩放定位，视觉对齐旧紧裁口径；不改图标字节。
+        // TC_IMG_ASPECT 必须与 AgentArmorView.vue 的 .tc-img aspect-ratio 一致（dom-contract 测试锁定）。
+        const TC_IMG_ASPECT = 8 / 5;
+        let iconCrops = null;
+
+        function iconCropTransformFor(tankId) {
+            return tankIconCropTransform(iconCrops?.[String(tankId)], TC_IMG_ASPECT);
+        }
+
+        /** 表可能晚于首屏卡片到达：对已渲染卡片补样式（数据缺失时为空串 → 回退原始 contain） */
+        function refreshRenderedIconCrops() {
+            if (!iconCrops) return;
+            document.querySelectorAll('#tp-grid .tc-img[data-tank-id]').forEach((el) => {
+                el.style.transform = iconCropTransformFor(el.dataset.tankId);
+            });
+        }
+
+        loadTankIconCrops().then((crops) => {
+            iconCrops = crops;
+            refreshRenderedIconCrops();
+        });
+
         function makeCard(t, selId) {
             const card = document.createElement('button');
             card.type = 'button';
@@ -4222,6 +4247,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             img.loading = 'lazy';
             img.src = tankImageUrl(t.id);
             img.alt = t.name;
+            img.dataset.tankId = String(t.id);
+            img.style.transform = iconCropTransformFor(t.id);
 
             const body = document.createElement('div');
             body.className = 'tc-body';
