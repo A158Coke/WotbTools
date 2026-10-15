@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { confirm } from '../composables/useConfirm.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -19,6 +19,7 @@ import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
 import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
+import { copyText } from '../utils/clipboard.js'
 import AppButton from './AppButton.vue'
 
 const { locale, t, te } = useI18n()
@@ -220,6 +221,7 @@ watch(() => [authState.value, tokenParsed.value?.sub], ([now, sub], [before, pre
   editError.value = ''
   verifyPending.value = false
   verifyError.value = ''
+  resetUserIdCopied()
   loginStarted.value = false
   loading.value = false
   phase.value = now ? 'done' : 'signedOut'
@@ -263,6 +265,39 @@ const heroSubtitle = computed(() =>
       ? t('profile.wgSyncing')
       : t('profile.notBoundWotbAccount')
 )
+
+/**
+ * 当前 token 的 realm 角色（`realm_access.roles`，Keycloak 已展开 composite），隐藏 Keycloak
+ * 内置角色后按原始 key 展示。只读真实 token claim：dev `?admin=1` 旁路不改变这里的展示。
+ */
+const KEYCLOAK_BUILTIN_ROLES = new Set(['offline_access', 'uma_authorization'])
+const realmRoles = computed(() => {
+  const roles = tokenParsed.value?.realm_access?.roles
+  if (!Array.isArray(roles)) return []
+  return roles
+    .filter(role => typeof role === 'string'
+      && !KEYCLOAK_BUILTIN_ROLES.has(role)
+      && !role.startsWith('default-roles-'))
+    .sort()
+})
+
+const userIdCopied = ref(false)
+let userIdCopiedTimer = null
+
+function resetUserIdCopied() {
+  clearTimeout(userIdCopiedTimer)
+  userIdCopied.value = false
+}
+
+async function copyUserId() {
+  const id = profile.value?.keycloakUserId
+  if (!id || !(await copyText(id))) return
+  userIdCopied.value = true
+  clearTimeout(userIdCopiedTimer)
+  userIdCopiedTimer = setTimeout(() => { userIdCopied.value = false }, 1500)
+}
+
+onBeforeUnmount(() => clearTimeout(userIdCopiedTimer))
 
 /** JWT 明确是 WG 登录（ASIA/EU/NA + 可信 verified + account_id），即使同步失败也据此只读。 */
 const isWargamingLogin = computed(() => {
@@ -504,6 +539,22 @@ async function removeAccount() {
               <span class="info-label">{{ $t('profile.authProvider') }}</span>
               <span class="info-value">Keycloak</span>
             </div>
+            <div class="info-row">
+              <span class="info-label">{{ $t('profile.keycloakUserId') }}</span>
+              <span class="info-value info-value-copy">
+                <code data-testid="profile-keycloak-user-id">{{ profile.keycloakUserId || '--' }}</code>
+                <button v-if="profile.keycloakUserId" type="button" class="btn-ghost btn-sm" data-testid="profile-copy-user-id" @click="copyUserId">
+                  {{ $t(userIdCopied ? 'profile.copied' : 'profile.copy') }}
+                </button>
+              </span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ $t('profile.roles') }}</span>
+              <span class="info-value role-list" data-testid="profile-roles">
+                <span v-for="role in realmRoles" :key="role" class="role-chip">{{ role }}</span>
+                <template v-if="!realmRoles.length">--</template>
+              </span>
+            </div>
           </div>
 
           <div class="profile-card profile-section">
@@ -719,6 +770,10 @@ async function removeAccount() {
 .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; gap: 16px; }
 .info-label { color: #a3a6a0; font-size: .85rem; flex-shrink: 0; }
 .info-value { color: var(--showcase-tactical-text); font-size: .85rem; font-weight: 500; text-align: right; word-break: break-all; }
+.info-value-copy { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.info-value-copy code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+.role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+.role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .account-bound { display: flex; flex-direction: column; gap: 10px; }
 .account-row { display: flex; justify-content: space-between; font-size: .88rem; color: var(--showcase-tactical-text); }
 .account-row span { color: #a3a6a0; }
