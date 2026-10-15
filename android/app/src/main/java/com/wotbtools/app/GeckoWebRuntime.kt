@@ -1,6 +1,8 @@
 package com.wotbtools.app
 
+import android.app.AlertDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -62,6 +64,7 @@ internal class GeckoWebRuntime(
     private var crashCount = 0
     private var killCount = 0
     private var lastFailure = "none"
+    private var choiceDialog: AlertDialog? = null
 
     /** 当前主文档 URL（取代 `WebView.url`）；尚未加载过任何页面时为 null。 */
     var currentUrl: String? = null
@@ -105,6 +108,7 @@ internal class GeckoWebRuntime(
 
     fun close() {
         closed = true
+        choiceDialog?.dismiss()
         port = null
         extension?.let { session.webExtensionController.setMessageDelegate(it, null, NATIVE_APP) }
         session.close()
@@ -184,6 +188,85 @@ internal class GeckoWebRuntime(
                 Log.d(TAG, "bridge-reply dropped category=${e.javaClass.simpleName}")
             }
         }
+    }
+
+    /**
+     * HTML `<select>` 的原生选择菜单（Gecko 把 select 点击转成 choice prompt；默认实现返回 null = 取消，
+     * 页面就无法改选）。optgroup 展开为不可选的组标题，disabled 选项不可选。生命周期：页面侧关闭弹窗
+     * （导航 / 元素移除）只收起对话框；弹窗打开期间选项更新时用新 prompt 重绘，结果仍回给同一个 [result]。
+     */
+    private fun showChoicePrompt(
+        prompt: PromptDelegate.ChoicePrompt,
+        result: GeckoResult<PromptDelegate.PromptResponse>
+    ) {
+        choiceDialog?.let {
+            it.setOnDismissListener(null)
+            it.dismiss()
+        }
+        choiceDialog = null
+        if (closed) {
+            result.complete(prompt.dismiss())
+            return
+        }
+        var settled = false
+        fun settle(response: () -> PromptDelegate.PromptResponse) {
+            if (settled) return
+            settled = true
+            if (!prompt.isComplete) result.complete(response())
+        }
+        val rows = ArrayList<Pair<PromptDelegate.ChoicePrompt.Choice, Int>>()
+        fun collect(choices: Array<PromptDelegate.ChoicePrompt.Choice>, depth: Int) {
+            for (choice in choices) {
+                if (choice.separator) continue
+                rows.add(choice to depth)
+                choice.items?.let { collect(it, depth + 1) }
+            }
+        }
+        collect(prompt.choices, 0)
+        val labels = rows.map { (choice, depth) -> "　".repeat(depth) + choice.label }.toTypedArray()
+        fun selectable(index: Int) = rows[index].first.let { !it.disabled && it.items == null }
+
+        val builder = AlertDialog.Builder(context)
+        prompt.title?.takeIf { it.isNotBlank() }?.let { builder.setTitle(it) }
+        if (prompt.type == PromptDelegate.ChoicePrompt.Type.MULTIPLE) {
+            val checked = BooleanArray(rows.size) { rows[it].first.selected }
+            builder.setMultiChoiceItems(labels, checked) { dialog, which, isChecked ->
+                if (selectable(which)) checked[which] = isChecked
+                else (dialog as AlertDialog).listView.setItemChecked(which, checked[which])
+            }
+            builder.setPositiveButton(android.R.string.ok) { _, _ ->
+                settle { prompt.confirm(rows.indices.filter { checked[it] }.map { rows[it].first }.toTypedArray()) }
+            }
+            builder.setNegativeButton(android.R.string.cancel, null)
+        } else {
+            val onPick = DialogInterface.OnClickListener { dialog, which ->
+                if (!selectable(which)) return@OnClickListener
+                settle { prompt.confirm(rows[which].first) }
+                dialog.dismiss()
+            }
+            if (prompt.type == PromptDelegate.ChoicePrompt.Type.MENU) builder.setItems(labels, onPick)
+            else builder.setSingleChoiceItems(labels, rows.indexOfFirst { it.first.selected }, onPick)
+        }
+        val dialog = builder.create()
+        // 返回键 / 点外部 / 取消按钮：等价于 select 未改选。
+        dialog.setOnDismissListener {
+            if (choiceDialog === dialog) choiceDialog = null
+            settle { prompt.dismiss() }
+        }
+        prompt.setDelegate(object : PromptDelegate.PromptInstanceDelegate {
+            override fun onPromptDismiss(dismissed: PromptDelegate.BasePrompt) {
+                settled = true
+                dialog.dismiss()
+            }
+
+            override fun onPromptUpdate(updatedPrompt: PromptDelegate.BasePrompt) {
+                settled = true
+                val updated = updatedPrompt as? PromptDelegate.ChoicePrompt
+                if (updated != null) showChoicePrompt(updated, result) else dialog.dismiss()
+            }
+        })
+        choiceDialog = dialog
+        dialog.show()
     }
 
     private fun navigationDelegate() = object : NavigationDelegate {
@@ -297,6 +380,12 @@ internal class GeckoWebRuntime(
                 session: GeckoSession,
                 prompt: PromptDelegate.FilePrompt
             ): GeckoResult<PromptDelegate.PromptResponse> = host.onFilePrompt(prompt)
+
+            override fun onChoicePrompt(
+                session: GeckoSession,
+                prompt: PromptDelegate.ChoicePrompt
+            ): GeckoResult<PromptDelegate.PromptResponse> =
+                GeckoResult<PromptDelegate.PromptResponse>().also { showChoicePrompt(prompt, it) }
         }
         session.permissionDelegate = denyAllPermissions
         session.open(runtime(context))
