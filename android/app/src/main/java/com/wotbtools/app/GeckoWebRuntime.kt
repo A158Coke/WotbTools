@@ -21,6 +21,7 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate
 import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebResponse
 import org.mozilla.geckoview.WebRequestError
 
 /**
@@ -47,6 +48,7 @@ internal class GeckoWebRuntime(
         fun onBridgeMessage(json: String, reply: (String) -> Unit)
         fun onExternalNavigation(uri: String)
         fun onFullScreen(fullScreen: Boolean)
+        fun onExternalResponse(response: WebResponse)
         fun onFilePrompt(prompt: PromptDelegate.FilePrompt): GeckoResult<PromptDelegate.PromptResponse>
         /** [crashLoop] = content 进程短时间内连续崩溃；否则为本地页面 / 扩展加载失败。 */
         fun onRuntimeFailure(crashLoop: Boolean)
@@ -193,16 +195,13 @@ internal class GeckoWebRuntime(
     /**
      * HTML `<select>` 的原生选择菜单（Gecko 把 select 点击转成 choice prompt；默认实现返回 null = 取消，
      * 页面就无法改选）。optgroup 展开为不可选的组标题，disabled 选项不可选。生命周期：页面侧关闭弹窗
-     * （导航 / 元素移除）只收起对话框；弹窗打开期间选项更新时用新 prompt 重绘，结果仍回给同一个 [result]。
+     * （导航 / 元素移除）收起对话框并完成 result；弹窗打开期间选项更新时用新 prompt 重绘，结果仍回给同一个 [result]。
      */
     private fun showChoicePrompt(
         prompt: PromptDelegate.ChoicePrompt,
         result: GeckoResult<PromptDelegate.PromptResponse>
     ) {
-        choiceDialog?.let {
-            it.setOnDismissListener(null)
-            it.dismiss()
-        }
+        choiceDialog?.dismiss()
         choiceDialog = null
         if (closed) {
             result.complete(prompt.dismiss())
@@ -212,7 +211,8 @@ internal class GeckoWebRuntime(
         fun settle(response: () -> PromptDelegate.PromptResponse) {
             if (settled) return
             settled = true
-            if (!prompt.isComplete) result.complete(response())
+            prompt.setDelegate(null)
+            result.complete(response())
         }
         val rows = ArrayList<Pair<PromptDelegate.ChoicePrompt.Choice, Int>>()
         fun collect(choices: Array<PromptDelegate.ChoicePrompt.Choice>, depth: Int) {
@@ -255,14 +255,21 @@ internal class GeckoWebRuntime(
         }
         prompt.setDelegate(object : PromptDelegate.PromptInstanceDelegate {
             override fun onPromptDismiss(dismissed: PromptDelegate.BasePrompt) {
-                settled = true
+                dialog.setOnDismissListener(null)
+                if (choiceDialog === dialog) choiceDialog = null
+                settle { dismissed.dismiss() }
                 dialog.dismiss()
             }
 
             override fun onPromptUpdate(updatedPrompt: PromptDelegate.BasePrompt) {
-                settled = true
                 val updated = updatedPrompt as? PromptDelegate.ChoicePrompt
-                if (updated != null) showChoicePrompt(updated, result) else dialog.dismiss()
+                if (updated != null) {
+                    settled = true
+                    prompt.setDelegate(null)
+                    showChoicePrompt(updated, result)
+                } else {
+                    dialog.dismiss()
+                }
             }
         })
         choiceDialog = dialog
@@ -324,6 +331,8 @@ internal class GeckoWebRuntime(
 
     private fun contentDelegate() = object : GeckoSession.ContentDelegate {
         override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) = host.onFullScreen(fullScreen)
+
+        override fun onExternalResponse(session: GeckoSession, response: WebResponse) = host.onExternalResponse(response)
 
         override fun onCrash(session: GeckoSession) {
             crashCount++
