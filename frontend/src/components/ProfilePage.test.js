@@ -537,6 +537,114 @@ describe('ProfilePage as the account page', () => {
   })
 })
 
+describe('ProfilePage identity card', () => {
+  const keycloakUserId = '3f2b9c1e-7a4d-4e8b-9c1f-2d3e4f5a6b7c'
+
+  beforeEach(() => {
+    api.authenticated = true
+    profileFailures = 0
+    tokenRef.value = null
+    currentProfile = {
+      keycloakUserId,
+      wotbAccountSource: 'MANUAL',
+      wotbServer: 'CN',
+      wotbAccountId: null,
+      displayName: 'Player'
+    }
+    userApi.getUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.ensureUserProfile.mockImplementation(() => Promise.resolve(currentProfile))
+    userApi.syncUserWotbAccountFromLogin.mockImplementation(() => Promise.resolve(null))
+  })
+
+  afterEach(() => {
+    delete navigator.clipboard
+  })
+
+  it('shows the Keycloak user id and business realm roles without Keycloak built-ins', async () => {
+    tokenRef.value = {
+      sub: keycloakUserId,
+      realm_access: { roles: ['wotbtools-user', 'offline_access', 'default-roles-wotbtools', 'HoF-admin', 'uma_authorization'] }
+    }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(keycloakUserId)
+    const roles = wrapper.get('[data-testid="profile-roles"]').findAll('.role-chip').map(chip => chip.text())
+    expect(roles).toEqual(['HoF-admin', 'wotbtools-user'])
+  })
+
+  it('shows a placeholder when the token carries only Keycloak built-in roles', async () => {
+    tokenRef.value = { sub: keycloakUserId, realm_access: { roles: ['offline_access', 'default-roles-wotbtools'] } }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-roles"]').text()).toBe('--')
+  })
+
+  it('copies the Keycloak user id and confirms only after the clipboard write succeeds', async () => {
+    tokenRef.value = { sub: keycloakUserId }
+    const writeText = vi.fn()
+      .mockRejectedValueOnce(new Error('denied'))
+      .mockResolvedValueOnce(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    const button = wrapper.get('[data-testid="profile-copy-user-id"]')
+
+    // writeText 拒绝且无 execCommand 降级可用：不得显示「已复制」。
+    await button.trigger('click')
+    await flushPromises()
+    expect(button.text()).toBe('profile.copy')
+
+    await button.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith(keycloakUserId)
+    expect(button.text()).toBe('profile.copied')
+  })
+
+  it('A→B：A 时代在途的复制迟到完成，不得在 B 的按钮上显示「已复制」', async () => {
+    signInAs('user-a')
+    let finishCopyA
+    const writeText = vi.fn(() => new Promise((resolve) => { finishCopyA = resolve }))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-copy-user-id"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith(keycloakUserId)
+
+    const userIdB = '8c7d6e5f-4a3b-4c2d-9e1f-0a1b2c3d4e5f'
+    currentProfile = { ...currentProfile, keycloakUserId: userIdB }
+    signInAs('user-b')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(userIdB)
+
+    // 剪贴板里是 A 的 ID：B 的按钮必须保持「复制」。
+    finishCopyA()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="profile-copy-user-id"]').text()).toBe('profile.copy')
+  })
+
+  it('卸载后迟到完成的复制不再创建定时器', async () => {
+    signInAs('user-a')
+    let finishCopy
+    const writeText = vi.fn(() => new Promise((resolve) => { finishCopy = resolve }))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountProfile()
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-copy-user-id"]').trigger('click')
+    wrapper.unmount()
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      finishCopy()
+      await flushPromises()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('ProfilePage verify with replay', () => {
   const unverified = () => ({
     wotbAccountSource: 'MANUAL',
