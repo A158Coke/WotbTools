@@ -92,6 +92,20 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
   在 hidden interval = UNKNOWN。
 
+### 生命状态与复活轨道（issue #622，2026-10-15）
+
+`lifeTransitions` 的生命语义分层：
+
+- **上游复活轨道在场**（PlaybackData 车辆 `death_times`（≥2 死才输出）/ `resurrection_times`
+  （非空才输出），上游 2026-10-15 additive）：它取代 prop3 采样扫描成为死亡/复活时刻 SSOT——
+  死亡 → DESTROYED、复活 → ALIVE 交替，采样只兜底 ALIVE 证据。复活模式（爆燃等）同一 eid
+  死亡后可复活继续移动，死亡不再是终态。
+- **字段缺省**（旧上游产物 / 普通回放）：prop3 `alive=false`（终态，EXACT）→ DESTROYED；
+  可信血量 / alive → ALIVE——行为与既往逐位一致（golden 锁定）。
+- def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
+  PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
+  只爆一次，复活后的新死亡各自爆焰。
+
 ### 反未来信息泄漏（anti-future-leak，硬性 invariant）
 
 > 在 UI 时间 `t`，任何展示出来的事实只能来自 `timeSec <= t` 的证据。这是 Battle Playback V2
