@@ -27,7 +27,7 @@ import { shotResultBadge } from '../utils/shotPresentation.js'
 import { formatPlaybackClock } from '../utils/playbackClock.js'
 import { resolveReplayClock } from '../replay-local/canonical/facts'
 import { loadTankopedia } from '../replay-local/compute/tankopedia.ts'
-import { storeShotsForViewer, fetchLocalShotTankData, shotViewerQuery } from '../scene/agentData.js'
+import { storeShotsForViewer, fetchShotTankData, shotViewerQuery } from '../scene/agentData.js'
 import Scene3DStatus from './Scene3DStatus.vue'
 import Badge from './Badge.vue'
 import StatStrip from './StatStrip.vue'
@@ -78,17 +78,14 @@ let parseSeq = 0
 let decoding = Promise.resolve()
 
 /**
- * 弹种使用 bundled shellKinds，俯仰锚定/配置顺序使用 common/shot-tank-data.json。
- * 这份紧凑快照来自同一 reviewed Agent asset plane；射击检视从不请求远端数据。
- * 弹表只在首次解析时按需加载一次。
+ * 弹种表与搭载输入都来自资产包（/data/shellKinds.json 与 tank/{id}.json，COS 分发，
+ * 与上游 tanks.pb 同批刷新）：弹种表只在首次解析时按需加载一次，搭载输入逐车取。
+ * 资产源未配置 / 请求失败时按降级语义继续（弹种走槽位/id 兜底、俯仰如实降级标记）。
  */
 let shellTablePromise = null
 function loadShellTable() {
   if (!shellTablePromise) {
-    shellTablePromise = (async () => {
-      const mod = await import('../scene/shellKinds.json')
-      return mod.default
-    })()
+    shellTablePromise = assetProvider.json('/data/shellKinds.json')
     shellTablePromise.catch(() => { shellTablePromise = null })
   }
   return shellTablePromise
@@ -108,10 +105,17 @@ function enrichShellFallback(parsedShots, table) {
   }
 }
 
+/** 俯仰锚定表的等待上界（ms）。该表是解析期入参（`parseShotReplays` 的可选注入），
+ *  不能像弹表那样事后补齐，只能在解析前**有界等待**：到期用已到的部分表
+ *  （best effort）继续解析，避免单个资产请求挂起把整条列表拖死在解析中
+ *  （评审 P1，2026-10-15）。缺锚定 = 既有的如实降级态（俯仰降级标记透传）。 */
+const PITCH_ANCHOR_WAIT_MS = 1500
+
 /**
  * 俯仰锚定表：playback 名册 → tank_id → 顶级配置 pitch_limits，换算 GunPitchRange 形状
  * （dep = max 俯角上限、ele = −min 仰角上限）。注入后俯仰按车型极限解码，
- * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。
+ * 消解空表下的大面积「俯仰降级」标记；缺数据的玩家如实降级。**有界等待**：
+ * 逐车请求并行、结果随到随写，PITCH_ANCHOR_WAIT_MS 到期即以已到部分返回。
  */
 async function buildPitchLimits(vehicles) {
   const limits = {}
@@ -121,9 +125,10 @@ async function buildPitchLimits(vehicles) {
     if (v.nickname && v.tank_id && !tankNames.has(v.tank_id)) tankNames.set(v.tank_id, [])
     if (v.nickname && v.tank_id) tankNames.get(v.tank_id).push(v.nickname)
   }
-  await Promise.all([...tankNames.keys()].map(async (tid) => {
+  let timer = null
+  const pending = Promise.all([...tankNames.keys()].map(async (tid) => {
     try {
-      const data = await fetchLocalShotTankData(tid)
+      const data = await fetchShotTankData(tid)
       const cfgs = data.configs || []
       const pl = cfgs.length ? cfgs[cfgs.length - 1].pitch_limits : null
       if (pl && pl.max != null && pl.min != null) {
@@ -136,7 +141,11 @@ async function buildPitchLimits(vehicles) {
         })
       }
     } catch { /* 数据缺失：该玩家保持空锚定（如实降级） */ }
-  }))
+  })).finally(() => clearTimeout(timer))
+  await Promise.race([
+    pending,
+    new Promise((resolve) => { timer = setTimeout(resolve, PITCH_ANCHOR_WAIT_MS) }),
+  ])
   for (const [tid, names] of tankNames) {
     const range = tankRange.get(tid)
     if (!range) continue
@@ -233,11 +242,14 @@ async function decode(file) {
       console.warn('pitch limits skipped:', e)
     }
     if (seq !== parseSeq) return
-    const shellTable = await loadShellTable().catch(() => undefined)
-    if (seq !== parseSeq) return
+    // 弹种表（COS /data/shellKinds.json）与解析**并行**取用，不在发布前 await——
+    // 已完成的本地解析不被资产平台的响应速度卡住（与下方 annotateMountedConfigs
+    // 同款异步增强契约）。表到位后按同款表原地补齐 shell/shell_kind（WASM 端未注入
+    // 时客户端补齐同构）；资产源未配置/失败 → undefined，弹种保持槽位/id 兜底。
+    const shellTablePromise = loadShellTable().catch(() => undefined)
     let outcome
     try {
-      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined, shellTable)
+      outcome = await parseAgentShotsFromBytes(bytes, pitchLimits ?? undefined)
     } catch (e) {
       console.warn('anchored parse failed, fallback:', e)
       if (seq !== parseSeq) return
@@ -255,11 +267,6 @@ async function decode(file) {
         console.warn('roster enrichment skipped:', e)
       }
     }
-    if (shellTable && parsedShots.some((s) => s.shell_id && !s.shell)) {
-      try { enrichShellFallback(parsedShots, shellTable) } catch (e) {
-        console.warn('shell enrichment skipped:', e)
-      }
-    }
     if (seq !== parseSeq) return
     const tankopedia = await loadTankopedia().catch(() => null)
     if (seq !== parseSeq) return
@@ -274,6 +281,19 @@ async function decode(file) {
     // 闭包持有本文件的 parsedShots，就地注入；文件切换后旧数组不再被 shots.value
     // 引用，迟到注入无副作用（shooter_config_idx 消费点也有未注解回退链）。
     shots.value = parsedShots
+    // 弹表迟到补齐（评审 P2）：回调注册于**发布之后**，经响应式视图写入以触发重绘
+    // （直接改原始数组 parsedShots 会绕过 Vue 代理，迟到补齐不重绘）；表已就绪时
+    // 回调也在微任务中晚于上面的赋值执行——shots.value 必为本文件的列表，
+    // 文件切换由 seq 隔离。
+    shellTablePromise.then((shellTable) => {
+      if (seq !== parseSeq || !shellTable) return
+      const list = shots.value
+      if (list && list.some((s) => s.shell_id && !s.shell)) {
+        try { enrichShellFallback(list, shellTable) } catch (e) {
+          console.warn('shell enrichment skipped:', e)
+        }
+      }
+    })
     if (playback) {
       annotateMountedConfigs(parsedShots, playback).catch((e) => {
         console.warn('mounted-config annotation skipped:', e)

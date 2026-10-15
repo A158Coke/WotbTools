@@ -9,6 +9,7 @@ const data = vi.hoisted(() => ({
   fetchTankEncyclopedia: vi.fn(),
   fetchTankData: vi.fn(),
   tankImageUrl: vi.fn(id => `https://assets.test/tank_images/${id}.webp`),
+  loadTankIconCrops: vi.fn(async () => null),
 }))
 vi.mock('../scene/agentData.js', () => data)
 
@@ -74,6 +75,28 @@ describe('AgentTankopedia', () => {
     expect(cards[0].element.tagName).toBe('BUTTON')
     await wrapper.find('[data-testid="tank-load-more"]').trigger('click')
     expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
+  })
+
+  it('封面图按内容框数据做展示裁剪；数据缺失时回退原始 contain', async () => {
+    // 有内容框：卡片与详情 hero 都带 transform（数据驱动展示裁剪，见 utils/tankIconCrop.js）
+    data.loadTankIconCrops.mockResolvedValue({
+      1: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 141, h: 101 },
+      999: { canvas_w: 256, canvas_h: 128, x: 0, y: 0, w: 148, h: 101 },
+    })
+    const { wrapper } = await mountAt({ tank: '999' })
+    const hero = wrapper.find('[data-testid="tank-detail"] img, .tp-media-lg img').exists()
+      ? wrapper.find('.tp-media-lg img')
+      : wrapper.find('img')
+    expect(hero.attributes('style')).toContain('translate(')
+    expect(hero.attributes('style')).toContain('scale(')
+    wrapper.unmount()
+
+    // 数据缺失（旧包/资产源未配置）：无 transform，保持原 contain 展示
+    data.loadTankIconCrops.mockResolvedValue(null)
+    const { wrapper: w2 } = await mountAt({ tank: '999' })
+    const hero2 = w2.find('.tp-media-lg img')
+    expect(hero2.attributes('style') ?? '').not.toContain('scale(')
+    w2.unmount()
   })
 
   it('筛选读写 URL：从 query 恢复，修改时 replace 写回', async () => {
