@@ -103,7 +103,7 @@ Replay Workspace contains five publicly discoverable capabilities. Anonymous use
 |---|---|---|
 | `data`：导入、Rust/WASM 解析、Result、deterministic Rating、session state | LOCAL | 文件、结果与选择照常使用，不请求业务 HTTP |
 | `playback`：2D、底图、标记 | LOCAL | 本机解析，底图和标记随 bundle 提供 |
-| `shots`：射击列表、检视、弹种、俯仰锚定 | LOCAL +（登录或已验证官方示例） | 本机解析，使用 bundled `shellKinds.json` 与 `common/shot-tank-data.json`；匿名个人回放由 `ReplayCapabilityAuthGate.vue` 引导登录 |
+| `shots`：射击列表、检视、弹种、俯仰锚定 | LOCAL +（登录或已验证官方示例） | 本机解析；弹种表与搭载输入取资产包（`/data/shellKinds.json` 与 `tank/{id}.json`，2026-10-15 起不再内嵌 bundle）；匿名个人回放由 `ReplayCapabilityAuthGate.vue` 引导登录 |
 | `3d`：远端场景/GLB | ONLINE_REQUIRED +（登录或已验证官方示例） | tab 保留；官方示例也受连通性门禁约束；连通性提示优先于登录门禁，不挂载 remote loader |
 | `ai`：AI 复盘 | ONLINE_REQUIRED + auth | connectivity 先于登录与请求；联网恢复不自动提交 |
 | HoF/remote Profile/Admin users | ONLINE_REQUIRED | 入口保留；mount、读写、确认后的动作都经过同一门禁 |
@@ -112,7 +112,7 @@ Android 与 Web 共用工作台、Router 和唯一 `useReplaySession`。外部 r
 
 断网不清空 replay、Result、Rating、native cached session 或本地检视。3D 断网销毁当前场景以作废在途 asset session（沿用场景 generation，不创建另一套 cancellation）；selection 仍属于工作台。用户停留在阻断的 3D 时，重连只恢复 controller 与待开播面板一次；沿用 main 的画质先选、明确 Start 后才解析/拉资产，后台重连不新建场景。AI 流沿用既有 AbortController 取消，断网取消不再发送 cancel HTTP；重连只恢复能力，不提交复盘。HoF 只在 availability 从不可用恢复可用时加载当前榜单一次，业务错误仍由明确重试处理。
 
-`common/shot-tank-data.json` 从 reviewed Agent asset plane 的 `data/tank_cache.json` 与 `tank/{id}.json` 提取 config 原始顺序、`pitch_limits`、`shell_global_ids`；不包含名称/GLB/纹理或第二份 tankopedia。更新：`python common/python/update_shot_tank_data.py --asset-base <reviewed HTTPS asset origin>`。缺 source entry 更新失败，不覆盖现有快照；缓存与全部 tank 原始输入有 SHA-256 provenance。当前 735 车型的 2075 global shell IDs 全部由同包弹表覆盖。未知车型如实保留 pitch 降级，不联网补齐。装甲查看器跳转属于联网 3D 动作，由装甲页面自身承载（匿名可用，无需登录）。
+~~`common/shot-tank-data.json`~~ **已退役（2026-10-15）**：射击检视的搭载输入与弹种表改为运行期直读资产包——`fetchShotTankData` 对 `tank/{id}.json` 做 config 顺序 + `pitch_limits` + `shell_global_ids` 的紧凑投影，弹种表取 `/data/shellKinds.json`（与上游 tanks.pb 同批刷新，经 manifest sha256 差分发布）。资产源未配置或请求失败时按降级语义继续（pitch 如实降级、弹种走槽位/id 兜底），列表发布不被资产请求挂起阻塞。装甲查看器跳转属于联网 3D 动作，由装甲页面自身承载（匿名可用，无需登录）。
 
 `npm run test:browser-interaction` 包含真实 WASM offline scenario：冷启动/重启、fixture 手动导入/Result/Rating/2D/射击、AI/HoF/3D/Profile 深链、重连/断网与 local state 保持，并在网络边界记录和拒绝业务 HTTP（应为零）。这是自动运行门禁；3D 画面和 Android provider 真机验证仍由人工完成。
 
