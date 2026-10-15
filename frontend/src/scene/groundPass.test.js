@@ -18,7 +18,8 @@ import { makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const strip = (s) => s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF 锚点不匹配，CI 为 LF）
+  .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
