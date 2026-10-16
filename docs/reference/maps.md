@@ -128,7 +128,8 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 ### COS 免发版通道（Android：包内兜底 + 在线校验）
 
 Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp` + `map2d/index.json`
-（schemaVersion 1：`generated`、`recipe`、逐图 `path/sha256/bytes/width/height`）。App 侧实现单点 =
+（**schemaVersion 2**：`generated`、`recipe`、逐图 `path/sha256/bytes/width/height` **＋几何契约
+`worldBounds`/`orientation`**；2026-10-16 起）。App 侧实现单点 =
 `frontend/src/data/map2dOverlay.js`，规则确定、无启发式：
 
 1. 无包内清单（web / 旧包）⇒ 通道关闭（web 行为完全不变）；
@@ -141,6 +142,13 @@ Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp`
    无本地时钟参与；
 5. 逐图 `sha256` 与包内一致 ⇒ 用包内（零流量）；不同 ⇒ 取远端。**远端字节必须 sha256 校验通过
    才启用**（`crypto.subtle` 不可用也视为不通过），任何失败都回落包内、不抛给渲染层。
+6. **逐图几何契约必须与注册表一致**（2026-10-16 起）：索引条目须带 `worldBounds`（与
+   `mapImages.js` 的 `coordinateBounds` 逐值相等）与 `orientation = top=+Z,left=+X`，像素为方形；
+   任一不符 ⇒ 该图不换（`window.__wotbMap2d.maps[code]` 记 `source='rejected'`、`reason: geometry`），
+   schemaVersion 1 的索引因缺这两项一律不换（通道状态 `schema`）。理由：2D 渲染把回放坐标按
+   `coordinateBounds` 线性映射到整幅图，**栅格分辨率不参与映射**（底图与标记同框拉伸），所以
+   sha256/尺寸全对仍可能"换了图但取景变了"（裁剪/补边/换框后尺寸可以不变），只有世界框能判出来；
+   换图后还会**解码一次**核对 `naturalWidth/Height` 与索引声明一致。
 
 - 传输与离线缓存**复用现有 `AgentAssetProxy`**（条件请求 + ETag 磁盘缓存 + 上游失败回落陈旧；
   本机制**不需要任何 Kotlin 改动**）；索引另在 localStorage 留副本，离线时仍能判定"远端有更新"。
@@ -163,6 +171,11 @@ Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp`
 - 诊断：`window.__wotbMap2d`（Android 运行时与本地 dev）暴露通道状态与逐图来源
   （`embedded` / `pending` / `remote` / `rejected`）。消费点 = `BattlePlayback` / `MapOverview`
   的 `imageSrc` 计算属性与 `BattleMap3D` 贴图前的 `ensureMap2dImage`。
-- 契约测试：`src/data/map2dOverlay.test.js`（16 例：不降级 / 哈希不符不启用 / 离线回落 /
-  schema 与时间戳 fail-closed / 构建产物存在性）。**真机端到端**（确实换到新图、离线仍可用）
+- 契约测试：`src/data/map2dOverlay.test.js`（25 例：不降级 / 哈希不符不启用 / 离线回落 /
+  schema 与时间戳 fail-closed / **几何契约逐项判否（换框 / 取向 / 非方形 / 缺字段 / 无注册表）
+  与解码尺寸不符回落** / 构建产物存在性）。**真机端到端**（确实换到新图、离线仍可用）
   属设备验收，由用户在真机确认。
+- **随包底图的配准证据（2026-10-16 补）**：29 张逐个与 Agent 仓 `map/<key>/ground.webp`
+  （±300 全幅渲染）做零位移比对——移位 (0,0)、取向 identity、尺度 1.000、相关 0.987–0.998，
+  即每一张都是包内渲染的全幅等比降采样。分辨率变化因此**不改变**坐标语义；
+  非方形 logical frame 只影响形状（底图与标记同框拉伸），不影响对齐。

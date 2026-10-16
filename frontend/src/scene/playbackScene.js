@@ -48,9 +48,10 @@ import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapL
 import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
-import { lifeAt } from '../utils/battlePlaybackV2.ts'
+import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
-import { sampleChannel, sampleKeyframes, sampleDetachedPose } from './trackInterp.js'
+import { sampleDetachedPose } from './trackInterp.js'
+import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
@@ -144,10 +145,10 @@ async function mapLimit(items, limit, fn) {
 // fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
 // 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
 }
 
 /**
@@ -196,6 +197,12 @@ export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts） */
+  const POSE_GRID = { tStart: 0, samples: 0 };
+  /** 位姿采样复用对象（每帧多车高频调用，零分配） */
+  const _poseOut = {
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0,
+  };
   let currentMapBases = null;
   // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
   // 中立与未知阵营一律 white（unknown ≠ enemy）。
@@ -390,54 +397,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function idxOf(t) { return Math.floor((t - DATA.meta.t_start) / GRID_DT); }
 
-  // 位姿求值：**优先关键帧折线**（上游 `pose_kf` = 客户端 60Hz 渲染路径的折点序列，
-  // 段内线性插值即复现客户端画面，含「保持-跳变」阶梯）。缺失 `pose_kf`（旧 facet）时
-  // 回退 10Hz 网格线性插值——与历史行为逐值一致。
-  // 为什么不能只靠网格：0.1s 网格与 ≈10~12Hz 位置更新不同相 → 阶梯被混叠成速度摆动
-  // （实测某 0.5s 窗内线速度 4.5→29.6 m/s，同段真值稳定），观感即「一顿一顿」。
-  // pos 的 x 分量在此处取镜像负号（游戏系 → 场景系）。
-  const kfOf = (v) => {
-    const k = v.def.pose_kf;
-    return k && k.t && k.t.length >= 2 ? k : null;
-  };
+  // 位姿求值：**唯一实现**在 `replay-local/pose/vehiclePose.ts`（2D 俯视与 3D 场景共用）——
+  // 含 `pose_kf` 关键帧优先 / 10Hz 网格回退、以及炮塔绝对角 → 相对角的换算。
+  // 本处只施加「场景系 = 游戏系 x 取负」的帧变换（符号约定见 glbRig.js 头注释）；
+  // 车体侧倾 hull_roll 取自原始 type=10 volatile（滤波层不输出侧倾），旧产物缺列 → 0。
+  const poseOf = (v, t) => sampleVehiclePoseGame(v.def, POSE_GRID, t, _poseOut);
   function posAt(v, t, out) {
-    const k = kfOf(v);
-    if (k) {
-      const col = (c) => (i) => k.pos[i * 3 + c];
-      out.set(-sampleKeyframes(col(0), k.t, t),
-               sampleKeyframes(col(1), k.t, t),
-               sampleKeyframes(col(2), k.t, t));
-      return out;
-    }
-    const p = v.def.pos, t0 = DATA.meta.t_start, n = DATA.meta.samples;
-    const col = (c) => (i) => p[i * 3 + c];
-    out.set(-sampleChannel(col(0), n, t, t0, GRID_DT),
-             sampleChannel(col(1), n, t, t0, GRID_DT),
-             sampleChannel(col(2), n, t, t0, GRID_DT));
+    const p = poseOf(v, t);
+    out.set(-p.x, p.y, p.z);
     return out;
   }
-  function yawAt(v, t) {
-    const k = kfOf(v);
-    if (k) return sampleKeyframes((i) => k.yaw[i], k.t, t);
-    return arrAt(v.def.hull_yaw, t);
-  }
-  function hullPitchAt(v, t) {
-    const k = kfOf(v);
-    if (k) return sampleKeyframes((i) => k.pitch[i], k.t, t);
-    return arrAt(v.def.hull_pitch, t);
-  }
-  function turretAbsAt(v, t) { return arrAt(v.def.turret_yaw, t); }
-  function gunPitchAt(v, t) { return arrAt(v.def.gun_pitch, t); }
-  function arrAt(arr, t) {
-    if (!arr || !arr.length) return 0;
-    return sampleChannel((i) => arr[i], arr.length, t, DATA.meta.t_start, GRID_DT);
-  }
-  // 车体侧倾（rad）。数据侧 hull_roll 取自**原始 type=10 volatile 采样**（滤波层不输出侧倾，
-  // 与 hull_pitch 不同源）；旧产物无该列 → 0 = 水平（fail-safe，绝不拿 pitch 顶替）。
-  // 符号约定：游戏系→场景系是「x 取负」的镜像，镜像下绕 z（偏航）与绕 y（横滚=车体前向轴）
-  // 的角度取负、绕 x（俯仰）不变——这正是既有 `-yaw` 与 `+pitch` 的来源，故横滚取 `-roll`。
-  // （若实机目视发现侧倾方向相反，只翻这一个符号，并同步更新此处注释与守卫测试。）
-  const rollAt = (v, t) => (v.def.hull_roll && v.def.hull_roll.length ? arrAt(v.def.hull_roll, t) : 0);
+  function yawAt(v, t) { return poseOf(v, t).yaw; }
+  function hullPitchAt(v, t) { return poseOf(v, t).pitch; }
+  function turretAbsAt(v, t) { return poseOf(v, t).turretAbs; }
+  function gunPitchAt(v, t) { return poseOf(v, t).gunPitch; }
+  const rollAt = (v, t) => poseOf(v, t).roll;
 
   function hpAt(v, t) {
     const hp = v.def.hp; let cur = v.def.max_hp;
@@ -480,9 +454,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       };
     }
     // Canonical may still be loading/fail: retain the existing authoritative scene fact, never HP.
-    const death = v.def.death_t;
-    return Number.isFinite(t) && Number.isFinite(death)
-      ? { lifeState: t >= death ? 'DESTROYED' : 'ALIVE', destroyedKnownAtSec: death } : null;
+    // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往逐位一致）。
+    return defLifeAt(v.def, t);
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
   function visibleAt(v, t) {
@@ -1007,16 +980,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
     // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
     const progress = createLoadProgress((snap) => { if (!stale()) store.assetProgress = snap.fraction; });
-    const mapUrlPlanned = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
+    const mapUrlPlanned = mapStaticUrl('map', undefined, resolvedKey);
     if (mapUrlPlanned) progress.expect('map');
     if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
     if (Q.groundLayers && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
     if (Q.scenery && mapStaticUrl('scenery', undefined, resolvedKey)) progress.expect('scenery');
     try {
-      // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
+      // 地面贴图统一用**契约化的 `ground.webp`**（±300 全幅，与 2D 底图同源同框）。
+      // 曾用客户端 HUD 小地图（资产面 res=mini）省流量：实测它覆盖约 620 m —— 比 ±300 契约框
+      // **多出外围一圈**（水面/场景在 Landscape 框外侧），按 600 m 铺会把内容压缩约 3%、并把圈外
+      // 内容摊进边界（2026-10-16 用户裁定：以 ±300 为准，外圈不呈现）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
-      const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
+      const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
       if (mapUrl) {
         const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
@@ -2274,7 +2250,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function feedTrail(v, tr, t0) {
     const space = v.tread.space;
     const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
-    const deathT = v.def.death_t;
+    const def = v.def;
     const pendL = [], pendR = [];
     let broken = false;
     // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
@@ -2288,7 +2264,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
     const pushPoint = (tt) => {
-      if (deathT != null && tt >= deathT) return;             // 阵亡：静止残骸不再出段（不断链）
+      if (defLifeAt(def, tt)?.lifeState === 'DESTROYED') return; // 阵亡期：残骸不出段（不断链）；复活后恢复出印（issue #622）
       if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
         if (!broken) {
           flush();
@@ -3327,15 +3303,31 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
     burstEvents = [];
     for (const v of V) {
-      let t = v.def.death_t;
+      // 每次死亡各一次爆焰（issue #622 复活模式：同一 eid 可多次死亡）。
+      // 普通战斗每车至多一次死亡——单条行为与既往逐位一致。
+      const times = [];
       if (hasCanonicalLife) {
-        const transition = canonicalLifeTrack(v, canonical)?.lifeTransitions?.find(life => life.lifeState === 'DESTROYED');
-        t = transition && Number.isFinite(transition.timeSec)
-          ? transition.timeSec + canonical.clock.startRaw : null;
-        const identityTime = (transition?.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
-        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) t = null;
+        const seenDeaths = new Set();
+        for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
+          if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
+          const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
+          if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
+          // 同一次死亡的重复迁移只爆一次（既有不变式）；真复活模式的多死 killedAtSec 互异
+          const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
+          if (seenDeaths.has(key)) continue;
+          seenDeaths.add(key);
+          times.push(life.timeSec + canonical.clock.startRaw);
+        }
+      } else {
+        const death = v.def.death_t;
+        if (Number.isFinite(death)) {
+          times.push(death);
+          for (const d of v.def.death_times ?? []) {
+            if (Number.isFinite(d) && d !== death) times.push(d);
+          }
+        }
       }
-      if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
+      for (const t of times) burstEvents.push({ t, eid: v.def.eid });
     }
     burstEvents.sort((a, b) => a.t - b.t);
   }
@@ -4220,6 +4212,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    POSE_GRID.tStart = 0;
+    POSE_GRID.samples = 0;
     store.playbackSession = null;
     // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
     // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
@@ -4281,6 +4275,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      POSE_GRID.tStart = data.meta.t_start;
+      POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。

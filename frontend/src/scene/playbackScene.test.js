@@ -1426,10 +1426,20 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
-      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
     }
+  })
+
+  it('地面贴图四档统一用契约化的 `map`（ground.webp）；客户端 HUD 小地图不再进地面链路', async () => {
+    // 2026-10-16 用户裁定（以 ±300 为准）：客户端小地图覆盖约 620 m、多出外围一圈，按 600 m 铺
+    // 会压缩内容约 3% 并把圈外内容摊进边界 ⇒ 地面链路（含最低档）只认 ground.webp。
+    const src = (await import('./playbackScene.js?raw')).default
+    expect(src).not.toMatch(/map-mini/)
+    expect(src).not.toMatch(/miniMap/)
+    expect(src).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
+    const replay = (await import('./replaySource.js?raw')).default
+    expect(replay).not.toMatch(/map-mini/)
   })
 })
 
@@ -1941,6 +1951,48 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     frames.shift()()
     api.setPlaying(false)
     expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
+  })
+
+  it('respawn track: DESTROYED→ALIVE→DESTROYED — wreck un-fades on resurrection, roster follows (issue #622)', async () => {
+    const track = { accountId: 77, lifeTransitions: [
+      { timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: 10 },
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    ] }
+    const { api, store, vehicles } = await load([vehicle()], canonicalFor([track]))
+    api.seekTime(53)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+    api.seekTime(73)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+  })
+
+  it('respawn: distinct deaths each spawn one burst (canonical life has no ALIVE gap in normal battles)', async () => {
+    const track = deadTrack()
+    track.lifeTransitions.push(
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    )
+    const { api, frames } = await load([vehicle()], canonicalFor([track]))
+    const spawnBurst = vi.spyOn(window.__battleFx, 'spawnBurst')
+    api.seekTime(51.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(1)   // 第一次死亡
+    api.seekTime(71.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(2)   // 复活后的第二次死亡：独立爆焰
+    expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
   })
 
   it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(

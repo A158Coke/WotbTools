@@ -1116,8 +1116,27 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
 })
 
 describe('车体横滚（hull_roll）接线守卫', () => {
-  it('侧倾取值助手：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
-    expect(src).toMatch(/const rollAt = \(v, t\) => \(v\.def\.hull_roll && v\.def\.hull_roll\.length \? arrAt\(v\.def\.hull_roll, t\) : 0\);/)
+  // 位姿采样 SSOT（2026-10-16 抽层：2D 俯视与 3D 场景共用同一实现，见 vehiclePose.ts 头部）。
+  // 通道选择 / 缺列兜底随实现迁移到该模块，守卫改读新源（与 matSrc/asmSrc/gpSrc 同例）。
+  const poseSrc = readSrc(resolve(here, '../replay-local/pose/vehiclePose.ts'), 'utf8')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it('侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
+    expect(src).toMatch(/const rollAt = \(v, t\) => poseOf\(v, t\)\.roll;/)
+    expect(poseSrc).toMatch(/if \(!arr \|\| !arr\.length\) return 0/)
+    expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid\)/)
+    expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid\)/)
+    // 侧倾/炮塔**只有网格列**（pose_kf 只覆盖 pos/hull_yaw/hull_pitch）
+    expect(poseSrc).not.toMatch(/kf\.roll/)
+  })
+
+  it('位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退', () => {
+    // 2D 俯视与 3D 场景必须逐帧同源（2026-10-16 抽层）；本守卫防通道逻辑回流到场景侧。
+    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(v\.def, POSE_GRID, t, _poseOut\);/)
+    expect(src).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
+    expect(src).not.toMatch(/kfOf/)
+    expect(src).not.toMatch(/const col = \(c\) =>/)
   })
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {

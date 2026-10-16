@@ -7,6 +7,8 @@
  *    不得覆盖已见过的新版，更不得据它把底图 OTA 回退）；索引不比包内内容新 ⇒ 一律包内；
  *  - **确定性内容时间戳**：包内清单携带 `contentGeneratedAt`（底图内容的生成时刻，与 COS 索引
  *    同源），不是构建时间；构建脚本里不得用 `new Date()`；
+ *  - **几何契约**（索引 schemaVersion 2）：逐图 `worldBounds` 必须与注册表 `coordinateBounds` 一致、
+ *    取向常量逐字相符、像素为方形且与实际解码一致——只校验 sha256/尺寸校不出"换了图但取景变了"；
  *  - 字节 sha256 校验不通过绝不启用；任何失败都回落包内而不是抛给渲染层。
  *
  * 真机上的"确实换图了 / 离线仍可用"属端到端行为，由用户在设备上确认（本文件覆盖可确定的部分）。
@@ -36,11 +38,26 @@ const embeddedManifest = {
   contentGeneratedAt: CONTENT_TIME,
   maps: { canal: { file: 'canal.webp', asset: 'assets/canal-abc.webp', sha256: EMBEDDED_HASH } },
 }
-const indexAt = (generated, sha256 = IMAGE_HASH) => ({
-  schemaVersion: 1,
+const BOUNDS_300 = { xMin: -300, xMax: 300, yMin: -300, yMax: 300 }
+const BOUNDS_BY_CODE = { canal: BOUNDS_300 }
+const indexAt = (generated, sha256 = IMAGE_HASH, geometry = {}) => ({
+  schemaVersion: 2,
   generated,
-  maps: { canal: { path: 'map2d/canal.webp', sha256, bytes: IMAGE_BYTES.length, width: 1254, height: 1254 } },
+  maps: {
+    canal: {
+      path: 'map2d/canal.webp', sha256, bytes: IMAGE_BYTES.length, width: 1254, height: 1254,
+      worldBounds: BOUNDS_300, orientation: 'top=+Z,left=+X', ...geometry,
+    },
+  },
 })
+/** 生产调用点总是带注册表世界框；纯决策测试同样显式传入（缺了就是"无注册表"⇒ 不换图）。 */
+const select = (props) => selectMap2dSources({ boundsByCode: BOUNDS_BY_CODE, ...props })
+/** Image 桩：解码几何即声明值（尺寸不符的用例单独覆盖）。 */
+const imageStub = (w = 1254, h = 1254) => class {
+  constructor() { this.naturalWidth = w; this.naturalHeight = h }
+  set src(_v) {}
+  decode() { return Promise.resolve() }
+}
 
 function storeStub(initial = {}) {
   const data = new Map(Object.entries(initial))
@@ -70,7 +87,11 @@ function fetchStub(routes) {
 beforeEach(() => {
   vi.stubEnv('MODE', 'android')
   vi.stubGlobal('localStorage', storeStub())
-  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:map2d') }))
+  vi.stubGlobal('URL', Object.assign(URL, {
+    createObjectURL: vi.fn(() => 'blob:map2d'),
+    revokeObjectURL: vi.fn(),
+  }))
+  vi.stubGlobal('Image', imageStub())
   __resetMap2dForTests()
 })
 
@@ -85,7 +106,7 @@ describe('pickNewestIndex / isValidIndex', () => {
     const newest = pickNewestIndex([
       { index: indexAt(OLDER_INDEX_TIME), source: 'stored' },
       { index: { schemaVersion: 9, generated: NEWER_INDEX_TIME }, source: 'remote' },
-      { index: { schemaVersion: 1, generated: 'not-a-date' }, source: 'remote' },
+      { index: { schemaVersion: 1, generated: NEWER_INDEX_TIME }, source: 'remote' },
     ])
     expect(newest).toMatchObject({ source: 'stored' })
     expect(newest.index.generated).toBe(OLDER_INDEX_TIME)
@@ -102,7 +123,7 @@ describe('pickNewestIndex / isValidIndex', () => {
 
   it('isValidIndex：schema + 可解析 generated 才有效', () => {
     expect(isValidIndex(indexAt(NEWER_INDEX_TIME))).toBe(true)
-    expect(isValidIndex({ schemaVersion: 2, generated: NEWER_INDEX_TIME })).toBe(false)
+    expect(isValidIndex({ schemaVersion: 1, generated: NEWER_INDEX_TIME }), 'v1 缺几何契约 ⇒ 不启用').toBe(false)
     expect(isValidIndex({ schemaVersion: 1, generated: '' })).toBe(false)
     expect(isValidIndex(null)).toBe(false)
   })
@@ -110,30 +131,30 @@ describe('pickNewestIndex / isValidIndex', () => {
 
 describe('selectMap2dSources（纯决策）', () => {
   it('无包内清单 ⇒ 关闭通道（web / 旧包）', () => {
-    expect(selectMap2dSources({ embedded: null }).reason).toBe('no-embedded')
-    expect(selectMap2dSources({ embedded: { maps: {} } }).active).toBe(false)
+    expect(select({ embedded: null }).reason).toBe('no-embedded')
+    expect(select({ embedded: { maps: {} } }).active).toBe(false)
   })
 
   it('无索引 / 索引全无效 ⇒ 全部包内', () => {
-    expect(selectMap2dSources({ embedded: embeddedManifest })).toMatchObject({ active: false, reason: 'no-index', use: {} })
-    expect(selectMap2dSources({ embedded: embeddedManifest, remoteIndex: { schemaVersion: 9, generated: NEWER_INDEX_TIME } }).reason).toBe('schema')
-    expect(selectMap2dSources({ embedded: embeddedManifest, remoteIndex: { schemaVersion: 1, generated: 'x' } }).reason).toBe('timestamp')
+    expect(select({ embedded: embeddedManifest })).toMatchObject({ active: false, reason: 'no-index', use: {} })
+    expect(select({ embedded: embeddedManifest, remoteIndex: { schemaVersion: 9, generated: NEWER_INDEX_TIME } }).reason).toBe('schema')
+    expect(select({ embedded: embeddedManifest, remoteIndex: { schemaVersion: 1, generated: 'x' } }).reason).toBe('schema')
   })
 
   it('包内清单缺 contentGeneratedAt / 不可解析 ⇒ fail closed（不是构建时间兜底）', () => {
     const legacy = { schemaVersion: 1, buildTime: CONTENT_TIME, maps: embeddedManifest.maps }
-    expect(selectMap2dSources({ embedded: legacy, remoteIndex: indexAt(NEWER_INDEX_TIME) }).reason).toBe('timestamp')
+    expect(select({ embedded: legacy, remoteIndex: indexAt(NEWER_INDEX_TIME) }).reason).toBe('timestamp')
   })
 
   it('索引不比包内内容新 ⇒ 一律包内（即使哈希不同）', () => {
     for (const generated of [BEFORE_CONTENT_TIME, CONTENT_TIME]) {
-      const out = selectMap2dSources({ embedded: embeddedManifest, remoteIndex: indexAt(generated) })
+      const out = select({ embedded: embeddedManifest, remoteIndex: indexAt(generated) })
       expect(out).toMatchObject({ active: false, reason: 'stale-index', use: {} })
     }
   })
 
   it('**stored 比 remote 新 ⇒ 选 stored**（embedded=15日 / stored=20日 / remote=18日）', () => {
-    const out = selectMap2dSources({
+    const out = select({
       embedded: embeddedManifest,
       storedIndex: indexAt(NEWER_INDEX_TIME, IMAGE_HASH),
       remoteIndex: indexAt(OLDER_INDEX_TIME, EMBEDDED_HASH),
@@ -143,7 +164,7 @@ describe('selectMap2dSources（纯决策）', () => {
   })
 
   it('索引更新 + 同哈希 ⇒ 不进 OTA 清单（零流量）', () => {
-    const out = selectMap2dSources({ embedded: embeddedManifest, remoteIndex: indexAt(NEWER_INDEX_TIME, EMBEDDED_HASH) })
+    const out = select({ embedded: embeddedManifest, remoteIndex: indexAt(NEWER_INDEX_TIME, EMBEDDED_HASH) })
     expect(out.active).toBe(true)
     expect(out.use).toEqual({})
   })
@@ -151,9 +172,35 @@ describe('selectMap2dSources（纯决策）', () => {
   it('索引更新 + 哈希不同 ⇒ 该图走远端；索引缺失的图不越权', () => {
     const index = indexAt(NEWER_INDEX_TIME)
     index.maps.unknown = { path: 'map2d/unknown.webp', sha256: 'b'.repeat(64) }
-    const out = selectMap2dSources({ embedded: embeddedManifest, remoteIndex: index })
+    const out = select({ embedded: embeddedManifest, remoteIndex: index })
     expect(out.use.canal).toMatchObject({ sha256: IMAGE_HASH, path: 'map2d/canal.webp', bytes: IMAGE_BYTES.length })
     expect(out.use.unknown).toBeUndefined()
+  })
+
+  it('**几何契约不符 ⇒ 该图不换**（世界框 / 取向 / 方形 / 缺字段，逐个判否）', () => {
+    const cases = {
+      '世界框不同（换框）': { worldBounds: { xMin: -320, xMax: 320, yMin: -300, yMax: 300 } },
+      '取向不符': { orientation: 'top=+Z,left=-X' },
+      '非方形栅格': { width: 2048, height: 1024 },
+      '缺 worldBounds': { worldBounds: undefined },
+      '缺取向': { orientation: undefined },
+    }
+    for (const [label, geometry] of Object.entries(cases)) {
+      const out = select({ embedded: embeddedManifest, remoteIndex: indexAt(NEWER_INDEX_TIME, IMAGE_HASH, geometry) })
+      expect(out.use.canal, label).toBeUndefined()
+      expect(out.rejected.canal, label).toBe('geometry')
+    }
+  })
+
+  it('注册表没有该图的世界框 ⇒ 同样不换（无比对面 = 判否，绝不"缺省放行"）', () => {
+    const out = selectMap2dSources({ remoteIndex: indexAt(NEWER_INDEX_TIME), embedded: embeddedManifest, boundsByCode: {} })
+    expect(out.use.canal).toBeUndefined()
+    expect(out.rejected.canal).toBe('geometry')
+  })
+
+  it('几何契约通过 + 字节不同 ⇒ 正常走远端（像素尺寸随件带出）', () => {
+    const out = select({ embedded: embeddedManifest, remoteIndex: indexAt(NEWER_INDEX_TIME) })
+    expect(out.use.canal).toMatchObject({ width: 1254, height: 1254 })
   })
 })
 
@@ -180,6 +227,19 @@ describe('ensureMap2dImage（取字节 + 校验 + 启用）', () => {
     }))
     expect(await ensureMap2dImage('canal')).toBeNull()
     expect(map2dState.maps.canal.source).toBe('rejected')
+    expect(map2dSrc('canal', 'assets/canal-abc.webp')).toBe('assets/canal-abc.webp')
+  })
+
+  it('字节校验通过但解码尺寸与索引声明不符 ⇒ 不启用、回落包内（几何 fail closed）', async () => {
+    vi.stubGlobal('Image', imageStub(2048, 2048))
+    vi.stubGlobal('fetch', fetchStub({
+      '/map2d-embedded.json': embeddedManifest,
+      '/agent-assets/map2d/index.json': indexAt(NEWER_INDEX_TIME),
+      '/agent-assets/map2d/canal.webp': IMAGE_BYTES,
+    }))
+    expect(await ensureMap2dImage('canal')).toBeNull()
+    expect(map2dState.maps.canal).toMatchObject({ source: 'rejected' })
+    expect(String(map2dState.maps.canal.reason)).toContain('geometry')
     expect(map2dSrc('canal', 'assets/canal-abc.webp')).toBe('assets/canal-abc.webp')
   })
 
