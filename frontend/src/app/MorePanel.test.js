@@ -8,9 +8,14 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 
 const authState = vi.hoisted(() => ({ authenticated: null }))
+const platformState = vi.hoisted(() => ({ android: false }))
 
 vi.mock('../composables/useAuth.js', () => ({
   useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false }, isTournamentAdmin: { value: false }, authenticated: authState.authenticated }),
+}))
+
+vi.mock('../composables/usePlatformBridge.js', () => ({
+  isAndroidApp: () => platformState.android,
 }))
 
 function mountPanel(navigate = vi.fn(), onboarding = null) {
@@ -28,7 +33,10 @@ function mountPanel(navigate = vi.fn(), onboarding = null) {
 }
 
 describe('MorePanel', () => {
-  beforeEach(() => { authState.authenticated = ref(false) })
+  beforeEach(() => {
+    authState.authenticated = ref(false)
+    platformState.android = false
+  })
   afterEach(() => { document.body.innerHTML = '' })
   it('keeps anonymous guide entries hidden and enables them reactively after sign-in', async () => {
     const openDirectory = vi.fn()
@@ -44,6 +52,21 @@ describe('MorePanel', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="more-link-guide"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('仅在 Android APP 展示工信部 APP 备案号并链接备案系统', async () => {
+    const web = mountPanel()
+    await web.wrapper.setProps({ open: true })
+    expect(web.wrapper.find('[data-testid="more-link-app-filing"]').exists()).toBe(false)
+    web.wrapper.unmount()
+
+    platformState.android = true
+    const android = mountPanel()
+    await android.wrapper.setProps({ open: true })
+    const filing = android.wrapper.get('[data-testid="more-link-app-filing"]')
+    expect(filing.text()).toContain('闽ICP备2026036303号-2A')
+    expect(filing.attributes('href')).toBe('https://beian.miit.gov.cn/')
+    android.wrapper.unmount()
   })
 
   it('点面板外关闭，点触发按钮不算"外部"', async () => {
