@@ -236,6 +236,16 @@ class SecurityConfigTest {
     }
 
     @Test
+    void telemetryAllowsAnonymousButRejectsInvalidBearer() throws Exception {
+        mvc.perform(post(ApiPaths.OBSERVABILITY_EVENTS)).andExpect(status().isOk());
+        final JwtDecoder decoder = context.getBean(JwtDecoder.class);
+        when(decoder.decode("invalid-telemetry-token")).thenThrow(new BadJwtException("invalid"));
+        mvc.perform(post(ApiPaths.OBSERVABILITY_EVENTS).header("Authorization", "Bearer invalid-telemetry-token"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get(ApiPaths.OBSERVABILITY_EVENTS).with(jwt())).andExpect(status().isForbidden());
+    }
+
+    @Test
     void userApiShouldRequireAuthentication() throws Exception {
         mvc.perform(get("/api/users/probe"))
                 .andExpect(status().isUnauthorized());
@@ -308,6 +318,9 @@ class SecurityConfigTest {
         String probe() {
             return "ok";
         }
+
+        @PostMapping(ApiPaths.OBSERVABILITY_EVENTS)
+        String telemetry() { return "ok"; }
 
         @PostMapping("/api/admin/tournaments")
         String tournamentCreate() { return "ok"; }

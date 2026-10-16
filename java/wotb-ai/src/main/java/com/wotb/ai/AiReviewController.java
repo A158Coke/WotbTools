@@ -10,6 +10,7 @@ import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.core.replay.processing.ReplayAnalysisScope;
 import com.wotb.core.replay.processing.UnsupportedBattleCategoryException;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.web.replay.ai.AiReviewEventLog;
 import com.wotb.web.replay.ai.AiReviewStreamListener;
 import com.wotb.web.replay.ai.AiReviewWorkerExecutor;
 import com.wotb.web.replay.ai.AllowedLanguage;
@@ -28,6 +29,8 @@ import com.wotb.web.replay.exception.AiPromptBudgetExceededException;
 import jakarta.servlet.http.HttpServletRequest;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +51,7 @@ import tools.jackson.databind.json.JsonMapper;
 @RestController
 @RequestMapping("/api/ai/reviews")
 public class AiReviewController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiReviewController.class);
     private static final long SSE_TIMEOUT_MS = 1_120_000L;
     private static final int MAX_REQUEST_BYTES = 16 * 1024 * 1024;
 
@@ -275,6 +279,9 @@ public class AiReviewController {
                 cancellations.cancel(request.correlationId());
             }
             if (!(error instanceof ClientDisconnectedException)) {
+                LOGGER.warn(AiReviewEventLog.line("ai_review_error", request.correlationId(),
+                        "feature", "ai_review", "errorCode", errorType,
+                        "exceptionType", error.getClass().getSimpleName()));
                 try {
                     emitter.send(SseEmitter.event().name("error")
                             .data(Map.of("id", request.correlationId(), "errorCode", errorType)));
@@ -289,6 +296,13 @@ public class AiReviewController {
             if (errorType != null) {
                 meterRegistry.counter("wotb_ai_review_errors_total", "type", errorType).increment();
             }
+            final AiRequestContext.UsageTotals usage = AiRequestContext.usageTotals();
+            LOGGER.info(AiReviewEventLog.line(
+                    "ai_review_usage", request.correlationId(),
+                    "inputTokens", usage.inputTokens, "outputTokens", usage.outputTokens,
+                    "totalTokens", usage.totalTokens, "calls", usage.calls,
+                    "missingUsageCalls", usage.missingUsageCalls, "result", result,
+                    "errorCode", errorType == null ? "none" : errorType));
             AiRequestContext.clear();
             cancellations.unregister(request.correlationId(), cancellation);
         }
