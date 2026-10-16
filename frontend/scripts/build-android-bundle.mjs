@@ -37,6 +37,7 @@ const PIN_PATH = join(REPO, 'deploy/agent/source.json')
 const VERIFY = join(here, 'verify-agent-wasm-dist.mjs')
 const MANIFEST_NAME = 'bundle-manifest.json'
 const EMBEDDED_MAP2D_NAME = 'map2d-embedded.json'
+const MAP2D_SOURCE_NAME = 'map2d-source.json'
 
 function fail(message) {
   console.error(`android bundle: ${message}`)
@@ -76,7 +77,20 @@ function buildMap2dEmbedded(files) {
     if (!asset) fail(`map2d-embedded: 找不到 ${code}（${file}）的随包资源`)
     maps[code] = { file, asset, sha256: sha256(join(ASSETS_WEB, asset)) }
   }
-  return { schemaVersion: 1, buildTime: new Date().toISOString(), maps }
+  // 内容时间戳来自**底图内容自身**（Agent 仓导出的 map2d-source.json，与 COS 索引 `generated` 同源）。
+  // 绝不能用 `new Date()`：它既不代表底图的新鲜度（会让 stage 晚于 COS 发布时构建的包把真正更新的
+  // 底图判成更旧、永久拒绝升级），也会让同一 commit 重跑构建产出不同字节的 bundle（破坏 stage
+  // 可重跑性与 APK 不可变性——本函数所在产物同时进 bundle manifest 与 APK 资产）。
+  const sourcePath = join(FRONTEND, 'src/assets/maps', MAP2D_SOURCE_NAME)
+  if (!existsSync(sourcePath)) {
+    fail(`map2d-embedded: 缺 ${MAP2D_SOURCE_NAME}——底图交接集不完整（应与 29 张 webp 同批，见 docs/reference/maps.md §2026-10-16）`)
+  }
+  const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
+  const contentGeneratedAt = String(source?.contentGeneratedAt ?? '')
+  if (source?.schemaVersion !== 1 || !Number.isFinite(Date.parse(contentGeneratedAt))) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 非法（需要 schemaVersion 1 + 可解析的 contentGeneratedAt）`)
+  }
+  return { schemaVersion: 2, contentGeneratedAt, maps }
 }
 
 /** `maps` 段（bundle manifest）：随包 2D 底图的真实字节统计（与 Web 同字节的 canonical）。 */

@@ -24,9 +24,19 @@ const image = computed(() => mapImages[props.overview.mapCode] || null)
 const imageSrc = computed(() => (image.value ? map2dSrc(props.overview.mapCode, image.value.src) : null))
 
 // 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/features/battle-playback.md）。
+// `imageSrc` 会二次变化（包内 → OTA blob），两次取亮度的完成顺序不保证；用 request token 丢弃
+// 迟到的旧结果，避免"已是远端底图、却被打回旧调色板"的 last-request-wins 竞态
+//（BattlePlayback 用同一套 guard，见其 paletteRequestToken）。
 const palette = ref(darkMapPalette)
+let paletteRequestToken = 0
 watch(imageSrc, async (src) => {
-  palette.value = paletteForLuminance(src ? await luminanceOfImage({ src }) : null)
+  const token = ++paletteRequestToken
+  try {
+    const luminance = src ? await luminanceOfImage({ src }) : null
+    if (token === paletteRequestToken) palette.value = paletteForLuminance(luminance)
+  } catch {
+    if (token === paletteRequestToken) palette.value = darkMapPalette
+  }
 }, { immediate: true })
 
 // 热力筛选
