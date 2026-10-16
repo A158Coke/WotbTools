@@ -36,7 +36,8 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
 - **APK**：单个 APK，release 只含 `arm64-v8a` + `armeabi-v7a`（debug 另含 `x86_64` 供模拟器），
   native libs 压缩打包（`useLegacyPackaging`），优先减小侧载下载体积。
 - **设置**：只用公开 API——release 关闭 remote debugging / about:config / console 输出；Safe Browsing 关闭
-  （只加载本机可信内容）；权限请求一律拒绝；`window.open` / 新窗口一律拒绝。
+  （只加载本机可信内容）；权限请求一律拒绝；页面引擎不创建多窗口（GeckoView 只用一个 `GeckoSession`，
+  `onNewSession` 返回 null）。`window.open` / `target=_blank` 的最终处置见「运行时安全」的导航条目。
 - **原生弹窗**：GeckoView 的 `PromptDelegate` 默认实现一律「取消」。已实现的只有 HTML `<select>`
   （`onChoicePrompt` → 原生单选 / 多选菜单，含 optgroup、disabled、页面侧关闭与选项更新）与
   `<input type=file>`（`onFilePrompt` → 系统 picker）。`alert` / `confirm` / `prompt`、日期 / 颜色选择、
@@ -166,10 +167,17 @@ Android 不在 Native 层重写 AI Review / Battle Reconstruction / capability �
 - Native Bridge（`getCapabilities`/`getPendingReplay`/`consumePendingReplay`/`checkForUpdate`/
   `startUpdate`/`authGetState`/`authLogin`/`authLogout`/`authGetAccessToken`；禁止
   readFile/http/execute/launch、禁止任何 refresh token 出口）——
-  **origin-scoped**：内置扩展的 content script 只在 `127.0.0.1` 的 top frame 暴露与 v2 同形的
-  `window.WotbNative`（`postMessage(string)` / `addEventListener('message')` / `removeEventListener`），经
-  native messaging port 交给 Native；Native 只接受「content script ∧ top frame ∧ 当前 session ∧ exact
-  `http://127.0.0.1:21653`」的 port，再交给不变的 `NativeBridge.handleMessage`。不暴露给 Keycloak / IdP /
+  **origin-scoped**：内置扩展的 content script 只在 exact `http://127.0.0.1:21653` 的 top frame 暴露与
+  v2 同形的 `window.WotbNative`（`postMessage(string)` / `addEventListener('message')` /
+  `removeEventListener`），经 native messaging port 交给 Native；Native 只接受「content script ∧ top
+  frame ∧ 当前 session ∧ exact `http://127.0.0.1:21653`」的 port，再交给不变的
+  `NativeBridge.handleMessage`。exact origin 由**两层**共同执行：content script 的
+  `isTrustedBridgeLocation`（`http:` + `127.0.0.1` + `21653` + top frame）与 Native 的
+  `MainActivity.isLocalAppUrl(sender.url)`；manifest 的 `matches` 因为 Gecko 的 WebExtension match
+  pattern **不支持 port**（MDN match patterns；Firefox bug 1362809 / 1468162）只能是粗粒度的
+  `http://127.0.0.1/*` 注入范围，**不构成** origin 保证。回归用例：
+  `frontend/src/platform/geckoBridgeOriginGate.test.js`（执行真实 `bridge.js`，逐个 URL 断言只有 exact
+  origin 才会 `connectNative`）。不暴露给 Keycloak / IdP /
   任意第三方 frame；Native → Web 事件只会调用 contract `events` 列出的 global
 - APK 下载、SHA-256 校验、installer、未知来源授权
 - 复用 Web 的本机解析（上游 Rust Core WASM，服务器没有 parser；Android 不实现第二套解析，
@@ -361,8 +369,13 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
 
 - **导航**：主文档只允许 exact `http://127.0.0.1:21653`（与 `about:blank`）；唯一例外是内嵌 origin
   等于本机 origin 的 `blob:` 下载派发（见「引擎」一节的下载说明与 `NavigationPolicy`）；外部
-  `https:` / `mailto:` 交给系统浏览器，其它 scheme 一律拒绝；新窗口拒绝；iframe 只允许本机 origin。
-  生产 API、Keycloak 与 IdP 不在引擎内导航。
+  `https:` / `mailto:` 交给系统浏览器，其它 scheme 一律拒绝。引擎**不创建 Gecko 多窗口**：没有第二个
+  `GeckoSession`，`onNewSession` 返回 null，`target=_blank` / `window.open` 按目标分四种处置：
+  ① 本机 origin（含 `about:blank`）→ 降级为**当前 session** 导航（`load(uri)`），不新开窗口；
+  ② 外部 `https:` / `mailto:` → 交 Android system handler（系统浏览器 / 邮件应用），页面不导航；
+  ③ trusted local `blob:` → 只允许 Gecko 的下载派发（不 `load(blob)`、不交系统浏览器）；
+  ④ 其它 scheme / 非可信 blob → fail-closed 拒绝。iframe 只允许本机 origin；生产 API、Keycloak 与
+  IdP 不在引擎内导航。
 - **本机 server**：只 bind `127.0.0.1`；`Host` 必须等于 `127.0.0.1:21653`（防 DNS rebinding）；带 `Origin`
   的请求必须来自本机 origin（挡住设备上其它浏览器里的跨源页面）；只收 GET/HEAD，不读 body、不列目录、
   不做代理；拒绝 `..` / 编码分隔符 / 反斜杠 / 控制字符；请求头大小与读超时有上限。设备上其它 App 也能

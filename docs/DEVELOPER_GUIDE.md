@@ -676,7 +676,10 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 `workflow_dispatch(mode=publish, version=<已 staged 版本>)` **publish**（显式版本决定 tag/APK/evidence
 名，tag target 源码给出 versionCode/bridge/Agent pin，再校验 staged 身份 + Keycloak client +
 APK bundled frontend 身份/Bridge/native-auth + API exact-origin CORS/对象存储匿名可读就绪 + minSupported
-至少 2000001 的 local-first cutover，最后才写 `version.json`）。候选身份与当前 main 分离：main 前进
+至少 2000001 的 local-first cutover，最后才写 `version.json`）。**stage preflight 同样执行 cutover 守卫**
+（`guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`），所以 major / bridge
+cutover 的 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 必须在**合并之前**设好，而不是等到 publish。
+候选身份与当前 main 分离：main 前进
 不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
 再验证。细节见 `docs/android/release-process.md`。

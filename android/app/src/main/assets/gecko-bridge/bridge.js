@@ -8,8 +8,16 @@
 (() => {
   // 只允许 Native 触发 contract events 列出的 global，绝不执行任意名字。
   const EVENT_GLOBALS = new Set(["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay"]);
-  // 端口不在这里重复：引擎只会导航到 exact MainActivity.LOCAL_APP_ORIGIN，Native 也按 exact origin 复核 port。
-  if (window !== window.top || location.protocol !== "http:" || location.hostname !== "127.0.0.1") return;
+
+  // 第一道门：exact local origin（`http://127.0.0.1:21653`）的 top frame。
+  // manifest 的 `http://127.0.0.1/*` 只是粗粒度注入范围——Firefox 的 WebExtension match pattern
+  // 不支持 port（MDN match patterns / bug 1362809、1468162），所以 port 必须在这里显式比对。
+  // origin 的精确性 = 这里（port）+ Native 的 MainActivity.isLocalAppUrl(sender.url)，两层缺一不可。
+  function isTrustedBridgeLocation(loc) {
+    return loc.protocol === "http:" && loc.hostname === "127.0.0.1" && loc.port === "21653";
+  }
+
+  if (window !== window.top || !isTrustedBridgeLocation(location)) return;
 
   const page = window.wrappedJSObject;
   const listeners = new Set();

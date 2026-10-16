@@ -5,7 +5,7 @@
   "allowedOrigins": [
     "http://127.0.0.1:21653"
   ],
-  "transport": "GeckoView built-in WebExtension (android/app/src/main/assets/gecko-bridge) exposes window.WotbNative with postMessage(string) / addEventListener('message') / removeEventListener to the exact origin's top frame only; Native re-validates the sender (content script, top frame, current session, exact origin).",
+  "transport": "GeckoView built-in WebExtension (android/app/src/main/assets/gecko-bridge) exposes window.WotbNative with postMessage(string) / addEventListener('message') / removeEventListener to the exact origin's top frame only. The content-script injection scope is the coarse host pattern `http://127.0.0.1/*` because Gecko WebExtension match patterns cannot express a port (MDN match patterns / Firefox bug 1362809); the exact origin is enforced by the content-script gate (protocol + hostname + port + top frame) and re-validated by Native, which accepts only the sender (content script, top frame, current session, exact origin).",
   "rpc": {
     "request": {
       "id": "string|number",
