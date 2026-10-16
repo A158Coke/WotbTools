@@ -193,7 +193,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 40m
-          envs: DEV_METRICS_REGISTRY_TOKEN,DEV_METRICS_REGISTRY_USER,DEV_METRICS_IMAGE,GITHUB_DEV_METRICS_TOKEN,SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
+          envs: DEV_METRICS_REGISTRY_TOKEN,DEV_METRICS_REGISTRY_USER,DEV_METRICS_IMAGE,DEV_METRICS_GITHUB_TOKEN,SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -223,21 +223,21 @@ jobs:
             export WOTB_DEPLOY_LOCK_FD=9
 
             if [[ ",$RUNTIME_SERVICES," == *,dev-metrics-exporter,* ]]; then
-              test -n "$GITHUB_DEV_METRICS_TOKEN" || { echo 'GITHUB_DEV_METRICS_TOKEN is required.' >&2; exit 2; }
+              test -n "$DEV_METRICS_GITHUB_TOKEN" || { echo 'DEV_METRICS_GITHUB_TOKEN is required.' >&2; exit 2; }
               # /run is host tmpfs; the token never enters Compose environment,
               # image layers, OpenTofu state, or the persistent staging tree.
               [[ ! -L /run/wotb-dev-metrics ]] || exit 2
               install -d -m 700 /run/wotb-dev-metrics
               token_file="$(mktemp /run/wotb-dev-metrics/token.XXXXXX)"
               chmod 600 "$token_file"
-              printf '%s' "$GITHUB_DEV_METRICS_TOKEN" > "$token_file"
+              printf '%s' "$DEV_METRICS_GITHUB_TOKEN" > "$token_file"
               chmod 444 "$token_file"
               mv -f -- "$token_file" /run/wotb-dev-metrics/github-token
               export DEV_METRICS_IMAGE
             else
               unset DEV_METRICS_IMAGE
             fi
-            unset GITHUB_DEV_METRICS_TOKEN
+            unset DEV_METRICS_GITHUB_TOKEN
 
             # Shared SCP staging is overlaid across releases. Replace its dashboard
             # directory from the exact-SHA bundle so removed JSON cannot survive.
@@ -352,7 +352,7 @@ jobs:
           DEV_METRICS_REGISTRY_USER: ${{ github.actor }}
           DEV_METRICS_REGISTRY_TOKEN: ${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}
           DEV_METRICS_IMAGE: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}@${{ steps.exporter_image.outputs.digest }}
-          GITHUB_DEV_METRICS_TOKEN: ${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_DEV_METRICS_TOKEN || '' }}
+          DEV_METRICS_GITHUB_TOKEN: ${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.DEV_METRICS_GITHUB_TOKEN || '' }}
           RUNTIME_SERVICES: ${{ steps.source.outputs.runtime_services }}
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
           GRAFANA_ADMIN_USER: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_USER || '' }}

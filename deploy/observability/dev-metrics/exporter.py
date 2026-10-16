@@ -87,7 +87,7 @@ def main():
     overrides = json.loads(Path(__file__).with_name('historical-area-overrides.json').read_text(encoding='utf-8-sig'))
     if any(not isinstance(areas, list) or not areas or not set(areas) <= set((*AREAS, 'unclassified')) for areas in overrides.values()):
         raise ValueError('invalid historical area overrides')
-    client = GitHubClient(os.environ.get('GITHUB_DEV_METRICS_TOKEN_FILE', '/run/secrets/github-dev-metrics-token'))
+    client = GitHubClient(os.environ.get('DEV_METRICS_GITHUB_TOKEN_FILE', '/run/secrets/github-dev-metrics-token'))
     cache = {}  # Aggregate contributions only; rebuilt from GitHub after restart.
     state = Snapshot(lambda: collect(client, repository, overrides, cache=cache), client)
     registry = CollectorRegistry()
