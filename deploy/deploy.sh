@@ -62,7 +62,7 @@ validate_inputs() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana|ai-service) ;;
+      dev-metrics-exporter|node-exporter|prometheus|loki|alloy|grafana|ai-service) ;;
       *) die "unsupported deployment service: $service" ;;
     esac
   done
@@ -86,6 +86,21 @@ stage_and_validate() {
   [ -f "$staged_source" ] || die "staged deployment tree is missing docker-compose.prod.yml."
   mkdir -p "$INCOMING_DIR"
   cp -f "$staged_source" "$EFFECTIVE_COMPOSE"
+  # Freeze the exporter reference into promoted Compose so another owner's
+  # later deployment cannot reset it through missing workflow environment.
+  local dev_image="${DEV_METRICS_IMAGE:-}"
+  if is_selected dev-metrics-exporter; then
+    [[ "$dev_image" =~ ^ghcr\.io/a158coke/dev-metrics-exporter:[0-9a-f]{40}@sha256:[0-9a-f]{64}$ ]] \
+      || die "exporter image must use an exact source SHA tag and digest."
+    [ -f /run/wotb-dev-metrics/github-token ] && [ ! -L /run/wotb-dev-metrics/github-token ] \
+      || die "runtime exporter token file is unavailable."
+  elif [ -f "$LIVE_COMPOSE" ]; then
+    dev_image="$(sed -n 's/^    image: \(ghcr\.io\/a158coke\/dev-metrics-exporter:[0-9a-f]\{40\}@sha256:[0-9a-f]\{64\}\)$/\1/p' "$LIVE_COMPOSE")"
+  fi
+  if [ -n "$dev_image" ]; then
+    [[ "$dev_image" =~ ^ghcr\.io/a158coke/dev-metrics-exporter:[0-9a-f]{40}@sha256:[0-9a-f]{64}$ ]] || die "unsafe exporter image reference."
+    sed -i "s|^    image: \${DEV_METRICS_IMAGE:-ghcr.io/a158coke/dev-metrics-exporter:unconfigured}$|    image: $dev_image|" "$EFFECTIVE_COMPOSE"
+  fi
   chmod 600 "$EFFECTIVE_COMPOSE"
   if ! docker compose -f "$EFFECTIVE_COMPOSE" config >/dev/null; then
     die "staged compose config is invalid; live deployment was not changed."
@@ -93,7 +108,7 @@ stage_and_validate() {
   local observability_selected=false service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+      prometheus|loki|alloy|grafana|node-exporter|dev-metrics-exporter) observability_selected=true ;;
     esac
   done
   if [ "$observability_selected" = true ]; then
@@ -132,7 +147,7 @@ promote_files() {
   cp -f "$INCOMING_DIR/deploy/deploy.sh" "$next_deploy/deploy.sh" || return 1
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      prometheus|loki|alloy|grafana|node-exporter) observability_selected=true ;;
+      prometheus|loki|alloy|grafana|node-exporter|dev-metrics-exporter) observability_selected=true ;;
     esac
   done
   if [ "$observability_selected" = true ]; then
@@ -213,7 +228,7 @@ observability_service_list() {
   local service
   for service in "${DEPLOY_SERVICES[@]}"; do
     case "$service" in
-      node-exporter|prometheus|loki|alloy|grafana) printf '%s\n' "$service" ;;
+      dev-metrics-exporter|node-exporter|prometheus|loki|alloy|grafana) printf '%s\n' "$service" ;;
     esac
   done
 }
