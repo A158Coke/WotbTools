@@ -230,9 +230,9 @@ scratch-object 契约不允许静默残留）。
    `vars.COS_REGION` 缺省 `ap-shanghai`。凭证按最小权限建：发布专用桶（与资产桶
    `wotbtools-assets-*` **分开**）的 `android/*` 前缀 `PutObject` / `GetObject` / `HeadObject` /
    `DeleteObject`，外加分片上传必需的 `InitiateMultipartUpload` / `UploadPart` /
-   `CompleteMultipartUpload` / `AbortMultipartUpload`（缺分片动作时 8 路分片测量会 AccessDenied、只剩
-   单流数字；缺 `HeadObject` 时上传后的 HEAD 回读与清理确认会失败——HEAD 在 CAM 里不被 `GetObject`
-   覆盖）；不给 ListBucket。
+   `CompleteMultipartUpload` / `AbortMultipartUpload` 与枚举未完成分片用的 `ListMultipartUploads`
+   （缺分片动作时 8 路分片测量会 AccessDenied、只剩单流数字；缺 `HeadObject` 时上传后的 HEAD 回读与
+   清理确认会失败——HEAD 在 CAM 里不被 `GetObject` 覆盖）；不给 ListBucket。
 2. **COS → TX1**：主机从预签名直链拉回 + `sha256sum -c`，并打印该主机把 COS 域名解析到**内网还是
    公网**（同地域内网流量免费；跨地域不支持内网，故发布桶应与 TX 主机同地域）。
 3. **TX1 → 清华网盘**：与 `android-release.yml` 同一协议（upload-link → multipart `replace=1`），

@@ -68,11 +68,13 @@ jobs:
           case "$PROBE_MIB" in
             ''|*[!0-9]*) echo "::error::probe_mib must be an integer (MiB), got: $PROBE_MIB" >&2; exit 1;;
           esac
+          # 显式十进制：leading zero 会被 bash 当八进制（`032` → 26 MiB，`08` 直接报错）。
+          PROBE_MIB="$((10#$PROBE_MIB))"
           if [ "$PROBE_MIB" -lt 8 ] || [ "$PROBE_MIB" -gt 256 ]; then
             echo "::error::probe_mib out of range 8..256: $PROBE_MIB" >&2
             exit 1
           fi
-          echo "probe size: ${PROBE_MIB} MiB"
+          echo "probe size: ${PROBE_MIB} MiB (decimal)"
 
       - name: Checkout main (exact dispatched SHA)
         uses: actions/checkout@v5
@@ -98,6 +100,8 @@ jobs:
           PROBE_MIB: ${{ inputs.probe_mib }}
         run: |
           set -euo pipefail
+          # 与 Validate 步骤同一条十进制归一，SIZE 不能吃八进制（`inputs.probe_mib` 是原始字符串）。
+          PROBE_MIB="$((10#$PROBE_MIB))"
           NAME="_offload-probe-${GITHUB_RUN_ID}.bin"
           SIZE=$(( PROBE_MIB * 1024 * 1024 ))
           BLOB="$RUNNER_TEMP/offload-probe.bin"
@@ -117,9 +121,10 @@ jobs:
       #    缺 COS 凭证时本段跳过（::notice::），后面的 TX1→网盘段仍用同尺寸本地载荷测量。
       #    凭证按最小权限建：CAM 子账号限定到该发布桶的 `android/*` 前缀，动作 = PutObject / GetObject /
       #    HeadObject / DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart /
-      #    CompleteMultipartUpload / AbortMultipartUpload。缺分片动作时 8 路分片测量 AccessDenied、只剩
-      #    单流数字；缺 HeadObject 时上传回来之后的 HEAD 回读与清理确认会失败（HEAD 在 CAM 里是独立动作，
-      #    不被 GetObject 覆盖）。不给 ListBucket，更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
+      #    CompleteMultipartUpload / AbortMultipartUpload 与清理时枚举未完成分片用的 ListMultipartUploads。
+      #    缺分片动作时 8 路分片测量 AccessDenied、只剩单流数字；缺 HeadObject 时上传回来之后的 HEAD
+      #    回读与清理确认会失败（HEAD 在 CAM 里是独立动作，不被 GetObject 覆盖）。不给 ListBucket，
+      #    更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
       - name: Probe runner to COS (single flow + 8-way multipart)
         id: cos
         shell: bash
@@ -182,10 +187,15 @@ jobs:
                   label, size, elapsed, rate, size * 8.0 / elapsed / 1e6))
               return elapsed, rate
 
+          # 8 路分片：part 大小取 mib//8（下限 1 MiB，COS 的最小 part 尺寸），保证**恰好 ≥8 个 part**——
+          # 否则 8..28 MiB 的小探针只切出 2–7 片，MAXThread=8 并发不起来，数字就不是 8 路测量。
+          part_mb = max(1, int(mib) // 8)
+          parts = (size + part_mb * 1024 * 1024 - 1) // (part_mb * 1024 * 1024)
+          print("parallel upload plan: PartSize=%d MiB, MAXThread=8, parts=%d" % (part_mb, parts))
           single_seconds, single_mibps = measure(
               "runner->COS single flow (1 part)", "android/probe/%s.single" % name, max(1, int(mib)), 1)
           parallel_seconds, parallel_mibps = measure(
-              "runner->COS 8-way multipart", "android/probe/%s" % name, max(4, int(mib) // 8), 8)
+              "runner->COS 8-way multipart", "android/probe/%s" % name, part_mb, 8)
 
           head = client.head_object(Bucket=bucket, Key="android/probe/%s" % name)
           head_size = int(head["Content-Length"])
@@ -279,15 +289,17 @@ jobs:
             fi
 
             echo "--- (1) COS -> TX1 ---"
+            COS_PULL_RATE="<skipped>"
             if [ -n "${COS_PRESIGNED_URL:-}" ]; then
               COS_HOST="$(printf '%s' "$COS_PRESIGNED_URL" | sed -n 's#https://\([^/]*\)/.*#\1#p')"
               echo "COS host from presigned URL: ${COS_HOST:-<unparsable>}"
               if [ -n "$COS_HOST" ]; then
                 getent hosts "$COS_HOST" || echo "getent hosts failed for $COS_HOST"
               fi
-              curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 900 \
-                -o "$TMP" -w 'cos->tx1 pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)\n' \
-                "$COS_PRESIGNED_URL"
+              COS_PULL_RATE="$(curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 900 \
+                -o "$TMP" -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+                "$COS_PRESIGNED_URL")"
+              echo "cos->tx1 pull: $COS_PULL_RATE"
               echo "$PROBE_SHA  $TMP" | sha256sum -c - || { echo "::error::COS pull bytes mismatch" >&2; exit 1; }
             else
               echo "cos->tx1 pull: SKIPPED (runner had no COS credentials); measuring TX1->drive with a local blob"
@@ -311,22 +323,26 @@ jobs:
             # multipart 的文件名默认取本地路径的 basename（这里是临时名），必须显式 filename=，
             # 否则网盘上的对象名会是 offload-probe-<pid>.bin：回读/删除全部落空、对象成孤儿。
             # release 步骤因为本地文件名就是 APK_NAME 而天然正确，探针用临时文件就必须自己钉住。
-            curl -sS --connect-timeout 10 --max-time 1800 -o "$RESP" \
+            DRIVE_PUSH_RATE="$(curl -sS --connect-timeout 10 --max-time 1800 -o "$RESP" \
               -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
               -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$TMP;filename=$PROBE_NAME" \
-              -w 'drive push: %{size_upload} bytes in %{time_total}s (%{speed_upload} B/s)\n' \
-              "$ULINK" || upload_rc=$?
+              -w '%{size_upload} bytes in %{time_total}s (%{speed_upload} B/s)' \
+              "$ULINK")" || upload_rc=$?
+            echo "drive push: ${DRIVE_PUSH_RATE:-<no stats>} (upload_curl_rc=$upload_rc)"
             echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RESP" 2>/dev/null || echo '<none>')"
             echo "note: this deployment answers HTTP 400 'Parent dir doesn't exist' even on a successful upload; the read-back below is the authority"
 
             echo "--- (3) read-back via the public share direct link ---"
             verified=0
+            READ_RATE="<none>"
             for attempt in 1 2 3; do
               sleep 3
-              if curl -fsSL --connect-timeout 5 --max-time 300 -o "$TMP.read" \
-                   -w 'drive pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)\n' \
-                   "$SHARE_DIRECT" \
-                 && [ "$(sha256sum "$TMP.read" | awk '{print $1}')" = "$PROBE_SHA" ]; then
+              READ_REPORT=""
+              READ_REPORT="$(curl -fsSL --connect-timeout 5 --max-time 300 -o "$TMP.read" \
+                -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+                "$SHARE_DIRECT" 2>/dev/null)" || READ_REPORT=""
+              if [ -n "$READ_REPORT" ] && [ "$(sha256sum "$TMP.read" | awk '{print $1}')" = "$PROBE_SHA" ]; then
+                READ_RATE="$READ_REPORT"
                 verified=1
                 break
               fi
@@ -335,7 +351,7 @@ jobs:
             done
             rm -f "$TMP.read"
             [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts" >&2; exit 1; }
-            echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA"
+            echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA ($READ_RATE)"
 
             echo "--- (4) delete the probe object (verified absence is mandatory) ---"
             # 删除必须被「确认」：探针把自己定义为「只写删一个 scratch 对象」，所以删不掉就不能绿。
@@ -347,12 +363,14 @@ jobs:
               curl -fsS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
                 "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
                 || delete_rc=$?
-              BYTES_AFTER="$(curl -sSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
+              # -f：4xx/5xx 一律失败，绝不把「错误页」当成缺席证据（缺对象时该部署返回的是 HTTP 200 +
+              # 小 HTML 页，-f 不会误伤它；被截断的下载由 curl 自己的 short-read 检测报错）。
+              BYTES_AFTER="$(curl -fsSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
                 "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
               case "$BYTES_AFTER" in
-                # 只有「直链服务的不再是探针字节」才算删掉了：缺对象时该部署返回 200 + 小 HTML 页，
-                # 探针本身失败（<probe-failed>）不构成缺席证据，继续重试。
-                "$PROBE_SIZE"|'<probe-failed>') echo "delete attempt $attempt/3: object still served (bytes=$BYTES_AFTER); retrying." ;;
+                # 只有「HTTP 200 且服务的字节数不是探针大小」才算删掉；探针失败（4xx/5xx、截断、连不上）
+                # 不构成缺席证据，继续重试。
+                "$PROBE_SIZE"|'<probe-failed>') echo "delete attempt $attempt/3: absence not proven (bytes=$BYTES_AFTER); retrying." ;;
                 *) probe_gone=1; break ;;
               esac
               sleep 3
@@ -367,6 +385,9 @@ jobs:
 
             echo "========== PROBE NUMBERS =========="
             echo "probe_name=$PROBE_NAME size=$PROBE_SIZE sha256=$PROBE_SHA"
+            echo "rate cos->tx1:     ${COS_PULL_RATE:-<skipped>}"
+            echo "rate tx1->drive:   ${DRIVE_PUSH_RATE:-<no stats>}"
+            echo "rate drive->tx1:   $READ_RATE"
             echo "upload_curl_rc=$upload_rc delete_curl_rc=$delete_rc bytes_after_delete=$BYTES_AFTER"
             echo "==================================="
 
@@ -427,6 +448,26 @@ jobs:
                   else:
                       print("could not confirm deletion of cos://%s/%s (HEAD returned %s: %s)" % (bucket, key, status, error))
                       leaked.append(key)
+          # 被取消/失败的分片上传不产生 object（HEAD 看不见），但已传 part 会留在桶里：
+          # 尽力枚举并 abort 本 run 的两个 key。枚举本身失败（权限/接口名不符）只告警——「无法枚举」
+          # 不是「已泄漏」的证据，这类残留由桶的生命周期规则兜底；abort 失败则计入泄漏并让 run 变红。
+          try:
+              listing = client.list_multipart_uploads(Bucket=bucket, Prefix="android/probe/")
+              uploads = listing.get("Upload") or []
+              if isinstance(uploads, dict):
+                  uploads = [uploads]
+              for upload in uploads:
+                  upload_key = upload.get("Key", "")
+                  upload_id = upload.get("UploadId", "")
+                  if upload_id and upload_key in ("android/probe/%s.single" % name, "android/probe/%s" % name):
+                      try:
+                          client.abort_multipart_upload(Bucket=bucket, Key=upload_key, UploadId=upload_id)
+                          print("aborted unfinished multipart upload for cos://%s/%s" % (bucket, upload_key))
+                      except Exception as error:
+                          print("abort failed for cos://%s/%s (%s): %s" % (bucket, upload_key, upload_id, error))
+                          leaked.append(upload_key)
+          except Exception as error:
+              print("::warning::could not enumerate unfinished multipart uploads (any parts left behind expire via the bucket lifecycle): %s" % error)
           if leaked:
               print("::error::probe objects left behind on COS: %s" % ", ".join(leaked))
               sys.exit(1)
@@ -462,5 +503,6 @@ jobs:
             echo "判据（docs/android/release-process.md §卸载链路体检）：两段都 ≥ 2 MiB/s ⇒ 采纳 TX1 落地方案；"
             echo "0.3–2 MiB/s ⇒ 采纳但 P1 需要调并发/超时；< 0.3 MiB/s ⇒ 换 TX2 推，或换对象存储。"
             echo ""
-            echo "数字原文：\`gh run view ${GITHUB_RUN_ID} --log | grep -A8 'PROBE NUMBERS'\`"
+            echo "数字：runner→COS 两个速率见上表；TX1 三段（cos→tx1 / tx1→drive / drive→tx1）在日志的"
+            echo "\`gh run view ${GITHUB_RUN_ID} --log | grep -A8 'PROBE NUMBERS'\` 块里。"
           } >> "$GITHUB_STEP_SUMMARY"
