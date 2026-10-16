@@ -84,6 +84,39 @@ Existing callers of `Tankopedia.load()` may be migrated incrementally because `l
 the same shared application reference. New code should nevertheless prefer the explicit
 `TankopediaReferenceData` entry point so lifecycle ownership remains visible in code review.
 
+## Search aliases are not reference data
+
+`common/tank_aliases.json` is WotBTools **search metadata**, not game factual data, and it has a
+different owner and lifecycle from the files above:
+
+- **developer-maintained.** Aliases are curated by hand in the repository. Nothing generates them
+  from WoT-Blitz-Agent, BlitzKit, the WG API, an LLM or a community API.
+- **sparse by design.** The document maps a canonical decimal `tank_id` to a non-empty array of
+  alias strings. A vehicle without aliases is simply absent: **a missing tank id means
+  `aliases = []`**, so empty arrays must not be stored and adding a vehicle to `tank_cache.json`
+  requires no alias change.
+- **search-only.** Aliases widen Tankopedia search recall. They never reach vehicle identity, the
+  displayed or sorted name, replay vehicle names, exports, the HTTP contract or the `tank_cache.json`
+  upstream schema. Aliases affect discovery, never identity.
+- **not language-scoped.** One flat array holds Chinese, English and any other community spelling;
+  recall does not depend on the current UI language.
+- **frontend-only transport.** The dataset is imported at build time by
+  `frontend/src/utils/tankopediaQuery.js` (`normalizeTankCache` projects `aliases`; `selectTanks`
+  scores `max(canonical name, aliases)`), the same mechanism as `common/map_names.json`. There is no
+  backend endpoint, database table or second asset origin, so the Web and Android bundled frontends
+  ship identical data.
+- **fail closed in CI.** `common/python/validate_tank_aliases.py`, gated by
+  `common/python/tests/test_validate_tank_aliases.py`, rejects invalid JSON, duplicate tank id keys,
+  a non-object document, invalid or unknown tank ids, non-array values, empty arrays, non-string or
+  blank aliases, and case-insensitive duplicates within one vehicle. Cross-vehicle duplicates stay a
+  warning: two vehicles may legitimately share a community short name.
+- **tier 7-10 only.** Validation resolves tank ids against `common/tankopedia-tier{7,8,9,10}.json`,
+  the only deterministic in-repo vehicle list (CI never reaches the network). Vehicles outside those
+  tiers have no in-repo reference and therefore cannot carry aliases.
+
+`tank_cache.json` (asset plane) and `tankopedia-tier{7,8,9,10}.json` (this document) remain the
+factual vehicle data; the alias file is additive metadata beside them.
+
 ## Battle Playback interaction
 
 Battle Playback HP authority is documented in
