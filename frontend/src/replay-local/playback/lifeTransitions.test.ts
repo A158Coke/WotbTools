@@ -24,6 +24,10 @@ const prop3Dead = (t: number): HpSample => ({
 const prop3Alive = (t: number, hp: number): HpSample => ({
   t, entityId: EID, hp, kind: 'PROP3', rawState: null, alive: true, exact: true, order: 0,
 })
+/** 未知哨兵（PROP3 UNKNOWN_FFFF）：血量未知 ≠ 0（`hp = null`，不提供可显示现值） */
+const prop3Unknown = (t: number): HpSample => ({
+  t, entityId: EID, hp: null, kind: 'PROP3', rawState: 'UNKNOWN_FFFF', alive: null, exact: false, order: 0,
+})
 
 const FIRST_SEEN = new Map([[EID, 0]])
 
@@ -115,15 +119,30 @@ it('无复活轨道：血量投影与既往逐位一致（无未知边界）', (
 
 // ---- DESTROYED 事件时刻：复活模式账号用完整死亡列（2D 爆焰按事件生成，缺一条就少爆一次） ----
 
-it('DESTROYED 事件时刻表：复活模式账号给全部死亡时刻；非复活模式账号不在表内（维持 canonical 终态）', () => {
+it('DESTROYED 事件时刻表：同账号多实体的死亡列**合并**；非复活模式账号不在表内（维持 canonical 终态）', () => {
   const facts = {
     ...factsWith([]),
-    entities: new Map([[EID, { accountId: 42 }]]),
+    entities: new Map([[EID, { accountId: 42 }], [404, { accountId: 42 }]]),
   } as unknown as CanonicalReplayFacts
   const respawn = new Map([
+    // 同一账号的两个实体（AoI 重入 / 复活换实体）：后一实体先入表 → 合并必须排序去重
+    [404, { deaths: [70, 90], resurrections: [80] }],
     [EID, { deaths: [10, 58.5], resurrections: [20] }],
-    [202, { deaths: [5], resurrections: [] }],      // 单死无复活 = 非复活模式 → 不在表内
+    [202, { deaths: [5], resurrections: [] }],       // 单死无复活 = 非复活模式 → 不在表内
     [303, { deaths: [], resurrections: [8] }],       // 无死亡时刻 → 不接管（不丢 canonical 终态）
   ])
-  expect([...respawnDestroyedTimes(facts, respawn)]).toEqual([[42, [10, 58.5]]])
+  expect([...respawnDestroyedTimes(facts, respawn)]).toEqual([[42, [10, 58.5, 70, 90]]])
+})
+
+it('复活时刻只有未知哨兵采样（hp=null）→ 未知边界不被跳过（哨兵不是可用血量证据）', () => {
+  // 生产复现：1s HP=900 → 10s 死（HP=0）→ 20s 复活且该刻只有 PROP3 UNKNOWN_FFFF（hp=null）。
+  // 若把哨兵当"新血量证据"，边界被跳过且采样路径也 continue ⇒ 最近 transition 仍是 10s 的 0。
+  const facts = factsWith([prop3Alive(1, 900), prop3Dead(10), prop3Unknown(20)])
+  const respawn = new Map([[EID, { deaths: [10], resurrections: [20] }]])
+  const out = healthTransitions(facts, [EID], FIRST_SEEN, 120, false, null, respawn)
+  expect(out.map((x) => [x.timeSec, x.currentHp])).toEqual([
+    [1, 900],
+    [10, 0],
+    [20, null],   // 哨兵不提供可显示现值 → 仍是未知（绝不回落死前的 0）
+  ])
 })

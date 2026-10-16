@@ -326,13 +326,15 @@ WotBTools
 - **消费边界 fail closed**：字段出现时必须为数组、元素有限、非负且非降序；形状漂移在
   `validateAgentPlayback`（`frontend/src/api/agent-replay-facets.ts`，前端唯一装载/校验边界）拒绝，
   不静默降级为"缺省 = 死亡终态"。不据数组长度反推复活模式（"≥2 死 / 非空"是上游的输出条件，不是消费方的判据）。
-- **消费侧的三处显式规则**（3.1.0 review P2 落定）：① 复活时刻起、到该实体第一份新血量证据之前，
-  血量 transition 落 `currentHp: null`（未知展示），绝不沿用死前值；② battle-level `events` 的
-  DESTROYED 在该账号改用轨道死亡列（每次死亡一条），canonical 终态重建（每账号至多一条）只覆盖
-  无轨道账号，KILL 仍只由 canonical 致死窗口证据给出；③ 同一账号多实体（AoI 重入 / 复活换实体）时
-  2D 位姿按 canonical 身份证据（`entityFirstSeenByAccount` + `activeEntityAt`）选活跃实体，证据
-  缺失/并列一律回落 canonical 位姿。三处都有对应测试（`lifeTransitions.test.ts` /
-  `parseLocalPlayback.test.ts` / `vehiclePose.test.ts` / `BattlePlayback.integration.test.js`）。
+- **消费侧的三处显式规则**（3.1.0 review P2 落定）：① 复活时刻起、到该实体第一份**可用数值**血量证据之前，
+  血量 transition 落 `currentHp: null`（未知展示），绝不沿用死前值——未知哨兵（`hp = null`，如
+  PROP3 `UNKNOWN_FFFF`）与终态 0 都不是"新证据"（`isPlausibleHp` 判据）；② battle-level `events` 的
+  DESTROYED 在该账号改用轨道死亡列（**同账号多实体的死亡列合并、升序去重**，每次死亡一条），
+  canonical 终态重建（每账号至多一条）只覆盖无轨道账号，KILL 仍只由 canonical 致死窗口证据给出；
+  ③ 同一账号多实体（AoI 重入 / 复活换实体）时 2D 位姿按 canonical 身份证据（`entityFirstSeenByAccount`
+  + `activeEntityAt`）选活跃实体，证据缺失/并列一律回落 canonical 位姿。三处都有对应测试
+  （`lifeTransitions.test.ts` / `parseLocalPlayback.test.ts` / `vehiclePose.test.ts` /
+  `BattlePlayback.integration.test.js`）。
 
 ## 5. 射击复现能力（ShotReplays）
 

@@ -57,6 +57,7 @@ import {
   type ReplayClock,
 } from '../canonical/facts.js'
 import type { Tankopedia } from '../compute/tankopedia.js'
+import { isPlausibleHp } from '../canonical/hpRawState.js'
 import { consumableItemId, consumableStateName, provisionItemId } from './itemCodes.js'
 
 export interface ToDatasetOptions {
@@ -241,7 +242,7 @@ export function healthTransitions(
     // 复活后尚无新血量证据：生命已回 ALIVE，但死前血量（可能是 0 / 终态哨兵镜像）**不是**当前血量。
     // 显式落"未知"边界（currentHp null；展示层渲染为「—」），新证据一到即被正常采样覆盖。
     const resurrectedAt = lastResurrectionAtOrBefore(respawnTrackOf(respawnByEid, eid), t)
-    if (resurrectedAt !== null && !hasHpSampleBetween(facts, eid, resurrectedAt, t)) {
+    if (resurrectedAt !== null && !hasPlausibleHpBetween(facts, eid, resurrectedAt, t)) {
       const next: HealthTransition = {
         timeSec: t, currentHp: null, knowledge: 'LAST_KNOWN', source: null,
         displayCapacityHp: replayCapacity, relativeFull: false, confidence: 'UNKNOWN',
@@ -318,10 +319,12 @@ function lastResurrectionAtOrBefore(track: RespawnTrack | null, t: number): numb
   return latest
 }
 
-/** 该实体在 [from, to] 窗口内是否有血量采样（= 复活后是否已有新证据）。 */
-function hasHpSampleBetween(facts: CanonicalReplayFacts, eid: number, from: number, to: number): boolean {
+/** 该实体在 [from, to] 窗口内是否已有**可用数值血量**证据（判定"复活后是否已有新血量"）。
+ *  哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不是可用血量证据——它们不提供
+ *  任何可显示的现值（`isPlausibleHp`，Java `HealthChangedEvent.isPlausibleHp` 同源）。 */
+function hasPlausibleHpBetween(facts: CanonicalReplayFacts, eid: number, from: number, to: number): boolean {
   for (const s of facts.hpSamples.get(eid) ?? []) {
-    if (s.t >= from - EPS && s.t <= to + EPS) return true
+    if (s.t >= from - EPS && s.t <= to + EPS && isPlausibleHp(s.hp)) return true
   }
   return false
 }
@@ -332,6 +335,10 @@ function hasHpSampleBetween(facts: CanonicalReplayFacts, eid: number, from: numb
  * canonical 终态重建（`facts.destroyed`）每个账号至多一条终态，而复活模式会死多次——只发前者会让
  * 前面的死亡没有 DESTROYED 事件（2D 爆焰按事件生成，就会少爆）。上游轨道在场时它是死亡时刻
  * SSOT，故这些账号改用轨道列；返回表外的账号由调用方维持 canonical 终态。
+ *
+ * 同一账号可能有**多个实体**（AoI 重入 / 复活换实体），每个实体各带自己的死亡列——按账号
+ * **合并**（覆盖写会丢掉前一实体的死亡，而调用方随后已抑制该账号的 canonical 回退 ⇒ 那些死亡
+ * 会彻底没有事件）。
  */
 export function respawnDestroyedTimes(
   facts: CanonicalReplayFacts, respawnByEid: Map<number, RespawnTrack>,
@@ -341,7 +348,18 @@ export function respawnDestroyedTimes(
     if (!respawnTrackOf(respawnByEid, eid) || track.deaths.length === 0) continue
     const accountId = facts.entities.get(eid)?.accountId
     if (accountId === undefined) continue
-    out.set(accountId, track.deaths)
+    const merged = out.get(accountId)
+    if (merged) merged.push(...track.deaths)
+    else out.set(accountId, [...track.deaths])
+  }
+  for (const deaths of out.values()) {
+    deaths.sort((a, b) => a - b)
+    let kept = 0
+    for (const t of deaths) {
+      if (kept > 0 && t <= deaths[kept - 1] + EPS) continue
+      deaths[kept++] = t
+    }
+    deaths.length = kept
   }
   return out
 }
