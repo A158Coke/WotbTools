@@ -455,6 +455,51 @@ describe('playbackScene 会话代数契约', () => {
     expect(minPostGapAbs).toBeGreaterThan(48.5)
   })
 
+  it('履带印阵亡期断链：复活落在新位置时不与死前锚连铺（3.1.0 review P2，issue #622）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    const t0 = 42, n = 150          // 15 s；步长 0.5 m/0.1 s
+    // 阵亡期（t0+5 → t0+10）位姿仍在缓慢移动（渐进复活迁移）：每步 0.5 m 走不出大步断链阈值，
+    // 若阵亡期只是跳过出戳而不复位锚点，复活后的首个接地点会与死前锚连铺出一条跨 25 m 的印记。
+    const pos = new Array(n * 3)
+    for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
+    const data = minimalData(t0)
+    data.meta.samples = n
+    data.meta.duration = t0 + 15
+    data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos, hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      hp: [], coverage: [t0, t0 + 15], death_t: t0 + 5, resurrection_times: [t0 + 10] }]
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
+      Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
+    vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'respawn-trail.wotbreplay') })
+    await new Promise((r) => setTimeout(r, 0))
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    api.setPlaying(false)
+    const read = () => {
+      const v = window.__pbV[0]
+      return { total: v.trail.L.total,
+               segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1, t: sg.t })) }
+    }
+    api.seekTime(t0 + 4)
+    const before = read()
+    expect(before.total).toBeGreaterThan(10)
+    api.seekTime(t0 + 11)
+    const r = read()
+    expect(r.total).toBeGreaterThan(before.total)
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)   // 历史段逐值保留
+    // 阵亡期零出戳（没有任何戳出生在阵亡区间内）
+    expect(r.segs.every((sg) => !(sg.t > t0 + 5 && sg.t < t0 + 10))).toBe(true)
+    // 无跨阵亡期桥接：死前锚在 x≈25、复活首点在 x≈50 —— 有 bug 时这里会出现一条 25 m 长戳
+    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
+    const post = r.segs.slice(before.total).filter((sg) => sg.t >= t0 + 10)
+    expect(post.length).toBeGreaterThanOrEqual(3)                // 复活后 1 s：锚点 + ~5 戳
+    expect(post.length).toBeLessThanOrEqual(8)
+    expect(Math.min(...post.map((sg) => Math.abs(sg.x0)))).toBeGreaterThan(48.5)   // 新锚从复活位姿开始
+  })
+
   describe('履带印 review 回归', () => {
     async function setupTrail({ n = 580, pos, hull_yaw, yaw = 0, duration = 58 }) {
       window.history.replaceState(null, '', '/?debug&q=high')

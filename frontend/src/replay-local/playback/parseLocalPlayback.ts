@@ -102,6 +102,8 @@ export async function parseLocalPlayback(
     shots: playback.shots,
   } : null
   // 位姿通道（瘦身投影）：2D 俯视与 3D 场景共用同一采样器，故这里把 facet 的位姿列随结果带出。
-  const poseFacet = playback ? buildPoseFacet(playback) : null
+  // 实体身份证据（entityStartsByAccount）一并带上：多实体账号（AoI 重入 / 复活换实体）的活跃
+  // 实体选择必须用与 3D 死亡归属同源的 canonical 证据，否则会在重入前采样到后一个实体。
+  const poseFacet = playback ? buildPoseFacet(playback, entityStartsByAccount) : null
   return { dataset, overview, result, reloadTelemetry, clock, entityStartsByAccount, poseFacet }
 }

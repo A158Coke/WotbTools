@@ -105,6 +105,18 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
   PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
   只爆一次，复活后的新死亡各自爆焰。
+- **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份新血量证据之前，
+  血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
+  当成复活后的现值；证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
+  的"复活后无新血量证据 → 未知边界"与"证据在查询时刻之后不得提前使用"用例。
+- **每次死亡各一条 DESTROYED 事件**：battle-level `events` 的 DESTROYED 原先只来自 canonical 终态
+  重建（每账号至多一条终态），复活模式会死多次——轨道在场（且给出 ≥1 死亡时刻）的账号改用轨道
+  死亡列，其余账号维持 canonical。2D burst 与 Event Panel 因此**每次死亡各出一次**，KILL 仍只由
+  canonical 致死窗口的唯一攻击者证据给出（不伪造击杀者）。守卫：`lifeTransitions.test.ts` 的
+  `respawnDestroyedTimes` 用例 + `parseLocalPlayback.test.ts` 的"复活轨道注入"用例。
+- **阵亡期断链（履带印）**：DESTROYED 期间与 AoI 空洞同语义——历史印记保留、复活后从**新锚**开始，
+  不与死前锚连铺（否则跨阵亡期/复活迁移桥出一条长印记）。守卫：`playbackScene.test.js` 的
+  "履带印阵亡期断链"用例（复活落在新位置时不出现长戳）。
 
 ### 反未来信息泄漏（anti-future-leak，硬性 invariant）
 
@@ -722,6 +734,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     （本地与 CI 同报 `expected 10 to be less than or equal to 8`）。现改为按**出生时刻**
     过滤（`t < gapEnd` = 洞前含尾巴，`t ≥ gapEnd` = 洞后新锚段），并对尾巴段独立断言
     横向区间——洞后窗口的语义（新锚、无桥接）不变。
+    **阵亡期同属"向前的不连续"**（3.1.0 review P2，issue #622）：DESTROYED 期间同样
+    flush + 双侧 `resetTrailState`（只是"不出段"而不复位锚点，复活落回新位置时会把这段位移
+    盖成一条跨阵亡期的长印记）——回归见 `playbackScene.test.js` 的"履带印阵亡期断链"用例。
   - **呈现** = 每车一个动态合并几何 Mesh（槽位 = 环 50 槽/侧**含活戳**，左右交错
     ⇒ `TRAIL_SLOTS = 50×2 = 100` 个四边形；**绘制窗口恒为全部槽位**，无效槽（环内空槽）
     一律**显式隐藏 alpha=0**——转弯时左右落锚数因弧长差而不同，固定窗口没有 min/max 的
@@ -1267,6 +1282,13 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 阵亡残骸除外），2D 变灰停在原地。守卫：`vehiclePose.canonical-parity.test.ts`（区间内亚米级、
 区间外 ≤20 m 冻结差）、`battlePlaybackV2.test.js` 的 `observedFreezeTimeAt` 用例、以及
 `BattlePlayback.integration.test.js` 的"失察即冻结"用例（观测内跟随通道、失察冻结在段末）。
+
+**多实体账号（AoI 重入 / 复活换实体）**：同一账号在回放里可能有多个实体，位姿列按 eid 各列一份。
+2D 的**活跃实体**判定与 3D 的死亡归属**同源**——canonical 身份证据（`entityFirstSeenByAccount` +
+`activeEntityAt`，随 `PoseFacet.entityStartsByAccount` 带出），按采样时刻选活跃实体；证据缺失或
+并列（歧义）→ 该车回落 canonical 位姿（fail-closed，不猜）。守卫：`vehiclePose.test.ts` 的
+`selectActiveDef` 用例 + `BattlePlayback.integration.test.js` 的"多实体账号"用例（数组里靠后的实体
+不得把位姿泄漏到重入之前——"后写覆盖"的旧写法会因轨迹端点外钳位把后一实体的首帧顶到过去）。
 
 **刻意不呈现**：俯仰/侧倾（"多出的那个维度"）与炮管仰角。2D 是纯俯视，标记视觉层不施加任何
 3D 倾斜（原"2.5D 车辆地形姿态"——用底图 heightfield 合成 pitch/roll + ×1.35 增益 + ±14°/±10°

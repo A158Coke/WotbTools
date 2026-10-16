@@ -2857,4 +2857,38 @@ describe('2D 位姿与 3D 同源（poseFacet 通道）', () => {
     const marker = wrapper.find('[data-test="pb-marker-1001"]')
     expect(marker.findAll('img')[0].attributes('style')).toContain('rotate(90deg)')
   })
+
+  it('多实体账号（AoI 重入 / 复活换实体）：按 canonical 身份证据选活跃实体，后一实体不得泄漏到重入之前', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 40)
+    const n = 401
+    const defOf = (eid, x) => ({
+      eid, account_id: 1001,
+      pos: Array.from({ length: n }, () => [x, 0, 0]).flat(),
+      hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      coverage: [100, 140],
+    })
+    // 同一账号两个实体：eid 1 首见 0s（x=50）、eid 2 首见 30s（x=150）。数组里 eid 2 在后 ——
+    // 若按"后写覆盖"取 def，重入之前的每一帧都会被 eid 2 的钳位首帧（x=150）顶掉（未来泄漏）。
+    const facet = {
+      tStart: 100, samples: n,
+      vehicles: [defOf(1, 50), defOf(2, 150)],
+      entityStartsByAccount: new Map([[1001, new Map([[1, 0], [2, 30]])]]),
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: ds, poseFacet: facet, clockOffset: 100,
+    })
+    await flushPromises()
+    const pctOf = (x) => ((x + 300) / 600) * 100
+    const leftAt = async (seekTo) => {
+      await wrapper.setProps({ seekTo })
+      await flushPromises()
+      const style = wrapper.find('[data-test="pb-marker-1001"]').attributes('style') || ''
+      return Number(/left: ([\d.]+)%/.exec(style)?.[1])
+    }
+    expect(await leftAt(5)).toBeCloseTo(pctOf(50), 1)    // 重入前：eid 1
+    expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)  // 重入后：eid 2
+  })
 })
