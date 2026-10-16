@@ -4,7 +4,7 @@ Implementation for [#639](https://github.com/A158Coke/WotbTools/issues/639). Pri
 
 ## Directory and access
 
-Visitors browse the public directory without signing in. The primary navigation groups League standings, broadcasts and UP recommendations (`?view=creators`) before More, using one source for the desktop sidebar and mobile bottom tabs. More does not duplicate the public link. Administration remains in the existing league-administration group (`?view=creators-config`), protected by `tournament-admin`. Category selection uses the `creatorCategory` router query and supports Back/Forward.
+Visitors browse the public directory without signing in. The primary navigation groups League standings, broadcasts and UP recommendations (`?view=creators`) before More, using one source for the desktop sidebar and mobile bottom tabs. More does not duplicate the public link. On narrow phones the bottom bar scrolls horizontally while preserving distinct 44px touch targets; active and keyboard-focused tabs are brought into view. Administration remains in the existing league-administration group (`?view=creators-config`), protected by `tournament-admin`. Category selection uses the `creatorCategory` router query and supports Back/Forward.
 
 Administrators create, edit and remove creator records, categories and assessment levels. The directory has no favorites, voting pool, public submissions, reward progress, rating threshold or ordinary-user write API. Creator data and images belong to the site, independent of operator accounts; the feature neither stores uploader subjects nor changes account-deletion/audit behavior.
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watchPostEffect } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { locationForView, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
 import { PRIMARY_NAV_ICONS } from './navIcons.js'
@@ -8,10 +8,17 @@ import { PRIMARY_NAV_ICONS } from './navIcons.js'
 const route = useRoute()
 const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
+const bar = ref(null)
+function revealTab(element) { element?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
+watchPostEffect(() => {
+  // Deep links and history navigation can select a tab outside the narrow viewport.
+  const active = activeSection.value
+  revealTab(bar.value?.querySelector(`[data-testid="tab-${active}"]`))
+})
 </script>
 
 <template>
-  <nav class="app-tab-bar" :aria-label="$t('nav.primary')" data-testid="app-tab-bar">
+  <nav ref="bar" class="app-tab-bar" :aria-label="$t('nav.primary')" data-testid="app-tab-bar">
     <RouterLink
       v-for="item in items"
       :key="item.id"
@@ -21,6 +28,7 @@ const items = primaryNavItems()
       :aria-current="activeSection === item.id ? 'page' : undefined"
       :aria-label="item.shortLabelKey ? `${$t(item.shortLabelKey)}: ${$t(item.labelKey)}` : $t(item.labelKey)"
       :data-testid="`tab-${item.id}`"
+      @focus="revealTab($event.target)"
     >
       <component :is="PRIMARY_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
       <span class="tab-label">{{ $t(item.shortLabelKey || item.labelKey) }}</span>
@@ -35,8 +43,11 @@ const items = primaryNavItems()
   bottom: 0;
   z-index: var(--z-header);
   display: grid;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-columns: minmax(var(--hit-min), 1fr);
   grid-auto-flow: column;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   border-top: 1px solid var(--color-border-subtle);
