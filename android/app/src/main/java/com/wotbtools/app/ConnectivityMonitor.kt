@@ -11,7 +11,7 @@ import android.util.Log
 /**
  * 设备连通性的**系统权威**（计划 §4）：Android framework 的 `ConnectivityManager`。
  *
- * 为什么不把 `navigator.onLine` 当真相：WebView 里那个布尔值只反映「设备认为自己有默认路由」，
+ * 为什么不把 `navigator.onLine` 当真相：页面里那个布尔值只反映「设备认为自己有默认路由」，
  * 不区分「连上了 Wi-Fi 但出不了网」。这里用 `NET_CAPABILITY_INTERNET` + `NET_CAPABILITY_VALIDATED`：
  * 前者表示网络声明可用，后者表示系统**实际**校验过可达性（captive portal / 假连接不算在线）。
  *
@@ -22,7 +22,7 @@ import android.util.Log
  * 预留 `degraded` / `service-unavailable` 由服务端可达性探测引入，本类不猜测它们。
  *
  * 线程：`registerDefaultNetworkCallback` 的回调发生在 binder 线程；状态读写成原子引用，
- * 通知一律 hop 到主线程（WebView 只能在它自己的线程上碰）。
+ * 通知一律 hop 到主线程（页面引擎只能在主线程上碰）。
  */
 internal class ConnectivityMonitor(
     context: Context,

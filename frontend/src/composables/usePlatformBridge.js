@@ -70,7 +70,7 @@ export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT
     try {
       b.postMessage(JSON.stringify({ id, method, params }))
     } catch {
-      // postMessage 抛错（WebView 已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
+      // postMessage 抛错（页面引擎已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
       // 否则 async 调用方（例如 connectivity 事件 handler）会产生 unhandled rejection。
       if (typeof b.removeEventListener === 'function') {
         b.removeEventListener('message', handler)
@@ -106,7 +106,7 @@ export async function supports(capability) {
   return (await getCapabilities()).includes(capability)
 }
 
-/** Result: { pendingId, name, size, uri }; uri is a fixed same-origin HTTPS Native resource. */
+/** Result: { pendingId, name, size, uri }; uri is the fixed same-origin LocalRuntimeServer resource (NATIVE_REPLAY_RESOURCE_URL). */
 export async function getPendingReplay() {
   return await callBridge('getPendingReplay')
 }

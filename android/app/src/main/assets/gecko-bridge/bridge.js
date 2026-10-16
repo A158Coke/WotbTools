@@ -1,7 +1,7 @@
 "use strict";
 // Native Bridge transport for GeckoView（contracts/android-native-bridge.json，bridge v3）。
 //
-// 向页面暴露与 Bridge v2 WebView 完全同形的 `window.WotbNative`
+// 向页面暴露与 2.x（Bridge v2，System WebView 注入）完全同形的 `window.WotbNative`
 // （postMessage(string) / addEventListener('message') / removeEventListener），
 // 因此前端 `callBridge()` 是唯一 RPC 入口且无需感知引擎。消息经 runtime.connectNative 交给 Native；
 // Native 再按 sender（content script / top frame / 当前 session / exact origin）复核，这里只是第一道门。

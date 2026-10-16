@@ -26,13 +26,13 @@ import java.util.concurrent.TimeUnit
  * Native 认证的编排 owner（process 级单例，持有 `applicationContext`）。
  *
  * ── ownership 边界 ──
- *  - WebView **不再拥有认证**：App 内不再出现任何 IdP / provider host，登录只在 external
+ *  - 页面引擎（2.x System WebView / 3.0 GeckoView）**不拥有认证**：App 内不出现任何 IdP / provider host，登录只在 external
  *    user-agent（Custom Tabs，AppAuth 选择）里发生；回程固定 private scheme（[OidcRedirectStrategy]，2.1.0 起）：
  *    两条 URI 都登记在 Keycloak client；private scheme 之外仅剩兼容回退路径。
  *  - 本类只向 bridge 暴露 [AuthSession]（access token + claims + 到期秒）与显式失败原因；
  *    refresh token / 授权码 / PKCE verifier / state / nonce 永不出本类（只以密文落盘）。
- *  - 网络与 token 操作都不在 WebView 线程：发现走库的 AsyncTask，持久化与等待走 [executor]，
- *    bridge 的 WebView 线程只提交请求、异步收结果。
+ *  - 网络与 token 操作都不在主线程：发现走库的 AsyncTask，持久化与等待走 [executor]，
+ *    bridge 调用线程（主线程）只提交请求、异步收结果。
  *
  * ── 两个状态域（本类最重要的不变量）──
  *  持久化被刻意拆成两个互不相干的域，各有独立 slot（见 [SecureSlotStore]）：

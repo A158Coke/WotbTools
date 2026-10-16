@@ -241,7 +241,7 @@ function startAuthInit({ mode = 'normal', reason = 'startup' } = {}) {
     const provider = await resolveAuthProvider()
     if (currentTransaction !== transaction || transaction.settled || transaction.abandoned) return
     transaction.provider = provider
-    // Native 在 external browser 里完成 login / logout 后推送：WebView 停在原页面，
+    // Native 在 external browser 里完成 login / logout 后推送：页面停在原地，
     // 这里就地把最新状态投影回 refs，不需要 reload。
     transaction.unsubscribe = provider.onAuthChanged(() => {
       if (currentTransaction !== transaction || transaction.abandoned) return
@@ -336,7 +336,7 @@ function logoutRedirectUri() {
 /**
  * 两个 provider 的 login 都接受 redirectUri，但语义刻意不对称：
  * - 浏览器：redirect 回到明确 view 或完整 router location，场景 query 必须保留。
- * - Android：OIDC 在 external browser 里完成、WebView 从不导航，provider 直接忽略该 URI；
+ * - Android：OIDC 在 external browser 里完成、页面从不导航，provider 直接忽略该 URI；
  *   登录结果由 `wotbtoolsOnAuthChanged` 就地把状态同步回来，页面停在原地，
  *   当前 view 天然保留，所以 `view` 对 Native 侧没有任何意义。
  *

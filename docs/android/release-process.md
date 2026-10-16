@@ -44,8 +44,8 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   **不因此自动递增 patch**，保持在**原计划版本**——例如 3.0.0 候选在合并前修掉了 blob 下载导航、
   响应体 ownership、下载与 picker 互斥、prompt 生命周期等 blocker，最终发布的仍然是 **3.0.0**，
   而不是 3.0.1 / 3.0.2 / 3.0.3（这些版本从未存在过）。
-  一旦下列**任一**条件成立，候选版本即被锁定（version identity consumed），此后任何源码修改都必须使用
-  **更高的** `wotbVersion`：
+  一旦下列**任一**条件成立，候选版本即被锁定（version identity consumed），此后任何会改变该 staged
+  Android candidate / APK identity 的源码或 release input 修改，都必须使用**更高的** `wotbVersion`：
   ① 已创建 immutable release tag（`android-vX.Y.Z`）；② staged APK 已在**任意一台** immutable origin
   （TX1 **或** TX2 的 no-clobber origin 路径）成功落位并通过 SHA-256 核验——**不需要等两台都完成**；
   ③ 已写出 staging evidence；④ production `version.json` 已 publish。
@@ -56,6 +56,18 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   清华云盘副本（distribution replica）**不是** identity authority：它是可 `replace=1` 覆盖的分发副本 +
   origin 冷启动源，上传并核验副本本身不消耗版本（判定源划分见下文「Origin 与分发副本是两个身份」）。
   但只要**任意一台** origin 已从该副本 seed 并 no-clobber 落位成功，版本即锁定（上列 ②）。
+- **锁定后哪些修改必须换版本**：会改变已锁定 Android candidate identity 的修改——Android Native 代码与
+  `android/app/**`、Android 构建输入（Gradle 配置 / 依赖版本 / 工具链）、进入 APK 的 bundled frontend /
+  WASM / 资产与 Android 专用生成 bundle、Native Bridge contract 与 `bridgeVersion`、以及 tag target 中任何会改变
+  staged APK 字节或身份的 release input。与已 staged Android artifact 无关的修改——docs-only、Caddy-only、
+  observability-only、无关后端 / 基础设施修复、不改变 staged 字节与身份的 workflow / policy 修复——可以让
+  main 前进，**本身不消耗新的 Android 版本**（unrelated main evolution does not by itself consume a new Android
+  version）。已完整 stage 的候选照常按自己的 tag target 发布，并且仍要通过 publish 的 ancestry / 当前 policy /
+  bridge compatibility / minSupported / CORS 等就绪探测 / staged identity 守卫，没有跳过守卫的例外。
+  - 允许：3.0.0 stage 成功 → Caddy 部署失败 → 只修改 `deploy/tx/Caddyfile` → main 前进 → Caddy 部署成功 →
+    publish 已 staged 的 3.0.0（Caddy-only 修改没有改变 staged 3.0.0 artifact）。
+  - 不允许：3.0.0 stage 成功 → 修改 `GeckoWebRuntime` / bundled frontend / Bridge contract → 仍复用 3.0.0。
+    这种情况必须使用更高版本。
 - **「版本已锁定」不等于「stage 已完成」**：
   - *version identity consumed*：上列四项**任一**出现即成立；
   - *stage distribution complete*：TX1 **和** TX2 都落位并核验、公网回读核验、tag、staging evidence
@@ -64,7 +76,9 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   partial-stage 例子：build A → TX1 seed 成功 → TX2 seed 失败 → stage 整体失败。此时 3.0.0 **已经被锁定**
   ——TX1 上已有 3.0.0 APK（build A 的 SHA）。若随后修改源码得到 build B 仍想复用 3.0.0，stage 的
   「Classify origin APK on TX1/TX2」会发现 TX1 现有 SHA ≠ build B 的 SHA → immutable conflict → fail-closed。
-  对**未改动的同一源码**（build A）幂等重跑 stage 可以补齐 TX2；任何源码修改都必须换更高版本。
+  补齐 TX2 只能对**同一提交**（build A 的源码提交）幂等重跑 stage：stage 只从 `origin/main` HEAD 构建，且 APK
+  内嵌 `buildCommit`。main 一旦前进（哪怕只是 docs / Caddy 修改），重跑构建出的 APK 字节就不同，TX1 classify
+  同样 conflict，这时只能换更高版本——这是部分 stage 无法补齐的结果，不是无关修改本身消耗了版本。
 - **stage 失败后能否复用同一版本：不能只看 workflow conclusion**（A failed stage may still have consumed
   the version if an immutable artifact was already materialized），逐项只读检查：
   - tag `android-vX.Y.Z` 是否已存在（`git ls-remote --tags origin android-vX.Y.Z`）；
@@ -74,9 +88,10 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
   - staging evidence `wotbtools-android-vX.Y.Z.staging.json` 是否已存在；
   - production `version.json` 是否已 publish 该版本。
 
-  全部不存在 → 版本尚未被消耗，可以继续修复并复用；任意一项存在 → 版本已锁，只能对同一源码幂等重跑，
-  后续任何 runtime 修改都必须使用更高版本。也就是：PR 合并前的 review fix 通常保持原版本；合并后 stage
-  一旦部分成功，就可能已经锁定版本，此后不能再复用 3.0.0。
+  全部不存在 → 版本尚未被消耗，可以继续修复并复用；任意一项存在 → 版本已锁：已完整 stage 的候选可以照常
+  publish（main 上的无关修改不影响它）；部分 stage 只有在 `origin/main` 仍是原提交时才能幂等重跑补齐；任何会
+  改变 candidate identity 的修改都必须使用更高版本。也就是：PR 合并前的 review fix 通常保持原版本；合并后
+  stage 一旦部分成功，就可能已经锁定版本，此后改变 Android candidate 的修改不能再复用 3.0.0。
 - **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、
   数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时
   由用户裁定——等级决定是否强制全部用户更新，是产品决策。
@@ -382,7 +397,8 @@ source 不允许改生产）。合并前把 PR 分支的网关配置弄上生产
 - 合并后 Caddy 部署与 Android stage 各自独立（`production-maintenance` 与 `android-release` 两个
   concurrency 组，Caddy 可能排在其他生产维护任务之后），谁先完成都可以；
 - stage 只做构建 / 签名 / seed / tag / evidence，**不** publish `version.json`；
-- 唯一的 production commit point 是 `publish(version=3.0.0)` 最后写入 `version.json`——只有它之后，
+- Android 客户端 rollout 的唯一 commit point 是 `publish(version=3.0.0)` 最后写入 production `version.json`
+  （它不是整个生产环境的唯一变更点：Caddy 网关的生产变更在合并后就已发生，早于 publish）——只有它之后，
   floor `3000000` 才真正作用到 2.x 客户端。publish 的 readiness 步骤会探测 loopback origin 的 CORS，
   Caddy 未部署成功时 fail-closed。
 
