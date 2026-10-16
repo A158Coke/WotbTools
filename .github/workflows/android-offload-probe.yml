@@ -353,33 +353,39 @@ jobs:
             [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts" >&2; exit 1; }
             echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA ($READ_RATE)"
 
-            echo "--- (4) delete the probe object (verified absence is mandatory) ---"
-            # 删除必须被「确认」：探针把自己定义为「只写删一个 scratch 对象」，所以删不掉就不能绿。
+            echo "--- (4) delete the probe object (authoritative absence is mandatory) ---"
+            # 删除必须被「权威确认」：探针把自己定义为「只写删一个 scratch 对象」，所以删不掉就不能绿。
+            # 权威证据 = Seafile API 的 file-detail **明确回 404**（不是靠公开页面的字节数猜）：
+            # 该接口对不存在的文件是 404、对存在的是 200，其余（401/403/5xx/网络失败）一律「未证明」。
             delete_rc=0
             BYTES_AFTER="<not-checked>"
+            API_STATUS="<not-checked>"
             probe_gone=0
             for attempt in 1 2 3; do
               delete_rc=0
               curl -fsS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
                 "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
                 || delete_rc=$?
-              # -f：4xx/5xx 一律失败，绝不把「错误页」当成缺席证据（缺对象时该部署返回的是 HTTP 200 +
-              # 小 HTML 页，-f 不会误伤它；被截断的下载由 curl 自己的 short-read 检测报错）。
+              API_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 60 \
+                -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
+                2>/dev/null || echo '000')"
+              # 公开路径旁证：直链不该再服务探针字节。-f 让 4xx/5xx 直接失败，绝不冒充缺席证据；
+              # 若它仍然服务探针字节，则与 API 的 404 矛盾 ⇒ 判为「未证明」。
               BYTES_AFTER="$(curl -fsSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
                 "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
-              case "$BYTES_AFTER" in
-                # 只有「HTTP 200 且服务的字节数不是探针大小」才算删掉；探针失败（4xx/5xx、截断、连不上）
-                # 不构成缺席证据，继续重试。
-                "$PROBE_SIZE"|'<probe-failed>') echo "delete attempt $attempt/3: absence not proven (bytes=$BYTES_AFTER); retrying." ;;
-                *) probe_gone=1; break ;;
-              esac
+              if [ "$API_STATUS" = "404" ] && [ "$BYTES_AFTER" != "$PROBE_SIZE" ]; then
+                probe_gone=1
+                break
+              fi
+              echo "delete attempt $attempt/3: absence not proven (api=$API_STATUS share-bytes=$BYTES_AFTER delete_rc=$delete_rc); retrying."
               sleep 3
             done
             if [ "$probe_gone" = "1" ]; then
               PROBE_DELETED=1
-              echo "probe object no longer served (delete rc=$delete_rc, share link returned $BYTES_AFTER bytes)"
+              echo "probe object absence confirmed: API file-detail=404, share link returned $BYTES_AFTER bytes (delete rc=$delete_rc)"
             else
-              echo "::error::probe object is STILL served after 3 delete attempts; remove $PARENT_DIR/$PROBE_NAME manually" >&2
+              echo "::error::probe object absence NOT proven after 3 delete attempts (api=$API_STATUS share-bytes=$BYTES_AFTER); remove $PARENT_DIR/$PROBE_NAME manually" >&2
               exit 1
             fi
 
@@ -449,13 +455,15 @@ jobs:
                       print("could not confirm deletion of cos://%s/%s (HEAD returned %s: %s)" % (bucket, key, status, error))
                       leaked.append(key)
           # 被取消/失败的分片上传不产生 object（HEAD 看不见），但已传 part 会留在桶里：
-          # 尽力枚举并 abort 本 run 的两个 key。枚举本身失败（权限/接口名不符）只告警——「无法枚举」
-          # 不是「已泄漏」的证据，这类残留由桶的生命周期规则兜底；abort 失败则计入泄漏并让 run 变红。
+          # 枚举并 abort 本 run 的两个 key。**枚举失败也算泄漏**——「无法枚举」就无法证明零残留，
+          # 而零残留是本 workflow 自己的契约（错误信息会点名缺失的 CAM 动作，便于一次修好）。
+          # abort 失败同样计入泄漏。
           try:
               listing = client.list_multipart_uploads(Bucket=bucket, Prefix="android/probe/")
               uploads = listing.get("Upload") or []
               if isinstance(uploads, dict):
                   uploads = [uploads]
+              aborted = 0
               for upload in uploads:
                   upload_key = upload.get("Key", "")
                   upload_id = upload.get("UploadId", "")
@@ -463,11 +471,17 @@ jobs:
                       try:
                           client.abort_multipart_upload(Bucket=bucket, Key=upload_key, UploadId=upload_id)
                           print("aborted unfinished multipart upload for cos://%s/%s" % (bucket, upload_key))
+                          aborted += 1
                       except Exception as error:
                           print("abort failed for cos://%s/%s (%s): %s" % (bucket, upload_key, upload_id, error))
                           leaked.append(upload_key)
+              if aborted:
+                  print("aborted %d unfinished multipart upload(s) for the probe keys" % aborted)
+              else:
+                  print("no unfinished multipart uploads for the probe keys")
           except Exception as error:
-              print("::warning::could not enumerate unfinished multipart uploads (any parts left behind expire via the bucket lifecycle): %s" % error)
+              print("could not enumerate unfinished multipart uploads (need cos:ListMultipartUploads on android/probe/* and a SDK that exposes list_multipart_uploads): %s" % error)
+              leaked.append("android/probe/%s* (unfinished multipart uploads unverifiable)" % name)
           if leaked:
               print("::error::probe objects left behind on COS: %s" % ", ".join(leaked))
               sys.exit(1)
