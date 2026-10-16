@@ -2,11 +2,12 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
-import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.creator.service.CreatorService;
+import com.wotb.web.user.entity.AdminUserLog;
 import com.wotb.web.user.entity.UserProfile;
+import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,7 @@ class AdminUserDeleteTest {
     void keycloakFailureRollsBackTheLocalTransactionAfterFavoriteCleanup() {
         when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
         doThrow(new IllegalStateException("keycloak failed")).when(keycloakAdminUserService).deleteUser("kc-a");
+        when(keycloakAdminUserService.getUser("kc-a")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
 
         final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
 

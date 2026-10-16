@@ -177,7 +177,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `hof`：单场名人堂（客户端提交结算事实 + 回放附件）。
 - `hundred`：百场名人堂（MANUAL 人工证据审核）。
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
-- `user`：Profile、WoTB 账号（含「用回放验证」）。
+- `user`：Profile、WoTB 账号（含「用回放验证」），以及账号删除审计与推荐域写入屏障；复用 `AdminUserLog` 原表和独立审计事务，避免 `admin → creator → admin` 循环。
 - `admin`：用户和后台管理。
 - `creator`：bilibili UP 推荐目录、分类/实力等级、登录用户收藏与奖励；管理沿用 `tournament-admin`，数据不依附赛事。契约见 [UP recommendations](features/bilibili-creators.md)。
 - `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。

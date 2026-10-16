@@ -13,6 +13,8 @@ import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.repository.CreatorSettingsRepository;
 import com.wotb.web.creator.service.CreatorAvatarService;
 import com.wotb.web.creator.service.CreatorService;
+import com.wotb.web.user.entity.AdminUserLog;
+import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
@@ -81,11 +83,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,6 +125,7 @@ class CreatorAvatarIntegrationTest {
     @MockitoSpyBean CreatorAvatarRepository reservations;
     @Autowired CreatorService service;
     @Autowired AdminUserService adminUsers;
+    @MockitoSpyBean AdminUserLogPersister accountAudit;
     @MockitoBean KeycloakAdminUserService keycloakUsers;
     @Autowired CreatorRepository creators;
     @Autowired CreatorSettingsRepository settings;
@@ -134,6 +139,8 @@ class CreatorAvatarIntegrationTest {
 
     @BeforeEach void setup() throws Exception {
         jdbc.execute("truncate creator, creator_avatar, creator_category, creator_level restart identity cascade");
+        jdbc.execute("truncate admin_user_log restart identity");
+        jdbc.execute("truncate user_profile restart identity cascade");
         jdbc.update("insert into creator_category(name) values ('A'),('B')");
         reset(client, keycloakUsers);
         objects.clear();
@@ -357,6 +364,7 @@ class CreatorAvatarIntegrationTest {
         final String unused = avatars.upload(png()).id();
         final long creator = service.create(save(attached)).id();
         doThrow(new IllegalStateException("keycloak unavailable")).when(keycloakUsers).deleteUser("uploader");
+        when(keycloakUsers.getUser("uploader")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
 
         final var result = adminUsers.deleteUsers(List.of("uploader"), true, adminJwt());
 
@@ -368,6 +376,225 @@ class CreatorAvatarIntegrationTest {
         assertTrue(objects.containsKey(PREFIX + unused));
         avatars.cleanup();
         assertTrue(reservations.existsById(unused));
+        verify(client, never()).deleteObject(anyString(), anyString());
+        assertEquals(1, service.favorite("uploader", creator, true).creator().favoriteCount());
+        assertNotNull(avatars.upload(png()).id());
+    }
+
+    @Test void queuedFavoriteAndUploadAndDeletedAdminWritesAreRejectedAfterAccountDeletionCommits() throws Exception {
+        final long creator = service.create(save(null)).id();
+        final CountDownLatch deleting = new CountDownLatch(1);
+        final CountDownLatch finishDeletion = new CountDownLatch(1);
+        final CountDownLatch requestsStarted = new CountDownLatch(2);
+        doAnswer(call -> {
+            deleting.countDown();
+            assertTrue(finishDeletion.await(10, TimeUnit.SECONDS));
+            return null;
+        }).when(keycloakUsers).deleteUser("uploader");
+        try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var deletion = executor.submit(() -> adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()));
+            assertTrue(deleting.await(10, TimeUnit.SECONDS));
+            final var favorite = executor.submit(() -> {
+                requestsStarted.countDown();
+                return mvc.perform(put("/api/creators/" + creator + "/favorite")
+                        .with(jwt().jwt(token -> token.subject("uploader")).authorities())).andReturn();
+            });
+            final var upload = executor.submit(() -> {
+                requestsStarted.countDown();
+                return mvc.perform(multipart("/api/admin/creators/avatars").file(png())
+                        .with(jwt().jwt(token -> token.subject("uploader")).authorities(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                        .andReturn();
+            });
+            assertTrue(requestsStarted.await(10, TimeUnit.SECONDS));
+            try {
+                assertThrows(TimeoutException.class, () -> favorite.get(300, TimeUnit.MILLISECONDS));
+                assertThrows(TimeoutException.class, () -> upload.get(300, TimeUnit.MILLISECONDS));
+            } finally { finishDeletion.countDown(); }
+            assertEquals(1, deletion.get(10, TimeUnit.SECONDS).deleted());
+            final var rejectedFavorite = favorite.get(10, TimeUnit.SECONDS);
+            final var rejectedUpload = upload.get(10, TimeUnit.SECONDS);
+            assertEquals(401, rejectedFavorite.getResponse().getStatus());
+            assertEquals(401, rejectedUpload.getResponse().getStatus());
+            assertTrue(rejectedFavorite.getResponse().getContentAsString().contains("AUTH_UNAUTHENTICATED"));
+            assertTrue(rejectedUpload.getResponse().getContentAsString().contains("AUTH_UNAUTHENTICATED"));
+        } finally { finishDeletion.countDown(); }
+        assertEquals(0, reservations.count());
+        assertEquals(0, jdbc.queryForObject("select count(*) from creator_favorite", Integer.class));
+        assertEquals(0, service.list(null).getFirst().favoriteCount());
+        verify(client, never()).putObject(anyString(), anyString(), any(InputStream.class), any());
+        login("uploader");
+        final List<Runnable> managementWrites = List.of(() -> service.create(save(null)),
+                () -> service.update(creator, save(null)), () -> service.delete(creator),
+                () -> service.addCategory(new CreatorDtos.DictionaryRequest("New")), () -> service.deleteCategory(1),
+                () -> service.addLevel(new CreatorDtos.DictionaryRequest("New")), () -> service.deleteLevel(1),
+                () -> service.configure(new CreatorDtos.SettingsRequest(123)));
+        for (final Runnable write : managementWrites) {
+            assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED, assertThrows(ApiException.class, write::run).errorCode());
+        }
+        login("jwt-only-active");
+        assertEquals(1, service.favorite("jwt-only-active", creator, true).creator().favoriteCount());
+        assertEquals(0, jdbc.queryForObject("select count(*) from user_profile", Integer.class));
+        verify(keycloakUsers, times(1)).deleteUser("uploader");
+        verify(keycloakUsers, never()).getUser(anyString());
+    }
+
+    @Test void ambiguousKeycloakFailureWithMissingAccountRetainsPendingBarrier() throws Exception {
+        assertAmbiguousDeletionBlocksWrites(false);
+    }
+
+    @Test void ambiguousKeycloakFailureWithFailedProbeRetainsPendingBarrier() throws Exception {
+        assertAmbiguousDeletionBlocksWrites(true);
+    }
+
+    @Test void pendingDeletionPreventsReleasingAnUnusedReservationAfterLocalRollback() throws Exception {
+        final String unused = avatars.upload(png()).id();
+        doThrow(new IllegalStateException("test lost delete response")).when(keycloakUsers).deleteUser("uploader");
+
+        assertEquals("FAILED_KEYCLOAK_DELETE",
+                adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).results().getFirst().errorCode());
+
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> avatars.release(unused)).errorCode());
+        assertEquals("uploader", reservations.findById(unused).orElseThrow().subject);
+        assertTrue(objects.containsKey(PREFIX + unused));
+        verify(client, never()).deleteObject(anyString(), anyString());
+    }
+
+    @Test void definitiveRetryResolvesOlderPendingAttemptsAndRestoresSubjectWrites() throws Exception {
+        final String unused = avatars.upload(png()).id();
+        final long creator = service.create(save(null)).id();
+        service.favorite("uploader", creator, true);
+        doThrow(new IllegalStateException("first ambiguous response"), new IllegalStateException("retry definitive failure"))
+                .when(keycloakUsers).deleteUser("uploader");
+        assertEquals("FAILED_KEYCLOAK_DELETE",
+                adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).results().getFirst().errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> service.favorite("uploader", creator, false)).errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> avatars.upload(png())).errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> avatars.release(unused)).errorCode());
+        verify(client, never()).deleteObject(anyString(), anyString());
+        when(keycloakUsers.getUser("uploader")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
+
+        assertEquals("FAILED_KEYCLOAK_DELETE",
+                adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).results().getFirst().errorCode());
+
+        assertEquals(List.of("FAILED_KEYCLOAK_DELETE", "FAILED_KEYCLOAK_DELETE"),
+                jdbc.queryForList("select status from admin_user_log order by id", String.class));
+        assertEquals("first ambiguous response",
+                jdbc.queryForObject("select error_message from admin_user_log order by id limit 1", String.class));
+        assertEquals(0, service.favorite("uploader", creator, false).creator().favoriteCount());
+        assertNotNull(avatars.upload(png()).id());
+        avatars.release(unused);
+        assertFalse(reservations.existsById(unused));
+        assertFalse(objects.containsKey(PREFIX + unused));
+        verify(keycloakUsers, times(2)).getUser("uploader");
+    }
+
+    @Test void definitiveRetryNeverClearsAnExistingSuccessfulDeletionFact() throws Exception {
+        avatars.upload(png());
+        final long creator = service.create(save(null)).id();
+        assertEquals(1, adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).deleted());
+        doThrow(new IllegalStateException("test retry failed")).when(keycloakUsers).deleteUser("uploader");
+        when(keycloakUsers.getUser("uploader")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
+
+        assertEquals("FAILED_KEYCLOAK_DELETE",
+                adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).results().getFirst().errorCode());
+
+        assertEquals(List.of("SUCCESS", "FAILED_KEYCLOAK_DELETE"),
+                jdbc.queryForList("select status from admin_user_log order by id", String.class));
+        assertEquals(1, jdbc.queryForObject("select count(*) from admin_user_log where keycloak_user_deleted", Integer.class));
+        assertSubjectWritesRejected(creator);
+    }
+
+    @Test void failedFinalSuccessAuditKeepsPendingBarrierAfterLocalRollback() throws Exception {
+        final String avatar = avatars.upload(png()).id();
+        final long creator = service.create(save(avatar)).id();
+        doAnswer(call -> {
+            final AdminUserLog log = call.getArgument(0);
+            if ("SUCCESS".equals(log.getStatus())) { throw new IllegalStateException("test audit write failed"); }
+            return call.callRealMethod();
+        }).when(accountAudit).save(any(AdminUserLog.class));
+
+        assertThrows(IllegalStateException.class, () -> adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()));
+
+        assertEquals(AdminUserLog.KEYCLOAK_DELETE_PENDING, jdbc.queryForObject("select status from admin_user_log", String.class));
+        assertEquals("uploader", reservations.findById(avatar).orElseThrow().subject);
+        assertEquals(avatar, service.detail(creator).avatarId());
+        assertSubjectWritesRejected(creator);
+        verify(keycloakUsers).deleteUser("uploader");
+        verify(keycloakUsers, never()).getUser(anyString());
+    }
+
+    @Test void queuedPutRejectsRestoredOwnerAfterAmbiguousDeletionRollsBackLocalMetadata() throws Exception {
+        final CountDownLatch reservationCommitted = new CountDownLatch(1);
+        final CountDownLatch deletionDone = new CountDownLatch(1);
+        doAnswer(call -> {
+            if ("pending-delete-put".equals(Thread.currentThread().getName())) {
+                reservationCommitted.countDown();
+                assertTrue(deletionDone.await(10, TimeUnit.SECONDS));
+            }
+            return Optional.ofNullable(entityManager.find(CreatorAvatar.class, call.getArgument(0), LockModeType.PESSIMISTIC_WRITE));
+        }).when(reservations).findLocked(anyString());
+        doThrow(new IllegalStateException("test lost delete response")).when(keycloakUsers).deleteUser("uploader");
+        try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var upload = executor.submit(() -> {
+                Thread.currentThread().setName("pending-delete-put");
+                login("uploader");
+                try { return avatars.upload(png()); }
+                finally { SecurityContextHolder.clearContext(); }
+            });
+            assertTrue(reservationCommitted.await(10, TimeUnit.SECONDS));
+            try {
+                assertEquals("FAILED_KEYCLOAK_DELETE",
+                        adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).results().getFirst().errorCode());
+            } finally { deletionDone.countDown(); }
+            final var failure = assertThrows(ExecutionException.class, () -> upload.get(10, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof ApiException);
+            assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED, ((ApiException) failure.getCause()).errorCode());
+            final CreatorAvatar restored = reservations.findAll().getFirst();
+            assertEquals("uploader", restored.subject);
+            assertEquals("PENDING", restored.status);
+            assertEquals(1, reservations.count());
+            assertTrue(objects.isEmpty());
+            verify(client, never()).putObject(anyString(), anyString(), any(InputStream.class), any());
+        } finally { deletionDone.countDown(); }
+    }
+
+    private void assertAmbiguousDeletionBlocksWrites(final boolean probeFails) throws Exception {
+        final String avatar = avatars.upload(png()).id();
+        final long creator = service.create(save(avatar)).id();
+        service.favorite("uploader", creator, true);
+        doThrow(new IllegalStateException("test ambiguous delete response")).when(keycloakUsers).deleteUser("uploader");
+        if (probeFails) {
+            when(keycloakUsers.getUser("uploader")).thenThrow(new IllegalStateException("test unavailable probe"));
+        }
+
+        final var result = adminUsers.deleteUsers(List.of("uploader"), true, adminJwt());
+
+        assertEquals("FAILED_KEYCLOAK_DELETE", result.results().getFirst().errorCode());
+        assertEquals(AdminUserLog.KEYCLOAK_DELETE_PENDING, jdbc.queryForObject("select status from admin_user_log", String.class));
+        assertEquals("FAILED_KEYCLOAK_DELETE", jdbc.queryForObject("select error_code from admin_user_log", String.class));
+        assertEquals("uploader", reservations.findById(avatar).orElseThrow().subject);
+        assertEquals(avatar, service.detail(creator).avatarId());
+        assertEquals(1, service.list(null).getFirst().favoriteCount());
+        assertSubjectWritesRejected(creator);
+        verify(keycloakUsers, times(1)).getUser("uploader");
+    }
+
+    private void assertSubjectWritesRejected(final long creator) throws Exception {
+        login("uploader");
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> service.favorite("uploader", creator, true)).errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> avatars.upload(png())).errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> service.update(creator, save(null))).errorCode());
+        assertEquals(ApiErrorCode.AUTH_UNAUTHENTICATED,
+                assertThrows(ApiException.class, () -> avatars.release(reservations.findAll().getFirst().id)).errorCode());
+        assertEquals(1, reservations.count());
         verify(client, never()).deleteObject(anyString(), anyString());
     }
 
