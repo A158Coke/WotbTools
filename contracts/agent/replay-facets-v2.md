@@ -362,11 +362,14 @@ WotBTools
 - **回归背景**：−1/−2 档弹药架殉爆（实例 1910 局 Intotherainy `0xFFFE`）曾因本层只认
   {0x0000, 0xFFFD} 被判成存活（血量冻在最后正值、装填条继续外播）。裁决与迁移账见上游
   `WoT-Blitz-Agent` §七（`docs/wotbtools-cross-reference.md`）。
-- **上线顺序（部署纪律）**：该字段的**读取边界兼容先行**——服务端 `ReplayFactsCodec` 忽略未知
-  additive 字段（`PROJECTION_MAPPER`）并已能消费 `hpState`（`HpRawState.fromWireName` 显式映射）；
-  客户端投影的**发送**在 tolerant reader 部署到生产之后由 follow-up 打开（`toClientAiReviewProjection`
-  当前仍只发 `hpRaw`）。原因：旧服务镜像的严格读取器会把未知字段判 400（`/api/ai/reviews`），
-  且 `ai-service` 与前端是两条独立的 main-push 工作流、也无回滚保护。
+- **上线顺序（部署纪律）**：该字段的**读取边界登记先行**——服务端 DTO 显式登记 `hpState`
+  （`ClientAiProjection.Prop3Health/HealthEvent` + 契约 enum）并已能消费（`HpRawState.fromWireName`
+  显式映射）；**未登记字段仍 fail-closed**（`PROJECTION_MAPPER` 保持
+  `FAIL_ON_UNKNOWN_PROPERTIES`，与各 schema 的 `additionalProperties: false` 一致），**显式
+  `null` 拒绝**（读取边界拦截；只有字段缺省才走 legacy 口径）。客户端投影的**发送**在该镜像
+  部署到生产之后由 follow-up 打开（`toClientAiReviewProjection` 当前仍只发 `hpRaw`）。原因：
+  旧服务镜像不认识该字段会把请求判 400（`/api/ai/reviews`），且 `ai-service` 与前端是两条
+  独立的 main-push 工作流、也无回滚保护。
 
 ## 5. 射击复现能力（ShotReplays）
 

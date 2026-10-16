@@ -283,7 +283,8 @@ public final class ClientAiProjectionAdapter {
         }
     }
 
-    /** hpState（可空）：在场必须是契约 enum 的 wire 字面量之一（显式映射；producer 漂移在边界拒绝）。 */
+    /** hpState：**缺省**（Java null，且读取边界已拒绝显式 null——见 ReplayFactsCodec）走 legacy；
+     *  在场必须是契约 enum 的 wire 字面量之一（显式映射；producer 漂移在边界拒绝）。 */
     private static boolean validHpState(final String name) {
         return name == null || HpRawState.fromWireName(name) != null;
     }
