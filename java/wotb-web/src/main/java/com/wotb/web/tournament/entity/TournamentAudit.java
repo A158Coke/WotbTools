@@ -14,6 +14,9 @@ import java.time.Instant;
 @Entity
 @Table(name = "tournament_audit")
 public class TournamentAudit {
+    /** List projection excludes snapshots; full audit facts remain in the entity for internal readers. */
+    public record Metadata(long id, String action, String actor, String reason,
+                           Integer roundNumber, Integer dayNumber, Instant createdAt) { }
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
     @Column(name = "event_id")
