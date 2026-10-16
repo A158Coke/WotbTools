@@ -512,7 +512,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `labelPrefs.showPlayerName / showTankName / showReload` 与 `hpPrefs.showHp`；默认昵称关、
   车型/血量/装填开，旧持久化 key 与迁移语义保留。任一面板改变偏好，另一面板立即观察到。
   名牌直接使用语义 CSS token，不铺整卡不透明黑底，字体保持屏幕空间可读大小，长名称受限截断。
-  3D 车辆标签不再创建 CanvasTexture/Sprite；独立的伤害飘字仍可使用 Three.js sprite。
+  3D 车辆标签不再创建 CanvasTexture/Sprite；独立的伤害飘字仍可使用 Three.js sprite——但 HTML
+  名牌恒在 canvas 之上，sprite 的 `renderOrder` 压不住它，所以飘字按屏幕空间几何避让：从该车
+  名牌块**顶边之上**起跳（块高由 overlay 的 `labelHeight(eid)` 在飘字出生时量一次，名牌隐藏
+  或覆盖层缺席时为 0，退回车体上方的老位置），并沿**相机 up** 方向上浮固定屏幕像素——俯视镜头下
+  世界 y 近乎指向相机，沿它上浮在屏幕上几乎原地不动。名牌抬升量（`labelLiftWorld`）是名牌与
+  飘字共用的唯一事实源。
   场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，
   内容状态按 HUD cadence（约 10Hz）发布给标签子组件，seek 立即刷新，不驱动整个
   `Replay3DPane` reactive tree。背向相机、出屏、未可见车辆隐藏，既有遮挡语义保留；

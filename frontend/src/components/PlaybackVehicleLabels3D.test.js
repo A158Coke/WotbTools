@@ -78,6 +78,28 @@ describe('PlaybackVehicleLabels3D setAnchor 拷贝契约', () => {
   })
 })
 
+/**
+ * 名牌块高是场景侧唯一拿得到的"名牌在屏幕上占了多高"——伤害飘字靠它落到名牌之上
+ *（名牌是 canvas 上方的 HTML 层，renderOrder 压不住）。块高随显示行数变化，只有 DOM 知道。
+ */
+describe('PlaybackVehicleLabels3D labelHeight', () => {
+  it('返回该 eid 名牌块的屏幕高度；未知 eid / 清空后为 0（场景侧退回车体上方起跳）', async () => {
+    const wrapper = mountOverlay()
+    wrapper.vm.setLabels([row(7)])
+    await nextTick()
+
+    expect(wrapper.vm.labelHeight(99)).toBe(0)        // 未知 eid 不抛错
+    const el = wrapper.get('.vehicle-label-anchor').element
+    Object.defineProperty(el, 'offsetHeight', { configurable: true, value: 52 })
+    expect(wrapper.vm.labelHeight(7)).toBe(52)
+
+    wrapper.vm.clear()
+    await nextTick()
+    expect(wrapper.vm.labelHeight(7)).toBe(0)
+    wrapper.unmount()
+  })
+})
+
 it('late marks use accountId rather than scene eid and disappear with hidden tank labels', async () => {
   const wrapper = mountOverlay()
   await wrapper.setProps({ labelPrefs: { showTankName: true } })

@@ -41,8 +41,14 @@ function setAnchor(eid, anchor) {
   paint(elements.get(eid), cur)
 }
 function setLabels(rows) { labels.value = rows }
+/**
+ * 名牌块的屏幕高度（px，自锚点向上延伸）。名牌是 canvas 之上的 HTML 覆盖层，场景里的
+ * renderOrder 压不住它——伤害飘字只能靠几何避让落到名牌上方，而块高取决于当前显示了
+ * 几行（玩家名 / 坦克名 / HP / 装填），只有 DOM 自己知道。隐藏或未挂载时为 0。
+ */
+function labelHeight(eid) { return elements.get(eid)?.offsetHeight || 0 }
 function clear() { labels.value = []; anchors.clear(); elements.clear() }
-defineExpose({ setLabels, setAnchor, clear })
+defineExpose({ setLabels, setAnchor, clear, labelHeight })
 </script>
 
 <template>

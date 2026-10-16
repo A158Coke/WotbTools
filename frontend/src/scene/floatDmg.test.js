@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { DMG_ASPECT, DMG_FRAC, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
+import {
+  DMG_ASPECT, DMG_FRAC, DMG_INK_RATIO, dmgWorldHeight, floatDmgAnim, worldPerScreenPx,
+} from './floatDmg.js'
 
 describe('伤害飘字 · 动画与尺寸', () => {
   it('出生弹出：0.72 起，18% 生命周期内升到 1.0 并此后保持（单调不回退）', () => {
@@ -45,6 +47,36 @@ describe('伤害飘字 · 动画与尺寸', () => {
 
   it('贴图保持 2:1（精灵不被拉伸）', () => {
     expect(DMG_ASPECT).toBe(2)
+  })
+
+  it('墨迹占比 < 1：盒高含透明留白，贴名牌摆位要按数字真实高度算', () => {
+    expect(DMG_INK_RATIO).toBeGreaterThan(0)
+    expect(DMG_INK_RATIO).toBeLessThan(1)
+  })
+})
+
+describe('伤害飘字 · 屏幕像素 → 世界长度', () => {
+  const fov = 55
+  const viewportH = 900
+
+  it('与 dmgWorldHeight 同一投影关系：perPx × 视口高 × DMG_FRAC = 飘字世界高', () => {
+    for (const d of [10, 50, 200, 800]) {
+      expect(worldPerScreenPx(d, fov, viewportH) * viewportH * DMG_FRAC).toBeCloseTo(dmgWorldHeight(d, fov), 9)
+    }
+  })
+
+  it('与距离成正比：同一像素偏移在任何距离都落成同样的屏上位移', () => {
+    const near = worldPerScreenPx(50, fov, viewportH)
+    expect(worldPerScreenPx(200, fov, viewportH)).toBeCloseTo(near * 4, 9)
+    expect(worldPerScreenPx(800, fov, viewportH)).toBeCloseTo(near * 16, 9)
+  })
+
+  it('视口高缺失 / 距离非法 → 0，不把 NaN 写进 sprite 位置', () => {
+    expect(worldPerScreenPx(100, fov, 0)).toBe(0)
+    expect(worldPerScreenPx(100, fov, undefined)).toBe(0)
+    expect(worldPerScreenPx(100, fov, NaN)).toBe(0)
+    expect(worldPerScreenPx(-5, fov, viewportH)).toBe(0)
+    expect(worldPerScreenPx(NaN, fov, viewportH)).toBe(0)
   })
 })
 
@@ -94,7 +126,40 @@ describe('伤害飘字 · 覆盖层层级（回归守卫）', () => {
   })
 
   it('逐帧尺寸走屏幕占比恒定式，并套用弹出曲线', () => {
-    expect(src).toMatch(/dmgWorldHeight\(camera\.position\.distanceTo\(f\.sp\.position\), camera\.fov\) \* pop/)
+    expect(src).toMatch(/const worldH = dmgWorldHeight\(d, camera\.fov\) \* pop;/)
     expect(src).toMatch(/const \{ pop, opacity \} = floatDmgAnim\(k\);/)
+    expect(src).toMatch(/placeFloatDmg\(f, k, pop\);/)
+  })
+})
+
+/**
+ * 名牌迁到 HTML 覆盖层之后，canvas 里的 renderOrder 再也压不住它——飘字只能靠几何
+ * 避让：落在该车名牌块顶边之上。这组守卫锁的就是这条无法用纯函数覆盖的接线
+ *（线上表现：伤害数字被名牌盖掉上半截，只露出下沿）。
+ */
+describe('伤害飘字 · 避开名牌块（回归守卫）', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  const place = src.slice(src.indexOf('function placeFloatDmg'), src.indexOf('// 同源触发 HP 条反馈'))
+
+  it('出生时量一次名牌块高（每帧读 offsetHeight 会把同步布局拖进渲染循环）', () => {
+    expect(place).toMatch(/labelOverlay\?\.labelHeight\?\.\(eid\) \|\| 0/)
+    expect(place).toMatch(/labelPx/)
+  })
+
+  it('起跳点 = 名牌块高 + 间隙，上浮量是屏幕像素而非世界单位', () => {
+    expect(place).toMatch(/f\.labelPx \+ DMG_LABEL_GAP_PX \+ k \* DMG_RISE_PX/)
+    expect(place).toMatch(/worldPerScreenPx\(d, camera\.fov, container\.clientHeight\)/)
+  })
+
+  it('沿相机 up 偏移：俯视镜头下世界 y 近乎指向相机，沿它抬高不产生屏上位移', () => {
+    expect(place).toMatch(/dmgUpScratch\.set\(0, 1, 0\)\.applyQuaternion\(camera\.quaternion\)/)
+    expect(place).not.toMatch(/baseY/)   // 世界空间锚点已退役
+  })
+
+  it('与名牌共用同一个抬升事实源（labelLiftWorld），两者不各算各的', () => {
+    expect(place).toMatch(/labelLiftWorld\(d\)/)
+    const labels = src.slice(src.indexOf('function updateLabels'), src.indexOf('function buildVehicles'))
+    expect(labels).toMatch(/v\.labelAnchor\.y \+= labelLiftWorld\(d\);/)
   })
 })
