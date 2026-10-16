@@ -69,21 +69,10 @@ const isTurreted = computed(() => model.value?.kind === 'turreted')
 const hullDeg = computed(() => st.value.hullScreenDeg)
 const turretDeg = computed(() => st.value.turretScreenDeg)
 
-// 2.5D vehicle attitude: only the vehicle artwork tilts. Hitbox/HP/labels/selection
-// remain screen-aligned and keep their existing collision/accessibility contracts.
-const graphicsStyle = computed(() => {
-  const attitude = st.value.terrainAttitude
-  if (!attitude || hullDeg.value == null) return null
-  const pitch = Number(attitude.pitchDeg)
-  const roll = Number(attitude.rollDeg)
-  const heading = Number(hullDeg.value)
-  if (![pitch, roll, heading].every(Number.isFinite)) return null
-  return {
-    // Conjugate the 3D tilt by hull heading so pitch is always front/rear and
-    // roll is always left/right in vehicle-local axes while child yaw remains authoritative.
-    transform: `rotateZ(${heading}deg) rotateX(${-pitch}deg) rotateY(${-roll}deg) rotateZ(${-heading}deg)`,
-  }
-})
+// 2D 是 3D 回放的**严格俯视投影**（2026-10-16）：只呈现平面内姿态（车体/炮塔朝向），
+// 不再呈现"多出的维度"（俯仰/侧倾）——原地形高度场合成倾斜已删（见
+// docs/features/battle-playback.md「2D 位姿与 3D 同源」）。
+// 命中盒 / HP / 名牌 / 选中标记保持屏幕对齐与既有碰撞契约。
 
 // —— dedicated turret assembly（嵌套 transform）——
 const assemblyStyle = computed(() =>
@@ -251,7 +240,7 @@ const stateClasses = computed(() => ({
       :style="{ transform: `translate(-50%, -50%) ${st.overlayInverseScale}` }" aria-hidden="true">
       <TankClassIcon :tank-class="st.vehicle.tankClass" />
     </div>
-    <div v-else class="pb-graphics" :style="graphicsStyle">
+    <div v-else class="pb-graphics">
       <!-- dedicated turreted：hull 填满等比 square render box + turret assembly
            （父层绕盒中心 H，子层绕 image-local pivot T-H） -->
       <template v-if="isDedicated && isTurreted">
@@ -360,8 +349,7 @@ const stateClasses = computed(() => ({
 /* generic 素材 512×512 含大量透明留白：放大到按钮 134% 居中（PR3 增补校准，
    见 script 注释的素材占比推导），共同 pivot 旋转 */
 .pb-vehicle {
-  perspective: 96px;
-  transform-style: preserve-3d;
+  /* marker 盒就是车辆的俯视外接盒；纯俯视下不再需要 3D 渲染上下文 */
 }
 .pb-hp-ring { position: absolute; inset-inline-start: 50%; inset-block-start: 50%; overflow: visible; pointer-events: none; color: var(--color-team-neutral); z-index: var(--pb-z-hud); }
 .pb-friendly .pb-hp-ring { color: var(--color-team-ally); }
@@ -417,15 +405,13 @@ const stateClasses = computed(() => ({
   position: absolute;
   z-index: 1;
 }
-/* 车型视觉层容器：与 button 同盒（imgs 百分比定位的 containing block 不变） */
+/* 车型视觉层容器：与 button 同盒（imgs 百分比定位的 containing block 不变）。
+   纯俯视（2026-10-16）：容器本身不再施加任何 3D 变换（原 2.5D 倾斜已删），
+   perspective / preserve-3d / transform 过渡一并移除（无 3D 变换即无效用）。 */
 .pb-graphics {
   position: absolute;
   inset: 0;
   transform-origin: 50% 50%;
-  transform-style: preserve-3d;
-  backface-visibility: visible;
-  transition: transform 90ms linear;
-  will-change: transform;
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-graphics { transition: none; }
