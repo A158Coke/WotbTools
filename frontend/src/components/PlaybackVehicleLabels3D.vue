@@ -274,7 +274,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
   color: var(--color-playback-damage-text);
   font: var(--type-caption);
   font-size: var(--font-size-h3);
-  font-weight: 800;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-shadow: var(--text-shadow-playback-damage);
