@@ -269,14 +269,16 @@ async function setCapability(key) {
 
 async function onPreview() {
   if (activeCapability.value === 'data' || files.value.length === 1) await analyze()
-  else await ensureTargetBattle()
+  else await ensureTargetBattle({ allowRetry: true })
 }
 
 /** Prepare a single-battle capability using finalized, original source identities. */
-async function ensureTargetBattle() {
+async function ensureTargetBattle({ allowRetry = false } = {}) {
   if (!files.value.length || targetFile.value) return
   const revision = selectionRevision.value
   if (!resp.value) {
+    // Capability navigation must preserve cancellation/failure; only Preview authorizes retry.
+    if (analysis.value.phase === 'parsing' || (!allowRetry && analysis.value.phase !== 'idle')) return
     const result = await analyze()
     if (!result?.completed) return
   }
