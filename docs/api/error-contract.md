@@ -50,6 +50,11 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | false | protocol | Content-Type 不支持 |
 | `METHOD_NOT_ALLOWED` | 405 | false | protocol | HTTP method 不支持 |
 | `RESOURCE_NOT_FOUND` | 404 | false | resource | 通用资源不存在 |
+| `BROADCAST_VERSION_CONFLICT` | 409 | false | concurrency | 直播季赛版本已变化，须刷新后重试／重新确认删除数量 |
+| `BROADCAST_NODE_CONFLICT` | 409 | false | validation | 重复积分轮次或已存在的八强／四强阶段根节点 |
+| `BROADCAST_COVER_INVALID` | 400 | false | validation | 封面格式、实际解码、字节或尺寸不合法 |
+| `BROADCAST_STORAGE_UNAVAILABLE` | 503 | false | configuration | 直播封面 COS 未完成配置 |
+| `BROADCAST_STORAGE_ERROR` | 502 | true | storage | COS 上传、读取或删除请求失败 |
 | `REPLAY_BUSY` | 503 | true | capacity | Replay worker 暂时繁忙 |
 | `PROCESSING_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Processing queue 已满；enum 值保留以避免动 wire |
 | `EXPORT_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Export queue 已满；enum 值保留以避免动 wire |

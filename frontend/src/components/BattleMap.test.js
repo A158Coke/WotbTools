@@ -93,7 +93,9 @@ describe('BattleMap', () => {
     expect(wrapper.find('[data-test="marker-2"]').attributes('data-selected')).toBe('true')
   })
 
-  it('keeps relief collision offsets in screen pixels with the layout-scaled camera', () => {
+  it('标记严格落在真实位置：忽略任何残留 presentationOffset，且不画虚线引导线', () => {
+    // 2026-10-16 用户裁定：删除防重叠位移与虚线引导线——车体必须落在真实位置
+    //（密集处允许图标互相压盖），与 3D 一致（3D 从不移动车体模型）。
     activeTerrainRelief.value = createTerrainReliefModel({
       mapCode: 'test',
       worldBounds: { xMin: -100, xMax: 100, yMin: -100, yMax: 100 },
@@ -108,20 +110,19 @@ describe('BattleMap', () => {
         vehicle: { accountId: 1, team: 1 },
         pos: { x: 0, y: 0 },
         markerStyle: { left: '50%', top: '50%' },
+        // 残留字段（旧数据/旧状态）必须被忽略
         presentationOffset: { x: 20, y: -16 },
       }],
     })
-
     const style = wrapper.find('[data-test="marker-1"]').attributes('style')
-    expect(style).toContain('+ 20px')
-    expect(style).toContain('+ -16px')
-    expect(style).not.toContain('+ 5px')
-    expect(style).not.toContain('+ -4px')
+    expect(style).not.toContain('+ 20px')
+    expect(style).not.toContain('-16px')
+    expect(style).toContain('50%')
+    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
   })
 
-  it('draws a leader line from an offset marker back to its canonical point', () => {
+  it('无 terrain relief 时同样严格真实位置（markerStyle 原样透传）', () => {
     const wrapper = mountMap({
-      viewScale: 4,
       vehicleStates: [{
         vehicle: { accountId: 1, team: 1 },
         pos: { x: 25, y: 30 },
@@ -129,71 +130,9 @@ describe('BattleMap', () => {
         presentationOffset: { x: 20, y: -16 },
       }],
     })
-
-    const line = wrapper.find('.pb-marker-leader')
-    expect(line.exists()).toBe(true)
-    expect(line.attributes('x1')).toBe('25')
-    expect(line.attributes('y1')).toBe('70')
-    expect(line.attributes('x2')).toBe('45')
-    expect(line.attributes('y2')).toBe('54')
-    expect(line.attributes('stroke-width')).toBe('1.25')
-  })
-
-  it('converts screen offsets with the actual non-1:1 rendered SVG frame', async () => {
-    const nonSquareMapView = {
-      ...mapView,
-      W: 769,
-      H: 763,
-      toY: value => 763 - value,
-    }
-    const state = {
-      vehicle: { accountId: 1, team: 1 },
-      pos: { x: 384.5, y: 381.5 },
-      presentationOffset: { x: 20, y: -16 },
-    }
-    const wrapper = mountMap({ mapView: nonSquareMapView, viewScale: 4, vehicleStates: [state] })
-    const svg = wrapper.find('.pb-svg').element
-    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
-      width: 1560,
-      height: 1548,
-      top: 0,
-      left: 0,
-      right: 1560,
-      bottom: 1548,
-    })
-    await wrapper.setProps({ vehicleStates: [{ ...state }] })
-
-    const line = wrapper.find('.pb-marker-leader')
-    expect(Number(line.attributes('x2'))).toBeCloseTo(394.358974, 5)
-    expect(Number(line.attributes('y2'))).toBeCloseTo(373.613695, 5)
-  })
-
-  it('does not draw leader lines for canonical marker positions', () => {
-    const wrapper = mountMap({
-      vehicleStates: [{
-        vehicle: { accountId: 1, team: 1 },
-        pos: { x: 25, y: 30 },
-        presentationOffset: { x: 0, y: 0 },
-      }],
-    })
-
-    expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
-  })
-
-  it('skips leader lines when an offset marker has no finite canonical position', () => {
-    expect(() => mountMap({
-      vehicleStates: [{
-        vehicle: { accountId: 1, team: 1 },
-        presentationOffset: { x: 20, y: -16 },
-      }],
-    })).not.toThrow()
-    const wrapper = mountMap({
-      vehicleStates: [{
-        vehicle: { accountId: 1, team: 1 },
-        pos: { x: Number.NaN, y: 30 },
-        presentationOffset: { x: 20, y: -16 },
-      }],
-    })
+    const style = wrapper.find('[data-test="marker-1"]').attributes('style')
+    expect(style).toContain('25%')
+    expect(style).toContain('70%')
     expect(wrapper.findAll('.pb-marker-leader')).toHaveLength(0)
   })
 

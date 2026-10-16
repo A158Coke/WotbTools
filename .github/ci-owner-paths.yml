@@ -110,6 +110,7 @@ android:
   - 'frontend/src/platform/nativeBridgeContract.js'
   - 'scripts/android-release/**'
 observability:
+  - 'deploy/list-image-tags.sh'
   - '.github/workflows/observability.yml'
   # The runtime smoke that proves the Docker -> Alloy -> Loki compliance split:
   # editing it must re-run it, not only the deployment contract job.

@@ -89,7 +89,7 @@ export function buildGroundGeometry({
   });
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  // 底图 UV：回退档（无分层）把 ground.webp/mini.webp 直接摊在地形上——分层着色的 UV 在
+  // 底图 UV：回退档（无分层）把 `ground.webp` 直接摊在地形上——分层着色的 UV 在
   // 片元由世界坐标反推，但回退材质吃几何 `uv`，缺了整张图退化成单 texel 常量（2026-10-10 review P1）
   g.setAttribute('uv', new THREE.BufferAttribute(groundMapUv(positions, span, cx, cz), 2));
   g.setIndex(new THREE.BufferAttribute(indices, 1));

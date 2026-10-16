@@ -4,7 +4,7 @@ The dashboards answer the maintainer's questions: who used the product, which fe
 
 ## Ownership and topology
 
-- Yecao hosts Prometheus, Loki, Alloy, Grafana, node-exporter and the independent ai-service.
+- Yecao hosts Prometheus, Loki, Alloy, Grafana, node-exporter, dev-metrics-exporter and the independent ai-service.
 - TX business-api exposes management metrics on WireGuard `10.20.0.1:8088`. TX `alloy-tx` sends business-api, Keycloak, frontend APK download and Caddy logs to Yecao Loki at `10.20.0.2:3100`.
 - Yecao Alloy collects `ai-service` by its exact Compose service label. Its name-based backend/Keycloak/frontend rules remain for deployment canaries.
 - Grafana is private on `10.20.0.2:3000`, exposed through TX Caddy at https://monitor.wotbtools.com. Anonymous login and sign-up are disabled.
@@ -13,10 +13,11 @@ The dashboards answer the maintainer's questions: who used the product, which fe
 
 ## Dashboards
 
-All five dashboards default to last 24 hours, use `Asia/Shanghai`, and link to each other while preserving the selected range. **Today** means midnight Beijing time to now. Choose last 7 days or a custom range within the retention window. Empty results are displayed as No data, not a verified zero.
+The five product dashboards default to last 24 hours, use `Asia/Shanghai`, and link to each other while preserving the selected range. **Today** means midnight Beijing time to now. Choose last 7 days or a custom range within the retention window. Empty results are displayed as No data, not a verified zero.
 
 | Dashboard | UID | What it measures |
 |---|---|---|
+| Engineering Overview | wotbtools-engineering-overview | GitHub PR/CI aggregates, history, freshness and production correlation |
 | Active users (home) | wotbtools-active-users | Distinct authenticated accounts with received foreground activity signals |
 | Feature usage | wotbtools-feature-usage | Per-file parse starts/outcomes and page/capability opens, by Web/Android |
 | Android downloads | wotbtools-android-downloads | APK request counts by filename/version and HTTP status |
@@ -79,8 +80,26 @@ Account-group queries have an explicit `max_query_series=10000` ceiling; exceedi
 
 PR CI performs native Prometheus/Loki/Alloy validation, real Docker emitter → Alloy → Loki smoke, Grafana datasource/dashboard API smoke, HTTP contract checks and targeted semantic tests. New producers are deployed after the receiver/collector where possible; independent service owners can otherwise produce a temporary undercount, not a product outage. Android bundled telemetry needs the new APK release; existing APKs cannot retroactively report usage.
 
-`observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all five new UIDs and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the six-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana) even though infrastructure charts no longer appear on the home dashboard.
+`observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all six current UIDs and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the seven-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana, dev-metrics) even though infrastructure charts no longer appear on the home dashboard.
 
 Deployment canaries prove ingestion paths, not actual activity from every production service. Runtime acceptance must check real received client activity, a parse batch, APK requests and AI usage/errors in the new dashboards. No historical client counts can be backfilled from absent events.
 
 See [runbook](observability-runbook.md) and [Grafana OpenTofu ownership](../architecture/grafana-opentofu.md).
+
+## Engineering metrics
+
+[Engineering metrics architecture](../architecture/engineering-metrics.md) defines counting/classification. GitHub refreshes every 15 minutes, independently of 15-second scrapes. `/metrics` reads the last complete in-memory snapshot without GitHub calls. Initial failure keeps the process healthy with `wotb_dev_collector_data_ready=0`; later failure preserves successful aggregates and timestamp. Restart reconstructs from GitHub; there is no database/cache backup.
+
+Engineering Overview shows Healthy below 30 minutes since the last success, Delayed at 30–60 minutes and Stale at 60 minutes or more; no initial success is Not ready. Inspect process health/Prometheus UP separately from dataset readiness/age. GitHub outage does not imply Grafana runtime failure.
+
+`DEV_METRICS_GITHUB_TOKEN` is repository-scoped read-only (Metadata, Pull requests, Issues, Actions, Contents read). The observability owner injects a protected runtime token file mounted read-only; only its path enters container configuration. Never put its value in images, Grafana JSON, OpenTofu state, argv, metrics, diagnostics or logs. Rotate via the same owner and redeploy. No public exporter port; Grafana remains authenticated only.
+
+Configure this repository secret before selecting the exporter in `observability.yml`. The owner writes `/run/wotb-dev-metrics/github-token` under the existing Yecao deployment lock and recreates the container after rotation. `/run` is ephemeral: after a host reboot, dispatch Observability with scope `dev-metrics-exporter` to reinject the secret; a missing bind source fails closed instead of creating a directory. For a private GHCR package, the owner authenticates only the exporter pull with its short-lived publishing token, uses a temporary `/run` Docker config, and removes that config on success or failure. Exporter data access still uses the separate read-only token. No persistent host Docker login is required.
+
+Rerunning the same source SHA reuses the existing exporter tag's digest. Only an absent tag is built; registry/authentication failures remain fatal. Both reused and newly built images must retain the expected OCI source revision and registry digest before staging, so a retry never overwrites an existing SHA tag.
+
+`verify-observability.sh` checks exporter health, the `dev-metrics` Prometheus target and dataset readiness/age separately. An unavailable or stale GitHub snapshot prints `OBSERVABILITY DEGRADED [DEV_METRICS_DATA]` and continues the Grafana/Loki checks; it does not restart the exporter or skip unrelated runtime verification.
+
+The monthly table shows historical event-date labels. The daily Created/Merged line chart converts day labels to UTC midnight through native Grafana transformations; its x-axis follows the picker. They do not invent pre-Prometheus sample history. Months start June 2026; days cover the latest 90 days. Instant bucket queries require a snapshot at the picker end; selecting an end outside observed Prometheus retention can return No data. Workflow snapshot/production trends follow the picker and existing seven-day retention. Never use `increase()`/`rate()` on reconstructed GitHub totals. Areas overlap, drafts overlap open, cancelled runs are not failures, and Actions retention can limit CI completeness. PR creation-to-merge is not DORA lead time. Release/workflow completion does not prove mutation: deployment/publish panels explicitly show Not available.
+
+Activity is not productivity; production correlation does not establish causation. Links use the five real product dashboards. Production acceptance must compare live GitHub totals/months, prove successful refresh under 30 minutes, check safe diagnostics for leakage, apply only the additional dashboard, and require the existing clean second-plan/UID checks.

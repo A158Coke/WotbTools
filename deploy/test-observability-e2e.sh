@@ -304,8 +304,8 @@ for excluded in \
 done
 echo "PASS: only the declared security logs carry compliance=security"
 
-# Loki parses every metric and log query used by the product dashboards, including
-# variable interpolation, even if this small fixture has no matching product data.
+# Loki parses its metric and log queries, including variable interpolation.
+# Prometheus targets are validated by promtool in the observability CI job.
 python3 - "$ROOT" "$LOKI_PORT" <<'PYQUERY'
 from pathlib import Path
 import json, urllib.parse, urllib.request,sys,time
@@ -315,6 +315,9 @@ api = "http://127.0.0.1:"+port+"/loki/api/v1/"
 for file in (root / 'deploy/observability/grafana/dashboards').glob('*.json'):
  for panel in json.loads(file.read_text())['panels']:
   for target in panel.get('targets',[]):
+   datasource=target.get('datasource') or panel.get('datasource') or {}
+   if datasource.get('uid') != 'loki':
+    continue
    expr=target['expr'].replace('$__range','1h').replace('$__interval','1m').replace('${service:raw}','.+').replace('${keyword:doublequote}','""').replace('${errorId:doublequote}','""')
    endpoint='query_range' if panel['type']=='logs' else 'query'
    try:
