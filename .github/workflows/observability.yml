@@ -11,6 +11,7 @@ on:
       - deploy/validate-alloy-config.sh
       - deploy/tofu-local-state-backup.sh
       - deploy/verify-observability.sh
+      - deploy/list-image-tags.sh
       - deploy/observability/**
       - infra/tofu/grafana/**
   workflow_dispatch:
@@ -46,6 +47,7 @@ env:
     deploy/validate-alloy-config.sh
     deploy/tofu-local-state-backup.sh
     deploy/verify-observability.sh
+    deploy/list-image-tags.sh
     deploy/observability/**
     infra/tofu/grafana/**
 
@@ -107,7 +109,7 @@ jobs:
                   .github/workflows/observability.yml|deploy/deploy.sh|deploy/docker-compose.prod.yml|deploy/validate-alloy-config.sh|deploy/verify-observability.sh)
                     add_all
                     ;;
-                  deploy/observability/dev-metrics/*) add_service dev-metrics-exporter ;;
+                  deploy/observability/dev-metrics/*|deploy/list-image-tags.sh) add_service dev-metrics-exporter ;;
                   deploy/observability/prometheus/*) add_service prometheus ;;
                   deploy/observability/loki/*) add_service loki ;;
                   deploy/observability/alloy/*) add_service alloy ;;
@@ -141,15 +143,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish exact-SHA exporter image
-        id: exporter_image
+      - uses: imjasonh/setup-crane@v0.7
         if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+
+      - name: Resolve existing exact-SHA exporter image
+        id: exporter_existing
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+        env:
+          REPOSITORY: ghcr.io/a158coke/dev-metrics-exporter
+          TAG: ${{ steps.source.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
+          if grep -Fxq "$TAG" <<< "$tags"; then
+            digest="$(crane digest "$REPOSITORY:$TAG")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and publish exact-SHA exporter image
+        id: exporter_build
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && steps.exporter_existing.outputs.existing_digest == ''
         uses: docker/build-push-action@v6
         with:
           context: deploy/observability/dev-metrics
           push: true
           tags: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}
           labels: org.opencontainers.image.revision=${{ steps.source.outputs.source_sha }}
+
+      - name: Verify exporter digest and source identity
+        id: exporter_image
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+        env:
+          IMAGE: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          EXISTING_DIGEST: ${{ steps.exporter_existing.outputs.existing_digest }}
+          BUILD_DIGEST: ${{ steps.exporter_build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Exporter digest is missing or invalid.' >&2; exit 1; }
+          [[ "$(crane digest "$IMAGE")" == "$digest" ]] || { echo 'Exporter registry digest changed.' >&2; exit 1; }
+          revision="$(crane config --platform linux/amd64 "$IMAGE@$digest" | jq -er '.config.Labels["org.opencontainers.image.revision"]')"
+          [[ "$revision" == "$SOURCE_SHA" ]] || { echo 'Exporter source revision mismatch.' >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Stage the Yecao runtime tree and Grafana root
         uses: appleboy/scp-action@v1
