@@ -1,6 +1,6 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { BookOpen, ChevronRight, ExternalLink, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, ChevronRight, ExternalLink, FileText, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import PageHeader from './PageHeader.vue'
@@ -10,7 +10,16 @@ import SegmentedControl from './SegmentedControl.vue'
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 回放能力统一从回放工作台进入，坦克百科是主导航栏目，都不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide } = useMoreMenu()
+const {
+  uiProfilePreference,
+  setUiProfile,
+  uiProfileOptions,
+  setLocale,
+  adminLinks,
+  aboutLinks,
+  appFiling,
+  openGuide,
+} = useMoreMenu()
 
 const groups = computed(() => [
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
@@ -68,6 +77,18 @@ const groups = computed(() => [
           <span class="more-row-label">{{ $t(link.labelKey) }}</span>
           <ChevronRight :size="20" aria-hidden="true" />
         </button>
+        <a
+          v-if="group.feedback && appFiling"
+          class="more-row"
+          :href="appFiling.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="more-link-app-filing"
+        >
+          <FileText :size="20" aria-hidden="true" />
+          <span class="more-row-label">{{ appFiling.number }}</span>
+          <ExternalLink :size="16" aria-hidden="true" />
+        </a>
         <a
           v-if="group.feedback"
           class="more-row"
