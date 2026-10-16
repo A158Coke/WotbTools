@@ -153,34 +153,66 @@ class CreatorAvatarIntegrationTest {
     }
 
     @Test void directorySaveOwnsImageReplacementRemovalAndFailedDuplicateCleanup() throws Exception {
-        final CreatorDtos.SaveRequest replace = new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE");
+        final CreatorDtos.SaveRequest replace = new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE", null);
         final CreatorDtos.Detail created = directory.create(replace, png(512, 256));
         final String original = avatarReference(created.id());
         assertNotNull(original);
         assertNull(reservations.findById(original).orElseThrow().unreferencedAt);
-        directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Edited", null, List.of(1L), null, 4, "KEEP"), null);
+        final CreatorDtos.Detail edited = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Edited", null,
+                List.of(1L), null, 4, "KEEP", created.version()), null);
         assertEquals(original, avatarReference(created.id()));
         assertEquals(ApiErrorCode.CREATOR_UID_ALREADY_EXISTS,
                 assertThrows(ApiException.class, () -> directory.create(replace, png(32, 32))).errorCode());
         assertEquals(original, avatarReference(created.id()));
         final String orphan = reservations.findAll().stream().filter(row -> !row.id.equals(original)).findFirst().orElseThrow().id;
         assertNotNull(reservations.findById(orphan).orElseThrow().unreferencedAt);
-        directory.update(created.id(), replace, png(64, 32));
+        final CreatorDtos.Detail replaced = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+                List.of(1L), null, 3, "REPLACE", edited.version()), png(64, 32));
         final String replacement = avatarReference(created.id());
         assertFalse(original.equals(replacement));
         assertNotNull(reservations.findById(original).orElseThrow().unreferencedAt);
         assertNull(reservations.findById(replacement).orElseThrow().unreferencedAt);
-        directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REMOVE"), null);
+        final CreatorDtos.Detail cleared = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+                List.of(1L), null, 3, "REMOVE", replaced.version()), null);
         assertNull(avatarReference(created.id()));
         assertNotNull(reservations.findById(replacement).orElseThrow().unreferencedAt);
-        directory.update(created.id(), replace, png(32, 32));
+        final CreatorDtos.Detail finalImage = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+                List.of(1L), null, 3, "REPLACE", cleared.version()), png(32, 32));
         final String removed = avatarReference(created.id());
-        directory.delete(created.id());
+        directory.delete(created.id(), finalImage.version());
         assertNotNull(reservations.findById(removed).orElseThrow().unreferencedAt);
         reservations.findAll().forEach(row -> age(row.id));
         avatars.cleanup();
         assertEquals(0, reservations.count());
         assertTrue(objects.isEmpty());
+    }
+
+    @Test void staleDirectoryWritesKeepTheCurrentImageAndLeaveOnlyRecoverableReplacementObjects() throws Exception {
+        final CreatorDtos.Detail created = directory.create(new CreatorDtos.SaveRequest("123", "Original", null,
+                List.of(1L), null, 3, "REPLACE", null), png(64, 32));
+        final String original = avatarReference(created.id());
+        final byte[] originalBytes = objects.get(PREFIX + original);
+        final CreatorDtos.Detail changed = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Current", null,
+                List.of(1L), null, 4, "KEEP", created.version()), null);
+        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, assertThrows(ApiException.class,
+                () -> directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Stale removal", null,
+                        List.of(1L), null, 1, "REMOVE", created.version()), null)).errorCode());
+        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, assertThrows(ApiException.class,
+                () -> directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Stale replacement", null,
+                        List.of(1L), null, 1, "REPLACE", created.version()), png(32, 32))).errorCode());
+        assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
+                assertThrows(ApiException.class, () -> directory.delete(created.id(), created.version())).errorCode());
+        assertEquals(changed, directory.detail(created.id()));
+        assertEquals(original, avatarReference(created.id()));
+        assertNull(reservations.findById(original).orElseThrow().unreferencedAt);
+        assertArrayEquals(originalBytes, avatars.load(original).bytes());
+        verify(client, never()).deleteObject(anyString(), anyString());
+        final String orphan = reservations.findAll().stream().filter(row -> !row.id.equals(original)).findFirst().orElseThrow().id;
+        assertNotNull(reservations.findById(orphan).orElseThrow().unreferencedAt);
+        age(orphan); avatars.cleanup();
+        assertFalse(reservations.existsById(orphan));
+        assertTrue(reservations.existsById(original));
+        assertArrayEquals(originalBytes, avatars.load(original).bytes());
     }
 
     @Test void invalidFilesAndMissingConfigurationNeverCreateLedgerRows() throws Exception {

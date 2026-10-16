@@ -20,6 +20,10 @@ public interface CreatorRepository extends JpaRepository<Creator, Long> {
     @Query("select c from Creator c where c.id = :id")
     Optional<Creator> findLocked(@Param("id") long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Creator c where :categoryId member of c.categoryIds order by c.id")
+    List<Creator> findCategoryMembersLocked(@Param("categoryId") long categoryId);
+
     boolean existsByLevelId(long levelId);
     boolean existsByBilibiliUid(String bilibiliUid);
     boolean existsByBilibiliUidAndIdNot(String bilibiliUid, long id);
@@ -35,7 +39,7 @@ public interface CreatorRepository extends JpaRepository<Creator, Long> {
             """, nativeQuery = true)
     boolean wouldOrphanCreator(@Param("categoryId") long categoryId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true)
     @Query(value = "delete from creator_category_link where category_id = :categoryId", nativeQuery = true)
     void removeCategoryLinks(@Param("categoryId") long categoryId);
 }

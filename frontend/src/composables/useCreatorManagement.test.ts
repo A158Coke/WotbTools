@@ -6,6 +6,7 @@ import detail from '../../../contracts/http/fixtures/creator-detail.json'
 import request from '../../../contracts/http/fixtures/creator-save-request.json'
 import type { CreatorDetail, CreatorMetadata, CreatorSaveRequest } from '../api/creators.js'
 import { useCreatorManagement } from './useCreatorManagement.js'
+import { ApiError } from '../utils/http.js'
 vi.mock('./useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
 const payload = (): CreatorSaveRequest => ({ ...request, avatarAction: 'KEEP' })
 function fixture() {
@@ -50,11 +51,12 @@ describe('creator directory management ownership', () => {
   it('preserves failed editor data and sends the selected file only with the save request', async () => {
     const f = fixture(); await flushPromises(); await f.owner.editCreator(1)
     const file = new File(['image'], 'avatar.png', { type: 'image/png' })
-    f.transport.saveCreator.mockRejectedValueOnce(new Error('CREATOR_UID_ALREADY_EXISTS'))
-    expect(await f.owner.save({ ...payload(), avatarAction: 'REPLACE' }, file, true)).toBe(false)
+    f.transport.saveCreator.mockRejectedValueOnce(new ApiError({ errorCode: 'CREATOR_CONFIG_CONFLICT', status: 409 }))
+    expect(await f.owner.save({ ...payload(), expectedVersion: detail.version, avatarAction: 'REPLACE' }, file, true)).toBe(false)
     expect(f.owner.detail.value?.id).toBe(1); expect(f.owner.editorOpen.value).toBe(true)
-    expect(await f.owner.save({ ...payload(), avatarAction: 'REPLACE' }, file, true)).toBe(true)
-    expect(f.transport.saveCreator).toHaveBeenLastCalledWith(1, expect.objectContaining({ avatarAction: 'REPLACE' }), file, expect.any(AbortSignal))
+    expect(f.owner.detail.value?.version).toBe(detail.version); expect(f.onChanged).not.toHaveBeenCalled()
+    expect(await f.owner.save({ ...payload(), expectedVersion: detail.version, avatarAction: 'REPLACE' }, file, true)).toBe(true)
+    expect(f.transport.saveCreator).toHaveBeenLastCalledWith(1, expect.objectContaining({ avatarAction: 'REPLACE', expectedVersion: detail.version }), file, expect.any(AbortSignal))
     f.owner.finishSave(true); expect(f.owner.editorOpen.value).toBe(false); f.scope.stop()
   })
   it('keeps a rejected in-use category deletion atomic in the view', async () => {

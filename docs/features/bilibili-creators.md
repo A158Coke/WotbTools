@@ -10,11 +10,11 @@ Administrators create, edit and remove creator records, categories and assessmen
 
 ## Creator fields and consistency
 
-A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, trimmed and normalized without leading zeros; all-zero input is rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 characters); descriptions are optional (2000 characters).
+A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, trimmed and normalized without leading zeros; all-zero input is rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 Unicode code points); descriptions are optional (2000 Unicode code points). Supplementary characters such as emoji count once in the API, browser validation and PostgreSQL.
 
 Each creator has at least one category, may belong to several, and displays every category. Assessment is optional: a null level hides the level and disclaimer, while an assigned level displays the site's evaluation disclaimer. Initial categories and levels are inserted only once by Flyway and remain administrator-maintained data.
 
-Administrators set one through five whole stars, with three selected by default. The sole score projection is `2 * stars` (2/4/6/8/10). Sorting uses stars descending, original creation time descending, then ID for stability. Editing retains record identity and creation time. User activity does not affect ratings.
+Administrators set one through five whole stars, with three selected by default. The sole score projection is `2 * stars` (2/4/6/8/10). Sorting uses stars descending, original creation time descending, then ID for stability. Editing retains record identity and creation time. Cards and details include a monotonically increasing version. Creates require a null expectedVersion; updates and deletes must carry the version the administrator viewed. A mismatch returns 409 CREATOR_CONFIG_CONFLICT without overwriting newer data. Removing a shared category also advances the affected creator versions. User activity does not affect ratings.
 
 V35 creates the directory, dictionaries, category links, site-owned image ledger and one `creator_catalog_lock` row. The lock row is a technical anchor, not a configurable threshold. All directory writes lock catalog → creator → avatar in a short transaction. UID uniqueness is enforced by the database. Category deletion rejects any operation leaving a creator without a category; level deletion rejects referenced levels. Those checks and changes share the transaction, including concurrent edits and dictionary deletions.
 
@@ -45,6 +45,12 @@ Missing storage configuration disables image replacement only; text-only creatio
 Cleanup runs daily at 04:00 in `Asia/Hong_Kong` (UTC+8), handling at most 100 reservations that have remained unreferenced for at least 24 hours. Normal cleanup therefore takes about 24–48 hours; backlog, downtime or storage failure can extend this. Each deletion locks and rechecks the image and references. Failed attempts retain metadata and rotate behind other eligible candidates. Multiple instances may safely trigger the same cleanup; no new scheduler service or exact-once job registry is required.
 
 Cleanup only touches canonical UUID keys in the creator namespace. A missing COS object is already deleted; failure retains the ledger for a later attempt. Before changing prefixes, migrate or retire old objects and reservations. Production bucket permissions require deployment-time verification; ordinary tests use fake COS.
+
+## Independent deployment compatibility
+
+The existing anonymous `/api/health` response retains `status` and `tanks` and advertises `capabilities: ["creators-v1"]` when this backend is installed. The frontend treats old responses without that capability as unsupported: public and administrator creator links remain hidden, and direct links show an availability notice without issuing directory requests. Once readiness is confirmed, the entry appears in its normal primary-navigation position.
+
+AppShell owns one bounded health probe per page session, shared by navigation and route rendering. It retries after network recovery, focus while unavailable, or an explicit retry on the direct-link notice; there is no background polling. Transient network loss preserves a previously established capability and existing drafts. This makes frontend-first deployment safe and does not depend on deployment queue ordering. Backend-first remains preferred; a still-open page can discover it on retry or focus.
 
 ## Contract and verification
 

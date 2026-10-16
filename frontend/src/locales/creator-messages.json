@@ -50,7 +50,11 @@
       "uidHint": "填写不超过20位的正整数UID，自动去除首尾空白和前导零，主页自动生成。",
       "stars": "推荐星级",
       "starsHint": "由管理员选择1–5颗整星，默认3星；展示评分为星级乘2。",
-      "restoreAvatar": "恢复原头像"
+      "restoreAvatar": "恢复原头像",
+      "invalidName": "名称不能为空，且最多100个字符。",
+      "reloadEditor": "重新加载资料",
+      "notAvailable": "UP 推荐暂不可用，请联网后重试。",
+      "checkingAvailability": "正在检查功能是否可用…"
     },
     "featureOffline": {
       "creators": "UP 主推荐需要联网后查看和操作。"
@@ -60,7 +64,7 @@
       "CREATOR_INVALID_REQUEST": "UP 主资料无效，请检查录入内容。",
       "CREATOR_CATEGORY_IN_USE": "无法移除：该类别是部分 UP 主的唯一类别。请先给相关 UP 配置其他类别。",
       "CREATOR_LEVEL_IN_USE": "无法移除：仍有 UP 主使用该实力等级。请先更换相关 UP 的等级或关闭实力评估。",
-      "CREATOR_CONFIG_CONFLICT": "配置已变化，请刷新后重试。",
+      "CREATOR_CONFIG_CONFLICT": "资料或配置已由其他管理员修改。当前输入尚未保存，请重新加载资料后再编辑。",
       "CREATOR_STORAGE_UNAVAILABLE": "头像存储暂不可用，请稍后重试。",
       "CREATOR_AVATAR_NOT_FOUND": "该头像不存在，请刷新资料。",
       "CREATOR_UID_ALREADY_EXISTS": "该bilibili UID已在推荐目录中，请编辑现有UP资料。"
@@ -117,7 +121,11 @@
       "uidHint": "A positive UID of up to 20 digits. Spaces and leading zeros are removed; the profile link is generated automatically.",
       "stars": "Recommendation stars",
       "starsHint": "Administrators choose 1–5 whole stars; default 3. The displayed score is twice the stars.",
-      "restoreAvatar": "Restore current avatar"
+      "restoreAvatar": "Restore current avatar",
+      "invalidName": "Enter a name of at most 100 characters.",
+      "reloadEditor": "Reload details",
+      "notAvailable": "Creator recommendations are unavailable. Check your connection and try again.",
+      "checkingAvailability": "Checking feature availability…"
     },
     "featureOffline": {
       "creators": "Connect to the Internet to browse and manage creator recommendations."
@@ -127,7 +135,7 @@
       "CREATOR_INVALID_REQUEST": "Invalid creator details. Check your input.",
       "CREATOR_CATEGORY_IN_USE": "This is the only category for some creators. Assign those creators another category first.",
       "CREATOR_LEVEL_IN_USE": "Creators still use this skill level. Change their level or disable skill assessment first.",
-      "CREATOR_CONFIG_CONFLICT": "The configuration changed. Refresh and try again.",
+      "CREATOR_CONFIG_CONFLICT": "Another administrator changed these details or settings. Your draft has not been saved. Reload the details before editing again.",
       "CREATOR_STORAGE_UNAVAILABLE": "Avatar storage is unavailable. Try again later.",
       "CREATOR_AVATAR_NOT_FOUND": "This avatar is unavailable. Refresh the creator details.",
       "CREATOR_UID_ALREADY_EXISTS": "This Bilibili UID already exists. Edit the existing creator."
@@ -184,7 +192,11 @@
       "uidHint": "Положительный UID до 20 цифр. Пробелы по краям и начальные нули удаляются; ссылка создаётся автоматически.",
       "stars": "Звёзды рекомендации",
       "starsHint": "Администратор выбирает от 1 до 5 целых звёзд; по умолчанию 3. Оценка равна числу звёзд, умноженному на 2.",
-      "restoreAvatar": "Вернуть текущий аватар"
+      "restoreAvatar": "Вернуть текущий аватар",
+      "invalidName": "Укажите название длиной не более 100 символов.",
+      "reloadEditor": "Загрузить данные заново",
+      "notAvailable": "Рекомендации авторов сейчас недоступны. Проверьте подключение и повторите.",
+      "checkingAvailability": "Проверка доступности функции…"
     },
     "featureOffline": {
       "creators": "Для просмотра рекомендаций авторов и управления ими нужен Интернет."
@@ -194,7 +206,7 @@
       "CREATOR_INVALID_REQUEST": "Некорректные данные автора. Проверьте ввод.",
       "CREATOR_CATEGORY_IN_USE": "Эта категория — единственная для некоторых авторов. Сначала назначьте им другую категорию.",
       "CREATOR_LEVEL_IN_USE": "Этот уровень ещё используется авторами. Сначала измените их уровень или отключите оценку мастерства.",
-      "CREATOR_CONFIG_CONFLICT": "Конфигурация изменилась. Обновите страницу и повторите.",
+      "CREATOR_CONFIG_CONFLICT": "Другой администратор изменил данные или настройки. Черновик не сохранён. Загрузите данные заново перед редактированием.",
       "CREATOR_STORAGE_UNAVAILABLE": "Хранилище аватаров недоступно. Повторите позже.",
       "CREATOR_AVATAR_NOT_FOUND": "Этот аватар недоступен. Обновите данные автора.",
       "CREATOR_UID_ALREADY_EXISTS": "Этот UID bilibili уже есть в каталоге. Измените существующего автора."

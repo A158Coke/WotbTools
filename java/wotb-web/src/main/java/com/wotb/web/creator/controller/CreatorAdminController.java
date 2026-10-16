@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,7 +44,10 @@ public class CreatorAdminController {
         return service.update(id, request, singleAvatar(files));
     }
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable final long id) { service.delete(id); return ResponseEntity.noContent().build(); }
+    public ResponseEntity<Void> delete(@PathVariable final long id,
+                                        @RequestParam(name = "expectedVersion") final long expectedVersion) {
+        service.delete(id, expectedVersion); return ResponseEntity.noContent().build();
+    }
     @PostMapping("/categories")
     @ResponseStatus(HttpStatus.CREATED)
     public CreatorDtos.Category category(@RequestBody final CreatorDtos.DictionaryRequest request) { return service.addCategory(request); }

@@ -9,23 +9,25 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
 function reset() {
-  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true,
-    creators: [{ id: 1, bilibiliUid: '1000001', name: 'A creator with a long name for narrow screens', description: 'Recommended replays and commentary.', categoryIds: [1, 2], levelId: null, stars: 3, avatarId: null, createdAt: '2026-10-16T00:00:00Z' },
-      { id: 2, bilibiliUid: '1000002', name: 'Assessed creator', description: null, categoryIds: [1], levelId: 1, stars: 4, avatarId: null, createdAt: '2026-10-15T00:00:00Z' }], nextId: 10, failSave: false, writes: 0 }
+  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, creatorReads: 0,
+    creators: [{ id: 1, version: 0, bilibiliUid: '1000001', name: 'A creator with a long name for narrow screens', description: 'Recommended replays and commentary.', categoryIds: [1, 2], levelId: null, stars: 3, avatarId: null, createdAt: '2026-10-16T00:00:00Z' },
+      { id: 2, version: 0, bilibiliUid: '1000002', name: 'Assessed creator', description: null, categoryIds: [1], levelId: 1, stars: 4, avatarId: null, createdAt: '2026-10-15T00:00:00Z' }], nextId: 10, failSave: false, writes: 0 }
 }
 const avatarUrl = id => id ? `/api/creators/avatars/${id}` : null
-const detail = value => ({ id: value.id, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, avatarUrl: avatarUrl(value.avatarId) })
-const card = value => ({ id: value.id, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, homepageUrl: `https://space.bilibili.com/${value.bilibiliUid}`, avatarUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
+const detail = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, avatarUrl: avatarUrl(value.avatarId) })
+const card = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, homepageUrl: `https://space.bilibili.com/${value.bilibiliUid}`, avatarUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
 function send(response, status, value) { response.statusCode = status; if (value === undefined) { response.end(); return }; response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)) }
 function fail(response, status, errorCode) { send(response, status, { id: 'creator-browser-fixture', errorCode, errorMsg: null, status, retryable: false, details: {}, timestamp: null }) }
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
+  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, ...(db.apiAvailable ? { capabilities: ['creators-v1'] } : {}) }); return }
   if (path === '/api/observability/events') { send(response, 204); return }
   if (!path.startsWith('/api/creators') && !path.startsWith('/api/admin/creators')) { next(); return }
   try {
     const admin = path.startsWith('/api/admin/'), parts = path.slice((admin ? '/api/admin/creators' : '/api/creators').length).split('/').filter(Boolean)
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { fail(response, 403, 'AUTH_FORBIDDEN'); return }
     if (request.method === 'GET') {
+      db.creatorReads++
       if (!admin && parts[0] === 'categories') send(response, 200, db.categories)
       else if (admin && parts[0] === 'metadata') send(response, 200, { categories: db.categories, levels: db.levels, avatarUploadsAvailable: db.uploadAvailable })
       else if (!admin && parts[0] === 'avatars') {
@@ -41,7 +43,7 @@ const middleware = async (request, response, next) => {
     if (request.method === 'DELETE') {
       if (parts[0] === 'categories') { const id = Number(parts[1]); if (db.creators.some(value => value.categoryIds.length === 1 && value.categoryIds.includes(id))) { fail(response, 409, 'CREATOR_CATEGORY_IN_USE'); return }; db.categories = db.categories.filter(value => value.id !== id) }
       else if (parts[0] === 'levels') { const id = Number(parts[1]); if (db.creators.some(value => value.levelId === id)) { fail(response, 409, 'CREATOR_LEVEL_IN_USE'); return }; db.levels = db.levels.filter(value => value.id !== id) }
-      else db.creators = db.creators.filter(value => value.id !== Number(parts[0]))
+      else { const current = db.creators.find(value => value.id === Number(parts[0])); if (!current || !url.searchParams.has('expectedVersion') || current.version !== Number(url.searchParams.get('expectedVersion'))) { fail(response, 409, 'CREATOR_CONFIG_CONFLICT'); return }; db.creators = db.creators.filter(value => value.id !== current.id) }
       send(response, 204); return
     }
     const incoming = new Request(url, { method: request.method, headers: request.headers, body: Readable.toWeb(request), duplex: 'half' })
@@ -53,12 +55,15 @@ const middleware = async (request, response, next) => {
     assert.equal(payload.avatarAction === 'REPLACE', !!avatar, 'action matches the one optional avatar part')
     const bilibiliUid = payload.bilibiliUid.trim().replace(/^0+/, ''), id = parts.length ? Number(parts[0]) : null
     if (db.creators.some(value => value.bilibiliUid === bilibiliUid && value.id !== id)) { fail(response, 409, 'CREATOR_UID_ALREADY_EXISTS'); return }
+    const current = db.creators.find(item => item.id === id)
+    if ((id === null && payload.expectedVersion !== null) || (id !== null && (!current || current.version !== payload.expectedVersion))) { fail(response, 409, 'CREATOR_CONFIG_CONFLICT'); return }
     if (db.failSave) { db.failSave = false; fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
     let value = db.creators.find(item => item.id === id)
-    if (!value) { value = { id: db.nextId++, avatarId: null, createdAt: '2026-10-17T00:00:00Z' }; db.creators.push(value) }
+    if (!value) { value = { id: db.nextId++, version: 0, avatarId: null, createdAt: '2026-10-17T00:00:00Z' }; db.creators.push(value) }
     if (payload.avatarAction === 'REPLACE') { assert.ok(db.uploadAvailable); const avatarId = crypto.randomUUID(); db.avatars.set(avatarId, avatar); value.avatarId = avatarId }
     else if (payload.avatarAction === 'REMOVE') value.avatarId = null
     Object.assign(value, { bilibiliUid, name: payload.name, description: payload.description, categoryIds: payload.categoryIds, levelId: payload.levelId, stars: payload.stars })
+    if (id !== null) value.version++
     send(response, id ? 200 : 201, detail(value))
   } catch (error) { console.error(error); fail(response, 500, 'INTERNAL_ERROR') }
 }
@@ -88,6 +93,7 @@ const { server, origin } = await startFixtureServer({ middleware, allowedHosts: 
 const scenarios = ['showcase', 'classic'].flatMap(profile => [
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
   ...[320, 351, 352, 360].map(width => ({ name: `${profile}-production-${width}`, profile, width, height: 844, touch: true, locale: 'ru', productionHome: true, compactNavigation: true })),
+  { name: `${profile}-old-backend`, profile, width: 1440, height: 900, touch: false, locale: 'en', oldBackend: true },
   { name: `${profile}-local-320`, profile, width: 320, height: 844, touch: true, locale: 'zh', compactNavigation: true },
 ])
 let failures = 0
@@ -99,10 +105,25 @@ try {
     try {
       await page.enable(); await page.emulate(scenario)
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
+      if (scenario.oldBackend) {
+        db.apiAvailable = false
+        await page.goto(`${origin}/?view=creators&ws-auth=1&ws-roles=tournament-admin`)
+        await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
+        await page.waitForValue('document.querySelector("[data-testid=creators-availability-retry]")?.disabled', value => value === false)
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=tab-creators],[data-testid=nav-creators-config],[data-testid=more-link-creators-config]")'), false)
+        assert.equal(db.creatorReads, 0, 'legacy backend is never queried for creator directory or management metadata')
+        db.apiAvailable = true
+        await tap(page, '[data-testid=creators-availability-retry]', false)
+        await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), true)
+        assert.ok(db.creatorReads > 0)
+        assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
+      }
       const scenarioOrigin = scenario.productionHome ? origin.replace('127.0.0.1', 'wotbtools.com') : origin
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       if (scenario.compactNavigation) {
         await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
+        await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
         await tabGeometry(page, scenario.productionHome ? 8 : 7)
         if (scenario.productionHome && scenario.width === 320) {
           const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
@@ -138,12 +159,17 @@ try {
         await page.goto(`${origin}/?view=creators&ws-auth=1&ws-roles=tournament-admin`)
         await page.waitForValue('document.querySelector("[data-testid=creator-edit-1]")?.disabled', value => value === false)
         await geometry(page, scenario.profile)
-        db.categories.push({ id: 99, name: 'New category from another administrator' }); db.levels.push({ id: 99, name: 'New skill level' }); db.creators[0].categoryIds = [99]; db.creators[0].levelId = 99
+        db.categories.push({ id: 99, name: 'New category from another administrator' }); db.levels.push({ id: 99, name: 'New skill level' }); db.creators[0].categoryIds = [99]; db.creators[0].levelId = 99; db.creators[0].version++
         await tap(page, '[data-testid=creator-edit-1]', scenario.touch); await page.waitForValue('!!document.querySelector("[data-testid=creator-name]")', Boolean)
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-category-99]")?.checked'), true)
-        await fill(page, { 'creator-name': 'Edited in real browser' }); db.failSave = true
+        await fill(page, { 'creator-name': 'Edited in real browser' })
+        db.creators[0].name = 'Concurrent administrator edit'; db.creators[0].version++
         await tap(page, '[data-testid=creator-save]', scenario.touch); await page.waitForValue('!!document.querySelector("[data-testid=creator-editor-dialog] [role=alert]")', Boolean)
-        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-name]").value'), 'Edited in real browser')
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-name]").value'), 'Edited in real browser', '409 preserves the local draft')
+        assert.equal(db.creators[0].name, 'Concurrent administrator edit', 'a stale editor cannot overwrite a newer version')
+        await tap(page, '[data-testid=creator-editor-reload]', scenario.touch)
+        await page.waitForValue('document.querySelector("[data-testid=creator-name]")?.value', value => value === 'Concurrent administrator edit')
+        await fill(page, { 'creator-name': 'Edited in real browser' })
         await tap(page, '[data-testid=creator-save]', scenario.touch); await page.waitForValue('!document.querySelector("[data-testid=creator-editor-dialog]")', Boolean)
         await tap(page, '[data-testid=creator-remove-2]', scenario.touch); await tap(page, '[data-testid=confirm-ok]', scenario.touch); await page.waitForValue('!document.querySelector("[data-testid=creator-card-2]")', Boolean)
         await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=tournament-admin`); await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean); await geometry(page, scenario.profile, true)

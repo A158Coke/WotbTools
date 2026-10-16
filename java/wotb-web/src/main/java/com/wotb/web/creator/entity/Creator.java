@@ -18,6 +18,8 @@ import java.util.Set;
 public class Creator {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
+    @Column(nullable = false)
+    public long version;
     @Column(nullable = false, length = 100)
     public String name;
     @Column(length = 2000)

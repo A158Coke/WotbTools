@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { creatorAvatarUrl } from '../api/creators.js'
+import { creatorAvatarUrl, creatorInputValid } from '../api/creators.js'
 import type { CreatorCategory, CreatorDetail, CreatorLevel, CreatorSaveRequest } from '../api/creators.js'
 import { useAuth, tournamentAdminAllowed } from '../composables/useAuth.js'
 import AppButton from './AppButton.vue'
@@ -13,7 +13,7 @@ const props = defineProps<{ detail?: CreatorDetail | null; categories: CreatorCa
 const emit = defineEmits<{ saved: [] }>()
 const { t } = useI18n(), auth = useAuth(), formId = `creator-form-${useId()}`
 const draft = ref<CreatorSaveRequest>({ bilibiliUid: props.detail?.bilibiliUid ?? '', name: props.detail?.name ?? '', description: props.detail?.description ?? null,
-  categoryIds: [...(props.detail?.categoryIds ?? [])], levelId: props.detail?.levelId ?? null, stars: props.detail?.stars ?? 3, avatarAction: 'KEEP' })
+  categoryIds: [...(props.detail?.categoryIds ?? [])], levelId: props.detail?.levelId ?? null, stars: props.detail?.stars ?? 3, avatarAction: 'KEEP', expectedVersion: props.detail?.version ?? null })
 const assessed = ref(props.detail?.levelId != null), categorySearch = ref('')
 const visibleCategories = computed(() => props.categories.filter(value => value.name.toLocaleLowerCase().includes(categorySearch.value.trim().toLocaleLowerCase())))
 const invalid = ref(false), submitting = ref(false), files = ref<File[]>([]), preview = ref('')
@@ -43,10 +43,10 @@ watch(() => props.levels.map(level => level.id), (ids, previousIds) => {
 async function submit() {
   if (disabled.value || (draft.value.avatarAction === 'REPLACE' && !props.avatarUploadsAvailable)) return
   const value = draft.value
-  const valid = uidValid.value && value.name.trim().length > 0 && value.name.trim().length <= 100
-    && (value.description?.trim().length ?? 0) <= 2000 && value.categoryIds.length > 0
+  const request: CreatorSaveRequest = { ...value, bilibiliUid: normalizedUid.value, name: value.name.trim(),
+    description: value.description?.trim() || null, categoryIds: [...value.categoryIds], levelId: assessed.value ? value.levelId : null }
+  const valid = uidValid.value && creatorInputValid('CreatorSaveRequest', request)
     && value.categoryIds.every(id => props.categories.some(category => category.id === id))
-    && Number.isInteger(value.stars) && value.stars >= 1 && value.stars <= 5
     && (!assessed.value || (value.levelId != null && props.levels.some(level => level.id === value.levelId)))
   invalid.value = !valid
   if (!valid) return
@@ -54,14 +54,13 @@ async function submit() {
   const ownsSubmission = () => mounted && gen === formGeneration && epoch === auth.authEpoch() && allowed.value
   submitting.value = true
   try {
-    const success = await props.save({ ...value, bilibiliUid: normalizedUid.value, name: value.name.trim(),
-      description: value.description?.trim() || null, categoryIds: [...value.categoryIds], levelId: assessed.value ? value.levelId : null }, files.value[0] ?? null)
+    const success = await props.save(request, files.value[0] ?? null)
     if (success && ownsSubmission()) { releasePreview(); files.value = []; emit('saved') }
   } finally { if (ownsSubmission()) submitting.value = false }
 }
 watch([() => auth.tokenParsed.value?.sub, allowed], () => {
   formGeneration++; submitting.value = false; releasePreview(); files.value = []; invalid.value = false
-  draft.value = { bilibiliUid: '', name: '', description: null, categoryIds: [], levelId: null, stars: 3, avatarAction: 'KEEP' }; assessed.value = false
+  draft.value = { bilibiliUid: '', name: '', description: null, categoryIds: [], levelId: null, stars: 3, avatarAction: 'KEEP', expectedVersion: null }; assessed.value = false
 })
 onScopeDispose(() => { mounted = false; formGeneration++; releasePreview() })
 </script>
@@ -69,10 +68,10 @@ onScopeDispose(() => { mounted = false; formGeneration++; releasePreview() })
 <template>
   <form :id="formId" class="creator-form" data-testid="creator-form" @submit.prevent="submit">
     <Banner v-if="invalid" tone="danger">{{ t('creators.invalidForm') }}</Banner>
-    <label class="creator-field"><span>{{ t('creators.name') }}</span><input v-model="draft.name" required maxlength="100" :disabled="disabled" data-autofocus data-testid="creator-name"></label>
+    <label class="creator-field"><span>{{ t('creators.name') }}</span><input v-model="draft.name" required :disabled="disabled" data-autofocus data-testid="creator-name"></label>
     <label class="creator-field"><span>{{ t('creators.uid') }}</span><input v-model="draft.bilibiliUid" type="text" inputmode="numeric" autocomplete="off" required maxlength="40" :disabled="disabled" data-testid="creator-uid"><small>{{ t('creators.uidHint') }}</small></label>
     <div v-if="homepage" class="creator-field"><span>{{ t('creators.homepage') }}</span><a class="creator-homepage" :href="homepage" target="_blank" rel="noopener noreferrer" data-testid="creator-homepage">{{ homepage }}</a></div>
-    <label class="creator-field"><span>{{ t('creators.description') }}</span><textarea v-model="draft.description" maxlength="2000" rows="3" :disabled="disabled" data-testid="creator-description" /><small>{{ t('creators.descriptionHint') }}</small></label>
+    <label class="creator-field"><span>{{ t('creators.description') }}</span><textarea v-model="draft.description" rows="3" :disabled="disabled" data-testid="creator-description" /><small>{{ t('creators.descriptionHint') }}</small></label>
     <fieldset class="creator-fieldset"><legend>{{ t('creators.categories') }}</legend>
       <label v-if="categories.length > 15" class="creator-field"><span>{{ t('creators.searchCategories') }}</span><input v-model="categorySearch" type="search" :disabled="disabled"></label>
       <div class="creator-options"><label v-for="category in visibleCategories" :key="category.id" class="creator-check"><input v-model="draft.categoryIds" type="checkbox" :value="category.id" :disabled="disabled" :data-testid="`creator-category-${category.id}`"><span>{{ category.name }}</span></label></div>

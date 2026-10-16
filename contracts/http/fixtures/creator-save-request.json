@@ -7,5 +7,6 @@
   ],
   "levelId": null,
   "stars": 3,
-  "avatarAction": "KEEP"
+  "avatarAction": "KEEP",
+  "expectedVersion": null
 }

@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,7 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class CreatorHttpTest {
     private static final String SAVE = """
             {"bilibiliUid":"123","name":"Creator","description":null,
-             "categoryIds":[1],"levelId":null,"stars":3,"avatarAction":"KEEP"}
+             "categoryIds":[1],"levelId":null,"stars":3,"avatarAction":"KEEP","expectedVersion":null}
             """;
     private static final SimpleGrantedAuthority TOURNAMENT_ADMIN = new SimpleGrantedAuthority("ROLE_tournament-admin");
     private AnnotationConfigWebApplicationContext context;
@@ -117,16 +118,17 @@ class CreatorHttpTest {
 
     @Test void cardSerializationKeepsExactUidAndExplicitNullsWithoutPrivateOrEditableState() throws Exception {
         final String uid = "12345678901234567890";
-        final CreatorDtos.Card card = new CreatorDtos.Card(7, uid, "Creator", null, "https://space.bilibili.com/" + uid, null,
+        final CreatorDtos.Card card = new CreatorDtos.Card(7, 2, uid, "Creator", null, "https://space.bilibili.com/" + uid, null,
                 List.of(new CreatorDtos.Category(1, "A"), new CreatorDtos.Category(2, "B")), null, 6, Instant.parse("2026-10-16T00:00:00Z"));
         when(service().list(1L)).thenReturn(List.of(card));
         final String json = mvc.perform(get("/api/creators?categoryId=1")).andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].bilibiliUid").isString()).andExpect(jsonPath("$[0].bilibiliUid").value(uid))
                 .andExpect(jsonPath("$[0].score").value(6))
+                .andExpect(jsonPath("$[0].version").value(2))
                 .andExpect(jsonPath("$[0].categories.length()").value(2))
                 .andReturn().getResponse().getContentAsString();
         final var node = JsonMapper.builder().findAndAddModules().build().readTree(json).get(0);
-        assertEquals(10, node.properties().size());
+        assertEquals(11, node.properties().size());
         assertEquals(uid, node.path("bilibiliUid").asText());
         assertTrue(node.path("description").isNull());
         assertTrue(node.path("avatarUrl").isNull());
@@ -139,41 +141,43 @@ class CreatorHttpTest {
 
     @Test void multipartSaveBindsKeepRemoveAndReplacementWithDeclaredStatuses() throws Exception {
         when(service().create(any(), any())).thenReturn(detail());
-        when(service().update(eq(7L), any(), any())).thenReturn(detail());
+        when(service().update(eq(7L), any(), any())).thenReturn(new CreatorDtos.Detail(7, 1, "123", "Creator", null, List.of(1L), null, 3, null));
         final String createdJson = mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities(TOURNAMENT_ADMIN)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(7)).andExpect(jsonPath("$.stars").value(3))
                 .andExpect(jsonPath("$.avatarId").doesNotExist()).andExpect(jsonPath("$.homepageUrl").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         final var detailJson = JsonMapper.builder().findAndAddModules().build().readTree(createdJson);
-        assertEquals(8, detailJson.properties().size());
+        assertEquals(9, detailJson.properties().size());
+        assertEquals(0, detailJson.path("version").asInt());
         assertTrue(detailJson.path("description").isNull());
         assertTrue(detailJson.path("levelId").isNull());
         assertTrue(detailJson.path("avatarUrl").isNull());
-        verify(service()).create(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "KEEP"), null);
+        verify(service()).create(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "KEEP", null), null);
 
-        final String remove = SAVE.replace("\"KEEP\"", "\"REMOVE\"");
+        final String remove = SAVE.replace("\"KEEP\"", "\"REMOVE\"").replace("\"expectedVersion\":null", "\"expectedVersion\":0");
         mvc.perform(multipart(HttpMethod.PUT, "/api/admin/creators/7").file(payload(remove)).with(jwt().authorities(TOURNAMENT_ADMIN)))
-                .andExpect(status().isOk());
-        verify(service()).update(7, new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REMOVE"), null);
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        verify(service()).update(7, new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REMOVE", 0L), null);
 
         final MockMultipartFile avatar = new MockMultipartFile("avatar", "avatar.png", "image/png", new byte[] {1, 2, 3});
         mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"KEEP\"", "\"REPLACE\""))).file(avatar)
                         .with(jwt().authorities(TOURNAMENT_ADMIN)))
                 .andExpect(status().isCreated());
-        verify(service()).create(eq(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE")),
+        verify(service()).create(eq(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE", null)),
                 any(MultipartFile.class));
-        mvc.perform(delete("/api/admin/creators/7").with(jwt().authorities(TOURNAMENT_ADMIN))).andExpect(status().isNoContent());
-        verify(service()).delete(7);
+        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "1").with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isNoContent());
+        verify(service()).delete(7, 1);
     }
 
     @Test void twentyDigitStringUidPassesMultipartWithoutNumericCoercion() throws Exception {
         final String uid = "12345678901234567890";
-        when(service().create(any(), any())).thenReturn(new CreatorDtos.Detail(7, uid, "Creator", null, List.of(1L), null, 3, null));
+        when(service().create(any(), any())).thenReturn(new CreatorDtos.Detail(7, 0, uid, "Creator", null, List.of(1L), null, 3, null));
         mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"123\"", "\"" + uid + "\"")))
                         .with(jwt().authorities(TOURNAMENT_ADMIN)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").isString())
                 .andExpect(jsonPath("$.bilibiliUid").value(uid));
-        verify(service()).create(new CreatorDtos.SaveRequest(uid, "Creator", null, List.of(1L), null, 3, "KEEP"), null);
+        verify(service()).create(new CreatorDtos.SaveRequest(uid, "Creator", null, List.of(1L), null, 3, "KEEP", null), null);
     }
 
     @Test void multipartBoundaryRejectsMultipleAvatarsMissingPayloadAndLegacyJsonBody() throws Exception {
@@ -209,18 +213,37 @@ class CreatorHttpTest {
                 SAVE.replace("\"categoryIds\":[1]", "\"categoryIds\":[\"1\"]"),
                 SAVE.replace("\"levelId\":null,", ""), SAVE.replace("\"avatarAction\":\"KEEP\"", "\"avatarAction\":\"KEEP\",\"rewardPoints\":8"),
                 SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":123"),
-                SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":true"))) {
+                SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":true"),
+                SAVE.replace(",\"expectedVersion\":null", ""),
+                SAVE.replace("\"expectedVersion\":null", "\"expectedVersion\":\"0\""),
+                SAVE.replace("\"expectedVersion\":null", "\"expectedVersion\":0.5"),
+                SAVE.replace("\"expectedVersion\":null", "\"expectedVersion\":true"))) {
             assertThrows(tools.jackson.core.JacksonException.class, () -> json.readValue(invalid, CreatorDtos.SaveRequest.class));
         }
         final String uid = "12345678901234567890";
         assertEquals(uid, json.readValue(SAVE.replace("\"123\"", "\"" + uid + "\""), CreatorDtos.SaveRequest.class).bilibiliUid());
+        assertNull(json.readValue(SAVE, CreatorDtos.SaveRequest.class).expectedVersion());
+        assertEquals(0L, json.readValue(SAVE.replace("\"expectedVersion\":null", "\"expectedVersion\":0"), CreatorDtos.SaveRequest.class).expectedVersion());
+    }
+
+    @Test void deleteRequiresAVersionQueryBeforeInvokingTheDirectory() throws Exception {
+        mvc.perform(delete("/api/admin/creators/7").with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isBadRequest());
+        for (final String version : List.of("1.5", "invalid")) {
+            mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", version).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service());
+        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "2").with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isNoContent());
+        verify(service()).delete(7, 2);
     }
 
     private static MockMultipartFile payload(final String json) {
         return new MockMultipartFile("payload", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
     }
     private static CreatorDtos.Detail detail() {
-        return new CreatorDtos.Detail(7, "123", "Creator", null, List.of(1L), null, 3, null);
+        return new CreatorDtos.Detail(7, 0, "123", "Creator", null, List.of(1L), null, 3, null);
     }
     private CreatorService service() { return context.getBean(CreatorService.class); }
     private CreatorAvatarService avatars() { return context.getBean(CreatorAvatarService.class); }

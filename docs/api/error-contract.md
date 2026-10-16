@@ -63,7 +63,7 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `CREATOR_INVALID_REQUEST` | 400 | false | creator | UP 字段、UID、整数、头像或输入结构不合法 |
 | `CREATOR_CATEGORY_IN_USE` | 409 | false | creator | 删除类别会使至少一个 UP 没有类别；先补配其他类别 |
 | `CREATOR_LEVEL_IN_USE` | 409 | false | creator | 等级仍被使用；先更换等级或关闭实力评估 |
-| `CREATOR_CONFIG_CONFLICT` | 409 | false | creator | 引用的类别/等级配置已变化，重新加载后重试 |
+| `CREATOR_CONFIG_CONFLICT` | 409 | false | creator | UP版本或引用的类别/等级配置已变化；保留草稿，重新加载最新资料后重试 |
 | `CREATOR_STORAGE_UNAVAILABLE` | 503 | false | creator | 头像存储未就绪，无图目录维护仍可独立使用 |
 | `CREATOR_AVATAR_NOT_FOUND` | 404 | false | creator | 头像资源不存在或不可用于当前操作 |
 | `REPLAY_BUSY` | 503 | true | capacity | Replay worker 暂时繁忙 |

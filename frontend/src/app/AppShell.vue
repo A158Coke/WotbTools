@@ -7,6 +7,7 @@ import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { provideCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
 import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
@@ -41,6 +42,7 @@ const { isCompact } = useBreakpoint()
 const { connectivity, start: startConnectivity } = useConnectivity()
 // 门禁（唯一判定入口）：重试等交互用它 —— 既弹统一 connectivity notice，又给出布尔结果。
 const { requireFeature } = useFeatureGate()
+provideCreatorAvailability()
 onMounted(() => {
   void startConnectivity()
 })

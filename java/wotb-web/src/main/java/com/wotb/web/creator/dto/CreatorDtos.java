@@ -19,9 +19,9 @@ public final class CreatorDtos {
     private CreatorDtos() { }
     public record Category(long id, String name) { }
     public record Level(long id, String name) { }
-    public record Card(long id, String bilibiliUid, String name, String description, String homepageUrl,
+    public record Card(long id, long version, String bilibiliUid, String name, String description, String homepageUrl,
                        String avatarUrl, List<Category> categories, Level level, int score, Instant createdAt) { }
-    public record Detail(long id, String bilibiliUid, String name, String description, List<Long> categoryIds,
+    public record Detail(long id, long version, String bilibiliUid, String name, String description, List<Long> categoryIds,
                          Long levelId, int stars, String avatarUrl) { }
     public record Metadata(List<Category> categories, List<Level> levels, boolean avatarUploadsAvailable) { }
     public record SaveRequest(
@@ -31,7 +31,8 @@ public final class CreatorDtos {
             @JsonProperty(required = true) @JsonDeserialize(contentUsing = JsonNumberInputs.LongInput.class) List<Long> categoryIds,
             @JsonProperty(required = true) @JsonDeserialize(using = JsonNumberInputs.LongInput.class) Long levelId,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = JsonNumberInputs.IntegerInput.class) int stars,
-            @JsonProperty(required = true) String avatarAction
+            @JsonProperty(required = true) String avatarAction,
+            @JsonProperty(required = true) @JsonDeserialize(using = JsonNumberInputs.LongInput.class) Long expectedVersion
     ) {
         @JsonAnySetter
         public void rejectUnknown(final String key, final Object value) { throw invalid(); }

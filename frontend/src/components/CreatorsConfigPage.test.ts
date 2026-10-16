@@ -5,20 +5,34 @@ import { ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { messages } from '../locales/messages.js'
 import CreatorsConfigPage from './CreatorsConfigPage.vue'
+import { addCreatorCategory, addCreatorLevel } from '../api/creators.js'
 
 const state = vi.hoisted(() => ({ auth: null as any, epoch: 1 }))
 vi.mock('../composables/useAuth.js', async original => ({ ...await original<typeof import('../composables/useAuth.js')>(), useAuth: () => state.auth }))
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
 vi.mock('../api/creators.js', async original => ({ ...await original<typeof import('../api/creators.js')>(),
   getCreatorMetadata: vi.fn(async () => ({ categories: [{ id: 1, name: 'category' }], levels: [{ id: 1, name: 'level' }], avatarUploadsAvailable: false })), saveCreator: vi.fn(async () => ({ id: 1 })),
+  addCreatorCategory: vi.fn(async (name: string) => ({ id: 2, name })), addCreatorLevel: vi.fn(async (name: string) => ({ id: 2, name })),
 }))
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
+  vi.clearAllMocks()
   state.epoch = 1
   state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => state.epoch }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 describe('creator configuration drafts', () => {
+  it.each([['category', addCreatorCategory], ['level', addCreatorLevel]] as const)('accepts 100 emoji %s names and rejects 101 without UTF16 truncation', async (kind, add) => {
+    wrapper = mount(CreatorsConfigPage, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages })], stubs: { CreatorForm: { template: '<div />' } } } })
+    await flushPromises()
+    const input = wrapper.get(`[data-testid=creator-new-${kind}]`), form = input.element.closest('form')!
+    expect(input.attributes('maxlength')).toBeUndefined()
+    await input.setValue('😀'.repeat(100)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
+    expect(add).toHaveBeenCalledWith('😀'.repeat(100), expect.any(AbortSignal))
+    await input.setValue('😀'.repeat(101)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
+    expect(add).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('[role=alert]').exists()).toBe(true)
+  })
   it('clears dictionary drafts when switching between equally privileged administrators', async () => {
     wrapper = mount(CreatorsConfigPage, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages })], stubs: { CreatorForm: { template: '<div />' } } } })
     await flushPromises()

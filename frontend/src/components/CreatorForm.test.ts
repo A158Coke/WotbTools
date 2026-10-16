@@ -21,7 +21,7 @@ async function pick(wrapper: ReturnType<typeof mount>, name = 'avatar.png') {
   const file = new File(['image-bytes'], name, { type: 'image/png' }), input = wrapper.get('[data-testid=tournament-image-input]')
   Object.defineProperty(input.element, 'files', { value: [file], configurable: true }); await input.trigger('change'); await flushPromises(); return file
 }
-const existing: CreatorDetail = { id: 1, bilibiliUid: '456', name: 'Existing', description: null, categoryIds: [1], levelId: 1, stars: 3, avatarUrl: '/api/creators/avatars/11111111-1111-4111-8111-111111111111' }
+const existing: CreatorDetail = { id: 1, version: 2, bilibiliUid: '456', name: 'Existing', description: null, categoryIds: [1], levelId: 1, stars: 3, avatarUrl: '/api/creators/avatars/11111111-1111-4111-8111-111111111111' }
 beforeEach(() => {
   epoch = 1; state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => epoch }
   let next = 0
@@ -30,6 +30,20 @@ beforeEach(() => {
 })
 afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers = []; vi.unstubAllGlobals() })
 describe('creator directory form and local avatar state', () => {
+  it('accepts 100 supplementary-codepoint names and 2000-codepoint descriptions without UTF16 maxlength truncation', async () => {
+    const { wrapper, save } = form(); await fill(wrapper)
+    expect(wrapper.get('[data-testid=creator-name]').attributes('maxlength')).toBeUndefined()
+    expect(wrapper.get('[data-testid=creator-description]').attributes('maxlength')).toBeUndefined()
+    await wrapper.get('[data-testid=creator-name]').setValue('😀'.repeat(100))
+    await wrapper.get('[data-testid=creator-description]').setValue('😀'.repeat(2000))
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: '😀'.repeat(100), description: '😀'.repeat(2000), expectedVersion: null }), null)
+  })
+  it.each([['name', 101], ['description', 2001]] as const)('rejects an over-limit Unicode %s through the generated contract', async (field, count) => {
+    const { wrapper, save } = form(); await fill(wrapper)
+    await wrapper.get(`[data-testid=creator-${field}]`).setValue('😀'.repeat(count))
+    await wrapper.get('form').trigger('submit'); await flushPromises(); expect(save).not.toHaveBeenCalled()
+  })
   it('defaults to three whole stars and normalizes UID strings without losing precision', async () => {
     const { wrapper, save } = form(); await fill(wrapper)
     await wrapper.get('[data-testid=creator-uid]').setValue(' 0009007199254740993 ')
@@ -80,7 +94,7 @@ describe('creator directory form and local avatar state', () => {
     expect((wrapper.get('[data-testid=tournament-image-input]').element as HTMLInputElement).disabled).toBe(true)
     await wrapper.get('form').trigger('submit'); await flushPromises(); expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ avatarAction: 'KEEP' }), null)
     await wrapper.get('[data-testid=creator-avatar-clear]').trigger('click'); await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ avatarAction: 'REMOVE' }), null)
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ avatarAction: 'REMOVE', expectedVersion: 2 }), null)
     await wrapper.setProps({ avatarUploadsAvailable: true }); await pick(wrapper)
     await wrapper.get('[data-testid=creator-avatar-restore]').trigger('click'); await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ avatarAction: 'KEEP' }), null)

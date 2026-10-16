@@ -6,6 +6,7 @@ import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
 import { isAndroidApp } from './usePlatformBridge.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
+import { useCreatorAvailability } from './useCreatorAvailability.js'
 
 /**
  * "更多"的唯一内容源：手机的"更多"页（MorePage）与平板 / 桌面侧边栏底部的"更多"弹出面板（MorePanel）
@@ -24,6 +25,7 @@ export function useMoreMenu() {
   const onboarding = inject(ONBOARDING_KEY, null)
   const { isAdmin, isHofAdmin, isTournamentAdmin, authenticated } = useAuth()
   const { uiProfilePreference, setUiProfile } = useUiProfile()
+  const { available: creatorsAvailable } = useCreatorAvailability()
   // vue-i18n legacy 模式下 $i18n 由 mixin 在 setup 之后才挂上：setup 时只捕获实例，用户操作时再读
   const instance = getCurrentInstance()
 
@@ -44,7 +46,7 @@ export function useMoreMenu() {
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
     isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
     isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
-    isTournamentAdmin.value && { view: 'creators-config', labelKey: 'creators.configTitle', icon: Users },
+    isTournamentAdmin.value && creatorsAvailable.value && { view: 'creators-config', labelKey: 'creators.configTitle', icon: Users },
   ].filter(Boolean))
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

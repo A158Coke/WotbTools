@@ -75,12 +75,15 @@ public class CreatorService {
     }
     private CreatorDtos.Detail save(final Long id, final CreatorDtos.SaveRequest request, final MultipartFile avatar) {
         validate(request, avatar);
+        if ((id == null && request.expectedVersion() != null)
+                || (id != null && (request.expectedVersion() == null || request.expectedVersion() < 0))) { throw invalid(); }
         final String uid = uid(request.bilibiliUid());
         // The committed, site-owned upload remains discoverable if the following catalog transaction fails.
         final String uploaded = "REPLACE".equals(request.avatarAction()) ? avatars.upload(avatar) : null;
         return writes.execute(tx -> {
             lockCatalog();
             final Creator creator = id == null ? new Creator() : locked(id);
+            if (id != null) { requireVersion(creator, request.expectedVersion()); }
             final boolean duplicate = id == null ? creators.existsByBilibiliUid(uid) : creators.existsByBilibiliUidAndIdNot(uid, id);
             if (duplicate) { throw error(ApiErrorCode.CREATOR_UID_ALREADY_EXISTS); }
             if (categories.findAllById(request.categoryIds()).size() != request.categoryIds().size()
@@ -92,6 +95,7 @@ public class CreatorService {
             creator.categoryIds.clear(); creator.categoryIds.addAll(new LinkedHashSet<>(request.categoryIds()));
             creator.levelId = request.levelId(); creator.stars = request.stars();
             if (id == null) { creator.createdAt = Instant.now(); }
+            else { creator.version++; }
             final String previous = creator.avatarId;
             if ("REPLACE".equals(request.avatarAction())) { avatars.attach(uploaded); creator.avatarId = uploaded; }
             else if ("REMOVE".equals(request.avatarAction())) { creator.avatarId = null; }
@@ -100,9 +104,11 @@ public class CreatorService {
             return mapper.toDto(creator);
         });
     }
-    public void delete(final long id) {
+    public void delete(final long id, final long expectedVersion) {
+        if (id <= 0 || expectedVersion < 0) { throw invalid(); }
         lockCatalog();
         final Creator creator = locked(id);
+        requireVersion(creator, expectedVersion);
         final String previous = creator.avatarId;
         creators.delete(creator); creators.flush(); avatars.detach(previous);
     }
@@ -115,6 +121,7 @@ public class CreatorService {
         lockCatalog();
         final CreatorCategory category = categories.findById(id).orElseThrow(CreatorService::notFound);
         if (creators.wouldOrphanCreator(id)) { throw error(ApiErrorCode.CREATOR_CATEGORY_IN_USE); }
+        for (final Creator creator : creators.findCategoryMembersLocked(id)) { creator.version++; }
         creators.removeCategoryLinks(id); categories.delete(category); categories.flush();
     }
     public CreatorDtos.Level addLevel(final CreatorDtos.DictionaryRequest request) {
@@ -129,6 +136,9 @@ public class CreatorService {
         levels.delete(level); levels.flush();
     }
     private void lockCatalog() { Objects.requireNonNull(catalog.findExclusive(), "Creator catalog lock is missing"); }
+    private static void requireVersion(final Creator creator, final long expectedVersion) {
+        if (creator.version != expectedVersion) { throw error(ApiErrorCode.CREATOR_CONFIG_CONFLICT); }
+    }
     private Creator locked(final long id) { return creators.findLocked(id).orElseThrow(CreatorService::notFound); }
     private static void validate(final CreatorDtos.SaveRequest request, final MultipartFile avatar) {
         if (request == null || request.stars() < 1 || request.stars() > 5
@@ -138,12 +148,14 @@ public class CreatorService {
                 || (request.levelId() != null && request.levelId() <= 0)
                 || request.avatarAction() == null || !List.of("KEEP", "REPLACE", "REMOVE").contains(request.avatarAction())
                 || ("REPLACE".equals(request.avatarAction()) != (avatar != null))
-                || (request.description() != null && request.description().length() > 2000)) { throw invalid(); }
+                || (request.description() != null && request.description().codePointCount(0, request.description().length()) > 2000)) { throw invalid(); }
         name(request.name()); uid(request.bilibiliUid());
     }
     private static String name(final String raw) {
-        if (!StringUtils.hasText(raw) || raw.trim().length() > 100) { throw invalid(); }
-        return raw.trim();
+        if (!StringUtils.hasText(raw)) { throw invalid(); }
+        final String trimmed = raw.trim();
+        if (trimmed.codePointCount(0, trimmed.length()) > 100) { throw invalid(); }
+        return trimmed;
     }
     private static String uid(final String raw) {
         if (raw == null || !raw.trim().matches("[0-9]{1,20}")) { throw invalid(); }
