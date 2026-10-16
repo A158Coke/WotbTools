@@ -110,6 +110,7 @@
 | `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
 | `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、bootstrap/adoption 与备份时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
+| `operations/security-log-retention.md` | 安全日志 190 天留存边界、脱敏规则、合规查询与投诉举报渠道（公安自评估事实源）时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 | `operations/agent-asset-origin.md` | 部署/更换 Agent 3D 静态资产源（GLB/地图/坦克数据）时 |
 | `operations/league-broadcast-covers.md` | 配置联赛直播封面 COS、权限、上传失败和孤立对象回收时 |

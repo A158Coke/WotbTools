@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { primaryNavItems } from '../src/app/navigation.js'
 
 // Exercise the production router, components, transport validators and CSS. Only external
 // auth and HTTP services are fixtures, shared by anonymous and administrator requests.
@@ -93,14 +94,15 @@ const middleware = async (request, response, next) => {
   } catch (error) { console.error(error); failure(response, 500, 'INTERNAL_ERROR') }
 }
 
-const { server, origin } = await startFixtureServer({ middleware })
+const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] })
 
-const chrome = await launchChromeForCdp(findChrome())
+const chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
 const screenshots = process.env.BROADCAST_SCREENSHOTS
 const scenarios = ['showcase', 'classic'].flatMap(profile => [
-  { name: `${profile}-desktop`, profile, width: 1440, height: 900, touch: false, locale: 'en' },
+  { name: `${profile}-desktop`, profile, width: 1440, height: 900, touch: false, locale: 'en', productionHome: true },
   { name: `${profile}-tablet`, profile, width: 1024, height: 768, touch: true, locale: 'zh' },
   { name: `${profile}-mobile`, profile, width: 390, height: 844, touch: true, locale: 'ru' },
+  { name: `${profile}-production-mobile`, profile, width: 360, height: 844, touch: true, locale: 'ru', productionHome: true, geometryOnly: true },
   ...[360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-boundary-${width}`, profile, width, height: 900, touch: width < 768, locale: 'en', geometryOnly: true })),
 ])
 let failures = 0
@@ -117,9 +119,13 @@ async function fill(page, values) {
 async function geometry(page) {
   const result = await page.evaluate(`(() => ({ overflow: document.documentElement.scrollWidth > innerWidth + 1,
     tiny: matchMedia('(pointer:coarse)').matches ? [...document.querySelectorAll('[data-testid="league-broadcasts-page"] button')].filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.height<43}).map(el=>el.dataset.testid||el.textContent) : [],
+    tabs:[...document.querySelectorAll('[data-testid="app-tab-bar"] .tab')].map(el=>{const r=el.getBoundingClientRect();return {width:r.width,height:r.height}}),
     profile:document.documentElement.dataset.uiProfile }))()`)
   assert.equal(result.overflow, false, 'horizontal overflow')
   assert.deepEqual(result.tiny, [], 'minimum 44px hit targets')
+  for (const tab of result.tabs) {
+    assert.ok(tab.width >= 44 && tab.height >= 44, 'primary tab remains at least 44px wide and tall')
+  }
 }
 try {
   assert.ok(selectedScenarios.length, `no scenario matches ${nameFilter}`)
@@ -130,8 +136,27 @@ try {
     try {
       await page.enable(); await page.emulate(scenario)
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
-      await page.goto(`${origin}/?view=league-broadcasts&ws-auth=0`)
+      const scenarioOrigin = scenario.productionHome ? origin.replace('127.0.0.1', 'wotbtools.com') : origin
+      await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
+      await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
+      assert.equal(await page.evaluate('!!document.querySelector("[data-testid=more-link-league-broadcasts]")'), false)
+      const navigation = scenario.width < 768 ? 'tab' : 'nav'
+      await tap(page, `[data-testid=${navigation}-league-broadcasts]`, scenario.touch)
       await page.waitForValue('document.querySelectorAll("[data-testid^=broadcast-server-]").length', value => value === 5)
+      assert.equal(await page.evaluate(`document.querySelector('[data-testid="${navigation}-league-broadcasts"]').getAttribute('aria-current')`), 'page')
+      const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
+      assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
+      if (scenario.width < 768) {
+        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
+      }
+      const cardHeights = await page.evaluate('[...document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-choice")].map(el=>el.getBoundingClientRect().height)')
+      assert.ok(cardHeights.every(height => height >= 160), 'server cards use the larger presentation')
+      await geometry(page)
+      if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
+        await mkdir(screenshots, { recursive: true })
+        const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
+        await writeFile(join(screenshots, `${scenario.name}-servers.png`), Buffer.from(image.data, 'base64'))
+      }
       await tap(page, '[data-testid=broadcast-server-CN]', scenario.touch)
       await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
       await tap(page, '[data-testid=broadcast-category-20]', scenario.touch)

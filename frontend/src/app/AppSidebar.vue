@@ -71,10 +71,11 @@ function linkAttrs(id) {
             v-bind="linkAttrs(item.id)"
             :to="to(item.view)"
             :title="rail ? $t(item.labelKey) : undefined"
+            :aria-label="rail && item.shortLabelKey ? `${$t(item.shortLabelKey)}: ${$t(item.labelKey)}` : $t(item.labelKey)"
             :data-testid="`nav-${item.id}`"
           >
             <component :is="PRIMARY_NAV_ICONS[item.id]" :size="20" aria-hidden="true" />
-            <span class="sidebar-label">{{ $t(item.labelKey) }}</span>
+            <span class="sidebar-label">{{ $t(rail ? (item.shortLabelKey || item.labelKey) : item.labelKey) }}</span>
           </RouterLink>
         </li>
       </ul>
