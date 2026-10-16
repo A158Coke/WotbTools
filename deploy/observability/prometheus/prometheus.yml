@@ -6,6 +6,13 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  - job_name: dev-metrics
+    static_configs:
+      - targets:
+          - dev-metrics-exporter:9108
+        labels:
+          service: dev-metrics-exporter
+
   # The business runtime (business-api) runs on TX and publishes its management
   # port on the TX WireGuard address only; Prometheus dials it across the
   # existing TX<->Yecao WireGuard link. The job name stays `wotb-backend` so all
