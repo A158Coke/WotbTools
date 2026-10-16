@@ -78,11 +78,9 @@ jobs:
             find /usr/share/nginx/html -type f -exec du -k {} + | sort -n | tail -15
           '
 
-  # 真实浏览器门禁拆成 4 个并行 job（原先是 frontend job 尾部的串行 step，合计占该 job 约 2/3 时长；
-  # 其中装甲瞄准门禁又占其大头）。各 job 只依赖 npm ci + runner 自带 Chrome（不跑 build）；
-  # WASM 产物仍需按 pin 下载——Playback/Workspace interaction 的 local-workspace-matrix 场景
-  # 真的走本地 WASM 解析（夹具桩只替代了部分通道），其余三条门禁不消费它（各约 1s，统一带上）。
-  # fail-fast: false —— 一条门禁失败不取消其它三条，PR 上一次就能看到全部失败面。
+  # 浏览器门禁并行运行，复用 runner Chrome 和既有夹具，无需先跑 build。
+  # Playback/Workspace 场景消费 pinned WASM；各功能的独立门禁仍在同一 owner 内执行。
+  # fail-fast: false 保留每条门禁的失败证据。
   browser-gates:
     name: Frontend / ${{ matrix.gate.label }}
     runs-on: ubuntu-latest
@@ -112,6 +110,8 @@ jobs:
           # 初始化、选弹、失败重试与销毁生命周期；同样自带夹具资产包，不需要真实资产。
           - label: Armor viewer shot readiness
             script: test:browser-armor-shot-readiness
+          - label: League broadcast directory
+            script: test:browser-broadcasts
     steps:
       - uses: actions/checkout@v5
         with:
