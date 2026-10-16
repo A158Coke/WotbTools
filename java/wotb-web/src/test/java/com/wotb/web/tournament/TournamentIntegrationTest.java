@@ -1,6 +1,7 @@
 package com.wotb.web.tournament;
 
 import com.wotb.web.tournament.dto.TournamentDtos;
+import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
 import com.wotb.web.tournament.repository.TournamentDayRepository;
@@ -43,6 +44,7 @@ import java.time.Instant;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -193,6 +195,10 @@ class TournamentIntegrationTest {
         assertEquals(1, ((Number) oldDay.get("roundNumber")).intValue()); assertEquals(1, ((Number) oldDay.get("dayNumber")).intValue());
         final var oldGroup = (Map<?, ?>) ((List<?>) oldDay.get("groups")).getFirst();
         assertEquals(original.evidenceId(), oldGroup.get("evidenceId"));
+        // CSV row/standing payloads are not evidence sources, even if they contain a matching field.
+        jdbc.update("update tournament_audit set before_state=jsonb_set(before_state,'{standings,evidenceId}',to_jsonb(cast(? as text))), after_state=jsonb_set(after_state,'{evidenceId}',to_jsonb(cast(? as text))) where id=?",
+                orphan.evidenceId(), orphan.evidenceId(), imported.id);
+        assertEquals(List.of(original.evidenceId()), audits.findEvidenceIdsByEventId(id));
         final Instant expired = Instant.now().minusSeconds(90000);
         for (final var attachment : evidence.findByEventId(id)) {
             attachment.createdAt = expired; evidence.saveAndFlush(attachment);
@@ -206,6 +212,21 @@ class TournamentIntegrationTest {
         assertFalse(evidence.existsById(orphan.evidenceId())); assertFalse(Files.exists(orphanFile));
         service.deleteEvent(id, new TournamentDtos.DeleteRequest(service.config(id).event().version(), true));
         assertFalse(Files.exists(originalFile));
+    }
+    @Test void auditEvidenceProjectionKeepsLegacyBeforeAndAfterReferencesAndFiltersNonStringIds() {
+        final TournamentAudit legacy = new TournamentAudit(); legacy.eventId = id; legacy.action = "LEGACY_EVIDENCE";
+        legacy.actor = "admin"; legacy.createdAt = Instant.now();
+        legacy.beforeState = Map.of("nested", List.of(Map.of("evidenceId", "before"), Map.of("evidenceId", 42),
+                java.util.Collections.singletonMap("evidenceId", null)));
+        legacy.afterState = Map.of("evidenceId", "after", "duplicate", Map.of("evidenceId", "before"));
+        audits.saveAndFlush(legacy);
+        final long other = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"))).event().id();
+        final TournamentAudit foreign = new TournamentAudit(); foreign.eventId = other; foreign.action = "LEGACY_EVIDENCE";
+        foreign.actor = "admin"; foreign.createdAt = Instant.now(); foreign.beforeState = Map.of("evidenceId", "foreign"); foreign.afterState = Map.of();
+        audits.saveAndFlush(foreign);
+        final List<String> references = audits.findEvidenceIdsByEventId(id);
+        assertEquals(2, references.size()); assertEquals(Set.of("before", "after"), Set.copyOf(references));
+        assertEquals(List.of("foreign"), audits.findEvidenceIdsByEventId(other));
     }
     @Test void csvRollbackAndPreviewHashVersionAndWorkspaceGuardsProtectPreviousData() throws Exception {
         final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
@@ -275,7 +296,7 @@ class TournamentIntegrationTest {
         assertTrue(service.dataSource(id).csvImported()); assertEquals("_EK_", service.dataSource(id).attribution().name());
         final long version = service.config(id).event().version(); service.deleteEvent(id, new TournamentDtos.DeleteRequest(version, true));
         assertEquals(ApiErrorCode.RESOURCE_NOT_FOUND, assertThrows(ApiException.class, () -> service.dataSource(id)).errorCode());
-        assertTrue(audits.findByEventIdOrderByIdDesc(id).isEmpty());
+        assertTrue(audits.findAll().stream().noneMatch(audit -> Long.valueOf(id).equals(audit.eventId)));
     }
     private MockMultipartFile csvFixture() throws Exception {
         return new MockMultipartFile("file", "2026战火杯积分榜.csv", "text/csv", new ClassPathResource("tournament/2026-fire-cup-standings.csv").getContentAsByteArray());
@@ -525,7 +546,7 @@ class TournamentIntegrationTest {
         final int auditCount=service.auditList(eventId).size();
         applySummerSeed();
         assertEquals(before,service.publicStandings(eventId)); assertEquals(auditCount,service.auditList(eventId).size());
-        final var imported=audits.findByEventIdOrderByIdDesc(eventId).stream().filter(audit->audit.action.equals("HISTORICAL_IMPORTED")).findFirst().orElseThrow();
+        final var imported=audits.findAll().stream().filter(audit->Long.valueOf(eventId).equals(audit.eventId) && audit.action.equals("HISTORICAL_IMPORTED")).findFirst().orElseThrow();
         final List<TournamentDtos.HistoricalRow> source=((List<?>)imported.afterState.get("rows")).stream().map(value->{
             final Map<?,?> row=(Map<?,?>)value;
             final List<Integer> points=((List<?>)row.get("points")).stream().map(point->point==null?null:((Number)point).intValue()).toList();

@@ -45,10 +45,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 class TournamentServiceTest {
     private static final String KEY = "unit-only-32-byte-signing-key-123456";
@@ -92,7 +95,6 @@ class TournamentServiceTest {
         when(evidence.findByEventId(anyLong())).thenAnswer(call->List.copyOf(images.values()));
         when(evidence.save(any())).thenAnswer(call->{final TournamentEvidence row=call.getArgument(0);images.put(row.id,row);return row;});
         when(audits.save(any())).thenAnswer(call->{final TournamentAudit row=call.getArgument(0);row.id=(long)auditRows.size()+1;auditRows.add(row);return row;});
-        when(audits.findByEventIdOrderByIdDesc(1L)).thenAnswer(call->List.copyOf(auditRows));
         when(audits.findCsvImport(anyLong(),anyString())).thenAnswer(call->auditRows.stream()
                 .filter(row->"CSV_IMPORTED".equals(row.action) && call.getArgument(1).equals(row.afterState.get("idempotencyKey"))).findFirst());
     }
@@ -306,7 +308,18 @@ class TournamentServiceTest {
         assertEquals(1, result.size()); assertEquals(7L, result.getFirst().id());
         assertEquals("CSV_IMPORTED", result.getFirst().action()); assertEquals(created, result.getFirst().createdAt());
         assertTrue(result.getFirst().before().isEmpty()); assertTrue(result.getFirst().after().isEmpty());
-        verify(audits).findMetadataByEventId(1L); verify(audits, never()).findByEventIdOrderByIdDesc(1L);
+        verify(audits).findMetadataByEventId(1L); verifyNoMoreInteractions(audits);
+    }
+    @Test void orphanSweepAndDraftDiscardReadOnlyProjectedAuditEvidenceIds() {
+        final var retained = group(1, "ERROR", "A", "B", "C"); final var orphan = group(2, "ERROR", "D", "E", "F");
+        images.values().forEach(image -> image.createdAt = Instant.now().minusSeconds(90000));
+        when(audits.findEvidenceIdsByEventId(1L)).thenReturn(List.of(retained.evidenceId()));
+        service.cleanupOrphans();
+        verify(evidence).delete(images.get(orphan.evidenceId())); verify(evidence, never()).delete(images.get(retained.evidenceId()));
+        verify(storage).cleanup(anyLong(), eq(Set.of(retained.imageHash())), any(Instant.class));
+        day.draftGroups = List.of(); service.deleteDraft(1, 1, 1, new TournamentDtos.Versions(event.version, day.version));
+        verify(evidence, times(2)).delete(images.get(orphan.evidenceId()));
+        verify(audits, times(2)).findEvidenceIdsByEventId(1L); verifyNoMoreInteractions(audits);
     }
     @Test void csvPreviewKeepsClearedBlankCellsMissingAndCountsTheirRemoval() {
         day.publishedHistoricalPoints = Map.of("A", 100, "B", 50); day.clearedClans = Set.of("A");
