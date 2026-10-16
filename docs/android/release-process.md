@@ -224,7 +224,9 @@ tag / staging evidence，不 seed origin，只在网盘上写一个 `_offload-pr
    没有的杠杆——链路差时靠它把最坏情况压回可重试的量级。缺 `secrets.COS_RELEASE_SECRET_ID` /
    `secrets.COS_RELEASE_SECRET_KEY` / `vars.COS_RELEASE_BUCKET` 时该段跳过（`::notice::`），其余段照测；
    `vars.COS_REGION` 缺省 `ap-shanghai`。凭证按最小权限建：发布专用桶（与资产桶
-   `wotbtools-assets-*` **分开**）的 `android/*` 前缀 Put/Get/Delete，不给 ListBucket。
+   `wotbtools-assets-*` **分开**）的 `android/*` 前缀 `PutObject` / `GetObject` / `DeleteObject`，
+   外加分片上传必需的 `InitiateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload` /
+   `AbortMultipartUpload`（缺这几个动作时 8 路分片测量会 AccessDenied，只剩单流数字）；不给 ListBucket。
 2. **COS → TX1**：主机从预签名直链拉回 + `sha256sum -c`，并打印该主机把 COS 域名解析到**内网还是
    公网**（同地域内网流量免费；跨地域不支持内网，故发布桶应与 TX 主机同地域）。
 3. **TX1 → 清华网盘**：与 `android-release.yml` 同一协议（upload-link → multipart `replace=1`），
@@ -234,7 +236,10 @@ tag / staging evidence，不 seed origin，只在网盘上写一个 `_offload-pr
    确认直链不再服务它（该部署对缺失对象返回 200 + 小 HTML 页，所以按服务的字节数判定，不按状态码）。
 
 判据（写进 job summary）：两段都 ≥ 2 MiB/s ⇒ 采纳「TX1 落地」方案；0.3–2 MiB/s ⇒ 采纳，但后续
-host 侧脚本需要调并发/超时；< 0.3 MiB/s ⇒ 改由 TX2 推，或换对象存储。**本探针只测量**：把 runner
+host 侧脚本需要调并发/超时；< 0.3 MiB/s ⇒ 改由 TX2 推，或换对象存储。探针预算按 192 MiB 场景给足
+（job 90 分钟；COS 拉取 900s、网盘推送 1800s、回读 3×300s），所以「链路已严重退化」时仍能拿到数字；
+真到上限以下跑不完时按低于判据记负，且退出路径上的 trap 仍会删掉探针对象。
+**本探针只测量**：把 runner
 直传改成 TX1 落地（步骤重排、host 侧脚本、token 收敛）是后续工作；在那之前
 `android-release.yml` 的直传路径仍是唯一发布路径。
 
