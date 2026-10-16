@@ -1,9 +1,10 @@
 import { expect, it } from 'vitest'
-import { lifeTransitions } from './toBattlePlaybackDataset.js'
+import { healthTransitions, lifeTransitions, respawnDestroyedTimes } from './toBattlePlaybackDataset.js'
 import type { CanonicalReplayFacts, HpSample } from '../canonical/facts.js'
 
-// 生命投影（issue #622）：上游复活轨道在场 → 死亡/复活交替（SSOT 取代采样扫描）；
-// 缺省 → prop3 alive=false 终态路径（行为与既往逐位一致，golden 锁定）。
+// 复活轨道（issue #622）的三处投影：生命交替 / 血量未知边界 / DESTROYED 事件时刻（3.1.0 review P2）。
+// 上游复活轨道在场 → 它取代采样扫描成为死亡/复活时刻 SSOT；缺省 → 既有路径（行为与既往逐位一致，
+// golden 锁定）。
 
 const EID = 101
 const START = 30 // battle startRaw；上游死亡/复活时刻是原始时钟
@@ -74,4 +75,55 @@ it('单死 + 复活（death_times 缺省形态）：上游 death_t 兜底首死'
     [10, 'DESTROYED'],
     [18, 'ALIVE'],
   ])
+})
+
+// ---- 血量投影：复活后必须落"未知"边界，绝不沿用死前值（3.1.0 review P2） ----
+
+it('复活后无新血量证据 → 血量落未知（currentHp null），不显示死前的 0/终态值', () => {
+  const facts = factsWith([prop3Alive(1, 900), prop3Dead(10)])
+  const respawn = new Map([[EID, { deaths: [10], resurrections: [20] }]])
+  const out = healthTransitions(facts, [EID], FIRST_SEEN, 120, false, null, respawn)
+  expect(out.map((x) => [x.timeSec, x.currentHp])).toEqual([
+    [1, 900],
+    [10, 0],
+    [20, null],
+  ])
+  expect(out[2]).toMatchObject({ knowledge: 'LAST_KNOWN', confidence: 'UNKNOWN' })
+})
+
+it('复活后新证据到达 → 未知边界被采样覆盖；证据在查询时刻之后时不得提前使用（窗口 [复活, t]）', () => {
+  const facts = factsWith([prop3Alive(1, 900), prop3Dead(10), prop3Alive(25, 700)])
+  const respawn = new Map([[EID, { deaths: [10], resurrections: [20] }]])
+  const out = healthTransitions(facts, [EID], FIRST_SEEN, 120, false, null, respawn)
+  expect(out.map((x) => [x.timeSec, x.currentHp])).toEqual([
+    [1, 900],
+    [10, 0],
+    [20, null],
+    [25, 700],
+  ])
+})
+
+it('无复活轨道：血量投影与既往逐位一致（无未知边界）', () => {
+  const facts = factsWith([prop3Alive(1, 900), prop3Dead(10), prop3Alive(20, 900)])
+  const out = healthTransitions(facts, [EID], FIRST_SEEN, 120, false, null)
+  expect(out.map((x) => [x.timeSec, x.currentHp])).toEqual([
+    [1, 900],
+    [10, 0],
+    [20, 900],
+  ])
+})
+
+// ---- DESTROYED 事件时刻：复活模式账号用完整死亡列（2D 爆焰按事件生成，缺一条就少爆一次） ----
+
+it('DESTROYED 事件时刻表：复活模式账号给全部死亡时刻；非复活模式账号不在表内（维持 canonical 终态）', () => {
+  const facts = {
+    ...factsWith([]),
+    entities: new Map([[EID, { accountId: 42 }]]),
+  } as unknown as CanonicalReplayFacts
+  const respawn = new Map([
+    [EID, { deaths: [10, 58.5], resurrections: [20] }],
+    [202, { deaths: [5], resurrections: [] }],      // 单死无复活 = 非复活模式 → 不在表内
+    [303, { deaths: [], resurrections: [8] }],       // 无死亡时刻 → 不接管（不丢 canonical 终态）
+  ])
+  expect([...respawnDestroyedTimes(facts, respawn)]).toEqual([[42, [10, 58.5]]])
 })

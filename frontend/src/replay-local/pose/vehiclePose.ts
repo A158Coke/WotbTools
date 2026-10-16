@@ -24,6 +24,7 @@
  * 纯函数、无 THREE/DOM 依赖（单测锁不变量）。
  */
 import { GRID_DT, keyframeAt, sampleChannel, sampleKeyframes, segmentAt } from '../../scene/trackInterp.js'
+import { activeEntityAt } from '../canonical/facts.js'
 import type { AgentPoseKeyframes, AgentPlaybackFacet, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
 
 export { GRID_DT, keyframeAt, sampleChannel, sampleKeyframes, segmentAt }
@@ -81,10 +82,21 @@ export interface PoseFacet {
   /** 网格点数 */
   samples: number
   vehicles: PoseFacetVehicle[]
+  /**
+   * 账号 → 各实体（eid）首见时刻（**战斗相对秒**；null = 该实体缺定位/血量/观测起点证据）。
+   *
+   * 同一账号在回放里可能有多个实体（AoI 重入、复活换实体），位姿列按 eid 各列一份；渲染必须
+   * 按时选择活跃实体，否则会在重入之前也采样到后一个实体（轨迹端点外钳位 ⇒ 未来位姿泄漏到过去）。
+   * 证据与 3D 场景的死亡归属同源（canonical `entityFirstSeenByAccount`）。
+   */
+  entityStartsByAccount?: Map<number, Map<number, number | null>>
 }
 
 /** 从 playback facet 投影出瘦身位姿切面（数组按引用复用，structured clone 时拷贝一次）。 */
-export function buildPoseFacet(playback: Pick<AgentPlaybackFacet, 'meta' | 'vehicles'>): PoseFacet {
+export function buildPoseFacet(
+  playback: Pick<AgentPlaybackFacet, 'meta' | 'vehicles'>,
+  entityStartsByAccount?: Map<number, Map<number, number | null>>,
+): PoseFacet {
   return {
     tStart: playback.meta.t_start,
     samples: playback.meta.samples,
@@ -100,7 +112,28 @@ export function buildPoseFacet(playback: Pick<AgentPlaybackFacet, 'meta' | 'vehi
       pose_kf: v.pose_kf,
       coverage: v.coverage,
     })),
+    ...(entityStartsByAccount ? { entityStartsByAccount } : {}),
   }
+}
+
+/**
+ * 多实体账号的**活跃实体**选择（2D 渲染用）。
+ *
+ * 判据与 3D 场景的死亡归属完全同源：`activeEntityAt(firstSeen, tBattle)`（canonical 身份证据，
+ * `replay-local/canonical/facts.ts`）。单实体账号直取（无判定成本）；证据缺失或并列（歧义）
+ * 一律返回 null —— 调用方回退 canonical 位姿（fail-closed，不猜）。
+ */
+export function selectActiveDef(
+  defs: readonly PoseFacetVehicle[],
+  starts: ReadonlyMap<number, number | null> | null | undefined,
+  tBattle: number,
+): PoseFacetVehicle | null {
+  if (defs.length === 0) return null
+  if (defs.length === 1) return defs[0]
+  if (!starts) return null
+  const eid = activeEntityAt(starts, tBattle)
+  if (eid === null) return null
+  return defs.find((def) => def.eid === eid) ?? null
 }
 
 /** 关键帧折线：缺省或单点 = null（→ 回退网格），与场景既有判据逐位一致。 */

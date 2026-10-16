@@ -2264,7 +2264,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
     const pushPoint = (tt) => {
-      if (defLifeAt(def, tt)?.lifeState === 'DESTROYED') return; // 阵亡期：残骸不出段（不断链）；复活后恢复出印（issue #622）
+      // 阵亡期：残骸不出段，且必须**断链**——复活会把车放到新位置（或渐进迁移），若沿用死前锚，
+      // 复活后的首个接地点会与死前锚连铺，跨阵亡期盖出一段长印记（3.1.0 review P2，issue #622）。
+      // 与 AoI 空洞同语义：历史印记保留，出阵亡期从新锚开始。
+      if (defLifeAt(def, tt)?.lifeState === 'DESTROYED') {
+        if (!broken) {
+          flush();
+          resetTrailState(tr.L);
+          resetTrailState(tr.R);
+          broken = true;
+        }
+        return;
+      }
       if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
         if (!broken) {
           flush();

@@ -3,6 +3,7 @@ import {
   GRID_DT,
   poseKeyframesOf,
   sampleVehiclePoseGame,
+  selectActiveDef,
   wrapPi,
 } from './vehiclePose.js'
 import type { AgentVehicleTrack } from '../../api/agent-replay-facets.js'
@@ -138,5 +139,32 @@ describe('sampleVehiclePoseGame（2D/3D 共用的唯一位姿采样器）', () =
     expect(wrapPi(2 * Math.PI)).toBeCloseTo(0, 9)
     expect(wrapPi(-3 * Math.PI)).toBeCloseTo(-Math.PI, 9)
     expect(wrapPi(0.5)).toBeCloseTo(0.5, 9)
+  })
+})
+
+describe('selectActiveDef（多实体账号的活跃实体选择，canonical 身份证据）', () => {
+  const defA = { ...gridDef({ eid: 7, account_id: 1 }) }
+  const defB = { ...gridDef({ eid: 9, account_id: 1 }) }
+  // 首见证据：eid 7 从 10s 起、eid 9 从 100s 起（同一账号的重入/复活换实体）
+  const starts = new Map<number, number | null>([[7, 10], [9, 100]])
+
+  it('单实体账号直取（无身份判定），空集合 = null', () => {
+    expect(selectActiveDef([defA], undefined, 0)).toBe(defA)
+    expect(selectActiveDef([defA], starts, 0)).toBe(defA)
+    expect(selectActiveDef([], starts, 50)).toBeNull()
+  })
+
+  it('多实体：按 activeEntityAt 选活跃实体——重入前取前实体，重入后取后实体', () => {
+    expect(selectActiveDef([defA, defB], starts, 50)).toBe(defA)
+    expect(selectActiveDef([defA, defB], starts, 10)).toBe(defA)
+    expect(selectActiveDef([defA, defB], starts, 150)).toBe(defB)
+    expect(selectActiveDef([defA, defB], starts, 100)).toBe(defB)
+  })
+
+  it('证据缺失/歧义（并列、null 首见、canonical 有而切面无）一律 null（回退 canonical）', () => {
+    expect(selectActiveDef([defA, defB], undefined, 50)).toBeNull()
+    expect(selectActiveDef([defA, defB], new Map([[7, null], [9, 100]]), 150)).toBeNull()
+    expect(selectActiveDef([defA, defB], new Map([[7, 10], [9, 10]]), 50)).toBeNull()
+    expect(selectActiveDef([defA, defB], new Map([[7, 10], [99, 100]]), 150)).toBeNull()
   })
 })

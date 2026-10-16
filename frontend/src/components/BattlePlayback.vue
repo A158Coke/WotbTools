@@ -59,7 +59,7 @@ import {
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
-import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
+import { selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
@@ -1595,11 +1595,22 @@ const poseSource = computed(() => {
   const offset = props.clockOffset
   if (!facet || !Number.isFinite(offset)) return null
   const byAccount = new Map()
-  for (const def of facet.vehicles || []) byAccount.set(def.account_id, def)
+  for (const def of facet.vehicles || []) {
+    const list = byAccount.get(def.account_id)
+    if (list) list.push(def)
+    else byAccount.set(def.account_id, [def])
+  }
   return {
     grid: { tStart: Number(facet.tStart) || 0, samples: Number(facet.samples) || 0 },
     offset,
-    defFor: (accountId) => byAccount.get(accountId) || null,
+    /**
+     * 活跃实体选择（`t` = 采样时刻，战斗相对秒）。多实体账号（AoI 重入 / 复活换实体）按
+     * canonical 身份证据判定——不能"后写覆盖"：那会在重入之前就采样到后一个实体，
+     * 而轨迹端点外钳位会把该实体的首帧位姿泄漏到过去。证据缺失/歧义 → null（回退 canonical）。
+     */
+    defFor: (accountId, t) => selectActiveDef(
+      byAccount.get(accountId) || [], facet.entityStartsByAccount?.get(accountId), t,
+    ),
   }
 })
 /** 位姿采样复用对象（每帧多车 + 尾迹回溯采样，零分配热路径） */
@@ -1611,12 +1622,13 @@ const _poseScratch = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0
 function poseAtTime(track, t) {
   const source = poseSource.value
   if (!source) return null
-  const def = source.defFor(track.accountId)
-  if (!def) return null
   // **失察即冻结**（2026-10-16 用户裁定）：车离开我方视野后图标停在最后观测点，不再跟随客户端
   // 滤波器的预测延续（3D 里该车模型直接不显示，两侧语义一致：2D 变灰停住 / 3D 消失）。
   const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
   if (freezeAt == null) return null
+  // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
+  const def = source.defFor(track.accountId, freezeAt)
+  if (!def) return null
   const pose = sampleVehiclePoseGame(def, source.grid, freezeAt + source.offset, _poseScratch)
   return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
 }
