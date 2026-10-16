@@ -1,7 +1,10 @@
 package com.wotb.core.replay.projection;
 
+import com.wotb.core.replay.event.HealthChangedEvent;
 import com.wotb.core.replay.event.HpRawState;
+import com.wotb.core.replay.event.VehicleHealthStateEvent;
 import com.wotb.core.replay.facts.ReplayFactsCodec;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -12,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.GZIPInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -159,5 +163,57 @@ class ClientAiProjectionReaderTest {
                     list + "：未登记枚举值必须 fail-closed（不得静默回退 hp_raw）");
             assertTrue(error.getMessage().contains("invalid"), error.getMessage());
         }
+    }
+
+    /**
+     * 端到端（AI 链路一侧，不只看 reader）：canonical {@code DEATH_TERMINAL} 配 {@code hpRaw = 0xFFFE}
+     * 必须原样装回 {@link ReplayReconstruction}（prop3 → {@link HealthChangedEvent}、method1 →
+     * {@link VehicleHealthStateEvent}），且分类是 **terminal**（alive=false、血量未知 ≠ 0）——不允许
+     * 「2D/3D 判死、AI 复盘未知/存活」。0xFFFE 档真实事故（1910 局弹药架殉爆）即此形状。
+     */
+    @Test
+    void canonicalTerminalSurvivesIntoTheAiReconstruction() throws Exception {
+        for (final String list : LISTS) {
+            final ObjectNode root = freshProjection();
+            final ObjectNode projection = (ObjectNode) root.get("projection");
+            final ObjectNode entry = (ObjectNode) projection.get(list).get(0);
+            entry.put("hpRaw", 0xFFFE);
+            entry.put("hpState", "DEATH_TERMINAL");
+            final int entityId = entry.get("entityId").asInt();
+            final double clock = entry.get("rawClockSec").asDouble();
+
+            final ClientAiProjection decoded = ReplayFactsCodec.projectionFromJson(projection);
+            final ReplayReconstruction reconstruction = ClientAiProjectionAdapter.toReconstruction(
+                    ReplayFactsCodec.battleFromJson(root.get("battle")), decoded);
+
+            if ("prop3Health".equals(list)) {
+                final List<HealthChangedEvent> events = reconstruction.events().stream()
+                        .filter(HealthChangedEvent.class::isInstance)
+                        .map(HealthChangedEvent.class::cast)
+                        .filter(e -> e.entityId() == entityId && sameClock(e.timestamp().rawClockSec(), clock))
+                        .toList();
+                assertEquals(1, events.size(), list + "：prop3 条目必须装回一条 HealthChangedEvent");
+                assertEquals(HpRawState.DEATH_TERMINAL, events.getFirst().rawState(), list);
+                assertTrue(events.getFirst().rawState().terminal(), list + "：canonical terminal 必须是终态分类");
+                assertEquals(Boolean.FALSE, events.getFirst().alive(), list + "：终态 ⇒ alive=false（与 2D/3D 同判）");
+                assertNull(events.getFirst().currentHealth(), list + "：终态哨兵血量未知 ≠ 0");
+                assertEquals(Integer.valueOf(0xFFFE), events.getFirst().rawCurrentHealth(), list);
+            } else {
+                final List<VehicleHealthStateEvent> events = reconstruction.events().stream()
+                        .filter(VehicleHealthStateEvent.class::isInstance)
+                        .map(VehicleHealthStateEvent.class::cast)
+                        .filter(e -> e.entityId() == entityId && sameClock(e.timestamp().rawClockSec(), clock))
+                        .toList();
+                assertEquals(1, events.size(), list + "：method1 条目必须装回一条 VehicleHealthStateEvent");
+                assertEquals(HpRawState.DEATH_TERMINAL, events.getFirst().rawState(), list);
+                assertTrue(events.getFirst().rawState().terminal(), list + "：canonical terminal 必须是终态分类");
+                assertEquals(0xFFFE, events.getFirst().currentHpRaw(), list);
+            }
+        }
+    }
+
+    /** 投影与事件流都是 float/double 混用；同刻判定用毫秒级容差（与适配器 ts() 的 float 舍入同量级）。 */
+    private static boolean sameClock(final float eventClock, final double projectedClock) {
+        return Math.abs(eventClock - projectedClock) < 1e-3;
     }
 }
