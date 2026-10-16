@@ -104,6 +104,8 @@ CSV 必须是本季赛**更新到当日的完整累计表**。每次提交整体
 
 管理页的修改记录列表仅查询操作摘要，不加载或传输整批 CSV 快照；完整前后记录仍保存在数据库中供内部审计、幂等和证据引用使用。`GET /api/admin/tournaments/{eventId}/audit` 的既有响应字段保持不变，其中 `before`、`after` 以空对象表示列表未包含快照。仅配置了应上传组数、尚无正式成绩的未来日期在 CSV 对应列为空时保留配置，不要求每日重复填写。
 
+证据定时清理与丢弃草稿只查询数据库投影出的去重截图 ID，不将完整审计快照加载到 Java。CSV 审计仅从替换前的 `publishedDays` 提取引用，跳过源积分行与前后榜单；其它历史操作继续识别前后状态中的截图引用。
+
 接口为 `POST /api/admin/tournaments/{eventId}/csv-import/preview` 与 `POST /api/admin/tournaments/{eventId}/csv-import`，均使用 multipart 的 `file` 和 `expectedEventVersion`；正式导入另需预览返回的 `sourceSha256`、`confirm=true` 和稳定的 `idempotencyKey`。完整字段以 OpenAPI 为准。
 
 ### 永久数据来源标识

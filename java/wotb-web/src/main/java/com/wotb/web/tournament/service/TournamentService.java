@@ -835,7 +835,7 @@ public class TournamentService {
             if (day.draftGroups != null) { day.draftGroups.forEach(group -> ids.add(group.evidenceId())); }
             if (day.publishedGroups != null) { day.publishedGroups.forEach(group -> ids.add(group.evidenceId())); }
         }
-        for (final TournamentAudit audit : audits.findByEventIdOrderByIdDesc(event.id)) { evidenceIds(audit.beforeState, ids); evidenceIds(audit.afterState, ids); }
+        ids.addAll(audits.findEvidenceIdsByEventId(event.id));
         final Instant cutoff = Instant.now().minus(24, ChronoUnit.HOURS); final Set<String> retainedHashes = new HashSet<>();
         for (final TournamentEvidence attachment : evidence.findByEventId(event.id)) {
             if (!ids.contains(attachment.id) && (immediate || attachment.createdAt.isBefore(cutoff))) { evidence.delete(attachment); }
@@ -845,12 +845,6 @@ public class TournamentService {
         // Scheduled sweeps keep the event lock while deleting unreferenced old files, preventing an
         // upload from reusing an orphan between the reference check and physical removal.
         if (!immediate) { storage.cleanup(event.id, retainedHashes, cutoff); }
-    }
-    private void evidenceIds(final Object value, final Set<String> ids) {
-        if (value instanceof TournamentSnapshot.Group group) { ids.add(group.evidenceId()); }
-        else if (value instanceof Map<?, ?> map) {
-            if (map.get("evidenceId") instanceof String id) { ids.add(id); } map.values().forEach(child -> evidenceIds(child, ids));
-        } else if (value instanceof Iterable<?> items) { items.forEach(child -> evidenceIds(child, ids)); }
     }
     private void afterCommit(final Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) { action.run(); return; }
