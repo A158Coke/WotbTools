@@ -34,6 +34,7 @@ The six former dashboards are deleted through OpenTofu. Dashboard deletion and r
 - Account hashes stay in the log **content**, not indexed stream labels or Prometheus labels. Active users are deduplicated across Web/Android; platform counts overlap and must not be added.
 - Other telemetry can be anonymous. Feature opens include initial entry, refresh and returning to a feature; parameter-only navigation within one feature does not count again. Managed/admin, documentation, contact and More pages are excluded.
 - Replay counters are per file entering a parse task. Ten selected files mean ten starts. Each operation has at most one success/failure/cancelled outcome. In-flight/page crashes are not automatically classified as failure. Re-parsing counts again.
+- Only the authoritative online connectivity state permits enqueueing or sending. Disconnect discards queued events; reconnect never replays offline usage. The first page can wait for initial connectivity settlement and is counted once if online.
 - The sender holds only a bounded in-memory queue; it does not persist visitor identity or offline history, and does not retry failed batches. Offline, old clients, blocked telemetry and page shutdown can undercount. Do not use these counts for billing, security audit or exact population estimates.
 - Foreground activity is periodic, so the newest few minutes can be incomplete. Requests are recorded at backend reception time; client `occurred_at` is diagnostic content, not a trusted Loki timestamp.
 

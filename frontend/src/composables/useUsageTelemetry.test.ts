@@ -5,10 +5,10 @@ import { computed, defineComponent, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { viewFromRoute } from '../app/navigation.js'
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), auth: null as any, connectivity: null as any }))
+const mocks = vi.hoisted(() => ({ post: vi.fn(), auth: null as any, connectivity: null as any, settled: null as any }))
 vi.mock('../api/usage-events.js', () => ({ postUsageEvents: mocks.post }))
 vi.mock('./useAuth.js', () => ({ useAuth: () => mocks.auth }))
-vi.mock('./useConnectivity.js', () => ({ useConnectivity: () => ({ connectivity: mocks.connectivity }) }))
+vi.mock('./useConnectivity.js', () => ({ useConnectivity: () => ({ connectivity: mocks.connectivity, settled: mocks.settled }) }))
 vi.mock('./usePlatformBridge.js', () => ({ isAndroidApp: () => false }))
 
 let wrappers: ReturnType<typeof mount>[] = []
@@ -25,6 +25,7 @@ beforeEach(async () => {
   vi.useFakeTimers()
   mocks.post.mockReset().mockResolvedValue(undefined)
   mocks.connectivity = ref('online')
+  mocks.settled = ref(true)
   mocks.auth = { authenticated: ref(false), authInitState: ref('initializing'), authEpoch: () => 1 }
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
   const module = await import('./useUsageTelemetry.js')
@@ -46,6 +47,78 @@ function start(view = ref('home')) {
 }
 
 describe('foreground product telemetry', () => {
+  it('emits the initial page once after the first online connectivity result', async () => {
+    mocks.connectivity.value = 'unknown'
+    mocks.settled.value = false
+    start()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+    mocks.settled.value = true
+    mocks.connectivity.value = 'online'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(events().map(e => e.feature)).toEqual(['home'])
+    mocks.connectivity.value = 'offline'
+    mocks.connectivity.value = 'online'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(events().map(e => e.feature)).toEqual(['home'])
+  })
+
+  it('drops the initial page when the first connectivity result is offline', async () => {
+    mocks.connectivity.value = 'unknown'
+    mocks.settled.value = false
+    start()
+    mocks.connectivity.value = 'offline'
+    mocks.settled.value = true
+    await nextTick()
+    mocks.connectivity.value = 'online'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+  it.each(['offline', 'unknown', 'degraded', 'service-unavailable'])('does not enqueue or upload events while %s', async state => {
+    mocks.connectivity.value = state
+    start()
+    record({ event: 'replay_parse', feature: 'replay_parse', outcome: 'start', operation_id: crypto.randomUUID() })
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+    mocks.connectivity.value = 'online'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('discards a queued online event when disconnected before the flush and never replays it', async () => {
+    start()
+    record({ event: 'feature_open', feature: 'armor' })
+    mocks.connectivity.value = 'offline'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+    mocks.connectivity.value = 'online'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('discards a pending hidden-page open when disconnected', async () => {
+    const view = ref('home')
+    start(view)
+    await vi.advanceTimersByTimeAsync(5_000)
+    mocks.post.mockClear()
+    visible('hidden')
+    view.value = 'agent-armor'
+    await nextTick()
+    mocks.connectivity.value = 'offline'
+    view.value = 'hof'
+    await nextTick()
+    mocks.connectivity.value = 'online'
+    visible('visible')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
+
+  it('rechecks connectivity when a flush runs without a mounted shell' , async () => {
+    record({ event: 'feature_open', feature: 'armor' })
+    mocks.connectivity.value = 'offline'
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mocks.post).not.toHaveBeenCalled()
+  })
   it('waits for authentication, pauses heartbeats while hidden and reports foreground recovery', async () => {
     start()
     await vi.advanceTimersByTimeAsync(5_000)

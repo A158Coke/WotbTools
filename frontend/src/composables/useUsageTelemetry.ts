@@ -13,11 +13,18 @@ const queue: UsageEvent[] = []
 let sending = false
 let flushTimer: ReturnType<typeof setTimeout> | undefined
 
+const online = () => String(useConnectivity().connectivity.value) === ConnectivityState.ONLINE
+function discardQueue(): void {
+  queue.length = 0
+  clearTimeout(flushTimer)
+  flushTimer = undefined
+}
+
 /** No disk queue, persistent visitor identifier, file names or raw exceptions. */
 export function recordUsage(input: Pick<UsageEvent, 'event' | 'feature'> & Partial<Pick<UsageEvent,
   'outcome' | 'operation_id' | 'error_code' | 'error_id'>>): void {
   try {
-    if (queue.length >= MAX_QUEUE) return
+    if (!online() || queue.length >= MAX_QUEUE) return
     queue.push({ ...input, event_id: crypto.randomUUID(), occurred_at: new Date().toISOString(),
       platform: isAndroidApp() ? 'android' : 'web' })
     if (!flushTimer) flushTimer = setTimeout(() => { flushTimer = undefined; void flushUsage() }, FLUSH_MS)
@@ -25,10 +32,12 @@ export function recordUsage(input: Pick<UsageEvent, 'event' | 'feature'> & Parti
 }
 
 async function flushUsage(): Promise<void> {
+  if (!online()) { discardQueue(); return }
   if (sending) return
   sending = true
   try {
     while (queue.length) {
+      if (!online()) { discardQueue(); return }
       const batch = queue.splice(0, BATCH_SIZE)
       try { await postUsageEvents(batch) } catch { /* Discard; no retry/offline backlog. */ }
     }
@@ -51,11 +60,12 @@ let activityInFlight = false
 /** AppShell supplies the canonical router view; query-only changes do not reopen a feature. */
 export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
   const auth = useAuth()
-  const { connectivity } = useConnectivity()
+  const { connectivity, settled } = useConnectivity()
   const owner = Symbol('usage-owner')
   let heartbeat: ReturnType<typeof setInterval> | undefined
   let previousView: string | undefined
   let pendingView: string | undefined
+  let initialView: string | undefined
   const foreground = () => currentOwner === owner && document.visibilityState !== 'hidden'
 
   async function activity(force = false): Promise<void> {
@@ -69,7 +79,7 @@ export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
       await postUsageEvents([{
         event_id: crypto.randomUUID(), event: 'active_user', feature: 'home',
         platform: isAndroidApp() ? 'android' : 'web', occurred_at: new Date().toISOString(),
-      }], { auth, isCurrent: () => foreground() && auth.authenticated.value && auth.authEpoch() === epoch })
+      }], { auth, isCurrent: () => online() && foreground() && auth.authenticated.value && auth.authEpoch() === epoch })
     } catch { /* The next normal foreground heartbeat can try again. */ }
     finally { activityInFlight = false }
   }
@@ -78,6 +88,8 @@ export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
     if (currentOwner !== owner) return
     if (next === previousView) return
     previousView = next
+    if (!settled.value) { initialView = next; return }
+    if (!online()) return
     if (!foreground()) { pendingView = next; return }
     pendingView = undefined
     const feature = FEATURE_BY_VIEW[next]
@@ -91,6 +103,21 @@ export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
     }
   }
   const stopView = watch(view, recordView)
+  const stopConnectivity = watch(connectivity, () => {
+    if (!online()) {
+      discardQueue()
+      pendingView = undefined
+    }
+  }, { flush: 'sync' })
+  // The connectivity owner sets settled before projecting its first state.
+  // Observe the completed Vue update rather than consuming that intermediate state.
+  const stopInitialView = watch([connectivity, settled], () => {
+    if (settled.value && initialView) {
+      const next = initialView
+      initialView = undefined
+      if (online()) { previousView = undefined; recordView(next) }
+    }
+  })
   const stopAuth = watch([auth.authenticated, auth.authInitState, () => auth.authEpoch(), connectivity], () => {
     void activity()
   })
@@ -108,6 +135,8 @@ export function useUsageTelemetry(view: Readonly<Ref<string>>): void {
   })
   onUnmounted(() => {
     stopView()
+    stopConnectivity()
+    stopInitialView()
     stopAuth()
     clearInterval(heartbeat)
     document.removeEventListener('visibilitychange', visibilityChanged)
