@@ -1,8 +1,59 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
+import Ajv2020 from 'ajv/dist/2020.js'
+import addFormats from 'ajv-formats'
 import { validateApiError, validateBattlePlaybackDataset } from './contract-runtime.js'
 import { API_ERROR_CODES } from './generated/api-error-codes.js'
+import contractSchema from './generated/playback-v2.schema.js'
+import { tournamentDefaultRulesValidator, tournamentRuleSourceValidator } from './generated/contract-validators.js'
 import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
+
+describe('tournament default rule wire compatibility', () => {
+  it('accepts seeded and deleted-source snapshots, including real zero points and no fifth-place rule', () => {
+    const snapshot = {
+      version: 1, active: true, sourceEventId: null, sourceLabel: '2026 FIRE_CUP',
+      updatedAt: '2026-10-16T00:00:00Z',
+      rounds: Array.from({ length: 5 }, (_, round) => ({
+        roundNumber: round + 1,
+        days: [1, 2].map(dayNumber => ({ dayNumber, points: [1, 2, 3, 4].map(rank => ({ rank, points: 0 })) })),
+      })),
+    }
+    expect(tournamentDefaultRulesValidator(snapshot)).toBe(true)
+    expect(tournamentDefaultRulesValidator({ ...snapshot, sourceEventId: 7 })).toBe(true)
+    expect(tournamentDefaultRulesValidator({ ...snapshot, sourceEventId: 0 })).toBe(false)
+    expect(tournamentDefaultRulesValidator({ ...snapshot, version: -1 })).toBe(false)
+    expect(tournamentDefaultRulesValidator({ ...snapshot, updatedAt: 'invalid' })).toBe(false)
+  })
+
+  it('retains the inactive singleton version and accepts frozen rules without default provenance', () => {
+    expect(tournamentDefaultRulesValidator({
+      version: 3, active: false, sourceEventId: null, sourceLabel: '', updatedAt: null, rounds: [],
+    })).toBe(true)
+    const source = { eventVersion: 2, source: 'INHERIT', defaultVersion: 3, isDefaultSource: false, defaultOutdated: false }
+    expect(tournamentRuleSourceValidator(source)).toBe(true)
+    expect(tournamentRuleSourceValidator({ ...source, source: 'FROZEN', defaultVersion: null })).toBe(true)
+    expect(tournamentRuleSourceValidator({ ...source, source: 'inherit' })).toBe(false)
+    expect(tournamentRuleSourceValidator({ ...source, defaultVersion: -1 })).toBe(false)
+  })
+
+  it.each([
+    ['TournamentRuleRequest', { expectedEventVersion: 0, expectedRulesVersion: 0, days: [] }],
+    ['TournamentExpectedGroupsRequest', { expectedEventVersion: 0, expectedDayVersion: 0, expectedGroupCount: 1 }],
+  ])('keeps legacy %s payloads valid while bounding an explicit default version', (name, legacy) => {
+    const ajv = new Ajv2020({ strict: false })
+    addFormats(ajv)
+    const validate = ajv.compile({
+      $schema: contractSchema.$schema, $defs: contractSchema.$defs, $ref: `#/$defs/${name}`,
+    })
+    expect(validate(legacy)).toBe(true)
+    for (const expectedDefaultVersion of [null, 0, 3]) {
+      expect(validate({ ...legacy, expectedDefaultVersion })).toBe(true)
+    }
+    for (const expectedDefaultVersion of [-1, 1.5, '3']) {
+      expect(validate({ ...legacy, expectedDefaultVersion })).toBe(false)
+    }
+  })
+})
 
 it('loads generated validators as native ESM and enforces Unicode tag lengths', () => {
   // Vitest's transform can supply require; a separate native ESM process cannot.

@@ -2,6 +2,7 @@ package com.wotb.web.tournament.mapper;
 
 import com.wotb.web.tournament.dto.TournamentDtos;
 import com.wotb.web.tournament.entity.TournamentEvent;
+import com.wotb.web.tournament.entity.TournamentDefaultRules;
 import com.wotb.web.tournament.entity.TournamentRule;
 import com.wotb.web.tournament.entity.TournamentSnapshot;
 import com.wotb.web.tournament.entity.TournamentAudit;
@@ -21,6 +22,21 @@ public class TournamentMapper implements Mapper<TournamentEvent, TournamentDtos.
         return new TournamentDtos.RoundRule(rule.roundNumber, rule.rulesVersion, complete, locked,
                 rule.days.stream().map(day -> new TournamentDtos.RuleDay(day.dayNumber(), day.points().stream()
                         .map(point -> new TournamentDtos.RankPoints(point.rank(), point.points())).toList())).toList());
+    }
+    public TournamentDtos.DefaultRules defaultRules(final TournamentDefaultRules defaults) {
+        return new TournamentDtos.DefaultRules(defaults.version, defaults.active, defaults.sourceEventId,
+                defaults.sourceLabel, defaults.updatedAt, defaults.rounds.stream().map(round ->
+                new TournamentDtos.DefaultRound(round.roundNumber(), round.days().stream().map(day ->
+                        new TournamentDtos.RuleDay(day.dayNumber(), day.points().stream().map(point ->
+                                new TournamentDtos.RankPoints(point.rank(), point.points())).toList())).toList())).toList());
+    }
+    public TournamentDtos.RuleSource ruleSource(final TournamentEvent event, final Long defaultVersion,
+                                               final boolean source, final boolean outdated) {
+        final String state = switch (event.ruleSource) {
+            case "INHERIT" -> "INHERIT"; case "CUSTOM" -> "CUSTOM"; case "FROZEN" -> "FROZEN";
+            default -> throw new IllegalStateException("Unknown stored tournament rule source");
+        };
+        return new TournamentDtos.RuleSource(event.version, state, defaultVersion, source, outdated);
     }
     public TournamentDtos.Group group(final TournamentSnapshot.Group group) {
         return new TournamentDtos.Group(group.groupNumber(), group.evidenceId(), group.imageHash(),
