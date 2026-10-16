@@ -361,6 +361,11 @@ WotBTools
 - **回归背景**：−1/−2 档弹药架殉爆（实例 1910 局 Intotherainy `0xFFFE`）曾因本层只认
   {0x0000, 0xFFFD} 被判成存活（血量冻在最后正值、装填条继续外播）。裁决与迁移账见上游
   `WoT-Blitz-Agent` §七（`docs/wotbtools-cross-reference.md`）。
+- **上线顺序（部署纪律）**：该字段的**读取边界兼容先行**——服务端 `ReplayFactsCodec` 忽略未知
+  additive 字段（`PROJECTION_MAPPER`）并已能消费 `hpState`（`HpRawState.fromWireName` 显式映射）；
+  客户端投影的**发送**在 tolerant reader 部署到生产之后由 follow-up 打开（`toClientAiReviewProjection`
+  当前仍只发 `hpRaw`）。原因：旧服务镜像的严格读取器会把未知字段判 400（`/api/ai/reviews`），
+  且 `ai-service` 与前端是两条独立的 main-push 工作流、也无回滚保护。
 
 ## 5. 射击复现能力（ShotReplays）
 

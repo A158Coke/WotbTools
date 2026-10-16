@@ -142,7 +142,7 @@ consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解
 | XYZ 位置 | PROVEN / EXACT（位置流） | type-10；LAST_KNOWN 时降级 |
 | hullYaw | PROVEN / EXACT | type-10 yaw（弧度→度） |
 | turretRelativeYaw | PROVEN / EXACT | type-7 propId=2（u16*360/65536-180） |
-| currentHp | PROVEN / EXACT | Type5 物化 / type-7 prop3 / Vehicle method1 的可信 HP；原始 u16 经 `HpRawState` 分类，0xFFFD 只证明终态，不伪造 HP=0 |
+| currentHp | PROVEN / EXACT | Type5 物化 / type-7 prop3 / Vehicle method1 的可信 HP；原始 u16 经 `HpRawState` 分类——投影携带 `hpState` 时以其为权威（不重新分类），缺省按 legacy 口径（0/0xFFFD 终态），终态哨兵只证明终态、不伪造 HP=0 |
 | displayCapacityHp | DERIVED（presentation） | 截至当前时刻的观测 HP 最大值；不是实际 maxHp，不读未来采样 |
 | destroyed（world fact） | PROVEN / EXACT | EXACT alive=false / 死亡 sentinel |
 | damage / points | PROVEN / EXACT | type-8 伤害；type-8 subtype48 root field12（争霸实时点数） |
