@@ -7,21 +7,6 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  # This owner probes the remote Yecao Loki immediately after recreating Alloy.
-  # Loki may legitimately return a short-lived 503 while its observability owner
-  # is converging. Retry only in the alloy-tx compose overlay; persistent failure
-  # still exits non-zero and keeps the blocking deployment gate fail-closed.
-  health-probe:
-    entrypoint:
-      - curl
-      - --retry
-      - "30"
-      - --retry-delay
-      - "2"
-      - --retry-max-time
-      - "60"
-      - --retry-all-errors
-
   alloy-tx:
     image: grafana/alloy:v1.4.2
     command:
