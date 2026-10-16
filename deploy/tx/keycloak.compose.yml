@@ -19,6 +19,13 @@ services:
       KC_DB_USERNAME: ${KC_DB_USERNAME:?KC_DB_USERNAME is required}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
       WG_APPLICATION_ID: ${WG_APPLICATION_ID:?WG_APPLICATION_ID is required}
+      # 受控安全事件日志（公安自评估「日志信息留存措施」）。infra/tofu/keycloak/events.tf
+      # 打开 realm events 并注册 jboss-logging listener，但 Keycloak 对**成功**事件
+      # （LOGIN / LOGOUT / IDENTITY_PROVIDER_LOGIN、以及全部 admin event）默认只记到
+      # DEBUG——只有失败事件是 WARN。不抬这个 logger 的级别，190 天留存里就只有登录失败、
+      # 看不到任何成功登录证据。作用域精确到 org.keycloak.events（该 logger 只被事件
+      # listener 使用），其余日志仍是 info。
+      KC_LOG_LEVEL: info,org.keycloak.events:debug
     command: start --optimized --hostname=https://auth.wotbtools.com --hostname-strict=true --http-enabled=true --http-port=8080 --proxy-headers=xforwarded
     ports:
       # OpenTofu runs on TX and manages Keycloak through this loopback-only port.

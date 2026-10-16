@@ -63,6 +63,18 @@ assert "android" in affected(".github/workflows/android-release.yml"), "release 
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
+# The gateway fixture suite is owned by the Caddy gateway: ci-caddy.yml is the only
+# workflow that runs it, so a Caddyfile-only change still re-runs the runtime proof
+# of the compliance access log instead of only its staged text/JSON assertions.
+assert affected("deploy/test-caddy-route-inventory.sh") == {"caddy", "deployment"}
+assert "deploy/test-caddy-route-inventory.sh" in json.dumps(
+    load(workflow_dir / "ci-caddy.yml"), ensure_ascii=False
+), "the Caddy owner must run its own public-site inventory and access-log fixtures"
+assert not [
+    step for job in load(workflow_dir / "ci-deployment.yml")["jobs"].values()
+    for step in job.get("steps", [])
+    if "bash deploy/test-caddy-route-inventory.sh" in step.get("run", "")
+], "the gateway fixtures must run in exactly one owner"
 # Owner-boundary guards for the Komodo control plane:
 # - the Caddy gateway publishes Komodo but must never depend on Komodo-owned
 #   inputs (a Core release bump may not re-run, or fail, the gateway on its own);
