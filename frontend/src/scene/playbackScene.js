@@ -55,7 +55,10 @@ import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTim
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
-import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
+import {
+  DMG_ASPECT, DMG_INK_RATIO, DMG_LABEL_GAP_PX, DMG_RISE_PX, DMG_TEX_H, DMG_TEX_W,
+  dmgWorldHeight, floatDmgAnim, worldPerScreenPx,
+} from './floatDmg.js'
 import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
@@ -2029,15 +2032,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     publishLabels(true);
     invalidate();
   }
+  // 名牌锚点（= 名牌块底边）相对车体的世界抬升。名牌与伤害飘字共用这一个事实源：
+  // 飘字要落在名牌之上，就必须从同一个锚点往上量，否则两者各算各的会重新叠在一起。
+  // In symbol mode the icon replaces the hull at its projected position;
+  // ordinary labels keep their headroom above the visible vehicle model.
+  function labelLiftWorld(distance) {
+    return classIconsVisible() ? 0.3 : Math.min(6, Math.max(3.25, distance * 0.045));
+  }
   function updateLabels() {
     if (!labelOverlay) return;
     camera.updateMatrixWorld();
     for (const v of V) {
       const d = camera.position.distanceTo(v.group.position);
       v.labelAnchor.copy(v.group.position);
-      // In symbol mode the icon replaces the hull at its projected position;
-      // ordinary labels keep their headroom above the visible vehicle model.
-      v.labelAnchor.y += classIconsVisible() ? 0.3 : Math.min(6, Math.max(3.25, d * 0.045));
+      v.labelAnchor.y += labelLiftWorld(d);
     }
     updateLabelOcclusion();
     for (const v of V) {
@@ -3300,7 +3308,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
-  let floatDmgs = [];          // { sp, tex, born, baseY, group }
+  let floatDmgs = [];          // { sp, tex, cv, born, group, labelPx }
   let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
@@ -3357,6 +3365,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return { sp, tex, cv, ctx: cv.getContext('2d') };
   }
 
+  // 飘字落点（屏幕空间约束 → 世界空间）：名牌块顶边之上 DMG_LABEL_GAP_PX 像素处，
+  // 随生命周期沿屏幕垂直方向上浮。名牌已经是 HTML 覆盖层、永远盖在 canvas 之上，
+  // sprite 的 renderOrder 对它无效——不主动避让就必被名牌压住（"伤害数字只露半截"的成因）。
+  // 偏移方向取相机 up 而不是世界 y：俯视镜头下世界 y 近乎指向相机，沿它抬高只会让数字
+  // 变大、不会在屏幕上升起。
+  // ponytail: 只避让「这辆车自己的」名牌；正上方另一辆车的名牌仍可能压住飘字（DOM 恒在
+  // canvas 之上）。要彻底消除得把飘字也搬进 HTML 覆盖层，与名牌同层用 z-index 排序。
+  const dmgUpScratch = new THREE.Vector3();
+  function placeFloatDmg(f, k, pop) {
+    const d = camera.position.distanceTo(f.group.position);
+    const worldH = dmgWorldHeight(d, camera.fov) * pop;
+    const perPx = worldPerScreenPx(d, camera.fov, container.clientHeight);
+    const upPx = f.labelPx + DMG_LABEL_GAP_PX + k * DMG_RISE_PX;
+    dmgUpScratch.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    f.sp.position.copy(f.group.position);        // 跟随车辆漂移
+    f.sp.position.y += labelLiftWorld(d);        // 名牌块底边
+    // 盒高含透明留白，贴名牌顶边要按墨迹半高抬，否则目测间隙偏大
+    f.sp.position.addScaledVector(dmgUpScratch, upPx * perPx + (worldH * DMG_INK_RATIO) / 2);
+    f.sp.scale.set(worldH * DMG_ASPECT, worldH, 1);   // 屏上占比恒定（拉远看全场也读得出）
+  }
+
   function spawnFloatDmg(eid, hpLoss) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
@@ -3378,13 +3407,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     c.lineWidth = 16; c.strokeStyle = 'rgba(0,0,0,.95)'; c.strokeText(text, cx, cy);
     c.fillStyle = '#ffb340'; c.fillText(text, cx, cy);
     tex.needsUpdate = true;
-    // 池复用：出生状态归位（透明度/尺寸/可见性由 updateTransients 逐帧驱动）
+    // 池复用：出生状态归位（位置/尺寸由 placeFloatDmg 设定，透明度由 updateTransients 驱动）
     sp.material.opacity = 1;
     sp.visible = showMarkerStatus;
-    sp.scale.set(DMG_ASPECT, 1, 1);        // 实际尺寸每帧按距离设定（屏上占比恒定，见 updateTransients）
-    sp.position.copy(v.group.position); sp.position.y += 3.2;
+    // 名牌块高只在出生时量一次：飘字寿命内名牌内容不会变，而每帧读 offsetHeight 会把
+    // 同步布局拖进渲染循环。名牌隐藏 / 覆盖层缺席 → 0，飘字退回"车体上方"的老位置。
+    const labelPx = labelOverlay?.labelHeight?.(eid) || 0;
+    const fx3d = { sp, tex, cv, born: performance.now(), group: v.group, labelPx };
+    placeFloatDmg(fx3d, 0, floatDmgAnim(0).pop);   // 出生帧就位，不等下一帧
     labelScene.add(sp);
-    floatDmgs.push({ sp, tex, cv, born: performance.now(), baseY: sp.position.y, group: v.group });
+    floatDmgs.push(fx3d);
     // 同源触发 HP 条反馈（2D 三件套：飘字 + 幽灵 + 闪，同一 loss 事件驱动）
     const nowMs = performance.now();
     const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
@@ -3433,14 +3465,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         floatDmgs.splice(i, 1);
         continue;
       }
-      // 跟随车辆水平漂移 + 上浮；尺寸按距离反算（屏上占比恒定，拉远看全场也读得出），
+      // 位置与尺寸见 placeFloatDmg（跟随车辆 + 落在名牌之上 + 屏上占比恒定）；
       // 不透明度"先保持后淡出"（线性淡出会让数字来不及读）
-      f.sp.position.x = f.group.position.x;
-      f.sp.position.z = f.group.position.z;
-      f.sp.position.y = f.baseY + k * 4.5;
       const { pop, opacity } = floatDmgAnim(k);
-      const s = dmgWorldHeight(camera.position.distanceTo(f.sp.position), camera.fov) * pop;
-      f.sp.scale.set(s * DMG_ASPECT, s, 1);
+      placeFloatDmg(f, k, pop);
       f.sp.material.opacity = opacity;
     }
   }
