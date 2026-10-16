@@ -203,6 +203,41 @@ nginx 服务，且直推是覆盖写）；③ `ln` 失败即比对目标现有 S
 - 若更换网盘目录或分享链接，必须同步修改 TX1 Caddyfile 的 redir 目标与 workflow 步骤里的
   `REPO_ID` / 分享 token，两边一一对应。
 
+### 卸载链路体检（offload probe）
+
+`runner → 清华网盘` 的直接上传是全链路最慢的一段：2026-10-16 实测同尺寸（201276631 B，
+GeckoView 双 ABI）用掉 2058s（≈98 KB/s，占 `--max-time 2700` 的 76%），当天 12:11 的 stage
+直接超时失败（run 38898856907，step `Upload APK to Tsinghua Cloud`）。同一台网盘**读**侧并不慢
+（TX1 拉 201276631 B 用 16.3s ≈ 12.3 MB/s，runner 走公网直链回读 ~10 MB/s）——瓶颈是那台校园
+Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「写」这一跳挪到境内主机
+（runner → 上海 COS → TX1 → 网盘）：`.github/workflows/android-offload-probe.yml` 是它的第一步，
+**只取数字**，不动发布路径。
+
+何时跑：`workflow_dispatch`（`environment: tx-production`，与部署/备份共用
+`production-maintenance` 队列）。它要求 dispatched SHA == 当前 `main`，不写 version.json /
+tag / staging evidence，不 seed origin，只在网盘上写一个 `_offload-probe-<run>.bin` 探针对象
+并在结束前删除（`.bin` 不在 Caddy 的 `*.apk` 重定向范围内，即使清理失败也不可能被当成 APK 分发）。
+
+它测四件事：
+
+1. **runner → COS**：单流（1 part）与 8 路分片各一次。分片并发是 Seafile 那条单个 multipart POST
+   没有的杠杆——链路差时靠它把最坏情况压回可重试的量级。缺 `secrets.COS_RELEASE_SECRET_ID` /
+   `secrets.COS_RELEASE_SECRET_KEY` / `vars.COS_RELEASE_BUCKET` 时该段跳过（`::notice::`），其余段照测；
+   `vars.COS_REGION` 缺省 `ap-shanghai`。凭证按最小权限建：发布专用桶（与资产桶
+   `wotbtools-assets-*` **分开**）的 `android/*` 前缀 Put/Get/Delete，不给 ListBucket。
+2. **COS → TX1**：主机从预签名直链拉回 + `sha256sum -c`，并打印该主机把 COS 域名解析到**内网还是
+   公网**（同地域内网流量免费；跨地域不支持内网，故发布桶应与 TX 主机同地域）。
+3. **TX1 → 清华网盘**：与 `android-release.yml` 同一协议（upload-link → multipart `replace=1`），
+   记录 `speed_upload`；token 优先取主机上的 `/etc/wotb-tx/tsinghua-cloud.token`（0600，目标形态），
+   缺失时回落到 ssh env 里的仓库 secret，并打印实际来源——便于确认「token 收敛到主机」的进度。
+4. **分享直链回读 + 删除**：与发布路径同一权威——下载回来 SHA-256 一致才算过；随后删除探针对象并
+   确认直链不再服务它（该部署对缺失对象返回 200 + 小 HTML 页，所以按服务的字节数判定，不按状态码）。
+
+判据（写进 job summary）：两段都 ≥ 2 MiB/s ⇒ 采纳「TX1 落地」方案；0.3–2 MiB/s ⇒ 采纳，但后续
+host 侧脚本需要调并发/超时；< 0.3 MiB/s ⇒ 改由 TX2 推，或换对象存储。**本探针只测量**：把 runner
+直传改成 TX1 落地（步骤重排、host 侧脚本、token 收敛）是后续工作；在那之前
+`android-release.yml` 的直传路径仍是唯一发布路径。
+
 ### publish 的候选身份：显式版本，不是当前 main
 
 ```text
