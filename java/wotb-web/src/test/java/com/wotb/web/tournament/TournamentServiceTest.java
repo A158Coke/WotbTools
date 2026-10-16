@@ -308,6 +308,30 @@ class TournamentServiceTest {
         assertTrue(result.getFirst().before().isEmpty()); assertTrue(result.getFirst().after().isEmpty());
         verify(audits).findMetadataByEventId(1L); verify(audits, never()).findByEventIdOrderByIdDesc(1L);
     }
+    @Test void csvPreviewKeepsClearedBlankCellsMissingAndCountsTheirRemoval() {
+        day.publishedHistoricalPoints = Map.of("A", 100, "B", 50); day.clearedClans = Set.of("A");
+        final var blank = service.previewCsv(1, 0, csv(csvText("A", "", "", "0") + "B,5,,,,,,,,,,5\n"));
+        final var missing = blank.standings().rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow();
+        assertNull(missing.rounds().getFirst().days().getFirst().points()); assertEquals(0, missing.totalPoints());
+        assertEquals(1, blank.changes().removedScores()); assertEquals(1, blank.changes().changedScores()); assertEquals(1, blank.changes().preservedClears());
+        final var zero = service.previewCsv(1, 0, csv(csvText("A", "0", "", "0") + "B,5,,,,,,,,,,5\n"));
+        assertEquals(0L, zero.standings().rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
+        assertEquals(0, zero.changes().removedScores()); assertEquals(Set.of("A"), day.clearedClans);
+    }
+    @Test void csvEmptyDayDoesNotCreateZeroFromAPreservedSanction() {
+        day.publishedHistoricalPoints = Map.of("A", 100); day.clearedClans = Set.of("A"); event.csvImported = true;
+        final var preview = service.previewCsv(1, 0, csv(csvText("A", "", "", "0")));
+        assertTrue(preview.standings().rows().getFirst().rounds().getFirst().days().stream().allMatch(value -> value.points() == null));
+        assertFalse(preview.standings().days().getFirst().published()); assertEquals(1, preview.changes().removedScores());
+        assertEquals(1, preview.changes().preservedClears()); assertEquals(Set.of("A"), day.clearedClans);
+    }
+    @Test void screenshotProjectionRetainsItsExistingExplicitSanctionBehaviorAfterCsvUse() {
+        event.csvImported = true; final TournamentClan cleared = new TournamentClan();
+        cleared.eventId = 1; cleared.clanTag = "A"; cleared.historicalPublished = true; clanRows.add(cleared); day.clearedClans = Set.of("A");
+        day.publishedGroups = List.of(new TournamentSnapshot.Group(1, "evidence", "a".repeat(64),
+                List.of(new TournamentSnapshot.Team("B", 1), new TournamentSnapshot.Team("C", 2), new TournamentSnapshot.Team("D", 3))));
+        assertEquals(0L, service.publicStandings(1).rows().stream().filter(row -> row.clanTag().equals("A")).findFirst().orElseThrow().rounds().getFirst().days().getFirst().points());
+    }
     @Test void csvRfcQuotesChineseTagsBomAndReorderedHeadersKeepNullAndZeroDistinct() {
         final String header = "总积分,R1D2,军团标签,R1D1,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2\r\n";
         final var preview = service.previewCsv(1, 0, csv("\ufeff" + header + "7,0,\"军团,\"\"甲\"\"\",7,,,,,,,,\r\n"));

@@ -39,6 +39,8 @@ import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -150,6 +152,60 @@ class TournamentIntegrationTest {
         assertEquals(List.of("B"), service.publicStandings(id).rows().stream().map(TournamentDtos.StandingRow::clanTag).toList());
         assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(id, 1, 1).orElseThrow().clearedClans.contains("A"));
         assertTrue(service.dataSource(id).csvImported());
+    }
+    @Test void csvSanctionKeepsBlankAndZeroDistinctAndStillAppliesWhenScoresReturn() throws Exception {
+        final var initial = csv(csvText("A,100,,,,,,,,,,100\nB,50,,,,,,,,,,50\n"));
+        final var first = service.previewCsv(id, service.config(id).event().version(), initial);
+        service.importCsv("admin", id, first.eventVersion(), initial, first.sourceSha256(), true, "initial");
+        service.clearPoints("admin", id, new TournamentDtos.ClearRequest(service.config(id).event().version(), 1, 1, "A", "sanction", false));
+        final var blank = csv(csvText("A,,,,,,,,,,,0\nB,50,,,,,,,,,,50\n"));
+        final var blankPreview = service.previewCsv(id, service.config(id).event().version(), blank);
+        assertNull(summerRow(blankPreview.standings(), "A").rounds().getFirst().days().getFirst().points());
+        assertEquals(1, blankPreview.changes().removedScores()); assertEquals(0, blankPreview.changes().changedScores());
+        final var replaced = service.importCsv("admin", id, blankPreview.eventVersion(), blank, blankPreview.sourceSha256(), true, "blank");
+        assertEquals(blankPreview.changes(), replaced.changes()); assertEquals(blankPreview.standings().rows(), service.publicStandings(id).rows());
+        assertNull(summerRow(service.publicStandings(id), "A").rounds().getFirst().days().getFirst().points());
+        final var noScores = csv(csvText("A,,,,,,,,,,,0\nB,,,,,,,,,,,0\n"));
+        final var emptyPreview = service.previewCsv(id, replaced.eventVersion(), noScores);
+        final var empty = service.importCsv("admin", id, emptyPreview.eventVersion(), noScores, emptyPreview.sourceSha256(), true, "empty");
+        assertFalse(empty.standings().days().getFirst().published());
+        assertNull(summerRow(service.publicStandings(id), "A").rounds().getFirst().days().getFirst().points());
+        assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(id, 1, 1).orElseThrow().clearedClans.contains("A"));
+        final var scored = csv(csvText("A,900,,,,,,,,,,900\nB,0,,,,,,,,,,0\n"));
+        final var scorePreview = service.previewCsv(id, empty.eventVersion(), scored);
+        assertEquals(2, scorePreview.changes().addedScores()); assertEquals(1, scorePreview.changes().preservedClears());
+        service.importCsv("admin", id, scorePreview.eventVersion(), scored, scorePreview.sourceSha256(), true, "scored");
+        assertEquals(0L, summerRow(service.publicStandings(id), "A").rounds().getFirst().days().getFirst().points());
+        assertEquals(0L, summerRow(service.publicStandings(id), "B").rounds().getFirst().days().getFirst().points());
+        service.clearPoints("admin", id, new TournamentDtos.ClearRequest(service.config(id).event().version(), 1, 1, "A", "restore", true));
+        assertEquals(900, summerRow(service.publicStandings(id), "A").totalPoints());
+    }
+    @Test void csvReplacementAuditRetainsOldScreenshotEvidenceThroughAnActualExpiredOrphanSweep() throws Exception {
+        final var orphan = group(id, 1, 1, 1, 99, "A", "B", "C");
+        final var original = group(id, 1, 1, 1, 0, "A", "B", "C");
+        save(id, 1, 1, List.of(original), List.of("A", "B", "C")); publish(id, 1, 1, "screenshot");
+        // Isolate the CSV replacement's reference, including snapshots without a legacy publication audit.
+        jdbc.update("delete from tournament_audit where event_id=? and action='DAY_PUBLISHED'", id);
+        final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "replace-screenshot");
+        final var imported = audits.findCsvImport(id, "replace-screenshot").orElseThrow();
+        final var oldDay = (Map<?, ?>) ((List<?>) imported.beforeState.get("publishedDays")).getFirst();
+        assertEquals(1, ((Number) oldDay.get("roundNumber")).intValue()); assertEquals(1, ((Number) oldDay.get("dayNumber")).intValue());
+        final var oldGroup = (Map<?, ?>) ((List<?>) oldDay.get("groups")).getFirst();
+        assertEquals(original.evidenceId(), oldGroup.get("evidenceId"));
+        final Instant expired = Instant.now().minusSeconds(90000);
+        for (final var attachment : evidence.findByEventId(id)) {
+            attachment.createdAt = expired; evidence.saveAndFlush(attachment);
+            Files.setLastModifiedTime(EVIDENCE_ROOT.resolve(Long.toString(id)).resolve(attachment.imageHash + ".image"), FileTime.from(expired));
+        }
+        final Path originalFile = EVIDENCE_ROOT.resolve(Long.toString(id)).resolve(original.imageHash() + ".image");
+        final Path orphanFile = EVIDENCE_ROOT.resolve(Long.toString(id)).resolve(orphan.imageHash() + ".image");
+        service.cleanupOrphans();
+        assertTrue(evidence.existsById(original.evidenceId())); assertTrue(Files.isRegularFile(originalFile));
+        assertTrue(service.download(id, original.evidenceId()).bytes().length > 0);
+        assertFalse(evidence.existsById(orphan.evidenceId())); assertFalse(Files.exists(orphanFile));
+        service.deleteEvent(id, new TournamentDtos.DeleteRequest(service.config(id).event().version(), true));
+        assertFalse(Files.exists(originalFile));
     }
     @Test void csvRollbackAndPreviewHashVersionAndWorkspaceGuardsProtectPreviousData() throws Exception {
         final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
