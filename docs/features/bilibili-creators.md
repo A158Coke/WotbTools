@@ -10,7 +10,7 @@ Administrators create, edit and remove creator records, categories and assessmen
 
 ## Creator fields and consistency
 
-A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, trimmed and normalized without leading zeros; all-zero input is rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 Unicode code points); descriptions are optional (2000 Unicode code points). Supplementary characters such as emoji count once in the API, browser validation and PostgreSQL.
+A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, normalized without leading zeros; all-zero input is rejected. Leading/trailing whitespace follows the OpenAPI ECMAScript whitespace set, including non-breaking spaces and BOM; interior whitespace and control characters outside that set are rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 Unicode code points); descriptions are optional (2000 Unicode code points). Supplementary characters such as emoji count once in the API, browser validation and PostgreSQL.
 
 Each creator has at least one category, may belong to several, and displays every category. Assessment is optional: a null level hides the level and disclaimer, while an assigned level displays the site's evaluation disclaimer. Initial categories and levels are inserted only once by Flyway and remain administrator-maintained data.
 

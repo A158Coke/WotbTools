@@ -312,6 +312,33 @@ class CreatorIntegrationTest {
         assertEquals("123", service.create(save("123", 3, List.of(1L), null, null), null).bilibiliUid());
     }
 
+    @Test void uidWhitespaceMatchesEcmascriptThroughMultipartAndPersistence() throws Exception {
+        final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
+        final var json = JsonMapper.builder().findAndAddModules().build();
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final int[] whitespace = {9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195, 8196,
+                8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279};
+        for (final int codePoint : whitespace) {
+            final String padding = Character.toString(codePoint), uid = Integer.toString(600000 + codePoint);
+            final CreatorDtos.SaveRequest valid = save(padding + "000" + uid + padding, 3, List.of(1L), null, null);
+            mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
+                    .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").value(uid));
+            assertTrue(creators.existsByBilibiliUid(uid));
+            for (final String invalid : List.of(padding + "000" + padding, "12" + padding + "3")) {
+                mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json",
+                                json.writeValueAsBytes(save(invalid, 3, List.of(1L), null, null)))).with(admin))
+                        .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("CREATOR_INVALID_REQUEST"));
+            }
+        }
+        // Java trim/strip or UNICODE_CHARACTER_CLASS must not broaden the wire contract.
+        for (final int codePoint : new int[] {0, 8, 14, 28, 31, 133, 6158, 8191, 8203, 8234, 8288, 8289, 12289}) {
+            final String padding = Character.toString(codePoint);
+            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
+                    () -> service.create(save(padding + "123" + padding, 3, List.of(1L), null, null), null));
+        }
+        assertEquals(whitespace.length, creators.count());
+    }
+
     @Test void unicodeLimitsCountCodePointsForCreatorAndDictionaryNamesAndDescription() {
         final String name = "😀".repeat(100);
         final String description = "🚀".repeat(2000);

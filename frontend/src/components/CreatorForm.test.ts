@@ -46,7 +46,7 @@ describe('creator directory form and local avatar state', () => {
   })
   it('defaults to three whole stars and normalizes UID strings without losing precision', async () => {
     const { wrapper, save } = form(); await fill(wrapper)
-    await wrapper.get('[data-testid=creator-uid]').setValue(' 0009007199254740993 ')
+    await wrapper.get('[data-testid=creator-uid]').setValue('\u00a0\ufeff0009007199254740993\u3000')
     expect(wrapper.get('[data-testid=creator-homepage]').attributes('href')).toBe('https://space.bilibili.com/9007199254740993')
     await wrapper.get('[data-testid=creator-category-2]').setValue(true)
     await wrapper.get('form').trigger('submit'); await flushPromises()
