@@ -52,6 +52,11 @@ function releaseBodyLock() {
 const bodyLockHeld = ref(false)
 const titleId = `dialog-title-${useId()}`
 let opener = null
+function restoreOpener() {
+  const activeModal = document.activeElement?.closest('[role="dialog"][aria-modal="true"]')
+  if (opener?.isConnected && typeof opener.focus === 'function' && (!activeModal || activeModal === panel.value)) opener.focus()
+  opener = null
+}
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 function focusables() {
@@ -95,8 +100,7 @@ watch(() => props.open, async (open) => {
       releaseBodyLock()
       bodyLockHeld.value = false
     }
-    if (opener && typeof opener.focus === 'function') opener.focus()
-    opener = null
+    restoreOpener()
   }
 }, { immediate: true })
 
@@ -105,6 +109,7 @@ onBeforeUnmount(() => {
     releaseBodyLock()
     bodyLockHeld.value = false
   }
+  restoreOpener()
 })
 </script>
 
