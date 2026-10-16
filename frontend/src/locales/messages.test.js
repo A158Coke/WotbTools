@@ -5,7 +5,7 @@ import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
   it('translates stable tournament and recognition errors in all supported locales', () => {
-    for (const code of API_ERROR_CODES.filter(code => /TOURNAMENT|RECOGNITION/.test(code))) {
+    for (const code of API_ERROR_CODES.filter(code => /TOURNAMENT|RECOGNITION|BROADCAST/.test(code))) {
       for (const locale of ['zh', 'en', 'ru']) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()
     }
   })

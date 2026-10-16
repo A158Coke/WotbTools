@@ -46,12 +46,15 @@ function authBoundaryStubPlugin() {
   }
 }
 
-export async function startFixtureServer() {
+export async function startFixtureServer({ middleware } = {}) {
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
     logLevel: 'error',
-    plugins: [authBoundaryStubPlugin(), vue()],
+    plugins: [authBoundaryStubPlugin(), vue(), {
+      name: 'wotb-browser-fixture-http-boundary',
+      configureServer(instance) { if (middleware) instance.middlewares.use(middleware) },
+    }],
     // vite.config.js 的 define 只在读取项目配置时注入；本实例不读 configFile，需显式提供。
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。

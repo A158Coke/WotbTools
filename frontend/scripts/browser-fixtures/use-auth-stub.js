@@ -50,6 +50,7 @@ let currentPromiseSettled = false
 
 const state = {
   loginCalls,
+  tokenParsed,
   authenticated,
   initialized,
   authInitState,
@@ -173,6 +174,11 @@ const isAdmin = computed(() => hasRole('wotbtools-admin'))
 /** 与真实 composable 一致：名人堂审核权限（侧边栏管理组按它显示"名人堂管理"）。 */
 const isHofAdmin = computed(() => hasRole('HoF-admin') || isAdmin.value)
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
+export function leagueBroadcastAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
+}
+const isLeagueBroadcastAdmin = computed(() => leagueBroadcastAdminAllowed({ authenticated, tokenParsed }))
 export function tournamentAdminAllowed(auth = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
@@ -197,6 +203,7 @@ export function useAuth() {
     isAdmin,
     isHofAdmin,
     isTournamentAdmin,
+    isLeagueBroadcastAdmin,
     authEpoch: () => generation,
     token,
     ensureToken,
