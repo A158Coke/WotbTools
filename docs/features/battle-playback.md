@@ -567,7 +567,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   右侧，不被 viewport 裁切。掉血事件跨过播放时钟时由场景
   `spawnDamage(eid, hpLoss, FLOAT_DMG_MS × FX_SCALE)` 生成一次（与 2D 同一组寿命常量），
   seek 由 `clearDamages` 清空且不补播；每个数字的 `animation-delay` 存活期间稳定（首次挂载为 0，
-  只有 showStatus 关→开的真实 remount 或 H 隐藏→恢复时按 `performance.now() - bornMs`
+  只有 showStatus 关→开的真实 remount、showStatus 关闭期间出生后的延迟首次挂载、H 隐藏→恢复或出屏→进屏时按 `performance.now() - bornMs`
   补偿相位），rerender 不会重复快进 CSS 动画；remount 同时恢复所在侧的漂移方向。H 只隐藏视觉，
   不暂停或延长生命周期，到期仍由原始 `bornMs + durationMs` 决定。
   场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，

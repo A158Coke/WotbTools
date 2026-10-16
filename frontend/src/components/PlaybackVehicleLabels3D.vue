@@ -127,7 +127,11 @@ function placeDamages(eid) {
     const el = d.el
     if (!el) continue
     // 车辆出屏 / 车体不可见：立刻隐藏，旧坐标不得继续显示（下一帧回来再按新 anchor 落位）
-    if (!projected) { setHidden(el, true); continue }
+    if (!projected) {
+      if (d.wasProjected === true) d.wasProjected = false
+      setHidden(el, true)
+      continue
+    }
     if (!d.layout || d.layoutKey !== key) {
       setHidden(el, false)                 // 量宽前必须先真正布局（display:none 时量不到宽度）
       const layout = measureDamageLayout(eid, el, d.stack, !!anchor.visible)
@@ -143,6 +147,8 @@ function placeDamages(eid) {
       // 漂移方向必须**离开**血条：左侧镜像后若继续向右漂，后段会重新撞回血条
       applyDamageDrift(d)
     }
+    if (d.wasProjected === false) syncDamageAnimationPhase(d)
+    d.wasProjected = true
     const dx = side === SIDE_LEFT ? d.layout.dxLeft : d.layout.dxRight
     el.style.transform = `translate3d(${anchor.x + dx}px, ${anchor.y + d.layout.dy}px, 0)`
   }
@@ -171,8 +177,8 @@ function bindDamage(d, el) {
   d.el = el
   d.everMounted = true
   applyDamageDrift(d)
-  // 只有真实 remount 或 H 恢复才补偿相位；普通 rerender 不重复快进动画。
-  if (remount) syncDamageAnimationPhase(d)
+  // remount 或关闭状态下出生后的延迟首次挂载需要补偿；普通 patch 不重复快进。
+  if (remount || d.delayedFirstMount) syncDamageAnimationPhase(d)
 }
 /**
  * 生成一个伤害数字：场景内核在伤害事件跨过播放时钟时调用一次。
@@ -181,10 +187,15 @@ function bindDamage(d, el) {
  */
 function spawnDamage(eid, hpLoss, durationMs) {
   const id = ++damageSeq
-  const alive = damages.value.filter((d) => d.eid === eid).length
+  const occupied = new Set(damages.value.filter((d) => d.eid === eid).map((d) => d.stack))
+  let stack = 0
+  while (stack < DMG_STACK_SLOTS && occupied.has(stack)) stack++
+  // 三槽全满时沿用有界叠放；存在空槽时优先复用，避免旧数字到期后重复占槽。
+  if (stack === DMG_STACK_SLOTS) stack = 0
   damages.value = [...damages.value, {
-    id, eid, stack: alive, text: '-' + hpLoss, bornMs: performance.now(), durationMs,
+    id, eid, stack, text: '-' + hpLoss, bornMs: performance.now(), durationMs,
     layout: null, layoutKey: null, side: null, el: null, everMounted: false,
+    wasProjected: null, delayedFirstMount: props.markerPrefs.showStatus === false,
   }]
   // 到期摘除走定时器而不是渲染循环：数字是 DOM，暂停时不需要（也不该依赖）场景继续出帧。
   // 非法寿命（NaN / ≤0）也要摘除——宁可短促，也不能把数字永远留在屏幕上。
