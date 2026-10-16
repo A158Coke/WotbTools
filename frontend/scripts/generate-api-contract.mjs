@@ -64,7 +64,8 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
   'TournamentCsvImportPreview', 'TournamentDataSource',
-  'OnboardingReceipt', 'SaveOnboardingReceipt']) {
+  'OnboardingReceipt', 'SaveOnboardingReceipt',
+  'BroadcastSeason', 'BroadcastCategory', 'BroadcastReplay', 'BroadcastNode', 'BroadcastIndex', 'BroadcastSeasonView', 'BroadcastCategoryView', 'BroadcastDeletionPreview', 'BroadcastSeasonCreate', 'BroadcastSeasonUpdate', 'BroadcastCategoryCreate', 'BroadcastNodeCreate', 'BroadcastReplaySave']) {
   if (!components[name]) continue
   const id = `tournament-${name}`
   ajv.addSchema({ $schema: schema.$schema, $id: id, $ref: `#/$defs/${name}`, $defs: responseDefinitions(name) }, id)
@@ -74,6 +75,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
 // Keep the generated module loadable directly in browsers and Android's strict CSP.
 const validators = standaloneCode(ajv, exports)
   .replaceAll('require("ajv/dist/runtime/ucs2length").default', 'ucs2length')
+  .replaceAll('require("ajv/dist/runtime/equal").default', 'equal')
 if (/\brequire\s*\(/.test(validators)) {
   throw new Error('Generated validator contains an unmapped CommonJS runtime helper')
 }
@@ -81,6 +83,8 @@ await writeFile(new URL('../src/api/generated/contract-validators.js', import.me
   '// GENERATED FILE - DO NOT EDIT MANUALLY. Source: contracts/http/openapi.yaml\n'
   + "import { fullFormats as formats } from 'ajv-formats/dist/formats.js';\n"
   + "import unicodeLengthModule from 'ajv/dist/runtime/ucs2length.js';\n"
+  + "import equalModule from 'ajv/dist/runtime/equal.js';\n"
   // Node native ESM and Vite interoperate differently with this CJS default export.
   + 'const ucs2length = unicodeLengthModule.default ?? unicodeLengthModule;\n'
+  + 'const equal = equalModule.default ?? equalModule;\n'
   + validators + '\n', 'utf8')

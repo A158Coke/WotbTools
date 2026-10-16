@@ -475,6 +475,13 @@ export function tournamentAdminAllowed(auth = useAuth()) {
 }
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
 
+/** Broadcast maintenance requires the real signed-in site administrator, including in development. */
+export function leagueBroadcastAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
+}
+const isLeagueBroadcastAdmin = computed(() => leagueBroadcastAdminAllowed({ authenticated, tokenParsed }))
+
 /**
  * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
@@ -544,6 +551,7 @@ export function useAuth() {
     isAdmin,
     isHofAdmin,
     isTournamentAdmin,
+    isLeagueBroadcastAdmin,
     token,
     ensureToken,
     initialized,
