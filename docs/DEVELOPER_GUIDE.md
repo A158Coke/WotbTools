@@ -27,6 +27,8 @@
 
 ---
 
+Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，sourceId 保留原始文件索引，详见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
+
 Playback 2D/3D 的布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)：共享 fluid 三列、实测正方形 Stage、紧凑 HUD/Transport、Gear 锚定 Display；Details 拖动与 fullscreen/session 生命周期沿用既有 owner。
 
 ## 环境与工具链
@@ -177,7 +179,8 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
-- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
+- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
+  同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 
 ### 客户端 Replay Engine（上游 Agent）
@@ -186,7 +189,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
-- **独立炮塔**：可选 `PlaybackData.detached_turrets` 由上游 class-8 实体初始化和 Type10 产出权威 owner、AoI 区间及完整三轴位姿。本仓只校验和呈现：原模型炮塔 / 炮管以枢轴重心化，独立世界位姿按回放时钟插值；缺字段保持旧行为，不按 HP 推断，也不增加二进制解析器。当前正式 pin 为上游 v0.4.7，见 [`battle-playback`](features/battle-playback.md)。
+- **独立炮塔**：可选 `PlaybackData.detached_turrets` 由上游 class-8 实体初始化和 Type10 产出权威 owner、AoI 区间及完整三轴位姿。本仓只校验和呈现：原模型炮塔 / 炮管以枢轴重心化，独立世界位姿按回放时钟插值；缺字段保持旧行为，不按 HP 推断，也不增加二进制解析器。当前正式 pin 为上游 v0.4.8，见 [`battle-playback`](features/battle-playback.md)。
 - **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（APK 自带 GeckoView 运行同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，个人回放的 3D / 射击分析与复现 / AI 登录后使用；已验证的官方示例开放匿名 3D/射击；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [Replay Workspace](frontend/replay-workspace.md)。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 是 Java 删除前在仓库 fixture 上的最后输出（只读），CI 常驻断言客户端全链路逐字段一致；上游升级后重新导出 `wasm-*` 再跑同一组测试。
 - **缺字段**：一律向上游要（改上游 → 发版 → 升级 `source.json`），不在客户端启发式推导，也不在服务端解析。
@@ -689,6 +692,9 @@ origin 上 no-clobber 落位并核验的 APK、staging evidence、production `ve
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
 再验证。细节见 `docs/android/release-process.md`。
 
+发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
+runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
+
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
@@ -759,4 +765,6 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 
 ## Product observability
 
-Grafana now has five TF-managed dashboards: Active users (home), Feature usage, Android downloads, AI token usage and Backend error logs. Client telemetry uses the bounded `/api/observability/events` contract; authenticated activity requires runtime-only `WOTB_OBSERVABILITY_HASH_KEY`. Yecao Alloy also collects ai-service logs. Dashboard deletes/replacements have no allowlist; datasource deletion remains protected. Queryable history is seven days, with asynchronous Loki deletion and size-based Docker raw-log rotation. See `docs/operations/observability.md` for exact counting, privacy, missing-usage and retention limits.
+Grafana now has six TF-managed dashboards: WotbTools Engineering Overview plus five product dashboards: Active users (home), Feature usage, Android downloads, AI token usage and Backend error logs. Client telemetry uses the bounded `/api/observability/events` contract; authenticated activity requires runtime-only `WOTB_OBSERVABILITY_HASH_KEY`. Yecao Alloy also collects ai-service logs. Dashboard deletes/replacements have no allowlist; datasource deletion remains protected. Queryable history is seven days, with asynchronous Loki deletion and size-based Docker raw-log rotation. See `docs/operations/observability.md` for exact counting, privacy, missing-usage and retention limits.
+
+Engineering health: Yecao `dev-metrics-exporter`, 15-minute GitHub refresh, in-memory snapshots and independent 15-second Prometheus scrape. Canonical semantics and recovery: [Engineering metrics](architecture/engineering-metrics.md). No developer ranking or productivity score.

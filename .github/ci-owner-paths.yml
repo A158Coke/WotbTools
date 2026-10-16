@@ -110,6 +110,7 @@ android:
   - 'frontend/src/platform/nativeBridgeContract.js'
   - 'scripts/android-release/**'
 observability:
+  - 'deploy/list-image-tags.sh'
   - '.github/workflows/observability.yml'
   - 'deploy/deploy.sh'
   - 'deploy/docker-compose.prod.yml'
@@ -123,6 +124,7 @@ observability:
 deployment:
   - '.github/workflows/ai-service.yml'
   - '.github/workflows/tx-runtime-check.yml'
+  - '.github/workflows/android-offload-probe.yml'
   - '.github/workflows/frontend-replica.yml'
   - 'docker/Dockerfile.ai-service'
   - '.github/workflows/ci-deployment.yml'

@@ -1,0 +1,91 @@
+import type { components } from './generated/http-contract.js'
+import * as validators from './generated/contract-validators.js'
+import { optionalBearer } from './replay-capabilities.js'
+import { ApiError, apiFetch, requireOk } from '../utils/http.js'
+import { useAuth, leagueBroadcastAdminAllowed } from '../composables/useAuth.js'
+import { Feature } from '../app/featureCapabilities.js'
+import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { resolveApiUrl } from '../platform/runtime.js'
+
+type Schemas = components['schemas']
+export type BroadcastIndex = Schemas['BroadcastIndex']
+export type BroadcastSeason = Schemas['BroadcastSeason']
+export type BroadcastSeasonView = Schemas['BroadcastSeasonView']
+export type BroadcastCategory = Schemas['BroadcastCategory']
+export type BroadcastCategoryView = Schemas['BroadcastCategoryView']
+export type BroadcastNode = Schemas['BroadcastNode']
+export type BroadcastReplay = Schemas['BroadcastReplay']
+export type BroadcastSeasonCreate = Schemas['BroadcastSeasonCreate']
+export type BroadcastSeasonUpdate = Schemas['BroadcastSeasonUpdate']
+export type BroadcastCategoryCreate = Schemas['BroadcastCategoryCreate']
+export type BroadcastNodeCreate = Schemas['BroadcastNodeCreate']
+export type BroadcastReplaySave = Schemas['BroadcastReplaySave']
+export type BroadcastDeletionPreview = Schemas['BroadcastDeletionPreview']
+export type BroadcastServer = BroadcastSeason['server']
+export const BROADCAST_CATEGORIES: BroadcastCategory['type'][] = ['POINTS', 'QUARTER_FINALS', 'SEMI_FINALS']
+
+const publicBase = '/api/tournament-broadcasts'
+const adminBase = '/api/admin/tournament-broadcasts'
+
+export function validateBroadcast<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
+  const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
+  const validate = validators[name] as ((value: unknown) => boolean) | undefined
+  if (!validate?.(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
+  return value as Schemas[K]
+}
+
+function requireOnline() {
+  if (!useFeatureGate().requireFeature(Feature.LEAGUE_BROADCASTS)) {
+    throw new ApiError({ errorCode: 'NETWORK_ERROR', retryable: true })
+  }
+}
+
+async function request<T>(path: string, admin: boolean, options: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
+  requireOnline()
+  const auth = useAuth(), epoch = auth.authEpoch()
+  const ownsIdentity = () => leagueBroadcastAdminAllowed(auth) && epoch === auth.authEpoch()
+  if (admin && !ownsIdentity()) throw new ApiError({ errorCode: 'AUTH_FORBIDDEN', status: 403 })
+  const headers = admin ? await optionalBearer(auth) : {}
+  if (admin && !headers.Authorization) throw new ApiError({ errorCode: 'AUTH_UNAUTHENTICATED', status: 401 })
+  if (admin && !ownsIdentity()) throw new ApiError({ errorCode: 'AUTH_FORBIDDEN', status: 403 })
+  requireOnline()
+  const response = await requireOk(await apiFetch(`${admin ? adminBase : publicBase}${path}`, { ...options, headers: { ...headers, ...options.headers } }))
+  const value = await read(response)
+  if (admin && !ownsIdentity()) throw new ApiError({ errorCode: 'REQUEST_ABORTED' })
+  return value
+}
+
+function json<K extends keyof Schemas>(path: string, schema: K, admin = false, options: RequestInit = {}): Promise<Schemas[K]> {
+  return request(path, admin, options, async response => validateBroadcast(schema, await response.json()))
+}
+function body(method: string, value: unknown, signal?: AbortSignal): RequestInit {
+  return { method, body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' }, signal }
+}
+
+export const listBroadcasts = (server?: BroadcastServer, signal?: AbortSignal) => json(server ? `?server=${server}` : '', 'BroadcastIndex', false, { signal })
+export const getBroadcastSeason = (id: number, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', false, { signal })
+export const getBroadcastCategory = (id: number, signal?: AbortSignal) => json(`/categories/${id}`, 'BroadcastCategoryView', false, { signal })
+export const createBroadcastSeason = (value: BroadcastSeasonCreate, signal?: AbortSignal) => json('/seasons', 'BroadcastSeasonView', true, body('POST', value, signal))
+export const updateBroadcastSeason = (id: number, value: BroadcastSeasonUpdate, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', true, body('PUT', value, signal))
+export const createBroadcastCategory = (id: number, value: BroadcastCategoryCreate, signal?: AbortSignal) => json(`/seasons/${id}/categories`, 'BroadcastSeasonView', true, body('POST', value, signal))
+export const createBroadcastNode = (id: number, value: BroadcastNodeCreate, signal?: AbortSignal) => json(`/categories/${id}/nodes`, 'BroadcastCategoryView', true, body('POST', value, signal))
+export const getBroadcastDeletionPreview = (kind: 'seasons' | 'nodes', id: number, signal?: AbortSignal) => json(`/${kind}/${id}/deletion-preview`, 'BroadcastDeletionPreview', true, { signal })
+
+export function saveBroadcastReplay(target: { nodeId: number; replayId?: number }, value: BroadcastReplaySave, cover: File | null, signal?: AbortSignal) {
+  if ((value.coverAction === 'REPLACE') !== Boolean(cover)) {
+    throw new ApiError({ errorCode: 'BROADCAST_COVER_INVALID' })
+  }
+  const form = new FormData()
+  form.append('payload', new Blob([JSON.stringify(value)], { type: 'application/json' }))
+  if (cover) form.append('cover', cover)
+  return json(target.replayId ? `/replays/${target.replayId}` : `/nodes/${target.nodeId}/replays`, 'BroadcastCategoryView', true,
+    { method: target.replayId ? 'PUT' : 'POST', body: form, signal })
+}
+
+export async function deleteBroadcastResource(kind: 'seasons' | 'nodes' | 'replays', id: number, expectedVersion: number, signal?: AbortSignal) {
+  await request(`/${kind}/${id}?expectedVersion=${expectedVersion}&confirm=true`, true, { method: 'DELETE', signal }, async () => undefined)
+}
+
+export function broadcastCoverUrl(id: string) {
+  return resolveApiUrl(`${publicBase}/covers/${encodeURIComponent(id)}`)
+}

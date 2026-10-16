@@ -22,6 +22,9 @@ const props = defineProps({
   disabled: Boolean,
   /** Shared picker supports screenshots without changing the default replay preflight. */
   purpose: { type: String, default: 'replay', validator: v => ['replay', 'image'].includes(v) },
+  imageSingle: { type: Boolean, default: false },
+  imageLabel: { type: String, default: '' },
+  imageHint: { type: String, default: '' },
   confirmRemove: Boolean,
   showPreview: { type: Boolean, default: true },
   /** 解析完成后压缩上传区域：隐藏大卡/预览主按钮，只保留细条批次摘要 + 添加/清空。 */
@@ -119,11 +122,15 @@ function addFiles(list) {
   if (props.loading || props.disabled || pickingFolder.value) return
   const picked = Array.from(list || [])
   if (props.purpose === 'image') {
-    if (picked.some(file => !['image/png', 'image/jpeg'].includes(file.type) || file.size > 10 * 1024 * 1024 || file.size === 0)) {
+    if ((props.imageSingle && picked.length > 1) || picked.some(file => !['image/png', 'image/jpeg'].includes(file.type) || file.size > 10 * 1024 * 1024 || file.size === 0)) {
       imageError.value = true
       return
     }
     imageError.value = false
+    if (props.imageSingle) {
+      if (picked.length) emit('update:files', picked)
+      return
+    }
     const byKey = new Map(props.files.map(file => [fileKey(file), file]))
     picked.forEach(file => byKey.set(fileKey(file), file))
     emit('update:files', [...byKey.values()])
@@ -201,11 +208,11 @@ function onDrop(e) {
            @drop.prevent="onDrop">
     <template v-if="purpose === 'image'">
       <Banner v-if="imageError" tone="danger">{{ $t('tournament.imageInvalid') }}</Banner>
-      <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" multiple accept="image/png,image/jpeg" :disabled="disabled || loading" data-testid="tournament-image-input" @change="onPick" />
+      <input ref="filesInput" class="visually-hidden" type="file" tabindex="-1" aria-hidden="true" :multiple="!imageSingle" accept="image/png,image/jpeg" :disabled="disabled || loading" data-testid="tournament-image-input" @change="onPick" />
       <div class="filebar">
-        <p class="dropzone-hint">{{ $t('tournament.imageHint') }}</p>
+        <p class="dropzone-hint">{{ imageHint || $t('tournament.imageHint') }}</p>
         <div class="fb-actions">
-          <AppButton :disabled="disabled || loading" @click="openPicker(filesInput)"><CloudUpload :size="18" aria-hidden="true" />{{ $t('tournament.selectImages') }}</AppButton>
+          <AppButton :disabled="disabled || loading" @click="openPicker(filesInput)"><CloudUpload :size="18" aria-hidden="true" />{{ imageLabel || $t('tournament.selectImages') }}</AppButton>
           <AppButton variant="ghost" :disabled="disabled || loading || !files.length" @click="clearFiles">{{ $t('upload.clear') }}</AppButton>
         </div>
         <div v-if="files.length" class="fb-list">

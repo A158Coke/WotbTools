@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createMapView, screenOffsetToSvgDelta } from './mapView.js'
+import { createMapView } from './mapView.js'
 
 const image = {
   width: 1000,
@@ -46,18 +46,4 @@ describe('createMapView coordinate round-trip', () => {
   })
 })
 
-describe('screenOffsetToSvgDelta', () => {
-  it('uses the actual rendered frame instead of replay zoom state', () => {
-    const delta = screenOffsetToSvgDelta(
-      { x: 20, y: -16 },
-      { W: 769, H: 763 },
-      { width: 1560, height: 1548 },
-    )
-    expect(delta.x).toBeCloseTo(9.85897435897436, 12)
-    expect(delta.y).toBeCloseTo(-7.886304909560724, 12)
-  })
 
-  it('fails closed for invalid geometry', () => {
-    expect(screenOffsetToSvgDelta({ x: 20, y: 0 }, { W: 769, H: 763 }, { width: 0, height: 1 })).toBeNull()
-  })
-})

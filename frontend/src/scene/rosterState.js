@@ -12,6 +12,8 @@
  * 必须得到逐字段相同的结果——任何"累加 / 递减"式实现都不允许出现在这里。
  */
 
+import { defLifeAt } from '../utils/battlePlaybackV2.ts';
+
 /** 物理队伍分组键：Team 1 / Team 2 / 未识别（绝不把未知并进任一队） */
 export const ROSTER_GROUPS = Object.freeze(['team1', 'team2', 'unknown']);
 
@@ -140,7 +142,7 @@ export function applyRosterRuntime(row, { hp, maxHp, dead, followed, health = nu
 
 /**
  * 逐车投影 t 时刻的运行时状态。
- * @param {Array<{def:{eid:number, hp:Array<[number,number]>, max_hp:number, death_t:number|null}}>} vehicles
+ * @param {Array<{def:{eid:number, hp:Array<[number,number]>, max_hp:number, death_t:number|null, death_times?:number[], resurrection_times?:number[]}}>} vehicles
  * @param {number} t 回放时刻（秒）
  * @param {Function|null} isDestroyed scene-owned canonical/fallback life resolver
  * @returns {Map<number, {hp:number, maxHp:number, dead:boolean}>} 按 eid
@@ -153,7 +155,8 @@ export function projectRoster(vehicles, t, isDestroyed = null) {
     out.set(def.eid, {
       hp: hpAtSeries(def.hp, def.max_hp, t),
       maxHp: Number(def.max_hp) || 0,
-      dead: isDestroyed ? isDestroyed(v, t) : Number.isFinite(def.death_t) && t >= def.death_t,
+      // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往一致）
+      dead: isDestroyed ? isDestroyed(v, t) : defLifeAt(def, t)?.lifeState === 'DESTROYED',
     });
   }
   return out;

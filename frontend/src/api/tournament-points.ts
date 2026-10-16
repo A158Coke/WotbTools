@@ -1,4 +1,4 @@
-import type { components } from './generated/http-contract.js'
+import type { components, operations } from './generated/http-contract.js'
 import * as validators from './generated/contract-validators.js'
 import { optionalBearer } from './replay-capabilities.js'
 import { ApiError, apiFetch, requireOk } from '../utils/http.js'
@@ -23,6 +23,9 @@ export type TournamentCreateRequest = Schemas['TournamentCreateRequest']
 export type TournamentHistoricalPreview = Schemas['TournamentHistoricalPreview']
 export type TournamentHistoricalPreviewRequest = Schemas['TournamentHistoricalPreviewRequest']
 export type TournamentHistoricalState = Schemas['TournamentHistoricalState']
+export type TournamentCsvImportPreview = Schemas['TournamentCsvImportPreview']
+export type TournamentDataSource = Schemas['TournamentDataSource']
+type TournamentCsvImportOptions = Omit<NonNullable<operations['importTournamentCsv']['requestBody']>['content']['multipart/form-data'], 'file'>
 export const TOURNAMENT_REGIONS: TournamentEvent['region'][] = ['CN', 'ASIA', 'NA', 'EU']
 export const TOURNAMENT_SEASONS: TournamentEvent['season'][] = ['SPRING', 'SUMMER', 'AUTUMN', 'FIRE_CUP', 'WINTER']
 
@@ -72,7 +75,16 @@ export async function listTournamentEvents(admin = false, signal?: AbortSignal):
   return value.map(event => validateTournament('TournamentEvent', event))
 }
 export const getTournamentStandings = (id: number, signal?: AbortSignal) => json(`/api/tournaments/${id}/standings`, 'TournamentStandings', false, { signal })
+export async function getTournamentDataSource(id: number, signal?: AbortSignal): Promise<TournamentDataSource | null> {
+  const response = await request('/api/tournaments', false, { signal })
+  if (response.headers.get('X-Tournament-Csv-Import') !== '1') return null
+  return json(`/api/tournaments/${id}/data-source`, 'TournamentDataSource', false, { signal })
+}
 export const getTournamentConfig = (id: number, signal?: AbortSignal) => json(eventPath(id), 'TournamentConfig', true, { signal })
+export async function supportsTournamentCsvImport(signal?: AbortSignal): Promise<boolean> {
+  const response = await request(base, true, { method: 'HEAD', signal })
+  return response.headers.get('X-Tournament-Csv-Import') === '1'
+}
 /** Probe the existing list route: old backends can turn unknown routes into generic 500 errors. */
 async function supportsTournamentDefaultRules(signal?: AbortSignal): Promise<boolean> {
   const response = await request(base, true, { method: 'HEAD', signal })
@@ -110,6 +122,18 @@ export const discardTournamentDraft = (id: number, round: number, day: number, v
 export const clearTournamentPoints = (id: number, value: Schemas['TournamentClearRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/clear-points`, 'TournamentStandings', true, body('POST', value, signal))
 export const previewTournamentHistoricalImport = (id: number, value: TournamentHistoricalPreviewRequest, signal?: AbortSignal) => json(`${eventPath(id)}/historical-import/preview`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
 export const importTournamentHistorical = (id: number, value: Schemas['TournamentHistoricalImportRequest'], signal?: AbortSignal) => json(`${eventPath(id)}/historical-import`, 'TournamentHistoricalPreview', true, body('POST', value, signal))
+export function previewTournamentCsvImport(id: number, file: File, expectedEventVersion: number, signal?: AbortSignal): Promise<TournamentCsvImportPreview> {
+  const data = new FormData()
+  data.append('file', file)
+  data.append('expectedEventVersion', String(expectedEventVersion))
+  return json(`${eventPath(id)}/csv-import/preview`, 'TournamentCsvImportPreview', true, { method: 'POST', body: data, signal })
+}
+export function importTournamentCsv(id: number, file: File, value: TournamentCsvImportOptions, signal?: AbortSignal): Promise<TournamentCsvImportPreview> {
+  const data = new FormData()
+  data.append('file', file)
+  for (const key of ['expectedEventVersion', 'sourceSha256', 'confirm', 'idempotencyKey'] as const) data.append(key, String(value[key]))
+  return json(`${eventPath(id)}/csv-import`, 'TournamentCsvImportPreview', true, { method: 'POST', body: data, signal })
+}
 /** A previous backend has no state endpoint; ordinary day management keeps its original wire format. */
 export async function getTournamentHistoricalState(id: number, round: number, day: number, signal?: AbortSignal): Promise<TournamentHistoricalState | null> {
   try {
