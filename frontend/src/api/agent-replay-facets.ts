@@ -438,6 +438,8 @@ export interface AgentArenaPeriod {
  *  （`combat::classify_hp_state` / `hp_terminal_normalized`），本层禁二次解释。 */
 export type AiHpStateField = 'current' | 'zero' | 'terminal'
 
+const AI_HP_STATES: ReadonlySet<string> = new Set(['current', 'zero', 'terminal'])
+
 /** 归一化事件（`type` 内部标签；t = 回放原始时钟秒） */
 export type AgentAiEvent =
   | { type: 'spawn'; t: number; eid: number; max_hp: number }
@@ -524,6 +526,11 @@ export function validateAgentAiReview(value: unknown): AgentAiReviewFacet {
     if (!isObject(e) || typeof e.type !== 'string') throw new Error('agent facets: ai_review.events[] 必须是带 type 的对象')
     if (e.type === 'damage' && typeof e.hp_raw !== 'number') {
       throw new Error('agent facets: ai_review damage.hp_raw 缺失（canonical 投影需要上游 ≥ v0.3.7）')
+    }
+    // hp_state（additive，v0.4.9 起恒在场）：在场值必须落在闭集内——producer 漂移（新枚举/错类型）
+    // 在边界拒绝，绝不静默回退 hp_raw（那会把枚举漂移变成错误的生命态事实）。
+    if (e.hp_state !== undefined && !AI_HP_STATES.has(e.hp_state as string)) {
+      throw new Error('agent facets: ai_review ' + e.type + '.hp_state 非法（须为 current|zero|terminal）')
     }
   }
   // prop3 血量广播是录像者血量帧的唯一来源：整场没有任何 health 事件 = 旧产物，拒绝而不是缺帧投影

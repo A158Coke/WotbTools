@@ -50,10 +50,12 @@ public record ClientAiProjection(
     public record SampleTrack(int entityId, int stride, double[] samples) {
     }
 
-    public record Prop3Health(int entityId, double rawClockSec, int hpRaw) {
+    /** hpState = canonical 权威分类（HpRawState 名；缺省 = 旧载荷，服务端按 hpRaw 现算）。 */
+    public record Prop3Health(int entityId, double rawClockSec, int hpRaw, String hpState) {
     }
 
-    public record HealthEvent(int entityId, double rawClockSec, int hpRaw, int sourceEntityId, int causeFlag) {
+    /** hpState 同 Prop3Health：canonical 权威分类；缺省 = 旧载荷（按 hpRaw 现算）。 */
+    public record HealthEvent(int entityId, double rawClockSec, int hpRaw, int sourceEntityId, int causeFlag, String hpState) {
     }
 
     public enum DamageNoticeKind { HIT, UNDECODED_VARIANT, SHORT_VARIANT }
