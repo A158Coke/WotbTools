@@ -60,7 +60,7 @@ assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgre
 assert affected("docs/README.md") == set()
 assert affected("frontend/src/platform/nativeBridgeContract.js") == {"frontend", "android"}
 assert "android" in affected(".github/workflows/android-release.yml"), "release protocol changes must run Android helper tests"
-assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment"}
+assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment", "observability"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
 # Owner-boundary guards for the Komodo control plane:
@@ -928,6 +928,20 @@ for index in read_pipelines:
         + all_lines[index].strip()
     )
 
+# The exporter package may be private on first publication. Its pull credentials
+# belong only to the exporter mutation and must never become host Docker state.
+observability = load(workflow_dir / "observability.yml")
+obs_steps = observability["jobs"]["observability"]["steps"]
+obs_reconcile = next(step for step in obs_steps if step.get("name") == "Reconcile selected runtime, apply Grafana plan, and verify")
+obs_script = obs_reconcile["with"]["script"]
+assert "mktemp -d /run/wotb-dev-metrics-pull.XXXXXX" in obs_script
+assert "trap 'rm -rf -- \"$DOCKER_CONFIG\"' EXIT" in obs_script
+assert 'docker login ghcr.io --username "$DEV_METRICS_REGISTRY_USER" --password-stdin' in obs_script
+assert 'printf \'%s\' "$DEV_METRICS_REGISTRY_TOKEN"' in obs_script
+assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
+assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
+assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
+
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
 
@@ -982,3 +996,59 @@ for mode in unauthorized server-error; do
 done
 
 echo "first publish falls through to build while registry failures stay fatal: PASS"
+
+# Exercise the real exporter lookup/verification blocks without registry writes.
+python3 - "$ROOT" "$work" <<'PY'
+import pathlib, sys, yaml
+root, work = map(pathlib.Path, sys.argv[1:])
+workflow = yaml.load((root / '.github/workflows/observability.yml').read_text(), Loader=yaml.BaseLoader)
+steps = {step.get('id'): step for step in workflow['jobs']['observability']['steps']}
+assert steps['exporter_build']['if'] == "contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && steps.exporter_existing.outputs.existing_digest == ''"
+for identity in ('exporter_existing', 'exporter_image'):
+    (work / (identity + '.sh')).write_text(steps[identity]['run'])
+PY
+cat > "$work/bin/crane" <<'CRANE'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$1" in
+  ls)
+    [ "$FAKE_CRANE_MODE" != registry-error ] || { echo 'UNAUTHORIZED' >&2; exit 1; }
+    [ "$FAKE_CRANE_MODE" = missing ] || echo "$TAG"
+    ;;
+  digest)
+    if [ "$FAKE_CRANE_MODE" = changed ]; then printf 'sha256:%064d\n' 0; else echo "$FAKE_EXPORTER_DIGEST"; fi
+    ;;
+  config)
+    if [ "$FAKE_CRANE_MODE" = wrong-revision ]; then revision=wrong; else revision="$SOURCE_SHA"; fi
+    printf '{"config":{"Labels":{"org.opencontainers.image.revision":"%s"}}}\n' "$revision"
+    ;;
+  *) exit 2 ;;
+esac
+CRANE
+chmod +x "$work/bin/crane"
+exporter_test_sha="$(printf 'a%.0s' {1..40})"
+exporter_test_digest="sha256:$(printf 'b%.0s' {1..64})"
+exporter_step() {
+  env PATH="$work/bin:$PATH" GITHUB_WORKSPACE="$ROOT" GITHUB_OUTPUT="$work/exporter.out" \
+    REPOSITORY=ghcr.io/a158coke/dev-metrics-exporter TAG="$exporter_test_sha" SOURCE_SHA="$exporter_test_sha" \
+    IMAGE="ghcr.io/a158coke/dev-metrics-exporter:$exporter_test_sha" \
+    FAKE_EXPORTER_DIGEST="$exporter_test_digest" "$@"
+}
+for mode in existing missing; do
+  : > "$work/exporter.out"
+  exporter_step FAKE_CRANE_MODE="$mode" bash "$work/exporter_existing.sh"
+  existing="$(sed -n 's/^existing_digest=//p' "$work/exporter.out")"
+  if [ "$mode" = existing ]; then [ "$existing" = "$exporter_test_digest" ]; else [ -z "$existing" ]; fi
+  exporter_step FAKE_CRANE_MODE="$mode" EXISTING_DIGEST="$existing" BUILD_DIGEST="$exporter_test_digest" bash "$work/exporter_image.sh"
+  grep -Fxq "digest=$exporter_test_digest" "$work/exporter.out"
+done
+if exporter_step FAKE_CRANE_MODE=registry-error bash "$work/exporter_existing.sh" >"$work/exporter-error.out" 2>&1; then
+  echo 'exporter lookup ignored registry authentication failure' >&2; exit 1
+fi
+for mode in changed wrong-revision; do
+  if exporter_step FAKE_CRANE_MODE="$mode" EXISTING_DIGEST="$exporter_test_digest" BUILD_DIGEST='' \
+    bash "$work/exporter_image.sh" >"$work/exporter-error.out" 2>&1; then
+    echo "exporter accepted invalid registry identity: $mode" >&2; exit 1
+  fi
+done
+echo 'exporter reuses immutable digests and rejects registry/identity drift: PASS'

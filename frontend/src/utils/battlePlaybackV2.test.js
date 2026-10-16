@@ -3,6 +3,7 @@ import {
   healthAt,
   healthDisplayAt,
   lifeAt,
+  observedFreezeTimeAt,
   positionCoveredAtV2,
   positionAtV2,
   orientationKnownAt,
@@ -74,6 +75,45 @@ describe('positionCoveredAtV2', () => {
     expect(positionCoveredAtV2(segs, 50)).toBe(true)
     expect(positionCoveredAtV2(segs, 120)).toBe(false) // hidden interval
     expect(positionCoveredAtV2(segs, 160)).toBe(true)
+  })
+})
+
+describe('observedFreezeTimeAt（失察即冻结的采样时刻）', () => {
+  const segs = [
+    { startSec: 0, endSec: 100, knowledge: 'OBSERVED' },
+    { startSec: 100, endSec: 140, knowledge: 'LAST_KNOWN' },
+    { startSec: 140, endSec: 200, knowledge: 'OBSERVED' },
+  ]
+
+  it('观测区间内返回 t 本身（正常采样）', () => {
+    expect(observedFreezeTimeAt(segs, 0)).toBe(0)
+    expect(observedFreezeTimeAt(segs, 50)).toBe(50)
+    expect(observedFreezeTimeAt(segs, 100)).toBe(100)
+    expect(observedFreezeTimeAt(segs, 160)).toBe(160)
+  })
+
+  it('失察区间内冻结在最后一个 OBSERVED 段的结束时刻（不跟随滤波器预测）', () => {
+    expect(observedFreezeTimeAt(segs, 120)).toBe(100)
+    expect(observedFreezeTimeAt(segs, 139.9)).toBe(100)
+  })
+
+  it('首个观测之前 / 无有效段 / 非法时刻 → null（调用方不显示）', () => {
+    expect(observedFreezeTimeAt([{ startSec: 10, endSec: 20, knowledge: 'OBSERVED' }], 5)).toBeNull()
+    expect(observedFreezeTimeAt([{ startSec: 0, endSec: 10, knowledge: 'LAST_KNOWN' }], 50)).toBeNull()
+    expect(observedFreezeTimeAt([], 5)).toBeNull()
+    expect(observedFreezeTimeAt(null, 5)).toBeNull()
+    expect(observedFreezeTimeAt(segs, Number.NaN)).toBeNull()
+  })
+
+  it('多段：跨多个失察区间时取最近一个已结束的观测段末尾', () => {
+    const many = [
+      { startSec: 0, endSec: 10, knowledge: 'OBSERVED' },
+      { startSec: 30, endSec: 40, knowledge: 'OBSERVED' },
+      { startSec: 60, endSec: 70, knowledge: 'OBSERVED' },
+    ]
+    expect(observedFreezeTimeAt(many, 45)).toBe(40)
+    expect(observedFreezeTimeAt(many, 59)).toBe(40)
+    expect(observedFreezeTimeAt(many, 100)).toBe(70)
   })
 })
 

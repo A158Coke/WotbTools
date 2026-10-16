@@ -3,6 +3,594 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "BroadcastServer": {
+      "type": "string",
+      "enum": [
+        "CN",
+        "ASIA",
+        "NA",
+        "EU",
+        "LESTA"
+      ]
+    },
+    "BroadcastCategoryType": {
+      "type": "string",
+      "enum": [
+        "POINTS",
+        "QUARTER_FINALS",
+        "SEMI_FINALS"
+      ]
+    },
+    "BroadcastFormat": {
+      "type": "string",
+      "enum": [
+        "ROUND_ROBIN",
+        "KNOCKOUT"
+      ]
+    },
+    "BroadcastPerspective": {
+      "type": "string",
+      "enum": [
+        "POV",
+        "OBSERVER"
+      ]
+    },
+    "BroadcastBracket": {
+      "type": "string",
+      "enum": [
+        "DEFAULT",
+        "WINNERS",
+        "LOSERS"
+      ]
+    },
+    "BroadcastSeason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "server",
+        "year",
+        "name",
+        "startDate",
+        "createdAt",
+        "version",
+        "rootCount",
+        "replayCount"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "server": {
+          "$ref": "#/$defs/BroadcastServer"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rootCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "replayCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "BroadcastCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "seasonId",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "seasonId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "type": {
+          "$ref": "#/$defs/BroadcastCategoryType"
+        }
+      }
+    },
+    "BroadcastReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodeId",
+        "title",
+        "url",
+        "matchDate",
+        "dayNumber",
+        "groupLabel",
+        "groupNumber",
+        "bracket",
+        "teams",
+        "perspective",
+        "coverId"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "nodeId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+        },
+        "matchDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "groupLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "groupNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4
+        },
+        "bracket": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastBracket"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "perspective": {
+          "$ref": "#/$defs/BroadcastPerspective"
+        },
+        "coverId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    },
+    "BroadcastNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "categoryId",
+        "roundNumber",
+        "format",
+        "replays"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "categoryId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "roundNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastReplay"
+          }
+        }
+      }
+    },
+    "BroadcastIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "servers",
+        "seasons",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "servers": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/BroadcastServer"
+          }
+        },
+        "seasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastSeason"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastSeasonView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "season",
+        "categories",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "season": {
+          "$ref": "#/$defs/BroadcastSeason"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastCategory"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastCategoryView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "season",
+        "category",
+        "nodes",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "season": {
+          "$ref": "#/$defs/BroadcastSeason"
+        },
+        "category": {
+          "$ref": "#/$defs/BroadcastCategory"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastNode"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastDeletionPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seasonId",
+        "expectedVersion",
+        "rootCount",
+        "replayCount"
+      ],
+      "properties": {
+        "seasonId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rootCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "replayCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "BroadcastSeasonCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "server",
+        "year",
+        "name",
+        "startDate"
+      ],
+      "properties": {
+        "server": {
+          "$ref": "#/$defs/BroadcastServer"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "BroadcastSeasonUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "year",
+        "name",
+        "startDate"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "BroadcastCategoryCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "type"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "type": {
+          "$ref": "#/$defs/BroadcastCategoryType"
+        }
+      }
+    },
+    "BroadcastNodeCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "roundNumber",
+        "format"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "roundNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "BroadcastReplaySave": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "title",
+        "url",
+        "matchDate",
+        "dayNumber",
+        "groupLabel",
+        "groupNumber",
+        "bracket",
+        "teams",
+        "perspective",
+        "coverAction"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+        },
+        "matchDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "groupLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "groupNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4
+        },
+        "bracket": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastBracket"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "perspective": {
+          "$ref": "#/$defs/BroadcastPerspective"
+        },
+        "coverAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REMOVE",
+            "REPLACE"
+          ]
+        }
+      }
+    },
     "ObservabilityEventsRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -1331,6 +1919,143 @@ export default {
         }
       }
     },
+    "TournamentCsvChanges": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "addedClans",
+        "changedClans",
+        "removedClans",
+        "addedScores",
+        "changedScores",
+        "removedScores",
+        "preservedClears"
+      ],
+      "properties": {
+        "addedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "addedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preservedClears": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Administrative clear overrides retained in the effective replacement."
+        }
+      }
+    },
+    "TournamentCsvImportPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standings",
+        "sourceName",
+        "sourceSha256",
+        "sourceRowCount",
+        "clanCount",
+        "missingCellCount",
+        "eventVersion",
+        "changes"
+      ],
+      "properties": {
+        "standings": {
+          "$ref": "#/$defs/TournamentStandings"
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceRowCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "clanCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "missingCellCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 150000
+        },
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "changes": {
+          "$ref": "#/$defs/TournamentCsvChanges"
+        }
+      }
+    },
+    "TournamentAttribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "TournamentDataSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "csvImported",
+        "attribution"
+      ],
+      "properties": {
+        "csvImported": {
+          "type": "boolean",
+          "description": "Remains true after the first successful CSV import for the lifetime of this event."
+        },
+        "attribution": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TournamentAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "TournamentRecognitionPermit": {
       "type": "object",
       "additionalProperties": false,
@@ -1421,6 +2146,7 @@ export default {
     },
     "TournamentAudit": {
       "type": "object",
+      "description": "Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -1469,10 +2195,12 @@ export default {
         },
         "before": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         },
         "after": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         }
       }
@@ -4451,6 +5179,13 @@ export default {
         "TOURNAMENT_EVIDENCE_INVALID",
         "TOURNAMENT_STORAGE_FULL",
         "TOURNAMENT_STORAGE_ERROR",
+        "TOURNAMENT_CSV_INVALID",
+        "TOURNAMENT_CSV_WORKSPACE_BUSY",
+        "BROADCAST_VERSION_CONFLICT",
+        "BROADCAST_NODE_CONFLICT",
+        "BROADCAST_COVER_INVALID",
+        "BROADCAST_STORAGE_UNAVAILABLE",
+        "BROADCAST_STORAGE_ERROR",
         "INVALID_RECOGNITION_REQUEST",
         "INVALID_RECOGNITION_PERMIT",
         "TOURNAMENT_RECOGNITION_NOT_CONFIGURED",
@@ -4465,6 +5200,7 @@ export default {
         "INVALID_ARGUMENT",
         "MISSING_PARAM",
         "INVALID_REQUEST",
+        "FILE_TOO_LARGE",
         "DATASET_REFERENCE_REQUIRED",
         "UNSUPPORTED_MEDIA_TYPE",
         "METHOD_NOT_ALLOWED",

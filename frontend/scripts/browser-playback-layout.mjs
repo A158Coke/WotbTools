@@ -28,11 +28,15 @@ const productionCss = cssPaths
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
 const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
 const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
-if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)')
-  || /offset\.[xy]\s*\/\s*(scale|viewScale)/.test(battleMapSource)
-  || !battlePlaybackSource.includes('const renderedMapFrame = computed(() =>')
-  || !battlePlaybackSource.includes(':rendered-frame="renderedMapFrame"')) {
-  throw new Error('BattleMap leader-line production wiring must use the rendered SVG frame contract')
+// 2026-10-16 用户裁定：标记删除防重叠位移与虚线 leader，车体严格落在真实位置。
+// 本门禁守住"生产接线里不再出现位移/虚线"（反过来写回去也会在这里失败）。
+if (battleMapSource.includes('screenOffsetToSvgDelta')
+  || battleMapSource.includes('presentationOffset')
+  || battleMapSource.includes('pb-marker-leader')
+  || battlePlaybackSource.includes('presentationOffset')
+  || battlePlaybackSource.includes('computeTankCollisionLayout')
+  || battlePlaybackSource.includes('renderedMapFrame')) {
+  throw new Error('markers must render at their true positions: no collision displacement / leader line')
 }
 const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
@@ -48,9 +52,9 @@ const scenarios = [
   // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
   // frame for the basemap img, overlay SVG and marker layer.
   { name: 'raster-frame-source', form: 'pc', width: 1280, height: 900, check: 'raster' },
-  // Real leader-line geometry guard: a 4x layout-scaled, non-square SVG frame must preserve the
+  // Real marker-position guard: the marker center must coincide with its semantic anchor
   // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
-  { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
+  { name: 'marker-true-position', form: 'mobile', width: 390, height: 844, check: 'true-position' },
 
   // Fullscreen changes capacity while retaining the shared three-row battlefield contract.
   { name: 'pc-fullscreen-side-slots', form: 'pc', width: 1920, height: 900, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
@@ -62,7 +66,7 @@ const scenarios = [
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
-  const lanes = !['mobile', 'raster', 'leader'].includes(scenario.check)
+  const lanes = !['mobile', 'raster', 'true-position'].includes(scenario.check)
   const rootClasses = [
     'battle-playback',
     'playback-workspace',
@@ -103,7 +107,6 @@ function fixtureHtml(scenario) {
   .pb-basemap { object-fit:fill; }
   .pb-markers { position:absolute; inset:0; pointer-events:none; }
   .pb-marker { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); border-radius:50%; background:#f00; }
-  .pb-marker-leader { stroke:#aaa; stroke-width:1; }
   .pb-mobile-overlay-content { min-height:72px; }
   .pb-controls { display: flex; justify-content: center; gap: 4px; }
   .pb-btn { min-width:44px; min-height:44px; }
@@ -130,8 +133,8 @@ ${productionCss}
   </section>
     ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     <div class="pb-map-stage">
-      <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
-        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
+      <div class="pb-map"${scenario.check === 'true-position' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'true-position' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
+        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'true-position' ? `<svg class="pb-svg" viewBox="0 0 769 763"><circle class="pb-true-anchor" cx="384.5" cy="381.5" r="2"></circle></svg><div class="pb-markers"><div class="pb-marker" style="left:50%;top:50%"></div></div>` : ''}
       </div></div>
     </div>
     <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsMarkup}</div></div>
@@ -254,51 +257,29 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
       require(zoomRect && zoomRect.width > (fitRect?.width || 0), '4x raster frame must be larger than fit frame')
     }
 
-    if (${JSON.stringify(scenario.check)} === 'leader') {
+    if (${JSON.stringify(scenario.check)} === 'true-position') {
+      // 标记严格落在真实位置：marker 中心必须与同一语义点的 SVG 锚点重合（无任何位移项），
+      // 且 DOM 里不得出现虚线 leader。
       const logical = { W: 769, H: 763 }
-      const offset = { x: 20, y: -16 }
       const svg = root.querySelector('.pb-svg')
-      const line = root.querySelector('.pb-marker-leader')
       const marker = root.querySelector('.pb-marker')
-      const visibleRect = map.getBoundingClientRect()
-      const renderedRect = svg?.getBoundingClientRect()
-      const delta = renderedRect && renderedRect.width > 0 && renderedRect.height > 0
-        ? {
-            x: offset.x * logical.W / renderedRect.width,
-            y: offset.y * logical.H / renderedRect.height,
-          }
-        : null
-      require(delta, 'leader-line SVG delta must be measurable')
-      const canonical = { x: logical.W / 2, y: logical.H / 2 }
-      const x2 = canonical.x + (delta?.x || 0)
-      const y2 = canonical.y + (delta?.y || 0)
-      line?.setAttribute('x2', String(x2))
-      line?.setAttribute('y2', String(y2))
+      const anchor = root.querySelector('.pb-true-anchor')
+      require(!root.querySelector('.pb-marker-leader'), 'leader line must not exist (removed 2026-10-16)')
       const markerRect = marker?.getBoundingClientRect()
-      const endpoint = renderedRect ? {
-        x: renderedRect.left + x2 * renderedRect.width / logical.W,
-        y: renderedRect.top + y2 * renderedRect.height / logical.H,
-      } : null
-      const markerCenter = markerRect ? {
-        x: markerRect.left + markerRect.width / 2,
-        y: markerRect.top + markerRect.height / 2,
-      } : null
-      const pixelDelta = endpoint && markerCenter ? {
-        x: endpoint.x - markerCenter.x,
-        y: endpoint.y - markerCenter.y,
-      } : null
-      require(renderedRect && Math.abs(renderedRect.width - visibleRect.width * 4) < 0.5,
-        'leader-line fixture must use a 4x rendered SVG frame')
-      require(markerCenter && endpoint && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
-        'leader endpoint must match visible marker center within 0.5 CSS px')
+      const svgRect = svg?.getBoundingClientRect()
+      const anchorRect = anchor?.getBoundingClientRect()
+      const markerCenter = markerRect ? { x: markerRect.left + markerRect.width / 2, y: markerRect.top + markerRect.height / 2 } : null
+      const anchorCenter = anchorRect ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 } : null
+      const pixelDelta = markerCenter && anchorCenter
+        ? { x: markerCenter.x - anchorCenter.x, y: markerCenter.y - anchorCenter.y } : null
+      require(svgRect && svgRect.width > 0, 'marker-true-position fixture must render the map frame')
+      require(pixelDelta && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
+        'marker center must coincide with its semantic anchor (no displacement)')
       metrics = {
         logical,
-        visibleCss: { width: visibleRect.width, height: visibleRect.height },
-        renderedSvgCss: { width: renderedRect?.width, height: renderedRect?.height },
-        viewScale: 4,
-        presentationOffset: offset,
+        visibleCss: { width: svgRect.width, height: svgRect.height },
         markerCenter,
-        leaderEndpoint: endpoint,
+        anchorCenter,
         pixelDelta,
       }
     }

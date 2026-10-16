@@ -4,7 +4,7 @@
 
 ## Current inventory
 
-Five resources: `wotbtools_active_users`, `wotbtools_feature_usage`, `wotbtools_android_downloads`, `wotbtools_ai_token_usage`, `wotbtools_backend_error_logs`. Their UIDs are the respective filename stems (hyphenated). Active users is the default home. Six older dashboards are removed through ordinary TF deletes.
+Six resources: `wotbtools_engineering_overview`, `wotbtools_active_users`, `wotbtools_feature_usage`, `wotbtools_android_downloads`, `wotbtools_ai_token_usage`, `wotbtools_backend_error_logs`. Their UIDs are the respective filename stems (hyphenated). Active users is the default home. The engineering dashboard is an additive resource; the five product resources and the default home remain unchanged. The six older dashboards remain retired.
 
 ## Lifecycle policy
 
