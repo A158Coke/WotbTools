@@ -3,7 +3,7 @@ import { ANDROID_APP_ORIGIN, PRODUCTION_API_ORIGIN, ANDROID_ASSET_BASE } from '.
  * Android local-first bundle（PR B §5/§6/§10/§31）。
  *
  * 目标：APK 里带着**完整可离线运行**的产品前端 —— index + JS/CSS + Agent WASM + 必需本地资源，
- * 由本地可信 origin（`https://appassets.androidplatform.net`，WebViewAssetLoader）伺服。
+ * 由本地可信 origin（`http://127.0.0.1:21653`，Native LocalRuntimeServer）伺服。
  *
  * 做法刻意是「同一份产品源码 + 不同 runtime target」，而不是第二套 frontend：
  * ```text

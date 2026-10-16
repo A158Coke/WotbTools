@@ -2241,7 +2241,7 @@ async function runParseLifecycleScenario(env, scenario) {
 }
 
 /** B13: real local parser/UI with every business HTTP attempt intercepted and counted.
- * Local fixture resources remain available, as bundled appassets do in airplane mode.
+ * Local fixture resources remain available, as the APK-bundled local origin does in airplane mode.
  * This checks state and requests only; it never inspects or captures a 3D scene.
  */
 async function runOfflineWorkspaceScenario(env) {

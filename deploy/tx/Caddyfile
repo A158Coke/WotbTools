@@ -60,13 +60,26 @@ www.wotbtools.com {
 }
 
 wotbtools.com {
-	# Exact Android origin; native Bearer authentication never needs cookies.
+	# Exact Android origins; native Bearer authentication never needs cookies.
+	# @android = Android 2.x System WebView origin (kept while 2.x clients and the
+	# documented Tier B rollback exist); @androidLoopback = Android 3.0+ GeckoView
+	# LocalRuntimeServer origin (MainActivity.LOCAL_APP_ORIGIN). Both blocks must stay
+	# field-for-field identical apart from the origin (validate-caddy-config.sh).
 	@android {
 		header Origin https://appassets.androidplatform.net
 		path /api/* /agent-assets/* /download/android/version.json
 	}
 	@androidPreflight {
 		header Origin https://appassets.androidplatform.net
+		method OPTIONS
+		path /api/* /agent-assets/* /download/android/version.json
+	}
+	@androidLoopback {
+		header Origin http://127.0.0.1:21653
+		path /api/* /agent-assets/* /download/android/version.json
+	}
+	@androidLoopbackPreflight {
+		header Origin http://127.0.0.1:21653
 		method OPTIONS
 		path /api/* /agent-assets/* /download/android/version.json
 	}
@@ -78,7 +91,15 @@ wotbtools.com {
 		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta"
 		+Vary Origin
 	}
+	header @androidLoopback {
+		Access-Control-Allow-Origin http://127.0.0.1:21653
+		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		Access-Control-Allow-Headers "Authorization, Content-Type, Content-Encoding, Accept"
+		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta"
+		+Vary Origin
+	}
 	respond @androidPreflight "" 204
+	respond @androidLoopbackPreflight "" 204
 	# 2026-10-06: APK downloads offloaded to Tsinghua Cloud dir-share; TX1's 5Mbps
 	# public pipe was saturated by 15MB apk downloads. Only *.apk is redirected —
 	# version.json and *.staging.json stay origin-served (the deploy preflight

@@ -184,7 +184,6 @@ spec = importlib.util.spec_from_file_location("android_contract", root / "script
 gates = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gates)
 contract = json.loads((root / "contracts/android-native-bridge.json").read_text(encoding="utf-8"))
-contract["origin"] = "https://appassets.androidplatform.net"
 pin = json.loads((root / "deploy/agent/source.json").read_text(encoding="utf-8"))
 source = "a" * 40
 version = "2.0.1"

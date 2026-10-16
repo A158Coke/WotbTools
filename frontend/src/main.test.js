@@ -179,7 +179,7 @@ describe('application startup preserves the authentication callback', () => {
       removeEventListener: (_, listener) => listeners.delete(listener),
       postMessage(json) {
         const message = JSON.parse(json)
-        const result = message.method === 'getBridgeVersion' ? 2
+        const result = message.method === 'getBridgeVersion' ? 3
           : message.method === 'getCapabilities' ? ['native-auth'] : null
         const reply = () => listeners.forEach(listener => listener({ data: { id: message.id, result } }))
         if (message.method === 'authGetState') replies.push(reply)

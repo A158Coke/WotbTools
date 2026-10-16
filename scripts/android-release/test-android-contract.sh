@@ -60,7 +60,7 @@ assert sorted(auth_methods) == ["authGetAccessToken", "authGetState", "authLogin
 assert auth_capabilities == ["native-auth"], auth_capabilities
 # 事件集合逐字固定（auth_surface 返回契约里的**全部**事件全局）：新增事件必须在这里显式登记，
 # 不允许悄悄多出一个页面全局。
-assert auth_globals == ["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged"], auth_globals
+assert auth_globals == ["wotbtoolsOnAuthChanged", "wotbtoolsOnConnectivityChanged", "wotbtoolsOnReplay"], auth_globals
 # connectivity 是 PR B 新增的 wire surface：方法与能力同样逐字固定（additive 不等于随手加）。
 connectivity_methods = [name for name in base["methods"] if name.startswith("connectivity")]
 assert connectivity_methods == ["connectivityGetState"], connectivity_methods
@@ -68,7 +68,14 @@ assert [name for name in base["capabilities"] if name == "connectivity"] == ["co
 assert base["methods"]["connectivityGetState"]["response"]["enum"] == ["online", "offline"]
 
 # Trusted local origin addition retains Bridge v2 RPC semantics and both production origins.
+# Historical v2 fixture (the current contract is v3 / loopback): this guards the reviewed
+# remote → appassets special case in contract_breaking_changes.
 local_contract = json.loads(json.dumps(base))
+local_contract["bridgeVersion"] = 2
+local_contract["origin"] = "https://appassets.androidplatform.net"
+local_contract["allowedOrigins"] = ["https://appassets.androidplatform.net", "https://wotbtools.com", "https://www.wotbtools.com"]
+for resource in local_contract["syntheticResources"].values():
+    resource["url"] = resource["url"].replace(base["origin"], local_contract["origin"])
 remote_contract = json.loads(json.dumps(local_contract))
 remote_contract["origin"] = "https://wotbtools.com"
 remote_contract["allowedOrigins"] = ["https://wotbtools.com", "https://www.wotbtools.com"]
@@ -89,7 +96,7 @@ assert contract_result(remote_contract, untrusted_origin)["breaking"]
 with tempfile.TemporaryDirectory() as temp:
     native = Path(temp) / "Native.kt"
     declarations = '\n'.join(f'"{item}"' for item in [*base["methods"], *base["allowedOrigins"], *base["capabilities"], *auth_globals])
-    native.write_text(declarations + '\nconst val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"\nconst val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"\n"X-Wotb-Pending-Id"\nconst val FOLDER_STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-folder"\n"X-Wotb-Folder-Selection-Id"\n"X-Wotb-Folder-File-Id"', encoding="utf-8")
+    native.write_text(declarations + '\nconst val LOCAL_APP_ORIGIN = "http://127.0.0.1:21653"\nconst val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"\n"X-Wotb-Pending-Id"\nconst val FOLDER_STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-folder"\n"X-Wotb-Folder-Selection-Id"\n"X-Wotb-Folder-File-Id"', encoding="utf-8")
     validate_native_sources(base, [str(native)])
     native.write_text(native.read_text(encoding="utf-8").replace('/__native/replay-pending', '/__native/wrong'), encoding="utf-8")
     try:

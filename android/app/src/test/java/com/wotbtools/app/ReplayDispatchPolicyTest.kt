@@ -17,7 +17,7 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = true,
-            currentUrl = "https://appassets.androidplatform.net/index.html",
+            currentUrl = "http://127.0.0.1:21653/index.html",
             expected = ReplayDispatchAction.NAVIGATE_REPLAY
         )
         // 冷启动后 URL 仍为空（webView.url == null）：同样切到 replay canonical view。
@@ -39,9 +39,9 @@ class ReplayDispatchPolicyTest {
     fun pendingReplayOnReplayWorkspaceNotifiesWebWithoutReloading() {
         // 已在 replay workspace：走 window.wotbtoolsOnReplay()，绝不 reload（否则丢掉 Web 侧已有状态）。
         listOf(
-            "https://appassets.androidplatform.net/index.html?view=replay",
-            "https://appassets.androidplatform.net/index.html?view=replay&tab=data",
-            "https://appassets.androidplatform.net/index.html?view=replay"
+            "http://127.0.0.1:21653/index.html?view=replay",
+            "http://127.0.0.1:21653/index.html?view=replay&tab=data",
+            "http://127.0.0.1:21653/index.html?view=replay"
         ).forEach { url ->
             assertDispatch(
                 hasPendingReplay = true,
@@ -58,13 +58,13 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = false,
-            currentUrl = "https://appassets.androidplatform.net/index.html",
+            currentUrl = "http://127.0.0.1:21653/index.html",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = true,
             webViewVisible = false,
-            currentUrl = "https://appassets.androidplatform.net/index.html?view=replay",
+            currentUrl = "http://127.0.0.1:21653/index.html?view=replay",
             expected = ReplayDispatchAction.NONE
         )
     }
@@ -74,13 +74,13 @@ class ReplayDispatchPolicyTest {
         assertDispatch(
             hasPendingReplay = false,
             webViewVisible = true,
-            currentUrl = "https://appassets.androidplatform.net/index.html",
+            currentUrl = "http://127.0.0.1:21653/index.html",
             expected = ReplayDispatchAction.NONE
         )
         assertDispatch(
             hasPendingReplay = false,
             webViewVisible = true,
-            currentUrl = "https://appassets.androidplatform.net/index.html?view=replay",
+            currentUrl = "http://127.0.0.1:21653/index.html?view=replay",
             expected = ReplayDispatchAction.NONE
         )
     }

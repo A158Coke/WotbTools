@@ -299,7 +299,7 @@ class ReplayFolderPickerTest {
         publish(picker, selection)
         listOf(
             "https://wotbtools.com/__native/replay-folder",
-            "http://appassets.androidplatform.net/__native/replay-folder",
+            "https://127.0.0.1:21653/__native/replay-folder",
             ReplayFolderPicker.STREAM_URL + "?file=other",
             ReplayFolderPicker.STREAM_URL + "/extra"
         ).forEach { url ->
