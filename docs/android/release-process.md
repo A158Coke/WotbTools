@@ -35,6 +35,18 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 - **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
 - **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在
   当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
+- **版本号在候选取得 immutable release identity 时才被消耗，不是每个 review commit 都消耗**
+  （Version number is consumed when a release candidate acquires an immutable release identity,
+  not for every review commit）：`wotbVersion` 固定的是**发布身份**，不是提交序号。同一个尚未形成
+  immutable identity 的 PR / release candidate，在 code review、测试或真机验收过程中发生的修复
+  **不因此自动递增 patch**，保持在**原计划版本**——例如 3.0.0 候选在合并前修掉了 blob 下载导航、
+  响应体 ownership、下载与 picker 互斥、prompt 生命周期等 blocker，最终发布的仍然是 **3.0.0**，
+  而不是 3.0.1 / 3.0.2 / 3.0.3（这些版本从未存在过）。
+  一旦下列任一条件成立，候选身份即不可变，此后任何修改都必须使用**更高的** `wotbVersion`：
+  ① 已创建 immutable release tag（`android-vX.Y.Z`）；② staged APK 身份已固定（清华副本上传 +
+  逐跳 SHA-256 核验）；③ 已写出 staging evidence；④ production `version.json` 已 publish。
+  **注意：不是只有 publish 之后才锁版本**——stage 阶段的 tag / APK 副本 / staging evidence 同样是
+  immutable identity。只有这些条件**全部尚未成立**时，同一 release PR 的 pre-release fix 才保留原版本。
 - **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、
   数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时
   由用户裁定——等级决定是否强制全部用户更新，是产品决策。
@@ -293,9 +305,9 @@ OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地�
 `--max-time 2700`、副本与生产 APK 回读 `--max-time 900`、publish job 90 分钟。实测 release APK 若
 超过 250 MB，先回到产品决策（例如只保留 arm64），不要只调超时。
 
-**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并当前 3.0.x 候选（当前 3.0.3，自动 stage）→
+**cutover 顺序**：① `caddy.yml` 部署含 `@androidLoopback` 的 Caddyfile → ② 合并 3.0.0 候选（`android/gradle.properties` 的 `wotbVersion=3.0.0`，合并 main 后自动 stage）→
 ③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
-`workflow_dispatch(mode=publish, version=3.0.3)`。
+`workflow_dispatch(mode=publish, version=3.0.0)`。
 
 **真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
 GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
@@ -303,7 +315,7 @@ GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与�
 横竖屏；连续切换 replay；前后台切换（含被系统回收后恢复）；断网 / 恢复；QQ 登录 → 回跳 → 登出；
 网页 PNG blob 导出、HoF replay 下载（核对文件内容 / 文件名 / MIME）、保存取消与失败后重试；
 select 打开时页面导航、选项更新后导航、file picker 打开时导航及迟到结果（新页面不可收到旧文件）；
-检查更新 → 下载 → 安装（含 2.3.7 覆盖安装当前 3.0.x）；外链交系统浏览器；软键盘不遮挡输入。
+检查更新 → 下载 → 安装（含 2.3.7 覆盖安装 3.0.0）；外链交系统浏览器；软键盘不遮挡输入。
 再用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」的出站流量：只应出现
 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，
 关不掉就阻塞发布。
