@@ -31,7 +31,7 @@ beforeEach(() => {
   state.createNode.mockResolvedValue(detail)
 })
 describe('shared broadcast catalogue rendering', () => {
-  it('keeps roots collapsed by default and retains usable text/links when a cover fails', async () => {
+  it('keeps roots collapsed, retains text on cover failure and retries the image on explicit refresh', async () => {
     const { wrapper } = await page()
     expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=broadcast-new-replay-30]').exists()).toBe(false)
@@ -44,6 +44,10 @@ describe('shared broadcast catalogue rendering', () => {
     expect(row.find('img').exists()).toBe(false)
     expect(row.text()).toContain('League final')
     expect(row.text()).toContain('追随 Followed')
+    await wrapper.get('[data-testid=broadcast-refresh]').trigger('click')
+    await flushPromises()
+    expect(state.category).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid=broadcast-replay-40] img').attributes('src')).toContain(detail.nodes[0].replays[0].coverId)
     wrapper.unmount()
   })
   it('shows management in the same subtree only for a real administrator and closes an editor when revoked', async () => {
