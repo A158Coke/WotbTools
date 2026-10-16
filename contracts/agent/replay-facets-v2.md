@@ -312,6 +312,21 @@ WotBTools
   此新增校验不扩大既有 `vehicles[]` 字段的兼容边界，也不向 HTTP / canonical ReplayFacts
   增加第二份飞头事实源。
 
+## 4k. 复活生命轨道（`vehicles[].death_times` / `vehicles[].resurrection_times`，PlaybackData additive；上游 v0.4.8）
+
+- `death_times?: number[]`（该车全部死亡时刻，升序，`death_times[0] == death_t`；**仅该车死亡 ≥2 次才输出**）、
+  `resurrection_times?: number[]`（死亡后生命证据从终态回归正值的时刻，升序；**仅非空才输出**）。
+  两列同时缺省 = `death_t` 已完整表达生命史（**死亡终态**；普通回放因此零扰动，行为与既往逐位一致）。
+  上游保证第 n 次死亡与第 n-1 次死亡之间必有复活证据。
+- **语义**：复活模式（爆燃等）同一 eid 死而复生，死亡不再是终态。消费方按 `death → resurrection → death …`
+  交替重建生命状态：canonical `lifeTransitions`（`replay-local/playback/toBattlePlaybackDataset.ts`）、
+  3D 回退 `defLifeAt`（`utils/battlePlaybackV2.ts`）与 `scene/rosterState.js` 同规则；爆焰按**死亡身份**
+  去重——同一次死亡的重复迁移只爆一次，复活后的新死亡各自爆焰。字段缺省时三者一律走 prop3 采样扫描的
+  旧口径。不以 HP 归零、爆焰或位移反推复活时刻。
+- **消费边界 fail closed**：字段出现时必须为数组、元素有限、非负且非降序；形状漂移在
+  `validateAgentPlayback`（`frontend/src/api/agent-replay-facets.ts`，前端唯一装载/校验边界）拒绝，
+  不静默降级为"缺省 = 死亡终态"。不据数组长度反推复活模式（"≥2 死 / 非空"是上游的输出条件，不是消费方的判据）。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
