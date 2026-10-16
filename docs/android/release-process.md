@@ -156,16 +156,34 @@ commit 时间 → 才回落 wall-clock（此时该构建不可逐字节复现，
 
 ### APK 公网下载卸载（清华云盘直链）
 
-TX1 出口公网带宽有限且会被 APK 下载打满（APK 随内嵌 bundle 增长：2026-10-16 起 2D 底图与 Web 同字节，bundle 资产约 40 MiB——见 [architecture.md](architecture.md) §2D 底图随包），stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
-把 APK 传进清华云盘
-`个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把
-`/download/android/*.apk` 302 到该目录的分享直链
+TX1 出口公网带宽有限且会被 APK 下载打满（APK 随内嵌 bundle 增长：2026-10-16 起 2D 底图与 Web 同字节，bundle 资产约 40 MiB——见 [architecture.md](architecture.md) §2D 底图随包），所以 APK 本体不由
+TX1 前端源站伺服：TX1 Caddy 把 `/download/android/*.apk` 302 到清华云盘
+`个人资料库 /wotbtools-android/` 目录的分享直链
 `https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/<apkName>&dl=1`，
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
 
-**两台 origin 的 APK 由该副本 seed（2026-10-08 优化）**：跨洋只发生一次——runner 只把 APK
-上传到清华副本（实测 15MB ≈ 75–108s；**2026-10-16 起 APK 随内嵌 bundle 增大——2D 底图改为与
-Web 同字节，bundle 资产约 40 MiB，下列耗时按体积比例放大**），随后 TX1/TX2 各自从分享直链**拉取**（实测
+**写副本的通道（2026-10-16 起，实测驱动）**：runner 直传网盘是全链路最慢、最随机的一段——
+同尺寸 201 MB 实测 1567s（26 min）～2058s（34 min），12:11 那次直接撞 `--max-time 2700` 上限失败
+（run 38898856907）；而同一门网盘**读**侧 12–15 MB/s。探针（`android-offload-probe.yml`）实测
+**TX1 写网盘 0.42 MiB/s**（192 MiB ≈ 7.6 min，且确定）——于是 stage 的 APK 落地改成两跳：
+
+1. **runner → 发布专用 COS 桶**（键 `android/<apkName>`，8 路分片）：跨洋只到对象存储一次。
+   同名且尺寸一致即跳过（stage 重跑幂等）；尺寸不一致直接 fail-closed（同一版本必须同一份字节，
+   要换字节就换 `wotbVersion`）。凭证 = `secrets.COS_RELEASE_SECRET_ID/KEY` + `vars.COS_RELEASE_BUCKET/REGION`
+   （CAM 动作清单见 §卸载链路体检），桶与资产桶 `wotbtools-assets-*` **分开**，SDK 版本在 workflow 内固定。
+2. **TX1 → 清华网盘**：主机用预签名直链（TTL 1h，只经 ssh env、不落盘）拉回 + `sha256sum -c`，再按与
+   旧实现**完全相同**的协议写副本（upload-link → multipart `replace=1`，`filename=` 显式钉住对象名），
+   并以「分享直链下载回来 SHA-256 与 staged APK 一致」为唯一权威（该部署上传成功也返回 HTTP 400）。
+   网盘 token 优先取主机上的 `/etc/wotb-tx/tsinghua-cloud.token`（0600，目标形态），缺失时回落仓库 secret
+   `TSINGHUA_CLOUD_TOKEN`；两种来源都会打印，便于确认收敛进度。
+
+`offload_transport`（stage 的 dispatch 输入）三态：`auto`（默认——配了 COS 走新链路，否则回落旧直传并
+`::warning::` + release summary 明示）、`cos`（强制新链路，缺凭证 fail-closed）、`direct`（强制旧链路，
+用于对照/回退）。两条通道都保证同一组不变量：副本先于两条 seed 就位、`replace=1` 自愈、
+副本字节由分享直链回读 SHA 判定、副本本身不消耗版本号。
+
+**两台 origin 的 APK 由该副本 seed（2026-10-08 优化）**：跨洋只发生一次（新链路下只到 COS 这一跳；
+`direct` 回落时仍是 runner→网盘那一次），随后 TX1/TX2 各自从分享直链**拉取**（实测
 0.70s / 0.81s，≈19–22 MB/s），取代旧的 `appleboy/scp-action` 直推（drone-scp 的 SFTP
 单流，美区 runner → 境内 VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage
 job 约 89%）。拉取侧四道边界：
@@ -190,7 +208,8 @@ nginx 服务，且直推是覆盖写）；③ `ln` 失败即比对目标现有 S
   区分「远端显式回答文件不存在」与「探测本身失败」，后者直接失败本步骤，绝不降级成 absent
   （否则 seed 会覆盖一个 SHA 不符的 origin 文件，销毁 immutable 冲突证据）。
 - Distribution replica：清华云盘。不参与 immutable 判定；stage 每次执行都会 `replace=1` 覆盖同名文件（`reuse=1` 幂等令牌）
-  覆盖上传 + 「分享直链下载回来 SHA-256 与 staged APK 一致」校验，因此副本缺失/损坏在
+  覆盖上传 + 「分享直链下载回来 SHA-256 与 staged APK 一致」校验（`cos` 通道由 TX1 执行、`direct` 回落由
+  runner 执行），因此副本缺失/损坏在
   任意重跑中都会被无条件修复（「重跑安全」指的就是这一层），上传并核验副本本身不消耗版本号。它同时是 **origin 的冷启动源**
   （两台 origin 从这里 seed）；副本字节若损坏，seed 步骤的就地 SHA 校验会在写入 origin 前拦下
   （fail-closed），不会污染 immutable 权威。
@@ -208,7 +227,7 @@ nginx 服务，且直推是覆盖写）；③ `ln` 失败即比对目标现有 S
 
 `runner → 清华网盘` 的直接上传是全链路最慢的一段：2026-10-16 实测同尺寸（201276631 B，
 GeckoView 双 ABI）用掉 2058s（≈98 KB/s，占 `--max-time 2700` 的 76%），当天 12:11 的 stage
-直接超时失败（run 38898856907，step `Upload APK to Tsinghua Cloud`）。同一台网盘**读**侧并不慢
+直接超时失败（run 38898856907，step `Upload APK to Tsinghua Cloud`——该旧直传步骤现已重构为上面的两跳）。同一台网盘**读**侧并不慢
 （TX1 拉 201276631 B 用 16.3s ≈ 12.3 MB/s，runner 走公网直链回读 ~10 MB/s）——瓶颈是那台校园
 Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「写」这一跳挪到境内主机
 （runner → 上海 COS → TX1 → 网盘）：`.github/workflows/android-offload-probe.yml` 是它的第一步，
@@ -252,9 +271,14 @@ scratch-object 契约不允许静默残留）。
 host 侧脚本需要调并发/超时；< 0.3 MiB/s ⇒ 改由 TX2 推，或换对象存储。探针预算按 192 MiB 场景给足
 （job 90 分钟；COS 拉取 900s、网盘推送 1800s、回读 3×300s），所以「链路已严重退化」时仍能拿到数字；
 真到上限以下跑不完时按低于判据记负，且退出路径上的 trap 仍会删掉探针对象。
-**本探针只测量**：把 runner
-直传改成 TX1 落地（步骤重排、host 侧脚本、token 收敛）是后续工作；在那之前
-`android-release.yml` 的直传路径仍是唯一发布路径。
+
+**首次体检结果（2026-10-16，run 38937611470，32 MiB）**：TX1 → 网盘 **0.42 MiB/s**
+（33,554,892 B / 76.4s；按此 192 MiB ≈ 7.6 min），网盘 → TX1 回读 **15.1 MiB/s**；两段 COS 链路因
+当时未配凭证而跳过（`::notice::`）。落在「0.3–2 MiB/s」档 ⇒ 采纳 TX1 落地并把超时按实测定死
+（`android-release.yml` 里网盘推送 `--max-time 1800`、回读 3×600s、ssh `command_timeout: 75m`）。
+**该结论已经落进发布路径**：`android-release.yml` 的 stage 现在是 runner → COS → TX1 → 网盘，
+探针与发布路径共用同一套网盘协议（`replace=1` + `filename=` 钉名 + 分享直链回读 SHA 为权威），
+改其中一边必须同步另一边；`direct` 回落保留旧的 runner 直传，待 COS 常态化后由后续 PR 删除。
 
 ### publish 的候选身份：显式版本，不是当前 main
 

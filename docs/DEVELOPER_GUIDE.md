@@ -693,7 +693,10 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 再验证。细节见 `docs/android/release-process.md`。
 
 发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
-runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
+runner → 上海 COS → TX1 → 清华网盘 这条链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
+2026-10-16 实测后它已成为 stage 的 APK 落地通道（探针实测 TX1 写网盘 0.42 MiB/s ⇒ 192 MiB ≈ 7.6 min，
+对比 runner 直传的 26–45 min 且可能撞 2700s 上限）；`offload_transport=direct` 保留旧直传作为回退，
+COS 未配置时 `auto` 也会自动回落并在 summary/日志明示。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 

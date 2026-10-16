@@ -3,8 +3,10 @@ name: Release / Android
 #
 #   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract + **cutover 守卫**
 #              （guard_min_supported / guard_local_first_cutover / guard_bridge_covered）→ 构建/签名 →
-#              证书校验 → 清华副本上传（distribution replica，可 replace 覆盖，不锁定版本）→
-#              immutable APK seed（TX1 → TX2 依次从副本拉取，逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗该
+#              证书校验 → **APK 落地**（runner → 上海 COS → TX1 → 清华网盘副本：distribution replica，
+#              可 replace 覆盖、不锁定版本；探针实测 TX1 写 0.42 MiB/s ⇒ 192 MiB ≈ 7.6 min。COS 未配置
+#              时回落到旧的 runner 直传）→ immutable APK seed（TX1 → TX2 依次从副本拉取，逐跳 SHA-256，
+#              no-clobber 落位；任意一台落位即消耗该
 #              版本号，之后改变 Android candidate 的修改必须换版本）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
 #              ⇒ major / bridge cutover 的 ANDROID_MIN_SUPPORTED_VERSION_CODE 必须在**合并之前**设好：
@@ -56,6 +58,18 @@ on:
         description: "Immutable staged Android version to publish, e.g. 2.0.1 (required for mode=publish; unused for mode=stage)"
         required: false
         type: string
+      offload_transport:
+        # stage 的 APK 落地通道（见 docs/android/release-process.md §APK 公网下载卸载）：
+        #   auto   —— 配了发布存储（COS）就用「runner→COS→TX1→网盘」，没配则回落旧直传（::warning::）；
+        #   cos    —— 强制新链路，缺凭证即 fail-closed（验证配置用）；
+        #   direct —— 强制旧链路 runner→网盘（在 COS 配好之后仍可用来对照/回退）。
+        description: "APK landing transport for stage: auto (default) | cos | direct"
+        type: choice
+        options:
+          - auto
+          - cos
+          - direct
+        default: auto
 
 permissions:
   contents: read
@@ -80,8 +94,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    # 3.0 起 APK 自带 GeckoView（双 ARM ABI，约 200 MB 量级），清华上传按实测 ~150–200 KB/s 约 20 分钟；
-    # staging 阶段不做任何线上就绪等待（那属于 publish）。
+    # 3.0 起 APK 自带 GeckoView（双 ARM ABI，约 200 MB 量级）。2026-10-16 起 APK 落地改走
+    # runner → 上海 COS → TX1 → 清华网盘（探针实测 TX1 写 0.42 MiB/s ⇒ 192 MiB ≈ 7.6 min，确定）；
+    # COS 未配置时的旧直传回落仍是 26–45 min 的不确定段。staging 阶段不做任何线上就绪等待（那属于 publish）。
     timeout-minutes: 120
     steps:
       - name: Checkout release source
@@ -613,25 +628,29 @@ jobs:
           echo "tx1State=$TX1_STATE" >> "$GITHUB_OUTPUT"
           echo "tx2State=$TX2_STATE" >> "$GITHUB_OUTPUT"
 
-      # —— APK 落地策略（2026-10-08 优化）：跨洋只发生一次，两台 origin 从清华副本**拉取** ——
-      # 旧实现用 appleboy/scp-action 直推两台（drone-scp 的 SFTP 单流）：美区 runner → 境内
-      # VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage job 的 89%。同一份字节
-      # 走清华 HTTP 只要 1–2 分钟，而 TX1/TX2 从清华拉取实测 0.70s / 0.81s（21.8 / 18.7 MB/s）。
-      #
-      # 公网下载卸载（副本自愈）：TX1 出口公网带宽只有 5Mbps 且被 15MB APK 下载打满，
-      # TX1 Caddy 已把 /download/android/*.apk 302 到清华云盘目录分享直链
-      # （/download/android/version.json 与 *.staging.json 不在重定向范围内，仍是源站服务）。
-      # 清华副本的两种角色：① 公网下载直链目标；② **origin 的冷启动源**（下方 seed 从这里拉）。
-      # 它不是 origin：immutable 冲突判定仍由上一跳 SSH 直查 TX1/TX2 的字节决定；seed 落位
-      # 本身也是 no-clobber（见下），两层叠加后"不覆盖 immutable APK"在并发窗口内同样成立。
-      # 本步骤在 absent（全新发布）与 equal（重跑/副本损坏）两种 origin 状态下都执行：
-      # replace=1 覆盖同名文件本身就是修复动作；随后 seed 若拉到坏字节会被就地 SHA 校验拦下
-      #（fail-closed），"Verify production APK" 再顺着 302 对公网 URL 做全链路 SHA 兜底。
-      # **顺序要求**：本步骤必须在两条 seed 之前——它们以本副本为源。
-      - name: Upload APK to Tsinghua Cloud (public download offload + origin seed source)
+      # —— APK 落地（2026-10-16 实测驱动，详见 docs/android/release-process.md §APK 公网下载卸载）——
+      # 旧链路瓶颈在 runner 直传清华网盘：同尺寸 201 MB 实测 1567s（26min）～2058s（34min），
+      # 且 2700s 上限是硬币（run 38898856907 就是撞墙失败）。探针（android-offload-probe.yml）实测：
+      # **TX1 写同一门网盘 0.42 MiB/s（192 MiB ≈ 7.6 min，确定）**，网盘读 15 MiB/s。所以把「写」
+      # 这一跳搬到境内主机：
+      #   ① 本步骤：runner → 发布专用 COS 桶（跨洋只到对象存储一次；8 路分片；同名同尺寸已存在即
+      #      跳过 ⇒ 重跑幂等；size 不一致则 fail-closed —— 同版本必须同字节）；
+      #   ② 下一步：TX1 从预签名直链拉回 + `sha256sum -c`，再按**同一** upload-link / `replace=1`
+      #      协议推网盘，并以「分享直链下载回来 SHA-256 一致」为唯一权威（该部署上传成功也返回
+      #      HTTP 400，响应码不判定成败）；`filename=` 显式钉住对象名。
+      # COS 未配置时 `auto` 自动回落到下面的旧直传（::warning:: + release summary 明示），发布不会
+      # 因为新链路未就绪而中断；`offload_transport=cos` 时缺凭证即 fail-closed。
+      # **顺序要求**：这两步都必须在两条 seed 之前——它们以网盘副本为冷启动源。
+      - name: Upload APK to the release store (runner → COS; cross-border leg once)
+        id: offload
         if: steps.preflight.outputs.releaseAction == 'publish'
         shell: bash
         env:
+          COS_SECRET_ID: ${{ secrets.COS_RELEASE_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_RELEASE_SECRET_KEY }}
+          COS_BUCKET: ${{ vars.COS_RELEASE_BUCKET }}
+          COS_REGION: ${{ vars.COS_REGION }}
+          REQUESTED_TRANSPORT: ${{ inputs.offload_transport }}
           TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
         run: |
           set -euo pipefail
@@ -644,40 +663,223 @@ jobs:
           REPO_ID="a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0"
           PARENT_DIR="/wotbtools-android"
           SHARE_DIRECT="https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/$APK_NAME&dl=1"
+          TRANSPORT="${REQUESTED_TRANSPORT:-auto}"
 
-          # Seafile upload-link 返回 **JSON 编码的 URL 字符串**（Response(url)）：
-          # 命令替换会保留响应中的双引号，必须解析后取裸 URL 再交给 curl
-          ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
-            "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
-          ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.')"
-          case "$ULINK" in
-            https://*) ;;
-            *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
-          esac
-
-          # replace=1 = 覆盖同名文件（reuse=1 只是幂等令牌，**不是**覆盖开关——缺
-          # replace 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本，
-          # 损坏副本无法自愈，评审 P2）。已知怪癖：这套清华云盘部署「上传成功也返回
-          # HTTP 400 Parent dir doesn't exist」——响应码不可作为成败依据；唯一权威
-          # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
-          # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
-          upload_rc=0
-          curl -sS --connect-timeout 10 --max-time 2700 -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
-            -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
-          echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
-
-          for attempt in 1 2 3 4 5; do
-            sleep 3
-            if curl -fsSL --connect-timeout 5 --max-time 900 \
-                -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
-                && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
-              echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
-              exit 0
+          if [ "$TRANSPORT" = "direct" ]; then
+            echo "offload_transport=direct (forced): legacy runner → drive upload"
+          elif [ -z "${COS_SECRET_ID:-}" ] || [ -z "${COS_SECRET_KEY:-}" ] || [ -z "${COS_BUCKET:-}" ]; then
+            if [ "$TRANSPORT" = "cos" ]; then
+              echo "::error::offload_transport=cos requires secrets.COS_RELEASE_SECRET_ID / secrets.COS_RELEASE_SECRET_KEY / vars.COS_RELEASE_BUCKET" >&2
+              exit 1
             fi
-            echo "Tsinghua Cloud offload verify attempt $attempt/5 failed; retrying."
-          done
-          echo "::error::Tsinghua Cloud offload verification failed after 5 attempts; public /download/android/*.apk redirects would hit a missing drive object." >&2
-          exit 1
+            echo "::warning::release store (COS) is not configured: falling back to the legacy runner → drive upload. Configure COS_RELEASE_* to move the drive write to TX1 (192 MiB ≈ 7.6 min measured, versus 26–45 min and a hard 2700s wall on the runner)."
+            TRANSPORT="direct"
+          fi
+
+          if [ "$TRANSPORT" = "cos" ]; then
+            REGION="${COS_REGION:-ap-shanghai}"
+            export REGION APK_NAME APK_FILE
+            # 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
+            # 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。
+            python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
+            # 注意：heredoc 正文与终止符 `PY` 必须与 run 块基线同缩进（YAML 去缩进后必须落在列 0），
+            # 否则 bash 认不出终止符（docker/仓内 linter 都会报 here-document delimited by EOF）。
+            python3 - <<'PY'
+          import os
+          import time
+          from qcloud_cos import CosConfig, CosS3Client
+
+          region = os.environ["REGION"]
+          bucket = os.environ["COS_BUCKET"]
+          name = os.environ["APK_NAME"]
+          path = os.environ["APK_FILE"]
+          size = os.path.getsize(path)
+          key = "android/%s" % name
+
+          client = CosS3Client(CosConfig(
+              Region=region,
+              SecretId=os.environ["COS_SECRET_ID"],
+              SecretKey=os.environ["COS_SECRET_KEY"],
+              Scheme="https",
+          ))
+
+
+          def head_size():
+              try:
+                  return int(client.head_object(Bucket=bucket, Key=key)["Content-Length"])
+              except Exception as error:
+                  status = None
+                  try:
+                      status = error.get_status_code()
+                  except Exception:
+                      status = None
+                  if status == 404:
+                      return None
+                  raise SystemExit("HEAD cos://%s/%s failed (status=%s): %s" % (bucket, key, status, error))
+
+
+          existing = head_size()
+          mib = size / (1024.0 * 1024.0)
+          if existing is None:
+              part_mb = max(4, int(mib) // 8)          # 8 路分片（COS part 下限 1 MiB，这里留足余量）
+              started = time.time()
+              client.upload_file(Bucket=bucket, Key=key, LocalFilePath=path,
+                                 PartSize=part_mb, MAXThread=8)
+              elapsed = time.time() - started
+              print("release store upload: %d bytes in %.2fs (%.2f MiB/s, PartSize=%d MiB, 8-way)" % (
+                  size, elapsed, mib / elapsed, part_mb))
+              existing = head_size()
+              if existing != size:
+                  raise SystemExit("release store object size mismatch after upload: %s != %s" % (existing, size))
+          else:
+              print("release store object already present (idempotent re-run): cos://%s/%s size=%s" % (bucket, key, existing))
+              if existing != size:
+                  raise SystemExit(
+                      "release store holds %s bytes for %s but this build is %d bytes; a staged version must keep "
+                      "identical bytes — bump wotbVersion instead of overwriting" % (existing, name, size))
+
+          url = client.get_presigned_url(Bucket=bucket, Key=key, Method="GET", Expired=3600)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("transport=cos\n")
+              out.write("presigned_url=%s\n" % url)
+          print("presigned GET URL issued (TTL 3600s; it appears in the TX1 step's env block — the bucket never goes public)")
+          PY
+            echo "offload transport: runner → COS → TX1 → drive (release store: cos://$COS_BUCKET/android/$APK_NAME)"
+          else
+            # —— 旧直传路径（回落）：runner 直接写清华副本，权威判定 = 分享直链回读 SHA ——
+            # Seafile upload-link 返回 **JSON 编码的 URL 字符串**（Response(url)）：
+            # 命令替换会保留响应中的双引号，必须解析后取裸 URL 再交给 curl
+            ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+            ULINK="$(printf '%s' "$ULINK_RAW" | jq -r '.')"
+            case "$ULINK" in
+              https://*) ;;
+              *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
+            esac
+
+            # replace=1 = 覆盖同名文件（reuse=1 只是幂等令牌，**不是**覆盖开关——缺
+            # replace 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本，
+            # 损坏副本无法自愈，评审 P2）。已知怪癖：这套清华云盘部署「上传成功也返回
+            # HTTP 400 Parent dir doesn't exist」——响应码不可作为成败依据；唯一权威
+            # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
+            # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
+            upload_rc=0
+            curl -sS --connect-timeout 10 --max-time 2700 -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
+            echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
+
+            for attempt in 1 2 3 4 5; do
+              sleep 3
+              if curl -fsSL --connect-timeout 5 --max-time 900 \
+                  -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
+                  && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
+                echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
+                echo "transport=direct" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "Tsinghua Cloud offload verify attempt $attempt/5 failed; retrying."
+            done
+            echo "::error::Tsinghua Cloud offload verification failed after 5 attempts; public /download/android/*.apk redirects would hit a missing drive object." >&2
+            exit 1
+          fi
+
+      # —— ② TX1 落地：从发布存储拉回（境内）+ 推网盘（境内，实测 0.42 MiB/s）+ 分享直链回读 ——
+      # 只在 `cos` 通道下运行（`direct` 通道已在上一步写好了副本）。资源/凭证边界：
+      #   · token 优先取主机上的 0600 文件（目标形态），缺失时回落 ssh env 里的仓库 secret——
+      #     两种来源都会打印，便于确认「token 收敛到主机」的进度；
+      #   · 预签名 URL 有 TTL（1h），只经 ssh env 传递、不落盘；
+      #   · 临时文件写在 /tmp 并全部清掉（trap 覆盖 EXIT/HUP/INT/TERM），不占被服务的目录。
+      - name: Publish APK to the Tsinghua drive from TX1 (pull from the release store; replace=1; share read-back)
+        if: steps.preflight.outputs.releaseAction == 'publish' && steps.offload.outputs.transport == 'cos'
+        uses: appleboy/ssh-action@v1
+        env:
+          APK_NAME: ${{ steps.artifact.outputs.apkName }}
+          EXPECT_SHA: ${{ steps.artifact.outputs.sha256 }}
+          COS_PRESIGNED_URL: ${{ steps.offload.outputs.presigned_url }}
+          REPO_ID: a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0
+          PARENT_DIR: /wotbtools-android
+          SHARE_BASE: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          # 预算按实测（0.42 MiB/s ⇒ 192 MiB ≈ 460s）给足 4 倍余量，并覆盖三段上限之和（600+1800+3×600）。
+          command_timeout: 75m
+          envs: APK_NAME,EXPECT_SHA,COS_PRESIGNED_URL,REPO_ID,PARENT_DIR,SHARE_BASE,TSINGHUA_CLOUD_TOKEN
+          script: |
+            set -Eeuo pipefail
+
+            TMP="/tmp/wotb-offload-$$.apk"
+            RESP="/tmp/wotb-offload-$$.resp"
+            SHARE_DIRECT="${SHARE_BASE}/${APK_NAME}&dl=1"
+            cleanup() {
+              rc=$?
+              rm -f "$TMP" "$TMP.read" "$RESP"
+              exit "$rc"
+            }
+            trap cleanup EXIT HUP INT TERM
+
+            if [ -r /etc/wotb-tx/tsinghua-cloud.token ]; then
+              TSINGHUA_CLOUD_TOKEN="$(cat /etc/wotb-tx/tsinghua-cloud.token)"
+              echo "token source: host file /etc/wotb-tx/tsinghua-cloud.token"
+            else
+              echo "token source: ssh env (host file /etc/wotb-tx/tsinghua-cloud.token not deployed yet)"
+            fi
+
+            echo "--- (1) release store -> TX1 ---"
+            PULL_RATE="$(curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 600 \
+              -o "$TMP" -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+              "$COS_PRESIGNED_URL")"
+            echo "release store pull: $PULL_RATE"
+            echo "$EXPECT_SHA  $TMP" | sha256sum -c - || { echo "::error::release store bytes mismatch; refusing to publish to the drive" >&2; exit 1; }
+
+            echo "--- (2) TX1 -> Tsinghua drive (replace=1; filename pinned) ---"
+            ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+            ULINK="$(printf '%s' "$ULINK_RAW" | tr -d '"\n')"
+            case "$ULINK" in
+              https://*) ;;
+              *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
+            esac
+            # curl 的 multipart 文件名默认取本地路径 basename（/tmp 临时名），必须显式 filename=
+            # 才是网盘上的对象名；release 里本地文件就叫 APK_NAME，这里用临时文件所以自己钉住。
+            PUSH_RATE="$(curl -sS --connect-timeout 10 --max-time 1800 -o "$RESP" \
+              -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$TMP;filename=$APK_NAME" \
+              -w '%{size_upload} bytes in %{time_total}s (%{speed_upload} B/s)' \
+              "$ULINK")" || true
+            echo "drive push: $PUSH_RATE"
+            echo "note: this deployment answers HTTP 400 even on a successful upload; the share read-back below is the authority"
+
+            echo "--- (3) share direct link read-back (authority) ---"
+            verified=0
+            READ_RATE="<none>"
+            for attempt in 1 2 3; do
+              sleep 3
+              READ_REPORT=""
+              READ_REPORT="$(curl -fsSL --connect-timeout 5 --max-time 600 -o "$TMP.read" \
+                -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+                "$SHARE_DIRECT" 2>/dev/null)" || READ_REPORT=""
+              if [ -n "$READ_REPORT" ] && [ "$(sha256sum "$TMP.read" 2>/dev/null | awk '{print $1}')" = "$EXPECT_SHA" ]; then
+                READ_RATE="$READ_REPORT"
+                verified=1
+                break
+              fi
+              rm -f "$TMP.read"
+              echo "read-back attempt $attempt/3 failed; retrying."
+            done
+            rm -f "$TMP.read"
+            [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts; public /download/android/*.apk would serve wrong bytes" >&2; exit 1; }
+            echo "drive read-back verified: $APK_NAME sha256=$EXPECT_SHA"
+
+            echo "========== OFFLOAD NUMBERS =========="
+            echo "apk=$APK_NAME size=$(stat -c%s "$TMP") sha256=$EXPECT_SHA"
+            echo "rate store->tx1:   $PULL_RATE"
+            echo "rate tx1->drive:   $PUSH_RATE"
+            echo "rate drive->tx1:   $READ_RATE"
+            echo "====================================="
 
       # —— 两台 origin 的 seed：从清华副本拉取 + 就地 SHA-256 校验 + 原子落位 ——
       # 安全边界（三道）：
@@ -995,6 +1197,7 @@ jobs:
             echo "Source Commit: ${{ steps.version.outputs.commit }}"
             echo "APK: ${{ steps.artifact.outputs.apkName }}"
             echo "APK SHA-256: ${{ steps.artifact.outputs.sha256 }}"
+            echo "APK transport: ${{ steps.offload.outputs.transport || 'n/a' }} (cos = runner → COS → TX1 → drive; direct = legacy runner → drive)"
             echo "Staging evidence: ${{ steps.staging.outputs.stagingName }}"
             echo "Signing Certificate SHA-256: ${{ env.ANDROID_SIGNING_CERT_SHA256 }}"
             echo ""

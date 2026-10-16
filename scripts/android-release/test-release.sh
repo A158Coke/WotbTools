@@ -291,10 +291,10 @@ assert "bash scripts/fetch-agent-wasm.sh" in agent_wasm_block, \
     "Android release frontend validation must fetch the pinned Agent WASM first"
 PY
 
-# 发布上传链（2026-10-08 优化后锁死，防回退）：APK 不得再走 scp-action 跨洋直推
-#（drone-scp 的 SFTP 单流实测 12.6–13.8 KB/s → 15MB × 2 台 ≈ 40 分钟，占 stage job 89%）；
-# 两台 origin 必须"从清华副本拉取 + 就地 SHA-256 校验 + 原子落位"，且仍只在 origin
-# absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。顺序：classify → 清华 → seed×2。
+# 发布上传链（2026-10-08 优化后锁死，防回退；2026-10-16 起落地通道改为 runner → COS → TX1 → 网盘，
+# 探针实测驱动）：APK 不得再走 scp-action 跨洋直推；两台 origin 必须"从清华副本拉取 + 就地 SHA-256
+# 校验 + 原子落位"，且仍只在 origin absent 时触发（幂等：equal 跳过、清华 replace=1 覆盖自愈）。
+# 顺序：classify → offload(runner→COS) → TX1 推网盘 → seed×2。
 python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
 import sys
 import yaml
@@ -334,11 +334,42 @@ for seed in seeds:
     assert "apkcheck.outputs.tx1State" in cond or "apkcheck.outputs.tx2State" in cond, cond
 
 order = [s.get("name") for s in steps]
-tsinghua = named("Upload APK to Tsinghua Cloud")["name"]
 classify = named("Classify origin APK on TX1/TX2")["name"]
 verify = named("Verify production APK")["name"]
-assert order.index(classify) < order.index(tsinghua) < order.index(seeds[0]["name"]) \
-    < order.index(seeds[1]["name"]) < order.index(verify), order
+
+# —— APK 落地链（2026-10-16 重构，实测驱动）：runner → 发布 COS → TX1 → 清华网盘 ——
+# 动机：runner 直传网盘实测 1567s（26min）～2058s（34min），2700s 上限是硬币（run 38898856907 撞墙）；
+# 探针实测 TX1 写同一门网盘 0.42 MiB/s（192 MiB ≈ 7.6 min，确定）。两条通道必须共用同一套网盘协议，
+# 且 drive 副本必须先于两条 seed 就位（seed 以它为冷启动源）。
+trigger_block = workflow.get(True, workflow.get("on", {}))
+transport_input = trigger_block["workflow_dispatch"]["inputs"]["offload_transport"]
+assert transport_input["options"] == ["auto", "cos", "direct"] and transport_input["default"] == "auto", transport_input
+
+offload = named("Upload APK to the release store (runner → COS; cross-border leg once)")
+tx1_publish = named("Publish APK to the Tsinghua drive from TX1")
+offload_run = offload.get("run") or ""
+
+assert "inputs.offload_transport" in str(offload.get("env") or {}), offload["name"]
+assert "transport=cos" in offload_run and "transport=direct" in offload_run, \
+    "offload must record which transport ran (cos, or the direct fallback)"
+assert "MAXThread=8" in offload_run, "release store upload must keep the 8-way multipart lever"
+assert "presigned_url" in offload_run, "offload must hand TX1 a presigned URL (the bucket stays private)"
+assert "upload-link" in offload_run and "replace=1" in offload_run, \
+    "the direct fallback must keep the drive protocol (upload-link + replace=1)"
+assert "cos-python-sdk-v5==" in offload_run, "the COS SDK must be version-pinned (this step holds production credentials)"
+
+assert tx1_publish["uses"].startswith("appleboy/ssh-action"), tx1_publish["name"]
+assert "steps.offload.outputs.transport == 'cos'" in (tx1_publish.get("if") or ""), \
+    "TX1 must only publish to the drive in cos mode (the direct fallback already wrote it)"
+tx1_script = tx1_publish["with"]["script"]
+for invariant in ("sha256sum -c", "upload-link", "replace=1", "filename=$APK_NAME",
+                  "$EXPECT_SHA", "read-back"):
+    assert invariant in tx1_script, f"TX1 drive publish must keep {invariant!r}: {tx1_publish['name']}"
+assert "tsinghua-cloud.token" in tx1_script, \
+    "the drive token must prefer the host 0600 file over the CI secret (收敛目标形态)"
+
+assert order.index(classify) < order.index(offload["name"]) < order.index(tx1_publish["name"]) \
+    < order.index(seeds[0]["name"]) < order.index(seeds[1]["name"]) < order.index(verify), order
 PY
 
 # 两阶段发布协议：stage 只做 staging（绝不写 production version.json），publish 只能手工续跑、
