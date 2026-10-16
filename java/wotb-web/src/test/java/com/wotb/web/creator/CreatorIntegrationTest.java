@@ -300,8 +300,8 @@ class CreatorIntegrationTest {
         service.favorite("other", second, true);
         service.favorite("deleted", third, true);
 
-        service.removeFavoritesForAccountDeletion("deleted");
-        service.removeFavoritesForAccountDeletion("deleted");
+        service.removeDataForAccountDeletion("deleted");
+        service.removeDataForAccountDeletion("deleted");
 
         assertEquals(0, jdbc.queryForObject("select count(*) from creator_favorite where keycloak_subject='deleted'", Integer.class));
         assertEquals(List.of(first, second), service.favorites("other").creatorIds());
@@ -331,7 +331,7 @@ class CreatorIntegrationTest {
             assertTrue(favoriteHeld.await(10, TimeUnit.SECONDS));
             final var cleanup = executor.submit(() -> {
                 cleanupStarted.countDown();
-                service.removeFavoritesForAccountDeletion("deleted");
+                service.removeDataForAccountDeletion("deleted");
             });
             assertTrue(cleanupStarted.await(10, TimeUnit.SECONDS));
             try {

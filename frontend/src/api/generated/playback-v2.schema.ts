@@ -160,7 +160,7 @@ export default {
           "type": "string",
           "format": "uri",
           "maxLength": 300,
-          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?(?:\\?[^#\\s]*)?$"
         },
         "categoryIds": {
           "type": "array",

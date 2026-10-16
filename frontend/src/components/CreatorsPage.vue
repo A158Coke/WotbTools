@@ -16,7 +16,7 @@ const { t, te } = useI18n()
 const { categoryId, categories, creators, favoriteIds, pendingIds, favoritesReady, signedIn, adminAllowed,
   network, loading, error, favoriteError, refresh, refreshFavorites, toggleFavorite, selectCategory } = useCreators()
 const management = useCreatorManagement({ onChanged: refresh })
-const { detail, editorOpen, editorLoading, editorError, busy, error: adminError, categories: adminCategories, levels, settings, notice } = management
+const { detail, editorOpen, editorLoading, editorError, busy, loading: adminLoading, error: adminError, categories: adminCategories, levels, settings, notice } = management
 async function remove(id: number) {
   const signal = management.operationSignal()
   const accepted = await confirm({ title: t('creators.removeConfirm'), confirmLabel: t('creators.remove'), danger: true, signal })
@@ -38,7 +38,7 @@ async function remove(id: number) {
     </nav>
     <p v-if="loading || network.pending" role="status">{{ t('creators.loading') }}</p>
     <p v-else-if="!error && network.available && !creators.length" class="creator-muted">{{ t('creators.empty') }}</p>
-    <div class="creator-grid"><CreatorCard v-for="creator in creators" :key="creator.id" :creator="creator" :favorite="favoriteIds.has(creator.id)" :pending="pendingIds.has(creator.id)" :favorite-disabled="!network.available || (signedIn && !favoritesReady)" :admin="adminAllowed" :admin-disabled="busy || !network.available" @favorite="toggleFavorite(creator.id)" @edit="management.editCreator(creator.id)" @remove="remove(creator.id)" /></div>
+    <div class="creator-grid"><CreatorCard v-for="creator in creators" :key="creator.id" :creator="creator" :favorite="favoriteIds.has(creator.id)" :pending="pendingIds.has(creator.id)" :favorite-disabled="!network.available || (signedIn && !favoritesReady)" :admin="adminAllowed" :admin-disabled="busy || adminLoading || !network.available" @favorite="toggleFavorite(creator.id)" @edit="management.editCreator(creator.id)" @remove="remove(creator.id)" /></div>
     <AppDialog :open="editorOpen" :title="t('creators.edit')" size="lg" :close-on-scrim="false" data-testid="creator-editor-dialog" @close="management.closeEditor">
       <Banner v-if="!network.available && !network.pending">{{ t(network.messageKey || 'featureOffline.creators') }}</Banner>
       <p v-if="editorLoading" role="status">{{ t('creators.loading') }}</p>

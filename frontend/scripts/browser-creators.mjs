@@ -111,6 +111,7 @@ const { server, origin } = await startFixtureServer({ middleware })
 const chrome = await launchChromeForCdp(findChrome())
 const scenarios = ['showcase', 'classic'].flatMap(profile => [1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({
   name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width),
+  locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en',
 })))
 let failures = 0
 try {
@@ -122,9 +123,14 @@ try {
     const { targetId, sessionId } = await chrome.openPage(), page = new Page(chrome.client, sessionId)
     try {
       await page.enable(); await page.emulate(scenario)
-      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang','en');` }, sessionId)
-      await page.goto(`${origin}/?view=creators&ws-auth=0`)
+      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
+      await page.goto(`${origin}/?view=more&ws-auth=0`)
+      const primarySelector = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
+      await page.waitForValue(`!!document.querySelector(${JSON.stringify(primarySelector)})`, Boolean)
+      assert.equal(await page.evaluate('!!document.querySelector("[data-testid=more-link-creators]")'), false, 'public creator link is not duplicated in More')
+      await tap(page, primarySelector, scenario.touch)
       await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+      assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primarySelector)}).getAttribute('aria-current')`), 'page', 'creator primary navigation is selected')
       assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-edit-1]")'), false)
       assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-card-1] a").rel'), 'noopener noreferrer')
       await tap(page, '[data-testid=creator-favorite-1]', scenario.touch)

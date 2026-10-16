@@ -20,6 +20,7 @@ console.log('Playback V2 contract fixture: OK')
 for (const [name, schema] of [
   ['creator-card', 'CreatorCard'],
   ['creator-detail', 'CreatorDetail'],
+  ['creator-save-request', 'CreatorSaveRequest'],
   ['creator-settings', 'CreatorSettings'],
   ['creator-favorite-result', 'CreatorFavoriteResult'],
   ['creator-favorites', 'CreatorFavorites'],

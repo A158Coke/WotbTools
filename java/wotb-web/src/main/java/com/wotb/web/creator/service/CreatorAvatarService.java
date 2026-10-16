@@ -5,6 +5,7 @@ import com.wotb.web.creator.entity.CreatorAvatar;
 import com.wotb.web.creator.mapper.CreatorMapper;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
+import com.wotb.web.creator.repository.CreatorSettingsRepository;
 import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.JwtUtil;
@@ -35,14 +36,17 @@ public class CreatorAvatarService {
     private static final Logger LOG = LoggerFactory.getLogger(CreatorAvatarService.class);
     private final CreatorAvatarRepository avatars;
     private final CreatorRepository creators;
+    private final CreatorSettingsRepository settings;
     private final CosImageStorage.Namespace storage;
     private final TransactionTemplate independent;
     private final TransactionTemplate metadataReads;
 
     public CreatorAvatarService(final CreatorAvatarRepository avatars, final CreatorRepository creators,
+                                final CreatorSettingsRepository settings,
                                 final CosImageStorage storage, final PlatformTransactionManager transactions,
                                 @Value("${wotb.creator.cos.prefix:creator-avatars/}") final String prefix) {
         this.avatars = avatars; this.creators = creators;
+        this.settings = settings;
         this.storage = storage.namespace(prefix, ApiErrorCode.CREATOR_STORAGE_UNAVAILABLE,
                 ApiErrorCode.CREATOR_INVALID_REQUEST, ApiErrorCode.CREATOR_STORAGE_UNAVAILABLE,
                 ApiErrorCode.CREATOR_AVATAR_NOT_FOUND);
@@ -63,6 +67,8 @@ public class CreatorAvatarService {
         final ImageValidation.Image image = validate(file);
         final String id = UUID.randomUUID().toString();
         independent.executeWithoutResult(tx -> {
+            // Serialize reservation insertion with the account deletion's metadata scan.
+            settings.findShared();
             final CreatorAvatar avatar = new CreatorAvatar();
             avatar.id = id; avatar.subject = subject; avatar.objectKey = storage.key(id);
             avatar.status = "PENDING"; avatar.contentType = image.contentType();
@@ -73,6 +79,8 @@ public class CreatorAvatarService {
         // A committed reservation survives a failed/ambiguous PUT or a process exit.
         independent.executeWithoutResult(tx -> {
             final CreatorAvatar avatar = locked(id);
+            // Account deletion can de-identify the committed reservation before PUT begins.
+            if (!Objects.equals(avatar.subject, subject)) { throw missing(); }
             storage.put(avatar.objectKey, image);
             avatar.status = "READY";
         });
@@ -94,6 +102,13 @@ public class CreatorAvatarService {
         if (id == null) { return; }
         final CreatorAvatar avatar = locked(id);
         if (!creators.existsByAvatarId(id)) { avatar.unreferencedAt = Instant.now(); }
+    }
+
+    /** Caller holds settings WRITE and any creator locks; no external deletes before account commit. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void removeOwnerForAccountDeletion(final String subject) {
+        for (final CreatorAvatar avatar : avatars.findOwnedLocked(subject)) { avatar.subject = null; }
+        avatars.flush();
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -136,7 +151,7 @@ public class CreatorAvatarService {
                     // Plain EXISTS reads do not lock creators or reverse the business write order.
                     if (avatar == null || creators.existsByAvatarId(id)) { return; }
                     final Instant detached = avatar.unreferencedAt == null ? avatar.createdAt : avatar.unreferencedAt;
-                    if (!detached.isBefore(cutoff)) { return; }
+                    if (avatar.subject != null && !detached.isBefore(cutoff)) { return; }
                     storage.delete(avatar.objectKey);
                     avatars.delete(avatar);
                 });

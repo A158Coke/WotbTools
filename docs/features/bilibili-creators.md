@@ -2,7 +2,7 @@
 
 Source implementation for [#639](https://github.com/A158Coke/WotbTools/issues/639); production availability follows deployment. Primary maintenance language: English.
 
-Public entry: More → Tools → Recommended creators (`?view=creators`); administration: the existing league-administration group (`?view=creators-config`). Category selection uses the `creatorCategory` route query and preserves browser history.
+Public entry: primary navigation beside League standings (`?view=creators`), shared by the desktop sidebar and mobile bottom tabs. It is not duplicated in More. Administration stays in the existing league-administration group (`?view=creators-config`). Category selection uses the `creatorCategory` route query and preserves browser history.
 
 Visitors browse recommendation categories and creator cards without signing in. Signing in is required to favorite or unfavorite a creator. Management uses the existing `tournament-admin` role; the recommendation catalog is independent of tournament events.
 
@@ -52,13 +52,15 @@ The sole wire authority is `contracts/http/openapi.yaml`; generated TypeScript a
 
 The public catalog has no per-user data. `GET /api/creators/favorites` supplies only the current subject's active creator IDs. Favorite PUT/DELETE expresses the desired active state and returns the authoritative creator card and current user's state. Editable payloads exclude system-maintained counters, rewards and creation time.
 
-Homepage inputs are normalized HTTPS `space.bilibili.com/<numeric UID>` URLs. Backend validation rejects script schemes, credentials and lookalike hosts. The server does not scrape bilibili. Interface messages are localized in Chinese, English and Russian; creator and dictionary names are stored administrator content.
+Homepage inputs accept HTTPS `space.bilibili.com/<numeric UID>` URLs, including a trailing slash and tracking query copied from bilibili. The server removes that query and returns canonical homepage URLs. Form and request validation reject script schemes, credentials, fragments, explicit ports and lookalike hosts. The server does not scrape bilibili. Interface messages are localized in Chinese, English and Russian; creator and dictionary names are stored administrator content.
 
 Avatar storage reuses the merged COS work in [#641](https://github.com/A158Coke/WotbTools/pull/641). The bounded COS adapter and byte-level image validation are shared; creators have their own namespace and durable reservations. Only attached READY avatars can be read publicly, so the form retains its local preview until a successful save. Uploads do not hold catalog/creator locks. Replacement, clearing, removal and abandoned uploads release references without deleting objects still used elsewhere. Runtime credentials never enter sources or tests; storage tests use fake COS.
 
 `BROADCAST_COS_BUCKET/REGION/SECRET_ID/SECRET_KEY` remain the single credential/bucket configuration. `CREATOR_AVATAR_COS_PREFIX` defaults to `creator-avatars/` and passes through the existing Business API workflow and Compose owner. It must differ from the broadcast prefix, and the runtime identity needs Put/Get/Delete rights for both prefixes. The private bucket must follow the existing non-versioned storage contract. Unreferenced reservations have a 24-hour grace period, and hourly cleanup processes at most 100 per batch. A failed delete retains metadata for retry.
 
 Object keys must match the currently configured prefix and canonical UUID. Before changing a prefix, migrate or retire its old objects and reservations; old keys are deliberately rejected after a namespace change. See [COS operations](../operations/league-broadcast-covers.md). Real production COS credentials and permissions require separate operator validation; ordinary tests never contact that bucket.
+
+Account deletion also anonymizes avatar ownership in the same transaction (V36 allows a null owner). Referenced READY images and creator links remain available. Anonymous unreferenced reservations bypass the usual grace period in the existing hourly cleanup; failed COS deletion keeps anonymous metadata for retry. Reservation creation briefly takes the shared settings lock, and PUT checks ownership again before external I/O; network transfers never hold the settings lock. This integration does not change the application's JWT revocation policy.
 
 ## Verification
 

@@ -11,7 +11,7 @@ import java.time.Instant;
 public class CreatorAvatar {
     @Id @Column(length = 36)
     public String id;
-    @Column(name = "keycloak_subject", nullable = false, length = 64)
+    @Column(name = "keycloak_subject", length = 64)
     public String subject;
     @Column(name = "object_key", nullable = false, length = 512, unique = true)
     public String objectKey;

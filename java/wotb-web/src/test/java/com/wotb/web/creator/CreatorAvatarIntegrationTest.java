@@ -4,6 +4,8 @@ import com.qcloud.cos.COSClient;
 import com.qcloud.cos.exception.CosClientException;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
+import com.wotb.web.admin.service.AdminUserService;
+import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.entity.CreatorAvatar;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
@@ -14,6 +16,9 @@ import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.AfterEach;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +36,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,12 +56,14 @@ import java.sql.Connection;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -67,7 +76,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -105,21 +116,24 @@ class CreatorAvatarIntegrationTest {
         }
     }
     @Autowired CreatorAvatarService avatars;
-    @Autowired CreatorAvatarRepository reservations;
+    @MockitoSpyBean CreatorAvatarRepository reservations;
     @Autowired CreatorService service;
+    @Autowired AdminUserService adminUsers;
+    @MockitoBean KeycloakAdminUserService keycloakUsers;
     @Autowired CreatorRepository creators;
     @Autowired CreatorSettingsRepository settings;
     @Autowired PlatformTransactionManager transactions;
     @Autowired JdbcTemplate jdbc;
     @Autowired COSClient client;
     @Autowired WebApplicationContext web;
+    @PersistenceContext EntityManager entityManager;
     private final ConcurrentHashMap<String, byte[]> objects = new ConcurrentHashMap<>();
     private MockMvc mvc;
 
     @BeforeEach void setup() throws Exception {
         jdbc.execute("truncate creator, creator_avatar, creator_category, creator_level restart identity cascade");
         jdbc.update("insert into creator_category(name) values ('A'),('B')");
-        reset(client);
+        reset(client, keycloakUsers);
         objects.clear();
         doAnswer(call -> { objects.put(call.getArgument(1), ((InputStream) call.getArgument(2)).readAllBytes()); return null; })
                 .when(client).putObject(anyString(), anyString(), any(InputStream.class), any());
@@ -301,6 +315,145 @@ class CreatorAvatarIntegrationTest {
         mvc.perform(delete("/api/admin/creators/avatars/" + uploaded).with(jwt().jwt(token -> token.subject("uploader"))
                         .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test void accountDeletionAnonymizesOwnersKeepsPublicImagesAndQueuesOnlyUnreferencedObjects() throws Exception {
+        final MockMultipartFile image = png();
+        final String attached = avatars.upload(image).id();
+        final String unused = avatars.upload(image).id();
+        final long creator = service.create(save(attached)).id();
+        login("other-admin");
+        final String other = avatars.upload(image).id();
+
+        assertEquals(1, adminUsers.deleteUsers(List.of("uploader"), true, adminJwt()).deleted());
+
+        assertNull(reservations.findById(attached).orElseThrow().subject);
+        assertNull(reservations.findById(unused).orElseThrow().subject);
+        assertEquals("other-admin", reservations.findById(other).orElseThrow().subject);
+        assertEquals(attached, service.detail(creator).avatarId());
+        assertArrayEquals(image.getBytes(), avatars.load(attached).bytes());
+        verify(client, never()).deleteObject(anyString(), anyString());
+        assertEquals(attached, service.update(creator, save(attached)).avatarId());
+        assertEquals(ApiErrorCode.CREATOR_AVATAR_NOT_FOUND,
+                assertThrows(ApiException.class, () -> service.create(save(attached))).errorCode());
+
+        avatars.cleanup();
+        assertFalse(reservations.existsById(unused));
+        assertFalse(objects.containsKey(PREFIX + unused));
+        assertTrue(reservations.existsById(attached));
+        assertTrue(reservations.existsById(other));
+        service.update(creator, save(other));
+        avatars.cleanup();
+        assertFalse(reservations.existsById(attached));
+        assertFalse(objects.containsKey(PREFIX + attached));
+        assertEquals(other, service.detail(creator).avatarId());
+        assertArrayEquals(image.getBytes(), avatars.load(other).bytes());
+    }
+
+    @Test void keycloakFailureRollsBackAvatarAnonymizationWithoutDeletingImagesOrReferences() throws Exception {
+        final String attached = avatars.upload(png()).id();
+        final String unused = avatars.upload(png()).id();
+        final long creator = service.create(save(attached)).id();
+        doThrow(new IllegalStateException("keycloak unavailable")).when(keycloakUsers).deleteUser("uploader");
+
+        final var result = adminUsers.deleteUsers(List.of("uploader"), true, adminJwt());
+
+        assertEquals("FAILED_KEYCLOAK_DELETE", result.results().getFirst().errorCode());
+        assertEquals("uploader", reservations.findById(attached).orElseThrow().subject);
+        assertEquals("uploader", reservations.findById(unused).orElseThrow().subject);
+        assertEquals(attached, service.detail(creator).avatarId());
+        assertTrue(objects.containsKey(PREFIX + attached));
+        assertTrue(objects.containsKey(PREFIX + unused));
+        avatars.cleanup();
+        assertTrue(reservations.existsById(unused));
+        verify(client, never()).deleteObject(anyString(), anyString());
+    }
+
+    @Test void failedAnonymousCleanupKeepsDeidentifiedMetadataForTheNextBatch() throws Exception {
+        final String unused = avatars.upload(png()).id();
+        service.removeDataForAccountDeletion("uploader");
+        doThrow(new CosClientException("fake unavailable storage")).when(client).deleteObject(anyString(), anyString());
+
+        avatars.cleanup();
+
+        assertNull(reservations.findById(unused).orElseThrow().subject);
+        assertTrue(objects.containsKey(PREFIX + unused));
+        doAnswer(call -> { objects.remove((String) call.getArgument(1)); return null; })
+                .when(client).deleteObject(anyString(), anyString());
+        avatars.cleanup();
+        assertFalse(reservations.existsById(unused));
+        assertFalse(objects.containsKey(PREFIX + unused));
+    }
+
+    @Test void localConstraintFailureRollsBackAvatarAnonymizationAndDoesNotDeleteCosObjects() throws Exception {
+        final String attached = avatars.upload(png()).id();
+        final String unused = avatars.upload(png()).id();
+        final long creator = service.create(save(attached)).id();
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                    service.removeDataForAccountDeletion("uploader");
+                    assertNull(reservations.findById(attached).orElseThrow().subject);
+                    jdbc.update("update creator set base_stars=0 where id=?", creator);
+                }));
+
+        assertEquals("uploader", reservations.findById(attached).orElseThrow().subject);
+        assertEquals("uploader", reservations.findById(unused).orElseThrow().subject);
+        assertEquals(attached, service.detail(creator).avatarId());
+        assertTrue(objects.containsKey(PREFIX + attached));
+        assertTrue(objects.containsKey(PREFIX + unused));
+        verify(client, never()).deleteObject(anyString(), anyString());
+    }
+
+    @Test void accountDeletionWaitsForReservationCommitAndPutRejectsTheAnonymizedReservation() throws Exception {
+        final CountDownLatch reserved = new CountDownLatch(1);
+        final CountDownLatch commitReservation = new CountDownLatch(1);
+        final CountDownLatch deletionStarted = new CountDownLatch(1);
+        final CountDownLatch deletionDone = new CountDownLatch(1);
+        doAnswer(call -> {
+            final CreatorAvatar saved = call.getArgument(0);
+            entityManager.persist(saved);
+            entityManager.flush();
+            reserved.countDown();
+            assertTrue(commitReservation.await(10, TimeUnit.SECONDS));
+            return saved;
+        }).when(reservations).saveAndFlush(any(CreatorAvatar.class));
+        doAnswer(call -> {
+            if ("avatar-upload-repair".equals(Thread.currentThread().getName())) {
+                assertTrue(deletionDone.await(10, TimeUnit.SECONDS));
+            }
+            return Optional.ofNullable(entityManager.find(CreatorAvatar.class, call.getArgument(0), LockModeType.PESSIMISTIC_WRITE));
+        }).when(reservations).findLocked(anyString());
+        try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var upload = executor.submit(() -> {
+                Thread.currentThread().setName("avatar-upload-repair");
+                login("uploader");
+                try { return avatars.upload(png()); }
+                finally { SecurityContextHolder.clearContext(); }
+            });
+            assertTrue(reserved.await(10, TimeUnit.SECONDS));
+            final var deletion = executor.submit(() -> {
+                deletionStarted.countDown();
+                try { service.removeDataForAccountDeletion("uploader"); }
+                finally { deletionDone.countDown(); }
+            });
+            assertTrue(deletionStarted.await(10, TimeUnit.SECONDS));
+            try { assertThrows(TimeoutException.class, () -> deletion.get(300, TimeUnit.MILLISECONDS)); }
+            finally { commitReservation.countDown(); }
+            deletion.get(10, TimeUnit.SECONDS);
+            final var failure = assertThrows(ExecutionException.class, () -> upload.get(10, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof ApiException);
+            assertEquals(ApiErrorCode.CREATOR_AVATAR_NOT_FOUND, ((ApiException) failure.getCause()).errorCode());
+            assertNull(reservations.findAll().getFirst().subject);
+            assertEquals("PENDING", reservations.findAll().getFirst().status);
+            verify(client, never()).putObject(anyString(), anyString(), any(InputStream.class), any());
+            avatars.cleanup();
+            assertEquals(0, reservations.count());
+        } finally { commitReservation.countDown(); deletionDone.countDown(); }
+    }
+
+    private static Jwt adminJwt() {
+        return Jwt.withTokenValue("test-admin").header("alg", "none").subject("admin").build();
     }
     private void age(final String id) {
         jdbc.update("update creator_avatar set created_at=?,unreferenced_at=? where id=?",
