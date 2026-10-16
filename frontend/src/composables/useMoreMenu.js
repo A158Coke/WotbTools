@@ -1,6 +1,6 @@
 import { computed, getCurrentInstance, inject } from 'vue'
 import {
-  Cpu, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings,
+  Cpu, Download, FileText, Heart, History, Mail, ShieldCheck, Users, ListOrdered, Settings, Radio,
 } from 'lucide-vue-next'
 import { useAuth } from './useAuth.js'
 import { useUiProfile } from './useUiProfile.js'
@@ -46,6 +46,10 @@ export function useMoreMenu() {
     isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
   ].filter(Boolean))
 
+  const toolLinks = Object.freeze([
+    { view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', icon: Radio },
+  ])
+
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */
   const aboutLinks = computed(() => [
     { view: 'history', labelKey: 'history.btn', icon: History },
@@ -57,5 +61,5 @@ export function useMoreMenu() {
   ].filter(Boolean))
 
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide }
+  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, toolLinks, adminLinks, aboutLinks, openGuide }
 }

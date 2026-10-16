@@ -13,11 +13,17 @@
 | `wotb-core` | 共享模型（`Battle` / `PlayerResult` 事实形状）、车辆库映射、AI 复盘用的客户端投影解码（`ReplayFactsCodec`）与分析（evidence / feature / timeline）；不解析回放 |
 | `wotb-ai`   | 独立 ai-service（AI 复盘与管理员积分赛截图识别） |
 | `wotb-web`  | Spring Boot 4 REST API + PostgreSQL/Flyway/Keycloak，监听 `8087`（管理端口 `8088`，Actuator/Prometheus） |
-| `frontend`  | Vue 3 + Vite 前端，单文件组件，无 router，开发端口 `5173`                   |
+| `frontend`  | Vue 3 + Vite + Vue Router 前端，单文件组件，开发端口 `5173`                   |
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
 | `deploy/test-keycloak-tofu.sh` | 独立 disposable PostgreSQL + Keycloak + local OpenTofu state 的 Keycloak realm 集成 smoke |
 
 > 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
+
+联赛直播回放目录由 `wotb-web` 的 tournament 域内 `Broadcast*` 独立管理，公开 API 为
+`/api/tournament-broadcasts/**`，管理 API 为 `/api/admin/tournament-broadcasts/**`（真实
+`wotbtools-admin`）。它不关联积分榜赛事，五服／季赛／分类／根节点规则见
+[功能契约](../docs/features/league-broadcasts.md)，可选 COS 封面配置和回收见
+[运维说明](../docs/operations/league-broadcast-covers.md)。
 
 ## AI Review Harness（双 Call + Team structured result）
 

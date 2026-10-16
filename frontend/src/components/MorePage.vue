@@ -10,9 +10,10 @@ import SegmentedControl from './SegmentedControl.vue'
 // 平板 / 桌面的同一份内容在侧边栏底部的"更多"弹出面板里（useMoreMenu 是唯一内容源）；
 // 回放能力统一从回放工作台进入，坦克百科是主导航栏目，都不在这里重复。账户由顶栏头像进入 profile。
 const navigate = inject(NAVIGATE_VIEW_KEY)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide } = useMoreMenu()
+const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, toolLinks, adminLinks, aboutLinks, openGuide } = useMoreMenu()
 
 const groups = computed(() => [
+  { id: 'tools', titleKey: 'more.sections.tools', links: toolLinks },
   { id: 'admin', titleKey: 'more.sections.admin', links: adminLinks.value },
   { id: 'about', titleKey: 'more.sections.about', links: aboutLinks.value, feedback: true },
 ].filter(group => group.links.length))
