@@ -85,6 +85,10 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 wotb:
+  creator:
+    cos:
+      # Credentials and private bucket are shared with broadcast covers; only the namespace differs.
+      prefix: ${CREATOR_AVATAR_COS_PREFIX:creator-avatars/}
   broadcast:
     cos:
       bucket: ${BROADCAST_COS_BUCKET:}

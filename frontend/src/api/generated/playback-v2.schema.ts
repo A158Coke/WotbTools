@@ -3,6 +3,332 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "CreatorCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorNameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bilibiliUid",
+        "name",
+        "description",
+        "homepageUrl",
+        "avatarUrl",
+        "categories",
+        "level",
+        "score",
+        "createdAt",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]{0,19}$",
+          "maxLength": 47
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          },
+          "minItems": 1
+        },
+        "level": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "enum": [
+            2,
+            4,
+            6,
+            8,
+            10
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bilibiliUid",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "avatarAction",
+        "expectedVersion"
+      ],
+      "properties": {
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^\\s*(?=0*[1-9])[0-9]{1,20}\\s*$",
+          "description": "Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REPLACE",
+            "REMOVE"
+          ]
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bilibiliUid",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "avatarUrl",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categories",
+        "levels",
+        "avatarUploadsAvailable"
+      ],
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          }
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorLevel"
+          }
+        },
+        "avatarUploadsAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BackendHealth": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "tanks"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "tanks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "BroadcastServer": {
       "type": "string",
       "enum": [
@@ -5167,6 +5493,14 @@ export default {
     "ApiErrorCode": {
       "type": "string",
       "enum": [
+        "CREATOR_NOT_FOUND",
+        "CREATOR_INVALID_REQUEST",
+        "CREATOR_UID_ALREADY_EXISTS",
+        "CREATOR_CATEGORY_IN_USE",
+        "CREATOR_LEVEL_IN_USE",
+        "CREATOR_CONFIG_CONFLICT",
+        "CREATOR_STORAGE_UNAVAILABLE",
+        "CREATOR_AVATAR_NOT_FOUND",
         "TOURNAMENT_VERSION_CONFLICT",
         "TOURNAMENT_LOCKED",
         "TOURNAMENT_RULES_INCOMPLETE",

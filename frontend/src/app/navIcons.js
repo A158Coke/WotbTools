@@ -10,6 +10,7 @@ export const PRIMARY_NAV_ICONS = Object.freeze({
   tankopedia: BookOpen,
   'tournament-points': ListOrdered,
   'league-broadcasts': Radio,
+  creators: Users,
   more: Menu,
 })
 
@@ -18,6 +19,7 @@ export const ADMIN_NAV_ICONS = Object.freeze({
   'hof-admin': ShieldCheck,
   'tournament-points-config': Settings,
   'tournament-points-admin': ListOrdered,
+  'creators-config': Users,
 })
 
 // 账户入口（进入个人中心）

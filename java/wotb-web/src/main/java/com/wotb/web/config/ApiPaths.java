@@ -28,6 +28,10 @@ public final class ApiPaths {
     public static final String USERS_MARK3 = "/api/users/mark3";
     public static final String HOF_MARK3_ADMIN = "/api/admin/hof/mark3";
 
+    public static final String CREATORS = "/api/creators";
+    public static final String CREATORS_ADMIN = "/api/admin/creators";
+    public static final String CREATORS_ADMIN_PATTERN = CREATORS_ADMIN + "/**";
+    public static final String CREATOR_AVATAR = CREATORS + "/avatars/*";
     public static final String TOURNAMENTS = "/api/tournaments";
     public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
