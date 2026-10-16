@@ -141,8 +141,14 @@ grep -qi 'reverse_proxy' <<<"$android_callback" \
 
 # auth 站点的受控访问日志（2.1.0 取证能力，docs/auth/web-qq-diagnostics.md §3.4）：
 # Caddy 的 `log` 不是 ordered HTTP handler——既不能进 `handle` 也不能进 `route`（两者都被
-# caddy adapt 拒绝），因此它是**站点级**的。这里断言它存在，且**脱敏行齐全**：query 里的
-# code/state/session_state/iss 与 Cookie/Authorization 头必须在写 stdout 之前被删除。
+# caddy adapt 拒绝），因此它是**站点级**的。这里断言它存在并使用 filter 编码器；留存字段
+# 与业务站点共用同一条断言（下方 assert_compliance_log_fields）。
+#
+# 这组断言**取代**了原先逐个删除 code / state / session_state / iss 的黑名单式检查：那条
+# 口径挡不住真实流量——RP-initiated logout 把完整 ID token 作为 `id_token_hint` query 参数
+# 发到本站点（Android 的 AuthManager.endSession 与 Web 的 keycloak-js 都是），授权回程的
+# `Location` 响应头同样带 code / state。整体删除 uri 与响应头严格强于逐参数删除：原先被
+# 点名的每个参数仍然不可能出现，而且下一个新参数也不会泄漏。
 auth_site="$(site_block auth.wotbtools.com)"
 [ -n "$auth_site" ] \
   || { echo 'ERROR: auth.wotbtools.com site block is missing.' >&2; exit 1; }
@@ -152,14 +158,11 @@ grep -qE '^[[:space:]]*format[[:space:]]+filter[[:space:]]*\{' <<<"$auth_site" \
   || { echo 'ERROR: the auth access log must use the filter encoder (redaction before stdout).' >&2; exit 1; }
 grep -qE '^[[:space:]]*wrap[[:space:]]+json[[:space:]]*$' <<<"$auth_site" \
   || { echo 'ERROR: the auth access log must wrap the json encoder.' >&2; exit 1; }
-for secret in code state session_state iss; do
-  grep -qE "^[[:space:]]*delete[[:space:]]+${secret}[[:space:]]*$" <<<"$auth_site" \
-    || { echo "ERROR: the auth access log must delete query parameter '${secret}' before stdout." >&2; exit 1; }
-done
-grep -qE '^[[:space:]]*request>headers>Cookie[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
-  || { echo 'ERROR: the auth access log must delete the Cookie header.' >&2; exit 1; }
-grep -qE '^[[:space:]]*request>headers>Authorization[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
-  || { echo 'ERROR: the auth access log must delete the Authorization header.' >&2; exit 1; }
+# 退回黑名单式 query 过滤必须直接失败，而不是静默地只删掉几个已知参数。
+if grep -qE '^[[:space:]]*request>uri[[:space:]]+query[[:space:]]*\{' <<<"$auth_site"; then
+  echo 'ERROR: the auth access log must delete the whole uri, not filter named query parameters (id_token_hint carries a full ID token).' >&2
+  exit 1
+fi
 
 # 合规安全日志（190 天留存，docs/operations/security-log-retention.md）。这里断言的是
 # **意图声明**：哪条日志算安全日志、覆盖面收窄到哪里、留存哪些字段。适配后 JSON 的形状
@@ -171,19 +174,33 @@ web_site="$(site_block wotbtools.com)"
 grep -qE '^[[:space:]]*log[[:space:]]+security_api[[:space:]]*\{' <<<"$web_site" \
   || { echo 'ERROR: wotbtools.com must declare the named compliance access log: log security_api.' >&2; exit 1; }
 # 字段白名单：原始 uri（含整个 query string）、全部请求头、全部响应头都必须在写 stdout
-# 之前删掉，所以凭据与 OAuth 参数不可能进入这条长期留存的日志。
-for deleted_field in 'request>uri' 'request>headers' 'resp_headers'; do
-  grep -qE "^[[:space:]]*${deleted_field}[[:space:]]+delete[[:space:]]*$" <<<"$web_site" \
-    || { echo "ERROR: the compliance access log must delete '${deleted_field}' before stdout." >&2; exit 1; }
-done
+# 之前删掉，所以凭据、OAuth 参数与 id_token_hint 不可能进入这条长期留存的日志；删掉之后
+# path 与 User-Agent 必须用 log_append 显式写回，否则取证日志里既没有访问目标也没有客户端
+# 类型。两个站点同一条规则：谁进 compliance stream，谁就守这组字段。
+assert_compliance_log_fields() {
+  local host="$1" scope="$2" field
+  for field in 'request>uri' 'request>headers' 'resp_headers'; do
+    grep -qE "^[[:space:]]*${field}[[:space:]]+delete[[:space:]]*$" <<<"$scope" \
+      || { echo "ERROR: the ${host} compliance access log must delete '${field}' before stdout." >&2; exit 1; }
+  done
+  grep -qE '^[[:space:]]*log_append[[:space:]]+path[[:space:]]+\{http[.]request[.]uri[.]path\}[[:space:]]*$' <<<"$scope" \
+    || { echo "ERROR: ${host} must log_append the request path (the replacement for the deleted uri)." >&2; exit 1; }
+  grep -qE '^[[:space:]]*log_append[[:space:]]+ua[[:space:]]+\{http[.]request[.]header[.]User-Agent\}[[:space:]]*$' <<<"$scope" \
+    || { echo "ERROR: ${host} must log_append the User-Agent (the replacement for the deleted headers)." >&2; exit 1; }
+  if grep -qE '^[[:space:]]*log_append[[:space:]]+[^[:space:]]+[[:space:]]+.*\{http[.]request[.]uri[.]query' <<<"$scope"; then
+    echo "ERROR: the ${host} compliance access log must not re-append the query string." >&2
+    exit 1
+  fi
+}
+assert_compliance_log_fields wotbtools.com "$web_site"
+assert_compliance_log_fields auth.wotbtools.com "$auth_site"
 # 覆盖面：只有 /api/* 留存。真正的不变量是「跳过判定排在任何能终结请求的 handler 之前」
 # ——由下方适配后 JSON 的顺序断言拥有；这里只锁住声明本身存在。
 grep -qE '^[[:space:]]*@notApi[[:space:]]+not[[:space:]]+path[[:space:]]+/api/\*[[:space:]]*$' <<<"$web_site" \
   || { echo 'ERROR: wotbtools.com must declare the @notApi matcher as: not path /api/*' >&2; exit 1; }
 grep -qE '^[[:space:]]*log_skip[[:space:]]+@notApi[[:space:]]*$' <<<"$web_site" \
   || { echo 'ERROR: wotbtools.com must log_skip @notApi so only /api/* enters the compliance log.' >&2; exit 1; }
-# 删掉 uri 之后，path 与 User-Agent 必须用 log_append 显式加回来，否则取证日志里既没有
-# 访问目标也没有客户端类型。compliance / security_kind 是 Alloy 合规分流的唯一事实源。
+# compliance / security_kind 是 Alloy 合规分流的唯一事实源（字段白名单见上方 helper）。
 web_appended() {
   grep -qE "^[[:space:]]*log_append[[:space:]]+$1$" <<<"$web_site"
 }
@@ -191,16 +208,7 @@ web_appended 'compliance[[:space:]]+security' \
   || { echo 'ERROR: wotbtools.com must log_append compliance security (the Alloy retention selector).' >&2; exit 1; }
 web_appended 'security_kind[[:space:]]+api_access' \
   || { echo 'ERROR: wotbtools.com must log_append security_kind api_access.' >&2; exit 1; }
-web_appended 'path[[:space:]]+\{http[.]request[.]uri[.]path\}' \
-  || { echo 'ERROR: wotbtools.com must log_append the request path (the replacement for the deleted uri).' >&2; exit 1; }
-web_appended 'ua[[:space:]]+\{http[.]request[.]header[.]User-Agent\}' \
-  || { echo 'ERROR: wotbtools.com must log_append the User-Agent.' >&2; exit 1; }
-# query string 绝不能被加回来：log_append 里出现 uri / query 占位符等于绕过上面的删除。
-if grep -qE '^[[:space:]]*log_append[[:space:]]+[^[:space:]]+[[:space:]]+.*\{http[.]request[.]uri[.]query' <<<"$web_site"; then
-  echo 'ERROR: the compliance access log must not re-append the query string.' >&2
-  exit 1
-fi
-# 认证域的受控访问日志同样进入 190 天 security stream：只加标记，不改已评审的脱敏字段集。
+# 认证域的受控访问日志同样进入 190 天 security stream，因此也必须带这两个分流标记。
 grep -qE '^[[:space:]]*log_append[[:space:]]+compliance[[:space:]]+security[[:space:]]*$' <<<"$auth_site" \
   || { echo 'ERROR: auth.wotbtools.com must log_append compliance security.' >&2; exit 1; }
 grep -qE '^[[:space:]]*log_append[[:space:]]+security_kind[[:space:]]+auth_access[[:space:]]*$' <<<"$auth_site" \
@@ -434,6 +442,12 @@ try:
                        if name != "security_api"
                        and "http.log.access." + name in excluded
                        and value.get("include"))
+    # The auth domain is in the same 190-day stream, so it must carry the same field
+    # whitelist. A named-parameter query filter there would keep `id_token_hint` - a
+    # full ID token - for 190 days, which is exactly what this log promises not to do.
+    auth_fields = logs[auth_logger]["encoder"]["fields"]
+    for field in ("request>uri", "request>headers", "resp_headers"):
+        assert auth_fields[field] == {"filter": "delete"}, (auth_logger, field, auth_fields.get(field))
     server = next(server for server in doc["apps"]["http"]["servers"].values()
                   if "wotbtools.com" in server.get("logs", {}).get("logger_names", {}))
     logger_names = server["logs"]["logger_names"]
@@ -465,7 +479,12 @@ try:
                      if node.get("match") == [{"host": ["auth.wotbtools.com"]}])
     auth_appended = {handler["key"]: handler["value"]
                      for handler in walk(auth_host) if handler.get("handler") == "log_append"}
-    assert auth_appended == {"compliance": "security", "security_kind": "auth_access"}, auth_appended
+    assert auth_appended == {
+        "compliance": "security",
+        "security_kind": "auth_access",
+        "path": "{http.request.uri.path}",
+        "ua": "{http.request.header.User-Agent}",
+    }, auth_appended
 except (StopIteration, AssertionError, KeyError) as error:
     raise SystemExit(
         "ERROR: the adapted Caddy configuration does not carry the reviewed compliance access log "

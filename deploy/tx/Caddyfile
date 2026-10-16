@@ -167,34 +167,39 @@ wotbtools.com {
 }
 
 auth.wotbtools.com {
-	# 受控访问日志（2.1.0 Phase 2 取证）：Caddy 的 `log` 不是 ordered HTTP handler，
-	# 既不能挂进 `handle` 也不能放进 `route`（两者都被 caddy adapt 拒绝），所以它是**站点级**的；
-	# 路径筛选交给 Loki 查询（broker 回调 = uri 含 /realms/*/broker/*）。
-	# filter 编码器在**写 stdout 之前**剥掉秘密：query 里的 code / state / session_state / iss
-	# （OAuth 授权码与会话标识）与 Cookie / Authorization 头（Caddy 默认即不记录凭据，这里显式删除）。
-	# 保留的 uri 其余部分、User-Agent、status、远端 IP 足以分辨"真实用户 vs 机器人"与客户端类型
-	# （docs/auth/web-qq-diagnostics.md §3.4）；校验见 deploy/tx/validate-caddy-config.sh。
+	# 受控访问日志（2.1.0 Phase 2 取证 + 190 天安全留存）：Caddy 的 `log` 不是 ordered HTTP
+	# handler，既不能挂进 `handle` 也不能放进 `route`（两者都被 caddy adapt 拒绝），所以它是
+	# **站点级**的；路径筛选交给 Loki 查询（broker 回调 = path 含 /realms/*/broker/*）。
+	#
+	# 字段白名单，与 wotbtools.com 的合规日志同一条规则：filter 编码器在**写 stdout 之前**
+	# 删掉原始 `request>uri`（连同整个 query string）、全部请求头与全部响应头，再用
+	# log_append 只写回 path 与 User-Agent。
+	#
+	# 这里**不能**退回"删掉几个已知 query 参数"的黑名单：RP-initiated logout 会把完整
+	# ID token 作为 `id_token_hint` query 参数发到本站点（android 的 AuthManager.endSession
+	# 与 Web 的 keycloak-js 都是），授权回程的 `Location` 响应头同样带 code / state。黑名单
+	# 漏掉它们，这条保存 190 天的日志就会存下授权令牌——正是它承诺不记录的东西。
+	#
+	# 留存字段（path / User-Agent / status / 远端 IP）仍足以分辨"真实用户 vs 机器人"与客户端
+	# 类型（docs/auth/web-qq-diagnostics.md §3.4）；校验见 deploy/tx/validate-caddy-config.sh。
 	log {
 		output stdout
 		format filter {
 			wrap json
 			fields {
-				request>uri query {
-					delete code
-					delete state
-					delete session_state
-					delete iss
-				}
-				request>headers>Cookie delete
-				request>headers>Authorization delete
+				request>uri delete
+				request>headers delete
+				resp_headers delete
 			}
 		}
 	}
 	# 同一条受控访问日志同时是认证域的安全日志：打上 compliance 标记后，TX Alloy 把它
 	# 归入 190 天留存的 security stream（security_kind 区分认证域访问与业务 API 访问）。
-	# 这里只加标记，不改上面已评审的脱敏字段集。
+	# path 与 ua 是上面被整体删除的 uri / 请求头的替代品，不是附加信息。
 	log_append compliance security
 	log_append security_kind auth_access
+	log_append path {http.request.uri.path}
+	log_append ua {http.request.header.User-Agent}
 
 	handle /.well-known/assetlinks.json {
 		root * /srv

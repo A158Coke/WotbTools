@@ -216,19 +216,21 @@ else
     [.resource_changes[]? | select(.address == "keycloak_realm_events.wotbtools")][0] as $c
     | ($c.change.actions // []) as $actions
     | ($c.change.after // {}) as $after
+    # 布尔与数组一律用 tojson 渲染：jq 的 `//` 把 `false` 当成空值，所以
+    # `false // "<absent>"` 会得到 "<absent>"，把「被显式关掉」说成「字段缺失」。
     | [
         (if (($actions | index("delete")) != null)
            then "actions=\($actions) (deleting or replacing this resource silently turns the 190-day security log off)"
            else empty end),
-        (if $after.events_enabled == true then empty else "events_enabled=\($after.events_enabled // "<absent>") (expected true)" end),
-        (if $after.admin_events_enabled == true then empty else "admin_events_enabled=\($after.admin_events_enabled // "<absent>") (expected true)" end),
+        (if $after.events_enabled == true then empty else "events_enabled=\($after.events_enabled | tojson) (expected true)" end),
+        (if $after.admin_events_enabled == true then empty else "admin_events_enabled=\($after.admin_events_enabled | tojson) (expected true)" end),
         (if $after.admin_events_details_enabled == false
            then empty
-           else "admin_events_details_enabled=\($after.admin_events_details_enabled // "<absent>") (expected false: the full resource representation must never be retained)"
+           else "admin_events_details_enabled=\($after.admin_events_details_enabled | tojson) (expected false: the full resource representation must never be retained)"
            end),
         (if (($after.events_listeners // []) | index("jboss-logging")) != null
            then empty
-           else "events_listeners=\($after.events_listeners // []) (expected to contain jboss-logging: it is what puts events on stdout)"
+           else "events_listeners=\($after.events_listeners | tojson) (expected to contain jboss-logging: it is what puts events on stdout)"
            end),
         (if (($after.enabled_event_types // []) | index("LOGIN")) != null
            then empty

@@ -192,7 +192,7 @@ docker run -d --name "$CADDY_TX" --network "$NETWORK" \
   --label com.docker.compose.service=caddy \
   alpine:3.22 sh -c "while true; do
     echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"http.log.access.security_api\",\"msg\":\"handled request\",\"request\":{\"remote_ip\":\"203.0.113.9\",\"remote_port\":\"51000\",\"proto\":\"HTTP/1.1\",\"method\":\"GET\",\"host\":\"wotbtools.com\"},\"status\":200,\"ua\":\"$CADDY_API_MARKER\",\"path\":\"/api/hof/leaderboard\",\"security_kind\":\"api_access\",\"compliance\":\"security\"}'
-    echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"http.log.access.log0\",\"msg\":\"handled request\",\"request\":{\"remote_ip\":\"203.0.113.9\",\"remote_port\":\"51001\",\"proto\":\"HTTP/1.1\",\"method\":\"GET\",\"host\":\"auth.wotbtools.com\",\"uri\":\"/realms/wotbtools/protocol/openid-connect/auth\"},\"status\":200,\"ua\":\"$CADDY_AUTH_MARKER\",\"security_kind\":\"auth_access\",\"compliance\":\"security\"}'
+    echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"http.log.access.log0\",\"msg\":\"handled request\",\"request\":{\"remote_ip\":\"203.0.113.9\",\"remote_port\":\"51001\",\"proto\":\"HTTP/1.1\",\"method\":\"GET\",\"host\":\"auth.wotbtools.com\"},\"status\":200,\"ua\":\"$CADDY_AUTH_MARKER\",\"path\":\"/realms/wotbtools/protocol/openid-connect/logout\",\"security_kind\":\"auth_access\",\"compliance\":\"security\"}'
     echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"tls.obtain\",\"msg\":\"certificate obtained successfully\",\"identifier\":\"$CADDY_RUNTIME_MARKER\"}'
     sleep 1
   done" >/dev/null
