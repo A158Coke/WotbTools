@@ -2250,6 +2250,7 @@ async function runOfflineWorkspaceScenario(env) {
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
   const businessAttempts = []
+  const healthProbes = []
   const interceptionErrors = []
   let closing = false
   await page.enable()
@@ -2267,12 +2268,22 @@ async function runOfflineWorkspaceScenario(env) {
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
     // Foreground activity is intentionally reported when connectivity recovers.
-    // Only this endpoint is accepted, and only while the browser fixture is online;
+    // Telemetry and read-only deployment capability discovery are accepted only online;
     // offline telemetry and all automatic business submissions still fail below.
     const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
       && params.request.method === 'POST'
     if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
       await env.chrome.client.send('Fetch.fulfillRequest', { requestId: params.requestId, responseCode: 204 }, sessionId)
+      return
+    }
+    const health = url.origin === env.origin && url.pathname === '/api/health' && params.request.method === 'GET'
+    if (health && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      healthProbes.push(params.request.url)
+      await env.chrome.client.send('Fetch.fulfillRequest', {
+        requestId: params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] })).toString('base64'),
+      }, sessionId)
       return
     }
     const business = (url.origin !== env.origin || url.pathname.startsWith('/api/')) && !assetPath
@@ -2330,12 +2341,14 @@ async function runOfflineWorkspaceScenario(env) {
   // Recovering connectivity may prepare local AI projection but must never submit it.
   await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
   await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
+  await page.waitFor(() => !!document.querySelector('[data-testid="nav-creators"]'), { label: 'read-only backend capability probe completed' })
   await delay(300)
   await page.evaluate(`window.__offlineFixtureOnline = false; window.dispatchEvent(new Event('offline'))`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'disconnect capability update' })
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="shots"]').click()`)
   check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
   check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
+  check(failures, healthProbes.length === 1, `reconnection must make exactly one read-only capability probe: ${healthProbes.length}`)
   check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
   closing = true
   await env.chrome.client.send('Target.closeTarget', { targetId })
