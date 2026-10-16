@@ -2,8 +2,8 @@
 import { ref, watch, computed, nextTick } from 'vue'
 import type { TournamentEvent } from '../api/tournament-points.js'
 import { TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
-const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [value: number | null] }>()
+const props = defineProps<{ events: TournamentEvent[]; modelValue: number | null; disabled?: boolean; includeGlobal?: boolean; globalSelected?: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [value: number | null]; 'select-global': [] }>()
 const year = ref('')
 const region = ref('')
 const season = ref('')
@@ -17,17 +17,22 @@ function syncModel(value: number | null) {
   else { year.value = ''; region.value = ''; season.value = '' }
 }
 watch(() => props.modelValue, value => {
-  if (value === null && preservePartialSelection) return
+  if (props.globalSelected || (value === null && preservePartialSelection)) return
   syncModel(value)
 }, { immediate: true })
-watch(() => props.events, () => { if (props.modelValue !== null) syncModel(props.modelValue) })
+watch(() => props.events, () => { if (props.modelValue !== null && !props.globalSelected) syncModel(props.modelValue) })
+watch(() => props.globalSelected, value => {
+  if (value) season.value = 'GLOBAL'
+  else if (!preservePartialSelection) syncModel(props.modelValue)
+}, { immediate: true })
 function select(level: 'year' | 'region' | 'season') {
+  if (level === 'season' && season.value === 'GLOBAL') { emit('select-global'); return }
   if (level === 'year') { region.value = ''; season.value = '' }
   if (level === 'region') season.value = ''
   const value = props.events.find(event => event.year === Number(year.value) && event.region === region.value && event.season === season.value)?.id ?? null
   // A local year/region change clears the selected event before the remaining
   // filters are chosen. Only that immediate parent echo preserves these filters.
-  preservePartialSelection = value === null && props.modelValue !== null
+  preservePartialSelection = value === null && (props.modelValue !== null || !!props.globalSelected)
   emit('update:modelValue', value)
   void nextTick(() => { preservePartialSelection = false })
 }
@@ -45,8 +50,8 @@ function select(level: 'year' | 'region' | 'season') {
       </select>
     </label>
     <label class="tournament-field"><span>{{ $t('tournament.season') }}</span>
-      <select v-model="season" :disabled="disabled || !region" data-testid="event-season" @change="select('season')">
-        <option value="">{{ $t('tournament.choose') }}</option><option v-for="value in seasons" :key="value" :value="value">{{ $t('tournament.seasons.' + value) }}</option>
+      <select v-model="season" :disabled="disabled || (!region && !includeGlobal)" data-testid="event-season" @change="select('season')">
+        <option value="">{{ $t('tournament.choose') }}</option><option v-if="includeGlobal" value="GLOBAL">{{ $t('tournament.globalConfiguration') }}</option><option v-for="value in seasons" :key="value" :value="value">{{ $t('tournament.seasons.' + value) }}</option>
       </select>
     </label>
   </div>
