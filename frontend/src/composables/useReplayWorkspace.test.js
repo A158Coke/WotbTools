@@ -156,14 +156,16 @@ describe('useReplayWorkspace', () => {
   it('late canonical A cannot publish after switching to ready B', async () => {
     const ws = useReplayWorkspace()
     const [a, b] = makeFiles(2)
-    holder.state.session.replaceSelection([a])
+    holder.state.session.replaceSelection([a, b])
+    holder.state.session.commitReadyResult({ battles: [battle('r0'), battle('r1')] })
+    await nextTick()
     let finishA
     parser.project.mockImplementationOnce(() => new Promise(resolve => { finishA = resolve }))
     const old = ws.playbackSession.loadCanonical(a)
     const discarded = expect(old).rejects.toMatchObject({ name: 'AbortError' })
     await vi.waitFor(() => expect(finishA).toBeTypeOf('function'))
     const stateA = ws.playbackSession.getState(a)
-    holder.state.session.replaceSelection([b])
+    ws.selectBattle('r1')
     const canonicalB = await ws.playbackSession.loadCanonical(b)
     finishA({ dataset: { vehicles: ['old A'] }, clock: null })
     await discarded
@@ -175,6 +177,32 @@ describe('useReplayWorkspace', () => {
     expect(await ws.playbackSession.loadCanonical(a)).toBeTruthy()
     expect(parser.raw).toHaveBeenCalledTimes(1)
     expect(parser.project).toHaveBeenCalledTimes(3)
+  })
+
+  it('battle switching aborts scene A and late A cannot overwrite cached scene B', async () => {
+    const ws = useReplayWorkspace()
+    const [a, b] = makeFiles(2)
+    holder.state.session.replaceSelection([a, b])
+    holder.state.session.commitReadyResult({ battles: [battle('r0'), battle('r1')] })
+    await nextTick()
+    let finishA, signalA
+    parser.raw.mockImplementationOnce((_file, signal) => {
+      signalA = signal
+      return new Promise(resolve => { finishA = resolve })
+    })
+    const old = ws.playbackSession.loadScene(a)
+    const discarded = expect(old).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(finishA).toBeTypeOf('function'))
+    ws.selectBattle('r1')
+    expect(signalA.aborted).toBe(true)
+    const sceneB = await ws.playbackSession.loadScene(b)
+    finishA({ vehicles: ['stale A'] })
+    await discarded
+    expect(ws.playbackSession.getState(a).scenePlayback).toBeNull()
+    expect(ws.playbackSession.getState(b).scenePlayback).toBe(sceneB)
+    expect(await ws.playbackSession.loadScene(b)).toBe(sceneB)
+    expect(parser.raw).toHaveBeenCalledTimes(2)
+    await ws.playbackSession.loadCanonical(b)
   })
 
   it('workspace disposal withdraws pending canonical without pretending to abort the projection', async () => {
