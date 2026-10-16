@@ -72,6 +72,20 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与本次实际 APK
 身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
+### 构建身份的确定性（stage 重跑 ⇒ 同一 APK）
+
+`frontend/vite.config.js` 的 `buildIdentity()` 把构建身份写进 bundle：`version.json` 与
+`define __BUILD_TIME__`（后者内联进入口 chunk，入口内容一变会**沿 import 图级联改名**）。
+因此 `buildTime` **必须是确定性的**——优先级：`SOURCE_DATE_EPOCH`（unix 秒）→ 当前 checkout 的
+commit 时间 → 才回落 wall-clock（此时该构建不可逐字节复现，仅作诊断）。
+
+- **Android bundle**（`npm run build:android`，有 .git）自动取 commit 时间 ⇒ 同一 commit + 同输入
+  ⇒ 逐字节相同的 bundle/APK（stage 重跑不会再撞 immutable conflict）；
+- **任何 Docker 构建**（生产镜像由仓库外构建方按本 Dockerfile 构建）必须传
+  `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`；`Dockerfile.frontend` 已声明该 ARG
+  并转 ENV，CI 侧的 `ci-frontend.yml` 已接上。未传时回落 wall-clock，该镜像不可复现。
+- 回归锁：`frontend/src/vite-proxy.test.js` 断言 `SOURCE_DATE_EPOCH` 固定 ⇒ `buildTime` 同值。
+
 ### APK 公网下载卸载（清华云盘直链）
 
 TX1 出口公网带宽有限且会被 APK 下载打满（APK 随内嵌 bundle 增长：2026-10-16 起 2D 底图与 Web 同字节，bundle 资产约 40 MiB——见 [architecture.md](architecture.md) §2D 底图随包），stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
