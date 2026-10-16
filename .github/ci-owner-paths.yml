@@ -55,6 +55,8 @@ frontend:
   - 'frontend/**'
   - 'common/map_names.json'
   - 'common/tankopedia-tier10.json'
+  # Tankopedia 搜索别名（构建期 import 进前端包）：改它必须重跑 frontend 测试
+  - 'common/tank_aliases.json'
   - 'common/assets/**'
   - 'deploy/agent/source.json'
   - 'scripts/fetch-agent-wasm.sh'
@@ -147,6 +149,15 @@ deployment:
 python:
   - '.github/workflows/ci-python.yml'
   - 'common/python/**'
+  # 人工维护的别名数据集 + 其 tank_id 校验源（完整车辆名册）：
+  # 由 validate_tank_aliases 的 unittest fail closed 守卫，名册与 tier 文件的一致性由
+  # test_update_tankopedia 的 RosterTest 守卫
+  - 'common/tank_aliases.json'
+  - 'common/tank_ids.json'
+  - 'common/tankopedia-tier7.json'
+  - 'common/tankopedia-tier8.json'
+  - 'common/tankopedia-tier9.json'
+  - 'common/tankopedia-tier10.json'
 business_postgres:
   - '.github/workflows/business-postgres.yml'
   - 'deploy/tx/deploy.sh'
