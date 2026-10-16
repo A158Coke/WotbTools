@@ -181,6 +181,6 @@ Workspace 的唯一 `ensureTargetBattle()` 复用现有 batch analysis，从 fin
 
 `sourceId = r{original sourceIndex}`；`rN → files[N]`。Sparse source IDs 是有意设计：失败首文件后可以从 `r1` 开始，重复文件后可以出现 `r0,r2`。不得按成功场次数重新编号。BattlePicker 仅列 finalized battles，切场始终使用对应原始 File。
 
-待分析与解析中由现有上传条/ProcessingPanel 表达，零有效场次显示真实解析失败，不报“只支持单回放”。已有结果和选中场次在能力切换间复用，不重复 batch parse。selection replacement 由 revision/abort 作废旧 batch 和 target preparation；per-File playbackSession 缓存与 canonical generation 保持独立，迟到工作不能覆盖新场次。
+待分析与解析中由现有上传条/ProcessingPanel 表达，零有效场次显示真实解析失败，不报“只支持单回放”。已有结果和选中场次在能力切换间复用，不重复 batch parse。能力切换仅自动准备 idle selection；parsing 不重复启动，cancelled/failed 保留当前状态，仅显式 Preview 才允许重试。selection replacement 由 revision/abort 作废旧 batch 和 target preparation；per-File playbackSession 缓存与 canonical generation 保持独立，迟到工作不能覆盖新场次。
 
 AI 仅为当前 File 构建一场的投影，切场撤销旧 review 并清空旧结果；投影与流的 generation 隔离迟到结果。本修复不增加 AI 缓存，也不合并多文件 AI 请求。Shots 使用同一个 target/picker，不持有另一份 batch selection。
