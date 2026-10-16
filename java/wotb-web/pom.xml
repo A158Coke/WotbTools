@@ -13,6 +13,12 @@
     <name>WotBTools Web</name>
 
     <dependencies>
+        <!-- CSV standings import: standard quoted fields, escaped delimiters and record boundaries. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
         <!-- Broadcast covers use only bounded simple PUT/GET/DELETE against a private COS bucket. -->
         <dependency>
             <groupId>com.qcloud</groupId>

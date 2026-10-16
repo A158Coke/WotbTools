@@ -43,7 +43,7 @@ public class TournamentAdminController {
     public TournamentDtos.RuleSource ruleSource(@PathVariable final long eventId) { return service.ruleSource(eventId); }
     @GetMapping
     public ResponseEntity<List<TournamentDtos.Event>> list() {
-        return ResponseEntity.ok().header("X-Tournament-Default-Rules", "1").body(service.listEvents());
+        return ResponseEntity.ok().header("X-Tournament-Default-Rules", "1").header("X-Tournament-Csv-Import", "1").body(service.listEvents());
     }
     @PostMapping
     public TournamentDtos.Config create(@RequestBody final TournamentDtos.CreateRequest request) {
@@ -106,6 +106,21 @@ public class TournamentAdminController {
     @PostMapping("/{eventId}/historical-import/preview")
     public TournamentDtos.HistoricalPreview historicalPreview(@PathVariable final long eventId, @RequestBody final TournamentDtos.HistoricalPreviewRequest request) {
         return service.previewHistorical(eventId, request);
+    }
+    @PostMapping(value = "/{eventId}/csv-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public TournamentDtos.CsvImportPreview csvPreview(@PathVariable final long eventId,
+            @RequestParam(name = "file") final MultipartFile file,
+            @RequestParam(name = "expectedEventVersion") final long eventVersion) {
+        return service.previewCsv(eventId, eventVersion, file);
+    }
+    @PostMapping(value = "/{eventId}/csv-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public TournamentDtos.CsvImportPreview csvImport(@PathVariable final long eventId,
+            @RequestParam(name = "file") final MultipartFile file,
+            @RequestParam(name = "expectedEventVersion") final long eventVersion,
+            @RequestParam(name = "sourceSha256") final String sourceSha256,
+            @RequestParam(name = "confirm") final boolean confirm,
+            @RequestParam(name = "idempotencyKey") final String idempotencyKey) {
+        return service.importCsv(JwtUtil.requireUserId(), eventId, eventVersion, file, sourceSha256, confirm, idempotencyKey);
     }
     @GetMapping("/{eventId}/historical-import")
     public TournamentDtos.HistoricalState historicalState(@PathVariable final long eventId,

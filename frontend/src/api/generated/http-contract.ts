@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tournaments/{eventId}/data-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the persistent CSV data-source attribution for an event
+         * @description Probe the existing public event-list route for X-Tournament-Csv-Import before calling this endpoint on a rolling deployment. Once a CSV import succeeds, attribution remains associated with the event.
+         */
+        get: operations["getTournamentDataSource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tournaments/{eventId}/standings": {
         parameters: {
             query?: never;
@@ -74,7 +94,7 @@ export interface paths {
         options?: never;
         /**
          * Check tournament capabilities without changing the existing event-list body
-         * @description Requires the tournament-admin role. Older backends return 200 without the capability header; clients must probe this existing route before requesting default-rule endpoints.
+         * @description Requires the tournament-admin role. Older backends return 200 without capability headers; clients must probe this existing route before requesting default-rule or CSV-import endpoints.
          */
         head: operations["getTournamentCapabilities"];
         patch?: never;
@@ -315,6 +335,46 @@ export interface paths {
         put?: never;
         /** clearTournamentClanPoints */
         post: operations["clearTournamentClanPoints"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/{eventId}/csv-import/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a complete cumulative CSV standings replacement
+         * @description Requires tournament-admin. Parses the CSV on the server without changing data. Scores are direct values, blank cells mean no participation, and existing administrative clear overrides remain effective. Existing drafts or correction workspaces reject the import with TOURNAMENT_CSV_WORKSPACE_BUSY.
+         */
+        post: operations["previewTournamentCsvImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/{eventId}/csv-import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Atomically replace standings with a previewed cumulative CSV snapshot
+         * @description Requires tournament-admin and explicit confirmation. Re-parses the original file and verifies the preview hash and event version. Repeated requests with the same idempotency key and payload do not add scores twice. Prior audit evidence and administrative clear overrides are retained, and successful imports permanently mark this event as using the credited CSV source.
+         */
+        post: operations["importTournamentCsv"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1444,6 +1504,37 @@ export interface components {
             /** Format: int64 */
             eventVersion: number;
         };
+        TournamentCsvChanges: {
+            addedClans: number;
+            changedClans: number;
+            removedClans: number;
+            addedScores: number;
+            changedScores: number;
+            removedScores: number;
+            /** @description Administrative clear overrides retained in the effective replacement. */
+            preservedClears: number;
+        };
+        TournamentCsvImportPreview: {
+            standings: components["schemas"]["TournamentStandings"];
+            sourceName: string;
+            sourceSha256: string;
+            sourceRowCount: number;
+            clanCount: number;
+            missingCellCount: number;
+            /** Format: int64 */
+            eventVersion: number;
+            changes: components["schemas"]["TournamentCsvChanges"];
+        };
+        TournamentAttribution: {
+            name: string;
+            /** Format: uri */
+            url: string;
+        };
+        TournamentDataSource: {
+            /** @description Remains true after the first successful CSV import for the lifetime of this event. */
+            csvImported: boolean;
+            attribution: components["schemas"]["TournamentAttribution"] | null;
+        };
         TournamentRecognitionPermit: {
             permit: string;
             /** Format: date-time */
@@ -1464,6 +1555,7 @@ export interface components {
             issues: string[];
             imageHash: string;
         };
+        /** @description Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers. */
         TournamentAudit: {
             /** Format: int64 */
             id: number;
@@ -1474,9 +1566,11 @@ export interface components {
             dayNumber: number | null;
             /** Format: date-time */
             createdAt: string;
+            /** @description Empty in audit-list responses; the full snapshot is retained internally. */
             before: {
                 [key: string]: unknown;
             };
+            /** @description Empty in audit-list responses; the full snapshot is retained internally. */
             after: {
                 [key: string]: unknown;
             };
@@ -2123,7 +2217,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -2212,6 +2306,8 @@ export interface operations {
             /** @description Tournament result */
             200: {
                 headers: {
+                    /** @description Version 1 supports recurring CSV imports and public data-source metadata. */
+                    "X-Tournament-Csv-Import"?: "1";
                     [name: string]: unknown;
                 };
                 content: {
@@ -2238,6 +2334,46 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getTournamentDataSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event data-source metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentDataSource"];
+                };
+            };
+            /** @description Invalid event identifier */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2310,6 +2446,8 @@ export interface operations {
                 headers: {
                     /** @description Version 1 supports global default rule operations, including direct configuration. */
                     "X-Tournament-Default-Rules"?: "1";
+                    /** @description Version 1 supports recurring CSV imports and public data-source metadata. */
+                    "X-Tournament-Csv-Import"?: "1";
                     [name: string]: unknown;
                 };
                 content: {
@@ -2446,6 +2584,8 @@ export interface operations {
                 headers: {
                     /** @description Version 1 supports global default rule operations, including direct configuration. */
                     "X-Tournament-Default-Rules"?: "1";
+                    /** @description Version 1 supports recurring CSV imports and public data-source metadata. */
+                    "X-Tournament-Csv-Import"?: "1";
                     [name: string]: unknown;
                 };
                 content?: never;
@@ -3681,6 +3821,183 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    previewTournamentCsvImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description UTF-8 CSV, with or without BOM, containing the complete cumulative event standings.
+                     */
+                    file: string;
+                    /** Format: int64 */
+                    expectedEventVersion: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Validated standings, source identity and replacement changes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentCsvImportPreview"];
+                };
+            };
+            /** @description Invalid multipart request or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details; rowNumber counts CSV records including the header. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description TOURNAMENT_VERSION_CONFLICT, TOURNAMENT_CSV_WORKSPACE_BUSY, or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_TOO_LARGE */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    importTournamentCsv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    /** Format: int64 */
+                    expectedEventVersion: number;
+                    sourceSha256: string;
+                    /** @description Must be true to replace standings. */
+                    confirm: boolean;
+                    idempotencyKey: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Committed standings and replacement changes, or the original idempotent result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentCsvImportPreview"];
+                };
+            };
+            /** @description Invalid multipart request, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key; TOURNAMENT_CSV_WORKSPACE_BUSY; or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_TOO_LARGE */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
