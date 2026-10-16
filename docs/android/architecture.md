@@ -52,7 +52,7 @@ choice / file prompt 被 Gecko 关闭时均完成对应 result；文件 picker �
 
 GeckoView 的下载派发**先**经过 `NavigationDelegate.onLoadRequest`，之后才进 `onExternalResponse`，
 所以 `blob:` 下载 URL 必须在导航策略里放行（`NavigationPolicy.isTrustedLocalBlobUrl`：scheme `blob` +
-内嵌 URL exact 本机 origin + 单段 id，其它 host / port / scheme / malformed 一律拒绝）。它只是下载派发
+内嵌 URL exact 本机 origin + canonical UUID，其它 host / port / scheme / malformed 一律拒绝）。它只是下载派发
 例外，**不是** application origin——Native Bridge 的 sender 校验仍是 `MainActivity.isLocalAppUrl`，
 blob URL 在那里恒为 false。本机 server 侧 `StreamResponse.data` 的 lifetime 由
 `LocalRuntimeServer.sendResponse` 唯一拥有：HEAD、打开输出流失败、header 写入失败、body copy 失败、

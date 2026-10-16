@@ -308,7 +308,9 @@ internal class GeckoWebRuntime(
                     }
                 }
                 // blob 下载派发：Gecko 先过 onLoadRequest，再进 ContentDelegate.onExternalResponse，
-                // 因此这里必须 ALLOW，但绝不 load(uri)（它不是文档导航目标），也不进 Bridge 的 origin trust。
+                // 因此这里必须 ALLOW。刻意不看 request.target：下载不需要 session，若 target=_blank
+                // 而这次又真的是页面导航，onNewSession 返回 null 会让它落空（fail-closed），
+                // 绝不 load(uri)、绝不交系统浏览器、也不进 Bridge 的 origin trust。
                 MainFrameNavigation.BLOB_DOWNLOAD -> {
                     Log.d(TAG, "nav blob download")
                     GeckoResult.fromValue(AllowOrDeny.ALLOW)

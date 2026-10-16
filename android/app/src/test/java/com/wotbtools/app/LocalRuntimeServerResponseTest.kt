@@ -3,6 +3,7 @@ package com.wotbtools.app
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -117,13 +118,19 @@ class LocalRuntimeServerResponseTest {
 
     /** body 的 close 失败不值得把已经写完的响应变成失败，也不允许它替换正在传播的异常。 */
     @Test fun aFailingBodyCloseIsSwallowed() {
-        val body = object : InputStream() {
+        val checked = object : InputStream() {
             override fun read(): Int = -1
             override fun close() = throw IOException("close failed")
         }
-        val out = ByteArrayOutputStream()
-        send({ out }, body)
-        assertTrue(out.toString(Charsets.ISO_8859_1).startsWith("HTTP/1.1 200 OK\r\n"))
+        val unchecked = object : InputStream() {
+            override fun read(): Int = -1
+            override fun close() = throw IllegalStateException("close failed")
+        }
+        for (body in listOf(checked, unchecked)) {
+            val out = ByteArrayOutputStream()
+            send({ out }, body)
+            assertTrue(out.toString(Charsets.ISO_8859_1).startsWith("HTTP/1.1 200 OK\r\n"))
+        }
     }
 
     @Test fun responsesWithoutABodyNeedNoClose() {
@@ -136,6 +143,29 @@ class LocalRuntimeServerResponseTest {
         val text = out.toString(Charsets.ISO_8859_1)
         assertTrue(text, text.startsWith("HTTP/1.1 404 Not Found\r\n"))
         assertTrue(text, text.contains("Cache-Control: no-store\r\n"))
+    }
+
+    /**
+     * `serve()` 自己的调用形态也必须保住 ownership：连接在请求头读完之后、响应头写出之前断掉
+     * （客户端 RST / fd 耗尽）时 `getOutputStream()` 会抛 IOException，而此刻路由已经打开了 replay /
+     * asset / 代理缓存流。只测 companion 函数覆盖不到这一点——这条用例在 `serve()` 退回
+     * 「先把输出流求值再交给 write」时失败（body 不会被关闭）。
+     */
+    @Test fun serveClosesTheRoutedBodyWhenTheSocketOutputCannotBeOpened() {
+        val body = TrackingInput("payload".toByteArray())
+        val server = LocalRuntimeServer(MainActivity.LOCAL_APP_ORIGIN) {
+            ReplayIntentHandler.StreamResponse(200, "OK", body, "text/plain")
+        }
+        val request = "GET /index.html HTTP/1.1\r\nHost: 127.0.0.1:21653\r\n\r\n".toByteArray(Charsets.US_ASCII)
+        val client = object : Socket() {
+            override fun setSoTimeout(timeout: Int) = Unit
+
+            override fun getInputStream(): InputStream = ByteArrayInputStream(request)
+
+            override fun getOutputStream(): OutputStream = throw IOException("output stream unavailable")
+        }
+        server.serve(client)
+        assertEquals(1, body.closeCount)
     }
 
     /** 端到端（真实 loopback）：`serve()` 必须在连接关闭前 close 路由返回的 body。 */
