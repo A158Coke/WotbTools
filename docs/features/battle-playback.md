@@ -105,15 +105,18 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
   PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
   只爆一次，复活后的新死亡各自爆焰。
-- **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份新血量证据之前，
-  血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
-  当成复活后的现值；证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
-  的"复活后无新血量证据 → 未知边界"与"证据在查询时刻之后不得提前使用"用例。
+- **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份**可用数值**血量证据
+  之前，血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
+  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不算"新证据"
+  （`isPlausibleHp` 判据）。证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
+  的"复活后无新血量证据 → 未知边界"、"证据在查询时刻之后不得提前使用"与"复活时刻只有未知哨兵
+  采样 → 边界不被跳过"用例。
 - **每次死亡各一条 DESTROYED 事件**：battle-level `events` 的 DESTROYED 原先只来自 canonical 终态
   重建（每账号至多一条终态），复活模式会死多次——轨道在场（且给出 ≥1 死亡时刻）的账号改用轨道
-  死亡列，其余账号维持 canonical。2D burst 与 Event Panel 因此**每次死亡各出一次**，KILL 仍只由
-  canonical 致死窗口的唯一攻击者证据给出（不伪造击杀者）。守卫：`lifeTransitions.test.ts` 的
-  `respawnDestroyedTimes` 用例 + `parseLocalPlayback.test.ts` 的"复活轨道注入"用例。
+  死亡列（**同账号多实体的死亡列合并、升序去重**），其余账号维持 canonical。2D burst 与 Event Panel
+  因此**每次死亡各出一次**，KILL 仍只由 canonical 致死窗口的唯一攻击者证据给出（不伪造击杀者）。
+  守卫：`lifeTransitions.test.ts` 的 `respawnDestroyedTimes` 用例（含同账号多实体合并）+
+  `parseLocalPlayback.test.ts` 的"复活轨道注入"用例。
 - **阵亡期断链（履带印）**：DESTROYED 期间与 AoI 空洞同语义——历史印记保留、复活后从**新锚**开始，
   不与死前锚连铺（否则跨阵亡期/复活迁移桥出一条长印记）。守卫：`playbackScene.test.js` 的
   "履带印阵亡期断链"用例（复活落在新位置时不出现长戳）。
