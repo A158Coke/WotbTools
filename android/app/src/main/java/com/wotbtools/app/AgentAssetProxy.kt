@@ -2,7 +2,6 @@ package com.wotbtools.app
 
 import android.content.Context
 import android.util.Log
-import android.webkit.WebResourceResponse
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -10,10 +9,10 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * 3D 资产原生代理：WebView 页面 origin（appassets.androidplatform.net）不在对象存储桶的
- * CORS 白名单里，页面内 `fetch` 直连会被 CORS 拦截；改由 Native 在 shouldInterceptRequest
- * 里以 HttpURLConnection 匿名 GET 对象存储（CORS 是浏览器机制，原生代码不受约束），字节
- * COS → 设备直连、不经过生产网关——TX1 出口带宽不再被资产包流量占用。
+ * 3D 资产原生代理：App 本机 origin（`MainActivity.LOCAL_APP_ORIGIN`）不在对象存储桶的
+ * CORS 白名单里，页面内 `fetch` 直连会被 CORS 拦截；改由 Native 在 LocalRuntimeServer 的
+ * `/agent-assets/` 前缀路由里以 HttpURLConnection 匿名 GET 对象存储（CORS 是浏览器机制，原生代码
+ * 不受约束），字节 COS → 设备直连、不经过生产网关——TX1 出口带宽不再被资产包流量占用。
  *
  * 资产基址因此保持本机路径（frontend/src/platform/runtime.js 的 ANDROID_ASSET_BASE =
  * '/agent-assets'），请求 same-origin，无需桶 CORS，也无需额外 CSP 白名单。
@@ -40,8 +39,10 @@ object AgentAssetProxy {
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 30_000
     private const val DEFAULT_CONTENT_TYPE = "application/octet-stream"
+    private val NO_STORE = mapOf("Cache-Control" to "no-store")
 
-    fun intercept(context: Context, path: String): WebResourceResponse {
+    /** 在 LocalRuntimeServer worker 线程调用（允许网络 I/O）。 */
+    internal fun intercept(context: Context, path: String): ReplayIntentHandler.StreamResponse {
         return try {
             fetchAndServe(context, path, conditional = true)
         } catch (_: IOException) {
@@ -51,15 +52,12 @@ object AgentAssetProxy {
                 cached.response()
             } else {
                 Log.w(TAG, "upstream failed and no cache for $path")
-                WebResourceResponse(
-                    "text/plain", "UTF-8", 502, "asset upstream unavailable",
-                    mapOf("Cache-Control" to "no-store"), null
-                )
+                ReplayIntentHandler.StreamResponse(502, "Bad Gateway", headers = NO_STORE)
             }
         }
     }
 
-    private fun fetchAndServe(context: Context, path: String, conditional: Boolean): WebResourceResponse {
+    private fun fetchAndServe(context: Context, path: String, conditional: Boolean): ReplayIntentHandler.StreamResponse {
         val dir = cacheDir(context)
         dir.mkdirs()
         val entry = entry(context, path)
@@ -161,7 +159,8 @@ object AgentAssetProxy {
         File(cacheDir(context), cacheKey(path) + ".meta")
 
     private class Entry(val etag: String, val contentType: String, val body: File) {
-        fun response(): WebResourceResponse = WebResourceResponse(contentType, null, body.inputStream())
+        // 本地已有 ETag 磁盘缓存：no-store 避免 Gecko HTTP cache 再存一份。
+        fun response() = ReplayIntentHandler.StreamResponse(200, "OK", body.inputStream(), contentType, NO_STORE)
     }
 
     /** 纯函数（纯 JVM 单测覆盖）：路径 → 定长缓存键。 */
@@ -172,7 +171,7 @@ object AgentAssetProxy {
 
     /**
      * 纯函数（纯 JVM 单测覆盖）：本机路由路径 → 对象存储 key。资产包在**桶根目录**
-     * （/index.json、/glb/...），而 WebView 请求带本机路由前缀 /agent-assets——拼上游
+     * （/index.json、/glb/...），而页面请求带本机路由前缀 /agent-assets——拼上游
      * URL 前必须剥掉前缀并保证根路径斜杠，否则冷缓存请求会 404。
      * 缓存键（[cacheKey]）仍使用完整本机路径，两者语义不同、不得混用。
      */

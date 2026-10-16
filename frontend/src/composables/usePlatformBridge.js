@@ -2,8 +2,8 @@ import { isAndroidRuntime } from '../platform/runtime.js'
 /**
  * 极薄的平台能力探测（origin-scoped）。
  *
- * Android WebView 壳经 AndroidX WebKit WebMessageListener 注入 `window.WotbNative`
- * （仅 appassets 和 reviewed production compatibility origins 的主 frame 可调）。
+ * Android 壳（GeckoView）由内置扩展的 content script 注入 `window.WotbNative`
+ * （仅 exact 本机 origin 的 top frame；Native 侧再按 sender 复核）。
  * 普通浏览器 / 非 Android 场景下不存在该对象，所有方法回退到 Web 默认（null / false）。
  *
  * 本模块是异步 RPC（postMessage → reply 'message' 事件），只做能力查询、pending replay 交接
@@ -70,7 +70,7 @@ export function callBridge(method, params = {}, { timeoutMs = BRIDGE_RPC_TIMEOUT
     try {
       b.postMessage(JSON.stringify({ id, method, params }))
     } catch {
-      // postMessage 抛错（WebView 已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
+      // postMessage 抛错（页面引擎已销毁 / 桥实现异常）也必须遵守「绝不 reject」的契约：
       // 否则 async 调用方（例如 connectivity 事件 handler）会产生 unhandled rejection。
       if (typeof b.removeEventListener === 'function') {
         b.removeEventListener('message', handler)
@@ -106,7 +106,7 @@ export async function supports(capability) {
   return (await getCapabilities()).includes(capability)
 }
 
-/** Result: { pendingId, name, size, uri }; uri is a fixed same-origin HTTPS Native resource. */
+/** Result: { pendingId, name, size, uri }; uri is the fixed same-origin LocalRuntimeServer resource (NATIVE_REPLAY_RESOURCE_URL). */
 export async function getPendingReplay() {
   return await callBridge('getPendingReplay')
 }

@@ -10,8 +10,8 @@ import { callBridge, isAndroidApp } from '../composables/usePlatformBridge.js'
  *
  * 为什么不是 `navigator.onLine` 一把梭（计划 §4）：
  *  - `navigator.onLine` 只说明「设备认为自己有默认路由」，不说明服务器可达；
- *  - Android WebView 里真正的权威是系统 `ConnectivityManager`（INTERNET + VALIDATED），
- *    由 Native 经 bridge v2 报告，页面不直接监听 Android framework；
+ *  - Android App 里真正的权威是系统 `ConnectivityManager`（INTERNET + VALIDATED），
+ *    由 Native 经 Native Bridge 报告，页面不直接监听 Android framework；
  *  - 未来要区分 `degraded` / `service-unavailable` 时，只需要 Native 多报一个 token，
  *    业务代码与 capability 模型都不用改。
  *
@@ -74,7 +74,7 @@ export function createBrowserConnectivitySource(target = typeof window === 'unde
 }
 
 /**
- * Android 壳来源：bridge v2 的 `connectivityGetState`（系统权威）+ `wotbtoolsOnConnectivityChanged` 推送。
+ * Android 壳来源：Native Bridge 的 `connectivityGetState`（系统权威）+ `wotbtoolsOnConnectivityChanged` 推送。
  *
  * 推送不携带 payload：状态一律回读 Native（与 authChanged 同一约定），因此不会出现
  * 「事件说在线、读回来是离线」的双事实源。缺少 bridge / 缺少 `connectivity` 能力时返回
@@ -115,7 +115,7 @@ export function createAndroidConnectivitySource(bridgeCapabilities = null) {
 /**
  * 选择平台来源：Android 壳且声明了 `connectivity` 能力 → Native 权威；否则浏览器近似。
  *
- * 老客户端（bridge v2 但还没有 connectivity 方法）不视为错误：退回浏览器近似，
+ * Native 未声明 `connectivity` 能力时不视为错误：退回浏览器近似，
  * 仍能提供 offline/online 两态，只是权威性较低 —— 这也是 §4 允许的最低要求。
  */
 export function selectConnectivitySource({ android = isAndroidApp(), capabilities = null } = {}) {

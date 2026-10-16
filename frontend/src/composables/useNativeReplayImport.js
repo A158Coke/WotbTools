@@ -6,16 +6,16 @@ import {
   isAndroidApp,
   isNativeBridgeCompatible,
 } from './usePlatformBridge.js'
-import { NATIVE_REPLAY_RESOURCE_URL } from '../platform/nativeBridgeContract.js'
+import { NATIVE_REPLAY_GLOBAL, NATIVE_REPLAY_RESOURCE_URL } from '../platform/nativeBridgeContract.js'
 
 /**
  * 端侧 Replay 导入钩子：把 Native 收到（并已复制到 app cache）的 share/open replay
  * 注入共享本地 replay selection，并**自动触发解析**。
  *
- * 机制（不再依赖 synthetic input.click()）：Native 经 WebView `shouldInterceptRequest`
- * 以固定 same-origin HTTPS resource stream 私有缓存文件；Web 侧 `fetch(pending.uri)` 读字节构造
+ * 机制（不再依赖 synthetic input.click()）：Native 的本机 LocalRuntimeServer
+ * 以固定 same-origin resource stream 私有缓存文件；Web 侧 `fetch(pending.uri)` 读字节构造
  * `File`，再交给 `onPendingFile(file, pending)` → 工作台本机分析
- * （`updateFiles` → `analyze`，服务器没有 parser）。无需 Base64、不取真实路径、不放宽 WebView 安全边界。
+ * （`updateFiles` → `analyze`，服务器没有 parser）。无需 Base64、不取真实路径、不放宽引擎安全边界。
  *
  * exactly-once 语义（针对「一个具体 pending replay」）：
  * - **identity-aware**：pending identity 是 Native 提供的 `pendingId`（完整 UUID，不是 URI 字符串）。
@@ -147,7 +147,7 @@ export function useNativeReplayImport({ isReady = () => false, onPendingFile, on
   /** 供 Native onNewIntent 回调的全局入口（warm resume 时 Workspace 重新触发导入）。 */
   function registerGlobalHandler() {
     if (typeof window !== 'undefined') {
-      window.wotbtoolsOnReplay = () => consumePendingWhenReady()
+      window[NATIVE_REPLAY_GLOBAL] = () => consumePendingWhenReady()
     }
   }
 

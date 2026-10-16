@@ -1,12 +1,11 @@
 {
   "schemaVersion": 1,
-  "bridgeVersion": 2,
-  "origin": "https://appassets.androidplatform.net",
+  "bridgeVersion": 3,
+  "origin": "http://127.0.0.1:21653",
   "allowedOrigins": [
-    "https://appassets.androidplatform.net",
-    "https://wotbtools.com",
-    "https://www.wotbtools.com"
+    "http://127.0.0.1:21653"
   ],
+  "transport": "GeckoView built-in WebExtension (android/app/src/main/assets/gecko-bridge) exposes window.WotbNative with postMessage(string) / addEventListener('message') / removeEventListener to the exact origin's top frame only. The content-script injection scope is the coarse host pattern `http://127.0.0.1/*` because Gecko WebExtension match patterns cannot express a port (MDN match patterns / Firefox bug 1362809); the exact origin is enforced by the content-script gate (protocol + hostname + port + top frame) and re-validated by Native, which accepts only the sender (content script, top frame, current session, exact origin).",
   "rpc": {
     "request": {
       "id": "string|number",
@@ -193,18 +192,23 @@
       "global": "wotbtoolsOnConnectivityChanged",
       "payload": "none",
       "notes": "Notification only: the page re-reads connectivityGetState, so there is no second source of truth."
+    },
+    "replay": {
+      "global": "wotbtoolsOnReplay",
+      "payload": "none",
+      "notes": "Sent only while the replay workspace is already loaded; the page reads getPendingReplay and ACKs with consumePendingReplay."
     }
   },
   "syntheticResources": {
     "pendingReplay": {
       "method": "GET",
-      "url": "https://appassets.androidplatform.net/__native/replay-pending",
+      "url": "http://127.0.0.1:21653/__native/replay-pending",
       "requiredHeaders": ["X-Wotb-Pending-Id"],
       "failure": "never-fallback-to-network"
     },
     "folderReplay": {
       "method": "GET",
-      "url": "https://appassets.androidplatform.net/__native/replay-folder",
+      "url": "http://127.0.0.1:21653/__native/replay-folder",
       "requiredHeaders": [
         "X-Wotb-Folder-Selection-Id",
         "X-Wotb-Folder-File-Id"

@@ -326,7 +326,8 @@ def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, v
             "entry": "index.html",
             "agentWasm": {"commit": pin["ref"], "release": pin["artifact"]["release"]},
         }
-        if contract["origin"] != "https://appassets.androidplatform.net":
+        # Bridge v3：本机 loopback origin（LocalRuntimeServer，固定端口）；只接受 127.0.0.1 字面量。
+        if not re.fullmatch(r"http://127\.0\.0\.1:[1-9][0-9]{0,4}", contract["origin"]):
             fail("APK runtime contract must use the trusted local origin")
         for key, value in expected.items():
             if manifest.get(key) != value:

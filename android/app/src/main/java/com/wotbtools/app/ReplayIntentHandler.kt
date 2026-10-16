@@ -63,12 +63,12 @@ internal data class ReplayPendingMetadata(
 /**
  * Replay 入口意图 → 安全 ingress（规格 §6 原始计划）：
  * external content URI → ContentResolver → 最小验证(.wotbreplay) → stream copy 到 app private cache
- * → Native Bridge 提供固定 HTTPS resource → Native stream。不 Base64、不取真实路径、不解析 replay、
+ * → Native Bridge 提供固定 same-origin resource → Native stream。不 Base64、不取真实路径、不解析 replay、
  * 不复制 20 MiB/100/200 MiB 业务 contract（只保留一个 infra 单文件硬上限）。
  * 非 replay intent 安全忽略（返回 null，绝不把任意 binary 交给 Web upload pipeline）。
  *
  * Android external replay 只有这一条 ingress（Intent → pending cache → Native Bridge →
- * Web `fetch(HTTPS synthetic resource)` → 上传管线），没有 file chooser 注入路径。
+ * Web `fetch(same-origin synthetic resource)` → 上传管线），没有 file chooser 注入路径。
  *
  * 跨 process death：pending 的 metadata 落盘在 app private SharedPreferences；冷启动先恢复
  * active pending，再清理不再被引用的 orphan，避免进程在用户离开 App（包括去外部浏览器登录）期间被杀后
@@ -78,10 +78,16 @@ object ReplayIntentHandler {
     internal const val STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-pending"
     internal const val IDENTITY_HEADER = "X-Wotb-Pending-Id"
 
-    /** Native response decision + open stream; independent of Android's WebResourceResponse stub. */
-    internal data class StreamResponse(val status: Int, val reason: String, val data: InputStream? = null)
+    /** Native response decision + open stream：LocalRuntimeServer 所有路由共用的唯一响应类型（纯 JVM）。 */
+    internal data class StreamResponse(
+        val status: Int,
+        val reason: String,
+        val data: InputStream? = null,
+        val contentType: String = "application/octet-stream",
+        val headers: Map<String, String> = emptyMap()
+    )
 
-    /** Only unrelated URLs may fall through to the network. Never buffer the replay in memory. */
+    /** 只认这一个 exact URL（其余返回 null 交给其它路由）。Never buffer the replay in memory. */
     internal fun interceptPendingResource(
         url: String, file: File?, currentId: String?, expectedId: String?, method: String = "GET"
     ): StreamResponse? {
@@ -177,7 +183,7 @@ object ReplayIntentHandler {
 
     /**
      * 清空持久化 metadata（Web consume / 损坏 / 过期 / backing file 缺失）。
-     * 不删除 backing file：Chromium 可能仍在读取，留给下一次 startup orphan cleanup。
+     * 不删除 backing file：LocalRuntimeServer 可能仍在向页面流式返回它，留给下一次 startup orphan cleanup。
      */
     @SuppressLint("ApplySharedPref")
     fun clearPendingMetadata(context: Context) {

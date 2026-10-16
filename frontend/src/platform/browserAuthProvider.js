@@ -9,7 +9,7 @@ const KEYCLOAK_CONFIG = Object.freeze({
 
 /**
  * 普通浏览器的认证 owner：keycloak-js 全量 OIDC 流程仍在页面内跑（web 行为与迁移前一致）。
- * Android WebView **绝不**使用本 provider —— 由 useAuth.js 的运行时选择决定（见 androidAuthProvider.js）。
+ * Android App **绝不**使用本 provider —— 由 useAuth.js 的运行时选择决定（见 androidAuthProvider.js）。
  *
  * 每个 provider 实例懒加载自己的 adapter：一次 init transaction 一个实例，
  * 因此 retry / login-recovery 拿到的是全新 adapter，被放弃的一代无法写回新状态。

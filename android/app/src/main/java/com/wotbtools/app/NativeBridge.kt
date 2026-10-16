@@ -6,7 +6,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * origin-scoped bridge：经 WebView WebMessageListener，仅 appassets + reviewed production compatibility origins 可调。
+ * origin-scoped bridge：经 GeckoView 内置扩展的 native messaging port（[GeckoWebRuntime]），
+ * 仅 exact local origin（[MainActivity.LOCAL_APP_ORIGIN]）的 top frame 可调。
  * 只暴露：capability/version discovery、pending replay handoff、temporary folder picker、app update、native auth。
  * 禁止 arbitrary file/http/command/intent API（规格 §27）。
  *
@@ -14,13 +15,13 @@ import java.util.concurrent.Executors
  *
  * **回复是异步的**：[handleMessage] 不返回字符串，而是把回复交给 `reply` 回调。replay / update /
  * capability 这些纯本地读仍在**同一个调用栈内**立即回复（延迟与改动前一致）；认证方法离开
- * WebView 线程（`authGetAccessToken` 可能需要 refresh 网络往返，`authLogin` 可能需要 discovery），
+ * 主线程（`authGetAccessToken` 可能需要 refresh 网络往返，`authLogin` 可能需要 discovery），
  * 在后台线程完成后回调 `reply`。目录选择同样异步：系统 picker → 后台 SAF 扫描 → 回复。
- * WebView 线程绝不做网络 / document I/O。
+ * 主线程绝不做网络 / document I/O。
  */
 class NativeBridge(private val host: MainActivity) {
 
-    /** 认证方法专用后台线程：WebView 线程只提交请求，不等待任何网络。 */
+    /** 认证方法专用后台线程：主线程只提交请求，不等待任何网络。 */
     private val authExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "wotb-bridge-auth")
     }
@@ -28,8 +29,8 @@ class NativeBridge(private val host: MainActivity) {
     /**
      * 处理来自页面的 JSON {id, method, params}，构建 JSON {id, result} 并交给 [reply]。
      *
-     * 运行于 WebView 线程；[reply] 可能在该线程同步触发，也可能在**后台线程**稍后触发。
-     * 未知方法 / 任何异常一律回复 `result: null`（fail-closed），绝不把异常抛回 WebView。
+     * 运行于主线程；[reply] 可能在该线程同步触发，也可能在**后台线程**稍后触发。
+     * 未知方法 / 任何异常一律回复 `result: null`（fail-closed），绝不把异常抛回页面。
      */
     fun handleMessage(json: String, reply: (String) -> Unit) {
         try {
@@ -56,7 +57,7 @@ class NativeBridge(private val host: MainActivity) {
                     reply(envelope(id, true))
                 }
 
-                // ── 认证：离开 WebView 线程，完成后回复（绝不阻塞页面）──
+                // ── 认证：离开主线程，完成后回复（绝不阻塞页面）──
                 "authGetState" -> dispatch(id, reply) { host.bridgeAuthGetState() }
                 "authLogin" -> dispatch(id, reply) { host.bridgeAuthLogin() }
                 "authLogout" -> dispatch(id, reply) { host.bridgeAuthLogout() }

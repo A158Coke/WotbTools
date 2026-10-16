@@ -33,15 +33,15 @@ class PendingReplayResourcePolicyTest {
     @Test fun unrelatedUrlsAreNotTheNativeResource() {
         val rejected = listOf(
             "https://wotbtools.com/__native/replay-pending",
-            "http://appassets.androidplatform.net/__native/replay-pending",
+            "https://127.0.0.1:21653/__native/replay-pending",
             "https://www.wotbtools.com/__native/replay-pending",
             "https://evil.com/__native/replay-pending",
-            "https://appassets.androidplatform.net/__native/replay-pending/extra",
-            "https://appassets.androidplatform.net/__native/other",
-            "https://appassets.androidplatform.net/__native/replay-pending?id=$identity",
-            "https://appassets.androidplatform.net:8443/__native/replay-pending",
-            "https://appassets.androidplatform.net/__native/replay-pending#fragment",
-            "https://user@appassets.androidplatform.net/__native/replay-pending"
+            "http://127.0.0.1:21653/__native/replay-pending/extra",
+            "http://127.0.0.1:21653/__native/other",
+            "http://127.0.0.1:21653/__native/replay-pending?id=$identity",
+            "http://127.0.0.1:8443/__native/replay-pending",
+            "http://127.0.0.1:21653/__native/replay-pending#fragment",
+            "http://user@127.0.0.1:21653/__native/replay-pending"
         )
         rejected.forEach { url ->
             assertNull(url, ReplayIntentHandler.interceptPendingResource(url, null, null, identity))

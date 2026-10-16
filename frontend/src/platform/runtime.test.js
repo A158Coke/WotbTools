@@ -26,7 +26,7 @@ describe('Android local resource / remote service boundary', () => {
     expect(fetch).toHaveBeenCalledWith(`${PRODUCTION_API_ORIGIN}/api/hof`, { headers: { Authorization: 'Bearer native-token' }, credentials: 'omit' })
     // A missing bridge in a packaged runtime must never select WebView Keycloak.
     expect(isAndroidApp()).toBe(true)
-    expect(ANDROID_APP_ORIGIN).toBe('https://appassets.androidplatform.net')
+    expect(ANDROID_APP_ORIGIN).toBe('http://127.0.0.1:21653')
     // 3D 资产是本机路径（same-origin），由 Native AgentAssetProxy 直连对象存储——
     // 一旦这里变成远程 origin，WebView fetch 会被桶 CORS 拦截（白名单不含本 origin）。
     expect(ANDROID_ASSET_BASE).toBe('/agent-assets')
