@@ -11,6 +11,9 @@ import com.wotb.web.tournament.service.TournamentService;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
+import tools.jackson.databind.json.JsonMapper;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -70,15 +73,20 @@ class TournamentIntegrationTest {
     @Autowired TournamentAuditRepository audits;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
+    private static TournamentDtos.DefaultRules migrationDefault;
+    @BeforeAll static void captureMigrationDefault(@Autowired final TournamentService service) {
+        migrationDefault = service.defaultRules();
+    }
     private long id;
     @BeforeEach void setup() {
+        jdbc.update("update tournament_default_rules set version=0, active=false, source_event_id=null, source_label='', updated_at=null, rounds='[]'::jsonb where id=1");
         audits.deleteAll(); evidence.deleteAll(); days.deleteAll(); clans.deleteAll(); rules.deleteAll(); events.deleteAll();
         final TournamentDtos.Config config=service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))); id=config.event().id();
         service.saveRules("admin",id,1,new TournamentDtos.RuleRequest(0,0,ruleDays(100)));
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("31",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("32",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));
@@ -366,6 +374,170 @@ class TournamentIntegrationTest {
             assertEquals(clanCount,clans.count()); assertEquals(dayCount,days.count());
             assertEquals(eventCount,events.count()); assertEquals(auditCount,audits.count());
         } finally { jdbc.execute("alter table tournament_audit drop constraint test_reject_summer_seed"); }
+    }
+    @Test void defaultSeedMatchesAllFortyApprovedScoresAndHasNoFifthRank() {
+        assertTrue(migrationDefault.active()); assertEquals(1,migrationDefault.version());
+        assertNull(migrationDefault.sourceEventId()); assertEquals("2026 FIRE_CUP",migrationDefault.sourceLabel());
+        final int[][][] expected = {
+            {{2305,1153,577,289},{1845,1291,903,631}}, {{2813,1756,879,440},{2253,1575,1101,771}},
+            {{3767,2173,1139,667},{3013,2109,1477,1033}}, {{4937,3315,2038,1020},{3949,2765,1935,1355}},
+            {{6611,4439,4155,1367},{5287,3703,2591,1815}}
+        };
+        assertEquals(5,migrationDefault.rounds().size());
+        for (int round=0; round<5; round++) {
+            final var configured=migrationDefault.rounds().get(round); assertEquals(round+1,configured.roundNumber()); assertEquals(2,configured.days().size());
+            for (int day=0;day<2;day++) {
+                assertEquals(day+1,configured.days().get(day).dayNumber()); assertEquals(4,configured.days().get(day).points().size());
+                for (int rank=0;rank<4;rank++) {
+                    assertEquals(rank+1,configured.days().get(day).points().get(rank).rank());
+                    assertEquals(expected[round][day][rank],configured.days().get(day).points().get(rank).points());
+                }
+            }
+        }
+        assertThrows(org.springframework.dao.DataAccessException.class,()->jdbc.update("insert into tournament_default_rules (id,version,active,source_label,rounds) values (2,0,false,'','[]')"));
+    }
+    @Test void inheritedRulesFreezeAtomicallyAndSourceDeletionKeepsSnapshotAndGlobalAudit() throws Exception {
+        enableSeed();
+        final long inheritor=newEvent("EU",2), untouched=newEvent("NA",2);
+        assertEquals(2305,firstPoints(inheritor));
+        service.expectedGroups(inheritor,1,1,new TournamentDtos.ExpectedGroupsRequest(0,0,1,1L));
+        assertEquals("FROZEN",service.ruleSource(inheritor).source()); assertEquals(1L,service.ruleSource(inheritor).defaultVersion());
+        save(inheritor,1,1,List.of(group(inheritor,1,1,1,0,"A","B","C")),List.of("A","B","C"));
+        publish(inheritor,1,1,"default-publication");
+        final var published=service.publicStandings(inheritor); assertEquals(2305,published.rows().getFirst().totalPoints());
+        service.saveRules("admin",untouched,1,new TournamentDtos.RuleRequest(0,1,ruleDays(777),1L));
+        final var replacement=service.setDefaultRules("admin",new TournamentDtos.SetDefaultRulesRequest(untouched,1,1,true));
+        assertEquals(2,replacement.version()); assertEquals(2305,firstPoints(inheritor)); assertEquals(100,firstPoints(id));
+        final long follower=newEvent("ASIA",2); assertEquals(777,firstPoints(follower));
+        service.saveRules("admin",untouched,1,new TournamentDtos.RuleRequest(1,2,ruleDays(888)));
+        assertTrue(service.ruleSource(untouched).defaultOutdated()); assertEquals(777,firstPoints(follower));
+        service.deleteEvent(untouched,new TournamentDtos.DeleteRequest(2,true));
+        assertNull(service.defaultRules().sourceEventId()); assertEquals(777,firstPoints(follower));
+        assertEquals(1,jdbc.queryForObject("select count(*) from tournament_audit where event_id is null and action='DEFAULT_RULES_SET'",Integer.class));
+        service.clearDefaultRules("admin",new TournamentDtos.ClearDefaultRulesRequest(2,true));
+        assertEquals(3L,service.ruleSource(follower).defaultVersion()); assertFalse(service.config(follower).rounds().getFirst().complete());
+        assertEquals(2305,firstPoints(inheritor)); assertEquals(100,firstPoints(id)); assertEquals(published,service.publicStandings(inheritor));
+    }
+    @Test void defaultWritesAndFreezeRaceRejectStaleVersionsWithoutPartialState() throws Exception {
+        enableSeed(); final long source=newEvent("EU",2), target=newEvent("NA",2);
+        service.saveRules("admin",source,1,new TournamentDtos.RuleRequest(0,1,ruleDays(777),1L));
+        final var request=new TournamentDtos.SetDefaultRulesRequest(source,1,1,true);
+        final List<Boolean> results=race(()->tryWrite(()->service.setDefaultRules("a",request)),()->tryWrite(()->service.setDefaultRules("b",request)));
+        assertEquals(1,results.stream().filter(Boolean::booleanValue).count()); assertEquals(2,service.defaultRules().version());
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,assertThrows(ApiException.class,()->service.expectedGroups(target,1,1,new TournamentDtos.ExpectedGroupsRequest(0,0,1,1L))).errorCode());
+        assertEquals("INHERIT",service.ruleSource(target).source()); assertEquals(0,days.findByEventIdOrderByRoundNumberAscDayNumberAsc(target).size());
+        final List<Boolean> freeze=race(()->tryWrite(()->service.expectedGroups(target,1,1,new TournamentDtos.ExpectedGroupsRequest(0,0,1,2L))),
+                ()->tryWrite(()->service.clearDefaultRules("a",new TournamentDtos.ClearDefaultRulesRequest(2,true))));
+        assertTrue(freeze.get(1));
+        if (freeze.get(0)) { assertEquals("FROZEN",service.ruleSource(target).source()); assertEquals(777,firstPoints(target)); }
+        else { assertEquals("INHERIT",service.ruleSource(target).source()); assertTrue(service.config(target).rounds().getFirst().days().isEmpty()); }
+    }
+    @Test void concurrentFirstDefaultAndStaleCustomSaveCannotOverwriteNewDefault() throws Exception {
+        enableSeed(); final long source=newEvent("EU",2), target=newEvent("NA",2);
+        service.saveRules("admin",source,1,new TournamentDtos.RuleRequest(0,1,ruleDays(777),1L));
+        service.clearDefaultRules("admin",new TournamentDtos.ClearDefaultRulesRequest(1,true));
+        assertEquals(2L,service.ruleSource(target).defaultVersion());
+        final var request=new TournamentDtos.SetDefaultRulesRequest(source,1,2,false);
+        final List<Boolean> results=race(()->tryWrite(()->service.setDefaultRules("a",request)),()->tryWrite(()->service.setDefaultRules("b",request)));
+        assertEquals(1,results.stream().filter(Boolean::booleanValue).count());
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,assertThrows(ApiException.class,()->service.saveRules("a",target,1,new TournamentDtos.RuleRequest(0,2,ruleDays(999),2L))).errorCode());
+        assertEquals("INHERIT",service.ruleSource(target).source()); assertEquals(777,firstPoints(target));
+        final long four=service.create("admin",new TournamentDtos.CreateRequest(2025,"EU","SUMMER",4,2,List.of("Day 1","Day 2"))).event().id();
+        assertEquals(4,service.config(four).rounds().size()); assertTrue(service.config(four).rounds().stream().allMatch(TournamentDtos.RoundRule::complete));
+    }
+    @Test void customAndMismatchRulesDoNotSilentlyFillMissingDaysAndHistoricalImportKeepsItsRules() {
+        enableSeed(); final long threeDays=newEvent("EU",3), partial=newEvent("NA",2);
+        assertFalse(service.config(threeDays).rounds().getFirst().complete());
+        assertEquals(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,assertThrows(ApiException.class,()->service.setDefaultRules("a",new TournamentDtos.SetDefaultRulesRequest(threeDays,0,1,true))).errorCode());
+        service.saveRules("a",partial,1,new TournamentDtos.RuleRequest(0,1,List.of(new TournamentDtos.RuleDay(1,List.of(new TournamentDtos.RankPoints(1,0)))),1L));
+        assertEquals("CUSTOM",service.ruleSource(partial).source()); assertEquals(0,firstPoints(partial)); assertFalse(service.config(partial).rounds().getFirst().complete());
+        final long history=historicalEvent(); service.importHistorical("a",history,historicalRequest(history,List.of(historicalRow("A",123)),"default-history"));
+        assertEquals("FROZEN",service.ruleSource(history).source()); assertTrue(service.config(history).rounds().getFirst().days().isEmpty());
+        assertEquals(123,service.publicStandings(history).rows().getFirst().totalPoints());
+    }
+    @Test void defaultAndFirstCustomSaveRollbackWhenAuditFails() {
+        enableSeed(); final long source=newEvent("EU",2);
+        jdbc.execute("alter table tournament_audit add constraint test_reject_default check (action not in ('DEFAULT_RULES_SET','RULES_UPDATED')) not valid");
+        try {
+            assertThrows(org.springframework.dao.DataAccessException.class,()->service.setDefaultRules("a",new TournamentDtos.SetDefaultRulesRequest(source,0,1,true)));
+            assertEquals(1,service.defaultRules().version());
+            assertThrows(org.springframework.dao.DataAccessException.class,()->service.saveRules("a",source,1,new TournamentDtos.RuleRequest(0,1,ruleDays(777),1L)));
+            assertEquals("INHERIT",service.ruleSource(source).source()); assertEquals(0,service.config(source).event().version());
+            assertEquals(0,rules.findByEventIdAndRoundNumber(source,1).orElseThrow().days.size());
+        } finally { jdbc.execute("alter table tournament_audit drop constraint test_reject_default"); }
+    }
+    @Test void directDefaultEditingUpdatesFollowersAndPreservesFrozenRulesWithoutAnEvent() {
+        enableSeed(); final long frozen=newEvent("EU",2), follower=newEvent("NA",2);
+        service.expectedGroups(frozen,1,1,new TournamentDtos.ExpectedGroupsRequest(0,0,1,1L));
+        final long eventCount=events.count();
+        final var updated=service.saveDefaultConfiguration("admin",new TournamentDtos.DefaultConfigurationRequest(1,true,defaultRounds(777,5,2)));
+        assertEquals(2,updated.version()); assertNull(updated.sourceEventId()); assertEquals("GLOBAL_DEFAULT",updated.sourceLabel());
+        assertEquals(eventCount,events.count()); assertEquals(777,firstPoints(follower)); assertEquals(2305,firstPoints(frozen)); assertEquals(100,firstPoints(id));
+        assertEquals(1,jdbc.queryForObject("select count(*) from tournament_audit where event_id is null and action='DEFAULT_RULES_SET'",Integer.class));
+        final var before=service.defaultRules();
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT,assertThrows(ApiException.class,()->service.saveDefaultConfiguration("admin",new TournamentDtos.DefaultConfigurationRequest(2,false,defaultRounds(888,5,2)))).errorCode());
+        assertEquals(before,service.defaultRules());
+    }
+    @Test void directDefaultEditingValidatesCompleteUniformDimensionsAndSupportsZeroAndFifthRank() {
+        final var configured=service.saveDefaultConfiguration("admin",new TournamentDtos.DefaultConfigurationRequest(0,false,defaultRounds(0,4,3)));
+        assertEquals(4,configured.rounds().size()); assertEquals(3,configured.rounds().getFirst().days().size());
+        assertEquals(0,configured.rounds().getFirst().days().getFirst().points().getFirst().points());
+        assertEquals(5,configured.rounds().getFirst().days().getFirst().points().size());
+        final var persisted=service.defaultRules();
+        final var missingRanks=new java.util.ArrayList<>(configured.rounds());
+        missingRanks.set(0,new TournamentDtos.DefaultRound(1,List.of(new TournamentDtos.RuleDay(1,List.of(new TournamentDtos.RankPoints(1,100))),new TournamentDtos.RuleDay(2,List.of()),new TournamentDtos.RuleDay(3,List.of()))));
+        assertEquals(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,assertThrows(ApiException.class,()->service.saveDefaultConfiguration("a",new TournamentDtos.DefaultConfigurationRequest(1,true,missingRanks))).errorCode());
+        final var uneven=new java.util.ArrayList<>(configured.rounds()); uneven.set(1,new TournamentDtos.DefaultRound(2,ruleDays(10)));
+        assertEquals(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE,assertThrows(ApiException.class,()->service.saveDefaultConfiguration("a",new TournamentDtos.DefaultConfigurationRequest(1,true,uneven))).errorCode());
+        final var duplicate=new java.util.ArrayList<>(configured.rounds()); duplicate.set(1,duplicate.getFirst());
+        assertEquals(ApiErrorCode.INVALID_ARGUMENT,assertThrows(ApiException.class,()->service.saveDefaultConfiguration("a",new TournamentDtos.DefaultConfigurationRequest(1,true,duplicate))).errorCode());
+        assertEquals(ApiErrorCode.INVALID_ARGUMENT,assertThrows(ApiException.class,()->service.saveDefaultConfiguration("a",new TournamentDtos.DefaultConfigurationRequest(1,true,configured.rounds().subList(0,3)))).errorCode());
+        assertEquals(persisted,service.defaultRules());
+    }
+    @Test void directDefaultConfigurationSerializesConcurrentEditors() throws Exception {
+        enableSeed();
+        final List<Boolean> results=race(()->tryWrite(()->service.saveDefaultConfiguration("a",new TournamentDtos.DefaultConfigurationRequest(1,true,defaultRounds(111,5,2)))),
+                ()->tryWrite(()->service.saveDefaultConfiguration("b",new TournamentDtos.DefaultConfigurationRequest(1,true,defaultRounds(222,5,2)))));
+        assertEquals(1,results.stream().filter(Boolean::booleanValue).count()); assertEquals(2,service.defaultRules().version());
+        final int winner=service.defaultRules().rounds().getFirst().days().getFirst().points().getFirst().points();
+        assertTrue(winner==111||winner==222);
+        assertTrue(service.defaultRules().rounds().stream().allMatch(round->round.days().stream().allMatch(day->day.points().getFirst().points()==winner)));
+    }
+    private List<TournamentDtos.DefaultRound> defaultRounds(final int first, final int rounds, final int number) {
+        final List<TournamentDtos.RankPoints> points=List.of(new TournamentDtos.RankPoints(1,first),new TournamentDtos.RankPoints(2,50),new TournamentDtos.RankPoints(3,25),new TournamentDtos.RankPoints(4,10),new TournamentDtos.RankPoints(5,0));
+        return java.util.stream.IntStream.rangeClosed(1,rounds).mapToObj(round->new TournamentDtos.DefaultRound(round,
+                java.util.stream.IntStream.rangeClosed(1,number).mapToObj(day->new TournamentDtos.RuleDay(day,points)).toList())).toList();
+    }
+    @Test void upgradeBackfillsOnlyActualRulesAndRepeatedMigratePreservesAdminChanges() throws Exception {
+        final String database="tournament_default_upgrade";
+        jdbc.execute("create database "+database);
+        final String migrationUrl=POSTGRES.getJdbcUrl().replace("/wotb?", "/"+database+"?");
+        final var legacy=Flyway.configure().dataSource(migrationUrl,POSTGRES.getUsername(),POSTGRES.getPassword()).target("31").load();
+        legacy.migrate();
+        try (final var connection=java.sql.DriverManager.getConnection(migrationUrl,POSTGRES.getUsername(),POSTGRES.getPassword());
+             final var statement=connection.createStatement()) {
+            statement.execute("insert into tournament_event (id,year,region,season,round_count,days_per_round,day_labels) values (9001,2025,'EU','SPRING',4,2,'[]'),(9002,2025,'EU','SUMMER',4,2,'[]'),(9003,2025,'EU','WINTER',4,2,'[]'),(9004,2025,'EU','AUTUMN',4,2,'[]')");
+            statement.execute("insert into tournament_rule (event_id,round_number,days) values (9001,1,'[{\"dayNumber\":1,\"points\":[]}]'),(9002,1,'[{\"dayNumber\":1,\"points\":[{\"rank\":1,\"points\":0}]}]'),(9003,1,'[]'),(9004,1,'[]')");
+            statement.execute("insert into tournament_day (event_id,round_number,day_number,expected_group_count) values (9003,1,1,1)");
+            statement.execute("insert into tournament_day (event_id,round_number,day_number,published_historical_points) values (9004,1,1,'{\"A\":123}')");
+            final var current=Flyway.configure().dataSource(migrationUrl,POSTGRES.getUsername(),POSTGRES.getPassword()).load(); current.migrate();
+            try (final var result=statement.executeQuery("select rule_source from tournament_event where id>=9001 order by id")) {
+                for (final String expected:List.of("INHERIT","CUSTOM","FROZEN","FROZEN")) { assertTrue(result.next()); assertEquals(expected,result.getString(1)); }
+            }
+            try (final var result=statement.executeQuery("select published_historical_points->>'A' from tournament_day where event_id=9004")) { assertTrue(result.next()); assertEquals("123",result.getString(1)); }
+            statement.execute("update tournament_default_rules set version=7,active=false,rounds='[]'"); current.migrate();
+            try (final var result=statement.executeQuery("select version,active from tournament_default_rules")) { assertTrue(result.next()); assertEquals(7,result.getLong(1)); assertFalse(result.getBoolean(2)); }
+            try (final var result=statement.executeQuery("select count(*) from tournament_audit where actor='flyway:V32' and event_id is null")) { assertTrue(result.next()); assertEquals(1,result.getInt(1)); }
+        } finally { jdbc.execute("drop database "+database); }
+    }
+    private long newEvent(final String region, final int number) {
+        return service.create("admin",new TournamentDtos.CreateRequest(2026,region,"FIRE_CUP",5,number,
+                number==2?List.of("Day 1","Day 2"):List.of("Day 1","Day 2","Day 3"))).event().id();
+    }
+    private int firstPoints(final long eventId) { return service.config(eventId).rounds().getFirst().days().getFirst().points().getFirst().points(); }
+    private void enableSeed() {
+        jdbc.update("update tournament_default_rules set version=1,active=true,source_label='2026 FIRE_CUP',rounds=?::jsonb where id=1",
+                JsonMapper.builder().findAndAddModules().build().writeValueAsString(migrationDefault.rounds()));
     }
     private void applySummerSeed() throws Exception {
         jdbc.execute(new ClassPathResource("db/migration/V30__import_2026_cn_summer_top32.sql").getContentAsString(StandardCharsets.UTF_8));
