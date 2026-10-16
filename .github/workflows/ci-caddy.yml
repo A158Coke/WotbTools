@@ -34,3 +34,10 @@ jobs:
           bash deploy/tx/validate-caddy-config.sh deploy/tx
           docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
+      # The gateway fixtures: negative cases for every staged assertion plus the
+      # runtime proof that a real /api/* request is logged with the reviewed field
+      # set while the SPA, hashed assets, the APK redirect and the asset gateway are
+      # not logged at all. It runs in the Caddy owner so a Caddyfile-only change
+      # cannot reach production with the compliance access log silently broken.
+      - name: Public-site inventory and compliance access-log fixtures
+        run: bash deploy/test-caddy-route-inventory.sh
