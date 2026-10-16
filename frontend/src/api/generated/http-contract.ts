@@ -66,7 +66,7 @@ export interface paths {
         put?: never;
         /**
          * createCreator
-         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
+         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
          */
         post: operations["createCreator"];
         delete?: never;
@@ -86,7 +86,7 @@ export interface paths {
         get: operations["getCreatorDetail"];
         /**
          * updateCreator
-         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
+         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
          */
         put: operations["updateCreator"];
         post?: never;
@@ -174,6 +174,23 @@ export interface paths {
         };
         /** Get creator management dictionaries and avatar upload availability */
         get: operations["getCreatorMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check backend health and additive product capabilities */
+        get: operations["getBackendHealth"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1262,6 +1279,7 @@ export interface components {
             score: 2 | 4 | 6 | 8 | 10;
             /** Format: date-time */
             createdAt: string;
+            version: number;
         };
         CreatorSaveRequest: {
             /** @description Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server. */
@@ -1273,6 +1291,7 @@ export interface components {
             stars: number;
             /** @enum {string} */
             avatarAction: "KEEP" | "REPLACE" | "REMOVE";
+            expectedVersion: number | null;
         };
         CreatorDetail: {
             id: number;
@@ -1283,11 +1302,19 @@ export interface components {
             levelId: number | null;
             stars: number;
             avatarUrl: string | null;
+            version: number;
         };
         CreatorMetadata: {
             categories: components["schemas"]["CreatorCategory"][];
             levels: components["schemas"]["CreatorLevel"][];
             avatarUploadsAvailable: boolean;
+        };
+        BackendHealth: {
+            status: string;
+            tanks: number;
+            capabilities?: string[];
+        } & {
+            [key: string]: unknown;
         };
         /** @enum {string} */
         BroadcastServer: "CN" | "ASIA" | "NA" | "EU" | "LESTA";
@@ -2880,7 +2907,10 @@ export interface operations {
     };
     deleteCreator: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description The version from the public card captured before confirming removal; stale versions return CREATOR_CONFIG_CONFLICT. */
+                expectedVersion: number;
+            };
             header?: never;
             path: {
                 id: number;
@@ -3245,6 +3275,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBackendHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Legacy health bodies may omit capabilities; clients must not assume product support. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendHealth"];
                 };
             };
         };

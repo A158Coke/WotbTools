@@ -88,9 +88,9 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     savedForm = null
     if (editing) closeEditor(); else draftEpoch.value++
   }
-  async function remove(id: number) {
+  async function remove(id: number, expectedVersion: number) {
     const gen = generation, epoch = auth.authEpoch()
-    const success = await mutation(async signal => { await transport.removeCreator(id, signal) })
+    const success = await mutation(async signal => { await transport.removeCreator(id, expectedVersion, signal) })
     if (success && owns(gen, epoch)) notice.value = 'removed'
     return success && owns(gen, epoch)
   }

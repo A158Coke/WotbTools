@@ -68,7 +68,8 @@ export default {
         "categories",
         "level",
         "score",
-        "createdAt"
+        "createdAt",
+        "version"
       ],
       "properties": {
         "id": {
@@ -134,6 +135,10 @@ export default {
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -147,7 +152,8 @@ export default {
         "categoryIds",
         "levelId",
         "stars",
-        "avatarAction"
+        "avatarAction",
+        "expectedVersion"
       ],
       "properties": {
         "bilibiliUid": {
@@ -195,6 +201,13 @@ export default {
             "REPLACE",
             "REMOVE"
           ]
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
         }
       }
     },
@@ -209,7 +222,8 @@ export default {
         "categoryIds",
         "levelId",
         "stars",
-        "avatarUrl"
+        "avatarUrl",
+        "version"
       ],
       "properties": {
         "id": {
@@ -259,6 +273,10 @@ export default {
             "string",
             "null"
           ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -285,6 +303,29 @@ export default {
         },
         "avatarUploadsAvailable": {
           "type": "boolean"
+        }
+      }
+    },
+    "BackendHealth": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "tanks"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "tanks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

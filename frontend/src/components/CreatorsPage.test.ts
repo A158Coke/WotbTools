@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import card from '../../../contracts/http/fixtures/creator-card.json'
 import detail from '../../../contracts/http/fixtures/creator-detail.json'
 import { getCreatorMetadata, removeCreator, saveCreator } from '../api/creators.js'
+import { ApiError } from '../utils/http.js'
 import { confirm } from '../composables/useConfirm.js'
 import { messages } from '../locales/messages.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -67,7 +68,22 @@ describe('creator public page management readiness', () => {
     expect((remove.element as HTMLButtonElement).disabled).toBe(false)
     ;(remove.element as HTMLButtonElement).click(); await flushPromises()
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(removeCreator).toHaveBeenCalledWith(card.id, expect.any(AbortSignal))
+    expect(removeCreator).toHaveBeenCalledWith(card.id, card.version, expect.any(AbortSignal))
     expect(wrapper.find(`[data-testid=creator-card-${card.id}]`).exists()).toBe(false)
+  })
+  it('captures the card version before confirmation and does not replace a newer list version when removing', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/?view=creators'); await router.isReady()
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true } } })
+    await flushPromises()
+    let accept!: (value: boolean) => void
+    vi.mocked(confirm).mockReturnValueOnce(new Promise(resolve => { accept = resolve }))
+    await wrapper.get(`[data-testid=creator-remove-${card.id}]`).trigger('click')
+    state.cards = [{ ...card, version: card.version + 1 }]
+    await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
+    vi.mocked(removeCreator).mockRejectedValueOnce(new ApiError({ errorCode: 'CREATOR_CONFIG_CONFLICT', status: 409 }))
+    accept(true); await flushPromises()
+    expect(removeCreator).toHaveBeenCalledWith(card.id, card.version, expect.any(AbortSignal))
+    expect(wrapper.find(`[data-testid=creator-card-${card.id}]`).exists()).toBe(true)
   })
 })

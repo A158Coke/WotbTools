@@ -203,7 +203,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-      description: Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
+      description: "Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft."
   /api/admin/creators/{id}:
     get:
       operationId: getCreatorDetail
@@ -334,7 +334,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-      description: Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
+      description: "Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft."
     delete:
       operationId: deleteCreator
       summary: deleteCreator
@@ -347,6 +347,13 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: expectedVersion
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+          description: The version from the public card captured before confirming removal; stale versions return CREATOR_CONFIG_CONFLICT.
       responses:
         "204":
           description: Completed
@@ -595,6 +602,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /api/health:
+    get:
+      operationId: getBackendHealth
+      summary: Check backend health and additive product capabilities
+      security: []
+      responses:
+        "200":
+          description: Legacy health bodies may omit capabilities; clients must not assume product support.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackendHealth"
   /api/observability/events:
     post:
       operationId: recordObservabilityEvents
@@ -3694,6 +3713,7 @@ components:
         - level
         - score
         - createdAt
+        - version
       properties:
         id:
           type: integer
@@ -3740,6 +3760,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        version:
+          type: integer
+          minimum: 0
     CreatorSaveRequest:
       type: object
       additionalProperties: false
@@ -3751,6 +3774,7 @@ components:
         - levelId
         - stars
         - avatarAction
+        - expectedVersion
       properties:
         bilibiliUid:
           type: string
@@ -3787,6 +3811,11 @@ components:
             - KEEP
             - REPLACE
             - REMOVE
+        expectedVersion:
+          type:
+            - integer
+            - "null"
+          minimum: 0
     CreatorDetail:
       type: object
       additionalProperties: false
@@ -3799,6 +3828,7 @@ components:
         - levelId
         - stars
         - avatarUrl
+        - version
       properties:
         id:
           type: integer
@@ -3836,6 +3866,9 @@ components:
           type:
             - string
             - "null"
+        version:
+          type: integer
+          minimum: 0
     CreatorMetadata:
       type: object
       additionalProperties: false
@@ -3854,6 +3887,22 @@ components:
             $ref: "#/components/schemas/CreatorLevel"
         avatarUploadsAvailable:
           type: boolean
+    BackendHealth:
+      type: object
+      additionalProperties: true
+      required:
+        - status
+        - tanks
+      properties:
+        status:
+          type: string
+        tanks:
+          type: integer
+          minimum: 0
+        capabilities:
+          type: array
+          items:
+            type: string
     BroadcastServer:
       type: "string"
       enum: ["CN", "ASIA", "NA", "EU", "LESTA"]

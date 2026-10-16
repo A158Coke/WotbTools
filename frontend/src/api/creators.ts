@@ -15,6 +15,10 @@ export type CreatorDetail = Schemas['CreatorDetail']
 export type CreatorSaveRequest = Schemas['CreatorSaveRequest']
 export type CreatorMetadata = Schemas['CreatorMetadata']
 
+export function creatorInputValid(schema: 'CreatorSaveRequest' | 'CreatorNameRequest', value: unknown): boolean {
+  return schema === 'CreatorSaveRequest' ? validators.creatorSaveRequestValidator(value) : validators.creatorNameRequestValidator(value)
+}
+
 export function validateCreator<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
   const validate = validators[`${schema[0].toLowerCase()}${schema.slice(1)}Validator`] as ((value: unknown) => boolean) | undefined
   if (!validate?.(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
@@ -44,6 +48,10 @@ async function request<T>(path: string, access: 'public' | 'admin', options: Req
 
 const publicBase = '/api/creators'
 const adminBase = '/api/admin/creators'
+export async function getCreatorAvailability(signal?: AbortSignal): Promise<boolean> {
+  const response = await requireOk(await apiFetch('/api/health', { signal, cache: 'no-store' }))
+  return validateCreator('BackendHealth', await response.json()).capabilities?.includes('creators-v1') ?? false
+}
 function json<K extends keyof Schemas>(path: string, schema: K, access: 'public' | 'admin', options: RequestInit = {}): Promise<Schemas[K]> {
   return request(path, access, options, async response => validateCreator(schema, await response.json()))
 }
@@ -62,16 +70,25 @@ export const listCreatorCategories = (signal?: AbortSignal) => list(`${publicBas
 export const listCreators = (categoryId: number | null = null, signal?: AbortSignal) => list(`${publicBase}${categoryId ? `?categoryId=${categoryId}` : ''}`, 'CreatorCard', 'public', signal)
 export const getCreatorDetail = (id: number, signal?: AbortSignal) => json(`${adminBase}/${id}`, 'CreatorDetail', 'admin', { signal })
 export function saveCreator(id: number | null, value: CreatorSaveRequest, avatar: File | null = null, signal?: AbortSignal) {
-  if ((value.avatarAction === 'REPLACE') !== Boolean(avatar)) throw new ApiError({ errorCode: 'CREATOR_INVALID_REQUEST' })
+  if (!creatorInputValid('CreatorSaveRequest', value) || (id === null) !== (value.expectedVersion === null)
+    || (value.avatarAction === 'REPLACE') !== Boolean(avatar)) throw new ApiError({ errorCode: 'CREATOR_INVALID_REQUEST' })
   const form = new FormData()
   form.append('payload', new Blob([JSON.stringify(value)], { type: 'application/json' }))
   if (avatar) form.append('avatar', avatar)
   return json(`${adminBase}${id ? `/${id}` : ''}`, 'CreatorDetail', 'admin', { method: id ? 'PUT' : 'POST', body: form, signal })
 }
 export const getCreatorMetadata = (signal?: AbortSignal) => json(`${adminBase}/metadata`, 'CreatorMetadata', 'admin', { signal })
-export const removeCreator = (id: number, signal?: AbortSignal) => request(`${adminBase}/${id}`, 'admin', { method: 'DELETE', signal }, async () => undefined)
-export const addCreatorCategory = (name: string, signal?: AbortSignal) => json(`${adminBase}/categories`, 'CreatorCategory', 'admin', body('POST', { name }, signal))
-export const addCreatorLevel = (name: string, signal?: AbortSignal) => json(`${adminBase}/levels`, 'CreatorLevel', 'admin', body('POST', { name }, signal))
+export function removeCreator(id: number, expectedVersion: number, signal?: AbortSignal) {
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) throw new ApiError({ errorCode: 'CREATOR_INVALID_REQUEST' })
+  return request(`${adminBase}/${id}?expectedVersion=${expectedVersion}`, 'admin', { method: 'DELETE', signal }, async () => undefined)
+}
+function dictionaryBody(name: string, signal?: AbortSignal) {
+  const value = { name: name.trim() }
+  if (!creatorInputValid('CreatorNameRequest', value)) throw new ApiError({ errorCode: 'CREATOR_INVALID_REQUEST' })
+  return body('POST', value, signal)
+}
+export const addCreatorCategory = (name: string, signal?: AbortSignal) => json(`${adminBase}/categories`, 'CreatorCategory', 'admin', dictionaryBody(name, signal))
+export const addCreatorLevel = (name: string, signal?: AbortSignal) => json(`${adminBase}/levels`, 'CreatorLevel', 'admin', dictionaryBody(name, signal))
 export const removeCreatorCategory = (id: number, signal?: AbortSignal) => request(`${adminBase}/categories/${id}`, 'admin', { method: 'DELETE', signal }, async () => undefined)
 export const removeCreatorLevel = (id: number, signal?: AbortSignal) => request(`${adminBase}/levels/${id}`, 'admin', { method: 'DELETE', signal }, async () => undefined)
 export const creatorAvatarUrl = (value: string | null) => value ? resolveApiUrl(value) : ''

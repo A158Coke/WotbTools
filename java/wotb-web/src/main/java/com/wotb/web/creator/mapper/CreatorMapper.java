@@ -13,12 +13,12 @@ import java.util.Map;
 public class CreatorMapper implements Mapper<Creator, CreatorDtos.Detail> {
     @Override
     public CreatorDtos.Detail toDto(final Creator creator) {
-        return new CreatorDtos.Detail(creator.id, creator.bilibiliUid, creator.name, creator.description,
+        return new CreatorDtos.Detail(creator.id, creator.version, creator.bilibiliUid, creator.name, creator.description,
                 creator.categoryIds.stream().sorted().toList(), creator.levelId, creator.stars, avatarUrl(creator.avatarId));
     }
     public CreatorDtos.Card card(final Creator creator, final Map<Long, CreatorDtos.Category> categories,
                                  final Map<Long, CreatorDtos.Level> levels) {
-        return new CreatorDtos.Card(creator.id, creator.bilibiliUid, creator.name, creator.description,
+        return new CreatorDtos.Card(creator.id, creator.version, creator.bilibiliUid, creator.name, creator.description,
                 "https://space.bilibili.com/" + creator.bilibiliUid, avatarUrl(creator.avatarId),
                 creator.categoryIds.stream().sorted().map(categories::get).toList(),
                 creator.levelId == null ? null : levels.get(creator.levelId), creator.stars * 2, creator.createdAt);
