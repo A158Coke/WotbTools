@@ -31,6 +31,7 @@ public final class ApiPaths {
     public static final String TOURNAMENTS = "/api/tournaments";
     public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
+    public static final String TOURNAMENT_DATA_SOURCE = "/api/tournaments/*/data-source";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";

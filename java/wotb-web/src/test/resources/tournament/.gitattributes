@@ -1,0 +1,2 @@
+# Keep the approved original CSV bytes (BOM and CRLF) for source-hash regression tests.
+2026-fire-cup-standings.csv -text whitespace=trailing-space,space-before-tab,cr-at-eol

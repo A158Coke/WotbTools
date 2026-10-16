@@ -10,10 +10,10 @@ import Banner from './Banner.vue'
 import type { TournamentEvent, TournamentStandings } from '../api/tournament-points.js'
 
 const state = vi.hoisted(() => ({
-  list: vi.fn(), board: vi.fn(), xlsx: vi.fn(), print: vi.fn(), download: vi.fn(), android: false,
+  list: vi.fn(), board: vi.fn(), source: vi.fn(), xlsx: vi.fn(), print: vi.fn(), download: vi.fn(), android: false,
   online: null as unknown as { value: boolean },
 }))
-vi.mock('../api/tournament-points.js', async importOriginal => ({ ...await importOriginal<object>(), listTournamentEvents: state.list, getTournamentStandings: state.board }))
+vi.mock('../api/tournament-points.js', async importOriginal => ({ ...await importOriginal<object>(), listTournamentEvents: state.list, getTournamentStandings: state.board, getTournamentDataSource: state.source }))
 vi.mock('../composables/useFeatureGate.js', async () => {
   const { ref } = await import('vue')
   state.online = ref(true)
@@ -51,6 +51,7 @@ beforeEach(() => {
   state.online.value = true
   state.list.mockResolvedValue(events)
   state.board.mockImplementation(id => Promise.resolve(board(id === 8 ? 1 : 0)))
+  state.source.mockResolvedValue({ csvImported: false, attribution: null })
   state.xlsx.mockResolvedValue({ blob: new Blob(['xlsx']), filename: 'scores.xlsx' })
   state.print.mockResolvedValue(undefined)
   state.download.mockResolvedValue(undefined)
@@ -258,6 +259,46 @@ describe('public tournament export lifecycle', () => {
     expect(state.print).toHaveBeenCalledOnce()
     expect(p.wrapper.text()).toContain(p.i18n.global.t('tournament.exportPdfBrowser'))
     expect(state.download).not.toHaveBeenCalled()
+    p.wrapper.unmount()
+  })
+})
+
+describe('persistent CSV source attribution', () => {
+  const source = { csvImported: true, attribution: { name: '_EK_', url: 'https://b23.tv/rqx5iYX' } }
+  it('shows a real external source button on initial load and after a refresh', async () => {
+    state.source.mockResolvedValue(source)
+    const p = page(); await flushPromises()
+    const link = p.wrapper.get('[data-testid="tournament-data-source"] a')
+    expect(link.text()).toBe('_EK_')
+    expect(link.attributes()).toMatchObject({ href: source.attribution.url, target: '_blank', rel: 'noopener noreferrer' })
+    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
+    await flushPromises()
+    expect(state.source.mock.calls.map(call => call[0])).toEqual([7, 7])
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(true)
+    p.wrapper.unmount()
+  })
+  it('hides the credit on a non-CSV tournament and for a previous backend', async () => {
+    state.source.mockImplementation(id => Promise.resolve(id === 7 ? source : null))
+    const p = page(); await flushPromises()
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(true)
+    await p.selected(8)
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(false)
+    p.wrapper.unmount()
+  })
+  it('rejects late source metadata from an older tournament and clears it while offline', async () => {
+    const p = page(); await flushPromises()
+    let finish!: (value: any) => void
+    state.source.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const pending = p.selected(8)
+    await nextTick()
+    await p.selected(7)
+    finish(source); await pending
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(false)
+    state.source.mockResolvedValue(source)
+    await p.selected(8)
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(true)
+    state.online.value = false; await nextTick()
+    expect(p.wrapper.find('[data-testid="tournament-data-source"]').exists()).toBe(false)
     p.wrapper.unmount()
   })
 })

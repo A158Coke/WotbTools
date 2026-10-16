@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import * as api from '../api/tournament-points.js'
 import { ApiError } from '../utils/http.js'
 import { useAuth } from './useAuth.js'
@@ -63,10 +63,20 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const historicalPreview = ref<api.TournamentHistoricalPreview | null>(null)
   const historicalState = ref<api.TournamentHistoricalState | null>(null)
   const historicalFileIssue = ref('')
+  const networkAvailable = ref(true)
+  const csvSupported = ref(false)
+  const csvFile = shallowRef<File | null>(null)
+  const csvPreview = ref<api.TournamentCsvImportPreview | null>(null)
+  const csvFileIssue = ref('')
+  const dataSource = ref<api.TournamentDataSource | null>(null)
   let generation = 0
   let controller = new AbortController()
   let publicationKey = crypto.randomUUID()
   let historicalKey = crypto.randomUUID()
+  let csvKey = crypto.randomUUID()
+
+  function clearCsvPreview() { csvPreview.value = null; csvKey = crypto.randomUUID() }
+  function clearCsv() { clearCsvPreview(); csvFile.value = null; csvFileIssue.value = '' }
 
   function clearReviews() {
     reviews.value.forEach(review => URL.revokeObjectURL(review.url))
@@ -90,9 +100,12 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     historicalState.value = null
     historicalFileIssue.value = ''
     ruleSource.value = null
+    clearCsv()
+    csvSupported.value = false
+    dataSource.value = null
   }
   function owns(gen: number, epoch: number) {
-    return gen === generation && epoch === auth.authEpoch() && allowed.value && !controller.signal.aborted
+    return gen === generation && epoch === auth.authEpoch() && allowed.value && networkAvailable.value && !controller.signal.aborted
   }
   function fail(value: unknown) {
     if ((value as { name?: string })?.name === 'AbortError' || (value as { code?: string })?.code === 'REQUEST_ABORTED') return
@@ -113,7 +126,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     dayState.value = null
     config.value = null
     audit.value = []
-    if (!allowed.value || !eventId.value) return
+    if (!allowed.value || !networkAvailable.value || !eventId.value) return
     busy.value = true
     try {
       const source = await transport.getTournamentRuleSource(eventId.value, signal)
@@ -122,27 +135,31 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) return
       config.value = cfg; ruleSource.value = source
       if (round.value > cfg.event.roundCount || day.value > cfg.event.daysPerRound) { round.value = 1; day.value = 1; return }
-      const [value, entries, history] = await Promise.all([
+      const [value, entries, history, csvAvailable, sourceData] = await Promise.all([
         transport.getTournamentDay(eventId.value, round.value, day.value, signal),
         transport.getTournamentAudit(eventId.value, signal),
         transport.getTournamentHistoricalState(eventId.value, round.value, day.value, signal),
+        transport.supportsTournamentCsvImport(signal),
+        transport.getTournamentDataSource(eventId.value, signal),
       ])
       if (!owns(gen, epoch)) return
       applyDay(value)
       audit.value = entries
       historicalState.value = history
+      csvSupported.value = csvAvailable
+      dataSource.value = sourceData
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
   async function loadEvents() {
-    if (!allowed.value) return
+    if (!allowed.value || !networkAvailable.value) return
     const gen = generation, epoch = auth.authEpoch()
     try {
       const value = await transport.listTournamentEvents(true, controller.signal)
       if (owns(gen, epoch)) events.value = value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
   }
-  const canImportHistorical = computed(() => allowed.value && !!config.value && !!dayState.value
+  const canImportHistorical = computed(() => allowed.value && networkAvailable.value && !!config.value && !!dayState.value
     && historicalState.value?.canImport === true
     && !busy.value && !recognizing.value && !stale.value && !reviews.value.length
     && !dayState.value.standings.days.some(value => value.published)
@@ -155,6 +172,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     historicalFileIssue.value = ''
     error.value = null
     notice.value = ''
+    clearCsvPreview()
     // A full 10,000-row matrix fits this bounded file budget; reads never block UI navigation.
     if (file.size > 2 * 1024 * 1024) { historicalFileIssue.value = 'historicalTooLarge'; return }
     if (!file.name.toLowerCase().endsWith('.json')) { historicalFileIssue.value = 'historicalInvalid'; return }
@@ -183,6 +201,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     const gen = generation, epoch = auth.authEpoch(), id = eventId.value!
     busy.value = true
     error.value = null
+    clearCsvPreview()
     try {
       await transport.importTournamentHistorical(id, { ...historicalRequest.value,
         expectedEventVersion: historicalPreview.value.eventVersion, confirm: true, idempotencyKey: historicalKey }, controller.signal)
@@ -192,8 +211,52 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
+  const csvWorkspaceBusy = computed(() => !!reviews.value.length || ['DRAFT', 'CORRECTION'].includes(dayState.value?.status || ''))
+  const canImportCsv = computed(() => allowed.value && networkAvailable.value && csvSupported.value && !!config.value && !!dayState.value
+    && !busy.value && !recognizing.value && !stale.value && !csvWorkspaceBusy.value)
+  function selectCsvFile(file: File) {
+    if (!canImportCsv.value) return
+    clearCsv()
+    error.value = null
+    notice.value = ''
+    if (file.size > 2 * 1024 * 1024) { csvFileIssue.value = 'csvTooLarge'; return }
+    if (!file.size || !file.name.toLowerCase().endsWith('.csv')) { csvFileIssue.value = 'csvInvalidFile'; return }
+    csvFile.value = file
+  }
+  async function previewCsv() {
+    if (!canImportCsv.value || !csvFile.value || !config.value) return
+    const gen = generation, epoch = auth.authEpoch(), file = csvFile.value, event = config.value.event
+    clearCsvPreview()
+    busy.value = true
+    error.value = null
+    notice.value = ''
+    try {
+      const result = await transport.previewTournamentCsvImport(event.id, file, event.version, controller.signal)
+      if (!owns(gen, epoch) || csvFile.value !== file) return
+      if (result.standings.event.id !== event.id) throw new Error('INVALID_RESPONSE')
+      csvPreview.value = result
+      historicalPreview.value = null
+      historicalRequest.value = null
+    } catch (value) { if (owns(gen, epoch)) fail(value) }
+    finally { if (owns(gen, epoch)) busy.value = false }
+  }
+  async function publishCsv() {
+    if (!canImportCsv.value || !csvPreview.value || !csvFile.value) return
+    const gen = generation, epoch = auth.authEpoch(), id = eventId.value!, file = csvFile.value, preview = csvPreview.value
+    busy.value = true
+    error.value = null
+    try {
+      await transport.importTournamentCsv(id, file, { expectedEventVersion: preview.eventVersion,
+        sourceSha256: preview.sourceSha256, confirm: true, idempotencyKey: csvKey }, controller.signal)
+      if (!owns(gen, epoch)) return
+      const refresh = loadSelection(), refreshGeneration = generation
+      await refresh
+      if (owns(refreshGeneration, epoch) && eventId.value === id && !error.value) notice.value = 'csvImported'
+    } catch (value) { if (owns(gen, epoch)) fail(value) }
+    finally { if (owns(gen, epoch)) busy.value = false }
+  }
   const roundRule = computed(() => config.value?.rounds.find(rule => rule.roundNumber === round.value))
-  const editable = computed(() => allowed.value && !!dayState.value && !!roundRule.value?.complete
+  const editable = computed(() => allowed.value && networkAvailable.value && !!dayState.value && !!roundRule.value?.complete
     && dayState.value.status !== 'FINALIZED' && !busy.value && !recognizing.value && !stale.value)
   const canUpload = computed(() => editable.value && !!dayState.value?.expectedGroupCount)
   const standings = computed(() => previewState.value?.standings ?? dayState.value?.standings ?? null)
@@ -235,11 +298,12 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     }
   }
   async function write(task: (signal: AbortSignal) => Promise<TournamentDayView>, resetReviews = true) {
-    if (!allowed.value || busy.value || recognizing.value || stale.value || !dayState.value) return
+    if (!allowed.value || !networkAvailable.value || busy.value || recognizing.value || stale.value || !dayState.value) return
     const gen = generation, epoch = auth.authEpoch()
     busy.value = true
     error.value = null
     notice.value = ''
+    clearCsvPreview()
     try {
       const value = await task(controller.signal)
       if (!owns(gen, epoch)) return
@@ -260,6 +324,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     recognizing.value = true
     progress.value = 0
     error.value = null
+    clearCsvPreview()
     for (const file of files) {
       if (!owns(gen, epoch)) break
       let review = retry || reviews.value.find(review => review.file === file)
@@ -342,9 +407,10 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     }, signal))
   }
   async function clearPoints(clanTag: string, scopeDay: number | null, reason: string, restore: boolean) {
-    if (!allowed.value || busy.value || recognizing.value || stale.value || !config.value || !reason.trim()) return
+    if (!allowed.value || !networkAvailable.value || busy.value || recognizing.value || stale.value || !config.value || !reason.trim()) return
     const gen = generation, epoch = auth.authEpoch()
     busy.value = true
+    clearCsvPreview()
     try {
       await transport.clearTournamentPoints(eventId.value!, { expectedEventVersion: config.value.event.version,
         roundNumber: round.value, dayNumber: scopeDay, clanTag, reason: reason.trim(), restore }, controller.signal)
@@ -352,14 +418,15 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
-  watch([eventId, round, day, () => (auth.tokenParsed.value as KeycloakTokenParsed | null)?.sub, allowed], () => {
+  watch([eventId, round, day, () => (auth.tokenParsed.value as KeycloakTokenParsed | null)?.sub, allowed, networkAvailable], () => {
     if (!allowed.value) { invalidate(); config.value = null; dayState.value = null; events.value = []; audit.value = [] }
     else { void loadSelection(); if (!events.value.length) void loadEvents() }
   }, { immediate: true })
-  watch(reviews, () => { previewState.value = null }, { deep: true })
+  watch(reviews, () => { previewState.value = null; clearCsvPreview() }, { deep: true })
   onScopeDispose(() => { invalidate(); events.value = []; audit.value = []; config.value = null; dayState.value = null })
   return { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
     historicalRequest, historicalPreview, historicalState, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
+    networkAvailable, csvSupported, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, selectCsvFile, previewCsv, publishCsv, dataSource,
     busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError,
     loadEvents, loadSelection, recognize, cancelRecognition, preview, saveDraft, finalize, setExpected, correction, discard, clearPoints }
 }

@@ -7,8 +7,8 @@ import MenuButton from './MenuButton.vue'
 import Banner from './Banner.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 import TournamentPointsTable from './TournamentPointsTable.vue'
-import { getTournamentStandings, listTournamentEvents, TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
-import type { TournamentEvent, TournamentStandings } from '../api/tournament-points.js'
+import { getTournamentStandings, getTournamentDataSource, listTournamentEvents, TOURNAMENT_REGIONS, TOURNAMENT_SEASONS } from '../api/tournament-points.js'
+import type { TournamentEvent, TournamentStandings, TournamentDataSource } from '../api/tournament-points.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -22,6 +22,7 @@ const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
 const events = ref<TournamentEvent[]>([])
 const eventId = ref<number | null>(null)
 const standings = ref<TournamentStandings | null>(null)
+const dataSource = ref<TournamentDataSource | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
 const noInitialStandings = ref(false)
@@ -67,6 +68,7 @@ async function loadEvents(selectInitial = !initialSelectionDone) {
   const gen = ++generation
   loading.value = true
   error.value = null
+  dataSource.value = null
   try {
     const values = await listTournamentEvents(false, controller.signal)
     if (gen !== generation) return
@@ -76,8 +78,11 @@ async function loadEvents(selectInitial = !initialSelectionDone) {
       // Initial default follows the tournament calendar; explicit history choices stay owned by eventId.
       const initial = await findInitialStandings(values, controller.signal)
       if (gen !== generation || eventId.value !== null) return
+      const source = initial ? await getTournamentDataSource(initial.event.id, controller.signal) : null
+      if (gen !== generation || eventId.value !== null) return
       standings.value = initial
       eventId.value = initial?.event.id ?? null
+      dataSource.value = source
       initialSelectionDone = true
       noInitialStandings.value = eventId.value === null && values.length > 0
     } else if (eventId.value !== null) {
@@ -91,14 +96,15 @@ async function loadBoard() {
   controller = new AbortController()
   const gen = ++generation
   standings.value = null
+  dataSource.value = null
   noInitialStandings.value = false
   error.value = null
   loading.value = false
   if (!eventId.value || !network.value.available) return
   loading.value = true
   try {
-    const result = await getTournamentStandings(eventId.value, controller.signal)
-    if (gen === generation) standings.value = result
+    const [result, source] = await Promise.all([getTournamentStandings(eventId.value, controller.signal), getTournamentDataSource(eventId.value, controller.signal)])
+    if (gen === generation) { standings.value = result; dataSource.value = source }
   } catch (value) { if (gen === generation) error.value = value }
   finally { if (gen === generation) loading.value = false }
 }
@@ -108,7 +114,7 @@ watch(eventId, id => {
 })
 watch(() => network.value.available, available => {
   if (available) void loadEvents(!initialSelectionDone || noInitialStandings.value)
-  else { generation++; controller.abort(); loading.value = false }
+  else { generation++; controller.abort(); loading.value = false; dataSource.value = null; standings.value = null }
 }, { immediate: true })
 onScopeDispose(() => { generation++; controller.abort() })
 </script>
@@ -122,6 +128,9 @@ onScopeDispose(() => { generation++; controller.abort() })
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="exportMessage" role="status">{{ exportMessage }}</Banner>
     <TournamentEventSelect data-tour="tournament-event" v-model="eventId" :events="events" :disabled="loading" />
+    <div v-if="dataSource?.csvImported && dataSource.attribution" class="tournament-actions" data-testid="tournament-data-source">
+      <span>{{ $t('tournament.dataSource') }}</span><AppButton :href="dataSource.attribution.url" target="_blank" rel="noopener noreferrer" size="sm">{{ dataSource.attribution.name }}</AppButton>
+    </div>
     <p v-if="loading" role="status">{{ $t('tournament.loading') }}</p>
     <p v-else-if="!events.length" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
     <p v-else-if="!eventId" class="tournament-muted">{{ $t(noInitialStandings ? 'tournament.empty' : 'tournament.selectEvent') }}</p>

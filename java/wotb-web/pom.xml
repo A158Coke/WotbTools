@@ -13,6 +13,12 @@
     <name>WotBTools Web</name>
 
     <dependencies>
+        <!-- CSV standings import: standard quoted fields, escaped delimiters and record boundaries. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
             <artifactId>wotb-core</artifactId>
