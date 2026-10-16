@@ -8,6 +8,7 @@ import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -216,4 +217,29 @@ class ClientAiProjectionReaderTest {
     private static boolean sameClock(final float eventClock, final double projectedClock) {
         return Math.abs(eventClock - projectedClock) < 1e-3;
     }
+
+    /**
+     * 未登记字段一律 fail-closed（{@code PROJECTION_MAPPER} 保持 {@code FAIL_ON_UNKNOWN_PROPERTIES}，
+     * 与契约各 schema 的 {@code additionalProperties: false} 一致）：additive 字段的兼容**只能**经
+     * 读取边界显式登记（DTO 成员 + openapi enum）获得——writer 先登记、再发送，不靠"忽略未知字段"。
+     * （Jackson 3 的 {@code UnrecognizedPropertyException} 是非受检异常，故这里按具体类型断言。）
+     */
+    @Test
+    void unregisteredAdditiveFieldIsRejected() throws Exception {
+        for (final String list : LISTS) {
+            final ObjectNode projection = firstEntry(list, entry -> entry.put("hpStateV2", "DEATH_TERMINAL"));
+            final UnrecognizedPropertyException nested = assertThrows(UnrecognizedPropertyException.class,
+                    () -> ReplayFactsCodec.projectionFromJson(projection),
+                    list + "：未登记字段必须 fail-closed（不得被忽略）");
+            assertTrue(nested.getMessage().contains("hpStateV2"), nested.getMessage());
+        }
+        // 顶层未登记字段同样拒绝：严格口径覆盖整张投影图，不是只覆盖嵌套 record
+        final ObjectNode root = freshProjection();
+        final ObjectNode projection = (ObjectNode) root.get("projection");
+        projection.put("hpStateV2", "DEATH_TERMINAL");
+        final UnrecognizedPropertyException topLevel = assertThrows(UnrecognizedPropertyException.class,
+                () -> ReplayFactsCodec.projectionFromJson(projection));
+        assertTrue(topLevel.getMessage().contains("hpStateV2"), topLevel.getMessage());
+    }
+
 }
