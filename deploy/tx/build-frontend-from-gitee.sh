@@ -79,6 +79,19 @@ validate_asset_base_url() {
   [ "${value%/}" = "$value" ] || die "ASSET_BASE_URL must not end with /"
 }
 
+# 构建身份的确定性（见 docs/android/release-process.md「构建身份的确定性」）：源 commit 的
+# unix 时间戳。生产镜像由本脚本构建，而 Docker 上下文没有 .git，必须在这里显式注入
+# SOURCE_DATE_EPOCH；否则 version.json / `__BUILD_TIME__` 回落 wall-clock，同一 source_sha
+# 重跑会产出不同字节的镜像，撞 immutable tag/evidence 纪律。$1 = 含该 commit 的 git 目录，
+# $2 = 完整 SHA。
+source_commit_epoch() {
+  local git_dir="$1" sha="$2" epoch
+  epoch="$(git -C "$git_dir" show -s --format=%ct "$sha" 2>/dev/null)" \
+    || die "cannot resolve commit epoch for $sha"
+  case "$epoch" in ''|*[!0-9]*) die "invalid commit epoch for $sha: $epoch" ;; esac
+  printf '%s' "$epoch"
+}
+
 validate_common() {
   local source_sha="$1" registry="$2" namespace="$3" asset_base_url="$4" agent_archive="$5"
 
@@ -246,6 +259,18 @@ print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
   [[ "$agent_ref" =~ ^[0-9a-f]{40}$ ]] || die "source.json at $source_sha has no valid ref"
   [ -n "$agent_release" ] || die "source.json at $source_sha has no artifact.release"
 
+  # 镜像内 version.json 的 buildTime 必须等于源 commit 时间（= 构建时注入的 SOURCE_DATE_EPOCH）。
+  # 这条把"确定性构建身份"从脚本传参升级为**产物级断言**：wall-clock 回落、参数丢失、或有人
+  # 改回 new Date() 都会在这里被拦住（Docker 上下文无 .git，时间只能由本脚本给）。
+  local source_epoch expected_build_time
+  source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
+  expected_build_time="$(SOURCE_EPOCH="$source_epoch" python3 -c '
+import datetime, os
+epoch = int(os.environ["SOURCE_EPOCH"])
+print(datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))
+')"
+  [ -n "$expected_build_time" ] || die "cannot derive expected buildTime for $source_sha"
+
   container="$(docker create "$image")" || die "cannot create verification container from $image"
   temp="$(mktemp -d)"
 
@@ -253,6 +278,7 @@ print(data.get("ref", ""), (data.get("artifact") or {}).get("release", ""))
     set -Eeuo pipefail
     docker cp "$container:/usr/share/nginx/html" "$temp/html"
     grep -Fq "\"buildCommit\": \"$source_sha\"" "$temp/html/version.json"
+    grep -Fq "\"buildTime\": \"$expected_build_time\"" "$temp/html/version.json"
     grep -R --binary-files=text -Fq "$source_sha" "$temp/html/assets"
     grep -R --binary-files=text -Fq "$asset_base_url" "$temp/html/assets"
     # commit-addressed 产物目录：恰好是 source commit 的 ref，且没有 stable 路径
@@ -326,7 +352,7 @@ build_publish() {
   validate_common "$source_sha" "$registry" "$namespace" "$asset_base_url" "$agent_archive"
   validate_sponsor_bundle "$sponsor_bundle" "$sponsor_fingerprint"
 
-  local identity tag remote_image local_image worktree digest lookup_status reused sponsor_tmp=""
+  local identity tag remote_image local_image worktree digest lookup_status reused sponsor_tmp="" source_epoch=""
   # identity 纳入 sponsor 内容指纹：换二维码 ⇒ 新 tag ⇒ 必然重建（immutable tag 复用不会把新码
   # 悄悄吞掉）；内容未变 ⇒ 同 tag ⇒ 复用（可复现）。
   identity="$(printf '%s\n%s\n%s' "$source_sha" "$asset_base_url" "$sponsor_fingerprint" | sha256sum | cut -c1-12)"
@@ -384,9 +410,11 @@ build_publish() {
         cp -R "$sponsor_tmp/." "$worktree/common/assets/"
       fi
 
+      source_epoch="$(source_commit_epoch "$REPO_DIR" "$source_sha")"
       timeout 1800 docker build \
         --file "$worktree/docker/Dockerfile.frontend" \
         --build-arg "BUILD_COMMIT=$source_sha" \
+        --build-arg "SOURCE_DATE_EPOCH=$source_epoch" \
         --build-arg "ASSET_BASE_URL=$asset_base_url" \
         --tag "$local_image" \
         "$worktree"

@@ -151,6 +151,15 @@ Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp`
   "内容其实更新"判成更旧（Android stage 晚于 COS 发布才构建时永久拒绝升级），也会让同一 commit
   重跑构建产出不同字节的 bundle（破坏 stage 可重跑性与 APK 不可变性）。构建脚本对缺失/非法
   的 `map2d-source.json` fail closed（契约测试同时断言构建脚本里没有 `new Date()`）。
+- **交接件与字节的绑定（schemaVersion 2）**：`map2d-source.json` 除时间戳外还带
+  `maps: {code: {file, sha256}}`（29 条）与 `mapsDigest`（排序后 `code<TAB>sha256` 的 sha256），
+  即"这份元数据描述的正是哪 29 个字节"。消费侧**用本地真实字节重算并逐条比对、fail closed**：
+  - 构建期（`buildMap2dEmbedded`）：与**随包** `assets/<名>-<哈希>.webp` 的 sha256 逐条比对，
+    缺图/多图/文件名不符/哈希不符即构建失败（**不查 COS**——COS 允许独立前进，这里要证的是
+    "元数据 == 随包图集"）；
+  - CI 测试（`src/assets/maps.test.js`）：与仓库里的 `src/assets/maps/*.webp` 重算比对。
+  缺了这条绑定，"换图但忘了重跑 Agent 仓导出并同步交接件"会让旧 `contentGeneratedAt` 配上新图，
+  运行时据 COS 索引判断时可能把包内更新的图 OTA 降级（违反 never-downgrade）。
 - 诊断：`window.__wotbMap2d`（Android 运行时与本地 dev）暴露通道状态与逐图来源
   （`embedded` / `pending` / `remote` / `rejected`）。消费点 = `BattlePlayback` / `MapOverview`
   的 `imageSrc` 计算属性与 `BattleMap3D` 贴图前的 `ensureMap2dImage`。

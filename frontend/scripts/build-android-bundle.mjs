@@ -87,10 +87,39 @@ function buildMap2dEmbedded(files) {
   }
   const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
   const contentGeneratedAt = String(source?.contentGeneratedAt ?? '')
-  if (source?.schemaVersion !== 1 || !Number.isFinite(Date.parse(contentGeneratedAt))) {
-    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 非法（需要 schemaVersion 1 + 可解析的 contentGeneratedAt）`)
+  if (source?.schemaVersion !== 2 || !Number.isFinite(Date.parse(contentGeneratedAt))) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 非法（需要 schemaVersion 2 + 可解析的 contentGeneratedAt）`)
   }
-  return { schemaVersion: 2, contentGeneratedAt, maps }
+  // **字节绑定**：交接件必须描述的正是**正在随包的那 29 张**——缺图 / 多图 / 文件名不符 /
+  // sha256 不符一律 fail closed。只在本地与随包字节比对，**不查 COS**（COS 允许独立前进）：
+  // 这里要证的不变量是「交接件 == 随包 canonical 图集」。缺了这条，"换图但忘了重跑 Agent 仓
+  // 导出并同步交接件"会让旧 `contentGeneratedAt` 配上新图，运行时据 COS 索引判断时可能把
+  // 包内更新的图 OTA 降级（违反 never-downgrade）。
+  const bound = source?.maps && typeof source.maps === 'object' ? source.maps : {}
+  const codes = Object.keys(maps).sort()
+  const boundCodes = Object.keys(bound).sort()
+  if (codes.length !== boundCodes.length || codes.some((code, index) => code !== boundCodes[index])) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 的图集与注册表不一致（注册表 ${codes.length} 张 / 交接件 ${boundCodes.length} 张）`)
+  }
+  for (const code of codes) {
+    const entry = bound[code]
+    if (!entry || entry.file !== maps[code].file) {
+      fail(`map2d-embedded: ${code} 交接件文件名 ${entry?.file ?? '(缺失)'} ≠ 注册表 ${maps[code].file}`)
+    }
+    if (entry.sha256 !== maps[code].sha256) {
+      fail(`map2d-embedded: ${code} 交接件 sha256 与随包字节不符——换图后必须重跑 Agent 仓 tools/export_2d_basemaps.py 并同步 ${MAP2D_SOURCE_NAME}`)
+    }
+  }
+  if (source.mapsDigest !== mapsDigest(bound)) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} mapsDigest 与 maps 条目不符（文件损坏？）`)
+  }
+  return { schemaVersion: 3, contentGeneratedAt, mapsDigest: source.mapsDigest, maps }
+}
+
+/** 与 Agent 仓 `tools/export_2d_basemaps.py::maps_digest` 同式：排序后的 `code<TAB>sha256` 行做 sha256。 */
+function mapsDigest(maps) {
+  const lines = Object.keys(maps).sort().map((code) => `${code}\t${maps[code].sha256}`).join('\n')
+  return createHash('sha256').update(lines, 'utf8').digest('hex')
 }
 
 /** `maps` 段（bundle manifest）：随包 2D 底图的真实字节统计（与 Web 同字节的 canonical）。 */
