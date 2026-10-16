@@ -1,6 +1,7 @@
 package com.wotb.web.tournament;
 import com.wotb.web.tournament.service.TournamentEvidenceStorage;
 import com.wotb.web.util.apierror.ApiException;
+import com.wotb.web.util.apierror.ApiErrorCode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
@@ -29,6 +30,20 @@ class TournamentEvidenceStorageTest {
         assertThrows(ApiException.class,()->storage.validate(png(8,32)));
         assertThrows(ApiException.class,()->storage.validate(new MockMultipartFile("image","f.png","image/png",new byte[]{1,2,3})));
         assertThrows(ApiException.class,()->storage.validate(new MockMultipartFile("image","f.png","image/png",new byte[10*1024*1024+1])));
+    }
+    @Test void extractedValidationPreservesJpegAndLegacyInvalidEvidenceErrors() throws Exception {
+        final TournamentEvidenceStorage storage=new TournamentEvidenceStorage(temp.toString(),0);
+        final ByteArrayOutputStream jpeg=new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(32,32,BufferedImage.TYPE_INT_RGB),"jpeg",jpeg);
+        assertEquals("image/jpeg",storage.validate(new MockMultipartFile("image","misleading.png","image/png",jpeg.toByteArray())).contentType());
+        final byte[] truncated=java.util.Arrays.copyOf(png(32,32).getBytes(),40);
+        assertEquals(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID,assertThrows(ApiException.class,
+                ()->storage.validate(new MockMultipartFile("image","truncated.png","image/png",truncated))).errorCode());
+        final MockMultipartFile dishonest=new MockMultipartFile("image","large.png","image/png",new byte[10*1024*1024+1]) {
+            @Override public long getSize() { return 1; }
+        };
+        assertEquals(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID,assertThrows(ApiException.class,
+                ()->storage.validate(dishonest)).errorCode());
     }
     @Test void cleanupPreservesReferencedHashesAndYoungOrphans() throws Exception {
         final TournamentEvidenceStorage storage=new TournamentEvidenceStorage(temp.toString(),0);

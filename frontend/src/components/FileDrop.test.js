@@ -22,6 +22,7 @@ function mountUploader(files = [], loading = false, options = {}) {
         files,
         loading,
         confirmRemove: false,
+        ...(options.purpose ? { purpose: options.purpose, imageSingle: options.imageSingle, imageLabel: options.imageLabel, imageHint: options.imageHint } : {}),
         ...(options.allowFolder === undefined ? {} : { allowFolder: options.allowFolder }),
         ...(options.showPreview === undefined ? {} : { showPreview: options.showPreview })
       },
@@ -35,6 +36,26 @@ function mountUploader(files = [], loading = false, options = {}) {
     })
   }
 }
+
+describe('FileDrop single cover selection', () => {
+  it('replaces the previous cover with a raw File and uses the caller copy', async () => {
+    const previous = new File(['old'], 'old.png', { type: 'image/png' })
+    const next = new File(['new'], 'new.jpg', { type: 'image/jpeg' })
+    const { wrapper } = mountUploader([previous], false, { purpose: 'image', imageSingle: true, imageLabel: 'Choose cover', imageHint: 'One cover' })
+    expect(wrapper.get('input[type=file]').attributes('multiple')).toBeUndefined()
+    expect(wrapper.text()).toContain('One cover')
+    await pickFiles(wrapper, [next], 'tournament-image-input')
+    expect(wrapper.emitted('update:files')?.at(-1)?.[0]).toEqual([next])
+    wrapper.unmount()
+  })
+  it('rejects a multiple-file drop without changing the existing cover', async () => {
+    const { wrapper } = mountUploader([], false, { purpose: 'image', imageSingle: true })
+    await wrapper.get('.uploadwrap').trigger('drop', { dataTransfer: { files: [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.png', { type: 'image/png' })] } })
+    expect(wrapper.emitted('update:files')).toBeUndefined()
+    expect(wrapper.text()).toContain('tournament.imageInvalid')
+    wrapper.unmount()
+  })
+})
 
 function pickFiles(wrapper, files, testId = 'select-files-input') {
   const input = wrapper.get(`[data-testid="${testId}"]`)
