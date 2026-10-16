@@ -553,14 +553,21 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   名牌直接使用语义 CSS token，不铺整卡不透明黑底，字体保持屏幕空间可读大小，长名称受限截断。
   3D 车辆标签不再创建 CanvasTexture/Sprite；**伤害数字同样在 `PlaybackVehicleLabels3D` 的
   HTML 覆盖层里**（同一层、DOM 顺序排在所有名牌之后）：出生点是该车 **HP 血条右缘 + 8px、
-  垂直居中于血条**（几何直接读血条 DOM：`damageAnchor(eid)`，不存在世界↔屏幕换算），不覆盖
-  血条、不被姓名/车型/装填条遮挡；生命周期内向右上漂移 20×24px 并只在后半程淡出（CSS 动画，
-  固定 px 字号 + 深色描边 token，远近缩放与自由/跟随/俯视镜头下屏幕尺寸一致）。回退链：
-  血条关掉 → 名牌块右缘同一规则；整块名牌关掉或没有可见内容 → 落回名牌锚点上方
-  （`labelLiftWorld` 抬升的车体上方）；车辆出屏/不可见 → 不显示。同一辆车连续受击按 20px
-  槽位错开，避免多个数字完全重叠；贴屏幕右缘放不下时镜像到血条左侧，不被 viewport 裁掉。
-  掉血事件跨过播放时钟时由场景 `spawnDamage(eid, hpLoss, FLOAT_DMG_MS × FX_SCALE)` 生成一次
-  （与 2D 同一组寿命常量），seek 由 `clearDamages` 清空且不补播。
+  垂直居中于血条**（`measureDamageLayout` 只读血条 / 名牌 DOM 几何，不存在世界↔屏幕换算），
+  不覆盖血条、不被姓名/车型/装填条遮挡。**几何缓存的是"相对名牌锚点的偏移"（dx/dy/textW），
+  屏幕位置每帧用当前 `anchor.x / anchor.y` 重算**——车辆与相机移动时数字跟着血条走，resize 或
+  出屏（`projected === false`）立即隐藏，不存在被冻结在旧坐标的数字；偏好 / 行开关 / 图标模式 /
+  名牌内容发布（10Hz）变化才按布局签名重新量一次，不逐帧读 `getBoundingClientRect()`。
+  生命周期内漂移 20×24px 并只在后半程淡出（CSS 动画，固定 px 字号 + 深色描边 token，远近缩放与
+  自由/跟随/俯视镜头下屏幕尺寸一致）；**漂移方向按所在侧取号**（右 → +20px，左 → −20px），
+  镜像后不会重新漂回血条。回退链：血条关掉 → 名牌块右缘同一规则；整块名牌关掉或**真实 0×0
+  空名牌**（姓名/车型/HP/装填全关且非图标模式）→ 落回名牌锚点上方（`labelLiftWorld` 抬升的
+  车体上方）；车辆出屏/不可见 → 不显示。同一辆车连续受击按 20px 槽位错开，避免多个数字完全
+  重叠；贴屏幕右缘放不下（**含整段漂移行程**，不只出生帧）时镜像到血条左侧，两侧都不够时仍取
+  右侧，不被 viewport 裁切。掉血事件跨过播放时钟时由场景
+  `spawnDamage(eid, hpLoss, FLOAT_DMG_MS × FX_SCALE)` 生成一次（与 2D 同一组寿命常量），
+  seek 由 `clearDamages` 清空且不补播；每个数字的 `animation-delay` 存活期间稳定（首次挂载为 0，
+  只有 showStatus 关→开导致的真实 remount 才一次性补偿相位），rerender 不会重复快进 CSS 动画。
   场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，
   内容状态按 HUD cadence（约 10Hz）发布给标签子组件，seek 立即刷新，不驱动整个
   `Replay3DPane` reactive tree。背向相机、出屏、未可见车辆隐藏，既有遮挡语义保留；
