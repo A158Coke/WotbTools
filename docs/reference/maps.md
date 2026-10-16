@@ -97,15 +97,72 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 
 ## 2D Local / 3D Remote 资产边界
 
-- 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp` 的 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。
+- 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp`（WebP q90），由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。现役来源 = Agent 仓 asset_pack 的 `ground.webp` 派生（见下节）。
 - 底图实际 raster 尺寸与本表一致（当前 29 张均为 1254×1254）。`mapImages.width/height` 是既有 logical frame 尺寸，与 raster 尺寸分开维护；更新图片不得改变地图坐标、车辆、基地与标注对齐。
 - `frontend/src/data/mapAssets.test.js` 校验注册表与本地底图的一一对应及实际 WebP 尺寸；真实浏览器布局回归覆盖底图加载与 overlay 对齐。
 - 3D 模型、纹理与地图资产继续由 `frontend/src/scene/assetProvider.js` 从已配置的 remote asset origin（生产 COS）读取；2D 底图不进入该 provider。
-- canonical 目录只维护一套已验收的 2D 底图；AI 无损母版、对照工具和原版离线备份不进入运行时或前端镜像。
+- canonical 目录只维护**一套** 2D 底图（来源见下节），**Web 与 APK 共用同一份字节**；
+  对照材料与中间产物不进入运行时或前端镜像。
 
-## 2026-10-09 底图资源更新
+## 2026-10-16 底图来源更换：客户端原图 × AI 增强 → pack `ground.webp` 派生
 
-- 29 张客户端原图经过 AI 增强后，统一以 1254×1254、WebP q90 / method 6 发布；总量从 32.83 MiB 降为 18.28 MiB。
-- `mapImages.js` 的逻辑 width / height、内部 code 与 coordinateBounds 保持原值；只替换同名 WebP 文件，不新增资源服务或运行时切换。
-- 原版等比采样后与增强图配准，原有投影的 261 个正反映射检查一致。马利诺夫卡、暗金矿窑、港湾小镇、绝望堡垒、沙漠之心的全局拟合偏移触发初筛，最大约 6.95px（1254px 尺度下约 3.33m）；用户已通过对照页接受本批偏移，不做自动几何校正。投影检查不代表每处补绘地形严格一致。
-- 原版 2024×2024 文件可从替换前 Git 提交 `51cf93de99f88fa388c84da3810e2fbaba8d14de` 恢复，本次另有按 SHA-256 核验的离线 ZIP 备份。回退图片时须同步恢复 canonical 尺寸校验和本文尺寸；Android 版本仍需递增。
+- 29 张底图改由 Agent 仓 `release/asset_pack/map/<key>/ground.webp`（4096²，含俯视屋顶/树冠烘焙）
+  经**冻结配方**派生：LANCZOS 1254² → 全局对比曲线 ×1.17（两端 24 级软肩）→ 饱和 ×0.9748 →
+  逐通道软肩（无硬裁切）→ USM 1.0px/80%/thr2 → WebP q90 / method 6。工具 = Agent 仓
+  `tools/export_2d_basemaps.py`（`--verify` 全量重算逐张比对；`--self-test` 锁曲线单调/不裁切/色相）；
+  **全部 29 张同一套参数**（不做逐图统计决策，见 Agent 仓 AGENTS.md）。
+- 取向与世界框由契约确定：`ground.webp` 顶行 = +Z_scene、左列 = +X_scene，与 2D 渲染契约
+  （`utils/mapView.js` 的 `toX/toY` + `coordinateBounds`）在同一坐标系 ⇒ **无需翻转/裁剪**，
+  本批未做任何几何校正。
+- 总量 21.50 MiB（原 AI 增强批 18.28 MiB）；`mapImages.js` 的 logical width/height、code 与
+  `coordinateBounds` 保持原值，只替换同名 WebP 文件，不新增资源服务或运行时切换。
+- **Android 不再派生缩小副本**（2026-10-16 决定）：APK 随包字节 = canonical 原图（同一份 1254²，
+  合计 21.5 MiB），Web 与 APK 像素完全一致；旧的 ≤1024²/q72 Pillow 派生链（及其不变量与 CI 步骤）
+  已整体删除。`wotbVersion` 已按 Version-as-Code 递增（内嵌 bundle 内容变了）。
+  见 [docs/android/architecture.md](../android/architecture.md) §2D 底图随包。
+- 旧批（客户端原图 2024² × AI 增强）的来源说明与回退指向（git 提交 `51cf93de` / 离线 ZIP）**随本批作废**：
+  底图现在可由 Agent 仓 pack 一条命令复现——`ground.webp` 重烘后重跑同一工具即可。
+- 观感（锐度配方 B + 对比曲线 ×1.17）已经用户对照页验收；色阶宽度差是**逐图属性**，
+  按仓规不做逐图配平，残余差距如实记录在 Agent 仓 `release/2d-basemaps-manifest.json` 同批材料中。
+
+### COS 免发版通道（Android：包内兜底 + 在线校验）
+
+Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp` + `map2d/index.json`
+（schemaVersion 1：`generated`、`recipe`、逐图 `path/sha256/bytes/width/height`）。App 侧实现单点 =
+`frontend/src/data/map2dOverlay.js`，规则确定、无启发式：
+
+1. 无包内清单（web / 旧包）⇒ 通道关闭（web 行为完全不变）；
+2. 索引拉取失败且无有效 localStorage 副本 ⇒ 通道关闭；**候选（远端 / 持久化副本）取
+   `generated` 最大者**——`AgentAssetProxy` 在上游失败时会返回陈旧磁盘缓存，remote 可能比
+   本地副本更旧，此时必须用副本且**不回写**（否则会把见过的新版打回去、甚至 OTA 回退）；
+3. `schemaVersion` 不支持 / 时间戳不可解析 ⇒ 通道关闭（fail closed）；
+4. **`index.generated ≤ 包内 contentGeneratedAt` ⇒ 一律包内**——索引不比包内内容新时，
+   包内那份就是较新的（或同一批），远端没有更新可拿；两侧时间戳都取自**产物内容**，
+   无本地时钟参与；
+5. 逐图 `sha256` 与包内一致 ⇒ 用包内（零流量）；不同 ⇒ 取远端。**远端字节必须 sha256 校验通过
+   才启用**（`crypto.subtle` 不可用也视为不通过），任何失败都回落包内、不抛给渲染层。
+
+- 传输与离线缓存**复用现有 `AgentAssetProxy`**（条件请求 + ETag 磁盘缓存 + 上游失败回落陈旧；
+  本机制**不需要任何 Kotlin 改动**）；索引另在 localStorage 留副本，离线时仍能判定"远端有更新"。
+- 包内清单由 `scripts/build-android-bundle.mjs` 构建期产出（`map2d-embedded.json`：
+  code → {file, asset, sha256} 与 **`contentGeneratedAt`**）；web 构建没有该文件 ⇒ 通道自然关闭。
+  该时间戳取自**底图内容自身**（与 29 张 webp 同批交接来的 `src/assets/maps/map2d-source.json`，
+  由 Agent 仓导出时写下，与 COS 索引 `generated` 同源），**不是构建时间**：用 wall-clock 会把
+  "内容其实更新"判成更旧（Android stage 晚于 COS 发布才构建时永久拒绝升级），也会让同一 commit
+  重跑构建产出不同字节的 bundle（破坏 stage 可重跑性与 APK 不可变性）。构建脚本对缺失/非法
+  的 `map2d-source.json` fail closed（契约测试同时断言构建脚本里没有 `new Date()`）。
+- **交接件与字节的绑定（schemaVersion 2）**：`map2d-source.json` 除时间戳外还带
+  `maps: {code: {file, sha256}}`（29 条）与 `mapsDigest`（排序后 `code<TAB>sha256` 的 sha256），
+  即"这份元数据描述的正是哪 29 个字节"。消费侧**用本地真实字节重算并逐条比对、fail closed**：
+  - 构建期（`buildMap2dEmbedded`）：与**随包** `assets/<名>-<哈希>.webp` 的 sha256 逐条比对，
+    缺图/多图/文件名不符/哈希不符即构建失败（**不查 COS**——COS 允许独立前进，这里要证的是
+    "元数据 == 随包图集"）；
+  - CI 测试（`src/assets/maps.test.js`）：与仓库里的 `src/assets/maps/*.webp` 重算比对。
+  缺了这条绑定，"换图但忘了重跑 Agent 仓导出并同步交接件"会让旧 `contentGeneratedAt` 配上新图，
+  运行时据 COS 索引判断时可能把包内更新的图 OTA 降级（违反 never-downgrade）。
+- 诊断：`window.__wotbMap2d`（Android 运行时与本地 dev）暴露通道状态与逐图来源
+  （`embedded` / `pending` / `remote` / `rejected`）。消费点 = `BattlePlayback` / `MapOverview`
+  的 `imageSrc` 计算属性与 `BattleMap3D` 贴图前的 `ensureMap2dImage`。
+- 契约测试：`src/data/map2dOverlay.test.js`（16 例：不降级 / 哈希不符不启用 / 离线回落 /
+  schema 与时间戳 fail-closed / 构建产物存在性）。**真机端到端**（确实换到新图、离线仍可用）
+  属设备验收，由用户在真机确认。

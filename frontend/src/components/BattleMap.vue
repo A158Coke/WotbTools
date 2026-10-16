@@ -9,6 +9,8 @@ defineOptions({ name: 'BattleMap' })
 
 const props = defineProps({
   image: { type: Object, required: true },
+  /** 2D 底图 URL 覆盖（Android OTA 升级生效时为 blob URL；null ⇒ 用 image.src，行为与旧版一致）。 */
+  imageSrc: { type: String, default: null },
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
   friendlyTeam: { type: [Number, String], default: null },
@@ -240,7 +242,7 @@ function onTwoFingerTouch(event) {
       @pointercancel="emit('pointer-up', $event)"
       @click.capture="emit('viewport-click', $event)"
     >
-      <img class="pb-basemap" data-test="pb-basemap" :src="props.image.src" alt="" aria-hidden="true" />
+      <img class="pb-basemap" data-test="pb-basemap" :src="props.imageSrc || props.image.src" alt="" aria-hidden="true" />
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
         <defs>
           <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">

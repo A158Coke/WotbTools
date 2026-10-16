@@ -10,6 +10,7 @@ import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { mapBases } from '../data/mapBases'
 import { mapLabel } from '../utils/helpers.js'
 import { mapImages } from '../data/mapImages'
+import { map2dSrc } from '../data/map2dOverlay'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
@@ -142,19 +143,21 @@ const pbOverview = computed(() => {
 })
 
 const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
+/** 底图 URL：包内兜底，Android 上若 COS 有更新且校验通过则换成 blob URL（见 map2dOverlay.js）。 */
+const imageSrc = computed(() => (image.value ? map2dSrc(pbOverview.value.mapCode, image.value.src) : null))
 const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
 // 自适应配色（与热力覆盖层使用同一色板）
 const palette = ref(darkMapPalette)
 let paletteRequestToken = 0
-watch(image, async (img) => {
+watch(imageSrc, async (src) => {
   const token = ++paletteRequestToken
-  if (!img) {
+  if (!src) {
     palette.value = darkMapPalette
     return
   }
   try {
-    const luminance = await luminanceOfImage(img)
+    const luminance = await luminanceOfImage({ src })
     if (token === paletteRequestToken) palette.value = paletteForLuminance(luminance)
   } catch {
     if (token === paletteRequestToken) palette.value = darkMapPalette
@@ -2272,6 +2275,7 @@ const mapStyle = computed(() => ({
           data-tour="playback-map"
           ref="mapComponent"
           :image="image"
+          :image-src="imageSrc"
           :map-view="mapView"
           :pb-overview="pbOverview"
           :friendly-team="friendlyTeam"
