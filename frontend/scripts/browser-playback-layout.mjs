@@ -423,8 +423,16 @@ async function probeDamageOverlay() {
     `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
   metrics.delay = delayAfter
 
+  // Force the previous mirrored side to stop fitting before testing right remount.
+  await api.setAnchor(7, anchorAt(20, 260))
+  const rightNode = dmgEl()
+  require(driftX() === 20, 'right side must be selected before remount')
+
   // 5b) showStatus 关→开 = 真实 remount：只补偿一次相位，之后 rerender 不再改动
   await api.remount()
+  require(dmgEl() !== rightNode, 'showStatus must create a new node')
+  require(driftX() === 20, 'right drift must be restored before placement')
+  await api.setAnchor(7, anchorAt(300, 260))
   const afterRemount = getComputedStyle(dmgEl().firstElementChild).animationDelay
   require(afterRemount !== delayAfter,
     `remount must compensate the phase exactly once (${delayAfter} -> ${afterRemount})`)
@@ -432,6 +440,52 @@ async function probeDamageOverlay() {
   require(getComputedStyle(dmgEl().firstElementChild).animationDelay === afterRemount,
     'phase compensation must not be recomputed by later rerenders')
   metrics.remountDelay = afterRemount
+
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  require(driftX() === -20, 'left side must be selected before remount')
+  const leftNode = dmgEl()
+  await api.remount()
+  require(dmgEl() !== leftNode, 'left damage must remount')
+  require(driftX() === -20, 'left drift must be restored before placement')
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  require(driftX() === -20, 'left drift must survive placement with unchanged side')
+
+  // H 恢复实际 CSS phase，原始 removal timer 不延长。
+  api.clearDamages()
+  const waitUntil = async (predicate, timeoutMs = 6000) => {
+    const start = performance.now()
+    while (!predicate()) {
+      if (performance.now() - start > timeoutMs) throw new Error('damage lifecycle condition timed out')
+      await new Promise(requestAnimationFrame)
+    }
+  }
+  const bornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const bornAfter = performance.now()
+  await api.setAnchor(7, anchorAt(300, 260))
+  const hNode = dmgEl()
+  await waitUntil(() => dmgTextEl().getAnimations()[0]?.currentTime >= 500)
+  await api.setHidden(true)
+  await waitUntil(() => performance.now() - bornAfter >= 1100)
+  await api.setHidden(false)
+  require(dmgEl() === hNode, 'H must preserve the damage node')
+  const animation = dmgTextEl().getAnimations()[0]
+  const timing = animation?.effect.getComputedTiming()
+  const effectiveTime = timing && animation.currentTime - timing.delay
+  const ageMin = performance.now() - bornAfter
+  const ageMax = performance.now() - bornBefore
+  require(Number.isFinite(effectiveTime) && effectiveTime >= ageMin - 100 && effectiveTime <= ageMax + 100,
+    `H must restore actual CSS phase (effective=${effectiveTime}, age=${ageMin}..${ageMax})`)
+  require(timing?.progress > 0.25, 'animation must not replay its birth phase')
+  const restoredDelay = dmgTextEl().style.animationDelay
+  await api.setLabels([row(7), row(8)])
+  require(dmgTextEl().style.animationDelay === restoredDelay, 'rerender must preserve restored delay')
+  await waitUntil(() => performance.now() - bornAfter >= 3500)
+  require(!!dmgEl(), 'damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const removedAt = performance.now()
+  require(removedAt - bornBefore < 4400, 'H must not restart removal timer')
+  metrics.hiddenRecovery = { effectiveTime, ageMin, ageMax, removedAfterMs: removedAt - bornBefore }
 
   // 6) HP 关掉 → 退回名牌块右侧，仍然可见
   await api.clearDamages()
