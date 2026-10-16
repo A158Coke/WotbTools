@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>3D damage overlay fixture</title>
+<style>
+  /* 只给覆盖层一个真实的定位容器与底色：被验收的 CSS 全部来自生产样式（token + 组件 scoped）。 */
+  html, body { margin: 0; height: 100%; background: #101418; }
+  #stage { position: relative; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module" src="./damage-overlay-entry.js"></script>
+</body>
+</html>
