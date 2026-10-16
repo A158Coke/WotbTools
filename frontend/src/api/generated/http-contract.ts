@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/observability/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record bounded, best-effort product telemetry
+         * @description Maximum 16384 bytes. Anonymous feature events allowed; active_user requires a valid bearer token. No arbitrary text or account identity accepted. Times must be within the past 24 hours and at most five minutes ahead.
+         */
+        post: operations["recordObservabilityEvents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tournaments": {
         parameters: {
             query?: never;
@@ -684,6 +704,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ObservabilityEventsRequest: {
+            events: components["schemas"]["ObservabilityEvent"][];
+        };
+        ObservabilityEvent: {
+            /** Format: uuid */
+            event_id: string;
+            /** @enum {string} */
+            event: "active_user" | "feature_open" | "replay_parse";
+            /** @enum {string} */
+            platform: "web" | "android";
+            /** @enum {string} */
+            feature: "home" | "replay_parse" | "replay_2d" | "replay_3d" | "replay_shots" | "ai_review" | "tankopedia" | "armor" | "hall_of_fame" | "tournament" | "android_download" | "sponsor" | "profile";
+            /** Format: date-time */
+            occurred_at: string;
+            /**
+             * Format: uuid
+             * @description Required for replay_parse; one ID per file attempt shared by start and terminal.
+             */
+            operation_id?: string;
+            /**
+             * @description Required only for replay_parse.
+             * @enum {string}
+             */
+            outcome?: "start" | "success" | "failure" | "cancelled";
+            /**
+             * @description Allowed only for failed replay_parse. Never raw exception text.
+             * @enum {string}
+             */
+            error_code?: "PARSE_FAILED" | "UNSUPPORTED_REPLAY" | "INVALID_REPLAY" | "RESOURCE_UNAVAILABLE" | "UNKNOWN";
+            /**
+             * Format: uuid
+             * @description Allowed only for failed replay_parse.
+             */
+            error_id?: string;
+        };
         TournamentEvent: {
             /** Format: int64 */
             id: number;
@@ -1603,6 +1658,73 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    recordObservabilityEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservabilityEventsRequest"];
+            };
+        };
+        responses: {
+            /** @description Events accepted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid telemetry */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required or invalid */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Payload too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Active-user hashing not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     listTournamentEvents: {
         parameters: {
             query?: never;

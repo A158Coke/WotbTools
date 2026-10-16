@@ -1,4 +1,5 @@
 import { onUnmounted } from 'vue'
+import { recordUsage } from './useUsageTelemetry.js'
 import { isOfficialDemo } from '../replay-local/demo.js'
 import type { Composer } from 'vue-i18n'
 import { parseReplayFiles, ReplayEngineUnavailableError } from '../replay-local/parseReplays.js'
@@ -73,6 +74,26 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     const revision = selectionRevision.value
     const selection = files.value
     const controller = new AbortController()
+    // Correlation IDs identify only this attempt, never the file or the user.
+    const operations = selection.map(() => {
+      let id: string | undefined
+      try { id = crypto.randomUUID() } catch { /* Unsupported telemetry cannot break parsing. */ }
+      return { id, settled: false }
+    })
+    const settle = (index: number, outcome: 'success' | 'failure' | 'cancelled',
+      errorCode?: 'PARSE_FAILED' | 'RESOURCE_UNAVAILABLE' | 'UNKNOWN') => {
+      const operation = operations[index]
+      if (!operation || operation.settled) return
+      operation.settled = true
+      if (!operation.id) return
+      recordUsage({ event: 'replay_parse', feature: 'replay_parse', operation_id: operation.id, outcome,
+        ...(errorCode ? { error_code: errorCode, error_id: operation.id } : {}) })
+    }
+    operations.forEach(operation => {
+      if (operation.id) recordUsage({ event: 'replay_parse', feature: 'replay_parse',
+        operation_id: operation.id, outcome: 'start' })
+    })
+    controller.signal.addEventListener('abort', () => operations.forEach((_, index) => settle(index, 'cancelled')), { once: true })
     inFlight = controller
     error.value = ''
     loading.value = true
@@ -84,6 +105,9 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
       const [parsed, tankopedia] = await Promise.all([
         parseReplayFiles(selection, {
           signal: controller.signal,
+          onFile: (index, file) => {
+            if (!stale()) settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED')
+          },
           onProgress: (done, total) => {
             if (!stale()) analysis.value = { phase: 'parsing', done, total, failure: null }
           },
@@ -91,6 +115,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
         loadTankopedia(),
       ])
       if (stale()) return { completed: false, reason: 'SUPERSEDED' }
+      parsed.forEach((file, index) => settle(index, file.result ? 'success' : 'failure', file.result ? undefined : 'PARSE_FAILED'))
       lastParsed = parsed
       const { dataset, preview } = analyzeReplayBatch(parsed, tankopedia)
       lastDataset = { dataset, tankopedia }
@@ -100,6 +125,7 @@ export function useLocalReplayAnalysis(session: ReplaySession, { t }: I18nContex
     } catch (e) {
       if (stale()) return { completed: false, reason: 'SUPERSEDED' }
       const failure = failureOf(e)
+      operations.forEach((_, index) => settle(index, 'failure', failure === 'ENGINE_UNAVAILABLE' ? 'RESOURCE_UNAVAILABLE' : 'UNKNOWN'))
       if (failure === 'UNKNOWN') console.error('[replay-local] analysis failed', e)
       analysis.value = { phase: 'failed', done: analysis.value.done, total: selection.length, failure }
       return failure === 'ENGINE_UNAVAILABLE' ? { completed: false, reason: 'ENGINE_UNAVAILABLE' } : { completed: true }

@@ -2266,6 +2266,15 @@ async function runOfflineWorkspaceScenario(env) {
     // 俯仰锚定两阶段解析会拉 /tank/{id}.json 与 /data/tank_cache.json（资产源）。
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
+    // Foreground activity is intentionally reported when connectivity recovers.
+    // Only this endpoint is accepted, and only while the browser fixture is online;
+    // offline telemetry and all automatic business submissions still fail below.
+    const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
+      && params.request.method === 'POST'
+    if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      await env.chrome.client.send('Fetch.fulfillRequest', { requestId: params.requestId, responseCode: 204 }, sessionId)
+      return
+    }
     const business = (url.origin !== env.origin || url.pathname.startsWith('/api/')) && !assetPath
     if (business) businessAttempts.push(params.request.url)
     try {
