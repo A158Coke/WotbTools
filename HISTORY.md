@@ -782,3 +782,31 @@ Android 9 等旧设备上，系统 WebView 版本由 ROM 决定：页面样式�
 提供，Native Bridge 经内置扩展传递、RPC 不变（bridge v3 只是 origin 与 transport 的替换）。页面引擎崩溃
 从「App 闪退」变成可自动恢复、可诊断的故障。代价是 APK 体积约十倍、引擎安全补丁需要靠发版跟进，
 以及 2.x 页面偏好在升级时重置一次。
+
+## 2026-10-16 — 安全日志留存半年，但普通日志仍然只留 7 天
+
+公安自评估要求认证与访问类安全日志留存不少于六个月。把 Loki 的 retention 从 7 天直接
+改成半年是最省事的做法，代价是 product telemetry、AI 用量、APK 下载计数一起被养半年
+——为了填表反过来扩大数据收集。改为按 stream 分档：Loki 默认仍是 `168h`，只有带
+`compliance="security"` 标签的流走 `4560h`（190 天），标签由 TX Alloy 产生，普通车道
+一律拿不到它。查询回看窗口放宽到 190 天，但单次查询长度仍限制在 7 天——取证按窗口分段，
+不让一次全范围查询把 Yecao 那台小机器打爆。
+
+安全日志只有三类：Keycloak 的受控 realm events（登录/登出/第三方身份提供者登录的成功与
+失败，以及管理动作）、Caddy 对 `/api/*` 的访问记录、认证域的访问记录。首页、JS/CSS、
+图片、WASM、APK 下载完全不写安全访问日志（站点级 `log_skip`），不是「先写出来再让 Loki
+丢掉」。脱敏在写 stdout 之前完成：删掉原始 uri（连同整个 query string）、全部请求头与
+全部响应头，再用 `log_append` 只写回 path 与 User-Agent，所以 token、Authorization、
+Cookie 不可能出现在一条保存 190 天的日志里；Keycloak 侧 `admin_events_details_enabled`
+保持 false，管理动作只留「谁做了什么」，不留完整 resource representation。
+
+两个反直觉的实现事实值得记下来，它们各自都能让整条链路静默失效：① Keycloak 的
+`jboss-logging` listener **不**受 realm `enabled_event_types` 约束（那只过滤数据库里的
+event store），所以「只保留需要的事件」这件事必须在 Alloy 的 selector 上收窄，两边清单
+由 CI 断言逐一对应；② 成功事件（含全部 admin event）默认只记到 DEBUG，不把
+`org.keycloak.events` 抬到 debug，半年留存里就只剩登录失败、看不到任何成功登录证据。
+两者都配了真实运行时证明：Keycloak 的 applied realm 与 stdout 事件行、以及
+Docker → Alloy → Loki 的打标/不打标断言。
+
+同时把现有 Contact 页面正式定义为问题反馈、投诉与举报渠道（中英俄三语同步），不新增
+工单后台。边界、查询方法与验收步骤见 `docs/operations/security-log-retention.md`。
