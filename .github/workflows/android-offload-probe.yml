@@ -55,9 +55,12 @@ jobs:
     # 与 `android-release` 互斥（同一门 Seafile 网盘的写入路径）：并发会让探针数字失真，也会挤占
     # android-release 那条已经贴着 `--max-time 2700` 的上传（run 38898856907 就是这么超时的）。
     # 顶层 `production-maintenance` 队列保留（与部署/备份互斥），这里再加 job 级 `android-release` 组。
+    # `queue: max` 是必须的：不带它时同一组只允许一个 pending 运行，新进入的探针会**取消排队中的
+    # 发布运行**（`cancel-in-progress: false` 只保护正在跑的那个）——诊断流程绝不能顶掉发布。
     concurrency:
       group: android-release
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Validate probe parameters
         shell: bash
@@ -121,7 +124,9 @@ jobs:
       #    缺 COS 凭证时本段跳过（::notice::），后面的 TX1→网盘段仍用同尺寸本地载荷测量。
       #    凭证按最小权限建：CAM 子账号限定到该发布桶的 `android/*` 前缀，动作 = PutObject / GetObject /
       #    HeadObject / DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart /
-      #    CompleteMultipartUpload / AbortMultipartUpload 与清理时枚举未完成分片用的 ListMultipartUploads。
+      #    CompleteMultipartUpload / AbortMultipartUpload、清理时枚举未完成分片用的 ListMultipartUploads，
+      #    以及续传路径的 ListParts（`GITHUB_RUN_ID` 在 rerun 时不变 ⇒ 同名 key；SDK 的 upload_file 发现
+      #    未完成分片会先 list_parts 再续传——缺它会 AccessDenied）。
       #    缺分片动作时 8 路分片测量 AccessDenied、只剩单流数字；缺 HeadObject 时上传回来之后的 HEAD
       #    回读与清理确认会失败（HEAD 在 CAM 里是独立动作，不被 GetObject 覆盖）。不给 ListBucket，
       #    更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
@@ -149,7 +154,10 @@ jobs:
           fi
           REGION="${COS_REGION:-ap-shanghai}"
           export REGION
-          python3 -m pip install --quiet --disable-pip-version-check cos-python-sdk-v5
+          # 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
+          # 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。完整哈希锁定（--require-hashes）
+          # 需要按平台维护锁文件，属后续工作。
+          python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
           python3 - <<'PY'
           import os
           import socket
@@ -415,7 +423,10 @@ jobs:
           fi
           REGION="${COS_REGION:-ap-shanghai}"
           export REGION
-          python3 -m pip install --quiet --disable-pip-version-check cos-python-sdk-v5
+          # 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
+          # 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。完整哈希锁定（--require-hashes）
+          # 需要按平台维护锁文件，属后续工作。
+          python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
           python3 - <<'PY'
           import os
           import sys
