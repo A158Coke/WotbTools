@@ -14,6 +14,11 @@ import { ONBOARDING_KEY } from '../shared/onboarding.js'
  */
 export const FEEDBACK_URL = 'https://github.com/A158Coke/WotbTools/issues/new'
 
+export const APP_FILING = Object.freeze({
+  number: '闽ICP备2026036303号-2A',
+  url: 'https://beian.miit.gov.cn/',
+})
+
 export const LANGUAGES = Object.freeze([
   { value: 'zh', label: '中文' },
   { value: 'en', label: 'English' },
@@ -56,6 +61,18 @@ export function useMoreMenu() {
     !isAndroidApp() && { view: 'android', labelKey: 'android.nav', icon: Download },
   ].filter(Boolean))
 
+  // 工信部 APP 备案信息只属于 APK；官网不重复展示 APP 备案号。
+  const appFiling = computed(() => isAndroidApp() ? APP_FILING : null)
+
   const openGuide = computed(() => authenticated?.value && onboarding ? () => onboarding.openDirectory() : null)
-  return { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, adminLinks, aboutLinks, openGuide }
+  return {
+    uiProfilePreference,
+    setUiProfile,
+    uiProfileOptions,
+    setLocale,
+    adminLinks,
+    aboutLinks,
+    appFiling,
+    openGuide,
+  }
 }
