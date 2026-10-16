@@ -309,6 +309,11 @@ OEM Intent、native auth/refresh/process-death、飞行模式冷启动与本地�
 ③ 真机验收（下节）→ ④ 仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE=3000000` → ⑤
 `workflow_dispatch(mode=publish, version=3.0.0)`。
 
+注意 stage job 自己也跑 `guard_bridge_covered`（bridge 2→3 的 cutover 守卫）：在变量仍是 2.x 门槛时，
+合并触发的自动 stage 会 **fail-closed**（不产生任何半成品 release 身份）。因此 ④ 实际上要在 ② 之前完成，
+或在 ② 失败后把变量设为 `3000000` 再重跑 stage（workflow 幂等）。门槛要求的就是候选自身的 versionCode
+`3000000`，不会要求 `3000001` / `3000002` / `3000003`。
+
 **真机验收（发布阻塞项）**：至少 Android 9 问题机 + 一台 Android 13+，记录型号 / Android / ABI /
 GeckoView 版本 / APK SHA：问题机 CSS 正常且不再闪退；冷启动与飞行模式启动；重启后偏好保留；单 / 多文件导入、
 分享 / 打开 replay、目录导入；WASM 解析、统计、Rating、2D、3D / Armor / 贴图；fullscreen 进出与 Back；
