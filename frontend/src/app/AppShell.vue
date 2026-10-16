@@ -9,6 +9,7 @@ import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
+import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -27,6 +28,7 @@ const APP_ICP_FILING = '闽ICP备2026036303号-2A'
 const isAndroidAppRuntime = isAndroidApp()
 const router = useRouter()
 const route = useRoute()
+useUsageTelemetry(computed(() => viewFromRoute(route)))
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnectivityNotice()
 // 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏

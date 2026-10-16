@@ -12,6 +12,10 @@ services:
     # name is intentionally distinct from the retired Yecao runtime.
     image: ${TX_BUSINESS_API_IMAGE_REF:?TX_BUSINESS_API_IMAGE_REF is required}
     environment:
+      # Trust the private TX bridge (including hairpin gateway) and TX2 frontend host.
+      # nginx overwrites X-Real-IP; public peers must never be added here.
+      WOTB_OBSERVABILITY_TRUSTED_PROXIES: "172.29.0.0/16,10.20.0.3/32"
+      WOTB_OBSERVABILITY_HASH_KEY: ${WOTB_OBSERVABILITY_HASH_KEY:-}
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
       # administrator.

@@ -86,15 +86,14 @@ class SecurityErrorLoggingContractTest {
     }
 
     @Test
-    void errorExplorerQueryMatchesSecurityRejectionEventsAndDiagnosticId() throws Exception {
+    void backendErrorsQueryMatchesSecurityRejectionEventsAndDiagnosticId() throws Exception {
         final Path dashboard = dashboardPath();
         final JsonNode root = objectMapper.readTree(Files.readString(dashboard));
         final String query = errorExplorerQuery(root);
 
         assertTrue(query.contains("api_request_failed|api_request_rejected"));
-        assertTrue(query.contains("${errorId:raw}"));
-        assertTrue(query.contains("${correlationId:raw}"));
-        assertTrue(query.contains("${jobId:raw}"));
+        assertTrue(query.contains("${errorId:doublequote}"));
+        assertTrue(query.contains("${keyword:doublequote}"));
         assertFalse(query.contains("${version:raw}"));
     }
 
@@ -131,7 +130,7 @@ class SecurityErrorLoggingContractTest {
 
     private static Path dashboardPath() {
         final Path relative = Path.of("deploy", "observability", "grafana", "dashboards",
-                "wotbtools-error-explorer.json");
+                "wotbtools-backend-error-logs.json");
         for (final Path candidate : new Path[]{relative, Path.of("..").resolve(relative),
                 Path.of("..", "..").resolve(relative)}) {
             if (Files.isRegularFile(candidate)) {
@@ -143,7 +142,7 @@ class SecurityErrorLoggingContractTest {
 
     private static String errorExplorerQuery(final JsonNode root) {
         for (final JsonNode panel : root.get("panels")) {
-            if ("近期事故（倒序）".equals(panel.get("title").asText())) {
+            if ("账号与登录 · 日志".equals(panel.get("title").asText())) {
                 return panel.get("targets").get(0).get("expr").asText();
             }
         }
