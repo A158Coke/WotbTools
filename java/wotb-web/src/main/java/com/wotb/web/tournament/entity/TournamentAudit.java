@@ -16,8 +16,8 @@ import java.time.Instant;
 public class TournamentAudit {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long id;
-    @Column(name = "event_id", nullable = false)
-    public long eventId;
+    @Column(name = "event_id")
+    public Long eventId;
     @Column(name = "round_number", nullable = true)
     public Integer roundNumber;
     @Column(name = "day_number", nullable = true)

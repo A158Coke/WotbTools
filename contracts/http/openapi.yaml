@@ -116,12 +116,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
   /api/admin/tournaments:
+    head:
+      operationId: getTournamentCapabilities
+      summary: Check tournament capabilities without changing the existing event-list body
+      description: Requires the tournament-admin role. Older backends return 200 without the capability header; clients must probe this existing route before requesting default-rule endpoints.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Event-list headers
+          headers:
+            X-Tournament-Default-Rules:
+              description: Version 1 supports global default rule operations, including direct configuration.
+              schema:
+                type: string
+                enum: ["1"]
+        "401":
+          description: Authentication required
+        "403":
+          description: Tournament administrator required
     get:
       operationId: listAdminTournamentEvents
       summary: listAdminTournamentEvents
       responses:
         "200":
           description: Tournament result
+          headers:
+            X-Tournament-Default-Rules:
+              description: Version 1 supports global default rule operations, including direct configuration.
+              schema:
+                type: string
+                enum: ["1"]
           content:
             application/json:
               schema:
@@ -208,6 +233,214 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/TournamentCreateRequest"
+  /api/admin/tournaments/rules/default:
+    get:
+      operationId: getTournamentDefaultRules
+      summary: Read the global default rule snapshot
+      description: Requires the tournament-admin role. The singleton version remains available when no default is active.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current global default state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDefaultRules"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    put:
+      operationId: setTournamentDefaultRules
+      summary: Publish a saved event rule set as the global default
+      description: Requires the tournament-admin role. Atomically replaces the full snapshot after checking both versions. Replacing an active default requires confirm=true. Ordinary event edits do not change the published snapshot.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentSetDefaultRulesRequest"
+      responses:
+        "200":
+          description: Updated global default state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDefaultRules"
+        "400":
+          description: INVALID_ARGUMENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Source event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    delete:
+      operationId: clearTournamentDefaultRules
+      summary: Clear the global default while retaining its versioned singleton
+      description: Requires the tournament-admin role and confirm=true. Custom and frozen event rules remain unchanged.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentClearDefaultRulesRequest"
+      responses:
+        "200":
+          description: Inactive global default state with an incremented version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDefaultRules"
+        "400":
+          description: INVALID_ARGUMENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: TOURNAMENT_VERSION_CONFLICT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournaments/rules/default/configuration:
+    put:
+      operationId: saveTournamentDefaultConfiguration
+      summary: Save a complete global default rule set without a source event
+      description: Requires the tournament-admin role. Atomically replaces the full default snapshot after checking expectedDefaultVersion; confirm=true is required when replacing an active default. Rounds must cover 1 through 4 or 5, with matching two or three days per round and ranks 1 through 4 required on every day. Rank 5 is optional. Frozen and custom event rules remain unchanged.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TournamentDefaultConfigurationRequest"
+      responses:
+        "200":
+          description: Updated global default snapshot with no source event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDefaultRules"
+        "400":
+          description: INVALID_ARGUMENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournaments/{eventId}/rule-source:
+    get:
+      operationId: getTournamentRuleSource
+      summary: Read the event rule source without freezing inherited rules
+      description: Requires the tournament-admin role. Existing event/config/day response shapes remain unchanged.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Current event rule source
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentRuleSource"
+        "400":
+          description: INVALID_ARGUMENT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/admin/tournaments/{eventId}:
     get:
       operationId: getTournamentConfig
@@ -1976,6 +2209,148 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TournamentRankPoints"
+    TournamentDefaultRound:
+      type: object
+      additionalProperties: false
+      required:
+        - roundNumber
+        - days
+      properties:
+        roundNumber:
+          type: integer
+          minimum: 1
+          maximum: 5
+        days:
+          type: array
+          minItems: 2
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/TournamentRuleDay"
+    TournamentDefaultRules:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - active
+        - sourceEventId
+        - sourceLabel
+        - updatedAt
+        - rounds
+      properties:
+        version:
+          type: integer
+          format: int64
+          minimum: 0
+        active:
+          type: boolean
+        sourceEventId:
+          description: Null for a directly configured or seeded default, a deleted source event, or an inactive default.
+          type: [integer, "null"]
+          format: int64
+          minimum: 1
+        sourceLabel:
+          description: Stable source identity snapshot; empty when no default is active. Not a localized UI message.
+          type: string
+        updatedAt:
+          type: [string, "null"]
+          format: date-time
+        rounds:
+          description: Full published rule snapshot; empty when inactive. Round and day numbers are unique within their parent.
+          type: array
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/TournamentDefaultRound"
+    TournamentSetDefaultRulesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - eventId
+        - expectedEventVersion
+        - expectedDefaultVersion
+        - confirm
+      properties:
+        eventId:
+          type: integer
+          format: int64
+          minimum: 1
+        expectedEventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedDefaultVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        confirm:
+          description: Must be true when replacing an active default.
+          type: boolean
+    TournamentDefaultConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedDefaultVersion
+        - confirm
+        - rounds
+      properties:
+        expectedDefaultVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        confirm:
+          description: Must be true when replacing an active default.
+          type: boolean
+        rounds:
+          description: Complete rounds numbered consecutively from 1, with a consistent number of days and ranks 1-4 present on each day. Duplicate round, day, or rank numbers are rejected.
+          type: array
+          minItems: 4
+          maxItems: 5
+          items:
+            $ref: "#/components/schemas/TournamentDefaultRound"
+    TournamentClearDefaultRulesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedDefaultVersion
+        - confirm
+      properties:
+        expectedDefaultVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        confirm:
+          description: Must be true to clear the default.
+          type: boolean
+    TournamentRuleSource:
+      type: object
+      additionalProperties: false
+      required:
+        - eventVersion
+        - source
+        - defaultVersion
+        - isDefaultSource
+        - defaultOutdated
+      properties:
+        eventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        source:
+          type: string
+          enum:
+            - INHERIT
+            - CUSTOM
+            - FROZEN
+        defaultVersion:
+          description: Current singleton version for INHERIT (including an inactive default), captured version for events frozen from a default, otherwise null.
+          type: [integer, "null"]
+          format: int64
+          minimum: 0
+        isDefaultSource:
+          description: True only when this event is the source of the currently active default.
+          type: boolean
+        defaultOutdated:
+          description: True when the active default source event has saved rules differing from the published snapshot.
+          type: boolean
     TournamentRoundRule:
       type: object
       additionalProperties: false
@@ -2034,6 +2409,11 @@ components:
           minimum: 0
         expectedRulesVersion:
           type: integer
+          format: int64
+          minimum: 0
+        expectedDefaultVersion:
+          description: Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before copying the complete effective rule set into this event. Null or omission uses the server-authoritative current default.
+          type: [integer, "null"]
           format: int64
           minimum: 0
         days:
@@ -2144,6 +2524,11 @@ components:
           minimum: 0
         expectedDayVersion:
           type: integer
+          format: int64
+          minimum: 0
+        expectedDefaultVersion:
+          description: Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before freezing the effective rule set. Null or omission uses the server-authoritative current default.
+          type: [integer, "null"]
           format: int64
           minimum: 0
         expectedGroupCount:

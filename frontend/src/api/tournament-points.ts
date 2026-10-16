@@ -10,6 +10,8 @@ export { tournamentAdminAllowed } from '../composables/useAuth.js'
 type Schemas = components['schemas']
 export type TournamentEvent = Schemas['TournamentEvent']
 export type TournamentConfig = Schemas['TournamentConfig']
+export type TournamentDefaultRules = Schemas['TournamentDefaultRules']
+export type TournamentRuleSource = Schemas['TournamentRuleSource']
 export type TournamentDayView = Schemas['TournamentDayView']
 export type TournamentStandings = Schemas['TournamentStandings']
 export type TournamentIncomingGroup = Schemas['TournamentIncomingGroup']
@@ -71,6 +73,30 @@ export async function listTournamentEvents(admin = false, signal?: AbortSignal):
 }
 export const getTournamentStandings = (id: number, signal?: AbortSignal) => json(`/api/tournaments/${id}/standings`, 'TournamentStandings', false, { signal })
 export const getTournamentConfig = (id: number, signal?: AbortSignal) => json(eventPath(id), 'TournamentConfig', true, { signal })
+/** Probe the existing list route: old backends can turn unknown routes into generic 500 errors. */
+async function supportsTournamentDefaultRules(signal?: AbortSignal): Promise<boolean> {
+  const response = await request(base, true, { method: 'HEAD', signal })
+  return response.headers.get('X-Tournament-Default-Rules') === '1'
+}
+export async function getTournamentDefaultRules(signal?: AbortSignal): Promise<TournamentDefaultRules | null> {
+  if (!await supportsTournamentDefaultRules(signal)) return null
+  try { return await json(`${base}/rules/default`, 'TournamentDefaultRules', true, { signal }) }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
+}
+export async function getTournamentRuleSource(id: number, signal?: AbortSignal): Promise<TournamentRuleSource | null> {
+  if (!await supportsTournamentDefaultRules(signal)) return null
+  try { return await json(`${eventPath(id)}/rule-source`, 'TournamentRuleSource', true, { signal }) }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null
+    throw error
+  }
+}
+export const setTournamentDefaultRules = (value: Schemas['TournamentSetDefaultRulesRequest'], signal?: AbortSignal) => json(`${base}/rules/default`, 'TournamentDefaultRules', true, body('PUT', value, signal))
+export const clearTournamentDefaultRules = (value: Schemas['TournamentClearDefaultRulesRequest'], signal?: AbortSignal) => json(`${base}/rules/default`, 'TournamentDefaultRules', true, body('DELETE', value, signal))
+export const saveTournamentDefaultConfiguration = (value: Schemas['TournamentDefaultConfigurationRequest'], signal?: AbortSignal) => json(`${base}/rules/default/configuration`, 'TournamentDefaultRules', true, body('PUT', value, signal))
 export const createTournament = (value: Schemas['TournamentCreateRequest'], signal?: AbortSignal) => json(base, 'TournamentConfig', true, body('POST', value, signal))
 export const updateTournament = (id: number, value: Schemas['TournamentUpdateRequest'], signal?: AbortSignal) => json(eventPath(id), 'TournamentConfig', true, body('PUT', value, signal))
 export const saveTournamentRules = (id: number, round: number, value: TournamentRuleRequest, signal?: AbortSignal) => json(`${eventPath(id)}/rounds/${round}`, 'TournamentConfig', true, body('PUT', value, signal))
