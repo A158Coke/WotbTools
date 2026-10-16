@@ -378,6 +378,7 @@ PY
 python3 - "$ROOT/.github/workflows/android-release.yml" <<'PY'
 import sys
 import yaml
+import pathlib
 
 workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 trigger = workflow.get(True, workflow.get("on", {}))
@@ -388,6 +389,17 @@ assert mode["options"] == ["stage", "publish"], mode
 jobs = workflow["jobs"]
 assert set(jobs) == {"stage", "publish"}, sorted(jobs)
 stage, publish = jobs["stage"], jobs["publish"]
+
+# 并发组：同组只允许一个 pending run——`cancel-in-progress: false` 只保护正在跑的那个，少了
+# `queue: max` 时新进入的 run 会取消排队中的运行（2026-10-16 实证：新触发的 Release / Android
+# 顶掉了同组排队的 android-offload-probe）。两边都必须排队，否则「互斥」会变成「互相顶掉」。
+concurrency = workflow["concurrency"]
+assert concurrency == {"group": "android-release", "cancel-in-progress": False, "queue": "max"}, concurrency
+probe_workflow = yaml.safe_load(
+    (pathlib.Path(sys.argv[1]).parent / "android-offload-probe.yml").read_text(encoding="utf-8"))
+probe_job_concurrency = probe_workflow["jobs"]["probe"]["concurrency"]
+assert probe_job_concurrency["group"] == "android-release" and probe_job_concurrency["queue"] == "max", \
+    "the probe's job-level exclusion must use the same group with queue: max"
 
 
 def runs(job):

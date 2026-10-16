@@ -75,8 +75,13 @@ permissions:
   contents: read
 
 concurrency:
+  # `queue: max` 不是可选项：同组只允许一个 pending run，少了它时**新进入的 run 会取消排队中的
+  # 那个**（`cancel-in-progress: false` 只保护正在跑的那个）。2026-10-16 实证：新推送触发的
+  # Release / Android 顶掉了同组排队的 android-offload-probe（探针那侧有 queue: max 也照样被顶）。
+  # 两个 Android 发布之间同理；这里与探针的 job 级组共同构成「双方都排队」的闭环。
   group: android-release
   cancel-in-progress: false
+  queue: max
 
 env:
   ANDROID_MIN_SUPPORTED_VERSION_CODE: ${{ vars.ANDROID_MIN_SUPPORTED_VERSION_CODE || '1000000' }}
