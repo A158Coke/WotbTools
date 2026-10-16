@@ -210,7 +210,8 @@
         "columns": "该行列数与表头不一致",
         "name": "文件名无效",
         "invalid": "文件内容无效，请检查后重试"
-      }
+      },
+      "dataSourceLoadFailed": "数据来源加载失败，可点击刷新重试。"
     },
     "featureOffline": {
       "tournamentPoints": "联赛积分榜和统计需要网络连接。"
@@ -452,7 +453,8 @@
         "columns": "The row has a different column count than the header",
         "name": "Invalid filename",
         "invalid": "Invalid file contents; check and retry"
-      }
+      },
+      "dataSourceLoadFailed": "The data source could not be loaded. Refresh to retry."
     },
     "featureOffline": {
       "tournamentPoints": "League standings and scoring require an internet connection."
@@ -694,7 +696,8 @@
         "columns": "Количество столбцов не совпадает с заголовком",
         "name": "Недопустимое имя файла",
         "invalid": "Некорректное содержимое файла; проверьте и повторите"
-      }
+      },
+      "dataSourceLoadFailed": "Не удалось загрузить источник данных. Обновите страницу, чтобы повторить."
     },
     "featureOffline": {
       "tournamentPoints": "Таблица лиги и подсчёт очков требуют подключения к сети."

@@ -265,6 +265,47 @@ describe('public tournament export lifecycle', () => {
 
 describe('persistent CSV source attribution', () => {
   const source = { csvImported: true, attribution: { name: '_EK_', url: 'https://b23.tv/rqx5iYX' } }
+  it('shows and exports the initial standings while source loading is pending or fails, then retries on refresh', async () => {
+    let failSource!: (value: unknown) => void
+    state.source.mockReturnValueOnce(new Promise((_, reject) => { failSource = reject }))
+    const p = page(); await flushPromises()
+    expect(p.wrapper.findComponent(TournamentEventSelect).props('modelValue')).toBe(7)
+    expect(p.wrapper.get('.tournament-table').text()).toContain('KSR')
+    expect(p.wrapper.get('.tournament-table').text()).toContain('100')
+    expect(p.wrapper.get('[data-testid="tournament-export"]').attributes('disabled')).toBeUndefined()
+    failSource({ errorCode: 'INTERNAL_ERROR', status: 500 }); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-data-source-error"]').text()).toContain(p.i18n.global.t('tournament.dataSourceLoadFailed'))
+    expect(p.wrapper.get('.tournament-table').text()).toContain('KSR')
+    await p.exportItem('xlsx'); await flushPromises()
+    expect(state.download).toHaveBeenCalledOnce()
+    state.source.mockResolvedValueOnce(source)
+    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
+    await flushPromises()
+    expect(p.wrapper.find('[data-testid="tournament-data-source-error"]').exists()).toBe(false)
+    expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
+    p.wrapper.unmount()
+  })
+  it('keeps a manually selected board usable when source loading times out and restores the source on refresh', async () => {
+    const p = page(); await flushPromises()
+    let failSource!: (value: unknown) => void
+    state.source.mockReturnValueOnce(new Promise((_, reject) => { failSource = reject }))
+    await p.selected(8)
+    expect(p.wrapper.get('.tournament-table').text()).toContain('NEW')
+    expect(p.wrapper.get('.tournament-table').text()).toContain('100')
+    expect(p.wrapper.get('[data-testid="tournament-export"]').attributes('disabled')).toBeUndefined()
+    failSource({ errorCode: 'NETWORK_TIMEOUT', status: 504 }); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-data-source-error"]').text()).toContain(p.i18n.global.t('tournament.dataSourceLoadFailed'))
+    expect(p.wrapper.get('.tournament-table').text()).toContain('NEW')
+    await p.exportItem('xlsx'); await flushPromises()
+    expect(state.download).toHaveBeenCalledOnce()
+    state.source.mockResolvedValueOnce(source)
+    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
+    await flushPromises()
+    expect(p.wrapper.findComponent(TournamentEventSelect).props('modelValue')).toBe(8)
+    expect(p.wrapper.find('[data-testid="tournament-data-source-error"]').exists()).toBe(false)
+    expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
+    p.wrapper.unmount()
+  })
   it('shows a real external source button on initial load and after a refresh', async () => {
     state.source.mockResolvedValue(source)
     const p = page(); await flushPromises()

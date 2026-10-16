@@ -47,6 +47,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 class TournamentServiceTest {
     private static final String KEY = "unit-only-32-byte-signing-key-123456";
@@ -296,6 +298,15 @@ class TournamentServiceTest {
         assertEquals(List.of(1, 50, 99, 125), preview.standings().rows().stream().map(TournamentDtos.StandingRow::rank).distinct().toList());
         assertEquals(200, preview.changes().addedClans()); assertEquals(200, preview.changes().addedScores());
         assertTrue(clanRows.isEmpty()); assertTrue(auditRows.isEmpty()); assertFalse(event.csvImported);
+    }
+    @Test void auditListReadsOnlyMetadataAndPreservesTheExistingResponseShape() {
+        final var created = Instant.parse("2026-10-16T15:00:00Z");
+        when(audits.findMetadataByEventId(1L)).thenReturn(List.of(new TournamentAudit.Metadata(7L, "CSV_IMPORTED", "admin", null, null, null, created)));
+        final var result = service.auditList(1);
+        assertEquals(1, result.size()); assertEquals(7L, result.getFirst().id());
+        assertEquals("CSV_IMPORTED", result.getFirst().action()); assertEquals(created, result.getFirst().createdAt());
+        assertTrue(result.getFirst().before().isEmpty()); assertTrue(result.getFirst().after().isEmpty());
+        verify(audits).findMetadataByEventId(1L); verify(audits, never()).findByEventIdOrderByIdDesc(1L);
     }
     @Test void csvRfcQuotesChineseTagsBomAndReorderedHeadersKeepNullAndZeroDistinct() {
         final String header = "总积分,R1D2,军团标签,R1D1,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2\r\n";
