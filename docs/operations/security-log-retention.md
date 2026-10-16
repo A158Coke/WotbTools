@@ -46,17 +46,22 @@ Keycloak 侧保留的事件类型由 [`infra/tofu/keycloak/events.tf`](../../inf
 
 | 禁止项 | 强制方式 |
 |---|---|
-| query string（含 `token=` 之类） | `wotbtools.com` 的 filter 编码器删除原始 `request>uri`，再用 `log_append path {http.request.uri.path}` 只写回 path |
-| `Authorization` / `Cookie` | 同一编码器删除**整个** `request>headers`；认证域另有逐项 `delete` |
-| OAuth `code` / `state` / `session_state` / `iss` | `auth.wotbtools.com` 的 filter 编码器在写 stdout 前从 query 中删除 |
-| 响应头（含 `Set-Cookie`） | 删除整个 `resp_headers` |
+| query string（含 `token=`、OAuth `code` / `state`、以及 logout 的 `id_token_hint`） | 两个站点的 filter 编码器都删除原始 `request>uri`，再用 `log_append path {http.request.uri.path}` 只写回 path |
+| `Authorization` / `Cookie` / `Referer` 等全部请求头 | 同一编码器删除**整个** `request>headers`，再 `log_append ua` 写回 User-Agent |
+| 响应头（含 `Set-Cookie`、带 `code` / `state` 的 `Location`） | 删除整个 `resp_headers` |
 | request body / response body | Caddy 从不记录 body |
 | AI prompt/output、回放内容、上传文件内容 | 这些只出现在 backend / ai-service 日志，而那两条车道永远不打 `compliance` 标签 |
 | Keycloak 管理动作的完整 resource representation | `admin_events_details_enabled = false` |
 
-`/api/*` 安全访问日志实际留存的字段：`ts`、`remote_ip`、`remote_port`、`host`、
+两个站点的安全访问日志实际留存的字段相同：`ts`、`remote_ip`、`remote_port`、`host`、
 `method`、`path`、`status`、`ua`，加上 Caddy 自身的结构字段（`proto`、`duration`、
 `size` 等，不含个人信息）。
+
+**白名单而不是黑名单，是刻意的**：按名字删除已知敏感参数的口径挡不住真实流量——
+RP-initiated logout 把完整 ID token 作为 `id_token_hint` query 参数发到认证域
+（`AuthManager.endSession` 与 keycloak-js 都是），授权回程的 `Location` 响应头也带
+code / state。删整个 `uri` 与整个响应头，才能让「不记录授权令牌」这句话在下一个新参数
+出现时仍然成立。`validate-caddy-config.sh` 会直接拒绝退回逐参数 query 过滤的配置。
 
 ## 4. 实现位置
 
@@ -78,7 +83,21 @@ Loki retention → Alloy compliance pipeline → Caddy API logging → Keycloak 
 ```
 
 先上线 consumer 与 retention，再启动新的日志 producer，避免出现「producer 已经在产生安全
-日志、collector 还没准备好打标签」的窗口——那段时间的日志会按 7 天被删掉。
+日志、collector 还没准备好打标签」的窗口——那段时间的日志拿不到 `compliance` 标签，会按
+7 天被删掉，而且**不会被事后补标**。
+
+**这个顺序不是 CI 强制的，必须人工执行。** 合并到 `main` 会同时触发四个互相独立的 owner
+workflow（`observability.yml`、`alloy-tx.yml`、`caddy.yml`、`keycloak.yml`）；它们共享
+`production-maintenance` concurrency group，所以只是互相排队、**不决定谁先跑**。因此：
+
+- 想要零窗口：先只合并 consumer 侧（Loki + Alloy），确认 `alloy-tx` 部署成功，再合并
+  producer 侧（Caddy + Keycloak）。
+- 一次性合并也可以接受，代价是有界的：窗口等于两个 owner workflow 的间隔（分钟级），
+  只影响上线当天最初几分钟的安全日志，之后的留存不受影响。选这条路就在 PR 里写明。
+
+不要靠在本文件里写一句顺序来当作保证——独立 owner 模型下没有依赖关系可声明；真要变成
+强制，需要给 producer 侧的 workflow 增加「先断言线上 Alloy 已带 compliance processor」的
+fail-closed preflight，那是一次独立的改动。
 
 ## 6. 查询方法
 

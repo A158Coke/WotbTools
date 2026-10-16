@@ -41,6 +41,21 @@ grafana_diagnostics() {
   docker network inspect "$NETWORK" 2>&1 || true
 }
 
+# This fixture creates an explicit 172.29.0.0/16 subnet, so nothing else may hold that
+# range. Earlier steps in the same job run the real `-p deploy` Compose project
+# (`caddy adapt` through deploy/tx/validate-caddy-config.sh), which leaves behind two
+# candidates: `wotb_tx_internal`, whose Compose definition pins exactly 172.29.0.0/16,
+# and `deploy_default`, taken from the daemon's default address pool. `compose down`
+# does not reliably reap them here (the broken / not-adaptable fixtures run the same
+# project name from temp copies), so release both by name before claiming the subnet.
+# This used to work only as a side effect of deploy/test-caddy-route-inventory.sh
+# running last in the same job; that script now belongs to the Caddy owner, so the
+# precondition belongs to the fixture that needs it. Same rationale as
+# deploy/test-tx-runtime-config.sh. Both removals are no-ops when the network is absent
+# or still in use, so a developer's live `-p deploy` project is never torn down silently.
+for stale_network in wotb_tx_internal deploy_default; do
+  docker network rm "$stale_network" >/dev/null 2>&1 || true
+done
 docker network create --driver bridge --subnet 172.29.0.0/16 --gateway 172.29.0.1 "$NETWORK" >/dev/null
 
 start_grafana_stub() {
