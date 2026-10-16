@@ -27,6 +27,8 @@
 
 ---
 
+Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，sourceId 保留原始文件索引，详见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
+
 Playback 2D/3D 的布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)：共享 fluid 三列、实测正方形 Stage、紧凑 HUD/Transport、Gear 锚定 Display；Details 拖动与 fullscreen/session 生命周期沿用既有 owner。
 
 ## 环境与工具链
