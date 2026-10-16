@@ -40,6 +40,7 @@ export const Feature = Object.freeze({
   ACCOUNT_PROFILE: 'accountProfile',
   ADMIN_USERS: 'adminUsers',
   TOURNAMENT_POINTS: 'tournamentPoints',
+  LEAGUE_BROADCASTS: 'leagueBroadcasts',
   TELEMETRY_UPLOAD: 'telemetryUpload',
   STATISTICS_CONTRIBUTION: 'statisticsContribution',
   BACKGROUND_SYNC: 'backgroundSync',
@@ -61,6 +62,7 @@ const REQUIREMENTS = Object.freeze({
   // 没有 backend 就没有列表、详情与删除，因此是 ONLINE_REQUIRED（入口仍可见，点击给统一提示）。
   [Feature.ADMIN_USERS]: FeatureRequirement.ONLINE_REQUIRED,
   [Feature.TOURNAMENT_POINTS]: FeatureRequirement.ONLINE_REQUIRED,
+  [Feature.LEAGUE_BROADCASTS]: FeatureRequirement.ONLINE_REQUIRED,
   [Feature.TELEMETRY_UPLOAD]: FeatureRequirement.ONLINE_OPTIONAL,
   [Feature.STATISTICS_CONTRIBUTION]: FeatureRequirement.ONLINE_OPTIONAL,
   [Feature.BACKGROUND_SYNC]: FeatureRequirement.ONLINE_OPTIONAL,

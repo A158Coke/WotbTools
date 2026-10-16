@@ -24,6 +24,14 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 })
 
 describe('primary navigation', () => {
+  it('keeps the broadcast catalogue public within More without a second admin view', () => {
+    expect(viewFromRoute({ path: '/', query: { view: 'league-broadcasts' } })).toBe('league-broadcasts')
+    expect(primarySection('league-broadcasts')).toBe('more')
+    expect(ADMIN_NAV.some(item => item.view.startsWith('league-broadcasts'))).toBe(false)
+    const route = { path: '/', query: { view: 'league-broadcasts', lbServer: 'CN', lbSeason: '4', lbCategory: '9', lang: 'zh' } }
+    expect(locationForView('league-broadcasts', route).query).toEqual(route.query)
+    expect(locationForView('replay', route).query).toEqual({ view: 'replay', lang: 'zh' })
+  })
   it('maps every Replay capability to the Replay section', () => {
     for (const view of ['replay', 'ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
       expect(primarySection(view)).toBe('replay')

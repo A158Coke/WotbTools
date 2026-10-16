@@ -14,7 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
-  'android', 'sponsor',
+  'android', 'sponsor', 'league-broadcasts',
 ])
 
 /**
@@ -126,10 +126,14 @@ const ARMOR_SCENE_QUERY_KEYS = [
   'tank', 'shooter', 'config', 'scfg', 'shell', 'shot', 'world', 'heatmap',
   'az', 'h', 'd', 'eqcal', 'eqenh', 'quality', 'move', 'rel', 'clean', 'debug',
 ]
+const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
 
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
+  if (route.query?.view === 'league-broadcasts' && view !== 'league-broadcasts') {
+    for (const key of BROADCAST_QUERY_KEYS) delete query[key]
+  }
   // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]

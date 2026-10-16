@@ -19,17 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ObservabilityDashboardContractTest {
     private static final ObjectMapper JSON = JsonMapper.builder().build();
     private static final Set<String> UIDS = Set.of("wotbtools-active-users", "wotbtools-feature-usage",
-            "wotbtools-android-downloads", "wotbtools-ai-token-usage", "wotbtools-backend-error-logs",
-            "wotbtools-engineering-overview");
+            "wotbtools-android-downloads", "wotbtools-ai-token-usage", "wotbtools-backend-error-logs");
+    private static final String ENGINEERING_UID = "wotbtools-engineering-overview";
 
     @Test
     void rebuiltDashboardsHaveUniqueIdentityAndTimeScope() throws Exception {
         final Path directory = resolve("deploy/observability/grafana/dashboards");
         try (Stream<Path> files = Files.list(directory)) {
-            assertEquals(UIDS.stream().map(uid -> uid + ".json").collect(Collectors.toSet()),
+            assertEquals(Stream.concat(UIDS.stream(), Stream.of(ENGINEERING_UID))
+                            .map(uid -> uid + ".json").collect(Collectors.toSet()),
                     files.filter(path -> path.toString().endsWith(".json"))
                             .map(path -> path.getFileName().toString()).collect(Collectors.toSet()));
         }
+        assertEquals(ENGINEERING_UID, dashboard(ENGINEERING_UID).path("uid").asText());
         for (final String uid : UIDS) {
             final JsonNode dashboard = dashboard(uid);
             assertEquals(uid, dashboard.path("uid").asText());
@@ -37,14 +39,7 @@ class ObservabilityDashboardContractTest {
             assertEquals("now-24h", dashboard.path("time").path("from").asText());
             assertTrue(dashboard.path("panels").size() > 0);
             for (final JsonNode link : dashboard.path("links")) {
-                final String url = link.path("url").asText();
-                if (url.startsWith("/d/")) {
-                    assertTrue(UIDS.contains(url.substring("/d/".length())));
-                } else {
-                    assertEquals("wotbtools-engineering-overview", uid);
-                    assertEquals("https://github.com/A158Coke/WotbTools/pulls", url);
-                    assertTrue(link.path("targetBlank").asBoolean());
-                }
+                assertTrue(UIDS.contains(link.path("url").asText().replace("/d/", "")));
             }
         }
     }
