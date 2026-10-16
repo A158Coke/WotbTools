@@ -26,7 +26,7 @@
 [运维说明](../docs/operations/league-broadcast-covers.md)。
 
 bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`，普通登录用户可收藏；
-`/api/admin/creators/**` 沿用 `tournament-admin`。V34/V35 一次性初始化可变字典和头像引用，
+`/api/admin/creators/**` 沿用 `tournament-admin`。V34/V35 初始化可维护字典和头像引用，V36 支持账号删除后的头像去标识；
 收藏历史、循环进度和奖励由同一事务维护。头像与联赛封面共用 COS client/凭据，独立 namespace；
 完整规则与验证边界见 [UP recommendations](../docs/features/bilibili-creators.md)。
 

@@ -25,6 +25,9 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 
 describe('primary navigation', () => {
   it('discovers creator pages and cleans only creator-owned filter state when leaving', () => {
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'creators')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'tournament-points') + 1)
+    expect(primarySection('creators')).toBe('creators')
+    expect(sectionTitleKey('creators')).toBe('creators.nav')
     expect(viewFromRoute({ path: '/', query: { view: 'creators' } })).toBe('creators')
     expect(ADMIN_NAV.find(item => item.view === 'creators-config')?.role).toBe('tournamentAdmin')
     const route = { path: '/', query: { view: 'creators', creatorCategory: '3', lang: 'ru' } }
@@ -57,14 +60,14 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'more']
+      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')

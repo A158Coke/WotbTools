@@ -292,7 +292,7 @@ public class AdminUserService {
 
         // 先验证并 flush 本地删除，避免数据库约束失败后才删除 Keycloak 用户。
         try {
-            creatorService.removeFavoritesForAccountDeletion(targetKeycloakUserId);
+            creatorService.removeDataForAccountDeletion(targetKeycloakUserId);
             if (profile != null) {
                 userProfileService.deleteForAdministration(profile);
                 localDeleted = true;

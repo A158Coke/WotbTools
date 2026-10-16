@@ -38,10 +38,9 @@ function mountPage(navigate = vi.fn(), onboarding = null) {
 }
 
 describe('MorePage language switcher', () => {
-  it('offers creator recommendations anonymously and scopes creator configuration to tournament admins', async () => {
+  it('keeps creator administration scoped without duplicating its primary navigation entry', async () => {
     const navigate = vi.fn(), { wrapper } = mountPage(navigate)
-    await wrapper.get('[data-testid="more-link-creators"]').trigger('click')
-    expect(navigate).toHaveBeenCalledWith('creators')
+    expect(wrapper.find('[data-testid="more-link-creators"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
     wrapper.unmount()
     menuRole.tournament = true

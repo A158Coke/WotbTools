@@ -3909,7 +3909,11 @@ components:
             - string
             - "null"
           maxLength: 2000
-        homepageUrl: *a2
+        homepageUrl:
+          type: string
+          format: uri
+          maxLength: 300
+          pattern: ^https://space\.bilibili\.com/[1-9][0-9]*/?(?:\?[^#\s]*)?$
         categoryIds:
           type: array
           minItems: 1

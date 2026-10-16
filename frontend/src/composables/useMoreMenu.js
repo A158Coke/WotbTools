@@ -49,7 +49,6 @@ export function useMoreMenu() {
 
   const toolLinks = Object.freeze([
     { view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', icon: Radio },
-    { view: 'creators', labelKey: 'creators.title', icon: Users },
   ])
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

@@ -81,7 +81,7 @@ class AdminUserDeleteTest {
         assertEquals(List.of("kc-a"), response.results().stream().map(DeleteUserResult::userId).toList());
         assertTrue(response.results().getFirst().deleted());
         final var order = inOrder(creatorService, keycloakAdminUserService);
-        order.verify(creatorService).removeFavoritesForAccountDeletion("kc-a");
+        order.verify(creatorService).removeDataForAccountDeletion("kc-a");
         order.verify(keycloakAdminUserService).deleteUser("kc-a");
     }
 
@@ -116,9 +116,9 @@ class AdminUserDeleteTest {
         // 其余用户正常完成删除（partial success 不回滚）
         verify(keycloakAdminUserService).deleteUser("kc-a");
         verify(keycloakAdminUserService).deleteUser("kc-c");
-        verify(creatorService).removeFavoritesForAccountDeletion("kc-a");
-        verify(creatorService).removeFavoritesForAccountDeletion("kc-b");
-        verify(creatorService).removeFavoritesForAccountDeletion("kc-c");
+        verify(creatorService).removeDataForAccountDeletion("kc-a");
+        verify(creatorService).removeDataForAccountDeletion("kc-b");
+        verify(creatorService).removeDataForAccountDeletion("kc-c");
         // 每个用户一个独立事务：失败用户触发 rollback
         verify(txManager, atLeastOnce()).rollback(nullable(TransactionStatus.class));
     }
@@ -136,7 +136,7 @@ class AdminUserDeleteTest {
         assertEquals("CANNOT_DELETE_SELF", response.results().get(0).errorCode());
         assertTrue(response.results().get(1).deleted());
         verify(keycloakAdminUserService, never()).deleteUser("admin-sub");
-        verify(creatorService, never()).removeFavoritesForAccountDeletion("admin-sub");
+        verify(creatorService, never()).removeDataForAccountDeletion("admin-sub");
         verify(keycloakAdminUserService).deleteUser("kc-a");
     }
 
@@ -144,7 +144,7 @@ class AdminUserDeleteTest {
     void favoriteCleanupFailureWithoutProfilePreventsKeycloakDeletion() {
         when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
         doThrow(new IllegalStateException("cleanup failed"))
-                .when(creatorService).removeFavoritesForAccountDeletion("kc-a");
+                .when(creatorService).removeDataForAccountDeletion("kc-a");
 
         final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
 
@@ -161,7 +161,7 @@ class AdminUserDeleteTest {
         final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
 
         assertEquals("FAILED_KEYCLOAK_DELETE", response.results().getFirst().errorCode());
-        verify(creatorService).removeFavoritesForAccountDeletion("kc-a");
+        verify(creatorService).removeDataForAccountDeletion("kc-a");
         verify(txManager).rollback(nullable(TransactionStatus.class));
     }
 

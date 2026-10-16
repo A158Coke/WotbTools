@@ -61,7 +61,7 @@ watch(() => props.levels.map(level => level.id), (ids, previousIds) => {
 async function submit() {
   if (disabled.value || uploading.value || uploadError.value) return
   const value = draft.value
-  const homepageValid = /^https:\/\/space\.bilibili\.com\/[1-9][0-9]*\/?$/.test(value.homepageUrl.trim()) && value.homepageUrl.trim().length <= 300
+  const homepageValid = /^https:\/\/space\.bilibili\.com\/[1-9][0-9]*\/?(?:\?[^#\s]*)?$/.test(value.homepageUrl.trim()) && value.homepageUrl.trim().length <= 300
   const valid = value.name.trim().length > 0 && value.name.trim().length <= 100 && homepageValid
     && (value.description?.trim().length ?? 0) <= 2000 && value.categoryIds.length > 0
     && value.categoryIds.every(id => props.categories.some(category => category.id === id))

@@ -62,6 +62,27 @@ describe('shared creator form and avatar reservation ownership', () => {
     await wrapper.get('[data-testid=creator-category-1]').setValue(false)
     await wrapper.get('form').trigger('submit'); expect(save).not.toHaveBeenCalled()
   })
+  it.each([
+    'https://space.bilibili.com/456/?spm_id_from=tracker',
+    'https://space.bilibili.com/456?spm_id_from=tracker&source=profile',
+  ])('accepts a copied profile query and leaves canonicalization to the server: %s', async homepageUrl => {
+    const { wrapper, save } = form(); await fill(wrapper)
+    await wrapper.get('[data-testid=creator-homepage]').setValue(`  ${homepageUrl}  `)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ homepageUrl }))
+  })
+  it.each([
+    'https://space.bilibili.com/456/?spm_id_from=tracker#fragment',
+    'https://space.bilibili.com.evil.test/456/?spm_id_from=tracker',
+    'https://attacker@space.bilibili.com/456/?spm_id_from=tracker',
+    'https://space.bilibili.com:443/456/?spm_id_from=tracker',
+    'https://space.bilibili.com/456/?spm_id_from=bad value',
+  ])('rejects unsafe query/profile syntax: %s', async homepageUrl => {
+    const { wrapper, save } = form(); await fill(wrapper)
+    await wrapper.get('[data-testid=creator-homepage]').setValue(homepageUrl)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save).not.toHaveBeenCalled()
+  })
   it('removes a deleted selected category and permits another selection without discarding the draft', async () => {
     const { wrapper, save } = form(); await fill(wrapper)
     await wrapper.get('[data-testid=creator-description]').setValue('Keep this description')

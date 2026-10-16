@@ -173,8 +173,8 @@ public class CreatorService {
         return new CreatorDtos.FavoriteResult(mapper.card(creator, categoryMap(), levelMap()), desired);
     }
 
-    /** Remove a deleted account's identity while preserving earned creator rewards. */
-    public void removeFavoritesForAccountDeletion(final String subject) {
+    /** Remove account identity while preserving earned creator rewards and referenced public images. */
+    public void removeDataForAccountDeletion(final String subject) {
         validateSubject(subject);
         // Block first favorites too: locking existing history alone cannot protect absent rows.
         settings.findExclusive();
@@ -185,6 +185,7 @@ public class CreatorService {
         }
         favorites.deleteAll(history);
         favorites.flush();
+        avatars.removeOwnerForAccountDeletion(subject);
     }
 
     private void assign(final Creator creator, final CreatorDtos.SaveRequest request) {

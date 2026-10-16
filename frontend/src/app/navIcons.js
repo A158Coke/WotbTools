@@ -9,6 +9,7 @@ export const PRIMARY_NAV_ICONS = Object.freeze({
   hof: Trophy,
   tankopedia: BookOpen,
   'tournament-points': ListOrdered,
+  creators: Users,
   more: Menu,
 })
 

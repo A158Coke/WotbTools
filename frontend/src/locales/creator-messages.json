@@ -1,6 +1,7 @@
 {
   "zh": {
     "creators": {
+      "nav": "UP 推荐",
       "title": "bilibili UP 主推荐", "configTitle": "UP 主推荐管理", "name": "UP 主名字", "homepage": "bilibili 主页链接",
       "homepageHint": "填写 https://space.bilibili.com/数字UID", "description": "简介（选填）", "descriptionHint": "推荐复制 UP 主页的简介", "categories": "内容类别", "levels": "实力等级",
       "allCategories": "全部类别", "categoryRequired": "至少选择一个类别。", "searchCategories": "搜索类别", "baseStars": "基础推荐星级",
@@ -25,6 +26,7 @@
   },
   "en": {
     "creators": {
+      "nav": "Creators",
       "title": "Bilibili creators", "configTitle": "Manage recommended creators", "name": "Creator name", "homepage": "Bilibili profile link",
       "homepageHint": "Use https://space.bilibili.com/numericUID", "description": "Description (optional)", "descriptionHint": "We recommend copying the description from the creator's profile.", "categories": "Content categories", "levels": "Skill levels",
       "allCategories": "All categories", "categoryRequired": "Select at least one category.", "searchCategories": "Search categories", "baseStars": "Base recommendation stars",
@@ -49,6 +51,7 @@
   },
   "ru": {
     "creators": {
+      "nav": "Авторы",
       "title": "Авторы bilibili", "configTitle": "Управление рекомендациями авторов", "name": "Имя автора", "homepage": "Ссылка на профиль bilibili",
       "homepageHint": "Формат: https://space.bilibili.com/числовойUID", "description": "Описание (необязательно)", "descriptionHint": "Рекомендуем скопировать описание из профиля автора.", "categories": "Категории контента", "levels": "Уровни мастерства",
       "allCategories": "Все категории", "categoryRequired": "Выберите хотя бы одну категорию.", "searchCategories": "Поиск категорий", "baseStars": "Базовые звёзды рекомендации",
