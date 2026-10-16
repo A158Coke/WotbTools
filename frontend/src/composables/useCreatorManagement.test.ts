@@ -19,6 +19,60 @@ function fixture() {
   return { owner, auth, transport, scope, onChanged, online, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } } } }
 }
 describe('creator management owner', () => {
+  it('acknowledges a save without waiting for a catalog refresh and can finish it after disconnecting', async () => {
+    const f = fixture(); await flushPromises()
+    let finishRefresh!: () => void
+    f.onChanged.mockReturnValueOnce(new Promise<void>(done => { finishRefresh = done }))
+    const { id: _id, avatarUrl: _url, ...payload } = detail
+    const before = f.owner.draftEpoch.value
+    expect(await f.owner.save(payload)).toBe(true)
+    expect(f.owner.busy.value).toBe(false); expect(f.onChanged).toHaveBeenCalledTimes(1)
+    f.online.value = false; await nextTick()
+    f.owner.finishSave()
+    expect(f.owner.draftEpoch.value).toBe(before + 1)
+    finishRefresh(); await flushPromises()
+    expect(f.owner.error.value).toBeNull(); expect(f.transport.saveCreator).toHaveBeenCalledTimes(1); f.scope.stop()
+  })
+  it.each(['sync', 'async'])('does not report an acknowledged save as failed when the background refresh throws (%s)', async mode => {
+    const f = fixture(); await flushPromises()
+    f.onChanged.mockImplementationOnce(() => {
+      if (mode === 'sync') throw new Error('refresh failed')
+      return Promise.reject(new Error('refresh failed'))
+    })
+    const { id: _id, avatarUrl: _url, ...payload } = detail
+    expect(await f.owner.save(payload)).toBe(true); await flushPromises()
+    expect(f.owner.notice.value).toBe('saved'); expect(f.owner.error.value).toBeNull()
+    expect(f.owner.editorError.value).toBeNull(); expect(f.transport.saveCreator).toHaveBeenCalledTimes(1); f.scope.stop()
+  })
+  it('does not let a previous account\'s acknowledged save notify or reset the new account\'s form', async () => {
+    const f = fixture(); await flushPromises()
+    f.onChanged.mockImplementationOnce(async () => { f.changeIdentity(); await nextTick() })
+    const { id: _id, avatarUrl: _url, ...payload } = detail
+    expect(await f.owner.save(payload)).toBe(true); await flushPromises()
+    const newAccountDraft = f.owner.draftEpoch.value
+    f.owner.finishSave()
+    expect(f.owner.draftEpoch.value).toBe(newAccountDraft); expect(f.owner.notice.value).toBe(''); f.scope.stop()
+  })
+  it('does not consume an acknowledged completion after a different editor has taken ownership', async () => {
+    const f = fixture(); await flushPromises()
+    const { id: _id, avatarUrl: _url, ...payload } = detail
+    expect(await f.owner.save(payload)).toBe(true)
+    await f.owner.editCreator(detail.id)
+    const currentDraft = f.owner.draftEpoch.value
+    f.owner.finishSave()
+    expect(f.owner.draftEpoch.value).toBe(currentDraft); expect(f.owner.editorOpen.value).toBe(true); f.scope.stop()
+  })
+  it('keeps an acknowledged result from an unmounted owner from changing a form or notice', async () => {
+    const f = fixture(); await flushPromises()
+    let acknowledge!: (value: typeof detail) => void
+    f.transport.saveCreator.mockReturnValueOnce(new Promise(done => { acknowledge = done }))
+    const { id: _id, avatarUrl: _url, ...payload } = detail
+    const saving = f.owner.save(payload)
+    f.scope.stop(); const disposedDraft = f.owner.draftEpoch.value
+    acknowledge(detail); expect(await saving).toBe(true)
+    f.owner.finishSave()
+    expect(f.owner.draftEpoch.value).toBe(disposedDraft); expect(f.owner.notice.value).toBe(''); expect(f.onChanged).not.toHaveBeenCalled()
+  })
   it('preserves a failed editor and only closes/resets after the form acknowledges attachment', async () => {
     const f = fixture(); await flushPromises(); await f.owner.editCreator(detail.id)
     const { id: _id, avatarUrl: _url, ...payload } = detail

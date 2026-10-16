@@ -24,7 +24,7 @@ const reservation = ref<Awaited<ReturnType<typeof uploadCreatorAvatar>> | null>(
 const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated')
 const disabled = computed(() => props.busy || submitting.value || !allowed.value)
 const avatarSource = computed(() => preview.value || creatorAvatarUrl(savedAvatarUrl.value))
-let mounted = true, uploadGeneration = 0, controller = new AbortController()
+let mounted = true, uploadGeneration = 0, formGeneration = 0, controller = new AbortController()
 function releasePreview() { if (preview.value) URL.revokeObjectURL(preview.value); preview.value = '' }
 function cleanup(id: string) { void removeUnusedCreatorAvatar(id).catch(() => { if (mounted) cleanupFailed.value = true }) }
 function releaseReservation() { if (reservation.value) cleanup(reservation.value.id); reservation.value = null }
@@ -69,19 +69,32 @@ async function submit() {
     && (!assessed.value || (value.levelId != null && props.levels.some(level => level.id === value.levelId)))
   invalid.value = !valid
   if (!valid) return
+  const gen = formGeneration, epoch = auth.authEpoch(), pendingReservation = reservation.value
+  const ownsSubmission = () => mounted && gen === formGeneration && epoch === auth.authEpoch() && allowed.value
+  // The save attempt owns this reservation until the server confirms attachment or the write fails.
+  reservation.value = null
+  let attached = false
   submitting.value = true
   try {
     const success = await props.save({ ...value, name: value.name.trim(), homepageUrl: value.homepageUrl.trim(),
       description: value.description?.trim() || null, categoryIds: [...value.categoryIds], levelId: assessed.value ? value.levelId : null })
-    if (success) { reservation.value = null; releasePreview(); emit('saved') }
-  } finally { submitting.value = false }
+    attached = success
+    if (success && ownsSubmission()) { releasePreview(); emit('saved') }
+  } finally {
+    if (!attached && pendingReservation) {
+      if (ownsSubmission()) reservation.value = pendingReservation
+      else cleanup(pendingReservation.id)
+    }
+    if (ownsSubmission()) submitting.value = false
+  }
 }
 watch([() => auth.tokenParsed.value?.sub, allowed], () => {
+  formGeneration++; submitting.value = false
   invalidateUpload(); releaseReservation(); files.value = []; uploadError.value = null
   draft.value = { name: '', homepageUrl: '', description: null, categoryIds: [], levelId: null, baseStars: 3, avatarId: null }
   savedAvatarUrl.value = null; assessed.value = false
 })
-onScopeDispose(() => { mounted = false; invalidateUpload(); releaseReservation() })
+onScopeDispose(() => { mounted = false; formGeneration++; invalidateUpload(); releaseReservation() })
 </script>
 
 <template>
