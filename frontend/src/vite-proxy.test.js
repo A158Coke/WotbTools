@@ -69,6 +69,32 @@ describe('frontend build identity', () => {
       else process.env.BUILD_COMMIT = previous
     }
   })
+
+  it('buildTime 确定性：SOURCE_DATE_EPOCH 固定 ⇒ 同值（Docker 重跑不换 APK 身份）', () => {
+    const previous = process.env.SOURCE_DATE_EPOCH
+    process.env.SOURCE_DATE_EPOCH = '1760572800'
+    try {
+      const expected = new Date(1760572800 * 1000).toISOString()
+      const first = buildIdentity().buildTime
+      expect(first).toBe(expected)
+      expect(buildIdentity().buildTime).toBe(first) // 同输入同输出（不得回落 wall-clock）
+    } finally {
+      if (previous === undefined) delete process.env.SOURCE_DATE_EPOCH
+      else process.env.SOURCE_DATE_EPOCH = previous
+    }
+  })
+
+  it('buildTime 可解析为 UTC ISO-8601（无 SOURCE_DATE_EPOCH 时取 commit 时间）', () => {
+    const previous = process.env.SOURCE_DATE_EPOCH
+    delete process.env.SOURCE_DATE_EPOCH
+    try {
+      const { buildTime } = buildIdentity()
+      expect(Number.isFinite(Date.parse(buildTime))).toBe(true)
+      expect(buildTime).toMatch(/Z$/)
+    } finally {
+      if (previous !== undefined) process.env.SOURCE_DATE_EPOCH = previous
+    }
+  })
 })
 
 /**
