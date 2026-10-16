@@ -190,7 +190,7 @@ for dashboard_file in "$DASHBOARD_DIR"/*.json; do
   uid="${dashboard_file##*/}"
   uid="${uid%.json}"
   [ -n "$uid" ] || fail "GRAFANA" "dashboard has no valid canonical filename: $dashboard_file"
-  [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
+  [ "$(basename "$dashboard_file")" = "wotbtools-active-users.json" ] && production_uid="$uid"
   wait_for_grafana_api "Grafana dashboard $(basename "$dashboard_file")" \
     "/api/dashboards/uid/$uid" '"dashboard"' "$uid"
 done

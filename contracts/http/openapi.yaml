@@ -4,6 +4,50 @@ info:
   version: 1.0.0
   description: FE ↔ BE wire contract. Domain models and Control/Worker contracts are separate authorities.
 paths:
+  /api/observability/events:
+    post:
+      operationId: recordObservabilityEvents
+      summary: Record bounded, best-effort product telemetry
+      description: Maximum 16384 bytes. Anonymous feature events allowed; active_user requires a valid bearer token. No arbitrary text or account identity accepted. Times must be within the past 24 hours and at most five minutes ahead.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ObservabilityEventsRequest"
+      responses:
+        "204":
+          description: Events accepted
+        "400":
+          description: Invalid telemetry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Payload too large
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Active-user hashing not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/tournaments:
     get:
       operationId: listTournamentEvents
@@ -1711,6 +1755,53 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    ObservabilityEventsRequest:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/ObservabilityEvent"
+    ObservabilityEvent:
+      type: object
+      additionalProperties: false
+      required: [event_id, event, platform, feature, occurred_at]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+          enum: [active_user, feature_open, replay_parse]
+        platform:
+          type: string
+          enum: [web, android]
+        feature:
+          type: string
+          enum: [home, replay_parse, replay_2d, replay_3d, replay_shots, ai_review, tankopedia, armor, hall_of_fame, tournament, android_download, sponsor, profile]
+        occurred_at:
+          type: string
+          format: date-time
+        operation_id:
+          type: string
+          format: uuid
+          description: Required for replay_parse; one ID per file attempt shared by start and terminal.
+        outcome:
+          type: string
+          enum: [start, success, failure, cancelled]
+          description: Required only for replay_parse.
+        error_code:
+          type: string
+          enum: [PARSE_FAILED, UNSUPPORTED_REPLAY, INVALID_REPLAY, RESOURCE_UNAVAILABLE, UNKNOWN]
+          description: Allowed only for failed replay_parse. Never raw exception text.
+        error_id:
+          type: string
+          format: uuid
+          description: Allowed only for failed replay_parse.
     TournamentEvent:
       type: object
       additionalProperties: false

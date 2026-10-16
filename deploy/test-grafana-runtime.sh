@@ -109,7 +109,7 @@ docker run -d --name "$GRAFANA" --network "$NETWORK" --network-alias grafana \
   -e GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   -e GF_AUTH_ANONYMOUS_ENABLED=false \
   -e GF_USERS_ALLOW_SIGN_UP=false \
-  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/wotbtools-production-overview.json \
+  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/wotbtools-active-users.json \
   -v "$ROOT/deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro" \
   -v "$ROOT/deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro" \
   grafana/grafana:11.6.16 >/dev/null
@@ -140,7 +140,7 @@ for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
   seed_dashboard_via_api "$dashboard_file"
 done
 
-dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-production-overview")" \
+dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-active-users")" \
   || fail "Alpine/BusyBox Grafana auth failed for dashboard API"
 grep -Fq '"dashboard"' <<<"$dashboard_body" \
   || fail "Alpine/BusyBox dashboard API response was not valid"
@@ -152,7 +152,7 @@ production_uid=""
 for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
   uid="$(dashboard_uid "$dashboard_file")" \
     || fail "dashboard has no valid uid: $dashboard_file"
-  [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
+  [ "$(basename "$dashboard_file")" = "wotbtools-active-users.json" ] && production_uid="$uid"
   response="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" \
     "http://127.0.0.1:${PORT}/api/dashboards/uid/${uid}")" || fail "dashboard API fetch failed: $uid"
   grep -Fq '"dashboard"' <<<"$response" || fail "dashboard was not provisioned: $uid"

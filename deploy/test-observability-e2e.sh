@@ -11,6 +11,7 @@ ALLOY="wotb-observability-alloy-${GITHUB_RUN_ID:-local}-$$"
 ALLOY_TX="wotb-observability-alloy-tx-${GITHUB_RUN_ID:-local}-$$"
 BACKEND="wotb-backend-smoke-${GITHUB_RUN_ID:-local}-$$"
 BACKEND_TX="business-api-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
+AI="ai-service-smoke-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK="keycloak-smoke-${GITHUB_RUN_ID:-local}-$$"
 FRONTEND="wotb-frontend-smoke-${GITHUB_RUN_ID:-local}-$$"
 MARKER="observability-e2e-${GITHUB_RUN_ID:-local}-$$"
@@ -19,7 +20,7 @@ KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
 
 cleanup() {
-  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$LOKI" >/dev/null 2>&1 || true
+  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$AI" "$LOKI" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -57,6 +58,10 @@ docker run -d --name "$KEYCLOAK" --network "$NETWORK" \
   alpine:3.22 sh -c "while true; do echo event=keycloak_smoke marker=$KEYCLOAK_MARKER; sleep 1; done" >/dev/null
 docker run -d --name "$FRONTEND" --network "$NETWORK" -p 127.0.0.1::80 \
   nginx:1.27-alpine >/dev/null
+
+docker run -d --name "$AI" --network "$NETWORK" \
+  --label com.docker.compose.service=ai-service \
+  alpine:3.22 sh -c 'while true; do echo "{\"message\":\"event=ai_token_usage inputTokens=10 outputTokens=5 totalTokens=15 usageMissing=0\"}"; sleep 1; done' >/dev/null
 
 docker run -d --name "$ALLOY" --network "$NETWORK" \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -108,6 +113,12 @@ frontend_query() {
     && ! grep -Fq 'User-Agent' <<<"$body" \
     && ! grep -Fq 'Referer' <<<"$body"
 }
+
+ai_query() {
+  body="$(query_range '{container_name="ai-service"} | json | line_format "{{.message}}" | logfmt | event="ai_token_usage"')"
+  loki_response_has_sample "$body" && grep -Fq 'totalTokens=15' <<<"$body"
+}
+wait_until "AI production Compose-label stream reaches Loki" ai_query
 
 wait_until "backend Docker stream reaches Loki" backend_query
 wait_until "Keycloak Docker stream reaches Loki" keycloak_query
@@ -189,5 +200,83 @@ if [ "$backend_tx_seen" != 1 ]; then
   fail "TX Compose-label stream reaches Loki as wotb-backend"
 fi
 wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+
+# Loki parses every metric and log query used by the product dashboards, including
+# variable interpolation, even if this small fixture has no matching product data.
+python3 - "$ROOT" "$LOKI_PORT" <<'PYQUERY'
+from pathlib import Path
+import json, urllib.parse, urllib.request,sys,time
+root = Path(sys.argv[1])
+port = sys.argv[2]
+api = "http://127.0.0.1:"+port+"/loki/api/v1/"
+for file in (root / 'deploy/observability/grafana/dashboards').glob('*.json'):
+ for panel in json.loads(file.read_text())['panels']:
+  for target in panel.get('targets',[]):
+   expr=target['expr'].replace('$__range','1h').replace('$__interval','1m').replace('${service:raw}','.+').replace('${keyword:doublequote}','""').replace('${errorId:doublequote}','""')
+   endpoint='query_range' if panel['type']=='logs' else 'query'
+   try:
+    with urllib.request.urlopen(api+endpoint+'?'+urllib.parse.urlencode({'query':expr}), timeout=30) as resp: result=json.load(resp)
+    assert result['status']=='success'
+    print('PASS',panel['title'])
+   except urllib.error.HTTPError as err:
+    print('FAIL',panel['title'],err.read().decode(),expr);raise
+
+# Query semantics against deterministic fixtures, isolated from ongoing Docker emitters.
+scope = "product-query-" + str(time.time_ns())
+now = time.time_ns()
+def line(message, level="INFO"):
+    return json.dumps({"level": level, "message": message})
+backend = []
+for account in range(1000):
+    for platform in ("web", "android"):
+        backend.append(line(f"event=product_telemetry telemetry_event=active_user account_hash=user{account} platform={platform} error_code= error_id="))
+backend += [line("event=product_telemetry telemetry_event=feature_open feature=armor platform=web event_id=open1 error_code= error_id="),
+            line("event=product_telemetry telemetry_event=replay_parse feature=replay_parse platform=android event_id=start1 outcome=start error_code= error_id="),
+            line("event=product_telemetry telemetry_event=replay_parse feature=replay_parse platform=android event_id=fail1 outcome=failure error_code=PARSE_FAILED error_id=safe-id"),
+            line("api_request_failed path=/api/hof errorCode=INTERNAL_ERROR id=fixture-error", "ERROR"),
+            line("api_request_failed path=/api/admin/users errorCode=INTERNAL_ERROR id=fixture-admin-error", "ERROR")]
+ai = [line("event=ai_token_usage mode=SINGLE_PLAYER_BATTLE inputTokens=10 outputTokens=5 totalTokens=15 usageMissing=0"),
+      line("event=ai_token_usage mode=SINGLE_PLAYER_BATTLE inputTokens=20 outputTokens=10 totalTokens=30 usageMissing=0"),
+      line("event=ai_token_usage mode=TOURNAMENT_GROUP_RECOGNITION inputTokens=900 outputTokens=100 totalTokens=1000 usageMissing=0"),
+      line("event=ai_token_usage mode=SINGLE_PLAYER_BATTLE inputTokens=0 outputTokens=0 totalTokens=0 usageMissing=1"),
+      line("event=ai_review_usage inputTokens=30 outputTokens=15 totalTokens=45 calls=3 missingUsageCalls=1 result=success errorCode=none"),
+      line("event=ai_review_usage inputTokens=0 outputTokens=0 totalTokens=0 calls=1 missingUsageCalls=1 result=failure errorCode=AI_TIMEOUT"),
+      line("event=ai_review_error feature=ai_review errorCode=AI_TIMEOUT", "WARN")]
+streams=[]
+for name, values in [("wotb-backend",backend),("ai-service",ai)]:
+    streams.append({"stream":{"container_name":name,"test_scope":scope},
+                    "values":[[str(now - 1000000000 + i), value] for i,value in enumerate(values)]})
+request=urllib.request.Request(api+"push", data=json.dumps({"streams":streams}).encode(),headers={"Content-Type":"application/json"})
+with urllib.request.urlopen(request,timeout=30) as response:
+    assert response.status==204
+
+def run(uid,title,logs=False):
+    d=json.loads((root/"deploy/observability/grafana/dashboards"/(uid+".json")).read_text(encoding="utf-8"))
+    p=next(p for p in d["panels"] if p["title"]==title)
+    expr=p["targets"][0]["expr"].replace("$__range","7d").replace("$__interval","1m")
+    expr=expr.replace("${service:raw}",".+").replace("${keyword:doublequote}",'""').replace("${errorId:doublequote}",'""')
+    expr=expr.replace("{container_name=",'{test_scope="'+scope+'",container_name=')
+    started=time.monotonic()
+    endpoint="query_range" if logs else "query"
+    with urllib.request.urlopen(api+endpoint+"?"+urllib.parse.urlencode({"query":expr}),timeout=30) as response:
+        result=json.load(response)
+    assert result["status"]=="success",result
+    print(f"PASS fixture {title} ({time.monotonic()-started:.3f}s)")
+    return result["data"]["result"]
+def scalar(uid,title):
+    result=run(uid,title)
+    assert len(result)==1,result
+    return float(result[0]["value"][1])
+assert scalar("wotbtools-active-users","所选时间内活跃登录用户")==1000
+assert scalar("wotbtools-feature-usage","解析发起次数")==1
+assert scalar("wotbtools-ai-token-usage","已知总 token")==45
+assert scalar("wotbtools-ai-token-usage","平均每次完成复盘 token")==22.5
+assert scalar("wotbtools-ai-token-usage","缺失 usage 调用数")==1
+for title, expected in [("账号与登录 · 日志",1),("AI 复盘 · 日志",1),("名人堂 · 日志",1),("回放解析错误（客户端上报） · 日志",1),("其他后端错误 · 日志",0)]:
+    result=run("wotbtools-backend-error-logs",title,True)
+    values=[value for stream in result for value in stream["values"]]
+    assert len(values)==expected,(title,values)
+print("PASS: cross-platform dedup of 1000 accounts, seven-day query, parse counts, AI totals/average/missing usage, error-only rows")
+PYQUERY
 
 echo "OK: production Alloy Docker discovery, normalization, redaction, and Loki ingestion passed"
