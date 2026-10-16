@@ -72,6 +72,78 @@ export interface paths {
         post: operations["createTournament"];
         delete?: never;
         options?: never;
+        /**
+         * Check tournament capabilities without changing the existing event-list body
+         * @description Requires the tournament-admin role. Older backends return 200 without the capability header; clients must probe this existing route before requesting default-rule endpoints.
+         */
+        head: operations["getTournamentCapabilities"];
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/rules/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the global default rule snapshot
+         * @description Requires the tournament-admin role. The singleton version remains available when no default is active.
+         */
+        get: operations["getTournamentDefaultRules"];
+        /**
+         * Publish a saved event rule set as the global default
+         * @description Requires the tournament-admin role. Atomically replaces the full snapshot after checking both versions. Replacing an active default requires confirm=true. Ordinary event edits do not change the published snapshot.
+         */
+        put: operations["setTournamentDefaultRules"];
+        post?: never;
+        /**
+         * Clear the global default while retaining its versioned singleton
+         * @description Requires the tournament-admin role and confirm=true. Custom and frozen event rules remain unchanged.
+         */
+        delete: operations["clearTournamentDefaultRules"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/rules/default/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a complete global default rule set without a source event
+         * @description Requires the tournament-admin role. Atomically replaces the full default snapshot after checking expectedDefaultVersion; confirm=true is required when replacing an active default. Rounds must cover 1 through 4 or 5, with matching two or three days per round and ranks 1 through 4 required on every day. Rank 5 is optional. Frozen and custom event rules remain unchanged.
+         */
+        put: operations["saveTournamentDefaultConfiguration"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournaments/{eventId}/rule-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the event rule source without freezing inherited rules
+         * @description Requires the tournament-admin role. Existing event/config/day response shapes remain unchanged.
+         */
+        get: operations["getTournamentRuleSource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
         head?: never;
         patch?: never;
         trace?: never;
@@ -784,6 +856,65 @@ export interface components {
             dayNumber: number;
             points: components["schemas"]["TournamentRankPoints"][];
         };
+        TournamentDefaultRound: {
+            roundNumber: number;
+            days: components["schemas"]["TournamentRuleDay"][];
+        };
+        TournamentDefaultRules: {
+            /** Format: int64 */
+            version: number;
+            active: boolean;
+            /**
+             * Format: int64
+             * @description Null for a directly configured or seeded default, a deleted source event, or an inactive default.
+             */
+            sourceEventId: number | null;
+            /** @description Stable source identity snapshot; empty when no default is active. Not a localized UI message. */
+            sourceLabel: string;
+            /** Format: date-time */
+            updatedAt: string | null;
+            /** @description Full published rule snapshot; empty when inactive. Round and day numbers are unique within their parent. */
+            rounds: components["schemas"]["TournamentDefaultRound"][];
+        };
+        TournamentSetDefaultRulesRequest: {
+            /** Format: int64 */
+            eventId: number;
+            /** Format: int64 */
+            expectedEventVersion: number;
+            /** Format: int64 */
+            expectedDefaultVersion: number;
+            /** @description Must be true when replacing an active default. */
+            confirm: boolean;
+        };
+        TournamentDefaultConfigurationRequest: {
+            /** Format: int64 */
+            expectedDefaultVersion: number;
+            /** @description Must be true when replacing an active default. */
+            confirm: boolean;
+            /** @description Complete rounds numbered consecutively from 1, with a consistent number of days and ranks 1-4 present on each day. Duplicate round, day, or rank numbers are rejected. */
+            rounds: components["schemas"]["TournamentDefaultRound"][];
+        };
+        TournamentClearDefaultRulesRequest: {
+            /** Format: int64 */
+            expectedDefaultVersion: number;
+            /** @description Must be true to clear the default. */
+            confirm: boolean;
+        };
+        TournamentRuleSource: {
+            /** Format: int64 */
+            eventVersion: number;
+            /** @enum {string} */
+            source: "INHERIT" | "CUSTOM" | "FROZEN";
+            /**
+             * Format: int64
+             * @description Current singleton version for INHERIT (including an inactive default), captured version for events frozen from a default, otherwise null.
+             */
+            defaultVersion: number | null;
+            /** @description True only when this event is the source of the currently active default. */
+            isDefaultSource: boolean;
+            /** @description True when the active default source event has saved rules differing from the published snapshot. */
+            defaultOutdated: boolean;
+        };
         TournamentRoundRule: {
             roundNumber: number;
             /** Format: int64 */
@@ -802,6 +933,11 @@ export interface components {
             expectedEventVersion: number;
             /** Format: int64 */
             expectedRulesVersion: number;
+            /**
+             * Format: int64
+             * @description Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before copying the complete effective rule set into this event. Null or omission uses the server-authoritative current default.
+             */
+            expectedDefaultVersion?: number | null;
             days: components["schemas"]["TournamentRuleDay"][];
         };
         TournamentTeam: {
@@ -836,6 +972,11 @@ export interface components {
             expectedEventVersion: number;
             /** Format: int64 */
             expectedDayVersion: number;
+            /**
+             * Format: int64
+             * @description Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before freezing the effective rule set. Null or omission uses the server-authoritative current default.
+             */
+            expectedDefaultVersion?: number | null;
             expectedGroupCount: number;
         };
         TournamentDraftRequest: {
@@ -1833,6 +1974,8 @@ export interface operations {
             /** @description Tournament result */
             200: {
                 headers: {
+                    /** @description Version 1 supports global default rule operations, including direct configuration. */
+                    "X-Tournament-Default-Rules"?: "1";
                     [name: string]: unknown;
                 };
                 content: {
@@ -1946,6 +2089,325 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getTournamentCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event-list headers */
+            200: {
+                headers: {
+                    /** @description Version 1 supports global default rule operations, including direct configuration. */
+                    "X-Tournament-Default-Rules"?: "1";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getTournamentDefaultRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current global default state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentDefaultRules"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    setTournamentDefaultRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentSetDefaultRulesRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated global default state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentDefaultRules"];
+                };
+            };
+            /** @description INVALID_ARGUMENT */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Source event not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    clearTournamentDefaultRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentClearDefaultRulesRequest"];
+            };
+        };
+        responses: {
+            /** @description Inactive global default state with an incremented version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentDefaultRules"];
+                };
+            };
+            /** @description INVALID_ARGUMENT */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description TOURNAMENT_VERSION_CONFLICT */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    saveTournamentDefaultConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TournamentDefaultConfigurationRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated global default snapshot with no source event */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentDefaultRules"];
+                };
+            };
+            /** @description INVALID_ARGUMENT */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_RULES_INCOMPLETE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getTournamentRuleSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current event rule source */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TournamentRuleSource"];
+                };
+            };
+            /** @description INVALID_ARGUMENT */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Event not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

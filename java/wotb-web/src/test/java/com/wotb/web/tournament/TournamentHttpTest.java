@@ -19,6 +19,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,9 +34,13 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 class TournamentHttpTest {
     private AnnotationConfigWebApplicationContext context;
@@ -43,6 +50,22 @@ class TournamentHttpTest {
         mvc=MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
     @AfterEach void close(){context.close();}
+    @Test void previousBackendListHeadDoesNotAdvertiseDefaultRules() throws Exception {
+        final MockMvc legacy=MockMvcBuilders.standaloneSetup(new PreviousEventIdController())
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+        legacy.perform(get("/api/admin/tournaments/1")).andExpect(status().isOk());
+        // The former one-segment candidate collides with the old Long eventId argument.
+        legacy.perform(get("/api/admin/tournaments/default-rules")).andExpect(status().isBadRequest());
+        legacy.perform(head("/api/admin/tournaments")).andExpect(status().isOk())
+                .andExpect(header().doesNotExist("X-Tournament-Default-Rules"));
+    }
+    @RestController
+    static class PreviousEventIdController {
+        @GetMapping("/api/admin/tournaments")
+        List<TournamentDtos.Event> list() { return List.of(); }
+        @GetMapping("/api/admin/tournaments/{eventId}")
+        long config(@PathVariable("eventId") final long eventId) { return eventId; }
+    }
     @Test void onlyPublicGetsAndExplicitTournamentRoleMayReachTournamentRoutes() throws Exception {
         when(context.getBean(TournamentService.class).listEvents()).thenReturn(List.of());
         mvc.perform(get("/api/tournaments")).andExpect(status().isOk());
@@ -53,6 +76,43 @@ class TournamentHttpTest {
         mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"),new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
         mvc.perform(get("/api/tournaments/1/evidence/x")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isForbidden());
+    }
+    @Test void globalDefaultsHaveStrictSerializationAndTournamentAdminAuthorization() throws Exception {
+        final var service=context.getBean(TournamentService.class);
+        final var inactive=new TournamentDtos.DefaultRules(7,false,null,"",null,List.of());
+        when(service.defaultRules()).thenReturn(inactive);
+        when(service.ruleSource(1)).thenReturn(new TournamentDtos.RuleSource(3,"INHERIT",7L,false,false));
+        when(service.setDefaultRules(any(),any())).thenReturn(inactive); when(service.clearDefaultRules(any(),any())).thenReturn(inactive);
+        when(service.saveDefaultConfiguration(any(),any())).thenReturn(inactive);
+        when(service.listEvents()).thenReturn(List.of());
+        mvc.perform(head("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(header().string("X-Tournament-Default-Rules","1"));
+        mvc.perform(get("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(header().string("X-Tournament-Default-Rules","1")).andExpect(jsonPath("$").isArray());
+        mvc.perform(get("/api/admin/tournaments/rules/default")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/tournaments/rules/default").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/tournaments/rules/default").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(7)).andExpect(jsonPath("$.active").value(false));
+        mvc.perform(get("/api/admin/tournaments/1/rule-source").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.source").value("INHERIT")).andExpect(jsonPath("$.isDefaultSource").value(false)).andExpect(jsonPath("$.defaultVersion").value(7));
+        mvc.perform(put("/api/admin/tournaments/rules/default").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
+                .contentType("application/json").content("{\"eventId\":1,\"expectedEventVersion\":3,\"expectedDefaultVersion\":7,\"confirm\":true}"))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/api/admin/tournaments/rules/default").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
+                .contentType("application/json").content("{\"expectedDefaultVersion\":7,\"confirm\":true}"))
+                .andExpect(status().isOk());
+        final var points=List.of(new TournamentDtos.RankPoints(1,100),new TournamentDtos.RankPoints(2,50),
+                new TournamentDtos.RankPoints(3,25),new TournamentDtos.RankPoints(4,0));
+        final var ruleDays=List.of(new TournamentDtos.RuleDay(1,points),new TournamentDtos.RuleDay(2,points));
+        final var configuration=new TournamentDtos.DefaultConfigurationRequest(7,true,
+                java.util.stream.IntStream.rangeClosed(1,4).mapToObj(round->new TournamentDtos.DefaultRound(round,ruleDays)).toList());
+        mvc.perform(put("/api/admin/tournaments/rules/default/configuration").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
+                .contentType("application/json").content(JsonMapper.builder().findAndAddModules().build().writeValueAsString(configuration)))
+                .andExpect(status().isOk());
+        final var json=JsonMapper.builder().findAndAddModules().build();
+        assertEquals(6,json.valueToTree(inactive).properties().size()); assertEquals(true,json.valueToTree(inactive).has("sourceEventId"));
+        assertThrows(tools.jackson.core.JacksonException.class,()->json.readValue("{\"expectedDefaultVersion\":7}",TournamentDtos.ClearDefaultRulesRequest.class));
+        assertThrows(tools.jackson.core.JacksonException.class,()->json.readValue("{\"expectedEventVersion\":0,\"expectedDayVersion\":0,\"expectedGroupCount\":1,\"expectedDefaultVersion\":1.2}",TournamentDtos.ExpectedGroupsRequest.class));
     }
     @Test void publicStandingsSerializationContainsOnlyProjectionAndExplicitMissingCells() throws Exception {
         final TournamentDtos.Event event=new TournamentDtos.Event(1,2,2026,"EU","SUMMER",4,3,List.of("Day 1","Day 2","Day 3"),true);

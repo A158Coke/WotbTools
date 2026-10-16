@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import * as api from '../api/tournament-points.js'
+import { ApiError } from '../utils/http.js'
 import { useAuth } from './useAuth.js'
 import { parseTournamentHistoricalFile } from '../utils/tournamentHistoricalImport.js'
 import type { KeycloakTokenParsed } from 'keycloak-js'
@@ -47,6 +48,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const round = ref(1)
   const day = ref(1)
   const config = ref<TournamentConfig | null>(null)
+  const ruleSource = ref<api.TournamentRuleSource | null>(null)
   const dayState = ref<TournamentDayView | null>(null)
   const previewState = ref<TournamentDayView | null>(null)
   const audit = ref<TournamentAudit[]>([])
@@ -87,6 +89,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     historicalPreview.value = null
     historicalState.value = null
     historicalFileIssue.value = ''
+    ruleSource.value = null
   }
   function owns(gen: number, epoch: number) {
     return gen === generation && epoch === auth.authEpoch() && allowed.value && !controller.signal.aborted
@@ -113,9 +116,11 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     if (!allowed.value || !eventId.value) return
     busy.value = true
     try {
+      const source = await transport.getTournamentRuleSource(eventId.value, signal)
       const cfg = await transport.getTournamentConfig(eventId.value, signal)
+      if (source && source.eventVersion !== cfg.event.version) throw new ApiError({ errorCode: 'TOURNAMENT_VERSION_CONFLICT', status: 409 })
       if (!owns(gen, epoch)) return
-      config.value = cfg
+      config.value = cfg; ruleSource.value = source
       if (round.value > cfg.event.roundCount || day.value > cfg.event.daysPerRound) { round.value = 1; day.value = 1; return }
       const [value, entries, history] = await Promise.all([
         transport.getTournamentDay(eventId.value, round.value, day.value, signal),
@@ -240,9 +245,11 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) return
       applyDay(value)
       if (resetReviews) clearReviews()
+      const source = await transport.getTournamentRuleSource(eventId.value!, controller.signal)
       const [cfg, entries, history] = await Promise.all([transport.getTournamentConfig(eventId.value!, controller.signal), transport.getTournamentAudit(eventId.value!, controller.signal),
         transport.getTournamentHistoricalState(eventId.value!, round.value, day.value, controller.signal)])
-      if (owns(gen, epoch)) { config.value = cfg; audit.value = entries; historicalState.value = history; notice.value = 'saved' }
+      if (source && source.eventVersion !== cfg.event.version) throw new ApiError({ errorCode: 'TOURNAMENT_VERSION_CONFLICT', status: 409 })
+      if (owns(gen, epoch)) { config.value = cfg; ruleSource.value = source; audit.value = entries; historicalState.value = history; notice.value = 'saved' }
       return value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
@@ -319,6 +326,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     if (!editable.value || !Number.isInteger(count) || count < 1 || count > 10000) return Promise.resolve(undefined)
     return write(signal => transport.setTournamentExpectedGroups(eventId.value!, round.value, day.value, {
       expectedEventVersion: dayState.value!.eventVersion, expectedDayVersion: dayState.value!.version, expectedGroupCount: count,
+      ...(ruleSource.value ? { expectedDefaultVersion: ruleSource.value.defaultVersion } : {}),
     }, signal), false)
   }
   function correction(count: number, reason: string) {

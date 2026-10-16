@@ -25,8 +25,26 @@ public class TournamentAdminController {
     private static final String DAY = "/{eventId}/rounds/{roundNumber}/days/{dayNumber}";
     private final TournamentService service;
     public TournamentAdminController(final TournamentService service) { this.service = service; }
+    @GetMapping("/rules/default")
+    public TournamentDtos.DefaultRules defaultRules() { return service.defaultRules(); }
+    @PutMapping("/rules/default")
+    public TournamentDtos.DefaultRules setDefaultRules(@RequestBody final TournamentDtos.SetDefaultRulesRequest request) {
+        return service.setDefaultRules(JwtUtil.requireUserId(), request);
+    }
+    @DeleteMapping("/rules/default")
+    public TournamentDtos.DefaultRules clearDefaultRules(@RequestBody final TournamentDtos.ClearDefaultRulesRequest request) {
+        return service.clearDefaultRules(JwtUtil.requireUserId(), request);
+    }
+    @PutMapping("/rules/default/configuration")
+    public TournamentDtos.DefaultRules saveDefaultConfiguration(@RequestBody final TournamentDtos.DefaultConfigurationRequest request) {
+        return service.saveDefaultConfiguration(JwtUtil.requireUserId(), request);
+    }
+    @GetMapping("/{eventId}/rule-source")
+    public TournamentDtos.RuleSource ruleSource(@PathVariable final long eventId) { return service.ruleSource(eventId); }
     @GetMapping
-    public List<TournamentDtos.Event> list() { return service.listEvents(); }
+    public ResponseEntity<List<TournamentDtos.Event>> list() {
+        return ResponseEntity.ok().header("X-Tournament-Default-Rules", "1").body(service.listEvents());
+    }
     @PostMapping
     public TournamentDtos.Config create(@RequestBody final TournamentDtos.CreateRequest request) {
         return service.create(JwtUtil.requireUserId(), request);
