@@ -20,7 +20,11 @@ def validate(document, known=None):
 
 
 class CommittedTankAliasesTest(unittest.TestCase):
-    """The repository's own alias dataset must stay valid (CI fails closed on bad data)."""
+    """The repository's own alias dataset must stay valid (CI fails closed on bad data).
+
+    The dataset currently ships empty (`{}`), which is a legal state: aliases are opt-in and
+    added by developers over time. These cases therefore guard the contract, not its content.
+    """
 
     def test_committed_dataset_is_valid(self):
         document = validator.load_alias_document()
@@ -32,7 +36,7 @@ class CommittedTankAliasesTest(unittest.TestCase):
     def test_vehicle_reference_is_offline_and_non_empty(self):
         known_tank_ids = validator.load_known_tank_ids()
         self.assertGreater(len(known_tank_ids), 100)
-        # FV215b 183 — the seeded alias owner must resolve against the in-repo reference.
+        # FV215b 183 — a real tier 10 id must resolve, so an alias PR can reference it.
         self.assertIn(9297, known_tank_ids)
 
     def test_missing_vehicle_reference_fails(self):

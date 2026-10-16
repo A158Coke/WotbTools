@@ -170,15 +170,20 @@ describe('normalizeTankCache — alias 投影', () => {
     expect(selectTanks(rows, { q: '大白兔' }).map(tank => tank.name)).toEqual(['FV215b 183'])
   })
 
-  it('默认接的是仓库的 common/tank_aliases.json', () => {
+  it('默认接的是仓库的 common/tank_aliases.json；数据集为空时等价于旧版行为', () => {
+    // 数据集当前是空对象（`{}` 是合法初始状态，alias 由开发者按需逐步录入）：
+    // 这条用例同时锁住「空数据集不报错、每辆车都拿到数组」与「录入后按 tank_id 投影」。
     const entries = Object.entries(TANK_ALIASES)
     const cache = Object.fromEntries(entries.map(([id]) => [id, { name: `Tank ${id}` }]))
     cache[1] = { name: 'Unconfigured' }
     const rows = normalizeTankCache(cache)
+    expect(rows.every(row => Array.isArray(row.aliases))).toBe(true)
     for (const [id, aliases] of entries) {
       expect(rows.find(row => row.id === Number(id)).aliases).toEqual(aliases)
     }
     expect(rows.find(row => row.id === 1).aliases).toEqual([])
+    // 空数据集下搜索行为与接入 alias 之前完全一致（只认正式车名）。
+    expect(selectTanks(rows, { q: 'unconfigured' }).map(tank => tank.name)).toEqual(['Unconfigured'])
   })
 })
 

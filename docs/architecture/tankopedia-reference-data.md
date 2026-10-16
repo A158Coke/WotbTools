@@ -91,10 +91,11 @@ different owner and lifecycle from the files above:
 
 - **developer-maintained.** Aliases are curated by hand in the repository. Nothing generates them
   from WoT-Blitz-Agent, BlitzKit, the WG API, an LLM or a community API.
-- **sparse by design.** The document maps a canonical decimal `tank_id` to a non-empty array of
-  alias strings. A vehicle without aliases is simply absent: **a missing tank id means
+- **sparse by design, and opt-in.** The document maps a canonical decimal `tank_id` to a non-empty
+  array of alias strings. A vehicle without aliases is simply absent: **a missing tank id means
   `aliases = []`**, so empty arrays must not be stored and adding a vehicle to `tank_cache.json`
-  requires no alias change.
+  requires no alias change. The file currently ships as `{}`: zero configured aliases is a legal
+  state, and search then behaves exactly as it did before aliases existed.
 - **search-only.** Aliases widen Tankopedia search recall. They never reach vehicle identity, the
   displayed or sorted name, replay vehicle names, exports, the HTTP contract or the `tank_cache.json`
   upstream schema. Aliases affect discovery, never identity.
