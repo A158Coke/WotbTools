@@ -16,7 +16,8 @@ import java.util.List;
  * `FAIL_ON_UNKNOWN_PROPERTIES`——**未登记字段一律 fail-closed**（与各 schema 的
  * `additionalProperties: false` 一致），**显式 `null` 的 `hpState` 亦在读取边界拒绝**（只有字段
  * 缺省才走 legacy 口径）；已知字段由 {@link ClientAiProjectionAdapter} 逐项显式校验。
- * 部署顺序：读取边界登记先行（服务端镜像），客户端发送后行。</p>
+ * 写方与读方同批到位：客户端投影恒发送 {@code hpState}（canonical 权威分类），本读取边界在场即
+ * 权威；字段缺省只服务旧载荷 / 回滚窗口。</p>
  */
 public record ClientAiProjection(
         Engine engine,

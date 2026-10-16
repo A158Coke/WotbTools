@@ -496,8 +496,8 @@ describe('2D canonical 场景', () => {
   it('畸形 / 旧版 AiReview 切面（缺 hp_raw 或 prop3 health）在信任边界被拒绝，不降级猜测', () => {
     const ai = random.aiReview!
     const noRaw = { ...ai, events: ai.events.map((e) => (e.type === 'damage' ? { ...e, hp_raw: undefined } : e)) }
-    expect(() => validateAgentAiReview(JSON.parse(JSON.stringify(noRaw)))).toThrow(/hp_raw/)
+    expect(() => validateAgentAiReview(JSON.parse(JSON.stringify(noRaw)), 'current-producer')).toThrow(/hp_raw/)
     const noProp3 = { ...ai, events: ai.events.filter((e) => e.type !== 'health') }
-    expect(() => validateAgentAiReview(noProp3)).toThrow(/health/)
+    expect(() => validateAgentAiReview(noProp3, 'current-producer')).toThrow(/health/)
   })
 })

@@ -16,6 +16,7 @@
 import type { components } from '../../api/generated/http-contract.js'
 import type { AgentAiReviewFacet, AgentBattleResult, AgentPlaybackFacet } from '../../api/agent-replay-facets.js'
 import { buildCanonicalReplayFacts, type CanonicalReplayFacts } from '../canonical/facts.js'
+import { classifyHpRaw } from '../canonical/hpRawState.js'
 
 export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
 
@@ -75,12 +76,14 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
 
   const prop3Health: ClientAiReviewProjection['prop3Health'] = []
   for (const e of input.aiReview.events) {
-    // hpState（canonical 权威分类）**暂不随载荷发送**：写方变更必须晚于读取边界兼容上线
-    // （`.agents/AGENTS.md` §5a「旧 artifact 兼容只放读取边界」+ 部署顺序纪律）——服务端
-    // `ReplayFactsCodec` 的旧版严格读取器会因未知字段 400。读取侧（Java `hpState` 消费 +
-    // `HpRawState.fromWireName`）已在位；写方在 tolerant reader 部署后由 follow-up 打开。
     if (e.type === 'health' && combatant(e.eid)) {
-      prop3Health.push({ entityId: e.eid, rawClockSec: e.t, hpRaw: e.hp_raw })
+      // hpState = canonical 层对同一 hpRaw 的权威分类（与 facts.hpSamples 同一函数、同一输入）。
+      // 服务端在场即权威、不再重新分类——`DEATH_TERMINAL` 让 0xFFFE/0xFFFF/0xFFFD 全族在 Java
+      // 重建里也是终态（2D/3D 与 AI 复盘对同一事件的生命状态一致）。
+      prop3Health.push({
+        entityId: e.eid, rawClockSec: e.t, hpRaw: e.hp_raw,
+        hpState: classifyHpRaw(e.hp_raw, e.hp_state),
+      })
     }
   }
 
@@ -117,8 +120,10 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
     positions,
     turrets,
     prop3Health,
+    // hpState 取 canonical facts 已完成的分类（facts.ts 对同一 hp_raw/hp_state 的权威结论）
     healthEvents: facts.healthEvents.filter((h) => combatant(h.entityId)).map((h) => ({
-      entityId: h.entityId, rawClockSec: raw(h.t), hpRaw: h.hpRaw, sourceEntityId: h.sourceEntityId, causeFlag: h.causeFlag,
+      entityId: h.entityId, rawClockSec: raw(h.t), hpRaw: h.hpRaw, hpState: h.rawState,
+      sourceEntityId: h.sourceEntityId, causeFlag: h.causeFlag,
     })),
     // 分类已在 canonical 层完成（仅战斗车辆 envelope；录像者 Avatar 实体上的 method8 不是伤害通知）
     damageNotices: facts.damageNotices.map((n) => ({

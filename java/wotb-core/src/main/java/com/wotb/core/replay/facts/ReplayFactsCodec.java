@@ -52,7 +52,8 @@ public final class ReplayFactsCodec {
      * additive 字段的兼容**只经读取边界显式登记**（DTO 成员 + `contracts/http/openapi.yaml`）获得——
      * 未登记字段一律 fail-closed（与各 schema 的 `additionalProperties: false` 一致）；
      * 已知字段仍由 {@code ClientAiProjectionAdapter} 逐项显式校验，primitive 的 null 仍 fail closed。
-     * 部署顺序：先让读取边界认识新字段（服务端镜像），再由客户端发送（见契约 §4l）。
+     * 写方（客户端投影）与读方同批到位：{@code hpState} 恒发送、在场即权威；字段缺省只服务旧载荷 /
+     * 回滚窗口（见契约 §4l）。
      */
     private static final ObjectMapper PROJECTION_MAPPER = JsonMapper.builder()
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)

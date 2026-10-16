@@ -445,7 +445,7 @@ typed facets（api/agent-replay-facets.ts，信任边界校验）
 | `clock` | 开战（period 3）/ 时长 / 战斗结束（AFTERBATTLE）/ 流末 | 无 period 3 时按 AFTERBATTLE − 结算时长反推（`CLOCK_ESTIMATED`）；时间轴不可用 → 不产生投影 |
 | `observationWindows` | AoI 观测段 [Type5 物化, Type4 离开) + 开段物化血量 | 半开区间；每次重入各自携带物化血量 |
 | `positions` / `turrets` | 原始 type10 世界位姿 / prop2 原始炮塔（列式） | 只收 attachmentParent=0；不是渲染滤波网格（重入后网格有收敛滞后） |
-| `prop3Health` / `healthEvents` | prop3 血量广播 / method1 血量-来源-原因，**原始 u16** + 可选 `hpState` | `hpState`（客户端 canonical 权威分类，契约 enum）**在场即权威、服务端不重新分类**；缺省 = 旧载荷，服务端按 `HpRawState` 的 legacy 口径现算：0 = HP 归零，0xFFFD = 终态哨兵（血量未知，不改写为 0），0xFFFF/0xFFFE 等负值 = 未证明哨兵（不是死亡证据）。写方（客户端投影）**当前不发送该字段**——发送以「读取边界已显式登记并消费 `hpState`（未登记字段仍 fail-closed、显式 `null` 拒绝）的服务镜像已部署到生产」为前提，随 follow-up 打开 |
+| `prop3Health` / `healthEvents` | prop3 血量广播 / method1 血量-来源-原因，**原始 u16** + `hpState`（canonical 权威分类，客户端投影**恒发送**） | `hpState`（契约 enum）**在场即权威、服务端不重新分类**（`HpRawState.fromWireName` 显式映射）；缺省 = 旧载荷，服务端按 `HpRawState` 的 legacy 口径现算：0 = HP 归零，0xFFFD = 终态哨兵（血量未知，不改写为 0），0xFFFF/0xFFFE 等负值 = 未证明哨兵（不是死亡证据）。读取边界保持严格：未登记字段 fail-closed、显式 `null` 拒绝，缺省只服务旧载荷 / 回滚窗口 |
 | `damageNotices` | method8 通知：`HIT`（result=3）/ `UNDECODED_VARIANT` / `SHORT_VARIANT` | 只对战斗车辆实体（Type5 entityTypeId=2）分类；录像者实体按 Avatar 角色分派，不产生伤害通知 |
 | `objectives` | 争霸点数 / A–D 基地 / 单基地目标存在性与进度 | 目标存在性独立于是否有占领进度 |
 | `limitations` | 影响能力的缺口 | 非空 → `AVAILABLE_WITH_LIMITED_TIMELINE` |

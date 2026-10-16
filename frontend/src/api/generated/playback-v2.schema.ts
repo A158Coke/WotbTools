@@ -3508,7 +3508,7 @@ export default {
           "maximum": 65535
         },
         "hpState": {
-          "description": "canonical 层对 hpRaw 的权威分类（HpRawState）。服务端不得重新分类。字段缺省 = 旧载荷（按 hpRaw 现算，legacy 语义：仅 0/0xFFFD 终态）。",
+          "description": "canonical 层对 hpRaw 的权威分类（HpRawState）。服务端不得重新分类。客户端投影恒发送该字段 （v0.4.9 起的 pinned producer 路径）；字段缺省只出现在旧载荷上，此时服务端按 hpRaw 现算 （legacy 语义：仅 0/0xFFFD 终态）。",
           "type": "string",
           "enum": [
             "CURRENT_HP",
@@ -3550,7 +3550,7 @@ export default {
           "type": "integer"
         },
         "hpState": {
-          "description": "同 AiProjectionProp3Health.hpState：canonical 权威分类；缺省 = 旧载荷（legacy 现算）。",
+          "description": "同 AiProjectionProp3Health.hpState：canonical 权威分类（客户端投影恒发送）；缺省 = 旧载荷 （legacy 现算）。",
           "type": "string",
           "enum": [
             "CURRENT_HP",
