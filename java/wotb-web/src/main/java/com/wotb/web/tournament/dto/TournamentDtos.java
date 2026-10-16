@@ -199,6 +199,13 @@ public final class TournamentDtos {
             Standings standings
     ) { }
     public record HistoricalState(long eventVersion, boolean imported, boolean canImport, boolean historical) { }
+    public record Attribution(String name, String url) { }
+    public record DataSource(boolean csvImported, Attribution attribution) { }
+    public record CsvChanges(int addedClans, int changedClans, int removedClans,
+                             int addedScores, int changedScores, int removedScores, int preservedClears) { }
+    public record CsvImportPreview(Standings standings, String sourceName, String sourceSha256,
+                                   int sourceRowCount, int clanCount, int missingCellCount,
+                                   long eventVersion, CsvChanges changes) { }
     public record HistoricalRow(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonDeserialize(contentUsing = IntegerInput.class) List<Integer> points,

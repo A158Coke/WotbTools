@@ -63,6 +63,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentDefaultRules', 'TournamentRuleSource',
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
+  'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
   'BroadcastSeason', 'BroadcastCategory', 'BroadcastReplay', 'BroadcastNode', 'BroadcastIndex', 'BroadcastSeasonView', 'BroadcastCategoryView', 'BroadcastDeletionPreview', 'BroadcastSeasonCreate', 'BroadcastSeasonUpdate', 'BroadcastCategoryCreate', 'BroadcastNodeCreate', 'BroadcastReplaySave']) {
   if (!components[name]) continue
