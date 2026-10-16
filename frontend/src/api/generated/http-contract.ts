@@ -3898,7 +3898,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_CSV_WORKSPACE_BUSY */
+            /** @description TOURNAMENT_VERSION_CONFLICT, TOURNAMENT_CSV_WORKSPACE_BUSY, or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3987,7 +3987,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key, or TOURNAMENT_CSV_WORKSPACE_BUSY */
+            /** @description TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key; TOURNAMENT_CSV_WORKSPACE_BUSY; or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day */
             409: {
                 headers: {
                     [name: string]: unknown;

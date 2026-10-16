@@ -280,6 +280,9 @@ public class TournamentService {
         final TournamentDtos.Standings before = standings(event, stored, null, null, false);
         final List<TournamentDay> replacement = csvDays(event, matrix, stored);
         final TournamentDtos.CsvChanges changes = csvChanges(before, standings(event, replacement, null, null, false, matrix.keySet(), true), stored);
+        final List<Map<String, Object>> previousPublishedDays = stored.stream().filter(day -> day.publishedGroups != null)
+                .map(day -> Map.<String, Object>of("roundNumber", day.roundNumber, "dayNumber", day.dayNumber,
+                        "groups", List.copyOf(day.publishedGroups))).toList();
         final Map<String, TournamentClan> existing = clans.findByEventIdOrderByClanTag(id).stream().collect(Collectors.toMap(clan -> clan.clanTag, clan -> clan));
         existing.values().forEach(clan -> clan.historicalPublished = matrix.containsKey(clan.clanTag));
         for (final String tag : matrix.keySet()) {
@@ -295,7 +298,7 @@ public class TournamentService {
         }
         freezeRules(event, null); event.configLocked = true; event.csvImported = true; event.version++;
         final TournamentDtos.CsvImportPreview result = csvView(event, source, matrix, dayList(id), changes);
-        audit(event, null, null, "CSV_IMPORTED", actor, null, Map.of("standings", before),
+        audit(event, null, null, "CSV_IMPORTED", actor, null, Map.of("standings", before, "publishedDays", previousPublishedDays),
                 Map.of("sourceName", source.name(), "sourceSha256", source.sha256(), "rows", source.rows(),
                         "idempotencyKey", idempotencyKey, "expectedEventVersion", expectedVersion,
                         "appliedVersion", event.version, "changes", changes, "standings", result.standings()));
@@ -639,12 +642,7 @@ public class TournamentService {
                 columns.add(new TournamentDtos.StandingDay(round, number, event.dayLabels.get(number - 1), day != null && published(day)));
                 if (day == null) { continue; }
                 final List<TournamentSnapshot.Group> selected = previewDay == day && preview != null ? preview : admin && day.draftGroups != null ? day.draftGroups : day.publishedGroups;
-                if (selected == null && day.publishedHistoricalPoints == null) {
-                    if (event.csvImported || replaceRoster) {
-                        for (final String tag : day.clearedClans) { if (scores.containsKey(tag)) { scores.get(tag).put(key, 0L); } }
-                    }
-                    continue;
-                }
+                if (selected == null && day.publishedHistoricalPoints == null) { continue; }
                 final Map<Integer, Integer> points = rulePoints(ruleByRound.get(round), number);
                 if (selected == null) {
                     day.publishedHistoricalPoints.forEach((tag, value) -> scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, day.clearedClans.contains(tag) ? 0L : value.longValue()));
@@ -656,7 +654,9 @@ public class TournamentService {
                     }
                 }
                 for (final String tag : day.clearedClans) {
-                    if (!event.csvImported && !replaceRoster || scores.containsKey(tag)) { scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, 0L); }
+                    if ((!event.csvImported && !replaceRoster) || (selected != null && scores.containsKey(tag))) {
+                        scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, 0L);
+                    }
                 }
             }
         }

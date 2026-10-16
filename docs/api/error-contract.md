@@ -49,6 +49,7 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `TOURNAMENT_CSV_WORKSPACE_BUSY` | 409 | false | tournament-csv | 目标季赛存在共享草稿或进行中的修正，须先完成或丢弃 |
 | `MISSING_PARAM` | 400 | false | validation | 必填 request parameter 缺失 |
 | `INVALID_REQUEST` | 400 | false | validation | JSON、Bean Validation 或请求结构不合法 |
+| `FILE_TOO_LARGE` | 413 | false | validation | 文件超过对应入口的字节上限；CSV 预览与正式导入均限制为 2 MiB，并对实际读取字节数再次校验 |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | false | protocol | Content-Type 不支持 |
 | `METHOD_NOT_ALLOWED` | 405 | false | protocol | HTTP method 不支持 |
 | `RESOURCE_NOT_FOUND` | 404 | false | resource | 通用资源不存在 |
