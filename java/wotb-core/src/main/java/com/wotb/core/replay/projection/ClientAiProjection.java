@@ -9,6 +9,11 @@ import java.util.List;
  * <p>服务器没有 replay parser：客户端用锁定版本的上游 Agent WASM 解析回放，经 WotbTools canonical replay facts
  * 投影成本结构；服务端只做结构校验，再由 {@link ClientAiProjectionAdapter} 装配成内存中的 canonical 事件流。
  * 所有时钟为原始回放时钟（秒）。只含参战实体。</p>
+ *
+ * <p>读取边界容错（.agents/AGENTS.md §5a「旧 artifact 兼容只放读取边界」）：客户端投影的
+ * **additive 新字段**（如 `hpState`）在较旧的客户端/服务组合上只应被忽略，不得让整个请求 400——
+ * 策略落点 = `ReplayFactsCodec.PROJECTION_MAPPER`（覆盖嵌套 record）；已知字段仍逐项显式校验
+ * （`ClientAiProjectionAdapter` 的 require 与显式 enum 映射）。</p>
  */
 public record ClientAiProjection(
         Engine engine,

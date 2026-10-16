@@ -46,8 +46,14 @@ public final class ReplayFactsCodec {
         return PROJECTION_MAPPER.treeToValue(node, com.wotb.core.replay.projection.ClientAiProjection.class);
     }
 
+    /**
+     * 客户端投影的读取边界（`.agents/AGENTS.md` §5a「旧 artifact 兼容只放读取边界」）：
+     * **忽略未知 additive 字段**（如 `hpState`）——客户端先于服务端镜像上线、或服务端回滚时，
+     * 新载荷不得让整个请求 400；已知字段仍由 {@code ClientAiProjectionAdapter} 逐项显式校验
+     * （require + 显式 enum 映射），primitive 的 null 仍 fail closed。
+     */
     private static final ObjectMapper PROJECTION_MAPPER = JsonMapper.builder()
-            .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
             .build();
 
