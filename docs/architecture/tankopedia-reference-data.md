@@ -118,6 +118,66 @@ different owner and lifecycle from the files above:
 `tank_cache.json` (asset plane) and `tankopedia-tier{7,8,9,10}.json` (this document) remain the
 factual vehicle data; the alias file is additive metadata beside them.
 
+### How to add an alias
+
+1. Find the `tank_id` in the in-repo vehicle reference (substring match on the canonical name):
+
+   ```bash
+   python -c "import glob,json,sys;[print(v['id'], v['name']) for f in sorted(glob.glob('common/tankopedia-tier*.json')) for v in json.load(open(f,encoding='utf-8'))['vehicles'] if sys.argv[1].lower() in v['name'].lower()]" 183
+   ```
+
+   ```text
+   9297 FV215b 183
+   ```
+
+2. Edit `common/tank_aliases.json`. The whole file is one flat object; append to an existing
+   `tank_id` or add a new one, and never create an empty array:
+
+   ```json
+   {
+     "9297": [
+       "183",
+       "大白兔",
+       "死星",
+       "Death Star"
+     ],
+     "24577": [
+       "268 四代"
+     ]
+   }
+   ```
+
+   Rejected by CI (each line is one separate violation):
+
+   ```json
+   {
+     "9297": [],                      // empty array — omit the key instead
+     "4481": "起重机",                 // value must be an array
+     "6225": [183],                   // alias must be a string
+     "13569": ["", "   "],            // blank alias
+     "385": ["907", "907"],           // duplicate within one vehicle (case-insensitive)
+     "999999999": ["foo"],            // unknown tank id
+     "012": ["bar"]                   // tank id must be canonical decimal
+   }
+   ```
+
+   (The real file is plain JSON — no comments.) Aliases need no translation and no locale entry:
+   one flat array holds every spelling, and a `zh` UI still matches `Death Star`.
+
+3. Validate and open a PR:
+
+   ```bash
+   cd common/python && python validate_tank_aliases.py
+   ```
+
+   ```text
+   tank_aliases.json OK: 2 vehicles, 5 aliases
+   ```
+
+   A `WARNING: TANK_ALIASES_CROSS_TANK_DUPLICATE` line is informational: two vehicles sharing a
+   community short name is allowed, and search relevance decides the order. Any other violation
+   raises and fails CI.
+
 ## Battle Playback interaction
 
 Battle Playback HP authority is documented in
