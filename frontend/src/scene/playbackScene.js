@@ -3318,15 +3318,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
 
-  // 伤害数字：受击车的 HP 血条右侧浮出 "-<lost>"，向右上漂移 + 淡出（基准 1s × FX_SCALE）。
-  // 呈现完全在 HTML 覆盖层（PlaybackVehicleLabels3D）：canvas sprite 恒在 DOM 名牌之下，
-  // renderOrder / 世界空间偏移都压不住它，而数字要精确贴住血条右缘，只有同层读 DOM 几何
-  // 才做得到（覆盖层内部按 px 定位，不做世界↔屏幕换算）。
-  function spawnFloatDmg(eid, hpLoss) {
+  // 掉血反馈（一次掉血事件 = 伤害数字 + HP 条幽灵段 + 受击闪，与 2D 三件套同源）。
+  // 伤害数字的落点与动画完全在 HTML 覆盖层（PlaybackVehicleLabels3D）：canvas sprite 恒在
+  // DOM 名牌之下，renderOrder / 世界空间偏移都压不住它，而数字要精确贴住血条右缘，只有同层
+  // 读 DOM 几何才做得到（覆盖层内部按 px 定位，不做世界↔屏幕换算）。
+  function emitDamageFeedback(eid, hpLoss) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
     labelOverlay?.spawnDamage?.(eid, hpLoss, FLOAT_DMG_MS * FX_SCALE);
-    // 同源触发 HP 条反馈（2D 三件套：飘字 + 幽灵 + 闪，同一 loss 事件驱动）
+    // HP 条幽灵段 + 受击闪（与伤害数字同一 loss 事件驱动，2D 三件套同源）
     const nowMs = performance.now();
     const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
     if (maxHp > 0) {
@@ -3816,7 +3816,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
-      spawnFloatDmg(e.eid, e.hpLoss);
+      emitDamageFeedback(e.eid, e.hpLoss);
     }
     while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
       spawnBurst(burstEvents[burstPtr++].eid);
