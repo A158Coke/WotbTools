@@ -21,21 +21,22 @@ import java.net.URI
  */
 internal object NavigationPolicy {
     /** Gecko 自己的空文档：既不是本机 origin，也不需要交系统浏览器。 */
-    const val BLANK = "about:blank"
+    const val ABOUT_BLANK = "about:blank"
 
     private const val BLOB_SCHEME = "blob:"
 
-    /** blob id 只允许单段、URL 安全的不透明标识；长度上限挡住异常长的输入。 */
-    private const val MAX_BLOB_ID = 128
-
-    /** 小写 `blob:` + exact 本机 origin + `/` + 单段 id；`%`、`/`、`?`、`#`、`@` 都不在字符集里。 */
-    private val BLOB_ID = Regex("[A-Za-z0-9._~-]{1,$MAX_BLOB_ID}")
+    /**
+     * `<uuid>`：object URL 规范形态 `blob:<origin>/<uuid>` 里的 UUID（canonical 8-4-4-4-12 十六进制，
+     * 大小写都接受；Gecko 生成小写）。比「任意 URL 安全字符」更紧：`index.html`、`..`、`%2f` 这类
+     * 路径样子的 id 全部被拒。
+     */
+    private val BLOB_ID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
     /** 交系统浏览器 / 系统 handler 的 scheme（是否真的能打开由宿主决定）。 */
     private val EXTERNAL_SCHEMES = setOf("https", "mailto")
 
-    /** 唯一事实源仍是 [MainActivity.LOCAL_APP_ORIGIN]，这里只做一次 rawAuthority 提取。 */
-    private val LOCAL_APP_AUTHORITY = URI(MainActivity.LOCAL_APP_ORIGIN).rawAuthority
+    /** 与 [MainActivity.isLocalAppUrl] 共用同一份 authority 提取（唯一事实源是 LOCAL_APP_ORIGIN 常量）。 */
+    private val LOCAL_APP_AUTHORITY = MainActivity.LOCAL_APP_AUTHORITY
 
     enum class MainFrameNavigation { LOCAL, BLANK, BLOB_DOWNLOAD, EXTERNAL, DENY }
 
@@ -45,21 +46,21 @@ internal object NavigationPolicy {
      */
     fun classifyMainFrameNavigation(url: String): MainFrameNavigation = when {
         MainActivity.isLocalAppUrl(url) -> MainFrameNavigation.LOCAL
-        url == BLANK -> MainFrameNavigation.BLANK
+        url == ABOUT_BLANK -> MainFrameNavigation.BLANK
         isTrustedLocalBlobUrl(url) -> MainFrameNavigation.BLOB_DOWNLOAD
         url.substringBefore(':', "").lowercase() in EXTERNAL_SCHEMES -> MainFrameNavigation.EXTERNAL
         else -> MainFrameNavigation.DENY
     }
 
     /**
-     * 纯函数：只接受 `blob:http://127.0.0.1:21653/<id>`——scheme 必须是 `blob`，内嵌 URL 必须
+     * 纯函数：只接受 `blob:http://127.0.0.1:21653/<uuid>`——scheme 必须是 `blob`，内嵌 URL 必须
      * **exact** 等于本机 origin（同 scheme、同 host、同 port，无 userinfo / query / fragment），
-     * 且带一个单段不透明 id。
+     * 且以 `/` 跟一个 canonical UUID（见 [BLOB_ID]）。
      *
      * 明确拒绝（fail-closed）：其它 host / port / scheme（`blob:https://evil.example/...`、
      * `blob:http://127.0.0.1:9999/...`、`blob:http://localhost:21653/...`、`blob:null/...`、
-     * `blob:ftp://...`）、`blob:` 空内嵌、缺失 / 空 / 多段 / 被编码的 id、带 userinfo / query /
-     * fragment 的形态、以及所有非 blob scheme（`data:`、`file:`、`javascript:`、外部 `http:`）。
+     * `blob:ftp://...`）、`blob:` 空内嵌、缺失 / 空 / 非 UUID / 多段 / 被编码的 id、带 userinfo /
+     * query / fragment 的形态、以及所有非 blob scheme（`data:`、`file:`、`javascript:`、外部 `http:`）。
      * 不是「scheme == blob 就放行」。
      */
     fun isTrustedLocalBlobUrl(url: String): Boolean {

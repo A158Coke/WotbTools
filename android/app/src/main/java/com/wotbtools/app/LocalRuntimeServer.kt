@@ -87,7 +87,12 @@ internal class LocalRuntimeServer(
         }
     }
 
-    private fun serve(client: Socket) {
+    /**
+     * 每个连接的完整处理：读请求 → 路由 → 写响应。`internal` 只为让 JVM 测试能注入「输出流打不开」的
+     * socket，验证 `getOutputStream()` 确实在 [sendResponse] 的受保护区内求值（见
+     * `LocalRuntimeServerResponseTest`）；生产路径只有 [acceptLoop] 调用它。
+     */
+    internal fun serve(client: Socket) {
         client.use {
             try {
                 it.soTimeout = READ_TIMEOUT_MS
@@ -209,7 +214,7 @@ internal class LocalRuntimeServer(
         private fun closeQuietly(body: InputStream?) {
             try {
                 body?.close()
-            } catch (_: IOException) {
+            } catch (_: Exception) {
                 // 丢弃：连接即将关闭，body 已不可用。
             }
         }

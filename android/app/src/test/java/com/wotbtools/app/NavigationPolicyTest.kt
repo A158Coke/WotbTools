@@ -16,8 +16,8 @@ class NavigationPolicyTest {
     @Test fun trustedLocalBlobDownloadUrlsAreAccepted() {
         listOf(
             "blob:$origin/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e",
-            "blob:$origin/1",
-            "blob:$origin/AbC-123_z.9~0"
+            "blob:$origin/00000000-0000-0000-0000-000000000000",
+            "blob:$origin/8F4C0B1E-2C3F-4A5B-9D6E-7F8A9B0C1D2E"
         ).forEach { assertTrue(it, NavigationPolicy.isTrustedLocalBlobUrl(it)) }
     }
 
@@ -31,10 +31,12 @@ class NavigationPolicyTest {
             "blob:http://localhost:21653/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e",
             "blob:http://127.0.0.2:21653/uuid",
             "blob:http://[::1]:21653/uuid",
+            "blob:http://021653/uuid",
             "blob:null/uuid",
             "blob:null",
             "blob:",
             "blob:uuid",
+            "blob:HTTP://127.0.0.1:21653/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e",
             "blob:http://127.0.0.1:21653",
             "blob:http://127.0.0.1:21653/",
             "blob:http://127.0.0.1:21653/a/b",
@@ -48,6 +50,23 @@ class NavigationPolicyTest {
             "blob:file:///data/user/0/com.wotbtools.app/files/replay.wotbreplay",
             "BLOB:$origin/uuid",
             " data:$origin/uuid"
+        ).forEach { assertFalse(it, NavigationPolicy.isTrustedLocalBlobUrl(it)) }
+    }
+
+    /** id 必须是 object URL 规范里的 UUID：路径样子的 id 一律拒绝（`blob:<origin>/<uuid>`）。 */
+    @Test fun blobIdsThatAreNotUuidsAreRejected() {
+        listOf(
+            "blob:$origin/index.html",
+            "blob:$origin/..",
+            "blob:$origin/....",
+            "blob:$origin/uuid.",
+            "blob:$origin/1",
+            "blob:$origin/AbC-123_z.9~0",
+            "blob:$origin/8f4c0b1e2c3f4a5b9d6e7f8a9b0c1d2e",
+            "blob:$origin/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2",
+            "blob:$origin/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e-",
+            "blob:$origin/8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2Z",
+            "blob:$origin/a.8f4c0b1e-2c3f-4a5b-9d6e-7f8a9b0c1d2e"
         ).forEach { assertFalse(it, NavigationPolicy.isTrustedLocalBlobUrl(it)) }
     }
 

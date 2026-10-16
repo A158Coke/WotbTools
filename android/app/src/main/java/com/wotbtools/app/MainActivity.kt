@@ -77,7 +77,8 @@ class MainActivity : Activity() {
         /** 使用浏览器版（错误页兜底入口）。 */
         private const val WEB_APP_URL = "https://wotbtools.com/"
 
-        private val LOCAL_APP_AUTHORITY = java.net.URI(LOCAL_APP_ORIGIN).rawAuthority
+        /** [LOCAL_APP_ORIGIN] 的 authority；导航与 Bridge sender 校验共用同一份提取（不重复派生）。 */
+        internal val LOCAL_APP_AUTHORITY = java.net.URI(LOCAL_APP_ORIGIN).rawAuthority
 
         /** Only the exact local origin can be the main document or call the Native Bridge. */
         internal fun isLocalAppUrl(url: String): Boolean = try {
