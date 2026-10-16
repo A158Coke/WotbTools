@@ -43,5 +43,14 @@ Yecao（ai-service 宿主，ssh -i <wotb_vps_deploy> root@<VPS_HOST> -p <VPS_POR
 
 ## 验收与回滚
 
+**与前端 bundle 的部署次序（2026-10-16 裁决）**：`frontend.yml`（group `deploy-frontend`）与
+`ai-service.yml`（group `deploy-ai-service`）各自独立 main-push、互相没有 `needs` /
+`workflow_run` 依赖——**代码侧不做部署次序编排**（部署顺序不是业务代码的职责）。客户端投影的
+additive 字段与读取边界登记（DTO 成员 + `contracts/http/openapi.yaml`）在同一 PR 内同批上线，
+因此合并后的两次部署之间存在**分钟级窗口**：前端先上线时，旧镜像的严格读取器
+（`ReplayFactsCodec` 的 `FAIL_ON_UNKNOWN_PROPERTIES`）会把携带新字段的投影判 400，AI 复盘在该
+窗口内不可用。窗口出现或某个 workflow 失败时，用 **workflow rerun / 人工单发 deploy** 恢复；
+**回滚 `ai-service` 必须同时回滚前端 bundle**（或先把 `ai-service` 升级到位），否则窗口会重新出现。
+
 PR CI 校验 Maven、Docker/Compose 配置及部署脚本。合并并发布后，在 Yecao 确认容器的 `BUILD_COMMIT`、readiness 和 liveness、仅 WireGuard 绑定及无数据库/存储依赖。健康通过只证明服务独立运行正常，不代表 AI 复盘质量，也不代表端到端可用：**readiness=UP 不是验收标准**——端到端验收必须由真实登录用户（realm role `wotbtools-user`）用真实 `.wotbreplay` 完成一次 AI 复盘。若启动或健康失败，停止 `ai-service`（TX 侧 `/api/ai/**` 会得到上游不可用错误），其它服务不受影响；修复后按该服务 owner workflow 重发。
 
