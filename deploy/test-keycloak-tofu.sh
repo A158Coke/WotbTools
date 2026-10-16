@@ -118,7 +118,16 @@ for attempt in $(seq 1 "$RETRIES"); do
   [ "$attempt" -eq "$RETRIES" ] && fail "fresh PostgreSQL did not become ready"
 done
 
+# 事件 logger 级别的唯一事实源是生产 compose：在这里复制一份字面量，就等于让这个 smoke
+# 在生产改了之后继续"通过"。Keycloak 对成功事件（含全部 admin event）默认只记到 DEBUG，
+# 所以这个值直接决定下面的 stdout 断言能不能成立。
+KC_LOG_LEVEL_VALUE="$(sed -n 's/^[[:space:]]*KC_LOG_LEVEL:[[:space:]]*\(.*\)$/\1/p' \
+  "$ROOT/deploy/tx/keycloak.compose.yml" | head -n1)"
+[ -n "$KC_LOG_LEVEL_VALUE" ] \
+  || fail "deploy/tx/keycloak.compose.yml must declare KC_LOG_LEVEL for the security event log"
+
 docker run -d --name "$KC_NAME" --network "$NETWORK" \
+  -e KC_LOG_LEVEL="$KC_LOG_LEVEL_VALUE" \
   -p 127.0.0.1:18080:8080 \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
   -e KC_BOOTSTRAP_ADMIN_PASSWORD="$BOOTSTRAP_PASSWORD" \
@@ -265,6 +274,47 @@ echo "PASS: ordinary realm role add/remove"
 
 api 204 DELETE "$KEYCLOAK_URL/admin/realms/wotbtools/users/$TEST_USER_ID" "$SERVICE_TOKEN" "$WORK/delete-user.json"
 echo "PASS: delete user"
+
+# --- controlled security event logging (public-security self-assessment) -----
+# 两层证明，缺一不可：先证明 IaC 真的落到了 realm 上，再证明事件真的出现在容器 stdout
+# ——TX Alloy 只能采它看得见的东西，所以 stdout 才是这条合规链路真正的起点。
+api 200 GET "$KEYCLOAK_URL/admin/realms/wotbtools/events/config" "$BOOTSTRAP_TOKEN" "$WORK/events-config.json"
+jq -e '
+  .eventsEnabled == true and
+  .adminEventsEnabled == true and
+  .adminEventsDetailsEnabled == false and
+  ((.eventsExpiration // 0) > 0) and
+  ((.eventsListeners // []) | index("jboss-logging") != null) and
+  ((.enabledEventTypes // []) | index("LOGIN") != null) and
+  ((.enabledEventTypes // []) | index("LOGIN_ERROR") != null)
+' "$WORK/events-config.json" >/dev/null \
+  || fail "the applied realm does not carry the reviewed security event logging configuration: $(jq -c . "$WORK/events-config.json" 2>/dev/null || tr -d '\n' < "$WORK/events-config.json")"
+echo "PASS: applied realm security event logging configuration"
+
+# 上面的 create/delete user 是真实的 admin 动作，而 admin event 只记到 DEBUG，所以这条
+# 断言同时证明三件事：jboss-logging listener 在工作、KC_LOG_LEVEL 真的把
+# org.keycloak.events 抬到了 debug、以及 details = false 让完整 resource representation
+# 留在了日志之外。少了第二件，190 天留存里就只有登录失败、没有任何成功操作证据。
+admin_event_line=""
+for attempt in $(seq 1 "$RETRIES"); do
+  admin_event_line="$(docker logs "$KC_NAME" 2>&1 \
+    | grep -F '[org.keycloak.events]' \
+    | grep -F 'resourceType="USER"' \
+    | grep -F "$TEST_USER_ID" \
+    | head -n1 || true)"
+  [ -n "$admin_event_line" ] && break
+  [ "$attempt" -lt "$RETRIES" ] && sleep "$INTERVAL_SEC"
+done
+[ -n "$admin_event_line" ] \
+  || fail "no Keycloak admin event for the test user reached stdout; the 190-day security log chain starts there"
+for required_field in 'operationType=' 'realmName=' 'ipAddress=' 'resourcePath='; do
+  grep -Fq "$required_field" <<< "$admin_event_line" \
+    || fail "the Keycloak admin event line is missing $required_field: $admin_event_line"
+done
+if grep -Fq 'representation' <<< "$admin_event_line"; then
+  fail "the admin event line carries the resource representation; admin_events_details_enabled must stay false: $admin_event_line"
+fi
+echo "PASS: Keycloak security events reach stdout without the resource representation"
 
 client_id() {
   local client_id_value="$1" output="$2"

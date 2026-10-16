@@ -46,7 +46,7 @@ function authBoundaryStubPlugin() {
   }
 }
 
-export async function startFixtureServer({ middleware } = {}) {
+export async function startFixtureServer({ middleware, allowedHosts } = {}) {
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
@@ -59,7 +59,7 @@ export async function startFixtureServer({ middleware } = {}) {
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
     publicDir: resolve(frontendRoot, '../common/assets'),
-    server: { host: '127.0.0.1', port: 0, strictPort: false },
+    server: { host: '127.0.0.1', port: 0, strictPort: false, allowedHosts },
   })
   await server.listen()
   const url = server.resolvedUrls?.local?.[0]

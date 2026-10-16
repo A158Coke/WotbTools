@@ -64,12 +64,15 @@ Server error logs retain existing safe diagnostics. AI uses safe event/error-cod
 | Storage | Retention / bound |
 |---|---|
 | Prometheus | 168h, 2GB TSDB size bound |
-| Loki | 168h retention; query lookback and maximum query length 168h |
+| Loki | 168h retention by default; query lookback 4560h (190d), maximum query length 168h |
+| Loki security stream | `{compliance="security"}` only: 4560h (190d) retention — see [`security-log-retention.md`](security-log-retention.md) |
 | Grafana | Persistent database; dashboards are code, not usage storage |
 | Client queue | Bounded memory only; discarded batches are not retried |
 | Docker stdout | Existing 20MB × 3 size rotation; no time-based expiry |
 
-Loki's compactor removes expired chunks asynchronously (10-minute compaction, 2-hour delete delay). Seven days is the **queryable telemetry window**, not a claim that every physical copy is erased exactly at hour 168. Docker size rotation can keep low-volume raw logs longer than seven days. Strict physical age deletion is not implemented; it would require a separate reviewed host logging lifecycle, not deleting Docker-owned files behind its back. Do not add telemetry to long-lived backups.
+One stream is deliberately exempt from the seven-day window: lines labelled `compliance="security"` (Keycloak realm events and the Caddy `/api/*` and auth-domain access logs) are retained for 190 days under a `retention_stream` override. Nothing else is, and ordinary telemetry must never carry that label — the boundary, the redaction rules and the compliance query recipe live in [`security-log-retention.md`](security-log-retention.md).
+
+Loki's compactor removes expired chunks asynchronously (10-minute compaction, 2-hour delete delay). Seven days is the **queryable telemetry window** for everything outside that stream, not a claim that every physical copy is erased exactly at hour 168. Docker size rotation can keep low-volume raw logs longer than seven days. Strict physical age deletion is not implemented; it would require a separate reviewed host logging lifecycle, not deleting Docker-owned files behind its back. Do not add telemetry to long-lived backups.
 
 Account-group queries have an explicit `max_query_series=10000` ceiling; exceeding it returns a query error rather than silently truncating users. Validate seven-day production query cost and memory before treating the dashboard as operationally accepted; Loki's 256MiB memory limit remains unchanged.
 

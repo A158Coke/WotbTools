@@ -2,7 +2,7 @@
 
 Source implementation for [#639](https://github.com/A158Coke/WotbTools/issues/639); production availability follows deployment. Primary maintenance language: English.
 
-Public entry: primary navigation beside League standings (`?view=creators`), shared by the desktop sidebar and mobile bottom tabs. It is not duplicated in More. Administration stays in the existing league-administration group (`?view=creators-config`). Category selection uses the `creatorCategory` route query and preserves browser history.
+Public entry: primary navigation alongside League standings and broadcasts (`?view=creators`), shared by the desktop sidebar and mobile bottom tabs. It is not duplicated in More. Administration stays in the existing league-administration group (`?view=creators-config`). Category selection uses the `creatorCategory` route query and preserves browser history.
 
 Visitors browse recommendation categories and creator cards without signing in. Signing in is required to favorite or unfavorite a creator. Management uses the existing `tournament-admin` role; the recommendation catalog is independent of tournament events.
 

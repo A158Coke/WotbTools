@@ -48,11 +48,9 @@ describe('MorePage language switcher', () => {
     expect(admin.find('[data-testid="more-link-creators-config"]').exists()).toBe(true)
     admin.unmount()
   })
-  it('offers the same public broadcast tool to anonymous visitors', async () => {
-    const navigate = vi.fn()
-    const { wrapper } = mountPage(navigate)
-    await wrapper.get('[data-testid="more-link-league-broadcasts"]').trigger('click')
-    expect(navigate).toHaveBeenCalledWith('league-broadcasts')
+  it('does not duplicate the primary broadcast entry in More', () => {
+    const { wrapper } = mountPage()
+    expect(wrapper.find('[data-testid="more-link-league-broadcasts"]').exists()).toBe(false)
     wrapper.unmount()
   })
   beforeEach(() => {

@@ -31,6 +31,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'hof', view: 'hof', labelKey: 'nav.hof' }),
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
+  Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
   Object.freeze({ id: 'creators', view: 'creators', labelKey: 'creators.nav' }),
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
@@ -60,6 +61,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-tankopedia': 'tankopedia',
   'agent-armor': 'tankopedia',
   'tournament-points': 'tournament-points',
+  'league-broadcasts': 'league-broadcasts',
   creators: 'creators',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',

@@ -25,7 +25,8 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 
 describe('primary navigation', () => {
   it('discovers creator pages and cleans only creator-owned filter state when leaving', () => {
-    expect(PRIMARY_NAV.findIndex(item => item.id === 'creators')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'tournament-points') + 1)
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'creators')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'league-broadcasts') + 1)
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'more')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'creators') + 1)
     expect(primarySection('creators')).toBe('creators')
     expect(sectionTitleKey('creators')).toBe('creators.nav')
     expect(viewFromRoute({ path: '/', query: { view: 'creators' } })).toBe('creators')
@@ -34,9 +35,12 @@ describe('primary navigation', () => {
     expect(locationForView('replay', route).query).toEqual({ view: 'replay', lang: 'ru' })
     expect(locationForView('creators', route).query).toEqual(route.query)
   })
-  it('keeps the broadcast catalogue public within More without a second admin view', () => {
+  it('places broadcasts directly after standings as one public primary section', () => {
     expect(viewFromRoute({ path: '/', query: { view: 'league-broadcasts' } })).toBe('league-broadcasts')
-    expect(primarySection('league-broadcasts')).toBe('more')
+    expect(primarySection('league-broadcasts')).toBe('league-broadcasts')
+    expect(sectionTitleKey('league-broadcasts')).toBe('leagueBroadcasts.title')
+    expect(PRIMARY_NAV.findIndex(item => item.id === 'league-broadcasts'))
+      .toBe(PRIMARY_NAV.findIndex(item => item.id === 'tournament-points') + 1)
     expect(ADMIN_NAV.some(item => item.view.startsWith('league-broadcasts'))).toBe(false)
     const route = { path: '/', query: { view: 'league-broadcasts', lbServer: 'CN', lbSeason: '4', lbCategory: '9', lang: 'zh' } }
     expect(locationForView('league-broadcasts', route).query).toEqual(route.query)
@@ -60,14 +64,14 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'creators', 'more']
+      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'creators', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')
