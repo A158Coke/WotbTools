@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.mock.web.MockServletContext;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
@@ -24,6 +25,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
+import java.util.Map;
+import java.time.Instant;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -38,6 +41,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -58,6 +62,49 @@ class TournamentHttpTest {
         legacy.perform(get("/api/admin/tournaments/default-rules")).andExpect(status().isBadRequest());
         legacy.perform(head("/api/admin/tournaments")).andExpect(status().isOk())
                 .andExpect(header().doesNotExist("X-Tournament-Default-Rules"));
+    }
+    @Test void csvCapabilitiesSourceAndMultipartRoutesKeepPublicAndAdminBoundaries() throws Exception {
+        final var service = context.getBean(TournamentService.class);
+        when(service.listEvents()).thenReturn(List.of());
+        when(service.dataSource(1)).thenReturn(new TournamentDtos.DataSource(true, new TournamentDtos.Attribution("_EK_", "https://b23.tv/rqx5iYX")));
+        final var event = new TournamentDtos.Event(1, 4, 2026, "CN", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"), true);
+        final var preview = new TournamentDtos.CsvImportPreview(new TournamentDtos.Standings(event, List.of(), List.of()),
+                "standings.csv", "a".repeat(64), 200, 200, 1800, 4, new TournamentDtos.CsvChanges(200, 0, 0, 200, 0, 0, 0));
+        when(service.previewCsv(eq(1L), eq(4L), any())).thenReturn(preview);
+        when(service.importCsv(any(), eq(1L), eq(4L), any(), eq("a".repeat(64)), eq(true), eq("csv-key"))).thenReturn(preview);
+        mvc.perform(get("/api/tournaments")).andExpect(status().isOk()).andExpect(header().string("X-Tournament-Csv-Import", "1")).andExpect(jsonPath("$").isArray());
+        mvc.perform(head("/api/admin/tournaments").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(header().string("X-Tournament-Csv-Import", "1"));
+        mvc.perform(get("/api/tournaments/1/data-source")).andExpect(status().isOk()).andExpect(jsonPath("$.csvImported").value(true))
+                .andExpect(jsonPath("$.attribution.name").value("_EK_")).andExpect(jsonPath("$.attribution.url").value("https://b23.tv/rqx5iYX"));
+        mvc.perform(head("/api/tournaments/1/data-source")).andExpect(status().isUnauthorized());
+        final var file = new MockMultipartFile("file", "standings.csv", "text/csv", new byte[]{1});
+        mvc.perform(multipart("/api/admin/tournaments/1/csv-import/preview").file(file).param("expectedEventVersion", "4")).andExpect(status().isUnauthorized());
+        mvc.perform(multipart("/api/admin/tournaments/1/csv-import/preview").file(file).param("expectedEventVersion", "4")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
+        mvc.perform(multipart("/api/admin/tournaments/1/csv-import/preview").file(file).param("expectedEventVersion", "4")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sourceRowCount").value(200)).andExpect(jsonPath("$.changes.addedScores").value(200));
+        mvc.perform(multipart("/api/admin/tournaments/1/csv-import").file(file).param("expectedEventVersion", "4")
+                .param("sourceSha256", "a".repeat(64)).param("confirm", "true").param("idempotencyKey", "csv-key")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
+        mvc.perform(multipart("/api/admin/tournaments/1/csv-import").file(file).param("expectedEventVersion", "4")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isBadRequest());
+        final var json = JsonMapper.builder().findAndAddModules().build();
+        assertEquals(8, json.valueToTree(preview).properties().size());
+        assertEquals(2, json.valueToTree(new TournamentDtos.DataSource(false, null)).properties().size());
+        assertEquals(true, json.valueToTree(new TournamentDtos.DataSource(false, null)).has("attribution"));
+    }
+    @Test void auditEndpointKeepsMetadataAndEmptySnapshotObjectsInTheExistingWireShape() throws Exception {
+        final var metadata = new TournamentDtos.Audit(7, "CSV_IMPORTED", "admin", null, null, null,
+                Instant.parse("2026-10-16T15:00:00Z"), Map.of(), Map.of());
+        when(context.getBean(TournamentService.class).auditList(1)).thenReturn(List.of(metadata));
+        final var result = mvc.perform(get("/api/admin/tournaments/1/audit")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].action").value("CSV_IMPORTED"))
+                .andExpect(jsonPath("$[0].before").isEmpty()).andExpect(jsonPath("$[0].after").isEmpty()).andReturn();
+        final var json = JsonMapper.builder().findAndAddModules().build().readTree(result.getResponse().getContentAsString());
+        assertEquals(9, json.get(0).properties().size()); assertEquals(true, json.get(0).has("before")); assertEquals(true, json.get(0).has("after"));
     }
     @RestController
     static class PreviousEventIdController {
