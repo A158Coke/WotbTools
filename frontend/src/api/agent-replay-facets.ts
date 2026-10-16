@@ -433,6 +433,11 @@ export interface AgentArenaPeriod {
   [key: string]: unknown
 }
 
+/** 上游血量编码分类（`hp_state`；上游 ≥ 含该字段的版本恒在场，旧产物缺省）。
+ *  `terminal` = 负 i16 终态哨兵（死亡面之一）——分类规则唯一定义源在上游
+ *  （`combat::classify_hp_state` / `hp_terminal_normalized`），本层禁二次解释。 */
+export type AiHpStateField = 'current' | 'zero' | 'terminal'
+
 /** 归一化事件（`type` 内部标签；t = 回放原始时钟秒） */
 export type AgentAiEvent =
   | { type: 'spawn'; t: number; eid: number; max_hp: number }
@@ -442,12 +447,14 @@ export type AgentAiEvent =
   }
   /** method1：hp = 钳 0 的显示值；hp_raw = 原始 u16（v0.3.5，终态哨兵族原样）；
    *  v0.3.16 起 cause 未知/其他 = **255 哨兵**（唯一可判定的规范值，此前未知可能
-   *  落成任意缺省值；前端击杀流不按 cause 分支，新增按原因映射的消费方须处理 255） */
-  | { type: 'damage'; t: number; victim_eid: number; hp: number; hp_raw: number; source_eid: number; cause: number }
+   *  落成任意缺省值；前端击杀流不按 cause 分支，新增按原因映射的消费方须处理 255）；
+   *  `hp_state` = 上游权威血量编码分类（additive、恒在场；字段缺省 = 旧产物）。 */
+  | { type: 'damage'; t: number; victim_eid: number; hp: number; hp_raw: number; hp_state?: AiHpStateField; source_eid: number; cause: number }
   | { type: 'kill'; t: number; killer_eid: number; victim_eid: number; cause: number; assister_eid?: number }
   | { type: 'visibility'; t_in: number; eid: number; t_out?: number; hp_raw?: number }
-  /** prop3（type=7 sub=3）血量属性广播原始值（v0.3.6；录像者自身血量常只走这一路） */
-  | { type: 'health'; t: number; eid: number; hp_raw: number }
+  /** prop3（type=7 sub=3）血量属性广播原始值（v0.3.6；录像者自身血量常只走这一路）；
+   *  `hp_state` 同 `damage`（上游权威分类；字段缺省 = 旧产物，按 hp_raw 同一规则现算） */
+  | { type: 'health'; t: number; eid: number; hp_raw: number; hp_state?: AiHpStateField }
   /** method8 原始通知（v0.3.5；全变体不分类，载荷不足的字段缺省） */
   | {
     type: 'hit_notice'; t: number; eid: number; payload_len: number
