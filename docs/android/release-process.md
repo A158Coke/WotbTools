@@ -215,9 +215,12 @@ Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「�
 **只取数字**，不动发布路径。
 
 何时跑：`workflow_dispatch`（`environment: tx-production`，与部署/备份共用
-`production-maintenance` 队列）。它要求 dispatched SHA == 当前 `main`，不写 version.json /
-tag / staging evidence，不 seed origin，只在网盘上写一个 `_offload-probe-<run>.bin` 探针对象
-并在结束前删除（`.bin` 不在 Caddy 的 `*.apk` 重定向范围内，即使清理失败也不可能被当成 APK 分发）。
+`production-maintenance` 队列，并与 `android-release` 用 job 级 `concurrency` **互斥**——两边写同一门
+Seafile 网盘，重叠会让探针数字失真，也会挤占发布那条已经贴着 `--max-time 2700` 的上传）。它要求
+dispatched SHA == 当前 `main`（运行期间 main 一前进即失败），不写 version.json / tag / staging
+evidence，不 seed origin，只在网盘上写一个 `_offload-probe-<run>.bin` 探针对象并**必须确认删除**
+（`.bin` 不在 Caddy 的 `*.apk` 重定向范围内，即使残留也不会被当成 APK 分发；但删不掉就是红的——
+scratch-object 契约不允许静默残留）。
 
 它测四件事：
 
@@ -225,9 +228,11 @@ tag / staging evidence，不 seed origin，只在网盘上写一个 `_offload-pr
    没有的杠杆——链路差时靠它把最坏情况压回可重试的量级。缺 `secrets.COS_RELEASE_SECRET_ID` /
    `secrets.COS_RELEASE_SECRET_KEY` / `vars.COS_RELEASE_BUCKET` 时该段跳过（`::notice::`），其余段照测；
    `vars.COS_REGION` 缺省 `ap-shanghai`。凭证按最小权限建：发布专用桶（与资产桶
-   `wotbtools-assets-*` **分开**）的 `android/*` 前缀 `PutObject` / `GetObject` / `DeleteObject`，
-   外加分片上传必需的 `InitiateMultipartUpload` / `UploadPart` / `CompleteMultipartUpload` /
-   `AbortMultipartUpload`（缺这几个动作时 8 路分片测量会 AccessDenied，只剩单流数字）；不给 ListBucket。
+   `wotbtools-assets-*` **分开**）的 `android/*` 前缀 `PutObject` / `GetObject` / `HeadObject` /
+   `DeleteObject`，外加分片上传必需的 `InitiateMultipartUpload` / `UploadPart` /
+   `CompleteMultipartUpload` / `AbortMultipartUpload`（缺分片动作时 8 路分片测量会 AccessDenied、只剩
+   单流数字；缺 `HeadObject` 时上传后的 HEAD 回读与清理确认会失败——HEAD 在 CAM 里不被 `GetObject`
+   覆盖）；不给 ListBucket。
 2. **COS → TX1**：主机从预签名直链拉回 + `sha256sum -c`，并打印该主机把 COS 域名解析到**内网还是
    公网**（同地域内网流量免费；跨地域不支持内网，故发布桶应与 TX 主机同地域）。
 3. **TX1 → 清华网盘**：与 `android-release.yml` 同一协议（upload-link → multipart `replace=1`），

@@ -35,6 +35,9 @@ concurrency:
   queue: max
 
 env:
+  # 本 workflow 是 dispatch-only：freshness 门禁先要求「event SHA == 当前 main」，所以运行期间 main 一前进
+  # 就会在第二次校验失败（不依赖下面的清单）——那正是探针要的语义：它测的是「当时 main 上的发布协议」。
+  # 这个清单只有在本 workflow 将来改成 push 触发时才会成为判定依据，此刻保留只是为了与仓库惯例同形。
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/android-offload-probe.yml
     deploy/check-production-freshness.sh
@@ -49,6 +52,12 @@ jobs:
     timeout-minutes: 90
     # SSH 到生产主机 + 写公开分发副本 ⇒ 沿用受保护的 tx-production，与 tx-runtime-check 同口径。
     environment: tx-production
+    # 与 `android-release` 互斥（同一门 Seafile 网盘的写入路径）：并发会让探针数字失真，也会挤占
+    # android-release 那条已经贴着 `--max-time 2700` 的上传（run 38898856907 就是这么超时的）。
+    # 顶层 `production-maintenance` 队列保留（与部署/备份互斥），这里再加 job 级 `android-release` 组。
+    concurrency:
+      group: android-release
+      cancel-in-progress: false
     steps:
       - name: Validate probe parameters
         shell: bash
@@ -107,9 +116,10 @@ jobs:
       #    杠杆，链路差时靠它把最坏情况压回可重试的量级。
       #    缺 COS 凭证时本段跳过（::notice::），后面的 TX1→网盘段仍用同尺寸本地载荷测量。
       #    凭证按最小权限建：CAM 子账号限定到该发布桶的 `android/*` 前缀，动作 = PutObject / GetObject /
-      #    DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart / CompleteMultipartUpload /
-      #    AbortMultipartUpload（缺这几个动作时 8 路分片测量会 AccessDenied，只剩单流数字，而这正是
-      #    链路退化时唯一还能用的杠杆）；不给 ListBucket，更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
+      #    HeadObject / DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart /
+      #    CompleteMultipartUpload / AbortMultipartUpload。缺分片动作时 8 路分片测量 AccessDenied、只剩
+      #    单流数字；缺 HeadObject 时上传回来之后的 HEAD 回读与清理确认会失败（HEAD 在 CAM 里是独立动作，
+      #    不被 GetObject 覆盖）。不给 ListBucket，更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
       - name: Probe runner to COS (single flow + 8-way multipart)
         id: cos
         shell: bash
@@ -327,18 +337,33 @@ jobs:
             [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts" >&2; exit 1; }
             echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA"
 
-            echo "--- (4) delete the probe object ---"
+            echo "--- (4) delete the probe object (verified absence is mandatory) ---"
+            # 删除必须被「确认」：探针把自己定义为「只写删一个 scratch 对象」，所以删不掉就不能绿。
             delete_rc=0
-            curl -sS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
-              "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
-              || delete_rc=$?
-            echo "delete curl rc=$delete_rc"
-            BYTES_AFTER="$(curl -sSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
-              "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
-            case "$BYTES_AFTER" in
-              "$PROBE_SIZE") echo "::warning::probe object is still served by the share link; remove $PARENT_DIR/$PROBE_NAME manually" ;;
-              *) echo "probe object no longer served (share link returned $BYTES_AFTER bytes)"; PROBE_DELETED=1 ;;
-            esac
+            BYTES_AFTER="<not-checked>"
+            probe_gone=0
+            for attempt in 1 2 3; do
+              delete_rc=0
+              curl -fsS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
+                || delete_rc=$?
+              BYTES_AFTER="$(curl -sSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
+                "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
+              case "$BYTES_AFTER" in
+                # 只有「直链服务的不再是探针字节」才算删掉了：缺对象时该部署返回 200 + 小 HTML 页，
+                # 探针本身失败（<probe-failed>）不构成缺席证据，继续重试。
+                "$PROBE_SIZE"|'<probe-failed>') echo "delete attempt $attempt/3: object still served (bytes=$BYTES_AFTER); retrying." ;;
+                *) probe_gone=1; break ;;
+              esac
+              sleep 3
+            done
+            if [ "$probe_gone" = "1" ]; then
+              PROBE_DELETED=1
+              echo "probe object no longer served (delete rc=$delete_rc, share link returned $BYTES_AFTER bytes)"
+            else
+              echo "::error::probe object is STILL served after 3 delete attempts; remove $PARENT_DIR/$PROBE_NAME manually" >&2
+              exit 1
+            fi
 
             echo "========== PROBE NUMBERS =========="
             echo "probe_name=$PROBE_NAME size=$PROBE_SIZE sha256=$PROBE_SHA"
@@ -366,6 +391,7 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check cos-python-sdk-v5
           python3 - <<'PY'
           import os
+          import sys
           from qcloud_cos import CosConfig, CosS3Client
 
           client = CosS3Client(CosConfig(
@@ -376,12 +402,34 @@ jobs:
           ))
           bucket = os.environ["COS_BUCKET"]
           name = os.environ["PROBE_NAME"]
+          leaked = []
           for key in ("android/probe/%s" % name, "android/probe/%s.single" % name):
               try:
                   client.delete_object(Bucket=bucket, Key=key)
-                  print("deleted cos://%s/%s" % (bucket, key))
               except Exception as error:
-                  print("::warning::could not delete cos://%s/%s: %s" % (bucket, key, error))
+                  print("delete failed for cos://%s/%s: %s" % (bucket, key, error))
+                  leaked.append(key)
+                  continue
+              # 删除后必须确认缺席：HEAD 报 404 才算删掉；其它错误（403 / 网络）不构成缺席证据，
+              # 一律按「可能残留」处理——探针的 scratch-object 契约不允许 summary 声称已删却留着对象。
+              try:
+                  client.head_object(Bucket=bucket, Key=key)
+                  print("cos://%s/%s still present after delete" % (bucket, key))
+                  leaked.append(key)
+              except Exception as error:
+                  status = None
+                  try:
+                      status = error.get_status_code()
+                  except Exception:
+                      status = None
+                  if status == 404:
+                      print("deleted cos://%s/%s (HEAD confirms 404)" % (bucket, key))
+                  else:
+                      print("could not confirm deletion of cos://%s/%s (HEAD returned %s: %s)" % (bucket, key, status, error))
+                      leaked.append(key)
+          if leaked:
+              print("::error::probe objects left behind on COS: %s" % ", ".join(leaked))
+              sys.exit(1)
           PY
 
       - name: Probe summary
