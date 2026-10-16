@@ -62,7 +62,7 @@ internal class GeckoWebRuntime(
     private var extensionRequested = false
     private var port: WebExtension.Port? = null
     private var pendingUri: String? = null
-    private var killed = false
+    private val recovery = RuntimeRecovery()
     private var closed = false
     private val recentCrashes = ArrayDeque<Long>()
     private var crashCount = 0
@@ -76,22 +76,30 @@ internal class GeckoWebRuntime(
     var canGoBack = false
         private set
 
-    /** 扩展就绪（message delegate 已注册）之前不加载页面：首屏前 bridge 必须可用。 */
+    /**
+     * 扩展就绪（message delegate 已注册）之前不加载页面：首屏前 bridge 必须可用。
+     * content 进程 crash / kill 后 session 已关闭：这里先重开再加载（错误页「重新加载」也走这里）。
+     */
     fun load(uri: String) {
         if (closed) return
+        recovery.requested(uri)
         pendingUri = uri
         if (extension == null) {
             requestExtension() // 安装失败后，错误页的「重新加载」从这里重试
             return
         }
         pendingUri = null
+        if (!session.isOpen) {
+            session.open(runtime(context))
+            attachBridge()
+        }
         session.loadUri(uri)
     }
 
     fun reload() {
         val url = currentUrl
         if (url.isNullOrEmpty()) return
-        if (!session.isOpen) reopen(url) else session.reload()
+        if (!session.isOpen) load(url) else session.reload()
     }
 
     fun goBack() = session.goBack()
@@ -103,15 +111,14 @@ internal class GeckoWebRuntime(
         port?.let { post(it, JSONObject().put("type", "event").put("global", global)) }
     }
 
-    /** 低内存 kill 后回到前台：静默重开并重载被杀前的页面。 */
+    /** 低内存 kill 后回到前台：静默重开并重载被杀前的页面（包括还没收到 onLocationChange 的首屏）。 */
     fun onResume() {
-        if (!killed || closed) return
-        killed = false
-        reopen(currentUrl ?: return)
+        recovery.onResume()?.let { load(it) }
     }
 
     fun close() {
         closed = true
+        recovery.close()
         choiceDialog?.dismiss()
         port = null
         extension?.let { session.webExtensionController.setMessageDelegate(it, null, NATIVE_APP) }
@@ -123,13 +130,6 @@ internal class GeckoWebRuntime(
         "GeckoView ${BuildConfig.GECKOVIEW_VERSION} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · " +
             "${Build.MANUFACTURER} ${Build.MODEL} · ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"} · " +
             "bridge v${BuildConfig.NATIVE_BRIDGE_VERSION} · crash=$crashCount kill=$killCount last=$lastFailure"
-
-    private fun reopen(uri: String) {
-        if (closed) return
-        if (!session.isOpen) session.open(runtime(context))
-        attachBridge()
-        load(uri)
-    }
 
     private fun requestExtension() {
         if (extension != null || extensionRequested || closed) return
@@ -286,6 +286,7 @@ internal class GeckoWebRuntime(
             hasUserGesture: Boolean
         ) {
             currentUrl = url
+            recovery.committed(url)
         }
 
         override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) {
@@ -365,7 +366,7 @@ internal class GeckoWebRuntime(
             if (recentCrashes.size >= 2) {
                 host.onRuntimeFailure(crashLoop = true)
             } else {
-                reopen(currentUrl ?: MainActivity.LOCAL_APP_ENTRY)
+                recovery.onCrash()?.let { load(it) }
             }
         }
 
@@ -375,7 +376,7 @@ internal class GeckoWebRuntime(
             port = null
             Log.w(TAG, "content process killed count=$killCount")
             // 通常发生在后台（低内存回收）：等回到前台再重载；若窗口正可见则立即重载，避免停在空白页。
-            if (view.windowVisibility == View.VISIBLE) reopen(currentUrl ?: return) else killed = true
+            recovery.onKill(visible = view.windowVisibility == View.VISIBLE)?.let { load(it) }
         }
     }
 
@@ -472,4 +473,52 @@ internal class GeckoWebRuntime(
             })
         }
     }
+}
+
+/**
+ * content 进程 crash / kill 后的恢复目标与恢复时机（纯逻辑，JVM 单测覆盖）。
+ *
+ * 恢复目标 = 最近一次**请求**加载或 Gecko **确认**的本机 URL：`loadUri` 之后、首个 `onLocationChange` 之前
+ * 进程就被杀时，`currentUrl` 还是 null，但请求的目标（例如冷启动的 `?view=replay`）不能丢。`about:blank` 等非本机
+ * 地址不会覆盖目标；从未请求过任何页面时才回落 [MainActivity.LOCAL_APP_ENTRY]。后台 kill 的标记只在回前台真正开始
+ * 恢复时消费；runtime 关闭后一律不再恢复。
+ */
+internal class RuntimeRecovery {
+    private var target: String? = null
+    private var resumePending = false
+    private var closed = false
+
+    fun requested(uri: String) {
+        if (MainActivity.isLocalAppUrl(uri)) target = uri
+    }
+
+    fun committed(url: String?) {
+        if (url != null && MainActivity.isLocalAppUrl(url)) target = url
+    }
+
+    /** 窗口可见时立即返回恢复 URL；不可见时记下，等 [onResume]。 */
+    fun onKill(visible: Boolean): String? {
+        if (closed) return null
+        if (!visible) {
+            resumePending = true
+            return null
+        }
+        resumePending = false
+        return recoveryUri()
+    }
+
+    fun onResume(): String? {
+        if (closed || !resumePending) return null
+        resumePending = false
+        return recoveryUri()
+    }
+
+    fun onCrash(): String? = if (closed) null else recoveryUri()
+
+    fun close() {
+        closed = true
+        resumePending = false
+    }
+
+    private fun recoveryUri(): String = target ?: MainActivity.LOCAL_APP_ENTRY
 }

@@ -64,6 +64,10 @@ flush 失败、客户端断开与意外异常都 close 恰好一次。
 - content 进程 **crash**：首次自动重开 session 并重载当前页；60 s 内第二次进入 Native 错误页
   （「重新加载」/「使用浏览器版」），避免重启风暴。
 - content 进程被系统 **kill**（低内存回收）：不算故障，回到前台时静默重载被杀前的页面。
+  恢复目标由 `RuntimeRecovery` 决定：最近一次**请求**加载或 Gecko **确认**的本机 URL——`loadUri` 之后、首个
+  `onLocationChange` 之前就被杀（`currentUrl` 仍为 null，例如冷启动的 `?view=replay`）也不会丢目标；窗口可见时立即
+  恢复，后台时等回前台、真正开始恢复才消费标记；crash 恢复用同一目标；runtime 关闭后不再恢复。session 已关闭时
+  `load()` 先重开再加载，错误页「重新加载」同样有效。
 - Gecko parent 进程运行在 App 进程内，它的 native crash 仍会结束 App——「不再闪退」的口径只覆盖 content 进程。
 - 错误页带一行可长按复制的诊断（GeckoView 版本、Android / API、厂商型号、ABI、bridge 版本、crash / kill 计数、
   最近一次故障类型），同时写 logcat；不含账号、文件或回放信息。
