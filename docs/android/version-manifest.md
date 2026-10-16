@@ -43,8 +43,10 @@
 
 > 上面的 `minSupportedVersionCode=2000000` 是 Android 2.0 的 cutover 取值：manifest 一旦指向
 > bridge v2 的客户端，前端就不再服务 bridge v1，因此旧版必须是强制更新。该值来自 GitHub Actions
-> variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（不在仓库内），设置时机见
-> [`release-process.md`](release-process.md)。
+> variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（不在仓库内）。设置时机：**major / bridge cutover 时
+> 必须在合并（触发自动 stage）之前设好**——stage preflight 自己执行 cutover 守卫，floor 未到位时
+> 自动 stage 会 fail-closed；设置变量本身不写 `version.json`、不强制客户端更新，详见
+> [`release-process.md`](release-process.md)「强制更新门槛（minSupportedVersionCode）的抬升」。
 
 | 字段 | 必填 | 说明 |
 |---|---|---|

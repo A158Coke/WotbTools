@@ -15,11 +15,11 @@
 
 目录入口不再依赖 WebView 的 `webkitdirectory`／`FileChooserParams.createIntent()`：后者在 Android 16 设备上实际发出普通 `ACTION_GET_CONTENT`，选目录会被文件管理器拒绝。普通 Web 浏览器继续使用 HTML 目录选择；Android 文件多选仍走既有 input。
 
-- Bridge v2 追加可选 `replay-folder-picker` capability；`pickReplayFolder(requestId)` 启动系统 SAF 目录选择，取消不修改既有文件；`cancelReplayFolderPicker(requestId)` 只关闭／取消该调用者尚未完成的选择或扫描，不会影响新请求。`releaseReplayFolderSelection(selectionId)` 只释放匹配的瞬时选择。
+- Bridge 可选 `replay-folder-picker` capability（v2 引入，v3 不变）；`pickReplayFolder(requestId)` 启动系统 SAF 目录选择，取消不修改既有文件；`cancelReplayFolderPicker(requestId)` 只关闭／取消该调用者尚未完成的选择或扫描，不会影响新请求。`releaseReplayFolderSelection(selectionId)` 只释放匹配的瞬时选择。
 - 系统只授权所选目录，App 不调用 `takePersistableUriPermission`，不申请 broad storage permission。Android 11+ 的根目录、Download 根及 Android/data 等限制由系统执行，不绕过。
 - 原生在后台逐行递归目录，最多扫描 10,000 个文档条目（含重复／循环），保留不可变的文档引用，累计 metadata／相对路径限 1,000,000 字符；原生不是业务过滤／校验 owner。目录选择总等待 9 分钟、扫描 60 秒，失败／取消／销毁关闭本次请求，迟到 Activity 结果和扫描不得替换新选择。
 - Web 收到 metadata（fileId、name、relativePath、size 可未知、lastModified），不会收到真实 content URI。FileDrop 使用既有回放筛选、去重和 100 文件／20 MiB 单文件／200 MiB 总量规则预检，再读取回放；嵌套目录的相对路径避免同名文件互相覆盖；提供者若返回路径完全相同的多个回放，则明确拒绝整个批次，不静默覆盖。
-- 固定 `https://appassets.androidplatform.net/__native/replay-folder` 只响应 GET，使用 `X-Wotb-Folder-Selection-Id` 与 `X-Wotb-Folder-File-Id` 两个身份 header。不存在、错身份、旧选择、读失败必须由 Native 返回错误，绝不落到网络；响应 no-store。读取同时复核所有权，Native 沿用 25 MiB 基础设施单文件上限，前端再按实际字节执行业务上限（不信 provider SIZE）。
+- 固定 `http://127.0.0.1:21653/__native/replay-folder`（LocalRuntimeServer）只响应 GET，使用 `X-Wotb-Folder-Selection-Id` 与 `X-Wotb-Folder-File-Id` 两个身份 header。不存在、错身份、旧选择、读失败必须由 Native 返回错误，绝不落到网络；响应 no-store。读取同时复核所有权，Native 沿用 25 MiB 基础设施单文件上限，前端再按实际字节执行业务上限（不信 provider SIZE）。
 - 前端读取阶段最多 2 分钟；离开组件或既有选择被新导入替换时，通过请求身份取消 Native picker／扫描及读取。只有完整成功的 File 批次才交给既有候选入口，错误不部分导入；成功／拒绝／读失败／取消后的迟到回复均释放本次 Native 选择。
 - 这是手动、瞬时的文件选择：不自动解析、不写 durable pending、不改变 share/open 的 analysis/ACK 语义。进程结束后用户重新选择目录，没有常驻目录监听。
 
@@ -27,13 +27,14 @@
 
 ## 单一交接通道（唯一 external ingress，不依赖 Base64，规格 §38/§39）
 
-### HTTPS pending resource（2026-09-10 hotfix）
+### Same-origin pending resource（2026-09-10 hotfix；3.0 起由 LocalRuntimeServer 伺服）
 
-旧链路在 `allowContentAccess=false` 的 WebView 中 `fetch(content://...)`，登录成功后可能无法读取字节，
-因此无法把 pending 字节交给前端分析。Processing Job 是已退役的历史链路。修复保留 `allowFileAccess=false` / `allowContentAccess=false`。
+更早的链路让页面直接 `fetch(content://...)`，登录成功后可能无法读取字节，因此无法把 pending 字节交给
+前端分析。Processing Job 是已退役的历史链路。页面从不直接读取 content URI。
 
-- Bridge 的 `uri` 固定为 `https://appassets.androidplatform.net/__native/replay-pending`；这是 Native resource，不是后端 API。
-  App canonical origin 是 `https://appassets.androidplatform.net`；URL 不含 query、pendingId、文件名、本地路径或凭据。
+- Bridge 的 `uri` 固定为 `http://127.0.0.1:21653/__native/replay-pending`；这是 Native resource，不是后端 API。
+  App canonical origin 是 `http://127.0.0.1:21653`（2.x 为 `https://appassets.androidplatform.net`）；
+  URL 不含 query、pendingId、文件名、本地路径或凭据。前端只接受与该常量逐字相等的 `uri`。
 - Web 用 `X-Wotb-Pending-Id` request header 传 metadata identity；Native 比较当前 snapshot 的 identity，
   再打开同一 snapshot 的 backing file，防止新 replay B 替换 A 后，B 的内容被关联到 A 的 pendingId。
 - Exact URL 始终 Native-owned：文件存在返回 200 octet-stream + FileInputStream；无 pending/文件返回 404；
@@ -56,36 +57,36 @@ ACTION_SEND / ACTION_VIEW
   → private cache backing file + pendingId（完整 UUID，authoritative identity）+ createdAt
   → pending slot（single slot：最新 replay 取代旧 pending）+ SharedPreferences metadata
   → 工作台挂载后经 NativeBridge getPendingReplay() 取回 pendingId/name/size/uri
-  → Web fetch 固定同源 HTTPS synthetic resource 读字节构造 File → 现有 FileDrop/validate 管线
+  → Web fetch 固定同源 synthetic resource（LocalRuntimeServer）读字节构造 File → 现有 FileDrop/validate 管线
   → 本机分析（上游 Rust Core WASM；服务器没有 parser，不上传回放）
   → 分析完成后 Web 调 consumePendingReplay(pendingId) ACK（compare-and-clear）
 ```
 
-Android 外部 replay **只有这一条** ingress。曾经的第二条路径——WebView `onShowFileChooser`
-拦截 `<input type=file>` 并把 pending URI 直接回传给页面——已删除；普通 Web file chooser 仍走
+Android 外部 replay **只有这一条** ingress。曾经的第二条路径——拦截 `<input type=file>` 并把 pending URI
+直接回传给页面——早已删除；普通 Web file chooser（3.0 起为 Gecko `PromptDelegate.onFilePrompt`）仍走
 Android 系统 picker，与 pending replay 无关。Kotlin 侧不做任何 replay 解析、不建立第二套
 uploader。
 
-非 `.wotbreplay` candidate 安全忽略（返回 null，不交给 Web upload pipeline）。`allowContentAccess=false`
-与 app-owned FileProvider URI 兼容：字节经 `WebViewClient.shouldInterceptRequest` 以文件流返回给
-Web，不依赖 WebView 直接读取 external content URI，也不放宽 WebView 安全边界。
+非 `.wotbreplay` candidate 安全忽略（返回 null，不交给 Web upload pipeline）。字节经 LocalRuntimeServer
+的 `/__native/replay-pending` 路由以文件流返回给 Web（2.x 为 `WebViewClient.shouldInterceptRequest`），
+页面不直接读取 external content URI，也不放宽引擎安全边界。
 
 ## 导航所有权（与认证完全解耦）
 
-Android 2.0 起认证由 Native 在**外部浏览器**完成，WebView 不再承载任何 OIDC 导航，因此 replay
+Android 2.0 起认证由 Native 在**外部浏览器**完成，页面引擎不承载任何 OIDC 导航，因此 replay
 ingress 与认证之间**不存在**所有权冲突：replay 意图没有 auth-return 分支，认证也没有任何
-WebView navigation 可以「优先」。
+页面导航可以「优先」。
 
 - intent 分类只做一件事：非 replay intent 返回 false，replay candidate 入队；**是否分发、如何分发**
   由纯策略 `ReplayDispatchPolicy.decide(hasPendingReplay, webViewVisible, currentUrl)` 唯一决定：
 
 | 条件 | 动作 |
 |---|---|
-| 无 pending / WebView 容器不可见（门禁 / 错误 / 更新页接管） | `NONE`——只入队，不 `loadUrl`，不 `evaluateJavascript` |
-| 已在 replay workspace（URL 含 `view=replay`） | `NOTIFY_WEB` → `window.wotbtoolsOnReplay()` |
-| 其它 | `NAVIGATE_REPLAY` → `loadUrl(https://appassets.androidplatform.net/index.html?view=replay)` |
+| 无 pending / 页面不可见（门禁 / 错误 / 更新页接管） | `NONE`——只入队，不导航，不发事件 |
+| 已在 replay workspace（URL 含 `view=replay`） | `NOTIFY_WEB` → bridge 事件 `wotbtoolsOnReplay`（contract `events.replay`） |
+| 其它 | `NAVIGATE_REPLAY` → 加载 `http://127.0.0.1:21653/index.html?view=replay` |
 
-- **登录期间收到 replay**：正常持久化并分发（WebView 没有被认证占用）；正在进行的 OIDC 事务在外部
+- **登录期间收到 replay**：正常持久化并分发（页面没有被认证占用）；正在进行的 OIDC 事务在外部
   浏览器里，不会被 replay 打断。**登录失败 / 取消 / 未登录**时 pending replay 原样保留且仍可用——
   认证不是 replay 的前置条件。
 - 非 replay intent（例如 launcher `ACTION_MAIN`）不清空既有 pending：pending 只由 Web consume、
@@ -107,15 +108,15 @@ WebView navigation 可以「优先」。
 - TTL 24 小时（`PENDING_TTL_MS`）：本地 cache hygiene，与 Keycloak/client login timeout 无关；
   过期 pending 在下次启动被丢弃并清理。
 - ACK 后（`consumePendingReplay(pendingId)`）：清 pending slot + 清持久 metadata（exactly-once），
-  下次启动不再恢复该 replay。backing file 不立即删除（Chromium 可能仍在读取 Web
-  synthetic HTTPS resource 的响应流），留到下一次启动 orphan cleanup 安全清理。
+  下次启动不再恢复该 replay。backing file 不立即删除（Gecko 可能仍在消费 LocalRuntimeServer
+  返回的响应体），留到下一次启动 orphan cleanup 安全清理。
 
 ## ACK 语义（identity-aware exactly-once）
 
 Web 侧 `useNativeReplayImport` 的顺序固定为：
 
 ```text
-getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(file, pending) → 受理成功
+getPendingReplay → fetch(same-origin LocalRuntimeServer resource) → File → await onPendingFile(file, pending)（本机分析）→ 受理成功
   → consumePendingReplay(pending.pendingId)
 ```
 

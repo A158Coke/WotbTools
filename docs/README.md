@@ -95,7 +95,7 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `android/architecture.md` | 改 Android WebView 壳、native bridge 或启动流程时 |
+| `android/architecture.md` | 改 Android 运行时（GeckoView / 本机 LocalRuntimeServer）、native bridge 或启动流程时 |
 | `android/replay-intent.md` | 改 Android 外部回放交接 / pending replay 消费时 |
 | `android/release-process.md` | 改 Android 发布流程或版本门禁时 |
 | `android/version-manifest.md` | 改 APK version manifest / update contract 时 |

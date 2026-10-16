@@ -3,8 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useNativeReplayImport } from './useNativeReplayImport.js'
 
-const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 }
-const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 }
+const PENDING_A = { pendingId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', name: 'a.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 5 }
+const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 5 }
 
 /**
  * Native 侧替身：`consumePendingReplay` 实现 **compare-and-clear**
@@ -16,7 +16,7 @@ const PENDING_B = { pendingId: 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb', name: 'b.
 function stubNative(
   pending,
   consumeResult = true,
-  bridgeVersion = 2,
+  bridgeVersion = 3,
   capabilities = bridgeVersion === null ? ['replay-open', 'replay-share'] : [],
 ) {
   const listeners = []
@@ -70,7 +70,7 @@ function stubNative(
 /** 模拟 Native shouldInterceptRequest 以 synthetic HTTPS resource 返回缓存文件字节。 */
 function stubFetchBlob() {
   vi.stubGlobal('fetch', vi.fn(async (uri) => {
-    if (uri === 'https://appassets.androidplatform.net/__native/replay-pending') {
+    if (uri === 'http://127.0.0.1:21653/__native/replay-pending') {
       return { ok: true, blob: async () => new Blob(['replay-bytes'], { type: 'application/octet-stream' }) }
     }
     return { ok: false, status: 404 }
@@ -92,7 +92,7 @@ describe('useNativeReplayImport', () => {
     expect(importing.value).toBe(false)
   })
 
-  it.each([null, 1, 3])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
+  it.each([null, 1, 2, 4])('rejects unsupported bridge version v%s before touching any pending replay', async (bridgeVersion) => {
     const native = stubNative(PENDING_A, true, bridgeVersion)
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -160,7 +160,7 @@ describe('useNativeReplayImport', () => {
   it.each([
     'https://wotbtools.com/__native/replay-pending',
     'https://evil.example/replay',
-    'https://appassets.androidplatform.net/__native/replay-pending?other=1',
+    'http://127.0.0.1:21653/__native/replay-pending?other=1',
     'content://com.wotbtools/replay/file',
   ])('rejects a noncanonical resource %s before any fetch or ACK', async (uri) => {
     const native = stubNative({ ...PENDING_A, uri })
@@ -266,7 +266,7 @@ describe('useNativeReplayImport', () => {
   })
 
   it('missing identity：没有 pendingId 的 pending 绝不消费、绝不 ACK', async () => {
-    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'https://appassets.androidplatform.net/__native/replay-pending', size: 5 })
+    const native = stubNative({ name: 'legacy.wotbreplay', uri: 'http://127.0.0.1:21653/__native/replay-pending', size: 5 })
     stubFetchBlob()
     const onPendingFile = vi.fn(async () => true)
     const { consumePendingWhenReady } = useNativeReplayImport({ isReady: () => true, onPendingFile })
