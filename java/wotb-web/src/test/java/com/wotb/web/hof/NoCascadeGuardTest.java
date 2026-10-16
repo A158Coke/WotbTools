@@ -25,10 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li>没有任何外键指向 {@code user_profile}（删资料不会牵连任何业务表）；</li>
  *   <li>{@code ON DELETE CASCADE} 只允许出现在**域内组合关系**上，且必须逐个显式评审：
- *       replay processing 权威状态域内的 {@code fk_replay_processing_source_job} /
- *       {@code fk_replay_processing_operation_job}
- *       （删除一个 job 投影必须一并删除它的 source 投影与 operationId 索引；两者都不指向
- *       IAM 身份、也不指向 HoF 业务表），不得出现在 HoF 或 IAM 路径上；</li>
+ *       新闻归档内的正文快照、类别关联和图片关联随所选归档删除；类别字典与图片对象
+ *       本身不级联删除，也不关联 IAM 身份或 HoF 业务表；</li>
  *   <li>百场/三环的 replay evidence 外键不是 CASCADE（业务行永不被级联删除）。</li>
  * </ol>
  */
@@ -68,13 +66,19 @@ class NoCascadeGuardTest {
             // 3) ON DELETE CASCADE 必须只属于已显式评审的域内组合关系
             //    （按约束名排序以获得确定性断言，与 information_schema 返回顺序无关）
             final List<String> cascades = strings(s,
-                    "select tc.constraint_name from information_schema.referential_constraints rc "
+                    "select tc.table_name || ':' || tc.constraint_name || '->' || target.table_name "
+                            + "from information_schema.referential_constraints rc "
                             + "join information_schema.table_constraints tc "
                             + "  on tc.constraint_name = rc.constraint_name and tc.constraint_schema = rc.constraint_schema "
+                            + "join information_schema.constraint_column_usage target "
+                            + "  on target.constraint_name=rc.unique_constraint_name "
+                            + "  and target.constraint_schema=rc.unique_constraint_schema "
                             + "where rc.delete_rule = 'CASCADE' "
                             + "order by tc.constraint_name");
-            // V27 删除回放处理 Job 三表后，库内不再有任何 ON DELETE CASCADE。
-            assertEquals(List.of(),
+            // V35 only cascades owned snapshots/join rows. Shared category/image targets use RESTRICT.
+            assertEquals(List.of("news_archive_category:news_archive_category_archive_id_fkey->news_archive",
+                            "news_archive_image:news_archive_image_archive_id_fkey->news_archive",
+                            "news_archive_source:news_archive_source_archive_id_fkey->news_archive"),
                     cascades,
                     "出现新的级联删除关系时必须显式评审：IAM / HoF 路径禁止级联删除");
 
