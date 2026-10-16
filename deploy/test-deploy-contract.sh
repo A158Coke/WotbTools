@@ -49,4 +49,15 @@ grep -Fq 'ghcr.io/a158coke/ai-service:latest' "$WORK/docker-compose.yml"
 grep -Fq '10.20.0.2:8089:8080' "$WORK/docker-compose.yml"
 grep -Fq 'http://10.20.0.2:8089/actuator/health/readiness' "$WORK/curl.log"
 [ ! -e "$WORK/production-release.json" ]
+# A later AI-owned deployment must retain the previously deployed immutable
+# exporter reference, even when that job has no exporter environment or token.
+exporter_image="ghcr.io/a158coke/dev-metrics-exporter:${SHA}@sha256:$(printf 'b%.0s' {1..64})"
+sed -i "s|^    image: \${DEV_METRICS_IMAGE:-ghcr.io/a158coke/dev-metrics-exporter:unconfigured}$|    image: $exporter_image|" "$WORK/docker-compose.yml"
+deploy_run ai-service AI_API_KEY=test >/dev/null
+grep -Fq "image: $exporter_image" "$WORK/docker-compose.yml"
+if deploy_run dev-metrics-exporter DEV_METRICS_IMAGE=ghcr.io/a158coke/dev-metrics-exporter:latest >/dev/null 2>&1; then
+  echo 'exporter accepted mutable latest image authority' >&2
+  exit 1
+fi
+echo 'Yecao unrelated deployment preserves exporter digest and rejects latest: PASS'
 echo 'Yecao ai-service deploy uses latest without release metadata: PASS'

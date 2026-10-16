@@ -928,6 +928,20 @@ for index in read_pipelines:
         + all_lines[index].strip()
     )
 
+# The exporter package may be private on first publication. Its pull credentials
+# belong only to the exporter mutation and must never become host Docker state.
+observability = load(workflow_dir / "observability.yml")
+obs_steps = observability["jobs"]["observability"]["steps"]
+obs_reconcile = next(step for step in obs_steps if step.get("name") == "Reconcile selected runtime, apply Grafana plan, and verify")
+obs_script = obs_reconcile["with"]["script"]
+assert "mktemp -d /run/wotb-dev-metrics-pull.XXXXXX" in obs_script
+assert "trap 'rm -rf -- \"$DOCKER_CONFIG\"' EXIT" in obs_script
+assert 'docker login ghcr.io --username "$DEV_METRICS_REGISTRY_USER" --password-stdin' in obs_script
+assert 'printf \'%s\' "$DEV_METRICS_REGISTRY_TOKEN"' in obs_script
+assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
+assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
+assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
+
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
 

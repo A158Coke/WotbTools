@@ -26,6 +26,12 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 prompt-repair-executor（基于现成修复提示词增量修复）· review-fix · review-with-docs · code-smell ·
 product-qa（真实浏览器黑盒产品 QA）· column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
 
+## PR area 标签
+
+新建 PR 至少添加一个正式 `area/*` 标签，按实际 changed scope 可选多个。
+taxonomy 唯一来源为 `deploy/observability/dev-metrics/area-taxonomy.json`；
+不得临时创建任意 area，扩充 taxonomy 必须作为明确变更。CI V1 仅 advisory，不阻断合入。
+
 ## 文档入口
 
 README.md · HISTORY.md（项目演进）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/ROADMAP.md
