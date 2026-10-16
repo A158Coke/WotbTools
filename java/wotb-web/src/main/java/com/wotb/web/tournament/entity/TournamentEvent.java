@@ -27,6 +27,8 @@ public class TournamentEvent {
     public int daysPerRound;
     @Column(name = "config_locked", nullable = false)
     public boolean configLocked;
+    @Column(name = "csv_imported", nullable = false)
+    public boolean csvImported;
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "day_labels", nullable = false, columnDefinition = "jsonb")
     public List<String> dayLabels;

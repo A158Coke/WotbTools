@@ -5,8 +5,8 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-17，本候选源码为 **3.4.0 / 3004000**（`android/gradle.properties`；在 3.2.0 回放运行时与
-已合入的 3.3.0 联赛直播回放目录之上，新增 bilibili UP 推荐、收藏与管理；随包 WASM pin 仍为上游 v0.4.8；
+截至 2026-10-17，本候选源码为 **3.5.0 / 3005000**（`android/gradle.properties`；在 3.2.0 回放运行时、
+3.3.0 联赛直播回放目录与 3.4.0 联赛 CSV 导入之上，新增 bilibili UP 推荐、收藏与管理；随包 WASM pin 仍为上游 v0.4.8；
 另已包含更早未 stage、未发布的 2.5.0 / 2.6.0 改动）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。

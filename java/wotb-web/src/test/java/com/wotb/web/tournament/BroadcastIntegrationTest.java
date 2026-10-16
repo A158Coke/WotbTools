@@ -65,7 +65,7 @@ class BroadcastIntegrationTest {
         seasonId = service.createSeason(new BroadcastDtos.SeasonCreate("LESTA",2026," Summer ",null)).season().id();
     }
     @Test void migrationValidatesIndependentFiveServerCatalogueAndDateOrdering() {
-        assertEquals("37", jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("38", jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("Summer",service.season(seasonId).season().name());
         final long pointsEvents = jdbc.queryForObject("select count(*) from tournament_event",Long.class);
         final long dated = service.createSeason(new BroadcastDtos.SeasonCreate("LESTA",2026,"Dated",LocalDate.of(2026,7,1))).season().id();
