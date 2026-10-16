@@ -765,6 +765,64 @@ def write_json(path, payload):
         file.write("\n")
 
 
+# ---- 完整车辆名册（tank_ids.json）：tank_id ↔ 权威名，**全部 tier** ----
+#
+# tankopedia-tier{7,8,9,10}.json 只覆盖业务 tier（filter_to_business_tiers），而坦克百科页面
+# 展示的是资产包 tank_cache.json（全 tier）。需要按 tank_id 校验或查询全量车辆的消费方
+#（common/tank_aliases.json 的 validator 与其维护流程）因此拿不到完整清单。
+# 这份名册由同一次 BlitzKit 快照在过滤之前产出：只有 id -> 权威名，不含任何属性，
+# 事实数据仍然只在 tier 文件与资产包里。刷新随 update-tankopedia workflow 自动发生。
+
+ROSTER_FILE = "tank_ids.json"
+
+
+def load_existing_roster(directory):
+    """已入库名册（缺文件 → {}；用于数量骤降门禁）。"""
+    path = os.path.join(directory, ROSTER_FILE)
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as file:
+        return json.load(file)
+
+
+def roster_payload(vehicles, generated_at, game_version=None, source_hashes=None):
+    """未过滤的解析结果 → 名册 payload（id 升序；id 或名字缺失的条目丢弃）。"""
+    roster = {}
+    for entry in vehicles.values():
+        if not isinstance(entry, dict):
+            continue
+        tank_id = entry.get("id")
+        name = (entry.get("name") or "").strip()
+        if not isinstance(tank_id, int) or isinstance(tank_id, bool) or tank_id <= 0 or not name:
+            continue
+        roster[str(tank_id)] = name
+    meta = {"source": "blitzkit production definitions"}
+    if game_version:
+        meta["source_game_version"] = game_version
+    if source_hashes and source_hashes.get("tanks"):
+        meta["source_hashes"] = {"tanks": source_hashes["tanks"]}
+    meta["generated_at"] = generated_at
+    meta["count"] = len(roster)
+    return {
+        "meta": meta,
+        "vehicles": {key: roster[key] for key in sorted(roster, key=int)},
+    }
+
+
+def validate_roster(payload, old_roster):
+    """fail closed：名册为空、或相对已入库名册骤降（MIN_TIER_COUNT_RATIO）必须失败。"""
+    vehicles = payload.get("vehicles") or {}
+    if not vehicles:
+        raise RuntimeError("TANK_ROSTER_EMPTY: parsed vehicle roster is empty")
+    old = (old_roster or {}).get("vehicles") or {}
+    if old and len(vehicles) < len(old) * MIN_TIER_COUNT_RATIO:
+        raise RuntimeError(
+            "TANK_ROSTER_COUNT_DROP: %d -> %d exceeds allowed decline"
+            % (len(old), len(vehicles))
+        )
+    return True
+
+
 def vehicle_output(vehicle):
     """输出用 vehicle：剥掉内部 clip / _equipmentPreset 标志。"""
     out = dict(vehicle)
@@ -804,9 +862,9 @@ def main(argv=None):
           % (len(tanks_pb), len(consumables_pb), len(provisions_pb), len(equipment_pb)))
 
     old_data = load_existing_data_dir(args.existing_dir)
-    vehicles = parse_tanks(tanks_pb)
-    total = len(vehicles)
-    vehicles = filter_to_business_tiers(vehicles)
+    all_vehicles = parse_tanks(tanks_pb)
+    total = len(all_vehicles)
+    vehicles = filter_to_business_tiers(all_vehicles)
     provision_map, consumable_map = load_catalog()
     vehicles = apply_items(
         vehicles,
@@ -844,6 +902,15 @@ def main(argv=None):
             },
             "vehicles": tier_vehicles,
         })
+
+    # 名册取**未过滤**的解析结果（全 tier），与 tier 文件同一次快照
+    roster = roster_payload(all_vehicles, generated_at)
+    try:
+        validate_roster(roster, load_existing_roster(args.existing_dir))
+    except RuntimeError as error:
+        print("ERROR: %s" % error, file=sys.stderr)
+        return 1
+    write_json(os.path.join(args.output_dir, ROSTER_FILE), roster)
 
     ok, old_knowledge, preserved_knowledge = verify_knowledge_preservation(old_data, new_data)
     per_tier_summary = " ".join(
