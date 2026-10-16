@@ -26,6 +26,10 @@ const props = defineProps({
 })
 
 const mapOverview = ref<Record<string, any> | null>(null)
+/** 2D 位姿通道（playback facet 位姿列投影；见 replay-local/pose/vehiclePose.ts） */
+const poseFacet = ref<Record<string, any> | null>(null)
+/** battle-relative → 回放时钟域偏移（canonical clock.startRaw） */
+const clockOffset = ref<number | null>(null)
 const onboarding = inject(ONBOARDING_KEY, null)
 const playbackView = ref<InstanceType<typeof BattlePlayback> | null>(null)
 let guideOpenedAnnotations = false
@@ -63,6 +67,8 @@ function reset() {
   mapOverview.value = null
   mapPlaybackV2.value = null
   reloadTelemetry.value = null
+  poseFacet.value = null
+  clockOffset.value = null
   result.value = null
   playbackV2State.value = 'LOADING'
   playbackV2Error.value = ''
@@ -86,6 +92,9 @@ async function load() {
     mapPlaybackV2.value = dataset
     reloadTelemetry.value = telemetry
     mapOverview.value = overview as Record<string, any> | null
+    // 位姿通道：与 3D 场景同源同插值；offset 缺失（clock 不可得）时组件回退 canonical 观测
+    poseFacet.value = (canonical.poseFacet as Record<string, any> | null) ?? null
+    clockOffset.value = Number.isFinite(canonical.clock?.startRaw) ? (canonical.clock as { startRaw: number }).startRaw : null
     playbackV2State.value = !dataset ? 'UNAVAILABLE' : dataset.capability === 'PARTIAL' ? 'PARTIAL' : 'FULL'
   } catch (e) {
     if (seq !== parseSeq) return
@@ -181,6 +190,8 @@ onMounted(() => {
             v-if="pbOverview"
             :overview="pbOverview || undefined"
             :playback-v2="mapPlaybackV2 || undefined"
+            :pose-facet="poseFacet || undefined"
+            :clock-offset="clockOffset ?? undefined"
             :result="result || undefined"
             :reload-telemetry="reloadTelemetry || undefined"
             :seek-to="mapSeek ?? undefined"
