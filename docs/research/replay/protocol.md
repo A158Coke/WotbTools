@@ -119,8 +119,18 @@ Type8
 - **0xFFFF（signed -1）**：UNKNOWN/不可用/未初始化 sentinel（1535 样本 11.102s 出现，时刻无 ±40 kill points、无死亡证据）；不得当 HP、不得直接变成死亡 0
 - **其它 ≤0 高位值**：UNKNOWN sentinel，不臆测语义
 
+**上游 v0.4.9 起：另一条更权威的路径 = 生产方声明**。`AiReviewFacet` 的 `damage`（method1）与
+`health`（prop3）事件携带 `hp_state`（`current` / `zero` / `terminal`；规则 = 上游
+`combat::hp_terminal_normalized`，int16 ≤ 0 全域）：`zero` = 确知归零、`terminal` = **负 i16 终态
+哨兵全族**（实测族 `0xFFFF`/`0xFFFE`/`0xFFFD`，其余负值同编码，同族全部取值同一处理、禁按分布
+裁剪）、`current` = 可用血量。**这时"某负值是否终态"由生产方声明，而不是消费方按 raw 现算**——
+上面这张 raw-only 表保留为 **legacy 口径**（字段缺省 = 旧产物 / 旧 pin）：legacy 路径下
+`0xFFFF`/`0xFFFE` 等仍是未证明哨兵、**不是死亡证据**；全族语义**只能**经字段获得（缺省不放大）。
+裁决与两侧口径见 `docs/agent/replay-facets-v2.md` §4l（消费方）与上游
+`WoT-Blitz-Agent` 的 `docs/wotbtools-cross-reference.md` §七。
+
 **落点**：客户端 `frontend/src/replay-local/canonical/hpRawState.ts`（signed 解读 + sentinel 归一化：
-`0xFFFD` → 已证明阵亡终态但**血量未知**，`0xFFFF`/`0xFFFE`/其余负值 → 未知；`isPlausibleHp` = `0 < hp < 0xFF00`）
+`0xFFFD` → 已证明阵亡终态但**血量未知**，`0xFFFF`/`0xFFFE`/其余负值 → 未知；`isPlausibleHp` = `0 < hp < 0xFF00`；**`hp_state` 在场时走权威路径**（`DEATH_TERMINAL` 全族），缺省才用上述 legacy 判定）
 → `frontend/src/replay-local/canonical/facts.ts` 的 `hpSamples`（哨兵永不进入 HP 数值）。原 Java
 `EntityPropertyDecoder` 与 `MapOverviewBuilder.hpSamplesByAccount` 已于 2026-10-02 退役（历史 Java 实现）；
 `HealthChangedEvent.isPlausibleHp` 与 `ObservedMaxHp` 仍在 `wotb-core`，只服务 AI 侧证据链。
