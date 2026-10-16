@@ -181,10 +181,14 @@ APK 里随包携带 29 张 2D 离线底图，**就是 `frontend/src/assets/maps/
 ### 2D 底图的运行时更新（包内兜底 + 在线校验）
 
 APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 向 COS 的 `map2d/index.json`
-（经 `AgentAssetProxy` 同源直连）核对：若有**比本包更新**（`generated > bundle buildTime`）
-且该图 `sha256` 与包内不同的版本，则拉取远端图、**sha256 校验通过**后以 blob URL 顶替包内图；
+（经 `AgentAssetProxy` 同源直连）核对：先取候选索引中 **`generated` 最大者**（stale proxy 的旧缓存
+不得覆盖见过的新版），若它**比包内内容更新**（`generated > 包内 contentGeneratedAt`，该时间戳是
+底图内容的生成时刻、不是构建时间）且该图 `sha256` 与包内不同，则拉取远端图、**sha256 校验通过**后
+以 blob URL 顶替包内图；
 取不到 / 校验失败 / 索引比包内旧 ⇒ 继续用包内（绝不降级、绝不抛错）。因此**更新已有地图的底图
 不需要发 APK**（Agent 仓上传 `map2d/` 即达用户）；**新增地图仍需发版**（注册表与 WASM 在包内）。
+2.5D（`BattleMap3D`）**不被该通道阻塞**：贴图始终先用包内图渲染到 ready，远端校验通过后
+再在后台热替换 `material.map`（离线/慢网时 OTA 的最坏等待不再落在首次渲染路径上）。
 规则与失败姿态、诊断开关（`window.__wotbMap2d`）、契约测试见
 [reference/maps.md](../reference/maps.md) §2026-10-16；实现单点 = `frontend/src/data/map2dOverlay.js`。
 

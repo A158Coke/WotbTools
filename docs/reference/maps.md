@@ -132,17 +132,25 @@ Agent 仓同批产出（并随既有发布链上传）包内 `map2d/<code>.webp`
 `frontend/src/data/map2dOverlay.js`，规则确定、无启发式：
 
 1. 无包内清单（web / 旧包）⇒ 通道关闭（web 行为完全不变）；
-2. 索引拉取失败且无 localStorage 副本 ⇒ 通道关闭；
+2. 索引拉取失败且无有效 localStorage 副本 ⇒ 通道关闭；**候选（远端 / 持久化副本）取
+   `generated` 最大者**——`AgentAssetProxy` 在上游失败时会返回陈旧磁盘缓存，remote 可能比
+   本地副本更旧，此时必须用副本且**不回写**（否则会把见过的新版打回去、甚至 OTA 回退）；
 3. `schemaVersion` 不支持 / 时间戳不可解析 ⇒ 通道关闭（fail closed）；
-4. **`index.generated ≤ 包内 buildTime` ⇒ 一律包内**——索引比本包旧时包内就是较新那份，
-   这是"APK 升级后不得被旧索引/旧缓存降级"的唯一保证（时间戳均取自产物，无本地时钟参与）；
+4. **`index.generated ≤ 包内 contentGeneratedAt` ⇒ 一律包内**——索引不比包内内容新时，
+   包内那份就是较新的（或同一批），远端没有更新可拿；两侧时间戳都取自**产物内容**，
+   无本地时钟参与；
 5. 逐图 `sha256` 与包内一致 ⇒ 用包内（零流量）；不同 ⇒ 取远端。**远端字节必须 sha256 校验通过
    才启用**（`crypto.subtle` 不可用也视为不通过），任何失败都回落包内、不抛给渲染层。
 
 - 传输与离线缓存**复用现有 `AgentAssetProxy`**（条件请求 + ETag 磁盘缓存 + 上游失败回落陈旧；
   本机制**不需要任何 Kotlin 改动**）；索引另在 localStorage 留副本，离线时仍能判定"远端有更新"。
 - 包内清单由 `scripts/build-android-bundle.mjs` 构建期产出（`map2d-embedded.json`：
-  code → {file, asset, sha256}，含 `buildTime`）；web 构建没有该文件 ⇒ 通道自然关闭。
+  code → {file, asset, sha256} 与 **`contentGeneratedAt`**）；web 构建没有该文件 ⇒ 通道自然关闭。
+  该时间戳取自**底图内容自身**（与 29 张 webp 同批交接来的 `src/assets/maps/map2d-source.json`，
+  由 Agent 仓导出时写下，与 COS 索引 `generated` 同源），**不是构建时间**：用 wall-clock 会把
+  "内容其实更新"判成更旧（Android stage 晚于 COS 发布才构建时永久拒绝升级），也会让同一 commit
+  重跑构建产出不同字节的 bundle（破坏 stage 可重跑性与 APK 不可变性）。构建脚本对缺失/非法
+  的 `map2d-source.json` fail closed（契约测试同时断言构建脚本里没有 `new Date()`）。
 - 诊断：`window.__wotbMap2d`（Android 运行时与本地 dev）暴露通道状态与逐图来源
   （`embedded` / `pending` / `remote` / `rejected`）。消费点 = `BattlePlayback` / `MapOverview`
   的 `imageSrc` 计算属性与 `BattleMap3D` 贴图前的 `ensureMap2dImage`。

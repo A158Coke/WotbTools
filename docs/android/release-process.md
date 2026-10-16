@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-15，本仓源码为 **2.4.0 / 2004000**（`android/gradle.properties`）；
+截至 2026-10-16，本仓源码为 **2.5.0 / 2005000**（`android/gradle.properties`）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -23,10 +23,10 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 2026-10-14 用户裁示。每个改动 Android 运行时的 PR 递增 `wotbVersion` 时，按**变更等级**选位，
 而不是一律 +1 patch；强制更新门槛只随 major 抬升。
 
-| 等级 | 适用变更 | 示例（当前 2.3.3） | 强制更新门槛 |
+| 等级 | 适用变更 | 示例（当前 2.5.0） | 强制更新门槛 |
 |---|---|---|---|
 | **major** | breaking change（含 Native Bridge wire breaking、需要新客户端才能正确工作的数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `3.0.0` | **必须抬到该 major 的 `X.0.0`**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = `X×1_000_000`（`3000000`），随 publish 写入 |
-| **minor** | 增加中小功能 | `2.4.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
+| **minor** | 增加中小功能 | `2.5.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
 | **patch** | 小 bug 修复 | `2.3.4` | 不抬，不强制升级 |
 
 - **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
