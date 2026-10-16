@@ -45,6 +45,8 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `AUTH_UNAUTHENTICATED` | 401 | false | authentication | 未登录、token 缺失/无效/过期 |
 | `AUTH_FORBIDDEN` | 403 | false | authorization | 已登录但角色或资源权限不足 |
 | `INVALID_ARGUMENT` | 400 | false | validation | 参数值/类型不合法 |
+| `TOURNAMENT_CSV_INVALID` | 400 | false | tournament-csv | CSV 文件格式、编码、列或积分不合法；`details` 提供 `rowNumber`、`column` 和稳定英文 `reason`，列名为原 CSV 输入列 |
+| `TOURNAMENT_CSV_WORKSPACE_BUSY` | 409 | false | tournament-csv | 目标季赛存在共享草稿或进行中的修正，须先完成或丢弃 |
 | `MISSING_PARAM` | 400 | false | validation | 必填 request parameter 缺失 |
 | `INVALID_REQUEST` | 400 | false | validation | JSON、Bean Validation 或请求结构不合法 |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | false | protocol | Content-Type 不支持 |

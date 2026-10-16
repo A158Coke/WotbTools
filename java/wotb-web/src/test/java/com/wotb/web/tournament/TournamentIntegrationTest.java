@@ -10,6 +10,12 @@ import com.wotb.web.tournament.repository.TournamentRuleRepository;
 import com.wotb.web.tournament.service.TournamentService;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVPrinter;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.util.ArrayList;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
 import tools.jackson.databind.json.JsonMapper;
@@ -86,13 +92,127 @@ class TournamentIntegrationTest {
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("32",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("33",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));
         assertEquals(ApiErrorCode.TOURNAMENT_ALREADY_EXISTS,error.errorCode());
         service.create("admin",new TournamentDtos.CreateRequest(2026,"EU","FIRE_CUP",4,3,List.of("Day 1","Day 2","Day 3")));
         assertEquals(2,events.count());
+    }
+    @Test void csvActualFixtureImportsAllTwoHundredClansAndSecondDayReplacesWithoutAddingDayOneTwice() throws Exception {
+        final var original = csvFixture(); final long initialVersion = service.config(id).event().version();
+        final long auditCount = audits.count(); final long clanCount = clans.count(); final long dayCount = days.count();
+        final var preview = service.previewCsv(id, initialVersion, original);
+        assertEquals(200, preview.clanCount()); assertEquals(1800, preview.missingCellCount());
+        assertEquals(clanCount, clans.count()); assertEquals(dayCount, days.count()); assertEquals(auditCount, audits.count());
+        assertFalse(service.dataSource(id).csvImported());
+        final var result = service.importCsv("csv-admin", id, initialVersion, original, preview.sourceSha256(), true, "csv-day-one");
+        assertEquals(preview.standings().rows(), result.standings().rows()); assertEquals(preview.changes(), result.changes());
+        assertEquals(result.standings(), service.publicStandings(id));
+        assertEquals(206408, result.standings().rows().stream().mapToLong(TournamentDtos.StandingRow::totalPoints).sum());
+        assertEquals(List.of(1, 50, 99, 125), result.standings().rows().stream().map(TournamentDtos.StandingRow::rank).distinct().toList());
+        assertEquals(1, result.standings().days().stream().filter(TournamentDtos.StandingDay::published).count());
+        assertEquals(200, jdbc.queryForObject("select count(*) from tournament_clan where event_id=? and historical_published", Integer.class, id));
+        assertTrue(service.dataSource(id).csvImported()); assertEquals("_EK_", service.dataSource(id).attribution().name());
+        assertEquals("https://b23.tv/rqx5iYX", service.dataSource(id).attribution().url());
+        final var retried = service.importCsv("csv-admin", id, initialVersion, original, preview.sourceSha256(), true, "csv-day-one");
+        assertEquals(result, retried); assertEquals(auditCount + 1, audits.count());
+        final var second = csvDayTwo(original); final var secondPreview = service.previewCsv(id, result.eventVersion(), second);
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, assertThrows(ApiException.class,
+                () -> service.importCsv("csv-admin", id, initialVersion, second, secondPreview.sourceSha256(), true, "csv-day-one")).errorCode());
+        assertEquals(200, secondPreview.changes().addedScores()); assertEquals(200, secondPreview.changes().changedClans());
+        final var updated = service.importCsv("csv-admin", id, result.eventVersion(), second, secondPreview.sourceSha256(), true, "csv-day-two");
+        assertEquals(207808, updated.standings().rows().stream().mapToLong(TournamentDtos.StandingRow::totalPoints).sum());
+        assertEquals(1600, updated.missingCellCount());
+        assertEquals(206408, updated.standings().rows().stream().mapToLong(row -> row.rounds().getFirst().days().getFirst().points()).sum());
+        final var snapshot = service.publicStandings(id);
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, assertThrows(ApiException.class,
+                () -> service.importCsv("csv-admin", id, initialVersion, original, preview.sourceSha256(), true, "csv-day-one")).errorCode());
+        assertEquals(snapshot, service.publicStandings(id));
+    }
+    @Test void csvReplacementRemovesOmittedClansAndOldGroupsWhilePreservingExplicitClears() throws Exception {
+        final var batch = group(id, 1, 1, 1, 0, "A", "B", "C");
+        save(id, 1, 1, List.of(batch), List.of("A", "B", "C")); publish(id, 1, 1, "screenshots");
+        service.clearPoints("admin", id, new TournamentDtos.ClearRequest(service.config(id).event().version(), 1, 1, "A", "sanction", false));
+        final var file = csv(csvText("A,999,10,,,,,,,,,1009\nB,,5,,,,,,,,,5\n"));
+        final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        assertEquals(1, preview.changes().removedClans()); assertEquals(1, preview.changes().preservedClears());
+        final var imported = service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "replacement");
+        assertEquals(preview.standings().rows(), imported.standings().rows());
+        final var board = service.publicStandings(id);
+        assertEquals(2, board.rows().size()); assertEquals(10, summerRow(board, "A").totalPoints());
+        assertNull(summerRow(board, "B").rounds().getFirst().days().getFirst().points());
+        assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(id, 1, 1).orElseThrow().publishedGroups == null);
+        final var omitCleared = csv(csvText("B,0,,,,,,,,,,0\n"));
+        final var omitPreview = service.previewCsv(id, imported.eventVersion(), omitCleared);
+        service.importCsv("admin", id, omitPreview.eventVersion(), omitCleared, omitPreview.sourceSha256(), true, "omit-cleared");
+        assertEquals(List.of("B"), service.publicStandings(id).rows().stream().map(TournamentDtos.StandingRow::clanTag).toList());
+        assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(id, 1, 1).orElseThrow().clearedClans.contains("A"));
+        assertTrue(service.dataSource(id).csvImported());
+    }
+    @Test void csvRollbackAndPreviewHashVersionAndWorkspaceGuardsProtectPreviousData() throws Exception {
+        final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        final var before = service.publicStandings(id); final long count = audits.count();
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, assertThrows(ApiException.class,
+                () -> service.importCsv("admin", id, preview.eventVersion(), file, "a".repeat(64), true, "wrong-hash")).errorCode());
+        jdbc.execute("alter table tournament_audit add constraint test_reject_csv check (action <> 'CSV_IMPORTED') not valid");
+        try { assertThrows(org.springframework.dao.DataAccessException.class,
+                () -> service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "rollback")); }
+        finally { jdbc.execute("alter table tournament_audit drop constraint test_reject_csv"); }
+        assertEquals(before, service.publicStandings(id)); assertEquals(count, audits.count()); assertFalse(service.dataSource(id).csvImported());
+        final var request = group(id, 1, 1, 1, 0, "A", "B", "C"); save(id, 1, 1, List.of(request), List.of("A", "B", "C"));
+        assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, assertThrows(ApiException.class,
+                () -> service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "old-preview")).errorCode());
+        assertEquals(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY, assertThrows(ApiException.class,
+                () -> service.previewCsv(id, service.config(id).event().version(), file)).errorCode());
+        assertFalse(service.dataSource(id).csvImported());
+    }
+    @Test void csvCompetingImportsSerializeAndTheLosingVersionCannotOverwriteWinner() throws Exception {
+        final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        final var start = new CountDownLatch(1);
+        try (final var executor = Executors.newFixedThreadPool(2)) {
+            final Callable<Boolean> first = () -> { start.await(); try { service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "first"); return true; } catch (final ApiException conflict) { assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, conflict.errorCode()); return false; } };
+            final Callable<Boolean> second = () -> { start.await(); try { service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "second"); return true; } catch (final ApiException conflict) { assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, conflict.errorCode()); return false; } };
+            final var left = executor.submit(first); final var right = executor.submit(second); start.countDown();
+            assertTrue(left.get(20, TimeUnit.SECONDS) ^ right.get(20, TimeUnit.SECONDS));
+        }
+        assertEquals(1, service.auditList(id).stream().filter(row -> row.action().equals("CSV_IMPORTED")).count());
+        assertEquals(200, service.publicStandings(id).rows().size()); assertTrue(service.dataSource(id).csvImported());
+    }
+    @Test void csvAttributionSurvivesLaterScreenshotCorrectionAndIsRemovedWithTheEvent() throws Exception {
+        final var file = csv(csvText("A,999,,,,,,,,,,999\nB,88,,,,,,,,,,88\nC,77,,,,,,,,,,77\n"));
+        final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "csv");
+        final var oldDay = service.day(id, 1, 1);
+        service.correction("admin", id, 1, 1, new TournamentDtos.CorrectionRequest(oldDay.eventVersion(), oldDay.version(), 1, "replace with screenshot"));
+        assertTrue(service.dataSource(id).csvImported());
+        final var screenshot = group(id, 1, 1, 1, 0, "A", "B", "C");
+        save(id, 1, 1, List.of(screenshot), List.of()); publish(id, 1, 1, "screenshot-correction");
+        assertNull(days.findByEventIdAndRoundNumberAndDayNumber(id, 1, 1).orElseThrow().publishedHistoricalPoints);
+        assertTrue(service.dataSource(id).csvImported()); assertEquals("_EK_", service.dataSource(id).attribution().name());
+        final long version = service.config(id).event().version(); service.deleteEvent(id, new TournamentDtos.DeleteRequest(version, true));
+        assertEquals(ApiErrorCode.RESOURCE_NOT_FOUND, assertThrows(ApiException.class, () -> service.dataSource(id)).errorCode());
+        assertTrue(audits.findByEventIdOrderByIdDesc(id).isEmpty());
+    }
+    private MockMultipartFile csvFixture() throws Exception {
+        return new MockMultipartFile("file", "2026战火杯积分榜.csv", "text/csv", new ClassPathResource("tournament/2026-fire-cup-standings.csv").getContentAsByteArray());
+    }
+    private MockMultipartFile csv(final String text) { return new MockMultipartFile("file", "standings.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
+    private String csvText(final String rows) { return "军团标签,R1D1,R1D2,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2,总积分\n" + rows; }
+    private MockMultipartFile csvDayTwo(final MockMultipartFile original) throws Exception {
+        final StringWriter output = new StringWriter();
+        try (final CSVParser parser = CSVFormat.RFC4180.builder().setHeader().setSkipHeaderRecord(true).get()
+                .parse(new StringReader(new String(original.getBytes(), StandardCharsets.UTF_8).substring(1)));
+             final CSVPrinter printer = new CSVPrinter(output, CSVFormat.RFC4180.builder().setHeader(parser.getHeaderNames().toArray(String[]::new)).get())) {
+            for (final var row : parser) {
+                final List<String> values = new ArrayList<>(row.toList());
+                values.set(parser.getHeaderNames().indexOf("R1D2"), "7");
+                values.set(parser.getHeaderNames().indexOf("总积分"), Long.toString(Long.parseLong(row.get("总积分")) + 7));
+                printer.printRecord(values);
+            }
+        }
+        return csv(output.toString());
     }
     @Test void persistedDraftAndPublishedSnapshotsRemainSeparated() throws Exception {
         final TournamentDtos.IncomingGroup group=group(id,1,1,1,0,"A","B","C");

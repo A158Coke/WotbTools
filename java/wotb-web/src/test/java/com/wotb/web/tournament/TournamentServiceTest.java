@@ -26,6 +26,8 @@ import com.wotb.web.util.apierror.ApiException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.core.io.ClassPathResource;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -89,6 +91,8 @@ class TournamentServiceTest {
         when(evidence.save(any())).thenAnswer(call->{final TournamentEvidence row=call.getArgument(0);images.put(row.id,row);return row;});
         when(audits.save(any())).thenAnswer(call->{final TournamentAudit row=call.getArgument(0);row.id=(long)auditRows.size()+1;auditRows.add(row);return row;});
         when(audits.findByEventIdOrderByIdDesc(1L)).thenAnswer(call->List.copyOf(auditRows));
+        when(audits.findCsvImport(anyLong(),anyString())).thenAnswer(call->auditRows.stream()
+                .filter(row->"CSV_IMPORTED".equals(row.action) && call.getArgument(1).equals(row.afterState.get("idempotencyKey"))).findFirst());
     }
     @Test void clanLengthMatchesUnicodeCharactersInTheWireContract() {
         final String tag = "😀".repeat(20);
@@ -282,6 +286,72 @@ class TournamentServiceTest {
     }
     private TournamentDtos.HistoricalImportRequest historicalRequest(final List<TournamentDtos.HistoricalRow> input, final String key) {
         return new TournamentDtos.HistoricalImportRequest(event.version,"source.png","a".repeat(64),input,true,key);
+    }
+    @Test void csvActualFullFixturePreviewIsPureAndUsesTheSharedRanker() throws Exception {
+        final byte[] bytes = new ClassPathResource("tournament/2026-fire-cup-standings.csv").getContentAsByteArray();
+        final var preview = service.previewCsv(1, 0, new MockMultipartFile("file", "2026战火杯积分榜.csv", "text/csv", bytes));
+        assertEquals(11577, bytes.length); assertEquals("103539aaf50f3650b375a446d6e09b41acebf1eda9a1aec93cbe2a616b7f52fe", preview.sourceSha256());
+        assertEquals(200, preview.sourceRowCount()); assertEquals(200, preview.clanCount()); assertEquals(1800, preview.missingCellCount());
+        assertEquals(206408, preview.standings().rows().stream().mapToLong(TournamentDtos.StandingRow::totalPoints).sum());
+        assertEquals(List.of(1, 50, 99, 125), preview.standings().rows().stream().map(TournamentDtos.StandingRow::rank).distinct().toList());
+        assertEquals(200, preview.changes().addedClans()); assertEquals(200, preview.changes().addedScores());
+        assertTrue(clanRows.isEmpty()); assertTrue(auditRows.isEmpty()); assertFalse(event.csvImported);
+    }
+    @Test void csvRfcQuotesChineseTagsBomAndReorderedHeadersKeepNullAndZeroDistinct() {
+        final String header = "总积分,R1D2,军团标签,R1D1,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2\r\n";
+        final var preview = service.previewCsv(1, 0, csv("\ufeff" + header + "7,0,\"军团,\"\"甲\"\"\",7,,,,,,,,\r\n"));
+        final var row = preview.standings().rows().getFirst();
+        assertEquals("军团,\"甲\"", row.clanTag()); assertEquals(7, row.totalPoints());
+        assertEquals(0L, row.rounds().getFirst().days().getLast().points()); assertNull(row.rounds().get(1).days().getFirst().points());
+    }
+    @Test void csvRejectsBadHeadersEncodingNumbersAndTotalsWithLocation() {
+        final String good = csvText("A", "1", "", "1");
+        for (final String bad : List.of(good.replace("R5D2", "R5D1"), good.replace("R5D2", "R9D9"),
+                good.replace("军团标签", ""), good.replace("A,1,", "\"A,1,"),
+                good.replace("A,1,", "A,-1,"), good.replace("A,1,", "A,1.5,"), good.replace("A,1,", "A,1000001,"),
+                good.replace("A,1,", ",1,"), good.replace(",1\n", ",2\n"), good + "A,1\n")) {
+            final var error = assertThrows(ApiException.class, () -> service.previewCsv(1, 0, csv(bad)));
+            assertEquals(ApiErrorCode.TOURNAMENT_CSV_INVALID, error.errorCode());
+            assertTrue(error.details().containsKey("rowNumber")); assertTrue(error.details().containsKey("column")); assertTrue(error.details().containsKey("reason"));
+        }
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_INVALID, () -> service.previewCsv(1, 0, new MockMultipartFile("file", "x.csv", "text/csv", new byte[]{(byte) 0xff})));
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_INVALID, () -> service.previewCsv(1, 0, csv("")));
+        assertCode(ApiErrorCode.FILE_TOO_LARGE, () -> service.previewCsv(1, 0, new MockMultipartFile("file", "x.csv", "text/csv", new byte[2 * 1024 * 1024 + 1])));
+        assertCode(ApiErrorCode.TOURNAMENT_GROUP_CONFLICT, () -> service.previewCsv(1, 0, csv(good + "A,1,,,,,,,,,,1\n")));
+        assertFalse(event.csvImported); assertTrue(auditRows.isEmpty());
+    }
+    @Test void csvBlankLinesQuotedReferenceNewlinesAndRowLimitUseTheRealParser() {
+        final String header = csvText("A", "1", "", "1").lines().findFirst().orElseThrow();
+        final String body = csvText("A", "1", "", "1").lines().skip(1).findFirst().orElseThrow();
+        final var preview = service.previewCsv(1, 0, csv("积分排名," + header + "\n\n\"reference\nonly\"," + body + "\n"));
+        assertEquals(1, preview.sourceRowCount()); assertEquals(1, preview.standings().rows().getFirst().totalPoints());
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_INVALID, () -> service.previewCsv(1, 0, csv(header + "\n" + (body + "\n").repeat(10001))));
+        event.daysPerRound = 3;
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_INVALID, () -> service.previewCsv(1, 0, csv(header + "\n" + body + "\n")));
+    }
+    @Test void csvNullRosterStillBlocksOneTimeJsonAndAttributionRemainsAfterClearingFacts() {
+        final var file = csv(csvText("A", "", "", "0")); final var preview = service.previewCsv(1, 0, file);
+        service.importCsv("admin", 1, 0, file, preview.sourceSha256(), true, "csv");
+        assertTrue(service.dataSource(1).csvImported()); assertEquals("_EK_", service.dataSource(1).attribution().name());
+        assertEquals("https://b23.tv/rqx5iYX", service.dataSource(1).attribution().url());
+        assertFalse(service.historicalState(1, 1, 1).canImport()); assertNull(event.historicalImportKey);
+        assertCode(ApiErrorCode.TOURNAMENT_LOCKED, () -> service.importHistorical("admin", 1, historicalRequest(List.of(historicalRow("B", 10)), "json")));
+        assertTrue(service.dataSource(1).csvImported());
+    }
+    @Test void csvRejectsBusyWorkspaceAndNeverMarksFailedImport() {
+        final var file = csv(csvText("A", "1", "", "1")); final var preview = service.previewCsv(1, 0, file);
+        assertCode(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, () -> service.importCsv("admin", 1, 0, file, "a".repeat(64), true, "csv"));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT, () -> service.importCsv("admin", 1, 0, file, preview.sourceSha256(), false, "csv"));
+        day.draftGroups = List.of();
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY, () -> service.previewCsv(1, 0, file));
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY, () -> service.importCsv("admin", 1, 0, file, preview.sourceSha256(), true, "csv"));
+        day.draftGroups = null; day.correction = true;
+        assertCode(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY, () -> service.previewCsv(1, 0, file));
+        assertFalse(event.csvImported); assertTrue(auditRows.isEmpty());
+    }
+    private MockMultipartFile csv(final String text) { return new MockMultipartFile("file", "standings.csv", "text/csv", text.getBytes(StandardCharsets.UTF_8)); }
+    private String csvText(final String tag, final String first, final String second, final String total) {
+        return "军团标签,R1D1,R1D2,R2D1,R2D2,R3D1,R3D2,R4D1,R4D2,R5D1,R5D2,总积分\n" + tag + "," + first + "," + second + ",,,,,,,,," + total + "\n";
     }
     private TournamentDtos.HistoricalRow historicalRow(final String tag, final Integer... input) {
         final List<Integer> values=new ArrayList<>(java.util.Collections.nCopies(10,null)); long total=0;

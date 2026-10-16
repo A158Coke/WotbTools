@@ -135,7 +135,8 @@
         "CORRECTION_PUBLISHED": "发布整天修正",
         "POINTS_CLEARED": "清除军团积分",
         "POINTS_RESTORED": "恢复军团积分",
-        "HISTORICAL_IMPORTED": "导入历史成绩"
+        "HISTORICAL_IMPORTED": "导入历史成绩",
+        "CSV_IMPORTED": "CSV 整表替换"
       },
       "export": "导出",
       "exportExcel": "导出 Excel",
@@ -181,7 +182,35 @@
       "globalConfiguration": "全局默认配置",
       "globalEditHint": "编辑全局默认积分规则。切换轮次会保留修改；保存时更新整套规则，仅影响尚未开始统计且未单独配置的季赛。",
       "saveGlobalRules": "保存全局默认规则",
-      "globalSaveEffect": "当前编辑的所有轮次和天数规则将更新为全局默认配置。"
+      "globalSaveEffect": "当前编辑的所有轮次和天数规则将更新为全局默认配置。",
+      "csvImport": "CSV 积分导入",
+      "csvHint": "上传截至当日的累计全量 CSV，先预览，再确认替换当前季赛全部积分；每天的文件须保留之前各天的成绩。此入口与历史 JSON 导入独立。",
+      "csvFile": "累计积分 CSV（UTF-8，最大 2 MiB）",
+      "csvPreview": "预览 CSV 替换",
+      "csvPublish": "确认替换当前季赛积分",
+      "csvImported": "CSV 积分已整表替换并公开。",
+      "csvInvalidFile": "请选择非空的 .csv 文件。",
+      "csvTooLarge": "CSV 文件不能超过 2 MiB。",
+      "csvWorkspaceBusy": "存在未提交的截图、共享草稿或进行中的修正，请先完成或删除草稿后再导入 CSV。",
+      "csvClanChanges": "军团：新增 {added}，修改 {changed}，移除 {removed}。",
+      "csvScoreChanges": "积分格：新增 {added}，修改 {changed}，清除 {removed}。",
+      "csvPreservedClears": "保留 {count} 条管理员清分记录。",
+      "csvReplaceWarning": "空白将清除对应旧成绩，文件中缺失的军团将从当前榜单移除；保留已有清分修正。整表替换，不重复累加。",
+      "csvConfirm": "确认用此完整积分快照替换所选季赛的全部公开成绩？请核对目标赛事与预览差异。成功后本季赛将保留数据来源标识。",
+      "csvErrorLocation": "第 {row} 行 · 列 {column}：{reason}",
+      "dataSource": "数据来源：",
+      "csvReasons": {
+        "encoding": "文件须为有效 UTF-8 编码",
+        "header": "请检查表头是否缺失、重复或多出列",
+        "number": "积分须为允许范围内的非负整数",
+        "total": "总积分与逐日积分合计不一致",
+        "clanTag": "军团简称无效",
+        "rows": "数据行数量无效",
+        "syntax": "CSV 引号或分隔格式无效",
+        "columns": "该行列数与表头不一致",
+        "name": "文件名无效",
+        "invalid": "文件内容无效，请检查后重试"
+      }
     },
     "featureOffline": {
       "tournamentPoints": "联赛积分榜和统计需要网络连接。"
@@ -207,7 +236,9 @@
       "TOURNAMENT_IMAGE_TOO_LARGE": "截图超过 10 MiB，请压缩后重新上传。",
       "UNSUPPORTED_TOURNAMENT_IMAGE": "只支持 PNG 和 JPEG 图片。",
       "TOURNAMENT_STORAGE_FULL": "截图存储空间不足，请联系网站管理员清理空间后重试。",
-      "TOURNAMENT_STORAGE_ERROR": "截图保存失败，请重试；持续失败时联系网站管理员。"
+      "TOURNAMENT_STORAGE_ERROR": "截图保存失败，请重试；持续失败时联系网站管理员。",
+      "TOURNAMENT_CSV_INVALID": "CSV 格式或积分内容无效，请检查标出的行和列。",
+      "TOURNAMENT_CSV_WORKSPACE_BUSY": "存在未提交的截图、共享草稿或进行中的修正，请先完成或删除草稿后再导入 CSV。"
     }
   },
   "en": {
@@ -346,7 +377,8 @@
         "CORRECTION_PUBLISHED": "Correction published",
         "POINTS_CLEARED": "Clan points cleared",
         "POINTS_RESTORED": "Clan points restored",
-        "HISTORICAL_IMPORTED": "Historical scores imported"
+        "HISTORICAL_IMPORTED": "Historical scores imported",
+        "CSV_IMPORTED": "CSV snapshot replacement"
       },
       "export": "Export",
       "exportExcel": "Export Excel",
@@ -392,7 +424,35 @@
       "globalConfiguration": "Global default configuration",
       "globalEditHint": "Edit the global default rules. Edits are retained when changing rounds. Saving updates the entire configuration for seasons without custom rules that have not started statistics.",
       "saveGlobalRules": "Save global default rules",
-      "globalSaveEffect": "All edited rounds and days will be saved as the global default rules."
+      "globalSaveEffect": "All edited rounds and days will be saved as the global default rules.",
+      "csvImport": "CSV score import",
+      "csvHint": "Upload the full cumulative CSV through today, preview it, then replace all scores for the selected tournament. Each file must retain earlier days. This is separate from historical JSON import.",
+      "csvFile": "Cumulative scores CSV (UTF-8, up to 2 MiB)",
+      "csvPreview": "Preview CSV replacement",
+      "csvPublish": "Confirm replacement of tournament scores",
+      "csvImported": "The full CSV score snapshot has replaced the public standings.",
+      "csvInvalidFile": "Select a nonempty .csv file.",
+      "csvTooLarge": "The CSV file cannot exceed 2 MiB.",
+      "csvWorkspaceBusy": "Resolve or discard pending screenshots, shared drafts and active corrections before importing CSV.",
+      "csvClanChanges": "Clans: {added} added, {changed} changed, {removed} removed.",
+      "csvScoreChanges": "Score cells: {added} added, {changed} changed, {removed} cleared.",
+      "csvPreservedClears": "Preserving {count} administrator score-clearing records.",
+      "csvReplaceWarning": "Blank cells clear previous scores. Clans absent from the file leave the current standings. Existing score-clearing corrections remain. This replaces the full table without adding scores again.",
+      "csvConfirm": "Replace all public scores for the selected tournament with this complete snapshot? Check the target and preview changes. A successful CSV import leaves a persistent source credit for this tournament.",
+      "csvErrorLocation": "Row {row} · column {column}: {reason}",
+      "dataSource": "Data source:",
+      "csvReasons": {
+        "encoding": "The file must use valid UTF-8 encoding",
+        "header": "Check for missing, duplicate or unexpected headers",
+        "number": "Scores must be nonnegative integers within the allowed range",
+        "total": "The total does not match the sum of daily scores",
+        "clanTag": "Invalid clan tag",
+        "rows": "Invalid number of data rows",
+        "syntax": "Invalid CSV quoting or delimiter syntax",
+        "columns": "The row has a different column count than the header",
+        "name": "Invalid filename",
+        "invalid": "Invalid file contents; check and retry"
+      }
     },
     "featureOffline": {
       "tournamentPoints": "League standings and scoring require an internet connection."
@@ -418,7 +478,9 @@
       "TOURNAMENT_IMAGE_TOO_LARGE": "This screenshot exceeds 10 MiB.",
       "UNSUPPORTED_TOURNAMENT_IMAGE": "Only PNG and JPEG images are supported.",
       "TOURNAMENT_STORAGE_FULL": "Screenshot storage is full. Ask the site administrator to free space, then retry.",
-      "TOURNAMENT_STORAGE_ERROR": "The screenshot could not be saved. Retry or contact the site administrator if it persists."
+      "TOURNAMENT_STORAGE_ERROR": "The screenshot could not be saved. Retry or contact the site administrator if it persists.",
+      "TOURNAMENT_CSV_INVALID": "Invalid CSV format or scores. Check the indicated row and column.",
+      "TOURNAMENT_CSV_WORKSPACE_BUSY": "Resolve or discard pending screenshots, shared drafts and active corrections before importing CSV."
     }
   },
   "ru": {
@@ -557,7 +619,8 @@
         "CORRECTION_PUBLISHED": "Исправление опубликовано",
         "POINTS_CLEARED": "Очки клана очищены",
         "POINTS_RESTORED": "Очки клана восстановлены",
-        "HISTORICAL_IMPORTED": "Исторические очки импортированы"
+        "HISTORICAL_IMPORTED": "Исторические очки импортированы",
+        "CSV_IMPORTED": "Замена полной таблицы CSV"
       },
       "export": "Экспорт",
       "exportExcel": "Экспорт Excel",
@@ -603,7 +666,35 @@
       "globalConfiguration": "Глобальные настройки по умолчанию",
       "globalEditHint": "Измените глобальные правила. Изменения сохраняются при переключении раундов. Сохранение обновляет все правила для сезонов без собственных правил и начатого подсчёта.",
       "saveGlobalRules": "Сохранить глобальные правила",
-      "globalSaveEffect": "Все изменённые раунды и дни будут сохранены как глобальные правила по умолчанию."
+      "globalSaveEffect": "Все изменённые раунды и дни будут сохранены как глобальные правила по умолчанию.",
+      "csvImport": "Импорт очков из CSV",
+      "csvHint": "Загрузите полный накопительный CSV на текущий день, проверьте предпросмотр и замените все очки выбранного турнира. Файл должен сохранять результаты предыдущих дней. Этот импорт независим от исторического JSON.",
+      "csvFile": "Накопительные очки CSV (UTF-8, до 2 МиБ)",
+      "csvPreview": "Предпросмотр замены CSV",
+      "csvPublish": "Подтвердить замену очков турнира",
+      "csvImported": "Полная таблица CSV заменила опубликованные результаты.",
+      "csvInvalidFile": "Выберите непустой файл .csv.",
+      "csvTooLarge": "Файл CSV не должен превышать 2 МиБ.",
+      "csvWorkspaceBusy": "Завершите или удалите ожидающие скриншоты, общие черновики и исправления перед импортом CSV.",
+      "csvClanChanges": "Кланы: добавлено {added}, изменено {changed}, удалено {removed}.",
+      "csvScoreChanges": "Ячейки очков: добавлено {added}, изменено {changed}, очищено {removed}.",
+      "csvPreservedClears": "Сохранено записей об обнулении администратором: {count}.",
+      "csvReplaceWarning": "Пустые ячейки очищают старые очки. Кланы, отсутствующие в файле, удаляются из текущей таблицы. Ранее выполненное обнуление сохраняется. Таблица заменяется целиком без повторного начисления.",
+      "csvConfirm": "Заменить все опубликованные очки выбранного турнира этой полной таблицей? Проверьте турнир и изменения. После успешного импорта CSV указание источника сохранится для этого турнира.",
+      "csvErrorLocation": "Строка {row} · столбец {column}: {reason}",
+      "dataSource": "Источник данных:",
+      "csvReasons": {
+        "encoding": "Файл должен иметь корректную кодировку UTF-8",
+        "header": "Проверьте отсутствующие, повторяющиеся или лишние заголовки",
+        "number": "Очки должны быть неотрицательными целыми числами в допустимом диапазоне",
+        "total": "Общий результат не совпадает с суммой очков по дням",
+        "clanTag": "Недопустимый тег клана",
+        "rows": "Недопустимое количество строк",
+        "syntax": "Некорректные кавычки или разделители CSV",
+        "columns": "Количество столбцов не совпадает с заголовком",
+        "name": "Недопустимое имя файла",
+        "invalid": "Некорректное содержимое файла; проверьте и повторите"
+      }
     },
     "featureOffline": {
       "tournamentPoints": "Таблица лиги и подсчёт очков требуют подключения к сети."
@@ -629,7 +720,9 @@
       "TOURNAMENT_IMAGE_TOO_LARGE": "Размер снимка превышает 10 MiB.",
       "UNSUPPORTED_TOURNAMENT_IMAGE": "Поддерживаются только PNG и JPEG.",
       "TOURNAMENT_STORAGE_FULL": "Хранилище снимков заполнено. Обратитесь к администратору и повторите после очистки.",
-      "TOURNAMENT_STORAGE_ERROR": "Не удалось сохранить снимок. Повторите или обратитесь к администратору."
+      "TOURNAMENT_STORAGE_ERROR": "Не удалось сохранить снимок. Повторите или обратитесь к администратору.",
+      "TOURNAMENT_CSV_INVALID": "Неверный формат CSV или очки. Проверьте указанную строку и столбец.",
+      "TOURNAMENT_CSV_WORKSPACE_BUSY": "Завершите или удалите ожидающие скриншоты, общие черновики и исправления перед импортом CSV."
     }
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE tournament_event ADD COLUMN csv_imported BOOLEAN NOT NULL DEFAULT FALSE;

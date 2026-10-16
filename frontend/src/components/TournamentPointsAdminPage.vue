@@ -23,21 +23,33 @@ const owner = useTournamentPointsAdmin()
 const { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
   busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError } = owner
 const { historicalPreview, historicalRequest, historicalState, historicalFileIssue, canImportHistorical } = owner
+const { csvSupported, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, dataSource } = owner
 const { availability } = useFeatureGate()
 const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
+watch(() => network.value.available, value => { owner.networkAvailable.value = value }, { immediate: true })
 const files = ref<File[]>([]), expected = ref<number | string>(''), reason = ref(''), correctionCount = ref(1)
 const clearClan = ref(''), clearDay = ref<number | null>(null), restore = ref(false)
 const dialog = ref<'' | 'finalize' | 'correction' | 'clear' | 'discard'>('')
 const historicalConfirm = ref(false)
+const csvConfirm = ref(false)
+const csvErrorLocation = computed(() => {
+  const value = error.value as { errorCode?: string; details?: { rowNumber?: number; column?: string; reason?: string } } | null
+  return value?.errorCode === 'TOURNAMENT_CSV_INVALID' ? value.details : null
+})
+const csvErrorReason = computed(() => {
+  const key = 'tournament.csvReasons.' + csvErrorLocation.value?.reason
+  return te(key) ? t(key) : t('tournament.csvReasons.invalid')
+})
 const evidenceUrl = ref(''), evidenceLoading = ref(false)
 let evidenceController = new AbortController(), evidenceGeneration = 0
 function closeEvidence() {
   evidenceGeneration++; evidenceController.abort()
   evidenceController = new AbortController(); URL.revokeObjectURL(evidenceUrl.value); evidenceUrl.value = ''; evidenceLoading.value = false
 }
-function clearLocal() { files.value = []; dialog.value = ''; historicalConfirm.value = false; reason.value = ''; closeEvidence() }
+function clearLocal() { files.value = []; dialog.value = ''; historicalConfirm.value = false; csvConfirm.value = false; reason.value = ''; closeEvidence() }
 watch([eventId, round, day, allowed], clearLocal)
 watch(config, value => { if (!value) clearLocal() })
+watch(csvPreview, value => { if (!value) csvConfirm.value = false })
 watch(() => dayState.value?.expectedGroupCount, value => { expected.value = value ?? ''; correctionCount.value = value || 1 })
 watch(() => reviews.value.length, length => { if (!length && !recognizing.value) files.value = [] })
 function teamChange(review: TournamentImageReview, index: number, key: 'rank' | 'clanTag', value: number | string) {
@@ -77,6 +89,16 @@ async function confirmHistorical() {
   await owner.publishHistorical()
   if (!error.value) historicalConfirm.value = false
 }
+function selectCsvFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) owner.selectCsvFile(file)
+}
+async function confirmCsv() {
+  await owner.publishCsv()
+  if (!error.value) csvConfirm.value = false
+}
 onScopeDispose(clearLocal)
 </script>
 <template>
@@ -93,8 +115,29 @@ onScopeDispose(clearLocal)
       <Banner v-else-if="notice">{{ $t('tournament.' + notice) }}</Banner>
       <Banner v-if="reviews.length">{{ $t('tournament.unsaved') }}</Banner>
       <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing" />
+      <div v-if="dataSource?.csvImported && dataSource.attribution" class="tournament-actions" data-testid="tournament-data-source">
+        <span>{{ $t('tournament.dataSource') }}</span><AppButton :href="dataSource.attribution.url" target="_blank" rel="noopener noreferrer" size="sm">{{ dataSource.attribution.name }}</AppButton>
+      </div>
       <p v-if="busy" role="status">{{ $t('tournament.loading') }}</p>
       <p v-if="!events.length && !busy" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
+      <section v-if="config && csvSupported" class="tournament-card tournament-stack" data-testid="csv-import">
+        <h2>{{ $t('tournament.csvImport') }}</h2>
+        <p class="tournament-muted">{{ $t('tournament.csvHint') }}</p>
+        <p>{{ config.event.year }} · {{ $t('tournament.regions.' + config.event.region) }} · {{ $t('tournament.seasons.' + config.event.season) }}</p>
+        <Banner v-if="csvWorkspaceBusy" tone="warning">{{ $t('tournament.csvWorkspaceBusy') }}</Banner>
+        <label class="tournament-field"><span>{{ $t('tournament.csvFile') }}</span><input type="file" accept=".csv,text/csv" :disabled="!canImportCsv" data-testid="csv-file" @change="selectCsvFile" /></label>
+        <Banner v-if="csvFileIssue" tone="danger">{{ $t('tournament.' + csvFileIssue) }}</Banner>
+        <p v-if="csvFile" class="tournament-source-name">{{ csvFile.name }}</p>
+        <AppButton :disabled="!canImportCsv || !csvFile" data-testid="csv-preview" @click="owner.previewCsv">{{ $t('tournament.csvPreview') }}</AppButton>
+        <p v-if="csvErrorLocation">{{ $t('tournament.csvErrorLocation', { row: csvErrorLocation.rowNumber ?? '—', column: csvErrorLocation.column ?? '—', reason: csvErrorReason }) }}</p>
+        <template v-if="csvPreview">
+          <p>{{ $t('tournament.historicalSummary', { rows: csvPreview.sourceRowCount, clans: csvPreview.clanCount, blanks: csvPreview.missingCellCount }) }}</p>
+          <ul class="tournament-csv-changes"><li>{{ $t('tournament.csvClanChanges', { added: csvPreview.changes.addedClans, changed: csvPreview.changes.changedClans, removed: csvPreview.changes.removedClans }) }}</li><li>{{ $t('tournament.csvScoreChanges', { added: csvPreview.changes.addedScores, changed: csvPreview.changes.changedScores, removed: csvPreview.changes.removedScores }) }}</li><li>{{ $t('tournament.csvPreservedClears', { count: csvPreview.changes.preservedClears }) }}</li></ul>
+          <Banner tone="warning">{{ $t('tournament.csvReplaceWarning') }}</Banner>
+          <TournamentPointsTable :standings="csvPreview.standings" />
+          <AppButton variant="primary" :disabled="!canImportCsv" data-testid="csv-publish" @click="csvConfirm = true">{{ $t('tournament.csvPublish') }}</AppButton>
+        </template>
+      </section>
       <section v-if="config && (historicalState?.canImport || historicalPreview)" class="tournament-card tournament-stack" data-testid="historical-import">
         <h2>{{ $t('tournament.historicalImport') }}</h2>
         <p class="tournament-muted">{{ $t('tournament.historicalHint') }}</p>
@@ -153,6 +196,13 @@ onScopeDispose(clearLocal)
         </section>
       </template>
     </template>
+    <AppDialog :open="csvConfirm && allowed && !!csvPreview" :title="$t('tournament.csvPublish')" @close="!busy && (csvConfirm = false)">
+      <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>
+      <p>{{ $t('tournament.csvConfirm') }}</p>
+      <p v-if="csvPreview">{{ csvPreview.standings.event.year }} · {{ $t('tournament.regions.' + csvPreview.standings.event.region) }} · {{ $t('tournament.seasons.' + csvPreview.standings.event.season) }}</p>
+      <Banner tone="warning">{{ $t('tournament.csvReplaceWarning') }}</Banner>
+      <template #actions><AppButton :disabled="busy" data-testid="csv-cancel" @click="csvConfirm = false">{{ $t('tournament.cancel') }}</AppButton><AppButton variant="primary" :disabled="!canImportCsv || !csvPreview" data-testid="csv-confirm" @click="confirmCsv">{{ $t('tournament.csvPublish') }}</AppButton></template>
+    </AppDialog>
     <AppDialog :open="historicalConfirm && allowed && !!historicalPreview" :title="$t('tournament.historicalPublish')" @close="!busy && (historicalConfirm = false)">
       <p>{{ $t('tournament.historicalConfirm') }}</p>
       <p v-if="historicalPreview">{{ historicalPreview.standings.event.year }} · {{ $t('tournament.regions.' + historicalPreview.standings.event.region) }} · {{ $t('tournament.seasons.' + historicalPreview.standings.event.season) }}</p>
