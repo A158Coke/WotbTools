@@ -41,6 +41,20 @@ describe('replay-local compute ↔ Java golden', () => {
     expect(JSON.stringify(entries)).toBe(before)
   })
 
+  it('preserves original source indices across failed and duplicate entries', () => {
+    const [a, b] = entriesFor(goldenBatches['mixed:random+cw'])
+    const entries: ParsedEntry[] = [
+      { sourceIndex: 0, sourceName: 'bad.wotbreplay', battle: null, failureMessage: 'broken' },
+      { ...a!, sourceIndex: 1 },
+      { ...a!, sourceIndex: 2, sourceName: 'duplicate.wotbreplay' },
+      { ...b!, sourceIndex: 3 },
+    ]
+    const preview = toPreviewResponse(finalizeBatch(entries, tankopedia), tankopedia)
+    expect(preview.battles.map(battle => battle.sourceId)).toEqual(['r1', 'r3'])
+    expect(preview.failures).toHaveLength(1)
+    expect(preview.duplicates).toHaveLength(1)
+  })
+
   it('0 场有效回放抛 NoValidReplaysError（全部失败 / 空批次）', () => {
     const failure: ParsedEntry = { sourceIndex: 0, sourceName: 'x.wotbreplay', battle: null, failureMessage: 'broken' }
     expect(() => finalizeBatch([failure], tankopedia)).toThrow(NoValidReplaysError)
