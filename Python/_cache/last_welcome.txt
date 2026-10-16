@@ -1,5 +1,0 @@
-26.4
-
-!B!Python install manager was successfully updated to 26.4.!W!
-
-Please see !B!https://github.com/python/pymanager/releases/tag/26.4!W! for all changes.
