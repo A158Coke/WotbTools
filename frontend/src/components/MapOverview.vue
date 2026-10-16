@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { mapImages } from '../data/mapImages'
+import { map2dSrc } from '../data/map2dOverlay'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 
 /**
@@ -19,11 +20,13 @@ const props = defineProps({
 const { t, locale } = useI18n()
 
 const image = computed(() => mapImages[props.overview.mapCode] || null)
+/** 底图 URL：包内兜底 + Android OTA 覆盖（见 data/map2dOverlay.js）。 */
+const imageSrc = computed(() => (image.value ? map2dSrc(props.overview.mapCode, image.value.src) : null))
 
 // 自适应配色：按底图平均相对亮度选择暗图/亮图调色板（规则见 docs/features/battle-playback.md）。
 const palette = ref(darkMapPalette)
-watch(image, async (img) => {
-  palette.value = paletteForLuminance(await luminanceOfImage(img))
+watch(imageSrc, async (src) => {
+  palette.value = paletteForLuminance(src ? await luminanceOfImage({ src }) : null)
 }, { immediate: true })
 
 // 热力筛选
@@ -126,7 +129,7 @@ const gridRegions = computed(() => {
       role="img"
       :aria-label="`${overview.displayName} ${$t('recon.map.aria')}`"
     >
-      <image :href="image.src" :width="W" :height="H" preserveAspectRatio="none" />
+      <image :href="imageSrc" :width="W" :height="H" preserveAspectRatio="none" />
 
       <!-- 6x6 网格 -->
       <g class="grid-cells">

@@ -74,7 +74,7 @@ Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evide
 
 ### APK 公网下载卸载（清华云盘直链）
 
-TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
+TX1 出口公网带宽有限且会被 APK 下载打满（APK 随内嵌 bundle 增长：2026-10-16 起 2D 底图与 Web 同字节，bundle 资产约 40 MiB——见 [architecture.md](architecture.md) §2D 底图随包），stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
 把 APK 传进清华云盘
 `个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把
 `/download/android/*.apk` 302 到该目录的分享直链
@@ -82,7 +82,8 @@ TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段�
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
 
 **两台 origin 的 APK 由该副本 seed（2026-10-08 优化）**：跨洋只发生一次——runner 只把 APK
-上传到清华副本（实测 15MB ≈ 75–108s），随后 TX1/TX2 各自从分享直链**拉取**（实测
+上传到清华副本（实测 15MB ≈ 75–108s；**2026-10-16 起 APK 随内嵌 bundle 增大——2D 底图改为与
+Web 同字节，bundle 资产约 40 MiB，下列耗时按体积比例放大**），随后 TX1/TX2 各自从分享直链**拉取**（实测
 0.70s / 0.81s，≈19–22 MB/s），取代旧的 `appleboy/scp-action` 直推（drone-scp 的 SFTP
 单流，美区 runner → 境内 VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage
 job 约 89%）。拉取侧四道边界：

@@ -163,34 +163,33 @@ catch-all 404）：页面带「返回 WotBTools App」按钮——把本页持�
 交易永远 pending——并提供下载入口。Keycloak 自身的路径（`/realms/...`、`/resources/...`）行为不变。
 这个按钮是**兜底，不是主认证机制**。
 
-### 2D 离线地图派生（Phase 10）
+### 2D 底图随包（与 Web 同字节，无派生）
 
-APK 里随包携带 29 张 2D 离线底图（`frontend/src/assets/maps/*.webp`，canonical
-AI 增强 WebP q90，1254×1254、合计约 18.3 MiB，Web 构建继续使用 canonical 资源）。Android 构建在
-`frontend/scripts/build-android-bundle.mjs` 内先派生出缩小副本，再让 android 模式的
-Vite 构建把地图 import 重定向到派生物（`vite.config.js` 的 `wotb-android-map-derivatives`
-插件）——**不维护第二份人工源**，也不改任何源码 import：
+APK 里随包携带 29 张 2D 离线底图，**就是 `frontend/src/assets/maps/*.webp` 的 canonical 原图**
+（WebP q90，1254×1254、合计约 21.5 MiB；来源 = Agent 仓 asset_pack `ground.webp` 派生，配方与验收见
+[reference/maps.md](../reference/maps.md) §2026-10-16）——**Web 与 APK 用同一份字节，Android 不做任何
+缩放/重编码**（2026-10-16 起取消此前的 ≤1024² 派生：视觉一致性优先于 APK 体积）。
 
-```text
-src/assets/maps/*.webp（canonical，Web 用）
-  --python3 scripts/optimize-android-maps.py（Pillow，等比缩放到最长边 1024、WebP q72、剥元数据）-->
-    frontend/dist-android-maps/*.webp（构建产物，gitignored）
-  --Vite 别名-->  APK assets（当前 29 张约 7.37 MiB，单张 ≤500 KiB / 全套 ≤10 MiB）
-```
+- 随包完整性 **fail closed**：`scripts/build-android-bundle.mjs` 的 `buildMap2dEmbedded` 解析
+  `src/data/mapImages.js` 注册表，逐张要求 APK assets 里存在对应 `<名>-<内容哈希>.webp`，缺一即构建失败；
+  同时写下运行时的兜底判据 `map2d-embedded.json`（code → 随包 sha256）与 bundle manifest 的 `maps` 段
+  （`{source: 'canonical-1254', files, totalBytes, largest}`）。
+- 注册表完整性、1254² 规格与体积量级由 `src/assets/maps.test.js` 在 frontend CI 守（无需 Pillow / 无派生管线）；
+- 由此 APK 体积比旧派生方案 +13.4 MiB（8.14 → 21.5 MiB，2D 底图部分）；这是刻意的取舍：
+  少一条 Pillow 派生链、两端像素完全一致、离线兜底也是最高清的一份。
 
-- 参数与预算单点声明在 `frontend/scripts/lib/mapAssetInvariants.mjs`
-  （maxDimension 1024 / 单张 ≤500 KiB / 总量 ≤10 MiB / 宽高比容差 0.2%）；
-- **不变量 fail closed**：文件集合逐字一致、派生尺寸 = 按上限计算的期望尺寸（等比、
-  不放大、无裁剪 / 补边）、单张与总量在预算内——构建期由
-  `scripts/build-android-map-assets.mjs` 对**真实编码输出**校验（不是 CSS 文本式的近似断言）；
-  打包后再按派生文件名逐张核对地图确实进了 APK，并写入 bundle manifest 的 `maps` 段；
-- **确定性**：Pillow 版本在 workflow 里 pin（wheel 自带 libwebp），`--check-determinism`
-  再跑一遍逐字节比对；同输入同版本必须同输出；
-- 纯校验器有独立单测（`scripts/lib/mapAssetInvariants.test.mjs`），canonical 资产的
-  映射完整性与规格由 `src/assets/maps.test.js` 在 frontend CI 守（无需 Pillow）。
+### 2D 底图的运行时更新（包内兜底 + 在线校验）
 
-压缩参数的"看起来够不够清楚"属**视觉验收**：由用户在真机 2D 回放目视确认，需要更清晰
-时只调 `MAP_DERIVATIVE_BUDGETS.maxDimension` / python 的 `--quality`（预算会跟着拦）。
+APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 向 COS 的 `map2d/index.json`
+（经 `AgentAssetProxy` 同源直连）核对：若有**比本包更新**（`generated > bundle buildTime`）
+且该图 `sha256` 与包内不同的版本，则拉取远端图、**sha256 校验通过**后以 blob URL 顶替包内图；
+取不到 / 校验失败 / 索引比包内旧 ⇒ 继续用包内（绝不降级、绝不抛错）。因此**更新已有地图的底图
+不需要发 APK**（Agent 仓上传 `map2d/` 即达用户）；**新增地图仍需发版**（注册表与 WASM 在包内）。
+规则与失败姿态、诊断开关（`window.__wotbMap2d`）、契约测试见
+[reference/maps.md](../reference/maps.md) §2026-10-16；实现单点 = `frontend/src/data/map2dOverlay.js`。
+
+观感"看起来够不够清楚"属**视觉验收**：由用户在真机 2D 回放目视确认；要改清晰度/体积，
+改 Agent 仓 `tools/export_2d_basemaps.py` 的冻结配方（对比曲线/饱和/USM/编码参数）后重出底图。
 
 ### 校验边界（谁负责什么）
 

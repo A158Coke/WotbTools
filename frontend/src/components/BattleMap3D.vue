@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { mapImages } from '../data/mapImages.js'
+import { ensureMap2dImage } from '../data/map2dOverlay.js'
 import {
   activateTerrainRelief,
   clearTerrainRelief,
@@ -311,7 +312,9 @@ async function loadMap() {
     nextRenderer.shadowMap.enabled = false
     host.value.appendChild(nextRenderer.domElement)
 
-    const texture = await new THREE.TextureLoader().loadAsync(image.src)
+    // Android：先等 OTA 判定/校验（无更新或校验失败立即返回 null ⇒ 用包内图，不阻塞正常路径）。
+    const resolvedSrc = (await ensureMap2dImage(props.mapCode)) || image.src
+    const texture = await new THREE.TextureLoader().loadAsync(resolvedSrc)
     if (token !== loadToken) {
       texture.dispose()
       nextRenderer.dispose()
