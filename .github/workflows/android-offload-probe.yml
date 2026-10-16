@@ -43,8 +43,10 @@ jobs:
   probe:
     name: ANDROID_OFFLOAD_PROBE
     runs-on: ubuntu-latest
-    # 32 MiB 探针的预算；192 MiB 也在其中（最慢的 TX1→网盘段自带 1800s 上限）。
-    timeout-minutes: 30
+    # 预算按 192 MiB 探针给足，让「恰好低于判据地板」的链路仍能跑出数字而不是撞 job 超时
+    # （最需要诊断的正是这种链路）：runner→COS 两次上传 + TX1 侧 900s 拉取 + 1800s 推送 +
+    # 3×300s 回读 + 240s 删除，SSH command_timeout 75m 覆盖后者，job 90m 再留出 runner 侧余量。
+    timeout-minutes: 90
     # SSH 到生产主机 + 写公开分发副本 ⇒ 沿用受保护的 tx-production，与 tx-runtime-check 同口径。
     environment: tx-production
     steps:
@@ -104,8 +106,10 @@ jobs:
       #    单流（1 part）与 8 路分片各测一次：分片并发是 Seafile 那条单个 multipart POST 没有的
       #    杠杆，链路差时靠它把最坏情况压回可重试的量级。
       #    缺 COS 凭证时本段跳过（::notice::），后面的 TX1→网盘段仍用同尺寸本地载荷测量。
-      #    凭证按最小权限建：CAM 子账号只对该发布桶的 `android/*` 有 Put/Get/Delete，不给 ListBucket，
-      #    更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
+      #    凭证按最小权限建：CAM 子账号限定到该发布桶的 `android/*` 前缀，动作 = PutObject / GetObject /
+      #    DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart / CompleteMultipartUpload /
+      #    AbortMultipartUpload（缺这几个动作时 8 路分片测量会 AccessDenied，只剩单流数字，而这正是
+      #    链路退化时唯一还能用的杠杆）；不给 ListBucket，更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
       - name: Probe runner to COS (single flow + 8-way multipart)
         id: cos
         shell: bash
@@ -221,14 +225,15 @@ jobs:
           COS_PRESIGNED_URL: ${{ steps.cos.outputs.presigned_url }}
           REPO_ID: a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0
           PARENT_DIR: /wotbtools-android
-          SHARE_BASE: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=/
+          # 不带尾斜杠：与 android-release.yml 完全同形地拼出 ?p=/<name>&dl=1（否则会成 ?p=//<name>）。
+          SHARE_BASE: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=
           TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
         with:
           host: ${{ secrets.TX_VPS_HOST }}
           username: ${{ secrets.TX_VPS_USER }}
           port: ${{ secrets.TX_VPS_PORT }}
           key: ${{ secrets.TX_VPS_SSH_KEY }}
-          command_timeout: 30m
+          command_timeout: 75m
           envs: PROBE_NAME,PROBE_SIZE,PROBE_SHA,COS_PRESIGNED_URL,REPO_ID,PARENT_DIR,SHARE_BASE,TSINGHUA_CLOUD_TOKEN
           script: |
             set -Eeuo pipefail
@@ -236,10 +241,25 @@ jobs:
             TMP="/tmp/offload-probe-$$.bin"
             RESP="/tmp/offload-probe-$$.resp"
             SHARE_DIRECT="${SHARE_BASE}/${PROBE_NAME}&dl=1"
+            UPLOAD_ATTEMPTED=0
+            PROBE_DELETED=0
             cleanup() {
+              rc=$?
               rm -f "$TMP" "$TMP.read" "$RESP"
+              # 任何退出路径都要收尾探针对象：主流程一旦动过上传、又还没确认删掉，就在这里删。
+              # （回读失败 / 中途报错 / SSH 被取消都不能把对象留在公开目录里。）
+              if [ "$UPLOAD_ATTEMPTED" = "1" ] && [ "$PROBE_DELETED" != "1" ]; then
+                echo "cleanup: removing the probe object (exit path rc=$rc)"
+                if curl -sS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                     "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME"; then
+                  echo "cleanup: probe object removed"
+                else
+                  echo "::warning::cleanup could not remove $PARENT_DIR/$PROBE_NAME; delete it manually"
+                fi
+              fi
+              exit "$rc"
             }
-            trap cleanup EXIT
+            trap cleanup EXIT HUP INT TERM
 
             if [ -r /etc/wotb-tx/tsinghua-cloud.token ]; then
               TSINGHUA_CLOUD_TOKEN="$(cat /etc/wotb-tx/tsinghua-cloud.token)"
@@ -277,9 +297,13 @@ jobs:
               *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
             esac
             upload_rc=0
+            UPLOAD_ATTEMPTED=1
+            # multipart 的文件名默认取本地路径的 basename（这里是临时名），必须显式 filename=，
+            # 否则网盘上的对象名会是 offload-probe-<pid>.bin：回读/删除全部落空、对象成孤儿。
+            # release 步骤因为本地文件名就是 APK_NAME 而天然正确，探针用临时文件就必须自己钉住。
             curl -sS --connect-timeout 10 --max-time 1800 -o "$RESP" \
               -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
-              -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$TMP" \
+              -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$TMP;filename=$PROBE_NAME" \
               -w 'drive push: %{size_upload} bytes in %{time_total}s (%{speed_upload} B/s)\n' \
               "$ULINK" || upload_rc=$?
             echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RESP" 2>/dev/null || echo '<none>')"
@@ -287,7 +311,7 @@ jobs:
 
             echo "--- (3) read-back via the public share direct link ---"
             verified=0
-            for attempt in 1 2 3 4 5; do
+            for attempt in 1 2 3; do
               sleep 3
               if curl -fsSL --connect-timeout 5 --max-time 300 -o "$TMP.read" \
                    -w 'drive pull: %{size_download} bytes in %{time_total}s (%{speed_download} B/s)\n' \
@@ -297,10 +321,10 @@ jobs:
                 break
               fi
               rm -f "$TMP.read"
-              echo "read-back attempt $attempt/5 failed; retrying."
+              echo "read-back attempt $attempt/3 failed; retrying."
             done
             rm -f "$TMP.read"
-            [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 5 attempts" >&2; exit 1; }
+            [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts" >&2; exit 1; }
             echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA"
 
             echo "--- (4) delete the probe object ---"
@@ -313,7 +337,7 @@ jobs:
               "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
             case "$BYTES_AFTER" in
               "$PROBE_SIZE") echo "::warning::probe object is still served by the share link; remove $PARENT_DIR/$PROBE_NAME manually" ;;
-              *) echo "probe object no longer served (share link returned $BYTES_AFTER bytes)" ;;
+              *) echo "probe object no longer served (share link returned $BYTES_AFTER bytes)"; PROBE_DELETED=1 ;;
             esac
 
             echo "========== PROBE NUMBERS =========="
