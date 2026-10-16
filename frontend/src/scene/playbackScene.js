@@ -2002,8 +2002,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   // 名牌锚点（= 名牌块底边）相对车体的世界抬升：这是"名牌挂在屏幕哪里"的唯一事实源。
-  // 伤害数字在覆盖层里直接读血条 DOM 几何（见 PlaybackVehicleLabels3D.damageAnchor）；
-  // 关名牌 / 无血条时，覆盖层回退到这个锚点上方——两者共用同一个锚点，不各算各的。
+  // 伤害数字在覆盖层里只量"相对锚点的几何"（见 PlaybackVehicleLabels3D.measureDamageLayout），
+  // 屏幕位置每帧用当前 anchor 重算；关名牌 / 无血条 / 空名牌时覆盖层回退到这个锚点上方。
   // In symbol mode the icon replaces the hull at its projected position;
   // ordinary labels keep their headroom above the visible vehicle model.
   function labelLiftWorld(distance) {

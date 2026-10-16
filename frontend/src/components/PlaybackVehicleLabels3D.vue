@@ -4,7 +4,7 @@ import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
 import TankClassIcon from './TankClassIcon.vue'
 import { LABEL_OCCLUDED_OPACITY } from '../utils/labelLayout.js'
 
-defineProps({
+const props = defineProps({
   labelPrefs: { type: Object, required: true },
   gunMarks: { type: Map, default: () => new Map() },
   hpPrefs: { type: Object, required: true },
@@ -23,8 +23,9 @@ const anchors = new Map()
 // 不存在世界↔屏幕换算，也不存在"永远被 DOM 盖住"。
 const rootEl = ref(null)
 const damages = shallowRef([])
-const damageEls = new Map()
 let damageSeq = 0
+/** 名牌内容发布序号：布局失效签名的一部分（行内容变化可能改变名牌块几何）。 */
+let labelsSeq = 0
 /** 血条右缘 ↔ 数字左缘的间隙：贴着血条读数，又不压住血条本身。 */
 const DMG_GAP_PX = 8
 /** 没有血条也没有名牌内容时的回退抬升（锚点 = 名牌块底边，即车辆模型上方）。 */
@@ -32,6 +33,13 @@ const DMG_FALLBACK_LIFT_PX = 20
 /** 同一辆车短时间内连续受击：向下错开槽位，避免多个数字完全重叠到读不出。 */
 const DMG_STACK_PX = 20
 const DMG_STACK_SLOTS = 3
+/**
+ * 生命周期内的水平漂移距离（px，方向由所在侧决定）。唯一事实源在 JS：fit 计算必须把
+ * 漂移行程算进去，CSS 只消费 `--pb-damage-drift-x`（组件内不再写第二份数值）。
+ */
+const DMG_DRIFT_PX = 20
+const SIDE_RIGHT = 'right'
+const SIDE_LEFT = 'left'
 // 软遮挡下限的唯一来源在 utils/labelLayout.js；这里只做「常量 → CSS 变量」投影，
 // CSS 不再自带数值（否则同一契约又散成两处）。
 const occludedStyle = { '--pb-label-occluded-opacity': String(LABEL_OCCLUDED_OPACITY) }
@@ -45,60 +53,112 @@ function bind(eid, el) {
   if (el) { elements.set(eid, el); paint(el, anchors.get(eid)) }
   else elements.delete(eid)
 }
+function stackOffsetPx(stack) { return (stack % DMG_STACK_SLOTS) * DMG_STACK_PX }
 /**
- * 伤害数字落点（覆盖层 px）。血条可见 → 血条右缘 + `DMG_GAP_PX`、垂直居中于血条；
- * 血条关掉但名牌仍在 → 名牌块右缘同一规则；两者都没有（关名牌 / 空名牌）→ 锚点上方
- * `DMG_FALLBACK_LIFT_PX`（锚点 = 名牌块底边，场景侧已按车体抬升，见 labelLiftWorld）。
- * 车辆未投影、或名牌 DOM 尚未布局（hidden / 还没 patch）→ null：本帧不定位，下一帧再量。
- * @param {number} stack 同车并发伤害数字的槽位（0 = 最新，向下错开）
- * @param {number} textWidth 数字自身宽度：右侧放不下时（车辆贴屏幕右缘）镜像到血条左侧
+ * 布局失效签名：只列**会改变名牌 DOM 结构 / 尺寸**的状态（行开关、图标模式、名牌是否显示、
+ * 覆盖层是否隐藏、名牌内容发布序号）。车辆每帧移动不在其中——屏幕位置每帧由当前 anchor
+ * 重算，不需要也不允许因此重新量 DOM。
  */
-function damageAnchor(eid, stack = 0, textWidth = 0) {
-  const anchor = anchors.get(eid)
-  if (!anchor || !anchor.projected) return null
-  const stackY = (stack % DMG_STACK_SLOTS) * DMG_STACK_PX
-  if (!anchor.visible) return { x: anchor.x, y: anchor.y - DMG_FALLBACK_LIFT_PX + stackY }
+function damageLayoutKey(anchorVisible) {
+  return [
+    anchorVisible ? 1 : 0,
+    props.hidden ? 1 : 0,
+    props.hpPrefs?.showHp ? 1 : 0,
+    props.labelPrefs?.showPlayerName ? 1 : 0,
+    props.labelPrefs?.showTankName === false ? 0 : 1,
+    props.labelPrefs?.showReload ? 1 : 0,
+    props.markerPrefs?.classIcons ? 1 : 0,
+    labelsSeq,
+  ].join('|')
+}
+/**
+ * 量一块伤害数字**相对名牌锚点**的局部布局：血条可见 → 右缘 + `DMG_GAP_PX`、垂直居中于血条；
+ * 血条关掉但名牌仍在 → 名牌块右缘同一规则；两者都没有（关名牌 / 真实 0×0 空名牌）→ 锚点上方
+ * `DMG_FALLBACK_LIFT_PX`（锚点 = 名牌块底边，场景侧已按车体抬升，见 labelLiftWorld）。
+ * 缓存的是几何（dx/dy/textW），不是屏幕坐标：屏幕坐标每帧按当前 anchor 重算。
+ * @returns {{dxRight:number,dxLeft:number,dy:number,textW:number}|null} null = 现在还量不到（下一帧再试）
+ */
+function measureDamageLayout(eid, el, stack, anchorVisible) {
+  if (props.hidden) return null            // 整层隐藏（隐藏全部 UI）：不可测，也不缓存成兜底布局
+  const textW = el?.offsetWidth || 0
+  // 兜底布局 = 锚点正上方，向左镜像时就贴锚点左侧
+  const fallback = { dxRight: 0, dxLeft: -textW, dy: -DMG_FALLBACK_LIFT_PX + stackOffsetPx(stack), textW }
+  if (!anchorVisible) return fallback      // 关名牌：数字是战斗反馈而非名牌内容，仍要显示
   const host = elements.get(eid)
-  if (!host) return null
+  if (!host) return null                   // 行 DOM 还没 patch：下一帧再量（不能用错位置）
   const hostRect = host.getBoundingClientRect()
-  if (!hostRect.width && !hostRect.height) return null
   const target = (host.querySelector('.pb-hp-bar') || host.querySelector('.vehicle-label'))?.getBoundingClientRect()
-  // 名牌在屏上但没有任何可见内容（姓名/血量全关）→ 等同于没有名牌
-  if (!target || (!target.width && !target.height)) {
-    return { x: anchor.x, y: anchor.y - DMG_FALLBACK_LIFT_PX + stackY }
-  }
+  // 真实 0×0 是**合法**的空名牌（姓名 / 车型 / HP / 装填全关、非图标模式）→ 兜底，不是"还没 ready"
+  if ((!hostRect.width && !hostRect.height) || !target || (!target.width && !target.height)) return fallback
+  // hostRect / target 是视口坐标，锚点坐标是覆盖层坐标——这里只量"相对锚点"的偏移，
+  // 每帧由 placeDamages 加上当前 anchor 才是覆盖层内的落点（两坐标空间同原点，见 Replay3DPane.pb-stage）
   const baseX = hostRect.left + hostRect.width / 2
   const baseY = hostRect.bottom
-  // hostRect / target 是视口坐标，锚点坐标是覆盖层坐标——先量出"相对锚点"的偏移，
-  // 再加锚点得到覆盖层内的落点（覆盖层与 canvas 同原点，见 Replay3DPane.pb-stage 注释）
-  const rightX = anchor.x + target.right + DMG_GAP_PX - baseX
-  const stageW = rootEl.value?.clientWidth || 0
-  // 右边放不下就不硬贴：镜像到血条左侧（仍不覆盖血条），不让 viewport 直接裁掉数字
-  const x = stageW > 0 && rightX + textWidth > stageW
-    ? anchor.x + target.left - DMG_GAP_PX - textWidth - baseX
-    : rightX
-  return { x, y: anchor.y + target.top + target.height / 2 - baseY + stackY }
+  return {
+    dxRight: target.right + DMG_GAP_PX - baseX,
+    dxLeft: target.left - DMG_GAP_PX - textW - baseX,
+    dy: target.top + target.height / 2 - baseY + stackOffsetPx(stack),
+    textW,
+  }
 }
+/**
+ * 按**当前** anchor.x 与舞台宽度选侧：当前这一侧放不下（含整段漂移行程）才允许翻到另一侧，
+ * 两侧都放不下时保持当前侧（出生点优先贴血条读数，viewport 裁切不可避免时不做往返抖动）。
+ * 滞回（保持当前侧直到真的放不下）是必须的：车辆停在舞台右缘时，逐帧重判会让数字左右跳。
+ */
+function resolveDamageSide(layout, anchorX, stageW, current) {
+  const fitsRight = stageW <= 0 || anchorX + layout.dxRight + layout.textW + DMG_DRIFT_PX <= stageW
+  const fitsLeft = anchorX + layout.dxLeft - DMG_DRIFT_PX >= 0
+  if (current === SIDE_LEFT) return fitsLeft || !fitsRight ? SIDE_LEFT : SIDE_RIGHT
+  return fitsRight || !fitsLeft ? SIDE_RIGHT : SIDE_LEFT
+}
+/** hidden 只在真正变化时写：每帧一次 display 变更会让后续几何读取次次触发同步布局。 */
+function setHidden(el, hidden) { if (el.hidden !== hidden) el.hidden = hidden }
 /** 逐帧把存活数字摆到锚点几何上：位置走 DOM 直写（与名牌 anchor 同一条热路径），不触发 VDOM patch。 */
 function placeDamages(eid) {
   const list = damages.value
   if (!list.length) return
+  const anchor = anchors.get(eid)
+  const projected = !!anchor?.projected
+  const key = damageLayoutKey(!!anchor?.visible)
+  let stageW = null
   for (const d of list) {
     if (d.eid !== eid) continue
-    const el = damageEls.get(d.id)
+    const el = d.el
     if (!el) continue
-    if (d.at == null) {
-      el.hidden = false                     // 先显示再量宽：hidden(= display:none) 时量不到宽度
-      d.at = damageAnchor(eid, d.stack, el.offsetWidth)
-      if (!d.at) { el.hidden = true; continue }   // 本帧还量不到：下一帧再试，不用错位置
+    // 车辆出屏 / 车体不可见：立刻隐藏，旧坐标不得继续显示（下一帧回来再按新 anchor 落位）
+    if (!projected) { setHidden(el, true); continue }
+    if (!d.layout || d.layoutKey !== key) {
+      setHidden(el, false)                 // 量宽前必须先真正布局（display:none 时量不到宽度）
+      const layout = measureDamageLayout(eid, el, d.stack, !!anchor.visible)
+      if (!layout) { setHidden(el, true); continue }
+      d.layout = layout
+      d.layoutKey = key
     }
-    el.hidden = false
-    el.style.transform = `translate3d(${d.at.x}px, ${d.at.y}px, 0)`
+    setHidden(el, false)
+    if (stageW == null) stageW = rootEl.value?.clientWidth || 0
+    const side = resolveDamageSide(d.layout, anchor.x, stageW, d.side)
+    if (side !== d.side) {
+      d.side = side
+      // 漂移方向必须**离开**血条：左侧镜像后若继续向右漂，后段会重新撞回血条
+      el.style.setProperty('--pb-damage-drift-x', `${side === SIDE_LEFT ? -DMG_DRIFT_PX : DMG_DRIFT_PX}px`)
+    }
+    const dx = side === SIDE_LEFT ? d.layout.dxLeft : d.layout.dxRight
+    el.style.transform = `translate3d(${anchor.x + dx}px, ${anchor.y + d.layout.dy}px, 0)`
   }
 }
 function bindDamage(d, el) {
-  if (el) damageEls.set(d.id, el)
-  else damageEls.delete(d.id)
+  if (!el) { d.el = null; return }
+  if (d.el === el) return      // 同一节点：inline ref 回调在每次 patch 重跑，不是 remount
+  const remount = d.everMounted === true
+  d.el = el
+  d.everMounted = true
+  // CSS 动画自己按 wall clock 前进：只有**真实 remount**（showStatus / 隐藏层关→开重建节点）
+  // 才一次性补偿相位。每次 rerender 重算 negative delay 会把已播的动画再快进一遍
+  //（表现为数字突然加速淡出甚至提前消失），因此首次挂载保持 CSS 默认 delay = 0。
+  if (!remount) return
+  const text = el.firstElementChild
+  if (text) text.style.animationDelay = `${-(performance.now() - d.bornMs)}ms`
 }
 /**
  * 生成一个伤害数字：场景内核在伤害事件跨过播放时钟时调用一次。
@@ -109,7 +169,8 @@ function spawnDamage(eid, hpLoss, durationMs) {
   const id = ++damageSeq
   const alive = damages.value.filter((d) => d.eid === eid).length
   damages.value = [...damages.value, {
-    id, eid, stack: alive, text: '-' + hpLoss, bornMs: performance.now(), durationMs, at: null,
+    id, eid, stack: alive, text: '-' + hpLoss, bornMs: performance.now(), durationMs,
+    layout: null, layoutKey: null, side: null, el: null, everMounted: false,
   }]
   // 到期摘除走定时器而不是渲染循环：数字是 DOM，暂停时不需要（也不该依赖）场景继续出帧。
   // 非法寿命（NaN / ≤0）也要摘除——宁可短促，也不能把数字永远留在屏幕上。
@@ -120,17 +181,10 @@ function removeDamage(id) {
   const next = damages.value.filter((d) => d.id !== id)
   if (next.length === damages.value.length) return
   damages.value = next
-  damageEls.delete(id)
 }
-function clearDamages() {
-  damages.value = []
-  damageEls.clear()
-}
-function damageAnimStyle(d) {
-  // 重新挂载（开关伤害层）时从当前相位续播，而不是从头再飘一次
-  const age = Math.max(0, performance.now() - d.bornMs)
-  return { animationDuration: `${d.durationMs}ms`, animationDelay: `${-age}ms` }
-}
+function clearDamages() { damages.value = [] }
+/** 每个 entry 的时长稳定不变（rerender 只重写同一个值），动画 timeline 不被重新快进。 */
+function damageAnimStyle(d) { return { animationDuration: `${d.durationMs}ms` } }
 function setAnchor(eid, anchor) {
   // 契约：**同步拷贝**进自有 per-eid 存储，不持有调用方对象引用——场景内核逐帧逐车
   // 复用同一个 scratch 对象喂所有 eid（60Hz ×14 个对象的分配热路径），若这里存引用，
@@ -143,9 +197,9 @@ function setAnchor(eid, anchor) {
   paint(elements.get(eid), cur)
   placeDamages(eid)
 }
-function setLabels(rows) { labels.value = rows }
+function setLabels(rows) { labels.value = rows; labelsSeq++ }
 function clear() { labels.value = []; anchors.clear(); elements.clear(); clearDamages() }
-defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDamages, damageAnchor })
+defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDamages })
 </script>
 
 <template>
@@ -166,7 +220,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
         <TankClassIcon :tank-class="row.tankClass" />
       </button>
     </div>
-    <!-- 伤害数字排在所有名牌之后：同层内 DOM 顺序即层级，数字永远不会被名牌压住。
+    <!-- 伤害数字排在所有名牌之后：同层内 DOM 顺序即层级，数字永远不会被名牌盖住。
          初始 hidden，由 placeDamages 量到落点后再显示（避免在覆盖层原点闪一帧）。 -->
     <div v-if="markerPrefs.showStatus !== false" class="pb-damage-layer" aria-hidden="true">
       <span v-for="d in damages" :key="d.id" :ref="el => bindDamage(d, el)"
@@ -184,9 +238,11 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 .label-occluded { opacity: var(--pb-label-occluded-opacity, .35); }
 /* 伤害数字：血条右侧的战斗反馈数字。屏幕尺寸固定 px（远近缩放与自由/跟随/俯视镜头下
    视觉大小一致），深色描边保证任意地形 / 车体上都读得出，出生阶段 100% 不透明、
-   只在后半程淡出；漂移 = 右上 20px / 24px（合计约 31px，契约 20~35px）。 */
+   只在后半程淡出；漂移 = 水平 20px（方向由 JS 按所在侧写 `--pb-damage-drift-x`，
+   保证始终远离血条）+ 垂直 24px（--space-6），合计约 31px（契约 20~35px）。 */
 .pb-damage-layer { position: absolute; inset: 0; pointer-events: none; }
-.pb-damage { position: absolute; left: 0; top: 0; }
+/* 定位前的兜底值：元素此时还是 hidden（placeDamages 就位时才显示），不会以 0 漂移露一帧 */
+.pb-damage { position: absolute; left: 0; top: 0; --pb-damage-drift-x: 0px; }
 .pb-damage[hidden] { display: none; }
 .pb-damage-text {
   display: block;
@@ -203,7 +259,7 @@ defineExpose({ setLabels, setAnchor, clear, spawnDamage, removeDamage, clearDama
 @keyframes pb-damage-rise {
   0% { transform: translate(0, -50%); opacity: 1; }
   50% { opacity: 1; }
-  100% { transform: translate(var(--space-5), calc(-50% - var(--space-6))); opacity: 0; }
+  100% { transform: translate(var(--pb-damage-drift-x), calc(-50% - var(--space-6))); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .pb-damage-text { animation: none; }

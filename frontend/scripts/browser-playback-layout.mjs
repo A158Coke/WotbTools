@@ -334,6 +334,132 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 </html>`
 }
 
+/**
+ * 3D 伤害数字覆盖层的浏览器级几何探针（在页面内执行，**不能引用模块作用域**）。
+ *
+ * 验收：出生贴血条右侧且不覆盖血条 / 跟随当前 anchor（车辆与相机每帧在动）/ 出屏立即隐藏 /
+ * 贴右缘镜像到血条左侧且漂移反向（远离血条、不出边界）/ fit 边界含整段漂移行程 /
+ * 真 0×0 空名牌回退到锚点上方 / rerender 不重算 animation-delay。
+ * 组件挂载与偏好注入由 scripts/browser-fixtures/damage-overlay-entry.js 提供（真实组件 + 真实 CSS）。
+ */
+async function probeDamageOverlay() {
+  const failures = []
+  const require = (ok, message) => { if (!ok) failures.push(message) }
+  const api = window.__damageOverlay
+  const stageRect = document.getElementById('stage').getBoundingClientRect()
+  const box = (element) => {
+    const rect = element.getBoundingClientRect()
+    return {
+      left: rect.left - stageRect.left, top: rect.top - stageRect.top,
+      right: rect.right - stageRect.left, bottom: rect.bottom - stageRect.top,
+      width: rect.width, height: rect.height,
+    }
+  }
+  const barEl = () => document.querySelector('.pb-hp-bar')
+  const labelEl = () => document.querySelector('.vehicle-label')
+  const dmgEl = () => document.querySelector('[data-test="pb-damage"]')
+  // 几何一律量**数字文本本身**：外层 span 只是定位载体，文本带 translate(0,-50%) 与漂移动画，
+  // 真正要与血条对齐 / 不覆盖血条的是文本的可见盒。
+  const dmgTextEl = () => document.querySelector('[data-test="pb-damage"] .pb-damage-text')
+  const driftX = () => parseFloat(getComputedStyle(dmgEl()).getPropertyValue('--pb-damage-drift-x')) || 0
+  const row = (eid, extra = {}) => ({
+    eid, accountId: 1000 + eid, playerName: 'Recipient 7', tankName: 'Maus', friendly: true,
+    destroyed: false, lastKnown: false, hp: { current: 800, pct: 80, state: 'CURRENT' },
+    reload: null, hpGhost: null, hpFlash: null, tankClass: 'Heavy tank', ...extra,
+  })
+  const anchorAt = (x, y) => ({ x, y, visible: true, occluded: false, projected: true })
+  const stageW = stageRect.width
+  const metrics = {}
+
+  await api.setLabels([row(7), row(8)])
+  await api.setAnchor(7, anchorAt(300, 260))
+  await api.spawn(7, 342, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+
+  // 1) 出生在血条右侧、垂直居中于血条；漂移行程仍在舞台内（fit 含 drift）
+  const bar = box(barEl())
+  let dmg = box(dmgTextEl())
+  require(!!dmgEl() && !dmgEl().hidden, 'damage number must be visible next to the HP bar')
+  require(dmg.left >= bar.right + 4,
+    `damage must start right of the HP bar (dmg=${JSON.stringify(dmg)} bar=${JSON.stringify(bar)})`)
+  require(Math.abs((dmg.top + dmg.height / 2) - (bar.top + bar.height / 2)) <= 1.5,
+    `damage must be vertically centred on the HP bar (dmg=${JSON.stringify(dmg)} bar=${JSON.stringify(bar)})`)
+  require(driftX() > 0, `right-side damage must drift right (driftX=${driftX()})`)
+  require(dmg.right + driftX() <= stageW + 0.5,
+    `right-side drift must stay inside the stage (dmg.right=${dmg.right} drift=${driftX()} stage=${stageW})`)
+  metrics.birth = { gap: dmg.left - bar.right, driftX: driftX(), dmg, bar }
+
+  // 2) 跟随当前 anchor：车辆 / 相机移动时按同一偏移一起走（不缓存屏幕绝对坐标）
+  await api.setAnchor(7, anchorAt(360, 300))
+  const moved = box(dmgTextEl())
+  require(Math.abs((moved.left - dmg.left) - 60) <= 1 && Math.abs((moved.top - dmg.top) - 40) <= 1,
+    `damage must follow the anchor (dx=${moved.left - dmg.left} dy=${moved.top - dmg.top})`)
+  metrics.follow = { dx: moved.left - dmg.left, dy: moved.top - dmg.top }
+
+  // 3) 出屏（projected=false）→ 立即隐藏；回到视锥内 → 按新 anchor 继续显示
+  await api.setAnchor(7, { ...anchorAt(360, 300), projected: false })
+  require(dmgEl().hidden, 'damage must hide as soon as the vehicle leaves the frustum')
+  await api.setAnchor(7, anchorAt(360, 300))
+  require(!dmgEl().hidden, 'damage must come back with the remaining lifetime')
+
+  // 4) 贴右缘放不下（含漂移行程）→ 镜像到血条左侧，漂移反向、不覆盖血条、不出左边界
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  dmg = box(dmgTextEl())
+  const barNear = box(barEl())
+  require(driftX() < 0, `mirrored damage must drift left, away from the bar (driftX=${driftX()})`)
+  require(dmg.right <= barNear.left + 0.5,
+    `mirrored damage must not cover the HP bar (dmg.right=${dmg.right} bar.left=${barNear.left})`)
+  require(dmg.left + driftX() >= -0.5,
+    `mirrored drift must stay inside the stage (dmg.left=${dmg.left} drift=${driftX()})`)
+  metrics.mirror = { dmgRight: dmg.right, barLeft: barNear.left, driftX: driftX() }
+
+  // 5) rerender 不重算 animation-delay（存活期间 timeline 稳定，不被重复快进）
+  await api.setAnchor(7, anchorAt(300, 260))
+  const delayBefore = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  await api.setLabels([row(7), row(8), row(9)])
+  await api.spawn(7, 120, 60000)
+  const delayAfter = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  require(delayBefore === delayAfter,
+    `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
+  metrics.delay = delayAfter
+
+  // 5b) showStatus 关→开 = 真实 remount：只补偿一次相位，之后 rerender 不再改动
+  await api.remount()
+  const afterRemount = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  require(afterRemount !== delayAfter,
+    `remount must compensate the phase exactly once (${delayAfter} -> ${afterRemount})`)
+  await api.setLabels([row(7), row(8), row(9), row(10)])
+  require(getComputedStyle(dmgEl().firstElementChild).animationDelay === afterRemount,
+    'phase compensation must not be recomputed by later rerenders')
+  metrics.remountDelay = afterRemount
+
+  // 6) HP 关掉 → 退回名牌块右侧，仍然可见
+  await api.clearDamages()
+  await api.prefs({ hpPrefs: { showHp: false } })
+  await api.spawn(7, 400, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  dmg = box(dmgTextEl())
+  const label = box(labelEl())
+  require(!dmgEl().hidden, 'damage must stay visible when the HP display is off')
+  require(dmg.left >= label.right - 0.5 && dmg.left <= label.right + 10,
+    `HP-off damage must fall back to the right of the label block (dmg.left=${dmg.left} label.right=${label.right})`)
+  metrics.hpOff = { dmgLeft: dmg.left, labelRight: label.right }
+
+  // 7) 姓名 / 车型 / HP 全关 → 真正的 0×0 名牌 → 回退到锚点上方（不得一直 hidden）
+  await api.clearDamages()
+  await api.prefs({ labelPrefs: { showPlayerName: false, showTankName: false }, hpPrefs: { showHp: false } })
+  await api.spawn(7, 400, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  dmg = box(dmgTextEl())
+  require(!dmgEl().hidden, 'empty 0x0 label must still yield a visible damage number above the vehicle')
+  require(Math.abs(dmg.left - 300) <= 1.5 && dmg.bottom <= 260,
+    `0x0 fallback must sit above the anchor (dmg=${JSON.stringify(dmg)})`)
+  metrics.emptyLabel = dmg
+
+  api.clearDamages()
+  return { failures, metrics }
+}
+
 // 设备指标走 CDP `Emulation.setDeviceMetricsOverride`，不是 `--window-size`：headless Chrome 的窗口
 // 有最小宽度（实测 500px），`--window-size=390,844` 会被静默放大成 500×757，「手机竖屏」用例于是
 // 跑在一个根本不是手机竖屏的视口上还报 OK。这里要求页面实测的 innerWidth/innerHeight 与请求一致，
@@ -416,6 +542,32 @@ try {
     `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
   if (contractFailures.length) {
     throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
+  }
+
+  // —— 3D 伤害数字覆盖层：真实组件 + 真实 CSS 的浏览器几何 / 跟随 / 出屏 / 镜像门禁 ——
+  // 覆盖层是纯 DOM（无 WebGL、无资产），所以能在真浏览器里锁几何；3D 场景画面观感仍归用户人工验收。
+  const { startFixtureServer } = await import('./browser-fixtures/fixture-server.mjs')
+  const fixture = await startFixtureServer()
+  try {
+    const { targetId, sessionId } = await browser.openPage()
+    const overlayPage = new Page(browser.client, sessionId)
+    await overlayPage.enable()
+    await overlayPage.emulate({ width: 1200, height: 800, touch: false, deviceScaleFactor: 1 })
+    await overlayPage.goto(`${fixture.origin}/scripts/browser-fixtures/damage-overlay.html`)
+    await overlayPage.waitForValue('!!(window.__damageOverlay && window.__damageOverlay.ready())', (ready) => ready === true,
+      { label: '3d damage overlay fixture ready' })
+    const overlayResult = await overlayPage.probe(probeDamageOverlay)
+    const pageErrors = overlayPage.consoleErrors
+    await browser.client.send('Target.closeTarget', { targetId })
+    if (overlayResult.failures.length) {
+      throw new Error(`3d damage overlay geometry:\n- ${overlayResult.failures.join('\n- ')}`)
+    }
+    if (pageErrors.length) {
+      throw new Error(`3d damage overlay fixture page errors:\n- ${pageErrors.join('\n- ')}`)
+    }
+    console.log(`[browser-layout] 3d-damage-overlay OK ${JSON.stringify(overlayResult.metrics)}`)
+  } finally {
+    await fixture.server.close()
   }
 } finally {
   await browser.close()
