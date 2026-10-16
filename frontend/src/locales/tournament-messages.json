@@ -154,7 +154,34 @@
       "historicalInvalid": "文件格式无效。请检查军团、逐日积分、总分和来源信息；分数须为整数，未参赛格填 null。",
       "historicalEventMismatch": "文件的年份、区服、季赛或轮数、天数与当前赛事不匹配。",
       "historicalTooLarge": "历史积分文件不能超过 2 MiB。",
-      "historicalImported": "历史积分已正式导入并公开。"
+      "historicalImported": "历史积分已正式导入并公开。",
+      "defaultTitle": "全局默认积分规则",
+      "setDefault": "设为全局默认配置",
+      "defaultHint": "未单独配置规则的季赛使用全局默认；开始统计时固定规则，之后更新默认不影响已有成绩。",
+      "defaultNone": "尚未设置全局默认配置。",
+      "ruleSources": {
+        "INHERIT": "本季赛规则来源：跟随全局默认",
+        "CUSTOM": "本季赛规则来源：单独配置（优先于全局默认）",
+        "FROZEN": "本季赛规则来源：已固定，后续默认更新不影响本季赛"
+      },
+      "defaultSaveFirst": "有未保存的修改，请先保存赛事设置和本轮规则，再操作全局默认。",
+      "defaultCompleteFirst": "设置默认前，请保存所有轮次、所有天的完整积分规则。",
+      "defaultMissing": "默认配置未覆盖以下轮次/天，请为本季赛补齐规则后再统计对应轮次：",
+      "defaultMissingDay": "第 {round} 轮 · 第 {day} 天",
+      "defaultOutdated": "默认配置有待更新",
+      "defaultUpdate": "更新默认配置",
+      "defaultClear": "取消全局默认配置",
+      "defaultClearConfirm": "取消后，未开始统计且没有单独配置规则的季赛将恢复待配置。单独配置和已固定的规则保持不变。是否继续？",
+      "defaultClearYes": "是，取消默认配置",
+      "defaultReplaceConfirm": "当前已有默认的积分规则配置，是否更新默认配置？",
+      "defaultReplaceEffect": "当前季赛已保存的整套规则将成为全局默认配置。",
+      "defaultReplaceYes": "是，继续更新",
+      "defaultSaved": "全局默认配置已更新。",
+      "defaultCleared": "已取消全局默认配置。",
+      "globalConfiguration": "全局默认配置",
+      "globalEditHint": "编辑全局默认积分规则。切换轮次会保留修改；保存时更新整套规则，仅影响尚未开始统计且未单独配置的季赛。",
+      "saveGlobalRules": "保存全局默认规则",
+      "globalSaveEffect": "当前编辑的所有轮次和天数规则将更新为全局默认配置。"
     },
     "featureOffline": {
       "tournamentPoints": "联赛积分榜和统计需要网络连接。"
@@ -338,7 +365,34 @@
       "historicalInvalid": "Invalid file. Check clans, daily scores, totals and source information. Scores must be integers; use null for missed days.",
       "historicalEventMismatch": "The file’s year, region, season, round count or day count does not match this event.",
       "historicalTooLarge": "The historical scores file must not exceed 2 MiB.",
-      "historicalImported": "Historical scores have been imported and published."
+      "historicalImported": "Historical scores have been imported and published.",
+      "defaultTitle": "Global default points rules",
+      "setDefault": "Use as global default",
+      "defaultHint": "Seasons without custom rules use the global default. Rules are frozen when statistics begin; later default changes do not affect existing results.",
+      "defaultNone": "No global default is configured.",
+      "ruleSources": {
+        "INHERIT": "Season rules: following the global default",
+        "CUSTOM": "Season rules: custom configuration (takes priority)",
+        "FROZEN": "Season rules: frozen; later default changes do not affect this season"
+      },
+      "defaultSaveFirst": "Save changes to the season settings and current round before changing the global default.",
+      "defaultCompleteFirst": "Save complete rules for every round and day before setting the default.",
+      "defaultMissing": "The default does not cover these rounds/days. Complete the season rules before recording the affected rounds:",
+      "defaultMissingDay": "Round {round} · Day {day}",
+      "defaultOutdated": "Default rules need updating",
+      "defaultUpdate": "Update default rules",
+      "defaultClear": "Clear global default",
+      "defaultClearConfirm": "Seasons that have not started statistics and have no custom rules will need configuration. Custom and frozen rules remain unchanged. Continue?",
+      "defaultClearYes": "Yes, clear default",
+      "defaultReplaceConfirm": "A global default points configuration already exists. Update it?",
+      "defaultReplaceEffect": "The complete saved rules for this season will become the global default.",
+      "defaultReplaceYes": "Yes, continue updating",
+      "defaultSaved": "Global default rules updated.",
+      "defaultCleared": "Global default rules cleared.",
+      "globalConfiguration": "Global default configuration",
+      "globalEditHint": "Edit the global default rules. Edits are retained when changing rounds. Saving updates the entire configuration for seasons without custom rules that have not started statistics.",
+      "saveGlobalRules": "Save global default rules",
+      "globalSaveEffect": "All edited rounds and days will be saved as the global default rules."
     },
     "featureOffline": {
       "tournamentPoints": "League standings and scoring require an internet connection."
@@ -522,7 +576,34 @@
       "historicalInvalid": "Некорректный файл. Проверьте кланы, очки по дням, суммы и источник. Очки должны быть целыми числами; для пропущенных дней используйте null.",
       "historicalEventMismatch": "Год, регион, сезон, количество раундов или дней в файле не соответствуют выбранному турниру.",
       "historicalTooLarge": "Файл исторических очков не должен превышать 2 МиБ.",
-      "historicalImported": "Исторические очки импортированы и опубликованы."
+      "historicalImported": "Исторические очки импортированы и опубликованы.",
+      "defaultTitle": "Глобальные правила начисления очков",
+      "setDefault": "Использовать по умолчанию",
+      "defaultHint": "Сезоны без собственных правил используют глобальные правила. При начале подсчёта правила фиксируются; обновление не влияет на существующие результаты.",
+      "defaultNone": "Глобальные правила по умолчанию не заданы.",
+      "ruleSources": {
+        "INHERIT": "Правила сезона: глобальные по умолчанию",
+        "CUSTOM": "Правила сезона: собственные (имеют приоритет)",
+        "FROZEN": "Правила сезона: зафиксированы; обновление глобальных правил не влияет на сезон"
+      },
+      "defaultSaveFirst": "Сохраните изменения настроек сезона и текущего раунда перед изменением глобальных правил.",
+      "defaultCompleteFirst": "Сначала сохраните полные правила для всех раундов и дней.",
+      "defaultMissing": "В глобальных правилах отсутствуют следующие раунды/дни. Заполните правила сезона перед подсчётом соответствующих раундов:",
+      "defaultMissingDay": "Раунд {round} · День {day}",
+      "defaultOutdated": "Глобальные правила требуют обновления",
+      "defaultUpdate": "Обновить глобальные правила",
+      "defaultClear": "Отменить глобальные правила",
+      "defaultClearConfirm": "Сезонам без начатого подсчёта и собственных правил потребуется настройка. Собственные и зафиксированные правила не изменятся. Продолжить?",
+      "defaultClearYes": "Да, отменить",
+      "defaultReplaceConfirm": "Глобальные правила начисления очков уже заданы. Обновить их?",
+      "defaultReplaceEffect": "Все сохранённые правила этого сезона станут глобальными правилами по умолчанию.",
+      "defaultReplaceYes": "Да, обновить",
+      "defaultSaved": "Глобальные правила обновлены.",
+      "defaultCleared": "Глобальные правила отменены.",
+      "globalConfiguration": "Глобальные настройки по умолчанию",
+      "globalEditHint": "Измените глобальные правила. Изменения сохраняются при переключении раундов. Сохранение обновляет все правила для сезонов без собственных правил и начатого подсчёта.",
+      "saveGlobalRules": "Сохранить глобальные правила",
+      "globalSaveEffect": "Все изменённые раунды и дни будут сохранены как глобальные правила по умолчанию."
     },
     "featureOffline": {
       "tournamentPoints": "Таблица лиги и подсчёт очков требуют подключения к сети."

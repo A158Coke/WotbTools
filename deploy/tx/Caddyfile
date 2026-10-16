@@ -86,16 +86,16 @@ wotbtools.com {
 	route {
 	header @android {
 		Access-Control-Allow-Origin https://appassets.androidplatform.net
-		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		Access-Control-Allow-Methods "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
 		Access-Control-Allow-Headers "Authorization, Content-Type, Content-Encoding, Accept"
-		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta"
+		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta, X-Tournament-Default-Rules"
 		+Vary Origin
 	}
 	header @androidLoopback {
 		Access-Control-Allow-Origin http://127.0.0.1:21653
-		Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+		Access-Control-Allow-Methods "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
 		Access-Control-Allow-Headers "Authorization, Content-Type, Content-Encoding, Accept"
-		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta"
+		Access-Control-Expose-Headers "Content-Disposition, X-Request-ID, X-Map-Meta, X-Tournament-Default-Rules"
 		+Vary Origin
 	}
 	respond @androidPreflight "" 204

@@ -256,11 +256,18 @@ try:
     assert status == 204, status
     assert headers["access-control-allow-origin"] == origin, headers
     assert "authorization" in headers["access-control-allow-headers"].lower()
+    assert "HEAD" in headers["access-control-allow-methods"].split(", "), headers
+    assert "x-tournament-default-rules" in headers["access-control-expose-headers"].lower(), headers
     assert "access-control-allow-credentials" not in headers
     _, untrusted, _ = request("https://untrusted.example")
     assert "access-control-allow-origin" not in untrusted, untrusted
     status, actual, _ = request(origin, "GET")
     assert status == 502 and actual["access-control-allow-origin"] == origin, (status, actual)
+    for allowed_origin in (origin, "http://127.0.0.1:21653"):
+        status, head_headers, body = request(allowed_origin, "HEAD", "/api/admin/tournaments")
+        assert status == 502 and body == "", (status, body)
+        assert head_headers["access-control-allow-origin"] == allowed_origin, head_headers
+        assert "x-tournament-default-rules" in head_headers["access-control-expose-headers"].lower(), head_headers
     status, asset_headers, body = request(origin, "GET", "/agent-assets/index.json")
     assert status == 200 and body == "asset:/index.json", (status, body)
     assert asset_headers["x-map-meta"] == "fixture-map-metadata", asset_headers

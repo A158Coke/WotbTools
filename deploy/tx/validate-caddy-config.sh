@@ -297,9 +297,9 @@ try:
         cors = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "path": paths}])
         headers = next(node["response"]["set"] for node in walk(cors) if node.get("handler") == "headers")
         assert headers["Access-Control-Allow-Origin"] == [origin]
-        assert set(headers["Access-Control-Allow-Methods"][0].replace(" ", "").split(",")) == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+        assert set(headers["Access-Control-Allow-Methods"][0].replace(" ", "").split(",")) == {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
         assert set(headers["Access-Control-Allow-Headers"][0].lower().replace(" ", "").split(",")) == {"authorization", "content-type", "content-encoding", "accept"}
-        assert {"content-disposition", "x-request-id", "x-map-meta"}.issubset(set(headers["Access-Control-Expose-Headers"][0].lower().replace(" ", "").split(",")))
+        assert {"content-disposition", "x-request-id", "x-map-meta", "x-tournament-default-rules"}.issubset(set(headers["Access-Control-Expose-Headers"][0].lower().replace(" ", "").split(",")))
         preflight = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "method": ["OPTIONS"], "path": paths}])
         assert any(node.get("handler") == "static_response" and node.get("status_code") == 204 for node in walk(preflight))
         assert next(i for i, node in enumerate(nodes) if node is preflight) < proxy_position

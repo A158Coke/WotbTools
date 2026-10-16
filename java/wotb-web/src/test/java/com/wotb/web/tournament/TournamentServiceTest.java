@@ -6,6 +6,7 @@ import com.wotb.web.tournament.dto.TournamentDtos;
 import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.tournament.entity.TournamentClan;
 import com.wotb.web.tournament.entity.TournamentDay;
+import com.wotb.web.tournament.entity.TournamentDefaultRules;
 import com.wotb.web.tournament.entity.TournamentEvent;
 import com.wotb.web.tournament.entity.TournamentEvidence;
 import com.wotb.web.tournament.entity.TournamentRule;
@@ -14,6 +15,7 @@ import com.wotb.web.tournament.mapper.TournamentMapper;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
 import com.wotb.web.tournament.repository.TournamentDayRepository;
+import com.wotb.web.tournament.repository.TournamentDefaultRulesRepository;
 import com.wotb.web.tournament.repository.TournamentEventRepository;
 import com.wotb.web.tournament.repository.TournamentEvidenceRepository;
 import com.wotb.web.tournament.repository.TournamentRuleRepository;
@@ -46,6 +48,7 @@ import static org.mockito.Mockito.when;
 
 class TournamentServiceTest {
     private static final String KEY = "unit-only-32-byte-signing-key-123456";
+    private final TournamentDefaultRulesRepository defaults = mock(TournamentDefaultRulesRepository.class);
     private final TournamentEventRepository events = mock(TournamentEventRepository.class);
     private final TournamentRuleRepository rules = mock(TournamentRuleRepository.class);
     private final TournamentDayRepository days = mock(TournamentDayRepository.class);
@@ -62,8 +65,10 @@ class TournamentServiceTest {
     private final Map<String, TournamentEvidence> images = new HashMap<>();
     private final List<TournamentAudit> auditRows = new ArrayList<>();
     @BeforeEach void setup() {
-        service = new TournamentService(events,rules,days,clans,evidence,audits,new TournamentMapper(),storage,KEY);
-        event = new TournamentEvent(); event.id=1L; event.year=2026; event.region="CN"; event.season="FIRE_CUP";
+        service = new TournamentService(events,rules,defaults,days,clans,evidence,audits,new TournamentMapper(),storage,KEY);
+        final TournamentDefaultRules slot = new TournamentDefaultRules();
+        when(defaults.findById(1L)).thenReturn(Optional.of(slot)); when(defaults.findLocked()).thenReturn(slot);
+        event = new TournamentEvent(); event.ruleSource="CUSTOM"; event.id=1L; event.year=2026; event.region="CN"; event.season="FIRE_CUP";
         event.roundCount=5; event.daysPerRound=2; event.dayLabels=List.of("Day 1","Day 2");
         rule = new TournamentRule(); rule.eventId=1; rule.roundNumber=1; rule.rulesVersion=1; rule.days=ruleDays(false);
         day = new TournamentDay(); day.id=1L; day.eventId=1; day.roundNumber=1; day.dayNumber=1; day.expectedGroupCount=2;

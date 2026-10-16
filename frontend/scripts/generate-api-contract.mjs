@@ -60,6 +60,7 @@ function responseDefinitions(root) {
   return definitions
 }
 for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings', 'TournamentDayView',
+  'TournamentDefaultRules', 'TournamentRuleSource',
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
   'OnboardingReceipt', 'SaveOnboardingReceipt']) {
