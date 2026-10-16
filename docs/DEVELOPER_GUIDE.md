@@ -693,6 +693,9 @@ origin 上 no-clobber 落位并核验的 APK、staging evidence、production `ve
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
 再验证。细节见 `docs/android/release-process.md`。
 
+发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
+runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
+
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
