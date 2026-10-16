@@ -135,9 +135,32 @@ export function resolveWasmDevFile(requestUrl, wasmRoot = WASM_DEV_ROOT) {
   return { ok: true, file: realFile }
 }
 
+/**
+ * 确定性构建时间（UTC ISO-8601）。优先级：
+ *  ① `SOURCE_DATE_EPOCH`（reproducible-builds 惯例；Docker 构建由 workflow 传 commit 时间戳）；
+ *  ② 当前 checkout 的 commit 时间（本地 / 有 .git 的 CI，浅克隆取 tip 时间即可）；
+ *  ③ 才回落 wall-clock —— 此时该构建**不可逐字节复现**（无 git 且未传 env 的容器），
+ *     仅作诊断用途，不得用于可复现断言。
+ * 为什么必须确定性：`buildTime` 既进 `version.json`，又经 `define __BUILD_TIME__` 内联进入口 chunk；
+ * 入口内容一变会沿 import 图级联改名 ⇒ 同一 commit 重跑会产出不同字节的 bundle/APK，与
+ * stage 的「immutable APK/evidence、重跑不得换身份」纪律冲突（见 docs/android/release-process.md）。
+ */
+function resolveBuildTime() {
+  const epoch = Number(process.env.SOURCE_DATE_EPOCH)
+  if (Number.isFinite(epoch) && epoch > 0) return new Date(epoch * 1000).toISOString()
+  try {
+    const commitTime = execSync('git log -1 --format=%cI', { encoding: 'utf-8' }).trim()
+    if (commitTime && Number.isFinite(Date.parse(commitTime))) return new Date(commitTime).toISOString()
+  } catch {
+    // 无 git 上下文：只能回落 wall-clock（见上方说明）。
+  }
+  return new Date().toISOString()
+}
+
 /** Build identity：生产 bundle 可精确对应 git commit + 构建时间（见 /version.json 与 console 输出）。
  * 优先取 Docker 构建参数 BUILD_COMMIT（CI 传入，Docker 上下文无 .git 无法自行 rev-parse），
- * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。 */
+ * 本地构建再 fallback 到 git rev-parse；两者皆无时降级 unknown，不阻断构建。
+ * `buildTime` 是确定性的（见 `resolveBuildTime`）。 */
 export function buildIdentity() {
   const fromEnv = process.env.BUILD_COMMIT
   let commit = fromEnv?.trim() || ''
@@ -150,7 +173,7 @@ export function buildIdentity() {
   }
   return {
     buildCommit: commit || 'unknown',
-    buildTime: new Date().toISOString(),
+    buildTime: resolveBuildTime(),
   }
 }
 
@@ -201,25 +224,6 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       vue(),
-      // Android 2D 地图派生（Phase 10）：canonical 底图（src/assets/maps，Web 构建继续用）
-      // 在 build:android 里被 Pillow 派生成更小的同比例副本（dist-android-maps/），
-      // 这里把 android 模式下的地图 import 重定向到派生物——不改源码 import，也不维护
-      // 第二份人工源。派生物缺失 = 构建失败（fail closed，见 scripts/build-android-map-assets.mjs）。
-      ...(mode === 'android' ? [{
-        name: 'wotb-android-map-derivatives',
-        enforce: 'pre',
-        resolveId(source) {
-          const match = /(?:^|\/)assets\/maps\/([^/]+\.webp)$/.exec(source)
-          if (!match) return null
-          const derived = resolve(configDirectory, 'dist-android-maps', match[1])
-          if (!existsSync(derived)) {
-            throw new Error(
-              `android map derivative missing: ${match[1]} —— 先运行 npm run build:android（内部会生成 dist-android-maps/）`,
-            )
-          }
-          return derived
-        },
-      }] : []),
       ...(mode === 'android' ? [{
         name: 'wotb-android-csp',
         transformIndexHtml: {

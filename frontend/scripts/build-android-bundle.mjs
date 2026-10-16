@@ -27,7 +27,6 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 import { nativeRuntimeIdentity } from '../vite.config.js'
-import { MAP_DERIVATIVE_BUDGETS } from './lib/mapAssetInvariants.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const FRONTEND = resolve(here, '..')
@@ -37,16 +36,8 @@ const ASSETS_WEB = join(REPO, 'android/app/src/main/assets/web')
 const PIN_PATH = join(REPO, 'deploy/agent/source.json')
 const VERIFY = join(here, 'verify-agent-wasm-dist.mjs')
 const MANIFEST_NAME = 'bundle-manifest.json'
-
-/** 地图派生物（唯一实现：scripts/build-android-map-assets.mjs，含自身不变量校验）。 */
-async function generateMapDerivatives() {
-  const { generate } = await import('./build-android-map-assets.mjs')
-  try {
-    return generate()
-  } catch (error) {
-    return fail(`地图派生失败：${error?.message || error}`)
-  }
-}
+const EMBEDDED_MAP2D_NAME = 'map2d-embedded.json'
+const MAP2D_SOURCE_NAME = 'map2d-source.json'
 
 function fail(message) {
   console.error(`android bundle: ${message}`)
@@ -64,6 +55,84 @@ function walk(dir, base = dir, acc = []) {
     else acc.push(relative(base, full).split('\\').join('/'))
   }
   return acc
+}
+
+/**
+ * 2D 底图"包内兜底"清单（运行时 OTA 决策的输入之一）：registry code → {file, asset, sha256}。
+ * 与 `src/data/mapImages.js` 注册表逐条对齐（解析为空 / 漏图即 fail），sha256 取自**随包派生物**
+ * 的真实字节。只对 android 构建产出；web 构建没有该文件 ⇒ 运行时按"无兜底清单 = 关闭通道"处理。
+ */
+function buildMap2dEmbedded(files) {
+  const text = readFileSync(join(FRONTEND, 'src/data/mapImages.js'), 'utf8')
+  const imports = new Map([...text.matchAll(/import\s+(\w+)\s+from\s+'\.\.\/assets\/maps\/([^']+)'/g)]
+    .map((match) => [match[1], match[2]]))
+  const entries = [...text.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*):\s*\{\s*src:\s*(\w+),/gm)]
+  if (!entries.length) fail('map2d-embedded: mapImages.js 注册表解析为空')
+  const maps = {}
+  for (const [, code, variable] of entries) {
+    const file = imports.get(variable)
+    if (!file) fail(`map2d-embedded: ${code} 引用了未 import 的变量 ${variable}`)
+    const base = file.replace(/\.webp$/i, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const asset = files.find((path) => new RegExp(`(^|/)assets/${base}-[A-Za-z0-9_-]+\.webp$`).test(path))
+    if (!asset) fail(`map2d-embedded: 找不到 ${code}（${file}）的随包资源`)
+    maps[code] = { file, asset, sha256: sha256(join(ASSETS_WEB, asset)) }
+  }
+  // 内容时间戳来自**底图内容自身**（Agent 仓导出的 map2d-source.json，与 COS 索引 `generated` 同源）。
+  // 绝不能用 `new Date()`：它既不代表底图的新鲜度（会让 stage 晚于 COS 发布时构建的包把真正更新的
+  // 底图判成更旧、永久拒绝升级），也会让同一 commit 重跑构建产出不同字节的 bundle（破坏 stage
+  // 可重跑性与 APK 不可变性——本函数所在产物同时进 bundle manifest 与 APK 资产）。
+  const sourcePath = join(FRONTEND, 'src/assets/maps', MAP2D_SOURCE_NAME)
+  if (!existsSync(sourcePath)) {
+    fail(`map2d-embedded: 缺 ${MAP2D_SOURCE_NAME}——底图交接集不完整（应与 29 张 webp 同批，见 docs/reference/maps.md §2026-10-16）`)
+  }
+  const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
+  const contentGeneratedAt = String(source?.contentGeneratedAt ?? '')
+  if (source?.schemaVersion !== 2 || !Number.isFinite(Date.parse(contentGeneratedAt))) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 非法（需要 schemaVersion 2 + 可解析的 contentGeneratedAt）`)
+  }
+  // **字节绑定**：交接件必须描述的正是**正在随包的那 29 张**——缺图 / 多图 / 文件名不符 /
+  // sha256 不符一律 fail closed。只在本地与随包字节比对，**不查 COS**（COS 允许独立前进）：
+  // 这里要证的不变量是「交接件 == 随包 canonical 图集」。缺了这条，"换图但忘了重跑 Agent 仓
+  // 导出并同步交接件"会让旧 `contentGeneratedAt` 配上新图，运行时据 COS 索引判断时可能把
+  // 包内更新的图 OTA 降级（违反 never-downgrade）。
+  const bound = source?.maps && typeof source.maps === 'object' ? source.maps : {}
+  const codes = Object.keys(maps).sort()
+  const boundCodes = Object.keys(bound).sort()
+  if (codes.length !== boundCodes.length || codes.some((code, index) => code !== boundCodes[index])) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} 的图集与注册表不一致（注册表 ${codes.length} 张 / 交接件 ${boundCodes.length} 张）`)
+  }
+  for (const code of codes) {
+    const entry = bound[code]
+    if (!entry || entry.file !== maps[code].file) {
+      fail(`map2d-embedded: ${code} 交接件文件名 ${entry?.file ?? '(缺失)'} ≠ 注册表 ${maps[code].file}`)
+    }
+    if (entry.sha256 !== maps[code].sha256) {
+      fail(`map2d-embedded: ${code} 交接件 sha256 与随包字节不符——换图后必须重跑 Agent 仓 tools/export_2d_basemaps.py 并同步 ${MAP2D_SOURCE_NAME}`)
+    }
+  }
+  if (source.mapsDigest !== mapsDigest(bound)) {
+    fail(`map2d-embedded: ${MAP2D_SOURCE_NAME} mapsDigest 与 maps 条目不符（文件损坏？）`)
+  }
+  return { schemaVersion: 3, contentGeneratedAt, mapsDigest: source.mapsDigest, maps }
+}
+
+/** 与 Agent 仓 `tools/export_2d_basemaps.py::maps_digest` 同式：排序后的 `code<TAB>sha256` 行做 sha256。 */
+function mapsDigest(maps) {
+  const lines = Object.keys(maps).sort().map((code) => `${code}\t${maps[code].sha256}`).join('\n')
+  return createHash('sha256').update(lines, 'utf8').digest('hex')
+}
+
+/** `maps` 段（bundle manifest）：随包 2D 底图的真实字节统计（与 Web 同字节的 canonical）。 */
+function map2dSegment(embeddedMaps) {
+  const entries = Object.values(embeddedMaps.maps)
+    .map((entry) => ({ file: entry.file, bytes: statSync(join(ASSETS_WEB, entry.asset)).size }))
+  const largest = entries.reduce((a, b) => (b.bytes > a.bytes ? b : a), { file: null, bytes: 0 })
+  return {
+    source: 'canonical-1254',
+    files: entries.length,
+    totalBytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+    largest: largest.file,
+  }
 }
 
 /** Verify emitted URLs against the actual root mapping, including lazy chunk edges. */
@@ -112,11 +181,6 @@ async function main() {
     fail(`Agent WASM 产物缺失：${relative(REPO, wasmSource)}。先运行 bash scripts/fetch-agent-wasm.sh（禁止从 CDN 取）`)
   }
 
-  // 1b) 2D 地图派生（Phase 10）：canonical 底图 → dist-android-maps/（Pillow，确定性），
-  // 之后 android 模式的 vite build 会把地图 import 重定向到派生物；不变量（等比 / 不放大 /
-  // 单张与总量预算）在这里 fail closed。
-  const mapSummary = await generateMapDerivatives()
-
   // 2) 构建 android target（同一份源码、不同 mode/outDir）。
   // Invalidate the previous APK payload before any build can fail.
   rmSync(ASSETS_WEB, { recursive: true, force: true })
@@ -138,14 +202,15 @@ async function main() {
   mkdirSync(ASSETS_WEB, { recursive: true })
   cpSync(DIST, ASSETS_WEB, { recursive: true })
 
+  // 4b) 2D 底图：**与 Web 同字节**（canonical 1254²，Android 不再派生缩小副本）。
+  //     buildMap2dEmbedded 逐条 fail closed（注册表里每张地图都必须有随包资源），
+  //     并产出运行时 OTA 决策用的兜底清单（code → 随包 sha256）。先写再 walk，
+  //     使清单自身也进 bundle manifest 的 files[]。
+  const embeddedMaps = buildMap2dEmbedded(walk(ASSETS_WEB))
+  writeFileSync(join(ASSETS_WEB, EMBEDDED_MAP2D_NAME),
+    JSON.stringify(embeddedMaps, null, 2) + '\n')
+
   const files = walk(ASSETS_WEB)
-  // 2D 地图必须真的随包进 APK（离线 2D 的前提）：按**派生文件名**逐张核对（Vite 会给
-  // 资源加内容哈希），不看宽松的 webp 计数——坦克图标等其它 webp 不在核对范围内。
-  const missingMaps = mapSummary.names.filter((name) =>
-    !files.some((path) => new RegExp(`(^|/)assets/${name}-[A-Za-z0-9_-]+\.webp$`).test(path)))
-  if (missingMaps.length) {
-    fail(`APK bundle 缺少 ${missingMaps.length} 张派生地图：${missingMaps.slice(0, 5).join(', ')}${missingMaps.length > 5 ? ' …' : ''}`)
-  }
   const indexRel = 'index.html'
   const wasmJsRel = `wasm/${ref}/wotb_replay_wasm.js`
   const wasmBinRel = `wasm/${ref}/wotb_replay_wasm_bg.wasm`
@@ -166,8 +231,7 @@ async function main() {
     entry: indexRel,
     entrySha256: sha256(join(ASSETS_WEB, indexRel)),
     agentWasmSha256: sha256(join(ASSETS_WEB, wasmBinRel)),
-    maps: { files: mapSummary.files, totalBytes: mapSummary.totalBytes, largest: mapSummary.largest,
-             maxDimension: MAP_DERIVATIVE_BUDGETS.maxDimension },
+    maps: map2dSegment(embeddedMaps),
     fileCount: files.length,
     totalBytes: files.reduce((sum, rel) => sum + statSync(join(ASSETS_WEB, rel)).size, 0),
   }

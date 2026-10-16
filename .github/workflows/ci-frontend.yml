@@ -68,7 +68,7 @@ jobs:
           du -sk frontend/dist
           du -sk frontend/dist/assets
           find frontend/dist -type f -printf "%s %p\n" | sort -n | tail -15
-          docker build -f docker/Dockerfile.frontend --build-arg BUILD_COMMIT=${{ inputs.head_sha }} -t frontend-ci .
+          docker build -f docker/Dockerfile.frontend --build-arg BUILD_COMMIT=${{ inputs.head_sha }} --build-arg SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" -t frontend-ci .
           docker image inspect --format 'total_size_bytes={{.Size}}' frontend-ci
           docker history --no-trunc --format '{{.Size}}\t{{.CreatedBy}}' frontend-ci
           docker run --rm --entrypoint sh frontend-ci -c '
