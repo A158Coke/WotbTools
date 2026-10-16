@@ -27,4 +27,6 @@ public class CreatorAvatar {
     public Instant createdAt;
     @Column(name = "unreferenced_at")
     public Instant unreferencedAt;
+    @Column(name = "last_cleanup_attempt_at")
+    public Instant lastCleanupAttemptAt;
 }

@@ -64,6 +64,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -78,6 +79,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -383,6 +385,68 @@ class CreatorAvatarIntegrationTest {
         avatars.cleanup();
         assertFalse(reservations.existsById(unused));
         assertFalse(objects.containsKey(PREFIX + unused));
+    }
+
+    @Test void failedOldBatchRotatesPersistentlySoLaterExpiredAvatarsAreNotStarved() throws Exception {
+        final List<String> failed = IntStream.range(0, 100).mapToObj(index -> {
+            final String id = UUID.randomUUID().toString();
+            final String key = "retired-creator-avatars/" + id;
+            jdbc.update("""
+                    insert into creator_avatar(id,keycloak_subject,object_key,status,content_type,size,hash,created_at,unreferenced_at)
+                    values (?,'uploader',?,'READY','image/png',1,repeat('a',64),now()-interval '48 hours',now()-interval '48 hours')
+                    """, id, key);
+            objects.put(key, new byte[] {1});
+            return id;
+        }).toList();
+        final String later = avatars.upload(png()).id();
+        age(later);
+
+        avatars.cleanup();
+
+        assertEquals(101, reservations.count());
+        assertTrue(objects.containsKey(PREFIX + later));
+        assertEquals(100, jdbc.queryForObject("select count(*) from creator_avatar where last_cleanup_attempt_at is not null", Integer.class));
+        verify(client, never()).deleteObject(anyString(), anyString());
+
+        avatars.cleanup();
+
+        assertFalse(reservations.existsById(later));
+        assertFalse(objects.containsKey(PREFIX + later));
+        assertEquals(100, reservations.count());
+        assertTrue(failed.stream().allMatch(id -> objects.containsKey("retired-creator-avatars/" + id)));
+        assertEquals(100, jdbc.queryForObject("select count(*) from creator_avatar where keycloak_subject='uploader'", Integer.class));
+        verify(client, times(1)).deleteObject(anyString(), anyString());
+    }
+
+    @Test void attemptWriteFailureKeepsMetadataAndDoesNotAbortTheRemainingCleanupBatch() throws Exception {
+        final String blocked = avatars.upload(png()).id();
+        final String blockedKey = "retired-creator-avatars/" + blocked;
+        final String later = avatars.upload(png()).id();
+        jdbc.update("update creator_avatar set object_key=?,created_at=now()-interval '48 hours',"
+                + "unreferenced_at=now()-interval '48 hours' where id=?", blockedKey, blocked);
+        objects.put(blockedKey, objects.remove(PREFIX + blocked));
+        age(later);
+        jdbc.execute("""
+                create function creator_avatar_test_reject_attempt() returns trigger language plpgsql as $$
+                begin raise exception 'test attempt write failure'; end; $$
+                """);
+        jdbc.execute("create trigger creator_avatar_test_reject_attempt before update of last_cleanup_attempt_at "
+                + "on creator_avatar for each row execute function creator_avatar_test_reject_attempt()");
+        try {
+            avatars.cleanup();
+
+            final CreatorAvatar preserved = reservations.findById(blocked).orElseThrow();
+            assertEquals("uploader", preserved.subject);
+            assertEquals(blockedKey, preserved.objectKey);
+            assertNull(preserved.lastCleanupAttemptAt);
+            assertTrue(objects.containsKey(blockedKey));
+            assertFalse(reservations.existsById(later));
+            assertFalse(objects.containsKey(PREFIX + later));
+            verify(client, times(1)).deleteObject(anyString(), anyString());
+        } finally {
+            jdbc.execute("drop trigger creator_avatar_test_reject_attempt on creator_avatar");
+            jdbc.execute("drop function creator_avatar_test_reject_attempt()");
+        }
     }
 
     @Test void localConstraintFailureRollsBackAvatarAnonymizationAndDoesNotDeleteCosObjects() throws Exception {

@@ -157,6 +157,17 @@ public class CreatorAvatarService {
                 });
             } catch (final RuntimeException e) {
                 LOG.warn("Creator avatar cleanup failed: avatarId={}, type={}", id, e.getClass().getSimpleName());
+                try {
+                    // The failed delete transaction rolled back. Persist rotation separately so
+                    // a full batch of permanently invalid objects cannot starve later candidates.
+                    independent.executeWithoutResult(tx -> {
+                        final CreatorAvatar avatar = avatars.findLocked(id).orElse(null);
+                        if (avatar != null) { avatar.lastCleanupAttemptAt = Instant.now(); }
+                    });
+                } catch (final RuntimeException recordingFailure) {
+                    LOG.warn("Creator avatar cleanup attempt recording failed: avatarId={}, type={}",
+                            id, recordingFailure.getClass().getSimpleName());
+                }
             }
         }
     }

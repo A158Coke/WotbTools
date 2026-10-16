@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { messages } from '../locales/messages.js'
 import { removeUnusedCreatorAvatar, uploadCreatorAvatar } from '../api/creators.js'
 import CreatorForm from './CreatorForm.vue'
 import type { CreatorDetail } from '../api/creators.js'
+import { useCreatorManagement } from '../composables/useCreatorManagement.js'
 
 const state = vi.hoisted(() => ({ auth: null as any }))
 vi.mock('../composables/useAuth.js', async original => ({ ...await original<typeof import('../composables/useAuth.js')>(), useAuth: () => state.auth }))
@@ -20,12 +21,12 @@ function form(detail: CreatorDetail | null = null, available = true, save = vi.f
   wrappers.push(wrapper)
   return { wrapper, save }
 }
-async function fill(wrapper: ReturnType<typeof form>['wrapper']) {
+async function fill(wrapper: ReturnType<typeof mount>) {
   await wrapper.get('[data-testid=creator-name]').setValue('Author')
   await wrapper.get('[data-testid=creator-homepage]').setValue('https://space.bilibili.com/123')
   await wrapper.get('[data-testid=creator-category-1]').setValue(true)
 }
-async function pick(wrapper: ReturnType<typeof form>['wrapper'], name = 'avatar.png') {
+async function pick(wrapper: ReturnType<typeof mount>, name = 'avatar.png') {
   const file = new File(['image-bytes'], name, { type: 'image/png' })
   const input = wrapper.get('[data-testid=tournament-image-input]')
   Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
@@ -168,5 +169,58 @@ describe('shared creator form and avatar reservation ownership', () => {
     expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('')
     expect(removeUnusedCreatorAvatar).toHaveBeenCalledWith(ids[0])
     expect(wrapper.find('[data-testid=creator-avatar-preview]').exists()).toBe(false)
+  })
+  it('does not emit a previous account\'s save or clear a newer submission after confirmed attachment', async () => {
+    vi.mocked(uploadCreatorAvatar).mockResolvedValueOnce(avatar(0))
+    let acknowledgeOld!: (value: boolean) => void, finishNew!: (value: boolean) => void
+    const save = vi.fn().mockReturnValueOnce(new Promise<boolean>(done => { acknowledgeOld = done }))
+      .mockReturnValueOnce(new Promise<boolean>(done => { finishNew = done }))
+    const { wrapper } = form(null, true, save); await fill(wrapper); await pick(wrapper)
+    await wrapper.get('form').trigger('submit'); expect(save).toHaveBeenCalledTimes(1)
+    epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } }
+    await flushPromises(); await fill(wrapper)
+    await wrapper.get('[data-testid=creator-name]').setValue('New account draft')
+    await wrapper.get('form').trigger('submit'); expect(save).toHaveBeenCalledTimes(2)
+    acknowledgeOld(true); await flushPromises()
+    expect(wrapper.emitted('saved')).toBeUndefined(); expect(removeUnusedCreatorAvatar).not.toHaveBeenCalled()
+    expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('New account draft')
+    expect((wrapper.get('[data-testid=creator-save]').element as HTMLButtonElement).disabled).toBe(true)
+    finishNew(false); await flushPromises()
+    expect((wrapper.get('[data-testid=creator-save]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+  it('does not clean up an attached reservation or emit saved when its form unmounts during save', async () => {
+    vi.mocked(uploadCreatorAvatar).mockResolvedValueOnce(avatar(0))
+    let acknowledge!: (value: boolean) => void
+    const save = vi.fn(() => new Promise<boolean>(done => { acknowledge = done }))
+    const { wrapper } = form(null, true, save); await fill(wrapper); await pick(wrapper)
+    await wrapper.get('form').trigger('submit'); wrapper.unmount(); wrappers = []
+    acknowledge(true); await flushPromises()
+    expect(wrapper.emitted('saved')).toBeUndefined(); expect(removeUnusedCreatorAvatar).not.toHaveBeenCalled()
+  })
+  it('resets an acknowledged create before a slow catalog refresh, preventing a duplicate retry and avatar cleanup', async () => {
+    vi.mocked(uploadCreatorAvatar).mockResolvedValueOnce(avatar(0))
+    let finishRefresh!: () => void
+    const onChanged = vi.fn(() => new Promise<void>(done => { finishRefresh = done }))
+    const online = ref(true), transport = {
+      listCreatorAdminCategories: vi.fn(async () => [{ id: 1, name: 'category' }]), listCreatorLevels: vi.fn(async () => []),
+      getCreatorSettings: vi.fn(async () => ({ favoriteThreshold: 200, avatarUploadsAvailable: true })),
+      saveCreator: vi.fn(async () => ({ id: 1 })),
+    }
+    const harness = defineComponent({ setup() {
+      const owner = useCreatorManagement({ api: transport, auth: state.auth, onChanged, network: () => ({ available: online.value }) } as any)
+      return () => h(CreatorForm, { key: owner.draftEpoch.value, categories: owner.categories.value, levels: owner.levels.value,
+        busy: owner.busy.value || !owner.network.value.available, avatarUploadsAvailable: true,
+        save: value => owner.save(value), onSaved: () => owner.finishSave() })
+    } })
+    const wrapper = mount(harness, { global: { plugins: [createI18n({ legacy: false, locale: 'zh', messages })] } }); wrappers.push(wrapper)
+    await flushPromises(); await fill(wrapper); await pick(wrapper)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(transport.saveCreator).toHaveBeenCalledTimes(1); expect(onChanged).toHaveBeenCalledTimes(1)
+    expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('')
+    expect(removeUnusedCreatorAvatar).not.toHaveBeenCalled()
+    online.value = false; await flushPromises(); finishRefresh(); await flushPromises()
+    online.value = true; await flushPromises()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(transport.saveCreator).toHaveBeenCalledTimes(1); expect(removeUnusedCreatorAvatar).not.toHaveBeenCalled()
   })
 })
