@@ -1,5 +1,5 @@
 import {
-  BookOpen, CircleUser, Clapperboard, House, Menu, ShieldCheck, Trophy, Users, ListOrdered, Settings,
+  BookOpen, CircleUser, Clapperboard, House, Menu, Radio, ShieldCheck, Trophy, Users, ListOrdered, Settings,
 } from 'lucide-vue-next'
 
 // 主导航图标（侧边栏与底部 Tab 栏共用，键为 PRIMARY_NAV.id / ADMIN_NAV.id）
@@ -9,6 +9,7 @@ export const PRIMARY_NAV_ICONS = Object.freeze({
   hof: Trophy,
   tankopedia: BookOpen,
   'tournament-points': ListOrdered,
+  'league-broadcasts': Radio,
   more: Menu,
 })
 

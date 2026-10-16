@@ -19,10 +19,11 @@ const items = primaryNavItems()
       :class="{ 'is-active': activeSection === item.id }"
       :to="locationForView(item.view, route)"
       :aria-current="activeSection === item.id ? 'page' : undefined"
+      :aria-label="item.shortLabelKey ? `${$t(item.shortLabelKey)}: ${$t(item.labelKey)}` : $t(item.labelKey)"
       :data-testid="`tab-${item.id}`"
     >
       <component :is="PRIMARY_NAV_ICONS[item.id]" :size="24" aria-hidden="true" />
-      <span class="tab-label">{{ $t(item.labelKey) }}</span>
+      <span class="tab-label">{{ $t(item.shortLabelKey || item.labelKey) }}</span>
     </RouterLink>
   </nav>
 </template>
