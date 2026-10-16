@@ -17,6 +17,7 @@ const labelPrefs = reactive({ showPlayerName: true, showTankName: true, showRelo
 const hpPrefs = reactive({ showHp: true })
 const markerPrefs = reactive({ classIcons: false, showStatus: true })
 
+const hidden = ref(false)
 let overlay = null
 const settle = async () => {
   await nextTick()
@@ -28,7 +29,7 @@ const Root = {
     const overlayRef = ref(null)
     onMounted(() => { overlay = overlayRef.value })
     return () => h(PlaybackVehicleLabels3D, {
-      ref: overlayRef, labelPrefs, hpPrefs, markerPrefs, hidden: false,
+      ref: overlayRef, labelPrefs, hpPrefs, markerPrefs, hidden: hidden.value,
     })
   },
 }
@@ -37,6 +38,7 @@ createApp(Root).use(i18n).mount('#stage')
 // 门禁探针只用这个入口：真实组件实例的 exposed API + 真实响应式偏好
 window.__damageOverlay = {
   ready: () => !!overlay,
+  async setHidden(value) { hidden.value = value; await settle() },
   async setLabels(rows) { overlay.setLabels(rows); await settle() },
   async setAnchor(eid, anchor) { overlay.setAnchor(eid, anchor); await settle() },
   async spawn(eid, hpLoss, durationMs) { overlay.spawnDamage(eid, hpLoss, durationMs); await settle() },

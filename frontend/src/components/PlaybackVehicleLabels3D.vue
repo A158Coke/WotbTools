@@ -1,5 +1,5 @@
 <script setup>
-import { ref, shallowRef } from 'vue'
+import { ref, shallowRef, watch } from 'vue'
 import PlaybackVehicleLabel from './PlaybackVehicleLabel.vue'
 import TankClassIcon from './TankClassIcon.vue'
 import { LABEL_OCCLUDED_OPACITY } from '../utils/labelLayout.js'
@@ -141,24 +141,38 @@ function placeDamages(eid) {
     if (side !== d.side) {
       d.side = side
       // 漂移方向必须**离开**血条：左侧镜像后若继续向右漂，后段会重新撞回血条
-      el.style.setProperty('--pb-damage-drift-x', `${side === SIDE_LEFT ? -DMG_DRIFT_PX : DMG_DRIFT_PX}px`)
+      applyDamageDrift(d)
     }
     const dx = side === SIDE_LEFT ? d.layout.dxLeft : d.layout.dxRight
     el.style.transform = `translate3d(${anchor.x + dx}px, ${anchor.y + d.layout.dy}px, 0)`
   }
 }
+function applyDamageDrift(d) {
+  if (!d.el || !d.side) return
+  d.el.style.setProperty('--pb-damage-drift-x', `${d.side === SIDE_LEFT ? -DMG_DRIFT_PX : DMG_DRIFT_PX}px`)
+}
+function syncDamageAnimationPhase(d) {
+  const text = d.el?.querySelector('.pb-damage-text')
+  if (!text) return
+  const age = Math.max(0, performance.now() - d.bornMs)
+  text.style.animationDuration = `${d.durationMs}ms`
+  text.style.animationDelay = `${-age}ms`
+}
+// 根节点 display:none 会重启 CSS timeline；DOM patch 后按原始壁钟恢复，不改到期 timer。
+watch(() => props.hidden, (hidden, previous) => {
+  if (previous === true && hidden === false) {
+    for (const d of damages.value) syncDamageAnimationPhase(d)
+  }
+}, { flush: 'post' })
 function bindDamage(d, el) {
   if (!el) { d.el = null; return }
   if (d.el === el) return      // 同一节点：inline ref 回调在每次 patch 重跑，不是 remount
   const remount = d.everMounted === true
   d.el = el
   d.everMounted = true
-  // CSS 动画自己按 wall clock 前进：只有**真实 remount**（showStatus / 隐藏层关→开重建节点）
-  // 才一次性补偿相位。每次 rerender 重算 negative delay 会把已播的动画再快进一遍
-  //（表现为数字突然加速淡出甚至提前消失），因此首次挂载保持 CSS 默认 delay = 0。
-  if (!remount) return
-  const text = el.firstElementChild
-  if (text) text.style.animationDelay = `${-(performance.now() - d.bornMs)}ms`
+  applyDamageDrift(d)
+  // 只有真实 remount 或 H 恢复才补偿相位；普通 rerender 不重复快进动画。
+  if (remount) syncDamageAnimationPhase(d)
 }
 /**
  * 生成一个伤害数字：场景内核在伤害事件跨过播放时钟时调用一次。
