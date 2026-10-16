@@ -73,6 +73,7 @@
 | `features/battle-playback-hp-authority.md` | 改战局回放 HP 权威来源 / settlement 优先级时 |
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/tournament-points.md` | 改积分赛规则、截图识别、共享草稿、正式榜单、修正或证据生命周期时 |
+| `features/league-broadcasts.md` | 改全服联赛直播回放目录、同页管理、季赛／分类／根节点与回放时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |
 | `WotBTools_League_Rating_V6.md` | 改 League Rating V6 批次 pooled sum/count 算法 / 回放解析「算法说明」入口正文时 |
@@ -109,6 +110,7 @@
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 | `operations/agent-asset-origin.md` | 部署/更换 Agent 3D 静态资产源（GLB/地图/坦克数据）时 |
+| `operations/league-broadcast-covers.md` | 配置联赛直播封面 COS、权限、上传失败和孤立对象回收时 |
 | `operations/sponsor-runtime-content.md` | 更新/轮换赞助收款码、关闭赞助入口，或排查「赞助页显示暂未配置」时 |
 | `operations/ai-service.md` | Yecao 独立 AI 服务的预部署、私网边界与健康验收时 |
 | `operations/komodo-public-ingress.md` | Komodo 控制平面公网入口（K2）ownership、两层验证、手工验收与回滚时 |

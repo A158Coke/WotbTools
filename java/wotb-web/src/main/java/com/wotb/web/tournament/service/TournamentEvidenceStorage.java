@@ -1,25 +1,18 @@
 package com.wotb.web.tournament.service;
 
+import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.HexFormat;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -36,38 +29,15 @@ public class TournamentEvidenceStorage {
     }
     public record Image(byte[] bytes, String imageHash, String contentType) { }
     public Image validate(final MultipartFile file) {
-        if (file == null || file.isEmpty() || file.getSize() > 10L * 1024 * 1024) {
+        if (file == null || file.isEmpty() || file.getSize() > ImageValidation.MAX_BYTES) {
             throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID);
         }
-        try {
-            final byte[] bytes;
-            try (final InputStream input = file.getInputStream()) { bytes = input.readNBytes(10 * 1024 * 1024 + 1); }
-            if (bytes.length > 10 * 1024 * 1024) {
-                throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID);
-            }
-            try (final ImageInputStream stream = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
-                if (stream == null) { throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID); }
-                final Iterator<ImageReader> readers = ImageIO.getImageReaders(stream);
-                if (!readers.hasNext()) { throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID); }
-                final ImageReader reader = readers.next();
-                try {
-                    reader.setInput(stream, true, true);
-                    final String format = reader.getFormatName().toLowerCase(java.util.Locale.ROOT);
-                    final int width = reader.getWidth(0);
-                    final int height = reader.getHeight(0);
-                    if (!(format.equals("png") || format.equals("jpeg")) || width < 16 || height < 16
-                            || width > 8192 || height > 8192 || (long) width * height > 20_000_000) {
-                        throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID);
-                    }
-                    // Decode validates that a plausible header does not hide truncated/corrupt image data.
-                    if (reader.read(0) == null) { throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID); }
-                    final String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-                    return new Image(bytes, hash, format.equals("png") ? "image/png" : "image/jpeg");
-                } finally { reader.dispose(); }
-            }
-        } catch (final IOException e) {
+        try (final InputStream input = file.getInputStream()) {
+            final ImageValidation.Image image = ImageValidation.read(input);
+            return new Image(image.bytes(), image.hash(), image.contentType());
+        } catch (final IOException | IllegalArgumentException e) {
             throw new ApiException(ApiErrorCode.TOURNAMENT_EVIDENCE_INVALID);
-        } catch (final NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+        }
     }
     public void store(final long eventId, final Image image) {
         final Path dir = directory(eventId);

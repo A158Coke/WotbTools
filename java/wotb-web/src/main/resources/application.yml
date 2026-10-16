@@ -67,6 +67,9 @@ management:
           ignore-trailing-slash: true
 
 logging:
+  level:
+    # COS logs signed Authorization headers on failures; the domain reports sanitized error types.
+    com.qcloud.cos: "OFF"
   structured:
     format:
       console: logstash
@@ -79,6 +82,13 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 wotb:
+  broadcast:
+    cos:
+      bucket: ${BROADCAST_COS_BUCKET:}
+      region: ${BROADCAST_COS_REGION:}
+      secret-id: ${BROADCAST_COS_SECRET_ID:}
+      secret-key: ${BROADCAST_COS_SECRET_KEY:}
+      prefix: ${BROADCAST_COS_PREFIX:league-broadcasts/covers/}
   tournament:
     recognition-signing-key: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:}
     evidence-dir: ${HOF_REPLAY_DIR:data/replays}/tournament
