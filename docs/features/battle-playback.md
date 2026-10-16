@@ -365,7 +365,8 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ### 2D Local / 3D Remote 运行时渲染契约
 
-- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的已验收 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随站点发布；当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
+- 2D 底图来自 `frontend/src/assets/maps/*.webp`（由 Agent 仓 asset_pack `ground.webp` 按冻结配方派生，WebP q90；来源与配方见 [reference/maps.md](../reference/maps.md) §2026-10-16），由 `mapImages.js` 静态 import 随站点发布；
+  Android 上该 URL 还可能被运行时更新通道顶替（包内兜底 + 在线校验：sha256 判据、下载校验、失败回落包内；规则见 [reference/maps.md](../reference/maps.md) §2026-10-16、实现见 `frontend/src/data/map2dOverlay.js`），因此 intrinsic 尺寸仍为 1254×1254 但不保证像素与包内那份相同——坐标契约不变。当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
 - `mapImages.width/height` 保持既有 logical/render-frame dimensions（约 754–783），由 `createMapView()` 生成 `mapView.W/H`，作为 `coordinateBounds`、terrain projection、SVG `viewBox`、车辆/基地/轨迹/标注及 pointer conversion 的共同坐标空间；不得用图片实际像素替换。
 - Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；`.pb-svg` 承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera frame。底图和 SVG 按 `mapView.W / mapView.H` 的 frame `fill`，保持既有 overlay 对齐。
 - 运行时 raster capacity 以 `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足；维持现有 1×→4× camera contract，不用滤镜弥补源图细节。
