@@ -352,6 +352,10 @@ WotBTools
 - **消费边界 fail closed**：`hp_state` 在场值必须落在闭集内；形状 / 枚举漂移在
   `validateAgentAiReview`（`frontend/src/api/agent-replay-facets.ts`）拒绝，**不静默回退 `hp_raw`**
   （避免把 producer 漂移变成错误的生命态事实）。缺省路径按 §6 表的 legacy 规则现算。
+- **词汇边界**：只有上游 facet 的事件字段用小写三值 `current`/`zero`/`terminal`；**客户端投影的
+  `ClientAiReviewProjection.hpState` 用 canonical 状态名**（`HpRawState` 枚举：`CURRENT_HP` /
+  `HP_ZERO_TERMINAL` / `DEATH_TERMINAL_FFFD` / `DEATH_TERMINAL` / `UNKNOWN_FFFF` / `UNKNOWN_OTHER`，
+  即 `contracts/http/openapi.yaml` 的 enum），服务端 `HpRawState.fromWireName` 只认后者。
 - **消费**：canonical `classifyHpRaw(raw, hp_state?)`（`replay-local/canonical/hpRawState.ts`）→
   血量帧（`healthTransitions`；终态哨兵血量未知 ≠ 0）与生命轨道（`lifeTransitions` 终态样本 →
   `DESTROYED`）；终态分类**可**经 HTTP 投影（`ClientAiReviewProjection.hpState`，可选）传到 Java

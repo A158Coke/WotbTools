@@ -82,20 +82,40 @@ class ClientAiProjectionReaderTest {
                 : decoded.healthEvents().getFirst().hpRaw();
     }
 
+    /**
+     * 有效值 = **HTTP 契约词汇**（`contracts/http/openapi.yaml` 的 enum = `HpRawState` 名，
+     * 即 {@code DEATH_TERMINAL} 这一族），**不是**上游 facet 的 {@code current}/{@code zero}/
+     * {@code terminal} 小写值——两者是不同边界的词汇，混用会被下面 {@link #facetVocabularyIsNotTheHttpWireValue()} 抓住。
+     */
     @Test
     void validWireValueIsAuthoritativeForTheWholeTerminalFamily() throws Exception {
         for (final String list : LISTS) {
             final ClientAiProjection decoded = ReplayFactsCodec.projectionFromJson(
                     firstEntry(list, entry -> {
                         entry.put("hpRaw", 0xFFFE);
-                        entry.put("hpState", "terminal");
+                        entry.put("hpState", "DEATH_TERMINAL");
                     }));
-            assertEquals("terminal", hpStateOf(decoded, list), list + "：字段必须原样解出");
+            assertEquals("DEATH_TERMINAL", hpStateOf(decoded, list), list + "：字段必须原样解出");
             assertEquals(0xFFFE, hpRawOf(decoded, list));
             assertEquals(HpRawState.DEATH_TERMINAL, HpRawState.fromProjection(hpStateOf(decoded, list), 0xFFFE),
-                    list + "：字段在场 = 权威（0xFFFE 档按上游分类判终态，不经 legacy 现算）");
+                    list + "：字段在场 = 权威（0xFFFE 档按客户端 canonical 分类判终态，不经 legacy 现算）");
             // 合法值必须通过读取边界校验（否则生产请求会被 400）。
             ClientAiProjectionAdapter.validate(decoded);
+        }
+    }
+
+    /** 上游 facet 的 `hp_state` 小写值（`current/zero/terminal`）**不是** HTTP `hpState` 的合法值。 */
+    @Test
+    void facetVocabularyIsNotTheHttpWireValue() throws Exception {
+        assertNull(HpRawState.fromWireName("terminal"), "facet 词汇无 wire 映射");
+        assertEquals(HpRawState.UNKNOWN_OTHER, HpRawState.fromProjection("terminal", 0xFFFE),
+                "按 legacy 现算 ⇒ 0xFFFE 仍属未证明哨兵（不得被当成终态）");
+        for (final String list : LISTS) {
+            final ClientAiProjection decoded = ReplayFactsCodec.projectionFromJson(
+                    firstEntry(list, entry -> entry.put("hpState", "terminal")));
+            assertThrows(ClientAiProjectionAdapter.InvalidProjectionException.class,
+                    () -> ClientAiProjectionAdapter.validate(decoded),
+                    list + "：facet 词汇必须被 HTTP 边界拒绝");
         }
     }
 
@@ -125,6 +145,7 @@ class ClientAiProjectionReaderTest {
         }
     }
 
+    /** 未登记 wire 值（含拼写漂移）一律 fail-closed；映射表只认真实契约 enum。 */
     @Test
     void unknownWireValueIsRejectedByBoundaryValidation() throws Exception {
         assertNull(HpRawState.fromWireName("dead"), "未登记 wire 值不得映射到任何状态");
