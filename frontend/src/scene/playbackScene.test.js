@@ -1563,6 +1563,25 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1)
   })
 
+  it('复活后装回炮塔：上一世的飞头不让新车继续无炮塔（issue #622 review P2）', async () => {
+    // 同一 eid 死（52s 飞头）→ 复活（70s）：分离只属于那一世；飞头实体自身照旧按自己的 coverage 渲染。
+    const sceneData = dataFor([vehicle({ death_t: 52, resurrection_times: [70] })])
+    sceneData.detached_turrets = [detachedTrack()]
+    const { api, vehicles } = await load(sceneData.vehicles, null, sceneData)
+    const owner = vehicles[0], head = owner.detachedTurrets[0]
+    expect(owner.turretG.visible).toBe(true)          // 分离前：装炮塔
+    api.seekTime(53)
+    expect(owner.turretG.visible).toBe(false)         // 分离期：摘掉炮塔
+    expect(head.root.visible).toBe(true)
+    api.seekTime(71)
+    expect(owner.turretG.visible).toBe(true)          // 复活后：装回炮塔
+    api.seekTime(81)
+    expect(owner.turretG.visible).toBe(true)          // 复活后飞头仍在视野（coverage 80~100）也不摘
+    expect(head.root.visible).toBe(true)
+    api.seekTime(53)
+    expect(owner.turretG.visible).toBe(false)         // 倒带回到分离世：恢复摘除
+  })
+
   it('uses the same replay clock for pause and speed, with direct seek matching forward playback', async () => {
     const sceneData = dataFor([vehicle({ death_t: 52 })]); sceneData.detached_turrets = [detachedTrack()]
     const { api, vehicles, frames } = await load(sceneData.vehicles, null, sceneData)

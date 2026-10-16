@@ -3635,11 +3635,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
   const detachedPose = {};
+  /**
+   * 分离事实是否属于**当前这一世**（issue #622 review P2）：复活模式下车会带着炮塔复活——上一世的
+   * 飞头不应让新车继续无炮塔。分离从 detached 轨道首帧起生效，到该车**下一次复活**为止（规则与
+   * `defLifeAt` 同一份上游字段，原始时钟域）；复活后的新死亡若再飞头，会有新的 detached 轨道
+   * （新首帧）重新接管。飞头实体自身的渲染不受此判据影响（它有自己的 coverage 与位姿轨道）。
+   */
+  function detachmentAppliesNow(v, head) {
+    const startRaw = head.track.pose_kf.t[0];
+    if (!(T >= startRaw)) return false;
+    for (const r of v.def.resurrection_times || []) {
+      if (r > startRaw && r <= T + 1e-6) return false;
+    }
+    return true;
+  }
   function applyDetachedTurrets(v) {
     let separated = false;
     for (const head of v.detachedTurrets) {
       const known = T >= head.track.pose_kf.t[0];
-      separated ||= known;
+      separated ||= known && detachmentAppliesNow(v, head);
       head.root.visible = known && !classIconsVisible() && sampleDetachedPose(head.track, T, detachedPose);
       if (head.root.visible) {
         head.root.position.set(detachedPose.x, detachedPose.y, detachedPose.z);

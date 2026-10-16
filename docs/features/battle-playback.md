@@ -120,6 +120,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - **阵亡期断链（履带印）**：DESTROYED 期间与 AoI 空洞同语义——历史印记保留、复活后从**新锚**开始，
   不与死前锚连铺（否则跨阵亡期/复活迁移桥出一条长印记）。守卫：`playbackScene.test.js` 的
   "履带印阵亡期断链"用例（复活落在新位置时不出现长戳）。
+- **复活后装回炮塔（3D）**：分离（飞头）只属于**它发生的那一世**——`detachmentAppliesNow` 让
+  detached 轨道的摘除从首帧起、到该车下一次复活为止生效；复活后的新车装回炮塔（旧飞头实体自身
+  照旧按自己的 coverage 渲染，它是独立实体）。若复活后的新死亡再次飞头，会有新的 detached 轨道
+  （新首帧）重新接管。守卫：`playbackScene.test.js` 的"复活后装回炮塔"用例（失败态即复活后仍无炮塔）。
 
 ### 反未来信息泄漏（anti-future-leak，硬性 invariant）
 
@@ -1289,9 +1293,13 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 **多实体账号（AoI 重入 / 复活换实体）**：同一账号在回放里可能有多个实体，位姿列按 eid 各列一份。
 2D 的**活跃实体**判定与 3D 的死亡归属**同源**——canonical 身份证据（`entityFirstSeenByAccount` +
 `activeEntityAt`，随 `PoseFacet.entityStartsByAccount` 带出），按采样时刻选活跃实体；证据缺失或
-并列（歧义）→ 该车回落 canonical 位姿（fail-closed，不猜）。守卫：`vehiclePose.test.ts` 的
-`selectActiveDef` 用例 + `BattlePlayback.integration.test.js` 的"多实体账号"用例（数组里靠后的实体
-不得把位姿泄漏到重入之前——"后写覆盖"的旧写法会因轨迹端点外钳位把后一实体的首帧顶到过去）。
+并列（歧义）→ 该车回落 canonical 位姿（fail-closed，不猜）。
+**采样时刻还必须落在所选实体的 `coverage` 证据内**（`poseCoveredAt`）：coverage 外没有位姿证据，
+而关键帧 / 网格采样在首样本前**端点钳位**——新实体的身份证据（HP / 观测先见）可能早于其首个位姿
+样本，直接采样就会把它未来的首帧位姿泄漏到过去（review P2）。不覆盖同样回落 canonical。
+守卫：`vehiclePose.test.ts` 的 `selectActiveDef` / `poseCoveredAt` 用例 +
+`BattlePlayback.integration.test.js` 的"多实体账号"与"实体身份证据早于位姿覆盖"用例（后者失败态
+即泄漏成后一实体的钳位首帧）。
 
 **刻意不呈现**：俯仰/侧倾（"多出的那个维度"）与炮管仰角。2D 是纯俯视，标记视觉层不施加任何
 3D 倾斜（原"2.5D 车辆地形姿态"——用底图 heightfield 合成 pitch/roll + ×1.35 增益 + ±14°/±10°

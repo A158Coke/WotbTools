@@ -136,6 +136,33 @@ export function selectActiveDef(
   return defs.find((def) => def.eid === eid) ?? null
 }
 
+/** coverage 判定的浮点容差（原始时钟秒）。 */
+const COVERAGE_EPS = 1e-6
+
+/**
+ * 该实体的位姿列是否**覆盖**该回放时钟时刻（`coverage` = 原始时钟域的 AoI 闭区间）。
+ *
+ * 区间外没有位姿证据，而关键帧 / 网格采样都在首样本前**端点钳位**——直接采样会把该实体未来的
+ * 首帧位姿泄漏到过去。多实体账号尤其明显：新实体的身份证据（HP / 观测先见）可能早于其首个
+ * 位姿样本。故渲染前必须把采样时刻关在证据内；不覆盖 = false，由调用方回落 canonical
+ * （fail-closed，不猜）。
+ */
+export function poseCoveredAt(
+  def: Pick<PoseFacetVehicle, 'coverage'> | null | undefined,
+  rawTime: number,
+): boolean {
+  const spans = def?.coverage
+  if (!Array.isArray(spans) || !Number.isFinite(rawTime)) return false
+  for (let i = 0; i + 1 < spans.length; i += 2) {
+    const start = spans[i]
+    const end = spans[i + 1]
+    if (typeof start !== 'number' || typeof end !== 'number') continue
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    if (rawTime >= start - COVERAGE_EPS && rawTime <= end + COVERAGE_EPS) return true
+  }
+  return false
+}
+
 /** 关键帧折线：缺省或单点 = null（→ 回退网格），与场景既有判据逐位一致。 */
 export function poseKeyframesOf(def: Pick<PoseDef, 'pose_kf'> | null | undefined): AgentPoseKeyframes | null {
   const k = def?.pose_kf
