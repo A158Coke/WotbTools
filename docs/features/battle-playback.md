@@ -373,9 +373,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 - 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。2D 底图资源更新不改变 3D provider、缓存策略或资产托管。
 - 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
   失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
-  （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
-  （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；伤害飘字走对象池，战斗特效（曳光/光迹/开火/命中/爆炸/残骸烟）
-  由 `scene/battleFx.js` 合批与池化，二者都仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
+  （暂停且无在飞特效、相机静止时不重绘）；**伤害数字与车辆标签同在 HTML 覆盖层**（数字是血条
+  右侧的 DOM 文本，尺寸 / 漂移是屏幕空间常量，不再有第二个 WebGL 上下文、也没画布贴图池），
+  战斗特效（曳光/光迹/开火/命中/爆炸/残骸烟）由 `scene/battleFx.js` 合批与池化，仅在会话结束时
+  整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条/名册按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
 - **3D 击毁车辆视觉**：复用原车模，死亡后 0.30 秒开始去饱和和压暗，0.80 秒完成
   哑光炭灰残骸状态，保持到回放结束。完全去饱和，在显示颜色上取原明度的 45%，
@@ -512,12 +513,16 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `labelPrefs.showPlayerName / showTankName / showReload` 与 `hpPrefs.showHp`；默认昵称关、
   车型/血量/装填开，旧持久化 key 与迁移语义保留。任一面板改变偏好，另一面板立即观察到。
   名牌直接使用语义 CSS token，不铺整卡不透明黑底，字体保持屏幕空间可读大小，长名称受限截断。
-  3D 车辆标签不再创建 CanvasTexture/Sprite；独立的伤害飘字仍可使用 Three.js sprite——但 HTML
-  名牌恒在 canvas 之上，sprite 的 `renderOrder` 压不住它，所以飘字按屏幕空间几何避让：从该车
-  名牌块**顶边之上**起跳（块高由 overlay 的 `labelHeight(eid)` 在飘字出生时量一次，名牌隐藏
-  或覆盖层缺席时为 0，退回车体上方的老位置），并沿**相机 up** 方向上浮固定屏幕像素——俯视镜头下
-  世界 y 近乎指向相机，沿它上浮在屏幕上几乎原地不动。名牌抬升量（`labelLiftWorld`）是名牌与
-  飘字共用的唯一事实源。
+  3D 车辆标签不再创建 CanvasTexture/Sprite；**伤害数字同样在 `PlaybackVehicleLabels3D` 的
+  HTML 覆盖层里**（同一层、DOM 顺序排在所有名牌之后）：出生点是该车 **HP 血条右缘 + 8px、
+  垂直居中于血条**（几何直接读血条 DOM：`damageAnchor(eid)`，不存在世界↔屏幕换算），不覆盖
+  血条、不被姓名/车型/装填条遮挡；生命周期内向右上漂移 20×24px 并只在后半程淡出（CSS 动画，
+  固定 px 字号 + 深色描边 token，远近缩放与自由/跟随/俯视镜头下屏幕尺寸一致）。回退链：
+  血条关掉 → 名牌块右缘同一规则；整块名牌关掉或没有可见内容 → 落回名牌锚点上方
+  （`labelLiftWorld` 抬升的车体上方）；车辆出屏/不可见 → 不显示。同一辆车连续受击按 20px
+  槽位错开，避免多个数字完全重叠；贴屏幕右缘放不下时镜像到血条左侧，不被 viewport 裁掉。
+  掉血事件跨过播放时钟时由场景 `spawnDamage(eid, hpLoss, FLOAT_DMG_MS × FX_SCALE)` 生成一次
+  （与 2D 同一组寿命常量），seek 由 `clearDamages` 清空且不补播。
   场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，
   内容状态按 HUD cadence（约 10Hz）发布给标签子组件，seek 立即刷新，不驱动整个
   `Replay3DPane` reactive tree。背向相机、出屏、未可见车辆隐藏，既有遮挡语义保留；
