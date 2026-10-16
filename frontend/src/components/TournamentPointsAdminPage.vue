@@ -23,7 +23,7 @@ const owner = useTournamentPointsAdmin()
 const { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
   busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError } = owner
 const { historicalPreview, historicalRequest, historicalState, historicalFileIssue, canImportHistorical } = owner
-const { csvSupported, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, dataSource } = owner
+const { csvSupported, csvCapabilityError, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, dataSource, dataSourceError } = owner
 const { availability } = useFeatureGate()
 const network = computed(() => availability(Feature.TOURNAMENT_POINTS))
 watch(() => network.value.available, value => { owner.networkAvailable.value = value }, { immediate: true })
@@ -115,6 +115,8 @@ onScopeDispose(clearLocal)
       <Banner v-else-if="notice">{{ $t('tournament.' + notice) }}</Banner>
       <Banner v-if="reviews.length">{{ $t('tournament.unsaved') }}</Banner>
       <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing" />
+      <Banner v-if="dataSourceError" tone="warning" data-testid="tournament-data-source-error">{{ $t('tournament.dataSourceLoadFailed') }} {{ apiErrorLabel(t, te, dataSourceError) }}</Banner>
+      <Banner v-if="csvCapabilityError" tone="warning" data-testid="tournament-csv-capability-error">{{ $t('tournament.csvCapabilityLoadFailed') }} {{ apiErrorLabel(t, te, csvCapabilityError) }}</Banner>
       <div v-if="dataSource?.csvImported && dataSource.attribution" class="tournament-actions" data-testid="tournament-data-source">
         <span>{{ $t('tournament.dataSource') }}</span><AppButton :href="dataSource.attribution.url" target="_blank" rel="noopener noreferrer" size="sm">{{ dataSource.attribution.name }}</AppButton>
       </div>

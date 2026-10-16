@@ -211,7 +211,8 @@
         "name": "文件名无效",
         "invalid": "文件内容无效，请检查后重试"
       },
-      "dataSourceLoadFailed": "数据来源加载失败，可点击刷新重试。"
+      "dataSourceLoadFailed": "数据来源加载失败，可点击刷新重试。",
+      "csvCapabilityLoadFailed": "CSV 导入可用性检查失败，可点击刷新重试；其他积分操作仍可使用。"
     },
     "featureOffline": {
       "tournamentPoints": "联赛积分榜和统计需要网络连接。"
@@ -454,7 +455,8 @@
         "name": "Invalid filename",
         "invalid": "Invalid file contents; check and retry"
       },
-      "dataSourceLoadFailed": "The data source could not be loaded. Refresh to retry."
+      "dataSourceLoadFailed": "The data source could not be loaded. Refresh to retry.",
+      "csvCapabilityLoadFailed": "CSV import availability could not be checked. Refresh to retry; other scoring actions remain available."
     },
     "featureOffline": {
       "tournamentPoints": "League standings and scoring require an internet connection."
@@ -697,7 +699,8 @@
         "name": "Недопустимое имя файла",
         "invalid": "Некорректное содержимое файла; проверьте и повторите"
       },
-      "dataSourceLoadFailed": "Не удалось загрузить источник данных. Обновите страницу, чтобы повторить."
+      "dataSourceLoadFailed": "Не удалось загрузить источник данных. Обновите страницу, чтобы повторить.",
+      "csvCapabilityLoadFailed": "Не удалось проверить доступность импорта CSV. Обновите страницу для повторной попытки; другие действия с очками доступны."
     },
     "featureOffline": {
       "tournamentPoints": "Таблица лиги и подсчёт очков требуют подключения к сети."

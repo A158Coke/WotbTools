@@ -54,6 +54,25 @@ beforeEach(() => {
   state.api.importTournamentCsv.mockResolvedValue(preview)
 })
 describe('independent CSV administration flow', () => {
+  it.each([
+    ['getTournamentDataSource', 'tournament-data-source-error', 'tournament.dataSourceLoadFailed'],
+    ['supportsTournamentCsvImport', 'tournament-csv-capability-error', 'tournament.csvCapabilityLoadFailed'],
+  ])('keeps the editor enabled with a localized warning when %s fails, then recovers on refresh', async (request, testid, message) => {
+    state.api.getTournamentConfig.mockResolvedValue({ event, clans: [], rounds: [{ roundNumber: 1, complete: true, locked: false, rulesVersion: 1, days: [] }] })
+    state.api.getTournamentDataSource.mockResolvedValue({ csvImported: true, attribution: { name: '_EK_', url: 'https://b23.tv/rqx5iYX' } })
+    state.api[request].mockRejectedValueOnce({ errorCode: 'INTERNAL_ERROR', status: 500 })
+    const p = page(); await p.select()
+    expect(p.wrapper.get('[data-testid="expected-group-count"]').attributes('disabled')).toBeUndefined()
+    expect(p.wrapper.get(`[data-testid="${testid}"]`).text()).toContain(p.i18n.global.t(message))
+    if (request === 'supportsTournamentCsvImport') expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
+    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
+    await flushPromises()
+    expect(p.wrapper.find(`[data-testid="${testid}"]`).exists()).toBe(false)
+    expect(p.wrapper.get('[data-testid="expected-group-count"]').attributes('disabled')).toBeUndefined()
+    expect(p.wrapper.get('[data-testid="tournament-data-source"] a').text()).toBe('_EK_')
+    expect(p.wrapper.find('[data-testid="csv-import"]').exists()).toBe(true)
+    p.wrapper.unmount()
+  })
   it('keeps JSON and CSV inputs separate, previews changes and cancels before writing', async () => {
     const p = page(); await p.select()
     expect(p.wrapper.get('[data-testid="csv-file"]').attributes('accept')).toBe('.csv,text/csv')
