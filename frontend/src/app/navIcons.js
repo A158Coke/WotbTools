@@ -17,6 +17,7 @@ export const ADMIN_NAV_ICONS = Object.freeze({
   'hof-admin': ShieldCheck,
   'tournament-points-config': Settings,
   'tournament-points-admin': ListOrdered,
+  'creators-config': Users,
 })
 
 // 账户入口（进入个人中心）

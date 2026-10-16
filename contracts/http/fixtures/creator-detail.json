@@ -1,0 +1,13 @@
+{
+  "id": 1,
+  "name": "Example UP",
+  "description": null,
+  "homepageUrl": "https://space.bilibili.com/1000001",
+  "categoryIds": [
+    1
+  ],
+  "levelId": null,
+  "baseStars": 3,
+  "avatarId": null,
+  "avatarUrl": null
+}

@@ -3,6 +3,351 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "CreatorCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorNameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "homepageUrl",
+        "avatarUrl",
+        "categories",
+        "level",
+        "score",
+        "favoriteCount",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 300,
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          },
+          "minItems": 1
+        },
+        "level": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 10
+        },
+        "favoriteCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "CreatorSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description",
+        "homepageUrl",
+        "categoryIds",
+        "levelId",
+        "baseStars",
+        "avatarId"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 300,
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "baseStars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 36
+        }
+      }
+    },
+    "CreatorDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "description",
+        "homepageUrl",
+        "categoryIds",
+        "levelId",
+        "baseStars",
+        "avatarId",
+        "avatarUrl"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "maxLength": 300,
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "baseStars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 36
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "CreatorSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "favoriteThreshold",
+        "avatarUploadsAvailable"
+      ],
+      "properties": {
+        "favoriteThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "avatarUploadsAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CreatorSettingsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "favoriteThreshold"
+      ],
+      "properties": {
+        "favoriteThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "CreatorFavorites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "creatorIds"
+      ],
+      "properties": {
+        "creatorIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "CreatorFavoriteResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "creator",
+        "active"
+      ],
+      "properties": {
+        "creator": {
+          "$ref": "#/$defs/CreatorCard"
+        },
+        "active": {
+          "type": "boolean"
+        }
+      }
+    },
+    "CreatorAvatar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "url"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "BroadcastServer": {
       "type": "string",
       "enum": [
@@ -5027,6 +5372,13 @@ export default {
     "ApiErrorCode": {
       "type": "string",
       "enum": [
+        "CREATOR_NOT_FOUND",
+        "CREATOR_INVALID_REQUEST",
+        "CREATOR_CATEGORY_IN_USE",
+        "CREATOR_LEVEL_IN_USE",
+        "CREATOR_CONFIG_CONFLICT",
+        "CREATOR_STORAGE_UNAVAILABLE",
+        "CREATOR_AVATAR_NOT_FOUND",
         "TOURNAMENT_VERSION_CONFLICT",
         "TOURNAMENT_LOCKED",
         "TOURNAMENT_RULES_INCOMPLETE",

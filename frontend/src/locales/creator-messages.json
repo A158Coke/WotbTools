@@ -1,0 +1,74 @@
+{
+  "zh": {
+    "creators": {
+      "title": "bilibili UP 主推荐", "configTitle": "UP 主推荐管理", "name": "UP 主名字", "homepage": "bilibili 主页链接",
+      "homepageHint": "填写 https://space.bilibili.com/数字UID", "description": "简介（选填）", "descriptionHint": "推荐复制 UP 主页的简介", "categories": "内容类别", "levels": "实力等级",
+      "allCategories": "全部类别", "categoryRequired": "至少选择一个类别。", "searchCategories": "搜索类别", "baseStars": "基础推荐星级",
+      "baseStarsHint": "1–5 颗整星，默认 3 星；收藏奖励另行累计，最终评分最高 10 分。", "starOption": "{count} 星", "assess": "启用实力评估",
+      "level": "实力等级", "selectLevel": "选择实力等级", "assessmentDisclaimer": "本网站仅提供评估意见", "scoreLabel": "推荐评分 {score}/10",
+      "favoriteCount": "当前收藏 {count}", "favorite": "收藏", "unfavorite": "取消收藏", "visitHomepage": "跳转主页", "addCreator": "新增 UP 主",
+      "newCategory": "新增类别", "newLevel": "新增等级", "add": "新增", "edit": "编辑 UP 主", "remove": "移除", "removeNamed": "移除{name}",
+      "removeConfirm": "是否移除该 UP？", "removeCategoryConfirm": "是否移除该类别？", "removeLevelConfirm": "是否移除该等级？", "save": "保存",
+      "saving": "正在保存…", "saved": "已保存", "removed": "已移除", "cancel": "取消", "refresh": "刷新", "retry": "重试", "loading": "正在加载…",
+      "empty": "该类别暂无推荐 UP 主。", "invalidForm": "请填写名字和正确的 bilibili 主页、选择至少一个类别，并检查星级和实力等级。",
+      "avatar": "头像", "avatarAlt": "{name}的头像", "chooseAvatar": "选择头像", "avatarHint": "仅上传一张 PNG 或 JPEG 图片，最大 10 MB。",
+      "avatarUnavailable": "头像上传暂不可用，仍可保留或清空现有头像。", "uploading": "正在上传头像…", "retryUpload": "重试上传", "clearAvatar": "清空头像",
+      "avatarCleanupFailed": "未采用头像的即时清理失败，将由过期清理处理。", "thresholdTitle": "收藏奖励配置", "threshold": "每档首次收藏人数",
+      "thresholdHint": "正整数，默认 200。每档奖励 1 分；修改只影响后续首次收藏，不重算历史奖励。"
+    },
+    "featureOffline": { "creators": "UP 主推荐需要联网后查看和操作。" },
+    "api_errors": {
+      "CREATOR_NOT_FOUND": "该 UP 主已不存在，请刷新列表。", "CREATOR_INVALID_REQUEST": "UP 主资料无效，请检查录入内容。",
+      "CREATOR_CATEGORY_IN_USE": "无法移除：该类别是部分 UP 主的唯一类别。请先给相关 UP 配置其他类别。", "CREATOR_LEVEL_IN_USE": "无法移除：仍有 UP 主使用该实力等级。请先更换相关 UP 的等级或关闭实力评估。",
+      "CREATOR_CONFIG_CONFLICT": "配置已变化，请刷新后重试。", "CREATOR_STORAGE_UNAVAILABLE": "头像存储暂不可用，请稍后重试。", "CREATOR_AVATAR_NOT_FOUND": "该头像已失效，请重新上传。"
+    }
+  },
+  "en": {
+    "creators": {
+      "title": "Bilibili creators", "configTitle": "Manage recommended creators", "name": "Creator name", "homepage": "Bilibili profile link",
+      "homepageHint": "Use https://space.bilibili.com/numericUID", "description": "Description (optional)", "descriptionHint": "We recommend copying the description from the creator's profile.", "categories": "Content categories", "levels": "Skill levels",
+      "allCategories": "All categories", "categoryRequired": "Select at least one category.", "searchCategories": "Search categories", "baseStars": "Base recommendation stars",
+      "baseStarsHint": "1–5 whole stars; default 3. Favorites add rewards separately, up to a final score of 10.", "starOption": "{count} stars", "assess": "Enable skill assessment",
+      "level": "Skill level", "selectLevel": "Select a skill level", "assessmentDisclaimer": "This website provides an assessment opinion only.", "scoreLabel": "Recommendation score {score}/10",
+      "favoriteCount": "Current favorites: {count}", "favorite": "Favorite", "unfavorite": "Unfavorite", "visitHomepage": "Visit profile", "addCreator": "Add a creator",
+      "newCategory": "New category", "newLevel": "New skill level", "add": "Add", "edit": "Edit creator", "remove": "Remove", "removeNamed": "Remove {name}",
+      "removeConfirm": "Remove this creator?", "removeCategoryConfirm": "Remove this category?", "removeLevelConfirm": "Remove this skill level?", "save": "Save",
+      "saving": "Saving…", "saved": "Saved", "removed": "Removed", "cancel": "Cancel", "refresh": "Refresh", "retry": "Retry", "loading": "Loading…",
+      "empty": "No recommended creators in this category yet.", "invalidForm": "Enter a name and valid Bilibili profile, select a category, and check the stars and skill level.",
+      "avatar": "Avatar", "avatarAlt": "Avatar of {name}", "chooseAvatar": "Choose avatar", "avatarHint": "One PNG or JPEG image, up to 10 MB.",
+      "avatarUnavailable": "Avatar uploads are unavailable. You can keep or clear the current avatar.", "uploading": "Uploading avatar…", "retryUpload": "Retry upload", "clearAvatar": "Clear avatar",
+      "avatarCleanupFailed": "Immediate cleanup of the unused avatar failed. Expiry cleanup will handle it.", "thresholdTitle": "Favorite rewards", "threshold": "First-time favorites per reward",
+      "thresholdHint": "A positive integer; default 200. Each threshold grants 1 point. Changes apply to future first-time favorites without recalculating past rewards."
+    },
+    "featureOffline": { "creators": "Connect to the Internet to browse and manage creator recommendations." },
+    "api_errors": {
+      "CREATOR_NOT_FOUND": "This creator no longer exists. Refresh the list.", "CREATOR_INVALID_REQUEST": "Invalid creator details. Check your input.",
+      "CREATOR_CATEGORY_IN_USE": "This is the only category for some creators. Assign those creators another category first.", "CREATOR_LEVEL_IN_USE": "Creators still use this skill level. Change their level or disable skill assessment first.",
+      "CREATOR_CONFIG_CONFLICT": "The configuration changed. Refresh and try again.", "CREATOR_STORAGE_UNAVAILABLE": "Avatar storage is unavailable. Try again later.", "CREATOR_AVATAR_NOT_FOUND": "This avatar expired. Upload it again."
+    }
+  },
+  "ru": {
+    "creators": {
+      "title": "Авторы bilibili", "configTitle": "Управление рекомендациями авторов", "name": "Имя автора", "homepage": "Ссылка на профиль bilibili",
+      "homepageHint": "Формат: https://space.bilibili.com/числовойUID", "description": "Описание (необязательно)", "descriptionHint": "Рекомендуем скопировать описание из профиля автора.", "categories": "Категории контента", "levels": "Уровни мастерства",
+      "allCategories": "Все категории", "categoryRequired": "Выберите хотя бы одну категорию.", "searchCategories": "Поиск категорий", "baseStars": "Базовые звёзды рекомендации",
+      "baseStarsHint": "От 1 до 5 целых звёзд; по умолчанию 3. Избранное даёт дополнительные баллы, итог — не более 10.", "starOption": "Звёзд: {count}", "assess": "Включить оценку мастерства",
+      "level": "Уровень мастерства", "selectLevel": "Выберите уровень мастерства", "assessmentDisclaimer": "Сайт предоставляет только оценочное мнение.", "scoreLabel": "Рекомендация: {score}/10",
+      "favoriteCount": "Сейчас в избранном: {count}", "favorite": "В избранное", "unfavorite": "Убрать из избранного", "visitHomepage": "Открыть профиль", "addCreator": "Добавить автора",
+      "newCategory": "Новая категория", "newLevel": "Новый уровень", "add": "Добавить", "edit": "Изменить автора", "remove": "Удалить", "removeNamed": "Удалить {name}",
+      "removeConfirm": "Удалить этого автора?", "removeCategoryConfirm": "Удалить эту категорию?", "removeLevelConfirm": "Удалить этот уровень?", "save": "Сохранить",
+      "saving": "Сохранение…", "saved": "Сохранено", "removed": "Удалено", "cancel": "Отмена", "refresh": "Обновить", "retry": "Повторить", "loading": "Загрузка…",
+      "empty": "В этой категории пока нет рекомендованных авторов.", "invalidForm": "Укажите имя и действительный профиль bilibili, выберите категорию и проверьте звёзды и уровень мастерства.",
+      "avatar": "Аватар", "avatarAlt": "Аватар автора {name}", "chooseAvatar": "Выбрать аватар", "avatarHint": "Одно изображение PNG или JPEG до 10 МБ.",
+      "avatarUnavailable": "Загрузка аватаров недоступна. Текущий аватар можно оставить или убрать.", "uploading": "Загрузка аватара…", "retryUpload": "Повторить загрузку", "clearAvatar": "Убрать аватар",
+      "avatarCleanupFailed": "Не удалось сразу удалить неиспользуемый аватар. Он будет очищен по истечении срока.", "thresholdTitle": "Награды за избранное", "threshold": "Первичных добавлений для награды",
+      "thresholdHint": "Положительное целое число, по умолчанию 200. Каждый порог даёт 1 балл. Изменения действуют для будущих первичных добавлений без пересчёта прошлых наград."
+    },
+    "featureOffline": { "creators": "Для просмотра рекомендаций авторов и управления ими нужен Интернет." },
+    "api_errors": {
+      "CREATOR_NOT_FOUND": "Этот автор больше не существует. Обновите список.", "CREATOR_INVALID_REQUEST": "Некорректные данные автора. Проверьте ввод.",
+      "CREATOR_CATEGORY_IN_USE": "Эта категория — единственная для некоторых авторов. Сначала назначьте им другую категорию.", "CREATOR_LEVEL_IN_USE": "Этот уровень ещё используется авторами. Сначала измените их уровень или отключите оценку мастерства.",
+      "CREATOR_CONFIG_CONFLICT": "Конфигурация изменилась. Обновите страницу и повторите.", "CREATOR_STORAGE_UNAVAILABLE": "Хранилище аватаров недоступно. Повторите позже.", "CREATOR_AVATAR_NOT_FOUND": "Срок действия аватара истёк. Загрузите его снова."
+    }
+  }
+}

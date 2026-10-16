@@ -3,10 +3,8 @@ package com.wotb.web.tournament.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
-import tools.jackson.core.JsonParser;
-import tools.jackson.core.JsonToken;
-import tools.jackson.databind.DeserializationContext;
-import tools.jackson.databind.ValueDeserializer;
+import com.wotb.web.util.JsonNumberInputs.IntegerInput;
+import com.wotb.web.util.JsonNumberInputs.LongInput;
 import tools.jackson.databind.annotation.JsonDeserialize;
 import java.time.Instant;
 import java.util.List;
@@ -246,27 +244,4 @@ public final class TournamentDtos {
             byte[] bytes,
             String contentType
     ) { }
-    /** Native Jackson property readers keep decimal input exact and reject numeric strings. */
-    public static class IntegerInput extends ValueDeserializer<Integer> {
-        @Override
-        public Integer deserialize(final JsonParser parser, final DeserializationContext context) {
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_INT)) { return parser.getIntValue(); }
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_FLOAT)) {
-                try { return parser.getDecimalValue().intValueExact(); }
-                catch (final ArithmeticException invalid) { return context.reportInputMismatch(Integer.class, "Expected an exact integer"); }
-            }
-            return context.reportInputMismatch(Integer.class, "Expected an integer JSON number");
-        }
-    }
-    public static class LongInput extends ValueDeserializer<Long> {
-        @Override
-        public Long deserialize(final JsonParser parser, final DeserializationContext context) {
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_INT)) { return parser.getLongValue(); }
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_FLOAT)) {
-                try { return parser.getDecimalValue().longValueExact(); }
-                catch (final ArithmeticException invalid) { return context.reportInputMismatch(Long.class, "Expected an exact integer"); }
-            }
-            return context.reportInputMismatch(Long.class, "Expected an integer JSON number");
-        }
-    }
 }

@@ -44,10 +44,12 @@ export function useMoreMenu() {
     isHofAdmin.value && { view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', icon: ShieldCheck },
     isTournamentAdmin.value && { view: 'tournament-points-config', labelKey: 'tournament.configTitle', icon: Settings },
     isTournamentAdmin.value && { view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', icon: ListOrdered },
+    isTournamentAdmin.value && { view: 'creators-config', labelKey: 'creators.configTitle', icon: Users },
   ].filter(Boolean))
 
   const toolLinks = Object.freeze([
     { view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', icon: Radio },
+    { view: 'creators', labelKey: 'creators.title', icon: Users },
   ])
 
   /** 关于与支持：低频入口，两种形态都放在"更多"里。 */

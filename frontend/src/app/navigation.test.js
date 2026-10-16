@@ -24,6 +24,13 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 })
 
 describe('primary navigation', () => {
+  it('discovers creator pages and cleans only creator-owned filter state when leaving', () => {
+    expect(viewFromRoute({ path: '/', query: { view: 'creators' } })).toBe('creators')
+    expect(ADMIN_NAV.find(item => item.view === 'creators-config')?.role).toBe('tournamentAdmin')
+    const route = { path: '/', query: { view: 'creators', creatorCategory: '3', lang: 'ru' } }
+    expect(locationForView('replay', route).query).toEqual({ view: 'replay', lang: 'ru' })
+    expect(locationForView('creators', route).query).toEqual(route.query)
+  })
   it('keeps the broadcast catalogue public within More without a second admin view', () => {
     expect(viewFromRoute({ path: '/', query: { view: 'league-broadcasts' } })).toBe('league-broadcasts')
     expect(primarySection('league-broadcasts')).toBe('more')
