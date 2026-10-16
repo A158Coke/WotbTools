@@ -19,6 +19,9 @@ spring:
     username: ${POSTGRES_USER:wotb}
     password: ${POSTGRES_PASSWORD}
   jpa:
+    # DTO projection ends in service transactions; public COS reads must not
+    # keep a request-wide persistence context and its borrowed connection.
+    open-in-view: false
     hibernate.ddl-auto: validate
   flyway:
     enabled: true

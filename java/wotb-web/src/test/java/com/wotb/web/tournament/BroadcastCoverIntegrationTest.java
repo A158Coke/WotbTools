@@ -7,6 +7,7 @@ import com.wotb.web.tournament.service.BroadcastCosStorage;
 import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,8 +17,11 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -45,6 +49,8 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Actual PostgreSQL transactions/locks/FKs; the concrete COS boundary is mocked, never cloud-backed. */
 @Testcontainers(disabledWithoutDocker = true)
@@ -69,6 +75,7 @@ class BroadcastCoverIntegrationTest {
     @Autowired BroadcastSeasonRepository seasons;
     @Autowired PlatformTransactionManager transactions;
     @Autowired JdbcTemplate jdbc;
+    @Autowired WebApplicationContext webContext;
     @MockitoBean BroadcastCosStorage storage;
     private long seasonId;
     private long nodeId;
@@ -141,6 +148,25 @@ class BroadcastCoverIntegrationTest {
         jdbc.update("delete from tournament_broadcast_season where id=?", seasonId);
         assertNull(covers.findById(id).orElseThrow().seasonId);
         age(id); service.cleanup(); assertFalse(covers.existsById(id));
+    }
+
+    @Test void publicDownloadsReleaseTheirConnectionAndRowLockBeforeCosIo() throws Exception {
+        final MockMultipartFile file = png();
+        final String id = service.upload(seasonId, file);
+        attach(id);
+        when(storage.get(anyString())).thenAnswer(call -> {
+            assertFalse(TransactionSynchronizationManager.isActualTransactionActive());
+            final HikariDataSource dataSource = (HikariDataSource) jdbc.getDataSource();
+            assertEquals(0, dataSource.getHikariPoolMXBean().getActiveConnections(),
+                    "Public COS I/O must run after the request's database connection is returned");
+            try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                executor.submit(() -> new TransactionTemplate(transactions)
+                        .execute(tx -> covers.findLocked(id).orElseThrow())).get(3, TimeUnit.SECONDS);
+            }
+            return file.getBytes();
+        });
+        MockMvcBuilders.webAppContextSetup(webContext).build()
+                .perform(get("/api/tournament-broadcasts/covers/" + id)).andExpect(status().isOk());
     }
 
     @Test void failedReplayReplacementRollsBackBothReferencesAndLeavesTheNewObjectRecoverable() throws Exception {

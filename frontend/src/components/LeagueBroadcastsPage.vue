@@ -102,13 +102,17 @@ function goBack() {
     : state.seasonId ? { server: state.server } : {})
 }
 function coverFailed(id: string | null) { if (id) failedCovers.value = new Set([...failedCovers.value, id]) }
+async function refreshPage() {
+  failedCovers.value = new Set()
+  await state.refresh()
+}
 </script>
 
 <template>
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
     <PageHeader :title="pageTitle"><template #actions>
       <AppButton v-if="state.server" :disabled="state.busy" data-testid="broadcast-back" @click="goBack">{{ t('leagueBroadcasts.back') }}</AppButton>
-      <AppButton :disabled="state.loading || state.busy || !state.network.available" @click="state.refresh">{{ t('leagueBroadcasts.refresh') }}</AppButton>
+      <AppButton :disabled="state.loading || state.busy || !state.network.available" data-testid="broadcast-refresh" @click="refreshPage">{{ t('leagueBroadcasts.refresh') }}</AppButton>
       <template v-if="state.allowed && state.network.available && !state.loading">
         <AppButton v-if="state.server && !state.seasonId" variant="primary" :disabled="state.busy" data-testid="broadcast-new-season" @click="openSeason()"><Plus :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.newSeason') }}</AppButton>
         <AppButton v-else-if="state.season && !state.categoryId" variant="primary" :disabled="state.busy || !remainingCategories.length" data-testid="broadcast-new-category" @click="openStructure('category')">{{ t('leagueBroadcasts.newCategory') }}</AppButton>

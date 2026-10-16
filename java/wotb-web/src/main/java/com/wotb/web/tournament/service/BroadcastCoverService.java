@@ -33,6 +33,7 @@ public class BroadcastCoverService {
     private final BroadcastReplayRepository replays;
     private final BroadcastCosStorage storage;
     private final TransactionTemplate independent;
+    private final TransactionTemplate metadataReads;
 
     public BroadcastCoverService(final BroadcastCoverRepository covers, final BroadcastReplayRepository replays,
                                  final BroadcastCosStorage storage, final PlatformTransactionManager transactions) {
@@ -41,6 +42,9 @@ public class BroadcastCoverService {
         this.storage = storage;
         this.independent = new TransactionTemplate(transactions);
         this.independent.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.metadataReads = new TransactionTemplate(transactions);
+        this.metadataReads.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.metadataReads.setReadOnly(true);
     }
 
     public record CoverImage(byte[] bytes, String contentType, String hash) { }
@@ -102,23 +106,28 @@ public class BroadcastCoverService {
     }
 
     public CoverImage load(final String coverId) {
-        return independent.execute(tx -> {
-            final BroadcastCover cover = locked(coverId);
-            if (!"READY".equals(cover.status) || !replays.existsByCoverId(coverId)) {
+        final BroadcastCover cover = metadataReads.execute(tx -> {
+            if (coverId == null) { throw new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND); }
+            final BroadcastCover stored = covers.findById(coverId)
+                    .orElseThrow(() -> new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND));
+            if (!"READY".equals(stored.status) || !replays.existsByCoverId(coverId)) {
                 throw new ApiException(ApiErrorCode.RESOURCE_NOT_FOUND);
             }
-            final byte[] bytes = storage.get(cover.objectKey);
-            try {
-                final ImageValidation.Image image = ImageValidation.validate(bytes);
-                if (bytes.length != cover.size || !image.hash().equals(cover.hash)
-                        || !image.contentType().equals(cover.contentType)) {
-                    throw new ApiException(ApiErrorCode.BROADCAST_STORAGE_ERROR);
-                }
-                return new CoverImage(bytes, cover.contentType, cover.hash);
-            } catch (final IOException | IllegalArgumentException e) {
+            return stored;
+        });
+        // Only immutable metadata leaves the short read transaction. Public I/O and
+        // decoding must never retain a connection or block maintenance on this row.
+        final byte[] bytes = storage.get(cover.objectKey);
+        try {
+            final ImageValidation.Image image = ImageValidation.validate(bytes);
+            if (bytes.length != cover.size || !image.hash().equals(cover.hash)
+                    || !image.contentType().equals(cover.contentType)) {
                 throw new ApiException(ApiErrorCode.BROADCAST_STORAGE_ERROR);
             }
-        });
+            return new CoverImage(bytes, cover.contentType, cover.hash);
+        } catch (final IOException | IllegalArgumentException e) {
+            throw new ApiException(ApiErrorCode.BROADCAST_STORAGE_ERROR);
+        }
     }
 
     @Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT1H")
