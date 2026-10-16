@@ -70,7 +70,7 @@ discovery.relabel "keycloak" {
 loki.source.docker "keycloak" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.keycloak.output
-	forward_to = [loki.write.default.receiver]
+	forward_to = [loki.process.compliance.receiver]
 }
 
 // Android APK 由 frontend nginx 直接静态托管，不经过 Spring Boot。
@@ -161,7 +161,70 @@ discovery.relabel "caddy" {
 loki.source.docker "caddy" {
 	host       = "unix:///var/run/docker.sock"
 	targets    = discovery.relabel.caddy.output
+	forward_to = [loki.process.compliance.receiver]
+}
+
+// 合规安全日志分流（公安自评估「日志信息留存措施」）。
+//
+// 这里**不替换**任何现有行为：Keycloak 与 Caddy 的所有日志行照旧原样流向
+// loki.write.default，Grafana 既有查询口径不变。唯一的新增动作是给**真正属于安全日志**
+// 的行打上两个低基数标签：
+//   compliance="security"   -> Loki 据此把这些流的 retention 延长到 190 天
+//   security_kind=...       -> 取证时区分认证事件 / API 访问 / 认证域访问
+// 没有被打标的行（backend debug、AI telemetry、feature usage、APK 下载、Keycloak 的
+// 普通 runtime 日志）继续走默认 7 天档。边界见 docs/operations/security-log-retention.md。
+//
+// stage.match 的 action 默认是 keep：命中 selector 的行执行嵌套 stage，未命中的行
+// **原样透传**（不丢弃），因此一个 processor 里可以并列多个互不影响的分支。
+loki.process "compliance" {
 	forward_to = [loki.write.default.receiver]
+
+	// Keycloak 受控安全事件（realm events 经 jboss-logging listener 写到 stdout）。
+	// 事件类型清单与 infra/tofu/keycloak/events.tf 的 enabled_event_types 必须逐一对应
+	// （scripts/ci/test-keycloak-tofu-contract.sh 断言两边一致）：jboss-logging listener
+	// 本身不受 realm 的 enabled_event_types 约束（那只过滤数据库 event store），所以
+	// 190 天留存的边界必须在这里显式收窄，否则全部事件类型都会被延长。
+	// operationType= 是 admin event 的形态（admin_events_details_enabled = false，
+	// 所以行里不含 resource representation）。
+	// LogQL 的 line filter 只接受双引号字符串（反引号原样串在这个解析器里是 syntax
+	// error），所以引号写成 \\\" 逐层转义；而双引号串里的 \. 会被 LogQL 判为非法转义，
+	// 因此点号一律写成 [.]（与下方 Android selector 同一条既有约定）。
+	stage.match {
+		selector = "{container_name=\"keycloak\"} |~ \"org[.]keycloak[.]events\" |~ \"(type=\\\"(LOGIN|LOGIN_ERROR|LOGOUT|LOGOUT_ERROR|IDENTITY_PROVIDER_LOGIN|IDENTITY_PROVIDER_LOGIN_ERROR|IDENTITY_PROVIDER_FIRST_LOGIN)\\\"|operationType=\\\"(CREATE|UPDATE|DELETE|ACTION)\\\")\""
+
+		stage.static_labels {
+			values = {
+				compliance    = "security",
+				security_kind = "auth",
+			}
+		}
+	}
+
+	// Caddy 的受控安全访问日志。Caddyfile 用 log_append 在行里写死 compliance /
+	// security_kind，所以这里既不猜 logger 名字（log0/log1 随声明顺序漂移），也不在
+	// Alloy 侧第二次定义「哪些访问日志算安全日志」：唯一事实源是 deploy/tx/Caddyfile。
+	// 其余 Caddy 行（TLS/ACME/reload 等 runtime 日志）不含该字段，照旧走 7 天档。
+	stage.match {
+		selector = "{container_name=\"caddy\"} |~ \"\\\"compliance\\\":\\\"security\\\"\""
+
+		stage.json {
+			expressions = {
+				security_kind = "security_kind",
+			}
+		}
+
+		stage.labels {
+			values = {
+				security_kind = "security_kind",
+			}
+		}
+
+		stage.static_labels {
+			values = {
+				compliance = "security",
+			}
+		}
+	}
 }
 
 // Yecao Loki 的 WireGuard-only 摄入端口（deploy/docker-compose.prod.yml）。

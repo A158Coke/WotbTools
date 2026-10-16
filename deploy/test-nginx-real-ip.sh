@@ -46,6 +46,14 @@ trust_count="$(grep -c 'set_real_ip_from ' "$CFG")"
 
 # 1) recreate the pinned production network topology (same subnet/gateway)
 docker network rm "$NETWORK" >/dev/null 2>&1 || true
+# Same fixed-subnet precondition as deploy/test-nginx-grafana-recreate.sh: the `-p deploy`
+# Compose project that earlier steps in this job run can leave a network holding this
+# range (`deploy_default` comes from the daemon's default pool). Release the leftovers
+# instead of relying on another fixture's cleanup; both removals are no-ops when absent
+# or still in use.
+for stale_network in wotb_tx_internal deploy_default; do
+  docker network rm "$stale_network" >/dev/null 2>&1 || true
+done
 docker network create --driver bridge --subnet 172.28.0.0/16 --gateway 172.28.0.1 "$NETWORK" >/dev/null
 
 docker run -d --name "$CONTAINER" --network "$NETWORK" \

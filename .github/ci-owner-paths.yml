@@ -112,6 +112,9 @@ android:
 observability:
   - 'deploy/list-image-tags.sh'
   - '.github/workflows/observability.yml'
+  # The runtime smoke that proves the Docker -> Alloy -> Loki compliance split:
+  # editing it must re-run it, not only the deployment contract job.
+  - 'deploy/test-observability-e2e.sh'
   - 'deploy/deploy.sh'
   - 'deploy/docker-compose.prod.yml'
   - 'deploy/grafana-api-request.sh'
@@ -177,6 +180,9 @@ keycloak_postgres:
   - '.github/workflows/ci-keycloak-postgres.yml'
 caddy:
   - '.github/workflows/caddy.yml'
+  # The gateway's own fixture suite: a Caddyfile change must re-run the runtime
+  # proof of the compliance access log, not only the staged text/JSON assertions.
+  - 'deploy/test-caddy-route-inventory.sh'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/docker-compose.yml'
   - 'deploy/tx/common.compose.yml'
@@ -187,6 +193,9 @@ caddy:
   - '.github/workflows/ci-caddy.yml'
 alloy_tx:
   - '.github/workflows/alloy-tx.yml'
+  # The compliance selector's retained event list must stay identical to the
+  # declared Keycloak event list, so that declaration is a production input here.
+  - 'infra/tofu/keycloak/events.tf'
   - 'deploy/tx/alloy/**'
   - 'deploy/tx/docker-compose.yml'
   - 'deploy/tx/common.compose.yml'
