@@ -10,6 +10,7 @@ import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
+import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.ErrorCode;
@@ -63,17 +64,20 @@ public class AdminUserService {
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
+    private final CreatorService creatorService;
     private final TransactionTemplate transactionTemplate;
 
     public AdminUserService(final UserProfileService userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,
+                            final CreatorService creatorService,
                             final PlatformTransactionManager transactionManager) {
         this.userProfileService = userProfileService;
         this.mapper = mapper;
         this.logPersister = logPersister;
         this.keycloakAdminUserService = keycloakAdminUserService;
+        this.creatorService = creatorService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -287,21 +291,22 @@ public class AdminUserService {
         boolean localDeleted = false;
 
         // 先验证并 flush 本地删除，避免数据库约束失败后才删除 Keycloak 用户。
-        if (profile != null) {
-            try {
+        try {
+            creatorService.removeFavoritesForAccountDeletion(targetKeycloakUserId);
+            if (profile != null) {
                 userProfileService.deleteForAdministration(profile);
                 localDeleted = true;
-            } catch (final DataIntegrityViolationException e) {
-                log.markFailedLocalDelete(ErrorCode.USER_HAS_DEPENDENCIES.name(), e.getMessage());
-                logPersister.save(log);
-                throw new AdminConflictException(ErrorCode.USER_HAS_DEPENDENCIES.name(),
-                        ErrorCode.USER_HAS_DEPENDENCIES.getDefaultMessage());
-            } catch (final Exception e) {
-                log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
-                logPersister.save(log);
-                throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
-                        ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
             }
+        } catch (final DataIntegrityViolationException e) {
+            log.markFailedLocalDelete(ErrorCode.USER_HAS_DEPENDENCIES.name(), e.getMessage());
+            logPersister.save(log);
+            throw new AdminConflictException(ErrorCode.USER_HAS_DEPENDENCIES.name(),
+                    ErrorCode.USER_HAS_DEPENDENCIES.getDefaultMessage());
+        } catch (final Exception e) {
+            log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
+            logPersister.save(log);
+            throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
+                    ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
         }
 
         try {

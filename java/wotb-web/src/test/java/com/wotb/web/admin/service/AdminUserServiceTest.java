@@ -3,6 +3,7 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.config.KeycloakAdminUserService;
+import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
@@ -65,12 +66,12 @@ class AdminUserServiceTest {
             final UserProfileService userProfileService,
             final AdminUserLogPersister logPersister,
             final KeycloakAdminUserService keycloakService) {
-        // 第 5 参数（PlatformTransactionManager）只被 deleteUsers 使用；本用例走的删除路径不触碰它。
         return new AdminUserService(
                 userProfileService,
                 new AdminUserMapper(),
                 logPersister,
                 keycloakService,
+                mock(CreatorService.class),
                 mock(PlatformTransactionManager.class)
         );
     }
