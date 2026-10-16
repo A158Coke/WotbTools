@@ -5,7 +5,7 @@
 // Teleport 到 body：侧边栏是 fixed + z-index 的层叠上下文，面板留在里面会被页面里更高的层
 // （如装甲查看器的 3D 浮层）盖住。测试用 DIALOG_INLINE_KEY 原地渲染。
 import { inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { BookOpen, ExternalLink, MessageSquare } from 'lucide-vue-next'
+import { BookOpen, ExternalLink, FileText, MessageSquare } from 'lucide-vue-next'
 import { FEEDBACK_URL, LANGUAGES, useMoreMenu } from '../composables/useMoreMenu.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
@@ -21,7 +21,15 @@ const emit = defineEmits(['close'])
 
 const navigate = inject(NAVIGATE_VIEW_KEY, null)
 const inline = inject(DIALOG_INLINE_KEY, false)
-const { uiProfilePreference, setUiProfile, uiProfileOptions, setLocale, aboutLinks, openGuide } = useMoreMenu()
+const {
+  uiProfilePreference,
+  setUiProfile,
+  uiProfileOptions,
+  setLocale,
+  aboutLinks,
+  appFiling,
+  openGuide,
+} = useMoreMenu()
 const panel = ref(null)
 
 function close({ restoreFocus = false } = {}) {
@@ -115,6 +123,13 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
             <component :is="link.icon" :size="18" aria-hidden="true" />
             <span>{{ $t(link.labelKey) }}</span>
           </button>
+        </li>
+        <li v-if="appFiling">
+          <a class="more-panel-link" :href="appFiling.url" target="_blank" rel="noopener noreferrer" data-testid="more-link-app-filing" @click="close()">
+            <FileText :size="18" aria-hidden="true" />
+            <span>{{ appFiling.number }}</span>
+            <ExternalLink class="more-panel-external" :size="14" aria-hidden="true" />
+          </a>
         </li>
         <li>
           <a class="more-panel-link" :href="FEEDBACK_URL" target="_blank" rel="noopener noreferrer" data-testid="more-link-feedback" @click="close()">
