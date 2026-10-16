@@ -128,7 +128,7 @@ function placeDamages(eid) {
     if (!el) continue
     // 车辆出屏 / 车体不可见：立刻隐藏，旧坐标不得继续显示（下一帧回来再按新 anchor 落位）
     if (!projected) {
-      if (d.wasProjected === true) d.wasProjected = false
+      d.wasProjected = false // 包括出生时就在视野外：首次进屏也必须消费已过寿命
       setHidden(el, true)
       continue
     }
