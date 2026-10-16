@@ -26,12 +26,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** Catalog write order: catalog -> creator -> avatar. Image I/O precedes the catalog transaction. */
 @Service
 @Transactional
 public class CreatorService {
+    // OpenAPI/Ajv uses ECMAScript \s: ASCII whitespace, Unicode Zs, LS, PS and BOM.
+    // Java trim/strip and Unicode regex \s each accept a different set.
+    private static final Pattern UID_INPUT = Pattern.compile(
+            "[\\s\\p{Zs}\\u2028\\u2029\\uFEFF]*([0-9]{1,20})[\\s\\p{Zs}\\u2028\\u2029\\uFEFF]*");
     private final CreatorRepository creators;
     private final CreatorCategoryRepository categories;
     private final CreatorLevelRepository levels;
@@ -158,8 +163,10 @@ public class CreatorService {
         return trimmed;
     }
     private static String uid(final String raw) {
-        if (raw == null || !raw.trim().matches("[0-9]{1,20}")) { throw invalid(); }
-        final String normalized = raw.trim().replaceFirst("^0+", "");
+        if (raw == null) { throw invalid(); }
+        final var match = UID_INPUT.matcher(raw);
+        if (!match.matches()) { throw invalid(); }
+        final String normalized = match.group(1).replaceFirst("^0+", "");
         if (normalized.isEmpty()) { throw invalid(); }
         return normalized;
     }

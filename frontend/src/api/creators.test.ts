@@ -19,6 +19,22 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 describe('creator directory transport', () => {
+  it('accepts the ECMAScript UID edge whitespace set without accepting internal spaces or zero UIDs', () => {
+    const whitespace = [9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195, 8196,
+      8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279]
+    for (const codePoint of whitespace) {
+      const padding = String.fromCodePoint(codePoint), bilibiliUid = `${padding}000123${padding}`
+      expect(validateCreator('CreatorSaveRequest', { ...payload(), bilibiliUid }).bilibiliUid).toBe(bilibiliUid)
+      expect(bilibiliUid.trim()).toBe('000123')
+      for (const invalid of [`${padding}000${padding}`, `12${padding}3`]) {
+        expect(() => validateCreator('CreatorSaveRequest', { ...payload(), bilibiliUid: invalid })).toThrow('INVALID_RESPONSE')
+      }
+    }
+    for (const codePoint of [0, 8, 14, 28, 31, 133, 6158, 8191, 8203, 8234, 8288, 8289, 12289]) {
+      const padding = String.fromCodePoint(codePoint)
+      expect(() => validateCreator('CreatorSaveRequest', { ...payload(), bilibiliUid: `${padding}123${padding}` })).toThrow('INVALID_RESPONSE')
+    }
+  })
   it('probes additive availability without authentication or the creator gate and preserves transport failures', async () => {
     state.online = false
     const controller = new AbortController()
