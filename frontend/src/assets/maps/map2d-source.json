@@ -1,0 +1,137 @@
+{
+ "schemaVersion": 2,
+ "contentGeneratedAt": "2026-10-16T00:47:16Z",
+ "indexSha256": "0ea002079ec67ce67e562ac2f012a797bacc45e59011df0eb119f3c57e331487",
+ "mapsDigest": "84ccf1ddb13dc89ba539a609707ca135ba27b12917a9b0a38cc2360c018061d5",
+ "recipe": {
+  "canonDim": 1254,
+  "quality": 90,
+  "method": 6,
+  "gain": 1.17,
+  "softShoulder": 24.0,
+  "saturation": 0.9748,
+  "usm": [
+   1.0,
+   80,
+   2
+  ]
+ },
+ "maps": {
+  "amigosville": {
+   "file": "falls-creek.webp",
+   "sha256": "fd6e7c5ab77ef329a32021f140b96f66e7199d73956fa33c9fbe84c0029bd17c"
+  },
+  "canal": {
+   "file": "canal.webp",
+   "sha256": "e6dec094485576a110b3baceb6c8eac85c178632c5f2aaff8cea8cbcedc6a99e"
+  },
+  "canyon": {
+   "file": "canyon.webp",
+   "sha256": "b21cf62ff78b379f5a29ebcb1981c6b25e8aae1971b600f00239ff1a94b398ee"
+  },
+  "desert_train": {
+   "file": "desert-sands.webp",
+   "sha256": "f1fa1fd4f5923e7fbe72a02263b836b1430838ad3f04e58b1b765684a68463a2"
+  },
+  "erlenberg": {
+   "file": "middleburg.webp",
+   "sha256": "aaa1e25a08cbd12f0446934f71ad71e3a6b25e213b85f0027bc9bb4b7c783dd0"
+  },
+  "faust": {
+   "file": "faust.webp",
+   "sha256": "71fb519b28cec0f709b0b440cef671320e0afefad9a46c00f3f0014ae62cb3a0"
+  },
+  "forgecity": {
+   "file": "new-bay.webp",
+   "sha256": "91398cc230a197e99e1c27b693eb3183e946f16acc932dbeaf4d2c57abac6d68"
+  },
+  "fort": {
+   "file": "fort-despair.webp",
+   "sha256": "1e876c780b620e4146b3812770400d0ab4610c5278a4d536eb58319df10ba8c9"
+  },
+  "himmelsdorf": {
+   "file": "himmelsdorf.webp",
+   "sha256": "013ab590ca656b235e0c6b3cce93f516eaa1d499027c0d7543a5eeeeb02b1426"
+  },
+  "holland": {
+   "file": "molendijk.webp",
+   "sha256": "3a141d7fedb97e2c69912e8e92b441c937ced1c922f37cb2d8b5e3c73c788cea"
+  },
+  "holmeisk": {
+   "file": "wasteland.webp",
+   "sha256": "55fa78e67e1943ce30eda5a0503e967fb0daca2bcaad2c99dd27c370d9b1be4e"
+  },
+  "idle": {
+   "file": "yukon.webp",
+   "sha256": "86a10d907023e01fcaf935ddbab77ca53b96a9d2b429b942fe63af2a16ca5453"
+  },
+  "italy": {
+   "file": "vineyards.webp",
+   "sha256": "ef19ce98cdfa759fe0591cf31dc8ff48d2b701884e091af35be9ce35b9359b49"
+  },
+  "karieri": {
+   "file": "copperfield.webp",
+   "sha256": "b7d49881808276614f459b5909f9734c14e1d130481c56341410c0a22b80252c"
+  },
+  "karelia": {
+   "file": "rockfield.webp",
+   "sha256": "20a7fe1715a8fac487def6ce8c6e97fb91bb3179da48889ea86eca71d0124279"
+  },
+  "lagoon": {
+   "file": "lagoon.webp",
+   "sha256": "86fb198f63c03dd7f5eaccd603261bad87894225da377e789229570965d6c931"
+  },
+  "lumber": {
+   "file": "horrorstadt.webp",
+   "sha256": "03e4116bd74b5d5b4f527de50141a453922a7769b058d2a96d00718cc8984164"
+  },
+  "malinovka": {
+   "file": "winter-malinovka.webp",
+   "sha256": "3e6129da196442a8dc8da640887bcc6701a49a0167154f1a4381475288410d4f"
+  },
+  "medvedkovo": {
+   "file": "dead-rail.webp",
+   "sha256": "16b503a132af160d6cfa81a81c3986732959cac6c260dbc5ff7dc403b3e51814"
+  },
+  "milbase": {
+   "file": "yamato-harbor.webp",
+   "sha256": "0db36d0d8833931785a2c8110a7a7d9221346f077d9d49ab3847c86374be59de"
+  },
+  "mountain": {
+   "file": "black-goldville.webp",
+   "sha256": "118083786e5b37951968891f8ef6c01c2639f3fbd22079b1c6bfbd43c107d66a"
+  },
+  "neptune": {
+   "file": "normandy.webp",
+   "sha256": "056f4cf117178779ab4d77ea684b0ab7c86856c6f39fbe92613dd7c780806465"
+  },
+  "pliego": {
+   "file": "castilla.webp",
+   "sha256": "4594dc9d783641bd24f02c111223ebb2389747a7426291587a389155345a1b42"
+  },
+  "plant": {
+   "file": "ghost-factory.webp",
+   "sha256": "331a141f7ffd95b5c09ea4276afc38ba67b5a5c305964b1176d87c67b8481fac"
+  },
+  "port": {
+   "file": "port-bay.webp",
+   "sha256": "80be80f0a0170cab8c591d958b8e2d91ba633c9d9da53f0a3a26d55f79b15ed0"
+  },
+  "rift": {
+   "file": "hellas.webp",
+   "sha256": "8d42f4abaa9850a2c2a089a88c9ad5b49ffb2376d9d7b31bd121e1d3f16559ef"
+  },
+  "rock": {
+   "file": "mayan-ruins.webp",
+   "sha256": "995ad82f8bdb625cb47b47a9ece8e0038f6252076373018897b595f3219c581f"
+  },
+  "savanna": {
+   "file": "oasis-palms.webp",
+   "sha256": "8c2ab620b688ad5b92fe00ff8b1844a60cd61a104b1bd36cf7ebf6622d2e37b8"
+  },
+  "skit": {
+   "file": "naval-frontier.webp",
+   "sha256": "729bbbf1950391cc02a509cf5299e86707a0bd2a962cfab458e1066661648cce"
+  }
+ }
+}
