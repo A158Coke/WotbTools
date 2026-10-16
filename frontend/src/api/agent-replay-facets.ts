@@ -759,6 +759,26 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       )
     }
   })
+  // 复活生命轨道（additive，上游 v0.4.8）：在场时必须为数组、数值有限、非负且非降序——
+  // 消费端按「死亡 ↔ 复活」交替重建生命史（canonical lifeTransitions / defLifeAt / rosterState），
+  // 形状漂移会静默篡改终态迁移，故在边界拦下。缺省 = 无复活证据（死亡终态，行为与既往逐位一致），
+  // 不据数组长度反推复活模式。
+  vehicles.forEach((vehicle, i) => {
+    if (!isObject(vehicle)) return
+    for (const key of ['death_times', 'resurrection_times'] as const) {
+      const column = vehicle[key]
+      if (column === undefined) continue
+      const times = assertArray(column, `playback.vehicles[${i}].${key}`)
+      let previous = Number.NEGATIVE_INFINITY
+      for (let j = 0; j < times.length; j++) {
+        const time = assertFiniteNumber(times[j], `playback.vehicles[${i}].${key}[${j}]`)
+        if (time < 0 || time < previous) {
+          throw new Error(`agent facets: playback.vehicles[${i}].${key} 必须非负且非降序`)
+        }
+        previous = time
+      }
+    }
+  })
   // 独立炮塔必须带完整的原始实体轨迹。只校验新字段与车辆 eid 的联表，保持旧车辆形状兼容。
   if (pb.detached_turrets !== undefined) {
     const tracks = assertArray(pb.detached_turrets, 'playback.detached_turrets')
