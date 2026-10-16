@@ -31,6 +31,7 @@ public final class ApiPaths {
     public static final String TOURNAMENTS = "/api/tournaments";
     public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
+    public static final String TOURNAMENT_DATA_SOURCE = "/api/tournaments/*/data-source";
     public static final String BROADCASTS = "/api/tournament-broadcasts";
     public static final String BROADCASTS_ADMIN = "/api/admin/tournament-broadcasts";
     public static final String BROADCAST_SEASON = BROADCASTS + "/seasons/*";

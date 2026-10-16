@@ -72,3 +72,6 @@ build/performance/
 # Agent WASM 构建产物（scripts/build-agent-wasm.sh 生成，随发布不入库）
 common/assets/wasm/
 frontend/dist-android/
+
+# 本地工具/运行时落到工作区的目录，绝不入库（2026-10-16 误提交事故的护栏）
+/Python/

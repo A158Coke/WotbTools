@@ -2342,6 +2342,48 @@ async function runOfflineWorkspaceScenario(env) {
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
 }
 
+/** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
+async function runMultiFileWorkspaceScenario(env) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await page.emulate({ width: 1600, height: 900, touch: false })
+    await page.goto(`${env.origin}/?view=battle-playback&ws-auth=1`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'multi-file picker' })
+    const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+    const { nodeId } = await env.chrome.client.send('DOM.querySelector', {
+      nodeId: root.nodeId, selector: '[data-testid="select-files-input"]',
+    }, sessionId)
+    await env.chrome.client.send('DOM.setFileInputFiles', { nodeId, files: [
+      resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
+      resolve(frontendRoot, '../common/fixtures/replays/tournament-14-14-example.wotbreplay'),
+    ] }, sessionId)
+    const hit = async selector => {
+      const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
+      await page.tap({ ...point, touch: false })
+    }
+    await hit('.replay-primary-actions button')
+    await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: 'first batch battle loaded in 2D' })
+    const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
+    const firstRoster = await page.evaluate(roster)
+    check(failures, !!firstRoster, 'first battle has no playback roster')
+    await hit('[data-testid="playback-battle-picker"]')
+    const options = await page.evaluate(`Array.from(document.querySelectorAll('[data-testid="battle-picker-option"]')).map(option => option.dataset.value)`)
+    check(failures, JSON.stringify(options) === JSON.stringify(['r0', 'r1']), `unexpected batch options: ${options}`)
+    await hit('[data-testid="battle-picker-option"][data-value="r1"]')
+    await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second original File loaded in 2D' })
+    await hit('[data-testid="playback-battle-picker"]')
+    await hit('[data-testid="battle-picker-option"][data-value="r0"]')
+    await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900' })
+}
+
 /* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
 
 /**
@@ -3211,6 +3253,7 @@ try {
   })
   const env = { origin, chrome: chromeCdp }
   const runs = [
+    { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),

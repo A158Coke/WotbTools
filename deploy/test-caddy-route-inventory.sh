@@ -290,6 +290,7 @@ try:
     assert "authorization" in headers["access-control-allow-headers"].lower()
     assert "HEAD" in headers["access-control-allow-methods"].split(", "), headers
     assert "x-tournament-default-rules" in headers["access-control-expose-headers"].lower(), headers
+    assert "x-tournament-csv-import" in headers["access-control-expose-headers"].lower(), headers
     assert "access-control-allow-credentials" not in headers
     _, untrusted, _ = request("https://untrusted.example")
     assert "access-control-allow-origin" not in untrusted, untrusted
@@ -300,6 +301,7 @@ try:
         assert status == 502 and body == "", (status, body)
         assert head_headers["access-control-allow-origin"] == allowed_origin, head_headers
         assert "x-tournament-default-rules" in head_headers["access-control-expose-headers"].lower(), head_headers
+        assert "x-tournament-csv-import" in head_headers["access-control-expose-headers"].lower(), head_headers
     status, asset_headers, body = request(origin, "GET", "/agent-assets/index.json")
     assert status == 200 and body == "asset:/index.json", (status, body)
     assert asset_headers["x-map-meta"] == "fixture-map-metadata", asset_headers

@@ -27,6 +27,8 @@
 
 ---
 
+Replay Workspace 的 Data 批次分析与 2D/3D/Shots/AI 单场目标共享同一 selection；多文件先选首个有效 battle，sourceId 保留原始文件索引，详见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)。
+
 Playback 2D/3D 的布局所有权与浏览器验收矩阵见 [`frontend/replay-workspace.md`](frontend/replay-workspace.md)：共享 fluid 三列、实测正方形 Stage、紧凑 HUD/Transport、Gear 锚定 Display；Details 拖动与 fullscreen/session 生命周期沿用既有 owner。
 
 ## 环境与工具链
@@ -177,7 +179,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
-- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
+- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
   同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 
@@ -689,6 +691,9 @@ origin 上 no-clobber 落位并核验的 APK、staging evidence、production `ve
 不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
 再验证。细节见 `docs/android/release-process.md`。
+
+发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
+runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
 
 **Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
