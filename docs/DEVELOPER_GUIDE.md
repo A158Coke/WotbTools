@@ -679,6 +679,11 @@ APK bundled frontend 身份/Bridge/native-auth + API exact-origin CORS/对象存
 至少 2000001 的 local-first cutover，最后才写 `version.json`）。**stage preflight 同样执行 cutover 守卫**
 （`guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`），所以 major / bridge
 cutover 的 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 必须在**合并之前**设好，而不是等到 publish。
+major cutover 顺序固定为：设 floor → 合并 → main 上自动运行 stage 与随 PR 带来的基础设施 workflow（如 3.0 的
+`caddy.yml` / `@androidLoopback`，只能从 fresh main 部署，不在合并前手工部署）→ 两者都成功 → 真机验收 →
+publish（唯一 production commit point）。版本号在**任一** immutable artifact 出现时即被消耗（tag、任意一台
+origin 上 no-clobber 落位并核验的 APK、staging evidence、production `version.json`）；stage 失败不代表版本可复用，
+判定方法见 `docs/android/release-process.md`「版本号递增规则」。
 候选身份与当前 main 分离：main 前进
 不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
