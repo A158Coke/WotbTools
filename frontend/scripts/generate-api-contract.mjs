@@ -66,8 +66,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
   'CreatorCategory', 'CreatorLevel', 'CreatorCard', 'CreatorDetail', 'CreatorSaveRequest',
-  'CreatorNameRequest', 'CreatorSettings', 'CreatorSettingsRequest', 'CreatorFavorites',
-  'CreatorFavoriteResult', 'CreatorAvatar',
+  'CreatorNameRequest', 'CreatorMetadata',
   'BroadcastSeason', 'BroadcastCategory', 'BroadcastReplay', 'BroadcastNode', 'BroadcastIndex', 'BroadcastSeasonView', 'BroadcastCategoryView', 'BroadcastDeletionPreview', 'BroadcastSeasonCreate', 'BroadcastSeasonUpdate', 'BroadcastCategoryCreate', 'BroadcastNodeCreate', 'BroadcastReplaySave']) {
   if (!components[name]) continue
   const id = `tournament-${name}`

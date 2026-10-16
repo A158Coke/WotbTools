@@ -94,6 +94,10 @@ public class CosImageStorage {
             catch (final CosClientException e) { throw new ApiException(failure); }
         }
         public byte[] get(final String objectKey) {
+            return get(objectKey, ImageValidation.MAX_BYTES);
+        }
+        public byte[] get(final String objectKey, final int maxBytes) {
+            if (maxBytes < 1 || maxBytes > ImageValidation.MAX_BYTES) { throw new IllegalArgumentException("Invalid image bound"); }
             checkKey(objectKey);
             // The SDK's deadline stops at streaming GET headers, so bound the body too.
             final AtomicBoolean expired = new AtomicBoolean();
@@ -109,8 +113,8 @@ public class CosImageStorage {
                 if (input == null) { throw new ApiException(failure); }
                 stream.set(input);
                 if (expired.get()) { input.abort(); throw new ApiException(failure); }
-                final byte[] bytes = input.readNBytes(ImageValidation.MAX_BYTES + 1);
-                if (expired.get() || bytes.length > ImageValidation.MAX_BYTES) {
+                final byte[] bytes = input.readNBytes(maxBytes + 1);
+                if (expired.get() || bytes.length > maxBytes) {
                     input.abort(); throw new ApiException(failure);
                 }
                 return bytes;

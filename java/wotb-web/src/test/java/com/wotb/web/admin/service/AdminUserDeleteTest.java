@@ -2,12 +2,10 @@ package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
+import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.creator.service.CreatorService;
-import com.wotb.web.user.entity.AdminUserLog;
 import com.wotb.web.user.entity.UserProfile;
-import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +28,6 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -57,12 +54,11 @@ class AdminUserDeleteTest {
     private final AdminUserMapper mapper = mock(AdminUserMapper.class);
     private final AdminUserLogPersister logPersister = mock(AdminUserLogPersister.class);
     private final KeycloakAdminUserService keycloakAdminUserService = mock(KeycloakAdminUserService.class);
-    private final CreatorService creatorService = mock(CreatorService.class);
     private final PlatformTransactionManager txManager = mock(PlatformTransactionManager.class);
 
     private AdminUserService service() {
         return new AdminUserService(userProfileService, mapper, logPersister,
-                keycloakAdminUserService, creatorService, txManager);
+                keycloakAdminUserService, txManager);
     }
 
     @BeforeEach
@@ -81,9 +77,7 @@ class AdminUserDeleteTest {
         assertEquals(0, response.failed());
         assertEquals(List.of("kc-a"), response.results().stream().map(DeleteUserResult::userId).toList());
         assertTrue(response.results().getFirst().deleted());
-        final var order = inOrder(creatorService, keycloakAdminUserService);
-        order.verify(creatorService).removeDataForAccountDeletion("kc-a");
-        order.verify(keycloakAdminUserService).deleteUser("kc-a");
+        verify(keycloakAdminUserService).deleteUser("kc-a");
     }
 
     @Test
@@ -117,9 +111,6 @@ class AdminUserDeleteTest {
         // 其余用户正常完成删除（partial success 不回滚）
         verify(keycloakAdminUserService).deleteUser("kc-a");
         verify(keycloakAdminUserService).deleteUser("kc-c");
-        verify(creatorService).removeDataForAccountDeletion("kc-a");
-        verify(creatorService).removeDataForAccountDeletion("kc-b");
-        verify(creatorService).removeDataForAccountDeletion("kc-c");
         // 每个用户一个独立事务：失败用户触发 rollback
         verify(txManager, atLeastOnce()).rollback(nullable(TransactionStatus.class));
     }
@@ -137,34 +128,7 @@ class AdminUserDeleteTest {
         assertEquals("CANNOT_DELETE_SELF", response.results().get(0).errorCode());
         assertTrue(response.results().get(1).deleted());
         verify(keycloakAdminUserService, never()).deleteUser("admin-sub");
-        verify(creatorService, never()).removeDataForAccountDeletion("admin-sub");
         verify(keycloakAdminUserService).deleteUser("kc-a");
-    }
-
-    @Test
-    void favoriteCleanupFailureWithoutProfilePreventsKeycloakDeletion() {
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
-        doThrow(new IllegalStateException("cleanup failed"))
-                .when(creatorService).removeDataForAccountDeletion("kc-a");
-
-        final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
-
-        assertEquals("FAILED_LOCAL_DELETE", response.results().getFirst().errorCode());
-        verify(keycloakAdminUserService, never()).deleteUser("kc-a");
-        verify(txManager).rollback(nullable(TransactionStatus.class));
-    }
-
-    @Test
-    void keycloakFailureRollsBackTheLocalTransactionAfterFavoriteCleanup() {
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
-        doThrow(new IllegalStateException("keycloak failed")).when(keycloakAdminUserService).deleteUser("kc-a");
-        when(keycloakAdminUserService.getUser("kc-a")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
-
-        final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
-
-        assertEquals("FAILED_KEYCLOAK_DELETE", response.results().getFirst().errorCode());
-        verify(creatorService).removeDataForAccountDeletion("kc-a");
-        verify(txManager).rollback(nullable(TransactionStatus.class));
     }
 
     @Test

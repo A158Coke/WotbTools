@@ -12,11 +12,10 @@ import CreatorForm from './CreatorForm.vue'
 import './creators.css'
 
 const { t, te } = useI18n(), management = useCreatorManagement()
-const { network, allowed, categories, levels, settings, loading, busy, error, notice, draftEpoch } = management
-const categoryName = ref(''), levelName = ref(''), threshold = ref(200)
+const { network, allowed, categories, levels, avatarUploadsAvailable, metadataLoaded, loading, busy, error, notice, draftEpoch } = management
+const categoryName = ref(''), levelName = ref('')
 const { authenticated, tokenParsed } = useAuth()
-watch(settings, (value, previous) => { if (value && (!previous || threshold.value === previous.favoriteThreshold)) threshold.value = value.favoriteThreshold })
-watch([authenticated, () => tokenParsed.value?.sub, allowed], () => { categoryName.value = ''; levelName.value = ''; threshold.value = 200 })
+watch([authenticated, () => tokenParsed.value?.sub, allowed], () => { categoryName.value = ''; levelName.value = '' })
 async function add(kind: 'categories' | 'levels') {
   const name = kind === 'categories' ? categoryName : levelName
   if (!name.value.trim() || name.value.trim().length > 100) return
@@ -27,7 +26,6 @@ async function remove(kind: 'categories' | 'levels', id: number) {
   const accepted = await confirm({ title: t(kind === 'categories' ? 'creators.removeCategoryConfirm' : 'creators.removeLevelConfirm'), confirmLabel: t('creators.remove'), danger: true, signal })
   if (accepted && !signal.aborted) await management.removeDictionary(kind, id)
 }
-function saveThreshold() { if (Number.isSafeInteger(threshold.value) && threshold.value > 0 && threshold.value <= 2147483647) void management.setThreshold(threshold.value) }
 </script>
 
 <template>
@@ -40,7 +38,7 @@ function saveThreshold() { if (Number.isSafeInteger(threshold.value) && threshol
     <p v-if="loading || network.pending" role="status">{{ t('creators.loading') }}</p>
     <div v-if="allowed" class="creator-config-grid">
       <section class="creator-panel" :aria-labelledby="'creator-new-heading'"><h2 id="creator-new-heading">{{ t('creators.addCreator') }}</h2>
-        <CreatorForm v-if="settings" :key="draftEpoch" :categories="categories" :levels="levels" :busy="busy || loading || !network.available" :avatar-uploads-available="settings.avatarUploadsAvailable" :save="value => management.save(value)" @saved="management.finishSave()" />
+        <CreatorForm v-if="metadataLoaded" :key="draftEpoch" :categories="categories" :levels="levels" :busy="busy || loading || !network.available" :avatar-uploads-available="avatarUploadsAvailable" :save="(value, avatar) => management.save(value, avatar)" @saved="management.finishSave()" />
       </section>
       <div class="creator-config-sections">
         <section class="creator-panel"><h2>{{ t('creators.categories') }}</h2>
@@ -50,9 +48,6 @@ function saveThreshold() { if (Number.isSafeInteger(threshold.value) && threshol
         <section class="creator-panel"><h2>{{ t('creators.levels') }}</h2>
           <form class="creator-dictionary-add" @submit.prevent="add('levels')"><label class="creator-field"><span>{{ t('creators.newLevel') }}</span><input v-model="levelName" required maxlength="100" :disabled="busy || loading || !network.available" data-testid="creator-new-level"></label><AppButton type="submit" :disabled="busy || loading || !network.available">{{ t('creators.add') }}</AppButton></form>
           <ul class="creator-dictionary-list"><li v-for="level in levels" :key="level.id"><span>{{ level.name }}</span><AppButton variant="danger" :disabled="busy || loading || !network.available" :aria-label="t('creators.removeNamed', { name: level.name })" @click="remove('levels', level.id)">{{ t('creators.remove') }}</AppButton></li></ul>
-        </section>
-        <section class="creator-panel"><h2>{{ t('creators.thresholdTitle') }}</h2>
-          <form class="creator-form" @submit.prevent="saveThreshold"><label class="creator-field"><span>{{ t('creators.threshold') }}</span><input v-model.number="threshold" type="number" min="1" max="2147483647" step="1" required :disabled="busy || loading || !network.available" data-testid="creator-threshold"><small>{{ t('creators.thresholdHint') }}</small></label><AppButton type="submit" :disabled="busy || loading || !network.available">{{ t('creators.save') }}</AppButton></form>
         </section>
       </div>
     </div>

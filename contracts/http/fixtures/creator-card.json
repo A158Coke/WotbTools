@@ -1,5 +1,6 @@
 {
   "id": 1,
+  "bilibiliUid": "1000001",
   "name": "Example UP",
   "description": null,
   "homepageUrl": "https://space.bilibili.com/1000001",
@@ -7,11 +8,10 @@
   "categories": [
     {
       "id": 1,
-      "name": "单车高伤回放类"
+      "name": "Replays"
     }
   ],
   "level": null,
-  "score": 7,
-  "favoriteCount": 200,
-  "createdAt": "2026-10-16T00:00:00Z"
+  "score": 6,
+  "createdAt": "2026-10-17T00:00:00Z"
 }

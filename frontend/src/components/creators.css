@@ -17,11 +17,9 @@
 .creator-stars .is-filled { color: var(--color-accent-text); fill: currentColor; }
 .creator-strength { display: grid; gap: var(--space-1); margin: 0; }
 .creator-strength small, .creator-muted, .creator-field small, .creator-fieldset small { color: var(--color-text-secondary); font: var(--type-caption); }
-.creator-count { margin: 0; font-variant-numeric: tabular-nums; }
 .creator-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .creator-actions .app-button { white-space: normal; }
 .creator-admin-actions { margin-top: auto; }
-.creator-heart-active { color: var(--color-accent-text); fill: currentColor; }
 .creator-config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; margin-top: var(--space-4); }
 .creator-config-sections, .creator-form, .creator-avatar-editor { display: grid; gap: var(--space-4); min-width: 0; }
 .creator-field { display: grid; gap: var(--space-1); min-width: 0; }
@@ -39,3 +37,4 @@
 .creator-dictionary-list li { display: flex; align-items: center; gap: var(--space-3); justify-content: space-between; overflow-wrap: anywhere; }
 .creator-dictionary-list li > span { min-width: 0; }
 @media (width < 768px) { .creator-config-grid { grid-template-columns: minmax(0, 1fr); } }
+.creator-homepage { overflow-wrap: anywhere; color: var(--color-accent-text); }

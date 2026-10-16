@@ -1,73 +1,53 @@
-# bilibili UP recommendations
+# Bilibili creator recommendations
 
-Source implementation for [#639](https://github.com/A158Coke/WotbTools/issues/639); production availability follows deployment. Primary maintenance language: English.
+Implementation for [#639](https://github.com/A158Coke/WotbTools/issues/639). Primary maintenance language: English. Production availability follows deployment.
 
-Public entry: primary navigation alongside League standings and broadcasts (`?view=creators`), shared by the desktop sidebar and mobile bottom tabs. It is not duplicated in More. Administration stays in the existing league-administration group (`?view=creators-config`). Category selection uses the `creatorCategory` route query and preserves browser history.
+## Directory and access
 
-Visitors browse recommendation categories and creator cards without signing in. Signing in is required to favorite or unfavorite a creator. Management uses the existing `tournament-admin` role; the recommendation catalog is independent of tournament events.
+Visitors browse the public directory without signing in. The primary navigation groups League standings, broadcasts and UP recommendations (`?view=creators`) before More, using one source for the desktop sidebar and mobile bottom tabs. More does not duplicate the public link. Administration remains in the existing league-administration group (`?view=creators-config`), protected by `tournament-admin`. Category selection uses the `creatorCategory` router query and supports Back/Forward.
 
-## Public and management views
+Administrators create, edit and remove creator records, categories and assessment levels. The directory has no favorites, voting pool, public submissions, reward progress, rating threshold or ordinary-user write API. Creator data and images belong to the site, independent of operator accounts; the feature neither stores uploader subjects nor changes account-deletion/audit behavior.
 
-The public view groups creators by administrator-maintained categories. A creator belongs to at least one category and can appear in several. Cards always show all its categories. Each card contains its name, optional description/avatar, recommendation score out of ten, five-star representation including half stars, current favorite count, and its bilibili homepage link. The optional assessment level and evaluation disclaimer appear only when an assessment is enabled; a missing assessment does not mean the lowest level.
+## Creator fields and consistency
 
-Only administrators see card edit/remove actions. Editing uses a dialog and takes effect immediately. Removing a creator removes its category links and favorite history while preserving category and level definitions and other creators. The confirmation text only asks whether to remove the creator.
+A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, trimmed and normalized without leading zeros; all-zero input is rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 characters); descriptions are optional (2000 characters).
 
-The management view has a creator form beside catalog settings on desktop/tablet and above them on mobile. Settings contain categories, assessment levels, and the global favorite threshold. New creators default to three base stars; all administrator-entered fields can be edited without rebuilding the record or resetting its creation time, favorites, progress, or rewards.
+Each creator has at least one category, may belong to several, and displays every category. Assessment is optional: a null level hides the level and disclaimer, while an assigned level displays the site's evaluation disclaimer. Initial categories and levels are inserted only once by Flyway and remain administrator-maintained data.
 
-A server-acknowledged save completes the form even when the following catalog refresh is slow or fails. The refresh has independent error handling and does not turn a committed create into an unsaved draft. Save completions only reset the originating account's current form, and an avatar attached by a successful save is no longer an unused upload reservation.
+Administrators set one through five whole stars, with three selected by default. The sole score projection is `2 * stars` (2/4/6/8/10). Sorting uses stars descending, original creation time descending, then ID for stability. Editing retains record identity and creation time. User activity does not affect ratings.
 
-The initial categories are 单车高伤回放类, 单车实况类, 直播类, 联赛类, 高手/大神类, 娱乐类. Initial assessment levels are 普通, 高手, 职业级, 殿堂级. Flyway inserts them once. Administrators can add and remove dictionary entries under the reference rules below; initialization does not reseed deleted entries or define a hard-coded frontend enum.
+V35 creates the directory, dictionaries, category links, site-owned image ledger and one `creator_catalog_lock` row. The lock row is a technical anchor, not a configurable threshold. All directory writes lock catalog → creator → avatar in a short transaction. UID uniqueness is enforced by the database. Category deletion rejects any operation leaving a creator without a category; level deletion rejects referenced levels. Those checks and changes share the transaction, including concurrent edits and dictionary deletions.
 
-## Favorite and score semantics
+## One-save avatar handling
 
-Base recommendation stars are an integer from one through five. The final recommendation score is `min(10, 2 * baseStars + rewardPoints)`. A half star represents one score point. A creator's assessment level is independent of its categories and recommendation score.
+Avatars are optional. Choosing an image creates only a local browser preview; canceling an unsent form creates no server object. Create/update uses one multipart request containing an application/json `payload` and, for replacement only, one `avatar` file. The payload never accepts an object key, arbitrary image URL, uploader or temporary avatar ID.
 
-The catalog sorts by the capped final score descending and then by original creation time descending. An ID provides a stable order only when both values are identical. Favorite count and uncapped scores do not break ties.
-
-Four distinct values are maintained: a user's historical favorite relationship and active state, current active favorite count, unsettled first-favorite progress, and already-earned reward points. The unique identity is `(creator_id, JWT subject)`, shared across every category. It is independent of linked WotB accounts and local profile provisioning.
-
-| Operation | Active count | Progress and reward |
+| avatarAction | File | Effect |
 |---|---|---|
-| First favorite while below ten | Increase by one | Add one progress, settle full threshold units, stop at ten and preserve all unconsumed progress |
-| First favorite while already at ten | Increase by one | Leave progress/reward unchanged; record the first-favorite history |
-| Repeated favorite or repeated unfavorite | Unchanged | Unchanged |
-| Active favorite removed | Decrease by one | Keep progress and earned reward; keep the historical relationship |
-| Previously removed favorite restored | Increase by one | Do not add progress or settle pending progress |
-| Threshold edited | Unchanged | Preserve progress/reward; do not settle or scan creators |
-| Base stars edited | Unchanged | Recalculate final score, preserve progress/reward; only a subsequent first favorite can resume settlement |
+| KEEP | Absent | Keep the database's current image; new creators have no image |
+| REPLACE | Exactly one | Use a freshly processed image from this request |
+| REMOVE | Absent | Clear the current reference |
 
-The threshold must be a positive integer. Its effective default is 200. There is no background scoring job. With a stable six-point base and threshold 200, scores at 199, 200, 400 and 800 first favorites are respectively 6, 7, 8 and 10.
+Invalid action/file combinations are rejected. Only administrators can submit images. Saving failures retain the browser draft and selected file for retry. A server-acknowledged save completes the original form independently of a later catalog refresh; stale identity/editor completions cannot clear a newer draft.
 
-Changing a threshold from 200 to 100 with progress 150 does nothing immediately. The next first favorite below ten produces progress 151, awards one point, and leaves 51. If the current score is nine and progress is 450, the next first favorite under threshold 100 awards only one point and retains 351. A paused progress value can therefore exceed the current threshold and must not be reset.
+The image processor accepts PNG/JPEG with a 10 MiB input cap, 16–8192 pixels on each side and at most 20 million total pixels. It validates headers before a subsampled decode, applies JPEG EXIF orientation, scales proportionally to a longest edge of 256 pixels without enlarging smaller images, and re-encodes a static thumbnail. Alpha images use PNG; opaque images use JPEG quality 0.85. Only the transformed bytes (at most 512 KiB), their type and SHA-256 are stored; original metadata is stripped. This path does not first decode a full-size image just to validate it. Existing broadcast/evidence image validation remains unchanged.
 
-## Consistency and deletion
+An internal PENDING reservation commits before the bounded COS PUT, then becomes READY. Compression and COS transfer hold no catalog/creator lock. The final catalog transaction rechecks references and attaches the image; failures leave an unreferenced ledger entry for cleanup. A failed/ambiguous commit never triggers an unsafe immediate external delete. Replacing, clearing or removing a creator detaches the old image without deleting objects still referenced elsewhere.
 
-Favorite relationship changes, counts, progress and rewards commit in one PostgreSQL transaction. The fixed settings row is locked shared before locking the target creator for writing. Concurrent changes to different creators do not require an exclusive global favorite lock.
+The public image API only serves referenced READY images. It reads at most 512 KiB and verifies stored size, hash and trusted content type; it does not fully decode the thumbnail on every GET. It supplies ETag, `nosniff` and a five-minute browser cache. Cards load images lazily.
 
-Low-frequency management mutations lock settings exclusively before any creator row. Category deletion uses an indexed existence query to reject deletion if any linked creator has no other category; the check and deletion are one transaction. Level deletion similarly rejects a level still referenced by any creator. Disabling assessment removes that creator's level reference. No partial dictionary deletion or automatic reassessment is allowed.
+## Storage and cleanup
 
-Canceled favorites retain history while the account exists, preventing repeat rewards. The established administrator account-deletion flow calls the creator domain inside the same local transaction: active favorites decrement their creators' current counts, then all favorite history for that subject is removed, including canceled favorites and accounts without a local profile. Creator records, other users' favorites, settled rewards and unsettled progress remain unchanged. A local or Keycloak deletion failure rolls this cleanup back with the local deletion. No local-profile foreign key performs this cleanup implicitly.
+`BROADCAST_COS_BUCKET/REGION/SECRET_ID/SECRET_KEY` remain the shared runtime-only COS credentials. `CREATOR_AVATAR_COS_PREFIX` defaults to `creator-avatars/` and must differ from the broadcast prefix. The bucket remains private and non-versioned; anonymous viewing goes through the read-only API, without a bucket-ACL change or a new CDN. The credentials need Put/Get/Delete permissions for both namespaces. See [COS operations](../operations/league-broadcast-covers.md).
 
-Authenticated creator mutations check the existing account-deletion audit after acquiring the settings lock. A successful deletion or `KEYCLOAK_DELETE_PENDING` record rejects the actor with `AUTH_UNAUTHENTICATED`, including requests whose JWT was accepted before they waited for that lock. A legitimate account without a local profile remains eligible. The reused audit entity, repository and persister belong to the user domain; no separate subject registry is created.
+Missing storage configuration disables image replacement only; text-only creation, KEEP and REMOVE remain available. The management metadata response returns dictionaries and `avatarUploadsAvailable`, with no editable settings/threshold endpoint.
 
-Before calling Keycloak, deletion persists its pending state in the existing independent audit transaction. A lost response, process exit or failed final success-audit write therefore retains the write barrier. When deletion throws, only an authoritative check confirming the account still exists allows a failed terminal state; a missing account or failed check leaves deletion pending while local changes roll back. A confirmed-live failure also resolves earlier pending attempts for that subject in the same audit transaction, preserving their error details and any successful deletion facts. Resolve an uncertain deletion by retrying the established administrator deletion API. Ordinary creator writes only query the indexed local audit and do not call Keycloak.
+Cleanup runs daily at 04:00 in `Asia/Hong_Kong` (UTC+8), handling at most 100 reservations that have remained unreferenced for at least 24 hours. Normal cleanup therefore takes about 24–48 hours; backlog, downtime or storage failure can extend this. Each deletion locks and rechecks the image and references. Failed attempts retain metadata and rotate behind other eligible candidates. Multiple instances may safely trigger the same cleanup; no new scheduler service or exact-once job registry is required.
 
-## HTTP and storage boundaries
+Cleanup only touches canonical UUID keys in the creator namespace. A missing COS object is already deleted; failure retains the ledger for a later attempt. Before changing prefixes, migrate or retire old objects and reservations. Production bucket permissions require deployment-time verification; ordinary tests use fake COS.
 
-The sole wire authority is `contracts/http/openapi.yaml`; generated TypeScript and Ajv validators are produced by `frontend/scripts/generate-api-contract.mjs`. Public catalog endpoints are under `/api/creators`; personal favorites require a Bearer token; management endpoints are under `/api/admin/creators` and require `tournament-admin`. Administrative path rules precede the generic admin matcher.
+## Contract and verification
 
-The public catalog has no per-user data. `GET /api/creators/favorites` supplies only the current subject's active creator IDs. Favorite PUT/DELETE expresses the desired active state and returns the authoritative creator card and current user's state. Editable payloads exclude system-maintained counters, rewards and creation time.
+`contracts/http/openapi.yaml` is the wire authority. Public APIs are under `/api/creators`; authenticated management is under `/api/admin/creators`. The metadata read returns categories, levels and upload availability. There are no separate temporary upload/release, favorites or threshold endpoints.
 
-Homepage inputs accept HTTPS `space.bilibili.com/<numeric UID>` URLs, including a trailing slash and tracking query copied from bilibili. The server removes that query and returns canonical homepage URLs. Form and request validation reject script schemes, credentials, fragments, explicit ports and lookalike hosts. The server does not scrape bilibili. Interface messages are localized in Chinese, English and Russian; creator and dictionary names are stored administrator content.
-
-Avatar storage reuses the merged COS work in [#641](https://github.com/A158Coke/WotbTools/pull/641). The bounded COS adapter and byte-level image validation are shared; creators have their own namespace and durable reservations. Only attached READY avatars can be read publicly, so the form retains its local preview until a successful save. Uploads do not hold catalog/creator locks. Replacement, clearing, removal and abandoned uploads release references without deleting objects still used elsewhere. Runtime credentials never enter sources or tests; storage tests use fake COS.
-
-`BROADCAST_COS_BUCKET/REGION/SECRET_ID/SECRET_KEY` remain the single credential/bucket configuration. `CREATOR_AVATAR_COS_PREFIX` defaults to `creator-avatars/` and passes through the existing Business API workflow and Compose owner. It must differ from the broadcast prefix, and the runtime identity needs Put/Get/Delete rights for both prefixes. The private bucket must follow the existing non-versioned storage contract. Unreferenced reservations have a 24-hour grace period, and hourly cleanup processes at most 100 per batch. A failed delete retains metadata for retry. V38 persists its last cleanup attempt after the failed transaction rolls back, moving it behind other existing expired candidates so a permanently failing batch cannot block later reservations. Failure to record that attempt is logged without stopping the remaining batch.
-
-Object keys must match the currently configured prefix and canonical UUID. Before changing a prefix, migrate or retire its old objects and reservations; old keys are deliberately rejected after a namespace change. See [COS operations](../operations/league-broadcast-covers.md). Real production COS credentials and permissions require separate operator validation; ordinary tests never contact that bucket.
-
-Account deletion also anonymizes avatar ownership in the same transaction (V37 allows a null owner). Referenced READY images and creator links remain available. Anonymous unreferenced reservations bypass the usual grace period in the existing hourly cleanup; failed COS deletion keeps anonymous metadata for retry. Reservation creation briefly takes the shared settings lock and checks the account-deletion barrier, and PUT checks ownership again before external I/O; network transfers never hold the settings lock. JWT handling in other domains is unchanged.
-
-## Verification
-
-Targeted service and HTTP tests cover validation, anonymous/authenticated/admin permissions, Jackson wire shape and score boundaries. PostgreSQL integration tests cover concurrent first favorites, repeated operations, threshold edits, pause/resume, category/level deletion races, removal and transactional rollback. Frontend tests cover shared creator identity across categories, server-driven scores, identity changes, stale asynchronous responses, dialog/edit flows and upload reservations. `npm run test:browser-creators` verifies desktop/tablet/mobile and both UI profiles, including focus and overflow, using the existing browser fixture server. It runs in the frontend owner's CI browser matrix. Repository-wide validation belongs to PR CI.
+Generated TypeScript/Ajv, fixtures, MockMvc serialization and permission tests cover the contract. Real PostgreSQL tests cover unique UIDs, directory transactions, reference protection and cleanup races. Image tests cover bounds, transparent/opaque inputs, all EXIF orientations and small output. Frontend tests cover one-save image handling, failures, administrator identity changes, filtering and navigation. The creator browser matrix checks both UI profiles and all three layout bands. PR CI provides repository-wide validation.

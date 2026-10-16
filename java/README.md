@@ -25,10 +25,10 @@
 [功能契约](../docs/features/league-broadcasts.md)，可选 COS 封面配置和回收见
 [运维说明](../docs/operations/league-broadcast-covers.md)。
 
-bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`，普通登录用户可收藏；
-`/api/admin/creators/**` 沿用 `tournament-admin`。V35/V36 初始化可维护字典和头像引用，V37 支持账号删除后的头像去标识，V38 轮转失败回收；
-收藏历史、循环进度和奖励由同一事务维护。头像与联赛封面共用 COS client/凭据，独立 namespace；
-完整规则与验证边界见 [UP recommendations](../docs/features/bilibili-creators.md)。
+bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`；管理员在 `/api/admin/creators/**` 使用 `tournament-admin` 维护UID、整星、字典与站点头像。
+V35创建简版目录与无上传者的图片回收台账。UID字符串唯一、主页自动生成；星级默认3，显示分数为星级×2。
+头像随表单一次multipart提交，压到最长边256px，仅存小图；UTC+8每日04:00回收未引用满24小时的图片。
+头像与联赛封面共用COS client/凭据、独立namespace；完整规则见 [UP recommendations](../docs/features/bilibili-creators.md)。
 
 ## AI Review Harness（双 Call + Team structured result）
 
@@ -182,8 +182,6 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `DELETE /api/admin/users?confirm=true` — 删除用户：**请求体是 Keycloak sub 的 JSON 数组**（删除单个用户就是长度为 1 的数组，因此没有单独的批量端点，也没有单条 `/{keycloakUserId}` 删除端点）。每个 id 都先删本地 profile 再删 Keycloak 用户（`confirm` 缺失/false → 整个请求 400 `CONFIRMATION_REQUIRED`；不能删除自己 → `CANNOT_DELETE_SELF`；有依赖 → `USER_HAS_DEPENDENCIES` / `BOOSTER_HAS_DEPENDENCIES`）。去重后上限 100 → 400 `BULK_LIMIT_EXCEEDED`；**每个用户独立事务**，允许 **partial success**，返回 `{requested, deleted, failed, results:[{userId, deleted, errorCode}]}`。**删除用户必须走本 API**：绕过它直连 Keycloak 会留下孤儿 profile 并阻塞后续重绑（HoF 数据本身不会被连带删除，见下）。
 
 **删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（业务证据表的内部外键不会将游戏账号成绩归属绑定到登录用户资料），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
-
-推荐域写入取得 settings 锁后，会检查既有用户删除审计，拒绝已删除或 `KEYCLOAK_DELETE_PENDING` 账号的旧 JWT／排队请求。Keycloak 调用前独立持久化 pending；异常后只有确认账号仍在，才能转为已知失败并恢复写入。响应丢失、查询失败或最终成功审计写入失败时保留屏障，按既有管理员删除 API 重试收敛；普通收藏／上传只做本地索引查询。审计 entity/repository/persister 由 `user` 域持有，表结构与管理 API 不变。
 
 ## 测试
 
