@@ -22,6 +22,8 @@ const TournamentPointsPage = defineAsyncComponent(() => import('../components/To
 const TournamentPointsConfigPage = defineAsyncComponent(() => import('../components/TournamentPointsConfigPage.vue'))
 const TournamentPointsAdminPage = defineAsyncComponent(() => import('../components/TournamentPointsAdminPage.vue'))
 const LeagueBroadcastsPage = defineAsyncComponent(() => import('../components/LeagueBroadcastsPage.vue'))
+const CreatorsPage = defineAsyncComponent(() => import('../components/CreatorsPage.vue'))
+const CreatorsConfigPage = defineAsyncComponent(() => import('../components/CreatorsConfigPage.vue'))
 
 /**
  * 回放工作台是唯一 capability orchestrator：`replay` / `battle-playback` / `ai-review`
@@ -57,6 +59,8 @@ export const VIEW_COMPONENTS = Object.freeze({
   'tournament-points-config': TournamentPointsConfigPage,
   'tournament-points-admin': TournamentPointsAdminPage,
   'league-broadcasts': LeagueBroadcastsPage,
+  creators: CreatorsPage,
+  'creators-config': CreatorsConfigPage,
 })
 
 /** view → 工作台初始能力（唯一映射点）。 */

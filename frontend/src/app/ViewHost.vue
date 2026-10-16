@@ -12,10 +12,11 @@ const route = useRoute()
 const { authenticated, isTournamentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
 // 装甲查看器匿名可用，ViewHost 只保留锦标赛管理页的登录门。
-const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin'].includes(activeView.value))
+const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config'].includes(activeView.value))
 const tournamentNeedsLogin = computed(() => tournamentAdmin.value && !authenticated.value)
 const tournamentDenied = computed(() => tournamentAdmin.value && authenticated.value
   && !isTournamentAdmin.value)
+const adminTitleKey = computed(() => activeView.value === 'creators-config' ? 'creators.configTitle' : 'tournament.adminTitle')
 const loginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
 const currentView = computed(() => VIEW_COMPONENTS[activeView.value] || VIEW_COMPONENTS.replay)
 const initialCapability = computed(() => replayInitialCapability(activeView.value))
@@ -26,7 +27,7 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
     <ReplayCapabilityAuthGate
       v-if="tournamentNeedsLogin"
       :icon="Shield"
-      :title="$t('tournament.adminTitle')"
+      :title="$t(adminTitleKey)"
       :description="$t('tournament.loginRequired')"
       :login-destination="loginDestination"
     />

@@ -38,6 +38,17 @@ function mountPage(navigate = vi.fn(), onboarding = null) {
 }
 
 describe('MorePage language switcher', () => {
+  it('offers creator recommendations anonymously and scopes creator configuration to tournament admins', async () => {
+    const navigate = vi.fn(), { wrapper } = mountPage(navigate)
+    await wrapper.get('[data-testid="more-link-creators"]').trigger('click')
+    expect(navigate).toHaveBeenCalledWith('creators')
+    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
+    wrapper.unmount()
+    menuRole.tournament = true
+    const admin = mountPage().wrapper
+    expect(admin.find('[data-testid="more-link-creators-config"]').exists()).toBe(true)
+    admin.unmount()
+  })
   it('offers the same public broadcast tool to anonymous visitors', async () => {
     const navigate = vi.fn()
     const { wrapper } = mountPage(navigate)

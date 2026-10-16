@@ -4,6 +4,13 @@ import { messages, mergeLocaleMessages } from './messages.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
+  it('contains creator forms, favorites, assessment and canonical errors in all locales', () => {
+    for (const locale of ['zh', 'en', 'ru']) {
+      for (const key of ['title', 'configTitle', 'favorite', 'assessmentDisclaimer', 'thresholdHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()
+      expect(messages[locale].featureOffline.creators).toBeTruthy()
+      for (const code of API_ERROR_CODES.filter(code => code.startsWith('CREATOR_'))) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()
+    }
+  })
   it('translates stable tournament and recognition errors in all supported locales', () => {
     for (const code of API_ERROR_CODES.filter(code => /TOURNAMENT|RECOGNITION|BROADCAST/.test(code))) {
       for (const locale of ['zh', 'en', 'ru']) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()

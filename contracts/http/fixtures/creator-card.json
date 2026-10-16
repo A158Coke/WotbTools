@@ -1,0 +1,17 @@
+{
+  "id": 1,
+  "name": "Example UP",
+  "description": null,
+  "homepageUrl": "https://space.bilibili.com/1000001",
+  "avatarUrl": null,
+  "categories": [
+    {
+      "id": 1,
+      "name": "单车高伤回放类"
+    }
+  ],
+  "level": null,
+  "score": 7,
+  "favoriteCount": 200,
+  "createdAt": "2026-10-16T00:00:00Z"
+}
