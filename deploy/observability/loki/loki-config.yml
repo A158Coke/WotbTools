@@ -1,5 +1,6 @@
 # Loki 配置 — WotBTools 观测栈
-# 单实例、文件系统存储，日志保留 7 天。
+# 单实例、文件系统存储。普通日志保留 7 天；只有安全合规日志流
+# （`{compliance="security"}`，由 TX Alloy 打标）保留 190 天。
 auth_enabled: false
 
 server:
@@ -27,9 +28,20 @@ schema_config:
         period: 24h
 
 limits_config:
-  # 日志保留 7 天
+  # 默认日志保留 7 天 —— product telemetry、backend debug、AI 用量、APK 下载等
+  # 全部走这一档，不因为合规需求被整栈延长到半年。
   retention_period: 168h
-  max_query_lookback: 168h
+  # 合规安全日志单独延长到 190 天（4560h = 190 × 24h）：留存期「不少于六个月」。
+  # 只有 TX Alloy 显式打上 compliance="security" 的流进入这一档，priority 高于
+  # 默认档，因此普通流不会被这条规则捕获。来源与边界见
+  # docs/operations/security-log-retention.md。
+  retention_stream:
+    - selector: '{compliance="security"}'
+      priority: 10
+      period: 4560h
+  # 查询可以回看 190 天（否则取证查询读不到旧块），但单次查询窗口仍限制在 7 天：
+  # 这台机器很小，一次 190 天的范围查询会把它打爆。合规取证按 7 天窗口分段查。
+  max_query_lookback: 4560h
   max_query_length: 168h
   max_query_series: 10000
   # 拒绝超过保留期的旧样本
