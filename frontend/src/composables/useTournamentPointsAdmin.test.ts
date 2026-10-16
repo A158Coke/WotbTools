@@ -187,6 +187,70 @@ describe('historical import owner', () => {
   })
 })
 describe('shared tournament draft owner', () => {
+  it.each(['getTournamentDataSource', 'supportsTournamentCsvImport'] as const)('keeps ordinary editing available when %s fails and retries it on refresh', async request => {
+    const f = fixture()
+    f.transport.supportsTournamentCsvImport.mockResolvedValue(true)
+    const failure = { errorCode: 'INTERNAL_ERROR', status: 500 }
+    f.transport[request].mockRejectedValueOnce(failure)
+    const current = mountOwner(f)
+    current.owner.eventId.value = 7; await settle()
+    expect(current.owner.dayState.value?.groups).toHaveLength(1)
+    expect(current.owner.editable.value).toBe(true)
+    expect(current.owner.canUpload.value).toBe(true)
+    expect(current.owner.busy.value).toBe(false)
+    expect(current.owner.error.value).toBeNull()
+    expect(request === 'getTournamentDataSource' ? current.owner.dataSourceError.value : current.owner.csvCapabilityError.value).toEqual(failure)
+    await current.owner.setExpected(2)
+    expect(current.transport.setTournamentExpectedGroups).toHaveBeenCalledOnce()
+    await current.owner.loadSelection()
+    expect(current.owner.dataSourceError.value).toBeNull()
+    expect(current.owner.csvCapabilityError.value).toBeNull()
+    expect(current.owner.csvSupported.value).toBe(true)
+    current.scope.stop()
+  })
+  it('applies day state and enables editing without waiting for metadata or its capability probe', async () => {
+    const f = fixture()
+    f.transport.getTournamentDataSource.mockReturnValueOnce(new Promise(() => {}))
+    f.transport.supportsTournamentCsvImport.mockReturnValueOnce(new Promise(() => {}))
+    const current = mountOwner(f)
+    current.owner.eventId.value = 7; await settle()
+    expect(current.owner.dayState.value?.groups).toHaveLength(1)
+    expect(current.owner.busy.value).toBe(false)
+    expect(current.owner.editable.value).toBe(true)
+    expect(current.owner.canUpload.value).toBe(true)
+    current.scope.stop()
+  })
+  it.each(['event', 'account', 'permission', 'network'] as const)('ignores late optional-request failures after an %s transition', async transition => {
+    const f = fixture()
+    let failSource!: (value: unknown) => void, failSupport!: (value: unknown) => void
+    f.transport.getTournamentDataSource.mockReturnValueOnce(new Promise((_, reject) => { failSource = reject }))
+    f.transport.supportsTournamentCsvImport.mockReturnValueOnce(new Promise((_, reject) => { failSupport = reject }))
+    const current = mountOwner(f)
+    current.owner.eventId.value = 7; await settle()
+    if (transition === 'event') current.owner.eventId.value = 8
+    if (transition === 'account') f.auth.tokenParsed.value = { sub: 'admin-b', realm_access: { roles: ['tournament-admin'] } }
+    if (transition === 'permission') f.auth.tokenParsed.value.realm_access.roles = []
+    if (transition === 'network') current.owner.networkAvailable.value = false
+    await settle()
+    failSource(new Error('obsolete metadata failure')); failSupport(new Error('obsolete probe failure')); await settle()
+    expect(current.owner.dataSourceError.value).toBeNull()
+    expect(current.owner.csvCapabilityError.value).toBeNull()
+    expect(current.owner.error.value).toBeNull()
+    current.scope.stop()
+  })
+  it('does not restore source attribution or CSV capability from late responses for a prior event', async () => {
+    const f = fixture()
+    let sourceDone!: (value: any) => void, supportDone!: (value: boolean) => void
+    f.transport.getTournamentDataSource.mockReturnValueOnce(new Promise(resolve => { sourceDone = resolve }))
+    f.transport.supportsTournamentCsvImport.mockReturnValueOnce(new Promise(resolve => { supportDone = resolve }))
+    const current = mountOwner(f)
+    current.owner.eventId.value = 7; await settle()
+    current.owner.eventId.value = 8; await settle()
+    sourceDone({ csvImported: true, attribution: { name: '_EK_', url: 'https://b23.tv/rqx5iYX' } }); supportDone(true); await settle()
+    expect(current.owner.dataSource.value).toBeNull()
+    expect(current.owner.csvSupported.value).toBe(false)
+    current.scope.stop()
+  })
   it('does not request or retain administrator data after role loss', async () => {
     const f = mountOwner()
     f.owner.eventId.value = 7

@@ -69,6 +69,8 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const csvPreview = ref<api.TournamentCsvImportPreview | null>(null)
   const csvFileIssue = ref('')
   const dataSource = ref<api.TournamentDataSource | null>(null)
+  const dataSourceError = ref<unknown>(null)
+  const csvCapabilityError = ref<unknown>(null)
   let generation = 0
   let controller = new AbortController()
   let publicationKey = crypto.randomUUID()
@@ -103,6 +105,8 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     clearCsv()
     csvSupported.value = false
     dataSource.value = null
+    dataSourceError.value = null
+    csvCapabilityError.value = null
   }
   function owns(gen: number, epoch: number) {
     return gen === generation && epoch === auth.authEpoch() && allowed.value && networkAvailable.value && !controller.signal.aborted
@@ -120,6 +124,18 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     previewState.value = null
     if (config.value) config.value.event.version = value.eventVersion
   }
+  async function loadDataSource(id: number, gen: number, epoch: number, signal: AbortSignal) {
+    try {
+      const source = await transport.getTournamentDataSource(id, signal)
+      if (owns(gen, epoch) && eventId.value === id) dataSource.value = source
+    } catch (value) { if (owns(gen, epoch) && eventId.value === id) dataSourceError.value = value }
+  }
+  async function loadCsvSupport(gen: number, epoch: number, signal: AbortSignal) {
+    try {
+      const supported = await transport.supportsTournamentCsvImport(signal)
+      if (owns(gen, epoch)) csvSupported.value = supported
+    } catch (value) { if (owns(gen, epoch)) csvCapabilityError.value = value }
+  }
   async function loadSelection() {
     invalidate()
     const gen = generation, epoch = auth.authEpoch(), signal = controller.signal
@@ -135,19 +151,17 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       if (!owns(gen, epoch)) return
       config.value = cfg; ruleSource.value = source
       if (round.value > cfg.event.roundCount || day.value > cfg.event.daysPerRound) { round.value = 1; day.value = 1; return }
-      const [value, entries, history, csvAvailable, sourceData] = await Promise.all([
+      void loadDataSource(eventId.value, gen, epoch, signal)
+      void loadCsvSupport(gen, epoch, signal)
+      const [value, entries, history] = await Promise.all([
         transport.getTournamentDay(eventId.value, round.value, day.value, signal),
         transport.getTournamentAudit(eventId.value, signal),
         transport.getTournamentHistoricalState(eventId.value, round.value, day.value, signal),
-        transport.supportsTournamentCsvImport(signal),
-        transport.getTournamentDataSource(eventId.value, signal),
       ])
       if (!owns(gen, epoch)) return
       applyDay(value)
       audit.value = entries
       historicalState.value = history
-      csvSupported.value = csvAvailable
-      dataSource.value = sourceData
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
@@ -426,7 +440,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   onScopeDispose(() => { invalidate(); events.value = []; audit.value = []; config.value = null; dayState.value = null })
   return { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
     historicalRequest, historicalPreview, historicalState, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
-    networkAvailable, csvSupported, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, selectCsvFile, previewCsv, publishCsv, dataSource,
+    networkAvailable, csvSupported, csvCapabilityError, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, selectCsvFile, previewCsv, publishCsv, dataSource, dataSourceError,
     busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError,
     loadEvents, loadSelection, recognize, cancelRecognition, preview, saveDraft, finalize, setExpected, correction, discard, clearPoints }
 }
