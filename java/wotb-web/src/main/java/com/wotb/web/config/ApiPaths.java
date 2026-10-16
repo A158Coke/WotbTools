@@ -38,6 +38,18 @@ public final class ApiPaths {
     public static final String BROADCAST_CATEGORY = BROADCASTS + "/categories/*";
     public static final String BROADCAST_COVER = BROADCASTS + "/covers/*";
 
+    public static final String NEWS = "/api/news";
+    public static final String NEWS_ADMIN = "/api/admin/news";
+    public static final String NEWS_ADMIN_PATTERN = NEWS_ADMIN + "/**";
+    public static final String NEWS_SOURCES = NEWS + "/sources";
+    public static final String NEWS_ARTICLES = NEWS + "/articles";
+    public static final String NEWS_ARTICLE = NEWS_ARTICLES + "/*";
+    public static final String NEWS_ARCHIVES = NEWS + "/archives";
+    public static final String NEWS_ARCHIVE = NEWS_ARCHIVES + "/*";
+    public static final String NEWS_CATEGORIES = NEWS + "/categories";
+    public static final String NEWS_IMAGE = NEWS + "/images/*";
+    public static final String NEWS_SOURCE_IMAGE = NEWS + "/source-images/*";
+
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
     public static final String OBSERVABILITY_EVENTS = "/api/observability/events";

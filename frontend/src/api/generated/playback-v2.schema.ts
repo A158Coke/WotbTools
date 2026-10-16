@@ -3,6 +3,536 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "NewsSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "WG",
+            "LESTA"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "NewsCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "GENERAL",
+            "SPECIALIZED"
+          ]
+        }
+      }
+    },
+    "NewsBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "html"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "html": {
+          "type": "string"
+        }
+      }
+    },
+    "NewsSync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lastSuccessfulFetchAt",
+        "nextRefreshAt",
+        "stale"
+      ],
+      "properties": {
+        "lastSuccessfulFetchAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "nextRefreshAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      }
+    },
+    "NewsArticle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceKey",
+        "title",
+        "sourceUrl",
+        "language",
+        "publishedAtRaw",
+        "coverImageId",
+        "revision",
+        "blocks",
+        "sync"
+      ],
+      "properties": {
+        "sourceKey": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "language": {
+          "type": "string"
+        },
+        "publishedAtRaw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "coverImageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "type": "string"
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsBlock"
+          }
+        },
+        "sync": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NewsSync"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "NewsArticlePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "sync"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsArticle"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "totalItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sync": {
+          "$ref": "#/$defs/NewsSync"
+        }
+      }
+    },
+    "NewsArchive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "version",
+        "title",
+        "status",
+        "revision",
+        "categories",
+        "articles",
+        "createdAt",
+        "reviewedBy",
+        "publishedAt",
+        "errorCode"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "WG"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PREPARING",
+            "FAILED",
+            "PUBLISHED",
+            "WITHDRAWN"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsCategory"
+          }
+        },
+        "articles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsArticle"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewedBy": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "NewsArchivePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsArchiveSummary"
+          }
+        },
+        "page": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "totalItems": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "NewsSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceKey",
+        "revision",
+        "blockIds"
+      ],
+      "properties": {
+        "sourceKey": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "blockIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1000
+        }
+      }
+    },
+    "NewsDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "title",
+        "categoryIds",
+        "articles"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "categoryIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "maxItems": 30
+        },
+        "articles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsSelection"
+          },
+          "minItems": 1,
+          "maxItems": 20
+        }
+      }
+    },
+    "NewsCreateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idempotencyKey",
+        "archives"
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "archives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsDraft"
+          },
+          "minItems": 1,
+          "maxItems": 10
+        }
+      }
+    },
+    "NewsReceiptResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archiveIds",
+        "deletedIds"
+      ],
+      "properties": {
+        "archiveIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "deletedIds": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    },
+    "NewsRevisionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedRevision"
+      ],
+      "properties": {
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "NewsCategoryCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "GENERAL",
+            "SPECIALIZED"
+          ]
+        }
+      }
+    },
+    "NewsArchiveSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "version",
+        "title",
+        "status",
+        "revision",
+        "categories",
+        "createdAt",
+        "reviewedBy",
+        "publishedAt",
+        "errorCode"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "WG"
+          ]
+        },
+        "version": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PREPARING",
+            "FAILED",
+            "PUBLISHED",
+            "WITHDRAWN"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NewsCategory"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reviewedBy": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "errorCode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "BroadcastServer": {
       "type": "string",
       "enum": [
@@ -5186,6 +5716,15 @@ export default {
         "BROADCAST_COVER_INVALID",
         "BROADCAST_STORAGE_UNAVAILABLE",
         "BROADCAST_STORAGE_ERROR",
+        "NEWS_SOURCE_UNAVAILABLE",
+        "NEWS_REVISION_CONFLICT",
+        "NEWS_CONTENT_UNSUPPORTED",
+        "NEWS_IMAGE_INVALID",
+        "NEWS_STORAGE_UNAVAILABLE",
+        "NEWS_STORAGE_ERROR",
+        "NEWS_STATE_CONFLICT",
+        "NEWS_IDEMPOTENCY_CONFLICT",
+        "NEWS_CATEGORY_IN_USE",
         "INVALID_RECOGNITION_REQUEST",
         "INVALID_RECOGNITION_PERMIT",
         "TOURNAMENT_RECOGNITION_NOT_CONFIGURED",

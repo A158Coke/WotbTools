@@ -188,7 +188,7 @@ Android 2.0 起认证由 Native 独占（OIDC Authorization Code + PKCE，外部
 | consent required: off | `consent_required = false` |
 | front-channel logout | 不启用（App 的生命周期由 OIDC end-session 与本地清理负责） |
 | displayName / wotb_* claims | 新增 `keycloak_openid_user_attribute_protocol_mapper.wotbtools_android`，与 `.wotbtools_web` 共用 `local.protocol_mappers` |
-| realm roles（`wotbtools-user` / `wotbtools-admin` / `HoF-admin`） | 不额外声明：realm 默认 client scope 已包含 `roles`，两个 client 因此得到同一套授权模型；后端资源服务器只校验 issuer + realm roles，不按 `azp` 复制授权规则 |
+| realm roles（`wotbtools-user` / `wotbtools-admin` / `HoF-admin` / `tournament-admin` / `news-admin`） | 不额外声明：realm 默认 client scope 已包含 `roles`，两个 client 因此得到同一套授权模型；后端资源服务器只校验 issuer + realm roles，不按 `azp` 复制授权规则 |
 
 `infra/tofu/keycloak/validate-plan.sh` 在 plan 层锁定以上契约（client 出现且只出现一次、不是
 delete/replace、flow/PKCE/redirect 精确匹配、android mapper 存在），`deploy/test-keycloak-tofu.sh`
@@ -333,3 +333,5 @@ service, verifies the same project and volume identity, and publishes regular
 validation. It never starts or recreates PostgreSQL and never mutates the source
 database. Keycloak archives must not be passed to the Business PostgreSQL restore
 tool.
+
+新闻管理使用`news-admin`或`tournament-admin`；最高管理员通过`roles.tf`的composite继承`news-admin`。新闻角色不会继承联赛权限。新增角色部署后旧token需正常刷新；角色定义不自动给任何线上用户授权。

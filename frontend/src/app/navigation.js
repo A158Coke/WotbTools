@@ -14,7 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
-  'android', 'sponsor', 'league-broadcasts',
+  'android', 'sponsor', 'league-broadcasts', 'game-announcements',
 ])
 
 /**
@@ -32,6 +32,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
+  Object.freeze({ id: 'game-announcements', view: 'game-announcements', labelKey: 'news.title', shortLabelKey: 'news.navTitle' }),
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
@@ -60,6 +61,7 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-armor': 'tankopedia',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
+  'game-announcements': 'game-announcements',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',
   'tournament-points-config': 'tournament-points-config',
@@ -133,6 +135,9 @@ const BROADCAST_QUERY_KEYS = ['lbServer', 'lbSeason', 'lbCategory']
 /** Keep legacy query URLs as the public URL contract while Vue Router owns history. */
 export function locationForView(view, route) {
   const query = { ...route.query }
+  if (route.query?.view === 'game-announcements' && view !== 'game-announcements') {
+    for (const key of ['newsTab', 'newsPage', 'newsArticle', 'newsArchive', 'newsVersion', 'newsManage', 'newsSource']) delete query[key]
+  }
   if (route.query?.view === 'league-broadcasts' && view !== 'league-broadcasts') {
     for (const key of BROADCAST_QUERY_KEYS) delete query[key]
   }

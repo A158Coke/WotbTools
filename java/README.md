@@ -245,3 +245,7 @@ wotb:
 
 - 列定义在客户端 `frontend/src/replay-local/compute/columns.ts` 集中管理（移植自已删除的 Java `Columns`），批次计算的 Preview 结果携带列定义，表格不硬编码业务字段。
 - 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
+
+## 游戏公告
+
+新闻领域提供公开`/api/news/**`与管理`/api/admin/news/**`。管理角色为`news-admin`或`tournament-admin`；最高管理员经Keycloak composite继承。官方源缓存与永久归档分离，图片通过私有COS和本站API保存/读取。配置与生命周期见[公告功能](../docs/features/game-announcements.md)及[图片运维](../docs/operations/news-images.md)。

@@ -24,6 +24,14 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 })
 
 describe('primary navigation', () => {
+  it('keeps news public and clears its page-local query when leaving', () => {
+    expect(viewFromRoute({ path: '/', query: { view: 'game-announcements' } })).toBe('game-announcements')
+    expect(primarySection('game-announcements')).toBe('game-announcements')
+    expect(sectionTitleKey('game-announcements')).toBe('news.title')
+    const route = { path: '/', query: { view: 'game-announcements', newsTab: 'history', newsPage: '2', newsArticle: 'slug', newsArchive: '7', newsVersion: '11.21', newsSource: 'WG', newsManage: '1', lang: 'en' } }
+    expect(locationForView('game-announcements', route).query).toEqual(route.query)
+    expect(locationForView('replay', route).query).toEqual({ view: 'replay', lang: 'en' })
+  })
   it('places broadcasts directly after standings as one public primary section', () => {
     expect(viewFromRoute({ path: '/', query: { view: 'league-broadcasts' } })).toBe('league-broadcasts')
     expect(primarySection('league-broadcasts')).toBe('league-broadcasts')
@@ -53,14 +61,14 @@ describe('primary navigation', () => {
   })
 
   it('only offers Home on the production home host', () => {
-    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'more'])
-    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'more'])
+    expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(['home', 'replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'game-announcements', 'more'])
+    expect(primaryNavItems('localhost').map(item => item.id)).toEqual(['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'game-announcements', 'more'])
   })
 
   it('omits Home in the APK and resolves startup or stale Home links to Replay', () => {
     vi.stubEnv('MODE', 'android')
     try {
-      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'more']
+      const expected = ['replay', 'hof', 'tankopedia', 'tournament-points', 'league-broadcasts', 'game-announcements', 'more']
       expect(primaryNavItems('127.0.0.1').map(item => item.id)).toEqual(expected)
       expect(primaryNavItems('wotbtools.com').map(item => item.id)).toEqual(expected)
       expect(defaultView('127.0.0.1')).toBe('replay')

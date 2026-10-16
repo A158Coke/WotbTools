@@ -17,6 +17,8 @@ The Replay Workspace always displays Data, 2D Playback, 3D Playback, Shot Analys
 - **AI tactical review**: pre-battle prediction + evidence-chain review; team results use structured tactical episodes, training suggestions, review focus and high contributors, with SSE tokens and stage updates; the review keeps running while you switch pages or background the tab (including long team reviews with an ~1100s budget, with results or progress ready on return); points victories state how they ended (time expired / reached 1000 points early) and HP-loss descriptions include time ranges with resolved attacker counts (a single attacker is never called focus fire; only 2+ resolved attackers within a short window (total span ≤ 15s) may be cited as multi-vehicle focus fire); results include a "Map Overview" (friendly/enemy heatmaps + routes + battle playback with progress bar / event jumps / clickable AI-report times / two-layer hull-turret markers rotating by heading and gun direction + brightness-adaptive colors, 28 maps with assets) and a one-click "Copy" button for the final review body (excluding the pre-battle prediction and map overview).
 - **Auth & business**: Keycloak (QQ + Wargaming.net ASIA / EU / NA), user profile & account management.
 
+Game announcements provide public WG update news and reviewed historical snapshots. News and tournament administrators can select complete content blocks, manage categories, and withdraw, restore or delete archives with reference protection. See the [feature guide](docs/features/game-announcements.md) (Chinese).
+
 ## Architecture
 
 ```mermaid

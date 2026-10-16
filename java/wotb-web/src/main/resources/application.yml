@@ -85,6 +85,14 @@ keycloak:
     client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
 
 wotb:
+  # Private news images use their own restricted namespace and runtime identity.
+  news:
+    cos:
+      bucket: ${NEWS_COS_BUCKET:}
+      region: ${NEWS_COS_REGION:}
+      secret-id: ${NEWS_COS_SECRET_ID:}
+      secret-key: ${NEWS_COS_SECRET_KEY:}
+      prefix: ${NEWS_COS_PREFIX:news/images/}
   broadcast:
     cos:
       bucket: ${BROADCAST_COS_BUCKET:}

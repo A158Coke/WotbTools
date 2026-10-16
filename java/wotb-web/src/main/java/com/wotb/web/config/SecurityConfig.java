@@ -75,6 +75,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
                         ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()
+                .requestMatchers(HttpMethod.GET, ApiPaths.NEWS_SOURCES, ApiPaths.NEWS_ARTICLES,
+                        ApiPaths.NEWS_ARTICLE, ApiPaths.NEWS_ARCHIVES, ApiPaths.NEWS_ARCHIVE,
+                        ApiPaths.NEWS_CATEGORIES, ApiPaths.NEWS_IMAGE, ApiPaths.NEWS_SOURCE_IMAGE).permitAll()
+                .requestMatchers(ApiPaths.NEWS_ADMIN_PATTERN).hasAnyRole("news-admin", "tournament-admin")
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()

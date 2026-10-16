@@ -3,6 +3,7 @@ package com.wotb.web.tournament.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
+import com.wotb.web.util.ExactLongInput;
 import tools.jackson.core.JsonParser;
 import tools.jackson.core.JsonToken;
 import tools.jackson.databind.DeserializationContext;
@@ -35,7 +36,7 @@ public final class TournamentDtos {
             @JsonProperty(required = true) List<String> dayLabels
     ) { }
     public record UpdateRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int year,
             @JsonProperty(required = true) String region,
             @JsonProperty(required = true) String season,
@@ -68,7 +69,7 @@ public final class TournamentDtos {
             @JsonProperty(required = true) List<RuleDay> days
     ) { }
     public record DefaultConfigurationRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDefaultVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm,
             @JsonProperty(required = true) List<DefaultRound> rounds
     ) { }
@@ -77,20 +78,20 @@ public final class TournamentDtos {
     public record RuleSource(long eventVersion, String source, Long defaultVersion,
                              boolean isDefaultSource, boolean defaultOutdated) { }
     public record SetDefaultRulesRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long eventId,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long eventId,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDefaultVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
     ) { }
     public record ClearDefaultRulesRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDefaultVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
     ) { }
     public record RuleRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedRulesVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedRulesVersion,
             @JsonProperty(required = true) List<RuleDay> days,
-            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+            @JsonDeserialize(using = ExactLongInput.class) Long expectedDefaultVersion
     ) {
         public RuleRequest(final long eventVersion, final long rulesVersion, final List<RuleDay> days) {
             this(eventVersion, rulesVersion, days, null);
@@ -115,40 +116,40 @@ public final class TournamentDtos {
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean complete
     ) { }
     public record Versions(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDayVersion
     ) { }
     public record ExpectedGroupsRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDayVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount,
-            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+            @JsonDeserialize(using = ExactLongInput.class) Long expectedDefaultVersion
     ) {
         public ExpectedGroupsRequest(final long eventVersion, final long dayVersion, final int count) {
             this(eventVersion, dayVersion, count, null);
         }
     }
     public record DraftRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedRulesVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDayVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedRulesVersion,
             @JsonProperty(required = true) List<IncomingGroup> groups,
             @JsonProperty(required = true) List<String> confirmedNewClans
     ) { }
     public record FinalizeRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedRulesVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDayVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedRulesVersion,
             @JsonProperty(required = true) String idempotencyKey
     ) { }
     public record CorrectionRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedDayVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount,
             @JsonProperty(required = true) String reason
     ) { }
     public record ClearRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int roundNumber,
             @JsonProperty(required = true) @JsonDeserialize(using = IntegerInput.class) Integer dayNumber,
             @JsonProperty(required = true) String clanTag,
@@ -156,7 +157,7 @@ public final class TournamentDtos {
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean restore
     ) { }
     public record DeleteRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
     ) { }
     public record DayPoints(
@@ -209,16 +210,16 @@ public final class TournamentDtos {
     public record HistoricalRow(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonDeserialize(contentUsing = IntegerInput.class) List<Integer> points,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long sourceTotal
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long sourceTotal
     ) { }
     public record HistoricalPreviewRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) String sourceName,
             @JsonProperty(required = true) String sourceSha256,
             @JsonProperty(required = true) List<HistoricalRow> rows
     ) { }
     public record HistoricalImportRequest(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) String sourceName,
             @JsonProperty(required = true) String sourceSha256,
             @JsonProperty(required = true) List<HistoricalRow> rows,
@@ -263,17 +264,6 @@ public final class TournamentDtos {
                 catch (final ArithmeticException invalid) { return context.reportInputMismatch(Integer.class, "Expected an exact integer"); }
             }
             return context.reportInputMismatch(Integer.class, "Expected an integer JSON number");
-        }
-    }
-    public static class LongInput extends ValueDeserializer<Long> {
-        @Override
-        public Long deserialize(final JsonParser parser, final DeserializationContext context) {
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_INT)) { return parser.getLongValue(); }
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_FLOAT)) {
-                try { return parser.getDecimalValue().longValueExact(); }
-                catch (final ArithmeticException invalid) { return context.reportInputMismatch(Long.class, "Expected an exact integer"); }
-            }
-            return context.reportInputMismatch(Long.class, "Expected an integer JSON number");
         }
     }
 }

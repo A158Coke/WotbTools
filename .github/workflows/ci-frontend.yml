@@ -112,6 +112,8 @@ jobs:
             script: test:browser-armor-shot-readiness
           - label: League broadcast directory
             script: test:browser-broadcasts
+          - label: Game announcements
+            script: test:browser-news
     steps:
       - uses: actions/checkout@v5
         with:

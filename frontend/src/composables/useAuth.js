@@ -482,6 +482,14 @@ export function leagueBroadcastAdminAllowed(auth = useAuth()) {
 }
 const isLeagueBroadcastAdmin = computed(() => leagueBroadcastAdminAllowed({ authenticated, tokenParsed }))
 
+/** News authorization uses real realm claims, never the local visibility shortcut. */
+export function newsAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && (roles.includes('news-admin') || roles.includes('tournament-admin'))
+}
+const isNewsAdmin = computed(() => newsAdminAllowed({ authenticated, tokenParsed }))
+
 /**
  * 展示名（顶栏账户入口 / 个人中心）：Keycloak `display-name-mapper` 映射的 `displayName`
  * （WG 官方昵称 / QQ 昵称）。`preferred_username` 是内部登录名（形如 `wg_eu_572253806`），
@@ -552,6 +560,7 @@ export function useAuth() {
     isHofAdmin,
     isTournamentAdmin,
     isLeagueBroadcastAdmin,
+    isNewsAdmin,
     token,
     ensureToken,
     initialized,

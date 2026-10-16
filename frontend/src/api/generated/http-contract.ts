@@ -4,6 +4,297 @@
  */
 
 export interface paths {
+    "/api/news/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** listNewsSources */
+        get: operations["listNewsSources"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** listNewsArticles */
+        get: operations["listNewsArticles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/articles/{sourceKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getNewsArticle */
+        get: operations["getNewsArticle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** listNewsCategories */
+        get: operations["listNewsCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** listNewsArchives */
+        get: operations["listNewsArchives"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/archives/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getNewsArchive */
+        get: operations["getNewsArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** listManagedNewsArchives */
+        get: operations["listManagedNewsArchives"];
+        put?: never;
+        /** createNewsArchives */
+        post: operations["createNewsArchives"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getManagedNewsArchive */
+        get: operations["getManagedNewsArchive"];
+        put?: never;
+        post?: never;
+        /** deleteNewsArchive */
+        delete: operations["deleteNewsArchive"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** retryNewsArchive */
+        post: operations["retryNewsArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives/{id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** withdrawNewsArchive */
+        post: operations["withdrawNewsArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** restoreNewsArchive */
+        post: operations["restoreNewsArchive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** createNewsCategory */
+        post: operations["createNewsCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** deleteNewsCategory */
+        delete: operations["deleteNewsCategory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/source-images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getNewsSourceImage */
+        get: operations["getNewsSourceImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/news/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getNewsImage */
+        get: operations["getNewsImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/images/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getManagedNewsImage */
+        get: operations["getManagedNewsImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/news/archives/{id}/source-images/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a frozen archive source image */
+        get: operations["getManagedNewsArchiveSourceImage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/observability/events": {
         parameters: {
             query?: never;
@@ -1059,6 +1350,116 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        NewsSource: {
+            /** @enum {string} */
+            id: "WG" | "LESTA";
+            enabled: boolean;
+        };
+        NewsCategory: {
+            id: number;
+            name: string;
+            /** @enum {string} */
+            type: "GENERAL" | "SPECIALIZED";
+        };
+        NewsBlock: {
+            id: string;
+            html: string;
+        };
+        NewsSync: {
+            /** Format: date-time */
+            lastSuccessfulFetchAt: string | null;
+            /** Format: date-time */
+            nextRefreshAt: string | null;
+            stale: boolean;
+        };
+        NewsArticle: {
+            sourceKey: string;
+            title: string;
+            /** Format: uri */
+            sourceUrl: string;
+            language: string;
+            publishedAtRaw: string | null;
+            coverImageId: string | null;
+            revision: string;
+            blocks: components["schemas"]["NewsBlock"][];
+            sync: components["schemas"]["NewsSync"] | null;
+        };
+        NewsArticlePage: {
+            items: components["schemas"]["NewsArticle"][];
+            page: number;
+            size: number;
+            totalItems: number;
+            sync: components["schemas"]["NewsSync"];
+        };
+        NewsArchive: {
+            id: number;
+            /** @enum {string} */
+            source: "WG";
+            version: string;
+            title: string;
+            /** @enum {string} */
+            status: "PREPARING" | "FAILED" | "PUBLISHED" | "WITHDRAWN";
+            revision: number;
+            categories: components["schemas"]["NewsCategory"][];
+            articles: components["schemas"]["NewsArticle"][];
+            /** Format: date-time */
+            createdAt: string;
+            reviewedBy: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+            errorCode: string | null;
+        };
+        NewsArchivePage: {
+            items: components["schemas"]["NewsArchiveSummary"][];
+            page: number;
+            size: number;
+            totalItems: number;
+        };
+        NewsSelection: {
+            sourceKey: string;
+            revision: string;
+            blockIds: string[];
+        };
+        NewsDraft: {
+            version: string;
+            title: string;
+            categoryIds: number[];
+            articles: components["schemas"]["NewsSelection"][];
+        };
+        NewsCreateRequest: {
+            /** Format: uuid */
+            idempotencyKey: string;
+            archives: components["schemas"]["NewsDraft"][];
+        };
+        NewsReceiptResult: {
+            archiveIds: number[];
+            deletedIds: number[];
+        };
+        NewsRevisionRequest: {
+            expectedRevision: number;
+        };
+        NewsCategoryCreate: {
+            name: string;
+            /** @enum {string} */
+            type: "GENERAL" | "SPECIALIZED";
+        };
+        NewsArchiveSummary: {
+            id: number;
+            /** @enum {string} */
+            source: "WG";
+            version: string;
+            title: string;
+            /** @enum {string} */
+            status: "PREPARING" | "FAILED" | "PUBLISHED" | "WITHDRAWN";
+            revision: number;
+            categories: components["schemas"]["NewsCategory"][];
+            /** Format: date-time */
+            createdAt: string;
+            reviewedBy: string;
+            /** Format: date-time */
+            publishedAt: string | null;
+            errorCode: string | null;
+        };
         /** @enum {string} */
         BroadcastServer: "CN" | "ASIA" | "NA" | "EU" | "LESTA";
         /** @enum {string} */
@@ -2217,7 +2618,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "NEWS_SOURCE_UNAVAILABLE" | "NEWS_REVISION_CONFLICT" | "NEWS_CONTENT_UNSUPPORTED" | "NEWS_IMAGE_INVALID" | "NEWS_STORAGE_UNAVAILABLE" | "NEWS_STORAGE_ERROR" | "NEWS_STATE_CONFLICT" | "NEWS_IDEMPOTENCY_CONFLICT" | "NEWS_CATEGORY_IN_USE" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -2227,6 +2628,2010 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listNewsSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsSource"][];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listNewsArticles: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArticlePage"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNewsArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArticle"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listNewsCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsCategory"][];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listNewsArchives: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                source?: "WG";
+                version?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchivePage"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNewsArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchive"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listManagedNewsArchives: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+                source?: "WG";
+                version?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchivePage"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createNewsArchives: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description News result */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsReceiptResult"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getManagedNewsArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchive"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteNewsArchive: {
+        parameters: {
+            query: {
+                expectedRevision: number;
+                confirm: true;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    retryNewsArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchive"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    withdrawNewsArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchive"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    restoreNewsArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description News result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsArchive"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createNewsCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewsCategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description News result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsCategory"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteNewsCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNewsSourceImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated image bytes; references are checked before cache validators. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description Not modified after authorization */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNewsImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated image bytes; references are checked before cache validators. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description Not modified after authorization */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getManagedNewsImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated image bytes; references are checked before cache validators. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description Not modified after authorization */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getManagedNewsArchiveSourceImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated image bytes; references are checked before cache validators. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description Not modified after authorization */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request rejected with a stable error code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Unsupported source content or unavailable image storage */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Request rejected with a stable error code */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     recordObservabilityEvents: {
         parameters: {
             query?: never;

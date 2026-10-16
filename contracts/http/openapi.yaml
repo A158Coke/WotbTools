@@ -4,6 +4,797 @@ info:
   version: 1.0.0
   description: FE ↔ BE wire contract. Domain models and Control/Worker contracts are separate authorities.
 paths:
+  /api/news/sources:
+    get:
+      operationId: listNewsSources
+      summary: listNewsSources
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsSource"
+        "400": &a1
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401": &a2
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403": &a3
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404": &a4
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409": &a5
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413": &a6
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": &a7
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/news/articles:
+    get:
+      operationId: listNewsArticles
+      summary: listNewsArticles
+      parameters:
+        - &a8
+          name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            maximum: 10000
+        - &a9
+          name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArticlePage"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/articles/{sourceKey}:
+    get:
+      operationId: getNewsArticle
+      summary: getNewsArticle
+      parameters:
+        - name: sourceKey
+          in: path
+          required: true
+          schema: &a10
+            type: string
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArticle"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/categories:
+    get:
+      operationId: listNewsCategories
+      summary: listNewsCategories
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsCategory"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/archives:
+    get:
+      operationId: listNewsArchives
+      summary: listNewsArchives
+      parameters: &a11
+        - *a8
+        - *a9
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum:
+              - WG
+        - name: version
+          in: query
+          schema: *a10
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchivePage"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/archives/{id}:
+    get:
+      operationId: getNewsArchive
+      summary: getNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: &a12
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchive"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives:
+    get:
+      operationId: listManagedNewsArchives
+      summary: listManagedNewsArchives
+      parameters: *a11
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchivePage"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+    post:
+      operationId: createNewsArchives
+      summary: createNewsArchives
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsCreateRequest"
+      responses:
+        "202":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsReceiptResult"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives/{id}:
+    get:
+      operationId: getManagedNewsArchive
+      summary: getManagedNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchive"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+    delete:
+      operationId: deleteNewsArchive
+      summary: deleteNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+        - name: expectedRevision
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+          required: true
+        - name: confirm
+          in: query
+          schema:
+            type: boolean
+            enum:
+              - true
+          required: true
+      responses:
+        "204":
+          description: Deleted
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives/{id}/retry:
+    post:
+      operationId: retryNewsArchive
+      summary: retryNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsRevisionRequest"
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchive"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives/{id}/withdraw:
+    post:
+      operationId: withdrawNewsArchive
+      summary: withdrawNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsRevisionRequest"
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchive"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives/{id}/restore:
+    post:
+      operationId: restoreNewsArchive
+      summary: restoreNewsArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsRevisionRequest"
+      responses:
+        "200":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsArchive"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/categories:
+    post:
+      operationId: createNewsCategory
+      summary: createNewsCategory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewsCategoryCreate"
+      responses:
+        "201":
+          description: News result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsCategory"
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/categories/{id}:
+    delete:
+      operationId: deleteNewsCategory
+      summary: deleteNewsCategory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a12
+      responses:
+        "204":
+          description: Deleted
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/source-images/{id}:
+    get:
+      operationId: getNewsSourceImage
+      summary: getNewsSourceImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a10
+      responses:
+        "200":
+          description: Validated image bytes; references are checked before cache validators.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified after authorization
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/news/images/{id}:
+    get:
+      operationId: getNewsImage
+      summary: getNewsImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a10
+      responses:
+        "200":
+          description: Validated image bytes; references are checked before cache validators.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified after authorization
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/images/{id}:
+    get:
+      operationId: getManagedNewsImage
+      summary: getManagedNewsImage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: *a10
+      responses:
+        "200":
+          description: Validated image bytes; references are checked before cache validators.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified after authorization
+        "400": *a1
+        "401": *a2
+        "403": *a3
+        "404": *a4
+        "409": *a5
+        "413": *a6
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503": *a7
+  /api/admin/news/archives/{id}/source-images/{sourceId}:
+    get:
+      operationId: getManagedNewsArchiveSourceImage
+      summary: Get a frozen archive source image
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Validated image bytes; references are checked before cache validators.
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: Not modified after authorization
+        "400":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: Unsupported source content or unavailable image storage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Request rejected with a stable error code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/observability/events:
     post:
       operationId: recordObservabilityEvents
@@ -3051,6 +3842,339 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    NewsSource:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - enabled
+      properties:
+        id:
+          type: string
+          enum:
+            - WG
+            - LESTA
+        enabled:
+          type: boolean
+    NewsCategory:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - type
+      properties:
+        id: &a4
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        name: &a1
+          type: string
+        type:
+          type: string
+          enum:
+            - GENERAL
+            - SPECIALIZED
+    NewsBlock:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - html
+      properties:
+        id: *a1
+        html: *a1
+    NewsSync:
+      type: object
+      additionalProperties: false
+      required:
+        - lastSuccessfulFetchAt
+        - nextRefreshAt
+        - stale
+      properties:
+        lastSuccessfulFetchAt:
+          type: &a2
+            - string
+            - "null"
+          format: date-time
+        nextRefreshAt:
+          type: *a2
+          format: date-time
+        stale:
+          type: boolean
+    NewsArticle:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceKey
+        - title
+        - sourceUrl
+        - language
+        - publishedAtRaw
+        - coverImageId
+        - revision
+        - blocks
+        - sync
+      properties:
+        sourceKey: *a1
+        title: *a1
+        sourceUrl:
+          type: string
+          format: uri
+        language: *a1
+        publishedAtRaw: &a3
+          type: *a2
+        coverImageId: *a3
+        revision: *a1
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsBlock"
+        sync:
+          anyOf:
+            - $ref: "#/components/schemas/NewsSync"
+            - type: "null"
+    NewsArticlePage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - size
+        - totalItems
+        - sync
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsArticle"
+        page: *a4
+        size:
+          type: integer
+          minimum: 1
+          maximum: 50
+        totalItems: &a5
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        sync:
+          $ref: "#/components/schemas/NewsSync"
+    NewsArchive:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - version
+        - title
+        - status
+        - revision
+        - categories
+        - articles
+        - createdAt
+        - reviewedBy
+        - publishedAt
+        - errorCode
+      properties:
+        id: *a4
+        source:
+          type: string
+          enum:
+            - WG
+        version: *a1
+        title: *a1
+        status:
+          type: string
+          enum:
+            - PREPARING
+            - FAILED
+            - PUBLISHED
+            - WITHDRAWN
+        revision: *a5
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsCategory"
+        articles:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsArticle"
+        createdAt:
+          type: string
+          format: date-time
+        reviewedBy: *a1
+        publishedAt:
+          type: *a2
+          format: date-time
+        errorCode: *a3
+    NewsArchivePage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - page
+        - size
+        - totalItems
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsArchiveSummary"
+        page: *a4
+        size:
+          type: integer
+          minimum: 1
+          maximum: 50
+        totalItems: *a5
+    NewsSelection:
+      type: object
+      additionalProperties: false
+      required:
+        - sourceKey
+        - revision
+        - blockIds
+      properties:
+        sourceKey: *a1
+        revision: *a1
+        blockIds:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: *a1
+          maxItems: 1000
+    NewsDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - title
+        - categoryIds
+        - articles
+      properties:
+        version:
+          type: string
+          minLength: 1
+          maxLength: 80
+        title:
+          type: string
+          minLength: 1
+          maxLength: 300
+        categoryIds:
+          type: array
+          uniqueItems: true
+          items: *a4
+          maxItems: 30
+        articles:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsSelection"
+          minItems: 1
+          maxItems: 20
+    NewsCreateRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - idempotencyKey
+        - archives
+      properties:
+        idempotencyKey:
+          type: string
+          format: uuid
+        archives:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsDraft"
+          minItems: 1
+          maxItems: 10
+    NewsReceiptResult:
+      type: object
+      additionalProperties: false
+      required:
+        - archiveIds
+        - deletedIds
+      properties:
+        archiveIds:
+          type: array
+          items: *a4
+        deletedIds:
+          type: array
+          items: *a4
+    NewsRevisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expectedRevision
+      properties:
+        expectedRevision: *a5
+    NewsCategoryCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          type: string
+          enum:
+            - GENERAL
+            - SPECIALIZED
+    NewsArchiveSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - source
+        - version
+        - title
+        - status
+        - revision
+        - categories
+        - createdAt
+        - reviewedBy
+        - publishedAt
+        - errorCode
+      properties:
+        id:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        source:
+          type: string
+          enum:
+            - WG
+        version: &a6
+          type: string
+        title: *a6
+        status:
+          type: string
+          enum:
+            - PREPARING
+            - FAILED
+            - PUBLISHED
+            - WITHDRAWN
+        revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsCategory"
+        createdAt:
+          type: string
+          format: date-time
+        reviewedBy: *a6
+        publishedAt:
+          type: &a7
+            - string
+            - "null"
+          format: date-time
+        errorCode:
+          type: *a7
     BroadcastServer:
       type: "string"
       enum: ["CN", "ASIA", "NA", "EU", "LESTA"]
@@ -5462,6 +6586,15 @@ components:
         - BROADCAST_COVER_INVALID
         - BROADCAST_STORAGE_UNAVAILABLE
         - BROADCAST_STORAGE_ERROR
+        - NEWS_SOURCE_UNAVAILABLE
+        - NEWS_REVISION_CONFLICT
+        - NEWS_CONTENT_UNSUPPORTED
+        - NEWS_IMAGE_INVALID
+        - NEWS_STORAGE_UNAVAILABLE
+        - NEWS_STORAGE_ERROR
+        - NEWS_STATE_CONFLICT
+        - NEWS_IDEMPOTENCY_CONFLICT
+        - NEWS_CATEGORY_IN_USE
         - INVALID_RECOGNITION_REQUEST
         - INVALID_RECOGNITION_PERMIT
         - TOURNAMENT_RECOGNITION_NOT_CONFIGURED

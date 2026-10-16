@@ -354,6 +354,10 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 - 解析后的 Aggregate/Summary 不代表某一场 battle；结果 toolbar 的 battle-level shortcut 只在具体 battle tab 出现。
 - League 模式的汇总人数读取 `league.playerSummaries.length`；普通模式读取 `aggregate.length`。
 
+### 游戏公告
+
+`?view=game-announcements` 提供匿名官方更新和审核历史归档；news-admin或tournament-admin管理。news域拥有12小时有界源缓存、冻结快照、类别与图片引用；COS有界I/O与直播共享，命名空间和生命周期隔离。HTTP契约由OpenAPI生成前端transport。详见 [游戏公告](features/game-announcements.md) 与 [图片运维](operations/news-images.md)。
+
 ### SPA views
 
 - `?view=home`：主页。

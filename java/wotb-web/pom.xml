@@ -13,6 +13,12 @@
     <name>WotBTools Web</name>
 
     <dependencies>
+        <!-- Official announcements require structural HTML parsing and a strict sanitizer. -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.23.2</version>
+        </dependency>
         <!-- CSV standings import: standard quoted fields, escaped delimiters and record boundaries. -->
         <dependency>
             <groupId>org.apache.commons</groupId>

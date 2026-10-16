@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
+import com.wotb.web.util.ExactLongInput;
 import tools.jackson.databind.annotation.JsonDeserialize;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,25 +32,25 @@ public final class BroadcastDtos {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
     public record SeasonUpdate(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = TournamentDtos.LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = TournamentDtos.IntegerInput.class) int year,
             @JsonProperty(required = true) String name,
             @JsonProperty(required = true) LocalDate startDate) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
     public record CategoryCreate(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = TournamentDtos.LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) String type) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
     public record NodeCreate(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = TournamentDtos.LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) @JsonDeserialize(using = TournamentDtos.IntegerInput.class) Integer roundNumber,
             @JsonProperty(required = true) String format) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
     public record ReplaySave(
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = TournamentDtos.LongInput.class) long expectedVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = ExactLongInput.class) long expectedVersion,
             @JsonProperty(required = true) String title,
             @JsonProperty(required = true) String url,
             @JsonProperty(required = true) LocalDate matchDate,

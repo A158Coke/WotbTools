@@ -179,6 +179,12 @@ export function leagueBroadcastAdminAllowed(auth = useAuth()) {
   return auth.authenticated.value && Array.isArray(roles) && roles.includes('wotbtools-admin')
 }
 const isLeagueBroadcastAdmin = computed(() => leagueBroadcastAdminAllowed({ authenticated, tokenParsed }))
+export function newsAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && (roles.includes('news-admin') || roles.includes('tournament-admin'))
+}
+const isNewsAdmin = computed(() => newsAdminAllowed({ authenticated, tokenParsed }))
 export function tournamentAdminAllowed(auth = useAuth()) {
   const roles = auth.tokenParsed.value?.realm_access?.roles
   return auth.authenticated.value && Array.isArray(roles)
@@ -204,6 +210,7 @@ export function useAuth() {
     isHofAdmin,
     isTournamentAdmin,
     isLeagueBroadcastAdmin,
+    isNewsAdmin,
     authEpoch: () => generation,
     token,
     ensureToken,

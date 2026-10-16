@@ -146,7 +146,7 @@ try {
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (scenario.productionHome && scenario.width < 768) {
-        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), 7)
+        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), 8)
       }
       const cardHeights = await page.evaluate('[...document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-choice")].map(el=>el.getBoundingClientRect().height)')
       assert.ok(cardHeights.every(height => height >= 160), 'server cards use the larger presentation')
