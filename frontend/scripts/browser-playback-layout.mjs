@@ -517,6 +517,35 @@ async function probeDamageOverlay() {
   require(offscreenRemovedAfterMs < 4400, 'off-screen return must not extend removal deadline')
   metrics.offscreenRecovery = { beforeOffscreen, resumedTime, resumedAgeMin, resumedAgeMax, offscreenRemovedAfterMs }
 
+  // 出生时已经在视锥外：延迟首次可见也要恢复原始 wall-clock phase。
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  const unseenBornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const unseenBornAfter = performance.now()
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  require(dmgEl().hidden, 'born-off-screen damage must remain hidden')
+  await waitUntil(() => performance.now() - unseenBornAfter >= 1200)
+  await api.setAnchor(7, anchorAt(300, 260))
+  require(!dmgEl().hidden, 'first projected display must reveal damage')
+  const firstAnimation = dmgTextEl().getAnimations()[0]
+  const firstTiming = firstAnimation.effect.getComputedTiming()
+  const firstTime = firstAnimation.currentTime - firstTiming.delay
+  const firstAgeMin = performance.now() - unseenBornAfter
+  const firstAgeMax = performance.now() - unseenBornBefore
+  require(firstTime >= firstAgeMin - 100 && firstTime <= firstAgeMax + 100,
+    `first visible phase must match age (${firstTime} vs ${firstAgeMin}..${firstAgeMax})`)
+  require(firstTiming.progress > 0.25, 'first display must not start at birth phase')
+  const firstDelay = dmgTextEl().style.animationDelay
+  await api.setAnchor(7, anchorAt(320, 260))
+  await api.setLabels([row(7), row(8)])
+  require(dmgTextEl().style.animationDelay === firstDelay, 'first-display phase must stay stable on ordinary updates')
+  await waitUntil(() => performance.now() - unseenBornAfter >= 3500)
+  require(!!dmgEl(), 'first-display damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const unseenRemovedAfterMs = performance.now() - unseenBornBefore
+  require(unseenRemovedAfterMs < 4400, 'delayed first display must not extend removal deadline')
+  metrics.bornOffscreen = { firstTime, firstAgeMin, firstAgeMax, unseenRemovedAfterMs }
+
   // showStatus=false 时出生：延迟首次挂载仍消费原始 wall-clock age。
   await api.prefs({ markerPrefs: { showStatus: false } })
   const delayedBorn = performance.now()
