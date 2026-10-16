@@ -283,17 +283,9 @@ public final class ClientAiProjectionAdapter {
         }
     }
 
-    /** hpState（可空）：在场必须等于某个 HpRawState 枚举名（producer 漂移在边界拒绝）。 */
+    /** hpState（可空）：在场必须是契约 enum 的 wire 字面量之一（显式映射；producer 漂移在边界拒绝）。 */
     private static boolean validHpState(final String name) {
-        if (name == null) {
-            return true;
-        }
-        for (final HpRawState state : HpRawState.values()) {
-            if (state.name().equals(name)) {
-                return true;
-            }
-        }
-        return false;
+        return name == null || HpRawState.fromWireName(name) != null;
     }
 
     private static boolean rawHp(final int raw) {

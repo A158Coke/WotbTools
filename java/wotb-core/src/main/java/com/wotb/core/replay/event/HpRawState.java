@@ -25,20 +25,34 @@ public enum HpRawState {
      * 正 HP 与 0x0000 的解释只依赖其 wire shape，不依赖 clientVersion。
      */
     /**
+     * 投影 wire 值（`hpState` 字面量）→ 本枚举。**显式映射**：HTTP 边界接受的集合 = 契约
+     * （`contracts/http/openapi.yaml` 的 enum），与内部枚举成员增删/改名解耦——不得改用
+     * {@code values()} + {@code name()} 迭代，否则一次内部改名会静默改变边界接受集。
+     */
+    public static HpRawState fromWireName(final String name) {
+        if (name == null) {
+            return null;
+        }
+        return switch (name) {
+            case "CURRENT_HP" -> CURRENT_HP;
+            case "HP_ZERO_TERMINAL" -> HP_ZERO_TERMINAL;
+            case "DEATH_TERMINAL_FFFD" -> DEATH_TERMINAL_FFFD;
+            case "DEATH_TERMINAL" -> DEATH_TERMINAL;
+            case "UNKNOWN_FFFF" -> UNKNOWN_FFFF;
+            case "UNKNOWN_OTHER" -> UNKNOWN_OTHER;
+            default -> null;
+        };
+    }
+
+    /**
      * 投影载荷携带的 canonical 分类（`hpState`）→ 本枚举。**字段在场 = 权威**（不重新分类 raw）；
      * 缺省（旧载荷）回退 {@link #classify(int)} 的 legacy 语义（仅 0/0xFFFD 终态，−1/−2 未知）。
      * 未知名由调用方在信任边界拒绝（{@code ClientAiProjectionAdapter} 的 require），本方法只兜底
-     * 已注册名与 null。
+     * 已注册 wire 名与 null。
      */
     public static HpRawState fromProjection(final String name, final int rawValue) {
-        if (name != null) {
-            for (final HpRawState state : values()) {
-                if (state.name().equals(name)) {
-                    return state;
-                }
-            }
-        }
-        return classify(rawValue);
+        final HpRawState mapped = fromWireName(name);
+        return mapped != null ? mapped : classify(rawValue);
     }
 
     public static HpRawState classify(final int rawValue) {

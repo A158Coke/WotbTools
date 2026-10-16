@@ -339,6 +339,29 @@ WotBTools
   （`lifeTransitions.test.ts` / `parseLocalPlayback.test.ts` / `vehiclePose.test.ts` /
   `BattlePlayback.integration.test.js` / `playbackScene.test.js`）。
 
+## 4l. 血量终态分类（`damage.hp_state` / `health.hp_state`，AiReview additive；上游 v0.4.9）
+
+- 形状：`hp_state?: 'current' | 'zero' | 'terminal'`，随 `damage`（method1）/`health`（prop3）事件输出；
+  上游 v0.4.9 起**恒在场**，缺省仅出现在旧产物（见 §6 表）。
+- **两条各自单一权威的路径**：①字段在场 = 权威——`terminal` = 负 i16 终态哨兵**全族**
+  （实测 0xFFFF/0xFFFE/0xFFFD，其余负值同编码；同族全部取值同一处理，禁按分布裁剪），
+  `zero` = 0x0000 确知归零，`current` = 可用血量；②**字段缺省 = legacy 分类不放宽**——仅
+  `{0x0000, 0xFFFD}` 为终态，`0xFFFF`/`0xFFFE` 等仍是"未证明哨兵（血量与生死都未知）"，
+  **不作为死亡证据**（存量语料把 0xFFFF 记为 unavailable；缺省放宽会在旧产物上产生无旁证的
+  死亡判定）。全族语义只能经字段获得。
+- **消费边界 fail closed**：`hp_state` 在场值必须落在闭集内；形状 / 枚举漂移在
+  `validateAgentAiReview`（`frontend/src/api/agent-replay-facets.ts`）拒绝，**不静默回退 `hp_raw`**
+  （避免把 producer 漂移变成错误的生命态事实）。缺省路径按 §6 表的 legacy 规则现算。
+- **消费**：canonical `classifyHpRaw(raw, hp_state?)`（`replay-local/canonical/hpRawState.ts`）→
+  血量帧（`healthTransitions`；终态哨兵血量未知 ≠ 0）与生命轨道（`lifeTransitions` 终态样本 →
+  `DESTROYED`）；终态分类经 HTTP 投影（`ClientAiReviewProjection.hpState`）传到 Java canonical，
+  服务端**不再重新分类**（`HpRawState.fromWireName` 显式 wire 映射）。守卫：
+  `canonical/facts.hpTerminal.test.ts`（字段权威 / legacy 缺省两侧）+ `playbackScene.test.js`
+  终态族用例（含 `hp_state=terminal` 的 0xFFFE/0xFFFF 行与"legacy 0xFFFE 不判死"反例行）。
+- **回归背景**：−1/−2 档弹药架殉爆（实例 1910 局 Intotherainy `0xFFFE`）曾因本层只认
+  {0x0000, 0xFFFD} 被判成存活（血量冻在最后正值、装填条继续外播）。裁决与迁移账见上游
+  `WoT-Blitz-Agent` §七（`docs/wotbtools-cross-reference.md`）。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
@@ -452,3 +475,8 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
      保持 2（additive 删除 + 字段补正，见 §4b）；
   5. **additive `vehicles[].hull_roll`**：车体横滚列（raw type=10 最近邻，见 §4e）。
   WotbTools production pin 同步到该 Release（shot reconstruction 的 raw Type39 能力不受影响）。
+- v0.4.9（2026-10-16，agent commit `8dcec2c6`，fanypcd/WoT-Blitz-Agent#22 + #23）：
+  **additive `hp_state`**（`damage`/`health` 事件的权威血量分类，见 §4l）——上游把
+  `{0x0000, 0xFFFF, 0xFFFE, 0xFFFD}` 终态族语义从"内部规则"改为显式透出，消费方不再自行解释
+  u16；`PlaybackData` v2 / `AiReviewFacet` v1 形状不变。WotbTools production pin 同步到
+  v0.4.9（`ref 8dcec2c6…`、`wotb-replay-wasm-v0.4.9.zip`），Android `wotbVersion` 随候选递增。
