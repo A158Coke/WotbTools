@@ -48,7 +48,7 @@ import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapL
 import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
-import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
+import { lifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleDetachedPose } from './trackInterp.js'
 import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
@@ -454,8 +454,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       };
     }
     // Canonical may still be loading/fail: retain the existing authoritative scene fact, never HP.
-    // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往逐位一致）。
-    return defLifeAt(v.def, t);
+    const death = v.def.death_t;
+    return Number.isFinite(t) && Number.isFinite(death)
+      ? { lifeState: t >= death ? 'DESTROYED' : 'ALIVE', destroyedKnownAtSec: death } : null;
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
   function visibleAt(v, t) {
@@ -2250,7 +2251,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function feedTrail(v, tr, t0) {
     const space = v.tread.space;
     const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
-    const def = v.def;
+    const deathT = v.def.death_t;
     const pendL = [], pendR = [];
     let broken = false;
     // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
@@ -2264,7 +2265,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
     const pushPoint = (tt) => {
-      if (defLifeAt(def, tt)?.lifeState === 'DESTROYED') return; // 阵亡期：残骸不出段（不断链）；复活后恢复出印（issue #622）
+      if (deathT != null && tt >= deathT) return;             // 阵亡：静止残骸不再出段（不断链）
       if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
         if (!broken) {
           flush();
@@ -3303,31 +3304,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
     burstEvents = [];
     for (const v of V) {
-      // 每次死亡各一次爆焰（issue #622 复活模式：同一 eid 可多次死亡）。
-      // 普通战斗每车至多一次死亡——单条行为与既往逐位一致。
-      const times = [];
+      let t = v.def.death_t;
       if (hasCanonicalLife) {
-        const seenDeaths = new Set();
-        for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
-          if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
-          const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
-          if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
-          // 同一次死亡的重复迁移只爆一次（既有不变式）；真复活模式的多死 killedAtSec 互异
-          const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
-          if (seenDeaths.has(key)) continue;
-          seenDeaths.add(key);
-          times.push(life.timeSec + canonical.clock.startRaw);
-        }
-      } else {
-        const death = v.def.death_t;
-        if (Number.isFinite(death)) {
-          times.push(death);
-          for (const d of v.def.death_times ?? []) {
-            if (Number.isFinite(d) && d !== death) times.push(d);
-          }
-        }
+        const transition = canonicalLifeTrack(v, canonical)?.lifeTransitions?.find(life => life.lifeState === 'DESTROYED');
+        t = transition && Number.isFinite(transition.timeSec)
+          ? transition.timeSec + canonical.clock.startRaw : null;
+        const identityTime = (transition?.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
+        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) t = null;
       }
-      for (const t of times) burstEvents.push({ t, eid: v.def.eid });
+      if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
     }
     burstEvents.sort((a, b) => a.t - b.t);
   }

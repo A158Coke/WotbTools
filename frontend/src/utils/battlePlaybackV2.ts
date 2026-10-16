@@ -85,57 +85,6 @@ export function lifeAt(
   }
 }
 
-export type DefLifeState = {
-  lifeState: 'ALIVE' | 'DESTROYED'
-  destroyedKnownAtSec: number | null
-}
-
-type DefLifeFields = {
-  death_t: number | null
-  /** 上游 additive：仅该车死亡 ≥2 次（复活模式）才输出 */
-  death_times?: number[]
-  /** 上游 additive：仅非空才输出 */
-  resurrection_times?: number[]
-}
-
-/**
- * def 层生命状态（PlaybackData 车辆字段直读；canonical 轨道缺位时的权威回退）。
- *
- * 消费上游复活轨道（issue #622，2026-10-15 additive）：复活字段缺省 = 死亡终态语义
- * （`t >= death_t → DESTROYED`，行为与既往逐位一致）；字段在场 = 死亡/复活交替，
- * 最后一次 ≤t 的事件决定状态（首死前 ALIVE）。纯 def 字段推导，不读 canonical。
- */
-export function defLifeAt(def: DefLifeFields | null | undefined, t: number): DefLifeState | null {
-  if (def == null || !Number.isFinite(t)) return null
-  const death = def.death_t
-  if (typeof death !== 'number' || !Number.isFinite(death)) return null
-  const res = def.resurrection_times ?? []
-  const deaths = def.death_times && def.death_times.length > 1 ? def.death_times : [death]
-  if (deaths.length <= 1 && res.length === 0) {
-    return { lifeState: t >= death ? 'DESTROYED' : 'ALIVE', destroyedKnownAtSec: death }
-  }
-  let state: 'ALIVE' | 'DESTROYED' = 'ALIVE'
-  let destroyedAt: number | null = null
-  let di = 0
-  let ri = 0
-  while (di < deaths.length || ri < res.length) {
-    const nextDeath = di < deaths.length ? deaths[di] : Infinity
-    const nextRes = ri < res.length ? res[ri] : Infinity
-    if (nextDeath <= t && nextDeath <= nextRes) {
-      state = 'DESTROYED'
-      destroyedAt = nextDeath
-      di += 1
-    } else if (nextRes <= t) {
-      state = 'ALIVE'
-      destroyedAt = null
-      ri += 1
-    } else {
-      break
-    }
-  }
-  return { lifeState: state, destroyedKnownAtSec: destroyedAt }
-}
-
 /**
  * Canonical HP presentation for one track at t.
  *
