@@ -24,6 +24,7 @@ import { fixtureFacets, requireFixtures } from '../replay-local/__golden__/agent
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount } from '../replay-local/canonical/facts.js'
 import { toBattlePlaybackDataset } from '../replay-local/playback/toBattlePlaybackDataset.js'
 import { validateAgentAiReview, validateAgentBattleResult, validateAgentPlayback } from '../api/agent-replay-facets.js'
+import { FLOAT_DMG_MS } from '../utils/battlePlayback.js'
 
 const source = vi.hoisted(() => ({ loadPlaybackData: vi.fn(), resolveMapKey: vi.fn(), mapStaticUrl: vi.fn() }))
 vi.mock('./replaySource.js', () => ({
@@ -1433,8 +1434,8 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
   })
 })
 
-describe('disposeFxPool 会话切换（issue #556 回归锁）', () => {
-  it('会话销毁时特效池（伤害飘字的 JS 包装对象）与战斗特效释放不抛错', async () => {
+describe('会话销毁（issue #556 回归锁）', () => {
+  it('没有标签覆盖层时销毁也不抛错（伤害数字改由覆盖层 DOM 呈现，场景不再持有飘字画布）', async () => {
     const { createPlaybackStore } = await import('./playbackStore.js')
     const sceneMod = await import('./playbackScene.js')
     const store = createPlaybackStore()
@@ -1461,7 +1462,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     vi.stubGlobal('requestAnimationFrame', (cb) => frames.push(cb))
     vi.stubGlobal('cancelAnimationFrame', vi.fn())
     vi.spyOn(THREE.Clock.prototype, 'getDelta').mockReturnValue(0.1)
-    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn() }
+    const overlay = { setLabels: vi.fn(), setAnchor: vi.fn(), clear: vi.fn(), spawnDamage: vi.fn(), clearDamages: vi.fn() }
     const store = createPlaybackStore()
     api = initPlayback(mountContainer(), store, overlay)
     created.push(api)
@@ -1471,6 +1472,29 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.setPlaying(false)
     return { api, store, overlay, frames, vehicles: window.__pbV }
   }
+
+  /**
+   * 伤害数字由 HTML 覆盖层呈现（血条右侧的 DOM 几何），场景只负责在掉血事件跨过回放时钟时
+   * 生成一次、并在 seek 时清空：数字不能因为"曾经在屏幕上"而在倒带 / 重播时补播。
+   */
+  it('掉血事件生成一次覆盖层伤害数字（3D 寿命系数），seek 清空且不补播', async () => {
+    const { api, frames, overlay } = await load([vehicle({ hp: [[42, 1000], [50, 600]] })])
+    api.seekTime(49.9)
+    api.setPlaying(true)
+    frames.shift()()   // 越过 t=50：掉血 400
+    expect(overlay.spawnDamage).toHaveBeenCalledWith(1, 400, FLOAT_DMG_MS * 2)
+
+    api.setPlaying(false)
+    overlay.clearDamages.mockClear()
+    api.seekTime(40)
+    expect(overlay.clearDamages, 'seek 必须清空屏幕上的伤害数字').toHaveBeenCalled()
+
+    overlay.spawnDamage.mockClear()
+    api.setPlaying(true)
+    frames.shift()()
+    expect(overlay.spawnDamage, '倒带后不得补播历史伤害数字').not.toHaveBeenCalled()
+    api.setPlaying(false)
+  })
 
 
   const detachedTrack = () => ({ eid: 9, vehicle_eid: 1, coverage: [52, 60, 80, 100], pose_kf: {
