@@ -28,7 +28,7 @@
 - `frontend/src/composables/useReplaySession.ts` 是唯一 session state owner，持有 selection、当前 battle、本地分析状态（`analysis: { phase, done, total, failure }`）、结果与 Workspace view state。
 - `frontend/src/composables/useLocalReplayAnalysis.ts` 持有本机分析生命周期：Worker 解析（上游 Rust Core WASM）→ 批次计算 → 提交结果；选择变化 / 取消作废在途分析；`exportExcel` 复用最近一次的批次结果在客户端生成 xlsx / zip。服务器没有 parser，失败只显示原因（`ENGINE_UNAVAILABLE` / `NO_VALID_REPLAYS` / `UNKNOWN`），不回退服务端。
 - `frontend/src/composables/useReplay.ts` 是 facade/orchestrator，组合 session 与本地分析。
-- `BattlePlaybackPanel.vue` 直接接收目标文件，通过工作台的 canonical Worker 得到 2D 数据与地图概览，不等待 3D 的联网俯仰资料或显示名；已就绪的 scene facet 仍可复用；多文件未选场次时显示 `workspace.single_replay_required`。
+- `BattlePlaybackPanel.vue` 直接接收目标文件，通过工作台的 canonical Worker 得到 2D 数据与地图概览，不等待 3D 的联网俯仰资料或显示名；已就绪的 scene facet 仍可复用。多文件先由 Workspace 批次分析并选中有效场次，面板仅处理目标 File。
 - `frontend/src/app/viewRegistry.js` 是 view → capability 的唯一映射：`replay` → `data`、`battle-playback` → `playback`、`agent-replay` → `3d`、`agent-shots` → `shots`、`ai-review` → `ai`；五个 view 全部映射到同一个 `ReplayWorkspace`，由 `initialCapability` 决定初始能力。`ViewHost.vue` 用 `KeepAlive` 保留工作台实例。旧深链（`agent-replay` / `agent-shots`）继续有效，只是变成能力入口。
 - `frontend/src/app/router.js` 是历史与深链 owner。页面组件通过注入的 `navigate` 改变 URL，不直接操作浏览器 history。
 
@@ -172,3 +172,15 @@ geometry and interaction checks establish layout/state invariants, not GPU/mater
 场景名册保留 `accountId` / `tankId`；选择动作仍以 3D `eid` 为键，详情按账号匹配 track。查询时间为 `store.time - clock.startRaw`，不能用 render-grid 的 `startTime` 代替 AI-derived origin；rich Details 不以 reload telemetry 是否存在为前提。
 
 共享 `VehicleDetailsPanel` / `V2VehicleInspector` 展示肖像、最后已知位置时间、血量与生命状态、已记录伤害 / 承伤 / 击杀、最近伤害日志、装备 / 物资 / 消耗品及状态。已记录伤害优先读取该车 `damageDealtSamples` 中当前时刻已出现的累计广播；当前仅录像者 Avatar prop10 有此证据，其 eid 与车辆 eid 不同，归属由录像者账号确定。旧数据或其他玩家仍累计可靠归属的掉血；累计广播不与掉血重复相加，也不回填结算总伤害。日志标注由两种 renderer 共用 `detailsDamageLogAtV2`，事件时刻未覆盖的攻击者保持来源未知；累计广播没有目标身份，不凭总量补造日志。缺少 canonical 数据、时钟起点或账号匹配时不造 0；仅保留场景已有的基础详情。场景加载代数与肖像 generation guard 防止迟到数据和肖像串场。
+
+## Shared batch selection / single-battle capabilities
+
+`data` 是 batch capability；`playback` / `3d` / `shots` / `ai` 是共享 batch selection 之上的 single-battle capabilities。
+
+Workspace 的唯一 `ensureTargetBattle()` 复用现有 batch analysis，从 finalized `ReplayResult.battles` 自动选择第一场有效 battle，再通过 session 的 `currentBattleId` / `currentTargetBattleId` / `currentTargetFile` 交给当前 pane。文件选择仍由现有上传条与手动解析动作负责；进入单场能力时可准备已有多文件 selection。单文件保留无需先 batch analysis 的快速路径。3D 的画质选择与 Start、AI 的明确 Analyze 动作保持不变，不因选场自动提交 AI 请求。
+
+`sourceId = r{original sourceIndex}`；`rN → files[N]`。Sparse source IDs 是有意设计：失败首文件后可以从 `r1` 开始，重复文件后可以出现 `r0,r2`。不得按成功场次数重新编号。BattlePicker 仅列 finalized battles，切场始终使用对应原始 File。
+
+待分析与解析中由现有上传条/ProcessingPanel 表达，零有效场次显示真实解析失败，不报“只支持单回放”。已有结果和选中场次在能力切换间复用，不重复 batch parse。selection replacement 由 revision/abort 作废旧 batch 和 target preparation；per-File playbackSession 缓存与 canonical generation 保持独立，迟到工作不能覆盖新场次。
+
+AI 仅为当前 File 构建一场的投影，切场撤销旧 review 并清空旧结果；投影与流的 generation 隔离迟到结果。本修复不增加 AI 缓存，也不合并多文件 AI 请求。Shots 使用同一个 target/picker，不持有另一份 batch selection。

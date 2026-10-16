@@ -59,8 +59,8 @@ const { availability, requireFeature } = useFeatureGate()
 const onlineFeatures = { '3d': Feature.PLAYBACK_3D, ai: Feature.AI_REVIEW }
 const threeAvailability = computed(() => availability(Feature.PLAYBACK_3D))
 const aiAvailability = computed(() => availability(Feature.AI_REVIEW))
-const threeBlocked = computed(() => !threeAvailability.value.available ? t(threeAvailability.value.messageKey) : blockedReason.value)
-const aiBlocked = computed(() => !aiAvailability.value.available ? t(aiAvailability.value.messageKey) : blockedReason.value)
+const threeBlocked = computed(() => !threeAvailability.value.available ? t(threeAvailability.value.messageKey) : '')
+const aiBlocked = computed(() => !aiAvailability.value.available ? t(aiAvailability.value.messageKey) : '')
 
 /**
  * Workspace 持有唯一一份 replay selection 与本地分析结果（服务器没有 parser：文件不出本机，
@@ -228,7 +228,7 @@ function onBattleSelect(sourceId) {
   workspace.selectBattle(sourceId)
 }
 
-/** 单场能力的目标文件：单文件直接用；多文件须先选场次（本机解析单场） */
+/** 单场能力的目标文件：单文件直接用；多文件先批次分析，再选有效场次对应的原始 File */
 const targetFile = computed(() => workspace.currentTargetFile.value)
 
 // Only presentation is collapsible; the uploader and selection keep their existing owner.
@@ -246,8 +246,6 @@ const showBattlePicker = computed(() => {
   return aiAvailability.value.available && !aiLoadError.value
 })
 const battlePickerTestId = computed(() => ({ playback: 'playback', '3d': 'replay3d', shots: 'shots', ai: 'ai' })[activeCapability.value] + '-battle-picker')
-const blockedReason = computed(() =>
-  files.value.length > 1 && !targetFile.value ? t('workspace.single_replay_required') : '')
 
 const VIEW_BY_CAPABILITY = Object.freeze({
   data: 'replay',
@@ -270,8 +268,27 @@ async function setCapability(key) {
 }
 
 async function onPreview() {
-  await analyze()
+  if (activeCapability.value === 'data' || files.value.length === 1) await analyze()
+  else await ensureTargetBattle()
 }
+
+/** Prepare a single-battle capability using finalized, original source identities. */
+async function ensureTargetBattle() {
+  if (!files.value.length || targetFile.value) return
+  const revision = selectionRevision.value
+  if (!resp.value) {
+    const result = await analyze()
+    if (!result?.completed) return
+  }
+  if (disposed || selectionRevision.value !== revision) return
+  const firstBattle = resp.value?.battles?.[0]
+  if (!targetFile.value && firstBattle) workspace.selectBattle(firstBattle.sourceId)
+}
+
+// FileDrop keeps manual preview; entering another capability reuses/prepares the selection.
+watch(activeCapability, (cap) => {
+  if (cap !== 'data') void ensureTargetBattle()
+}, { immediate: true })
 
 function onFileRemoveRequest(f) {
   workspace.replay.askRemoveFile(f)
@@ -417,7 +434,6 @@ watch(() => props.initialCapability, (val) => {
           :playback-session="workspace.playbackSession"
           :file="targetFile"
           :active="activeCapability === 'playback'"
-          :blocked-reason="blockedReason"
         />
       </div>
       <div v-show="activeCapability === '3d'" class="capability-pane" data-testid="ws-3d">
@@ -468,7 +484,6 @@ watch(() => props.initialCapability, (val) => {
           v-if="canUseDemoCapabilities && shotsMounted && !shotsLoadError"
           :file="targetFile"
           :active="activeCapability === 'shots'"
-          :blocked-reason="blockedReason"
           :navigate="navigate"
         />
       </div>
