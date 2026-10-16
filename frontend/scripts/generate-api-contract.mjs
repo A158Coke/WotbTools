@@ -63,6 +63,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentDefaultRules', 'TournamentRuleSource',
   'TournamentAudit', 'TournamentRecognitionPermit', 'TournamentRecognitionResult',
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
+  'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
   'CreatorCategory', 'CreatorLevel', 'CreatorCard', 'CreatorDetail', 'CreatorSaveRequest',
   'CreatorNameRequest', 'CreatorSettings', 'CreatorSettingsRequest', 'CreatorFavorites',

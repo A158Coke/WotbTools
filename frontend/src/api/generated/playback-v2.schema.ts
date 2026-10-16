@@ -2264,6 +2264,143 @@ export default {
         }
       }
     },
+    "TournamentCsvChanges": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "addedClans",
+        "changedClans",
+        "removedClans",
+        "addedScores",
+        "changedScores",
+        "removedScores",
+        "preservedClears"
+      ],
+      "properties": {
+        "addedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "addedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preservedClears": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Administrative clear overrides retained in the effective replacement."
+        }
+      }
+    },
+    "TournamentCsvImportPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standings",
+        "sourceName",
+        "sourceSha256",
+        "sourceRowCount",
+        "clanCount",
+        "missingCellCount",
+        "eventVersion",
+        "changes"
+      ],
+      "properties": {
+        "standings": {
+          "$ref": "#/$defs/TournamentStandings"
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceRowCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "clanCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "missingCellCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 150000
+        },
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "changes": {
+          "$ref": "#/$defs/TournamentCsvChanges"
+        }
+      }
+    },
+    "TournamentAttribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "TournamentDataSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "csvImported",
+        "attribution"
+      ],
+      "properties": {
+        "csvImported": {
+          "type": "boolean",
+          "description": "Remains true after the first successful CSV import for the lifetime of this event."
+        },
+        "attribution": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TournamentAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "TournamentRecognitionPermit": {
       "type": "object",
       "additionalProperties": false,
@@ -2354,6 +2491,7 @@ export default {
     },
     "TournamentAudit": {
       "type": "object",
+      "description": "Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -2402,10 +2540,12 @@ export default {
         },
         "before": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         },
         "after": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         }
       }
@@ -5391,6 +5531,8 @@ export default {
         "TOURNAMENT_EVIDENCE_INVALID",
         "TOURNAMENT_STORAGE_FULL",
         "TOURNAMENT_STORAGE_ERROR",
+        "TOURNAMENT_CSV_INVALID",
+        "TOURNAMENT_CSV_WORKSPACE_BUSY",
         "BROADCAST_VERSION_CONFLICT",
         "BROADCAST_NODE_CONFLICT",
         "BROADCAST_COVER_INVALID",
@@ -5410,6 +5552,7 @@ export default {
         "INVALID_ARGUMENT",
         "MISSING_PARAM",
         "INVALID_REQUEST",
+        "FILE_TOO_LARGE",
         "DATASET_REFERENCE_REQUIRED",
         "UNSUPPORTED_MEDIA_TYPE",
         "METHOD_NOT_ALLOWED",

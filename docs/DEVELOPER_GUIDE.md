@@ -180,7 +180,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
 - `creator`：bilibili UP 推荐目录、分类/实力等级、登录用户收藏与奖励；管理沿用 `tournament-admin`，数据不依附赛事。契约见 [UP recommendations](features/bilibili-creators.md)。
-- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
+- `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
   同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 

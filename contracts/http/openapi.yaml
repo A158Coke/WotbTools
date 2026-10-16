@@ -1015,6 +1015,12 @@ paths:
       responses:
         "200":
           description: Tournament result
+          headers:
+            X-Tournament-Csv-Import:
+              description: Version 1 supports recurring CSV imports and public data-source metadata.
+              schema:
+                type: string
+                enum: ["1"]
           content:
             application/json:
               schema:
@@ -1035,6 +1041,37 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/tournaments/{eventId}/data-source:
+    get:
+      operationId: getTournamentDataSource
+      summary: Get the persistent CSV data-source attribution for an event
+      description: Probe the existing public event-list route for X-Tournament-Csv-Import before calling this endpoint on a rolling deployment. Once a CSV import succeeds, attribution remains associated with the event.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Event data-source metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentDataSource"
+        "400":
+          description: Invalid event identifier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Event not found
           content:
             application/json:
               schema:
@@ -1079,7 +1116,7 @@ paths:
     head:
       operationId: getTournamentCapabilities
       summary: Check tournament capabilities without changing the existing event-list body
-      description: Requires the tournament-admin role. Older backends return 200 without the capability header; clients must probe this existing route before requesting default-rule endpoints.
+      description: Requires the tournament-admin role. Older backends return 200 without capability headers; clients must probe this existing route before requesting default-rule or CSV-import endpoints.
       security:
         - bearerAuth: []
       responses:
@@ -1088,6 +1125,11 @@ paths:
           headers:
             X-Tournament-Default-Rules:
               description: Version 1 supports global default rule operations, including direct configuration.
+              schema:
+                type: string
+                enum: ["1"]
+            X-Tournament-Csv-Import:
+              description: Version 1 supports recurring CSV imports and public data-source metadata.
               schema:
                 type: string
                 enum: ["1"]
@@ -1104,6 +1146,11 @@ paths:
           headers:
             X-Tournament-Default-Rules:
               description: Version 1 supports global default rule operations, including direct configuration.
+              schema:
+                type: string
+                enum: ["1"]
+            X-Tournament-Csv-Import:
+              description: Version 1 supports recurring CSV imports and public data-source metadata.
               schema:
                 type: string
                 enum: ["1"]
@@ -2234,6 +2281,163 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/TournamentClearRequest"
+  /api/admin/tournaments/{eventId}/csv-import/preview:
+    post:
+      operationId: previewTournamentCsvImport
+      summary: Preview a complete cumulative CSV standings replacement
+      description: Requires tournament-admin. Parses the CSV on the server without changing data. Scores are direct values, blank cells mean no participation, and existing administrative clear overrides remain effective. Existing drafts or correction workspaces reject the import with TOURNAMENT_CSV_WORKSPACE_BUSY.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, expectedEventVersion]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: UTF-8 CSV, with or without BOM, containing the complete cumulative event standings.
+                expectedEventVersion:
+                  type: integer
+                  format: int64
+                  minimum: 0
+      responses:
+        "200":
+          description: Validated standings, source identity and replacement changes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentCsvImportPreview"
+        "400":
+          description: Invalid multipart request or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details; rowNumber counts CSV records including the header.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: TOURNAMENT_VERSION_CONFLICT, TOURNAMENT_CSV_WORKSPACE_BUSY, or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournaments/{eventId}/csv-import:
+    post:
+      operationId: importTournamentCsv
+      summary: Atomically replace standings with a previewed cumulative CSV snapshot
+      description: Requires tournament-admin and explicit confirmation. Re-parses the original file and verifies the preview hash and event version. Repeated requests with the same idempotency key and payload do not add scores twice. Prior audit evidence and administrative clear overrides are retained, and successful imports permanently mark this event as using the credited CSV source.
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file, expectedEventVersion, sourceSha256, confirm, idempotencyKey]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                expectedEventVersion:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                sourceSha256:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+                confirm:
+                  type: boolean
+                  description: Must be true to replace standings.
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+      responses:
+        "200":
+          description: Committed standings and replacement changes, or the original idempotent result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TournamentCsvImportPreview"
+        "400":
+          description: Invalid multipart request, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Tournament administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Event not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key; TOURNAMENT_CSV_WORKSPACE_BUSY; or TOURNAMENT_GROUP_CONFLICT when duplicate clan rows contain non-null scores for the same day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: FILE_TOO_LARGE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /api/admin/tournaments/{eventId}/historical-import/preview:
     post:
       operationId: previewTournamentHistoricalImport
@@ -5341,6 +5545,88 @@ components:
           type: integer
           format: int64
           minimum: 0
+    TournamentCsvChanges:
+      type: object
+      additionalProperties: false
+      required: [addedClans, changedClans, removedClans, addedScores, changedScores, removedScores, preservedClears]
+      properties:
+        addedClans:
+          type: integer
+          minimum: 0
+        changedClans:
+          type: integer
+          minimum: 0
+        removedClans:
+          type: integer
+          minimum: 0
+        addedScores:
+          type: integer
+          minimum: 0
+        changedScores:
+          type: integer
+          minimum: 0
+        removedScores:
+          type: integer
+          minimum: 0
+        preservedClears:
+          type: integer
+          minimum: 0
+          description: Administrative clear overrides retained in the effective replacement.
+    TournamentCsvImportPreview:
+      type: object
+      additionalProperties: false
+      required: [standings, sourceName, sourceSha256, sourceRowCount, clanCount, missingCellCount, eventVersion, changes]
+      properties:
+        standings:
+          $ref: "#/components/schemas/TournamentStandings"
+        sourceName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sourceSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        sourceRowCount:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        clanCount:
+          type: integer
+          minimum: 1
+          maximum: 10000
+        missingCellCount:
+          type: integer
+          minimum: 0
+          maximum: 150000
+        eventVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        changes:
+          $ref: "#/components/schemas/TournamentCsvChanges"
+    TournamentAttribution:
+      type: object
+      additionalProperties: false
+      required: [name, url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        url:
+          type: string
+          format: uri
+    TournamentDataSource:
+      type: object
+      additionalProperties: false
+      required: [csvImported, attribution]
+      properties:
+        csvImported:
+          type: boolean
+          description: Remains true after the first successful CSV import for the lifetime of this event.
+        attribution:
+          oneOf:
+            - $ref: "#/components/schemas/TournamentAttribution"
+            - type: "null"
     TournamentRecognitionPermit:
       type: object
       additionalProperties: false
@@ -5406,6 +5692,7 @@ components:
           pattern: ^[a-f0-9]{64}$
     TournamentAudit:
       type: object
+      description: Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.
       additionalProperties: false
       required:
         - id
@@ -5443,9 +5730,11 @@ components:
           format: date-time
         before:
           type: object
+          description: Empty in audit-list responses; the full snapshot is retained internally.
           additionalProperties: true
         after:
           type: object
+          description: Empty in audit-list responses; the full snapshot is retained internally.
           additionalProperties: true
     HundredCreateResult:
       type: object
@@ -6365,6 +6654,8 @@ components:
         - TOURNAMENT_EVIDENCE_INVALID
         - TOURNAMENT_STORAGE_FULL
         - TOURNAMENT_STORAGE_ERROR
+        - TOURNAMENT_CSV_INVALID
+        - TOURNAMENT_CSV_WORKSPACE_BUSY
         - BROADCAST_VERSION_CONFLICT
         - BROADCAST_NODE_CONFLICT
         - BROADCAST_COVER_INVALID
@@ -6384,6 +6675,7 @@ components:
         - INVALID_ARGUMENT
         - MISSING_PARAM
         - INVALID_REQUEST
+        - FILE_TOO_LARGE
         - DATASET_REFERENCE_REQUIRED
         - UNSUPPORTED_MEDIA_TYPE
         - METHOD_NOT_ALLOWED
