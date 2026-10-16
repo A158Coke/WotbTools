@@ -442,6 +442,47 @@ describe('独立炮塔实体（PlaybackData additive，原始轨迹边界）', (
   })
 })
 
+describe('复活生命轨道（PlaybackData additive，上游 v0.4.8）', () => {
+  const lifePlayback = (vehicle: Record<string, unknown>) =>
+    ({ ...minimalPlayback(), vehicles: [{ eid: 7, death_t: 10, ...vehicle }] })
+  const vehicleOf = (pb: unknown) =>
+    (validateAgentPlayback(pb).vehicles[0] as unknown as Record<string, unknown>)
+
+  it('缺省与空数组兼容：缺字段 = 死亡终态，不提升原有车辆字段校验', () => {
+    const legacy = { ...minimalPlayback(), vehicles: [{ eid: 7 }] }
+    expect(vehicleOf(legacy).death_times).toBeUndefined()
+    expect(vehicleOf(legacy).resurrection_times).toBeUndefined()
+    expect(vehicleOf(lifePlayback({ death_times: [], resurrection_times: [] })).death_times)
+      .toEqual([])
+  })
+
+  it('合法多死多复活原样透传（对象通道与 JSON 通道同规则）', () => {
+    const pb = lifePlayback({ death_times: [10, 20], resurrection_times: [15] })
+    expect(vehicleOf(pb).death_times).toEqual([10, 20])
+    expect(vehicleOf(pb).resurrection_times).toEqual([15])
+    expect(vehicleOf(parseAgentPlaybackFromJson(JSON.stringify(pb))).death_times).toEqual([10, 20])
+  })
+
+  it('非数组漂移 fail closed（不静默降级为缺省）', () => {
+    for (const value of [10, '10', { t: 10 }]) {
+      expect(() => validateAgentPlayback(lifePlayback({ death_times: value })))
+        .toThrow(/vehicles\[0\]\.death_times 必须是数组/)
+      expect(() => validateAgentPlayback(lifePlayback({ resurrection_times: value })))
+        .toThrow(/vehicles\[0\]\.resurrection_times 必须是数组/)
+    }
+  })
+
+  it('元素必须是有限、非负、非降序时刻', () => {
+    const bad = [[Number.NaN], [Number.POSITIVE_INFINITY], [-1], [10, 5], [0, Number.NaN]]
+    for (const times of bad) {
+      expect(() => validateAgentPlayback(lifePlayback({ death_times: times })))
+        .toThrow(/vehicles\[0\]\.death_times/)
+    }
+    // 同刻允许（非降序）：边界只拦下不可能的生命史，不为上游排序保证代替 fail
+    expect(() => validateAgentPlayback(lifePlayback({ death_times: [10, 10] }))).not.toThrow()
+  })
+})
+
 describe('normalizeAgentShotIndices（/api/replay/shots 同规则全局重编号）', () => {
   it('time_s 排序 + index 从 1 起连续重编（作者/他人两路局部 index 收敛）', () => {
     const shots = [
