@@ -487,6 +487,59 @@ async function probeDamageOverlay() {
   require(removedAt - bornBefore < 4400, 'H must not restart removal timer')
   metrics.hiddenRecovery = { effectiveTime, ageMin, ageMax, removedAfterMs: removedAt - bornBefore }
 
+  // 出屏再进屏也会重启 CSS timeline，必须恢复原始 wall-clock phase。
+  const offscreenBornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const offscreenBornAfter = performance.now()
+  await api.setAnchor(7, anchorAt(300, 260))
+  await waitUntil(() => dmgTextEl().getAnimations()[0]?.currentTime >= 500)
+  const beforeOffscreen = dmgTextEl().getAnimations()[0].currentTime
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  require(dmgEl().hidden, 'off-screen damage must be hidden')
+  await waitUntil(() => performance.now() - offscreenBornAfter >= 1100)
+  await api.setAnchor(7, anchorAt(300, 260))
+  require(!dmgEl().hidden, 'returning damage must be visible')
+  const resumedAnimation = dmgTextEl().getAnimations()[0]
+  const resumedTiming = resumedAnimation.effect.getComputedTiming()
+  const resumedTime = resumedAnimation.currentTime - resumedTiming.delay
+  const resumedAgeMin = performance.now() - offscreenBornAfter
+  const resumedAgeMax = performance.now() - offscreenBornBefore
+  require(resumedTime >= resumedAgeMin - 100 && resumedTime <= resumedAgeMax + 100,
+    `off-screen return phase must match age (${resumedTime} vs ${resumedAgeMin}..${resumedAgeMax})`)
+  require(resumedTime > beforeOffscreen + 300, 'return phase must advance past the pre-hide phase')
+  const resumedDelay = dmgTextEl().style.animationDelay
+  await api.setAnchor(7, anchorAt(320, 260))
+  require(dmgTextEl().style.animationDelay === resumedDelay, 'ordinary anchor updates must preserve return phase')
+  await waitUntil(() => performance.now() - offscreenBornAfter >= 3500)
+  require(!!dmgEl(), 'returning damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const offscreenRemovedAfterMs = performance.now() - offscreenBornBefore
+  require(offscreenRemovedAfterMs < 4400, 'off-screen return must not extend removal deadline')
+  metrics.offscreenRecovery = { beforeOffscreen, resumedTime, resumedAgeMin, resumedAgeMax, offscreenRemovedAfterMs }
+
+  // showStatus=false 时出生：延迟首次挂载仍消费原始 wall-clock age。
+  await api.prefs({ markerPrefs: { showStatus: false } })
+  const delayedBorn = performance.now()
+  await api.spawn(7, 342, 4000)
+  await waitUntil(() => performance.now() - delayedBorn >= 700)
+  await api.prefs({ markerPrefs: { showStatus: true } })
+  await api.setAnchor(7, anchorAt(300, 260))
+  const delayedAnimation = dmgTextEl().getAnimations()[0]
+  const delayedTiming = delayedAnimation.effect.getComputedTiming()
+  require(delayedAnimation.currentTime - delayedTiming.delay >= 650,
+    'delayed first mount must compensate elapsed time')
+  api.clearDamages()
+
+  // 第一槽到期后再出生：三个仍存活的数字必须占三个不同位置。
+  await api.spawn(7, 100, 500)
+  await api.spawn(7, 200, 4000)
+  await api.spawn(7, 300, 4000)
+  await waitUntil(() => document.querySelectorAll('[data-test="pb-damage"]').length === 2)
+  await api.spawn(7, 400, 4000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  const slotPositions = [...document.querySelectorAll('[data-test="pb-damage"]')].map(el => el.style.transform)
+  require(new Set(slotPositions).size === 3, 'expire-then-spawn must reuse the free stacking slot')
+
   // 6) HP 关掉 → 退回名牌块右侧，仍然可见
   await api.clearDamages()
   await api.prefs({ hpPrefs: { showHp: false } })
