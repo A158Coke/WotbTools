@@ -1,0 +1,455 @@
+{
+  "uid": "wotbtools-backend-error-logs",
+  "title": "Backend error logs",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "timezone": "Asia/Shanghai",
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m"
+    ],
+    "time_options": [
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d"
+    ]
+  },
+  "tags": [
+    "wotbtools",
+    "operations"
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Active users",
+      "type": "link",
+      "url": "/d/wotbtools-active-users",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Feature usage",
+      "type": "link",
+      "url": "/d/wotbtools-feature-usage",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Android downloads",
+      "type": "link",
+      "url": "/d/wotbtools-android-downloads",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "AI token usage",
+      "type": "link",
+      "url": "/d/wotbtools-ai-token-usage",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Backend error logs",
+      "type": "link",
+      "url": "/d/wotbtools-backend-error-logs",
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "来源服务",
+        "type": "custom",
+        "query": "All : .+,wotb-backend,ai-service,keycloak,caddy",
+        "current": {
+          "text": "All",
+          "value": ".+"
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "keyword",
+        "label": "关键词（原样文本）",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "errorId",
+        "label": "Error ID（原样文本）",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "使用方式",
+      "options": {
+        "mode": "markdown",
+        "content": "按时间、来源服务、关键词、Error ID 筛选。关键词和 ID 为原样子串。各分区可重叠；原始日志中保留来源容器和详细字段。客户端解析错误为 client-reported。最多查询最近 7 天。"
+      },
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      }
+    },
+    {
+      "type": "row",
+      "title": "账号与登录",
+      "collapsed": false,
+      "panels": [],
+      "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "账号与登录 · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} |~ \"(?i)(keycloak|LOGIN_ERROR|IDENTITY_PROVIDER|/api/(admin/)?(auth|user|profile)|/realms/|AUTH_|TOKEN_|UNAUTHORIZED|FORBIDDEN)\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "名人堂",
+      "collapsed": false,
+      "panels": [],
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "名人堂 · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} |~ \"(?i)(/api/(admin/)?(hof|users/(hundred|mark3)|hundred|mark3)|hall.of.fame|hof_|hundred_|mark3_)\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "赛事积分",
+      "collapsed": false,
+      "panels": [],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "赛事积分 · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} |~ \"(?i)(/api/(admin/)?tournament|tournament_)\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "AI 复盘",
+      "collapsed": false,
+      "panels": [],
+      "id": 8,
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "AI 复盘 · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} |~ \"(?i)(ai_review|ai_upstream|team_review|/api/ai/)\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 9,
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "回放解析错误（客户端上报）",
+      "collapsed": false,
+      "panels": [],
+      "id": 10,
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "回放解析错误（客户端上报） · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} |~ \"telemetry_event=replay_parse\" |~ \"outcome=failure\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "其他后端错误",
+      "collapsed": false,
+      "panels": [],
+      "id": 12,
+      "gridPos": {
+        "x": 0,
+        "y": 60,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "title": "其他后端错误 · 日志",
+      "type": "logs",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "",
+      "targets": [
+        {
+          "expr": "{container_name=~\"${service:raw}\"} |~ `(?i)(\"level\"[[:space:]]*:[[:space:]]*\"(error|warn)\"|[[:space:]](ERROR|WARN)[[:space:]]|api_request_failed|api_request_rejected|event=(ai_review_error|ai_upstream_call_failed|ai_review_contract_failed|ai_review_recovery_failed)|LOGIN_ERROR|IDENTITY_PROVIDER_LOGIN_ERROR|outcome=failure)` |= ${keyword:doublequote} |= ${errorId:doublequote} !~ \"(?i)(keycloak|LOGIN_ERROR|IDENTITY_PROVIDER|/api/(admin/)?(auth|user|profile|hof|hundred|mark3|tournament|ai)|/realms/|AUTH_|TOKEN_|UNAUTHORIZED|FORBIDDEN|hall.of.fame|hof_|hundred_|mark3_|tournament_|ai_review|ai_upstream|team_review|telemetry_event=replay_parse)\"",
+          "refId": "A",
+          "queryType": "range",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      },
+      "id": 13,
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 24,
+        "h": 10
+      }
+    }
+  ],
+  "description": "Last seven days only. No data means no matching received events, not verified zero usage."
+}

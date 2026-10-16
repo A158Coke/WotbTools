@@ -39,7 +39,13 @@ command -v sha256sum >/dev/null || { echo 'sha256sum is required.' >&2; exit 2; 
 
 backup_root="$host_root/backups/opentofu-state"
 install -d -m 700 "$backup_root"
-exec 9>"$host_root/.deploy.lock"
+if [[ -n "${WOTB_DEPLOY_LOCK_FD:-}" ]]; then
+  [[ "$WOTB_DEPLOY_LOCK_FD" == 9 && "$(readlink /proc/self/fd/9)" == "$host_root/.deploy.lock" ]] || {
+    echo 'Inherited deployment lock belongs to a different owner or is unavailable.' >&2; exit 1;
+  }
+else
+  exec 9>"$host_root/.deploy.lock"
+fi
 flock -n 9 || { echo 'Another owner-host production mutation is running.' >&2; exit 1; }
 exec 8>"$backup_root/.backup.lock"
 flock -n 8 || { echo 'Another OpenTofu state backup is running.' >&2; exit 1; }

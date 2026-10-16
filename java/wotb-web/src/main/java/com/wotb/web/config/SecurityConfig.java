@@ -71,6 +71,7 @@ public class SecurityConfig {
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HEALTH).permitAll()
+                .requestMatchers(HttpMethod.POST, ApiPaths.OBSERVABILITY_EVENTS).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS).permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()

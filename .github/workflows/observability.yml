@@ -9,6 +9,7 @@ on:
       - deploy/docker-compose.prod.yml
       - deploy/grafana-api-request.sh
       - deploy/validate-alloy-config.sh
+      - deploy/tofu-local-state-backup.sh
       - deploy/verify-observability.sh
       - deploy/observability/**
       - infra/tofu/grafana/**
@@ -42,6 +43,7 @@ env:
     deploy/docker-compose.prod.yml
     deploy/grafana-api-request.sh
     deploy/validate-alloy-config.sh
+    deploy/tofu-local-state-backup.sh
     deploy/verify-observability.sh
     deploy/observability/**
     infra/tofu/grafana/**
@@ -175,7 +177,7 @@ jobs:
             stage="/opt/wotb/observability.incoming/$SOURCE_SHA"
             root="$stage/infra/tofu/grafana"
             test -d "$root"
-            test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-production-overview.json"
+            test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-active-users.json"
             test -f /opt/wotb/deploy.incoming/deploy/deploy.sh
             state_dir=/opt/wotb/grafana-tofu-state
             state_file="$state_dir/terraform.tfstate"
@@ -195,6 +197,13 @@ jobs:
             exec 9>/opt/wotb/.deploy.lock
             flock -n 9 || { echo 'Another Yecao production mutation is running.' >&2; exit 1; }
             export WOTB_DEPLOY_LOCK_FD=9
+
+            # Shared SCP staging is overlaid across releases. Replace its dashboard
+            # directory from the exact-SHA bundle so removed JSON cannot survive.
+            incoming_dashboards=/opt/wotb/deploy.incoming/deploy/observability/grafana/dashboards
+            rm -rf -- "$incoming_dashboards"
+            mkdir -p "$incoming_dashboards"
+            cp -a "$stage/deploy/observability/grafana/dashboards/." "$incoming_dashboards/"
 
             selected_services=()
             if [[ -n "$RUNTIME_SERVICES" ]]; then
@@ -237,7 +246,14 @@ jobs:
             tofu validate
             tofu plan -input=false -no-color -out=plan.tfplan
             bash ./validate-plan.sh plan.tfplan
+            bash /opt/wotb/deploy.incoming/deploy/tofu-local-state-backup.sh yecao
             tofu apply -input=false -auto-approve plan.tfplan
+            # Keep the mounted home JSON current even for dashboard-only releases.
+            # Update contents in place; do not replace the bind-mounted directory.
+            live_dashboards=/opt/wotb/deploy/observability/grafana/dashboards
+            mkdir -p "$live_dashboards"
+            find "$live_dashboards" -maxdepth 1 -type f -name '*.json' -delete
+            cp -a "$stage/deploy/observability/grafana/dashboards/." "$live_dashboards/"
             tofu plan -input=false -no-color -out=second-plan.tfplan
             second_json="$(tofu show -json second-plan.tfplan)"
             if ! jq -e 'type == "object" and (.resource_changes | type == "array") and all(.resource_changes[]; ((.change.actions // []) == ["no-op"]))' <<< "$second_json" >/dev/null; then
@@ -254,12 +270,18 @@ jobs:
             grafana_url="${GRAFANA_ROOT_URL%/}"
             curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
               "$grafana_url/api/health" | jq -e '.database == "ok"' >/dev/null
-            for uid in wotbtools-production-overview wotbtools-backend-overview \
-              wotbtools-error-explorer wotbtools-ai-review wotbtools-usage wotbtools-keycloak; do
+            for uid in wotbtools-active-users wotbtools-feature-usage \
+              wotbtools-android-downloads wotbtools-ai-token-usage wotbtools-backend-error-logs; do
               curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
                 -H "Authorization: Bearer ${GRAFANA_PAT}" \
                 "$grafana_url/api/dashboards/uid/$uid" \
                 | jq -e --arg uid "$uid" '.dashboard.uid == $uid' >/dev/null
+            done
+            for uid in wotbtools-production-overview wotbtools-backend-overview \
+              wotbtools-error-explorer wotbtools-ai-review wotbtools-usage wotbtools-keycloak; do
+              status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer ${GRAFANA_PAT}" "$grafana_url/api/dashboards/uid/$uid")"
+              [[ "$status" == 404 ]] || { echo "Retired dashboard still exists: $uid ($status)" >&2; exit 1; }
             done
             echo 'Grafana health and managed dashboard API checks: PASS'
         env:
