@@ -14,7 +14,7 @@ Only administrators see card edit/remove actions. Editing uses a dialog and take
 
 The management view has a creator form beside catalog settings on desktop/tablet and above them on mobile. Settings contain categories, assessment levels, and the global favorite threshold. New creators default to three base stars; all administrator-entered fields can be edited without rebuilding the record or resetting its creation time, favorites, progress, or rewards.
 
-The initial categories are 单车高伤回放类, 单车实况类, 直播类, 联赛类, 高手/大神类, 娱乐类. Initial assessment levels are 普通, 高手, 职业级, 殿堂级. Flyway inserts them once. They remain editable data, with no startup reseeding or hard-coded frontend enum.
+The initial categories are 单车高伤回放类, 单车实况类, 直播类, 联赛类, 高手/大神类, 娱乐类. Initial assessment levels are 普通, 高手, 职业级, 殿堂级. Flyway inserts them once. Administrators can add and remove dictionary entries under the reference rules below; initialization does not reseed deleted entries or define a hard-coded frontend enum.
 
 ## Favorite and score semantics
 
@@ -44,7 +44,7 @@ Favorite relationship changes, counts, progress and rewards commit in one Postgr
 
 Low-frequency management mutations lock settings exclusively before any creator row. Category deletion uses an indexed existence query to reject deletion if any linked creator has no other category; the check and deletion are one transaction. Level deletion similarly rejects a level still referenced by any creator. Disabling assessment removes that creator's level reference. No partial dictionary deletion or automatic reassessment is allowed.
 
-Canceled favorites retain history until their creator is removed, preventing repeat rewards. Any account-deletion integration must update active counts through the creator domain rather than cascade through a local-profile foreign key or reset reward history.
+Canceled favorites retain history while the account exists, preventing repeat rewards. The established administrator account-deletion flow calls the creator domain inside the same local transaction: active favorites decrement their creators' current counts, then all favorite history for that subject is removed, including canceled favorites and accounts without a local profile. Creator records, other users' favorites, settled rewards and unsettled progress remain unchanged. A local or Keycloak deletion failure rolls this cleanup back with the local deletion. No local-profile foreign key performs this cleanup implicitly.
 
 ## HTTP and storage boundaries
 

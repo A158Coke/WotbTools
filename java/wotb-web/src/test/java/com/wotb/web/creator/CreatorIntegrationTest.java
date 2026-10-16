@@ -1,5 +1,7 @@
 package com.wotb.web.creator;
 
+import com.wotb.web.admin.service.AdminUserService;
+import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.repository.CreatorSettingsRepository;
@@ -13,8 +15,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -25,10 +29,13 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 
 /** PostgreSQL proves lock ordering, relation uniqueness, FK/CHECK behavior and atomic rewards. */
 @Testcontainers(disabledWithoutDocker = true)
@@ -56,6 +63,8 @@ class CreatorIntegrationTest {
     @Autowired CreatorSettingsRepository settings;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactions;
+    @Autowired AdminUserService adminUsers;
+    @MockitoBean KeycloakAdminUserService keycloakUsers;
     @BeforeAll
     static void migrationSeedsOnlyOnce(@Autowired final JdbcTemplate jdbc) {
         assertEquals(List.of("单车高伤回放类", "单车实况类", "直播类", "联赛类", "高手/大神类", "娱乐类"),
@@ -69,6 +78,7 @@ class CreatorIntegrationTest {
     @BeforeEach
     void reset() {
         jdbc.execute("truncate creator, creator_category, creator_level, creator_category_link, creator_favorite restart identity cascade");
+        jdbc.execute("truncate user_profile, admin_user_log restart identity cascade");
         jdbc.update("update creator_settings set favorite_threshold=null where id=1");
         jdbc.update("insert into creator_category(name) values ('A'),('B'),('C')");
         jdbc.update("insert into creator_level(name) values ('Basic'),('Expert')");
@@ -277,6 +287,117 @@ class CreatorIntegrationTest {
             } finally { release.countDown(); }
             lock.get(10, TimeUnit.SECONDS);
         }
+    }
+    @Test void accountCleanupRemovesActiveAndInactiveHistoryWithoutReversingRewardsOrOtherUsers() {
+        service.configure(new CreatorDtos.SettingsRequest(2));
+        final long first = create(3, List.of(1L), 1L).id();
+        final long second = create(3, List.of(1L), 1L).id();
+        final long third = create(3, List.of(1L), null).id();
+        service.favorite("deleted", first, true);
+        service.favorite("other", first, true);
+        service.favorite("deleted", second, true);
+        service.favorite("deleted", second, false);
+        service.favorite("other", second, true);
+        service.favorite("deleted", third, true);
+
+        service.removeFavoritesForAccountDeletion("deleted");
+        service.removeFavoritesForAccountDeletion("deleted");
+
+        assertEquals(0, jdbc.queryForObject("select count(*) from creator_favorite where keycloak_subject='deleted'", Integer.class));
+        assertEquals(List.of(first, second), service.favorites("other").creatorIds());
+        assertEquals(1, card(first).favoriteCount());
+        assertEquals(1, card(second).favoriteCount());
+        assertEquals(0, card(third).favoriteCount());
+        assertEquals(1, counter(first, "reward_points"));
+        assertEquals(1, counter(second, "reward_points"));
+        assertEquals(1, counter(third, "cycle_count"));
+        assertEquals(3, service.list(null).size());
+        assertEquals(3, service.categories().size());
+        assertEquals(2, service.levels().size());
+    }
+    @Test void accountCleanupWaitsForInFlightFirstFavoriteBeforeScanningHistory() throws Exception {
+        final long id = create(3, List.of(1L), null).id();
+        final CountDownLatch favoriteHeld = new CountDownLatch(1);
+        final CountDownLatch releaseFavorite = new CountDownLatch(1);
+        final CountDownLatch cleanupStarted = new CountDownLatch(1);
+        try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var favorite = executor.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                settings.findShared();
+                favoriteHeld.countDown();
+                try { assertTrue(releaseFavorite.await(10, TimeUnit.SECONDS)); }
+                catch (final InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException(e); }
+                service.favorite("deleted", id, true);
+            }));
+            assertTrue(favoriteHeld.await(10, TimeUnit.SECONDS));
+            final var cleanup = executor.submit(() -> {
+                cleanupStarted.countDown();
+                service.removeFavoritesForAccountDeletion("deleted");
+            });
+            assertTrue(cleanupStarted.await(10, TimeUnit.SECONDS));
+            try {
+                assertThrows(TimeoutException.class, () -> cleanup.get(300, TimeUnit.MILLISECONDS));
+            } finally { releaseFavorite.countDown(); }
+            favorite.get(10, TimeUnit.SECONDS);
+            cleanup.get(10, TimeUnit.SECONDS);
+        }
+        assertEquals(0, card(id).favoriteCount());
+        assertEquals(1, counter(id, "cycle_count"));
+        assertEquals(0, jdbc.queryForObject("select count(*) from creator_favorite where keycloak_subject='deleted'", Integer.class));
+    }
+    @Test void adminDeletionCleansFavoritesForAccountsWithAndWithoutLocalProfile() {
+        final long id = create(3, List.of(1L), null).id();
+        jdbc.update("insert into user_profile(keycloak_user_id, created_at, updated_at) values ('with-profile', now(), now())");
+        service.favorite("with-profile", id, true);
+        service.favorite("jwt-only", id, true);
+        service.favorite("other", id, true);
+
+        final var result = adminUsers.deleteUsers(List.of("with-profile", "jwt-only"), true, adminJwt());
+
+        assertEquals(2, result.deleted());
+        assertEquals(0, result.failed());
+        assertEquals(0, jdbc.queryForObject("select count(*) from user_profile", Integer.class));
+        assertEquals(List.of("other"), jdbc.queryForList("select keycloak_subject from creator_favorite", String.class));
+        assertEquals(1, card(id).favoriteCount());
+        assertEquals(3, counter(id, "cycle_count"));
+        assertEquals(2, jdbc.queryForObject("select count(*) from admin_user_log where status='SUCCESS'", Integer.class));
+        verify(keycloakUsers).deleteUser("with-profile");
+        verify(keycloakUsers).deleteUser("jwt-only");
+    }
+    @Test void keycloakFailureRollsBackFavoriteCleanupAndProfileDeletionButKeepsAudit() {
+        final long id = create(3, List.of(1L), null).id();
+        jdbc.update("insert into user_profile(keycloak_user_id, created_at, updated_at) values ('failed', now(), now())");
+        service.favorite("failed", id, true);
+        doThrow(new IllegalStateException("keycloak unavailable")).when(keycloakUsers).deleteUser("failed");
+
+        final var result = adminUsers.deleteUsers(List.of("failed"), true, adminJwt());
+
+        assertEquals("FAILED_KEYCLOAK_DELETE", result.results().getFirst().errorCode());
+        assertEquals(1, jdbc.queryForObject("select count(*) from user_profile where keycloak_user_id='failed'", Integer.class));
+        assertEquals(List.of(id), service.favorites("failed").creatorIds());
+        assertEquals(1, card(id).favoriteCount());
+        assertEquals(1, counter(id, "cycle_count"));
+        assertEquals("FAILED_KEYCLOAK_DELETE", jdbc.queryForObject("select status from admin_user_log", String.class));
+    }
+    @Test void localProfileFailureRollsBackFavoriteCleanupBeforeCallingKeycloak() {
+        final long id = create(3, List.of(1L), null).id();
+        jdbc.update("insert into user_profile(keycloak_user_id, created_at, updated_at) values ('dependent', now(), now())");
+        jdbc.execute("create table account_cleanup_test_dependency(profile_id bigint references user_profile(id))");
+        try {
+            jdbc.update("insert into account_cleanup_test_dependency select id from user_profile where keycloak_user_id='dependent'");
+            service.favorite("dependent", id, true);
+
+            final var result = adminUsers.deleteUsers(List.of("dependent"), true, adminJwt());
+
+            assertEquals("USER_HAS_DEPENDENCIES", result.results().getFirst().errorCode());
+            assertEquals(List.of(id), service.favorites("dependent").creatorIds());
+            assertEquals(1, card(id).favoriteCount());
+            assertEquals(1, counter(id, "cycle_count"));
+            org.mockito.Mockito.verifyNoInteractions(keycloakUsers);
+            assertEquals("FAILED_LOCAL_DELETE", jdbc.queryForObject("select status from admin_user_log", String.class));
+        } finally { jdbc.execute("drop table account_cleanup_test_dependency"); }
+    }
+    private static Jwt adminJwt() {
+        return Jwt.withTokenValue("token").header("alg", "none").subject("admin").claim("preferred_username", "admin").build();
     }
     private CreatorDtos.Detail create(final int stars, final List<Long> ids, final Long levelId) {
         return service.create(save(stars, ids, levelId));

@@ -173,6 +173,20 @@ public class CreatorService {
         return new CreatorDtos.FavoriteResult(mapper.card(creator, categoryMap(), levelMap()), desired);
     }
 
+    /** Remove a deleted account's identity while preserving earned creator rewards. */
+    public void removeFavoritesForAccountDeletion(final String subject) {
+        validateSubject(subject);
+        // Block first favorites too: locking existing history alone cannot protect absent rows.
+        settings.findExclusive();
+        final List<CreatorFavorite> history = favorites.findAllBySubjectOrderByCreatorIdAsc(subject);
+        for (final CreatorFavorite favorite : history) {
+            final Creator creator = locked(favorite.creatorId);
+            if (favorite.active) { creator.favoriteCount--; }
+        }
+        favorites.deleteAll(history);
+        favorites.flush();
+    }
+
     private void assign(final Creator creator, final CreatorDtos.SaveRequest request) {
         if (request == null || request.baseStars() < 1 || request.baseStars() > 5
                 || request.categoryIds() == null || request.categoryIds().isEmpty()
