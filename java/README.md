@@ -183,6 +183,8 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 
 **删除用户 ≠ 删除 HoF 记录**：HoF 数据属于 WotB 游戏账号，仓库中没有任何 FK 指向 `user_profile`（业务证据表的内部外键不会将游戏账号成绩归属绑定到登录用户资料），因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 
+推荐域写入取得 settings 锁后，会检查既有用户删除审计，拒绝已删除或 `KEYCLOAK_DELETE_PENDING` 账号的旧 JWT／排队请求。Keycloak 调用前独立持久化 pending；异常后只有确认账号仍在，才能转为已知失败并恢复写入。响应丢失、查询失败或最终成功审计写入失败时保留屏障，按既有管理员删除 API 重试收敛；普通收藏／上传只做本地索引查询。审计 entity/repository/persister 由 `user` 域持有，表结构与管理 API 不变。
+
 ## 测试
 
 ```bash

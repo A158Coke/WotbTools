@@ -1,10 +1,11 @@
 package com.wotb.web.admin.service;
 
 import com.wotb.web.admin.dto.DeleteUsersResponse;
-import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.creator.service.CreatorService;
+import com.wotb.web.user.entity.AdminUserLog;
 import com.wotb.web.user.entity.UserProfile;
+import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;

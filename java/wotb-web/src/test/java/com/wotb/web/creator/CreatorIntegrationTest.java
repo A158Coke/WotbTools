@@ -368,6 +368,7 @@ class CreatorIntegrationTest {
         jdbc.update("insert into user_profile(keycloak_user_id, created_at, updated_at) values ('failed', now(), now())");
         service.favorite("failed", id, true);
         doThrow(new IllegalStateException("keycloak unavailable")).when(keycloakUsers).deleteUser("failed");
+        org.mockito.Mockito.when(keycloakUsers.getUser("failed")).thenReturn(new org.keycloak.representations.idm.UserRepresentation());
 
         final var result = adminUsers.deleteUsers(List.of("failed"), true, adminJwt());
 
@@ -377,6 +378,7 @@ class CreatorIntegrationTest {
         assertEquals(1, card(id).favoriteCount());
         assertEquals(1, counter(id, "cycle_count"));
         assertEquals("FAILED_KEYCLOAK_DELETE", jdbc.queryForObject("select status from admin_user_log", String.class));
+        assertEquals(0, service.favorite("failed", id, false).creator().favoriteCount());
     }
     @Test void localProfileFailureRollsBackFavoriteCleanupBeforeCallingKeycloak() {
         final long id = create(3, List.of(1L), null).id();
@@ -394,6 +396,7 @@ class CreatorIntegrationTest {
             assertEquals(1, counter(id, "cycle_count"));
             org.mockito.Mockito.verifyNoInteractions(keycloakUsers);
             assertEquals("FAILED_LOCAL_DELETE", jdbc.queryForObject("select status from admin_user_log", String.class));
+            assertEquals(0, service.favorite("dependent", id, false).creator().favoriteCount());
         } finally { jdbc.execute("drop table account_cleanup_test_dependency"); }
     }
     private static Jwt adminJwt() {

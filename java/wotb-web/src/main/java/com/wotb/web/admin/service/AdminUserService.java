@@ -5,13 +5,14 @@ import com.wotb.web.admin.dto.AdminUserListItemDto;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
-import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
 import com.wotb.web.creator.service.CreatorService;
+import com.wotb.web.user.entity.AdminUserLog;
 import com.wotb.web.user.entity.UserProfile;
+import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -309,10 +310,16 @@ public class AdminUserService {
                     ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
         }
 
+        // A durable intent survives a lost KC response or a failed final success-audit write.
+        log.markKeycloakDeletePending();
+        logPersister.save(log);
         try {
             keycloakAdminUserService.deleteUser(targetKeycloakUserId);
         } catch (final Exception e) {
-            log.markFailedKeycloakDelete(ErrorCode.FAILED_KEYCLOAK_DELETE.name(), false, e.getMessage());
+            boolean accountStillExists = false;
+            try { accountStillExists = keycloakAdminUserService.getUser(targetKeycloakUserId) != null; }
+            catch (final Exception probeFailure) { /* The persisted pending state remains authoritative. */ }
+            log.markFailedKeycloakDelete(ErrorCode.FAILED_KEYCLOAK_DELETE.name(), false, e.getMessage(), accountStillExists);
             logPersister.save(log);
             throw new AdminInternalException(ErrorCode.FAILED_KEYCLOAK_DELETE.name(),
                     ErrorCode.FAILED_KEYCLOAK_DELETE.getDefaultMessage());

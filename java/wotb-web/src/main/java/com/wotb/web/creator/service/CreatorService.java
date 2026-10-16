@@ -12,6 +12,8 @@ import com.wotb.web.creator.repository.CreatorFavoriteRepository;
 import com.wotb.web.creator.repository.CreatorLevelRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.repository.CreatorSettingsRepository;
+import com.wotb.web.user.service.AdminUserLogPersister;
+import com.wotb.web.util.JwtUtil;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.springframework.stereotype.Service;
@@ -41,11 +43,12 @@ public class CreatorService {
     private final CreatorFavoriteRepository favorites;
     private final CreatorMapper mapper;
     private final CreatorAvatarService avatars;
+    private final AdminUserLogPersister accountAudit;
 
     public CreatorService(final CreatorRepository creators, final CreatorCategoryRepository categories,
                           final CreatorLevelRepository levels, final CreatorSettingsRepository settings,
                           final CreatorFavoriteRepository favorites, final CreatorMapper mapper,
-                          final CreatorAvatarService avatars) {
+                          final CreatorAvatarService avatars, final AdminUserLogPersister accountAudit) {
         this.creators = creators;
         this.categories = categories;
         this.levels = levels;
@@ -53,6 +56,7 @@ public class CreatorService {
         this.favorites = favorites;
         this.mapper = mapper;
         this.avatars = avatars;
+        this.accountAudit = accountAudit;
     }
 
     @Transactional(readOnly = true)
@@ -75,7 +79,7 @@ public class CreatorService {
     public CreatorDtos.Detail detail(final long id) { return mapper.toDto(required(id)); }
 
     public CreatorDtos.Detail create(final CreatorDtos.SaveRequest request) {
-        settings.findExclusive();
+        exclusiveSettings();
         final Creator creator = new Creator();
         assign(creator, request);
         if (request.avatarId() != null) { avatars.attach(request.avatarId()); }
@@ -84,7 +88,7 @@ public class CreatorService {
         return mapper.toDto(creators.saveAndFlush(creator));
     }
     public CreatorDtos.Detail update(final long id, final CreatorDtos.SaveRequest request) {
-        settings.findExclusive();
+        exclusiveSettings();
         final Creator creator = locked(id);
         assign(creator, request);
         final String previous = creator.avatarId;
@@ -96,7 +100,7 @@ public class CreatorService {
         return mapper.toDto(creator);
     }
     public void delete(final long id) {
-        settings.findExclusive();
+        exclusiveSettings();
         final Creator creator = locked(id);
         final String previous = creator.avatarId;
         creators.delete(creator);
@@ -104,13 +108,13 @@ public class CreatorService {
         avatars.detach(previous);
     }
     public CreatorDtos.Category addCategory(final CreatorDtos.DictionaryRequest request) {
-        settings.findExclusive();
+        exclusiveSettings();
         final CreatorCategory category = new CreatorCategory();
         category.name = name(request == null ? null : request.name());
         return mapper.category(categories.saveAndFlush(category));
     }
     public void deleteCategory(final long id) {
-        settings.findExclusive();
+        exclusiveSettings();
         final CreatorCategory category = categories.findById(id).orElseThrow(CreatorService::notFound);
         if (creators.wouldOrphanCreator(id)) { throw error(ApiErrorCode.CREATOR_CATEGORY_IN_USE); }
         creators.removeCategoryLinks(id);
@@ -118,13 +122,13 @@ public class CreatorService {
         categories.flush();
     }
     public CreatorDtos.Level addLevel(final CreatorDtos.DictionaryRequest request) {
-        settings.findExclusive();
+        exclusiveSettings();
         final CreatorLevel level = new CreatorLevel();
         level.name = name(request == null ? null : request.name());
         return mapper.level(levels.saveAndFlush(level));
     }
     public void deleteLevel(final long id) {
-        settings.findExclusive();
+        exclusiveSettings();
         final CreatorLevel level = levels.findById(id).orElseThrow(CreatorService::notFound);
         if (creators.existsByLevelId(id)) { throw error(ApiErrorCode.CREATOR_LEVEL_IN_USE); }
         levels.delete(level);
@@ -135,7 +139,7 @@ public class CreatorService {
         return configuration(settings.findById(1L).orElseThrow());
     }
     public CreatorDtos.Settings configure(final CreatorDtos.SettingsRequest request) {
-        final CreatorSettings slot = settings.findExclusive();
+        final CreatorSettings slot = exclusiveSettings();
         if (request == null || request.favoriteThreshold() <= 0) { throw invalid(); }
         slot.favoriteThreshold = request.favoriteThreshold();
         return configuration(slot);
@@ -148,6 +152,7 @@ public class CreatorService {
     public CreatorDtos.FavoriteResult favorite(final String subject, final long id, final boolean desired) {
         validateSubject(subject);
         final CreatorSettings configuration = settings.findShared();
+        accountAudit.requireAccountWritable(subject);
         final Creator creator = locked(id);
         CreatorFavorite favorite = favorites.findByCreatorIdAndSubject(id, subject).orElse(null);
         final boolean first = favorite == null;
@@ -210,6 +215,12 @@ public class CreatorService {
         creator.baseStars = request.baseStars();
     }
     private Creator required(final long id) { return creators.findById(id).orElseThrow(CreatorService::notFound); }
+    private CreatorSettings exclusiveSettings() {
+        final CreatorSettings slot = settings.findExclusive();
+        final String actor = JwtUtil.currentUserId();
+        if (actor != null) { accountAudit.requireAccountWritable(actor); }
+        return slot;
+    }
     private Creator locked(final long id) { return creators.findLocked(id).orElseThrow(CreatorService::notFound); }
     private Map<Long, CreatorDtos.Category> categoryMap() {
         return categories.findAllByOrderByIdAsc().stream().map(mapper::category)
