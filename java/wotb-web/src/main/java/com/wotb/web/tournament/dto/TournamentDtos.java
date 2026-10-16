@@ -63,11 +63,39 @@ public final class TournamentDtos {
             List<RoundRule> rounds,
             List<String> clans
     ) { }
+    public record DefaultRound(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int roundNumber,
+            @JsonProperty(required = true) List<RuleDay> days
+    ) { }
+    public record DefaultConfigurationRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm,
+            @JsonProperty(required = true) List<DefaultRound> rounds
+    ) { }
+    public record DefaultRules(long version, boolean active, Long sourceEventId, String sourceLabel,
+                               Instant updatedAt, List<DefaultRound> rounds) { }
+    public record RuleSource(long eventVersion, String source, Long defaultVersion,
+                             boolean isDefaultSource, boolean defaultOutdated) { }
+    public record SetDefaultRulesRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long eventId,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
+    ) { }
+    public record ClearDefaultRulesRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
+    ) { }
     public record RuleRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedRulesVersion,
-            @JsonProperty(required = true) List<RuleDay> days
-    ) { }
+            @JsonProperty(required = true) List<RuleDay> days,
+            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+    ) {
+        public RuleRequest(final long eventVersion, final long rulesVersion, final List<RuleDay> days) {
+            this(eventVersion, rulesVersion, days, null);
+        }
+    }
     public record Team(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int rank
@@ -93,8 +121,13 @@ public final class TournamentDtos {
     public record ExpectedGroupsRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount
-    ) { }
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount,
+            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+    ) {
+        public ExpectedGroupsRequest(final long eventVersion, final long dayVersion, final int count) {
+            this(eventVersion, dayVersion, count, null);
+        }
+    }
     public record DraftRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,

@@ -330,6 +330,201 @@ export default {
         }
       }
     },
+    "TournamentDefaultRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roundNumber",
+        "days"
+      ],
+      "properties": {
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "days": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/TournamentRuleDay"
+          }
+        }
+      }
+    },
+    "TournamentDefaultRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "active",
+        "sourceEventId",
+        "sourceLabel",
+        "updatedAt",
+        "rounds"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "sourceEventId": {
+          "description": "Null for a directly configured or seeded default, a deleted source event, or an inactive default.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "minimum": 1
+        },
+        "sourceLabel": {
+          "description": "Stable source identity snapshot; empty when no default is active. Not a localized UI message.",
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rounds": {
+          "description": "Full published rule snapshot; empty when inactive. Round and day numbers are unique within their parent.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentDefaultRound"
+          }
+        }
+      }
+    },
+    "TournamentSetDefaultRulesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "expectedEventVersion",
+        "expectedDefaultVersion",
+        "confirm"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true when replacing an active default.",
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentDefaultConfigurationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedDefaultVersion",
+        "confirm",
+        "rounds"
+      ],
+      "properties": {
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true when replacing an active default.",
+          "type": "boolean"
+        },
+        "rounds": {
+          "description": "Complete rounds numbered consecutively from 1, with a consistent number of days and ranks 1-4 present on each day. Duplicate round, day, or rank numbers are rejected.",
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentDefaultRound"
+          }
+        }
+      }
+    },
+    "TournamentClearDefaultRulesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedDefaultVersion",
+        "confirm"
+      ],
+      "properties": {
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true to clear the default.",
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentRuleSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventVersion",
+        "source",
+        "defaultVersion",
+        "isDefaultSource",
+        "defaultOutdated"
+      ],
+      "properties": {
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "INHERIT",
+            "CUSTOM",
+            "FROZEN"
+          ]
+        },
+        "defaultVersion": {
+          "description": "Current singleton version for INHERIT (including an inactive default), captured version for events frozen from a default, otherwise null.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "minimum": 0
+        },
+        "isDefaultSource": {
+          "description": "True only when this event is the source of the currently active default.",
+          "type": "boolean"
+        },
+        "defaultOutdated": {
+          "description": "True when the active default source event has saved rules differing from the published snapshot.",
+          "type": "boolean"
+        }
+      }
+    },
     "TournamentRoundRule": {
       "type": "object",
       "additionalProperties": false,
@@ -407,6 +602,15 @@ export default {
         },
         "expectedRulesVersion": {
           "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "description": "Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before copying the complete effective rule set into this event. Null or omission uses the server-authoritative current default.",
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "int64",
           "minimum": 0
         },
@@ -553,6 +757,15 @@ export default {
         },
         "expectedDayVersion": {
           "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "description": "Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before freezing the effective rule set. Null or omission uses the server-authoritative current default.",
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "int64",
           "minimum": 0
         },
