@@ -2059,7 +2059,9 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
   })
 
-  it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
+  // 终态族全族判死（2026-10-16 裁决）：0x0000 与负 i16 哨兵族（0xFFFD/0xFFFE/0xFFFF）同判 DESTROYED；
+  // 仅「死亡证据落在实体未入场期间」（entry 42 = 开战时钟，身份不可归属）不判死。
+  it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xfffe, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
     'real producer → scene re-entry %s → %s with prop3 %s and entry %s', async (oldId, newId, terminal, newEntry) => {
       const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))
       const result = validateAgentBattleResult({ ...f.result, author_account_id: 77, author_team: 1,
@@ -2085,7 +2087,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
       const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
       const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
       const canonical = { dataset, clock: facts.clock, entityStartsByAccount: entityFirstSeenByAccount(facts) }
-      const destroyed = terminal !== 0xffff && newEntry > 42
+      const destroyed = newEntry > 42
       expect(dataset.vehicles[0].lifeTransitions.some(life => life.lifeState === 'DESTROYED')).toBe(destroyed)
       const { api, frames, vehicles, overlay } = await load(definitions, canonical, playback)
       api.seekTime(51.9)

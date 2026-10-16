@@ -102,12 +102,19 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   死亡后可复活继续移动，死亡不再是终态。
 - **字段缺省**（旧上游产物 / 普通回放）：prop3 `alive=false`（终态，EXACT）→ DESTROYED；
   可信血量 / alive → ALIVE——行为与既往逐位一致（golden 锁定）。
+- **终态族 = int16 ≤ 0 全域**（2026-10-16 裁决，上游 `wotbtools-cross-reference.md` §七）：
+  `0x0000` 与**负 i16 哨兵全族**（实测 0xFFFF −1:68 / 0xFFFE −2:1 / 0xFFFD −3:59，其余负值同编码）
+  一律 `DEATH_TERMINAL`——同族全部取值同一处理，禁按分布裁剪。上游切面 `damage`/`health` 的
+  `hp_state`（additive、恒在场）在场时为其**权威分类**，缺省（旧产物）按同一规则从 `hp_raw` 现算
+  （`hpRawState.classifyHpRaw(raw, hp_state?)`）。回归：曾只认 {0x0000, 0xFFFD}，把 −1/−2 档的
+  弹药架殉爆判成存活（血量冻在最后正值、装填条继续外播；实例 1910 局 Intotherainy `0xFFFE`）——
+  守卫 `canonical/facts.hpTerminal.test.ts`（两种产物形态）+ scene 终态族用例（含 0xFFFE 行）。
 - def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
   PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
   只爆一次，复活后的新死亡各自爆焰。
 - **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份**可用数值**血量证据
   之前，血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
-  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不算"新证据"
+  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 终态 `DEATH_TERMINAL`）与终态 0 都不算"新证据"
   （`isPlausibleHp` 判据）。证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
   的"复活后无新血量证据 → 未知边界"、"证据在查询时刻之后不得提前使用"与"复活时刻只有未知哨兵
   采样 → 边界不被跳过"用例。

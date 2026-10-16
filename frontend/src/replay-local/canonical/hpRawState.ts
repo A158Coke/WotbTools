@@ -1,31 +1,42 @@
 /**
- * 原始 u16 血量的 canonical 分类——与已退役 Java `HpRawState.classify` / `HealthChangedEvent.isPlausibleHp`
- * 逐值一致（golden 以此为前提）。只依赖 wire 形状，不依赖客户端版本。
+ * 原始 u16 血量的 canonical 分类——终态族 = 上游 Agent 的同一规则
+ * （`combat::hp_terminal_normalized`：终态 ⇔ 归一化为 0，即 `hp == 0 ∨ i16(hp) < 0`）。
+ * 只依赖 wire 形状，不依赖客户端版本。
  *
  * 语义红线：
- *  - 0x0000 = 确知 HP 归零（终态）；0xFFFD = 已证明的阵亡终态哨兵——**血量未知**，不得改写成 0；
- *  - 0xFFFF / 0xFFFE / 其余负值 = 未证明的哨兵，血量与生死都未知；
+ *  - `hp_state` 在场时 = **上游权威分类**（`current`/`zero`/`terminal`），逐事件直用；
+ *    缺省（旧产物）时按同一规则从 `hp_raw` 现算——两条路径判定一致；
+ *  - 0x0000 = 确知 HP 归零（终态）；负 i16 = 终态哨兵（**死亡面之一**；实测族
+ *    0xFFFF/0xFFFE/0xFFFD，其余负值同属该编码——同族全部取值同一处理，禁按分布裁剪）——
+ *    血量未知，**不得改写成 0**（`knownHpOf` → null）；
  *  - 上游 `Damage.hp` 的钳 0 只是显示便利，canonical 一律读 `hp_raw`。
+ *
+ * 历史（2026-10-16 裁决，见上游 docs/wotbtools-cross-reference.md §七）：本层曾只认
+ * {0x0000, 0xFFFD} 为终态、把 −1/−2 档记为"未证明"，导致 0xFFFE 档的殉爆死亡被判成
+ * 存活（血量冻在最后正值、装填条继续播放；实例 1910 局 Intotherainy）。
  */
+
+/** 上游切面 `hp_state`（additive；缺省 = 旧产物，走 hp_raw 现算） */
+export type HpStateField = 'current' | 'zero' | 'terminal'
 
 export type HpRawState =
   | 'CURRENT_HP'
   | 'HP_ZERO_TERMINAL'
-  | 'DEATH_TERMINAL_FFFD'
-  | 'UNKNOWN_FFFF'
-  | 'UNKNOWN_OTHER'
+  /** 负 i16 终态哨兵（0xFFFF/0xFFFE/0xFFFD 及同编码其它负值）——死亡面之一，血量未知 */
+  | 'DEATH_TERMINAL'
 
-export function classifyHpRaw(rawValue: number): HpRawState {
+export function classifyHpRaw(rawValue: number, hpState?: HpStateField | null): HpRawState {
+  // 上游分类在场 = 权威（与现值算规则同判；字段存在即以此为准，禁止二次解释）
+  if (hpState === 'current') return 'CURRENT_HP'
+  if (hpState === 'zero') return 'HP_ZERO_TERMINAL'
+  if (hpState === 'terminal') return 'DEATH_TERMINAL'
   const raw = rawValue & 0xffff
   if (raw === 0x0000) return 'HP_ZERO_TERMINAL'
-  if (raw === 0xfffd) return 'DEATH_TERMINAL_FFFD'
-  if (raw === 0xffff) return 'UNKNOWN_FFFF'
-  if (raw === 0xfffe) return 'UNKNOWN_OTHER'
-  return toSignedShort(raw) > 0 ? 'CURRENT_HP' : 'UNKNOWN_OTHER'
+  return toSignedShort(raw) > 0 ? 'CURRENT_HP' : 'DEATH_TERMINAL'
 }
 
 export function isTerminalHpState(state: HpRawState): boolean {
-  return state === 'HP_ZERO_TERMINAL' || state === 'DEATH_TERMINAL_FFFD'
+  return state === 'HP_ZERO_TERMINAL' || state === 'DEATH_TERMINAL'
 }
 
 /** Java `HealthChangedEvent.isPlausibleHp`：0 < hp < 0xFF00 */
@@ -34,11 +45,11 @@ export function isPlausibleHp(hp: number | null | undefined): hp is number {
 }
 
 /**
- * 原始值对应的确知当前血量：CURRENT_HP → 有符号值，HP_ZERO → 0，哨兵 → null（未知 ≠ 0）。
- * 与 Java prop3 `currentHealth` 的取值口径一致（终态 FFFD 的 currentHealth 为 null）。
+ * 原始值对应的确知当前血量：CURRENT_HP → 有符号值，HP_ZERO → 0，终态哨兵 → null（未知 ≠ 0）。
+ * 与 Java prop3 `currentHealth` 的取值口径一致（终态哨兵的 currentHealth 为 null）。
  */
-export function knownHpOf(rawValue: number): number | null {
-  const state = classifyHpRaw(rawValue)
+export function knownHpOf(rawValue: number, hpState?: HpStateField | null): number | null {
+  const state = classifyHpRaw(rawValue, hpState)
   if (state === 'CURRENT_HP') return toSignedShort(rawValue & 0xffff)
   if (state === 'HP_ZERO_TERMINAL') return 0
   return null
