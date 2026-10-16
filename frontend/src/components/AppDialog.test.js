@@ -31,6 +31,30 @@ function mountDialog() {
 const dialog = () => document.querySelector('[role="dialog"]')
 
 describe('AppDialog', () => {
+  it('returns focus when a conditional editor is unmounted while open', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const editor = mount(AppDialog, { props: { open: true, title: 'Conditional editor' }, attachTo: document.body, global: { mocks }, slots: { default: '<input autofocus>' } })
+    await flushPromises()
+    expect(document.activeElement).not.toBe(opener)
+    editor.unmount()
+    expect(document.activeElement).toBe(opener)
+    expect(document.body.classList.contains('dialog-open')).toBe(false)
+  })
+  it('does not take focus from a newer active dialog when an old editor unmounts', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener); opener.focus()
+    const old = mount(AppDialog, { props: { open: true, title: 'Old' }, attachTo: document.body, global: { mocks }, slots: { default: '<input id="old-input" autofocus>' } })
+    await flushPromises()
+    const current = mount(AppDialog, { props: { open: true, title: 'Current' }, attachTo: document.body, global: { mocks }, slots: { default: '<input id="current-input" autofocus>' } })
+    await flushPromises()
+    old.unmount()
+    expect(document.activeElement.id).toBe('current-input')
+    current.unmount()
+    expect(document.getElementById('old-input')).toBeNull()
+    expect(document.activeElement).not.toBe(opener)
+  })
   it('打开：role=dialog + aria-modal + 标题关联，焦点进入对话框', async () => {
     mountDialog()
     document.getElementById('opener').focus()

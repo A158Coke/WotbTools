@@ -38,6 +38,13 @@ function mountPage(navigate = vi.fn(), onboarding = null) {
 }
 
 describe('MorePage language switcher', () => {
+  it('offers the same public broadcast tool to anonymous visitors', async () => {
+    const navigate = vi.fn()
+    const { wrapper } = mountPage(navigate)
+    await wrapper.get('[data-testid="more-link-league-broadcasts"]').trigger('click')
+    expect(navigate).toHaveBeenCalledWith('league-broadcasts')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
     menuRole.tournament = false
