@@ -79,15 +79,22 @@ JGroups `connection closed`（日志已出现）对齐：**重启后 in-flight �
 ### 3.4 broker 回调的 HTTP 层证据（已上线的受控访问日志）
 
 `deploy/tx/Caddyfile` 为 `auth.wotbtools.com` 开启受控访问日志（Caddy 的 `log` 是站点级指令，无法只挂某条路径；路径筛选交给下面的 LogQL），并且
-**在写 stdout 之前**由 Caddy 的 filter 编码器剥掉秘密：query 里的 `code` / `state` /
-`session_state` / `iss` 被删除，`Cookie` 与 `Authorization` 头被删除（Caddy 默认即不记录
-凭据，这里是显式固定口径）。经 `deploy/tx/alloy` 送 Loki，标签 `container_name="caddy"`；校验脚本断言脱敏行齐全，且配置用真实 Caddy（`caddy validate`）在 CI 中适配通过。
+**在写 stdout 之前**由 Caddy 的 filter 编码器按**白名单**剥掉内容：原始 `request>uri`
+（连同整个 query string）、全部请求头与全部响应头都被删除，再由 `log_append` 只写回
+`path` 与 `ua`。经 `deploy/tx/alloy` 送 Loki，标签 `container_name="caddy"`，并带
+`compliance="security"`（留存 190 天，见
+[`operations/security-log-retention.md`](../operations/security-log-retention.md)）；校验脚本断言字段白名单齐全，且配置用真实 Caddy（`caddy validate`）在 CI 中适配通过。
+
+> 2026-10-16 起不再是「删掉 code / state / session_state / iss 几个已知 query 参数」的
+> 黑名单口径：RP-initiated logout 会把完整 ID token 作为 `id_token_hint` query 参数发到本
+> 站点，授权回程的 `Location` 响应头同样带 code / state，黑名单挡不住它们。整体删除严格
+> 强于逐参数删除，原先被点名的参数仍然不可能出现。
 
 保留的字段足以回答两件事：
 
 ```logql
 # 谁在打 broker 回调（UA / 路径 / 状态码；IP 是 datacenter 还是住宅网段）
-{container_name="caddy"} |~ "broker" | json | line_format "{{.request.headers.User-Agent}} {{.request.uri}} {{.status}}"
+{container_name="caddy"} |~ "broker" | json | line_format "{{.ua}} {{.path}} {{.status}}"
 ```
 
 - **真实用户 vs 机器人**：UA 与来源 IP 网段；实测 72h 内 234 条 `cookie_not_found` 里约
