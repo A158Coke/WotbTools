@@ -1,6 +1,10 @@
 FROM node:24-alpine AS build
 # Build identity：CI 经 build-arg 注入 git commit（Docker 上下文无 .git，不能自行 rev-parse）。
 ARG BUILD_COMMIT=unknown
+# 确定性构建时间（unix 秒，通常是 commit 时间）：Docker 上下文无 .git，不传则 version.json /
+# __BUILD_TIME__ 回落 wall-clock，同一 commit 重跑会产出不同字节的 bundle。
+ARG SOURCE_DATE_EPOCH=
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 # Public static-asset origin (currently Tencent COS). This is a deployment value,
 # not a storage contract: frontend consumers remain behind AssetProvider.
 ARG ASSET_BASE_URL=

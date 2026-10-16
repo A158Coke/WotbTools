@@ -6,7 +6,7 @@
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
 截至 2026-10-16，本仓源码为 **3.0.0 / 3000000**（`android/gradle.properties`；GeckoView 引擎迁移，
-已包含 main 上未 stage、未发布的 2.5.0 改动）；
+已包含 main 上未 stage、未发布的 2.5.0 / 2.6.0 改动）；
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -29,10 +29,10 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 2026-10-14 用户裁示。每个改动 Android 运行时的 PR 递增 `wotbVersion` 时，按**变更等级**选位，
 而不是一律 +1 patch；强制更新门槛只随 major 抬升。
 
-| 等级 | 适用变更 | 示例（当前 2.3.3） | 强制更新门槛 |
+| 等级 | 适用变更 | 示例（当前 2.6.0） | 强制更新门槛 |
 |---|---|---|---|
 | **major** | breaking change（含 Native Bridge wire breaking、需要新客户端才能正确工作的数据/接口契约变化）、重大功能、删除功能、中大型 bug 修复 | `3.0.0` | **必须抬到该 major 的 `X.0.0`**：`ANDROID_MIN_SUPPORTED_VERSION_CODE` = `X×1_000_000`（`3000000`），随 publish 写入 |
-| **minor** | 增加中小功能 | `2.4.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
+| **minor** | 增加中小功能 | `2.6.0` | 不抬，保持现值（旧客户端只收到可选更新提示） |
 | **patch** | 小 bug 修复 | `2.3.4` | 不抬，不强制升级 |
 
 - **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
@@ -139,9 +139,23 @@ PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计�
 Tag 不得 repoint；已有 APK SHA 不同则拒绝覆盖。已有 staging evidence 必须与本次实际 APK
 身份逐字段匹配，重跑保留其原始 `stagedAt`，不能用新身份覆盖旧证据。
 
+### 构建身份的确定性（stage 重跑 ⇒ 同一 APK）
+
+`frontend/vite.config.js` 的 `buildIdentity()` 把构建身份写进 bundle：`version.json` 与
+`define __BUILD_TIME__`（后者内联进入口 chunk，入口内容一变会**沿 import 图级联改名**）。
+因此 `buildTime` **必须是确定性的**——优先级：`SOURCE_DATE_EPOCH`（unix 秒）→ 当前 checkout 的
+commit 时间 → 才回落 wall-clock（此时该构建不可逐字节复现，仅作诊断）。
+
+- **Android bundle**（`npm run build:android`，有 .git）自动取 commit 时间 ⇒ 同一 commit + 同输入
+  ⇒ 逐字节相同的 bundle/APK（stage 重跑不会再撞 immutable conflict）；
+- **任何 Docker 构建**（生产镜像由仓库外构建方按本 Dockerfile 构建）必须传
+  `--build-arg SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)`；`Dockerfile.frontend` 已声明该 ARG
+  并转 ENV，CI 侧的 `ci-frontend.yml` 已接上。未传时回落 wall-clock，该镜像不可复现。
+- 回归锁：`frontend/src/vite-proxy.test.js` 断言 `SOURCE_DATE_EPOCH` 固定 ⇒ `buildTime` 同值。
+
 ### APK 公网下载卸载（清华云盘直链）
 
-TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
+TX1 出口公网带宽有限且会被 APK 下载打满（APK 随内嵌 bundle 增长：2026-10-16 起 2D 底图与 Web 同字节，bundle 资产约 40 MiB——见 [architecture.md](architecture.md) §2D 底图随包），stage 阶段以 `TSINGHUA_CLOUD_TOKEN`
 把 APK 传进清华云盘
 `个人资料库 /wotbtools-android/` 目录（`replace=1` 覆盖同名文件；`reuse=1` 只是幂等令牌，**不是**覆盖开关——缺 `replace` 时同名上传会被改名 `filename (1).apk`，固定下载路径拿不到新副本）。TX1 Caddy 把
 `/download/android/*.apk` 302 到该目录的分享直链
@@ -149,7 +163,8 @@ TX1 出口公网带宽有限且会被 15MB 的 APK 下载打满，stage 阶段�
 分享链接无过期、不随版本变化，新增版本只需把文件放进目录即可生效。
 
 **两台 origin 的 APK 由该副本 seed（2026-10-08 优化）**：跨洋只发生一次——runner 只把 APK
-上传到清华副本（实测 15MB ≈ 75–108s），随后 TX1/TX2 各自从分享直链**拉取**（实测
+上传到清华副本（实测 15MB ≈ 75–108s；**2026-10-16 起 APK 随内嵌 bundle 增大——2D 底图改为与
+Web 同字节，bundle 资产约 40 MiB，下列耗时按体积比例放大**），随后 TX1/TX2 各自从分享直链**拉取**（实测
 0.70s / 0.81s，≈19–22 MB/s），取代旧的 `appleboy/scp-action` 直推（drone-scp 的 SFTP
 单流，美区 runner → 境内 VPS 实测 12.6–13.8 KB/s，15MB 要 18–21 分钟 × 2 台，占 stage
 job 约 89%）。拉取侧四道边界：
