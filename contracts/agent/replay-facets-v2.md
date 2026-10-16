@@ -354,8 +354,9 @@ WotBTools
   （避免把 producer 漂移变成错误的生命态事实）。缺省路径按 §6 表的 legacy 规则现算。
 - **消费**：canonical `classifyHpRaw(raw, hp_state?)`（`replay-local/canonical/hpRawState.ts`）→
   血量帧（`healthTransitions`；终态哨兵血量未知 ≠ 0）与生命轨道（`lifeTransitions` 终态样本 →
-  `DESTROYED`）；终态分类经 HTTP 投影（`ClientAiReviewProjection.hpState`）传到 Java canonical，
-  服务端**不再重新分类**（`HpRawState.fromWireName` 显式 wire 映射）。守卫：
+  `DESTROYED`）；终态分类**可**经 HTTP 投影（`ClientAiReviewProjection.hpState`，可选）传到 Java
+  canonical，服务端在场时**不再重新分类**（`HpRawState.fromWireName` 显式 wire 映射）——客户端
+  发送按上线顺序延后（见下一条），当前只发 `hpRaw`。守卫：
   `canonical/facts.hpTerminal.test.ts`（字段权威 / legacy 缺省两侧）+ `playbackScene.test.js`
   终态族用例（含 `hp_state=terminal` 的 0xFFFE/0xFFFF 行与"legacy 0xFFFE 不判死"反例行）。
 - **回归背景**：−1/−2 档弹药架殉爆（实例 1910 局 Intotherainy `0xFFFE`）曾因本层只认
