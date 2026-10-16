@@ -12,16 +12,17 @@ services:
     # Keep normal probe semantics unchanged, but tolerate a short-lived Yecao
     # Loki /ready 503 during observability convergence. The TX Alloy deploy calls
     # this exact endpoint with --fail; all other health probes are forwarded as-is.
+    # Double dollars are required so Compose passes shell variables through.
     entrypoint:
       - /bin/sh
       - -c
       - |
-        for arg in "$@"; do
-          if [ "$arg" = "http://10.20.0.2:3100/ready" ]; then
-            exec curl --retry 30 --retry-delay 2 --retry-max-time 60 --retry-all-errors "$@"
+        for arg in "$$@"; do
+          if [ "$$arg" = "http://10.20.0.2:3100/ready" ]; then
+            exec curl --retry 30 --retry-delay 2 --retry-max-time 60 --retry-all-errors "$$@"
           fi
         done
-        exec curl "$@"
+        exec curl "$$@"
       - --
     restart: "no"
     logging: *default-logging
