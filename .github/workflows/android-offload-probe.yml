@@ -1,0 +1,533 @@
+name: Ops / Android Offload Probe
+run-name: Ops / Android offload probe by @${{ github.actor }}
+
+# 何时跑：发布前（或怀疑链路退化时）手工 dispatch，为「runner → 上海 COS → TX1 → 清华网盘」
+# 这条候选卸载链路取实测数字。**不改发布状态**：不写 version.json / tag / staging evidence，
+# 不动两台 origin，只在网盘目录与 COS 上各写一个 `_offload-probe-<run>.bin` 探针对象并在结束前删掉。
+#
+# 为什么要测：runner 直传清华网盘是全链路最慢的一段。2026-10-16 实测同尺寸（201276631 B）
+# 上传用掉 2058s（≈98 KB/s，占 `--max-time 2700` 的 76%），当天 12:11 的 stage 直接超时失败
+# （run 38898856907）。该部署「上传成功也返回 HTTP 400」，所以成败判定只有一条：从分享直链
+# 下载回来 SHA-256 一致——探针把「写」与「回读」分开各测一遍，并把 COS 侧的跨洋上传单独计时。
+#
+# 判据（写入 job summary）：两段都 ≥ 2 MiB/s ⇒ 采纳「TX1 落地」方案；0.3–2 MiB/s ⇒ 采纳但要给
+# P1 调并发/超时；< 0.3 MiB/s ⇒ 换 TX2 或换对象存储。见 docs/android/release-process.md §卸载链路体检。
+#
+# 本 workflow 与 android-release.yml 的上传步骤是同一协议的两个实现（upload-link → multipart
+# `replace=1` → 分享直链回读 SHA-256）。收敛成 host 侧单一实现属于后续工作；在此之前改其中一边
+# 必须同步另一边，否则探针数字不再代表发布路径。
+on:
+  workflow_dispatch:
+    inputs:
+      probe_mib:
+        description: "探针对象大小（MiB）；默认 32，192 = 与真实 APK 同量级"
+        required: false
+        default: "32"
+        type: string
+
+permissions:
+  contents: read
+
+# 与部署/备份/其它手工生产 workflow 共用一条队列：本探针会 SSH 到 TX1 并写公开分发副本。
+concurrency:
+  group: production-maintenance
+  cancel-in-progress: false
+  queue: max
+
+env:
+  # 本 workflow 是 dispatch-only：freshness 门禁先要求「event SHA == 当前 main」，所以运行期间 main 一前进
+  # 就会在第二次校验失败（不依赖下面的清单）——那正是探针要的语义：它测的是「当时 main 上的发布协议」。
+  # 这个清单只有在本 workflow 将来改成 push 触发时才会成为判定依据，此刻保留只是为了与仓库惯例同形。
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/android-offload-probe.yml
+    deploy/check-production-freshness.sh
+
+jobs:
+  probe:
+    name: ANDROID_OFFLOAD_PROBE
+    runs-on: ubuntu-latest
+    # 预算按 192 MiB 探针给足，让「恰好低于判据地板」的链路仍能跑出数字而不是撞 job 超时
+    # （最需要诊断的正是这种链路）：runner→COS 两次上传 + TX1 侧 900s 拉取 + 1800s 推送 +
+    # 3×300s 回读 + 240s 删除，SSH command_timeout 75m 覆盖后者，job 90m 再留出 runner 侧余量。
+    timeout-minutes: 90
+    # SSH 到生产主机 + 写公开分发副本 ⇒ 沿用受保护的 tx-production，与 tx-runtime-check 同口径。
+    environment: tx-production
+    # 与 `android-release` 互斥（同一门 Seafile 网盘的写入路径）：并发会让探针数字失真，也会挤占
+    # android-release 那条已经贴着 `--max-time 2700` 的上传（run 38898856907 就是这么超时的）。
+    # 顶层 `production-maintenance` 队列保留（与部署/备份互斥），这里再加 job 级 `android-release` 组。
+    # `queue: max` 是必须的：不带它时同一组只允许一个 pending 运行，新进入的探针会**取消排队中的
+    # 发布运行**（`cancel-in-progress: false` 只保护正在跑的那个）——诊断流程绝不能顶掉发布。
+    concurrency:
+      group: android-release
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Validate probe parameters
+        shell: bash
+        env:
+          PROBE_MIB: ${{ inputs.probe_mib }}
+        run: |
+          set -euo pipefail
+          case "$PROBE_MIB" in
+            ''|*[!0-9]*) echo "::error::probe_mib must be an integer (MiB), got: $PROBE_MIB" >&2; exit 1;;
+          esac
+          # 显式十进制：leading zero 会被 bash 当八进制（`032` → 26 MiB，`08` 直接报错）。
+          PROBE_MIB="$((10#$PROBE_MIB))"
+          if [ "$PROBE_MIB" -lt 8 ] || [ "$PROBE_MIB" -gt 256 ]; then
+            echo "::error::probe_mib out of range 8..256: $PROBE_MIB" >&2
+            exit 1
+          fi
+          echo "probe size: ${PROBE_MIB} MiB (decimal)"
+
+      - name: Checkout main (exact dispatched SHA)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Reject stale main (before generating any probe bytes)
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash deploy/check-production-freshness.sh "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      - name: Generate probe blob (runner)
+        id: blob
+        shell: bash
+        env:
+          PROBE_MIB: ${{ inputs.probe_mib }}
+        run: |
+          set -euo pipefail
+          # 与 Validate 步骤同一条十进制归一，SIZE 不能吃八进制（`inputs.probe_mib` 是原始字符串）。
+          PROBE_MIB="$((10#$PROBE_MIB))"
+          NAME="_offload-probe-${GITHUB_RUN_ID}.bin"
+          SIZE=$(( PROBE_MIB * 1024 * 1024 ))
+          BLOB="$RUNNER_TEMP/offload-probe.bin"
+          head -c "$SIZE" /dev/urandom > "$BLOB"
+          SHA="$(sha256sum "$BLOB" | awk '{print $1}')"
+          {
+            echo "name=$NAME"
+            echo "size=$SIZE"
+            echo "sha256=$SHA"
+            echo "path=$BLOB"
+          } >> "$GITHUB_OUTPUT"
+          echo "probe blob: $NAME $SIZE bytes sha256=$SHA"
+
+      # ① runner → COS（ap-shanghai）：跨洋只发生一次，落在商用对象存储而不是校园网盘。
+      #    单流（1 part）与 8 路分片各测一次：分片并发是 Seafile 那条单个 multipart POST 没有的
+      #    杠杆，链路差时靠它把最坏情况压回可重试的量级。
+      #    缺 COS 凭证时本段跳过（::notice::），后面的 TX1→网盘段仍用同尺寸本地载荷测量。
+      #    凭证按最小权限建：CAM 子账号限定到该发布桶的 `android/*` 前缀，动作 = PutObject / GetObject /
+      #    HeadObject / DeleteObject，外加分片上传必需的 InitiateMultipartUpload / UploadPart /
+      #    CompleteMultipartUpload / AbortMultipartUpload、清理时枚举未完成分片用的 ListMultipartUploads，
+      #    以及续传路径的 ListParts（`GITHUB_RUN_ID` 在 rerun 时不变 ⇒ 同名 key；SDK 的 upload_file 发现
+      #    未完成分片会先 list_parts 再续传——缺它会 AccessDenied）。
+      #    缺分片动作时 8 路分片测量 AccessDenied、只剩单流数字；缺 HeadObject 时上传回来之后的 HEAD
+      #    回读与清理确认会失败（HEAD 在 CAM 里是独立动作，不被 GetObject 覆盖）。不给 ListBucket，
+      #    更**不要**复用资产桶（`wotbtools-assets-*`）的凭证。
+      - name: Probe runner to COS (single flow + 8-way multipart)
+        id: cos
+        shell: bash
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_RELEASE_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_RELEASE_SECRET_KEY }}
+          COS_BUCKET: ${{ vars.COS_RELEASE_BUCKET }}
+          COS_REGION: ${{ vars.COS_REGION }}
+          PROBE_NAME: ${{ steps.blob.outputs.name }}
+          PROBE_SIZE: ${{ steps.blob.outputs.size }}
+          PROBE_SHA: ${{ steps.blob.outputs.sha256 }}
+          PROBE_PATH: ${{ steps.blob.outputs.path }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COS_SECRET_ID:-}" ] || [ -z "${COS_SECRET_KEY:-}" ] || [ -z "${COS_BUCKET:-}" ]; then
+            {
+              echo "state=skipped"
+              echo "presigned_url="
+            } >> "$GITHUB_OUTPUT"
+            echo "::notice::runner→COS 段跳过：缺少 secrets.COS_RELEASE_SECRET_ID / secrets.COS_RELEASE_SECRET_KEY / vars.COS_RELEASE_BUCKET（接入方式见 docs/android/release-process.md §卸载链路体检）。TX1→网盘段仍会测量。"
+            exit 0
+          fi
+          REGION="${COS_REGION:-ap-shanghai}"
+          export REGION
+          # 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
+          # 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。完整哈希锁定（--require-hashes）
+          # 需要按平台维护锁文件，属后续工作。
+          python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
+          python3 - <<'PY'
+          import os
+          import socket
+          import time
+          from qcloud_cos import CosConfig, CosS3Client
+
+          region = os.environ["REGION"]
+          bucket = os.environ["COS_BUCKET"]
+          name = os.environ["PROBE_NAME"]
+          size = int(os.environ["PROBE_SIZE"])
+          path = os.environ["PROBE_PATH"]
+
+          client = CosS3Client(CosConfig(
+              Region=region,
+              SecretId=os.environ["COS_SECRET_ID"],
+              SecretKey=os.environ["COS_SECRET_KEY"],
+              Scheme="https",
+          ))
+          host = "%s.cos.%s.myqcloud.com" % (bucket, region)
+          print("COS endpoint: https://%s" % host)
+          try:
+              print("runner resolves %s -> %s" % (host, socket.gethostbyname(host)))
+          except OSError as error:
+              print("runner cannot resolve %s: %s" % (host, error))
+
+          mib = size / (1024.0 * 1024.0)
+
+          def measure(label, key, part_mb, threads):
+              started = time.time()
+              client.upload_file(Bucket=bucket, Key=key, LocalFilePath=path,
+                                 PartSize=part_mb, MAXThread=threads)
+              elapsed = time.time() - started
+              rate = mib / elapsed
+              print("%s: %d bytes in %.2fs (%.2f MiB/s, %.1f Mbit/s)" % (
+                  label, size, elapsed, rate, size * 8.0 / elapsed / 1e6))
+              return elapsed, rate
+
+          # 8 路分片：part 大小取 mib//8（下限 1 MiB，COS 的最小 part 尺寸），保证**恰好 ≥8 个 part**——
+          # 否则 8..28 MiB 的小探针只切出 2–7 片，MAXThread=8 并发不起来，数字就不是 8 路测量。
+          part_mb = max(1, int(mib) // 8)
+          parts = (size + part_mb * 1024 * 1024 - 1) // (part_mb * 1024 * 1024)
+          print("parallel upload plan: PartSize=%d MiB, MAXThread=8, parts=%d" % (part_mb, parts))
+          single_seconds, single_mibps = measure(
+              "runner->COS single flow (1 part)", "android/probe/%s.single" % name, max(1, int(mib)), 1)
+          parallel_seconds, parallel_mibps = measure(
+              "runner->COS 8-way multipart", "android/probe/%s" % name, part_mb, 8)
+
+          head = client.head_object(Bucket=bucket, Key="android/probe/%s" % name)
+          head_size = int(head["Content-Length"])
+          print("COS HEAD android/probe/%s: Content-Length=%d (expected %d) ETag=%s" % (
+              name, head_size, size, head.get("ETag", "<none>")))
+          if head_size != size:
+              raise SystemExit("COS object size mismatch after upload: %d != %d" % (head_size, size))
+
+          url = client.get_presigned_url(
+              Bucket=bucket, Key="android/probe/%s" % name, Method="GET", Expired=1800)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("state=ok\n")
+              out.write("presigned_url=%s\n" % url)
+              out.write("single_seconds=%.2f\n" % single_seconds)
+              out.write("single_mibps=%.2f\n" % single_mibps)
+              out.write("parallel_seconds=%.2f\n" % parallel_seconds)
+              out.write("parallel_mibps=%.2f\n" % parallel_mibps)
+          print("presigned GET URL issued (TTL 1800s, printed by the step env block); "
+                "the object is deleted by the cleanup step at the end of this run")
+          PY
+
+      - name: Reject stale main (before touching TX1 or the public drive)
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash deploy/check-production-freshness.sh "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+      # ② COS → TX1（境内拉）+ ③ TX1 → 清华网盘（境内推）+ ④ 分享直链回读 + ⑤ 删除探针对象。
+      #    网盘协议与 android-release.yml 的上传步骤逐条对齐（parent_dir=/wotbtools-android、
+      #    replace=1、不做 jq 依赖：host 上未必有 jq，用 tr 解析 JSON 字符串）。
+      #    探针名是 `_offload-probe-<run>.bin`：`.bin` 不在 TX1 Caddy 的 `*.apk` 重定向范围内，
+      #    即使清理失败也不可能被当成 APK 分发。
+      #    token 优先读主机上的 0600 文件（P1 的目标形态），否则回落到 ssh env 里的
+      #    secrets.TSINGHUA_CLOUD_TOKEN；两种都会打印来源，便于确认收敛进度。
+      #    本步骤不取 /opt/wotb-tx 的宿主部署锁：探针只写 /tmp 与网盘数据目录，不改被服务的宿主机状态。
+      - name: Probe TX1 (COS pull, drive push, read-back, delete)
+        uses: appleboy/ssh-action@v1
+        env:
+          PROBE_NAME: ${{ steps.blob.outputs.name }}
+          PROBE_SIZE: ${{ steps.blob.outputs.size }}
+          PROBE_SHA: ${{ steps.blob.outputs.sha256 }}
+          COS_PRESIGNED_URL: ${{ steps.cos.outputs.presigned_url }}
+          REPO_ID: a757b2fa-9bc9-42f9-bc90-d6a2c0a94ed0
+          PARENT_DIR: /wotbtools-android
+          # 不带尾斜杠：与 android-release.yml 完全同形地拼出 ?p=/<name>&dl=1（否则会成 ?p=//<name>）。
+          SHARE_BASE: https://cloud.tsinghua.edu.cn/d/909496de42424204ae11/files/?p=
+          TSINGHUA_CLOUD_TOKEN: ${{ secrets.TSINGHUA_CLOUD_TOKEN }}
+        with:
+          host: ${{ secrets.TX_VPS_HOST }}
+          username: ${{ secrets.TX_VPS_USER }}
+          port: ${{ secrets.TX_VPS_PORT }}
+          key: ${{ secrets.TX_VPS_SSH_KEY }}
+          command_timeout: 75m
+          envs: PROBE_NAME,PROBE_SIZE,PROBE_SHA,COS_PRESIGNED_URL,REPO_ID,PARENT_DIR,SHARE_BASE,TSINGHUA_CLOUD_TOKEN
+          script: |
+            set -Eeuo pipefail
+
+            TMP="/tmp/offload-probe-$$.bin"
+            RESP="/tmp/offload-probe-$$.resp"
+            SHARE_DIRECT="${SHARE_BASE}/${PROBE_NAME}&dl=1"
+            UPLOAD_ATTEMPTED=0
+            PROBE_DELETED=0
+            cleanup() {
+              rc=$?
+              rm -f "$TMP" "$TMP.read" "$RESP"
+              # 任何退出路径都要收尾探针对象：主流程一旦动过上传、又还没确认删掉，就在这里删。
+              # （回读失败 / 中途报错 / SSH 被取消都不能把对象留在公开目录里。）
+              if [ "$UPLOAD_ATTEMPTED" = "1" ] && [ "$PROBE_DELETED" != "1" ]; then
+                echo "cleanup: removing the probe object (exit path rc=$rc)"
+                if curl -sS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                     "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME"; then
+                  echo "cleanup: probe object removed"
+                else
+                  echo "::warning::cleanup could not remove $PARENT_DIR/$PROBE_NAME; delete it manually"
+                fi
+              fi
+              exit "$rc"
+            }
+            trap cleanup EXIT HUP INT TERM
+
+            if [ -r /etc/wotb-tx/tsinghua-cloud.token ]; then
+              TSINGHUA_CLOUD_TOKEN="$(cat /etc/wotb-tx/tsinghua-cloud.token)"
+              echo "token source: host file /etc/wotb-tx/tsinghua-cloud.token"
+            else
+              echo "token source: ssh env (host file not deployed yet)"
+            fi
+
+            echo "--- (1) COS -> TX1 ---"
+            COS_PULL_RATE="<skipped>"
+            if [ -n "${COS_PRESIGNED_URL:-}" ]; then
+              COS_HOST="$(printf '%s' "$COS_PRESIGNED_URL" | sed -n 's#https://\([^/]*\)/.*#\1#p')"
+              echo "COS host from presigned URL: ${COS_HOST:-<unparsable>}"
+              if [ -n "$COS_HOST" ]; then
+                getent hosts "$COS_HOST" || echo "getent hosts failed for $COS_HOST"
+              fi
+              COS_PULL_RATE="$(curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 10 --max-time 900 \
+                -o "$TMP" -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+                "$COS_PRESIGNED_URL")"
+              echo "cos->tx1 pull: $COS_PULL_RATE"
+              echo "$PROBE_SHA  $TMP" | sha256sum -c - || { echo "::error::COS pull bytes mismatch" >&2; exit 1; }
+            else
+              echo "cos->tx1 pull: SKIPPED (runner had no COS credentials); measuring TX1->drive with a local blob"
+              head -c "$PROBE_SIZE" /dev/urandom > "$TMP"
+              PROBE_SHA="$(sha256sum "$TMP" | awk '{print $1}')"
+              echo "local probe blob: $(stat -c%s "$TMP") bytes sha256=$PROBE_SHA"
+            fi
+            SIZE_ON_HOST="$(stat -c%s "$TMP")"
+            [ "$SIZE_ON_HOST" = "$PROBE_SIZE" ] || { echo "::error::probe size mismatch on host: $SIZE_ON_HOST != $PROBE_SIZE" >&2; exit 1; }
+
+            echo "--- (2) TX1 -> Tsinghua drive ---"
+            ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
+            ULINK="$(printf '%s' "$ULINK_RAW" | tr -d '"\n')"
+            case "$ULINK" in
+              https://*) ;;
+              *) echo "::error::upload-link response is not a JSON URL string: $ULINK_RAW" >&2; exit 1;;
+            esac
+            upload_rc=0
+            UPLOAD_ATTEMPTED=1
+            # multipart 的文件名默认取本地路径的 basename（这里是临时名），必须显式 filename=，
+            # 否则网盘上的对象名会是 offload-probe-<pid>.bin：回读/删除全部落空、对象成孤儿。
+            # release 步骤因为本地文件名就是 APK_NAME 而天然正确，探针用临时文件就必须自己钉住。
+            DRIVE_PUSH_RATE="$(curl -sS --connect-timeout 10 --max-time 1800 -o "$RESP" \
+              -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+              -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$TMP;filename=$PROBE_NAME" \
+              -w '%{size_upload} bytes in %{time_total}s (%{speed_upload} B/s)' \
+              "$ULINK")" || upload_rc=$?
+            echo "drive push: ${DRIVE_PUSH_RATE:-<no stats>} (upload_curl_rc=$upload_rc)"
+            echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RESP" 2>/dev/null || echo '<none>')"
+            echo "note: this deployment answers HTTP 400 'Parent dir doesn't exist' even on a successful upload; the read-back below is the authority"
+
+            echo "--- (3) read-back via the public share direct link ---"
+            verified=0
+            READ_RATE="<none>"
+            for attempt in 1 2 3; do
+              sleep 3
+              READ_REPORT=""
+              READ_REPORT="$(curl -fsSL --connect-timeout 5 --max-time 300 -o "$TMP.read" \
+                -w '%{size_download} bytes in %{time_total}s (%{speed_download} B/s)' \
+                "$SHARE_DIRECT" 2>/dev/null)" || READ_REPORT=""
+              if [ -n "$READ_REPORT" ] && [ "$(sha256sum "$TMP.read" | awk '{print $1}')" = "$PROBE_SHA" ]; then
+                READ_RATE="$READ_REPORT"
+                verified=1
+                break
+              fi
+              rm -f "$TMP.read"
+              echo "read-back attempt $attempt/3 failed; retrying."
+            done
+            rm -f "$TMP.read"
+            [ "$verified" = "1" ] || { echo "::error::drive read-back SHA-256 mismatch after 3 attempts" >&2; exit 1; }
+            echo "drive read-back verified: $PROBE_NAME sha256=$PROBE_SHA ($READ_RATE)"
+
+            echo "--- (4) delete the probe object (authoritative absence is mandatory) ---"
+            # 删除必须被「权威确认」：探针把自己定义为「只写删一个 scratch 对象」，所以删不掉就不能绿。
+            # 权威证据 = Seafile API 的 file-detail **明确回 404**（不是靠公开页面的字节数猜）：
+            # 该接口对不存在的文件是 404、对存在的是 200，其余（401/403/5xx/网络失败）一律「未证明」。
+            delete_rc=0
+            BYTES_AFTER="<not-checked>"
+            API_STATUS="<not-checked>"
+            probe_gone=0
+            for attempt in 1 2 3; do
+              delete_rc=0
+              curl -fsS -X DELETE -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
+                || delete_rc=$?
+              API_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 60 \
+                -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+                "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/file/?p=$PARENT_DIR/$PROBE_NAME" \
+                2>/dev/null || echo '000')"
+              # 公开路径旁证：直链不该再服务探针字节。-f 让 4xx/5xx 直接失败，绝不冒充缺席证据；
+              # 若它仍然服务探针字节，则与 API 的 404 矛盾 ⇒ 判为「未证明」。
+              BYTES_AFTER="$(curl -fsSL --connect-timeout 5 --max-time 120 -o "$RESP" -w '%{size_download}' \
+                "$SHARE_DIRECT" 2>/dev/null || echo '<probe-failed>')"
+              if [ "$API_STATUS" = "404" ] && [ "$BYTES_AFTER" != "$PROBE_SIZE" ]; then
+                probe_gone=1
+                break
+              fi
+              echo "delete attempt $attempt/3: absence not proven (api=$API_STATUS share-bytes=$BYTES_AFTER delete_rc=$delete_rc); retrying."
+              sleep 3
+            done
+            if [ "$probe_gone" = "1" ]; then
+              PROBE_DELETED=1
+              echo "probe object absence confirmed: API file-detail=404, share link returned $BYTES_AFTER bytes (delete rc=$delete_rc)"
+            else
+              echo "::error::probe object absence NOT proven after 3 delete attempts (api=$API_STATUS share-bytes=$BYTES_AFTER); remove $PARENT_DIR/$PROBE_NAME manually" >&2
+              exit 1
+            fi
+
+            echo "========== PROBE NUMBERS =========="
+            echo "probe_name=$PROBE_NAME size=$PROBE_SIZE sha256=$PROBE_SHA"
+            echo "rate cos->tx1:     ${COS_PULL_RATE:-<skipped>}"
+            echo "rate tx1->drive:   ${DRIVE_PUSH_RATE:-<no stats>}"
+            echo "rate drive->tx1:   $READ_RATE"
+            echo "upload_curl_rc=$upload_rc delete_curl_rc=$delete_rc bytes_after_delete=$BYTES_AFTER"
+            echo "==================================="
+
+      # 探针对象零残留：COS 侧两个对象在这里删（网盘对象由 TX1 侧删除并已确认）。
+      - name: Clean up COS probe objects
+        if: always()
+        shell: bash
+        env:
+          COS_SECRET_ID: ${{ secrets.COS_RELEASE_SECRET_ID }}
+          COS_SECRET_KEY: ${{ secrets.COS_RELEASE_SECRET_KEY }}
+          COS_BUCKET: ${{ vars.COS_RELEASE_BUCKET }}
+          COS_REGION: ${{ vars.COS_REGION }}
+          PROBE_NAME: ${{ steps.blob.outputs.name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COS_SECRET_ID:-}" ] || [ -z "${COS_SECRET_KEY:-}" ] || [ -z "${COS_BUCKET:-}" ] || [ -z "${PROBE_NAME:-}" ]; then
+            echo "nothing to clean up on COS (no credentials, or the blob step never ran)"
+            exit 0
+          fi
+          REGION="${COS_REGION:-ap-shanghai}"
+          export REGION
+          # 版本固定（不是「装最新」）：这一步带着生产 COS 凭证运行，不能让上游任意新版本自动进入
+          # 执行路径（供应链 + 可复现）；升级必须走代码改动与评审。完整哈希锁定（--require-hashes）
+          # 需要按平台维护锁文件，属后续工作。
+          python3 -m pip install --quiet --disable-pip-version-check 'cos-python-sdk-v5==1.9.44'
+          python3 - <<'PY'
+          import os
+          import sys
+          from qcloud_cos import CosConfig, CosS3Client
+
+          client = CosS3Client(CosConfig(
+              Region=os.environ["REGION"],
+              SecretId=os.environ["COS_SECRET_ID"],
+              SecretKey=os.environ["COS_SECRET_KEY"],
+              Scheme="https",
+          ))
+          bucket = os.environ["COS_BUCKET"]
+          name = os.environ["PROBE_NAME"]
+          leaked = []
+          for key in ("android/probe/%s" % name, "android/probe/%s.single" % name):
+              try:
+                  client.delete_object(Bucket=bucket, Key=key)
+              except Exception as error:
+                  print("delete failed for cos://%s/%s: %s" % (bucket, key, error))
+                  leaked.append(key)
+                  continue
+              # 删除后必须确认缺席：HEAD 报 404 才算删掉；其它错误（403 / 网络）不构成缺席证据，
+              # 一律按「可能残留」处理——探针的 scratch-object 契约不允许 summary 声称已删却留着对象。
+              try:
+                  client.head_object(Bucket=bucket, Key=key)
+                  print("cos://%s/%s still present after delete" % (bucket, key))
+                  leaked.append(key)
+              except Exception as error:
+                  status = None
+                  try:
+                      status = error.get_status_code()
+                  except Exception:
+                      status = None
+                  if status == 404:
+                      print("deleted cos://%s/%s (HEAD confirms 404)" % (bucket, key))
+                  else:
+                      print("could not confirm deletion of cos://%s/%s (HEAD returned %s: %s)" % (bucket, key, status, error))
+                      leaked.append(key)
+          # 被取消/失败的分片上传不产生 object（HEAD 看不见），但已传 part 会留在桶里：
+          # 枚举并 abort 本 run 的两个 key。**枚举失败也算泄漏**——「无法枚举」就无法证明零残留，
+          # 而零残留是本 workflow 自己的契约（错误信息会点名缺失的 CAM 动作，便于一次修好）。
+          # abort 失败同样计入泄漏。
+          try:
+              listing = client.list_multipart_uploads(Bucket=bucket, Prefix="android/probe/")
+              uploads = listing.get("Upload") or []
+              if isinstance(uploads, dict):
+                  uploads = [uploads]
+              aborted = 0
+              for upload in uploads:
+                  upload_key = upload.get("Key", "")
+                  upload_id = upload.get("UploadId", "")
+                  if upload_id and upload_key in ("android/probe/%s.single" % name, "android/probe/%s" % name):
+                      try:
+                          client.abort_multipart_upload(Bucket=bucket, Key=upload_key, UploadId=upload_id)
+                          print("aborted unfinished multipart upload for cos://%s/%s" % (bucket, upload_key))
+                          aborted += 1
+                      except Exception as error:
+                          print("abort failed for cos://%s/%s (%s): %s" % (bucket, upload_key, upload_id, error))
+                          leaked.append(upload_key)
+              if aborted:
+                  print("aborted %d unfinished multipart upload(s) for the probe keys" % aborted)
+              else:
+                  print("no unfinished multipart uploads for the probe keys")
+          except Exception as error:
+              print("could not enumerate unfinished multipart uploads (need cos:ListMultipartUploads on android/probe/* and a SDK that exposes list_multipart_uploads): %s" % error)
+              leaked.append("android/probe/%s* (unfinished multipart uploads unverifiable)" % name)
+          if leaked:
+              print("::error::probe objects left behind on COS: %s" % ", ".join(leaked))
+              sys.exit(1)
+          PY
+
+      - name: Probe summary
+        if: always()
+        shell: bash
+        env:
+          COS_STATE: ${{ steps.cos.outputs.state }}
+          PROBE_NAME: ${{ steps.blob.outputs.name }}
+          PROBE_SIZE: ${{ steps.blob.outputs.size }}
+          SINGLE_SECONDS: ${{ steps.cos.outputs.single_seconds }}
+          SINGLE_MIBPS: ${{ steps.cos.outputs.single_mibps }}
+          PARALLEL_SECONDS: ${{ steps.cos.outputs.parallel_seconds }}
+          PARALLEL_MIBPS: ${{ steps.cos.outputs.parallel_mibps }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          {
+            echo "# Android offload probe"
+            echo ""
+            echo "- run: ${GITHUB_RUN_ID} (attempt ${GITHUB_RUN_ATTEMPT}); job status: ${JOB_STATUS}"
+            echo "- probe object: ${PROBE_NAME:-<none>} (${PROBE_SIZE:-0} bytes) — drive copy and COS copies are deleted before the job ends"
+            echo ""
+            echo "| 段 | 状态 | 结果 |"
+            echo "|---|---|---|"
+            echo "| runner → COS | ${COS_STATE:-unknown} | 单流 ${SINGLE_MIBPS:-n/a} MiB/s (${SINGLE_SECONDS:-n/a}s) · 8 路分片 ${PARALLEL_MIBPS:-n/a} MiB/s (${PARALLEL_SECONDS:-n/a}s) |"
+            echo "| COS → TX1 | 见日志 | 搜 \`cos->tx1 pull\` |"
+            echo "| TX1 → 清华网盘 | 见日志 | 搜 \`drive push\` |"
+            echo "| 分享直链回读 | 见日志 | 搜 \`drive pull\` |"
+            echo ""
+            echo "判据（docs/android/release-process.md §卸载链路体检）：两段都 ≥ 2 MiB/s ⇒ 采纳 TX1 落地方案；"
+            echo "0.3–2 MiB/s ⇒ 采纳但 P1 需要调并发/超时；< 0.3 MiB/s ⇒ 换 TX2 推，或换对象存储。"
+            echo ""
+            echo "数字：runner→COS 两个速率见上表；TX1 三段（cos→tx1 / tx1→drive / drive→tx1）在日志的"
+            echo "\`gh run view ${GITHUB_RUN_ID} --log | grep -A8 'PROBE NUMBERS'\` 块里。"
+          } >> "$GITHUB_STEP_SUMMARY"
