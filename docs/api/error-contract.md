@@ -58,12 +58,13 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `BROADCAST_COVER_INVALID` | 400 | false | validation | 封面格式、实际解码、字节或尺寸不合法 |
 | `BROADCAST_STORAGE_UNAVAILABLE` | 503 | false | configuration | 直播封面 COS 未完成配置 |
 | `BROADCAST_STORAGE_ERROR` | 502 | true | storage | COS 上传、读取或删除请求失败 |
+| `CREATOR_UID_ALREADY_EXISTS` | 409 | false | creator | 规范化UID已被另一UP使用 |
 | `CREATOR_NOT_FOUND` | 404 | false | creator | UP 或类别/等级记录不存在 |
-| `CREATOR_INVALID_REQUEST` | 400 | false | creator | UP 字段、整数、主页链接或输入结构不合法 |
+| `CREATOR_INVALID_REQUEST` | 400 | false | creator | UP 字段、UID、整数、头像或输入结构不合法 |
 | `CREATOR_CATEGORY_IN_USE` | 409 | false | creator | 删除类别会使至少一个 UP 没有类别；先补配其他类别 |
 | `CREATOR_LEVEL_IN_USE` | 409 | false | creator | 等级仍被使用；先更换等级或关闭实力评估 |
 | `CREATOR_CONFIG_CONFLICT` | 409 | false | creator | 引用的类别/等级配置已变化，重新加载后重试 |
-| `CREATOR_STORAGE_UNAVAILABLE` | 503 | false | creator | 头像存储未就绪，目录与收藏仍可独立使用 |
+| `CREATOR_STORAGE_UNAVAILABLE` | 503 | false | creator | 头像存储未就绪，无图目录维护仍可独立使用 |
 | `CREATOR_AVATAR_NOT_FOUND` | 404 | false | creator | 头像资源不存在或不可用于当前操作 |
 | `REPLAY_BUSY` | 503 | true | capacity | Replay worker 暂时繁忙 |
 | `PROCESSING_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Processing queue 已满；enum 值保留以避免动 wire |

@@ -75,7 +75,7 @@
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/tournament-points.md` | 改积分赛规则、截图识别、共享草稿、正式榜单、修正或证据生命周期时 |
 | `features/league-broadcasts.md` | 改全服联赛直播回放目录、同页管理、季赛／分类／根节点与回放时 |
-| `features/bilibili-creators.md` | 改 bilibili UP 推荐分类、收藏奖励、实力评估或管理权限时（English primary） |
+| `features/bilibili-creators.md` | 改 bilibili UP 推荐目录、手动星级、站点头像、实力评估或管理权限时（English primary） |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |
 | `WotBTools_League_Rating_V6.md` | 改 League Rating V6 批次 pooled sum/count 算法 / 回放解析「算法说明」入口正文时 |

@@ -1,9 +1,11 @@
 {
+  "bilibiliUid": "1000001",
   "name": "Example UP",
   "description": null,
-  "homepageUrl": "https://space.bilibili.com/456/?spm_id_from=tracker",
-  "categoryIds": [1],
+  "categoryIds": [
+    1
+  ],
   "levelId": null,
-  "baseStars": 3,
-  "avatarId": null
+  "stars": 3,
+  "avatarAction": "KEEP"
 }

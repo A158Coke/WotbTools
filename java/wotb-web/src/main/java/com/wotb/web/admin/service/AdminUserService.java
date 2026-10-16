@@ -5,14 +5,12 @@ import com.wotb.web.admin.dto.AdminUserListItemDto;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
+import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.creator.service.CreatorService;
-import com.wotb.web.user.entity.AdminUserLog;
 import com.wotb.web.user.entity.UserProfile;
-import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -65,20 +63,17 @@ public class AdminUserService {
     private final AdminUserMapper mapper;
     private final AdminUserLogPersister logPersister;
     private final KeycloakAdminUserService keycloakAdminUserService;
-    private final CreatorService creatorService;
     private final TransactionTemplate transactionTemplate;
 
     public AdminUserService(final UserProfileService userProfileService,
                             final AdminUserMapper mapper,
                             final AdminUserLogPersister logPersister,
                             final KeycloakAdminUserService keycloakAdminUserService,
-                            final CreatorService creatorService,
                             final PlatformTransactionManager transactionManager) {
         this.userProfileService = userProfileService;
         this.mapper = mapper;
         this.logPersister = logPersister;
         this.keycloakAdminUserService = keycloakAdminUserService;
-        this.creatorService = creatorService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -292,34 +287,27 @@ public class AdminUserService {
         boolean localDeleted = false;
 
         // 先验证并 flush 本地删除，避免数据库约束失败后才删除 Keycloak 用户。
-        try {
-            creatorService.removeDataForAccountDeletion(targetKeycloakUserId);
-            if (profile != null) {
+        if (profile != null) {
+            try {
                 userProfileService.deleteForAdministration(profile);
                 localDeleted = true;
+            } catch (final DataIntegrityViolationException e) {
+                log.markFailedLocalDelete(ErrorCode.USER_HAS_DEPENDENCIES.name(), e.getMessage());
+                logPersister.save(log);
+                throw new AdminConflictException(ErrorCode.USER_HAS_DEPENDENCIES.name(),
+                        ErrorCode.USER_HAS_DEPENDENCIES.getDefaultMessage());
+            } catch (final Exception e) {
+                log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
+                logPersister.save(log);
+                throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
+                        ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
             }
-        } catch (final DataIntegrityViolationException e) {
-            log.markFailedLocalDelete(ErrorCode.USER_HAS_DEPENDENCIES.name(), e.getMessage());
-            logPersister.save(log);
-            throw new AdminConflictException(ErrorCode.USER_HAS_DEPENDENCIES.name(),
-                    ErrorCode.USER_HAS_DEPENDENCIES.getDefaultMessage());
-        } catch (final Exception e) {
-            log.markFailedLocalDelete(ErrorCode.FAILED_LOCAL_DELETE.name(), e.getMessage());
-            logPersister.save(log);
-            throw new AdminInternalException(ErrorCode.FAILED_LOCAL_DELETE.name(),
-                    ErrorCode.FAILED_LOCAL_DELETE.getDefaultMessage());
         }
 
-        // A durable intent survives a lost KC response or a failed final success-audit write.
-        log.markKeycloakDeletePending();
-        logPersister.save(log);
         try {
             keycloakAdminUserService.deleteUser(targetKeycloakUserId);
         } catch (final Exception e) {
-            boolean accountStillExists = false;
-            try { accountStillExists = keycloakAdminUserService.getUser(targetKeycloakUserId) != null; }
-            catch (final Exception probeFailure) { /* The persisted pending state remains authoritative. */ }
-            log.markFailedKeycloakDelete(ErrorCode.FAILED_KEYCLOAK_DELETE.name(), false, e.getMessage(), accountStillExists);
+            log.markFailedKeycloakDelete(ErrorCode.FAILED_KEYCLOAK_DELETE.name(), false, e.getMessage());
             logPersister.save(log);
             throw new AdminInternalException(ErrorCode.FAILED_KEYCLOAK_DELETE.name(),
                     ErrorCode.FAILED_KEYCLOAK_DELETE.getDefaultMessage());

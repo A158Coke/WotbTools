@@ -21,7 +21,8 @@ owner 链路是 `business-api.yml` runtime env → SSH 环境 →
 UP 推荐头像复用同一 COS client、私有桶和凭据，独立使用 `wotb.creator.cos.prefix`。
 凭据的 Put/Get/Delete 权限必须同时覆盖实际使用的两个前缀；头像和封面各自维护引用与回收记录，
 不会跨前缀清理。配置相同前缀会关闭上传，避免不同业务互删资源。UP 头像行为见
-[UP recommendations](../features/bilibili-creators.md)。
+[UP recommendations](../features/bilibili-creators.md)。UP头像只保留最长边256px的小图、不绑定上传者，
+每天UTC+8 04:00清理未引用满24小时的记录；这里的联赛封面调度与原图规则保持原状。
 secret 不进入源码、前端、镜像 build args 或主机持久 `.env`。
 未配置时应用仍可启动、公开浏览和无封面 CRUD 正常，上传能力标记不可用。
 配置缺失报 `BROADCAST_STORAGE_UNAVAILABLE`，COS 请求失败报可重试的 `BROADCAST_STORAGE_ERROR`。

@@ -5,6 +5,7 @@ import com.wotb.web.config.SecurityConfig;
 import com.wotb.web.creator.controller.CreatorAdminController;
 import com.wotb.web.creator.controller.CreatorController;
 import com.wotb.web.creator.dto.CreatorDtos;
+import com.wotb.web.creator.service.CreatorAvatarService;
 import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -13,38 +14,50 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import tools.jackson.databind.json.JsonMapper;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class CreatorHttpTest {
     private static final String SAVE = """
-            {"name":"Creator","description":null,"homepageUrl":"https://space.bilibili.com/123",
-             "categoryIds":[1],"levelId":null,"baseStars":3,"avatarId":null}
+            {"bilibiliUid":"123","name":"Creator","description":null,
+             "categoryIds":[1],"levelId":null,"stars":3,"avatarAction":"KEEP"}
             """;
+    private static final SimpleGrantedAuthority TOURNAMENT_ADMIN = new SimpleGrantedAuthority("ROLE_tournament-admin");
     private AnnotationConfigWebApplicationContext context;
     private MockMvc mvc;
+
     @BeforeEach void setup() {
         context = new AnnotationConfigWebApplicationContext();
         context.setServletContext(new MockServletContext());
@@ -54,90 +67,174 @@ class CreatorHttpTest {
     }
     @AfterEach void close() { context.close(); }
 
-    @Test void publicCatalogIsAnonymousButPersonalStateRequiresAnyAuthenticatedUser() throws Exception {
+    @Test void publicDirectoryAndAttachedAvatarAreAnonymousWhileMetadataIsAdministrative() throws Exception {
         when(service().list(null)).thenReturn(List.of());
         when(service().categories()).thenReturn(List.of(new CreatorDtos.Category(1, "Category")));
+        final String avatarId = "11111111-1111-4111-8111-111111111111";
+        when(avatars().load(avatarId)).thenReturn(new CreatorAvatarService.AvatarImage(new byte[] {1, 2}, "image/png", "a".repeat(64)));
         mvc.perform(get("/api/creators")).andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
-        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk());
-        mvc.perform(get("/api/creators/favorites")).andExpect(status().isUnauthorized()).andExpect(jsonPath("$.errorCode").value("AUTH_UNAUTHENTICATED"));
-        mvc.perform(put("/api/creators/1/favorite")).andExpect(status().isUnauthorized());
-        mvc.perform(delete("/api/creators/1/favorite")).andExpect(status().isUnauthorized());
-        when(service().favorites("normal-user")).thenReturn(new CreatorDtos.Favorites(List.of(1L)));
-        mvc.perform(get("/api/creators/favorites").with(jwt().jwt(token -> token.subject("normal-user")).authorities()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.creatorIds[0]").value(1));
-        mvc.perform(put("/api/creators/1/favorite").with(jwt().jwt(token -> token.subject("normal-user")).authorities()))
-                .andExpect(status().isOk());
-        verify(service()).favorite("normal-user", 1, true);
-        mvc.perform(delete("/api/creators/1/favorite").with(jwt().jwt(token -> token.subject("normal-user")).authorities()))
-                .andExpect(status().isOk());
-        verify(service()).favorite("normal-user", 1, false);
-        mvc.perform(post("/api/creators").with(jwt())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$[0].name").value("Category"));
+        mvc.perform(get("/api/creators/avatars/" + avatarId)).andExpect(status().isOk())
+                .andExpect(content().contentType("image/png")).andExpect(content().bytes(new byte[] {1, 2}))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        mvc.perform(get("/api/admin/creators/metadata")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/creators").with(jwt().authorities())).andExpect(status().isForbidden());
     }
-    @Test void everyManagementRouteRequiresTournamentRoleAndCompositeContainsThatRole() throws Exception {
-        for (final String path : List.of("/api/admin/creators/1", "/api/admin/creators/categories",
-                "/api/admin/creators/levels", "/api/admin/creators/settings")) {
+
+    @Test void metadataAndEditableDetailsRequireTheRealTournamentRoleOrItsComposite() throws Exception {
+        when(service().metadata()).thenReturn(new CreatorDtos.Metadata(
+                List.of(new CreatorDtos.Category(1, "A")), List.of(new CreatorDtos.Level(1, "Expert")), false));
+        when(service().detail(7)).thenReturn(detail());
+        for (final String path : List.of("/api/admin/creators/7", "/api/admin/creators/metadata")) {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             mvc.perform(get(path).with(jwt().authorities())).andExpect(status().isForbidden());
             mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin")))).andExpect(status().isForbidden());
             mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
-            mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isOk());
-            mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"),
-                    new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+            mvc.perform(get(path).with(jwt().authorities(TOURNAMENT_ADMIN))).andExpect(status().isOk());
+            mvc.perform(get(path).with(jwt().authorities(TOURNAMENT_ADMIN, new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                    .andExpect(status().isOk());
         }
-        mvc.perform(post("/api/admin/creators").contentType("application/json").content(SAVE).with(jwt().authorities()))
-                .andExpect(status().isForbidden());
-        mvc.perform(put("/api/admin/creators/1").contentType("application/json").content(SAVE).with(jwt().authorities()))
-                .andExpect(status().isForbidden());
-        mvc.perform(delete("/api/admin/creators/1").with(jwt().authorities())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(jsonPath("$.categories[0].id").value(1)).andExpect(jsonPath("$.levels[0].name").value("Expert"))
+                .andExpect(jsonPath("$.avatarUploadsAvailable").value(false));
     }
-    @Test void cardSerializationPreservesExplicitNullsAndHidesAdminAndPersonalHistory() throws Exception {
-        final CreatorDtos.Card card = new CreatorDtos.Card(7, "Creator", null, "https://space.bilibili.com/123", null,
-                List.of(new CreatorDtos.Category(1, "A"), new CreatorDtos.Category(2, "B")), null, 7, 200, Instant.parse("2026-10-16T00:00:00Z"));
+
+    @Test void ordinaryUsersCannotSaveRemoveOrMaintainDictionaryEntries() throws Exception {
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE))).andExpect(status().isUnauthorized());
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities())).andExpect(status().isForbidden());
+        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/creators/7").file(payload(SAVE)).with(jwt().authorities()))
+                .andExpect(status().isForbidden());
+        for (final String path : List.of("/api/admin/creators/7", "/api/admin/creators/categories/1", "/api/admin/creators/levels/1")) {
+            mvc.perform(delete(path)).andExpect(status().isUnauthorized());
+            mvc.perform(delete(path).with(jwt().authorities())).andExpect(status().isForbidden());
+        }
+        for (final String path : List.of("/api/admin/creators/categories", "/api/admin/creators/levels")) {
+            mvc.perform(post(path).contentType("application/json").content("{\"name\":\"New\"}").with(jwt().authorities()))
+                    .andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(service());
+    }
+
+    @Test void cardSerializationKeepsExactUidAndExplicitNullsWithoutPrivateOrEditableState() throws Exception {
+        final String uid = "12345678901234567890";
+        final CreatorDtos.Card card = new CreatorDtos.Card(7, uid, "Creator", null, "https://space.bilibili.com/" + uid, null,
+                List.of(new CreatorDtos.Category(1, "A"), new CreatorDtos.Category(2, "B")), null, 6, Instant.parse("2026-10-16T00:00:00Z"));
         when(service().list(1L)).thenReturn(List.of(card));
         final String json = mvc.perform(get("/api/creators?categoryId=1")).andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].score").value(7)).andExpect(jsonPath("$[0].categories.length()").value(2))
-                .andExpect(jsonPath("$[0].baseStars").doesNotExist()).andExpect(jsonPath("$[0].subject").doesNotExist())
+                .andExpect(jsonPath("$[0].bilibiliUid").isString()).andExpect(jsonPath("$[0].bilibiliUid").value(uid))
+                .andExpect(jsonPath("$[0].score").value(6))
+                .andExpect(jsonPath("$[0].categories.length()").value(2))
                 .andReturn().getResponse().getContentAsString();
         final var node = JsonMapper.builder().findAndAddModules().build().readTree(json).get(0);
         assertEquals(10, node.properties().size());
-        assertEquals(true, node.has("description"));
-        assertEquals(true, node.path("description").isNull());
-        assertEquals(true, node.path("avatarUrl").isNull());
-        assertEquals(true, node.path("level").isNull());
+        assertEquals(uid, node.path("bilibiliUid").asText());
+        assertTrue(node.path("description").isNull());
+        assertTrue(node.path("avatarUrl").isNull());
+        assertTrue(node.path("level").isNull());
+        assertFalse(node.has("stars"));
+        assertFalse(node.has("avatarId"));
+        assertFalse(node.has("subject"));
+        assertFalse(node.has("favoriteCount"));
     }
-    @Test void createsAndDeletesUseDeclaredStatusesAndRejectSystemFieldInjection() throws Exception {
-        final CreatorDtos.Detail detail = new CreatorDtos.Detail(1, "Creator", null, "https://space.bilibili.com/123", List.of(1L), null, 3, null, null);
-        when(service().create(any())).thenReturn(detail);
-        mvc.perform(post("/api/admin/creators").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
-                .contentType("application/json").content(SAVE)).andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(1));
-        mvc.perform(delete("/api/admin/creators/1").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
-                .andExpect(status().isNoContent());
-        final String injected = SAVE.replace("\"name\":", "\"favoriteCount\":100,\"name\":");
-        mvc.perform(post("/api/admin/creators").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))
-                .contentType("application/json").content(injected)).andExpect(status().isBadRequest());
+
+    @Test void multipartSaveBindsKeepRemoveAndReplacementWithDeclaredStatuses() throws Exception {
+        when(service().create(any(), any())).thenReturn(detail());
+        when(service().update(eq(7L), any(), any())).thenReturn(detail());
+        final String createdJson = mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(7)).andExpect(jsonPath("$.stars").value(3))
+                .andExpect(jsonPath("$.avatarId").doesNotExist()).andExpect(jsonPath("$.homepageUrl").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        final var detailJson = JsonMapper.builder().findAndAddModules().build().readTree(createdJson);
+        assertEquals(8, detailJson.properties().size());
+        assertTrue(detailJson.path("description").isNull());
+        assertTrue(detailJson.path("levelId").isNull());
+        assertTrue(detailJson.path("avatarUrl").isNull());
+        verify(service()).create(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "KEEP"), null);
+
+        final String remove = SAVE.replace("\"KEEP\"", "\"REMOVE\"");
+        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/creators/7").file(payload(remove)).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isOk());
+        verify(service()).update(7, new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REMOVE"), null);
+
+        final MockMultipartFile avatar = new MockMultipartFile("avatar", "avatar.png", "image/png", new byte[] {1, 2, 3});
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"KEEP\"", "\"REPLACE\""))).file(avatar)
+                        .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isCreated());
+        verify(service()).create(eq(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE")),
+                any(MultipartFile.class));
+        mvc.perform(delete("/api/admin/creators/7").with(jwt().authorities(TOURNAMENT_ADMIN))).andExpect(status().isNoContent());
+        verify(service()).delete(7);
     }
-    @Test void exactNumbersAndRequiredNullableFieldsAreEnforcedAtJacksonBoundary() {
+
+    @Test void twentyDigitStringUidPassesMultipartWithoutNumericCoercion() throws Exception {
+        final String uid = "12345678901234567890";
+        when(service().create(any(), any())).thenReturn(new CreatorDtos.Detail(7, uid, "Creator", null, List.of(1L), null, 3, null));
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"123\"", "\"" + uid + "\"")))
+                        .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").isString())
+                .andExpect(jsonPath("$.bilibiliUid").value(uid));
+        verify(service()).create(new CreatorDtos.SaveRequest(uid, "Creator", null, List.of(1L), null, 3, "KEEP"), null);
+    }
+
+    @Test void multipartBoundaryRejectsMultipleAvatarsMissingPayloadAndLegacyJsonBody() throws Exception {
+        final MockMultipartFile first = new MockMultipartFile("avatar", "a.png", "image/png", new byte[] {1});
+        final MockMultipartFile second = new MockMultipartFile("avatar", "b.png", "image/png", new byte[] {2});
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).file(first).file(second).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(multipart("/api/admin/creators").file(first).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
+        mvc.perform(post("/api/admin/creators").contentType("application/json").content(SAVE).with(jwt().authorities(TOURNAMENT_ADMIN)))
+                .andExpect(status().isUnsupportedMediaType());
+        verifyNoInteractions(service());
+    }
+
+    @Test void unknownSystemFieldsAndNonStringUidsAreRejectedByRealMultipartJacksonBinding() throws Exception {
+        for (final String field : List.of("\"avatarId\":\"injected\"", "\"subject\":\"injected\"", "\"score\":10", "\"favoriteCount\":20")) {
+            mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"name\":", field + ",\"name\":")))
+                            .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                    .andExpect(status().isBadRequest());
+        }
+        for (final String uid : List.of("123", "true")) {
+            mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":" + uid)))
+                            .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                    .andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(service());
+    }
+
+    @Test void exactNumbersRequiredNullableFieldsAndTwentyDigitUidAreEnforcedAtJacksonBoundary() {
         final var json = JsonMapper.builder().findAndAddModules().build();
-        for (final String invalid : List.of(SAVE.replace("\"baseStars\":3", "\"baseStars\":3.2"),
-                SAVE.replace("\"baseStars\":3", "\"baseStars\":\"3\""),
-                SAVE.replace("\"baseStars\":3", "\"baseStars\":null"),
+        for (final String invalid : List.of(SAVE.replace("\"stars\":3", "\"stars\":3.2"),
+                SAVE.replace("\"stars\":3", "\"stars\":\"3\""), SAVE.replace("\"stars\":3", "\"stars\":null"),
                 SAVE.replace("\"categoryIds\":[1]", "\"categoryIds\":[\"1\"]"),
-                SAVE.replace("\"levelId\":null,", ""),
-                SAVE.replace("\"avatarId\":null", "\"score\":10,\"avatarId\":null"))) {
+                SAVE.replace("\"levelId\":null,", ""), SAVE.replace("\"avatarAction\":\"KEEP\"", "\"avatarAction\":\"KEEP\",\"rewardPoints\":8"),
+                SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":123"),
+                SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":true"))) {
             assertThrows(tools.jackson.core.JacksonException.class, () -> json.readValue(invalid, CreatorDtos.SaveRequest.class));
         }
-        assertThrows(tools.jackson.core.JacksonException.class, () -> json.readValue("{\"favoriteThreshold\":1.1}", CreatorDtos.SettingsRequest.class));
-        assertThrows(tools.jackson.core.JacksonException.class, () -> json.readValue("{\"favoriteThreshold\":\"1\"}", CreatorDtos.SettingsRequest.class));
-        assertThrows(tools.jackson.core.JacksonException.class, () -> json.readValue("{\"favoriteThreshold\":null}", CreatorDtos.SettingsRequest.class));
+        final String uid = "12345678901234567890";
+        assertEquals(uid, json.readValue(SAVE.replace("\"123\"", "\"" + uid + "\""), CreatorDtos.SaveRequest.class).bilibiliUid());
+    }
+
+    private static MockMultipartFile payload(final String json) {
+        return new MockMultipartFile("payload", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
+    }
+    private static CreatorDtos.Detail detail() {
+        return new CreatorDtos.Detail(7, "123", "Creator", null, List.of(1L), null, 3, null);
     }
     private CreatorService service() { return context.getBean(CreatorService.class); }
+    private CreatorAvatarService avatars() { return context.getBean(CreatorAvatarService.class); }
+
     @Configuration
     @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class, GlobalExceptionHandler.class})
     static class TestConfig {
         @Bean JwtDecoder jwtDecoder() { return mock(JwtDecoder.class); }
         @Bean CreatorService service() { return mock(CreatorService.class); }
-        @Bean CreatorController publicController(final CreatorService service) { return new CreatorController(service); }
+        @Bean CreatorAvatarService avatars() { return mock(CreatorAvatarService.class); }
+        @Bean CreatorController publicController(final CreatorService service, final CreatorAvatarService avatars) {
+            return new CreatorController(service, avatars);
+        }
         @Bean CreatorAdminController adminController(final CreatorService service) { return new CreatorAdminController(service); }
     }
 }

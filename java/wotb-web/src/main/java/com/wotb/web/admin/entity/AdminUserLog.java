@@ -1,4 +1,4 @@
-package com.wotb.web.user.entity;
+package com.wotb.web.admin.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,8 +15,6 @@ import java.time.OffsetDateTime;
 @Entity
 @Table(name = "admin_user_log")
 public class AdminUserLog {
-    public static final String KEYCLOAK_DELETE_PENDING = "KEYCLOAK_DELETE_PENDING";
-    public static final String FAILED_KEYCLOAK_DELETE = "FAILED_KEYCLOAK_DELETE";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -109,13 +107,8 @@ public class AdminUserLog {
         this.errorMessage = errorMessage;
     }
 
-    public void markKeycloakDeletePending() {
-        this.status = KEYCLOAK_DELETE_PENDING;
-    }
-
-    public void markFailedKeycloakDelete(final String errorCode, final boolean localDeleted, final String errorMessage,
-                                         final boolean accountStillExists) {
-        this.status = accountStillExists ? FAILED_KEYCLOAK_DELETE : KEYCLOAK_DELETE_PENDING;
+    public void markFailedKeycloakDelete(final String errorCode, final boolean localDeleted, final String errorMessage) {
+        this.status = "FAILED_KEYCLOAK_DELETE";
         this.localProfileDeleted = localDeleted;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;

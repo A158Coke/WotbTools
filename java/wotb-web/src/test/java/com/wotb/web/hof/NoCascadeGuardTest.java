@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li>没有任何外键指向 {@code user_profile}（删资料不会牵连任何业务表）；</li>
  *   <li>{@code ON DELETE CASCADE} 只允许出现在**域内组合关系**上，且必须逐个显式评审：
- *       creator 的类别关联与收藏历史随所属 UP 删除；两条路径均只指向 creator，
+ *       creator 的类别关联随所属 UP 删除；该路径只指向 creator，
  *       不得出现在 HoF 或 IAM 路径上；</li>
  *   <li>百场/三环的 replay evidence 外键不是 CASCADE（业务行永不被级联删除）。</li>
  * </ol>
@@ -79,8 +79,7 @@ class NoCascadeGuardTest {
                             + "order by tc.constraint_name");
             // Only creator-owned composition may cascade; verify the exact source and target columns too.
             assertEquals(List.of(
-                            "creator_category_link_creator_id_fkey:creator_category_link.creator_id->creator.id",
-                            "creator_favorite_creator_id_fkey:creator_favorite.creator_id->creator.id"),
+                            "creator_category_link_creator_id_fkey:creator_category_link.creator_id->creator.id"),
                     cascades,
                     "出现新的级联删除关系时必须显式评审：IAM / HoF 路径禁止级联删除");
 

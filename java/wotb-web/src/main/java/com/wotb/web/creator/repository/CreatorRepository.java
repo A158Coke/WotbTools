@@ -13,7 +13,7 @@ import java.util.Optional;
 
 public interface CreatorRepository extends JpaRepository<Creator, Long> {
     @EntityGraph(attributePaths = "categoryIds")
-    @Query("select c from Creator c where (:categoryId is null or :categoryId member of c.categoryIds) order by least(10, c.baseStars * 2 + c.rewardPoints) desc, c.createdAt desc, c.id desc")
+    @Query("select c from Creator c where (:categoryId is null or :categoryId member of c.categoryIds) order by c.stars desc, c.createdAt desc, c.id desc")
     List<Creator> publicList(@Param("categoryId") Long categoryId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -21,6 +21,8 @@ public interface CreatorRepository extends JpaRepository<Creator, Long> {
     Optional<Creator> findLocked(@Param("id") long id);
 
     boolean existsByLevelId(long levelId);
+    boolean existsByBilibiliUid(String bilibiliUid);
+    boolean existsByBilibiliUidAndIdNot(String bilibiliUid, long id);
     boolean existsByAvatarId(String avatarId);
 
     @Query(value = """

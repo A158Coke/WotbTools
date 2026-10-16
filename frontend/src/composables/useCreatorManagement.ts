@@ -10,7 +10,7 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
   const network = computed(deps.network ?? (() => gate.availability(Feature.CREATORS)))
   const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated')
   const categories = ref<api.CreatorCategory[]>([]), levels = ref<api.CreatorLevel[]>([])
-  const settings = ref<api.CreatorSettings | null>(null), detail = ref<api.CreatorDetail | null>(null)
+  const avatarUploadsAvailable = ref(false), metadataLoaded = ref(false), detail = ref<api.CreatorDetail | null>(null)
   const loading = ref(false), busy = ref(false), editorLoading = ref(false), editorOpen = ref(false)
   const error = ref<unknown>(null), editorError = ref<unknown>(null), notice = ref(''), draftEpoch = ref(0)
   let generation = 0, controller = new AbortController(), editorGeneration = 0, readGeneration = 0
@@ -33,10 +33,8 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     const gen = generation, epoch = auth.authEpoch(), signal = controller.signal, readGen = ++readGeneration
     loading.value = true; error.value = null
     try {
-      const [nextCategories, nextLevels, nextSettings] = await Promise.all([
-        transport.listCreatorAdminCategories(signal), transport.listCreatorLevels(signal), transport.getCreatorSettings(signal),
-      ])
-      if (owns(gen, epoch) && readGen === readGeneration) { categories.value = nextCategories; levels.value = nextLevels; settings.value = nextSettings }
+      const metadata = await transport.getCreatorMetadata(signal)
+      if (owns(gen, epoch) && readGen === readGeneration) { categories.value = metadata.categories; levels.value = metadata.levels; avatarUploadsAvailable.value = metadata.avatarUploadsAvailable; metadataLoaded.value = true }
     } catch (value) { if (owns(gen, epoch) && readGen === readGeneration) error.value = value }
     finally { if (owns(gen, epoch) && readGen === readGeneration) loading.value = false }
   }
@@ -50,11 +48,9 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     loading.value = false
     editorOpen.value = true; editorLoading.value = true; detail.value = null; editorError.value = null
     try {
-      const [nextCategories, nextLevels, nextSettings, value] = await Promise.all([
-        transport.listCreatorAdminCategories(signal), transport.listCreatorLevels(signal), transport.getCreatorSettings(signal), transport.getCreatorDetail(id, signal),
-      ])
+      const [metadata, value] = await Promise.all([transport.getCreatorMetadata(signal), transport.getCreatorDetail(id, signal)])
       if (owns(gen, epoch) && editGen === editorGeneration && readGen === readGeneration) {
-        categories.value = nextCategories; levels.value = nextLevels; settings.value = nextSettings; detail.value = value
+        categories.value = metadata.categories; levels.value = metadata.levels; avatarUploadsAvailable.value = metadata.avatarUploadsAvailable; metadataLoaded.value = true; detail.value = value
       }
     } catch (value) { if (owns(gen, epoch) && editGen === editorGeneration) editorError.value = value }
     finally { if (owns(gen, epoch) && editGen === editorGeneration) editorLoading.value = false }
@@ -78,11 +74,11 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     } catch (value) { if (owns(gen, epoch)) (editor ? editorError : error).value = value; return false }
     finally { if (owns(gen, epoch)) busy.value = false }
   }
-  async function save(value: api.CreatorSaveRequest, editing = false) {
+  async function save(value: api.CreatorSaveRequest, avatar: File | null = null, editing = false) {
     const id = editing ? detail.value?.id : null
     if (editing && !id) return false
     const gen = generation, epoch = auth.authEpoch(), context = { draftGeneration: draftEpoch.value, epoch, editing }
-    const success = await mutation(async signal => { await transport.saveCreator(id ?? null, value, signal) }, editing)
+    const success = await mutation(async signal => { await transport.saveCreator(id ?? null, value, avatar, signal) }, editing)
     if (success && ownsForm(context)) savedForm = context
     if (success && owns(gen, epoch)) notice.value = 'saved'
     return success
@@ -117,17 +113,8 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     if (success && owns(gen, epoch)) notice.value = 'removed'
     return success && owns(gen, epoch)
   }
-  async function setThreshold(value: number) {
-    const gen = generation, epoch = auth.authEpoch()
-    const success = await mutation(async signal => {
-      const result = await transport.saveCreatorSettings(value, signal)
-      if (owns(gen, epoch)) settings.value = result
-    })
-    if (success && owns(gen, epoch)) notice.value = 'saved'
-    return success && owns(gen, epoch)
-  }
   watch([allowed, () => auth.tokenParsed.value?.sub], () => {
-    invalidate(); categories.value = []; levels.value = []; settings.value = null
+    invalidate(); categories.value = []; levels.value = []; avatarUploadsAvailable.value = false; metadataLoaded.value = false
     if (allowed.value && network.value.available) void refresh()
   }, { immediate: true })
   watch(() => network.value.available, available => {
@@ -136,11 +123,11 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
       loading.value = false; busy.value = false; editorLoading.value = false
       return
     }
-    // A temporary disconnect cancels work without discarding this account's drafts or avatar reservation.
+    // A temporary disconnect cancels work without discarding this account's drafts or selected image.
     if (editorOpen.value && !detail.value && editingId != null) void editCreator(editingId)
     else void refresh()
   })
   onScopeDispose(() => { mounted = false; invalidate() })
-  return { network, allowed, categories, levels, settings, detail, loading, busy, editorLoading, editorOpen,
-    error, editorError, notice, draftEpoch, operationSignal: () => controller.signal, refresh, editCreator, retryEditor, closeEditor, save, finishSave, remove, addDictionary, removeDictionary, setThreshold }
+  return { network, allowed, categories, levels, avatarUploadsAvailable, metadataLoaded, detail, loading, busy, editorLoading, editorOpen,
+    error, editorError, notice, draftEpoch, operationSignal: () => controller.signal, refresh, editCreator, retryEditor, closeEditor, save, finishSave, remove, addDictionary, removeDictionary }
 }

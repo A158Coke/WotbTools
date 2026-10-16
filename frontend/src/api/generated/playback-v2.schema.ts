@@ -60,6 +60,7 @@ export default {
       "additionalProperties": false,
       "required": [
         "id",
+        "bilibiliUid",
         "name",
         "description",
         "homepageUrl",
@@ -67,13 +68,17 @@ export default {
         "categories",
         "level",
         "score",
-        "favoriteCount",
         "createdAt"
       ],
       "properties": {
         "id": {
           "type": "integer",
           "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
         },
         "name": {
           "type": "string",
@@ -90,8 +95,8 @@ export default {
         "homepageUrl": {
           "type": "string",
           "format": "uri",
-          "maxLength": 300,
-          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]{0,19}$",
+          "maxLength": 47
         },
         "avatarUrl": {
           "type": [
@@ -118,12 +123,13 @@ export default {
         },
         "score": {
           "type": "integer",
-          "minimum": 2,
-          "maximum": 10
-        },
-        "favoriteCount": {
-          "type": "integer",
-          "minimum": 0
+          "enum": [
+            2,
+            4,
+            6,
+            8,
+            10
+          ]
         },
         "createdAt": {
           "type": "string",
@@ -135,15 +141,20 @@ export default {
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "bilibiliUid",
         "name",
         "description",
-        "homepageUrl",
         "categoryIds",
         "levelId",
-        "baseStars",
-        "avatarId"
+        "stars",
+        "avatarAction"
       ],
       "properties": {
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^\\s*(?=0*[1-9])[0-9]{1,20}\\s*$",
+          "description": "Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server."
+        },
         "name": {
           "type": "string",
           "minLength": 1,
@@ -155,12 +166,6 @@ export default {
             "null"
           ],
           "maxLength": 2000
-        },
-        "homepageUrl": {
-          "type": "string",
-          "format": "uri",
-          "maxLength": 300,
-          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?(?:\\?[^#\\s]*)?$"
         },
         "categoryIds": {
           "type": "array",
@@ -178,17 +183,18 @@ export default {
           ],
           "minimum": 1
         },
-        "baseStars": {
+        "stars": {
           "type": "integer",
           "minimum": 1,
           "maximum": 5
         },
-        "avatarId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 36
+        "avatarAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REPLACE",
+            "REMOVE"
+          ]
         }
       }
     },
@@ -197,19 +203,23 @@ export default {
       "additionalProperties": false,
       "required": [
         "id",
+        "bilibiliUid",
         "name",
         "description",
-        "homepageUrl",
         "categoryIds",
         "levelId",
-        "baseStars",
-        "avatarId",
+        "stars",
         "avatarUrl"
       ],
       "properties": {
         "id": {
           "type": "integer",
           "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
         },
         "name": {
           "type": "string",
@@ -222,12 +232,6 @@ export default {
             "null"
           ],
           "maxLength": 2000
-        },
-        "homepageUrl": {
-          "type": "string",
-          "format": "uri",
-          "maxLength": 300,
-          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]*/?$"
         },
         "categoryIds": {
           "type": "array",
@@ -245,17 +249,10 @@ export default {
           ],
           "minimum": 1
         },
-        "baseStars": {
+        "stars": {
           "type": "integer",
           "minimum": 1,
           "maximum": 5
-        },
-        "avatarId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 36
         },
         "avatarUrl": {
           "type": [
@@ -265,86 +262,29 @@ export default {
         }
       }
     },
-    "CreatorSettings": {
+    "CreatorMetadata": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "favoriteThreshold",
+        "categories",
+        "levels",
         "avatarUploadsAvailable"
       ],
       "properties": {
-        "favoriteThreshold": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          }
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorLevel"
+          }
         },
         "avatarUploadsAvailable": {
           "type": "boolean"
-        }
-      }
-    },
-    "CreatorSettingsRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "favoriteThreshold"
-      ],
-      "properties": {
-        "favoriteThreshold": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
-        }
-      }
-    },
-    "CreatorFavorites": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "creatorIds"
-      ],
-      "properties": {
-        "creatorIds": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      }
-    },
-    "CreatorFavoriteResult": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "creator",
-        "active"
-      ],
-      "properties": {
-        "creator": {
-          "$ref": "#/$defs/CreatorCard"
-        },
-        "active": {
-          "type": "boolean"
-        }
-      }
-    },
-    "CreatorAvatar": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "url"
-      ],
-      "properties": {
-        "id": {
-          "type": "string",
-          "format": "uuid"
-        },
-        "url": {
-          "type": "string",
-          "minLength": 1
         }
       }
     },
@@ -5514,6 +5454,7 @@ export default {
       "enum": [
         "CREATOR_NOT_FOUND",
         "CREATOR_INVALID_REQUEST",
+        "CREATOR_UID_ALREADY_EXISTS",
         "CREATOR_CATEGORY_IN_USE",
         "CREATOR_LEVEL_IN_USE",
         "CREATOR_CONFIG_CONFLICT",

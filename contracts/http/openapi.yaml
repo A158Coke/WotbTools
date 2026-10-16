@@ -87,83 +87,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/creators/favorites:
+  /api/creators/avatars/{avatarId}:
     get:
-      operationId: getCreatorFavorites
-      summary: getCreatorFavorites
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorFavorites"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/creators/{id}/favorite:
-    put:
-      operationId: favoriteCreator
-      summary: favoriteCreator
-      security:
-        - bearerAuth: []
+      operationId: getCreatorAvatar
+      summary: Read an attached creator avatar
+      security: []
       parameters:
-        - name: id
+        - name: avatarId
           in: path
           required: true
           schema:
-            type: integer
-            minimum: 1
+            type: string
+            format: uuid
       responses:
         "200":
-          description: Creator result
+          description: Creator avatar bytes
           content:
-            application/json:
+            image/png:
               schema:
-                $ref: "#/components/schemas/CreatorFavoriteResult"
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
         "400":
           description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
           content:
             application/json:
               schema:
@@ -174,57 +123,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-    delete:
-      operationId: unfavoriteCreator
-      summary: unfavoriteCreator
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorFavoriteResult"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
+        "503":
+          description: Avatar storage unavailable
           content:
             application/json:
               schema:
@@ -238,9 +138,22 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/CreatorSaveRequest"
+              type: object
+              additionalProperties: false
+              required:
+                - payload
+              properties:
+                payload:
+                  $ref: "#/components/schemas/CreatorSaveRequest"
+                avatar:
+                  type: string
+                  format: binary
+                  description: One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
+            encoding:
+              payload:
+                contentType: application/json
       responses:
         "201":
           description: Creator result
@@ -278,12 +191,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "413":
+          description: "FILE_TOO_LARGE: image input exceeds the configured limits"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "503":
           description: Avatar storage unavailable
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+      description: Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
   /api/admin/creators/{id}:
     get:
       operationId: getCreatorDetail
@@ -349,9 +269,22 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/CreatorSaveRequest"
+              type: object
+              additionalProperties: false
+              required:
+                - payload
+              properties:
+                payload:
+                  $ref: "#/components/schemas/CreatorSaveRequest"
+                avatar:
+                  type: string
+                  format: binary
+                  description: One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
+            encoding:
+              payload:
+                contentType: application/json
       responses:
         "200":
           description: Creator result
@@ -389,12 +322,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "413":
+          description: "FILE_TOO_LARGE: image input exceeds the configured limits"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
         "503":
           description: Avatar storage unavailable
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+      description: Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected.
     delete:
       operationId: deleteCreator
       summary: deleteCreator
@@ -441,50 +381,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
   /api/admin/creators/categories:
-    get:
-      operationId: listAdminCreatorCategories
-      summary: listAdminCreatorCategories
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CreatorCategory"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
     post:
       operationId: createCreatorCategory
       summary: createCreatorCategory
@@ -580,50 +476,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
   /api/admin/creators/levels:
-    get:
-      operationId: listCreatorLevels
-      summary: listCreatorLevels
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CreatorLevel"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
     post:
       operationId: createCreatorLevel
       summary: createCreatorLevel
@@ -718,25 +570,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/settings:
+  /api/admin/creators/metadata:
     get:
-      operationId: getCreatorSettings
-      summary: getCreatorSettings
+      operationId: getCreatorMetadata
+      summary: Get creator management dictionaries and avatar upload availability
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: Creator result
+          description: Creator management metadata
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CreatorSettings"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: "#/components/schemas/CreatorMetadata"
         "401":
           description: Authentication required
           content:
@@ -744,222 +590,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-    put:
-      operationId: saveCreatorSettings
-      summary: saveCreatorSettings
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreatorSettingsRequest"
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorSettings"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/avatars:
-    post:
-      operationId: uploadCreatorAvatar
-      summary: uploadCreatorAvatar
-      security:
-        - bearerAuth: []
-      responses:
-        "201":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorAvatar"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "413":
-          description: Payload too large
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Avatar storage unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required:
-                - file
-              properties:
-                file:
-                  type: string
-                  format: binary
-  /api/admin/creators/avatars/{avatarId}:
-    delete:
-      operationId: deleteUnusedCreatorAvatar
-      summary: deleteUnusedCreatorAvatar
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: avatarId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "204":
-          description: Completed
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Avatar storage unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/creators/avatars/{avatarId}:
-    get:
-      operationId: getCreatorAvatar
-      summary: Read an attached creator avatar
-      security: []
-      parameters:
-        - name: avatarId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Creator avatar bytes
-          content:
-            image/png:
-              schema:
-                type: string
-                format: binary
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Avatar storage unavailable
+          description: Tournament administrator required
           content:
             application/json:
               schema:
@@ -4021,7 +3652,7 @@ components:
         id:
           type: integer
           minimum: 1
-        name: &a1
+        name:
           type: string
           minLength: 1
           maxLength: 100
@@ -4035,19 +3666,26 @@ components:
         id:
           type: integer
           minimum: 1
-        name: *a1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
     CreatorNameRequest:
       type: object
       additionalProperties: false
       required:
         - name
       properties:
-        name: *a1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
     CreatorCard:
       type: object
       additionalProperties: false
       required:
         - id
+        - bilibiliUid
         - name
         - description
         - homepageUrl
@@ -4055,23 +3693,29 @@ components:
         - categories
         - level
         - score
-        - favoriteCount
         - createdAt
       properties:
         id:
           type: integer
           minimum: 1
-        name: *a1
+        bilibiliUid:
+          type: string
+          pattern: ^[1-9][0-9]{0,19}$
+          maxLength: 20
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
         description:
           type:
             - string
             - "null"
           maxLength: 2000
-        homepageUrl: &a2
+        homepageUrl:
           type: string
           format: uri
-          maxLength: 300
-          pattern: ^https://space\.bilibili\.com/[1-9][0-9]*/?$
+          pattern: ^https://space\.bilibili\.com/[1-9][0-9]{0,19}$
+          maxLength: 47
         avatarUrl:
           type:
             - string
@@ -4087,11 +3731,12 @@ components:
             - type: "null"
         score:
           type: integer
-          minimum: 2
-          maximum: 10
-        favoriteCount:
-          type: integer
-          minimum: 0
+          enum:
+            - 2
+            - 4
+            - 6
+            - 8
+            - 10
         createdAt:
           type: string
           format: date-time
@@ -4099,25 +3744,27 @@ components:
       type: object
       additionalProperties: false
       required:
+        - bilibiliUid
         - name
         - description
-        - homepageUrl
         - categoryIds
         - levelId
-        - baseStars
-        - avatarId
+        - stars
+        - avatarAction
       properties:
-        name: *a1
+        bilibiliUid:
+          type: string
+          pattern: ^\s*(?=0*[1-9])[0-9]{1,20}\s*$
+          description: Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
         description:
           type:
             - string
             - "null"
           maxLength: 2000
-        homepageUrl:
-          type: string
-          format: uri
-          maxLength: 300
-          pattern: ^https://space\.bilibili\.com/[1-9][0-9]*/?(?:\?[^#\s]*)?$
         categoryIds:
           type: array
           minItems: 1
@@ -4125,44 +3772,50 @@ components:
           items:
             type: integer
             minimum: 1
-        levelId: &a3
+        levelId:
           type:
             - integer
             - "null"
           minimum: 1
-        baseStars:
+        stars:
           type: integer
           minimum: 1
           maximum: 5
-        avatarId:
-          type:
-            - string
-            - "null"
-          maxLength: 36
+        avatarAction:
+          type: string
+          enum:
+            - KEEP
+            - REPLACE
+            - REMOVE
     CreatorDetail:
       type: object
       additionalProperties: false
       required:
         - id
+        - bilibiliUid
         - name
         - description
-        - homepageUrl
         - categoryIds
         - levelId
-        - baseStars
-        - avatarId
+        - stars
         - avatarUrl
       properties:
         id:
           type: integer
           minimum: 1
-        name: *a1
+        bilibiliUid:
+          type: string
+          pattern: ^[1-9][0-9]{0,19}$
+          maxLength: 20
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
         description:
           type:
             - string
             - "null"
           maxLength: 2000
-        homepageUrl: *a2
         categoryIds:
           type: array
           minItems: 1
@@ -4170,79 +3823,37 @@ components:
           items:
             type: integer
             minimum: 1
-        levelId: *a3
-        baseStars:
+        levelId:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        stars:
           type: integer
           minimum: 1
           maximum: 5
-        avatarId:
-          type:
-            - string
-            - "null"
-          maxLength: 36
         avatarUrl:
           type:
             - string
             - "null"
-    CreatorSettings:
+    CreatorMetadata:
       type: object
       additionalProperties: false
       required:
-        - favoriteThreshold
+        - categories
+        - levels
         - avatarUploadsAvailable
       properties:
-        favoriteThreshold:
-          type: integer
-          minimum: 1
-          maximum: 2147483647
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatorCategory"
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreatorLevel"
         avatarUploadsAvailable:
           type: boolean
-    CreatorSettingsRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - favoriteThreshold
-      properties:
-        favoriteThreshold:
-          type: integer
-          minimum: 1
-          maximum: 2147483647
-    CreatorFavorites:
-      type: object
-      additionalProperties: false
-      required:
-        - creatorIds
-      properties:
-        creatorIds:
-          type: array
-          uniqueItems: true
-          items:
-            type: integer
-            minimum: 1
-    CreatorFavoriteResult:
-      type: object
-      additionalProperties: false
-      required:
-        - creator
-        - active
-      properties:
-        creator:
-          $ref: "#/components/schemas/CreatorCard"
-        active:
-          type: boolean
-    CreatorAvatar:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - url
-      properties:
-        id:
-          type: string
-          format: uuid
-        url:
-          type: string
-          minLength: 1
     BroadcastServer:
       type: "string"
       enum: ["CN", "ASIA", "NA", "EU", "LESTA"]
@@ -6637,6 +6248,7 @@ components:
       enum:
         - CREATOR_NOT_FOUND
         - CREATOR_INVALID_REQUEST
+        - CREATOR_UID_ALREADY_EXISTS
         - CREATOR_CATEGORY_IN_USE
         - CREATOR_LEVEL_IN_USE
         - CREATOR_CONFIG_CONFLICT

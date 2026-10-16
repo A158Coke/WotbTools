@@ -3,9 +3,7 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.user.entity.UserProfile;
-import com.wotb.web.user.service.AdminUserLogPersister;
 import com.wotb.web.user.service.UserProfileService;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.UserRepresentation;
@@ -47,7 +45,7 @@ class AdminUserPaginationTest {
 
     private AdminUserService service() {
         return new AdminUserService(userProfileService, mapper, logPersister,
-                keycloakAdminUserService, mock(CreatorService.class), txManager);
+                keycloakAdminUserService, txManager);
     }
 
     @Test

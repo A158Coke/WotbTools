@@ -21,9 +21,7 @@ for (const [name, schema] of [
   ['creator-card', 'CreatorCard'],
   ['creator-detail', 'CreatorDetail'],
   ['creator-save-request', 'CreatorSaveRequest'],
-  ['creator-settings', 'CreatorSettings'],
-  ['creator-favorite-result', 'CreatorFavoriteResult'],
-  ['creator-favorites', 'CreatorFavorites'],
+  ['creator-metadata', 'CreatorMetadata'],
 ]) {
   const value = JSON.parse(await readFile(new URL(`../../contracts/http/fixtures/${name}.json`, import.meta.url), 'utf8'))
   const check = ajv.compile(document.components.schemas[schema])

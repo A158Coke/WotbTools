@@ -22,20 +22,14 @@ public class Creator {
     public String name;
     @Column(length = 2000)
     public String description;
-    @Column(name = "homepage_url", nullable = false, length = 300)
-    public String homepageUrl;
+    @Column(name = "bilibili_uid", nullable = false, length = 20, unique = true)
+    public String bilibiliUid;
     @Column(name = "level_id")
     public Long levelId;
     @Column(name = "avatar_id", length = 36, unique = true)
     public String avatarId;
-    @Column(name = "base_stars", nullable = false)
-    public int baseStars = 3;
-    @Column(name = "favorite_count", nullable = false)
-    public long favoriteCount;
-    @Column(name = "cycle_count", nullable = false)
-    public long cycleCount;
-    @Column(name = "reward_points", nullable = false)
-    public int rewardPoints;
+    @Column(nullable = false)
+    public int stars = 3;
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
     @ElementCollection
