@@ -108,15 +108,15 @@ ingress 与认证之间**不存在**所有权冲突：replay 意图没有 auth-r
 - TTL 24 小时（`PENDING_TTL_MS`）：本地 cache hygiene，与 Keycloak/client login timeout 无关；
   过期 pending 在下次启动被丢弃并清理。
 - ACK 后（`consumePendingReplay(pendingId)`）：清 pending slot + 清持久 metadata（exactly-once），
-  下次启动不再恢复该 replay。backing file 不立即删除（Chromium 可能仍在读取 Web
-  synthetic HTTPS resource 的响应流），留到下一次启动 orphan cleanup 安全清理。
+  下次启动不再恢复该 replay。backing file 不立即删除（Gecko 可能仍在消费 LocalRuntimeServer
+  返回的响应体），留到下一次启动 orphan cleanup 安全清理。
 
 ## ACK 语义（identity-aware exactly-once）
 
 Web 侧 `useNativeReplayImport` 的顺序固定为：
 
 ```text
-getPendingReplay → fetch(synthetic HTTPS resource) → await onPendingFile(file, pending) → 受理成功
+getPendingReplay → fetch(same-origin LocalRuntimeServer resource) → File → await onPendingFile(file, pending)（本机分析）→ 受理成功
   → consumePendingReplay(pending.pendingId)
 ```
 

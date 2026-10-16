@@ -9,7 +9,7 @@ import { ANDROID_APP_ORIGIN } from './runtime.js'
 // 绝不在页面里静默回退到 keycloak-js。
 export const SUPPORTED_NATIVE_BRIDGE_VERSIONS = Object.freeze([3])
 
-/** Capability that makes the native OIDC session (not the WebView) the auth owner. */
+/** Capability that makes the native OIDC session (not the page) the auth owner. */
 export const NATIVE_AUTH_CAPABILITY = 'native-auth'
 
 /** Bridge methods the native-auth provider depends on (mirrors the JSON contract). */
@@ -25,7 +25,7 @@ export const NATIVE_AUTH_CHANGED_GLOBAL = 'wotbtoolsOnAuthChanged'
 
 /**
  * Capability that makes the native connectivity state (Android `ConnectivityManager`,
- * INTERNET + VALIDATED) authoritative instead of `navigator.onLine` in the WebView.
+ * INTERNET + VALIDATED) authoritative instead of `navigator.onLine` in the page.
  */
 export const NATIVE_CONNECTIVITY_CAPABILITY = 'connectivity'
 

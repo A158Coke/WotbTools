@@ -183,7 +183,7 @@ object ReplayIntentHandler {
 
     /**
      * 清空持久化 metadata（Web consume / 损坏 / 过期 / backing file 缺失）。
-     * 不删除 backing file：Chromium 可能仍在读取，留给下一次 startup orphan cleanup。
+     * 不删除 backing file：LocalRuntimeServer 可能仍在向页面流式返回它，留给下一次 startup orphan cleanup。
      */
     @SuppressLint("ApplySharedPref")
     fun clearPendingMetadata(context: Context) {

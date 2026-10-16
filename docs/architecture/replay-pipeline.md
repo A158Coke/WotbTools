@@ -1,7 +1,7 @@
 # 回放管线（Replay Pipeline）
 
 > **服务器没有 parser。** 唯一的回放解析器是上游 [WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent)
-> Rust Core，编译成 WASM 在浏览器 / Android WebView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
+> Rust Core，编译成 WASM 在浏览器 / Android APK 自带的 GeckoView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
 > 消费契约 `contracts/agent/replay-facets-v2.md`）。对解析结果的一切计算（去重、League Rating、指标、列投影、
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
 > 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。

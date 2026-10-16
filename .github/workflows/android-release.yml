@@ -5,7 +5,7 @@ name: Release / Android
 #              （guard_min_supported / guard_local_first_cutover / guard_bridge_covered）→ 构建/签名 →
 #              证书校验 → 清华副本上传（distribution replica，可 replace 覆盖，不锁定版本）→
 #              immutable APK seed（TX1 → TX2 依次从副本拉取，逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗该
-#              版本号，之后改源码必须换版本）→ 线上 APK 可访问 + SHA 核验 → tag →
+#              版本号，之后改变 Android candidate 的修改必须换版本）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
 #              ⇒ major / bridge cutover 的 ANDROID_MIN_SUPPORTED_VERSION_CODE 必须在**合并之前**设好：
 #              floor 未到位时这个 preflight 会 fail-closed（修好变量后幂等重跑是恢复路径，不是正常流程）。
@@ -15,7 +15,7 @@ name: Release / Android
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
 #              不重建 APK（复用 staged 的 immutable APK），校验 staged 身份（版本/SHA/tag/URL/
 #              source SHA）→ minSupported 覆盖 breaking bridge cutover → Keycloak runtime client
-#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（唯一 commit point）。
+#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（Android 客户端 rollout 的唯一 commit point）。
 #
 # 当前 main 在 publish 里的角色只有「策略与历史」：ancestry、minSupported、runtime compatibility
 # 以及 workflow 代码本身。它**不**决定发布哪个候选 —— main 前进到 2.0.2 不能作废已 staged 的 2.0.1。
@@ -25,7 +25,8 @@ name: Release / Android
 #
 # 全程 fail-closed + 幂等：APK/tag/staging evidence/version.json 任一步失败后对**同一源码**重跑同一版本都安全，
 # 不会双写、不会覆盖 immutable APK、不会 repoint tag。stage 失败不代表版本可复用：只要已有任一 immutable
-# artifact（tag / 任意一台 origin 的 APK / staging evidence / version.json），改源码就必须换更高版本。
+# artifact（tag / 任意一台 origin 的 APK / staging evidence / version.json），改变 Android candidate 的修改就必须
+# 换更高版本；stage 只从 origin/main HEAD 构建，main 前进后部分 stage 也无法再补齐。
 on:
   push:
     branches:
@@ -1018,7 +1019,7 @@ jobs:
     # 最终发布不变量（全部成立才写 manifest）：
     #   staged APK 身份正确（版本 / source SHA / tag / URL / APK SHA-256）
     #   ∧ production Keycloak 有可用的 wotbtools-android
-    #   ∧ APK bundled frontend 支持 Bridge v2 + native-auth，API/asset CORS 就绪
+    #   ∧ APK bundled frontend 支持 staged Native Bridge contract + native-auth，API/asset CORS 就绪
     #   ∧ minSupportedVersionCode 覆盖这次 breaking bridge cutover
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
     permissions:

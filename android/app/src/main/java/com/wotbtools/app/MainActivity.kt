@@ -724,7 +724,7 @@ class MainActivity : Activity() {
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
      * authoritative identity，Web 必须在本机分析完成后原样回传给 `consumePendingReplay`；其余字段与
-     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定 same-origin HTTPS resource）。
+     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定的同源 LocalRuntimeServer resource `http://127.0.0.1:21653/__native/replay-pending`）。
      */
     fun bridgePendingReplayJson(): Any {
         val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
