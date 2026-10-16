@@ -2891,4 +2891,39 @@ describe('2D 位姿与 3D 同源（poseFacet 通道）', () => {
     expect(await leftAt(5)).toBeCloseTo(pctOf(50), 1)    // 重入前：eid 1
     expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)  // 重入后：eid 2
   })
+
+  it('实体身份证据早于位姿覆盖（HP 先见）→ 覆盖外的采样回落 canonical，不泄漏该实体未来首帧（review P2）', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    // canonical：观测 [0,40]、x 恒 0——回落路径的期望位置
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 0, y: 0, timeSec: 40 }], 0, 40)
+    const n = 401
+    const defOf = (eid, x, coverage) => ({
+      eid, account_id: 1001,
+      pos: Array.from({ length: n }, () => [x, 0, 0]).flat(),
+      hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      coverage,
+    })
+    const facet = {
+      tStart: 100, samples: n,
+      // eid 2 的位姿证据从战斗 30s（raw 130）才出现，但身份证据（HP/观测先见）在战斗 10s ——
+      // 战斗 20s 的采样时刻落在 eid 2 的 coverage 之外，钳位会把它未来的首帧（x=150）泄漏到过去。
+      vehicles: [defOf(1, 50, [100, 140]), defOf(2, 150, [130, 200])],
+      entityStartsByAccount: new Map([[1001, new Map([[1, 0], [2, 10]])]]),
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: ds, poseFacet: facet, clockOffset: 100,
+    })
+    await flushPromises()
+    const pctOf = (x) => ((x + 300) / 600) * 100
+    const leftAt = async (seekTo) => {
+      await wrapper.setProps({ seekTo })
+      await flushPromises()
+      const style = wrapper.find('[data-test="pb-marker-1001"]').attributes('style') || ''
+      return Number(/left: ([\d.]+)%/.exec(style)?.[1])
+    }
+    expect(await leftAt(20)).toBeCloseTo(pctOf(0), 1)     // 覆盖外 → canonical 的 x=0（不是 eid 2 的 150）
+    expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)   // 进入覆盖（raw 135）→ eid 2 的通道值
+  })
 })

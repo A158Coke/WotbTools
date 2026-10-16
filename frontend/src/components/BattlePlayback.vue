@@ -59,7 +59,7 @@ import {
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
 import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
-import { selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
+import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
@@ -1627,9 +1627,12 @@ function poseAtTime(track, t) {
   const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
   if (freezeAt == null) return null
   // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
+  const rawAt = freezeAt + source.offset
   const def = source.defFor(track.accountId, freezeAt)
-  if (!def) return null
-  const pose = sampleVehiclePoseGame(def, source.grid, freezeAt + source.offset, _poseScratch)
+  // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
+  // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
+  if (!def || !poseCoveredAt(def, rawAt)) return null
+  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch)
   return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   GRID_DT,
+  poseCoveredAt,
   poseKeyframesOf,
   sampleVehiclePoseGame,
   selectActiveDef,
@@ -166,5 +167,24 @@ describe('selectActiveDef（多实体账号的活跃实体选择，canonical 身
     expect(selectActiveDef([defA, defB], new Map([[7, null], [9, 100]]), 150)).toBeNull()
     expect(selectActiveDef([defA, defB], new Map([[7, 10], [9, 10]]), 50)).toBeNull()
     expect(selectActiveDef([defA, defB], new Map([[7, 10], [99, 100]]), 150)).toBeNull()
+  })
+})
+
+describe('poseCoveredAt（采样时刻必须落在所选实体的 coverage 证据内）', () => {
+  const withCoverage = (coverage: number[]) => gridDef({ coverage })
+
+  it('区间内（含端点 ±容差）为 true；区间外、多区间空洞与畸形数据一律 false', () => {
+    expect(poseCoveredAt(withCoverage([10, 20]), 15)).toBe(true)
+    expect(poseCoveredAt(withCoverage([10, 20]), 10)).toBe(true)
+    expect(poseCoveredAt(withCoverage([10, 20]), 20 + 1e-7)).toBe(true)   // 端点浮点抖动
+    expect(poseCoveredAt(withCoverage([10, 20]), 9.9)).toBe(false)
+    expect(poseCoveredAt(withCoverage([10, 20]), 20 + 1e-3)).toBe(false)
+    expect(poseCoveredAt(withCoverage([10, 20, 30, 40]), 35)).toBe(true)  // 多区间
+    expect(poseCoveredAt(withCoverage([10, 20, 30, 40]), 25)).toBe(false)
+    expect(poseCoveredAt(withCoverage([]), 15)).toBe(false)
+    expect(poseCoveredAt(withCoverage([10]), 15)).toBe(false)
+    expect(poseCoveredAt(withCoverage([Number.NaN, 20]), 15)).toBe(false)
+    expect(poseCoveredAt(undefined, 15)).toBe(false)
+    expect(poseCoveredAt(withCoverage([10, 20]), Number.NaN)).toBe(false)
   })
 })
