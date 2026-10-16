@@ -8,6 +8,7 @@ import {
   serializeTankopediaQuery,
   withTankopediaState,
 } from './tankopediaQuery.js'
+import TANK_ALIASES from '../../../common/tank_aliases.json'
 
 describe('parseTankopediaQuery', () => {
   it('空 query 得到默认状态', () => {
@@ -97,10 +98,99 @@ describe('selectTanks', () => {
   })
 })
 
+describe('selectTanks — 别名搜索', () => {
+  // alias 只扩召回：命中后的身份与显示名仍然是 tank_cache 的正式车名。
+  const tanks = [
+    { id: 9297, name: 'FV215b 183', tier: 10, nation: 'uk', type: 'AT-SPG', aliases: ['183', '大白兔', '死星', 'Death Star'] },
+    { id: 2, name: 'IS-7', tier: 10, nation: 'ussr', type: 'heavyTank', aliases: [] },
+    { id: 3, name: 'E 100', tier: 10, nation: 'germany', type: 'heavyTank' },
+  ]
+  const names = list => list.map(tank => tank.name)
+
+  it('正式车名搜索不受 alias 影响', () => {
+    expect(names(selectTanks(tanks, { q: 'FV215b 183' }))).toEqual(['FV215b 183'])
+    expect(names(selectTanks(tanks, { q: 'is7' }))).toEqual(['IS-7'])
+    expect(names(selectTanks(tanks, { q: 'e100' }))).toEqual(['E 100'])
+  })
+
+  it('中文俗称命中，返回正式车名', () => {
+    const hits = selectTanks(tanks, { q: '大白兔' })
+    expect(names(hits)).toEqual(['FV215b 183'])
+    expect(hits[0].name).toBe('FV215b 183')
+  })
+
+  it('英文 nickname 不受大小写与 UI 语言限制', () => {
+    expect(names(selectTanks(tanks, { q: 'death star' }))).toEqual(['FV215b 183'])
+    expect(names(selectTanks(tanks, { q: 'DEATH STAR' }))).toEqual(['FV215b 183'])
+  })
+
+  it('alias 也走现有模糊匹配（前缀 / 子序列）', () => {
+    expect(names(selectTanks(tanks, { q: 'death' }))).toEqual(['FV215b 183'])
+    expect(names(selectTanks(tanks, { q: '死星' }))).toEqual(['FV215b 183'])
+  })
+
+  it('alias 与筛选叠加，且不改变相关度排序', () => {
+    expect(names(selectTanks(tanks, { q: '大白兔', nation: 'ussr' }))).toEqual([])
+    // 正式车名精确前缀命中的车排在仅 alias 子序列命中的车之前（现有 fuzzy ranking 不变）。
+    const ranked = selectTanks(
+      [
+        { id: 1, name: 'Death Dealer', aliases: [] },
+        { id: 2, name: 'FV215b 183', aliases: ['Death Star'] },
+      ],
+      { q: 'death' },
+    )
+    expect(names(ranked)).toEqual(['Death Dealer', 'FV215b 183'])
+  })
+
+  it('空白 / 缺失 alias 不产生假命中', () => {
+    const noisy = [{ id: 1, name: 'IS-7', aliases: ['', '   '] }, { id: 2, name: 'E 100' }]
+    expect(selectTanks(noisy, { q: 'zzz' })).toEqual([])
+    expect(names(selectTanks(noisy, { q: 'is7' }))).toEqual(['IS-7'])
+  })
+})
+
+describe('normalizeTankCache — alias 投影', () => {
+  it('缺 key 的车辆得到 aliases=[]，空 alias map 下搜索行为与旧版一致', () => {
+    const rows = normalizeTankCache({ 12345: { name: 'FV215b 183' } }, {})
+    expect(rows[0].aliases).toEqual([])
+    expect(selectTanks(rows, { q: 'fv215b' }).map(tank => tank.name)).toEqual(['FV215b 183'])
+    expect(selectTanks(rows, { q: '大白兔' })).toEqual([])
+  })
+
+  it('稀疏数据集：只有配置过的车辆拿到 alias，其余一律 []', () => {
+    const cache = {}
+    for (let id = 1; id <= 200; id += 1) cache[id] = { name: `Tank ${id}` }
+    cache[12345] = { name: 'FV215b 183' }
+    const rows = normalizeTankCache(cache, { 12345: ['大白兔'] })
+    const configured = rows.filter(row => row.aliases.length)
+    expect(configured).toHaveLength(1)
+    expect(configured[0]).toMatchObject({ id: 12345, name: 'FV215b 183', aliases: ['大白兔'] })
+    expect(rows.every(row => Array.isArray(row.aliases))).toBe(true)
+    // 搜索别名命中后，展示用的仍然是正式车名。
+    expect(selectTanks(rows, { q: '大白兔' }).map(tank => tank.name)).toEqual(['FV215b 183'])
+  })
+
+  it('默认接的是仓库的 common/tank_aliases.json；数据集为空时等价于旧版行为', () => {
+    // 数据集当前是空对象（`{}` 是合法初始状态，alias 由开发者按需逐步录入）：
+    // 这条用例同时锁住「空数据集不报错、每辆车都拿到数组」与「录入后按 tank_id 投影」。
+    const entries = Object.entries(TANK_ALIASES)
+    const cache = Object.fromEntries(entries.map(([id]) => [id, { name: `Tank ${id}` }]))
+    cache[1] = { name: 'Unconfigured' }
+    const rows = normalizeTankCache(cache)
+    expect(rows.every(row => Array.isArray(row.aliases))).toBe(true)
+    for (const [id, aliases] of entries) {
+      expect(rows.find(row => row.id === Number(id)).aliases).toEqual(aliases)
+    }
+    expect(rows.find(row => row.id === 1).aliases).toEqual([])
+    // 空数据集下搜索行为与接入 alias 之前完全一致（只认正式车名）。
+    expect(selectTanks(rows, { q: 'unconfigured' }).map(tank => tank.name)).toEqual(['Unconfigured'])
+  })
+})
+
 describe('normalizeTankCache', () => {
   it('对象与数组两种形状都能转换，最大穿深取弹种最大值', () => {
     const fromObject = normalizeTankCache({ 7: { name: 'A', tier: 3, shells: [{ penetration: 50 }, { penetration: 80 }] } })
-    expect(fromObject).toEqual([{ id: 7, name: 'A', tier: 3, nation: 'unknown', type: 'unknown', is_premium: false, is_collector: false, hp: null, pen_max: 80 }])
+    expect(fromObject).toEqual([{ id: 7, name: 'A', aliases: [], tier: 3, nation: 'unknown', type: 'unknown', is_premium: false, is_collector: false, hp: null, pen_max: 80 }])
     expect(normalizeTankCache([{ id: 8, name: 'B', is_premium: 1 }])[0]).toMatchObject({ id: 8, is_premium: true, pen_max: null })
   })
 

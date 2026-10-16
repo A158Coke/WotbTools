@@ -77,7 +77,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 - **API 纯英文**：成功 DTO 返回 raw enum 与数据；失败返回 canonical `ApiErrorResponse`（唯一错误 `id`、稳定 `errorCode`、可选 `errorMsg`、status、retryable、details、timestamp），不返回本地化 `*Label/message` 或 exception message。完整契约见 `docs/api/error-contract.md`。
 - **HTTP Contract First**：FE ↔ BE 的序列化契约以 `contracts/http/openapi.yaml` 为唯一事实源；前端 generated transport、Ajv runtime schema 与 fixture 由它生成/校验。修改 HTTP shape 时按 `docs/architecture/http-contracts.md` 的顺序执行，不让 Java domain enum 或 Vue view model 直接泄漏到 wire。
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
-- **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。
+- **单一数据源**：车辆库为 `common/tankopedia-tier{7,8,9,10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。坦克百科搜索别名 `common/tank_aliases.json` 是独立的**搜索 metadata**（人工维护、稀疏存储、只扩搜索召回，不参与车辆身份与显示名）；按任意 `tank_id` 离线校验/查询用生成的完整名册 `common/tank_ids.json`（全 tier，只有 id ↔ 名字，不是属性来源）。两者契约见 [`architecture/tankopedia-reference-data.md`](architecture/tankopedia-reference-data.md)。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
 - 跨层联动必须执行 `wotb-sync`。
 - **UI Profile（展示风格）**：`showcase`（深色，默认）/ `classic`（浅色）共用同一套业务组件、布局、状态与 API；`auto` 偏好按系统深浅色解析到其中一种。共享外壳和已迁移页面使用语义 token，Classic 在 `frontend/src/styles/classic-profile.css` 中提供浅色映射。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
