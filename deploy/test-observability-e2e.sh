@@ -18,9 +18,22 @@ MARKER="observability-e2e-${GITHUB_RUN_ID:-local}-$$"
 MARKER_TX="tx-alloy-e2e-${GITHUB_RUN_ID:-local}-$$"
 KEYCLOAK_MARKER="keycloak-${MARKER}"
 APK="observability-canary-${MARKER}.apk"
+KEYCLOAK_TX="kc-events-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
+CADDY_TX="gateway-tx-smoke-${GITHUB_RUN_ID:-local}-$$"
+# 合规分流的标记：每一条都必须能单独判定「该进 190 天留存」还是「只进 7 天」。
+# 独立前缀（不复用 MARKER / MARKER_TX）是必须的：下面的「不得进 compliance」断言是
+# 子串匹配，若这些标记里嵌了 MARKER_TX，后端 telemetry 的排除断言会被自己误伤。
+COMPLIANCE_SCOPE="compliance-e2e-${GITHUB_RUN_ID:-local}-$$"
+KC_LOGIN_MARKER="kc-login-${COMPLIANCE_SCOPE}"
+KC_ADMIN_MARKER="kc-admin-${COMPLIANCE_SCOPE}"
+KC_UNSELECTED_MARKER="kc-client-login-${COMPLIANCE_SCOPE}"
+KC_RUNTIME_MARKER="kc-runtime-${COMPLIANCE_SCOPE}"
+CADDY_API_MARKER="caddy-api-${COMPLIANCE_SCOPE}"
+CADDY_AUTH_MARKER="caddy-auth-${COMPLIANCE_SCOPE}"
+CADDY_RUNTIME_MARKER="caddy-runtime-${COMPLIANCE_SCOPE}"
 
 cleanup() {
-  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$FRONTEND" "$AI" "$LOKI" >/dev/null 2>&1 || true
+  docker rm -f "$ALLOY" "$ALLOY_TX" "$BACKEND" "$BACKEND_TX" "$KEYCLOAK" "$KEYCLOAK_TX" "$CADDY_TX" "$FRONTEND" "$AI" "$LOKI" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -45,6 +58,30 @@ wait_until() {
   done
   fail "$description"
 }
+
+# 留存契约：普通日志 7 天、只有 {compliance="security"} 190 天。这里断言的是**两档同时
+# 存在**——只 grep 4560h 会在有人把默认档也改成半年时通过，那正好是这次整改要避免的结果。
+# 下面用真实 Loki 镜像加载同一个文件，所以语法层由 Loki 自己把关，这里只管语义。
+python3 - "$ROOT/deploy/observability/loki/loki-config.yml" <<'PY_RETENTION'
+import sys
+
+import yaml
+
+limits = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))["limits_config"]
+assert limits["retention_period"] == "168h", limits.get("retention_period")
+streams = limits["retention_stream"]
+assert len(streams) == 1, streams
+override = streams[0]
+assert override["selector"] == '{compliance="security"}', override
+# 4560h = 190 天：公安自评估的「不少于六个月」。
+assert override["period"] == "4560h", override
+assert int(override["priority"]) >= 1, override
+# 回看窗口必须跟着延长，否则取证查询读不到旧块；单次查询长度仍然受限，避免一次 190 天的
+# 范围查询把这台小机器打爆。
+assert limits["max_query_lookback"] == "4560h", limits.get("max_query_lookback")
+assert limits["max_query_length"] == "168h", limits.get("max_query_length")
+print("PASS: Loki keeps ordinary logs 7 days and only the security stream 190 days")
+PY_RETENTION
 
 docker network create "$NETWORK" >/dev/null
 docker run -d --name "$LOKI" --network "$NETWORK" --network-alias loki \
@@ -134,6 +171,31 @@ wait_until "sanitized Android frontend stream reaches Loki" frontend_query
 docker run -d --name "$BACKEND_TX" --network "$NETWORK" \
   --label com.docker.compose.service=business-api \
   alpine:3.22 sh -c "while true; do echo event=backend_tx_smoke marker=$MARKER_TX; sleep 1; done" >/dev/null
+# 合规分流的输入：形态照抄生产真实行（Keycloak jboss-logging 的文本行、Caddy filter
+# 编码器的 JSON 行），因为分流判定就是在这些形态上做的。每个 lane 都带正反两例：
+#   - Keycloak：受控事件（LOGIN）与 admin event 必须进 compliance；未入清单的事件类型
+#     （CLIENT_LOGIN）与普通 runtime 日志必须留在 7 天档；
+#   - Caddy：带 compliance 字段的受控访问日志必须进 compliance（并把 security_kind 提
+#     升为标签）；TLS/ACME 之类的 runtime 行必须留在 7 天档。
+# 容器名刻意不含 keycloak/wotb-frontend/wotb-backend：Yecao 车道按**容器名**匹配，这些
+# 容器只应该被按 Compose 标签匹配的 TX 车道采到。
+docker run -d --name "$KEYCLOAK_TX" --network "$NETWORK" \
+  --label com.docker.compose.service=keycloak \
+  alpine:3.22 sh -c "while true; do
+    echo '2026-01-01 00:00:00,000 DEBUG [org.keycloak.events] (executor-thread-1) type=\"LOGIN\", realmId=\"r\", realmName=\"wotbtools\", clientId=\"wotbtools-web\", userId=\"u\", ipAddress=\"203.0.113.9\", username=\"$KC_LOGIN_MARKER\"'
+    echo '2026-01-01 00:00:00,000 DEBUG [org.keycloak.events] (executor-thread-1) operationType=\"CREATE\", realmId=\"r\", realmName=\"wotbtools\", clientId=\"c\", userId=\"u\", ipAddress=\"203.0.113.9\", resourceType=\"USER\", resourcePath=\"users/$KC_ADMIN_MARKER\"'
+    echo '2026-01-01 00:00:00,000 DEBUG [org.keycloak.events] (executor-thread-1) type=\"CLIENT_LOGIN\", realmId=\"r\", clientId=\"wotbtools-admin-api\", grant_type=\"client_credentials\", marker=\"$KC_UNSELECTED_MARKER\"'
+    echo '2026-01-01 00:00:00,000 INFO  [io.quarkus] (main) Keycloak started in 9.9s marker=$KC_RUNTIME_MARKER'
+    sleep 1
+  done" >/dev/null
+docker run -d --name "$CADDY_TX" --network "$NETWORK" \
+  --label com.docker.compose.service=caddy \
+  alpine:3.22 sh -c "while true; do
+    echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"http.log.access.security_api\",\"msg\":\"handled request\",\"request\":{\"remote_ip\":\"203.0.113.9\",\"remote_port\":\"51000\",\"proto\":\"HTTP/1.1\",\"method\":\"GET\",\"host\":\"wotbtools.com\"},\"status\":200,\"ua\":\"$CADDY_API_MARKER\",\"path\":\"/api/hof/leaderboard\",\"security_kind\":\"api_access\",\"compliance\":\"security\"}'
+    echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"http.log.access.log0\",\"msg\":\"handled request\",\"request\":{\"remote_ip\":\"203.0.113.9\",\"remote_port\":\"51001\",\"proto\":\"HTTP/1.1\",\"method\":\"GET\",\"host\":\"auth.wotbtools.com\"},\"status\":200,\"ua\":\"$CADDY_AUTH_MARKER\",\"path\":\"/realms/wotbtools/protocol/openid-connect/logout\",\"security_kind\":\"auth_access\",\"compliance\":\"security\"}'
+    echo '{\"level\":\"info\",\"ts\":1767225600.0,\"logger\":\"tls.obtain\",\"msg\":\"certificate obtained successfully\",\"identifier\":\"$CADDY_RUNTIME_MARKER\"}'
+    sleep 1
+  done" >/dev/null
 docker run -d --name "$ALLOY_TX" --network "$NETWORK" \
   -p 127.0.0.1::12345 \
   -e WOTB_LOKI_URL="http://loki:3100/loki/api/v1/push" \
@@ -200,6 +262,47 @@ if [ "$backend_tx_seen" != 1 ]; then
   fail "TX Compose-label stream reaches Loki as wotb-backend"
 fi
 wait_until "Yecao name-matched Keycloak stream still reaches Loki" unlabeled_stream_not_collected_by_tx_lane
+
+# --- the compliance split: only security logs reach the 190-day stream -------
+stream_has() {
+  local selector="$1" marker="$2" body
+  body="$(query_range "$selector")"
+  loki_response_has_sample "$body" && grep -Fq "$marker" <<<"$body"
+}
+wait_until "Keycloak LOGIN event is labelled compliance=security/auth" \
+  stream_has '{compliance="security",security_kind="auth"}' "$KC_LOGIN_MARKER"
+wait_until "Keycloak admin event is labelled compliance=security/auth" \
+  stream_has '{compliance="security",security_kind="auth"}' "$KC_ADMIN_MARKER"
+wait_until "Caddy API access log is labelled compliance=security/api_access" \
+  stream_has '{compliance="security",security_kind="api_access"}' "$CADDY_API_MARKER"
+wait_until "Caddy auth access log is labelled compliance=security/auth_access" \
+  stream_has '{compliance="security",security_kind="auth_access"}' "$CADDY_AUTH_MARKER"
+# 正向对照：下面「不进 compliance」的断言只有在这些行确实已经到达 Loki 之后才有意义，
+# 否则缺席可能只是还没送到。
+wait_until "a non-retained Keycloak event type still reaches the ordinary stream" \
+  stream_has '{container_name="keycloak"}' "$KC_UNSELECTED_MARKER"
+wait_until "ordinary Keycloak runtime output still reaches the ordinary stream" \
+  stream_has '{container_name="keycloak"}' "$KC_RUNTIME_MARKER"
+wait_until "ordinary Caddy runtime output still reaches the ordinary stream" \
+  stream_has '{container_name="caddy"}' "$CADDY_RUNTIME_MARKER"
+
+compliance_body="$(query_range '{compliance="security"}')"
+loki_response_has_sample "$compliance_body" || fail "the compliance stream is empty"
+# 这一组是整次整改的边界：普通产品日志绝不能被延长到 190 天。
+for excluded in \
+  "$KC_UNSELECTED_MARKER:a Keycloak event type outside the declared list" \
+  "$KC_RUNTIME_MARKER:ordinary Keycloak runtime output" \
+  "$CADDY_RUNTIME_MARKER:ordinary Caddy runtime output" \
+  "$APK:an Android APK download" \
+  "$MARKER_TX:backend product telemetry" \
+  "$MARKER:backend debug output"; do
+  marker="${excluded%%:*}"
+  description="${excluded#*:}"
+  if grep -Fq "$marker" <<<"$compliance_body"; then
+    fail "$description must never be labelled compliance=security (190-day retention)"
+  fi
+done
+echo "PASS: only the declared security logs carry compliance=security"
 
 # Loki parses its metric and log queries, including variable interpolation.
 # Prometheus targets are validated by promtool in the observability CI job.

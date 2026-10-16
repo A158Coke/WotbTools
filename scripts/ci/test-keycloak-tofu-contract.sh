@@ -105,6 +105,41 @@ assert "KEYCLOAK_E2E_CLIENT_SECRET" in keycloak_workflow_text, \
 assert "keycloak_openid_client.e2e" in read("infra/tofu/keycloak/validate-plan.sh"), \
     "the plan guard must protect the runtime E2E client"
 
+# --- controlled security event logging (public-security self-assessment) -----
+# 这是合规承诺的 IaC 载体：realm 已完全由 OpenTofu 管理，在 Admin UI 里手工打开不算完成。
+# 事件类型清单与 TX Alloy 的 compliance selector 必须逐一对应——那条跨层断言的 owner 是
+# deploy/validate-alloy-config.sh（它读 events.tf 作为唯一事实源），所以这里只锁 Keycloak
+# 自己这一侧：声明存在、开关正确、listener 在、以及成功事件真的会被写出来。
+events_text = read("infra/tofu/keycloak/events.tf")
+assert 'resource "keycloak_realm_events" "wotbtools"' in events_text, \
+    "realm events must be declared as code"
+assert "keycloak_realm_events" not in read("infra/tofu/keycloak/realm.tf"), \
+    "realm events must stay a separate declaration, not folded into realm.tf"
+assert re.search(r"events_enabled\s+=\s+true", events_text), "realm events must be enabled"
+assert re.search(r"events_expiration\s+=\s+[1-9][0-9]*", events_text), \
+    "the Keycloak event store must expire: the 190-day source of truth is the Loki compliance stream"
+assert re.search(r"admin_events_enabled\s+=\s+true", events_text), "admin events must be enabled"
+# details = true 会把完整 resource representation（用户资料、client secret）写进一条
+# 保存 190 天的日志里，所以它必须保持关闭。
+assert re.search(r"admin_events_details_enabled\s+=\s+false", events_text), \
+    "admin event details must stay off: the representation must never be retained"
+assert re.search(r'events_listeners\s+=\s+\["jboss-logging"\]', events_text), \
+    "the jboss-logging listener is what puts events on stdout; it must be declared explicitly"
+enabled_block = events_text.split("enabled_event_types", 1)[1].split("]", 1)[0]
+enabled_types = set(re.findall(r'"([A-Z_]+)"', enabled_block))
+# 不在这里复制整份清单（那会是第三份事实源）：只锁住公安自评估文本真正承诺的下限——
+# 认证操作与其访问结果。清单本身的跨层一致由 Alloy 侧断言。
+for required_event in ("LOGIN", "LOGIN_ERROR"):
+    assert required_event in enabled_types, f"the declared event list must cover {required_event}"
+assert "keycloak_realm_events.wotbtools" in read("infra/tofu/keycloak/validate-plan.sh"), \
+    "the plan guard must audit the security event logging contract against desired state"
+# Keycloak 对**成功**事件（LOGIN / LOGOUT / 全部 admin event）默认只记到 DEBUG，只有失败
+# 事件是 WARN。不抬 org.keycloak.events 的级别，190 天留存里就只有登录失败、没有任何成功
+# 登录证据——这正是「日志信息留存措施」要证明的东西。
+keycloak_environment = yaml.safe_load(tx_compose)["services"]["keycloak"]["environment"]
+assert keycloak_environment.get("KC_LOG_LEVEL") == "info,org.keycloak.events:debug", \
+    "TX Keycloak must raise org.keycloak.events to debug so successful events reach stdout"
+
 # --- no legacy realm import and no resurrected aggregated QQ IdP -------------
 for path_text in (read("docker/Dockerfile.keycloak"), tx_compose):
     assert "--import-realm" not in path_text
@@ -514,6 +549,53 @@ write_guard_plan android-mapper-delete "$(jq -nc --argjson client "$(android_cli
   --argjson mappers "$(android_mappers_json '["create"]' | jq -c '.[0].change.actions = ["delete"]')" \
   '{resource_changes: ([$client] + $mappers)}')"
 
+# --- controlled security event logging (public-security self-assessment) ------
+# 合规开关的反向用例：关掉 events / admin events、打开 admin event details、摘掉
+# jboss-logging listener、从清单里拿掉 LOGIN，或者整份声明被删除/替换，都必须在 apply
+# 之前被拦下。同时必须保留 all-no-op 这个正向用例——落定后的第二个 plan 全是 no-op，
+# 如果守卫要求「必须有变更」，以后每次 Keycloak 部署都会被自己的守卫卡住。
+realm_events_json() {
+  jq -nc --argjson actions "$1" '{
+    address: "keycloak_realm_events.wotbtools",
+    change: {
+      actions: $actions,
+      after: {
+        events_enabled: true,
+        events_expiration: 604800,
+        admin_events_enabled: true,
+        admin_events_details_enabled: false,
+        events_listeners: ["jboss-logging"],
+        enabled_event_types: [
+          "LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR",
+          "IDENTITY_PROVIDER_LOGIN", "IDENTITY_PROVIDER_LOGIN_ERROR",
+          "IDENTITY_PROVIDER_FIRST_LOGIN"
+        ]
+      }
+    }
+  }'
+}
+realm_events_plan() {
+  jq -nc --argjson events "$1" '{resource_changes: [$events]}'
+}
+write_guard_plan realm-events-contract "$(realm_events_plan "$(realm_events_json '["create"]')")"
+write_guard_plan realm-events-all-noop "$(realm_events_plan "$(realm_events_json '["no-op"]')")"
+write_guard_plan realm-events-delete \
+  "$(realm_events_plan "$(realm_events_json '["delete"]' | jq -c '.change.after = null')")"
+write_guard_plan realm-events-replace \
+  "$(realm_events_plan "$(realm_events_json '["delete","create"]')")"
+write_guard_plan realm-events-disabled \
+  "$(realm_events_plan "$(realm_events_json '["update"]' | jq -c '.change.after.events_enabled = false')")"
+write_guard_plan realm-events-admin-off \
+  "$(realm_events_plan "$(realm_events_json '["update"]' | jq -c '.change.after.admin_events_enabled = false')")"
+write_guard_plan realm-events-details-on \
+  "$(realm_events_plan "$(realm_events_json '["update"]' | jq -c '.change.after.admin_events_details_enabled = true')")"
+write_guard_plan realm-events-listener-dropped \
+  "$(realm_events_plan "$(realm_events_json '["update"]' | jq -c '.change.after.events_listeners = []')")"
+write_guard_plan realm-events-login-dropped \
+  "$(realm_events_plan "$(realm_events_json '["update"]' | jq -c '.change.after.enabled_event_types -= ["LOGIN"]')")"
+write_guard_plan realm-events-duplicated "$(jq -nc --argjson events "$(realm_events_json '["no-op"]')" \
+  '{resource_changes: [$events, $events]}')"
+
 assert_guard_passes boost-role-retirement
 assert_guard_passes other-role-retirement
 assert_guard_passes android-client-contract
@@ -532,6 +614,17 @@ assert_guard_rejects mass-replacement "$MASS_REPLACEMENT_RULE"
 assert_guard_rejects malformed-json "plan JSON is malformed or missing resource changes"
 assert_guard_rejects missing-resource-changes "plan JSON is malformed or missing resource changes"
 assert_guard_rejects wrong-resource-changes-type "plan JSON is malformed or missing resource changes"
+readonly REALM_EVENTS_RULE="does not satisfy the security log retention contract"
+assert_guard_passes realm-events-contract
+assert_guard_passes realm-events-all-noop
+assert_guard_rejects realm-events-delete "$REALM_EVENTS_RULE"
+assert_guard_rejects realm-events-replace "$REALM_EVENTS_RULE"
+assert_guard_rejects realm-events-disabled 'events_enabled=false'
+assert_guard_rejects realm-events-admin-off 'admin_events_enabled=false'
+assert_guard_rejects realm-events-details-on 'admin_events_details_enabled=true'
+assert_guard_rejects realm-events-listener-dropped 'expected to contain jboss-logging'
+assert_guard_rejects realm-events-login-dropped 'expected to contain LOGIN'
+assert_guard_rejects realm-events-duplicated 'must appear exactly once'
 
 if output="$(FAKE_TOFU_FAIL=1 PATH="$guard_work/bin:$PATH" \
     bash "$ROOT/infra/tofu/keycloak/validate-plan.sh" "$guard_work/boost-role-retirement.tfplan" 2>&1)"; then
