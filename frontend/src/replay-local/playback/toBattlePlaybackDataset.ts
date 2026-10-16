@@ -8,7 +8,8 @@
  *  - 血量：canonical 血量采样（prop3 + 每次物化快照）；哨兵 = 血量未知，不改写为 0、不产生迁移；
  *    友方开局 = 结算血量（HIGH），敌方开局 = 车辆库血量（MEDIUM、临时），首个回放血量后永久回放权威；
  *  - 掉血 / 归属 / 击杀者：canonical combat（method8 直击 = 证据，其它变体 = 冲突，fail-closed）；
- *  - 生命：prop3 alive=false（终态）→ DESTROYED；可信血量 / alive → ALIVE；
+ *  - 生命：上游复活轨道在场（≥2 死 / ≥1 复活，issue #622）→ 死亡/复活交替（SSOT）；
+ *    否则 prop3 alive=false（终态）→ DESTROYED；可信血量 / alive → ALIVE；
  *  - limitations：映射 / 时钟 / 车辆轨迹缺失 + 视角未解析 / 回放在战斗结束前截断（缺证据即 PARTIAL）。
  *
  * 与 Java 的已知口径差异（`playback.golden.test.ts` 逐项固定，`docs/features/battle-playback.md` 记录）：
@@ -56,6 +57,7 @@ import {
   type ReplayClock,
 } from '../canonical/facts.js'
 import type { Tankopedia } from '../compute/tankopedia.js'
+import { isPlausibleHp } from '../canonical/hpRawState.js'
 import { consumableItemId, consumableStateName, provisionItemId } from './itemCodes.js'
 
 export interface ToDatasetOptions {
@@ -212,9 +214,9 @@ function changePoints(facts: CanonicalReplayFacts, entityIds: number[], duration
   return [...set].filter((t) => t <= durationSec + EPS).sort((a, b) => a - b)
 }
 
-function healthTransitions(
+export function healthTransitions(
   facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number | null>, durationSec: number,
-  friendly: boolean, openingSeed: number | null,
+  friendly: boolean, openingSeed: number | null, respawnByEid?: Map<number, RespawnTrack>,
 ): HealthTransition[] {
   const out: HealthTransition[] = []
   let previous: HealthTransition | null = null
@@ -226,10 +228,31 @@ function healthTransitions(
     }
     out.push(previous)
   }
+  // 复活时刻也是血量状态变化点（复活后血量未知，直到新证据到达）
+  const points = new Set(changePoints(facts, entityIds, durationSec))
+  for (const id of entityIds) {
+    for (const r of respawnTrackOf(respawnByEid, id)?.resurrections ?? []) {
+      if (r >= 0) points.add(Math.min(r, durationSec + EPS))
+    }
+  }
   let replayCapacity: number | null = null
-  for (const t of changePoints(facts, entityIds, durationSec)) {
+  for (const t of [...points].sort((a, b) => a - b)) {
     const eid = activeEntityAt(firstSeen, t)
     if (eid === null) continue
+    // 复活后尚无新血量证据：生命已回 ALIVE，但死前血量（可能是 0 / 终态哨兵镜像）**不是**当前血量。
+    // 显式落"未知"边界（currentHp null；展示层渲染为「—」），新证据一到即被正常采样覆盖。
+    const resurrectedAt = lastResurrectionAtOrBefore(respawnTrackOf(respawnByEid, eid), t)
+    if (resurrectedAt !== null && !hasPlausibleHpBetween(facts, eid, resurrectedAt, t)) {
+      const next: HealthTransition = {
+        timeSec: t, currentHp: null, knowledge: 'LAST_KNOWN', source: null,
+        displayCapacityHp: replayCapacity, relativeFull: false, confidence: 'UNKNOWN',
+      }
+      if (!sameHealth(previous, next)) {
+        out.push(next)
+        previous = next
+      }
+      continue
+    }
     const sample = lastHpSampleAtOrBefore(facts, eid, t)
     // 无可信血量（未观测 / 哨兵）= 保持上一 canonical 状态；绝不回落到车辆库种子
     if (!sample || sample.hp === null) continue
@@ -258,23 +281,139 @@ function sameHealth(a: HealthTransition | null, b: HealthTransition): boolean {
     && a.displayCapacityHp === b.displayCapacityHp && a.relativeFull === b.relativeFull && a.confidence === b.confidence
 }
 
-/** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE */
-function lifeTransitions(
+/**
+ * 上游 additive 复活轨道（issue #622，2026-10-15）：eid → 战斗相对时刻的死亡/复活事件表。
+ * 仅当车辆声明 ≥2 死或 ≥1 复活时才有条目；字段缺省（旧上游产物 / 普通回放）= 空表，
+ * 生命投影走 prop3 采样路径，输出与既往逐位一致（golden 锁定）。
+ */
+export type RespawnTrack = { deaths: number[]; resurrections: number[] }
+
+function respawnTracks(pb: AgentPlaybackFacet, clock: ReplayClock): Map<number, RespawnTrack> {
+  const out = new Map<number, RespawnTrack>()
+  for (const v of pb.vehicles) {
+    const declared = v.death_times ?? []
+    const resurrections = v.resurrection_times ?? []
+    if (declared.length <= 1 && resurrections.length === 0) continue
+    const deaths = (declared.length > 0 ? declared : v.death_t != null ? [v.death_t] : [])
+      .map((t) => t - clock.startRaw).sort((a, b) => a - b)
+    out.set(v.eid, {
+      deaths,
+      resurrections: resurrections.map((t) => t - clock.startRaw).sort((a, b) => a - b),
+    })
+  }
+  return out
+}
+
+/** 复活模式车（≥2 死或 ≥1 复活）的轨道；缺省/旧产物 = null → 走采样路径（行为与既往逐位一致）。 */
+function respawnTrackOf(tracks: Map<number, RespawnTrack> | undefined, eid: number): RespawnTrack | null {
+  const track = tracks?.get(eid)
+  return track && (track.deaths.length > 1 || track.resurrections.length > 0) ? track : null
+}
+
+/** 最近的 ≤t 复活时刻（轨道已升序）；无 = null。 */
+function lastResurrectionAtOrBefore(track: RespawnTrack | null, t: number): number | null {
+  let latest: number | null = null
+  for (const r of track?.resurrections ?? []) {
+    if (r <= t + EPS && (latest === null || r > latest)) latest = r
+  }
+  return latest
+}
+
+/** 该实体在 [from, to] 窗口内是否已有**可用数值血量**证据（判定"复活后是否已有新血量"）。
+ *  哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不是可用血量证据——它们不提供
+ *  任何可显示的现值（`isPlausibleHp`，Java `HealthChangedEvent.isPlausibleHp` 同源）。 */
+function hasPlausibleHpBetween(facts: CanonicalReplayFacts, eid: number, from: number, to: number): boolean {
+  for (const s of facts.hpSamples.get(eid) ?? []) {
+    if (s.t >= from - EPS && s.t <= to + EPS && isPlausibleHp(s.hp)) return true
+  }
+  return false
+}
+
+/**
+ * 复活模式账号 → DESTROYED 事件时刻列（升序去重；issue #622）。
+ *
+ * canonical 终态重建（`facts.destroyed`）每个账号至多一条终态，而复活模式会死多次——只发前者会让
+ * 前面的死亡没有 DESTROYED 事件（2D 爆焰按事件生成，就会少爆）。上游轨道在场时它是死亡时刻
+ * SSOT，故这些账号改用轨道列；返回表外的账号由调用方维持 canonical 终态。
+ *
+ * 同一账号可能有**多个实体**（AoI 重入 / 复活换实体），每个实体各带自己的死亡列——按账号
+ * **合并**（覆盖写会丢掉前一实体的死亡，而调用方随后已抑制该账号的 canonical 回退 ⇒ 那些死亡
+ * 会彻底没有事件）。
+ */
+export function respawnDestroyedTimes(
+  facts: CanonicalReplayFacts, respawnByEid: Map<number, RespawnTrack>,
+): Map<number, number[]> {
+  const out = new Map<number, number[]>()
+  for (const [eid, track] of respawnByEid) {
+    if (!respawnTrackOf(respawnByEid, eid) || track.deaths.length === 0) continue
+    const accountId = facts.entities.get(eid)?.accountId
+    if (accountId === undefined) continue
+    const merged = out.get(accountId)
+    if (merged) merged.push(...track.deaths)
+    else out.set(accountId, [...track.deaths])
+  }
+  for (const deaths of out.values()) {
+    deaths.sort((a, b) => a - b)
+    let kept = 0
+    for (const t of deaths) {
+      if (kept > 0 && t <= deaths[kept - 1] + EPS) continue
+      deaths[kept++] = t
+    }
+    deaths.length = kept
+  }
+  return out
+}
+
+/** Java frameVehicle lifeState：prop3 alive=false（终态，EXACT）→ DESTROYED；可信血量 / alive → ALIVE。
+ *  上游复活轨道在场时（issue #622）它取代采样扫描成为死亡/复活时刻 SSOT：
+ *  死亡 → DESTROYED、复活 → ALIVE 交替（采样只兜底 ALIVE 证据），否则行为与既往逐位一致。 */
+export function lifeTransitions(
   facts: CanonicalReplayFacts, entityIds: number[], firstSeen: Map<number, number | null>, durationSec: number,
+  respawnByEid?: Map<number, RespawnTrack>,
 ): LifeTransition[] {
   const out: LifeTransition[] = []
   let previous: LifeTransition | null = null
-  for (const t of changePoints(facts, entityIds, durationSec)) {
+  const tracksOf = (eid: number): RespawnTrack | null => respawnTrackOf(respawnByEid, eid)
+  const extraPoints: number[] = []
+  for (const id of entityIds) {
+    const track = tracksOf(id)
+    if (!track) continue
+    extraPoints.push(...track.deaths, ...track.resurrections)
+  }
+  const points = changePoints(facts, entityIds, durationSec)
+  if (extraPoints.length) {
+    const set = new Set(points)
+    for (const t of extraPoints) if (t >= 0) set.add(Math.min(t, durationSec + EPS))
+    points.length = 0
+    points.push(...set)
+    points.sort((a, b) => a - b)
+  }
+  for (const t of points) {
     const eid = activeEntityAt(firstSeen, t)
     if (eid === null) continue
     let destroyedAt: number | null = null
-    for (const s of facts.hpSamples.get(eid) ?? []) {
-      if (s.t > t) break
-      if (s.kind === 'PROP3' && s.exact && s.alive === false) destroyedAt = s.t
+    let resurrected = false
+    const track = tracksOf(eid)
+    if (track) {
+      let di = 0
+      let ri = 0
+      while (di < track.deaths.length || ri < track.resurrections.length) {
+        const d = di < track.deaths.length ? track.deaths[di] : Infinity
+        const r = ri < track.resurrections.length ? track.resurrections[ri] : Infinity
+        if (d <= t && d <= r) { destroyedAt = d; di += 1 }
+        else if (r <= t) { destroyedAt = null; resurrected = true; ri += 1 }
+        else break
+      }
+    } else {
+      for (const s of facts.hpSamples.get(eid) ?? []) {
+        if (s.t > t) break
+        if (s.kind === 'PROP3' && s.exact && s.alive === false) destroyedAt = s.t
+      }
     }
     const sample = lastHpSampleAtOrBefore(facts, eid, t)
+    const aliveBySample = sample != null && (sample.alive === true || (sample.hp !== null && sample.hp > 0))
     const lifeState = destroyedAt !== null ? 'DESTROYED'
-      : sample && (sample.alive === true || (sample.hp !== null && sample.hp > 0)) ? 'ALIVE' : null
+      : (resurrected || aliveBySample) ? 'ALIVE' : null
     if (lifeState === null) continue
     const next: LifeTransition = { timeSec: t, lifeState, destroyedKnownAtSec: destroyedAt }
     if (!previous || previous.lifeState !== next.lifeState || previous.destroyedKnownAtSec !== next.destroyedKnownAtSec) {
@@ -448,6 +587,7 @@ export function toBattlePlaybackDataset(
   const friendlyTeam = facts.perspectiveTeam
 
   const vehicleByEid = new Map(pb.vehicles.map((v) => [v.eid, v]))
+  const respawnByEid = respawnTracks(pb, clock)
   const settlementPlayers = new Map<number, AgentResultPlayer>()
   for (const p of result?.players ?? []) if (p.account_id > 0) settlementPlayers.set(p.account_id, p)
 
@@ -477,7 +617,7 @@ export function toBattlePlaybackDataset(
     const openingSeed = friendly === true
       ? settlementInitialHp(player)
       : (info?.maxHp != null && info.maxHp > 0 ? info.maxHp : null)
-    const health = healthTransitions(facts, entityIds, firstSeen, clock.durationSec, friendly === true, openingSeed)
+    const health = healthTransitions(facts, entityIds, firstSeen, clock.durationSec, friendly === true, openingSeed, respawnByEid)
     const losses = facts.lossesByVictim.get(player.account_id) ?? []
     const loadout = toLoadout(vehicles, result?.client_version ?? null)
     tracks.push({
@@ -494,7 +634,7 @@ export function toBattlePlaybackDataset(
       positionSegments: posSegs,
       orientationSegments: oriSegs,
       healthTransitions: health,
-      lifeTransitions: lifeTransitions(facts, entityIds, firstSeen, clock.durationSec),
+      lifeTransitions: lifeTransitions(facts, entityIds, firstSeen, clock.durationSec, respawnByEid),
       damageLosses: losses.map((l): DamageLoss => ({
         ...l,
         displayCapacityHp: lossCapacity(facts, entityIds, l.toSec),
@@ -521,11 +661,26 @@ export function toBattlePlaybackDataset(
     events.push({ type: 'DAMAGE', timeSec: n.t, accountId: attacker, targetAccountId: victim, observedHpLoss: loss ? loss.hpLoss : null })
   }
   // DESTROYED / KILL：canonical 终态 + 致死窗口唯一攻击者（fail-closed：证据冲突 → 无击杀者）
+  // 复活模式（issue #622）的账号改用上游轨道的死亡时刻列（含多次死亡）——见 respawnDestroyedTimes。
+  const respawnDeathsByAccount = respawnDestroyedTimes(facts, respawnByEid)
   for (const d of facts.destroyed) {
     if (!(d.timeSec >= 0)) continue
-    events.push({ type: 'DESTROYED', timeSec: d.timeSec, accountId: d.accountId, targetAccountId: null, observedHpLoss: null })
+    if (!respawnDeathsByAccount.has(d.accountId)) {
+      events.push({ type: 'DESTROYED', timeSec: d.timeSec, accountId: d.accountId, targetAccountId: null, observedHpLoss: null })
+    }
     if (d.killerAccountId !== null && d.killerAccountId !== d.accountId) {
       events.push({ type: 'KILL', timeSec: d.timeSec, accountId: d.killerAccountId, targetAccountId: d.accountId, observedHpLoss: null })
+    }
+  }
+  for (const [accountId, deaths] of respawnDeathsByAccount) {
+    let last = Number.NEGATIVE_INFINITY
+    for (const t of deaths) {
+      if (!(t >= 0) || t <= last + EPS) continue
+      last = t
+      events.push({
+        type: 'DESTROYED', timeSec: Math.min(t, clock.durationSec + EPS),
+        accountId, targetAccountId: null, observedHpLoss: null,
+      })
     }
   }
   // POSITION_*：OBSERVED 段起止；录像者自身不广播

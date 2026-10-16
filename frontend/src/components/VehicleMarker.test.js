@@ -149,19 +149,19 @@ describe('generic（非 Tier X / fallback）', () => {
 
 
 
-  it('tilts only vehicle graphics with terrain pitch/roll while overlays stay screen-aligned', () => {
+  it('纯俯视：视觉层不施加任何 3D 倾斜（即便残留 terrainAttitude 字段）', () => {
+    // 2026-10-16：2D = 3D 的严格俯视投影，"多出的维度"（俯仰/侧倾）不再呈现——
+    // 原地形高度场合成倾斜已删；此守卫防它随状态字段回流。
     const w = mountMarker({
       ...genericMarker,
       terrainAttitude: { pitchDeg: 8, rollDeg: -3 },
     })
-    const graphics = w.find('.pb-graphics')
-    const style = graphics.attributes('style') || ''
-    expect(style).toContain('rotateZ(30deg)')
-    expect(style).toContain('rotateX(-8deg)')
-    expect(style).toContain('rotateY(3deg)')
-    expect(style).toContain('rotateZ(-30deg)')
-    expect(w.find('button.pb-vehicle').attributes('style')).not.toContain('rotateX')
-    expect(w.find('.pb-hitbox').attributes('style')).not.toContain('rotateX')
+    const style = w.find('.pb-graphics').attributes('style') || ''
+    expect(style).not.toContain('rotateX')
+    expect(style).not.toContain('rotateY')
+    expect(style).not.toContain('rotateZ')
+    // 平面内朝向照常（hull 各自 rotate）
+    expect(w.find('.pb-hull').attributes('style')).toContain('rotate(30deg)')
   })
 
   it('无方向样本（hullDeg/turretDeg null）→ 不渲染 img（不伪造朝向）', () => {
