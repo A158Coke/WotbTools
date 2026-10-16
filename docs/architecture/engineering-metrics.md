@@ -26,7 +26,7 @@ Actor types human/agent/automation require reliable metadata or known identities
 
 ## Operations and security
 
-The repository-scoped `GITHUB_DEV_METRICS_TOKEN` grants Metadata/Pull requests/Issues/Actions/Contents read only. Production injection supplies a protected read-only token file; the value never enters container environment, image, Grafana JSON, OpenTofu state, metrics or logs. No public port, host network or privileged container. The existing observability owner deploys an immutable SHA-related image, reconciles Prometheus and applies the saved Grafana plan; Komodo supplies visibility, never dashboard desired state.
+The repository-scoped `DEV_METRICS_GITHUB_TOKEN` grants Metadata/Pull requests/Issues/Actions/Contents read only. Production injection supplies a protected read-only token file; the value never enters container environment, image, Grafana JSON, OpenTofu state, metrics or logs. No public port, host network or privileged container. The existing observability owner deploys an immutable SHA-related image, reconciles Prometheus and applies the saved Grafana plan; Komodo supplies visibility, never dashboard desired state.
 
 Data age is Healthy below 30 minutes, Delayed at 30–60 minutes, Stale at 60 minutes or more; no initial sync is Not ready. Stale counts remain visible. Runtime and data freshness are distinct: GitHub outage must not restart a healthy process or invalidate healthy Grafana. Container recovery needs no persistent database.
 
