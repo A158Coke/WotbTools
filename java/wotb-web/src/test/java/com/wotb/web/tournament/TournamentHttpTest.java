@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 import java.util.List;
+import java.util.Map;
+import java.time.Instant;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
@@ -92,6 +94,17 @@ class TournamentHttpTest {
         assertEquals(8, json.valueToTree(preview).properties().size());
         assertEquals(2, json.valueToTree(new TournamentDtos.DataSource(false, null)).properties().size());
         assertEquals(true, json.valueToTree(new TournamentDtos.DataSource(false, null)).has("attribution"));
+    }
+    @Test void auditEndpointKeepsMetadataAndEmptySnapshotObjectsInTheExistingWireShape() throws Exception {
+        final var metadata = new TournamentDtos.Audit(7, "CSV_IMPORTED", "admin", null, null, null,
+                Instant.parse("2026-10-16T15:00:00Z"), Map.of(), Map.of());
+        when(context.getBean(TournamentService.class).auditList(1)).thenReturn(List.of(metadata));
+        final var result = mvc.perform(get("/api/admin/tournaments/1/audit")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].action").value("CSV_IMPORTED"))
+                .andExpect(jsonPath("$[0].before").isEmpty()).andExpect(jsonPath("$[0].after").isEmpty()).andReturn();
+        final var json = JsonMapper.builder().findAndAddModules().build().readTree(result.getResponse().getContentAsString());
+        assertEquals(9, json.get(0).properties().size()); assertEquals(true, json.get(0).has("before")); assertEquals(true, json.get(0).has("after"));
     }
     @RestController
     static class PreviousEventIdController {

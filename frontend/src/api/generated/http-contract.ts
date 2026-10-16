@@ -1221,6 +1221,7 @@ export interface components {
             issues: string[];
             imageHash: string;
         };
+        /** @description Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers. */
         TournamentAudit: {
             /** Format: int64 */
             id: number;
@@ -1231,9 +1232,11 @@ export interface components {
             dayNumber: number | null;
             /** Format: date-time */
             createdAt: string;
+            /** @description Empty in audit-list responses; the full snapshot is retained internally. */
             before: {
                 [key: string]: unknown;
             };
+            /** @description Empty in audit-list responses; the full snapshot is retained internally. */
             after: {
                 [key: string]: unknown;
             };
@@ -3614,7 +3617,7 @@ export interface operations {
                     "application/json": components["schemas"]["TournamentCsvImportPreview"];
                 };
             };
-            /** @description Invalid multipart request, hash mismatch, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details. */
+            /** @description Invalid multipart request, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -3650,7 +3653,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_CSV_WORKSPACE_BUSY */
+            /** @description TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key, or TOURNAMENT_CSV_WORKSPACE_BUSY */
             409: {
                 headers: {
                     [name: string]: unknown;

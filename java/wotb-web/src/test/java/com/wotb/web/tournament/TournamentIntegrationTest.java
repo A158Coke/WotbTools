@@ -180,6 +180,32 @@ class TournamentIntegrationTest {
         assertEquals(1, service.auditList(id).stream().filter(row -> row.action().equals("CSV_IMPORTED")).count());
         assertEquals(200, service.publicStandings(id).rows().size()); assertTrue(service.dataSource(id).csvImported());
     }
+    @Test void csvPreservesPreparedEmptyDaysUntilItActuallyReplacesTheirPublishedScores() throws Exception {
+        final var future = service.day(id, 1, 2);
+        service.expectedGroups(id, 1, 2, new TournamentDtos.ExpectedGroupsRequest(future.eventVersion(), future.version(), 17));
+        final var original = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), original);
+        final var imported = service.importCsv("admin", id, preview.eventVersion(), original, preview.sourceSha256(), true, "day-one");
+        assertNull(service.day(id, 1, 1).expectedGroupCount());
+        assertEquals(17, service.day(id, 1, 2).expectedGroupCount()); assertFalse(service.day(id, 1, 2).published());
+        final var second = csvDayTwo(original); final var nextPreview = service.previewCsv(id, imported.eventVersion(), second);
+        final var updated = service.importCsv("admin", id, nextPreview.eventVersion(), second, nextPreview.sourceSha256(), true, "day-two");
+        assertNull(service.day(id, 1, 2).expectedGroupCount()); assertTrue(service.day(id, 1, 2).published());
+        final var removeDayTwo = service.previewCsv(id, updated.eventVersion(), original);
+        service.importCsv("admin", id, removeDayTwo.eventVersion(), original, removeDayTwo.sourceSha256(), true, "remove-day-two");
+        assertNull(service.day(id, 1, 2).expectedGroupCount()); assertFalse(service.day(id, 1, 2).published());
+    }
+    @Test void auditMetadataOmitsCsvPayloadsWhileTheFullDatabaseRecordsRemainReadable() throws Exception {
+        final var file = csvFixture(); final var preview = service.previewCsv(id, service.config(id).event().version(), file);
+        service.importCsv("admin", id, preview.eventVersion(), file, preview.sourceSha256(), true, "audit-csv");
+        final var full = audits.findCsvImport(id, "audit-csv").orElseThrow();
+        assertEquals(200, ((List<?>) full.afterState.get("rows")).size());
+        assertTrue(full.beforeState.containsKey("standings")); assertTrue(full.afterState.containsKey("standings"));
+        final var list = service.auditList(id); final var latest = list.getFirst();
+        assertEquals(full.id, latest.id()); assertEquals("CSV_IMPORTED", latest.action()); assertEquals("admin", latest.actor());
+        assertTrue(latest.before().isEmpty()); assertTrue(latest.after().isEmpty());
+        assertTrue(list.stream().allMatch(row -> row.before().isEmpty() && row.after().isEmpty()));
+        assertEquals(200, ((List<?>) audits.findCsvImport(id, "audit-csv").orElseThrow().afterState.get("rows")).size());
+    }
     @Test void csvAttributionSurvivesLaterScreenshotCorrectionAndIsRemovedWithTheEvent() throws Exception {
         final var file = csv(csvText("A,999,,,,,,,,,,999\nB,88,,,,,,,,,,88\nC,77,,,,,,,,,,77\n"));
         final var preview = service.previewCsv(id, service.config(id).event().version(), file);

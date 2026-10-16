@@ -23,6 +23,7 @@ const events = ref<TournamentEvent[]>([])
 const eventId = ref<number | null>(null)
 const standings = ref<TournamentStandings | null>(null)
 const dataSource = ref<TournamentDataSource | null>(null)
+const dataSourceError = ref<unknown>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
 const noInitialStandings = ref(false)
@@ -49,6 +50,13 @@ async function exportBoard(format: string) {
   finally { exporting.value = false }
 }
 let controller = new AbortController(), generation = 0, initialSelectionDone = false
+async function loadDataSource(id: number, gen: number, signal: AbortSignal) {
+  const ownsSource = () => gen === generation && eventId.value === id && !signal.aborted && network.value.available
+  try {
+    const source = await getTournamentDataSource(id, signal)
+    if (ownsSource()) dataSource.value = source
+  } catch (value) { if (ownsSource()) dataSourceError.value = value }
+}
 async function findInitialStandings(values: TournamentEvent[], signal: AbortSignal): Promise<TournamentStandings | null> {
   const cnEvents = values.filter(event => event.region === 'CN')
   const candidates = [...(cnEvents.length ? cnEvents : values)].sort((a, b) => b.year - a.year
@@ -69,6 +77,7 @@ async function loadEvents(selectInitial = !initialSelectionDone) {
   loading.value = true
   error.value = null
   dataSource.value = null
+  dataSourceError.value = null
   try {
     const values = await listTournamentEvents(false, controller.signal)
     if (gen !== generation) return
@@ -78,13 +87,11 @@ async function loadEvents(selectInitial = !initialSelectionDone) {
       // Initial default follows the tournament calendar; explicit history choices stay owned by eventId.
       const initial = await findInitialStandings(values, controller.signal)
       if (gen !== generation || eventId.value !== null) return
-      const source = initial ? await getTournamentDataSource(initial.event.id, controller.signal) : null
-      if (gen !== generation || eventId.value !== null) return
       standings.value = initial
       eventId.value = initial?.event.id ?? null
-      dataSource.value = source
       initialSelectionDone = true
       noInitialStandings.value = eventId.value === null && values.length > 0
+      if (initial) void loadDataSource(initial.event.id, gen, controller.signal)
     } else if (eventId.value !== null) {
       await loadBoard()
     }
@@ -97,14 +104,17 @@ async function loadBoard() {
   const gen = ++generation
   standings.value = null
   dataSource.value = null
+  dataSourceError.value = null
   noInitialStandings.value = false
   error.value = null
   loading.value = false
   if (!eventId.value || !network.value.available) return
+  const id = eventId.value
   loading.value = true
+  void loadDataSource(id, gen, controller.signal)
   try {
-    const [result, source] = await Promise.all([getTournamentStandings(eventId.value, controller.signal), getTournamentDataSource(eventId.value, controller.signal)])
-    if (gen === generation) { standings.value = result; dataSource.value = source }
+    const result = await getTournamentStandings(id, controller.signal)
+    if (gen === generation) standings.value = result
   } catch (value) { if (gen === generation) error.value = value }
   finally { if (gen === generation) loading.value = false }
 }
@@ -114,7 +124,7 @@ watch(eventId, id => {
 })
 watch(() => network.value.available, available => {
   if (available) void loadEvents(!initialSelectionDone || noInitialStandings.value)
-  else { generation++; controller.abort(); loading.value = false; dataSource.value = null; standings.value = null }
+  else { generation++; controller.abort(); loading.value = false; dataSource.value = null; dataSourceError.value = null; standings.value = null }
 }, { immediate: true })
 onScopeDispose(() => { generation++; controller.abort() })
 </script>
@@ -128,6 +138,7 @@ onScopeDispose(() => { generation++; controller.abort() })
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="exportMessage" role="status">{{ exportMessage }}</Banner>
     <TournamentEventSelect data-tour="tournament-event" v-model="eventId" :events="events" :disabled="loading" />
+    <Banner v-if="dataSourceError" tone="warning" data-testid="tournament-data-source-error">{{ $t('tournament.dataSourceLoadFailed') }} {{ apiErrorLabel(t, te, dataSourceError) }}</Banner>
     <div v-if="dataSource?.csvImported && dataSource.attribution" class="tournament-actions" data-testid="tournament-data-source">
       <span>{{ $t('tournament.dataSource') }}</span><AppButton :href="dataSource.attribution.url" target="_blank" rel="noopener noreferrer" size="sm">{{ dataSource.attribution.name }}</AppButton>
     </div>

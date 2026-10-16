@@ -288,8 +288,10 @@ public class TournamentService {
         }
         for (final TournamentDay next : replacement) {
             final TournamentDay day = stored.stream().filter(old -> old.roundNumber == next.roundNumber && old.dayNumber == next.dayNumber).findFirst().orElse(next);
+            final boolean replacesPublished = published(day) || published(next);
             day.publishedGroups = null; day.publishedHistoricalPoints = next.publishedHistoricalPoints;
-            day.expectedGroupCount = null; day.version++; days.save(day);
+            if (replacesPublished) { day.expectedGroupCount = null; }
+            day.version++; days.save(day);
         }
         freezeRules(event, null); event.configLocked = true; event.csvImported = true; event.version++;
         final TournamentDtos.CsvImportPreview result = csvView(event, source, matrix, dayList(id), changes);
@@ -546,7 +548,7 @@ public class TournamentService {
         event.version++; return standings(event, dayList(id), null, null, true);
     }
     @Transactional(readOnly = true)
-    public List<TournamentDtos.Audit> auditList(final long id) { event(id); return audits.findByEventIdOrderByIdDesc(id).stream().map(mapper::audit).toList(); }
+    public List<TournamentDtos.Audit> auditList(final long id) { event(id); return audits.findMetadataByEventId(id).stream().map(mapper::audit).toList(); }
     @Transactional(readOnly = true)
     public TournamentDtos.EvidenceDownload download(final long id, final String evidenceId) {
         event(id); final TournamentEvidence attachment = evidence.findByIdAndEventId(evidenceId, id).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND));

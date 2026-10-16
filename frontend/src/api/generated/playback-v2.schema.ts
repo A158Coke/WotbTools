@@ -1558,6 +1558,7 @@ export default {
     },
     "TournamentAudit": {
       "type": "object",
+      "description": "Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -1606,10 +1607,12 @@ export default {
         },
         "before": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         },
         "after": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         }
       }

@@ -1443,7 +1443,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TournamentCsvImportPreview"
         "400":
-          description: Invalid multipart request, hash mismatch, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details.
+          description: Invalid multipart request, missing confirmation or TOURNAMENT_CSV_INVALID. CSV errors identify rowNumber, column and an English reason key in ApiError.details.
           content:
             application/json:
               schema:
@@ -1467,7 +1467,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: TOURNAMENT_VERSION_CONFLICT or TOURNAMENT_CSV_WORKSPACE_BUSY
+          description: TOURNAMENT_VERSION_CONFLICT for a stale event version, preview-file hash mismatch or conflicting idempotency key, or TOURNAMENT_CSV_WORKSPACE_BUSY
           content:
             application/json:
               schema:
@@ -3304,6 +3304,7 @@ components:
           pattern: ^[a-f0-9]{64}$
     TournamentAudit:
       type: object
+      description: Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.
       additionalProperties: false
       required:
         - id
@@ -3341,9 +3342,11 @@ components:
           format: date-time
         before:
           type: object
+          description: Empty in audit-list responses; the full snapshot is retained internally.
           additionalProperties: true
         after:
           type: object
+          description: Empty in audit-list responses; the full snapshot is retained internally.
           additionalProperties: true
     HundredCreateResult:
       type: object
