@@ -58,6 +58,7 @@
 | `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役（2026-10-02）的决策、结果与后续待办时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
+| `architecture/engineering-metrics.md` | GitHub engineering exporter、classification、freshness 与 Engineering Overview |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |

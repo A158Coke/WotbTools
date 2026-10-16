@@ -30,6 +30,33 @@ services:
     mem_limit: 1536m
     cpus: 1.5
   # Observability stack: Prometheus / Loki / Alloy / Grafana / node-exporter (docker-internal only)
+  dev-metrics-exporter:
+    image: ${DEV_METRICS_IMAGE:-ghcr.io/a158coke/dev-metrics-exporter:unconfigured}
+    container_name: dev-metrics-exporter
+    user: "10001:10001"
+    environment:
+      GITHUB_REPOSITORY: A158Coke/WotbTools
+      DEV_METRICS_GITHUB_TOKEN_FILE: /run/secrets/github-dev-metrics-token
+    volumes:
+      - type: bind
+        source: /run/wotb-dev-metrics/github-token
+        target: /run/secrets/github-dev-metrics-token
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    cpus: 0.25
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9108/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
   node-exporter:
     image: prom/node-exporter:v1.12.1
     command:
