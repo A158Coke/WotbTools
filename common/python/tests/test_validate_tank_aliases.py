@@ -9,6 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import update_tankopedia as ut
 import validate_tank_aliases as validator
 
 
@@ -33,16 +34,43 @@ class CommittedTankAliasesTest(unittest.TestCase):
         warnings = validator.validate_tank_aliases(document, known_tank_ids)
         self.assertIsInstance(warnings, list)
 
-    def test_vehicle_reference_is_offline_and_non_empty(self):
+    def test_vehicle_reference_covers_every_tier_offline(self):
+        """校验源是完整名册（common/tank_ids.json），不是业务 tier 子集。"""
         known_tank_ids = validator.load_known_tank_ids()
-        self.assertGreater(len(known_tank_ids), 100)
-        # FV215b 183 — a real tier 10 id must resolve, so an alias PR can reference it.
+        # FV215b 183（tier 10）与 T-34（tier 5）都必须可解析
         self.assertIn(9297, known_tank_ids)
+        self.assertIn(1, known_tank_ids)
+        # 名册严格大于 tier 7-10 文件的并集，否则就回到了旧的 tier 限制
+        tier_ids = set()
+        for filename in ut.TIER_FILES.values():
+            with open(os.path.join(ut.REPO_COMMON_DIR, filename), encoding="utf-8") as handle:
+                tier_ids.update(vehicle["id"] for vehicle in json.load(handle)["vehicles"])
+        self.assertTrue(tier_ids <= known_tank_ids)
+        self.assertGreater(len(known_tank_ids), len(tier_ids))
+        # T-34 不在 tier 文件里：它能通过校验正是本次修复的要点
+        self.assertNotIn(1, tier_ids)
+
+    def test_alias_on_vehicle_outside_business_tiers_validates(self):
+        known_tank_ids = validator.load_known_tank_ids()
+        self.assertEqual(validator.validate_tank_aliases({"1": ["三四", "T34"]}, known_tank_ids), [])
+
+    def test_unknown_tank_id_still_fails_against_full_roster(self):
+        known_tank_ids = validator.load_known_tank_ids()
+        with self.assertRaisesRegex(RuntimeError, "TANK_ALIASES_UNKNOWN_TANK_ID"):
+            validator.validate_tank_aliases({"999999999": ["foo"]}, known_tank_ids)
 
     def test_missing_vehicle_reference_fails(self):
         with tempfile.TemporaryDirectory() as empty:
             with self.assertRaises(FileNotFoundError):
                 validator.load_known_tank_ids(empty)
+
+    def test_empty_vehicle_reference_fails(self):
+        with tempfile.TemporaryDirectory() as common_dir:
+            path = os.path.join(common_dir, ut.ROSTER_FILE)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"meta": {}, "vehicles": {}}, handle)
+            with self.assertRaisesRegex(RuntimeError, "TANK_ALIASES_NO_VEHICLE_REFERENCE"):
+                validator.load_known_tank_ids(common_dir)
 
     def test_missing_alias_file_fails(self):
         with tempfile.TemporaryDirectory() as empty:

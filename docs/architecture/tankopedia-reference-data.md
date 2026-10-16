@@ -111,19 +111,61 @@ different owner and lifecycle from the files above:
   a non-object document, invalid or unknown tank ids, non-array values, empty arrays, non-string or
   blank aliases, and case-insensitive duplicates within one vehicle. Cross-vehicle duplicates stay a
   warning: two vehicles may legitimately share a community short name.
-- **tier 7-10 only.** Validation resolves tank ids against `common/tankopedia-tier{7,8,9,10}.json`,
-  the only deterministic in-repo vehicle list (CI never reaches the network). Vehicles outside those
-  tiers have no in-repo reference and therefore cannot carry aliases.
+- **validated against the complete vehicle roster.** Tank ids resolve against
+  `common/tank_ids.json`, which covers **every tier**, so any Tankopedia vehicle can carry aliases.
+  See the next section.
 
 `tank_cache.json` (asset plane) and `tankopedia-tier{7,8,9,10}.json` (this document) remain the
 factual vehicle data; the alias file is additive metadata beside them.
 
+## The complete vehicle roster (`common/tank_ids.json`)
+
+The tier files deliberately stop at the business tiers (`filter_to_business_tiers`), while the
+Tankopedia page renders the asset plane's `tank_cache.json`, which contains every tier. Anything that
+has to resolve an arbitrary `tank_id` offline — the alias validator and its maintenance workflow —
+therefore had no complete in-repo reference. `common/tank_ids.json` fills exactly that gap:
+
+```json
+{
+  "meta": {
+    "source": "blitzkit production definitions",
+    "source_game_version": "11.21.0.1235_7376187",
+    "source_hashes": { "tanks": "c8a0857…" },
+    "generated_at": "…",
+    "count": 738
+  },
+  "vehicles": { "1": "T-34", "9297": "FV215b 183" }
+}
+```
+
+- **`tank_id` ↔ authoritative name only.** No tier, no stats, no images. Vehicle facts stay in the
+  tier files (tier 7-10) and in the asset plane (`tank_cache.json`, all tiers); the roster is a
+  join-key reference, not a data source, and must never be read for vehicle properties.
+- **Generated, never hand-edited.** `common/python/update_tankopedia.py:roster_payload` builds it
+  from the *unfiltered* `parse_tanks` result of the same stable BlitzKit snapshot that produces the
+  tier files, so roster and tier files always describe one game version.
+- **Refreshed by the existing data sync.** The `Update Tankopedia` workflow
+  (`.github/workflows/update-tankopedia.yml`, manual trigger) writes it next to the tier files and
+  commits it in the same automation PR. A local `python common/python/update_tankopedia.py` or
+  `sync_tankopedia_snapshot.py` run does the same. No separate fetch script, no second upstream.
+- **Fail closed.** `validate_roster` rejects an empty roster and a count drop beyond
+  `MIN_TIER_COUNT_RATIO` (the same threshold the tier data uses). `RosterTest` in
+  `common/python/tests/test_update_tankopedia.py` additionally asserts that every vehicle in the
+  committed tier files appears in the committed roster **under the same name**, and that the roster
+  is strictly larger than the tier files. The reverse is deliberately not asserted: the roster also
+  holds tiers 1-6 and may come from a newer snapshot than the tier files.
+- **Population.** 738 vehicles at game 11.21.0.1235 (tiers 1-10), versus 473 in the business tiers.
+  It is derived from the same BlitzKit client definitions that `tank_cache.json` is built from, so
+  the two populations track each other; a vehicle that upstream has published but the roster has not
+  been refreshed for is rejected until the data sync runs, which is the intended fail-closed
+  direction.
+
 ### How to add an alias
 
-1. Find the `tank_id` in the in-repo vehicle reference (substring match on the canonical name):
+1. Find the `tank_id` in the complete roster (substring match on the canonical name, every tier):
 
    ```bash
-   python -c "import glob,json,sys;[print(v['id'], v['name']) for f in sorted(glob.glob('common/tankopedia-tier*.json')) for v in json.load(open(f,encoding='utf-8'))['vehicles'] if sys.argv[1].lower() in v['name'].lower()]" 183
+   python -c "import json,sys;[print(i, n) for i, n in json.load(open('common/tank_ids.json',encoding='utf-8'))['vehicles'].items() if sys.argv[1].lower() in n.lower()]" 183
    ```
 
    ```text

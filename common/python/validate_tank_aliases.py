@@ -13,10 +13,10 @@ tolerated at runtime:
   array of non-blank alias strings;
 - sparse by design: a vehicle with no alias is simply absent (missing key means
   `aliases = []`), so empty arrays are rejected rather than stored;
-- every tank id must resolve against the repository's own vehicle reference
-  (`common/tankopedia-tier{7,8,9,10}.json`), which keeps validation deterministic and
-  offline. Vehicles outside tier 7-10 have no in-repo reference and therefore cannot
-  carry aliases.
+- every tank id must resolve against the complete in-repo vehicle roster
+  (`common/tank_ids.json`: every tier, generated from the same BlitzKit snapshot as the
+  tier files), which keeps validation deterministic and offline while covering the whole
+  Tankopedia vehicle population.
 
 Cross-tank duplicates stay a diagnostic warning: two vehicles can legitimately share a
 community short name, and search ranking — not this validator — decides the winner.
@@ -25,7 +25,7 @@ community short name, and search ranking — not this validator — decides the 
 import json
 import os
 
-from update_tankopedia import REPO_COMMON_DIR, TIER_FILES
+from update_tankopedia import REPO_COMMON_DIR, ROSTER_FILE
 
 ALIAS_FILENAME = "tank_aliases.json"
 
@@ -50,18 +50,17 @@ def load_alias_document(common_dir=REPO_COMMON_DIR):
 
 
 def load_known_tank_ids(common_dir=REPO_COMMON_DIR):
-    """Vehicle ids from the in-repo tankopedia reference (tier 7-10, offline)."""
-    known = set()
-    for filename in TIER_FILES.values():
-        path = os.path.join(common_dir, filename)
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-        for vehicle in document.get("vehicles") or []:
-            tank_id = vehicle.get("id")
-            if isinstance(tank_id, int) and not isinstance(tank_id, bool):
-                known.add(tank_id)
+    """Vehicle ids from the complete in-repo roster (every tier, offline, no network)."""
+    path = os.path.join(common_dir, ROSTER_FILE)
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    known = {
+        tank_id
+        for tank_id in (parse_tank_id(key) for key in document.get("vehicles") or {})
+        if tank_id is not None
+    }
     if not known:
-        raise RuntimeError("TANK_ALIASES_NO_VEHICLE_REFERENCE: common_dir=%s" % common_dir)
+        raise RuntimeError("TANK_ALIASES_NO_VEHICLE_REFERENCE: path=%s" % path)
     return known
 
 
