@@ -916,7 +916,7 @@ describe('PR4 — 标签开关/碰撞/选中/倍速/循环（§26–§49）', ()
   })
 })
 
-describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', () => {
+describe('PR4 §33 B3 — 标签防重叠：标签与 HP 永不因碰撞隐藏（车体不参与布局，2026-10-16）', () => {
   afterEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
@@ -1098,30 +1098,28 @@ describe('PR4 §33 B3 — collision UX：标签与 HP 永不因碰撞隐藏', ()
     }
   })
 
-  it('layout-scaled camera keeps collision offsets in screen pixels at 1× and 4×', async () => {
+  it('标记严格落在真实位置（无防重叠位移），标签的防重叠车道仍然生效', async () => {
+    // 2026-10-16 用户裁定：2D 车体不再被推开（密集处允许压盖），与 3D 一致；
+    // 名牌 / HP 的防重叠由 labelLayout 的车道机制承担（本用例锁住它没被一起删掉）。
     stubRaf()
     const wrapper = mountWithPlayer(overlapOverview(), 12)
     await flushPromises()
 
-    const offsetOf = (accountId) => {
-      const style = markerOf(wrapper, accountId).attributes('style') || ''
-      const left = style.match(/left: calc\([^+]+ \+ (-?[\d.]+)px\)/)
-      const top = style.match(/top: calc\([^+]+ \+ (-?[\d.]+)px\)/)
-      return { x: Number(left?.[1]), y: Number(top?.[1]) }
-    }
-    const magnitude = (offset) => Math.hypot(offset.x, offset.y)
-    const fitOffset = offsetOf(2001)
-    const fitState = wrapper.vm.vehicleStates.find((state) => state.vehicle.accountId === 2001)
-    expect(fitState.presentationOffset).toEqual(fitOffset)
+    const styleOf = (accountId) => markerOf(wrapper, accountId).attributes('style') || ''
+    // 位置表达式必须是纯百分比（无 `+ Npx` 位移项）
+    expect(styleOf(2001)).toMatch(/left: \d+(\.\d+)?%/)
+    expect(styleOf(2001)).not.toMatch(/left: calc\(/)
+    expect(styleOf(2001)).not.toMatch(/top: calc\(/)
 
+    // 1× 与 4× 下位置表达式形态一致（相机是 layout-scaled，不再有 screen-px 位移）
     for (let i = 0; i < 14; i++) {
       await wrapper.find('[data-test="pb-map"]').trigger('wheel', { ctrlKey: true, deltaY: -120, clientX: 400, clientY: 300 })
     }
     await flushPromises()
-    const zoomOffset = offsetOf(2001)
-    const zoomState = wrapper.vm.vehicleStates.find((state) => state.vehicle.accountId === 2001)
-    expect(zoomState.presentationOffset).toEqual(zoomOffset)
-    expect(magnitude(zoomOffset)).toBeGreaterThan(0)
+    expect(styleOf(2001)).not.toMatch(/left: calc\(/)
+    // 车道位移仍然存在（标签块自己会被挪开，车体不动）
+    const labelStyle = markerOf(wrapper, 2001).find('.pb-presentation').attributes('style') || ''
+    expect(labelStyle).toContain('bottom:')
   })
 })
 describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
@@ -1180,11 +1178,13 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
 
   // 碰撞必须喂渲染方框，不能喂各向异性的车体矩形：贴图按航向在方框内旋转，方框才是
   // 屏幕外接盒。喂车体矩形时横向行驶/接近垂直的两车判定失准，视觉上仍然叠在一起。
-  it('feeds the rendered box into the collision layout, not the hull rectangle', () => {
+  it('车体不再参与防重叠布局（marker 只按真实位置摆放；位移与虚线整体删除）', () => {
     // happy-dom 下 import.meta.url 不是 file URL，用 cwd 相对路径读源码。
     const src = readFileSync(resolve(process.cwd(), 'src/components/BattlePlayback.vue'), 'utf8')
-    expect(src).toContain('state.markerSize.renderBox.width * view.scale')
-    expect(src).toContain('state.markerSize.renderBox.height * view.scale')
+    expect(src).not.toContain('computeTankCollisionLayout')
+    expect(src).not.toContain('presentationOffset')
+    // 标记尺寸仍按渲染方框（供命中盒/环/标签布局用），但不再喂给碰撞求解器
+    expect(src).toContain('state.markerSize.renderBox.width')
     expect(src).not.toContain('state.markerSize.collisionFootprint.width * view.scale')
   })
 
@@ -2730,5 +2730,200 @@ describe('Playback secondary convergence', () => {
     expect(wrapper.getComponent({ name: 'PlaybackControls' }).props('currentTime')).toBe(time)
     expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
     expect(wrapper.findComponent({ name: 'VehicleDetailsPanel' }).exists()).toBe(true)
+  })
+})
+
+describe('2D 位姿与 3D 同源（poseFacet 通道）', () => {
+  /** 常量位姿切面：game 系 (x, z) + 朝向；网格 11 点覆盖原始时钟 100..101s */
+  function constantPoseFacet(accountId, { x, z, hullYawRad, turretAbsRad }) {
+    const n = 11
+    return {
+      tStart: 100, samples: n,
+      vehicles: [{
+        eid: 1, account_id: accountId,
+        pos: Array.from({ length: n }, () => [x, 0, z]).flat(),
+        hull_yaw: new Array(n).fill(hullYawRad),
+        hull_pitch: new Array(n).fill(0),
+        turret_yaw: new Array(n).fill(turretAbsRad),
+        gun_pitch: new Array(n).fill(0),
+        coverage: [100, 101],
+      }],
+    }
+  }
+
+  it('位姿通道在场：标记位置/朝向取通道值（canonical 原始观测被覆盖）', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    // canonical：1001 车 t=0..40 从 (0,0) 走到 (200,200)、朝向 90°
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 40)
+    trackOf(ds, 1001).orientationSegments = [{
+      knowledge: 'CURRENT', startSec: 0, endSec: 40,
+      samples: [{ timeSec: 0, hullYawDeg: 90, turretRelativeYawDeg: 0 }],
+    }]
+    // 位姿通道：常量 (game x=50, z=-60)、朝北 0°（偏移 100 ⇒ 原始时刻 100+战斗秒）
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(),
+      playbackV2: ds,
+      poseFacet: constantPoseFacet(1001, { x: 50, z: -60, hullYawRad: 0, turretAbsRad: 0 }),
+      clockOffset: 100,
+    })
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.exists()).toBe(true)
+    // 位置来自通道：(50, -60) 在 ±300 框、766×769 逻辑框内
+    const style = marker.attributes('style')
+    expect(style).toMatch(/58\.33/)
+    expect(style).toMatch(/60%/)
+    // 朝向来自通道（0°），而不是 canonical 的 90°
+    expect(marker.findAll('img')[0].attributes('style')).toContain('rotate(0deg)')
+    expect(marker.findAll('img')[0].attributes('style')).not.toContain('rotate(90deg)')
+  })
+
+  it('无位姿通道：回退 canonical 原始观测（与既往行为一致）', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 40)
+    trackOf(ds, 1001).orientationSegments = [{
+      knowledge: 'CURRENT', startSec: 0, endSec: 40,
+      samples: [{ timeSec: 0, hullYawDeg: 90, turretRelativeYawDeg: 30 }],
+    }]
+    const wrapper = mountPlayback(makeOverview(), 20, ds)
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.findAll('img')[0].attributes('style')).toContain('rotate(90deg)')
+    expect(marker.findAll('img')[1].attributes('style')).toContain('rotate(120deg)')
+  })
+
+  it('失察即冻结：观测段结束后标记停在最后观测点，不跟随滤波器继续移动', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    // canonical：OBSERVED [0,30]（0→60 m），其后 LAST_KNOWN（冻结在 t=30）
+    trackOf(ds, 1001).positionSegments = [
+      { knowledge: 'OBSERVED', startSec: 0, endSec: 30, interpolationAllowed: true,
+        samples: [{ timeSec: 0, x: 0, y: 0 }, { timeSec: 30, x: 60, y: 0 }] },
+      { knowledge: 'LAST_KNOWN', startSec: 30, endSec: 60,
+        samples: [{ timeSec: 30, x: 60, y: 0 }] },
+    ]
+    // 位姿通道：x 随原始时钟线性增长 2 m/s（raw = battle + 100）
+    const n = 601
+    const pos = []
+    const yaw = []
+    for (let i = 0; i < n; i++) { pos.push(i * 0.2, 0, 0); yaw.push(0) }
+    const facet = {
+      tStart: 100, samples: n,
+      vehicles: [{
+        eid: 1, account_id: 1001, pos, hull_yaw: yaw, hull_pitch: new Array(n).fill(0),
+        turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0), coverage: [100, 160],
+      }],
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: ds, poseFacet: facet, clockOffset: 100,
+    })
+    await flushPromises()
+    // 期望的 left%：x = 2 m/s × 战斗秒（raw = 战斗秒 + 100）
+    const pctOf = (x) => (((x + 300) / 600) * 766 / 766) * 100
+    const readLeft = async (seekTo) => {
+      await wrapper.setProps({ seekTo })
+      await flushPromises()
+      const t = wrapper.vm.currentTime
+      const style = wrapper.find('[data-test="pb-marker-1001"]').attributes('style') || ''
+      return { t, left: Number(/left: ([\d.]+)%/.exec(style)?.[1]) }
+    }
+    // t=20（观测内）：跟随位姿通道（x = 2·t）
+    const observed = await readLeft(20)
+    expect(observed.left).toBeCloseTo(pctOf(2 * observed.t), 3)
+    // t>30（失察）：冻结在 t=30 的位姿（x=60），而不是滤波延续值（x = 2·t）
+    const frozen = await readLeft(60)
+    expect(frozen.t).toBeGreaterThan(30)
+    expect(frozen.left).toBeCloseTo(pctOf(60), 3)
+    expect(Math.abs(frozen.left - pctOf(2 * frozen.t))).toBeGreaterThan(5)
+  })
+
+  it('位姿通道缺该车 / 缺时钟偏移：该车回退 canonical，其余车不受影响', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 40)
+    trackOf(ds, 1001).orientationSegments = [{
+      knowledge: 'CURRENT', startSec: 0, endSec: 40,
+      samples: [{ timeSec: 0, hullYawDeg: 90, turretRelativeYawDeg: 0 }],
+    }]
+    // 切面只含 2001；且 clockOffset 缺失（Number 缺省 null）
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(),
+      playbackV2: ds,
+      poseFacet: constantPoseFacet(2001, { x: 0, z: 0, hullYawRad: 0, turretAbsRad: 0 }),
+    })
+    await flushPromises()
+    const marker = wrapper.find('[data-test="pb-marker-1001"]')
+    expect(marker.findAll('img')[0].attributes('style')).toContain('rotate(90deg)')
+  })
+
+  it('多实体账号（AoI 重入 / 复活换实体）：按 canonical 身份证据选活跃实体，后一实体不得泄漏到重入之前', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 200, y: 200, timeSec: 40 }], 0, 40)
+    const n = 401
+    const defOf = (eid, x) => ({
+      eid, account_id: 1001,
+      pos: Array.from({ length: n }, () => [x, 0, 0]).flat(),
+      hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      coverage: [100, 140],
+    })
+    // 同一账号两个实体：eid 1 首见 0s（x=50）、eid 2 首见 30s（x=150）。数组里 eid 2 在后 ——
+    // 若按"后写覆盖"取 def，重入之前的每一帧都会被 eid 2 的钳位首帧（x=150）顶掉（未来泄漏）。
+    const facet = {
+      tStart: 100, samples: n,
+      vehicles: [defOf(1, 50), defOf(2, 150)],
+      entityStartsByAccount: new Map([[1001, new Map([[1, 0], [2, 30]])]]),
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: ds, poseFacet: facet, clockOffset: 100,
+    })
+    await flushPromises()
+    const pctOf = (x) => ((x + 300) / 600) * 100
+    const leftAt = async (seekTo) => {
+      await wrapper.setProps({ seekTo })
+      await flushPromises()
+      const style = wrapper.find('[data-test="pb-marker-1001"]').attributes('style') || ''
+      return Number(/left: ([\d.]+)%/.exec(style)?.[1])
+    }
+    expect(await leftAt(5)).toBeCloseTo(pctOf(50), 1)    // 重入前：eid 1
+    expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)  // 重入后：eid 2
+  })
+
+  it('实体身份证据早于位姿覆盖（HP 先见）→ 覆盖外的采样回落 canonical，不泄漏该实体未来首帧（review P2）', async () => {
+    stubRaf()
+    const ds = makePlaybackV2()
+    // canonical：观测 [0,40]、x 恒 0——回落路径的期望位置
+    setPositionSamples(ds, 1001, [{ x: 0, y: 0, timeSec: 0 }, { x: 0, y: 0, timeSec: 40 }], 0, 40)
+    const n = 401
+    const defOf = (eid, x, coverage) => ({
+      eid, account_id: 1001,
+      pos: Array.from({ length: n }, () => [x, 0, 0]).flat(),
+      hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      coverage,
+    })
+    const facet = {
+      tStart: 100, samples: n,
+      // eid 2 的位姿证据从战斗 30s（raw 130）才出现，但身份证据（HP/观测先见）在战斗 10s ——
+      // 战斗 20s 的采样时刻落在 eid 2 的 coverage 之外，钳位会把它未来的首帧（x=150）泄漏到过去。
+      vehicles: [defOf(1, 50, [100, 140]), defOf(2, 150, [130, 200])],
+      entityStartsByAccount: new Map([[1001, new Map([[1, 0], [2, 10]])]]),
+    }
+    const wrapper = mountBattlePlayback({
+      overview: makeOverview(), playbackV2: ds, poseFacet: facet, clockOffset: 100,
+    })
+    await flushPromises()
+    const pctOf = (x) => ((x + 300) / 600) * 100
+    const leftAt = async (seekTo) => {
+      await wrapper.setProps({ seekTo })
+      await flushPromises()
+      const style = wrapper.find('[data-test="pb-marker-1001"]').attributes('style') || ''
+      return Number(/left: ([\d.]+)%/.exec(style)?.[1])
+    }
+    expect(await leftAt(20)).toBeCloseTo(pctOf(0), 1)     // 覆盖外 → canonical 的 x=0（不是 eid 2 的 150）
+    expect(await leftAt(35)).toBeCloseTo(pctOf(150), 1)   // 进入覆盖（raw 135）→ eid 2 的通道值
   })
 })

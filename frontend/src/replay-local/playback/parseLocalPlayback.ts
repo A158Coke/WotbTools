@@ -22,6 +22,7 @@ import { loadTankopedia, type Tankopedia } from '../compute/tankopedia.js'
 import { toBattlePlaybackDataset } from './toBattlePlaybackDataset.js'
 import { indexMapGridProfiles, toMapOverview, type LocalMapOverview, type MapGridProfile } from './toMapOverview.js'
 import { buildCanonicalReplayFacts, entityFirstSeenByAccount, resolveReplayClock } from '../canonical/facts.js'
+import { buildPoseFacet, type PoseFacet } from '../pose/vehiclePose.js'
 
 export interface LocalPlayback {
   /** null = 时间轴不可用（与服务端 204「unavailable」同义） */
@@ -35,6 +36,12 @@ export interface LocalPlayback {
   clock: ReturnType<typeof resolveReplayClock>
   /** Presentation-only raw Playback telemetry; never promoted into canonical ReplayFacts. */
   reloadTelemetry: PlaybackReloadTelemetry | null
+  /**
+   * 2D 俯视渲染用的**位姿通道**（playback facet 的瘦身投影：pose_kf + 网格列 + coverage）。
+   * 与 3D 场景同源同插值（`replay-local/pose/vehiclePose.ts`）；canonical `dataset` 仍是
+   * 可信度 / 事件 / 血量的唯一权威。facet 不可得时 null（调用方回退 canonical 观测）。
+   */
+  poseFacet: PoseFacet | null
 }
 
 export interface ParseLocalPlaybackOptions {
@@ -94,5 +101,9 @@ export async function parseLocalPlayback(
     reload_effective: playback.reload_effective,
     shots: playback.shots,
   } : null
-  return { dataset, overview, result, reloadTelemetry, clock, entityStartsByAccount }
+  // 位姿通道（瘦身投影）：2D 俯视与 3D 场景共用同一采样器，故这里把 facet 的位姿列随结果带出。
+  // 实体身份证据（entityStartsByAccount）一并带上：多实体账号（AoI 重入 / 复活换实体）的活跃
+  // 实体选择必须用与 3D 死亡归属同源的 canonical 证据，否则会在重入前采样到后一个实体。
+  const poseFacet = playback ? buildPoseFacet(playback, entityStartsByAccount) : null
+  return { dataset, overview, result, reloadTelemetry, clock, entityStartsByAccount, poseFacet }
 }

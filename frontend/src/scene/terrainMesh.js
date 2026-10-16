@@ -168,7 +168,7 @@ export function terrainLodStale(prev, cur, sinceMs, minIntervalMs = 120) {
   return false;
 }
 
-/** 底图贴图 UV（低档 / 分层材质不可用时回退：`ground.webp`、最低档 `mini.webp` 摊在**地形网格**上）。
+/** 底图贴图 UV（低档/均衡档与分层材质不可用时回退：**契约化的 `ground.webp`** 摊在**地形网格**上）。
  *  契约 = 旧 `PlaneGeometry(size, size) + rotation.set(−π/2, 0, π)` + TextureLoader(flipY=true)
  *  的逐点等价（并见上游 `tools/composite_overhead.py` 底图侧注释「左列 = +X_scene、顶行 = +Z_scene」）：
  *    `u = 0.5 − (X − cx)/span`、`v = 0.5 + (Z − cz)/span`
