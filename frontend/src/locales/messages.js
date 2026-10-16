@@ -3,6 +3,7 @@ import en from './en.json'
 import ru from './ru.json'
 import featureMessages from './feature-messages.json'
 import tournamentMessages from './tournament-messages.json'
+import creatorMessages from './creator-messages.json'
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -24,7 +25,7 @@ export function mergeLocaleMessages(base, addition) {
 }
 
 export const messages = {
-  zh: mergeLocaleMessages(mergeLocaleMessages(zh, featureMessages.zh), tournamentMessages.zh),
-  en: mergeLocaleMessages(mergeLocaleMessages(en, featureMessages.en), tournamentMessages.en),
-  ru: mergeLocaleMessages(mergeLocaleMessages(ru, featureMessages.ru), tournamentMessages.ru)
+  zh: mergeLocaleMessages(mergeLocaleMessages(mergeLocaleMessages(zh, featureMessages.zh), tournamentMessages.zh), creatorMessages.zh),
+  en: mergeLocaleMessages(mergeLocaleMessages(mergeLocaleMessages(en, featureMessages.en), tournamentMessages.en), creatorMessages.en),
+  ru: mergeLocaleMessages(mergeLocaleMessages(mergeLocaleMessages(ru, featureMessages.ru), tournamentMessages.ru), creatorMessages.ru)
 }

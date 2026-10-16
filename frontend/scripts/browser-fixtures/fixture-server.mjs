@@ -53,7 +53,15 @@ export async function startFixtureServer({ middleware, allowedHosts } = {}) {
     logLevel: 'error',
     plugins: [authBoundaryStubPlugin(), vue(), {
       name: 'wotb-browser-fixture-http-boundary',
-      configureServer(instance) { if (middleware) instance.middlewares.use(middleware) },
+      configureServer(instance) {
+        if (middleware) instance.middlewares.use(middleware)
+        // Default backend capability for unrelated page tests; scenario middleware can emulate old APIs.
+        instance.middlewares.use((request, response, next) => {
+          if (request.url?.split('?')[0] !== '/api/health') { next(); return }
+          response.setHeader('Content-Type', 'application/json')
+          response.end(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] }))
+        })
+      },
     }],
     // vite.config.js 的 define 只在读取项目配置时注入；本实例不读 configFile，需显式提供。
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
