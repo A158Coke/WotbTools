@@ -161,6 +161,51 @@ grep -qE '^[[:space:]]*request>headers>Cookie[[:space:]]+delete[[:space:]]*$' <<
 grep -qE '^[[:space:]]*request>headers>Authorization[[:space:]]+delete[[:space:]]*$' <<<"$auth_site" \
   || { echo 'ERROR: the auth access log must delete the Authorization header.' >&2; exit 1; }
 
+# 合规安全日志（190 天留存，docs/operations/security-log-retention.md）。这里断言的是
+# **意图声明**：哪条日志算安全日志、覆盖面收窄到哪里、留存哪些字段。适配后 JSON 的形状
+# 断言在本文件下方（Caddy 真正会加载的配置）；真实请求级别的证明——/api/* 有日志、
+# / 与 /assets/* 没有、query / Authorization / Cookie 的值不出现——由
+# deploy/test-caddy-route-inventory.sh 的 runtime fixture 完成。三层缺一不可。
+web_site="$(site_block wotbtools.com)"
+[ -n "$web_site" ] || { echo 'ERROR: wotbtools.com site block is missing.' >&2; exit 1; }
+grep -qE '^[[:space:]]*log[[:space:]]+security_api[[:space:]]*\{' <<<"$web_site" \
+  || { echo 'ERROR: wotbtools.com must declare the named compliance access log: log security_api.' >&2; exit 1; }
+# 字段白名单：原始 uri（含整个 query string）、全部请求头、全部响应头都必须在写 stdout
+# 之前删掉，所以凭据与 OAuth 参数不可能进入这条长期留存的日志。
+for deleted_field in 'request>uri' 'request>headers' 'resp_headers'; do
+  grep -qE "^[[:space:]]*${deleted_field}[[:space:]]+delete[[:space:]]*$" <<<"$web_site" \
+    || { echo "ERROR: the compliance access log must delete '${deleted_field}' before stdout." >&2; exit 1; }
+done
+# 覆盖面：只有 /api/* 留存。真正的不变量是「跳过判定排在任何能终结请求的 handler 之前」
+# ——由下方适配后 JSON 的顺序断言拥有；这里只锁住声明本身存在。
+grep -qE '^[[:space:]]*@notApi[[:space:]]+not[[:space:]]+path[[:space:]]+/api/\*[[:space:]]*$' <<<"$web_site" \
+  || { echo 'ERROR: wotbtools.com must declare the @notApi matcher as: not path /api/*' >&2; exit 1; }
+grep -qE '^[[:space:]]*log_skip[[:space:]]+@notApi[[:space:]]*$' <<<"$web_site" \
+  || { echo 'ERROR: wotbtools.com must log_skip @notApi so only /api/* enters the compliance log.' >&2; exit 1; }
+# 删掉 uri 之后，path 与 User-Agent 必须用 log_append 显式加回来，否则取证日志里既没有
+# 访问目标也没有客户端类型。compliance / security_kind 是 Alloy 合规分流的唯一事实源。
+web_appended() {
+  grep -qE "^[[:space:]]*log_append[[:space:]]+$1$" <<<"$web_site"
+}
+web_appended 'compliance[[:space:]]+security' \
+  || { echo 'ERROR: wotbtools.com must log_append compliance security (the Alloy retention selector).' >&2; exit 1; }
+web_appended 'security_kind[[:space:]]+api_access' \
+  || { echo 'ERROR: wotbtools.com must log_append security_kind api_access.' >&2; exit 1; }
+web_appended 'path[[:space:]]+\{http[.]request[.]uri[.]path\}' \
+  || { echo 'ERROR: wotbtools.com must log_append the request path (the replacement for the deleted uri).' >&2; exit 1; }
+web_appended 'ua[[:space:]]+\{http[.]request[.]header[.]User-Agent\}' \
+  || { echo 'ERROR: wotbtools.com must log_append the User-Agent.' >&2; exit 1; }
+# query string 绝不能被加回来：log_append 里出现 uri / query 占位符等于绕过上面的删除。
+if grep -qE '^[[:space:]]*log_append[[:space:]]+[^[:space:]]+[[:space:]]+.*\{http[.]request[.]uri[.]query' <<<"$web_site"; then
+  echo 'ERROR: the compliance access log must not re-append the query string.' >&2
+  exit 1
+fi
+# 认证域的受控访问日志同样进入 190 天 security stream：只加标记，不改已评审的脱敏字段集。
+grep -qE '^[[:space:]]*log_append[[:space:]]+compliance[[:space:]]+security[[:space:]]*$' <<<"$auth_site" \
+  || { echo 'ERROR: auth.wotbtools.com must log_append compliance security.' >&2; exit 1; }
+grep -qE '^[[:space:]]*log_append[[:space:]]+security_kind[[:space:]]+auth_access[[:space:]]*$' <<<"$auth_site" \
+  || { echo 'ERROR: auth.wotbtools.com must log_append security_kind auth_access.' >&2; exit 1; }
+
 # No first-position upstream may exist beyond the reviewed set above. The second
 # frontend peer is asserted explicitly by the exact two-peer directive above and
 # by the adapted runtime dial list below.
@@ -233,6 +278,12 @@ fi
 # (never reverse_proxy), with a 200 status and a body that tells the user to return
 # to the app. `all_handlers` walks every nesting level, so a handler hidden one
 # level deeper is still found and a proxying one can never hide.
+# The catch-all is identified by what it does (a match-less route that proxies), not
+# by the mere absence of a matcher: site-level handlers that legitimately apply to
+# every request - `log_append` for the compliance access log - also adapt to
+# match-less routes, and they are not catch-alls. Counting those as catch-alls would
+# reject a correct configuration while still letting a second *proxying* catch-all
+# through, which is the shape this rule actually exists to catch.
 if ! jq -e '
   def all_handlers: .. | objects | select(has("handler"));
   def has_callback: ((.match // []) | map(.path? // []) | flatten | index("/android/oauth/callback")) != null;
@@ -240,7 +291,8 @@ if ! jq -e '
   | map(select([.match[]?.host[]?] | index("auth.wotbtools.com")))
   | .[0].handle[0].routes as $host_routes
   | [$host_routes[] | select(has_callback)] as $callback
-  | [$host_routes[] | select((.match // []) == [])] as $catch_all
+  | [$host_routes[]
+     | select(((.match // []) == []) and (any(all_handlers; .handler == "reverse_proxy")))] as $catch_all
   | ([$callback[] | all_handlers | select(.handler == "static_response")] | length) as $answers
   | ([$callback[] | all_handlers
       | select(.handler == "static_response")
@@ -253,7 +305,10 @@ if ! jq -e '
   | ($callback | length) == 1
     and ($catch_all | length) == 1
     and ([$host_routes | to_entries[] | select(.value | has_callback) | .key][0]
-         < [$host_routes | to_entries[] | select((.value.match // []) == []) | .key][0])
+         < [$host_routes | to_entries[]
+            | select(((.value.match // []) == [])
+                     and (.value | any(all_handlers; .handler == "reverse_proxy")))
+            | .key][0])
     and ($answers == 1)
     and ($answered == 1)
     and (any($callback[] | all_handlers; .handler == "reverse_proxy") | not)
@@ -340,6 +395,85 @@ try:
 except (StopIteration, AssertionError, KeyError):
     raise SystemExit("ERROR: adapted Android CORS / K7C frontend pool must be exact-origin, non-credentialed, pre-auth, with the reviewed asset gateway and exact two-peer health-checked frontend pool")
 PY_CORS
+
+# Inspect Caddy's real adapted logging configuration. The text assertions above
+# state the intent; this states what Caddy will actually load: one named access
+# logger per reviewed host, the compliance logger's field deletions, the default
+# logger excluding both access loggers (so a compliance line is never duplicated
+# into the 7-day stream), and the log_skip route ordered ahead of everything that
+# can terminate a request (the APK redirect and the Android preflight responses).
+python3 - "$android_adapted_doc" <<'PY_COMPLIANCE_LOG'
+import json
+import sys
+
+def walk(node):
+    if isinstance(node, dict):
+        yield node
+        for value in node.values(): yield from walk(value)
+    elif isinstance(node, list):
+        for value in node: yield from walk(value)
+
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+try:
+    logs = doc["logging"]["logs"]
+    compliance = logs["security_api"]
+    assert compliance["include"] == ["http.log.access.security_api"], compliance.get("include")
+    assert compliance["writer"] == {"output": "stdout"}, compliance.get("writer")
+    encoder = compliance["encoder"]
+    assert encoder["format"] == "filter" and encoder["wrap"]["format"] == "json", encoder
+    # The whitelist is enforced by deletion: no raw uri (hence no query string),
+    # no request headers (hence no Authorization / Cookie) and no response headers.
+    for field in ("request>uri", "request>headers", "resp_headers"):
+        assert encoder["fields"][field] == {"filter": "delete"}, (field, encoder["fields"].get(field))
+    # Both access loggers must be excluded from `default`: Caddy would otherwise
+    # write every compliance line a second time into the untagged stream, where it
+    # would be kept for 7 days without the field filter ever being applied.
+    excluded = set(logs["default"]["exclude"])
+    assert "http.log.access.security_api" in excluded, excluded
+    auth_logger = next(name for name, value in logs.items()
+                       if name != "security_api"
+                       and "http.log.access." + name in excluded
+                       and value.get("include"))
+    server = next(server for server in doc["apps"]["http"]["servers"].values()
+                  if "wotbtools.com" in server.get("logs", {}).get("logger_names", {}))
+    logger_names = server["logs"]["logger_names"]
+    assert logger_names["wotbtools.com"] == ["security_api"], logger_names
+    assert logger_names["auth.wotbtools.com"] == [auth_logger], logger_names
+
+    host = next(node for node in walk(server["routes"])
+                if node.get("match") == [{"host": ["wotbtools.com"]}])
+    site_routes = host["handle"][0]["routes"]
+    skip_index = next(i for i, route in enumerate(site_routes)
+                      if route.get("match") == [{"not": [{"path": ["/api/*"]}]}]
+                      and any(handler.get("handler") == "vars" and handler.get("log_skip") is True
+                              for handler in walk(route)))
+    # Everything that answers or proxies must come after the skip decision.
+    terminal = {"reverse_proxy", "static_response", "file_server"}
+    first_terminal = next(i for i, route in enumerate(site_routes)
+                          if any(handler.get("handler") in terminal for handler in walk(route)))
+    assert skip_index < first_terminal, (skip_index, first_terminal)
+    appended = {handler["key"]: handler["value"]
+                for handler in walk(host) if handler.get("handler") == "log_append"}
+    assert appended == {
+        "compliance": "security",
+        "security_kind": "api_access",
+        "path": "{http.request.uri.path}",
+        "ua": "{http.request.header.User-Agent}",
+    }, appended
+
+    auth_host = next(node for node in walk(server["routes"])
+                     if node.get("match") == [{"host": ["auth.wotbtools.com"]}])
+    auth_appended = {handler["key"]: handler["value"]
+                     for handler in walk(auth_host) if handler.get("handler") == "log_append"}
+    assert auth_appended == {"compliance": "security", "security_kind": "auth_access"}, auth_appended
+except (StopIteration, AssertionError, KeyError) as error:
+    raise SystemExit(
+        "ERROR: the adapted Caddy configuration does not carry the reviewed compliance access log "
+        "(named logger with the uri/headers/resp_headers deletions, both access loggers excluded "
+        "from the default stream, log_skip for non-/api/* ordered before every responder, and the "
+        f"exact log_append field set on both hosts): {error!r}"
+    )
+PY_COMPLIANCE_LOG
 
 docker compose -p deploy \
   -f "$INCOMING_DIR/common.compose.yml" -f "$INCOMING_DIR/caddy.compose.yml" \

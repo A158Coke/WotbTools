@@ -192,6 +192,67 @@ if [ "$android_client_changes" -gt 0 ] || [ "$android_mapper_changes" -gt 0 ]; t
   done
 fi
 
+# --- controlled security event logging, evaluated from the plan JSON only -----
+# 合规开关不能只在仓库文本里正确：plan 是「生产 desired state」的权威视图，所以把
+# events / admin events 关掉、把 admin event details 打开、摘掉 jboss-logging listener、
+# 或者直接删掉这份声明，都必须在 apply 之前被拦下。
+# 与 Android client 规则同样的 create-vs-no-op 不对称：`resource_changes` 不是 diff-only
+# 列表，已落定的资源会以 `["no-op"]` 携带完整 `change.after` 出现，所以字段检查对
+# create / update / no-op 一律适用，只有 delete / replace 被拒绝；plan 完全不碰这份资源
+# 时（例如资源尚不存在的首个 plan）保持绿色。
+realm_events_changes="$(jq -r '
+  [.resource_changes[]? | select(.address == "keycloak_realm_events.wotbtools")] | length
+' <<< "$plan_json")" || {
+  echo "Unable to evaluate the Keycloak security event logging contract." >&2
+  exit 1
+}
+if [ "$realm_events_changes" -eq 0 ]; then
+  echo "Keycloak plan does not touch keycloak_realm_events.wotbtools (security event logging contract not applicable)."
+elif [ "$realm_events_changes" -gt 1 ]; then
+  echo "The Keycloak plan addresses keycloak_realm_events.wotbtools $realm_events_changes times; it must appear exactly once." >&2
+  exit 1
+else
+  realm_events_violations="$(jq -r '
+    [.resource_changes[]? | select(.address == "keycloak_realm_events.wotbtools")][0] as $c
+    | ($c.change.actions // []) as $actions
+    | ($c.change.after // {}) as $after
+    | [
+        (if (($actions | index("delete")) != null)
+           then "actions=\($actions) (deleting or replacing this resource silently turns the 190-day security log off)"
+           else empty end),
+        (if $after.events_enabled == true then empty else "events_enabled=\($after.events_enabled // "<absent>") (expected true)" end),
+        (if $after.admin_events_enabled == true then empty else "admin_events_enabled=\($after.admin_events_enabled // "<absent>") (expected true)" end),
+        (if $after.admin_events_details_enabled == false
+           then empty
+           else "admin_events_details_enabled=\($after.admin_events_details_enabled // "<absent>") (expected false: the full resource representation must never be retained)"
+           end),
+        (if (($after.events_listeners // []) | index("jboss-logging")) != null
+           then empty
+           else "events_listeners=\($after.events_listeners // []) (expected to contain jboss-logging: it is what puts events on stdout)"
+           end),
+        (if (($after.enabled_event_types // []) | index("LOGIN")) != null
+           then empty
+           else "enabled_event_types=\($after.enabled_event_types // []) (expected to contain LOGIN)"
+           end),
+        (if (($after.enabled_event_types // []) | index("LOGIN_ERROR")) != null
+           then empty
+           else "enabled_event_types=\($after.enabled_event_types // []) (expected to contain LOGIN_ERROR)"
+           end)
+      ]
+    | .[]
+  ' <<< "$plan_json")" || {
+    echo "Unable to evaluate the Keycloak security event logging contract." >&2
+    exit 1
+  }
+  if [ -n "$realm_events_violations" ]; then
+    echo "The planned keycloak_realm_events.wotbtools does not satisfy the security log retention contract." >&2
+    while IFS= read -r violation; do
+      echo "BLOCKER: keycloak_realm_events.wotbtools $violation" >&2
+    done <<< "$realm_events_violations"
+    exit 1
+  fi
+fi
+
 replacement_count="$(jq '[.resource_changes[]? | select((.change.actions // []) | index("delete") != null and index("create") != null)] | length' <<< "$plan_json")" || {
   echo "Unable to count Keycloak resource replacements in the OpenTofu plan." >&2
   exit 1

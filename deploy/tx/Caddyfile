@@ -60,6 +60,43 @@ www.wotbtools.com {
 }
 
 wotbtools.com {
+	# 合规安全访问日志（公安自评估「日志信息留存措施」，190 天留存）。
+	# Caddy 的 `log` 不是 ordered HTTP handler——既不能挂进 `handle` 也不能放进 `route`
+	# （两者都被 caddy adapt 拒绝），所以它是**站点级**的；覆盖面靠下面的 `log_skip`
+	# 收窄到 `/api/*`，而不是把首页、JS/CSS、图片、WASM、APK 重定向全写出来再让 Loki 丢。
+	# 日志器显式命名，但 Alloy 的合规分流**不**依赖 logger 名字（log0/log1 会随声明顺序
+	# 漂移），只认 log_append 写进行里的 compliance 字段。
+	#
+	# 字段白名单：filter 编码器在**写 stdout 之前**删掉原始 `request>uri`（连同整个
+	# query string）、全部请求头与全部响应头，再用 log_append 把真正需要留存的两项加
+	# 回来——只含 path 的 uri、以及 User-Agent。因此 Authorization / Cookie / OAuth
+	# code、state / 任何 query 参数都不可能出现在这条长期留存的日志里；request body 与
+	# response body（AI prompt/output、回放内容、上传文件）Caddy 从不记录。
+	# 留存字段：ts、remote_ip、remote_port、host、method、path、status、ua。
+	# 校验见 deploy/tx/validate-caddy-config.sh（静态断言 + 真实请求的 runtime 断言）。
+	log security_api {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				resp_headers delete
+			}
+		}
+	}
+	# 只有 /api/* 进入安全日志。`log_skip` 放在站点级：Caddy 的 directive order 保证它排在
+	# 下面的 `route` 之前，所以 APK 重定向与 Android 预检的 `redir` / `respond` 终结请求
+	# 之前，跳过判定就已经生效。写进 `route` 里也能工作，但那时正确性只取决于它恰好是
+	# 第一条——真实请求的回归测试证明过代价：少了这条 log_skip，首页、hashed asset 与 APK
+	# 重定向全部进了 190 天日志。
+	@notApi not path /api/*
+	log_skip @notApi
+	log_append compliance security
+	log_append security_kind api_access
+	log_append path {http.request.uri.path}
+	log_append ua {http.request.header.User-Agent}
+
 	# Exact Android origins; native Bearer authentication never needs cookies.
 	# @android = Android 2.x System WebView origin (kept while 2.x clients and the
 	# documented Tier B rollback exist); @androidLoopback = Android 3.0+ GeckoView
@@ -153,6 +190,12 @@ auth.wotbtools.com {
 			}
 		}
 	}
+	# 同一条受控访问日志同时是认证域的安全日志：打上 compliance 标记后，TX Alloy 把它
+	# 归入 190 天留存的 security stream（security_kind 区分认证域访问与业务 API 访问）。
+	# 这里只加标记，不改上面已评审的脱敏字段集。
+	log_append compliance security
+	log_append security_kind auth_access
+
 	handle /.well-known/assetlinks.json {
 		root * /srv
 		file_server

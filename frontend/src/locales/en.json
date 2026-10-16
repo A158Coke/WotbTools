@@ -161,7 +161,9 @@
     "discord": "Discord",
     "copy": "Copy",
     "copied": "Copied",
-    "hint": "Copy the ID and add me in the corresponding app."
+    "hint": "Copy the ID and add me in the corresponding app.",
+    "report_title": "Complaints and reports",
+    "report_body": "This page is also the feedback, complaint and report channel for WotbTools. If you come across illegal or harmful content, account abuse, a security problem or any other violation, reach us through the contact methods below. We verify and act on every complaint or report we receive without delay."
   },
   "col_groups": {
     "identity": "Identity",
