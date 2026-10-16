@@ -1,9 +1,12 @@
 import groovy.json.JsonSlurper
 
+// AGP 9 built-in Kotlin：不再 apply org.jetbrains.kotlin.android（KGP 版本见根 build.gradle.kts）。
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
+
+/** 随 APK 固定的引擎版本：只用 Mozilla stable channel，精确版本号，升级即一次 Android 发版。 */
+private val geckoViewVersion = "158.0.20261007201254"
 
 private val committedWotbVersion = (project.findProperty("wotbVersion") as String?)
     ?: error("android/gradle.properties must define wotbVersion")
@@ -43,24 +46,32 @@ val keyPass = (project.findProperty("wotbKeyPass") as String?) ?: ""
 
 android {
     namespace = "com.wotbtools.app"
-    compileSdk = 34
+    // GeckoView 158 的 AAR metadata 要求 minCompileSdk=37 / minCompileMinorSdk=2。
+    // 只抬 compileSdk；targetSdk 不动（改 targetSdk 会改变运行时行为，不属于本次引擎迁移）。
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
         applicationId = "com.wotbtools.app"
         minSdk = 26
         targetSdk = 34
-        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+        // 单个 APK 覆盖全部 ARM 设备（不做 ABI split）；debug 另加 x86_64 供模拟器手测。
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         versionCode = resolvedVersionCode
         versionName = resolvedWotbVersion
         buildConfigField("int", "NATIVE_BRIDGE_VERSION", contractBridgeVersion.toString())
+        buildConfigField("String", "GECKOVIEW_VERSION", "\"$geckoViewVersion\"")
         // AppAuth 库 manifest 用 ${appAuthRedirectScheme} 声明回程 filter；不注入占位符 manifest 合并直接失败。
         // 值只取 scheme 段：库的 filter 只声明 scheme，精确 path 由我们自己的 filter 补充（见 AndroidManifest）。
         manifestPlaceholders["appAuthRedirectScheme"] = "com.wotbtools.app"
     }
 
     buildFeatures { buildConfig = true }
-    // Test APK reuses canonical anonymous replays; no fixture copy in production assets.
-    sourceSets.getByName("androidTest").assets.srcDir("../../common/fixtures/replays")
+    // 侧载分发：压缩 Gecko native libs，优先减小下载体积（代价是安装时解压）。
+    packaging { jniLibs { useLegacyPackaging = true } }
 
     signingConfigs {
         if (keystorePath != null) {
@@ -74,6 +85,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            ndk { abiFilters += "x86_64" }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -99,20 +113,13 @@ kotlin {
 }
 
 dependencies {
-    // Framework JUnit3 instrumentation is an optional SDK library on API28+; test-only compile stubs.
-    androidTestCompileOnly(files(
-        android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.test.base.jar"),
-        android.sdkDirectory.resolve("platforms/android-${android.compileSdk}/optional/android.test.runner.jar")
-    ))
-    // Android framework + AndroidX WebKit asset loader / origin-scoped bridge.
     implementation("androidx.core:core-ktx:1.13.1")
-    // origin-scoped Native Bridge：WebView WebMessageListener（带 origin allowlist），
-    // 替代 addJavascriptInterface 的全 frame 暴露。
-    implementation("androidx.webkit:webkit:1.11.0")
+    // APK 自带的 Web 引擎（取代设备 System WebView）。仓库来源由 settings.gradle.kts 的 exclusiveContent 锁定。
+    implementation("org.mozilla.geckoview:geckoview:$geckoViewVersion")
     // 原生认证（RFC 8252 external user-agent + PKCE S256 + Custom Tabs + App Links）：
     // 库只经浏览器完成授权、**从不使用 WebView**；固定 0.11.1 是因为上游发布节奏停滞
     // （审计记录在 docs/current-plan.md），升级需单独评审。
     implementation("net.openid:appauth:0.11.1")
-    // Pure JVM policy tests; device smoke uses the optional SDK framework runner above.
+    // Pure JVM policy tests.
     testImplementation("junit:junit:4.13.2")
 }

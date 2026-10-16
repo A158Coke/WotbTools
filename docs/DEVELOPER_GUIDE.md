@@ -187,7 +187,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
 - **独立炮塔**：可选 `PlaybackData.detached_turrets` 由上游 class-8 实体初始化和 Type10 产出权威 owner、AoI 区间及完整三轴位姿。本仓只校验和呈现：原模型炮塔 / 炮管以枢轴重心化，独立世界位姿按回放时钟插值；缺字段保持旧行为，不按 HP 推断，也不增加二进制解析器。当前正式 pin 为上游 v0.4.7，见 [`battle-playback`](features/battle-playback.md)。
-- **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（WebView 同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，个人回放的 3D / 射击分析与复现 / AI 登录后使用；已验证的官方示例开放匿名 3D/射击；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [Replay Workspace](frontend/replay-workspace.md)。
+- **消费方**：回放工作台（数据 / 导出 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘五能力同一工作台）、装甲查看器、名人堂 / 百场 / 三环提交、个人主页账号验证、Android（APK 自带 GeckoView 运行同一套前端）。五个 Replay capability 对匿名、普通用户与管理员永久可见：数据 / 2D 匿名可用，个人回放的 3D / 射击分析与复现 / AI 登录后使用；已验证的官方示例开放匿名 3D/射击；admin role 不改变工作台能力。装甲查看器匿名可用（Tankopedia 详情入口卡对全员开放），OIDC 返回仍保留完整 scene query。详见 [Replay Workspace](frontend/replay-workspace.md)。
 - **一致性基线**：`frontend/src/replay-local/__golden__/` 是 Java 删除前在仓库 fixture 上的最后输出（只读），CI 常驻断言客户端全链路逐字段一致；上游升级后重新导出 `wasm-*` 再跑同一组测试。
 - **缺字段**：一律向上游要（改上游 → 发版 → 升级 `source.json`），不在客户端启发式推导，也不在服务端解析。
 
@@ -385,18 +385,18 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 **能力解耦**：AI 与 Playback 不做 `AI@seek → Playback` 时间点联动 / 跨 capability 状态 handoff。tab 切换经 Vue Router navigation 形成可 Back/Forward 的 history，返回时 selection / 分析结果不丢，只恢复 activeCapability。
 **车辆环线**：已有 WASM `parseResult.players[].gun_marks` → `battleFacts.gunMarks` → 单场 `gun_marks` 列／中文 Excel；缺失和非法保留未知。专用标志共用于数据表、手机卡片、详情、2D／3D 名册与车型标签，回放读取 owner 的 `LocalPlayback.result` 按账号匹配，generic HTTP dataset 不增加字段。实体重入的活动身份选择与场景共用 canonical 首次观测映射（LocalPlayback 内部 sidecar），按时间而非 eid 排序；环线 SVG 显式内联图集以保留 PNG 导出。成就不按玩家跨车汇总，不推断精确百分位或获得时刻；3D 炮管贴花暂未实现。详见 [`字段字典`](reference/replay-parsed-fields.md#车辆环线gun-marks)。
 **2D 回放**：`BattlePlaybackPanel` 接收目标文件，本机 `parseLocalPlayback`（parseResult + parsePlayback + parseAiReview 伤害事件 → `BattlePlaybackDataset` + `MapOverview`）；多文件未选场次时给出明确提示。
-**Android Local-First**：APK 从 `https://appassets.androidplatform.net/index.html` 启动同一 Vue 产品；
-`WebViewAssetLoader` 的 `/` 映射到 APK `assets/web/`，Vue Router 的 `/index.html` alias 与历史路由
-共用工作台。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
+**Android Local-First**：APK（3.0 起由自带的 GeckoView 渲染）从 `http://127.0.0.1:21653/index.html` 启动同一
+Vue 产品；Native `LocalRuntimeServer`（固定 loopback 端口）把 `/` 映射到 APK `assets/web/`，Vue Router 的
+`/index.html` alias 与历史路由共用工作台。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
 `src/platform/runtime.js` 只把 Android 业务 `/api/**` 与下载 metadata URL 解析为 `https://wotbtools.com`；
-Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact appassets origin 放行实际方法/headers、
+Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact 本机 origin（3.0+ loopback 与 2.x appassets）放行实际方法/headers、
 先响应匿名 OPTIONS。Android 远端 3D 资产固定使用 `/agent-assets/` 网关（固定 reviewed COS upstream），
 不接受 Web 的 `?assets=` override；本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取。
 Native 过期 token 无法离线刷新时保留 encrypted session；前端只清 API token，离线不会清 replay selection。
 
-**Android 手动目录导入**：`FileDrop` 按可选 Native bridge v2 capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`；后台有界枚举后通过固定同源 Native stream 读取，既有前端规则负责过滤／去重／完整批次校验。取消、超限或读取失败保留当前回放，目录不会触发自动分析或写 external pending，授权不持久化。旧 APK 隐藏目录按钮但保留文件多选，普通 Web 继续 `webkitdirectory`。契约见 `contracts/android-native-bridge.json`，生命周期、限制与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
+**Android 手动目录导入**：`FileDrop` 按可选 Native bridge capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`；后台有界枚举后通过固定同源 Native stream 读取，既有前端规则负责过滤／去重／完整批次校验。取消、超限或读取失败保留当前回放，目录不会触发自动分析或写 external pending，授权不持久化。旧 APK 隐藏目录按钮但保留文件多选，普通 Web 继续 `webkitdirectory`。契约见 `contracts/android-native-bridge.json`，生命周期、限制与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
 
-**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `shouldInterceptRequest` 以固定同源 `https://wotbtools.com/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；WebView file/content access 保持禁用。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与 WebView navigation（Android 2.0 起原生 OIDC 在外部 user-agent 完成，WebView 不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
+**Android 外部 replay 完整自动解析**：仅 Android external intent 触发——Native `LocalRuntimeServer` 以固定同源 `http://127.0.0.1:21653/__native/replay-pending` stream 缓存字节，Web `fetch(pending.uri)` 构造 `File` → 替换 selection → 本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）；普通 Web/FileDrop 手动选文件不经过此路径。读取使用 `X-Wotb-Pending-Id` header 校验 metadata 与文件 identity，避免 pending 替换时串包；Native 无 pending/文件返回 404、identity 不匹配返回 409、读取失败返回 500，禁止网络 fallback，响应 no-store。读取失败复用 Replay 错误区与重试，不 ACK；页面从不直接读取 content URI。ACK 边界是「本机分析已完成」（`analyze()` 返回 `completed: true`，无论有没有有效场次——重新导入同一份结果相同）；回放引擎装载失败（可重试）不 ACK，Native pending 原样保留。认证不再参与页面导航（Android 2.0 起原生 OIDC 在外部 user-agent 完成，页面引擎不承载登录）；登录期间收到的 replay intent 正常持久化并按 `ReplayDispatchPolicy` 分发，pending metadata（24h TTL）持久化在 app private storage，跨 process death 恢复，且不以登录状态为前置条件。Tier X 车型图位于 `src/assets/tank-portraits/tier-x/<tankId>.webp`，由 BlitzKit 确定性生成，production 不访问 BlitzKit。
 
 Battle Playback 的页面编排保留在 `BattlePlayback.vue`；地图 SVG/标记/瞬时反馈与 canonical 2 秒轨迹由
 `BattleMap.vue` 渲染，通用 HUD 由 `BattlePlaybackHud.vue` 渲染，播放控制与标注工具由
@@ -676,7 +676,15 @@ bridge version、Native 实现和前端兼容门禁。CI 会比较 PR base/head 
 `workflow_dispatch(mode=publish, version=<已 staged 版本>)` **publish**（显式版本决定 tag/APK/evidence
 名，tag target 源码给出 versionCode/bridge/Agent pin，再校验 staged 身份 + Keycloak client +
 APK bundled frontend 身份/Bridge/native-auth + API exact-origin CORS/对象存储匿名可读就绪 + minSupported
-至少 2000001 的 local-first cutover，最后才写 `version.json`）。候选身份与当前 main 分离：main 前进
+至少 2000001 的 local-first cutover，最后才写 `version.json`）。**stage preflight 同样执行 cutover 守卫**
+（`guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`），所以 major / bridge
+cutover 的 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 必须在**合并之前**设好，而不是等到 publish。
+major cutover 顺序固定为：设 floor → 合并 → main 上自动运行 stage 与随 PR 带来的基础设施 workflow（如 3.0 的
+`caddy.yml` / `@androidLoopback`，只能从 fresh main 部署，不在合并前手工部署）→ 两者都成功 → 真机验收 →
+publish（Android 客户端 rollout / `version.json` 强制更新状态的唯一 commit point）。版本号在**任一** immutable artifact 出现时即被消耗（tag、任意一台
+origin 上 no-clobber 落位并核验的 APK、staging evidence、production `version.json`）；stage 失败不代表版本可复用，
+判定方法见 `docs/android/release-process.md`「版本号递增规则」。
+候选身份与当前 main 分离：main 前进
 不会改变要发布的版本，只提供 ancestry/minSupported/compatibility 策略。Web build commit 不再是
 Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 manifest 核验并在 publish
 再验证。细节见 `docs/android/release-process.md`。

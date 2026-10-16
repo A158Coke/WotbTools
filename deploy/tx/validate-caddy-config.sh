@@ -284,22 +284,25 @@ def walk(node):
     elif isinstance(node, list):
         for value in node: yield from walk(value)
 
-origin = "https://appassets.androidplatform.net"
+# Android 2.x System WebView origin + Android 3.0+ GeckoView LocalRuntimeServer origin
+# (android/app/src/main/java/com/wotbtools/app/MainActivity.kt LOCAL_APP_ORIGIN).
+origins = ["https://appassets.androidplatform.net", "http://127.0.0.1:21653"]
 doc = json.load(open(sys.argv[1]))
 host = next(node for node in walk(doc) if node.get("match") == [{"host": ["wotbtools.com"]}])
 nodes = list(walk(host))
 paths = ["/api/*", "/agent-assets/*", "/download/android/version.json"]
 try:
-    cors = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "path": paths}])
-    headers = next(node["response"]["set"] for node in walk(cors) if node.get("handler") == "headers")
-    assert headers["Access-Control-Allow-Origin"] == [origin]
-    assert set(headers["Access-Control-Allow-Methods"][0].replace(" ", "").split(",")) == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-    assert set(headers["Access-Control-Allow-Headers"][0].lower().replace(" ", "").split(",")) == {"authorization", "content-type", "content-encoding", "accept"}
-    assert {"content-disposition", "x-request-id", "x-map-meta"}.issubset(set(headers["Access-Control-Expose-Headers"][0].lower().replace(" ", "").split(",")))
-    preflight = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "method": ["OPTIONS"], "path": paths}])
-    assert any(node.get("handler") == "static_response" and node.get("status_code") == 204 for node in walk(preflight))
     proxy_position = next(i for i, node in enumerate(nodes) if node.get("handler") == "reverse_proxy")
-    assert next(i for i, node in enumerate(nodes) if node is preflight) < proxy_position
+    for origin in origins:
+        cors = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "path": paths}])
+        headers = next(node["response"]["set"] for node in walk(cors) if node.get("handler") == "headers")
+        assert headers["Access-Control-Allow-Origin"] == [origin]
+        assert set(headers["Access-Control-Allow-Methods"][0].replace(" ", "").split(",")) == {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+        assert set(headers["Access-Control-Allow-Headers"][0].lower().replace(" ", "").split(",")) == {"authorization", "content-type", "content-encoding", "accept"}
+        assert {"content-disposition", "x-request-id", "x-map-meta"}.issubset(set(headers["Access-Control-Expose-Headers"][0].lower().replace(" ", "").split(",")))
+        preflight = next(node for node in nodes if node.get("match") == [{"header": {"Origin": [origin]}, "method": ["OPTIONS"], "path": paths}])
+        assert any(node.get("handler") == "static_response" and node.get("status_code") == 204 for node in walk(preflight))
+        assert next(i for i, node in enumerate(nodes) if node is preflight) < proxy_position
     gateway = next(node for node in nodes if node.get("match") == [{"path": ["/agent-assets/*"]}])
     # handle directives within route preserve source order. Require the gateway
     # and Web catch-all to be siblings in the same mutually exclusive group.

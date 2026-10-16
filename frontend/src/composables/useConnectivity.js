@@ -6,7 +6,7 @@ import { getCapabilities, isAndroidApp } from './usePlatformBridge.js'
  * 连通性的 Vue 投影：**唯一**允许被业务组件读取的连通性入口。
  *
  * 业务组件不得：
- *  - 直接监听 `window` 的 online/offline（Android WebView 的权威在系统侧）；
+ *  - 直接监听 `window` 的 online/offline（Android App 的权威在系统侧）；
  *  - 直接读 `navigator.onLine`（计划 §2 禁止的散落判定）；
  *  - 各自缓存一份 online 布尔值。
  *
@@ -63,7 +63,7 @@ function markSettled() {
 
 /**
  * 平台来源选择：Android 壳先问能力再决定。
- * 老客户端（bridge v2 但没有 `connectivity` 方法/能力）退回浏览器近似，而不是把
+ * Native 未声明 `connectivity` 能力时退回浏览器近似，而不是把
  * 「读不到」当成永久离线 —— 计划 §4 允许的最低要求就是 offline/online 两态。
  */
 async function resolveSource() {
