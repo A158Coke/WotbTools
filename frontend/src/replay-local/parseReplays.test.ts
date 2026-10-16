@@ -30,12 +30,15 @@ describe('parseReplayFiles', () => {
     ])
     __setParseWorkerFactoryForTest(() => w as unknown as Worker)
     const progress: number[] = []
+    const completed: Array<[number, string | null]> = []
     const out = await parseReplayFiles([file('a.wotbreplay'), file('b.wotbreplay')], {
       onProgress: (done) => progress.push(done),
+      onFile: (index, result) => completed.push([index, result.error]),
     })
     expect(out.map((f) => f.name)).toEqual(['a.wotbreplay', 'b.wotbreplay'])
     expect(out[1].error).toBe('bad')
     expect(progress).toEqual([1, 2])
+    expect(completed).toEqual([[1, 'bad'], [0, null]])
     expect(w.terminate).toHaveBeenCalled()
   })
 

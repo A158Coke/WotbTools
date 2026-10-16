@@ -16,7 +16,10 @@ const local = vi.hoisted(() => ({
   exportAggregateXlsx: vi.fn(),
   exportEachZip: vi.fn(),
   downloadBlob: vi.fn(),
+  recordUsage: vi.fn(),
 }))
+
+vi.mock('./useUsageTelemetry.js', () => ({ recordUsage: local.recordUsage }))
 
 vi.mock('../replay-local/parseReplays.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -128,6 +131,60 @@ describe('useLocalReplayAnalysis', () => {
     analyze()
     await expect(analyze()).resolves.toEqual({ completed: false, reason: 'ALREADY_ACTIVE' })
     expect(local.parseReplayFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts ten file attempts independently, including failures, without leaking file/error text', async () => {
+    local.parseReplayFiles.mockImplementation(async (files, { onFile }) => {
+      const parsed = parsedOf(files)
+      parsed[4] = { name: files[4].name, result: null, error: 'private raw error' }
+      parsed.forEach((result, index) => onFile(index, result))
+      return parsed
+    })
+    const { updateFiles, analyze } = setup()
+    updateFiles(Array.from({ length: 10 }, (_, i) => replayFile(`private-${i}.wotbreplay`)))
+    await analyze()
+    const events = local.recordUsage.mock.calls.map(([event]) => event)
+    expect(events.filter(e => e.outcome === 'start')).toHaveLength(10)
+    expect(events.filter(e => e.outcome === 'success')).toHaveLength(9)
+    expect(events.filter(e => e.outcome === 'failure')).toHaveLength(1)
+    expect(new Set(events.map(e => e.operation_id)).size).toBe(10)
+    expect(JSON.stringify(events)).not.toContain('private')
+  })
+
+  it('settles only unfinished files when a batch fails after a per-file result', async () => {
+    local.parseReplayFiles.mockImplementation(async (files, { onFile }) => {
+      onFile(1, parsedOf(files)[1])
+      throw new ReplayEngineUnavailableError('private worker failure')
+    })
+    const { updateFiles, analyze } = setup()
+    updateFiles([replayFile('a'), replayFile('b'), replayFile('c')])
+    await analyze()
+    const events = local.recordUsage.mock.calls.map(([event]) => event)
+    expect(events.filter(e => e.outcome === 'success')).toHaveLength(1)
+    expect(events.filter(e => e.outcome === 'failure')).toHaveLength(2)
+    expect(events.filter(e => e.error_code === 'RESOURCE_UNAVAILABLE')).toHaveLength(2)
+  })
+
+  it('cancel settles unfinished files once and ignores late per-file completion', async () => {
+    const pending = deferred()
+    let onFile
+    local.parseReplayFiles.mockImplementation((files, options) => {
+      onFile = options.onFile
+      return pending.promise
+    })
+    const { updateFiles, analyze, cancel } = setup()
+    const files = [replayFile('a'), replayFile('b')]
+    updateFiles(files)
+    const running = analyze()
+    onFile(0, parsedOf(files)[0])
+    cancel()
+    onFile(1, parsedOf(files)[1])
+    pending.resolve(parsedOf(files))
+    await running
+    const events = local.recordUsage.mock.calls.map(([event]) => event)
+    expect(events.filter(e => e.outcome === 'success')).toHaveLength(1)
+    expect(events.filter(e => e.outcome === 'cancelled')).toHaveLength(1)
+    expect(events).toHaveLength(4)
   })
 
   it('engine unavailable → ENGINE_UNAVAILABLE failure and NOT completed (Android must not ACK)', async () => {

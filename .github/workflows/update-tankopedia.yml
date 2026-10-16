@@ -47,13 +47,14 @@ jobs:
               sys.exit(1)
           PY
 
-      - name: Replace tier files
+      - name: Replace tier files and vehicle roster
         run: |
           set -euo pipefail
           cp /tmp/wotb-tankopedia-out/tankopedia-tier7.json common/tankopedia-tier7.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier8.json common/tankopedia-tier8.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier9.json common/tankopedia-tier9.json
           cp /tmp/wotb-tankopedia-out/tankopedia-tier10.json common/tankopedia-tier10.json
+          cp /tmp/wotb-tankopedia-out/tank_ids.json common/tank_ids.json
 
       - name: Validate generated files
         run: |
@@ -68,7 +69,7 @@ jobs:
           SOURCE_REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json; then
+          if git diff --quiet -- common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json common/tank_ids.json; then
             echo "Tankopedia unchanged; nothing to publish."
             exit 0
           fi
@@ -80,7 +81,7 @@ jobs:
             git switch -C "$BRANCH"
           fi
 
-          git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json
+          git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json common/tank_ids.json
           git commit -m "chore(data): sync BlitzKit Tankopedia"
 
           if [[ "$SOURCE_REF" == "$BRANCH" ]]; then
