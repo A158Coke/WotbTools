@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { toRaw } from 'vue'
 import { readFileSync } from 'node:fs'
 import { URL as NodeURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -747,16 +748,15 @@ describe('ReplayWorkspace', () => {
     }
   })
 
-  it('多文件未选场次：3D / 射击 / 2D / AI 收到同一份阻断原因（本机只解析单场）', async () => {
+  it('single-battle capabilities select the first finalized battle without reparsing', async () => {
     withBattles(3)
-    const wrapper = mountWorkspace('3d')
+    const wrapper = mountWorkspace('data')
     await flushPromises()
-    // resp 落库会归一化 currentBattleId：先清掉选中场次，模拟"多文件但还没挑哪一场"
-    wrapper.findComponent({ name: 'ReplayPageMock' }).props('workspaceContext').currentBattleId.value = null
-    await flushPromises()
+    replayState.currentBattleId.value = null
     for (const cap of ['3d', 'shots', 'playback', 'ai']) {
       await switchTo(wrapper, cap)
-      expect(wrapper.get(`[data-test="ws-${cap}-pane"]`).text()).toContain('workspace.single_replay_required')
+      expect(wrapper.get(`[data-test="ws-${cap}-pane"]`).text()).toContain('f0.wotbreplay')
+      expect(replayState.analyze).not.toHaveBeenCalled()
     }
     wrapper.unmount()
   })
@@ -843,7 +843,7 @@ describe('ReplayWorkspace', () => {
     await pick('select-files-input', [b, a])
     expect(replayState.files.value).toEqual([a, b])
     expect(replayState.analyze).not.toHaveBeenCalled()
-    expect(pane().text()).toContain('workspace.single_replay_required')
+    expect(pane().text()).not.toContain('workspace.single_replay_required')
     await analyze()
     expect(replayState.analyze).toHaveBeenCalledTimes(1)
     expect(tab(wrapper, cap).classes()).toContain('is-active')
@@ -877,6 +877,150 @@ describe('ReplayWorkspace', () => {
     expect(replayState.currentTargetFile.value).toBeNull()
     expect(wrapper.find(`[data-testid="${pickerId}"]`).exists()).toBe(false)
     expect(pane().text()).not.toContain('.wotbreplay')
+    wrapper.unmount()
+  })
+
+  it.each(['playback', '3d', 'shots', 'ai'])('%s prepares a pending batch on entry and reuses finalized results', async cap => {
+    const wrapper = mountWorkspace('data')
+    replayState.updateFiles(['a', 'b'].map(name => new File([name], `${name}.wotbreplay`)))
+    replayState.analyze.mockImplementation(async () => {
+      replayState.session.commitReadyResult({ battles: [{ sourceId: 'r1', players: [] }], aggregate: [] })
+      replayState.analysis.value = { phase: 'ready' }
+      return { completed: true }
+    })
+    await switchTo(wrapper, cap)
+    expect(replayState.currentBattleId.value).toBe('r1')
+    expect(wrapper.get(`[data-test="ws-${cap}-pane"]`).text()).toContain('b.wotbreplay')
+    await switchTo(wrapper, 'data')
+    await switchTo(wrapper, cap)
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it.each(['playback', '3d', 'shots', 'ai'])('%s selects sparse finalized sources after failure and duplicate holes', async cap => {
+    const wrapper = mountWorkspace(cap, { attached: true })
+    await flushPromises()
+    const files = ['bad', 'good', 'duplicate', 'other'].map(name => new File([name], `${name}.wotbreplay`))
+    replayState.updateFiles(files)
+    replayState.analyze.mockImplementation(async () => {
+      replayState.session.commitReadyResult({ battles: [1, 3].map(i => ({ sourceId: `r${i}`, sourceName: files[i].name, players: [] })), aggregate: [] })
+      return { completed: true }
+    })
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    expect(replayState.currentBattleId.value).toBe('r1')
+    const pane = () => wrapper.findComponent({ name: ({ '3d': 'Replay3DPaneMock', playback: 'BattlePlaybackPanelMock', shots: 'ReplayShotsPaneMock', ai: 'AiReviewPaneMock' })[cap] })
+    expect(toRaw(pane().props('file'))).toBe(files[1])
+    const picker = `${cap === '3d' ? 'replay3d' : cap}-battle-picker`
+    await wrapper.get(`[data-testid="${picker}"]`).trigger('click')
+    expect(wrapper.findAll('[data-testid="battle-picker-option"]').map(option => option.attributes('data-value'))).toEqual(['r1', 'r3'])
+    await wrapper.get('[data-testid="battle-picker-option"][data-value="r3"]').trigger('click')
+    await flushPromises()
+    expect(toRaw(pane().props('file'))).toBe(files[3])
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('superseded preparation cannot select a battle from a replacement selection', async () => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    replayState.updateFiles(['a', 'b'].map(name => new File([name], `${name}.wotbreplay`)))
+    let finish
+    replayState.analyze.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    replayState.updateFiles(['c', 'd'].map(name => new File([name], `${name}.wotbreplay`)))
+    replayState.session.commitReadyResult({ battles: [{ sourceId: 'r1', players: [] }], aggregate: [] })
+    await flushPromises()
+    replayState.currentBattleId.value = null
+    finish({ completed: true })
+    await flushPromises()
+    expect(replayState.currentBattleId.value).toBeNull()
+    expect(wrapper.findComponent({ name: 'BattlePlaybackPanelMock' }).props('file')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('a failed batch leaves the failure in ProcessingPanel without a single-file restriction', async () => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    replayState.updateFiles(['a', 'b'].map(name => new File([name], `${name}.wotbreplay`)))
+    replayState.analyze.mockImplementation(async () => {
+      replayState.analysis.value = { phase: 'failed', failure: 'NO_VALID_REPLAYS' }
+      return { completed: true }
+    })
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    expect(replayState.currentTargetFile.value).toBeNull()
+    expect(wrapper.get('[data-test="processing"]').text()).toBe('failed')
+    expect(wrapper.text()).not.toContain('workspace.single_replay_required')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['cancelled', null],
+    ['failed', 'NO_VALID_REPLAYS'],
+    ['failed', 'ENGINE_UNAVAILABLE'],
+    ['failed', 'UNKNOWN'],
+  ])('capability navigation preserves %s/%s until explicit Preview retries', async (phase, failure) => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    replayState.updateFiles(['a', 'b'].map(name => new File([name], `${name}.wotbreplay`)))
+    replayState.analyze.mockImplementationOnce(async () => {
+      replayState.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
+      if (phase === 'failed') replayState.analysis.value = { phase, done: 1, total: 2, failure }
+      return { completed: phase === 'failed' }
+    })
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    if (phase === 'cancelled') {
+      replayState.cancelAnalysis.mockImplementationOnce(() => {
+        replayState.analysis.value = { ...replayState.analysis.value, phase: 'cancelled' }
+      })
+      wrapper.findComponent({ name: 'ReplayProcessingPanelMock' }).vm.$emit('cancel')
+      await flushPromises()
+    }
+    const terminal = replayState.analysis.value
+    for (const cap of ['3d', 'shots', 'ai', 'data', 'playback']) {
+      await switchTo(wrapper, cap)
+      expect(replayState.analyze).toHaveBeenCalledTimes(1)
+      expect(replayState.analysis.value).toBe(terminal)
+      expect(wrapper.findComponent({ name: 'ReplayProcessingPanelMock' }).props('analysis')).toEqual(terminal)
+      expect(wrapper.get('[data-test="processing"]').text()).toBe(phase)
+    }
+    replayState.analyze.mockImplementationOnce(async () => {
+      replayState.session.commitReadyResult({ battles: [{ sourceId: 'r1', players: [] }], aggregate: [] })
+      replayState.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
+      return { completed: true }
+    })
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    expect(replayState.analyze).toHaveBeenCalledTimes(2)
+    expect(replayState.currentBattleId.value).toBe('r1')
+    expect(replayState.analysis.value.phase).toBe('ready')
+    wrapper.unmount()
+  })
+
+  it('capability navigation does not call analyze again while the batch is parsing', async () => {
+    const wrapper = mountWorkspace('playback')
+    await flushPromises()
+    replayState.updateFiles(['a', 'b'].map(name => new File([name], `${name}.wotbreplay`)))
+    let finish
+    replayState.analyze.mockImplementationOnce(() => {
+      replayState.analysis.value = { phase: 'parsing', done: 0, total: 2, failure: null }
+      return new Promise(resolve => { finish = resolve })
+    })
+    wrapper.findComponent(FileDrop).vm.$emit('preview')
+    await flushPromises()
+    for (const cap of ['3d', 'shots', 'ai', 'playback']) await switchTo(wrapper, cap)
+    expect(replayState.analyze).toHaveBeenCalledTimes(1)
+    expect(replayState.analysis.value.phase).toBe('parsing')
+    replayState.session.commitReadyResult({ battles: [{ sourceId: 'r1', players: [] }], aggregate: [] })
+    replayState.analysis.value = { phase: 'ready', done: 2, total: 2, failure: null }
+    finish({ completed: true })
+    await flushPromises()
+    expect(replayState.currentBattleId.value).toBe('r1')
     wrapper.unmount()
   })
 
