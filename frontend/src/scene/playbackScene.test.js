@@ -2059,10 +2059,17 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
   })
 
-  // 终态族全族判死（2026-10-16 裁决）：0x0000 与负 i16 哨兵族（0xFFFD/0xFFFE/0xFFFF）同判 DESTROYED；
-  // 仅「死亡证据落在实体未入场期间」（entry 42 = 开战时钟，身份不可归属）不判死。
-  it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xfffe, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
-    'real producer → scene re-entry %s → %s with prop3 %s and entry %s', async (oldId, newId, terminal, newEntry) => {
+  // 血量判死两条路径（2026-10-16 裁决 + 本仓评审）：`hp_state`=terminal 时负 i16 全族判死；
+  // 字段缺省 = legacy 分类不放宽（0xFFFE/0xFFFF 仍属未证明哨兵 → 不判死）；0/0xFFFD 行为不变。
+  // 唯一"不判死"的另一情形：死亡证据落在实体未入场期间（entry 42 = 开战时钟，身份不可归属）。
+  it.each([
+    [10, 20, 0, 49, undefined], [20, 10, 0, 49, undefined],
+    [10, 20, 0xfffd, 49, undefined],
+    [10, 20, 0xfffe, 49, 'terminal'], [10, 20, 0xffff, 49, 'terminal'],
+    [10, 20, 0xfffe, 49, undefined], [10, 20, 0xffff, 49, undefined],
+    [10, 20, 0, 42, undefined],
+  ])(
+    'real producer → scene re-entry %s → %s with prop3 %s and entry %s (hp_state %s)', async (oldId, newId, terminal, newEntry, hpState) => {
       const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))
       const result = validateAgentBattleResult({ ...f.result, author_account_id: 77, author_team: 1,
         players: [{ ...f.result.players[0], account_id: 77, team: 1, survived: false, life_time_secs: 10 }] })
@@ -2072,7 +2079,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
         poses: [], turrets: [], settlements: [], events: [
           { type: 'visibility', eid: oldId, t_in: 42, t_out: 48, hp_raw: 1000 },
           { type: 'visibility', eid: newId, t_in: newEntry, t_out: 51, hp_raw: 1000 },
-          { type: 'health', eid: newId, t: 52, hp_raw: terminal },
+          { type: 'health', eid: newId, t: 52, hp_raw: terminal, ...(hpState === undefined ? {} : { hp_state: hpState }) },
         ],
       })
       const definitions = [vehicle({ eid: oldId, coverage: [42, 48], death_t: null }),
@@ -2087,7 +2094,10 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
       const facts = buildCanonicalReplayFacts({ result, aiReview, streamEndRaw: playback.meta.duration })
       const dataset = toBattlePlaybackDataset(playback, result, aiReview, { canonicalFacts: facts })
       const canonical = { dataset, clock: facts.clock, entityStartsByAccount: entityFirstSeenByAccount(facts) }
-      const destroyed = newEntry > 42
+      // 判死 = 字段权威全族 ∨ legacy 已证明值（0/0xFFFD）；legacy 未证明负值不算证据
+      const terminalByState = hpState === 'terminal'
+      const legacyTerminal = hpState === undefined && (terminal === 0 || terminal === 0xfffd)
+      const destroyed = (terminalByState || legacyTerminal) && newEntry > 42
       expect(dataset.vehicles[0].lifeTransitions.some(life => life.lifeState === 'DESTROYED')).toBe(destroyed)
       const { api, frames, vehicles, overlay } = await load(definitions, canonical, playback)
       api.seekTime(51.9)

@@ -16,6 +16,7 @@
 import type { components } from '../../api/generated/http-contract.js'
 import type { AgentAiReviewFacet, AgentBattleResult, AgentPlaybackFacet } from '../../api/agent-replay-facets.js'
 import { buildCanonicalReplayFacts, type CanonicalReplayFacts } from '../canonical/facts.js'
+import { classifyHpRaw } from '../canonical/hpRawState.js'
 
 export type ClientAiReviewProjection = components['schemas']['ClientAiReviewProjection']
 
@@ -75,7 +76,10 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
 
   const prop3Health: ClientAiReviewProjection['prop3Health'] = []
   for (const e of input.aiReview.events) {
-    if (e.type === 'health' && combatant(e.eid)) prop3Health.push({ entityId: e.eid, rawClockSec: e.t, hpRaw: e.hp_raw })
+    // hpState = canonical 权威分类（含上游 hp_state 在场时的全族终态）；服务端不得重新分类
+    if (e.type === 'health' && combatant(e.eid)) {
+      prop3Health.push({ entityId: e.eid, rawClockSec: e.t, hpRaw: e.hp_raw, hpState: classifyHpRaw(e.hp_raw, e.hp_state) })
+    }
   }
 
   const limitations = [...facts.mappingLimitations, ...facts.perspectiveLimitations]
@@ -113,6 +117,7 @@ function project(facts: CanonicalReplayFacts, input: ProjectionInput): ClientAiR
     prop3Health,
     healthEvents: facts.healthEvents.filter((h) => combatant(h.entityId)).map((h) => ({
       entityId: h.entityId, rawClockSec: raw(h.t), hpRaw: h.hpRaw, sourceEntityId: h.sourceEntityId, causeFlag: h.causeFlag,
+      hpState: h.rawState,
     })),
     // 分类已在 canonical 层完成（仅战斗车辆 envelope；录像者 Avatar 实体上的 method8 不是伤害通知）
     damageNotices: facts.damageNotices.map((n) => ({

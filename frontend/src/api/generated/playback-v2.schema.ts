@@ -3506,6 +3506,18 @@ export default {
           "type": "integer",
           "minimum": 0,
           "maximum": 65535
+        },
+        "hpState": {
+          "description": "canonical 层对 hpRaw 的权威分类（HpRawState）。服务端不得重新分类。字段缺省 = 旧载荷（按 hpRaw 现算，legacy 语义：仅 0/0xFFFD 终态）。",
+          "type": "string",
+          "enum": [
+            "CURRENT_HP",
+            "HP_ZERO_TERMINAL",
+            "DEATH_TERMINAL_FFFD",
+            "DEATH_TERMINAL",
+            "UNKNOWN_FFFF",
+            "UNKNOWN_OTHER"
+          ]
         }
       }
     },
@@ -3536,6 +3548,18 @@ export default {
         },
         "causeFlag": {
           "type": "integer"
+        },
+        "hpState": {
+          "description": "同 AiProjectionProp3Health.hpState：canonical 权威分类；缺省 = 旧载荷（legacy 现算）。",
+          "type": "string",
+          "enum": [
+            "CURRENT_HP",
+            "HP_ZERO_TERMINAL",
+            "DEATH_TERMINAL_FFFD",
+            "DEATH_TERMINAL",
+            "UNKNOWN_FFFF",
+            "UNKNOWN_OTHER"
+          ]
         }
       }
     },

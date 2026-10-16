@@ -365,13 +365,16 @@ WotBTools
 2D 回放与 AI 复盘的通用事实都只消费那一层（见 `docs/architecture/replay-pipeline.md`「Agent 切面不是领域契约」）；
 2D 车辆标签的装填呈现另外消费 §4d 的独立 Playback 时序遥测，不混入该 facts 投影。
 canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`health` 事件、`poses` / `turrets`（≥ v0.3.7）。
+`hp_state` 为 additive 可选字段：**在场值必须落在闭集内**（`current`/`zero`/`terminal`），非法枚举
+在信任边界拒绝（不静默回退 `hp_raw`——那会把 producer 漂移变成错误的生命态事实）。
 
 | 证据（上游版本） | 形状 | canonical 用途 |
 |---|---|---|
-| `damage.hp_raw`（v0.3.5） | method1 原始 u16 | `HpRawState`：0 = HP 归零；0xFFFD = 终态哨兵（血量未知）；`hp` 的钳 0 只是显示值 |
+| `damage.hp_raw`（v0.3.5） | method1 原始 u16 | `HpRawState`（**仅缺 `hp_state` 的旧产物**按此现算，legacy 语义）：0 = HP 归零；0xFFFD = 终态哨兵（血量未知）；0xFFFF/0xFFFE 等负值 = 未证明哨兵（血量与生死都未知，**不作为死亡证据**）；`hp` 的钳 0 只是显示值 |
+| `damage.hp_state` / `health.hp_state`（v0.4.9） | 血量 u16 的**权威分类**（`current` / `zero` / `terminal`，恒在场） | 在场即权威：`terminal` = 负 i16 终态哨兵**全族**（死亡面之一，血量未知），取代本地对 `hp_raw` 的再解释；缺省（旧产物）= legacy 分类**不放宽**（全族语义只能经字段获得）。`terminal` + `hp_raw` 的显示口径由 canonical 层决定（`knownHpOf` → null ≠ 0） |
 | `visibility.hp_raw`（v0.3.5） | 开段 Type5 物化快照原始 HP（仅战斗车辆，每次重入） | 物化血量采样；战斗车辆类证据（Type5 entityTypeId=2） |
 | `hit_notice`（v0.3.5） | method8 全变体（eid / payload_len / shooter / victim / result / secondary），**不分类** | WotbTools 按旧口径分类：payload < 26 = 短体变体；result=3 = 直击；其余 = 未解码变体（冲突证据） |
-| `health`（v0.3.6） | prop3 原始 u16 | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路） |
+| `health`（v0.3.6） | prop3 原始 u16（`hp_state` 同 `damage`） | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路）；终态样本（`hp_state=terminal` ∨ legacy 0/0xFFFD）产出 `DESTROYED` |
 | `damage_tick` | 录像者 Avatar prop10 的 `t / eid / cumulative`（eid 是 Avatar，不是车辆 eid） | 投影为录像者的可选 `damageDealtSamples`；只保留战斗内、非负整数、单一来源的累计广播，同刻保留较大值、下降样本拒绝。当前时刻只查询已出现的广播，不使用结算总量补齐；其他车辆仍使用可靠 HP-loss attribution。 |
 | `poses` / `turrets`（v0.3.7） | 原始 type10 世界位姿（attachmentParent=0）/ prop2 原始 u16，列式 | 位置 / 朝向证据（PlaybackData 网格是渲染滤波输出，不是观测） |
 

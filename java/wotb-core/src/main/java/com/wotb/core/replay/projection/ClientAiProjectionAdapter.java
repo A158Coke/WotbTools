@@ -155,7 +155,7 @@ public final class ClientAiProjectionAdapter {
         for (final ClientAiProjection.HealthEvent h : p.healthEvents()) {
             ranked.add(new Ranked(h.rawClockSec(), 7, seq -> new VehicleHealthStateEvent(seq, ts(h.rawClockSec()), 8,
                     DecodeConfidence.EXACT, h.entityId(), h.hpRaw(), h.sourceEntityId(), h.causeFlag(), null,
-                    HpRawState.classify(h.hpRaw()))));
+                    HpRawState.fromProjection(h.hpState(), h.hpRaw()))));
         }
         final ClientAiProjection.Objectives objectives = p.objectives();
         for (final ClientAiProjection.PointsSample sp : objectives.supremacyPoints()) {
@@ -200,7 +200,8 @@ public final class ClientAiProjectionAdapter {
     }
 
     private static HealthChangedEvent prop3(final int seq, final ClientAiProjection.Prop3Health h) {
-        final HpRawState state = HpRawState.classify(h.hpRaw());
+        // 投影分类在场 = 权威（不重新分类 raw；缺省 = 旧载荷回退 legacy 现算）
+        final HpRawState state = HpRawState.fromProjection(h.hpState(), h.hpRaw());
         final Integer current = switch (state) {
             case CURRENT_HP -> (int) (short) (h.hpRaw() & 0xFFFF);
             case HP_ZERO_TERMINAL -> 0;
@@ -256,10 +257,12 @@ public final class ClientAiProjectionAdapter {
         validateTracks(p.positions(), POSITION_STRIDE, entities);
         validateTracks(p.turrets(), TURRET_STRIDE, entities);
         for (final ClientAiProjection.Prop3Health h : p.prop3Health()) {
-            require(entities.contains(h.entityId()) && rawHp(h.hpRaw()) && Double.isFinite(h.rawClockSec()), "prop3 invalid");
+            require(entities.contains(h.entityId()) && rawHp(h.hpRaw()) && Double.isFinite(h.rawClockSec())
+                    && validHpState(h.hpState()), "prop3 invalid");
         }
         for (final ClientAiProjection.HealthEvent h : p.healthEvents()) {
-            require(entities.contains(h.entityId()) && rawHp(h.hpRaw()) && Double.isFinite(h.rawClockSec()), "health event invalid");
+            require(entities.contains(h.entityId()) && rawHp(h.hpRaw()) && Double.isFinite(h.rawClockSec())
+                    && validHpState(h.hpState()), "health event invalid");
         }
         for (final ClientAiProjection.DamageNotice n : p.damageNotices()) {
             require(n.kind() != null && Double.isFinite(n.rawClockSec()), "damage notice invalid");
@@ -278,6 +281,19 @@ public final class ClientAiProjectionAdapter {
                 require(Double.isFinite(v), "sample not finite");
             }
         }
+    }
+
+    /** hpState（可空）：在场必须等于某个 HpRawState 枚举名（producer 漂移在边界拒绝）。 */
+    private static boolean validHpState(final String name) {
+        if (name == null) {
+            return true;
+        }
+        for (final HpRawState state : HpRawState.values()) {
+            if (state.name().equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean rawHp(final int raw) {
