@@ -112,6 +112,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （实例 1910 局 Intotherainy `0xFFFE`）曾在 2D/3D 被判成存活（血量冻在最后正值、装填条继续外播）——
   守卫 `canonical/facts.hpTerminal.test.ts`（字段权威 + legacy 缺省两侧）+ scene 用例（含
   `hp_state=terminal` 的 0xFFFE/0xFFFF 行与"legacy 0xFFFE 不判死"反例行）。
+  ③**同一分类贯通 AI 复盘**：`toClientAiReviewProjection` 的 `prop3Health` / `healthEvents` 正式
+  携带 `hpState`（canonical 权威分类），Java 侧 `HpRawState.fromProjection` 在场即权威——2D/3D
+  与 AI 复盘对同一事件的生命状态一致（不会再出现「2D/3D 阵亡、AI 复盘判存活」）。
 - def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
   PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
   只爆一次，复活后的新死亡各自爆焰。

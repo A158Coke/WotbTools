@@ -433,12 +433,30 @@ export interface AgentArenaPeriod {
   [key: string]: unknown
 }
 
-/** 上游血量编码分类（`hp_state`；上游 ≥ 含该字段的版本恒在场，旧产物缺省）。
+/**
+ * 上游 `hp_state` 闭集 —— Agent-wire 的**唯一 SSOT**（producer enum 变更只改这一处）：
+ * `AiHpStateField` 由本 tuple 派生，运行期校验集合由本 tuple 构建，canonical 分类器
+ * （`replay-local/canonical/hpRawState.ts`）也只复用该类型，不再各自维护枚举。
+ */
+export const AI_HP_STATES = ['current', 'zero', 'terminal'] as const
+
+/** 上游血量编码分类（`hp_state`；上游 ≥ v0.4.9 恒在场，旧产物缺省）。
  *  `terminal` = 负 i16 终态哨兵（死亡面之一）——分类规则唯一定义源在上游
  *  （`combat::classify_hp_state` / `hp_terminal_normalized`），本层禁二次解释。 */
-export type AiHpStateField = 'current' | 'zero' | 'terminal'
+export type AiHpStateField = (typeof AI_HP_STATES)[number]
 
-const AI_HP_STATES: ReadonlySet<string> = new Set(['current', 'zero', 'terminal'])
+const AI_HP_STATE_SET: ReadonlySet<string> = new Set(AI_HP_STATES)
+
+/**
+ * AiReview 信任边界校验模式——**两条路径不混用**：
+ *
+ *  - `current-producer`：当前正式 pin（v0.4.9+）的 WASM 消费路径（`parseAgentAiReviewFromBytes`）。
+ *    `damage`/`health.hp_state` **必填**：该版本恒输出该字段，缺字段 = producer 漂移 → fail closed，
+ *    **不得**静默进入 legacy 回退（那会把 0xFFFE 档弹药架殉爆重新判成存活——本 PR 修的正是这个 bug）。
+ *  - `legacy-compatible`：旧 artifact / 旧 JSON fixture / 显式 legacy 摄入。字段可缺省，
+ *    缺省即 legacy raw 分类（仅 `{0x0000, 0xFFFD}` 终态，其余负值仍是未证明哨兵）。
+ */
+export type AiReviewValidationMode = 'current-producer' | 'legacy-compatible'
 
 /** 归一化事件（`type` 内部标签；t = 回放原始时钟秒） */
 export type AgentAiEvent =
@@ -511,8 +529,12 @@ export const AI_REVIEW_CONTRACT_VERSION = 1
  * AiReviewFacet 形状校验（trust boundary）。除结构外还锁定 canonical 语义**必需**的
  * v0.3.5 证据：`damage.hp_raw`（区分 HP=0 与终态哨兵）。缺失即拒绝——旧产物不得被
  * 静默投影成「哨兵 = 血量 0」的错误事实（fail closed，而不是降级猜测）。
+ *
+ * `mode` **必填**：当前 pin 的 producer 路径（`current-producer`）把 `hp_state` 当必填字段，
+ * 旧 artifact / 显式 legacy 摄入（`legacy-compatible`）才允许缺省。没有默认值——两条路径
+ * 由调用方显式选择，避免未来新增调用方静默拿到宽松口径。
  */
-export function validateAgentAiReview(value: unknown): AgentAiReviewFacet {
+export function validateAgentAiReview(value: unknown, mode: AiReviewValidationMode): AgentAiReviewFacet {
   const doc = assertObject(value, 'ai_review')
   assertFacetVersion(doc.version, 'ai_review.version', AI_REVIEW_CONTRACT_VERSION)
   const battle = assertObject(doc.battle, 'ai_review.battle')
@@ -527,9 +549,19 @@ export function validateAgentAiReview(value: unknown): AgentAiReviewFacet {
     if (e.type === 'damage' && typeof e.hp_raw !== 'number') {
       throw new Error('agent facets: ai_review damage.hp_raw 缺失（canonical 投影需要上游 ≥ v0.3.7）')
     }
-    // hp_state（additive，v0.4.9 起恒在场）：在场值必须落在闭集内——producer 漂移（新枚举/错类型）
-    // 在边界拒绝，绝不静默回退 hp_raw（那会把枚举漂移变成错误的生命态事实）。
-    if (e.hp_state !== undefined && !AI_HP_STATES.has(e.hp_state as string)) {
+    // hp_state：**两个方向都 fail closed**。①当前 pin（v0.4.9+）的 producer 恒输出该字段——
+    // 计数型 HP 事件缺字段 = producer 漂移，必须拒绝；若静默走 legacy 回退，0xFFFE 档弹药架殉爆
+    // 会重新被判成存活（本 PR 修的正是这个 bug）。②在场值必须落在闭集内，绝不静默回退 hp_raw。
+    if (e.type === 'damage' || e.type === 'health') {
+      if (e.hp_state === undefined) {
+        if (mode === 'current-producer') {
+          throw new Error('agent facets: ai_review ' + e.type
+            + '.hp_state 缺失（当前 pin 的 producer 恒输出该字段；缺失 = producer 漂移，fail closed）')
+        }
+      } else if (!AI_HP_STATE_SET.has(e.hp_state as string)) {
+        throw new Error('agent facets: ai_review ' + e.type + '.hp_state 非法（须为 current|zero|terminal）')
+      }
+    } else if (e.hp_state !== undefined && !AI_HP_STATE_SET.has(e.hp_state as string)) {
       throw new Error('agent facets: ai_review ' + e.type + '.hp_state 非法（须为 current|zero|terminal）')
     }
   }
@@ -1288,10 +1320,15 @@ export async function parseAgentPlaybackFromBytes(
   return validateAgentPlayback(JSON.parse(parse(bytes, tankNames)) as unknown)
 }
 
-/** AI 事件数据（第 4 入口）：.wotbreplay 字节 → 校验过的 AiReviewFacet。文件不出本机。 */
+/**
+ * AI 事件数据（第 4 入口）：.wotbreplay 字节 → 校验过的 AiReviewFacet。文件不出本机。
+ *
+ * 这是**当前正式 pin（v0.4.9+）的 WASM 消费路径**，因此走 `current-producer` 严格口径：
+ * `damage`/`health.hp_state` 必填，缺字段直接拒绝（fail closed）。
+ */
 export async function parseAgentAiReviewFromBytes(bytes: Uint8Array): Promise<AgentAiReviewFacet> {
   const parse = await wasmFn('parseAiReview')
-  return validateAgentAiReview(JSON.parse(parse(bytes)) as unknown)
+  return validateAgentAiReview(JSON.parse(parse(bytes)) as unknown, 'current-producer')
 }
 
 function assertShotArray(v: unknown): AgentShotReplay[] {

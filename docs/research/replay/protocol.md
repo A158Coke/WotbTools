@@ -121,7 +121,8 @@ Type8
 
 **上游 v0.4.9 起：另一条更权威的路径 = 生产方声明**。`AiReviewFacet` 的 `damage`（method1）与
 `health`（prop3）事件携带 `hp_state`（`current` / `zero` / `terminal`；规则 = 上游
-`combat::hp_terminal_normalized`，int16 ≤ 0 全域）：`zero` = 确知归零、`terminal` = **负 i16 终态
+`combat::hp_terminal_normalized`：signed i16 **> 0 ⇒ `current`**、**== 0 ⇒ `zero`**、**< 0 ⇒
+`terminal`**）：`zero` = 确知归零、`terminal` = **负 i16 终态
 哨兵全族**（实测族 `0xFFFF`/`0xFFFE`/`0xFFFD`，其余负值同编码，同族全部取值同一处理、禁按分布
 裁剪）、`current` = 可用血量。**这时"某负值是否终态"由生产方声明，而不是消费方按 raw 现算**——
 上面这张 raw-only 表保留为 **legacy 口径**（字段缺省 = 旧产物 / 旧 pin）：legacy 路径下
@@ -131,7 +132,9 @@ Type8
 
 **落点**：客户端 `frontend/src/replay-local/canonical/hpRawState.ts`（signed 解读 + sentinel 归一化：
 `0xFFFD` → 已证明阵亡终态但**血量未知**，`0xFFFF`/`0xFFFE`/其余负值 → 未知；`isPlausibleHp` = `0 < hp < 0xFF00`；**`hp_state` 在场时走权威路径**（`DEATH_TERMINAL` 全族），缺省才用上述 legacy 判定）
-→ `frontend/src/replay-local/canonical/facts.ts` 的 `hpSamples`（哨兵永不进入 HP 数值）。原 Java
+→ `frontend/src/replay-local/canonical/facts.ts` 的 `hpSamples`（哨兵永不进入 HP 数值）→ 同一分类
+随 AI 投影（`ClientAiReviewProjection.hpState`，`prop3Health` / `healthEvents`）发往服务端，
+读侧 `HpRawState.fromProjection` 在场即权威。原 Java
 `EntityPropertyDecoder` 与 `MapOverviewBuilder.hpSamplesByAccount` 已于 2026-10-02 退役（历史 Java 实现）；
 `HealthChangedEvent.isPlausibleHp` 与 `ObservedMaxHp` 仍在 `wotb-core`，只服务 AI 侧证据链。
 

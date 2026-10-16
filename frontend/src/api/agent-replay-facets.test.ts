@@ -15,12 +15,15 @@
 import { describe, expect, it } from 'vitest'
 
 import * as api from './agent-replay-facets.js'
+import { buildCanonicalReplayFacts } from '../replay-local/canonical/facts.js'
 import {
+  AI_HP_STATES,
   PLAYBACK_CONTRACT_VERSION,
   normalizeAgentShotIndices,
   parseAgentPlaybackFromJson,
   parseAgentResultFromJson,
   projectHoF,
+  validateAgentAiReview,
   validateAgentBattleResult,
   validateAgentPlayback,
 } from './agent-replay-facets.js'
@@ -560,6 +563,108 @@ describe('契约 v2 边界（评审 P0-1 验收的消费侧锁定）', () => {
     expect(typeof api.projectHoF).toBe('function')
     expect((api as Record<string, unknown>).HofFacet).toBeUndefined()
     expect((api as Record<string, unknown>).parseAgentHofFromBytes).toBeUndefined()
+  })
+})
+
+// ---------- AiReview 信任边界：hp_state 两条口径（当前 producer / legacy 兼容） ----------
+
+/**
+ * `hp_state` 的两条路径在信任边界必须分开（本 PR 的 blocker）：
+ *
+ *  - `current-producer`（= `parseAgentAiReviewFromBytes`，当前正式 pin v0.4.9 的 WASM 路径）：
+ *    `damage`/`health.hp_state` **必填**。producer 漂移（字段消失）必须 fail closed——静默回退
+ *    legacy 会把 0xFFFE 档弹药架殉爆重新判成存活（正是本 PR 修的 bug）。
+ *  - `legacy-compatible`（旧 artifact / 旧 JSON fixture / 显式 legacy 摄入）：字段可缺省，
+ *    缺省即 legacy raw 分类（仅 0/0xFFFD 终态，其余负值仍是未证明哨兵）。
+ */
+describe('AiReview 信任边界（hp_state：current-producer 必填 / legacy 可缺省）', () => {
+  function minimalAiReview(events: unknown[]): Record<string, unknown> {
+    return {
+      version: 1,
+      battle: {
+        start_time: 1780000000, map_id: 1, map_name: 'x', room_type: 'Rating', winner: 1,
+        duration_secs: 100,
+        periods: [
+          { clock: 10, period: 3, remaining_s: 0, duration_s: 100 },
+          { clock: 110, period: 4, remaining_s: 0, duration_s: 0 },
+        ],
+      },
+      rosters: [{ eid: 21, account_id: 7, team: 1, tank_id: 1, tank_name: 'T-34', is_author: true }],
+      events,
+      settlements: [],
+      poses: [],
+      turrets: [],
+    }
+  }
+
+  const healthEvent = (over: Record<string, unknown> = {}) =>
+    ({ type: 'health', t: 20, eid: 21, hp_raw: 0xfffe, hp_state: 'terminal', ...over })
+  const damageEvent = (over: Record<string, unknown> = {}) =>
+    ({ type: 'damage', t: 20, victim_eid: 21, hp: 0, hp_raw: 0xfffe, hp_state: 'terminal', source_eid: 22, cause: 0, ...over })
+
+  /** 去掉 hp_state 键（缺省 = 旧产物线形状；undefined 键与"不发送"在 JSON 上等价，这里显式删除更贴近产物） */
+  const withoutState = (e: Record<string, unknown>) => {
+    const { hp_state: _state, ...rest } = e
+    return rest
+  }
+
+  /** canonical 层对最后一条 health 事件的分类（legacy 路径要走真分类，不只是形状检查） */
+  function sampleOf(events: unknown[]) {
+    const facet = validateAgentAiReview(minimalAiReview(events), 'legacy-compatible')
+    const facts = buildCanonicalReplayFacts({ aiReview: facet })!
+    return facts.hpSamples.get(21)!.at(-1)!
+  }
+
+  it('current-producer：合法 current/zero/terminal 全部放行（含 damage 与 health 两处）', () => {
+    for (const hp_state of AI_HP_STATES) {
+      expect(
+        () => validateAgentAiReview(minimalAiReview([damageEvent({ hp_state }), healthEvent({ hp_state })]), 'current-producer'),
+        `hp_state=${hp_state}`,
+      ).not.toThrow()
+    }
+  })
+
+  it('current-producer：damage.hp_state 缺失 → reject（不得静默进入 legacy 回退）', () => {
+    expect(() => validateAgentAiReview(minimalAiReview([withoutState(damageEvent()), healthEvent()]), 'current-producer'))
+      .toThrow(/damage\.hp_state 缺失/)
+  })
+
+  it('current-producer：health.hp_state 缺失 → reject', () => {
+    expect(() => validateAgentAiReview(minimalAiReview([damageEvent(), withoutState(healthEvent())]), 'current-producer'))
+      .toThrow(/health\.hp_state 缺失/)
+  })
+
+  it('current-producer：非法枚举 / 非字符串 → reject（不静默回退 hp_raw）', () => {
+    for (const bad of ['dead', 'TERMINAL', 'DEATH_TERMINAL', 1, null, true]) {
+      expect(
+        () => validateAgentAiReview(minimalAiReview([damageEvent({ hp_state: bad }), healthEvent()]), 'current-producer'),
+        String(bad),
+      ).toThrow(/hp_state 非法/)
+    }
+  })
+
+  it('legacy-compatible：字段缺省放行，缺省分类仍是 legacy（0xFFFE/0xFFFF 未知、0xFFFD 终态）', () => {
+    const cases: Array<[number, string, boolean | null]> = [
+      [0xfffe, 'UNKNOWN_OTHER', null],        // −2：未证明哨兵 → 不判死
+      [0xffff, 'UNKNOWN_FFFF', null],         // −1：未证明哨兵 → 不判死
+      [0xfffd, 'DEATH_TERMINAL_FFFD', false], // −3：legacy 已证明终态（行为不变）
+      [0x0000, 'HP_ZERO_TERMINAL', false],
+      [1406, 'CURRENT_HP', true],
+    ]
+    for (const [hp_raw, expectedState, alive] of cases) {
+      const sample = sampleOf([
+        withoutState(healthEvent({ hp_raw })),
+        withoutState(damageEvent({ hp_raw })),
+      ])
+      expect(sample.rawState, `hp_raw=0x${hp_raw.toString(16)}`).toBe(expectedState)
+      expect(sample.alive, `hp_raw=0x${hp_raw.toString(16)}`).toBe(alive)
+    }
+  })
+
+  it('legacy-compatible 也拒绝在场非法枚举（只放宽「缺省」，不放宽「漂移」）', () => {
+    expect(() => validateAgentAiReview(
+      minimalAiReview([damageEvent({ hp_state: 'dead' }), healthEvent()]), 'legacy-compatible'))
+      .toThrow(/hp_state 非法/)
   })
 })
 

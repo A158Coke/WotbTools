@@ -80,8 +80,8 @@ Positive values are proven to represent actual current HP, including loadout-der
 `0xFFFE` was independently closed by settlement `lifeTime`, settlement `killerID`, Type-8 vehicle health/state method, matching attacker identity and absence of later alive HP. Future `0xFFFE` observations must still pass evidence gating until its global sentinel definition is independently closed.
 
 **Authoritative path (upstream ≥ v0.4.9)**: the `damage` / `health` event carries `hp_state`
-(`current` / `zero` / `terminal`) whose rule is the producer's `hp_terminal_normalized` (int16 ≤ 0 ⇒
-terminal). When present it **is** the classification — the whole negative family (measured
+(`current` / `zero` / `terminal`) whose rule is the producer's `hp_terminal_normalized`
+(signed i16 > 0 ⇒ `current`, == 0 ⇒ `zero`, < 0 ⇒ `terminal`). When present it **is** the classification — the whole negative family (measured
 `0xFFFF`/`0xFFFE`/`0xFFFD`, other negatives same encoding) counts as a terminal sentinel and must not
 be re-derived from the raw value. The table above remains the **legacy raw-only** reading (payloads
 without the field): there `0xFFFF` / `0xFFFE` stay unproven and are **not** death evidence. Consumer

@@ -2073,6 +2073,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
       const f = requireFixtures(await fixtureFacets('random-battle-example.wotbreplay'))
       const result = validateAgentBattleResult({ ...f.result, author_account_id: 77, author_team: 1,
         players: [{ ...f.result.players[0], account_id: 77, team: 1, survived: false, life_time_secs: 10 }] })
+      // 本用例显式构造 legacy 口径（含"字段缺省 = legacy 不判死"反例行）→ legacy-compatible
       const aiReview = validateAgentAiReview({ ...f.aiReview,
         battle: { ...f.aiReview.battle, duration_secs: 200, periods: [{ period: 3, clock: 42 }, { period: 4, clock: 242 }] },
         rosters: [oldId, newId].map(eid => ({ eid, account_id: 77, team: 1, tank_id: 6929, tank_name: 'Maus', is_author: true })),
@@ -2081,7 +2082,7 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
           { type: 'visibility', eid: newId, t_in: newEntry, t_out: 51, hp_raw: 1000 },
           { type: 'health', eid: newId, t: 52, hp_raw: terminal, ...(hpState === undefined ? {} : { hp_state: hpState }) },
         ],
-      })
+      }, 'legacy-compatible')
       const definitions = [vehicle({ eid: oldId, coverage: [42, 48], death_t: null }),
         // Deliberately equal render coverage starts: canonical evidence must determine identity.
         vehicle({ eid: newId, pos: [100, 0, 0], coverage: [42, 51], death_t: null, is_author: false })]

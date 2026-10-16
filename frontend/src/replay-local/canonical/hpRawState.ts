@@ -12,14 +12,16 @@
  *  - 上游 `damage.hp` 的钳 0 只是显示便利，canonical 一律读 `hp_raw`；
  *  - 只依赖 wire 形状，不依赖客户端版本。
  *
+ * 枚举 SSOT：本文件的字段类型直接复用 Agent-wire 的 `AiHpStateField`（`api/agent-replay-facets.ts`
+ * 的 `AI_HP_STATES` tuple 派生）——producer enum 变更只改那一处，本层不再独立维护第二份枚举。
+ *
  * 历史（2026-10-16 裁决，见上游 docs/wotbtools-cross-reference.md §七）：`hp_state` 的动机是
  * 0xFFFE 档弹药架殉爆被本层判成存活（血量冻在最后正值、装填条继续播放；实例 1910 局
  * Intotherainy）；而全族语义经字段获得、缺省不放宽，则来自本仓评审（存量语料的 unavailable
  * 记录 + "未证明哨兵"回归用例）。
  */
 
-/** 上游切面 `hp_state`（additive；缺省 = 旧产物，走 legacy 分类） */
-export type HpStateField = 'current' | 'zero' | 'terminal'
+import type { AiHpStateField } from '../../api/agent-replay-facets.js'
 
 export type HpRawState =
   | 'CURRENT_HP'
@@ -32,7 +34,7 @@ export type HpRawState =
   | 'UNKNOWN_FFFF'
   | 'UNKNOWN_OTHER'
 
-export function classifyHpRaw(rawValue: number, hpState?: HpStateField | null): HpRawState {
+export function classifyHpRaw(rawValue: number, hpState?: AiHpStateField | null): HpRawState {
   // 字段在场 = 权威（禁二次解释）
   if (hpState === 'current') return 'CURRENT_HP'
   if (hpState === 'zero') return 'HP_ZERO_TERMINAL'
@@ -59,7 +61,7 @@ export function isPlausibleHp(hp: number | null | undefined): hp is number {
  * 原始值对应的确知当前血量：CURRENT_HP → 有符号值，HP_ZERO → 0，终态哨兵 → null（未知 ≠ 0）。
  * 与 Java prop3 `currentHealth` 的取值口径一致（终态哨兵的 currentHealth 为 null）。
  */
-export function knownHpOf(rawValue: number, hpState?: HpStateField | null): number | null {
+export function knownHpOf(rawValue: number, hpState?: AiHpStateField | null): number | null {
   const state = classifyHpRaw(rawValue, hpState)
   if (state === 'CURRENT_HP') return toSignedShort(rawValue & 0xffff)
   if (state === 'HP_ZERO_TERMINAL') return 0
