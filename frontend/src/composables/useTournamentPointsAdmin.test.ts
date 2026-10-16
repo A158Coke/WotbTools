@@ -20,6 +20,7 @@ function fixture() {
   const transport = {
     listTournamentEvents: vi.fn(async (..._args: any[]) => [event]), getTournamentConfig: vi.fn(async (..._args: any[]) => structuredClone(cfg)), getTournamentDay: vi.fn(async (_id: number, round: number, day: number, ..._args: any[]) => ({ ...structuredClone(state), roundNumber: round, dayNumber: day })),
     getTournamentAudit: vi.fn(async (..._args: any[]) => []), previewTournamentDay: vi.fn(async (..._args: any[]) => structuredClone(state)), saveTournamentDraft: vi.fn(async (..._args: any[]) => structuredClone(state)),
+    getTournamentRuleSource: vi.fn(async (..._args: any[]) => null),
     getTournamentHistoricalState: vi.fn(async (..._args: any[]) => ({ eventVersion: 1, imported: false, canImport: false, historical: false })),
     finalizeTournamentDay: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'FINALIZED', published: true, version: 2, eventVersion: 2 })),
     setTournamentExpectedGroups: vi.fn(async (..._args: any[]) => structuredClone(state)), startTournamentCorrection: vi.fn(async (..._args: any[]) => ({ ...structuredClone(state), status: 'CORRECTION', groups: [], published: true })),
@@ -398,5 +399,22 @@ describe('shared tournament draft owner', () => {
     expect(f.owner.reviews.value).toEqual([])
     expect(f.owner.dayState.value?.dayNumber).toBe(2)
     f.scope.stop()
+  })
+})
+
+describe('starting statistics against inherited default rules', () => {
+  it('sends the observed global version and rejects mixed event reads before enabling statistics', async () => {
+    const f = fixture()
+    f.transport.getTournamentRuleSource.mockResolvedValue({ eventVersion: 1, source: 'INHERIT', defaultVersion: 9, isDefaultSource: false, defaultOutdated: false } as any)
+    const scope = effectScope()
+    const owner = scope.run(() => useTournamentPointsAdmin({ api: f.transport, auth: f.auth } as any))!
+    owner.eventId.value = 7; await settle()
+    await owner.setExpected(2)
+    expect(f.transport.setTournamentExpectedGroups.mock.calls[0][3].expectedDefaultVersion).toBe(9)
+    f.transport.getTournamentRuleSource.mockResolvedValue({ eventVersion: 0, source: 'INHERIT', defaultVersion: 9, isDefaultSource: false, defaultOutdated: false } as any)
+    await owner.loadSelection()
+    expect(owner.stale.value).toBe(true)
+    expect(owner.editable.value).toBe(false)
+    scope.stop()
   })
 })
