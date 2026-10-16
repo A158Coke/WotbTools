@@ -9,6 +9,7 @@ import {
   positionAt,
   pushFeed,
   recentPositionTrails,
+  recentPositionTrailsFromPose,
   screenRotation,
   teamPointsAt,
   transientsActive,
@@ -65,6 +66,47 @@ describe('recentPositionTrails', () => {
       samples: [{ timeSec: 8, x: 0, y: 0 }, { timeSec: 16, x: 80, y: 0 }],
     }])], 15)
     expect(trails).toHaveLength(0)
+  })
+})
+
+describe('recentPositionTrailsFromPose（位姿通道版尾迹）', () => {
+  const vehicle = (accountId = 7) => ({ accountId, friendly: true })
+
+  it('0.1s 步长沿位姿通道连线，只保留最近 2 秒（端点含当前时刻）', () => {
+    const trails = recentPositionTrailsFromPose([vehicle()], (v, t) => ({ x: t, y: 0 }), () => true, 10)
+    // 2s / 0.1s = 20 段
+    expect(trails).toHaveLength(20)
+    expect(trails[trails.length - 1].to.timeSec).toBeCloseTo(10, 6)
+    expect(trails[0].from.timeSec).toBeCloseTo(8, 6)
+    expect(trails[0].to.x).toBeCloseTo(8.1, 6)
+  })
+
+  it('未观测区间断链：不跨 AoI 空隙连线（canonical 知识层门控）', () => {
+    // 仅在 [8.5, 9.5] 观测：链被切成连续采样段，其余不连线
+    const covered = (v, t) => t >= 8.5 - 1e-9 && t <= 9.5 + 1e-9
+    const trails = recentPositionTrailsFromPose([vehicle()], (v, t) => ({ x: t, y: 0 }), covered, 10)
+    expect(trails.length).toBeGreaterThan(0)
+    for (const trail of trails) {
+      expect(trail.from.timeSec).toBeGreaterThanOrEqual(8.5 - 1e-9)
+      expect(trail.to.timeSec).toBeLessThanOrEqual(9.5 + 1e-9)
+      expect(trail.to.timeSec - trail.from.timeSec).toBeCloseTo(0.1, 6)
+    }
+  })
+
+  it('位姿缺失（null）时同样断链；单点仍出点状尾迹', () => {
+    const poseAt = (v, t) => (t > 9.9 ? { x: 1, y: 2 } : null)
+    const trails = recentPositionTrailsFromPose([vehicle()], poseAt, () => true, 10)
+    expect(trails).toHaveLength(1)
+    expect(trails[0].point).toBeTruthy()
+    expect(trails[0].point.x).toBe(1)
+  })
+
+  it('透明度随年龄单调衰减（最近段最亮）', () => {
+    const trails = recentPositionTrailsFromPose(
+      [vehicle()], (v, t) => ({ x: t, y: 0 }), () => true, 10)
+    const byAge = [...trails].sort((a, b) => b.to.timeSec - a.to.timeSec)
+    expect(byAge[0].opacity).toBeGreaterThan(byAge[byAge.length - 1].opacity)
+    expect(byAge[0].opacity).toBeLessThanOrEqual(0.7 + 1e-9)
   })
 })
 

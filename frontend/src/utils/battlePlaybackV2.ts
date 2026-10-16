@@ -85,6 +85,57 @@ export function lifeAt(
   }
 }
 
+export type DefLifeState = {
+  lifeState: 'ALIVE' | 'DESTROYED'
+  destroyedKnownAtSec: number | null
+}
+
+type DefLifeFields = {
+  death_t: number | null
+  /** 上游 additive：仅该车死亡 ≥2 次（复活模式）才输出 */
+  death_times?: number[]
+  /** 上游 additive：仅非空才输出 */
+  resurrection_times?: number[]
+}
+
+/**
+ * def 层生命状态（PlaybackData 车辆字段直读；canonical 轨道缺位时的权威回退）。
+ *
+ * 消费上游复活轨道（issue #622，2026-10-15 additive）：复活字段缺省 = 死亡终态语义
+ * （`t >= death_t → DESTROYED`，行为与既往逐位一致）；字段在场 = 死亡/复活交替，
+ * 最后一次 ≤t 的事件决定状态（首死前 ALIVE）。纯 def 字段推导，不读 canonical。
+ */
+export function defLifeAt(def: DefLifeFields | null | undefined, t: number): DefLifeState | null {
+  if (def == null || !Number.isFinite(t)) return null
+  const death = def.death_t
+  if (typeof death !== 'number' || !Number.isFinite(death)) return null
+  const res = def.resurrection_times ?? []
+  const deaths = def.death_times && def.death_times.length > 1 ? def.death_times : [death]
+  if (deaths.length <= 1 && res.length === 0) {
+    return { lifeState: t >= death ? 'DESTROYED' : 'ALIVE', destroyedKnownAtSec: death }
+  }
+  let state: 'ALIVE' | 'DESTROYED' = 'ALIVE'
+  let destroyedAt: number | null = null
+  let di = 0
+  let ri = 0
+  while (di < deaths.length || ri < res.length) {
+    const nextDeath = di < deaths.length ? deaths[di] : Infinity
+    const nextRes = ri < res.length ? res[ri] : Infinity
+    if (nextDeath <= t && nextDeath <= nextRes) {
+      state = 'DESTROYED'
+      destroyedAt = nextDeath
+      di += 1
+    } else if (nextRes <= t) {
+      state = 'ALIVE'
+      destroyedAt = null
+      ri += 1
+    } else {
+      break
+    }
+  }
+  return { lifeState: state, destroyedKnownAtSec: destroyedAt }
+}
+
 /**
  * Canonical HP presentation for one track at t.
  *
@@ -338,6 +389,31 @@ export function positionCoveredAtV2(
   if (!Array.isArray(segments)) return false
   return segments.some(s => s.knowledge === 'OBSERVED'
     && t >= s.startSec - 1e-6 && t <= s.endSec + 1e-6)
+}
+
+/**
+ * 位姿渲染的**采样时刻**（battle-relative 秒）：观测区间内 = t 本身；失察区间内 = 该时刻之前
+ * 最后一个 OBSERVED 段的结束时刻（即"停在最后观测点"，**不跟随**滤波器在失察区的预测延续）。
+ *
+ * 2026-10-16 用户裁定：2D 图标在车辆离开视野后必须停在原地（3D 里该车模型直接不显示，两者语义
+ * 一致）。从未被观测（t 之前没有 OBSERVED 段）→ null（调用方不显示该标记）。
+ *
+ * 只返回时刻，取值由调用方（位姿通道 / canonical 观测）决定——本函数不碰任何位姿数据。
+ */
+export function observedFreezeTimeAt(
+  segments: readonly PositionSegment[] | null | undefined,
+  t: number,
+): number | null {
+  if (!Array.isArray(segments) || segments.length === 0 || !Number.isFinite(t)) return null
+  let freeze: number | null = null
+  for (const s of segments) {
+    if (!s || s.knowledge !== 'OBSERVED' || !Number.isFinite(s.startSec)) continue
+    if (s.startSec > t + 1e-6) break
+    const end = Number.isFinite(s.endSec) ? s.endSec : s.startSec
+    if (t <= end + 1e-6) return t              // 区间内：正常采样
+    freeze = Math.max(freeze ?? Number.NEGATIVE_INFINITY, end)
+  }
+  return freeze
 }
 
 /**

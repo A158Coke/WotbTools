@@ -455,6 +455,51 @@ describe('playbackScene 会话代数契约', () => {
     expect(minPostGapAbs).toBeGreaterThan(48.5)
   })
 
+  it('履带印阵亡期断链：复活落在新位置时不与死前锚连铺（3.1.0 review P2，issue #622）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    const { api } = createScene()
+    const t0 = 42, n = 150          // 15 s；步长 0.5 m/0.1 s
+    // 阵亡期（t0+5 → t0+10）位姿仍在缓慢移动（渐进复活迁移）：每步 0.5 m 走不出大步断链阈值，
+    // 若阵亡期只是跳过出戳而不复位锚点，复活后的首个接地点会与死前锚连铺出一条跨 25 m 的印记。
+    const pos = new Array(n * 3)
+    for (let i = 0; i < n; i++) { pos[i * 3] = i * 0.5; pos[i * 3 + 1] = 0; pos[i * 3 + 2] = 0 }
+    const data = minimalData(t0)
+    data.meta.samples = n
+    data.meta.duration = t0 + 15
+    data.vehicles = [{ eid: 1, team: 1, tank_name: 'Maus', max_hp: 3074,
+      pos, hull_yaw: new Array(n).fill(0), hull_pitch: new Array(n).fill(0),
+      turret_yaw: new Array(n).fill(0), gun_pitch: new Array(n).fill(0),
+      hp: [], coverage: [t0, t0 + 15], death_t: t0 + 5, resurrection_times: [t0 + 10] }]
+    vi.spyOn(assetProvider, 'json').mockImplementation((path) =>
+      Promise.resolve(String(path) === '/tread/textures.json' ? {} : null))
+    vi.spyOn(assetProvider, 'url').mockImplementation((path) => 'http://assets.test' + path)
+    source.loadPlaybackData.mockResolvedValue(data)
+    await api.loadData({ kind: 'local', file: new File(['replay'], 'respawn-trail.wotbreplay') })
+    await new Promise((r) => setTimeout(r, 0))
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+    api.setPlaying(false)
+    const read = () => {
+      const v = window.__pbV[0]
+      return { total: v.trail.L.total,
+               segs: v.trail.L.segs.map((sg) => ({ x0: sg.x0, x1: sg.x1, t: sg.t })) }
+    }
+    api.seekTime(t0 + 4)
+    const before = read()
+    expect(before.total).toBeGreaterThan(10)
+    api.seekTime(t0 + 11)
+    const r = read()
+    expect(r.total).toBeGreaterThan(before.total)
+    expect(r.segs.slice(0, before.total)).toEqual(before.segs)   // 历史段逐值保留
+    // 阵亡期零出戳（没有任何戳出生在阵亡区间内）
+    expect(r.segs.every((sg) => !(sg.t > t0 + 5 && sg.t < t0 + 10))).toBe(true)
+    // 无跨阵亡期桥接：死前锚在 x≈25、复活首点在 x≈50 —— 有 bug 时这里会出现一条 25 m 长戳
+    for (const sg of r.segs) expect(Math.abs(sg.x1 - sg.x0)).toBeLessThanOrEqual(1.1)
+    const post = r.segs.slice(before.total).filter((sg) => sg.t >= t0 + 10)
+    expect(post.length).toBeGreaterThanOrEqual(3)                // 复活后 1 s：锚点 + ~5 戳
+    expect(post.length).toBeLessThanOrEqual(8)
+    expect(Math.min(...post.map((sg) => Math.abs(sg.x0)))).toBeGreaterThan(48.5)   // 新锚从复活位姿开始
+  })
+
   describe('履带印 review 回归', () => {
     async function setupTrail({ n = 580, pos, hull_yaw, yaw = 0, duration = 58 }) {
       window.history.replaceState(null, '', '/?debug&q=high')
@@ -1426,10 +1471,20 @@ describe('画质四档阶梯契约（2026-10-07 重分档）', () => {
       expect(QUALITY_PRESETS[t].allowGlb).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].scenery).toBe(t === 'high' || t === 'ultra')
       expect(QUALITY_PRESETS[t].groundLayers).toBe(t === 'high' || t === 'ultra')
-      expect(QUALITY_PRESETS[t].miniMap).toBe(t === 'low')
       expect(QUALITY_PRESETS[t].antialias).toBe(t !== 'low')
       expect(QUALITY_PRESETS[t].fx).toBe(FX_BUDGETS[t])   // 战斗特效预算与画质档同一键
     }
+  })
+
+  it('地面贴图四档统一用契约化的 `map`（ground.webp）；客户端 HUD 小地图不再进地面链路', async () => {
+    // 2026-10-16 用户裁定（以 ±300 为准）：客户端小地图覆盖约 620 m、多出外围一圈，按 600 m 铺
+    // 会压缩内容约 3% 并把圈外内容摊进边界 ⇒ 地面链路（含最低档）只认 ground.webp。
+    const src = (await import('./playbackScene.js?raw')).default
+    expect(src).not.toMatch(/map-mini/)
+    expect(src).not.toMatch(/miniMap/)
+    expect(src).toMatch(/const mapUrl = mapStaticUrl\('map', undefined, resolvedKey\);/)
+    const replay = (await import('./replaySource.js?raw')).default
+    expect(replay).not.toMatch(/map-mini/)
   })
 })
 
@@ -1506,6 +1561,25 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     api.reset()
     expect(window.__scene.children).not.toContain(head.root)
     for (const dispose of disposed) expect(dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('复活后装回炮塔：上一世的飞头不让新车继续无炮塔（issue #622 review P2）', async () => {
+    // 同一 eid 死（52s 飞头）→ 复活（70s）：分离只属于那一世；飞头实体自身照旧按自己的 coverage 渲染。
+    const sceneData = dataFor([vehicle({ death_t: 52, resurrection_times: [70] })])
+    sceneData.detached_turrets = [detachedTrack()]
+    const { api, vehicles } = await load(sceneData.vehicles, null, sceneData)
+    const owner = vehicles[0], head = owner.detachedTurrets[0]
+    expect(owner.turretG.visible).toBe(true)          // 分离前：装炮塔
+    api.seekTime(53)
+    expect(owner.turretG.visible).toBe(false)         // 分离期：摘掉炮塔
+    expect(head.root.visible).toBe(true)
+    api.seekTime(71)
+    expect(owner.turretG.visible).toBe(true)          // 复活后：装回炮塔
+    api.seekTime(81)
+    expect(owner.turretG.visible).toBe(true)          // 复活后飞头仍在视野（coverage 80~100）也不摘
+    expect(head.root.visible).toBe(true)
+    api.seekTime(53)
+    expect(owner.turretG.visible).toBe(false)         // 倒带回到分离世：恢复摘除
   })
 
   it('uses the same replay clock for pause and speed, with direct seek matching forward playback', async () => {
@@ -1941,6 +2015,48 @@ describe('destroyed vehicle visuals in the real scene lifecycle', () => {
     frames.shift()()
     api.setPlaying(false)
     expect(activeBursts()).toHaveLength(0)  // seeking never replays historical explosions
+  })
+
+  it('respawn track: DESTROYED→ALIVE→DESTROYED — wreck un-fades on resurrection, roster follows (issue #622)', async () => {
+    const track = { accountId: 77, lifeTransitions: [
+      { timeSec: 10, lifeState: 'DESTROYED', destroyedKnownAtSec: 10 },
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    ] }
+    const { api, store, vehicles } = await load([vehicle()], canonicalFor([track]))
+    api.seekTime(53)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+    api.seekTime(73)
+    expect(vehicles[0].proxyVisual.amount).toBe(1)
+    expect(store.roster.team1[0].dead).toBe(true)
+    api.seekTime(63)
+    expect(vehicles[0].proxyVisual.amount).toBe(0)
+    expect(store.roster.team1[0].dead).toBe(false)
+  })
+
+  it('respawn: distinct deaths each spawn one burst (canonical life has no ALIVE gap in normal battles)', async () => {
+    const track = deadTrack()
+    track.lifeTransitions.push(
+      { timeSec: 20, lifeState: 'ALIVE', destroyedKnownAtSec: null },
+      { timeSec: 30, lifeState: 'DESTROYED', destroyedKnownAtSec: 30 },
+    )
+    const { api, frames } = await load([vehicle()], canonicalFor([track]))
+    const spawnBurst = vi.spyOn(window.__battleFx, 'spawnBurst')
+    api.seekTime(51.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(1)   // 第一次死亡
+    api.seekTime(71.9)
+    api.setPlaying(true)
+    frames.shift()()
+    api.setPlaying(false)
+    expect(spawnBurst).toHaveBeenCalledTimes(2)   // 复活后的第二次死亡：独立爆焰
+    expect(spawnBurst.mock.calls.every(([pos]) => pos === undefined || typeof pos === 'object')).toBe(true)
   })
 
   it.each([[10, 20, 0, 49], [20, 10, 0, 49], [10, 20, 0xfffd, 49], [10, 20, 0xffff, 49], [10, 20, 0, 42]])(
