@@ -166,7 +166,6 @@
       "title": "更多",
       "sections": {
         "display": "显示设置",
-        "tools": "工具",
         "admin": "管理",
         "about": "关于与支持"
       },
@@ -671,6 +670,7 @@
     },
     "leagueBroadcasts": {
       "title": "联赛直播回放",
+      "navTitle": "直播回放",
       "serversTitle": "选择服务器",
       "seasonsTitle": "季赛",
       "categoriesTitle": "子赛事分类",
@@ -945,7 +945,6 @@
       "title": "More",
       "sections": {
         "display": "Display",
-        "tools": "Tools",
         "admin": "Administration",
         "about": "About & support"
       },
@@ -1450,6 +1449,7 @@
     },
     "leagueBroadcasts": {
       "title": "League broadcast replays",
+      "navTitle": "Broadcasts",
       "serversTitle": "Choose a server",
       "seasonsTitle": "Seasons",
       "categoriesTitle": "Competition categories",
@@ -1724,7 +1724,6 @@
       "title": "Ещё",
       "sections": {
         "display": "Отображение",
-        "tools": "Инструменты",
         "admin": "Администрирование",
         "about": "О проекте и поддержка"
       },
@@ -2229,6 +2228,7 @@
     },
     "leagueBroadcasts": {
       "title": "Записи трансляций лиги",
+      "navTitle": "Трансляции",
       "serversTitle": "Выберите сервер",
       "seasonsTitle": "Сезоны",
       "categoriesTitle": "Категории соревнования",

@@ -130,7 +130,7 @@ async function refreshPage() {
     <Banner v-if="state.notice">{{ t(`leagueBroadcasts.${state.notice}`) }}</Banner>
     <p v-if="state.loading || state.network.pending" role="status">{{ t('leagueBroadcasts.loading') }}</p>
     <template v-else-if="state.network.available && !state.readFailed">
-      <div v-if="!state.server" class="broadcast-card-grid" data-testid="broadcast-servers">
+      <div v-if="!state.server" class="broadcast-card-grid broadcast-servers" data-testid="broadcast-servers">
         <button v-for="server in state.servers" :key="server" type="button" class="broadcast-choice" :data-testid="`broadcast-server-${server}`" @click="state.navigate({ server })"><span>{{ t(`leagueBroadcasts.servers.${server}`) }}</span><ChevronRight :size="20" aria-hidden="true" /></button>
       </div>
       <section v-else-if="!state.seasonId" class="broadcast-list" data-testid="broadcast-seasons">
@@ -198,6 +198,8 @@ async function refreshPage() {
 .broadcast-choice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-h-lg); padding: var(--space-6); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-h3); cursor: pointer; text-align: start; }
 .broadcast-choice span { min-width: 0; overflow-wrap: anywhere; }
 .broadcast-choice svg { flex: none; }
+.broadcast-servers { grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--broadcast-server-card-min-w)), 1fr)); }
+.broadcast-servers .broadcast-choice { min-height: var(--broadcast-server-card-min-h); padding: var(--space-8); font: var(--type-h2); }
 .broadcast-list { display: grid; gap: var(--space-3); }
 .broadcast-season-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .broadcast-row-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
