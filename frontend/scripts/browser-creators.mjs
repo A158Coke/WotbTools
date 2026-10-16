@@ -70,8 +70,26 @@ async function geometry(page, profile, configuration = false) {
   assert.equal(value.overflow, false); assert.equal(value.profile, profile); assert.deepEqual(value.tiny, [])
   if (configuration) assert.equal(value.stacked, await page.evaluate('innerWidth<768'))
 }
-const { server, origin } = await startFixtureServer({ middleware }), chrome = await launchChromeForCdp(findChrome())
-const scenarios = ['showcase', 'classic'].flatMap(profile => [1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })))
+async function tabGeometry(page, expectedCount) {
+  const value = await page.evaluate(`(() => {
+    const bar = document.querySelector('[data-testid=app-tab-bar]'), bounds = bar.getBoundingClientRect();
+    const tabs = [...bar.querySelectorAll('.tab')].map(el => { const r = el.getBoundingClientRect(); return {left:r.left,right:r.right,width:r.width,height:r.height,active:el.getAttribute('aria-current') === 'page'} });
+    return {tabs,left:bounds.left,right:bounds.right,overflow:document.documentElement.scrollWidth > innerWidth + 1};
+  })()`)
+  assert.equal(value.tabs.length, expectedCount)
+  assert.equal(value.overflow, false, 'tab overflow stays inside the navigation scroller')
+  value.tabs.forEach((tab, index) => {
+    assert.ok(tab.width >= 44 && tab.height >= 44, 'tabs retain 44px touch targets')
+    if (index) assert.ok(tab.left >= value.tabs[index - 1].right - 0.5, 'adjacent tab targets never overlap')
+    if (tab.active) assert.ok(tab.left >= value.left - 0.5 && tab.right <= value.right + 0.5, 'active tab is visible after navigation')
+  })
+}
+const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
+const scenarios = ['showcase', 'classic'].flatMap(profile => [
+  ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
+  ...[320, 351, 352, 360].map(width => ({ name: `${profile}-production-${width}`, profile, width, height: 844, touch: true, locale: 'ru', productionHome: true, compactNavigation: true })),
+  { name: `${profile}-local-320`, profile, width: 320, height: 844, touch: true, locale: 'zh', compactNavigation: true },
+])
 let failures = 0
 try {
   const filters = process.argv.slice(2), selected = scenarios.filter(value => !filters.length || filters.some(filter => value.name.includes(filter)))
@@ -81,10 +99,35 @@ try {
     try {
       await page.enable(); await page.emulate(scenario)
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
-      await page.goto(`${origin}/?view=more&ws-auth=0`)
+      const scenarioOrigin = scenario.productionHome ? origin.replace('127.0.0.1', 'wotbtools.com') : origin
+      await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
+      if (scenario.compactNavigation) {
+        await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
+        await tabGeometry(page, scenario.productionHome ? 8 : 7)
+        if (scenario.productionHome && scenario.width === 320) {
+          const y = await page.evaluate('document.querySelector("[data-testid=app-tab-bar]").getBoundingClientRect().top + 24')
+          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 140, y, id: 1 }] }, sessionId)
+          for (const x of [160, 190, 230]) await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] }, sessionId)
+          await chrome.client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, sessionId)
+          await page.waitForValue('document.querySelector("[data-testid=app-tab-bar]").scrollLeft', value => value <= 0.5)
+        }
+        // Tab traversal must reveal every target without moving the page vertically.
+        const scrollY = await page.evaluate('window.scrollY')
+        const targets = await page.evaluate('[...document.querySelectorAll("[data-testid=app-tab-bar] .tab")].map(el=>el.dataset.testid)')
+        await page.evaluate(`document.querySelector('[data-testid="${targets[0]}"]').focus()`)
+        for (const [index, target] of targets.entries()) {
+          if (index) {
+            await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
+            await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
+          }
+          await page.waitForValue(`(() => {const e=document.activeElement,r=e.getBoundingClientRect();return {id:e.dataset.testid,left:r.left,right:r.right,width:innerWidth}})()`, value => value.id === target && value.left >= -0.5 && value.right <= value.width + 0.5)
+        }
+        assert.equal(await page.evaluate('window.scrollY'), scrollY)
+      }
       const primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
       await tap(page, primary, scenario.touch); await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
       assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-current')`), 'page')
+      if (scenario.compactNavigation) await tabGeometry(page, scenario.productionHome ? 8 : 7)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')
