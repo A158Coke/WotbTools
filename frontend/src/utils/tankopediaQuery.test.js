@@ -170,9 +170,8 @@ describe('normalizeTankCache — alias 投影', () => {
     expect(selectTanks(rows, { q: '大白兔' }).map(tank => tank.name)).toEqual(['FV215b 183'])
   })
 
-  it('默认接的是仓库的 common/tank_aliases.json；数据集为空时等价于旧版行为', () => {
-    // 数据集当前是空对象（`{}` 是合法初始状态，alias 由开发者按需逐步录入）：
-    // 这条用例同时锁住「空数据集不报错、每辆车都拿到数组」与「录入后按 tank_id 投影」。
+  it('默认从仓库数据按 tank_id 投影，未配置车辆仍只按正式车名搜索', () => {
+    // 不固定名称总量；所有已配置条目都必须接入默认搜索路径。
     const entries = Object.entries(TANK_ALIASES)
     const cache = Object.fromEntries(entries.map(([id]) => [id, { name: `Tank ${id}` }]))
     cache[1] = { name: 'Unconfigured' }
@@ -182,8 +181,34 @@ describe('normalizeTankCache — alias 投影', () => {
       expect(rows.find(row => row.id === Number(id)).aliases).toEqual(aliases)
     }
     expect(rows.find(row => row.id === 1).aliases).toEqual([])
-    // 空数据集下搜索行为与接入 alias 之前完全一致（只认正式车名）。
+    // 没有别名的车型仍可按正式车名搜索。
     expect(selectTanks(rows, { q: 'unconfigured' }).map(tank => tank.name)).toEqual(['Unconfigured'])
+  })
+})
+
+describe('国服名称快照 — 默认搜索接线', () => {
+  const rows = normalizeTankCache({
+    6929: { name: 'Maus' },
+    10113: { name: 'Carro 45t' },
+    19825: { name: 'AC Atlas' },
+    7041: { name: 'Turbo' },
+  })
+
+  it.each([
+    ['鼠式', 6929, 'Maus'],
+    ['45t战车', 10113, 'Carro 45t'],
+    ['45t战斗战车', 10113, 'Carro 45t'],
+    ['AC阿特拉斯', 19825, 'AC Atlas'],
+    ['AC-10阿特拉斯', 19825, 'AC Atlas'],
+  ])('国服名称 %s 命中正确车型且保留英文展示名', (q, id, name) => {
+    expect(selectTanks(rows, { q }).map(tank => ({ id: tank.id, name: tank.name })))
+      .toEqual([{ id, name }])
+    expect(selectTanks(rows, { q: name })[0]).toMatchObject({ id, name })
+  })
+
+  it('缺少国服名称的车辆正常保留英文搜索', () => {
+    expect(rows.find(row => row.id === 7041).aliases).toEqual([])
+    expect(selectTanks(rows, { q: 'Turbo' }).map(tank => tank.id)).toEqual([7041])
   })
 })
 
