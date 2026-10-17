@@ -1361,6 +1361,34 @@ async function runRosterGeometryScenario(env, scenario) {
     }
   }
 
+  // Real input regression: disclosure must release toolbar space and remain reachable.
+  const toolbarSelector = '[data-testid="replay3d-controls-toggle"]'
+  const expandedHeight = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
+  const sessionBeforeCollapse = await page.evaluate('JSON.stringify({ time: window.__pbPane.store.time, speed: window.__pbPane.store.speed, cam: window.__pbPane.store.cam, playing: window.__pbPane.store.playing })')
+  for (const collapsed of [true, false]) {
+    await page.evaluate(`document.querySelector(${JSON.stringify(toolbarSelector)}).scrollIntoView({ block: 'center' })`)
+    await waitForStableLayout(page)
+    const hit = await page.evaluate(`(() => {
+      const button = document.querySelector(${JSON.stringify(toolbarSelector)})
+      const r = button.getBoundingClientRect()
+      const x = r.left + r.width / 2, y = r.top + r.height / 2
+      return { x, y, reachable: button.contains(document.elementFromPoint(x, y)), width: r.width, height: r.height }
+    })()`)
+    check(failures, hit.reachable && hit.width >= 44 && hit.height >= 44, 'toolbar disclosure must be hit-testable with a 44px target')
+    await page.tap({ x: hit.x, y: hit.y, touch: scenario.touch })
+    await page.waitForValue(`document.querySelector(${JSON.stringify(toolbarSelector)})?.getAttribute('aria-expanded')`,
+      value => value === String(!collapsed), { label: 'toolbar disclosure changes after raw input' })
+    await waitForStableLayout(page)
+    const height = await page.evaluate("document.querySelector('.controls').getBoundingClientRect().height")
+    check(failures, collapsed ? height < expandedHeight - 20 : Math.abs(height - expandedHeight) < 2,
+      `toolbar must shrink and restore its height: expanded=${expandedHeight}, actual=${height}`)
+    check(failures, await page.evaluate("getComputedStyle(document.querySelector('.controls-content')).display === 'none'") === collapsed,
+      'collapsed content must leave layout and keyboard navigation')
+    check(failures, await page.evaluate('window.__sceneMarker === window.__pbPane.sceneApi'), 'toolbar disclosure rebuilt the scene')
+    check(failures, await page.evaluate('JSON.stringify({ time: window.__pbPane.store.time, speed: window.__pbPane.store.speed, cam: window.__pbPane.store.cam, playing: window.__pbPane.store.playing })') === sessionBeforeCollapse,
+      'toolbar disclosure changed playback or camera state')
+  }
+
   await captureMobileReview(page, scenario)
   // 回卷到顶部：start/scrollIntoView 留下的页面滚动会让"浮层在视口内"的测量失真
   // （lane top=-52 = 恰好一屏标题高）。浮层几何契约必须在**未滚动**的布局上取值。
@@ -2251,6 +2279,7 @@ async function runOfflineWorkspaceScenario(env) {
   lastPage = page
   const businessAttempts = []
   const healthProbes = []
+  const publicCategoryProbes = []
   const interceptionErrors = []
   let closing = false
   await page.enable()
@@ -2268,7 +2297,7 @@ async function runOfflineWorkspaceScenario(env) {
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
     // Foreground activity is intentionally reported when connectivity recovers.
-    // Telemetry and read-only deployment capability discovery are accepted only online;
+    // Telemetry and read-only capability/content discovery are accepted only online;
     // offline telemetry and all automatic business submissions still fail below.
     const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
       && params.request.method === 'POST'
@@ -2282,7 +2311,17 @@ async function runOfflineWorkspaceScenario(env) {
       await env.chrome.client.send('Fetch.fulfillRequest', {
         requestId: params.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] })).toString('base64'),
+        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1', 'recommendations-v1'] })).toString('base64'),
+      }, sessionId)
+      return
+    }
+    const publicCategories = url.origin === env.origin && url.pathname === '/api/recommendations/categories' && params.request.method === 'GET'
+    if (publicCategories && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      publicCategoryProbes.push(params.request.url)
+      await env.chrome.client.send('Fetch.fulfillRequest', {
+        requestId: params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+        body: Buffer.from(JSON.stringify([{ id: 1, name: 'Creator fixture', type: 'UP' }])).toString('base64'),
       }, sessionId)
       return
     }
@@ -2349,6 +2388,7 @@ async function runOfflineWorkspaceScenario(env) {
   check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
   check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
   check(failures, healthProbes.length === 1, `reconnection must make exactly one read-only capability probe: ${healthProbes.length}`)
+  check(failures, publicCategoryProbes.length === 1, `reconnection must make exactly one read-only public category probe: ${publicCategoryProbes.length}`)
   check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
   closing = true
   await env.chrome.client.send('Target.closeTarget', { targetId })

@@ -214,13 +214,36 @@ describe('国服名称快照 — 默认搜索接线', () => {
       4657: { name: 'Type T-34' },
     })
 
-    it.each(['T-34', 't34'])('搜索 %s 时保留不带星号查询的原有相关度', q => {
-      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([1, 2849, 5489, 4657])
+    it.each([
+      ['T-34', [1, 2849, 5489, 4657]],
+      ['t34', [2849, 1, 5489, 4657]],
+    ])('搜索 %s 时精确正式车名优先，其余车型保持相关度', (q, ids) => {
+      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual(ids)
     })
 
     it.each(['T34*', 'T-34*', 't34*'])('搜索 %s 只命中国服星号车型', q => {
       expect(selectTanks(rows, { q }).map(tank => ({ id: tank.id, name: tank.name })))
         .toEqual([{ id: 4657, name: 'Type T-34' }])
+    })
+  })
+
+  describe('别名召回与精确车名排序', () => {
+    it.each(['Mk I重型坦克', '重型坦克'])('不带星号的 %s 仍可命中 Mk I 中文名称', q => {
+      const rows = normalizeTankCache({ 64081: { name: 'Mk I* Heavy Tank' } })
+      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([64081])
+    })
+
+    it.each(['AMX M4 45', ' amx m4 45 '])('精确正式车名 %s 排在其他车型的模糊别名之前', q => {
+      const rows = normalizeTankCache({
+        4417: { name: 'AMX M4 mle. 54' },
+        6977: { name: 'AMX M4 45' },
+      })
+      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([6977, 4417])
+    })
+
+    it.each(['T-22中型', 'Т-22中型'])('T-22 中文名称接受拉丁及官方西里尔拼法 %s', q => {
+      const rows = normalizeTankCache({ 19969: { name: 'T-22 medium' } })
+      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([19969])
     })
   })
 

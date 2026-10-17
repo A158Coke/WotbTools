@@ -5,10 +5,11 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-17，本候选源码为 **3.5.4 / 3005004**（`android/gradle.properties`；
-在 3.5.1 回放生命状态修复 / WASM v0.4.9、3.5.2 Android 文件选择缓存修复及 3.5.3 联赛服务器卡片更新之上，
-补全坦克百科国服车型搜索名称；patch，Native Bridge v3 与最低支持门槛不变）。
-本次候选说明见 [`releases/3.5.4.md`](releases/3.5.4.md)，此前累计改动见各版本说明。
+截至 2026-10-18，本候选源码为 **3.9.1 / 3009001**（`android/gradle.properties`）；
+在 main 的 3.9.0（3D 回放工具栏收起／展开及此前累计功能）之上，补全坦克百科国服搜索别名，
+修复星号名称召回、精确正式车名排序与 T-22 键盘拼法，属于 **patch**。
+候选说明见 [3.9.1](releases/3.9.1.md)；Native Bridge 保持 v3，最低支持版本保持 3000000，
+不新增强制升级。历史发布记录保持原样，本候选不复用已有 immutable release 身份。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -215,7 +216,7 @@ Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「�
 （runner → 上海 COS → TX1 → 网盘）：`.github/workflows/android-offload-probe.yml` 是它的第一步，
 **只取数字**，不动发布路径。
 
-何时跑：`workflow_dispatch`（`environment: tx-production`，与部署/备份共用
+何时跑：`workflow_dispatch`（凭据读取 repository-level Actions secrets / variables，与部署/备份共用
 `production-maintenance` 队列，并与 `android-release` 用 job 级 `concurrency` **互斥**——两边写同一门
 Seafile 网盘，重叠会让探针数字失真，也会挤占发布那条已经贴着 `--max-time 2700` 的上传）。它要求
 dispatched SHA == 当前 `main`（运行期间 main 一前进即失败），不写 version.json / tag / staging

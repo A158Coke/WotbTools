@@ -105,7 +105,8 @@ different owner and lifecycle from the files above:
   recall does not depend on the current UI language.
 - **frontend-only transport.** The dataset is imported at build time by
   `frontend/src/utils/tankopediaQuery.js` (`normalizeTankCache` projects `aliases`; `selectTanks`
-  scores `max(canonical name, aliases)`), the same mechanism as `common/map_names.json`. There is no
+  ranks exact canonical-name matches first, then scores `max(canonical name, aliases)` with the
+  canonical name as the tie-breaker), the same mechanism as `common/map_names.json`. There is no
   backend endpoint, database table or second asset origin, so the Web and Android bundled frontends
   ship identical data.
 - **fail closed in CI.** `common/python/validate_tank_aliases.py`, gated by
@@ -122,7 +123,7 @@ factual vehicle data; the alias file is additive metadata beside them.
 
 ### Reviewed national-server client names
 
-The 2026-10-17 import adds **552 aliases for 471 vehicles** from the official national-server
+The 2026-10-17 import contributes **552 official aliases for 471 vehicles** from the national-server
 Android client (`com.netease.wotb`), version
 `11.21.0.155_7380044 release/11.21.0 WOTB_Android_Windows_china`. Its `Strings/zh-Hans.yaml`
 contains language code `zh_ne`. Both the official short name and full name are retained when they
@@ -130,9 +131,20 @@ differ; whitespace is trimmed and case-insensitive duplicates (including the can
 name) are omitted. Keep meaningful punctuation in official names: `T-34*` is the national-server
 name of `4657` (Type T-34), distinct from `1` (T-34) and `2849` (T34). Tankopedia treats a literal
 `*` query as a qualifier: only names/aliases containing `*` are scored. For an unstarred query,
-starred aliases do not raise relevance; the vehicle's canonical name still participates normally.
-This preserves `t34` recall while `t34*` selects Type T-34. For example, `6929` (Maus) also has
-`“鼠”式`, while `10113` (Carro 45t) has `45t战车` and `45t战斗战车`.
+a starred alias can fill missing canonical-name recall (for example, `Mk I重型坦克` or `重型坦克`
+still matches `Mk I*重型坦克`). If the canonical name already matches, retain its relevance instead
+of raising it via the starred alias. This preserves normal recall while `t34*` selects Type T-34.
+For example, `6929` (Maus) also has `“鼠”式`, while `10113` (Carro 45t) has `45t战车` and
+`45t战斗战车`.
+
+One reviewed keyboard spelling, `T-22中型` with Latin `T` (U+0054), supplements the official
+`Т-22中型` with Cyrillic `Т` (U+0422). Both map to `19969` (T-22 medium); the official spelling is
+retained. The maintained dataset therefore contains **553 aliases for 471 vehicles**. This is an
+explicit search alias, without a global Cyrillic/Latin normalization rule.
+
+An exact canonical-name query (case-insensitive, trimmed) precedes alias fuzzy matches. For example,
+`AMX M4 45` returns `6977` before `4417` (AMX M4 mle. 54), even if the latter's `AMX M4 54` alias
+gets a higher fuzzy token total. Non-exact matches retain fuzzy relevance and canonical-name ties.
 
 The English reference is `common/tank_ids.json` at commit
 `6766effe57cf396d2b8cbeca8255cb2bfb773eb5`: 738 vehicles, BlitzKit game version

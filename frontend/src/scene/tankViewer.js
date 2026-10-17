@@ -212,13 +212,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function getPlateThickness(section, plateId) {
             // BlitzKit resolveArmor 语义：thickness = armor.thickness[index] ?? 0。
-            // 数据源只有 models.pb 合成的 tankData.armor_model（armor_cache.json 已退役）；
-            // 缺板（如序列化时省略的 0 值板）记 0mm，0 厚度板照常渲染/判定。
+            // 炮塔有两套（stock/top）：唯一权威来源是当前 config 的逐炮塔
+            // tank/{id}.json configs[].turret_plates（models.pb 逐炮塔透出）；
+            // 缺失即 0mm fail-closed，不回退到顶级炮塔摘要 armor_model。
             const am = tankData.armor_model || {};
             const id = String(plateId);
             if (section === 'hull') return am.hull?.plates?.[id] ?? 0;
-            if (section === 'turret') return am.turret?.plates?.[id] ?? 0;
-            if (section === 'gun') return am.gun?.plates?.[id] ?? 0;
+            if (section === 'turret') return currentConfig()?.turret_plates?.[id] ?? 0;
+            if (section === 'gun') return currentConfig()?.gun_plates?.[id] ?? 0;
             if (section === 'chassis') {
                 const ch = am.chassis;
                 if (!ch) return 0;
@@ -226,8 +227,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (plateId === 'rightTrack') return ch.right_track ?? 0;
             }
             if (section === 'gunBarrel') {
-                // 炮管：armor_model 的 'gun' 汇总值优先，缺失回退 models.pb 的 gun_thickness
-                return am.gun?.plates?.['gun'] ?? currentConfig()?.gun_thickness ?? 0;
+                // 炮管外部模块厚度：当前 config 的 gun_thickness 是唯一权威来源（models.pb
+                // 按主炮透出）；armor_model 的 'gun' 是顶级炮塔摘要，不再作为回退。
+                return currentConfig()?.gun_thickness ?? 0;
             }
             return 0;
         }
@@ -1057,7 +1059,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 tagStateClone(od, node);
             });
             externalMeshes.forEach(function(node){
-                const t = node.userData.armorThickness || 20;
+                // 0 mm 是合法的 fail-closed 厚度，只有缺失/undefined 才使用外部模块兜底值
+                const t = node.userData.armorThickness ?? 20;
                 const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
                 const dmat = clipped
                     ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
@@ -1761,14 +1764,25 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             updateHeatmapThickness();
             refreshPenetrationResolution();
         }
+        // 本查看器替换过的装甲材质才可 dispose；GLTF 原始材质可能跨网格共享，不能动。
+        function replaceArmorMaterial(node, material) {
+            if (node.userData.armorMaterialOwned && node.material && typeof node.material.dispose === 'function') {
+                node.material.dispose();
+            }
+            node.material = material;
+            node.userData.armorMaterialOwned = true;
+        }
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
         function applyArmorViewStyle(collision) {
+            // visual 与 armor 两个 GLB 独立完成；collisionMode 可能在 armor 就绪前已开启。
+            // armor 未就绪时直接返回，等 armor 完成回调里的 applyConfig 再刷新材质。
+            if (!armorModel) return;
             if (tankModel) tankModel.visible = !collision;
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.armorSection === 'deco') { node.visible = false; return; }
-                node.material = collision
+                replaceArmorMaterial(node, collision
                     ? new THREE.MeshStandardMaterial({
                         color: thicknessToColor(node.userData.armorThickness), metalness: 0.4, roughness: 0.6,
                         transparent: true, opacity: 0.95, depthWrite: true,
@@ -1776,7 +1790,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     : new THREE.MeshStandardMaterial({
                         color: 0x444444, metalness: 0.3, roughness: 0.8,
                         transparent: true, opacity: 0, depthWrite: false,
-                    });
+                    }));
             });
         }
         function applyPenetrationMode(on) {
@@ -1935,8 +1949,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const cfg = currentConfig();
             const am = tankData.armor_model || {};
             const hullSpaced = new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String));
-            const turretSpaced = new Set((cfg?.turret_spaced ?? am.turret?.spaced ?? []).map(String));
-            const gunSpaced = new Set((cfg?.gun_spaced ?? am.gun?.spaced ?? []).map(String));
+            const turretSpaced = new Set((cfg?.turret_spaced ?? []).map(String));
+            const gunSpaced = new Set((cfg?.gun_spaced ?? []).map(String));
             root.traverse(function(node) {
                 if (!node.isMesh) return;
                 const section = node.userData.armorSectionOrig;
@@ -1946,6 +1960,29 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                (section === 'turret' && turretSpaced.has(plateId)) ||
                                (section === 'gun' && gunSpaced.has(plateId));
                 node.userData.armorSection = spaced ? 'spaced' : (section === 'gun' ? 'turret' : section);
+            });
+        }
+
+        function refreshConfigArmorThickness() {
+            // 逐炮塔/逐主炮 plates 随 config 切换：tagArmorPlates 只在装甲模型加载时跑一次，
+            // 之后切 stock/top 必须按当前 config 重算 turret/gun userData.armorThickness，
+            // 否则热力图/点击信息仍沿用加载时那套 config 的值。
+            // 炮管/炮盾是视觉车体上的外部模块，tagModuleMeshes 在加载时缓存了
+            // gun_thickness；切炮后同样要刷新，否则判定仍用上一门炮的厚度。
+            const gunBarrelThickness = getPlateThickness('gunBarrel', 'gun');
+            moduleMeshes.forEach(function(node) {
+                if (node.userData.armorSection === 'gunBarrel') {
+                    node.userData.armorThickness = gunBarrelThickness;
+                }
+            });
+            if (!armorModel) return;
+            armorModel.traverse(function(node) {
+                if (!node.isMesh) return;
+                const section = node.userData.armorSectionOrig;
+                if (section !== 'turret' && section !== 'gun') return;
+                const plateId = node.userData.armorPlateId;
+                if (!plateId) return;
+                node.userData.armorThickness = getPlateThickness(section, plateId);
             });
         }
 
@@ -2021,8 +2058,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const cfg = currentConfig();
             const spacedBySection = {
                 hull: new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String)),
-                turret: new Set((cfg?.turret_spaced ?? am.turret?.spaced ?? []).map(String)),
-                gun: new Set((cfg?.gun_spaced ?? am.gun?.spaced ?? []).map(String)),
+                turret: new Set((cfg?.turret_spaced ?? []).map(String)),
+                gun: new Set((cfg?.gun_spaced ?? []).map(String)),
             };
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
@@ -2061,7 +2098,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     // 同步当前视图材质（review P2-2）：deco 分支没初始化材质，
                     // 新激活板沿用原 GLTF 材质——普通模式不透明、碰撞模式不上厚度色。
                     // 热力图模式下装甲本体走透明覆盖层（着色在 clone 场景），同普通模式。
-                    node.material = collisionMode
+                    replaceArmorMaterial(node, collisionMode
                         ? new THREE.MeshStandardMaterial({
                             color: thicknessToColor(node.userData.armorThickness),
                             metalness: 0.4, roughness: 0.6,
@@ -2070,7 +2107,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         : new THREE.MeshStandardMaterial({
                             color: 0x444444, metalness: 0.3, roughness: 0.8,
                             transparent: true, opacity: 0, depthWrite: false,
-                        });
+                        }));
                 }
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
@@ -2302,10 +2339,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 armorModel.traverse(function(node) {
                     if (node.isMesh) {
                         if (node.userData.armorSection === 'deco') { node.visible = false; return; }
-                        node.material = new THREE.MeshStandardMaterial({
+                        replaceArmorMaterial(node, new THREE.MeshStandardMaterial({
                             color: 0x444444, metalness: 0.3, roughness: 0.8,
                             transparent: true, opacity: 0, depthWrite: false,
-                        });
+                        }));
                     }
                 });
                 scene.add(armorModel);
@@ -4036,6 +4073,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             applyConfigVisible(tankModel, cfg.gun_index, cfg.turret_index);
             applyArmorConfigVisible(cfg);
             retagSpacedSections();
+            refreshConfigArmorThickness();
             alignArmorModules();
             origMatrices = null;
             armorOrigMatrices = null;
@@ -4056,6 +4094,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // applyArmorConfigVisible 会把可控板还原/重显（覆盖 deco）——visual 回调与
             // 配置切换都经此汇入，漏挂或次序颠倒则初态/切态被覆盖或板集陈旧（review P1-1/P2）
             applyArmorStateToModel();
+            // 碰撞视图的颜色是厚度快照（applyArmorViewStyle 只在按钮切换时写）；切配置后
+            // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
+            if (collisionMode && !penetrationMode && armorModel) applyArmorViewStyle(true);
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
         }
 

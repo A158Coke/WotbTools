@@ -76,8 +76,8 @@ const shotGestures = computed(() => ['rotate', 'zoom', 'pan'].map(action => ({
     action: t(`armor.gestures.${action}`),
     input: t(`armor.gestures.${coarse.value ? 'touch' : 'mouse'}_${action}`),
 })))
-// 手机顶栏的「参数」面板（装备 / 射击方 / 目标 / 配置）：默认收起，不再常驻占掉 3D 视口。
-// 桌面端该按钮由 CSS 隐藏（面板照旧常驻），故默认值不影响桌面布局。
+// 「参数」面板（装备 / 射击方 / 目标 / 配置）：桌面与手机都默认收起，不再常驻占掉 3D 视口；
+// 桌面端复用手机竖屏的顶栏结构，信息卡与设置面板合并为左上角同一张卡。
 const toolsOpen = ref(false)
 // ?clean=1 时场景脚本会隐藏全部常驻面板（截图 / 嵌入用）；顶栏卡片与参数开关一并让位
 const cleanQuery = computed(() => route.query.clean === '1')
@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
                 <div class="stat"><span class="label">{{ $t('armor.type') }}</span><span class="value" id="tank-type"></span></div>
                 <div class="stat"><span class="label">{{ $t('armor.nation') }}</span><span class="value" id="tank-nation"></span></div>
             </div>
-            <!-- 手机顶栏的「参数」开关：展开 / 收起装备、射击方、目标、配置（桌面端 CSS 隐藏，面板常驻） -->
+            <!-- 「参数」开关：展开 / 收起装备、射击方、目标、配置；桌面与手机均默认收起 -->
             <button
                 v-if="!cleanQuery"
                 type="button"
@@ -372,6 +372,69 @@ onBeforeUnmount(() => {
 .armor-view #corner-br { inset-block-end: var(--space-5); inset-inline-end: var(--space-5); align-items: flex-end; flex-direction: column; max-inline-size: 38%; }
 .armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
 .armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }
+/* Desktop mirrors the mobile portrait top bar: tank info and the setup panel are one
+   top-left card, and the setup panel starts collapsed behind the 参数 toggle. */
+@media (width >= 768px) {
+    .armor-view #corner-tl {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: var(--space-1) var(--space-2);
+        inline-size: min(20rem, calc(100% - var(--space-10)));
+        max-block-size: calc(100% - var(--space-10));
+        padding: var(--space-3);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--elevation-2);
+        overflow-y: auto;
+        z-index: var(--pb-z-hud);
+    }
+    .armor-view.is-clean #corner-tl { display: none; }
+    .armor-view.has-back #corner-tl { max-block-size: calc(100% - var(--space-10) - 44px - var(--space-2)); }
+    .armor-view #info-panel {
+        grid-column: 1;
+        grid-row: 1;
+        min-inline-size: 0;
+        max-inline-size: none;
+        max-block-size: none;
+        overflow: visible;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    .armor-view #corner-tl > .armor-tools {
+        grid-column: 2;
+        grid-row: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--input-bg);
+        color: var(--txt);
+    }
+    .armor-view .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+    .armor-view #tank-selectors {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        display: none;
+        inline-size: auto;
+        max-block-size: 54dvh;
+        margin-block-start: var(--space-1);
+        padding: var(--space-3) 0 0;
+        border: 0;
+        border-block-start: 1px solid var(--border);
+        border-radius: 0;
+        background: none;
+        box-shadow: none;
+    }
+    .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
+}
 .armor-view .ctrl-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; font: var(--type-caption); }
 .armor-view .ctrl-row > * { min-inline-size: 0; }
 .armor-view .ctrl-row label { color: var(--muted); }
@@ -438,16 +501,7 @@ onBeforeUnmount(() => {
 .armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
 .armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
-@media (width >= 768px) {
-    .armor-view.is-shot #corner-tl { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); max-inline-size: min(var(--column-panel-width), 52%); }
-    .armor-view.is-shot .armor-tools { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
-    .armor-view.is-shot .armor-tools[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
-    .armor-view.is-shot #tank-selectors { display: none; position: absolute; inset-block-start: calc(100% + var(--space-2)); inset-inline-start: 0; inline-size: 100%; max-block-size: 52dvh; }
-    .armor-view.is-shot .armor-stage.is-tools-open #tank-selectors { display: block; }
-}
 @media (768px <= width < 1200px) {
-    .armor-view #corner-tl { flex-direction: column; gap: var(--space-2); }
-    .armor-view #info-panel { inline-size: 17rem; padding: var(--space-3); }
     .armor-view #tank-selectors { max-block-size: 38dvh; }
 }
 @media (width < 768px) {

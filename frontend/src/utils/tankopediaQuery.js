@@ -105,11 +105,14 @@ function tankSearchScore(tank, query) {
   // 国服 T-34* 是 Type T-34 的正式名称，星号是车型限定，不能作为标点丢掉。
   const starredQuery = query.includes('*')
   const name = tank.name || ''
-  let score = !starredQuery || name.includes('*') ? tankFuzzyScore(name, query) : 0
+  const canonicalScore = !starredQuery || name.includes('*') ? tankFuzzyScore(name, query) : 0
+  let score = canonicalScore
   for (const value of tank.aliases || []) {
     const alias = String(value || '').trim()
-    // 带星查询只比较带星字段；裸查询跳过星号别名，仍可用 canonical 名命中该车。
-    if (alias.includes('*') !== starredQuery) continue
+    const starredAlias = alias.includes('*')
+    if (starredQuery && !starredAlias) continue
+    // 无星查询已命中正式名时保持其相关度；未命中时仍让 Mk I*重型坦克等别名补召回。
+    if (!starredQuery && starredAlias && canonicalScore > 0) continue
     const aliasScore = tankFuzzyScore(alias, query)
     if (aliasScore > score) score = aliasScore
   }
@@ -118,7 +121,7 @@ function tankSearchScore(tank, query) {
 
 /**
  * 列表筛选 + 排序：tier / nation / type 精确匹配，q 走模糊打分（正式车名 + alias）。
- * 有搜索词时按相关度排序（与旧实现一致），否则按 sort。
+ * 有搜索词时精确正式车名优先，其后按相关度及正式车名排序；否则按 sort。
  */
 export function selectTanks(tanks, state = {}) {
   const base = tanks.filter(tank =>
@@ -129,9 +132,14 @@ export function selectTanks(tanks, state = {}) {
   const query = (state.q || '').trim().toLowerCase()
   if (query) {
     return base
-      .map(tank => ({ tank, score: tankSearchScore(tank, query) }))
+      .map(tank => ({
+        tank,
+        score: tankSearchScore(tank, query),
+        exactCanonical: (tank.name || '').trim().toLowerCase() === query,
+      }))
       .filter(entry => entry.score > 0)
-      .sort((a, b) => b.score - a.score || byName(a.tank, b.tank))
+      .sort((a, b) => Number(b.exactCanonical) - Number(a.exactCanonical)
+        || b.score - a.score || byName(a.tank, b.tank))
       .map(entry => entry.tank)
   }
   return base.slice().sort(COMPARATORS[state.sort] || byName)
