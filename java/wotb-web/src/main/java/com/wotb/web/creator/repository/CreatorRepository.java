@@ -8,10 +8,18 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
 public interface CreatorRepository extends JpaRepository<Creator, Long> {
+    /** Transaction-only catalog mutex: two-int namespace WOTB (0x574f5442), creator catalog 1.
+     * Separate from the single-bigint replay-file session locks; released on commit or rollback. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    @Query(value = "select 1 from pg_advisory_xact_lock(1464816706, 1)", nativeQuery = true)
+    int lockCatalog();
+
     @EntityGraph(attributePaths = "categoryIds")
     @Query("select c from Creator c where (:categoryId is null or :categoryId member of c.categoryIds) order by c.stars desc, c.createdAt desc, c.id desc")
     List<Creator> publicList(@Param("categoryId") Long categoryId);

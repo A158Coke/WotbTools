@@ -8,7 +8,6 @@ import com.wotb.web.creator.mapper.CreatorMapper;
 import com.wotb.web.creator.repository.CreatorCategoryRepository;
 import com.wotb.web.creator.repository.CreatorLevelRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
-import com.wotb.web.creator.repository.CreatorCatalogLockRepository;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.springframework.stereotype.Service;
@@ -40,17 +39,16 @@ public class CreatorService {
     private final CreatorRepository creators;
     private final CreatorCategoryRepository categories;
     private final CreatorLevelRepository levels;
-    private final CreatorCatalogLockRepository catalog;
     private final CreatorMapper mapper;
     private final CreatorAvatarService avatars;
     private final TransactionTemplate writes;
 
     public CreatorService(final CreatorRepository creators, final CreatorCategoryRepository categories,
-                          final CreatorLevelRepository levels, final CreatorCatalogLockRepository catalog,
+                          final CreatorLevelRepository levels,
                           final CreatorMapper mapper, final CreatorAvatarService avatars,
                           final PlatformTransactionManager transactions) {
         this.creators = creators; this.categories = categories; this.levels = levels;
-        this.catalog = catalog; this.mapper = mapper; this.avatars = avatars;
+        this.mapper = mapper; this.avatars = avatars;
         this.writes = new TransactionTemplate(transactions);
     }
     @Transactional(readOnly = true)
@@ -90,7 +88,7 @@ public class CreatorService {
         // The committed, site-owned upload remains discoverable if the following catalog transaction fails.
         final String uploaded = "REPLACE".equals(request.avatarAction()) ? avatars.upload(avatar) : null;
         return writes.execute(tx -> {
-            lockCatalog();
+            creators.lockCatalog();
             final Creator creator = id == null ? new Creator() : locked(id);
             if (id != null) { requireVersion(creator, request.expectedVersion()); }
             final boolean duplicate = id == null ? creators.existsByBilibiliUid(uid) : creators.existsByBilibiliUidAndIdNot(uid, id);
@@ -115,36 +113,35 @@ public class CreatorService {
     }
     public void delete(final long id, final long expectedVersion) {
         if (id <= 0 || expectedVersion < 0) { throw invalid(); }
-        lockCatalog();
+        creators.lockCatalog();
         final Creator creator = locked(id);
         requireVersion(creator, expectedVersion);
         final String previous = creator.avatarId;
         creators.delete(creator); creators.flush(); avatars.detach(previous);
     }
     public CreatorDtos.Category addCategory(final CreatorDtos.DictionaryRequest request) {
-        lockCatalog();
+        creators.lockCatalog();
         final CreatorCategory category = new CreatorCategory(); category.name = name(request == null ? null : request.name());
         return mapper.category(categories.saveAndFlush(category));
     }
     public void deleteCategory(final long id) {
-        lockCatalog();
+        creators.lockCatalog();
         final CreatorCategory category = categories.findById(id).orElseThrow(CreatorService::notFound);
         if (creators.wouldOrphanCreator(id)) { throw error(ApiErrorCode.CREATOR_CATEGORY_IN_USE); }
         for (final Creator creator : creators.findCategoryMembersLocked(id)) { creator.version++; }
         creators.removeCategoryLinks(id); categories.delete(category); categories.flush();
     }
     public CreatorDtos.Level addLevel(final CreatorDtos.DictionaryRequest request) {
-        lockCatalog();
+        creators.lockCatalog();
         final CreatorLevel level = new CreatorLevel(); level.name = name(request == null ? null : request.name());
         return mapper.level(levels.saveAndFlush(level));
     }
     public void deleteLevel(final long id) {
-        lockCatalog();
+        creators.lockCatalog();
         final CreatorLevel level = levels.findById(id).orElseThrow(CreatorService::notFound);
         if (creators.existsByLevelId(id)) { throw error(ApiErrorCode.CREATOR_LEVEL_IN_USE); }
         levels.delete(level); levels.flush();
     }
-    private void lockCatalog() { Objects.requireNonNull(catalog.findExclusive(), "Creator catalog lock is missing"); }
     private static void requireVersion(final Creator creator, final long expectedVersion) {
         if (creator.version != expectedVersion) { throw error(ApiErrorCode.CREATOR_CONFIG_CONFLICT); }
     }
