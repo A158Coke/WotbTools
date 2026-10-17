@@ -25,6 +25,7 @@ const AGENT_FILES = {
   'Replay3DPane.vue': '../components/Replay3DPane.vue',
   'ReplayShotsPane.vue': '../components/ReplayShotsPane.vue',
   'AgentTankopedia.vue': '../components/AgentTankopedia.vue',
+  'TankCatalogMenu.vue': '../components/TankCatalogMenu.vue',
   'AgentArmorView.vue': '../components/AgentArmorView.vue',
   'tankViewer.js': '../scene/tankViewer.js',
 }
@@ -164,6 +165,7 @@ describe('Agent 视觉面配色契约', () => {
   describe('C) 组件样式块不留裸色（除白名单的非主题色）', () => {
     const scanned = {
       'AgentArmorView.vue': { file: '../components/AgentArmorView.vue' },
+      'TankCatalogMenu.vue': { file: '../components/TankCatalogMenu.vue' },
       'Replay3DPane.vue': { file: '../components/Replay3DPane.vue' },
       'ReplayShotsPane.vue': { file: '../components/ReplayShotsPane.vue' },
     }
@@ -195,7 +197,7 @@ describe('Agent 视觉面配色契约', () => {
 
   describe('E) 金币 / 收藏车边框 precedence：异常双 true 也不依赖 CSS 规则顺序', () => {
     it('收藏车边框规则带 `:not(.is-premium)`——premium > collector 由选择器确定', () => {
-      const css = read(AGENT_FILES['AgentTankopedia.vue'])
+      const css = read(AGENT_FILES['TankCatalogMenu.vue'])
       expect(css).toContain('.tp-card.is-collector:not(.is-premium)')
       // 上游数据两者互斥（tanks.pb field13：1=金币 2=收藏），但 consumer 不依赖上游保证：
       // 双 true 的行必须确定性地落回金币（警告色）边框。
