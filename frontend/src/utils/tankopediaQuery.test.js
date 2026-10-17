@@ -206,15 +206,22 @@ describe('国服名称快照 — 默认搜索接线', () => {
     expect(selectTanks(rows, { q: name })[0]).toMatchObject({ id, name })
   })
 
-  it.each(['T-34', 't34'])('搜索 %s 时保留 Type T-34 的原有子串相关度', q => {
+  describe('T34、T-34 与国服 T-34* 是不同车辆', () => {
     const rows = normalizeTankCache({
       1: { name: 'T-34' },
       2849: { name: 'T34' },
       5489: { name: 'Y5 T-34' },
       4657: { name: 'Type T-34' },
     })
-    // T-34* 去标点后等于 t34，会让 Type T-34 越过原本更相关的 Y5 T-34。
-    expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([1, 2849, 5489, 4657])
+
+    it.each(['T-34', 't34'])('搜索 %s 时保留不带星号查询的原有相关度', q => {
+      expect(selectTanks(rows, { q }).map(tank => tank.id)).toEqual([1, 2849, 5489, 4657])
+    })
+
+    it.each(['T34*', 'T-34*', 't34*'])('搜索 %s 只命中国服星号车型', q => {
+      expect(selectTanks(rows, { q }).map(tank => ({ id: tank.id, name: tank.name })))
+        .toEqual([{ id: 4657, name: 'Type T-34' }])
+    })
   })
 
   it('缺少国服名称的车辆正常保留英文搜索', () => {
