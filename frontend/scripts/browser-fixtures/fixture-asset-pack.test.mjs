@@ -117,11 +117,25 @@ describe('夹具 tank JSON / 名册契约', () => {
         expect(am.chassis.left_track).toBeGreaterThan(0)
         expect(am.chassis.right_track).toBeGreaterThan(0)
         expect(am.gun.plates.gun).toBeGreaterThan(0)   // 炮管外部模块厚度
+        // 每个 config 都必须自带完整的逐炮塔/逐主炮表；缺一个就会在门禁里静默退化成 0mm
+        expect(FIXTURE_TANK_DATA.configs.length).toBeGreaterThanOrEqual(2)
+        for (const cfg of FIXTURE_TANK_DATA.configs) {
+            for (const id of ids.turret) expect(cfg.turret_plates[id]).toBeGreaterThan(0)
+            for (const id of ids.gun) expect(cfg.gun_plates[id]).toBeGreaterThan(0)
+            expect(cfg.gun_thickness).toBeGreaterThan(0)
+        }
+    })
+    it('stock/top 的逐配置厚度必须不同（门禁切换配置后才能区分缓存/新值）', () => {
+        const [stock, top] = FIXTURE_TANK_DATA.configs
+        expect(stock.turret_plates[1]).not.toBe(top.turret_plates[1])
+        expect(stock.turret_plates[2]).not.toBe(top.turret_plates[2])
+        expect(stock.gun_plates[1]).not.toBe(top.gun_plates[1])
+        expect(stock.gun_thickness).not.toBe(top.gun_thickness)
     })
     it('间隙甲屏幕板在 spaced 列表内（门禁的「仅屏幕射线」场景依赖该分类）', () => {
         const am = FIXTURE_TANK_DATA.armor_model
         expect(am.turret.spaced).toContain(2)                  // retag 的兜底来源
-        expect(FIXTURE_TANK_DATA.configs[0].turret_spaced).toContain(2)   // retag 的首选来源
+        for (const cfg of FIXTURE_TANK_DATA.configs) expect(cfg.turret_spaced).toContain(2)
         expect(am.turret.plates[2]).toBeGreaterThan(0)
     })
     it('模型 URL 与资产路由同形（/glb/<数字 id>/…；射击复现路径替换依赖数字 id）', () => {
