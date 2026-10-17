@@ -17,7 +17,7 @@
 | `keycloak-wargaming-provider` | Keycloak 26 自定义 Identity Provider：Wargaming.net 登录 SPI（Provider ID `wargaming`，region 配置 ASIA/EU/NA → 官方 host 白名单：认证 `api.worldoftanks.*/wot/auth/`、账号 `api.wotblitz.*/wotb/account/`；ASIA/EU/NA 三个实例） |
 | `deploy/test-keycloak-tofu.sh` | 独立 disposable PostgreSQL + Keycloak + local OpenTofu state 的 Keycloak realm 集成 smoke |
 
-> 车辆库 `common/tankopedia-tier{7,8,9,10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
+> 车辆库 `common/tankopedia-tier{1..10}.json` 与地图名映射 `common/map_names.json`（仓库根的共享目录）都会在 `wotb-core` 构建时自动复制到 classpath，无需在模块内再放副本。
 
 联赛直播回放目录由 `wotb-web` 的 tournament 域内 `Broadcast*` 独立管理，公开 API 为
 `/api/tournament-broadcasts/**`，管理 API 为 `/api/admin/tournament-broadcasts/**`（真实
@@ -249,4 +249,4 @@ wotb:
 ## 维护注意
 
 - 列定义在客户端 `frontend/src/replay-local/compute/columns.ts` 集中管理（移植自已删除的 Java `Columns`），批次计算的 Preview 结果携带列定义，表格不硬编码业务字段。
-- 车辆库单一来源在 `common/tankopedia-tier{7,8,9,10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 4 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点与每车可用物资/消耗品/装备）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。
+- 车辆库单一来源在 `common/tankopedia-tier{1..10}.json`（由 `common/python/update_tankopedia.py` 从 blitzkit 游戏客户端数据同步，按等级拆分 10 个文件，`vehicles` 数组全英文格式，含手工 `extraInfo` 每车知识点；物资/消耗品/装备 reviewed 建模仍限 7–10 级）；`wotb-core` 构建时自动复制到 classpath，勿在模块内再放副本。

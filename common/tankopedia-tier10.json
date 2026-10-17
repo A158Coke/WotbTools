@@ -1,16 +1,16 @@
 {
   "meta": {
     "source": "blitzkit production definitions",
-    "source_game_version": "11.20.0.887_7344903",
+    "source_game_version": "11.21.0.1235_7376187",
     "source_hashes": {
-      "game": "a582d25841b85450cd65be23677d6319fc3c966cf1c1c3c52b035fe441481471",
-      "tanks": "334003ee11c0eeea563f490b12b912f4ef38572170ed24f55baf9715697e6427",
-      "consumables": "74f816ab2eb9ac420f7034cb0735ac5cf2913126d34acf2a22e26196f616f7c1",
+      "game": "de8bfa5396f7d5fe4d4337efba52f2640719ec00bda97a5f9f5463f981cbade0",
+      "tanks": "c8a085787a76a4fcdb5f31c5d6a3e42720ba937d62c1653b2ee1e0778f03243e",
+      "consumables": "f992d2dd53184cfb314ae0e45d71cdec947ffd2bd1752bf3bd867bbe2c3d30a0",
       "provisions": "34b575b05651762f2ffa1965bea7794fa65d499228ecb1a3d276692024183d61",
       "equipment": "bc09afd2a2f50500bc2e620fd5d057eaf1f89d2ecaa499926f5790ea2ba35546"
     },
     "tier": 10,
-    "generated_at": "2026-09-08T13:11:18.285575+00:00",
+    "generated_at": "2026-10-15T14:38:18.589806+00:00",
     "count": 85
   },
   "vehicles": [

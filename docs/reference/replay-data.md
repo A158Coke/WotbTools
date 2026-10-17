@@ -626,3 +626,12 @@ EntityLeave / damage threshold 自行计算。
 ## 客户端环线展示与导出
 
 单场玩家列 `gun_marks` 来自上游结果的同名字段，保存该玩家在此车辆已获得的环数（整数 0～3，缺失或非法为未知）。数据表车型旁、手机卡片、单场选手／车辆详情、2D／3D 回放名册与车型标签共用专用标志；中文 Excel 的“环线”列导出原始数值，未知留空。用户自定义列保持原偏好，独立环线列可在列选择器开启。环数不在多车多场汇总中求平均，不以单场战绩或军阶推导，不显示虚假的当前精确百分位。当前仅是界面标志，未在炮管上添加贴花。
+
+## 全等级车型资料
+
+数据页、导出及客户端回放按车型 ID 查询 `common/tankopedia-tier{1..10}.json`。资料覆盖
+1–10 级，与评分规则和十级专属功能的资格范围分离；未知车型仍显示 `#<id>`，不猜车名。
+同一份 tier 文件由前端异步加载并由 Maven 打包给 Java Tankopedia。自动同步由 `update-tankopedia.yml` 调用
+`common/python/sync_tankopedia_snapshot.py`，复用 `update_tankopedia.py` 生成十份文件后提交，
+保留 extraInfo、装备 preset 与完整性校验。1–6 级新增基础资料（名称、等级、车种、国家、HP、炮与机动参数）；物资/装备的 reviewed 建模与覆盖门禁仍限定原有 7–10 级，低级资料不输出未建模的 allowedEquipment/allowedConsumables/allowedProvision。
+快照同步入口复用 `blitzkit_snapshot` 的连续两轮稳定读取，并记录游戏版本及五份来源定义的 SHA-256，保留每份 tier 数据的来源可追溯性。

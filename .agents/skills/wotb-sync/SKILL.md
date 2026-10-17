@@ -115,7 +115,7 @@ description: >
 
 ## 配方 G：更新车辆库
 
-更新走 `.github/workflows/update-tankopedia.yml`（手动触发，blitzkit 数据源，自动提交 4 个文件）或本地 `cd common/python && python update_tankopedia.py`（需联网）。产物为 `common/tankopedia-tier{7,8,9,10}.json`（**不是** `tankopedia.json`）；写入前有完整性门禁。Java 构建会自动复制到 classpath，无需手动同步。详见 `common/AGENTS.md`。
+更新走 `.github/workflows/update-tankopedia.yml`（手动触发，blitzkit 数据源，自动提交 10 个文件）或本地 `cd common/python && python update_tankopedia.py`（需联网）。产物为 `common/tankopedia-tier{1..10}.json`（**不是** `tankopedia.json`）；写入前有完整性门禁。Java 构建会自动复制到 classpath，无需手动同步。详见 `common/AGENTS.md`。
 
 ---
 
