@@ -1,17 +1,17 @@
 {
   "meta": {
     "source": "blitzkit production definitions",
-    "source_game_version": "11.20.0.887_7344903",
+    "source_game_version": "11.21.0.1235_7376187",
     "source_hashes": {
-      "game": "a582d25841b85450cd65be23677d6319fc3c966cf1c1c3c52b035fe441481471",
-      "tanks": "334003ee11c0eeea563f490b12b912f4ef38572170ed24f55baf9715697e6427",
-      "consumables": "74f816ab2eb9ac420f7034cb0735ac5cf2913126d34acf2a22e26196f616f7c1",
+      "game": "de8bfa5396f7d5fe4d4337efba52f2640719ec00bda97a5f9f5463f981cbade0",
+      "tanks": "c8a085787a76a4fcdb5f31c5d6a3e42720ba937d62c1653b2ee1e0778f03243e",
+      "consumables": "f992d2dd53184cfb314ae0e45d71cdec947ffd2bd1752bf3bd867bbe2c3d30a0",
       "provisions": "34b575b05651762f2ffa1965bea7794fa65d499228ecb1a3d276692024183d61",
       "equipment": "bc09afd2a2f50500bc2e620fd5d057eaf1f89d2ecaa499926f5790ea2ba35546"
     },
     "tier": 9,
-    "generated_at": "2026-09-08T13:11:18.285575+00:00",
-    "count": 104
+    "generated_at": "2026-10-15T14:38:18.589806+00:00",
+    "count": 106
   },
   "vehicles": [
     {
@@ -8320,7 +8320,7 @@
       "forwardSpeed": 35,
       "reverseSpeed": 13,
       "turretRotationSpeed": 23.0,
-      "hullRotationSpeed": 28.0,
+      "hullRotationSpeed": 25.0,
       "powerToWeightRatio": 20.2,
       "guns": [
         {
@@ -8378,6 +8378,80 @@
         "IMPROVED_CONTROL",
         "IMPROVED_MODULES",
         "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "Lorraine 120 Alby",
+      "id": 23617,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "France",
+      "hp": 1500,
+      "forwardSpeed": 50,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 25.0,
+      "hullRotationSpeed": 31.0,
+      "powerToWeightRatio": 22.5,
+      "guns": [
+        {
+          "gunId": 30017,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 263
+            },
+            {
+              "type": "apcr",
+              "damage": 265,
+              "penetration": 335
+            },
+            {
+              "type": "he",
+              "damage": 370,
+              "penetration": 67
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "IMPROVED_VENTILATION",
         "REFINED_GUN",
         "SUPERCHARGER",
         "TOOLBOX",
@@ -9890,6 +9964,81 @@
         }
       ],
       "alphaDamage": 400,
+      "allowedProvision": [
+        "IMPROVED_FUEL",
+        "LARGE_FOOD",
+        "PROTECTIVE_KIT",
+        "SMALL_FOOD",
+        "STANDARD_FUEL"
+      ],
+      "allowedConsumables": [
+        "ADRENALINE",
+        "AUTOMATIC_FIRE_EXTINGUISHER",
+        "ENGINE_POWER_BOOST",
+        "FIRST_AID_KIT",
+        "MULTI_PURPOSE_RESTORATION_PACK",
+        "REDUCED_ENGINE_POWER_BOOST",
+        "REPAIR_KIT"
+      ],
+      "allowedEquipment": [
+        "CALIBRATED_SHELLS",
+        "CAMOUFLAGE_NET",
+        "CONSUMABLE_DELIVERY_SYSTEM",
+        "DEFENSE_SYSTEM",
+        "ENGINE_ACCELERATOR",
+        "ENHANCED_ARMOR",
+        "ENHANCED_GUN_LAYING_DRIVE",
+        "ENHANCED_TRACKS",
+        "GUN_RAMMER",
+        "HIGH_END_CONSUMABLES",
+        "IMPROVED_ASSEMBLY",
+        "IMPROVED_CONTROL",
+        "IMPROVED_MODULES",
+        "IMPROVED_OPTICS",
+        "REFINED_GUN",
+        "SUPERCHARGER",
+        "TOOLBOX",
+        "VERTICAL_STABILIZER"
+      ],
+      "extraInfo": ""
+    },
+    {
+      "name": "XM57",
+      "id": 30753,
+      "tier": 9,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 1700,
+      "forwardSpeed": 24,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 12.0,
+      "hullRotationSpeed": 14.0,
+      "powerToWeightRatio": 21.4,
+      "guns": [
+        {
+          "gunId": 273953,
+          "isDefault": true,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 265
+            },
+            {
+              "type": "heat",
+              "damage": 545,
+              "penetration": 335
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 80
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 640,
       "allowedProvision": [
         "IMPROVED_FUEL",
         "LARGE_FOOD",

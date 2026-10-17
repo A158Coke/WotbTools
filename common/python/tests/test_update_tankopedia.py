@@ -500,7 +500,13 @@ class IntegrityGateTest(unittest.TestCase):
 
     def test_tier_out_of_range_fails(self):
         with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_OUT_OF_RANGE"):
-            ut.validate_integrity({"1": self.vehicle(1, tier=6)}, {})
+            ut.validate_integrity({"1": self.vehicle(1, tier=11)}, {})
+
+    def test_all_supported_tiers_pass(self):
+        for tier in range(1, 11):
+            self.assertTrue(ut.validate_integrity({"1": self.vehicle(1, tier=tier)}, {}))
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_OUT_OF_RANGE"):
+            ut.validate_integrity({"1": self.vehicle(1, tier=0)}, {})
 
     def test_total_count_drop_fails(self):
         old = {str(i): self.vehicle(i) for i in range(1, 101)}
@@ -602,9 +608,8 @@ class MainPathTest(unittest.TestCase):
                 "IMPROVED_SUSPENSION", "IMPROVED_VERTICAL_STABILIZER",
             ])
 
-    def test_main_filters_out_of_scope_tiers_before_integrity_gate(self):
-        # 回归：真实 tanks.pb 含 1-10 级车辆，业务范围过滤必须在 validate_integrity 之前，
-        # 否则 tier 5 T-34 会触发 TANKOPEDIA_TIER_OUT_OF_RANGE 导致 workflow 失败。
+    def test_main_includes_lower_tiers_and_preserves_high_tier_data(self):
+        # 全等级车型资料：低级车不得被丢弃；原有高等级炮伤与知识点仍须保留。
         tanks_pb = root(
             tank_data(1, 5, 1, 496, turret(124,
                 gun(100, [shell("ap", 140, 85)])),
@@ -667,7 +672,7 @@ class MainPathTest(unittest.TestCase):
                 rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
 
             self.assertEqual(rc, 0)
-            # 4 个 tier 文件 + 完整车辆名册
+            # 10 个 tier 文件 + 完整车辆名册
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
                 sorted([*ut.TIER_FILES.values(), ut.ROSTER_FILE]),
@@ -677,10 +682,14 @@ class MainPathTest(unittest.TestCase):
                 with open(os.path.join(new_dir, name), encoding="utf-8") as f:
                     files[name] = json.load(f)
             all_ids = {v["id"] for payload in files.values() for v in payload["vehicles"]}
-            # tier 5 T-34 不进入任何最终 JSON，且不触发 TANKOPEDIA_TIER_OUT_OF_RANGE
-            self.assertNotIn(1, all_ids)
-            # 但完整名册覆盖全部 tier：被 tier 过滤掉的 T-34 必须在名册里
-            #（alias 校验据此覆盖全量车辆，而不是只有 tier 7-10）
+            # tier 5 T-34 与高等级车辆一起进入最终资料
+            self.assertIn(1, all_ids)
+            lower = files["tankopedia-tier5.json"]["vehicles"][0]
+            self.assertEqual(lower["name"], "T-34")
+            self.assertEqual(lower["hp"], 620)
+            self.assertNotIn("allowedEquipment", lower)
+            self.assertNotIn("allowedConsumables", lower)
+            self.assertNotIn("_equipmentPreset", lower)
             with open(os.path.join(new_dir, ut.ROSTER_FILE), encoding="utf-8") as f:
                 roster = json.load(f)
             self.assertEqual(roster["vehicles"]["1"], "T-34")
@@ -701,10 +710,10 @@ class MainPathTest(unittest.TestCase):
 
 
 class RosterTest(unittest.TestCase):
-    """完整车辆名册 tank_ids.json：仓库内唯一覆盖全部 tier 的 tank_id ↔ 名字来源。
+    """完整车辆名册 tank_ids.json：沿用 alias 校验的全等级 tank_id ↔ 名字契约。
 
     消费方是 common/tank_aliases.json 的 validator 与其维护流程（按 id 配 alias、按名字查 id）。
-    tier 文件只覆盖业务 tier 7-10，坦克百科页面展示的却是全 tier 的资产包 tank_cache.json。
+    tier 文件与名册均覆盖全等级；名册只用于离线名称/ID 校验。
     """
 
     def payload(self, **kwargs):
@@ -751,10 +760,10 @@ class RosterTest(unittest.TestCase):
         self.assertTrue(ut.validate_roster(roster(85), old))
         self.assertTrue(ut.validate_roster(roster(120), old))
 
-    def test_committed_roster_agrees_with_tier_files_and_exceeds_them(self):
+    def test_committed_roster_covers_tier_files_with_matching_names(self):
         """已入库名册：tier 文件里的每辆车都必须同名出现在名册中（方向性断言）。
 
-        反向不成立且不应断言——名册覆盖 tier 1-6，且可能来自更新的快照（新车先出现在名册里）。
+        反向不成立且不应断言——名册可能来自更新的快照（新车先出现在名册里）。
         """
         roster = ut.load_existing_roster(ut.REPO_COMMON_DIR)["vehicles"]
         tier_ids = set()
@@ -766,8 +775,8 @@ class RosterTest(unittest.TestCase):
                         roster.get(str(vehicle["id"])), vehicle["name"],
                         "roster name drifted for tank_id=%s" % vehicle["id"],
                     )
-        # 名册不是 tier 文件的副本：必须包含业务 tier 之外的车辆
-        self.assertGreater(len(roster), len(tier_ids))
+        # 名册可以与全等级 tier 文件相等，也可来自更新的快照。
+        self.assertGreaterEqual(len(roster), len(tier_ids))
 
 
 if __name__ == "__main__":

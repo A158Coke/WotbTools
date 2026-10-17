@@ -3,6 +3,7 @@ package com.wotb.core.ai;
 import com.wotb.core.ai.TankNameCorrector.Replacement;
 import com.wotb.core.ai.TankNameCorrector.Result;
 import com.wotb.core.ai.TankNameCorrector.RosterEntry;
+import com.wotb.core.ref.Tankopedia;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -31,6 +32,88 @@ class TankNameCorrectorTest {
 
     private static List<String> reasons(final Result result) {
         return result.replacements().stream().map(Replacement::reason).toList();
+    }
+
+    @Test
+    void gridCoordinatesBesideNicknamesAreNotVehicleMentions() {
+        assertTrue(Tankopedia.load().names().containsAll(List.of("D1", "D2", "B1")));
+        final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "Kranvagn"));
+        final List<String> texts = List.of(
+                "D1（Alice）正在防守", "D2 (Alice) remains clear", "B1（Alice）正在防守",
+                "Alice（D1）正在防守", "Alice 的 d2 区域", "B1 remains clear");
+        final List<Result> results = TankNameCorrector.correctAll(texts, roster);
+        for (int index = 0; index < texts.size(); index++) {
+            assertEquals(texts.get(index), results.get(index).text());
+            assertTrue(results.get(index).replacements().isEmpty());
+        }
+    }
+
+    @Test
+    void commonWordsAreNotVehicleMentionsEvenBesideRosterNicknames() {
+        final List<String> words = List.of("agent", "wind", "fury", "explorer", "ranger", "is",
+                "scavenger", "spike", "thunder", "pirate", "nightmare", "hellcat", "outcast");
+        final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "Kranvagn"),
+                new RosterEntry("Bob", "Agent"));
+        for (final String word : words) {
+            assertTrue(Tankopedia.load().names().stream().anyMatch(word::equalsIgnoreCase));
+            for (final String token : List.of(word, word.toUpperCase(java.util.Locale.ROOT))) {
+                final List<String> texts = List.of("the " + token + " pushed", token + " (Alice)",
+                        "Alice（" + token + "）", "Alice 的 " + token, token + " (Bob)");
+                final List<Result> results = TankNameCorrector.correctAll(texts, roster);
+                for (int index = 0; index < texts.size(); index++) {
+                    assertEquals(texts.get(index), results.get(index).text());
+                    assertTrue(results.get(index).replacements().isEmpty());
+                }
+            }
+        }
+        final Result english = TankNameCorrector.correct("D2 (Alice) is clear. B1 is clear.", roster);
+        assertEquals("D2 (Alice) is clear. B1 is clear.", english.text());
+        assertTrue(english.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastStandaloneProseIsUnchanged() {
+        final Result result = TankNameCorrector.correct("the outcast pushed",
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals("the outcast pushed", result.text());
+        assertTrue(result.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastBesideNicknameIsNotCorrected() {
+        final Result result = TankNameCorrector.correct("outcast (Alice)",
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals("outcast (Alice)", result.text());
+        assertTrue(result.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastDoesNotEstablishPackagePropagation() {
+        final List<String> texts = List.of("outcast (Alice)", "the outcast pushed");
+        final List<Result> results = TankNameCorrector.correctAll(texts,
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals(texts, results.stream().map(Result::text).toList());
+        assertTrue(results.stream().allMatch(result -> result.replacements().isEmpty()));
+    }
+
+    @Test
+    void outcastRemainsAvailableByTankIdAndAsRosterCorrectionTarget() {
+        final String name = Tankopedia.load().info(16257L).name();
+        assertEquals("Outcast", name);
+        assertTrue(Tankopedia.load().names().contains(name));
+        final Result result = TankNameCorrector.correct("T-34 (Alice)",
+                List.of(new RosterEntry("Alice", name)));
+        assertEquals("Outcast (Alice)", result.text());
+        assertEquals(List.of("CORRECTED"), reasons(result));
+    }
+
+    @Test
+    void unambiguousLowerTierTankNamesStillCorrectAndNormalize() {
+        final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "KV-2"));
+        final Result result = TankNameCorrector.correct("T-34（Alice）前压，kv-2 支援。", roster);
+        assertEquals("KV-2（Alice）前压，KV-2 支援。", result.text());
+        assertTrue(reasons(result).contains("CORRECTED"));
+        assertTrue(reasons(result).contains("NORMALIZED"));
     }
 
     @Test
