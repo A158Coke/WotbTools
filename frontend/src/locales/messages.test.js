@@ -4,6 +4,12 @@ import { messages, mergeLocaleMessages } from './messages.js'
 import { API_ERROR_CODES } from '../api/generated/api-error-codes.js'
 
 describe('locale message composition', () => {
+  it('provides 3D toolbar disclosure labels in every locale', () => {
+    for (const locale of ['zh', 'en', 'ru']) {
+      expect(messages[locale].agentReplay.collapse_toolbar).toBeTruthy()
+      expect(messages[locale].agentReplay.expand_toolbar).toBeTruthy()
+    }
+  })
   it('contains creator forms, manual ratings, assessment and canonical errors in all locales', () => {
     for (const locale of ['zh', 'en', 'ru']) {
       for (const key of ['title', 'configTitle', 'uid', 'assessmentDisclaimer', 'starsHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()

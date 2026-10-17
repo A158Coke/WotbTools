@@ -232,6 +232,8 @@
       }
     },
     "agentReplay": {
+      "collapse_toolbar": "收起工具栏",
+      "expand_toolbar": "展开工具栏",
       "title": "3D 回放",
       "roster": "阵容",
       "start": "开始",
@@ -1011,6 +1013,8 @@
       }
     },
     "agentReplay": {
+      "collapse_toolbar": "Collapse toolbar",
+      "expand_toolbar": "Expand toolbar",
       "title": "3D replay",
       "roster": "Rosters",
       "start": "Start",
@@ -1522,10 +1526,10 @@
       "notFound": "This selection no longer exists. Returned to the nearest available parent.",
       "permissionLost": "Administrator access changed. Unsaved maintenance was cancelled.",
       "servers": {
-        "CN": "China",
-        "ASIA": "Asia",
-        "NA": "North America",
-        "EU": "Europe",
+        "CN": "CN Server",
+        "ASIA": "APAC Server",
+        "NA": "NA Server",
+        "EU": "EU Server",
         "LESTA": "Lesta"
       },
       "categories": {
@@ -1790,6 +1794,8 @@
       }
     },
     "agentReplay": {
+      "collapse_toolbar": "Свернуть панель инструментов",
+      "expand_toolbar": "Развернуть панель инструментов",
       "title": "3D-повтор",
       "roster": "Составы",
       "start": "Начать",

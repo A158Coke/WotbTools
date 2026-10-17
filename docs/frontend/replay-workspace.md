@@ -123,6 +123,8 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 
 ### Playback fluid geometry and controls
 
+3D 回放下方工具栏右上角支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。
+
 2D/3D share the primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`.
 Speed options open on demand; all six controls keep their intrinsic touch targets. HUD, Stage and
 Transport form one compact center stack. The 2D Stage stays square; the 3D canvas fills the available
