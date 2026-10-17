@@ -2251,6 +2251,7 @@ async function runOfflineWorkspaceScenario(env) {
   lastPage = page
   const businessAttempts = []
   const healthProbes = []
+  const publicCategoryProbes = []
   const interceptionErrors = []
   let closing = false
   await page.enable()
@@ -2268,7 +2269,7 @@ async function runOfflineWorkspaceScenario(env) {
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
     // Foreground activity is intentionally reported when connectivity recovers.
-    // Telemetry and read-only deployment capability discovery are accepted only online;
+    // Telemetry and read-only capability/content discovery are accepted only online;
     // offline telemetry and all automatic business submissions still fail below.
     const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
       && params.request.method === 'POST'
@@ -2282,7 +2283,17 @@ async function runOfflineWorkspaceScenario(env) {
       await env.chrome.client.send('Fetch.fulfillRequest', {
         requestId: params.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] })).toString('base64'),
+        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1'] })).toString('base64'),
+      }, sessionId)
+      return
+    }
+    const publicCategories = url.origin === env.origin && url.pathname === '/api/creators/categories' && params.request.method === 'GET'
+    if (publicCategories && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      publicCategoryProbes.push(params.request.url)
+      await env.chrome.client.send('Fetch.fulfillRequest', {
+        requestId: params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+        body: Buffer.from(JSON.stringify([{ id: 1, name: 'Creator fixture' }])).toString('base64'),
       }, sessionId)
       return
     }
@@ -2349,6 +2360,7 @@ async function runOfflineWorkspaceScenario(env) {
   check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
   check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
   check(failures, healthProbes.length === 1, `reconnection must make exactly one read-only capability probe: ${healthProbes.length}`)
+  check(failures, publicCategoryProbes.length === 1, `reconnection must make exactly one read-only public category probe: ${publicCategoryProbes.length}`)
   check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
   closing = true
   await env.chrome.client.send('Target.closeTarget', { targetId })
