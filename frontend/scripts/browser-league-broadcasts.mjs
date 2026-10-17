@@ -38,6 +38,7 @@ function recount(season) {
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
+  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, capabilities: ['creators-v1'] }); return }
   if (!path.startsWith(publicBase) && !path.startsWith(adminBase)) { next(); return }
   try {
     const admin = path.startsWith(adminBase), base = admin ? adminBase : publicBase
@@ -103,6 +104,8 @@ const scenarios = ['showcase', 'classic'].flatMap(profile => [
   { name: `${profile}-tablet`, profile, width: 1024, height: 768, touch: true, locale: 'zh' },
   { name: `${profile}-mobile`, profile, width: 390, height: 844, touch: true, locale: 'ru' },
   { name: `${profile}-production-mobile`, profile, width: 360, height: 844, touch: true, locale: 'ru', productionHome: true, geometryOnly: true },
+  { name: `${profile}-wide`, profile, width: 2560, height: 1440, touch: false, locale: 'zh', geometryOnly: true },
+  { name: `${profile}-short-phone`, profile, width: 667, height: 375, touch: true, locale: 'en', geometryOnly: true },
   ...[360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-boundary-${width}`, profile, width, height: 900, touch: width < 768, locale: 'en', geometryOnly: true })),
 ])
 let failures = 0
@@ -127,6 +130,34 @@ async function geometry(page) {
     assert.ok(tab.width >= 44 && tab.height >= 44, 'primary tab remains at least 44px wide and tall')
   }
 }
+async function serverGeometry(page, scenario, count) {
+  await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-server-card").length', value => value === count)
+  await page.waitForValue('document.querySelector("[data-testid=broadcast-servers]")?.style.getPropertyValue("--broadcast-grid-top")', Boolean)
+  const layout = await page.evaluate(`(() => {
+    const grid = document.querySelector('[data-testid=broadcast-servers]'), style = getComputedStyle(grid)
+    return { cards: [...grid.querySelectorAll('.broadcast-server-card')].map(el => { const r=el.getBoundingClientRect(); return { x:r.x, y:r.y+scrollY, width:r.width, height:r.height, bottom:r.bottom+scrollY, icon:!!el.querySelector('.broadcast-server-emblem svg'), code:el.querySelector('.broadcast-server-code').textContent }; }),
+      gap:parseFloat(style.rowGap), top:parseFloat(style.getPropertyValue('--broadcast-grid-top')), tail:parseFloat(style.getPropertyValue('--broadcast-grid-tail')),
+      tabs:document.querySelector('[data-testid=app-tab-bar]')?.getBoundingClientRect().height ?? 0, viewport:innerHeight }
+  })()`)
+  const [first, second, third, fourth, fifth] = layout.cards
+  assert.ok(layout.cards.every(card => card.height >= 200 && card.icon && servers.includes(card.code)), 'large cards include region code and Lucide icon')
+  if (scenario.width >= 768) {
+    assert.ok(Math.abs(first.y - second.y) < 1 && second.x > first.x, 'desktop and tablet use two columns')
+    assert.ok(third.y > first.y && Math.abs(third.y - fourth.y) < 1, 'four cards form two rows')
+    if (fifth) assert.ok(fifth.y > fourth.y, 'fifth server follows on the next row')
+  } else {
+    assert.ok(layout.cards.every(card => Math.abs(card.x - first.x) < 1), 'phone is one column')
+    assert.ok(second.y > first.y, 'phone cards stack vertically')
+  }
+  const expected = Math.max(200, (layout.viewport - layout.top - layout.tail - layout.gap) / 2)
+  assert.ok(Math.abs(first.height - expected) < 2, `cards fill two available rows: ${JSON.stringify(layout)}`)
+  if (expected > 200 && count === 5) {
+    const secondRowEnd = scenario.width < 768 ? second.bottom : fourth.bottom
+    assert.ok(Math.abs(secondRowEnd - (layout.viewport - layout.tabs)) < 2, 'first two rows fill the viewport without reserving offscreen footer space')
+  }
+  await geometry(page)
+}
+
 try {
   assert.ok(selectedScenarios.length, `no scenario matches ${nameFilter}`)
   for (const scenario of selectedScenarios) {
@@ -149,14 +180,22 @@ try {
       if (scenario.width < 768) {
         assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
       }
-      const cardHeights = await page.evaluate('[...document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-choice")].map(el=>el.getBoundingClientRect().height)')
-      assert.ok(cardHeights.every(height => height >= 160), 'server cards use the larger presentation')
-      await geometry(page)
+      await serverGeometry(page, scenario, 5)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
-        const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
+        const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId)
         await writeFile(join(screenshots, `${scenario.name}-servers.png`), Buffer.from(image.data, 'base64'))
       }
+      if (scenario.name.endsWith('-desktop')) {
+        await page.emulate({ ...scenario, width: 1280, height: 720 })
+        await serverGeometry(page, { ...scenario, width: 1280, height: 720 }, 5)
+        await page.emulate(scenario)
+        await serverGeometry(page, scenario, 5)
+      }
+      await tap(page, '[data-testid=broadcast-server-LESTA]', scenario.touch)
+      await page.waitForValue('!!document.querySelector("[data-testid=broadcast-seasons]")', Boolean)
+      assert.equal(await page.evaluate('new URLSearchParams(location.search).get("lbServer")'), 'LESTA', 'fifth server remains reachable by scrolling')
+      await tap(page, '[data-testid=broadcast-back]', scenario.touch)
       await tap(page, '[data-testid=broadcast-server-CN]', scenario.touch)
       await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
       await tap(page, '[data-testid=broadcast-category-20]', scenario.touch)
