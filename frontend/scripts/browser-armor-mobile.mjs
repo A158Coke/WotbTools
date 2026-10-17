@@ -853,14 +853,30 @@ async function runStaggeredLoadScenario(env, scenario) {
   check(failures, clicked === 'true', `${scenario.name}: 碰撞模式未在 armor 加载前开启（aria-pressed=${clicked}）`)
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled,
     { timeout: 30000, label: 'staggered visual/armor load ready' })
-  const state = await page.evaluate(`(() => ({
-    load: window.__LOAD__,
-    collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
-  }))()`)
+  const state = await page.evaluate(`(() => {
+    const debug = window.__DBG__
+    let armorSample = null
+    if (debug && debug.scene) {
+      debug.scene.traverse(node => {
+        if (armorSample || !node.isMesh || !node.visible || node.userData.armorSection === 'deco') return
+        if (/_armor_/.test(node.name || '')) armorSample = node
+      })
+    }
+    return {
+      load: window.__LOAD__,
+      collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
+      tankVisible: debug && debug.tankModel ? debug.tankModel.visible : null,
+      armorOpacity: armorSample && armorSample.material ? armorSample.material.opacity : null,
+    }
+  })()`)
   check(failures, state.load === 'ok:' + FIXTURE_TANK_ID,
     `${scenario.name}: visual 先完成时加载未收敛（__LOAD__=${state.load}）`)
   check(failures, state.collision === 'true',
     `${scenario.name}: armor 就绪后碰撞模式丢失（aria-pressed=${state.collision}）`)
+  check(failures, state.tankVisible === false,
+    `${scenario.name}: armor 就绪后视觉车体仍可见（tankVisible=${state.tankVisible}）`)
+  check(failures, state.armorOpacity != null && state.armorOpacity >= 0.9,
+    `${scenario.name}: armor 材质未切到碰撞态（opacity=${state.armorOpacity}）`)
   check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
