@@ -22,7 +22,7 @@ const draft = ref({ title: '', url: '', matchDate: '', time: '', dayNumber: 1, g
 const files = ref<File[]>([]), preview = ref(''), removeCover = ref(false), invalid = ref(false)
 const inputOffset = ref<number>(BROADCAST_ADMIN_OFFSET)
 let originalInstant: string | null = null
-let matchDateEdited = false
+const matchDateEdited = ref(false)
 let expectedVersion = 0
 const points = computed(() => props.category.type === 'POINTS')
 const grouped = computed(() => props.category.type === 'SEMI_FINALS'
@@ -49,7 +49,7 @@ watch(() => props.open, open => {
   const value = props.replay
   inputOffset.value = BROADCAST_ADMIN_OFFSET
   originalInstant = value?.startsAt ?? null
-  matchDateEdited = false
+  matchDateEdited.value = false
   draft.value = {
     title: value?.title ?? '', url: value?.url ?? '', ...broadcastInputFields(value?.matchDate ?? '', originalInstant), dayNumber: value?.dayNumber ?? 1,
     groupNumber: value?.groupNumber ?? '', bracket: value?.bracket ?? 'DEFAULT',
@@ -57,7 +57,7 @@ watch(() => props.open, open => {
   }
 }, { immediate: true })
 watch(() => draft.value.time, (time, previous) => {
-  if (!time && previous && originalInstant && !matchDateEdited && props.replay) {
+  if (!time && previous && originalInstant && !matchDateEdited.value && props.replay) {
     draft.value.matchDate = props.replay.matchDate
   }
 })
