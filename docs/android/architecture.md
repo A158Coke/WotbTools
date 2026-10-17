@@ -48,6 +48,8 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
 普通文件选择（replay 与图片共用）：`ACTION_GET_CONTENT` 返回的 URI 仅由 Native 持有。
 `FilePickerCache` 在后台通过 `ContentResolver` 完整复制到独立 `cache/file-picker/<uuid>/<safe-original-name>`，
 全部成功后才在 UI 线程把 `file://` URI 交给 Gecko；DOM `File` 保留原文件名和扩展名。
+保留 provider 的修改时间，缺失时由文件内容哈希生成稳定时间，避免重复选择被前端误判为新文件；TTL 单独按缓存目录创建时间计算。
+复制按实际字节执行 Native 安全上限：单文件 25 MiB（复用 external ingress ceiling）、整批 256 MiB、128 文件；不信任 provider SIZE，超过时整批清理。前端仍负责 20 MiB／200 MiB／100 文件与图片规则。
 缺少显示名时只按 provider MIME 推导扩展名，不猜测 replay。任意文件复制失败、空文件或请求已失效时
 整批拒绝并清理；复制期间保持 chooser busy，晚到结果不会完成新请求。
 成功 backing file 不在 confirm 后或打开下一次 picker 时删除；启动及下次复制前清理达到 1 小时的缓存，
