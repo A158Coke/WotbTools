@@ -45,14 +45,17 @@ const broadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtur
 if (!broadcastCategoryViewValidator(broadcast)) {
   throw new Error(JSON.stringify(broadcastCategoryViewValidator.errors, null, 2))
 }
-// These are independent business dimensions: days and points-group labels must
+// These are independent business dimensions: days and points-group numbers must
 // not inherit the bounds on round numbers or knockout group numbers.
 for (const mutate of [
   value => { delete value.season.startDate },
   value => { value.season.server = 'UNKNOWN' },
   value => { value.nodes[0].roundNumber = 6 },
   value => { value.nodes[0].replays[0].dayNumber = 0 },
-  value => { value.nodes[0].replays[0].groupNumber = 5 },
+  value => { value.nodes[0].replays[0].groupNumber = 0 },
+  value => { value.nodes[0].replays[0].groupNumber = 1.5 },
+  value => { value.nodes[0].replays[0].groupNumber = 2147483648 },
+  value => { value.nodes[0].replays[0].groupLabel = 'Group A' },
   value => { value.nodes[0].replays[0].matchDate = '2026-02-30' },
   value => { value.nodes[0].replays[0].teams.push('Fifth team') },
 ]) {
@@ -61,3 +64,21 @@ for (const mutate of [
   if (broadcastCategoryViewValidator(invalid)) throw new Error('Invalid broadcast fixture unexpectedly accepted')
 }
 console.log('Broadcast directory contract fixture and boundary cases: OK')
+
+// Frozen v1 wire remains closed: extra translated fields would break installed APKs.
+const legacyBroadcastCategoryViewValidator = ajv.compile(document.components.schemas.LegacyBroadcastCategoryView)
+const legacyBroadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-category-v1.json', import.meta.url), 'utf8'))
+if (!legacyBroadcastCategoryViewValidator(legacyBroadcast)) {
+  throw new Error(JSON.stringify(legacyBroadcastCategoryViewValidator.errors, null, 2))
+}
+for (const mutate of [
+  value => { value.season.nameZh = '新增字段' },
+  value => { delete value.season.name },
+  value => { delete value.nodes[0].replays[0].groupLabel },
+  value => { value.nodes[0].replays[0].groupNumber = 5 },
+]) {
+  const invalid = structuredClone(legacyBroadcast)
+  mutate(invalid)
+  if (legacyBroadcastCategoryViewValidator(invalid)) throw new Error('Legacy APK shape unexpectedly changed')
+}
+console.log('Legacy broadcast APK wire fixture and closed-field boundaries: OK')

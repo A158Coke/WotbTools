@@ -59,3 +59,13 @@ export function formatDateTimeMinute(value, minYear = null) {
   const pad = number => String(number).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
+
+/**
+ * @param {{ nameZh: string, nameEn: string, nameRu?: string | null }} season
+ * @param {string} locale
+ */
+export function broadcastSeasonName(season, locale) {
+  if (locale.startsWith('zh')) return season.nameZh
+  if (locale.startsWith('ru')) return season.nameRu || season.nameEn
+  return season.nameEn
+}

@@ -7,11 +7,11 @@ const state = vi.hoisted(() => ({ auth: null as any, fetch: vi.fn(), online: tru
 vi.mock('../composables/useAuth.js', async original => ({ ...await original<object>(), useAuth: () => state.auth }))
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ requireFeature: () => state.online }) }))
 vi.mock('../utils/http.js', async original => ({ ...await original<object>(), apiFetch: state.fetch }))
-import { broadcastCoverUrl, createBroadcastNode, getBroadcastCategory, listBroadcasts, saveBroadcastReplay, validateBroadcast } from './league-broadcasts.js'
+import { broadcastCoverUrl, createBroadcastNode, deleteBroadcastResource, getBroadcastCategory, listBroadcasts, saveBroadcastReplay, validateBroadcast } from './league-broadcasts.js'
 
-const season = { id: 1, server: 'CN' as const, year: 2026, name: 'Summer', startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
+const season = { id: 1, server: 'CN' as const, year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
 const detail: BroadcastCategoryView = { season, category: { id: 2, seasonId: 1, type: 'POINTS' }, nodes: [{ id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }], coverUploadAvailable: true }
-const payload: BroadcastReplaySave = { expectedVersion: 0, title: 'Final', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7, groupLabel: 'Group A', groupNumber: null, bracket: null, teams: ['A', 'B'], perspective: 'POV', coverAction: 'KEEP' }
+const payload: BroadcastReplaySave = { expectedVersion: 0, title: 'Final', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['A', 'B'], perspective: 'POV', coverAction: 'KEEP' }
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
 beforeEach(() => {
   vi.clearAllMocks(); state.online = true; state.epoch = 0
@@ -26,14 +26,25 @@ describe('broadcast HTTP boundary', () => {
     expect(validateBroadcast('BroadcastCategoryView', detail).nodes[0].roundNumber).toBe(1)
     expect(() => validateBroadcast('BroadcastCategoryView', { ...detail, nodes: undefined })).toThrow('INVALID_RESPONSE')
     expect(() => validateBroadcast('BroadcastSeason', { ...season, server: 'RU' })).toThrow('INVALID_RESPONSE')
-    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 5 })).toThrow('INVALID_RESPONSE')
+    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 5 })).not.toThrow()
+    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 0 })).toThrow('INVALID_RESPONSE')
     expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, dayNumber: 7 })).not.toThrow()
   })
   it('uses public reads without waiting for authentication or attaching a bearer', async () => {
     await getBroadcastCategory(2)
     expect(state.auth.ensureToken).not.toHaveBeenCalled()
-    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/categories/2')
+    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/v2/categories/2')
     expect(state.fetch.mock.calls[0][1].headers).toEqual({})
+  })
+  it('uses v2 for the catalogue and versioned deletion while retaining shared cover URLs', async () => {
+    state.fetch.mockResolvedValueOnce(response({ servers: ['CN', 'ASIA', 'NA', 'EU', 'LESTA'], seasons: [season], coverUploadAvailable: true }))
+    await listBroadcasts('CN')
+    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/v2?server=CN')
+    state.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await deleteBroadcastResource('replays', 40, 4)
+    expect(state.fetch.mock.calls[1][0]).toBe('/api/admin/tournament-broadcasts/v2/replays/40?expectedVersion=4&confirm=true')
+    expect(state.fetch.mock.calls[1][1].method).toBe('DELETE')
+    expect(broadcastCoverUrl('493199ec-c421-456b-a865-dcd69ef4c62a')).toBe('/api/tournament-broadcasts/covers/493199ec-c421-456b-a865-dcd69ef4c62a')
   })
   it('does not send a mutation for points-only roles or a failed token refresh', async () => {
     state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
@@ -56,7 +67,7 @@ describe('broadcast HTTP boundary', () => {
     const file = new File(['png'], 'cover.png', { type: 'image/png' })
     await saveBroadcastReplay({ nodeId: 3 }, { ...payload, coverAction: 'REPLACE' }, file)
     const [url, options] = state.fetch.mock.calls[0]
-    expect(url).toBe('/api/admin/tournament-broadcasts/nodes/3/replays')
+    expect(url).toBe('/api/admin/tournament-broadcasts/v2/nodes/3/replays')
     expect(options.headers).toEqual({ Authorization: 'Bearer access-token' })
     expect(options.body.get('payload').type).toBe('application/json')
     expect(options.body.get('cover').name).toBe('cover.png')
