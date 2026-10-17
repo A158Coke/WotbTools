@@ -199,11 +199,39 @@ export const FIXTURE_TANK_DATA = {
     gun_index: 0,
     gun_thickness: 60,
     gun_origin: GUN_ORIGIN,
+    // 逐配置装甲：stock/top 两套值必须不同，门禁才能验证切换后不是旧缓存
+    turret_plates: { 1: 150, 2: 12 },
+    gun_plates: { 1: 200 },
     turret_spaced: [2],
     gun_spaced: [],
     // 俯仰限位（aimFromDrag 无 null 保护：真实配置必带；lower=-max/upper=-min 口径）
     pitch_limits: { min: -8, max: 20, transition: 20 },
     // 不提供 yaw_limits：走 turret_traverse_left/right(=180) 的全向回卷分支
+    caliber: 105,
+    shells: [{
+      type: 'ap',
+      name: 'AP',
+      penetration: 200,
+      damage: 320,
+      module_damage: 100,
+      explosion_radius: 0,
+      caliber: 105,
+      normalization: 5,
+      ricochet: 70,
+    }],
+    shell_global_ids: [1],
+  }, {
+    label: 'Fixture 122mm',
+    turret_name: 'Fixture Top Turret',
+    turret_index: 0,
+    gun_index: 0,
+    gun_thickness: 80,
+    gun_origin: GUN_ORIGIN,
+    turret_plates: { 1: 250, 2: 30 },
+    gun_plates: { 1: 300 },
+    turret_spaced: [2],
+    gun_spaced: [],
+    pitch_limits: { min: -8, max: 20, transition: 20 },
     caliber: 105,
     shells: [{
       type: 'ap',
@@ -239,10 +267,11 @@ const CORS_HEADERS = {
 /**
  * 起一个极小的资产源（127.0.0.1 随机端口，CORS 放行）。路由与真实资产包同形：
  * /data/tank_cache.json、/tank/{id}.json、/glb/{id}/{armor,visual}.glb。
- * @param {{tankCache?: typeof FIXTURE_TANK_CACHE}} [options] 仅覆盖本实例名册，用于大列表布局回归。
+ * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {armor?: number, visual?: number}}} [options]
+ *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制两个 GLB 的完成顺序（加载竞态回归）。
  * @returns {Promise<{server: import('node:http').Server, origin: string, close: () => Promise<void>, requests: string[]}>}
  */
-export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE } = {}) {
+export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {} } = {}) {
   const requests = []
   const routes = new Map([
     ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(tankCache)) }],
@@ -258,14 +287,21 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE } =
       res.end()
       return
     }
-    const route = routes.get(path)
-    if (!route) {
-      res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end(`fixture asset pack: no such asset ${path}（可用：${[...routes.keys()].join(', ')}）`)
-      return
+    const send = () => {
+      if (res.writableEnded) return
+      const route = routes.get(path)
+      if (!route) {
+        res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
+        res.end(`fixture asset pack: no such asset ${path}（可用：${[...routes.keys()].join(', ')}）`)
+        return
+      }
+      res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': route.type, 'Content-Length': route.body.length })
+      res.end(route.body)
     }
-    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': route.type, 'Content-Length': route.body.length })
-    res.end(route.body)
+    const delay = path.endsWith('/armor.glb') ? (delays.armor || 0)
+      : path.endsWith('/visual.glb') ? (delays.visual || 0) : 0
+    if (delay > 0) setTimeout(send, delay)
+    else send()
   })
   await new Promise((resolve, reject) => {
     server.once('error', reject)
