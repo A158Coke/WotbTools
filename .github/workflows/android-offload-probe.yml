@@ -50,8 +50,7 @@ jobs:
     # （最需要诊断的正是这种链路）：runner→COS 两次上传 + TX1 侧 900s 拉取 + 1800s 推送 +
     # 3×300s 回读 + 240s 删除，SSH command_timeout 75m 覆盖后者，job 90m 再留出 runner 侧余量。
     timeout-minutes: 90
-    # SSH 到生产主机 + 写公开分发副本 ⇒ 沿用受保护的 tx-production，与 tx-runtime-check 同口径。
-    environment: tx-production
+    # SSH 到生产主机 + 写公开分发副本；凭据直接读取 repository-level Actions secrets / vars。
     # 与 `android-release` 互斥（同一门 Seafile 网盘的写入路径）：并发会让探针数字失真，也会挤占
     # android-release 那条已经贴着 `--max-time 2700` 的上传（run 38898856907 就是这么超时的）。
     # 顶层 `production-maintenance` 队列保留（与部署/备份互斥），这里再加 job 级 `android-release` 组。
@@ -317,7 +316,6 @@ jobs:
             fi
             SIZE_ON_HOST="$(stat -c%s "$TMP")"
             [ "$SIZE_ON_HOST" = "$PROBE_SIZE" ] || { echo "::error::probe size mismatch on host: $SIZE_ON_HOST != $PROBE_SIZE" >&2; exit 1; }
-
             echo "--- (2) TX1 -> Tsinghua drive ---"
             ULINK_RAW="$(curl -fsS -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
               "https://cloud.tsinghua.edu.cn/api2/repos/$REPO_ID/upload-link/?p=$PARENT_DIR&reuse=1")"
