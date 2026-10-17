@@ -27,6 +27,9 @@ public class BroadcastReplay {
     public LocalDate matchDate;
     @Column(name = "day_number", nullable = false)
     public int dayNumber;
+    // Read boundary for pre-v2 labels; v2 transport never exposes this archive.
+    @Column(name = "legacy_group_label", length = 100)
+    public String legacyGroupLabel;
     @Column(name = "group_number")
     public Integer groupNumber;
     @Column(length = 16)

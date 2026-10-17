@@ -6,6 +6,7 @@ import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.tournament.controller.BroadcastAdminController;
 import com.wotb.web.tournament.controller.BroadcastController;
 import com.wotb.web.tournament.dto.BroadcastDtos;
+import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.tournament.service.BroadcastService;
 import org.junit.jupiter.api.AfterEach;
@@ -60,20 +61,52 @@ class BroadcastHttpTest {
     @Test void anonymousReadsAndRealGlobalAdministratorAreTheOnlyAccessPaths() throws Exception {
         final BroadcastService service = context.getBean(BroadcastService.class);
         when(service.index(null)).thenReturn(new BroadcastDtos.Index(List.of("CN","ASIA","NA","EU","LESTA"), List.of(), false));
-        mvc.perform(get("/api/tournament-broadcasts")).andExpect(status().isOk())
+        mvc.perform(get("/api/tournament-broadcasts/v2")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.servers[4]").value("LESTA"));
-        mvc.perform(get("/api/admin/tournament-broadcasts/seasons/1/deletion-preview")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/tournament-broadcasts/v2/seasons/1/deletion-preview")).andExpect(status().isUnauthorized());
         for (final String role : List.of("tournament-admin", "HoF-admin", "wotbtools-user")) {
-            mvc.perform(get("/api/admin/tournament-broadcasts/seasons/1/deletion-preview")
+            mvc.perform(get("/api/admin/tournament-broadcasts/v2/seasons/1/deletion-preview")
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role)))).andExpect(status().isForbidden());
         }
         when(service.seasonDeletionPreview(1)).thenReturn(new BroadcastDtos.DeletionPreview(1, 2, 3, 4));
-        mvc.perform(get("/api/admin/tournament-broadcasts/seasons/1/deletion-preview")
+        mvc.perform(get("/api/admin/tournament-broadcasts/v2/seasons/1/deletion-preview")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.expectedVersion").value(2));
-        mvc.perform(post("/api/tournament-broadcasts").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+        mvc.perform(post("/api/tournament-broadcasts/v2").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/api/tournament-broadcasts/seasons/1/deletion-preview")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/tournament-broadcasts/v2/seasons/1/deletion-preview")).andExpect(status().isUnauthorized());
+    }
+    @Test void originalWireAndWriteRequestsRemainClosedAndAvailableToOldClients() throws Exception {
+        final BroadcastService service = context.getBean(BroadcastService.class);
+        final BroadcastLegacyDtos.Season season = new BroadcastLegacyDtos.Season(1,"LESTA",2026,"Summer",null,Instant.parse("2026-10-16T00:00:00Z"),2,1,1);
+        final BroadcastLegacyDtos.Replay replay = new BroadcastLegacyDtos.Replay(4,3,"Title","https://example.org/replay",LocalDate.of(2026,10,16),9,"42",null,null,List.of("A","B"),"POV",null);
+        final BroadcastLegacyDtos.CategoryView category = new BroadcastLegacyDtos.CategoryView(season,new BroadcastDtos.Category(2,1,"POINTS"),List.of(new BroadcastLegacyDtos.Node(3,2,1,null,List.of(replay))),false);
+        when(service.legacyIndex(null)).thenReturn(new BroadcastLegacyDtos.Index(List.of("CN","ASIA","NA","EU","LESTA"),List.of(season),false));
+        when(service.legacySeason(1)).thenReturn(new BroadcastLegacyDtos.SeasonView(season,List.of(),false)); when(service.legacyCategory(2)).thenReturn(category);
+        mvc.perform(get("/api/tournament-broadcasts")).andExpect(status().isOk()).andExpect(jsonPath("$.seasons[0].name").value("Summer"));
+        mvc.perform(get("/api/tournament-broadcasts/seasons/1")).andExpect(status().isOk()).andExpect(jsonPath("$.season.name").value("Summer"));
+        final String json = mvc.perform(get("/api/tournament-broadcasts/categories/2")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.season.name").value("Summer")).andExpect(jsonPath("$.season.nameZh").doesNotExist())
+                .andExpect(jsonPath("$.nodes[0].replays[0].groupLabel").value("42"))
+                .andExpect(jsonPath("$.nodes[0].replays[0].groupNumber").value(nullValue())).andReturn().getResponse().getContentAsString();
+        final var tree = new JsonMapper().readTree(json);
+        assertEquals(9,tree.get("season").properties().size()); assertEquals(12,tree.get("nodes").get(0).get("replays").get(0).properties().size());
+        final String create = "{\"server\":\"CN\",\"year\":2026,\"name\":\"Summer\",\"startDate\":null}";
+        mvc.perform(post("/api/admin/tournament-broadcasts/seasons").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+                .contentType("application/json").content(create)).andExpect(status().isOk());
+        final ArgumentCaptor<BroadcastLegacyDtos.SeasonCreate> created = ArgumentCaptor.forClass(BroadcastLegacyDtos.SeasonCreate.class);
+        verify(service).legacyCreateSeason(created.capture()); assertEquals("Summer",created.getValue().name());
+        final String payload = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupLabel\":\"42\",\"groupNumber\":null,\"bracket\":null,\"teams\":[\"A\",\"B\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"}";
+        mvc.perform(multipart("/api/admin/tournament-broadcasts/nodes/3/replays")
+                .file(new MockMultipartFile("payload","","application/json",payload.getBytes(StandardCharsets.UTF_8)))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        final ArgumentCaptor<BroadcastLegacyDtos.ReplaySave> saved = ArgumentCaptor.forClass(BroadcastLegacyDtos.ReplaySave.class);
+        verify(service).legacyCreateReplay(eq(3L),saved.capture(),eq(null)); assertEquals("42",saved.getValue().groupLabel());
+        for (final String prefix : List.of("/api/admin/tournament-broadcasts","/api/admin/tournament-broadcasts/v2")) {
+            mvc.perform(get(prefix+"/seasons/1/deletion-preview")).andExpect(status().isUnauthorized());
+            mvc.perform(get(prefix+"/seasons/1/deletion-preview").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                    .andExpect(status().isForbidden());
+        }
     }
     @Test void categorySerializationPreservesExplicitNullsDatesAndOrderedTeams() throws Exception {
         final BroadcastDtos.Replay replay = new BroadcastDtos.Replay(4, 3, "Title", "https://example.org/replay",
@@ -81,7 +114,7 @@ class BroadcastHttpTest {
         final BroadcastDtos.CategoryView view = new BroadcastDtos.CategoryView(season(),
                 new BroadcastDtos.Category(2, 1, "POINTS"), List.of(new BroadcastDtos.Node(3,2,5,null,List.of(replay))), false);
         when(context.getBean(BroadcastService.class).category(2)).thenReturn(view);
-        final String json = mvc.perform(get("/api/tournament-broadcasts/categories/2")).andExpect(status().isOk())
+        final String json = mvc.perform(get("/api/tournament-broadcasts/v2/categories/2")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.season.nameZh").value("夏季赛"))
                 .andExpect(jsonPath("$.season.nameEn").value("Summer"))
                 .andExpect(jsonPath("$.season.nameRu").value(nullValue()))
@@ -104,7 +137,7 @@ class BroadcastHttpTest {
                 "{\"server\":\"CN\",\"year\":null,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}",
                 "{\"server\":\"CN\",\"year\":2026.5,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}",
                 "{\"server\":\"CN\",\"year\":\"2026\",\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}")) {
-            mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+            mvc.perform(post("/api/admin/tournament-broadcasts/v2/seasons")
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))).contentType("application/json").content(body))
                     .andExpect(status().isBadRequest());
         }
@@ -115,17 +148,17 @@ class BroadcastHttpTest {
         for (final String missing : List.of("nameZh", "nameEn")) {
             final var tree = new JsonMapper().readTree(body);
             ((tools.jackson.databind.node.ObjectNode) tree).remove(missing);
-            mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+            mvc.perform(post("/api/admin/tournament-broadcasts/v2/seasons")
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
                     .contentType("application/json").content(tree.toString())).andExpect(status().isBadRequest());
             final var update = (tools.jackson.databind.node.ObjectNode) tree;
             update.remove("server"); update.put("expectedVersion",2);
-            mvc.perform(put("/api/admin/tournament-broadcasts/seasons/1")
+            mvc.perform(put("/api/admin/tournament-broadcasts/v2/seasons/1")
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
                     .contentType("application/json").content(update.toString())).andExpect(status().isBadRequest());
         }
         verifyNoInteractions(context.getBean(BroadcastService.class));
-        mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+        mvc.perform(post("/api/admin/tournament-broadcasts/v2/seasons")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
                 .contentType("application/json").content(body)).andExpect(status().isOk());
         final ArgumentCaptor<BroadcastDtos.SeasonCreate> request = ArgumentCaptor.forClass(BroadcastDtos.SeasonCreate.class);
@@ -136,25 +169,25 @@ class BroadcastHttpTest {
     @Test void multipartJsonUsesTheSameStrictDtoForCreateAndUpdate() throws Exception {
         final String json = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupNumber\":12,\"bracket\":null,\"teams\":[\"Followed\",\"Other\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"}";
         final MockMultipartFile payload = new MockMultipartFile("payload", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
-        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/tournament-broadcasts/replays/4").file(payload)
+        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/tournament-broadcasts/v2/replays/4").file(payload)
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
         final ArgumentCaptor<BroadcastDtos.ReplaySave> request = ArgumentCaptor.forClass(BroadcastDtos.ReplaySave.class);
         verify(context.getBean(BroadcastService.class)).updateReplay(eq(4L), request.capture(), eq(null));
         assertEquals(LocalDate.of(2026,10,16), request.getValue().matchDate()); assertEquals(9, request.getValue().dayNumber()); assertEquals(12, request.getValue().groupNumber());
         final MockMultipartFile malformed = new MockMultipartFile("payload", "", "application/json",
                 json.replace("\"dayNumber\":9", "\"dayNumber\":2.5").getBytes(StandardCharsets.UTF_8));
-        mvc.perform(multipart("/api/admin/tournament-broadcasts/nodes/3/replays").file(malformed)
+        mvc.perform(multipart("/api/admin/tournament-broadcasts/v2/nodes/3/replays").file(malformed)
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isBadRequest());
     }
     @Test void deleteRequiresExplicitConfirmationAndVersionAndReturnsNoContent() throws Exception {
-        mvc.perform(delete("/api/admin/tournament-broadcasts/replays/4?expectedVersion=2")
+        mvc.perform(delete("/api/admin/tournament-broadcasts/v2/replays/4?expectedVersion=2")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isBadRequest());
-        mvc.perform(delete("/api/admin/tournament-broadcasts/replays/4?expectedVersion=2&confirm=true")
+        mvc.perform(delete("/api/admin/tournament-broadcasts/v2/replays/4?expectedVersion=2&confirm=true")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isNoContent());
         verify(context.getBean(BroadcastService.class)).deleteReplay(4,2,true);
     }
     @Test void unknownRequestFieldsCannotOverrideInheritedIdentityOrNodeConfiguration() throws Exception {
-        mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+        mvc.perform(post("/api/admin/tournament-broadcasts/v2/seasons")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
                 .contentType("application/json")
                 .content("{\"server\":\"CN\",\"year\":2026,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null,\"serverOverride\":\"LESTA\"}"))
@@ -163,7 +196,7 @@ class BroadcastHttpTest {
         for (final String extra : List.of("\"groupLabel\":\"A\"", "\"nodeId\":42", "\"roundNumber\":4", "\"format\":\"KNOCKOUT\"")) {
             final MockMultipartFile payload = new MockMultipartFile("payload","","application/json",
                     (replay + "," + extra + "}").getBytes(StandardCharsets.UTF_8));
-            mvc.perform(multipart("/api/admin/tournament-broadcasts/nodes/3/replays").file(payload)
+            mvc.perform(multipart("/api/admin/tournament-broadcasts/v2/nodes/3/replays").file(payload)
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isBadRequest());
         }
         verifyNoInteractions(context.getBean(BroadcastService.class));
