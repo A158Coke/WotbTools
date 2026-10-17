@@ -177,7 +177,6 @@ jobs:
             *) exit "$status" ;;
           esac
 
-
   smoke:
     needs: [build]
     # 被更新的 main 取代（published=false）时跳过：不部署旧镜像，也不判红
@@ -225,7 +224,6 @@ jobs:
     if: needs.build.outputs.latest_published == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    environment: tx-production
     steps:
       - uses: actions/checkout@v5
         with:

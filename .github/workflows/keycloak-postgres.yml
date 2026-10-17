@@ -30,7 +30,6 @@ jobs:
     name: Reconcile Keycloak PostgreSQL on TX
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: tx-production
     steps:
       - uses: actions/checkout@v5
         with:
