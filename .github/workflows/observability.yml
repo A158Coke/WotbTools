@@ -9,7 +9,9 @@ on:
       - deploy/docker-compose.prod.yml
       - deploy/grafana-api-request.sh
       - deploy/validate-alloy-config.sh
+      - deploy/tofu-local-state-backup.sh
       - deploy/verify-observability.sh
+      - deploy/list-image-tags.sh
       - deploy/observability/**
       - infra/tofu/grafana/**
   workflow_dispatch:
@@ -21,6 +23,7 @@ on:
         default: all
         options:
           - all
+          - dev-metrics-exporter
           - node-exporter
           - prometheus
           - loki
@@ -42,12 +45,17 @@ env:
     deploy/docker-compose.prod.yml
     deploy/grafana-api-request.sh
     deploy/validate-alloy-config.sh
+    deploy/tofu-local-state-backup.sh
     deploy/verify-observability.sh
+    deploy/list-image-tags.sh
     deploy/observability/**
     infra/tofu/grafana/**
 
 jobs:
   observability:
+    permissions:
+      contents: read
+      packages: write
     name: Reconcile Yecao observability and Grafana dashboards
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -78,6 +86,7 @@ jobs:
           declare -A selected=()
           add_service() { selected["$1"]=1; }
           add_all() {
+            add_service dev-metrics-exporter
             add_service node-exporter
             add_service prometheus
             add_service loki
@@ -87,7 +96,7 @@ jobs:
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
             case "$SCOPE" in
               all) add_all ;;
-              node-exporter|prometheus|loki|alloy|grafana) add_service "$SCOPE" ;;
+              dev-metrics-exporter|node-exporter|prometheus|loki|alloy|grafana) add_service "$SCOPE" ;;
               *) echo "Unsupported Observability scope: $SCOPE" >&2; exit 1 ;;
             esac
           else
@@ -100,6 +109,7 @@ jobs:
                   .github/workflows/observability.yml|deploy/deploy.sh|deploy/docker-compose.prod.yml|deploy/validate-alloy-config.sh|deploy/verify-observability.sh)
                     add_all
                     ;;
+                  deploy/observability/dev-metrics/*|deploy/list-image-tags.sh) add_service dev-metrics-exporter ;;
                   deploy/observability/prometheus/*) add_service prometheus ;;
                   deploy/observability/loki/*) add_service loki ;;
                   deploy/observability/alloy/*) add_service alloy ;;
@@ -114,7 +124,7 @@ jobs:
           fi
 
           runtime_services=''
-          for service in node-exporter prometheus loki alloy grafana; do
+          for service in dev-metrics-exporter node-exporter prometheus loki alloy grafana; do
             if [[ -n "${selected[$service]:-}" ]]; then
               [[ -z "$runtime_services" ]] || runtime_services+=","
               runtime_services+="$service"
@@ -124,6 +134,63 @@ jobs:
             echo "source_sha=$SOURCE_SHA"
             echo "runtime_services=$runtime_services"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR for exporter publication
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: imjasonh/setup-crane@v0.7
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+
+      - name: Resolve existing exact-SHA exporter image
+        id: exporter_existing
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+        env:
+          REPOSITORY: ghcr.io/a158coke/dev-metrics-exporter
+          TAG: ${{ steps.source.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tags="$(bash "$GITHUB_WORKSPACE/deploy/list-image-tags.sh" "$REPOSITORY")"
+          if grep -Fxq "$TAG" <<< "$tags"; then
+            digest="$(crane digest "$REPOSITORY:$TAG")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            echo "existing_digest=$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo 'existing_digest=' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and publish exact-SHA exporter image
+        id: exporter_build
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && steps.exporter_existing.outputs.existing_digest == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/observability/dev-metrics
+          push: true
+          tags: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}
+          labels: org.opencontainers.image.revision=${{ steps.source.outputs.source_sha }}
+
+      - name: Verify exporter digest and source identity
+        id: exporter_image
+        if: contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter')
+        env:
+          IMAGE: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          EXISTING_DIGEST: ${{ steps.exporter_existing.outputs.existing_digest }}
+          BUILD_DIGEST: ${{ steps.exporter_build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Exporter digest is missing or invalid.' >&2; exit 1; }
+          [[ "$(crane digest "$IMAGE")" == "$digest" ]] || { echo 'Exporter registry digest changed.' >&2; exit 1; }
+          revision="$(crane config --platform linux/amd64 "$IMAGE@$digest" | jq -er '.config.Labels["org.opencontainers.image.revision"]')"
+          [[ "$revision" == "$SOURCE_SHA" ]] || { echo 'Exporter source revision mismatch.' >&2; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Stage the Yecao runtime tree and Grafana root
         uses: appleboy/scp-action@v1
@@ -167,7 +234,7 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           key: ${{ secrets.VPS_SSH_KEY }}
           command_timeout: 40m
-          envs: SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
+          envs: DEV_METRICS_REGISTRY_TOKEN,DEV_METRICS_REGISTRY_USER,DEV_METRICS_IMAGE,DEV_METRICS_GITHUB_TOKEN,SOURCE_SHA,RUNTIME_SERVICES,WOTB_DEPLOY_CONFIG_SHA,GRAFANA_ADMIN_USER,GRAFANA_ADMIN_PASSWORD,GRAFANA_ROOT_URL,OBSERVABILITY_ENVIRONMENT,GRAFANA_PAT
           script: |
             set -Eeuo pipefail
             [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -175,7 +242,7 @@ jobs:
             stage="/opt/wotb/observability.incoming/$SOURCE_SHA"
             root="$stage/infra/tofu/grafana"
             test -d "$root"
-            test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-production-overview.json"
+            test -f "$stage/deploy/observability/grafana/dashboards/wotbtools-active-users.json"
             test -f /opt/wotb/deploy.incoming/deploy/deploy.sh
             state_dir=/opt/wotb/grafana-tofu-state
             state_file="$state_dir/terraform.tfstate"
@@ -196,18 +263,63 @@ jobs:
             flock -n 9 || { echo 'Another Yecao production mutation is running.' >&2; exit 1; }
             export WOTB_DEPLOY_LOCK_FD=9
 
+            if [[ ",$RUNTIME_SERVICES," == *,dev-metrics-exporter,* ]]; then
+              test -n "$DEV_METRICS_GITHUB_TOKEN" || { echo 'DEV_METRICS_GITHUB_TOKEN is required.' >&2; exit 2; }
+              # /run is host tmpfs; the token never enters Compose environment,
+              # image layers, OpenTofu state, or the persistent staging tree.
+              [[ ! -L /run/wotb-dev-metrics ]] || exit 2
+              install -d -m 700 /run/wotb-dev-metrics
+              token_file="$(mktemp /run/wotb-dev-metrics/token.XXXXXX)"
+              chmod 600 "$token_file"
+              printf '%s' "$DEV_METRICS_GITHUB_TOKEN" > "$token_file"
+              chmod 444 "$token_file"
+              mv -f -- "$token_file" /run/wotb-dev-metrics/github-token
+              export DEV_METRICS_IMAGE
+            else
+              unset DEV_METRICS_IMAGE
+            fi
+            unset DEV_METRICS_GITHUB_TOKEN
+
+            # Shared SCP staging is overlaid across releases. Replace its dashboard
+            # directory from the exact-SHA bundle so removed JSON cannot survive.
+            incoming_dashboards=/opt/wotb/deploy.incoming/deploy/observability/grafana/dashboards
+            rm -rf -- "$incoming_dashboards"
+            mkdir -p "$incoming_dashboards"
+            cp -a "$stage/deploy/observability/grafana/dashboards/." "$incoming_dashboards/"
+
             selected_services=()
             if [[ -n "$RUNTIME_SERVICES" ]]; then
               IFS=, read -r -a selected_services <<< "$RUNTIME_SERVICES"
             fi
             for service in "${selected_services[@]}"; do
               case "$service" in
-                node-exporter|prometheus|loki|alloy|grafana) ;;
+                dev-metrics-exporter|node-exporter|prometheus|loki|alloy|grafana) ;;
                 *) echo "Unexpected Observability runtime selection: $service" >&2; exit 2 ;;
               esac
               export WOTB_DEPLOY_SERVICE="$service"
               export WOTB_DEPLOY_CONFIG_SHA="$SOURCE_SHA"
-              if [[ "$service" == grafana ]]; then
+              if [[ "$service" == dev-metrics-exporter ]]; then
+                # A newly published GHCR package can be private. Authenticate
+                # only this pull with the publishing job's short-lived token;
+                # never persist registry credentials in the host Docker config.
+                (
+                  umask 077
+                  DOCKER_CONFIG="$(mktemp -d /run/wotb-dev-metrics-pull.XXXXXX)"
+                  export DOCKER_CONFIG
+                  trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+                  chmod 700 "$DOCKER_CONFIG"
+                  test -n "$DEV_METRICS_REGISTRY_TOKEN" && test -n "$DEV_METRICS_REGISTRY_USER" \
+                    || { echo 'Exporter registry credentials are required.' >&2; exit 2; }
+                  printf '%s' "$DEV_METRICS_REGISTRY_TOKEN" \
+                    | docker login ghcr.io --username "$DEV_METRICS_REGISTRY_USER" --password-stdin
+                  unset DEV_METRICS_REGISTRY_TOKEN
+                  GRAFANA_ADMIN_USER=not-configured \
+                    GRAFANA_ADMIN_PASSWORD=not-configured \
+                    GRAFANA_PAT='' \
+                    bash /opt/wotb/deploy.incoming/deploy/deploy.sh
+                )
+                unset DEV_METRICS_REGISTRY_TOKEN
+              elif [[ "$service" == grafana ]]; then
                 GRAFANA_PAT='' \
                   bash /opt/wotb/deploy.incoming/deploy/deploy.sh
               else
@@ -237,7 +349,14 @@ jobs:
             tofu validate
             tofu plan -input=false -no-color -out=plan.tfplan
             bash ./validate-plan.sh plan.tfplan
+            bash /opt/wotb/deploy.incoming/deploy/tofu-local-state-backup.sh yecao
             tofu apply -input=false -auto-approve plan.tfplan
+            # Keep the mounted home JSON current even for dashboard-only releases.
+            # Update contents in place; do not replace the bind-mounted directory.
+            live_dashboards=/opt/wotb/deploy/observability/grafana/dashboards
+            mkdir -p "$live_dashboards"
+            find "$live_dashboards" -maxdepth 1 -type f -name '*.json' -delete
+            cp -a "$stage/deploy/observability/grafana/dashboards/." "$live_dashboards/"
             tofu plan -input=false -no-color -out=second-plan.tfplan
             second_json="$(tofu show -json second-plan.tfplan)"
             if ! jq -e 'type == "object" and (.resource_changes | type == "array") and all(.resource_changes[]; ((.change.actions // []) == ["no-op"]))' <<< "$second_json" >/dev/null; then
@@ -254,16 +373,27 @@ jobs:
             grafana_url="${GRAFANA_ROOT_URL%/}"
             curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
               "$grafana_url/api/health" | jq -e '.database == "ok"' >/dev/null
-            for uid in wotbtools-production-overview wotbtools-backend-overview \
-              wotbtools-error-explorer wotbtools-ai-review wotbtools-usage wotbtools-keycloak; do
+            for uid in wotbtools-active-users wotbtools-feature-usage \
+              wotbtools-android-downloads wotbtools-ai-token-usage wotbtools-backend-error-logs \
+              wotbtools-engineering-overview; do
               curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 2 \
                 -H "Authorization: Bearer ${GRAFANA_PAT}" \
                 "$grafana_url/api/dashboards/uid/$uid" \
                 | jq -e --arg uid "$uid" '.dashboard.uid == $uid' >/dev/null
             done
+            for uid in wotbtools-production-overview wotbtools-backend-overview \
+              wotbtools-error-explorer wotbtools-ai-review wotbtools-usage wotbtools-keycloak; do
+              status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer ${GRAFANA_PAT}" "$grafana_url/api/dashboards/uid/$uid")"
+              [[ "$status" == 404 ]] || { echo "Retired dashboard still exists: $uid ($status)" >&2; exit 1; }
+            done
             echo 'Grafana health and managed dashboard API checks: PASS'
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          DEV_METRICS_REGISTRY_USER: ${{ github.actor }}
+          DEV_METRICS_REGISTRY_TOKEN: ${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}
+          DEV_METRICS_IMAGE: ghcr.io/a158coke/dev-metrics-exporter:${{ steps.source.outputs.source_sha }}@${{ steps.exporter_image.outputs.digest }}
+          DEV_METRICS_GITHUB_TOKEN: ${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.DEV_METRICS_GITHUB_TOKEN || '' }}
           RUNTIME_SERVICES: ${{ steps.source.outputs.runtime_services }}
           WOTB_DEPLOY_CONFIG_SHA: ${{ steps.source.outputs.source_sha }}
           GRAFANA_ADMIN_USER: ${{ contains(steps.source.outputs.runtime_services, 'grafana') && secrets.GRAFANA_ADMIN_USER || '' }}

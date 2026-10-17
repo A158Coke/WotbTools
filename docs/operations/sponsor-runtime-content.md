@@ -9,7 +9,7 @@
 | 内容 | `sponsor-config.json`（`enabled` + `methods[{type,image}]`；**形状 SSOT = `frontend/src/utils/sponsor-config.js`**）+ `sponsor-assets/<name>.{png,jpg,jpeg,webp}` |
 | 存放 | **不在 Git 历史里**：内容作为 GitHub Release 资产发布（`sponsor-runtime-content-v1`），由仓内 pin `deploy/sponsor/content.json` 钉住 `release/asset/sha256`（与 Agent WASM 的 `deploy/agent/source.json` 同一模式）。构建期下载校验后由 `scripts/ci/inject-sponsor-runtime-content.sh` 注入 publicDir（`common/assets/`），Vite 原样拷进 `dist` / `dist-android` |
 | Web 面 | Frontend 镜像内 `/usr/share/nginx/html/sponsor-config.json` 与 `/sponsor-assets/*`，与 SPA **同源**伺服（无跨域、不依赖桶 CORS） |
-| APK 面 | `assets/web/sponsor-config.json` + `assets/web/sponsor-assets/*`，由本机 origin（`appassets.androidplatform.net`）同源伺服 ⇒ **离线也能显示** |
+| APK 面 | `assets/web/sponsor-config.json` + `assets/web/sponsor-assets/*`，由本机 origin（3.0 起 `http://127.0.0.1:21653`，Native LocalRuntimeServer）同源伺服 ⇒ **离线也能显示** |
 | TX 侧 | 不挂载、不同步、不下发赞助内容（2026-10-09 前的 host 只读挂载已退场） |
 
 > 为什么不用 Actions secrets 装图片：GitHub 对 secret 值有 48KB 上限，base64 后的收款码超过它。

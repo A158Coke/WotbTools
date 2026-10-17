@@ -28,12 +28,23 @@ public final class ApiPaths {
     public static final String USERS_MARK3 = "/api/users/mark3";
     public static final String HOF_MARK3_ADMIN = "/api/admin/hof/mark3";
 
+    public static final String CREATORS = "/api/creators";
+    public static final String CREATORS_ADMIN = "/api/admin/creators";
+    public static final String CREATORS_ADMIN_PATTERN = CREATORS_ADMIN + "/**";
+    public static final String CREATOR_AVATAR = CREATORS + "/avatars/*";
     public static final String TOURNAMENTS = "/api/tournaments";
     public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
+    public static final String TOURNAMENT_DATA_SOURCE = "/api/tournaments/*/data-source";
+    public static final String BROADCASTS = "/api/tournament-broadcasts";
+    public static final String BROADCASTS_ADMIN = "/api/admin/tournament-broadcasts";
+    public static final String BROADCAST_SEASON = BROADCASTS + "/seasons/*";
+    public static final String BROADCAST_CATEGORY = BROADCASTS + "/categories/*";
+    public static final String BROADCAST_COVER = BROADCASTS + "/covers/*";
 
     // ---- 精确端点（SecurityConfig 与 Controller 共用） ----
     public static final String HOF_UPLOAD = "/api/hof/upload";
+    public static final String OBSERVABILITY_EVENTS = "/api/observability/events";
     public static final String HEALTH = "/api/health";
 
     // ---- 安全匹配模式（/** 通配，仅 SecurityConfig 使用） ----

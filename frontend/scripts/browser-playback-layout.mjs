@@ -28,11 +28,15 @@ const productionCss = cssPaths
 const rasterDensityUrl = pathToFileURL(resolve(frontendRoot, 'src/utils/mapRasterDensity.js')).href
 const battleMapSource = readFileSync(resolve(frontendRoot, 'src/components/BattleMap.vue'), 'utf8')
 const battlePlaybackSource = readFileSync(resolve(frontendRoot, 'src/components/BattlePlayback.vue'), 'utf8')
-if (!battleMapSource.includes('screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)')
-  || /offset\.[xy]\s*\/\s*(scale|viewScale)/.test(battleMapSource)
-  || !battlePlaybackSource.includes('const renderedMapFrame = computed(() =>')
-  || !battlePlaybackSource.includes(':rendered-frame="renderedMapFrame"')) {
-  throw new Error('BattleMap leader-line production wiring must use the rendered SVG frame contract')
+// 2026-10-16 用户裁定：标记删除防重叠位移与虚线 leader，车体严格落在真实位置。
+// 本门禁守住"生产接线里不再出现位移/虚线"（反过来写回去也会在这里失败）。
+if (battleMapSource.includes('screenOffsetToSvgDelta')
+  || battleMapSource.includes('presentationOffset')
+  || battleMapSource.includes('pb-marker-leader')
+  || battlePlaybackSource.includes('presentationOffset')
+  || battlePlaybackSource.includes('computeTankCollisionLayout')
+  || battlePlaybackSource.includes('renderedMapFrame')) {
+  throw new Error('markers must render at their true positions: no collision displacement / leader line')
 }
 const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
@@ -48,9 +52,9 @@ const scenarios = [
   // Real raster frame guard: intentionally non-square logical dimensions must remain the shared
   // frame for the basemap img, overlay SVG and marker layer.
   { name: 'raster-frame-source', form: 'pc', width: 1280, height: 900, check: 'raster' },
-  // Real leader-line geometry guard: a 4x layout-scaled, non-square SVG frame must preserve the
+  // Real marker-position guard: the marker center must coincide with its semantic anchor
   // same 20px screen displacement as the HTML marker on a mobile-sized visible map frame.
-  { name: 'leader-line-non-1-to-1', form: 'mobile', width: 390, height: 844, check: 'leader' },
+  { name: 'marker-true-position', form: 'mobile', width: 390, height: 844, check: 'true-position' },
 
   // Fullscreen changes capacity while retaining the shared three-row battlefield contract.
   { name: 'pc-fullscreen-side-slots', form: 'pc', width: 1920, height: 900, check: 'fullscreen', fullscreen: true, sideSlots: true, controlsInRail: false },
@@ -62,7 +66,7 @@ const scenarios = [
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
-  const lanes = !['mobile', 'raster', 'leader'].includes(scenario.check)
+  const lanes = !['mobile', 'raster', 'true-position'].includes(scenario.check)
   const rootClasses = [
     'battle-playback',
     'playback-workspace',
@@ -103,7 +107,6 @@ function fixtureHtml(scenario) {
   .pb-basemap { object-fit:fill; }
   .pb-markers { position:absolute; inset:0; pointer-events:none; }
   .pb-marker { position:absolute; width:20px; height:20px; transform:translate(-50%,-50%); border-radius:50%; background:#f00; }
-  .pb-marker-leader { stroke:#aaa; stroke-width:1; }
   .pb-mobile-overlay-content { min-height:72px; }
   .pb-controls { display: flex; justify-content: center; gap: 4px; }
   .pb-btn { min-width:44px; min-height:44px; }
@@ -130,8 +133,8 @@ ${productionCss}
   </section>
     ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     <div class="pb-map-stage">
-      <div class="pb-map"${scenario.check === 'leader' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'leader' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
-        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'leader' ? `<svg class="pb-svg" viewBox="0 0 769 763"><line class="pb-marker-leader" x1="384.5" y1="381.5" x2="384.5" y2="381.5"></line></svg><div class="pb-markers"><div class="pb-marker" style="left:calc(50% + 20px);top:calc(50% - 16px)"></div></div>` : ''}
+      <div class="pb-map"${scenario.check === 'true-position' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'true-position' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
+        ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'true-position' ? `<svg class="pb-svg" viewBox="0 0 769 763"><circle class="pb-true-anchor" cx="384.5" cy="381.5" r="2"></circle></svg><div class="pb-markers"><div class="pb-marker" style="left:50%;top:50%"></div></div>` : ''}
       </div></div>
     </div>
     <div class="${overlayClasses}"><div class="pb-mobile-overlay-content">${controlsMarkup}</div></div>
@@ -254,51 +257,29 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
       require(zoomRect && zoomRect.width > (fitRect?.width || 0), '4x raster frame must be larger than fit frame')
     }
 
-    if (${JSON.stringify(scenario.check)} === 'leader') {
+    if (${JSON.stringify(scenario.check)} === 'true-position') {
+      // 标记严格落在真实位置：marker 中心必须与同一语义点的 SVG 锚点重合（无任何位移项），
+      // 且 DOM 里不得出现虚线 leader。
       const logical = { W: 769, H: 763 }
-      const offset = { x: 20, y: -16 }
       const svg = root.querySelector('.pb-svg')
-      const line = root.querySelector('.pb-marker-leader')
       const marker = root.querySelector('.pb-marker')
-      const visibleRect = map.getBoundingClientRect()
-      const renderedRect = svg?.getBoundingClientRect()
-      const delta = renderedRect && renderedRect.width > 0 && renderedRect.height > 0
-        ? {
-            x: offset.x * logical.W / renderedRect.width,
-            y: offset.y * logical.H / renderedRect.height,
-          }
-        : null
-      require(delta, 'leader-line SVG delta must be measurable')
-      const canonical = { x: logical.W / 2, y: logical.H / 2 }
-      const x2 = canonical.x + (delta?.x || 0)
-      const y2 = canonical.y + (delta?.y || 0)
-      line?.setAttribute('x2', String(x2))
-      line?.setAttribute('y2', String(y2))
+      const anchor = root.querySelector('.pb-true-anchor')
+      require(!root.querySelector('.pb-marker-leader'), 'leader line must not exist (removed 2026-10-16)')
       const markerRect = marker?.getBoundingClientRect()
-      const endpoint = renderedRect ? {
-        x: renderedRect.left + x2 * renderedRect.width / logical.W,
-        y: renderedRect.top + y2 * renderedRect.height / logical.H,
-      } : null
-      const markerCenter = markerRect ? {
-        x: markerRect.left + markerRect.width / 2,
-        y: markerRect.top + markerRect.height / 2,
-      } : null
-      const pixelDelta = endpoint && markerCenter ? {
-        x: endpoint.x - markerCenter.x,
-        y: endpoint.y - markerCenter.y,
-      } : null
-      require(renderedRect && Math.abs(renderedRect.width - visibleRect.width * 4) < 0.5,
-        'leader-line fixture must use a 4x rendered SVG frame')
-      require(markerCenter && endpoint && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
-        'leader endpoint must match visible marker center within 0.5 CSS px')
+      const svgRect = svg?.getBoundingClientRect()
+      const anchorRect = anchor?.getBoundingClientRect()
+      const markerCenter = markerRect ? { x: markerRect.left + markerRect.width / 2, y: markerRect.top + markerRect.height / 2 } : null
+      const anchorCenter = anchorRect ? { x: anchorRect.left + anchorRect.width / 2, y: anchorRect.top + anchorRect.height / 2 } : null
+      const pixelDelta = markerCenter && anchorCenter
+        ? { x: markerCenter.x - anchorCenter.x, y: markerCenter.y - anchorCenter.y } : null
+      require(svgRect && svgRect.width > 0, 'marker-true-position fixture must render the map frame')
+      require(pixelDelta && Math.abs(pixelDelta.x) <= 0.5 && Math.abs(pixelDelta.y) <= 0.5,
+        'marker center must coincide with its semantic anchor (no displacement)')
       metrics = {
         logical,
-        visibleCss: { width: visibleRect.width, height: visibleRect.height },
-        renderedSvgCss: { width: renderedRect?.width, height: renderedRect?.height },
-        viewScale: 4,
-        presentationOffset: offset,
+        visibleCss: { width: svgRect.width, height: svgRect.height },
         markerCenter,
-        leaderEndpoint: endpoint,
+        anchorCenter,
         pixelDelta,
       }
     }
@@ -351,6 +332,268 @@ import { mapRasterDensity } from ${JSON.stringify(rasterDensityUrl)}
 </script>
 </body>
 </html>`
+}
+
+/**
+ * 3D 伤害数字覆盖层的浏览器级几何探针（在页面内执行，**不能引用模块作用域**）。
+ *
+ * 验收：出生贴血条右侧且不覆盖血条 / 跟随当前 anchor（车辆与相机每帧在动）/ 出屏立即隐藏 /
+ * 贴右缘镜像到血条左侧且漂移反向（远离血条、不出边界）/ fit 边界含整段漂移行程 /
+ * 真 0×0 空名牌回退到锚点上方 / rerender 不重算 animation-delay。
+ * 组件挂载与偏好注入由 scripts/browser-fixtures/damage-overlay-entry.js 提供（真实组件 + 真实 CSS）。
+ */
+async function probeDamageOverlay() {
+  const failures = []
+  const require = (ok, message) => { if (!ok) failures.push(message) }
+  const api = window.__damageOverlay
+  const stageRect = document.getElementById('stage').getBoundingClientRect()
+  const box = (element) => {
+    const rect = element.getBoundingClientRect()
+    return {
+      left: rect.left - stageRect.left, top: rect.top - stageRect.top,
+      right: rect.right - stageRect.left, bottom: rect.bottom - stageRect.top,
+      width: rect.width, height: rect.height,
+    }
+  }
+  const barEl = () => document.querySelector('.pb-hp-bar')
+  const labelEl = () => document.querySelector('.vehicle-label')
+  const dmgEl = () => document.querySelector('[data-test="pb-damage"]')
+  // 几何一律量**数字文本本身**：外层 span 只是定位载体，文本带 translate(0,-50%) 与漂移动画，
+  // 真正要与血条对齐 / 不覆盖血条的是文本的可见盒。
+  const dmgTextEl = () => document.querySelector('[data-test="pb-damage"] .pb-damage-text')
+  const driftX = () => parseFloat(getComputedStyle(dmgEl()).getPropertyValue('--pb-damage-drift-x')) || 0
+  const row = (eid, extra = {}) => ({
+    eid, accountId: 1000 + eid, playerName: 'Recipient 7', tankName: 'Maus', friendly: true,
+    destroyed: false, lastKnown: false, hp: { current: 800, pct: 80, state: 'CURRENT' },
+    reload: null, hpGhost: null, hpFlash: null, tankClass: 'Heavy tank', ...extra,
+  })
+  const anchorAt = (x, y) => ({ x, y, visible: true, occluded: false, projected: true })
+  const stageW = stageRect.width
+  const metrics = {}
+
+  await api.setLabels([row(7), row(8)])
+  await api.setAnchor(7, anchorAt(300, 260))
+  await api.spawn(7, 342, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+
+  // 1) 出生在血条右侧、垂直居中于血条；漂移行程仍在舞台内（fit 含 drift）
+  const bar = box(barEl())
+  let dmg = box(dmgTextEl())
+  require(!!dmgEl() && !dmgEl().hidden, 'damage number must be visible next to the HP bar')
+  require(dmg.left >= bar.right + 4,
+    `damage must start right of the HP bar (dmg=${JSON.stringify(dmg)} bar=${JSON.stringify(bar)})`)
+  require(Math.abs((dmg.top + dmg.height / 2) - (bar.top + bar.height / 2)) <= 1.5,
+    `damage must be vertically centred on the HP bar (dmg=${JSON.stringify(dmg)} bar=${JSON.stringify(bar)})`)
+  require(driftX() > 0, `right-side damage must drift right (driftX=${driftX()})`)
+  require(dmg.right + driftX() <= stageW + 0.5,
+    `right-side drift must stay inside the stage (dmg.right=${dmg.right} drift=${driftX()} stage=${stageW})`)
+  metrics.birth = { gap: dmg.left - bar.right, driftX: driftX(), dmg, bar }
+
+  // 2) 跟随当前 anchor：车辆 / 相机移动时按同一偏移一起走（不缓存屏幕绝对坐标）
+  await api.setAnchor(7, anchorAt(360, 300))
+  const moved = box(dmgTextEl())
+  require(Math.abs((moved.left - dmg.left) - 60) <= 1 && Math.abs((moved.top - dmg.top) - 40) <= 1,
+    `damage must follow the anchor (dx=${moved.left - dmg.left} dy=${moved.top - dmg.top})`)
+  metrics.follow = { dx: moved.left - dmg.left, dy: moved.top - dmg.top }
+
+  // 3) 出屏（projected=false）→ 立即隐藏；回到视锥内 → 按新 anchor 继续显示
+  await api.setAnchor(7, { ...anchorAt(360, 300), projected: false })
+  require(dmgEl().hidden, 'damage must hide as soon as the vehicle leaves the frustum')
+  await api.setAnchor(7, anchorAt(360, 300))
+  require(!dmgEl().hidden, 'damage must come back with the remaining lifetime')
+
+  // 4) 贴右缘放不下（含漂移行程）→ 镜像到血条左侧，漂移反向、不覆盖血条、不出左边界
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  dmg = box(dmgTextEl())
+  const barNear = box(barEl())
+  require(driftX() < 0, `mirrored damage must drift left, away from the bar (driftX=${driftX()})`)
+  require(dmg.right <= barNear.left + 0.5,
+    `mirrored damage must not cover the HP bar (dmg.right=${dmg.right} bar.left=${barNear.left})`)
+  require(dmg.left + driftX() >= -0.5,
+    `mirrored drift must stay inside the stage (dmg.left=${dmg.left} drift=${driftX()})`)
+  metrics.mirror = { dmgRight: dmg.right, barLeft: barNear.left, driftX: driftX() }
+
+  // 5) rerender 不重算 animation-delay（存活期间 timeline 稳定，不被重复快进）
+  await api.setAnchor(7, anchorAt(300, 260))
+  const delayBefore = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  await api.setLabels([row(7), row(8), row(9)])
+  await api.spawn(7, 120, 60000)
+  const delayAfter = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  require(delayBefore === delayAfter,
+    `animation-delay must stay stable across rerenders (${delayBefore} -> ${delayAfter})`)
+  metrics.delay = delayAfter
+
+  // Force the previous mirrored side to stop fitting before testing right remount.
+  await api.setAnchor(7, anchorAt(20, 260))
+  const rightNode = dmgEl()
+  require(driftX() === 20, 'right side must be selected before remount')
+
+  // 5b) showStatus 关→开 = 真实 remount：只补偿一次相位，之后 rerender 不再改动
+  await api.remount()
+  require(dmgEl() !== rightNode, 'showStatus must create a new node')
+  require(driftX() === 20, 'right drift must be restored before placement')
+  await api.setAnchor(7, anchorAt(300, 260))
+  const afterRemount = getComputedStyle(dmgEl().firstElementChild).animationDelay
+  require(afterRemount !== delayAfter,
+    `remount must compensate the phase exactly once (${delayAfter} -> ${afterRemount})`)
+  await api.setLabels([row(7), row(8), row(9), row(10)])
+  require(getComputedStyle(dmgEl().firstElementChild).animationDelay === afterRemount,
+    'phase compensation must not be recomputed by later rerenders')
+  metrics.remountDelay = afterRemount
+
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  require(driftX() === -20, 'left side must be selected before remount')
+  const leftNode = dmgEl()
+  await api.remount()
+  require(dmgEl() !== leftNode, 'left damage must remount')
+  require(driftX() === -20, 'left drift must be restored before placement')
+  await api.setAnchor(7, anchorAt(stageW - 20, 260))
+  require(driftX() === -20, 'left drift must survive placement with unchanged side')
+
+  // H 恢复实际 CSS phase，原始 removal timer 不延长。
+  api.clearDamages()
+  const waitUntil = async (predicate, timeoutMs = 6000) => {
+    const start = performance.now()
+    while (!predicate()) {
+      if (performance.now() - start > timeoutMs) throw new Error('damage lifecycle condition timed out')
+      await new Promise(requestAnimationFrame)
+    }
+  }
+  const bornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const bornAfter = performance.now()
+  await api.setAnchor(7, anchorAt(300, 260))
+  const hNode = dmgEl()
+  await waitUntil(() => dmgTextEl().getAnimations()[0]?.currentTime >= 500)
+  await api.setHidden(true)
+  await waitUntil(() => performance.now() - bornAfter >= 1100)
+  await api.setHidden(false)
+  require(dmgEl() === hNode, 'H must preserve the damage node')
+  const animation = dmgTextEl().getAnimations()[0]
+  const timing = animation?.effect.getComputedTiming()
+  const effectiveTime = timing && animation.currentTime - timing.delay
+  const ageMin = performance.now() - bornAfter
+  const ageMax = performance.now() - bornBefore
+  require(Number.isFinite(effectiveTime) && effectiveTime >= ageMin - 100 && effectiveTime <= ageMax + 100,
+    `H must restore actual CSS phase (effective=${effectiveTime}, age=${ageMin}..${ageMax})`)
+  require(timing?.progress > 0.25, 'animation must not replay its birth phase')
+  const restoredDelay = dmgTextEl().style.animationDelay
+  await api.setLabels([row(7), row(8)])
+  require(dmgTextEl().style.animationDelay === restoredDelay, 'rerender must preserve restored delay')
+  await waitUntil(() => performance.now() - bornAfter >= 3500)
+  require(!!dmgEl(), 'damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const removedAt = performance.now()
+  require(removedAt - bornBefore < 4400, 'H must not restart removal timer')
+  metrics.hiddenRecovery = { effectiveTime, ageMin, ageMax, removedAfterMs: removedAt - bornBefore }
+
+  // 出屏再进屏也会重启 CSS timeline，必须恢复原始 wall-clock phase。
+  const offscreenBornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const offscreenBornAfter = performance.now()
+  await api.setAnchor(7, anchorAt(300, 260))
+  await waitUntil(() => dmgTextEl().getAnimations()[0]?.currentTime >= 500)
+  const beforeOffscreen = dmgTextEl().getAnimations()[0].currentTime
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  require(dmgEl().hidden, 'off-screen damage must be hidden')
+  await waitUntil(() => performance.now() - offscreenBornAfter >= 1100)
+  await api.setAnchor(7, anchorAt(300, 260))
+  require(!dmgEl().hidden, 'returning damage must be visible')
+  const resumedAnimation = dmgTextEl().getAnimations()[0]
+  const resumedTiming = resumedAnimation.effect.getComputedTiming()
+  const resumedTime = resumedAnimation.currentTime - resumedTiming.delay
+  const resumedAgeMin = performance.now() - offscreenBornAfter
+  const resumedAgeMax = performance.now() - offscreenBornBefore
+  require(resumedTime >= resumedAgeMin - 100 && resumedTime <= resumedAgeMax + 100,
+    `off-screen return phase must match age (${resumedTime} vs ${resumedAgeMin}..${resumedAgeMax})`)
+  require(resumedTime > beforeOffscreen + 300, 'return phase must advance past the pre-hide phase')
+  const resumedDelay = dmgTextEl().style.animationDelay
+  await api.setAnchor(7, anchorAt(320, 260))
+  require(dmgTextEl().style.animationDelay === resumedDelay, 'ordinary anchor updates must preserve return phase')
+  await waitUntil(() => performance.now() - offscreenBornAfter >= 3500)
+  require(!!dmgEl(), 'returning damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const offscreenRemovedAfterMs = performance.now() - offscreenBornBefore
+  require(offscreenRemovedAfterMs < 4400, 'off-screen return must not extend removal deadline')
+  metrics.offscreenRecovery = { beforeOffscreen, resumedTime, resumedAgeMin, resumedAgeMax, offscreenRemovedAfterMs }
+
+  // 出生时已经在视锥外：延迟首次可见也要恢复原始 wall-clock phase。
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  const unseenBornBefore = performance.now()
+  await api.spawn(7, 342, 4000)
+  const unseenBornAfter = performance.now()
+  await api.setAnchor(7, { ...anchorAt(300, 260), projected: false })
+  require(dmgEl().hidden, 'born-off-screen damage must remain hidden')
+  await waitUntil(() => performance.now() - unseenBornAfter >= 1200)
+  await api.setAnchor(7, anchorAt(300, 260))
+  require(!dmgEl().hidden, 'first projected display must reveal damage')
+  const firstAnimation = dmgTextEl().getAnimations()[0]
+  const firstTiming = firstAnimation.effect.getComputedTiming()
+  const firstTime = firstAnimation.currentTime - firstTiming.delay
+  const firstAgeMin = performance.now() - unseenBornAfter
+  const firstAgeMax = performance.now() - unseenBornBefore
+  require(firstTime >= firstAgeMin - 100 && firstTime <= firstAgeMax + 100,
+    `first visible phase must match age (${firstTime} vs ${firstAgeMin}..${firstAgeMax})`)
+  require(firstTiming.progress > 0.25, 'first display must not start at birth phase')
+  const firstDelay = dmgTextEl().style.animationDelay
+  await api.setAnchor(7, anchorAt(320, 260))
+  await api.setLabels([row(7), row(8)])
+  require(dmgTextEl().style.animationDelay === firstDelay, 'first-display phase must stay stable on ordinary updates')
+  await waitUntil(() => performance.now() - unseenBornAfter >= 3500)
+  require(!!dmgEl(), 'first-display damage must survive close to its original deadline')
+  await waitUntil(() => !dmgEl())
+  const unseenRemovedAfterMs = performance.now() - unseenBornBefore
+  require(unseenRemovedAfterMs < 4400, 'delayed first display must not extend removal deadline')
+  metrics.bornOffscreen = { firstTime, firstAgeMin, firstAgeMax, unseenRemovedAfterMs }
+
+  // showStatus=false 时出生：延迟首次挂载仍消费原始 wall-clock age。
+  await api.prefs({ markerPrefs: { showStatus: false } })
+  const delayedBorn = performance.now()
+  await api.spawn(7, 342, 4000)
+  await waitUntil(() => performance.now() - delayedBorn >= 700)
+  await api.prefs({ markerPrefs: { showStatus: true } })
+  await api.setAnchor(7, anchorAt(300, 260))
+  const delayedAnimation = dmgTextEl().getAnimations()[0]
+  const delayedTiming = delayedAnimation.effect.getComputedTiming()
+  require(delayedAnimation.currentTime - delayedTiming.delay >= 650,
+    'delayed first mount must compensate elapsed time')
+  api.clearDamages()
+
+  // 第一槽到期后再出生：三个仍存活的数字必须占三个不同位置。
+  await api.spawn(7, 100, 500)
+  await api.spawn(7, 200, 4000)
+  await api.spawn(7, 300, 4000)
+  await waitUntil(() => document.querySelectorAll('[data-test="pb-damage"]').length === 2)
+  await api.spawn(7, 400, 4000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  const slotPositions = [...document.querySelectorAll('[data-test="pb-damage"]')].map(el => el.style.transform)
+  require(new Set(slotPositions).size === 3, 'expire-then-spawn must reuse the free stacking slot')
+
+  // 6) HP 关掉 → 退回名牌块右侧，仍然可见
+  await api.clearDamages()
+  await api.prefs({ hpPrefs: { showHp: false } })
+  await api.spawn(7, 400, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  dmg = box(dmgTextEl())
+  const label = box(labelEl())
+  require(!dmgEl().hidden, 'damage must stay visible when the HP display is off')
+  require(dmg.left >= label.right - 0.5 && dmg.left <= label.right + 10,
+    `HP-off damage must fall back to the right of the label block (dmg.left=${dmg.left} label.right=${label.right})`)
+  metrics.hpOff = { dmgLeft: dmg.left, labelRight: label.right }
+
+  // 7) 姓名 / 车型 / HP 全关 → 真正的 0×0 名牌 → 回退到锚点上方（不得一直 hidden）
+  await api.clearDamages()
+  await api.prefs({ labelPrefs: { showPlayerName: false, showTankName: false }, hpPrefs: { showHp: false } })
+  await api.spawn(7, 400, 60000)
+  await api.setAnchor(7, anchorAt(300, 260))
+  dmg = box(dmgTextEl())
+  require(!dmgEl().hidden, 'empty 0x0 label must still yield a visible damage number above the vehicle')
+  require(Math.abs(dmg.left - 300) <= 1.5 && dmg.bottom <= 260,
+    `0x0 fallback must sit above the anchor (dmg=${JSON.stringify(dmg)})`)
+  metrics.emptyLabel = dmg
+
+  api.clearDamages()
+  return { failures, metrics }
 }
 
 // 设备指标走 CDP `Emulation.setDeviceMetricsOverride`，不是 `--window-size`：headless Chrome 的窗口
@@ -435,6 +678,32 @@ try {
     `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
   if (contractFailures.length) {
     throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
+  }
+
+  // —— 3D 伤害数字覆盖层：真实组件 + 真实 CSS 的浏览器几何 / 跟随 / 出屏 / 镜像门禁 ——
+  // 覆盖层是纯 DOM（无 WebGL、无资产），所以能在真浏览器里锁几何；3D 场景画面观感仍归用户人工验收。
+  const { startFixtureServer } = await import('./browser-fixtures/fixture-server.mjs')
+  const fixture = await startFixtureServer()
+  try {
+    const { targetId, sessionId } = await browser.openPage()
+    const overlayPage = new Page(browser.client, sessionId)
+    await overlayPage.enable()
+    await overlayPage.emulate({ width: 1200, height: 800, touch: false, deviceScaleFactor: 1 })
+    await overlayPage.goto(`${fixture.origin}/scripts/browser-fixtures/damage-overlay.html`)
+    await overlayPage.waitForValue('!!(window.__damageOverlay && window.__damageOverlay.ready())', (ready) => ready === true,
+      { label: '3d damage overlay fixture ready' })
+    const overlayResult = await overlayPage.probe(probeDamageOverlay)
+    const pageErrors = overlayPage.consoleErrors
+    await browser.client.send('Target.closeTarget', { targetId })
+    if (overlayResult.failures.length) {
+      throw new Error(`3d damage overlay geometry:\n- ${overlayResult.failures.join('\n- ')}`)
+    }
+    if (pageErrors.length) {
+      throw new Error(`3d damage overlay fixture page errors:\n- ${pageErrors.join('\n- ')}`)
+    }
+    console.log(`[browser-layout] 3d-damage-overlay OK ${JSON.stringify(overlayResult.metrics)}`)
+  } finally {
+    await fixture.server.close()
   }
 } finally {
   await browser.close()

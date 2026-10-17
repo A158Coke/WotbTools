@@ -92,6 +92,39 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （anti-future-leak），非 canonical max HP；loadout 离开 AoI 仍 KNOWN；consumable runtime
   在 hidden interval = UNKNOWN。
 
+### 生命状态与复活轨道（issue #622，2026-10-15）
+
+`lifeTransitions` 的生命语义分层：
+
+- **上游复活轨道在场**（PlaybackData 车辆 `death_times`（≥2 死才输出）/ `resurrection_times`
+  （非空才输出），上游 2026-10-15 additive）：它取代 prop3 采样扫描成为死亡/复活时刻 SSOT——
+  死亡 → DESTROYED、复活 → ALIVE 交替，采样只兜底 ALIVE 证据。复活模式（爆燃等）同一 eid
+  死亡后可复活继续移动，死亡不再是终态。
+- **字段缺省**（旧上游产物 / 普通回放）：prop3 `alive=false`（终态，EXACT）→ DESTROYED；
+  可信血量 / alive → ALIVE——行为与既往逐位一致（golden 锁定）。
+- def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
+  PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
+  只爆一次，复活后的新死亡各自爆焰。
+- **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份**可用数值**血量证据
+  之前，血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
+  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不算"新证据"
+  （`isPlausibleHp` 判据）。证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
+  的"复活后无新血量证据 → 未知边界"、"证据在查询时刻之后不得提前使用"与"复活时刻只有未知哨兵
+  采样 → 边界不被跳过"用例。
+- **每次死亡各一条 DESTROYED 事件**：battle-level `events` 的 DESTROYED 原先只来自 canonical 终态
+  重建（每账号至多一条终态），复活模式会死多次——轨道在场（且给出 ≥1 死亡时刻）的账号改用轨道
+  死亡列（**同账号多实体的死亡列合并、升序去重**），其余账号维持 canonical。2D burst 与 Event Panel
+  因此**每次死亡各出一次**，KILL 仍只由 canonical 致死窗口的唯一攻击者证据给出（不伪造击杀者）。
+  守卫：`lifeTransitions.test.ts` 的 `respawnDestroyedTimes` 用例（含同账号多实体合并）+
+  `parseLocalPlayback.test.ts` 的"复活轨道注入"用例。
+- **阵亡期断链（履带印）**：DESTROYED 期间与 AoI 空洞同语义——历史印记保留、复活后从**新锚**开始，
+  不与死前锚连铺（否则跨阵亡期/复活迁移桥出一条长印记）。守卫：`playbackScene.test.js` 的
+  "履带印阵亡期断链"用例（复活落在新位置时不出现长戳）。
+- **复活后装回炮塔（3D）**：分离（飞头）只属于**它发生的那一世**——`detachmentAppliesNow` 让
+  detached 轨道的摘除从首帧起、到该车下一次复活为止生效；复活后的新车装回炮塔（旧飞头实体自身
+  照旧按自己的 coverage 渲染，它是独立实体）。若复活后的新死亡再次飞头，会有新的 detached 轨道
+  （新首帧）重新接管。守卫：`playbackScene.test.js` 的"复活后装回炮塔"用例（失败态即复活后仍无炮塔）。
+
 ### 反未来信息泄漏（anti-future-leak，硬性 invariant）
 
 > 在 UI 时间 `t`，任何展示出来的事实只能来自 `timeSec <= t` 的证据。这是 Battle Playback V2
@@ -226,12 +259,14 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     clock**——播放由 frame 刷新、暂停由轻量 RAF 继续推进，不依赖播放状态）隐藏/恢复（~120ms
     opacity fade-in，类保持完整生命周期不被下一次 resolve 取消）；PlayerName 盒从 final TankName
     盒推导（与共享 label 块整体位移一致）；zoom 结束由 computed
-    依赖 view.scale 自然重算；点击命中使用随 vehicle-aware marker 与 presentation offset 移动的
-    小幅扩展 hit target（不参与视觉碰撞，不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
+    依赖 view.scale 自然重算；点击命中使用 marker 真实位置上的小幅扩展 hit target（不参与视觉碰撞，
+    不含 gun overflow/label/三角/菱形/✕；destroyed/last-known 仍可点），重叠时
     取指针最近车辆、距离几乎一致且已选中则保持、否则 render order tie-break；倍速含 0.5×；
-    `loop` prop（QA 场景循环）。Tank model collision 仅作用于 model box，使用 screen-pixel
-     presentation offset 做确定性自适应避让：持续搜索直到同一帧内所有可见 model box 完全不重叠，
-     不改变 canonical position；拥挤时 marker 可离开真实点，并由 leader line 回指 canonical anchor。
+    `loop` prop（QA 场景循环）。
+    **坦克标记不做防重叠位移**（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相
+    压盖（与 3D 一致——3D 从不移动车体模型）；早前"整盒推开 + 虚线 leader 回指真实位置"的 2D 布局
+    已整体删除（`computeTankCollisionLayout`、`presentationOffset`、`.pb-marker-leader` 与
+    `screenOffsetToSvgDelta` 一并移除）。名牌 / HP 的防重叠仍由本节的标签车道机制承担。
    - **全屏模式（原生 Fullscreen API）**：控制栏「⛶ 全屏 / 退出全屏」（i18n 三语 `enter_fullscreen`/`exit_fullscreen`）；
     全屏对象 = `.battle-playback` 根容器（地图 + 全部 controls + 标注 + 信息面板，不含页面 header/nav）；
     状态事实源 = `document.fullscreenElement === 当前根容器` + `fullscreenchange`（ESC/浏览器 UI 退出立即同步，
@@ -365,16 +400,21 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
 
 ### 2D Local / 3D Remote 运行时渲染契约
 
-- 2D 底图来自 `frontend/src/assets/maps/*.webp` 的已验收 AI 增强底图（WebP q90），由 `mapImages.js` 静态 import 随站点发布；当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
+- 2D 底图来自 `frontend/src/assets/maps/*.webp`（由 Agent 仓 asset_pack `ground.webp` 按冻结配方派生，WebP q90；来源与配方见 [reference/maps.md](../reference/maps.md) §2026-10-16），由 `mapImages.js` 静态 import 随站点发布；当前底图 intrinsic raster resolution 为 1254×1254。它只描述文件解码像素，不等于页面的 logical map frame。
+- **3D 地面贴图四档统一 = `map`（`ground.webp`，±300 全幅契约）**（2026-10-16 用户裁定）：此前最低档用资产面 `res=mini`（客户端 HUD 小地图）省流量，实测它覆盖约 620 m——比 ±300 契约框多出**外围一圈**（水面/场景在 Landscape 框外侧），按 600 m 铺会把内容压缩约 3% 并把圈外内容摊进边界；2D 底图同框 ⇒ 低档地面与 2D 地图
+  必然对不上。现四档同源，低档的带宽代价（4096² ground 而非 512² mini）如实记录，路由守卫见
+  `playbackScene.test.js`「地面贴图四档统一用契约化的 `map`」。数据面背景见 Agent 仓 Agent 仓 `docs/game-data-sources.md` §5.7。
+  Android 上该 URL 还可能被运行时更新通道顶替（包内兜底 + 在线校验：sha256 判据、下载校验、失败回落包内；规则见 [reference/maps.md](../reference/maps.md) §2026-10-16、实现见 `frontend/src/data/map2dOverlay.js`），因此 intrinsic 尺寸仍为 1254×1254 但不保证像素与包内那份相同——坐标契约不变。
 - `mapImages.width/height` 保持既有 logical/render-frame dimensions（约 754–783），由 `createMapView()` 生成 `mapView.W/H`，作为 `coordinateBounds`、terrain projection、SVG `viewBox`、车辆/基地/轨迹/标注及 pointer conversion 的共同坐标空间；不得用图片实际像素替换。
 - Battle Playback 的 2D 底图由 `BattleMap.vue` 的独立 `.pb-basemap` HTML `<img>` 渲染；`.pb-svg` 承载 vector overlays，`.pb-markers` 与两者共享同一个 `.pb-viewport` camera frame。底图和 SVG 按 `mapView.W / mapView.H` 的 frame `fill`，保持既有 overlay 对齐。
 - 运行时 raster capacity 以 `requiredDeviceWidth = renderedCssWidth × view.scale × devicePixelRatio`（height 同理）诊断。`naturalWidth / requiredDeviceWidth` 小于 1 表示源分辨率不足；维持现有 1×→4× camera contract，不用滤镜弥补源图细节。
 - 3D 模型、纹理及地图资产继续经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin（生产 COS），与 2D 本地静态底图分开。2D 底图资源更新不改变 3D provider、缓存策略或资产托管。
 - 3D 回放运行特征（2026-10-03 性能批）：解析在 Worker 内跑（`scene/playbackParse.worker.ts`，
   失败自动回退主线程），同一文件（名+长+mtime+采样指纹）的解析结果缓存最近 3 场；渲染按需刷新
-  （暂停且无在飞特效、相机静止时不重绘）；伤害飘字留在主画布**单 WebGL 上下文**
-  （清晰度随画质档 DPR，不再固定 `min(dpr,2)`），车辆标签使用共享 HTML 呈现；伤害飘字走对象池，战斗特效（曳光/光迹/开火/命中/爆炸/残骸烟）
-  由 `scene/battleFx.js` 合批与池化，二者都仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
+  （暂停且无在飞特效、相机静止时不重绘）；**伤害数字与车辆标签同在 HTML 覆盖层**（数字是血条
+  右侧的 DOM 文本，尺寸 / 漂移是屏幕空间常量，不再有第二个 WebGL 上下文、也没画布贴图池），
+  战斗特效（曳光/光迹/开火/命中/爆炸/残骸烟）由 `scene/battleFx.js` 合批与池化，仅在会话结束时
+  整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）；
   HUD/进度条/名册按 ~10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
 - **3D 击毁车辆视觉**：复用原车模，死亡后 0.30 秒开始去饱和和压暗，0.80 秒完成
   哑光炭灰残骸状态，保持到回放结束。完全去饱和，在显示颜色上取原明度的 45%，
@@ -443,7 +483,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     回放时钟确定；AoI 缺口隐藏独立部件，不跨缺口插值。旧产物缺少字段则保持完整原车模。
     飞头实体是呈现依据，低血量、HP=0 或普通击杀不单独触发；不能由飞头反推弹药架殉爆死因。
     样本协议范围为 11.20：本机 77 场回放中 83 次 class-8 创建的 owner 均对应真实车辆，私人回放不入库。
-    解析由上游 v0.4.7 提供，本仓正式 pin 已同步；观感由用户在真实资产和 GPU 上验收。
+    解析由上游 v0.4.7 起提供，本仓正式 pin 为 v0.4.8；观感由用户在真实资产和 GPU 上验收。
   - **画质档位预算**（`QUALITY_PRESETS[k].fx` 引用 `FX_BUDGETS[k]`；信息类元素四档都有，氛围元素按档裁剪；
     批次容量封顶，满了按「命中 → 开火 → 爆炸 → 回放驱动粒子」的优先级丢弃）：
 
@@ -511,7 +551,25 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `labelPrefs.showPlayerName / showTankName / showReload` 与 `hpPrefs.showHp`；默认昵称关、
   车型/血量/装填开，旧持久化 key 与迁移语义保留。任一面板改变偏好，另一面板立即观察到。
   名牌直接使用语义 CSS token，不铺整卡不透明黑底，字体保持屏幕空间可读大小，长名称受限截断。
-  3D 车辆标签不再创建 CanvasTexture/Sprite；独立的伤害飘字仍可使用 Three.js sprite。
+  3D 车辆标签不再创建 CanvasTexture/Sprite；**伤害数字同样在 `PlaybackVehicleLabels3D` 的
+  HTML 覆盖层里**（同一层、DOM 顺序排在所有名牌之后）：出生点是该车 **HP 血条右缘 + 8px、
+  垂直居中于血条**（`measureDamageLayout` 只读血条 / 名牌 DOM 几何，不存在世界↔屏幕换算），
+  不覆盖血条、不被姓名/车型/装填条遮挡。**几何缓存的是"相对名牌锚点的偏移"（dx/dy/textW），
+  屏幕位置每帧用当前 `anchor.x / anchor.y` 重算**——车辆与相机移动时数字跟着血条走，resize 或
+  出屏（`projected === false`）立即隐藏，不存在被冻结在旧坐标的数字；偏好 / 行开关 / 图标模式 /
+  名牌内容发布（10Hz）变化才按布局签名重新量一次，不逐帧读 `getBoundingClientRect()`。
+  生命周期内漂移 20×24px 并只在后半程淡出（CSS 动画，固定 px 字号 + 深色描边 token，远近缩放与
+  自由/跟随/俯视镜头下屏幕尺寸一致）；**漂移方向按所在侧取号**（右 → +20px，左 → −20px），
+  镜像后不会重新漂回血条。回退链：血条关掉 → 名牌块右缘同一规则；整块名牌关掉或**真实 0×0
+  空名牌**（姓名/车型/HP/装填全关且非图标模式）→ 落回名牌锚点上方（`labelLiftWorld` 抬升的
+  车体上方）；车辆出屏/不可见 → 不显示。同一辆车连续受击按 20px 槽位错开，避免多个数字完全
+  重叠；贴屏幕右缘放不下（**含整段漂移行程**，不只出生帧）时镜像到血条左侧，两侧都不够时仍取
+  右侧，不被 viewport 裁切。掉血事件跨过播放时钟时由场景
+  `spawnDamage(eid, hpLoss, FLOAT_DMG_MS × FX_SCALE)` 生成一次（与 2D 同一组寿命常量），
+  seek 由 `clearDamages` 清空且不补播；每个数字的 `animation-delay` 存活期间稳定（首次挂载为 0，
+  只有 showStatus 关→开的真实 remount、showStatus 关闭期间出生后的延迟首次挂载、H 隐藏→恢复或出屏→进屏（含出生时在视野外的延迟首次可见）时按 `performance.now() - bornMs`
+  补偿相位），rerender 不会重复快进 CSS 动画；remount 同时恢复所在侧的漂移方向。H 只隐藏视觉，
+  不暂停或延长生命周期，到期仍由原始 `bornMs + durationMs` 决定。
   场景按帧投影 world position，隔离的轻量 DOM bridge 只更新 anchor transform/visibility，
   内容状态按 HUD cadence（约 10Hz）发布给标签子组件，seek 立即刷新，不驱动整个
   `Replay3DPane` reactive tree。背向相机、出屏、未可见车辆隐藏，既有遮挡语义保留；
@@ -702,6 +760,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     （本地与 CI 同报 `expected 10 to be less than or equal to 8`）。现改为按**出生时刻**
     过滤（`t < gapEnd` = 洞前含尾巴，`t ≥ gapEnd` = 洞后新锚段），并对尾巴段独立断言
     横向区间——洞后窗口的语义（新锚、无桥接）不变。
+    **阵亡期同属"向前的不连续"**（3.1.0 review P2，issue #622）：DESTROYED 期间同样
+    flush + 双侧 `resetTrailState`（只是"不出段"而不复位锚点，复活落回新位置时会把这段位移
+    盖成一条跨阵亡期的长印记）——回归见 `playbackScene.test.js` 的"履带印阵亡期断链"用例。
   - **呈现** = 每车一个动态合并几何 Mesh（槽位 = 环 50 槽/侧**含活戳**，左右交错
     ⇒ `TRAIL_SLOTS = 50×2 = 100` 个四边形；**绘制窗口恒为全部槽位**，无效槽（环内空槽）
     一律**显式隐藏 alpha=0**——转弯时左右落锚数因弧长差而不同，固定窗口没有 min/max 的
@@ -1026,7 +1087,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   `terrainLodStale`：拉近 ≥5% 立即细化、拉远 ≥40% 才允许变粗、两次重建至少隔 120 ms）⇒
   网格**永不比客户端同一相机位置允许的层级更粗**，且"时有时无"消失。守卫 +单测锁该契约。
   **滞回输入与构建判据同源（2026-10-10 review P2）**：滞回此前只读"相机到 controls.target 的视距"，而 `buildAdaptiveTerrain` 的判据读相机三维位置/FOV/aspect ⇒ **绕目标水平旋转、视距恒等时网格永远跳过重建**，停在旧相机位置的 LOD 分布上（近处该细的补片保持粗格）；`onResize` 也只改 `camera.aspect` 不重建地形。现滞回输入改为相机姿态快照 `terrainLodState`（位置/视距/视轴/FOV/aspect）：侧向绕转 ≥5% 视距、FOV/aspect 相对变化 >0.1% 都触发重建，同受 120 ms 节流（上限 ≈1 次/120 ms，成本同原先拉近场景）。守卫（`sceneryMaterials.test.js` 源码接线）+ 单测（`terrainMesh.test.js` 绕转/FOV/aspect 用例）锁该契约。
-  **评审批修复（2026-10-10，基线 1da7b4e9）**：①**P1** 自适应地形几何补回 `uv`——低档/均衡档与分层材质不可用时底图（`ground.webp`/`mini.webp`）走 `MeshBasicMaterial({map})`，缺 uv 整图退化成单 texel 常量；朝向取旧 `PlaneGeometry+rotπ` 契约（`u = 0.5−(X−cx)/span`、`v = 0.5+(Z−cz)/span`，与合成器「顶行=+Z」一致；实测梯度结构相关在 erlenberg/medvedkovo/malinovka 三图唯一命中该式，`cm.webp` 是另一套 v（两文件导出侧 v 互翻，公式不可互换））。②场景纹理依赖 `getDependency('texture')` 全部 await 之后、任何共享状态写入前复查会话失效。③履带 UV 回退分支未定义变量（`v0tankId`→`tankId`，否则 ReferenceError 中断装配、留下半初始化状态）。④光照图材质改按输入指纹 `cachedSceneryMat` 共享（逐 mesh 新建会把 (几何,材质) 合批拆成 count=1 单实例批；逐实例光照图变换本就走 `aLm` 实例属性）。⑤履带形变下发判定改为比较**解算链**（`chainChanged`，顶点输出是链的纯函数）——只比最大幅度会漏"幅度相同、分布不同"的形变；**法线闸门**同样按链判定（`chainDrift`：与上次重算法线时的链逐点取最大偏差，2 cm 阈值兼作成本刹车）——累计统计量（最大幅度/均值）表达不了空间分布（复审曾据此漏报一次：把 0.1 m 的形变从一处挪到另一处，两项统计量都不变、法线却必须重算）。⑥关闭 GLB 时先释放该车悬挂克隆几何（`suspParts.disposables`）再清引用，反复开关不累积 GPU 缓冲。守卫见 `sceneryMaterials.test.js`「场景装配的会话/资源卫生」与 `terrainMesh.test.js` 的 `groundMapUv` 用例；纯前端，无数据面改动。
+  **评审批修复（2026-10-10，基线 1da7b4e9）**：①**P1** 自适应地形几何补回 `uv`——低档/均衡档与分层材质不可用时底图（`ground.webp`）走 `MeshBasicMaterial({map})`，缺 uv 整图退化成单 texel 常量；朝向取旧 `PlaneGeometry+rotπ` 契约（`u = 0.5−(X−cx)/span`、`v = 0.5+(Z−cz)/span`，与合成器「顶行=+Z」一致；实测梯度结构相关在 erlenberg/medvedkovo/malinovka 三图唯一命中该式，`cm.webp` 是另一套 v（两文件导出侧 v 互翻，公式不可互换））。②场景纹理依赖 `getDependency('texture')` 全部 await 之后、任何共享状态写入前复查会话失效。③履带 UV 回退分支未定义变量（`v0tankId`→`tankId`，否则 ReferenceError 中断装配、留下半初始化状态）。④光照图材质改按输入指纹 `cachedSceneryMat` 共享（逐 mesh 新建会把 (几何,材质) 合批拆成 count=1 单实例批；逐实例光照图变换本就走 `aLm` 实例属性）。⑤履带形变下发判定改为比较**解算链**（`chainChanged`，顶点输出是链的纯函数）——只比最大幅度会漏"幅度相同、分布不同"的形变；**法线闸门**同样按链判定（`chainDrift`：与上次重算法线时的链逐点取最大偏差，2 cm 阈值兼作成本刹车）——累计统计量（最大幅度/均值）表达不了空间分布（复审曾据此漏报一次：把 0.1 m 的形变从一处挪到另一处，两项统计量都不变、法线却必须重算）。⑥关闭 GLB 时先释放该车悬挂克隆几何（`suspParts.disposables`）再清引用，反复开关不累积 GPU 缓冲。守卫见 `sceneryMaterials.test.js`「场景装配的会话/资源卫生」与 `terrainMesh.test.js` 的 `groundMapUv` 用例；纯前端，无数据面改动。
   **地形 LOD 逐行对齐引擎源码（2026-10-11）**：用户"同距下客户端两侧平整、我们台阶分界处下陷/上浮"后，
   从 dava.engine 源码镜像（github `the-tuxedo-cat/dava.engine`，`Sources/Internal/Render/Highlevel/`
   `LandscapeSubdivision.{h,cpp}` + `Landscape.{h,cpp}` + `Scene3D/Systems/LandscapeSystem.cpp`）逐行
@@ -1219,13 +1280,52 @@ python common/python/extract_vehicle_sizes.py
 python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 ```
 
-## 2.5D 车辆地形姿态
+## 2D 位姿与 3D 同源（2D = 3D 的严格俯视投影）
 
-Playback 继续使用现有俯视 hull/turret 资产，不引入 3D 坦克模型。启用 2.5D terrain relief 时，前端以当前车辆 footprint 和可靠 hull yaw 在 heightfield 上采样前/后/左/右地面高度，得到 presentation-only pitch/roll。pitch/roll 只倾斜车辆视觉层 `.pb-graphics`；HP、名称、hitbox、selected/recorder 与 collision layout 保持 screen-aligned。
+2D 俯视**就是 3D 场景的俯视版本**（2026-10-16 定案）：车辆位置与朝向不再由 2D 自采原始观测，
+而是与 3D 场景共用**同一个位姿采样器** `replay-local/pose/vehiclePose.ts`——
+同一套通道选择（`pose_kf` 关键帧折线优先，缺省回退 10 Hz 滤波网格线性插值）、同一插值、同一
+解卷绕域，因此两个页签逐帧同一画面（含 AoI 重入时客户端滤波器的收敛行为）。
 
-该姿态来自地图权威 heightfield，不从前端猜测 replay Z；无 terrain model 或无可靠 hull yaw 时保持原有平面 marker。为避免小尺寸贴图翻卡片，视觉 pitch clamp ±14°、roll clamp ±10°，并遵守 `prefers-reduced-motion`。
+**分层契约**（决定改动落点）：
 
-- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry，与播放条 / 顶栏同一个原点）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。
+- **画在哪 / 朝哪** → 位姿通道（playback facet 的位姿列投影 `PoseFacet`，随 `LocalPlayback` 带出，
+  2D 单独打开也拿得到）；game 坐标系（x 不镜像、z 北），视图各自施加帧变换：
+  3D 场景 `(−x, y, z)` + `yaw/roll` 取负，2D 地图 `toX/toY`（y 翻转、无 x 镜像）。
+  帧契约的可执行验收：`replay-local/pose/vehiclePose.parity.test.ts`。
+- **可不可信** → 仍是 canonical 知识层：观测区间（`positionCoveredAtV2`）决定 last-known 淡化、
+  尾迹断链、炮线端点门控与伤害浮字锚点；canonical 原始观测（type=10）不再进入渲染取值。
+  冻结的 Java 金标（`__golden__/java-playback.json`）因此不受影响。
+
+炮塔：facet 的 `turret_yaw` 为绝对角且与 `hull_yaw` 严格同长（上游"本车无 prop2 ⇒ 相对 0"回退），
+2D 换算 `wrapPi(绝对 − 车体)` 后渲染——**不再出现"prop2 首样本前炮塔整层消失"**
+（旧实现把 `turretRelativeYawDeg: null` 当"无炮塔"，实测开局最长 90 s 缺炮塔）。
+
+**失察即冻结**（2026-10-16 用户裁定）：车辆离开我方视野后，2D 图标**停在最后观测点**——采样时刻由
+`observedFreezeTimeAt`（`utils/battlePlaybackV2.ts`）给出（最后一个 OBSERVED 段的结束时刻），
+位姿仍取自同一通道但**时刻冻结**，不跟随客户端滤波器在失察区间的预测延续（实测滤波延续可与最后
+观测点相差 177 m）。语义与 3D 对齐：3D 里该车模型直接不显示（`visibleAt(v, T)` = coverage 区间，
+阵亡残骸除外），2D 变灰停在原地。守卫：`vehiclePose.canonical-parity.test.ts`（区间内亚米级、
+区间外 ≤20 m 冻结差）、`battlePlaybackV2.test.js` 的 `observedFreezeTimeAt` 用例、以及
+`BattlePlayback.integration.test.js` 的"失察即冻结"用例（观测内跟随通道、失察冻结在段末）。
+
+**多实体账号（AoI 重入 / 复活换实体）**：同一账号在回放里可能有多个实体，位姿列按 eid 各列一份。
+2D 的**活跃实体**判定与 3D 的死亡归属**同源**——canonical 身份证据（`entityFirstSeenByAccount` +
+`activeEntityAt`，随 `PoseFacet.entityStartsByAccount` 带出），按采样时刻选活跃实体；证据缺失或
+并列（歧义）→ 该车回落 canonical 位姿（fail-closed，不猜）。
+**采样时刻还必须落在所选实体的 `coverage` 证据内**（`poseCoveredAt`）：coverage 外没有位姿证据，
+而关键帧 / 网格采样在首样本前**端点钳位**——新实体的身份证据（HP / 观测先见）可能早于其首个位姿
+样本，直接采样就会把它未来的首帧位姿泄漏到过去（review P2）。不覆盖同样回落 canonical。
+守卫：`vehiclePose.test.ts` 的 `selectActiveDef` / `poseCoveredAt` 用例 +
+`BattlePlayback.integration.test.js` 的"多实体账号"与"实体身份证据早于位姿覆盖"用例（后者失败态
+即泄漏成后一实体的钳位首帧）。
+
+**刻意不呈现**：俯仰/侧倾（"多出的那个维度"）与炮管仰角。2D 是纯俯视，标记视觉层不施加任何
+3D 倾斜（原"2.5D 车辆地形姿态"——用底图 heightfield 合成 pitch/roll + ×1.35 增益 + ±14°/±10°
+钳制——已整体删除：它是地形坡度而不是记录的车辆姿态，且与 3D 记录值可差数十度）。
+2.5D 的**地形起伏背景**（`BattleMap3D` / `projectTerrainPoint`）保留，它只是底图升级，与车辆姿态无关。
+
+- 3D Details 与 2D 共用 canonical 查询及 `V2VehicleInspector`：选中账号对应的 track 提供时刻统计、伤害日志、最后已知时间、装备、物资与消耗品状态，肖像按车型懒加载。2D / 3D 复用工作台 playback session 的同一份解析结果；3D 只等待 scene readiness，canonical 后台就绪后自动增强已打开的 Details。3D 按独立 clock.startRaw 转换场景时钟（不依赖 reload telemetry，与播放条 / 顶栏同一个原点）；2D 的位姿通道同样按 `clock.startRaw` 偏移到回放时钟域（`clockOffset` prop）；数据缺失保持 unavailable，不使用终局汇总代替当前统计。
 
 ### 2D 车辆血量显示
 

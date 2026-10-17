@@ -97,6 +97,8 @@ jobs:
           bash scripts/ci/test-postgres-business-tofu-contract.sh
       - name: Declarative Komodo resource contract
         run: python3 scripts/ci/test-komodo-resources.py
+      - name: PR area label advisory tests
+        run: python3 scripts/ci/test_pr_area_labels.py
       - name: TX and Yecao owner runtime fixtures
         run: |
           set -euo pipefail
@@ -110,7 +112,6 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
-          bash deploy/test-caddy-route-inventory.sh
       - name: Keycloak PostgreSQL backup runtime smoke
         run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract

@@ -6,6 +6,11 @@
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
+// 搜索别名（开发者人工维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
+// 没配 alias 的车辆直接不出现在文件里（缺 key == aliases []）。与 map_names.json 同一机制：
+// 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
+// 契约与维护流程见 common/AGENTS.md 与 docs/architecture/tankopedia-reference-data.md。
+import TANK_ALIASES from '../../../common/tank_aliases.json'
 
 export const TANKOPEDIA_SORTS = Object.freeze(['name', 'tier', 'hp', 'pen'])
 /** 只属于坦克百科的 query 键：离开百科时由 navigation.locationForView 丢掉 */
@@ -93,7 +98,21 @@ const COMPARATORS = {
 }
 
 /**
- * 列表筛选 + 排序：tier / nation / type 精确匹配，q 走模糊打分。
+ * 单车命中分 = max(正式车名, 各 alias)：alias 只扩搜索召回，命中后展示与排序仍走正式车名
+ * （同分回落既有 byName）。不做 exact-alias / 语言 / 热度 boost。
+ */
+function tankSearchScore(tank, query) {
+  let score = tankFuzzyScore(tank.name || '', query)
+  for (const alias of tank.aliases || []) {
+    // alias 原始文本留在 JSON 里，匹配时与 query 同样 trim；大小写由 tankFuzzyScore 归一化。
+    const aliasScore = tankFuzzyScore(String(alias || '').trim(), query)
+    if (aliasScore > score) score = aliasScore
+  }
+  return score
+}
+
+/**
+ * 列表筛选 + 排序：tier / nation / type 精确匹配，q 走模糊打分（正式车名 + alias）。
  * 有搜索词时按相关度排序（与旧实现一致），否则按 sort。
  */
 export function selectTanks(tanks, state = {}) {
@@ -105,7 +124,7 @@ export function selectTanks(tanks, state = {}) {
   const query = (state.q || '').trim().toLowerCase()
   if (query) {
     return base
-      .map(tank => ({ tank, score: tankFuzzyScore(tank.name || '', query) }))
+      .map(tank => ({ tank, score: tankSearchScore(tank, query) }))
       .filter(entry => entry.score > 0)
       .sort((a, b) => b.score - a.score || byName(a.tank, b.tank))
       .map(entry => entry.tank)
@@ -113,8 +132,12 @@ export function selectTanks(tanks, state = {}) {
   return base.slice().sort(COMPARATORS[state.sort] || byName)
 }
 
-/** tank_cache.json（对象或数组）→ 列表视图模型。 */
-export function normalizeTankCache(cache) {
+/**
+ * tank_cache.json（对象或数组）→ 列表视图模型。车辆身份与显示名只来自 tank_cache
+ * 事实数据；`aliases` 是独立的搜索 metadata（缺 key 的车辆得到 `[]`，新车进 tank_cache
+ * 不需要同步改 alias 文件）。aliasMap 参数只为测试注入稀疏数据集。
+ */
+export function normalizeTankCache(cache, aliasMap = TANK_ALIASES) {
   const entries = Array.isArray(cache)
     ? cache.map(tank => [tank?.id, tank])
     : Object.entries(cache || {})
@@ -126,6 +149,7 @@ export function normalizeTankCache(cache) {
       return {
         id: Number(id),
         name: value.name || '',
+        aliases: aliasMap?.[String(Number(id))] ?? [],
         tier: value.tier ?? 0,
         nation: value.nation || 'unknown',
         type: value.type || 'unknown',

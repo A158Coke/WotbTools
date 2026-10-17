@@ -25,8 +25,26 @@ public class TournamentAdminController {
     private static final String DAY = "/{eventId}/rounds/{roundNumber}/days/{dayNumber}";
     private final TournamentService service;
     public TournamentAdminController(final TournamentService service) { this.service = service; }
+    @GetMapping("/rules/default")
+    public TournamentDtos.DefaultRules defaultRules() { return service.defaultRules(); }
+    @PutMapping("/rules/default")
+    public TournamentDtos.DefaultRules setDefaultRules(@RequestBody final TournamentDtos.SetDefaultRulesRequest request) {
+        return service.setDefaultRules(JwtUtil.requireUserId(), request);
+    }
+    @DeleteMapping("/rules/default")
+    public TournamentDtos.DefaultRules clearDefaultRules(@RequestBody final TournamentDtos.ClearDefaultRulesRequest request) {
+        return service.clearDefaultRules(JwtUtil.requireUserId(), request);
+    }
+    @PutMapping("/rules/default/configuration")
+    public TournamentDtos.DefaultRules saveDefaultConfiguration(@RequestBody final TournamentDtos.DefaultConfigurationRequest request) {
+        return service.saveDefaultConfiguration(JwtUtil.requireUserId(), request);
+    }
+    @GetMapping("/{eventId}/rule-source")
+    public TournamentDtos.RuleSource ruleSource(@PathVariable final long eventId) { return service.ruleSource(eventId); }
     @GetMapping
-    public List<TournamentDtos.Event> list() { return service.listEvents(); }
+    public ResponseEntity<List<TournamentDtos.Event>> list() {
+        return ResponseEntity.ok().header("X-Tournament-Default-Rules", "1").header("X-Tournament-Csv-Import", "1").body(service.listEvents());
+    }
     @PostMapping
     public TournamentDtos.Config create(@RequestBody final TournamentDtos.CreateRequest request) {
         return service.create(JwtUtil.requireUserId(), request);
@@ -88,6 +106,21 @@ public class TournamentAdminController {
     @PostMapping("/{eventId}/historical-import/preview")
     public TournamentDtos.HistoricalPreview historicalPreview(@PathVariable final long eventId, @RequestBody final TournamentDtos.HistoricalPreviewRequest request) {
         return service.previewHistorical(eventId, request);
+    }
+    @PostMapping(value = "/{eventId}/csv-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public TournamentDtos.CsvImportPreview csvPreview(@PathVariable final long eventId,
+            @RequestParam(name = "file") final MultipartFile file,
+            @RequestParam(name = "expectedEventVersion") final long eventVersion) {
+        return service.previewCsv(eventId, eventVersion, file);
+    }
+    @PostMapping(value = "/{eventId}/csv-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public TournamentDtos.CsvImportPreview csvImport(@PathVariable final long eventId,
+            @RequestParam(name = "file") final MultipartFile file,
+            @RequestParam(name = "expectedEventVersion") final long eventVersion,
+            @RequestParam(name = "sourceSha256") final String sourceSha256,
+            @RequestParam(name = "confirm") final boolean confirm,
+            @RequestParam(name = "idempotencyKey") final String idempotencyKey) {
+        return service.importCsv(JwtUtil.requireUserId(), eventId, eventVersion, file, sourceSha256, confirm, idempotencyKey);
     }
     @GetMapping("/{eventId}/historical-import")
     public TournamentDtos.HistoricalState historicalState(@PathVariable final long eventId,

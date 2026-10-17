@@ -48,14 +48,14 @@ import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapL
 import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
-import { lifeAt } from '../utils/battlePlaybackV2.ts'
+import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
-import { sampleChannel, sampleKeyframes, sampleDetachedPose } from './trackInterp.js'
+import { sampleDetachedPose } from './trackInterp.js'
+import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
 import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
-import { DMG_ASPECT, DMG_TEX_H, DMG_TEX_W, dmgWorldHeight, floatDmgAnim } from './floatDmg.js'
 import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
 import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
@@ -144,10 +144,10 @@ async function mapLimit(items, limit, fn) {
 // fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
 // 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
 export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, miniMap: true,  anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, miniMap: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  miniMap: false, anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
+  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
+  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
+  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
+  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
 }
 
 /**
@@ -196,6 +196,12 @@ export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts） */
+  const POSE_GRID = { tStart: 0, samples: 0 };
+  /** 位姿采样复用对象（每帧多车高频调用，零分配） */
+  const _poseOut = {
+    x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0,
+  };
   let currentMapBases = null;
   // 阵营/中立调色（唯一事实源）：green / red / white——炮线、基地归属、标签共用；
   // 中立与未知阵营一律 white（unknown ≠ enemy）。
@@ -234,7 +240,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let animLayerMats = [];                  // 动画混合层材质（uTime 每帧写回放秒数）
   let envTexture = null;                   // 逐图 IBL 环境贴图（scene.environment；会话拥有）
   let envMultiplier = 1;                   // 逐图 ibl.environmentMultiplier → scene.environmentIntensity
-  let labelScene = null;
   let sizeObserver = null;
   let glbCache = new Map(), glbOn = false;
   // 履带印（tread/）逐车参数与贴图缓存：会话域（与 glbCache 同生命周期）。
@@ -390,54 +395,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
 
   function idxOf(t) { return Math.floor((t - DATA.meta.t_start) / GRID_DT); }
 
-  // 位姿求值：**优先关键帧折线**（上游 `pose_kf` = 客户端 60Hz 渲染路径的折点序列，
-  // 段内线性插值即复现客户端画面，含「保持-跳变」阶梯）。缺失 `pose_kf`（旧 facet）时
-  // 回退 10Hz 网格线性插值——与历史行为逐值一致。
-  // 为什么不能只靠网格：0.1s 网格与 ≈10~12Hz 位置更新不同相 → 阶梯被混叠成速度摆动
-  // （实测某 0.5s 窗内线速度 4.5→29.6 m/s，同段真值稳定），观感即「一顿一顿」。
-  // pos 的 x 分量在此处取镜像负号（游戏系 → 场景系）。
-  const kfOf = (v) => {
-    const k = v.def.pose_kf;
-    return k && k.t && k.t.length >= 2 ? k : null;
-  };
+  // 位姿求值：**唯一实现**在 `replay-local/pose/vehiclePose.ts`（2D 俯视与 3D 场景共用）——
+  // 含 `pose_kf` 关键帧优先 / 10Hz 网格回退、以及炮塔绝对角 → 相对角的换算。
+  // 本处只施加「场景系 = 游戏系 x 取负」的帧变换（符号约定见 glbRig.js 头注释）；
+  // 车体侧倾 hull_roll 取自原始 type=10 volatile（滤波层不输出侧倾），旧产物缺列 → 0。
+  const poseOf = (v, t) => sampleVehiclePoseGame(v.def, POSE_GRID, t, _poseOut);
   function posAt(v, t, out) {
-    const k = kfOf(v);
-    if (k) {
-      const col = (c) => (i) => k.pos[i * 3 + c];
-      out.set(-sampleKeyframes(col(0), k.t, t),
-               sampleKeyframes(col(1), k.t, t),
-               sampleKeyframes(col(2), k.t, t));
-      return out;
-    }
-    const p = v.def.pos, t0 = DATA.meta.t_start, n = DATA.meta.samples;
-    const col = (c) => (i) => p[i * 3 + c];
-    out.set(-sampleChannel(col(0), n, t, t0, GRID_DT),
-             sampleChannel(col(1), n, t, t0, GRID_DT),
-             sampleChannel(col(2), n, t, t0, GRID_DT));
+    const p = poseOf(v, t);
+    out.set(-p.x, p.y, p.z);
     return out;
   }
-  function yawAt(v, t) {
-    const k = kfOf(v);
-    if (k) return sampleKeyframes((i) => k.yaw[i], k.t, t);
-    return arrAt(v.def.hull_yaw, t);
-  }
-  function hullPitchAt(v, t) {
-    const k = kfOf(v);
-    if (k) return sampleKeyframes((i) => k.pitch[i], k.t, t);
-    return arrAt(v.def.hull_pitch, t);
-  }
-  function turretAbsAt(v, t) { return arrAt(v.def.turret_yaw, t); }
-  function gunPitchAt(v, t) { return arrAt(v.def.gun_pitch, t); }
-  function arrAt(arr, t) {
-    if (!arr || !arr.length) return 0;
-    return sampleChannel((i) => arr[i], arr.length, t, DATA.meta.t_start, GRID_DT);
-  }
-  // 车体侧倾（rad）。数据侧 hull_roll 取自**原始 type=10 volatile 采样**（滤波层不输出侧倾，
-  // 与 hull_pitch 不同源）；旧产物无该列 → 0 = 水平（fail-safe，绝不拿 pitch 顶替）。
-  // 符号约定：游戏系→场景系是「x 取负」的镜像，镜像下绕 z（偏航）与绕 y（横滚=车体前向轴）
-  // 的角度取负、绕 x（俯仰）不变——这正是既有 `-yaw` 与 `+pitch` 的来源，故横滚取 `-roll`。
-  // （若实机目视发现侧倾方向相反，只翻这一个符号，并同步更新此处注释与守卫测试。）
-  const rollAt = (v, t) => (v.def.hull_roll && v.def.hull_roll.length ? arrAt(v.def.hull_roll, t) : 0);
+  function yawAt(v, t) { return poseOf(v, t).yaw; }
+  function hullPitchAt(v, t) { return poseOf(v, t).pitch; }
+  function turretAbsAt(v, t) { return poseOf(v, t).turretAbs; }
+  function gunPitchAt(v, t) { return poseOf(v, t).gunPitch; }
+  const rollAt = (v, t) => poseOf(v, t).roll;
 
   function hpAt(v, t) {
     const hp = v.def.hp; let cur = v.def.max_hp;
@@ -480,9 +452,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       };
     }
     // Canonical may still be loading/fail: retain the existing authoritative scene fact, never HP.
-    const death = v.def.death_t;
-    return Number.isFinite(t) && Number.isFinite(death)
-      ? { lifeState: t >= death ? 'DESTROYED' : 'ALIVE', destroyedKnownAtSec: death } : null;
+    // def 层复活轨道感知（issue #622）：复活字段缺省 = 死亡终态（行为与既往逐位一致）。
+    return defLifeAt(v.def, t);
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
   function visibleAt(v, t) {
@@ -535,8 +506,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     renderer.toneMapping = THREE.LinearToneMapping;
     renderer.toneMappingExposure = 1.0;
     container.appendChild(renderer.domElement);
-    // 伤害飘字使用同一 renderer 的反馈层；车辆标签由宿主 HTML 覆盖层呈现。
-    labelScene = new THREE.Scene();
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.02;
     if (DEBUG) window.__controls = controls;   // 诊断钩子（controls 创建后才可引用）
@@ -1007,16 +976,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
     // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
     const progress = createLoadProgress((snap) => { if (!stale()) store.assetProgress = snap.fraction; });
-    const mapUrlPlanned = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
+    const mapUrlPlanned = mapStaticUrl('map', undefined, resolvedKey);
     if (mapUrlPlanned) progress.expect('map');
     if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
     if (Q.groundLayers && mapStaticUrl('groundmeta', undefined, resolvedKey)) progress.expect('ground');
     if (Q.scenery && mapStaticUrl('scenery', undefined, resolvedKey)) progress.expect('scenery');
     try {
-      // 低档 mini：客户端小地图作地面（比高清底图小一个量级，保留 3D 起伏）。
+      // 地面贴图统一用**契约化的 `ground.webp`**（±300 全幅，与 2D 底图同源同框）。
+      // 曾用客户端 HUD 小地图（资产面 res=mini）省流量：实测它覆盖约 620 m —— 比 ±300 契约框
+      // **多出外围一圈**（水面/场景在 Landscape 框外侧），按 600 m 铺会把内容压缩约 3%、并把圈外
+      // 内容摊进边界（2026-10-16 用户裁定：以 ±300 为准，外圈不呈现）。
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
-      const mapUrl = (Q.miniMap ? mapStaticUrl('map-mini', undefined, resolvedKey) : null) ?? mapStaticUrl('map', undefined, resolvedKey);
+      const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
       if (mapUrl) {
         const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
@@ -1991,7 +1963,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 零分配锚点：所有车辆共用一个 scratch 喂 labelOverlay.setAnchor——overlay 侧契约是
   // **同步拷贝**进它自有的 per-eid 存储（见 PlaybackVehicleLabels3D.setAnchor），不持有
   // 调用方对象引用，因此逐帧逐车复用同一个对象是安全的（此前每帧每车新建一个对象）。
-  const labelAnchorScratch = { x: 0, y: 0, visible: false, occluded: false };
+  const labelAnchorScratch = { x: 0, y: 0, visible: false, occluded: false, projected: false };
   function publishLabels(force = false) {
     if (!DATA || !labelOverlay || !store.labelsOn) return;
     const now = performance.now();
@@ -2029,15 +2001,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     publishLabels(true);
     invalidate();
   }
+  // 名牌锚点（= 名牌块底边）相对车体的世界抬升：这是"名牌挂在屏幕哪里"的唯一事实源。
+  // 伤害数字在覆盖层里只量"相对锚点的几何"（见 PlaybackVehicleLabels3D.measureDamageLayout），
+  // 屏幕位置每帧用当前 anchor 重算；关名牌 / 无血条 / 空名牌时覆盖层回退到这个锚点上方。
+  // In symbol mode the icon replaces the hull at its projected position;
+  // ordinary labels keep their headroom above the visible vehicle model.
+  function labelLiftWorld(distance) {
+    return classIconsVisible() ? 0.3 : Math.min(6, Math.max(3.25, distance * 0.045));
+  }
   function updateLabels() {
     if (!labelOverlay) return;
     camera.updateMatrixWorld();
     for (const v of V) {
       const d = camera.position.distanceTo(v.group.position);
       v.labelAnchor.copy(v.group.position);
-      // In symbol mode the icon replaces the hull at its projected position;
-      // ordinary labels keep their headroom above the visible vehicle model.
-      v.labelAnchor.y += classIconsVisible() ? 0.3 : Math.min(6, Math.max(3.25, d * 0.045));
+      v.labelAnchor.y += labelLiftWorld(d);
     }
     updateLabelOcclusion();
     for (const v of V) {
@@ -2045,12 +2023,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         .applyMatrix4(camera.matrixWorldInverse).applyMatrix4(camera.projectionMatrix);
       const w = labelClip.w;
       const x = labelClip.x / w, y = labelClip.y / w, z = labelClip.z / w;
-      const visible = v.group.visible && store.labelsOn && w > 0
+      // projected = 车辆在视锥内；visible = 名牌本身是否显示。两者必须分开：伤害数字是
+      // 战斗反馈而不是名牌内容，关掉名牌后它仍要有落点（覆盖层里回退到锚点上方）。
+      const projected = v.group.visible && w > 0
         && Number.isFinite(x) && Number.isFinite(y) && z >= -1 && z <= 1
         && x >= -1 && x <= 1 && y >= -1 && y <= 1;
-      labelAnchorScratch.x = visible ? (x + 1) * container.clientWidth / 2 : 0;
-      labelAnchorScratch.y = visible ? (1 - y) * container.clientHeight / 2 : 0;
-      labelAnchorScratch.visible = visible;
+      labelAnchorScratch.x = projected ? (x + 1) * container.clientWidth / 2 : 0;
+      labelAnchorScratch.y = projected ? (1 - y) * container.clientHeight / 2 : 0;
+      labelAnchorScratch.projected = projected;
+      labelAnchorScratch.visible = projected && store.labelsOn;
       labelAnchorScratch.occluded = v.labelOccluded;
       labelOverlay.setAnchor(v.def.eid, labelAnchorScratch);
     }
@@ -2274,7 +2255,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function feedTrail(v, tr, t0) {
     const space = v.tread.space;
     const hwL = trailHalfGauge(v, 'L'), hwR = trailHalfGauge(v, 'R');
-    const deathT = v.def.death_t;
+    const def = v.def;
     const pendL = [], pendR = [];
     let broken = false;
     // flush = 纯批次收尾（只把已在批内的点喂给 advanceTrail），**不再兼职复位**——
@@ -2288,7 +2269,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     };
     /** 单点：阵亡/可见性过滤后按该时刻位姿推两侧接地点（yaw 随点携带，横截面戳据此定向） */
     const pushPoint = (tt) => {
-      if (deathT != null && tt >= deathT) return;             // 阵亡：静止残骸不再出段（不断链）
+      // 阵亡期：残骸不出段，且必须**断链**——复活会把车放到新位置（或渐进迁移），若沿用死前锚，
+      // 复活后的首个接地点会与死前锚连铺，跨阵亡期盖出一段长印记（3.1.0 review P2，issue #622）。
+      // 与 AoI 空洞同语义：历史印记保留，出阵亡期从新锚开始。
+      if (defLifeAt(def, tt)?.lifeState === 'DESTROYED') {
+        if (!broken) {
+          flush();
+          resetTrailState(tr.L);
+          resetTrailState(tr.R);
+          broken = true;
+        }
+        return;
+      }
       if (!visibleAt(v, tt)) {                                // AoI 外：断链（跨空洞不连铺）
         if (!broken) {
           flush();
@@ -3106,34 +3098,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let wreckClock = 0;
   let trajLines = [];
 
-  // ---------- 特效对象池（伤害飘字） ----------
-  // 飘字是最高频的反馈事件：canvas + CanvasTexture + Sprite 整套复用，取出时重置内容与
-  // 透明度，归还只从场景移除、不 dispose；真正的释放只在会话结束时做一次（disposeFxPool）。
-  // 炮线 / 光迹 / 命中 / 爆炸的对象与批次由 battleFx 自己池化。
-  const fxPool = new Map();
-  function fxTake(key, make) {
-    const p = fxPool.get(key);
-    if (p && p.length) return p.pop();
-    return make();
-  }
-  function fxGive(key, obj) {
-    let p = fxPool.get(key);
-    if (!p) { p = []; fxPool.set(key, p); }
-    p.push(obj);
-  }
-  function disposeFxPool() {
-    // 池里只剩伤害飘字（JS 包装 { sp, tex, cv, ctx }；炮线/命中/爆炸已移交 battleFx，
-    // 由 battleFx.dispose 释放）。Sprite 的四边形几何是 three 全局共享的，不随会话释放；
-    // 逐条释放材质与画布贴图（此前 rootOf 只认 Object3D / { g }，飘字贴图从未释放）。
-    for (const list of fxPool.values()) {
-      for (const o of list) {
-        o?.sp?.material?.dispose();
-        o?.tex?.dispose();
-      }
-    }
-    fxPool.clear();
-  }
-
   function spawnShot(s, seed) {
     // 炮线唯一颜色规则 = 射手阵营（绿/红/白）；命中/跳弹/击毁不改炮线颜色——
     // 结果由弹着点 impact 编码（原实现按结果上色，与上游 Agent 不一致）
@@ -3300,7 +3264,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 3D 侧统一在**使用点**乘 FX_SCALE（不改进 SSOT 常量 → 2D 时序不动）
   const ghostByEid = new Map();  // eid -> { fromFrac, toFrac, untilMs }
   const flashByEid = new Map();  // eid -> untilMs
-  let floatDmgs = [];          // { sp, tex, born, baseY, group }
   let dmgEvents = [];          // { t, eid, hpLoss }（回放时钟，升序）
   let burstEvents = [];        // { t, eid }（回放时钟，升序）
   let dmgPtr = 0, burstPtr = 0;
@@ -3327,65 +3290,46 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const hasCanonicalLife = canonical?.dataset?.vehicles && Number.isFinite(canonical.clock?.startRaw);
     burstEvents = [];
     for (const v of V) {
-      let t = v.def.death_t;
+      // 每次死亡各一次爆焰（issue #622 复活模式：同一 eid 可多次死亡）。
+      // 普通战斗每车至多一次死亡——单条行为与既往逐位一致。
+      const times = [];
       if (hasCanonicalLife) {
-        const transition = canonicalLifeTrack(v, canonical)?.lifeTransitions?.find(life => life.lifeState === 'DESTROYED');
-        t = transition && Number.isFinite(transition.timeSec)
-          ? transition.timeSec + canonical.clock.startRaw : null;
-        const identityTime = (transition?.destroyedKnownAtSec ?? transition?.timeSec) + canonical.clock.startRaw;
-        if (!canonicalDeathAppliesTo(v, identityTime, canonical)) t = null;
+        const seenDeaths = new Set();
+        for (const life of canonicalLifeTrack(v, canonical)?.lifeTransitions ?? []) {
+          if (life.lifeState !== 'DESTROYED' || !Number.isFinite(life.timeSec)) continue;
+          const identityTime = (life.destroyedKnownAtSec ?? life.timeSec) + canonical.clock.startRaw;
+          if (!canonicalDeathAppliesTo(v, identityTime, canonical)) continue;
+          // 同一次死亡的重复迁移只爆一次（既有不变式）；真复活模式的多死 killedAtSec 互异
+          const key = Number.isFinite(life.destroyedKnownAtSec) ? life.destroyedKnownAtSec : life.timeSec;
+          if (seenDeaths.has(key)) continue;
+          seenDeaths.add(key);
+          times.push(life.timeSec + canonical.clock.startRaw);
+        }
+      } else {
+        const death = v.def.death_t;
+        if (Number.isFinite(death)) {
+          times.push(death);
+          for (const d of v.def.death_times ?? []) {
+            if (Number.isFinite(d) && d !== death) times.push(d);
+          }
+        }
       }
-      if (Number.isFinite(t)) burstEvents.push({ t, eid: v.def.eid });
+      for (const t of times) burstEvents.push({ t, eid: v.def.eid });
     }
     burstEvents.sort((a, b) => a.t - b.t);
   }
 
   function vehicleByEid(eid) { return V.find((x) => x.def.eid === eid); }
 
-  // 伤害飘字：受击车上方浮出 "-<lost>"，上浮 + 淡出（基准 1s × FX_SCALE）。
-  // 在同一 renderer 的反馈层绘制（depthTest 关闭），车辆名牌独立使用 HTML 覆盖层。
-  // 飘字是最高频的反馈事件（每次掉血一次）：canvas / CanvasTexture / Sprite 全部池化，
-  // 复用时只重画画布内容并置 needsUpdate（贴图上传仍会发生，但对象不再反复创建销毁）
-  function makeFloatDmgFx() {
-    const cv = document.createElement('canvas'); cv.width = DMG_TEX_W; cv.height = DMG_TEX_H;
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 1, toneMapped: false,
-    }));
-    sp.renderOrder = 1001;                 // 反馈层内的绘制顺序
-    return { sp, tex, cv, ctx: cv.getContext('2d') };
-  }
-
-  function spawnFloatDmg(eid, hpLoss) {
+  // 掉血反馈（一次掉血事件 = 伤害数字 + HP 条幽灵段 + 受击闪，与 2D 三件套同源）。
+  // 伤害数字的落点与动画完全在 HTML 覆盖层（PlaybackVehicleLabels3D）：canvas sprite 恒在
+  // DOM 名牌之下，renderOrder / 世界空间偏移都压不住它，而数字要精确贴住血条右缘，只有同层
+  // 读 DOM 几何才做得到（覆盖层内部按 px 定位，不做世界↔屏幕换算）。
+  function emitDamageFeedback(eid, hpLoss) {
     const v = vehicleByEid(eid);
     if (!v || !v.group.visible) return;
-    const fx = fxTake('floatDmg', makeFloatDmgFx);
-    const cv = fx.cv, c = fx.ctx, tex = fx.tex, sp = fx.sp;
-    const cx = DMG_TEX_W / 2, cy = DMG_TEX_H / 2;
-    c.setTransform(1, 0, 0, 1, 0, 0);
-    c.clearRect(0, 0, DMG_TEX_W, DMG_TEX_H);
-    c.font = 'bold 100px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.lineJoin = 'round';
-    const text = '-' + hpLoss;
-    // 三层（由外到内）保证任意地形/车体/名牌上都读得出：橙光晕 → 黑描边 → 亮橙填充。
-    // 固定 384×192 对小到手机、大到 4K 都够清晰（屏上数字约 1.6% 视口高，贴图字高 100px
-    // 始终过采样；覆盖层的 DPR 上限由主画布画质档决定）：
-    // 屏上数字约 1.6% 视口高 ≈ 最多 ~70 设备像素，贴图字高 100px 始终过采样。
-    c.shadowColor = 'rgba(255,140,0,.95)'; c.shadowBlur = 30;
-    c.fillStyle = '#000'; c.fillText(text, cx, cy);          // 光晕载体（自身被后两层覆盖）
-    c.shadowBlur = 0;
-    c.lineWidth = 16; c.strokeStyle = 'rgba(0,0,0,.95)'; c.strokeText(text, cx, cy);
-    c.fillStyle = '#ffb340'; c.fillText(text, cx, cy);
-    tex.needsUpdate = true;
-    // 池复用：出生状态归位（透明度/尺寸/可见性由 updateTransients 逐帧驱动）
-    sp.material.opacity = 1;
-    sp.visible = showMarkerStatus;
-    sp.scale.set(DMG_ASPECT, 1, 1);        // 实际尺寸每帧按距离设定（屏上占比恒定，见 updateTransients）
-    sp.position.copy(v.group.position); sp.position.y += 3.2;
-    labelScene.add(sp);
-    floatDmgs.push({ sp, tex, cv, born: performance.now(), baseY: sp.position.y, group: v.group });
-    // 同源触发 HP 条反馈（2D 三件套：飘字 + 幽灵 + 闪，同一 loss 事件驱动）
+    labelOverlay?.spawnDamage?.(eid, hpLoss, FLOAT_DMG_MS * FX_SCALE);
+    // HP 条幽灵段 + 受击闪（与伤害数字同一 loss 事件驱动，2D 三件套同源）
     const nowMs = performance.now();
     const maxHp = v.def.max_hp > 0 ? v.def.max_hp : 0;
     if (maxHp > 0) {
@@ -3423,35 +3367,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         invalidate();
       }
     }
-    for (let i = floatDmgs.length - 1; i >= 0; i--) {
-      const f = floatDmgs[i];
-      f.sp.visible = showMarkerStatus;
-      const k = (now - f.born) / (FLOAT_DMG_MS * FX_SCALE);
-      if (k >= 1) {
-        labelScene.remove(f.sp);
-        fxGive('floatDmg', { sp: f.sp, tex: f.tex, cv: f.cv, ctx: f.cv.getContext('2d') });
-        floatDmgs.splice(i, 1);
-        continue;
-      }
-      // 跟随车辆水平漂移 + 上浮；尺寸按距离反算（屏上占比恒定，拉远看全场也读得出），
-      // 不透明度"先保持后淡出"（线性淡出会让数字来不及读）
-      f.sp.position.x = f.group.position.x;
-      f.sp.position.z = f.group.position.z;
-      f.sp.position.y = f.baseY + k * 4.5;
-      const { pop, opacity } = floatDmgAnim(k);
-      const s = dmgWorldHeight(camera.position.distanceTo(f.sp.position), camera.fov) * pop;
-      f.sp.scale.set(s * DMG_ASPECT, s, 1);
-      f.sp.material.opacity = opacity;
-    }
   }
 
   function clearTransients() {
-    // 归池而非 dispose：seek/teardown 后这些对象还要复用（真正的释放在 disposeFxPool）
-    for (const f of floatDmgs) {
-      labelScene.remove(f.sp);
-      fxGive('floatDmg', { sp: f.sp, tex: f.tex, cv: f.cv, ctx: f.cv.getContext('2d') });
-    }
-    floatDmgs.length = 0;
+    labelOverlay?.clearDamages?.();   // 伤害数字：seek 后不补播（到期由覆盖层自己的定时器负责）
     battleFx?.clearTransients();   // 爆炸 / 开火 / 命中：seek 后不补播
     ghostByEid.clear(); flashByEid.clear();   // 2D seek 同语义：清空且不补播
     dmgPtr = 0; burstPtr = 0;                 // 游标重置：seek 后不补播历史动画
@@ -3632,11 +3551,25 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const _tpA = new THREE.Vector3(), _tpB = new THREE.Vector3();
 
   const detachedPose = {};
+  /**
+   * 分离事实是否属于**当前这一世**（issue #622 review P2）：复活模式下车会带着炮塔复活——上一世的
+   * 飞头不应让新车继续无炮塔。分离从 detached 轨道首帧起生效，到该车**下一次复活**为止（规则与
+   * `defLifeAt` 同一份上游字段，原始时钟域）；复活后的新死亡若再飞头，会有新的 detached 轨道
+   * （新首帧）重新接管。飞头实体自身的渲染不受此判据影响（它有自己的 coverage 与位姿轨道）。
+   */
+  function detachmentAppliesNow(v, head) {
+    const startRaw = head.track.pose_kf.t[0];
+    if (!(T >= startRaw)) return false;
+    for (const r of v.def.resurrection_times || []) {
+      if (r > startRaw && r <= T + 1e-6) return false;
+    }
+    return true;
+  }
   function applyDetachedTurrets(v) {
     let separated = false;
     for (const head of v.detachedTurrets) {
       const known = T >= head.track.pose_kf.t[0];
-      separated ||= known;
+      separated ||= known && detachmentAppliesNow(v, head);
       head.root.visible = known && !classIconsVisible() && sampleDetachedPose(head.track, T, detachedPose);
       if (head.root.visible) {
         head.root.position.set(detachedPose.x, detachedPose.y, detachedPose.z);
@@ -3754,13 +3687,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     clampCameraTarget();
     const cameraMoved = controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
     // ---------- 按需渲染（脏帧）----------
-    // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 两次全屏
+    // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
+    // 伤害数字不参与这个判定：它是覆盖层 DOM + CSS 动画，暂停时自己走完，不需要出帧。
     const busy = PLAYING
       || cameraMoved
       || frameDirty
       || (destruct && destruct.animating)
-      || tracers.length > 0 || floatDmgs.length > 0 || (battleFx && battleFx.active())
+      || tracers.length > 0 || (battleFx && battleFx.active())
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) return;
     frameDirty = false;
@@ -3785,14 +3719,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     const perfT1 = PERF ? performance.now() : 0;
     maybeRebuildTerrainLod();   // 地形 LOD 跟随相机姿态（视距滞回 + 绕转/FOV/aspect；120 ms 节流）
     renderer.render(scene, camera);
-    // 伤害飘字覆盖层：同 renderer 的第二次 render；车辆标签由 HTML overlay 呈现。
-    // labelScene 只装飘字精灵（爆散在主场景）——无存活飘字时整遍跳过：空场景 render
-    // 也要付 clear + 命令提交，而战斗里绝大多数帧并没有飘字。
-    if (floatDmgs.length > 0) {
-      renderer.autoClear = false;
-      renderer.render(labelScene, camera);
-      renderer.autoClear = true;
-    }
     if (PERF) perfFrame(perfT1 - perfT0, performance.now() - perfT1);
   }
 
@@ -3800,7 +3726,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 3D 卡顿类问题靠"读代码"定不了位：这里逐帧记录**分阶段耗时**（场景状态更新 /
   // 提交渲染）与当时的**在场对象数**，并保留最慢的若干帧（含回放时刻 T）——复现后
   // 在控制台执行 `__pbPerf.report()` 即可拿到证据（谁慢、慢在哪个阶段、当时有多少
-  // 炮线/轨迹盒/命中特效/飘字/爆散/可见车辆）。
+  // 炮线/轨迹盒/命中特效/爆散/可见车辆）。
   const PERF = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).has('perf');
   let dynResCtl = null;
@@ -3817,7 +3743,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     perfRing[perfRingN % PERF_RING] = { dt, updateMs, renderMs, t: T, calls,
       dpr: renderer ? Math.round(renderer.getPixelRatio() * 100) / 100 : 0,
       tracers: tracers.length, traj: trajLines.length, impacts: battleFx ? battleFx.stats().impacts : 0,
-      dmg: floatDmgs.length, burst: battleFx ? battleFx.stats().bursts : 0,
+      burst: battleFx ? battleFx.stats().bursts : 0,
       veh: V.filter((v) => v.group.visible).length };
     perfRingN++;
     if (dt > 33) {
@@ -3844,7 +3770,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       `render ms med=${f(q('renderMs', 0.5))} p90=${f(q('renderMs', 0.9))}`,
       `draw calls med=${f(q('calls', 0.5))} p90=${f(q('calls', 0.9))} max=${f(q('calls', 0.99))}`,
       `pixel ratio med=${f(q('dpr', 0.5))} min=${f(q('dpr', 0.05))}`,
-      `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} dmg=${last.dmg} burst=${last.burst}`,
+      `now: T=${last.t.toFixed(1)} veh=${last.veh} tracers=${last.tracers} trajBoxes=${last.traj} impacts=${last.impacts} burst=${last.burst}`,
       'slowest frames (dt ms / update / render / T):',
       ...perfSlow.map((r) => `  ${f(r.dt)} / ${f(r.updateMs)} / ${f(r.renderMs)} @T=${r.t.toFixed(1)}`),
       `main-thread stalls >${PERF_HEARTBEAT_MS * 2}ms: ${perfStalls.length}`,
@@ -3880,14 +3806,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
 
   /** 预热在用材质（见 renderer 初始化处注释）：把首次编译的数十~数百 ms 从"战斗第一次
-   *  开火/命中"挪到加载阶段。场景层与飘字层各编译一次；失败不影响播放（best-effort）。 */
+   *  开火/命中"挪到加载阶段。失败不影响播放（best-effort）。 */
   function prewarmShaders() {
     try {
       camera.updateMatrixWorld();
       // 战斗特效的批次与条带平时按需隐藏：预热期间临时显示，避免首发开火时才编译
       ensureBattleFx().prewarm(() => {
         renderer.compile(scene, camera);
-        renderer.compile(labelScene, camera);
       });
     } catch (e) { console.warn('着色器预热失败（忽略）:', e); }
   }
@@ -3908,7 +3833,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 战斗反馈事件泵（回放时钟；壁钟寿命见 transient 段）
     while (dmgPtr < dmgEvents.length && dmgEvents[dmgPtr].t <= T) {
       const e = dmgEvents[dmgPtr++];
-      spawnFloatDmg(e.eid, e.hpLoss);
+      emitDamageFeedback(e.eid, e.hpLoss);
     }
     while (burstPtr < burstEvents.length && burstEvents[burstPtr].t <= T) {
       spawnBurst(burstEvents[burstPtr++].eid);
@@ -4138,7 +4063,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     resetMapLighting();   // 逐图光照随会话复位（否则换图时上一张的太阳会残留）
     animLayerMats = [];   // 动画混合层材质随会话失效（材质已随 mapScenery dispose）
     clearEffects();
-    disposeFxPool();   // 特效池（飘字画布贴图）随会话一次性释放
     battleFx?.dispose();   // 战斗特效（粒子批次 / 条带 / 图集）随会话一次性释放
     battleFx = null;
     if (DEBUG) delete window.__battleFx;
@@ -4220,6 +4144,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    POSE_GRID.tStart = 0;
+    POSE_GRID.samples = 0;
     store.playbackSession = null;
     // 会话终止 = 不再有任何可用的回放数据：就绪标记必须一起落下，否则新会话加载期间
     // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
@@ -4281,6 +4207,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      POSE_GRID.tStart = data.meta.t_start;
+      POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;
       // 资产阶段（地图/地形/地表/场景）内部有多个 await：被取代后必须立刻放弃，
       // 否则旧会话会走完 buildVehicles / buildRoster / setPlaying / tick / writeHud 复活自己。
@@ -4322,7 +4250,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       try { renderer.forceContextLoss(); } catch (_) {}
       renderer.domElement.remove();
       renderer = null;
-      labelScene = null;
     }
     dynResCtl = null;
     initScene();
@@ -4497,11 +4424,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     },
     /**
      * 共享标签偏好（唯一 owner = usePlaybackPreferences）。契约：
-     * - `enabled:false` → 整层名牌隐藏（覆盖层上还有伤害飘字，它是战斗反馈而非名牌，
-     *   关名牌时数字仍要可见——updateLabels 每帧也会重算同一条件）；
+     * - `enabled:false` → 整层名牌隐藏。伤害数字是战斗反馈而不是名牌内容：覆盖层收到
+     *   的 anchor 仍带 `projected`，关名牌时数字回退到锚点上方继续显示；
      * - `showPlayerName / showTankName / showHp / showReload` → 名牌内部的行开关。
      * - `classIcons` → 使用 HTML 类型图标替换模型，保留事实 root 与拾取。
-     * - `showStatus` → 作者标记环 / 伤害飘字；不改血量、伤害或可见性事实。
+     * - `showStatus` → 作者标记环 / 伤害数字（数字的显示开关在覆盖层，与标记同一偏好）。
      */
     setLabelPrefs: (prefs) => {
       const enabled = !prefs || prefs.enabled !== false;
@@ -4515,7 +4442,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         applyDetachedTurrets(v);
         if (v.glb) v.glb.visible = v.group.visible && !classIconsVisible();
       }
-      for (const effect of floatDmgs) effect.sp.visible = showMarkerStatus;
       setLabelPrefs(prefs || {});
       if (camera) updateLabels();
     },

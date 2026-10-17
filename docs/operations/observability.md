@@ -1,619 +1,105 @@
-# WotBTools 观测系统（Observability）运维文档
+# Observability and product usage
 
-> 可观测系统：**Backend 结构化日志 + requestId、HTTP/AI 指标（回放解析在客户端）、Prometheus + Loki + Grafana + Alloy**。
-> 当前实现包含 6 个 Dashboard（生产总览 / JVM 与基础设施 / HTTP 与事故诊断 / 回放与 AI 诊断 / 使用统计与 Android / Keycloak）、AI 指标在服务边界统计、日志安全与保留策略。
+The dashboards answer the maintainer's questions: who used the product, which features were opened, how many replays were parsed, which APK versions were requested, what AI tokens were consumed, and which errors occurred. There is no new alert or notification system.
 
----
+## Ownership and topology
 
-## Build-to-Learn：部署前配置核对记录
+- Yecao hosts Prometheus, Loki, Alloy, Grafana, node-exporter, dev-metrics-exporter and the independent ai-service.
+- TX business-api exposes management metrics on WireGuard `10.20.0.1:8088`. TX `alloy-tx` sends business-api, Keycloak, frontend APK download and Caddy logs to Yecao Loki at `10.20.0.2:3100`.
+- Yecao Alloy collects `ai-service` by its exact Compose service label. Its name-based backend/Keycloak/frontend rules remain for deployment canaries.
+- Grafana is private on `10.20.0.2:3000`, exposed through TX Caddy at https://monitor.wotbtools.com. Anonymous login and sign-up are disabled.
+- `infra/tofu/grafana` alone owns dashboards; canonical JSON lives in `deploy/observability/grafana/dashboards`. Datasources remain read-only file provisioning, UIDs `prometheus` and `loki`.
+- Existing Komodo/Periphery host monitoring remains independent and is not changed here.
 
-2026-09-06 核对生产 Dockerfile/compose 与 Prometheus 配置时：backend 业务端口为 `8087`，management
-端口为 `8088`；当时 frontend 的 host port 为 `8088:80`。该 frontend 映射已退役，
-当前 TX frontend service plane 使用 `10.20.0.1:8081 → 80`，见下节。Prometheus 与部署 gate
-统一抓取 TX WireGuard 专用管理端点 `10.20.0.1:8088/actuator/prometheus`，业务健康检查仍访问 backend 的
-`8087/api/health`。完整
-Docker emitter → Alloy → Loki 运行时结论交给 PR CI 的生产配置 smoke，不在此记录静态推测。
+## Dashboards
 
-## 0. 当前拓扑（2026-09 observability realignment 后）
+The five product dashboards default to last 24 hours, use `Asia/Shanghai`, and link to each other while preserving the selected range. **Today** means midnight Beijing time to now. Choose last 7 days or a custom range within the retention window. Empty results are displayed as No data, not a verified zero.
 
-双主机分工与观测数据路径（旧单机架构的历史记录见下文各节，与现状冲突时以本节为准）：
+| Dashboard | UID | What it measures |
+|---|---|---|
+| Engineering Overview | wotbtools-engineering-overview | GitHub PR/CI aggregates, history, freshness and production correlation |
+| Active users (home) | wotbtools-active-users | Distinct authenticated accounts with received foreground activity signals |
+| Feature usage | wotbtools-feature-usage | Per-file parse starts/outcomes and page/capability opens, by Web/Android |
+| Android downloads | wotbtools-android-downloads | APK request counts by filename/version and HTTP status |
+| AI token usage | wotbtools-ai-token-usage | Known input/output/total tokens, per-review average and missing usage |
+| Backend error logs | wotbtools-backend-error-logs | Login, HoF, tournament, AI, client parsing and other error sections |
 
-- **观测栈在 Yecao**（`deploy/docker-compose.prod.yml`）：Prometheus/Loki/Alloy/Grafana/node-exporter。
-  除容器内网外只发布两个 WireGuard-only 端口：Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100`。
-  端口发布只在容器**重建**时生效：若容器早于端口发布创建（端口随后才加入 compose），宿主不会有监听，
-  必须重新 reconcile 该服务（`WOTB_DEPLOY_SERVICE=loki`／`grafana` 走 `deploy/deploy.sh`，其
-  `apply_services` 用 `up -d --no-deps --force-recreate`）。注意 `observability.yml` 的 Grafana
-  local-state gate 在 runtime reconcile **之前**执行：state 未 bootstrap 时整个 workflow 会先失败、
-  根本不会 reconcile，其典型症状是「TX 侧 Alloy 本身启动正常，但 `10.20.0.2:3100` 连接超时」。
-  判据：`docker inspect <loki> --format '{{json .HostConfig.PortBindings}}'` 为空＝端口未发布，
-  而不是网络/WireGuard 故障（对照 `10.20.0.2:9000` 这类已发布端口应可连通）。
-- **业务在 TX**：`business-api` 的 management 端口只绑 `10.20.0.1:8088`，Yecao Prometheus 以
-  `job="wotb-backend"`（目标 `10.20.0.1:8088/actuator/prometheus`）跨 WireGuard 抓取；job 名与
-  `service` 标签保持不变，所有 dashboard PromQL 无需改动。
-- **日志**：TX 侧 `alloy-tx`（`deploy/tx/alloy/config.alloy`）按 `com.docker.compose.service`
-  标签采集 business-api/keycloak/wotb-frontend，标签归一化为旧名 `wotb-backend`/`keycloak`/
-  `wotb-frontend` 后经 WireGuard 推给 Yecao Loki；部署车道是 `.github/workflows/alloy-tx.yml`，
-  deploy gate 用带生产标签的 canary 证明三条流端到端可达。
-- **公网 monitor**：`monitor.wotbtools.com` DNS 指向 **TX（118.25.18.105）**，由 TX `Caddyfile`
-  的站点块反代到 `10.20.0.2:3000`；TX-local 就绪路由 `http://caddy/_wotb/monitor/*` 供无 DNS 部署
-  验证。Yecao 宿主上的 Grafana Tofu root 走本机 `http://10.20.0.2:3000`，不依赖公网 DNS。
-- **验证**：`deploy/verify-observability.sh` 在一次性 alpine 容器内执行全部检查。它不依赖已退役的 Yecao
-  `wotb-backend` 容器：backend 指标从 TX WireGuard 管理端点 `10.20.0.1:8088/actuator/prometheus` 读取，
-  `ai-service` 指标走 `wotb_internal` 网络；Loki 断言里的 canary 容器刻意复用 `wotb-backend-observability-canary-*`
-  名称，只为命中 Yecao Alloy 的 keep 标签、验证部署采集路径。覆盖 backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target `up==1`、datasource/dashboard API、双 canary 与 APK
-  脱敏 canary；Yecao 部署在数据链路失败时仍只输出非阻塞的 `OBSERVABILITY DEGRADED`。
+The six former dashboards are deleted through OpenTofu. Dashboard deletion and replacement are ordinary desired-state operations: **no delete allowlist**. Datasource deletion stays prohibited. Never remove the Grafana volume or edit state to delete a dashboard.
 
-## 1. 架构总览
+## Client telemetry
 
-| 路径 | 当前部署与配置 |
+`POST /api/observability/events` accepts a bounded batch described by `contracts/http/openapi.yaml`. The backend strictly validates fields, enums, timestamps, batch/body size and request rate before logging any events. It never accepts arbitrary client log text, account identity, file names or replay contents.
+
+- Limits are fixed-minute **event** quotas after full bounded batch validation: authenticated subjects each get 120 events/minute, sharing an authenticated 6000-events/minute pool; anonymous sources each get 120 events/minute, sharing a separate anonymous 6000-events/minute pool. A 20-event batch costs 20; invalid or over-quota batches consume no quota and emit no telemetry. Each pool tracks at most 4096 keys; a full key map rejects new identities while existing ones can still use remaining quota. Minute rollover resets both pools and maps.
+- Anonymous source uses normalized `X-Real-IP` only when the socket peer matches `WOTB_OBSERVABILITY_TRUSTED_PROXIES` (empty by default). TX Compose explicitly trusts the private `wotb_tx_internal` bridge `172.29.0.0/16` (including same-host hairpin NAT) and TX2 frontend WireGuard host `10.20.0.3/32`. This boundary trusts workloads on that private bridge and the TX2 host; neither backend port nor this network may be exposed to untrusted callers. Caddy is the sole public ingress; frontend nginx trusts Caddy real-IP processing and **overwrites** `X-Real-IP` with its resolved `$remote_addr`. Backend ignores `X-Forwarded-For`/`Forwarded`; untrusted peers or missing/duplicate/invalid `X-Real-IP` fall back to the socket peer. Only single literal IPs are accepted (no DNS, lists or zone IDs); IPv6 is canonicalized. Source hashes remain minute-salted, JVM-only, never logged/persisted or used as visitor identifiers. Placement/network changes must update this explicit proxy boundary; no blanket private-network or public trust is inferred.
+- Authenticated foreground activity: app initialization, login settlement, foreground return, page changes and at most one regular five-minute heartbeat. Hidden tabs pause activity. Backend validates the bearer token and hashes its subject; the client cannot name an account.
+- Deployment secret `WOTB_OBSERVABILITY_HASH_KEY` must contain at least 32 characters. It is supplied only to the business-api workflow/runtime, never committed. Empty/short keys disable authenticated activity ingestion; feature/parse telemetry remains available. Provision it in the protected TX deployment environment before relying on user counts. Keep it stable for at least the seven-day query window; rotation splits identities across the window.
+- Account hashes stay in the log **content**, not indexed stream labels or Prometheus labels. Active users are deduplicated across Web/Android; platform counts overlap and must not be added.
+- Other telemetry can be anonymous. Feature opens include initial entry, refresh and returning to a feature; parameter-only navigation within one feature does not count again. Managed/admin, documentation, contact and More pages are excluded.
+- Replay counters are per file entering a parse task. Ten selected files mean ten starts. Each operation has at most one success/failure/cancelled outcome. In-flight/page crashes are not automatically classified as failure. Re-parsing counts again.
+- Only the authoritative online connectivity state permits enqueueing or sending. Disconnect discards queued events; reconnect never replays offline usage. The first page can wait for initial connectivity settlement and is counted once if online.
+- The sender holds only a bounded in-memory queue; it does not persist visitor identity or offline history, and does not retry failed batches. Offline, old clients, blocked telemetry and page shutdown can undercount. Do not use these counts for billing, security audit or exact population estimates.
+- Foreground activity is periodic, so the newest few minutes can be incomplete. Requests are recorded at backend reception time; client `occurred_at` is diagnostic content, not a trusted Loki timestamp.
+
+## AI token semantics
+
+`ai_token_usage` is emitted for upstream attempts at received-usage time. `inputTokens`, `outputTokens` and `totalTokens` are independent provider values; reasoning/cache counters are subsets and must not be added to total again. Failed/cancelled calls contribute any usage actually received. A provider call without usage emits `usageMissing=1`; absence is not evidence of zero spend.
+
+`ai_review_usage` is emitted once when an executed review finishes, combining internal calls/retries into one user review, including failed or in-worker rejected reviews. HTTP rejections before worker execution do not count. The average divides the sum of these terminal review totals by their count. A request spanning the time boundary therefore belongs to the average's completion window while individual usage belongs to its receipt window. Never divide the receipt-window total by an unrelated request count.
+
+The dashboard reports **known consumption**, not the provider's invoice; missing usage is shown separately. There are no live/paid provider calls in ordinary tests.
+
+## Android downloads
+
+Only `GET /download/android/*.apk` access events enter this log stream. Alloy removes IP, Referer and User-Agent and retains APK filename, status and bytes. HTTP 200 counts complete-response requests; 206 counts partial/range-response requests separately. Repeated/range requests may refer to one download; neither count proves installation. Failed requests remain visible by status. Download-page views are a separate Feature usage event.
+
+## Error logs
+
+`Backend error logs` has functional rows for account/login, HoF (including hundred/mark3), tournament, AI, client-reported replay parsing and other backend errors. Filter the source service, literal keyword and literal Error ID, then expand the log entry. Functional matching uses existing path/event/error-code context and can overlap; the Other section excludes recognized sections.
+
+Server error logs retain existing safe diagnostics. AI uses safe event/error-code fields without raw provider bodies; client parser errors contain only approved classifications and generated IDs. Do not send tokens, authorization headers, user identifiers, raw model output/prompt or replay data to telemetry.
+
+## Storage and limits
+
+| Storage | Retention / bound |
 |---|---|
-| 公网 Grafana | TX Caddy（`deploy/tx/Caddyfile`）→ WireGuard `10.20.0.2:3000` → Yecao Grafana |
-| 业务指标 | Yecao Prometheus → WireGuard `10.20.0.1:8088/actuator/prometheus` → TX business-api |
-| AI 指标 | Yecao Prometheus → Docker `ai-service:8080/actuator/prometheus` |
-| TX 日志 | TX alloy-tx → WireGuard `10.20.0.2:3100` → Yecao Loki |
-| Yecao 日志 | 本机 Alloy → Loki；backend/keycloak/frontend selectors 为部署 canary，当前没有 ai-service selector |
-| Grafana 查询 | Docker 内网 Prometheus `:9090` / Loki `:3100`；datasource file provisioning、dashboard OpenTofu API ownership |
+| Prometheus | 168h, 2GB TSDB size bound |
+| Loki | 168h retention by default; query lookback 4560h (190d), maximum query length 168h |
+| Loki security stream | `{compliance="security"}` only: 4560h (190d) retention — see [`security-log-retention.md`](security-log-retention.md) |
+| Grafana | Persistent database; dashboards are code, not usage storage |
+| Client queue | Bounded memory only; discarded batches are not retried |
+| Docker stdout | Existing 20MB × 3 size rotation; no time-based expiry |
 
-生产入口由仓库内 owner workflows 管理，不能沿旧单机拓扑绕过 staged 校验手工改公网代理。
+One stream is deliberately exempt from the seven-day window: lines labelled `compliance="security"` (Keycloak realm events and the Caddy `/api/*` and auth-domain access logs) are retained for 190 days under a `retention_stream` override. Nothing else is, and ordinary telemetry must never carry that label — the boundary, the redaction rules and the compliance query recipe live in [`security-log-retention.md`](security-log-retention.md).
 
-**组件职责**
+Loki's compactor removes expired chunks asynchronously (10-minute compaction, 2-hour delete delay). Seven days is the **queryable telemetry window** for everything outside that stream, not a claim that every physical copy is erased exactly at hour 168. Docker size rotation can keep low-volume raw logs longer than seven days. Strict physical age deletion is not implemented; it would require a separate reviewed host logging lifecycle, not deleting Docker-owned files behind its back. Do not add telemetry to long-lived backups.
 
-| 组件 | 版本（固定） | 职责 |
-|---|---|---|
-| `wotb-backend` Actuator | Spring Boot 4.1.1 自带 | 业务 HTTP 使用容器端口 `8087`；dedicated management / Actuator 使用容器端口 `8088`，暴露 `/actuator/prometheus`、`/actuator/health` |
-| Prometheus | `prom/prometheus:v2.55.1` | 每 15s 抓取 TX Backend、Yecao `ai-service`、node-exporter 以及 Prometheus/Loki/Grafana 自身，TSDB 保留 7 天 / 上限 2GiB |
-| Loki | `grafana/loki:3.3.2` | 接收 Alloy 推送的 Backend / Keycloak 容器日志，保留 7 天 |
-| Alloy | `grafana/alloy:v1.4.2` | TX alloy-tx 按 Compose service 采集业务/Keycloak/frontend/Caddy；Yecao Alloy 保留部署 canary selectors，使用低基数标签 |
-| Grafana | `grafana/grafana:11.6.16` | 可视化；Datasource 由 file provisioning 配置，Dashboard API 对象由 OpenTofu 管理 |
-| node-exporter | `prom/node-exporter:v1.12.1` | 仅 Docker 内部网络提供 CPU、RAM、Disk、Load 主机指标；不映射宿主机端口 |
-| Grafana MCP server（已下线） | 已移除 | 2026-08-11 因公网匿名访问风险（MCP 缺少调用者认证）且使用频率低，已从生产与本地 compose 移除；宿主 Caddy `/mcp*` 路由与 Grafana MCP Service Account 由人工清理 |
+Account-group queries have an explicit `max_query_series=10000` ceiling; exceeding it returns a query error rather than silently truncating users. Validate seven-day production query cost and memory before treating the dashboard as operationally accepted; Loki's 256MiB memory limit remains unchanged.
 
-**关键安全边界**
+## Validation and deployment
 
-- Yecao Grafana `10.20.0.2:3000`、Loki `10.20.0.2:3100` 只发布到 WireGuard；Prometheus、Alloy、node-exporter 无宿主端口映射。TX1 Backend app `10.20.0.1:8087` 与 management `10.20.0.1:8088` 分开；frontend 为 `10.20.0.1:8081 → 80`，Keycloak 保留 loopback `127.0.0.1:18080` 并增加 `10.20.0.1:8080`。禁止公网或 wildcard service-plane bind；完整 K6A 契约见 [TX service plane](tx-service-plane.md)。生产观测不配置或依赖独立的 Keycloak management 端点。
-- 公网通过 `monitor.wotbtools.com`（TX Caddy → `10.20.0.2:3000`）访问 Grafana，且 Grafana 禁止匿名访问。
-- `/actuator/**` 不通过公网域名暴露（TX frontend nginx 代理 `/api/`；monitor 由 TX Caddy 直接反代 Grafana）。
+PR CI performs native Prometheus/Loki/Alloy validation, real Docker emitter → Alloy → Loki smoke, Grafana datasource/dashboard API smoke, HTTP contract checks and targeted semantic tests. New producers are deployed after the receiver/collector where possible; independent service owners can otherwise produce a temporary undercount, not a product outage. Android bundled telemetry needs the new APK release; existing APKs cannot retroactively report usage.
 
-**Grafana MCP 下线记录（2026-08-11，P0）**
+`observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all six current UIDs and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the seven-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana, dev-metrics) even though infrastructure charts no longer appear on the home dashboard.
 
-生产 `mcp-grafana` 曾把 Grafana Service Account Token 当作调用者认证使用，实际该 Token 仅是访问 Grafana 的后端凭据：未设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token` 时，公网 `/mcp` 的匿名 MCP initialize 返回 200 并建立 session。因使用频率低，选择**彻底下线**而非加固：
+Deployment canaries prove ingestion paths, not actual activity from every production service. Runtime acceptance must check real received client activity, a parse batch, APK requests and AI usage/errors in the new dashboards. No historical client counts can be backfilled from absent events.
 
-- 仓库侧（已完成）：生产与本地 compose 移除 `mcp-grafana`；部署链路不再传递 `GRAFANA_MCP_TOKEN`；CI 增加「生产 compose 不得含 MCP 服务 / 8000 端口」回归断言。
-- 生产侧（已完成，2026-08-11）：`docker rm -f wotb-mcp-grafana-1` 移除容器、8000 端口关闭；宿主 Caddy（`wotb-caddy` 容器，配置 `/opt/caddy/Caddyfile`）将 `/mcp*` 从反代改为 `respond 404` 并热重载，外部验证 `https://monitor.wotbtools.com/mcp` → 404。
-- 剩余人工步骤（Grafana / GitHub，仓库外）：
-  1. Grafana：删除或禁用 MCP 专用 Service Account（若保留则降为 Viewer 只读），并吊销/删除其 Token。
-  2. GitHub 仓库 Settings → Secrets：删除 `GRAFANA_MCP_TOKEN`（代码已停止引用）。
-  3. 轮换 Grafana admin 密码（2026-08-11 排障时一次命令参数错误曾将 `GRAFANA_ADMIN_PASSWORD` 输出到终端日志）。
+See [runbook](observability-runbook.md) and [Grafana OpenTofu ownership](../architecture/grafana-opentofu.md).
 
-**历史 Caddy 运维记录（2026-08-11；路径和容器名不适用于当前 TX owner）**
+## Engineering metrics
 
-- `wotb-caddy` 由 `/opt/caddy/docker-compose.yml` 管理（`caddy:2`，host 网络），`/opt/caddy/Caddyfile` 以 bind mount 挂载到容器 `/etc/caddy/Caddyfile`。
-- **禁止用 `sed -i` 编辑挂载文件**：`sed -i` 通过重命名替换文件，会破坏 bind mount 的 inode 关联，容器内会继续读到旧内容（`docker cp` 也会因 unlink busy 失败）。必须原地写入（`vi` / `tee` / `cp`）。
-- 改完热重载：`docker exec wotb-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile`（先 `caddy fmt --overwrite` 可消除格式告警）。
+[Engineering metrics architecture](../architecture/engineering-metrics.md) defines counting/classification. GitHub refreshes every 15 minutes, independently of 15-second scrapes. `/metrics` reads the last complete in-memory snapshot without GitHub calls. Initial failure keeps the process healthy with `wotb_dev_collector_data_ready=0`; later failure preserves successful aggregates and timestamp. Restart reconstructs from GitHub; there is no database/cache backup.
 
-如需恢复 MCP，必须：固定 release + digest、设置 `MCP_GRAFANA_SERVER_TOKEN`/`--server-auth-token`（匿名 401）、启用 `--disable-write` 只读、Service Account 仅 Viewer 权限。
+Engineering Overview shows Healthy below 30 minutes since the last success, Delayed at 30–60 minutes and Stale at 60 minutes or more; no initial success is Not ready. Inspect process health/Prometheus UP separately from dataset readiness/age. GitHub outage does not imply Grafana runtime failure.
 
----
+`DEV_METRICS_GITHUB_TOKEN` is repository-scoped read-only (Metadata, Pull requests, Issues, Actions, Contents read). The observability owner injects a protected runtime token file mounted read-only; only its path enters container configuration. Never put its value in images, Grafana JSON, OpenTofu state, argv, metrics, diagnostics or logs. Rotate via the same owner and redeploy. No public exporter port; Grafana remains authenticated only.
 
-## 2. `monitor.wotbtools.com`：DNS、HTTPS、反向代理
+Configure this repository secret before selecting the exporter in `observability.yml`. The owner writes `/run/wotb-dev-metrics/github-token` under the existing Yecao deployment lock and recreates the container after rotation. `/run` is ephemeral: after a host reboot, dispatch Observability with scope `dev-metrics-exporter` to reinject the secret; a missing bind source fails closed instead of creating a directory. For a private GHCR package, the owner authenticates only the exporter pull with its short-lived publishing token, uses a temporary `/run` Docker config, and removes that config on success or failure. Exporter data access still uses the separate read-only token. No persistent host Docker login is required.
 
-公网 monitor 由 `deploy/tx/Caddyfile` 的站点块直接反代 Yecao WireGuard-only Grafana：
+Rerunning the same source SHA reuses the existing exporter tag's digest. Only an absent tag is built; registry/authentication failures remain fatal. Both reused and newly built images must retain the expected OCI source revision and registry digest before staging, so a retry never overwrites an existing SHA tag.
 
-```caddy
-monitor.wotbtools.com {
-    reverse_proxy 10.20.0.2:3000
-}
-```
+`verify-observability.sh` checks exporter health, the `dev-metrics` Prometheus target and dataset readiness/age separately. An unavailable or stale GitHub snapshot prints `OBSERVABILITY DEGRADED [DEV_METRICS_DATA]` and continues the Grafana/Loki checks; it does not restart the exporter or skip unrelated runtime verification.
 
-DNS 指向 TX 公网入口；TLS 与 Caddy 生命周期属于 `.github/workflows/caddy.yml`，不能用
-旧 Yecao host Caddy / frontend monitor server 的手工步骤替代。Grafana 的
-`GF_SERVER_ROOT_URL=https://monitor.wotbtools.com` 仍由 `.env.example` / production Compose
-约定。`.github/workflows/observability.yml` 接收 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`，
-Yecao deploy 将其写入受限 runtime `.env`，Compose 使用 required 引用；缺失则 fail-closed。
+The monthly table shows historical event-date labels. The daily Created/Merged line chart converts day labels to UTC midnight through native Grafana transformations; its x-axis follows the picker. They do not invent pre-Prometheus sample history. Months start June 2026; days cover the latest 90 days. Instant bucket queries require a snapshot at the picker end; selecting an end outside observed Prometheus retention can return No data. Workflow snapshot/production trends follow the picker and existing seven-day retention. Never use `increase()`/`rate()` on reconstructed GitHub totals. Areas overlap, drafts overlap open, cancelled runs are not failures, and Actions retention can limit CI completeness. PR creation-to-merge is not DORA lead time. Release/workflow completion does not prove mutation: deployment/publish panels explicitly show Not available.
 
----
-
-## 3. 环境变量
-
-新增观测相关变量（`.env.example` 已更新，未覆盖原有变量）：
-
-| 变量 | 必填 | 说明 |
-|---|---|---|
-| `GRAFANA_ADMIN_USER` | 是（compose required 语法） | Grafana 管理员用户名 |
-| `GRAFANA_ADMIN_PASSWORD` | 是（compose required 语法） | Grafana 管理员密码；**不得提交到 Git** |
-| `GRAFANA_ROOT_URL` | 否，默认 `https://monitor.wotbtools.com` | Grafana 对外根地址 |
-| `OBSERVABILITY_ENVIRONMENT` | 否，默认 `production` | 环境标记 |
-
-生产观测栈在部署环境中提供前两项；密码通过环境变量注入 Grafana 容器，**不出现在命令行参数**中。
-
----
-
-## 4. 启动 / 停止
-
-### 本地验证
-
-仓库不再提供本地完整 Docker Compose 观测环境。Prometheus/Loki/Alloy/Grafana 的配置、
-dashboard 与运行时链路由 CI 的独立 runtime smoke 验证；生产运行按下方 production
-流程执行。
-
-### 生产（CI 自动）
-
-每次 main push 都触发应用 image owner；固定基础设施 owner 按各自路径规则独立触发。应用 image owner 是
-`business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`；固定 runtime
-与 root owner 是 `caddy.yml`、`business-postgres.yml`、`keycloak-postgres.yml`、
-`alloy-tx.yml`（TX 日志采集）、`komodo-controller.yml`（Yecao Komodo 控制平面）与本 `observability.yml`。每个 workflow 使用自己的 staging、当前 main SHA 检查、
-验证和手动入口；TX 的 TCR 镜像只属于前三个 TX 应用，Yecao 的 GHCR 镜像只属于 ai-service。
-不相关服务不会因统一 release planner 被选择。应用 owner 在新 main 到来时取消旧运行，
-固定基础设施保留生产维护队列；host mutation 另有 `flock` 串行化，过期 SHA 在 mutation 前 fail closed。
-
-### Application gate 与镜像身份
-
-TX 应用 owner workflow 由 `deploy/tx/deploy.sh` 验证各自的 API/frontend/OIDC readiness；Business
-API 的 mutation 前检查还以只读 consumer 身份验证 PostgreSQL 与 Keycloak（服务器没有 parser：
-RabbitMQ / MinIO / parser-worker 已删除）。观测组件、datasource/
-dashboard 与日志 ingestion 失败只记 `OBSERVABILITY DEGRADED`，不让健康应用回退。部署失败由所属
-workflow 输出该服务诊断并停止确认失败的目标服务；不自动恢复旧镜像。
-
-main 是应用部署的唯一目标状态。TX business-api/frontend 从 exact source SHA 本机构建、
-发布 immutable TCR tag 并回读 digest，生产分别消费 `TX_BUSINESS_API_IMAGE_REF` /
-`TX_FRONTEND_IMAGE_REF` 的 `repo@sha256:<digest>`，禁止 latest 回退。Keycloak 与 Yecao ai-service
-仍沿各自 latest/freshness 契约。发布前确认 source SHA 仍为远端 main HEAD；旧 workflow 被新 main 取消。生产实际运行镜像与
-`BUILD_COMMIT` 可用 `docker inspect` 核对。固定基础设施独立管理持久 volume 与 OpenTofu state。
-
-
-backend 在 `ApplicationReadyEvent` 后记录 `WotBTools backend build=<commit> Flyway
-migration ceiling=<version>`。排查 schema/image 不匹配时，在 TX 日志中核对完整 build SHA 与
-运行容器的 image digest 与 schema。
-
-
-### 单目标人工操作与数据库边界
-
-事故恢复通过对应应用 owner workflow 的单服务手动入口完成。镜像身份必须是所属 workflow 当前 release contract 的产物（business-api/frontend 为 exact digest；
-Keycloak/ai-service 保留各自 latest/freshness 契约）；没有 `all` 选择器。schema 回退不是部署能力；
-Business PostgreSQL 归档验证及 disposable restore 见 `docs/operations/business-postgres.md`；Keycloak PostgreSQL 归档必须与 Business PostgreSQL 工具隔离处理。
-`database-backup.yml` 保持 VPS 本地双库备份边界；COS 上传、对象验证和 retention 尚未纳入该链路。
-
-### 停止观测系统（不影响主业务）
-
-```bash
-cd /opt/wotb
-docker compose stop prometheus loki alloy grafana node-exporter
-```
-
-TX 主业务服务（business-postgres/keycloak-postgres/keycloak/business-api/frontend）保持运行。重新启动：
-
-```bash
-docker compose start prometheus loki alloy grafana node-exporter
-```
-
-> **禁止**使用 `docker compose down -v` 作为普通停止/回滚命令——它会删除所有 volume（含 PostgreSQL 数据）。
-
-> **应用失败处理**不由服务 owner workflow 自动切换旧版本：该 workflow 输出服务/image/status/log/schema 诊断并停止确认失败的目标 service，随后 workflow FAIL。operator 通过该应用 workflow 的单服务手动入口重新部署当前 main 的所属 owner 镜像（business-api/frontend 为 exact digest）；它不触碰数据库 volume，也不执行数据库 restore/downgrade。数据库 schema 迁移随新版本启动执行，恢复策略见 `DEVELOPER_GUIDE.md`「CI/CD 与部署」。
-
----
-
-## 5. 验证方法
-
-### 5.0 生产 gate 的认证与日志 canary 契约
-
-- `verify-observability.sh` 通过加入 `wotb_internal` 的一次性 Alpine 容器执行 HTTP 数据链路检查，并复用 `deploy/grafana-api-request.sh` 访问 Grafana API；不会依赖已退役的 Yecao backend 容器，也不会把 Grafana 密码放进 URL、命令行输出或诊断日志。
-- Grafana Prometheus/Loki datasource health 只有 JSON `status: "OK"` 才算成功；其他值（包括旧版兼容的 `success`）一律失败。
-- backend/Keycloak canary 启动前记录固定 Loki `start`，每次重试只更新 `end`。Keycloak canary 使用加入 `wotb_internal` 的 Alpine 3.22 独立 emitter，容器名仍带 `keycloak-observability-canary-`，用于确认 Alloy ownership 规则，不启动第二个 Keycloak。
-- Loki gate 必须同时确认 API `status=success`、`data.result` 非空、stream 的 `values` 非空以及 marker 在实际日志值中；空数组不能被“`values` 字段存在”误判为成功。
-- Production Overview 顶部把 Backend、Host、Prometheus、Loki、Grafana 分成五张独立观测健康卡，并由「生产状态（全部六类 target）」Overall 卡统一覆盖 Backend、ai-service、node-exporter、Prometheus、Loki、Grafana 六类 target；缺失数据显示“无数据 / 未知”且不映射为绿色。Overall 查询同时要求六类 target 数量完整（`count(up{job=~...}) == 6`）且 `min(up)==1`，因此 `ai-service` 宕机会直接反映在该卡上。Keycloak 不在 Prometheus metrics contract，登录/IdP 状态通过 Loki 日志面板观察。
-- Backend production gate 还确认至少一个稳定的 Hikari 指标（`hikaricp_connections_active`），避免连接池遥测在 dashboard 中静默失效。
-- Keycloak production gate 确认应用 realm metadata / OIDC discovery；Keycloak 镜像使用 PostgreSQL 与 `start --optimized` runtime，且不启用或暴露 management health/metrics 端点。登录、QQ callback、broker/IdP 错误与 WARN/ERROR 事件通过 Alloy → Loki 观测。
-
-### CI 实际验证项（PR 时自动执行，见 `.github/workflows/ci-observability.yml` `observability_config` job）
-
-> **CI 验证边界**：静态检查覆盖生产观测配置语法/结构、
-> dashboard 合同与端口安全；runtime smoke 会实际启动最小 Prometheus/Loki/Grafana、Alpine emitter，
-> 并验证 Alloy→Loki ownership、Grafana provisioning/auth；独立的 Keycloak runtime smoke 会真实构建并启动
-> optimized PostgreSQL Keycloak，确认应用 OIDC discovery、无 management health/metrics 配置和无启动时 augmentation。
-> CI 不替代生产 deploy gate：不验证真实主机上的 staging/render、真实 backend 指标采集或生产网络/DNS/TLS。
-
-| 验证项 | 命令 | 说明 |
-|---|---|---|
-| 本地 compose 语法 | `docker compose config --quiet` | 仅本地 compose，不含生产 heredoc |
-| Prometheus 配置 | `promtool check config` | 配置语法 |
-| Loki 配置 | `loki --verify-config` | 配置语法 |
-| Alloy 配置与日志链路 | `alloy fmt -t` + `test-observability-e2e.sh` | 格式检查，并在 CI 最小 runtime 中验证 emitter → Alloy → Loki |
-| Grafana runtime | `test-grafana-runtime.sh` | 启动最小 Prometheus/Loki/Grafana，验证 provisioning、默认首页与 Alpine/BusyBox auth |
-| Grafana provisioning + Dashboard JSON | `python` 解析全部 YAML/JSON | 结构校验 |
-| 端口安全 | `docker compose config --format json` 校验 Yecao WG-only Grafana/Loki/AI 和无 host ports 的 Prometheus/Alloy/node-exporter；TX 五个 owner 使用 `assert_tx_service_ports` 校验精确 WG/loopback TCP 绑定 | Caddy 是唯一公网 HTTP/HTTPS ingress；不配置 Keycloak management contract |
-
-Backend Maven 单元/集成测试属于独立的 `Backend` CI job，不属于 `observability_config` job；它们会在 PR gate 中单独执行。
-
-### 手动验证命令（生产部署后执行）
-
-```bash
-# compose 语法
-docker compose config --quiet
-
-# Prometheus 配置检查（容器内 promtool）
-docker run --rm -v /opt/wotb/deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro prom/prometheus:v2.55.1 promtool check config /etc/prometheus/prometheus.yml
-
-# Loki 配置检查
-docker run --rm -v /opt/wotb/deploy/observability/loki/loki-config.yml:/etc/loki/loki-config.yml:ro grafana/loki:3.3.2 -config.file=/etc/loki/loki-config.yml -verify-config
-
-# Alloy 配置格式/语法检查（与 CI 相同命令）
-docker run --rm -v /opt/wotb/deploy/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro grafana/alloy:v1.4.2 fmt -t /etc/alloy/config.alloy
-```
-
-> `alloy fmt -t` 只是格式/语法检查，**不代表 Alloy 能正常运行**。
-> 完整 Alloy 验证（docker.sock 采集 → Loki 收到日志）需在生产容器启动后，通过
-> `docker logs alloy` 与 Loki 查询实际日志确认。
-
-### 需生产环境手动验证（CI 无法覆盖）
-
-- 生产完整整栈启动（业务 + 观测容器，含服务 owner workflow staging 的 production Compose）
-- Alloy 实际采集 Backend / Keycloak 日志并推送到 Loki、`requestId` 与认证关键词可过滤
-- `/actuator/prometheus` 与 node-exporter `:9100` 实际输出（**指标名真实存在**，与 Dashboard 面板匹配——CI 只检查配置结构，无法验证指标）
-- Volume 重启后数据持久化（7 天保留）
-- `docker stats` 实际资源占用（空闲约 1GB 目标）
-- 公网无法访问 8088/9090/9100/3100/3000/12345；Keycloak 应用 `8080` 仅发布到 `127.0.0.1:18080` 与 `10.20.0.1:8080`
-
----
-
-## 6. Grafana 登录与 Dashboard
-
-1. 浏览器访问 `https://monitor.wotbtools.com`（受控本地访问可用 SSH tunnel 到 `10.20.0.2:3000`；不增加 wildcard port 映射）。
-2. 使用 `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` 登录（匿名访问已禁用：`GF_AUTH_ANONYMOUS_ENABLED=false`）。
-3. 首次启动后，provisioning 自动创建：
-   - Datasource：`Prometheus`（uid `prometheus`，`http://prometheus:9090`）、`Loki`（uid `loki`，`http://loki:3100`）；部署 gate 会调用两个 datasource health API。
-   - 默认首页：`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH` 指向 `wotbtools-production-overview.json`，并通过 Production Overview UID API fetch 验证 provisioning 已加载。
-    - Dashboard（最终固定为 6 个）：
-       - **WotBTools · 生产总览**（uid `wotbtools-production-overview`）— 最近 1 小时的生产健康、HTTP 摘要、回放/AI 状态与主机资源摘要。
-       - **WotBTools · JVM 与基础设施**（uid `wotbtools-backend-overview`）— CPU、heap、memory pool、GC、线程、Hikari、磁盘、进程与主机运行时细节。
-       - **WotBTools · HTTP 与事故诊断**（uid `wotbtools-error-explorer`）— HTTP 状态/性能、URI 与错误码分布，以及按 service、correlationId、errorId、errorCode、jobId 检索 Incident 生命周期。
-       - **WotBTools · 回放与 AI 诊断**（uid `wotbtools-ai-review`）— 回放处理、AI 结果与延迟、Schema 失败分类、Recovery、AI 错误与团队结果契约分类和按 correlationId 的深度诊断。
-       - **WotBTools · 使用统计与 Android**（uid `wotbtools-usage`）— 最近 24 小时的回放/AI 使用量与 Android APK 200/206/失败下载统计。
-       - **WotBTools · Keycloak**（uid `wotbtools-keycloak`）— LOGIN/LOGIN_ERROR、QQ callback、broker authentication、IdP 故障与 WARN/ERROR 日志。
-
-| UID | 标题 | 职责 |
-|---|---|---|
-| `wotbtools-production-overview` | WotBTools · 生产总览 | 生产健康、HTTP 摘要、回放/AI 状态与资源摘要 |
-| `wotbtools-backend-overview` | WotBTools · JVM 与基础设施 | JVM、连接池、磁盘、进程与主机运行时 |
-| `wotbtools-error-explorer` | WotBTools · HTTP 与事故诊断 | HTTP 性能、错误码与 Incident 检索 |
-| `wotbtools-ai-review` | WotBTools · 回放与 AI 诊断 | 回放、AI、Schema/Recovery 与 correlation trace |
-| `wotbtools-usage` | WotBTools · 使用统计与 Android | 回放/AI 使用量与 APK 下载统计 |
-| `wotbtools-keycloak` | WotBTools · Keycloak | 登录、QQ callback、IdP 与 Keycloak 日志 |
-
-- 新增 `container_name="caddy"` 流：承载 `auth.wotbtools.com` 的受控访问日志（Caddy `log` 为站点级指令，路径筛选在查询侧；broker 回调取证见下）（Caddy `filter` 编码器在写 stdout 前删除 query 的 `code`/`state`/`session_state`/`iss` 与 `Cookie`/`Authorization` 头，校验由 `deploy/tx/validate-caddy-config.sh` 断言）。它提供 broker 回调的 UA / 状态码 / 来源网段，用于区分真实用户与扫描器（见 [`docs/auth/web-qq-diagnostics.md`](../auth/web-qq-diagnostics.md) §3.4）。
-- Keycloak 看板把「登录可靠性」与「诊断日志」分开：
-  - **登录可靠性 · 失败分类（5m，已分流噪音）**：`LOGIN_ERROR` / `IDENTITY_PROVIDER_LOGIN_ERROR` / `IDENTITY_PROVIDER_FIRST_LOGIN_ERROR` 按 `error` 维度分解，**排除**本机 silent-check-sso 的 `invalid_redirect_uri`、密码错误 / 用户不存在与 `security-admin-console` 管理台噪音；
-  - **登录可靠性 · broker 会话连续性（P0 信号）**：`cookie_not_found` 与 `Failed to verify login action` 两条独立曲线（正常用户路径应为 0；持续非零按 `docs/auth/web-qq-diagnostics.md` §3 取证）；
-  - **IdP 失败分解（provider × error，5m）**：按 `identity_provider` 定位 QQ / WG 单点故障。
-  失败分类法（A/B/C/D 与噪音清单）单点在 `docs/auth/web-qq-diagnostics.md` 维护，看板不另立口径。
-
-看板使用现有 Prometheus/Loki 数据源，并增加低基数 node-exporter 主机指标；Keycloak 观测保持 Alloy → Loki 日志链路，不增加或依赖 management metrics。生产总览只放摘要，HTTP 与事故诊断、回放与 AI 诊断、JVM 与基础设施、使用统计与 Android 分别承接下钻职责。未引入 cAdvisor、Postgres exporter 或 Alertmanager。
-
-Error Explorer 的 `service` 变量映射 Loki 的 `container_name` 标签；`errorId` 对 AI SSE 映射为 `correlationId`，对普通 HTTP 错误映射为 canonical error 的 `id`，其余变量作为日志内容中的 regex token 搜索，用于关联结构化日志里的 `errorCode`。当前没有 authoritative deployment/build version 字段，因此不提供 `version` filter。
-
-Spring Security 的 401/403（`AUTH_UNAUTHENTICATED` / `AUTH_FORBIDDEN`）也会以 INFO 级 `api_request_rejected` 写入同一组 `traceId`、`id`、`errorCode`、`status`、`method`、`path` 字段，因此可直接用 response body 的 `id` 在 Error Explorer 定位。
-
-回放解析与计算在客户端完成（服务器没有 parser），Prometheus 没有回放解析指标；Production Overview / Usage 中的 Replay 面板已随服务端解析删除。
-
-**统计口径说明（WotBTools 使用统计与 Android）**
-
-- Prometheus Counter 会在 Backend 重启或重新部署后归零，Dashboard 中的"次数"均为 **Grafana 所选时间范围内的估算增量**（`increase()` + `round()`），不是历史累计。
-- **AI Review 启动数**：使用 `wotb_ai_review_requests_total` 统计进入 Review 处理边界的请求次数。
-- **AI 平均每次调用 Token**：`wotb_ai_upstream_tokens_total{token_type="total"}` 增量 ÷ `wotb_ai_upstream_requests_total` 增量（分母含失败调用，失败计 0 token），即「平均每次发起的 AI 上游调用消耗的 token」；按模式面板可区分单机复盘（`PRE_BATTLE_STRATEGIC_PRIOR` + `TACTICAL_REVIEW_HARNESS`）与团队复盘（`SINGLE_TEAM_BATTLE` + recovery 的 `SINGLE_TEAM_BATTLE_RECOVERY`）各阶段消耗。
-- **数据保留**：Prometheus 仅保留约 7 天，不提供网站历史永久累计；如未来需要永久累计，应写入 PostgreSQL（当前不引入），而非依赖 Counter。
-
-**生产总览面板清单**
-
-1. 生产状态、HTTP 5xx/P95/吞吐与主机/依赖健康
-2. 六类观测 target 健康；没有服务端 Replay processing/job 队列面板
-3. AI 执行中、等待队列、成功与失败
-4. CPU、内存、磁盘与主机负载
-
-> Dashboard JSON 提交在 `deploy/observability/grafana/dashboards/`，由 Grafana OpenTofu API reconciliation 写入 Grafana；该目录不再由 dashboard file provisioning controller 自动重建。
-> 面板查询基于上述指标名编写；**每个面板是否有真实数据支撑，需在生产实际产生流量后确认**（CI 仅校验 JSON 结构与指标名存在，无法验证面板有数据）。
-
----
-
-## 7. 日志查询与 requestId 排查
-
-Backend 日志为**结构化 JSON**（`logging.structured.format.console: logstash`）。MDC 的 `requestId` 与同值别名 `traceId` 输出为顶层 JSON 字段（不是 `mdc.*` 子对象；由 Spring Boot 4 `LogstashStructuredLogFormatter` 的 `ContextPairs.flat` 保证）。canonical error response 的 `body.id` 是唯一错误 id（typed `ApiException` 返回异常实例 id，非 typed/security/legacy 返回请求关联 id，等于响应头 `X-Request-ID`）；5xx 日志同时携带 `traceId=<requestId>` 与 `id=<body.id>`。
-
-### 查询 Backend ERROR
-
-Grafana → Explore → 选 Loki：
-
-```logql
-{container_name="wotb-backend"} |= "ERROR"
-```
-
-或按级别过滤（结构化日志 `level` 字段）：
-
-```logql
-{container_name="wotb-backend"} | json | level="ERROR"
-```
-
-### 按 requestId 排查单个请求
-
-1. 请求响应头 `X-Request-ID` 会带回一个 UUID（或沿用并清洗请求头传入值）；错误 JSON 的 `id`（非 typed/security/legacy 错误）与其一致。用户界面的“诊断 ID”即该值；对 typed `ApiException`，`id` 为异常实例 id，后端日志 `id=<value>` 可检索到同一异常。
-2. Loki 查询：
-
-```logql
-{container_name="wotb-backend"} | json | requestId="<requestId>"
-```
-
-3. 也可用 Error Explorer 顶部的 `service`、`correlationId`、`errorId`、`errorCode`、`jobId` 变量 + Loki 面板联动；默认 service 为 `wotb-backend`，其它过滤器默认 `.*`。AI SSE 的 `errorId` 与该次请求 `correlationId` 相同，普通 HTTP 错误使用 canonical body 的 `id`。
-
-### 查询 AI Review 错误
-
-当前 AI 生产日志由 Yecao `ai-service` 输出：
-
-```bash
-# 在 Yecao 的 production Compose 目录执行
-docker compose logs ai-service --since 30m
-```
-
-当前 Yecao Alloy 没有 `ai-service` discovery selector；不能用
-`{container_name="wotb-backend"}` 查询代替 AI 服务日志，也不把 AI Loki ingestion 描述为已实现。
-
-Prometheus（错误分类计数，固定枚举）：
-
-```promql
-sum by (type) (rate(wotb_ai_review_errors_total[5m]))
-```
-
-错误类型枚举（低基数，与 `AiReviewController.errorCodeOf` + `SpringAiChatGateway` 的错误码映射一致）：
-`AI_TIMELINE_UNUSABLE`、`AI_NOT_CONFIGURED`、`AI_PROMPT_MANDATORY_SECTION_TOO_LARGE`、`AI_REVIEW_SCHEMA_FAILED`、
-`AI_TIMEOUT`、`AI_CANCELLED`（客户端取消，上游调用被中断，不产生新请求）、`AI_UPSTREAM_UNAVAILABLE`、
-`AI_INVALID_REQUEST`、`AI_AUTHENTICATION_ERROR`、`AI_RATE_LIMITED`、`AI_CONTEXT_TOO_LARGE`、
-`AI_RESPONSE_INVALID`、`AI_EMPTY_RESPONSE`。
-
-> **AI 全链路超时与无效消耗**：整体 deadline 默认 1100s（团队 3 次 AI 调用 + 余量，`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 前端 review 安全超时 1100s → TX ingress `/api/ai/**` 1120s → `ai-service` AI 单次预算 `AI_CALL_TIMEOUT_SEC=315s` + 解析余量。**host 级 Caddy/Nginx 反代必须允许 ≥1120s**（Nginx 默认 60s 会提前 504，用户重试即产生重复 API 消耗）。取消语义：**应用内路由切换因 `App.vue` 的 `<KeepAlive>` 缓存 AI 复盘页而不会取消进行中的复盘**（SSE 流继续）；只有**手动取消按钮、关闭/刷新浏览器页面（`beforeunload`）或前端安全超时**才会经 `POST /api/ai/reviews/{correlationId}/cancel` 中断 in-flight 上游调用。`AI_TIMEOUT` 不再自动重试（上游可能已计费）。Broken pipe 已在 `ai-service` 侧降级为 WARN，不再产生 Unhandled exception 堆栈。
-### AI Review 全链路事件日志（按 correlationId 追踪）
-
-> 随 AI Review JSON Output 任务（见 docs/architecture/ai-review.md）落地：AI Review 全链路结构化事件日志，
-> 统一格式 `event=<eventName> correlationId=<id> key=value key=value`，与 logstash structured logging 兼容，
-> 当前在 Yecao ai-service 日志中按 correlationId 过滤；Alloy 尚未声明 AI 采集路径，
-> 不把此时间线描述为 Loki 已有数据。**一次 AI Review 从进入 ai-service 到结束可用单个 correlationId 重建完整时间线**
->（correlationId 即前端 cancel 用的请求 id，见 `java/wotb-ai/src/main/java/com/wotb/ai/AiReviewController.java`）。
->
-> 日志纪律：只记录低基数 metadata——严禁 prompt / completion / reviewMarkdown / API key /
-> Authorization / 回放原始内容 / 用户上传文件内容 / 明文昵称（身份用 account hash / vehicle id）。
-
-当前生产 Team Call #2 的 resilience 链路是「一次初始 structured parse + 必要时恰好一次 fresh recovery」：
-只有完整有效的 `TeamAiReviewResult` JSON 才成功；失败 completion 不会回传给模型，也不会以 Markdown
-或部分 JSON 直接展示。初始 contract 失败时触发 `SINGLE_TEAM_BATTLE_RECOVERY`，recovery 仍失败时
-返回 `AI_REVIEW_SCHEMA_FAILED`。provider、超时、取消等上游错误保持原始错误码。
-
-#### 追一单
-
-```bash
-docker compose logs ai-service --since 30m 2>&1 | rg "correlationId=<id>"
-```
-
-该命令在 Yecao 上执行。当前 Alloy 未声明 AI 采集路径，不能据 TX backend 的 Loki 流重建 AI 时间线。
-
-以下仅列**当前在 `java/*/src/main/**` 有生产者**的事件；已随 2026-10 legacy 契约收敛删除或当前无生产者的事件见下文「当前无生产者的事件」。
-
-典型一条成功时间线（team 模式）：
-
-```text
-event=ai_upstream_call_started correlationId=... stage=PRE_BATTLE mode=PRE_BATTLE_STRATEGIC_PRIOR attempt=1 responseFormat=TEXT
-event=ai_upstream_call_completed correlationId=... attempt=1 promptTokens=... completionTokens=...
-event=team_review_grounding_ready correlationId=... factsTotal=... deathFacts=...
-event=ai_prompt_budget correlationId=... stage=TEAM_CALL_2 attempt=1 estimatedInputTokens=... maxOutputTokens=...
-event=ai_upstream_call_started correlationId=... stage=TEAM_CALL_2 attempt=1 responseFormat=JSON_OBJECT
-event=ai_review_contract_salvage_started correlationId=... failureCategory=... failureCode=... failurePath=...
-event=ai_review_contract_salvage_completed correlationId=... result=SUCCESS removedReferences=... removedEntries=...
-event=team_review_completed correlationId=... validationAttempts=1 totalPromptTokens=... result=pass
-```
-
-contract 失败并走唯一一次 fresh recovery 时：
-
-```text
-event=ai_review_contract_failed correlationId=... attempt=1 failureCategory=... failureCode=... failurePath=...
-event=ai_review_recovery_triggered correlationId=... reason=UNPARSEABLE_RESPONSE primaryResponseLength=...
-event=ai_review_recovery_failed correlationId=... reason=...
-```
-
-#### 事件清单（低基数，禁止高基数字段）
-
-| event | 关键字段 | 含义 |
-|---|---|---|
-| `ai_upstream_call_started` | stage, mode, attempt, model, responseFormat, thinking, maxOutputTokens, remainingBudgetSec | 每次上游调用 |
-| `ai_upstream_call_completed` | attempt, durationMs, promptTokens, completionTokens, totalTokens | 上游成功（不记录硬编码 providerStatus——成功响应无真实 transport status metadata，真实 status 只在失败事件） |
-| `ai_upstream_call_failed` | stage, mode, attempt, errorCode, providerStatus, retryable | 上游终态失败（providerStatus 为异常携带的真实 status，缺失为 `N/A`） |
-| `ai_transport_retry` | stage, mode, retryNumber, reason, backoffMs | 传输层退避重试（retryNumber 为 1 基重试序号，retryNumber=1 → 下一次上游调用 attempt=2） |
-| `ai_prompt_budget` | stage, attempt, estimatedInputTokens, maxOutputTokens, contextWindowTokens, remainingBudgetSec | 发送前预算（token amplification 观测） |
-| `team_review_grounding_ready` | factsTotal, deathFacts, aliveTransitions, focusWindows, positionSnapshots, enemyPositionFacts | grounding 事实计数 |
-| `team_review_completed` | validationAttempts, totalPromptTokens, totalCompletionTokens, durationMs, result | Team Call #2 阶段汇总 |
-| `ai_review_contract_failed`（WARN） | attempt, failureCategory, failureCode, failurePath | JSON/schema contract 失败；不含 prompt/completion/正文 |
-| `ai_review_contract_salvage_started`（INFO） | failureCategory, failureCode, failurePath | 确定性 salvage / normalization 开始 |
-| `ai_review_contract_salvage_completed`（INFO） | failureCategory, failureCode, failurePath, removedReferences, removedEntries, normalizationCount, result=SUCCESS/STILL_INVALID | 确定性 salvage 结果；`SUCCESS` 表示规范化后满足最低 contract，直接作为生产成功路径（不触发额外模型调用） |
-| `ai_review_recovery_triggered` / `ai_review_recovery_failed`（WARN） | reason, primaryResponseLength | 无可展示正文时最多一次 recovery 的生命周期；不记录正文 |
-
-#### 当前无生产者的事件（不要用它们排障）
-
-以下事件在 `java/*/src/main/**` 中**没有任何生产者**，查询它们不会返回任何日志：
-
-- **已随 2026-10 legacy 契约收敛删除**：`team_review_parse_result`、`team_review_validation`、
-  `team_review_validation_conflict`、`team_review_validation_attempt_completed`、`ai_validation_retry`；
-  对应指标 `wotb_ai_team_review_validation_retry_total`、`wotb_ai_team_review_grounding_conflict_total`、
-  `wotb_ai_review_team_autopsy_total` 同时删除，`TeamReviewEnvelope*` / `TeamFactualConsistencyValidator` /
-  `TeamAutopsy*` 机制本身也已删除。
-- **历史遗留（早于本次收敛即无生产者，属代码缺口，未在本次收敛中修复）**：`ai_review_sse_opened`、
-  `ai_review_sse_completed`、`ai_review_started`、`ai_review_finished`、`ai_review_failed`、
-  `ai_review_cancelled`。终态 `ai_review_finished` 的「exactly once」契约目前只存在于本文档与
-  `TeamReplayAnalysisService` 的 javadoc 中（两个看板都已不再查询它），尚未有 emitter；在补上 emitter 前不要依赖它定位终态。
-
-#### parser 失败分类（低基数枚举）
-
-`EMPTY_OUTPUT` · `INVALID_JSON` · `OUTPUT_TOO_LARGE` · `MISSING_REQUIRED_FIELD` · `INVALID_FIELD` ·
-`CARDINALITY_EXCEEDED` · `INVALID_REFERENCE`
-
-每条 failure 带稳定 `path` 与 `FailureCategory`；Prometheus 仅使用 `reason` / `path_class` 枚举，
-不写入用户或玩家标识。规范化（salvage）后仍满足最低 contract（`summary` + `episodes`）时**是合法的生产成功路径**
-（`wotb_ai_team_review_validation_attempt_total{result="salvaged"}`），不触发额外模型调用。
-
-#### validator conflict reasonCode（已随 2026-10 legacy 契约收敛删除）
-
-以下枚举属于已删除的 `TeamFactualConsistencyValidator`（legacy envelope 的 HARD_FACT 冲突分类），
-当前 `java/*/src/main/**` 已无生产者，仅作历史记录保留：
-
-`UNKNOWN_EVIDENCE` · `EVIDENCE_TYPE_MISMATCH` · `SUBJECT_MISMATCH` · `TIME_MISMATCH` · `REGION_MISMATCH` ·
-`KNOWLEDGE_MISMATCH` · `COUNT_MISMATCH` · `UNSUPPORTED_HARD_FACT` · `TEMPORAL_OWNERSHIP` · `IDENTITY_AMBIGUITY` ·
-`CLAIMS_COVERAGE` · `INTERNAL_LABEL_LEAK` · `EMPTY_OUTPUT` · `MISSING_DIAGNOSIS`（其余按 checkId 推断为 `UNCLASSIFIED`）
-
-#### 常见错误码排障
-
-- **`AI_REVIEW_SCHEMA_FAILED`**（502）：初始结果和最多一次 recovery 都不是有效 TeamAiReviewResult。
-  这表示模型有响应，但最终 structured contract 无法形成可消费的 `TeamAiReviewResult`；它不是
-  `AI_UPSTREAM_UNAVAILABLE`（后者表示 transport/provider availability failure）。按下方 runbook
-  使用 AI Review dashboard 的 correlation trace 还原两次 contract attempt 与最终终态。
-- **`AI_TIMEOUT`**：分 provider read timeout / 整体预算耗尽 / SSE timeout 三种；查 `event=ai_upstream_call_failed` 与调用耗时、remainingBudgetSec。
-- **`AI_UPSTREAM_UNAVAILABLE`**：上游 5xx / 连接失败；`event=ai_transport_retry` 记录退避重试。
-- **`AI_CANCELLED`**：客户端取消（cancel 端点 / SSE 断开）；`result=rejected` + `type=AI_CANCELLED` 可在
-  `wotb_ai_review_errors_total` 观察（`ai_review_cancelled` 事件当前无生产者，见上文）。
-- **`AI_REVIEW_GROUNDING_FAILED`**：已删除。它由 legacy `TeamFactualConsistencyValidator` 的
-  HARD_FACT 冲突 fail-safe 产生，随 2026-10 legacy 契约收敛一并移除；`java/*/src/main/**` 中不再有该错误码，
-  排障时请改看 `AI_REVIEW_SCHEMA_FAILED`（contract 路径）与上游错误码。
-
-#### `AI_REVIEW_SCHEMA_FAILED` runbook
-
-1. 在 AI Review dashboard 中找到失败请求。
-2. 从失败日志或 SSE error 的 `id` 获取 `correlationId`。
-3. 在 dashboard 的 `correlationId` textbox 中输入该 ID（默认值 `.*`，只用于 Loki 文本过滤）。
-4. 打开「Schema Failure Request Trace」，确认日志按时间正序展示同一单请求。
-5. 先查看 `ai_review_contract_failed attempt=1`，读取 `failureCategory`、`failureCode` 和 `failurePath`。
-6. 查看 `ai_review_recovery_triggered` 的 `reason`，确认是否启动了唯一一次 fresh recovery。
-7. 查看 recovery 后的 `ai_review_contract_failed attempt=2`，对比两次的 category/code/path。
-8. 查看 `ai_review_recovery_failed` 与 `team_review_completed`，确认 recovery 和 Team Call #2 汇总结果。
-9. 终态：`ai_review_failed` / `ai_review_finished` 当前**没有生产者**（见上文「当前无生产者的事件」），
-   改用 SSE `error` 事件与 `wotb_ai_review_errors_total{type="AI_REVIEW_SCHEMA_FAILED"}` 确认最终失败终态。
-
-`AI_REVIEW_SCHEMA_FAILED` != `AI_UPSTREAM_UNAVAILABLE`：前者是模型有响应但无法形成可消费的 structured
-`TeamAiReviewResult`；后者是 transport/provider availability failure。不要用上游可用性告警替代 schema
-failure 的 contract diagnosis，也不要在日志中寻找 raw completion、prompt 或回放内容。
-
-### 生产事故排查（Error ID → lifecycle）
-
-1. 用户提供错误 UI 中的 `errorId`（AI SSE 中为 `id`，值与 `correlationId` 相同；普通 HTTP 错误使用 canonical `error.id`）。
-2. 打开 `WotBTools · HTTP 与事故诊断`，填入 `errorId`；必要时同时填写 `service`、`errorCode` 或 Replay `jobId`。
-3. 先看「近期事故」确认服务、事件、错误码和阶段，再看「单次 Incident 生命周期」的时间顺序。
-4. AI 侧失败按错误码分流：`AI_REVIEW_SCHEMA_FAILED` 走 `ai_review_contract_failed` → `ai_review_recovery_triggered` /
-   `ai_review_recovery_failed` → `team_review_completed`（见上文 runbook）；上游失败走 `ai_upstream_call_started` /
-   `ai_upstream_call_completed` / `ai_upstream_call_failed` / `ai_transport_retry`。legacy 的
-   `team_review_parse_result` / `team_review_validation` / `team_review_validation_conflict` / `ai_validation_retry` /
-   `team_review_validation_attempt_completed` 与 `AI_REVIEW_GROUNDING_FAILED` 已随 2026-10 legacy 契约收敛删除，
-   不要再用它们排障。
-
-看板只用 Prometheus 做计数/速率/延迟/低基数 breakdown；`correlationId`、`errorId`、`jobId` 和完整生命周期只进入 Loki 查询。冲突日志只保留 event、correlationId、attempt、failureCategory、failureCode、failurePath，不记录 prompt、原始模型输出、回放内容、账号或 token。
-
-### 生产验收清单（部署后）
-
-- 成功复盘：能看到 upstream → grounding facts → prompt budget → contract salvage/completed → `team_review_completed`。
-- contract 失败：能看到 `ai_review_contract_failed` → `ai_review_recovery_triggered` →（失败时）`ai_review_recovery_failed` → `team_review_completed`，或最终以 `AI_REVIEW_SCHEMA_FAILED` 结束。
-- `AI_REVIEW_SCHEMA_FAILED`：从 UI error ID 可定位同一 correlationId，并能看到 contract failure 分类、recovery 次数、Team Call #2 汇总与上游状态。
-- 在 `monitor.wotbtools.com` 实际检查 AI Review 与 Incident Explorer 的真实数据、筛选结果和空数据提示；本地 JSON/PromQL 校验不能替代该生产验收。
-
----
-
----
-
-## 8. 数据保留与资源限制
-
-| 组件 | 保留 | 磁盘上限 | 内存限制（mem_limit） |
-|---|---|---|---|
-| Prometheus | 7 天（`--storage.tsdb.retention.time=168h`） | 2GiB（`--storage.tsdb.retention.size=2GB`） | 384m |
-| Loki | 7 天（`retention_period: 168h` + compactor） | 无显式上限（受宿主磁盘） | 256m |
-| Grafana | 独立 volume `grafana_data` | 无 | 256m |
-| Alloy | —（仅转发） | — | 128m |
-| node-exporter | —（仅转发主机指标） | — | 64m |
-| Docker 原始日志 | json-file 轮转：单文件 20MB × 3 | — | — |
-
-**持久化**：全部使用独立命名 volume（`prometheus_data` / `loki_data` / `grafana_data`），与 `postgres_data` 分离；不写入 PostgreSQL。容器重启后 7 天数据仍在。
-
-### 查看磁盘和内存占用
-
-```bash
-# 观测栈内存
-docker stats prometheus loki alloy grafana node-exporter
-
-# 数据卷占用
-docker system df -v | grep -E "prometheus_data|loki_data|grafana_data"
-
-# Prometheus 自身 TSDB 大小
-docker exec prometheus du -sh /prometheus
-
-# Loki 块大小
-docker exec loki du -sh /loki/chunks
-```
-
-### 调整保留时间 / 资源限制
-
-- Prometheus 保留：改 `deploy/docker-compose.prod.yml` 中 `--storage.tsdb.retention.time`，由 `observability.yml` reconcile。
-- Loki 保留：改 `deploy/observability/loki/loki-config.yml` 的 `limits_config.retention_period`（如 `336h` = 14 天）后 `docker compose up -d loki`（Loki 需要 compactor 周期生效）。
-- 内存限制：改各服务 `mem_limit`。
-
-### 认证故障快速排查
-
-参见 [`docs/operations/observability-runbook.md`](observability-runbook.md)，其中包含 Keycloak OIDC discovery、Prometheus target、Loki 关键词和 QQ callback 复现后的证据采集顺序。
-
----
-
-## 9. 回滚 / 完全移除观测系统（不影响主业务）
-
-```bash
-# 停止（数据保留，可随时 start 恢复）
-docker compose stop prometheus loki alloy grafana
-
-# 完全移除容器但保留 volume（回滚到无观测栈）
-docker compose rm -sf prometheus loki alloy grafana
-
-# 如需彻底删除观测数据（谨慎，不可恢复）
-docker volume rm <project>_prometheus_data <project>_loki_data <project>_grafana_data
-```
-
-Yecao 只运行 `ai-service` 与观测栈（prometheus / loki / alloy / grafana / node-exporter），停止或移除观测容器不影响 TX 业务运行时（business-postgres / keycloak-postgres / keycloak / business-api / wotb-frontend）；TX 侧的数据 volume 永不触碰。
-
----
-
-## 10. 指标清单（Backend）
-
-- **HTTP**：`http_server_requests_seconds_*`（Micrometer 自动，URI 已模板化，低基数；2xx/3xx/4xx/5xx 分布、P50/P95/P99 直方图）
-- **JVM**：`jvm_memory_used_bytes`、`process_cpu_usage`、`system_cpu_usage`、`jvm_gc_pause_seconds_*`、`jvm_threads_*`
-- **HikariCP**：`hikaricp_connections_active/idle/pending`
-- **AI Review**（自定义；由 Yecao `ai-service` 暴露并由 Prometheus `job="ai-service"` 抓取；`AiReviewController` 边界，**一次进入 worker 的请求 = 一次 Review**）：
-  - `wotb_ai_review_requests_total` — Review 请求量（每次 analyze +1，与上游调用次数无关）
-  - `wotb_ai_review_results_total{result=success|failure|rejected}` — 结果（rejected 在 Dashboard 中显示为“事实校验退回”，含流内拒绝：AI 未配置/不支持战斗类型/perspective 未确定/token budget 拒绝；混合批次中单文件解析失败返回 FAILED 结果不抛异常，计入 success 的请求完成语义）。**注意**：SSE worker 池饱和（503 `AI_REVIEW_BUSY`）与 request-envelope 预校验失败（`UNSUPPORTED_AI_REQUEST_SCHEMA` / `INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID` / `UNSUPPORTED_BATTLE_CATEGORY` / 413 `AI_REQUEST_TOO_LARGE`）在提交 worker 前同步返回 HTTP 400 / 409 / 413 / 422 / 503，**不进入 review worker，不计入这些 AI Review 计数器**——只能在 `http_server_requests_seconds_*`（按 status 4xx/5xx）与 nginx access log 中观察；监控告警须结合两者，不能只看 `wotb_ai_review_*`。
-  - `wotb_ai_review_errors_total{type=<固定枚举>}` — 错误分类（仅流内失败，与 `failure` 一致；HTTP 4xx 预校验失败不在此处计数）
-  - `wotb_ai_review_duration_seconds` — Review 完整总耗时（Timer，histogram，成功与异常都结束，覆盖文件验证→解析→分析→AI 调用→响应处理）
-  - `wotb_ai_review_in_flight` — 当前处理中的 Review 数（Gauge，即"已进入 worker、尚未完成"的请求数；不含队列中等待的请求，也不含被 `AI_REVIEW_BUSY` 回绝的请求）
-  - `wotb_ai_review_queue_wait_seconds` — worker 排队等待时长（Timer，histogram；由 `wotb_ai_review_queue_wait_seconds_bucket` 支撑 P95）
-  - `wotb_ai_review_queue_depth` — 当前等待执行的 AI Review worker 数（Gauge；不含正在执行与已拒绝请求）
-  - `wotb_ai_team_review_validation_attempt_total{result=pass|salvaged|schema_invalid}` — Team Call #2 contract attempt 分类（`salvaged` = parser 规范化后满足最低 contract 且直接成功；`schema_invalid` = 该 attempt 无法形成可消费结果）
-  - `wotb_ai_team_review_schema_failure_total{reason,path_class}` — Team Call #2 JSON/schema contract 失败；仅使用低基数失败原因和路径类别，不记录 prompt/output
-  - `wotb_ai_team_review_repair_total{result=triggered|started|success|failed}` — recovery 生命周期；不记录 prompt/output
-  - 已随 2026-10 legacy 契约收敛删除：`wotb_ai_team_review_validation_retry_total`、`wotb_ai_team_review_grounding_conflict_total`、`wotb_ai_review_team_autopsy_total`（无生产者，看板中已移除；不要新增同名指标）
-- **AI upstream**（自定义，`SpringAiChatGateway.chat`，每次上游调用）：
-  - `wotb_ai_upstream_requests_total{mode}` — 上游请求量（每个 attempt +1，含 retry 重试；token budget 拒绝不进入 gateway，不计）
-  - `wotb_ai_upstream_success_total{mode}` — 成功调用数（一次逻辑调用 +1）
-  - `wotb_ai_upstream_errors_total{type=<枚举>}` — 失败调用数（重试耗尽后的最终失败 +1，不按 attempt 重复累计）
-  - `wotb_ai_upstream_duration_seconds` — 调用总耗时（Timer，histogram，含重试；成功与最终失败都结束，token budget rejection 不计时长）
-  - `wotb_ai_upstream_retries_total{mode}` — retry 重试次数
-  - `wotb_ai_upstream_retry_outcome_total{mode,outcome=no_retry|success_after_retry|failure_after_retry}` — 重试结果
-  - `wotb_ai_upstream_tokens_total{mode,token_type=input|output|total|reasoning|cache_hit|cache_miss}` — token 用量（usage 缺失时不记录）
-
-> 当前没有 authoritative 的 per-source replay success/failure Prometheus metric；不要用 Processing Job 的 `READY` / `FAILED` 终态替代 source-level 解析结果。
-> legacy `wotb_replay_results_total` 不统计，避免把异常路径或 Job 终态误解为逐文件解析 success/failure。
-
-**Keycloak / Host**：
-
-- Keycloak observability：不再配置 Prometheus `keycloak` job 或独立 management contract；认证事件、QQ callback、broker/IdP 错误与 WARN/ERROR 统一通过 Alloy → Loki，Dashboard 以日志 panels 为主。Keycloak OIDC discovery 只属于 application blocking gate。
-- Host：Prometheus job `node-exporter` 抓取 `node-exporter:9100`；生产首页使用 `node_cpu_seconds_total`、`node_memory_*`、`node_filesystem_*` 与 `node_load1` 展示 CPU/RAM/Disk/Load。
-
-**Label 约束**：不使用用户 ID、Replay ID、文件名、IP、correlation ID、Prompt、Completion、异常正文作为 label；URI 一律为 Spring MVC 模板（如 `/api/preview`）。Token Usage 仅以低基数 `mode`/`token_type` 统计。
-
----
-
-## 11. 日志安全
-
-结构化日志**不会**包含：Authorization Header、Token、API Key、密码、Replay 文件内容、解析后的完整战斗数据、完整 Prompt/AI 响应、请求体、用户个人信息。AI 上游错误体被 `[PROVIDER_BODY_REDACTED]` 脱敏；`X-Request-ID` 限制 128 字符防注入。
+Activity is not productivity; production correlation does not establish causation. Links use the five real product dashboards. Production acceptance must compare live GitHub totals/months, prove successful refresh under 30 minutes, check safe diagnostics for leakage, apply only the additional dashboard, and require the existing clean second-plan/UID checks.

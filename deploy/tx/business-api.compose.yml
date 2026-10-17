@@ -12,6 +12,10 @@ services:
     # name is intentionally distinct from the retired Yecao runtime.
     image: ${TX_BUSINESS_API_IMAGE_REF:?TX_BUSINESS_API_IMAGE_REF is required}
     environment:
+      # Trust the private TX bridge (including hairpin gateway) and TX2 frontend host.
+      # nginx overwrites X-Real-IP; public peers must never be added here.
+      WOTB_OBSERVABILITY_TRUSTED_PROXIES: "172.29.0.0/16,10.20.0.3/32"
+      WOTB_OBSERVABILITY_HASH_KEY: ${WOTB_OBSERVABILITY_HASH_KEY:-}
       # Flyway owns every application table in the OpenTofu-provisioned business
       # database; the application role is separate from the PostgreSQL bootstrap
       # administrator.
@@ -36,6 +40,14 @@ services:
       # Tournament-only permits; this is not an AI provider credential. The same
       # runtime secret is passed to ai-service, which verifies the image permit.
       TOURNAMENT_RECOGNITION_SIGNING_KEY: ${TOURNAMENT_RECOGNITION_SIGNING_KEY:-}
+      # Optional, prefix-scoped COS credentials for league broadcast covers.
+      # No configuration is required for browsing or records without covers.
+      BROADCAST_COS_BUCKET: ${BROADCAST_COS_BUCKET:-}
+      BROADCAST_COS_REGION: ${BROADCAST_COS_REGION:-}
+      BROADCAST_COS_PREFIX: ${BROADCAST_COS_PREFIX:-league-broadcasts/covers/}
+      CREATOR_AVATAR_COS_PREFIX: ${CREATOR_AVATAR_COS_PREFIX:-creator-avatars/}
+      BROADCAST_COS_SECRET_ID: ${BROADCAST_COS_SECRET_ID:-}
+      BROADCAST_COS_SECRET_KEY: ${BROADCAST_COS_SECRET_KEY:-}
       # AI provider configuration deliberately does not exist here: AI Review runs
       # in the standalone stateless Yecao ai-service (deploy/docker-compose.prod.yml),
       # and TX only routes /api/ai/** to its WireGuard endpoint.

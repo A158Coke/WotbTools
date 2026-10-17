@@ -7,22 +7,24 @@ import TournamentEventSelect from './TournamentEventSelect.vue'
 import { messages } from '../locales/messages.js'
 import type { TournamentEvent } from '../api/tournament-points.js'
 
-function picker(initial: number | null = 7) {
+function picker(initial: number | null = 7, includeGlobal = false) {
   const events: TournamentEvent[] = [
     { id: 7, version: 1, year: 2026, region: 'CN', season: 'SUMMER', roundCount: 5, daysPerRound: 2, dayLabels: ['Day 1', 'Day 2'], configLocked: false },
     { id: 8, version: 1, year: 2025, region: 'EU', season: 'FIRE_CUP', roundCount: 4, daysPerRound: 3, dayLabels: ['Day 1', 'Day 2', 'Day 3'], configLocked: false },
   ]
   const model = ref<number | null>(initial)
   const loadedEvents = ref(events)
+  const globalSelected = ref(false)
   const host = defineComponent({
     setup: () => () => h(TournamentEventSelect, {
-      events: loadedEvents.value, modelValue: model.value,
-      'onUpdate:modelValue': (value: number | null) => { model.value = value },
+      events: loadedEvents.value, modelValue: model.value, includeGlobal, globalSelected: globalSelected.value,
+      'onSelect-global': () => { globalSelected.value = true },
+      'onUpdate:modelValue': (value: number | null) => { globalSelected.value = false; model.value = value },
     }),
   })
   const wrapper = mount(host, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages })] } })
   const values = () => wrapper.findAll('select').map(select => (select.element as HTMLSelectElement).value)
-  return { wrapper, model, loadedEvents, events, values }
+  return { globalSelected, wrapper, model, loadedEvents, events, values }
 }
 
 describe('controlled tournament event selection', () => {
@@ -86,5 +88,34 @@ describe('controlled tournament event selection', () => {
     await p.wrapper.get('[data-testid="event-season"]').setValue('SUMMER')
     expect(p.model.value).toBe(7)
     expect(p.values()).toEqual(['2026', 'CN', 'SUMMER'])
+  })
+})
+
+describe('optional global configuration selection', () => {
+  it('offers global rules without year/region and exits to ordinary filters without inventing event ids', async () => {
+    const p = picker(null, true)
+    const seasons = p.wrapper.get('[data-testid="event-season"]')
+    expect(seasons.attributes('disabled')).toBeUndefined()
+    await seasons.setValue('GLOBAL')
+    expect(p.globalSelected.value).toBe(true); expect(p.model.value).toBeNull()
+    expect(p.values()).toEqual(['', '', 'GLOBAL'])
+    await p.wrapper.get('[data-testid="event-year"]').setValue('2026')
+    expect(p.globalSelected.value).toBe(false)
+    expect(p.values()).toEqual(['2026', '', ''])
+    await p.wrapper.get('[data-testid="event-region"]').setValue('CN')
+    await seasons.setValue('SUMMER')
+    expect(p.model.value).toBe(7)
+    p.wrapper.unmount()
+  })
+  it('preserves ordinary choices while global is selected and refreshed events arrive', async () => {
+    const p = picker(7, true)
+    await p.wrapper.get('[data-testid="event-season"]').setValue('GLOBAL')
+    p.loadedEvents.value = [...p.events]; await nextTick()
+    expect(p.values()).toEqual(['2026', 'CN', 'GLOBAL'])
+    await p.wrapper.get('[data-testid="event-season"]').setValue('SUMMER')
+    expect(p.globalSelected.value).toBe(false)
+    expect(p.model.value).toBe(7)
+    expect(p.values()).toEqual(['2026', 'CN', 'SUMMER'])
+    p.wrapper.unmount()
   })
 })

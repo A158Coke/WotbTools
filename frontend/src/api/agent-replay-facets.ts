@@ -181,6 +181,19 @@ export interface AgentVehicleTrack {
   hp: Array<[number, number]>
   death_t: number | null
   killer_eid: number
+  /**
+   * 全部死亡时刻（升序；`death_times[0] == death_t`，**上游 2026-10-15 起产出，additive**）。
+   * **仅该车死亡 ≥2 次（复活模式，如爆燃）才输出**；单死/无死回放字段缺省。
+   * 缺省 = death_t 已完整表达生命史（死亡终态语义）。
+   */
+  death_times?: number[]
+  /**
+   * 复活时刻（升序；**上游 2026-10-15 起产出，additive，仅非空才输出**）。
+   * 生命状态重建：death_t 起 DESTROYED，至首个 ≥ 该时刻的复活点回 ALIVE，与后续死亡交替。
+   * 字段缺省 = 无复活证据 → 死亡终态（fail-closed，行为与既往一致）。上游契约见
+   * `crates/replay-core/src/replay/playback.rs` VehicleTrack。
+   */
+  resurrection_times?: number[]
   shell_ids: number[]
   turret_index: number | null
   gun_index: number | null
@@ -744,6 +757,26 @@ export function validateAgentPlayback(value: unknown): AgentPlaybackFacet {
       throw new Error(
         `agent facets: playback.vehicles[${i}].pose_kf.pos 长度 ${pos.length} ≠ 3×t（${t.length}）`,
       )
+    }
+  })
+  // 复活生命轨道（additive，上游 v0.4.8）：在场时必须为数组、数值有限、非负且非降序——
+  // 消费端按「死亡 ↔ 复活」交替重建生命史（canonical lifeTransitions / defLifeAt / rosterState），
+  // 形状漂移会静默篡改终态迁移，故在边界拦下。缺省 = 无复活证据（死亡终态，行为与既往逐位一致），
+  // 不据数组长度反推复活模式。
+  vehicles.forEach((vehicle, i) => {
+    if (!isObject(vehicle)) return
+    for (const key of ['death_times', 'resurrection_times'] as const) {
+      const column = vehicle[key]
+      if (column === undefined) continue
+      const times = assertArray(column, `playback.vehicles[${i}].${key}`)
+      let previous = Number.NEGATIVE_INFINITY
+      for (let j = 0; j < times.length; j++) {
+        const time = assertFiniteNumber(times[j], `playback.vehicles[${i}].${key}[${j}]`)
+        if (time < 0 || time < previous) {
+          throw new Error(`agent facets: playback.vehicles[${i}].${key} 必须非负且非降序`)
+        }
+        previous = time
+      }
     }
   })
   // 独立炮塔必须带完整的原始实体轨迹。只校验新字段与车辆 eid 的联表，保持旧车辆形状兼容。

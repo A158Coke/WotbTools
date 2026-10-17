@@ -10,6 +10,8 @@ export type { ParsedReplayFile }
 export interface ParseReplaysOptions {
   /** 每完成一个文件回调一次（done = 已完成个数） */
   onProgress?: (done: number, total: number) => void
+  /** Lifecycle observer, using the original input index even when worker messages arrive out of order. */
+  onFile?: (index: number, file: ParsedReplayFile) => void
   signal?: AbortSignal
 }
 
@@ -34,7 +36,7 @@ export function __setParseWorkerFactoryForTest(factory: WorkerFactory | null): v
 }
 
 export async function parseReplayFiles(files: File[], options: ParseReplaysOptions = {}): Promise<ParsedReplayFile[]> {
-  const { onProgress, signal } = options
+  const { onProgress, onFile, signal } = options
   if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
   const payload = await Promise.all(files.map(async (f) => ({ name: f.name, bytes: await f.arrayBuffer() })))
   if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
@@ -50,6 +52,7 @@ export async function parseReplayFiles(files: File[], options: ParseReplaysOptio
         const message = event.data
         if (message.type === 'file') {
           results[message.index] = message.file
+          onFile?.(message.index, message.file)
           done++
           onProgress?.(done, files.length)
         } else if (message.type === 'fatal') {

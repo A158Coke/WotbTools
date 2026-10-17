@@ -8,6 +8,7 @@ import { messages } from '../locales/messages.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import MorePage from './MorePage.vue'
+import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
 const menuRole = vi.hoisted(() => ({ tournament: false, authenticated: null }))
 
 vi.mock('../composables/useAuth.js', async () => {
@@ -22,7 +23,7 @@ vi.mock('../composables/useAuth.js', async () => {
   }
 })
 
-function mountPage(navigate = vi.fn(), onboarding = null) {
+function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = true) {
   const i18n = createI18n({
     locale: 'zh',
     fallbackLocale: 'en',
@@ -31,13 +32,36 @@ function mountPage(navigate = vi.fn(), onboarding = null) {
   const wrapper = mount(MorePage, {
     global: {
       plugins: [i18n],
-      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding },
+      provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding,
+        [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), loading: ref(false), refresh: vi.fn() } },
     },
   })
   return { wrapper, i18n }
 }
 
 describe('MorePage language switcher', () => {
+  it('keeps creator administration hidden on a legacy backend', () => {
+    menuRole.tournament = true
+    const { wrapper } = mountPage(vi.fn(), null, false)
+    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('keeps creator administration scoped without duplicating its primary navigation entry', async () => {
+    const navigate = vi.fn(), { wrapper } = mountPage(navigate)
+    expect(wrapper.find('[data-testid="more-link-creators"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
+    wrapper.unmount()
+    menuRole.tournament = true
+    const admin = mountPage().wrapper
+    expect(admin.find('[data-testid="more-link-creators-config"]').exists()).toBe(true)
+    admin.unmount()
+  })
+  it('does not duplicate the primary broadcast entry in More', () => {
+    const { wrapper } = mountPage()
+    expect(wrapper.find('[data-testid="more-link-league-broadcasts"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
     menuRole.tournament = false

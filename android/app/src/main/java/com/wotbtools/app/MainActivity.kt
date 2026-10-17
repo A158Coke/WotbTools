@@ -1,10 +1,8 @@
 package com.wotbtools.app
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
-import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
@@ -14,30 +12,24 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.View
-import android.webkit.CookieManager
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.webkit.URLUtil
+import android.webkit.MimeTypeMap
 import android.widget.Button
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.webkit.WebViewAssetLoader
-import androidx.webkit.WebViewFeature
-import androidx.webkit.WebViewCompat
 import com.wotbtools.app.auth.AuthFailureReason
 import com.wotbtools.app.auth.AuthManager
 import com.wotbtools.app.auth.AuthResult
 import org.json.JSONArray
 import org.json.JSONObject
+import org.mozilla.geckoview.GeckoResult
+import org.mozilla.geckoview.GeckoSession.PromptDelegate
+import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebResponse
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -51,7 +43,11 @@ import java.util.concurrent.atomic.AtomicInteger
 class MainActivity : Activity() {
 
     companion object {
-        internal const val LOCAL_APP_ORIGIN = "https://appassets.androidplatform.net"
+        /**
+         * 本机 origin（LocalRuntimeServer）：固定端口让 origin 跨启动稳定（localStorage / CORS 依赖它）。
+         * 端口的唯一事实源；contracts/android-native-bridge.json 与前端声明由 android_contract.py 校验一致。
+         */
+        internal const val LOCAL_APP_ORIGIN = "http://127.0.0.1:21653"
         internal const val LOCAL_APP_ENTRY = LOCAL_APP_ORIGIN + "/index.html"
         internal const val REPLAY_FOLDER_STREAM_URL = MainActivity.LOCAL_APP_ORIGIN + "/__native/replay-folder"
         internal const val REPLAY_FOLDER_SELECTION_IDENTITY_HEADER = "X-Wotb-Folder-Selection-Id"
@@ -59,14 +55,12 @@ class MainActivity : Activity() {
         // replay canonical view 的 marker 由 ReplayDispatchPolicy 拥有：分发决策所判断的 URL 与这里导航到的
         // URL 共用同一常量，避免两处字面量漂移。
         private const val REPLAY_URL = LOCAL_APP_ENTRY + "?" + ReplayDispatchPolicy.REPLAY_VIEW_MARKER
-        private const val FILE_CHOOSER_REQUEST = 1001
-        private const val REPLAY_FOLDER_REQUEST_MIN = 0x2000
-        private const val REPLAY_FOLDER_REQUEST_MAX = 0xffff
-        // Never reuse a folder request code within a process, including Activity recreation.
-        private val nextFolderRequestCode = AtomicInteger(REPLAY_FOLDER_REQUEST_MIN)
+        private const val PICKER_REQUEST_MIN = 0x2000
+        private const val PICKER_REQUEST_MAX = 0xffff
+        // All native pickers share this allocator; never reuse a code, including Activity recreation.
+        private val nextPickerRequestCode = AtomicInteger(PICKER_REQUEST_MIN)
         private const val REPLAY_FOLDER_LIFETIME_MS = 9L * 60 * 1000
         private const val REPLAY_FOLDER_SCAN_TIMEOUT_MS = 60L * 1000
-        private const val BRIDGE_NAME = "WotbNative"
 
         /** 日志 tag（导航 / replay / auth 诊断共用）。 */
         private const val TAG = "WotbAuth"
@@ -77,35 +71,69 @@ class MainActivity : Activity() {
         /** 连通性变化后推给页面的全局（与 contracts/android-native-bridge.json 的 events 一致）。 */
         private const val CONNECTIVITY_CHANGED_GLOBAL = "wotbtoolsOnConnectivityChanged"
 
-        /** Native Bridge 唯一允许的调用 origin；绝不暴露给 Keycloak / IdP / 任意 frame。 */
-        internal val BRIDGE_ORIGINS = setOf(
-            LOCAL_APP_ORIGIN,
-            "https://wotbtools.com",
-            "https://www.wotbtools.com"
-        )
+        /** 已在 replay workspace 时通知页面消费 pending（与 contracts/android-native-bridge.json 的 events 一致）。 */
+        private const val REPLAY_GLOBAL = "wotbtoolsOnReplay"
 
-        /** Only the exact HTTPS local origin can remain the main document. */
+        /** 使用浏览器版（错误页兜底入口）。 */
+        private const val WEB_APP_URL = "https://wotbtools.com/"
+
+        /** [LOCAL_APP_ORIGIN] 的 authority；导航与 Bridge sender 校验共用同一份提取（不重复派生）。 */
+        internal val LOCAL_APP_AUTHORITY = java.net.URI(LOCAL_APP_ORIGIN).rawAuthority
+
+        /** Only the exact local origin can be the main document or call the Native Bridge. */
         internal fun isLocalAppUrl(url: String): Boolean = try {
             val uri = java.net.URI(url)
-            uri.scheme == "https" && uri.rawAuthority == "appassets.androidplatform.net"
+            uri.scheme == "http" && uri.rawAuthority == LOCAL_APP_AUTHORITY
         } catch (_: Exception) {
             false
         }
 
+        /** Own the input even when creating or writing the private temp file fails. */
+        internal fun spoolDownload(body: InputStream, directory: File): File {
+            var file: File? = null
+            try {
+                return body.use { input ->
+                    File.createTempFile("web-download-", ".tmp", directory).also {
+                        file = it
+                        it.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            } catch (error: Exception) {
+                file?.delete()
+                throw error
+            }
+        }
+
+        /** RFC 5987 filename* takes precedence over the legacy filename parameter. */
+        internal fun extendedDownloadName(disposition: String?): String? {
+            val match = disposition?.let {
+                Regex("""(?i)filename\*\s*=\s*(?:"([^"\r\n]*)"|([^;\r\n]*))""").find(it)
+            } ?: return null
+            val parts = (match.groups[1]?.value ?: match.groups[2]?.value)?.trim()
+                ?.split("'", limit = 3)?.takeIf { it.size == 3 } ?: return null
+            return try {
+                java.net.URLDecoder.decode(parts[2].replace("+", "%2B"), parts[0])
+                    .takeIf { it.isNotBlank() }
+            } catch (_: Exception) { null }
+        }
+
     }
 
-    private lateinit var webView: WebView
-    private lateinit var webViewContainer: FrameLayout
+    private lateinit var runtimeView: GeckoView
+    private lateinit var runtime: GeckoWebRuntime
+    private var localServer: LocalRuntimeServer? = null
     private lateinit var versionGateView: LinearLayout
-    private lateinit var webErrorView: LinearLayout
+    private lateinit var runtimeErrorView: LinearLayout
     private lateinit var versionTitle: TextView
     private lateinit var versionMessage: TextView
     private lateinit var versionCurrent: TextView
     private lateinit var versionLatest: TextView
-    private lateinit var webErrorRetryButton: Button
+    private lateinit var runtimeErrorRetryButton: Button
+    private lateinit var runtimeErrorBrowserButton: Button
+    private lateinit var runtimeErrorDiagnostics: TextView
     private lateinit var versionPrimaryButton: Button
     private lateinit var versionLaterButton: Button
-    private lateinit var webErrorTitle: TextView
+    private lateinit var runtimeErrorTitle: TextView
 
     private lateinit var apkUpdater: ApkUpdater
     private lateinit var nativeBridge: NativeBridge
@@ -118,7 +146,10 @@ class MainActivity : Activity() {
     @Volatile private var latestManifest: VersionManifest? = null
     private var versionCheckInFlight = false
     @Volatile private var downloadedApk: File? = null
-    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    /** 进行中的普通 `<input type=file>` 选择（Gecko PromptDelegate）；同一时刻只有一个。 */
+    private var filePrompt: Triple<Int, PromptDelegate.FilePrompt, GeckoResult<PromptDelegate.PromptResponse>>? = null
+    private var downloadInFlight = false
+    private var downloadSave: Pair<Int, File>? = null
     private val replayFolderPicker = ReplayFolderPicker()
     private var folderPickRequest: FolderPickRequest? = null
     private val folderTimeoutHandler = Handler(Looper.getMainLooper())
@@ -137,12 +168,11 @@ class MainActivity : Activity() {
     }
     @Volatile private var awaitingUnknownSourcesPermission = false
 
-    /** WebView 是否已销毁：晚到的 bridge 回复 / JS 通知都必须先看这一位。 */
-    @Volatile private var destroyedWebView = false
+    /** 引擎是否已销毁：晚到的 bridge 回复 / 页面通知都必须先看这一位。 */
+    @Volatile private var destroyedRuntime = false
 
-    /** HTML Fullscreen API 在 Android WebView 中通过 WebChromeClient custom-view 回调落地。 */
-    private var fullscreenView: View? = null
-    private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
+    /** HTML Fullscreen API：Gecko 经 ContentDelegate.onFullScreen 通知，宿主只管系统 UI 与方向。 */
+    private var fullscreen = false
     private var fullscreenPreviousOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var fullscreenPreviousSystemUiVisibility: Int = View.SYSTEM_UI_FLAG_VISIBLE
 
@@ -153,16 +183,17 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        webView = findViewById(R.id.webView)
-        webViewContainer = findViewById(R.id.webViewContainer)
+        runtimeView = findViewById(R.id.runtimeView)
         versionGateView = findViewById(R.id.versionGateView)
-        webErrorView = findViewById(R.id.webErrorView)
+        runtimeErrorView = findViewById(R.id.runtimeErrorView)
         versionTitle = findViewById(R.id.versionTitle)
         versionMessage = findViewById(R.id.versionMessage)
         versionCurrent = findViewById(R.id.versionCurrent)
         versionLatest = findViewById(R.id.versionLatest)
-        webErrorRetryButton = findViewById(R.id.webErrorRetryButton)
-        webErrorTitle = findViewById(R.id.webErrorTitle)
+        runtimeErrorRetryButton = findViewById(R.id.runtimeErrorRetryButton)
+        runtimeErrorBrowserButton = findViewById(R.id.runtimeErrorBrowserButton)
+        runtimeErrorDiagnostics = findViewById(R.id.runtimeErrorDiagnostics)
+        runtimeErrorTitle = findViewById(R.id.runtimeErrorTitle)
         versionPrimaryButton = findViewById(R.id.versionPrimaryButton)
         versionLaterButton = findViewById(R.id.versionLaterButton)
 
@@ -176,15 +207,16 @@ class MainActivity : Activity() {
         connectivityMonitor.start()
         if (connectivityMonitor.state == "online") authManager.warmUp()
 
-        webErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
+        runtimeErrorRetryButton.setOnClickListener { hideAllGates(); loadWeb() }
+        runtimeErrorBrowserButton.setOnClickListener { openExternal(WEB_APP_URL) }
         versionPrimaryButton.setOnClickListener { onUpdatePrimary() }
         versionLaterButton.setOnClickListener {
             hideAllGates()
-            webView.visibility = View.VISIBLE
+            runtimeView.visibility = View.VISIBLE
             dispatchPendingReplayIfAllowed()
         }
 
-        val webViewOk = configureWebView()
+        runtime = GeckoWebRuntime(this, runtimeView, runtimeHost)
         // 冷启动顺序：先恢复 active pending（跨进程重建存活），再清理不再被它引用的 orphan replay cache
         // —— active backing file 绝不能删除。
         val restoredReplay = ReplayIntentHandler.restorePending(this)
@@ -197,235 +229,168 @@ class MainActivity : Activity() {
         // 冷启动 intent 先看是不是授权回程（external user-agent 回来，进程可能已被重建），
         // 其余一律走 replay ingress。
         if (!handleAuthorizationIntent(intent)) handleIncomingIntent(intent)
-        if (webViewOk) startStartupFlow()
+        startStartupFlow()
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView(): Boolean {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            showUnsupportedWebView()
-            return false
+    /** 本机 origin 按需绑定；绑定失败（端口被占用）返回 false，由调用方显示错误页，「重新加载」会再试一次。 */
+    private fun ensureLocalServer(): Boolean {
+        if (localServer != null) return true
+        val server = LocalRuntimeServer(LOCAL_APP_ORIGIN, ::serveLocalRequest)
+        return try {
+            server.start()
+            localServer = server
+            true
+        } catch (e: IOException) {
+            Log.w(TAG, "local runtime bind failed category=${e.javaClass.simpleName}")
+            server.close()
+            false
         }
-        val settings = webView.settings
-        // Authentication uses native Bearer; the local document needs no cross-site cookies.
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.allowFileAccess = false
-        settings.allowContentAccess = false
-        settings.setGeolocationEnabled(false)
-
-        // Exact local origin + reviewed production compatibility origins; never arbitrary frames.
-        WebViewCompat.addWebMessageListener(
-            webView,
-            BRIDGE_NAME,
-            BRIDGE_ORIGINS,
-            WebViewCompat.WebMessageListener { _, message, _, isMainFrame, replyProxy ->
-                if (!isMainFrame) return@WebMessageListener
-                val data = message.data
-                if (data != null) {
-                    // 认证方法会稍后才完成：replyProxy 必须按次捕获，由 postReply 兜住「回复时页面已销毁」，
-                    // 绝不把已失效的 proxy 交给后台线程。
-                    nativeBridge.handleMessage(data) { reply -> postReply(replyProxy, reply) }
-                }
-            }
-        )
-
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
-                if (view == null || callback == null) {
-                    callback?.onCustomViewHidden()
-                    return
-                }
-                showFullscreenView(view, callback)
-            }
-
-            override fun onHideCustomView() {
-                hideFullscreenView(notifyWeb = false)
-            }
-
-            override fun onShowFileChooser(
-                view: WebView,
-                callback: ValueCallback<Array<Uri>>,
-                params: WebChromeClient.FileChooserParams
-            ): Boolean {
-                // 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
-                // Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
-                // Native Bridge → local synthetic fetch → shared local parser.
-                if (fileChooserCallback != null || folderPickRequest != null || destroyedWebView) {
-                    callback.onReceiveValue(null)
-                    return true
-                }
-                val intent = try {
-                    params.createIntent()
-                } catch (_: Exception) {
-                    Intent(Intent.ACTION_GET_CONTENT)
-                }
-                fileChooserCallback = callback
-                return try {
-                    startActivityForResult(intent, FILE_CHOOSER_REQUEST)
-                    true
-                } catch (_: Exception) {
-                    fileChooserCallback = null
-                    callback.onReceiveValue(null)
-                    false
-                }
-            }
-        }
-
-        // Vite base=/; strip the URL root then read assets/web/<path> from the APK.
-        val bundledAssets = WebViewAssetLoader.AssetsPathHandler(this)
-        val assetLoader = WebViewAssetLoader.Builder()
-            .setDomain("appassets.androidplatform.net")
-            .setHttpAllowed(false)
-            .addPathHandler("/") { path -> bundledAssets.handle("web/" + path.ifEmpty { "index.html" }) }
-            .build()
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                val uri = url?.let { Uri.parse(it) }
-                Log.d(
-                    TAG,
-                    "pageStart scheme=${uri?.scheme ?: "null"} host=${uri?.host ?: "null"} " +
-                        "category=${if (url != null && isLocalAppUrl(url)) "local" else "external"} mainFrame=true"
-                )
-            }
-
-            /** Main frame stays local; HTTPS/mailto external links use the system browser. */
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                if (!request.isForMainFrame) return false
-                val uri = request.url
-                if (isLocalAppUrl(uri.toString())) {
-                    Log.d(TAG, "nav in-app scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
-                    return false
-                }
-                Log.d(TAG, "nav external scheme=${uri.scheme ?: "null"} host=${uri.host ?: "null"}")
-                if (uri.scheme !in setOf("https", "mailto")) return true
-                return try {
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
-                    true
-                } catch (_: Exception) {
-                    // 无可用 browser 时同样阻断：宁可停在这一页，也不在 WebView 内加载非 app origin。
-                    true
-                }
-            }
-
-            /**
-             * Android 外部 replay handoff：Web 侧 readPendingFile 用 fetch(pending.uri) 读取字节。
-             * 固定 same-origin HTTPS resource 始终由 Native 返回文件流或明确错误，不能落到真实网络。
-             */
-            override fun shouldInterceptRequest(
-                view: WebView,
-                request: WebResourceRequest
-            ): WebResourceResponse? {
-                // shouldOverrideUrlLoading is not called for every navigation (notably POST).
-                if (request.isForMainFrame && !isLocalAppUrl(request.url.toString())) {
-                    return WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden",
-                        mapOf("Cache-Control" to "no-store"), null)
-                }
-                if (request.url.toString() == ReplayFolderPicker.STREAM_URL) {
-                    val selectionId = request.requestHeaders.entries.firstOrNull {
-                        it.key.equals(ReplayFolderPicker.SELECTION_IDENTITY_HEADER, ignoreCase = true)
-                    }?.value
-                    val fileId = request.requestHeaders.entries.firstOrNull {
-                        it.key.equals(ReplayFolderPicker.FILE_IDENTITY_HEADER, ignoreCase = true)
-                    }?.value
-                    val response = replayFolderPicker.interceptFolderResource(
-                        request.url.toString(), selectionId, fileId, request.method
-                    ) { treeUri, documentId ->
-                        contentResolver.openInputStream(
-                            DocumentsContract.buildDocumentUriUsingTree(Uri.parse(treeUri), documentId)
-                        )
-                    } ?: error("Synthetic folder resource must be Native-owned")
-                    return WebResourceResponse(
-                        "application/octet-stream", null, response.status, response.reason,
-                        mapOf("Cache-Control" to "no-store"), response.data
-                    )
-                }
-                if (request.url.toString() != ReplayIntentHandler.STREAM_URL) {
-                    if (!isLocalAppUrl(request.url.toString())) return null
-                    // 3D 资产（/agent-assets/*）由 Native 直连对象存储并做 ETag 磁盘缓存，
-                    // 不经生产网关反代（AgentAssetProxy 类注释有完整背景与约束）。
-                    val assetPath = request.url.encodedPath
-                    if (request.method == "GET" && assetPath != null &&
-                        assetPath.startsWith(AgentAssetProxy.LOCAL_PATH_PREFIX)
-                    ) {
-                        return AgentAssetProxy.intercept(applicationContext, assetPath)
-                    }
-                    // Local URLs never escape to DNS/network when a bundled file is missing.
-                    val bundled = assetLoader.shouldInterceptRequest(request.url)
-                    // History navigation is owned by Vue Router; main-frame routes use the same index.
-                    if (request.isForMainFrame && (bundled == null || bundled.statusCode == 404)) {
-                        return bundledAssets.handle("web/index.html")
-                    }
-                    return bundled ?: WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
-                            mapOf("Cache-Control" to "no-store"), null)
-                }
-                Log.d(TAG, "replay-pending stream requested")
-                val pending = pendingReplay?.takeIf { pendingReplayEligible }
-                val expectedId = request.requestHeaders.entries.firstOrNull {
-                    it.key.equals(ReplayIntentHandler.IDENTITY_HEADER, ignoreCase = true)
-                }?.value
-                val response = ReplayIntentHandler.interceptPendingResource(
-                    request.url.toString(), pending?.file, pending?.pendingId, expectedId, request.method
-                ) ?: error("Synthetic replay resource must be Native-owned")
-                val event = when (response.status) {
-                    200 -> "served"
-                    404 -> "missing"
-                    else -> "failed"
-                }
-                Log.d(TAG, "replay-pending stream $event status=${response.status} ref=${pendingLogRef(pending?.pendingId)}")
-                return WebResourceResponse(
-                    "application/octet-stream", null, response.status, response.reason,
-                    mapOf("Cache-Control" to "no-store"), response.data
-                )
-            }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError
-            ) {
-                if (request.isForMainFrame && isLocalAppUrl(request.url.toString())) showWebError()
-            }
-            override fun onReceivedHttpError(
-                view: WebView,
-                request: WebResourceRequest,
-                errorResponse: WebResourceResponse
-            ) {
-                if (request.isForMainFrame && isLocalAppUrl(request.url.toString())) showWebError()
-            }
-        }
-        return true
     }
 
     /**
-     * Android WebView 的 HTML Fullscreen API 不会自动替 Activity 切换系统 UI。
-     * Chromium 通过 WebChromeClient custom-view 回调把 fullscreen element 交给宿主；
-     * 这里才是真正的 native fullscreen 边界。BattlePlayback 继续使用标准 requestFullscreen()，
-     * 不需要 Android 专用前端分支，也不会 reset playback state。
+     * 本机 origin 的全部路由（取代 2.x 的 WebView shouldInterceptRequest），在 server worker 线程运行。
+     * 合成 replay resource 的 exact URL 优先，其次 3D 资产代理，其余是 APK bundle；
+     * 缺失的本地资源返回本地 404，绝不落到网络。
      */
-    private fun showFullscreenView(view: View, callback: WebChromeClient.CustomViewCallback) {
-        if (fullscreenView != null) {
-            callback.onCustomViewHidden()
-            return
+    private fun serveLocalRequest(request: LocalRuntimeServer.Request): ReplayIntentHandler.StreamResponse {
+        val url = LOCAL_APP_ORIGIN + request.path
+        if (url == ReplayFolderPicker.STREAM_URL) {
+            return replayFolderPicker.interceptFolderResource(
+                url,
+                request.headers[ReplayFolderPicker.SELECTION_IDENTITY_HEADER.lowercase()],
+                request.headers[ReplayFolderPicker.FILE_IDENTITY_HEADER.lowercase()],
+                request.method
+            ) { treeUri, documentId ->
+                contentResolver.openInputStream(
+                    DocumentsContract.buildDocumentUriUsingTree(Uri.parse(treeUri), documentId)
+                )
+            }?.copy(headers = LocalRuntimeServer.NO_STORE) ?: error("Synthetic folder resource must be Native-owned")
+        }
+        if (url == ReplayIntentHandler.STREAM_URL) {
+            Log.d(TAG, "replay-pending stream requested")
+            val pending = pendingReplay?.takeIf { pendingReplayEligible }
+            val response = ReplayIntentHandler.interceptPendingResource(
+                url, pending?.file, pending?.pendingId,
+                request.headers[ReplayIntentHandler.IDENTITY_HEADER.lowercase()], request.method
+            ) ?: error("Synthetic replay resource must be Native-owned")
+            val event = when (response.status) {
+                200 -> "served"
+                404 -> "missing"
+                else -> "failed"
+            }
+            Log.d(TAG, "replay-pending stream $event status=${response.status} ref=${pendingLogRef(pending?.pendingId)}")
+            return response.copy(headers = LocalRuntimeServer.NO_STORE)
+        }
+        // 3D 资产（/agent-assets/*）由 Native 直连对象存储并做 ETag 磁盘缓存，
+        // 不经生产网关反代（AgentAssetProxy 类注释有完整背景与约束）。
+        if (request.path.startsWith(AgentAssetProxy.LOCAL_PATH_PREFIX)) {
+            return if (request.method == "GET") AgentAssetProxy.intercept(applicationContext, request.path)
+            else ReplayIntentHandler.StreamResponse(405, "Method Not Allowed", headers = LocalRuntimeServer.NO_STORE)
+        }
+        // Vite base=/：URL path 映射到 APK assets/web/<path>。
+        val asset = if (request.path == "/") "index.html" else request.path.substring(1)
+        openBundledAsset(asset)?.let { return bundledResponse(asset, it) }
+        // History navigation is owned by Vue Router：无扩展名的未知路径回落同一个 index。
+        if ('.' !in asset.substringAfterLast('/')) {
+            openBundledAsset("index.html")?.let { return bundledResponse("index.html", it) }
+        }
+        return ReplayIntentHandler.StreamResponse(404, "Not Found", headers = LocalRuntimeServer.NO_STORE)
+    }
+
+    private fun openBundledAsset(path: String): InputStream? = try {
+        assets.open("web/$path")
+    } catch (_: IOException) {
+        null
+    }
+
+    /** Vite 的 `assets/` 产物带内容哈希，可长期缓存；入口与其它文件每次重新校验。 */
+    private fun bundledResponse(path: String, data: InputStream) = ReplayIntentHandler.StreamResponse(
+        200, "OK", data, LocalRuntimeServer.contentTypeFor(path),
+        mapOf("Cache-Control" to if (path.startsWith("assets/")) "public, max-age=31536000, immutable" else "no-cache")
+    )
+
+    private val runtimeHost = object : GeckoWebRuntime.Host {
+        override fun onBridgeMessage(json: String, reply: (String) -> Unit) =
+            nativeBridge.handleMessage(json, reply)
+
+        /** Main frame stays local; HTTPS/mailto external links use the system browser. */
+        override fun onExternalNavigation(uri: String) = openExternal(uri)
+
+        override fun onExternalResponse(response: WebResponse) = saveExternalResponse(response)
+
+        override fun onFullScreen(fullScreen: Boolean) {
+            if (fullScreen) enterFullscreen() else exitFullscreen()
         }
 
+        /**
+         * 普通 Web file chooser：始终交给 Android 系统 picker（既有 UX 不变）。
+         * Android external replay 绝不在这里注入：唯一 ingress 是 Intent → pending cache →
+         * Native Bridge → local synthetic fetch → shared local parser.
+         */
+        override fun onFilePrompt(
+            prompt: PromptDelegate.FilePrompt
+        ): GeckoResult<PromptDelegate.PromptResponse> {
+            if (filePrompt != null || folderPickRequest != null || downloadInFlight || downloadSave != null || destroyedRuntime) {
+                return GeckoResult.fromValue(prompt.dismiss())
+            }
+            val intent = Intent(Intent.ACTION_GET_CONTENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*")
+            prompt.mimeTypes?.filter { '/' in it }?.takeIf { it.isNotEmpty() }?.let {
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, it.toTypedArray())
+            }
+            if (prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE) {
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+            val result = GeckoResult<PromptDelegate.PromptResponse>()
+            val requestCode = nextPickerRequestCode.getAndIncrement()
+            if (requestCode > PICKER_REQUEST_MAX) return GeckoResult.fromValue(prompt.dismiss())
+            val request = Triple(requestCode, prompt, result)
+            filePrompt = request
+            prompt.setDelegate(object : PromptDelegate.PromptInstanceDelegate {
+                override fun onPromptDismiss(dismissed: PromptDelegate.BasePrompt) {
+                    if (filePrompt !== request) return
+                    filePrompt = null
+                    prompt.setDelegate(null)
+                    result.complete(dismissed.dismiss())
+                    finishActivity(requestCode)
+                }
+            })
+            try {
+                startActivityForResult(intent, requestCode)
+            } catch (_: Exception) {
+                filePrompt = null
+                prompt.setDelegate(null)
+                result.complete(prompt.dismiss())
+            }
+            return result
+        }
+
+        override fun onRuntimeFailure(crashLoop: Boolean) {
+            if (fullscreen) exitFullscreen()
+            showRuntimeError(if (crashLoop) R.string.runtime_error_crash_title else R.string.runtime_error_title)
+        }
+    }
+
+    /** 无可用浏览器时同样阻断：宁可停在这一页，也不在引擎内加载非本机 origin。 */
+    private fun openExternal(uri: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+        } catch (_: Exception) {
+            // 没有可处理的 Activity：保持当前页面。
+        }
+    }
+
+    /**
+     * HTML Fullscreen API：Gecko 在 GeckoView 内渲染 fullscreen element，经 onFullScreen 通知宿主；
+     * 这里只切换系统 UI 与方向。BattlePlayback 继续使用标准 requestFullscreen()，
+     * 不需要 Android 专用前端分支，也不会 reset playback state。
+     */
+    private fun enterFullscreen() {
+        if (fullscreen) return
+        fullscreen = true
         fullscreenPreviousOrientation = requestedOrientation
         fullscreenPreviousSystemUiVisibility = window.decorView.systemUiVisibility
-        fullscreenView = view
-        fullscreenCallback = callback
-
-        webView.visibility = View.GONE
-        webViewContainer.addView(
-            view,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -437,24 +402,11 @@ class MainActivity : Activity() {
             )
     }
 
-    /**
-     * notifyWeb=true 用于 Android Back：通知 Chromium 结束 fullscreen，使 document.fullscreenElement /
-     * fullscreenchange 与 Vue 状态同步；Web 自己退出时 onHideCustomView 已表示 Chromium 完成退出，
-     * 此时不能再次 callback，避免重复退出。
-     */
-    private fun hideFullscreenView(notifyWeb: Boolean) {
-        val view = fullscreenView ?: return
-        val callback = fullscreenCallback
-
-        webViewContainer.removeView(view)
-        fullscreenView = null
-        fullscreenCallback = null
-        webView.visibility = View.VISIBLE
-
+    private fun exitFullscreen() {
+        if (!fullscreen) return
+        fullscreen = false
         requestedOrientation = fullscreenPreviousOrientation
         window.decorView.systemUiVisibility = fullscreenPreviousSystemUiVisibility
-
-        if (notifyWeb) callback?.onCustomViewHidden()
     }
 
     // ── Local startup + bounded best-effort update discovery ──
@@ -471,7 +423,7 @@ class MainActivity : Activity() {
             val result = StartupGate.checkVersion()
             runOnUiThread {
                 versionCheckInFlight = false
-                if (isDestroyed || destroyedWebView) return@runOnUiThread
+                if (isDestroyed || destroyedRuntime) return@runOnUiThread
                 if (result is StartupGate.Result.Ok) onVersionReady(result.manifest)
             }
         }
@@ -497,29 +449,30 @@ class MainActivity : Activity() {
             return
         }
         hideAllGates()
-        webView.visibility = View.VISIBLE
-        if (webView.url.isNullOrEmpty()) {
-            webView.loadUrl(entryUrl())
+        if (!ensureLocalServer()) {
+            showRuntimeError(R.string.runtime_error_port_title)
+            return
+        }
+        runtimeView.visibility = View.VISIBLE
+        if (runtime.currentUrl.isNullOrEmpty()) {
+            runtime.load(entryUrl())
         } else {
-            webView.reload()
+            runtime.reload()
         }
     }
 
-    private fun showWebError() {
+    /** 本地运行时错误页：标题说明原因，诊断行可长按复制（引擎 / 设备 / crash 计数，不含账号或回放信息）。 */
+    private fun showRuntimeError(titleRes: Int) {
         hideAllGates()
-        webErrorView.visibility = View.VISIBLE
-    }
-
-    private fun showUnsupportedWebView() {
-        hideAllGates()
-        webErrorView.visibility = View.VISIBLE
-        webErrorTitle.text = getString(R.string.webview_unsupported_title)
-        webErrorRetryButton.visibility = View.GONE
+        runtimeErrorTitle.text = getString(titleRes)
+        runtimeErrorDiagnostics.text = runtime.diagnostics()
+        runtimeErrorView.visibility = View.VISIBLE
+        Log.w(TAG, "runtime error ${runtimeErrorDiagnostics.text}")
     }
 
     private fun showMandatoryUpdate(manifest: VersionManifest, installed: Int) {
         // Best-effort discovery can finish after a local replay entered HTML fullscreen.
-        if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
+        if (fullscreen) runtime.exitFullScreen()
         hideAllGates()
         versionGateView.visibility = View.VISIBLE
         versionTitle.text = getString(R.string.update_mandatory_title)
@@ -594,6 +547,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // 后台期间 content 进程被系统回收：回到前台静默重载（不算故障）。
+        runtime.onResume()
         // 返回后保持可操作；缺权限时明确提示并可再次点击去授权。
         if (versionGateView.visibility == View.VISIBLE) {
             versionPrimaryButton.isEnabled = true
@@ -625,27 +580,27 @@ class MainActivity : Activity() {
      * pending replay 的唯一分发点。
      *
      * 「是否分发 / 怎么分发」完全由纯策略 [ReplayDispatchPolicy] 决定（JVM 单测覆盖），这里只执行动作：
-     * 无 pending / WebView 不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；
+     * 无 pending / 页面不可见（门禁 / 错误 / 更新页接管中）→ 不分发；已在 replay workspace → 通知 Web；
      * 否则切到 replay canonical view。认证不再参与这个决策：登录在 external user-agent 里进行，不会占用
-     * WebView navigation，因此 replay 无需为 auth 让路。登录完成后 Web 应用就地同步认证状态，并经 Native Bridge
+     * 页面导航，因此 replay 无需为 auth 让路。登录完成后 Web 应用就地同步认证状态，并经 Native Bridge
      * 自行消费 pending。
      */
     private fun dispatchPendingReplayIfAllowed() {
         val action = ReplayDispatchPolicy.decide(
             hasPendingReplay = pendingReplay != null,
-            webViewVisible = webView.visibility == View.VISIBLE,
-            currentUrl = webView.url
+            webViewVisible = runtimeView.visibility == View.VISIBLE,
+            currentUrl = runtime.currentUrl
         )
         if (action == ReplayDispatchAction.NONE) return
         Log.d(TAG, "replay-pending dispatched")
         val notifyWeb = action == ReplayDispatchAction.NOTIFY_WEB
-        webView.post {
+        runtimeView.post {
             if (notifyWeb) {
                 // 已在 replay workspace：直接通知导入（exactly-once 由 pending 被 consume 清空保证）。
-                webView.evaluateJavascript("window.wotbtoolsOnReplay && window.wotbtoolsOnReplay()", null)
+                runtime.postEvent(REPLAY_GLOBAL)
             } else {
                 // 切到 replay canonical view；ReplayPage 就绪后消费。
-                webView.loadUrl(REPLAY_URL)
+                runtime.load(REPLAY_URL)
             }
         }
     }
@@ -660,7 +615,7 @@ class MainActivity : Activity() {
      */
     private fun handleIncomingIntent(intent: Intent?): Boolean {
         val pending = ReplayIntentHandler.fromIntent(this, intent) ?: return false
-        // 旧 backing file 不立即删除（Chromium 可能仍在读取），交给下一次 startup orphan cleanup。
+        // 旧 backing file 不立即删除（页面可能仍在读取），交给下一次 startup orphan cleanup。
         pendingReplay = pending
         pendingReplayEligible = true
         ReplayIntentHandler.savePendingMetadata(this, pending)
@@ -675,7 +630,7 @@ class MainActivity : Activity() {
      * 逐字符相等之后。这里刻意保持无参：identity 判断归 [PendingReplayAckPolicy]，清理点不复制第二份规则。
      */
     private fun clearPendingReplay() {
-        // 重要：Web synthetic fetch 返回后 WebView/Chromium 仍可能读取该文件，不能立即删除 backing file。
+        // 重要：Web synthetic fetch 返回后本机 server 仍可能在流式读取该文件，不能立即删除 backing file。
         // 只清 pending slot + 持久 metadata（exactly-once），文件保留到下一次 app startup cleanupOrphans() 清理。
         pendingReplay = null
         pendingReplayEligible = false
@@ -726,18 +681,15 @@ class MainActivity : Activity() {
 
     /**
      * Native 认证变更 → 通知页面（全局 `wotbtoolsOnAuthChanged`），并顺带同步一次页面可见的会话状态。
-     * 只在 WebView 真的加载了页面时发送；没有页面就没有可通知的消费者。
+     * 只在页面真的加载过时发送；没有页面就没有可通知的消费者。
      */
     private fun notifyAuthChanged() {
-        // 这个 listener 可能由后台线程触发（bridge 的认证线程 / 库回调）：WebView 的任何方法都必须在
-        // 它自己的线程上调用，所以连「有没有页面」这个判断也放进 post 里，绝不在调用线程碰 WebView。
-        webView.post {
-            if (destroyedWebView || webView.url.isNullOrEmpty()) return@post
+        // 这个 listener 可能由后台线程触发（bridge 的认证线程 / 库回调）：引擎只能在主线程使用，
+        // 所以连「有没有页面」这个判断也放进主线程，绝不在调用线程碰引擎。
+        runOnUiThread {
+            if (destroyedRuntime || runtime.currentUrl.isNullOrEmpty()) return@runOnUiThread
             // 全局名来自 wire 契约（events.authChanged.global），页面据此重新拉 authGetState / authGetAccessToken。
-            webView.evaluateJavascript(
-                "window.$AUTH_CHANGED_GLOBAL && window.$AUTH_CHANGED_GLOBAL()",
-                null
-            )
+            runtime.postEvent(AUTH_CHANGED_GLOBAL)
         }
     }
 
@@ -749,13 +701,10 @@ class MainActivity : Activity() {
      * （binder 线程经 mainHandler 转发，这里仍保守地按 post 处理）。
      */
     private fun notifyConnectivityChanged() {
-        if (!destroyedWebView) checkForUpdateAsync()
-        webView.post {
-            if (destroyedWebView || webView.url.isNullOrEmpty()) return@post
-            webView.evaluateJavascript(
-                "window.$CONNECTIVITY_CHANGED_GLOBAL && window.$CONNECTIVITY_CHANGED_GLOBAL()",
-                null
-            )
+        if (!destroyedRuntime) checkForUpdateAsync()
+        runOnUiThread {
+            if (destroyedRuntime || runtime.currentUrl.isNullOrEmpty()) return@runOnUiThread
+            runtime.postEvent(CONNECTIVITY_CHANGED_GLOBAL)
         }
     }
 
@@ -775,7 +724,7 @@ class MainActivity : Activity() {
     /**
      * pending replay 的 wire contract（`getPendingReplay` 的 result）：`pendingId` 是这份 pending 的
      * authoritative identity，Web 必须在本机分析完成后原样回传给 `consumePendingReplay`；其余字段与
-     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定 same-origin HTTPS resource）。
+     * 既有语义一致（`name` 仅显示名、`size` 仅提示、`uri` 为固定的同源 LocalRuntimeServer resource `http://127.0.0.1:21653/__native/replay-pending`）。
      */
     fun bridgePendingReplayJson(): Any {
         val pending = pendingReplay?.takeIf { pendingReplayEligible } ?: return org.json.JSONObject.NULL
@@ -820,11 +769,11 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Dedicated SAF directory picker; never pass a tree URI through WebView's file callback. */
+    /** Dedicated SAF directory picker; never pass a tree URI through the engine's file prompt. */
     fun bridgePickReplayFolder(requestId: String?, reply: (JSONObject) -> Unit) {
         runOnUiThread {
             val clientRequestId = requestId?.takeIf { ReplayFolderPicker.validClientRequestId(it) }
-            if (clientRequestId == null || destroyedWebView || isDestroyed || fileChooserCallback != null) {
+            if (clientRequestId == null || destroyedRuntime || isDestroyed || filePrompt != null || downloadInFlight || downloadSave != null) {
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
             }
@@ -833,8 +782,8 @@ class MainActivity : Activity() {
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
             }
-            val requestCode = nextFolderRequestCode.getAndIncrement()
-            if (requestCode !in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+            val requestCode = nextPickerRequestCode.getAndIncrement()
+            if (requestCode !in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {
                 replayFolderPicker.complete(generation, null)
                 reply(folderPickJson("failed"))
                 return@runOnUiThread
@@ -861,7 +810,7 @@ class MainActivity : Activity() {
     fun bridgeCancelReplayFolderPicker(requestId: String?, reply: (Boolean) -> Unit) {
         runOnUiThread {
             val request = folderPickRequest
-            if (request == null || destroyedWebView || isDestroyed ||
+            if (request == null || destroyedRuntime || isDestroyed ||
                 !ReplayFolderPicker.ownsClientRequest(request.clientRequestId, requestId)
             ) {
                 reply(false)
@@ -923,7 +872,7 @@ class MainActivity : Activity() {
         status: String,
         selection: ReplayFolderPicker.Selection? = null
     ): Boolean {
-        if (folderPickRequest !== request || destroyedWebView || isDestroyed) return false
+        if (folderPickRequest !== request || destroyedRuntime || isDestroyed) return false
         if (!replayFolderPicker.complete(request.generation, selection)) return false
         folderPickRequest = null
         cancelFolderPickWork(request)
@@ -982,7 +931,7 @@ class MainActivity : Activity() {
         return installedVersionCode() < manifest.latestVersionCode
     }
 
-    /** @JavascriptInterface 等效的 bridge 调用运行在 WebView 线程；UI 动作必须分发到主线程。 */
+    /** bridge 调用可能来自后台线程（认证分发）；UI 动作必须分发到主线程。 */
     fun bridgeStartUpdate() {
         runOnUiThread { onUpdatePrimary() }
     }
@@ -1053,16 +1002,16 @@ class MainActivity : Activity() {
     // ── 通用 ──
 
     /**
-     * 隐藏 WebView 内容并收起版本/错误页。
+     * 隐藏页面并收起版本/错误页。
      *
-     * 门禁视图（version/webError）与 [webView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
-     * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 WebView
-     * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 WebView 之上，足以完整接管画面。
+     * 门禁视图（version/runtimeError）与 [runtimeView] 是根 FrameLayout 的**兄弟节点**，根容器必须保持
+     * VISIBLE，否则子节点即便置为 VISIBLE 也不会绘制（父 GONE 连子一起隐藏）。因此这里只隐藏 GeckoView
+     * 本身：门禁视图各自带不透明背景、按 XML 顺序绘制在 GeckoView 之上，足以完整接管画面。
      */
     private fun hideAllGates() {
         versionGateView.visibility = View.GONE
-        webErrorView.visibility = View.GONE
-        webView.visibility = View.GONE
+        runtimeErrorView.visibility = View.GONE
+        runtimeView.visibility = View.GONE
     }
 
     private fun installedVersionCode(): Int {
@@ -1073,33 +1022,118 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Blob bytes already belong to Gecko: spool off the UI thread, never refetch the URL. */
+    private fun saveExternalResponse(response: WebResponse) {
+        val body = response.body ?: run { toast(getString(R.string.download_failed)); return }
+        if (destroyedRuntime || downloadInFlight || filePrompt != null || folderPickRequest != null || downloadSave != null) {
+            try { body.close() } catch (_: IOException) { }
+            if (!destroyedRuntime) toast(getString(R.string.download_busy))
+            return
+        }
+        downloadInFlight = true
+        try {
+            executor.execute {
+                var file: File? = null
+                try {
+                    val ready = spoolDownload(body, cacheDir)
+                    file = ready
+                    val contentType = response.headers.entries.firstOrNull {
+                        it.key.equals("content-type", ignoreCase = true)
+                    }?.value?.substringBefore(';')?.trim()?.takeIf { '/' in it }
+                    val disposition = response.headers.entries.firstOrNull {
+                        it.key.equals("content-disposition", ignoreCase = true)
+                    }?.value
+                    val name = (extendedDownloadName(disposition) ?: URLUtil.guessFileName(response.uri, disposition, contentType))
+                        .replace(Regex("""[\\/\p{Cntrl}]"""), "_").trim().take(180)
+                        .takeUnless { it.isBlank() || it == "." || it == ".." } ?: "download"
+                    val mime = contentType ?: MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+                    runOnUiThread {
+                        if (destroyedRuntime || filePrompt != null || folderPickRequest != null) {
+                            ready.delete()
+                            downloadInFlight = false
+                            if (!destroyedRuntime) toast(getString(R.string.download_busy))
+                            return@runOnUiThread
+                        }
+                        val code = nextPickerRequestCode.getAndIncrement()
+                        try {
+                            check(code <= PICKER_REQUEST_MAX)
+                            downloadSave = code to ready
+                            startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT)
+                                .addCategory(Intent.CATEGORY_OPENABLE).setType(mime)
+                                .putExtra(Intent.EXTRA_TITLE, name), code)
+                        } catch (_: Exception) {
+                            downloadSave = null
+                            ready.delete()
+                            downloadInFlight = false
+                            toast(getString(R.string.download_failed))
+                        }
+                    }
+                } catch (_: Exception) {
+                    file?.delete()
+                    runOnUiThread {
+                        downloadInFlight = false
+                        if (!destroyedRuntime) toast(getString(R.string.download_failed))
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            try { body.close() } catch (_: IOException) { }
+            downloadInFlight = false
+            if (!destroyedRuntime) toast(getString(R.string.download_failed))
+        }
+    }
+
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
-    /**
-     * bridge 回复投递：认证方法在后台线程完成，回调可能晚于页面销毁。
-     *
-     * 因此回复通过**本次消息自己的** `JavaScriptReplyProxy` 投递（页面侧 listener 仍然有效时才会送达），
-     * 并且只在 WebView 尚未销毁时尝试；投递失败一律丢弃 —— JS 侧有自己的超时，绝不能因为回复而碰到
-     * 已销毁的 WebView 或让原生崩溃。
-     */
-    private fun postReply(replyProxy: androidx.webkit.JavaScriptReplyProxy, json: String) {
-        // JavaScriptReplyProxy 是 @UiThread（当前未强制，但契约要求）：认证回复来自后台线程，
-        // 因此统一投递到主线程 —— 主线程上 runOnUiThread 就是立即执行，同步路径延迟不变。
-        runOnUiThread {
-            if (isDestroyed || destroyedWebView) return@runOnUiThread
-            try {
-                replyProxy.postMessage(json)
-            } catch (e: Exception) {
-                Log.d(TAG, "bridge-reply dropped category=${e.javaClass.simpleName}")
-            }
-        }
-    }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode in REPLAY_FOLDER_REQUEST_MIN..REPLAY_FOLDER_REQUEST_MAX) {
+        if (requestCode == downloadSave?.first) {
+            val file = downloadSave!!.second
+            downloadSave = null
+            val uri = data?.data
+            if (resultCode != RESULT_OK || uri == null) {
+                file.delete()
+                downloadInFlight = false
+            } else {
+                executor.execute {
+                    try {
+                        contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                            file.inputStream().use { it.copyTo(output) }
+                        } ?: throw IOException("No document output stream")
+                        runOnUiThread { if (!destroyedRuntime) toast(getString(R.string.download_saved)) }
+                    } catch (_: Exception) {
+                        runOnUiThread { if (!destroyedRuntime) toast(getString(R.string.download_failed)) }
+                    } finally {
+                        file.delete()
+                        runOnUiThread { downloadInFlight = false }
+                    }
+                }
+            }
+            return
+        }
+        if (requestCode == filePrompt?.first) {
+            val (_, prompt, result) = filePrompt ?: return
+            filePrompt = null
+            prompt.setDelegate(null)
+            val uris = when {
+                resultCode == RESULT_OK && data?.clipData != null ->
+                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }.toTypedArray()
+                resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
+                else -> emptyArray()
+            }
+            result.complete(
+                when {
+                    uris.isEmpty() -> prompt.dismiss()
+                    prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE -> prompt.confirm(this, uris)
+                    else -> prompt.confirm(this, uris.first())
+                }
+            )
+            return
+        }
+        if (requestCode in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {
             val request = folderPickRequest ?: return
             // Expired requests and duplicate provider results must never belong to a retry.
             if (request.requestCode != requestCode || !request.pickerOpen) return
@@ -1133,43 +1167,40 @@ class MainActivity : Activity() {
             return
         }
         // 授权回程的防御性兜底：正常投递路径是 PendingIntent → onCreate/onNewIntent。
-        // Folder request codes have their own owner, even if a late result carries unrelated extras.
-        if (handleAuthorizationIntent(data)) return
-        if (requestCode == FILE_CHOOSER_REQUEST && fileChooserCallback != null) {
-            val uris = when {
-                resultCode == RESULT_OK && data?.clipData != null ->
-                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }.toTypedArray()
-                resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
-                else -> null
-            }
-            val callback = fileChooserCallback
-            fileChooserCallback = null
-            callback?.onReceiveValue(uris)
-        }
+        // Picker codes have their own owners, even if a late result carries unrelated extras.
+        handleAuthorizationIntent(data)
     }
 
     override fun onBackPressed() {
-        if (fullscreenView != null) {
-            hideFullscreenView(notifyWeb = true)
+        if (fullscreen) {
+            // 通知 Gecko 退出 fullscreen，使 document.fullscreenElement / fullscreenchange 与 Vue 状态同步；
+            // 系统 UI 在随后的 onFullScreen(false) 中恢复。
+            runtime.exitFullScreen()
             return
         }
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        if (runtime.canGoBack) runtime.goBack() else super.onBackPressed()
     }
 
     override fun onDestroy() {
-        if (fullscreenView != null) hideFullscreenView(notifyWeb = true)
-        destroyedWebView = true
+        exitFullscreen()
+        destroyedRuntime = true
         val folderRequest = folderPickRequest
         folderPickRequest = null
         replayFolderPicker.destroy()
         folderRequest?.let { cancelFolderPickWork(it) }
-        val callback = fileChooserCallback
-        fileChooserCallback = null
-        callback?.onReceiveValue(null)
+        filePrompt?.let { (code, prompt, result) ->
+            prompt.setDelegate(null)
+            result.complete(prompt.dismiss())
+            finishActivity(code)
+        }
+        downloadSave?.let { (code, file) -> finishActivity(code); file.delete() }
+        downloadSave = null
+        filePrompt = null
         connectivityMonitor.stop()
         authManager.removeListener(authChangedListener)
-        webViewContainer.removeAllViews()
-        webView.destroy()
+        runtime.close()
+        localServer?.close()
+        localServer = null
         executor.shutdown()
         super.onDestroy()
     }

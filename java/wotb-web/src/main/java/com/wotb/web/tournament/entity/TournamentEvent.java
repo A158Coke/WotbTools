@@ -27,11 +27,17 @@ public class TournamentEvent {
     public int daysPerRound;
     @Column(name = "config_locked", nullable = false)
     public boolean configLocked;
+    @Column(name = "csv_imported", nullable = false)
+    public boolean csvImported;
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "day_labels", nullable = false, columnDefinition = "jsonb")
     public List<String> dayLabels;
     @Column(name = "version", nullable = false)
     public long version;
+    @Column(name = "rule_source", nullable = false, length = 16)
+    public String ruleSource = "INHERIT";
+    @Column(name = "frozen_default_version")
+    public Long frozenDefaultVersion;
     @Column(name = "historical_import_key", nullable = true, length = 64)
     public String historicalImportKey;
     @Column(name = "historical_import_hash", nullable = true, length = 64)

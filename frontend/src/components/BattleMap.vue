@@ -3,12 +3,13 @@ import { computed, ref, useId } from 'vue'
 import VehicleMarker from './VehicleMarker.vue'
 import { ANNOT_TANK_CLASSES, arrowHeadPoints } from '../utils/annotation.js'
 import { activeTerrainRelief, projectTerrainPoint } from '../utils/terrainReliefProjection.js'
-import { screenOffsetToSvgDelta } from '../utils/mapView.js'
 
 defineOptions({ name: 'BattleMap' })
 
 const props = defineProps({
   image: { type: Object, required: true },
+  /** 2D 底图 URL 覆盖（Android OTA 升级生效时为 blob URL；null ⇒ 用 image.src，行为与旧版一致）。 */
+  imageSrc: { type: String, default: null },
   mapView: { type: Object, required: true },
   pbOverview: { type: Object, required: true },
   friendlyTeam: { type: [Number, String], default: null },
@@ -19,7 +20,6 @@ const props = defineProps({
   viewScale: { type: Number, default: 1 },
   /** 未缩放且非全屏时允许单指纵向滑动滚动页面（审计 PB-01）；缩放 / 标注时由地图接管手势。 */
   touchPan: { type: Boolean, default: false },
-  renderedFrame: { type: Object, default: null },
   viewportStyle: { type: [String, Array], default: '' },
   annotVisible: Boolean,
   renderedAnnotations: { type: Array, default: () => [] },
@@ -148,53 +148,19 @@ function onTextKeydown(event) {
 }
 
 const presentedVehicleStates = computed(() => {
+  // 标记**不做**防重叠位移：2.5D 起伏只是把"真实位置"投影一次，绝不叠加偏移
+  //（2026-10-16 用户裁定：图标严格落在真实位置，密集处允许压盖）。
   if (!reliefModel.value) return props.vehicleStates
   return props.vehicleStates.map((state) => {
     const point = projectSemantic(state.pos.x, state.pos.y)
-    const offset = state.presentationOffset || { x: 0, y: 0 }
     return {
       ...state,
       markerStyle: {
         ...state.markerStyle,
-        // Collision offsets are already screen pixels. The camera enlarges the layout box,
-        // so they must not be divided by viewScale before entering CSS positioning.
-        left: `calc(${(point.x / props.mapView.W) * 100}% + ${offset.x}px)`,
-        top: `calc(${(point.y / props.mapView.H) * 100}% + ${offset.y}px)`,
+        left: `${(point.x / props.mapView.W) * 100}%`,
+        top: `${(point.y / props.mapView.H) * 100}%`,
       },
     }
-  })
-})
-
-const markerLeaderStates = computed(() => {
-  // BattlePlayback supplies this from its existing ResizeObserver-backed mapSize
-  // and camera scale. Standalone mounts retain the DOM measurement fallback.
-  const hintedFrame = props.renderedFrame
-  const svgRect = mapEl.value?.querySelector('.pb-svg')?.getBoundingClientRect?.()
-  const hasFrame = (frame) => frame
-    && Number.isFinite(frame.width) && Number.isFinite(frame.height)
-    && frame.width > 0 && frame.height > 0
-  const renderedFrame = hasFrame(hintedFrame)
-    ? hintedFrame
-    : (hasFrame(svgRect) ? svgRect : { width: props.mapView.W, height: props.mapView.H })
-  return presentedVehicleStates.value.flatMap((state) => {
-    const offset = state.presentationOffset
-    if (!offset || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)
-      || (Math.abs(offset.x) <= 1e-9 && Math.abs(offset.y) <= 1e-9)) return []
-    const x = Number(state.pos?.x)
-    const y = Number(state.pos?.y)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return []
-    const canonical = projectSemantic(x, y)
-    if (!Number.isFinite(canonical.x) || !Number.isFinite(canonical.y)) return []
-    const svgOffset = screenOffsetToSvgDelta(offset, props.mapView, renderedFrame)
-    if (!svgOffset) return []
-    return [{
-      key: state.vehicle.accountId,
-      x1: canonical.x,
-      y1: canonical.y,
-      x2: canonical.x + svgOffset.x,
-      y2: canonical.y + svgOffset.y,
-      strokeWidth: 1.25 * props.mapView.W / renderedFrame.width,
-    }]
   })
 })
 
@@ -240,7 +206,7 @@ function onTwoFingerTouch(event) {
       @pointercancel="emit('pointer-up', $event)"
       @click.capture="emit('viewport-click', $event)"
     >
-      <img class="pb-basemap" data-test="pb-basemap" :src="props.image.src" alt="" aria-hidden="true" />
+      <img class="pb-basemap" data-test="pb-basemap" :src="props.imageSrc || props.image.src" alt="" aria-hidden="true" />
       <svg class="pb-svg" :viewBox="`0 0 ${props.mapView.W} ${props.mapView.H}`" role="img">
         <defs>
           <clipPath v-for="base in props.bases" :key="base.baseId" :id="`${clipPrefix}-${base.baseId}`">
@@ -253,18 +219,6 @@ function onTwoFingerTouch(event) {
             />
           </clipPath>
         </defs>
-        <g class="pb-marker-leaders" aria-hidden="true">
-          <line
-            v-for="leader in markerLeaderStates"
-            :key="`marker-leader-${leader.key}`"
-            class="pb-marker-leader"
-            :x1="leader.x1"
-            :y1="leader.y1"
-            :x2="leader.x2"
-            :y2="leader.y2"
-            :stroke-width="leader.strokeWidth"
-          />
-        </g>
         <g class="pb-bases" data-test="pb-bases">
           <g v-for="base in props.bases" :key="base.baseId" :class="[`pb-base-${base.status}`, { 'pb-base-assault': base.baseId === 'BASE' }]" :data-test="`pb-base-${base.baseId}`">
             <circle :cx="projectedX(base.x, base.y)" :cy="projectedY(base.x, base.y)" :r="baseRadius(base)" class="pb-base-circle" />
@@ -388,8 +342,6 @@ function onTwoFingerTouch(event) {
 .pb-basemap { object-fit: fill; border-radius: 4px; user-select: none; pointer-events: none; }
 .pb-svg { border-radius: 4px; background: transparent; pointer-events: none; }
 .pb-viewport.pb-25d-active .pb-basemap { visibility: hidden; }
-.pb-marker-leaders { pointer-events: none; }
-.pb-marker-leader { stroke: var(--text-muted, #999); stroke-dasharray: 2 2; stroke-linecap: round; opacity: .78; }
 .pb-markers { position: absolute; inset: 0; pointer-events: none; }
   .pb-vehicle { position: absolute; width: 30px; height: 30px; transform: translate(-50%, -50%); border: none; background: none; padding: 0; pointer-events: none; }
 .pb-base-circle { fill: color-mix(in srgb, currentColor 18%, transparent); stroke: currentColor; stroke-width: 1.6; }

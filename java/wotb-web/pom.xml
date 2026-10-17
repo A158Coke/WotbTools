@@ -13,6 +13,24 @@
     <name>WotBTools Web</name>
 
     <dependencies>
+        <!-- CSV standings import: standard quoted fields, escaped delimiters and record boundaries. -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+            <version>1.14.1</version>
+        </dependency>
+        <!-- Broadcast covers use only bounded simple PUT/GET/DELETE against a private COS bucket. -->
+        <dependency>
+            <groupId>com.qcloud</groupId>
+            <artifactId>cos_api</artifactId>
+            <version>5.6.283</version>
+        </dependency>
+        <!-- Keep the existing Keycloak/RESTEasy version; COS otherwise selects an older 4.5.13. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.5.14</version>
+        </dependency>
         <dependency>
             <groupId>com.wotb</groupId>
             <artifactId>wotb-core</artifactId>

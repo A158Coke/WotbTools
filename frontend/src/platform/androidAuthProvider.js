@@ -14,9 +14,9 @@ const AUTH_RPC_OPTIONS = Object.freeze({ timeoutMs: NATIVE_AUTH_TIMEOUT_MS })
 
 /**
  * Android 壳的认证 owner：OIDC 会话在 Native（AppAuth + external user-agent），
- * WebView 只经 bridge v2 读取状态 / 触发登录登出，**从不导航、从不构造 keycloak-js**。
+ * 页面只经 Native Bridge 读取状态 / 触发登录登出，**从不导航、从不构造 keycloak-js**。
  *
- * 调用方（useAuth.js）已确认 bridge v2 + `native-auth` 能力；这里只做协议映射。
+ * 调用方（useAuth.js）已确认 bridge 版本受支持（SUPPORTED_NATIVE_BRIDGE_VERSIONS）+ `native-auth` 能力；这里只做协议映射。
  */
 export function createAndroidAuthProvider() {
   let authenticated = false
@@ -97,7 +97,7 @@ export function createAndroidAuthProvider() {
 
     /**
      * Native 用 external user-agent 打开授权页并立刻返回；redirectUri / view 因此无意义
-     * （WebView 不导航，登录结果经 wotbtoolsOnAuthChanged 就地把状态同步回来）。
+     * （页面不导航，登录结果经 wotbtoolsOnAuthChanged 就地把状态同步回来）。
      */
     async login() {
       generation += 1
@@ -117,7 +117,7 @@ export function createAndroidAuthProvider() {
     },
 
     /**
-     * Native 完成 login / logout 后调用页面全局 `wotbtoolsOnAuthChanged`（WebView 停在原页面）。
+     * Native 完成 login / logout 后调用页面全局 `wotbtoolsOnAuthChanged`（页面停在原地）。
      * 推送不携带 payload：状态一律回读 Native，再通知 owner 重新投影。
      * 返回的退订函数会把全局槽位清掉（仅当它仍属于本次订阅）。
      */
@@ -144,7 +144,7 @@ export function createAndroidAuthProvider() {
  * 该客户端的认证 owner 仍是 WebView 里的 keycloak-js（bridge v1 时代），而本前端已经
  * 删除了那条路径：这里只把失败显式暴露给 `useAuth` 的 initError / initFailureReason /
  * authInitState，由既有 UI 提示；强制更新由 Native 的 mandatory-update gate 负责。
- * **绝不构造 keycloak-js，绝不导航 WebView。**
+ * **绝不构造 keycloak-js，绝不导航页面。**
  */
 export function createUnsupportedAuthProvider(reason) {
   function unsupportedError() {

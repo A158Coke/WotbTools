@@ -79,4 +79,11 @@ describe('MorePanel', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
+  it('does not duplicate the primary broadcast entry or leave an empty tools group', async () => {
+    const { wrapper } = mountPanel()
+    await wrapper.setProps({ open: true })
+    expect(wrapper.find('[data-testid="more-link-league-broadcasts"]').exists()).toBe(false)
+    expect(wrapper.find('#more-panel-tools').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

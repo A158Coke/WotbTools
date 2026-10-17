@@ -45,11 +45,27 @@ Spring Security 不经过 MVC advice，因此 401/403 分别由 canonical `Authe
 | `AUTH_UNAUTHENTICATED` | 401 | false | authentication | 未登录、token 缺失/无效/过期 |
 | `AUTH_FORBIDDEN` | 403 | false | authorization | 已登录但角色或资源权限不足 |
 | `INVALID_ARGUMENT` | 400 | false | validation | 参数值/类型不合法 |
+| `TOURNAMENT_CSV_INVALID` | 400 | false | tournament-csv | CSV 文件格式、编码、列或积分不合法；`details` 提供 `rowNumber`、`column` 和稳定英文 `reason`，列名为原 CSV 输入列 |
+| `TOURNAMENT_CSV_WORKSPACE_BUSY` | 409 | false | tournament-csv | 目标季赛存在共享草稿或进行中的修正，须先完成或丢弃 |
 | `MISSING_PARAM` | 400 | false | validation | 必填 request parameter 缺失 |
 | `INVALID_REQUEST` | 400 | false | validation | JSON、Bean Validation 或请求结构不合法 |
+| `FILE_TOO_LARGE` | 413 | false | validation | 文件超过对应入口的字节上限；CSV 预览与正式导入均限制为 2 MiB，并对实际读取字节数再次校验 |
 | `UNSUPPORTED_MEDIA_TYPE` | 415 | false | protocol | Content-Type 不支持 |
 | `METHOD_NOT_ALLOWED` | 405 | false | protocol | HTTP method 不支持 |
 | `RESOURCE_NOT_FOUND` | 404 | false | resource | 通用资源不存在 |
+| `BROADCAST_VERSION_CONFLICT` | 409 | false | concurrency | 直播季赛版本已变化，须刷新后重试／重新确认删除数量 |
+| `BROADCAST_NODE_CONFLICT` | 409 | false | validation | 重复积分轮次或已存在的八强／四强阶段根节点 |
+| `BROADCAST_COVER_INVALID` | 400 | false | validation | 封面格式、实际解码、字节或尺寸不合法 |
+| `BROADCAST_STORAGE_UNAVAILABLE` | 503 | false | configuration | 直播封面 COS 未完成配置 |
+| `BROADCAST_STORAGE_ERROR` | 502 | true | storage | COS 上传、读取或删除请求失败 |
+| `CREATOR_UID_ALREADY_EXISTS` | 409 | false | creator | 规范化UID已被另一UP使用 |
+| `CREATOR_NOT_FOUND` | 404 | false | creator | UP 或类别/等级记录不存在 |
+| `CREATOR_INVALID_REQUEST` | 400 | false | creator | UP 字段、UID、整数、头像或输入结构不合法 |
+| `CREATOR_CATEGORY_IN_USE` | 409 | false | creator | 删除类别会使至少一个 UP 没有类别；先补配其他类别 |
+| `CREATOR_LEVEL_IN_USE` | 409 | false | creator | 等级仍被使用；先更换等级或关闭实力评估 |
+| `CREATOR_CONFIG_CONFLICT` | 409 | false | creator | UP版本或引用的类别/等级配置已变化；保留草稿，重新加载最新资料后重试 |
+| `CREATOR_STORAGE_UNAVAILABLE` | 503 | false | creator | 头像存储未就绪，无图目录维护仍可独立使用 |
+| `CREATOR_AVATAR_NOT_FOUND` | 404 | false | creator | 头像资源不存在或不可用于当前操作 |
 | `REPLAY_BUSY` | 503 | true | capacity | Replay worker 暂时繁忙 |
 | `PROCESSING_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Processing queue 已满；enum 值保留以避免动 wire |
 | `EXPORT_QUEUE_FULL` | 503 | true | capacity | **已退役（无生产者）**：Export queue 已满；enum 值保留以避免动 wire |

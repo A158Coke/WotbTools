@@ -1,0 +1,1535 @@
+{
+  "uid": "wotbtools-engineering-overview",
+  "title": "WotbTools Engineering Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "timezone": "Asia/Shanghai",
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "tags": [
+    "wotbtools",
+    "engineering"
+  ],
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Active users",
+      "type": "link",
+      "url": "/d/wotbtools-active-users",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Feature usage",
+      "type": "link",
+      "url": "/d/wotbtools-feature-usage",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Android downloads",
+      "type": "link",
+      "url": "/d/wotbtools-android-downloads",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "AI token usage",
+      "type": "link",
+      "url": "/d/wotbtools-ai-token-usage",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Backend error logs",
+      "type": "link",
+      "url": "/d/wotbtools-backend-error-logs",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "GitHub PR activity",
+      "type": "link",
+      "url": "https://github.com/A158Coke/WotbTools/pulls",
+      "targetBlank": true
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total PR",
+      "description": "Activity metric, not productivity score. Merge rate excludes open PRs; a zero denominator is undefined.",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(wotb_dev_pull_requests_total) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Merged PR",
+      "description": "Activity metric, not productivity score. Merge rate excludes open PRs; a zero denominator is undefined.",
+      "gridPos": {
+        "x": 4,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(wotb_dev_pull_requests{state=\"merged\"}) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Open PR",
+      "description": "Activity metric, not productivity score. Merge rate excludes open PRs; a zero denominator is undefined.",
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(wotb_dev_open_pr_count) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Merge rate",
+      "description": "Activity metric, not productivity score. Merge rate excludes open PRs; a zero denominator is undefined.",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(wotb_dev_pull_requests{state=\"merged\"}) / sum(wotb_dev_pull_requests{state=~\"merged|closed_unmerged\"})) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "PR created / 7d",
+      "description": "Activity metric, not productivity score. Merge rate excludes open PRs; a zero denominator is undefined.",
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(wotb_dev_pr_created_window{window=\"7d\"}) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Data status",
+      "description": "Age since last successful refresh. No successful initial sync is Not ready. Previous aggregates remain visible after refresh failure.",
+      "gridPos": {
+        "x": 20,
+        "y": 0,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "floor(time() - wotb_dev_collector_last_success_timestamp) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Not ready",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1800
+              },
+              {
+                "color": "red",
+                "value": 3600
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 1799,
+                "result": {
+                  "text": "Healthy",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 1800,
+                "to": 3599,
+                "result": {
+                  "text": "Delayed",
+                  "color": "orange"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 3600,
+                "to": 1000000000000000.0,
+                "result": {
+                  "text": "Stale",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "title": "Reading this dashboard",
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Activity metric, not productivity score. Area metrics overlap; one PR may belong to multiple areas. Production correlation does not establish causation. Month tables preserve reconstructed historical event buckets. The daily chart plots reconstructed UTC days against the time picker; other trends show observed samples (Prometheus retains seven days)."
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Monthly PR created vs merged",
+      "description": "Bucket date is the month label, not scrape time. Backfill starts 2026-06-22. Current bucket is incomplete. Activity metric, not productivity score.",
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(label_replace(wotb_dev_pr_created_month, \"activity\", \"Created\", \"\", \"\") or label_replace(wotb_dev_pr_merged_month, \"activity\", \"Merged\", \"\", \"\")) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": "",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "service": true
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "month",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "PR Created vs Merged — daily UTC buckets",
+      "description": "Activity metric, not productivity score. Latest available snapshot reconstructed from GitHub event dates; each UTC day is plotted at midnight. X-axis follows the Grafana picker. This is not backdated Prometheus sample history. Partial current day; daily history limited to 90 days. A picker end outside observed Prometheus retention can return No data.",
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "label_replace(((label_replace(wotb_dev_pr_created_day, \"activity\", \"Created\", \"\", \"\") or label_replace(wotb_dev_pr_merged_day, \"activity\", \"Merged\", \"\", \"\")) and on() (wotb_dev_collector_data_ready == 1)), \"day\", \"${1}T00:00:00Z\", \"day\", \"(.*)\")",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": "",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 4,
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "activity",
+            "rowField": "day",
+            "valueField": "Value"
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "day\\activity",
+                "destinationType": "time"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "day\\activity",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "bargauge",
+      "title": "Development areas",
+      "description": "Area metrics overlap; one PR may belong to multiple areas. Explicit labels, frozen overrides, paths, keywords, then unclassified. Not effort shares.",
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_pr_area_total and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{area}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "PR state (draft overlaps open)",
+      "description": "Merged, closed unmerged and open are exclusive. Draft is a separate subset of open.",
+      "gridPos": {
+        "x": 12,
+        "y": 25,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_pull_requests and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Draft PR",
+      "description": "",
+      "gridPos": {
+        "x": 20,
+        "y": 25,
+        "w": 4,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_draft_pr_count and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Median merge lead time",
+      "description": "PR created_at → merged_at across merged PR history; not DORA commit-to-production lead time. Empty populations have No data.",
+      "gridPos": {
+        "x": 0,
+        "y": 33,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_pr_merge_lead_time_seconds{quantile=\"0.50\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "P90 merge lead time",
+      "description": "PR created_at → merged_at across merged PR history; not DORA commit-to-production lead time. Empty populations have No data.",
+      "gridPos": {
+        "x": 8,
+        "y": 33,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_pr_merge_lead_time_seconds{quantile=\"0.90\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Oldest open PR",
+      "description": "PR created_at → merged_at across merged PR history; not DORA commit-to-production lead time. Empty populations have No data.",
+      "gridPos": {
+        "x": 16,
+        "y": 33,
+        "w": 8,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_open_pr_oldest_age_seconds and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 16,
+      "type": "bargauge",
+      "title": "Actor type",
+      "description": "Reliable actor metadata only; human includes unknown ordinary accounts. Text mentioning an AI tool does not establish agent identity. No developer ranking.",
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_pr_actor_total and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{actor_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Required Gate success rate",
+      "description": "Available GitHub history; cancelled/skipped/other excluded from denominator. Empty denominator has No data.",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(wotb_dev_required_gate_runs_total{conclusion=\"success\"}) / sum(wotb_dev_required_gate_runs_total{conclusion=~\"success|failure\"})) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Required Gate P50 duration",
+      "description": "Required Gate job elapsed duration from available GitHub Actions history.",
+      "gridPos": {
+        "x": 6,
+        "y": 44,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_required_gate_duration_seconds{quantile=\"0.50\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Required Gate P90 duration",
+      "description": "Required Gate job elapsed duration from available GitHub Actions history.",
+      "gridPos": {
+        "x": 12,
+        "y": 44,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_required_gate_duration_seconds{quantile=\"0.90\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Required Gate failures / 7d",
+      "description": "Failures only; cancelled is not failure. GitHub retention may limit completeness.",
+      "gridPos": {
+        "x": 18,
+        "y": 44,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_required_gate_failures_window{window=\"7d\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Workflow success ratio — snapshot trend",
+      "description": "Each point is a ratio over API-visible historical runs in that refresh, not runs occurring at scrape time. Cancelled excluded. Picker controls observed snapshots only; GitHub retention limits history.",
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by(workflow)(wotb_dev_workflow_runs_total{conclusion=\"success\"}) / sum by(workflow)(wotb_dev_workflow_runs_total{conclusion=~\"success|failure\"})) and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{workflow}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 22,
+      "type": "text",
+      "title": "Production deployments — Not available",
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Production deploys / 7d: Not available** · **Production deploys / 30d: Not available** · **Android publishes / 30d: Not available**\n\nWorkflow completion and GitHub release creation do not prove production mutation. V1 does not infer deployments from workflow names. Use the owner workflow and production release evidence."
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "GitHub releases / 30d",
+      "description": "GitHub release publication only; this is not a deployment count.",
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_release_window{window=\"30d\"} and on() (wotb_dev_collector_data_ready == 1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Refresh duration",
+      "description": "",
+      "gridPos": {
+        "x": 6,
+        "y": 62,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_collector_refresh_duration_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "GitHub API budget remaining",
+      "description": "",
+      "gridPos": {
+        "x": 12,
+        "y": 62,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_github_rate_limit_remaining",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Collector refresh failures",
+      "description": "Process-lifetime errors; restarts reset this counter. Failed refresh retains previous successful snapshot.",
+      "gridPos": {
+        "x": 18,
+        "y": 62,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "wotb_dev_collector_refresh_errors_total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "range": false,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "HTTP 5xx / second",
+      "description": "Existing backend HTTP request metrics. Missing series is No data; no causal attribution to PR activity.",
+      "gridPos": {
+        "x": 0,
+        "y": 67,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"wotb-backend\",status=~\"5..\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false,
+          "range": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "HTTP P95 latency",
+      "description": "",
+      "gridPos": {
+        "x": 8,
+        "y": 67,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by(le)(rate(http_server_requests_seconds_bucket{job=\"wotb-backend\"}[$__rate_interval])))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false,
+          "range": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Production targets UP",
+      "description": "",
+      "gridPos": {
+        "x": 16,
+        "y": 67,
+        "w": 8,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"wotb-backend|ai-service|node-exporter|prometheus|loki|grafana|dev-metrics\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{job}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 30,
+      "type": "text",
+      "title": "Production drilldowns",
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 24,
+        "h": 4
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "[Feature usage / replay outcomes](/d/wotbtools-feature-usage) · [AI usage and terminal results](/d/wotbtools-ai-token-usage) · [Client parse, frontend and AI errors](/d/wotbtools-backend-error-logs)\n\nClient failures are log events, not invented server counters. The current dashboard inventory has no separate Production Overview, HTTP, Replay or Infrastructure dashboard."
+      }
+    },
+    {
+      "id": 31,
+      "type": "logs",
+      "title": "Recent production errors",
+      "description": "One overview log panel. Open Backend error logs for functional filters and details. No causal attribution to PRs.",
+      "gridPos": {
+        "x": 0,
+        "y": 85,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{container_name=~\"wotb-backend|ai-service|keycloak|wotb-frontend\"} |~ `(?i)(ERROR|api_request_failed|event=(ai_review_error|ai_upstream_call_failed)|outcome=failure)`",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": false,
+          "range": true,
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "AI Review errors / second",
+      "description": "Existing ai-service counter from AiReviewController. Errors grouped by bounded error type. Missing series is No data; no attribution to PR activity.",
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by(type) (rate(wotb_ai_review_errors_total{job=\"ai-service\"}[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "range": true,
+          "instant": false,
+          "legendFormat": "{{type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ]
+}

@@ -1,14 +1,21 @@
 name: Release / Android
 # 两阶段发布协议（见 docs/android/release-process.md）：
 #
-#   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract → 构建/签名 →
-#              证书校验 → 清华副本上传 + immutable APK seed（TX1/TX2 从副本拉取，逐跳 SHA-256）→ 线上 APK 可访问 + SHA 核验 → tag →
+#   stage   —— main 合并后自动跑（也可 workflow_dispatch 重跑/恢复）：contract + **cutover 守卫**
+#              （guard_min_supported / guard_local_first_cutover / guard_bridge_covered）→ 构建/签名 →
+#              证书校验 → 清华副本上传（distribution replica，可 replace 覆盖，不锁定版本）→
+#              immutable APK seed（TX1 → TX2 依次从副本拉取，逐跳 SHA-256，no-clobber 落位；任意一台落位即消耗该
+#              版本号，之后改变 Android candidate 的修改必须换版本）→ 线上 APK 可访问 + SHA 核验 → tag →
 #              写并上传 **staging evidence**。**绝不**写 production version.json。
+#              ⇒ major / bridge cutover 的 ANDROID_MIN_SUPPORTED_VERSION_CODE 必须在**合并之前**设好：
+#              floor 未到位时这个 preflight 会 fail-closed（修好变量后幂等重跑是恢复路径，不是正常流程）。
+#              major cutover：设 floor → 合并 → 本 stage 与随 PR 带来的基础设施 workflow（如 caddy.yml）各自从 main
+#              运行 → 两者都成功 → 真机验收 → publish。
 #   publish —— 真机 A14 验证通过后由 workflow_dispatch(mode=publish, version=X) 手工续跑：
 #              候选身份由**显式版本 X**决定（X 的 immutable tag target = staged 源码），
 #              不重建 APK（复用 staged 的 immutable APK），校验 staged 身份（版本/SHA/tag/URL/
 #              source SHA）→ minSupported 覆盖 breaking bridge cutover → Keycloak runtime client
-#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（唯一 commit point）。
+#              与 bundled frontend 与 API/CORS/asset 运行面就绪 → 才写 version.json（Android 客户端 rollout 的唯一 commit point）。
 #
 # 当前 main 在 publish 里的角色只有「策略与历史」：ancestry、minSupported、runtime compatibility
 # 以及 workflow 代码本身。它**不**决定发布哪个候选 —— main 前进到 2.0.2 不能作废已 staged 的 2.0.1。
@@ -16,8 +23,10 @@ name: Release / Android
 # `version.json` 是强制更新的开关：只有 publish 阶段会动它，因此真机验证失败 / 未做时线上
 # manifest 保持不变，旧客户端不会被推向一个尚未验证的客户端。
 #
-# 全程 fail-closed + 幂等：APK/tag/staging evidence/version.json 任一步失败后重跑同一版本都安全，
-# 不会双写、不会覆盖 immutable APK、不会 repoint tag。
+# 全程 fail-closed + 幂等：APK/tag/staging evidence/version.json 任一步失败后对**同一源码**重跑同一版本都安全，
+# 不会双写、不会覆盖 immutable APK、不会 repoint tag。stage 失败不代表版本可复用：只要已有任一 immutable
+# artifact（tag / 任意一台 origin 的 APK / staging evidence / version.json），改变 Android candidate 的修改就必须
+# 换更高版本；stage 只从 origin/main HEAD 构建，main 前进后部分 stage 也无法再补齐。
 on:
   push:
     branches:
@@ -71,8 +80,9 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    # 构建 + 签名/上传约 35 分钟；staging 阶段不做任何线上就绪等待（那属于 publish）。
-    timeout-minutes: 60
+    # 3.0 起 APK 自带 GeckoView（双 ARM ABI，约 200 MB 量级），清华上传按实测 ~150–200 KB/s 约 20 分钟；
+    # staging 阶段不做任何线上就绪等待（那属于 publish）。
+    timeout-minutes: 120
     steps:
       - name: Checkout release source
         uses: actions/checkout@v5
@@ -269,11 +279,6 @@ jobs:
       # PR B：signed release APK 必须和内层 debug APK 一样携带**完整的本地前端 bundle**
       # （index + JS/CSS + pinned Agent WASM + 本地 2D 资源）。否则会出现「CI 是 local-first、
       # 线上 APK 不是」的分裂。复用上一步的 node_modules 与已取回的 Agent 产物，不重复下载。
-      # 2D 地图派生（Phase 10）：canonical 底图 → dist-android-maps/（Pillow，确定性）。
-      # 版本 pin：Pillow wheel 自带 libwebp，跨环境同版本才能保证派生逐字节一致
-      # （build-android-map-assets.mjs 内部会跑 determinism 复核）。
-      - name: Install pinned Pillow for the map derivative pipeline
-        run: python3 -m pip install --disable-pip-version-check 'Pillow==12.3.0'
       # Sponsor 运行时内容（收款码 + 配置）不进 Git 历史：它作为 GitHub Release 资产发布，
       # 由 deploy/sponsor/content.json 钉住 release/asset/sha256。下载校验后注入 publicDir
       # （common/assets/），Vite 原样拷进 dist-android ⇒ APK 由本机 origin 同源伺服（离线可用）。
@@ -328,9 +333,8 @@ jobs:
         run: |
           set -euo pipefail
           npm --prefix frontend run build:android
-          # 派生不变量（等比 / 不放大 / 单张与总量预算）独立复核一次：build 内部已 fail closed，
-          # 这一步让 CI 日志里有明确的"地图派生已校验"证据。
-          node frontend/scripts/build-android-map-assets.mjs --verify
+          # 2D 底图与 Web 同字节随包（无派生）：build 内部已逐条 fail closed（注册表每张地图
+          # 都必须有随包资源），并写下 bundle manifest 的 maps 段与 map2d-embedded.json。
 
       - uses: actions/setup-java@v4
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -341,7 +345,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         if: steps.preflight.outputs.releaseAction == 'publish'
         with:
-          gradle-version: "8.7"
+          gradle-version: "9.6.1"
 
       - name: Prepare staging directory (workspace-relative, 服务器路径严格)
         if: steps.preflight.outputs.releaseAction == 'publish'
@@ -658,13 +662,13 @@ jobs:
           # 判定 = 从分享直链下载回来 SHA-256 一致（下方 5 次重试全败即 workflow
           # 失败，fail-visible）。curl 层错误打诊断后同样交由下载校验裁决。
           upload_rc=0
-          curl -sS -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
+          curl -sS --connect-timeout 10 --max-time 2700 -o "$RUNNER_TEMP/thu-upload-resp.txt" -H "Authorization: Token $TSINGHUA_CLOUD_TOKEN" \
             -F "parent_dir=$PARENT_DIR" -F "replace=1" -F "file=@$APK_FILE" "$ULINK" || upload_rc=$?
           echo "upload curl rc=$upload_rc; resp=$(head -c 200 "$RUNNER_TEMP/thu-upload-resp.txt" 2>/dev/null || echo '<none>')"
 
           for attempt in 1 2 3 4 5; do
             sleep 3
-            if curl -fsSL --connect-timeout 5 --max-time 120 \
+            if curl -fsSL --connect-timeout 5 --max-time 900 \
                 -o "$RUNNER_TEMP/thu-offload.apk" "$SHARE_DIRECT" 2>/dev/null \
                 && [ "$(sha256sum "$RUNNER_TEMP/thu-offload.apk" | awk '{print $1}')" = "$EXPECTED_SHA" ]; then
               echo "Tsinghua Cloud offload verified: $APK_NAME sha256=$EXPECTED_SHA"
@@ -780,7 +784,7 @@ jobs:
           for attempt in $(seq 1 "$ATTEMPTS"); do
             rm -f "$TMP_APK"
             VERIFY_URL="$URL?verify=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}-$(date +%s%N)"
-            RESULT="$(curl -sS -L --connect-timeout 5 --max-time 60 \
+            RESULT="$(curl -sS -L --connect-timeout 5 --max-time 900 \
               -H 'Cache-Control: no-cache' \
               -o "$TMP_APK" -w '%{http_code} %{size_download}' "$VERIFY_URL" || true)"
             read -r HTTP_CODE SIZE <<< "$RESULT"
@@ -1009,13 +1013,14 @@ jobs:
     # 最终发布不变量（全部成立才写 manifest）：
     #   staged APK 身份正确（版本 / source SHA / tag / URL / APK SHA-256）
     #   ∧ production Keycloak 有可用的 wotbtools-android
-    #   ∧ APK bundled frontend 支持 Bridge v2 + native-auth，API/asset CORS 就绪
+    #   ∧ APK bundled frontend 支持 staged Native Bridge contract + native-auth，API/asset CORS 就绪
     #   ∧ minSupportedVersionCode 覆盖这次 breaking bridge cutover
     if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish'
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # publish 会经公网下载 staged APK（GeckoView 体积）做字节核验。
+    timeout-minutes: 90
     steps:
       - name: Checkout current main (current release policy + ancestry history)
         uses: actions/checkout@v5

@@ -2241,7 +2241,7 @@ async function runParseLifecycleScenario(env, scenario) {
 }
 
 /** B13: real local parser/UI with every business HTTP attempt intercepted and counted.
- * Local fixture resources remain available, as bundled appassets do in airplane mode.
+ * Local fixture resources remain available, as the APK-bundled local origin does in airplane mode.
  * This checks state and requests only; it never inspects or captures a 3D scene.
  */
 async function runOfflineWorkspaceScenario(env) {
@@ -2250,6 +2250,7 @@ async function runOfflineWorkspaceScenario(env) {
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
   const businessAttempts = []
+  const healthProbes = []
   const interceptionErrors = []
   let closing = false
   await page.enable()
@@ -2266,6 +2267,25 @@ async function runOfflineWorkspaceScenario(env) {
     // 俯仰锚定两阶段解析会拉 /tank/{id}.json 与 /data/tank_cache.json（资产源）。
     const assetPath = ['^/glb/', '^/map/', '^/tank/', '^/tank_images/', '^/data/']
       .some((p) => url.pathname.startsWith(p.slice(1)))
+    // Foreground activity is intentionally reported when connectivity recovers.
+    // Telemetry and read-only deployment capability discovery are accepted only online;
+    // offline telemetry and all automatic business submissions still fail below.
+    const telemetry = url.origin === env.origin && url.pathname === '/api/observability/events'
+      && params.request.method === 'POST'
+    if (telemetry && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      await env.chrome.client.send('Fetch.fulfillRequest', { requestId: params.requestId, responseCode: 204 }, sessionId)
+      return
+    }
+    const health = url.origin === env.origin && url.pathname === '/api/health' && params.request.method === 'GET'
+    if (health && await page.evaluate('window.__offlineFixtureOnline === true')) {
+      healthProbes.push(params.request.url)
+      await env.chrome.client.send('Fetch.fulfillRequest', {
+        requestId: params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] })).toString('base64'),
+      }, sessionId)
+      return
+    }
     const business = (url.origin !== env.origin || url.pathname.startsWith('/api/')) && !assetPath
     if (business) businessAttempts.push(params.request.url)
     try {
@@ -2321,16 +2341,60 @@ async function runOfflineWorkspaceScenario(env) {
   // Recovering connectivity may prepare local AI projection but must never submit it.
   await page.evaluate(`window.__offlineFixtureOnline = true; window.dispatchEvent(new Event('online'))`)
   await page.waitFor(() => !document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'reconnect capability update' })
+  await page.waitFor(() => !!document.querySelector('[data-testid="nav-creators"]'), { label: 'read-only backend capability probe completed' })
   await delay(300)
   await page.evaluate(`window.__offlineFixtureOnline = false; window.dispatchEvent(new Event('offline'))`)
   await page.waitFor(() => !!document.querySelector('[data-testid="ws-ai-connectivity"]'), { label: 'disconnect capability update' })
   await page.evaluate(`document.querySelector('[data-testid="ws-tab"][data-cap="shots"]').click()`)
   check(failures, await page.evaluate('document.querySelectorAll(".shot-row").length') === shots, 'disconnect reset local shooting/replay state')
   check(failures, businessAttempts.length === 0, `offline/reconnect matrix attempted business HTTP: ${businessAttempts.join(', ')}`)
+  check(failures, healthProbes.length === 1, `reconnection must make exactly one read-only capability probe: ${healthProbes.length}`)
   check(failures, interceptionErrors.length === 0, `request interception failed: ${interceptionErrors.join(', ')}`)
   closing = true
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: 'offline-local-workspace-matrix', failures, viewport: '1600x900' })
+}
+
+/** Real multi-file analysis and 2D switching; scene appearance remains manual acceptance. */
+async function runMultiFileWorkspaceScenario(env) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  try {
+    await page.enable()
+    await page.emulate({ width: 1600, height: 900, touch: false })
+    await page.goto(`${env.origin}/?view=battle-playback&ws-auth=1`)
+    await page.waitFor(() => !!document.querySelector('[data-testid="select-files-input"]'), { label: 'multi-file picker' })
+    const { root } = await env.chrome.client.send('DOM.getDocument', {}, sessionId)
+    const { nodeId } = await env.chrome.client.send('DOM.querySelector', {
+      nodeId: root.nodeId, selector: '[data-testid="select-files-input"]',
+    }, sessionId)
+    await env.chrome.client.send('DOM.setFileInputFiles', { nodeId, files: [
+      resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
+      resolve(frontendRoot, '../common/fixtures/replays/tournament-14-14-example.wotbreplay'),
+    ] }, sessionId)
+    const hit = async selector => {
+      const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
+      await page.tap({ ...point, touch: false })
+    }
+    await hit('.replay-primary-actions button')
+    await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: 'first batch battle loaded in 2D' })
+    const roster = `Array.from(document.querySelectorAll('[data-test="pb-roster-row"]')).map(row => row.dataset.accountId).join(',')`
+    const firstRoster = await page.evaluate(roster)
+    check(failures, !!firstRoster, 'first battle has no playback roster')
+    await hit('[data-testid="playback-battle-picker"]')
+    const options = await page.evaluate(`Array.from(document.querySelectorAll('[data-testid="battle-picker-option"]')).map(option => option.dataset.value)`)
+    check(failures, JSON.stringify(options) === JSON.stringify(['r0', 'r1']), `unexpected batch options: ${options}`)
+    await hit('[data-testid="battle-picker-option"][data-value="r1"]')
+    await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second original File loaded in 2D' })
+    await hit('[data-testid="playback-battle-picker"]')
+    await hit('[data-testid="battle-picker-option"][data-value="r0"]')
+    await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
+  } finally {
+    await env.chrome.client.send('Target.closeTarget', { targetId })
+  }
+  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900' })
 }
 
 /* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
@@ -3202,6 +3266,7 @@ try {
   })
   const env = { origin, chrome: chromeCdp }
   const runs = [
+    { scenario: { name: 'multifile-workspace-playback', width: 1600, height: 900 }, run: () => runMultiFileWorkspaceScenario(env) },
     { scenario: { name: 'offline-local-workspace-matrix', width: 1600, height: 900 }, run: () => runOfflineWorkspaceScenario(env) },
     ...APP_SCENARIOS.map((scenario) => ({ scenario, run: () => runAppScenario(env, scenario) })),
     ...AUTH_CAPABILITY_SCENARIOS.map((scenario) => ({ scenario, run: () => runAuthCapabilityScenario(env, scenario) })),
