@@ -1,6 +1,8 @@
 package com.wotb.web.creator;
 
 import com.wotb.web.creator.dto.CreatorDtos;
+import com.wotb.web.creator.dto.RecommendationDtos;
+import org.springframework.http.HttpMethod;
 import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.util.apierror.ApiErrorCode;
@@ -44,6 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -120,7 +123,7 @@ class CreatorIntegrationTest {
                     + "join creator_category_link link on link.creator_id=c.id "
                     + "join creator_category cat on cat.id=link.category_id join creator_level l on l.id=c.level_id";
             final var before = upgrade.queryForMap(query);
-            final Flyway flyway = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
+            final Flyway flyway = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("36").load();
             flyway.migrate(); flyway.validate();
             assertNull(upgrade.queryForObject("select to_regclass('creator_catalog_lock')::text", String.class));
             assertEquals(before, upgrade.queryForMap(query));
@@ -427,7 +430,7 @@ class CreatorIntegrationTest {
             final CreatorDtos.SaveRequest valid = save(padding + "000" + uid + padding, 3, List.of(1L), null, null);
             mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").value(uid));
-            assertTrue(creators.existsByBilibiliUid(uid));
+            assertTrue(creators.existsByTypeAndExternalId("UP", uid));
             for (final String invalid : List.of(padding + "000" + padding, "12" + padding + "3")) {
                 mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json",
                                 json.writeValueAsBytes(save(invalid, 3, List.of(1L), null, null)))).with(admin))
@@ -542,6 +545,197 @@ class CreatorIntegrationTest {
         service.deleteCategory(unused);
         assertEquals(2, service.detail(first.id()).version());
         assertEquals(untouched, service.detail(untouched.id()));
+    }
+
+    @Test void v36UpgradePreservesUpDataAndAddsOnlyTypedConstraints() {
+        jdbc.execute("create database recommendation_upgrade");
+        final String url = POSTGRES.getJdbcUrl().replace("/wotb", "/recommendation_upgrade");
+        final JdbcTemplate upgrade = new JdbcTemplate(new DriverManagerDataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()));
+        try {
+            Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("36").load().migrate();
+            upgrade.update("update creator_category set name='Customized category' where id=1");
+            upgrade.update("insert into creator_avatar(id,object_key,status,content_type,size,hash,created_at) "
+                    + "values ('11111111-1111-4111-8111-111111111111','creator-avatars/old','READY','image/png',1,?,now())", "a".repeat(64));
+            upgrade.update("insert into creator(bilibili_uid,name,version,stars,level_id,avatar_id,created_at) "
+                    + "values ('123','Preserved UP',7,4,1,'11111111-1111-4111-8111-111111111111',now())");
+            upgrade.update("insert into creator_category_link(creator_id,category_id) values (1,1)");
+            final String query = "select c.id,c.version,c.bilibili_uid,c.name,c.stars,c.level_id,c.avatar_id,c.created_at,"
+                    + "a.object_key,a.hash,cat.name as category_name,l.name as level_name from creator c "
+                    + "join creator_avatar a on a.id=c.avatar_id join creator_category_link link on link.creator_id=c.id "
+                    + "join creator_category cat on cat.id=link.category_id join creator_level l on l.id=c.level_id";
+            final var before = upgrade.queryForMap(query);
+            final Flyway flyway = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
+            flyway.migrate(); flyway.validate();
+            assertEquals(before, upgrade.queryForMap(query));
+            assertEquals("UP", upgrade.queryForObject("select type from creator", String.class));
+            assertEquals(6, upgrade.queryForObject("select count(*) from creator_category where type='UP'", Integer.class));
+            assertEquals(0, upgrade.queryForObject("select count(*) from creator_category where type='VIDEO'", Integer.class));
+            assertEquals(4, upgrade.queryForObject("select count(*) from creator_level", Integer.class));
+            assertNull(upgrade.queryForObject("select to_regclass('creator_catalog_lock')::text", String.class));
+            assertEquals("37", flyway.info().current().getVersion().toString());
+        } finally { jdbc.execute("drop database recommendation_upgrade with (force)"); }
+    }
+
+    @Test void typedCatalogPreservesBvCaseAndLegacyUpWireWhileKeepingEmptyDictionariesPrivate() {
+        final long videoCategory = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final long unused = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Empty")).id();
+        final CreatorDtos.Detail up = create(3, List.of(1L), 1L);
+        final RecommendationDtos.Detail video = service.createRecommendation(video("  BV1AbCdEfGh2  ", List.of(videoCategory), null), null);
+        final RecommendationDtos.Detail lower = service.createRecommendation(video("BV1abcdefgh2", List.of(videoCategory), null), null);
+        assertEquals("VIDEO", video.type()); assertEquals("BV1AbCdEfGh2", video.externalId()); assertNull(video.levelId());
+        assertEquals(List.of(up.id()), service.list(null).stream().map(CreatorDtos.Card::id).toList());
+        assertEquals(List.of(1L), service.publicCategories().stream().map(CreatorDtos.Category::id).toList());
+        assertEquals(List.of(lower.id(), video.id()), service.recommendations("VIDEO", null).stream().map(RecommendationDtos.Card::id).toList());
+        final RecommendationDtos.Card card = service.recommendations("VIDEO", null).getLast();
+        assertEquals("https://www.bilibili.com/video/BV1AbCdEfGh2", card.targetUrl()); assertNull(card.level()); assertEquals(6, card.score());
+        assertEquals(List.of(videoCategory, unused), service.recommendationMetadata("VIDEO").categories().stream().map(RecommendationDtos.Category::id).toList());
+        assertTrue(service.recommendationMetadata("VIDEO").levels().isEmpty());
+        assertEquals(List.of(1L, videoCategory), service.publicRecommendationCategories().stream().map(RecommendationDtos.Category::id).toList());
+        service.deleteRecommendation("VIDEO", video.id(), video.version());
+        service.deleteRecommendation("VIDEO", lower.id(), lower.version());
+        assertEquals(service.publicCategories().size(), service.publicRecommendationCategories().size());
+    }
+
+    @Test void crossTypeIdsCannotBeReadUpdatedDeletedOrAssociated() {
+        final long videoCategory = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final CreatorDtos.Detail up = create(3, List.of(1L), null);
+        final RecommendationDtos.Detail video = service.createRecommendation(video("BV1AbCdEfGh2", List.of(videoCategory), null), null);
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.detail(video.id()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.delete(video.id(), video.version()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.update(video.id(), save("123", 3, List.of(1L), null, video.version()), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendationDetail("VIDEO", up.id()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendation("VIDEO", up.id(), up.version()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.updateRecommendation(up.id(), video("BV1AbCdEfGh3", List.of(videoCategory), up.version()), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteCategory(videoCategory));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendationCategory("VIDEO", 1));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.createRecommendation(video("BV1AbCdEfGh3", List.of(1L), null), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.create(save("555", 3, List.of(videoCategory), null, null), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.list(videoCategory));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendations("VIDEO", 1L));
+        assertEquals(2, creators.count());
+    }
+
+    @Test void typedValidationAndDatabaseConstraintsRejectInvalidVideosAndVideoLevels() {
+        final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        for (final String invalid : List.of("bv1AbCdEfGh2", "BV1AbCdEfGh", "BV1AbCdEfGh23", "BV1AbCdEfG_2", "123", "BV1Ab CdEfG2")) {
+            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(video(invalid, List.of(category), null), null));
+        }
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(
+                new RecommendationDtos.SaveRequest("VIDEO", "BV1AbCdEfGh2", "Video", null, List.of(category), 1L, 3, "KEEP", null), null));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.recommendations("OTHER", null));
+        final RecommendationDtos.Detail created = service.createRecommendation(video("\uFEFFBV1AbCdEfGh2\u00A0", List.of(category), null), null);
+        assertEquals("BV1AbCdEfGh2", created.externalId());
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("update creator set level_id=1 where id=?", created.id()));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("update creator set type='UP' where id=?", created.id()));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("update creator set bilibili_uid='bad' where id=?", created.id()));
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("insert into creator(type,bilibili_uid,name,created_at) values ('VIDEO','BV1AbCdEfGh2','Duplicate',now())"));
+        assertEquals(List.of("type", "bilibili_uid"), jdbc.queryForList("select a.attname from pg_constraint con "
+                + "cross join lateral unnest(con.conkey) with ordinality k(attnum,ord) join pg_attribute a "
+                + "on a.attrelid=con.conrelid and a.attnum=k.attnum where con.conname='creator_type_external_id_unique' order by k.ord", String.class));
+    }
+
+    @Test void concurrentVideoCreationAndCategoryRemovalKeepOneRecordWithValidMembership() throws Exception {
+        final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final var request = video("BV1AbCdEfGh2", List.of(category), null);
+        final List<String> duplicate = race(() -> outcome(() -> service.createRecommendation(request, null)),
+                () -> outcome(() -> service.createRecommendation(request, null)));
+        assertEquals(1, duplicate.stream().filter("SUCCESS"::equals).count());
+        assertEquals(1, duplicate.stream().filter(ApiErrorCode.RECOMMENDATION_ID_ALREADY_EXISTS.name()::equals).count());
+        final long second = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Other")).id();
+        final var original = service.recommendations("VIDEO", null).getFirst();
+        final List<String> change = race(() -> outcome(() -> service.updateRecommendation(original.id(), video("BV1AbCdEfGh2", List.of(second), original.version()), null)),
+                () -> outcome(() -> service.deleteRecommendationCategory("VIDEO", second)));
+        assertEquals(1, change.stream().filter("SUCCESS"::equals).count());
+        assertEquals(0, jdbc.queryForObject("select count(*) from creator c where not exists (select 1 from creator_category_link l where l.creator_id=c.id)", Integer.class));
+        assertEquals(1, creators.count());
+        final var latest = service.recommendationDetail("VIDEO", original.id());
+        if (latest.version() > original.version()) {
+            assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT, () -> service.deleteRecommendation("VIDEO", latest.id(), original.version()));
+        }
+    }
+
+    @Test void realHttpEnforcesNewRolesStrictRequestsAndBothLegacyAndTypedBoundaries() throws Exception {
+        final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final var wrongAdmin = jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"));
+        final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final JsonMapper json = JsonMapper.builder().build();
+        final String payload = json.writeValueAsString(video("BV1AbCdEfGh2", List.of(category), null));
+        mvc.perform(get("/api/recommendations?type=VIDEO")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/recommendations")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/recommendations?type=BAD")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(wrongAdmin)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.type").value("VIDEO")).andExpect(jsonPath("$.levels").isEmpty()).andExpect(jsonPath("$.categories[0].type").value("VIDEO"));
+        mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload))).andExpect(status().isUnauthorized());
+        mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload)).with(wrongAdmin)).andExpect(status().isForbidden());
+        final String created = mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload)).with(admin))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.type").value("VIDEO"))
+                .andExpect(jsonPath("$.externalId").value("BV1AbCdEfGh2")).andExpect(jsonPath("$.bilibiliUid").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        final long id = json.readTree(created).path("id").asLong();
+        mvc.perform(get("/api/recommendations?type=VIDEO")).andExpect(status().isOk()).andExpect(jsonPath("$[0].targetUrl").value("https://www.bilibili.com/video/BV1AbCdEfGh2"));
+        mvc.perform(get("/api/creators")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/recommendations/categories")).andExpect(status().isOk()).andExpect(jsonPath("$[0].type").value("VIDEO"));
+        mvc.perform(get("/api/admin/creators/" + id).with(admin)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/admin/recommendations/" + id + "?type=UP").with(admin)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/admin/creators/" + id + "?expectedVersion=0").with(admin)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/admin/creators/categories/" + category).with(admin)).andExpect(status().isNotFound());
+        for (final String invalid : List.of(payload.replace("\"VIDEO\"", "null"), payload.replace("\"BV1AbCdEfGh2\"", "123"),
+                payload.replace("\"levelId\":null", "\"levelId\":1"), payload.replace("\"stars\":3", "\"stars\":3.1"),
+                payload.replace("\"externalId\":", "\"extra\":true,\"externalId\":"))) {
+            mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(invalid)).with(admin)).andExpect(status().isBadRequest());
+        }
+        final String legacy = json.writeValueAsString(save("123", 3, List.of(1L), null, null));
+        mvc.perform(multipart("/api/admin/creators").file(jsonPayload(legacy.replaceFirst("\\{", "{\"type\":\"VIDEO\","))).with(admin))
+                .andExpect(status().isBadRequest());
+        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/recommendations/" + id).file(jsonPayload(json.writeValueAsString(video("BV1AbCdEfGh2", List.of(category), 0L)))).with(admin))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        mvc.perform(delete("/api/admin/recommendations/" + id + "?type=VIDEO&expectedVersion=0").with(admin)).andExpect(status().isConflict());
+        mvc.perform(delete("/api/admin/recommendations/" + id + "?type=VIDEO&expectedVersion=1").with(admin)).andExpect(status().isNoContent());
+    }
+
+    @Test void recommendationHttpRejectsScalarTextCoercionAndPreservesNullableDescription() throws Exception {
+        final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final JsonMapper json = JsonMapper.builder().build();
+        final var valid = video("BV1AbCdEfGh2", List.of(category), null);
+        for (final String field : List.of("type", "externalId", "name", "description", "imageAction")) {
+            for (final boolean numeric : List.of(true, false)) {
+                final var payload = (tools.jackson.databind.node.ObjectNode) json.valueToTree(valid);
+                if (numeric) { payload.put(field, 123); } else { payload.put(field, true); }
+                mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(json.writeValueAsString(payload))).with(admin))
+                        .andExpect(status().isBadRequest());
+            }
+        }
+        for (final String field : List.of("type", "name")) {
+            for (final boolean numeric : List.of(true, false)) {
+                final var payload = json.createObjectNode().put("type", "VIDEO").put("name", "Clips");
+                if (numeric) { payload.put(field, 123); } else { payload.put(field, true); }
+                mvc.perform(post("/api/admin/recommendations/categories").contentType("application/json")
+                                .content(json.writeValueAsString(payload)).with(admin))
+                        .andExpect(status().isBadRequest());
+            }
+        }
+        assertEquals(0, creators.count());
+        assertEquals(1, service.recommendationMetadata("VIDEO").categories().size());
+        final String result = mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(json.writeValueAsString(valid))).with(admin))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        assertTrue(json.readTree(result).has("description"));
+        assertTrue(json.readTree(result).path("description").isNull());
+        mvc.perform(post("/api/admin/recommendations/categories").contentType("application/json")
+                        .content("{\"type\":\"VIDEO\",\"name\":\"123\"}").with(admin))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value("123"));
+    }
+
+    private static MockMultipartFile jsonPayload(final String value) {
+        return new MockMultipartFile("payload", "", "application/json", value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private static RecommendationDtos.SaveRequest video(final String bv, final List<Long> categories, final Long version) {
+        return new RecommendationDtos.SaveRequest("VIDEO", bv, "Video", null, categories, null, 3, "KEEP", version);
     }
 
     private CreatorDtos.Detail create(final int stars, final List<Long> ids, final Long levelId) {

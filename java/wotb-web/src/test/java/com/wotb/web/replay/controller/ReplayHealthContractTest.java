@@ -12,6 +12,7 @@ class ReplayHealthContractTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ok"))
                 .andExpect(jsonPath("$.tanks").isNumber())
                 .andExpect(jsonPath("$.capabilities[0]").value("creators-v1"))
-                .andExpect(jsonPath("$.capabilities[1]").value("creators-content-visibility-v1"));
+                .andExpect(jsonPath("$.capabilities[1]").value("creators-content-visibility-v1"))
+                .andExpect(jsonPath("$.capabilities[2]").value("recommendations-v1"));
     }
 }

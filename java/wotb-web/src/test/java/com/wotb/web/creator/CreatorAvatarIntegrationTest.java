@@ -7,6 +7,7 @@ import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
 import com.wotb.web.creator.entity.CreatorAvatar;
 import com.wotb.web.creator.dto.CreatorDtos;
+import com.wotb.web.creator.dto.RecommendationDtos;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.service.CreatorAvatarService;
@@ -387,6 +388,20 @@ class CreatorAvatarIntegrationTest {
             jdbc.execute("drop trigger creator_avatar_test_reject_attempt on creator_avatar");
             jdbc.execute("drop function creator_avatar_test_reject_attempt()");
         }
+    }
+
+    @Test void videoCoverUsesExistingCompressionAndSurvivesCleanupUntilFinalReferenceIsRemoved() throws Exception {
+        final long category = directory.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final var request = new RecommendationDtos.SaveRequest("VIDEO", "BV1AbCdEfGh2", "Video", null, List.of(category), null, 3, "REPLACE", null);
+        final var video = directory.createRecommendation(request, png(1024, 576));
+        final String cover = avatarReference(video.id());
+        final BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(avatars.load(cover).bytes()));
+        assertEquals(256, decoded.getWidth()); assertEquals(144, decoded.getHeight());
+        age(cover); avatars.cleanup();
+        assertTrue(reservations.existsById(cover)); assertTrue(objects.containsKey(PREFIX + cover));
+        directory.deleteRecommendation("VIDEO", video.id(), video.version());
+        age(cover); avatars.cleanup();
+        assertFalse(reservations.existsById(cover)); assertFalse(objects.containsKey(PREFIX + cover));
     }
 
     private long creator() {
