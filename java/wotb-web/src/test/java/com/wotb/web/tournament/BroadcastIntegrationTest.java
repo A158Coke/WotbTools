@@ -144,7 +144,7 @@ class BroadcastIntegrationTest {
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest("2",null,null),null));
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest(null,1,null),null));
     }
-    @Test void legacyTextGroupsRemainEditableAndCurrentClientsCanClearGroups() {
+    @Test void legacyTextGroupsSurviveUnrelatedV2AndV3EditsWhileNumericGroupsCanBeCleared() {
         final long points = category("POINTS");
         final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
         final var original = service.legacyCreateReplay(root,legacyRequest("Group A",null,null),null).nodes().getFirst().replays().getFirst();
@@ -155,8 +155,19 @@ class BroadcastIntegrationTest {
         assertEquals("Edited title",edited.title()); assertEquals("Group A",edited.groupLabel());
         final var v2 = service.category(points).nodes().getFirst().replays().getFirst();
         assertNull(v2.groupNumber()); assertEquals("Edited title",v2.title());
-        service.updateReplay(original.id(),request("Ungrouped","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null);
-        assertNull(service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
+        service.updateReplay(original.id(),request("V2 title edit","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null);
+        assertEquals("Group A",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
+        service.timedUpdateReplay(original.id(),new BroadcastDtos.TimedReplaySave(
+                request("V3 title edit","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        final var preserved = service.legacyCategory(points).nodes().getFirst().replays().getFirst();
+        assertEquals("V3 title edit",preserved.title()); assertEquals("Group A",preserved.groupLabel());
+        assertEquals("Group A",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,original.id()));
+        for (final String cleared : new String[]{null,""," "}) {
+            service.legacyUpdateReplay(original.id(),legacyRequest("Group A",null,null),null);
+            service.legacyUpdateReplay(original.id(),legacyRequest(cleared,null,null),null);
+            assertNull(service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
+            assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,original.id()));
+        }
         for (final String label : List.of("0","-1","2147483648","9".repeat(100),"Group 1","1e3","A")) {
             final var view = service.legacyCreateReplay(root,legacyRequest(label,null,null),null);
             final var saved = view.nodes().getFirst().replays().getLast();
@@ -168,6 +179,14 @@ class BroadcastIntegrationTest {
         assertEquals("42",numeric.groupLabel()); assertNull(numeric.groupNumber());
         assertEquals(42,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
         assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.updateReplay(numeric.id(),request("V2 clear numeric","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null);
+        assertNull(jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
+        assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.legacyUpdateReplay(numeric.id(),legacyRequest("00042",null,null),null);
+        service.timedUpdateReplay(numeric.id(),new BroadcastDtos.TimedReplaySave(
+                request("V3 clear numeric","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        assertNull(jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
+        assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
     }
     private BroadcastLegacyDtos.ReplaySave legacyRequest(final String label, final Integer number, final String bracket) {
         return new BroadcastLegacyDtos.ReplaySave(version(),"Title","https://example.org/legacy",LocalDate.of(2026,10,15),1,label,number,bracket,List.of("A","B"),"POV","KEEP");
@@ -222,13 +241,14 @@ class BroadcastIntegrationTest {
             assertEquals(labels.length+1,upgrade.queryForObject("select count(*) from tournament_broadcast_replay",Integer.class));
         } finally { jdbc.execute("drop database broadcast_groups_upgrade with (force)"); }
     }
-    @Test void legacyUnparsedGroupRemainsReadableAndCanBeClearedOnSave() {
+    @Test void legacyUnparsedGroupRemainsReadableUntilExplicitNumberReplacement() {
         final long points = category("POINTS");
         final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
         final long replay = service.createReplay(root,request("Legacy","2026-10-15",1,1,null,List.of("A","B"),"KEEP"),null).nodes().getFirst().replays().getFirst().id();
         jdbc.update("update tournament_broadcast_replay set group_number=null,legacy_group_label='A' where id=?",replay);
         assertNull(service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
         assertNull(service.updateReplay(replay,request("Legacy","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null).nodes().getFirst().replays().getFirst().groupNumber());
+        assertEquals("A",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay));
         assertEquals(2,service.updateReplay(replay,request("Legacy","2026-10-15",1,2,null,List.of("A","B"),"KEEP"),null).nodes().getFirst().replays().getFirst().groupNumber());
         assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay));
     }

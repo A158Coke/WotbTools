@@ -79,11 +79,11 @@ public class BroadcastService {
         return createNode(categoryId, request, this::timedCategoryView);
     }
     public BroadcastDtos.TimedCategoryView timedCreateReplay(final long nodeId, final BroadcastDtos.TimedReplaySave request, final MultipartFile cover) {
-        return saveReplay(nodeId, null, request.replay(), cover, null, true, request.startsAt(), this::timedCategoryView);
+        return saveReplay(nodeId, null, request.replay(), cover, null, false, true, request.startsAt(), this::timedCategoryView);
     }
     public BroadcastDtos.TimedCategoryView timedUpdateReplay(final long replayId, final BroadcastDtos.TimedReplaySave request, final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId, replayId, request.replay(), cover, null, true, request.startsAt(), this::timedCategoryView);
+        return saveReplay(nodeId, replayId, request.replay(), cover, null, false, true, request.startsAt(), this::timedCategoryView);
     }
 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -108,11 +108,11 @@ public class BroadcastService {
         return createNode(id,request,this::legacyCategoryView);
     }
     public BroadcastLegacyDtos.CategoryView legacyCreateReplay(final long nodeId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
-        return saveReplay(nodeId,null,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,false,null,this::legacyCategoryView);
+        return saveReplay(nodeId,null,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,true,false,null,this::legacyCategoryView);
     }
     public BroadcastLegacyDtos.CategoryView legacyUpdateReplay(final long replayId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId,replayId,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,false,null,this::legacyCategoryView);
+        return saveReplay(nodeId,replayId,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,true,false,null,this::legacyCategoryView);
     }
     private BroadcastDtos.ReplaySave legacyReplaySave(final long nodeId, final BroadcastLegacyDtos.ReplaySave request) {
         final Integer number = transactions.execute(status -> {
@@ -197,15 +197,15 @@ public class BroadcastService {
 
     public BroadcastDtos.CategoryView createReplay(final long nodeId, final BroadcastDtos.ReplaySave request,
                                                   final MultipartFile cover) {
-        return saveReplay(nodeId, null, request, cover,null,false,null,this::categoryView);
+        return saveReplay(nodeId, null, request, cover,null,false,false,null,this::categoryView);
     }
     public BroadcastDtos.CategoryView updateReplay(final long replayId, final BroadcastDtos.ReplaySave request,
                                                   final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId, replayId, request, cover,null,false,null,this::categoryView);
+        return saveReplay(nodeId, replayId, request, cover,null,false,false,null,this::categoryView);
     }
     private <T> T saveReplay(final long nodeId, final Long replayId, final BroadcastDtos.ReplaySave request,
-                             final MultipartFile file, final String legacyGroupLabel, final boolean timedWrite, final Instant startsAt,
+                             final MultipartFile file, final String legacyGroupLabel, final boolean legacyWrite, final boolean timedWrite, final Instant startsAt,
                              final BiFunction<BroadcastSeason,BroadcastCategory,T> response) {
         final long seasonId = transactions.execute(status -> {
             final BroadcastNode node = findNode(nodeId); final BroadcastCategory category = findCategory(node.categoryId);
@@ -233,8 +233,12 @@ public class BroadcastService {
             if (timedWrite) { replay.matchStartsAt = startsAt == null ? null : startsAt.truncatedTo(ChronoUnit.MICROS); }
             else if (!Objects.equals(replay.matchDate, request.matchDate())) { replay.matchStartsAt = null; }
             replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
+            // Current clients cannot see a nonnumeric legacy label; an unrelated edit must retain it.
+            // A legacy editor can clear the label explicitly; numeric changes also replace that archive.
+            if (legacyWrite || request.groupNumber() != null || replay.groupNumber != null) {
+                replay.legacyGroupLabel = legacyGroupLabel;
+            }
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
-            replay.legacyGroupLabel = legacyGroupLabel;
             replay.teams = request.teams().stream().map(String::strip).toList(); replay.perspective = request.perspective();
             if (uploaded != null) { replay.coverId = uploaded; }
             else if ("REMOVE".equals(request.coverAction())) { replay.coverId = null; }
