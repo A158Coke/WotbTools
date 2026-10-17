@@ -161,7 +161,6 @@ assert tx_runtime["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == [
     "deploy/tx/with-deploy-lock.sh",
 ]
 tx_runtime_job = tx_runtime["jobs"]["runtime_check"]
-assert tx_runtime_job["environment"] == "tx-production"
 assert tx_runtime_job["name"] == "TX_RUNTIME_READY"
 tx_runtime_steps = tx_runtime_job["steps"]
 tx_runtime_checkout = next(step for step in tx_runtime_steps if step.get("uses") == "actions/checkout@v5")
@@ -680,9 +679,7 @@ assert set(worker_events["push"]["paths"]) == {
 worker_jobs = worker_workflow["jobs"]
 assert set(worker_jobs) == {"reconcile_tx2"}, sorted(worker_jobs)
 worker_job = worker_jobs["reconcile_tx2"]
-# A host mutating workflow runs in the protected environment and serializes with every
-# other TX mutation through the shared maintenance queue.
-assert worker_job["environment"] == "tx-production", worker_job.get("environment")
+# A host mutating workflow serializes with every other TX mutation through the shared maintenance queue.
 assert worker_workflow["concurrency"]["group"] == "production-maintenance"
 assert worker_workflow["concurrency"]["cancel-in-progress"] == "false"
 # One owner, one host: the worker owns no other domain, and no workload owner's
@@ -731,7 +728,7 @@ assert 'bash "$stage/deploy/production-worker/reconcile.sh"' in worker_reconcile
 assert 'grep -qx "$WORKER_READY_TOKEN" "$log"' in worker_reconcile["with"]["script"]
 assert "TX2_PRODUCTION_WORKER_READY" not in json.dumps(worker_workflow, ensure_ascii=False), \
     "the readiness token must come from the reviewed host profile, never inlined"
-# The registry credential is read from the protected environment and handed over
+# The registry credential is read from repository-level Actions secrets and handed over
 # through the SSH action's environment: never inline, never an argument, never a file.
 worker_envs = worker_reconcile["with"]["envs"].split(",")
 for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_CREDENTIAL_VERSION", "TCR_USERNAME", "TCR_PASSWORD"):
@@ -778,7 +775,7 @@ for lock_path in ("deploy/production-worker/install.sh", "deploy/production-work
         assert forbidden not in lock_script, (lock_path, forbidden)
     assert lock_script.count(".deploy.lock") <= 2, lock_path
 # No tracked file may carry a Docker registry credential. The worker materialises it on
-# the host from the protected environment, so the repository stays credential-free; only
+# the host from repository-level Actions secrets, so the repository stays credential-free; only
 # the owner's own fixture may contain a deliberately fake credential document.
 for tracked in sorted(root.rglob("*")):
     if not tracked.is_file() or ".git" in tracked.parts:

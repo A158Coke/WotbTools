@@ -5,11 +5,13 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-17，本候选源码为 **3.5.4 / 3005004**（`android/gradle.properties`；在 3.2.0 回放运行时、
+截至 2026-10-18，本候选源码为 **3.9.1 / 3009001**（`android/gradle.properties`；在 3.2.0 回放运行时、
 3.3.0 联赛直播回放目录、3.4.0 联赛 CSV 导入、3.4.1 直播导航调整与 3.5.0 bilibili UP 推荐目录之上，
-修复回放生命状态对 −1/−2 档终态血量的判死（弹药架殉爆），并把随包 WASM pin 升至上游 **v0.4.9**；
-另已包含更早未 stage、未发布的 2.5.0 / 2.6.0 改动）；
-本候选还包含 3.5.2 文件选择修复、3.5.3 联赛服务器卡片调整与全等级车型资料。
+保留3.7.0的推荐目录内容灰度、3.6.0的逐配置装甲数据与参数折叠卡片、3.5.4的UP分类折叠筛选、3.5.3的联赛服务器卡片优化、3.5.2的Android回放文件选择修复、3.5.1的回放终态血量修复和上游 **v0.4.9** WASM pin，增加优秀作品推荐：UP与作品共用推荐目录和管理表单，通过类型卡片进入各自分类列表；
+本次进一步将联赛区服图标替换为放大的本地地球SVG，保留圆角正方形底色与现有卡片布局，统一CN/APAC/NA/EU的英文Server名称；另已包含更早未 stage、未发布的 2.5.0 / 2.6.0 改动）；
+本次 3.9.0 在上述功能上新增 3D 回放工具栏收起／展开，属于 APK 内嵌前端的中小新功能，按 **minor** 分类（3.8.1 → 3.9.0）；
+`android-v3.8.1` 已固定旧源码身份，不能复用该版本发布新增的 bundle。候选说明见 [3.9.0](releases/3.9.0.md)，Native Bridge 保持 v3，最低支持版本保持 3000000，不新增强制升级。
+本次 3.9.1 在上述候选上修复低级回放车名缺失并补全 1–10 级基础车型资料，按 **patch** 分类；说明见 [3.9.1](releases/3.9.1.md)。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
@@ -216,7 +218,7 @@ Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「�
 （runner → 上海 COS → TX1 → 网盘）：`.github/workflows/android-offload-probe.yml` 是它的第一步，
 **只取数字**，不动发布路径。
 
-何时跑：`workflow_dispatch`（`environment: tx-production`，与部署/备份共用
+何时跑：`workflow_dispatch`（凭据读取 repository-level Actions secrets / variables，与部署/备份共用
 `production-maintenance` 队列，并与 `android-release` 用 job 级 `concurrency` **互斥**——两边写同一门
 Seafile 网盘，重叠会让探针数字失真，也会挤占发布那条已经贴着 `--max-time 2700` 的上传）。它要求
 dispatched SHA == 当前 `main`（运行期间 main 一前进即失败），不写 version.json / tag / staging

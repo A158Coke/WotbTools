@@ -53,6 +53,15 @@ public final class TankNameCorrector {
     private static final TankNameAliases ALIASES = TankNameAliases.load();
 
     private static final Pattern GRID_COORDINATE = Pattern.compile("[A-K](?:[1-9]|10)", Pattern.CASE_INSENSITIVE);
+    // 普通英文词/人名与车型身份有歧义；自由文本缺少车辆上下文时宁可漏报，不改写正文。
+    // 这是匹配排除策略，不影响 Tankopedia 的完整 ID / roster 查询。
+    private static final Set<String> AMBIGUOUS_PROSE_NAMES = Set.of(
+            "is", "agent", "wind", "fury", "explorer", "ranger",
+            "tetrarch", "locust", "matilda", "covenanter", "alecto", "crusader",
+            "scavenger", "leopard", "wolverine", "nightmare", "spike", "medjay",
+            "high score", "excelsior", "angry connor", "turbo", "jackson", "spark",
+            "ox", "rover", "hellcat", "shadowhunter", "charles", "pirate", "dreadnought",
+            "thunder", "rudolph", "triumphant", "icebreaker", "enforcer", "frosty", "cyborg");
 
     /** 已知车名（tier1-10 权威名）+ 别名的 小写文本 -&gt; 权威名。 */
     private static final Map<String, String> CANONICAL_BY_LOWER = buildCanonicalIndex();
@@ -65,18 +74,21 @@ public final class TankNameCorrector {
     private static Map<String, String> buildCanonicalIndex() {
         final Map<String, String> index = new HashMap<>();
         for (final String name : TANKOPEDIA.names()) {
-            // D1 / D2 / B1 同时是地图格号；自由文本不足以证明它在指车辆。
-            if (!GRID_COORDINATE.matcher(name).matches()) {
+            if (!isAmbiguousProseName(name)) {
                 index.put(lower(name), name);
             }
         }
         for (final String alias : ALIASES.aliases()) {
             final String canonical = ALIASES.canonical(alias);
-            if (!GRID_COORDINATE.matcher(alias).matches() && !GRID_COORDINATE.matcher(canonical).matches()) {
+            if (!isAmbiguousProseName(alias) && !isAmbiguousProseName(canonical)) {
                 index.put(lower(alias), canonical);
             }
         }
         return index;
+    }
+
+    private static boolean isAmbiguousProseName(final String name) {
+        return GRID_COORDINATE.matcher(name).matches() || AMBIGUOUS_PROSE_NAMES.contains(lower(name));
     }
 
     private static Set<String> buildAliasKeys() {
