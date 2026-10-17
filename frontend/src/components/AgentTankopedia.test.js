@@ -13,6 +13,10 @@ const data = vi.hoisted(() => ({
 }))
 vi.mock('../scene/agentData.js', () => data)
 
+// 搜索别名数据集（common/tank_aliases.json）在这里替换成确定性夹具：断言的是
+// 「alias 能把车搜出来、展示的仍是正式车名」这条契约，而不是仓库当前录了哪些 alias。
+vi.mock('../../../common/tank_aliases.json', () => ({ default: { 999: ['大白兔', 'Death Star'] } }))
+
 const layout = vi.hoisted(() => ({ compact: false }))
 vi.mock('../composables/useBreakpoint.js', async () => {
   const { computed } = await import('vue')
@@ -131,6 +135,32 @@ describe('AgentTankopedia', () => {
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-tankopedia' })
     expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(48)
+  })
+
+  it('别名搜索命中目标车辆；卡片与详情标题都显示正式车名', async () => {
+    vi.useFakeTimers()
+    const { wrapper, router } = await mountAt()
+    // 车名里没有「大白兔」，只有 alias 有：命中说明 alias 进了召回链。
+    await wrapper.find('[data-testid="tank-search"]').setValue('大白兔')
+    const cards = wrapper.findAll('[data-testid="tank-card"]')
+    expect(cards.map(card => card.find('.tp-card-name').text())).toEqual(['IS-7'])
+    // ?q= 机制不变：alias 和正式车名一样写进 URL（刷新后别名搜索重新执行）。
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+    expect(router.currentRoute.value.query.q).toBe('大白兔')
+
+    await cards[0].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.tank).toBe('999')
+    expect(wrapper.find('h1').text()).toBe('IS-7')
+    expect(wrapper.text()).not.toContain('大白兔')
+    wrapper.unmount()
+
+    // 刷新/分享链接：?q= 恢复后别名搜索重新执行（没有新增 alias= 参数）。
+    const { wrapper: restored } = await mountAt({ q: '大白兔' })
+    expect(restored.findAll('[data-testid="tank-card"]').map(card => card.find('.tp-card-name').text()))
+      .toEqual(['IS-7'])
+    restored.unmount()
   })
 
   it('加载失败显示错误态，重试后恢复', async () => {

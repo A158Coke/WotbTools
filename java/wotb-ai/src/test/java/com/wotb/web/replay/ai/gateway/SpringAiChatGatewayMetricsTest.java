@@ -119,6 +119,97 @@ class SpringAiChatGatewayMetricsTest {
                 .allMatch(name -> name.startsWith("wotb_ai_upstream_")));
     }
 
+    @Test
+    void requestUsageAggregatesCallsAndFailedRetryWithoutCountingMissingAsKnown() {
+        AiRequestContext.set("review-usage", new AiCancellationToken());
+        try {
+            when(chatModel.call(any(Prompt.class))).thenThrow(
+                    RateLimitException.builder().headers(Headers.builder().build())
+                            .error(error("secret provider text")).build())
+                    .thenReturn(okResponse());
+            gateway.chat(request());
+            gateway.chat(request());
+            final AiRequestContext.UsageTotals usage = AiRequestContext.usageTotals();
+            assertEquals(3, usage.calls);
+            assertEquals(1, usage.missingUsageCalls);
+            assertEquals(2, usage.inputTokens);
+            assertEquals(2, usage.outputTokens);
+            assertEquals(4, usage.totalTokens);
+        } finally {
+            AiRequestContext.clear();
+        }
+    }
+
+    @Test
+    void receivedUsageSurvivesInvalidResponseAndLaterFailure() {
+        AiRequestContext.set("review-failure", new AiCancellationToken());
+        try {
+            final ChatResponse invalid = ChatResponse.builder()
+                    .generations(List.of(new Generation(new AssistantMessage(""))))
+                    .metadata(ChatResponseMetadata.builder().usage(new DefaultUsage(4, 2, 6)).build())
+                    .build();
+            when(chatModel.call(any(Prompt.class))).thenReturn(invalid);
+            assertThrows(AiUpstreamException.class, () -> gateway.chat(request()));
+            assertEquals(6, AiRequestContext.usageTotals().totalTokens);
+            assertEquals(1, AiRequestContext.usageTotals().calls);
+            assertEquals(0, AiRequestContext.usageTotals().missingUsageCalls);
+        } finally {
+            AiRequestContext.clear();
+        }
+    }
+
+    @Test
+    void streamUsageIsNotLostOnCancellationAfterProviderResponse() {
+        final AiCancellationToken cancellation = new AiCancellationToken();
+        AiRequestContext.set("stream-cancel", cancellation);
+        try {
+            when(chatModel.stream(any(Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(okResponse()));
+            assertThrows(AiUpstreamException.class,
+                    () -> gateway.stream(request(), delta -> cancellation.cancel()));
+            assertEquals(2, AiRequestContext.usageTotals().totalTokens);
+            assertEquals(1, AiRequestContext.usageTotals().calls);
+            assertEquals(0, AiRequestContext.usageTotals().missingUsageCalls);
+        } finally {
+            AiRequestContext.clear();
+        }
+    }
+
+    @Test
+    void streamWithoutProviderUsageRecordsMissingInsteadOfKnownZero() {
+        AiRequestContext.set("stream-no-usage", new AiCancellationToken());
+        try {
+            when(chatModel.stream(any(Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(
+                    ChatResponse.builder().generations(List.of(new Generation(new AssistantMessage("ok")))).build()));
+            gateway.stream(request(), delta -> { });
+            assertEquals(1, AiRequestContext.usageTotals().calls);
+            assertEquals(1, AiRequestContext.usageTotals().missingUsageCalls);
+        } finally {
+            AiRequestContext.clear();
+        }
+    }
+
+    @Test
+    void cumulativeStreamingUsageCountsOnlyTheIncrementAndOneCall() {
+        AiRequestContext.set("stream-cumulative", new AiCancellationToken());
+        try {
+            final ChatResponse first = ChatResponse.builder()
+                    .generations(List.of(new Generation(new AssistantMessage("a"))))
+                    .metadata(ChatResponseMetadata.builder().usage(new DefaultUsage(5, 1, 6)).build()).build();
+            final ChatResponse last = ChatResponse.builder()
+                    .generations(List.of(new Generation(new AssistantMessage("b"))))
+                    .metadata(ChatResponseMetadata.builder().usage(new DefaultUsage(5, 2, 7)).build()).build();
+            when(chatModel.stream(any(Prompt.class))).thenReturn(reactor.core.publisher.Flux.just(first, last));
+            gateway.stream(request(), delta -> { });
+            assertEquals(5, AiRequestContext.usageTotals().inputTokens);
+            assertEquals(2, AiRequestContext.usageTotals().outputTokens);
+            assertEquals(7, AiRequestContext.usageTotals().totalTokens);
+            assertEquals(1, AiRequestContext.usageTotals().calls);
+            assertEquals(0, AiRequestContext.usageTotals().missingUsageCalls);
+        } finally {
+            AiRequestContext.clear();
+        }
+    }
+
     private long counter(final String name, final String... tags) {
         return (long) registry.find(name).tags(tags).counter().count();
     }

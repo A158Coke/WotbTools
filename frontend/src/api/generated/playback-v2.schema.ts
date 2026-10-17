@@ -3,6 +3,1022 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "CreatorCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorNameRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "CreatorCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bilibiliUid",
+        "name",
+        "description",
+        "homepageUrl",
+        "avatarUrl",
+        "categories",
+        "level",
+        "score",
+        "createdAt",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "homepageUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]{0,19}$",
+          "maxLength": 47
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          },
+          "minItems": 1
+        },
+        "level": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "enum": [
+            2,
+            4,
+            6,
+            8,
+            10
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bilibiliUid",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "avatarAction",
+        "expectedVersion"
+      ],
+      "properties": {
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^\\s*(?=0*[1-9])[0-9]{1,20}\\s*$",
+          "description": "Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REPLACE",
+            "REMOVE"
+          ]
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bilibiliUid",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "avatarUrl",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bilibiliUid": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "CreatorMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categories",
+        "levels",
+        "avatarUploadsAvailable"
+      ],
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorCategory"
+          }
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorLevel"
+          }
+        },
+        "avatarUploadsAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BackendHealth": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "status",
+        "tanks"
+      ],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "tanks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "BroadcastServer": {
+      "type": "string",
+      "enum": [
+        "CN",
+        "ASIA",
+        "NA",
+        "EU",
+        "LESTA"
+      ]
+    },
+    "BroadcastCategoryType": {
+      "type": "string",
+      "enum": [
+        "POINTS",
+        "QUARTER_FINALS",
+        "SEMI_FINALS"
+      ]
+    },
+    "BroadcastFormat": {
+      "type": "string",
+      "enum": [
+        "ROUND_ROBIN",
+        "KNOCKOUT"
+      ]
+    },
+    "BroadcastPerspective": {
+      "type": "string",
+      "enum": [
+        "POV",
+        "OBSERVER"
+      ]
+    },
+    "BroadcastBracket": {
+      "type": "string",
+      "enum": [
+        "DEFAULT",
+        "WINNERS",
+        "LOSERS"
+      ]
+    },
+    "BroadcastSeason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "server",
+        "year",
+        "name",
+        "startDate",
+        "createdAt",
+        "version",
+        "rootCount",
+        "replayCount"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "server": {
+          "$ref": "#/$defs/BroadcastServer"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rootCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "replayCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "BroadcastCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "seasonId",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "seasonId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "type": {
+          "$ref": "#/$defs/BroadcastCategoryType"
+        }
+      }
+    },
+    "BroadcastReplay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodeId",
+        "title",
+        "url",
+        "matchDate",
+        "dayNumber",
+        "groupLabel",
+        "groupNumber",
+        "bracket",
+        "teams",
+        "perspective",
+        "coverId"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "nodeId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+        },
+        "matchDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "groupLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "groupNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4
+        },
+        "bracket": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastBracket"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "perspective": {
+          "$ref": "#/$defs/BroadcastPerspective"
+        },
+        "coverId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    },
+    "BroadcastNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "categoryId",
+        "roundNumber",
+        "format",
+        "replays"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "categoryId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "roundNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replays": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastReplay"
+          }
+        }
+      }
+    },
+    "BroadcastIndex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "servers",
+        "seasons",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "servers": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/BroadcastServer"
+          }
+        },
+        "seasons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastSeason"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastSeasonView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "season",
+        "categories",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "season": {
+          "$ref": "#/$defs/BroadcastSeason"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastCategory"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastCategoryView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "season",
+        "category",
+        "nodes",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "season": {
+          "$ref": "#/$defs/BroadcastSeason"
+        },
+        "category": {
+          "$ref": "#/$defs/BroadcastCategory"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastNode"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "BroadcastDeletionPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seasonId",
+        "expectedVersion",
+        "rootCount",
+        "replayCount"
+      ],
+      "properties": {
+        "seasonId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "rootCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "replayCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "BroadcastSeasonCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "server",
+        "year",
+        "name",
+        "startDate"
+      ],
+      "properties": {
+        "server": {
+          "$ref": "#/$defs/BroadcastServer"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "BroadcastSeasonUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "year",
+        "name",
+        "startDate"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9999
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "startDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "BroadcastCategoryCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "type"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "type": {
+          "$ref": "#/$defs/BroadcastCategoryType"
+        }
+      }
+    },
+    "BroadcastNodeCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "roundNumber",
+        "format"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "roundNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 5
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "BroadcastReplaySave": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedVersion",
+        "title",
+        "url",
+        "matchDate",
+        "dayNumber",
+        "groupLabel",
+        "groupNumber",
+        "bracket",
+        "teams",
+        "perspective",
+        "coverAction"
+      ],
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
+        },
+        "matchDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "dayNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "groupLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "groupNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4
+        },
+        "bracket": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BroadcastBracket"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "perspective": {
+          "$ref": "#/$defs/BroadcastPerspective"
+        },
+        "coverAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REMOVE",
+            "REPLACE"
+          ]
+        }
+      }
+    },
+    "ObservabilityEventsRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "events"
+      ],
+      "properties": {
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/ObservabilityEvent"
+          }
+        }
+      }
+    },
+    "ObservabilityEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event",
+        "platform",
+        "feature",
+        "occurred_at"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event": {
+          "type": "string",
+          "enum": [
+            "active_user",
+            "feature_open",
+            "replay_parse"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "web",
+            "android"
+          ]
+        },
+        "feature": {
+          "type": "string",
+          "enum": [
+            "home",
+            "replay_parse",
+            "replay_2d",
+            "replay_3d",
+            "replay_shots",
+            "ai_review",
+            "tankopedia",
+            "armor",
+            "hall_of_fame",
+            "tournament",
+            "android_download",
+            "sponsor",
+            "profile"
+          ]
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Required for replay_parse; one ID per file attempt shared by start and terminal."
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "start",
+            "success",
+            "failure",
+            "cancelled"
+          ],
+          "description": "Required only for replay_parse."
+        },
+        "error_code": {
+          "type": "string",
+          "enum": [
+            "PARSE_FAILED",
+            "UNSUPPORTED_REPLAY",
+            "INVALID_REPLAY",
+            "RESOURCE_UNAVAILABLE",
+            "UNKNOWN"
+          ],
+          "description": "Allowed only for failed replay_parse. Never raw exception text."
+        },
+        "error_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Allowed only for failed replay_parse."
+        }
+      }
+    },
     "TournamentEvent": {
       "type": "object",
       "additionalProperties": false,
@@ -228,6 +1244,201 @@ export default {
         }
       }
     },
+    "TournamentDefaultRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roundNumber",
+        "days"
+      ],
+      "properties": {
+        "roundNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "days": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/TournamentRuleDay"
+          }
+        }
+      }
+    },
+    "TournamentDefaultRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "active",
+        "sourceEventId",
+        "sourceLabel",
+        "updatedAt",
+        "rounds"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "sourceEventId": {
+          "description": "Null for a directly configured or seeded default, a deleted source event, or an inactive default.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "minimum": 1
+        },
+        "sourceLabel": {
+          "description": "Stable source identity snapshot; empty when no default is active. Not a localized UI message.",
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rounds": {
+          "description": "Full published rule snapshot; empty when inactive. Round and day numbers are unique within their parent.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentDefaultRound"
+          }
+        }
+      }
+    },
+    "TournamentSetDefaultRulesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "expectedEventVersion",
+        "expectedDefaultVersion",
+        "confirm"
+      ],
+      "properties": {
+        "eventId": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        },
+        "expectedEventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true when replacing an active default.",
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentDefaultConfigurationRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedDefaultVersion",
+        "confirm",
+        "rounds"
+      ],
+      "properties": {
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true when replacing an active default.",
+          "type": "boolean"
+        },
+        "rounds": {
+          "description": "Complete rounds numbered consecutively from 1, with a consistent number of days and ranks 1-4 present on each day. Duplicate round, day, or rank numbers are rejected.",
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/TournamentDefaultRound"
+          }
+        }
+      }
+    },
+    "TournamentClearDefaultRulesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expectedDefaultVersion",
+        "confirm"
+      ],
+      "properties": {
+        "expectedDefaultVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "confirm": {
+          "description": "Must be true to clear the default.",
+          "type": "boolean"
+        }
+      }
+    },
+    "TournamentRuleSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventVersion",
+        "source",
+        "defaultVersion",
+        "isDefaultSource",
+        "defaultOutdated"
+      ],
+      "properties": {
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "INHERIT",
+            "CUSTOM",
+            "FROZEN"
+          ]
+        },
+        "defaultVersion": {
+          "description": "Current singleton version for INHERIT (including an inactive default), captured version for events frozen from a default, otherwise null.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64",
+          "minimum": 0
+        },
+        "isDefaultSource": {
+          "description": "True only when this event is the source of the currently active default.",
+          "type": "boolean"
+        },
+        "defaultOutdated": {
+          "description": "True when the active default source event has saved rules differing from the published snapshot.",
+          "type": "boolean"
+        }
+      }
+    },
     "TournamentRoundRule": {
       "type": "object",
       "additionalProperties": false,
@@ -305,6 +1516,15 @@ export default {
         },
         "expectedRulesVersion": {
           "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "description": "Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before copying the complete effective rule set into this event. Null or omission uses the server-authoritative current default.",
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "int64",
           "minimum": 0
         },
@@ -451,6 +1671,15 @@ export default {
         },
         "expectedDayVersion": {
           "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "expectedDefaultVersion": {
+          "description": "Optional for legacy clients. When supplied for inherited rules, must match the current singleton version before freezing the effective rule set. Null or omission uses the server-authoritative current default.",
+          "type": [
+            "integer",
+            "null"
+          ],
           "format": "int64",
           "minimum": 0
         },
@@ -1016,6 +2245,143 @@ export default {
         }
       }
     },
+    "TournamentCsvChanges": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "addedClans",
+        "changedClans",
+        "removedClans",
+        "addedScores",
+        "changedScores",
+        "removedScores",
+        "preservedClears"
+      ],
+      "properties": {
+        "addedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedClans": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "addedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removedScores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preservedClears": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Administrative clear overrides retained in the effective replacement."
+        }
+      }
+    },
+    "TournamentCsvImportPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "standings",
+        "sourceName",
+        "sourceSha256",
+        "sourceRowCount",
+        "clanCount",
+        "missingCellCount",
+        "eventVersion",
+        "changes"
+      ],
+      "properties": {
+        "standings": {
+          "$ref": "#/$defs/TournamentStandings"
+        },
+        "sourceName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sourceRowCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "clanCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "missingCellCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 150000
+        },
+        "eventVersion": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "changes": {
+          "$ref": "#/$defs/TournamentCsvChanges"
+        }
+      }
+    },
+    "TournamentAttribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        }
+      }
+    },
+    "TournamentDataSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "csvImported",
+        "attribution"
+      ],
+      "properties": {
+        "csvImported": {
+          "type": "boolean",
+          "description": "Remains true after the first successful CSV import for the lifetime of this event."
+        },
+        "attribution": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TournamentAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
     "TournamentRecognitionPermit": {
       "type": "object",
       "additionalProperties": false,
@@ -1106,6 +2472,7 @@ export default {
     },
     "TournamentAudit": {
       "type": "object",
+      "description": "Audit-list metadata. Full before/after snapshots remain in storage for internal audit and evidence readers.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -1154,10 +2521,12 @@ export default {
         },
         "before": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         },
         "after": {
           "type": "object",
+          "description": "Empty in audit-list responses; the full snapshot is retained internally.",
           "additionalProperties": true
         }
       }
@@ -4124,6 +5493,14 @@ export default {
     "ApiErrorCode": {
       "type": "string",
       "enum": [
+        "CREATOR_NOT_FOUND",
+        "CREATOR_INVALID_REQUEST",
+        "CREATOR_UID_ALREADY_EXISTS",
+        "CREATOR_CATEGORY_IN_USE",
+        "CREATOR_LEVEL_IN_USE",
+        "CREATOR_CONFIG_CONFLICT",
+        "CREATOR_STORAGE_UNAVAILABLE",
+        "CREATOR_AVATAR_NOT_FOUND",
         "TOURNAMENT_VERSION_CONFLICT",
         "TOURNAMENT_LOCKED",
         "TOURNAMENT_RULES_INCOMPLETE",
@@ -4136,6 +5513,13 @@ export default {
         "TOURNAMENT_EVIDENCE_INVALID",
         "TOURNAMENT_STORAGE_FULL",
         "TOURNAMENT_STORAGE_ERROR",
+        "TOURNAMENT_CSV_INVALID",
+        "TOURNAMENT_CSV_WORKSPACE_BUSY",
+        "BROADCAST_VERSION_CONFLICT",
+        "BROADCAST_NODE_CONFLICT",
+        "BROADCAST_COVER_INVALID",
+        "BROADCAST_STORAGE_UNAVAILABLE",
+        "BROADCAST_STORAGE_ERROR",
         "INVALID_RECOGNITION_REQUEST",
         "INVALID_RECOGNITION_PERMIT",
         "TOURNAMENT_RECOGNITION_NOT_CONFIGURED",
@@ -4150,6 +5534,7 @@ export default {
         "INVALID_ARGUMENT",
         "MISSING_PARAM",
         "INVALID_REQUEST",
+        "FILE_TOO_LARGE",
         "DATASET_REFERENCE_REQUIRED",
         "UNSUPPORTED_MEDIA_TYPE",
         "METHOD_NOT_ALLOWED",

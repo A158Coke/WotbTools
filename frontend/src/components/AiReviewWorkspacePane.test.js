@@ -80,6 +80,39 @@ beforeEach(() => {
 })
 
 describe('AiReviewWorkspacePane authenticated use', () => {
+  it('switching File discards late A projection and only exposes the selected B to AI', async () => {
+    let finishA
+    const a = new File(['a'], 'a.wotbreplay')
+    const b = new File(['b'], 'b.wotbreplay')
+    buildLocalAiReviewInput.mockImplementationOnce(() => new Promise(resolve => { finishA = resolve }))
+    const wrapper = mountPane({ file: a })
+    await flushPromises()
+    const projectionB = { battle: { id: 'B' }, projection: { id: 'B' } }
+    buildLocalAiReviewInput.mockResolvedValueOnce(projectionB)
+    await wrapper.setProps({ file: b })
+    await flushPromises()
+    finishA({ battle: { id: 'stale A' }, projection: { id: 'stale A' } })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('projection')).toEqual(projectionB)
+    expect(buildLocalAiReviewInput.mock.calls.map(([file]) => file)).toEqual([a, b])
+    wrapper.unmount()
+  })
+
+  it('clears completed A projection immediately while B is preparing', async () => {
+    const projectionA = { battle: { id: 'A' }, projection: { id: 'A' } }
+    buildLocalAiReviewInput.mockResolvedValueOnce(projectionA)
+    const wrapper = mountPane()
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('projection')).toEqual(projectionA)
+    let finishB
+    buildLocalAiReviewInput.mockImplementationOnce(() => new Promise(resolve => { finishB = resolve }))
+    await wrapper.setProps({ file: new File(['b'], 'b.wotbreplay') })
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('projection')).toBeNull()
+    finishB({ battle: { id: 'B' }, projection: { id: 'B' } })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'AiReviewPanel' }).props('projection').battle.id).toBe('B')
+    wrapper.unmount()
+  })
   it.each(['', 'select one replay'])('anonymous sees login gate before projection work (blocked=%s)', async (blockedReason) => {
     auth.authenticated.value = false
     const wrapper = mountPane({ blockedReason })

@@ -16,6 +16,7 @@ business_api:
   - 'deploy/dependency-readiness.sh'
   - 'deploy/dependency-readiness.py'
   - 'deploy/check-latest-main.sh'
+  - 'deploy/tofu-local-state-backup.sh'
   - 'deploy/list-image-tags.sh'
   - 'deploy/tx/business-api.compose.yml'
   - 'deploy/tx/build-business-api-from-gitee.sh'
@@ -48,6 +49,8 @@ frontend:
   - 'frontend/**'
   - 'common/map_names.json'
   - 'common/tankopedia-tier*.json'
+  # Tankopedia 搜索别名（构建期 import 进前端包）：改它必须重跑 frontend 测试
+  - 'common/tank_aliases.json'
   - 'common/assets/**'
   - 'deploy/agent/source.json'
   - 'scripts/fetch-agent-wasm.sh'
@@ -101,10 +104,15 @@ android:
   - 'frontend/src/platform/nativeBridgeContract.js'
   - 'scripts/android-release/**'
 observability:
+  - 'deploy/list-image-tags.sh'
   - '.github/workflows/observability.yml'
+  # The runtime smoke that proves the Docker -> Alloy -> Loki compliance split:
+  # editing it must re-run it, not only the deployment contract job.
+  - 'deploy/test-observability-e2e.sh'
   - 'deploy/deploy.sh'
   - 'deploy/docker-compose.prod.yml'
   - 'deploy/grafana-api-request.sh'
+  - 'deploy/tofu-local-state-backup.sh'
   - 'deploy/validate-alloy-config.sh'
   - 'deploy/verify-observability.sh'
   - 'deploy/observability/**'
@@ -113,6 +121,7 @@ observability:
 deployment:
   - '.github/workflows/ai-service.yml'
   - '.github/workflows/tx-runtime-check.yml'
+  - '.github/workflows/android-offload-probe.yml'
   - '.github/workflows/frontend-replica.yml'
   - 'docker/Dockerfile.ai-service'
   - '.github/workflows/ci-deployment.yml'
@@ -139,6 +148,15 @@ deployment:
 python:
   - '.github/workflows/ci-python.yml'
   - 'common/python/**'
+  # 人工维护的别名数据集 + 其 tank_id 校验源（完整车辆名册）：
+  # 由 validate_tank_aliases 的 unittest fail closed 守卫，名册与 tier 文件的一致性由
+  # test_update_tankopedia 的 RosterTest 守卫
+  - 'common/tank_aliases.json'
+  - 'common/tank_ids.json'
+  - 'common/tankopedia-tier7.json'
+  - 'common/tankopedia-tier8.json'
+  - 'common/tankopedia-tier9.json'
+  - 'common/tankopedia-tier10.json'
 business_postgres:
   - '.github/workflows/business-postgres.yml'
   - 'deploy/tx/deploy.sh'
@@ -156,6 +174,9 @@ keycloak_postgres:
   - '.github/workflows/ci-keycloak-postgres.yml'
 caddy:
   - '.github/workflows/caddy.yml'
+  # The gateway's own fixture suite: a Caddyfile change must re-run the runtime
+  # proof of the compliance access log, not only the staged text/JSON assertions.
+  - 'deploy/test-caddy-route-inventory.sh'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/docker-compose.yml'
   - 'deploy/tx/common.compose.yml'
@@ -166,6 +187,9 @@ caddy:
   - '.github/workflows/ci-caddy.yml'
 alloy_tx:
   - '.github/workflows/alloy-tx.yml'
+  # The compliance selector's retained event list must stay identical to the
+  # declared Keycloak event list, so that declaration is a production input here.
+  - 'infra/tofu/keycloak/events.tf'
   - 'deploy/tx/alloy/**'
   - 'deploy/tx/docker-compose.yml'
   - 'deploy/tx/common.compose.yml'

@@ -84,7 +84,7 @@ function stubNative(results = {}) {
 
 function androidBridge(overrides = {}) {
   return stubNative({
-    getBridgeVersion: 2,
+    getBridgeVersion: 3,
     getCapabilities: ['native-auth'],
     authGetState: { authenticated: false, expiresAt: null },
     ...overrides,
@@ -144,7 +144,7 @@ describe('useAuth', () => {
     expect(auth.token()).toBe('kc-access-token')
   })
 
-  it('Android bridge v2 + native-auth 能力 → AndroidAuthProvider，绝不构造 keycloak-js', async () => {
+  it('Android bridge v3 + native-auth 能力 → AndroidAuthProvider，绝不构造 keycloak-js', async () => {
     const keycloakBefore = kcInstances.length
     const native = androidBridge({
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
@@ -174,9 +174,9 @@ describe('useAuth', () => {
     expect(kcInit).not.toHaveBeenCalled()
   })
 
-  it('Android bridge v2 但缺 native-auth 能力 → unsupported（绝不回退 keycloak-js）', async () => {
+  it('Android bridge v3 但缺 native-auth 能力 → unsupported（绝不回退 keycloak-js）', async () => {
     const keycloakBefore = kcInstances.length
-    const native = stubNative({ getBridgeVersion: 2, getCapabilities: ['replay-open', 'app-update'] })
+    const native = stubNative({ getBridgeVersion: 3, getCapabilities: ['replay-open', 'app-update'] })
     const auth = useAuth()
 
     await expect(auth.retryAuth()).resolves.toBe(false)
@@ -720,8 +720,10 @@ describe('useAuth', () => {
     // 全站管理员同时具备 HoF 审核权限。
     expect(auth.isHofAdmin.value).toBe(true)
     expect(auth.isTournamentAdmin.value).toBe(true)
+    expect(auth.isLeagueBroadcastAdmin.value).toBe(true)
     auth.authenticated.value = false
     expect(auth.isTournamentAdmin.value).toBe(false)
+    expect(auth.isLeagueBroadcastAdmin.value).toBe(false)
     auth.authenticated.value = true
 
     auth.tokenParsed.value = { realm_access: { roles: ['HoF-admin'] } }
@@ -731,6 +733,7 @@ describe('useAuth', () => {
 
     auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
     expect(auth.isTournamentAdmin.value).toBe(true)
+    expect(auth.isLeagueBroadcastAdmin.value).toBe(false)
     expect(auth.isAdmin.value).toBe(false)
     expect(auth.isHofAdmin.value).toBe(false)
 
@@ -769,6 +772,7 @@ describe('useAuth', () => {
       expect(auth.hasRole('wotbtools-admin')).toBe(true)
       expect(auth.hasRole('HoF-admin')).toBe(true)
       expect(auth.isAdmin.value).toBe(true)
+      expect(auth.isLeagueBroadcastAdmin.value).toBe(false)
       // 但登录态不得被 URL 参数伪造——3D / shots / AI 的登录门必须照旧拦下
       expect(auth.authenticated.value).toBe(false)
       expect(auth.isAuthenticated()).toBe(false)

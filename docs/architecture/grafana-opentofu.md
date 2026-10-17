@@ -1,85 +1,21 @@
-# Grafana OpenTofu baseline
+# Grafana OpenTofu ownership
 
-The Grafana root is `infra/tofu/grafana`. It manages the existing Grafana
-dashboard API objects in organization 1 with `grafana/grafana` provider
-`4.45.2`, tested against the production Grafana `11.6.16` API.
+`infra/tofu/grafana` owns dashboard API resources in organization 1. Canonical JSON is under `deploy/observability/grafana/dashboards`; Compose owns runtime/volumes and file provisioning alone owns Prometheus/Loki datasources. Do not restore dashboard file provisioning or manually edit generated API state.
 
-Docker Compose remains responsible for the Grafana container, image, database
-volume, network, reverse proxy, and runtime environment. Persistent state is
-stored on the Yecao owner host outside per-SHA staging:
+## Current inventory
 
-```text
-/opt/wotb/grafana-tofu-state/terraform.tfstate
-```
+Six resources: `wotbtools_engineering_overview`, `wotbtools_active_users`, `wotbtools_feature_usage`, `wotbtools_android_downloads`, `wotbtools_ai_token_usage`, `wotbtools_backend_error_logs`. Their UIDs are the respective filename stems (hyphenated). Active users is the default home. The engineering dashboard is an additive resource; the five product resources and the default home remain unchanged. The six older dashboards remain retired.
 
-## Ownership
+## Lifecycle policy
 
-The six approved dashboards are provider-managed. Their canonical JSON stays
-in `deploy/observability/grafana/dashboards` and is read by
-`grafana_dashboard.managed`; the dashboard file-provisioning YAML controller
-is removed so there is only one dashboard owner. Compose still mounts these
-canonical files read-only for Grafana's default-home dashboard path; that mount
-does not provision or reconcile dashboard API objects.
+All dashboard creates, updates, deletes and replacements are allowed. There is no dashboard delete allowlist and no per-dashboard approval requirement. `validate-plan.sh` reports dashboard action counts and continues to prohibit datasource deletion/replacement involving delete. This permission does not extend to other infrastructure owners.
 
-The provisioning mount keeps an empty `dashboards/` directory only so Grafana
-does not report a missing provisioning path at startup; it contains no
-dashboard controller or dashboard payload. Changes under the canonical
-dashboard JSON path therefore reconcile through OpenTofu and do not require an
-application image Build or production runtime deployment.
+The persistent Yecao state is `/opt/wotb/grafana-tofu-state/terraform.tfstate`, outside SHA staging. Missing/unsafe state or bootstrap marker fails closed. Existing volumes and state are reused. New dashboards are created by apply, not imported as nonexistent resources.
 
-Prometheus and Loki remain file-provisioned. Grafana reports those datasources
-as read-only and the provider rejects importing them as resources. The
-datasource provisioning YAML remains the sole datasource controller.
+## Validation and apply
 
-No alert rules, folders, contact points, notification policies, teams, library
-panels, annotations, Keycloak objects, Loki objects, or Alloy objects are
-managed by this root.
+PR jobs have no production credentials/state and run fmt, init without backend, validate, local policy fixtures, Grafana runtime smoke and data-chain tests. The production observability owner keeps the host lock, plans locally, applies the exact saved plan, requires a clean second plan, checks new UIDs/default home and requires 404 for retired UIDs. Backup live state root-only before the migration; never commit it or log credentials.
 
-## Owner import addresses
+Grafana access uses the runtime-only existing `GRAFANA_PAT` provider input. The root does not own alerting, contact points, teams, Keycloak, Alloy or Loki. Datasources remain read-only file provisioned. Public UI is https://monitor.wotbtools.com; the production provider uses the WireGuard bind rather than public DNS.
 
-The six dashboards are existing production objects and must be imported into a
-new Yecao local state before the owner workflow can run. Their Grafana UIDs are
-the import IDs:
-
-```powershell
-tofu import 'grafana_dashboard.managed["wotbtools_ai_review"]' wotbtools-ai-review
-tofu import 'grafana_dashboard.managed["wotbtools_backend_overview"]' wotbtools-backend-overview
-tofu import 'grafana_dashboard.managed["wotbtools_error_explorer"]' wotbtools-error-explorer
-tofu import 'grafana_dashboard.managed["wotbtools_keycloak"]' wotbtools-keycloak
-tofu import 'grafana_dashboard.managed["wotbtools_production_overview"]' wotbtools-production-overview
-tofu import 'grafana_dashboard.managed["wotbtools_usage"]' wotbtools-usage
-```
-
-CI never runs import or an authenticated production plan. Pull requests perform
-local validation only and receive no `GRAFANA_PAT`. Main changes to the
-observability owner inputs run the `grafana` root through
-`.github/workflows/observability.yml`, which plans, applies the exact saved plan,
-and verifies all six keeper UIDs plus 404 for the three retired UIDs.
-
-The current `GRAFANA_PAT` is the existing `wotbtool` service-account token with
-the Grafana organization `Admin` role. The owner explicitly approved this
-temporary credential exception for automatic apply; it is not a dedicated
-least-privilege token. The practical minimum for the adopted dashboard set is
-an organization `Editor` service-account role: Grafana documents that Editor
-can view and add/edit/delete dashboards and folders, while Viewer cannot write
-dashboards. Replacing the current Admin token with a dedicated Editor service
-account/token remains a follow-up hardening action. No token, prefix, length,
-hash, Authorization header, dashboard JSON, or state artifact is printed or
-committed.
-
-## Runtime validation
-
-The runtime smoke keeps datasource file provisioning, then adopts the canonical
-dashboard JSON through the Grafana API before checking datasource health, all
-dashboard UIDs, dashboard links, the Production Overview five-target health
-contract, and authentication failure behavior. This validates the API boundary
-used by the provider without restoring the removed dashboard file controller.
-
-The PR local validation and main apply workflow use the same fail-closed
-plan gate:
-datasource deletes always fail; dashboard deletes are accepted only for the
-three exact retired addresses (`wotbtools_http_errors`,
-`wotbtools_replay_parser`, `wotbtools_android_downloads`) and only when the
-action set is exactly `["delete"]`; replacements and every other delete fail.
-The plan step reports expected deletes, unexpected deletes, replacements, and
-datasource deletes. Future dashboard deletes remain fail-closed.
+A failed partial apply is diagnosed using real state and re-planned; no automatic state rollback. To recover a deleted dashboard, restore its declaration/JSON from Git and apply the resulting plan. See [operations](../operations/observability.md) for event semantics, retention and deployment acceptance.

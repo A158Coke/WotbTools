@@ -8,13 +8,14 @@ NETWORK="wotb-grafana-runtime-${SUFFIX}"
 PROMETHEUS="wotb-grafana-prometheus-${SUFFIX}"
 LOKI="wotb-grafana-loki-${SUFFIX}"
 GRAFANA="wotb-grafana-${SUFFIX}"
+DEV_METRICS="wotb-dev-metrics-${SUFFIX}"
 ADMIN_USER=ci-admin
 ADMIN_PASSWORD=ci-password
 TRACE_DIR="$(mktemp -d)"
 TRACE_FILE=/tmp/grafana-api-trace/request-url
 
 cleanup() {
-  docker rm -f "$GRAFANA" "$LOKI" "$PROMETHEUS" >/dev/null 2>&1 || true
+  docker rm -f "$DEV_METRICS" "$GRAFANA" "$LOKI" "$PROMETHEUS" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   rm -rf "$TRACE_DIR"
 }
@@ -97,6 +98,19 @@ alpine_grafana_api() {
 }
 
 docker network create "$NETWORK" >/dev/null
+# Missing runtime secret deliberately simulates initial upstream failure. The
+# exporter must stay healthy and expose unavailable data, without network I/O.
+docker run -d --name "$DEV_METRICS" --network "$NETWORK" \
+  --network-alias dev-metrics-exporter --read-only --user 10001:10001 \
+  --cap-drop ALL --security-opt no-new-privileges --memory 128m --cpus 0.25 \
+  wotb-dev-metrics:ci >/dev/null
+wait_http 'http://dev-metrics-exporter:9108/health' \
+  docker run --rm --network "$NETWORK" alpine:3.22 wget -qO- -T 5
+dev_body="$(docker run --rm --network "$NETWORK" alpine:3.22 \
+  wget -qO- -T 5 http://dev-metrics-exporter:9108/metrics)"
+grep -Eq '^wotb_dev_collector_data_ready 0(\.0)?$' <<< "$dev_body" \
+  || fail 'exporter initial unavailable state is not explicit'
+echo 'PASS: read-only non-root exporter stays healthy without a GitHub snapshot'
 docker run -d --name "$PROMETHEUS" --network "$NETWORK" --network-alias prometheus \
   -v "$ROOT/deploy/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
   prom/prometheus:v2.55.1 --config.file=/etc/prometheus/prometheus.yml >/dev/null
@@ -109,12 +123,17 @@ docker run -d --name "$GRAFANA" --network "$NETWORK" --network-alias grafana \
   -e GF_SECURITY_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
   -e GF_AUTH_ANONYMOUS_ENABLED=false \
   -e GF_USERS_ALLOW_SIGN_UP=false \
-  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/wotbtools-production-overview.json \
+  -e GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/wotbtools-active-users.json \
   -v "$ROOT/deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro" \
   -v "$ROOT/deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro" \
   grafana/grafana:11.6.16 >/dev/null
 
-PORT="$(docker port "$GRAFANA" 3000/tcp | sed -E 's/.*://')"
+PORT=''
+for attempt in $(seq 1 30); do
+  PORT="$(docker port "$GRAFANA" 3000/tcp | sed -E 's/.*://')"
+  [ -z "$PORT" ] || break
+  sleep 1
+done
 [ -n "$PORT" ] || fail "Grafana port was not published"
 wait_http "http://127.0.0.1:${PORT}/api/health" curl -fsS
 wait_grafana_datasource_ok "http://127.0.0.1:${PORT}/api/datasources/uid/prometheus/health"
@@ -140,7 +159,7 @@ for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
   seed_dashboard_via_api "$dashboard_file"
 done
 
-dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-production-overview")" \
+dashboard_body="$(alpine_grafana_api "$ADMIN_USER" "$ADMIN_PASSWORD" "/api/dashboards/uid/wotbtools-active-users")" \
   || fail "Alpine/BusyBox Grafana auth failed for dashboard API"
 grep -Fq '"dashboard"' <<<"$dashboard_body" \
   || fail "Alpine/BusyBox dashboard API response was not valid"
@@ -152,7 +171,7 @@ production_uid=""
 for dashboard_file in "$ROOT"/deploy/observability/grafana/dashboards/*.json; do
   uid="$(dashboard_uid "$dashboard_file")" \
     || fail "dashboard has no valid uid: $dashboard_file"
-  [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
+  [ "$(basename "$dashboard_file")" = "wotbtools-active-users.json" ] && production_uid="$uid"
   response="$(curl -fsS -u "$ADMIN_USER:$ADMIN_PASSWORD" \
     "http://127.0.0.1:${PORT}/api/dashboards/uid/${uid}")" || fail "dashboard API fetch failed: $uid"
   grep -Fq '"dashboard"' <<<"$response" || fail "dashboard was not provisioned: $uid"

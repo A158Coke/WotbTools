@@ -252,6 +252,23 @@ describe('MapOverview', () => {
     expect(dark.find('.map-overview').attributes('style')).toContain('--map-region-stroke: rgba(255,255,255,.55)')
   })
 
+  it('discards a late palette result when src changes again（embedded→remote 同一 race 形状）', async () => {
+    // 第一次取亮度故意悬空；第二次（换图 / OTA 生效）先完成——迟到的第一次不得覆盖调色板。
+    let resolveFirst
+    luminanceOfImage
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => Promise.resolve(0.8))
+    const wrapper = mountOverview(makeOverview())
+    await flushPromises()
+    await wrapper.setProps({ overview: makeOverview({ mapCode: 'holland' }) })
+    await flushPromises()
+    expect(wrapper.find('.map-overview').attributes('style')).toContain('--map-region-stroke: rgba(0,0,0,.55)')
+
+    resolveFirst(0.05)
+    await flushPromises()
+    expect(wrapper.find('.map-overview').attributes('style')).toContain('--map-region-stroke: rgba(0,0,0,.55)')
+  })
+
   it('calibrates Molendijk against worldBounds: Spawn_1_02 maps to ~(152.4, 693.7)', () => {
     const wrapper = mountOverview(makeHollandOverview())
     // 用 playableBounds 映射会得到 (110.6, 741.7)——若回归到旧行为本断言即失败。

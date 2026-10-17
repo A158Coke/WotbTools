@@ -153,6 +153,23 @@ wait_for_http "BACKEND_METRICS" "backend Hikari metrics" \
   "$BACKEND_METRICS_URL" "hikaricp_connections_active"
 wait_for_http "AI_SERVICE_METRICS" "AI service metrics endpoint" \
   "$AI_SERVICE_METRICS_URL" "wotb_ai_review_in_flight" "wotb_ai_review_queue_depth"
+wait_for_http "DEV_METRICS" "engineering exporter process health" \
+  "http://dev-metrics-exporter:9108/health"
+wait_for_http "DEV_METRICS" "engineering exporter self metrics" \
+  "http://dev-metrics-exporter:9108/metrics" \
+  "wotb_dev_collector_data_ready" "wotb_dev_collector_last_success_timestamp"
+# Process health and scrapeability do not prove a usable GitHub snapshot.
+# Report missing/stale data separately, without restarting a healthy process.
+dev_metrics="$(net_exec 'http://dev-metrics-exporter:9108/metrics')" \
+  || fail "DEV_METRICS" "engineering exporter metrics unavailable"
+dev_ready="$(awk '$1 == "wotb_dev_collector_data_ready" {print $2}' <<< "$dev_metrics")"
+dev_success="$(awk '$1 == "wotb_dev_collector_last_success_timestamp" {print $2}' <<< "$dev_metrics")"
+if ! awk -v ready="$dev_ready" -v last="$dev_success" -v now="$(date +%s)" \
+  'BEGIN {exit !(ready == 1 && last > 0 && last <= now && now-last < 3600)}'; then
+  echo "OBSERVABILITY DEGRADED [DEV_METRICS_DATA]: GitHub snapshot is initially unavailable or more than one hour stale; runtime checks continue." >&2
+else
+  echo "PASS: engineering exporter GitHub snapshot freshness"
+fi
 wait_for_http "KEYCLOAK_APPLICATION" "Keycloak application metadata" \
   "$KEYCLOAK_METADATA_URL" '"issuer"'
 wait_for_http "PROMETHEUS_TARGET" "node exporter metrics endpoint" "http://node-exporter:9100/metrics" "node_"
@@ -168,7 +185,7 @@ targets="$(wait_for_http "PROMETHEUS_TARGET" "prometheus target API" "http://pro
   '"status":"success"' '"job":"wotb-backend"' '"job":"ai-service"' '"job":"node-exporter"' \
   '"job":"prometheus"' '"job":"loki"' '"job":"grafana"' >/dev/null \
   && net_exec "http://prometheus:9090/api/v1/targets")" || fail "PROMETHEUS_TARGET" "Prometheus target API unavailable"
-for job in wotb-backend ai-service node-exporter prometheus loki grafana; do
+for job in wotb-backend ai-service node-exporter prometheus loki grafana dev-metrics; do
   grep -Fq "\"job\":\"$job\"" <<<"$targets" || fail "PROMETHEUS_TARGET" "Prometheus target missing job=$job"
   wait_for_prometheus_target_up "$job"
 done
@@ -190,7 +207,7 @@ for dashboard_file in "$DASHBOARD_DIR"/*.json; do
   uid="${dashboard_file##*/}"
   uid="${uid%.json}"
   [ -n "$uid" ] || fail "GRAFANA" "dashboard has no valid canonical filename: $dashboard_file"
-  [ "$(basename "$dashboard_file")" = "wotbtools-production-overview.json" ] && production_uid="$uid"
+  [ "$(basename "$dashboard_file")" = "wotbtools-active-users.json" ] && production_uid="$uid"
   wait_for_grafana_api "Grafana dashboard $(basename "$dashboard_file")" \
     "/api/dashboards/uid/$uid" '"dashboard"' "$uid"
 done

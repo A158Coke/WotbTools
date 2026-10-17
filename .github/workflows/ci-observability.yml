@@ -19,6 +19,15 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.head_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install observability validation dependencies
+        run: python -m pip install -r deploy/observability/dev-metrics/requirements.txt PyYAML==6.0.3
+      - name: Exporter fixture tests
+        run: python -m unittest discover -s deploy/observability/dev-metrics/tests -v
+      - name: Build exporter image
+        run: docker build -t wotb-dev-metrics:ci deploy/observability/dev-metrics
       - name: Pull Prometheus image with bounded network retry
         run: bash scripts/ci/run-with-network-retry.sh "Pull Prometheus image" docker pull prom/prometheus:v2.55.1
       - name: Pull Loki image with bounded network retry
@@ -50,31 +59,21 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import glob, json, os, yaml
+          import glob, json, os, subprocess, tempfile, yaml
 
           # Panel links of type=dashboard + uid without a valid url crash the Grafana
           # frontend (TypeError: Cannot read properties of undefined (reading 'replace')).
           # Forbid this structure so the dashboard runtime stays stable.
           required = {
-              "wotbtools-production-overview.json",
-              "wotbtools-backend-overview.json",
-              "wotbtools-ai-review.json",
-              "wotbtools-keycloak.json",
-              "wotbtools-error-explorer.json",
-              "wotbtools-usage.json",
+              "wotbtools-active-users.json", "wotbtools-feature-usage.json",
+              "wotbtools-android-downloads.json", "wotbtools-ai-token-usage.json",
+              "wotbtools-backend-error-logs.json", "wotbtools-engineering-overview.json",
           }
           paths = glob.glob("deploy/observability/grafana/dashboards/*.json")
           assert {p.replace("\\", "/").rsplit("/", 1)[-1] for p in paths} == required, "dashboard inventory drift"
           dashboard_uids = {}
           dashboard_link_uids = []
-          production_health_contract = {
-              "后端服务": 'up{job="wotb-backend"}',
-              "主机": 'up{job="node-exporter"}',
-              "Prometheus": 'up{job="prometheus"}',
-              "Loki": 'up{job="loki"}',
-              "Grafana": 'up{job="grafana"}',
-          }
-
+          prometheus_queries = []
           def validate_datasource(value, where):
               if not isinstance(value, dict):
                   return
@@ -85,11 +84,17 @@ jobs:
           def walk_dashboard_panels(node, where):
               if not isinstance(node, dict):
                   return
+              if "id" in node:
+                  assert node["id"] not in panel_ids, f"{where}: duplicate panel id"
+                  panel_ids.add(node["id"])
               validate_datasource(node.get("datasource"), where)
               for target_index, target in enumerate(node.get("targets") or []):
                   if isinstance(target, dict):
                       validate_datasource(target.get("datasource"), f"{where}.targets[{target_index}]")
                       expr = target.get("expr") or target.get("query") or ""
+                      datasource = target.get("datasource") or node.get("datasource") or {}
+                      if datasource.get("uid") == "prometheus" and expr:
+                          prometheus_queries.append(expr.replace("$__rate_interval", "5m").replace("$__interval", "1m"))
                       if "or vector(0)" in expr:
                           assert not any(token in expr for token in ("up(", "queue_depth", "in_flight", "node_")), \
                               f"{where}: health/gauge query must not mask no-data with vector(0): {expr}"
@@ -105,63 +110,53 @@ jobs:
                   for i, child in enumerate(node.get(key) or []):
                       walk_dashboard_panels(child, f"{where}.{key}[{i}]")
 
-          def collect_production_panels(node, found):
-              if not isinstance(node, dict):
-                  return
-              title = node.get("title")
-              if isinstance(title, str):
-                  found.setdefault(title, []).extend(
-                      target.get("expr", "")
-                      for target in node.get("targets") or []
-                      if isinstance(target, dict) and isinstance(target.get("expr"), str)
-                  )
-              for key in ("panels", "rows"):
-                  for child in node.get(key) or []:
-                      collect_production_panels(child, found)
-
           for p in glob.glob("deploy/observability/grafana/provisioning/**/*.yml", recursive=True):
               yaml.safe_load(open(p, encoding="utf-8"))
           assert not os.path.exists("deploy/observability/grafana/provisioning/dashboards/dashboards.yml"), \
               "dashboard file-provisioning controller must remain disabled after OpenTofu adoption"
           for p in paths:
               d = json.load(open(p, encoding="utf-8"))
+              panel_ids = set()
               assert d.get("panels"), "empty dashboard " + p
               uid = d.get("uid")
               assert isinstance(uid, str) and uid, "dashboard uid missing: " + p
               assert uid not in dashboard_uids.values(), "duplicate dashboard uid: " + uid
               dashboard_uids[p] = uid
-              if p.replace("\\", "/").endswith("wotbtools-production-overview.json"):
-                  production_panels = {}
-                  collect_production_panels(d, production_panels)
-                  for title, expected_expr in production_health_contract.items():
-                      actual_exprs = {"".join(expr.split()) for expr in production_panels.get(title, [])}
-                      assert expected_expr in actual_exprs, \
-                          f"production overview health panel {title} must query {expected_expr}"
-                      assert all("orvector(0)" not in expr for expr in actual_exprs), \
-                          f"production overview health panel {title} must not mask no-data"
-                  overall_exprs = [
-                      expr for title, exprs in production_panels.items()
-                      if title.startswith("生产状态")
-                      for expr in exprs
-                  ]
-                  assert overall_exprs, "production overview overall health panel missing"
-                  overall_expr = "".join(overall_exprs[0].split())
-                  # 六类 scraped target（deploy/AGENTS.md 与 docs/operations/observability.md 的
-                  # metrics contract）：ai-service 必须计入，否则 ai-service 宕机不进总健康卡。
-                  required_jobs = "wotb-backend|ai-service|node-exporter|prometheus|loki|grafana"
-                  expected_overall = (
-                      f'min(up{{job=~"{required_jobs}"}})and('
-                      f'count(up{{job=~"{required_jobs}"}})==6)'
-                  )
-                  assert overall_expr == expected_overall, \
-                      "production overview overall health must use min(up) as the value and count(up)==6 as the presence guard"
-                  assert "orvector(0)" not in overall_expr, \
-                      "production overview overall health must not mask no-data"
+              assert d.get("timezone") == "Asia/Shanghai", p
+              assert d.get("time") == {"from": "now-24h", "to": "now"}, p
               for i, panel in enumerate(d.get("panels", [])):
                   walk_dashboard_panels(panel, f"{p}::panels[{i}]")
           uid_set = set(dashboard_uids.values())
           assert len(uid_set) == len(paths), "dashboard UIDs must be unique"
           assert set(dashboard_link_uids) <= uid_set, "dashboard link points to an unknown uid"
+          with tempfile.TemporaryDirectory() as rule_dir:
+              rule_file = os.path.join(rule_dir, "dashboard-rules.yml")
+              with open(rule_file, "w", encoding="utf-8") as output:
+                  yaml.safe_dump({"groups": [{"name": "dashboard-query-validation", "rules": [
+                      {"record": f"dashboard_validation_{index}", "expr": expr}
+                      for index, expr in enumerate(prometheus_queries)
+                  ]}]}, output)
+              subprocess.run(["docker", "run", "--rm", "--entrypoint", "promtool", "-v",
+                              f"{rule_file}:/tmp/dashboard-rules.yml:ro", "prom/prometheus:v2.55.1",
+                              "check", "rules", "/tmp/dashboard-rules.yml"], check=True)
+              engineering = json.load(open("deploy/observability/grafana/dashboards/wotbtools-engineering-overview.json", encoding="utf-8"))
+              daily_expr = next(target["expr"] for panel in engineering["panels"] for target in panel.get("targets", [])
+                                if "wotb_dev_pr_created_day" in target.get("expr", ""))
+              # Parse checks alone cannot catch regexp replacement ambiguity:
+              # $1T is a named group; ${1}T preserves the date before the suffix.
+              test_file = os.path.join(rule_dir, "dashboard-query-tests.yml")
+              with open(test_file, "w", encoding="utf-8") as output:
+                  yaml.safe_dump({"rule_files": [], "tests": [{"input_series": [
+                      {"series": "wotb_dev_collector_data_ready", "values": "1"},
+                      {"series": 'wotb_dev_pr_created_day{day="2026-10-16"}', "values": "3"},
+                      {"series": 'wotb_dev_pr_merged_day{day="2026-10-16"}', "values": "2"},
+                  ], "promql_expr_test": [{"expr": daily_expr, "eval_time": "0s", "exp_samples": [
+                      {"labels": 'wotb_dev_pr_created_day{activity="Created",day="2026-10-16T00:00:00Z"}', "value": 3},
+                      {"labels": 'wotb_dev_pr_merged_day{activity="Merged",day="2026-10-16T00:00:00Z"}', "value": 2},
+                  ]}]}]}, output)
+              subprocess.run(["docker", "run", "--rm", "--entrypoint", "promtool", "-v",
+                              f"{test_file}:/tmp/dashboard-query-tests.yml:ro", "prom/prometheus:v2.55.1",
+                              "test", "rules", "/tmp/dashboard-query-tests.yml"], check=True)
           print("provisioning yml + dashboards json OK")
           PY
   tofu_plans:

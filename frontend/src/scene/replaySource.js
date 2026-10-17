@@ -352,14 +352,15 @@ export function __resetMapIndexForTest() {
 /**
  * 静态模式 URL（已配置 origin 且 index 命中 → 打包器物化路径）；
  * mapKey 由当前会话显式传入；未解析/未配置 origin → null，调用方跳过该资产（无服务端回退）。
- * kind ∈ map | map-mini | terrain | terrain-meta | scenery | groundmeta | groundtex
+ * kind ∈ map | terrain | terrain-meta | scenery | groundmeta | groundtex
+ * （客户端 HUD 小地图 `minimap` res=mini **不再被消费**：它覆盖约 620 m > ±300 契约框，见
+ *  playbackScene.loadMapImage 的说明与 Agent 仓 docs/game-data-sources.md §5.7）
  */
 export function mapStaticUrl(kind, layer, mapKey) {
   if (!mapKey || !assetProvider.configured()) return null
   const f = (name) => assetProvider.url(`/map/${mapKey}/${name}`)
   switch (kind) {
     case 'map': return f('ground.webp')
-    case 'map-mini': return f('mini.webp')
     case 'terrain': return f('terrain.u16.bin')
     case 'terrain-meta': return f('terrain.json')
     case 'scenery': return f('scenery.glb')

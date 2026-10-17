@@ -32,6 +32,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -161,7 +162,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentNotValidException.class,
-            HandlerMethodValidationException.class})
+            HandlerMethodValidationException.class, MissingServletRequestPartException.class})
     public ResponseEntity<ApiErrorResponse> handleInvalidRequest(
             final Exception exception, final HttpServletRequest request) {
         return response("INVALID_REQUEST", HttpStatus.BAD_REQUEST, exception, request);

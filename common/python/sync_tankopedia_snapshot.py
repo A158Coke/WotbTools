@@ -96,7 +96,8 @@ def main(argv=None):
     )
 
     old_data = ut.load_existing_data_dir(args.existing_dir)
-    vehicles = ut.parse_tanks(snapshots["tanks"])
+    all_vehicles = ut.parse_tanks(snapshots["tanks"])
+    vehicles = all_vehicles
     item_vehicles = ut.filter_to_business_tiers(vehicles)
     total = len(vehicles)
 
@@ -149,6 +150,15 @@ def main(argv=None):
             },
             "vehicles": tier_vehicles,
         })
+
+    # 完整车辆名册（全 tier，alias 校验与 tank_id 查询用）：同一快照、过滤之前的解析结果
+    roster = ut.roster_payload(all_vehicles, generated_at, game_version, hashes)
+    try:
+        ut.validate_roster(roster, ut.load_existing_roster(args.existing_dir))
+    except RuntimeError as error:
+        print("ERROR: %s" % error, file=sys.stderr)
+        return 1
+    ut.write_json(os.path.join(args.output_dir, ut.ROSTER_FILE), roster)
 
     ok, old_knowledge, preserved_knowledge = ut.verify_knowledge_preservation(old_data, new_data)
     if not ok:

@@ -40,7 +40,7 @@ verify_frontend_image() {
   if [ "$FAIL_STAGE" = verify ]; then exit 17; fi
 }
 docker() {
-  printf '%s\n' "$1" >> "$CACHE_ROOT/docker.log"
+  printf '%s\n' "$*" >> "$CACHE_ROOT/docker.log"
   if [ "$1" = push ]; then : > "$CACHE_ROOT/pushed"; fi
 }
 build_publish "$SOURCE_SHA" ccr.ccs.tencentyun.com fixture https://assets.example.invalid "$AGENT_ARCHIVE" "$SPONSOR_BUNDLE" "$SPONSOR_FINGERPRINT"
@@ -100,6 +100,14 @@ class FrontendBuilderCleanupTest(unittest.TestCase):
                 self.assertIn("RESULT wasm_verified=true", result.stdout)
                 self.assertIn("CALLER resumed", result.stdout)
                 self.assertEqual((cache / "fetched").exists(), mode == "fresh")
+                if mode == "fresh":
+                    # 确定性构建身份：真实生产构建方必须把**源 commit 的 epoch** 作为
+                    # SOURCE_DATE_EPOCH 传给 Docker（Docker 上下文无 .git，时间只能由脚本给）。
+                    # 缺参、传错值（例如 wall-clock）都在这里被拦住。
+                    epoch = subprocess.check_output(
+                        ["git", "-C", str(repo), "show", "-s", "--format=%ct", sha], text=True).strip()
+                    docker_log = (cache / "docker.log").read_text()
+                    self.assertIn(f"--build-arg SOURCE_DATE_EPOCH={epoch}", docker_log, docker_log)
             else:
                 self.assertNotIn("RESULT source_sha=", result.stdout)
                 self.assertNotIn("CALLER resumed", result.stdout)

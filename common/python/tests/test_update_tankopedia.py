@@ -591,7 +591,7 @@ class MainPathTest(unittest.TestCase):
                 self.assertEqual(f.read(), old_bytes_before)  # 旧文件未被修改
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
-                sorted(ut.TIER_FILES.values()),
+                sorted([*ut.TIER_FILES.values(), ut.ROSTER_FILE]),
             )
             with open(os.path.join(new_dir, "tankopedia-tier10.json"), encoding="utf-8") as f:
                 payload = json.load(f)
@@ -672,10 +672,10 @@ class MainPathTest(unittest.TestCase):
                 rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
 
             self.assertEqual(rc, 0)
-            # 10 个 tier 文件正常生成
+            # 10 个 tier 文件 + 完整车辆名册
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
-                sorted(ut.TIER_FILES.values()),
+                sorted([*ut.TIER_FILES.values(), ut.ROSTER_FILE]),
             )
             files = {}
             for name in ut.TIER_FILES.values():
@@ -690,6 +690,11 @@ class MainPathTest(unittest.TestCase):
             self.assertNotIn("allowedEquipment", lower)
             self.assertNotIn("allowedConsumables", lower)
             self.assertNotIn("_equipmentPreset", lower)
+            with open(os.path.join(new_dir, ut.ROSTER_FILE), encoding="utf-8") as f:
+                roster = json.load(f)
+            self.assertEqual(roster["vehicles"]["1"], "T-34")
+            self.assertIn("1585", roster["vehicles"])
+            self.assertEqual(roster["meta"]["count"], len(roster["vehicles"]))
             # tier 8 T-34-2 正常生成：alphaDamage=400、extraInfo 保留
             tier8_vehicles = files["tankopedia-tier8.json"]["vehicles"]
             t82 = next(v for v in tier8_vehicles if v["id"] == 1585)
@@ -702,6 +707,76 @@ class MainPathTest(unittest.TestCase):
             # 无 7/9 级车辆时对应文件存在且为空
             self.assertEqual(files["tankopedia-tier7.json"]["meta"]["count"], 0)
             self.assertEqual(files["tankopedia-tier9.json"]["meta"]["count"], 0)
+
+
+class RosterTest(unittest.TestCase):
+    """完整车辆名册 tank_ids.json：沿用 alias 校验的全等级 tank_id ↔ 名字契约。
+
+    消费方是 common/tank_aliases.json 的 validator 与其维护流程（按 id 配 alias、按名字查 id）。
+    tier 文件与名册均覆盖全等级；名册只用于离线名称/ID 校验。
+    """
+
+    def payload(self, **kwargs):
+        vehicles = {
+            "1": {"id": 1, "name": "T-34", "tier": 5},
+            "9297": {"id": 9297, "name": "FV215b 183", "tier": 10},
+            "17": {"id": 17, "name": " Pz. IV G ", "tier": 5},
+        }
+        return ut.roster_payload(vehicles, "2026-10-16T00:00:00+00:00", **kwargs)
+
+    def test_covers_every_tier_sorted_by_id(self):
+        payload = self.payload()
+        self.assertEqual(list(payload["vehicles"]), ["1", "17", "9297"])
+        self.assertEqual(payload["vehicles"]["17"], "Pz. IV G")
+        self.assertEqual(payload["meta"]["count"], 3)
+
+    def test_records_snapshot_provenance(self):
+        payload = self.payload(game_version="11.21.0", source_hashes={"tanks": "abc123", "game": "zzz"})
+        self.assertEqual(payload["meta"]["source_game_version"], "11.21.0")
+        # 只记录 tanks.pb 的哈希：名册的唯一输入就是它
+        self.assertEqual(payload["meta"]["source_hashes"], {"tanks": "abc123"})
+
+    def test_drops_entries_without_usable_id_or_name(self):
+        vehicles = {
+            "a": {"id": 0, "name": "zero"},
+            "b": {"id": 5, "name": "   "},
+            "c": {"name": "no id"},
+            "d": {"id": 7, "name": "ok"},
+            "e": "not a dict",
+        }
+        self.assertEqual(ut.roster_payload(vehicles, "t")["vehicles"], {"7": "ok"})
+
+    def test_empty_roster_fails(self):
+        with self.assertRaisesRegex(RuntimeError, "TANK_ROSTER_EMPTY"):
+            ut.validate_roster({"vehicles": {}}, {})
+
+    def test_count_drop_fails(self):
+        def roster(size):
+            return {"vehicles": {str(i): "v%d" % i for i in range(size)}}
+        old = roster(100)
+        with self.assertRaisesRegex(RuntimeError, "TANK_ROSTER_COUNT_DROP"):
+            ut.validate_roster(roster(70), old)
+        # 正常新增与少量真实删除放行（MIN_TIER_COUNT_RATIO 同口径）
+        self.assertTrue(ut.validate_roster(roster(85), old))
+        self.assertTrue(ut.validate_roster(roster(120), old))
+
+    def test_committed_roster_covers_tier_files_with_matching_names(self):
+        """已入库名册：tier 文件里的每辆车都必须同名出现在名册中（方向性断言）。
+
+        反向不成立且不应断言——名册可能来自更新的快照（新车先出现在名册里）。
+        """
+        roster = ut.load_existing_roster(ut.REPO_COMMON_DIR)["vehicles"]
+        tier_ids = set()
+        for filename in ut.TIER_FILES.values():
+            with open(os.path.join(ut.REPO_COMMON_DIR, filename), encoding="utf-8") as file:
+                for vehicle in json.load(file)["vehicles"]:
+                    tier_ids.add(vehicle["id"])
+                    self.assertEqual(
+                        roster.get(str(vehicle["id"])), vehicle["name"],
+                        "roster name drifted for tank_id=%s" % vehicle["id"],
+                    )
+        # 名册可以与全等级 tier 文件相等，也可来自更新的快照。
+        self.assertGreaterEqual(len(roster), len(tier_ids))
 
 
 if __name__ == "__main__":

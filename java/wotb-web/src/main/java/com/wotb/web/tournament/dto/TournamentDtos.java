@@ -3,10 +3,8 @@ package com.wotb.web.tournament.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
-import tools.jackson.core.JsonParser;
-import tools.jackson.core.JsonToken;
-import tools.jackson.databind.DeserializationContext;
-import tools.jackson.databind.ValueDeserializer;
+import com.wotb.web.util.JsonNumberInputs.IntegerInput;
+import com.wotb.web.util.JsonNumberInputs.LongInput;
 import tools.jackson.databind.annotation.JsonDeserialize;
 import java.time.Instant;
 import java.util.List;
@@ -63,11 +61,39 @@ public final class TournamentDtos {
             List<RoundRule> rounds,
             List<String> clans
     ) { }
+    public record DefaultRound(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int roundNumber,
+            @JsonProperty(required = true) List<RuleDay> days
+    ) { }
+    public record DefaultConfigurationRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm,
+            @JsonProperty(required = true) List<DefaultRound> rounds
+    ) { }
+    public record DefaultRules(long version, boolean active, Long sourceEventId, String sourceLabel,
+                               Instant updatedAt, List<DefaultRound> rounds) { }
+    public record RuleSource(long eventVersion, String source, Long defaultVersion,
+                             boolean isDefaultSource, boolean defaultOutdated) { }
+    public record SetDefaultRulesRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long eventId,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
+    ) { }
+    public record ClearDefaultRulesRequest(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDefaultVersion,
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) boolean confirm
+    ) { }
     public record RuleRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedRulesVersion,
-            @JsonProperty(required = true) List<RuleDay> days
-    ) { }
+            @JsonProperty(required = true) List<RuleDay> days,
+            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+    ) {
+        public RuleRequest(final long eventVersion, final long rulesVersion, final List<RuleDay> days) {
+            this(eventVersion, rulesVersion, days, null);
+        }
+    }
     public record Team(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int rank
@@ -93,8 +119,13 @@ public final class TournamentDtos {
     public record ExpectedGroupsRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
-            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount
-    ) { }
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = IntegerInput.class) int expectedGroupCount,
+            @JsonDeserialize(using = LongInput.class) Long expectedDefaultVersion
+    ) {
+        public ExpectedGroupsRequest(final long eventVersion, final long dayVersion, final int count) {
+            this(eventVersion, dayVersion, count, null);
+        }
+    }
     public record DraftRequest(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedEventVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = LongInput.class) long expectedDayVersion,
@@ -166,6 +197,13 @@ public final class TournamentDtos {
             Standings standings
     ) { }
     public record HistoricalState(long eventVersion, boolean imported, boolean canImport, boolean historical) { }
+    public record Attribution(String name, String url) { }
+    public record DataSource(boolean csvImported, Attribution attribution) { }
+    public record CsvChanges(int addedClans, int changedClans, int removedClans,
+                             int addedScores, int changedScores, int removedScores, int preservedClears) { }
+    public record CsvImportPreview(Standings standings, String sourceName, String sourceSha256,
+                                   int sourceRowCount, int clanCount, int missingCellCount,
+                                   long eventVersion, CsvChanges changes) { }
     public record HistoricalRow(
             @JsonProperty(required = true) String clanTag,
             @JsonProperty(required = true) @JsonDeserialize(contentUsing = IntegerInput.class) List<Integer> points,
@@ -213,27 +251,4 @@ public final class TournamentDtos {
             byte[] bytes,
             String contentType
     ) { }
-    /** Native Jackson property readers keep decimal input exact and reject numeric strings. */
-    public static class IntegerInput extends ValueDeserializer<Integer> {
-        @Override
-        public Integer deserialize(final JsonParser parser, final DeserializationContext context) {
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_INT)) { return parser.getIntValue(); }
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_FLOAT)) {
-                try { return parser.getDecimalValue().intValueExact(); }
-                catch (final ArithmeticException invalid) { return context.reportInputMismatch(Integer.class, "Expected an exact integer"); }
-            }
-            return context.reportInputMismatch(Integer.class, "Expected an integer JSON number");
-        }
-    }
-    public static class LongInput extends ValueDeserializer<Long> {
-        @Override
-        public Long deserialize(final JsonParser parser, final DeserializationContext context) {
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_INT)) { return parser.getLongValue(); }
-            if (parser.hasToken(JsonToken.VALUE_NUMBER_FLOAT)) {
-                try { return parser.getDecimalValue().longValueExact(); }
-                catch (final ArithmeticException invalid) { return context.reportInputMismatch(Long.class, "Expected an exact integer"); }
-            }
-            return context.reportInputMismatch(Long.class, "Expected an integer JSON number");
-        }
-    }
 }

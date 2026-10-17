@@ -10,10 +10,11 @@ import { usePlaybackFullscreen } from '../composables/usePlaybackFullscreen.js'
 import { mapBases } from '../data/mapBases'
 import { mapLabel } from '../utils/helpers.js'
 import { mapImages } from '../data/mapImages'
+import { map2dSrc } from '../data/map2dOverlay'
 import { teamCssVars } from '../data/mapTeamColors'
 import { darkMapPalette, luminanceOfImage, paletteForLuminance } from '../utils/mapPalette'
 import { createMapView } from '../utils/mapView'
-import { activeTerrainRelief, projectTerrainPoint, sampleTerrainAttitude, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
+import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
 import { PencilRuler, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
@@ -42,6 +43,7 @@ import {
   formatClock,
   pushFeed,
   recentPositionTrails,
+  recentPositionTrailsFromPose,
   teamPointsAt,
   tracerLines,
   transientsActive,
@@ -52,9 +54,12 @@ import {
   friendlyHealthAt,
   ghostAroundV2,
   healthDisplayAt,
+  positionCoveredAtV2,
   victimFeedbackAllowedV2,
 } from '../utils/battlePlaybackV2'
 import { projectVehicleState } from '../utils/playbackVehicleState'
+import { observedFreezeTimeAt } from '../utils/battlePlaybackV2'
+import { poseCoveredAt, selectActiveDef, sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
 import { createReloadStateResolver, magazineSizeForVehicle } from '../scene/reloadBar.js'
 import { assetProvider } from '../scene/assetProvider.js'
 import { computeVehicleMarkerSize, healthRingDiameter } from '../utils/vehicleMarkerSizing'
@@ -63,7 +68,6 @@ import { baseView } from '../utils/baseStatus.js'
 import {
   MARKER_CORE_PX,
   computeLabelLayout,
-  computeTankCollisionLayout,
 } from '../utils/labelLayout'
 import {
   ANNOT_COLORS,
@@ -109,6 +113,13 @@ const props = defineProps({
   loop: { type: Boolean, default: false },
   /** V2 canonical battle-playback-dataset；未加载时为空。 */
   playbackV2: { type: Object, default: null },
+  /**
+   * 位姿通道（`LocalPlayback.poseFacet` = playback facet 的位姿列投影）：2D 俯视与 3D 场景
+   * 同源同插值（`replay-local/pose/vehiclePose.ts`）。缺失 = 回退 canonical 原始观测。
+   */
+  poseFacet: { type: Object, default: null },
+  /** battle-relative → 回放时钟域的偏移（canonical `clock.startRaw`）；与 poseFacet 同时给出。 */
+  clockOffset: { type: Number, default: null },
   result: { type: Object, default: null },
   /** Raw Playback reload evidence stays outside the generic canonical/HTTP dataset. */
   reloadTelemetry: { type: Object, default: null },
@@ -142,19 +153,21 @@ const pbOverview = computed(() => {
 })
 
 const image = computed(() => mapImages[pbOverview.value.mapCode] || null)
+/** 底图 URL：包内兜底，Android 上若 COS 有更新且校验通过则换成 blob URL（见 map2dOverlay.js）。 */
+const imageSrc = computed(() => (image.value ? map2dSrc(pbOverview.value.mapCode, image.value.src) : null))
 const mapView = computed(() => createMapView(image.value, pbOverview.value))
 
 // 自适应配色（与热力覆盖层使用同一色板）
 const palette = ref(darkMapPalette)
 let paletteRequestToken = 0
-watch(image, async (img) => {
+watch(imageSrc, async (src) => {
   const token = ++paletteRequestToken
-  if (!img) {
+  if (!src) {
     palette.value = darkMapPalette
     return
   }
   try {
-    const luminance = await luminanceOfImage(img)
+    const luminance = await luminanceOfImage({ src })
     if (token === paletteRequestToken) palette.value = paletteForLuminance(luminance)
   } catch {
     if (token === paletteRequestToken) palette.value = darkMapPalette
@@ -290,7 +303,14 @@ const hpModeOptions = computed(() => ['bar', 'ring'].map(mode => ({
 
 // 最近 2 秒位置轨迹只消费 canonical observed positionSegments；显示偏好由 usePlaybackPreferences 持久化。
 const visibleTrails = computed(() => trailPrefs.showTrail
-  ? recentPositionTrails(hpVehicles.value, currentTime.value, 2)
+  ? (poseSource.value
+      // 位姿通道：与 3D 同源的位置序列；可信度门控仍取 canonical 观测区间
+      ? recentPositionTrailsFromPose(
+          hpVehicles.value,
+          (vehicle, t) => poseAtTime(vehicle, t),
+          (vehicle, t) => positionCoveredAtV2(vehicle.positionSegments, t),
+          currentTime.value, 2)
+      : recentPositionTrails(hpVehicles.value, currentTime.value, 2))
   : [])
 
 // ---- PR5（§1.3/§10/§16/§20）：deterministic state 与 transient feedback 分层。
@@ -630,13 +650,6 @@ watch(() => mapEl.value, (el, prev) => {
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 // Default contain follows geometry; a user camera stays owned by their gestures until Reset View.
 let cameraUserModified = false
-// Actual rendered SVG frame in the shared camera layer. mapSize is updated by
-// the existing ResizeObserver; multiplying both axes by the camera width scale
-// keeps leader-line conversion reactive across resize/fullscreen/zoom changes.
-const renderedMapFrame = computed(() => {
-  const scale = Number.isFinite(view.scale) && view.scale > 0 ? view.scale : 1
-  return { width: mapWidth() * scale, height: mapHeight() * scale }
-})
 const PAN_THRESHOLD_PX = 5
 const PINCH_THRESHOLD_PX = 5
 const ZOOM_STEP = 1.2
@@ -1572,6 +1585,57 @@ const vehiclesByAccount = computed(() => {
   return map
 })
 
+/**
+ * 位姿通道（与 3D 场景同源同插值）：`poseFacet` = playback facet 的位姿列投影，
+ * `clockOffset` = canonical `clock.startRaw`（battle-relative → 回放时钟域）。
+ * 两者缺一即 null → 全链路回退 canonical 原始观测（与既往行为逐值一致）。
+ */
+const poseSource = computed(() => {
+  const facet = props.poseFacet
+  const offset = props.clockOffset
+  if (!facet || !Number.isFinite(offset)) return null
+  const byAccount = new Map()
+  for (const def of facet.vehicles || []) {
+    const list = byAccount.get(def.account_id)
+    if (list) list.push(def)
+    else byAccount.set(def.account_id, [def])
+  }
+  return {
+    grid: { tStart: Number(facet.tStart) || 0, samples: Number(facet.samples) || 0 },
+    offset,
+    /**
+     * 活跃实体选择（`t` = 采样时刻，战斗相对秒）。多实体账号（AoI 重入 / 复活换实体）按
+     * canonical 身份证据判定——不能"后写覆盖"：那会在重入之前就采样到后一个实体，
+     * 而轨迹端点外钳位会把该实体的首帧位姿泄漏到过去。证据缺失/歧义 → null（回退 canonical）。
+     */
+    defFor: (accountId, t) => selectActiveDef(
+      byAccount.get(accountId) || [], facet.entityStartsByAccount?.get(accountId), t,
+    ),
+  }
+})
+/** 位姿采样复用对象（每帧多车 + 尾迹回溯采样，零分配热路径） */
+const _poseScratch = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0 }
+/**
+ * 该车在战斗相对时刻 t 的 game 系位姿（`y` = 游戏 z；2D 地图纵向翻转由 mapView 负责）。
+ * 无 facet / 该账号不在位姿切面 → null（调用方回退 canonical）。
+ */
+function poseAtTime(track, t) {
+  const source = poseSource.value
+  if (!source) return null
+  // **失察即冻结**（2026-10-16 用户裁定）：车离开我方视野后图标停在最后观测点，不再跟随客户端
+  // 滤波器的预测延续（3D 里该车模型直接不显示，两侧语义一致：2D 变灰停住 / 3D 消失）。
+  const freezeAt = observedFreezeTimeAt(track.positionSegments, t)
+  if (freezeAt == null) return null
+  // 活跃实体按**采样时刻**（冻结后的 freezeAt）选择：与"这个位姿属于谁"的时间域一致。
+  const rawAt = freezeAt + source.offset
+  const def = source.defFor(track.accountId, freezeAt)
+  // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
+  // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
+  if (!def || !poseCoveredAt(def, rawAt)) return null
+  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch)
+  return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
+}
+
 const friendlyColors = computed(() => palette.value.friendlyColors)
 const enemyColors = computed(() => palette.value.enemyColors)
 
@@ -1652,6 +1716,8 @@ const baseVehicleStates = computed(() => {
         vehicle,
         track,
         time: currentTime.value,
+        // 位姿通道（与 3D 同源同插值）；缺失时 projectVehicleState 回退 canonical 观测
+        pose: poseAtTime(track, currentTime.value),
         recorderAccountId: pbOverview.value.recorderAccountId,
         model,
         markerSize,
@@ -1667,62 +1733,20 @@ const baseVehicleStates = computed(() => {
         translate: t,
       })
       if (!state) return null
-      const terrainModel = reliefModelForPlayback()
-      const hullYawDeg = state.direction?.hullYawDeg
-      const terrainAttitude = terrainModel && Number.isFinite(hullYawDeg)
-        ? sampleTerrainAttitude(
-          terrainModel,
-          state.pos.x,
-          state.pos.y,
-          hullYawDeg,
-          markerSize?.footprint,
-        )
-        : null
-      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, terrainAttitude, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
+      // 2D 是严格俯视投影（2026-10-16）：不再呈现"多出的维度"（俯仰/侧倾），
+      // 故不产出 terrainAttitude（原地形高度场合成倾斜已删）。
+      return { ...state, gunMarks: gunMarks.value.get(track.accountId) ?? null, reloadShells: vehicleReloadAt(track.accountId, currentTime.value) }
     })
     .filter(Boolean)
 })
 
-const collisionOffsets = ref(new Map())
-watch(
-  [baseVehicleStates, () => currentTime.value, () => view.scale, () => view.tx, () => view.ty, () => mapWidth(), () => mapHeight(), () => selectedAccountId.value, () => markerPrefs.classIcons, () => hpPrefs.mode, () => hpPrefs.showHp, () => uiHidden.value],
-  ([states]) => {
-    const items = states.map((state) => {
-      const point = canonicalMarkerScreen(state)
-      if (!point) return null
-      // 用渲染方框而不是车体矩形做碰撞：车体贴图按航向在方框内旋转，方框是它在屏幕上的
-      // 外接盒。用各向异性的车体矩形会判错——横向行驶的车实际占满方框宽度，矩形却说它很窄，
-      // 而且矩形不随航向旋转，两车接近垂直时判定完全失准。
-      const classIcons = !uiHidden.value && markerPrefs.classIcons
-      const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !state.destroyed
-        ? healthRingDiameter(state, classIcons) : null
-      const width = ringSize ?? (classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.width * view.scale)
-      const height = ringSize ?? (classIcons ? MARKER_CORE_PX : state.markerSize.renderBox.height * view.scale)
-      return {
-        accountId: state.vehicle.accountId,
-        x: point.x,
-        y: point.y,
-        width,
-        height,
-        selected: selectedAccountId.value === state.vehicle.accountId,
-        recorder: state.recorder,
-      }
-    }).filter(Boolean)
-    collisionOffsets.value = computeTankCollisionLayout(
-      items,
-      collisionOffsets.value,
-      { viewportW: mapWidth(), viewportH: mapHeight() },
-    )
-  },
-  { immediate: true },
-)
-
+// 标记**不做**防重叠位移（2026-10-16 用户裁定）：车体严格落在真实位置，密集处允许图标互相压盖；
+// 早前的"整盒推开 + 虚线指回真实位置"在 2D 里读起来就是"坦克模型与真实位置有偏移"，且 3D 从不
+// 移动车体模型 ⇒ 两侧不一致。名牌 / HP 的防重叠仍由 labelLayout 的车道机制承担（与 3D 同构）。
 const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
-  const offset = collisionOffsets.value.get(state.vehicle.accountId) || { x: 0, y: 0 }
   const scale = view.scale || 1
   return {
     ...state,
-    presentationOffset: offset,
     markerStyle: {
       ...state.markerStyle,
       width: `${state.markerSize.renderBox.width}px`,
@@ -1730,10 +1754,8 @@ const vehicleStates = computed(() => baseVehicleStates.value.map((state) => {
       // The camera content is layout-scaled rather than transform-scaled. Keep the marker's
       // existing scale so vehicle artwork and screen-space inverse overlays retain their contract.
       transform: `translate(-50%, -50%) scale(${scale})`,
-      // Collision offsets are already final screen-pixel presentation offsets. The layout-scaled
-      // camera does not scale absolute CSS px values, so preserve them unchanged here.
-      left: `calc(${markerLeft(state.pos.x)} + ${offset.x}px)`,
-      top: `calc(${markerTop(state.pos.y)} + ${offset.y}px)`,
+      left: markerLeft(state.pos.x),
+      top: markerTop(state.pos.y),
     },
   }
 }))
@@ -1751,7 +1773,13 @@ const userVisibleEvents = computed(() => authoritativeEvents.value.filter((event
 )))
 
 // 炮线：仅来自真实事件流中的已知射击（DAMAGE/KILL），两端可信位置，随播放时间与倍速确定性呈现
-const visibleTracers = computed(() => tracerLines(authoritativeEvents.value, routesByAccount.value, currentTime.value, speed.value))
+const visibleTracers = computed(() => tracerLines(
+  authoritativeEvents.value,
+  routesByAccount.value,
+  currentTime.value,
+  speed.value,
+  poseSource.value ? (route, t) => poseAtTime(route, t) : null,
+))
 
 function tracerColor(accountId) {
   const vehicle = vehiclesByAccount.value.get(accountId)
@@ -1801,10 +1829,8 @@ function canonicalMarkerScreen(st) {
 }
 
 function markerScreen(st) {
-  const point = canonicalMarkerScreen(st)
-  if (!point) return null
-  const offset = st.presentationOffset || { x: 0, y: 0 }
-  return { x: point.x + offset.x, y: point.y + offset.y }
+  // 标记严格落在真实位置（无防重叠位移），屏幕位置 = 语义位置。
+  return canonicalMarkerScreen(st)
 }
 
 function selectAt(accountId, clientX, clientY) {
@@ -1813,16 +1839,15 @@ function selectAt(accountId, clientX, clientY) {
   const rect = mapEl.value ? mapEl.value.getBoundingClientRect() : { left: 0, top: 0 }
   const px = hasPoint ? clientX - rect.left : NaN
   const py = hasPoint ? clientY - rect.top : NaN
-  // Hit-test uses the final vehicle-aware hit target and the same presentation offset
-  // used by the rendered marker. Selection still returns the canonical vehicle.
+  // Hit-test uses the final vehicle-aware hit target at the marker's true position
+  // (markers are never displaced). Selection still returns the canonical vehicle.
   const hitTest = (s) => {
     const cx = (px - view.tx) / view.scale
     const cy = (py - view.ty) / view.scale
     const rect = mapRenderRect()
-    const offset = s.presentationOffset || { x: 0, y: 0 }
     const projected = projectedSemanticNorm(s.pos.x, s.pos.y)
-    const x = projected.xNorm * rect.width + offset.x / view.scale
-    const y = projected.yNorm * rect.height + offset.y / view.scale
+    const x = projected.xNorm * rect.width
+    const y = projected.yNorm * rect.height
     const hitTarget = s.hitTargetSize || s.markerSize?.hitTarget
     const ringSize = !uiHidden.value && hpPrefs.showHp && hpPrefs.mode === 'ring' && !s.destroyed
       ? healthRingDiameter(s, markerPrefs.classIcons) / view.scale : 0
@@ -2272,6 +2297,7 @@ const mapStyle = computed(() => ({
           data-tour="playback-map"
           ref="mapComponent"
           :image="image"
+          :image-src="imageSrc"
           :map-view="mapView"
           :pb-overview="pbOverview"
           :friendly-team="friendlyTeam"
@@ -2280,7 +2306,6 @@ const mapStyle = computed(() => ({
           :visible-trails="visibleTrails"
           :tracer-color="tracerColor"
           :view-scale="view.scale"
-          :rendered-frame="renderedMapFrame"
           :viewport-style="viewportStyle"
           :annot-visible="annotVisible"
           :rendered-annotations="renderedAnnotations"

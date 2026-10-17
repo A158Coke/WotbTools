@@ -10,6 +10,7 @@ import com.wotb.web.tournament.dto.TournamentDtos;
 import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.tournament.entity.TournamentClan;
 import com.wotb.web.tournament.entity.TournamentDay;
+import com.wotb.web.tournament.entity.TournamentDefaultRules;
 import com.wotb.web.tournament.entity.TournamentEvent;
 import com.wotb.web.tournament.entity.TournamentEvidence;
 import com.wotb.web.tournament.entity.TournamentRule;
@@ -18,11 +19,15 @@ import com.wotb.web.tournament.mapper.TournamentMapper;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
 import com.wotb.web.tournament.repository.TournamentDayRepository;
+import com.wotb.web.tournament.repository.TournamentDefaultRulesRepository;
 import com.wotb.web.tournament.repository.TournamentEventRepository;
 import com.wotb.web.tournament.repository.TournamentEvidenceRepository;
 import com.wotb.web.tournament.repository.TournamentRuleRepository;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +40,12 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -60,6 +71,7 @@ import java.util.stream.Collectors;
 @Transactional
 public class TournamentService {
     private static final Logger LOG = LoggerFactory.getLogger(TournamentService.class);
+    private final TournamentDefaultRulesRepository defaults;
     private final TournamentEventRepository events;
     private final TournamentRuleRepository rules;
     private final TournamentDayRepository days;
@@ -71,19 +83,111 @@ public class TournamentService {
     private final byte[] signingKey;
 
     public TournamentService(final TournamentEventRepository events, final TournamentRuleRepository rules,
+                             final TournamentDefaultRulesRepository defaults,
                              final TournamentDayRepository days, final TournamentClanRepository clans,
                              final TournamentEvidenceRepository evidence, final TournamentAuditRepository audits,
                              final TournamentMapper mapper, final TournamentEvidenceStorage storage,
                              @Value("${wotb.tournament.recognition-signing-key:}") final String signingKey) {
+        this.defaults = defaults;
         this.events = events; this.rules = rules; this.days = days; this.clans = clans;
         this.evidence = evidence; this.audits = audits; this.mapper = mapper; this.storage = storage;
         this.signingKey = signingKey.getBytes(StandardCharsets.UTF_8);
     }
     @Transactional(readOnly = true)
+    public TournamentDtos.DefaultRules defaultRules() { return mapper.defaultRules(defaultSlot()); }
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TournamentDtos.RuleSource ruleSource(final long id) {
+        final TournamentEvent event = event(id); final TournamentDefaultRules slot = defaultSlot();
+        final boolean source = slot.active && Objects.equals(slot.sourceEventId, id);
+        final boolean outdated = source && !snapshot(effectiveRules(event, slot)).equals(slot.rounds);
+        return mapper.ruleSource(event, "INHERIT".equals(event.ruleSource) ? Long.valueOf(slot.version) : event.frozenDefaultVersion, source, outdated);
+    }
+    public TournamentDtos.DefaultRules setDefaultRules(final String actor, final TournamentDtos.SetDefaultRulesRequest request) {
+        final TournamentEvent event = locked(request.eventId(), request.expectedEventVersion());
+        final TournamentDefaultRules slot = defaults.findLocked(); version(slot.version, request.expectedDefaultVersion());
+        if (slot.active && !request.confirm()) { throw error(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT); }
+        final List<TournamentRule> configured = effectiveRules(event, slot);
+        if (configured.size() != event.roundCount || configured.stream().anyMatch(rule -> !complete(event, rule))) {
+            throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE);
+        }
+        final Map<String, Object> before = Map.of("defaultRules", mapper.defaultRules(slot));
+        slot.rounds = snapshot(configured); slot.active = true; slot.version++;
+        slot.sourceEventId = event.id; slot.sourceLabel = event.year + " " + event.region + " " + event.season; slot.updatedAt = Instant.now();
+        audit(null, null, null, "DEFAULT_RULES_SET", actor, null, before, Map.of("defaultRules", mapper.defaultRules(slot)));
+        return mapper.defaultRules(slot);
+    }
+    public TournamentDtos.DefaultRules saveDefaultConfiguration(final String actor, final TournamentDtos.DefaultConfigurationRequest request) {
+        final TournamentDefaultRules slot = defaults.findLocked(); version(slot.version, request.expectedDefaultVersion());
+        if (slot.active && !request.confirm()) { throw error(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT); }
+        if (request.rounds() == null || request.rounds().size() < 4 || request.rounds().size() > 5
+                || request.rounds().getFirst() == null || request.rounds().getFirst().days() == null) { throw invalid(); }
+        final int daysPerRound = request.rounds().getFirst().days().size();
+        if (daysPerRound < 2 || daysPerRound > 3) { throw invalid(); }
+        final List<TournamentSnapshot.RuleRound> configured = new ArrayList<>();
+        for (int index = 0; index < request.rounds().size(); index++) {
+            final TournamentDtos.DefaultRound round = request.rounds().get(index);
+            if (round == null || round.roundNumber() != index + 1) { throw invalid(); }
+            final List<TournamentSnapshot.RuleDay> normalized = normalizeRules(daysPerRound, round.days());
+            if (!complete(daysPerRound, normalized)) { throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE); }
+            configured.add(new TournamentSnapshot.RuleRound(round.roundNumber(), normalized));
+        }
+        final Map<String, Object> before = Map.of("defaultRules", mapper.defaultRules(slot));
+        slot.rounds = List.copyOf(configured); slot.active = true; slot.version++;
+        slot.sourceEventId = null; slot.sourceLabel = "GLOBAL_DEFAULT"; slot.updatedAt = Instant.now();
+        audit(null, null, null, "DEFAULT_RULES_SET", actor, null, before, Map.of("defaultRules", mapper.defaultRules(slot)));
+        return mapper.defaultRules(slot);
+    }
+    public TournamentDtos.DefaultRules clearDefaultRules(final String actor, final TournamentDtos.ClearDefaultRulesRequest request) {
+        final TournamentDefaultRules slot = defaults.findLocked(); version(slot.version, request.expectedDefaultVersion());
+        if (!request.confirm()) { throw invalid(); }
+        final Map<String, Object> before = Map.of("defaultRules", mapper.defaultRules(slot));
+        slot.active = false; slot.rounds = List.of(); slot.sourceEventId = null; slot.sourceLabel = ""; slot.version++; slot.updatedAt = Instant.now();
+        audit(null, null, null, "DEFAULT_RULES_CLEARED", actor, null, before, Map.of("defaultRules", mapper.defaultRules(slot)));
+        return mapper.defaultRules(slot);
+    }
+    private TournamentDefaultRules defaultSlot() {
+        return defaults.findById(1L).orElseThrow(() -> new IllegalStateException("Missing tournament default singleton"));
+    }
+    private List<TournamentSnapshot.RuleRound> snapshot(final List<TournamentRule> configured) {
+        return configured.stream().map(rule -> new TournamentSnapshot.RuleRound(rule.roundNumber, List.copyOf(rule.days))).toList();
+    }
+    private List<TournamentRule> effectiveRules(final TournamentEvent event) {
+        return effectiveRules(event, "INHERIT".equals(event.ruleSource) ? defaultSlot() : null);
+    }
+    private List<TournamentRule> effectiveRules(final TournamentEvent event, final TournamentDefaultRules slot) {
+        final List<TournamentRule> stored = rules.findByEventIdOrderByRoundNumber(event.id);
+        if (!"INHERIT".equals(event.ruleSource)) { return stored; }
+        return stored.stream().map(original -> {
+            final TournamentRule effective = new TournamentRule(); effective.eventId = event.id; effective.roundNumber = original.roundNumber;
+            // Default revisions are visible in legacy rule-version checks as well as the new explicit guard.
+            effective.rulesVersion = slot.version;
+            effective.days = slot.active ? slot.rounds.stream().filter(round -> round.roundNumber() == original.roundNumber)
+                    .findFirst().map(TournamentSnapshot.RuleRound::days).orElse(List.of()).stream()
+                    .filter(day -> day.dayNumber() <= event.daysPerRound).toList() : List.of();
+            return effective;
+        }).toList();
+    }
+    private void materializeRules(final TournamentEvent event, final TournamentDefaultRules slot, final String source) {
+        final List<TournamentRule> effective = effectiveRules(event, slot);
+        for (final TournamentRule selected : effective) {
+            final TournamentRule stored = rule(event.id, selected.roundNumber); stored.days = List.copyOf(selected.days); stored.rulesVersion = selected.rulesVersion;
+        }
+        event.ruleSource = source; event.frozenDefaultVersion = "FROZEN".equals(source) && slot.active ? slot.version : null;
+    }
+    private void freezeRules(final TournamentEvent event, final Long expectedDefaultVersion) {
+        if ("INHERIT".equals(event.ruleSource)) {
+            final TournamentDefaultRules slot = defaults.findLocked();
+            if (expectedDefaultVersion != null) { version(slot.version, expectedDefaultVersion); }
+            materializeRules(event, slot, "FROZEN");
+        } else {
+            event.ruleSource = "FROZEN";
+        }
+    }
+    @Transactional(readOnly = true)
     public List<TournamentDtos.Event> listEvents() {
         return events.findAllByOrderByYearDescIdDesc().stream().map(mapper::toDto).toList();
     }
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.Config config(final long id) { return configView(event(id)); }
     public TournamentDtos.Config create(final String actor, final TournamentDtos.CreateRequest request) {
         validateEvent(request.year(), request.region(), request.season(), request.roundCount(), request.daysPerRound(), request.dayLabels());
@@ -120,9 +224,16 @@ public class TournamentService {
     }
     public TournamentDtos.Config saveRules(final String actor, final long id, final int round, final TournamentDtos.RuleRequest request) {
         final TournamentEvent event = locked(id, request.expectedEventVersion()); dimension(event, round, 1);
+        if ("INHERIT".equals(event.ruleSource)) {
+            final TournamentDefaultRules slot = defaults.findLocked();
+            if (request.expectedDefaultVersion() != null) { version(slot.version, request.expectedDefaultVersion()); }
+            final TournamentRule effective = effectiveRules(event, slot).stream().filter(candidate -> candidate.roundNumber == round).findFirst().orElseThrow();
+            version(effective.rulesVersion, request.expectedRulesVersion());
+            materializeRules(event, slot, "CUSTOM");
+        }
         final TournamentRule rule = rule(id, round); version(rule.rulesVersion, request.expectedRulesVersion());
         if (roundLocked(id, round)) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
-        final List<TournamentSnapshot.RuleDay> next = normalizeRules(event, request.days());
+        final List<TournamentSnapshot.RuleDay> next = normalizeRules(event.daysPerRound, request.days());
         if (dayList(id).stream().anyMatch(day -> day.roundNumber == round && day.publishedHistoricalPoints != null)
                 && !complete(event, next)) { throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE); }
         final Map<String, Object> before = Map.of("rules", rule.days);
@@ -135,6 +246,174 @@ public class TournamentService {
     // Event identity, published day facts and historical roster must share one MVCC snapshot.
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.Standings publicStandings(final long id) { return standings(event(id), dayList(id), null, null, false); }
+    @Transactional(readOnly = true)
+    public TournamentDtos.DataSource dataSource(final long id) {
+        final boolean imported = event(id).csvImported;
+        return new TournamentDtos.DataSource(imported, imported ? new TournamentDtos.Attribution("_EK_", "https://b23.tv/rqx5iYX") : null);
+    }
+    public TournamentDtos.CsvImportPreview previewCsv(final long id, final long expectedVersion, final MultipartFile file) {
+        final TournamentEvent event = locked(id, expectedVersion);
+        final List<TournamentDay> stored = dayList(id); requireCsvWorkspace(stored);
+        final CsvSource source = csvSource(event, file);
+        final Map<String, List<Integer>> matrix = historicalMatrix(event, source.name(), source.sha256(), source.rows());
+        final TournamentDtos.Standings before = standings(event, stored, null, null, false);
+        final List<TournamentDay> replacement = csvDays(event, matrix, stored);
+        return csvView(event, source, matrix, replacement, csvChanges(before, standings(event, replacement, null, null, false, matrix.keySet(), true), stored));
+    }
+    public TournamentDtos.CsvImportPreview importCsv(final String actor, final long id, final long expectedVersion,
+            final MultipartFile file, final String sourceSha256, final boolean confirm, final String idempotencyKey) {
+        final TournamentEvent event = events.findLocked(id).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND));
+        if (!confirm || !StringUtils.hasText(idempotencyKey) || idempotencyKey.length() > 64 || idempotencyKey.codePoints().anyMatch(Character::isISOControl)) { throw invalid(); }
+        final CsvSource source = csvSource(event, file);
+        if (!source.sha256().equals(sourceSha256)) { throw error(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT); }
+        final Map<String, List<Integer>> matrix = historicalMatrix(event, source.name(), source.sha256(), source.rows());
+        final TournamentAudit previous = audits.findCsvImport(id, idempotencyKey).orElse(null);
+        final List<TournamentDay> stored = dayList(id);
+        if (previous != null) {
+            final Map<String, Object> applied = previous.afterState;
+            if (!source.sha256().equals(applied.get("sourceSha256")) || !source.name().equals(applied.get("sourceName"))
+                    || ((Number) applied.get("expectedEventVersion")).longValue() != expectedVersion
+                    || ((Number) applied.get("appliedVersion")).longValue() != event.version) { throw error(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT); }
+            return csvView(event, source, matrix, stored, storedCsvChanges(applied));
+        }
+        version(event.version, expectedVersion); requireCsvWorkspace(stored);
+        final TournamentDtos.Standings before = standings(event, stored, null, null, false);
+        final List<TournamentDay> replacement = csvDays(event, matrix, stored);
+        final TournamentDtos.CsvChanges changes = csvChanges(before, standings(event, replacement, null, null, false, matrix.keySet(), true), stored);
+        final List<Map<String, Object>> previousPublishedDays = stored.stream().filter(day -> day.publishedGroups != null)
+                .map(day -> Map.<String, Object>of("roundNumber", day.roundNumber, "dayNumber", day.dayNumber,
+                        "groups", List.copyOf(day.publishedGroups))).toList();
+        final Map<String, TournamentClan> existing = clans.findByEventIdOrderByClanTag(id).stream().collect(Collectors.toMap(clan -> clan.clanTag, clan -> clan));
+        existing.values().forEach(clan -> clan.historicalPublished = matrix.containsKey(clan.clanTag));
+        for (final String tag : matrix.keySet()) {
+            final TournamentClan clan = existing.getOrDefault(tag, new TournamentClan());
+            clan.eventId = id; clan.clanTag = tag; clan.historicalPublished = true; clans.save(clan);
+        }
+        for (final TournamentDay next : replacement) {
+            final TournamentDay day = stored.stream().filter(old -> old.roundNumber == next.roundNumber && old.dayNumber == next.dayNumber).findFirst().orElse(next);
+            final boolean replacesPublished = published(day) || published(next);
+            day.publishedGroups = null; day.publishedHistoricalPoints = next.publishedHistoricalPoints;
+            if (replacesPublished) { day.expectedGroupCount = null; }
+            day.version++; days.save(day);
+        }
+        freezeRules(event, null); event.configLocked = true; event.csvImported = true; event.version++;
+        final TournamentDtos.CsvImportPreview result = csvView(event, source, matrix, dayList(id), changes);
+        audit(event, null, null, "CSV_IMPORTED", actor, null, Map.of("standings", before, "publishedDays", previousPublishedDays),
+                Map.of("sourceName", source.name(), "sourceSha256", source.sha256(), "rows", source.rows(),
+                        "idempotencyKey", idempotencyKey, "expectedEventVersion", expectedVersion,
+                        "appliedVersion", event.version, "changes", changes, "standings", result.standings()));
+        return result;
+    }
+    private void requireCsvWorkspace(final List<TournamentDay> stored) {
+        if (stored.stream().anyMatch(day -> day.draftGroups != null || day.correction)) { throw error(ApiErrorCode.TOURNAMENT_CSV_WORKSPACE_BUSY); }
+    }
+    private List<TournamentDay> csvDays(final TournamentEvent event, final Map<String, List<Integer>> matrix, final List<TournamentDay> stored) {
+        final Map<String, TournamentDay> imported = historicalDays(event, matrix).stream().collect(Collectors.toMap(day -> key(day.roundNumber, day.dayNumber), day -> day));
+        final List<TournamentDay> result = new ArrayList<>();
+        for (int round = 1; round <= event.roundCount; round++) {
+            for (int number = 1; number <= event.daysPerRound; number++) {
+                final TournamentDay next = imported.getOrDefault(key(round, number), newDay(event.id, round, number));
+                final int selectedRound = round; final int selectedDay = number;
+                stored.stream().filter(day -> day.roundNumber == selectedRound && day.dayNumber == selectedDay)
+                        .findFirst().ifPresent(day -> next.clearedClans = Set.copyOf(day.clearedClans));
+                result.add(next);
+            }
+        }
+        return result;
+    }
+    private TournamentDtos.CsvImportPreview csvView(final TournamentEvent event, final CsvSource source, final Map<String, List<Integer>> matrix,
+            final List<TournamentDay> replacement, final TournamentDtos.CsvChanges changes) {
+        final int missing = (int) matrix.values().stream().flatMap(List::stream).filter(Objects::isNull).count();
+        return new TournamentDtos.CsvImportPreview(standings(event, replacement, null, null, false, matrix.keySet(), true), source.name(), source.sha256(),
+                source.rows().size(), matrix.size(), missing, event.version, changes);
+    }
+    private TournamentDtos.CsvChanges csvChanges(final TournamentDtos.Standings before, final TournamentDtos.Standings after, final List<TournamentDay> stored) {
+        final Map<String, TournamentDtos.StandingRow> old = before.rows().stream().collect(Collectors.toMap(TournamentDtos.StandingRow::clanTag, row -> row));
+        final Map<String, TournamentDtos.StandingRow> next = after.rows().stream().collect(Collectors.toMap(TournamentDtos.StandingRow::clanTag, row -> row));
+        final Set<String> tags = new HashSet<>(old.keySet()); tags.addAll(next.keySet());
+        int addedClans = 0; int changedClans = 0; int removedClans = 0; int added = 0; int changed = 0; int removed = 0;
+        for (final String tag : tags) {
+            if (!old.containsKey(tag)) { addedClans++; }
+            else if (!next.containsKey(tag)) { removedClans++; }
+            else if (!old.get(tag).rounds().equals(next.get(tag).rounds())) { changedClans++; }
+            final List<Long> oldValues = old.containsKey(tag) ? old.get(tag).rounds().stream().flatMap(round -> round.days().stream()).map(TournamentDtos.DayPoints::points).toList() : null;
+            final List<Long> newValues = next.containsKey(tag) ? next.get(tag).rounds().stream().flatMap(round -> round.days().stream()).map(TournamentDtos.DayPoints::points).toList() : null;
+            final int count = oldValues != null ? oldValues.size() : newValues.size();
+            for (int cell = 0; cell < count; cell++) {
+                final Long left = oldValues == null ? null : oldValues.get(cell); final Long right = newValues == null ? null : newValues.get(cell);
+                if (left == null && right != null) { added++; } else if (left != null && right == null) { removed++; }
+                else if (!Objects.equals(left, right)) { changed++; }
+            }
+        }
+        final int clears = stored.stream().mapToInt(day -> day.clearedClans.size()).sum();
+        return new TournamentDtos.CsvChanges(addedClans, changedClans, removedClans, added, changed, removed, clears);
+    }
+    private TournamentDtos.CsvChanges storedCsvChanges(final Map<String, Object> applied) {
+        final Object saved = applied.get("changes");
+        if (saved instanceof TournamentDtos.CsvChanges changes) { return changes; }
+        final Map<?, ?> values = (Map<?, ?>) saved;
+        return new TournamentDtos.CsvChanges(((Number) values.get("addedClans")).intValue(), ((Number) values.get("changedClans")).intValue(),
+                ((Number) values.get("removedClans")).intValue(), ((Number) values.get("addedScores")).intValue(), ((Number) values.get("changedScores")).intValue(),
+                ((Number) values.get("removedScores")).intValue(), ((Number) values.get("preservedClears")).intValue());
+    }
+    private record CsvSource(String name, String sha256, List<TournamentDtos.HistoricalRow> rows) { }
+    private CsvSource csvSource(final TournamentEvent event, final MultipartFile file) {
+        final int limit = 2 * 1024 * 1024;
+        if (file == null) { throw csvInvalid(0, "file", "empty"); }
+        if (file.getSize() > limit) { throw error(ApiErrorCode.FILE_TOO_LARGE); }
+        final byte[] bytes;
+        try (final var input = file.getInputStream()) { bytes = input.readNBytes(limit + 1); }
+        catch (final IOException failure) { throw csvInvalid(0, "file", "read"); }
+        if (bytes.length > limit) { throw error(ApiErrorCode.FILE_TOO_LARGE); }
+        if (bytes.length == 0) { throw csvInvalid(0, "file", "empty"); }
+        final String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().replace('\\', '/');
+        final String sourceName = name.substring(name.lastIndexOf('/') + 1).strip();
+        if (!StringUtils.hasText(sourceName) || sourceName.codePointCount(0, sourceName.length()) > 200 || sourceName.codePoints().anyMatch(Character::isISOControl)) { throw csvInvalid(0, "file", "name"); }
+        final String text;
+        try {
+            final String decoded = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
+            text = decoded.startsWith("\ufeff") ? decoded.substring(1) : decoded;
+        } catch (final CharacterCodingException failure) { throw csvInvalid(0, "file", "encoding"); }
+        final List<String> pointColumns = new ArrayList<>();
+        for (int round = 1; round <= event.roundCount; round++) {
+            for (int day = 1; day <= event.daysPerRound; day++) { pointColumns.add("R" + round + "D" + day); }
+        }
+        final Set<String> required = new HashSet<>(pointColumns); required.add("军团标签"); required.add("总积分");
+        final List<TournamentDtos.HistoricalRow> rows = new ArrayList<>();
+        try (final CSVParser parser = CSVFormat.RFC4180.builder().setHeader().setSkipHeaderRecord(true).setIgnoreEmptyLines(true).get().parse(new StringReader(text))) {
+            final List<String> headers = parser.getHeaderNames(); final Set<String> actual = new HashSet<>(headers);
+            if (actual.size() != headers.size() || !actual.containsAll(required) || actual.stream().anyMatch(header -> !required.contains(header) && !"积分排名".equals(header))) { throw csvInvalid(1, "header", "header"); }
+            for (final CSVRecord row : parser) {
+                final long rowNumber = row.getRecordNumber() + 1;
+                if (row.stream().allMatch(value -> !StringUtils.hasText(value))) { continue; }
+                if (!row.isConsistent()) { throw csvInvalid(rowNumber, "header", "columns"); }
+                if (rows.size() >= 10000) { throw csvInvalid(rowNumber, "file", "rows"); }
+                final String tag;
+                try { tag = clanTag(row.get("军团标签")); } catch (final ApiException invalidTag) { throw csvInvalid(rowNumber, "军团标签", "clanTag"); }
+                final List<Integer> points = new ArrayList<>(); long sum = 0;
+                for (final String column : pointColumns) {
+                    final String value = row.get(column).strip();
+                    final Integer point = value.isEmpty() ? null : (int) csvNumber(value, 1_000_000, rowNumber, column);
+                    points.add(point); if (point != null) { sum += point; }
+                }
+                final long total = csvNumber(row.get("总积分").strip(), (long) pointColumns.size() * 1_000_000, rowNumber, "总积分");
+                if (sum != total) { throw csvInvalid(rowNumber, "总积分", "total"); }
+                rows.add(new TournamentDtos.HistoricalRow(tag, points, total));
+            }
+        } catch (final IOException | UncheckedIOException failure) { throw csvInvalid(0, "file", "syntax"); }
+        catch (final IllegalArgumentException invalidHeader) { throw csvInvalid(1, "header", "header"); }
+        if (rows.isEmpty()) { throw csvInvalid(0, "file", "empty"); }
+        try { return new CsvSource(sourceName, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)), List.copyOf(rows)); }
+        catch (final NoSuchAlgorithmException impossible) { throw new IllegalStateException("SHA-256 unavailable", impossible); }
+    }
+    private long csvNumber(final String text, final long maximum, final long row, final String column) {
+        if (!text.matches("[0-9]+")) { throw csvInvalid(row, column, "number"); }
+        try { final long value = Long.parseLong(text); if (value > maximum) { throw csvInvalid(row, column, "number"); } return value; }
+        catch (final NumberFormatException invalidNumber) { throw csvInvalid(row, column, "number"); }
+    }
+    private static ApiException csvInvalid(final long row, final String column, final String reason) {
+        return new ApiException(ApiErrorCode.TOURNAMENT_CSV_INVALID, null, Map.of("rowNumber", row, "column", column, "reason", reason));
+    }
     /** Separate capability/state response leaves strict, already-deployed day clients compatible. */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.HistoricalState historicalState(final long id, final int round, final int number) {
@@ -166,12 +445,12 @@ public class TournamentService {
             final TournamentDay day = existingDay(id, imported.roundNumber, imported.dayNumber).orElse(imported);
             day.publishedHistoricalPoints = imported.publishedHistoricalPoints; day.expectedGroupCount = null; day.version++; days.save(day);
         }
-        event.configLocked = true; event.historicalImportKey = request.idempotencyKey(); event.historicalImportHash = hash; event.version++;
+        event.ruleSource = "FROZEN"; event.frozenDefaultVersion = null; event.configLocked = true; event.historicalImportKey = request.idempotencyKey(); event.historicalImportHash = hash; event.version++;
         audit(event, null, null, "HISTORICAL_IMPORTED", actor, null, Map.of(), Map.of("sourceName", request.sourceName().strip(),
                 "sourceSha256", request.sourceSha256(), "importHash", hash, "rows", request.rows(), "clanCount", matrix.size()));
         return historicalView(event, request.rows().size(), matrix, dayList(id));
     }
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.DayView day(final long id, final int round, final int number) {
         final TournamentEvent event = event(id); dimension(event, round, number);
         return dayView(event, existingDay(id, round, number).orElseGet(() -> newDay(id, round, number)), null);
@@ -180,6 +459,7 @@ public class TournamentService {
         final TournamentEvent event = locked(id, request.expectedEventVersion()); dimension(event, round, number);
         final TournamentDay day = writableDay(id, round, number, request.expectedDayVersion()); groupCount(request.expectedGroupCount());
         if (day.draftGroups != null && day.draftGroups.size() > request.expectedGroupCount()) { throw error(ApiErrorCode.TOURNAMENT_GROUP_COUNT_MISMATCH); }
+        freezeRules(event, request.expectedDefaultVersion());
         day.expectedGroupCount = request.expectedGroupCount(); event.configLocked = true; changed(event, day); return dayView(event, day, null);
     }
     public TournamentDtos.RecognitionPermit recognitionPermit(final String actor, final long id, final int round, final int number,
@@ -271,7 +551,7 @@ public class TournamentService {
         event.version++; return standings(event, dayList(id), null, null, true);
     }
     @Transactional(readOnly = true)
-    public List<TournamentDtos.Audit> auditList(final long id) { event(id); return audits.findByEventIdOrderByIdDesc(id).stream().map(mapper::audit).toList(); }
+    public List<TournamentDtos.Audit> auditList(final long id) { event(id); return audits.findMetadataByEventId(id).stream().map(mapper::audit).toList(); }
     @Transactional(readOnly = true)
     public TournamentDtos.EvidenceDownload download(final long id, final String evidenceId) {
         event(id); final TournamentEvidence attachment = evidence.findByIdAndEventId(evidenceId, id).orElseThrow(() -> error(ApiErrorCode.RESOURCE_NOT_FOUND));
@@ -345,14 +625,17 @@ public class TournamentService {
         return standings(event, storedDays, previewDay, preview, admin, Set.of());
     }
     private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin, final Set<String> historicalRoster) {
+        return standings(event, storedDays, previewDay, preview, admin, historicalRoster, false);
+    }
+    private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin, final Set<String> historicalRoster, final boolean replaceRoster) {
         final Map<String, Map<String, Long>> scores = new HashMap<>();
-        clans.findByEventIdOrderByClanTag(event.id).stream().filter(clan -> clan.historicalPublished)
+        clans.findByEventIdOrderByClanTag(event.id).stream().filter(clan -> !replaceRoster && clan.historicalPublished)
                 .forEach(clan -> scores.put(clan.clanTag, new HashMap<>()));
         historicalRoster.forEach(tag -> scores.putIfAbsent(tag, new HashMap<>()));
         final Map<String, TournamentDay> dayByKey = storedDays.stream().collect(Collectors.toMap(day -> key(day.roundNumber, day.dayNumber), day -> day));
         if (previewDay != null) { dayByKey.put(key(previewDay.roundNumber, previewDay.dayNumber), previewDay); }
         final List<TournamentDtos.StandingDay> columns = new ArrayList<>();
-        final Map<Integer, TournamentRule> ruleByRound = rules.findByEventIdOrderByRoundNumber(event.id).stream().collect(Collectors.toMap(rule -> rule.roundNumber, rule -> rule));
+        final Map<Integer, TournamentRule> ruleByRound = effectiveRules(event).stream().collect(Collectors.toMap(rule -> rule.roundNumber, rule -> rule));
         for (int round = 1; round <= event.roundCount; round++) {
             for (int number = 1; number <= event.daysPerRound; number++) {
                 final String key = key(round, number); final TournamentDay day = dayByKey.get(key);
@@ -370,7 +653,11 @@ public class TournamentService {
                         scores.computeIfAbsent(team.clanTag(), ignored -> new HashMap<>()).put(key, day.clearedClans.contains(team.clanTag()) ? 0L : value.longValue());
                     }
                 }
-                for (final String tag : day.clearedClans) { scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, 0L); }
+                for (final String tag : day.clearedClans) {
+                    if ((!event.csvImported && !replaceRoster) || (selected != null && scores.containsKey(tag))) {
+                        scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, 0L);
+                    }
+                }
             }
         }
         final List<TournamentDtos.StandingRow> rows = new ArrayList<>();
@@ -397,12 +684,12 @@ public class TournamentService {
     private TournamentDtos.DayView dayView(final TournamentEvent event, final TournamentDay day, final List<TournamentSnapshot.Group> preview) {
         final List<TournamentSnapshot.Group> selected = preview != null ? preview : day.draftGroups != null ? day.draftGroups : day.publishedGroups != null ? day.publishedGroups : List.of();
         final String status = day.correction ? "CORRECTION" : published(day) ? "FINALIZED" : day.draftGroups != null || preview != null ? "DRAFT" : "EMPTY";
-        return new TournamentDtos.DayView(event.id, day.roundNumber, day.dayNumber, event.version, rule(event.id, day.roundNumber).rulesVersion,
+        return new TournamentDtos.DayView(event.id, day.roundNumber, day.dayNumber, event.version, effectiveRules(event).stream().filter(rule -> rule.roundNumber == day.roundNumber).findFirst().orElseThrow().rulesVersion,
                 day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), published(day),
                 standings(event, dayList(event.id), preview == null ? null : day, preview, true));
     }
     private TournamentDtos.Config configView(final TournamentEvent event) {
-        return new TournamentDtos.Config(mapper.toDto(event), rules.findByEventIdOrderByRoundNumber(event.id).stream()
+        return new TournamentDtos.Config(mapper.toDto(event), effectiveRules(event).stream()
                 .map(rule -> mapper.round(rule, complete(event, rule), roundLocked(event.id, rule.roundNumber))).toList(),
                 clans.findByEventIdOrderByClanTag(event.id).stream().map(clan -> clan.clanTag).toList());
     }
@@ -434,8 +721,11 @@ public class TournamentService {
         return complete(event, rule.days);
     }
     private boolean complete(final TournamentEvent event, final List<TournamentSnapshot.RuleDay> configuredDays) {
-        if (configuredDays.size() != event.daysPerRound) { return false; }
-        for (int number = 1; number <= event.daysPerRound; number++) {
+        return complete(event.daysPerRound, configuredDays);
+    }
+    private boolean complete(final int daysPerRound, final List<TournamentSnapshot.RuleDay> configuredDays) {
+        if (configuredDays.size() != daysPerRound) { return false; }
+        for (int number = 1; number <= daysPerRound; number++) {
             final int target = number;
             final Set<Integer> ranks = configuredDays.stream().filter(day -> day.dayNumber() == target).flatMap(day -> day.points().stream()).map(TournamentSnapshot.RankPoints::rank).collect(Collectors.toSet());
             if (!(ranks.contains(1) && ranks.contains(2) && ranks.contains(3) && ranks.contains(4))) { return false; }
@@ -447,11 +737,11 @@ public class TournamentService {
         return rule.days.stream().filter(day -> day.dayNumber() == number).findFirst().map(day -> day.points().stream()
                 .collect(Collectors.toMap(TournamentSnapshot.RankPoints::rank, TournamentSnapshot.RankPoints::points))).orElse(Map.of());
     }
-    private List<TournamentSnapshot.RuleDay> normalizeRules(final TournamentEvent event, final List<TournamentDtos.RuleDay> input) {
-        if (input == null || input.size() > event.daysPerRound) { throw invalid(); }
+    private List<TournamentSnapshot.RuleDay> normalizeRules(final int daysPerRound, final List<TournamentDtos.RuleDay> input) {
+        if (input == null || input.size() > daysPerRound) { throw invalid(); }
         final Set<Integer> seenDays = new HashSet<>(); final List<TournamentSnapshot.RuleDay> result = new ArrayList<>();
         for (final TournamentDtos.RuleDay day : input) {
-            if (day == null || day.dayNumber() < 1 || day.dayNumber() > event.daysPerRound || !seenDays.add(day.dayNumber()) || day.points() == null || day.points().size() > 5) { throw invalid(); }
+            if (day == null || day.dayNumber() < 1 || day.dayNumber() > daysPerRound || !seenDays.add(day.dayNumber()) || day.points() == null || day.points().size() > 5) { throw invalid(); }
             final Set<Integer> ranks = new HashSet<>(); final List<TournamentSnapshot.RankPoints> points = new ArrayList<>();
             for (final TournamentDtos.RankPoints point : day.points()) {
                 if (point == null || point.rank() < 1 || point.rank() > 5 || !ranks.add(point.rank()) || point.points() < 0 || point.points() > 1_000_000) { throw invalid(); }
@@ -479,7 +769,7 @@ public class TournamentService {
         if (!historicalTargetEmpty(event, dayList(event.id))) { throw error(ApiErrorCode.TOURNAMENT_LOCKED); }
     }
     private boolean historicalTargetEmpty(final TournamentEvent event, final List<TournamentDay> storedDays) {
-        return event.historicalImportKey == null && storedDays.stream().noneMatch(day -> day.draftGroups != null || published(day) || day.correction || !day.clearedClans.isEmpty());
+        return !event.csvImported && event.historicalImportKey == null && storedDays.stream().noneMatch(day -> day.draftGroups != null || published(day) || day.correction || !day.clearedClans.isEmpty());
     }
     private Map<String, List<Integer>> historicalMatrix(final TournamentEvent event, final String sourceName, final String sourceSha256, final List<TournamentDtos.HistoricalRow> input) {
         if (!StringUtils.hasText(sourceName) || sourceName.codePointCount(0, sourceName.length()) > 200 || sourceName.codePoints().anyMatch(Character::isISOControl)
@@ -536,7 +826,7 @@ public class TournamentService {
     private static ApiException invalid() { return error(ApiErrorCode.INVALID_ARGUMENT); }
     private static ApiException error(final ApiErrorCode code) { return new ApiException(code); }
     private void audit(final TournamentEvent event, final Integer round, final Integer number, final String action, final String actor, final String reason, final Map<String, Object> before, final Map<String, Object> after) {
-        final TournamentAudit audit = new TournamentAudit(); audit.eventId = event.id; audit.roundNumber = round; audit.dayNumber = number;
+        final TournamentAudit audit = new TournamentAudit(); audit.eventId = event == null ? null : event.id; audit.roundNumber = round; audit.dayNumber = number;
         audit.action = action; audit.actor = actor; audit.reason = reason; audit.createdAt = Instant.now(); audit.beforeState = before; audit.afterState = after; audits.save(audit);
     }
     private void removeUnusedEvidence(final TournamentEvent event, final boolean immediate) {
@@ -545,7 +835,7 @@ public class TournamentService {
             if (day.draftGroups != null) { day.draftGroups.forEach(group -> ids.add(group.evidenceId())); }
             if (day.publishedGroups != null) { day.publishedGroups.forEach(group -> ids.add(group.evidenceId())); }
         }
-        for (final TournamentAudit audit : audits.findByEventIdOrderByIdDesc(event.id)) { evidenceIds(audit.beforeState, ids); evidenceIds(audit.afterState, ids); }
+        ids.addAll(audits.findEvidenceIdsByEventId(event.id));
         final Instant cutoff = Instant.now().minus(24, ChronoUnit.HOURS); final Set<String> retainedHashes = new HashSet<>();
         for (final TournamentEvidence attachment : evidence.findByEventId(event.id)) {
             if (!ids.contains(attachment.id) && (immediate || attachment.createdAt.isBefore(cutoff))) { evidence.delete(attachment); }
@@ -555,12 +845,6 @@ public class TournamentService {
         // Scheduled sweeps keep the event lock while deleting unreferenced old files, preventing an
         // upload from reusing an orphan between the reference check and physical removal.
         if (!immediate) { storage.cleanup(event.id, retainedHashes, cutoff); }
-    }
-    private void evidenceIds(final Object value, final Set<String> ids) {
-        if (value instanceof TournamentSnapshot.Group group) { ids.add(group.evidenceId()); }
-        else if (value instanceof Map<?, ?> map) {
-            if (map.get("evidenceId") instanceof String id) { ids.add(id); } map.values().forEach(child -> evidenceIds(child, ids));
-        } else if (value instanceof Iterable<?> items) { items.forEach(child -> evidenceIds(child, ids)); }
     }
     private void afterCommit(final Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) { action.run(); return; }

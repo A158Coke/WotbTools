@@ -160,6 +160,33 @@ awk '/^\thandle \/android\/oauth\/callback \{/ { skip = 1 }
 rejects 'android callback absent from the inventory' "$callback_removed_entirely" \
   'auth.wotbtools.com must declare handle /android/oauth/callback'
 
+# 合规安全访问日志的守卫必须是真守卫：删掉覆盖面收窄、删掉字段删除、或把 query string
+# 重新 append 回来，都必须在 live gateway 之前被拦下。前三个变体在文本层就被拒绝（docker
+# 还没被调用），最后一个只在适配后的 JSON 里才看得出来，所以用 CORS 变体同样的手法断言。
+log_skip_gone="$(caddyfile compliance-log-skip-gone)"
+sed -i '/^\tlog_skip @notApi$/d' "$log_skip_gone/Caddyfile"
+rejects 'compliance access log covers more than /api/*' "$log_skip_gone" \
+  'must log_skip @notApi'
+
+log_headers_kept="$(caddyfile compliance-headers-kept)"
+sed -i '/^\t\t\t\trequest>headers delete$/d' "$log_headers_kept/Caddyfile"
+rejects 'compliance access log keeps request headers' "$log_headers_kept" \
+  "must delete 'request>headers'"
+
+log_query_reappended="$(caddyfile compliance-query-reappended)"
+sed -i 's|^\tlog_append ua {http.request.header.User-Agent}$|\tlog_append ua {http.request.header.User-Agent}\n\tlog_append q {http.request.uri.query}|' \
+  "$log_query_reappended/Caddyfile"
+rejects 'compliance access log re-appends the query string' "$log_query_reappended" \
+  'must not re-append the query string'
+
+log_duplicated="$(caddyfile compliance-log-unnamed)"
+sed -i 's|^\tlog security_api {$|\tlog {|' "$log_duplicated/Caddyfile"
+if guard "$log_duplicated"; then
+  echo 'an unnamed compliance access log was accepted' >&2
+  exit 1
+fi
+grep -q 'named compliance access log' "$work/out.log" || { cat "$work/out.log" >&2; exit 1; }
+
 unreviewed="$(caddyfile unreviewed-upstream)"
 printf '\n%sunreviewed.example.com {\n%sreverse_proxy example.invalid:1234\n%s}\n' \
   '' "$(printf '\t')" '' >> "$unreviewed/Caddyfile"
@@ -202,6 +229,7 @@ for name, default in (
     env_args += ["-e", f"{name}={os.environ.get(name) or default}"]
 config = json.loads(subprocess.check_output(["docker", "run", "--rm", "-e", "CADDY_ACME_EMAIL=ci@example.invalid", *env_args, "-v", f"{root}/deploy/tx/Caddyfile:/etc/caddy/Caddyfile:ro", image, "caddy", "adapt", "--config", "/etc/caddy/Caddyfile"], stderr=subprocess.DEVNULL))
 server = config["apps"]["http"]["servers"]["srv0"]
+logging_config = config["logging"]
 server["routes"] = [route for route in server["routes"] if route.get("match") == [{"host": ["wotbtools.com"]}]]
 server["listen"] = [":8080"]
 server["automatic_https"] = {"disable": True}
@@ -229,7 +257,11 @@ web = {"listen": [":8082"], "routes": [
     {"match": [{"path": ["/index.json"]}], "handle": [{"handler": "static_response", "status_code": 200, "body": "web:{http.request.uri}"}]},
     {"handle": [{"handler": "static_response", "status_code": 502}]}
 ]}
-config = {"admin": {"disabled": True}, "apps": {"http": {"servers": {"cors": server, "asset-fixture": asset, "web-fixture": web}}}}
+# The adapted `logging` block travels with the server: the compliance access
+# logger is what this fixture proves, and without it Caddy would fall back to
+# the default logger and log every request unfiltered.
+config = {"admin": {"disabled": True}, "logging": logging_config,
+          "apps": {"http": {"servers": {"cors": server, "asset-fixture": asset, "web-fixture": web}}}}
 path = work / "cors-runtime.json"; path.write_text(json.dumps(config))
 container = subprocess.check_output(["docker", "run", "-d", "--rm", "-p", "127.0.0.1::8080", "-v", f"{path}:/config.json:ro", image, "caddy", "run", "--config", "/config.json"], text=True).strip()
 try:
@@ -256,11 +288,20 @@ try:
     assert status == 204, status
     assert headers["access-control-allow-origin"] == origin, headers
     assert "authorization" in headers["access-control-allow-headers"].lower()
+    assert "HEAD" in headers["access-control-allow-methods"].split(", "), headers
+    assert "x-tournament-default-rules" in headers["access-control-expose-headers"].lower(), headers
+    assert "x-tournament-csv-import" in headers["access-control-expose-headers"].lower(), headers
     assert "access-control-allow-credentials" not in headers
     _, untrusted, _ = request("https://untrusted.example")
     assert "access-control-allow-origin" not in untrusted, untrusted
     status, actual, _ = request(origin, "GET")
     assert status == 502 and actual["access-control-allow-origin"] == origin, (status, actual)
+    for allowed_origin in (origin, "http://127.0.0.1:21653"):
+        status, head_headers, body = request(allowed_origin, "HEAD", "/api/admin/tournaments")
+        assert status == 502 and body == "", (status, body)
+        assert head_headers["access-control-allow-origin"] == allowed_origin, head_headers
+        assert "x-tournament-default-rules" in head_headers["access-control-expose-headers"].lower(), head_headers
+        assert "x-tournament-csv-import" in head_headers["access-control-expose-headers"].lower(), head_headers
     status, asset_headers, body = request(origin, "GET", "/agent-assets/index.json")
     assert status == 200 and body == "asset:/index.json", (status, body)
     assert asset_headers["x-map-meta"] == "fixture-map-metadata", asset_headers
@@ -268,6 +309,59 @@ try:
     assert asset_headers["access-control-allow-origin"] == origin
     status, _, body = request(origin, "GET", "/index.json")
     assert status == 200 and body == "web:/index.json", (status, body)
+
+    # --- the 190-day compliance access log, proven against real stdout -------
+    # Fixture secrets are deliberately recognisable: the whole point is that none
+    # of them may survive into a log that is retained for 190 days. The query
+    # value, the Authorization credential and the Cookie value all travel on the
+    # one request that IS logged, so finding any of them in the output means the
+    # field filter is not doing its job.
+    query_secret, bearer_secret, cookie_secret = "QUERY-SECRET-FIXTURE", "AUTH-SECRET-FIXTURE", "COOKIE-SECRET-FIXTURE"
+    user_agent = "WotBTools-compliance-fixture/1.0"
+    access_marker = '"logger":"http.log.access.'
+    def access_lines():
+        output = subprocess.check_output(["docker", "logs", container], stderr=subprocess.STDOUT, text=True, errors="replace")
+        return [line for line in output.splitlines() if access_marker in line]
+    # The CORS assertions above already drove several /api/* requests through this
+    # same gateway, so only the lines this block adds are its own evidence.
+    baseline = len(access_lines())
+    def logged_request(path, headers=None):
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        connection.request("GET", path, headers={"Host": "wotbtools.com", "User-Agent": user_agent, **(headers or {})})
+        response = connection.getresponse(); response.read()
+        return response.status
+    api_status = logged_request(
+        f"/api/hof/leaderboard?token={query_secret}&page=2",
+        {"Authorization": f"Bearer {bearer_secret}", "Cookie": f"KEYCLOAK_SESSION={cookie_secret}"},
+    )
+    assert api_status == 502, api_status
+    # Everything else the public site serves: the SPA shell, a hashed asset, the
+    # APK redirect (which answers from Caddy, so it would be logged if log_skip
+    # ran after it) and the asset gateway.
+    for skipped_path in ("/", "/assets/index-fixture.js", "/download/android/fixture.apk", "/agent-assets/index.json"):
+        logged_request(skipped_path)
+    for attempt in range(50):
+        added = access_lines()[baseline:]
+        if added: break
+        time.sleep(.1)
+    assert len(added) == 1, f"only the /api/* request may be logged, got: {added}"
+    entry = json.loads(added[0])
+    assert entry["logger"] == "http.log.access.security_api", entry["logger"]
+    assert entry["path"] == "/api/hof/leaderboard", entry
+    assert entry["compliance"] == "security" and entry["security_kind"] == "api_access", entry
+    assert entry["ua"] == user_agent, entry
+    assert entry["status"] == 502, entry
+    assert entry["request"]["method"] == "GET" and entry["request"]["host"] == "wotbtools.com", entry
+    # The retained field set: enough to answer "who reached which service, from
+    # where, when, and with what result" and nothing beyond it.
+    for required in ("remote_ip", "remote_port"):
+        assert entry["request"][required], (required, entry)
+    assert "uri" not in entry["request"] and "headers" not in entry["request"], entry
+    assert "resp_headers" not in entry, entry
+    for secret in (query_secret, bearer_secret, cookie_secret, "token="):
+        assert secret not in added[0], f"{secret} leaked into the compliance access log: {added[0]}"
+    print("Caddy compliance access log: /api/* retained with the reviewed field set, "
+          "SPA/assets/APK/asset-gateway skipped, query + Authorization + Cookie absent: PASS")
 finally:
     subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, check=True)
 print("Caddy HTTP preflight / rejected origin / upstream failure / asset gateway path and exposed metadata: PASS")

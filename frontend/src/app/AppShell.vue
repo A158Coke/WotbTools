@@ -7,8 +7,10 @@ import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 import { useError } from '../composables/useError.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { provideCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useOnboarding } from '../composables/useOnboarding.js'
+import { useUsageTelemetry } from '../composables/useUsageTelemetry.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -27,18 +29,20 @@ const APP_ICP_FILING = '闽ICP备2026036303号-2A'
 const isAndroidAppRuntime = isAndroidApp()
 const router = useRouter()
 const route = useRoute()
+useUsageTelemetry(computed(() => viewFromRoute(route)))
 const { error: globalError, showError: showGlobalError, close: closeGlobalError } = useError()
 const { notice: connectivityNotice, close: closeConnectivityNotice } = useConnectivityNotice()
 // 外壳按可用宽度切换（design-language §9）：compact 用标题栏 + 底部 Tab 栏；平板 / 桌面用左侧边栏
 const { isCompact } = useBreakpoint()
 
 /**
- * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（bridge v2），
+ * 连通性监听在这里启动一次（进程内单例）：Android 壳走系统 ConnectivityManager（Native Bridge），
  * 浏览器走 navigator.onLine。业务页面不得自行监听 —— 它们只读 capability 门禁的结果。
  */
 const { connectivity, start: startConnectivity } = useConnectivity()
 // 门禁（唯一判定入口）：重试等交互用它 —— 既弹统一 connectivity notice，又给出布尔结果。
 const { requireFeature } = useFeatureGate()
+provideCreatorAvailability()
 onMounted(() => {
   void startConnectivity()
 })
@@ -92,7 +96,7 @@ function retryBusinessBootstrap() {
 /**
  * 登出 / 会话失效 → 当前运行面的默认落地页（2.1.0 Phase 5.3/5.4）：
  * Web production 回首页；Android 与本地 Web 回回放工作台。浏览器端这一步发生在跳 Keycloak
- * end-session 之前（local-first 已先清本地态）；Android 端 WebView 不导航，这一跳就是它唯一的落点。
+ * end-session 之前（local-first 已先清本地态）；Android 端页面不导航，这一跳就是它唯一的落点。
  * init 重建期间（authInitState=initializing）的中间态不是登出：不导航。
  */
 let previousAuthenticated = authenticated.value

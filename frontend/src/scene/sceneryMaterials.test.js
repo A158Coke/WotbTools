@@ -441,11 +441,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(matSrc).not.toMatch(/SRGBColorSpace/);      // 材质模块内零 sRGB 解码
     expect(matSrc).toMatch(/NoColorSpace/);            // 且确有显式原样采样
     // 场景侧的 sRGB 只许是**显示内容**（画布贴图 / 底图 / IBL 等距柱状）：
-    // 底图 mapTexture、IBL envTexture、基地标记画布、伤害飘字画布、履带印贴图 —— 恰好 5 处。
-    // （履带印 = 客户端 albedo 贴图的显示内容解码，DDS→webp 保像素转码；2026-10-11）
+    // 底图 mapTexture、IBL envTexture、基地标记画布、履带印贴图 —— 恰好 4 处。
+    // （履带印 = 客户端 albedo 贴图的显示内容解码，DDS→webp 保像素转码；2026-10-11。
+    //   伤害飘字画布随 sprite 一同退役：3D 伤害数字改由 HTML 覆盖层呈现，见
+    //   PlaybackVehicleLabels3D 与 docs/features/battle-playback.md。）
     // 新增一处（尤其给地面分层 texs[k] 加）会改这个数 ⇒ 必须先想清楚它属于哪一类。
     const sites = [...src.matchAll(/colorSpace = THREE\.SRGBColorSpace/g)]
-    expect(sites.length).toBe(5)
+    expect(sites.length).toBe(4)
     expect(src).toMatch(/groundLayers = \{ layers: L, texs \};/)   // 分层纹理键集不变
     expect(src).not.toMatch(/texs\[k\][^\n]*colorSpace/);          // 分层纹理不得改采样空间
   })
@@ -1020,24 +1022,21 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(resize).not.toMatch(/labelRenderer/)
   })
 
-  it('覆盖层并入主画布：不再有第二个 WebGL 上下文', () => {
-    // 回归：独立标签画布 = 两块 GPU 表面 + 浏览器逐帧两画布合成
+  it('覆盖层并入主画布：不再有第二个 WebGL 上下文，也没有第二次 render', () => {
+    // 回归：独立标签画布 = 两块 GPU 表面 + 浏览器逐帧两画布合成。
+    // 伤害数字迁到 HTML 覆盖层后，反馈层不再需要 renderer 的第二次 render。
     expect(src).not.toMatch(/labelRenderer/)
     const ctor = src.match(/new THREE\.WebGLRenderer\(/g) || []
     expect(ctor.length).toBe(1)
     const animate = src.slice(src.indexOf('function animate()'))
-    expect(animate).toMatch(/renderer\.autoClear = false;/)
-    expect(animate).toMatch(/renderer\.render\(labelScene, camera\);/)
-    expect(animate).toMatch(/renderer\.autoClear = true;/)
+    expect(animate).toMatch(/renderer\.render\(scene, camera\);/)
+    expect(animate).not.toMatch(/autoClear/)
   })
 
   it('特效走对象池：到期归池而非 dispose，池只在会话结束时整体释放', () => {
     // 回归：每发/每次命中/每次击毁新建 geometry+material 再 dispose → 交火高峰分配尖峰。
-    // 伤害飘字留在场景自己的池；炮线/光迹借还 battleFx 的条带池，命中/开火/爆炸写进
-    // battleFx 的粒子批次（资源唯一 owner 与释放见 battleFx.test.js）。
-    expect(src).toMatch(/function fxTake\(key, make\)/)
-    expect(src).toMatch(/function disposeFxPool\(\)/)
-    expect(src.includes("fxGive('floatDmg'")).toBe(true)
+    // 炮线/光迹借还 battleFx 的条带池，命中/开火/爆炸写进 battleFx 的粒子批次
+    //（资源唯一 owner 与释放见 battleFx.test.js）；伤害数字已是覆盖层 DOM，没有画布资源可池化。
     expect(src).toMatch(/fx\.takeRibbon\('tracer'\)/)
     expect(src).toMatch(/fx\.takeRibbon\('trail'\)/)
     expect(src).toMatch(/battleFx\.giveRibbon\(tl\.mesh\);/)
@@ -1046,7 +1045,6 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     const hot = src.slice(src.indexOf('function spawnShot'), src.indexOf('function updateBases'))
     expect(hot).not.toMatch(/\.geometry\.dispose\(\)/)
     expect(hot).not.toMatch(/\.material\.dispose\(\)/)
-    expect(src).toMatch(/disposeFxPool\(\);/)
   })
 
   /**
@@ -1109,15 +1107,34 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(animate).toMatch(/const busy = PLAYING/)
     expect(animate).toMatch(/\|\| cameraMoved/)
     expect(animate).toMatch(/\|\| frameDirty/)
-    expect(animate).toMatch(/tracers\.length > 0 \|\| floatDmgs\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
+    expect(animate).toMatch(/tracers\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
     expect(animate).toMatch(/ghostByEid\.size > 0 \|\| flashByEid\.size > 0;/)
     expect(animate).toMatch(/if \(!busy\) return;/)
   })
 })
 
 describe('车体横滚（hull_roll）接线守卫', () => {
-  it('侧倾取值助手：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
-    expect(src).toMatch(/const rollAt = \(v, t\) => \(v\.def\.hull_roll && v\.def\.hull_roll\.length \? arrAt\(v\.def\.hull_roll, t\) : 0\);/)
+  // 位姿采样 SSOT（2026-10-16 抽层：2D 俯视与 3D 场景共用同一实现，见 vehiclePose.ts 头部）。
+  // 通道选择 / 缺列兜底随实现迁移到该模块，守卫改读新源（与 matSrc/asmSrc/gpSrc 同例）。
+  const poseSrc = readSrc(resolve(here, '../replay-local/pose/vehiclePose.ts'), 'utf8')
+    .replace(/\/\/[^\n]*/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+
+  it('侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
+    expect(src).toMatch(/const rollAt = \(v, t\) => poseOf\(v, t\)\.roll;/)
+    expect(poseSrc).toMatch(/if \(!arr \|\| !arr\.length\) return 0/)
+    expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid\)/)
+    expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid\)/)
+    // 侧倾/炮塔**只有网格列**（pose_kf 只覆盖 pos/hull_yaw/hull_pitch）
+    expect(poseSrc).not.toMatch(/kf\.roll/)
+  })
+
+  it('位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退', () => {
+    // 2D 俯视与 3D 场景必须逐帧同源（2026-10-16 抽层）；本守卫防通道逻辑回流到场景侧。
+    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(v\.def, POSE_GRID, t, _poseOut\);/)
+    expect(src).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
+    expect(src).not.toMatch(/kfOf/)
+    expect(src).not.toMatch(/const col = \(c\) =>/)
   })
 
   it('两条位姿路径都带 roll，且符号为负（镜像约定：绕前向轴取负，与 -yaw 同理）', () => {
@@ -1174,7 +1191,6 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
       [/color: 0xe8b23c[\s\S]{0,160}toneMapped: false/, '作者标记环'],
       [/color: baseColors\.neutral[\s\S]{0,200}toneMapped: false/, '基地环'],
       [/map: tex, side: THREE\.DoubleSide[\s\S]{0,160}toneMapped: false/, '基地圆盘'],
-      [/SpriteMaterial\(\{[\s\S]{0,180}toneMapped: false/, '伤害飘字'],
     ]
     for (const [re, label] of sites) expect(src, label).toMatch(re)
     // 炮线 / 光迹 / 命中 / 开火 / 爆炸的材质在 battleFx：其 toneMapped=false 由 battleFx.test.js 按真实材质断言
@@ -1183,7 +1199,6 @@ describe('炮线渲染守卫（阵营语义色直出）', () => {
   it('着色器预热：场景就绪时 compile 一次（首次开火才编译＝开局/接火卡顿）', () => {
     expect(src).toMatch(/function prewarmShaders\(\)/)
     expect(src).toMatch(/renderer\.compile\(scene, camera\);/)
-    expect(src).toMatch(/renderer\.compile\(labelScene, camera\);/)
     // 会话启动路径必须调用（GLB 恢复之后、开播之前）
     // GLB 恢复挂载已前移到 buildVehicles 之后（2026-10-11）：高/极致在 assetStage 内
     // await 全部模型就绪才开播（用户裁示"进地图前加载完双方坦克模型"）

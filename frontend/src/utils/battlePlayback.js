@@ -91,10 +91,20 @@ export function trustedPositionAt(points, t) {
   return p
 }
 
-/** Canonical V2 route position at a shot time; point routes remain legacy-test compatible. */
-function trustedRoutePosition(route, t) {
+/**
+ * Canonical V2 route position at a shot time; point routes remain legacy-test compatible.
+ *
+ * `poseAt(route, t)`（可选）= 与 3D 同源的位姿通道取值（`replay-local/pose/vehiclePose.ts`）。
+ * **门控不变**：事件时刻必须落在观测区间（`positionCoveredAtV2`）才可信——位姿通道只改"取哪个值"，
+ * 不放松"能不能画"（炮线端点禁止用最后已知位置 / 编造位置伪造射击位置）。
+ */
+function trustedRoutePosition(route, t, poseAt = null) {
   if (Array.isArray(route?.positionSegments)) {
     if (!positionCoveredAtV2(route.positionSegments, t)) return null
+    if (poseAt) {
+      const p = poseAt(route, t)
+      return p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { x: p.x, y: p.y, timeSec: t } : null
+    }
     const p = positionAtV2(route.positionSegments, t)
     return p && Number.isFinite(p.x) && Number.isFinite(p.y)
       && Math.abs(p.timeSec - t) <= 1e-6 ? p : null
@@ -175,10 +185,66 @@ export function recentPositionTrails(vehicles, nowSec, windowSec = 2) {
   return trails
 }
 
+/**
+ * 位姿通道版尾迹（与 3D 同源的位置序列）。
+ *
+ * 与 `recentPositionTrails` 的区别只有"取哪个值"：位置来自 `poseAt(vehicle, t)`（= 3D 场景同一
+ * 采样器），而**可信度门控 `coveredAt(vehicle, t)` 仍由 canonical 知识层给出**；段外（未观测/
+ * AoI 空隙）不连线、不插值——观感与 3D 运动一致，同时保留"最后已知不伪造轨迹"的既有语义。
+ *
+ * @param poseAt     (vehicle, t) → { x, y } | null（y = 游戏 z）
+ * @param coveredAt  (vehicle, t) → boolean（canonical 观测区间）
+ */
+export function recentPositionTrailsFromPose(vehicles, poseAt, coveredAt, nowSec, windowSec = 2, stepSec = 0.1) {
+  if (!Array.isArray(vehicles) || typeof poseAt !== 'function' || typeof coveredAt !== 'function'
+    || !Number.isFinite(nowSec)) return []
+  const span = Number.isFinite(windowSec) && windowSec > 0 ? windowSec : 2
+  const step = Number.isFinite(stepSec) && stepSec > 0 ? stepSec : 0.1
+  const start = nowSec - span
+  const trails = []
+  for (const vehicle of vehicles) {
+    // 从当前时刻向回走；未观测处断链（绝不跨越 AoI 空隙连线）。
+    let chain = []
+    const emit = () => {
+      for (let i = 1; i < chain.length; i += 1) {
+        const from = chain[i - 1]
+        const to = chain[i]
+        const age = Math.max(0, nowSec - to.timeSec)
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          from,
+          to,
+          opacity: 0.12 + 0.58 * Math.max(0, 1 - age / span),
+        })
+      }
+      if (chain.length === 1) {
+        const point = chain[0]
+        trails.push({
+          accountId: vehicle.accountId,
+          friendly: vehicle.friendly,
+          point,
+          opacity: 0.2 + 0.5 * Math.max(0, 1 - Math.max(0, nowSec - point.timeSec) / span),
+        })
+      }
+      chain = []
+    }
+    for (let age = 0; age <= span + 1e-9; age += step) {
+      const t = nowSec - age
+      if (t < start - 1e-9) break
+      if (!coveredAt(vehicle, t)) { emit(); continue }
+      const p = poseAt(vehicle, t)
+      if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) { emit(); continue }
+      chain.unshift({ x: p.x, y: p.y, timeSec: t })
+    }
+    emit()
+  }
+  return trails
+}
+
 /** 炮线可见窗口基础时长（真实秒）：实际窗口 = TRACER_BASE_SEC × 播放倍速。
  * 原值 0.4s 实测太短，跟不上就看不见，整组时长按同比例加倍。 */
 const TRACER_BASE_SEC = 0.8
-
 /** 炮线全亮保持期（真实秒）：「先亮后淡」——保持后线性淡出到窗口结束。 */
 const TRACER_HOLD_REAL_SEC = 0.3
 
@@ -206,9 +272,11 @@ const SAME_SHOT_WINDOW_SEC = 0.25
  * @param routesByAccount Map<accountId, VehiclePlaybackTrack | { points: [{x,y,timeSec}] }>
  * @param nowSec         当前播放时间（battle-relative 秒）
  * @param speed          播放倍速（1/2/4）
+ * @param poseAt         可选：与 3D 同源的位姿通道 `(route, t) → { x, y } | null`
+ *                       （只改端点取值；可信度门控仍是 canonical 观测区间）
  * @returns [{ x1, y1, x2, y2, opacity, flashProgress, flashOpacity, timeSec, attackerAccountId, targetAccountId }]
  */
-export function tracerLines(events, routesByAccount, nowSec, speed) {
+export function tracerLines(events, routesByAccount, nowSec, speed, poseAt = null) {
   if (!Array.isArray(events) || !routesByAccount || !Number.isFinite(nowSec)) return []
   const rate = Number.isFinite(speed) && speed > 0 ? speed : 1
   const windowSec = TRACER_BASE_SEC * rate
@@ -248,8 +316,8 @@ export function tracerLines(events, routesByAccount, nowSec, speed) {
     if (nowSec < t - 1e-6 || nowSec >= t + windowSec - 1e-9) continue
     const from = routesByAccount.get(ev.accountId)
     const to = routesByAccount.get(ev.targetAccountId)
-    const a = from ? trustedRoutePosition(from, t) : null
-    const b = to ? trustedRoutePosition(to, t) : null
+    const a = from ? trustedRoutePosition(from, t, poseAt) : null
+    const b = to ? trustedRoutePosition(to, t, poseAt) : null
     // 目标位置是画命中闪光的最低要求；射手未被侦察时没有可信位置，只出闪光不连线
     // ——绝不用最后已知位置伪造射击点。
     if (!b) continue

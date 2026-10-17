@@ -2,12 +2,14 @@ package com.wotb.web.tournament.mapper;
 
 import com.wotb.web.tournament.dto.TournamentDtos;
 import com.wotb.web.tournament.entity.TournamentEvent;
+import com.wotb.web.tournament.entity.TournamentDefaultRules;
 import com.wotb.web.tournament.entity.TournamentRule;
 import com.wotb.web.tournament.entity.TournamentSnapshot;
 import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.util.Mapper;
 import org.springframework.stereotype.Component;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class TournamentMapper implements Mapper<TournamentEvent, TournamentDtos.Event> {
@@ -22,13 +24,28 @@ public class TournamentMapper implements Mapper<TournamentEvent, TournamentDtos.
                 rule.days.stream().map(day -> new TournamentDtos.RuleDay(day.dayNumber(), day.points().stream()
                         .map(point -> new TournamentDtos.RankPoints(point.rank(), point.points())).toList())).toList());
     }
+    public TournamentDtos.DefaultRules defaultRules(final TournamentDefaultRules defaults) {
+        return new TournamentDtos.DefaultRules(defaults.version, defaults.active, defaults.sourceEventId,
+                defaults.sourceLabel, defaults.updatedAt, defaults.rounds.stream().map(round ->
+                new TournamentDtos.DefaultRound(round.roundNumber(), round.days().stream().map(day ->
+                        new TournamentDtos.RuleDay(day.dayNumber(), day.points().stream().map(point ->
+                                new TournamentDtos.RankPoints(point.rank(), point.points())).toList())).toList())).toList());
+    }
+    public TournamentDtos.RuleSource ruleSource(final TournamentEvent event, final Long defaultVersion,
+                                               final boolean source, final boolean outdated) {
+        final String state = switch (event.ruleSource) {
+            case "INHERIT" -> "INHERIT"; case "CUSTOM" -> "CUSTOM"; case "FROZEN" -> "FROZEN";
+            default -> throw new IllegalStateException("Unknown stored tournament rule source");
+        };
+        return new TournamentDtos.RuleSource(event.version, state, defaultVersion, source, outdated);
+    }
     public TournamentDtos.Group group(final TournamentSnapshot.Group group) {
         return new TournamentDtos.Group(group.groupNumber(), group.evidenceId(), group.imageHash(),
                 group.teams().stream().map(team -> new TournamentDtos.Team(team.clanTag(), team.rank())).toList());
     }
-    public TournamentDtos.Audit audit(final TournamentAudit audit) {
-        return new TournamentDtos.Audit(audit.id, audit.action, audit.actor, audit.reason, audit.roundNumber,
-                audit.dayNumber, audit.createdAt, audit.beforeState, audit.afterState);
+    public TournamentDtos.Audit audit(final TournamentAudit.Metadata audit) {
+        return new TournamentDtos.Audit(audit.id(), audit.action(), audit.actor(), audit.reason(), audit.roundNumber(),
+                audit.dayNumber(), audit.createdAt(), Map.of(), Map.of());
     }
     private static String region(final String value) {
         return switch (value) { case "CN" -> "CN"; case "ASIA" -> "ASIA"; case "EU" -> "EU"; case "NA" -> "NA";
