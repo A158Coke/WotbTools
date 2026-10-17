@@ -56,7 +56,7 @@ public final class TankNameCorrector {
     // 普通英文词/人名与车型身份有歧义；自由文本缺少车辆上下文时宁可漏报，不改写正文。
     // 这是匹配排除策略，不影响 Tankopedia 的完整 ID / roster 查询。
     private static final Set<String> AMBIGUOUS_PROSE_NAMES = Set.of(
-            "is", "agent", "wind", "fury", "explorer", "ranger",
+            "is", "agent", "wind", "fury", "explorer", "ranger", "outcast",
             "tetrarch", "locust", "matilda", "covenanter", "alecto", "crusader",
             "scavenger", "leopard", "wolverine", "nightmare", "spike", "medjay",
             "high score", "excelsior", "angry connor", "turbo", "jackson", "spark",

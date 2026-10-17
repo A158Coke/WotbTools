@@ -51,7 +51,7 @@ class TankNameCorrectorTest {
     @Test
     void commonWordsAreNotVehicleMentionsEvenBesideRosterNicknames() {
         final List<String> words = List.of("agent", "wind", "fury", "explorer", "ranger", "is",
-                "scavenger", "spike", "thunder", "pirate", "nightmare", "hellcat");
+                "scavenger", "spike", "thunder", "pirate", "nightmare", "hellcat", "outcast");
         final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "Kranvagn"),
                 new RosterEntry("Bob", "Agent"));
         for (final String word : words) {
@@ -69,6 +69,42 @@ class TankNameCorrectorTest {
         final Result english = TankNameCorrector.correct("D2 (Alice) is clear. B1 is clear.", roster);
         assertEquals("D2 (Alice) is clear. B1 is clear.", english.text());
         assertTrue(english.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastStandaloneProseIsUnchanged() {
+        final Result result = TankNameCorrector.correct("the outcast pushed",
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals("the outcast pushed", result.text());
+        assertTrue(result.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastBesideNicknameIsNotCorrected() {
+        final Result result = TankNameCorrector.correct("outcast (Alice)",
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals("outcast (Alice)", result.text());
+        assertTrue(result.replacements().isEmpty());
+    }
+
+    @Test
+    void outcastDoesNotEstablishPackagePropagation() {
+        final List<String> texts = List.of("outcast (Alice)", "the outcast pushed");
+        final List<Result> results = TankNameCorrector.correctAll(texts,
+                List.of(new RosterEntry("Alice", "E 100")));
+        assertEquals(texts, results.stream().map(Result::text).toList());
+        assertTrue(results.stream().allMatch(result -> result.replacements().isEmpty()));
+    }
+
+    @Test
+    void outcastRemainsAvailableByTankIdAndAsRosterCorrectionTarget() {
+        final String name = Tankopedia.load().info(16257L).name();
+        assertEquals("Outcast", name);
+        assertTrue(Tankopedia.load().names().contains(name));
+        final Result result = TankNameCorrector.correct("T-34 (Alice)",
+                List.of(new RosterEntry("Alice", name)));
+        assertEquals("Outcast (Alice)", result.text());
+        assertEquals(List.of("CORRECTED"), reasons(result));
     }
 
     @Test
