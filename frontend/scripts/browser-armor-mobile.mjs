@@ -844,12 +844,13 @@ async function runPickerCardsScenario(env, scenario) {
   if (failures.length === 0) {
     if (scenario.resize) {
       await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
-      // 视口扩大只靠 IO 续页：先不送滚轮，保留 resize-only 断言；滚动测试在下一步单独做。
-      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === PICKER_TOTAL,
-        { timeout: 5000, label: 'resize refills the visible picker before scrolling' }).catch(() => {})
+      // 视口扩大只靠 IO 续页：先不送滚轮，断言 resize 确实追加了一页（共享增量列表
+      // 只补到可滚动，不要求一次到全量）；滚动加载剩余页在下一步单独测试。
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > initial.count,
+        { timeout: 5000, label: 'resize appends a page without input' }).catch(() => {})
       const resized = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
-      check(failures, resized === PICKER_TOTAL,
-        `${scenario.name}: resize refills the visible picker before scrolling (${resized}/${PICKER_TOTAL})`)
+      check(failures, resized > initial.count,
+        `${scenario.name}: resize must append a page before scrolling (${resized}/${PICKER_TOTAL}, initial ${initial.count})`)
     }
     const loadedCount = await exhaustPicker(PICKER_TOTAL)
     check(failures, loadedCount === PICKER_TOTAL,
