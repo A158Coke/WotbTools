@@ -1141,7 +1141,7 @@ class MainActivity : Activity() {
                     val success = try {
                         val directory = File(cacheDir, "file-picker")
                         FilePickerCache.cleanup(directory)
-                        uris.forEach { files.add(FilePickerCache.spool(contentResolver, it, directory)) }
+                        files.addAll(FilePickerCache.spoolSelection(contentResolver, uris, directory))
                         true
                     } catch (_: Exception) {
                         FilePickerCache.discard(files)

@@ -89,4 +89,27 @@ class FilePickerCacheTest {
         assertFalse(old.exists())
         assertArrayEquals(byteArrayOf(2), fresh.readBytes())
     }
+
+    @Test fun byteLimitUsesActualStreamAndCleansOversizeOutput() {
+        val exact = FilePickerCache.copy(temporary.root, "a", { byteArrayOf(1, 2, 3).inputStream() }, maxBytes = 3)
+        assertEquals(3L, exact.length())
+        assertThrows(IOException::class.java) {
+            FilePickerCache.copy(temporary.root, "b", { byteArrayOf(1, 2, 3, 4).inputStream() }, maxBytes = 3)
+        }
+        assertEquals(1, temporary.root.listFiles()!!.size)
+    }
+
+    @Test fun sourceTimestampAndStableContentFallbackDoNotChangeCacheAge() {
+        val bytes = byteArrayOf(1, 2, 3)
+        val old = FilePickerCache.copy(temporary.root, "a", { bytes.inputStream() }, modified = 946684800000L)
+        assertEquals(946684800000L, old.lastModified())
+        val first = FilePickerCache.copy(temporary.root, "a", { bytes.inputStream() })
+        val again = FilePickerCache.copy(temporary.root, "a", { bytes.inputStream() })
+        val changed = FilePickerCache.copy(temporary.root, "a", { byteArrayOf(1, 2, 4).inputStream() })
+        assertEquals(first.lastModified(), again.lastModified())
+        assertNotEquals(first.lastModified(), changed.lastModified())
+        FilePickerCache.cleanup(temporary.root)
+        assertTrue(old.exists())
+        assertTrue(first.exists())
+    }
 }
