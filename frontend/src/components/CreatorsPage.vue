@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, ref, useId, watch } from 'vue'
+import { ChevronDown, ChevronRight } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useCreators } from '../composables/useCreators.js'
 import { useCreatorManagement } from '../composables/useCreatorManagement.js'
@@ -15,6 +17,17 @@ import './creators.css'
 const { t, te } = useI18n()
 const { categoryId, categories, creators, adminAllowed,
   network, loading, error, refresh, selectCategory } = useCreators()
+const categoriesExpanded = ref(categoryId.value !== null)
+const categoryPanelId = `creator-categories-${useId()}`
+const selectedCategoryLabel = computed(() => {
+  const category = categories.value.find(value => value.id === categoryId.value)
+  return category ? t('creators.selectedCategory', { name: category.name }) : t('creators.currentFilter')
+})
+watch(categoryId, id => { if (id !== null) categoriesExpanded.value = true })
+function toggleCategories(event: MouseEvent) {
+  categoriesExpanded.value = !categoriesExpanded.value
+  if (!categoriesExpanded.value) (event.currentTarget as HTMLButtonElement).focus()
+}
 const management = useCreatorManagement({ onChanged: refresh })
 const { detail, editorOpen, editorLoading, editorError, busy, loading: adminLoading, error: adminError, categories: adminCategories, levels, avatarUploadsAvailable, notice } = management
 async function remove(id: number, expectedVersion: number) {
@@ -31,9 +44,18 @@ async function remove(id: number, expectedVersion: number) {
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="adminError" tone="danger">{{ apiErrorLabel(t, te, adminError) }}</Banner>
     <Banner v-if="notice" role="status">{{ t('creators.' + notice) }}</Banner>
-    <nav class="creator-category-grid" :aria-label="t('creators.categories')">
-      <AppButton :aria-pressed="categoryId === null" data-testid="creator-category-all" @click="selectCategory(null)">{{ t('creators.allCategories') }}</AppButton>
-      <AppButton v-for="category in categories" :key="category.id" :aria-pressed="categoryId === category.id" :data-testid="`creator-filter-${category.id}`" @click="selectCategory(category.id)">{{ category.name }}</AppButton>
+    <nav class="creator-filters" :aria-label="t('creators.categories')">
+      <div class="creator-filter-bar">
+        <AppButton :aria-pressed="categoryId === null" data-testid="creator-category-all" @click="selectCategory(null)">{{ t('creators.allCategories') }}</AppButton>
+        <AppButton v-if="categories.length" :aria-expanded="categoriesExpanded" :aria-controls="categoryPanelId" data-testid="creator-categories-toggle" @click="toggleCategories">
+          {{ t(categoriesExpanded ? 'creators.collapseCategories' : 'creators.expandCategories') }}
+          <component :is="categoriesExpanded ? ChevronDown : ChevronRight" :size="16" aria-hidden="true" />
+        </AppButton>
+        <span v-if="categoryId !== null && (!categoriesExpanded || !categories.length)" class="creator-filter-summary" data-testid="creator-selected-category">{{ selectedCategoryLabel }}</span>
+      </div>
+      <div v-if="categories.length" v-show="categoriesExpanded" :id="categoryPanelId" class="creator-category-grid" data-testid="creator-category-options">
+        <AppButton v-for="category in categories" :key="category.id" :aria-pressed="categoryId === category.id" :data-testid="`creator-filter-${category.id}`" @click="selectCategory(category.id)">{{ category.name }}</AppButton>
+      </div>
     </nav>
     <p v-if="loading || network.pending" role="status">{{ t('creators.loading') }}</p>
     <p v-else-if="!error && network.available && !creators.length" class="creator-muted">{{ t('creators.empty') }}</p>
