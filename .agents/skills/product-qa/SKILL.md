@@ -2,10 +2,11 @@
 name: product-qa
 description: >
   用真实浏览器把 WotBTools 当成黑盒产品实际使用，主动探索并发现可复现的用户侧问题。
+  包括 UI/UX、易用性与新手教程：以完成真实用户任务评估入口、指引、反馈、布局及恢复路径。
   第一阶段禁止先看源码、GitHub issue、实现细节或网络内部；必须先真实操作 UI、复现、截图、
   记录精确步骤，再按用户要求进入源码定位或创建 issue。
   Trigger: 用户说“真正试用网站 / try to use / exploratory QA / 找产品问题 / 黑盒测试 /
-  mobile QA / replay power-user QA”等，或明确要求 agent 像真实用户一样操作 wotbtools.com。
+  mobile QA / replay power-user QA / UI UX 易用性 / 教程体验”等，或明确要求 agent 像真实用户一样操作 wotbtools.com。
 ---
 
 # Product QA（真实用户黑盒探索）
@@ -21,7 +22,33 @@ description: >
 - 能截图、点击、输入、滚动、前进/后退、刷新、调整 viewport、上传本地文件；
 - 浏览器会话在一次 QA 中持续存在。
 
-如果当前 agent **没有真正的浏览器交互能力**：立即停止并报告 capability missing。
+### 必需工具与自动补齐
+
+| 工具 | 用途 | 缺失时处理 |
+|---|---|---|
+| 可交互浏览器 MCP / computer-use，或 Playwright Library | 持续浏览器会话与真实 UI 操作 | 优先复用已配置工具；无 MCP 时使用本地 Playwright，不以 MCP 缺失直接结束 |
+| Node.js 与 npm（使用 Playwright 时） | 运行和安装浏览器驱动 | 检查 `node --version` / `npm --version`；缺少时通过官方发行渠道安装受支持的 LTS |
+| `playwright` 与匹配的 Chromium | 导航、点击、输入、上传、截图、viewport | 检查包能否导入且浏览器能否启动；缺少时自动安装对应包和浏览器 |
+| 截图查看工具与可写证据目录 | 查看渲染结果、保留失败截图 | 使用当前环境的图片查看工具和仓库外可写目录 |
+
+用户已授权本技能在工具缺失时自行下载安装。仅补齐本任务所需依赖，优先安装到用户级独立目录，不改项目 `package.json` / lockfile，不覆盖已有浏览器用户资料，不修改无关的全局配置。
+
+Windows PowerShell 安装示例（先检查已有安装，仅执行缺失项）：
+
+```powershell
+$qaTools = Join-Path $env:LOCALAPPDATA 'WotbTools/product-qa'
+New-Item -ItemType Directory -Force -Path $qaTools | Out-Null
+npm install --prefix $qaTools playwright
+# npm 成功后再下载匹配版本浏览器；失败则先处理报错。
+& (Join-Path $qaTools 'node_modules/.bin/playwright.cmd') install chromium
+```
+
+其他系统使用用户缓存目录和对应可执行文件。安装方式参考 [Playwright 官方文档](https://playwright.dev/docs/library)。通过持久 Node REPL 或持续运行的 Node 进程保存 `browser/context/page`；每轮读取截图或可访问性信息、执行真实 UI 操作并观察结果。允许用语义 locator 定位可见控件，但不读取应用内部状态或源码猜问题。Headless Chromium 也是真实浏览器，不能只运行静态抓取脚本。
+
+Node REPL 若无法通过 ESM 导入本地 Playwright，可用 `node:module` 的 `createRequire`，以独立安装目录的 `package.json` 为基准导入；不为修复工具加载修改产品依赖。截图可通过 REPL 的图片输出或本地图片查看工具检查。等待可操作 UI / 步骤标题等明确条件，避免依赖所有资源完成的 `load` / `networkidle`；导航超时后先检查实际页面，再决定是否重试。
+
+安装后必须实际启动浏览器，验证点击、输入、文件上传、截图、viewport 和导航能力；验证通过后继续原 QA 请求。安装命令成功不等于工具可用。只有在自动安装或启动仍失败、当前权限禁止安装，或缺少可用截图查看通道时，才报告 capability missing，并附失败步骤与错误；不得静默结束或声称测试通过。
+
 **禁止**用 `curl`、源码阅读、静态 DOM 搜索或普通 HTTP 抓取冒充“真实使用网站”。
 
 默认目标：`https://wotbtools.com`。
@@ -57,10 +84,17 @@ description: >
 - 不绕过认证、权限、速率限制或安全控制。
 
 遇到 auth-only 功能且没有测试身份：记录为 **coverage limitation**，不是 bug。
+已获授权的测试身份可继续用于本轮复测；不反复索取相同授权。只使用本任务所需权限，不因测试账号拥有管理角色就扩大到管理操作。凭据不写入 skill、报告、仓库、持久浏览器配置或截图。
 
 ## 3. 选择场景
 
 用户未指定时，默认执行 `desktop-exploratory`。
+
+### `usability-and-onboarding`
+
+用户要求 UI/UX、易用性或教程时选择此场景，读取 [易用性与教程检查方法](references/usability-and-onboarding.md)。
+
+以少量真实任务贯穿“首次发现入口 → 理解提示 → 操作目标控件 → 完成 → 退出/恢复”，记录每个任务的成功、绕行、阻断或主动跳过。至少走一遍主线、一条相关支线，并在关闭教程后独立完成一个任务；手机和登录路径按任务相关性与现有授权覆盖。不以访问页面数或点击完“下一步”代替易用性结论。
 
 ### `smoke`
 
@@ -142,6 +176,8 @@ description: >
 
 优先发现**真实用户能撞到的问题**，不要为了制造 bug 做不合理的极端输入。
 
+操作前看可见文字或可访问性信息，选对角色再执行；不要连续猜 locator。定位失败、自动滚动和短暂空白本身不构成产品 bug。遇到动作超时，先截图和查看当前 UI；不使用 force click、隐藏 DOM 操作或直接改内部状态让受阻流程“通过”。步骤切换后等待新标题或预期反馈，再评估稳定布局；需要测试加载中操作时单独记录该分支。
+
 ## 5. Finding 门槛
 
 任何问题在进入 Confirmed Bugs 前都必须：
@@ -156,6 +192,7 @@ description: >
 8. 判断真实 user impact。
 
 只出现一次、无法重现的异常放到 `Needs investigation`，**不得伪装成 confirmed bug**。
+复现分母包含失败和未复现的有效尝试，如 `2/3`；分别说明全新会话、刷新重导与同一结果重入。同一页面截图两次不算两次独立复现。对持续 UI 问题可独立重建交互路径；若声称生成过程有问题，应重跑生成或明确只验证了已有结果的显示。AI 等耗时操作按所需证据执行，UI/UX 测试不默认重复生成内容。
 
 ### 分类
 
@@ -188,6 +225,7 @@ description: >
 | Other public tools | | | | | | |
 
 没有真正执行过的格子保持空白，不得凭推测打勾。
+UI/UX 场景另记任务结果与教程主线/支线、前进/返回、实际操作、跳过/重开、登录恢复的覆盖情况。`viewport` 调整、触控模拟、真机三者分开说明；覆盖某个按钮不表示整项功能或视觉渲染已验收。
 
 ## 7. 第一阶段输出
 
@@ -209,6 +247,8 @@ description: >
 - Refresh/re-entry behavior
 - Evidence / screenshot reference
 - User impact
+
+UI/UX finding 还需说明用户要完成什么任务、具体阻力、可用绕行方式和一条可验收改进建议。事实、预期、建议分开；不把审美偏好写成缺陷，不伪造真人可用性测试、耗时指标或满意度分数。复测报告区分本轮新增、历史重现和未复测；报告与截图放独立目录，不覆盖先前证据。
 
 ### UX / visual findings
 
@@ -265,6 +305,7 @@ description: >
 - 所有 reported bug 都达到复现门槛；
 - 明确列出成功覆盖与未覆盖范围；
 - 没有把源码推测混入黑盒 finding。
+- UI/UX 场景已实际操作教程目标控件，完成一次教程外任务，并验证退出/恢复；跳过的功能明确列为未测，不能因为教程显示完成就算功能通过。
 
 如果长流程受时间/上下文限制，优先交付**已验证 finding + coverage matrix**，而不是为了数量降低证据标准。
 
@@ -284,4 +325,8 @@ Use product-qa for mobile exploratory QA. After the black-box report, inspect co
 
 ```text
 Use product-qa. Reproduce confirmed findings twice, then create GitHub issues only for high-confidence bugs.
+```
+
+```text
+Use product-qa in usability-and-onboarding mode. Test first-visit discovery, tutorial actions, mobile layout, keyboard dismissal and recovery. Save evidence, then update the skill only with reusable lessons.
 ```
