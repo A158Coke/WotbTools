@@ -63,6 +63,30 @@ describe('broadcast replay form inheritance and fields', () => {
     expect(wrapper.emitted('save')![0][0]).toMatchObject({ startsAt: null, replay: { matchDate: existing.matchDate } })
   })
   it.each([
+    ['America/Los_Angeles', '2026-08-17T01:00:00Z'],
+    ['Europe/Berlin', '2026-08-16T20:00:00Z'],
+  ])('preserves the %s server day when only clearing time in the default UTC+8 editor', async (defaultTimeZone, startsAt) => {
+    const wrapper = dialog('POINTS', null, { ...existing, matchDate: '2026-08-16', startsAt })
+    await wrapper.setProps({ defaultTimeZone })
+    expect((wrapper.get('[data-testid=broadcast-date]').element as HTMLInputElement).value).toBe('2026-08-17')
+    await wrapper.get('[data-testid=broadcast-time]').setValue('')
+    expect((wrapper.get('[data-testid=broadcast-date]').element as HTMLInputElement).value).toBe('2026-08-16')
+    await wrapper.get('[data-testid=broadcast-input-time-zone]').setValue('-420')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![0][0]).toMatchObject({ startsAt: null, replay: { matchDate: '2026-08-16' } })
+    await wrapper.get('[data-testid=broadcast-date]').setValue('2026-08-18')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![1][0]).toMatchObject({ startsAt: null, replay: { matchDate: '2026-08-18' } })
+  })
+  it('keeps a date explicitly edited before removing the clock time', async () => {
+    const wrapper = dialog('POINTS', null, { ...existing, matchDate: '2026-08-16', startsAt: '2026-08-17T01:00:00Z' })
+    await wrapper.setProps({ defaultTimeZone: 'America/Los_Angeles' })
+    await wrapper.get('[data-testid=broadcast-date]').setValue('2026-08-18')
+    await wrapper.get('[data-testid=broadcast-time]').setValue('')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![0][0]).toMatchObject({ startsAt: null, replay: { matchDate: '2026-08-18' } })
+  })
+  it.each([
     ['POINTS', null, true, false], ['QUARTER_FINALS', 'ROUND_ROBIN', false, false],
     ['QUARTER_FINALS', 'KNOCKOUT', false, true], ['SEMI_FINALS', null, false, true],
   ] as const)('selects only fields applicable to %s / %s', async (type, format, points, grouped) => {
