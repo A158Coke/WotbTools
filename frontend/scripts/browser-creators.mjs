@@ -9,7 +9,7 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
 function reset() {
-  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, creatorReads: 0,
+  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, creatorReads: 0,
     creators: [{ id: 1, version: 0, bilibiliUid: '1000001', name: 'A creator with a long name for narrow screens', description: 'Recommended replays and commentary.', categoryIds: [1, 2], levelId: null, stars: 3, avatarId: null, createdAt: '2026-10-16T00:00:00Z' },
       { id: 2, version: 0, bilibiliUid: '1000002', name: 'Assessed creator', description: null, categoryIds: [1], levelId: 1, stars: 4, avatarId: null, createdAt: '2026-10-15T00:00:00Z' }], nextId: 10, failSave: false, writes: 0 }
 }
@@ -152,10 +152,54 @@ try {
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
       assert.equal(await page.evaluate('window.__wsAuth.loginCalls.length'), 0); assert.equal(db.writes, 0)
       assert.equal(await page.evaluate('document.querySelector(".creator-card a").rel'), 'noopener noreferrer')
+      const readsBeforeDisclosure = db.creatorReads, urlBeforeDisclosure = await page.evaluate('location.href')
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-category-options]").getClientRects().length'), 0)
+      await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-filter-3]").getClientRects().length > 0'), true, 'empty categories stay available in phase one')
+      await geometry(page, scenario.profile)
+      await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
+      assert.equal(await page.evaluate('document.activeElement.dataset.testid'), 'creator-categories-toggle')
+      if (scenario.width === 1440) {
+        for (const [key, code, keyCode, expanded] of [[' ', 'Space', 32, 'true'], ['Enter', 'Enter', 13, 'false']]) {
+          await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, text: key === 'Enter' ? '\r' : key }, sessionId)
+          await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode }, sessionId)
+          await page.waitForValue('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")', value => value === expanded)
+        }
+      }
+      await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
+      await chrome.client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 }, sessionId)
+      assert.equal(await page.evaluate('!!document.activeElement.closest("[data-testid=creator-category-options]")'), false, 'collapsed options leave the keyboard tab order')
+      assert.equal(db.creatorReads, readsBeforeDisclosure, 'disclosure does not request data')
+      assert.equal(await page.evaluate('location.href'), urlBeforeDisclosure, 'disclosure does not change browser history')
+      await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
       await tap(page, '[data-testid=creator-filter-2]', scenario.touch); await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-tags li").length'), 2)
+      await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
+      assert.ok((await page.evaluate('document.querySelector("[data-testid=creator-selected-category]").textContent')).includes('Live commentary'))
       await geometry(page, scenario.profile)
       if (scenario.full) {
+        await tap(page, '[data-testid=creator-refresh]', scenario.touch)
+        await page.waitForValue('document.querySelector("[data-testid=creator-refresh]").disabled', value => value === false)
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
+        assert.equal(await page.evaluate('new URL(location.href).searchParams.get("creatorCategory")'), '2')
+        const profileBeforeReads = db.creatorReads
+        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile === 'classic' ? 'showcase' : 'classic')}))`)
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
+        await page.evaluate(`import('/src/composables/useUiProfile.js').then(m => m.setUiProfile(${JSON.stringify(scenario.profile)}))`)
+        assert.equal(db.creatorReads, profileBeforeReads)
+        await tap(page, '[data-testid=creator-category-all]', scenario.touch)
+        await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'false')
+        await page.evaluate('history.back()')
+        await page.waitForValue('document.querySelector("[data-testid=creator-filter-2]").getAttribute("aria-pressed")', value => value === 'true')
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'true')
+        await page.evaluate('history.forward()')
+        await page.waitForValue('document.querySelector("[data-testid=creator-category-all]").getAttribute("aria-pressed")', value => value === 'true')
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-categories-toggle]").getAttribute("aria-expanded")'), 'true')
+        await tap(page, '[data-testid=creator-filter-3]', scenario.touch)
+        await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 0)
+        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creators-page]")'), true, 'empty content does not hide the directory before phase two')
         await page.goto(`${origin}/?view=creators&ws-auth=1&ws-roles=tournament-admin`)
         await page.waitForValue('document.querySelector("[data-testid=creator-edit-1]")?.disabled', value => value === false)
         await geometry(page, scenario.profile)
