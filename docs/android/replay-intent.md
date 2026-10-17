@@ -105,7 +105,7 @@ ingress 与认证之间**不存在**所有权冲突：replay 意图没有 auth-r
   filename 通过安全校验、backing file 存在、未过期），随后
   `ReplayIntentHandler.cleanupOrphans(context, activeFile)` **只清理不再被它引用的**缓存文件——
   active backing file 绝不删除。不再无条件清空整个 replay cache。
-- TTL 24 小时（`PENDING_TTL_MS`）：本地 cache hygiene，与 Keycloak/client login timeout 无关；
+- TTL 1 小时（`PENDING_TTL_MS`）：本地 cache hygiene，与 Keycloak/client login timeout 无关；
   过期 pending 在下次启动被丢弃并清理。
 - ACK 后（`consumePendingReplay(pendingId)`）：清 pending slot + 清持久 metadata（exactly-once），
   下次启动不再恢复该 replay。backing file 不立即删除（Gecko 可能仍在消费 LocalRuntimeServer

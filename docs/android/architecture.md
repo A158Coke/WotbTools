@@ -50,7 +50,7 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
 全部成功后才在 UI 线程把 `file://` URI 交给 Gecko；DOM `File` 保留原文件名和扩展名。
 缺少显示名时只按 provider MIME 推导扩展名，不猜测 replay。任意文件复制失败、空文件或请求已失效时
 整批拒绝并清理；复制期间保持 chooser busy，晚到结果不会完成新请求。
-成功 backing file 不在 confirm 后或打开下一次 picker 时删除；启动及下次复制前清理超过 24 小时的缓存，
+成功 backing file 不在 confirm 后或打开下一次 picker 时删除；启动及下次复制前清理达到 1 小时的缓存，
 避免 Gecko 延迟 `arrayBuffer()` 时文件已消失。目录 picker 与 external pending 各自保留独立生命周期。
 没有真实路径解析、服务器上传或 Android 专用 parser fallback。
 
@@ -370,7 +370,7 @@ Web，绝不自行决定「是否解析」「是否绕过登录」。
   OIDC 事务不会被 replay 打断。分发只在页面被门禁 / 错误页 / 更新页接管时暂缓。
 - **单一 ingress**：只有 Intent → private cache → Native Bridge → Web fetch 固定同源 synthetic
   resource（LocalRuntimeServer）一条路径；普通 file prompt 从不注入 pending replay。
-- **跨 process death 存活**：pending metadata 落在 app private storage（24h TTL），启动时先恢复
+- **跨 process death 存活**：pending metadata 落在 app private storage（1h TTL），启动时先恢复
   active pending、再按引用清理 orphan cache。
 - **identity-aware ACK**：pending identity 是完整 UUID（`pendingId`）。Web 在本机分析完成后调用
   `consumePendingReplay(pendingId)`，Native 执行 compare-and-clear（纯策略 `PendingReplayAckPolicy`）：

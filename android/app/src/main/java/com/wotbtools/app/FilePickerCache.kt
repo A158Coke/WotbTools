@@ -12,7 +12,7 @@ import java.util.UUID
 
 /** Disposable chooser files; independent of external replay pending and folder ownership. */
 internal object FilePickerCache {
-    internal const val TTL_MS = 24L * 60 * 60 * 1000
+    internal const val TTL_MS = 60L * 60 * 1000
     private const val TAG = "WotbPicker"
 
     fun spool(resolver: ContentResolver, uri: Uri, directory: File): File {
