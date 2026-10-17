@@ -43,13 +43,41 @@ public final class ReplayFactsCodec {
         if (node == null || !node.isObject()) {
             throw new IllegalArgumentException("projection missing");
         }
+        rejectExplicitNullHpState(node);
         return PROJECTION_MAPPER.treeToValue(node, com.wotb.core.replay.projection.ClientAiProjection.class);
     }
 
+    /**
+     * 客户端投影的读取边界（`.agents/AGENTS.md` §5a「旧 artifact 兼容只放读取边界」）：
+     * additive 字段的兼容**只经读取边界显式登记**（DTO 成员 + `contracts/http/openapi.yaml`）获得——
+     * 未登记字段一律 fail-closed（与各 schema 的 `additionalProperties: false` 一致）；
+     * 已知字段仍由 {@code ClientAiProjectionAdapter} 逐项显式校验，primitive 的 null 仍 fail closed。
+     * 写方（客户端投影）与读方同批到位：{@code hpState} 恒发送、在场即权威；字段缺省只服务旧载荷 /
+     * 回滚窗口（见契约 §4l）。
+     */
     private static final ObjectMapper PROJECTION_MAPPER = JsonMapper.builder()
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
             .build();
+
+    /**
+     * 显式 `null` 的 `hpState` 必须被拒绝：Jackson 把「字段缺省」与「显式 null」都映射成 Java null，
+     * 若不拦截，`"hpState": null`（契约 `type: string` enum，不可空）会被当成 legacy 缺省，进而对
+     * 终态 `hpRaw`（如 0xFFFE）静默退回未证明哨兵、而不是按契约报错。只查两处载荷的该字段。
+     */
+    private static void rejectExplicitNullHpState(final JsonNode projection) {
+        for (final String key : new String[] {"prop3Health", "healthEvents"}) {
+            final JsonNode list = projection.get(key);
+            if (list == null || !list.isArray()) {
+                continue;
+            }
+            for (final JsonNode item : list) {
+                if (item != null && item.isObject() && item.has("hpState") && item.get("hpState").isNull()) {
+                    throw new IllegalArgumentException("projection." + key + "[].hpState 不可为 null（缺省才是 legacy 口径）");
+                }
+            }
+        }
+    }
 
     public static Battle battleFromJson(final JsonNode node) throws IOException {
         return MAPPER.treeToValue(node, Battle.class);

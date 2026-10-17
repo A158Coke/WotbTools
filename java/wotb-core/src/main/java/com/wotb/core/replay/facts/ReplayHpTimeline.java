@@ -82,7 +82,8 @@ public final class ReplayHpTimeline {
             }
             case HP_ZERO_TERMINAL -> out.add(new HpObservation(h.entityId(), account, t, 0,
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
-            case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(h.entityId(), account, t, null,
+            // DEATH_TERMINAL = 投影判定的终态哨兵全族（字段权威）；与 legacy FFFD 同待遇
+            case DEATH_TERMINAL_FFFD, DEATH_TERMINAL -> out.add(new HpObservation(h.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> {
                 if (h.rawCurrentHealth() != null) {
@@ -121,7 +122,7 @@ public final class ReplayHpTimeline {
                     ReplayFactSource.OBSERVED_EXACT));
             case HP_ZERO_TERMINAL -> out.add(new HpObservation(v.entityId(), account, t, 0,
                     HpObservationKind.TERMINAL_ZERO, ReplayFactSource.OBSERVED_EXACT));
-            case DEATH_TERMINAL_FFFD -> out.add(new HpObservation(v.entityId(), account, t, null,
+            case DEATH_TERMINAL_FFFD, DEATH_TERMINAL -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.TERMINAL_FFFD, ReplayFactSource.OBSERVED_EXACT));
             case UNKNOWN_FFFF, UNKNOWN_OTHER -> out.add(new HpObservation(v.entityId(), account, t, null,
                     HpObservationKind.UNKNOWN_SENTINEL, ReplayFactSource.UNKNOWN));
