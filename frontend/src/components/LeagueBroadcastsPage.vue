@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, Pencil, MapPin, Earth, Compass, Landmark, Shield } from 'lucide-vue-next'
 import PageHeader from './PageHeader.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -14,6 +14,33 @@ import { apiErrorLabel } from '../utils/display.js'
 
 const { t, te } = useI18n()
 const state = reactive(useLeagueBroadcasts())
+const serverIcons = { CN: MapPin, ASIA: Earth, NA: Compass, EU: Landmark, LESTA: Shield }
+const serverGrid = ref<HTMLElement | null>(null)
+// Measure shell chrome instead of duplicating header/footer heights. Two card rows fill
+// the remaining viewport; minimum card height preserves readability on short screens.
+watch(serverGrid, (element, _, onCleanup) => {
+  if (!element) return
+  const grid = element
+  const page = grid.parentElement!
+  const app = document.getElementById('app')
+  const footer = document.querySelector<HTMLElement>('.app-footer')
+  function measure() {
+    grid.style.setProperty('--broadcast-grid-top', `${grid.getBoundingClientRect().top + window.scrollY}px`)
+    const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
+    const fitsTwoRows = grid.childElementCount <= columns * 2
+    const tail = fitsTwoRows ? (Number.parseFloat(getComputedStyle(page).paddingBottom) || 0)
+      + (footer?.getBoundingClientRect().height ?? 0) : 0
+    const shellBottom = app ? Number.parseFloat(getComputedStyle(app).paddingBottom) || 0 : 0
+    grid.style.setProperty('--broadcast-grid-tail', `${tail + shellBottom}px`)
+  }
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+  observer?.observe(page)
+  if (app) observer?.observe(app)
+  if (footer) observer?.observe(footer)
+  window.addEventListener('resize', measure)
+  measure()
+  onCleanup(() => { observer?.disconnect(); window.removeEventListener('resize', measure) })
+}, { flush: 'post' })
 const dialog = ref<'' | 'season' | 'category' | 'node'>('')
 const editingSeason = ref<BroadcastSeason | null>(null)
 const replayEditor = ref<{ node: BroadcastNode; replay: BroadcastReplay | null } | null>(null)
@@ -130,8 +157,13 @@ async function refreshPage() {
     <Banner v-if="state.notice">{{ t(`leagueBroadcasts.${state.notice}`) }}</Banner>
     <p v-if="state.loading || state.network.pending" role="status">{{ t('leagueBroadcasts.loading') }}</p>
     <template v-else-if="state.network.available && !state.readFailed">
-      <div v-if="!state.server" class="broadcast-card-grid broadcast-servers" data-testid="broadcast-servers">
-        <button v-for="server in state.servers" :key="server" type="button" class="broadcast-choice" :data-testid="`broadcast-server-${server}`" @click="state.navigate({ server })"><span>{{ t(`leagueBroadcasts.servers.${server}`) }}</span><ChevronRight :size="20" aria-hidden="true" /></button>
+      <div v-if="!state.server" ref="serverGrid" class="broadcast-card-grid broadcast-servers" data-testid="broadcast-servers">
+        <button v-for="server in state.servers" :key="server" type="button" class="broadcast-choice broadcast-server-card" :data-server="server" :data-testid="`broadcast-server-${server}`" @click="state.navigate({ server })">
+          <span class="broadcast-server-emblem"><component :is="serverIcons[server]" aria-hidden="true" /></span>
+          <span class="broadcast-server-code">{{ server }}</span>
+          <span class="broadcast-server-name">{{ t(`leagueBroadcasts.servers.${server}`) }}</span>
+          <ChevronRight class="broadcast-server-arrow" aria-hidden="true" />
+        </button>
       </div>
       <section v-else-if="!state.seasonId" class="broadcast-list" data-testid="broadcast-seasons">
         <p v-if="!state.seasons.length">{{ t('leagueBroadcasts.noSeasons') }}</p>
@@ -198,8 +230,29 @@ async function refreshPage() {
 .broadcast-choice { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-h-lg); padding: var(--space-6); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-h3); cursor: pointer; text-align: start; }
 .broadcast-choice span { min-width: 0; overflow-wrap: anywhere; }
 .broadcast-choice svg { flex: none; }
-.broadcast-servers { grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--broadcast-server-card-min-w)), 1fr)); }
-.broadcast-servers .broadcast-choice { min-height: var(--broadcast-server-card-min-h); padding: var(--space-8); font: var(--type-h2); }
+.broadcast-servers { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(var(--broadcast-server-card-min-h), auto); }
+.broadcast-servers .broadcast-server-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 1fr auto;
+  align-items: start;
+  gap: var(--space-6);
+  min-height: max(var(--broadcast-server-card-min-h), calc((100dvh - var(--broadcast-grid-top, 0px) - var(--broadcast-grid-tail, 0px) - var(--space-4)) / 2));
+  padding: var(--space-8);
+  border-color: color-mix(in oklab, var(--color-broadcast-server) 30%, var(--color-border-subtle));
+  background: color-mix(in oklab, var(--color-broadcast-server) 5%, var(--color-surface-1));
+  font: var(--type-h1);
+}
+.broadcast-server-card[data-server="CN"] { --color-broadcast-server: var(--color-danger); }
+.broadcast-server-card[data-server="ASIA"] { --color-broadcast-server: var(--color-success); }
+.broadcast-server-card[data-server="NA"] { --color-broadcast-server: var(--color-info); }
+.broadcast-server-card[data-server="EU"] { --color-broadcast-server: var(--color-warning); }
+.broadcast-server-card[data-server="LESTA"] { --color-broadcast-server: var(--color-text-secondary); }
+.broadcast-server-emblem { display: grid; place-items: center; width: var(--broadcast-server-emblem-size); height: var(--broadcast-server-emblem-size); border-radius: var(--radius-lg); color: var(--color-broadcast-server); background: color-mix(in oklab, var(--color-broadcast-server) 14%, var(--color-surface-1)); }
+.broadcast-server-emblem svg { width: var(--space-8); height: var(--space-8); }
+.broadcast-server-code { align-self: start; color: var(--color-text-secondary); font: var(--type-h3); }
+.broadcast-server-name, .broadcast-server-arrow { align-self: end; }
+.broadcast-server-arrow { width: var(--space-6); height: var(--space-6); color: var(--color-broadcast-server); }
 .broadcast-list { display: grid; gap: var(--space-3); }
 .broadcast-season-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4); border: var(--border-width) solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
 .broadcast-row-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -223,7 +276,10 @@ async function refreshPage() {
 .broadcast-field input, .broadcast-field select { width: 100%; min-width: 0; min-height: var(--control-h-md); padding: var(--space-2); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-primary); font: inherit; }
 .broadcast-choice:focus-visible, .broadcast-disclosure:focus-visible, .broadcast-breadcrumbs button:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) { .broadcast-choice:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
+@media (hover: hover) { .broadcast-servers .broadcast-server-card:hover { border-color: var(--color-broadcast-server); background: color-mix(in oklab, var(--color-broadcast-server) 10%, var(--color-surface-1)); } }
 @media (width < 768px) {
+  .broadcast-servers { grid-template-columns: minmax(0, 1fr); }
+  .broadcast-servers .broadcast-server-card { padding: var(--space-6); gap: var(--space-4); font: var(--type-h2); }
   .broadcast-season-row { flex-wrap: wrap; }
   .broadcast-row-title { flex-basis: calc(100% - var(--control-h-lg) - var(--space-3)); }
   .broadcast-season-row > .broadcast-actions { order: 1; flex-basis: 100%; }
