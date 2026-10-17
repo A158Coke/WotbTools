@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, Pencil, MapPin, Earth, Compass, Landmark, Shield } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
+import cnGlobe from '../assets/broadcast-globes/cn.svg'
+import asiaGlobe from '../assets/broadcast-globes/asia.svg'
+import naGlobe from '../assets/broadcast-globes/na.svg'
+import euGlobe from '../assets/broadcast-globes/eu.svg'
+import lestaGlobe from '../assets/broadcast-globes/lesta.svg'
 import PageHeader from './PageHeader.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
@@ -14,7 +19,7 @@ import { apiErrorLabel } from '../utils/display.js'
 
 const { t, te } = useI18n()
 const state = reactive(useLeagueBroadcasts())
-const serverIcons = { CN: MapPin, ASIA: Earth, NA: Compass, EU: Landmark, LESTA: Shield }
+const serverIcons = { CN: cnGlobe, ASIA: asiaGlobe, NA: naGlobe, EU: euGlobe, LESTA: lestaGlobe }
 const serverGrid = ref<HTMLElement | null>(null)
 // Measure shell chrome instead of duplicating header/footer heights. Two card rows fill
 // the remaining viewport; minimum card height preserves readability on short screens.
@@ -159,8 +164,8 @@ async function refreshPage() {
     <template v-else-if="state.network.available && !state.readFailed">
       <div v-if="!state.server" ref="serverGrid" class="broadcast-card-grid broadcast-servers" data-testid="broadcast-servers">
         <button v-for="server in state.servers" :key="server" type="button" class="broadcast-choice broadcast-server-card" :data-server="server" :data-testid="`broadcast-server-${server}`" @click="state.navigate({ server })">
-          <span class="broadcast-server-emblem"><component :is="serverIcons[server]" aria-hidden="true" /></span>
-          <span class="broadcast-server-code">{{ server }}</span>
+          <span class="broadcast-server-emblem"><span class="broadcast-server-icon-frame"><svg viewBox="0 0 160 160" aria-hidden="true" focusable="false"><use :href="`${serverIcons[server]}#globe`" /></svg></span></span>
+          <span class="broadcast-server-code">{{ server === 'ASIA' ? 'APAC' : server }}</span>
           <span class="broadcast-server-name">{{ t(`leagueBroadcasts.servers.${server}`) }}</span>
           <ChevronRight class="broadcast-server-arrow" aria-hidden="true" />
         </button>
@@ -248,8 +253,9 @@ async function refreshPage() {
 .broadcast-server-card[data-server="NA"] { --color-broadcast-server: var(--color-info); }
 .broadcast-server-card[data-server="EU"] { --color-broadcast-server: var(--color-warning); }
 .broadcast-server-card[data-server="LESTA"] { --color-broadcast-server: var(--color-text-secondary); }
-.broadcast-server-emblem { display: grid; place-items: center; width: var(--broadcast-server-emblem-size); height: var(--broadcast-server-emblem-size); border-radius: var(--radius-lg); color: var(--color-broadcast-server); background: color-mix(in oklab, var(--color-broadcast-server) 14%, var(--color-surface-1)); }
-.broadcast-server-emblem svg { width: var(--space-8); height: var(--space-8); }
+.broadcast-server-emblem { display: grid; align-self: stretch; min-width: 0; min-height: 0; container-type: size; color: var(--color-broadcast-server); }
+.broadcast-server-icon-frame { display: grid; place-items: center; align-self: start; justify-self: start; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); border-radius: var(--radius-lg); background: color-mix(in oklab, var(--color-broadcast-server) 14%, var(--color-surface-1)); }
+.broadcast-server-emblem svg { width: 75%; height: 75%; }
 .broadcast-server-code { align-self: start; color: var(--color-text-secondary); font: var(--type-h3); }
 .broadcast-server-name, .broadcast-server-arrow { align-self: end; }
 .broadcast-server-arrow { width: var(--space-6); height: var(--space-6); color: var(--color-broadcast-server); }
