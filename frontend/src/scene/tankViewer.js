@@ -1763,6 +1763,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             updateHeatmapThickness();
             refreshPenetrationResolution();
         }
+        // 本查看器替换过的装甲材质才可 dispose；GLTF 原始材质可能跨网格共享，不能动。
+        function replaceArmorMaterial(node, material) {
+            if (node.userData.armorMaterialOwned && node.material && typeof node.material.dispose === 'function') {
+                node.material.dispose();
+            }
+            node.material = material;
+            node.userData.armorMaterialOwned = true;
+        }
         // 装甲模型视图样式（collision 按钮与热力图退出共用一份写入，避免各自硬编码漂移）：
         // 碰撞视图=按厚度上色并隐藏视觉车体；普通视图=透明覆盖层并显示视觉车体
         function applyArmorViewStyle(collision) {
@@ -1773,7 +1781,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
                 if (node.userData.armorSection === 'deco') { node.visible = false; return; }
-                node.material = collision
+                replaceArmorMaterial(node, collision
                     ? new THREE.MeshStandardMaterial({
                         color: thicknessToColor(node.userData.armorThickness), metalness: 0.4, roughness: 0.6,
                         transparent: true, opacity: 0.95, depthWrite: true,
@@ -1781,7 +1789,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     : new THREE.MeshStandardMaterial({
                         color: 0x444444, metalness: 0.3, roughness: 0.8,
                         transparent: true, opacity: 0, depthWrite: false,
-                    });
+                    }));
             });
         }
         function applyPenetrationMode(on) {
@@ -2089,7 +2097,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                     // 同步当前视图材质（review P2-2）：deco 分支没初始化材质，
                     // 新激活板沿用原 GLTF 材质——普通模式不透明、碰撞模式不上厚度色。
                     // 热力图模式下装甲本体走透明覆盖层（着色在 clone 场景），同普通模式。
-                    node.material = collisionMode
+                    replaceArmorMaterial(node, collisionMode
                         ? new THREE.MeshStandardMaterial({
                             color: thicknessToColor(node.userData.armorThickness),
                             metalness: 0.4, roughness: 0.6,
@@ -2098,7 +2106,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                         : new THREE.MeshStandardMaterial({
                             color: 0x444444, metalness: 0.3, roughness: 0.8,
                             transparent: true, opacity: 0, depthWrite: false,
-                        });
+                        }));
                 }
             });
             // 新激活的板此前被 deco 跳过了枢轴安装（alignArmorModules 的正则原不含
@@ -2330,10 +2338,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 armorModel.traverse(function(node) {
                     if (node.isMesh) {
                         if (node.userData.armorSection === 'deco') { node.visible = false; return; }
-                        node.material = new THREE.MeshStandardMaterial({
+                        replaceArmorMaterial(node, new THREE.MeshStandardMaterial({
                             color: 0x444444, metalness: 0.3, roughness: 0.8,
                             transparent: true, opacity: 0, depthWrite: false,
-                        });
+                        }));
                     }
                 });
                 scene.add(armorModel);
