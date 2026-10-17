@@ -155,6 +155,42 @@ class BroadcastSeedMigrationTest {
         assertEquals(seasonsBefore,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
         assertEquals(replaysBefore,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
     }
+    @Test void officialCupNameCorrectionPreservesReplayFactsAndIsIdempotent() throws Exception {
+        migrate();
+        jdbc.update("update tournament_broadcast_season set name_ru='Кубок администратора'");
+        final long oldVersion = jdbc.queryForObject("select version from tournament_broadcast_season",Long.class);
+        final var replays = jdbc.queryForList("select * from tournament_broadcast_replay order by id");
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).target("41").load().migrate();
+        assertEquals("Blitz Professional Cup (BPC)",jdbc.queryForObject("select name_en from tournament_broadcast_season",String.class));
+        assertEquals("战火杯",jdbc.queryForObject("select name_zh from tournament_broadcast_season",String.class));
+        assertEquals("Кубок администратора",jdbc.queryForObject("select name_ru from tournament_broadcast_season",String.class));
+        assertEquals(oldVersion+1,jdbc.queryForObject("select version from tournament_broadcast_season",Long.class));
+        assertEquals(replays,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
+        final var corrected = jdbc.queryForList("select * from tournament_broadcast_season order by id");
+        final String sql = new ClassPathResource("db/migration/V41__correct_blitz_professional_cup_name.sql").getContentAsString(StandardCharsets.UTF_8);
+        jdbc.execute(sql); jdbc.execute(sql);
+        assertEquals(corrected,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+    }
+    @ParameterizedTest
+    @CsvSource({"战火杯,Administrator name", "管理员赛事,Zhanhuo Cup"})
+    void cupNameCorrectionDoesNotReplaceAdministratorNames(final String chinese, final String english) {
+        migrate();
+        jdbc.update("update tournament_broadcast_season set name_zh=?,name_en=?,name_ru='Свой перевод',version=9",chinese,english);
+        final var before = jdbc.queryForList("select * from tournament_broadcast_season order by id");
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).target("41").load().migrate();
+        assertEquals(before,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+    }
+    @Test void cupNameCorrectionRequiresTheSeedVideoAndCorrectServerAndYear() {
+        migrate();
+        jdbc.update("update tournament_broadcast_season set name_en='Custom English'");
+        jdbc.update("insert into tournament_broadcast_season(server,year,name_zh,name_en,created_at,version) values ('CN',2025,'战火杯','Zhanhuo Cup',now(),4)");
+        createSeasonWithPart("EU",2025,"Zhanhuo Cup",1);
+        createSeasonWithPart("CN",2026,"Zhanhuo Cup",1);
+        jdbc.update("update tournament_broadcast_season set name_zh='战火杯'");
+        final var before = jdbc.queryForList("select * from tournament_broadcast_season order by id");
+        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).target("41").load().migrate();
+        assertEquals(before,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+    }
     private void createSeasonWithPart(final String server, final int year, final String name, final int part) {
         final long season = jdbc.queryForObject("insert into tournament_broadcast_season(server,year,name_zh,name_en,created_at,version) "
                 + "values (?,?,'管理员自定义赛事',?,now(),5) returning id",Long.class,server,year,name);

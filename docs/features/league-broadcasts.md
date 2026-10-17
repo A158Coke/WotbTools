@@ -78,7 +78,7 @@ APK 真机、COS 真实上传／展示／回收和生产发布均须按所属运
 
 仅录入已核实具体对阵、实际比赛日和阶段的条目，不把整日多场直播假定为某两队对阵，也不以上传日代替比赛日。
 首批为国服2025战火杯Day 3四强的3个官方B站分P，比赛日2025-12-07，OBSERVER，两队顺序沿原标题，默认组1/DEFAULT不表示推测胜败组。
-赛事年单独存储，名称为“战火杯 / Zhanhuo Cup”，英文是编辑译名，俄文暂空。赛季开赛日未确认，保留null。
+赛事年单独存储，当前名称为“战火杯 / Blitz Professional Cup (BPC)”，英文全称由网易官方冠军海报确认，俄文暂空。赛季开赛日未确认，保留null。
 来源、B站播放接口核对及暂缓281条的原因见[筛选清单](../research/broadcast-seed-2025-2026/seed-skipped.md)与[初始化事实](../research/broadcast-seed-2025-2026/seed-ready.json)。
 
 迁移只追加缺失的分P；同一视频与分P即使已带跟踪参数也不重复导入，不覆盖管理员已有标题、翻译或队伍。
@@ -87,5 +87,15 @@ APK 真机、COS 真实上传／展示／回收和生产发布均须按所属运
 
 新字段通过v2接口提供；原公开与管理端点保持旧single-name/groupLabel结构，不向旧响应添加会被严格校验拒绝的字段。
 两版共用已有Service、数据库、角色校验与版本锁。旧写入适配位于兼容边界；不允许旧编辑器清空已配的三语翻译。旧积分赛文字请求继续保存到归档字段，能安全转换时填数值，否则新界面显示组号待补；v2保存仍必须明确正整数，不因兼容入口放宽。
-Android以minor 3.11.0提供新版界面，Bridge仍v3，最低支持门槛保持3000000；旧APK可在后端先行部署后继续读取和管理原结构。
+三语名称与数字小组界面自Android minor 3.11.0提供，Bridge仍v3，最低支持门槛保持3000000；旧APK可在后端先行部署后继续读取和管理原结构。
 发布流程见[发布手册](../android/release-process.md)。
+
+## 赛事术语与名称纠正（V41）
+
+界面用赛事 / Tournament / Турнир 表示外层自由命名赛事；内部 season API key 保持兼容。
+积分赛英文采用官方 Prove Your Skill（Skill 单数），俄文为 Путь мастерства。八强赛与四强赛是完整阶段，英文显示 Top 8 / Top 4、俄文 Топ-8 / Топ-4，包含循环赛、双败与总决赛，不把整个阶段误称 Quarterfinals / Semifinals。
+中文视角采用个人视角（POV）与观战视角（OBSERVER）。比赛日期 matchDate 仍必填，赛事开赛日期 startDate 仍选填；开赛日期不能代替每条回放的比赛日。
+
+V41 只纠正国服 2025、中文“战火杯”、仍为旧默认英文“Zhanhuo Cup”且关联 V40 官方视频分 P 的记录，改为 Blitz Professional Cup (BPC)，同步递增版本以使旧编辑草稿触发冲突检查。自定义中英名称、俄文翻译与回放事实保留；重复执行不再次更新。V40 与 seed-ready.json 是原始核验快照，不改历史内容或哈希。
+
+来源：[官方 Prove Your Skill 与阶段规则](https://eu.wotblitz.com/en/content/blitz-masters-legacy-regulations-eu/)、[官方俄文赛事公告](https://na.wotblitz.com/ru/news/tournaments/blitz-masters-legacy-2026/)、[网易官方战火杯冠军海报所在文章](https://game.xiaomi.com/viewpoint/1160758920_1766404215796_16)。此界面修正随 Android patch 3.11.1 提供。
