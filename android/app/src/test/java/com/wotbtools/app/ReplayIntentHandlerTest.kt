@@ -170,13 +170,13 @@ class ReplayIntentHandlerTest {
     }
 
     @Test
-    fun expiryBoundaryIsExactlyTwentyFourHours() {
+    fun expiryBoundaryIsExactlyOneHour() {
         val createdAt = 1_700_000_000_000L
 
-        assertEquals(24L * 60 * 60 * 1000, ReplayIntentHandler.PENDING_TTL_MS)
+        assertEquals(60L * 60 * 1000, ReplayIntentHandler.PENDING_TTL_MS)
         assertFalse(ReplayIntentHandler.isExpired(createdAt, createdAt)) // 刚创建
         assertFalse(ReplayIntentHandler.isExpired(createdAt, createdAt + ReplayIntentHandler.PENDING_TTL_MS - 1)) // 未到
-        assertTrue(ReplayIntentHandler.isExpired(createdAt, createdAt + ReplayIntentHandler.PENDING_TTL_MS)) // 刚好 24h
+        assertTrue(ReplayIntentHandler.isExpired(createdAt, createdAt + ReplayIntentHandler.PENDING_TTL_MS)) // 刚好 1h
         assertTrue(ReplayIntentHandler.isExpired(createdAt, createdAt + ReplayIntentHandler.PENDING_TTL_MS + 1)) // 超过
         assertTrue(ReplayIntentHandler.isExpired(createdAt, createdAt + 7 * ReplayIntentHandler.PENDING_TTL_MS))
         assertFalse(ReplayIntentHandler.isExpired(createdAt, createdAt - 60_000L)) // 时钟回拨不算过期

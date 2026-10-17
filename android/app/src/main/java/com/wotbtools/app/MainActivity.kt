@@ -148,6 +148,7 @@ class MainActivity : Activity() {
     @Volatile private var downloadedApk: File? = null
     /** 进行中的普通 `<input type=file>` 选择（Gecko PromptDelegate）；同一时刻只有一个。 */
     private var filePrompt: Triple<Int, PromptDelegate.FilePrompt, GeckoResult<PromptDelegate.PromptResponse>>? = null
+    private var filePromptCopying = false
     private var downloadInFlight = false
     private var downloadSave: Pair<Int, File>? = null
     private val replayFolderPicker = ReplayFolderPicker()
@@ -181,6 +182,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        executor.execute { FilePickerCache.cleanup(File(cacheDir, "file-picker")) }
         setContentView(R.layout.activity_main)
 
         runtimeView = findViewById(R.id.runtimeView)
@@ -347,6 +349,7 @@ class MainActivity : Activity() {
             if (requestCode > PICKER_REQUEST_MAX) return GeckoResult.fromValue(prompt.dismiss())
             val request = Triple(requestCode, prompt, result)
             filePrompt = request
+            filePromptCopying = false
             prompt.setDelegate(object : PromptDelegate.PromptInstanceDelegate {
                 override fun onPromptDismiss(dismissed: PromptDelegate.BasePrompt) {
                     if (filePrompt !== request) return
@@ -1115,22 +1118,64 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode == filePrompt?.first) {
-            val (_, prompt, result) = filePrompt ?: return
-            filePrompt = null
-            prompt.setDelegate(null)
+            val request = filePrompt ?: return
+            if (filePromptCopying) return // Ignore duplicate Activity results while copying.
+            val (_, prompt, result) = request
             val uris = when {
                 resultCode == RESULT_OK && data?.clipData != null ->
-                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }.toTypedArray()
-                resultCode == RESULT_OK && data?.data != null -> arrayOf(data.data!!)
-                else -> emptyArray()
+                    (0 until data.clipData!!.itemCount).map { data.clipData!!.getItemAt(it).uri }
+                resultCode == RESULT_OK && data?.data != null -> listOf(data.data!!)
+                else -> emptyList()
+            }.let { if (prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE) it else it.take(1) }
+            if (uris.isEmpty()) {
+                filePrompt = null
+                prompt.setDelegate(null)
+                result.complete(prompt.dismiss())
+                return
             }
-            result.complete(
-                when {
-                    uris.isEmpty() -> prompt.dismiss()
-                    prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE -> prompt.confirm(this, uris)
-                    else -> prompt.confirm(this, uris.first())
+            filePromptCopying = true
+            Log.d(TAG, "picker-selected count=${uris.size}")
+            try {
+                executor.execute {
+                    val files = mutableListOf<File>()
+                    val success = try {
+                        val directory = File(cacheDir, "file-picker")
+                        FilePickerCache.cleanup(directory)
+                        files.addAll(FilePickerCache.spoolSelection(contentResolver, uris, directory))
+                        true
+                    } catch (_: Exception) {
+                        FilePickerCache.discard(files)
+                        files.clear()
+                        false
+                    }
+                    runOnUiThread {
+                        if (filePrompt !== request || destroyedRuntime) {
+                            FilePickerCache.discard(files)
+                            return@runOnUiThread
+                        }
+                        filePrompt = null
+                        prompt.setDelegate(null)
+                        try {
+                            val response = when {
+                                !success -> prompt.dismiss()
+                                prompt.type == PromptDelegate.FilePrompt.Type.MULTIPLE ->
+                                    prompt.confirm(this, files.map { Uri.fromFile(it) }.toTypedArray())
+                                else -> prompt.confirm(this, Uri.fromFile(files.first()))
+                            }
+                            result.complete(response)
+                            Log.d(TAG, "picker-confirm count=${files.size}")
+                            // Gecko may read DOM File bytes later: successful backing files live until TTL.
+                        } catch (_: Exception) {
+                            FilePickerCache.discard(files)
+                            result.complete(prompt.dismiss())
+                        }
+                    }
                 }
-            )
+            } catch (_: Exception) {
+                filePrompt = null
+                prompt.setDelegate(null)
+                result.complete(prompt.dismiss())
+            }
             return
         }
         if (requestCode in PICKER_REQUEST_MIN..PICKER_REQUEST_MAX) {

@@ -5,10 +5,10 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-17，本候选源码为 **3.5.1 / 3005001**（`android/gradle.properties`；在 3.2.0 回放运行时、
-3.3.0 联赛直播回放目录、3.4.0 联赛 CSV 导入、3.4.1 直播导航调整与 3.5.0 bilibili UP 推荐目录之上，
-修复回放生命状态对 −1/−2 档终态血量的判死（弹药架殉爆），并把随包 WASM pin 升至上游 **v0.4.9**；
-另已包含更早未 stage、未发布的 2.5.0 / 2.6.0 改动）；
+截至 2026-10-17，本候选源码为 **3.5.3 / 3005003**（`android/gradle.properties`；
+在 3.5.1 回放生命状态修复 / WASM v0.4.9 与 3.5.2 Android 文件选择缓存修复之上，
+补全坦克百科国服车型搜索名称；patch，Native Bridge v3 与最低支持门槛不变）。
+本次候选说明见 [`releases/3.5.3.md`](releases/3.5.3.md)，此前累计改动见各版本说明。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
