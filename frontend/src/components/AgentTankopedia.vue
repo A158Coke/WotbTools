@@ -10,31 +10,26 @@
  * 列表增量渲染（审计 3D-18）：首屏一页，滚动到底由 IntersectionObserver 追加，按钮兜底。
  * 坦克百科中的 3D 检视入口保留当前角色显示策略；装甲页面本身只要求登录。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { locationForView } from '../app/navigation'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, Box, RotateCcw, Search, SearchX, TriangleAlert } from 'lucide-vue-next'
+import { ArrowLeft, Box, RotateCcw, TriangleAlert } from 'lucide-vue-next'
 import { fetchTankEncyclopedia, fetchTankData, tankImageUrl, loadTankIconCrops } from '../scene/agentData.js'
 import { tankIconCropTransform } from '../utils/tankIconCrop.js'
 import { TYPE_CLS, normType, shellLabel, isPremiumShell, fmt, fmtNum, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
-import { useBreakpoint } from '../composables/useBreakpoint.js'
-import { useIncrementalList } from '../composables/useIncrementalList.js'
 import {
-  normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, selectTanks, withTankopediaState,
+  normalizeTankCache, parseTankopediaQuery, sameTankopediaQuery, withTankopediaState,
 } from '../utils/tankopediaQuery.js'
 import PageHeader from './PageHeader.vue'
 import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
-import FilterChips from './FilterChips.vue'
+import TankCatalogMenu from './TankCatalogMenu.vue'
 
 const VIEW = 'agent-tankopedia'
-const PAGE_SIZE = 48
-const SEARCH_DEBOUNCE_MS = 250
 /** 车种枚举 → i18n 键（AT-SPG 含连字符，不直接作键） */
 
 const { t, te } = useI18n()
-const { isCompact } = useBreakpoint()
 const route = useRoute()
 const router = useRouter()
 
@@ -49,19 +44,24 @@ function writeState(patch, { push = false } = {}) {
   router[push ? 'push' : 'replace']({ query })
 }
 
-// 搜索框是输入草稿：即时参与筛选，防抖后写进 URL；返回 / 前进带来的 q 变化回填草稿
-const searchText = ref(urlState.value.q)
-let searchTimer = null
-watch(searchText, (value) => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => writeState({ q: value }), SEARCH_DEBOUNCE_MS)
-})
-watch(() => urlState.value.q, (q) => {
-  if (q !== searchText.value.trim()) searchText.value = q
-})
-onBeforeUnmount(() => clearTimeout(searchTimer))
-
-const filterState = computed(() => ({ ...urlState.value, q: searchText.value }))
+// 搜索 / 筛选 / 排序的唯一实现是 TankCatalogMenu（与装甲查看器选车弹窗共用）：
+// 本页只负责 URL 状态与详情；组件内的输入草稿即时筛选，防抖后通过 update:filters 提交。
+const listFilters = computed(() => ({
+  q: urlState.value.q,
+  tier: urlState.value.tier,
+  nation: urlState.value.nation,
+  type: urlState.value.type,
+  sort: urlState.value.sort,
+}))
+function writeFilters(filters) {
+  writeState({
+    q: filters.q,
+    tier: filters.tier,
+    nation: filters.nation,
+    type: filters.type,
+    sort: filters.sort,
+  })
+}
 
 // ---------- 显示名（审计 3D-16：不直接显示 china / heavyTank 等原始值） ----------
 const nationLabel = nation => tankNationLabel(t, te, nation)
@@ -74,43 +74,6 @@ const listState = ref('loading')   // loading | ready | error
 const listError = ref('')
 
 const tanks = computed(() => normalizeTankCache(cache.value))
-const tiers = computed(() => [...new Set(tanks.value.map(tank => tank.tier))].filter(Boolean).sort((a, b) => a - b))
-const nations = computed(() => [...new Set(tanks.value.map(tank => tank.nation))].sort())
-const types = computed(() => [...new Set(tanks.value.map(tank => tank.type))].sort())
-const filtered = computed(() => selectTanks(tanks.value, filterState.value))
-
-const { visible, hasMore, loadMore, sentinel } = useIncrementalList(filtered, {
-  pageSize: PAGE_SIZE,
-  resetKey: () => [filterState.value.q, filterState.value.tier, filterState.value.nation, filterState.value.type, filterState.value.sort].join('|'),
-})
-const remaining = computed(() => filtered.value.length - visible.value.length)
-
-const hasFilters = computed(() => !!(searchText.value.trim() || urlState.value.tier || urlState.value.nation || urlState.value.type))
-const chips = computed(() => [
-  urlState.value.tier && { key: 'tier', label: tierLabel(urlState.value.tier) },
-  urlState.value.nation && { key: 'nation', label: nationLabel(urlState.value.nation) },
-  urlState.value.type && { key: 'type', label: typeLabel(urlState.value.type) },
-].filter(Boolean))
-
-function clearFilters() {
-  clearTimeout(searchTimer)
-  searchText.value = ''
-  writeState({ q: '', tier: '', nation: '', type: '' })
-}
-
-// 手机筛选 sheet（design-language §9）：与名人堂同一交互
-const sheetOpen = ref(false)
-let sheetOpener = null
-function toggleSheet() {
-  if (sheetOpen.value) return closeSheet()
-  sheetOpener = document.activeElement
-  sheetOpen.value = true
-}
-function closeSheet() {
-  sheetOpen.value = false
-  sheetOpener?.focus?.()
-  sheetOpener = null
-}
 
 async function loadList() {
   listState.value = 'loading'
@@ -334,137 +297,16 @@ onMounted(() => {
 
     <!-- ================= 列表态 ================= -->
     <template v-else>
-      <PageHeader :title="t('agentTanks.title')" :description="t('agentTanks.hint')">
-        <template v-if="listState === 'ready'" #actions>
-          <span class="tp-count" data-testid="tank-count" aria-live="polite">{{ t('agentTanks.count', { shown: filtered.length, total: tanks.length }) }}</span>
-        </template>
-      </PageHeader>
-
-      <div class="tp-search-row">
-        <label class="tp-search">
-          <Search :size="16" class="tp-search-icon" aria-hidden="true" />
-          <input
-            v-model="searchText"
-            type="search"
-            data-testid="tank-search" data-tour="tankopedia-search"
-            :aria-label="t('agentTanks.search_label')"
-            :placeholder="t('agentTanks.search_ph')"
-            autocomplete="off"
-            enterkeyhint="search"
-          >
-        </label>
-        <FilterChips data-tour="tankopedia-filters" v-if="isCompact" :chips="chips" :open="sheetOpen" @toggle="toggleSheet" @remove="key => writeState({ [key]: '' })" />
-      </div>
-
-      <div v-if="isCompact && sheetOpen" class="tp-sheet-scrim" aria-hidden="true" @click="closeSheet"></div>
-      <div
-        v-if="!isCompact || sheetOpen"
-        class="tp-filters"
-        :class="{ 'is-sheet': isCompact }"
-        :role="isCompact ? 'dialog' : undefined"
-        :aria-label="isCompact ? t('filters.title') : undefined"
-        data-testid="tank-filters" data-tour="tankopedia-filters"
-        @keydown.esc="isCompact && closeSheet()"
-      >
-        <div v-if="isCompact" class="tp-sheet-head">
-          <strong>{{ t('filters.title') }}</strong>
-          <AppButton size="sm" variant="primary" @click="closeSheet">{{ t('filters.done') }}</AppButton>
-        </div>
-        <label class="tp-field">
-          <span class="tp-field-label">{{ t('agentTanks.tier') }}</span>
-          <select data-testid="filter-tier" :value="urlState.tier" @change="writeState({ tier: $event.target.value })">
-            <option value="">{{ t('agentTanks.all') }}</option>
-            <option v-for="tier in tiers" :key="tier" :value="String(tier)">{{ tierLabel(tier) }}</option>
-          </select>
-        </label>
-        <label class="tp-field">
-          <span class="tp-field-label">{{ t('agentTanks.nation') }}</span>
-          <select data-testid="filter-nation" :value="urlState.nation" @change="writeState({ nation: $event.target.value })">
-            <option value="">{{ t('agentTanks.all') }}</option>
-            <option v-for="n in nations" :key="n" :value="n">{{ nationLabel(n) }}</option>
-          </select>
-        </label>
-        <label class="tp-field">
-          <span class="tp-field-label">{{ t('agentTanks.type') }}</span>
-          <select data-testid="filter-type" :value="urlState.type" @change="writeState({ type: $event.target.value })">
-            <option value="">{{ t('agentTanks.all') }}</option>
-            <option v-for="tv in types" :key="tv" :value="tv">{{ typeLabel(tv) }}</option>
-          </select>
-        </label>
-        <label class="tp-field">
-          <span class="tp-field-label">{{ t('agentTanks.sort') }}</span>
-          <select data-testid="filter-sort" :value="urlState.sort" @change="writeState({ sort: $event.target.value })">
-            <option value="name">{{ t('agentTanks.sort_name') }}</option>
-            <option value="tier">{{ t('agentTanks.sort_tier') }}</option>
-            <option value="hp">{{ t('agentTanks.sort_hp') }}</option>
-            <option value="pen">{{ t('agentTanks.sort_pen') }}</option>
-          </select>
-        </label>
-      </div>
-
-      <EmptyState
-        v-if="listState === 'error'"
-        role="alert"
-        data-testid="tank-list-error"
-        :icon="TriangleAlert"
-        :title="t('agentTanks.error_title')"
-        :description="t('agentTanks.error_desc')"
-      >
-        <AppButton variant="primary" data-testid="tank-list-retry" @click="loadList">
-          <RotateCcw :size="16" aria-hidden="true" />
-          {{ t('agentTanks.retry') }}
-        </AppButton>
-      </EmptyState>
-
-      <div v-else-if="listState === 'loading'" class="tp-grid" aria-busy="true" data-testid="tank-skeleton">
-        <span class="tp-visually-hidden" role="status">{{ t('agentTanks.loading') }}</span>
-        <div v-for="n in 12" :key="n" class="tp-card is-skeleton" aria-hidden="true">
-          <span class="tp-media"></span>
-          <span class="tp-skeleton-line"></span>
-          <span class="tp-skeleton-line is-short"></span>
-        </div>
-      </div>
-
-      <EmptyState
-        v-else-if="!filtered.length"
-        data-testid="tank-empty"
-        :icon="SearchX"
-        :title="t('agentTanks.empty_title')"
-        :description="t('agentTanks.empty_desc')"
-      >
-        <AppButton v-if="hasFilters" data-testid="tank-clear-filters" @click="clearFilters">{{ t('agentTanks.clear_filters') }}</AppButton>
-      </EmptyState>
-
-      <template v-else>
-        <ul class="tp-grid" data-testid="tank-grid" data-tour="tankopedia-list">
-          <li v-for="tank in visible" :key="tank.id">
-            <button
-              type="button"
-              class="tp-card"
-              :class="{ 'is-premium': tank.is_premium, 'is-collector': tank.is_collector }"
-              data-testid="tank-card"
-              @click="openDetail(tank.id)"
-            >
-              <span class="tp-media">
-                <img :src="tankImageUrl(tank.id)" alt="" loading="lazy" decoding="async" width="160" height="100" :style="iconCropStyle(tank.id)" @error="hideBrokenImage">
-              </span>
-              <span class="tp-card-name" :title="tank.name">{{ tank.name }}</span>
-              <span class="tp-badges">
-                <span class="tp-pill is-tier">{{ tierLabel(tank.tier) }}</span>
-                <span class="tp-pill">{{ nationLabel(tank.nation) }}</span>
-                <span class="tp-pill" :class="TYPE_CLS[tank.type] || 't-unknown'">{{ typeLabel(tank.type) }}</span>
-              </span>
-              <span class="tp-card-stats">
-                <span><span class="tp-stat-label">{{ t('agentTanks.hp') }}</span>{{ tank.hp ?? '-' }}</span>
-                <span><span class="tp-stat-label">{{ t('agentTanks.pen') }}</span>{{ tank.pen_max ?? '-' }}</span>
-              </span>
-            </button>
-          </li>
-        </ul>
-        <div v-if="hasMore" :ref="sentinel" class="tp-more" data-testid="tank-more">
-          <AppButton data-testid="tank-load-more" @click="loadMore">{{ t('agentTanks.load_more', { n: remaining }) }}</AppButton>
-        </div>
-      </template>
+      <PageHeader :title="t('agentTanks.title')" :description="t('agentTanks.hint')" />
+      <TankCatalogMenu
+        :tanks="tanks"
+        :state="listState"
+        :error="listError"
+        :filters="listFilters"
+        @update:filters="writeFilters"
+        @select="tank => openDetail(tank.id)"
+        @retry="loadList"
+      />
     </template>
   </section>
 </template>
@@ -480,118 +322,24 @@ onMounted(() => {
 
 .tankopedia :deep(.page-header) { margin-bottom: 0; }
 
-.tp-count { color: var(--color-text-secondary); font: var(--type-caption); font-variant-numeric: tabular-nums; }
 .tp-muted { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-status { margin: 0; color: var(--color-text-secondary); font: var(--type-body); }
 
-.tp-visually-hidden {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-/* ---------- 搜索与筛选 ---------- */
-.tp-search-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
-
-.tp-search { position: relative; flex: 1 1 280px; max-inline-size: 420px; }
-.tp-search-icon { position: absolute; inset-block-start: 50%; inset-inline-start: var(--space-3); color: var(--color-text-tertiary); transform: translateY(-50%); pointer-events: none; }
-
-.tp-search input,
+/* 详情页配置选择（列表的搜索/筛选/排序在 TankCatalogMenu 内，单一实现） */
+.tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }
+.tp-field-inline { max-inline-size: 360px; }
+.tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-field select {
   inline-size: 100%;
   min-block-size: var(--control-h-md);
+  padding: 0 var(--space-2);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface-1);
   color: var(--color-text-primary);
   font: var(--type-body);
 }
-
-.tp-search input { padding: 0 var(--space-3) 0 var(--space-8); }
-.tp-field select { padding: 0 var(--space-2); }
-
-.tp-search input:focus-visible,
 .tp-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.tp-search input::placeholder { color: var(--color-text-tertiary); }
-
-.tp-filters { display: flex; flex-wrap: wrap; gap: var(--space-3); }
-
-.tp-field { display: grid; gap: var(--space-1); min-inline-size: 140px; }
-.tp-field-inline { max-inline-size: 360px; }
-.tp-field-label { color: var(--color-text-secondary); font: var(--type-caption); }
-
-.tp-sheet-scrim { position: fixed; inset: 0; z-index: var(--z-sheet); background: var(--color-scrim); }
-
-.tp-filters.is-sheet {
-  position: fixed;
-  inset-inline: 0;
-  inset-block-end: 0;
-  z-index: var(--z-sheet);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-  max-block-size: 80dvh;
-  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
-  overflow-y: auto;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--color-surface-3);
-  box-shadow: var(--elevation-3);
-}
-
-.tp-sheet-head {
-  display: flex;
-  grid-column: 1 / -1;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--color-text-primary);
-  font: var(--type-h3);
-}
-
-.is-sheet .tp-field { min-inline-size: 0; }
-
-/* ---------- 卡片网格 ---------- */
-.tp-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tp-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  inline-size: 100%;
-  block-size: 100%;
-  padding: var(--space-2) var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
-  color: var(--color-text-primary);
-  font: var(--type-body);
-  text-align: start;
-  cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
-}
-
-.tp-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-.tp-card.is-premium { border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-border-subtle)); }
-/* 收藏车：蓝框（`--color-info` 是本组件既有的中性蓝；主题测试要求 Agent 组件只用
- * 已定义 token，故不写裸色）。与金币车警告色边框区分开：上游数据两者互斥
- * （tanks.pb field13：1=金币 2=收藏），但 consumer 不依赖上游保证——异常双 true 时
- * **premium 优先**，由 `:not(.is-premium)` 显式确定，而不是靠规则先后顺序。 */
-.tp-card.is-collector:not(.is-premium) { border-color: color-mix(in oklab, var(--color-info) 55%, var(--color-border-subtle)); }
-
-@media (hover: hover) {
-  .tp-card:hover { border-color: var(--color-accent); background: var(--color-surface-2); }
-}
 
 /* 固定比例的图片框：懒加载图片到达前后都不引起布局位移 */
 .tp-media {
@@ -621,16 +369,6 @@ onMounted(() => {
   object-fit: contain;
 }
 
-.tp-card-name {
-  display: -webkit-box;
-  min-block-size: calc(var(--line-height-body) * 2);
-  overflow: hidden;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .tp-badges { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
 .tp-pill {
@@ -651,26 +389,6 @@ onMounted(() => {
 .tp-pill.t-td { background: color-mix(in oklab, var(--color-info) 16%, var(--color-surface-1)); color: var(--color-info); }
 .tp-pill.is-shell { background: color-mix(in oklab, var(--color-info) 14%, var(--color-surface-1)); color: var(--color-info); }
 .tp-pill.is-shell.is-premium { background: color-mix(in oklab, var(--color-warning) 16%, var(--color-surface-1)); color: var(--color-warning); }
-
-.tp-card-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-1);
-  margin-block-start: auto;
-  padding-block-start: var(--space-2);
-  border-block-start: 1px solid var(--color-border-subtle);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.tp-stat-label { display: block; color: var(--color-text-tertiary); font: var(--type-caption); }
-
-.tp-card.is-skeleton { cursor: default; }
-.tp-skeleton-line { display: block; block-size: var(--space-3); border-radius: var(--radius-sm); background: var(--color-surface-2); }
-.tp-skeleton-line.is-short { inline-size: 60%; }
-
-.tp-more { display: flex; justify-content: center; padding-block: var(--space-4); }
 
 /* ---------- 详情态 ---------- */
 .tp-detail-nav { display: flex; }
@@ -719,17 +437,14 @@ onMounted(() => {
 .tp-stats dt { color: var(--color-text-secondary); font: var(--type-caption); }
 .tp-stats dd { margin: 0; font: var(--type-h3); font-variant-numeric: tabular-nums; }
 
-/* 平板：卡片稍窄，详情头部封面缩小 */
+/* 平板：详情头部封面缩小 */
 @media (768px <= width < 1200px) {
-  .tp-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .tp-media-lg { flex-basis: 200px; inline-size: 200px; }
 }
 
-/* 手机：两列卡片；筛选进 sheet；详情头部改为上下排列 */
+/* 手机：详情头部改为上下排列 */
 @media (width < 768px) {
   .tankopedia { gap: var(--space-3); padding-block-start: var(--space-4); }
-  .tp-search { flex-basis: 100%; max-inline-size: none; }
-  .tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
   .tp-detail-head { flex-direction: column; align-items: stretch; gap: var(--space-3); }
   .tp-media-lg { flex-basis: auto; inline-size: 100%; }
   .tp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }

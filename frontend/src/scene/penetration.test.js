@@ -94,9 +94,11 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r2.layers[0].effective - 87.18)).toBeLessThan(0.1)
   })
 
-  it('外部模块在前的层链：模块 flat、其后间隙甲裸 LOS（无跳弹/转正）——review 2026-10-13 用例', () => {
-    // 20mm 履带（flat）→ 40mm 间隙甲@75°（layer>0：不跳弹、不转正）→ 100mm 主装甲@0°，AP 100/200/5°。
-    // CPU：20 + 154.548 + 100 → BLOCKED（状态通道最近层=模块 → 无跳弹状态、差额 0，与管线一致）。
+  it('外部模块在前的层链：模块不消耗首层转正资格，其后间隙甲仍转正——review 2026-10-13 用例（2026-10-17 更新）', () => {
+    // 20mm 履带（flat）→ 40mm 间隙甲@75°（首个**实际装甲层**：不跳弹，但保留 2× 增强转正）
+    // → 100mm 主装甲@0°（第二实际装甲层：裸 LOS），AP 100/200/5°。
+    // 模块 20 + 间隙甲 40/cos(75−8.75)°≈99.32 + 主装甲 100 = 219.32 > 200 → BLOCKED。
+    // 旧规则把模块计入首层 → 间隙甲裸 LOS 154.55、总 274.55（同样 BLOCKED，但数值不同）。
     const a = 75 * Math.PI / 180
     const hits = [
       hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
@@ -104,8 +106,10 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
       hit(ArmorSection.HULL, 100.0, [0, 0.6, 0]),
     ]
     const r = calculate(req('ap', 200.0, 100.0, hits, { normalization_deg: 5 }))
+    const twoCalNormDeg = (1.4 * 5 * 100) / (2 * 40)
     expect(Math.abs(r.layers[0].effective - 20)).toBeLessThan(0.02)
-    expect(Math.abs(r.layers[1].effective - 154.548)).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[1].effective - 40 / Math.cos((75 - twoCalNormDeg) * Math.PI / 180))).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[1].effective - 154.548)).toBeGreaterThan(1)   // 判别：旧规则裸 LOS
     expect(Math.abs(r.layers[2].effective - 100)).toBeLessThan(0.02)
     expect(r.result).toBe('BLOCKED')
   })
@@ -141,6 +145,69 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r.layers[0].effective - 20.0 / Math.cos(12.5 * Math.PI / 180))).toBeLessThan(0.05)
     expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(a))).toBeLessThan(0.05)
     expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(25 * Math.PI / 180))).toBeGreaterThan(1.0)
+  })
+
+  it('external_module_does_not_consume_first_armor_normalization', () => {
+    // 用户 2026-10-17 裁示：动能弹击穿外部模块后不跳弹，但仍要考虑转正/口径碾压。
+    // 履带 20mm（flat）→ 主装甲 100mm @75°，口径 100、转正 5°、穿深 400。
+    // 模块不消耗首层转正资格：主装甲仍按 75°−5°=70° 计 → eff=100/cos70°≈292.38，余 380 → 穿透。
+    // 旧规则（layerIndex>0 → 0）eff=100/cos75°≈386.37 → 380 被挡——本用例有判别力。
+    const a = 75 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0.5, 0], { normal }),
+    ]
+    const r = calculate(req('ap', 400.0, 100.0, hits, { normalization_deg: 5 }))
+    expect(r.layers).toHaveLength(2)
+    expect(r.layers[1].angle_deg).toBeCloseTo(75, 6)
+    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(70 * Math.PI / 180))).toBeLessThan(0.05)
+    expect(r.layers[1].effective).toBeLessThan(380)
+    expect(r.layers[1].ricochet).toBe(false)
+    expect(r.layers[1].overmatch).toBe(false)   // 真实 3× 口径规则：100 > 100×3 不成立
+    expect(r.first_armor_norm_deg).toBeCloseTo(5, 6)
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('external_module_keeps_two_caliber_enhanced_normalization', () => {
+    // 履带 20mm → 主装甲 40mm @75°，口径 100：2× 口径（100 > 80）→ 增强转正 8.75°
+    // （1.4×5×100/(2×40)），等效 40/cos(66.25°)≈99.41；余 120−20=100 > 99.41 → 穿透。
+    // 旧规则不转正给 154.69 → 被挡。
+    const a = 75 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 40.0, [0, 0.5, 0], { normal }),
+    ]
+    const r = calculate(req('ap', 120.0, 100.0, hits, { normalization_deg: 5 }))
+    const normDeg = (1.4 * 5 * 100) / (2 * 40)
+    expect(Math.abs(r.layers[1].effective - 40.0 / Math.cos((75 - normDeg) * Math.PI / 180))).toBeLessThan(0.05)
+    expect(r.layers[1].effective).toBeLessThan(120)
+    expect(r.layers[1].ricochet).toBe(false)
+    expect(r.layers[1].overmatch).toBe(false)
+    expect(r.result).toBe('PENETRATION')
+  })
+
+  it('external_module_suppresses_ricochet_and_reports_actual_overmatch', () => {
+    // 履带 20mm → 30mm 主装甲 @75°，口径 100：3× 碾压（100 > 90）成立 → overmatch=true；
+    // 即使没有模块也本就不跳弹。另一例 100mm（非 3×）@75°：模块已使其不跳弹，但 overmatch
+    // 字段必须是真实的 false（不得再用 layerIndex 冒充）。
+    const a = 75 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const mk = (thickness) => calculate(req('ap', 1000.0, 100.0, [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, thickness, [0, 0.5, 0], { normal }),
+    ], { normalization_deg: 5 }))
+
+    const overmatched = mk(30.0)
+    expect(overmatched.layers[1].overmatch).toBe(true)
+    expect(overmatched.ricochet).toBe(false)
+    expect(overmatched.layers[1].ricochet).toBe(false)
+
+    const plain = mk(100.0)
+    expect(plain.layers[1].overmatch).toBe(false)
+    expect(plain.ricochet).toBe(false)
+    expect(plain.layers[1].ricochet).toBe(false)
   })
 
   it('heat_gap_decay_blocks_across_large_gap', () => {

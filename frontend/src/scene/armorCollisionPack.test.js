@@ -259,6 +259,20 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(oracle).toBe(2)                            // 与 calculate 平价（分歧已闭合）
     })
 
+    it('外部模块不消耗首层转正资格：履带 + 主装甲@60°，转正 5°（用户 2026-10-17）', () => {
+        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 仍是首个实际装甲层，转正 5° →
+        // eff = 100/cos(55°) ≈ 174.34，190 > 174.34 → 穿透（绿）。
+        // 旧规则把模块计入首层 → 不转正 eff = 200 → 190 被挡（红）——本用例有判别力。
+        const { sim, oracle } = runCase([
+            { section: 'chassis', thickness: 20, x: 2 },
+            { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
+        ], { remIn: 210, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
+        expect(Math.abs(sim.layers[1].eff - 100 / Math.cos(55 * Math.PI / 180))).toBeLessThan(0.05)
+        expect(sim.layers[1].eff).toBeLessThan(190)   // 判别：旧规则 200 → blocked
+        expect(sim.cls).toBe(1)
+        expect(oracle).toBe(1)
+    })
+
     it('非平行间隙板/主装甲：续飞按间隙板自身几何（review 2026-10-13 用例）', () => {
         // 40mm 间隙板入射 75°：其反射线沿 XZ 面前行 0.5m 处放 100mm 主装甲（入射 0°，
         // 与间隙板不平行）。续飞必须从**间隙板**的跳弹点与其法线出发：

@@ -6,25 +6,24 @@
 // 调用前须设置 window.__INITIAL_TANK__ / __INITIAL_SHOOTER__（ArmorView 从路由参数注入）。
 // 加载状态（审计 3D-23）：options.onLoadState 收到 { state: 'loading'|'ready'|'error', progress, message }，
 // 宿主页据此显示进度条 / 失败重试；返回的 retry() 重新加载当前目标坦克。
-// 生命周期：返回 { destroy, retry }——SPA 路由离开时必须调用（ArmorView onBeforeUnmount）：
+// 生命周期：返回 { destroy, retry, selectTank, canPick }——SPA 路由离开时必须调用（ArmorView onBeforeUnmount）：
 // 取消 rAF 循环、摘除 window 监听器、释放 WebGL 上下文；不调用则多次进出路由会
-// 耗尽浏览器 WebGL 上下文上限（~16 个）出现"context lost"黑屏。
+// 耗尽浏览器 WebGL 上下文上限（~16 个）出现"context lost"黑屏。selectTank/canPick 供宿主页的
+// 共享选车菜单（TankCatalogMenu）加载射手/目标；名册与当前选择经 onTankList/onTankSelection 回调。
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { poseFromYPR, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
     fetchTankData,
-    fetchTankFilter,
+    fetchTankEncyclopedia,
     fetchShells,
     fetchReplayShots,
     judgePenetration,
-    tankImageUrl,
-    loadTankIconCrops,
     assetProvider,
     shotBallisticLength,
 } from './agentData.js'
-import { tankIconCropTransform } from '../utils/tankIconCrop.js'
+import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
@@ -39,6 +38,8 @@ import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclaratio
  * @param {object} [options]
  * @param {object} [options.labels] 界面文案（审计 3D-16：由宿主页按当前语言提供；缺省为英文原文）
  * @param {(state: { state: string, progress?: number | null, message?: string }) => void} [options.onLoadState]
+ * @param {(list: Array) => void} [options.onTankList] 名册视图模型（normalizeTankCache）就绪
+ * @param {(selection: { shooter: number|null, target: number|null }) => void} [options.onTankSelection] 当前射手/目标变化
  */
 /**
  * 场景脚本把射击复现 / 调试状态挂在 window 上（__worldPan、__shotCtx…）。以前每次都在新窗口里打开，
@@ -108,13 +109,12 @@ export function mirrorShotData(s) {
     
 }
 
-export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
+export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null } = {}) {
         resetViewerGlobals();
         const L = {
             loading: 'Loading tank model...',
             shellUnavailable: 'Shell data is missing or invalid.',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
-            tier: (tier) => 'Tier ' + tier,
             type: (value) => value,
             nation: (value) => value,
             showCollision: 'Show Collision',
@@ -128,8 +128,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             shotDistance: 'Engagement distance', distanceUnit: 'm',
             heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
             technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
-            selectShooter: 'Choose firing tank', selectTarget: 'Choose target tank',
-            allTiers: 'All tiers', allNations: 'All nations', allTypes: 'All types',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
             armorStateCheckbox: 'Dynamic armor',
             armorStateAutoTitle: 'Replay-detected (armor state at impact)',
@@ -306,7 +304,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               vec4 spacedData = texture2D(spacedArmorBuffer, sc);
               vec4 spacedState = texture2D(spacedStateBuffer, sc);
               bool underSpaced = spacedData.a != 0.0;
-              bool gapRicochet = underSpaced && spacedState.r > 0.5;   // 首层跳弹标志（RT1，最近板独占）
+              // RT0.G = 间隙甲层标记（SPACED_FRAG 写入 1；外部模块只写 R/coverage）。
+              // 外部模块是 flat 消耗、不是装甲层：主装甲在「只穿模块」时仍是首个实际装甲层，
+              // 保留转正/2×口径增强转正资格（用户 2026-10-17 裁示）；间隙甲才是首层。
+              bool hasSpacedArmor = spacedData.g > 0.0;
+              // RT1.A = 1：最近覆盖层是外部模块（moduleStateMaterial 写；间隙甲写 0）。
+              // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
+              bool moduleInFront = spacedState.a > 0.5;
+              bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
 
@@ -316,7 +321,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               highp vec3 nVR = normalize(vNormal);
               highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
               highp vec3 reflR = normalize(vRotT * rVR);
-              bool threeCal = caliber > thickness * 3.0 || underSpaced;
+              bool threeCal = caliber > thickness * 3.0;
+              // 跳弹抑制：真实 3× 口径，或此前已有任何命中层（外部模块/间隙甲）。炮弹穿过
+              // 外部模块后沿原方向继续，不再跳弹（用户 2026-10-17 裁示）。
+              bool noRicochet = threeCal || underSpaced;
               bool mayRicochet = angle >= ricochet;
               float penChance = -1.0;
               float splashChance = 0.0;
@@ -340,14 +348,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                   ricocheted = false;
                   contPen = true;
                 }
-              } else if (!threeCal && mayRicochet) {
+              } else if (!noRicochet && mayRicochet) {
                 penChance = 0.0; ricocheted = true;
                 // 跳弹续飞（GPU 求交）：反射线在打包碰撞几何上做出射段判定，
                 // 语义 = 点击判定跳弹后的 judgePenetration 二次判定（强制不跳弹）。
                 // 仅动能弹可入本分支（爆炸弹 ricochet=90°）。v5.3 全分辨率逐像素：
                 //   rcMode>=1 —— 网格 DDA 求交（与原热力图同精度、同帧计算）；
                 //   rcMode=0 —— 关闭（维持紫）。
-                // 注：入射侧无消耗可言——有覆盖(underSpaced)时 threeCal 恒真进不了本分支，
+                // 注：入射侧无消耗可言——有覆盖(underSpaced)时 noRicochet 恒真进不了本分支，
                 // 故续飞初始穿深恒为 penetration×0.75，与点击链首层跳弹精确一致。
                 // 全分辨率逐像素续飞（v5.3）：网格 DDA + 取数预算把单像素求交压回
                 // 原热力图量级，不再需要低清类通道中转（与原热力图同精度、同帧计算）
@@ -359,9 +367,10 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
                 bool twoCal = ratio > 2.0;
-                // 转正只作用于首个装甲层：已有间隙板覆盖（= 已穿透首层）时不再转正——
-                // 与点击链 layerIndex>0 同规则（WG 语义，用户 2026-10-13 裁示）
-                float norm = underSpaced ? 0.0
+                // 转正只作用于首个**实际装甲层**：已有间隙甲覆盖（= 首层装甲已被消耗）时不再转正；
+                // 外部模块覆盖不算装甲层（RT0.G 未置位）→ 本主装甲仍是首层，保留转正与
+                // 2×口径增强转正（用户 2026-10-13/2026-10-17 裁示，与点击链 armorLayerCount 同规则）
+                float norm = hasSpacedArmor ? 0.0
                   : (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization);
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
@@ -689,10 +698,13 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
         }
         const SPACED_VERT = PBR_VERT;
-        // 厚度通道（RT0，additive，R 累计）：只写 R/coverage；**首层判定**用状态通道（RT1）
-        // 的最近间隙板/模块深度：|gl_FragCoord.z − stateDepth| < eps ⇒ 本片元即最近板。
-        // 首层 → 全效应（3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
-        // （与点击链 layerIndex>0 同规则；review 2026-10-13 重叠间隙板案例）。
+        // 厚度通道（RT0，additive，R 累计）：每个间隙板写 R=裸 LOS（thickness/cos 入射角）、
+        // G=间隙甲层标记；外部模块只写 R/coverage、不写 G。PBR 用 G 判断主装甲前方是否已有
+        // 实际装甲层（决定是否保留首层转正资格）；外部模块是 flat 消耗，不计入装甲层。
+        // **首层判定**用状态通道（RT1）的最近间隙板深度；外部模块不阻塞间隙板状态，
+        // 而是写 A=1 让 PBR 抑制「模块在前」时其后间隙板的跳弹/续飞。首层 → 全效应
+        // （3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
+        // （与点击链同规则；review 2026-10-13）。
         // 厚度通道（RT0，additive）：**每块间隙板只贡献裸 LOS 厚度**（thickness/cos 入射角），
         // 不做任何首层判定——本通道里没有任何浮点深度邻近阈值可被合法小层距反例击穿
         // （review 2026-10-13：任何"距离最近层 < δ"的推断都不是身份）。首层身份与转正差额
@@ -709,7 +721,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
               float losThick = thickness / max(cos(angle), 1e-6);
-              gl_FragColor = vec4(losThick / penetration, 0.0, 0.0, 1.0);
+              gl_FragColor = vec4(losThick / penetration, 1.0, 0.0, 1.0);
             }
         `;
         // 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
@@ -759,7 +771,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
                 if (rcDiag > 1e30) bCode = -1.0;
               }
-              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, delta, 1.0);
+              // A=0：本片元是间隙甲（不是外部模块）；模块状态材质写 A=1，PBR 据此抑制
+              // 「模块在前」时其后间隙板的跳弹/续飞。RGB 仍供 PBR 使用（B=转正差额）。
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, delta, 0.0);
             }
         `;
         /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
@@ -796,6 +810,30 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
                 depthWrite: true, depthTest: true, blending: THREE.NoBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
+            });
+        }
+        // 外部模块状态材质（RT1）：只把 A 置 1（= 最近覆盖层是外部模块），RGB 保留——
+        // 其后间隙板的转正差额/跳弹状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
+        // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞（用户 2026-10-17），但间隙甲
+        // 仍是首个实际装甲层，其转正差额继续由 PBR 使用。
+        const MODULE_STATE_FRAG = `
+            #include <clipping_planes_pars_fragment>
+            void main() {
+              #include <clipping_planes_fragment>
+              gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+            }
+        `;
+        function moduleStateMaterial(clip) {
+            return new THREE.ShaderMaterial({
+                vertexShader: EXTERNAL_VERT, fragmentShader: MODULE_STATE_FRAG,
+                depthWrite: true, depthTest: true,
+                blending: THREE.CustomBlending,
+                blendEquation: THREE.AddEquation,
+                blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor,
+                blendEquationAlpha: THREE.AddEquation,
+                blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor,
+                clipping: clip != null,
+                clippingPlanes: clip ? [clip] : null,
             });
         }
         function shellTypeOf(sh) {
@@ -1072,13 +1110,20 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 cm2.userData._baseThickness = t;
             });
         }
-        /** 状态通道场景：间隙板（状态材质——depthWrite 独占最近板）+ 外部模块（仅深度：
-         *  点击链把模块计入 layerIndex，模块在前的间隙板不得作为「首层」）。 */
+        /** 状态通道场景（RT1）：主装甲深度（阻挡其后间隙板/模块）→ 间隙板状态（depthWrite
+         *  独占最近板；R/G/B=跳弹/续飞/转正差额，A=0）→ 外部模块状态（更近时写 A=1，
+         *  RGB 保留）。模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞，但间隙甲仍是
+         *  首个实际装甲层，其转正差额继续由 PBR 使用（用户 2026-10-17）。 */
         function buildSpacedStateScene() {
             if (!armorModel) return;
             if (spacedStateScene) spacedStateScene.clear();
             else spacedStateScene = new THREE.Scene();
             const pen = ((selectedShell && selectedShell.penetration) || 200) * equipmentCoeffs().penMul;
+            // 主装甲深度：其后间隙板/模块不写状态（防止越过主装甲的板污染本像素状态）
+            primaryMeshes.forEach(function(node){
+                const c = addClone(spacedStateScene, node, omitMaterial, 0);
+                tagStateClone(c, node);
+            });
             spacedMeshes.forEach(function(node){
                 const t = node.userData.armorThickness || 0;
                 const sm = addClone(spacedStateScene, node, spacedStateMaterial(t, pen), 2);
@@ -1087,14 +1132,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             });
             externalMeshes.forEach(function(node){
                 const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
-                const dmat = clipped
-                    ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
-                    : externalDepthMaterial;
-                // 模块深度**先于**间隙板写入（order 1 < 2，colorWrite=false 只写深度）：
-                // 更近的模块让后方间隙板的深度测试失败 → 不留下过期跳弹/续飞状态
-                // （review 2026-10-13：模块仅更新深度不清状态色，PBR 会读到陈旧状态）
-                const od = addClone(spacedStateScene, node, omitMaterial, 1);
-                od.material = dmat;
+                // 模块在最近间隙板之前时写 A=1（更远则深度测试失败）；RGB 保留间隙板状态。
+                addClone(spacedStateScene, node, moduleStateMaterial(clipped ? gunClipPlane : null), 3);
             });
         }
         function buildPrimaryArmorScene() {
@@ -1906,8 +1945,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
-            // ① 状态通道：最近间隙板独占写 G/B（NoBlending + depthWrite；外部模块只贡献深度），
-            //    并产出最近板深度 → ② 的「是否首层」判定依据（review 2026-10-13 重叠板）
+            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G/B（A=0）→ 更近的外部模块写
+            //    A=1（RGB 保留：间隙甲仍是首个实际装甲层，转正差额/续飞状态不被模块覆盖）
             if (spacedStateScene) {
                 renderer.autoClear = true;
                 renderer.setRenderTarget(srt);
@@ -4002,7 +4041,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function updateInfoPanel() {
             document.getElementById('tank-name').textContent = tankData.name || '?';
-            // 卡片该行已有「等级」行标题：值只写数字（L.tier 带前缀，留给选车下拉的选项文案）
+            // 卡片该行已有「等级」行标题：值只写数字
             document.getElementById('tank-tier').textContent = String(tankData.tier || '?');
             document.getElementById('tank-type').textContent = tankData.type ? L.type(tankData.type) : '?';
             document.getElementById('tank-nation').textContent = tankData.nation ? L.nation(tankData.nation) : '?';
@@ -4213,131 +4252,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         let tanksList = [];
         let currentShooterId = null, currentTargetId = null;
-        let pickerMode = 'target'; // which selector the picker is currently editing
-
-        function populateFilterOptions() {
-            const tiers = [...new Set(tanksList.map(t => t.tier))].sort((a, b) => a - b);
-            const nations = [...new Set(tanksList.map(t => t.nation))].sort();
-            const types = [...new Set(tanksList.map(t => t.type))].sort();
-            const addOpts = (selId, items, labelFn, defLabel) => {
-                const sel = document.getElementById(selId);
-                sel.innerHTML = '';
-                const def = document.createElement('option');
-                def.value = '';
-                def.textContent = defLabel;
-                sel.appendChild(def);
-                items.forEach(v => {
-                    const o = document.createElement('option');
-                    o.value = String(v);
-                    o.textContent = labelFn(v);
-                    sel.appendChild(o);
-                });
-            };
-            addOpts('tp-tier', tiers, L.tier, L.allTiers);
-            addOpts('tp-nation', nations, L.nation, L.allNations);
-            addOpts('tp-type', types, L.type, L.allTypes);
-        }
-
-
-        function getFiltered() {
-            const q = document.getElementById('tp-search').value.trim().toLowerCase();
-            const tier = document.getElementById('tp-tier').value;
-            const nation = document.getElementById('tp-nation').value;
-            const type = document.getElementById('tp-type').value;
-            return tanksList.filter(t =>
-                (!q || (t.name || '').toLowerCase().includes(q)) &&
-                (!tier || String(t.tier) === tier) &&
-                (!nation || t.nation === nation) &&
-                (!type || t.type === type)
-            );
-        }
-
-        let renderChunk = null;   // { list, rendered, selId }
-
-        // 封面图展示裁剪（与坦克百科同款）：客户端封面画布留白近半（坦克锚定左上），
-        // 按逐车内容框（tank_images/crops.json）缩放定位，视觉对齐旧紧裁口径；不改图标字节。
-        // TC_IMG_ASPECT 必须与 AgentArmorView.vue 的 .tc-img aspect-ratio 一致（dom-contract 测试锁定）。
-        const TC_IMG_ASPECT = 8 / 5;
-        let iconCrops = null;
-
-        function iconCropTransformFor(tankId) {
-            return tankIconCropTransform(iconCrops?.[String(tankId)], TC_IMG_ASPECT);
-        }
-
-        /** 表可能晚于首屏卡片到达：对已渲染卡片补样式（数据缺失时为空串 → 回退原始 contain） */
-        function refreshRenderedIconCrops() {
-            if (!iconCrops) return;
-            document.querySelectorAll('#tp-grid .tc-img[data-tank-id]').forEach((el) => {
-                el.style.transform = iconCropTransformFor(el.dataset.tankId);
-            });
-        }
-
-        loadTankIconCrops().then((crops) => {
-            iconCrops = crops;
-            refreshRenderedIconCrops();
-        });
-
-        function makeCard(t, selId) {
-            const card = document.createElement('button');
-            card.type = 'button';
-            card.className = 'tank-card' + (String(t.id) === String(selId) ? ' sel' : '');
-            card.dataset.id = String(t.id);
-
-            const img = document.createElement('img');
-            img.className = 'tc-img';
-            img.loading = 'lazy';
-            img.src = tankImageUrl(t.id);
-            img.alt = t.name;
-            img.dataset.tankId = String(t.id);
-            img.style.transform = iconCropTransformFor(t.id);
-
-            const body = document.createElement('div');
-            body.className = 'tc-body';
-            const nm = document.createElement('div');
-            nm.className = 'tc-name';
-            nm.textContent = t.name;
-            const meta = document.createElement('div');
-            meta.className = 'tc-meta';
-            const tier = document.createElement('span');
-            tier.className = 'tc-tier';
-            tier.textContent = 'T' + t.tier;
-            const typ = document.createElement('span');
-            typ.className = 'tc-type';
-            typ.textContent = L.type(t.type);
-            const nat = document.createElement('span');
-            nat.className = 'tc-nation';
-            nat.textContent = L.nation(t.nation);
-            meta.append(tier, typ, nat);
-
-            body.append(nm, meta);
-            card.append(img, body);
-            card.addEventListener('click', () => selectFromPicker(t.id));
-            return card;
-        }
-
-        function renderGrid() {
-            const grid = document.getElementById('tp-grid');
-            const filtered = getFiltered();
-            const selId = pickerMode === 'shooter' ? currentShooterId : currentTargetId;
-            renderChunk = { list: filtered, rendered: 0, selId };
-            grid.innerHTML = '';
-            loadMoreCards();
-            document.getElementById('tp-count').textContent = filtered.length + '/' + tanksList.length;
-        }
-
-        const CHUNK = 90;
-        function loadMoreCards() {
-            if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
-            const grid = document.getElementById('tp-grid');
-            do {
-                const end = Math.min(renderChunk.rendered + CHUNK, renderChunk.list.length);
-                for (let i = renderChunk.rendered; i < end; i++) {
-                    grid.appendChild(makeCard(renderChunk.list[i], renderChunk.selId));
-                }
-                renderChunk.rendered = end;
-                // A visible grid must overflow or exhaust its roster; a hidden picker still renders one chunk.
-            } while (renderChunk.rendered < renderChunk.list.length && grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight);
-        }
 
         function updateTankLabels() {
             const find = (id) => tanksList.find(t => String(t.id) === String(id));
@@ -4349,47 +4263,44 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             document.getElementById('tank-selection-status').hidden = initDone;
         }
 
-        function openPicker(mode) {
-            if (!initDone) return;
-            pickerMode = mode;
-            document.getElementById('tp-title').textContent =
-                mode === 'shooter' ? L.selectShooter : L.selectTarget;
-            document.getElementById('tank-picker').classList.add('open');
-            renderGrid();
-            document.getElementById('tp-search').focus();
-        }
-
-        function closePicker() {
-            document.getElementById('tank-picker').classList.remove('open');
-            document.getElementById(pickerMode === 'shooter' ? 'shooter-select' : 'target-select').focus();
-        }
-
-        function selectFromPicker(id) {
+        /** 选车（宿主页的共享 TankCatalogMenu → 这里）：加载弹药/目标并回报当前选择。 */
+        function selectTank(mode, id) {
             // 首次弹药初始化由 init 独占；防止过期 init continuation 越过新选择。
-            if (!initDone) { closePicker(); return; }
-            id = parseInt(id);
-            if (pickerMode === 'shooter') {
+            if (!initDone) return false;
+            id = parseInt(id, 10);
+            if (!Number.isFinite(id)) return false;
+            if (mode === 'shooter') {
                 currentShooterId = id;
                 updateTankLabels();
                 loadShooter(id).catch((e) => {
                     if (currentShooterId === id) reportLoad({ state: 'error', message: loadFailed('shell data', errorMessage(e)) });
                 });
-            } else {
+            } else if (mode === 'target') {
                 currentTargetId = id;
                 updateTankLabels();
                 loadTarget(id).catch((e) => reportLoad({ state: 'error', message: loadFailed('tank data', errorMessage(e)) }));
+            } else {
+                return false;
             }
-            closePicker();
+            onTankSelection?.({ shooter: currentShooterId, target: currentTargetId });
+            return true;
+        }
+
+        /** 宿主页选车入口可用性：名册已就绪且弹药初始化完成。 */
+        function canPick() {
+            return initDone;
         }
 
         async function populateTankLists(initTargetId, initShooterId) {
-            const list = await fetchTankFilter();
+            // 与坦克百科同一名册视图模型：搜索别名 / hp / pen_max 都来自 normalizeTankCache。
+            const list = normalizeTankCache(await fetchTankEncyclopedia());
             if (destroyed) return;
             tanksList = list;
             currentShooterId = initShooterId || initTargetId;
             currentTargetId = initTargetId;
-            populateFilterOptions();
             updateTankLabels();
+            onTankList?.(list);
+            onTankSelection?.({ shooter: currentShooterId, target: currentTargetId });
         }
 
         function initScene() {
@@ -4487,38 +4398,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 applyConfig(parseInt(this.value));
             });
 
-            document.getElementById('target-select').addEventListener('click', function() { openPicker('target'); });
-            document.getElementById('shooter-select').addEventListener('click', function() { openPicker('shooter'); });
-
-            document.getElementById('tp-close').addEventListener('click', closePicker);
-            onWin('keydown', (event) => {
-                const picker = document.getElementById('tank-picker');
-                if (!picker?.classList.contains('open')) return;
-                if (event.key === 'Escape') { event.preventDefault(); closePicker(); return; }
-                if (event.key !== 'Tab') return;
-                const focusable = [...picker.querySelectorAll('button, input, select')].filter(el => !el.disabled);
-                const first = focusable[0], last = focusable[focusable.length - 1];
-                if (event.shiftKey && (document.activeElement === first || !picker.contains(document.activeElement))) {
-                    event.preventDefault(); last?.focus();
-                } else if (!event.shiftKey && (document.activeElement === last || !picker.contains(document.activeElement))) {
-                    event.preventDefault(); first?.focus();
-                }
-            });
-            document.getElementById('tp-grid').addEventListener('scroll', function() {
-                if (!renderChunk || renderChunk.rendered >= renderChunk.list.length) return;
-                // Keep one viewport of cards ahead without rendering the whole roster at once.
-                if (this.scrollTop + this.clientHeight >= this.scrollHeight - this.clientHeight) {
-                    loadMoreCards();
-                }
-            });
-            document.getElementById('tp-search').addEventListener('input', renderGrid);
-            document.getElementById('tp-tier').addEventListener('change', renderGrid);
-            document.getElementById('tp-nation').addEventListener('change', renderGrid);
-            document.getElementById('tp-type').addEventListener('change', renderGrid);
-            document.getElementById('tank-picker').addEventListener('click', function(e) {
-                if (e.target === this) closePicker();
-            });
-
             document.getElementById('collision-btn').addEventListener('click', function() {
                 collisionMode = !collisionMode;
                 this.classList.toggle('active', collisionMode);
@@ -4546,8 +4425,6 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 camera.updateProjectionMatrix();
                 renderer.setSize(view.clientWidth, view.clientHeight);
                 refreshPenetrationResolution();
-                const grid = document.getElementById('tp-grid');
-                if (grid.clientHeight > 0 && grid.scrollHeight <= grid.clientHeight) loadMoreCards();
             };
             onWin('resize', resizeView);
             // The recorded-shot header can wrap without a window resize (locale / error message).
@@ -5454,5 +5331,5 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry };
+        return { destroy, retry, selectTank, canPick };
     }
