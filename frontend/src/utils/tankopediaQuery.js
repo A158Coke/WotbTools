@@ -6,7 +6,7 @@
  * 键：q（搜索词）· tier · nation · type · sort（name|tier|hp|pen）· tank（详情车辆 id）· config（配置下标）
  */
 import { tankFuzzyScore } from '../scene/tankMeta.js'
-// 搜索别名（开发者人工维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
+// 搜索别名（开发者审校维护的 WotBTools 搜索 metadata，**不是**游戏事实数据）：稀疏存储，
 // 没配 alias 的车辆直接不出现在文件里（缺 key == aliases []）。与 map_names.json 同一机制：
 // 构建期相对路径 import，无后端接口、无第二资产源，Web 与 Android 内置前端同一份。
 // 契约与维护流程见 common/AGENTS.md 与 docs/architecture/tankopedia-reference-data.md。
@@ -102,10 +102,18 @@ const COMPARATORS = {
  * （同分回落既有 byName）。不做 exact-alias / 语言 / 热度 boost。
  */
 function tankSearchScore(tank, query) {
-  let score = tankFuzzyScore(tank.name || '', query)
-  for (const alias of tank.aliases || []) {
-    // alias 原始文本留在 JSON 里，匹配时与 query 同样 trim；大小写由 tankFuzzyScore 归一化。
-    const aliasScore = tankFuzzyScore(String(alias || '').trim(), query)
+  // 国服 T-34* 是 Type T-34 的正式名称，星号是车型限定，不能作为标点丢掉。
+  const starredQuery = query.includes('*')
+  const name = tank.name || ''
+  const canonicalScore = !starredQuery || name.includes('*') ? tankFuzzyScore(name, query) : 0
+  let score = canonicalScore
+  for (const value of tank.aliases || []) {
+    const alias = String(value || '').trim()
+    const starredAlias = alias.includes('*')
+    if (starredQuery && !starredAlias) continue
+    // 无星查询已命中正式名时保持其相关度；未命中时仍让 Mk I*重型坦克等别名补召回。
+    if (!starredQuery && starredAlias && canonicalScore > 0) continue
+    const aliasScore = tankFuzzyScore(alias, query)
     if (aliasScore > score) score = aliasScore
   }
   return score
@@ -113,7 +121,7 @@ function tankSearchScore(tank, query) {
 
 /**
  * 列表筛选 + 排序：tier / nation / type 精确匹配，q 走模糊打分（正式车名 + alias）。
- * 有搜索词时按相关度排序（与旧实现一致），否则按 sort。
+ * 有搜索词时精确正式车名优先，其后按相关度及正式车名排序；否则按 sort。
  */
 export function selectTanks(tanks, state = {}) {
   const base = tanks.filter(tank =>
@@ -124,9 +132,14 @@ export function selectTanks(tanks, state = {}) {
   const query = (state.q || '').trim().toLowerCase()
   if (query) {
     return base
-      .map(tank => ({ tank, score: tankSearchScore(tank, query) }))
+      .map(tank => ({
+        tank,
+        score: tankSearchScore(tank, query),
+        exactCanonical: (tank.name || '').trim().toLowerCase() === query,
+      }))
       .filter(entry => entry.score > 0)
-      .sort((a, b) => b.score - a.score || byName(a.tank, b.tank))
+      .sort((a, b) => Number(b.exactCanonical) - Number(a.exactCanonical)
+        || b.score - a.score || byName(a.tank, b.tank))
       .map(entry => entry.tank)
   }
   return base.slice().sort(COMPARATORS[state.sort] || byName)
