@@ -14,7 +14,7 @@ Without a category link, the directory initially shows all creators with other c
 
 Category deep links and Back/Forward into a category expand the choices. Data refresh and UI profile changes preserve the disclosure state. Collapsed choices leave the keyboard tab order, and closing returns focus to the toggle. An empty category dictionary has no toggle.
 
-Anonymous and ordinary signed-in visitors see only categories containing a creator. If none contain a creator, the public navigation entry is hidden and a direct directory link shows a not-yet-published notice with retry. A successful public refresh that removes the selected category replaces the URL with All categories, preserving other query parameters and the hash. Failed reads do not count as an empty directory.
+Anonymous and ordinary signed-in visitors see only categories containing a creator. If none contain a creator, the public navigation entry is hidden and a direct directory link shows a not-yet-published notice with retry. After authentication initialization settles, a successful public refresh that removes the selected category replaces the URL with All categories, preserving other query parameters and the hash. Pending authentication preserves the category link so a slowly identified administrator can still open an empty category. Failed reads do not count as an empty directory.
 
 Authenticated `tournament-admin` users retain the directory, management entry and complete category dictionary, including empty categories, so they can create the first creator. Their selected empty category remains selected. These are content-presentation rules; administrator write permissions are unchanged.
 

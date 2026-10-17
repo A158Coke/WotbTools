@@ -23,7 +23,9 @@ export function useCreators(deps: { api?: typeof api; auth?: ReturnType<typeof u
   const loading = computed(() => listLoading.value || availability.loading.value)
   const error = computed(() => listError.value ?? availability.error.value)
   const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && tournamentAdminAllowed(auth))
-  const invalidCategory = computed(() => !adminAllowed.value && availability.contentKnown.value && categoryId.value !== null
+  // Public content can arrive before check-sso; do not destroy an administrator's deep link while identity is pending.
+  const invalidCategory = computed(() => !['idle', 'initializing'].includes(auth.authInitState.value)
+    && !adminAllowed.value && availability.contentKnown.value && categoryId.value !== null
     && !categories.value.some(value => value.id === categoryId.value))
   let disposed = false
   let generation = 0, controller = new AbortController(), activeCategory = categoryId.value, inFlight: Promise<void> | null = null
