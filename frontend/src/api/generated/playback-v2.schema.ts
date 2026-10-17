@@ -3,6 +3,481 @@ export default {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$ref": "#/$defs/BattlePlaybackDataset",
   "$defs": {
+    "RecommendationType": {
+      "type": "string",
+      "enum": [
+        "UP",
+        "VIDEO"
+      ]
+    },
+    "RecommendationCategory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "RecommendationCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "externalId",
+        "name",
+        "description",
+        "targetUrl",
+        "imageUrl",
+        "categories",
+        "level",
+        "score",
+        "createdAt",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecommendationCategory"
+          },
+          "minItems": 1
+        },
+        "level": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CreatorLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "enum": [
+            2,
+            4,
+            6,
+            8,
+            10
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "externalId": {
+          "type": "string",
+          "description": "UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints."
+        },
+        "targetUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "imageUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "UP"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "maxLength": 20
+              },
+              "targetUrl": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]{0,19}$",
+                "maxLength": 47
+              },
+              "categories": {
+                "items": {
+                  "properties": {
+                    "type": {
+                      "const": "UP"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^BV[A-Za-z0-9]{10}$",
+                "description": "Case-sensitive BV identifier. Only surrounding ECMAScript whitespace is trimmed; structural validation does not verify video existence."
+              },
+              "level": {
+                "type": "null"
+              },
+              "targetUrl": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://www\\.bilibili\\.com/video/BV[A-Za-z0-9]{10}$"
+              },
+              "categories": {
+                "items": {
+                  "properties": {
+                    "type": {
+                      "const": "VIDEO"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RecommendationDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id",
+        "externalId",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "imageUrl",
+        "version"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "externalId": {
+          "type": "string",
+          "description": "UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints."
+        },
+        "imageUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "UP"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,19}$",
+                "maxLength": 20
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^BV[A-Za-z0-9]{10}$",
+                "description": "Case-sensitive BV identifier. Only surrounding ECMAScript whitespace is trimmed; structural validation does not verify video existence."
+              },
+              "levelId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RecommendationSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "externalId",
+        "name",
+        "description",
+        "categoryIds",
+        "levelId",
+        "stars",
+        "imageAction",
+        "expectedVersion"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "categoryIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "levelId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "stars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "expectedVersion": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "externalId": {
+          "type": "string",
+          "description": "UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints."
+        },
+        "imageAction": {
+          "type": "string",
+          "enum": [
+            "KEEP",
+            "REPLACE",
+            "REMOVE"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "UP"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^\\s*(?=0*[1-9])[0-9]{1,20}\\s*$",
+                "description": "Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server."
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "externalId": {
+                "type": "string",
+                "pattern": "^\\s*BV[A-Za-z0-9]{10}\\s*$",
+                "description": "Case-sensitive BV identifier. Only surrounding ECMAScript whitespace is trimmed; structural validation does not verify video existence."
+              },
+              "levelId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RecommendationMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "categories",
+        "levels",
+        "imageUploadsAvailable"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecommendationCategory"
+          }
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CreatorLevel"
+          }
+        },
+        "imageUploadsAvailable": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "VIDEO"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "levels": {
+                "maxItems": 0
+              },
+              "categories": {
+                "items": {
+                  "properties": {
+                    "type": {
+                      "const": "VIDEO"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "categories": {
+                "items": {
+                  "properties": {
+                    "type": {
+                      "const": "UP"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RecommendationCategoryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "name"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/RecommendationType"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
     "CreatorCategory": {
       "type": "object",
       "additionalProperties": false,
@@ -322,7 +797,7 @@ export default {
           "minimum": 0
         },
         "capabilities": {
-          "description": "Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends.",
+          "description": "recommendations-v1 enables typed UP/VIDEO endpoints. Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends.",
           "type": "array",
           "items": {
             "type": "string"
@@ -5520,6 +5995,7 @@ export default {
       "enum": [
         "CREATOR_NOT_FOUND",
         "CREATOR_INVALID_REQUEST",
+        "RECOMMENDATION_ID_ALREADY_EXISTS",
         "CREATOR_UID_ALREADY_EXISTS",
         "CREATOR_CATEGORY_IN_USE",
         "CREATOR_LEVEL_IN_USE",
