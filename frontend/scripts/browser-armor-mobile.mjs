@@ -802,7 +802,9 @@ async function runPickerCardsScenario(env, scenario) {
       if (count >= total) return count
       const probe = await page.probe(pickerCardsProbe)
       await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...probe.wheel, deltaX: 0, deltaY: probe.scrollHeight }, sessionId)
-      await delay(120)
+      // 等名册实际增长（IO 回调 + Vue patch 可能超过一帧），而不是固定延时。
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, next => next > count,
+        { timeout: 3000, label: 'roster growth after wheel' }).catch(() => {})
     }
     return page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
   }
@@ -842,7 +844,10 @@ async function runPickerCardsScenario(env, scenario) {
   if (failures.length === 0) {
     if (scenario.resize) {
       await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
-      const resized = await exhaustPicker(PICKER_TOTAL)
+      // 视口扩大只靠 IO 续页：先不送滚轮，保留 resize-only 断言；滚动测试在下一步单独做。
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === PICKER_TOTAL,
+        { timeout: 5000, label: 'resize refills the visible picker before scrolling' }).catch(() => {})
+      const resized = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
       check(failures, resized === PICKER_TOTAL,
         `${scenario.name}: resize refills the visible picker before scrolling (${resized}/${PICKER_TOTAL})`)
     }

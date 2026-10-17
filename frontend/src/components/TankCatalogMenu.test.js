@@ -84,6 +84,14 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it('卸载前 flush 未提交的搜索草稿', async () => {
+    vi.useFakeTimers()
+    const wrapper = mountMenu()
+    await wrapper.find('#tp-search').setValue('is7')
+    wrapper.unmount()
+    expect(wrapper.emitted('update:filters')?.at(-1)?.[0].q).toBe('is7')
+  })
+
   it('筛选/排序 emit 完整 filters', async () => {
     const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
     await wrapper.find('#tp-nation').setValue('germany')

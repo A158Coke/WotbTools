@@ -76,7 +76,12 @@ function setFilter(key, value) {
   clearTimeout(searchTimer)
   emitFilters()
 }
-onBeforeUnmount(() => clearTimeout(searchTimer))
+onBeforeUnmount(() => {
+  clearTimeout(searchTimer)
+  // 组件真正卸载（离开百科/装甲页）时 flush 尚未提交的搜索草稿；
+  // 列表→详情已改为保持挂载，不会走到这里。
+  if (local.q !== (props.filters?.q ?? '') && local.q !== lastExternal.q) emitFilters()
+})
 
 const tiers = computed(() => [...new Set(props.tanks.map(tank => tank.tier))].filter(Boolean).sort((a, b) => a - b))
 const nations = computed(() => [...new Set(props.tanks.map(tank => tank.nation))].sort())
@@ -185,7 +190,7 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
       :role="isCompact ? 'dialog' : undefined"
       :aria-label="isCompact ? t('filters.title') : undefined"
       data-testid="tank-filters" data-tour="tankopedia-filters"
-      @keydown.esc="isCompact && closeSheet()"
+      @keydown.esc.stop="isCompact && closeSheet()"
     >
       <div v-if="isCompact" class="tp-sheet-head">
         <strong>{{ t('filters.title') }}</strong>
