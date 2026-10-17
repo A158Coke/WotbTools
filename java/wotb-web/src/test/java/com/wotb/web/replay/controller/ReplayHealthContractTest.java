@@ -11,6 +11,7 @@ class ReplayHealthContractTest {
         MockMvcBuilders.standaloneSetup(new ReplayController()).build().perform(get("/api/health"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("ok"))
                 .andExpect(jsonPath("$.tanks").isNumber())
-                .andExpect(jsonPath("$.capabilities[0]").value("creators-v1"));
+                .andExpect(jsonPath("$.capabilities[0]").value("creators-v1"))
+                .andExpect(jsonPath("$.capabilities[1]").value("creators-content-visibility-v1"));
     }
 }

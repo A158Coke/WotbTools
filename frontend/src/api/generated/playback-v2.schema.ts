@@ -322,6 +322,7 @@ export default {
           "minimum": 0
         },
         "capabilities": {
+          "description": "Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends.",
           "type": "array",
           "items": {
             "type": "string"

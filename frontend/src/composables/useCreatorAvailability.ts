@@ -1,43 +1,73 @@
 import { computed, inject, onMounted, onScopeDispose, provide, readonly, ref, watch } from 'vue'
-import type { InjectionKey, Ref } from 'vue'
-import { getCreatorAvailability } from '../api/creators.js'
+import { getCreatorAvailability, listCreatorCategories } from '../api/creators.js'
+import type { CreatorCategory } from '../api/creators.js'
+import { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
+import type { CreatorAvailability } from '../shared/creatorAvailability.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from './useFeatureGate.js'
+import { tournamentAdminAllowed, useAuth } from './useAuth.js'
 
-type CreatorAvailability = { available: Readonly<Ref<boolean>>; loading: Readonly<Ref<boolean>>; refresh: () => Promise<void> }
-export const CREATOR_AVAILABILITY_KEY: InjectionKey<CreatorAvailability> = Symbol('creator-availability')
+export { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 
-/** AppShell owns one bounded probe; legacy health responses keep creator routes unavailable. */
+/** AppShell owns both capability and public content; private metadata never enters this cache. */
 export function provideCreatorAvailability() {
-  const gate = useFeatureGate(), online = computed(() => gate.availability(Feature.CREATORS).available)
-  const available = ref(false), loading = ref(false)
-  let generation = 0, controller: AbortController | null = null
-  async function refresh() {
-    controller?.abort()
-    const gen = ++generation
-    if (!online.value) { loading.value = false; return }
-    const request = new AbortController()
-    controller = request; loading.value = true
-    const timer = setTimeout(() => request.abort(), 5000)
-    try {
-      const supported = await getCreatorAvailability(request.signal)
-      if (gen === generation && !request.signal.aborted) available.value = supported
-    } catch {
-      // Fail closed initially, but a transient disconnect must not discard an existing form.
-    } finally {
-      clearTimeout(timer)
-      if (gen === generation) loading.value = false
-    }
+  const gate = useFeatureGate(), auth = useAuth()
+  const online = computed(() => gate.availability(Feature.CREATORS).available)
+  const available = ref(false), loading = ref(false), error = ref<unknown>(null)
+  const contentKnown = ref(false), publicCategories = ref<CreatorCategory[]>([])
+  const directoryVisible = computed(() => available.value && (
+    (auth.authInitState.value === 'authenticated' && tournamentAdminAllowed(auth))
+    || (contentKnown.value && publicCategories.value.length > 0)))
+  let generation = 0, controller: AbortController | null = null, inFlight: Promise<void> | null = null
+  function cancel() {
+    generation++; controller?.abort(); controller = null; inFlight = null; loading.value = false
   }
-  const context = { available: readonly(available), loading: readonly(loading), refresh }
+  function refresh(): Promise<void> {
+    if (inFlight) return inFlight
+    if (!online.value) return Promise.resolve()
+    const gen = ++generation, request = new AbortController()
+    controller = request; loading.value = true; error.value = null
+    // Settle even when an underlying transport ignores AbortSignal; late completions have no ownership.
+    const aborted = new Promise<never>((_resolve, reject) => request.signal.addEventListener('abort', () => reject(new Error('REQUEST_ABORTED')), { once: true }))
+    const timer = setTimeout(() => request.abort(), 5000)
+    inFlight = (async () => {
+      try {
+        const capability = await Promise.race([getCreatorAvailability(request.signal), aborted])
+        if (gen !== generation || request.signal.aborted) return
+        available.value = capability.supported
+        if (!capability.supported || !capability.contentVisibilitySupported) {
+          contentKnown.value = false; publicCategories.value = []; return
+        }
+        const categories = await Promise.race([listCreatorCategories(request.signal), aborted])
+        if (gen !== generation || request.signal.aborted) return
+        publicCategories.value = categories; contentKnown.value = true
+      } catch (value) {
+        // A failed read preserves the last successful snapshot, including an acknowledged empty one.
+        if (gen === generation) error.value = value
+      } finally {
+        clearTimeout(timer)
+        if (gen === generation) { loading.value = false; inFlight = null }
+      }
+    })()
+    return inFlight
+  }
+  function refreshPublicCategories() {
+    // An ACK invalidates any pre-write read, while subsequent page/focus refreshes share this request.
+    cancel()
+    return refresh()
+  }
+  const context: CreatorAvailability = { available: readonly(available), loading: readonly(loading), error: readonly(error),
+    contentKnown: readonly(contentKnown), publicCategories: readonly(publicCategories), directoryVisible, refresh, refreshPublicCategories }
   provide(CREATOR_AVAILABILITY_KEY, context)
-  watch(online, () => { void refresh() }, { immediate: true })
-  const retryUnavailable = () => { if (!available.value && !loading.value) void refresh() }
-  onMounted(() => window.addEventListener('focus', retryUnavailable))
-  onScopeDispose(() => { generation++; controller?.abort(); window.removeEventListener('focus', retryUnavailable) })
+  watch(online, value => { if (value) void refresh(); else cancel() }, { immediate: true })
+  const retry = () => { void refresh() }
+  onMounted(() => { window.addEventListener('focus', retry); window.addEventListener('online', retry) })
+  onScopeDispose(() => { cancel(); window.removeEventListener('focus', retry); window.removeEventListener('online', retry) })
   return context
 }
 
 export function useCreatorAvailability(): CreatorAvailability {
-  return inject(CREATOR_AVAILABILITY_KEY, { available: readonly(ref(false)), loading: readonly(ref(false)), refresh: async () => {} })
+  return inject(CREATOR_AVAILABILITY_KEY, { available: readonly(ref(false)), loading: readonly(ref(false)), error: readonly(ref(null)),
+    contentKnown: readonly(ref(false)), publicCategories: readonly(ref([])), directoryVisible: readonly(ref(false)),
+    refresh: async () => {}, refreshPublicCategories: async () => {} })
 }

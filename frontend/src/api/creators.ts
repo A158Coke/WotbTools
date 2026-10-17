@@ -48,9 +48,10 @@ async function request<T>(path: string, access: 'public' | 'admin', options: Req
 
 const publicBase = '/api/creators'
 const adminBase = '/api/admin/creators'
-export async function getCreatorAvailability(signal?: AbortSignal): Promise<boolean> {
+export async function getCreatorAvailability(signal?: AbortSignal): Promise<{ supported: boolean; contentVisibilitySupported: boolean }> {
   const response = await requireOk(await apiFetch('/api/health', { signal, cache: 'no-store' }))
-  return validateCreator('BackendHealth', await response.json()).capabilities?.includes('creators-v1') ?? false
+  const capabilities = validateCreator('BackendHealth', await response.json()).capabilities ?? []
+  return { supported: capabilities.includes('creators-v1'), contentVisibilitySupported: capabilities.includes('creators-content-visibility-v1') }
 }
 function json<K extends keyof Schemas>(path: string, schema: K, access: 'public' | 'admin', options: RequestInit = {}): Promise<Schemas[K]> {
   return request(path, access, options, async response => validateCreator(schema, await response.json()))

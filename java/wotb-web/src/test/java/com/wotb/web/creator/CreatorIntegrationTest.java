@@ -9,10 +9,13 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -20,6 +23,9 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -37,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -70,7 +77,59 @@ class CreatorIntegrationTest {
     @Autowired CreatorRepository creators;
     @Autowired JdbcTemplate jdbc;
     @Autowired WebApplicationContext web;
+    @Autowired PlatformTransactionManager transactions;
     private long nextUid;
+
+    @Test void catalogLockRequiresAnExistingTransaction() {
+        assertThrows(IllegalTransactionStateException.class, creators::lockCatalog);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void catalogLockIsExclusiveAcrossConnectionsAndReleasedAtTransactionEnd(final boolean rollback) {
+        // A separate physical connection observes the lock while the real repository joins the JPA transaction.
+        final JdbcTemplate observer = new JdbcTemplate(new DriverManagerDataSource(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            creators.lockCatalog();
+            assertFalse(observer.queryForObject("select pg_try_advisory_xact_lock(1464816706, 1)", Boolean.class));
+            jdbc.update("insert into creator_category(name) values ('Transaction probe')");
+            if (rollback) { tx.setRollbackOnly(); }
+        });
+        assertTrue(observer.queryForObject("select pg_try_advisory_xact_lock(1464816706, 1)", Boolean.class));
+        assertEquals(rollback ? 0 : 1, jdbc.queryForObject(
+                "select count(*) from creator_category where name='Transaction probe'", Integer.class));
+    }
+
+    @Test void v35UpgradeDropsOnlyTheLockTableAndPreservesDirectoryData() {
+        jdbc.execute("create database creator_lock_upgrade");
+        final String url = POSTGRES.getJdbcUrl().replace("/wotb", "/creator_lock_upgrade");
+        final JdbcTemplate upgrade = new JdbcTemplate(new DriverManagerDataSource(
+                url, POSTGRES.getUsername(), POSTGRES.getPassword()));
+        try {
+            Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).target("35").load().migrate();
+            assertEquals(1, upgrade.queryForObject("select count(*) from creator_catalog_lock", Integer.class));
+            upgrade.update("update creator_category set name='Custom category' where id=1");
+            upgrade.update("insert into creator_avatar(id,object_key,status,content_type,size,hash,created_at) "
+                    + "values ('11111111-1111-4111-8111-111111111111','creator-avatars/test','READY','image/png',1,?,now())", "a".repeat(64));
+            upgrade.update("insert into creator(bilibili_uid,name,version,stars,level_id,avatar_id,created_at) "
+                    + "values ('123','Preserved creator',7,4,1,'11111111-1111-4111-8111-111111111111',now())");
+            upgrade.update("insert into creator_category_link(creator_id,category_id) values (1,1)");
+            final String query = "select c.*, a.object_key, a.hash, cat.name as category_name, l.name as level_name "
+                    + "from creator c join creator_avatar a on a.id=c.avatar_id "
+                    + "join creator_category_link link on link.creator_id=c.id "
+                    + "join creator_category cat on cat.id=link.category_id join creator_level l on l.id=c.level_id";
+            final var before = upgrade.queryForMap(query);
+            final Flyway flyway = Flyway.configure().dataSource(url, POSTGRES.getUsername(), POSTGRES.getPassword()).load();
+            flyway.migrate(); flyway.validate();
+            assertNull(upgrade.queryForObject("select to_regclass('creator_catalog_lock')::text", String.class));
+            assertEquals(before, upgrade.queryForMap(query));
+            assertEquals(6, upgrade.queryForObject("select count(*) from creator_category", Integer.class));
+            assertEquals(4, upgrade.queryForObject("select count(*) from creator_level", Integer.class));
+        } finally {
+            jdbc.execute("drop database creator_lock_upgrade with (force)");
+        }
+    }
 
     @BeforeAll
     static void migrationSeedsOnlyOnce(@Autowired final JdbcTemplate jdbc) {
@@ -92,9 +151,8 @@ class CreatorIntegrationTest {
     }
 
     @Test void schemaContainsOnlySiteDirectoryTablesAndEnforcesUidAndStarConstraints() {
-        assertEquals(List.of("creator", "creator_avatar", "creator_catalog_lock", "creator_category", "creator_category_link", "creator_level"),
+        assertEquals(List.of("creator", "creator_avatar", "creator_category", "creator_category_link", "creator_level"),
                 jdbc.queryForList("select tablename from pg_tables where schemaname='public' and tablename like 'creator%' order by tablename", String.class));
-        assertEquals(1L, jdbc.queryForObject("select id from creator_catalog_lock", Long.class));
         assertFalse(service.metadata().avatarUploadsAvailable());
         final Long id = jdbc.queryForObject(
                 "insert into creator(bilibili_uid,name,created_at) values ('900001','Default',now()) returning id", Long.class);
@@ -143,6 +201,52 @@ class CreatorIntegrationTest {
         assertEquals(uid, service.detail(detail.id()).bilibiliUid());
         assertEquals("https://space.bilibili.com/" + uid, card(detail.id()).homepageUrl());
         assertEquals(10, card(detail.id()).score());
+    }
+
+    @Test void publicCategoriesFollowCommittedMembershipWhileMetadataKeepsEmptyCategories() {
+        final List<CreatorDtos.Category> dictionary = List.of(new CreatorDtos.Category(1, "A"),
+                new CreatorDtos.Category(2, "B"), new CreatorDtos.Category(3, "C"));
+        assertEquals(List.of(), service.publicCategories());
+        assertEquals(dictionary, service.metadata().categories());
+
+        final CreatorDtos.Detail first = create(3, List.of(2L), null);
+        assertEquals(List.of(dictionary.get(1)), service.publicCategories());
+        final CreatorDtos.Detail second = create(3, List.of(3L, 2L), null);
+        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), service.publicCategories());
+        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), card(second.id()).categories());
+        assertEquals(dictionary, service.metadata().categories());
+
+        final CreatorDtos.Detail moved = service.update(second.id(),
+                save(second.bilibiliUid(), 3, List.of(1L), null, second.version()), null);
+        assertEquals(List.of(dictionary.get(0), dictionary.get(1)), service.publicCategories());
+        assertEquals(List.of(dictionary.get(0)), card(moved.id()).categories());
+        service.delete(first.id(), first.version());
+        assertEquals(List.of(dictionary.get(0)), service.publicCategories());
+        service.delete(moved.id(), moved.version());
+        assertEquals(List.of(), service.publicCategories());
+        assertEquals(dictionary, service.metadata().categories());
+        assertEquals(dictionary, service.categories());
+    }
+
+    @Test void publicCategoryHttpResponseIsTheSameForEveryRoleWhileAdminMetadataRemainsComplete() throws Exception {
+        final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        create(3, List.of(2L), null);
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(2));
+        for (final String role : List.of("wotbtools-user", "HoF-admin", "wotbtools-admin", "tournament-admin")) {
+            mvc.perform(get("/api/creators/categories").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].id").value(2)).andExpect(jsonPath("$[0].name").value("B"));
+        }
+        mvc.perform(get("/api/admin/creators/metadata")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/creators/metadata")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.categories.length()").value(3))
+                .andExpect(jsonPath("$.categories[0].name").value("A"))
+                .andExpect(jsonPath("$.categories[2].name").value("C"));
     }
 
     @Test void concurrentEquivalentUidsProduceOneCreatorAndOneCanonicalConflict() throws Exception {

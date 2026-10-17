@@ -2,11 +2,14 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import * as api from '../api/creators.js'
 import { useAuth, tournamentAdminAllowed } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
+import { useCreatorAvailability } from './useCreatorAvailability.js'
+import type { CreatorAvailability } from '../shared/creatorAvailability.js'
 import { Feature } from '../app/featureCapabilities.js'
 
 export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType<typeof useAuth>;
-  onChanged?: () => Promise<unknown>; network?: () => ReturnType<ReturnType<typeof useFeatureGate>['availability']> } = {}) {
+  availability?: CreatorAvailability; onChanged?: () => Promise<unknown>; network?: () => ReturnType<ReturnType<typeof useFeatureGate>['availability']> } = {}) {
   const transport = deps.api ?? api, auth = deps.auth ?? useAuth(), gate = useFeatureGate()
+  const availability = deps.availability ?? useCreatorAvailability()
   const network = computed(deps.network ?? (() => gate.availability(Feature.CREATORS)))
   const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated')
   const categories = ref<api.CreatorCategory[]>([]), levels = ref<api.CreatorLevel[]>([])
@@ -67,8 +70,12 @@ export function useCreatorManagement(deps: { api?: typeof api; auth?: ReturnType
     try {
       await run(controller.signal)
       // The server acknowledged the write. A catalog refresh has its own read/error ownership.
-      if (deps.onChanged && owns(gen, epoch)) void Promise.resolve().then(() => {
-        if (owns(gen, epoch)) return deps.onChanged!()
+      if (owns(gen, epoch)) void Promise.resolve().then(() => {
+        if (!owns(gen, epoch)) return
+        const publicRefresh = availability.refreshPublicCategories()
+        return Promise.allSettled([publicRefresh, Promise.resolve().then(() => {
+          if (owns(gen, epoch)) return deps.onChanged?.()
+        })])
       }).catch(() => { /* Best-effort refresh must not turn a committed write into a retryable failure. */ })
       return true
     } catch (value) { if (owns(gen, epoch)) (editor ? editorError : error).value = value; return false }

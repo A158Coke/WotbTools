@@ -8,7 +8,7 @@ import { useCreatorAvailability } from '../composables/useCreatorAvailability.js
 // 手机 / App 的主导航（design-language §9）：固定在底部，高度 --tabbar-h + 底部安全区。
 const route = useRoute()
 const activeSection = computed(() => primarySection(viewFromRoute(route)))
-const { available: creatorsAvailable } = useCreatorAvailability()
+const { directoryVisible: creatorsAvailable } = useCreatorAvailability()
 const items = computed(() => primaryNavItems().filter(item => item.id !== 'creators' || creatorsAvailable.value))
 const bar = ref(null)
 function revealTab(element) { element?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
