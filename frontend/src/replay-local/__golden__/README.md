@@ -18,8 +18,10 @@ pin 不符即失败）；AI 投影的永久 golden 在 `common/fixtures/ai-proje
 
 Java 已删除：`java-*` 文件只读、不再重新生成。客户端新增字段须在 parity 测试中显式扩展期望值：
 环线 `gun_marks` 按单场 `sourceName` 和玩家账号从 `wasm-results.json` 取值，不修改历史 JSON；
-AI golden 同时包含 `toBattleFacts` 的 Battle，新增事实字段也必须重生成，并确认差异仅为新增字段、
-`projection` 和引擎 provenance 不变。
+AI golden 同时包含 `toBattleFacts` 的 Battle，新增事实字段也必须重生成。重生成后的核对按变更类别区分：
+**仅 pin 升级、投影规则未变**时，差异应仅为新增字段 / 引擎 provenance，`battle` 与 `projection` 不变；
+**同一 PR 有意改变投影形状**（例如 writer 开始发送 canonical `hpState`）时，`projection` 的差异是预期
+结果，必须在同一 PR 内显式重生成并按字段逐条说明，不得仍按「`projection` 不变」核对。
 
 上游 pin 升级后（在 `frontend/` 下运行）：
 `bash ../scripts/fetch-agent-wasm.sh` 拉取 pin 版本 → `node scripts/export-wasm-results.mjs` 重新导出
