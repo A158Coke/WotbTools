@@ -202,6 +202,39 @@ describe('AgentTankopedia', () => {
     expect(router.currentRoute.value.query).toEqual({ view: 'agent-armor', tank: '999', config: '0' })
   })
 
+  it('加载更多 → 详情 → 返回保留增量条数', async () => {
+    const { wrapper } = await mountAt()
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(48)
+    await wrapper.find('[data-testid="tank-load-more"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
+    await wrapper.findAll('[data-testid="tank-card"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('h1').text()).toBe('IS-7')
+    await wrapper.find('[data-testid="tank-back"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="tank-card"]')).toHaveLength(96)
+  })
+
+  it('防抖窗口内进入详情：计时器继续提交 q，返回列表保留搜索', async () => {
+    vi.useFakeTimers()
+    const { wrapper, router } = await mountAt()
+    await wrapper.find('[data-testid="tank-search"]').setValue('is7')
+    const cards = wrapper.findAll('[data-testid="tank-card"]')
+    expect(cards).toHaveLength(1)
+    await cards[0].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.tank).toBe('999')
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+    // 列表保持挂载：250ms 防抖在详情态继续提交 q，不会因组件卸载清掉 timer。
+    vi.advanceTimersByTime(300)
+    await flushPromises()
+    expect(router.currentRoute.value.query.q).toBe('is7')
+    await wrapper.find('[data-testid="tank-back"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#tp-search').element.value).toBe('is7')
+    expect(wrapper.findAll('[data-testid="tank-card"]').map(card => card.find('.tp-card-name').text())).toEqual(['IS-7'])
+  })
+
   it('装甲查看器入口对全员可见（匿名 / 非管理员也不缺席）；返回列表保留筛选', async () => {
     const { wrapper, router } = await mountAt({ nation: 'ussr', tank: '999' })
     expect(wrapper.find('[data-testid="tank-open3d-card"]').exists()).toBe(true)

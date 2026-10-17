@@ -60,6 +60,13 @@ try {
     responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
     body: Buffer.from(JSON.stringify(payload)).toString('base64'),
   })
+  /** 打开共享 TankCatalogMenu（Vue 下一 tick 才渲染卡片）→ 点第一张卡。 */
+  const pickFirstCard = async (buttonId) => {
+    await page.evaluate(`document.getElementById(${JSON.stringify(buttonId)}).click()`)
+    await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > 0,
+      { timeout: 5000, label: `picker cards after ${buttonId}` })
+    await page.evaluate(`document.querySelector('#tp-grid .tank-card').click()`)
+  }
   browser.client.on('Fetch.requestPaused', (event, session) => {
     if (session !== sessionId) return
     if (event.request.url.includes('/tank/' + FIXTURE_TANK_ID + '.json')) {
@@ -122,7 +129,7 @@ try {
   // Only target data fails: retry must reuse the already valid shooter ammo.
   const shooterRequestsBeforeTargetFailure = shooterRequests
   failTarget = true
-  await page.evaluate(`document.querySelector('#target-select').click(); document.querySelector('#tp-grid .tank-card').click()`)
+  await pickFirstCard('target-select')
   await waitHeld(failedTargetRequests)
   await Promise.all(failedTargetRequests.splice(0).map(requestId => send('Fetch.fulfillRequest', {
     requestId, responseCode: 503, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '',
@@ -135,7 +142,7 @@ try {
   console.log('[shot-readiness] PASS: target-only failure and retry reuse ready ammo')
 
   failShooterSwitch = true
-  await page.evaluate(`document.querySelector('#shooter-select').click(); document.querySelector('#tp-grid .tank-card').click()`)
+  await pickFirstCard('shooter-select')
   await waitHeld(failedSwitchRequests)
   await page.evaluate(`document.querySelector('#shell-select').dispatchEvent(new Event('change'))`)
   await Promise.all(failedSwitchRequests.splice(0).map(requestId => send('Fetch.fulfillRequest', {
