@@ -47,12 +47,17 @@ const { t, te } = useI18n()
 const { isCompact } = useBreakpoint()
 
 const local = reactive({ ...DEFAULT_FILTERS, ...props.filters })
+// 只回灌“外部值真的变了”的字段：父级在详情/无关路由变化时会生成新的 filters 对象，
+// 深度 watch 不能因此把用户正在输入的搜索草稿重置为空。
+const lastExternal = { ...DEFAULT_FILTERS, ...props.filters }
 let searchTimer = null
 
 function syncFromProps(next) {
   for (const key of Object.keys(DEFAULT_FILTERS)) {
     const value = next?.[key] ?? DEFAULT_FILTERS[key]
-    if (local[key] !== value) local[key] = value
+    const previous = lastExternal[key] ?? DEFAULT_FILTERS[key]
+    if (value !== previous) local[key] = value
+    lastExternal[key] = value
   }
 }
 watch(() => props.filters, next => syncFromProps(next), { deep: true })

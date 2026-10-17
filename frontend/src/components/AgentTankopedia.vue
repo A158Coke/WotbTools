@@ -156,6 +156,12 @@ async function loadDetail(id) {
 }
 watch(detailId, id => loadDetail(id))
 
+// 列表在详情往返期间保持挂载：TankCatalogMenu 内部保存增量条数与搜索草稿
+//（组件卸载会清掉防抖 timer，详情期间提交的 q 也会丢）。直达详情时不提前挂载列表，
+// 避免隐藏卡片发图片请求；返回列表时再挂载。
+const listMounted = ref(detailId.value == null)
+watch(detailId, id => { if (id == null) listMounted.value = true })
+
 function open3d() {
   // 审计 3D-09：在当前标签页打开装甲查看器（携带实际搭载配置下标），返回走浏览器历史
   // 走 locationForView：它按"离开坦克百科"删掉列表筛选（nation/q/…），同时保留
@@ -296,18 +302,19 @@ onMounted(() => {
     </template>
 
     <!-- ================= 列表态 ================= -->
-    <template v-else>
-      <PageHeader :title="t('agentTanks.title')" :description="t('agentTanks.hint')" />
-      <TankCatalogMenu
-        :tanks="tanks"
-        :state="listState"
-        :error="listError"
-        :filters="listFilters"
-        @update:filters="writeFilters"
-        @select="tank => openDetail(tank.id)"
-        @retry="loadList"
-      />
-    </template>
+    <!-- v-if：直达详情不提前挂载；v-show：列表→详情→返回保留增量条数与搜索草稿 -->
+    <PageHeader v-if="listMounted" v-show="detailId == null" :title="t('agentTanks.title')" :description="t('agentTanks.hint')" />
+    <TankCatalogMenu
+      v-if="listMounted"
+      v-show="detailId == null"
+      :tanks="tanks"
+      :state="listState"
+      :error="listError"
+      :filters="listFilters"
+      @update:filters="writeFilters"
+      @select="tank => openDetail(tank.id)"
+      @retry="loadList"
+    />
   </section>
 </template>
 
