@@ -120,6 +120,7 @@
     --control-h-lg: 40px;
     --row-h: 36px;
     --hit-min: 24px;
+    --hit-min-comfortable: 44px;
     /* 复选框 / 单选框的可视尺寸（审计 PG-10：原生 13×13 太小） */
     --control-check: 18px;
 
