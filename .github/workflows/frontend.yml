@@ -9,7 +9,7 @@ on:
       - docker/Dockerfile.frontend
       - frontend/**
       - common/map_names.json
-      - common/tankopedia-tier10.json
+      - common/tankopedia-tier*.json
       - common/assets/**
       - deploy/agent/source.json
       - scripts/fetch-agent-wasm.sh
@@ -40,7 +40,7 @@ env:
     docker/Dockerfile.frontend
     frontend/**
     common/map_names.json
-    common/tankopedia-tier10.json
+    common/tankopedia-tier*.json
     common/assets/**
     deploy/agent/source.json
     scripts/fetch-agent-wasm.sh

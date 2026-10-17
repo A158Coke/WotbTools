@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia-tier{7,8,9,10}.json。
+"""从 blitzkit（游戏客户端数据）生成车辆库 common/tankopedia-tier{1..10}.json。
 
 用法：
     python update_tankopedia.py [--existing-dir common] [--output-dir common]
 
-输出为按等级拆分的 4 个文件（meta + vehicles 数组）：
+输出为按等级拆分的 10 个文件（meta + vehicles 数组）：
+    common/tankopedia-tier1.json   // 1 级车辆
+    ...
     common/tankopedia-tier7.json   // 7 级车辆
     common/tankopedia-tier8.json   // 8 级车辆
     common/tankopedia-tier9.json   // 9 级车辆
@@ -31,12 +33,12 @@
             { "gunId", "isDefault", "alphaDamage", "shells": [{type,damage,penetration}] }
           ],                            // 顶配炮塔上的全部炮（含 7-9 级多炮如 T-34-2 的 5 把）
                                         // isDefault = 权威默认炮：
-                                        //   7-9 级 = 顶配炮（最高 tier，同 tier 取最高 alpha）
+                                        //   1-9 级 = 顶配炮（最高 tier，同 tier 取最高 alpha）
                                         //   10 级多炮车 = 全部 false（回放无可靠实际炮，不伪装）
           "allowedProvision": [...],    // catalog 逻辑物资 id（SMALL_FOOD 等）
           "allowedConsumables": [...],  // catalog 消耗品 code（AUTOMATIC_FIRE_EXTINGUISHER 等）
           "allowedEquipment": [...],    // catalog 装备 code（含 VK 72.01 俯角 / 履带齿等专属装备）
-          "alphaDamage": 420,           // 仅唯一权威时输出：单炮车 / 7-9 顶配炮；
+          "alphaDamage": 420,           // 仅唯一权威时输出：单炮车 / 1-9 顶配炮；
                                         // 10 级多炮车省略（避免把不确定炮伤伪装成权威事实）
           "extraInfo": ""               // 手工知识点（原 extraKnowledge，按 tank_id 保留合并）
         }
@@ -47,7 +49,7 @@
 - 数据源为 blitzkit production definitions（tanks.pb + consumables.pb + provisions.pb + equipment.pb，
   游戏客户端直出并随 production 数据更新；WG 百科可能滞后游戏版本，故不依赖 WG API）。
 - 每辆车一条记录，guns 数组含顶配炮塔上的全部炮；isDefault 标记权威默认炮：
-  - 7-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（已用 origin/main 全量 454/457 验证；
+  - 1-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（已用 origin/main 全量 454/457 验证；
     T-34-2 取 122mm 400，不能用数组顺序猜）。
   - 10 级多炮车：存在多个合法终局炮，回放无可靠实际 gunId，全部 isDefault=false、
     不输出 vehicle 级 alphaDamage，运行时 AI 结构化事实省略炮伤（不输出虚假唯一炮伤）。
@@ -56,7 +58,7 @@
   判定，再映射到 common/wotb-item-catalog-json 的逻辑 id / code；
   catalog 未收录的道具（多为活动/娱乐模式专属）不输出。
 - extraInfo 按 tank_id 保留合并；仍存在车辆的知识点丢失会直接失败。
-- 只输出 7-10 级四个等级文件（业务范围：个人随机 7-10、团队联赛 10 级）。
+- 输出 1-10 级十份资料；资料覆盖范围不决定评分或十级专属业务资格。
 - 脚本无第三方依赖（仅标准库 urllib / struct / json）。
 """
 
@@ -79,12 +81,9 @@ REPO_COMMON_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "common",
 )
-TIER_FILES = {
-    7: "tankopedia-tier7.json",
-    8: "tankopedia-tier8.json",
-    9: "tankopedia-tier9.json",
-    10: "tankopedia-tier10.json",
-}
+TIER_FILES = {tier: f"tankopedia-tier{tier}.json" for tier in range(1, 11)}
+# 物资/装备的现有 reviewed 模型范围；基础车型资料独立覆盖 1–10 级。
+MODELED_ITEM_TIERS = frozenset(range(7, 11))
 MIN_TIER_COUNT_RATIO = 0.8
 CATALOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -400,7 +399,7 @@ def parse_tanks(pb_bytes):
             item["powerToWeightRatio"] = round(engine_power / (weight_kg / 1000.0), 1)
         item["_equipmentPreset"] = as_str(f1(td, FIELD_TANK_EQUIPMENT_PRESET, b""))
         # 权威默认炮：
-        # - 7-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（T-34-2 取 122mm 400，
+        # - 1-9 级：顶配炮 = 最高 tier，同 tier 取最高 alpha（T-34-2 取 122mm 400，
         #   与旧 main 规则一致，不能用数组顺序猜）。
         # - 10 级多炮车：存在多个合法终局炮且回放无可靠实际 gunId，
         #   不标 isDefault、不输出 vehicle 级 alphaDamage（避免把不确定值伪装成权威事实）。
@@ -428,15 +427,10 @@ def parse_tanks(pb_bytes):
 
 
 def filter_to_business_tiers(vehicles):
-    """只保留业务范围 tier 7-10（TIER_FILES）；1-6 级不进入最终数据。
-
-    必须在 validate_integrity 之前调用：完整性门禁只校验最终准备写入
-    tankopedia-tier{7,8,9,10}.json 的数据，解析出的低等级车辆不应触发
-    TANKOPEDIA_TIER_OUT_OF_RANGE。
-    """
+    """保留现有物资/装备建模范围（7–10 级），与基础车型资料覆盖范围独立。"""
     return {
         tank_id: entry for tank_id, entry in vehicles.items()
-        if isinstance(entry, dict) and entry.get("tier") in TIER_FILES
+        if isinstance(entry, dict) and entry.get("tier") in MODELED_ITEM_TIERS
     }
 
 
@@ -695,7 +689,7 @@ def validate_integrity(new_data, old_data):
     - 总车辆数或单个 tier 数量相对已有数据异常大幅下降必须失败
       （允许正常新增与少量真实删除，阈值为 MIN_TIER_COUNT_RATIO=0.8）；
     - tank ID 不得重复；
-    - 车辆 tier 必须在 {7,8,9,10}（与输出文件等级一致）；
+    - 车辆 tier 必须在 1-10（与输出文件等级一致）；
     - 车辆必须有有效 id、name、hp 和至少一把 gun。
     """
     if not new_data:
@@ -718,7 +712,7 @@ def validate_integrity(new_data, old_data):
             raise RuntimeError("TANKOPEDIA_MISSING_GUN: vehicle %s has no guns" % tank_id)
         if entry.get("tier") not in TIER_FILES:
             raise RuntimeError(
-                "TANKOPEDIA_TIER_OUT_OF_RANGE: vehicle %s tier %s not in 7-10"
+                "TANKOPEDIA_TIER_OUT_OF_RANGE: vehicle %s tier %s not in 1-10"
                 % (tank_id, entry.get("tier")))
     if old_data:
         old_total = len(old_data)
@@ -788,7 +782,7 @@ def main(argv=None):
     parser.add_argument("--existing-dir", default=REPO_COMMON_DIR,
                         help="旧数据所在目录（读取 tankopedia-tier*.json 保留 extraInfo；默认仓库 common/）")
     parser.add_argument("--output-dir", default=REPO_COMMON_DIR,
-                        help="新数据写入目录（写 4 个 tankopedia-tier*.json；Workflow 与 --existing-dir 分离）")
+                        help="新数据写入目录（写 10 个 tankopedia-tier*.json；Workflow 与 --existing-dir 分离）")
     args = parser.parse_args(argv)
 
     print("download %s ..." % PB_URL)
@@ -806,17 +800,17 @@ def main(argv=None):
     old_data = load_existing_data_dir(args.existing_dir)
     vehicles = parse_tanks(tanks_pb)
     total = len(vehicles)
-    vehicles = filter_to_business_tiers(vehicles)
+    item_vehicles = filter_to_business_tiers(vehicles)
     provision_map, consumable_map = load_catalog()
-    vehicles = apply_items(
-        vehicles,
+    apply_items(
+        item_vehicles,
         parse_item_defs(provisions_pb),
         parse_item_defs(consumables_pb),
         provision_map,
         consumable_map,
     )
     equipment_presets, _ = parse_equipment_defs(equipment_pb)
-    vehicles = apply_equipment(vehicles, equipment_presets, load_equipment_catalog())
+    apply_equipment(item_vehicles, equipment_presets, load_equipment_catalog())
     vehicles = merge_extra_info(vehicles, old_data)
     try:
         validate_integrity(vehicles, old_data)

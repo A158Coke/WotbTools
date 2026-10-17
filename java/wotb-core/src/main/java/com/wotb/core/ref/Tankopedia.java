@@ -10,10 +10,16 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 4 个 tier 文件）。 */
+/** 车辆库 (tank_id -> 车辆信息), 来自 blitzkit（按等级拆分的 10 个 tier 文件）。 */
 public final class Tankopedia {
 
     private static final String[] TIER_RESOURCES = {
+            "/tankopedia-tier1.json",
+            "/tankopedia-tier2.json",
+            "/tankopedia-tier3.json",
+            "/tankopedia-tier4.json",
+            "/tankopedia-tier5.json",
+            "/tankopedia-tier6.json",
             "/tankopedia-tier7.json",
             "/tankopedia-tier8.json",
             "/tankopedia-tier9.json",
@@ -77,7 +83,7 @@ public final class Tankopedia {
         final Object tier = vehicle.hasNonNull("tier") ? vehicle.get("tier").asInt() : "";
         final String type = vehicle.hasNonNull("class") ? vehicle.get("class").asText() : "";
         final String nation = vehicle.hasNonNull("nation") ? vehicle.get("nation").asText() : "";
-        // 权威炮伤只在数据层有唯一依据时输出（单炮车 / 7-9 顶配炮）；
+        // 权威炮伤只在数据层有唯一依据时输出（单炮车 / 1-9 顶配炮）；
         // 10 级多炮车不输出 vehicle 级 alphaDamage，这里返回 null，
         // AI structured facts 会省略炮伤，而不是把不确定值伪装成本场实际炮伤。
         final Integer alphaDamage = firstInt(vehicle, "alphaDamage");
@@ -99,7 +105,7 @@ public final class Tankopedia {
     }
 
     /**
-     * 全部已知坦克名（tier7-10 词表，与 {@link #info} 同源）。
+     * 全部已知坦克名（tier1-10 词表，与 {@link #info} 同源）。
      * <p>供 AI 复盘正文的车名校验使用：判断正文中出现的车名是否属于已知车辆、
      * 是否属于本场 roster。名称本身仍是权威专有名词，不得由名称推断属性。</p>
      */

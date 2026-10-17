@@ -50,10 +50,9 @@ jobs:
       - name: Replace tier files
         run: |
           set -euo pipefail
-          cp /tmp/wotb-tankopedia-out/tankopedia-tier7.json common/tankopedia-tier7.json
-          cp /tmp/wotb-tankopedia-out/tankopedia-tier8.json common/tankopedia-tier8.json
-          cp /tmp/wotb-tankopedia-out/tankopedia-tier9.json common/tankopedia-tier9.json
-          cp /tmp/wotb-tankopedia-out/tankopedia-tier10.json common/tankopedia-tier10.json
+          for tier in {1..10}; do
+            cp "/tmp/wotb-tankopedia-out/tankopedia-tier${tier}.json" "common/tankopedia-tier${tier}.json"
+          done
 
       - name: Validate generated files
         run: |
@@ -68,7 +67,7 @@ jobs:
           SOURCE_REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json; then
+          if git diff --quiet -- 'common/tankopedia-tier*.json'; then
             echo "Tankopedia unchanged; nothing to publish."
             exit 0
           fi
@@ -80,7 +79,7 @@ jobs:
             git switch -C "$BRANCH"
           fi
 
-          git add common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json
+          git add 'common/tankopedia-tier*.json'
           git commit -m "chore(data): sync BlitzKit Tankopedia"
 
           if [[ "$SOURCE_REF" == "$BRANCH" ]]; then
@@ -95,7 +94,7 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "chore(data): sync BlitzKit Tankopedia" \
-              --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates and validates tier 7-10 data from one upstream snapshot\n- Fails closed when a vehicle has no reviewed equipment preset\n- Fails closed when a preset references unknown equipment\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
+              --body $'Automated Tankopedia sync from BlitzKit.\n\n- Generates and validates tier 1-10 data from one upstream snapshot\n- Fails closed when a vehicle has no reviewed equipment preset\n- Fails closed when a preset references unknown equipment\n- Preserves existing extraInfo\n- Runs integrity gates and Python tests\n- Explicitly dispatches normal CI for this automation branch\n- Never auto-merges'
             pr_number="$(gh pr list --base main --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           else
             echo "Updated existing PR #$pr_number"

@@ -500,7 +500,13 @@ class IntegrityGateTest(unittest.TestCase):
 
     def test_tier_out_of_range_fails(self):
         with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_OUT_OF_RANGE"):
-            ut.validate_integrity({"1": self.vehicle(1, tier=6)}, {})
+            ut.validate_integrity({"1": self.vehicle(1, tier=11)}, {})
+
+    def test_all_supported_tiers_pass(self):
+        for tier in range(1, 11):
+            self.assertTrue(ut.validate_integrity({"1": self.vehicle(1, tier=tier)}, {}))
+        with self.assertRaisesRegex(RuntimeError, "TANKOPEDIA_TIER_OUT_OF_RANGE"):
+            ut.validate_integrity({"1": self.vehicle(1, tier=0)}, {})
 
     def test_total_count_drop_fails(self):
         old = {str(i): self.vehicle(i) for i in range(1, 101)}
@@ -602,9 +608,8 @@ class MainPathTest(unittest.TestCase):
                 "IMPROVED_SUSPENSION", "IMPROVED_VERTICAL_STABILIZER",
             ])
 
-    def test_main_filters_out_of_scope_tiers_before_integrity_gate(self):
-        # 回归：真实 tanks.pb 含 1-10 级车辆，业务范围过滤必须在 validate_integrity 之前，
-        # 否则 tier 5 T-34 会触发 TANKOPEDIA_TIER_OUT_OF_RANGE 导致 workflow 失败。
+    def test_main_includes_lower_tiers_and_preserves_high_tier_data(self):
+        # 全等级车型资料：低级车不得被丢弃；原有高等级炮伤与知识点仍须保留。
         tanks_pb = root(
             tank_data(1, 5, 1, 496, turret(124,
                 gun(100, [shell("ap", 140, 85)])),
@@ -667,7 +672,7 @@ class MainPathTest(unittest.TestCase):
                 rc = ut.main(["--existing-dir", old_dir, "--output-dir", new_dir])
 
             self.assertEqual(rc, 0)
-            # 4 个 tier 文件正常生成
+            # 10 个 tier 文件正常生成
             self.assertEqual(
                 sorted(os.listdir(new_dir)),
                 sorted(ut.TIER_FILES.values()),
@@ -677,8 +682,14 @@ class MainPathTest(unittest.TestCase):
                 with open(os.path.join(new_dir, name), encoding="utf-8") as f:
                     files[name] = json.load(f)
             all_ids = {v["id"] for payload in files.values() for v in payload["vehicles"]}
-            # tier 5 T-34 不进入任何最终 JSON，且不触发 TANKOPEDIA_TIER_OUT_OF_RANGE
-            self.assertNotIn(1, all_ids)
+            # tier 5 T-34 与高等级车辆一起进入最终资料
+            self.assertIn(1, all_ids)
+            lower = files["tankopedia-tier5.json"]["vehicles"][0]
+            self.assertEqual(lower["name"], "T-34")
+            self.assertEqual(lower["hp"], 620)
+            self.assertNotIn("allowedEquipment", lower)
+            self.assertNotIn("allowedConsumables", lower)
+            self.assertNotIn("_equipmentPreset", lower)
             # tier 8 T-34-2 正常生成：alphaDamage=400、extraInfo 保留
             tier8_vehicles = files["tankopedia-tier8.json"]["vehicles"]
             t82 = next(v for v in tier8_vehicles if v["id"] == 1585)
