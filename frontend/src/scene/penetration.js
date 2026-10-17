@@ -227,7 +227,10 @@ export function calculate(req) {
       isOvermatch = threeCalibersRule
       const twoCalibersRule = caliber > thickness * 2.0
 
-      const normalization = twoCalibersRule
+      // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0、normDeg=0（HEAT/缺失）时
+      // 会得到 0/0=NaN，使该层等效厚度 NaN、误判 BLOCKED。0mm 板必须保持等效 0，
+      // 由剩余穿深决定是否穿透；正厚度才应用 2× 增强转正。
+      const normalization = twoCalibersRule && thickness > 0.0
         ? (1.4 * normDeg * caliber) / (2.0 * thickness)
         : normDeg
 

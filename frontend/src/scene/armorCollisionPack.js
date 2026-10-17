@@ -251,7 +251,9 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             highp vec3 nW = normalize(cross(b - a, c - a));   // 背面已剔除，恒朝来向 = face.normal 同口径
             highp float cosA = min(abs(dot(nW, reflDir)), 1.0);
             highp float angle = acos(cosA);
-            bool twoCal = caliber > th * 2.0;
+            // 0mm 合法板厚：2× 增强转正在 thickness=0、normalization=0 时是 0/0，
+            // 只对正厚度应用（与 penetration.js 同规则），0mm 板等效保持 0。
+            bool twoCal = th > 0.0 && caliber > th * 2.0;
             // 转正只作用于**首个实际装甲层**（armorIdx==0）——外部模块是 flat 消耗、不是装甲层，
             // 击穿它不消耗首层转正资格（用户 2026-10-17 裁示）；与 penetration.js calculate 的
             // armorLayerCount 及 JS 参考同规则；review 2026-10-13 / 2026-10-17。
@@ -733,7 +735,8 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         } else {
             const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
             const angle = Math.acos(cosA);
-            const twoCal = caliber > th * 2;
+            // 0mm 合法板厚：只对正厚度应用 2× 增强转正（与 penetration.js / GLSL 同规则）。
+            const twoCal = th > 0 && caliber > th * 2;
             // 转正只作用于首个实际装甲层（armorIdx===0）——外部模块不计入；与 calculate / GLSL 同规则
             const normR = armorIdx === 0
               ? (twoCal ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th) : normalizationRad)

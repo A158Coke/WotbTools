@@ -210,6 +210,25 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(plain.layers[1].ricochet).toBe(false)
   })
 
+  it('zero_thickness_first_armor_behind_module_does_not_nan', () => {
+    // 0mm 是合法 fail-closed 板厚。模块后接 0mm 首层、normalization=0（HEAT/缺失）时，
+    // 2× 公式 0/0 会生成 NaN；修后该层等效 0，剩余穿深 >0 → 穿透。
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 0.0, [0, 0.5, 0]),
+    ]
+    const ap = calculate(req('ap', 100.0, 100.0, hits, { normalization_deg: 0 }))
+    expect(Number.isFinite(ap.layers[1].effective)).toBe(true)
+    expect(ap.layers[1].effective).toBe(0)
+    expect(ap.result).toBe('PENETRATION')
+
+    const heat = calculate(req('heat', 100.0, 100.0, hits))
+    const last = heat.layers[heat.layers.length - 1]
+    expect(Number.isFinite(last.effective)).toBe(true)
+    expect(last.effective).toBe(0)
+    expect(heat.result).toBe('PENETRATION')
+  })
+
   it('heat_gap_decay_blocks_across_large_gap', () => {
     // 200m 间隙：剩余穿深 ×0.5^200 → 0 → gap 层 blocked → BLOCKED
     const hits = [

@@ -273,6 +273,17 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(oracle).toBe(1)
     })
 
+    it('0mm 首层装甲：模块后不产生 NaN，0mm 板穿透', () => {
+        // 0mm 合法板厚 + normalization=0：2× 公式必须要求正厚度，否则 0/0 NaN。
+        const { sim, oracle } = runCase([
+            { section: 'chassis', thickness: 20, x: 2 },
+            { section: 'hull', thickness: 0, x: 4 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(sim.layers[1].eff).toBe(0)
+        expect(sim.cls).toBe(1)
+        expect(oracle).toBe(1)
+    })
+
     it('非平行间隙板/主装甲：续飞按间隙板自身几何（review 2026-10-13 用例）', () => {
         // 40mm 间隙板入射 75°：其反射线沿 XZ 面前行 0.5m 处放 100mm 主装甲（入射 0°，
         // 与间隙板不平行）。续飞必须从**间隙板**的跳弹点与其法线出发：
