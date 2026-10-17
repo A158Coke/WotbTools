@@ -1955,6 +1955,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // 逐炮塔/逐主炮 plates 随 config 切换：tagArmorPlates 只在装甲模型加载时跑一次，
             // 之后切 stock/top 必须按当前 config 重算 turret/gun userData.armorThickness，
             // 否则热力图/点击信息仍沿用加载时那套 config 的值。
+            // 炮管/炮盾是视觉车体上的外部模块，tagModuleMeshes 在加载时缓存了
+            // gun_thickness；切炮后同样要刷新，否则判定仍用上一门炮的厚度。
+            const gunBarrelThickness = getPlateThickness('gunBarrel', 'gun');
+            moduleMeshes.forEach(function(node) {
+                if (node.userData.armorSection === 'gunBarrel') {
+                    node.userData.armorThickness = gunBarrelThickness;
+                }
+            });
             if (!armorModel) return;
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
@@ -4074,6 +4082,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             // applyArmorConfigVisible 会把可控板还原/重显（覆盖 deco）——visual 回调与
             // 配置切换都经此汇入，漏挂或次序颠倒则初态/切态被覆盖或板集陈旧（review P1-1/P2）
             applyArmorStateToModel();
+            // 碰撞视图的颜色是厚度快照（applyArmorViewStyle 只在按钮切换时写）；切配置后
+            // 必须重刷，否则新炮塔/主炮仍显示上一配置的厚度色。热力图模式由下方重建接管。
+            if (collisionMode && !penetrationMode) applyArmorViewStyle(true);
             if (penetrationMode && armorModel) rebuildHeatmapScenes();
         }
 

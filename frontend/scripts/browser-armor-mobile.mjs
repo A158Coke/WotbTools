@@ -1,7 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_CACHE, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -524,7 +524,70 @@ async function runDesktopScenario(env, scenario) {
     && opened.selectors.bottom <= opened.topBar.bottom + 1,
     `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
   check(failures, opened.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见`)
+  check(failures, opened.configSelect?.visible === true, `${label}: 展开后配置下拉不可见`)
   checkCommonGeometry(failures, opened, `${label} (expanded)`)
+
+  // Per-config armor: switching stock/top must update both armor plates and the gun-barrel
+  // module cache, not just the initially loaded config. The fixture has two distinct configs.
+  const setConfig = async (index) => {
+    await page.evaluate(`(() => {
+      const sel = document.getElementById('config-select')
+      sel.value = '${index}'
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+      return sel.value
+    })()`)
+    await delay(120)
+  }
+  const scanArmorHit = () => page.evaluate(`(() => {
+    const H = window.__armorRicochet, c = document.querySelector('canvas'), r = c.getBoundingClientRect()
+    const out = {}
+    for (const step of [12, 6]) {
+      for (let cy = 16; cy < c.height - 16; cy += step) {
+        for (let cx = 16; cx < c.width - 16; cx += step) {
+          const px = r.left + cx, py = r.top + cy
+          if (document.elementFromPoint(px, py) !== c) continue
+          for (const hit of (H.__raytrace(px, py) || [])) {
+            if (!out.turret && hit.sec === 'turret' && /armor_(\\d+)/.test(hit.name)) {
+              out.turret = { x: px, y: py, name: hit.name, th: hit.th }
+            }
+            if (!out.gun && hit.sec === 'gunBarrel') {
+              out.gun = { x: px, y: py, name: hit.name, th: hit.th }
+            }
+          }
+          if (out.turret && out.gun) return out
+        }
+      }
+      if (out.turret && out.gun) return out
+    }
+    return out
+  })()`)
+  const readHitAt = (spot, section) => page.evaluate(`(() => {
+    const hits = window.__armorRicochet.__raytrace(${spot.x}, ${spot.y}) || []
+    return hits.find(hit => ${JSON.stringify(section)} === 'turret'
+      ? hit.sec === 'turret' && hit.name === ${JSON.stringify(spot.name)}
+      : hit.sec === 'gunBarrel') || null
+  })()`)
+  await setConfig(0)
+  const stock = await scanArmorHit()
+  check(failures, !!stock.turret && !!stock.gun,
+    `${label}: 夹具未找到炮塔/炮管装甲像素（${JSON.stringify(stock)}）`)
+  if (stock.turret && stock.gun) {
+    const plateId = stock.turret.name.match(/armor_(\d+)/)[1]
+    const stockCfg = FIXTURE_TANK_DATA.configs[0]
+    check(failures, stock.turret.th === stockCfg.turret_plates[plateId],
+      `${label}: stock 炮塔板 ${plateId} 厚度 ${stock.turret.th} != ${stockCfg.turret_plates[plateId]}`)
+    check(failures, stock.gun.th === stockCfg.gun_thickness,
+      `${label}: stock 炮管厚度 ${stock.gun.th} != ${stockCfg.gun_thickness}`)
+    await setConfig(1)
+    const topTurret = await readHitAt(stock.turret, 'turret')
+    const topGun = await readHitAt(stock.gun, 'gun')
+    const topCfg = FIXTURE_TANK_DATA.configs[1]
+    check(failures, topTurret?.th === topCfg.turret_plates[plateId],
+      `${label}: top 炮塔板 ${plateId} 厚度 ${topTurret?.th} != ${topCfg.turret_plates[plateId]}（配置缓存未刷新？）`)
+    check(failures, topGun?.th === topCfg.gun_thickness,
+      `${label}: top 炮管厚度 ${topGun?.th} != ${topCfg.gun_thickness}（gunBarrel 缓存未刷新？）`)
+  }
+
   await page.tap({ ...opened.tools.center, touch: scenario.touch })
   const collapsed = await page.probe(armorLayoutProbe)
   check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
@@ -704,6 +767,10 @@ async function runPickerCardsScenario(env, scenario) {
   if (!initialChrome.selectors?.visible) {
     await page.tap({ ...initialChrome.tools.center, touch: scenario.touch })
   }
+  // The setup body scrolls inside the card; multiple configs push the target row below the
+  // tablet-height fold. Scroll it into view before issuing real input.
+  await page.evaluate(`document.getElementById('target-select').scrollIntoView({ block: 'nearest' })`)
+  await delay(80)
   const controls = await page.probe(armorLayoutProbe)
   await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
   await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 90,
