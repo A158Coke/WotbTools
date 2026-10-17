@@ -21,7 +21,7 @@ public class CreatorController {
     private final CreatorAvatarService avatars;
     public CreatorController(final CreatorService service, final CreatorAvatarService avatars) { this.service = service; this.avatars = avatars; }
     @GetMapping("/categories")
-    public List<CreatorDtos.Category> categories() { return service.categories(); }
+    public List<CreatorDtos.Category> categories() { return service.publicCategories(); }
     @GetMapping
     public List<CreatorDtos.Card> list(@RequestParam(name = "categoryId", required = false) final Long categoryId) { return service.list(categoryId); }
     @GetMapping("/avatars/{avatarId}")

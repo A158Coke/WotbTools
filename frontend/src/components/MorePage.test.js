@@ -33,7 +33,7 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
     global: {
       plugins: [i18n],
       provide: { [NAVIGATE_VIEW_KEY]: navigate, [ONBOARDING_KEY]: onboarding,
-        [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), loading: ref(false), refresh: vi.fn() } },
+        [CREATOR_AVAILABILITY_KEY]: { available: ref(creatorsAvailable), directoryVisible: ref(false), contentKnown: ref(true), publicCategories: ref([]), loading: ref(false), refresh: vi.fn() } },
     },
   })
   return { wrapper, i18n }
@@ -47,7 +47,7 @@ describe('MorePage language switcher', () => {
     expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
     wrapper.unmount()
   })
-  it('keeps creator administration scoped without duplicating its primary navigation entry', async () => {
+  it('keeps creator administration available with an empty public snapshot without duplicating primary navigation', async () => {
     const navigate = vi.fn(), { wrapper } = mountPage(navigate)
     expect(wrapper.find('[data-testid="more-link-creators"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)

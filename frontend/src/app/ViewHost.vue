@@ -13,8 +13,9 @@ import { replayInitialCapability, VIEW_COMPONENTS } from './viewRegistry.js'
 const route = useRoute()
 const { authenticated, isTournamentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
-const { available: creatorsAvailable, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
-const creatorUnavailable = computed(() => ['creators', 'creators-config'].includes(activeView.value) && !creatorsAvailable.value)
+const { available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
+const creatorUnavailable = computed(() => activeView.value === 'creators' ? !directoryVisible.value : activeView.value === 'creators-config' && !creatorsAvailable.value)
+const creatorsNotPublished = computed(() => creatorsAvailable.value && contentKnown.value && !directoryVisible.value)
 // 装甲查看器匿名可用，ViewHost 只保留锦标赛管理页的登录门。
 const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config'].includes(activeView.value))
 const tournamentNeedsLogin = computed(() => tournamentAdmin.value && !authenticated.value)
@@ -36,8 +37,8 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
       :login-destination="loginDestination"
     />
     <Banner v-if="tournamentDenied" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
-    <Banner v-if="creatorUnavailable && !tournamentNeedsLogin && !tournamentDenied" data-testid="creators-unavailable">
-      {{ $t(creatorsChecking ? 'creators.checkingAvailability' : 'creators.notAvailable') }}
+    <Banner v-if="creatorUnavailable && !tournamentNeedsLogin && !tournamentDenied" :data-testid="creatorsNotPublished ? 'creators-not-published' : 'creators-unavailable'">
+      {{ $t(creatorsChecking ? 'creators.checkingAvailability' : creatorsError ? 'creators.availabilityFailed' : creatorsNotPublished ? 'creators.notPublished' : 'creators.notAvailable') }}
       <AppButton :disabled="creatorsChecking" data-testid="creators-availability-retry" @click="retryCreators">{{ $t('creators.retry') }}</AppButton>
     </Banner>
     <!-- 回放工作台是唯一 capability host：五种能力切换、从装甲查看器返回都保留同一个工作台实例 -->

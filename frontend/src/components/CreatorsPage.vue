@@ -15,7 +15,7 @@ import CreatorForm from './CreatorForm.vue'
 import './creators.css'
 
 const { t, te } = useI18n()
-const { categoryId, categories, creators, adminAllowed,
+const { categoryId, categories: publicCategories, creators, adminAllowed,
   network, loading, error, refresh, selectCategory } = useCreators()
 const categoriesExpanded = ref(categoryId.value !== null)
 const categoryPanelId = `creator-categories-${useId()}`
@@ -30,6 +30,10 @@ function toggleCategories(event: MouseEvent) {
 }
 const management = useCreatorManagement({ onChanged: refresh })
 const { detail, editorOpen, editorLoading, editorError, busy, loading: adminLoading, error: adminError, categories: adminCategories, levels, avatarUploadsAvailable, notice } = management
+const categories = computed(() => adminAllowed.value ? adminCategories.value : publicCategories.value)
+async function refreshPage() {
+  await Promise.all([refresh(), management.refresh()])
+}
 async function remove(id: number, expectedVersion: number) {
   const signal = management.operationSignal()
   const accepted = await confirm({ title: t('creators.removeConfirm'), confirmLabel: t('creators.remove'), danger: true, signal })
@@ -39,7 +43,7 @@ async function remove(id: number, expectedVersion: number) {
 
 <template>
   <div class="creators-page layout-content" data-testid="creators-page">
-    <PageHeader :title="t('creators.title')"><template #actions><AppButton :disabled="loading || busy || !network.available" data-testid="creator-refresh" @click="refresh">{{ t('creators.refresh') }}</AppButton></template></PageHeader>
+    <PageHeader :title="t('creators.title')"><template #actions><AppButton :disabled="loading || adminLoading || editorLoading || busy || !network.available" data-testid="creator-refresh" @click="refreshPage">{{ t('creators.refresh') }}</AppButton></template></PageHeader>
     <Banner v-if="!network.available && !network.pending">{{ t(network.messageKey || 'featureOffline.creators') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="adminError" tone="danger">{{ apiErrorLabel(t, te, adminError) }}</Banner>

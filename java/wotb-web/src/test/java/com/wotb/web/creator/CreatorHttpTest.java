@@ -8,6 +8,7 @@ import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.service.CreatorAvatarService;
 import com.wotb.web.creator.service.CreatorService;
 import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
+import com.wotb.web.replay.controller.ReplayController;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -68,9 +69,18 @@ class CreatorHttpTest {
     }
     @AfterEach void close() { context.close(); }
 
+    @Test void anonymousHealthAdvertisesContentVisibilityWithoutReadingTheCreatorDirectory() throws Exception {
+        mvc.perform(get("/api/health")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ok"))
+                .andExpect(jsonPath("$.tanks").isNumber())
+                .andExpect(jsonPath("$.capabilities[0]").value("creators-v1"))
+                .andExpect(jsonPath("$.capabilities[1]").value("creators-content-visibility-v1"));
+        verifyNoInteractions(service(), avatars());
+    }
+
     @Test void publicDirectoryAndAttachedAvatarAreAnonymousWhileMetadataIsAdministrative() throws Exception {
         when(service().list(null)).thenReturn(List.of());
-        when(service().categories()).thenReturn(List.of(new CreatorDtos.Category(1, "Category")));
+        when(service().publicCategories()).thenReturn(List.of(new CreatorDtos.Category(1, "Category")));
         final String avatarId = "11111111-1111-4111-8111-111111111111";
         when(avatars().load(avatarId)).thenReturn(new CreatorAvatarService.AvatarImage(new byte[] {1, 2}, "image/png", "a".repeat(64)));
         mvc.perform(get("/api/creators")).andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
@@ -252,6 +262,7 @@ class CreatorHttpTest {
     @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class, GlobalExceptionHandler.class})
     static class TestConfig {
+        @Bean ReplayController healthController() { return new ReplayController(); }
         @Bean JwtDecoder jwtDecoder() { return mock(JwtDecoder.class); }
         @Bean CreatorService service() { return mock(CreatorService.class); }
         @Bean CreatorAvatarService avatars() { return mock(CreatorAvatarService.class); }

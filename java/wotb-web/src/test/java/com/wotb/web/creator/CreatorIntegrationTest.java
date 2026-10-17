@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -143,6 +144,52 @@ class CreatorIntegrationTest {
         assertEquals(uid, service.detail(detail.id()).bilibiliUid());
         assertEquals("https://space.bilibili.com/" + uid, card(detail.id()).homepageUrl());
         assertEquals(10, card(detail.id()).score());
+    }
+
+    @Test void publicCategoriesFollowCommittedMembershipWhileMetadataKeepsEmptyCategories() {
+        final List<CreatorDtos.Category> dictionary = List.of(new CreatorDtos.Category(1, "A"),
+                new CreatorDtos.Category(2, "B"), new CreatorDtos.Category(3, "C"));
+        assertEquals(List.of(), service.publicCategories());
+        assertEquals(dictionary, service.metadata().categories());
+
+        final CreatorDtos.Detail first = create(3, List.of(2L), null);
+        assertEquals(List.of(dictionary.get(1)), service.publicCategories());
+        final CreatorDtos.Detail second = create(3, List.of(3L, 2L), null);
+        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), service.publicCategories());
+        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), card(second.id()).categories());
+        assertEquals(dictionary, service.metadata().categories());
+
+        final CreatorDtos.Detail moved = service.update(second.id(),
+                save(second.bilibiliUid(), 3, List.of(1L), null, second.version()), null);
+        assertEquals(List.of(dictionary.get(0), dictionary.get(1)), service.publicCategories());
+        assertEquals(List.of(dictionary.get(0)), card(moved.id()).categories());
+        service.delete(first.id(), first.version());
+        assertEquals(List.of(dictionary.get(0)), service.publicCategories());
+        service.delete(moved.id(), moved.version());
+        assertEquals(List.of(), service.publicCategories());
+        assertEquals(dictionary, service.metadata().categories());
+        assertEquals(dictionary, service.categories());
+    }
+
+    @Test void publicCategoryHttpResponseIsTheSameForEveryRoleWhileAdminMetadataRemainsComplete() throws Exception {
+        final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        create(3, List.of(2L), null);
+        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(2));
+        for (final String role : List.of("wotbtools-user", "HoF-admin", "wotbtools-admin", "tournament-admin")) {
+            mvc.perform(get("/api/creators/categories").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                    .andExpect(jsonPath("$[0].id").value(2)).andExpect(jsonPath("$[0].name").value("B"));
+        }
+        mvc.perform(get("/api/admin/creators/metadata")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/creators/metadata")
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.categories.length()").value(3))
+                .andExpect(jsonPath("$.categories[0].name").value("A"))
+                .andExpect(jsonPath("$.categories[2].name").value("C"));
     }
 
     @Test void concurrentEquivalentUidsProduceOneCreatorAndOneCanonicalConflict() throws Exception {

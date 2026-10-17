@@ -9,16 +9,36 @@ import { useCreatorManagement } from './useCreatorManagement.js'
 import { ApiError } from '../utils/http.js'
 vi.mock('./useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
 const payload = (): CreatorSaveRequest => ({ ...request, avatarAction: 'KEEP' })
-function fixture() {
+function fixture(withOnChanged = true) {
   let epoch = 1
   const online = ref(true), metadata: CreatorMetadata = { categories: [{ id: 1, name: 'category' }], levels: [{ id: 1, name: 'level' }], avatarUploadsAvailable: true }
   const auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => epoch }
   const transport = { getCreatorMetadata: vi.fn(async (): Promise<CreatorMetadata> => structuredClone(metadata)), getCreatorDetail: vi.fn(async (): Promise<CreatorDetail> => detail), saveCreator: vi.fn(async () => detail), addCreatorCategory: vi.fn(async () => ({ id: 2, name: 'new' })), removeCreatorCategory: vi.fn(async () => {}) }
   const onChanged = vi.fn(async () => {}), scope = effectScope()
-  const owner = scope.run(() => useCreatorManagement({ api: transport, auth, onChanged, network: () => ({ available: online.value }) } as any))!
-  return { owner, transport, auth, onChanged, scope, online, metadata, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } } } }
+  const availability = { refreshPublicCategories: vi.fn(async () => {}) }
+  const owner = scope.run(() => useCreatorManagement({ api: transport, auth, availability, onChanged: withOnChanged ? onChanged : undefined, network: () => ({ available: online.value }) } as any))!
+  return { owner, transport, auth, onChanged, scope, online, metadata, availability, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } } } }
 }
 describe('creator directory management ownership', () => {
+  it('refreshes the global public snapshot from configuration without a page callback', async () => {
+    const f = fixture(false); await flushPromises()
+    expect(await f.owner.save(payload())).toBe(true); await flushPromises()
+    expect(f.availability.refreshPublicCategories).toHaveBeenCalledTimes(1)
+    expect(f.onChanged).not.toHaveBeenCalled(); f.scope.stop()
+  })
+  it('keeps a committed mutation successful if the global content refresh rejects', async () => {
+    const f = fixture(); await flushPromises()
+    f.availability.refreshPublicCategories.mockRejectedValueOnce(new Error('503'))
+    expect(await f.owner.addDictionary('categories', 'new')).toBe(true); await flushPromises()
+    expect(f.owner.notice.value).toBe('saved'); expect(f.owner.error.value).toBeNull()
+    expect(f.onChanged).toHaveBeenCalledTimes(1); f.scope.stop()
+  })
+  it('drops private metadata and an open editor immediately on role loss', async () => {
+    const f = fixture(); await flushPromises(); await f.owner.editCreator(1)
+    f.auth.tokenParsed.value.realm_access.roles = []; await nextTick()
+    expect(f.owner.categories.value).toEqual([]); expect(f.owner.levels.value).toEqual([])
+    expect(f.owner.editorOpen.value).toBe(false); expect(f.owner.detail.value).toBeNull(); f.scope.stop()
+  })
   it('acknowledges a save without awaiting a slow catalog refresh and finishes after disconnecting', async () => {
     const f = fixture(); await flushPromises(); let done!: () => void
     f.onChanged.mockReturnValueOnce(new Promise<void>(resolve => { done = resolve }))

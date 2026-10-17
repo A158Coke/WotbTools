@@ -14,7 +14,9 @@ Without a category link, the directory initially shows all creators with other c
 
 Category deep links and Back/Forward into a category expand the choices. Data refresh and UI profile changes preserve the disclosure state. Collapsed choices leave the keyboard tab order, and closing returns focus to the toggle. An empty category dictionary has no toggle.
 
-This presentation change does not enable content-based visibility: empty categories and an empty directory remain accessible under the existing backend-capability and permission rules. Administrator fields, images, version checks and directory queries are unchanged.
+Anonymous and ordinary signed-in visitors see only categories containing a creator. If none contain a creator, the public navigation entry is hidden and a direct directory link shows a not-yet-published notice with retry. A successful public refresh that removes the selected category replaces the URL with All categories, preserving other query parameters and the hash. Failed reads do not count as an empty directory.
+
+Authenticated `tournament-admin` users retain the directory, management entry and complete category dictionary, including empty categories, so they can create the first creator. Their selected empty category remains selected. These are content-presentation rules; administrator write permissions are unchanged.
 
 ## Creator fields and consistency
 
@@ -56,9 +58,11 @@ Cleanup only touches canonical UUID keys in the creator namespace. A missing COS
 
 ## Independent deployment compatibility
 
-The existing anonymous `/api/health` response retains `status` and `tanks` and advertises `capabilities: ["creators-v1"]` when this backend is installed. The frontend treats old responses without that capability as unsupported: public and administrator creator links remain hidden, and direct links show an availability notice without issuing directory requests. Once readiness is confirmed, the entry appears in its normal primary-navigation position.
+The existing anonymous `/api/health` response retains `status` and `tanks` and advertises `creators-v1` plus `creators-content-visibility-v1`. Health does not query the directory. Without `creators-v1`, public and administrator creator links remain hidden and direct links show a retryable availability notice without directory requests. With only the older `creators-v1`, administrators can still maintain the directory, but the new frontend keeps public entries hidden rather than treating the old full category dictionary as proof of published content.
 
-AppShell owns one bounded health probe per page session, shared by navigation and route rendering. It retries after network recovery, focus while unavailable, or an explicit retry on the direct-link notice; there is no background polling. Transient network loss preserves a previously established capability and existing drafts. This makes frontend-first deployment safe and does not depend on deployment queue ordering. Backend-first remains preferred; a still-open page can discover it on retry or focus.
+AppShell owns one shared public category snapshot and bounded, coalesced health/category reads. It refreshes on initial load, network recovery, window focus, explicit refresh/retry and acknowledged administrator mutations; there is no background polling or persistent cache. Mutation acknowledgements invalidate pre-write reads. Transient read failures retain the last successful snapshot and existing drafts; write success remains independent of a subsequent refresh failure. Private management metadata never enters the public snapshot. Changes made by another session become visible on the next successful refresh, not through realtime push.
+
+The public category endpoint uses one indexed `EXISTS` query over existing category links, regardless of caller role. Administrator metadata still returns the full dictionary. No new table, counter, scheduler or external cache is required. Backend-first deployment is preferred. Older frontend/APK bundles receive filtered public categories but need the new frontend bundle to hide the navigation entry; this presentation-only change does not raise the minimum supported APK version.
 
 ## Contract and verification
 

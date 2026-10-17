@@ -58,7 +58,9 @@
       "selectedCategory": "当前：{name}",
       "currentFilter": "当前筛选",
       "collapseCategories": "收起分类",
-      "expandCategories": "筛选分类"
+      "expandCategories": "筛选分类",
+      "notPublished": "UP 推荐暂未开放。",
+      "availabilityFailed": "暂时无法检查 UP 推荐，请重试。"
     },
     "featureOffline": {
       "creators": "UP 主推荐需要联网后查看和操作。"
@@ -133,7 +135,9 @@
       "selectedCategory": "Selected: {name}",
       "currentFilter": "Current filter",
       "collapseCategories": "Hide categories",
-      "expandCategories": "Filter categories"
+      "expandCategories": "Filter categories",
+      "notPublished": "Creator recommendations have not been published yet.",
+      "availabilityFailed": "Unable to check creator recommendations. Please try again."
     },
     "featureOffline": {
       "creators": "Connect to the Internet to browse and manage creator recommendations."
@@ -208,7 +212,9 @@
       "selectedCategory": "Выбрано: {name}",
       "currentFilter": "Текущий фильтр",
       "collapseCategories": "Свернуть категории",
-      "expandCategories": "Выбрать категорию"
+      "expandCategories": "Выбрать категорию",
+      "notPublished": "Рекомендации авторов пока не опубликованы.",
+      "availabilityFailed": "Не удалось проверить рекомендации авторов. Повторите попытку."
     },
     "featureOffline": {
       "creators": "Для просмотра рекомендаций авторов и управления ими нужен Интернет."

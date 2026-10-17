@@ -1,41 +1,70 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/creators.js'
+import type { CreatorAvailability } from '../shared/creatorAvailability.js'
+import { useCreatorAvailability } from './useCreatorAvailability.js'
 import { useAuth, tournamentAdminAllowed } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
 
 export function useCreators(deps: { api?: typeof api; auth?: ReturnType<typeof useAuth>; route?: ReturnType<typeof useRoute>;
-  router?: Pick<ReturnType<typeof useRouter>, 'push'>; network?: () => ReturnType<ReturnType<typeof useFeatureGate>['availability']> } = {}) {
+  availability?: CreatorAvailability; router?: Pick<ReturnType<typeof useRouter>, 'push' | 'replace'>;
+  network?: () => ReturnType<ReturnType<typeof useFeatureGate>['availability']> } = {}) {
   const transport = deps.api ?? api, auth = deps.auth ?? useAuth()
+  const availability = deps.availability ?? useCreatorAvailability()
   const route = deps.route ?? useRoute(), router = deps.router ?? useRouter(), gate = useFeatureGate()
   const network = computed(deps.network ?? (() => gate.availability(Feature.CREATORS)))
   const categoryId = computed(() => {
     const value = route.query.creatorCategory
     return typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null
   })
-  const categories = ref<api.CreatorCategory[]>([]), creators = ref<api.CreatorCard[]>([])
-  const loading = ref(false), error = ref<unknown>(null), adminAllowed = computed(() => tournamentAdminAllowed(auth))
-  let generation = 0, controller = new AbortController(), activeCategory = categoryId.value
-  async function refresh() {
-    controller.abort(); controller = new AbortController()
+  const categories = availability.publicCategories, creators = ref<api.CreatorCard[]>([])
+  const listLoading = ref(false), listError = ref<unknown>(null)
+  const loading = computed(() => listLoading.value || availability.loading.value)
+  const error = computed(() => listError.value ?? availability.error.value)
+  const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && tournamentAdminAllowed(auth))
+  const invalidCategory = computed(() => !adminAllowed.value && availability.contentKnown.value && categoryId.value !== null
+    && !categories.value.some(value => value.id === categoryId.value))
+  let disposed = false
+  let generation = 0, controller = new AbortController(), activeCategory = categoryId.value, inFlight: Promise<void> | null = null
+  function cancel() { generation++; controller.abort(); inFlight = null; listLoading.value = false }
+  function loadList(): Promise<void> {
+    if (inFlight) return inFlight
+    if (disposed || !network.value.available || invalidCategory.value) return Promise.resolve()
+    controller = new AbortController()
     const gen = ++generation, signal = controller.signal
-    error.value = null; loading.value = false
-    if (categoryId.value !== activeCategory) { creators.value = []; activeCategory = categoryId.value }
-    if (!network.value.available) return
-    loading.value = true
-    try {
-      const [dictionary, cards] = await Promise.all([transport.listCreatorCategories(signal), transport.listCreators(categoryId.value, signal)])
-      if (gen === generation && !signal.aborted) { categories.value = dictionary; creators.value = cards }
-    } catch (value) { if (gen === generation && !signal.aborted) error.value = value }
-    finally { if (gen === generation) loading.value = false }
+    listLoading.value = true; listError.value = null
+    inFlight = transport.listCreators(categoryId.value, signal).then(cards => {
+      if (gen === generation && !signal.aborted) creators.value = cards
+    }).catch(value => { if (gen === generation && !signal.aborted) listError.value = value })
+      .finally(() => { if (gen === generation) { listLoading.value = false; inFlight = null } })
+    return inFlight
   }
-  function selectCategory(id: number | null) {
+  function categoryLocation(id: number | null) {
     const query = { ...route.query }
     if (id) query.creatorCategory = String(id); else delete query.creatorCategory
-    return router.push({ path: route.path, query, hash: route.hash })
+    return { path: route.path, query, hash: route.hash }
   }
-  watch([categoryId, () => network.value.available], () => { void refresh() }, { immediate: true })
-  onScopeDispose(() => { generation++; controller.abort() })
+  let replacing: Promise<unknown> | null = null
+  function reconcileCategory() {
+    if (!invalidCategory.value) return replacing ?? Promise.resolve()
+    if (!replacing) replacing = Promise.resolve(router.replace(categoryLocation(null))).finally(() => { replacing = null })
+    return replacing
+  }
+  async function refresh() {
+    cancel()
+    await availability.refresh()
+    if (disposed) return
+    await reconcileCategory()
+    await loadList()
+  }
+  function selectCategory(id: number | null) { return router.push(categoryLocation(id)) }
+  watch(invalidCategory, value => { if (value) { cancel(); creators.value = []; void reconcileCategory() } }, { immediate: true, flush: 'sync' })
+  watch([categoryId, () => network.value.available, adminAllowed], () => {
+    cancel()
+    if (categoryId.value !== activeCategory) { creators.value = []; activeCategory = categoryId.value }
+    void loadList()
+  }, { immediate: true })
+  onScopeDispose(() => { disposed = true; cancel() })
   return { categoryId, categories, creators, adminAllowed, network, loading, error, refresh, selectCategory }
 }

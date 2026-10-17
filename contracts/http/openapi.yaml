@@ -8,6 +8,13 @@ paths:
     get:
       operationId: listCreatorCategories
       summary: listCreatorCategories
+      description: >-
+        Returns only categories linked to at least one creator, ordered by ID.
+        The same public subset is returned to anonymous users and every authenticated role.
+        An empty array means the directory has no populated categories. Administrators use
+        /api/admin/creators/metadata for the complete dictionary, including empty categories.
+        This semantic is advertised by the creators-content-visibility-v1 health capability;
+        older backends advertising only creators-v1 may return the complete dictionary.
       security: []
       responses:
         "200":
@@ -581,6 +588,7 @@ paths:
     get:
       operationId: getCreatorMetadata
       summary: Get creator management dictionaries and avatar upload availability
+      description: Returns complete category and level dictionaries, including entries not linked to any creator.
       security:
         - bearerAuth: []
       responses:
@@ -3900,6 +3908,12 @@ components:
           type: integer
           minimum: 0
         capabilities:
+          description: >-
+            Additive technical capability markers, independent of directory contents and read
+            without querying the creator database. creators-v1 enables the creator APIs;
+            creators-content-visibility-v1 additionally guarantees that the public categories
+            endpoint returns only populated categories. New clients must not infer content
+            availability from the complete dictionary returned by legacy creators-v1 backends.
           type: array
           items:
             type: string
