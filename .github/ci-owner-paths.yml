@@ -153,10 +153,7 @@ python:
   # test_update_tankopedia 的 RosterTest 守卫
   - 'common/tank_aliases.json'
   - 'common/tank_ids.json'
-  - 'common/tankopedia-tier7.json'
-  - 'common/tankopedia-tier8.json'
-  - 'common/tankopedia-tier9.json'
-  - 'common/tankopedia-tier10.json'
+  - 'common/tankopedia-tier*.json'
 business_postgres:
   - '.github/workflows/business-postgres.yml'
   - 'deploy/tx/deploy.sh'

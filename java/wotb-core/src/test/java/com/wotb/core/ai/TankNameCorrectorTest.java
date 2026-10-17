@@ -3,6 +3,7 @@ package com.wotb.core.ai;
 import com.wotb.core.ai.TankNameCorrector.Replacement;
 import com.wotb.core.ai.TankNameCorrector.Result;
 import com.wotb.core.ai.TankNameCorrector.RosterEntry;
+import com.wotb.core.ref.Tankopedia;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -31,6 +32,29 @@ class TankNameCorrectorTest {
 
     private static List<String> reasons(final Result result) {
         return result.replacements().stream().map(Replacement::reason).toList();
+    }
+
+    @Test
+    void gridCoordinatesBesideNicknamesAreNotVehicleMentions() {
+        assertTrue(Tankopedia.load().names().containsAll(List.of("D1", "D2", "B1")));
+        final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "Kranvagn"));
+        final List<String> texts = List.of(
+                "D1（Alice）正在防守", "D2 (Alice) is clear", "B1（Alice）正在防守",
+                "Alice（D1）正在防守", "Alice 的 d2 区域", "B1 is clear");
+        final List<Result> results = TankNameCorrector.correctAll(texts, roster);
+        for (int index = 0; index < texts.size(); index++) {
+            assertEquals(texts.get(index), results.get(index).text());
+            assertTrue(results.get(index).replacements().isEmpty());
+        }
+    }
+
+    @Test
+    void unambiguousLowerTierTankNamesStillCorrectAndNormalize() {
+        final List<RosterEntry> roster = List.of(new RosterEntry("Alice", "KV-2"));
+        final Result result = TankNameCorrector.correct("Hellcat（Alice）前压，kv-2 支援。", roster);
+        assertEquals("KV-2（Alice）前压，KV-2 支援。", result.text());
+        assertTrue(reasons(result).contains("CORRECTED"));
+        assertTrue(reasons(result).contains("NORMALIZED"));
     }
 
     @Test
