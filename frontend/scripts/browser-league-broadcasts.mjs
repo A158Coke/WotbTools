@@ -5,6 +5,7 @@ import { Readable } from 'node:stream'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
+import { primaryNavItems } from '../src/app/navigation.js'
 
 // Exercise the production router, components, transport validators and CSS. Only external
 // auth and HTTP services are fixtures, shared by anonymous and administrator requests.
@@ -145,8 +146,8 @@ try {
       assert.equal(await page.evaluate(`document.querySelector('[data-testid="${navigation}-league-broadcasts"]').getAttribute('aria-current')`), 'page')
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
-      if (scenario.productionHome && scenario.width < 768) {
-        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), 7)
+      if (scenario.width < 768) {
+        assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
       }
       const cardHeights = await page.evaluate('[...document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-choice")].map(el=>el.getBoundingClientRect().height)')
       assert.ok(cardHeights.every(height => height >= 160), 'server cards use the larger presentation')

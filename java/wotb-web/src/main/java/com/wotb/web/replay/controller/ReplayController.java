@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 健康检查（部署探针 deploy/tx/deploy.sh、runtime-check-lib.sh 依赖）。
@@ -18,7 +19,8 @@ public class ReplayController {
     public Object health() {
         return Map.of(
                 "status", "ok",
-                "tanks", Tankopedia.load().size()
+                "tanks", Tankopedia.load().size(),
+                "capabilities", List.of("creators-v1")
         );
     }
 }

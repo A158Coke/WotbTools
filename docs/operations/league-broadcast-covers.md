@@ -12,11 +12,17 @@
 | `BROADCAST_COS_BUCKET` | Variable | `BucketName-APPID` 格式的私有封面桶 |
 | `BROADCAST_COS_REGION` | Variable | 桶所在区域，如 `ap-shanghai` |
 | `BROADCAST_COS_PREFIX` | Variable，可空 | 默认 `league-broadcasts/covers/`，只属于本功能 |
+| `CREATOR_AVATAR_COS_PREFIX` | Variable，可空 | UP 头像独立前缀，默认 `creator-avatars/`，不能与封面前缀相同 |
 | `BROADCAST_COS_SECRET_ID` | Secret | 专用最小权限身份 |
 | `BROADCAST_COS_SECRET_KEY` | Secret | 该身份的密钥 |
 
 owner 链路是 `business-api.yml` runtime env → SSH 环境 →
 `deploy/tx/business-api.compose.yml` → `wotb.broadcast.cos`。
+UP 推荐头像复用同一 COS client、私有桶和凭据，独立使用 `wotb.creator.cos.prefix`。
+凭据的 Put/Get/Delete 权限必须同时覆盖实际使用的两个前缀；头像和封面各自维护引用与回收记录，
+不会跨前缀清理。配置相同前缀会关闭上传，避免不同业务互删资源。UP 头像行为见
+[UP recommendations](../features/bilibili-creators.md)。UP头像只保留最长边256px的小图、不绑定上传者，
+每天UTC+8 04:00清理未引用满24小时的记录；这里的联赛封面调度与原图规则保持原状。
 secret 不进入源码、前端、镜像 build args 或主机持久 `.env`。
 未配置时应用仍可启动、公开浏览和无封面 CRUD 正常，上传能力标记不可用。
 配置缺失报 `BROADCAST_STORAGE_UNAVAILABLE`，COS 请求失败报可重试的 `BROADCAST_STORAGE_ERROR`。

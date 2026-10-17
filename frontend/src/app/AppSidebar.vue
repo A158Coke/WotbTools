@@ -9,6 +9,7 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
 import { useAuth } from '../composables/useAuth.js'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
 import { useSidebar } from '../composables/useSidebar.js'
+import { useCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { ADMIN_NAV, defaultView, locationForView, primaryNavItems, primarySection, viewFromRoute } from './navigation.js'
 import { ACCOUNT_ICON, ADMIN_NAV_ICONS, PRIMARY_NAV_ICONS } from './navIcons.js'
 import MorePanel from './MorePanel.vue'
@@ -23,10 +24,11 @@ const { collapsed, toggle } = useSidebar()
 const rail = computed(() => !isExpanded.value || collapsed.value)
 const activeSection = computed(() => primarySection(viewFromRoute(route)))
 const items = primaryNavItems()
-const sectionItems = items.filter(item => item.id !== 'more')
+const { available: creatorsAvailable } = useCreatorAvailability()
+const sectionItems = computed(() => items.filter(item => item.id !== 'more' && (item.id !== 'creators' || creatorsAvailable.value)))
 const moreItem = items.find(item => item.id === 'more')
 const adminPermissions = { admin: isAdmin, hofAdmin: isHofAdmin, tournamentAdmin: isTournamentAdmin }
-const adminItems = computed(() => ADMIN_NAV.filter(item => adminPermissions[item.role].value))
+const adminItems = computed(() => ADMIN_NAV.filter(item => adminPermissions[item.role].value && (item.id !== 'creators-config' || creatorsAvailable.value)))
 const brandTarget = computed(() => locationForView(defaultView(), route))
 const accountLabel = computed(() => (isAuthenticated() && displayName.value) || null)
 const showDevEnvironmentNotice = import.meta.env.DEV
