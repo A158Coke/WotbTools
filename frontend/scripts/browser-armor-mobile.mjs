@@ -829,11 +829,49 @@ async function runPickerCardsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/** Load-order regression: collision enabled before the delayed armor GLB finishes, visual first. */
+const STAGGERED_LOAD_SCENARIO = { name: 'armor-staggered-visual-first', width: 1024, height: 768, touch: false }
+async function runStaggeredLoadScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.staggeredAssets)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  const beforeLoad = await page.evaluate('window.__LOAD__')
+  check(failures, beforeLoad !== 'ok:' + FIXTURE_TANK_ID,
+    `${scenario.name}: visual 在开启碰撞前已完成，竞态未被复现（__LOAD__=${beforeLoad}）`)
+  // Programmatic click reaches the collision handler even while the status overlay is visible.
+  const clicked = await page.evaluate(`(() => {
+    const button = document.getElementById('collision-btn')
+    if (!button) return null
+    button.click()
+    return button.getAttribute('aria-pressed')
+  })()`)
+  check(failures, clicked === 'true', `${scenario.name}: 碰撞模式未在 armor 加载前开启（aria-pressed=${clicked}）`)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled,
+    { timeout: 30000, label: 'staggered visual/armor load ready' })
+  const state = await page.evaluate(`(() => ({
+    load: window.__LOAD__,
+    collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
+  }))()`)
+  check(failures, state.load === 'ok:' + FIXTURE_TANK_ID,
+    `${scenario.name}: visual 先完成时加载未收敛（__LOAD__=${state.load}）`)
+  check(failures, state.collision === 'true',
+    `${scenario.name}: armor 就绪后碰撞模式丢失（aria-pressed=${state.collision}）`)
+  check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
+const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
 const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 let chromeCdp = null
 
@@ -848,12 +886,13 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
+    { scenario: STAGGERED_LOAD_SCENARIO, run: () => runStaggeredLoadScenario(env, STAGGERED_LOAD_SCENARIO) },
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
@@ -892,5 +931,6 @@ try {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
   await assets.close()
+  await staggeredAssets.close()
   await pickerAssets.close()
 }
