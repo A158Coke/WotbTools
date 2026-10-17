@@ -1,6 +1,6 @@
 # 2026 回放复核与术语来源
 
-核对日：2026-10-18。对上一轮候选中的 2026 年 172 条重新提取公开元数据，供逐条人工确认，尚未增加生产初始化记录。
+核对日：2026-10-18。对上一轮候选中的 2026 年 172 条重新提取公开元数据；其中 9 条已核实并加入 V43 初始化快照，涵盖 4 个区服赛事，其余 163 条保留待补。没有向生产数据库写入。
 
 | 区服 | 候选数 |
 | --- | ---: |
@@ -17,7 +17,11 @@
 
 原始直播回放优先采用真实直播开始时间（startTimestamp / 直播开始日期），按该区服赛程当地时区取年月日：APAC UTC+8，NA America/Los_Angeles，EU Europe/Berlin，Lesta Europe/Moscow。保留原始带时区时间作为证据，不拿提前创建直播页的日期、上传日期或整个赛事开赛日替代。NA 的直播 UTC 日期通常比当地比赛日大一天；北美和欧洲必须按当日夏令时换算。
 
-赛事 startDate 选填，回放 matchDate 与 dayNumber 必填；两队及阶段等原有约束继续适用。用户人工核对结果才用于后续数据初始化，不把本轮候选直接发送管理 API。
+赛事 startDate 选填，回放 matchDate 与 dayNumber 必填；两队及阶段等原有约束继续适用。按用户调整后的规则，每条直播只需确认其中一场战斗的两队；组号未知时留空。仅把来源明确的记录纳入初始化快照，不把候选直接发送管理 API。
+
+## 已确认初始化记录
+
+`seed-ready-2026.json` 保存 9 条回放的原赛事名称、UTC 开播时刻、区服当地日期与证据；V43 使用同一快照，按来源视频去重，保留管理员已有配置。8 条 EU 记录的简介明确列出对阵和解说信息；1 条 APAC 记录由用户提供的 10:00 准备房间截图确认 REQM / CHRD、个人视角、第 1 组败者组，阶段为 Top 4 第 2 天。截图对应 [REQM 回放 10:00](https://www.youtube.com/watch?v=reSgKpylUwE&t=600s)。未识别的对手不据自动章节或房间名称猜测。
 
 ## 2026 官方赛程
 
@@ -36,3 +40,5 @@
 - 积分赛：Prove Your Skill（Skill 单数），俄文 Путь мастерства。
 - 战火杯：Blitz Professional Cup，简称 BPC。网易游戏小管家 [2025 冠军专访](https://game.xiaomi.com/viewpoint/1160758920_1766404215796_16) 的[冠军海报](https://pic.kts.g.mi.com/aaf942c9fb630d47c5f4af2aa30d33e64739192207011129958.jpg) 明确印有 BLITZ PROFESSIONAL CUP 2025。
 - 存量默认英文名由 V41 更正为 Blitz Professional Cup (BPC)；V40 与 seed-ready.json 是历史快照，保留原始内容与哈希。
+
+Lesta 时区依据：[2026 Season II 官方比赛安排](https://tanksblitz.ru/ru/news/tournaments/blitz-point-4-season-2-play-off-streams/) 使用 МСК（莫斯科时间）；保存与显示使用 Europe/Moscow（UTC+3）。

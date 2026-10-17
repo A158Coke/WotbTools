@@ -1130,6 +1130,73 @@ export default {
         }
       }
     },
+    "BroadcastTimedCategoryView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "data",
+        "defaultTimeZone",
+        "replayStarts"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/BroadcastCategoryView"
+        },
+        "defaultTimeZone": {
+          "type": "string",
+          "enum": [
+            "Asia/Shanghai",
+            "America/Los_Angeles",
+            "Europe/Berlin",
+            "Europe/Moscow"
+          ]
+        },
+        "replayStarts": {
+          "type": "array",
+          "description": "Only replays with a known start instant are included.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "replayId",
+              "startsAt"
+            ],
+            "properties": {
+              "replayId": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "startsAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    },
+    "BroadcastTimedReplaySave": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replay",
+        "startsAt"
+      ],
+      "properties": {
+        "replay": {
+          "$ref": "#/$defs/BroadcastReplaySave"
+        },
+        "startsAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Explicit null clears the time. When present, its date in the server tournament timezone must equal replay.matchDate."
+        }
+      }
+    },
     "BroadcastCategoryView": {
       "type": "object",
       "additionalProperties": false,

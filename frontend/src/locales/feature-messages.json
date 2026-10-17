@@ -714,7 +714,6 @@
       "matchDate": "比赛日期",
       "groupNumber": "小组号",
       "groupNumberLabel": "第{number}组",
-      "groupNumberPending": "组号待补",
       "bracket": "组别",
       "teams": "队伍（2–4 支）",
       "followedTeam": "追随的队伍（必填）",
@@ -773,7 +772,30 @@
         "OBSERVER": "观战视角"
       },
       "following": "追随 {team}",
-      "reloadEditor": "重新载入（放弃当前输入）"
+      "reloadEditor": "重新载入（放弃当前输入）",
+      "displayTimeZone": "显示时区",
+      "serverTimeZone": "区服赛事时区 · {zone}",
+      "matchTime": "具体时间",
+      "matchTimeHint": "未知时留空，仅显示比赛日期。",
+      "inputTimeZone": "录入时区",
+      "inputTimeZoneHint": "默认北京时间；切换时区会换算已填写的日期与时间。",
+      "noGroup": "不分组",
+      "timeZones": {
+        "Asia/Shanghai": "北京时间 (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "太平洋时间 PT (PST/PDT)",
+        "Europe/Berlin": "中欧时间 (CET/CEST)",
+        "Europe/Moscow": "莫斯科时间 (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · 北京时间",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · 莫斯科"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "目录已被其他管理员修改，请刷新后重新检查并保存。",
@@ -1498,7 +1520,6 @@
       "matchDate": "Match date",
       "groupNumber": "Group number",
       "groupNumberLabel": "Group {number}",
-      "groupNumberPending": "Group number pending",
       "bracket": "Bracket",
       "teams": "Teams (2–4)",
       "followedTeam": "Team followed by this replay (required)",
@@ -1557,7 +1578,30 @@
         "OBSERVER": "Observer"
       },
       "following": "Following {team}",
-      "reloadEditor": "Reload (discard current inputs)"
+      "reloadEditor": "Reload (discard current inputs)",
+      "displayTimeZone": "Display time zone",
+      "serverTimeZone": "Server time zone · {zone}",
+      "matchTime": "Start time",
+      "matchTimeHint": "Leave blank if unknown; only the match date is shown.",
+      "inputTimeZone": "Input time zone",
+      "inputTimeZoneHint": "Defaults to Beijing time. Switching zones converts the entered date and time.",
+      "noGroup": "No group",
+      "timeZones": {
+        "Asia/Shanghai": "Beijing (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Pacific Time (PST/PDT)",
+        "Europe/Berlin": "Central Europe (CET/CEST)",
+        "Europe/Moscow": "Moscow (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Beijing",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Moscow"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Another administrator changed this catalogue. Refresh and review before saving.",
@@ -2282,7 +2326,6 @@
       "matchDate": "Дата матча",
       "groupNumber": "Номер группы",
       "groupNumberLabel": "Группа {number}",
-      "groupNumberPending": "Номер группы не указан",
       "bracket": "Сетка",
       "teams": "Команды (2–4)",
       "followedTeam": "Команда, за которой следует запись (обязательно)",
@@ -2341,7 +2384,30 @@
         "OBSERVER": "От лица наблюдателя"
       },
       "following": "Следуя за {team}",
-      "reloadEditor": "Загрузить заново (сбросить ввод)"
+      "reloadEditor": "Загрузить заново (сбросить ввод)",
+      "displayTimeZone": "Часовой пояс отображения",
+      "serverTimeZone": "Часовой пояс сервера · {zone}",
+      "matchTime": "Время начала",
+      "matchTimeHint": "Если время неизвестно, оставьте поле пустым: будет показана только дата матча.",
+      "inputTimeZone": "Часовой пояс ввода",
+      "inputTimeZoneHint": "По умолчанию — пекинское время. При смене пояса введённые дата и время пересчитываются.",
+      "noGroup": "Без группы",
+      "timeZones": {
+        "Asia/Shanghai": "Пекин (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Тихоокеанское время (PST/PDT)",
+        "Europe/Berlin": "Центральная Европа (CET/CEST)",
+        "Europe/Moscow": "Москва (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Пекин",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Москва"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Другой администратор изменил каталог. Обновите и проверьте данные.",

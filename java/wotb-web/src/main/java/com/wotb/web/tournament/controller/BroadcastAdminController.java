@@ -55,6 +55,16 @@ public class BroadcastAdminController {
     public BroadcastDtos.CategoryView updateReplayV2(@PathVariable final long id,
             @RequestPart(name = "payload") final BroadcastDtos.ReplaySave request,
             @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.updateReplay(id, request, cover); }
+    @PostMapping("/v3/categories/{id}/nodes")
+    public BroadcastDtos.TimedCategoryView createNodeV3(@PathVariable final long id, @RequestBody final BroadcastDtos.NodeCreate request) { return service.timedCreateNode(id, request); }
+    @PostMapping(value = "/v3/nodes/{id}/replays", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BroadcastDtos.TimedCategoryView createReplayV3(@PathVariable final long id,
+            @RequestPart(name = "payload") final BroadcastDtos.TimedReplaySave request,
+            @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.timedCreateReplay(id, request, cover); }
+    @PutMapping(value = "/v3/replays/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BroadcastDtos.TimedCategoryView updateReplayV3(@PathVariable final long id,
+            @RequestPart(name = "payload") final BroadcastDtos.TimedReplaySave request,
+            @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.timedUpdateReplay(id, request, cover); }
     @GetMapping({"/seasons/{id}/deletion-preview", "/v2/seasons/{id}/deletion-preview"})
     public BroadcastDtos.DeletionPreview seasonDeletionPreview(@PathVariable final long id) { return service.seasonDeletionPreview(id); }
     @GetMapping({"/nodes/{id}/deletion-preview", "/v2/nodes/{id}/deletion-preview"})

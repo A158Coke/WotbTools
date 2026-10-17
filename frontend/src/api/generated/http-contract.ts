@@ -1280,6 +1280,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tournament-broadcasts/v3/categories/{categoryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** get Broadcast Category */
+        get: operations["getBroadcastCategoryV3"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tournament-broadcasts/covers/{coverId}": {
         parameters: {
             query?: never;
@@ -1469,6 +1486,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tournament-broadcasts/v3/categories/{categoryId}/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** create Broadcast Node */
+        post: operations["createBroadcastNodeV3"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tournament-broadcasts/nodes/{nodeId}/deletion-preview": {
         parameters: {
             query?: never;
@@ -1571,6 +1605,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/tournament-broadcasts/v3/nodes/{nodeId}/replays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** create Broadcast Replay */
+        post: operations["createBroadcastReplayV3"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/tournament-broadcasts/replays/{replayId}": {
         parameters: {
             query?: never;
@@ -1602,6 +1653,23 @@ export interface paths {
         post?: never;
         /** delete Broadcast Replay */
         delete: operations["deleteBroadcastReplayV2"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/tournament-broadcasts/v3/replays/{replayId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** update Broadcast Replay */
+        put: operations["updateBroadcastReplayV3"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1796,6 +1864,25 @@ export interface components {
             season: components["schemas"]["BroadcastSeason"];
             categories: components["schemas"]["BroadcastCategory"][];
             coverUploadAvailable: boolean;
+        };
+        BroadcastTimedCategoryView: {
+            data: components["schemas"]["BroadcastCategoryView"];
+            /** @enum {string} */
+            defaultTimeZone: "Asia/Shanghai" | "America/Los_Angeles" | "Europe/Berlin" | "Europe/Moscow";
+            /** @description Only replays with a known start instant are included. */
+            replayStarts: {
+                replayId: number;
+                /** Format: date-time */
+                startsAt: string;
+            }[];
+        };
+        BroadcastTimedReplaySave: {
+            replay: components["schemas"]["BroadcastReplaySave"];
+            /**
+             * Format: date-time
+             * @description Explicit null clears the time. When present, its date in the server tournament timezone must equal replay.matchDate.
+             */
+            startsAt: string | null;
         };
         BroadcastCategoryView: {
             season: components["schemas"]["BroadcastSeason"];
@@ -7798,6 +7885,55 @@ export interface operations {
             };
         };
     };
+    getBroadcastCategoryV3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public broadcast directory data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastTimedCategoryView"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The season changed or the root already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getBroadcastCover: {
         parameters: {
             query?: never;
@@ -8684,6 +8820,77 @@ export interface operations {
             };
         };
     };
+    createBroadcastNodeV3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BroadcastNodeCreate"];
+            };
+        };
+        responses: {
+            /** @description Public broadcast directory data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastTimedCategoryView"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Real site administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The season changed or the root already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     previewBroadcastNodeDeletion: {
         parameters: {
             query?: never;
@@ -9158,6 +9365,108 @@ export interface operations {
             };
         };
     };
+    createBroadcastReplayV3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nodeId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    payload: components["schemas"]["BroadcastTimedReplaySave"];
+                    /** Format: binary */
+                    cover?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Public broadcast directory data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastTimedCategoryView"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Real site administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The season changed or the root already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Upload too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Cover storage request failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Cover storage is not configured */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     updateBroadcastReplay: {
         parameters: {
             query?: never;
@@ -9489,6 +9798,108 @@ export interface operations {
             };
             /** @description The season changed or the root already exists */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateBroadcastReplayV3: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                replayId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    payload: components["schemas"]["BroadcastTimedReplaySave"];
+                    /** Format: binary */
+                    cover?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Public broadcast directory data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastTimedCategoryView"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Real site administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description The season changed or the root already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Upload too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Cover storage request failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Cover storage is not configured */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

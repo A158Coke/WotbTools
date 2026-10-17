@@ -58,6 +58,51 @@ class BroadcastHttpTest {
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
     @AfterEach void close() { context.close(); }
+    @Test void v3EnvelopeSerializesOnlyKnownTimesWithoutChangingV2Body() throws Exception {
+        final var replay = new BroadcastDtos.Replay(4,3,"Title","https://example.org/replay",LocalDate.of(2026,10,16),1,null,null,List.of("A","B"),"OBSERVER",null);
+        final var data = new BroadcastDtos.CategoryView(season(),new BroadcastDtos.Category(2,1,"POINTS"),List.of(new BroadcastDtos.Node(3,2,1,null,List.of(replay))),false);
+        final var timed = new BroadcastDtos.TimedCategoryView(data,"Europe/Moscow",List.of(new BroadcastDtos.ReplayStart(4,Instant.parse("2026-10-16T16:00:00Z"))));
+        when(context.getBean(BroadcastService.class).timedCategory(2)).thenReturn(timed);
+        mvc.perform(get("/api/tournament-broadcasts/v3/categories/2")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultTimeZone").value("Europe/Moscow"))
+                .andExpect(jsonPath("$.replayStarts[0].startsAt").value("2026-10-16T16:00:00Z"))
+                .andExpect(jsonPath("$.data.nodes[0].replays[0].startsAt").doesNotExist())
+                .andExpect(jsonPath("$.data.nodes[0].replays[0].groupNumber").value(nullValue()));
+        when(context.getBean(BroadcastService.class).category(2)).thenReturn(data);
+        final String old = mvc.perform(get("/api/tournament-broadcasts/v2/categories/2")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.defaultTimeZone").doesNotExist()).andReturn().getResponse().getContentAsString();
+        assertEquals(4,new JsonMapper().readTree(old).properties().size());
+        mvc.perform(get("/api/tournament-broadcasts/v3/categories/2/other")).andExpect(status().isUnauthorized());
+    }
+    @Test void v3MultipartRequiresExplicitTimeAndRetainsAdministratorAuthorization() throws Exception {
+        final var replay = new BroadcastDtos.ReplaySave(2,"Title","https://example.org/replay",LocalDate.of(2026,10,16),1,null,null,List.of("A","B"),"OBSERVER","KEEP");
+        final String body = new JsonMapper().writeValueAsString(new BroadcastDtos.TimedReplaySave(replay,null));
+        final MockMultipartFile payload = new MockMultipartFile("payload","","application/json",body.getBytes(StandardCharsets.UTF_8));
+        mvc.perform(multipart("/api/admin/tournament-broadcasts/v3/nodes/3/replays").file(payload)).andExpect(status().isUnauthorized());
+        mvc.perform(multipart("/api/admin/tournament-broadcasts/v3/nodes/3/replays").file(payload)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin")))).andExpect(status().isForbidden());
+        mvc.perform(multipart("/api/admin/tournament-broadcasts/v3/nodes/3/replays").file(payload)
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        final ArgumentCaptor<BroadcastDtos.TimedReplaySave> saved = ArgumentCaptor.forClass(BroadcastDtos.TimedReplaySave.class);
+        verify(context.getBean(BroadcastService.class)).timedCreateReplay(eq(3L),saved.capture(),eq(null));
+        assertEquals(null,saved.getValue().startsAt()); assertEquals(null,saved.getValue().replay().groupNumber());
+        for (final String invalid : List.of(body.replace("\"startsAt\":null","\"startsAt\":123"),body.replace("\"startsAt\":null","\"startsAt\":\"\""),body.replace(",\"startsAt\":null",""),body.replace("\"startsAt\":null","\"startsAt\":\"2026-10-16\""),body.replace("\"startsAt\":null","\"startsAt\":null,\"extra\":true"))) {
+            mvc.perform(multipart(HttpMethod.PUT,"/api/admin/tournament-broadcasts/v3/replays/4")
+                    .file(new MockMultipartFile("payload","","application/json",invalid.getBytes(StandardCharsets.UTF_8)))
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isBadRequest());
+        }
+        final String offsetBody = body.replace("\"startsAt\":null","\"startsAt\":\"2026-10-16T19:00:00+03:00\"");
+        mvc.perform(multipart(HttpMethod.PUT,"/api/admin/tournament-broadcasts/v3/replays/4")
+                .file(new MockMultipartFile("payload","","application/json",offsetBody.getBytes(StandardCharsets.UTF_8)))
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        final ArgumentCaptor<BroadcastDtos.TimedReplaySave> updated = ArgumentCaptor.forClass(BroadcastDtos.TimedReplaySave.class);
+        verify(context.getBean(BroadcastService.class)).timedUpdateReplay(eq(4L),updated.capture(),eq(null));
+        assertEquals(Instant.parse("2026-10-16T16:00:00Z"),updated.getValue().startsAt());
+        mvc.perform(post("/api/admin/tournament-broadcasts/v3/categories/2/nodes").contentType("application/json")
+                .content("{\"expectedVersion\":2,\"roundNumber\":1,\"format\":null}")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
+        verify(context.getBean(BroadcastService.class)).timedCreateNode(2,new BroadcastDtos.NodeCreate(2,1,null));
+    }
     @Test void anonymousReadsAndRealGlobalAdministratorAreTheOnlyAccessPaths() throws Exception {
         final BroadcastService service = context.getBean(BroadcastService.class);
         when(service.index(null)).thenReturn(new BroadcastDtos.Index(List.of("CN","ASIA","NA","EU","LESTA"), List.of(), false));
