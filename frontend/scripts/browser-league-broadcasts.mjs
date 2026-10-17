@@ -38,7 +38,6 @@ function recount(season) {
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
-  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, capabilities: ['creators-v1'] }); return }
   if (!path.startsWith(publicBase) && !path.startsWith(adminBase)) { next(); return }
   try {
     const admin = path.startsWith(adminBase), base = admin ? adminBase : publicBase
@@ -178,6 +177,7 @@ try {
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (scenario.width < 768) {
+        await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
         assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
       }
       await serverGeometry(page, scenario, 5)

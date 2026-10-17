@@ -55,11 +55,14 @@ export async function startFixtureServer({ middleware, allowedHosts } = {}) {
       name: 'wotb-browser-fixture-http-boundary',
       configureServer(instance) {
         if (middleware) instance.middlewares.use(middleware)
-        // Default backend capability for unrelated page tests; scenario middleware can emulate old APIs.
+        // Unrelated page tests use a published directory; scenario middleware can emulate empty/old APIs.
         instance.middlewares.use((request, response, next) => {
-          if (request.url?.split('?')[0] !== '/api/health') { next(); return }
+          const path = request.url?.split('?')[0]
+          if (request.method !== 'GET' || !['/api/health', '/api/creators/categories'].includes(path)) { next(); return }
           response.setHeader('Content-Type', 'application/json')
-          response.end(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1'] }))
+          response.end(JSON.stringify(path === '/api/health'
+            ? { status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1'] }
+            : [{ id: 1, name: 'Creator fixture' }]))
         })
       },
     }],

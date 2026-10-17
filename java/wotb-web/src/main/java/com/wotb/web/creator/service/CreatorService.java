@@ -55,6 +55,10 @@ public class CreatorService {
     }
     @Transactional(readOnly = true)
     public List<CreatorDtos.Category> categories() { return categories.findAllByOrderByIdAsc().stream().map(mapper::category).toList(); }
+    @Transactional(readOnly = true)
+    public List<CreatorDtos.Category> publicCategories() {
+        return categories.findPopulatedByOrderByIdAsc().stream().map(mapper::category).toList();
+    }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CreatorDtos.Metadata metadata() {
         return new CreatorDtos.Metadata(categories(), levels.findAllByOrderByIdAsc().stream().map(mapper::level).toList(), avatars.configured());

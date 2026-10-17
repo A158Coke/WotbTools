@@ -122,4 +122,6 @@ Android starts the same Vue application from `http://127.0.0.1:21653/index.html`
 
 ### 推荐目录的分批部署兼容
 
-AppShell中的useCreatorAvailability提供唯一的健康能力探测状态，侧栏、底栏、更多管理入口和ViewHost共同读取。只有后端健康响应明确声明creators-v1才开放目录；旧响应保留其它功能，推荐深链只显示可重试提示。该探测不替代useFeatureGate的网络判断，不轮询，也不保存到localStorage。
+AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，侧栏、底栏、更多管理入口和ViewHost共同读取。creators-v1表示技术能力；新增creators-content-visibility-v1确认公开分类只含有UP的分类。大众入口由成功的非空公开快照决定；空目录深链显示待发布与重试。真实tournament-admin保留空目录和管理入口，页面分类取管理metadata完整字典，不向公开快照写入私有字典。旧后端仅声明creators-v1时管理仍可用，大众入口保持隐藏。
+
+初次加载、恢复联网、窗口焦点、显式刷新及管理写入ACK触发共享读取；ACK会作废写前请求。失败保留最近成功快照，不伪造空目录或清掉已保存/正在编辑的草稿。公开分类失效后router.replace回全部，保留其他query/hash；管理员空分类不回退。该状态不替代useFeatureGate的网络判断，不轮询、不保存到localStorage，不承诺跨会话实时更新。

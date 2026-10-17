@@ -25,13 +25,27 @@ beforeEach(() => {
 })
 function host() { return mount(ViewHost, { global: { mocks: { $t: (key: string) => key }, stubs: { ReplayCapabilityAuthGate: { template: '<div data-testid="login-gate" />' } } } }) }
 describe('tournament deep-link page gates', () => {
+  it('distinguishes confirmed unpublished content from an unknown failed probe and preserves retry', async () => {
+    state.route.query.view = 'creators'
+    const directoryVisible = ref(false), contentKnown = ref(false), error = ref<unknown>(new Error('503')), refresh = vi.fn()
+    const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available: ref(true), directoryVisible, contentKnown, error, loading: ref(false), refresh } } } })
+    expect(wrapper.get('[data-testid=creators-unavailable]').text()).toContain('creators.availabilityFailed')
+    contentKnown.value = true; error.value = null; await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid=creators-not-published]').text()).toContain('creators.notPublished')
+    expect(wrapper.find('[data-testid=creator-directory]').exists()).toBe(false)
+    await wrapper.get('[data-testid=creators-availability-retry]').trigger('click'); expect(refresh).toHaveBeenCalledTimes(1)
+    directoryVisible.value = true; await wrapper.vm.$nextTick(); expect(wrapper.find('[data-testid=creator-directory]').exists()).toBe(true)
+    directoryVisible.value = false; await wrapper.vm.$nextTick(); expect(wrapper.find('[data-testid=creator-directory]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it.each(['creators', 'creators-config'])('withholds %s until the backend explicitly advertises support', async view => {
     state.route.query.view = view
     state.auth.authenticated.value = true
     state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
     const available = ref(false), refresh = vi.fn()
     const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
-      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available, loading: ref(false), refresh } } } })
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available, directoryVisible: available, contentKnown: ref(false), error: ref(null), loading: ref(false), refresh } } } })
     expect(wrapper.find('[data-testid="creator-config"], [data-testid="creator-directory"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="creators-unavailable"]').exists()).toBe(true)
     await wrapper.get('[data-testid="creators-availability-retry"]').trigger('click')

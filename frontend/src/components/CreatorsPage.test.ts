@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import card from '../../../contracts/http/fixtures/creator-card.json'
@@ -32,12 +33,13 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
+function availability() { return { publicCategories: computed(() => state.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}), refreshPublicCategories: vi.fn(async () => {}) } }
 async function publicPage(query = '') {
   state.auth.tokenParsed.value.realm_access.roles = []
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push(`/?view=creators&lang=ru${query}#list`); await router.isReady()
   const i18n = createI18n({ legacy: false, locale: 'zh', messages })
-  wrapper = mount(CreatorsPage, { attachTo: document.body, global: { plugins: [router, i18n] } })
+  wrapper = mount(CreatorsPage, { attachTo: document.body, global: { plugins: [router, i18n], provide: { [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
   await flushPromises()
   return { router, i18n }
 }
@@ -56,7 +58,7 @@ describe('creator category disclosure', () => {
     await toggle.trigger('click'); expect(options.isVisible()).toBe(false)
     expect(document.activeElement).toBe(toggle.element)
     expect(router.currentRoute.value.fullPath).toBe(before)
-    expect(listCreators).toHaveBeenCalledTimes(1); expect(listCreatorCategories).toHaveBeenCalledTimes(1)
+    expect(listCreators).toHaveBeenCalledTimes(1); expect(listCreatorCategories).not.toHaveBeenCalled()
     expect(wrapper!.findAll('.creator-card')).toHaveLength(1)
   })
   it('keeps the selected category visible in a collapsed summary and preserves state on refresh', async () => {
@@ -92,13 +94,14 @@ describe('creator category disclosure', () => {
     expect(wrapper!.get('[data-testid=creator-category-all]').attributes('aria-pressed')).toBe('true')
     expect(wrapper!.get('[data-testid=creator-category-options]').isVisible()).toBe(true)
   })
-  it('retains empty categories and uses a neutral summary for a missing category', async () => {
+  it('replaces a missing public category with all while preserving query and hash', async () => {
     state.categories.push({ id: 99, name: 'Empty category' }); state.cards = []
-    await publicPage('&creatorCategory=999')
+    const { router } = await publicPage('&creatorCategory=999')
     expect(wrapper!.get('[data-testid=creator-filter-99]').isVisible()).toBe(true)
     await wrapper!.get('[data-testid=creator-categories-toggle]').trigger('click')
-    expect(wrapper!.get('[data-testid=creator-selected-category]').text()).toBe('当前筛选')
-    expect(wrapper!.get('[data-testid=creator-category-all]').attributes('aria-pressed')).toBe('false')
+    expect(router.currentRoute.value.query).toEqual({ view: 'creators', lang: 'ru' })
+    expect(router.currentRoute.value.hash).toBe('#list')
+    expect(wrapper!.get('[data-testid=creator-category-all]').attributes('aria-pressed')).toBe('true')
   })
   it('has no disclosure for an empty dictionary and does not hide the page', async () => {
     state.categories = []; state.cards = []
@@ -111,10 +114,63 @@ describe('creator category disclosure', () => {
 })
 
 describe('creator public page management readiness', () => {
+  it('refreshes added and removed empty administrator categories without publishing them', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/?view=creators'); await router.isReady()
+    const publicState = availability()
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })],
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: publicState } } })
+    await flushPromises(); await wrapper.get('[data-testid=creator-categories-toggle]').trigger('click')
+    let resolveMetadata!: (value: CreatorMetadata) => void
+    vi.mocked(getCreatorMetadata).mockReturnValueOnce(new Promise(done => { resolveMetadata = done }))
+    await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
+    expect((wrapper.get('[data-testid=creator-refresh]').element as HTMLButtonElement).disabled).toBe(true)
+    resolveMetadata({ categories: [...card.categories, { id: 99, name: 'New empty category' }], levels: [], avatarUploadsAvailable: false })
+    await flushPromises()
+    expect(wrapper.get('[data-testid=creator-filter-99]').text()).toBe('New empty category')
+    expect(publicState.publicCategories.value).toEqual(card.categories)
+    await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
+    expect(wrapper.find('[data-testid=creator-filter-99]').exists()).toBe(false)
+    expect(publicState.refresh).toHaveBeenCalledTimes(2)
+    expect(listCreators).toHaveBeenCalledTimes(3)
+  })
+  it('preserves an open editor draft across a manual metadata refresh and keeps it on refresh failure', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/?view=creators'); await router.isReady()
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })],
+      provide: { [DIALOG_INLINE_KEY]: true, [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
+    await flushPromises(); await wrapper.get(`[data-testid=creator-edit-${card.id}]`).trigger('click'); await flushPromises()
+    await wrapper.get('[data-testid=creator-name]').setValue('Unsaved editor draft')
+    vi.mocked(getCreatorMetadata).mockResolvedValueOnce({ categories: [...card.categories, { id: 99, name: 'New empty category' }], levels: [], avatarUploadsAvailable: false })
+    await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
+    expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('Unsaved editor draft')
+    expect(wrapper.find('[data-testid=creator-category-99]').exists()).toBe(true)
+    vi.mocked(getCreatorMetadata).mockRejectedValueOnce(new ApiError({ errorCode: 'NETWORK_ERROR', retryable: true }))
+    await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
+    expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('Unsaved editor draft')
+    expect(wrapper.find('[data-testid=creator-category-99]').exists()).toBe(true)
+    expect(wrapper.find('[role=alert]').exists()).toBe(true)
+    expect(saveCreator).not.toHaveBeenCalled()
+  })
+  it('shows full management categories only to administrators and removes them on role loss', async () => {
+    state.categories = []
+    vi.mocked(getCreatorMetadata).mockResolvedValueOnce({ categories: [{ id: 99, name: 'Empty admin category' }], levels: [], avatarUploadsAvailable: false })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/?view=creators&creatorCategory=99&lang=ru#list'); await router.isReady()
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })],
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid=creator-filter-99]').text()).toBe('Empty admin category')
+    expect(router.currentRoute.value.query.creatorCategory).toBe('99')
+    state.auth.tokenParsed.value.realm_access.roles = []; await flushPromises()
+    expect(wrapper.find('[data-testid=creator-filter-99]').exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ view: 'creators', lang: 'ru' }); expect(router.currentRoute.value.hash).toBe('#list')
+    expect(wrapper.find('[data-testid=creator-edit-1]').exists()).toBe(false)
+  })
   it('disables an existing editor while reconnect refreshes metadata, then permits its save', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/?view=creators'); await router.isReady()
-    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true } } })
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true, [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
     await flushPromises(); await wrapper.get(`[data-testid=creator-edit-${card.id}]`).trigger('click'); await flushPromises()
     state.online.value = false; await flushPromises()
     let resolveMetadata!: (value: CreatorMetadata) => void
@@ -134,7 +190,7 @@ describe('creator public page management readiness', () => {
     vi.mocked(getCreatorMetadata).mockReturnValueOnce(new Promise(done => { resolveMetadata = done }))
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/?view=creators'); await router.isReady()
-    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true } } })
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true, [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
     await flushPromises()
     const remove = wrapper.get(`[data-testid=creator-remove-${card.id}]`)
     expect((remove.element as HTMLButtonElement).disabled).toBe(true)
@@ -152,7 +208,7 @@ describe('creator public page management readiness', () => {
   it('captures the card version before confirmation and does not replace a newer list version when removing', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/?view=creators'); await router.isReady()
-    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true } } })
+    wrapper = mount(CreatorsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true, [CREATOR_AVAILABILITY_KEY as symbol]: availability() } } })
     await flushPromises()
     let accept!: (value: boolean) => void
     vi.mocked(confirm).mockReturnValueOnce(new Promise(resolve => { accept = resolve }))
