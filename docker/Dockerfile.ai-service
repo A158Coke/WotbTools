@@ -1,6 +1,12 @@
 ARG BUILD_COMMIT=unknown
 FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /build
+COPY common/tankopedia-tier1.json common/tankopedia-tier1.json
+COPY common/tankopedia-tier2.json common/tankopedia-tier2.json
+COPY common/tankopedia-tier3.json common/tankopedia-tier3.json
+COPY common/tankopedia-tier4.json common/tankopedia-tier4.json
+COPY common/tankopedia-tier5.json common/tankopedia-tier5.json
+COPY common/tankopedia-tier6.json common/tankopedia-tier6.json
 COPY common/tankopedia-tier7.json common/tankopedia-tier7.json
 COPY common/tankopedia-tier8.json common/tankopedia-tier8.json
 COPY common/tankopedia-tier9.json common/tankopedia-tier9.json

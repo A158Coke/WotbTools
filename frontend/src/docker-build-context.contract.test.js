@@ -72,7 +72,7 @@ describe('docker/Dockerfile.frontend build context contract', () => {
   const copies = buildStageCopies()
 
   it('discovers the replay-local common inputs (scanner self-check)', () => {
-    for (const tier of [7, 8, 9, 10]) expect(inputs.has(`common/tankopedia-tier${tier}.json`)).toBe(true)
+    for (const tier of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) expect(inputs.has(`common/tankopedia-tier${tier}.json`)).toBe(true)
     expect(inputs.has('common/map_names.json')).toBe(true)
     expect(inputs.has('common/map-semantics')).toBe(true)
   })
