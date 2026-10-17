@@ -1522,10 +1522,10 @@
       "notFound": "This selection no longer exists. Returned to the nearest available parent.",
       "permissionLost": "Administrator access changed. Unsaved maintenance was cancelled.",
       "servers": {
-        "CN": "China",
-        "ASIA": "APAC",
-        "NA": "North America",
-        "EU": "Europe",
+        "CN": "CN Server",
+        "ASIA": "APAC Server",
+        "NA": "NA Server",
+        "EU": "EU Server",
         "LESTA": "Lesta"
       },
       "categories": {
