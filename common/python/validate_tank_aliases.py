@@ -6,8 +6,8 @@
 factual data: it only widens Tankopedia search recall and never participates in
 vehicle identity or display names (see docs/architecture/tankopedia-reference-data.md).
 
-Because it is hand edited, the contract is enforced here instead of being silently
-tolerated at runtime:
+Whether edited individually or imported from a reviewed client-name snapshot, the
+contract is enforced here instead of being silently tolerated at runtime:
 
 - the document is a JSON object mapping a canonical decimal tank id to a non-empty
   array of non-blank alias strings;
@@ -31,7 +31,7 @@ ALIAS_FILENAME = "tank_aliases.json"
 
 
 def _duplicate_free_object(pairs):
-    """json object hook: a repeated tank id would silently drop one hand-written entry."""
+    """json object hook: a repeated tank id would silently drop one curated entry."""
     seen = {}
     for key, value in pairs:
         if key in seen:
