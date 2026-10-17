@@ -5,12 +5,13 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **4.0.0 / 4000000**（`android/gradle.properties`）。
-保留main新增3.9.0的3D工具栏折叠功能，以及此前 3.8.1 的地球图标、3.8.0 的双类型推荐目录、3.7.0 的推荐目录内容灰度及上游 **v0.4.9** WASM pin；
-本次加入联赛季赛中英必填、俄文选填名称，以及积分赛数字小组号。名称与回放 HTTP shape 发生 breaking change，
-旧 APK 的严格响应校验不兼容，因此使用 major 4.0.0；Native Bridge 仍为 v3。
-**合并触发 stage 前须将 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `4000000`**，并按现有 stage、真机验收、publish 流程发布。
-初始化仅收录完整核实比赛日、对阵与阶段的记录，不用占位值填补缺失回放。
+截至 2026-10-18，本候选源码为 **3.10.0 / 3010000**（`android/gradle.properties`）。
+保留main的3.9.0工具栏折叠、3.8.1地球图标和此前推荐目录等功能，以及上游 **v0.4.9** WASM pin；
+本次加入联赛季赛中英必填、俄文选填名称和积分赛数字小组号。
+新版前端使用v2联赛接口；原接口保持旧APK要求的完整字段形状，并复用同一服务、数据和权限。
+后端先行部署不会让旧APK因严格校验失败而失去目录，故本次是minor 3.10.0，Native Bridge仍v3，
+最低支持版本门槛保持 `3000000`，不为这次功能强制升级。
+初始化仅收录核实比赛日、对阵与阶段的3条分场记录，不用占位值补全缺失回放。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。

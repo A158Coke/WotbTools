@@ -18,7 +18,8 @@ function reset() {
     nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'Final day — a long broadcast title for narrow screens', url: 'https://example.org/watch', matchDate: '2026-08-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed team', 'Other international team'], perspective: 'POV', coverId }] }],
     nextId: 100, failNext: false }
 }
-const publicBase = '/api/tournament-broadcasts', adminBase = '/api/admin/tournament-broadcasts'
+const publicBase = '/api/tournament-broadcasts/v2', adminBase = '/api/admin/tournament-broadcasts/v2'
+const coverBase = '/api/tournament-broadcasts/covers/'
 function send(response, status, value) {
   response.statusCode = status
   if (value === undefined) { response.end(); return }
@@ -38,13 +39,13 @@ function recount(season) {
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
+  if (path.startsWith(coverBase)) { response.statusCode = 404; response.end(); return }
   if (!path.startsWith(publicBase) && !path.startsWith(adminBase)) { next(); return }
   try {
     const admin = path.startsWith(adminBase), base = admin ? adminBase : publicBase
     const parts = path.slice(base.length).split('/').filter(Boolean), targetId = Number(parts[1])
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { failure(response, 403, 'AUTH_FORBIDDEN'); return }
     if (!parts.length) { send(response, 200, { servers, seasons: db.seasons.filter(value => value.server === url.searchParams.get('server')), coverUploadAvailable: true }); return }
-    if (parts[0] === 'covers') { response.statusCode = 404; response.end(); return }
     let season = parts[0] === 'seasons' ? db.seasons.find(value => value.id === targetId) : null
     let category = parts[0] === 'categories' ? db.categories.find(value => value.id === targetId) : null
     let node = parts[0] === 'nodes' ? db.nodes.find(value => value.id === targetId) : null

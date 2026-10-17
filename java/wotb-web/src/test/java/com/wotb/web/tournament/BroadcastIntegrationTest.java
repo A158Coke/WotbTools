@@ -1,6 +1,7 @@
 package com.wotb.web.tournament;
 
 import com.wotb.web.tournament.dto.BroadcastDtos;
+import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.service.BroadcastCosStorage;
 import com.wotb.web.tournament.service.BroadcastService;
 import com.wotb.web.util.apierror.ApiErrorCode;
@@ -100,6 +101,50 @@ class BroadcastIntegrationTest {
         assertNull(service.createSeason(new BroadcastDtos.SeasonCreate("CN",2026,"中文","English","  ",null)).season().nameRu());
         final BroadcastDtos.Season maximum = service.createSeason(new BroadcastDtos.SeasonCreate("CN",2026,"中".repeat(100),"e".repeat(100),"р".repeat(100),null)).season();
         assertEquals(100,maximum.nameZh().length()); assertEquals(100,maximum.nameEn().length()); assertEquals(100,maximum.nameRu().length());
+    }
+    @Test void legacySeasonWritesPreserveTranslationsAndShareVersionLocksWithV2() {
+        final long id = service.legacyCreateSeason(new BroadcastLegacyDtos.SeasonCreate("CN",2025," Original ",null)).season().id();
+        assertEquals("Original",service.season(id).season().nameZh()); assertEquals("Original",service.season(id).season().nameEn());
+        service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(0,2025,"Renamed",null));
+        assertEquals("Renamed",service.season(id).season().nameZh()); assertEquals("Renamed",service.season(id).season().nameEn());
+        service.updateSeason(id,new BroadcastDtos.SeasonUpdate(1,2025,"已翻译","English","Русский",null));
+        final var renamed = service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(2,2025,"New English",null));
+        assertEquals("New English",renamed.season().name()); assertEquals(3,renamed.season().version());
+        assertEquals("已翻译",service.season(id).season().nameZh()); assertEquals("Русский",service.season(id).season().nameRu());
+        assertCode(ApiErrorCode.BROADCAST_VERSION_CONFLICT,()->service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(2,2025,"Stale",null)));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateSeason(new BroadcastLegacyDtos.SeasonCreate("CN",2025," ",null)));
+        assertEquals("New English",service.legacyIndex("CN").seasons().stream().filter(value -> value.id()==id).findFirst().orElseThrow().name());
+    }
+    @Test void legacyReplayProjectionAndWritesUseTheRealCategoryWithoutGuessingGroups() {
+        final long points = service.legacyCreateCategory(seasonId,new BroadcastDtos.CategoryCreate(version(),"POINTS")).categories().getFirst().id();
+        final long root = service.legacyCreateNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
+        final var saved = service.legacyCreateReplay(root,legacyRequest("42",null,null),null).nodes().getFirst().replays().getFirst();
+        assertEquals("42",saved.groupLabel()); assertNull(saved.groupNumber());
+        assertEquals(42,service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
+        service.legacyUpdateReplay(saved.id(),legacyRequest("13",null,null),null);
+        assertEquals("13",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
+        for (final String label : new String[]{null,"A","Group 1","0","-1","2147483648"}) {
+            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest(label,null,null),null));
+        }
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest("1",1,null),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest("1",null,"DEFAULT"),null));
+        jdbc.update("update tournament_broadcast_replay set group_number=null,legacy_group_label='Group A' where id=?",saved.id());
+        assertEquals("Group A",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
+        assertNull(service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
+        final long semis = category("SEMI_FINALS");
+        final long semiRoot = service.legacyCreateNode(semis,new BroadcastDtos.NodeCreate(version(),null,null)).nodes().getFirst().id();
+        final var knockout = service.legacyCreateReplay(semiRoot,legacyRequest(null,4,"WINNERS"),null).nodes().getFirst().replays().getFirst();
+        assertNull(knockout.groupLabel()); assertEquals(4,knockout.groupNumber());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(semiRoot,legacyRequest("2",2,"DEFAULT"),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(semiRoot,legacyRequest(null,5,"DEFAULT"),null));
+        final long quarters = category("QUARTER_FINALS");
+        final long rrRoot = service.legacyCreateNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).nodes().getFirst().id();
+        assertNull(service.legacyCreateReplay(rrRoot,legacyRequest(null,null,null),null).nodes().getFirst().replays().getFirst().groupLabel());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest("2",null,null),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest(null,1,null),null));
+    }
+    private BroadcastLegacyDtos.ReplaySave legacyRequest(final String label, final Integer number, final String bracket) {
+        return new BroadcastLegacyDtos.ReplaySave(version(),"Title","https://example.org/legacy",LocalDate.of(2026,10,15),1,label,number,bracket,List.of("A","B"),"POV","KEEP");
     }
     @Test void v38UpgradePreservesLegacyNamesAndLocalizedEdits() {
         jdbc.execute("create database broadcast_names_upgrade");

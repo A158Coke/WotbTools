@@ -61,9 +61,9 @@ Android 通过现有业务 API URL resolver 读取图片，不能把 `/api/...` 
 
 ## 工程边界与验证
 
-- HTTP SSOT：`contracts/http/openapi.yaml` 的 `Broadcast*` schema。
-- 公开 API：`/api/tournament-broadcasts` 索引、`/seasons/{id}`、`/categories/{id}` 和被引用封面。
-- 管理 API：`/api/admin/tournament-broadcasts/**`，真实全站管理员，季赛版本保护所有树内写操作。
+- HTTP SSOT：`contracts/http/openapi.yaml` 的 `Broadcast*` 与 `LegacyBroadcast*` schema。
+- 新版公开 API：`/api/tournament-broadcasts/v2` 索引、`/v2/seasons/{id}`、`/v2/categories/{id}`；封面共用原 `/api/tournament-broadcasts/covers/{id}`。
+- 新版管理 API：`/api/admin/tournament-broadcasts/v2/**`，真实全站管理员，季赛版本保护所有树内写操作；原管理接口继续为旧APK服务。
 - 持久模型：Business API 的 tournament 域内 `Broadcast*`，独立 `tournament_broadcast_*` 表，
   不引用积分榜 `TournamentEvent`；Flyway V33 创建结构，V38增加三语名称，V39规范小组号，V40初始化已核实分场回放。
 - 前端：`useLeagueBroadcasts` 是公共数据和请求生命周期唯一 owner；API 模块负责 Bearer、错误、
@@ -85,5 +85,7 @@ APK 真机、COS 真实上传／展示／回收和生产发布均须按所属运
 相同自然身份的候选季赛不唯一时跳过并记录warning，由管理员确认归属，不随机选一个。
 迁移与手工重跑同一事务执行并序列化，不新增运行时导入开关或定时任务。后补数据使用新的迁移或现有管理员界面，不重写历史Flyway。
 
-HTTP shape更改涉及 `nameZh/nameEn/nameRu` 与数值 `groupNumber`，旧的单 `name` / `groupLabel` 客户端不兼容；
-Android使用4.0.0候选，合并stage前先设置major floor，见[发布手册](../android/release-process.md)。Native Bridge仍v3。
+新字段通过v2接口提供；原公开与管理端点保持旧single-name/groupLabel结构，不向旧响应添加会被严格校验拒绝的字段。
+两版共用已有Service、数据库、角色校验与版本锁。旧写入适配位于兼容边界；不允许旧编辑器清空已配的三语翻译。
+Android以minor 3.10.0提供新版界面，Bridge仍v3，最低支持门槛保持3000000；旧APK可在后端先行部署后继续读取和管理原结构。
+发布流程见[发布手册](../android/release-process.md)。
