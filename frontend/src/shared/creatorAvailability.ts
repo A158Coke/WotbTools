@@ -1,12 +1,15 @@
 import type { InjectionKey, Ref } from 'vue'
-import type { CreatorCategory } from '../api/creators.js'
+import type { RecommendationCategory, RecommendationType } from '../api/creators.js'
 
 export interface CreatorAvailability {
   available: Readonly<Ref<boolean>>
+  recommendationsSupported: Readonly<Ref<boolean>>
+  typeAvailable: (type: RecommendationType) => boolean
+  typeVisible: (type: RecommendationType) => boolean
   loading: Readonly<Ref<boolean>>
   error: Readonly<Ref<unknown>>
   contentKnown: Readonly<Ref<boolean>>
-  publicCategories: Readonly<Ref<readonly CreatorCategory[]>>
+  publicCategories: Readonly<Ref<readonly RecommendationCategory[]>>
   directoryVisible: Readonly<Ref<boolean>>
   refresh: () => Promise<void>
   refreshPublicCategories: () => Promise<void>

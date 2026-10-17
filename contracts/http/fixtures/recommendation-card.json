@@ -1,0 +1,20 @@
+{
+  "id": 3,
+  "version": 0,
+  "type": "VIDEO",
+  "externalId": "BV1xx411c7mD",
+  "name": "Example video",
+  "description": null,
+  "targetUrl": "https://www.bilibili.com/video/BV1xx411c7mD",
+  "imageUrl": null,
+  "categories": [
+    {
+      "id": 7,
+      "name": "Featured videos",
+      "type": "VIDEO"
+    }
+  ],
+  "level": null,
+  "score": 6,
+  "createdAt": "2026-10-17T00:00:00Z"
+}

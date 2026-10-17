@@ -24,6 +24,17 @@ describe('viewFromRoute publicly discoverable Agent views', () => {
 })
 
 describe('primary navigation', () => {
+  it('groups the type entry and both lists under one recommendation destination', () => {
+    expect(PRIMARY_NAV.find(item => item.id === 'creators').view).toBe('recommendations')
+    for (const view of ['creators', 'recommended-videos', 'recommendations']) {
+      expect(viewFromRoute({ path: '/', query: { view } })).toBe(view)
+      expect(primarySection(view)).toBe('creators')
+    }
+    const route = { path: '/', query: { view: 'creators', creatorCategory: '4', keep: 'yes' }, hash: '#list' }
+    expect(locationForView('recommended-videos', route)).toEqual({ path: '/', query: { view: 'recommended-videos', keep: 'yes' }, hash: '#list' })
+    expect(locationForView('recommendations', { path: '/', query: { view: 'creators-config', recommendationType: 'VIDEO', keep: 'yes' }, hash: '#list' }).query)
+      .toEqual({ view: 'recommendations', keep: 'yes' })
+  })
   it('discovers creator pages and cleans only creator-owned filter state when leaving', () => {
     expect(PRIMARY_NAV.findIndex(item => item.id === 'creators')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'league-broadcasts') + 1)
     expect(PRIMARY_NAV.findIndex(item => item.id === 'more')).toBe(PRIMARY_NAV.findIndex(item => item.id === 'creators') + 1)
