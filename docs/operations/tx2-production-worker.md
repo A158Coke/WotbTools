@@ -77,7 +77,7 @@ Compose YAML                     （不用 registry secret 注入）
 staging 目录                      （只 stage 脚本；临时凭据目录 0700 且立即删除）
 ```
 
-凭据来源是受保护 `tx-production` environment 的 `secrets.TCR_USERNAME` /
+凭据来源是repository-level Actions `secrets.TCR_USERNAME` /
 `secrets.TCR_PASSWORD`（registry 与 namespace 复用既有的 `vars.TCR_REGISTRY` /
 `vars.TCR_NAMESPACE`）。跨 sudo 只按名字 `--preserve-env`，不经 argv、磁盘或日志。
 

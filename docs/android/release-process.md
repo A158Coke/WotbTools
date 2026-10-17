@@ -215,7 +215,7 @@ Seafile 的**国际入口**，不是跨洋本身。因此候选方案是把「�
 （runner → 上海 COS → TX1 → 网盘）：`.github/workflows/android-offload-probe.yml` 是它的第一步，
 **只取数字**，不动发布路径。
 
-何时跑：`workflow_dispatch`（`environment: tx-production`，与部署/备份共用
+何时跑：`workflow_dispatch`（凭据读取 repository-level Actions secrets / variables，与部署/备份共用
 `production-maintenance` 队列，并与 `android-release` 用 job 级 `concurrency` **互斥**——两边写同一门
 Seafile 网盘，重叠会让探针数字失真，也会挤占发布那条已经贴着 `--max-time 2700` 的上传）。它要求
 dispatched SHA == 当前 `main`（运行期间 main 一前进即失败），不写 version.json / tag / staging
