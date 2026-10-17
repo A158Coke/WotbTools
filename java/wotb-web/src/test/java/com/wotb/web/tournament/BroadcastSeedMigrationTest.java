@@ -24,6 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -206,7 +207,7 @@ class BroadcastSeedMigrationTest {
         final Flyway current = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).load();
         current.migrate(); current.validate();
         assertEquals("43",current.info().current().getVersion().toString());
-        assertCounts(19,28,32,74);
+        assertCounts(20,29,33,74);
         assertEquals(prior,jdbc.queryForList("select * from tournament_broadcast_replay where url like 'https://www.bilibili.com/%' order by id"));
         final String source = Files.readString(Path.of("..","..","docs","research","broadcast-seed-2025-2026","seed-ready-2025-2026-verified.json"),StandardCharsets.UTF_8).replace("\r\n","\n");
         final String hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(source.getBytes(StandardCharsets.UTF_8)));
@@ -238,6 +239,28 @@ class BroadcastSeedMigrationTest {
             if (replay.get("bracket").isNull()) { assertNull(row.get("bracket")); } else { assertEquals(replay.get("bracket").asText(),row.get("bracket")); }
             assertEquals(replay.get("teams"),JSON.readTree(row.get("teams").toString())); assertEquals(replay.get("perspective").asText(),row.get("perspective"));
         }
+        // Official New Horizons DE spans March 15–16; stream-title "Day 3" is not the stage day.
+        for (final String video : List.of("VWT0AE2RmWc","GU9PXRxLG2I","2Te4Q2hwn7g","1rPFxY60wXs")) {
+            final var corrected = jdbc.queryForMap("select replay.match_date,replay.day_number,season.year,season.name_en,category.type "
+                    + "from tournament_broadcast_replay replay join tournament_broadcast_node node on node.id=replay.node_id "
+                    + "join tournament_broadcast_category category on category.id=node.category_id join tournament_broadcast_season season on season.id=category.season_id where replay.url=?",
+                    "https://www.youtube.com/watch?v="+video);
+            assertEquals("2025-03-16",corrected.get("match_date").toString()); assertEquals(2,corrected.get("day_number"));
+            assertEquals(2025,corrected.get("year")); assertEquals("Blitz Masters: New Horizons",corrected.get("name_en"));
+            assertEquals("SEMI_FINALS",corrected.get("type"));
+        }
+        final var challengers = jdbc.queryForMap("select replay.node_id,replay.match_date,replay.day_number,season.id as season_id,season.server,season.year,season.name_en "
+                + "from tournament_broadcast_replay replay join tournament_broadcast_node node on node.id=replay.node_id "
+                + "join tournament_broadcast_category category on category.id=node.category_id join tournament_broadcast_season season on season.id=category.season_id "
+                + "where replay.url='https://www.youtube.com/watch?v=OyMQG6OR27o'");
+        final var professionals = jdbc.queryForMap("select replay.node_id,category.season_id from tournament_broadcast_replay replay "
+                + "join tournament_broadcast_node node on node.id=replay.node_id join tournament_broadcast_category category on category.id=node.category_id "
+                + "where replay.url='https://www.youtube.com/watch?v=guIa_J5h9bI'");
+        assertEquals("EU",challengers.get("server")); assertEquals(2025,challengers.get("year"));
+        assertEquals("Blitz Diamond Cup — Challengers",challengers.get("name_en"));
+        assertEquals("2025-09-05",challengers.get("match_date").toString()); assertEquals(1,challengers.get("day_number"));
+        assertNotEquals(professionals.get("season_id"),challengers.get("season_id"));
+        assertNotEquals(professionals.get("node_id"),challengers.get("node_id"));
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_broadcast_replay where match_starts_at is not null",Integer.class));
         jdbc.update("update tournament_broadcast_season set name_zh='Own zh',name_en='Own en',name_ru='Own ru',start_date='2026-01-01',version=9 where server='EU'");
         jdbc.update("update tournament_broadcast_replay set title='Own title',teams='[\"Own1\",\"Own2\"]'::jsonb,match_starts_at='2026-01-01T08:00:00Z',match_date='2026-01-01' where url like 'https://www.youtube.com/%'");
@@ -245,7 +268,7 @@ class BroadcastSeedMigrationTest {
         final var seasons = jdbc.queryForList("select * from tournament_broadcast_season order by id");
         final var replays = jdbc.queryForList("select * from tournament_broadcast_replay order by id");
         jdbc.execute(verifiedSeedSql()); jdbc.execute(verifiedSeedSql());
-        assertCounts(19,28,32,74); assertEquals(seasons,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+        assertCounts(20,29,33,74); assertEquals(seasons,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
         assertEquals(replays,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
     }
     @ParameterizedTest
@@ -257,13 +280,13 @@ class BroadcastSeedMigrationTest {
         final var seasonBefore = jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner);
         jdbc.execute(verifiedSeedSql());
         // The administrator's existing video stays in its Top 4 node; no empty PYS #1 node is created.
-        assertCounts(18,27,30,71);
+        assertCounts(19,28,31,71);
         assertEquals(before,jdbc.queryForMap("select * from tournament_broadcast_replay where id=?",before.get("id")));
         assertEquals(seasonBefore,jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner));
         assertEquals(6L,jdbc.queryForObject("select version from tournament_broadcast_season where id=?",Long.class,owner));
         assertEquals(8,jdbc.queryForObject("select count(*) from tournament_broadcast_replay replay join tournament_broadcast_node node on node.id=replay.node_id join tournament_broadcast_category category on category.id=node.category_id where category.season_id=?",Integer.class,owner));
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_broadcast_node node join tournament_broadcast_category category on category.id=node.category_id where category.season_id=? and category.type='POINTS' and node.round_number=1",Integer.class,owner));
-        jdbc.execute(verifiedSeedSql()); assertCounts(18,27,30,71);
+        jdbc.execute(verifiedSeedSql()); assertCounts(19,28,31,71);
         assertEquals(6L,jdbc.queryForObject("select version from tournament_broadcast_season where id=?",Long.class,owner));
     }
     @Test void v43SplitSourceOwnershipSkipsWholeEventAndStillImportsOtherEvents() throws Exception {
@@ -312,7 +335,7 @@ class BroadcastSeedMigrationTest {
         final var replayBefore = jdbc.queryForMap("select * from tournament_broadcast_replay where id=?",replay);
         final var seasonBefore = jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner);
         jdbc.execute(verifiedSeedSql());
-        assertCounts(18,27,31,71);
+        assertCounts(19,28,32,71);
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_broadcast_replay where url='https://www.youtube.com/watch?v=sYURrUAi-oE'",Integer.class));
         assertEquals(70,jdbc.queryForObject("select count(*) from tournament_broadcast_replay where url like 'https://www.youtube.com/%'",Integer.class));
         assertEquals(rootBefore,jdbc.queryForMap("select * from tournament_broadcast_node where id=?",root));
@@ -320,7 +343,7 @@ class BroadcastSeedMigrationTest {
         assertEquals(seasonBefore,jdbc.queryForMap("select name_zh,name_en,name_ru,start_date from tournament_broadcast_season where id=?",owner));
         assertEquals(6L,jdbc.queryForObject("select version from tournament_broadcast_season where id=?",Long.class,owner));
         jdbc.execute(verifiedSeedSql());
-        assertCounts(18,27,31,71);
+        assertCounts(19,28,32,71);
         assertEquals(6L,jdbc.queryForObject("select version from tournament_broadcast_season where id=?",Long.class,owner));
     }
     private void prepareVerifiedSeed() {

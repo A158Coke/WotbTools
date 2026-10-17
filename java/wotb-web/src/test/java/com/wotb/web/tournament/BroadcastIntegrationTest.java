@@ -179,6 +179,20 @@ class BroadcastIntegrationTest {
         assertEquals("42",numeric.groupLabel()); assertNull(numeric.groupNumber());
         assertEquals(42,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
         assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.updateReplay(numeric.id(),request("V2 same numeric group","2026-10-15",1,42,null,List.of("A","B"),"KEEP"),null);
+        assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.timedUpdateReplay(numeric.id(),new BroadcastDtos.TimedReplaySave(
+                request("V3 same numeric group","2026-10-15",1,42,null,List.of("A","B"),"KEEP"),null),null);
+        assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.updateReplay(numeric.id(),request("V2 different numeric group","2026-10-15",1,43,null,List.of("A","B"),"KEEP"),null);
+        assertEquals(43,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
+        assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.legacyUpdateReplay(numeric.id(),legacyRequest("00042",null,null),null);
+        service.timedUpdateReplay(numeric.id(),new BroadcastDtos.TimedReplaySave(
+                request("V3 different numeric group","2026-10-15",1,43,null,List.of("A","B"),"KEEP"),null),null);
+        assertEquals(43,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
+        assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
+        service.legacyUpdateReplay(numeric.id(),legacyRequest("00042",null,null),null);
         service.updateReplay(numeric.id(),request("V2 clear numeric","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null);
         assertNull(jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
         assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));

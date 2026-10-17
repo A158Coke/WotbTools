@@ -233,9 +233,9 @@ public class BroadcastService {
             if (timedWrite) { replay.matchStartsAt = startsAt == null ? null : startsAt.truncatedTo(ChronoUnit.MICROS); }
             else if (!Objects.equals(replay.matchDate, request.matchDate())) { replay.matchStartsAt = null; }
             replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
-            // Current clients cannot see a nonnumeric legacy label; an unrelated edit must retain it.
-            // A legacy editor can clear the label explicitly; numeric changes also replace that archive.
-            if (legacyWrite || request.groupNumber() != null || replay.groupNumber != null) {
+            // Current clients cannot see the legacy spelling; unrelated edits must retain the archive.
+            // A legacy editor can clear it explicitly; an actual group-number change also replaces it.
+            if (legacyWrite || !Objects.equals(request.groupNumber(), replay.groupNumber)) {
                 replay.legacyGroupLabel = legacyGroupLabel;
             }
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
