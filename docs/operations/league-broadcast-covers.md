@@ -5,7 +5,7 @@
 
 ## 配置与权限
 
-在 GitHub `tx-production` environment 配置以下变量／secret：
+在 GitHub repository-level Actions variables / secrets 配置以下项目：
 
 | 名称 | 类型 | 用途 |
 | --- | --- | --- |

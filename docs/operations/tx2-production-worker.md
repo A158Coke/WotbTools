@@ -77,13 +77,13 @@ Compose YAML                     （不用 registry secret 注入）
 staging 目录                      （只 stage 脚本；临时凭据目录 0700 且立即删除）
 ```
 
-凭据来源是受保护 `tx-production` environment 的 `secrets.TCR_USERNAME` /
+凭据来源是repository-level Actions `secrets.TCR_USERNAME` /
 `secrets.TCR_PASSWORD`（registry 与 namespace 复用既有的 `vars.TCR_REGISTRY` /
 `vars.TCR_NAMESPACE`）。跨 sudo 只按名字 `--preserve-env`，不经 argv、磁盘或日志。
 
 ### 凭据生成（credential generation）：desired state 的权威输入
 
-凭据的**生成号**决定收敛，认证只是额外功能验证。受保护 `tx-production` environment 提供
+凭据的**生成号**决定收敛，认证只是额外功能验证。repository-level Actions 配置提供
 `vars.TCR_CREDENTIAL_VERSION`（**非密**、正整数、reviewed）与 `secrets.TCR_USERNAME` /
 `secrets.TCR_PASSWORD`；host 在 state root 记录自己实际应用的生成号：
 
@@ -114,7 +114,7 @@ config → 原子安装 `/root/.docker/config.json` → 用已安装的 root con
 
 ```text
 1. 在 TCR 侧 provision / 启用新凭据（旧凭据暂时保持有效）
-2. 更新受保护 environment 的 secrets.TCR_USERNAME / secrets.TCR_PASSWORD
+2. 更新 repository-level Actions secrets.TCR_USERNAME / secrets.TCR_PASSWORD
 3. 递增 vars.TCR_CREDENTIAL_VERSION（例如 2 → 3）
 4. 运行 Production Worker reconcile（merge 后自动触发，或手工 dispatch）
 5. 确认输出 TX2_PRODUCTION_WORKER_READY，且 host 上的 tcr-credential-version == 新值
@@ -150,7 +150,7 @@ TX2_PRODUCTION_WORKER_READY
 ```text
 1. 主机：Ubuntu + Docker（发行版或官方安装，二者都行）+ WireGuard 身份 + TX2 deploy-owned
    /opt/wotb-tx2/（含 .deploy.lock）；Periphery 由 komodo-periphery.yml 独立 reconcile
-2. GitHub：`tx-production` environment 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD，
+2. GitHub：repository-level Actions 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD，
    以及 vars.TCR_CREDENTIAL_VERSION（正整数生成号；缺失或非法即 fail closed）；
    仓库 variables TCR_REGISTRY / TCR_NAMESPACE 必须指向 TCR
 3. dispatch `Production Worker`（或在 main 上改动 deploy/production-worker/** 触发）

@@ -26,7 +26,7 @@ Prometheus must have six UP jobs: wotb-backend (WireGuard `10.20.0.1:8088`), ai-
 
 1. Confirm the client includes the new telemetry producer; older Web bundles/APKs cannot emit these events.
 2. In DevTools verify `/api/observability/events` returns 204. Never copy bearer headers or request identities into tickets.
-3. For active-user 503, verify the business-api runtime has a configured `WOTB_OBSERVABILITY_HASH_KEY` of at least 32 characters without printing it. Provision the GitHub protected-environment secret and deploy the owner normally. A 401 means no valid verified identity; do not bypass auth.
+3. For active-user 503, verify the business-api runtime has a configured `WOTB_OBSERVABILITY_HASH_KEY` of at least 32 characters without printing it. Provision the repository-level Actions secret and deploy the owner normally. A 401 means no valid verified identity; do not bypass auth.
 4. Check business-api structured logs for `event=product_telemetry`, then check TX Alloy → WireGuard → Yecao Loki.
 5. Events are best effort; offline/blocked uploads and shutdown can undercount. Query-series-limit errors are explicit failures, not partial populations. Inspect Loki logs and query cost before raising limits.
 
