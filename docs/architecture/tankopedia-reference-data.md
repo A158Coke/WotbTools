@@ -2,8 +2,8 @@
 
 ## Decision
 
-Tankopedia is application-level immutable reference data. The four classpath resources
-`tankopedia-tier7.json` through `tankopedia-tier10.json` are loaded exactly once per JVM and shared by
+Tankopedia is application-level immutable reference data. The ten classpath resources
+`tankopedia-tier1.json` through `tankopedia-tier10.json` are loaded exactly once per JVM and shared by
 all backend consumers.
 
 The application-level entry point is:
@@ -115,15 +115,14 @@ different owner and lifecycle from the files above:
   `common/tank_ids.json`, which covers **every tier**, so any Tankopedia vehicle can carry aliases.
   See the next section.
 
-`tank_cache.json` (asset plane) and `tankopedia-tier{7,8,9,10}.json` (this document) remain the
+`tank_cache.json` (asset plane) and `tankopedia-tier{1..10}.json` (this document) remain the
 factual vehicle data; the alias file is additive metadata beside them.
 
 ## The complete vehicle roster (`common/tank_ids.json`)
 
-The tier files deliberately stop at the business tiers (`filter_to_business_tiers`), while the
-Tankopedia page renders the asset plane's `tank_cache.json`, which contains every tier. Anything that
-has to resolve an arbitrary `tank_id` offline — the alias validator and its maintenance workflow —
-therefore had no complete in-repo reference. `common/tank_ids.json` fills exactly that gap:
+The tier files and the asset plane's `tank_cache.json` cover every tier.
+`common/tank_ids.json` remains the generated offline reference for the alias validator and its
+maintenance workflow, which require only an ID and name:
 
 ```json
 {
@@ -139,7 +138,7 @@ therefore had no complete in-repo reference. `common/tank_ids.json` fills exactl
 ```
 
 - **`tank_id` ↔ authoritative name only.** No tier, no stats, no images. Vehicle facts stay in the
-  tier files (tier 7-10) and in the asset plane (`tank_cache.json`, all tiers); the roster is a
+  tier files (tiers 1-10) and in the asset plane (`tank_cache.json`, all tiers); the roster is a
   join-key reference, not a data source, and must never be read for vehicle properties.
 - **Generated, never hand-edited.** `common/python/update_tankopedia.py:roster_payload` builds it
   from the *unfiltered* `parse_tanks` result of the same stable BlitzKit snapshot that produces the
@@ -152,9 +151,9 @@ therefore had no complete in-repo reference. `common/tank_ids.json` fills exactl
   `MIN_TIER_COUNT_RATIO` (the same threshold the tier data uses). `RosterTest` in
   `common/python/tests/test_update_tankopedia.py` additionally asserts that every vehicle in the
   committed tier files appears in the committed roster **under the same name**, and that the roster
-  is strictly larger than the tier files. The reverse is deliberately not asserted: the roster also
-  holds tiers 1-6 and may come from a newer snapshot than the tier files.
-- **Population.** 738 vehicles at game 11.21.0.1235 (tiers 1-10), versus 473 in the business tiers.
+  covers at least the tier-file population. The reverse is deliberately not asserted: the roster
+  may come from a newer snapshot than the tier files.
+- **Population.** 738 vehicles at game 11.21.0.1235 (tiers 1-10), matching the current all-tier attribute library.
   It is derived from the same BlitzKit client definitions that `tank_cache.json` is built from, so
   the two populations track each other; a vehicle that upstream has published but the roster has not
   been refreshed for is rejected until the data sync runs, which is the intended fail-closed
@@ -239,3 +238,14 @@ Regression tests should preserve these invariants:
 3. Repeated access does not reload classpath resources.
 4. Published collections such as known vehicle names are immutable.
 5. Existing Tankopedia lookup semantics remain unchanged by the lifecycle refactor.
+
+## AI free-text name matching
+
+The complete ID/name library remains available to roster and vehicle lookups.
+`TankNameCorrector` excludes coordinate-shaped names (A1–K10, including D1, D2 and B1)
+and reviewed ambiguous English word/person names (including Agent, Wind, Fury, Explorer,
+Ranger and IS) from its free-text matching index. Both canonical spellings and aliases resolving
+to these ambiguous names are excluded, even next to a roster nickname: parentheses alone do not
+prove a vehicle context. These spans remain unchanged and produce no correction/detection records.
+Unambiguous model names retain the existing correction rules. All names remain available through
+Tankopedia ID and roster lookup.

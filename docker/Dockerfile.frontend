@@ -15,10 +15,10 @@ COPY frontend/ .
 COPY common/map_names.json /common/map_names.json
 # Assault static geometry is resolved by mapCode from semantic JSON at build time.
 COPY common/map-semantics /common/map-semantics
-# Tankopedia 车辆库：本机回放计算（replay-local/compute/tankopedia.ts）按需 import tier7–10，
+# Tankopedia 车辆库：本机回放计算（replay-local/compute/tankopedia.ts）按需 import tier1–10，
 # 百场 / 隐藏 QA 页用 tier10。common/ 是唯一事实源，按仓库相对路径放到 /common；
 # frontend/src/docker-build-context.contract.test.js 断言前端引用的每个仓库外构建输入都在这里 COPY。
-COPY common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json /common/
+COPY common/tankopedia-tier1.json common/tankopedia-tier2.json common/tankopedia-tier3.json common/tankopedia-tier4.json common/tankopedia-tier5.json common/tankopedia-tier6.json common/tankopedia-tier7.json common/tankopedia-tier8.json common/tankopedia-tier9.json common/tankopedia-tier10.json /common/
 # 坦克百科搜索别名（人工维护的搜索 metadata，utils/tankopediaQuery.js 构建期 import）：
 # 与车辆库同一机制按仓库相对路径放到 /common；空对象 `{}` 也必须在上下文里，否则 Vite 解析不到该 import。
 COPY common/tank_aliases.json /common/tank_aliases.json

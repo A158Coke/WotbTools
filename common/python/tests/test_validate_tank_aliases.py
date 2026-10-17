@@ -35,20 +35,20 @@ class CommittedTankAliasesTest(unittest.TestCase):
         self.assertIsInstance(warnings, list)
 
     def test_vehicle_reference_covers_every_tier_offline(self):
-        """校验源是完整名册（common/tank_ids.json），不是业务 tier 子集。"""
+        """校验源是完整名册（common/tank_ids.json），覆盖全等级。"""
         known_tank_ids = validator.load_known_tank_ids()
         # FV215b 183（tier 10）与 T-34（tier 5）都必须可解析
         self.assertIn(9297, known_tank_ids)
         self.assertIn(1, known_tank_ids)
-        # 名册严格大于 tier 7-10 文件的并集，否则就回到了旧的 tier 限制
+        # 名册覆盖全部 tier 文件；资料库同样全等级后允许人口相等。
         tier_ids = set()
         for filename in ut.TIER_FILES.values():
             with open(os.path.join(ut.REPO_COMMON_DIR, filename), encoding="utf-8") as handle:
                 tier_ids.update(vehicle["id"] for vehicle in json.load(handle)["vehicles"])
         self.assertTrue(tier_ids <= known_tank_ids)
-        self.assertGreater(len(known_tank_ids), len(tier_ids))
-        # T-34 不在 tier 文件里：它能通过校验正是本次修复的要点
-        self.assertNotIn(1, tier_ids)
+        self.assertGreaterEqual(len(known_tank_ids), len(tier_ids))
+        # T-34 现已进入低级车型资料，并继续通过名册校验。
+        self.assertIn(1, tier_ids)
 
     def test_alias_on_vehicle_outside_business_tiers_validates(self):
         known_tank_ids = validator.load_known_tank_ids()
