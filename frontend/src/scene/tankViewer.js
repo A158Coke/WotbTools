@@ -212,13 +212,14 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
 
         function getPlateThickness(section, plateId) {
             // BlitzKit resolveArmor 语义：thickness = armor.thickness[index] ?? 0。
-            // 数据源只有 models.pb 合成的 tankData.armor_model（armor_cache.json 已退役）；
-            // 缺板（如序列化时省略的 0 值板）记 0mm，0 厚度板照常渲染/判定。
+            // 炮塔有两套（stock/top）：唯一权威来源是当前 config 的逐炮塔
+            // tank/{id}.json configs[].turret_plates（models.pb 逐炮塔透出）；
+            // 缺失即 0mm fail-closed，不回退到顶级炮塔摘要 armor_model。
             const am = tankData.armor_model || {};
             const id = String(plateId);
             if (section === 'hull') return am.hull?.plates?.[id] ?? 0;
-            if (section === 'turret') return am.turret?.plates?.[id] ?? 0;
-            if (section === 'gun') return am.gun?.plates?.[id] ?? 0;
+            if (section === 'turret') return currentConfig()?.turret_plates?.[id] ?? 0;
+            if (section === 'gun') return currentConfig()?.gun_plates?.[id] ?? 0;
             if (section === 'chassis') {
                 const ch = am.chassis;
                 if (!ch) return 0;
@@ -226,8 +227,9 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 if (plateId === 'rightTrack') return ch.right_track ?? 0;
             }
             if (section === 'gunBarrel') {
-                // 炮管：armor_model 的 'gun' 汇总值优先，缺失回退 models.pb 的 gun_thickness
-                return am.gun?.plates?.['gun'] ?? currentConfig()?.gun_thickness ?? 0;
+                // 炮管外部模块厚度：当前 config 的 gun_thickness 是唯一权威来源（models.pb
+                // 按主炮透出）；armor_model 的 'gun' 是顶级炮塔摘要，不再作为回退。
+                return currentConfig()?.gun_thickness ?? 0;
             }
             return 0;
         }
@@ -1935,8 +1937,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const cfg = currentConfig();
             const am = tankData.armor_model || {};
             const hullSpaced = new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String));
-            const turretSpaced = new Set((cfg?.turret_spaced ?? am.turret?.spaced ?? []).map(String));
-            const gunSpaced = new Set((cfg?.gun_spaced ?? am.gun?.spaced ?? []).map(String));
+            const turretSpaced = new Set((cfg?.turret_spaced ?? []).map(String));
+            const gunSpaced = new Set((cfg?.gun_spaced ?? []).map(String));
             root.traverse(function(node) {
                 if (!node.isMesh) return;
                 const section = node.userData.armorSectionOrig;
@@ -1946,6 +1948,21 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                                (section === 'turret' && turretSpaced.has(plateId)) ||
                                (section === 'gun' && gunSpaced.has(plateId));
                 node.userData.armorSection = spaced ? 'spaced' : (section === 'gun' ? 'turret' : section);
+            });
+        }
+
+        function refreshConfigArmorThickness() {
+            // 逐炮塔/逐主炮 plates 随 config 切换：tagArmorPlates 只在装甲模型加载时跑一次，
+            // 之后切 stock/top 必须按当前 config 重算 turret/gun userData.armorThickness，
+            // 否则热力图/点击信息仍沿用加载时那套 config 的值。
+            if (!armorModel) return;
+            armorModel.traverse(function(node) {
+                if (!node.isMesh) return;
+                const section = node.userData.armorSectionOrig;
+                if (section !== 'turret' && section !== 'gun') return;
+                const plateId = node.userData.armorPlateId;
+                if (!plateId) return;
+                node.userData.armorThickness = getPlateThickness(section, plateId);
             });
         }
 
@@ -2021,8 +2038,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             const cfg = currentConfig();
             const spacedBySection = {
                 hull: new Set((tankData.hull_spaced ?? am.hull?.spaced ?? []).map(String)),
-                turret: new Set((cfg?.turret_spaced ?? am.turret?.spaced ?? []).map(String)),
-                gun: new Set((cfg?.gun_spaced ?? am.gun?.spaced ?? []).map(String)),
+                turret: new Set((cfg?.turret_spaced ?? []).map(String)),
+                gun: new Set((cfg?.gun_spaced ?? []).map(String)),
             };
             armorModel.traverse(function(node) {
                 if (!node.isMesh) return;
@@ -4036,6 +4053,7 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
             applyConfigVisible(tankModel, cfg.gun_index, cfg.turret_index);
             applyArmorConfigVisible(cfg);
             retagSpacedSections();
+            refreshConfigArmorThickness();
             alignArmorModules();
             origMatrices = null;
             armorOrigMatrices = null;
