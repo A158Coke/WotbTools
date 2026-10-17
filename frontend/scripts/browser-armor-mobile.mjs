@@ -429,8 +429,8 @@ async function runMobileScenario(env, scenario) {
       })
       const sheet = await page.waitForValue(`(${pickerSheetProbe.toString()})()`, value => value?.sheet === true && value.boxes.every(box => box?.visible),
         { timeout: 5000, label: 'picker filter sheet' }).catch(() => null)
-      check(failures, !!sheet && sheet.boxes.every(box => box && box.height >= 43.5),
-        `${label}: 筛选 sheet 的四个筛选控件缺失或低于 44px（${JSON.stringify(sheet?.boxes)}）`)
+      check(failures, !!sheet && sheet.boxes.every(box => box && box.height >= 43.5) && sheet.done && sheet.done.height >= 43.5,
+        `${label}: 筛选 sheet 的筛选控件/完成按钮缺失或低于 44px（boxes=${JSON.stringify(sheet?.boxes)} done=${JSON.stringify(sheet?.done)}）`)
       // 关闭 sheet：优先点「完成」按钮（确定性入口；scrim 点击在弹窗叠层下时序不稳定）。
       const done = await page.evaluate(`(() => {
         const el = document.querySelector('[data-testid="filter-sheet-done"]')
@@ -787,7 +787,12 @@ function pickerSheetProbe() {
     const rect = el.getBoundingClientRect()
     return { width: Math.round(rect.width), height: Math.round(rect.height), visible: rect.width > 0 && rect.height > 0 }
   })
-  return { sheet: !!sheet, boxes }
+  const doneEl = document.querySelector('[data-testid="filter-sheet-done"]')
+  const doneRect = doneEl ? doneEl.getBoundingClientRect() : null
+  const done = doneRect
+    ? { width: Math.round(doneRect.width), height: Math.round(doneRect.height), visible: doneRect.width > 0 && doneRect.height > 0 }
+    : null
+  return { sheet: !!sheet, boxes, done }
 }
 async function runPickerCardsScenario(env, scenario) {
   const failures = []

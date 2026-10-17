@@ -117,16 +117,46 @@ function clearFilters() {
 
 // 手机筛选 sheet（与坦克百科同一交互）
 const sheetOpen = ref(false)
+const sheetRef = ref(null)
 let sheetOpener = null
 function toggleSheet() {
   if (sheetOpen.value) return closeSheet()
   sheetOpener = document.activeElement
   sheetOpen.value = true
+  // 焦点进入 sheet：Esc 才能命中 sheet 自己的 handler，Tab 也不会跑到背景控件。
+  nextTick(() => sheetRef.value?.querySelector('button, select, input')?.focus?.())
 }
 function closeSheet() {
   sheetOpen.value = false
-  sheetOpener?.focus?.()
+  const opener = sheetOpener
   sheetOpener = null
+  nextTick(() => opener?.focus?.())
+}
+/**
+ * 筛选区键盘处理：只有 compact sheet 打开时才拦截 Escape/Tab。
+ * 桌面/平板的普通筛选行必须让 Escape 继续冒泡，由外层选车弹窗关闭；
+ * sheet 打开时 Escape 只关 sheet，不再连带关闭整个弹窗。
+ */
+function onSheetKeydown(event) {
+  if (!isCompact.value || !sheetOpen.value) return
+  if (event.key === 'Escape') {
+    event.stopPropagation()
+    closeSheet()
+    return
+  }
+  if (event.key !== 'Tab') return
+  // sheet 是弹窗内的二级 modal：Tab 也停在本层，避免外层 picker 的 Tab trap 介入。
+  event.stopPropagation()
+  const root = sheetRef.value
+  if (!root) return
+  const focusable = [...root.querySelectorAll('button, select, input')].filter(el => !el.disabled)
+  const first = focusable[0], last = focusable[focusable.length - 1]
+  if (!first) return
+  if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
+    event.preventDefault(); last?.focus()
+  } else if (!event.shiftKey && (document.activeElement === last || !root.contains(document.activeElement))) {
+    event.preventDefault(); first?.focus()
+  }
 }
 
 function hideBrokenImage(event) {
@@ -185,12 +215,13 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
     <div v-if="isCompact && sheetOpen" class="tp-sheet-scrim" aria-hidden="true" @click="closeSheet"></div>
     <div
       v-if="!isCompact || sheetOpen"
+      ref="sheetRef"
       class="tp-filters"
       :class="{ 'is-sheet': isCompact }"
       :role="isCompact ? 'dialog' : undefined"
       :aria-label="isCompact ? t('filters.title') : undefined"
       data-testid="tank-filters" data-tour="tankopedia-filters"
-      @keydown.esc.stop="isCompact && closeSheet()"
+      @keydown="onSheetKeydown"
     >
       <div v-if="isCompact" class="tp-sheet-head">
         <strong>{{ t('filters.title') }}</strong>
@@ -321,6 +352,13 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 .tank-catalog-menu.is-dialog {
   block-size: 100%;
   padding: var(--space-3);
+}
+
+/* 弹窗内（装甲页）所有控件 ≥44px，包括 FilterChips / AppButton 等子组件内部按钮。 */
+.tank-catalog-menu.is-dialog :deep(button),
+.tank-catalog-menu.is-dialog :deep(select),
+.tank-catalog-menu.is-dialog :deep(input) {
+  min-block-size: 44px;
 }
 
 .tc-dialog-head {

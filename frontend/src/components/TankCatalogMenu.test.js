@@ -84,6 +84,43 @@ describe('TankCatalogMenu（坦克百科 / 装甲查看器选车共用）', () =
     wrapper.unmount()
   })
 
+  it('compact 筛选 sheet：焦点进入 sheet，Escape 只关闭 sheet 并停止冒泡', async () => {
+    layout.compact = true
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+    const wrapper = mountMenu({ filters: { q: '', tier: '10', nation: '', type: '', sort: 'name' } })
+    await wrapper.find('[data-testid="filter-toggle"]').trigger('click')
+    await flushPromises()
+    const sheet = wrapper.find('[data-testid="tank-filters"]')
+    expect(sheet.exists()).toBe(true)
+    expect(sheet.element.contains(document.activeElement)).toBe(true)
+    const done = wrapper.find('[data-testid="filter-sheet-done"]').element
+    const last = wrapper.find('#tp-sort').element
+    last.focus()
+    last.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(done)
+    done.focus()
+    done.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }))
+    expect(document.activeElement).toBe(last)
+    document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="tank-filters"]').exists()).toBe(false)
+    expect(outer).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', outer)
+    wrapper.unmount()
+  })
+
+  it('non-compact 筛选区：Escape 不拦截，继续冒泡给外层弹窗', async () => {
+    layout.compact = false
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+    const wrapper = mountMenu()
+    wrapper.find('#tp-tier').element.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(outer).toHaveBeenCalledTimes(1)
+    window.removeEventListener('keydown', outer)
+    wrapper.unmount()
+  })
+
   it('卸载前 flush 未提交的搜索草稿', async () => {
     vi.useFakeTimers()
     const wrapper = mountMenu()
