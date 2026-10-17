@@ -6,6 +6,7 @@ import { nextTick } from 'vue'
 import { messages } from '../locales/messages.js'
 import TournamentPointsPage from './TournamentPointsPage.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
+import TournamentPointsTable from './TournamentPointsTable.vue'
 import Banner from './Banner.vue'
 import type { TournamentEvent, TournamentStandings } from '../api/tournament-points.js'
 
@@ -55,6 +56,87 @@ beforeEach(() => {
   state.xlsx.mockResolvedValue({ blob: new Blob(['xlsx']), filename: 'scores.xlsx' })
   state.print.mockResolvedValue(undefined)
   state.download.mockResolvedValue(undefined)
+})
+
+describe('public tournament summary', () => {
+  const snapshot = (index = 0): TournamentStandings => ({
+    event: events[index],
+    days: [
+      { roundNumber: 1, dayNumber: 1, label: events[index].dayLabels[0], published: true },
+      { roundNumber: 1, dayNumber: 2, label: events[index].dayLabels[1], published: true },
+      { roundNumber: 2, dayNumber: 1, label: events[index].dayLabels[0], published: false },
+    ],
+    rows: [
+      { rank: 1, clanTag: 'ALPHA', totalPoints: 100, rounds: [{ roundNumber: 1, totalPoints: 100, days: [{ dayNumber: 1, points: 100 }, { dayNumber: 2, points: null }] }] },
+      { rank: 1, clanTag: 'BETA', totalPoints: 100, rounds: [{ roundNumber: 1, totalPoints: 100, days: [{ dayNumber: 1, points: 0 }, { dayNumber: 2, points: 100 }] }] },
+      { rank: 3, clanTag: 'GAMMA', totalPoints: 0, rounds: [{ roundNumber: 1, totalPoints: 0, days: [{ dayNumber: 1, points: 0 }, { dayNumber: 2, points: null }] }] },
+    ],
+  })
+  it('derives only clan and published-day statistics from the current board without adding requests or changing ranks and scores', async () => {
+    const initial = snapshot()
+    const historical = { ...snapshot(1), days: snapshot(1).days.map((day, index) => ({ ...day, published: index === 0 })), rows: snapshot(1).rows.slice(0, 2) }
+    state.board.mockImplementation(id => Promise.resolve(id === 8 ? historical : initial))
+    const p = page(); await flushPromises()
+    const table = p.wrapper.findComponent(TournamentPointsTable)
+    expect(table.props('publicView')).toBe(true)
+    const summary = () => p.wrapper.get('[data-testid="tournament-public-summary"]')
+    expect(summary().findAll('dt').map(label => label.text())).toEqual([
+      p.i18n.global.t('tournament.participatingClans'), p.i18n.global.t('tournament.publishedMatchDays'),
+    ])
+    expect(summary().get('[data-testid="tournament-clan-count"]').text()).toBe('3')
+    expect(summary().get('[data-testid="tournament-published-days"]').text()).toBe('2 / 10')
+    expect(table.findAll('tbody .rank').map(cell => cell.text())).toEqual(['1', '1', '3'])
+    expect(table.findAll('tbody .clan').map(cell => cell.text())).toEqual(['ALPHA', 'BETA', 'GAMMA'])
+    expect(table.findAll('tbody tr')[0].findAll('td.day').slice(0, 2).map(cell => cell.text())).toEqual(['100', '—'])
+    expect(table.findAll('tbody tr')[1].findAll('td.day').slice(0, 2).map(cell => cell.text())).toEqual(['0', '100'])
+    expect(table.props('standings').rows).toEqual(initial.rows)
+    expect(p.wrapper.text()).not.toMatch(/最高积分|并列|前三名/)
+    expect(state.list).toHaveBeenCalledTimes(1)
+    expect(state.board.mock.calls.map(call => call[0])).toEqual([7])
+    expect(state.source.mock.calls.map(call => call[0])).toEqual([7])
+
+    await p.selected(8)
+    expect(summary().get('[data-testid="tournament-clan-count"]').text()).toBe('2')
+    expect(summary().get('[data-testid="tournament-published-days"]').text()).toBe('1 / 12')
+    const refreshed = { ...historical, event: { ...historical.event, version: 2 }, days: historical.days.map(day => ({ ...day, published: true })), rows: [...historical.rows, ...initial.rows.slice(2)] }
+    state.board.mockResolvedValueOnce(refreshed)
+    await p.wrapper.findAll('button').find(button => button.text() === p.i18n.global.t('tournament.refresh'))!.trigger('click')
+    await flushPromises()
+    expect(summary().get('[data-testid="tournament-clan-count"]').text()).toBe('3')
+    expect(summary().get('[data-testid="tournament-published-days"]').text()).toBe('3 / 12')
+    expect(p.wrapper.findComponent(TournamentPointsTable).props('standings').rows).toEqual(refreshed.rows)
+    p.i18n.global.locale.value = 'en'; await nextTick()
+    expect(summary().findAll('dt').map(label => label.text())).toEqual(['Participating clans', 'Published match days'])
+    expect(state.list).toHaveBeenCalledTimes(1)
+    expect(state.board.mock.calls.map(call => call[0])).toEqual([7, 8, 8])
+    expect(state.source.mock.calls.map(call => call[0])).toEqual([7, 8, 8])
+    p.wrapper.unmount()
+  })
+  it('hides a previous summary during loading and while offline, and keeps current statistics when source metadata fails', async () => {
+    state.board.mockResolvedValueOnce(snapshot())
+    const p = page(); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-clan-count"]').text()).toBe('3')
+    let finish!: (value: TournamentStandings) => void
+    state.board.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    state.source.mockRejectedValueOnce({ errorCode: 'INTERNAL_ERROR', status: 500 })
+    await p.selected(8)
+    expect(p.wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)
+    expect(p.wrapper.get('[data-testid="tournament-export"]').attributes('disabled')).toBeDefined()
+    expect(p.wrapper.find('[data-testid="tournament-data-source-error"]').exists()).toBe(true)
+    const historical = { ...snapshot(1), rows: snapshot(1).rows.slice(0, 2) }
+    finish(historical); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-clan-count"]').text()).toBe('2')
+    expect(p.wrapper.get('[data-testid="tournament-published-days"]').text()).toBe('2 / 12')
+    expect(p.wrapper.get('[data-testid="tournament-export"]').attributes('disabled')).toBeUndefined()
+    expect(p.wrapper.find('[data-testid="tournament-data-source-error"]').exists()).toBe(true)
+    state.online.value = false; await nextTick()
+    expect(p.wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)
+    expect(p.wrapper.findComponent(TournamentPointsTable).exists()).toBe(false)
+    expect(state.list).toHaveBeenCalledTimes(1)
+    expect(state.board.mock.calls.map(call => call[0])).toEqual([7, 8])
+    expect(state.source.mock.calls.map(call => call[0])).toEqual([7, 8])
+    p.wrapper.unmount()
+  })
 })
 
 describe('public tournament export lifecycle', () => {
