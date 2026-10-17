@@ -6,7 +6,7 @@
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
 截至 2026-10-18，本候选源码为 **4.0.0 / 4000000**（`android/gradle.properties`）。
-保留此前 3.8.1 的地球图标、3.8.0 的双类型推荐目录、3.7.0 的推荐目录内容灰度及上游 **v0.4.9** WASM pin；
+保留main新增3.9.0的3D工具栏折叠功能，以及此前 3.8.1 的地球图标、3.8.0 的双类型推荐目录、3.7.0 的推荐目录内容灰度及上游 **v0.4.9** WASM pin；
 本次加入联赛季赛中英必填、俄文选填名称，以及积分赛数字小组号。名称与回放 HTTP shape 发生 breaking change，
 旧 APK 的严格响应校验不兼容，因此使用 major 4.0.0；Native Bridge 仍为 v3。
 **合并触发 stage 前须将 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `4000000`**，并按现有 stage、真机验收、publish 流程发布。
