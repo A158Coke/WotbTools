@@ -4,6 +4,148 @@
  */
 
 export interface paths {
+    "/api/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listRecommendations
+         * @description Returns only the required type, ordered by score, creation time and ID descending. categoryId must belong to the requested type. Requires recommendations-v1 capability.
+         */
+        get: operations["listRecommendations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/recommendations/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * listRecommendationCategories
+         * @description Returns populated categories of both types, ordered by ID. Each category has at least one recommendation of its own type. The public snapshot is identical for all roles; administrators use typed metadata for complete dictionaries. An empty array means both directories are empty.
+         */
+        get: operations["listRecommendationCategories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/recommendations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * createRecommendation
+         * @description Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+         */
+        post: operations["createRecommendation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/recommendations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getRecommendationDetail */
+        get: operations["getRecommendationDetail"];
+        /**
+         * updateRecommendation
+         * @description Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+         */
+        put: operations["updateRecommendation"];
+        post?: never;
+        /** deleteRecommendation */
+        delete: operations["deleteRecommendation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/recommendations/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get typed recommendation dictionaries and image upload availability
+         * @description Returns the complete category dictionary of the required type, including empty categories. UP includes strength levels; VIDEO has an empty levels array. Image upload availability is shared.
+         */
+        get: operations["getRecommendationMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/recommendations/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * createRecommendationCategory
+         * @description Create a category of the required type. Category type is immutable.
+         */
+        post: operations["createRecommendationCategory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/recommendations/categories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * deleteRecommendationCategory
+         * @description Delete only a category of the required type. Referenced categories are rejected with CREATOR_CATEGORY_IN_USE.
+         */
+        delete: operations["deleteRecommendationCategory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/creators/categories": {
         parameters: {
             query?: never;
@@ -31,7 +173,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** listCreators */
+        /**
+         * listCreators
+         * @description Legacy UP-only directory. VIDEO records are never returned by creator endpoints.
+         */
         get: operations["listCreators"];
         put?: never;
         post?: never;
@@ -48,7 +193,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read an attached creator avatar */
+        /** Read an attached recommendation image */
         get: operations["getCreatorAvatar"];
         put?: never;
         post?: never;
@@ -1260,6 +1405,67 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        RecommendationType: "UP" | "VIDEO";
+        RecommendationCategory: {
+            type: components["schemas"]["RecommendationType"];
+            id: number;
+            name: string;
+        };
+        RecommendationCard: {
+            type: components["schemas"]["RecommendationType"];
+            id: number;
+            name: string;
+            description: string | null;
+            categories: components["schemas"]["RecommendationCategory"][];
+            level: components["schemas"]["CreatorLevel"] | null;
+            /** @enum {integer} */
+            score: 2 | 4 | 6 | 8 | 10;
+            /** Format: date-time */
+            createdAt: string;
+            version: number;
+            /** @description UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints. */
+            externalId: string;
+            /** Format: uri */
+            targetUrl: string;
+            imageUrl: string | null;
+        } & unknown;
+        RecommendationDetail: {
+            type: components["schemas"]["RecommendationType"];
+            id: number;
+            name: string;
+            description: string | null;
+            categoryIds: number[];
+            levelId: number | null;
+            stars: number;
+            version: number;
+            /** @description UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints. */
+            externalId: string;
+            imageUrl: string | null;
+        } & unknown;
+        RecommendationSaveRequest: {
+            type: components["schemas"]["RecommendationType"];
+            name: string;
+            description: string | null;
+            categoryIds: number[];
+            levelId: number | null;
+            stars: number;
+            expectedVersion: number | null;
+            /** @description UP: positive decimal UID. VIDEO: case-sensitive BV identifier. See type-specific constraints. */
+            externalId: string;
+            /** @enum {string} */
+            imageAction: "KEEP" | "REPLACE" | "REMOVE";
+        } & unknown;
+        RecommendationMetadata: {
+            type: components["schemas"]["RecommendationType"];
+            categories: components["schemas"]["RecommendationCategory"][];
+            levels: components["schemas"]["CreatorLevel"][];
+            imageUploadsAvailable: boolean;
+        } & unknown;
+        RecommendationCategoryRequest: {
+            type: components["schemas"]["RecommendationType"];
+            name: string;
+        };
         CreatorCategory: {
             id: number;
             name: string;
@@ -1318,7 +1524,7 @@ export interface components {
         BackendHealth: {
             status: string;
             tanks: number;
-            /** @description Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends. */
+            /** @description recommendations-v1 enables typed UP/VIDEO endpoints. Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends. */
             capabilities?: string[];
         } & {
             [key: string]: unknown;
@@ -2491,7 +2697,7 @@ export interface components {
             timestamp: string | null;
         };
         /** @enum {string} */
-        ApiErrorCode: "CREATOR_NOT_FOUND" | "CREATOR_INVALID_REQUEST" | "CREATOR_UID_ALREADY_EXISTS" | "CREATOR_CATEGORY_IN_USE" | "CREATOR_LEVEL_IN_USE" | "CREATOR_CONFIG_CONFLICT" | "CREATOR_STORAGE_UNAVAILABLE" | "CREATOR_AVATAR_NOT_FOUND" | "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        ApiErrorCode: "CREATOR_NOT_FOUND" | "CREATOR_INVALID_REQUEST" | "RECOMMENDATION_ID_ALREADY_EXISTS" | "CREATOR_UID_ALREADY_EXISTS" | "CREATOR_CATEGORY_IN_USE" | "CREATOR_LEVEL_IN_USE" | "CREATOR_CONFIG_CONFLICT" | "CREATOR_STORAGE_UNAVAILABLE" | "CREATOR_AVATAR_NOT_FOUND" | "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
     };
     responses: never;
     parameters: never;
@@ -2501,6 +2707,634 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    listRecommendations: {
+        parameters: {
+            query: {
+                categoryId?: number;
+                type: components["schemas"]["RecommendationType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationCard"][];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listRecommendationCategories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationCategory"][];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createRecommendation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    payload: components["schemas"]["RecommendationSaveRequest"];
+                    /**
+                     * Format: binary
+                     * @description One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
+                     */
+                    image?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recommendation result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationDetail"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_TOO_LARGE: image input exceeds the configured limits */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Avatar storage unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getRecommendationDetail: {
+        parameters: {
+            query: {
+                type: components["schemas"]["RecommendationType"];
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationDetail"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateRecommendation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    payload: components["schemas"]["RecommendationSaveRequest"];
+                    /**
+                     * Format: binary
+                     * @description One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
+                     */
+                    image?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recommendation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationDetail"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description FILE_TOO_LARGE: image input exceeds the configured limits */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Avatar storage unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteRecommendation: {
+        parameters: {
+            query: {
+                /** @description The version from the public card captured before confirming removal; stale versions return CREATOR_CONFIG_CONFLICT. */
+                expectedVersion: number;
+                type: components["schemas"]["RecommendationType"];
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getRecommendationMetadata: {
+        parameters: {
+            query: {
+                type: components["schemas"]["RecommendationType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recommendation management metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationMetadata"];
+                };
+            };
+            /** @description Missing or invalid recommendation type */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tournament administrator required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createRecommendationCategory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecommendationCategoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Recommendation result */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationCategory"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteRecommendationCategory: {
+        parameters: {
+            query: {
+                type: components["schemas"]["RecommendationType"];
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Configuration or resource conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     listCreatorCategories: {
         parameters: {
             query?: never;

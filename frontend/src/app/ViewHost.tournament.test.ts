@@ -6,7 +6,7 @@ import ViewHost from './ViewHost.vue'
 import { tournamentAdminAllowed } from '../composables/useAuth.js'
 import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
 const state = vi.hoisted(() => ({ route: null as any, auth: null as any }))
-vi.mock('vue-router', () => ({ useRoute: () => state.route }))
+vi.mock('vue-router', () => ({ useRoute: () => state.route, useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('../composables/useAuth.js', async importOriginal => ({
   ...await importOriginal<typeof import('../composables/useAuth.js')>(), useAuth: () => state.auth,
 }))
@@ -29,7 +29,7 @@ describe('tournament deep-link page gates', () => {
     state.route.query.view = 'creators'
     const directoryVisible = ref(false), contentKnown = ref(false), error = ref<unknown>(new Error('503')), refresh = vi.fn()
     const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
-      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available: ref(true), directoryVisible, contentKnown, error, loading: ref(false), refresh } } } })
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => true, typeVisible: () => directoryVisible.value, available: ref(true), directoryVisible, contentKnown, error, loading: ref(false), refresh } } } })
     expect(wrapper.get('[data-testid=creators-unavailable]').text()).toContain('creators.availabilityFailed')
     contentKnown.value = true; error.value = null; await wrapper.vm.$nextTick()
     expect(wrapper.get('[data-testid=creators-not-published]').text()).toContain('creators.notPublished')
@@ -45,7 +45,7 @@ describe('tournament deep-link page gates', () => {
     state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
     const available = ref(false), refresh = vi.fn()
     const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
-      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available, directoryVisible: available, contentKnown: ref(false), error: ref(null), loading: ref(false), refresh } } } })
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => available.value, typeVisible: () => available.value, available, directoryVisible: available, contentKnown: ref(false), error: ref(null), loading: ref(false), refresh } } } })
     expect(wrapper.find('[data-testid="creator-config"], [data-testid="creator-directory"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="creators-unavailable"]').exists()).toBe(true)
     await wrapper.get('[data-testid="creators-availability-retry"]').trigger('click')

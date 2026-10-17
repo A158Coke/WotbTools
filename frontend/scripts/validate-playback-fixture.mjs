@@ -22,12 +22,24 @@ for (const [name, schema] of [
   ['creator-detail', 'CreatorDetail'],
   ['creator-save-request', 'CreatorSaveRequest'],
   ['creator-metadata', 'CreatorMetadata'],
+  ['recommendation-card', 'RecommendationCard'],
+  ['recommendation-detail', 'RecommendationDetail'],
+  ['recommendation-save-request', 'RecommendationSaveRequest'],
+  ['recommendation-metadata', 'RecommendationMetadata'],
 ]) {
   const value = JSON.parse(await readFile(new URL(`../../contracts/http/fixtures/${name}.json`, import.meta.url), 'utf8'))
   const check = ajv.compile(document.components.schemas[schema])
   if (!check(value)) throw new Error(`${name}: ${JSON.stringify(check.errors, null, 2)}`)
   console.log(`${schema} contract fixture: OK`)
 }
+
+const recommendationRequest = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/recommendation-save-request.json', import.meta.url), 'utf8'))
+const invalidRecommendations = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/recommendation-invalid-save-requests.json', import.meta.url), 'utf8'))
+const validateRecommendation = ajv.compile(document.components.schemas.RecommendationSaveRequest)
+for (const override of invalidRecommendations) {
+  if (validateRecommendation({ ...recommendationRequest, ...override })) throw new Error(`Invalid recommendation request accepted: ${JSON.stringify(override)}`)
+}
+console.log('Recommendation request boundary fixtures: OK')
 
 const broadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-category.json', import.meta.url), 'utf8'))
 if (!broadcastCategoryViewValidator(broadcast)) {

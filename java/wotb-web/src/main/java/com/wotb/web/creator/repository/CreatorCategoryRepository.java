@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import java.util.List;
 
 public interface CreatorCategoryRepository extends JpaRepository<CreatorCategory, Long> {
-    List<CreatorCategory> findAllByOrderByIdAsc();
+    List<CreatorCategory> findAllByTypeOrderByIdAsc(String type);
 
     @Query(value = """
             select c.* from creator_category c
