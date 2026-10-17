@@ -122,4 +122,6 @@ dependencies {
     implementation("net.openid:appauth:0.11.1")
     // Pure JVM policy tests.
     testImplementation("junit:junit:4.13.2")
+    // Exercise ContentResolver/provider streams without a connected device.
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }

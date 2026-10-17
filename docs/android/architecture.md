@@ -1,5 +1,7 @@
 # WotBTools Android — 架构
 
+> Translation pending: ordinary file chooser cache ownership and TTL (3.5.2).
+
 ## 定位
 
 Android 是同一 Vue 应用的 Local-First App Shell。APK 自带 Vue chunks、唯一 Agent Rust/WASM
@@ -42,6 +44,15 @@ stable（精确版本见 `android/app/build.gradle.kts` 的 `geckoViewVersion`�
   （`onChoicePrompt` → 原生单选 / 多选菜单，含 optgroup、disabled、页面侧关闭与选项更新）与
   `<input type=file>`（`onFilePrompt` → 系统 picker）。`alert` / `confirm` / `prompt`、日期 / 颜色选择、
   `beforeunload` 确认都未实现，页面确认框统一使用 `AppDialog`；以后新增这类原生输入前，先补对应 delegate。
+
+普通文件选择（replay 与图片共用）：`ACTION_GET_CONTENT` 返回的 URI 仅由 Native 持有。
+`FilePickerCache` 在后台通过 `ContentResolver` 完整复制到独立 `cache/file-picker/<uuid>/<safe-original-name>`，
+全部成功后才在 UI 线程把 `file://` URI 交给 Gecko；DOM `File` 保留原文件名和扩展名。
+缺少显示名时只按 provider MIME 推导扩展名，不猜测 replay。任意文件复制失败、空文件或请求已失效时
+整批拒绝并清理；复制期间保持 chooser busy，晚到结果不会完成新请求。
+成功 backing file 不在 confirm 后或打开下一次 picker 时删除；启动及下次复制前清理超过 24 小时的缓存，
+避免 Gecko 延迟 `arrayBuffer()` 时文件已消失。目录 picker 与 external pending 各自保留独立生命周期。
+没有真实路径解析、服务器上传或 Android 专用 parser fallback。
 
 网页下载由 `ContentDelegate.onExternalResponse` 接管：后台消费并关闭 `WebResponse.body`（含 blob），
 流入私有 cache 临时文件，再通过 `ACTION_CREATE_DOCUMENT` 选择保存位置并流式写入。
