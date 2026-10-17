@@ -96,16 +96,17 @@ def main(argv=None):
     )
 
     old_data = ut.load_existing_data_dir(args.existing_dir)
-    vehicles = ut.filter_to_business_tiers(ut.parse_tanks(snapshots["tanks"]))
+    vehicles = ut.parse_tanks(snapshots["tanks"])
+    item_vehicles = ut.filter_to_business_tiers(vehicles)
     total = len(vehicles)
 
     provision_map, consumable_map = ut.load_catalog()
     provision_defs = parse_item_defs_with_scope(snapshots["provisions"])
     consumable_defs = parse_item_defs_with_scope(snapshots["consumables"])
-    validate_item_catalog_coverage(vehicles, provision_defs, provision_map, "provision")
-    validate_item_catalog_coverage(vehicles, consumable_defs, consumable_map, "consumable")
-    vehicles = ut.apply_items(
-        vehicles,
+    validate_item_catalog_coverage(item_vehicles, provision_defs, provision_map, "provision")
+    validate_item_catalog_coverage(item_vehicles, consumable_defs, consumable_map, "consumable")
+    ut.apply_items(
+        item_vehicles,
         provision_defs,
         consumable_defs,
         provision_map,
@@ -114,8 +115,8 @@ def main(argv=None):
 
     equipment_presets, _ = ut.parse_equipment_defs(snapshots["equipment"])
     equipment_map = ut.load_equipment_catalog()
-    validate_vehicle_equipment_coverage(vehicles, equipment_presets, equipment_map)
-    vehicles = ut.apply_equipment(vehicles, equipment_presets, equipment_map)
+    validate_vehicle_equipment_coverage(item_vehicles, equipment_presets, equipment_map)
+    ut.apply_equipment(item_vehicles, equipment_presets, equipment_map)
     vehicles = ut.merge_extra_info(vehicles, old_data)
 
     try:

@@ -52,7 +52,7 @@ public final class TankNameCorrector {
     private static final Tankopedia TANKOPEDIA = Tankopedia.load();
     private static final TankNameAliases ALIASES = TankNameAliases.load();
 
-    /** 已知车名（tier7-10 权威名）+ 别名的 小写文本 -&gt; 权威名。 */
+    /** 已知车名（tier1-10 权威名）+ 别名的 小写文本 -&gt; 权威名。 */
     private static final Map<String, String> CANONICAL_BY_LOWER = buildCanonicalIndex();
     private static final Set<String> ALIAS_KEYS_LOWER = buildAliasKeys();
     private static final Pattern TANK_PATTERN = buildPattern(CANONICAL_BY_LOWER.keySet());
