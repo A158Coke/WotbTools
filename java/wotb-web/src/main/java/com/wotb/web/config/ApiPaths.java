@@ -28,6 +28,9 @@ public final class ApiPaths {
     public static final String USERS_MARK3 = "/api/users/mark3";
     public static final String HOF_MARK3_ADMIN = "/api/admin/hof/mark3";
 
+    public static final String RECOMMENDATIONS = "/api/recommendations";
+    public static final String RECOMMENDATIONS_ADMIN = "/api/admin/recommendations";
+    public static final String RECOMMENDATIONS_ADMIN_PATTERN = RECOMMENDATIONS_ADMIN + "/**";
     public static final String CREATORS = "/api/creators";
     public static final String CREATORS_ADMIN = "/api/admin/creators";
     public static final String CREATORS_ADMIN_PATTERN = CREATORS_ADMIN + "/**";

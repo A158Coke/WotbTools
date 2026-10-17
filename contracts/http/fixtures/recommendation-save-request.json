@@ -1,0 +1,13 @@
+{
+  "type": "VIDEO",
+  "externalId": " BV1xx411c7mD ",
+  "name": "Example video",
+  "description": null,
+  "categoryIds": [
+    7
+  ],
+  "levelId": null,
+  "stars": 3,
+  "imageAction": "KEEP",
+  "expectedVersion": null
+}

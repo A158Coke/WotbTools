@@ -2283,17 +2283,17 @@ async function runOfflineWorkspaceScenario(env) {
       await env.chrome.client.send('Fetch.fulfillRequest', {
         requestId: params.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1'] })).toString('base64'),
+        body: Buffer.from(JSON.stringify({ status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1', 'recommendations-v1'] })).toString('base64'),
       }, sessionId)
       return
     }
-    const publicCategories = url.origin === env.origin && url.pathname === '/api/creators/categories' && params.request.method === 'GET'
+    const publicCategories = url.origin === env.origin && url.pathname === '/api/recommendations/categories' && params.request.method === 'GET'
     if (publicCategories && await page.evaluate('window.__offlineFixtureOnline === true')) {
       publicCategoryProbes.push(params.request.url)
       await env.chrome.client.send('Fetch.fulfillRequest', {
         requestId: params.requestId, responseCode: 200,
         responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-        body: Buffer.from(JSON.stringify([{ id: 1, name: 'Creator fixture' }])).toString('base64'),
+        body: Buffer.from(JSON.stringify([{ id: 1, name: 'Creator fixture', type: 'UP' }])).toString('base64'),
       }, sessionId)
       return
     }

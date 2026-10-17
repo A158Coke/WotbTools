@@ -22,6 +22,7 @@ const TournamentPointsPage = defineAsyncComponent(() => import('../components/To
 const TournamentPointsConfigPage = defineAsyncComponent(() => import('../components/TournamentPointsConfigPage.vue'))
 const TournamentPointsAdminPage = defineAsyncComponent(() => import('../components/TournamentPointsAdminPage.vue'))
 const LeagueBroadcastsPage = defineAsyncComponent(() => import('../components/LeagueBroadcastsPage.vue'))
+const RecommendationsPage = defineAsyncComponent(() => import('../components/RecommendationsPage.vue'))
 const CreatorsPage = defineAsyncComponent(() => import('../components/CreatorsPage.vue'))
 const CreatorsConfigPage = defineAsyncComponent(() => import('../components/CreatorsConfigPage.vue'))
 
@@ -59,6 +60,8 @@ export const VIEW_COMPONENTS = Object.freeze({
   'tournament-points-config': TournamentPointsConfigPage,
   'tournament-points-admin': TournamentPointsAdminPage,
   'league-broadcasts': LeagueBroadcastsPage,
+  recommendations: RecommendationsPage,
+  'recommended-videos': CreatorsPage,
   creators: CreatorsPage,
   'creators-config': CreatorsConfigPage,
 })

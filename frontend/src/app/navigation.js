@@ -14,7 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
-  'android', 'sponsor', 'league-broadcasts', 'creators', 'creators-config',
+  'android', 'sponsor', 'league-broadcasts', 'recommendations', 'recommended-videos', 'creators', 'creators-config',
 ])
 
 /**
@@ -32,7 +32,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
-  Object.freeze({ id: 'creators', view: 'creators', labelKey: 'creators.nav' }),
+  Object.freeze({ id: 'creators', view: 'recommendations', labelKey: 'creators.nav' }),
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
@@ -63,6 +63,8 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
   creators: 'creators',
+  recommendations: 'creators',
+  'recommended-videos': 'creators',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',
   'tournament-points-config': 'tournament-points-config',
@@ -140,7 +142,8 @@ export function locationForView(view, route) {
   if (route.query?.view === 'league-broadcasts' && view !== 'league-broadcasts') {
     for (const key of BROADCAST_QUERY_KEYS) delete query[key]
   }
-  if (route.query?.view === 'creators' && view !== 'creators') delete query.creatorCategory
+  if (['creators', 'recommended-videos'].includes(route.query?.view) && view !== route.query.view) delete query.creatorCategory
+  if (route.query?.view === 'creators-config' && view !== 'creators-config') delete query.recommendationType
   // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]
@@ -157,6 +160,7 @@ export function locationForView(view, route) {
   return {
     path: view === 'android' ? ANDROID_PATH : view === 'sponsor' ? SPONSOR_PATH : '/',
     query,
+    ...(['creators', 'recommended-videos', 'recommendations', 'creators-config'].includes(view) ? { hash: route.hash } : {}),
   }
 }
 
