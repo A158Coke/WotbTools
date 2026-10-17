@@ -187,7 +187,9 @@ export interface CombatLoss {
   toHp: number
 }
 
-export type TerminalKind = 'HP_ZERO' | 'DEATH_SENTINEL_FFFD' | 'DROWNING' | 'LEGACY_EXACT_ALIVE_FALSE'
+/** 终态证据种类：`DEATH_SENTINEL` = 负 i16 终态哨兵族（0xFFFF/0xFFFE/0xFFFD 及同编码其它负值，
+ *  上游 `hp_state === 'terminal'`；2026-10-16 前只覆盖 0xFFFD，见 hpRawState.ts 历史注）。 */
+export type TerminalKind = 'HP_ZERO' | 'DEATH_SENTINEL' | 'DROWNING' | 'LEGACY_EXACT_ALIVE_FALSE'
 
 export interface TerminalEvidence {
   accountId: number
@@ -336,11 +338,12 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
         break
       }
       case 'health': {
-        const rawState = classifyHpRaw(e.hp_raw)
+        // 上游 `hp_state` 在场 = 权威分类；缺省（旧产物）按 hp_raw 同一规则现算（见 hpRawState.ts）
+        const rawState = classifyHpRaw(e.hp_raw, e.hp_state)
         push(hpSamples, e.eid, {
-          t: rel(e.t), entityId: e.eid, hp: knownHpOf(e.hp_raw), kind: 'PROP3', rawState,
+          t: rel(e.t), entityId: e.eid, hp: knownHpOf(e.hp_raw, e.hp_state), kind: 'PROP3', rawState,
           alive: rawState === 'CURRENT_HP' ? true : isTerminalHpState(rawState) ? false : null,
-          // prop3 未证明哨兵（FFFF/FFFE/其它负值）在 Java 解码为 PARTIAL
+          // 缺 hp_state 的旧产物：正 i16 与终态族在 Java 同为 EXACT，其余负值 PARTIAL（现规则下不存在该档）
           exact: rawState === 'CURRENT_HP' || isTerminalHpState(rawState),
           order,
         })
@@ -348,7 +351,8 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
       }
       case 'damage':
         healthEvents.push({
-          t: rel(e.t), entityId: e.victim_eid, hpRaw: e.hp_raw, rawState: classifyHpRaw(e.hp_raw),
+          t: rel(e.t), entityId: e.victim_eid, hpRaw: e.hp_raw,
+          rawState: classifyHpRaw(e.hp_raw, e.hp_state),
           sourceEntityId: e.source_eid, causeFlag: e.cause, order,
         })
         break
@@ -491,7 +495,7 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
       if (s.kind === 'MATERIALIZATION') {
         addEvidence(s.entityId, s.t, s.order, false, null)
       } else if (s.rawState !== null && isTerminalHpState(s.rawState)) {
-        addEvidence(s.entityId, s.t, s.order, true, s.rawState === 'HP_ZERO_TERMINAL' ? 'HP_ZERO' : 'DEATH_SENTINEL_FFFD')
+        addEvidence(s.entityId, s.t, s.order, true, s.rawState === 'HP_ZERO_TERMINAL' ? 'HP_ZERO' : 'DEATH_SENTINEL')
       } else if (s.alive === true && isPlausibleHp(s.hp)) {
         addEvidence(s.entityId, s.t, s.order, false, null)
       }
@@ -503,7 +507,7 @@ export function buildCanonicalReplayFacts(input: CanonicalInput): CanonicalRepla
       ? semanticCauseOf(h.causeFlag, h.sourceEntityId, h.entityId) : null
     if (cause === 'DROWNING') addEvidence(h.entityId, h.t, h.order, true, 'DROWNING')
     else if (isTerminalHpState(h.rawState)) {
-      addEvidence(h.entityId, h.t, h.order, true, h.rawState === 'HP_ZERO_TERMINAL' ? 'HP_ZERO' : 'DEATH_SENTINEL_FFFD')
+      addEvidence(h.entityId, h.t, h.order, true, h.rawState === 'HP_ZERO_TERMINAL' ? 'HP_ZERO' : 'DEATH_SENTINEL')
     }
   }
   evidence.sort((a, b) => a.timeSec - b.timeSec || a.order - b.order)
@@ -679,7 +683,7 @@ function laterEvidence(current: TerminalEvidence, incoming: TerminalEvidence): T
   if (delta < -SAME_CLOCK_EPSILON) return current
   if (current.terminal === incoming.terminal) return incoming.order >= current.order ? incoming : current
   const terminal = current.terminal ? current : incoming
-  if (terminal.kind === 'DROWNING' || terminal.kind === 'DEATH_SENTINEL_FFFD') return terminal
+  if (terminal.kind === 'DROWNING' || terminal.kind === 'DEATH_SENTINEL') return terminal
   return incoming.order >= current.order ? incoming : current
 }
 

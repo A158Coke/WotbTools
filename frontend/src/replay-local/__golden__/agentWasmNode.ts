@@ -101,7 +101,8 @@ export async function fixtureFacets(file: string): Promise<FixtureFacets> {
   try { playback = validateAgentPlayback(JSON.parse(m.parsePlayback(bytes))) } catch (e) { playbackError = String(e) }
   let aiReview: AgentAiReviewFacet | null = null
   let aiReviewError: string | null = null
-  try { aiReview = validateAgentAiReview(JSON.parse(m.parseAiReview(bytes))) } catch (e) { aiReviewError = String(e) }
+  // 锁定 pin 的 WASM = 当前 producer：hp_state 必填（`current-producer` 严格口径）
+  try { aiReview = validateAgentAiReview(JSON.parse(m.parseAiReview(bytes)), 'current-producer') } catch (e) { aiReviewError = String(e) }
   const out = { bytes, result, playback, playbackError, aiReview, aiReviewError }
   cache.set(file, out)
   return out
@@ -137,7 +138,7 @@ export async function replayFacets(path: string): Promise<FixtureFacets> {
   try { playback = validateAgentPlayback(JSON.parse(m.parsePlayback(bytes))) } catch (e) { playbackError = String(e) }
   let aiReview: AgentAiReviewFacet | null = null
   let aiReviewError: string | null = null
-  try { aiReview = validateAgentAiReview(JSON.parse(m.parseAiReview(bytes))) } catch (e) { aiReviewError = String(e) }
+  try { aiReview = validateAgentAiReview(JSON.parse(m.parseAiReview(bytes)), 'current-producer') } catch (e) { aiReviewError = String(e) }
   return { bytes, result, playback, playbackError, aiReview, aiReviewError }
 }
 

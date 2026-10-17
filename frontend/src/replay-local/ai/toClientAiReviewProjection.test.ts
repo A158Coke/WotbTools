@@ -14,6 +14,7 @@ import { gunzipSync, gzipSync } from 'node:zlib'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { fixtureFacets, requireFixtures, type FixtureFacets } from '../__golden__/agentWasmNode.js'
+import { validateAgentAiReview } from '../../api/agent-replay-facets.js'
 import { toBattleFacts } from '../battleFacts.js'
 import { toClientAiReviewProjection, UNAVAILABLE_EVIDENCE, type ClientAiReviewProjection } from './toClientAiReviewProjection.js'
 
@@ -96,6 +97,53 @@ describe('client canonical AI projection', () => {
       })
     })
   }
+
+  // writer 侧（不是只测 reader）：canonical 分类必须真的随载荷发出——Java 侧
+  // `HpRawState.fromProjection` 只有在 `hpState` 在场时才不重新解释 raw。
+  it('canonical 终态分类随投影发送：hp_state=terminal + 0xFFFE → hpState = DEATH_TERMINAL', () => {
+    const f = requireFixtures(facets['random-battle-example'])
+    let hpPatched = false
+    let damagePatched = false
+    const events = f.aiReview.events.map((e) => {
+      if (e.type === 'health' && !hpPatched) {
+        hpPatched = true
+        return { ...e, hp_raw: 0xfffe, hp_state: 'terminal' as const }
+      }
+      if (e.type === 'damage' && !damagePatched) {
+        damagePatched = true
+        return { ...e, hp_raw: 0xfffe, hp_state: 'terminal' as const }
+      }
+      return e
+    })
+    expect(hpPatched && damagePatched, '夹具必须同时含 prop3 与 method1 事件').toBe(true)
+    const aiReview = validateAgentAiReview({ ...f.aiReview, events }, 'current-producer')
+    const p = toClientAiReviewProjection({ result: f.result, playback: f.playback, aiReview, engine: engineOf() })!
+    const prop3 = p.prop3Health.find((h) => h.hpRaw === 0xfffe)!
+    const health = p.healthEvents.find((h) => h.hpRaw === 0xfffe)!
+    expect(prop3.hpState).toBe('DEATH_TERMINAL')
+    expect(health.hpState).toBe('DEATH_TERMINAL')
+    // 写方恒发送该字段：任何携带 HP 的条目都必须带 wire 词汇的 canonical 分类
+    const wire = new Set(['CURRENT_HP', 'HP_ZERO_TERMINAL', 'DEATH_TERMINAL_FFFD', 'DEATH_TERMINAL', 'UNKNOWN_FFFF', 'UNKNOWN_OTHER'])
+    for (const h of [...p.prop3Health, ...p.healthEvents]) {
+      expect(wire.has(h.hpState!), `${h.entityId}@${h.rawClockSec} hpState=${String(h.hpState)}`).toBe(true)
+    }
+  })
+
+  it('legacy 载荷（字段缺省）不放大：0xFFFE 投影为 UNKNOWN_OTHER，不是终态', () => {
+    const f = requireFixtures(facets['random-battle-example'])
+    let patched = false
+    const events = f.aiReview.events.map((e) => {
+      if (e.type !== 'health' || patched) return e
+      patched = true
+      const { hp_state: _drop, ...rest } = e
+      return { ...rest, hp_raw: 0xfffe }
+    })
+    expect(patched).toBe(true)
+    const aiReview = validateAgentAiReview({ ...f.aiReview, events }, 'legacy-compatible')
+    const p = toClientAiReviewProjection({ result: f.result, playback: f.playback, aiReview, engine: engineOf() })!
+    const prop3 = p.prop3Health.find((h) => h.hpRaw === 0xfffe)!
+    expect(prop3.hpState).toBe('UNKNOWN_OTHER')
+  })
 
   it('视角无法解析 / 回放截断 → limitations（不缺省队伍、不假装完整）', () => {
     const f = requireFixtures(facets['random-battle-example'])

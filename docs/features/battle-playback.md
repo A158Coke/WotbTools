@@ -102,12 +102,25 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   死亡后可复活继续移动，死亡不再是终态。
 - **字段缺省**（旧上游产物 / 普通回放）：prop3 `alive=false`（终态，EXACT）→ DESTROYED；
   可信血量 / alive → ALIVE——行为与既往逐位一致（golden 锁定）。
+- **血量判死两条路径（2026-10-16 裁决，上游 `wotbtools-cross-reference.md` §七）**：
+  ①上游切面 `damage`/`health` 的 `hp_state`（v0.4.9 起恒在场）**在场即权威**——`terminal` = 负 i16
+  终态哨兵**全族**（实测 0xFFFF −1:68 / 0xFFFE −2:1 / 0xFFFD −3:59，其余负值同编码；同族全部取值
+  同一处理，禁按分布裁剪），`classifyHpRaw(raw, hp_state)` → `DEATH_TERMINAL`；
+  ②**字段缺省（旧产物 / 旧 pin）= legacy 分类不放宽**——仅 `{0x0000, 0xFFFD}` 为终态，
+  `0xFFFF`/`0xFFFE` 等仍是"未证明哨兵（血量与生死都未知）"，不作为死亡证据（存量语料把 0xFFFF
+  记为 unavailable；缺省放宽会在旧产物上产生无旁证的死亡判定）。回归：−1/−2 档弹药架殉爆
+  （实例 1910 局 Intotherainy `0xFFFE`）曾在 2D/3D 被判成存活（血量冻在最后正值、装填条继续外播）——
+  守卫 `canonical/facts.hpTerminal.test.ts`（字段权威 + legacy 缺省两侧）+ scene 用例（含
+  `hp_state=terminal` 的 0xFFFE/0xFFFF 行与"legacy 0xFFFE 不判死"反例行）。
+  ③**同一分类贯通 AI 复盘**：`toClientAiReviewProjection` 的 `prop3Health` / `healthEvents` 正式
+  携带 `hpState`（canonical 权威分类），Java 侧 `HpRawState.fromProjection` 在场即权威——2D/3D
+  与 AI 复盘对同一事件的生命状态一致（不会再出现「2D/3D 阵亡、AI 复盘判存活」）。
 - def 层（canonical 缺位时的 3D 回退）：`defLifeAt`（`utils/battlePlaybackV2.ts`）同规则直读
   PlaybackData 字段；爆焰按**死亡身份**（`destroyedKnownAtSec`）去重——同一次死亡的重复迁移
   只爆一次，复活后的新死亡各自爆焰。
 - **血量在复活后先落未知**（`healthTransitions`）：复活时刻起、到该实体出现第一份**可用数值**血量证据
   之前，血量 transition 显式落 `currentHp: null`（展示层渲染「—」）——绝不把死前的 0 / 终态哨兵镜像
-  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 `UNKNOWN_FFFF`）与终态 0 都不算"新证据"
+  当成复活后的现值；未知哨兵（`hp = null`，如 PROP3 终态 `DEATH_TERMINAL`）与终态 0 都不算"新证据"
   （`isPlausibleHp` 判据）。证据窗口 `[复活, t]`，不使用未来采样。守卫：`lifeTransitions.test.ts`
   的"复活后无新血量证据 → 未知边界"、"证据在查询时刻之后不得提前使用"与"复活时刻只有未知哨兵
   采样 → 边界不被跳过"用例。
@@ -483,7 +496,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
     回放时钟确定；AoI 缺口隐藏独立部件，不跨缺口插值。旧产物缺少字段则保持完整原车模。
     飞头实体是呈现依据，低血量、HP=0 或普通击杀不单独触发；不能由飞头反推弹药架殉爆死因。
     样本协议范围为 11.20：本机 77 场回放中 83 次 class-8 创建的 owner 均对应真实车辆，私人回放不入库。
-    解析由上游 v0.4.7 起提供，本仓正式 pin 为 v0.4.8；观感由用户在真实资产和 GPU 上验收。
+    解析由上游 v0.4.7 起提供，本仓正式 pin 为 v0.4.9；观感由用户在真实资产和 GPU 上验收。
   - **画质档位预算**（`QUALITY_PRESETS[k].fx` 引用 `FX_BUDGETS[k]`；信息类元素四档都有，氛围元素按档裁剪；
     批次容量封顶，满了按「命中 → 开火 → 爆炸 → 回放驱动粒子」的优先级丢弃）：
 
