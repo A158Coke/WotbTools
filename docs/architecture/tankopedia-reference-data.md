@@ -89,13 +89,15 @@ the same shared application reference. New code should nevertheless prefer the e
 `common/tank_aliases.json` is WotBTools **search metadata**, not game factual data, and it has a
 different owner and lifecycle from the files above:
 
-- **developer-maintained.** Aliases are curated by hand in the repository. Nothing generates them
-  from WoT-Blitz-Agent, BlitzKit, the WG API, an LLM or a community API.
+- **developer-curated.** Individual edits and reviewed imports of client short/full names are
+  maintained in the repository. A bulk import needs exact vehicle/key matching and recorded source
+  provenance (see below). Asset or Tankopedia refreshes never regenerate this file; names must not
+  be guessed by an LLM or a community API.
 - **sparse by design, and opt-in.** The document maps a canonical decimal `tank_id` to a non-empty
   array of alias strings. A vehicle without aliases is simply absent: **a missing tank id means
   `aliases = []`**, so empty arrays must not be stored and adding a vehicle to `tank_cache.json`
-  requires no alias change. The file currently ships as `{}`: zero configured aliases is a legal
-  state, and search then behaves exactly as it did before aliases existed.
+  requires no alias change. An empty document `{}` remains legal; imported snapshots only add
+  vehicles with verified names that differ from their canonical English names.
 - **search-only.** Aliases widen Tankopedia search recall. They never reach vehicle identity, the
   displayed or sorted name, replay vehicle names, exports, the HTTP contract or the `tank_cache.json`
   upstream schema. Aliases affect discovery, never identity.
@@ -103,7 +105,8 @@ different owner and lifecycle from the files above:
   recall does not depend on the current UI language.
 - **frontend-only transport.** The dataset is imported at build time by
   `frontend/src/utils/tankopediaQuery.js` (`normalizeTankCache` projects `aliases`; `selectTanks`
-  scores `max(canonical name, aliases)`), the same mechanism as `common/map_names.json`. There is no
+  ranks exact canonical-name matches first, then scores `max(canonical name, aliases)` with the
+  canonical name as the tie-breaker), the same mechanism as `common/map_names.json`. There is no
   backend endpoint, database table or second asset origin, so the Web and Android bundled frontends
   ship identical data.
 - **fail closed in CI.** `common/python/validate_tank_aliases.py`, gated by
@@ -117,6 +120,86 @@ different owner and lifecycle from the files above:
 
 `tank_cache.json` (asset plane) and `tankopedia-tier{1..10}.json` (this document) remain the
 factual vehicle data; the alias file is additive metadata beside them.
+
+### Reviewed national-server client names
+
+The 2026-10-17 import contributes **552 official aliases for 471 vehicles** from the national-server
+Android client (`com.netease.wotb`), version
+`11.21.0.155_7380044 release/11.21.0 WOTB_Android_Windows_china`. Its `Strings/zh-Hans.yaml`
+contains language code `zh_ne`. Both the official short name and full name are retained when they
+differ; whitespace is trimmed and case-insensitive duplicates (including the canonical English
+name) are omitted. Keep meaningful punctuation in official names: `T-34*` is the national-server
+name of `4657` (Type T-34), distinct from `1` (T-34) and `2849` (T34). Tankopedia treats a literal
+`*` query as a qualifier: only names/aliases containing `*` are scored. For an unstarred query,
+a starred alias can fill missing canonical-name recall (for example, `Mk I重型坦克` or `重型坦克`
+still matches `Mk I*重型坦克`). If the canonical name already matches, retain its relevance instead
+of raising it via the starred alias. This preserves normal recall while `t34*` selects Type T-34.
+For example, `6929` (Maus) also has `“鼠”式`, while `10113` (Carro 45t) has `45t战车` and
+`45t战斗战车`.
+
+One reviewed keyboard spelling, `T-22中型` with Latin `T` (U+0054), supplements the official
+`Т-22中型` with Cyrillic `Т` (U+0422). Both map to `19969` (T-22 medium); the official spelling is
+retained. The maintained dataset therefore contains **553 aliases for 471 vehicles**. This is an
+explicit search alias, without a global Cyrillic/Latin normalization rule.
+
+An exact canonical-name query (case-insensitive, trimmed) precedes alias fuzzy matches. For example,
+`AMX M4 45` returns `6977` before `4417` (AMX M4 mle. 54), even if the latter's `AMX M4 54` alias
+gets a higher fuzzy token total. Non-exact matches retain fuzzy relevance and canonical-name ties.
+
+The English reference is `common/tank_ids.json` at commit
+`6766effe57cf396d2b8cbeca8255cb2bfb773eb5`: 738 vehicles, BlitzKit game version
+`11.21.0.1235_7376187`, tanks.pb SHA-256
+`c8a085787a76a4fcdb5f31c5d6a3e42720ba937d62c1653b2ee1e0778f03243e`. Extraction reused
+[WoT-Blitz-Agent's client extraction helpers](https://github.com/fanypcd/WoT-Blitz-Agent/blob/8dcec2c6463f23116871157ef6d64985875efd67/tools/extract_vehicles.py)
+and its `data/tank_id_bridge.json` at the same commit. Join by **both** canonical `tank_id` and
+`nation/model_code`, then resolve the complete localization key from each vehicle's
+`shortUserString` / `userString`. Do not fall back to bare keys or fuzzy/translated names.
+
+Of the 738 reference vehicles, 708 have an exact verified name match; 30 were skipped (25 have no
+matching localization string and 5 are absent from the client vehicle index). A verified name that
+is identical to the English name needs no alias. Missing names create no placeholder.
+`九七中战` legitimately belongs to both `2145` and `4401`; the validator reports one cross-vehicle
+warning and accepts both.
+
+**Storage decision:** keep this small, reviewed search configuration in Git as
+`common/tank_aliases.json`, so reviews and rollbacks are atomic with Web/Android releases. No
+backend table, asset server file or second runtime mapping is needed. Raw APKs, complete language
+files, vehicle XML indexes and intermediate mapping reports stay outside the repository. Record
+their provenance here rather than committing those resources. Source SHA-256 values for this
+snapshot:
+
+| Source path inside the decoded client | SHA-256 |
+|---|---|
+| `Strings/zh-Hans.yaml` | `08cbef0d23224647746fd614ebcc0b5716b04c101c0ef53bd7e86cdd752e73cb` |
+| `XML/item_defs/vehicles/china/list.xml` | `00a2d6480b63b3af5585a6ad2ffa9384a36fa0d0bb70dadedf932b453180b4a3` |
+| `XML/item_defs/vehicles/european/list.xml` | `d01f9f15b345b22d3b951dcc683382d2171b3932ebf01b83e34800ae75aa9be5` |
+| `XML/item_defs/vehicles/france/list.xml` | `4788522019915fc7fada976c28dfab9434a55befd02955f610ed47f5957a3272` |
+| `XML/item_defs/vehicles/germany/list.xml` | `58776bd3102e34aa7a0bc762dc90c9a554f8e14302af41cdab1b0d2fc11530a3` |
+| `XML/item_defs/vehicles/japan/list.xml` | `472a2118fb3f3c24462abbe4e109b7c50c290f751a98af4a06ceb40a42227799` |
+| `XML/item_defs/vehicles/other/list.xml` | `5d8219ff4aecb50038353aa2717552bbeff72fc72057b621df9a8617ab92abec` |
+| `XML/item_defs/vehicles/uk/list.xml` | `4aea16b497d98b10d181114182f376dbc6b475a151e2ca5763666cb8de4007bf` |
+| `XML/item_defs/vehicles/usa/list.xml` | `cc1b957742687a9bab3f1eaeb76876ce613d31d27d3e3cc79fe2d9c2fa10a01f` |
+| `XML/item_defs/vehicles/ussr/list.xml` | `5fd6c699b026cd58d68a82ea6754b3bc27aed93f4061baf23a2cdb7d7de51a90` |
+| `version.txt` | `cebb290ac669bd9bd0bbc6b2be4bccd8fe40a3e6a90ee9aeabf93bc294a23012` |
+
+For the next reviewed import:
+
+1. Decode a locally available official client using the upstream extraction tools. Record its
+   version, tool revision and input hashes; retain the decoded sources locally for verification.
+2. Cross-check client vehicle ids and `nation/model_code` against the upstream bridge and the
+   current committed English roster. Resolve only the exact short/full localization keys. Skip
+   missing or mismatched records and report their counts instead of inventing names.
+3. **Merge** verified short/full names into the existing arrays; preserve manually added community
+   aliases. Trim values, deduplicate case-insensitively per vehicle and omit values equal to its
+   canonical English name. Preserve official name qualifiers such as `T-34*`; a spelling that
+   collapses under fuzzy normalization can still identify a different vehicle. Check collisions
+   against the actual search behavior rather than deleting verified names. Legitimate shared
+   Chinese names remain allowed. Sort tank-id keys numerically for a readable diff. Never replace the
+   file wholesale with a new client snapshot or remove an alias merely because that client omits it.
+4. Update this provenance section, run `python3 common/python/validate_tank_aliases.py` and
+   `python3 -m unittest discover -s common/python/tests -p test_validate_tank_aliases.py`, then run
+   the targeted `frontend/src/utils/tankopediaQuery.test.js` search integration tests. Review the
+   data diff before opening a PR. The bundled Android dataset also needs the normal version bump.
 
 ## The complete vehicle roster (`common/tank_ids.json`)
 

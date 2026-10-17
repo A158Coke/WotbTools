@@ -23,8 +23,8 @@ def validate(document, known=None):
 class CommittedTankAliasesTest(unittest.TestCase):
     """The repository's own alias dataset must stay valid (CI fails closed on bad data).
 
-    The dataset currently ships empty (`{}`), which is a legal state: aliases are opt-in and
-    added by developers over time. These cases therefore guard the contract, not its content.
+    Aliases are opt-in and curated over time, including reviewed client-name imports.
+    These cases guard the contract, not a fixed snapshot or population count.
     """
 
     def test_committed_dataset_is_valid(self):
