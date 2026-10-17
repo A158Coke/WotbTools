@@ -1,0 +1,69 @@
+name: Temporary fix PR 656 review
+
+on:
+  push:
+    branches: [chore/remove-tx-production-environment]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[pr656-review-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: chore/remove-tx-production-environment
+          fetch-depth: 0
+      - name: Apply review fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          replacements = {
+              'docs/operations/tx2-production-worker.md': [
+                  ('受保护 `tx-production` environment 提供\n`vars.TCR_CREDENTIAL_VERSION`',
+                   'repository-level Actions 配置提供\n`vars.TCR_CREDENTIAL_VERSION`'),
+                  ('更新受保护 environment 的 secrets.TCR_USERNAME / secrets.TCR_PASSWORD',
+                   '更新 repository-level Actions secrets.TCR_USERNAME / secrets.TCR_PASSWORD'),
+                  ('GitHub：`tx-production` environment 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD，',
+                   'GitHub：repository-level Actions 必须提供 secrets.TCR_USERNAME / secrets.TCR_PASSWORD，'),
+              ],
+              'docs/operations/tx-service-plane.md': [
+                  ('它通过现有 `tx-production` Secrets/Variables 注入只读检查所需凭据',
+                   '它通过 repository-level Actions secrets / variables 注入只读检查所需凭据'),
+              ],
+              '.github/AGENTS.md': [
+                  ('uses the protected repository-level Actions secrets / variables',
+                   'uses repository-level Actions secrets / variables'),
+                  ('dispatch-only, `tx-production`, serialized with `production-maintenance`',
+                   'dispatch-only, uses repository-level Actions secrets / variables, serialized with `production-maintenance`'),
+                  ('Scope `secrets.*`, `vars.*`, job permissions, and protected environments to the job that consumes them.',
+                   'Scope `secrets.*`, `vars.*`, and job permissions to the job that consumes them.'),
+              ],
+          }
+          for filename, pairs in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  if old not in text:
+                      raise SystemExit(f'missing expected text in {filename}: {old!r}')
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+      - name: Show remaining tx-production references
+        shell: bash
+        run: |
+          set -euo pipefail
+          git grep -n 'tx-production' -- ':!HISTORY.md' ':!docs/archive/**' || true
+
+      - name: Commit review fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/operations/tx2-production-worker.md docs/operations/tx-service-plane.md .github/AGENTS.md
+          git commit -m 'docs(actions): finish repository-scope credential migration [pr656-review-fix]'
+          git push origin HEAD:chore/remove-tx-production-environment
