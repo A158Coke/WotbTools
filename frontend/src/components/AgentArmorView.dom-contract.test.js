@@ -39,7 +39,7 @@ describe('armor destroyed scene async ownership', () => {
   const kernel = read('../scene/tankViewer.js')
   it('guards every bootstrap continuation before the next asset or DOM step', () => {
     for (const step of [
-      'const list = await fetchTankFilter();',
+      'const list = normalizeTankCache(await fetchTankEncyclopedia());',
       'const data = await fetchTankData(tid);',
       'const data = await fetchShells(tid);',
       'await populateTankLists(initTargetId, initShooterId);',
@@ -132,34 +132,50 @@ describe('engagement-distance result line localization', () => {
   })
 })
 
-// 间隙板首层跳弹上屏（用户 2026-10-13 报告）：SPACED_FRAG 写 G=跳弹标志，PBR_FRAG 据此把间隙板
-// 跳弹渲染为跳弹色（紫）并跑续飞；二层（underSpaced 的主装甲）不再转正——与点击链 layerIndex>0 同规则。
+// 间隙板首层跳弹上屏（用户 2026-10-13 报告）：SPACED_FRAG 写 G=间隙甲层标记，PBR_FRAG 据此
+// 区分「间隙甲已消耗首层」与「只穿外部模块」；主装甲在后者仍保留首层转正（用户 2026-10-17）。
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   const kernel = read('../scene/tankViewer.js')
   const pen = read('../scene/penetration.js')
   it('无阈值首层：厚度通道零身份推断（全板裸 LOS），状态通道独占最近层并携带转正差额（review 2026-10-13 blocker）', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
     const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
-    // 厚度通道：只写裸 LOS；不得含任何首层身份/容差推断（任何"距最近层 < δ"都会被合法小层距击穿）
+    // 厚度通道：只写裸 LOS + 间隙甲层标记 G（外部模块只写 R/coverage，G 恒 0）；
+    // 不得含任何首层身份/容差推断（任何"距最近层 < δ"都会被合法小层距击穿）
     expect(thickness).toMatch(/float losThick = thickness \/ max\(cos\(angle\), 1e-6\);/)
-    expect(thickness).toMatch(/gl_FragColor = vec4\(losThick \/ penetration, 0\.0, 0\.0, 1\.0\);/)
+    expect(thickness).toMatch(/gl_FragColor = vec4\(losThick \/ penetration, 1\.0, 0\.0, 1\.0\);/)
     expect(thickness).not.toMatch(/isFirstSpaced|linState|stateD|camNear|camFar|0\.05/)
     // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码 / B=转正差额
     expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
     expect(state).toMatch(/float delta = max\(0\.0, losThick - normThick\) \/ max\(penetration, 1\.0\);/)
     expect(state).not.toMatch(/delta = clamp\(/)   // 差额不上钳：>1 须精确参与 r−b 恒等（review 2026-10-13 P2）
-    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, delta, 1\.0\);/)
+    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, delta, 0\.0\);/)
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
+    // 外部模块状态：只写 A=1，RGB 保留（模块在前的间隙甲转正差额不被覆盖）；自定义混合
+    // RGB src=0/dst=1、A src=1/dst=0——单一来源，PBR 用 A 抑制其后间隙板跳弹。
+    expect(kernel).toMatch(/function moduleStateMaterial\(clip\)/)
+    expect(kernel).toMatch(/blendSrc: THREE\.ZeroFactor, blendDst: THREE\.OneFactor/)
+    expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
+    const stateScene = kernel.slice(kernel.indexOf('function buildSpacedStateScene'), kernel.indexOf('function buildPrimaryArmorScene'))
+    expect(stateScene).toMatch(/primaryMeshes\.forEach/)
+    expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
     // PBR：差额修正总消费（8 位回退格式下 R 饱和时禁止在其上退差额）；跳弹分支只解读状态
     expect(kernel).toMatch(/highp float totalConsume = \(spacedSatGuard > 0\.5 && rawTotal >= 1\.0\)/)
     expect(kernel).toMatch(/float spacedThick = totalConsume \* penetration;/)
-    expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5;/)
+    expect(kernel).toMatch(/bool moduleInFront = spacedState\.a > 0\.5;/)
+    expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5 && !moduleInFront;/)
+    // 外部模块不是装甲层：G 未置位时主装甲仍是首层 → 保留转正/2×口径增强转正；
+    // 3× overmatch 只表示真实口径规则，跳弹抑制另外由 underSpaced 承担。
+    expect(kernel).toMatch(/bool hasSpacedArmor = spacedData\.g > 0\.0;/)
+    expect(kernel).toMatch(/bool threeCal = caliber > thickness \* 3\.0;/)
+    expect(kernel).not.toMatch(/bool threeCal = caliber > thickness \* 3\.0 \|\| underSpaced;/)
+    expect(kernel).toMatch(/bool noRicochet = threeCal \|\| underSpaced;/)
+    expect(kernel).toMatch(/float norm = hasSpacedArmor \? 0\.0/)
     const gapStart = kernel.indexOf('if (gapRicochet) {')
     expect(gapStart).toBeGreaterThan(-1)
     const gapSeg = kernel.slice(gapStart, gapStart + 900)
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
-    expect(kernel).toMatch(/float norm = underSpaced \? 0\.0/)
   })
   it('管线消费模型 = Σ裸LOS − 最近层差额（含 0.02m 合法小层距反例；review 2026-10-13 blocker）', () => {
     // 两块 20mm@60°（相隔 0.02m——任何深度邻近阈值都会被它击穿）+ 100mm 主装甲@0°，AP 100/164/5°。
@@ -217,32 +233,37 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(Math.abs(rem16 - 17.772901)).toBeLessThan(0.15)           // 与 CPU 17.772901 同判（fp16 逐次舍入 ≪0.1mm）
     expect(rem16).toBeLessThan(25)
   })
-  it('rcContinue 双实现：转正仅首层（hitIdx == 0 / hitIdx === 0）', () => {
+  it('rcContinue 双实现：转正仅首个实际装甲层（armorIdx == 0 / armorIdx === 0）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')
-    expect(packSrc).toMatch(/highp float normR = \(hitIdx == 0\)/)
-    expect(packSrc).toMatch(/const normR = hitIdx === 0/)
+    // 外部模块是 flat 消耗，不计入 armorIdx（用户 2026-10-17）；旧 hitIdx 口径已删除。
+    expect(packSrc).toMatch(/int armorIdx = 0;/)
+    expect(packSrc).not.toMatch(/hitIdx/)
+    expect(packSrc).toMatch(/highp float normR = \(armorIdx == 0\)/)
+    expect(packSrc).toMatch(/const normR = armorIdx === 0/)
   })
-  it('点击链：转正只作用于首个装甲层（layerIndex>0 → 0）', () => {
-    expect(pen).toMatch(/const effNormalization = layerIndex > 0 \? 0\.0 : normalization/)
+  it('点击链：转正只作用于首个实际装甲层（armorLayerCount === 0）', () => {
+    expect(pen).toMatch(/const effNormalization = armorLayerCount === 0 \? normalization : 0\.0/)
+    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| layerIndex > 0 \|\| !allowRicochet/)
+    // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
+    expect(pen).toMatch(/const threeCalibersRule = caliber > thickness \* 3\.0\r?\n/)
   })
 })
 
-// 坦克选择菜单封面图展示裁剪契约（2026-10-15）：卡片图按逐车内容框缩放定位，
-// 盒比例是变换数学的契约——内核常数与 .tc-img 的 aspect-ratio 必须一致，且盒子
-// 不再用固定高度（固定高会让比例随卡片宽度漂移、内容框换算失准）。
-describe('tank-picker cover crop wiring', () => {
-  const template = read('./AgentArmorView.vue')
-  const kernel = read('../scene/tankViewer.js')
+// 坦克选择菜单封面图展示裁剪契约（2026-10-15；2026-10-17 起菜单改为与坦克百科共享
+// TankCatalogMenu）：卡片图按逐车内容框缩放定位，盒比例是变换数学的契约——组件常数
+// 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
+// 宽度漂移、内容框换算失准）。
+describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
+  const menu = read('./TankCatalogMenu.vue')
 
   it('卡片盒是固定 8:5 比例、无固定高度尺寸', () => {
-    expect(template).toMatch(/\.tc-img[^}]*aspect-ratio:\s*8\s*\/\s*5/)
-    expect(template).not.toMatch(/\.tc-img[^}]*block-size:\s*[0-9.]+rem/)
+    expect(menu).toMatch(/\.tp-media[^}]*aspect-ratio:\s*8\s*\/\s*5/)
+    expect(menu).not.toMatch(/\.tp-media[^}]*block-size:\s*[0-9.]+rem/)
   })
-  it('内核以同一比例常数应用内容框变换，并驱动迟到表补样式', () => {
-    expect(kernel).toMatch(/const TC_IMG_ASPECT = 8 \/ 5/)
-    expect(kernel).toMatch(/tankIconCropTransform\(iconCrops\?\.\[String\(tankId\)\], TC_IMG_ASPECT\)/)
-    expect(kernel).toMatch(/loadTankIconCrops\(\)\.then/)
-    expect(kernel).toMatch(/img\.dataset\.tankId = String\(t\.id\)/)
-    expect(kernel).toMatch(/img\.style\.transform = iconCropTransformFor\(t\.id\)/)
+  it('共享菜单以同一比例常数应用内容框变换，并驱动迟到表补样式', () => {
+    expect(menu).toMatch(/const ICON_BOX_ASPECT = 8 \/ 5/)
+    expect(menu).toMatch(/tankIconCropTransform\(iconCrops\.value\?\.\[String\(id\)\], ICON_BOX_ASPECT\)/)
+    expect(menu).toMatch(/loadTankIconCrops\(\)\.then/)
+    expect(menu).toMatch(/:style="iconCropStyle\(tank\.id\)"/)
   })
 })
