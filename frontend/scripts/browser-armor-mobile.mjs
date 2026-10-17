@@ -1,7 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_CACHE, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -466,9 +466,9 @@ async function runMobileBackScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height} (with back)` })
 }
 
-/** 桌面 / 平板回归：本仓的移动端规则只能作用于 <768px，且参数开关不渲染成可见控件。 */
+/** 桌面 / 平板回归：移动端规则只作用于 <768px；桌面复用左上信息卡，参数面板默认收起。 */
 const DESKTOP_SCENARIOS = [
-  // 断点边界：768px 起必须是桌面档（面板常驻、四角布局）
+  // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
   { name: 'armor-1280x800-desktop', width: 1280, height: 800, touch: false },
@@ -491,10 +491,12 @@ async function runDesktopScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.hasStage && !layout.unsupported, `${label}: 场景未渲染（hasStage=${layout.hasStage} unsupported=${layout.unsupported}）`)
   checkCommonGeometry(failures, layout, label)
-  check(failures, layout.tools?.display === 'none' || !layout.tools?.visible,
-    `${label}: 桌面档不应渲染可见的参数开关（display=${layout.tools?.display}）`)
-  check(failures, layout.selectors?.visible === true,
-    `${label}: 桌面档参数面板必须常驻可见（visible=${layout.selectors?.visible}）`)
+  check(failures, layout.tools?.visible === true,
+    `${label}: 桌面档参数开关必须可见（display=${layout.tools?.display}）`)
+  check(failures, layout.selectors?.visible === false,
+    `${label}: 桌面档设置面板默认应收起（visible=${layout.selectors?.visible}）`)
+  check(failures, layout.toolsOpen === false && layout.tools?.ariaExpanded === 'false',
+    `${label}: 桌面档默认收起状态不正确（is-tools-open=${layout.toolsOpen} aria=${layout.tools?.ariaExpanded}）`)
   check(failures, layout.topBar && layout.root
     && Math.abs((layout.topBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.topBar.left - layout.root.left) - 20) <= 2,
     `${label}: 顶栏没有回到四角布局（top=${layout.topBar?.top} left=${layout.topBar?.left} root=${layout.root?.top}/${layout.root?.left}，期望相对 20/20）`)
@@ -503,6 +505,93 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
   check(failures, layout.viewToggleDisplay === 'flex',
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
+
+  // Desktop mirrors mobile portrait: the toggle expands the setup fields inside the top-left info card.
+  await page.installInputTrace()
+  await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  const tapInput = await page.inputTrace()
+  check(failures, tapInput?.click?.testId === 'armor-tools',
+    `${label}: 真实点击落在 ${JSON.stringify(tapInput?.click)}，不是参数开关`)
+  const opened = await page.probe(armorLayoutProbe)
+  check(failures, opened.toolsOpen === true && opened.tools?.ariaExpanded === 'true',
+    `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
+  check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
+  check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
+    `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
+  check(failures, opened.selectors && opened.topBar
+    && opened.selectors.left >= opened.topBar.left - 1
+    && opened.selectors.right <= opened.topBar.right + 1
+    && opened.selectors.bottom <= opened.topBar.bottom + 1,
+    `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  check(failures, opened.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见`)
+  check(failures, opened.configSelect?.visible === true, `${label}: 展开后配置下拉不可见`)
+  checkCommonGeometry(failures, opened, `${label} (expanded)`)
+
+  // Per-config armor: switching stock/top must update both armor plates and the gun-barrel
+  // module cache, not just the initially loaded config. The fixture has two distinct configs.
+  const setConfig = async (index) => {
+    await page.evaluate(`(() => {
+      const sel = document.getElementById('config-select')
+      sel.value = '${index}'
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+      return sel.value
+    })()`)
+    await delay(120)
+  }
+  const scanArmorHit = () => page.evaluate(`(() => {
+    const H = window.__armorRicochet, c = document.querySelector('canvas'), r = c.getBoundingClientRect()
+    const out = {}
+    for (const step of [12, 6]) {
+      for (let cy = 16; cy < c.height - 16; cy += step) {
+        for (let cx = 16; cx < c.width - 16; cx += step) {
+          const px = r.left + cx, py = r.top + cy
+          if (document.elementFromPoint(px, py) !== c) continue
+          for (const hit of (H.__raytrace(px, py) || [])) {
+            if (!out.turret && hit.sec === 'turret' && /armor_(\\d+)/.test(hit.name)) {
+              out.turret = { x: px, y: py, name: hit.name, th: hit.th }
+            }
+            if (!out.gun && hit.sec === 'gunBarrel') {
+              out.gun = { x: px, y: py, name: hit.name, th: hit.th }
+            }
+          }
+          if (out.turret && out.gun) return out
+        }
+      }
+      if (out.turret && out.gun) return out
+    }
+    return out
+  })()`)
+  const readHitAt = (spot, section) => page.evaluate(`(() => {
+    const hits = window.__armorRicochet.__raytrace(${spot.x}, ${spot.y}) || []
+    return hits.find(hit => ${JSON.stringify(section)} === 'turret'
+      ? hit.sec === 'turret' && hit.name === ${JSON.stringify(spot.name)}
+      : hit.sec === 'gunBarrel') || null
+  })()`)
+  await setConfig(0)
+  const stock = await scanArmorHit()
+  check(failures, !!stock.turret && !!stock.gun,
+    `${label}: 夹具未找到炮塔/炮管装甲像素（${JSON.stringify(stock)}）`)
+  if (stock.turret && stock.gun) {
+    const plateId = stock.turret.name.match(/armor_(\d+)/)[1]
+    const stockCfg = FIXTURE_TANK_DATA.configs[0]
+    check(failures, stock.turret.th === stockCfg.turret_plates[plateId],
+      `${label}: stock 炮塔板 ${plateId} 厚度 ${stock.turret.th} != ${stockCfg.turret_plates[plateId]}`)
+    check(failures, stock.gun.th === stockCfg.gun_thickness,
+      `${label}: stock 炮管厚度 ${stock.gun.th} != ${stockCfg.gun_thickness}`)
+    await setConfig(1)
+    const topTurret = await readHitAt(stock.turret, 'turret')
+    const topGun = await readHitAt(stock.gun, 'gun')
+    const topCfg = FIXTURE_TANK_DATA.configs[1]
+    check(failures, topTurret?.th === topCfg.turret_plates[plateId],
+      `${label}: top 炮塔板 ${plateId} 厚度 ${topTurret?.th} != ${topCfg.turret_plates[plateId]}（配置缓存未刷新？）`)
+    check(failures, topGun?.th === topCfg.gun_thickness,
+      `${label}: top 炮管厚度 ${topGun?.th} != ${topCfg.gun_thickness}（gunBarrel 缓存未刷新？）`)
+  }
+
+  await page.tap({ ...opened.tools.center, touch: scenario.touch })
+  const collapsed = await page.probe(armorLayoutProbe)
+  check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
+    `${label}: 再次点击未收起（is-tools-open=${collapsed.toolsOpen} selectors visible=${collapsed.selectors?.visible}）`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
@@ -673,10 +762,15 @@ async function runPickerCardsScenario(env, scenario) {
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.pickerAssets)}`)
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && document.querySelector('#target-select')?.disabled === false,
     { timeout: 30000, label: 'picker fixture initialized' })
-  if (scenario.touch) {
-    const tools = await page.probe(armorLayoutProbe)
-    await page.tap({ ...tools.tools.center, touch: true })
+  // The setup panel is collapsed by default on every viewport; open it before choosing a target.
+  const initialChrome = await page.probe(armorLayoutProbe)
+  if (!initialChrome.selectors?.visible) {
+    await page.tap({ ...initialChrome.tools.center, touch: scenario.touch })
   }
+  // The setup body scrolls inside the card; multiple configs push the target row below the
+  // tablet-height fold. Scroll it into view before issuing real input.
+  await page.evaluate(`document.getElementById('target-select').scrollIntoView({ block: 'nearest' })`)
+  await delay(80)
   const controls = await page.probe(armorLayoutProbe)
   await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
   await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 90,
@@ -735,11 +829,65 @@ async function runPickerCardsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/** Load-order regression: collision enabled before the delayed armor GLB finishes, visual first. */
+const STAGGERED_LOAD_SCENARIO = { name: 'armor-staggered-visual-first', width: 1024, height: 768, touch: false }
+async function runStaggeredLoadScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.staggeredAssets)}`)
+  await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  const beforeLoad = await page.evaluate('window.__LOAD__')
+  check(failures, beforeLoad !== 'ok:' + FIXTURE_TANK_ID,
+    `${scenario.name}: visual 在开启碰撞前已完成，竞态未被复现（__LOAD__=${beforeLoad}）`)
+  // Programmatic click reaches the collision handler even while the status overlay is visible.
+  const clicked = await page.evaluate(`(() => {
+    const button = document.getElementById('collision-btn')
+    if (!button) return null
+    button.click()
+    return button.getAttribute('aria-pressed')
+  })()`)
+  check(failures, clicked === 'true', `${scenario.name}: 碰撞模式未在 armor 加载前开启（aria-pressed=${clicked}）`)
+  await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && !document.querySelector('#target-select').disabled,
+    { timeout: 30000, label: 'staggered visual/armor load ready' })
+  const state = await page.evaluate(`(() => {
+    const debug = window.__DBG__
+    let armorSample = null
+    if (debug && debug.scene) {
+      debug.scene.traverse(node => {
+        if (armorSample || !node.isMesh || !node.visible || node.userData.armorSection === 'deco') return
+        if (/_armor_/.test(node.name || '')) armorSample = node
+      })
+    }
+    return {
+      load: window.__LOAD__,
+      collision: document.getElementById('collision-btn').getAttribute('aria-pressed'),
+      tankVisible: debug && debug.tankModel ? debug.tankModel.visible : null,
+      armorOpacity: armorSample && armorSample.material ? armorSample.material.opacity : null,
+    }
+  })()`)
+  check(failures, state.load === 'ok:' + FIXTURE_TANK_ID,
+    `${scenario.name}: visual 先完成时加载未收敛（__LOAD__=${state.load}）`)
+  check(failures, state.collision === 'true',
+    `${scenario.name}: armor 就绪后碰撞模式丢失（aria-pressed=${state.collision}）`)
+  check(failures, state.tankVisible === false,
+    `${scenario.name}: armor 就绪后视觉车体仍可见（tankVisible=${state.tankVisible}）`)
+  check(failures, state.armorOpacity != null && state.armorOpacity >= 0.9,
+    `${scenario.name}: armor 材质未切到碰撞态（opacity=${state.armorOpacity}）`)
+  check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /* ------------------------------------------------------------------ main */
 
 const chrome = findChrome()
 const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
+const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
 const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 let chromeCdp = null
 
@@ -754,12 +902,13 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
+    { scenario: STAGGERED_LOAD_SCENARIO, run: () => runStaggeredLoadScenario(env, STAGGERED_LOAD_SCENARIO) },
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
@@ -798,5 +947,6 @@ try {
   if (chromeCdp) await chromeCdp.close()
   await server.close()
   await assets.close()
+  await staggeredAssets.close()
   await pickerAssets.close()
 }

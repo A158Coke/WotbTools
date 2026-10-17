@@ -14,4 +14,6 @@ public class CreatorCategory {
     public Long id;
     @Column(nullable = false, length = 100)
     public String name;
+    @Column(nullable = false, length = 8)
+    public String type = "UP";
 }

@@ -7,6 +7,7 @@ import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
 import com.wotb.web.creator.entity.CreatorAvatar;
 import com.wotb.web.creator.dto.CreatorDtos;
+import com.wotb.web.creator.dto.RecommendationDtos;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
 import com.wotb.web.creator.service.CreatorAvatarService;
@@ -132,7 +133,7 @@ class CreatorAvatarIntegrationTest {
             }
             try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 executor.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                    catalogLock(); creators.findLocked(creator).orElseThrow();
+                    creators.lockCatalog(); creators.findLocked(creator).orElseThrow();
                 })).get(3, TimeUnit.SECONDS);
             }
             objects.put(call.getArgument(1), ((InputStream) call.getArgument(2)).readAllBytes());
@@ -280,7 +281,7 @@ class CreatorAvatarIntegrationTest {
         final String replacement = avatars.upload(png(32, 32));
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                 () -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                    catalogLock(); creators.findLocked(creator).orElseThrow();
+                    creators.lockCatalog(); creators.findLocked(creator).orElseThrow();
                     avatars.attach(replacement);
                     jdbc.update("update creator set avatar_id=? where id=?", replacement, creator);
                     avatars.detach(original);
@@ -300,7 +301,7 @@ class CreatorAvatarIntegrationTest {
         final String replacement = avatars.upload(png(32, 32));
         assertThrows(IllegalStateException.class, () -> {
             new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                catalogLock(); creators.findLocked(creator).orElseThrow();
+                creators.lockCatalog(); creators.findLocked(creator).orElseThrow();
                 avatars.attach(replacement);
                 jdbc.update("update creator set avatar_id=? where id=?", replacement, creator);
                 avatars.detach(original);
@@ -312,7 +313,7 @@ class CreatorAvatarIntegrationTest {
         assertEquals(replacement, avatarReference(creator));
         assertTrue(objects.containsKey(PREFIX + replacement));
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-            catalogLock(); creators.findLocked(creator).orElseThrow();
+            creators.lockCatalog(); creators.findLocked(creator).orElseThrow();
             jdbc.update("update creator set avatar_id=null where id=?", creator);
             avatars.detach(replacement);
         });
@@ -332,7 +333,7 @@ class CreatorAvatarIntegrationTest {
             final var cleanup = executor.submit(avatars::cleanup);
             assertTrue(deleting.await(5, TimeUnit.SECONDS));
             final var attach = executor.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                catalogLock(); attaching.countDown(); avatars.attach(id);
+                creators.lockCatalog(); attaching.countDown(); avatars.attach(id);
                 jdbc.update("update creator set avatar_id=? where id=?", id, creator);
             }));
             assertTrue(attaching.await(5, TimeUnit.SECONDS)); release.countDown();
@@ -389,6 +390,20 @@ class CreatorAvatarIntegrationTest {
         }
     }
 
+    @Test void videoCoverUsesExistingCompressionAndSurvivesCleanupUntilFinalReferenceIsRemoved() throws Exception {
+        final long category = directory.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
+        final var request = new RecommendationDtos.SaveRequest("VIDEO", "BV1AbCdEfGh2", "Video", null, List.of(category), null, 3, "REPLACE", null);
+        final var video = directory.createRecommendation(request, png(1024, 576));
+        final String cover = avatarReference(video.id());
+        final BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(avatars.load(cover).bytes()));
+        assertEquals(256, decoded.getWidth()); assertEquals(144, decoded.getHeight());
+        age(cover); avatars.cleanup();
+        assertTrue(reservations.existsById(cover)); assertTrue(objects.containsKey(PREFIX + cover));
+        directory.deleteRecommendation("VIDEO", video.id(), video.version());
+        age(cover); avatars.cleanup();
+        assertFalse(reservations.existsById(cover)); assertFalse(objects.containsKey(PREFIX + cover));
+    }
+
     private long creator() {
         final long id = jdbc.queryForObject("insert into creator(bilibili_uid,name,stars,created_at) "
                 + "values (?,'Creator',3,now()) returning id", Long.class, Long.toString(nextUid.incrementAndGet()));
@@ -397,11 +412,10 @@ class CreatorAvatarIntegrationTest {
     }
     private void attach(final long creator, final String avatar) {
         new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-            catalogLock(); creators.findLocked(creator).orElseThrow(); avatars.attach(avatar);
+            creators.lockCatalog(); creators.findLocked(creator).orElseThrow(); avatars.attach(avatar);
             jdbc.update("update creator set avatar_id=? where id=?", avatar, creator);
         });
     }
-    private void catalogLock() { jdbc.queryForObject("select id from creator_catalog_lock where id=1 for update", Long.class); }
     private String avatarReference(final long creator) { return jdbc.queryForObject("select avatar_id from creator where id=?", String.class, creator); }
     private void age(final String id) {
         jdbc.update("update creator_avatar set created_at=?,unreferenced_at=? where id=?",

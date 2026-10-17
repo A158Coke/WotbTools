@@ -38,7 +38,6 @@ function recount(season) {
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
-  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, capabilities: ['creators-v1'] }); return }
   if (!path.startsWith(publicBase) && !path.startsWith(adminBase)) { next(); return }
   try {
     const admin = path.startsWith(adminBase), base = admin ? adminBase : publicBase
@@ -132,15 +131,23 @@ async function geometry(page) {
 }
 async function serverGeometry(page, scenario, count) {
   await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-servers] .broadcast-server-card").length', value => value === count)
+  await page.waitForValue(`(() => { const icons = [...document.querySelectorAll('.broadcast-server-emblem use')]; return icons.length === ${count} && icons.every(icon => icon.getBBox().width > 0); })()`, Boolean)
   await page.waitForValue('document.querySelector("[data-testid=broadcast-servers]")?.style.getPropertyValue("--broadcast-grid-top")', Boolean)
   const layout = await page.evaluate(`(() => {
     const grid = document.querySelector('[data-testid=broadcast-servers]'), style = getComputedStyle(grid)
-    return { cards: [...grid.querySelectorAll('.broadcast-server-card')].map(el => { const r=el.getBoundingClientRect(); return { x:r.x, y:r.y+scrollY, width:r.width, height:r.height, bottom:r.bottom+scrollY, icon:!!el.querySelector('.broadcast-server-emblem svg'), code:el.querySelector('.broadcast-server-code').textContent }; }),
+    return { cards: [...grid.querySelectorAll('.broadcast-server-card')].map(el => { const r=el.getBoundingClientRect(), stage=el.querySelector('.broadcast-server-emblem').getBoundingClientRect(), frame=el.querySelector('.broadcast-server-icon-frame').getBoundingClientRect(), icon=el.querySelector('.broadcast-server-emblem svg').getBoundingClientRect(); return { x:r.x, y:r.y+scrollY, width:r.width, height:r.height, bottom:r.bottom+scrollY, iconWidth:icon.width, iconHeight:icon.height, frameWidth:frame.width, frameHeight:frame.height, frameLeft:frame.left, frameTop:frame.top, stageWidth:stage.width, stageHeight:stage.height, stageLeft:stage.left, stageTop:stage.top, name:el.querySelector('.broadcast-server-name').textContent, code:el.querySelector('.broadcast-server-code').textContent }; }),
       gap:parseFloat(style.rowGap), top:parseFloat(style.getPropertyValue('--broadcast-grid-top')), tail:parseFloat(style.getPropertyValue('--broadcast-grid-tail')),
       tabs:document.querySelector('[data-testid=app-tab-bar]')?.getBoundingClientRect().height ?? 0, viewport:innerHeight }
   })()`)
   const [first, second, third, fourth, fifth] = layout.cards
-  assert.ok(layout.cards.every(card => card.height >= 200 && card.icon && servers.includes(card.code)), 'large cards include region code and Lucide icon')
+  assert.deepEqual(layout.cards.map(card => card.code), ['CN', 'APAC', 'NA', 'EU', 'LESTA'])
+  if (scenario.locale === 'en') assert.deepEqual(layout.cards.map(card => card.name), ['CN Server', 'APAC Server', 'NA Server', 'EU Server', 'Lesta'])
+  for (const card of layout.cards) {
+    assert.ok(card.height >= 200 && card.iconWidth > 0, 'large cards include rendered globe SVG')
+    assert.ok(Math.abs(card.frameWidth - Math.min(card.stageWidth, card.stageHeight)) < 2 && Math.abs(card.frameWidth - card.frameHeight) < 1, 'background frame fills the available square')
+    assert.ok(Math.abs(card.frameLeft - card.stageLeft) < 1 && Math.abs(card.frameTop - card.stageTop) < 1, 'square stays at the original upper-left anchor')
+    assert.ok(Math.abs(card.iconWidth - card.frameWidth * .75) < 2 && Math.abs(card.iconWidth - card.iconHeight) < 1, 'globe scales inside the square with its original inset')
+  }
   if (scenario.width >= 768) {
     assert.ok(Math.abs(first.y - second.y) < 1 && second.x > first.x, 'desktop and tablet use two columns')
     assert.ok(third.y > first.y && Math.abs(third.y - fourth.y) < 1, 'four cards form two rows')
@@ -178,6 +185,7 @@ try {
       const navLabel = await page.evaluate(`(() => { const link = document.querySelector('[data-testid="${navigation}-league-broadcasts"]'); return { visible: link.textContent.trim(), accessible: link.getAttribute('aria-label') }; })()`)
       assert.ok(navLabel.accessible.includes(navLabel.visible), 'accessible name includes the visible navigation label')
       if (scenario.width < 768) {
+        await page.waitForValue('!!document.querySelector("[data-testid=tab-creators]")', Boolean)
         assert.equal(await page.evaluate('document.querySelectorAll("[data-testid=app-tab-bar] .tab").length'), primaryNavItems(new URL(scenarioOrigin).hostname).length)
       }
       await serverGeometry(page, scenario, 5)

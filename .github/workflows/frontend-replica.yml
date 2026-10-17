@@ -26,7 +26,6 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    environment: tx-production
     steps:
       - name: Resolve Frontend source SHA
         id: source

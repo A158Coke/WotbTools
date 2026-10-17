@@ -243,5 +243,9 @@ Regression tests should preserve these invariants:
 
 The complete ID/name library remains available to roster and vehicle lookups.
 `TankNameCorrector` excludes coordinate-shaped names (A1–K10, including D1, D2 and B1)
-from its free-text matching index: a map location beside a player nickname must not
-be rewritten as that player’s vehicle. Other lower-tier names keep the existing correction rules.
+and reviewed ambiguous English word/person names (including Agent, Wind, Fury, Explorer,
+Ranger and IS) from its free-text matching index. Both canonical spellings and aliases resolving
+to these ambiguous names are excluded, even next to a roster nickname: parentheses alone do not
+prove a vehicle context. These spans remain unchanged and produce no correction/detection records.
+Unambiguous model names retain the existing correction rules. All names remain available through
+Tankopedia ID and roster lookup.

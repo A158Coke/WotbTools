@@ -54,7 +54,7 @@ Replay → **authoritative settlement** (`battle_results.dat`: damage / received
 
 - Local run / build: see [java/README.md](java/README.md); Keycloak realm configuration is verified by the disposable smoke test
 - Testing and quality gates: see [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- Updating the tank database: `cd common/python && python update_tankopedia.py` — generates the four per-tier files (see DEVELOPER_GUIDE)
+- Updating the tank database: `cd common/python && python update_tankopedia.py` — generates ten per-tier files (tiers 1–10) (see DEVELOPER_GUIDE)
 
 ## Current Tools
 

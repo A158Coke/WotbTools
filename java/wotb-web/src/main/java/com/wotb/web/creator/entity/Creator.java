@@ -24,8 +24,10 @@ public class Creator {
     public String name;
     @Column(length = 2000)
     public String description;
-    @Column(name = "bilibili_uid", nullable = false, length = 20, unique = true)
-    public String bilibiliUid;
+    @Column(nullable = false, length = 8)
+    public String type = "UP";
+    @Column(name = "bilibili_uid", nullable = false, length = 20)
+    public String externalId;
     @Column(name = "level_id")
     public Long levelId;
     @Column(name = "avatar_id", length = 36, unique = true)

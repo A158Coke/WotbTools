@@ -26,7 +26,6 @@ jobs:
     name: TX_RUNTIME_READY
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: tx-production
     steps:
       - uses: actions/checkout@v5
         with:
