@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiCodeLabel, apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
+import { apiCodeLabel, broadcastSeasonName, apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from './display.js'
 
 const values = {
   'api_errors.NETWORK_ERROR': 'Network failed',
@@ -15,6 +15,13 @@ const t = key => values[key] || key
 const te = key => Object.hasOwn(values, key)
 
 describe('display helpers', () => {
+  it('selects configured season translations and falls back from missing Russian to English', () => {
+    const season = { nameZh: '新视野', nameEn: 'New Horizons', nameRu: 'Новые горизонты' }
+    expect(broadcastSeasonName(season, 'zh-CN')).toBe('新视野')
+    expect(broadcastSeasonName(season, 'en')).toBe('New Horizons')
+    expect(broadcastSeasonName(season, 'ru-RU')).toBe('Новые горизонты')
+    expect(broadcastSeasonName({ ...season, nameRu: null }, 'ru')).toBe('New Horizons')
+  })
   it('localizes stable replay values and preserves future values', () => {
     expect(replayValueLabel(t, te, 'HEAVY_TANK')).toBe('Heavy tank')
     expect(replayValueLabel(t, te, 'FUTURE_VALUE')).toBe('FUTURE_VALUE')

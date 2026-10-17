@@ -15,9 +15,9 @@ import LeagueBroadcastReplayDialog from './LeagueBroadcastReplayDialog.vue'
 import { useLeagueBroadcasts } from '../composables/useLeagueBroadcasts.js'
 import * as api from '../api/league-broadcasts.js'
 import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
-import { apiErrorLabel } from '../utils/display.js'
+import { apiErrorLabel, broadcastSeasonName } from '../utils/display.js'
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const state = reactive(useLeagueBroadcasts())
 const serverIcons = { CN: cnGlobe, ASIA: asiaGlobe, NA: naGlobe, EU: euGlobe, LESTA: lestaGlobe }
 const serverGrid = ref<HTMLElement | null>(null)
@@ -51,7 +51,7 @@ const editingSeason = ref<BroadcastSeason | null>(null)
 const replayEditor = ref<{ node: BroadcastNode; replay: BroadcastReplay | null } | null>(null)
 const expanded = ref(new Set<number>()), failedCovers = ref(new Set<string>())
 const invalid = ref(false)
-const form = reactive({ year: new Date().getFullYear(), name: '', startDate: '', type: 'POINTS' as BroadcastCategory['type'], roundNumber: 1, format: 'ROUND_ROBIN' as NonNullable<BroadcastNode['format']>, expectedVersion: 0 })
+const form = reactive({ year: new Date().getFullYear(), nameZh: '', nameEn: '', nameRu: '', startDate: '', type: 'POINTS' as BroadcastCategory['type'], roundNumber: 1, format: 'ROUND_ROBIN' as NonNullable<BroadcastNode['format']>, expectedVersion: 0 })
 const errorText = computed(() => state.error ? apiErrorLabel(t, te, state.error) : '')
 const remainingCategories = computed(() => api.BROADCAST_CATEGORIES.filter(type => !state.categories.some(category => category.type === type)))
 const remainingRounds = computed(() => [1, 2, 3, 4, 5].filter(round => !state.nodes.some(node => node.roundNumber === round)))
@@ -59,7 +59,7 @@ const canAddNode = computed(() => state.category?.type === 'POINTS' ? remainingR
 const dialogTitle = computed(() => t(dialog.value === 'season' ? (editingSeason.value ? 'leagueBroadcasts.editSeason' : 'leagueBroadcasts.newSeason')
   : dialog.value === 'category' ? 'leagueBroadcasts.newCategory' : 'leagueBroadcasts.newNode'))
 const pageTitle = computed(() => state.category ? t(`leagueBroadcasts.categories.${state.category.type}`)
-  : state.season ? `${state.season.year} ${state.season.name}` : state.server ? t(`leagueBroadcasts.servers.${state.server}`) : t('leagueBroadcasts.title'))
+  : state.season ? `${state.season.year} ${broadcastSeasonName(state.season, locale.value)}` : state.server ? t(`leagueBroadcasts.servers.${state.server}`) : t('leagueBroadcasts.title'))
 
 function nodeTitle(node: BroadcastNode) {
   return state.category?.type === 'POINTS' ? t('leagueBroadcasts.roundLabel', { round: node.roundNumber })
@@ -69,7 +69,8 @@ const displayNodes = computed(() => state.nodes.map(node => ({ ...node, label: n
   records: node.replays.map(replay => ({ ...replay,
     metadata: [replay.matchDate, t('leagueBroadcasts.dayLabel', { day: replay.dayNumber }),
       state.category?.type === 'POINTS' ? t('leagueBroadcasts.roundLabel', { round: node.roundNumber }) : '',
-      replay.groupLabel, replay.groupNumber ? t('leagueBroadcasts.groupNumberLabel', { group: replay.groupNumber }) : '',
+      replay.groupNumber ? t('leagueBroadcasts.groupNumberLabel', { number: replay.groupNumber })
+        : state.category?.type === 'POINTS' ? t('leagueBroadcasts.groupNumberPending') : '',
       replay.bracket ? t(`leagueBroadcasts.brackets.${replay.bracket}`) : '', t(`leagueBroadcasts.perspectives.${replay.perspective}`)].filter(Boolean).join(' · '),
     teamLabel: [t('leagueBroadcasts.following', { team: replay.teams[0] }), ...replay.teams.slice(1)].join(' / '),
     coverUrl: replay.coverId && !failedCovers.value.has(replay.coverId) ? api.broadcastCoverUrl(replay.coverId) : '',
@@ -84,7 +85,7 @@ function toggle(id: number) {
 }
 function openSeason(value: BroadcastSeason | null = null) {
   editingSeason.value = value
-  Object.assign(form, { year: value?.year ?? new Date().getFullYear(), name: value?.name ?? '', startDate: value?.startDate ?? '', expectedVersion: value?.version ?? 0 })
+  Object.assign(form, { year: value?.year ?? new Date().getFullYear(), nameZh: value?.nameZh ?? '', nameEn: value?.nameEn ?? '', nameRu: value?.nameRu ?? '', startDate: value?.startDate ?? '', expectedVersion: value?.version ?? 0 })
   invalid.value = false; dialog.value = 'season'
 }
 function openStructure(kind: 'category' | 'node') {
@@ -97,8 +98,9 @@ function openStructure(kind: 'category' | 'node') {
 async function saveStructure() {
   if (!state.allowed || !state.server) return
   if (dialog.value === 'season') {
-    if (!Number.isInteger(form.year) || form.year < 1 || form.year > 9999 || !form.name.trim()) { invalid.value = true; return }
-    const value = { year: form.year, name: form.name.trim(), startDate: form.startDate || null }
+    if (!Number.isInteger(form.year) || form.year < 1 || form.year > 9999 || !form.nameZh.trim() || !form.nameEn.trim()
+      || [form.nameZh, form.nameEn, form.nameRu].some(name => name.trim().length > 100)) { invalid.value = true; return }
+    const value = { year: form.year, nameZh: form.nameZh.trim(), nameEn: form.nameEn.trim(), nameRu: form.nameRu.trim() || null, startDate: form.startDate || null }
     const existing = editingSeason.value
     await state.mutate(signal => existing ? api.updateBroadcastSeason(existing.id, { ...value, expectedVersion: form.expectedVersion }, signal)
       : api.createBroadcastSeason({ ...value, server: state.server! }, signal))
@@ -154,7 +156,7 @@ async function refreshPage() {
     <nav v-if="state.server" class="broadcast-breadcrumbs" :aria-label="t('leagueBroadcasts.title')">
       <button type="button" @click="state.navigate({})">{{ t('leagueBroadcasts.title') }}</button>
       <button type="button" @click="state.navigate({ server: state.server })">{{ t(`leagueBroadcasts.servers.${state.server}`) }}</button>
-      <button v-if="state.season" type="button" @click="state.navigate({ server: state.server, season: state.season.id })">{{ state.season.year }} · {{ state.season.name }}</button>
+      <button v-if="state.season" type="button" @click="state.navigate({ server: state.server, season: state.season.id })">{{ state.season.year }} · {{ broadcastSeasonName(state.season, locale) }}</button>
       <span v-if="state.category" aria-current="page">{{ t(`leagueBroadcasts.categories.${state.category.type}`) }}</span>
     </nav>
     <Banner v-if="!state.network.available && !state.network.pending">{{ t(state.network.messageKey || 'featureOffline.leagueBroadcasts') }}</Banner>
@@ -173,9 +175,9 @@ async function refreshPage() {
       <section v-else-if="!state.seasonId" class="broadcast-list" data-testid="broadcast-seasons">
         <p v-if="!state.seasons.length">{{ t('leagueBroadcasts.noSeasons') }}</p>
         <article v-for="season in state.seasons" :key="season.id" class="broadcast-season-row" :data-testid="`broadcast-season-${season.id}`">
-          <div class="broadcast-row-title"><h2>{{ season.year }} · {{ season.name }}</h2><span v-if="season.startDate">{{ season.startDate }}</span></div>
-          <div v-if="state.allowed" class="broadcast-actions"><AppButton :disabled="state.busy" :aria-label="t('leagueBroadcasts.editSeason')" :data-testid="`broadcast-edit-season-${season.id}`" @click="openSeason(season)"><Pencil :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.edit') }}</AppButton><AppButton variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-season-${season.id}`" @click="state.remove('seasons', season.id, season.name, t)"><Trash2 :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.delete') }}</AppButton></div>
-          <AppButton class="broadcast-enter" :aria-label="t('leagueBroadcasts.enter', { name: `${season.year} ${season.name}` })" :data-testid="`broadcast-enter-season-${season.id}`" @click="state.navigate({ server: state.server, season: season.id })"><ChevronRight :size="20" aria-hidden="true" /></AppButton>
+          <div class="broadcast-row-title"><h2>{{ season.year }} · {{ broadcastSeasonName(season, locale) }}</h2><span v-if="season.startDate">{{ season.startDate }}</span></div>
+          <div v-if="state.allowed" class="broadcast-actions"><AppButton :disabled="state.busy" :aria-label="t('leagueBroadcasts.editSeason')" :data-testid="`broadcast-edit-season-${season.id}`" @click="openSeason(season)"><Pencil :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.edit') }}</AppButton><AppButton variant="danger" :disabled="state.busy" :data-testid="`broadcast-delete-season-${season.id}`" @click="state.remove('seasons', season.id, broadcastSeasonName(season, locale), t)"><Trash2 :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.delete') }}</AppButton></div>
+          <AppButton class="broadcast-enter" :aria-label="t('leagueBroadcasts.enter', { name: `${season.year} ${broadcastSeasonName(season, locale)}` })" :data-testid="`broadcast-enter-season-${season.id}`" @click="state.navigate({ server: state.server, season: season.id })"><ChevronRight :size="20" aria-hidden="true" /></AppButton>
         </article>
       </section>
       <section v-else-if="!state.categoryId" data-testid="broadcast-categories">
@@ -209,7 +211,9 @@ async function refreshPage() {
         <Banner v-if="errorText" tone="danger">{{ errorText }}</Banner><Banner v-if="invalid" tone="danger">{{ t('leagueBroadcasts.invalidForm') }}</Banner>
         <template v-if="dialog === 'season'">
           <label class="broadcast-field"><span>{{ t('leagueBroadcasts.year') }}</span><input v-model.number="form.year" type="number" min="1" max="9999" step="1" required :disabled="state.busy" data-testid="broadcast-season-year"></label>
-          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.seasonName') }}</span><input v-model="form.name" required maxlength="100" :disabled="state.busy" data-testid="broadcast-season-name"></label>
+          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.seasonNameZh') }}</span><input v-model="form.nameZh" required maxlength="100" :disabled="state.busy" data-testid="broadcast-season-name-zh"></label>
+          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.seasonNameEn') }}</span><input v-model="form.nameEn" required maxlength="100" :disabled="state.busy" data-testid="broadcast-season-name-en"></label>
+          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.seasonNameRu') }} · {{ t('leagueBroadcasts.optional') }}</span><input v-model="form.nameRu" maxlength="100" :disabled="state.busy" data-testid="broadcast-season-name-ru"><small>{{ t('leagueBroadcasts.seasonNameRuFallback') }}</small></label>
           <label class="broadcast-field"><span>{{ t('leagueBroadcasts.startDate') }}</span><input v-model="form.startDate" type="date" :disabled="state.busy" data-testid="broadcast-season-start-date"></label>
         </template>
         <label v-else-if="dialog === 'category'" class="broadcast-field"><span>{{ t('leagueBroadcasts.category') }}</span><select v-model="form.type" :disabled="state.busy" data-testid="broadcast-category-type"><option v-for="type in remainingCategories" :key="type" :value="type">{{ t(`leagueBroadcasts.categories.${type}`) }}</option></select></label>

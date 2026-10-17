@@ -24,8 +24,9 @@ export type BroadcastDeletionPreview = Schemas['BroadcastDeletionPreview']
 export type BroadcastServer = BroadcastSeason['server']
 export const BROADCAST_CATEGORIES: BroadcastCategory['type'][] = ['POINTS', 'QUARTER_FINALS', 'SEMI_FINALS']
 
-const publicBase = '/api/tournament-broadcasts'
-const adminBase = '/api/admin/tournament-broadcasts'
+const publicBase = '/api/tournament-broadcasts/v2'
+const adminBase = '/api/admin/tournament-broadcasts/v2'
+const coverBase = '/api/tournament-broadcasts/covers'
 
 export function validateBroadcast<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
   const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
@@ -87,5 +88,5 @@ export async function deleteBroadcastResource(kind: 'seasons' | 'nodes' | 'repla
 }
 
 export function broadcastCoverUrl(id: string) {
-  return resolveApiUrl(`${publicBase}/covers/${encodeURIComponent(id)}`)
+  return resolveApiUrl(`${coverBase}/${encodeURIComponent(id)}`)
 }

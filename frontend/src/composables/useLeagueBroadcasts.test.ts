@@ -7,7 +7,7 @@ import * as api from '../api/league-broadcasts.js'
 import { useLeagueBroadcasts } from './useLeagueBroadcasts.js'
 
 const servers: api.BroadcastServer[] = ['CN', 'ASIA', 'NA', 'EU', 'LESTA']
-const season: api.BroadcastSeason = { id: 10, server: 'CN', year: 2026, name: 'Summer', startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 0 }
+const season: api.BroadcastSeason = { id: 10, server: 'CN', year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 0 }
 const category: api.BroadcastCategory = { id: 20, seasonId: 10, type: 'POINTS' }
 const node: api.BroadcastNode = { id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [] }
 async function setup(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20', overrides = {}) {

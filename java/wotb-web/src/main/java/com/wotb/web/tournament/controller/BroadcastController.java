@@ -2,6 +2,7 @@ package com.wotb.web.tournament.controller;
 
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.tournament.dto.BroadcastDtos;
+import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.tournament.service.BroadcastService;
 import org.springframework.http.HttpHeaders;
@@ -22,11 +23,17 @@ public class BroadcastController {
         this.service = service; this.covers = covers;
     }
     @GetMapping
-    public BroadcastDtos.Index index(@RequestParam(name = "server", required = false) final String server) { return service.index(server); }
+    public BroadcastLegacyDtos.Index index(@RequestParam(name = "server", required = false) final String server) { return service.legacyIndex(server); }
     @GetMapping("/seasons/{id}")
-    public BroadcastDtos.SeasonView season(@PathVariable final long id) { return service.season(id); }
+    public BroadcastLegacyDtos.SeasonView season(@PathVariable final long id) { return service.legacySeason(id); }
     @GetMapping("/categories/{id}")
-    public BroadcastDtos.CategoryView category(@PathVariable final long id) { return service.category(id); }
+    public BroadcastLegacyDtos.CategoryView category(@PathVariable final long id) { return service.legacyCategory(id); }
+    @GetMapping("/v2")
+    public BroadcastDtos.Index indexV2(@RequestParam(name = "server", required = false) final String server) { return service.index(server); }
+    @GetMapping("/v2/seasons/{id}")
+    public BroadcastDtos.SeasonView seasonV2(@PathVariable final long id) { return service.season(id); }
+    @GetMapping("/v2/categories/{id}")
+    public BroadcastDtos.CategoryView categoryV2(@PathVariable final long id) { return service.category(id); }
     @GetMapping("/covers/{id}")
     public ResponseEntity<byte[]> cover(@PathVariable final String id) {
         final BroadcastCoverService.CoverImage image = covers.load(id);

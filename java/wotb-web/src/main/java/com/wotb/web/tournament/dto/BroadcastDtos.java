@@ -14,11 +14,11 @@ import java.util.List;
 /** Wire shapes owned by contracts/http/openapi.yaml. */
 public final class BroadcastDtos {
     private BroadcastDtos() { }
-    public record Season(long id, String server, int year, String name, LocalDate startDate,
+    public record Season(long id, String server, int year, String nameZh, String nameEn, String nameRu, LocalDate startDate,
                          Instant createdAt, long version, long rootCount, long replayCount) { }
     public record Category(long id, long seasonId, String type) { }
     public record Replay(long id, long nodeId, String title, String url, LocalDate matchDate, int dayNumber,
-                         String groupLabel, Integer groupNumber, String bracket, List<String> teams,
+                         Integer groupNumber, String bracket, List<String> teams,
                          String perspective, String coverId) { }
     public record Node(long id, long categoryId, Integer roundNumber, String format, List<Replay> replays) { }
     public record Index(List<String> servers, List<Season> seasons, boolean coverUploadAvailable) { }
@@ -28,14 +28,18 @@ public final class BroadcastDtos {
     public record SeasonCreate(
             @JsonProperty(required = true) String server,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = JsonNumberInputs.IntegerInput.class) int year,
-            @JsonProperty(required = true) String name,
+            @JsonProperty(required = true) String nameZh,
+            @JsonProperty(required = true) String nameEn,
+            String nameRu,
             @JsonProperty(required = true) LocalDate startDate) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
     public record SeasonUpdate(
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = JsonNumberInputs.LongInput.class) long expectedVersion,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = JsonNumberInputs.IntegerInput.class) int year,
-            @JsonProperty(required = true) String name,
+            @JsonProperty(required = true) String nameZh,
+            @JsonProperty(required = true) String nameEn,
+            String nameRu,
             @JsonProperty(required = true) LocalDate startDate) {
         @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
     }
@@ -56,7 +60,6 @@ public final class BroadcastDtos {
             @JsonProperty(required = true) String url,
             @JsonProperty(required = true) LocalDate matchDate,
             @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) @JsonDeserialize(using = JsonNumberInputs.IntegerInput.class) int dayNumber,
-            @JsonProperty(required = true) String groupLabel,
             @JsonProperty(required = true) @JsonDeserialize(using = JsonNumberInputs.IntegerInput.class) Integer groupNumber,
             @JsonProperty(required = true) String bracket,
             @JsonProperty(required = true) List<String> teams,
