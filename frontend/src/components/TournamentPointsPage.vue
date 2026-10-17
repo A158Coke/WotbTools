@@ -145,6 +145,6 @@ onScopeDispose(() => { generation++; controller.abort() })
     <p v-if="loading" role="status">{{ $t('tournament.loading') }}</p>
     <p v-else-if="!events.length" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
     <p v-else-if="!eventId" class="tournament-muted">{{ $t(noInitialStandings ? 'tournament.empty' : 'tournament.selectEvent') }}</p>
-    <TournamentPointsTable data-tour="tournament-standings" v-if="standings" :standings="standings" />
+    <TournamentPointsTable data-tour="tournament-standings" v-if="standings" :standings="standings" public-view />
   </div>
 </template>
