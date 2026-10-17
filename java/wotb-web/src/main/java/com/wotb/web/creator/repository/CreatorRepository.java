@@ -21,8 +21,8 @@ public interface CreatorRepository extends JpaRepository<Creator, Long> {
     int lockCatalog();
 
     @EntityGraph(attributePaths = "categoryIds")
-    @Query("select c from Creator c where (:categoryId is null or :categoryId member of c.categoryIds) order by c.stars desc, c.createdAt desc, c.id desc")
-    List<Creator> publicList(@Param("categoryId") Long categoryId);
+    @Query("select c from Creator c where c.type = :type and (:categoryId is null or :categoryId member of c.categoryIds) order by c.stars desc, c.createdAt desc, c.id desc")
+    List<Creator> publicList(@Param("type") String type, @Param("categoryId") Long categoryId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from Creator c where c.id = :id")
@@ -33,8 +33,8 @@ public interface CreatorRepository extends JpaRepository<Creator, Long> {
     List<Creator> findCategoryMembersLocked(@Param("categoryId") long categoryId);
 
     boolean existsByLevelId(long levelId);
-    boolean existsByBilibiliUid(String bilibiliUid);
-    boolean existsByBilibiliUidAndIdNot(String bilibiliUid, long id);
+    boolean existsByTypeAndExternalId(String type, String externalId);
+    boolean existsByTypeAndExternalIdAndIdNot(String type, String externalId, long id);
     boolean existsByAvatarId(String avatarId);
 
     @Query(value = """

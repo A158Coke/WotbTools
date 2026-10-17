@@ -1,21 +1,25 @@
 <script setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Shield } from 'lucide-vue-next'
 import ReplayCapabilityAuthGate from '../components/ReplayCapabilityAuthGate.vue'
 import Banner from '../components/Banner.vue'
 import AppButton from '../components/AppButton.vue'
 import { useCreatorAvailability } from '../composables/useCreatorAvailability.js'
 import { useAuth } from '../composables/useAuth.js'
-import { viewFromRoute } from './navigation.js'
+import { locationForView, viewFromRoute } from './navigation.js'
 import { replayInitialCapability, VIEW_COMPONENTS } from './viewRegistry.js'
 
-const route = useRoute()
+const route = useRoute(), router = useRouter()
 const { authenticated, isTournamentAdmin } = useAuth()
 const activeView = computed(() => viewFromRoute(route))
-const { available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
-const creatorUnavailable = computed(() => activeView.value === 'creators' ? !directoryVisible.value : activeView.value === 'creators-config' && !creatorsAvailable.value)
-const creatorsNotPublished = computed(() => creatorsAvailable.value && contentKnown.value && !directoryVisible.value)
+const { typeAvailable, typeVisible, available: creatorsAvailable, directoryVisible, contentKnown, error: creatorsError, loading: creatorsChecking, refresh: retryCreators } = useCreatorAvailability()
+const recommendationType = computed(() => activeView.value === 'recommended-videos' ? 'VIDEO' : 'UP')
+const recommendationList = computed(() => ['creators', 'recommended-videos'].includes(activeView.value))
+const creatorUnavailable = computed(() => recommendationList.value ? !typeVisible(recommendationType.value)
+  : activeView.value === 'recommendations' ? !directoryVisible.value : activeView.value === 'creators-config' && !creatorsAvailable.value)
+const creatorsNotPublished = computed(() => contentKnown.value && (recommendationList.value
+  ? typeAvailable(recommendationType.value) && !typeVisible(recommendationType.value) : creatorsAvailable.value && !directoryVisible.value))
 // 装甲查看器匿名可用，ViewHost 只保留锦标赛管理页的登录门。
 const tournamentAdmin = computed(() => ['tournament-points-config', 'tournament-points-admin', 'creators-config'].includes(activeView.value))
 const tournamentNeedsLogin = computed(() => tournamentAdmin.value && !authenticated.value)
@@ -40,10 +44,11 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
     <Banner v-if="creatorUnavailable && !tournamentNeedsLogin && !tournamentDenied" :data-testid="creatorsNotPublished ? 'creators-not-published' : 'creators-unavailable'">
       {{ $t(creatorsChecking ? 'creators.checkingAvailability' : creatorsError ? 'creators.availabilityFailed' : creatorsNotPublished ? 'creators.notPublished' : 'creators.notAvailable') }}
       <AppButton :disabled="creatorsChecking" data-testid="creators-availability-retry" @click="retryCreators">{{ $t('creators.retry') }}</AppButton>
+      <AppButton v-if="recommendationList" data-testid="recommendations-back" @click="router.push(locationForView('recommendations', route))">{{ $t('creators.backToTypes') }}</AppButton>
     </Banner>
     <!-- 回放工作台是唯一 capability host：五种能力切换、从装甲查看器返回都保留同一个工作台实例 -->
     <KeepAlive :include="['ReplayWorkspace']">
-      <component v-if="!tournamentNeedsLogin && !tournamentDenied && !creatorUnavailable" :is="currentView" :initial-capability="initialCapability" />
+      <component v-if="!tournamentNeedsLogin && !tournamentDenied && !creatorUnavailable" :is="currentView" :initial-capability="initialCapability" v-bind="recommendationList ? { type: recommendationType } : {}" />
     </KeepAlive>
   </main>
 </template>

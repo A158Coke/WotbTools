@@ -9,62 +9,84 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
 function reset() {
-  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, visibilityAvailable: true, creatorReads: 0, publicListReads: 0, metadataReads: 0,
+  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, visibilityAvailable: true, recommendationsAvailable: true, creatorReads: 0, publicListReads: 0, metadataReads: 0, typedReads: 0,
     creators: [{ id: 1, version: 0, bilibiliUid: '1000001', name: 'A creator with a long name for narrow screens', description: 'Recommended replays and commentary.', categoryIds: [1, 2], levelId: null, stars: 3, avatarId: null, createdAt: '2026-10-16T00:00:00Z' },
       { id: 2, version: 0, bilibiliUid: '1000002', name: 'Assessed creator', description: null, categoryIds: [1], levelId: 1, stars: 4, avatarId: null, createdAt: '2026-10-15T00:00:00Z' }], nextId: 10, failSave: false, writes: 0 }
+  db.categories.forEach(value => { value.type = 'UP' }); db.creators.forEach(value => { value.type = 'UP' })
 }
 const avatarUrl = id => id ? `/api/creators/avatars/${id}` : null
+const legacyCategory = ({ id, name }) => ({ id, name })
 const detail = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, avatarUrl: avatarUrl(value.avatarId) })
-const card = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, homepageUrl: `https://space.bilibili.com/${value.bilibiliUid}`, avatarUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
+const card = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, homepageUrl: `https://space.bilibili.com/${value.bilibiliUid}`, avatarUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)).map(legacyCategory), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
+const recommendationDetail = value => ({ id: value.id, version: value.version, type: value.type, externalId: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, imageUrl: avatarUrl(value.avatarId) })
+const recommendationCard = value => ({ id: value.id, version: value.version, type: value.type, externalId: value.bilibiliUid, name: value.name, description: value.description, targetUrl: value.type === 'VIDEO' ? `https://www.bilibili.com/video/${value.bilibiliUid}` : `https://space.bilibili.com/${value.bilibiliUid}`, imageUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
 function send(response, status, value) { response.statusCode = status; if (value === undefined) { response.end(); return }; response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)) }
 function fail(response, status, errorCode) { send(response, status, { id: 'creator-browser-fixture', errorCode, errorMsg: null, status, retryable: false, details: {}, timestamp: null }) }
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
-  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, ...(db.apiAvailable ? { capabilities: ['creators-v1', ...(db.visibilityAvailable ? ['creators-content-visibility-v1'] : [])] } : {}) }); return }
+  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, ...(db.apiAvailable ? { capabilities: ['creators-v1', ...(db.visibilityAvailable ? ['creators-content-visibility-v1'] : []), ...(db.recommendationsAvailable ? ['recommendations-v1'] : [])] } : {}) }); return }
   if (path === '/api/observability/events') { send(response, 204); return }
-  if (!path.startsWith('/api/creators') && !path.startsWith('/api/admin/creators')) { next(); return }
+  const typed = path.startsWith('/api/recommendations') || path.startsWith('/api/admin/recommendations')
+  if (typed) db.typedReads++
+  if (!typed && !path.startsWith('/api/creators') && !path.startsWith('/api/admin/creators')) { next(); return }
+  if (typed && !db.recommendationsAvailable) { fail(response, 404, 'RESOURCE_NOT_FOUND'); return }
   try {
-    const admin = path.startsWith('/api/admin/'), parts = path.slice((admin ? '/api/admin/creators' : '/api/creators').length).split('/').filter(Boolean)
+    const admin = path.startsWith('/api/admin/'), base = `${admin ? '/api/admin' : '/api'}/${typed ? 'recommendations' : 'creators'}`
+    const parts = path.slice(base.length).split('/').filter(Boolean), type = typed ? url.searchParams.get('type') : 'UP'
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { fail(response, 403, 'AUTH_FORBIDDEN'); return }
     if (request.method === 'GET') {
       db.creatorReads++
-      if (!admin && parts[0] === 'categories') send(response, 200, db.categories.filter(category => !db.visibilityAvailable || db.creators.some(value => value.categoryIds.includes(category.id))))
-      else if (admin && parts[0] === 'metadata') { db.metadataReads++; send(response, 200, { categories: db.categories, levels: db.levels, avatarUploadsAvailable: db.uploadAvailable }) }
+      if (!admin && parts[0] === 'categories') {
+        const categories = db.categories.filter(category => (typed || category.type === 'UP') && ((!typed && !db.visibilityAvailable) || db.creators.some(value => value.type === category.type && value.categoryIds.includes(category.id))))
+        send(response, 200, typed ? categories : categories.map(legacyCategory))
+      } else if (admin && parts[0] === 'metadata') {
+        db.metadataReads++
+        if (!['UP', 'VIDEO'].includes(type)) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
+        const categories = db.categories.filter(value => value.type === type)
+        send(response, 200, typed ? { type, categories, levels: type === 'UP' ? db.levels : [], imageUploadsAvailable: db.uploadAvailable } : { categories: categories.map(legacyCategory), levels: db.levels, avatarUploadsAvailable: db.uploadAvailable })
+      }
       else if (!admin && parts[0] === 'avatars') {
         const file = db.creators.some(value => value.avatarId === parts[1]) ? db.avatars.get(parts[1]) : null
         if (!file) { response.statusCode = 404; response.end() } else { response.setHeader('Content-Type', file.type); response.end(Buffer.from(await file.arrayBuffer())) }
-      } else if (admin && /^\d+$/.test(parts[0] ?? '')) { const value = db.creators.find(item => item.id === Number(parts[0])); if (value) send(response, 200, detail(value)); else fail(response, 404, 'CREATOR_NOT_FOUND') }
-      else if (!admin && !parts.length) { db.publicListReads++; send(response, 200, db.creators.filter(value => !url.searchParams.get('categoryId') || value.categoryIds.includes(Number(url.searchParams.get('categoryId')))).sort((a, b) => b.stars - a.stars || b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map(card)) }
+      } else if (admin && /^\d+$/.test(parts[0] ?? '')) { const value = db.creators.find(item => item.id === Number(parts[0]) && item.type === type); if (value) send(response, 200, typed ? recommendationDetail(value) : detail(value)); else fail(response, 404, 'CREATOR_NOT_FOUND') }
+      else if (!admin && !parts.length) {
+        if (!['UP', 'VIDEO'].includes(type)) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
+        db.publicListReads++; send(response, 200, db.creators.filter(value => value.type === type && (!url.searchParams.get('categoryId') || value.categoryIds.includes(Number(url.searchParams.get('categoryId'))))).sort((a, b) => b.stars - a.stars || b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map(typed ? recommendationCard : card))
+      }
       else fail(response, 404, 'RESOURCE_NOT_FOUND')
       return
     }
     if (!admin) { fail(response, 404, 'RESOURCE_NOT_FOUND'); return }
     db.writes++
     if (request.method === 'DELETE') {
-      if (parts[0] === 'categories') { const id = Number(parts[1]); if (db.creators.some(value => value.categoryIds.length === 1 && value.categoryIds.includes(id))) { fail(response, 409, 'CREATOR_CATEGORY_IN_USE'); return }; db.categories = db.categories.filter(value => value.id !== id) }
+      if (parts[0] === 'categories') { const id = Number(parts[1]); if (!db.categories.some(value => value.id === id && value.type === type)) { fail(response, 404, 'CREATOR_NOT_FOUND'); return }; if (db.creators.some(value => value.categoryIds.length === 1 && value.categoryIds.includes(id))) { fail(response, 409, 'CREATOR_CATEGORY_IN_USE'); return }; db.categories = db.categories.filter(value => value.id !== id) }
       else if (parts[0] === 'levels') { const id = Number(parts[1]); if (db.creators.some(value => value.levelId === id)) { fail(response, 409, 'CREATOR_LEVEL_IN_USE'); return }; db.levels = db.levels.filter(value => value.id !== id) }
-      else { const current = db.creators.find(value => value.id === Number(parts[0])); if (!current || !url.searchParams.has('expectedVersion') || current.version !== Number(url.searchParams.get('expectedVersion'))) { fail(response, 409, 'CREATOR_CONFIG_CONFLICT'); return }; db.creators = db.creators.filter(value => value.id !== current.id) }
+      else { const current = db.creators.find(value => value.id === Number(parts[0]) && value.type === type); if (!current) { fail(response, 404, 'CREATOR_NOT_FOUND'); return }; if (!url.searchParams.has('expectedVersion') || current.version !== Number(url.searchParams.get('expectedVersion'))) { fail(response, 409, 'CREATOR_CONFIG_CONFLICT'); return }; db.creators = db.creators.filter(value => value.id !== current.id) }
       send(response, 204); return
     }
     const incoming = new Request(url, { method: request.method, headers: request.headers, body: Readable.toWeb(request), duplex: 'half' })
-    if (parts[0] === 'categories' || parts[0] === 'levels') { const payload = await incoming.json(), value = { id: db.nextId++, name: payload.name }; db[parts[0]].push(value); send(response, 201, value); return }
+    if (parts[0] === 'categories' || parts[0] === 'levels') { const payload = await incoming.json(), value = { id: db.nextId++, name: payload.name, ...(parts[0] === 'categories' ? { type: typed ? payload.type : 'UP' } : {}) }; db[parts[0]].push(value); send(response, 201, typed || parts[0] === 'levels' ? value : legacyCategory(value)); return }
     assert.match(String(request.headers['content-type']), /^multipart\/form-data; boundary=/)
     const form = await incoming.formData(), payloadPart = form.get('payload')
     assert.equal(payloadPart.type, 'application/json')
-    const payload = JSON.parse(await payloadPart.text()), avatar = form.get('avatar')
+    const input = JSON.parse(await payloadPart.text()), recordType = typed ? input.type : 'UP'
+    const payload = typed ? { ...input, bilibiliUid: input.externalId, avatarAction: input.imageAction } : input, avatar = form.get(typed ? 'image' : 'avatar')
     assert.equal(payload.avatarAction === 'REPLACE', !!avatar, 'action matches the one optional avatar part')
-    const bilibiliUid = payload.bilibiliUid.trim().replace(/^0+/, ''), id = parts.length ? Number(parts[0]) : null
-    if (db.creators.some(value => value.bilibiliUid === bilibiliUid && value.id !== id)) { fail(response, 409, 'CREATOR_UID_ALREADY_EXISTS'); return }
+    if (!['UP', 'VIDEO'].includes(recordType) || (recordType === 'VIDEO' && payload.levelId !== null)
+      || payload.categoryIds.some(id => !db.categories.some(value => value.id === id && value.type === recordType))) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
+    const bilibiliUid = recordType === 'UP' ? payload.bilibiliUid.trim().replace(/^0+/, '') : payload.bilibiliUid.trim(), id = parts.length ? Number(parts[0]) : null
+    if (db.creators.some(value => value.type === recordType && value.bilibiliUid === bilibiliUid && value.id !== id)) { fail(response, 409, recordType === 'UP' ? 'CREATOR_UID_ALREADY_EXISTS' : 'RECOMMENDATION_ID_ALREADY_EXISTS'); return }
     const current = db.creators.find(item => item.id === id)
+    if (current && current.type !== recordType) { fail(response, 404, 'CREATOR_NOT_FOUND'); return }
     if ((id === null && payload.expectedVersion !== null) || (id !== null && (!current || current.version !== payload.expectedVersion))) { fail(response, 409, 'CREATOR_CONFIG_CONFLICT'); return }
     if (db.failSave) { db.failSave = false; fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
     let value = db.creators.find(item => item.id === id)
-    if (!value) { value = { id: db.nextId++, version: 0, avatarId: null, createdAt: '2026-10-17T00:00:00Z' }; db.creators.push(value) }
+    if (!value) { value = { id: db.nextId++, type: recordType, version: 0, avatarId: null, createdAt: '2026-10-17T00:00:00Z' }; db.creators.push(value) }
     if (payload.avatarAction === 'REPLACE') { assert.ok(db.uploadAvailable); const avatarId = crypto.randomUUID(); db.avatars.set(avatarId, avatar); value.avatarId = avatarId }
     else if (payload.avatarAction === 'REMOVE') value.avatarId = null
     Object.assign(value, { bilibiliUid, name: payload.name, description: payload.description, categoryIds: payload.categoryIds, levelId: payload.levelId, stars: payload.stars })
     if (id !== null) value.version++
-    send(response, id ? 200 : 201, detail(value))
+    send(response, id ? 200 : 201, typed ? recommendationDetail(value) : detail(value))
   } catch (error) { console.error(error); fail(response, 500, 'INTERNAL_ERROR') }
 }
 async function tap(page, selector, touch) {
@@ -102,6 +124,110 @@ async function tabGeometry(page, expectedCount) {
     if (tab.active) assert.ok(tab.left >= value.left - 0.5 && tab.right <= value.right + 0.5, 'active tab is visible after navigation')
   })
 }
+async function videoLifecycle(page, origin, scenario) {
+  const touch = scenario.touch, primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
+  db.categories.push({ id: 51, type: 'VIDEO', name: 'Video tutorials' }, { id: 52, type: 'VIDEO', name: 'Video highlights' }, { id: 53, type: 'VIDEO', name: 'Empty video category' })
+  db.creators = [
+    { ...db.creators[0], id: 101, type: 'VIDEO', bilibiliUid: 'BV1xx411c7mD', name: 'Tutorial video', categoryIds: [51], levelId: null },
+    { ...db.creators[1], id: 102, type: 'VIDEO', bilibiliUid: 'BV1XX411C7MD', name: 'Highlight video', categoryIds: [52], levelId: null },
+  ]
+  await page.goto(`${origin}/?view=recommendations&ws-auth=0&keep=1#catalog`)
+  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), false, 'only VIDEO content still publishes the main entry')
+  assert.equal(await page.evaluate(`!!document.querySelector(${JSON.stringify(primary)})`), true)
+  await geometry(page, scenario.profile)
+  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+  assert.equal(await page.evaluate('new URL(location.href).searchParams.get("view")'), 'recommended-videos')
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-card-101] a").href'), 'https://www.bilibili.com/video/BV1xx411c7mD')
+  await tap(page, '[data-testid=creator-categories-toggle]', touch)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-filter-1],[data-testid=creator-filter-53]")'), false, 'public VIDEO filters exclude UP and empty VIDEO categories')
+  await tap(page, '[data-testid=creator-filter-51]', touch)
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
+  await page.evaluate('history.back()')
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+  await page.evaluate('history.forward()')
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
+  await tap(page, '[data-testid=recommendations-back]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=recommendations-page]")', Boolean)
+  assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),category:new URL(location.href).searchParams.get("creatorCategory"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', category: null, keep: '1', hash: '#catalog' })
+
+  reset(); db.recommendationsAvailable = false
+  await page.goto(`${origin}/?view=recommendations&ws-auth=0`)
+  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-UP]")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")'), false)
+  await tap(page, '[data-testid=recommendation-card-UP]', touch)
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+  await page.goto(`${origin}/?view=recommended-videos&ws-auth=0`)
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
+  assert.equal(db.typedReads, 0, 'legacy backend is only called through the UP API')
+  await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=tournament-admin`)
+  await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean)
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=recommendation-type-VIDEO]").disabled'), true)
+
+  reset()
+  await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=tournament-admin`)
+  await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean)
+  await fill(page, { 'creator-name': 'Unsaved UP draft', 'creator-uid': '123456' })
+  await chooseAvatar(page)
+  await page.waitForValue('document.querySelector("[data-testid=creator-avatar-preview]")?.naturalWidth', value => value === 32)
+  await tap(page, '[data-testid=recommendation-type-VIDEO]', touch)
+  await tap(page, '[data-testid=confirm-cancel]', touch)
+  await page.waitForValue('!document.querySelector("[data-testid=confirm-dialog]") && !document.body.classList.contains("dialog-open")', Boolean, { label: 'cancelled type navigation closes and restores the form' })
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-name]").value'), 'Unsaved UP draft')
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-avatar-preview]").src.startsWith("blob:")'), true)
+  await tap(page, '[data-testid=recommendation-type-VIDEO]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=confirm-dialog]")', Boolean, { label: 'second type navigation requests draft confirmation' })
+  await tap(page, '[data-testid=confirm-ok]', touch)
+  await page.waitForValue('new URL(location.href).searchParams.get("recommendationType")', value => value === 'VIDEO')
+  await page.waitForValue('document.querySelector("[data-testid=creator-name]")?.value', value => value === '')
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-avatar-preview],[data-testid=creator-assessed],[data-testid=creator-level],[data-testid=creator-new-level]")'), false, 'VIDEO clears abandoned UP draft and never exposes strength configuration')
+  assert.equal(await page.evaluate('document.querySelector(".creator-fieldset small").textContent'), 'No categories yet. Add one in category management first.')
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-stars]").value'), '3')
+  await geometry(page, scenario.profile, true)
+  await fill(page, { 'creator-new-category': 'New video category' })
+  await tap(page, '.creator-config-sections section:first-child form button', touch)
+  await page.waitForValue('document.querySelectorAll(".creator-options input").length', value => value === 1)
+  const category = db.categories.find(value => value.type === 'VIDEO')
+  assert.ok(category); assert.equal(db.categories.filter(value => value.type === 'UP').length, 4)
+  await fill(page, { 'creator-name': 'New video from administrator', 'creator-uid': '  BV1xX411c7mD  ', 'creator-description': 'A cover is optional.' })
+  await tap(page, `[data-testid=creator-category-${category.id}]`, touch)
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-homepage]").href'), 'https://www.bilibili.com/video/BV1xX411c7mD')
+  const writes = db.writes
+  await chooseAvatar(page)
+  await page.waitForValue('document.querySelector("[data-testid=creator-avatar-preview]")?.naturalWidth', value => value === 32)
+  assert.equal(db.writes, writes, 'cover selection does not upload ahead of a save')
+  db.failSave = true
+  await tap(page, '[data-testid=creator-save]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=creators-config-page] [role=alert]")', Boolean)
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-name]").value'), 'New video from administrator')
+  assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-avatar-preview]").src.startsWith("blob:")'), true)
+  await tap(page, '[data-testid=creator-save]', touch)
+  await page.waitForValue('document.querySelector("[data-testid=creator-name]")?.value', value => value === '')
+  const created = db.creators.find(value => value.type === 'VIDEO')
+  assert.ok(created?.avatarId); assert.equal(created.bilibiliUid, 'BV1xX411c7mD'); assert.equal(created.levelId, null); assert.equal(created.stars, 3)
+  await tap(page, primary, touch)
+  await tap(page, '[data-testid=recommendation-card-VIDEO]', touch)
+  await page.waitForValue(`document.querySelector('[data-testid=creator-edit-${created.id}]')?.disabled`, value => value === false)
+  await geometry(page, scenario.profile)
+  await tap(page, `[data-testid=creator-edit-${created.id}]`, touch)
+  await page.waitForValue('document.querySelector("[data-testid=creator-avatar-preview]")?.naturalWidth', value => value === 32)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-assessed],[data-testid=recommendation-type-UP]")'), false)
+  await fill(page, { 'creator-name': 'Edited video' })
+  await tap(page, '[data-testid=creator-avatar-clear]', touch)
+  await tap(page, '[data-testid=creator-save]', touch)
+  await page.waitForValue('!document.querySelector("[data-testid=creator-editor-dialog]")', Boolean)
+  assert.equal(created.name, 'Edited video'); assert.equal(created.avatarId, null, 'VIDEO can be saved without a cover')
+  await tap(page, `[data-testid=creator-remove-${created.id}]`, touch)
+  await tap(page, '[data-testid=confirm-ok]', touch)
+  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 0)
+  await tap(page, '[data-testid=recommendations-back]', touch)
+  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
+  await page.evaluate('window.__wsAuth.tokenParsed.value={realm_access:{roles:[]}}')
+  await page.waitForValue('!document.querySelector("[data-testid=recommendation-card-VIDEO]")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-UP]")'), true, 'deleting final VIDEO hides its public card while UP stays published')
+  assert.equal(await page.evaluate(`!!document.querySelector(${JSON.stringify(primary)})`), true)
+}
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
 const scenarios = ['showcase', 'classic'].flatMap(profile => [
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
@@ -110,6 +236,7 @@ const scenarios = ['showcase', 'classic'].flatMap(profile => [
   { name: `${profile}-content-lifecycle`, profile, width: 390, height: 1000, touch: true, locale: 'en', contentLifecycle: true },
   { name: `${profile}-legacy-creators`, profile, width: 1440, height: 900, touch: false, locale: 'en', legacyCreators: true },
   { name: `${profile}-local-320`, profile, width: 320, height: 844, touch: true, locale: 'zh', compactNavigation: true },
+  ...[1440, 390].map(width => ({ name: `${profile}-videos-${width}`, profile, width, height: 1000, touch: width < 768, locale: 'en', videos: true })),
 ])
 let failures = 0
 try {
@@ -120,6 +247,10 @@ try {
     try {
       await page.enable(); await page.emulate(scenario)
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
+      if (scenario.videos) {
+        await videoLifecycle(page, origin, scenario)
+        assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
+      }
       if (scenario.contentLifecycle) {
         const published = structuredClone(db.creators[0])
         db.creators = []
@@ -141,6 +272,7 @@ try {
         const created = db.creators[0]
         assert.ok(created, 'administrator can publish the first UP')
         await tap(page, '[data-testid=tab-creators]', scenario.touch)
+        await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
         await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 1)
         await tap(page, '[data-testid=creator-categories-toggle]', scenario.touch)
         await tap(page, '[data-testid=creator-filter-3]', scenario.touch)
@@ -170,6 +302,7 @@ try {
         assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
       }
       if (scenario.legacyCreators) {
+        db.recommendationsAvailable = false
         db.visibilityAvailable = false
         await page.goto(`${origin}/?view=creators&ws-auth=0`)
         await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
@@ -225,7 +358,9 @@ try {
         assert.equal(await page.evaluate('window.scrollY'), scrollY)
       }
       const primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
-      await tap(page, primary, scenario.touch); await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
+      await tap(page, primary, scenario.touch)
+      await tap(page, '[data-testid=recommendation-card-UP]', scenario.touch)
+      await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
       assert.equal(await page.evaluate(`document.querySelector(${JSON.stringify(primary)}).getAttribute('aria-current')`), 'page')
       if (scenario.compactNavigation) await tabGeometry(page, scenario.productionHome ? 8 : 7)
       assert.equal(await page.evaluate('document.querySelectorAll(".creator-card button").length'), 0, 'anonymous cards have no management or user-action buttons')
@@ -288,7 +423,7 @@ try {
         await tap(page, '[data-testid=creator-category-all]', scenario.touch)
         await page.waitForValue('document.querySelector("[data-testid=creator-edit-1]")?.disabled', value => value === false)
         await geometry(page, scenario.profile)
-        db.categories.push({ id: 99, name: 'New category from another administrator' }); db.levels.push({ id: 99, name: 'New skill level' }); db.creators[0].categoryIds = [99]; db.creators[0].levelId = 99; db.creators[0].version++
+        db.categories.push({ id: 99, type: 'UP', name: 'New category from another administrator' }); db.levels.push({ id: 99, name: 'New skill level' }); db.creators[0].categoryIds = [99]; db.creators[0].levelId = 99; db.creators[0].version++
         await tap(page, '[data-testid=creator-edit-1]', scenario.touch); await page.waitForValue('!!document.querySelector("[data-testid=creator-name]")', Boolean)
         assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-category-99]")?.checked'), true)
         await fill(page, { 'creator-name': 'Edited in real browser' })

@@ -1,0 +1,12 @@
+{
+  "type": "VIDEO",
+  "categories": [
+    {
+      "id": 7,
+      "name": "Featured videos",
+      "type": "VIDEO"
+    }
+  ],
+  "levels": [],
+  "imageUploadsAvailable": true
+}

@@ -124,6 +124,8 @@ Android starts the same Vue application from `http://127.0.0.1:21653/index.html`
 
 ### 推荐目录的分批部署兼容
 
-AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，侧栏、底栏、更多管理入口和ViewHost共同读取。creators-v1表示技术能力；新增creators-content-visibility-v1确认公开分类只含有UP的分类。大众入口由成功的非空公开快照决定；空目录深链显示待发布与重试。真实tournament-admin保留空目录和管理入口，页面分类取管理metadata完整字典，不向公开快照写入私有字典。旧后端仅声明creators-v1时管理仍可用，大众入口保持隐藏。
+AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，按UP/VIDEO派生类型卡片、列表与总入口可见性。recommendations-v1启用typed API，一次类别快照包含两个类型；只有作品非空时总入口也可见。旧后端回退到UP-only API；creators-v1表示UP技术能力，creators-content-visibility-v1确认公开UP分类为非空子集。无新能力时作品不可进入，不发新接口请求。真实tournament-admin保留各技术可用类型的空目录和管理入口；完整管理字典不回流公开快照。
+
+RecommendationsPage是类型入口，CreatorsPage以type prop复用UP和作品列表；旧creators深链继续直达UP，recommended-videos打开作品，两者属于同一导航栏目。CreatorsConfigPage用recommendationType query选择同一表单/类别管理，VIDEO不展示实力等级。Vue Router拥有类型与分类历史，切换前由路由guard确认放弃脏草稿/图片；保存中阻止切换。useCreators/useCreatorManagement将type纳入请求所有权，过期metadata/list/editor响应不得污染新类型。api/creators.ts集中适配新typed和旧UP wire，不让组件处理endpoint或兼容字段转换。
 
 初次加载、恢复联网、窗口焦点、显式刷新及管理写入ACK触发共享读取；ACK会作废写前请求。失败保留最近成功快照，不伪造空目录或清掉已保存/正在编辑的草稿。公开分类失效后router.replace回全部，保留其他query/hash；管理员空分类不回退。该状态不替代useFeatureGate的网络判断，不轮询、不保存到localStorage，不承诺跨会话实时更新。
