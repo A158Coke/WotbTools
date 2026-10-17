@@ -10,10 +10,10 @@ name: Production Worker
 # declarative resources, never touches Periphery's lifecycle, and never changes a K6B
 # production placement.
 #
-# The credential is read from the protected `tx-production` environment and handed to
-# the host through the SSH action's environment (never argv, never a file in Git). The
-# host-side reconcile re-executes itself through non-interactive sudo preserving only
-# that credential, so it never appears in a process list, a staged directory or a log.
+# The credential is read from repository-level Actions secrets and handed to the host
+# through the SSH action's environment (never argv, never a file in Git). The host-side
+# reconcile re-executes itself through non-interactive sudo preserving only that
+# credential, so it never appears in a process list, a staged directory or a log.
 on:
   push:
     branches: [main]
@@ -42,7 +42,6 @@ jobs:
     name: Reconcile the TX2 production worker
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    environment: tx-production
     steps:
       - uses: actions/checkout@v5
         with:
