@@ -102,10 +102,15 @@ const COMPARATORS = {
  * （同分回落既有 byName）。不做 exact-alias / 语言 / 热度 boost。
  */
 function tankSearchScore(tank, query) {
-  let score = tankFuzzyScore(tank.name || '', query)
-  for (const alias of tank.aliases || []) {
-    // alias 原始文本留在 JSON 里，匹配时与 query 同样 trim；大小写由 tankFuzzyScore 归一化。
-    const aliasScore = tankFuzzyScore(String(alias || '').trim(), query)
+  // 国服 T-34* 是 Type T-34 的正式名称，星号是车型限定，不能作为标点丢掉。
+  const starredQuery = query.includes('*')
+  const name = tank.name || ''
+  let score = !starredQuery || name.includes('*') ? tankFuzzyScore(name, query) : 0
+  for (const value of tank.aliases || []) {
+    const alias = String(value || '').trim()
+    // 带星查询只比较带星字段；裸查询跳过星号别名，仍可用 canonical 名命中该车。
+    if (alias.includes('*') !== starredQuery) continue
+    const aliasScore = tankFuzzyScore(alias, query)
     if (aliasScore > score) score = aliasScore
   }
   return score
