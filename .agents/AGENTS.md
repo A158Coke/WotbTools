@@ -140,7 +140,10 @@
 - **换 pin 的完整动作链**：除重跑 fetch 脚本，还须重生成 AI 投影 golden——`common/fixtures/ai-projection/*.json.gz`
   内嵌 pin provenance（`projection.engine.agentRelease`/`agentCommit`）：
   `WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，
-  并校验 `battle`/`projection` 逐字段不变、仅 provenance 更新，随同一 PR 提交。漏跑则该文件 3 个
+  并校验 `battle`/`projection` 逐字段不变、仅 provenance 更新，随同一 PR 提交。**该"仅 provenance"不变式
+  只在「pin 单独升级、投影规则未变」时成立**：若同一 PR 有意改变投影形状（如 writer 开始发送新的
+  canonical 字段 `hpState`），golden 差异必须在同一 PR 内显式重生成，并在 PR 描述里按差异类别逐条
+  说明（新增了哪些字段、为什么），**不得**写成"与 main 逐字段一致、仅 provenance 变化"。漏跑则该文件 3 个
   fixture 因 provenance 失配而红、Required Gate 拦下；失败信息只显示 release/commit 不符，先比对
   两个 release 的 `wotb_replay_wasm_bg.wasm` sha256（可能字节相同）再排查行为回归。
 - admin 视图的 dev-gated 旁路参数 `?admin=1`（**已入库**：`frontend/src/composables/useAuth.js`

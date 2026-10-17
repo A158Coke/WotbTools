@@ -211,7 +211,8 @@ public final class ReplayTerminalLifecycle {
     private static TerminalKind terminalKind(final HpRawState state) {
         return switch (state) {
             case HP_ZERO_TERMINAL -> TerminalKind.HP_ZERO;
-            case DEATH_TERMINAL_FFFD -> TerminalKind.DEATH_SENTINEL_FFFD;
+            // 字段权威的终态全族与 legacy FFFD 同归为"独立于 HP 的终态"（kind 名保持，不动 wire）
+            case DEATH_TERMINAL_FFFD, DEATH_TERMINAL -> TerminalKind.DEATH_SENTINEL_FFFD;
             default -> TerminalKind.LEGACY_EXACT_ALIVE_FALSE;
         };
     }

@@ -111,21 +111,48 @@ Type8
 
 **状态**：PROVEN for tested 11.18–11.19 samples；生产代码若使用需结构化解码 + 版本/结构校验，结构不符合时安全降级，**不得把 300/1000 重新硬编码成游戏规则**。
 
-## PROP3_HP_SENTINELS（propId=3 血量 sentinel · PROVEN）
+## PROP3_HP_SENTINELS（propId=3 血量 sentinel · raw evidence PROVEN）
 
-**结论**：type-7 propId=3 的 u16 值按 **signed i16** 解释：
+**读法（两层不可互换）**：下面的 raw 结论是 11.x 语料上的**研究证据**，只适用于**没有 `hp_state`
+字段的 legacy payload**（旧产物 / pin < v0.4.9）；**上游 ≥ v0.4.9 的消费契约以生产方字段
+`hp_state` 为唯一权威**（见下节）。研究层未决的负值族问题不会改变权威路径，也不得反过来放宽
+legacy 判定。
+
+**Raw evidence（legacy / 无 `hp_state` 的旧产物）**：type-7 propId=3 的 u16 值按 **signed i16** 解释：
 - **正数**：当前真实 HP（含装备/物资加成；阵亡到 0、存活不到 0）——注意这只是该时刻的当前 HP，不等于初始满血：真实样本 probe（wotb-web `EntryHpProbeTest`）显示首个样本多与首次受击同刻且低于 tankopedia base，进场满血只能由「严格早于首次受击且 ≥ base 的样本」证明（`EntryHpSource.OBSERVED_EXACT`），否则只能 base baseline
-- **0xFFFD（signed -3）**：与车辆死亡强关联的 sentinel——11/11 与争霸击毁 ±40 点**精确同刻**；不得解析为 HP=65533；解码器归一化为死亡 HP=0（alive=false）
+- **0x0000**：确知归零（death terminal）
+- **0xFFFD（signed -3）**：与车辆死亡强关联的 sentinel——11/11 与争霸击毁 ±40 点**精确同刻**；不得解析为 HP=65533；legacy 分类据此判死（`alive=false`），但 canonical 血量仍是**未知（≠ 0）**
 - **0xFFFF（signed -1）**：UNKNOWN/不可用/未初始化 sentinel（1535 样本 11.102s 出现，时刻无 ±40 kill points、无死亡证据）；不得当 HP、不得直接变成死亡 0
+- **0xFFFE（signed -2）**：单条 Intotherainy 死亡链已闭环（settlement `lifeTime`/`killerID` + Type-8 血量/状态 + 无后续存活 HP），但**全局语义仍是未证明哨兵**；legacy 分类按 UNKNOWN 处理（与 `0xFFFF` 同档），不作为死亡证据
 - **其它 ≤0 高位值**：UNKNOWN sentinel，不臆测语义
 
-**落点**：客户端 `frontend/src/replay-local/canonical/hpRawState.ts`（signed 解读 + sentinel 归一化：
-`0xFFFD` → 已证明阵亡终态但**血量未知**，`0xFFFF`/`0xFFFE`/其余负值 → 未知；`isPlausibleHp` = `0 < hp < 0xFF00`）
-→ `frontend/src/replay-local/canonical/facts.ts` 的 `hpSamples`（哨兵永不进入 HP 数值）。原 Java
+**消费契约（上游 ≥ v0.4.9）：`hp_state` 是唯一权威分类**。`AiReviewFacet` 的 `damage`（method1）与
+`health`（prop3）事件携带 `hp_state`（`current` / `zero` / `terminal`；规则 = 上游
+`combat::hp_terminal_normalized`：signed i16 **> 0 ⇒ `current`**、**== 0 ⇒ `zero`**、**< 0 ⇒
+`terminal`**）：`zero` = 确知归零、`terminal` = **负 i16 终态
+哨兵全族**（实测族 `0xFFFF`/`0xFFFE`/`0xFFFD`，其余负值同编码，同族全部取值同一处理、禁按分布
+裁剪）、`current` = 可用血量。**字段在场时"某负值是否终态"由生产方声明，消费方不得按 raw 再解释**。
+上面那组 raw 结论只保留为 **legacy 口径**（字段缺省 = 显式旧产物 / pin < v0.4.9）：legacy 路径下
+`0xFFFF`/`0xFFFE` 等仍是未证明哨兵、**不是死亡证据**；全族语义**只能**经字段获得（缺省不放大）。
+裁决与两侧口径见 `contracts/agent/replay-facets-v2.md` §4l（消费方）与上游
+`WoT-Blitz-Agent` 的 `docs/wotbtools-cross-reference.md` §七。
+
+**落点（两条路径，各自单一权威）**：客户端 `frontend/src/replay-local/canonical/hpRawState.ts` 的
+`classifyHpRaw(raw, hp_state?)` 是唯一入口：
+- **`hp_state` 在场** → 直接采用 producer 分类：`current` → `CURRENT_HP`、`zero` →
+  `HP_ZERO_TERMINAL`、`terminal` → `DEATH_TERMINAL`（负 i16 全族），禁止按 raw 二次解释；
+- **字段缺省** → legacy 分类：`0x0000` → `HP_ZERO_TERMINAL`、`0xFFFD` →
+  `DEATH_TERMINAL_FFFD`（已证明阵亡终态，血量未知）、`0xFFFF`/`0xFFFE`/其余负值 → 未知；
+  `isPlausibleHp` = `0 < hp < 0xFF00`。
+两条路径的终态哨兵血量都**未知 ≠ 0**。分类结果进入 `frontend/src/replay-local/canonical/facts.ts`
+的 `hpSamples`（哨兵永不进入 HP 数值）→ 同一分类随 AI 投影（`ClientAiReviewProjection.hpState`，
+`prop3Health` / `healthEvents`）发往服务端，读侧 `HpRawState.fromProjection` 在场即权威。原 Java
 `EntityPropertyDecoder` 与 `MapOverviewBuilder.hpSamplesByAccount` 已于 2026-10-02 退役（历史 Java 实现）；
 `HealthChangedEvent.isPlausibleHp` 与 `ObservedMaxHp` 仍在 `wotb-core`，只服务 AI 侧证据链。
 
-**遗留**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有 FFFC/FFFE 等其它负值 sentinel。
+**遗留（仅 research/raw 层）**：需扫描全部真实 fixtures/replays 的 propId3 高位值，确认是否还有
+FFFC 等其它负值 sentinel。该扫描只补全 **legacy/raw** 语义，**不参与也不得放宽 v0.4.9+ 的分类**——
+`hp_state` 在场时终态族已由生产方定义。
 
 ## SPECTATOR / NON-COMBATANT ENTITY（观战/非参战实体 · 2026-08-19 验证）
 

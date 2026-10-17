@@ -68,18 +68,34 @@ signed = i16(raw)
 
 Positive values are proven to represent actual current HP, including loadout-derived HP increases. Consecutive positive samples provide authoritative observed HP loss; Type-8 damage-method raw values must not replace these HP deltas.
 
-### Terminal/sentinel values
+### Terminal/sentinel values (raw-only / legacy payloads)
+
+The table below is **research evidence for payloads without `hp_state`** (legacy artifacts,
+pin < v0.4.9). It defines the legacy reader's classification, not the upstream v0.4.9+ consumer
+contract.
 
 | Raw | Corpus observation | Verdict |
 |---|---|---|
 | `0x0000` | 291 | **PROVEN** terminal HP=0 |
-| `0xFFFF` | 88 | UNKNOWN sentinel; insufficient alone to assert death |
-| `0xFFFD` | 83 | **PROVEN on current death corpus** death-associated terminal sentinel |
-| `0xFFFE` | closed Intotherainy death chain | **PROVEN for that chain / PARTIAL global semantic** |
+| `0xFFFF` | 88 | UNKNOWN sentinel (legacy); insufficient alone to assert death |
+| `0xFFFD` | 83 | **PROVEN on current death corpus** death-associated terminal sentinel (legacy) |
+| `0xFFFE` | closed Intotherainy death chain | **PROVEN for that chain / PARTIAL global semantic**; legacy reader treats it as UNKNOWN |
 
-`0xFFFE` was independently closed by settlement `lifeTime`, settlement `killerID`, Type-8 vehicle health/state method, matching attacker identity and absence of later alive HP. Future `0xFFFE` observations must still pass evidence gating until its global sentinel definition is independently closed.
+`0xFFFE` was independently closed by settlement `lifeTime`, settlement `killerID`, Type-8 vehicle health/state method, matching attacker identity and absence of later alive HP. In the raw-only layer, future `0xFFFE` observations without `hp_state` must still pass evidence gating until its global sentinel definition is independently closed; payloads that carry `hp_state` do not re-derive this from the raw value — the producer's classification is authoritative.
 
-Current main names `0xFFFD` as “unknown HP” in one place while treating it as exact death elsewhere. That naming is inconsistent with the current research evidence and should be cleaned in a later implementation PR.
+**Authoritative path (upstream ≥ v0.4.9)**: the `damage` / `health` event carries `hp_state`
+(`current` / `zero` / `terminal`) whose rule is the producer's `hp_terminal_normalized`
+(signed i16 > 0 ⇒ `current`, == 0 ⇒ `zero`, < 0 ⇒ `terminal`). When present it **is** the classification — the whole negative family (measured
+`0xFFFF`/`0xFFFE`/`0xFFFD`, other negatives same encoding) counts as a terminal sentinel and must not
+be re-derived from the raw value. The table above is the **legacy raw-only** reading (payloads
+without the field): there `0xFFFF` / `0xFFFE` stay unproven and are **not** death evidence. Consumer
+ruling: `contracts/agent/replay-facets-v2.md` §4l.
+
+Earlier drafts deferred the `0xFFFD` naming cleanup to a later implementation PR. That change is now
+implemented: the legacy classifier names `0xFFFD` as a terminal sentinel (`DEATH_TERMINAL_FFFD`), and
+`UNKNOWN_*` remains only for the values the legacy path still treats as unproven. Those legacy state
+names are stable read-boundary identities for the legacy path, not a pending cleanup item; the
+authoritative `hp_state` path does not depend on them.
 
 ## propId 0 — vehicle binary property
 

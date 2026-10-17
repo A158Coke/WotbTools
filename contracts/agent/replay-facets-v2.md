@@ -339,6 +339,48 @@ WotBTools
   （`lifeTransitions.test.ts` / `parseLocalPlayback.test.ts` / `vehiclePose.test.ts` /
   `BattlePlayback.integration.test.js` / `playbackScene.test.js`）。
 
+## 4l. 血量终态分类（`damage.hp_state` / `health.hp_state`，AiReview additive；上游 v0.4.9）
+
+- 形状：`hp_state?: 'current' | 'zero' | 'terminal'`，随 `damage`（method1）/`health`（prop3）事件输出；
+  上游 v0.4.9 起**恒在场**，缺省仅出现在旧产物（见 §6 表）。闭集 SSOT =
+  `frontend/src/api/agent-replay-facets.ts` 的 `AI_HP_STATES` tuple：`AiHpStateField` 由它派生，
+  运行期校验集合由它构建，canonical 分类器（`classifyHpRaw`）也只复用该类型——producer 枚举变更
+  只改一处。
+- **两条各自单一权威的路径**：①字段在场 = 权威——`terminal` = 负 i16 终态哨兵**全族**
+  （实测 0xFFFF/0xFFFE/0xFFFD，其余负值同编码；同族全部取值同一处理，禁按分布裁剪），
+  `zero` = 0x0000 确知归零，`current` = 可用血量；②**字段缺省 = legacy 分类不放宽**——仅
+  `{0x0000, 0xFFFD}` 为终态，`0xFFFF`/`0xFFFE` 等仍是"未证明哨兵（血量与生死都未知）"，
+  **不作为死亡证据**（存量语料把 0xFFFF 记为 unavailable；缺省放宽会在旧产物上产生无旁证的
+  死亡判定）。全族语义只能经字段获得。
+- **消费边界 fail closed（两种口径，不混用）**：`validateAgentAiReview(value, mode)` 的 `mode` 必填——
+  **`current-producer`**（当前正式 pin 的 WASM 路径 `parseAgentAiReviewFromBytes`）把
+  `damage` / `health.hp_state` 当**必填**：缺字段 = producer 漂移 → 拒绝，**不得静默进入 legacy 回退**
+  （那会把 0xFFFE 档弹药架殉爆重新判成存活）；**`legacy-compatible`**（显式旧 artifact / 旧 JSON
+  fixture 摄入）允许缺省，缺省按 §6 表的 legacy 规则现算。两种口径下**在场值都必须落在闭集内**，
+  形状 / 枚举漂移一律拒绝，**不静默回退 `hp_raw`**（避免把 producer 漂移变成错误的生命态事实）。
+- **词汇边界**：只有上游 facet 的事件字段用小写三值 `current`/`zero`/`terminal`；**客户端投影的
+  `ClientAiReviewProjection.hpState` 用 canonical 状态名**（`HpRawState` 枚举：`CURRENT_HP` /
+  `HP_ZERO_TERMINAL` / `DEATH_TERMINAL_FFFD` / `DEATH_TERMINAL` / `UNKNOWN_FFFF` / `UNKNOWN_OTHER`，
+  即 `contracts/http/openapi.yaml` 的 enum），服务端 `HpRawState.fromWireName` 只认后者。
+- **消费**：canonical `classifyHpRaw(raw, hp_state?)`（`replay-local/canonical/hpRawState.ts`）→
+  血量帧（`healthTransitions`；终态哨兵血量未知 ≠ 0）与生命轨道（`lifeTransitions` 终态样本 →
+  `DESTROYED`）；终态分类**随 HTTP 投影正式发送**（`ClientAiReviewProjection.hpState`，
+  `prop3Health` 与 `healthEvents` 两处载荷都携带 canonical 分类）传到 Java canonical，服务端在场时
+  **不再重新分类**（`HpRawState.fromWireName` 显式 wire 映射）。守卫：
+  `canonical/facts.hpTerminal.test.ts`（字段权威 / legacy 缺省两侧）+ `playbackScene.test.js`
+  终态族用例（含 `hp_state=terminal` 的 0xFFFE/0xFFFF 行与"legacy 0xFFFE 不判死"反例行）。
+- **回归背景**：−1/−2 档弹药架殉爆（实例 1910 局 Intotherainy `0xFFFE`）曾因本层只认
+  {0x0000, 0xFFFD} 被判成存活（血量冻在最后正值、装填条继续外播）。裁决与迁移账见上游
+  `WoT-Blitz-Agent` §七（`docs/wotbtools-cross-reference.md`）。
+- **HTTP wire 词表与读取边界**：服务端 DTO `ClientAiProjection.Prop3Health/HealthEvent` 显式登记
+  `hpState`（与 `contracts/http/openapi.yaml` 的 enum 同步登记），经 `HpRawState.fromWireName` 的
+  **字面量 switch** 映射——HTTP 接受的集合与内部枚举增删/改名解耦；**未登记字段仍 fail-closed**
+  （`PROJECTION_MAPPER` 保持 `FAIL_ON_UNKNOWN_PROPERTIES`，与各 schema 的
+  `additionalProperties: false` 一致），**显式 `null` 拒绝**（读取边界拦截；只有字段缺省才走
+  legacy 口径，服务旧载荷 / 回滚窗口）。写方与读方在本 PR 内同时到位：前端与 `ai-service` 是两条
+  独立的 main-push 工作流，若部署顺序产生短暂兼容窗口或某个 workflow 失败，用 rerun / 人工单发
+  deploy 恢复——**不保留 staged writer，也不留 follow-up**。
+
 ## 5. 射击复现能力（ShotReplays）
 
 - **契约 v0.1.9（breaking）**：WASM 入口输出由裸数组改为包装对象——
@@ -365,13 +407,20 @@ WotBTools
 2D 回放与 AI 复盘的通用事实都只消费那一层（见 `docs/architecture/replay-pipeline.md`「Agent 切面不是领域契约」）；
 2D 车辆标签的装填呈现另外消费 §4d 的独立 Playback 时序遥测，不混入该 facts 投影。
 canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`health` 事件、`poses` / `turrets`（≥ v0.3.7）。
+`hp_state`（`current`/`zero`/`terminal`）自上游 v0.4.9 起恒在场：当前正式 pin 的 WASM 路径
+（`current-producer`）把 `damage` / `health` 两处的该字段当**必填**，缺字段即拒绝——producer 漂移
+fail closed，不静默进入 legacy 回退；只有显式 legacy 摄入（`legacy-compatible`）允许缺省并走 legacy
+raw 分类。在场值必须落在闭集内（SSOT = `api/agent-replay-facets.ts` 的 `AI_HP_STATES`，`AiHpStateField`
+与 canonical `classifyHpRaw` 都复用它），非法枚举在信任边界拒绝（不静默回退 `hp_raw`——那会把
+producer 漂移变成错误的生命态事实）。
 
 | 证据（上游版本） | 形状 | canonical 用途 |
 |---|---|---|
-| `damage.hp_raw`（v0.3.5） | method1 原始 u16 | `HpRawState`：0 = HP 归零；0xFFFD = 终态哨兵（血量未知）；`hp` 的钳 0 只是显示值 |
+| `damage.hp_raw`（v0.3.5） | method1 原始 u16 | `HpRawState`（**仅缺 `hp_state` 的旧产物**按此现算，legacy 语义）：0 = HP 归零；0xFFFD = 终态哨兵（血量未知）；0xFFFF/0xFFFE 等负值 = 未证明哨兵（血量与生死都未知，**不作为死亡证据**）；`hp` 的钳 0 只是显示值 |
+| `damage.hp_state` / `health.hp_state`（v0.4.9） | 血量 u16 的**权威分类**（`current` / `zero` / `terminal`，恒在场） | 在场即权威：`terminal` = 负 i16 终态哨兵**全族**（死亡面之一，血量未知），取代本地对 `hp_raw` 的再解释；缺省（旧产物）= legacy 分类**不放宽**（全族语义只能经字段获得）。`terminal` + `hp_raw` 的显示口径由 canonical 层决定（`knownHpOf` → null ≠ 0） |
 | `visibility.hp_raw`（v0.3.5） | 开段 Type5 物化快照原始 HP（仅战斗车辆，每次重入） | 物化血量采样；战斗车辆类证据（Type5 entityTypeId=2） |
 | `hit_notice`（v0.3.5） | method8 全变体（eid / payload_len / shooter / victim / result / secondary），**不分类** | WotbTools 按旧口径分类：payload < 26 = 短体变体；result=3 = 直击；其余 = 未解码变体（冲突证据） |
-| `health`（v0.3.6） | prop3 原始 u16 | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路） |
+| `health`（v0.3.6） | prop3 原始 u16（`hp_state` 同 `damage`） | 血量帧与掉血推导的采样源（录像者自身血量常只有这一路）；终态样本（`hp_state=terminal` ∨ legacy 0/0xFFFD）产出 `DESTROYED` |
 | `damage_tick` | 录像者 Avatar prop10 的 `t / eid / cumulative`（eid 是 Avatar，不是车辆 eid） | 投影为录像者的可选 `damageDealtSamples`；只保留战斗内、非负整数、单一来源的累计广播，同刻保留较大值、下降样本拒绝。当前时刻只查询已出现的广播，不使用结算总量补齐；其他车辆仍使用可靠 HP-loss attribution。 |
 | `poses` / `turrets`（v0.3.7） | 原始 type10 世界位姿（attachmentParent=0）/ prop2 原始 u16，列式 | 位置 / 朝向证据（PlaybackData 网格是渲染滤波输出，不是观测） |
 
@@ -449,3 +498,11 @@ canonical 必需证据缺失即拒绝（fail closed）：`damage.hp_raw`、`heal
      保持 2（additive 删除 + 字段补正，见 §4b）；
   5. **additive `vehicles[].hull_roll`**：车体横滚列（raw type=10 最近邻，见 §4e）。
   WotbTools production pin 同步到该 Release（shot reconstruction 的 raw Type39 能力不受影响）。
+- v0.4.9（2026-10-16，agent commit `8dcec2c6`，fanypcd/WoT-Blitz-Agent#22 + #23）：
+  **additive `hp_state`**（`damage`/`health` 事件的权威血量分类，见 §4l）——上游把
+  `{0x0000, 0xFFFF, 0xFFFE, 0xFFFD}` 终态族语义从"内部规则"改为显式透出，消费方不再自行解释
+  u16；`PlaybackData` v2 / `AiReviewFacet` v1 形状不变。WotbTools production pin 同步到
+  v0.4.9（`ref 8dcec2c6…`、`wotb-replay-wasm-v0.4.9.zip`），Android `wotbVersion` 随候选递增。
+  WotbTools 同批正式消费该字段并把它投影给服务端：canonical 分类（2D/3D 生命轨道）与
+  AI 投影（`ClientAiReviewProjection.hpState` → Java `HpRawState.fromWireName`）用**同一套**
+  terminal 分类；legacy 只用于明确的旧 artifact / 缺字段兼容（见 §4l）。
