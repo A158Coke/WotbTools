@@ -35,10 +35,9 @@ export async function fetchShotTankData(id) {
 
 // ---------- 全景名册（tank_cache.json；无服务端聚合回退） ----------
 
-let tankFilterPromise = null
 let tankCachePromise = null
 
-/** 静态 tank_cache.json（一次装载，名册/百科两通道共享） */
+/** 静态 tank_cache.json（一次装载；坦克百科与 3D 选车共用同一原始缓存） */
 function fetchTankCacheStatic() {
   if (!tankCachePromise) {
     tankCachePromise = assetProvider.json('/data/tank_cache.json')
@@ -48,29 +47,6 @@ function fetchTankCacheStatic() {
       })
   }
   return tankCachePromise
-}
-
-/** 静态 tank_cache.json → tank_filter 行形状 [{id,name,tier,nation,type}]（字段超集透传） */
-function tankCacheToFilter(cache) {
-  return Object.entries(cache)
-    .map(([id, info]) => ({
-      id: Number(id),
-      name: (info && info.name) || '',
-      tier: (info && info.tier) ?? 0,
-      nation: (info && info.nation) || 'unknown',
-      type: (info && info.type) || 'unknown',
-      is_premium: !!(info && info.is_premium),
-    }))
-    .filter((t) => t.name)
-    .sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/** 坦克名册（3D 查看器选择器）：静态 tank_cache.json */
-export function fetchTankFilter() {
-  if (!tankFilterPromise) {
-    tankFilterPromise = fetchTankCacheStatic().then(tankCacheToFilter)
-  }
-  return tankFilterPromise
 }
 
 /**

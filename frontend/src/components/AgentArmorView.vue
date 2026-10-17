@@ -1,7 +1,8 @@
 <script setup>
 /**
  * Agent 3D 装甲查看器（?view=agent-armor）：tankViewer.js 场景内核宿主。
- * Vue owns navigation / recorded-shot summary; tankViewer owns model controls via stable DOM IDs.
+ * Vue owns navigation / recorded-shot summary / the shared tank picker (TankCatalogMenu);
+ * tankViewer owns model controls via stable DOM IDs.
  * 数据面：tank/{id}.json + glb/{id}/*.glb 静态资产（agentData.js，?assets= 基址），
  * 击穿判定 penetration.js 客户端移植；射击复现数据经 sessionStorage 交接（AgentShots）。
  * URL 参数保持上游契约：?tank= &shooter= &config= &shell= &shot= &heatmap=1 &world=1 等。
@@ -12,7 +13,7 @@ import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch } fr
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2, X } from 'lucide-vue-next'
+import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, SlidersHorizontal, MousePointer2 } from 'lucide-vue-next'
 import { fetchReplayShots, shotViewerQuery } from '../scene/agentData.js'
 import { shotResultBadge } from '../utils/shotPresentation.js'
 import { shellLabel, armorPartLabel, armorResultLabel, tankNationLabel, tankTypeLabel } from '../scene/tankMeta.js'
@@ -21,6 +22,7 @@ import { initTankViewer } from '../scene/tankViewer.js'
 import { detectWebGL } from '../scene/webglSupport.js'
 import { usePointer } from '../composables/useBreakpoint.js'
 import Scene3DStatus from './Scene3DStatus.vue'
+import TankCatalogMenu from './TankCatalogMenu.vue'
 
 const { t, te } = useI18n()
 const router = useRouter()
@@ -83,6 +85,8 @@ const toolsOpen = ref(false)
 const cleanQuery = computed(() => route.query.clean === '1')
 
 let viewer = null
+/** tankViewer 已创建并挂上静态控件事件（碰撞/热力图按钮在此之前置灰，避免点击丢失） */
+const viewerReady = ref(false)
 // 审计 3D-23：创建渲染器之前做 WebGL 预检；不支持时整页换成说明，不再抛原始报错
 const webgl = detectWebGL()
 /** 场景加载状态（tankViewer onLoadState 上报）：loading / ready / error */
@@ -101,6 +105,53 @@ function onLoadState(next) {
     load.value = { state: next.state, progress: next.progress ?? null, message: next.message || '' }
 }
 
+// 选车弹窗：菜单本体是共享 TankCatalogMenu（与坦克百科同一套搜索/筛选/排序/卡片）。
+// 名册与当前选择由 tankViewer 回调提供；选择动作回到 viewer.selectTank 加载弹药/目标。
+const pickerOpen = ref(false)
+const pickerMode = ref('target')
+const tankList = ref([])
+const tankListState = ref('loading')
+const selectedShooterId = ref(null)
+const selectedTargetId = ref(null)
+const pickerFilters = ref({ q: '', tier: '', nation: '', type: '', sort: 'name' })
+const pickerTitle = computed(() => pickerMode.value === 'shooter' ? t('armor.select_shooter') : t('armor.select_target'))
+const pickerSelectedId = computed(() => pickerMode.value === 'shooter' ? selectedShooterId.value : selectedTargetId.value)
+
+function openPicker(mode) {
+    if (!viewer?.canPick?.()) return
+    pickerMode.value = mode
+    pickerOpen.value = true
+}
+function closePicker() {
+    if (!pickerOpen.value) return
+    pickerOpen.value = false
+    const id = pickerMode.value === 'shooter' ? 'shooter-select' : 'target-select'
+    nextTick(() => document.getElementById(id)?.focus())
+}
+function onPickerSelect(tank) {
+    if (viewer?.selectTank?.(pickerMode.value, tank.id)) closePicker()
+}
+function setPickerFilters(filters) {
+    pickerFilters.value = filters
+}
+function onPickerKeydown(event) {
+    if (!pickerOpen.value) return
+    if (event.key === 'Escape') { event.preventDefault(); closePicker(); return }
+    if (event.key !== 'Tab') return
+    const picker = document.getElementById('tank-picker')
+    if (!picker) return
+    const focusable = [...picker.querySelectorAll('button, input, select')].filter(el => !el.disabled)
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (!first) return
+    if (event.shiftKey && (document.activeElement === first || !picker.contains(document.activeElement))) {
+        event.preventDefault(); last?.focus()
+    } else if (!event.shiftKey && (document.activeElement === last || !picker.contains(document.activeElement))) {
+        event.preventDefault(); first?.focus()
+    }
+}
+onMounted(() => window.addEventListener('keydown', onPickerKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onPickerKeydown))
+
 function startViewer() {
     const seq = navigationSeq
     const q = new URLSearchParams(window.location.search)
@@ -114,7 +165,6 @@ function startViewer() {
             loading: t('armor.loading'),
             shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
-            tier: (tier) => `${t('armor.tier')} ${tier}`,
             type: (value) => tankTypeLabel(t, te, value),
             nation: (value) => tankNationLabel(t, te, value),
             showCollision: t('armor.show_collision'),
@@ -122,14 +172,9 @@ function startViewer() {
             heatmap: t('armor.heatmap'),
             hideHeatmap: t('armor.hide_heatmap'),
             technicalEvidence: t('armor.technical_evidence'),
-            allTiers: t('armor.all_tiers'),
-            allNations: t('armor.all_nations'),
-            allTypes: t('armor.all_types'),
             shotView: t('armor.shot_view'),
             relativeView: t('armor.relative_view'),
             worldView: t('armor.world_view'),
-            selectShooter: t('armor.select_shooter'),
-            selectTarget: t('armor.select_target'),
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
             shotDamage: t('armor.shot_damage'),
@@ -145,7 +190,18 @@ function startViewer() {
             phase: (phase) => (PHASE_KEY[phase] ? t(`armor.phase_${PHASE_KEY[phase]}`) : phase),
         },
         onLoadState: (next) => { if (alive && seq === navigationSeq) onLoadState(next) },
+        onTankList: (list) => {
+            if (!alive || seq !== navigationSeq) return
+            tankList.value = list
+            tankListState.value = 'ready'
+        },
+        onTankSelection: (selection) => {
+            if (!alive || seq !== navigationSeq) return
+            selectedShooterId.value = selection.shooter
+            selectedTargetId.value = selection.target
+        },
     })
+    viewerReady.value = true
 }
 
 async function retry() {
@@ -156,6 +212,7 @@ async function retry() {
     requestSeq++
     navigating.value = false
     // 名册都没拿到（或渲染器创建失败）：销毁后重建整个场景
+    viewerReady.value = false
     viewer?.destroy?.()
     viewer = null
     attempt.value += 1
@@ -173,9 +230,13 @@ onMounted(async () => {
 watch(() => route.fullPath, async () => {
     if (route.query.view !== 'agent-armor') return
     requestSeq++
+    viewerReady.value = false
     viewer?.destroy?.()
     viewer = null
     toolsOpen.value = false
+    pickerOpen.value = false
+    tankList.value = []
+    tankListState.value = 'loading'
     load.value = { state: 'loading', progress: null, message: '' }
     attempt.value += 1
     const seq = ++navigationSeq
@@ -250,22 +311,25 @@ onBeforeUnmount(() => {
                     <label class="eq-opt"><input type="checkbox" id="eq-enhanced"> <span class="eq-opt-label">{{ $t('armor.enhanced') }}</span></label>
                     <label class="eq-opt" id="armor-state-opt" style="display:none;"><input type="checkbox" id="armor-state-toggle"> <span class="eq-opt-label">{{ $t('armor.dynamic_armor') }}</span></label>
                 </div>
-                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled>—</button></div>
-                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled>—</button></div>
+                <div class="sel-row"><label id="shooter-label">{{ $t('armor.shooter') }}</label><button class="tank-btn" id="shooter-select" disabled @click="openPicker('shooter')">—</button></div>
+                <div class="sel-row"><label id="target-label">{{ $t('armor.target') }}</label><button class="tank-btn" id="target-select" disabled @click="openPicker('target')">—</button></div>
                 <p id="tank-selection-status" role="status">{{ $t('armor.picker_loading') }}</p>
             </div>
         </div>
-        <div id="tank-picker" role="dialog" aria-modal="true" aria-labelledby="tp-title">
-            <div id="tp-header">
-                <span id="tp-title">{{ $t('armor.select_tank') }}</span>
-                <input type="text" id="tp-search" :placeholder="$t('armor.search')" :aria-label="$t('armor.search')">
-                <select id="tp-tier" :aria-label="$t('armor.tier')"></select>
-                <select id="tp-nation" :aria-label="$t('armor.nation')"></select>
-                <select id="tp-type" :aria-label="$t('armor.type')"></select>
-                <span id="tp-count"></span>
-                <button id="tp-close" :title="$t('armor.close')" :aria-label="$t('armor.close')"><X :size="20" aria-hidden="true" /></button>
-            </div>
-            <div id="tp-grid"></div>
+        <div id="tank-picker" role="dialog" aria-modal="true" aria-labelledby="tp-title" :class="{ open: pickerOpen }" @click.self="closePicker">
+            <TankCatalogMenu
+                v-if="pickerOpen"
+                layout="dialog"
+                autofocus
+                :title="pickerTitle"
+                :tanks="tankList"
+                :state="tankListState"
+                :filters="pickerFilters"
+                :selected-id="pickerSelectedId"
+                @update:filters="setPickerFilters"
+                @select="onPickerSelect"
+                @close="closePicker"
+            />
         </div>
             <div id="click-info">
                 <h3 id="click-part">—</h3>
@@ -282,8 +346,8 @@ onBeforeUnmount(() => {
                 <select id="shell-select"></select>
             </div>
             <div id="view-toggle">
-                <button id="collision-btn" type="button" aria-pressed="false">{{ $t('armor.show_collision') }}</button>
-                <button id="penetration-btn" type="button" aria-pressed="false">{{ $t('armor.heatmap') }}</button>
+                <button id="collision-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.show_collision') }}</button>
+                <button id="penetration-btn" type="button" aria-pressed="false" :disabled="!viewerReady">{{ $t('armor.heatmap') }}</button>
             </div>
         </div>
         <div id="corner-br">
@@ -464,24 +528,10 @@ onBeforeUnmount(() => {
 
 .armor-view #tank-picker { position: absolute; inset: var(--space-5); margin: auto; max-inline-size: var(--layout-wide-max); background: var(--panel); border: 1px solid var(--border-hi); border-radius: var(--radius-lg); z-index: var(--z-dialog); display: none; flex-direction: column; box-shadow: var(--elevation-3); }
 .armor-view #tank-picker.open { display: flex; }
-.armor-view #tp-header { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3); border-block-end: 1px solid var(--border); }
-.armor-view #tp-title { font: var(--type-h3); }
-.armor-view #tp-search { flex: 1; min-inline-size: var(--form-field-min); }
-.armor-view #tp-header :is(input, select) { min-block-size: 44px; padding: var(--space-2); background: var(--input-bg); color: var(--txt); border: 1px solid var(--border); border-radius: var(--radius-md); }
-.armor-view #tp-count { color: var(--muted); font: var(--type-caption); }
-.armor-view #tp-close { display: inline-flex; align-items: center; justify-content: center; min-inline-size: 44px; background: transparent; border: none; color: var(--txt); }
-.armor-view #tp-grid { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--space-3); display: grid; grid-template-columns: repeat(auto-fill, minmax(min(10rem, 100%), 1fr)); grid-auto-rows: max-content; gap: var(--space-3); align-content: start; }
-.armor-view .tank-card { padding: 0; min-inline-size: 0; overflow: hidden; background: var(--color-surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--txt); text-align: start; }
-.armor-view .tank-card:hover, .armor-view .tank-card.sel { border-color: var(--accent); }
-/* 封面图盒 = 固定 8:5 比例（与坦克百科同款）：`tankViewer.js` 按该比例把逐车内容框
- * （tank_images/crops.json）换算成 translate/scale 展示裁剪——盒比例是该数学的契约，
- * 改这里必须同步内核的 TC_IMG_ASPECT（dom-contract 测试锁定两处一致）。
- * 内边距用 margin 表达（显示区 = 元素盒，object-fit 的 contain 基准不被 padding 偏移）。 */
-.armor-view .tank-card .tc-img { inline-size: calc(100% - var(--space-1) * 2); margin: var(--space-1) auto; aspect-ratio: 8 / 5; block-size: auto; object-fit: contain; display: block; }
-.armor-view .tank-card .tc-body { padding: var(--space-2); }
-.armor-view .tank-card .tc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); }
-.armor-view .tank-card .tc-meta { display: flex; justify-content: space-between; gap: var(--space-1); margin-block-start: var(--space-1); font: var(--type-caption); color: var(--muted); }
-.armor-view .tank-card .tc-tier { color: var(--color-accent-text); }
+/* 菜单本体 = 共享 TankCatalogMenu（与坦克百科同一套搜索/筛选/卡片/增量列表） */
+.armor-view #tank-picker > .tank-catalog-menu { flex: 1; min-block-size: 0; }
+/* 共享菜单的控件在装甲页内沿用 44px 触控目标（含搜索框；百科页保持全站控件高度） */
+.armor-view #tank-picker :is(button, select, input) { min-block-size: 44px; }
 .armor-view .armor-shot-header { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-5); border-block-end: 1px solid var(--border); background: var(--color-surface-1); z-index: calc(var(--z-sticky) + 1); }
 .armor-view .armor-shot-header button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: 44px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--txt); }
 .armor-view .armor-navigation-error { margin: 0; color: var(--color-danger); font: var(--type-caption); }
@@ -541,13 +591,6 @@ onBeforeUnmount(() => {
     .armor-view .armor-back { inset-block-start: var(--space-2); inset-inline-start: var(--space-2); inline-size: 44px; padding: 0; justify-content: center; }
     .armor-view .armor-back-label { display: none; }
     .armor-view #tank-picker { inset: 0; max-inline-size: none; border-radius: 0; }
-    .armor-view #tp-header { gap: var(--space-2); padding: var(--space-2); }
-    .armor-view #tp-title { order: 1; flex: 1 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .armor-view #tp-count { order: 2; flex: none; }
-    .armor-view #tp-close { order: 3; flex: none; inline-size: 44px; }
-    .armor-view #tp-search { order: 4; flex: 1 1 100%; min-inline-size: 0; }
-    .armor-view #tp-header select { order: 5; flex: 1 1 28%; min-inline-size: 0; }
-    .armor-view #tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: var(--space-2); gap: var(--space-2); }
     .armor-view .armor-shot-header { flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2); }
     .armor-view .armor-shot-back span { display: none; }
     .armor-view .armor-shot-context { flex-basis: calc(100% - 60px); }
