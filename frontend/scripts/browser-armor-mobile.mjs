@@ -466,9 +466,9 @@ async function runMobileBackScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height} (with back)` })
 }
 
-/** 桌面 / 平板回归：本仓的移动端规则只能作用于 <768px，且参数开关不渲染成可见控件。 */
+/** 桌面 / 平板回归：移动端规则只作用于 <768px；桌面复用左上信息卡，参数面板默认收起。 */
 const DESKTOP_SCENARIOS = [
-  // 断点边界：768px 起必须是桌面档（面板常驻、四角布局）
+  // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
   { name: 'armor-1280x800-desktop', width: 1280, height: 800, touch: false },
@@ -491,10 +491,12 @@ async function runDesktopScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.hasStage && !layout.unsupported, `${label}: 场景未渲染（hasStage=${layout.hasStage} unsupported=${layout.unsupported}）`)
   checkCommonGeometry(failures, layout, label)
-  check(failures, layout.tools?.display === 'none' || !layout.tools?.visible,
-    `${label}: 桌面档不应渲染可见的参数开关（display=${layout.tools?.display}）`)
-  check(failures, layout.selectors?.visible === true,
-    `${label}: 桌面档参数面板必须常驻可见（visible=${layout.selectors?.visible}）`)
+  check(failures, layout.tools?.visible === true,
+    `${label}: 桌面档参数开关必须可见（display=${layout.tools?.display}）`)
+  check(failures, layout.selectors?.visible === false,
+    `${label}: 桌面档设置面板默认应收起（visible=${layout.selectors?.visible}）`)
+  check(failures, layout.toolsOpen === false && layout.tools?.ariaExpanded === 'false',
+    `${label}: 桌面档默认收起状态不正确（is-tools-open=${layout.toolsOpen} aria=${layout.tools?.ariaExpanded}）`)
   check(failures, layout.topBar && layout.root
     && Math.abs((layout.topBar.top - layout.root.top) - 20) <= 2 && Math.abs((layout.topBar.left - layout.root.left) - 20) <= 2,
     `${label}: 顶栏没有回到四角布局（top=${layout.topBar?.top} left=${layout.topBar?.left} root=${layout.root?.top}/${layout.root?.left}，期望相对 20/20）`)
@@ -503,6 +505,30 @@ async function runDesktopScenario(env, scenario) {
     `${label}: 底栏没有回到右上角（top=${layout.bottomBar?.top} right=${layout.bottomBar?.right} root right=${layout.root?.right}，期望相对 20/20）`)
   check(failures, layout.viewToggleDisplay === 'flex',
     `${label}: 视图开关不是桌面 flex 布局（display=${layout.viewToggleDisplay}）`)
+
+  // Desktop mirrors mobile portrait: the toggle expands the setup fields inside the top-left info card.
+  await page.installInputTrace()
+  await page.tap({ ...layout.tools.center, touch: scenario.touch })
+  const tapInput = await page.inputTrace()
+  check(failures, tapInput?.click?.testId === 'armor-tools',
+    `${label}: 真实点击落在 ${JSON.stringify(tapInput?.click)}，不是参数开关`)
+  const opened = await page.probe(armorLayoutProbe)
+  check(failures, opened.toolsOpen === true && opened.tools?.ariaExpanded === 'true',
+    `${label}: 点击后设置面板未展开（is-tools-open=${opened.toolsOpen} aria=${opened.tools?.ariaExpanded}）`)
+  check(failures, opened.selectors?.visible === true, `${label}: 点击后设置面板仍不可见`)
+  check(failures, opened.selectors && opened.tools && opened.selectors.top >= opened.tools.bottom - 1,
+    `${label}: 设置面板没有排在参数开关下方（panel top=${opened.selectors?.top} tools bottom=${opened.tools?.bottom}）`)
+  check(failures, opened.selectors && opened.topBar
+    && opened.selectors.left >= opened.topBar.left - 1
+    && opened.selectors.right <= opened.topBar.right + 1
+    && opened.selectors.bottom <= opened.topBar.bottom + 1,
+    `${label}: 设置面板没有并进左上角信息卡（panel=${opened.selectors?.left}/${opened.selectors?.bottom} bar=${opened.topBar?.left}/${opened.topBar?.bottom}）`)
+  check(failures, opened.targetSelect?.visible === true, `${label}: 展开后目标按钮不可见`)
+  checkCommonGeometry(failures, opened, `${label} (expanded)`)
+  await page.tap({ ...opened.tools.center, touch: scenario.touch })
+  const collapsed = await page.probe(armorLayoutProbe)
+  check(failures, collapsed.toolsOpen === false && collapsed.selectors?.visible === false,
+    `${label}: 再次点击未收起（is-tools-open=${collapsed.toolsOpen} selectors visible=${collapsed.selectors?.visible}）`)
 
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
@@ -673,9 +699,10 @@ async function runPickerCardsScenario(env, scenario) {
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.pickerAssets)}`)
   await page.waitFor(() => !document.querySelector('[data-testid="scene3d-loading"]') && !document.querySelector('[data-testid="scene3d-error"]') && document.querySelector('#target-select')?.disabled === false,
     { timeout: 30000, label: 'picker fixture initialized' })
-  if (scenario.touch) {
-    const tools = await page.probe(armorLayoutProbe)
-    await page.tap({ ...tools.tools.center, touch: true })
+  // The setup panel is collapsed by default on every viewport; open it before choosing a target.
+  const initialChrome = await page.probe(armorLayoutProbe)
+  if (!initialChrome.selectors?.visible) {
+    await page.tap({ ...initialChrome.tools.center, touch: scenario.touch })
   }
   const controls = await page.probe(armorLayoutProbe)
   await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
