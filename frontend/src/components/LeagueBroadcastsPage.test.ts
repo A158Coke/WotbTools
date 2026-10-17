@@ -73,6 +73,12 @@ describe('shared broadcast catalogue rendering', () => {
   it('presents all five fixed server cards and does not expose mutation controls for an admin query alone', async () => {
     const { wrapper } = await page('/?view=league-broadcasts&admin=1')
     expect(wrapper.findAll('[data-testid^=broadcast-server-]')).toHaveLength(5)
+    for (const server of ['CN', 'ASIA', 'NA', 'EU', 'LESTA']) {
+      const card = wrapper.get(`[data-testid=broadcast-server-${server}]`)
+      expect(card.get('svg use').attributes('href')).toContain(`/broadcast-globes/${server.toLowerCase()}.svg#globe`)
+      expect(card.get('svg').attributes('aria-hidden')).toBe('true')
+      expect(card.get('.broadcast-server-code').text()).toBe(server === 'ASIA' ? 'APAC' : server)
+    }
     expect(wrapper.find('[data-testid=broadcast-new-season]').exists()).toBe(false)
     wrapper.unmount()
   })
