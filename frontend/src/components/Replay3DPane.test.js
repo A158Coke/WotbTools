@@ -1426,6 +1426,53 @@ describe('Replay3DPane', () => {
     wrapper.unmount()
   })
 
+  it('collapses only the toolbar and preserves the session across UI and fullscreen transitions', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    Object.assign(store, { hasData: true, time: 42, playing: true, speed: 4, cam: 'follow' })
+    await nextTick()
+    store.roster = { team1: [{ eid: 7, accountId: 7, team: 1, nick: 'A', tank: 'T', hp: 1, maxHp: 2 }], team2: [], unknown: [] }
+    await openDetailsViaScene(7)
+    const selectedId = () => wrapper.getComponent({ name: 'VehicleDetailsPanel' }).props('selectedState').vehicle.accountId
+    expect(selectedId()).toBe(7)
+    const initCalls = playback.init.mock.calls.length
+    const toggle = () => wrapper.get('[data-testid="replay3d-controls-toggle"]')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    const content = wrapper.get('.controls-content')
+    expect(toggle().attributes('aria-controls')).toBe(content.attributes('id'))
+    await wrapper.get('[data-testid="display-toggle"]').trigger('click')
+    await toggle().trigger('click')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(content.element.style.display).toBe('none')
+    expect(wrapper.find('[data-testid="display-panel"]').exists()).toBe(false)
+    expect(wrapper.find('.hud').exists()).toBe(true)
+    Object.defineProperty(document, 'fullscreenElement', { value: wrapper.get('.pb-root').element, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await nextTick()
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await nextTick()
+    expect(wrapper.find('[data-testid="replay3d-controls-toggle"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="show-all-ui"]').trigger('click')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    await toggle().trigger('click')
+    expect(wrapper.get('.controls-content').element.style.display).not.toBe('none')
+    expect(selectedId()).toBe(7)
+    expect(playback.init.mock.calls.length).toBe(initCalls)
+    expect(store).toMatchObject({ time: 42, playing: true, speed: 4, cam: 'follow' })
+    await toggle().trigger('click')
+    Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+    document.dispatchEvent(new Event('fullscreenchange'))
+    await wrapper.setProps({ file: mkFile('next.wotbreplay') })
+    await start(wrapper)
+    playback.api.store.hasData = true
+    await nextTick()
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
+  })
+
   it('button hide and H restore share the full UI transition', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
