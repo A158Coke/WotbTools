@@ -14,6 +14,10 @@
     --color-playback-label-track: rgb(0 0 0 / .45);
     --color-playback-label-locked: rgb(255 255 255 / .25);
     --text-shadow-playback-label: 0 1px 2px rgb(0 0 0 / .95), 0 0 3px rgb(0 0 0 / .95);
+    /* 伤害数字（血条右侧的战斗反馈）：固定琥珀色 + 更重的深色描边，不随阵营换色——
+       数字要压过任意地形 / 车体 / 名牌背景，一眼读出掉血量。 */
+    --color-playback-damage-text: #ffb340;
+    --text-shadow-playback-damage: 0 0 2px rgb(0 0 0), 0 0 4px rgb(0 0 0 / .95), 0 1px 0 rgb(0 0 0 / .95), 0 -1px 0 rgb(0 0 0 / .95), 1px 0 0 rgb(0 0 0 / .95), -1px 0 0 rgb(0 0 0 / .95);
     /* 装填条外描边：半透明黑——白色状态条/亮空槽在雪地等亮背景上会糊进背景 */
     --pb-label-reload-outline: 0 0 0 1.5px rgb(0 0 0 / .7);
     --green-400: #5cc280;

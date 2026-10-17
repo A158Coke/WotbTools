@@ -75,6 +75,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
                         ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()
+                .requestMatchers(HttpMethod.GET, ApiPaths.CREATORS, ApiPaths.CREATORS + "/categories",
+                        ApiPaths.CREATOR_AVATAR).permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
@@ -87,6 +89,9 @@ public class SecurityConfig {
                     .hasAnyRole("HoF-admin", "wotbtools-admin")
 
                 .requestMatchers(TOURNAMENTS_ADMIN_PATTERN)
+                    .hasRole("tournament-admin")
+
+                .requestMatchers(ApiPaths.CREATORS_ADMIN_PATTERN)
                     .hasRole("tournament-admin")
 
                 .requestMatchers(ADMIN_PATTERN)

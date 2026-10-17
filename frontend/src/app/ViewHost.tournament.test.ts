@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { computed, reactive, ref } from 'vue'
 import ViewHost from './ViewHost.vue'
 import { tournamentAdminAllowed } from '../composables/useAuth.js'
+import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
 const state = vi.hoisted(() => ({ route: null as any, auth: null as any }))
 vi.mock('vue-router', () => ({ useRoute: () => state.route }))
 vi.mock('../composables/useAuth.js', async importOriginal => ({
@@ -12,7 +13,9 @@ vi.mock('../composables/useAuth.js', async importOriginal => ({
 vi.mock('./viewRegistry.js', () => ({
   VIEW_COMPONENTS: { 'tournament-points': { template: '<div data-testid="public-board" />' },
     'tournament-points-admin': { template: '<div data-testid="admin-editor" />' },
-    'tournament-points-config': { template: '<div data-testid="admin-config" />' } },
+    'tournament-points-config': { template: '<div data-testid="admin-config" />' },
+    'creators-config': { template: '<div data-testid="creator-config" />' },
+    creators: { template: '<div data-testid="creator-directory" />' } },
   replayInitialCapability: () => 'data',
 }))
 beforeEach(() => {
@@ -22,12 +25,28 @@ beforeEach(() => {
 })
 function host() { return mount(ViewHost, { global: { mocks: { $t: (key: string) => key }, stubs: { ReplayCapabilityAuthGate: { template: '<div data-testid="login-gate" />' } } } }) }
 describe('tournament deep-link page gates', () => {
+  it.each(['creators', 'creators-config'])('withholds %s until the backend explicitly advertises support', async view => {
+    state.route.query.view = view
+    state.auth.authenticated.value = true
+    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    const available = ref(false), refresh = vi.fn()
+    const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { available, loading: ref(false), refresh } } } })
+    expect(wrapper.find('[data-testid="creator-config"], [data-testid="creator-directory"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="creators-unavailable"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="creators-availability-retry"]').trigger('click')
+    expect(refresh).toHaveBeenCalledTimes(1)
+    available.value = true; await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="creators-unavailable"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="creator-config"], [data-testid="creator-directory"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('keeps the public page accessible anonymously', () => { expect(host().find('[data-testid="public-board"]').exists()).toBe(true) })
-  it.each(['tournament-points-admin', 'tournament-points-config'])('does not mount %s anonymously despite admin=1', view => {
+  it.each(['tournament-points-admin', 'tournament-points-config', 'creators-config'])('does not mount %s anonymously despite admin=1', view => {
     state.route.query.view = view
     const wrapper = host()
     expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="admin-editor"], [data-testid="admin-config"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="admin-editor"], [data-testid="admin-config"], [data-testid="creator-config"]').exists()).toBe(false)
   })
   it('denies HoF-only roles and admits actual tournament or site roles, then removes access on role loss', async () => {
     state.route.query.view = 'tournament-points-admin'

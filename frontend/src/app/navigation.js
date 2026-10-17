@@ -14,7 +14,7 @@ export const ALLOWED_VIEWS = Object.freeze([
   'profile', 'admin-users', 'history', 'technical-evolution', 'contact',
   'ai-review', 'battle-playback', 'agent-replay', 'agent-tankopedia', 'agent-armor', 'agent-shots',
   'rating-docs', 'tournament-points', 'tournament-points-config', 'tournament-points-admin',
-  'android', 'sponsor', 'league-broadcasts',
+  'android', 'sponsor', 'league-broadcasts', 'creators', 'creators-config',
 ])
 
 /**
@@ -32,6 +32,7 @@ export const PRIMARY_NAV = Object.freeze([
   Object.freeze({ id: 'tankopedia', view: 'agent-tankopedia', labelKey: 'nav.tankopedia' }),
   Object.freeze({ id: 'tournament-points', view: 'tournament-points', labelKey: 'tournament.title' }),
   Object.freeze({ id: 'league-broadcasts', view: 'league-broadcasts', labelKey: 'leagueBroadcasts.title', shortLabelKey: 'leagueBroadcasts.navTitle' }),
+  Object.freeze({ id: 'creators', view: 'creators', labelKey: 'creators.nav' }),
   Object.freeze({ id: 'more', view: 'more', labelKey: 'nav.more' }),
 ])
 
@@ -44,6 +45,7 @@ export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
   Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'tournamentAdmin' }),
   Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'tournamentAdmin' }),
+  Object.freeze({ id: 'creators-config', view: 'creators-config', labelKey: 'creators.configTitle', role: 'tournamentAdmin' }),
 ])
 
 // 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；
@@ -60,10 +62,12 @@ const PRIMARY_SECTION_OF_VIEW = Object.freeze({
   'agent-armor': 'tankopedia',
   'tournament-points': 'tournament-points',
   'league-broadcasts': 'league-broadcasts',
+  creators: 'creators',
   'admin-users': 'admin-users',
   'hof-admin': 'hof-admin',
   'tournament-points-config': 'tournament-points-config',
   'tournament-points-admin': 'tournament-points-admin',
+  'creators-config': 'creators-config',
   profile: 'account',
 })
 
@@ -136,6 +140,7 @@ export function locationForView(view, route) {
   if (route.query?.view === 'league-broadcasts' && view !== 'league-broadcasts') {
     for (const key of BROADCAST_QUERY_KEYS) delete query[key]
   }
+  if (route.query?.view === 'creators' && view !== 'creators') delete query.creatorCategory
   // 进出名人堂都丢掉这些键：既不把筛选带到别的页面，也不把别处同名参数（如坦克百科的 tank）当成名人堂筛选
   if ((route.query?.view === 'hof') !== (view === 'hof')) {
     for (const key of HOF_QUERY_KEYS) delete query[key]

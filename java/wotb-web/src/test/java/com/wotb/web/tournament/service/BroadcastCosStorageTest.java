@@ -8,10 +8,13 @@ import com.qcloud.cos.exception.CosClientException;
 import com.qcloud.cos.exception.CosServiceException;
 import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.COSObject;
+import com.qcloud.cos.model.COSObjectInputStream;
+import com.wotb.web.util.CosImageStorage;
 import com.wotb.web.util.ImageValidation;
 import com.wotb.web.util.apierror.ApiErrorCode;
 import com.wotb.web.util.apierror.ApiException;
 import org.apache.http.HttpEntityEnclosingRequest;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.ContentType;
 import org.apache.http.impl.bootstrap.ServerBootstrap;
@@ -47,19 +50,21 @@ class BroadcastCosStorageTest {
     private static final String PREFIX = "league-broadcasts/covers/";
 
     @Test void missingOrUnsafeConfigurationDisablesOnlyCoverStorage() {
-        final BroadcastCosStorage missing = new BroadcastCosStorage("", "", "", "", PREFIX);
-        final BroadcastCosStorage unsafe = new BroadcastCosStorage("covers-1251234567", "ap-shanghai",
-                "test-only", "test-only", "../assets/");
+        final CosImageStorage missingAdapter = new CosImageStorage("", "", "", "", PREFIX, "avatars/");
+        final CosImageStorage unsafeAdapter = new CosImageStorage("covers-1251234567", "ap-shanghai",
+                "test-only", "test-only", "../assets/", "avatars/");
+        final BroadcastCosStorage missing = new BroadcastCosStorage(missingAdapter, PREFIX);
+        final BroadcastCosStorage unsafe = new BroadcastCosStorage(unsafeAdapter, "../assets/");
         try {
             assertFalse(missing.configured());
             assertFalse(unsafe.configured());
             assertEquals(ApiErrorCode.BROADCAST_STORAGE_UNAVAILABLE,
                     assertThrows(ApiException.class, () -> missing.get(PREFIX + UUID.randomUUID())).errorCode());
-        } finally { missing.close(); unsafe.close(); }
+        } finally { missingAdapter.close(); unsafeAdapter.close(); }
     }
 
     @Test void productionClientBoundsEveryStageAndEnablesTheOtherwiseDisabledOverallDeadline() {
-        final ClientConfig config = BroadcastCosStorage.clientConfig("ap-shanghai");
+        final ClientConfig config = CosImageStorage.clientConfig("ap-shanghai");
         assertEquals(HttpProtocol.https, config.getHttpProtocol());
         assertEquals(5_000, config.getConnectionTimeout());
         assertEquals(5_000, config.getConnectionRequestTimeout());
@@ -100,8 +105,9 @@ class BroadcastCosStorageTest {
         }).create();
         server.start();
         final ClientConfig config = loopbackConfig(server.getLocalPort());
-        final BroadcastCosStorage storage = new BroadcastCosStorage(
+        final CosImageStorage adapter = new CosImageStorage(
                 new COSClient(new BasicCOSCredentials("test-only", "test-only"), config), "covers-1251234567", PREFIX);
+        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
         try {
             final ImageValidation.Image image = image();
             final String key = storage.key(UUID.randomUUID().toString());
@@ -110,7 +116,7 @@ class BroadcastCosStorageTest {
             storage.delete(key);
             assertTrue(objects.isEmpty());
             assertEquals(3, operations.get());
-        } finally { storage.close(); server.stop(); }
+        } finally { adapter.close(); server.stop(); }
     }
 
     @Test void realSdkOverallDeadlineStopsAStalledPutAndMapsItsFailure() throws Exception {
@@ -127,19 +133,21 @@ class BroadcastCosStorageTest {
         final ClientConfig config = loopbackConfig(server.getLocalPort());
         config.setRequestTimeout(500);
         config.setMaxErrorRetry(0);
-        final BroadcastCosStorage storage = new BroadcastCosStorage(
+        final CosImageStorage adapter = new CosImageStorage(
                 new COSClient(new BasicCOSCredentials("test-only", "test-only"), config), "covers-1251234567", PREFIX);
+        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
         try {
             final String key = storage.key(UUID.randomUUID().toString());
             assertTimeoutPreemptively(Duration.ofSeconds(3), () -> assertEquals(ApiErrorCode.BROADCAST_STORAGE_ERROR,
                     assertThrows(ApiException.class, () -> storage.put(key, image())).errorCode()));
             assertEquals(0, arrived.getCount());
-        } finally { release.countDown(); storage.close(); server.stop(); }
+        } finally { release.countDown(); adapter.close(); server.stop(); }
     }
 
     @Test void failuresAreCanonicalAndKeysCannotEscapeTheNamespace() throws Exception {
         final COSClient client = mock(COSClient.class);
-        final BroadcastCosStorage storage = new BroadcastCosStorage(client, "covers-1251234567", PREFIX);
+        final CosImageStorage adapter = new CosImageStorage(client, "covers-1251234567", PREFIX);
+        final BroadcastCosStorage storage = new BroadcastCosStorage(adapter, PREFIX);
         final String key = storage.key(UUID.randomUUID().toString());
         try {
             assertEquals(ApiErrorCode.BROADCAST_COVER_INVALID,
@@ -156,11 +164,12 @@ class BroadcastCosStorageTest {
             doThrow(missing).when(client).deleteObject(anyString(), anyString());
             storage.delete(key); // Already absent is a successful cleanup.
             final COSObject oversized = new COSObject();
-            oversized.setObjectContent(new ByteArrayInputStream(new byte[ImageValidation.MAX_BYTES + 1]));
+            oversized.setObjectContent(new COSObjectInputStream(new ByteArrayInputStream(new byte[ImageValidation.MAX_BYTES + 1]),
+                    mock(HttpRequestBase.class)));
             doReturn(oversized).when(client).getObject(anyString(), anyString());
             assertEquals(ApiErrorCode.BROADCAST_STORAGE_ERROR,
                     assertThrows(ApiException.class, () -> storage.get(key)).errorCode());
-        } finally { storage.close(); }
+        } finally { adapter.close(); }
     }
 
     private static ImageValidation.Image image() throws Exception {
@@ -175,7 +184,7 @@ class BroadcastCosStorageTest {
     }
 
     private static ClientConfig loopbackConfig(final int port) {
-        final ClientConfig config = BroadcastCosStorage.clientConfig("ap-shanghai");
+        final ClientConfig config = CosImageStorage.clientConfig("ap-shanghai");
         config.setHttpProtocol(HttpProtocol.http); // Test-only loopback, never a cloud endpoint.
         config.setEndpointBuilder(new EndpointBuilder() {
             @Override public String buildGeneralApiEndpoint(final String bucket) { return "127.0.0.1:" + port; }

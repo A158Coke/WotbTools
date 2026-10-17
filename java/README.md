@@ -25,6 +25,11 @@
 [功能契约](../docs/features/league-broadcasts.md)，可选 COS 封面配置和回收见
 [运维说明](../docs/operations/league-broadcast-covers.md)。
 
+bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`；管理员在 `/api/admin/creators/**` 使用 `tournament-admin` 维护UID、整星、字典与站点头像。
+V35创建简版目录与无上传者的图片回收台账。UID字符串唯一、主页自动生成；星级默认3，显示分数为星级×2。
+头像随表单一次multipart提交，压到最长边256px，仅存小图；UTC+8每日04:00回收未引用满24小时的图片。
+头像与联赛封面共用COS client/凭据、独立namespace；完整规则见 [UP recommendations](../docs/features/bilibili-creators.md)。
+
 ## AI Review Harness（双 Call + Team structured result）
 
 随机战个人复盘（ZH）在重建与特征可用时走 `TacticalReviewHarness`（双 Call）：Call #1 用双方阵容 + `common/tank_tactical_profiles.json` + 地图语义（`common/map-semantics/*.semantic.json`，由 `map-semanticizer` 从 Wot Blitz 客户端 SC2 + heightmap 解码生成）建立赛前战略基线（不含任何战斗结果），Backend Evidence Skills（HpMomentum / EngagementTrade / LocalSupport / DeathCascade / Route / CriticalWindow）输出确定性战术证据，Call #2 按 Priority Bookends 对照「预期 vs 实际」输出复盘，输入含走位/区域时间线、逐次对炮明细、≤8 个关键决策窗口完整证据与口语化语气约束；随机战斗不评判 MVP/战犯。任何前提不满足自动降级旧单 Call 路径；EN/RU 保持旧路径。地图战术语义层（`MapTacticalSemanticsRegistry`）：按 `mapCodes` / `mapId` / token 边界别名查询，未收录地图明确 UNKNOWN（禁止编造区域语义）；语义数据 `displayName` 用 `map_names.json` 的 en 名（未收录回退 mapId），Call #1 语义段显示可读地图名 + 内部 code；语义 AREA 标注 `gridRegions`（GRID_REGION_1~9），与 `MapRegionResolver` 同一坐标约定（±250 m → 500×500 → 3×3），回放定位与地图语义共用同一九宫格；Call #1 有独立 45s stage 预算，Call #2 使用剩余预算并留安全余量，整体不超过 `AI_CALL_TIMEOUT_SEC`。**结构化 JSON 小调用关闭 thinking**：Call #1 与团队 Call #2 在请求层按各自 JSON contract 发送（Call #2 使用 `TeamAiReviewResult` + `TeamAiReviewResultParser`，含确定性 salvage / normalization；生产链没有 Team Autopsy、没有 legacy envelope / claims validator）；Call #2 生产结果在 SSE `done.teamReview` 一次性传输，前端负责标题和可选区块渲染。团队复盘（训练房/联赛，`TeamReplayAnalysisService`）与随机战一样**先执行 Call #1**（地图 + 双方阵容赛前先验，按视角队伍重标 TEAM_A=你的队伍 / TEAM_B=对方队伍 后注入团队 Prompt）；该 prior 只是战略基线/可能性空间，不是队伍实际计划，Call #2 只按可观察执行与确定性证据判断，Call #1 失败仅缺 prior 段不阻断复盘。团队输入含每名成员整场路线序列（九宫格）；production Team Review 没有第三次模型调用，也没有 settlement-only autopsy 阶段；Call #2 由 `TeamAiReviewResultParser` 校验 JSON/schema/roster/episode references。
