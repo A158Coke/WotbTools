@@ -12,7 +12,7 @@ import java.util.List;
 @Component
 public class BroadcastMapper implements Mapper<BroadcastReplay, BroadcastDtos.Replay> {
     public BroadcastDtos.Season season(final BroadcastSeason season, final long rootCount, final long replayCount) {
-        return new BroadcastDtos.Season(season.id, season.server, season.year, season.name,
+        return new BroadcastDtos.Season(season.id, season.server, season.year, season.nameZh, season.nameEn, season.nameRu,
                 season.startDate, season.createdAt, season.version, rootCount, replayCount);
     }
     public BroadcastDtos.Category category(final BroadcastCategory category) {
@@ -25,7 +25,7 @@ public class BroadcastMapper implements Mapper<BroadcastReplay, BroadcastDtos.Re
     @Override
     public BroadcastDtos.Replay toDto(final BroadcastReplay replay) {
         return new BroadcastDtos.Replay(replay.id, replay.nodeId, replay.title, replay.url, replay.matchDate,
-                replay.dayNumber, replay.groupLabel, replay.groupNumber, replay.bracket,
+                replay.dayNumber, replay.groupNumber, replay.bracket,
                 List.copyOf(replay.teams), replay.perspective, replay.coverId);
     }
 }

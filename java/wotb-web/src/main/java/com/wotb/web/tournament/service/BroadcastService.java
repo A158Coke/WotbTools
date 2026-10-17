@@ -63,19 +63,22 @@ public class BroadcastService {
     }
 
     public BroadcastDtos.SeasonView createSeason(final BroadcastDtos.SeasonCreate request) {
-        validateServer(request.server()); validateSeason(request.year(), request.name(), request.startDate());
+        validateServer(request.server()); validateSeason(request.year(), request.nameZh(), request.nameEn(), request.nameRu(), request.startDate());
         return transactions.execute(status -> {
             final BroadcastSeason season = new BroadcastSeason();
-            season.server = request.server(); season.year = request.year(); season.name = request.name().strip();
+            season.server = request.server(); season.year = request.year(); season.nameZh = request.nameZh().strip();
+            season.nameEn = request.nameEn().strip(); season.nameRu = StringUtils.hasText(request.nameRu()) ? request.nameRu().strip() : null;
             season.startDate = request.startDate(); season.createdAt = Instant.now(); seasons.save(season);
             return seasonView(season);
         });
     }
     public BroadcastDtos.SeasonView updateSeason(final long id, final BroadcastDtos.SeasonUpdate request) {
-        validateSeason(request.year(), request.name(), request.startDate());
+        validateSeason(request.year(), request.nameZh(), request.nameEn(), request.nameRu(), request.startDate());
         return transactions.execute(status -> {
             final BroadcastSeason season = locked(id, request.expectedVersion());
-            season.year = request.year(); season.name = request.name().strip(); season.startDate = request.startDate();
+            season.year = request.year(); season.nameZh = request.nameZh().strip();
+            season.nameEn = request.nameEn().strip(); season.nameRu = StringUtils.hasText(request.nameRu()) ? request.nameRu().strip() : null;
+            season.startDate = request.startDate();
             season.version++; return seasonView(season);
         });
     }
@@ -140,7 +143,7 @@ public class BroadcastService {
             final String previousCover = replay.coverId;
             if (uploaded != null) { covers.attach(seasonId, uploaded); }
             replay.nodeId = nodeId; replay.title = request.title().strip(); replay.url = request.url().strip();
-            replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber(); replay.groupLabel = request.groupLabel() == null ? null : request.groupLabel().strip();
+            replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
             replay.teams = request.teams().stream().map(String::strip).toList(); replay.perspective = request.perspective();
             if (uploaded != null) { replay.coverId = uploaded; }
@@ -219,9 +222,11 @@ public class BroadcastService {
         if (expected < 0 || expected != season.version) { throw new ApiException(ApiErrorCode.BROADCAST_VERSION_CONFLICT); }
     }
     private static void validateServer(final String server) { if (server == null || !SERVERS.contains(server)) { throw invalid(); } }
-    private static void validateSeason(final int year, final String name, final LocalDate startDate) {
+    private static void validateSeason(final int year, final String nameZh, final String nameEn, final String nameRu, final LocalDate startDate) {
         if (year < 1 || year > 9999) { throw invalid(); }
-        text(name, 100); if (startDate != null) { date(startDate); }
+        text(nameZh, 100); text(nameEn, 100);
+        if (StringUtils.hasText(nameRu)) { text(nameRu, 100); }
+        if (startDate != null) { date(startDate); }
     }
     private static void validateReplay(final BroadcastDtos.ReplaySave request, final String type,
                                        final String format, final MultipartFile file) {
@@ -235,12 +240,11 @@ public class BroadcastService {
                 || !contains(Set.of("POV", "OBSERVER"), request.perspective())) { throw invalid(); }
         request.teams().forEach(team -> text(team, 100));
         if (POINTS.equals(type)) {
-            text(request.groupLabel(), 100);
-            if (request.groupNumber() != null || request.bracket() != null) { throw invalid(); }
+            if (request.groupNumber() == null || request.groupNumber() < 1 || request.bracket() != null) { throw invalid(); }
         } else if (SEMI_FINALS.equals(type) || "KNOCKOUT".equals(format)) {
-            if (request.groupLabel() != null || request.groupNumber() == null || request.groupNumber() < 1
+            if (request.groupNumber() == null || request.groupNumber() < 1
                     || request.groupNumber() > 4 || !contains(Set.of("DEFAULT", "WINNERS", "LOSERS"), request.bracket())) { throw invalid(); }
-        } else if (request.groupLabel() != null || request.groupNumber() != null || request.bracket() != null) { throw invalid(); }
+        } else if (request.groupNumber() != null || request.bracket() != null) { throw invalid(); }
         if (!contains(Set.of("KEEP", "REMOVE", "REPLACE"), request.coverAction())
                 || ("REPLACE".equals(request.coverAction()) ? file == null || file.isEmpty() : file != null)) { throw invalid(); }
     }

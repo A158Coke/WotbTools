@@ -27,8 +27,6 @@ public class BroadcastReplay {
     public LocalDate matchDate;
     @Column(name = "day_number", nullable = false)
     public int dayNumber;
-    @Column(name = "group_label", length = 100)
-    public String groupLabel;
     @Column(name = "group_number")
     public Integer groupNumber;
     @Column(length = 16)

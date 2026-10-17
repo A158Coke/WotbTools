@@ -86,8 +86,8 @@ class BroadcastCoverIntegrationTest {
         reset(storage);
         when(storage.configured()).thenReturn(true);
         when(storage.key(anyString())).thenAnswer(call -> "league-broadcasts/covers/" + call.getArgument(0));
-        seasonId = jdbc.queryForObject("insert into tournament_broadcast_season(server,year,name,created_at) "
-                + "values ('CN',2026,'Cover test',now()) returning id", Long.class);
+        seasonId = jdbc.queryForObject("insert into tournament_broadcast_season(server,year,name_zh,name_en,created_at) "
+                + "values ('CN',2026,'封面测试','Cover test',now()) returning id", Long.class);
         final long categoryId = jdbc.queryForObject("insert into tournament_broadcast_category(season_id,type) "
                 + "values (?,'POINTS') returning id", Long.class, seasonId);
         nodeId = jdbc.queryForObject("insert into tournament_broadcast_node(category_id,root_key,round_number) "
@@ -237,8 +237,8 @@ class BroadcastCoverIntegrationTest {
         });
     }
     private void insertReplay(final String coverId) {
-        jdbc.update("insert into tournament_broadcast_replay(node_id,title,url,match_date,day_number,group_label,teams,"
-                + "perspective,cover_id,created_at) values (?,'Replay','https://example.test/video','2026-10-16',1,'A',"
+        jdbc.update("insert into tournament_broadcast_replay(node_id,title,url,match_date,day_number,group_number,teams,"
+                + "perspective,cover_id,created_at) values (?,'Replay','https://example.test/video','2026-10-16',1,1,"
                 + "'[\"A\",\"B\"]'::jsonb,'POV',?,now())", nodeId, coverId);
     }
     private void age(final String id) {

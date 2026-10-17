@@ -5,12 +5,12 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-17，本候选源码为 **3.9.0 / 3009000**（`android/gradle.properties`；在 3.2.0 回放运行时、
-3.3.0 联赛直播回放目录、3.4.0 联赛 CSV 导入、3.4.1 直播导航调整与 3.5.0 bilibili UP 推荐目录之上，
-保留3.7.0的推荐目录内容灰度、3.6.0的逐配置装甲数据与参数折叠卡片、3.5.4的UP分类折叠筛选、3.5.3的联赛服务器卡片优化、3.5.2的Android回放文件选择修复、3.5.1的回放终态血量修复和上游 **v0.4.9** WASM pin，增加优秀作品推荐：UP与作品共用推荐目录和管理表单，通过类型卡片进入各自分类列表；
-本次进一步将联赛区服图标替换为放大的本地地球SVG，保留圆角正方形底色与现有卡片布局，统一CN/APAC/NA/EU的英文Server名称；另已包含更早未 stage、未发布的 2.5.0 / 2.6.0 改动）；
-本次 3.9.0 在上述功能上新增 3D 回放工具栏收起／展开，属于 APK 内嵌前端的中小新功能，按 **minor** 分类（3.8.1 → 3.9.0）；
-`android-v3.8.1` 已固定旧源码身份，不能复用该版本发布新增的 bundle。候选说明见 [3.9.0](releases/3.9.0.md)，Native Bridge 保持 v3，最低支持版本保持 3000000，不新增强制升级。
+截至 2026-10-18，本候选源码为 **4.0.0 / 4000000**（`android/gradle.properties`）。
+保留main新增3.9.0的3D工具栏折叠功能，以及此前 3.8.1 的地球图标、3.8.0 的双类型推荐目录、3.7.0 的推荐目录内容灰度及上游 **v0.4.9** WASM pin；
+本次加入联赛季赛中英必填、俄文选填名称，以及积分赛数字小组号。名称与回放 HTTP shape 发生 breaking change，
+旧 APK 的严格响应校验不兼容，因此使用 major 4.0.0；Native Bridge 仍为 v3。
+**合并触发 stage 前须将 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `4000000`**，并按现有 stage、真机验收、publish 流程发布。
+初始化仅收录完整核实比赛日、对阵与阶段的记录，不用占位值填补缺失回放。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
