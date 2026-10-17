@@ -122,13 +122,15 @@ factual vehicle data; the alias file is additive metadata beside them.
 
 ### Reviewed national-server client names
 
-The 2026-10-17 import adds **552 aliases for 471 vehicles** from the official national-server
+The 2026-10-17 import adds **551 aliases for 470 vehicles** from the official national-server
 Android client (`com.netease.wotb`), version
 `11.21.0.155_7380044 release/11.21.0 WOTB_Android_Windows_china`. Its `Strings/zh-Hans.yaml`
 contains language code `zh_ne`. Both the official short name and full name are retained when they
 differ; whitespace is trimmed and case-insensitive duplicates (including the canonical English
-name) are omitted. For example, `6929` (Maus) has `“鼠”式`, while `10113` (Carro 45t) has
-`45t战车` and `45t战斗战车`.
+name) are omitted. The redundant `T-34*` spelling for Type T-34 is also excluded: search removes
+punctuation, so it would boost that vehicle to the exact `t34` score without adding recall and
+promote it above the more relevant Y5 T-34 match. For example, `6929` (Maus) has `“鼠”式`, while
+`10113` (Carro 45t) has `45t战车` and `45t战斗战车`.
 
 The English reference is `common/tank_ids.json` at commit
 `6766effe57cf396d2b8cbeca8255cb2bfb773eb5`: 738 vehicles, BlitzKit game version
@@ -175,7 +177,10 @@ For the next reviewed import:
    missing or mismatched records and report their counts instead of inventing names.
 3. **Merge** verified short/full names into the existing arrays; preserve manually added community
    aliases. Trim values, deduplicate case-insensitively per vehicle and omit values equal to its
-   canonical English name. Sort tank-id keys numerically for a readable diff. Never replace the
+   canonical English name. Review cross-vehicle collisions after the search normalization (lowercase,
+   Unicode letters/digits only); omit redundant punctuation variants that only boost an existing
+   substring match to another vehicle's canonical-name score. Legitimate shared Chinese names
+   remain allowed. Sort tank-id keys numerically for a readable diff. Never replace the
    file wholesale with a new client snapshot or remove an alias merely because that client omits it.
 4. Update this provenance section, run `python3 common/python/validate_tank_aliases.py` and
    `python3 -m unittest discover -s common/python/tests -p test_validate_tank_aliases.py`, then run
