@@ -14,8 +14,8 @@ vi.mock('../composables/useAuth.js', () => ({ useAuth: () => ({ isLeagueBroadcas
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true, pending: false }) }) }))
 vi.mock('../api/league-broadcasts.js', async original => ({ ...await original<object>(), listBroadcasts: state.list, getBroadcastSeason: state.season, getBroadcastCategory: state.category, createBroadcastNode: state.createNode, createBroadcastSeason: state.createSeason, updateBroadcastSeason: state.updateSeason }))
 const season: BroadcastSeason = { id: 10, server: 'CN', year: 2026, nameZh: '独立赛事', nameEn: 'Independent season', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 1 }
-const detail: BroadcastCategoryView = { season, category: { id: 20, seasonId: 10, type: 'POINTS' }, coverUploadAvailable: true,
-  nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'League final', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }] }] }
+const detail: BroadcastCategoryView = { defaultTimeZone: 'Asia/Shanghai', season, category: { id: 20, seasonId: 10, type: 'POINTS' }, coverUploadAvailable: true,
+  nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ startsAt: null, id: 40, nodeId: 30, title: 'League final', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }] }] }
 async function page(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push(url); await router.isReady()
@@ -25,7 +25,7 @@ async function page(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCa
   return { wrapper, router, i18n }
 }
 beforeEach(() => {
-  vi.clearAllMocks(); state.admin = ref(false)
+  vi.clearAllMocks(); localStorage.clear(); state.admin = ref(false)
   state.list.mockImplementation(async server => ({ servers: ['CN', 'ASIA', 'NA', 'EU', 'LESTA'], seasons: server === 'CN' ? [season] : [], coverUploadAvailable: true }))
   state.season.mockResolvedValue({ season, categories: [detail.category], coverUploadAvailable: true })
   state.category.mockResolvedValue(detail)
@@ -34,6 +34,32 @@ beforeEach(() => {
   state.updateSeason.mockResolvedValue({ season, categories: [], coverUploadAvailable: true })
 })
 describe('shared broadcast catalogue rendering', () => {
+  it('uses server time by default, remembers only the viewing preference and keeps admin input independent', async () => {
+    state.admin.value = true
+    state.category.mockResolvedValue({ ...detail, nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: '2026-10-16T11:00:00Z' })) })) })
+    const { wrapper } = await page()
+    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
+    expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain('2026-10-16 19:00 UTC+8')
+    await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue('UTC')
+    expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain('2026-10-16 11:00 UTC')
+    await wrapper.get('[data-testid=broadcast-edit-replay-40]').trigger('click')
+    expect((wrapper.get('[data-testid=broadcast-input-time-zone]').element as HTMLSelectElement).value).toBe('480')
+    expect((wrapper.get('[data-testid=broadcast-time]').element as HTMLInputElement).value).toBe('19:00')
+    wrapper.unmount()
+    const next = await page()
+    expect((next.wrapper.get('[data-testid=broadcast-display-time-zone]').element as HTMLSelectElement).value).toBe('UTC')
+    next.wrapper.unmount()
+  })
+  it('keeps a date-only replay stable when selecting another viewing zone', async () => {
+    const { wrapper } = await page()
+    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
+    await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue('America/Los_Angeles')
+    const text = wrapper.get('[data-testid=broadcast-replay-40]').text()
+    expect(text).toContain('2026-10-16')
+    expect(text).not.toContain('00:00')
+    expect(text).not.toContain('UTC-')
+    wrapper.unmount()
+  })
   it('keeps roots collapsed, retains text on cover failure and retries the image on explicit refresh', async () => {
     const { wrapper } = await page()
     expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(false)
@@ -66,13 +92,13 @@ describe('shared broadcast catalogue rendering', () => {
     }
     wrapper.unmount()
   })
-  it('marks a legacy missing points group for completion without inventing a number', async () => {
+  it('omits an optional empty group in every language', async () => {
     state.category.mockResolvedValue({ ...detail, nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, groupNumber: null })) })) })
     const { wrapper, i18n } = await page()
     await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     for (const [locale, label] of [['zh', '组号待补'], ['en', 'Group number pending'], ['ru', 'Номер группы не указан']] as const) {
       i18n.global.locale.value = locale; await flushPromises()
-      expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain(label)
+      expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).not.toContain(label)
     }
     wrapper.unmount()
   })

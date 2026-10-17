@@ -24,16 +24,16 @@ URL 的 `lbServer/lbSeason/lbCategory` 由 Vue Router 所有，可分享、刷�
 
 | 分类 | 根节点 | 回放分组 |
 | --- | --- | --- |
-| 积分赛 | 第 1–5 轮，每轮唯一 | 正整数小组号，1–2147483647，不限于 1–4 |
+| 积分赛 | 第 1–5 轮，每轮唯一 | 小组号选填；填写时为正整数 1–2147483647，不限于 1–4 |
 | 八强循环积分赛 | 八强分类下唯一节点 | 不填写淘汰小组与组别 |
-| 八强淘汰赛 | 与循环赛互斥，同一八强根节点 | 小组序号 1–4，默认／胜者／败者组 |
-| 四强赛 | 四强分类下唯一节点 | 小组序号 1–4，默认／胜者／败者组 |
+| 八强淘汰赛 | 与循环赛互斥，同一八强根节点 | 小组号选填，填写时为 1–4；默认／胜者／败者组 |
+| 四强赛 | 四强分类下唯一节点 | 小组号选填，填写时为 1–4；默认／胜者／败者组 |
 
 创建分类不会自动创建根节点，同类型分类在季赛内复用。积分赛轮次和八强赛制在根节点
 创建后不可更改，空节点亦然；需要变更时确认删除并重建，所属分类保留。
 八强、四强节点容纳多天回放，不按天拆根节点。
 
-新版积分赛使用数字 `groupNumber`，固定显示“第 N 组 / Group N / Группа N”，不提供自由组名输入。积分赛的组号与淘汰赛的组号上限独立：后者仍为1–4。V39把旧组名归档在 `legacy_group_label`，只将纯数字、明确的“第N组”或“Group N”转换成组号；字母和无法解释的名称不猜编号，保留原文且组号为null。历史空号显示三语“组号待补”，编辑时必须明确补成合法正整数。
+新版积分赛使用数字 `groupNumber`，固定显示“第 N 组 / Group N / Группа N”，不提供自由组名输入。积分赛的组号与淘汰赛的组号上限独立：后者仍为1–4。V39把旧组名归档在 `legacy_group_label`，只将纯数字、明确的“第N组”或“Group N”转换成组号；字母和无法解释的名称不猜编号，保留原文且组号为null。组号允许留空，空值不显示小组标记；填写时仍校验对应阶段的数字范围。历史归档文字保留，不自动猜号。
 
 每条回放的标题、HTTP(S) 链接、比赛日期、第几天、视角和前两支队伍必填，可再填两支队伍。
 第一支是整段回放追随的队伍，允许 POV 与上帝视角。第几天是正整数，与日历日期独立，
@@ -62,8 +62,8 @@ Android 通过现有业务 API URL resolver 读取图片，不能把 `/api/...` 
 ## 工程边界与验证
 
 - HTTP SSOT：`contracts/http/openapi.yaml` 的 `Broadcast*` 与 `LegacyBroadcast*` schema。
-- 新版公开 API：`/api/tournament-broadcasts/v2` 索引、`/v2/seasons/{id}`、`/v2/categories/{id}`；封面共用原 `/api/tournament-broadcasts/covers/{id}`。
-- 新版管理 API：`/api/admin/tournament-broadcasts/v2/**`，真实全站管理员，季赛版本保护所有树内写操作；原管理接口继续为旧APK服务。
+- 公开 API：索引和赛事沿用 `/api/tournament-broadcasts/v2`、`/v2/seasons/{id}`；新前端读取 `/v3/categories/{id}` 获取目录与时刻，旧 `/v2/categories/{id}` 保留原结构。封面共用 `/api/tournament-broadcasts/covers/{id}`。
+- 管理 API：赛事／分类／删除沿用 `/api/admin/tournament-broadcasts/v2/**`；新前端创建节点和保存回放走相应 `/v3/**` 处理器。真实全站管理员角色及赛事版本保护所有树内写操作，原管理接口继续为旧APK服务。
 - 持久模型：Business API 的 tournament 域内 `Broadcast*`，独立 `tournament_broadcast_*` 表，
   不引用积分榜 `TournamentEvent`；Flyway V33 创建结构，V38增加三语名称，V39规范小组号，V40初始化已核实分场回放。
 - 前端：`useLeagueBroadcasts` 是公共数据和请求生命周期唯一 owner；API 模块负责 Bearer、错误、
@@ -86,7 +86,7 @@ APK 真机、COS 真实上传／展示／回收和生产发布均须按所属运
 迁移与手工重跑同一事务执行并序列化，不新增运行时导入开关或定时任务。后补数据使用新的迁移或现有管理员界面，不重写历史Flyway。
 
 新字段通过v2接口提供；原公开与管理端点保持旧single-name/groupLabel结构，不向旧响应添加会被严格校验拒绝的字段。
-两版共用已有Service、数据库、角色校验与版本锁。旧写入适配位于兼容边界；不允许旧编辑器清空已配的三语翻译。旧积分赛文字请求继续保存到归档字段，能安全转换时填数值，否则新界面显示组号待补；v2保存仍必须明确正整数，不因兼容入口放宽。
+两版共用已有Service、数据库、角色校验与版本锁。旧写入适配位于兼容边界；不允许旧编辑器清空已配的三语翻译。旧积分赛文字请求继续保存到归档字段，能安全转换时填数值，否则保留归档；无组号可保存为null，填写时仍需合法正整数。
 三语名称与数字小组界面自Android minor 3.11.0提供，Bridge仍v3，最低支持门槛保持3000000；旧APK可在后端先行部署后继续读取和管理原结构。
 发布流程见[发布手册](../android/release-process.md)。
 
@@ -98,4 +98,20 @@ APK 真机、COS 真实上传／展示／回收和生产发布均须按所属运
 
 V41 只纠正国服 2025、中文“战火杯”、仍为旧默认英文“Zhanhuo Cup”且关联 V40 官方视频分 P 的记录，改为 Blitz Professional Cup (BPC)，同步递增版本以使旧编辑草稿触发冲突检查。自定义中英名称、俄文翻译与回放事实保留；重复执行不再次更新。V40 与 seed-ready.json 是原始核验快照，不改历史内容或哈希。
 
-来源：[官方 Prove Your Skill 与阶段规则](https://eu.wotblitz.com/en/content/blitz-masters-legacy-regulations-eu/)、[官方俄文赛事公告](https://na.wotblitz.com/ru/news/tournaments/blitz-masters-legacy-2026/)、[网易官方战火杯冠军海报所在文章](https://game.xiaomi.com/viewpoint/1160758920_1766404215796_16)。此界面修正随 Android patch 3.11.1 提供。
+来源：[官方 Prove Your Skill 与阶段规则](https://eu.wotblitz.com/en/content/blitz-masters-legacy-regulations-eu/)、[官方俄文赛事公告](https://na.wotblitz.com/ru/news/tournaments/blitz-masters-legacy-2026/)、[网易官方战火杯冠军海报所在文章](https://game.xiaomi.com/viewpoint/1160758920_1766404215796_16)。此界面修正与时间功能随 Android minor 3.12.0 提供。
+
+## 开赛时刻与时区（V42 / v3）
+
+赛事开赛日期仍是选填的日历日期。每条回放的比赛日期必填，具体开赛时刻选填；没有可靠时刻的历史回放不补00:00。有时刻时用UTC瞬间保存到nullable `match_starts_at`，`matchDate`保持该区服赛程当地比赛日。
+
+公众回放列表的时区选择器位于标题工具栏，默认区服赛事时区：CN/ASIA UTC+8、NA PT（PST/PDT）、EU CET/CEST、LESTA莫斯科UTC+3；可切其他显示时区。按记录发生日期处理夏令时与跨日，仅改显示，不改数据库、第几天或轮次。纯日期记录不随时区换日。
+
+管理员日期/时间旁的录入时区默认UTC+8，可选择明确UTC偏移；与公众显示偏好分开。切换录入偏移保持同一瞬间。有时间时保存所对应的区服日历日；清空时间保留日期精度。
+
+新category时间envelope与时间写入使用v3处理器，复用v2目录数据主体、业务服务、权限与版本锁。v1/v2响应保持既有严格字段形状；旧客户端编辑日期不变时保留时刻，改日期时清除旧时刻，避免两个时间事实矛盾。新客户端可明确清空时刻。原封面路径与上传流程共用。
+
+## 2026 核实回放初始化（V43）
+
+V43 从 [2026 核验快照](../research/broadcast-seed-2025-2026/seed-ready-2026.json) 初始化 9 条回放，覆盖 EU 的 Spring Games、Blitz Masters: Legacy、Autumn Games，以及 APAC 的 Spring Games。每条仅需一场已确认两队的战斗，保留原赛事名、真实直播 UTC 开始时间和区服当地比赛日期；未知组号为 NULL，已确认的第 1 组败者组保留。
+
+与既有初始化相同，先按视频来源识别管理员已有归属，保留自定义名称、翻译和回放事实；来源归属冲突、错误区服/年份或重名歧义时跳过对应赛事，不覆盖猜测。重复执行不重复新增。其余候选不自动导入，后补使用新迁移或管理员界面，历史快照与迁移保持原样。核验范围和官方来源见 [2026 复核记录](../research/broadcast-seed-2025-2026/2026-recheck.md)。

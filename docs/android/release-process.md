@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **3.11.1 / 3011001**（`android/gradle.properties`）。
+截至 2026-10-18，本候选源码为 **3.12.0 / 3012000**（`android/gradle.properties`）。
 保留 main 的 3.10.1 全等级坦克百科资料修复（基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），
 以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块转正/口径碾压修复，
 以及 3.9.1 积分榜公开展示优化、3.9.0 工具栏折叠、3.8.1 地球图标和此前推荐目录等功能，以及上游 **v0.4.9** WASM pin。
@@ -15,7 +15,7 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 `android-v3.10.0` 已固定旧源码身份，不能复用该版本发布新增的 bundle；说明见 [3.10.0](releases/3.10.0.md)、[3.10.1](releases/3.10.1.md) 与 [3.11.0](releases/3.11.0.md)。
 Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这次功能强制升级。
 初始化仅收录核实比赛日、对阵与阶段的 3 条分场记录，不用占位值补全缺失回放。
-3.11.1 是术语与视角文案修正的 **patch**（3.11.0 → 3.11.1），包含 Tournament、Prove Your Skill、Top 8 / Top 4 与中文个人/观战视角，详见 [3.11.1](releases/3.11.1.md)。Bridge 与最低版本门槛均不变。
+3.12.0 新增可选回放开赛时刻、公众显示与管理员录入时区选择器，并将小组号改为选填；同时修正 Tournament、Prove Your Skill、Top 8 / Top 4 与中文个人/观战视角。按新增中小功能选 **minor**（3.11.0 → 3.12.0），详见 [3.12.0](releases/3.12.0.md)。Bridge 与最低版本门槛均不变。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。

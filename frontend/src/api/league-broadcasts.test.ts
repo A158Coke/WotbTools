@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { BroadcastCategoryView, BroadcastReplaySave } from './league-broadcasts.js'
+import type { BroadcastReplaySave } from './league-broadcasts.js'
 
 const state = vi.hoisted(() => ({ auth: null as any, fetch: vi.fn(), online: true, epoch: 0 }))
 vi.mock('../composables/useAuth.js', async original => ({ ...await original<object>(), useAuth: () => state.auth }))
@@ -10,14 +10,15 @@ vi.mock('../utils/http.js', async original => ({ ...await original<object>(), ap
 import { broadcastCoverUrl, createBroadcastNode, deleteBroadcastResource, getBroadcastCategory, listBroadcasts, saveBroadcastReplay, validateBroadcast } from './league-broadcasts.js'
 
 const season = { id: 1, server: 'CN' as const, year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
-const detail: BroadcastCategoryView = { season, category: { id: 2, seasonId: 1, type: 'POINTS' }, nodes: [{ id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }], coverUploadAvailable: true }
+const detail = { season, category: { id: 2, seasonId: 1, type: 'POINTS' }, nodes: [{ id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }], coverUploadAvailable: true }
+const timedDetail = { data: detail, defaultTimeZone: 'Asia/Shanghai', replayStarts: [] }
 const payload: BroadcastReplaySave = { expectedVersion: 0, title: 'Final', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['A', 'B'], perspective: 'POV', coverAction: 'KEEP' }
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
 beforeEach(() => {
   vi.clearAllMocks(); state.online = true; state.epoch = 0
   state.auth = { authenticated: ref(true), tokenParsed: ref({ realm_access: { roles: ['wotbtools-admin'] } }), authEpoch: () => state.epoch,
     ensureToken: vi.fn(async () => true), token: () => 'access-token' }
-  state.fetch.mockResolvedValue(response(detail))
+  state.fetch.mockResolvedValue(response(timedDetail))
 })
 afterEach(() => vi.unstubAllEnvs())
 
@@ -33,8 +34,19 @@ describe('broadcast HTTP boundary', () => {
   it('uses public reads without waiting for authentication or attaching a bearer', async () => {
     await getBroadcastCategory(2)
     expect(state.auth.ensureToken).not.toHaveBeenCalled()
-    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/v2/categories/2')
+    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/v3/categories/2')
     expect(state.fetch.mock.calls[0][1].headers).toEqual({})
+  })
+  it('adapts a validated v3 envelope and leaves old date-only records without a time', async () => {
+    const replay = { id: 4, nodeId: 3, title: 'Match', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 1,
+      groupNumber: null, bracket: null, teams: ['A', 'B'], perspective: 'OBSERVER', coverId: null }
+    const data = { ...detail, nodes: [{ ...detail.nodes[0], replays: [replay, { ...replay, id: 5 }] }] }
+    state.fetch.mockResolvedValueOnce(response({ data, defaultTimeZone: 'Europe/Berlin', replayStarts: [{ replayId: 4, startsAt: '2026-10-16T11:00:00Z' }] }))
+    const value = await getBroadcastCategory(2)
+    expect(value.defaultTimeZone).toBe('Europe/Berlin')
+    expect(value.nodes[0].replays.map(replay => replay.startsAt)).toEqual(['2026-10-16T11:00:00Z', null])
+    state.fetch.mockResolvedValueOnce(response(detail))
+    await expect(getBroadcastCategory(2)).rejects.toThrow('INVALID_RESPONSE')
   })
   it('uses v2 for the catalogue and versioned deletion while retaining shared cover URLs', async () => {
     state.fetch.mockResolvedValueOnce(response({ servers: ['CN', 'ASIA', 'NA', 'EU', 'LESTA'], seasons: [season], coverUploadAvailable: true }))
@@ -60,18 +72,19 @@ describe('broadcast HTTP boundary', () => {
     expect(state.fetch).not.toHaveBeenCalled()
   })
   it('rejects a delayed response belonging to an old account', async () => {
-    state.fetch.mockImplementation(async () => { state.epoch++; return response(detail) })
+    state.fetch.mockImplementation(async () => { state.epoch++; return response(timedDetail) })
     await expect(createBroadcastNode(2, { expectedVersion: 0, roundNumber: 1, format: null })).rejects.toThrow('REQUEST_ABORTED')
   })
   it('uses multipart JSON and the selected raw image only when replacing a cover', async () => {
     const file = new File(['png'], 'cover.png', { type: 'image/png' })
-    await saveBroadcastReplay({ nodeId: 3 }, { ...payload, coverAction: 'REPLACE' }, file)
+    await saveBroadcastReplay({ nodeId: 3 }, { replay: { ...payload, coverAction: 'REPLACE' }, startsAt: '2026-10-16T11:00:00Z' }, file)
     const [url, options] = state.fetch.mock.calls[0]
-    expect(url).toBe('/api/admin/tournament-broadcasts/v2/nodes/3/replays')
+    expect(url).toBe('/api/admin/tournament-broadcasts/v3/nodes/3/replays')
     expect(options.headers).toEqual({ Authorization: 'Bearer access-token' })
     expect(options.body.get('payload').type).toBe('application/json')
+    expect(JSON.parse(await options.body.get('payload').text())).toEqual({ replay: { ...payload, coverAction: 'REPLACE' }, startsAt: '2026-10-16T11:00:00Z' })
     expect(options.body.get('cover').name).toBe('cover.png')
-    expect(() => saveBroadcastReplay({ nodeId: 3 }, payload, file)).toThrow('BROADCAST_COVER_INVALID')
+    expect(() => saveBroadcastReplay({ nodeId: 3 }, { replay: payload, startsAt: null }, file)).toThrow('BROADCAST_COVER_INVALID')
   })
   it('keeps business cover reads on the production API origin in Android', () => {
     vi.stubEnv('MODE', 'android')

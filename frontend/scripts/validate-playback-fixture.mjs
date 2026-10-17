@@ -82,3 +82,28 @@ for (const mutate of [
   if (legacyBroadcastCategoryViewValidator(invalid)) throw new Error('Legacy APK shape unexpectedly changed')
 }
 console.log('Legacy broadcast APK wire fixture and closed-field boundaries: OK')
+
+// V3 keeps the frozen v2 body nested, adding timezone/instant metadata only in the envelope.
+const timedBroadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-timed-category.json', import.meta.url), 'utf8'))
+const validateTimed = ajv.compile(document.components.schemas.BroadcastTimedCategoryView)
+if (!validateTimed(timedBroadcast)) throw new Error(JSON.stringify(validateTimed.errors, null, 2))
+for (const mutate of [
+  value => { delete value.defaultTimeZone },
+  value => { value.defaultTimeZone = 'US/Pacific' },
+  value => { value.replayStarts[0].startsAt = null },
+  value => { value.replayStarts[0].startsAt = '2026-10-16' },
+  value => { value.data.nodes[0].replays[0].startsAt = '2026-10-16T16:00:00Z' },
+]) {
+  const invalid = structuredClone(timedBroadcast)
+  mutate(invalid)
+  if (validateTimed(invalid)) throw new Error('Invalid timed broadcast fixture unexpectedly accepted')
+}
+const { id, nodeId, coverId, ...replaySave } = timedBroadcast.data.nodes[0].replays[0]
+const timedSave = { replay: { ...replaySave, expectedVersion: 3, coverAction: 'KEEP', groupNumber: null }, startsAt: null }
+const validateTimedSave = ajv.compile(document.components.schemas.BroadcastTimedReplaySave)
+if (!validateTimedSave(timedSave)) throw new Error(JSON.stringify(validateTimedSave.errors, null, 2))
+if (!validateTimedSave({ ...timedSave, startsAt: '2026-10-16T16:00:00Z' })) throw new Error('Known start instant rejected')
+for (const invalid of [{ replay: timedSave.replay }, { ...timedSave, startsAt: '2026-10-16' }, { ...timedSave, replay: null }]) {
+  if (validateTimedSave(invalid)) throw new Error('Invalid timed save accepted')
+}
+console.log('Timed broadcast envelope, optional groups and explicit time precision: OK')

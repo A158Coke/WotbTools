@@ -34,6 +34,8 @@ public class BroadcastController {
     public BroadcastDtos.SeasonView seasonV2(@PathVariable final long id) { return service.season(id); }
     @GetMapping("/v2/categories/{id}")
     public BroadcastDtos.CategoryView categoryV2(@PathVariable final long id) { return service.category(id); }
+    @GetMapping("/v3/categories/{id}")
+    public BroadcastDtos.TimedCategoryView categoryV3(@PathVariable final long id) { return service.timedCategory(id); }
     @GetMapping("/covers/{id}")
     public ResponseEntity<byte[]> cover(@PathVariable final String id) {
         final BroadcastCoverService.CoverImage image = covers.load(id);
