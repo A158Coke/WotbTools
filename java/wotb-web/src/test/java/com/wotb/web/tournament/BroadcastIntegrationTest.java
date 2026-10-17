@@ -123,7 +123,7 @@ class BroadcastIntegrationTest {
         assertEquals(42,service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
         service.legacyUpdateReplay(saved.id(),legacyRequest("13",null,null),null);
         assertEquals("13",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
-        for (final String label : new String[]{null,"A","Group 1","0","-1","2147483648"}) {
+        for (final String label : new String[]{null,""," ","x".repeat(101)}) {
             assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest(label,null,null),null));
         }
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest("1",1,null),null));
@@ -142,6 +142,31 @@ class BroadcastIntegrationTest {
         assertNull(service.legacyCreateReplay(rrRoot,legacyRequest(null,null,null),null).nodes().getFirst().replays().getFirst().groupLabel());
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest("2",null,null),null));
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest(null,1,null),null));
+    }
+    @Test void legacyTextGroupsRemainEditableWhileV2RequiresExplicitNumbers() {
+        final long points = category("POINTS");
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
+        final var original = service.legacyCreateReplay(root,legacyRequest("Group A",null,null),null).nodes().getFirst().replays().getFirst();
+        assertEquals("Group A",original.groupLabel()); assertNull(original.groupNumber());
+        assertEquals("Group A",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,original.id()));
+        final var edited = service.legacyUpdateReplay(original.id(),new BroadcastLegacyDtos.ReplaySave(version(),"Edited title",original.url(),original.matchDate(),
+                original.dayNumber(),"Group A",null,null,original.teams(),original.perspective(),"KEEP"),null).nodes().getFirst().replays().getFirst();
+        assertEquals("Edited title",edited.title()); assertEquals("Group A",edited.groupLabel());
+        final var v2 = service.category(points).nodes().getFirst().replays().getFirst();
+        assertNull(v2.groupNumber()); assertEquals("Edited title",v2.title());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("No numeric group","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.updateReplay(original.id(),request("Unrelated title change","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
+        for (final String label : List.of("0","-1","2147483648","9".repeat(100),"Group 1","1e3","A")) {
+            final var view = service.legacyCreateReplay(root,legacyRequest(label,null,null),null);
+            final var saved = view.nodes().getFirst().replays().getLast();
+            assertEquals(label,saved.groupLabel()); assertNull(saved.groupNumber());
+            assertEquals(label,jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,saved.id()));
+            assertNull(jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,saved.id()));
+        }
+        final var numeric = service.legacyCreateReplay(root,legacyRequest("00042",null,null),null).nodes().getFirst().replays().getLast();
+        assertEquals("42",numeric.groupLabel()); assertNull(numeric.groupNumber());
+        assertEquals(42,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
+        assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
     }
     private BroadcastLegacyDtos.ReplaySave legacyRequest(final String label, final Integer number, final String bracket) {
         return new BroadcastLegacyDtos.ReplaySave(version(),"Title","https://example.org/legacy",LocalDate.of(2026,10,15),1,label,number,bracket,List.of("A","B"),"POV","KEEP");

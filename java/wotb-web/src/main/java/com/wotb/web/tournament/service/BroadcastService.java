@@ -86,11 +86,11 @@ public class BroadcastService {
         return createNode(id,request,this::legacyCategoryView);
     }
     public BroadcastLegacyDtos.CategoryView legacyCreateReplay(final long nodeId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
-        return saveReplay(nodeId,null,legacyReplaySave(nodeId,request),cover,this::legacyCategoryView);
+        return saveReplay(nodeId,null,legacyReplaySave(nodeId,request),cover,request.groupLabel(),this::legacyCategoryView);
     }
     public BroadcastLegacyDtos.CategoryView legacyUpdateReplay(final long replayId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId,replayId,legacyReplaySave(nodeId,request),cover,this::legacyCategoryView);
+        return saveReplay(nodeId,replayId,legacyReplaySave(nodeId,request),cover,request.groupLabel(),this::legacyCategoryView);
     }
     private BroadcastDtos.ReplaySave legacyReplaySave(final long nodeId, final BroadcastLegacyDtos.ReplaySave request) {
         final Integer number = transactions.execute(status -> {
@@ -102,9 +102,9 @@ public class BroadcastService {
             if (request.groupNumber() != null || request.bracket() != null) { throw invalid(); }
             text(request.groupLabel(),100);
             final String label = request.groupLabel().strip();
-            if (!label.matches("[0-9]+")) { throw invalid(); }
-            try { final int parsed = Integer.parseInt(label); if (parsed < 1) { throw invalid(); } return parsed; }
-            catch (final NumberFormatException failure) { throw invalid(); }
+            if (!label.matches("[0-9]+")) { return null; }
+            try { final int parsed = Integer.parseInt(label); return parsed > 0 ? parsed : null; }
+            catch (final NumberFormatException failure) { return null; }
         });
         return new BroadcastDtos.ReplaySave(request.expectedVersion(),request.title(),request.url(),request.matchDate(),request.dayNumber(),number,
                 request.bracket(),request.teams(),request.perspective(),request.coverAction());
@@ -174,19 +174,19 @@ public class BroadcastService {
 
     public BroadcastDtos.CategoryView createReplay(final long nodeId, final BroadcastDtos.ReplaySave request,
                                                   final MultipartFile cover) {
-        return saveReplay(nodeId, null, request, cover,this::categoryView);
+        return saveReplay(nodeId, null, request, cover,null,this::categoryView);
     }
     public BroadcastDtos.CategoryView updateReplay(final long replayId, final BroadcastDtos.ReplaySave request,
                                                   final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId, replayId, request, cover,this::categoryView);
+        return saveReplay(nodeId, replayId, request, cover,null,this::categoryView);
     }
     private <T> T saveReplay(final long nodeId, final Long replayId, final BroadcastDtos.ReplaySave request,
-                             final MultipartFile file, final BiFunction<BroadcastSeason,BroadcastCategory,T> response) {
+                             final MultipartFile file, final String legacyGroupLabel, final BiFunction<BroadcastSeason,BroadcastCategory,T> response) {
         final long seasonId = transactions.execute(status -> {
             final BroadcastNode node = findNode(nodeId); final BroadcastCategory category = findCategory(node.categoryId);
             final BroadcastSeason season = findSeason(category.seasonId); version(season, request.expectedVersion());
-            validateReplay(request, category.type, node.format, file);
+            validateReplay(request, category.type, node.format, file, legacyGroupLabel);
             return season.id;
         });
         // A committed reservation makes failures between PUT and the business commit recoverable.
@@ -202,6 +202,7 @@ public class BroadcastService {
             replay.nodeId = nodeId; replay.title = request.title().strip(); replay.url = request.url().strip();
             replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
+            if (legacyGroupLabel != null) { replay.legacyGroupLabel = legacyGroupLabel.strip(); }
             replay.teams = request.teams().stream().map(String::strip).toList(); replay.perspective = request.perspective();
             if (uploaded != null) { replay.coverId = uploaded; }
             else if ("REMOVE".equals(request.coverAction())) { replay.coverId = null; }
@@ -291,7 +292,7 @@ public class BroadcastService {
         if (startDate != null) { date(startDate); }
     }
     private static void validateReplay(final BroadcastDtos.ReplaySave request, final String type,
-                                       final String format, final MultipartFile file) {
+                                       final String format, final MultipartFile file, final String legacyGroupLabel) {
         text(request.title(), 200); text(request.url(), 2048); date(request.matchDate());
         try {
             final URI uri = URI.create(request.url().strip());
@@ -301,8 +302,13 @@ public class BroadcastService {
         if (request.dayNumber() < 1 || request.teams() == null || request.teams().size() < 2 || request.teams().size() > 4
                 || !contains(Set.of("POV", "OBSERVER"), request.perspective())) { throw invalid(); }
         request.teams().forEach(team -> text(team, 100));
+        // Only the legacy write boundary supplies its actual text label; v2 must supply a number.
+        if (legacyGroupLabel != null) {
+            text(legacyGroupLabel,100); if (!POINTS.equals(type)) { throw invalid(); }
+        }
         if (POINTS.equals(type)) {
-            if (request.groupNumber() == null || request.groupNumber() < 1 || request.bracket() != null) { throw invalid(); }
+            if ((request.groupNumber() == null && legacyGroupLabel == null)
+                    || (request.groupNumber() != null && request.groupNumber() < 1) || request.bracket() != null) { throw invalid(); }
         } else if (SEMI_FINALS.equals(type) || "KNOCKOUT".equals(format)) {
             if (request.groupNumber() == null || request.groupNumber() < 1
                     || request.groupNumber() > 4 || !contains(Set.of("DEFAULT", "WINNERS", "LOSERS"), request.bracket())) { throw invalid(); }

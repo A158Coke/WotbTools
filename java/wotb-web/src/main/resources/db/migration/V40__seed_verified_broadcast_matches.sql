@@ -96,10 +96,24 @@ DECLARE
     seed_category_id bigint;
     seed_root_id bigint;
     matched_seasons integer;
+    existing_owner_matches boolean;
     added integer := 0;
 BEGIN
     -- Serialize the small one-time seed with normal administrator writes and manual retries.
     LOCK TABLE tournament_broadcast_season IN EXCLUSIVE MODE;
+    -- An administrator may have already filed part of this series under a custom season name.
+    SELECT count(DISTINCT season.id), min(season.id), bool_and(season.server = 'CN' AND season.year = 2025)
+    INTO matched_seasons, seed_season_id, existing_owner_matches
+    FROM tournament_broadcast_replay existing
+    JOIN tournament_broadcast_node node ON node.id = existing.node_id
+    JOIN tournament_broadcast_category category ON category.id = node.category_id
+    JOIN tournament_broadcast_season season ON season.id = category.season_id
+    WHERE existing.url ~ '/video/BV18j2CBWEMo([/?#]|$)'
+      AND coalesce(substring(existing.url from '[?&]p=([0-9]+)'), '1') IN ('1', '2', '3');
+    IF matched_seasons > 1 OR (matched_seasons = 1 AND NOT existing_owner_matches) THEN
+        RAISE WARNING 'Broadcast seed V40 skipped: existing Bilibili parts have conflicting season ownership';
+        RETURN;
+    END IF;
     IF NOT EXISTS (
         SELECT 1 FROM jsonb_array_elements(source_rows) candidate
         WHERE NOT EXISTS (
@@ -110,11 +124,13 @@ BEGIN
         )
     ) THEN RETURN; END IF;
 
-    SELECT count(*), min(id) INTO matched_seasons, seed_season_id
-    FROM tournament_broadcast_season
-    WHERE server = 'CN' AND year = 2025
-      AND (btrim(name_zh) IN ('战火杯', '2025战火杯', '2025 战火杯')
-        OR btrim(name_en) IN ('Zhanhuo Cup', '2025 Zhanhuo Cup', '战火杯', '2025战火杯', '2025 战火杯'));
+    IF matched_seasons = 0 THEN
+        SELECT count(*), min(id) INTO matched_seasons, seed_season_id
+        FROM tournament_broadcast_season
+        WHERE server = 'CN' AND year = 2025
+          AND (btrim(name_zh) IN ('战火杯', '2025战火杯', '2025 战火杯')
+            OR btrim(name_en) IN ('Zhanhuo Cup', '2025 Zhanhuo Cup', '战火杯', '2025战火杯', '2025 战火杯'));
+    END IF;
     IF matched_seasons > 1 THEN
         RAISE WARNING 'Broadcast seed V40 skipped: multiple CN 2025 Zhanhuo Cup seasons require administrator selection';
         RETURN;
