@@ -52,6 +52,8 @@ public final class TankNameCorrector {
     private static final Tankopedia TANKOPEDIA = Tankopedia.load();
     private static final TankNameAliases ALIASES = TankNameAliases.load();
 
+    private static final Pattern GRID_COORDINATE = Pattern.compile("[A-K](?:[1-9]|10)", Pattern.CASE_INSENSITIVE);
+
     /** 已知车名（tier1-10 权威名）+ 别名的 小写文本 -&gt; 权威名。 */
     private static final Map<String, String> CANONICAL_BY_LOWER = buildCanonicalIndex();
     private static final Set<String> ALIAS_KEYS_LOWER = buildAliasKeys();
@@ -63,10 +65,16 @@ public final class TankNameCorrector {
     private static Map<String, String> buildCanonicalIndex() {
         final Map<String, String> index = new HashMap<>();
         for (final String name : TANKOPEDIA.names()) {
-            index.put(lower(name), name);
+            // D1 / D2 / B1 同时是地图格号；自由文本不足以证明它在指车辆。
+            if (!GRID_COORDINATE.matcher(name).matches()) {
+                index.put(lower(name), name);
+            }
         }
         for (final String alias : ALIASES.aliases()) {
-            index.put(lower(alias), ALIASES.canonical(alias));
+            final String canonical = ALIASES.canonical(alias);
+            if (!GRID_COORDINATE.matcher(alias).matches() && !GRID_COORDINATE.matcher(canonical).matches()) {
+                index.put(lower(alias), canonical);
+            }
         }
         return index;
     }

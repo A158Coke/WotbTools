@@ -2,8 +2,8 @@
 
 ## Decision
 
-Tankopedia is application-level immutable reference data. The four classpath resources
-`tankopedia-tier7.json` through `tankopedia-tier10.json` are loaded exactly once per JVM and shared by
+Tankopedia is application-level immutable reference data. The ten classpath resources
+`tankopedia-tier1.json` through `tankopedia-tier10.json` are loaded exactly once per JVM and shared by
 all backend consumers.
 
 The application-level entry point is:
@@ -238,3 +238,10 @@ Regression tests should preserve these invariants:
 3. Repeated access does not reload classpath resources.
 4. Published collections such as known vehicle names are immutable.
 5. Existing Tankopedia lookup semantics remain unchanged by the lifecycle refactor.
+
+## AI free-text name matching
+
+The complete ID/name library remains available to roster and vehicle lookups.
+`TankNameCorrector` excludes coordinate-shaped names (A1–K10, including D1, D2 and B1)
+from its free-text matching index: a map location beside a player nickname must not
+be rewritten as that player’s vehicle. Other lower-tier names keep the existing correction rules.
