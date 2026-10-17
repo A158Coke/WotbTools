@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick, reactive, ref } from 'vue'
-import { flushPromises } from '@vue/test-utils'
+import { defineComponent, effectScope, nextTick, reactive, ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import card from '../../../contracts/http/fixtures/creator-card.json'
 import { useCreators } from './useCreators.js'
 vi.mock('./useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
@@ -15,6 +16,29 @@ function fixture() {
   return { owner, api, auth, online, route, router, scope, availability }
 }
 describe('public creator directory ownership', () => {
+  it.each(['authenticated', 'unauthenticated', 'failed'])('waits for slow authentication before reconciling an empty-category deep link: %s', async settledState => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+    await router.push('/?view=creators&creatorCategory=99&lang=ru#list'); await router.isReady()
+    const auth = { authenticated: ref(false), authInitState: ref('idle'), tokenParsed: ref<unknown>(null) }
+    const availability = { publicCategories: ref(card.categories), contentKnown: ref(true), loading: ref(false), error: ref(null), refresh: vi.fn(async () => {}) }
+    const api = { listCreators: vi.fn(async () => []) }
+    const host = mount(defineComponent({ setup() { useCreators({ auth, availability, api } as any); return () => null } }), { global: { plugins: [router] } })
+    try {
+      await flushPromises()
+      expect(router.currentRoute.value.query.creatorCategory).toBe('99')
+      auth.authInitState.value = 'initializing'; await flushPromises()
+      expect(router.currentRoute.value.query.creatorCategory).toBe('99')
+      // Match useAuth.projectSession ordering: identity is projected before the settled state.
+      if (settledState === 'authenticated') {
+        auth.authenticated.value = true
+        auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+      }
+      auth.authInitState.value = settledState; await flushPromises()
+      expect(router.currentRoute.value.query.creatorCategory).toBe(settledState === 'authenticated' ? '99' : undefined)
+      expect(router.currentRoute.value.query.lang).toBe('ru')
+      expect(router.currentRoute.value.hash).toBe('#list')
+    } finally { host.unmount() }
+  })
   it('uses the shared public dictionary on mount and category switches, refreshing it only on request', async () => {
     const f = fixture(); await flushPromises()
     f.route.query.creatorCategory = '1'; await flushPromises()
