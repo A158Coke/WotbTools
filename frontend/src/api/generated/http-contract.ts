@@ -1543,7 +1543,9 @@ export interface components {
             id: number;
             server: components["schemas"]["BroadcastServer"];
             year: number;
-            name: string;
+            nameZh: string;
+            nameEn: string;
+            nameRu: string | null;
             /** Format: date */
             startDate: string | null;
             /** Format: date-time */
@@ -1565,7 +1567,6 @@ export interface components {
             /** Format: date */
             matchDate: string;
             dayNumber: number;
-            groupLabel: string | null;
             groupNumber: number | null;
             bracket: components["schemas"]["BroadcastBracket"] | null;
             teams: string[];
@@ -1605,14 +1606,18 @@ export interface components {
         BroadcastSeasonCreate: {
             server: components["schemas"]["BroadcastServer"];
             year: number;
-            name: string;
+            nameZh: string;
+            nameEn: string;
+            nameRu?: string | null;
             /** Format: date */
             startDate: string | null;
         };
         BroadcastSeasonUpdate: {
             expectedVersion: number;
             year: number;
-            name: string;
+            nameZh: string;
+            nameEn: string;
+            nameRu?: string | null;
             /** Format: date */
             startDate: string | null;
         };
@@ -1632,7 +1637,6 @@ export interface components {
             /** Format: date */
             matchDate: string;
             dayNumber: number;
-            groupLabel: string | null;
             groupNumber: number | null;
             bracket: components["schemas"]["BroadcastBracket"] | null;
             teams: string[];

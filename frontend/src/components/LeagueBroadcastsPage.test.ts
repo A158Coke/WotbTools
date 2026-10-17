@@ -9,19 +9,20 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import LeagueBroadcastsPage from './LeagueBroadcastsPage.vue'
 import type { BroadcastCategoryView, BroadcastSeason } from '../api/league-broadcasts.js'
 
-const state = vi.hoisted(() => ({ admin: null as any, list: vi.fn(), season: vi.fn(), category: vi.fn(), createNode: vi.fn() }))
+const state = vi.hoisted(() => ({ admin: null as any, list: vi.fn(), season: vi.fn(), category: vi.fn(), createNode: vi.fn(), createSeason: vi.fn(), updateSeason: vi.fn() }))
 vi.mock('../composables/useAuth.js', () => ({ useAuth: () => ({ isLeagueBroadcastAdmin: state.admin, tokenParsed: ref({ sub: 'user' }), authEpoch: () => 1 }) }))
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true, pending: false }) }) }))
-vi.mock('../api/league-broadcasts.js', async original => ({ ...await original<object>(), listBroadcasts: state.list, getBroadcastSeason: state.season, getBroadcastCategory: state.category, createBroadcastNode: state.createNode }))
-const season: BroadcastSeason = { id: 10, server: 'CN', year: 2026, name: 'Independent season', startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 1 }
+vi.mock('../api/league-broadcasts.js', async original => ({ ...await original<object>(), listBroadcasts: state.list, getBroadcastSeason: state.season, getBroadcastCategory: state.category, createBroadcastNode: state.createNode, createBroadcastSeason: state.createSeason, updateBroadcastSeason: state.updateSeason }))
+const season: BroadcastSeason = { id: 10, server: 'CN', year: 2026, nameZh: '独立赛事', nameEn: 'Independent season', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 1 }
 const detail: BroadcastCategoryView = { season, category: { id: 20, seasonId: 10, type: 'POINTS' }, coverUploadAvailable: true,
-  nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'League final', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 7, groupLabel: 'Group A', groupNumber: null, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }] }] }
+  nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'League final', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }] }] }
 async function page(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push(url); await router.isReady()
-  const wrapper = mount(LeagueBroadcastsPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })], provide: { [DIALOG_INLINE_KEY]: true } } })
+  const i18n = createI18n({ legacy: false, locale: 'zh', messages })
+  const wrapper = mount(LeagueBroadcastsPage, { global: { plugins: [router, i18n], provide: { [DIALOG_INLINE_KEY]: true } } })
   await flushPromises()
-  return { wrapper, router }
+  return { wrapper, router, i18n }
 }
 beforeEach(() => {
   vi.clearAllMocks(); state.admin = ref(false)
@@ -29,6 +30,8 @@ beforeEach(() => {
   state.season.mockResolvedValue({ season, categories: [detail.category], coverUploadAvailable: true })
   state.category.mockResolvedValue(detail)
   state.createNode.mockResolvedValue(detail)
+  state.createSeason.mockResolvedValue({ season, categories: [], coverUploadAvailable: true })
+  state.updateSeason.mockResolvedValue({ season, categories: [], coverUploadAvailable: true })
 })
 describe('shared broadcast catalogue rendering', () => {
   it('keeps roots collapsed, retains text on cover failure and retries the image on explicit refresh', async () => {
@@ -50,6 +53,29 @@ describe('shared broadcast catalogue rendering', () => {
     expect(wrapper.get('[data-testid=broadcast-replay-40] img').attributes('src')).toContain(detail.nodes[0].replays[0].coverId)
     wrapper.unmount()
   })
+  it('uses fixed translated group numbers while preserving replay titles and team names', async () => {
+    const { wrapper, i18n } = await page()
+    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
+    for (const [locale, label] of [['zh', '第7组'], ['en', 'Group 7'], ['ru', 'Группа 7']] as const) {
+      i18n.global.locale.value = locale; await flushPromises()
+      const row = wrapper.get('[data-testid=broadcast-replay-40]')
+      expect(row.text()).toContain(label)
+      expect(row.get('h3').text()).toBe('League final')
+      expect(row.text()).toContain('Followed')
+      expect(row.text()).toContain('Other')
+    }
+    wrapper.unmount()
+  })
+  it('marks a legacy missing points group for completion without inventing a number', async () => {
+    state.category.mockResolvedValue({ ...detail, nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, groupNumber: null })) })) })
+    const { wrapper, i18n } = await page()
+    await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
+    for (const [locale, label] of [['zh', '组号待补'], ['en', 'Group number pending'], ['ru', 'Номер группы не указан']] as const) {
+      i18n.global.locale.value = locale; await flushPromises()
+      expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain(label)
+    }
+    wrapper.unmount()
+  })
   it('shows management in the same subtree only for a real administrator and closes an editor when revoked', async () => {
     state.admin.value = true
     const { wrapper } = await page()
@@ -68,6 +94,66 @@ describe('shared broadcast catalogue rendering', () => {
     await wrapper.get('[data-testid=broadcast-category-20]').trigger('click'); await flushPromises()
     expect(router.currentRoute.value.query.lbCategory).toBe('20')
     expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+  it('updates the list, heading, breadcrumbs and replay context with the current locale', async () => {
+    state.admin.value = true
+    const { wrapper, router, i18n } = await page('/?view=league-broadcasts&lbServer=CN')
+    expect(wrapper.get('[data-testid=broadcast-season-10] h2').text()).toContain('独立赛事')
+    i18n.global.locale.value = 'en'; await flushPromises()
+    expect(wrapper.get('[data-testid=broadcast-season-10] h2').text()).toContain('Independent season')
+    await router.push('/?view=league-broadcasts&lbServer=CN&lbSeason=10'); await flushPromises()
+    expect(wrapper.get('h1').text()).toContain('Independent season')
+    i18n.global.locale.value = 'ru'; await flushPromises()
+    expect(wrapper.get('h1').text()).toContain('Independent season')
+    expect(wrapper.get('.broadcast-breadcrumbs').text()).toContain('Independent season')
+    await wrapper.get('[data-testid=broadcast-category-20]').trigger('click'); await flushPromises()
+    await wrapper.get('[data-testid=broadcast-new-replay-30]').trigger('click')
+    expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('Independent season')
+    i18n.global.locale.value = 'zh'; await flushPromises()
+    expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('独立赛事')
+    expect(state.category).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('requires trimmed Chinese and English names, limits all names and saves blank Russian as null', async () => {
+    state.admin.value = true
+    const { wrapper } = await page('/?view=league-broadcasts&lbServer=CN')
+    await wrapper.get('[data-testid=broadcast-new-season]').trigger('click')
+    const input = (language: string) => wrapper.get(`[data-testid=broadcast-season-name-${language}]`)
+    expect(input('zh').attributes('required')).toBeDefined()
+    expect(input('en').attributes('required')).toBeDefined()
+    expect(input('ru').attributes('required')).toBeUndefined()
+    await input('en').setValue(' New Horizons ')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(state.createSeason).not.toHaveBeenCalled()
+    await input('zh').setValue(' 新视野大师赛 ')
+    await input('en').setValue(' ')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(state.createSeason).not.toHaveBeenCalled()
+    await input('en').setValue(' New Horizons ')
+    for (const language of ['zh', 'en', 'ru']) {
+      const original = (input(language).element as HTMLInputElement).value
+      await input(language).setValue('x'.repeat(101))
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      expect(state.createSeason).not.toHaveBeenCalled()
+      await input(language).setValue(original)
+    }
+    await input('ru').setValue('  ')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(state.createSeason.mock.calls[0][0]).toEqual({ server: 'CN', year: new Date().getFullYear(), nameZh: '新视野大师赛', nameEn: 'New Horizons', nameRu: null, startDate: null })
+    wrapper.unmount()
+  })
+  it('edits all translations without using the currently displayed name as the stored value', async () => {
+    state.admin.value = true
+    const { wrapper, i18n } = await page('/?view=league-broadcasts&lbServer=CN')
+    i18n.global.locale.value = 'ru'; await flushPromises()
+    await wrapper.get('[data-testid=broadcast-edit-season-10]').trigger('click')
+    expect((wrapper.get('[data-testid=broadcast-season-name-zh]').element as HTMLInputElement).value).toBe('独立赛事')
+    expect((wrapper.get('[data-testid=broadcast-season-name-en]').element as HTMLInputElement).value).toBe('Independent season')
+    expect((wrapper.get('[data-testid=broadcast-season-name-ru]').element as HTMLInputElement).value).toBe('')
+    await wrapper.get('[data-testid=broadcast-season-name-ru]').setValue(' Независимый турнир ')
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(state.updateSeason.mock.calls[0].slice(0, 2)).toEqual([10, { year: 2026, nameZh: '独立赛事', nameEn: 'Independent season', nameRu: 'Независимый турнир', startDate: null, expectedVersion: 4 }])
     wrapper.unmount()
   })
   it('presents all five fixed server cards and does not expose mutation controls for an admin query alone', async () => {

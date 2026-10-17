@@ -7,11 +7,11 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import LeagueBroadcastReplayDialog from './LeagueBroadcastReplayDialog.vue'
 import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastSeason } from '../api/league-broadcasts.js'
 
-const season: BroadcastSeason = { id: 1, server: 'CN', year: 2026, name: 'Summer', startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 0 }
+const season: BroadcastSeason = { id: 1, server: 'CN', year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 0 }
 const category: BroadcastCategory = { id: 2, seasonId: 1, type: 'POINTS' }
 const node: BroadcastNode = { id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }
 const existing: BroadcastReplay = { id: 5, nodeId: 3, title: 'Existing', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7,
-  groupLabel: 'Group A', groupNumber: null, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }
+  groupNumber: 7, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }
 let wrappers: ReturnType<typeof mount>[] = []
 function dialog(type: BroadcastCategory['type'] = 'POINTS', format: BroadcastNode['format'] = null, replay: BroadcastReplay | null = null, uploads = true) {
   const wrapper = mount(LeagueBroadcastReplayDialog, { props: { open: true, season, category: { ...category, type }, node: { ...node, format }, replay, busy: false, coverUploadAvailable: uploads },
@@ -26,7 +26,7 @@ async function fill(wrapper: ReturnType<typeof dialog>) {
   await wrapper.get('[data-testid=broadcast-day]').setValue('7')
   await wrapper.get('[data-testid=broadcast-team-0]').setValue('Followed')
   await wrapper.get('[data-testid=broadcast-team-1]').setValue('Other')
-  if (wrapper.find('[data-testid=broadcast-group-label]').exists()) await wrapper.get('[data-testid=broadcast-group-label]').setValue('Group A')
+  if (wrapper.find('input[data-testid=broadcast-group-number]').exists()) await wrapper.get('[data-testid=broadcast-group-number]').setValue('7')
 }
 beforeEach(() => {
   vi.stubGlobal('URL', class extends URL {
@@ -42,8 +42,8 @@ describe('broadcast replay form inheritance and fields', () => {
     ['QUARTER_FINALS', 'KNOCKOUT', false, true], ['SEMI_FINALS', null, false, true],
   ] as const)('selects only fields applicable to %s / %s', async (type, format, points, grouped) => {
     const wrapper = dialog(type, format)
-    expect(wrapper.find('[data-testid=broadcast-group-label]').exists()).toBe(points)
-    expect(wrapper.find('[data-testid=broadcast-group-number]').exists()).toBe(grouped)
+    expect(wrapper.find('input[data-testid=broadcast-group-number]').exists()).toBe(points)
+    expect(wrapper.find('select[data-testid=broadcast-group-number]').exists()).toBe(grouped)
     expect(wrapper.find('[data-testid=broadcast-bracket]').exists()).toBe(grouped)
     expect(wrapper.find('[data-testid=broadcast-node-round]').exists()).toBe(false)
     expect(wrapper.find('[data-testid=broadcast-node-format]').exists()).toBe(false)
@@ -51,9 +51,50 @@ describe('broadcast replay form inheritance and fields', () => {
     await wrapper.get('form').trigger('submit')
     const value = wrapper.emitted('save')![0][0] as any
     expect(value).toMatchObject({ expectedVersion: 4, dayNumber: 7, matchDate: '2026-10-16', teams: ['Followed', 'Other'],
-      groupLabel: points ? 'Group A' : null, groupNumber: grouped ? 1 : null, bracket: grouped ? 'DEFAULT' : null, coverAction: 'KEEP' })
+      groupNumber: points ? 7 : grouped ? 1 : null, bracket: grouped ? 'DEFAULT' : null, coverAction: 'KEEP' })
+    expect(value).not.toHaveProperty('groupLabel')
     if (points) expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('第 1 轮积分赛')
     expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('第 7 天')
+  })
+  it.each(['0', '-1', '1.5', '2147483648', ''])('rejects invalid points group number %s', async group => {
+    const wrapper = dialog()
+    await fill(wrapper)
+    await wrapper.get('[data-testid=broadcast-group-number]').setValue(group)
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')).toBeUndefined()
+  })
+  it.each(['5', '2147483647'])('allows points group number %s beyond the knockout range', async group => {
+    const wrapper = dialog()
+    await fill(wrapper)
+    const input = wrapper.get('[data-testid=broadcast-group-number]')
+    expect(input.attributes()).toMatchObject({ type: 'number', min: '1', max: '2147483647', step: '1' })
+    await input.setValue(group)
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![0][0]).toMatchObject({ groupNumber: Number(group), bracket: null })
+  })
+  it('leaves a legacy missing points group blank until the administrator enters a number', async () => {
+    const wrapper = dialog('POINTS', null, { ...existing, groupNumber: null })
+    const input = wrapper.get('[data-testid=broadcast-group-number]')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')).toBeUndefined()
+    await input.setValue('12')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![0][0]).toMatchObject({ groupNumber: 12 })
+  })
+  it.each([['QUARTER_FINALS', 'KNOCKOUT'], ['SEMI_FINALS', null]] as const)('keeps %s groups restricted to 1 through 4', async (type, format) => {
+    const wrapper = dialog(type, format)
+    await fill(wrapper)
+    const input = wrapper.get('[data-testid=broadcast-group-number]')
+    expect(input.findAll('option').map(option => option.attributes('value'))).toEqual(['1', '2', '3', '4'])
+    const option = document.createElement('option'); option.value = '5'; option.textContent = '5'
+    input.element.appendChild(option)
+    await input.setValue('5')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')).toBeUndefined()
+    await input.setValue('4')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('save')![0][0]).toMatchObject({ groupNumber: 4, bracket: 'DEFAULT' })
   })
   it('requires both first teams and accepts up to four teams without a knockout-specific limit', async () => {
     const wrapper = dialog('SEMI_FINALS')

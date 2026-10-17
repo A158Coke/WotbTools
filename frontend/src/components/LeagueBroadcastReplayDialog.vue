@@ -5,6 +5,7 @@ import AppDialog from './AppDialog.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import FileDrop from './FileDrop.vue'
+import { broadcastSeasonName } from '../utils/display.js'
 import { broadcastCoverUrl } from '../api/league-broadcasts.js'
 import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
 
@@ -13,9 +14,9 @@ const props = defineProps<{
   replay?: BroadcastReplay | null; busy: boolean; coverUploadAvailable: boolean; errorText?: string
 }>()
 const emit = defineEmits<{ close: []; reload: []; save: [value: BroadcastReplaySave, cover: File | null] }>()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const formId = `broadcast-replay-${useId()}`
-const draft = ref({ title: '', url: '', matchDate: '', dayNumber: 1, groupLabel: '', groupNumber: 1,
+const draft = ref({ title: '', url: '', matchDate: '', dayNumber: 1, groupNumber: '' as number | string,
   bracket: 'DEFAULT' as NonNullable<BroadcastReplaySave['bracket']>, teams: ['', '', '', ''], perspective: 'POV' as BroadcastReplaySave['perspective'] })
 const files = ref<File[]>([]), preview = ref(''), removeCover = ref(false), invalid = ref(false)
 let expectedVersion = 0
@@ -23,7 +24,7 @@ const points = computed(() => props.category.type === 'POINTS')
 const grouped = computed(() => props.category.type === 'SEMI_FINALS'
   || (props.category.type === 'QUARTER_FINALS' && props.node.format === 'KNOCKOUT'))
 const context = computed(() => [t(`leagueBroadcasts.servers.${props.season.server}`),
-  `${props.season.year} ${props.season.name}`, t(`leagueBroadcasts.categories.${props.category.type}`),
+  `${props.season.year} ${broadcastSeasonName(props.season, locale.value)}`, t(`leagueBroadcasts.categories.${props.category.type}`),
   ...(points.value ? [t('leagueBroadcasts.roundLabel', { round: props.node.roundNumber })] : []),
   t('leagueBroadcasts.dayLabel', { day: draft.value.dayNumber })].join(' · '))
 const coverSource = computed(() => preview.value || (!removeCover.value && props.replay?.coverId ? broadcastCoverUrl(props.replay.coverId) : ''))
@@ -44,7 +45,7 @@ watch(() => props.open, open => {
   const value = props.replay
   draft.value = {
     title: value?.title ?? '', url: value?.url ?? '', matchDate: value?.matchDate ?? '', dayNumber: value?.dayNumber ?? 1,
-    groupLabel: value?.groupLabel ?? '', groupNumber: value?.groupNumber ?? 1, bracket: value?.bracket ?? 'DEFAULT',
+    groupNumber: value?.groupNumber ?? (points.value ? '' : 1), bracket: value?.bracket ?? 'DEFAULT',
     teams: Array.from({ length: 4 }, (_, index) => value?.teams[index] ?? ''), perspective: value?.perspective ?? 'POV',
   }
 }, { immediate: true })
@@ -55,17 +56,17 @@ function submit() {
   const value = draft.value
   let validUrl = false
   try { validUrl = ['http:', 'https:'].includes(new URL(value.url.trim()).protocol) } catch { /* Report with the other fields. */ }
+  const groupNumber = Number(value.groupNumber)
   const valid = value.title.trim() && value.title.trim().length <= 200 && validUrl && value.url.trim().length <= 2048
     && /^\d{4}-\d{2}-\d{2}$/.test(value.matchDate) && Number.isInteger(value.dayNumber) && value.dayNumber > 0
     && value.teams[0].trim() && value.teams[1].trim() && value.teams.every(team => team.trim().length <= 100)
-    && (!points.value || (value.groupLabel.trim() && value.groupLabel.trim().length <= 100))
-    && (!grouped.value || (Number.isInteger(value.groupNumber) && value.groupNumber >= 1 && value.groupNumber <= 4))
+    && (!(points.value || grouped.value) || (Number.isInteger(groupNumber) && groupNumber >= 1 && groupNumber <= (points.value ? 2147483647 : 4)))
     && (!files.value.length || props.coverUploadAvailable)
   invalid.value = !valid
   if (!valid) return
   emit('save', {
     expectedVersion, title: value.title.trim(), url: value.url.trim(), matchDate: value.matchDate, dayNumber: value.dayNumber,
-    groupLabel: points.value ? value.groupLabel.trim() : null, groupNumber: grouped.value ? value.groupNumber : null,
+    groupNumber: points.value || grouped.value ? groupNumber : null,
     bracket: grouped.value ? value.bracket : null, teams: value.teams.map(team => team.trim()).filter(Boolean), perspective: value.perspective,
     coverAction: files.value.length ? 'REPLACE' : removeCover.value ? 'REMOVE' : 'KEEP',
   }, files.value[0] ?? null)
@@ -83,7 +84,7 @@ function submit() {
       <div class="broadcast-form-grid">
         <label class="broadcast-field"><span>{{ t('leagueBroadcasts.day') }}</span><input v-model.number="draft.dayNumber" type="number" min="1" max="2147483647" step="1" required :disabled="busy" data-testid="broadcast-day"></label>
         <label class="broadcast-field"><span>{{ t('leagueBroadcasts.matchDate') }}</span><input v-model="draft.matchDate" type="date" required :disabled="busy" data-testid="broadcast-date"></label>
-        <label v-if="points" class="broadcast-field"><span>{{ t('leagueBroadcasts.groupLabel') }}</span><input v-model="draft.groupLabel" required maxlength="100" :disabled="busy" data-testid="broadcast-group-label"></label>
+        <label v-if="points" class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }}</span><input v-model.number="draft.groupNumber" type="number" min="1" max="2147483647" step="1" required :disabled="busy" data-testid="broadcast-group-number"></label>
         <template v-if="grouped">
           <label class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }}</span><select v-model.number="draft.groupNumber" :disabled="busy" data-testid="broadcast-group-number"><option v-for="value in 4" :key="value" :value="value">{{ value }}</option></select></label>
           <label class="broadcast-field"><span>{{ t('leagueBroadcasts.bracket') }}</span><select v-model="draft.bracket" :disabled="busy" data-testid="broadcast-bracket"><option v-for="value in ['DEFAULT', 'WINNERS', 'LOSERS']" :key="value" :value="value">{{ t(`leagueBroadcasts.brackets.${value}`) }}</option></select></label>
