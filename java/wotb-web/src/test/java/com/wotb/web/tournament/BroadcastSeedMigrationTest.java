@@ -3,6 +3,8 @@ package com.wotb.web.tournament;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -84,7 +86,7 @@ class BroadcastSeedMigrationTest {
     }
     @Test void existingTrackedBilibiliPartIsPreservedWhileOnlyMissingPartsAreAdded() throws Exception {
         final long season = jdbc.queryForObject("insert into tournament_broadcast_season(server,year,name_zh,name_en,name_ru,created_at,version) "
-                + "values ('CN',2025,'战火杯','Administrator English','Администратор',now(),7) returning id",Long.class);
+                + "values ('CN',2025,'管理员自定义赛事','Administrator English','Администратор',now(),7) returning id",Long.class);
         final long category = jdbc.queryForObject("insert into tournament_broadcast_category(season_id,type) values (?,'SEMI_FINALS') returning id",Long.class,season);
         final long root = jdbc.queryForObject("insert into tournament_broadcast_node(category_id,root_key) values (?,0) returning id",Long.class,category);
         final String tracked = "https://www.bilibili.com/video/BV18j2CBWEMo/?spm_id_from=333.337.search-card.all.click&p=2&vd_source=test";
@@ -118,7 +120,7 @@ class BroadcastSeedMigrationTest {
         }
         assertCounts(1,1,1,3);
         assertEquals(before,jdbc.queryForMap("select * from tournament_broadcast_replay where id=?",existing));
-        assertEquals("战火杯",jdbc.queryForObject("select name_zh from tournament_broadcast_season",String.class));
+        assertEquals("管理员自定义赛事",jdbc.queryForObject("select name_zh from tournament_broadcast_season",String.class));
         assertEquals("Administrator English",jdbc.queryForObject("select name_en from tournament_broadcast_season",String.class));
         assertEquals("Администратор",jdbc.queryForObject("select name_ru from tournament_broadcast_season",String.class));
         assertEquals(9L,jdbc.queryForObject("select version from tournament_broadcast_season",Long.class));
@@ -131,6 +133,36 @@ class BroadcastSeedMigrationTest {
         final var before = jdbc.queryForList("select * from tournament_broadcast_season order by id");
         migrate(); assertCounts(2,0,0,0);
         assertEquals(before,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+    }
+    @Test void partsAlreadySplitAcrossSeasonsSkipTheSeedWithoutAddingOrMovingAnything() throws Exception {
+        createSeasonWithPart("CN",2025,"First administrator season",1);
+        createSeasonWithPart("CN",2025,"Second administrator season",2);
+        final var seasonsBefore = jdbc.queryForList("select * from tournament_broadcast_season order by id");
+        final var replaysBefore = jdbc.queryForList("select * from tournament_broadcast_replay order by id");
+        migrate(); jdbc.execute(seedSql());
+        assertCounts(2,2,2,2);
+        assertEquals(seasonsBefore,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+        assertEquals(replaysBefore,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
+    }
+    @ParameterizedTest
+    @CsvSource({"EU,2025","CN,2026"})
+    void partsInAnotherServerOrYearSkipTheSeed(final String server, final int year) throws Exception {
+        createSeasonWithPart(server,year,"Administrator season",1);
+        final var seasonsBefore = jdbc.queryForList("select * from tournament_broadcast_season order by id");
+        final var replaysBefore = jdbc.queryForList("select * from tournament_broadcast_replay order by id");
+        migrate(); jdbc.execute(seedSql());
+        assertCounts(1,1,1,1);
+        assertEquals(seasonsBefore,jdbc.queryForList("select * from tournament_broadcast_season order by id"));
+        assertEquals(replaysBefore,jdbc.queryForList("select * from tournament_broadcast_replay order by id"));
+    }
+    private void createSeasonWithPart(final String server, final int year, final String name, final int part) {
+        final long season = jdbc.queryForObject("insert into tournament_broadcast_season(server,year,name_zh,name_en,created_at,version) "
+                + "values (?,?,'管理员自定义赛事',?,now(),5) returning id",Long.class,server,year,name);
+        final long category = jdbc.queryForObject("insert into tournament_broadcast_category(season_id,type) values (?,'SEMI_FINALS') returning id",Long.class,season);
+        final long root = jdbc.queryForObject("insert into tournament_broadcast_node(category_id,root_key) values (?,0) returning id",Long.class,category);
+        jdbc.update("insert into tournament_broadcast_replay(node_id,title,url,match_date,day_number,group_number,bracket,teams,perspective,created_at) "
+                + "values (?,'Administrator title',?,'2025-12-07',3,1,'DEFAULT','[\"Own1\",\"Own2\"]','OBSERVER',now())",
+                root,"https://www.bilibili.com/video/BV18j2CBWEMo/?p="+part);
     }
     private static void migrate() {
         Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).target("40").load().migrate();
