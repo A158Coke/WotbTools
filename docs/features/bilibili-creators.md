@@ -8,6 +8,14 @@ Visitors browse the public directory without signing in. The primary navigation 
 
 Administrators create, edit and remove creator records, categories and assessment levels. The directory has no favorites, voting pool, public submissions, reward progress, rating threshold or ordinary-user write API. Creator data and images belong to the site, independent of operator accounts; the feature neither stores uploader subjects nor changes account-deletion/audit behavior.
 
+## Category filter presentation
+
+Without a category link, the directory initially shows all creators with other category choices collapsed. An independent filter button reveals compact, wrapping category buttons; opening or closing this area makes no API request or history entry. The All categories button always clears the filter. When a selected category is collapsed, its name remains visible; an unknown category uses a neutral current-filter label.
+
+Category deep links and Back/Forward into a category expand the choices. Data refresh and UI profile changes preserve the disclosure state. Collapsed choices leave the keyboard tab order, and closing returns focus to the toggle. An empty category dictionary has no toggle.
+
+This presentation change does not enable content-based visibility: empty categories and an empty directory remain accessible under the existing backend-capability and permission rules. Administrator fields, images, version checks and directory queries are unchanged.
+
 ## Creator fields and consistency
 
 A Bilibili UID is required and unique across the directory. It is transported as a string of 1–20 decimal digits, normalized without leading zeros; all-zero input is rejected. Leading/trailing whitespace follows the OpenAPI ECMAScript whitespace set, including non-breaking spaces and BOM; interior whitespace and control characters outside that set are rejected. Numeric JSON values are rejected to avoid browser integer precision loss. The server derives `https://space.bilibili.com/<UID>` and does not scrape Bilibili. Names are required (100 Unicode code points); descriptions are optional (2000 Unicode code points). Supplementary characters such as emoji count once in the API, browser validation and PostgreSQL.

@@ -54,7 +54,11 @@
       "invalidName": "名称不能为空，且最多100个字符。",
       "reloadEditor": "重新加载资料",
       "notAvailable": "UP 推荐暂不可用，请联网后重试。",
-      "checkingAvailability": "正在检查功能是否可用…"
+      "checkingAvailability": "正在检查功能是否可用…",
+      "selectedCategory": "当前：{name}",
+      "currentFilter": "当前筛选",
+      "collapseCategories": "收起分类",
+      "expandCategories": "筛选分类"
     },
     "featureOffline": {
       "creators": "UP 主推荐需要联网后查看和操作。"
@@ -125,7 +129,11 @@
       "invalidName": "Enter a name of at most 100 characters.",
       "reloadEditor": "Reload details",
       "notAvailable": "Creator recommendations are unavailable. Check your connection and try again.",
-      "checkingAvailability": "Checking feature availability…"
+      "checkingAvailability": "Checking feature availability…",
+      "selectedCategory": "Selected: {name}",
+      "currentFilter": "Current filter",
+      "collapseCategories": "Hide categories",
+      "expandCategories": "Filter categories"
     },
     "featureOffline": {
       "creators": "Connect to the Internet to browse and manage creator recommendations."
@@ -196,7 +204,11 @@
       "invalidName": "Укажите название длиной не более 100 символов.",
       "reloadEditor": "Загрузить данные заново",
       "notAvailable": "Рекомендации авторов сейчас недоступны. Проверьте подключение и повторите.",
-      "checkingAvailability": "Проверка доступности функции…"
+      "checkingAvailability": "Проверка доступности функции…",
+      "selectedCategory": "Выбрано: {name}",
+      "currentFilter": "Текущий фильтр",
+      "collapseCategories": "Свернуть категории",
+      "expandCategories": "Выбрать категорию"
     },
     "featureOffline": {
       "creators": "Для просмотра рекомендаций авторов и управления ими нужен Интернет."
