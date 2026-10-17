@@ -1059,7 +1059,8 @@ export function initTankViewer({ labels = {}, onLoadState = null } = {}) {
                 tagStateClone(od, node);
             });
             externalMeshes.forEach(function(node){
-                const t = node.userData.armorThickness || 20;
+                // 0 mm 是合法的 fail-closed 厚度，只有缺失/undefined 才使用外部模块兜底值
+                const t = node.userData.armorThickness ?? 20;
                 const clipped = node.userData.armorSection === 'gunBarrel' && gunClipPlane;
                 const dmat = clipped
                     ? (() => { const m = externalDepthMaterial.clone(); m.clippingPlanes = [gunClipPlane]; return m; })()
