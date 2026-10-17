@@ -1,0 +1,5406 @@
+{
+  "meta": {
+    "source": "blitzkit production definitions",
+    "source_game_version": "11.21.0.1235_7376187",
+    "source_hashes": {
+      "game": "de8bfa5396f7d5fe4d4337efba52f2640719ec00bda97a5f9f5463f981cbade0",
+      "tanks": "c8a085787a76a4fcdb5f31c5d6a3e42720ba937d62c1653b2ee1e0778f03243e",
+      "consumables": "f992d2dd53184cfb314ae0e45d71cdec947ffd2bd1752bf3bd867bbe2c3d30a0",
+      "provisions": "34b575b05651762f2ffa1965bea7794fa65d499228ecb1a3d276692024183d61",
+      "equipment": "bc09afd2a2f50500bc2e620fd5d057eaf1f89d2ecaa499926f5790ea2ba35546"
+    },
+    "tier": 6,
+    "generated_at": "2026-10-15T14:38:18.589806+00:00",
+    "count": 102
+  },
+  "vehicles": [
+    {
+      "name": "Sherman Firefly",
+      "id": 593,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 990,
+      "forwardSpeed": 50,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 30.4,
+      "guns": [
+        {
+          "gunId": 593,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 148
+            },
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 171
+            },
+            {
+              "type": "he",
+              "damage": 190,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 6481,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Strv 74A2",
+      "id": 625,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 950,
+      "forwardSpeed": 45,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 27.0,
+      "guns": [
+        {
+          "gunId": 369,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "M6",
+      "id": 801,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 1150,
+      "forwardSpeed": 35,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 25.0,
+      "guns": [
+        {
+          "gunId": 1825,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 106
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 157
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 2081,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 2337,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 2593,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 160
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 243
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Cromwell",
+      "id": 1105,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 1000,
+      "forwardSpeed": 64,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 40.9,
+      "guns": [
+        {
+          "gunId": 3665,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 105
+            },
+            {
+              "type": "apcr",
+              "damage": 80,
+              "penetration": 170
+            },
+            {
+              "type": "he",
+              "damage": 100,
+              "penetration": 15
+            }
+          ]
+        },
+        {
+          "gunId": 3921,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 130
+            },
+            {
+              "type": "apcr",
+              "damage": 80,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 100,
+              "penetration": 15
+            }
+          ]
+        },
+        {
+          "gunId": 9809,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "M4A3E8",
+      "id": 1313,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 980,
+      "forwardSpeed": 50,
+      "reverseSpeed": 17,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 37.0,
+      "powerToWeightRatio": 35.6,
+      "guns": [
+        {
+          "gunId": 2081,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 2337,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Churchill Mk. VI",
+      "id": 1361,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1200,
+      "forwardSpeed": 20,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 22.5,
+      "powerToWeightRatio": 19.0,
+      "guns": [
+        {
+          "gunId": 1873,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "P.43 bis",
+      "id": 1409,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 31.1,
+      "guns": [
+        {
+          "gunId": 1921,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 118
+            },
+            {
+              "type": "apcr",
+              "damage": 110,
+              "penetration": 146
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 1665,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 140
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Jg.Pz. IV",
+      "id": 1553,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 850,
+      "forwardSpeed": 45,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 29.3,
+      "guns": [
+        {
+          "gunId": 4625,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 110
+            },
+            {
+              "type": "apcr",
+              "damage": 130,
+              "penetration": 158
+            },
+            {
+              "type": "he",
+              "damage": 180,
+              "penetration": 35
+            }
+          ]
+        },
+        {
+          "gunId": 4881,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        },
+        {
+          "gunId": 5137,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 225
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Chi-To",
+      "id": 1889,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Japan",
+      "hp": 970,
+      "forwardSpeed": 50,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 40.4,
+      "guns": [
+        {
+          "gunId": 4193,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 124
+            },
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 155
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 4449,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 155
+            },
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 186
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "VK 36.01 H",
+      "id": 2321,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 1150,
+      "forwardSpeed": 45,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 28.7,
+      "guns": [
+        {
+          "gunId": 1041,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 5905,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 157
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 221
+            }
+          ]
+        },
+        {
+          "gunId": 2065,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "T-34-85",
+      "id": 2561,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USSR",
+      "hp": 930,
+      "forwardSpeed": 54,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 46.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 39.7,
+      "guns": [
+        {
+          "gunId": 1537,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 125
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 156
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 39
+            }
+          ]
+        },
+        {
+          "gunId": 8961,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 167
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        },
+        {
+          "gunId": 266753,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 144
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Type 64",
+      "id": 2609,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "China",
+      "hp": 900,
+      "forwardSpeed": 72,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 54.0,
+      "powerToWeightRatio": 72.7,
+      "guns": [
+        {
+          "gunId": 5425,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 125
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "ARL 44",
+      "id": 2625,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "France",
+      "hp": 1200,
+      "forwardSpeed": 40,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 19.0,
+      "hullRotationSpeed": 19.0,
+      "powerToWeightRatio": 33.1,
+      "guns": [
+        {
+          "gunId": 3649,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 175
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 25153,
+          "isDefault": false,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 160
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 213
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        },
+        {
+          "gunId": 4161,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 170
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 248
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 24897,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 165
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "KV-1S",
+      "id": 2817,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 1000,
+      "forwardSpeed": 43,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 28.4,
+      "guns": [
+        {
+          "gunId": 1537,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 125
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 156
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 39
+            }
+          ]
+        },
+        {
+          "gunId": 2817,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 120
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 161
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        },
+        {
+          "gunId": 3585,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 160
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 217
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 400,
+      "extraInfo": ""
+    },
+    {
+      "name": "SU-100",
+      "id": 3585,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "USSR",
+      "hp": 880,
+      "forwardSpeed": 50,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 36.0,
+      "powerToWeightRatio": 26.3,
+      "guns": [
+        {
+          "gunId": 1793,
+          "isDefault": false,
+          "alphaDamage": 170,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 170,
+              "penetration": 130
+            },
+            {
+              "type": "apcr",
+              "damage": 145,
+              "penetration": 161
+            },
+            {
+              "type": "he",
+              "damage": 190,
+              "penetration": 43
+            }
+          ]
+        },
+        {
+          "gunId": 2305,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 144
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 9473,
+          "isDefault": false,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 9729,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "apcr",
+              "damage": 400,
+              "penetration": 180
+            },
+            {
+              "type": "heat",
+              "damage": 340,
+              "penetration": 225
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 64
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 400,
+      "extraInfo": ""
+    },
+    {
+      "name": "Strv 74",
+      "id": 3713,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 950,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 30.5,
+      "guns": [
+        {
+          "gunId": 5761,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 120
+            },
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 148
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 6017,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 148
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Churchill VII",
+      "id": 4689,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1200,
+      "forwardSpeed": 20,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 23.0,
+      "powerToWeightRatio": 17.0,
+      "guns": [
+        {
+          "gunId": 3921,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 130
+            },
+            {
+              "type": "apcr",
+              "damage": 80,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 100,
+              "penetration": 15
+            }
+          ]
+        },
+        {
+          "gunId": 9809,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 7761,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 148
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 208
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Firefly Saunders SP",
+      "id": 4705,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Japan",
+      "hp": 960,
+      "forwardSpeed": 50,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 26.0,
+      "guns": [
+        {
+          "gunId": 7777,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "59-16",
+      "id": 4913,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "China",
+      "hp": 900,
+      "forwardSpeed": 63,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 41.0,
+      "hullRotationSpeed": 47.0,
+      "powerToWeightRatio": 68.3,
+      "guns": [
+        {
+          "gunId": 7473,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 118
+            },
+            {
+              "type": "apcr",
+              "damage": 75,
+              "penetration": 189
+            },
+            {
+              "type": "he",
+              "damage": 110,
+              "penetration": 29
+            }
+          ]
+        },
+        {
+          "gunId": 7729,
+          "isDefault": true,
+          "alphaDamage": 170,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 170,
+              "penetration": 132
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 212
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 170,
+      "extraInfo": ""
+    },
+    {
+      "name": "P.43/06 ann.",
+      "id": 4993,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 47.0,
+      "powerToWeightRatio": 35.9,
+      "guns": [
+        {
+          "gunId": 7297,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 140
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Type 58",
+      "id": 5169,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 980,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 39.4,
+      "guns": [
+        {
+          "gunId": 817,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 120
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 161
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        },
+        {
+          "gunId": 1073,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 172
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Pudel",
+      "id": 5249,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 1000,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 30.0,
+      "hullRotationSpeed": 38.0,
+      "powerToWeightRatio": 47.9,
+      "guns": [
+        {
+          "gunId": 7553,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 160
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 182
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Ju-Nu",
+      "id": 5729,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 1200,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 22.0,
+      "powerToWeightRatio": 25.4,
+      "guns": [
+        {
+          "gunId": 4449,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 155
+            },
+            {
+              "type": "ap",
+              "damage": 135,
+              "penetration": 186
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 9313,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 195
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Y5 Firefly",
+      "id": 5745,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Other",
+      "hp": 950,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 45.0,
+      "powerToWeightRatio": 34.9,
+      "guns": [
+        {
+          "gunId": 19313,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 130
+            },
+            {
+              "type": "apcr",
+              "damage": 120,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "AMX 12 t",
+      "id": 6465,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "France",
+      "hp": 900,
+      "forwardSpeed": 65,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 55.0,
+      "guns": [
+        {
+          "gunId": 7745,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 108
+            },
+            {
+              "type": "apcr",
+              "damage": 130,
+              "penetration": 148
+            },
+            {
+              "type": "he",
+              "damage": 170,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 321,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 144
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Škoda T 25",
+      "id": 6529,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 29.9,
+      "guns": [
+        {
+          "gunId": 9345,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 132
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 9601,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 132
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Turbo",
+      "id": 7041,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 950,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 45.0,
+      "powerToWeightRatio": 32.7,
+      "guns": [
+        {
+          "gunId": 10369,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 148
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "VK 30.01 P",
+      "id": 7185,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 920,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 40.0,
+      "guns": [
+        {
+          "gunId": 785,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 110
+            },
+            {
+              "type": "apcr",
+              "damage": 140,
+              "penetration": 158
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 1041,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 2065,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Jackson",
+      "id": 7201,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 40,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 29.4,
+      "guns": [
+        {
+          "gunId": 10017,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        },
+        {
+          "gunId": 10529,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 243
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Ferrum",
+      "id": 7265,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 1200,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 21.3,
+      "guns": [
+        {
+          "gunId": 11105,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 195
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "WZ-131G FT",
+      "id": 7729,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "China",
+      "hp": 900,
+      "forwardSpeed": 45,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 34.1,
+      "guns": [
+        {
+          "gunId": 11057,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 145
+            },
+            {
+              "type": "heat",
+              "damage": 170,
+              "penetration": 220
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        },
+        {
+          "gunId": 10289,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 181
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 241
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 280,
+      "extraInfo": ""
+    },
+    {
+      "name": "40TP Habicha",
+      "id": 8065,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 1150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 22.5,
+      "powerToWeightRatio": 20.2,
+      "guns": [
+        {
+          "gunId": 11905,
+          "isDefault": false,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 12161,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Titan T24 57",
+      "id": 8561,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "Other",
+      "hp": 900,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 39.6,
+      "guns": [
+        {
+          "gunId": 21873,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 144
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Spark",
+      "id": 8833,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 26.1,
+      "guns": [
+        {
+          "gunId": 12929,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 132
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Ox",
+      "id": 9009,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "China",
+      "hp": 980,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 42.0,
+      "powerToWeightRatio": 39.4,
+      "guns": [
+        {
+          "gunId": 12849,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 172
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Titan-150",
+      "id": 9329,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 1200,
+      "forwardSpeed": 35,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 21.0,
+      "guns": [
+        {
+          "gunId": 22641,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 147
+            },
+            {
+              "type": "apcr",
+              "damage": 160,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "AT 8",
+      "id": 9553,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "UK",
+      "hp": 1000,
+      "forwardSpeed": 20,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 20.0,
+      "powerToWeightRatio": 13.9,
+      "guns": [
+        {
+          "gunId": 13137,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 110
+            },
+            {
+              "type": "apcr",
+              "damage": 80,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 100,
+              "penetration": 15
+            }
+          ]
+        },
+        {
+          "gunId": 12113,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 148
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 208
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 263505,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 175,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Chaffee",
+      "id": 9761,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 56,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 39.6,
+      "guns": [
+        {
+          "gunId": 14625,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 120
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 160
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 14881,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Churchill GC",
+      "id": 9809,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "UK",
+      "hp": 850,
+      "forwardSpeed": 30,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 15.1,
+      "guns": [
+        {
+          "gunId": 259409,
+          "isDefault": true,
+          "alphaDamage": 250,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 250,
+              "penetration": 214
+            },
+            {
+              "type": "apcr",
+              "damage": 210,
+              "penetration": 246
+            },
+            {
+              "type": "he",
+              "damage": 330,
+              "penetration": 47
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 250,
+      "extraInfo": ""
+    },
+    {
+      "name": "Rover",
+      "id": 9841,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "Other",
+      "hp": 870,
+      "forwardSpeed": 64,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 42.8,
+      "guns": [
+        {
+          "gunId": 23153,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 140
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "VK 28.01",
+      "id": 10001,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "Germany",
+      "hp": 900,
+      "forwardSpeed": 65,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 43.0,
+      "powerToWeightRatio": 61.9,
+      "guns": [
+        {
+          "gunId": 785,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 110
+            },
+            {
+              "type": "apcr",
+              "damage": 140,
+              "penetration": 158
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 1297,
+          "isDefault": false,
+          "alphaDamage": 330,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 330,
+              "penetration": 64
+            },
+            {
+              "type": "heat",
+              "damage": 280,
+              "penetration": 104
+            },
+            {
+              "type": "he",
+              "damage": 410,
+              "penetration": 53
+            }
+          ]
+        },
+        {
+          "gunId": 5905,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 157
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 221
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "M4A3E2",
+      "id": 10017,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 920,
+      "forwardSpeed": 35,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 29.2,
+      "guns": [
+        {
+          "gunId": 257825,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "O-I",
+      "id": 10081,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 1140,
+      "forwardSpeed": 25,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 22.0,
+      "powerToWeightRatio": 15.1,
+      "guns": [
+        {
+          "gunId": 16481,
+          "isDefault": false,
+          "alphaDamage": 270,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 270,
+              "penetration": 152
+            },
+            {
+              "type": "heat",
+              "damage": 220,
+              "penetration": 215
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 52
+            }
+          ]
+        },
+        {
+          "gunId": 16737,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 120
+            },
+            {
+              "type": "ap",
+              "damage": 390,
+              "penetration": 145
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 66
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 460,
+      "extraInfo": ""
+    },
+    {
+      "name": "KV-2",
+      "id": 10497,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 950,
+      "forwardSpeed": 35,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 18.0,
+      "powerToWeightRatio": 22.3,
+      "guns": [
+        {
+          "gunId": 7169,
+          "isDefault": false,
+          "alphaDamage": 450,
+          "shells": [
+            {
+              "type": "he",
+              "damage": 450,
+              "penetration": 30
+            },
+            {
+              "type": "heat",
+              "damage": 230,
+              "penetration": 140
+            }
+          ]
+        },
+        {
+          "gunId": 7425,
+          "isDefault": false,
+          "alphaDamage": 640,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 640,
+              "penetration": 110
+            },
+            {
+              "type": "ap",
+              "damage": 545,
+              "penetration": 136
+            },
+            {
+              "type": "he",
+              "damage": 960,
+              "penetration": 76
+            }
+          ]
+        },
+        {
+          "gunId": 2561,
+          "isDefault": true,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 167
+            },
+            {
+              "type": "apcr",
+              "damage": 270,
+              "penetration": 219
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 320,
+      "extraInfo": ""
+    },
+    {
+      "name": "Wind",
+      "id": 10545,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "China",
+      "hp": 900,
+      "forwardSpeed": 63,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 41.0,
+      "hullRotationSpeed": 47.0,
+      "powerToWeightRatio": 52.8,
+      "guns": [
+        {
+          "gunId": 16433,
+          "isDefault": true,
+          "alphaDamage": 150,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 150,
+              "penetration": 138
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 25
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 150,
+      "extraInfo": ""
+    },
+    {
+      "name": "Panlong",
+      "id": 10801,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "China",
+      "hp": 850,
+      "forwardSpeed": 43,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 34.1,
+      "guns": [
+        {
+          "gunId": 16689,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 181
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 241
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 280,
+      "extraInfo": ""
+    },
+    {
+      "name": "T-150",
+      "id": 11265,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 1200,
+      "forwardSpeed": 35,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 24.0,
+      "powerToWeightRatio": 23.2,
+      "guns": [
+        {
+          "gunId": 20993,
+          "isDefault": true,
+          "alphaDamage": 320,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 320,
+              "penetration": 167
+            },
+            {
+              "type": "apcr",
+              "damage": 270,
+              "penetration": 219
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 320,
+      "extraInfo": ""
+    },
+    {
+      "name": "Bassotto",
+      "id": 11393,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "European",
+      "hp": 950,
+      "forwardSpeed": 42,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 39.0,
+      "powerToWeightRatio": 27.7,
+      "guns": [
+        {
+          "gunId": 17281,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 165
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 218
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 48
+            }
+          ]
+        },
+        {
+          "gunId": 16769,
+          "isDefault": true,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 172
+            },
+            {
+              "type": "heat",
+              "damage": 260,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 300,
+      "extraInfo": ""
+    },
+    {
+      "name": "Hellcat",
+      "id": 11553,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 850,
+      "forwardSpeed": 65,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 31.0,
+      "powerToWeightRatio": 49.4,
+      "guns": [
+        {
+          "gunId": 9761,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 10017,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        },
+        {
+          "gunId": 270369,
+          "isDefault": true,
+          "alphaDamage": 240,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 240,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 205,
+              "penetration": 243
+            },
+            {
+              "type": "he",
+              "damage": 320,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 240,
+      "extraInfo": ""
+    },
+    {
+      "name": "ARL V39",
+      "id": 11585,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "France",
+      "hp": 950,
+      "forwardSpeed": 45,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 31.0,
+      "powerToWeightRatio": 32.4,
+      "guns": [
+        {
+          "gunId": 10561,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 100
+            },
+            {
+              "type": "apcr",
+              "damage": 130,
+              "penetration": 129
+            },
+            {
+              "type": "he",
+              "damage": 170,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 11073,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 137
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 175
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        },
+        {
+          "gunId": 12353,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 172
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 223
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "extraInfo": ""
+    },
+    {
+      "name": "Nashorn",
+      "id": 11793,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1000,
+      "forwardSpeed": 50,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 31.0,
+      "powerToWeightRatio": 34.6,
+      "guns": [
+        {
+          "gunId": 4881,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        },
+        {
+          "gunId": 5137,
+          "isDefault": false,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 225
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 7441,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 203
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 237
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Shadowhunter",
+      "id": 11905,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 32.1,
+      "guns": [
+        {
+          "gunId": 18305,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Aeonix",
+      "id": 13441,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 930,
+      "forwardSpeed": 57,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 36.0,
+      "hullRotationSpeed": 45.0,
+      "powerToWeightRatio": 33.8,
+      "guns": [
+        {
+          "gunId": 20353,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 132
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "AC Ocelote",
+      "id": 13681,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 1150,
+      "forwardSpeed": 36,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 27.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 27.8,
+      "guns": [
+        {
+          "gunId": 32369,
+          "isDefault": false,
+          "alphaDamage": 210,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 210,
+              "penetration": 140
+            },
+            {
+              "type": "apcr",
+              "damage": 175,
+              "penetration": 189
+            },
+            {
+              "type": "he",
+              "damage": 260,
+              "penetration": 46
+            }
+          ]
+        },
+        {
+          "gunId": 32113,
+          "isDefault": true,
+          "alphaDamage": 230,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 230,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 195,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 290,
+              "penetration": 50
+            }
+          ]
+        },
+        {
+          "gunId": 53617,
+          "isDefault": false,
+          "alphaDamage": 60,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 60,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 50,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 90,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 230,
+      "extraInfo": ""
+    },
+    {
+      "name": "VK 30.01 D",
+      "id": 14097,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1000,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 38.0,
+      "powerToWeightRatio": 47.4,
+      "guns": [
+        {
+          "gunId": 785,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 110
+            },
+            {
+              "type": "apcr",
+              "damage": 140,
+              "penetration": 158
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 1041,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Škoda P-JS",
+      "id": 14209,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 1100,
+      "forwardSpeed": 41,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 29.3,
+      "guns": [
+        {
+          "gunId": 22401,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 140
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 40
+            }
+          ]
+        },
+        {
+          "gunId": 22657,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 187
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 41
+            }
+          ]
+        },
+        {
+          "gunId": 22145,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 152
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 195
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 42
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "T21",
+      "id": 15137,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 60,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 56.2,
+      "guns": [
+        {
+          "gunId": 64801,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "AC Forger",
+      "id": 15217,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Other",
+      "hp": 1170,
+      "forwardSpeed": 38,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 28.5,
+      "guns": [
+        {
+          "gunId": 36465,
+          "isDefault": true,
+          "alphaDamage": 270,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 270,
+              "penetration": 151
+            },
+            {
+              "type": "apcr",
+              "damage": 220,
+              "penetration": 198
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 46
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 270,
+      "extraInfo": ""
+    },
+    {
+      "name": "VK 30.02 M",
+      "id": 15889,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1050,
+      "forwardSpeed": 60,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 30.0,
+      "hullRotationSpeed": 38.0,
+      "powerToWeightRatio": 43.9,
+      "guns": [
+        {
+          "gunId": 257809,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "B.U.G.I.",
+      "id": 16001,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "European",
+      "hp": 950,
+      "forwardSpeed": 52,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 43.0,
+      "powerToWeightRatio": 31.8,
+      "guns": [
+        {
+          "gunId": 26497,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 30
+            }
+          ]
+        },
+        {
+          "gunId": 26753,
+          "isDefault": false,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 205
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        },
+        {
+          "gunId": 27009,
+          "isDefault": true,
+          "alphaDamage": 240,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 240,
+              "penetration": 160
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 48
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 240,
+      "extraInfo": ""
+    },
+    {
+      "name": "Outcast",
+      "id": 16257,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "European",
+      "hp": 1100,
+      "forwardSpeed": 41,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 23.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 29.9,
+      "guns": [
+        {
+          "gunId": 27265,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 152
+            },
+            {
+              "type": "apcr",
+              "damage": 180,
+              "penetration": 195
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 42
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "MT-25",
+      "id": 16641,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USSR",
+      "hp": 870,
+      "forwardSpeed": 72,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 48.4,
+      "guns": [
+        {
+          "gunId": 1281,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 112
+            },
+            {
+              "type": "apcr",
+              "damage": 75,
+              "penetration": 189
+            },
+            {
+              "type": "he",
+              "damage": 110,
+              "penetration": 29
+            }
+          ]
+        },
+        {
+          "gunId": 1537,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 125
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 156
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 39
+            }
+          ]
+        },
+        {
+          "gunId": 30977,
+          "isDefault": false,
+          "alphaDamage": 55,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 55,
+              "penetration": 100
+            },
+            {
+              "type": "apcr",
+              "damage": 47,
+              "penetration": 130
+            },
+            {
+              "type": "he",
+              "damage": 75,
+              "penetration": 23
+            }
+          ]
+        },
+        {
+          "gunId": 256257,
+          "isDefault": false,
+          "alphaDamage": 90,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 90,
+              "penetration": 130
+            },
+            {
+              "type": "apcr",
+              "damage": 75,
+              "penetration": 175
+            },
+            {
+              "type": "he",
+              "damage": 110,
+              "penetration": 28
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "T37",
+      "id": 16673,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 66,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 46.1,
+      "guns": [
+        {
+          "gunId": 14625,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 120
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 160
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 14881,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        },
+        {
+          "gunId": 25121,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 120
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 175
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        },
+        {
+          "gunId": 24865,
+          "isDefault": false,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 180
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Eraser BP44",
+      "id": 17217,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "France",
+      "hp": 1150,
+      "forwardSpeed": 37,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 33.1,
+      "guns": [
+        {
+          "gunId": 19777,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 170
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 223
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "extraInfo": ""
+    },
+    {
+      "name": "Bretagne Panther",
+      "id": 17985,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "France",
+      "hp": 1050,
+      "forwardSpeed": 55,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 30.0,
+      "hullRotationSpeed": 38.0,
+      "powerToWeightRatio": 44.9,
+      "guns": [
+        {
+          "gunId": 20801,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "SDP 44 Burza",
+      "id": 18561,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "European",
+      "hp": 1050,
+      "forwardSpeed": 32,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 40.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 16.5,
+      "guns": [
+        {
+          "gunId": 31105,
+          "isDefault": false,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 172
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 225
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 46
+            }
+          ]
+        },
+        {
+          "gunId": 31361,
+          "isDefault": true,
+          "alphaDamage": 280,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 280,
+              "penetration": 180
+            },
+            {
+              "type": "apcr",
+              "damage": 240,
+              "penetration": 235
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 280,
+      "extraInfo": ""
+    },
+    {
+      "name": "AMXmas",
+      "id": 19009,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "France",
+      "hp": 900,
+      "forwardSpeed": 65,
+      "reverseSpeed": 23,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 50.0,
+      "powerToWeightRatio": 56.0,
+      "guns": [
+        {
+          "gunId": 21825,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 144
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 175,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Charles",
+      "id": 19265,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "France",
+      "hp": 850,
+      "forwardSpeed": 48,
+      "reverseSpeed": 13,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 34.0,
+      "powerToWeightRatio": 31.9,
+      "guns": [
+        {
+          "gunId": 22593,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 175,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Loza's Sherman",
+      "id": 19713,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USSR",
+      "hp": 920,
+      "forwardSpeed": 50,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 40.0,
+      "powerToWeightRatio": 28.8,
+      "guns": [
+        {
+          "gunId": 258049,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Tiger 131",
+      "id": 19729,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 1150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 25.6,
+      "guns": [
+        {
+          "gunId": 257297,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Pirate",
+      "id": 20289,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "France",
+      "hp": 920,
+      "forwardSpeed": 45,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 41.0,
+      "powerToWeightRatio": 38.0,
+      "guns": [
+        {
+          "gunId": 24129,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 172
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 223
+            },
+            {
+              "type": "he",
+              "damage": 400,
+              "penetration": 54
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "extraInfo": ""
+    },
+    {
+      "name": "Explorer",
+      "id": 20817,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 960,
+      "forwardSpeed": 64,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 33.0,
+      "powerToWeightRatio": 40.9,
+      "guns": [
+        {
+          "gunId": 264017,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Dreadnought",
+      "id": 21073,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "UK",
+      "hp": 950,
+      "forwardSpeed": 26,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 36.0,
+      "powerToWeightRatio": 13.1,
+      "guns": [
+        {
+          "gunId": 264273,
+          "isDefault": true,
+          "alphaDamage": 300,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 300,
+              "penetration": 182
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 230
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 300,
+      "extraInfo": ""
+    },
+    {
+      "name": "Thunder",
+      "id": 21249,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 1000,
+      "forwardSpeed": 43,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 23.6,
+      "guns": [
+        {
+          "gunId": 261121,
+          "isDefault": true,
+          "alphaDamage": 400,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 400,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 340,
+              "penetration": 217
+            },
+            {
+              "type": "he",
+              "damage": 500,
+              "penetration": 61
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 400,
+      "extraInfo": ""
+    },
+    {
+      "name": "Rudolph",
+      "id": 21281,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 980,
+      "forwardSpeed": 50,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 26.5,
+      "guns": [
+        {
+          "gunId": 261153,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Blasteroid",
+      "id": 21585,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1550,
+      "forwardSpeed": 20,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 20.0,
+      "powerToWeightRatio": 15.3,
+      "guns": [
+        {
+          "gunId": 264785,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 175,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Agent",
+      "id": 22033,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "Germany",
+      "hp": 900,
+      "forwardSpeed": 65,
+      "reverseSpeed": 22,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 43.0,
+      "powerToWeightRatio": 64.3,
+      "guns": [
+        {
+          "gunId": 260881,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 157
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 221
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Magnus",
+      "id": 22049,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 1150,
+      "forwardSpeed": 38,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 27.3,
+      "guns": [
+        {
+          "gunId": 262177,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 160
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 243
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Churchill VIII",
+      "id": 22097,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1200,
+      "forwardSpeed": 22,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 21.0,
+      "hullRotationSpeed": 22.5,
+      "powerToWeightRatio": 18.1,
+      "guns": [
+        {
+          "gunId": 265553,
+          "isDefault": true,
+          "alphaDamage": 270,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 270,
+              "penetration": 155
+            },
+            {
+              "type": "heat",
+              "damage": 220,
+              "penetration": 220
+            },
+            {
+              "type": "he",
+              "damage": 350,
+              "penetration": 50
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 270,
+      "extraInfo": ""
+    },
+    {
+      "name": "Churchill W",
+      "id": 22353,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1200,
+      "forwardSpeed": 22,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 25.0,
+      "powerToWeightRatio": 18.1,
+      "guns": [
+        {
+          "gunId": 265809,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 152
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 214
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Triumphant",
+      "id": 22785,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USSR",
+      "hp": 930,
+      "forwardSpeed": 54,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 46.0,
+      "hullRotationSpeed": 53.0,
+      "powerToWeightRatio": 34.4,
+      "guns": [
+        {
+          "gunId": 262913,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 167
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "Icebreaker",
+      "id": 22801,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 1150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 25.6,
+      "guns": [
+        {
+          "gunId": 261649,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Object 244",
+      "id": 23297,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USSR",
+      "hp": 1150,
+      "forwardSpeed": 43,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 28.0,
+      "powerToWeightRatio": 26.2,
+      "guns": [
+        {
+          "gunId": 261377,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 147
+            },
+            {
+              "type": "apcr",
+              "damage": 160,
+              "penetration": 210
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "U-Panzer",
+      "id": 24081,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 1000,
+      "forwardSpeed": 56,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 45.0,
+      "powerToWeightRatio": 41.8,
+      "guns": [
+        {
+          "gunId": 263185,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "BLTZ9000",
+      "id": 24097,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 950,
+      "forwardSpeed": 58,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 45.5,
+      "guns": [
+        {
+          "gunId": 264737,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 150
+            },
+            {
+              "type": "heat",
+              "damage": 190,
+              "penetration": 258
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Kryos",
+      "id": 24849,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 950,
+      "forwardSpeed": 40,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 44.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 20.6,
+      "guns": [
+        {
+          "gunId": 263953,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 225
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Barkhan",
+      "id": 25105,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Germany",
+      "hp": 1150,
+      "forwardSpeed": 45,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 26.0,
+      "powerToWeightRatio": 25.8,
+      "guns": [
+        {
+          "gunId": 264209,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Ranger",
+      "id": 25889,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 60,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 42.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 56.2,
+      "guns": [
+        {
+          "gunId": 266785,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Epsilon",
+      "id": 26129,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 1000,
+      "forwardSpeed": 50,
+      "reverseSpeed": 16,
+      "turretRotationSpeed": 27.0,
+      "hullRotationSpeed": 32.0,
+      "powerToWeightRatio": 33.3,
+      "guns": [
+        {
+          "gunId": 265233,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 203
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 237
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "Enforcer",
+      "id": 26401,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 40,
+      "reverseSpeed": 11,
+      "turretRotationSpeed": 16.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 29.4,
+      "guns": [
+        {
+          "gunId": 267553,
+          "isDefault": true,
+          "alphaDamage": 225,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 225,
+              "penetration": 175
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 243
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 45
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 225,
+      "extraInfo": ""
+    },
+    {
+      "name": "Frosty",
+      "id": 26913,
+      "tier": 6,
+      "class": "Light tank",
+      "nation": "USA",
+      "hp": 900,
+      "forwardSpeed": 60,
+      "reverseSpeed": 21,
+      "turretRotationSpeed": 39.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 41.6,
+      "guns": [
+        {
+          "gunId": 268065,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 135
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 185
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Cyborg",
+      "id": 27169,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 1150,
+      "forwardSpeed": 38,
+      "reverseSpeed": 10,
+      "turretRotationSpeed": 28.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 25.8,
+      "guns": [
+        {
+          "gunId": 269089,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 218
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 42
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Pawlack Tank",
+      "id": 27681,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "USA",
+      "hp": 1200,
+      "forwardSpeed": 41,
+      "reverseSpeed": 15,
+      "turretRotationSpeed": 22.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 23.3,
+      "guns": [
+        {
+          "gunId": 268833,
+          "isDefault": true,
+          "alphaDamage": 240,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 240,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 200,
+              "penetration": 182
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 30
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 240,
+      "extraInfo": ""
+    },
+    {
+      "name": "TOG II*",
+      "id": 53841,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "UK",
+      "hp": 1550,
+      "forwardSpeed": 20,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 32.0,
+      "hullRotationSpeed": 20.0,
+      "powerToWeightRatio": 15.3,
+      "guns": [
+        {
+          "gunId": 9297,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 171
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 239
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "SU-100Y",
+      "id": 54785,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "USSR",
+      "hp": 900,
+      "forwardSpeed": 35,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 30.0,
+      "powerToWeightRatio": 20.9,
+      "guns": [
+        {
+          "gunId": 25857,
+          "isDefault": true,
+          "alphaDamage": 460,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 460,
+              "penetration": 196
+            },
+            {
+              "type": "ap",
+              "damage": 530,
+              "penetration": 171
+            },
+            {
+              "type": "he",
+              "damage": 600,
+              "penetration": 65
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 460,
+      "extraInfo": ""
+    },
+    {
+      "name": "Cromwell B",
+      "id": 55889,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 960,
+      "forwardSpeed": 64,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 48.0,
+      "hullRotationSpeed": 50.0,
+      "powerToWeightRatio": 43.6,
+      "guns": [
+        {
+          "gunId": 20049,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Fury",
+      "id": 56097,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USA",
+      "hp": 980,
+      "forwardSpeed": 48,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 28.0,
+      "guns": [
+        {
+          "gunId": 64801,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 177
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Dicker Max",
+      "id": 57105,
+      "tier": 6,
+      "class": "Tank destroyer",
+      "nation": "Germany",
+      "hp": 900,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 26.0,
+      "hullRotationSpeed": 35.0,
+      "powerToWeightRatio": 22.7,
+      "guns": [
+        {
+          "gunId": 17681,
+          "isDefault": true,
+          "alphaDamage": 310,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 310,
+              "penetration": 180
+            },
+            {
+              "type": "apcr",
+              "damage": 260,
+              "penetration": 250
+            },
+            {
+              "type": "he",
+              "damage": 380,
+              "penetration": 53
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 310,
+      "extraInfo": ""
+    },
+    {
+      "name": "Pz. IV S.",
+      "id": 57361,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "Germany",
+      "hp": 950,
+      "forwardSpeed": 44,
+      "reverseSpeed": 18,
+      "turretRotationSpeed": 24.0,
+      "hullRotationSpeed": 34.0,
+      "powerToWeightRatio": 37.4,
+      "guns": [
+        {
+          "gunId": 18705,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 150
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 194
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 20
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    },
+    {
+      "name": "Tiger Kuromorimine SP",
+      "id": 63585,
+      "tier": 6,
+      "class": "Heavy tank",
+      "nation": "Japan",
+      "hp": 1150,
+      "forwardSpeed": 40,
+      "reverseSpeed": 12,
+      "turretRotationSpeed": 20.0,
+      "hullRotationSpeed": 27.0,
+      "powerToWeightRatio": 27.6,
+      "guns": [
+        {
+          "gunId": 257121,
+          "isDefault": true,
+          "alphaDamage": 220,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 220,
+              "penetration": 155
+            },
+            {
+              "type": "apcr",
+              "damage": 190,
+              "penetration": 200
+            },
+            {
+              "type": "he",
+              "damage": 270,
+              "penetration": 44
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 220,
+      "extraInfo": ""
+    },
+    {
+      "name": "T-34-85 Victory",
+      "id": 64257,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "USSR",
+      "hp": 930,
+      "forwardSpeed": 54,
+      "reverseSpeed": 20,
+      "turretRotationSpeed": 46.0,
+      "hullRotationSpeed": 48.0,
+      "powerToWeightRatio": 34.4,
+      "guns": [
+        {
+          "gunId": 64769,
+          "isDefault": true,
+          "alphaDamage": 200,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 200,
+              "penetration": 128
+            },
+            {
+              "type": "apcr",
+              "damage": 170,
+              "penetration": 167
+            },
+            {
+              "type": "he",
+              "damage": 300,
+              "penetration": 43
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 200,
+      "extraInfo": ""
+    },
+    {
+      "name": "AC IV Sentinel",
+      "id": 64337,
+      "tier": 6,
+      "class": "Medium tank",
+      "nation": "UK",
+      "hp": 970,
+      "forwardSpeed": 56,
+      "reverseSpeed": 14,
+      "turretRotationSpeed": 38.0,
+      "hullRotationSpeed": 44.0,
+      "powerToWeightRatio": 35.6,
+      "guns": [
+        {
+          "gunId": 256849,
+          "isDefault": true,
+          "alphaDamage": 160,
+          "shells": [
+            {
+              "type": "ap",
+              "damage": 160,
+              "penetration": 145
+            },
+            {
+              "type": "apcr",
+              "damage": 135,
+              "penetration": 202
+            },
+            {
+              "type": "he",
+              "damage": 200,
+              "penetration": 38
+            }
+          ]
+        }
+      ],
+      "alphaDamage": 160,
+      "extraInfo": ""
+    }
+  ]
+}

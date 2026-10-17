@@ -55,6 +55,10 @@ def covers_production_path(production_path, owner_pattern):
     return (owner_pattern.endswith("/**")
             and production_path.startswith(owner_pattern[:-2]))
 assert affected("frontend/src/styles/base.css") == {"frontend"}
+for tier in range(1, 11):
+    assert {"python", "frontend", "business_api", "ai_service"} <= affected(
+        f"common/tankopedia-tier{tier}.json"
+    ), f"tier {tier} data must run Python integrity checks and its consumers"
 assert affected("infra/tofu/postgres-business/main.tf") == {"business_postgres"}
 assert affected("deploy/tx/business-postgres.compose.yml") == {"business_postgres"}
 assert affected("docs/README.md") == set()

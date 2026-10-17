@@ -28,6 +28,16 @@ class TankopediaTest {
     }
 
     @Test
+    void loadsLowerTierNamesAndKeepsUnknownIdsExplicit() {
+        final Tankopedia tankopedia = TankopediaReferenceData.tankopedia();
+        assertEquals("KV-2", tankopedia.info(10497).name());
+        assertEquals(6, tankopedia.info(10497).tier());
+        assertEquals("Hellcat", tankopedia.info(11553).name());
+        assertEquals("SU-100", tankopedia.info(3585).name());
+        assertEquals("#2147483647", tankopedia.info(2147483647L).name());
+    }
+
+    @Test
     void legacyLoadReturnsApplicationSharedReference() {
         assertSame(TankopediaReferenceData.tankopedia(), Tankopedia.load());
         assertSame(Tankopedia.load(), Tankopedia.load());

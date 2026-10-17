@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/ai-service.yml
       - .dockerignore
+      - common/tankopedia-tier*.json
       - docker/Dockerfile.ai-service
       - java/pom.xml
       - java/**/pom.xml
@@ -26,6 +27,7 @@ env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/ai-service.yml
     .dockerignore
+    common/tankopedia-tier*.json
     docker/Dockerfile.ai-service
     java/pom.xml
     java/**/pom.xml

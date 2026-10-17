@@ -1,8 +1,8 @@
 /**
  * 车辆库（Java `com.wotb.core.ref.Tankopedia`）：tank_id → 名称/等级/车种/国家/炮伤/血量。
  *
- * 数据源与 Java classpath 资源同一份：仓库根 `common/tankopedia-tier{7,8,9,10}.json`
- * （Java 由 wotb-core/pom.xml 复制进 classpath）。按 tier7→tier10 顺序装载，重复 id 后者覆盖。
+ * 数据源与 Java classpath 资源同一份：仓库根 `common/tankopedia-tier{1..10}.json`
+ * （Java 由 wotb-core/pom.xml 复制进 classpath）。按 tier1→tier10 顺序装载，重复 id 后者覆盖。
  */
 
 /** 单辆车信息（Java `TankInfo`）。 */
@@ -94,6 +94,12 @@ export function createTankopedia(tierDocuments: readonly unknown[]): Tankopedia 
 /** 装载仓库内置车辆库（动态 import，独立 chunk，不进主 bundle）。 */
 export async function loadTankopedia(): Promise<Tankopedia> {
   const docs = await Promise.all([
+    import('../../../../common/tankopedia-tier1.json'),
+    import('../../../../common/tankopedia-tier2.json'),
+    import('../../../../common/tankopedia-tier3.json'),
+    import('../../../../common/tankopedia-tier4.json'),
+    import('../../../../common/tankopedia-tier5.json'),
+    import('../../../../common/tankopedia-tier6.json'),
     import('../../../../common/tankopedia-tier7.json'),
     import('../../../../common/tankopedia-tier8.json'),
     import('../../../../common/tankopedia-tier9.json'),
