@@ -20,7 +20,7 @@ import java.util.UUID
  * `pendingId` 是这份 pending 的 **authoritative identity**（完整 UUID）：Web ACK 必须原样回传它，
  * 由 `PendingReplayAckPolicy` 做 compare-and-clear —— 没有任何「无 identity 清当前 pending」的路径。
  * 日志一律只允许用 short ref（[logRef]），绝不落完整 id。
- * `createdAt` 是本地 ingress 时刻，供 24h 本地 cache TTL 判断（与认证会话 / token 生命周期无关）。
+ * `createdAt` 是本地 ingress 时刻，供 1h 本地 cache TTL 判断（与认证会话 / token 生命周期无关）。
  */
 data class PendingReplay(
     val pendingId: String,
@@ -124,10 +124,10 @@ object ReplayIntentHandler {
     internal const val PENDING_ID_MAX_LENGTH = 64
 
     /**
-     * 本地 cache hygiene TTL：24h。这是本地 pending 生命周期，**不**与认证会话 / token 生命周期绑定；
+     * 本地 cache hygiene TTL：1h。这是本地 pending 生命周期，**不**与认证会话 / token 生命周期绑定；
      * 只保证一个陈旧 replay 不会在跨 process death 后被无限期当成有效 pending 恢复。
      */
-    internal const val PENDING_TTL_MS = 24L * 60 * 60 * 1000
+    internal const val PENDING_TTL_MS = 60L * 60 * 1000
 
     /** metadata 编码版本；未知 / 缺失版本一律视为损坏（不恢复）。 */
     private const val METADATA_VERSION = "1"
@@ -258,7 +258,7 @@ object ReplayIntentHandler {
     }
 
     /**
-     * 本地 TTL 判断：从 createdAt 起算满 24h（含刚好 24h）即过期；时钟回拨（now < createdAt）不算过期。
+     * 本地 TTL 判断：从 createdAt 起算满 1h（含刚好 1h）即过期；时钟回拨（now < createdAt）不算过期。
      */
     internal fun isExpired(createdAt: Long, now: Long): Boolean = now - createdAt >= PENDING_TTL_MS
 
