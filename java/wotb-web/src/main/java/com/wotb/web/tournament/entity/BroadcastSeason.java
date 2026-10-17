@@ -19,8 +19,12 @@ public class BroadcastSeason {
     public String server;
     @Column(nullable = false)
     public int year;
-    @Column(nullable = false, length = 100)
-    public String name;
+    @Column(name = "name_zh", nullable = false, length = 100)
+    public String nameZh;
+    @Column(name = "name_en", nullable = false, length = 100)
+    public String nameEn;
+    @Column(name = "name_ru", length = 100)
+    public String nameRu;
     @Column(name = "start_date")
     public LocalDate startDate;
     @Column(name = "created_at", nullable = false)

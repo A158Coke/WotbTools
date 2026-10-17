@@ -45,14 +45,17 @@ const broadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtur
 if (!broadcastCategoryViewValidator(broadcast)) {
   throw new Error(JSON.stringify(broadcastCategoryViewValidator.errors, null, 2))
 }
-// These are independent business dimensions: days and points-group labels must
+// These are independent business dimensions: days and points-group numbers must
 // not inherit the bounds on round numbers or knockout group numbers.
 for (const mutate of [
   value => { delete value.season.startDate },
   value => { value.season.server = 'UNKNOWN' },
   value => { value.nodes[0].roundNumber = 6 },
   value => { value.nodes[0].replays[0].dayNumber = 0 },
-  value => { value.nodes[0].replays[0].groupNumber = 5 },
+  value => { value.nodes[0].replays[0].groupNumber = 0 },
+  value => { value.nodes[0].replays[0].groupNumber = 1.5 },
+  value => { value.nodes[0].replays[0].groupNumber = 2147483648 },
+  value => { value.nodes[0].replays[0].groupLabel = 'Group A' },
   value => { value.nodes[0].replays[0].matchDate = '2026-02-30' },
   value => { value.nodes[0].replays[0].teams.push('Fifth team') },
 ]) {

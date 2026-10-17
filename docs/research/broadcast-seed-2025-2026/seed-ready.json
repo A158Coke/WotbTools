@@ -1,0 +1,177 @@
+{
+  "checkedAt": "2026-10-18",
+  "selectionPolicy": "Only confirmed individual match replays with a match date, teams and stage. Preserve original event identity; do not infer seasonal names from months.",
+  "entries": [
+    {
+      "server": "CN",
+      "year": 2025,
+      "season": {
+        "nameZh": "战火杯",
+        "nameEn": "Zhanhuo Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "replay": {
+        "title": "四强赛 CHRD VS -ACE-",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=1",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "CHRD",
+          "-ACE-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "evidence": [
+        {
+          "url": "https://www.bilibili.com/video/BV18j2CBWEMo/",
+          "supports": [
+            "Official uploader 网易坦克世界闪击战",
+            "Series title identifies Day 3 and the final-four stage",
+            "Part 1 identifies CHRD versus -ACE-; full match recording, 47:41"
+          ]
+        },
+        {
+          "url": "https://bbs.4399.cn/thread-view-tid-51266383",
+          "supports": [
+            "Official announcement schedules the online championship on December 5, 6 and 7, 2025",
+            "Day 3 therefore maps to December 7, not the December 8 upload date"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/pagelist?bvid=BV18j2CBWEMo",
+          "supports": [
+            "Live public metadata code=0; part 1 title and duration match the selected recording; checked 2026-10-18"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/playurl?bvid=BV18j2CBWEMo&cid=34588330699&qn=32&fnval=0",
+          "supports": [
+            "Anonymous playback metadata code=0 and playback address present; checked 2026-10-18; no media downloaded"
+          ]
+        }
+      ]
+    },
+    {
+      "server": "CN",
+      "year": 2025,
+      "season": {
+        "nameZh": "战火杯",
+        "nameEn": "Zhanhuo Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "replay": {
+        "title": "四强赛 KSR VS -ACE-",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=2",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "KSR",
+          "-ACE-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "evidence": [
+        {
+          "url": "https://www.bilibili.com/video/BV18j2CBWEMo/",
+          "supports": [
+            "Official uploader 网易坦克世界闪击战",
+            "Series title identifies Day 3 and the final-four stage",
+            "Part 2 identifies KSR versus -ACE-; full match recording, 39:10"
+          ]
+        },
+        {
+          "url": "https://bbs.4399.cn/thread-view-tid-51266383",
+          "supports": [
+            "Official announcement schedules the online championship on December 5, 6 and 7, 2025",
+            "Day 3 therefore maps to December 7, not the December 8 upload date"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/pagelist?bvid=BV18j2CBWEMo",
+          "supports": [
+            "Live public metadata code=0; part 2 title and duration match the selected recording; checked 2026-10-18"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/playurl?bvid=BV18j2CBWEMo&cid=34588590815&qn=32&fnval=0",
+          "supports": [
+            "Anonymous playback metadata code=0 and playback address present; checked 2026-10-18; no media downloaded"
+          ]
+        }
+      ]
+    },
+    {
+      "server": "CN",
+      "year": 2025,
+      "season": {
+        "nameZh": "战火杯",
+        "nameEn": "Zhanhuo Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "replay": {
+        "title": "四强赛 Ru7K1 VS KSR",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=3",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "Ru7K1",
+          "KSR"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "evidence": [
+        {
+          "url": "https://www.bilibili.com/video/BV18j2CBWEMo/",
+          "supports": [
+            "Official uploader 网易坦克世界闪击战",
+            "Series title identifies Day 3 and the final-four stage",
+            "Part 3 identifies Ru7K1 versus KSR; full match recording, 45:34"
+          ]
+        },
+        {
+          "url": "https://bbs.4399.cn/thread-view-tid-51266383",
+          "supports": [
+            "Official announcement schedules the online championship on December 5, 6 and 7, 2025",
+            "Day 3 therefore maps to December 7, not the December 8 upload date"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/pagelist?bvid=BV18j2CBWEMo",
+          "supports": [
+            "Live public metadata code=0; part 3 title and duration match the selected recording; checked 2026-10-18"
+          ]
+        },
+        {
+          "url": "https://api.bilibili.com/x/player/playurl?bvid=BV18j2CBWEMo&cid=34588788958&qn=32&fnval=0",
+          "supports": [
+            "Anonymous playback metadata code=0 and playback address present; checked 2026-10-18; no media downloaded"
+          ]
+        }
+      ]
+    }
+  ]
+}

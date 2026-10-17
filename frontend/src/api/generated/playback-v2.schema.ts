@@ -852,7 +852,9 @@ export default {
         "id",
         "server",
         "year",
-        "name",
+        "nameZh",
+        "nameEn",
+        "nameRu",
         "startDate",
         "createdAt",
         "version",
@@ -873,9 +875,21 @@ export default {
           "minimum": 1,
           "maximum": 9999
         },
-        "name": {
+        "nameZh": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 100
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "nameRu": {
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 100
         },
         "startDate": {
@@ -940,7 +954,6 @@ export default {
         "url",
         "matchDate",
         "dayNumber",
-        "groupLabel",
         "groupNumber",
         "bracket",
         "teams",
@@ -978,21 +991,13 @@ export default {
           "minimum": 1,
           "maximum": 2147483647
         },
-        "groupLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 100
-        },
         "groupNumber": {
           "type": [
             "integer",
             "null"
           ],
           "minimum": 1,
-          "maximum": 4
+          "maximum": 2147483647
         },
         "bracket": {
           "anyOf": [
@@ -1190,7 +1195,8 @@ export default {
       "required": [
         "server",
         "year",
-        "name",
+        "nameZh",
+        "nameEn",
         "startDate"
       ],
       "properties": {
@@ -1202,9 +1208,21 @@ export default {
           "minimum": 1,
           "maximum": 9999
         },
-        "name": {
+        "nameZh": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 100
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "nameRu": {
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 100
         },
         "startDate": {
@@ -1222,7 +1240,8 @@ export default {
       "required": [
         "expectedVersion",
         "year",
-        "name",
+        "nameZh",
+        "nameEn",
         "startDate"
       ],
       "properties": {
@@ -1236,9 +1255,21 @@ export default {
           "minimum": 1,
           "maximum": 9999
         },
-        "name": {
+        "nameZh": {
           "type": "string",
           "minLength": 1,
+          "maxLength": 100
+        },
+        "nameEn": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "nameRu": {
+          "type": [
+            "string",
+            "null"
+          ],
           "maxLength": 100
         },
         "startDate": {
@@ -1311,7 +1342,6 @@ export default {
         "url",
         "matchDate",
         "dayNumber",
-        "groupLabel",
         "groupNumber",
         "bracket",
         "teams",
@@ -1344,21 +1374,13 @@ export default {
           "minimum": 1,
           "maximum": 2147483647
         },
-        "groupLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 100
-        },
         "groupNumber": {
           "type": [
             "integer",
             "null"
           ],
           "minimum": 1,
-          "maximum": 4
+          "maximum": 2147483647
         },
         "bracket": {
           "anyOf": [

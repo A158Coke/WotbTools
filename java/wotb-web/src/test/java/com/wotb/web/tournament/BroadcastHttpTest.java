@@ -43,6 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -76,40 +77,70 @@ class BroadcastHttpTest {
     }
     @Test void categorySerializationPreservesExplicitNullsDatesAndOrderedTeams() throws Exception {
         final BroadcastDtos.Replay replay = new BroadcastDtos.Replay(4, 3, "Title", "https://example.org/replay",
-                LocalDate.of(2026, 10, 16), 9, "Group 12", null, null, List.of("Followed","Other"), "OBSERVER", null);
+                LocalDate.of(2026, 10, 16), 9, 12, null, List.of("Followed","Other"), "OBSERVER", null);
         final BroadcastDtos.CategoryView view = new BroadcastDtos.CategoryView(season(),
                 new BroadcastDtos.Category(2, 1, "POINTS"), List.of(new BroadcastDtos.Node(3,2,5,null,List.of(replay))), false);
         when(context.getBean(BroadcastService.class).category(2)).thenReturn(view);
         final String json = mvc.perform(get("/api/tournament-broadcasts/categories/2")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.season.nameZh").value("夏季赛"))
+                .andExpect(jsonPath("$.season.nameEn").value("Summer"))
+                .andExpect(jsonPath("$.season.nameRu").value(nullValue()))
+                .andExpect(jsonPath("$.season.name").doesNotExist())
                 .andExpect(jsonPath("$.season.startDate").value(nullValue()))
                 .andExpect(jsonPath("$.nodes[0].format").value(nullValue()))
+                .andExpect(jsonPath("$.nodes[0].replays[0].groupNumber").value(12))
+                .andExpect(jsonPath("$.nodes[0].replays[0].groupLabel").doesNotExist())
                 .andExpect(jsonPath("$.nodes[0].replays[0].matchDate").value("2026-10-16"))
                 .andExpect(jsonPath("$.nodes[0].replays[0].teams[0]").value("Followed"))
                 .andExpect(jsonPath("$.nodes[0].replays[0].coverId").value(nullValue())).andReturn().getResponse().getContentAsString();
         final var tree = new JsonMapper().readTree(json);
         assertTrue(tree.get("season").has("startDate"));
+        assertTrue(tree.get("season").has("nameRu"));
         assertTrue(tree.get("nodes").get(0).get("replays").get(0).has("groupNumber"));
     }
     @Test void malformedRequiredIntegersCannotDefaultOrTruncateBeforeReachingService() throws Exception {
         for (final String body : List.of(
-                "{\"server\":\"CN\",\"name\":\"Summer\",\"startDate\":null}",
-                "{\"server\":\"CN\",\"year\":null,\"name\":\"Summer\",\"startDate\":null}",
-                "{\"server\":\"CN\",\"year\":2026.5,\"name\":\"Summer\",\"startDate\":null}",
-                "{\"server\":\"CN\",\"year\":\"2026\",\"name\":\"Summer\",\"startDate\":null}")) {
+                "{\"server\":\"CN\",\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}",
+                "{\"server\":\"CN\",\"year\":null,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}",
+                "{\"server\":\"CN\",\"year\":2026.5,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}",
+                "{\"server\":\"CN\",\"year\":\"2026\",\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}")) {
             mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
                     .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))).contentType("application/json").content(body))
                     .andExpect(status().isBadRequest());
         }
         verifyNoInteractions(context.getBean(BroadcastService.class));
     }
+    @Test void localizedRequestsRequireBothNamesAndAllowOmittedRussian() throws Exception {
+        final String body = "{\"server\":\"CN\",\"year\":2026,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null}";
+        for (final String missing : List.of("nameZh", "nameEn")) {
+            final var tree = new JsonMapper().readTree(body);
+            ((tools.jackson.databind.node.ObjectNode) tree).remove(missing);
+            mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+                    .contentType("application/json").content(tree.toString())).andExpect(status().isBadRequest());
+            final var update = (tools.jackson.databind.node.ObjectNode) tree;
+            update.remove("server"); update.put("expectedVersion",2);
+            mvc.perform(put("/api/admin/tournament-broadcasts/seasons/1")
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+                    .contentType("application/json").content(update.toString())).andExpect(status().isBadRequest());
+        }
+        verifyNoInteractions(context.getBean(BroadcastService.class));
+        mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
+                .contentType("application/json").content(body)).andExpect(status().isOk());
+        final ArgumentCaptor<BroadcastDtos.SeasonCreate> request = ArgumentCaptor.forClass(BroadcastDtos.SeasonCreate.class);
+        verify(context.getBean(BroadcastService.class)).createSeason(request.capture());
+        assertEquals("夏季赛",request.getValue().nameZh()); assertEquals("Summer",request.getValue().nameEn());
+        assertEquals(null,request.getValue().nameRu());
+    }
     @Test void multipartJsonUsesTheSameStrictDtoForCreateAndUpdate() throws Exception {
-        final String json = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupLabel\":\"Group 12\",\"groupNumber\":null,\"bracket\":null,\"teams\":[\"Followed\",\"Other\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"}";
+        final String json = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupNumber\":12,\"bracket\":null,\"teams\":[\"Followed\",\"Other\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"}";
         final MockMultipartFile payload = new MockMultipartFile("payload", "", "application/json", json.getBytes(StandardCharsets.UTF_8));
         mvc.perform(multipart(HttpMethod.PUT, "/api/admin/tournament-broadcasts/replays/4").file(payload)
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isOk());
         final ArgumentCaptor<BroadcastDtos.ReplaySave> request = ArgumentCaptor.forClass(BroadcastDtos.ReplaySave.class);
         verify(context.getBean(BroadcastService.class)).updateReplay(eq(4L), request.capture(), eq(null));
-        assertEquals(LocalDate.of(2026,10,16), request.getValue().matchDate()); assertEquals(9, request.getValue().dayNumber());
+        assertEquals(LocalDate.of(2026,10,16), request.getValue().matchDate()); assertEquals(9, request.getValue().dayNumber()); assertEquals(12, request.getValue().groupNumber());
         final MockMultipartFile malformed = new MockMultipartFile("payload", "", "application/json",
                 json.replace("\"dayNumber\":9", "\"dayNumber\":2.5").getBytes(StandardCharsets.UTF_8));
         mvc.perform(multipart("/api/admin/tournament-broadcasts/nodes/3/replays").file(malformed)
@@ -126,10 +157,10 @@ class BroadcastHttpTest {
         mvc.perform(post("/api/admin/tournament-broadcasts/seasons")
                 .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))
                 .contentType("application/json")
-                .content("{\"server\":\"CN\",\"year\":2026,\"name\":\"Summer\",\"startDate\":null,\"serverOverride\":\"LESTA\"}"))
+                .content("{\"server\":\"CN\",\"year\":2026,\"nameZh\":\"夏季赛\",\"nameEn\":\"Summer\",\"startDate\":null,\"serverOverride\":\"LESTA\"}"))
                 .andExpect(status().isBadRequest());
-        final String replay = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupLabel\":\"Group 12\",\"groupNumber\":null,\"bracket\":null,\"teams\":[\"Followed\",\"Other\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"";
-        for (final String extra : List.of("\"nodeId\":42", "\"roundNumber\":4", "\"format\":\"KNOCKOUT\"")) {
+        final String replay = "{\"expectedVersion\":2,\"title\":\"Title\",\"url\":\"https://example.org/replay\",\"matchDate\":\"2026-10-16\",\"dayNumber\":9,\"groupNumber\":12,\"bracket\":null,\"teams\":[\"Followed\",\"Other\"],\"perspective\":\"POV\",\"coverAction\":\"KEEP\"";
+        for (final String extra : List.of("\"groupLabel\":\"A\"", "\"nodeId\":42", "\"roundNumber\":4", "\"format\":\"KNOCKOUT\"")) {
             final MockMultipartFile payload = new MockMultipartFile("payload","","application/json",
                     (replay + "," + extra + "}").getBytes(StandardCharsets.UTF_8));
             mvc.perform(multipart("/api/admin/tournament-broadcasts/nodes/3/replays").file(payload)
@@ -146,7 +177,7 @@ class BroadcastHttpTest {
                 .andExpect(header().string("ETag", "\"" + "a".repeat(64) + "\""));
     }
     private static BroadcastDtos.Season season() {
-        return new BroadcastDtos.Season(1,"LESTA",2026,"Summer",null,Instant.parse("2026-10-16T00:00:00Z"),2,1,1);
+        return new BroadcastDtos.Season(1,"LESTA",2026,"夏季赛","Summer",null,null,Instant.parse("2026-10-16T00:00:00Z"),2,1,1);
     }
     @Configuration @EnableWebMvc
     @Import({SecurityConfig.class, ApiErrorTestConfig.class, GlobalExceptionHandler.class})

@@ -9,9 +9,9 @@ vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ re
 vi.mock('../utils/http.js', async original => ({ ...await original<object>(), apiFetch: state.fetch }))
 import { broadcastCoverUrl, createBroadcastNode, getBroadcastCategory, listBroadcasts, saveBroadcastReplay, validateBroadcast } from './league-broadcasts.js'
 
-const season = { id: 1, server: 'CN' as const, year: 2026, name: 'Summer', startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
+const season = { id: 1, server: 'CN' as const, year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
 const detail: BroadcastCategoryView = { season, category: { id: 2, seasonId: 1, type: 'POINTS' }, nodes: [{ id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }], coverUploadAvailable: true }
-const payload: BroadcastReplaySave = { expectedVersion: 0, title: 'Final', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7, groupLabel: 'Group A', groupNumber: null, bracket: null, teams: ['A', 'B'], perspective: 'POV', coverAction: 'KEEP' }
+const payload: BroadcastReplaySave = { expectedVersion: 0, title: 'Final', url: 'https://example.org/watch', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['A', 'B'], perspective: 'POV', coverAction: 'KEEP' }
 const response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
 beforeEach(() => {
   vi.clearAllMocks(); state.online = true; state.epoch = 0
@@ -26,7 +26,8 @@ describe('broadcast HTTP boundary', () => {
     expect(validateBroadcast('BroadcastCategoryView', detail).nodes[0].roundNumber).toBe(1)
     expect(() => validateBroadcast('BroadcastCategoryView', { ...detail, nodes: undefined })).toThrow('INVALID_RESPONSE')
     expect(() => validateBroadcast('BroadcastSeason', { ...season, server: 'RU' })).toThrow('INVALID_RESPONSE')
-    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 5 })).toThrow('INVALID_RESPONSE')
+    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 5 })).not.toThrow()
+    expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, groupNumber: 0 })).toThrow('INVALID_RESPONSE')
     expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, dayNumber: 7 })).not.toThrow()
   })
   it('uses public reads without waiting for authentication or attaching a bearer', async () => {
