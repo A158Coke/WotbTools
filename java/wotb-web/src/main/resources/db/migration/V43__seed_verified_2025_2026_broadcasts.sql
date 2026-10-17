@@ -1,6 +1,6 @@
 -- Reviewed 2025/2026 tournament broadcasts; one evidenced representative battle pair per stream.
 -- Source: docs/research/broadcast-seed-2025-2026/seed-ready-2025-2026-verified.json
--- Source SHA-256 (UTF-8, LF): c6c4c55c50d557ccd9c4666c86e1ac77c65ee83c19d3012fcbc73d3c87a562d4
+-- Source SHA-256 (UTF-8, LF): 1b9eab4d7784175e08ac11013e267980b6dce5d95b83e284fff6f688d41b792d
 -- Live-start UTC remains in source evidence; only its regional calendar date is imported.
 -- Confirmed groups are preserved; unknown groups remain NULL. No network access or overwrite of administrator-owned data.
 DO $seed$
@@ -1533,7 +1533,7 @@ DECLARE
       "url": "https://www.youtube.com/watch?v=VWT0AE2RmWc",
       "matchDate": "2025-03-16",
       "startsAt": null,
-      "dayNumber": 3,
+      "dayNumber": 2,
       "groupNumber": 1,
       "bracket": "DEFAULT",
       "teams": [
@@ -1562,7 +1562,7 @@ DECLARE
       "url": "https://www.youtube.com/watch?v=GU9PXRxLG2I",
       "matchDate": "2025-03-16",
       "startsAt": null,
-      "dayNumber": 3,
+      "dayNumber": 2,
       "groupNumber": 1,
       "bracket": "DEFAULT",
       "teams": [
@@ -1692,8 +1692,8 @@ DECLARE
     "server": "EU",
     "year": 2025,
     "season": {
-      "nameZh": "Blitz Diamond Cup",
-      "nameEn": "Blitz Diamond Cup",
+      "nameZh": "Blitz Diamond Cup — Challengers",
+      "nameEn": "Blitz Diamond Cup — Challengers",
       "nameRu": null,
       "startDate": null
     },
@@ -1707,7 +1707,7 @@ DECLARE
       "url": "https://www.youtube.com/watch?v=OyMQG6OR27o",
       "matchDate": "2025-09-05",
       "startsAt": null,
-      "dayNumber": 3,
+      "dayNumber": 1,
       "groupNumber": 1,
       "bracket": "DEFAULT",
       "teams": [
@@ -1910,7 +1910,7 @@ DECLARE
       "url": "https://www.youtube.com/watch?v=2Te4Q2hwn7g",
       "matchDate": "2025-03-16",
       "startsAt": null,
-      "dayNumber": 3,
+      "dayNumber": 2,
       "groupNumber": 1,
       "bracket": "DEFAULT",
       "teams": [
@@ -1939,7 +1939,7 @@ DECLARE
       "url": "https://www.youtube.com/watch?v=1rPFxY60wXs",
       "matchDate": "2025-03-16",
       "startsAt": null,
-      "dayNumber": 3,
+      "dayNumber": 2,
       "groupNumber": 1,
       "bracket": "DEFAULT",
       "teams": [

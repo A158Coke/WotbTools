@@ -5119,7 +5119,7 @@
         "url": "https://www.youtube.com/watch?v=VWT0AE2RmWc",
         "matchDate": "2025-03-16",
         "startsAt": null,
-        "dayNumber": 3,
+        "dayNumber": 2,
         "groupNumber": 1,
         "bracket": "DEFAULT",
         "teams": [
@@ -5178,6 +5178,18 @@
           "stage": "Second stage",
           "stageRule": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/837/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "March15 is DE Day1; March16 is DE Day2. Do not continue day numbering from the preceding Round Robin stage.",
+          "selectedMatchStage": "March16 lower-bracket final or grand final"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=KTFGqgr9ee8",
+          "sourceType": "same-date-stage-title-corroboration",
+          "text": "World of Tanks Blitz - Blitz Masters - Final Stages - Day 2; same EU local date2025-03-16."
         }
       ],
       "officialSameDayMatches": [
@@ -5232,7 +5244,7 @@
         "url": "https://www.youtube.com/watch?v=GU9PXRxLG2I",
         "matchDate": "2025-03-16",
         "startsAt": null,
-        "dayNumber": 3,
+        "dayNumber": 2,
         "groupNumber": 1,
         "bracket": "DEFAULT",
         "teams": [
@@ -5291,6 +5303,18 @@
           "stage": "Second stage",
           "stageRule": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/837/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "March15 is DE Day1; March16 is DE Day2. Do not continue day numbering from the preceding Round Robin stage.",
+          "selectedMatchStage": "March16 lower-bracket final or grand final"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=KTFGqgr9ee8",
+          "sourceType": "same-date-stage-title-corroboration",
+          "text": "World of Tanks Blitz - Blitz Masters - Final Stages - Day 2; same EU local date2025-03-16."
         }
       ],
       "officialSameDayMatches": [
@@ -5932,8 +5956,8 @@
       "server": "EU",
       "year": 2025,
       "season": {
-        "nameZh": "Blitz Diamond Cup",
-        "nameEn": "Blitz Diamond Cup",
+        "nameZh": "Blitz Diamond Cup — Challengers",
+        "nameEn": "Blitz Diamond Cup — Challengers",
         "nameRu": null,
         "startDate": null
       },
@@ -5947,7 +5971,7 @@
         "url": "https://www.youtube.com/watch?v=OyMQG6OR27o",
         "matchDate": "2025-09-05",
         "startsAt": null,
-        "dayNumber": 3,
+        "dayNumber": 1,
         "groupNumber": 1,
         "bracket": "DEFAULT",
         "teams": [
@@ -6005,6 +6029,25 @@
           },
           "stage": "Final stage",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/855/",
+          "sourceType": "official-competition-level",
+          "text": "Challengers tournament; Middle Echelon, eight entrants; finals September 5–6. Kept in a separate named event from Professionals."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/watch-blitz/v1/streams/1212/",
+          "sourceType": "official-distinct-tournament-identity",
+          "tournamentTmsId": 13929,
+          "text": "Challengers tournament; separate Middle Echelon championship, not the Professionals Tournament."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/855/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Final stage. September 5-6: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September5 is final-stage Day1, September6 Day2; preceding September3–4 group-stage days do not carry over.",
+          "selectedMatchId": 146440,
+          "selectedMatchStage": "First upper-bracket round in the four-team final stage"
         }
       ],
       "officialSameDayMatches": [
@@ -6066,6 +6109,7 @@
         }
       ],
       "sourcePlayability": "verified_replay_candidate",
+      "competitionLevel": "Challengers / Middle Echelon",
       "streamStartedAt": "2025-09-05T17:36:48Z"
     },
     {
@@ -6271,6 +6315,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/856/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "First upper-bracket round",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
@@ -6412,6 +6464,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/856/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "Lower-bracket final",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
@@ -6523,6 +6583,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/856/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "Lower-bracket final",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
@@ -6636,6 +6704,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/856/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "Lower-bracket final",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
@@ -6749,6 +6825,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://eu.wotblitz.com/en/api/tournaments/856/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "Lower-bracket final",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
@@ -6803,7 +6887,7 @@
         "url": "https://www.youtube.com/watch?v=2Te4Q2hwn7g",
         "matchDate": "2025-03-16",
         "startsAt": null,
-        "dayNumber": 3,
+        "dayNumber": 2,
         "groupNumber": 1,
         "bracket": "DEFAULT",
         "teams": [
@@ -6862,6 +6946,13 @@
           "stage": "Second stage",
           "stageRule": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://na.wotblitz.com/en/api/tournaments/769/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "March15 is DE Day1; March16 is DE Day2. Do not continue day numbering from the preceding Round Robin stage.",
+          "selectedMatchStage": "March16 lower-bracket final or grand final"
         }
       ],
       "officialSameDayMatches": [
@@ -6916,7 +7007,7 @@
         "url": "https://www.youtube.com/watch?v=1rPFxY60wXs",
         "matchDate": "2025-03-16",
         "startsAt": null,
-        "dayNumber": 3,
+        "dayNumber": 2,
         "groupNumber": 1,
         "bracket": "DEFAULT",
         "teams": [
@@ -6975,6 +7066,13 @@
           "stage": "Second stage",
           "stageRule": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://na.wotblitz.com/en/api/tournaments/769/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. March 15-16: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "March15 is DE Day1; March16 is DE Day2. Do not continue day numbering from the preceding Round Robin stage.",
+          "selectedMatchStage": "March16 lower-bracket final or grand final"
         }
       ],
       "officialSameDayMatches": [
@@ -7088,6 +7186,14 @@
           "stage": "Second stage",
           "stageRule": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
           "inference": "User-authorized representative battle selection: official full-session broadcast plus one same-event completed match scheduled within the live interval; parallel matches may exist. Not video-frame reviewed. Scheduled time not imported."
+        },
+        {
+          "url": "https://na.wotblitz.com/en/api/tournaments/787/",
+          "sourceType": "official-stage-and-day-classification",
+          "stageQuote": "Second stage. September 10-11: Double Elimination, 4 teams, 1 group.",
+          "dayRule": "September10 is this DE stage Day1; September11 is Day2. Use the event server local date; UTC may be a different calendar day.",
+          "selectedMatchStage": "Lower-bracket final",
+          "top6Clarification": "The top two Round Robin teams qualify directly to Cup Finals; positions3–6 (four teams) play this Double Elimination stage. Top6/Top5 video titles describe overall remaining placements and do not make this a six-team bracket."
         }
       ],
       "officialSameDayMatches": [
