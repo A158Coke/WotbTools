@@ -159,6 +159,10 @@ export function calculate(req) {
   const layers = [] // 每层结果
   let firstArmorAngleDeg = -1.0
   let firstArmorNormDeg = -1.0
+  // 已处理的实际装甲层数（间隙甲/主装甲；外部模块是 flat 消耗，不计入）。
+  // 「转正只作用于首个装甲层」按它判定，而不是命中序号——动能弹击穿外部模块后
+  // 仍保留转正/2×口径增强转正资格（用户 2026-10-17 裁示）。
+  let armorLayerCount = 0
   let ricochet = false
   let ricochetRemainingPen = 0.0
 
@@ -214,18 +218,24 @@ export function calculate(req) {
 
       if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = angleDeg
 
-      // Overmatch（对齐 BlitzKit）：3× 口径（>厚度×3，或 index>0，或出射射线）→ 强制不跳弹；
-      // 2× 口径 → 增强转正。
-      const threeCalibersRule = caliber > thickness * 3.0 || layerIndex > 0 || !allowRicochet
+      // Overmatch（对齐 BlitzKit）：3× 口径（caliber > 厚度×3）→ 该层不跳弹；2× 口径 →
+      // 增强转正。跳弹抑制另含「此前已有任何命中层」与出射射线（allow_ricochet=false）：
+      // 炮弹已经穿过一层（含外部模块）后沿原方向继续，不再跳弹（用户 2026-10-13/2026-10-17 裁示）。
+      // overmatch 字段只表示真实的 3× 口径规则，不再用 layerIndex / allow_ricochet 冒充。
+      const threeCalibersRule = caliber > thickness * 3.0
+      const noRicochet = threeCalibersRule || layerIndex > 0 || !allowRicochet
       isOvermatch = threeCalibersRule
       const twoCalibersRule = caliber > thickness * 2.0
 
-      const normalization = twoCalibersRule
+      // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0、normDeg=0（HEAT/缺失）时
+      // 会得到 0/0=NaN，使该层等效厚度 NaN、误判 BLOCKED。0mm 板必须保持等效 0，
+      // 由剩余穿深决定是否穿透；正厚度才应用 2× 增强转正。
+      const normalization = twoCalibersRule && thickness > 0.0
         ? (1.4 * normDeg * caliber) / (2.0 * thickness)
         : normDeg
 
-      // 跳弹：入射角 ≥ 跳弹角 且 未 overmatch（HEAT/HE 跳弹角=90° 永不触发）
-      if (!threeCalibersRule && angleDeg >= ricochetDeg) {
+      // 跳弹：入射角 ≥ 跳弹角 且 未被抑制（HEAT/HE 跳弹角=90° 永不触发）
+      if (!noRicochet && angleDeg >= ricochetDeg) {
         ricochet = true
         ricochetRemainingPen = remainingPen * 0.75
         layers.push({
@@ -241,19 +251,21 @@ export function calculate(req) {
         break
       }
 
-      // 转正只作用于**首个装甲层**（WG 语义，用户 2026-10-13 裁示）：击穿第一层后炮弹保持
-      // 出射方向，后续层不再转正（跳弹同理——threeCalibersRule 的 layerIndex>0 已置位）。
+      // 转正只作用于**首个实际装甲层**（WG 语义，用户 2026-10-13 裁示）：击穿第一层装甲后
+      // 炮弹保持出射方向，后续装甲层不再转正。外部模块是 flat 消耗、不是装甲层——击穿它
+      // **不消耗**首层转正资格（用户 2026-10-17 裁示：仍要考虑转正和口径碾压效应）。
       // 与 BlitzKit 的逐层转正有意分歧，注释存档。
-      const effNormalization = layerIndex > 0 ? 0.0 : normalization
+      const effNormalization = armorLayerCount === 0 ? normalization : 0.0
       // blitzkit 对所有弹种统一应用 shell.normalization（HEAT/HE 数据即为 0）
       const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
       // blitzkit 无下限钳制；1e-6 仅防 90° 时 cos 变负（f64 下 blitzkit 为正）
       eff = thickness / Math.max(Math.cos(finalAngle), 1e-6)
 
-      if (firstArmorNormDeg < 0.0) firstArmorNormDeg = normalization
+      if (firstArmorNormDeg < 0.0) firstArmorNormDeg = effNormalization
 
       // HE 命中非 Primary（间隙甲）：blitzkit 标 blocked，但穿深照常消耗
       layerPenetrated = (isPrimary(ah.section) || !isHe) && remainingPen > eff
+      armorLayerCount++
     }
 
     totalEffective += eff

@@ -101,6 +101,8 @@ function armorLayoutProbe() {
     pickerClose: box('#tp-close'),
     pickerSearch: box('#tp-search'),
     pickerFilters: ['#tp-tier', '#tp-nation', '#tp-type'].map((selector) => box(selector)),
+    pickerFilterToggle: box('[data-testid="filter-toggle"]'),
+    pickerSheet: box('[data-testid="tank-filters"][role="dialog"]'),
     targetSelect: box('#target-select'),
     configSelect: box('#config-select'),
     eqOpts: [...document.querySelectorAll('#tank-selectors .eq-opt')].map((label) => {
@@ -413,11 +415,35 @@ async function runMobileScenario(env, scenario) {
       `${label}: 关闭键超出 armor-view 右缘（right=${picker.pickerClose.right} root right=${picker.root.right}）`)
     check(failures, picker.pickerSearch.top >= picker.pickerTitle.bottom - 1,
       `${label}: 搜索框没有独占一行（search top=${picker.pickerSearch.top} title bottom=${picker.pickerTitle.bottom}）`)
-    const [tier, nation, type] = picker.pickerFilters
-    check(failures, tier && nation && type && Math.abs(tier.top - nation.top) <= 2 && Math.abs(nation.top - type.top) <= 2,
-      `${label}: 三个筛选下拉不在同一行（tops=${picker.pickerFilters.map((filter) => filter?.top)}）`)
-    for (const [index, filter] of picker.pickerFilters.entries()) {
-      check(failures, filter && filter.height >= 43.5, `${label}: 筛选下拉 #${index} 高度 ${filter?.height}px，低于 44px`)
+    // 共享 TankCatalogMenu：手机筛选收进 chips + sheet（与坦克百科同一实现），
+    // 不再在弹窗头部平铺三个下拉。搜索框与筛选入口都必须满足 44px 命中区。
+    check(failures, picker.pickerSearch.height >= 43.5,
+      `${label}: 选车搜索框高度 ${picker.pickerSearch.height}px，低于 44px`)
+    check(failures, picker.pickerFilterToggle && Math.min(picker.pickerFilterToggle.width, picker.pickerFilterToggle.height) >= 43.5,
+      `${label}: 筛选入口 ${JSON.stringify(picker.pickerFilterToggle)}，低于 44px`)
+    if (picker.pickerFilterToggle) {
+      await page.tap({
+        x: picker.pickerFilterToggle.left + Math.round(picker.pickerFilterToggle.width / 2),
+        y: picker.pickerFilterToggle.top + Math.round(picker.pickerFilterToggle.height / 2),
+        touch: scenario.touch,
+      })
+      const sheet = await page.waitForValue(`(${pickerSheetProbe.toString()})()`, value => value?.sheet === true && value.boxes.every(box => box?.visible),
+        { timeout: 5000, label: 'picker filter sheet' }).catch(() => null)
+      check(failures, !!sheet && sheet.boxes.every(box => box && box.height >= 43.5) && sheet.done && sheet.done.height >= 43.5,
+        `${label}: 筛选 sheet 的筛选控件/完成按钮缺失或低于 44px（boxes=${JSON.stringify(sheet?.boxes)} done=${JSON.stringify(sheet?.done)}）`)
+      // 关闭 sheet：优先点「完成」按钮（确定性入口；scrim 点击在弹窗叠层下时序不稳定）。
+      const done = await page.evaluate(`(() => {
+        const el = document.querySelector('[data-testid="filter-sheet-done"]')
+        if (!el) return null
+        const rect = el.getBoundingClientRect()
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, visible: rect.width > 0 && rect.height > 0 }
+      })()`)
+      check(failures, !!done?.visible, `${label}: 筛选 sheet 缺少可点击的「完成」按钮`)
+      if (done?.visible) {
+        await page.tap({ x: done.x, y: done.y, touch: scenario.touch })
+      }
+      await page.waitForValue(`!document.querySelector('[data-testid="tank-filters"][role="dialog"]')`, value => value === true,
+        { timeout: 5000, label: 'picker filter sheet closed' }).catch(() => {})
     }
     // 关闭弹窗：真实点击关闭键
     await page.tap({ x: picker.pickerClose.left + Math.round(picker.pickerClose.width / 2), y: picker.pickerClose.top + Math.round(picker.pickerClose.height / 2), touch: scenario.touch })
@@ -717,6 +743,7 @@ const PICKER_TANK_CACHE = {
     return [id, { ...FIXTURE_TANK_CACHE[FIXTURE_TANK_ID], id, name: `Picker Medium ${String(index).padStart(3, '0')}` }]
   })),
 }
+const PICKER_PAGE_SIZE = 48   // 共享 TankCatalogMenu 的首屏页大小（useIncrementalList 默认）
 const PICKER_SCENARIOS = ['showcase', 'classic'].flatMap(profile => [
   { name: `armor-picker-390x844-${profile}`, width: 390, height: 844, touch: true, profile },
   { name: `armor-picker-1024x768-${profile}`, width: 1024, height: 768, touch: false, profile },
@@ -729,16 +756,16 @@ function pickerCardsProbe() {
   const cards = [...grid.querySelectorAll('.tank-card')]
   const clipped = cards.filter(card => {
     const outer = card.getBoundingClientRect()
-    const children = [...card.querySelectorAll('.tc-img, .tc-name, .tc-meta')]
+    const children = [...card.querySelectorAll('.tp-media, .tp-card-name, .tp-badges')]
     return children.length !== 3 || children.some(child => {
       const inner = child.getBoundingClientRect(), style = getComputedStyle(child)
       return inner.width <= 0 || inner.height <= 0 || style.visibility === 'hidden'
         || inner.top < outer.top - 1 || inner.bottom > outer.bottom + 1
     })
   })
-  const first = cards[0], outer = first?.getBoundingClientRect(), name = first?.querySelector('.tc-name')?.getBoundingClientRect()
+  const first = cards[0], outer = first?.getBoundingClientRect(), name = first?.querySelector('.tp-card-name')?.getBoundingClientRect()
   const hit = name ? document.elementFromPoint(name.left + name.width / 2, name.top + name.height / 2) : null
-  const last = cards.at(-1), lastName = last?.querySelector('.tc-name')?.getBoundingClientRect()
+  const last = cards.at(-1), lastName = last?.querySelector('.tp-card-name')?.getBoundingClientRect()
   const lastHit = lastName ? document.elementFromPoint(lastName.left + lastName.width / 2, lastName.top + lastName.height / 2) : null
   const rect = grid.getBoundingClientRect()
   return {
@@ -751,11 +778,41 @@ function pickerCardsProbe() {
     wheel: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
   }
 }
+/** 共享 TankCatalogMenu 的手机筛选 sheet 探针：四个筛选控件在 dialog 内可见。 */
+function pickerSheetProbe() {
+  const sheet = document.querySelector('[data-testid="tank-filters"][role="dialog"]')
+  const boxes = ['#tp-tier', '#tp-nation', '#tp-type', '#tp-sort'].map(selector => {
+    const el = document.querySelector(selector)
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    return { width: Math.round(rect.width), height: Math.round(rect.height), visible: rect.width > 0 && rect.height > 0 }
+  })
+  const doneEl = document.querySelector('[data-testid="filter-sheet-done"]')
+  const doneRect = doneEl ? doneEl.getBoundingClientRect() : null
+  const done = doneRect
+    ? { width: Math.round(doneRect.width), height: Math.round(doneRect.height), visible: doneRect.width > 0 && doneRect.height > 0 }
+    : null
+  return { sheet: !!sheet, boxes, done }
+}
 async function runPickerCardsScenario(env, scenario) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
+  const PICKER_TOTAL = Object.keys(PICKER_TANK_CACHE).length
+  /** 真实滚轮逐页加载到目标条数（共享 useIncrementalList 每页 PICKER_PAGE_SIZE）。 */
+  const exhaustPicker = async (total) => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const count = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
+      if (count >= total) return count
+      const probe = await page.probe(pickerCardsProbe)
+      await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...probe.wheel, deltaX: 0, deltaY: probe.scrollHeight }, sessionId)
+      // 等名册实际增长（IO 回调 + Vue patch 可能超过一帧），而不是固定延时。
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, next => next > count,
+        { timeout: 3000, label: 'roster growth after wheel' }).catch(() => {})
+    }
+    return page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
+  }
   await page.enable(); await page.emulate(scenario)
   await page.goto(`${env.origin}/?view=home&ws-auth=1`)
   await page.evaluate(`localStorage.setItem('wotb-ui-profile', ${JSON.stringify(scenario.profile)})`)
@@ -773,8 +830,13 @@ async function runPickerCardsScenario(env, scenario) {
   await delay(80)
   const controls = await page.probe(armorLayoutProbe)
   await page.tap({ x: controls.targetSelect.left + controls.targetSelect.width / 2, y: controls.targetSelect.top + controls.targetSelect.height / 2, touch: scenario.touch })
-  await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 90,
-    { timeout: 5000, label: 'first roster chunk' })
+  await page.waitFor(() => !!document.querySelector('#tank-picker.open') && document.querySelectorAll('#tp-grid .tank-card').length >= 48,
+    { timeout: 5000, label: 'first roster page' })
+  // 大视口首屏会自动续页（IntersectionObserver 在哨兵可见时追加）；等它稳定后再取初始快照。
+  if (scenario.fillViewport) {
+    await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > PICKER_PAGE_SIZE,
+      { timeout: 5000, label: 'large viewport auto-fills' }).catch(() => {})
+  }
   const initial = await page.probe(pickerCardsProbe)
   check(failures, await page.evaluate('document.documentElement.dataset.uiProfile') === scenario.profile,
     `${scenario.name}: requested presentation profile must be active`)
@@ -782,22 +844,28 @@ async function runPickerCardsScenario(env, scenario) {
     `${scenario.name}: picker clips image/name/metadata or hides the name hit target: ${JSON.stringify(initial)}`)
   check(failures, initial.scrollHeight > initial.clientHeight && !initial.overflowX,
     `${scenario.name}: roster must scroll vertically without horizontal overflow: ${JSON.stringify(initial)}`)
-  check(failures, scenario.fillViewport ? initial.count > 90 : initial.count === 90,
-    `${scenario.name}: fill a large viewport while retaining ordinary chunking: ${JSON.stringify(initial)}`)
+  check(failures, scenario.fillViewport ? initial.count > PICKER_PAGE_SIZE : initial.count === PICKER_PAGE_SIZE,
+    `${scenario.name}: first page fills/chunks the viewport as expected: ${JSON.stringify(initial)}`)
   if (failures.length === 0) {
     if (scenario.resize) {
       await page.emulate({ ...scenario, width: 3840, height: 2160, deviceScaleFactor: 1 })
-      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
-        { timeout: 5000, label: 'resize refills the visible picker before scrolling' })
+      // 视口扩大只靠 IO 续页：先不送滚轮，断言 resize 确实追加了一页（共享增量列表
+      // 只补到可滚动，不要求一次到全量）；滚动加载剩余页在下一步单独测试。
+      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count > initial.count,
+        { timeout: 5000, label: 'resize appends a page without input' }).catch(() => {})
+      const resized = await page.evaluate(`document.querySelectorAll('#tp-grid .tank-card').length`)
+      check(failures, resized > initial.count,
+        `${scenario.name}: resize must append a page before scrolling (${resized}/${PICKER_TOTAL}, initial ${initial.count})`)
     }
-    const beforeScroll = await page.probe(pickerCardsProbe)
-    await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...beforeScroll.wheel, deltaX: 0, deltaY: beforeScroll.scrollHeight }, sessionId)
-    await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === Object.keys(PICKER_TANK_CACHE).length,
-      { timeout: 5000, label: 'scroll loads the remaining roster chunk' })
+    const loadedCount = await exhaustPicker(PICKER_TOTAL)
+    check(failures, loadedCount === PICKER_TOTAL,
+      `${scenario.name}: scroll loads the remaining roster pages (${loadedCount}/${PICKER_TOTAL})`)
     if (scenario.fillViewport) {
+      await page.evaluate(`document.getElementById('tp-search')?.focus()`)
       await env.chrome.client.send('Input.insertText', { text: 'Picker' }, sessionId)
-      await page.waitForValue(`document.querySelectorAll('#tp-grid .tank-card').length`, count => count === 120,
-        { timeout: 5000, label: 'filter refills the large visible picker' })
+      const filteredCount = await exhaustPicker(120)
+      check(failures, filteredCount === 120,
+        `${scenario.name}: filter refills the large visible picker (${filteredCount}/120)`)
     }
     const loaded = await page.probe(pickerCardsProbe)
     await env.chrome.client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...loaded.wheel, deltaX: 0, deltaY: loaded.scrollHeight }, sessionId)
@@ -840,6 +908,9 @@ async function runStaggeredLoadScenario(env, scenario) {
   await page.emulate(scenario)
   await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.staggeredAssets)}`)
   await page.waitFor(() => !!document.querySelector('[data-testid="armor-stage"]'), { label: 'armor stage' })
+  // viewer 静态控件事件必须先挂上；按钮置灰期内的程序化点击会被浏览器忽略（真实用户同样点不动）。
+  await page.waitFor(() => { const button = document.getElementById('collision-btn'); return !!button && !button.disabled },
+    { timeout: 10000, label: 'viewer controls ready' })
   const beforeLoad = await page.evaluate('window.__LOAD__')
   check(failures, beforeLoad !== 'ok:' + FIXTURE_TANK_ID,
     `${scenario.name}: visual 在开启碰撞前已完成，竞态未被复现（__LOAD__=${beforeLoad}）`)
