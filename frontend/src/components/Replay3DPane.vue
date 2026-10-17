@@ -13,7 +13,7 @@ import { gunMarksByAccount } from '../utils/gunMarks.js'
  */
 import { cumulativeStatsAtV2, healthDisplayAt, lifeAt, positionAtV2, positionCoveredAtV2 } from '../utils/battlePlaybackV2.ts'
 import { detailsDamageLogAtV2 } from '../utils/playbackDetails.js'
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
@@ -40,7 +40,7 @@ import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
-import { PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -88,6 +88,14 @@ const uiHidden = ref(false)
 const displayOpen = ref(false)
 const displayAnchor = ref(null)
 function toggleDisplay(anchor) { displayAnchor.value = anchor; displayOpen.value = !displayOpen.value }
+
+const controlsCollapsed = ref(false)
+const controlsContentId = useId()
+function toggleControls() {
+  controlsCollapsed.value = !controlsCollapsed.value
+  if (controlsCollapsed.value) displayOpen.value = false
+}
+watch(() => props.file, () => { controlsCollapsed.value = false })
 /** 紧凑档：手机形态（见 usePlaybackPhoneForm —— 宽度 <768 **或** 触屏且视口高 ≤500，
  *  后者命中手机全屏横屏）。**不能用纯宽度断点**：手机竖屏 412×915 全屏后是 915×412，
  *  按宽度会突然判成平板、把收起来的 controls 又展开。与 2D 共用同一份 form-factor 契约。 */
@@ -674,54 +682,65 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 
       <!-- 隐藏全部 UI：连底部播放控件一起让位（这是「只看战场」的语义）；
            `H` 键或右上角常驻按钮随时恢复。resize 观测对 null 元素是安全的（watch(controlsEl)）。 -->
-      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel">
+      <div v-if="store.hasData && !uiHidden" ref="controlsEl" class="controls panel" :class="{ 'controls-collapsed': controlsCollapsed }">
         <div class="pb-quick-actions">
-          <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
-            <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
-            {{ t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
-          </button>
-          <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
-            <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
+          <template v-if="!controlsCollapsed">
+            <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
+              <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
+              {{ t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
+            </button>
+            <button type="button" class="pb-quick-action" data-test="pb-declutter" :aria-pressed="declutterActive" :title="t('recon.map.playback.declutter_hint_3d')" @click="toggleDeclutter('hidden')">
+              <ScanEye :size="18" aria-hidden="true" /> {{ t('recon.map.playback.declutter') }}
+            </button>
+          </template>
+          <button type="button" class="controls-toggle pb-quick-action" data-testid="replay3d-controls-toggle"
+            :aria-expanded="!controlsCollapsed" :aria-controls="controlsContentId"
+            :aria-label="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+            :title="t(controlsCollapsed ? 'agentReplay.expand_toolbar' : 'agentReplay.collapse_toolbar')"
+            @click="toggleControls">
+            <component :is="controlsCollapsed ? ChevronUp : ChevronDown" :size="18" aria-hidden="true" />
           </button>
         </div>
-        <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
-        <PlaybackTransport
-          :fullscreen-supported="fullscreenSupported"
-          :is-fullscreen="isFullscreen"
-          :display-open="displayOpen"
-          display-enabled
-          @toggle-fullscreen="toggleFullscreen()"
-          @toggle-display="toggleDisplay"
-          :playing="store.playing"
-          :speed="store.speed"
-          :speeds="PLAYBACK_SPEEDS"
-          :current-time="store.time"
-          :start-time="store.startTime"
-          :duration="store.duration"
-          :step-seconds="PLAYBACK_STEP_SECONDS"
-          :compact="isPhone"
-          @toggle-play="transport.togglePlay()"
-          @step="sceneApi.seekBy($event)"
-          @set-speed="sceneApi.setSpeed($event)"
-          @seek="sceneApi.seekTime($event)"
-          @scrub-start="store.seeking = true; transport.scrubStart()"
-          @scrub-end="store.seeking = false; transport.scrubEnd()"
-        >
-        </PlaybackTransport>
-        <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
-        <div class="tool-row" data-testid="replay3d-toolrow" data-tour="replay3d-camera">
-          <span class="dim">{{ t('agentReplay.camera') }}</span>
-          <SegmentedControl
-            class="camera-control"
-            data-testid="replay3d-camera"
-            :model-value="store.cam"
-            :options="CAMERAS"
-            :aria-label="t('agentReplay.camera')"
-            @update:model-value="chooseCamera($event)"
-          />
-          <label class="toggle" :title="store.glbAllowed ? '' : t(store.glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
-            <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
-          </label>
+        <div v-show="!controlsCollapsed" :id="controlsContentId" class="controls-content">
+          <!-- 与 2D 回放同一套传输控件（时间轴 / 倍速 / mm:ss 一致） -->
+          <PlaybackTransport
+            :fullscreen-supported="fullscreenSupported"
+            :is-fullscreen="isFullscreen"
+            :display-open="displayOpen"
+            display-enabled
+            @toggle-fullscreen="toggleFullscreen()"
+            @toggle-display="toggleDisplay"
+            :playing="store.playing"
+            :speed="store.speed"
+            :speeds="PLAYBACK_SPEEDS"
+            :current-time="store.time"
+            :start-time="store.startTime"
+            :duration="store.duration"
+            :step-seconds="PLAYBACK_STEP_SECONDS"
+            :compact="isPhone"
+            @toggle-play="transport.togglePlay()"
+            @step="sceneApi.seekBy($event)"
+            @set-speed="sceneApi.setSpeed($event)"
+            @seek="sceneApi.seekTime($event)"
+            @scrub-start="store.seeking = true; transport.scrubStart()"
+            @scrub-end="store.seeking = false; transport.scrubEnd()"
+          >
+          </PlaybackTransport>
+          <!-- 高频查看动作直接陈列（2026-10-05 需求：从 Display 菜单移出）：镜头挡位 + GLB 车模 -->
+          <div class="tool-row" data-testid="replay3d-toolrow" data-tour="replay3d-camera">
+            <span class="dim">{{ t('agentReplay.camera') }}</span>
+            <SegmentedControl
+              class="camera-control"
+              data-testid="replay3d-camera"
+              :model-value="store.cam"
+              :options="CAMERAS"
+              :aria-label="t('agentReplay.camera')"
+              @update:model-value="chooseCamera($event)"
+            />
+            <label class="toggle" :title="store.glbAllowed ? '' : t(store.glbOn ? 'agentReplay.glb_forced_hint' : 'agentReplay.glb_gate_hint')">
+              <input type="checkbox" data-testid="disp-glb" :checked="store.glbOn" :disabled="!store.glbAllowed" @change="sceneApi.setGlb($event.target.checked)"> {{ t('agentReplay.glb') }}
+            </label>
+          </div>
         </div>
       </div>
 
@@ -959,6 +978,14 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .controls {
   z-index: var(--pb-z-hud);
   display: flex; flex-direction: column; gap: var(--space-2);
+}
+.controls-content { display: flex; flex-direction: column; gap: var(--space-1); }
+.controls-toggle { margin-inline-start: auto; min-inline-size: var(--hit-min-comfortable); min-block-size: var(--hit-min-comfortable); }
+.pb-root.playback-workspace > .controls.controls-collapsed {
+  inline-size: fit-content;
+  margin-inline-start: auto;
+  margin-inline-end: var(--space-2);
+  padding: 0;
 }
 .toggle { display: flex; gap: var(--space-1); align-items: center; min-height: var(--hit-min); color: var(--color-text-secondary); cursor: pointer; }
 .tool-btn {
