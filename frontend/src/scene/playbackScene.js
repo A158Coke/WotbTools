@@ -37,7 +37,7 @@ import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
          groundLayerKeys, setupGroundTextures, buildCorridorRefineMask } from './groundPass.js'
 // 装配规则 SSOT（2026-10-14 抽层）：水面语义判定与俯视烘焙共用同一份——
 // 此前烘焙自持一份名字启发式、未随本文件的"材质标记权威"修复同步而漂移（见该模块头部）
-import { strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
+import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
 // 场景装配 SSOT（extras 贴图解 + 逐节点材质分派；2026-10-14 抽层——本文件与俯视烘焙
 // 共用同一份，用户裁示"直接用它的代码"）：下方引用其 resolve/makeTexResolvers/assemble
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from './sceneryAssembly.js'
@@ -1227,6 +1227,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       if (!gltf || !gltf.scene) noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
       if (gltf && gltf.scene) {
+        // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
+        // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
+        const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
         // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
         // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
         // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
@@ -1290,6 +1293,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
           groundLayers, waterCoast, debug: DEBUG,
           onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
+          skyFlagsAvailable,
         });
 
         // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
