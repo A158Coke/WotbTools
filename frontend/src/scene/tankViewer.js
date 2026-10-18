@@ -402,6 +402,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
                 highp float spacedEff = 0.0;
+                // 8 位回退格式 R 饱和：累计值只知 >=1，真实消耗未知；不得当成恰好
+                // 一份穿深去算高斯 CDF（200mm 间隙甲/100mm 穿深会被算成 14%）。
+                // fail-closed：直接按 blocked 概率处理。
+                bool spacedSatBlocked = false;
                 // 间隙甲 CDF 的区间基准：若 RT1 最近覆盖层是外部模块，模块 flat 在
                 // 间隙甲之前消耗，间隙层 CDF 必须用 P−moduleFlat；否则用原始 P。
                 // 均值必须保留符号：模块厚于穿深时区间仍可能保留正向尾部
@@ -416,8 +420,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   // （SPACED_FRAG 与 EXTERNAL_FRAG 同口径）；不再用 RT1 最近层差额修正。
                   // 累计值可能 >1：半浮点 RT 保留；8 位回退在 R 饱和时按整穿深保守处理。
                   highp float rawTotal = spacedData.r;
-                  highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
-                    ? 1.0 : max(0.0, rawTotal);
+                  spacedSatBlocked = spacedSatGuard > 0.5 && rawTotal >= 1.0;
+                  highp float totalConsume = spacedSatBlocked ? 1.0 : max(0.0, rawTotal);
                   // B = 外部模块 flat 消耗；从总消费中分离间隙甲 normalized effective。
                   highp float moduleFlat = max(0.0, spacedData.b * penetration);
                   spacedEff = max(0.0, totalConsume * penetration - moduleFlat);
@@ -429,7 +433,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   pMin -= totalConsume * penetration;
                   pMax -= totalConsume * penetration;
                   rem -= spacedThick;
-                  if (isExplosive && rem > 0.0) {
+                  // 爆炸弹即使 rem<=0 也要走这里：名义被间隙甲耗尽仍是 SPLASH/BLOCKED，
+                  // 不能落进通用贯穿 CDF（100mm HE 打 100mm 间隙甲会伪造概率色）。
+                  if (isExplosive) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
                     float primaryDist = getDist(sc, gl_FragCoord.z);
                     // 深度反投影得到视空间距离；场景原生米制，metersPerUnit=1（恒等）
@@ -438,18 +444,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                       float finalDamage = 0.5 * damage * (1.0 - distArmor / explosionRadius) - 1.1 * (finalThick + spacedThick);
                       splashChance = step(0.0, finalDamage);
                       penChance = 0.0;
-                    } else {
+                    } else if (rem > 0.0) {
                       // HEAT gap decay：与 penetration.js 同一 0.5/m；概率区间同样衰减。
                       float gapLoss = max(0.0, 1.0 - 0.5 * distArmor);
                       pMin *= gapLoss;
                       pMax *= gapLoss;
                       rem -= 0.5 * rem * distArmor;
+                    } else {
+                      penChance = 0.0;   // HEAT 被间隙甲耗尽
                     }
                   }
                 }
                 if (penChance < 0.0) {
                   // 均值与宽度同时传播：σ = (max-min)/6，不得按扣减后的 rem 重算。
-                  if (pMax <= 0.0) {
+                  if (spacedSatBlocked) {
+                    // 8 位 R 饱和：真实累计厚度未知，按 blocked 处理（fail-closed）。
+                    penChance = 0.0;
+                  } else if (pMax <= 0.0) {
                     penChance = 0.0;
                   } else {
                     highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
