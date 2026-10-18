@@ -231,14 +231,14 @@ try {
       assert.ok(await page.evaluate(`document.querySelector('[data-testid=broadcast-replay-40]').textContent.includes(${JSON.stringify(groupLabel)})`), 'group number follows the UI language')
       assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-display-time-zone]").value'), 'server')
       await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('19:00') && value.includes('UTC+8'))
-      await fill(page, { 'broadcast-display-time-zone': 'UTC' })
-      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('11:00 UTC'))
-      await geometry(page)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
         await writeFile(join(screenshots, `${scenario.name}.png`), Buffer.from(image.data, 'base64'))
       }
+      await fill(page, { 'broadcast-display-time-zone': 'UTC' })
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('11:00 UTC'))
+      await geometry(page)
       if (!scenario.geometryOnly) {
         await page.goto(`${origin}/?view=league-broadcasts&lbServer=CN&ws-auth=1&ws-roles=wotbtools-admin`)
         await tap(page, '[data-testid=broadcast-edit-season-10]', scenario.touch)
