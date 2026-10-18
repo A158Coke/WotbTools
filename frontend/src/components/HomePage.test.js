@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
+import { VIEW_COMPONENTS } from '../app/viewRegistry.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 
 const api = vi.hoisted(() => ({
@@ -41,6 +42,20 @@ function mountPage(onboarding = null) {
 }
 
 const stat = (wrapper, index) => wrapper.findAll('.home-stats .home-stat')[index]
+
+/**
+ * 一个链接真正去往哪里 —— 按 **组件对象的引用** 判定，不是 href 字符串、也不是组件名。
+ * `?view=replay` / `?view=ai-review` / `?view=battle-playback` 是三个不同的 href，
+ * 却都落在同一个 ReplayWorkspace（viewRegistry.js:30-32）：比字符串会把它们当三个入口。
+ * 比组件名同样不行 —— 这些 view 是懒加载的，每个都叫 AsyncComponentWrapper。
+ */
+function destinationOf(href) {
+  const view = /^\/\?view=([\w-]+)$/.exec(href || '')?.[1]
+  if (!view) return href
+  return VIEW_COMPONENTS[view] ?? href
+}
+
+const hrefsOf = wrapper => wrapper.findAll('a').map(a => a.attributes('href')).filter(Boolean)
 
 describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
@@ -146,26 +161,52 @@ describe('HomePage information architecture — every entry appears exactly once
   })
 
   /**
-   * 本次重排的核心不变量。重排前首页是三份互相重复的导航副本：回放解析四次、
+   * 本次重排的核心不变量。重排前首页是三份互相重复的导航副本：回放四次、
    * AI 复盘 / 战局重建 / 名人堂 / 赞助 / Android 各两次。这条断言是那次回归的护栏。
    */
-  it('no navigation target is duplicated anywhere on the page', () => {
+  it('no destination is duplicated anywhere on the page', () => {
     const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
-    const targets = wrapper.findAll('a').map(a => a.attributes('href')).filter(Boolean)
-    const duplicated = targets.filter((href, index) => targets.indexOf(href) !== index)
-    expect(duplicated, `duplicated entries: ${duplicated.join(', ')}`).toEqual([])
+    const firstHrefFor = new Map()
+    const duplicated = []
+    for (const href of hrefsOf(wrapper)) {
+      const destination = destinationOf(href)
+      if (firstHrefFor.has(destination)) duplicated.push(`${href} (same destination as ${firstHrefFor.get(destination)})`)
+      else firstHrefFor.set(destination, href)
+    }
+    expect(duplicated, `duplicated destinations: ${duplicated.join('; ')}`).toEqual([])
     wrapper.unmount()
   })
 
-  it('replay parsing is owned by the single hero primary CTA', () => {
+  // 上一条按组件引用去重的前提。前提一旦不成立（比如 ai-review 真的拆成独立页面），
+  // 这里先红，提醒重新判断它该不该作为一级功能上首页。
+  it('the five replay views really are one component', () => {
+    for (const view of ['ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
+      expect(VIEW_COMPONENTS[view], view).toBe(VIEW_COMPONENTS.replay)
+    }
+  })
+
+  /**
+   * 首页只放一级功能：回放工作台的五个能力（data / 3d / shots / playback / ai）是同一个
+   * ReplayWorkspace 的 tab，不是独立目的地，因此整页只能有 Hero 那一个回放入口。
+   */
+  it('the replay workspace is reachable only through the single hero primary CTA', () => {
     const wrapper = mountPage()
-    const replayLinks = wrapper.findAll('a[href="/?view=replay"]')
-    expect(replayLinks).toHaveLength(1)
+    const toWorkspace = hrefsOf(wrapper).filter(href => destinationOf(href) === VIEW_COMPONENTS.replay)
+    expect(toWorkspace).toEqual(['/?view=replay'])
+
     const primary = wrapper.get('.home-cta-primary')
     expect(primary.text()).toBe('home.replayParse')
     expect(primary.attributes('href')).toBe('/?view=replay')
     expect(primary.classes()).toContain('is-primary')
     expect(wrapper.findAll('.home-hero-actions .is-primary')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('no replay capability tab is surfaced as its own homepage entry', () => {
+    const wrapper = mountPage()
+    for (const view of ['ai-review', 'battle-playback', 'agent-replay', 'agent-shots']) {
+      expect(wrapper.find(`a[href="/?view=${view}"]`).exists(), view).toBe(false)
+    }
     wrapper.unmount()
   })
 
@@ -191,23 +232,18 @@ describe('HomePage information architecture — every entry appears exactly once
     wrapper.unmount()
   })
 
-  it('core features are AI review, battle playback and the Hall of Fame', () => {
+  it('the Hall of Fame leads the feature section — it owns the numbers in the stat band', () => {
     const wrapper = mountPage()
-    const cards = wrapper.findAll('.home-core-card')
-    expect(cards.map(card => card.attributes('href'))).toEqual([
-      '/?view=ai-review',
-      '/?view=battle-playback',
-      '/?view=hof',
-    ])
-    expect(cards[0].find('h3').text()).toBe('home.aiReview')
-    expect(cards[0].find('.home-core-action').text()).toBe('home.aiReview')
-    expect(cards[2].find('h3').text()).toBe('hof.btn')
+    const lead = wrapper.get('.home-feature-lead')
+    expect(lead.attributes('href')).toBe('/?view=hof')
+    expect(lead.find('h3').text()).toBe('hof.btn')
+    expect(lead.find('.home-feature-action').text()).toBe('hof.btn')
     wrapper.unmount()
   })
 
   it('surfaces the four entries that only existed in the sidebar before', () => {
     const wrapper = mountPage()
-    const cards = wrapper.findAll('.home-community-card')
+    const cards = wrapper.findAll('.home-feature-card')
     expect(cards.map(card => card.attributes('href'))).toEqual([
       '/?view=agent-tankopedia',
       '/?view=tournament-points',
@@ -247,7 +283,7 @@ describe('HomePage information architecture — every entry appears exactly once
 
   it('the three duplicated panels of the previous homepage are gone', () => {
     const wrapper = mountPage()
-    for (const selector of ['.replay-panel', '.analysis-panel', '.quick-panel', '.feature-card', '.record-card']) {
+    for (const selector of ['.replay-panel', '.analysis-panel', '.quick-panel', '.feature-card', '.record-card', '.home-core-card']) {
       expect(wrapper.find(selector).exists(), selector).toBe(false)
     }
     expect(wrapper.text()).not.toContain('upload.select_files')
