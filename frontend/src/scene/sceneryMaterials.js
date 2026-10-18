@@ -99,7 +99,6 @@ export function makeBillboardMaterial(m) {
       uniform float uOccMean;
       uniform float uProdClamp;
       uniform float uAlphaCut;
-      uniform float uOpacity;
       varying vec2 vUv;
       varying float vOcc;
       #include <logdepthbuf_pars_fragment>
@@ -165,6 +164,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       uniform sampler2D map;
       uniform vec3 uSH;
       uniform float uAlphaCut;
+      uniform float uOpacity;
       varying vec2 vUv;
       varying float vOcc;
       #include <logdepthbuf_pars_fragment>

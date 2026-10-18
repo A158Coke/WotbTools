@@ -25,6 +25,7 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.depthWrite).toBe(false)
     expect(mat.uniforms.uAlphaCut.value).toBeCloseTo(0.05)
     expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/uniform float uOpacity;/)
     expect(mat.fragmentShader).toMatch(/c\.a \* uOpacity/)
     // 无标记的伪透明仍走原有裁切启发式
     const old = makeSpeedtreeStaticMaterial(plainPseudo('ST|leaf'), true)
@@ -40,6 +41,7 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.defines.ALPHA_BLEND).toBe(1)
     expect(mat.uniforms.uAlphaCut.value).toBe(0)
     expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/uniform float uOpacity;/)
     expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(color, c\.a \* uOpacity\);/)
     const old = makeLightmappedMaterial(plainPseudo('lm'), new THREE.Texture(), null, null)
     expect(old.transparent).toBe(false)
@@ -54,6 +56,7 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.defines.ALPHA_BLEND).toBe(1)
     expect(mat.uniforms.uAlphaCut.value).toBe(0)
     expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/uniform float uOpacity;/)
     expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(base\.rgb \* uTint \* shadowColor \* 2\.0, base\.a \* uOpacity\);/)
     const old = makeDecalMaterial(plainPseudo('decal'), new THREE.Texture(), null, {})
     expect(old.transparent).toBe(false)
