@@ -179,6 +179,9 @@ async function load(key, span = 600, mapId = null) {
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer
+  // 包级天空标记必须在**任何剔除之前**采样：变体组里的唯一 sky 节点被裁掉后，再从
+  // 缩减场景重算会退化为 false，bakeDropNode 会误启 /sky/ 名字 fallback。
+  const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)
   // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）
   pruneForeignVariants(gltf.scene, mapId)
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
@@ -196,7 +199,6 @@ async function load(key, span = 600, mapId = null) {
   const strictSurfaces = strictSurfacesOf(gltf.scene)
   // 新包天空语义 = 材质 extras.sky（导出器按 Skyobject 模板写入）；旧包无 sky 标记才按名字。
   // 烘焙与 3D 运行时同判，避免"名字不含 sky 的天穹被烘进俯视图 / 名字含 sky 的非天穹被剔"。
-  const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)
   const drop = []
   gltf.scene.traverse((o) => {
     const nm = o.name || ''

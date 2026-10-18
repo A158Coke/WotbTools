@@ -6,6 +6,7 @@ import {
   strictSurfacesOf, materialIsWater, isWaterNode, isSkyShellName,
   isNonIntactStateName, bakeDropNode, materialHasSky, sceneHasSkyFlags, isSkyShell,
 } from './sceneryAssemblyRules.js'
+import { pruneForeignVariants } from './variantFilter.js'
 
 const water = () => ({ userData: { water: { props: {} } } })
 const sky = () => ({ userData: { sky: true } })
@@ -55,6 +56,27 @@ describe('sceneryAssemblyRules：水面语义（SSOT）', () => {
     // 只要存在 sky 标记就认材质语义，与 surfaceFlags/strictSurfaces 无关
     expect(isSkyShell('bld_x.sc2', sky(), { skyFlagsAvailable: true })).toBe(true)
     expect(isSkyShell('sky_dome', plain(), { skyFlagsAvailable: true })).toBe(false)
+  })
+
+  it('包级 sky 标记在变体裁剪前采样：被裁变体里的唯一 sky 不触发名字 fallback', () => {
+    const root = { userData: { variantByMapId: { 1: 'md1' } }, children: [],
+      remove: (c) => { root.children = root.children.filter((x) => x !== c) } }
+    const add = (node) => {
+      node.parent = root
+      node.children = node.children || []
+      node.remove = (c) => { root.children = root.children.filter((x) => x !== c) }
+      root.children.push(node)
+      return node
+    }
+    add({ userData: { mdVariant: 'md2' }, isMesh: true, material: sky(), children: [] })
+    add({ userData: { mdVariant: 'md1' }, isMesh: true, name: 'sky_dome', material: plain(), children: [] })
+    const flags = sceneHasSkyFlags(root)
+    expect(flags).toBe(true)
+    pruneForeignVariants(root, 1)
+    expect(sceneHasSkyFlags(root)).toBe(false)
+    // 正确顺序：用裁剪前的 flags=true ⇒ 普通 sky_dome 保留；重算 false 会误剔
+    expect(bakeDropNode('sky_dome', plain(), { strictSurfaces: true, keepWater: true, skyFlagsAvailable: flags })).toBe(false)
+    expect(bakeDropNode('sky_dome', plain(), { strictSurfaces: true, keepWater: true, skyFlagsAvailable: false })).toBe(true)
   })
 
   it('isSkyShellName（旧包 fallback）：/sky/ ——穹顶建筑/舱室不再被当天空壳', () => {
