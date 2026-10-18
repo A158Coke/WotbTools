@@ -107,7 +107,10 @@ describe('useAuth', () => {
 
   it('普通浏览器 → BrowserAuthProvider：生产 issuer 配置 + check-sso，initPromise 正常落定', async () => {
     const auth = useAuth()
+
+    // initPromise 只是"bootstrap 已落定"这个事件：刻意不 resolve 任何值，避免被当成 session truth。
     await expect(auth.initPromise).resolves.toBeUndefined()
+
     expect(kcInstances).toHaveLength(1)
     expect(kcInstances[0].config).toEqual({
       url: 'https://auth.wotbtools.com',
@@ -130,7 +133,9 @@ describe('useAuth', () => {
     kcScenario.initResult = true
     kcScenario.tokenParsed = ADMIN_CLAIMS
     const auth = useAuth()
+
     await expect(auth.retryAuth()).resolves.toBe(true)
+
     expect(auth.authInitState.value).toBe('authenticated')
     expect(auth.authenticated.value).toBe(true)
     expect(auth.isAuthenticated()).toBe(true)
@@ -151,7 +156,9 @@ describe('useAuth', () => {
       },
     })
     const auth = useAuth()
+
     await expect(auth.retryAuth()).resolves.toBe(true)
+
     expect(native.calls.map(call => call.method)).toEqual([
       'getBridgeVersion',
       'getCapabilities',
@@ -171,7 +178,9 @@ describe('useAuth', () => {
     const keycloakBefore = kcInstances.length
     const native = stubNative({ getBridgeVersion: 3, getCapabilities: ['replay-open', 'app-update'] })
     const auth = useAuth()
+
     await expect(auth.retryAuth()).resolves.toBe(false)
+
     expect(auth.authInitState.value).toBe('failed')
     expect(auth.initFailureReason.value).toBe('init-error')
     expect(auth.initError.value.code).toBe('NATIVE_AUTH_UNSUPPORTED')
@@ -189,7 +198,9 @@ describe('useAuth', () => {
       authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
     })
     const auth = useAuth()
+
     await expect(auth.retryAuth()).resolves.toBe(false)
+
     expect(auth.authInitState.value).toBe('failed')
     expect(auth.initFailureReason.value).toBe('init-error')
     expect(auth.initError.value.name).toBe('NATIVE_AUTH_UNSUPPORTED')
@@ -206,7 +217,9 @@ describe('useAuth', () => {
   it('Android 报不出 bridge 版本（null）→ unsupported：原因显式，不猜能力', async () => {
     const native = stubNative({ getBridgeVersion: null })
     const auth = useAuth()
+
     await expect(auth.retryAuth()).resolves.toBe(false)
+
     expect(auth.initError.value.code).toBe('NATIVE_AUTH_UNSUPPORTED')
     expect(auth.initError.value.reason).toBe('bridge-version-unknown')
     expect(native.calls.map(call => call.method)).toEqual(['getBridgeVersion'])
@@ -218,6 +231,7 @@ describe('useAuth', () => {
     await auth.retryAuth()
     expect(auth.authenticated.value).toBe(false)
     expect(typeof window.wotbtoolsOnAuthChanged).toBe('function')
+
     native.results.authGetState = { authenticated: true, expiresAt: 1_700_000_100 }
     native.results.authGetAccessToken = {
       token: 'fresh-token',
@@ -226,6 +240,7 @@ describe('useAuth', () => {
       error: null,
     }
     window.wotbtoolsOnAuthChanged()
+
     await vi.waitFor(() => expect(auth.authenticated.value).toBe(true))
     expect(auth.authInitState.value).toBe('authenticated')
     expect(auth.tokenParsed.value).toEqual(USER_CLAIMS)
@@ -236,22 +251,476 @@ describe('useAuth', () => {
   it('login(view) 在浏览器里带 ?view= 回到本页，且不注入 idpHint', async () => {
     const auth = useAuth()
     await auth.retryAuth()
+
     await auth.login('profile')
-    expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({ redirectUri: expect.stringContaining('view=profile') }))
-    expect(kcLogin).not.toHaveBeenCalledWith(expect.objectContaining({ idpHint: expect.any(String) }))
+
+    expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({
+      redirectUri: expect.stringContaining('view=profile'),
+    }))
+    expect(kcLogin).not.toHaveBeenCalledWith(
+      expect.objectContaining({ idpHint: expect.any(String) }))
+  })
+
+  it('same capability login preserves query and hash; changing destination drops unrelated context', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    window.history.replaceState({}, '', '/?view=agent-replay&replay=abc#selected')
+    try {
+      await auth.login('agent-replay')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).searchParams.get('replay')).toBe('abc')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).hash).toBe('#selected')
+      await auth.login('profile')
+      expect(new URL(kcLogin.mock.calls.at(-1)[0].redirectUri).search).toBe('?view=profile')
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('explicit query-return recovery removes OIDC parameters from the new redirect and preserves product context', async () => {
+    history.replaceState(null, '', '/?view=profile&tank=13825&state=old-state&code=old-code&session_state=old-session&iss=old-issuer#details')
+    try {
+      const auth = useAuth()
+      await auth.retryAuth()
+      expect(auth.authInitState.value).toBe('failed')
+      await auth.login('profile')
+      const redirect = new URL(kcLogin.mock.calls.at(-1)[0].redirectUri)
+      expect(Object.fromEntries(redirect.searchParams)).toEqual({ view: 'profile', tank: '13825' })
+      expect(redirect.hash).toBe('#details')
+      expect(kcInit.mock.calls.at(-1)[0]).not.toHaveProperty('onLoad')
+    } finally {
+      history.replaceState(null, '', '/')
+    }
+  })
+
+  it('login accepts a full armor scene location without losing any scene query', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    const query = {
+      view: 'agent-armor', tank: '13825', shooter: '19969', config: '1', scfg: '0', shell: '0',
+      shot: '2', world: '1', heatmap: '1', az: '45', h: '6', d: '12',
+    }
+    await auth.login({ path: '/', query, hash: '#shot' })
+    const redirect = new URL(kcLogin.mock.calls.at(-1)[0].redirectUri)
+    expect(Object.fromEntries(redirect.searchParams)).toEqual(query)
+    expect(redirect.hash).toBe('#shot')
+    expect(redirect.origin).toBe(window.location.origin)
+  })
+
+  it('login rejects an external destination before handing it to the provider', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+    await expect(auth.login({ path: 'https://external.example/' })).rejects.toThrow('AUTH_REDIRECT_ORIGIN_MISMATCH')
+    expect(kcLogin).not.toHaveBeenCalled()
+    expect(auth.loginInFlight.value).toBe(false)
+  })
+
+  it('Android login() 走 native external user-agent：不导航 WebView、不构造 keycloak-js', async () => {
+    const keycloakBefore = kcInstances.length
+    const native = androidBridge({ authLogin: true })
+    const hrefBefore = window.location.href
+    const auth = useAuth()
+    await auth.retryAuth()
+
+    await expect(auth.login('profile')).resolves.toBe(true)
+
+    expect(native.calls.at(-1)).toEqual({ method: 'authLogin', params: {} })
+    expect(window.location.href).toBe(hrefBefore)
+    expect(kcInstances.length).toBe(keycloakBefore)
+    expect(kcInit).not.toHaveBeenCalled()
+  })
+
+  it('login() 只对「同一进行中的 redirect」去重，失败/取消后必须能重新发起', async () => {
+    const auth = useAuth()
+    await auth.retryAuth()
+
+    let rejectFirst
+    kcLogin.mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+    const first = auth.login('replay')
+    await vi.waitFor(() => expect(auth.loginInFlight.value).toBe(true))
+
+    // 同一个进行中的 redirect：不重复发起（不产生第二次导航）
+    await expect(auth.login('replay')).resolves.toBe(false)
+
+    rejectFirst(new Error('AUTH_NAVIGATION_FAILED'))
+    await expect(first).rejects.toThrow('AUTH_NAVIGATION_FAILED')
+    // 不是 component-lifetime 锁：失败后必须回到可重试状态
+    expect(auth.loginInFlight.value).toBe(false)
+
+    kcLogin.mockImplementationOnce(() => Promise.resolve(true))
+    await expect(auth.login('ai-review')).resolves.toBe(true)
+    expect(kcLogin).toHaveBeenLastCalledWith(expect.objectContaining({
+      redirectUri: expect.stringContaining('view=ai-review'),
+    }))
+    expect(auth.loginInFlight.value).toBe(false)
+  })
+
+  it('SDK rejection without an error still provides an explicit authentication failure', async () => {
+    kcScenario.initImpl = () => Promise.reject(undefined)
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initError.value).toBeInstanceOf(Error)
+    expect(auth.initError.value.message).toBe('AUTH_INIT_FAILED')
+    expect(auth.authenticated.value).toBe(false)
+  })
+
+  it('init reject becomes an explicit failed recovery state', async () => {
+    kcScenario.initImpl = () => Promise.reject(new Error('fixture init failed'))
+    const auth = useAuth()
+
+    await expect(auth.retryAuth()).resolves.toBe(false)
+
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initFailureReason.value).toBe('init-error')
+    expect(auth.initError.value.message).toBe('fixture init failed')
+    expect(auth.initialized.value).toBe(true)
+  })
+
+  it('watchdog settles a permanently pending init without changing auth to anonymous', async () => {
+    vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
+    const auth = useAuth()
+
+    const pending = auth.retryAuth()
+    await vi.advanceTimersByTimeAsync(12_000)
+
+    await expect(pending).resolves.toBe(false)
+    expect(auth.authInitState.value).toBe('failed')
+    expect(auth.initFailureReason.value).toBe('init-timeout')
+    expect(auth.authenticated.value).toBe(false)
+  })
+
+  it('retry before the watchdog settles the abandoned public promise', async () => {
+    vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
+    const auth = useAuth()
+
+    const oldInit = auth.retryAuth()
+    // provider 解析本身是异步的一步：先让上一代真正进入 init，否则它会在 init 之前就被放弃。
+    await Promise.resolve()
+    expect(kcInit).toHaveBeenCalledTimes(1)
+
+    kcScenario.initImpl = null
+    const newInit = auth.retryAuth()
+
+    await expect(oldInit).resolves.toBe(false)
+    await expect(newInit).resolves.toBe(false)
+    expect(auth.authInitState.value).toBe('unauthenticated')
+  })
+
+  it('late completion from an abandoned generation cannot overwrite the new generation', async () => {
+    vi.useFakeTimers()
+    const auth = useAuth()
+
+    let resolveOld
+    kcScenario.initImpl = () => new Promise(resolve => { resolveOld = resolve })
+    const oldInit = auth.retryAuth()
+    await vi.advanceTimersByTimeAsync(12_000)
+    const abandonedAdapter = kcInstances.at(-1)
+    await oldInit
+
+    // 被放弃的一代晚到，而且带着「已登录」的 adapter 状态。
+    abandonedAdapter.authenticated = true
+    abandonedAdapter.tokenParsed = { displayName: 'stale' }
+    kcScenario.initImpl = null
+    await auth.retryAuth()
+
+    resolveOld(true)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+  })
+
+  it('login after timeout creates a fresh non-silent adapter transaction', async () => {
+    vi.useFakeTimers()
+    kcScenario.initImpl = () => new Promise(() => {})
+    const auth = useAuth()
+
+    const oldInit = auth.retryAuth()
+    await vi.advanceTimersByTimeAsync(12_000)
+    await oldInit
+    expect(auth.initFailureReason.value).toBe('init-timeout')
+
+    kcScenario.initImpl = null
+    const instancesBefore = kcInstances.length
+    kcLogin.mockResolvedValueOnce(true)
+    await expect(auth.login('replay')).resolves.toBe(true)
+
+    expect(kcInit).toHaveBeenLastCalledWith({ pkceMethod: 'S256', checkLoginIframe: false })
+    expect(kcInstances.length).toBe(instancesBefore + 1)
+    expect(kcLogin).toHaveBeenCalledWith(expect.objectContaining({
+      redirectUri: expect.stringContaining('view=replay'),
+    }))
+    expect(auth.loginInFlight.value).toBe(false)
+  })
+
+  it('logout() 在浏览器里把回跳地址交给 keycloak（落点固定 HOME，不保留登出前 view）', async () => {
+    const auth = useAuth()
+    window.history.replaceState({}, '', '/?view=profile')
+    try {
+      await auth.retryAuth()
+
+      await auth.logout()
+
+      // Phase 5.3：登出落点 = 首页，不是当前 view（否则用户会被 end-session 送回个人中心）
+      expect(kcLogout).toHaveBeenCalledWith({ redirectUri: window.location.origin + '/' })
+    } finally {
+      window.history.replaceState({}, '', '/')
+    }
+  })
+
+  it('logout() 是 local-first：提交 provider 之前本地状态就已清空（当前页面立即 signed-out）', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    // 让 provider.logout 挂起：本地清理不得等它
+    let releaseLogout
+    kcLogout.mockImplementationOnce(() => new Promise((resolve) => { releaseLogout = resolve }))
+    const pending = auth.logout()
+
+    expect(auth.authenticated.value).toBe(false)      // 未等网络就落回未登录（Phase 5.4）
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.tokenParsed.value).toBe(null)
+
+    releaseLogout()
+    await pending
+  })
+
+  it('initPromise 只是落定信号：logout 后既不携带历史 session，也不会被重建', async () => {
+    // Android 2.1.0 真机 bug 的契约面：init 交易在第一次 authenticated 时落定，logout 只投影
+    // reactive session。若 initPromise 交出一个 boolean，重挂载的组件就会把它当成"现在已登录"。
+    // （本文件的模块态跨用例存活，所以用 retryAuth() 建立"本次已认证的交易"，与其它用例同规则。）
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.isAuthenticated()).toBe(true)
+
+    await auth.logout()
+    expect(auth.isAuthenticated()).toBe(false)
+
+    // 组件重新挂载 = 再调一次 useAuth()：拿到同一笔已落定的交易，但绝不交出历史 true。
+    const remounted = useAuth()
+    await expect(remounted.initPromise).resolves.toBeUndefined()
+    expect(remounted.isAuthenticated()).toBe(false)
+    expect(remounted.authenticated.value).toBe(false)
+  })
+
+  it('logout() 在 Android 上**离线也强制清 Native 本地会话**（远端 end-session 才是 best-effort）', async () => {
+    // review blocker 1：Native（Keystore）才是 Android 会话的持久 owner。离线时若整条
+    // authLogout 都不调用，本地会话残留 → 重启 / auth 同步会把用户"复活"成已登录。
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token', expiresAt: 1_700_000_000, claims: ADMIN_CLAIMS, error: null,
+      },
+      authLogout: true,
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      expect(useConnectivity().connectivity.value).toBe('offline')
+
+      await auth.logout()
+
+      // 本地会话清理必须已发到 Native（远端 end-session 由 Native 内部 best-effort）
+      expect(native.calls.at(-1)).toEqual({ method: 'authLogout', params: {} })
+      expect(auth.authenticated.value).toBe(false)
+      expect(auth.token()).toBe('')
+      expect(auth.authEpoch()).toBeGreaterThan(0)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+    }
+  })
+
+  it('浏览器离线 logout：跳过远端导航但留下"远端未收敛"标记，下一次 init 不静默复登', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      kcLogout.mockClear()
+      await auth.logout()
+
+      // 离线：不导航（浏览器会撞错误页），但登出意图必须留下
+      expect(kcLogout).not.toHaveBeenCalled()
+      expect(auth.hasPendingRemoteLogout()).toBe(true)
+      expect(auth.authenticated.value).toBe(false)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+      window.localStorage.removeItem('wotb-auth-pending-remote-logout')
+    }
+  })
+
+
+  it('身份代数：登录前进、登出再前进、A→B 也前进；同身份刷新 claims 不前进', async () => {
+    // review blocker 2：归属判定必须绑定**身份边界**，而不是 init 交易代数
+    // （Native authChanged 登录、logout、账号切换都发生在同一笔交易里）。
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-a' }
+    const auth = useAuth()
+    const beforeLogin = auth.authEpoch()
+    await auth.retryAuth()
+    const afterLoginA = auth.authEpoch()
+    expect(afterLoginA).toBeGreaterThan(beforeLogin)
+
+    // 同身份重新投影（刷新后 claims 更新）：不前进
+    kcUpdateToken.mockResolvedValueOnce(true)
+    kcInstances.at(-1).tokenParsed = { ...USER_CLAIMS, sub: 'user-a', displayName: 'A renamed' }
+    await auth.ensureToken(30)
+    expect(auth.authEpoch()).toBe(afterLoginA)
+
+    // 账号切换 A → B：前进
+    kcScenario.tokenParsed = { ...USER_CLAIMS, sub: 'user-b' }
+    await auth.retryAuth()
+    const afterSwitchToB = auth.authEpoch()
+    expect(afterSwitchToB).toBeGreaterThan(afterLoginA)
+
+    // 登出：前进（身份回到 null）
+    await auth.logout()
+    expect(auth.authEpoch()).toBeGreaterThan(afterSwitchToB)
+  })
+
+  it('logout() 在**明确离线**时跳过 end-session（best effort），本地照常清空', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+    kcLogout.mockClear()
+    // 明确离线：Phase 9.2——本地立即退出，不依赖 Keycloak 网络。
+    // 连通性状态由 store 经 online/offline 事件维护（直接改 navigator.onLine 不生效）：
+    // 重启 store 让初始读取落在 offline。
+    const { useConnectivity } = await import('./useConnectivity.js')
+    useConnectivity().stop()
+    Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      await useConnectivity().start()
+      expect(useConnectivity().connectivity.value).toBe('offline')
+      await auth.logout()
+      expect(kcLogout).not.toHaveBeenCalled()
+      expect(auth.authenticated.value).toBe(false)
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true })
+      useConnectivity().stop()
+    }
+  })
+
+  it('logout() 在 Android 上调用 native 会话终结并把本地状态落回未登录', async () => {
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token',
+        expiresAt: 1_700_000_000,
+        claims: ADMIN_CLAIMS,
+        error: null,
+      },
+      authLogout: true,
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    await auth.logout()
+
+    expect(native.calls.at(-1)).toEqual({ method: 'authLogout', params: {} })
+    expect(auth.authenticated.value).toBe(false)
+    expect(auth.tokenParsed.value).toBe(null)
+    expect(auth.authInitState.value).toBe('unauthenticated')
+    expect(auth.token()).toBe('')
+    expect(auth.isAuthenticated()).toBe(false)
+  })
+
+  it('ensureToken() Web 瞬时刷新失败保留身份、隐藏 token，并允许后续 refresh 恢复', async () => {
+    kcScenario.initResult = true
+    kcScenario.tokenParsed = USER_CLAIMS
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    kcUpdateToken.mockRejectedValueOnce(new Error('refresh failed'))
+
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
+
+    expect(kcUpdateToken).toHaveBeenCalledWith(30)
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(USER_CLAIMS)
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.token()).toBe('')
+
+    kcInstances.at(-1).token = 'kc-access-token-recovered'
+    kcUpdateToken.mockResolvedValueOnce(true)
+    await expect(auth.ensureToken(30)).resolves.toBe(true)
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.token()).toBe('kc-access-token-recovered')
+  })
+
+  it('ensureToken() Native 离线 refresh-failed 保留 session但返回 false', async () => {
+    const native = androidBridge({
+      authGetState: { authenticated: true, expiresAt: 1_700_000_000 },
+      authGetAccessToken: {
+        token: 'native-token',
+        expiresAt: 1_700_000_000,
+        claims: ADMIN_CLAIMS,
+        error: null,
+      },
+    })
+    const auth = useAuth()
+    await auth.retryAuth()
+    expect(auth.authenticated.value).toBe(true)
+
+    native.results.authGetAccessToken = {
+      token: null,
+      expiresAt: null,
+      claims: null,
+      error: 'refresh-failed',
+    }
+
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
+
+    expect(auth.authenticated.value).toBe(true)
+    expect(auth.tokenParsed.value).toEqual(ADMIN_CLAIMS)
+    expect(auth.authInitState.value).toBe('authenticated')
+    expect(auth.token()).toBe('')
+    native.results.authGetState = { authenticated: false }
+    await expect(auth.ensureToken(30)).resolves.toBe(false)
+    expect(auth.authenticated.value).toBe(false)
   })
 
   it('hasRole / isAdmin / isHofAdmin / displayName 都来自 tokenParsed claims', async () => {
     const auth = useAuth()
     await auth.retryAuth()
+
     auth.tokenParsed.value = { realm_access: { roles: ['wotbtools-admin', 'tournament-admin'] } }
     auth.authenticated.value = true
     expect(auth.hasRole('wotbtools-admin')).toBe(true)
     expect(auth.hasRole('HoF-admin')).toBe(false)
     expect(auth.hasRole('')).toBe(false)
     expect(auth.isAdmin.value).toBe(true)
+    // 全站管理员同时具备 HoF 审核权限。
     expect(auth.isHofAdmin.value).toBe(true)
     expect(auth.isTournamentAdmin.value).toBe(true)
+    // 内容域独立：`wotbtools-admin` 这个原始 claim 本身不展开 composite，必须显式带 content-admin。
     expect(auth.isContentAdmin.value).toBe(false)
     expect(auth.isLeagueBroadcastAdmin.value).toBe(true)
     auth.authenticated.value = false
@@ -283,17 +752,24 @@ describe('useAuth', () => {
     expect(auth.isHofAdmin.value).toBe(false)
     expect(auth.isTournamentAdmin.value).toBe(false)
 
+    // WG / QQ 登录：displayName = 官方昵称 / QQ 昵称，preferred_username 是内部登录名。
     auth.tokenParsed.value = { displayName: 'A158布丁', preferred_username: 'wg_eu_572253806' }
     expect(auth.displayName.value).toBe('A158布丁')
+
+    // 缺 claim 的 token（例如映射未生效的旧 token）：退回登录名，绝不渲染 undefined。
     auth.tokenParsed.value = { preferred_username: 'wg_eu_572253806' }
     expect(auth.displayName.value).toBe('wg_eu_572253806')
+
     auth.tokenParsed.value = null
     expect(auth.displayName.value).toBe('')
   })
 
-  it('?admin=1 不再提供角色旁路，也绝不伪造登录态', async () => {
+  it('?admin=1 只放行角色可见性，绝不伪造登录态（authenticated 仍为 false）', async () => {
+    // 回归锚点：曾有一条"本机验收旁路"把 authenticated 也置真（`authenticated ||= ?admin=1`），
+    // 被误扫进分支后撤出（49d4f757）。此用例在 dev 构建（vitest 下 import.meta.env.DEV=true）
+    // 且 URL 带 admin 参数时，断言「角色旁路生效 + 登录态不生效」两条同时成立。
     window.history.replaceState({}, '', '/?admin=1&view=agent-replay')
-    kcScenario.initResult = false
+    kcScenario.initResult = false // check-sso 未命中：真实未登录
     kcScenario.tokenParsed = null
     kcInit.mockClear()
     try {
@@ -302,13 +778,15 @@ describe('useAuth', () => {
       const auth = fresh.useAuth()
       await auth.initPromise
 
-      expect(auth.hasRole('wotbtools-admin')).toBe(false)
-      expect(auth.hasRole('HoF-admin')).toBe(false)
-      expect(auth.isAdmin.value).toBe(false)
+      // 角色可见性旁路照旧（DEV_ADMIN_ROLES）：管理入口可见
+      expect(auth.hasRole('wotbtools-admin')).toBe(true)
+      expect(auth.hasRole('HoF-admin')).toBe(true)
+      expect(auth.isAdmin.value).toBe(true)
       expect(auth.hasRole('content-admin')).toBe(false)
       expect(auth.isContentAdmin.value).toBe(false)
       expect(auth.isTournamentAdmin.value).toBe(false)
       expect(auth.isLeagueBroadcastAdmin.value).toBe(false)
+      // 但登录态不得被 URL 参数伪造——3D / shots / AI 的登录门必须照旧拦下
       expect(auth.authenticated.value).toBe(false)
       expect(auth.isAuthenticated()).toBe(false)
       expect(auth.authInitState.value).toBe('unauthenticated')
@@ -320,6 +798,8 @@ describe('useAuth', () => {
   })
 
   it('存在"远端登出未收敛"标记时，首屏 init 走 login-recovery（不做 check-sso 静默复登）', async () => {
+    // 真实路径是"页面加载后第一次 initAuth"（每个 useAuth 模块实例只发生一次）：
+    // 用 resetModules 复现首屏，而不是在同一模块态里再 init 一次。
     window.localStorage.setItem('wotb-auth-pending-remote-logout', '1')
     try {
       kcScenario.initResult = true
@@ -329,9 +809,12 @@ describe('useAuth', () => {
       const fresh = await import('./useAuth.js')
       const auth = fresh.useAuth()
       await auth.initPromise
+
+      // login-recovery 模式的 init 选项：无 check-sso（不带 onLoad/silentCheckSsoRedirectUri）
       const lastOptions = kcInit.mock.calls.at(-1)[0]
       expect(lastOptions).not.toHaveProperty('onLoad')
       expect(lastOptions).not.toHaveProperty('silentCheckSsoRedirectUri')
+      // 且标记仍然在（用户显式登录才会清）
       expect(auth.hasPendingRemoteLogout()).toBe(true)
     } finally {
       window.localStorage.removeItem('wotb-auth-pending-remote-logout')
