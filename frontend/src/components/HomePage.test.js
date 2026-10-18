@@ -34,7 +34,9 @@ function mountPage(onboarding = null) {
   })
 }
 
-describe('HomePage highest damage record', () => {
+const stat = (wrapper, index) => wrapper.findAll('.home-stats .home-stat')[index]
+
+describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
     api.hofList.mockReset()
     connectivityState.state.value = 'online'
@@ -45,140 +47,183 @@ describe('HomePage highest damage record', () => {
     // 冷启动：首次检测未完成，HoF 门禁 fail-closed —— 不得在此时请求（请求会被门禁拒绝）
     connectivityState.state.value = 'unknown'
     connectivityState.settled.value = false
-    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }] })
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }], totalItems: 2048 })
     const wrapper = mountPage()
     await flushPromises()
     expect(api.hofList).not.toHaveBeenCalled()
-    expect(wrapper.find('.record-card strong').text()).toBe('--')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('--')
     // 检测完成且在线 → 补加载一次
     connectivityState.state.value = 'online'
     connectivityState.settled.value = true
     await flushPromises()
     expect(api.hofList).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('.record-card strong').text()).toBe('10 483')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('10 483')
     wrapper.unmount()
   })
 
-  it('formats the top damage record with thousands separators (regression: formatDamage regex)', async () => {
-    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }] })
+  it('formats the top damage record with thousands separators (regression: formatCount regex)', async () => {
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }], totalItems: 1 })
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.record-card strong').text()).toBe('10 483')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('10 483')
     wrapper.unmount()
   })
 
   it('formats 123456 as 123 456', async () => {
-    api.hofList.mockResolvedValue({ items: [{ damageDealt: 123456 }] })
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 123456 }], totalItems: 1 })
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.record-card strong').text()).toBe('123 456')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('123 456')
     wrapper.unmount()
   })
 
-  it('shows -- when the leaderboard fails or is empty', async () => {
+  it('reads the record total from the same response — the band costs no extra request', async () => {
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }], totalItems: 2048 })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(api.hofList).toHaveBeenCalledTimes(1)
+    expect(stat(wrapper, 1).find('strong').text()).toBe('2 048')
+    wrapper.unmount()
+  })
+
+  it('shows -- for both numbers when the leaderboard request fails', async () => {
     api.hofList.mockRejectedValue(new Error('down'))
     const wrapper = mountPage()
     await flushPromises()
-    expect(wrapper.find('.record-card strong').text()).toBe('--')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('--')
+    expect(stat(wrapper, 1).find('strong').text()).toBe('--')
     wrapper.unmount()
+  })
+
+  // 「收录 0 条」是事实，「不知道收录多少」是未知态 —— Number(null) === 0 会把后者伪装成前者。
+  it('tells an empty leaderboard (0) apart from a missing total (--)', async () => {
+    api.hofList.mockResolvedValue({ items: [], totalItems: 0 })
+    const empty = mountPage()
+    await flushPromises()
+    expect(stat(empty, 0).find('strong').text()).toBe('--')
+    expect(stat(empty, 1).find('strong').text()).toBe('0')
+    empty.unmount()
+
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483 }] })
+    const missing = mountPage()
+    await flushPromises()
+    expect(stat(missing, 1).find('strong').text()).toBe('--')
+    missing.unmount()
   })
 })
 
-describe('HomePage information architecture — single replay entry point', () => {
+describe('HomePage information architecture — every entry appears exactly once', () => {
   beforeEach(() => {
     api.hofList.mockReset()
-    api.hofList.mockResolvedValue({ items: [] })
+    api.hofList.mockResolvedValue({ items: [], totalItems: 0 })
   })
+
+  /**
+   * 本次重排的核心不变量。重排前首页是三份互相重复的导航副本：回放解析四次、
+   * AI 复盘 / 战局重建 / 名人堂 / 赞助 / Android 各两次。这条断言是那次回归的护栏。
+   */
+  it('no navigation target is duplicated anywhere on the page', () => {
+    const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
+    const targets = wrapper.findAll('a').map(a => a.attributes('href')).filter(Boolean)
+    const duplicated = targets.filter((href, index) => targets.indexOf(href) !== index)
+    expect(duplicated, `duplicated entries: ${duplicated.join(', ')}`).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('replay parsing is owned by the single hero primary CTA', () => {
+    const wrapper = mountPage()
+    const replayLinks = wrapper.findAll('a[href="/?view=replay"]')
+    expect(replayLinks).toHaveLength(1)
+    const primary = wrapper.get('.home-cta-primary')
+    expect(primary.text()).toBe('home.replayParse')
+    expect(primary.attributes('href')).toBe('/?view=replay')
+    expect(primary.classes()).toContain('is-primary')
+    expect(wrapper.findAll('.home-hero-actions .is-primary')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('the hero carries no secondary feature buttons any more', () => {
+    const wrapper = mountPage()
+    const heroLinks = wrapper.findAll('.home-hero-actions a').map(a => a.attributes('href'))
+    expect(heroLinks).toEqual(['/?view=replay'])
+    wrapper.unmount()
+  })
+
   it('opens the complete feature directory from the prominent homepage tutorial button', async () => {
     const start = vi.fn()
     const openDirectory = vi.fn()
     const wrapper = mountPage({ start, openDirectory })
     const tutorial = wrapper.get('[data-testid="home-onboarding"]')
     expect(tutorial.text()).toBe('onboarding.newbie')
-    expect(tutorial.classes()).toContain('hero-guide')
+    expect(tutorial.classes()).toContain('home-cta-guide')
     expect(tutorial.classes()).toContain('is-secondary')
-    expect(wrapper.findAll('.hero-actions .is-primary')).toHaveLength(1)
-    expect(wrapper.find('.hero-guide-hint').text()).toBe('onboarding.newbieHint')
+    expect(wrapper.find('.home-hero-hint').text()).toBe('onboarding.newbieHint')
     await tutorial.trigger('click')
     expect(openDirectory).toHaveBeenCalledTimes(1)
     expect(start).not.toHaveBeenCalled()
-    expect(wrapper.find('a[href="/?view=replay"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('hero primary CTA is Upload Replay → replay view', () => {
+  it('core features are AI review, battle playback and the Hall of Fame', () => {
     const wrapper = mountPage()
-    const primary = wrapper.find('.hero-btn.primary')
-    expect(primary.text()).toBe('home.replayParse')
-    expect(primary.attributes('href')).toBe('/?view=replay')
+    const cards = wrapper.findAll('.home-core-card')
+    expect(cards.map(card => card.attributes('href'))).toEqual([
+      '/?view=ai-review',
+      '/?view=battle-playback',
+      '/?view=hof',
+    ])
+    expect(cards[0].find('h3').text()).toBe('home.aiReview')
+    expect(cards[0].find('.home-core-action').text()).toBe('home.aiReview')
+    expect(cards[2].find('h3').text()).toBe('hof.btn')
     wrapper.unmount()
   })
 
-  it('hero secondary CTA opens the standalone AI Review view', () => {
+  it('surfaces the four entries that only existed in the sidebar before', () => {
     const wrapper = mountPage()
-    const secondary = wrapper.find('.hero-btn.secondary')
-    expect(secondary.text()).toBe('home.aiReview')
-    expect(secondary.attributes('href')).toBe('/?view=ai-review')
+    const cards = wrapper.findAll('.home-community-card')
+    expect(cards.map(card => card.attributes('href'))).toEqual([
+      '/?view=agent-tankopedia',
+      '/?view=tournament-points',
+      '/?view=league-broadcasts',
+      '/?view=recommendations',
+    ])
+    expect(cards.map(card => card.find('span').text())).toEqual([
+      'nav.tankopedia',
+      'tournament.title',
+      'leagueBroadcasts.title',
+      'creators.nav',
+    ])
     wrapper.unmount()
   })
 
-  it('hero exposes a standalone Battle Playback entry', () => {
+  it('creators point at the recommendations view, not the retired creators view', () => {
     const wrapper = mountPage()
-    const actions = wrapper.findAll('.hero-btn')
-    expect(actions[2].text()).toBe('home.battlePlayback')
-    expect(actions[2].attributes('href')).toBe('/?view=battle-playback')
+    expect(wrapper.find('a[href="/?view=creators"]').exists()).toBe(false)
+    expect(wrapper.find('a[href="/?view=recommendations"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('feature card 01 CTA is Explore Battle Analysis, not Upload Replay', () => {
+  it('the footer bar keeps sponsor, Android download and feedback — and nothing the More page already owns', () => {
     const wrapper = mountPage()
-    const action = wrapper.find('.feature-primary .feature-action')
-    expect(action.text()).toBe('home.replayParse')
-    expect(wrapper.find('.feature-primary').attributes('href')).toBe('/?view=replay')
+    const bar = wrapper.get('.home-footer-bar')
+    expect(bar.findAll('a').map(a => a.attributes('href'))).toEqual([
+      '/sponsor',
+      '/download/android',
+      'https://github.com/A158Coke/WotbTools/issues/new',
+    ])
+    // 项目历史 / 技术演进 / 联系我 由 useMoreMenu 的「更多」信息组承载，首页不再抄一份
+    for (const view of ['history', 'technical-evolution', 'contact']) {
+      expect(wrapper.find(`a[href="/?view=${view}"]`).exists(), view).toBe(false)
+    }
     wrapper.unmount()
   })
 
-  it('bottom replay upload panel is removed (no third upload entry point)', () => {
+  it('the three duplicated panels of the previous homepage are gone', () => {
     const wrapper = mountPage()
-    expect(wrapper.find('.replay-panel').exists()).toBe(false)
+    for (const selector of ['.replay-panel', '.analysis-panel', '.quick-panel', '.feature-card', '.record-card']) {
+      expect(wrapper.find(selector).exists(), selector).toBe(false)
+    }
     expect(wrapper.text()).not.toContain('upload.select_files')
-    expect(wrapper.text()).not.toContain('upload.select_folder')
-    wrapper.unmount()
-  })
-
-  it('shows an analysis introduction without claiming a nonexistent recent history', () => {
-    const wrapper = mountPage()
-    const panel = wrapper.find('.analysis-panel')
-    expect(panel.exists()).toBe(true)
-    expect(panel.find('.analysis-title').text()).toBe('home.analysisTitle')
-    expect(panel.find('.analysis-desc').text()).toBe('home.analysisDesc')
-    expect(wrapper.text()).not.toContain('home.recentAnalysisEmptyTitle')
-    const cta = panel.find('.mini-action')
-    expect(cta.text()).toBe('home.uploadReplay')
-    expect(cta.attributes('href')).toBe('/?view=replay')
-    wrapper.unmount()
-  })
-
-  it('quick links panel shows the Android download link for all users (gray removed)', () => {
-    const wrapper = mountPage()
-    const quick = wrapper.find('.quick-panel')
-    expect(quick.exists()).toBe(true)
-    expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('Android download entries are public (no admin-only grayscale)', () => {
-    const wrapper = mountPage()
-    expect(wrapper.find('.hero-btn[href="/download/android"]').exists()).toBe(true)
-    const quick = wrapper.find('.quick-panel')
-    expect(quick.findAll('a').some(a => a.attributes('href') === '/download/android')).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('routes both Sponsor entries to the canonical path', () => {
-    const wrapper = mountPage()
-    expect(wrapper.find('.feature-card[href="/sponsor"]').exists()).toBe(true)
-    expect(wrapper.find('.quick-panel a[href="/sponsor"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

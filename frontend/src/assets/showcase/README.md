@@ -8,15 +8,15 @@
 
 | 资产 | 当前用途 |
 |---|---|
-| `home/card-replay-parser-v1.webp` | 首页回放解析入口插图 |
+| `home/hero-v4.webp`（1920×768，108 KB） | 首页 Hero 装饰插槽（`design-language.md` §2）。`HomePage.vue` import 后经内联 `--home-hero-image` 传给 CSS；插槽开关是 `--home-hero-decor`，Classic Profile 与 `width < 768px` 两种情况下置 `none` |
 | `home/card-ai-review-v1.webp` | 首页 AI 复盘入口插图 |
-| `home/card-battle-playback-v1.webp` | 首页战局回放入口插图 |
+| `home/card-battle-playback-v1.webp` | 首页战局重建入口插图 |
 | `home/card-hall-of-fame-v1.webp` | 首页名人堂入口插图 |
-| `home/card-sponsor-v1.webp` | 首页赞助入口插图 |
-| `home/hero-v4.webp`，其余各页 `*-v1.webp` / SVG | 保留的历史设计素材，当前 SPA 不通过全局背景样式加载 |
+| `home/card-replay-parser-v1.webp`、`home/card-sponsor-v1.webp` | 2026-10-18 首页重排后不再被引用：回放解析由 Hero 的唯一主 CTA 承载、赞助移入页脚条，两处都不再是图片卡。保留作设计参考 |
+| 其余各页 `*-v1.webp` / SVG | 保留的历史设计素材，当前 SPA 不通过全局背景样式加载 |
 | `../../../public/sponsor-bg.webp` | `SponsorPage.vue` 自己引用的赞助页背景，用户提供，仅用于视觉氛围 |
 
-首页图片由 `HomePage.vue` 显式导入，卡片使用独立图片区域，文字与操作不烘焙进图片。`showcase-backgrounds.css` 与 `showcase-backgrounds-v3.css` 已删除，应用及浏览器夹具均不再导入；`showcase-cohesion.css` 仍保留未迁移 HoF 的部分局部样式，不负责资产加载。
+首页图片一律由 `HomePage.vue` 显式 import（含 Hero 装饰图），卡片使用独立图片区域，文字与操作不烘焙进图片；Hero 装饰图是背景插槽而非内容图片，落在 `aria-hidden` 的空容器上，不承担任何信息。`showcase-backgrounds.css` 与 `showcase-backgrounds-v3.css` 已删除，应用及浏览器夹具均不再导入；`showcase-cohesion.css` 仍保留未迁移 HoF 的部分局部样式，不负责资产加载。
 
 ## 替换约定
 

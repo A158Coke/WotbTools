@@ -1027,10 +1027,10 @@
     "qaPlaybackHint": "Fixed 14-vehicle moving scene: two dense clusters stress player/tank name collisions, with destroyed/last-known/recorder states mixed in; the timeline loops at 0.5x–4x. Reuses the production BattlePlayback."
   },
   "home": {
+    "recordTotal": "Records in the Hall of Fame",
+    "coreTitle": "Core features",
+    "communityTitle": "Community & data",
     "replayTitle": "Replay Extractor",
-    "uploadReplay": "Upload Replay",
-    "analysisTitle": "Battle Analysis",
-    "analysisDesc": "Batch-parse replays and inspect battle data; pick a battle for reconstruction and AI review.",
     "viewAnalysisHistory": "View Analysis History",
     "learnAnalysis": "Explore Battle Analysis",
     "recentAnalysis": "Recent Analysis",
@@ -1042,8 +1042,6 @@
     "aiReviewDesc": "Upload a single replay and AI Review returns a tactical debrief with improvement tips. Sign-in required.",
     "available": "Available",
     "sponsorTitle": "Sponsor",
-    "sponsorDesc": "Voluntary sponsorship for server costs.",
-    "sponsorTag": "Support",
     "footer": "WoTBTools - Community tool, not a Wargaming product",
     "icpFiling": "闽ICP备2026036303号-1",
     "publicSecurityFiling": "闽公网安备35018202000555号",
