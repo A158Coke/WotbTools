@@ -1,6 +1,8 @@
 <script setup>
 // 页面头部（design-language §9）：compact = 一行标题 + 右侧操作，工作区与设置页使用。
-// hero 变体属于装饰插槽，随首页 / 名人堂迁移时再加入。
+// 本组件**不提供** hero 变体（2026-10-18 定）：首页 hero 是含装饰插槽、主 CTA 与实时数据带的
+// 整段落地页板块，与这里的 compact 头部职责不同，且只有一个调用方；塞进来会让本组件同时拥有
+// 两套互不相干的布局。首页 hero 由 `HomePage.vue` 自己拥有，装饰插槽规则见 design-language §2。
 defineProps({
   title: { type: String, required: true },
   description: { type: String, default: '' },

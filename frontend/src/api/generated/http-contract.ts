@@ -686,6 +686,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the public Hall of Fame records */
+        get: operations["listHallOfFame"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hof/hundred": {
         parameters: {
             query?: never;
@@ -1932,6 +1949,35 @@ export interface components {
             vehicleId?: number | null;
             vehicleName?: string | null;
             items: components["schemas"]["HundredLeaderboardItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        /** @enum {string} */
+        HallOfFameBattleType: "RANDOM" | "RATING";
+        /** @description Public page item from /api/hof; rank is always assigned in page context. */
+        HallOfFameRecord: {
+            /** Format: int64 */
+            id: number;
+            rank: number;
+            /** Format: int64 */
+            tankId: number;
+            tankName: string;
+            nickname: string;
+            damageDealt: number;
+            battleType: components["schemas"]["HallOfFameBattleType"];
+            mapName: string | null;
+            version: string | null;
+            /** Format: date-time */
+            battleTime: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            replayAvailable: boolean;
+        };
+        HallOfFamePage: {
+            items: components["schemas"]["HallOfFameRecord"][];
             page: number;
             size: number;
             /** Format: int64 */
@@ -5624,6 +5670,44 @@ export interface operations {
             };
             /** @description Provider timeout */
             504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listHallOfFame: {
+        parameters: {
+            query?: {
+                battleType?: components["schemas"]["HallOfFameBattleType"];
+                tankId?: number;
+                nation?: string;
+                vehicleType?: string;
+                tier?: number;
+                nickname?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Hall of Fame page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HallOfFamePage"];
+                };
+            };
+            /** @description Invalid filter */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
