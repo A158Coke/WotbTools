@@ -20,8 +20,8 @@
 3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑；**换 pin 还须重生成 AI 投影 golden**：`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，golden 内嵌 pin provenance，漏跑则 3 个 fixture 红）。
 4. `npm run dev` → `http://localhost:5173/`；个人回放的 3D / shots 与全部 AI 用普通账号登录；已验证的官方示例可匿名使用 3D / shots；装甲查看器匿名可用（Tankopedia 入口卡对全员开放）。
 
-仅真正管理功能需要 `?admin=1`：这是 `useAuth.js` 的 dev-gated 旁路（**已入库**，dev 构建把
-`wotbtools-admin` / `HoF-admin` 视为已持有，见 runbook §4）。管理功能仍只认角色；URL 参数不得作为产品权限来源。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
+真正管理功能必须使用具有真实 realm role 的测试账号；`hasRole()` 只认当前 access token 的
+`realm_access.roles`，任何 URL 参数都不得提升权限（见 runbook §4）。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
 
 ## Architecture boundaries
 
