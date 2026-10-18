@@ -31,17 +31,33 @@ describe('creator capability and content owner', () => {
     vi.mocked(listRecommendationCategories).mockResolvedValueOnce([]); await owner.refreshPublicCategories()
     expect(owner.directoryVisible.value).toBe(false)
     state.auth.authenticated.value = true; state.auth.authInitState.value = 'authenticated'
-    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     expect(owner.typeVisible('VIDEO')).toBe(true); expect(owner.typeVisible('UP')).toBe(true)
     vi.mocked(getCreatorAvailability).mockResolvedValueOnce(supported); await owner.refresh()
     expect(owner.typeAvailable('VIDEO')).toBe(false); expect(owner.typeVisible('VIDEO')).toBe(false)
     expect(owner.typeAvailable('UP')).toBe(true)
   })
+  it('keeps empty content types visible to content-admin but not to tournament-admin, HoF-admin or site-admin', async () => {
+    vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true, contentVisibilitySupported: true, recommendationsSupported: true })
+    vi.mocked(listRecommendationCategories).mockResolvedValueOnce([])
+    wrapper = mount(Host); await flushPromises()
+    state.auth.authenticated.value = true; state.auth.authInitState.value = 'authenticated'
+    for (const role of ['tournament-admin', 'HoF-admin', 'wotbtools-admin', 'wotbtools-user']) {
+      state.auth.tokenParsed.value = { realm_access: { roles: [role] } }
+      await flushPromises()
+      expect(owner.typeVisible('UP'), role).toBe(false)
+      expect(owner.typeVisible('VIDEO'), role).toBe(false)
+    }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
+    await flushPromises()
+    expect(owner.typeVisible('UP')).toBe(true)
+    expect(owner.typeVisible('VIDEO')).toBe(true)
+  })
   it('keeps legacy dictionaries closed to the public while allowing only a ready real administrator', async () => {
     vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: true, contentVisibilitySupported: false, recommendationsSupported: false })
     wrapper = mount(Host); await flushPromises()
     expect(wrapper.text()).toBe('true/false/false'); expect(listRecommendationCategories).not.toHaveBeenCalled()
-    state.auth.authenticated.value = true; state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    state.auth.authenticated.value = true; state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     state.auth.authInitState.value = 'initializing'; await flushPromises(); expect(owner.directoryVisible.value).toBe(false)
     state.auth.authInitState.value = 'authenticated'; await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']; await flushPromises(); expect(owner.directoryVisible.value).toBe(false)

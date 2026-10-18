@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { computed, defineComponent, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { provideCreatorAvailability } from '../composables/useCreatorAvailability.js'
-import { tournamentAdminAllowed } from '../composables/useAuth.js'
+import { contentAdminAllowed, tournamentAdminAllowed } from '../composables/useAuth.js'
 import { getCreatorAvailability, listRecommendationCategories } from '../api/creators.js'
 import AppSidebar from './AppSidebar.vue'
 import AppTabBar from './AppTabBar.vue'
@@ -21,6 +21,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   state.auth = { authenticated: ref(false), authInitState: ref('unauthenticated'), tokenParsed: ref(null), isAdmin: ref(false), isHofAdmin: ref(false), displayName: ref(''), isAuthenticated: () => state.auth.authenticated.value }
   state.auth.isTournamentAdmin = computed(() => tournamentAdminAllowed(state.auth))
+  state.auth.isContentAdmin = computed(() => contentAdminAllowed(state.auth))
   vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true, contentVisibilitySupported: true, recommendationsSupported: false })
   vi.mocked(listRecommendationCategories).mockResolvedValue([])
 })
@@ -46,7 +47,7 @@ describe('creator primary and administration navigation', () => {
   it('keeps an empty legacy directory and configuration reachable to real administrators, then hides them on logout', async () => {
     vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true, contentVisibilitySupported: false, recommendationsSupported: false })
     state.auth.authenticated.value = true; state.auth.authInitState.value = 'authenticated'
-    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     await host()
     expect(wrapper!.find('[data-testid=nav-creators]').exists()).toBe(true)
     expect(wrapper!.find('[data-testid=tab-creators]').exists()).toBe(true)

@@ -237,7 +237,7 @@ class CreatorIntegrationTest {
         create(3, List.of(2L), null);
         mvc.perform(get("/api/creators/categories")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(2));
-        for (final String role : List.of("wotbtools-user", "HoF-admin", "wotbtools-admin", "tournament-admin")) {
+        for (final String role : List.of("wotbtools-user", "HoF-admin", "wotbtools-admin", "tournament-admin", "content-admin")) {
             mvc.perform(get("/api/creators/categories").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
                     .andExpect(jsonPath("$[0].id").value(2)).andExpect(jsonPath("$[0].name").value("B"));
@@ -246,7 +246,7 @@ class CreatorIntegrationTest {
         mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities()))
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/creators/metadata")
-                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"))))
+                        .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.categories.length()").value(3))
                 .andExpect(jsonPath("$.categories[0].name").value("A"))
                 .andExpect(jsonPath("$.categories[2].name").value("C"));
@@ -422,7 +422,7 @@ class CreatorIntegrationTest {
     @Test void uidWhitespaceMatchesEcmascriptThroughMultipartAndPersistence() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
         final var json = JsonMapper.builder().findAndAddModules().build();
-        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final int[] whitespace = {9, 10, 11, 12, 13, 32, 160, 5760, 8192, 8193, 8194, 8195, 8196,
                 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279};
         for (final int codePoint : whitespace) {
@@ -469,7 +469,7 @@ class CreatorIntegrationTest {
     @Test void unicodeLimitsSurviveRealMultipartBindingAndPostgresqlPersistence() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
         final var json = JsonMapper.builder().findAndAddModules().build();
-        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final String name = "😀".repeat(100), description = "🚀".repeat(2000);
         final CreatorDtos.SaveRequest valid = new CreatorDtos.SaveRequest("300001", name, description, List.of(1L), null, 3, "KEEP", null);
         mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
@@ -656,8 +656,9 @@ class CreatorIntegrationTest {
 
     @Test void realHttpEnforcesNewRolesStrictRequestsAndBothLegacyAndTypedBoundaries() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
-        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final var wrongAdmin = jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"));
+        final var tournamentAdmin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
         final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
         final JsonMapper json = JsonMapper.builder().build();
         final String payload = json.writeValueAsString(video("BV1AbCdEfGh2", List.of(category), null));
@@ -666,6 +667,9 @@ class CreatorIntegrationTest {
         mvc.perform(get("/api/recommendations?type=BAD")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(wrongAdmin)).andExpect(status().isForbidden());
+        // The tournament domain never authorizes content management, not even as a fallback.
+        mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(tournamentAdmin)).andExpect(status().isForbidden());
+        mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload)).with(tournamentAdmin)).andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/recommendations/metadata?type=VIDEO").with(admin)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("VIDEO")).andExpect(jsonPath("$.levels").isEmpty()).andExpect(jsonPath("$.categories[0].type").value("VIDEO"));
         mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(payload))).andExpect(status().isUnauthorized());
@@ -699,7 +703,7 @@ class CreatorIntegrationTest {
 
     @Test void recommendationHttpRejectsScalarTextCoercionAndPreservesNullableDescription() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
-        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_tournament-admin"));
+        final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final long category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
         final JsonMapper json = JsonMapper.builder().build();
         final var valid = video("BV1AbCdEfGh2", List.of(category), null);
