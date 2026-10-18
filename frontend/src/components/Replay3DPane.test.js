@@ -16,6 +16,9 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { makeBattlePlaybackDataset } from '../test/playbackV2TestUtil.js'
+import zh from '../locales/zh.json'
+import en from '../locales/en.json'
+import ru from '../locales/ru.json'
 
 // 源码级守卫用（CSS 结构契约：名册不得是嵌套滚动盒等）
 const here = dirname(fileURLToPath(import.meta.url))
@@ -204,6 +207,33 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it('核心资产降级显示非阻塞状态，不把加载完成伪装成健康', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    expect(store.hasData).toBe(true)
+    expect(wrapper.find('[data-testid="scene3d-asset-degraded"]').exists()).toBe(false)
+    store.assetDegraded = true
+    await flush()
+    expect(wrapper.get('[data-testid="scene3d-asset-degraded"]').text()).toContain('agentReplay.asset_degraded')
+    store.assetDegraded = false
+    await flush()
+    expect(wrapper.find('[data-testid="scene3d-asset-degraded"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('资产降级提示三语均落在 agentReplay 命名空间且真实 i18n 可翻译', async () => {
+    const { createI18n } = await vi.importActual('vue-i18n')
+    for (const [lang, messages] of Object.entries({ zh, en, ru })) {
+      expect(messages.agentTanks.asset_degraded).toBeUndefined()
+      const i18n = createI18n({ legacy: false, locale: lang, fallbackLocale: 'en', messages: { [lang]: messages } })
+      const text = i18n.global.t('agentReplay.asset_degraded')
+      expect(text).not.toBe('agentReplay.asset_degraded')
+      expect(text.length).toBeGreaterThan(10)
+    }
+  })
+
   it('3D完整详情按canonical账号与时间投影，包含肖像装备物资道具且seek不泄露未来', async () => {
     mockWebGL('webgl2')
     const dataset = makeBattlePlaybackDataset()

@@ -268,7 +268,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 2026-10-14 抽层：路由在共享装配模块（asmSrc），运行时与烘焙同一份
     expect(asmSrc).toMatch(/getDependency\('texture', ex\.lightmap\)/)
     expect(asmSrc).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m, \{ strictSurfaces \}\)/)
-    expect(asmSrc).toMatch(/&& !\/sky\/i\.test\(o\.name \|\| ''\) && !underWater\(o\)\) \{/)
+    expect(asmSrc).toMatch(/&& !isSkyNode\(o\) && !underWater\(o\)\) \{/)
     expect(asmSrc).toMatch(/if \(atlas && o\.geometry\.attributes\.uv1\) \{/)
     // 材质**缓存共享**（review P2：逐 mesh 新建会把 (几何,材质) 合批拆成单实例批）；
     // 逐实例光照图变换走 aLm 实例属性，与材质无关 ⇒ 按输入指纹复用同一份材质
@@ -349,10 +349,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(st.slice(0, 400)).toMatch(/return makeSpeedtreeStaticMaterial\(m, opaqueEnough\);/)
     const fn = matSrc.slice(matSrc.indexOf('function makeSpeedtreeStaticMaterial'))
     // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
-    expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a\);/)
-    expect(fn).toMatch(/uAlphaCut: \{ value: opaqueEnough \? 0\.33 : 0\.05 \}/)
-    expect(fn).toMatch(/transparent: !opaqueEnough,/)
-    expect(fn).toMatch(/depthWrite: opaqueEnough,/)
+    expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a \* uOpacity\);/)
+    expect(fn).toMatch(/uAlphaCut: \{ value: blend \? 0\.05 : 0\.33 \}/)
+    expect(fn).toMatch(/transparent: blend,/)
+    expect(fn).toMatch(/depthWrite: !blend,/)
     // vOcc 仅取 COLOR_0.r（灰度遮挡）；无 COLOR_0 的正则树干 = 1
     expect(fn).toMatch(/vOcc = \$\{hasVC \? 'color\.r' : '1\.0'\};/)
     // SH 染色逐通道来自 baseColorFactor（karelia 彩色环境/√π 灰均按字面）
@@ -611,11 +611,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).not.toMatch(/polygonOffsetUnits = -units/)
   })
 
-  it('退化几何守卫 + ?degrade=N 覆盖（撕裂批次不渲染/不占 draw call）', () => {
-    expect(src).toMatch(/const degradedMeshes = \[\];/)
-    expect(src).toMatch(/const q = Number\(new URLSearchParams\(location\.search\)\.get\('degrade'\)\);/)
-    expect(src).toMatch(/if \(vc > 0 && \(ic \/ 3\) \/ vc > degLimit\) degradedMeshes\.push\(o\);/)
-    expect(src).toMatch(/o\.removeFromParent\(\);/)
+  it('禁止按逐网格三角形/顶点比删几何（统计启发式；损坏应由导出器语义标记/报错）', () => {
+    // 旧版导出器撕裂批次曾用 (ic/3)/vc > 15 + ?degrade=N 在生产路径逐网格删除。
+    // 这属于按内容统计量决定语义，AGENTS.md 明确禁止；树批次已在导出器修正，
+    // 消费端不得再静默删网格。
+    expect(src).not.toMatch(/degradedMeshes/)
+    expect(src).not.toMatch(/degLimit/)
+    expect(src).not.toMatch(/location\.search\)\.get\('degrade'\)/)
   })
 
   it('视角淡出效果片（AlphaBlend + BLEND_BY_ANGLE）：软混合 + 客户端视角因子，不被裁切', () => {
@@ -709,7 +711,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(asmSrc).toMatch(/export function makeUnderWater\(waterSurfaces\) \{\n\s*return \(o\) => \{/)
     expect(asmSrc).toMatch(/bb\.max\.z <= w\.h \+ 0\.05\) return true;/)
     expect(asmSrc).toMatch(/const uw = !!o\.geometry && underWater\(o\);/)
-    expect(asmSrc).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m, \{ strictSurfaces \}\)\s*\n\s*&& !\/sky\/i\.test\(o\.name \|\| ''\) && !underWater\(o\)\) \{/)
+    expect(asmSrc).toMatch(/if \(ud\.lightmap !== undefined && !isWaterNode\(o\.name, m, \{ strictSurfaces \}\)\s*\n\s*&& !isSkyNode\(o\) && !underWater\(o\)\) \{/)
     expect(asmSrc).toMatch(/if \(uw\) \{/)
     expect(asmSrc).toMatch(/new THREE\.MeshBasicMaterial\(\{/)
     expect(asmSrc).toMatch(/map: m\.map \|\| null,/)
@@ -775,7 +777,14 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\/sceneryAssemblyRules\.js'/)
     expect(src).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
     expect(src).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
-    expect(src).toMatch(/!\/sky\/i\.test\(e\.name\) && !isWaterNode\(e\.name, e\.material\)\);/)
+    expect(src).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\)[\s\S]{0,120}!isWaterNode\(e\.name, e\.material\)[\s\S]{0,120}!hasTransparentMaterial\(e\.material\)/)
+    expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
+    // 运行时：包级天空标记在变体裁剪之前采样，并显式传入装配
+    const skyFlagAt = src.indexOf('const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)')
+    const pruneAt = src.indexOf('pruneForeignVariantsDetailed(gltf.scene')
+    expect(skyFlagAt).toBeGreaterThan(-1)
+    expect(pruneAt).toBeGreaterThan(skyFlagAt)
+    expect(src).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
     // MEDIUM 档水面是半透明大面：逐材质修整（depthWrite/DoubleSide/depthTest）必须保留——
     // 2026-10-09 随 LOW 档（不透明）删过一次，回退 MEDIUM 时一并恢复。
     // 2026-10-14 抽层：修整体在共享装配模块（asmSrc），运行时与烘焙同一份
@@ -827,7 +836,28 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 渲染就是地图中心一个小球），深度靠 w 偏置推到最后，着色器无任何光照项。
     expect(src).not.toMatch(/o\.visible = false/);
     // 2026-10-14 抽层：天空分派在共享装配模块（asmSrc），运行时与烘焙同一份
-    const skyAt = asmSrc.indexOf('/sky/i.test(o.name');
+    // 语义标记优先：material extras.sky（导出器按客户端 Skyobject 模板写入）；只有整份
+    // GLB 都没有该标记（旧包）才退回节点名 /sky/i。
+    // 判据 SSOT：装配只调用共享 isSkyShell（运行时/烘焙不得各持一套开关）
+    expect(asmSrc).toMatch(/isSkyShell\(o\.name, o\.material, \{ skyFlagsAvailable: skyFlagAvailable \}\)/)
+    expect(asmSrc).toMatch(/sceneHasSkyFlags\(gltf\.scene\)/)
+    expect(asmSrc).not.toMatch(/\/sky\/i\.test\(o\.name/)
+    // 烘焙先剔天穹再装配：必须把剔除前的标记传进去，否则会退回 /sky/ 名字
+    const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
+    expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
+    // 合批/透明/lm 与运行时同口径；烘焙同样拒绝不完整变体映射
+    expect(src).toMatch(/buildStandaloneLightmappedMeshes\(allEntries/)
+    expect(bakeSkySrc).toMatch(/buildStandaloneLightmappedMeshes\(allEntries/)
+    expect(bakeSkySrc).toMatch(/hasTransparentMaterial\(e\.material\)/)
+    expect(bakeSkySrc).toMatch(/variantMappingIncomplete === true/)
+    expect(bakeSkySrc).not.toMatch(/\/sky\/i\.test\(e\.name/)
+    const bakeFlagAt = bakeSkySrc.indexOf('sceneHasSkyFlags(gltf.scene)')
+    const bakePruneAt = bakeSkySrc.indexOf('pruneForeignVariantsDetailed(gltf.scene')
+    expect(bakeFlagAt).toBeGreaterThan(-1)
+    expect(bakePruneAt).toBeGreaterThan(bakeFlagAt)
+    // fail-closed 变体裁剪必须中止本图烘焙，不能继续写不完整俯视图
+    expect(bakeSkySrc).toMatch(/variantPrune\.failClosed[\s\S]{0,200}throw new Error/)
+    const skyAt = asmSrc.indexOf('if (!waterMarked && isSkyNode(o))');
     expect(skyAt).toBeGreaterThan(-1);
     const skyBranch = asmSrc.slice(skyAt, skyAt + 500);
     expect(skyBranch).toMatch(/makeSkyMaterial\(o\.material\)/);
@@ -837,7 +867,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 客户端 `WaterPerPixelCubemapAlphablend.material`）——名字命中就抢走会让整片海挂上天空材质
     // （深度钉远平面 + 平面 UV 拉一张贴图）⇒ 海面永远画不出来、海床直接露出、远处只剩一张被拉平的图。
     expect(asmSrc).toMatch(/const waterMarked = materialIsWater\(o\.material\);/);
-    expect(asmSrc).toMatch(/if \(!waterMarked && \/sky\/i\.test\(o\.name/);
+    expect(asmSrc).toMatch(/if \(!waterMarked && isSkyNode\(o\)\)/);
     const skyStart = matSrc.indexOf('export function makeSkyMaterial');
     const sky = matSrc.slice(skyStart, matSrc.indexOf('export function', skyStart + 10));
     expect(sky).toMatch(/vec4\(position, 0\.0\)/);                  // w=0：丢弃平移
@@ -1123,15 +1153,16 @@ describe('车体横滚（hull_roll）接线守卫', () => {
   it('侧倾取值走共享位姿采样器：旧产物缺列时落 0（不拿 pitch 顶替）', () => {
     expect(src).toMatch(/const rollAt = \(v, t\) => poseOf\(v, t\)\.roll;/)
     expect(poseSrc).toMatch(/if \(!arr \|\| !arr\.length\) return 0/)
-    expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid\)/)
-    expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid\)/)
+    expect(poseSrc).toMatch(/out\.roll = gridChannel\(def\.hull_roll, t, grid, span\)/)
+    expect(poseSrc).toMatch(/out\.turretAbs = gridChannel\(def\.turret_yaw, t, grid, span\)/)
     // 侧倾/炮塔**只有网格列**（pose_kf 只覆盖 pos/hull_yaw/hull_pitch）
     expect(poseSrc).not.toMatch(/kf\.roll/)
   })
 
   it('位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退', () => {
     // 2D 俯视与 3D 场景必须逐帧同源（2026-10-16 抽层）；本守卫防通道逻辑回流到场景侧。
-    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(v\.def, POSE_GRID, t, _poseOut\);/)
+    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(/)
+    expect(src).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
     expect(src).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
     expect(src).not.toMatch(/kfOf/)
     expect(src).not.toMatch(/const col = \(c\) =>/)

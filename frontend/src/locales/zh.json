@@ -1520,6 +1520,7 @@
     "banner_draw": "平局",
     "pb_hint": "14 车全场连续回放：位姿、炮塔/炮管随动、弹道动画与实时血量 / 击杀流。回放在本机解析，加载需数秒。",
     "loading_assets": "正在获取地图/地形/场景资产…",
+    "asset_degraded": "部分地图资产加载失败，场景可能缺少地形、建筑或贴图。",
     "no_file": "请先在上方选择一份 .wotbreplay 回放。",
     "destroyed_by_environment": "阵亡"
   },

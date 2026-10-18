@@ -2,9 +2,10 @@
  * 回放位姿求值——2D 战术俯视与 3D 场景共用的**唯一实现**。
  *
  * 数据面：facet 的位姿列 = 客户端滤波器输出（`filter.rs` 移植，60Hz 逐帧）。渲染**以
- * `pose_kf` 折线为准**（上游把 60Hz 帧序列压成 ≈7.5 点/秒的折点序列，段内线性插值即复现
- * 客户端画面）；旧产物缺 `pose_kf` 时回退 10Hz 网格线性插值。理由与实测见
- * [`scene/trackInterp.js`] 头注释（网格与 ≈10~12Hz 位置更新不同相会把阶梯混叠成速度摆动）。
+ * `pose_kf` 折线为准**（上游 2026-10-18 起为显示重建：段首稳态 0.2s 延迟、只保留 0.2s
+ * 静止，段内线性插值即平滑画面）；旧产物缺 `pose_kf` 时回退 10Hz 网格线性插值。理由与
+ * 实测见 [`scene/trackInterp.js`] 头注释（网格与 ≈10~12Hz 位置更新不同相会把阶梯混叠成
+ * 速度摆动）。判定锚点仍用客户端 0.02s 复位，与渲染折线分属两层。
  *
  * 坐标系契约（**本模块输出 game 系，不做任何镜像**）：
  *   - `x` = 回放世界 x、`y` = 高度、`z` = 回放世界 z；yaw 0 = +z（北）、顺时针为正（rad）。
@@ -23,11 +24,11 @@
  *
  * 纯函数、无 THREE/DOM 依赖（单测锁不变量）。
  */
-import { GRID_DT, keyframeAt, sampleChannel, sampleKeyframes, segmentAt } from '../../scene/trackInterp.js'
+import { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling } from '../../scene/trackInterp.js'
 import { activeEntityAt } from '../canonical/facts.js'
-import type { AgentPoseKeyframes, AgentPlaybackFacet, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
+import type { AgentAoiPresence, AgentPoseKeyframes, AgentPlaybackFacet, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
 
-export { GRID_DT, keyframeAt, sampleChannel, sampleKeyframes, segmentAt }
+export { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling }
 export type { AgentPoseKeyframes, AgentVehicleTrack }
 
 /** 网格列的时间轴（`meta.t_start` + `meta.samples`，步长恒 `GRID_DT`）。 */
@@ -74,6 +75,11 @@ export interface PoseFacetVehicle extends PoseDef {
   account_id: number
   /** 有效区段 [t0,t1,...]（回放时钟域；区间外位姿未知，供"可信度"门控参考） */
   coverage: number[]
+  /**
+   * 协议精确的 AoI 在场段 flat [t0,t1,...]（来自 playback `visibility[]`；末段 t_out 缺省 =
+   * 战斗结束，用 +∞）。网格列（炮塔/炮管/侧倾）只在段内插值；缺省回退 `coverage`。
+   */
+  visibility?: number[]
 }
 
 export interface PoseFacet {
@@ -92,11 +98,30 @@ export interface PoseFacet {
   entityStartsByAccount?: Map<number, Map<number, number | null>>
 }
 
+/**
+ * 协议精确的 AoI 在场段按 eid 投影为 flat `[t0,t1,...]`（末段缺 `t_out` = 战斗结束 → +∞）。
+ * 2D（`buildPoseFacet`）与 3D（`playbackScene` 的 `DATA.visibility`）共用同一投影，
+ * 避免两视图对短隐藏段给出不同的炮塔/侧倾插值。
+ */
+export function visibilitySpansByEid(
+  visibility: readonly AgentAoiPresence[] | null | undefined,
+): Map<number, number[]> {
+  const out = new Map<number, number[]>()
+  for (const w of visibility ?? []) {
+    if (!Number.isFinite(w.t_in)) continue
+    const spans = out.get(w.eid) ?? []
+    spans.push(w.t_in, w.t_out ?? Number.POSITIVE_INFINITY)
+    out.set(w.eid, spans)
+  }
+  return out
+}
+
 /** 从 playback facet 投影出瘦身位姿切面（数组按引用复用，structured clone 时拷贝一次）。 */
 export function buildPoseFacet(
-  playback: Pick<AgentPlaybackFacet, 'meta' | 'vehicles'>,
+  playback: Pick<AgentPlaybackFacet, 'meta' | 'vehicles'> & { visibility?: AgentAoiPresence[] },
   entityStartsByAccount?: Map<number, Map<number, number | null>>,
 ): PoseFacet {
+  const visByEid = visibilitySpansByEid(playback.visibility)
   return {
     tStart: playback.meta.t_start,
     samples: playback.meta.samples,
@@ -111,6 +136,7 @@ export function buildPoseFacet(
       gun_pitch: v.gun_pitch,
       pose_kf: v.pose_kf,
       coverage: v.coverage,
+      visibility: visByEid.get(v.eid) ?? v.coverage,
     })),
     ...(entityStartsByAccount ? { entityStartsByAccount } : {}),
   }
@@ -177,10 +203,19 @@ export function wrapPi(a: number): number {
   return r
 }
 
-/** 网格标量列：空/缺列 → 0（fail-safe，绝不拿别的通道顶替）。 */
-function gridChannel(arr: readonly number[] | null | undefined, t: number, grid: PoseGrid): number {
+/** 网格标量列：空/缺列 → 0（fail-safe，绝不拿别的通道顶替）。
+ * 给了覆盖段时只在段内网格点之间插值（禁止跨隐藏段把旧炮塔角滑到新值）。 */
+function gridChannel(
+  arr: readonly number[] | null | undefined,
+  t: number,
+  grid: PoseGrid,
+  span: readonly [number, number] | null,
+): number {
   if (!arr || !arr.length) return 0
   if (arr.length === 1) return arr[0]
+  if (span) {
+    return sampleChannelWithin((i) => arr[i], arr.length, t, grid.tStart, GRID_DT, span[0], span[1])
+  }
   return sampleChannel((i) => arr[i], arr.length, t, grid.tStart, GRID_DT)
 }
 
@@ -193,7 +228,10 @@ export function sampleVehiclePoseGame(
   grid: PoseGrid,
   t: number,
   out: VehiclePoseGame = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0 },
+  visibleSpans?: readonly number[] | null,
 ): VehiclePoseGame {
+  // 段内采样：t 落在短隐藏段时夹到前一段（最后已知），不得退回无约束插值。
+  const span = visibleSpans ? (visibilitySpanForSampling(visibleSpans, t) as readonly [number, number] | null) : null
   const kf = poseKeyframesOf(def)
   if (kf) {
     const col = (c: number) => (i: number) => kf.pos[i * 3 + c]
@@ -206,16 +244,22 @@ export function sampleVehiclePoseGame(
     const p = def.pos
     const n = grid.samples
     const col = (c: number) => (i: number) => p[i * 3 + c]
-    out.x = sampleChannel(col(0), n, t, grid.tStart, GRID_DT)
-    out.y = sampleChannel(col(1), n, t, grid.tStart, GRID_DT)
-    out.z = sampleChannel(col(2), n, t, grid.tStart, GRID_DT)
-    out.yaw = gridChannel(def.hull_yaw, t, grid)
-    out.pitch = gridChannel(def.hull_pitch, t, grid)
+    for (const c of [0, 1, 2]) {
+      const get = col(c)
+      const v = span
+        ? sampleChannelWithin(get, n, t, grid.tStart, GRID_DT, span[0], span[1])
+        : sampleChannel(get, n, t, grid.tStart, GRID_DT)
+      if (c === 0) out.x = v
+      else if (c === 1) out.y = v
+      else out.z = v
+    }
+    out.yaw = gridChannel(def.hull_yaw, t, grid, span)
+    out.pitch = gridChannel(def.hull_pitch, t, grid, span)
   }
   // 侧倾与炮塔/炮管**只有网格列**（`pose_kf` 覆盖 pos/hull_yaw/hull_pitch 三列）。
-  out.roll = gridChannel(def.hull_roll, t, grid)
-  out.turretAbs = gridChannel(def.turret_yaw, t, grid)
+  out.roll = gridChannel(def.hull_roll, t, grid, span)
+  out.turretAbs = gridChannel(def.turret_yaw, t, grid, span)
   out.turretRel = wrapPi(out.turretAbs - out.yaw)
-  out.gunPitch = gridChannel(def.gun_pitch, t, grid)
+  out.gunPitch = gridChannel(def.gun_pitch, t, grid, span)
   return out
 }

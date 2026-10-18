@@ -40,7 +40,7 @@ import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
-import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
 defineOptions({ name: 'Replay3DPane' })
 
@@ -829,6 +829,18 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         @retry="retryLoad"
         @dismiss="store.err = ''"
       />
+      <!-- 资产降级是**非阻塞**状态：场景可玩，但地形/建筑/贴图缺失必须让用户看见，
+           不能再表现为“健康加载完成”（assetIssues 明细留控制台/诊断）。 -->
+      <div
+        v-if="!uiHidden && store.hasData && store.assetDegraded"
+        class="asset-degraded"
+        data-testid="scene3d-asset-degraded"
+        role="status"
+        aria-live="polite"
+      >
+        <TriangleAlert :size="16" aria-hidden="true" />
+        <span>{{ t('agentReplay.asset_degraded') }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -837,6 +849,28 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 /* HUD 全部走语义 token（两档主题同一份规则，不再各写一套私有 palette）：
    3D 场景本体（three.js 画的战场）不随主题变化，只有场景之上的应用 UI 跟随。 */
 .pb-pane { display: block; }
+
+/* 资产降级：顶部非阻塞提示（不挡播放/相机），与 Blocking 的 Scene3DStatus error 区分 */
+.asset-degraded {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  inline-size: max-content;
+  max-inline-size: calc(100% - var(--space-6));
+  margin-inline: auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-2);
+  color: var(--color-text-secondary);
+  font: var(--type-caption);
+  pointer-events: none;
+}
 
 .pb-note { margin: var(--space-4) 0; color: var(--color-text-secondary); font: var(--type-body); }
 

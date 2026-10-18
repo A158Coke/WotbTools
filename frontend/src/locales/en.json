@@ -1520,6 +1520,7 @@
     "banner_draw": "DRAW",
     "pb_hint": "All 14 vehicles replayed continuously: poses, turret/gun tracking, shell flight and live HP / kill feed. Parsing happens locally and takes a few seconds.",
     "loading_assets": "Fetching map / terrain / scenery assets…",
+    "asset_degraded": "Some map assets failed to load; terrain, scenery or textures may be missing.",
     "no_file": "Pick a .wotbreplay replay above to start.",
     "destroyed_by_environment": "destroyed"
   },

@@ -62,7 +62,7 @@ async function main() {
       throw e
     }
     const data = JSON.parse(await page.evaluate('JSON.stringify(window.__shaderCheck)'))
-    if (data.error) { console.log('页面异常：', data.error); process.exitCode = 1; return }
+    if (data.error) { console.log('页面异常：', data.error); console.log('gate debug：', JSON.stringify(data.debug)); process.exitCode = 1; return }
     let failed = 0
     for (const p of data.programs) {
       const d = p.diag

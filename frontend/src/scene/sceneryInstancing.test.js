@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh,
-  writeHiddenInstance, fallMatrix,
+  writeHiddenInstance, fallMatrix, hasTransparentMaterial, buildStandaloneLightmappedMeshes,
 } from './sceneryInstancing.js'
 
 const geo = (h = 1) => {
@@ -306,5 +306,38 @@ describe('损毁态批次球（评审五轮回归）', () => {
     // 隐藏槽位 base 位置 (60,0,0) 必须在球覆盖内（激活后无需重算球）
     const far = new THREE.Vector3(60, 0, 0).distanceTo(mesh.boundingSphere.center)
     expect(far).toBeLessThanOrEqual(mesh.boundingSphere.radius)
+  })
+})
+
+
+describe('透明材质不进入实例化批', () => {
+  it('单材质/多材质任一 transparent 都保留独立节点（three 批内不排序）', () => {
+    expect(hasTransparentMaterial({ transparent: false })).toBe(false)
+    expect(hasTransparentMaterial(null)).toBe(false)
+    expect(hasTransparentMaterial({ transparent: true })).toBe(true)
+    expect(hasTransparentMaterial([{ transparent: false }, { transparent: true }])).toBe(true)
+    expect(hasTransparentMaterial([{ transparent: false }])).toBe(false)
+  })
+})
+
+
+describe('透明+光照图网格保留逐节点 lm 变换', () => {
+  it('单实例 InstancedMesh 挂 aLm 并摘除原节点（保持一个透明排序单位）', () => {
+    const target = new THREE.Group()
+    const node = new THREE.Mesh(geo(), new THREE.MeshBasicMaterial({ transparent: true }))
+    target.add(node)
+    const entry = {
+      node, geometry: node.geometry, material: node.material,
+      matrix: new THREE.Matrix4(), lm: [0.25, 0.25, 0.5, 0.5],
+      name: 'lm-transparent', x: 0, y: 0,
+    }
+    const out = buildStandaloneLightmappedMeshes([entry], target)
+    expect(out).toHaveLength(1)
+    expect(out[0].mesh.count).toBe(1)
+    expect(out[0].mesh.geometry.attributes.aLm.getX(0)).toBeCloseTo(0.25)
+    expect(out[0].mesh.geometry.attributes.aLm.getY(0)).toBeCloseTo(0.25)
+    expect(out[0].mesh.geometry.attributes.aLm.getZ(0)).toBeCloseTo(0.5)
+    expect(out[0].mesh.geometry.attributes.aLm.getW(0)).toBeCloseTo(0.5)
+    expect(node.parent).toBe(null)
   })
 })
