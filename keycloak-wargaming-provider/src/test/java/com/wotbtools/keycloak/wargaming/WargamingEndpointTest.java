@@ -12,7 +12,6 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -197,18 +196,21 @@ class WargamingEndpointTest {
         assertEquals(500, response.getStatus());
         assertNull(authFake.captured);
         assertTrue(stub.requests.isEmpty());
+        assertEquals("407", WargamingEndpoint.safeProviderCode("407"));
+        assertEquals("INVALID_IP_ADDRESS",
+                WargamingEndpoint.providerErrorClass("INVALID_IP_ADDRESS"));
     }
 
     @Test
-    void diagnosticValuesStripControlCharactersAndAreBounded() {
-        final String sanitized = WargamingEndpoint.safeDiagnosticValue(
-                "AUTH_ERROR\r\nforged=true\t" + "x".repeat(200));
-
-        assertFalse(sanitized.contains("\r"));
-        assertFalse(sanitized.contains("\n"));
-        assertFalse(sanitized.contains("\t"));
-        assertTrue(sanitized.length() <= 160);
-        assertEquals("-", WargamingEndpoint.safeDiagnosticValue(" \r\n\t "));
+    void callbackDiagnosticsNeverExposeArbitraryProviderText() {
+        assertEquals("UNKNOWN",
+                WargamingEndpoint.providerErrorClass("access_token=secret forged=true"));
+        assertEquals("UNKNOWN",
+                WargamingEndpoint.providerErrorClass("INVALID_IP_ADDRESS forged=true"));
+        assertEquals("unknown", WargamingEndpoint.safeProviderCode("407\nsecret=1"));
+        assertEquals("unknown", WargamingEndpoint.safeProviderCode("secret"));
+        assertEquals("-", WargamingEndpoint.safeProviderCode(null));
+        assertEquals("-", WargamingEndpoint.providerErrorClass(null));
     }
 
     @Test
