@@ -1955,16 +1955,19 @@ export interface components {
             totalItems: number;
             totalPages: number;
         };
+        /** @enum {string} */
+        HallOfFameBattleType: "RANDOM" | "RATING";
+        /** @description Public page item from /api/hof; rank is always assigned in page context. */
         HallOfFameRecord: {
             /** Format: int64 */
             id: number;
-            rank: number | null;
+            rank: number;
             /** Format: int64 */
             tankId: number;
             tankName: string;
             nickname: string;
             damageDealt: number;
-            battleType: string;
+            battleType: components["schemas"]["HallOfFameBattleType"];
             mapName: string | null;
             version: string | null;
             /** Format: date-time */
@@ -5679,7 +5682,7 @@ export interface operations {
     listHallOfFame: {
         parameters: {
             query?: {
-                battleType?: string;
+                battleType?: components["schemas"]["HallOfFameBattleType"];
                 tankId?: number;
                 nation?: string;
                 vehicleType?: string;

@@ -3048,8 +3048,16 @@ export default {
         }
       }
     },
+    "HallOfFameBattleType": {
+      "type": "string",
+      "enum": [
+        "RANDOM",
+        "RATING"
+      ]
+    },
     "HallOfFameRecord": {
       "type": "object",
+      "description": "Public page item from /api/hof; rank is always assigned in page context.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -3071,10 +3079,7 @@ export default {
           "format": "int64"
         },
         "rank": {
-          "type": [
-            "integer",
-            "null"
-          ]
+          "type": "integer"
         },
         "tankId": {
           "type": "integer",
@@ -3090,7 +3095,7 @@ export default {
           "type": "integer"
         },
         "battleType": {
-          "type": "string"
+          "$ref": "#/$defs/HallOfFameBattleType"
         },
         "mapName": {
           "type": [
