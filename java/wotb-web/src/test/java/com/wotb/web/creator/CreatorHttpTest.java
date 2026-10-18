@@ -56,7 +56,7 @@ class CreatorHttpTest {
             {"bilibiliUid":"123","name":"Creator","description":null,
              "categoryIds":[1],"levelId":null,"stars":3,"avatarAction":"KEEP","expectedVersion":null}
             """;
-    private static final SimpleGrantedAuthority TOURNAMENT_ADMIN = new SimpleGrantedAuthority("ROLE_tournament-admin");
+    private static final SimpleGrantedAuthority CONTENT_ADMIN = new SimpleGrantedAuthority("ROLE_content-admin");
     private AnnotationConfigWebApplicationContext context;
     private MockMvc mvc;
 
@@ -93,20 +93,23 @@ class CreatorHttpTest {
         mvc.perform(post("/api/creators").with(jwt().authorities())).andExpect(status().isForbidden());
     }
 
-    @Test void metadataAndEditableDetailsRequireTheRealTournamentRoleOrItsComposite() throws Exception {
+    @Test void metadataAndEditableDetailsRequireTheRealContentRoleOrItsComposite() throws Exception {
         when(service().metadata()).thenReturn(new CreatorDtos.Metadata(
                 List.of(new CreatorDtos.Category(1, "A")), List.of(new CreatorDtos.Level(1, "Expert")), false));
         when(service().detail(7)).thenReturn(detail());
         for (final String path : List.of("/api/admin/creators/7", "/api/admin/creators/metadata")) {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             mvc.perform(get(path).with(jwt().authorities())).andExpect(status().isForbidden());
-            mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_HoF-admin")))).andExpect(status().isForbidden());
-            mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isForbidden());
-            mvc.perform(get(path).with(jwt().authorities(TOURNAMENT_ADMIN))).andExpect(status().isOk());
-            mvc.perform(get(path).with(jwt().authorities(TOURNAMENT_ADMIN, new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+            // Domain separation: the tournament role never implies content administration, and the
+            // super-admin realm role only works because Keycloak expands its composite claims.
+            for (final String role : List.of("ROLE_wotbtools-user", "ROLE_HoF-admin", "ROLE_tournament-admin", "ROLE_wotbtools-admin")) {
+                mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority(role)))).andExpect(status().isForbidden());
+            }
+            mvc.perform(get(path).with(jwt().authorities(CONTENT_ADMIN))).andExpect(status().isOk());
+            mvc.perform(get(path).with(jwt().authorities(CONTENT_ADMIN, new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
                     .andExpect(status().isOk());
         }
-        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(jsonPath("$.categories[0].id").value(1)).andExpect(jsonPath("$.levels[0].name").value("Expert"))
                 .andExpect(jsonPath("$.avatarUploadsAvailable").value(false));
     }
@@ -124,6 +127,12 @@ class CreatorHttpTest {
             mvc.perform(post(path).contentType("application/json").content("{\"name\":\"New\"}").with(jwt().authorities()))
                     .andExpect(status().isForbidden());
         }
+        // Content writes are owned by content-admin: the tournament role is not a compatibility fallback.
+        final SimpleGrantedAuthority tournament = new SimpleGrantedAuthority("ROLE_tournament-admin");
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities(tournament)))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "1").with(jwt().authorities(tournament)))
+                .andExpect(status().isForbidden());
         verifyNoInteractions(service());
     }
 
@@ -153,7 +162,7 @@ class CreatorHttpTest {
     @Test void multipartSaveBindsKeepRemoveAndReplacementWithDeclaredStatuses() throws Exception {
         when(service().create(any(), any())).thenReturn(detail());
         when(service().update(eq(7L), any(), any())).thenReturn(new CreatorDtos.Detail(7, 1, "123", "Creator", null, List.of(1L), null, 3, null));
-        final String createdJson = mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities(TOURNAMENT_ADMIN)))
+        final String createdJson = mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.id").value(7)).andExpect(jsonPath("$.stars").value(3))
                 .andExpect(jsonPath("$.avatarId").doesNotExist()).andExpect(jsonPath("$.homepageUrl").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
@@ -166,17 +175,17 @@ class CreatorHttpTest {
         verify(service()).create(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "KEEP", null), null);
 
         final String remove = SAVE.replace("\"KEEP\"", "\"REMOVE\"").replace("\"expectedVersion\":null", "\"expectedVersion\":0");
-        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/creators/7").file(payload(remove)).with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(multipart(HttpMethod.PUT, "/api/admin/creators/7").file(payload(remove)).with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
         verify(service()).update(7, new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REMOVE", 0L), null);
 
         final MockMultipartFile avatar = new MockMultipartFile("avatar", "avatar.png", "image/png", new byte[] {1, 2, 3});
         mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"KEEP\"", "\"REPLACE\""))).file(avatar)
-                        .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                        .with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isCreated());
         verify(service()).create(eq(new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE", null)),
                 any(MultipartFile.class));
-        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "1").with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "1").with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isNoContent());
         verify(service()).delete(7, 1);
     }
@@ -185,7 +194,7 @@ class CreatorHttpTest {
         final String uid = "12345678901234567890";
         when(service().create(any(), any())).thenReturn(new CreatorDtos.Detail(7, 0, uid, "Creator", null, List.of(1L), null, 3, null));
         mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"123\"", "\"" + uid + "\"")))
-                        .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                        .with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").isString())
                 .andExpect(jsonPath("$.bilibiliUid").value(uid));
         verify(service()).create(new CreatorDtos.SaveRequest(uid, "Creator", null, List.of(1L), null, 3, "KEEP", null), null);
@@ -194,11 +203,11 @@ class CreatorHttpTest {
     @Test void multipartBoundaryRejectsMultipleAvatarsMissingPayloadAndLegacyJsonBody() throws Exception {
         final MockMultipartFile first = new MockMultipartFile("avatar", "a.png", "image/png", new byte[] {1});
         final MockMultipartFile second = new MockMultipartFile("avatar", "b.png", "image/png", new byte[] {2});
-        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).file(first).file(second).with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(multipart("/api/admin/creators").file(payload(SAVE)).file(first).file(second).with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isBadRequest());
-        mvc.perform(multipart("/api/admin/creators").file(first).with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(multipart("/api/admin/creators").file(first).with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST"));
-        mvc.perform(post("/api/admin/creators").contentType("application/json").content(SAVE).with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(post("/api/admin/creators").contentType("application/json").content(SAVE).with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isUnsupportedMediaType());
         verifyNoInteractions(service());
     }
@@ -206,12 +215,12 @@ class CreatorHttpTest {
     @Test void unknownSystemFieldsAndNonStringUidsAreRejectedByRealMultipartJacksonBinding() throws Exception {
         for (final String field : List.of("\"avatarId\":\"injected\"", "\"subject\":\"injected\"", "\"score\":10", "\"favoriteCount\":20")) {
             mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"name\":", field + ",\"name\":")))
-                            .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                            .with(jwt().authorities(CONTENT_ADMIN)))
                     .andExpect(status().isBadRequest());
         }
         for (final String uid : List.of("123", "true")) {
             mvc.perform(multipart("/api/admin/creators").file(payload(SAVE.replace("\"bilibiliUid\":\"123\"", "\"bilibiliUid\":" + uid)))
-                            .with(jwt().authorities(TOURNAMENT_ADMIN)))
+                            .with(jwt().authorities(CONTENT_ADMIN)))
                     .andExpect(status().isBadRequest());
         }
         verifyNoInteractions(service());
@@ -238,14 +247,14 @@ class CreatorHttpTest {
     }
 
     @Test void deleteRequiresAVersionQueryBeforeInvokingTheDirectory() throws Exception {
-        mvc.perform(delete("/api/admin/creators/7").with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(delete("/api/admin/creators/7").with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isBadRequest());
         for (final String version : List.of("1.5", "invalid")) {
-            mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", version).with(jwt().authorities(TOURNAMENT_ADMIN)))
+            mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", version).with(jwt().authorities(CONTENT_ADMIN)))
                     .andExpect(status().isBadRequest());
         }
         verifyNoInteractions(service());
-        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "2").with(jwt().authorities(TOURNAMENT_ADMIN)))
+        mvc.perform(delete("/api/admin/creators/7").queryParam("expectedVersion", "2").with(jwt().authorities(CONTENT_ADMIN)))
                 .andExpect(status().isNoContent());
         verify(service()).delete(7, 2);
     }

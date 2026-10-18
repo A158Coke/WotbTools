@@ -128,7 +128,7 @@ Android starts the same Vue application from `http://127.0.0.1:21653/index.html`
 
 ### 推荐目录的分批部署兼容
 
-AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，按UP/VIDEO派生类型卡片、列表与总入口可见性。recommendations-v1启用typed API，一次类别快照包含两个类型；只有作品非空时总入口也可见。旧后端回退到UP-only API；creators-v1表示UP技术能力，creators-content-visibility-v1确认公开UP分类为非空子集。无新能力时作品不可进入，不发新接口请求。真实tournament-admin保留各技术可用类型的空目录和管理入口；完整管理字典不回流公开快照。
+AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，按UP/VIDEO派生类型卡片、列表与总入口可见性。recommendations-v1启用typed API，一次类别快照包含两个类型；只有作品非空时总入口也可见。旧后端回退到UP-only API；creators-v1表示UP技术能力，creators-content-visibility-v1确认公开UP分类为非空子集。无新能力时作品不可进入，不发新接口请求。真实content-admin保留各技术可用类型的空目录和管理入口；tournament-admin不拥有内容域，也不再显示内容管理入口；完整管理字典不回流公开快照。
 
 RecommendationsPage是类型入口，CreatorsPage以type prop复用UP和作品列表；旧creators深链继续直达UP，recommended-videos打开作品，两者属于同一导航栏目。CreatorsConfigPage用recommendationType query选择同一表单/类别管理，VIDEO不展示实力等级。Vue Router拥有类型与分类历史，切换前由路由guard确认放弃脏草稿/图片；保存中阻止切换。useCreators/useCreatorManagement将type纳入请求所有权，过期metadata/list/editor响应不得污染新类型。api/creators.ts集中适配新typed和旧UP wire，不让组件处理endpoint或兼容字段转换。
 

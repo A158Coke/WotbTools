@@ -446,8 +446,8 @@ function offlineKnown() {
  *  - 生产构建 `import.meta.env.DEV === false` → 表达式在 build 期折叠为 false，参数整段消除；
  *  - dev 下也必须显式带上该参数（模块加载时读取，不持久化）；
  *  - vitest 环境无 query（jsdom 默认 URL）→ 同样为 false，角色断言不受影响。
- * 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403；`tournament-admin`
- * 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
+ * 只改**前端可见性**：后端仍按真实 token 鉴权，越权调用照样 401/403；`tournament-admin` 与
+ * `content-admin` 不在覆盖之列（各自 Helper 只认真实 token claims）。
  */
 const DEV_ADMIN_ROLES = import.meta.env.DEV
   && typeof window !== 'undefined'
@@ -474,6 +474,14 @@ export function tournamentAdminAllowed(auth = useAuth()) {
     && roles.includes('tournament-admin')
 }
 const isTournamentAdmin = computed(() => tournamentAdminAllowed({ authenticated, tokenParsed }))
+
+/** Content administration is its own domain boundary: tournament-admin never implies it. */
+export function contentAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && roles.includes('content-admin')
+}
+const isContentAdmin = computed(() => contentAdminAllowed({ authenticated, tokenParsed }))
 
 /** Broadcast maintenance requires the real signed-in site administrator, including in development. */
 export function leagueBroadcastAdminAllowed(auth = useAuth()) {
@@ -551,6 +559,7 @@ export function useAuth() {
     isAdmin,
     isHofAdmin,
     isTournamentAdmin,
+    isContentAdmin,
     isLeagueBroadcastAdmin,
     token,
     ensureToken,

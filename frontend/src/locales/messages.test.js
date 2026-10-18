@@ -12,7 +12,7 @@ describe('locale message composition', () => {
   })
   it('contains creator forms, manual ratings, assessment and canonical errors in all locales', () => {
     for (const locale of ['zh', 'en', 'ru']) {
-      for (const key of ['title', 'configTitle', 'uid', 'assessmentDisclaimer', 'starsHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()
+      for (const key of ['title', 'configTitle', 'loginRequired', 'adminRequired', 'uid', 'assessmentDisclaimer', 'starsHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()
       expect(messages[locale].featureOffline.creators).toBeTruthy()
       for (const code of API_ERROR_CODES.filter(code => code.startsWith('CREATOR_'))) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()
     }

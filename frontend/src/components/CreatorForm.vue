@@ -3,7 +3,7 @@ import { computed, onScopeDispose, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { recommendationImageUrl, recommendationInputValid } from '../api/creators.js'
 import type { RecommendationCategory, RecommendationDetail, CreatorLevel, RecommendationSaveRequest, RecommendationType } from '../api/creators.js'
-import { useAuth, tournamentAdminAllowed } from '../composables/useAuth.js'
+import { useAuth, contentAdminAllowed } from '../composables/useAuth.js'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import FileDrop from './FileDrop.vue'
@@ -18,7 +18,7 @@ const draft = ref<RecommendationSaveRequest>({ type: props.type ?? 'UP', externa
 const assessed = ref(props.detail?.levelId != null), categorySearch = ref('')
 const visibleCategories = computed(() => props.categories.filter(value => value.name.toLocaleLowerCase().includes(categorySearch.value.trim().toLocaleLowerCase())))
 const invalid = ref(false), submitting = ref(false), files = ref<File[]>([]), preview = ref('')
-const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated')
+const allowed = computed(() => contentAdminAllowed(auth) && auth.authInitState.value === 'authenticated')
 const disabled = computed(() => props.busy || submitting.value || !allowed.value)
 const normalizedUid = computed(() => video.value ? draft.value.externalId.trim() : draft.value.externalId.trim().replace(/^0+/, ''))
 const uidValid = computed(() => video.value ? /^BV[0-9A-Za-z]{10}$/.test(normalizedUid.value) : /^[0-9]{1,20}$/.test(draft.value.externalId.trim()) && normalizedUid.value.length > 0)
