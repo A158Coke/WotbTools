@@ -15,7 +15,7 @@ let epoch = 1
 const payload = (): CreatorSaveRequest => ({ ...requestFixture, avatarAction: 'KEEP' })
 beforeEach(() => {
   vi.clearAllMocks(); state.online = true; epoch = 1
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => epoch, ensureToken: vi.fn(async () => true), token: () => 'valid-token' }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => epoch, ensureToken: vi.fn(async () => true), token: () => 'valid-token' }
 })
 afterEach(() => vi.unstubAllEnvs())
 describe('creator directory transport', () => {
@@ -66,7 +66,7 @@ describe('creator directory transport', () => {
   it('requires a real ready tournament administrator and a refreshed token', async () => {
     state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']
     await expect(getCreatorMetadata()).rejects.toThrow('AUTH_FORBIDDEN')
-    state.auth.tokenParsed.value.realm_access.roles = ['tournament-admin']; state.auth.authInitState.value = 'initializing'
+    state.auth.tokenParsed.value.realm_access.roles = ['content-admin']; state.auth.authInitState.value = 'initializing'
     await expect(getCreatorDetail(1)).rejects.toThrow('AUTH_FORBIDDEN')
     state.auth.authInitState.value = 'authenticated'; state.auth.ensureToken.mockResolvedValueOnce(false)
     await expect(getCreatorMetadata()).rejects.toThrow('AUTH_UNAUTHENTICATED'); expect(apiFetch).not.toHaveBeenCalled()

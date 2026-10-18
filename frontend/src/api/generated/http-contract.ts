@@ -55,7 +55,7 @@ export interface paths {
         put?: never;
         /**
          * createRecommendation
-         * @description Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+         * @description Requires content-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
          */
         post: operations["createRecommendation"];
         delete?: never;
@@ -75,7 +75,7 @@ export interface paths {
         get: operations["getRecommendationDetail"];
         /**
          * updateRecommendation
-         * @description Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+         * @description Requires content-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
          */
         put: operations["updateRecommendation"];
         post?: never;
@@ -214,7 +214,7 @@ export interface paths {
         put?: never;
         /**
          * createCreator
-         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
+         * @description Requires content-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
          */
         post: operations["createCreator"];
         delete?: never;
@@ -234,7 +234,7 @@ export interface paths {
         get: operations["getCreatorDetail"];
         /**
          * updateCreator
-         * @description Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
+         * @description Requires content-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft.
          */
         put: operations["updateCreator"];
         post?: never;

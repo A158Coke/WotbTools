@@ -98,7 +98,7 @@ npm run dev
 ——这是 `frontend/src/composables/useAuth.js` 里**已入库**的 dev-gated 实现（`DEV_ADMIN_ROLES`），
 不是本机补丁，也不是可回退的临时改动。
 
-管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名个人回放的 3D / shots 保留目标并显示 Login Gate，已验证的官方示例额外匿名放行这两个能力，装甲查看器匿名可用。普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 不在覆盖之列（`tournamentAdminAllowed` 只认真实 token claims）。
+管理功能**只认角色**，URL 不得成为权限来源。Agent 深链不再有 admin route gate：匿名个人回放的 3D / shots 保留目标并显示 Login Gate，已验证的官方示例额外匿名放行这两个能力，装甲查看器匿名可用。普通登录用户可用 3D / shots / armor。`?admin=1` 不提供登录态，也不能绕过这些认证门禁；`tournament-admin` 与 `content-admin` 不在覆盖之列（`tournamentAdminAllowed` / `contentAdminAllowed` 只认真实 token claims）。
 
 - 生效条件：`import.meta.env.DEV` 且 URL 存在 `admin` 参数（实现为 `.has('admin')`，value 不参与
   判定；模块加载时读取，不持久化，每次都要带）；生产构建该表达式在 build 期折叠为恒 false、参数
@@ -147,8 +147,9 @@ function createLocalDevAuthProvider() {
 - **不提供任何真实凭据**：桩的 `token()` 恒空、`ensureToken()` 恒 false ⇒ 一切需要真
   实鉴权的后端调用（AI 复盘 / 上传 / 管理 API）照常 401，fail-closed 不变（§5）。解锁的
   只是**纯本机**能力（3D / 射击：解析与资产全在本机）。
-- **不做任何权限升级**：角色仅 `wotbtools-user`；两个 admin 角色仍只归 `?admin=1`
-  （`DEV_ADMIN_ROLES`，已入库），`tournament-admin` 只认真实 claims（`tournamentAdminAllowed`）。
+- **不做任何权限升级**：角色仅 `wotbtools-user`；`wotbtools-admin` / `HoF-admin` 仍只归 `?admin=1`
+  （`DEV_ADMIN_ROLES`，已入库），`tournament-admin` / `content-admin` 只认真实 claims
+  （`tournamentAdminAllowed` / `contentAdminAllowed`）。
   `?localuser` 与 `?admin` 相互独立，可分别或同时带。
 - 生效条件：`import.meta.env.DEV` 且 URL 存在 `localuser` 参数（实现为 `.has('localuser')`；
   模块加载时读取，不持久化，每次都要带）；Keycloak 在本态下**完全不初始化**（不发
@@ -176,6 +177,8 @@ git checkout -- frontend/src/composables/useAuth.js frontend/src/composables/use
 |---|---|---|
 | 用户管理 | `/api/admin/users/**` | `wotbtools-admin` |
 | 名人堂管理 | `/api/admin/hof/**` | `HoF-admin` 或 `wotbtools-admin` |
+| 联赛积分管理 | `/api/admin/tournaments/**` | `tournament-admin` |
+| 推荐内容管理 | `/api/admin/creators/**`、`/api/admin/recommendations/**` | `content-admin` |
 | AI 复盘 | `/api/ai/**` | `wotbtools-user` 或 `wotbtools-admin` |
 
 角色只能在 **Keycloak Admin Console** 授予（本仓只 provision realm JSON，没有授予 UI）。前端

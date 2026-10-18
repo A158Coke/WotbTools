@@ -31,7 +31,7 @@ vi.mock('../api/creators.js', async original => ({ ...await original<typeof impo
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   vi.clearAllMocks(); state.cards = [structuredClone(card) as RecommendationCard]; state.categories = structuredClone(card.categories); state.online = ref(true)
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'admin', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => 1 }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'admin', realm_access: { roles: ['content-admin'] } }), authEpoch: () => 1 }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 

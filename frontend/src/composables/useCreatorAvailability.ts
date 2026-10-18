@@ -5,7 +5,7 @@ import { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 import type { CreatorAvailability } from '../shared/creatorAvailability.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from './useFeatureGate.js'
-import { tournamentAdminAllowed, useAuth } from './useAuth.js'
+import { contentAdminAllowed, useAuth } from './useAuth.js'
 
 export { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 
@@ -16,7 +16,7 @@ export function provideCreatorAvailability() {
   const available = ref(false), loading = ref(false), error = ref<unknown>(null)
   const contentKnown = ref(false), publicCategories = ref<RecommendationCategory[]>([])
   const recommendationsSupported = ref(false)
-  const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && tournamentAdminAllowed(auth))
+  const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && contentAdminAllowed(auth))
   const typeAvailable = (type: RecommendationType) => available.value && (type === 'UP' || recommendationsSupported.value)
   const typeVisible = (type: RecommendationType) => typeAvailable(type) && (adminAllowed.value
     || (contentKnown.value && publicCategories.value.some(category => category.type === type)))
