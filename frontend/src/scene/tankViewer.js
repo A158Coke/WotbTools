@@ -396,6 +396,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   : (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization);
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
+                // Armor Inspector 概率区间：±5% = ±3σ；两端一起平移，σ 保持不变。
+                highp float pMin = penetration * 0.95;
+                highp float pMax = penetration * 1.05;
                 if (underSpaced) {
                   // 厚度通道 = 全板裸 LOS 之和；状态通道 B = 最近层转正差额 → 修正总消费
                   // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）。
@@ -406,6 +409,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
                     ? 1.0 : max(0.0, rawTotal - spacedState.b);
                   float spacedThick = totalConsume * penetration;
+                  // 判定/热力图按实际等效厚度消耗一次（与 penetration.js 的
+                  // remainingPen -= effective 一致）；不能用 3× 概率区间把确定性的
+                  // 穿透判成红色。Armor Inspector 概率只作为结果卡上的补充数值。
+                  pMin -= totalConsume * penetration;
+                  pMax -= totalConsume * penetration;
                   rem -= spacedThick;
                   if (isExplosive && rem > 0.0) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
@@ -417,17 +425,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                       splashChance = step(0.0, finalDamage);
                       penChance = 0.0;
                     } else {
-                      rem -= 0.5 * rem * distArmor;      // HEAT gap decay
+                      // HEAT gap decay：与 penetration.js 同一 0.5/m；概率区间同样衰减。
+                      float gapLoss = max(0.0, 1.0 - 0.5 * distArmor);
+                      pMin *= gapLoss;
+                      pMax *= gapLoss;
+                      rem -= 0.5 * rem * distArmor;
                     }
                   }
                 }
                 if (penChance < 0.0) {
-                  rem = max(0.0, rem);
-                  // Armor Inspector：±5% 视为 ±3σ 正态分布（σ=rem/60），概率用高斯 CDF。
-                  float sigma = rem * 0.0166666667;
-                  penChance = rem > 0.0
-                    ? clamp(aiNormalCdf((rem - finalThick) / max(sigma, 1e-4)), 0.0, 1.0)
-                    : 0.0;
+                  // 均值与宽度同时传播：σ = (max-min)/6，不得按扣减后的 rem 重算。
+                  if (pMax <= 0.0) {
+                    penChance = 0.0;
+                  } else {
+                    highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
+                    highp float mu = 0.5 * (pMin + pMax);
+                    penChance = clamp(aiNormalCdf((mu - finalThick) / sigma), 0.0, 1.0);
+                  }
                   if (canSplash) {
                     float splash = 0.5 * damage - 1.1 * finalThick;
                     splashChance = step(0.0, splash);
@@ -5045,6 +5059,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         seg: 0,
                     };
                 });
+                // 概率必须使用完整命中链（res.probability_layers），不能复用上面会在
+                // 首个未穿透层截断的确定性 layers。显示层仍保持 BlitzKit 语义不变。
+                const probabilityLayers = Array.isArray(res.probability_layers) && res.probability_layers.length
+                    ? res.probability_layers.map(l => ({ ...l, seg: 0 }))
+                    : trajLayers;
+                const probabilityPen = Number.isFinite(res.probability_penetration)
+                    ? res.probability_penetration : null;
 
                 if (res.ricochet && res.ricochet_remaining_pen > 0) {
                     const lastLayer = trajLayers[trajLayers.length - 1];
@@ -5087,33 +5108,56 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                     if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应丢弃
                                     if (ricRes) {
                                         const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, angle: l.angle_deg != null ? l.angle_deg : null, seg: 1 }));
+                                        // 续飞段同样使用完整概率链；只在段首设置一次起点穿深，
+                                        // 该段内后续 seg=1 层由 helper 保持累计区间（不再重置）。
+                                        const ricProbability = Array.isArray(ricRes.probability_layers) && ricRes.probability_layers.length
+                                            ? ricRes.probability_layers.map((l, i) => ({
+                                                ...l,
+                                                seg: 1,
+                                                ...(i === 0 ? { remaining_before: Number.isFinite(ricRes.probability_penetration) ? ricRes.probability_penetration : res.ricochet_remaining_pen } : {}),
+                                            }))
+                                            : ricLayers;
                                         const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
-                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0);
-                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); }
-                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); });
+                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0, [...probabilityLayers, ...ricProbability], probabilityPen);
+                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen); }
+                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen); });
                             return;
                         }
                     }
                 }
 
-                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0);
+                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen);
             }).catch(err => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0);
+                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null);
             });
         }
 
 
         let trajGroup = null;
         let trajInfoPos = null;
-        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt) {
+        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null) {
             if (destroyed) return;
+            // Armor Inspector 击穿概率：使用完整命中链（res.probability_layers），
+            // 不能用会在首个未穿透层/首个 Primary 截断的确定性 layers。显示层仍用 layers。
+            const probLayers = Array.isArray(probabilityLayers) && probabilityLayers.length > 0
+                ? probabilityLayers : layers;
+            const chancePen = Number.isFinite(probabilityPen)
+                ? probabilityPen
+                : (probLayers.length > 0 && Number.isFinite(probLayers[0].remaining_before ?? probLayers[0].remainBefore)
+                    ? (probLayers[0].remaining_before ?? probLayers[0].remainBefore)
+                    : penVal);
+            const chancePct = probLayers.length > 0
+                ? Math.round(penetrationChance(chancePen, probLayers) * 100)
+                : 0;
+            const chancePartial = chancePct > 0 && chancePct < 100;
+
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
 
-            // 轨迹颜色按【最终能否击穿】染色(用户要求):最终击穿=绿,未穿=红,
-            // 跳弹但未击穿=橙。复合结果('RICOCHET → PENETRATION' 等)取末段判定。
+            // 轨迹/卡片判定使用确定性等效厚度结果；Armor Inspector 概率只作为
+            // 1–99% 的补充显示，绝不把确定性的 PENETRATION 覆盖成 BLOCKED。
             const finalOutcome = result.split('→').pop().trim();
             const color = finalOutcome === 'PENETRATION' ? 0x4CAF50
                 : (finalOutcome === 'RICOCHET' ? 0xFF8800
@@ -5187,12 +5231,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return Math.abs(r - v) < 0.05 ? String(r) : (Math.round(v * 10) / 10).toFixed(1);
             };
             const segments = result.split('→').map(x => x.trim()).filter(Boolean);
-            // Armor Inspector 击穿概率：首层前的有效穿深作为区间均值；
-            // 逐层 CDF + 3× 厚度消耗（外部模块 flat，跳弹 0）。
-            const chancePen = layers.length > 0 && Number.isFinite(layers[0].remainBefore)
-                ? layers[0].remainBefore : penVal;
-            const chancePct = Math.round(penetrationChance(chancePen, layers) * 100);
-            const chancePartial = chancePct > 0 && chancePct < 100;
             const colorHex = '#' + color.toString(16).padStart(6, '0');
             // 结果不确定时整张卡走黄色（与“可能击穿”标题同色），不再沿用确定性结果的红色。
             const cardBorder = chancePartial ? 'var(--yellow)' : colorHex;
@@ -5207,7 +5245,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const partial = final && chancePartial;
                 const title = partial ? L.mayPenetrate : L.resultName(st);
                 const titleColor = partial ? 'var(--yellow)' : stColor(st);
-                const chanceHtml = final
+                const chanceHtml = partial
                     ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${chancePct}%</span>`
                     : '';
                 return `<div style="font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;">${escapeText(title)}${chanceHtml}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;

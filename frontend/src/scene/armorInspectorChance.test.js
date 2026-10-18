@@ -90,14 +90,30 @@ describe('Armor Inspector 逐层概率', () => {
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
-  it('HEAT Gap 层不参与 CDF，区间继续按当前值推进', () => {
+  it('HEAT Gap 层不参与 CDF，但按 penetration.js 的 0.5/m 衰减区间', () => {
     const layers = [
       { section: 'hull', name: 'hull', thickness: 20, effective: 20, remaining_before: 100 },
       { name: 'Gap 0.50m', thickness: 0, remaining_before: 80 },
       { section: 'hull', name: 'hull', thickness: 30, effective: 30, remaining_before: 60 },
     ]
-    // 第一层后区间 100-60=40；gap 不参与 CDF；第二层用 40 → Φ(10/(40/60)) ≈ 1。
-    expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
+    // 第一层后 [95,105]-3×20=[35,45]；gap 0.5m 衰减 25% → [26.25,33.75]；
+    // 第二层 30mm：μ=30、σ=1.25 → Φ(0)=0.5。remaining_before 是确定性截断链，不参与。
+    expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
+  })
+
+  it('扣减剩余穿深时保留区间宽度：P100 → 20mm → 41mm ≈ 27.4%', () => {
+    const layers = [
+      { section: 'spaced', name: 'spaced', thickness: 20, effective: 20 },
+      { section: 'hull', name: 'hull', thickness: 41, effective: 41 },
+    ]
+    // [95,105] - 3×20 = [35,45]，σ 仍为 10/6；Φ((40-41)/(10/6)) = Φ(-0.6)。
+    expect(penetrationChance(100, layers)).toBeCloseTo(0.2742531, 5)
+  })
+
+  it('外部模块 flat 耗尽：P10 遇 20mm 履带 → 0（不再返回 100%）', () => {
+    expect(penetrationChance(10, [
+      { section: 'chassis', name: 'track', thickness: 20, effective: 20 },
+    ])).toBe(0)
   })
 
   it('单层 integration：与 Armor Inspector 公式一致', () => {
@@ -118,6 +134,16 @@ describe('Armor Inspector 逐层概率', () => {
       { name: 'hull', thickness: 25, eff: 25, remainBefore: 75, seg: 1 },
     ]
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
+  })
+
+  it('续飞段只在段首初始化一次：连续两层 seg=1 不得每层清空累计状态', () => {
+    const layers = [
+      { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, ricochet: true, seg: 0 },
+      { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, seg: 1 },
+      { name: 'hull', thickness: 20, eff: 20, remainBefore: 55, angle: 0, seg: 1 },
+    ]
+    // 75 → [71.25,78.75]；第一层后 [11.25,18.75]；第二层 20mm → 0。
+    expect(penetrationChance(100, layers)).toBe(0)
   })
 
   it('camelCase 字段（tankViewer trajLayers）同样可用', () => {

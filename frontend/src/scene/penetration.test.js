@@ -2,6 +2,7 @@
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
 import { calculate, isPrimary, ArmorSection } from './penetration.js'
+import { penetrationChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
   return {
@@ -351,6 +352,66 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(r2.result).toBe('PENETRATION')
     const r3 = calculate(req('heat', 100.0, 100.0, [hit(ArmorSection.HULL, 108.0, [0, 0, 0])], { calibrated_shells: true }))
     expect(r3.result).toBe('BLOCKED')
+  })
+})
+
+describe('probability_layers（完整命中链，供 Armor Inspector 概率模型）', () => {
+  it('确定性在间隙甲处截断时，概率链仍保留其后的主装甲', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    // 确定性：100mm 间隙甲等厚不穿透 → 只留下间隙甲层。
+    expect(r.result).toBe('BLOCKED')
+    expect(r.layers.map(l => l.part_name)).toEqual(['spaced'])
+    // 概率：完整路径含间隙甲 + 主装甲；3× 消耗后区间为负，主装甲 0%。
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+  })
+
+  it('外部模块耗尽时概率链仍含其后主装甲，概率为 0（P10 遇 20mm 履带）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 10.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.layers.map(l => l.part_name)).toEqual(['chassis'])
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+  })
+
+  it('概率链继续收集首个 Primary 之后的多层主装甲（击穿第一层不再终结概率）', () => {
+    const hits = [
+      hit(ArmorSection.HULL, 30.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    // 确定性层链仍按 BlitzKit 在首个 Primary 截断（用于确定性判定展示）。
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(1)
+    // 概率链必须看到第二层主装甲，3× 消耗后概率为 0。
+    expect(r.probability_layers.map(l => l.section)).toEqual(['hull', 'hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+  })
+
+  it('Super Conqueror 首上：20mm 间隙板 + 155mm 主甲 @42°，252AP 等效厚度足够 → 穿透', () => {
+    // 用户实车截图：layer13 eff≈21.5（20mm 首层 2×口径增强转正）+ layer1
+    // eff≈207（155mm 第二实际层裸 LOS），252 − 21.5 > 207 → 确定性穿透。
+    const a = 42 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [0, 0, 0], { normal }),
+      hit(ArmorSection.HULL, 155.0, [0, 0, 1], { normal }),
+    ]
+    const r = calculate(req('ap', 252.0, 120.0, hits, { normalization_deg: 5 }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(2)
+    expect(r.layers.every(l => l.penetrated)).toBe(true)
+    expect(r.damage).toBe(400.0)
+    expect(Math.abs(r.layers[0].effective - 21.5)).toBeLessThan(0.2)
+    expect(Math.abs(r.layers[1].effective - 207.0)).toBeLessThan(2.0)
   })
 })
 

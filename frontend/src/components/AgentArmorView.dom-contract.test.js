@@ -309,10 +309,27 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(packSrc).toMatch(/const normR = armorIdx === 0/)
   })
   it('点击链：转正只作用于首个实际装甲层（armorLayerCount === 0）', () => {
-    expect(pen).toMatch(/const effNormalization = armorLayerCount === 0 \? normalization : 0\.0/)
-    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| layerIndex > 0 \|\| !allowRicochet/)
+    // 几何规则已收敛到 resolveLayerGeometry，确定性与概率链共用（review P2）。
+    expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
+    expect(pen).toMatch(/const effNormalization = ctx\.armorLayerCount === 0 \? normalization : 0\.0/)
+    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
-    expect(pen).toMatch(/const threeCalibersRule = caliber > thickness \* 3\.0\r?\n/)
+    expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
+  })
+  it('主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）', () => {
+    expect(kernel).toMatch(/pMin -= totalConsume \* penetration;/)
+    expect(kernel).toMatch(/pMax -= totalConsume \* penetration;/)
+    expect(kernel).not.toMatch(/3\.0 \* spacedEff/)
+    expect(kernel).toMatch(/highp float sigma = max\(\(pMax - pMin\) \/ 6\.0, 1e-4\);/)
+  })
+  it('判定/热力图由确定性等效厚度决定；Armor Inspector 概率只做 1–99% 补充显示', () => {
+    // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
+    // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
+    expect(kernel).not.toMatch(/chanceOutcome/)
+    expect(kernel).toMatch(/const title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
+    expect(kernel).toMatch(/const chanceHtml = partial/)
+    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits, false\)/)
+    expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
   })
 })
 
