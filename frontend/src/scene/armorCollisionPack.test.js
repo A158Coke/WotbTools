@@ -394,6 +394,17 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(sim.penChance).toBeLessThan(1)
     })
 
+    it('续飞名义被挡但概率 1–99%：保留部分概率供热力图', () => {
+        // review 2026-10-18：remaining 100mm、主甲 102mm 名义被挡，但
+        // [95,105] 区间下 Φ((100−102)/(100/60)) ≈ 11.5%，卡片显示“可能击穿 12%”。
+        const { sim, oracle } = runCase([
+            { section: 'hull', thickness: 102, x: 2 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.penChance).toBeCloseTo(0.1150697, 5)
+    })
+
     it('严格大于才穿透：等厚 → 被挡（红）', () => {
         const { sim, oracle } = runCase([
             { section: 'hull', thickness: 250, x: 2 },

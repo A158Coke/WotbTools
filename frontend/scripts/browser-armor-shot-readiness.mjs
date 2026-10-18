@@ -268,17 +268,22 @@ try {
       // 只断言视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
       // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
       // 命中弹默认 = 命中点相对视角（15m/18.75° 标定）；MISS 无命中点 = world 总览 50°。
+      // shot-ready 标记必须存在：普通检视初始状态也满足 15m/18.75° 或 50°，
+      // 不能只凭相机数值判断。__shotCtx.shot 只在射击复现场景数据装载后出现，
+      // 且 target_eid 区分 MISS/HIT；相机数值再证明自动视角已执行。
       if (mode === 'overview') {
         await page.waitFor(() => {
           const v = window.__armorRicochet?.info()?.view
           return v && v.worldOverview === true && Math.abs(v.fov - 50) < 0.01
-        }, { timeout: 30000, label: 'MISS world overview ready (50° FOV)' })
+            && window.__shotCtx?.shot?.target_eid == null
+        }, { timeout: 30000, label: 'MISS world overview ready (50° FOV, shot loaded)' })
       } else {
         await page.waitFor(() => {
           const v = window.__armorRicochet?.info()?.view
           return v && v.worldOverview === false && Math.abs(v.fov - 18.75) < 0.01
             && Math.abs(v.cameraDistance - 15) < 0.2
-        }, { timeout: 30000, label: 'HIT default impact view ready (15m / 18.75° FOV)' })
+            && window.__shotCtx?.shot?.target_eid != null
+        }, { timeout: 30000, label: 'HIT default impact view ready (15m / 18.75° FOV, shot loaded)' })
       }
       return page.evaluate('window.__armorRicochet.info().view')
     }

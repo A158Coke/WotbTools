@@ -383,7 +383,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (rcMode >= 1) {
                   contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
                   if (contCls == 1) { penChance = contChance; ricocheted = false; contPen = true; }   // 续飞击穿→绿
-                  else if (contCls == 2) { ricocheted = false; }                                      // 续飞被挡→红
+                  else if (contCls == 2) {
+                    ricocheted = false;
+                    // 名义被挡但 1–99%：显示概率带，不写死红色（与结果卡一致）。
+                    float p = clamp(contChance, 0.0, 1.0);
+                    float pct = floor(p * 100.0 + 0.5);
+                    if (pct >= 1.0 && pct <= 99.0) penChance = p;
+                  }
                 }
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
@@ -829,7 +835,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 highp float rcDiag = 0.0;
                 int contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
                 if (contCls == 1) bCode = 0.2 + 0.6 * clamp(contChance, 0.0, 1.0);
-                else if (contCls == 2) bCode = 1.0;
+                else if (contCls == 2) {
+                  // 名义被挡但概率为 1–99%：编码概率带（与卡片“可能击穿 p%”一致）；
+                  // 0%/100% 仍编码 1.0 = 硬红（卡片隐藏概率、显示 BLOCKED）。
+                  float p = clamp(contChance, 0.0, 1.0);
+                  float pct = floor(p * 100.0 + 0.5);
+                  bCode = (pct >= 1.0 && pct <= 99.0) ? 0.2 + 0.6 * p : 1.0;
+                }
                 // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
                 if (rcDiag > 1e30) bCode = -1.0;
               }
