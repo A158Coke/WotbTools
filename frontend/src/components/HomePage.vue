@@ -13,7 +13,7 @@
  * 分段：① 全出血 Hero ② 实时数据带 ③ 能力展示（**无链接**，纯视觉）④ 极简页脚。
  * ③ 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含真实用户的私有数据。
  */
-import { computed, inject, onMounted, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import * as api from '../utils/api.js'
 import { ArrowRight } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
@@ -36,9 +36,6 @@ const { locale } = useI18n()
 
 const topRecord = ref(null)
 const recordTotal = ref(null)
-/** 进场动效只跑一次；`prefers-reduced-motion` 由 CSS 短路，这里不做第二份判断。 */
-const revealed = ref(false)
-onMounted(() => requestAnimationFrame(() => { revealed.value = true }))
 
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
@@ -80,7 +77,7 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
 </script>
 
 <template>
-  <main class="home-stage" :class="{ 'is-revealed': revealed }">
+  <main class="home-stage">
     <!-- ① 全出血 Hero -->
     <section class="home-hero" :style="{ '--home-hero-image': `url(${heroDecorImg})` }">
       <!-- 装饰层放在内容**之前**：两者都定位，后出现的内容自然压在上面，不需要 z-index。 -->
@@ -155,7 +152,9 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
   padding-block: var(--space-12);
   border-bottom: 1px solid var(--color-border-subtle);
 }
-.home-hero-inner { position: relative; width: 100%; }
+/* 不要写 width：`.layout-wide` 的左右边距就是靠 `width: min(max, 100% - gutter*2)` 做出来的，
+   在这里补一条 `width: 100%` 会把它盖掉，Hero 就贴着屏幕边缘、还比下面的区块少一个 gutter。 */
+.home-hero-inner { position: relative; }
 
 /* 装饰插槽（design-language §2）：Showcase 显示，Classic 关闭。
    图只铺右半边并由 scrim 压到纯色，文字永远落在稳定底色上（WCAG 1.4.3）。 */
@@ -223,21 +222,26 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-footer-bar a:hover { text-decoration: underline; }
 }
 
-/* 进场动效：只做一次淡入上浮，逐段延迟。 */
-.home-hero-inner, .home-shot, .home-footer-bar {
-  opacity: 0;
-  transform: translateY(18px);
-  transition: opacity 620ms var(--ease-standard), transform 620ms var(--ease-standard);
+/* 进场动效：一次淡入上浮。
+   **元素的常态是可见的**，动效只是叠在上面的一段 animation，不涉及任何 JS。
+   **只动位移，不动透明度**，这条是实测逼出来的：不绘制的标签页里动画会卡在第一帧
+   （动画处于活动期但时间线不推进，`fill-mode` 改不改都一样），所以任何从 `opacity: 0`
+   起步的进场动画都会让整页空白——后台标签页加载 10 秒后实测仍是 opacity 0。
+   真人看不到这个空白（要看到就得切过去，一切过去就开始绘制），但**单帧抓取**会：
+   社交分享预览、截图服务、打印，对一个营销首页正好要紧。
+   卡在第一帧的最坏情况现在只是「内容下移 18px」，始终可读。
+   同理不能用「默认 opacity: 0，等 JS 加 class 再显出来」：那把整页可见性挂在 rAF 回调上。
+   错落用递增**时长**而不是 `animation-delay`，避免延迟期的空窗。 */
+@keyframes home-rise {
+  from { transform: translateY(18px); }
 }
-.is-revealed .home-hero-inner, .is-revealed .home-shot, .is-revealed .home-footer-bar { opacity: 1; transform: none; }
-.is-revealed .home-shot:nth-of-type(2) { transition-delay: 80ms; }
-.is-revealed .home-shot:nth-of-type(3) { transition-delay: 160ms; }
-.is-revealed .home-shot:nth-of-type(4) { transition-delay: 240ms; }
-.is-revealed .home-shot:nth-of-type(5) { transition-delay: 320ms; }
+.home-hero-inner, .home-shot, .home-footer-bar { animation: home-rise 620ms var(--ease-standard); }
+.home-shot:nth-of-type(2) { animation-duration: 760ms; }
+.home-shot:nth-of-type(3) { animation-duration: 900ms; }
+.home-shot:nth-of-type(4) { animation-duration: 1040ms; }
+.home-shot:nth-of-type(5) { animation-duration: 1180ms; }
 @media (prefers-reduced-motion: reduce) {
-  /* 动效整体短路：不做位移、不做延迟，内容直接就位。 */
-  .home-hero-inner, .home-shot, .home-footer-bar { opacity: 1; transform: none; transition: none; }
-  .is-revealed .home-shot { transition-delay: 0ms; }
+  .home-hero-inner, .home-shot, .home-footer-bar { animation: none; }
 }
 
 @media (768px <= width < 1200px) {

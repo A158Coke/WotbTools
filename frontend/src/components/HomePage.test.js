@@ -147,6 +147,18 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     wrapper.unmount()
   })
 
+  /**
+   * QA 实测（2026-10-18）：进场动效原本是「默认 opacity: 0，onMounted 里 rAF 加 is-revealed」。
+   * 页面没被绘制时 rAF 不触发——后台标签页加载 10 秒后整页仍是 opacity 0（2/2 复现），
+   * 单帧截图 / 打印同理，JS 一出错更是永久空白。内容的可见性不能挂在 JS 上。
+   */
+  it('content visibility does not depend on any JS-applied class', () => {
+    const wrapper = mountPage()
+    expect(wrapper.get('.home-stage').classes()).not.toContain('is-revealed')
+    expect(wrapper.html()).not.toContain('is-revealed')
+    wrapper.unmount()
+  })
+
   it('the panels of the previous homepage are all gone', () => {
     const wrapper = mountPage()
     for (const selector of ['.replay-panel', '.analysis-panel', '.quick-panel', '.feature-card', '.record-card', '.home-core-card', '.home-feature-card', '.home-feature-lead']) {
