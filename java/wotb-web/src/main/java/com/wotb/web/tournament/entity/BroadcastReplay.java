@@ -25,6 +25,8 @@ public class BroadcastReplay {
     public String url;
     @Column(name = "match_date", nullable = false)
     public LocalDate matchDate;
+    @Column(name = "match_starts_at")
+    public Instant matchStartsAt;
     @Column(name = "day_number", nullable = false)
     public int dayNumber;
     // Read boundary for pre-v2 labels; v2 transport never exposes this archive.

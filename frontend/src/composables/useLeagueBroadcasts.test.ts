@@ -17,7 +17,7 @@ async function setup(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbC
   const allowed = ref(true), tokenParsed = ref({ sub: 'one' }), online = ref(true)
   const transport = { ...api, listBroadcasts: vi.fn(async (server?: string) => ({ servers, seasons: server === 'CN' ? [season] : [], coverUploadAvailable: true })),
     getBroadcastSeason: vi.fn(async () => ({ season, categories: [category], coverUploadAvailable: true })),
-    getBroadcastCategory: vi.fn(async () => ({ season, category, nodes: [node], coverUploadAvailable: true })),
+    getBroadcastCategory: vi.fn(async () => ({ defaultTimeZone: 'Asia/Shanghai', season, category, nodes: [node], coverUploadAvailable: true })),
     getBroadcastDeletionPreview: vi.fn(async () => ({ seasonId: 10, expectedVersion: 4, rootCount: 1, replayCount: 2 })),
     deleteBroadcastResource: vi.fn(async () => undefined), ...overrides }
   const confirm = vi.fn(async (_value: any) => true)
@@ -32,6 +32,19 @@ async function setup(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbC
 }
 
 describe('broadcast route and request ownership', () => {
+  it('derives the default zone from each category envelope rather than retaining the previous server zone', async () => {
+    localStorage.clear()
+    const p = await setup()
+    expect(p.state.displayTimeZone.value).toBe('Asia/Shanghai')
+    p.transport.getBroadcastCategory.mockResolvedValueOnce({ defaultTimeZone: 'America/Los_Angeles', season, category, nodes: [node], coverUploadAvailable: true })
+    await p.state.refresh()
+    expect(p.state.displayTimeZone.value).toBe('America/Los_Angeles')
+    p.state.displayTimeZonePreference.value = 'UTC'
+    await p.state.refresh()
+    expect(p.state.defaultTimeZone.value).toBe('Asia/Shanghai')
+    expect(p.state.displayTimeZone.value).toBe('UTC')
+    p.stop(); localStorage.clear()
+  })
   it('restores category deep links and keeps Back/Forward under Vue Router', async () => {
     const p = await setup()
     expect(p.state.category.value?.id).toBe(20)
@@ -56,7 +69,7 @@ describe('broadcast route and request ownership', () => {
     p.transport.getBroadcastCategory.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }) as any)
     const old = p.state.refresh(); await flushPromises()
     await p.state.navigate({ server: 'EU' }); await flushPromises()
-    finish({ season, category, nodes: [node], coverUploadAvailable: true }); await old
+    finish({ defaultTimeZone: 'Asia/Shanghai', season, category, nodes: [node], coverUploadAvailable: true }); await old
     expect(p.state.server.value).toBe('EU')
     expect(p.state.category.value).toBeNull()
     expect(p.state.seasons.value).toEqual([])
