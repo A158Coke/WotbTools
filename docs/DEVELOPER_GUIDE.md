@@ -151,7 +151,7 @@ Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退
 | Observability | Prometheus/Loki/Alloy/Grafana config | Yecao Compose、local state | config/runtime、Tofu | `grafana` | `observability.yml` |
 | Caddy / TX Alloy | gateway / TX shipper config | TX Compose | config validation | — | `caddy.yml` / `alloy-tx.yml` |
 | Komodo 控制平面 | Core/Mongo Compose、plan guard | Yecao Core/Mongo runtime、`/opt/komodo` local state、DNSPod | Compose 契约、Tofu validation | `komodo` | `komodo-controller.yml` |
-| Komodo Periphery (Yecao / TX1 / TX2) | pinned release manifest、每宿主 target profile、共享 config/unit | 各宿主 `/usr/local/bin/periphery`、`/etc/komodo`、systemd unit；Yecao `/opt/periphery`、TX1 `/opt/wotb-tx/periphery`、TX2 `/opt/wotb-tx2/periphery` 暂存 | release/config/unit/target 契约、onboarding 生命周期与 lock fixture | — | `komodo-periphery.yml` |
+| Komodo Periphery (Yecao / TX1 / TX2 / Alibaba `ali-sh-asset-01`) | pinned release manifest、每宿主 target profile、共享 config/unit | 各宿主 `/usr/local/bin/periphery`、`/etc/komodo`、systemd unit；Yecao `/opt/periphery`、TX1 `/opt/wotb-tx/periphery`、TX2 `/opt/wotb-tx2/periphery`、Alibaba `/opt/wotb-asset/periphery` 暂存；Alibaba 是唯一公网 Core（outbound `:443`）reviewed 例外 | release/config/unit/target 契约、onboarding 生命周期、live env/argv adoption 与 lock fixture | — | `komodo-periphery.yml` |
 | Komodo 声明式资源 (K4.1) | `infra/komodo/resources/**` 的 ResourceSync 与 Server 期望状态 | Komodo 控制面（只由人工在 UI apply，CI 不 apply） | `scripts/ci/test-komodo-resources.py`（tomllib 结构契约） | — | — （仅 `deployment` PR gate） |
 | Deployment / Python | shared deploy policy / common Python tools | shared scripts | contract smokes / unit tests | — | — |
 ---
