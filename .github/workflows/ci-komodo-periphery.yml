@@ -37,6 +37,8 @@ jobs:
       # through the real install.sh, and a real ":8120 has no listener" probe.
       - name: Validate the shared Periphery lifecycle and safety fixtures
         run: bash deploy/periphery/test-periphery.sh
+      - name: Validate existing-host adoption marker gate
+        run: bash deploy/periphery/test-adopt-existing.sh
       - name: Validate Alibaba asset target and adoption identity
         shell: bash
         run: |
