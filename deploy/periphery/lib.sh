@@ -297,9 +297,24 @@ read_process_env() {
   return 0
 }
 
+# periphery_env_override <complete environment text>
+#   0 = an entry NAME begins with the Periphery prefix in ANY case
+#   1 = no such entry
+#
+# Komodo v2.3.3 parses both uppercase and lowercase environment names
+# (`PERIPHERY_*` and `periphery_*`) and lets every one of them override the TOML.
+# The prefix is therefore matched case-insensitively, while the entry name keeps
+# its `[A-Za-z0-9_]` shape. Callers must pass the COMPLETE, already-buffered
+# environment from read_process_env: this function only matches, so adoption and
+# the later credential-free verification share one drained inspection regardless of
+# environment size (no `producer | grep -q` SIGPIPE path).
+periphery_env_override() {
+  grep -Eiq '^periphery_[a-z0-9_]+=' <<<"$1"
+}
+
 # process_env_is_clean <pid>
-#   0 = the process environment is readable and holds no onboarding key
-#   1 = the credential is still present in the process environment
+#   0 = the process environment is readable and holds no Periphery override
+#   1 = a Periphery environment override (credential included) is still present
 #   2 = the environment cannot be read or is not a regular file, so a
 #       credential-free process cannot be proven
 #
@@ -309,7 +324,7 @@ read_process_env() {
 process_env_is_clean() {
   local content
   read_process_env "$1" content || return 2
-  if grep -q '^PERIPHERY_ONBOARDING_KEY=' <<<"$content"; then
+  if periphery_env_override "$content"; then
     return 1
   fi
   return 0
@@ -352,7 +367,7 @@ assert_reviewed_argv() {
 # process_env_state_label <code>: the diagnostic for a non-zero probe result.
 process_env_state_label() {
   case "$1" in
-    1) printf 'PERIPHERY_ONBOARDING_KEY is still present in the process environment' ;;
+    1) printf 'a Periphery environment override (PERIPHERY_*/periphery_*) is still present in the process environment' ;;
     2) printf 'the process environment cannot be inspected, so a credential-free process cannot be proven' ;;
     *) printf 'the process environment was not inspected' ;;
   esac

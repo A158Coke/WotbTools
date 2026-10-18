@@ -55,12 +55,18 @@ build_extra_args = []
 # (/opt/wotb-asset/.deploy.lock) that deploy/periphery/reconcile.sh takes. Without
 # this, a Periphery reconcile could replace/restart the agent while it is servicing
 # a Stack deploy. Komodo v2.3.3 substitutes [[COMPOSE_COMMAND]] and runs the result
-# through the shell, so the wrapper keeps the whole `docker compose up` inside a
+# through /bin/bash, so the wrapper keeps the whole `docker compose up` inside a
 # non-blocking flock: a reconcile in progress makes the deploy fail closed instead
 # of racing it.
+#
+# The lock file belongs to the host's deploy owner and MUST already exist. util-linux
+# flock's pathname form creates a missing file, so the wrapper never passes the path
+# to flock: it first requires a regular, non-symlink file, opens it read-only on fd 9
+# (`exec 9<` never creates), then locks that fd. A missing or symlinked lock fails
+# closed before any Compose command runs.
 # A Compose pull is outside the wrapper (compose_cmd_wrapper_include = ["up"])
 # because it does not mutate the running Stack.
-compose_cmd_wrapper = "flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'"
+compose_cmd_wrapper = "test -f /opt/wotb-asset/.deploy.lock && test ! -L /opt/wotb-asset/.deploy.lock && exec 9</opt/wotb-asset/.deploy.lock && flock --exclusive --nonblock 9 && [[COMPOSE_COMMAND]]"
 compose_cmd_wrapper_include = ["up"]
 ignore_services = []
 file_contents = ""

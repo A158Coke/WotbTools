@@ -115,10 +115,13 @@ and never creates its own:
 - **Alibaba asset origin:** `/opt/wotb-asset/.deploy.lock`, the host's own deploy-owned
   lock. The Komodo Stack `wotbtools-asset-origin` serializes its mutating Compose
   `up` on the **same** lock through `compose_cmd_wrapper`
-  (`flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'`,
-  `compose_cmd_wrapper_include = ["up"]`), so a Stack deploy and a Periphery
-  reconcile can never overlap. A Compose pull stays outside the lock because it does
-  not mutate the running Stack. No second lock is introduced.
+  (`test -f … && test ! -L … && exec 9<… && flock --exclusive --nonblock 9 &&
+  [[COMPOSE_COMMAND]]`, `compose_cmd_wrapper_include = ["up"]`). The wrapper never
+  hands the pathname to flock (its pathname form would create the file): it requires
+  an existing regular non-symlink lock, opens it read-only on fd 9, and locks that fd,
+  so a missing or symlinked lock fails closed. A Stack deploy and a Periphery
+  reconcile can never overlap, and a Compose pull stays outside the lock because it
+  does not mutate the running Stack. No second lock is introduced.
 
 The lock root and its lock file belong to the host's deploy owner, so the reconcile
 **requires them to already exist** and fails closed if they do not. Creating the
@@ -293,12 +296,14 @@ commits `/etc/komodo/keys/onboarding-complete`:
 - a persistent identity and a pinned Core public key already exist;
 - the transient `/run/komodo/periphery-bootstrap.env` is gone;
 - the **complete** live `/proc/<MainPID>/environ` is readable and contains **no**
-  `PERIPHERY_*` entry. Komodo v2.3.3 lets environment variables override TOML
-  (including `*_FILE` variants and aliases such as `CONNECT_AS`,
+  Periphery-prefixed entry in **any case** (`PERIPHERY_*` / `periphery_*`).
+  Komodo v2.3.3 lets environment variables override TOML and parses lowercase names
+  too (including `*_FILE` variants and aliases such as `CONNECT_AS`,
   `ROOT_DIRECTORY`, `CORE_ADDRESSES` and the TLS flags), so a single override could
   certify an identity/Core route the process is not using. The read is buffered
-  first, so a large environment can never turn a match into a SIGPIPE false
-  negative;
+  first and matched through the shared normalized-prefix helper, so a large
+  environment can never turn a match into a SIGPIPE false negative and the later
+  credential-free verification applies the same rule;
 - the installed TOML has no `onboarding_key` and canonicalizes to **exactly** the
   reviewed target's effective config (only the legacy singular `core_address` and
   semantically identical v2.3.3 defaults may differ);

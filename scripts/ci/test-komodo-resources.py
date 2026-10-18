@@ -22,8 +22,12 @@ Run: python3 scripts/ci/test-komodo-resources.py
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -176,7 +180,10 @@ ASSET_STACK_CONFIG = {
     "extra_args": ["--force-recreate"],
     "build_extra_args": [],
     "compose_cmd_wrapper": (
-        "flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'"
+        "test -f /opt/wotb-asset/.deploy.lock && "
+        "test ! -L /opt/wotb-asset/.deploy.lock && "
+        "exec 9</opt/wotb-asset/.deploy.lock && "
+        "flock --exclusive --nonblock 9 && [[COMPOSE_COMMAND]]"
     ),
     "compose_cmd_wrapper_include": ["up"],
     "ignore_services": [],
@@ -383,16 +390,118 @@ def check_stacks(entries: dict[str, dict]) -> None:
         if "[[COMPOSE_COMMAND]]" not in wrapper:
             fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must contain the "
                  "Komodo-required [[COMPOSE_COMMAND]] placeholder")
-        if "flock" not in wrapper or "--nonblock" not in wrapper:
-            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must take a "
-                 "non-blocking flock")
-        lock_tokens = set(re.findall(r"[^\s'\"]+\.lock", wrapper))
+        # util-linux flock's pathname form creates a missing file, which would break
+        # the contract that the host's deploy owner owns the lock. The reviewed
+        # wrapper must therefore prove the file exists and is not a symlink, open it
+        # read-only on fd 9, and lock that fd.
+        for fragment, message in (
+            (f"test -f {ASSET_HOST_LOCK}", "must require the pre-created host lock"),
+            (f"test ! -L {ASSET_HOST_LOCK}", "must reject a symlinked host lock"),
+            (f"exec 9<{ASSET_HOST_LOCK}", "must open the existing lock read-only on fd 9"),
+            ("flock --exclusive --nonblock 9", "must take a non-blocking flock on fd 9"),
+        ):
+            if fragment not in wrapper:
+                fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper {message}")
+        if re.search(r"flock[^&]*" + re.escape(ASSET_HOST_LOCK), wrapper):
+            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must never hand the "
+                 "lock path to flock (its pathname form creates a missing file)")
+        lock_tokens = set(re.findall(r"/[A-Za-z0-9._/-]+\.lock", wrapper))
         if lock_tokens != {ASSET_HOST_LOCK}:
             fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must lock only the "
                  f"existing host lock {ASSET_HOST_LOCK}, found {sorted(lock_tokens) or '[]'}")
     if asset.get("compose_cmd_wrapper_include") != ["up"]:
         fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper_include must be exactly "
              "['up']; a pull must stay outside the host lock")
+
+
+def check_asset_stack_wrapper_execution(wrapper: str) -> None:
+    """Execute the reviewed host-lock wrapper against a disposable lock.
+
+    Komodo v2.3.3 substitutes [[COMPOSE_COMMAND]] and runs the wrapper through
+    /bin/bash, so the real failure surface is exactly this shell string. The
+    disposable run proves the wrapper (a) never creates a missing lock, (b) rejects
+    a symlinked lock, (c) runs the Compose command while holding an existing lock,
+    and (d) rejects a mutation while another holder (a Periphery reconcile) has it.
+    """
+    if os.name != "posix":
+        print("  note: asset host-lock wrapper execution skipped (POSIX only)")
+        return
+    if shutil.which("bash") is None or shutil.which("flock") is None:
+        fail("the asset host-lock wrapper contract needs bash and util-linux flock")
+        return
+    if "[[COMPOSE_COMMAND]]" not in wrapper or ASSET_HOST_LOCK not in wrapper:
+        return  # structural checks already reported the broken wrapper
+
+    import fcntl
+
+    with tempfile.TemporaryDirectory(prefix="wotb-asset-lock-") as raw:
+        work = Path(raw)
+        lock = work / ".deploy.lock"
+        marker = work / "compose-ran"
+        probe = work / "probe.sh"
+        probe.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -Eeuo pipefail\n"
+            "lock=\"$1\"\n"
+            "marker=\"$2\"\n"
+            "if flock --exclusive --nonblock \"$lock\" -c true 2>/dev/null; then\n"
+            "  echo 'the host lock was not held during the Compose command' >&2\n"
+            "  exit 9\n"
+            "fi\n"
+            "printf 'ran\\n' > \"$marker\"\n",
+            encoding="utf-8",
+        )
+        probe.chmod(0o755)
+        command = f"bash {probe} {lock} {marker}"
+        rendered = wrapper.replace(ASSET_HOST_LOCK, str(lock)).replace(
+            "[[COMPOSE_COMMAND]]", command
+        )
+
+        def execute() -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["bash", "-c", rendered],
+                cwd=str(work),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+        missing = execute()
+        if missing.returncode == 0:
+            fail("asset wrapper ran a Stack mutation without the host lock file")
+        if lock.exists() or lock.is_symlink():
+            fail("asset wrapper created the host lock file; it must already exist")
+
+        target = work / "other.lock"
+        target.write_text("", encoding="utf-8")
+        target.chmod(0o600)
+        lock.symlink_to(target)
+        symlinked = execute()
+        if symlinked.returncode == 0:
+            fail("asset wrapper followed a symlinked host lock")
+        if marker.exists():
+            marker.unlink()
+        lock.unlink()
+
+        lock.write_text("", encoding="utf-8")
+        lock.chmod(0o600)
+        accepted = execute()
+        if accepted.returncode != 0:
+            fail(f"asset wrapper rejected a pre-created host lock: {accepted.stderr.strip()}")
+        elif not marker.exists():
+            fail("asset wrapper did not run the Compose command under the host lock")
+
+        if marker.exists():
+            marker.unlink()
+        with lock.open("r", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            held = execute()
+        if held.returncode == 0:
+            fail("asset wrapper ran a Stack mutation while another holder had the host lock")
+        if marker.exists():
+            fail("asset wrapper ran the Compose command despite a held host lock")
+
+    print("  asset host-lock wrapper: missing/symlink/held fail closed, existing lock executes")
 
 
 def main() -> int:
@@ -407,6 +516,9 @@ def main() -> int:
     check_resource_sync(by_type.get("resource_sync", {}))
     check_servers(by_type.get("server", {}))
     check_stacks(by_type.get("stack", {}))
+    asset_stack = by_type.get("stack", {}).get(ASSET_STACK_NAME, {}).get("config")
+    if isinstance(asset_stack, dict):
+        check_asset_stack_wrapper_execution(asset_stack.get("compose_cmd_wrapper", ""))
 
     if failures:
         print("Declarative Komodo resource contract: FAIL", file=sys.stderr)

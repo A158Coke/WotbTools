@@ -908,6 +908,28 @@ assert push_run.index("deploy/check-production-freshness.sh") < push_run.index("
 assert "refs/heads/asset-origin-frozen:refs/heads/main" in push_run
 assert "force_update" not in asset_text, "account-level mirroring cannot freeze the event SHA"
 
+# The canonical runbook must state the same narrow exception as the authoritative
+# workflow contract. Without this, a maintainer could read "the resource tree only
+# reaches a non-production gate" as "asset-origin.toml is production-inert".
+runbook_text = " ".join(
+    (root / "docs/operations/komodo-resource-sync.md").read_text(encoding="utf-8").split()
+)
+for statement in (
+    "the resource tree routes only to the non-production `deployment` PR gate",
+    "Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml` "
+    "is an input of `.github/workflows/asset-origin.yml`",
+    "which may mutate only the Gitee source mirror",
+    "It must not apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.",
+    "`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain mandatory, "
+    "and ResourceSync Apply stays manual.",
+    "No other file under `infra/komodo/resources/**` is a production input.",
+):
+    assert statement in runbook_text, statement
+assert "the resource tree reaches only the non-production deployment contract gate" not in runbook_text
+agents_text = " ".join((root / ".github/AGENTS.md").read_text(encoding="utf-8").split())
+assert "The single narrow exception is `infra/komodo/resources/asset-origin.toml`" in agents_text, \
+    "the authoritative workflow contract lost its resource-tree exception"
+
 for retired in (
     "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
     "minio.yml", "ci-minio.yml",
