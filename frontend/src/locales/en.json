@@ -1027,6 +1027,9 @@
     "qaPlaybackHint": "Fixed 14-vehicle moving scene: two dense clusters stress player/tank name collisions, with destroyed/last-known/recorder states mixed in; the timeline loops at 0.5x–4x. Reuses the production BattlePlayback."
   },
   "home": {
+    "heroLine1": "The battle is over.",
+    "heroLine2": "Now rewind it.",
+    "heroSubtitle": "Drop in one .wotbreplay and get the whole fight back: a 3D battlefield, layer-by-layer armour, League Rating and AI tactical review.",
     "showcaseTitle": "What it does",
     "showcasePlaybackTitle": "The whole battle, rebuilt in 3D",
     "showcasePlaybackDesc": "Terrain, vehicles, HP, base captures and movement paths — every second reconstructed from one replay file.",

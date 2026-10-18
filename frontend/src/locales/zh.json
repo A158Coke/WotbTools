@@ -1027,6 +1027,9 @@
     "qaPlaybackHint": "固定 14 车移动场景：双密集簇制造玩家名/坦克名碰撞，含阵亡/失察/录像者状态；时间线循环，倍速 0.5×–4×。直接复用生产 BattlePlayback。"
   },
   "home": {
+    "heroLine1": "战斗结束",
+    "heroLine2": "复盘开始",
+    "heroSubtitle": "上传一个 .wotbreplay，拿回整场战斗——三维战场、逐层装甲判定、League Rating 与 AI 战术复盘。",
     "showcaseTitle": "能做什么",
     "showcasePlaybackTitle": "整场战斗，三维重建",
     "showcasePlaybackDesc": "地形、车辆、血量、占点与行进路线——用一个回放文件还原每一秒。",
