@@ -25,6 +25,7 @@
  * 非刚性/超限/网格过密 → fail-closed，调用方禁用续飞（跳弹维持紫色 = 现状）。
  */
 import * as THREE from 'three';
+import { AI_NORMAL_CDF_GLSL, penetrationChanceForLayer } from './armorInspectorChance.js';
 
 /** 续飞链常量（GLSL 与 JS 参考实现共用；改这里即改两边） */
 export const RC = Object.freeze({
@@ -69,8 +70,9 @@ export const RC = Object.freeze({
     GRID_DIM_MAX: 48,
     MAX_MESH: 128,
     MAX_TRI_PER_MESH: 256,
-    /** ±5% 显示概率带（与主着色器 rand = rem*0.05 同源） */
+    /** Armor Inspector 正态 CDF：±5% 随机化范围 = ±3σ（σ = rem * SIGMA_FACTOR） */
     BAND: 0.05,
+    SIGMA_FACTOR: 0.05 / 3,
     /** 90° 防 f32 负 cos 下限（penetration.js 同值） */
     COS_EPS: 1e-6,
     /** 2×口径增强转正系数（BlitzKit/penetration.js 同源） */
@@ -100,6 +102,7 @@ export const RC_GLSL_CONST = `
 #define RC_ENTRY_ROW ${RC.ENTRY_ROW}
 #define RC_ENTRY_ROW_I ${RC.ENTRY_ROW}
 #define RC_BAND ${RC.BAND.toFixed(3)}
+#define RC_SIGMA ${RC.SIGMA_FACTOR.toFixed(8)}
 #define RC_COS_EPS ${RC.COS_EPS.toFixed(8)}
 #define RC_TWO_CAL ${RC.TWO_CAL_NORM.toFixed(1)}
 #define RC_SEC_HULL ${RC.SECTION.hull}
@@ -113,6 +116,7 @@ export const RC_GLSL_CONST = `
  * 精度：几何量全部显式 highp（全局默认 mediump，f16 级精度撑不住求交）。
  */
 export const RC_GLSL_FUNCS = `
+${AI_NORMAL_CDF_GLSL}
 // ==== 跳弹续飞：反射线网格 DDA 求交 + 出射段层链（语义=penetration.js calculate(allow_ricochet=false)）====
 // 数据面：世界系均匀网格（炮塔/配置变化时 CPU 重建上传）——每 cell 一条目表（triSlot+section+thickness），
 // 世界系三角形顶点纹理。着色器沿 DDA 步进，只测路径覆盖的 cell 内三角形（~10² 级，替代全量 10³ 级扫描），
@@ -266,8 +270,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
             if (sec <= 2) {                             // 主装甲 = 末层，定结论
                 if (layPen) {
-                    highp float randB = rem * RC_BAND;  // ±5% 带显示概率（与主图公式同源）
-                    penOut = clamp(1.0 - ((eff - rem) + randB) / (2.0 * randB), 0.0, 1.0);
+                    highp float sigma = rem * RC_SIGMA; // Armor Inspector：±5% = ±3σ
+                    penOut = rem > 0.0
+                        ? clamp(aiNormalCdf((rem - eff) / max(sigma, 1e-4)), 0.0, 1.0)
+                        : 0.0;
                     return 1;
                 }
                 return 2;
@@ -753,10 +759,9 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             return { cls: 2, penChance: 0, layers };
         }
         if (isPrimary) {
-            // ±5% 带显示概率（末层穿透概率，与主着色器公式同源）
+            // Armor Inspector 正态 CDF：末层穿透概率（±5% = ±3σ）
             const remBefore = layers[layers.length - 1].remBefore;
-            const band = remBefore * RC.BAND;
-            const chance = Math.max(0, Math.min(1, 1 - ((eff - remBefore) + band) / (2 * band)));
+            const chance = penetrationChanceForLayer(remBefore, eff, RC.BAND);
             return { cls: 1, penChance: chance, layers };
         }
     }
