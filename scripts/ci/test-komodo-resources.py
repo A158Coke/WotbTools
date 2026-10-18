@@ -161,7 +161,9 @@ ASSET_STACK_CONFIG = {
     "git_provider": "gitee.com",
     "git_https": True,
     "repo": "A158Coke/Wotbtools",
-    "branch": "main",
+    # Asset-owned transport branch. Shared Gitee "main" is moved by the Frontend /
+    # Business API mirrors, so it can never be this Stack's deploy source.
+    "branch": "asset-origin",
     "commit": "",
     "clone_path": "",
     "reclone": False,
@@ -412,6 +414,11 @@ def check_stacks(entries: dict[str, dict]) -> None:
     if asset.get("compose_cmd_wrapper_include") != ["up"]:
         fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper_include must be exactly "
              "['up']; a pull must stay outside the host lock")
+    # The Stack must consume the asset-owned transport ref, never shared Gitee main:
+    # another owner moves main, which would silently change the deploy source.
+    if asset.get("branch") != "asset-origin":
+        fail(f"stack '{ASSET_STACK_NAME}': branch must be 'asset-origin', "
+             f"found {asset.get('branch')!r}")
 
 
 def check_asset_stack_wrapper_execution(wrapper: str) -> None:

@@ -10,10 +10,28 @@ work="$(mktemp -d)"
 cleanup() { sudo rm -rf "$work"; }
 trap cleanup EXIT
 
+# adopt-existing.sh loads the staged release manifest for the pinned digest and
+# proves the *live inode* against it. Drive a fixture copy of the lifecycle whose
+# manifest pins the disposable "live executable", so the reviewed-binary proof can
+# be exercised without the real release artifact.
+fixture_runtime="$work/periphery"
+cp -a "$ROOT/deploy/periphery" "$fixture_runtime"
+live_exe="$work/live-periphery"
+printf '#!/usr/bin/env bash\necho fixture-periphery\n' > "$live_exe"
+chmod 0755 "$live_exe"
+live_sha="$(sha256sum "$live_exe" | awk '{print $1}')"
+sed -i "s/^PERIPHERY_SHA256=.*/PERIPHERY_SHA256=$live_sha/" "$fixture_runtime/periphery.release"
+# A different binary: the replaced-inode case where the pathname is pinned but the
+# running process still executes the previous file.
+stale_exe="$work/stale-periphery"
+printf '#!/usr/bin/env bash\necho old-fixture-periphery\n' > "$stale_exe"
+chmod 0755 "$stale_exe"
+
 stub="$work/bin"
 host="$work/host"
 process_environ="$host/proc/4242/environ"
 process_cmdline="$host/proc/4242/cmdline"
+process_exe="$host/proc/4242/exe"
 mkdir -p "$stub" "$host/etc/keys" "$host/unit" "$host/run" "$host/proc/4242" "$host/lock" "$host/stage"
 printf '%s\n' 'fixture-periphery-private-key' > "$host/etc/keys/periphery.key"
 printf '%s\n' 'fixture-core-public-key' > "$host/etc/keys/core.pub"
@@ -119,6 +137,20 @@ write_cmdline_variant() {
   esac
 }
 
+# /proc/<pid>/exe is the magic symlink to the inode the process actually runs. The
+# lifecycle must hash that inode, not the on-disk pathname.
+write_exe_variant() {
+  # -r so the deliberate "directory" variant can never poison a later case.
+  rm -rf -- "$process_exe"
+  case "$1" in
+    reviewed) ln -s "$live_exe" "$process_exe" ;;
+    stale) ln -s "$stale_exe" "$process_exe" ;;
+    missing) ;;
+    directory) mkdir -p "$process_exe" ;;
+    *) echo "unknown executable fixture: $1" >&2; exit 2 ;;
+  esac
+}
+
 invoke_adopt() {
   local peer="$1" log="$2" rc
   sudo rm -f "$marker" "$marker.incoming"
@@ -133,7 +165,7 @@ invoke_adopt() {
     PERIPHERY_SYSTEMCTL="$stub/systemctl" \
     PERIPHERY_LOCK_ROOT="$host/lock" \
     PERIPHERY_STAGING_ROOT="$host/stage" \
-    bash "$ROOT/deploy/periphery/adopt-existing.sh" ali-sh-asset-01 >"$log" 2>&1
+    bash "$fixture_runtime/adopt-existing.sh" ali-sh-asset-01 >"$log" 2>&1
   rc=$?
   set -e
   return "$rc"
@@ -141,20 +173,22 @@ invoke_adopt() {
 
 run_adopt() {
   local config="$1" peer="$2" log="$3" process_override="${4:-}" cmdline_variant="${5:-reviewed}"
+  local exe_variant="${6:-reviewed}"
   cp "$config" "$host/etc/periphery.config.toml"
   write_process_env "$process_override"
   write_cmdline_variant "$cmdline_variant"
+  write_exe_variant "$exe_variant"
   invoke_adopt "$peer" "$log"
 }
 
-# rejects <label> <config> <peer> [process_override] [cmdline_variant] [reason]
+# rejects <label> <config> <peer> [process_override] [cmdline_variant] [reason] [exe_variant]
 #
 # Every rejection must also fail for the intended reason, so a fixture cannot pass
 # because an earlier unrelated check tripped.
 rejects() {
   local label="$1" config="$2" peer="$3" process_override="${4:-}" cmdline_variant="${5:-reviewed}"
-  local reason="${6:-}" log="$work/$label.log"
-  if run_adopt "$config" "$peer" "$log" "$process_override" "$cmdline_variant"; then
+  local reason="${6:-}" exe_variant="${7:-reviewed}" log="$work/$label.log"
+  if run_adopt "$config" "$peer" "$log" "$process_override" "$cmdline_variant" "$exe_variant"; then
     echo "unsafe existing-host adoption was accepted: $label" >&2
     cat "$log" >&2
     exit 1
@@ -219,6 +253,7 @@ for attempt in $(seq 1 20); do
     printf '%s=%s\0' "$name" "$big_filler" >> "$process_environ"
   done
   write_cmdline_variant reviewed
+  write_exe_variant reviewed
   if invoke_adopt "$peer_valid" "$work/large-env-$attempt.log"; then
     echo "a large live environment hid a PERIPHERY_* override (attempt $attempt)" >&2
     cat "$work/large-env-$attempt.log" >&2
@@ -238,15 +273,22 @@ done
 # A reviewed TOML on disk is not proof of the effective config. Komodo v2.3.3 gives
 # CLI config selection precedence over TOML/environment, so the live argv must be
 # exactly the reviewed steady-state invocation.
-argv_reason='live Periphery argv is not exactly'
+argv_reason='argv is not exactly'
 rejects other-config "$valid" "$peer_valid" '' other-config "$argv_reason"
 rejects duplicate-config-selector "$valid" "$peer_valid" '' duplicate-selector "$argv_reason"
 rejects short-config-selector "$valid" "$peer_valid" '' short-selector "$argv_reason"
 rejects inline-config-selector "$valid" "$peer_valid" '' inline-selector "$argv_reason"
 rejects extra-argument "$valid" "$peer_valid" '' extra-argument "$argv_reason"
 rejects wrong-executable "$valid" "$peer_valid" '' wrong-binary "$argv_reason"
-rejects missing-cmdline "$valid" "$peer_valid" '' missing 'cmdline cannot be inspected'
-rejects uninspectable-cmdline "$valid" "$peer_valid" '' fifo 'cmdline cannot be inspected'
+rejects missing-cmdline "$valid" "$peer_valid" '' missing 'Cannot inspect the argv'
+rejects uninspectable-cmdline "$valid" "$peer_valid" '' fifo 'Cannot inspect the argv'
+
+# A correct argv pathname is not proof that the process executes the pinned inode:
+# an atomically replaced binary leaves the old process on the deleted file, so the
+# live executable behind /proc/<pid>/exe must hash to the staged release digest.
+rejects stale-live-executable "$valid" "$peer_valid" '' reviewed 'still running a replaced or stale executable' stale
+rejects missing-live-executable "$valid" "$peer_valid" '' reviewed 'Cannot inspect the executable behind' missing
+rejects uninspectable-live-executable "$valid" "$peer_valid" '' reviewed 'Cannot inspect the executable behind' directory
 
 if ! run_adopt "$valid" "$peer_valid" "$work/valid.log"; then
   echo 'valid already-onboarded Alibaba host was rejected' >&2

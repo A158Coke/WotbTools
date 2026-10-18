@@ -273,6 +273,10 @@ sha=0123456789abcdef0123456789abcdef01234567
 fixture_secret='fixture-onboarding-key-do-not-persist'
 marker_content='komodo-periphery-onboarding-v1'
 stub="$work/bin"
+# A different executable: the stale live inode left behind by an atomic replace.
+old_live_bin="$work/old-live-periphery"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$old_live_bin"
+chmod 0755 "$old_live_bin"
 mkdir -p "$stub"
 
 cat > "$stub/systemctl" <<'STUB'
@@ -329,6 +333,9 @@ case "$command" in
     pid="${STUB_MAIN_PID:-4242}"
     proc_env="${STUB_PROC:?}/$pid/environ"
     mkdir -p "$(dirname "$proc_env")"
+    # The restarted unit executes the installed binary: /proc/<pid>/exe points at
+    # it, exactly like a real systemd start of ExecStart.
+    ln -sfn "${STUB_LIVE_BIN:?}" "$(dirname "$proc_env")/exe"
     if [[ -f "${STUB_BOOTSTRAP_ENV:?}" ]]; then
       printf 'restart-with-bootstrap %s\n' "$(marker_note)" >> "$state/events"
       if [[ "${STUB_SIMULATE_ONBOARDING:-true}" == true ]]; then
@@ -470,6 +477,7 @@ run_install() {
     STUB_CORE_PUB="$core_pub" \
     STUB_MARKER="$marker" \
     STUB_PROC="$case_dir/proc" \
+    STUB_LIVE_BIN="$bin_path" \
     STUB_SIMULATE_ONBOARDING="$stub_simulate" \
     STUB_BREAK_CREDENTIAL_FREE="$stub_break_free" \
     STUB_ENVIRON_MODE="$stub_environ_mode" \
@@ -478,6 +486,18 @@ run_install() {
     KOMODO_PERIPHERY_ONBOARDING_KEY="$key" \
     bash "$runtime/install.sh" "$case_target" "$sha" "$runtime" "$artifact" \
     >"$case_dir/install.log" 2>&1
+}
+
+# Pre-install the exact desired binary/config/unit and point the live process at the
+# installed binary: an idempotent reconcile then sees no on-disk change at all, so
+# only the /proc/<pid>/exe proof distinguishes a healthy live inode from a stale one.
+install_desired_state() {
+  install -m 0755 "$artifact" "$bin_path"
+  install -m 600 "$runtime/targets/$case_target/periphery.config.toml" "$case_dir/etc/periphery.config.toml"
+  install -m 644 "$runtime/periphery.service" "$case_dir/unit/periphery.service"
+  mkdir -p "$case_dir/proc/4242"
+  ln -sfn "$bin_path" "$case_dir/proc/4242/exe"
+  : > "$case_dir/state/active"
 }
 
 # marker_fingerprint: a value that changes if the marker is created, replaced, or
@@ -528,6 +548,60 @@ cmp -s "$bin_path" "$artifact" || die 'the installed binary does not match the s
 grep -q '^restart-without-bootstrap marker=present$' "$events" \
   || die 'the completed service was left stopped after the binary was replaced'
 pass 'yecao-completed reconciles-without-secret and preserves identity+marker after the K3.2 refactor'
+
+# D1b. Idempotent reconcile with a healthy live inode: no restart at all.
+prepare_case idempotent-live-binary
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+write_marker
+install_desired_state
+if ! run_install; then
+  cat "$case_dir/install.log" >&2
+  die 'an idempotent reconcile with a healthy live binary failed'
+fi
+if grep -q '^restart-' "$events"; then
+  die 'an idempotent reconcile restarted a healthy live Periphery process'
+fi
+[[ -f "$case_dir/state/active" ]] || die 'an idempotent reconcile left the healthy service stopped'
+[[ "$(sha256sum "$case_dir/proc/4242/exe" | awk '{print $1}')" == "$(sha256sum "$artifact" | awk '{print $1}')" ]] \
+  || die 'the healthy live executable proof changed the live inode'
+pass 'idempotent-reconcile leaves a healthy live binary untouched'
+
+# D1c. Stale live inode: the on-disk binary already equals the pin (binary_changed is
+# false) but the process still executes the previous file. Reconcile must restart.
+prepare_case stale-live-binary
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+write_marker
+install_desired_state
+ln -sfn "$old_live_bin" "$case_dir/proc/4242/exe"
+if ! run_install; then
+  cat "$case_dir/install.log" >&2
+  die 'a reconcile with a stale live binary failed'
+fi
+grep -q '^restart-without-bootstrap marker=present$' "$events" \
+  || die 'a stale live Periphery process was not restarted'
+grep -q 'does not execute the pinned release' "$case_dir/install.log" \
+  || die 'the stale-live restart reason was not reported'
+[[ "$(sha256sum "$case_dir/proc/4242/exe" | awk '{print $1}')" == "$(sha256sum "$artifact" | awk '{print $1}')" ]] \
+  || die 'the restarted process does not execute the pinned binary'
+pass 'stale-live-binary reconcile restarts even when the on-disk binary already matches'
+
+# D1d. The live executable cannot be inspected: that is not proof of health, so the
+# reconcile restarts instead of concluding "already at the desired state".
+prepare_case unreadable-live-binary
+printf '%s\n' 'fixture-periphery-identity' > "$identity"
+printf '%s\n' 'fixture-core-public-key' > "$core_pub"
+write_marker
+install_desired_state
+rm -f "$case_dir/proc/4242/exe"
+if ! run_install; then
+  cat "$case_dir/install.log" >&2
+  die 'a reconcile with an uninspectable live executable failed'
+fi
+grep -q '^restart-without-bootstrap marker=present$' "$events" \
+  || die 'an uninspectable live Periphery process was not restarted'
+pass 'uninspectable-live-executable forces a restart'
 
 # D2. Half-bootstrap (identity present, marker absent) and no secret: fail closed.
 prepare_case half-bootstrap-no-secret
@@ -799,6 +873,9 @@ for expected in \
   'established_core_connections' \
   'listener_on_8120' \
   'periphery_env_override' \
+  'require_reviewed_argv' \
+  'assert_live_executable_sha' \
+  'live_executable_sha' \
   'docker info' \
   'Requires=docker.service'; do
   grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" "$ROOT/lib.sh" \
@@ -807,6 +884,17 @@ done
 # The effective config must be compared with the reviewed per-target config.
 grep -Fq 'cmp -s "$periphery_config" "$periphery_config_source"' "$verify_script" \
   || die 'verify.sh must compare the effective config with the target config'
+# The live-process proofs are shared, not reimplemented: recurring verification and
+# one-time adoption must both call the same lib.sh helpers.
+for runtime_script in "$verify_script" "$ROOT/adopt-existing.sh"; do
+  grep -Fq 'require_reviewed_argv "$pid"' "$runtime_script" \
+    || die "the live-argv proof is missing from $(basename "$runtime_script")"
+  grep -Fq 'assert_live_executable_sha "$pid" "$PERIPHERY_SHA256"' "$runtime_script" \
+    || die "the live-executable proof is missing from $(basename "$runtime_script")"
+done
+# Stale live inodes must force a restart in the recurring reconcile path.
+grep -Fq '"$live_binary_stale" == true' "$ROOT/install.sh" \
+  || die 'install.sh must restart when the live process executes a stale binary'
 # Verification must never reach for a Komodo admin credential.
 if grep -Eq 'KOMODO_(INIT_ADMIN_PASSWORD|JWT_SECRET|WEBHOOK_SECRET|DATABASE_PASSWORD)' "$verify_script"; then
   die 'production verification must not use a Komodo admin/API credential'
@@ -878,14 +966,30 @@ verify_case() {
   : > "$case_dir/state/active"
   : > "$case_dir/state/enabled"
   mkdir -p "$case_dir/proc/4242"
+  local proc_cmdline="$case_dir/proc/4242/cmdline"
+  local proc_exe="$case_dir/proc/4242/exe"
+  # Default live process: the reviewed invocation and the pinned inode.
+  printf 'PATH=/usr/bin\0' > "$proc_environ"
+  printf '%s\0' "$bin_path" --config-path "$case_dir/etc/periphery.config.toml" > "$proc_cmdline"
+  ln -sfn "$bin_path" "$proc_exe"
   case "$mode" in
     missing) rm -f "$proc_environ" ;;
     swapped)
       # Another target's config installed on this host.
       install -m 600 "$ROOT/targets/$( [[ "$target" == yecao ]] && echo tx1 || echo yecao )/periphery.config.toml" \
-        "$case_dir/etc/periphery.config.toml"
-      printf 'PATH=/usr/bin\0' > "$proc_environ" ;;
-    *) printf 'PATH=/usr/bin\0' > "$proc_environ" ;;
+        "$case_dir/etc/periphery.config.toml" ;;
+    argv-alternate-config)
+      printf '%s\0' "$bin_path" --config-path "$case_dir/etc/other.config.toml" > "$proc_cmdline" ;;
+    argv-extra-arg)
+      printf '%s\0' "$bin_path" --config-path "$case_dir/etc/periphery.config.toml" --debug > "$proc_cmdline" ;;
+    argv-wrong-executable)
+      printf '%s\0' "/opt/unreviewed/periphery" --config-path "$case_dir/etc/periphery.config.toml" > "$proc_cmdline" ;;
+    argv-missing)
+      rm -f "$proc_cmdline" ;;
+    exe-stale)
+      ln -sfn "$old_live_bin" "$proc_exe" ;;
+    exe-missing)
+      rm -f "$proc_exe" ;;
   esac
   printf '#!/usr/bin/env bash\nexit 0\n' > "$stub/docker"
   chmod +x "$stub/docker"
@@ -931,6 +1035,10 @@ for target in "${targets[@]}"; do
     || die "verify.sh did not report the $target config check"
   grep -q 'PASS periphery-process-env-clean' "$case_dir/verify.log" \
     || die 'verify.sh did not report the credential-free process environment'
+  grep -q 'PASS periphery-live-argv' "$case_dir/verify.log" \
+    || die 'verify.sh did not report the live-argv proof'
+  grep -q 'PASS periphery-live-executable' "$case_dir/verify.log" \
+    || die 'verify.sh did not report the live-executable digest'
 done
 if verify_case unreadable missing; then
   cat "$case_dir/verify.log" >&2
@@ -944,6 +1052,37 @@ if verify_case swapped swapped tx1; then
 fi
 grep -q 'is not the reviewed tx1 config' "$case_dir/verify.log" \
   || { cat "$case_dir/verify.log" >&2; die 'the cross-target config diagnostic was not reported'; }
+# The recurring verifier must reject an effective config/executable that only the
+# live process reveals: a systemd override, extra CLI argument, replaced binary, or
+# unreadable /proc entry can never pass just because the files on disk are reviewed.
+for mode in argv-alternate-config argv-extra-arg argv-wrong-executable; do
+  if verify_case "$mode" "$mode" tx1; then
+    cat "$case_dir/verify.log" >&2
+    die "verify.sh must fail when the live argv is $mode"
+  fi
+  grep -q 'argv is not exactly' "$case_dir/verify.log" || {
+    cat "$case_dir/verify.log" >&2
+    die "the live-argv diagnostic was not reported for $mode"
+  }
+done
+if verify_case argv-missing argv-missing tx1; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must fail when the live cmdline cannot be inspected'
+fi
+grep -q 'Cannot inspect the argv' "$case_dir/verify.log" \
+  || { cat "$case_dir/verify.log" >&2; die 'the uninspectable-argv diagnostic was not reported'; }
+if verify_case exe-stale exe-stale tx1; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must fail when the live process executes a stale binary'
+fi
+grep -q 'still running a replaced or stale executable' "$case_dir/verify.log" \
+  || { cat "$case_dir/verify.log" >&2; die 'the stale-live-executable diagnostic was not reported'; }
+if verify_case exe-missing exe-missing tx1; then
+  cat "$case_dir/verify.log" >&2
+  die 'verify.sh must fail when the live executable cannot be inspected'
+fi
+grep -q 'Cannot inspect the executable behind' "$case_dir/verify.log" \
+  || { cat "$case_dir/verify.log" >&2; die 'the uninspectable-live-executable diagnostic was not reported'; }
 pass 'verify.sh runs per target and fails-closed on unreadable env and swaps'
 
 # ---------------------------------------------------------------------------

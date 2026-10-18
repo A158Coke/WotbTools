@@ -61,6 +61,14 @@ echo 'PASS periphery-onboarding-complete'
 # owns the Core port: Yecao/TX use 9120 over WireGuard, Alibaba uses 443 over WSS.
 pid="$(main_pid 2>/dev/null || true)"
 [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$pid" -gt 0 ]] || fail "periphery.service has no main PID ($pid)."
+# 4b. The live process must actually run the reviewed invocation and the pinned
+# binary. A systemd drop-in/ExecStart override, or a binary that was replaced while
+# the old process kept the deleted inode, leaves the reviewed files on disk while the
+# running agent uses something else; only /proc/<pid>/{cmdline,exe} can show that.
+require_reviewed_argv "$pid"
+echo 'PASS periphery-live-argv'
+assert_live_executable_sha "$pid" "$PERIPHERY_SHA256"
+echo "PASS periphery-live-executable $PERIPHERY_SHA256"
 if [[ -e "$periphery_bootstrap_env" ]]; then
   fail "the transient bootstrap credential survived: $periphery_bootstrap_env"
 fi

@@ -261,4 +261,21 @@ jobs:
           assert 'KOMODO_PERIPHERY_ONBOARDING_KEY' in reconcile['with']['envs'].split(',')
           assert 'deploy/periphery/reconcile.sh' in reconcile['with']['script']
           assert steps['Cleanup staged Alibaba asset inputs']['if'] == 'always()'
+
+          # Alibaba mutates the host twice after one freeze. Adoption can take
+          # minutes, so the shared freshness gate must run again immediately before
+          # the reconcile mutation and keep the originally frozen SOURCE_SHA.
+          names = [step.get('name') for step in job['steps']]
+          first_gate = names.index('Reject stale main before Alibaba asset mutation')
+          adopt_index = names.index('Adopt already-onboarded Alibaba agent if present')
+          second_gate = names.index('Reject stale main again immediately before the Alibaba reconcile')
+          reconcile_index = names.index('Reconcile Alibaba asset Periphery under the host lock')
+          assert first_gate < adopt_index < second_gate < reconcile_index, names
+          assert second_gate + 1 == reconcile_index, names
+          for gate_index in (first_gate, second_gate):
+              gate = job['steps'][gate_index]
+              assert 'deploy/check-production-freshness.sh' in gate['run'], gate
+              assert gate['env']['SOURCE_SHA'] == '$' + '{{ steps.source.outputs.source_sha }}', gate
+              assert gate['env']['EVENT_SHA'] == '$' + '{{ github.sha }}', gate
+          assert reconcile['env']['SOURCE_SHA'] == '$' + '{{ steps.source.outputs.source_sha }}'
           PY
