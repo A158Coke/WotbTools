@@ -40,7 +40,7 @@ jobs:
           deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
           deploy/tx/publish-loaded-image-to-tcr.sh deploy/tx/k7c-preflight.sh
           deploy/tx/k7c-sync-runtime-content.sh
-          deploy/assets/verify.sh deploy/test-asset-origin.sh
+          deploy/assets/verify.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
@@ -89,6 +89,75 @@ jobs:
           }
           docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
+      - name: Asset origin Caddy request-level smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          work="$(mktemp -d)"
+          container="wotb-asset-origin-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$work/assets/current"
+          printf '%s\n' '{"asset-origin":"fixture"}' > "$work/assets/current/index.json"
+          sed 's/^assets\.wotbtools\.com {/http:\/\/:8080 {/' deploy/assets/Caddyfile > "$work/Caddyfile"
+
+          docker run --rm --entrypoint caddy \
+            -v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine \
+            validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+
+          docker run -d --name "$container" --entrypoint caddy \
+            -p 127.0.0.1::8080 \
+            -v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -v "$work/assets:/srv/wotb-assets:ro" \
+            caddy:2.10.2-alpine \
+            run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+
+          host_port="$(docker port "$container" 8080/tcp | sed -n 's/.*://p' | head -n1)"
+          [[ "$host_port" =~ ^[0-9]+$ ]] || { echo "could not resolve disposable Caddy port: $host_port" >&2; exit 1; }
+          base="http://127.0.0.1:$host_port"
+          curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 0 \
+            --connect-timeout 1 --max-time 10 "$base/index.json" >/dev/null
+
+          curl_common=(--silent --show-error --connect-timeout 2 --max-time 10)
+          curl "${curl_common[@]}" -I -D "$work/no-origin" -o /dev/null "$base/index.json"
+          grep -Eqi '^vary:.*origin' "$work/no-origin"
+          grep -Eqi '^cache-control:.*max-age=300' "$work/no-origin"
+          grep -qi '^etag:' "$work/no-origin"
+
+          for origin in https://wotbtools.com https://www.wotbtools.com; do
+            curl "${curl_common[@]}" --fail -D "$work/allowed" -o /dev/null \
+              -H "Origin: $origin" "$base/index.json"
+            grep -Fqi "access-control-allow-origin: $origin" "$work/allowed"
+            grep -Eqi '^vary:.*origin' "$work/allowed"
+          done
+
+          curl "${curl_common[@]}" --fail -D "$work/untrusted" -o /dev/null \
+            -H 'Origin: https://example.invalid' "$base/index.json"
+          ! grep -qi '^access-control-allow-origin:' "$work/untrusted"
+          grep -Eqi '^vary:.*origin' "$work/untrusted"
+
+          preflight_status="$(curl "${curl_common[@]}" -o /dev/null -D "$work/preflight" -w '%{http_code}' \
+            -X OPTIONS -H 'Origin: https://wotbtools.com' \
+            -H 'Access-Control-Request-Method: GET' "$base/index.json")"
+          [[ "$preflight_status" == 204 ]]
+          grep -Fqi 'access-control-allow-origin: https://wotbtools.com' "$work/preflight"
+
+          range_status="$(curl "${curl_common[@]}" -o /dev/null -D "$work/range" -w '%{http_code}' \
+            -H 'Range: bytes=0-0' "$base/index.json")"
+          [[ "$range_status" == 206 ]]
+          grep -qi '^content-range: bytes 0-0/' "$work/range"
+
+          etag="$(awk 'BEGIN{IGNORECASE=1} /^etag:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$work/no-origin")"
+          [[ -n "$etag" ]]
+          conditional_status="$(curl "${curl_common[@]}" -o /dev/null -w '%{http_code}' \
+            -H "If-None-Match: $etag" "$base/index.json")"
+          [[ "$conditional_status" == 304 ]]
+          echo 'asset-origin Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
         run: |
           set -euo pipefail
@@ -100,7 +169,7 @@ jobs:
         run: python3 scripts/ci/test-komodo-resources.py
       - name: PR area label advisory tests
         run: python3 scripts/ci/test_pr_area_labels.py
-      - name: TX, Yecao, and asset-origin runtime fixtures
+      - name: TX and Yecao runtime fixtures
         run: |
           set -euo pipefail
           bash deploy/test-check-latest-main.sh
@@ -113,7 +182,6 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
-          bash deploy/test-asset-origin.sh
       - name: Keycloak PostgreSQL backup runtime smoke
         run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
