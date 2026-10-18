@@ -13,5 +13,11 @@ core_addresses = ["https://komodo.wotbtools.com"]
 connect_as = "ali-sh-asset-01"
 server_enabled = false
 
+# Keep the manually onboarded identity/trust files as the durable reviewed paths.
+# The adoption bridge accepts the current file's implicit defaults only when they
+# resolve to these exact paths under the reviewed root_directory.
+private_key = "file:/etc/komodo/keys/periphery.key"
+core_public_keys = ["file:/etc/komodo/keys/core.pub"]
+
 disable_terminals = false
 disable_container_terminals = false
