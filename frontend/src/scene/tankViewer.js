@@ -3877,15 +3877,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         }
                         relBtn.setAttribute('aria-pressed', 'false');
                         worldBtn.setAttribute('aria-pressed', 'true');
-                        relBtn.disabled = !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
+                        // MISS 没有命中点可聚焦：相对视角按钮禁用，保持 world 总览。
+                        relBtn.disabled = !window.__shotIsHit || !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
                         relBtn.onclick = () => setImpactView(true);
                         worldBtn.onclick = () => setImpactView(false);
                         viewSwitch.append(relBtn, worldBtn);
                         (document.getElementById('corner-br') || document.body).appendChild(viewSwitch);
-                        // 默认 = 双方位置（world 总览，原生 50°），与按钮初始状态一致；
-                        // 用户点击「相对视角」后才切到命中点的 15m/18.75° 标定视角。
-                        // setImpactView(false) 在 impactViewOn 初值 false 时是幂等 no-op。
-                        setImpactView(false);
+                        // 命中弹默认进入命中点相对视角（15m/18.75° 标定，与装甲查看器
+                        // 一致）；MISS 没有命中点，保持双方位置 world 总览（原生 50°）。
+                        // 用户可随时用「双方位置 / 相对视角」切换，切换时同步 FOV 模式。
+                        if (window.__shotIsHit) setImpactView(true);
+                        else setImpactView(false);
                         // 初始即按撤回状态隐藏全部标注（须在 debug=1 自动开启之前，否则被覆盖）
                         window.__debugSetVisible(false);
                         // URL debug=1 显式开启开发诊断标注

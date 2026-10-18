@@ -258,29 +258,57 @@ try {
       game_hit_result: 0, damage: 0, hit_flags: 0,
       terrain_impact: { impact_point: [400, 1, 60], terminal_dir: [1, 0, 0], material: 1 },
     }
-    const loadShot = async (value) => {
+    const loadShot = async (value, mode) => {
       await page.goto(`${origin}/?view=home&ws-auth=1`)
       await page.evaluate(`(async () => {
         const { storeShotsForViewer } = await import('/src/scene/agentData.js');
         storeShotsForViewer([${JSON.stringify(value)}]);
       })()`)
       await page.goto(plainUrl + '&shot=1&scfg=0&shell=0&config=0')
-      // 只断言 world 视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
+      // 只断言视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
       // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
-      // 同时等 FOV 真正落到 50°：worldOverview 标志在 init 同步阶段就置位，
-      // 若只等标志，可能在下一帧 applyLongRangeCompensation 之前读到旧的 18.75°。
-      await page.waitFor(() => {
-        const v = window.__armorRicochet?.info()?.view
-        return v && v.worldOverview === true && Math.abs(v.fov - 50) < 0.01
-      }, { timeout: 30000, label: 'world overview ready (50° FOV)' })
+      // 命中弹默认 = 命中点相对视角（15m/18.75° 标定）；MISS 无命中点 = world 总览 50°。
+      if (mode === 'overview') {
+        await page.waitFor(() => {
+          const v = window.__armorRicochet?.info()?.view
+          return v && v.worldOverview === true && Math.abs(v.fov - 50) < 0.01
+        }, { timeout: 30000, label: 'MISS world overview ready (50° FOV)' })
+      } else {
+        await page.waitFor(() => {
+          const v = window.__armorRicochet?.info()?.view
+          return v && v.worldOverview === false && Math.abs(v.fov - 18.75) < 0.01
+            && Math.abs(v.cameraDistance - 15) < 0.2
+        }, { timeout: 30000, label: 'HIT default impact view ready (15m / 18.75° FOV)' })
+      }
       return page.evaluate('window.__armorRicochet.info().view')
     }
-    const missView = await loadShot(missShot)
+    const missView = await loadShot(missShot, 'overview')
     assert.ok(Math.abs(missView.fov - 50) < 0.01, `MISS overview must keep native FOV (got ${missView.fov})`)
     console.log('[shot-readiness] PASS: miss world overview keeps native FOV (no dolly compensation)')
-    const hitView = await loadShot(shot)
-    assert.ok(Math.abs(hitView.fov - 50) < 0.01, `HIT overview must keep native FOV (got ${hitView.fov})`)
-    console.log('[shot-readiness] PASS: hit/MISS switch keeps native overview FOV')
+    const hitView = await loadShot(shot, 'impact')
+    assert.ok(Math.abs(hitView.fov - 18.75) < 0.01, `HIT impact view must use calibrated FOV (got ${hitView.fov})`)
+    assert.ok(Math.abs(hitView.cameraDistance - 15) < 0.2, `HIT impact camera must be at 15m (got ${hitView.cameraDistance})`)
+    console.log('[shot-readiness] PASS: HIT default impact view uses calibrated 18.75° FOV at 15m')
+    // 相对视角 ↔ 双方位置切换：overview 必须 50°，切回命中视角必须回到 18.75°。
+    // 先等按钮真实挂上：viewer 初始化/夹具迟到响应期间 DOM 会短暂重建。
+    const clickViewToggle = async (selector) => {
+      await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`,
+        (v) => v === true, { timeout: 30000, label: `${selector} ready` })
+      await page.evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+    }
+    await clickViewToggle('#world-view-toggle')
+    await page.waitFor(() => {
+      const v = window.__armorRicochet?.info()?.view
+      return v && v.worldOverview === true && Math.abs(v.fov - 50) < 0.01
+    }, { timeout: 30000, label: 'HIT overview toggle ready (50° FOV)' })
+    console.log('[shot-readiness] PASS: hit impact → overview keeps native 50° FOV')
+    await clickViewToggle('#rel-view-toggle')
+    await page.waitFor(() => {
+      const v = window.__armorRicochet?.info()?.view
+      return v && v.worldOverview === false && Math.abs(v.fov - 18.75) < 0.01
+        && Math.abs(v.cameraDistance - 15) < 0.2
+    }, { timeout: 30000, label: 'HIT impact toggle ready (15m / 18.75° FOV)' })
+    console.log('[shot-readiness] PASS: hit overview → impact returns to calibrated 15m / 18.75° FOV')
   }
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)
