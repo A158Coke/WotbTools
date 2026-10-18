@@ -433,8 +433,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   pMin -= totalConsume * penetration;
                   pMax -= totalConsume * penetration;
                   rem -= spacedThick;
-                  // 爆炸弹即使 rem<=0 也要走这里：名义被间隙甲耗尽仍是 SPLASH/BLOCKED，
-                  // 不能落进通用贯穿 CDF（100mm HE 打 100mm 间隙甲会伪造概率色）。
+                  // HE（canSplash）即使 rem<=0 也走 SPLASH/BLOCKED，不能落进贯穿 CDF；
+                  // HEAT 没有溅射，名义 rem 耗尽时随机区间仍可能有正尾，必须继续 gap
+                  // 衰减并进入 CDF（review 2026-10-18：spaced100→0.1m→hull1 卡片 13.19%）。
                   if (isExplosive) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
                     float primaryDist = getDist(sc, gl_FragCoord.z);
@@ -444,14 +445,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                       float finalDamage = 0.5 * damage * (1.0 - distArmor / explosionRadius) - 1.1 * (finalThick + spacedThick);
                       splashChance = step(0.0, finalDamage);
                       penChance = 0.0;
-                    } else if (rem > 0.0) {
+                    } else {
                       // HEAT gap decay：与 penetration.js 同一 0.5/m；概率区间同样衰减。
                       float gapLoss = max(0.0, 1.0 - 0.5 * distArmor);
                       pMin *= gapLoss;
                       pMax *= gapLoss;
                       rem -= 0.5 * rem * distArmor;
-                    } else {
-                      penChance = 0.0;   // HEAT 被间隙甲耗尽
                     }
                   }
                 }
