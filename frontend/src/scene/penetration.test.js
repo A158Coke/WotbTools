@@ -426,6 +426,18 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.713, 2)
   })
 
+  it('外部模块在间隙甲之前：模块 flat 先平移间隙甲 CDF（chassis20→spaced80→hull1）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 80.0, [0, 0, 1]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 2]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
+    // [95,105] −20 → [75,85]；spaced80 → 50%；再平移 [−5,5]；hull1 → Φ(−0.6)=0.274253。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1371265, 6)
+  })
+
   it('同一块板的重合三角形命中只算一层（射线掠过四边形对角线）', () => {
     const hits = [
       hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),

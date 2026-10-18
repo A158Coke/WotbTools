@@ -334,6 +334,12 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
     expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
   })
+  it('单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间', () => {
+    // review 2026-10-18 反例：chassis20 → spaced80 → hull1，卡片 13.7%；
+    // 旧 shader 用原始 penetration 算间隙层 CDF，得到 27.4%。
+    expect(kernel).toMatch(/spacedProbBase = moduleInFront \? max\(0\.0, penetration - moduleFlat\) : penetration;/)
+    expect(kernel).toMatch(/aiNormalCdf\(\(spacedProbBase - spacedEff\)/)
+  })
 })
 
 // 坦克选择菜单封面图展示裁剪契约（2026-10-15；2026-10-17 起菜单改为与坦克百科共享
