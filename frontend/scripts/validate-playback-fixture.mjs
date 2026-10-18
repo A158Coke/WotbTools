@@ -18,10 +18,6 @@ if (!validate(fixture)) {
 console.log('Playback V2 contract fixture: OK')
 
 for (const [name, schema] of [
-  ['creator-card', 'CreatorCard'],
-  ['creator-detail', 'CreatorDetail'],
-  ['creator-save-request', 'CreatorSaveRequest'],
-  ['creator-metadata', 'CreatorMetadata'],
   ['recommendation-card', 'RecommendationCard'],
   ['recommendation-detail', 'RecommendationDetail'],
   ['recommendation-save-request', 'RecommendationSaveRequest'],

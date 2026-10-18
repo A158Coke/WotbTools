@@ -2,7 +2,7 @@
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
-联赛回放现统一使用无版本 HTTP 路径，现代三语与时间结构以 OpenAPI 为准；旧 APK 单名/文字小组接口及客户端回退已移除。历史数据库迁移及归档继续保留，接口切换和升级门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换) 与 [Android 4.0.0](android/releases/4.0.0.md)。
+联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。用户确认旧接口仅内部测试使用，本次按 patch 发布且不抬强制更新门槛，见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.12.1](android/releases/3.12.1.md)。
 
 ---
 
@@ -181,9 +181,9 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
-- `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和UID/BV标识，手动星级、UP可选实力等级、256px站点头像/封面；新typed API与旧UP-only API复用同一服务和事务锁。管理使用独立的最小权限 realm role `content-admin`（与积分赛 `tournament-admin` 完全分离），数据不依附赛事。契约见 [Bilibili recommendations](features/bilibili-creators.md)。
+- `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和UID/BV标识，手动星级、UP可选实力等级、256px站点头像/封面；统一 recommendations API、服务和事务锁，既有图片 URL 保留。管理使用独立的最小权限 realm role `content-admin`（与积分赛 `tournament-admin` 完全分离），数据不依附赛事。契约见 [Bilibili recommendations](features/bilibili-creators.md)。
 - `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
-  同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；入口位于主导航的联赛积分榜之后，公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。赛事名称中英必填、俄文选填（缺省回退英文）；小组号选填，有值时显示固定三语数字组名。具体开赛时刻选填，公众默认区服时区并可切换，管理员录入默认UTC+8；旧纯日期记录不补时刻，v1/v2接口保持兼容，新时刻操作使用v3。仅资料完整的分场参与V40初始化。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
+  同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；入口位于主导航的联赛积分榜之后，公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。赛事名称中英必填、俄文选填（缺省回退英文）；小组号选填，有值时显示固定三语数字组名。具体开赛时刻选填，公众默认区服时区并可切换，管理员录入默认UTC+8；旧纯日期记录不补时刻，统一路径使用现代三语及时间结构，不保留旧版本 HTTP 处理器。仅资料完整的分场参与V40初始化。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。
 
 ### 客户端 Replay Engine（上游 Agent）

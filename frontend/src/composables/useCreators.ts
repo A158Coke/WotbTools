@@ -40,7 +40,7 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
     controller = new AbortController()
     const gen = ++generation, signal = controller.signal
     listLoading.value = true; listError.value = null
-    inFlight = transport.listRecommendations(type.value, categoryId.value, availability.recommendationsSupported.value, signal).then(cards => {
+    inFlight = transport.listRecommendations(type.value, categoryId.value, signal).then(cards => {
       if (gen === generation && !signal.aborted) creators.value = cards
     }).catch(value => { if (gen === generation && !signal.aborted) listError.value = value })
       .finally(() => { if (gen === generation) { listLoading.value = false; inFlight = null } })
@@ -66,7 +66,7 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
   }
   function selectCategory(id: number | null) { return router.push(categoryLocation(id)) }
   watch(invalidCategory, value => { if (value) { cancel(); creators.value = []; void reconcileCategory() } }, { immediate: true, flush: 'sync' })
-  watch([routeMatchesType, type, categoryId, () => network.value.available, adminAllowed, () => auth.tokenParsed.value?.sub, availability.recommendationsSupported], () => {
+  watch([routeMatchesType, type, categoryId, () => network.value.available, adminAllowed, () => auth.tokenParsed.value?.sub], () => {
     cancel()
     if (categoryId.value !== activeCategory || creators.value.some(value => value.type !== type.value)) { creators.value = []; activeCategory = categoryId.value }
     void loadList()
