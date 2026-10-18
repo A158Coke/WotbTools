@@ -236,7 +236,7 @@ expires_at    token 过期时间
 - `account_id` 必须存在且为合法正数，缺失/非法一律拒绝登录；
 - 返回结构化结果（刷新后的 token + 可信 `account_id` + `expires_at`），不得只返回 token 字符串。
 
-回调失败诊断：`WargamingEndpoint` 用局部 `stage` 标记失败阶段（`prolongate` / `callback-account-check` / `account-info` / `callback-nickname-check` / `identity-callback`），WARN 日志形如 `Wargaming login rejected at stage=prolongate: WG API rejected request: code=404, message=...`；日志允许包含 stage、安全错误码/消息/字段与异常类名，**严禁**包含 token、`WG_APPLICATION_ID`、state、完整回调 URL、完整响应 JSON 与 `error.value`。
+回调失败诊断：`WargamingEndpoint` 的 WARN 日志统一携带 `region` / `stage` / `reason`。主要阶段包括 `callback-state` / `configuration` / `callback-status` / `callback-token` / `prolongate` / `callback-account-check` / `account-info` / `callback-nickname-check` / `identity-callback`。例如 NA 区服收到 WG 拒绝回调时可出现 `Wargaming login rejected region=NA stage=callback-status reason=provider-error code=407 providerError=INVALID_IP_ADDRESS`；服务端 API 拒绝则形如 `Wargaming login rejected region=NA stage=prolongate reason=wg-api-error detail=...`。浏览器 callback 的 `code` / `message` 都是不可信输入：`code` 只允许短纯数字，原始 `message` **绝不写日志**，仅将精确命中的固定 allowlist（如 `INVALID_IP_ADDRESS`）映射为 `providerError`，其他值统一记为 `UNKNOWN`。日志可包含 region、stage、reason、安全数字 code、allowlist 分类、API client 已脱敏的有界 detail 与异常类名；**严禁**包含 token、`WG_APPLICATION_ID`、state、完整回调 URL、原始 callback message、完整响应 JSON 与 `error.value`。
 
 ### 3. 查询 WoTB 官方账号资料
 
@@ -557,6 +557,7 @@ keycloak-session-provider
 - 认证端点（login/prolongate/logout）实际请求走 `api.worldoftanks.*/wot/auth/`，账号端点（account/info）实际请求走 `api.wotblitz.*/wotb/account/`（三区服 × 四端点契约测试）；
 - 登录成功响应从 `data.location` 读取（兼容旧 `url` 字段），缺失时拒绝 `WG login response missing data.location`；
 - WG `status=error` 时抛安全异常消息（含 code/message/field，不含 error.value / application_id / token / 完整响应正文），`performLogin` 捕获后返回安全错误响应而非 Keycloak generic unexpected error；
+- 浏览器 callback `status=error` 时只记录安全数字 `code` 与固定 allowlist 的 `providerError` 分类；任意原始 `message`（包括伪造 key/value、token 或 application id）不得进入日志，未知分类统一为 `UNKNOWN`；
 - 无效/缺失/过期/被篡改的 state 被拒绝；
 - WG 拒绝登录时安全返回；
 - 缺少 token 时拒绝；token 过期（prolongate 失败）时拒绝；
