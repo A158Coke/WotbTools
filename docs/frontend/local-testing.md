@@ -168,7 +168,7 @@ git checkout -- frontend/src/composables/useAuth.js frontend/src/composables/use
 | 用户管理 | `/api/admin/users/**` | `wotbtools-admin` |
 | 名人堂管理 | `/api/admin/hof/**` | `HoF-admin` 或 `wotbtools-admin` |
 | 联赛积分管理 | `/api/admin/tournaments/**` | `tournament-admin` |
-| 推荐内容管理 | `/api/admin/creators/**`、`/api/admin/recommendations/**` | `content-admin` |
+| 推荐内容管理（含 UP 等级） | `/api/admin/recommendations/**` | `content-admin` |
 | AI 复盘 | `/api/ai/**` | `wotbtools-user` 或 `wotbtools-admin` |
 
 角色只能在 **Keycloak Admin Console** 授予（本仓只 provision realm JSON，没有授予 UI）。前端

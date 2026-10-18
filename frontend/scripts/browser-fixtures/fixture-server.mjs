@@ -58,11 +58,11 @@ export async function startFixtureServer({ middleware, allowedHosts } = {}) {
         // Unrelated page tests use a published directory; scenario middleware can emulate empty/old APIs.
         instance.middlewares.use((request, response, next) => {
           const path = request.url?.split('?')[0]
-          if (request.method !== 'GET' || !['/api/health', '/api/creators/categories', '/api/recommendations/categories'].includes(path)) { next(); return }
+          if (request.method !== 'GET' || !['/api/health', '/api/recommendations/categories'].includes(path)) { next(); return }
           response.setHeader('Content-Type', 'application/json')
           response.end(JSON.stringify(path === '/api/health'
-            ? { status: 'ok', tanks: 1, capabilities: ['creators-v1', 'creators-content-visibility-v1', 'recommendations-v1'] }
-            : [{ id: 1, name: 'Creator fixture', ...(path === '/api/recommendations/categories' ? { type: 'UP' } : {}) }]))
+            ? { status: 'ok', tanks: 1, capabilities: ['recommendations-v1'] }
+            : [{ id: 1, name: 'Creator fixture', type: 'UP' }]))
         })
       },
     }],

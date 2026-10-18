@@ -25,7 +25,7 @@
 [功能契约](../docs/features/league-broadcasts.md)，可选 COS 封面配置和回收见
 [运维说明](../docs/operations/league-broadcast-covers.md)。
 
-bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`；管理员在 `/api/admin/creators/**` 与 `/api/admin/recommendations/**` 使用 `content-admin` 维护UID、整星、字典与站点头像；该角色不授予积分赛管理，`tournament-admin` 也不再拥有内容管理权限。
+bilibili UP/视频推荐使用独立 `creator` 域，公开目录为 `/api/recommendations`；管理员在 `/api/admin/recommendations/**` 使用 `content-admin` 维护 UID/BV、整星、分类、UP 等级与图片。旧 UP-only CRUD/格式适配已移除，既有图片仍由 `/api/creators/avatars/{id}` 读取；该角色不授予积分赛管理，`tournament-admin` 也不拥有内容管理权限。
 V35创建简版目录与无上传者的图片回收台账。UID字符串唯一、主页自动生成；星级默认3，显示分数为星级×2。
 头像随表单一次multipart提交，压到最长边256px，仅存小图；UTC+8每日04:00回收未引用满24小时的图片。
 头像与联赛封面共用COS client/凭据、独立namespace；完整规则见 [UP recommendations](../docs/features/bilibili-creators.md)。

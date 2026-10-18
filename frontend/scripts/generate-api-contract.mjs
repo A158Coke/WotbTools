@@ -65,11 +65,10 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
   'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
-  'CreatorCategory', 'CreatorLevel', 'CreatorCard', 'CreatorDetail', 'CreatorSaveRequest',
-  'CreatorNameRequest', 'CreatorMetadata', 'BackendHealth',
+  'CreatorLevel', 'CreatorNameRequest', 'BackendHealth',
   'RecommendationType', 'RecommendationCategory', 'RecommendationCard', 'RecommendationDetail',
   'RecommendationSaveRequest', 'RecommendationCategoryRequest', 'RecommendationMetadata',
-  'BroadcastSeason', 'BroadcastCategory', 'BroadcastReplay', 'BroadcastNode', 'BroadcastIndex', 'BroadcastSeasonView', 'BroadcastCategoryView', 'BroadcastTimedCategoryView', 'BroadcastTimedReplaySave', 'BroadcastDeletionPreview', 'BroadcastSeasonCreate', 'BroadcastSeasonUpdate', 'BroadcastCategoryCreate', 'BroadcastNodeCreate', 'BroadcastReplaySave']) {
+  'BroadcastSeason', 'BroadcastCategory', 'BroadcastReplay', 'BroadcastNode', 'BroadcastIndex', 'BroadcastSeasonView', 'BroadcastTimedCategoryView', 'BroadcastTimedReplaySave', 'BroadcastDeletionPreview', 'BroadcastSeasonCreate', 'BroadcastSeasonUpdate', 'BroadcastCategoryCreate', 'BroadcastNodeCreate', 'BroadcastReplaySave']) {
   if (!components[name]) continue
   const id = `tournament-${name}`
   ajv.addSchema({ $schema: schema.$schema, $id: id, $ref: `#/$defs/${name}`, $defs: responseDefinitions(name) }, id)
