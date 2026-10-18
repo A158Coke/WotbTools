@@ -40,10 +40,6 @@ public final class ApiPaths {
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";
     public static final String TOURNAMENT_DATA_SOURCE = "/api/tournaments/*/data-source";
     public static final String BROADCASTS = "/api/tournament-broadcasts";
-    public static final String BROADCASTS_V2 = BROADCASTS + "/v2";
-    public static final String BROADCAST_SEASON_V2 = BROADCASTS_V2 + "/seasons/*";
-    public static final String BROADCAST_CATEGORY_V2 = BROADCASTS_V2 + "/categories/*";
-    public static final String BROADCAST_CATEGORY_V3 = BROADCASTS + "/v3/categories/*";
     public static final String BROADCASTS_ADMIN = "/api/admin/tournament-broadcasts";
     public static final String BROADCAST_SEASON = BROADCASTS + "/seasons/*";
     public static final String BROADCAST_CATEGORY = BROADCASTS + "/categories/*";
