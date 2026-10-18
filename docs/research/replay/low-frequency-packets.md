@@ -46,9 +46,58 @@ Type10 and Type35 are already active before Type17
 
 Verdict:
 
-> Type17 = **recorder-local aim/camera/projectile-control initialization boundary — PROVEN relationship / PARTIAL exact symbolic semantic**.
+> Type17 = **recorder-local aim/camera/control initialization boundary — PROVEN relationship / PARTIAL exact symbolic semantic**.
 
 Do not label it global client-ready or battle-start.
+
+## Type23 — recorder ARCADE / SNIPER scope-control state
+
+Current payload:
+
+```text
+u32 rawMode
+```
+
+Observed values:
+
+```text
+1              737
+0              689
+0x80000000      14
+```
+
+Observed transition graph:
+
+```text
+1 -> 0               689
+0 -> 1               689
+1 -> 0x80000000       14
+0x80000000 -> 1       14
+```
+
+No other transitions occur in the canonical corpus.
+
+Current normalization:
+
+```text
+modeCode = rawMode & 0x7fffffff
+
+modeCode == 1 -> ARCADE/default family
+modeCode == 0 -> SNIPER/scoped family
+otherwise     -> UNKNOWN
+```
+
+Independent camera-vs-turret geometry separates the two states strongly: Type23=0 keeps Type39 world aim close to reconstructed turret world yaw (median gap ~0.605°), while Type23=1 allows broad third-person separation (median ~5.885°, p90 ~54.51°).
+
+The previous `Type23 = recorder projectile/shot lifecycle toggle` interpretation is `REJECTED / SUPERSEDED`: only 170/703 scoped sessions contain a recorder launch, 533/703 contain none, and recorder launches occur in both mode families.
+
+Verdict:
+
+> Type23 low31 `1 = ARCADE/default`, `0 = SNIPER/scoped` — **PROVEN current 11.19 physical role**.
+
+The `0x80000000` high-bit meaning remains UNKNOWN and must be preserved raw.
+
+See [`recorder-camera-state.md`](recorder-camera-state.md).
 
 ## Type29 — duplicated recorder/client-options initialization companion flag
 
@@ -140,19 +189,39 @@ Verdict:
 
 Do not interpret it as arena ID, Unix time or battle start.
 
-## Type31 — recorder arcade gun-marker size
+## Type31 — recorder scoped-camera zoom/FOV-like raw trajectory
 
 Type31 is high-frequency rather than low-frequency, but is retained here as an important control surface:
 
 ```text
-payload : float32
+payload : float32 zoomFovRaw
+active  : only inside Type23 scoped sessions
 ```
+
+Exact gating:
+
+```text
+Type23 scoped sessions  703
+Type31 active runs       703
+```
+
+The stream starts a median ~8.575 ms after Type23 enters the scoped family, updates at ~120 Hz, and stops when Type23 returns to ARCADE/default.
+
+The previous `Type31 = arcade gun-marker / aiming-circle size` interpretation is `REJECTED / SUPERSEDED`. Avatar method36 `field6.field1` is independently proven as the actual dynamic gun dispersion/bloom scalar, and Type31 is effectively uncorrelated with it (`r ~= -0.01168`). Static no-shot sessions and a vehicle-independent ~0.617 s Type31 transition further identify this as a camera/control process.
 
 Verdict:
 
-> Type31 = **recorded arcade gun-marker / aiming-circle size scalar — PROVEN behavioral identity**.
+> Type31 = **recorder scoped-camera automatic zoom/FOV-like raw scalar — PROVEN relationship / VERY STRONG behavioral identity**.
 
-It is not itself a server RNG/penetration probability or guaranteed physical dispersion angle.
+Safe boundary:
+
+```text
+smaller raw value -> deeper zoom        VERY STRONG
+exact FOV unit / native symbol          UNKNOWN/PARTIAL
+exact optical magnification formula     UNKNOWN/PARTIAL
+```
+
+See [`recorder-camera-state.md`](recorder-camera-state.md) and [`gun-marker-stream.md`](gun-marker-stream.md).
 
 ## Type39 — recorder aim/camera stream
 
@@ -198,7 +267,7 @@ rawClock 0
 
 later setup
   Type17
-  Type23=1 same clock
+  Type23=1 (ARCADE/default) same clock
 
 ~Type17 + 0.100 s
   Type39 recorder aim/camera begins
@@ -218,5 +287,7 @@ This is a replay/control initialization timeline, not the battle-start timeline.
 3. Type14 and `0xFFFFFFFF` are stream lifecycle, not win/loss facts;
 4. Type35/36/32 share a client/session monotonic clock domain;
 5. Type28 is ammunition selection and must not regress to the superseded PC target-lock hypothesis;
-6. initialization packets must not be used as battle-start markers;
-7. every new client version must revalidate numeric packet IDs before widening decoder support.
+6. Type23 is recorder ARCADE/SNIPER mode state, not projectile lifecycle;
+7. Type31 is scoped camera zoom/FOV-like state, not gun dispersion authority;
+8. initialization packets must not be used as battle-start markers;
+9. every new client version must revalidate numeric packet IDs before widening decoder support.
