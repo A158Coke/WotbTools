@@ -1113,6 +1113,22 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(false)
   })
 
+  it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const boom = new THREE.Group()
+    boom.traverse = () => { throw new Error('assembly boom') }
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: boom,
+      parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('assembly boom'))).toBe(true)
+  })
+
   it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
     prepareAssets(['terrain', 'terrain-meta'])
     window.__terrain = undefined

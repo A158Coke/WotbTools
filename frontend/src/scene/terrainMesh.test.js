@@ -716,6 +716,9 @@ describe('decodeTerrainField（高度场 = 场景系引擎顶点口径）', () =
       expect(terrainFieldMetaValid({ size: n, zmin: bad, zmax: 100, terrainLayout: 2 })).toBe(false)
       expect(terrainFieldMetaValid({ size: n, zmin: 0, zmax: bad, terrainLayout: 2 })).toBe(false)
     }
+    // 单点高度场（size=1）会让 buildAdaptiveTerrain 抛错并同时失去地形/底图，提前拒绝
+    expect(terrainFieldMetaValid({ size: 1, zmin: 0, zmax: 1, terrainLayout: 2 })).toBe(false)
+    expect(decodeTerrainField(new Uint16Array([0]).buffer, { size: 1, zmin: 0, zmax: 1, terrainLayout: 2 })).toBeNull()
   })
 
   it('worldBounds 契约：只接受居中正方形（当前消费口径）', () => {

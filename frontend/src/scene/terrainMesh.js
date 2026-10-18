@@ -196,7 +196,8 @@ export const TERRAIN_LAYOUT_ENGINE_VERTEX = 2
 export function terrainFieldMetaValid(meta) {
   if (!meta || typeof meta !== 'object') return false;
   const n = Number(meta.size);
-  if (!Number.isInteger(n) || n <= 0) return false;
+  // size=1 会被解码成单点场，但 buildAdaptiveTerrain 要求 n>=2 会抛错——提前 fail-closed。
+  if (!Number.isInteger(n) || n < 2) return false;
   const layout = meta.terrainLayout;
   if (layout !== 1 && layout !== TERRAIN_LAYOUT_ENGINE_VERTEX) return false;
   // 必须先是真正的 number：null / '' / false 经 Number() 会变成 0，会被误认为合法高度范围。
