@@ -168,7 +168,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 | token | 字号 / 行高 | 字重 | 用途 |
 |---|---|---|---|
-| `--type-display` | 32 / 40 | 700 | 首页标题（**仅**用于装饰插槽） |
+| `--type-display-hero` | `clamp(40, 6vw, 72)` / 1.05 | 700 | **仅**首页英雄区标题（装饰插槽，§2）。2026-10-18 新增：首页改为纯展示页后，32px 的 display 撑不起一个整屏 hero；流体取值，手机回落 40px、宽屏停在 72px。工作区没有任何表面可以用这一级 |
+| `--type-display` | 32 / 40 | 700 | 装饰插槽内的强调数字（如首页实时数据带） |
 | `--type-h1` | 24 / 32 | 700 | 页面标题。**每页只有一个 h1** |
 | `--type-h2` | 20 / 28 | 600 | 区块标题 |
 | `--type-h3` | 16 / 24 | 600 | 卡片标题、抽屉小节 |
@@ -176,7 +177,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | `--type-body`（触控） | 15 / 22 | 400 | 正文（`pointer: coarse` 时自动替换） |
 | `--type-caption` | 12 / 16 | 400 / 600 | 标签、表头、辅助说明。**这是最小字号**，中文 < 12px 不可读 |
 
-- 字号只有这 7 级，从现在的 83 种收敛下来。**禁止出现 12px 以下的文字。**
+- 字号只有这 8 级（7 级工作区字阶 + 仅限装饰插槽的 `display-hero`），从现在的 83 种收敛下来。**禁止出现 12px 以下的文字。**
 - **token 形态：** 每一级有两个原子 token `--font-size-{级}`、`--line-height-{级}`，以及一个组合 token `--type-{级}`（字重 + 字号 / 行高 + 字体，用于 `font` 简写）。`font-size` / `line-height` 只能引用原子 token，`font` 只能引用组合 token；触控档只覆盖 `--font-size-body` / `--line-height-body`，组合 token 自动跟随。长文阅读另有 `--line-height-prose`（1.7，只用于文档类页面的正文）。
 - 字重只用 400 / 600 / 700。
 - 大写字母 + 字间距的 "kicker" 标签（如 `WOTBTOOLS · REPLAY WORKSPACE`）只能出现在装饰插槽里，工作区不用。
