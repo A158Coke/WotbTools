@@ -267,8 +267,12 @@ try {
       await page.goto(plainUrl + '&shot=1&scfg=0&shell=0&config=0')
       // 只断言 world 视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
       // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
-      await page.waitFor(() => window.__armorRicochet?.info()?.view
-        && window.__armorRicochet.info().view.worldOverview === true, { timeout: 30000, label: 'world overview ready' })
+      // 同时等 FOV 真正落到 50°：worldOverview 标志在 init 同步阶段就置位，
+      // 若只等标志，可能在下一帧 applyLongRangeCompensation 之前读到旧的 18.75°。
+      await page.waitFor(() => {
+        const v = window.__armorRicochet?.info()?.view
+        return v && v.worldOverview === true && Math.abs(v.fov - 50) < 0.01
+      }, { timeout: 30000, label: 'world overview ready (50° FOV)' })
       return page.evaluate('window.__armorRicochet.info().view')
     }
     const missView = await loadShot(missShot)

@@ -247,15 +247,13 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
                 if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
                 variantSeen |= vbit;
-                if (rem > th) {                         // 穿过模块（不计层）；概率区间 flat 平移
-                    rem -= th;
-                    pMin -= th;
-                    pMax -= th;
-                    if (pMax <= 0.0) { blocked = true; tCur = bestT + RC_ADV_EPS; continue; }
-                    tCur = bestT + RC_ADV_EPS;
-                    continue;
-                }
-                blocked = true;                         // 模块挡下：余下只查主装甲存在性
+                bool modPen = rem > th;
+                if (modPen) rem -= th;
+                // 概率区间按 Armor Inspector 的 flat 消耗平移（即便确定性模块已挡下，
+                // 也继续让概率链看到后续层；结论由首个 Primary 决定）。
+                pMin -= th;
+                pMax -= th;
+                if (!modPen) blocked = true;   // 模块挡下：余下只查主装甲存在性
                 tCur = bestT + RC_ADV_EPS; continue;
             }
             // 间隙/主装甲：角度等效 + 2×口径增强转正；出射段强制不跳弹（threeCal 恒真）
@@ -282,9 +280,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             pMin -= eff;
             pMax -= eff;
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
-            if (sec <= 2) {                             // 主装甲 = 末层，定结论
+            if (sec <= 2) {                             // 首个主装甲 = 末层，定结论
                 if (layPen) {
-                    penOut = clamp(probChance, 0.0, 1.0);
+                    // 确定性 layPen 已成立；补充概率为 0 时仍呈现确定性击穿（不把绿翻红）。
+                    penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
                     return 1;
                 }
                 return 2;
@@ -723,10 +722,15 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     const hits = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T);   // 初始接受阈与 GLSL/click 同一常量（评审 P1）
     // 前端门：原始命中无主装甲 → 不做二次判定（维持紫）
     if (!hits.some(h => _PRIM.has(h.section))) return { cls: 0, penChance: 0, layers: [] };
-    // 收集：variant 去重 + 首 primary 止（calculate 收集段）
+    // 收集：variant 去重；确定性判定与概率链都停在首个 primary（含）——
+    // 其后的车体底板/履带不是本次装甲交火层（GLSL 的 sec <= 2 分支同样立即返回）。
     const seen = new Set();
     const collected = [];
     for (const h of hits) {
+        // 同一位置的重合三角形（射线掠过四边形对角线）不是独立装甲层；
+        // GLSL 的 tCur 推进天然跳过同 t 的第二个命中，这里保持同一口径。
+        const prev = collected[collected.length - 1];
+        if (prev && Math.abs(h.t - prev.t) < 1e-6 && h.section === prev.section) continue;
         if (h.variant) {
             if (seen.has(h.variant)) continue;
             seen.add(h.variant);
@@ -752,35 +756,34 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         if (h.variant) {
             eff = th;
             layPen = rem > eff;
+            if (layPen) rem -= eff;
+            // 概率区间按 flat 消耗平移；概率耗尽不改变确定性命中结论。
             probMin -= eff;
             probMax -= eff;
-        } else {
-            const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
-            const angle = Math.acos(cosA);
-            // 0mm 合法板厚：只对正厚度应用 2× 增强转正（与 penetration.js / GLSL 同规则）。
-            const twoCal = th > 0 && caliber > th * 2;
-            // BlitzKit：每个非外部层独立套用转正（不继承首层状态）。
-            const normR = twoCal
-              ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th)
-              : normalizationRad;
-            const finA = Math.max(angle - normR, 0);
-            eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
-            layPen = rem > eff;
-            probChance *= penetrationChanceForInterval(probMin, probMax, eff);
-            probMin -= eff;
-            probMax -= eff;
+            layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem + (layPen ? eff : 0), penetrated: layPen });
+            if (!layPen) return { cls: 2, penChance: 0, layers };
+            continue;
         }
+        const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
+        const angle = Math.acos(cosA);
+        // 0mm 合法板厚：只对正厚度应用 2× 增强转正（与 penetration.js / GLSL 同规则）。
+        const twoCal = th > 0 && caliber > th * 2;
+        // BlitzKit：每个非外部层独立套用转正（不继承首层状态）。
+        const normR = twoCal
+          ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th)
+          : normalizationRad;
+        const finA = Math.max(angle - normR, 0);
+        eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
+        layPen = rem > eff;
+        probChance *= penetrationChanceForInterval(probMin, probMax, eff);
+        probMin -= eff;
+        probMax -= eff;
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
-        // 与 GLSL 同：模块 flat 已耗尽概率区间 → 红（即使确定性 rem 仍 > 厚度）。
-        if (h.variant && probMax <= 0) return { cls: 2, penChance: 0, layers };
-        if (layPen) {
-            rem -= eff;
-        } else {
-            return { cls: 2, penChance: 0, layers };
-        }
+        if (!layPen) return { cls: 2, penChance: 0, layers };
         if (isPrimary) {
-            return { cls: 1, penChance: Math.max(0, Math.min(1, probChance)), layers };
+            return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers };
         }
+        rem -= eff;
     }
     return { cls: 0, penChance: 0, layers };
 }

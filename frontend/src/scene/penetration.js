@@ -72,12 +72,13 @@ function moduleVariant(section) {
 }
 
 /**
- * 收集阶段：外部模块按 variant 去重。确定性判定在首个 Primary 后停止（BlitzKit
- * 同）；概率链传 stopAtPrimary=false，拿到沿射线的全部装甲层（含首个 Primary
- * 之后的多层主装甲），否则“击穿第一层即结束”的截断链会漏掉后续层。
- * 注意这里不因某层未穿透而停止——那发生在判定循环。
+ * 收集阶段：外部模块按 variant 去重；确定性判定与概率链都只收集到**首个 Primary
+ * （含）**——与 BlitzKit shoot() 的末层语义一致。概率链不再因某层未穿透而在收集
+ * 阶段截断（那发生在判定循环），但也不得越过首个 Primary 继续收集其后的车体底板/
+ * 履带：那些命中与本次装甲交火无关，会把补充概率压成 0（2026-10-18 Super
+ * Conqueror 炮塔点击：19% vs 0% 的相邻位置差异）。
  */
-function collectFilteredHits(hits, stopAtPrimary = true) {
+function collectFilteredHits(hits) {
   const seenVariants = new Set()
   const filteredHits = []
   for (const ah of hits) {
@@ -88,8 +89,15 @@ function collectFilteredHits(hits, stopAtPrimary = true) {
         filteredHits.push(ah)
       }
     } else {
+      // 同一网格的重合三角形（射线掠过四边形对角线时）是同一层，不是两层。
+      const prev = filteredHits[filteredHits.length - 1]
+      const samePlate = prev && prev.section === ah.section
+        && (ah.plate_id == null || prev.plate_id == null || String(ah.plate_id) === String(prev.plate_id))
+        && Array.isArray(ah.point) && Array.isArray(prev.point)
+        && dist3(ah.point, prev.point) < 1e-6
+      if (samePlate) continue
       filteredHits.push(ah)
-      if (stopAtPrimary && isPrimary(ah.section)) break
+      if (isPrimary(ah.section)) break
     }
   }
   return filteredHits
@@ -141,9 +149,10 @@ function resolveLayerGeometry(ah, thickness, ctx) {
 }
 
 /**
- * 概率链：遍历到首个 Primary 的**全部**层，包含确定性判定会因某层未穿透而
- * 提前截断的后续层。外部模块保留 flat 标记；HEAT 层间插入 gap 描述（距离），
- * 供概率区间按 penetration.js 的同一 0.5/m 衰减处理。
+ * 概率链：遍历到首个 Primary（含）的**全部**层，包含确定性判定会因某层未穿透而
+ * 提前截断的后续层；不包含首个 Primary 之后的车体/履带命中。外部模块保留 flat
+ * 标记；HEAT 层间插入 gap 描述（距离），供概率区间按 penetration.js 的同一
+ * 0.5/m 衰减处理。
  */
 function buildProbabilityLayers(filteredHits, ctx) {
   const layers = []
@@ -237,10 +246,11 @@ export function calculate(req) {
 
   const view = normalize(req.view_dir)
 
-  // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：确定性判定在首个 Primary
-  // 后停止；概率链另取全部命中（多层主装甲必须继续向下）。
+  // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：确定性判定与概率链
+  // 都停在首个 Primary（含）。概率链的差异只在判定循环：即使某层未穿透，
+  // 也继续评估后面直到首个 Primary 的层，而不是复用确定性截断结果。
   const filteredHits = collectFilteredHits(req.hits)
-  const probabilityHits = collectFilteredHits(req.hits, false)
+  const probabilityHits = collectFilteredHits(req.hits)
   // blitzkit：出射射线（allowRicochet=false）未命中任何 Primary → null；这里以空结果 "-" 表达。
   const allowRicochet = req.allow_ricochet !== false
   if (!allowRicochet && filteredHits.every((h) => !isPrimary(h.section))) {
