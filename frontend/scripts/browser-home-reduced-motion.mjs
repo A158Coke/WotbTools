@@ -11,9 +11,15 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
  *
  * 复用 browser-page.mjs（CDP 页面壳）与 fixture-server.mjs（真实 Vite 应用 + auth stub），
  * 不另起浏览器框架；只替换 /api/hof 为确定性的空页，避免首页数据带请求真实后端。
+ *
+ * 桌面 hover 能力必须由 fixture 显式建立：hosted headless Chrome 不保证
+ * `matchMedia('(hover: hover)')` 为 true，而共享 Page.emulate() 的 device metrics /
+ * touch 覆盖会重新决定 pointer capability。这里用 Blink settings 固定 fine pointer + hover，
+ * 用 --window-size 固定桌面视口（> 1200 断点），并在测试开始时断言 media capability 真的成立。
  */
 
-const VIEWPORT = { width: 1280, height: 900, touch: false, deviceScaleFactor: 1 }
+const DESKTOP_WINDOW = '--window-size=1440,900'
+const DESKTOP_POINTER = '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4'
 const HOME_READY = `document.querySelectorAll('.home-shot').length >= 4 && !!document.querySelector('.home-hero-line')`
 
 /** 跨进程序列化执行：返回首页关键元素在真实浏览器里的 computed motion 状态。 */
@@ -36,8 +42,10 @@ function homeMotionProbe() {
       viewTimeline: CSS.supports('animation-timeline: view()'),
       scrollTimeline: CSS.supports('animation-timeline: scroll()'),
     },
+    viewport: { width: innerWidth, height: innerHeight },
     media: {
       hover: matchMedia('(hover: hover)').matches,
+      fine: matchMedia('(pointer: fine)').matches,
       reduce: matchMedia('(prefers-reduced-motion: reduce)').matches,
       noPreference: matchMedia('(prefers-reduced-motion: no-preference)').matches,
     },
@@ -69,7 +77,8 @@ async function openHome(env, motion) {
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   await page.enable()
-  await page.emulate(VIEWPORT)
+  // 不调用 Page.emulate()：桌面 viewport 由 --window-size 固定，pointer capability 由
+  // --blink-settings 固定；device metrics / touch 覆盖会重新决定 (hover: hover)。
   await setMotionPreference(env.chrome, sessionId, motion)
   await page.goto(`${env.origin}/`)
   await page.waitForValue(HOME_READY, (ready) => ready === true, { label: 'homepage showcase ready' })
@@ -101,7 +110,8 @@ async function runReducedMotion(env) {
   try {
     const before = await page.probe(homeMotionProbe)
     check(failures, before.media.reduce === true, 'Emulation.setEmulatedMedia did not enable reduce')
-    check(failures, before.media.hover === true, 'desktop viewport must match (hover: hover) for hover regression')
+    check(failures, before.viewport.width >= 1200, `desktop viewport required for hover regression (got width ${before.viewport.width})`)
+    check(failures, before.media.hover === true && before.media.fine === true, `desktop hover/fine pointer capability missing (hover=${before.media.hover}, fine=${before.media.fine})`)
     for (const key of ['line', 'accent', 'subtitle', 'heroInner', 'shot']) {
       check(failures, before[key]?.animationName === 'none', `reduce: ${key} must not run animation (got ${before[key]?.animationName})`)
     }
@@ -146,7 +156,8 @@ async function runMotionEnabled(env) {
   try {
     const before = await page.probe(homeMotionProbe)
     check(failures, before.media.noPreference === true, 'Emulation.setEmulatedMedia did not enable no-preference')
-    check(failures, before.media.hover === true, 'desktop viewport must match (hover: hover) for hover regression')
+    check(failures, before.viewport.width >= 1200, `desktop viewport required for hover regression (got width ${before.viewport.width})`)
+    check(failures, before.media.hover === true && before.media.fine === true, `desktop hover/fine pointer capability missing (hover=${before.media.hover}, fine=${before.media.fine})`)
     check(failures, hasAnimation(before.line), 'no-preference: hero line must keep an entrance animation')
     check(failures, hasAnimation(before.subtitle), 'no-preference: hero subtitle must keep an entrance animation')
     check(failures, before.shot?.animationName !== 'none', 'no-preference: showcase block must keep its reveal animation')
@@ -194,7 +205,13 @@ let chromeCdp = null
 const results = []
 try {
   chromeCdp = await launchChromeForCdp(chromeBinary, {
-    extraArgs: ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
+    extraArgs: [
+      DESKTOP_WINDOW,
+      DESKTOP_POINTER,
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+    ],
   })
   const env = { origin, chrome: chromeCdp }
   for (const [name, run] of [['home-reduced-motion', runReducedMotion], ['home-motion-enabled', runMotionEnabled]]) {
