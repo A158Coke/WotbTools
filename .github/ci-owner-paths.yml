@@ -132,6 +132,7 @@ deployment:
   - 'deploy/test-*.sh'
   - 'deploy/test_*.py'
   - 'deploy/check-*.sh'
+  - 'deploy/assets/**'
   - 'deploy/tx/deploy.sh'
   - 'deploy/tx/with-deploy-lock.sh'
   - 'deploy/tx/nginx/**'
