@@ -2,12 +2,14 @@
 #
 # The Stack is created/adopted declaratively by ResourceSync, but ResourceSync Apply
 # must never deploy the workload implicitly. Deployment remains an explicit Komodo
-# action after the Gitee transport mirror contains the reviewed GitHub commit and the
-# host asset tree has been staged and verified.
+# action after the dedicated Gitee transport branch contains the reviewed GitHub
+# commit and the host asset tree has been staged and verified.
 #
 # GitHub remains source/review authority. The Shanghai worker cannot reliably reach
-# GitHub, so Gitee is transport only, matching the existing TX2 domestic-worker
-# pattern.
+# GitHub, so Gitee is transport only. Unlike the shared Gitee `main` used by other
+# mainland build paths, this Stack consumes the dedicated `asset-origin` branch;
+# `.github/workflows/asset-origin.yml` force-pushes exactly the triggering reviewed
+# GitHub SHA to that branch and verifies it before rollout.
 [[stack]]
 name = "wotbtools-asset-origin"
 description = "Alibaba Cloud Shanghai static origin for WotBTools Agent 3D assets"
@@ -28,7 +30,7 @@ skip_secret_interp = false
 git_provider = "gitee.com"
 git_https = true
 repo = "A158Coke/Wotbtools"
-branch = "main"
+branch = "asset-origin"
 commit = ""
 clone_path = ""
 reclone = false
