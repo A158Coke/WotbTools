@@ -54,9 +54,18 @@ describe('Classic Profile CSS contract', () => {
   })
 
   it('首页拥有自己的装饰插槽，Classic 不再覆盖业务卡片', () => {
-    expect(stripComments(classic)).not.toMatch(/\.(feature-visual|feature-card|showcase-hero|record-card)\b/)
-    expect(home).toContain('var(--color-surface-1)')
+    expect(stripComments(classic)).not.toMatch(/\.(home-hero|home-shot|home-stage|home-showcase|home-stat)\b/)
+    expect(home).toContain('var(--color-canvas)')
     expect(home).toContain('var(--color-text-primary)')
+    // 装饰插槽由首页自己按 Profile 派生（design-language §2：Classic 关闭），不靠 classic-profile.css 覆盖。
+    expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero \{[^}]*--home-hero-decor: none;/)
+    // 插槽置 none 之后那个承载背景的元素也必须隐藏，否则 Classic 下留一块空占区。
+    expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero-decor \{[^}]*display: none;/)
+    // reduced motion 的真实 computed 行为由 scripts/browser-home-reduced-motion.mjs 验证，
+    // 这里不再用 CSS 源码断言冒充浏览器验证。
+    // Hero 内层不得自带 width：`.layout-wide` 的左右边距就是靠 width 算出来的，
+    // 覆盖它会让 Hero 贴屏幕边缘、并比页面其余区块少一个 gutter（2026-10-18 QA 实测）。
+    expect(home).not.toMatch(/\.home-hero-inner\s*\{[^}]*\bwidth:/)
   })
 
   it('在 main.js 中必须最后导入(§43D / §33 顺序契约)', () => {
@@ -129,7 +138,7 @@ describe('Classic 迁移边界：语义 owner 与仍需要的 legacy 桥接', ()
   }
 
   it('首页标题与操作不受全局深浅色补丁接管', () => {
-    expect(css).not.toMatch(/\.(hero-copy|hero-btn|mini-action|record-meta)\b/)
+    expect(css).not.toMatch(/\.(home-hero-copy|home-hero-subtitle|home-cta-primary|home-cta-guide|home-stat-meta|home-footer-bar)\b/)
   })
 
   it('通用 Ghost / Tabs 由 app-shell 的语义 token 定义', () => {
