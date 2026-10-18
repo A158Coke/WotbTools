@@ -4,9 +4,10 @@
 #
 # This script never onboards a host and never accepts a bootstrap credential. It
 # only commits the lifecycle's durable onboarding marker after independently
-# proving that the *currently running* Periphery process is already connected to
-# the reviewed Core, has persistent identity/trust files, exposes no inbound 8120,
-# and has no onboarding credential in its config or process environment.
+# proving that the *currently running* Periphery process already uses the reviewed
+# Server identity/Core route, is connected to that reviewed peer, has persistent
+# identity/trust files, exposes no inbound 8120, and has no onboarding credential
+# in its config or process environment.
 #
 # On a fresh/rebuilt host with no active established agent this is a no-op; the
 # normal install.sh state machine remains responsible for bootstrap (using the
@@ -67,8 +68,16 @@ if grep -Eq '^[[:space:]]*onboarding_key[[:space:]]*=' "$periphery_config"; then
   fail 'Installed Periphery config still contains an onboarding key; refusing adoption.'
 fi
 
+# The manually installed host can use Komodo's legacy singular `core_address`
+# while the reviewed target uses `core_addresses`. Parse TOML and normalize only
+# that representation difference; Core identity and connect_as must match exactly.
+validator="$script_dir/validate-adoption-config.py"
+require_real_file "$validator" 'Periphery adoption config validator'
+python3 "$validator" "$periphery_config" "$periphery_config_source" "$periphery_connect_as" \
+  || fail 'Installed Periphery identity/Core config does not match the reviewed target.'
+
 [[ -n "$(established_core_connections "$pid")" ]] \
-  || fail "Active Periphery process has no established connection on reviewed Core port $periphery_core_port."
+  || fail "Active Periphery process has no established connection to reviewed Core peer $periphery_core_peer_match."
 [[ -z "$(listener_on_8120)" ]] \
   || fail 'Periphery inbound port 8120 is listening; refusing outbound-only adoption.'
 
