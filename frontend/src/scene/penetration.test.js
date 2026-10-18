@@ -438,6 +438,20 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1371265, 6)
   })
 
+  it('前置模块厚于穿深但区间仍有正向尾部：保留负均值（P199/chassis200/spaced1/hull1）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 200.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 1.0, [0, 0, 1]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 2]),
+    ]
+    const r = calculate(req('ap', 199.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
+    // [189.05,208.95] −200 = [−10.95,8.95]（均值−1，区间未耗尽）；spaced1 →
+    // Φ(−0.6030)≈0.2732；hull1 → Φ(−0.9045)≈0.1829；乘积≈4.9966%。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.049966, 5)
+  })
+
   it('同一块板的重合三角形命中只算一层（射线掠过四边形对角线）', () => {
     const hits = [
       hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),
