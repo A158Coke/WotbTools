@@ -1,0 +1,51 @@
+# Dedicated static asset origin for Agent 3D assets.
+#
+# The Stack is created/adopted declaratively by ResourceSync, but ResourceSync Apply
+# must never deploy the workload implicitly. Deployment remains an explicit Komodo
+# action after the Gitee transport mirror contains the reviewed GitHub commit and the
+# host asset tree has been staged and verified.
+#
+# GitHub remains source/review authority. The Shanghai worker cannot reliably reach
+# GitHub, so Gitee is transport only, matching the existing TX2 domestic-worker
+# pattern.
+[[stack]]
+name = "wotbtools-asset-origin"
+description = "Alibaba Cloud Shanghai static origin for WotBTools Agent 3D assets"
+tags = []
+template = false
+deploy = false
+
+[stack.config]
+server = "ali-sh-asset-01"
+project_name = "wotbtools-asset-origin"
+auto_pull = true
+run_build = false
+poll_for_updates = false
+auto_update = false
+auto_update_all_services = false
+destroy_before_deploy = false
+skip_secret_interp = false
+git_provider = "gitee.com"
+git_https = true
+repo = "A158Coke/Wotbtools"
+branch = "main"
+commit = ""
+clone_path = ""
+reclone = false
+webhook_enabled = false
+webhook_force_deploy = false
+files_on_host = false
+run_directory = "deploy/assets"
+file_paths = ["compose.yaml"]
+env_file_path = ".env"
+send_alerts = true
+registry_provider = ""
+registry_account = ""
+extra_args = []
+build_extra_args = []
+compose_cmd_wrapper = ""
+compose_cmd_wrapper_include = []
+ignore_services = []
+file_contents = ""
+environment = ""
+links = []
