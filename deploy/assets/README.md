@@ -41,7 +41,7 @@ Keep the current release plus at least one previous release while the migration 
 4. Stage the asset pack under `/srv/wotb-assets/releases/<pack-id>`, verify `manifest.json`, then atomically point `current` at that release.
 5. Ensure Alibaba firewall allows public TCP 80/443. Do not expose Periphery 8120.
 6. Point `assets.wotbtools.com` at the server when ready for certificate issuance, then explicitly deploy the Stack in Komodo.
-7. Run `deploy/assets/verify.sh https://assets.wotbtools.com`.
+7. Run `bash deploy/assets/verify.sh https://assets.wotbtools.com`.
 8. Canary the Web client with `?assets=https://assets.wotbtools.com` before changing the production `ASSET_BASE_URL`.
 9. Migrate the Android native asset origin in a separate client change. Old Android binaries keep using the old COS origin until retired.
 
