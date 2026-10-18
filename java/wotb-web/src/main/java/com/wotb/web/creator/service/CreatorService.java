@@ -1,6 +1,5 @@
 package com.wotb.web.creator.service;
 
-import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.dto.RecommendationDtos;
 import com.wotb.web.creator.entity.Creator;
 import com.wotb.web.creator.entity.CreatorCategory;
@@ -54,19 +53,8 @@ public class CreatorService {
         this.writes = new TransactionTemplate(transactions);
     }
     @Transactional(readOnly = true)
-    public List<CreatorDtos.Category> categories() { return categoryRows("UP").stream().map(mapper::legacy).toList(); }
-    @Transactional(readOnly = true)
-    public List<CreatorDtos.Category> publicCategories() {
-        return publicRecommendationCategories().stream().filter(category -> "UP".equals(category.type())).map(mapper::legacy).toList();
-    }
-    @Transactional(readOnly = true)
     public List<RecommendationDtos.Category> publicRecommendationCategories() {
         return categories.findPopulatedByOrderByIdAsc().stream().map(mapper::category).toList();
-    }
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public CreatorDtos.Metadata metadata() {
-        final RecommendationDtos.Metadata data = recommendationMetadata("UP");
-        return new CreatorDtos.Metadata(data.categories().stream().map(mapper::legacy).toList(), data.levels(), data.imageUploadsAvailable());
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public RecommendationDtos.Metadata recommendationMetadata(final String type) {
@@ -76,10 +64,6 @@ public class CreatorService {
     }
     private List<RecommendationDtos.Category> categoryRows(final String type) {
         return categories.findAllByTypeOrderByIdAsc(type).stream().map(mapper::category).toList();
-    }
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public List<CreatorDtos.Card> list(final Long categoryId) {
-        return recommendations("UP", categoryId).stream().map(mapper::legacy).toList();
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<RecommendationDtos.Card> recommendations(final String type, final Long categoryId) {
@@ -93,25 +77,14 @@ public class CreatorService {
         final List<Creator> rows = creators.publicList(type, categoryId);
         final Map<Long, RecommendationDtos.Category> categoryMap = categoryRows(type).stream()
                 .collect(Collectors.toMap(RecommendationDtos.Category::id, Function.identity()));
-        final Map<Long, CreatorDtos.Level> levelMap = levels.findAllByOrderByIdAsc().stream().map(mapper::level)
-                .collect(Collectors.toMap(CreatorDtos.Level::id, Function.identity()));
+        final Map<Long, RecommendationDtos.Level> levelMap = levels.findAllByOrderByIdAsc().stream().map(mapper::level)
+                .collect(Collectors.toMap(RecommendationDtos.Level::id, Function.identity()));
         return rows.stream().map(creator -> mapper.card(creator, categoryMap, levelMap)).toList();
     }
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public CreatorDtos.Detail detail(final long id) { return mapper.legacy(recommendationDetail("UP", id)); }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public RecommendationDtos.Detail recommendationDetail(final String type, final long id) {
         requireType(type);
         return mapper.toDto(creators.findById(id).filter(creator -> type.equals(creator.type)).orElseThrow(CreatorService::notFound));
-    }
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public CreatorDtos.Detail create(final CreatorDtos.SaveRequest request, final MultipartFile avatar) {
-        return mapper.legacy(save(null, mapper.request(request), avatar));
-    }
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public CreatorDtos.Detail update(final long id, final CreatorDtos.SaveRequest request, final MultipartFile avatar) {
-        if (id <= 0) { throw invalid(); }
-        return mapper.legacy(save(id, mapper.request(request), avatar));
     }
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RecommendationDtos.Detail createRecommendation(final RecommendationDtos.SaveRequest request, final MultipartFile image) {
@@ -157,7 +130,6 @@ public class CreatorService {
             return mapper.toDto(creator);
         });
     }
-    public void delete(final long id, final long expectedVersion) { deleteRecommendation("UP", id, expectedVersion); }
     public void deleteRecommendation(final String type, final long id, final long expectedVersion) {
         requireType(type);
         if (id <= 0 || expectedVersion < 0) { throw invalid(); }
@@ -167,9 +139,6 @@ public class CreatorService {
         final String previous = creator.avatarId;
         creators.delete(creator); creators.flush(); avatars.detach(previous);
     }
-    public CreatorDtos.Category addCategory(final CreatorDtos.DictionaryRequest request) {
-        return mapper.legacy(addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", request == null ? null : request.name())));
-    }
     public RecommendationDtos.Category addRecommendationCategory(final RecommendationDtos.CategoryRequest request) {
         if (request == null) { throw invalid(); }
         requireType(request.type());
@@ -178,7 +147,6 @@ public class CreatorService {
         category.type = request.type(); category.name = name(request.name());
         return mapper.category(categories.saveAndFlush(category));
     }
-    public void deleteCategory(final long id) { deleteRecommendationCategory("UP", id); }
     public void deleteRecommendationCategory(final String type, final long id) {
         requireType(type);
         creators.lockCatalog();
@@ -187,7 +155,7 @@ public class CreatorService {
         for (final Creator creator : creators.findCategoryMembersLocked(id)) { creator.version++; }
         creators.removeCategoryLinks(id); categories.delete(category); categories.flush();
     }
-    public CreatorDtos.Level addLevel(final CreatorDtos.DictionaryRequest request) {
+    public RecommendationDtos.Level addLevel(final RecommendationDtos.DictionaryRequest request) {
         creators.lockCatalog();
         final CreatorLevel level = new CreatorLevel(); level.name = name(request == null ? null : request.name());
         return mapper.level(levels.saveAndFlush(level));

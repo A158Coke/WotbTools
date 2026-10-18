@@ -30,11 +30,11 @@ function harness({ view = 'home', invite = false, files = false } = {}) {
   } }))
   const loadDemo = vi.fn(async (signal?: AbortSignal) => { if (!signal?.aborted) { selected.value = true; revision.value++ } })
   const chooseOwnReplay = vi.fn()
+  const setCapability = vi.fn()
   controller.registerWorkspace({ hasFiles: () => selected.value, busy: () => busy.value,
-    selectionIdentity: () => revision.value, loadDemo, chooseOwnReplay,
-    setCapability: vi.fn() })
+    selectionIdentity: () => revision.value, loadDemo, chooseOwnReplay, setCapability })
   controller.registerSurface('playback', { ready: () => true, prepare, cleanup })
-  return { controller, wrapper, route, canInvite, selected, revision, busy, loadDemo, chooseOwnReplay, prepare, cleanup }
+  return { controller, wrapper, route, canInvite, selected, revision, busy, loadDemo, chooseOwnReplay, setCapability, prepare, cleanup }
 }
 function cache() { return JSON.parse(localStorage.getItem(ONBOARDING_STORAGE_KEY) || '{"receipts":{}}').receipts }
 function account(sub: string | null) {
@@ -45,8 +45,9 @@ function account(sub: string | null) {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail })
+  return { promise, resolve, reject }
 }
 beforeEach(() => {
   localStorage.clear()
@@ -517,22 +518,152 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.canResume.value).toBe(false)
     h.wrapper.unmount()
   })
-  it('passes cancellation to sample loading and ignores its late continuation after Next', async () => {
+  it('keeps the official sample loading across Next so the advanced step can use it', async () => {
+    // #668：示例下载不再被“下一步”取消，否则播放步骤会等一个永远不会就绪的示例。
     const h = harness()
     const pending = deferred<void>()
-    h.loadDemo.mockImplementation(() => pending.promise)
+    h.loadDemo.mockImplementation(async () => {
+      await pending.promise
+      h.selected.value = true
+      h.revision.value++
+    })
     h.controller.start()
     const beginning = h.controller.begin()
     await flushPromises()
     const signal = h.loadDemo.mock.calls[0][0]
     expect(signal).toBeInstanceOf(AbortSignal)
     h.controller.next()
-    expect(signal?.aborted).toBe(true)
+    expect(signal?.aborted).toBe(false)
+    expect(h.controller.issue.value).toBe('loading')
     pending.resolve()
     await beginning
     await flushPromises()
     expect(h.controller.index.value).toBe(1)
     expect(h.controller.currentStage.value.anchor).toBe('data-toolbar')
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('reloads the official sample when Retry recovers an unavailable step', async () => {
+    const h = harness()
+    h.loadDemo.mockRejectedValueOnce(new Error('SAMPLE_UNAVAILABLE'))
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('unavailable')
+    expect(h.controller.index.value).toBe(0)
+    expect(h.loadDemo).toHaveBeenCalledTimes(1)
+
+    h.loadDemo.mockImplementation(async () => { h.selected.value = true; h.revision.value++ })
+    h.controller.retry()
+    await flushPromises()
+    expect(h.loadDemo).toHaveBeenCalledTimes(2)
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('reloads the sample on Retry without resetting an optional guide to its first step', async () => {
+    const h = harness()
+    const pending = deferred<void>()
+    h.loadDemo.mockImplementation(() => pending.promise)
+    h.controller.start('3d')
+    const beginning = h.controller.begin(false)
+    await flushPromises()
+    h.controller.next()
+    await flushPromises()
+    expect(h.controller.index.value).toBe(1)
+    pending.reject(new Error('SAMPLE_UNAVAILABLE'))
+    await beginning
+    await flushPromises()
+    expect(h.controller.issue.value).toBe('unavailable')
+    expect(h.controller.topic.value).toBe('3d')
+    expect(h.controller.index.value).toBe(1)
+
+    h.loadDemo.mockImplementation(async () => { h.selected.value = true; h.revision.value++ })
+    h.controller.retry()
+    await flushPromises()
+    expect(h.loadDemo).toHaveBeenCalledTimes(2)
+    expect(h.controller.index.value).toBe(1)
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('keeps the current stage when Retry reloads the sample', async () => {
+    const h = harness()
+    const pending = deferred<void>()
+    h.loadDemo.mockImplementation(() => pending.promise)
+    h.controller.start('annotations')
+    const beginning = h.controller.begin(false)
+    await flushPromises()
+    h.controller.stageIndex.value = 1
+    pending.reject(new Error('SAMPLE_UNAVAILABLE'))
+    await beginning
+    await flushPromises()
+    expect(h.controller.issue.value).toBe('unavailable')
+
+    h.loadDemo.mockImplementation(async () => { h.selected.value = true; h.revision.value++ })
+    h.controller.retry()
+    await flushPromises()
+    expect(h.controller.index.value).toBe(0)
+    expect(h.controller.stageIndex.value).toBe(1)
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('never lets a stale Retry write into a guide started while it was loading', async () => {
+    const h = harness()
+    h.loadDemo.mockRejectedValueOnce(new Error('SAMPLE_UNAVAILABLE'))
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.issue.value).toBe('unavailable')
+
+    // Retry 的示例加载仍在进行时切换到非回放支线（名人堂），旧 promise 随后才拒绝。
+    const pending = deferred<void>()
+    h.loadDemo.mockImplementation(() => pending.promise)
+    void h.controller.retry()
+    await flushPromises()
+    h.controller.start('hof')
+    await h.controller.begin()
+    await flushPromises()
+    expect(h.controller.topic.value).toBe('hof')
+    expect(h.controller.issue.value).toBe('')
+
+    pending.reject(new DOMException('Replay workspace is busy', 'AbortError'))
+    await flushPromises()
+    expect(h.controller.topic.value).toBe('hof')
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('drops the sample-load continuation after the guide is closed during navigation', async () => {
+    const h = harness()
+    h.controller.start()
+    const beginning = h.controller.begin()
+    // 示例加载仍在等待 ensureReplayView() 的导航续体时就退出教程。
+    h.controller.skip()
+    await beginning
+    await flushPromises()
+    expect(h.controller.mode.value).toBe('idle')
+    expect(h.loadDemo).not.toHaveBeenCalled()
+    expect(h.setCapability).not.toHaveBeenCalled()
+    h.wrapper.unmount()
+  })
+
+  it('never loads the sample when the guide closes while waiting for the workspace', async () => {
+    const h = harness()
+    h.controller.registerWorkspace(null)
+    h.controller.start()
+    const beginning = h.controller.begin()
+    await flushPromises()
+    h.controller.skip()
+    h.controller.registerWorkspace({ hasFiles: () => false, busy: () => false, selectionIdentity: () => 2,
+      loadDemo: h.loadDemo, chooseOwnReplay: vi.fn(), setCapability: h.setCapability })
+    await beginning
+    await flushPromises()
+    expect(h.loadDemo).not.toHaveBeenCalled()
+    expect(h.setCapability).not.toHaveBeenCalled()
     h.wrapper.unmount()
   })
 

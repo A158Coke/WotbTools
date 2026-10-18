@@ -15,9 +15,8 @@ export function provideCreatorAvailability() {
   const online = computed(() => gate.availability(Feature.CREATORS).available)
   const available = ref(false), loading = ref(false), error = ref<unknown>(null)
   const contentKnown = ref(false), publicCategories = ref<RecommendationCategory[]>([])
-  const recommendationsSupported = ref(false)
   const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && contentAdminAllowed(auth))
-  const typeAvailable = (type: RecommendationType) => available.value && (type === 'UP' || recommendationsSupported.value)
+  const typeAvailable = (type: RecommendationType) => available.value && (type === 'UP' || type === 'VIDEO')
   const typeVisible = (type: RecommendationType) => typeAvailable(type) && (adminAllowed.value
     || (contentKnown.value && publicCategories.value.some(category => category.type === type)))
   const directoryVisible = computed(() => typeVisible('UP') || typeVisible('VIDEO'))
@@ -37,12 +36,11 @@ export function provideCreatorAvailability() {
       try {
         const capability = await Promise.race([getCreatorAvailability(request.signal), aborted])
         if (gen !== generation || request.signal.aborted) return
-        available.value = capability.supported || capability.recommendationsSupported
-        recommendationsSupported.value = capability.recommendationsSupported
-        if (!available.value || (!capability.recommendationsSupported && !capability.contentVisibilitySupported)) {
+        available.value = capability.supported
+        if (!available.value) {
           contentKnown.value = false; publicCategories.value = []; return
         }
-        const categories = await Promise.race([listRecommendationCategories(capability.recommendationsSupported, request.signal), aborted])
+        const categories = await Promise.race([listRecommendationCategories(request.signal), aborted])
         if (gen !== generation || request.signal.aborted) return
         publicCategories.value = categories; contentKnown.value = true
       } catch (value) {
@@ -60,7 +58,7 @@ export function provideCreatorAvailability() {
     cancel()
     return refresh()
   }
-  const context: CreatorAvailability = { recommendationsSupported: readonly(recommendationsSupported), typeAvailable, typeVisible, available: readonly(available), loading: readonly(loading), error: readonly(error),
+  const context: CreatorAvailability = { typeAvailable, typeVisible, available: readonly(available), loading: readonly(loading), error: readonly(error),
     contentKnown: readonly(contentKnown), publicCategories: readonly(publicCategories), directoryVisible, refresh, refreshPublicCategories }
   provide(CREATOR_AVAILABILITY_KEY, context)
   watch(online, value => { if (value) void refresh(); else cancel() }, { immediate: true })
@@ -71,7 +69,7 @@ export function provideCreatorAvailability() {
 }
 
 export function useCreatorAvailability(): CreatorAvailability {
-  return inject(CREATOR_AVAILABILITY_KEY, { recommendationsSupported: readonly(ref(false)), typeAvailable: () => false, typeVisible: () => false, available: readonly(ref(false)), loading: readonly(ref(false)), error: readonly(ref(null)),
+  return inject(CREATOR_AVAILABILITY_KEY, { typeAvailable: () => false, typeVisible: () => false, available: readonly(ref(false)), loading: readonly(ref(false)), error: readonly(ref(null)),
     contentKnown: readonly(ref(false)), publicCategories: readonly(ref([])), directoryVisible: readonly(ref(false)),
     refresh: async () => {}, refreshPublicCategories: async () => {} })
 }

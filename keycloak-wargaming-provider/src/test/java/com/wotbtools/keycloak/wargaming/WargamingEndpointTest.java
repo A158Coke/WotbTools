@@ -186,8 +186,31 @@ class WargamingEndpointTest {
     }
 
     @Test
-    void wargamingDeniedLoginRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "error", "t", "P", "1").getStatus());
+    void wargamingDeniedLoginAcceptsProviderDiagnosticsWithoutCallingApi() {
+        config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "NA");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "error", null, null, null,
+                "407", "INVALID_IP_ADDRESS");
+
+        assertEquals(500, response.getStatus());
+        assertNull(authFake.captured);
+        assertTrue(stub.requests.isEmpty());
+        assertEquals("407", WargamingEndpoint.safeProviderCode("407"));
+        assertEquals("INVALID_IP_ADDRESS",
+                WargamingEndpoint.providerErrorClass("INVALID_IP_ADDRESS"));
+    }
+
+    @Test
+    void callbackDiagnosticsNeverExposeArbitraryProviderText() {
+        assertEquals("UNKNOWN",
+                WargamingEndpoint.providerErrorClass("access_token=secret forged=true"));
+        assertEquals("UNKNOWN",
+                WargamingEndpoint.providerErrorClass("INVALID_IP_ADDRESS forged=true"));
+        assertEquals("unknown", WargamingEndpoint.safeProviderCode("407\nsecret=1"));
+        assertEquals("unknown", WargamingEndpoint.safeProviderCode("secret"));
+        assertEquals("-", WargamingEndpoint.safeProviderCode(null));
+        assertEquals("-", WargamingEndpoint.providerErrorClass(null));
     }
 
     @Test

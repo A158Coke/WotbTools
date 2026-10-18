@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { defineComponent, h, ref } from 'vue'
 import ColumnPicker from './ColumnPicker.vue'
 
 // 固定列（League 模式 nickname/league_rating 语义）+ 三个可移动列。
@@ -66,6 +67,74 @@ describe('ColumnPicker 上下移按钮（触屏/键盘重排序）', () => {
     await firstUp.trigger('click')
     await lastDown.trigger('click')
     expect(wrapper.emitted('reorder')).toBeFalsy()
+  })
+})
+
+function mountPickerHost() {
+  const Host = defineComponent({
+    setup() {
+      const open = ref(false)
+      return () => h('div', [
+        h('button', { id: 'opener', onClick: () => { open.value = true } }, 'open'),
+        open.value
+          ? h(ColumnPicker, {
+            scope: 'player', order: ORDER, visible: ORDER, fixedKeys: FIXED,
+            onClose: () => { open.value = false },
+          })
+          : null,
+      ])
+    },
+  })
+  const wrapper = mount(Host, { attachTo: document.body, global: { mocks: { $t: key => key } } })
+  return { wrapper, trigger: () => document.getElementById('opener') }
+}
+
+async function openFrom(trigger) {
+  trigger.focus()
+  trigger.click()
+  await flushPromises()
+  return document.querySelector('.colpanel')
+}
+
+describe('ColumnPicker 浮层键盘契约（非模态对话框）', () => {
+  it('role=dialog；打开即取焦点；Esc 关闭并 emit close', async () => {
+    // #669 回归：浮层若既无 role 也不处理 Esc，引导会把 Esc 当成“退出教程”，面板反而留在原地。
+    const wrapper = mount(ColumnPicker, {
+      attachTo: document.body,
+      props: { scope: 'player', order: ORDER, visible: ORDER, fixedKeys: FIXED },
+      global: { mocks: { $t: key => key } },
+    })
+    await flushPromises()
+    expect(wrapper.attributes('role')).toBe('dialog')
+    expect(document.activeElement).toBe(wrapper.element)
+    expect(wrapper.vm.$options.emits).toEqual(expect.arrayContaining(['close']))
+    wrapper.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('Esc 关闭后把焦点还给打开它的按钮', async () => {
+    const { wrapper, trigger } = mountPickerHost()
+    const opener = trigger()
+    const panel = await openFrom(opener)
+    expect(document.activeElement).toBe(panel)
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.querySelector('.colpanel')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+  })
+
+  it('Done 按钮关闭后同样把焦点还给打开它的按钮', async () => {
+    const { wrapper, trigger } = mountPickerHost()
+    const opener = trigger()
+    const panel = await openFrom(opener)
+    const done = [...panel.querySelectorAll('.linkbtn')].find(element => element.textContent === 'col_picker.done')
+    done.click()
+    await flushPromises()
+    expect(document.querySelector('.colpanel')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
   })
 })
 

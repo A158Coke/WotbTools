@@ -278,6 +278,8 @@ describe('downloadBlob', () => {
     const anchor = appendChild.mock.calls[0][0]
     expect(anchor).toBeTruthy()
     expect(anchor.nodeName).toBe('A')
+    // OnboardingHost 只放行带这个标记的隐藏 anchor click（下载 activation 契约）。
+    expect(anchor.getAttribute('data-app-download')).toBe('')
     expect(removeChild).toHaveBeenCalledWith(anchor)
     expect(anchor.parentNode).toBeNull()
     expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1)

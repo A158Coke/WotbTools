@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Clock3, ExternalLink, Plus, Trash2, Pencil } from 'lucide-vue-next'
 import cnGlobe from '../assets/broadcast-globes/cn.svg'
 import asiaGlobe from '../assets/broadcast-globes/asia.svg'
 import naGlobe from '../assets/broadcast-globes/na.svg'
@@ -146,7 +146,14 @@ async function refreshPage() {
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
     <PageHeader :title="pageTitle"><template #actions>
       <AppButton v-if="state.server" :disabled="state.busy" data-testid="broadcast-back" @click="goBack">{{ t('leagueBroadcasts.back') }}</AppButton>
-      <label v-if="state.category && state.defaultTimeZone" class="broadcast-field broadcast-time-zone"><span>{{ t('leagueBroadcasts.displayTimeZone') }}</span><select v-model="state.displayTimeZonePreference" data-testid="broadcast-display-time-zone"><option value="server">{{ t('leagueBroadcasts.serverTimeZone', { zone: t(`leagueBroadcasts.timeZones.${state.defaultTimeZone}`) }) }}</option><option v-for="zone in BROADCAST_DISPLAY_ZONES" :key="zone" :value="zone">{{ t(`leagueBroadcasts.timeZones.${zone}`) }}</option></select></label>
+      <label v-if="state.category && state.defaultTimeZone" class="broadcast-time-zone">
+        <Clock3 class="broadcast-time-zone-icon" :size="16" aria-hidden="true" />
+        <select v-model="state.displayTimeZonePreference" :aria-label="t('leagueBroadcasts.displayTimeZone')" :title="`${t('leagueBroadcasts.displayTimeZone')} · ${t(`leagueBroadcasts.timeZones.${state.displayTimeZone}`)}`" data-testid="broadcast-display-time-zone">
+          <option value="server">{{ t('leagueBroadcasts.serverTimeZone', { zone: t(`leagueBroadcasts.timeZones.${state.defaultTimeZone}`) }) }}</option>
+          <option v-for="zone in BROADCAST_DISPLAY_ZONES" :key="zone" :value="zone">{{ t(`leagueBroadcasts.timeZones.${zone}`) }}</option>
+        </select>
+        <ChevronDown class="broadcast-time-zone-chevron" :size="16" aria-hidden="true" />
+      </label>
       <AppButton :disabled="state.loading || state.busy || !state.network.available" data-testid="broadcast-refresh" @click="refreshPage">{{ t('leagueBroadcasts.refresh') }}</AppButton>
       <template v-if="state.allowed && state.network.available && !state.loading">
         <AppButton v-if="state.server && !state.seasonId" variant="primary" :disabled="state.busy" data-testid="broadcast-new-season" @click="openSeason()"><Plus :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.newSeason') }}</AppButton>
@@ -284,12 +291,19 @@ async function refreshPage() {
 .broadcast-form, .broadcast-field { display: grid; gap: var(--space-2); }
 .broadcast-form { gap: var(--space-4); }
 .broadcast-field { min-width: 0; color: var(--color-text-primary); font: var(--type-body); }
-.broadcast-time-zone { max-width: 100%; font: var(--type-caption); }
 .broadcast-field input, .broadcast-field select { width: 100%; min-width: 0; min-height: var(--control-h-md); padding: var(--space-2); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-primary); font: inherit; }
-.broadcast-choice:focus-visible, .broadcast-disclosure:focus-visible, .broadcast-breadcrumbs button:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+.broadcast-time-zone { position: relative; display: inline-flex; min-width: 0; max-width: 100%; color: var(--color-text-secondary); }
+.broadcast-time-zone select { appearance: none; min-width: 0; max-width: 100%; min-height: var(--control-h-md); padding-block: 0; padding-inline: calc(var(--space-3) + var(--space-4) + var(--space-2)); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-surface-1); color: var(--color-text-primary); font: var(--type-body); text-overflow: ellipsis; cursor: pointer; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.broadcast-time-zone-icon, .broadcast-time-zone-chevron { position: absolute; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.broadcast-time-zone-icon { inset-inline-start: var(--space-3); color: var(--color-accent-text); }
+.broadcast-time-zone-chevron { inset-inline-end: var(--space-3); }
+.broadcast-choice:focus-visible, .broadcast-disclosure:focus-visible, .broadcast-breadcrumbs button:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible, .broadcast-time-zone select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+@media (hover: hover) { .broadcast-time-zone select:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
 @media (hover: hover) { .broadcast-choice:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
 @media (hover: hover) { .broadcast-servers .broadcast-server-card:hover { border-color: var(--color-broadcast-server); background: color-mix(in oklab, var(--color-broadcast-server) 10%, var(--color-surface-1)); } }
 @media (width < 768px) {
+  .broadcast-time-zone { order: 1; flex-basis: 100%; }
+  .broadcast-time-zone select { width: 100%; }
   .broadcast-servers { grid-template-columns: minmax(0, 1fr); }
   .broadcast-servers .broadcast-server-card { padding: var(--space-6); gap: var(--space-4); font: var(--type-h2); }
   .broadcast-season-row { flex-wrap: wrap; }
