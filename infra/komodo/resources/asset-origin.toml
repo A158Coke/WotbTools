@@ -37,11 +37,17 @@ webhook_force_deploy = false
 files_on_host = false
 run_directory = "deploy/assets"
 file_paths = ["compose.yaml"]
+# A Caddyfile-only Git change is a real workload change. Komodo tracks it and a
+# changed-file deploy redeploys the caddy service instead of silently leaving the
+# running process on the old config.
+config_files = [{ path = "Caddyfile", services = ["caddy"], requires = "redeploy" }]
 env_file_path = ".env"
 send_alerts = true
 registry_provider = ""
 registry_account = ""
-extra_args = []
+# Full/manual Deploy must also apply a Caddyfile-only update. Komodo v2.3.3 runs
+# `docker compose up -d` for a normal deploy, so force recreation explicitly.
+extra_args = ["--force-recreate"]
 build_extra_args = []
 compose_cmd_wrapper = ""
 compose_cmd_wrapper_include = []
