@@ -71,6 +71,120 @@ function moduleVariant(section) {
   return null
 }
 
+/**
+ * 收集阶段：外部模块按 variant 去重。确定性判定在首个 Primary 后停止（BlitzKit
+ * 同）；概率链传 stopAtPrimary=false，拿到沿射线的全部装甲层（含首个 Primary
+ * 之后的多层主装甲），否则“击穿第一层即结束”的截断链会漏掉后续层。
+ * 注意这里不因某层未穿透而停止——那发生在判定循环。
+ */
+function collectFilteredHits(hits, stopAtPrimary = true) {
+  const seenVariants = new Set()
+  const filteredHits = []
+  for (const ah of hits) {
+    if (isModule(ah.section)) {
+      const variant = moduleVariant(ah.section)
+      if (variant && !seenVariants.has(variant)) {
+        seenVariants.add(variant)
+        filteredHits.push(ah)
+      }
+    } else {
+      filteredHits.push(ah)
+      if (stopAtPrimary && isPrimary(ah.section)) break
+    }
+  }
+  return filteredHits
+}
+
+/**
+ * 单层几何（确定性与概率链共用）：外部模块 flat；实际装甲算入射角、3×/2×
+ * 口径规则、首层转正与等效厚度。概率链只需要几何量，不读取剩余穿深。
+ */
+function resolveLayerGeometry(ah, thickness, ctx) {
+  if (isModule(ah.section)) {
+    return {
+      thickness,
+      effective: thickness,
+      external: true,
+      angle_deg: null,
+      ricochet: false,
+      overmatch: false,
+      normalization_deg: 0,
+    }
+  }
+  const n = normalize(ah.normal)
+  const cosA = Math.min(Math.abs(dot(n, ctx.view)), 1.0)
+  const angleRad = Math.acos(cosA)
+  const angleDeg = angleRad / DEG
+  const threeCalibersRule = ctx.caliber > thickness * 3.0
+  const noRicochet = threeCalibersRule || ctx.layerIndex > 0 || !ctx.allowRicochet
+  const twoCalibersRule = ctx.caliber > thickness * 2.0
+  // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0 时会 0/0，只对正厚度应用。
+  const normalization = twoCalibersRule && thickness > 0.0
+    ? (1.4 * ctx.normalization_deg * ctx.caliber) / (2.0 * thickness)
+    : ctx.normalization_deg
+  // 转正只作用于首个实际装甲层；外部模块是 flat 消耗，不计入 armorLayerCount。
+  const effNormalization = ctx.armorLayerCount === 0 ? normalization : 0.0
+  const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
+  const effective = thickness / Math.max(Math.cos(finalAngle), 1e-6)
+  const ricochet = !noRicochet && angleDeg >= ctx.ricochet_deg
+  return {
+    thickness,
+    effective: ricochet ? 0.0 : effective,
+    external: false,
+    angle_deg: angleDeg,
+    ricochet,
+    overmatch: threeCalibersRule,
+    normalization_deg: effNormalization,
+  }
+}
+
+/**
+ * 概率链：遍历到首个 Primary 的**全部**层，包含确定性判定会因某层未穿透而
+ * 提前截断的后续层。外部模块保留 flat 标记；HEAT 层间插入 gap 描述（距离），
+ * 供概率区间按 penetration.js 的同一 0.5/m 衰减处理。
+ */
+function buildProbabilityLayers(filteredHits, ctx) {
+  const layers = []
+  let armorLayerCount = 0
+  for (let i = 0; i < filteredHits.length; i++) {
+    const ah = filteredHits[i]
+    if (ctx.isHeat && i > 0) {
+      const distance = dist3(ah.point, filteredHits[i - 1].point)
+      layers.push({
+        part_name: `Gap ${distance.toFixed(2)}m`,
+        section: 'gap',
+        thickness: 0.0,
+        effective: 0.0,
+        gap: true,
+        gap_distance: distance,
+        angle_deg: null,
+        external: false,
+        ricochet: false,
+      })
+    }
+    const thickness = ah.thickness * ctx.thicknessCoeff
+    const geo = resolveLayerGeometry(ah, thickness, {
+      ...ctx,
+      layerIndex: i,
+      armorLayerCount,
+    })
+    layers.push({
+      part_name: ah.part_name,
+      section: ah.section,
+      thickness: geo.thickness,
+      effective: geo.effective,
+      angle_deg: geo.angle_deg,
+      external: geo.external,
+      ricochet: geo.ricochet,
+      overmatch: geo.overmatch,
+      gap: false,
+    })
+    if (!geo.external) armorLayerCount++
+    if (geo.ricochet) break
+  }
+  return layers
+}
+
 function dist3(a, b) {
   const dx = a[0] - b[0]
   const dy = a[1] - b[1]
@@ -94,8 +208,9 @@ const DEG = Math.PI / 180
  * @param {object} req { shell_type, penetration, caliber, view_dir, hits, damage?,
  *   explosion_radius?, calibrated_shells?, enhanced_armor?, normalization_deg?,
  *   ricochet_deg?, allow_ricochet?, distance_m?, penetration_far? }
- * @returns {object} { result, total_effective, layers, first_armor_angle_deg,
- *   first_armor_norm_deg, ricochet, ricochet_remaining_pen, damage }。
+ * @returns {object} { result, total_effective, layers, probability_layers,
+ *   probability_penetration, first_armor_angle_deg, first_armor_norm_deg,
+ *   ricochet, ricochet_remaining_pen, damage }。
  *   层另带 angle_deg（该层入射角，度；外部模块层无）——结果面板对照 BlitzKit
  *   ShotDisplayCard 显示「等效厚度 @ 角度」用。
  */
@@ -123,22 +238,10 @@ export function calculate(req) {
 
   const view = normalize(req.view_dir)
 
-  // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：外部模块按 variant 去重；
-  // 非外部逐个 push，push 首个 Primary 后立即 break（其后所有命中都不收集）。
-  const seenVariants = new Set()
-  const filteredHits = []
-  for (const ah of req.hits) {
-    if (isModule(ah.section)) {
-      const variant = moduleVariant(ah.section)
-      if (variant && !seenVariants.has(variant)) {
-        seenVariants.add(variant)
-        filteredHits.push(ah)
-      }
-    } else {
-      filteredHits.push(ah)
-      if (isPrimary(ah.section)) break
-    }
-  }
+  // —— 收集阶段（对齐 blitzkit noDuplicateIntersections）：确定性判定在首个 Primary
+  // 后停止；概率链另取全部命中（多层主装甲必须继续向下）。
+  const filteredHits = collectFilteredHits(req.hits)
+  const probabilityHits = collectFilteredHits(req.hits, false)
   // blitzkit：出射射线（allowRicochet=false）未命中任何 Primary → null；这里以空结果 "-" 表达。
   const allowRicochet = req.allow_ricochet !== false
   if (!allowRicochet && filteredHits.every((h) => !isPrimary(h.section))) {
@@ -146,6 +249,8 @@ export function calculate(req) {
       result: '-',
       total_effective: 0.0,
       layers: [],
+      probability_layers: [],
+      probability_penetration: pen,
       first_armor_angle_deg: -1.0,
       first_armor_norm_deg: -1.0,
       ricochet: false,
@@ -209,33 +314,23 @@ export function calculate(req) {
         layerPenetrated = remainingPen > eff
       }
     } else {
-      const n = normalize(ah.normal)
-      // blitzkit angleTo 无 abs；正面命中时 dot>0，abs 仅在法线翻转时兜底（等价）
-      const cosA = Math.min(Math.abs(dot(n, view)), 1.0)
-      const angleRad = Math.acos(cosA)
-      const angleDeg = angleRad / DEG
-      layerAngleDeg = angleDeg
-
-      if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = angleDeg
-
-      // Overmatch（对齐 BlitzKit）：3× 口径（caliber > 厚度×3）→ 该层不跳弹；2× 口径 →
-      // 增强转正。跳弹抑制另含「此前已有任何命中层」与出射射线（allow_ricochet=false）：
-      // 炮弹已经穿过一层（含外部模块）后沿原方向继续，不再跳弹（用户 2026-10-13/2026-10-17 裁示）。
-      // overmatch 字段只表示真实的 3× 口径规则，不再用 layerIndex / allow_ricochet 冒充。
-      const threeCalibersRule = caliber > thickness * 3.0
-      const noRicochet = threeCalibersRule || layerIndex > 0 || !allowRicochet
-      isOvermatch = threeCalibersRule
-      const twoCalibersRule = caliber > thickness * 2.0
-
-      // 0mm 是合法的 fail-closed 板厚：2× 公式在 thickness=0、normDeg=0（HEAT/缺失）时
-      // 会得到 0/0=NaN，使该层等效厚度 NaN、误判 BLOCKED。0mm 板必须保持等效 0，
-      // 由剩余穿深决定是否穿透；正厚度才应用 2× 增强转正。
-      const normalization = twoCalibersRule && thickness > 0.0
-        ? (1.4 * normDeg * caliber) / (2.0 * thickness)
-        : normDeg
+      // 几何规则与概率链共用 resolveLayerGeometry（转正只作用于首个实际装甲层；
+      // 外部模块是 flat 消耗，不消耗首层转正资格；0mm 板不套 2× 公式）。
+      const geo = resolveLayerGeometry(ah, thickness, {
+        view,
+        caliber,
+        normalization_deg: normDeg,
+        ricochet_deg: ricochetDeg,
+        allowRicochet,
+        layerIndex,
+        armorLayerCount,
+      })
+      layerAngleDeg = geo.angle_deg
+      if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = layerAngleDeg
+      isOvermatch = geo.overmatch
 
       // 跳弹：入射角 ≥ 跳弹角 且 未被抑制（HEAT/HE 跳弹角=90° 永不触发）
-      if (!noRicochet && angleDeg >= ricochetDeg) {
+      if (geo.ricochet) {
         ricochet = true
         ricochetRemainingPen = remainingPen * 0.75
         layers.push({
@@ -251,18 +346,8 @@ export function calculate(req) {
         break
       }
 
-      // 转正只作用于**首个实际装甲层**（WG 语义，用户 2026-10-13 裁示）：击穿第一层装甲后
-      // 炮弹保持出射方向，后续装甲层不再转正。外部模块是 flat 消耗、不是装甲层——击穿它
-      // **不消耗**首层转正资格（用户 2026-10-17 裁示：仍要考虑转正和口径碾压效应）。
-      // 与 BlitzKit 的逐层转正有意分歧，注释存档。
-      const effNormalization = armorLayerCount === 0 ? normalization : 0.0
-      // blitzkit 对所有弹种统一应用 shell.normalization（HEAT/HE 数据即为 0）
-      const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
-      // blitzkit 无下限钳制；1e-6 仅防 90° 时 cos 变负（f64 下 blitzkit 为正）
-      eff = thickness / Math.max(Math.cos(finalAngle), 1e-6)
-
-      if (firstArmorNormDeg < 0.0) firstArmorNormDeg = effNormalization
-
+      eff = geo.effective
+      if (firstArmorNormDeg < 0.0) firstArmorNormDeg = geo.normalization_deg
       // HE 命中非 Primary（间隙甲）：blitzkit 标 blocked，但穿深照常消耗
       layerPenetrated = (isPrimary(ah.section) || !isHe) && remainingPen > eff
       armorLayerCount++
@@ -289,6 +374,18 @@ export function calculate(req) {
       remainingPen -= eff // HE 的 blocked 层同样消耗穿深
     }
   }
+
+  // 概率链必须在确定性循环之外重建：上面的 layers 会在首个未穿透层提前 break，
+  // 而概率模型要看到到首个 Primary 的完整路径。
+  const probabilityLayers = buildProbabilityLayers(probabilityHits, {
+    view,
+    caliber,
+    thicknessCoeff,
+    normalization_deg: normDeg,
+    ricochet_deg: ricochetDeg,
+    allowRicochet,
+    isHeat,
+  })
 
   // —— HE 判定 & 溅射伤害（对齐 BlitzKit）—— totalSpaced = 非 Primary 层（外部 flat + 间隙角度等效）
   // 等效厚度和；finalDamage = 0.5*dmg*(1-dist/radius) - 1.1*(lastLayer 厚度 + min(pen, totalSpaced))。
@@ -356,6 +453,8 @@ export function calculate(req) {
     result,
     total_effective: totalEffective,
     layers,
+    probability_layers: probabilityLayers,
+    probability_penetration: pen,
     first_armor_angle_deg: firstArmorAngleDeg,
     first_armor_norm_deg: firstArmorNormDeg,
     ricochet,

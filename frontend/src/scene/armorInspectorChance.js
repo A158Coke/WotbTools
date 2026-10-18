@@ -6,12 +6,13 @@
  *   均值 μ=(min+max)/2，σ=(max-min)/6，概率为 Φ((μ-T)/σ)，区间外夹到 1/0。
  * - Blitz 弹数据：min/max = 0.95P / 1.05P（±5%，σ=P/60）；
  *   PC 弹数据：0.75P / 1.25P（±25%，σ=P/12）。
- * - 逐层：每层用当前剩余区间算一次 CDF，然后把区间扣掉 3×该层等效厚度
- *   （`func[7696]` 的 3.0 常量）；外部模块是 flat 消耗，不参与 CDF。
+ * - 逐层：每层用当前剩余区间算一次 CDF，然后把 **min/max 同时**扣掉 3×该层
+ *   等效厚度（`func[7696]` 的 3.0 常量）——平移不改变 σ；外部模块是 flat
+ *   消耗（同样平移），不参与 CDF。
  *
  * 本模块只负责“概率”，不改 penetration.js 的确定性判定。视图层把
- * 同一套 [+/-3σ, 3×厚度] 语义用于：
- * - 点击面板的击穿概率；
+ * 同一套 [min/max, 3×厚度] 语义用于：
+ * - 点击面板的击穿概率（输入必须是完整命中链，不能是确定性提前截断的层链）；
  * - 主装甲热力图着色；
  * - 跳弹续飞概率带。
  *
@@ -44,6 +45,36 @@ export function normalCdf(z) {
   return 0.5 * (1 + sign * erf)
 }
 
+/** ±range 随机化区间；randomization=0 时退化为单点（确定性穿深）。 */
+function intervalFor(penetration, randomization) {
+  const p = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
+  if (!(randomization > 0)) return { min: p, max: p }
+  return { min: p * (1 - randomization), max: p * (1 + randomization) }
+}
+
+/** 区间 [min,max] 上 P(roll > thickness)。 */
+function cdfForInterval(min, max, thickness) {
+  if (max <= 0) return 0
+  if (min === max) return min > thickness ? 1 : 0
+  if (thickness <= min) return 1
+  if (thickness >= max) return 0
+  const sigma = (max - min) / 6
+  if (!(sigma > 0)) return 0
+  return normalCdf(((min + max) / 2 - thickness) / sigma)
+}
+
+/**
+ * 区间 [min,max] 上的单层击穿概率（供续飞 JS/GLSL 参考共用）。
+ * @param {number} min
+ * @param {number} max
+ * @param {number} thickness
+ * @returns {number} 0..1
+ */
+export function penetrationChanceForInterval(min, max, thickness) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(thickness)) return 0
+  return cdfForInterval(min, max, thickness)
+}
+
 /**
  * 单层击穿概率：穿深 ~ N(P, (P*randomization/3)^2)，求 P(pen > T)。
  * 区间外与 Armor Inspector 一致夹到 1/0（±3σ 外不再累积尾部）。
@@ -55,11 +86,8 @@ export function normalCdf(z) {
  */
 export function penetrationChanceForLayer(penetration, thickness, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
   if (!(penetration > 0) || !Number.isFinite(thickness)) return 0
-  if (!(randomization > 0)) return penetration > thickness ? 1 : 0
-  const sigma = penetration * randomization / 3
-  if (thickness <= penetration - 3 * sigma) return 1
-  if (thickness >= penetration + 3 * sigma) return 0
-  return normalCdf((penetration - thickness) / sigma)
+  const { min, max } = intervalFor(penetration, randomization)
+  return penetrationChanceForInterval(min, max, thickness)
 }
 
 function layerEffectiveThickness(layer) {
@@ -73,10 +101,18 @@ function layerRemainingBefore(layer) {
 }
 
 function isGapLayer(layer) {
-  return String(layer?.name ?? layer?.part_name ?? '').startsWith('Gap ')
+  return layer?.gap === true || String(layer?.name ?? layer?.part_name ?? '').startsWith('Gap ')
+}
+
+function gapDistance(layer) {
+  const direct = layer?.gap_distance ?? layer?.gapDistance
+  if (Number.isFinite(direct)) return Math.max(0, direct)
+  const match = /^Gap\s+([\d.]+)m/.exec(String(layer?.name ?? layer?.part_name ?? ''))
+  return match ? Math.max(0, parseFloat(match[1])) : 0
 }
 
 function isExternalLayer(layer) {
+  if (typeof layer?.external === 'boolean') return layer.external
   if (layer?.section) return EXTERNAL_SECTIONS.has(layer.section)
   // 点击面板的 trajLayers 不带 section；外部模块没有角度，间隙层由名字区分。
   return !isGapLayer(layer) && layer?.angle == null
@@ -85,59 +121,86 @@ function isExternalLayer(layer) {
 /**
  * 多层击穿概率（Armor Inspector 逐层模型）。
  *
- * - 每个实际装甲层：用当前区间算 CDF；随后剩余区间 -= 3 × 等效厚度。
- * - 外部模块：flat 消耗（remaining -= thickness），不算概率层。
- * - HEAT Gap 层：不消耗 CDF，区间对齐确定性层链的 remainBefore。
- * - 跳弹：返回 0（Armor Inspector 的 CDF 不建模跳弹分支）。
+ * - 初始区间 [P(1-r), P(1+r)]；每个实际装甲层用当前区间算 CDF，再把
+ *   min/max 同时减去 3×等效厚度（σ 保持不变）。
+ * - 外部模块：flat 消耗（min/max 同时减厚度），不参与 CDF；区间耗尽即 0。
+ * - HEAT Gap 层：按 penetration.js 的 0.5/m 衰减缩放区间，不参与 CDF。
+ * - 跳弹：确定性路径已跳弹，除非有后续续飞段，否则 0。
+ * - 续飞：在**首个** seg=1 层按该层的 remaining_before 初始化一次；同一段内
+ *   后续 seg=1 层不得再次清空累计概率与区间（只有再次跳弹后的新段才重置）。
  *
- * `layers` 接受 penetration.js 的 layers（snake_case）或 tankViewer 的
- * trajLayers（camelCase）。`remaining_before`/`remainBefore` 用来吸收距离衰减、
- * 装备系数与间隙甲损耗；没有该字段时退回纯 3× 传播。
+ * `layers` 接受 penetration.js 的 probability_layers（snake_case）或
+ * tankViewer trajLayers（camelCase）。normal 层不再读取 remaining_before——
+ * 它是确定性截断链的产物，不能作为概率区间来源；只有续飞段起点例外。
  *
  * @param {number} penetration 首层前的有效穿深（mm）
- * @param {Array<object>} layers
+ * @param {Array<object>} layers 完整命中链
  * @param {number} [randomization]
  * @returns {number} 0..1
  */
 export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
-  let interval = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
-  let chance = 1
-  // 跳弹 → 续飞（trajLayers 的 seg=1）：概率按末段（真正继续飞的那一段）计算；
-  // 纯跳弹仍返回 0。
-  const hasContinuation = (layers || []).some(layer => layer?.seg === 1)
+  const all = layers || []
+  if (all.length === 0) return 1
 
-  for (const layer of layers || []) {
-    if (layer?.seg === 1) {
+  const firstContinuation = all.findIndex(layer => layer?.seg === 1)
+  let startIndex = 0
+  let { min, max } = intervalFor(penetration, randomization)
+  if (firstContinuation >= 0) {
+    const start = layerRemainingBefore(all[firstContinuation])
+    ;({ min, max } = intervalFor(start != null ? start : penetration, randomization))
+    startIndex = firstContinuation
+  }
+
+  let chance = 1
+  let pendingSegmentReset = false
+  for (let i = startIndex; i < all.length; i++) {
+    const layer = all[i]
+    // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
+    if (layer?.seg === 1 && i !== startIndex && pendingSegmentReset) {
+      const start = layerRemainingBefore(layer)
+      ;({ min, max } = intervalFor(start != null ? start : penetration, randomization))
       chance = 1
-      interval = layerRemainingBefore(layer) ?? 0
+      pendingSegmentReset = false
     }
+
     if (layer?.ricochet) {
-      if (!hasContinuation) return 0
+      const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg === 1)
+      if (!hasLaterContinuation) return 0
+      pendingSegmentReset = true
       continue
     }
 
-    const before = layerRemainingBefore(layer)
-    if (before != null) interval = Math.min(interval, Math.max(0, before))
+    if (isGapLayer(layer)) {
+      const distance = gapDistance(layer)
+      if (distance > 0) {
+        // penetration.js：remainingPen -= 0.5 × remainingPen × distance
+        const loss = Math.max(0, 1 - 0.5 * distance)
+        min *= loss
+        max *= loss
+        if (max <= 0) return 0
+      }
+      continue
+    }
 
-    if (isGapLayer(layer)) continue
-
-    const thickness = Number.isFinite(layer?.thickness) ? layer.thickness : 0
+    const thickness = Number.isFinite(layer?.thickness) ? Math.max(0, layer.thickness) : 0
     if (isExternalLayer(layer)) {
-      interval = Math.max(0, interval - Math.max(0, thickness))
+      min -= thickness
+      max -= thickness
+      if (max <= 0) return 0
       continue
     }
 
     const eff = layerEffectiveThickness(layer)
     if (eff == null || !(eff > 0)) continue
-    if (!(interval > 0)) return 0
+    if (max <= 0) return 0
 
-    const sigma = interval * randomization / 3
-    const z = (interval - eff) / Math.max(sigma, 1e-6)
-    chance *= normalCdf(z)
+    chance *= cdfForInterval(min, max, eff)
     if (!(chance > 0)) return 0
 
     // Armor Inspector `func[7696]`：每层后 remaining_min/max -= 3 × thickness。
-    interval = Math.max(0, interval - 3 * eff)
+    // 同时平移两端，σ 不变——不得按扣减后的均值重算 σ。
+    min -= 3 * eff
+    max -= 3 * eff
   }
 
   return Math.max(0, Math.min(1, chance))

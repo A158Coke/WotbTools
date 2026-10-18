@@ -25,7 +25,7 @@
  * 非刚性/超限/网格过密 → fail-closed，调用方禁用续飞（跳弹维持紫色 = 现状）。
  */
 import * as THREE from 'three';
-import { AI_NORMAL_CDF_GLSL, penetrationChanceForLayer } from './armorInspectorChance.js';
+import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
 
 /** 续飞链常量（GLSL 与 JS 参考实现共用；改这里即改两边） */
 export const RC = Object.freeze({
@@ -70,9 +70,8 @@ export const RC = Object.freeze({
     GRID_DIM_MAX: 48,
     MAX_MESH: 128,
     MAX_TRI_PER_MESH: 256,
-    /** Armor Inspector 正态 CDF：±5% 随机化范围 = ±3σ（σ = rem * SIGMA_FACTOR） */
+    /** Armor Inspector 正态 CDF：±5% 随机化范围 = ±3σ；区间两端平移，σ 不重算 */
     BAND: 0.05,
-    SIGMA_FACTOR: 0.05 / 3,
     /** 90° 防 f32 负 cos 下限（penetration.js 同值） */
     COS_EPS: 1e-6,
     /** 2×口径增强转正系数（BlitzKit/penetration.js 同源） */
@@ -102,7 +101,6 @@ export const RC_GLSL_CONST = `
 #define RC_ENTRY_ROW ${RC.ENTRY_ROW}
 #define RC_ENTRY_ROW_I ${RC.ENTRY_ROW}
 #define RC_BAND ${RC.BAND.toFixed(3)}
-#define RC_SIGMA ${RC.SIGMA_FACTOR.toFixed(8)}
 #define RC_COS_EPS ${RC.COS_EPS.toFixed(8)}
 #define RC_TWO_CAL ${RC.TWO_CAL_NORM.toFixed(1)}
 #define RC_SEC_HULL ${RC.SECTION.hull}
@@ -202,6 +200,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     bool anyPrimary = false;           // 前端门：整条射线存在主装甲原始命中（ricHasPrimary）
     bool blocked = false;              // 链中途被挡（待定：anyPrimary→红 否则紫）
     highp float rem = remIn;
+    // Armor Inspector 概率区间：±5% = ±3σ；后续层两端一起平移，σ 不随 rem 重算。
+    highp float pMin = remIn * (1.0 - RC_BAND);
+    highp float pMax = remIn * (1.0 + RC_BAND);
+    highp float probChance = 1.0;
     int armorIdx = 0;                  // 已处理的实际装甲层数（外部模块 flat 消耗不计入）
     int variantSeen = 0;
     int prevTri = -1;                  // 同三角形跨 cell 重复列表去重（凸区域连续出现）
@@ -246,7 +248,14 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
                 if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
                 variantSeen |= vbit;
-                if (rem > th) { rem -= th; tCur = bestT + RC_ADV_EPS; continue; }          // 穿过模块（不计层）
+                if (rem > th) {                         // 穿过模块（不计层）；概率区间 flat 平移
+                    rem -= th;
+                    pMin -= th;
+                    pMax -= th;
+                    if (pMax <= 0.0) { blocked = true; tCur = bestT + RC_ADV_EPS; continue; }
+                    tCur = bestT + RC_ADV_EPS;
+                    continue;
+                }
                 blocked = true;                         // 模块挡下：余下只查主装甲存在性
                 tCur = bestT + RC_ADV_EPS; continue;
             }
@@ -267,13 +276,18 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             highp float finA = max(angle - normR, 0.0);
             highp float eff = th / max(cos(finA), RC_COS_EPS);
             armorIdx++;                                 // 本实际装甲层已计入
+            // 每层先用当前区间乘 CDF，再把两端平移 3×eff（σ 保持初值/段首值）。
+            highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
+            highp float mu = 0.5 * (pMin + pMax);
+            probChance *= pMax > 0.0
+                ? clamp(aiNormalCdf((mu - eff) / sigma), 0.0, 1.0)
+                : 0.0;
+            pMin -= 3.0 * eff;
+            pMax -= 3.0 * eff;
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
             if (sec <= 2) {                             // 主装甲 = 末层，定结论
                 if (layPen) {
-                    highp float sigma = rem * RC_SIGMA; // Armor Inspector：±5% = ±3σ
-                    penOut = rem > 0.0
-                        ? clamp(aiNormalCdf((rem - eff) / max(sigma, 1e-4)), 0.0, 1.0)
-                        : 0.0;
+                    penOut = clamp(probChance, 0.0, 1.0);
                     return 1;
                 }
                 return 2;
@@ -729,6 +743,10 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     // 模拟（allowRicochet=false 动能出射段）
     const { remIn, caliber, normalizationRad, thickMul } = params;
     let rem = remIn;
+    // 概率区间从段首穿深初始化；后续层两端平移，σ 保持段首值（不在扣减后重算）。
+    let probMin = remIn * (1 - RC.BAND);
+    let probMax = remIn * (1 + RC.BAND);
+    let probChance = 1;
     let armorIdx = 0;                  // 已处理的实际装甲层数（外部模块不计入）
     const layers = [];
     for (const h of collected) {
@@ -738,6 +756,8 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         if (h.variant) {
             eff = th;
             layPen = rem > eff;
+            probMin -= eff;
+            probMax -= eff;
         } else {
             const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
             const angle = Math.acos(cosA);
@@ -751,18 +771,20 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
             layPen = rem > eff;
             armorIdx++;
+            probChance *= penetrationChanceForInterval(probMin, probMax, eff);
+            probMin -= 3 * eff;
+            probMax -= 3 * eff;
         }
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
+        // 与 GLSL 同：模块 flat 已耗尽概率区间 → 红（即使确定性 rem 仍 > 厚度）。
+        if (h.variant && probMax <= 0) return { cls: 2, penChance: 0, layers };
         if (layPen) {
             rem -= eff;
         } else {
             return { cls: 2, penChance: 0, layers };
         }
         if (isPrimary) {
-            // Armor Inspector 正态 CDF：末层穿透概率（±5% = ±3σ）
-            const remBefore = layers[layers.length - 1].remBefore;
-            const chance = penetrationChanceForLayer(remBefore, eff, RC.BAND);
-            return { cls: 1, penChance: chance, layers };
+            return { cls: 1, penChance: Math.max(0, Math.min(1, probChance)), layers };
         }
     }
     return { cls: 0, penChance: 0, layers };
