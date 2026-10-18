@@ -1138,7 +1138,8 @@ describe('车体横滚（hull_roll）接线守卫', () => {
 
   it('位姿通道唯一实现：场景只做帧变换，不再自带通道选择/关键帧回退', () => {
     // 2D 俯视与 3D 场景必须逐帧同源（2026-10-16 抽层）；本守卫防通道逻辑回流到场景侧。
-    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(v\.def, POSE_GRID, t, _poseOut, v\.def\.visibility \?\? v\.def\.coverage\);/)
+    expect(src).toMatch(/const poseOf = \(v, t\) => sampleVehiclePoseGame\(/)
+    expect(src).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
     expect(src).toMatch(/out\.set\(-p\.x, p\.y, p\.z\);/)
     expect(src).not.toMatch(/kfOf/)
     expect(src).not.toMatch(/const col = \(c\) =>/)

@@ -711,12 +711,19 @@ describe('decodeTerrainField（高度场 = 场景系引擎顶点口径）', () =
     expect(terrainFieldMetaValid({ size: n, zmin: 0, zmax: 65535 })).toBe(false)
     expect(terrainFieldMetaValid({ size: n, zmin: 10, zmax: 9, terrainLayout: 2 })).toBe(false)
     expect(terrainFieldMetaValid({ size: n, zmin: 10, zmax: 10, terrainLayout: 2 })).toBe(true)
+    // null / '' / false 不得被 Number() 强转成 0 后当作合法高度范围
+    for (const bad of [null, '', false]) {
+      expect(terrainFieldMetaValid({ size: n, zmin: bad, zmax: 100, terrainLayout: 2 })).toBe(false)
+      expect(terrainFieldMetaValid({ size: n, zmin: 0, zmax: bad, terrainLayout: 2 })).toBe(false)
+    }
   })
 
   it('worldBounds 契约：只接受居中正方形（当前消费口径）', () => {
     expect(terrainBoundsOk({ worldBounds: { min: [-300, -300, 0], max: [300, 300, 70] } })).toBe(true)
     expect(terrainBoundsOk({ worldBounds: { min: [-300, -290, 0], max: [300, 310, 70] } })).toBe(false)
     expect(terrainBoundsOk({ worldBounds: { min: [-200, -300, 0], max: [400, 300, 70] } })).toBe(false)
+    expect(terrainBoundsOk({ worldBounds: { min: [null, -300, 0], max: [300, 300, 70] } })).toBe(false)
+    expect(terrainBoundsOk({ worldBounds: { min: ['-300', '-300', 0], max: ['300', '300', 70] } })).toBe(false)
     expect(terrainBoundsOk({})).toBe(true)   // 旧包无 bounds：由 span 校验兜底
   })
 })

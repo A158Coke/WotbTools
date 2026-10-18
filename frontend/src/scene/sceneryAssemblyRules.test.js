@@ -52,6 +52,9 @@ describe('sceneryAssemblyRules：水面语义（SSOT）', () => {
     expect(isSkyShell('sky_dome', plain(), { strictSurfaces: true, skyFlagsAvailable: true })).toBe(false)
     // 旧包：名字 fallback 保持
     expect(isSkyShell('sky_dome', plain(), { strictSurfaces: true, skyFlagsAvailable: false })).toBe(true)
+    // 只要存在 sky 标记就认材质语义，与 surfaceFlags/strictSurfaces 无关
+    expect(isSkyShell('bld_x.sc2', sky(), { skyFlagsAvailable: true })).toBe(true)
+    expect(isSkyShell('sky_dome', plain(), { skyFlagsAvailable: true })).toBe(false)
   })
 
   it('isSkyShellName（旧包 fallback）：/sky/ ——穹顶建筑/舱室不再被当天空壳', () => {

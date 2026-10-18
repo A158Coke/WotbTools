@@ -1098,6 +1098,21 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(true)
   })
 
+  it('迟到底图失败不得把旧会话诊断写进新 store（reset 后 assetIssues 保持干净）', async () => {
+    prepareAssets(['map'])
+    const parked = track(deferred())
+    vi.stubGlobal('fetch', vi.fn(() => parked.promise))
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    api.reset()
+    parked.reject(new Error('late map failure'))
+    await loadA
+    expect(store.assetIssues).toEqual([])
+    expect(store.assetDegraded).toBe(false)
+    expect(store.hasData).toBe(false)
+  })
+
   it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
     prepareAssets(['terrain', 'terrain-meta'])
     window.__terrain = undefined
@@ -1120,6 +1135,9 @@ describe('playbackScene 资产发布顺序', () => {
     expect(raw).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
     expect(raw).toMatch(/noteAsset\('terrain', 'unavailable'/)
     expect(raw).toMatch(/noteAsset\('scenery', 'failed'/)
+    // 3D 与 2D 共用同一 visibility 投影（短隐藏段在 3D 也不能回退到 coverage）
+    expect(raw).toMatch(/VIS_BY_EID = visibilitySpansByEid\(data\.visibility\)/)
+    expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {

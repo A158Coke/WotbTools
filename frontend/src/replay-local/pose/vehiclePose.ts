@@ -98,18 +98,30 @@ export interface PoseFacet {
   entityStartsByAccount?: Map<number, Map<number, number | null>>
 }
 
+/**
+ * 协议精确的 AoI 在场段按 eid 投影为 flat `[t0,t1,...]`（末段缺 `t_out` = 战斗结束 → +∞）。
+ * 2D（`buildPoseFacet`）与 3D（`playbackScene` 的 `DATA.visibility`）共用同一投影，
+ * 避免两视图对短隐藏段给出不同的炮塔/侧倾插值。
+ */
+export function visibilitySpansByEid(
+  visibility: readonly AgentAoiPresence[] | null | undefined,
+): Map<number, number[]> {
+  const out = new Map<number, number[]>()
+  for (const w of visibility ?? []) {
+    if (!Number.isFinite(w.t_in)) continue
+    const spans = out.get(w.eid) ?? []
+    spans.push(w.t_in, w.t_out ?? Number.POSITIVE_INFINITY)
+    out.set(w.eid, spans)
+  }
+  return out
+}
+
 /** 从 playback facet 投影出瘦身位姿切面（数组按引用复用，structured clone 时拷贝一次）。 */
 export function buildPoseFacet(
   playback: Pick<AgentPlaybackFacet, 'meta' | 'vehicles'> & { visibility?: AgentAoiPresence[] },
   entityStartsByAccount?: Map<number, Map<number, number | null>>,
 ): PoseFacet {
-  const visByEid = new Map<number, number[]>()
-  for (const w of playback.visibility ?? []) {
-    if (!Number.isFinite(w.t_in)) continue
-    const spans = visByEid.get(w.eid) ?? []
-    spans.push(w.t_in, w.t_out ?? Number.POSITIVE_INFINITY)
-    visByEid.set(w.eid, spans)
-  }
+  const visByEid = visibilitySpansByEid(playback.visibility)
   return {
     tStart: playback.meta.t_start,
     samples: playback.meta.samples,

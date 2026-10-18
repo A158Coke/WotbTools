@@ -97,7 +97,8 @@ export function coverageSpanAt(coverage, t) {
   for (let i = 0; i + 1 < coverage.length; i += 2) {
     const start = coverage[i]
     const end = coverage[i + 1]
-    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    // 末次可见段允许 +Infinity 终点（buildPoseFacet 对缺省 t_out 的投影）。
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
     if (t >= start - 1e-6 && t <= end + 1e-6) return [start, end]
   }
   return null

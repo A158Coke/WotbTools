@@ -1339,6 +1339,10 @@ latency 从 0.02s 缓慢收敛到 0.2s，段首数秒是 10Hz 保持-跳变阶�
 （`sampleChannelWithin`），车辆刚进视野时不再从隐藏段的旧角缓慢滑到新角（旧行为在
 0.86s 可见起点会把 0.8s 的 0° 与 0.9s 的 90° 插成 54°）。段内第一个网格点之前保持该点值。
 短隐藏段（<2s）在 `coverage` 中不断开，因此必须用 `visibility[]` 而不是 `coverage`。
+2D 与 3D 共用 `visibilitySpansByEid` 投影（3D 从 `DATA.visibility` 建 eid 映射），末段
+`t_out` 缺省投影为 `+Infinity` 并作为合法段终点；两视图不得各自回退到 `coverage`。
+核心资产缺失/失败时 3D 面板显示**非阻塞**降级提示（`scene3d-asset-degraded`），不再把
+`hasData=true` 当作健康加载完成。
 
 **失察即冻结**（2026-10-16 用户裁定）：车辆离开我方视野后，2D 图标**停在最后观测点**——采样时刻由
 `observedFreezeTimeAt`（`utils/battlePlaybackV2.ts`）给出（最后一个 OBSERVED 段的结束时刻），

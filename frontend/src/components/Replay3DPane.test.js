@@ -204,6 +204,22 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it('核心资产降级显示非阻塞状态，不把加载完成伪装成健康', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    expect(store.hasData).toBe(true)
+    expect(wrapper.find('[data-testid="scene3d-asset-degraded"]').exists()).toBe(false)
+    store.assetDegraded = true
+    await flush()
+    expect(wrapper.get('[data-testid="scene3d-asset-degraded"]').text()).toContain('agentReplay.asset_degraded')
+    store.assetDegraded = false
+    await flush()
+    expect(wrapper.find('[data-testid="scene3d-asset-degraded"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('3D完整详情按canonical账号与时间投影，包含肖像装备物资道具且seek不泄露未来', async () => {
     mockWebGL('webgl2')
     const dataset = makeBattlePlaybackDataset()

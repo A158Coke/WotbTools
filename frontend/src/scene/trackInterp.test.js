@@ -109,6 +109,8 @@ describe('trackInterp：覆盖段内网格采样（禁止跨隐藏段插值）',
     expect(coverageSpanAt(cov, 12)).toEqual([10, 12])
     expect(coverageSpanAt(cov, 13)).toBeNull()
     expect(coverageSpanAt(cov, 20.0000005)).toEqual([20, 24])
+    // 末次可见段：buildPoseFacet 对缺省 t_out 写 +Infinity，必须仍是有效段
+    expect(coverageSpanAt([0.85, Number.POSITIVE_INFINITY], 0.86)).toEqual([0.85, Number.POSITIVE_INFINITY])
     expect(coverageSpanAt([], 1)).toBeNull()
     expect(coverageSpanAt(null, 1)).toBeNull()
   })
@@ -122,6 +124,8 @@ describe('trackInterp：覆盖段内网格采样（禁止跨隐藏段插值）',
     expect(sampleChannelWithin(get, a.length, 0.25, 0, 0.1, 0.05, 0.25)).toBeCloseTo(2, 12)
     // 段短于一个网格间隔：取段后第一个点，保持（不猜运动）
     expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.08)).toBeCloseTo(1, 12)
+    // 开放的末段（+Infinity）从段内第一个点起正常插值
+    expect(sampleChannelWithin(get, a.length, 0.25, 0, 0.1, 0.05, Number.POSITIVE_INFINITY)).toBeCloseTo(2.5, 12)
     // 空/单点安全
     expect(sampleChannelWithin(() => 7, 1, 0.05, 0, 0.1, 0.05, 0.08)).toBe(7)
     expect(sampleChannelWithin(() => 7, 0, 0.05, 0, 0.1, 0.05, 0.08)).toBe(0)
