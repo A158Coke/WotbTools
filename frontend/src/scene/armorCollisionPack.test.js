@@ -367,15 +367,15 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(edge.oracle).toBe(1)
     })
 
-    it('穿透概率带保留段首区间宽度：20mm→41mm @100 = 27.4%（review P2）', () => {
-        // 旧实现用扣减后的 remBefore=80 重算 σ=80/60 → Φ(39/1.333)≈1。
-        // 正确：[95,105] − 3×20 = [35,45]，σ 仍 10/6 → Φ((40−41)/(10/6))=27.4%。
+    it('穿透概率带保留段首区间宽度：300→690 @1000 ≈ 72.57%', () => {
+        // 每层扣一次：1000 → [950,1050] − 300 = [650,750]，σ 仍 100/6；
+        // 主甲 690 → Φ((700−690)/(100/6)) = Φ(0.6) ≈ 0.7257469。
         const { sim } = runCase([
-            { section: 'spaced', thickness: 20, x: 2 },
-            { section: 'hull', thickness: 41, x: 4 },
-        ], { ...P, remIn: 100 })
+            { section: 'spaced', thickness: 300, x: 2 },
+            { section: 'hull', thickness: 690, x: 4 },
+        ], { ...P, remIn: 1000 })
         expect(sim.cls).toBe(1)
-        expect(sim.penChance).toBeCloseTo(0.2742531, 5)
+        expect(sim.penChance).toBeCloseTo(0.7257469, 5)
     })
 
     it('严格大于才穿透：等厚 → 被挡（红）', () => {
