@@ -75,8 +75,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, ApiPaths.OBSERVABILITY_EVENTS).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
-                        ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER,ApiPaths.BROADCASTS_V2,
-                        ApiPaths.BROADCAST_SEASON_V2,ApiPaths.BROADCAST_CATEGORY_V2, ApiPaths.BROADCAST_CATEGORY_V3).permitAll()
+                        ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.CREATORS, ApiPaths.CREATORS + "/categories",
                         ApiPaths.CREATOR_AVATAR, ApiPaths.RECOMMENDATIONS, ApiPaths.RECOMMENDATIONS + "/categories").permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
