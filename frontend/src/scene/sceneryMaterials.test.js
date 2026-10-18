@@ -350,9 +350,9 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const fn = matSrc.slice(matSrc.indexOf('function makeSpeedtreeStaticMaterial'))
     // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
     expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a\);/)
-    expect(fn).toMatch(/uAlphaCut: \{ value: opaqueEnough \? 0\.33 : 0\.05 \}/)
-    expect(fn).toMatch(/transparent: !opaqueEnough,/)
-    expect(fn).toMatch(/depthWrite: opaqueEnough,/)
+    expect(fn).toMatch(/uAlphaCut: \{ value: blend \? 0\.05 : 0\.33 \}/)
+    expect(fn).toMatch(/transparent: blend,/)
+    expect(fn).toMatch(/depthWrite: !blend,/)
     // vOcc 仅取 COLOR_0.r（灰度遮挡）；无 COLOR_0 的正则树干 = 1
     expect(fn).toMatch(/vOcc = \$\{hasVC \? 'color\.r' : '1\.0'\};/)
     // SH 染色逐通道来自 baseColorFactor（karelia 彩色环境/√π 灰均按字面）
@@ -845,6 +845,10 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 烘焙先剔天穹再装配：必须把剔除前的标记传进去，否则会退回 /sky/ 名字
     const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
     expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
+    const bakeFlagAt = bakeSkySrc.indexOf('sceneHasSkyFlags(gltf.scene)')
+    const bakePruneAt = bakeSkySrc.indexOf('pruneForeignVariants(gltf.scene')
+    expect(bakeFlagAt).toBeGreaterThan(-1)
+    expect(bakePruneAt).toBeGreaterThan(bakeFlagAt)
     const skyAt = asmSrc.indexOf('if (!waterMarked && isSkyNode(o))');
     expect(skyAt).toBeGreaterThan(-1);
     const skyBranch = asmSrc.slice(skyAt, skyAt + 500);
