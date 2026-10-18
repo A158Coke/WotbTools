@@ -399,7 +399,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 float norm = twoCal
                   ? (1.4 * normalization * caliber) / (2.0 * thickness)
                   : normalization;
-                float finalThick = thickness / cos(max(0.0, angle - norm));
+                // 掠射角保护：mediump 下 cos 可能为 0/负，必须与 resolveLayerGeometry 的
+                // 1e-6 下界一致，否则会写入 inf/负厚度并反向扣减覆盖（review 2026-10-18）。
+                float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
                 float rem = penetration;
                 highp float spacedEff = 0.0;
                 // 8 位回退格式 R 饱和：累计值只知 >=1，真实消耗未知；不得当成恰好
@@ -447,6 +449,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                       penChance = 0.0;
                     } else {
                       // HEAT gap decay：与 penetration.js 同一 0.5/m；概率区间同样衰减。
+                      // RT0 深度只保留最近覆盖层→主甲的总距离，多层前置时这里是
+                      // 1−0.5·Σd（卡片是逐 gap 乘积，严格更小）；精确需要逐层有序
+                      // 深度/depth peeling，与多间隙层 CDF 同一 RT0 限制（已知近似）。
                       float gapLoss = max(0.0, 1.0 - 0.5 * distArmor);
                       pMin *= gapLoss;
                       pMax *= gapLoss;
@@ -806,7 +811,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               float finalNorm = twoCal
                 ? (1.4 * normalization * caliber) / (2.0 * thickness)
                 : normalization;
-              float finalThick = thickness / cos(max(0.0, angle - finalNorm));
+              // 与 resolveLayerGeometry 同一 1e-6 余弦下界，防掠射角 inf/负厚度。
+              float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
               gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
             }
         `;

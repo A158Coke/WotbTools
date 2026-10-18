@@ -210,7 +210,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 厚度通道：每块间隙板独立计算 2×/normalization 后的 finalThick；不得含深度/首层推断。
     expect(thickness).toMatch(/bool twoCal = caliber > thickness \* 2\.0 && thickness > 0\.0;/)
     expect(thickness).toMatch(/float finalNorm = twoCal/)
-    expect(thickness).toMatch(/float finalThick = thickness \/ cos\(max\(0\.0, angle - finalNorm\)\);/)
+    // 掠射角余弦必须有 1e-6 下界（与 resolveLayerGeometry 一致），防 inf/负厚度。
+    expect(thickness).toMatch(/float finalThick = thickness \/ max\(cos\(max\(0\.0, angle - finalNorm\)\), 1e-6\);/)
     expect(thickness).toMatch(/gl_FragColor = vec4\(finalThick \/ penetration, 1\.0, 0\.0, 1\.0\);/)
     // 跳弹只在 RT1 最近板状态通道判定；RT0 不得把后续高倾角板写成 R=1。
     expect(thickness).not.toMatch(/angle >= ricochet/)
