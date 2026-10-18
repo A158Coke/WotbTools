@@ -82,6 +82,34 @@ describe('AppDialog', () => {
     expect(document.activeElement).toBe(opener)
   })
 
+  it('忽略视觉隐藏的焦点候选：初始焦点落在可见按钮，Tab 不逃到背景', async () => {
+    // #678 回归：名人堂上传弹层里隐藏的 file input 曾抢走初始焦点，导致 Tab 进背景、Esc 关不掉。
+    const Host = defineComponent({
+      setup() {
+        const open = ref(false)
+        return () => h('div', [
+          h('button', { id: 'opener', onClick: () => { open.value = true } }, 'open'),
+          h(AppDialog, { open: open.value, title: 'Upload', onClose: () => { open.value = false } }, {
+            default: () => [h('input', { id: 'hidden-file', type: 'file', style: 'display: none' }), h('button', { id: 'pick' }, 'pick')],
+          }),
+        ])
+      },
+    })
+    wrapper = mount(Host, { attachTo: document.body, global: { mocks } })
+    const opener = document.getElementById('opener')
+    opener.focus()
+    opener.click()
+    await flushPromises()
+    expect(document.activeElement.id).toBe('pick')
+    document.querySelector('.dialog-close').focus()
+    dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(document.activeElement.id).toBe('pick')
+    dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('点遮罩关闭', async () => {
     mountDialog()
     document.getElementById('opener').click()

@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **3.13.1 / 3013001**（`android/gradle.properties`）。
+截至 2026-10-18，本候选源码为 **3.13.2 / 3013002**（`android/gradle.properties`）。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
@@ -24,7 +24,10 @@ Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这�
 #683 已先合入 main，源码版本为 3.13.0；本次内容接口清理以它为基线递增为 **3.13.1 / 3013001**，说明见 [3.13.1](releases/3.13.1.md)。
 用户确认被清理的旧联赛/推荐接口仅内部使用、尚无用户使用，本次明确例外选 patch，不升 major、不强制升级；一般版本规则不变。
 本候选继承 3.13.0 的装甲查看器改动以及此前联赛三语、时间和初始化事实；不复用旧候选号，不修改历史迁移。
-Native Bridge 保持 v3，`ANDROID_MIN_SUPPORTED_VERSION_CODE` 保持 `3000000`。合并前仍须核对前置后端与成对切换安排，随后按 stage、真机验收、publish 发布；本次不修改生产变量。
+`android-v3.13.1` tag 已指向 `1f00bc66e75890cbe8bc116307cebffcb5ee403f`（3.13.1 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #688 修复教程导出/焦点与 Escape、名人堂上传弹层键盘、AI 复盘原始 Markdown 残留与战队汇总三语表头，随 APK 打包后按 **patch** 递增为 **3.13.2 / 3013002**，说明见 [3.13.2](releases/3.13.2.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
+3.13.2 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。

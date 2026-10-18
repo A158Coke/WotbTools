@@ -323,6 +323,35 @@ describe('HoFPage', () => {
     expect(wrapper.find('[data-testid="hof-rules-mark3"]').text()).toContain('hofRules.mark3.once')
   })
 
+  // #678：弹层打开后焦点必须在弹层内的可见控件上，隐藏的 file input 不得成为焦点目标；
+  // Esc 关闭并把焦点还给“提交记录”。
+  it('focuses the visible upload control and closes the submit dialog with Escape', async () => {
+    const wrapper = mount(HoFPage, {
+      attachTo: document.body,
+      global: { mocks: { $t: key => key }, provide: { [DIALOG_INLINE_KEY]: true } }
+    })
+    try {
+      await flushPromises()
+      const trigger = wrapper.find('.lb-submit-row button.filebtn')
+      trigger.element.focus()
+      await openSingleUpload(wrapper)
+      const dialog = document.querySelector('.hof-upload-modal[role="dialog"]')
+      expect(dialog).not.toBeNull()
+      const pick = wrapper.find('.hof-upload-modal button.filebtn').element
+      expect(document.activeElement).toBe(pick)
+      const input = wrapper.find('.hof-upload-modal input[type="file"]')
+      expect(input.attributes('tabindex')).toBe('-1')
+      expect(input.attributes('aria-hidden')).toBe('true')
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+      expect(document.querySelector('.hof-upload-modal')).toBeNull()
+      expect(document.activeElement).toBe(trigger.element)
+    } finally {
+      wrapper.unmount()
+      document.body.innerHTML = ''
+    }
+  })
+
   it('describes the hundred-battle threshold from the user\'s own current record', async () => {
     lbApi.hofHundredMyStatus.mockResolvedValue({
       current: [{ id: 5, vehicleId: 385, vehicleName: 'Progetto 65', status: 'CURRENT', approvedAverageDamage: 3800, approvedBattleCount: 110 }],

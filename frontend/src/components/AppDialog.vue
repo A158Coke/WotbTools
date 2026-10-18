@@ -59,8 +59,14 @@ function restoreOpener() {
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+/** 视觉隐藏或对辅助技术隐藏的控件无法聚焦：放进候选会让初始焦点静默落空、Tab 陷阱失效。 */
+function focusable(element) {
+  if (element.closest('[aria-hidden="true"], [hidden]')) return false
+  const style = getComputedStyle(element)
+  return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0
+}
 function focusables() {
-  return [...(panel.value?.querySelectorAll(FOCUSABLE) || [])]
+  return [...(panel.value?.querySelectorAll(FOCUSABLE) || [])].filter(focusable)
 }
 
 function onKeydown(event) {
@@ -89,7 +95,7 @@ watch(() => props.open, async (open) => {
     await nextTick()
     // 优先聚焦第一个输入或主按钮之外的第一个可聚焦元素；没有时聚焦面板本身
     const items = focusables()
-    const preferred = panel.value?.querySelector('[autofocus], [data-autofocus]')
+    const preferred = items.find(el => el.matches('[autofocus], [data-autofocus]'))
     ;(preferred || items.find(el => el.tagName !== 'BUTTON' || !el.classList.contains('dialog-close')) || panel.value)?.focus()
     if (!bodyLockHeld.value) {
       acquireBodyLock()
