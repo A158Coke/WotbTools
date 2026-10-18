@@ -18,6 +18,13 @@ import * as THREE from 'three'
  *  matrix = 以 root 为父系的完整局部变换（含整条父链，.GLTFLoader 产出的叶子
  *  Mesh 单 primitive 单材质）。调用方负责先 root.updateMatrixWorld(true)（或等价地
  *  保证局部矩阵新鲜），本函数只读不写。 */
+/** 透明材质不能进 InstancedMesh：three 只按 object 排序，批内实例顺序固定，
+ *  重叠软混合物（alphaBlend 树/效果片）会随镜头出现错误混合。返回 true = 保留独立节点。 */
+export function hasTransparentMaterial(material) {
+  const ms = Array.isArray(material) ? material : [material]
+  return ms.some((m) => !!(m && m.transparent))
+}
+
 export function collectInstanceEntries(root) {
   const out = []
   const stack = [{ node: root, parent: new THREE.Matrix4() }]

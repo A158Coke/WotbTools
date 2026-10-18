@@ -62,7 +62,7 @@ import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from
 import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from '/src/scene/mapLighting.js'
 // 装配规则 SSOT：剔除/水面语义判定与运行时共用同一份（见该模块头部 2026-10-14 漂移事故说明）
 import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater, sceneHasSkyFlags } from '/src/scene/sceneryAssemblyRules.js'
-import { pruneForeignVariants } from '/src/scene/variantFilter.js'
+import { pruneForeignVariantsDetailed } from '/src/scene/variantFilter.js'
 // 实例化合批：与 3D 运行时**同一模块同一序列**（sceneryInstancing.js；含 aLm 逐实例
 // 光照图变换的 InstancedBufferAttribute 口径）——此前本页手写的『单实例 InstancedMesh
 // + 几何克隆』是第二套实现，已删除（2026-10-14 收编，用户裁示"直接用它的代码"）
@@ -182,8 +182,13 @@ async function load(key, span = 600, mapId = null) {
   // 包级天空标记必须在**任何剔除之前**采样：变体组里的唯一 sky 节点被裁掉后，再从
   // 缩减场景重算会退化为 false，bakeDropNode 会误启 /sky/ 名字 fallback。
   const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)
-  // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）
-  pruneForeignVariants(gltf.scene, mapId)
+  // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）。
+  // fail-closed（映射缺失/当前 mapId 不在映射）时整图拒绝烘焙——否则会把缺少全部
+  // 变体布景的俯视图永久发布为正常资产。
+  const variantPrune = pruneForeignVariantsDetailed(gltf.scene, mapId)
+  if (variantPrune.failClosed) {
+    throw new Error(`变体映射缺失/未知（mapId=${String(mapId)}）：拒绝烘焙不完整俯视图`)
+  }
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf)
   const masks = makeTexResolvers(gltf, sceneryExtras)

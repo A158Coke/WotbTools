@@ -27,7 +27,7 @@ export function activeVariantOf(variantByMapId, mapId) {
  * 行为那样 fail-open 全量渲染（Dead Rail/Middleburg 等 9 图会出现游戏里不存在的
  * 幻影布景）。无标记节点时仍是 no-op。
  */
-export function pruneForeignVariants(root, mapId) {
+export function pruneForeignVariantsDetailed(root, mapId) {
   const mapping = root?.userData?.variantByMapId
   const active = activeVariantOf(mapping, mapId)
   const tagged = []
@@ -37,7 +37,7 @@ export function pruneForeignVariants(root, mapId) {
     for (const c of o.children || []) stack.push(c)
     if (o.userData?.mdVariant) tagged.push(o)
   }
-  if (!tagged.length) return 0
+  if (!tagged.length) return { removed: 0, failClosed: false }
   if (!active) {
     const hasMapping = !!(mapping && typeof mapping === 'object' && Object.keys(mapping).length)
     const reason = hasMapping
@@ -48,7 +48,7 @@ export function pruneForeignVariants(root, mapId) {
     for (const o of tagged) {
       if (typeof o.parent?.remove === 'function') { o.parent.remove(o); removed++ }
     }
-    return removed
+    return { removed, failClosed: true }
   }
   let pruned = 0
   for (const o of tagged) {
@@ -57,5 +57,11 @@ export function pruneForeignVariants(root, mapId) {
       pruned++
     }
   }
-  return pruned
+  return { removed: pruned, failClosed: false }
+}
+
+/** 兼容包装：旧调用方只关心剔除数量；需要 fail-closed 信号（运行时降级/烘焙中止）
+ *  用 {@link pruneForeignVariantsDetailed}。 */
+export function pruneForeignVariants(root, mapId) {
+  return pruneForeignVariantsDetailed(root, mapId).removed
 }

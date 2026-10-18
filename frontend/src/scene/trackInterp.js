@@ -153,8 +153,10 @@ export function sampleChannelWithin(get, n, t, t0, dt, spanStart, spanEnd) {
   let lo = Math.max(0, Math.min(n - 1, Math.ceil(xMin - 1e-9)))
   let hi = Math.max(0, Math.min(n - 1, Math.floor(xMax + 1e-9)))
   if (lo > hi) {
-    // 覆盖段内没有网格点：取段后第一个点（已可见时刻的最近证据），并保持
-    hi = lo
+    // 段内没有网格点：取段末**之前**的最近证据（最后已知），不得取段后第一个点——
+    // 下一可见段若在下一个 tick 前开始，会把后一段的炮塔角泄漏进这次短可见段。
+    hi = Math.max(0, Math.min(n - 1, Math.floor(xMax + 1e-9)))
+    lo = hi
   }
   if (hi === lo) return get(lo)
   const x = Math.max(lo, Math.min(hi, (t - t0) / dt))

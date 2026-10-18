@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activeVariantOf, pruneForeignVariants } from './variantFilter.js'
+import { activeVariantOf, pruneForeignVariants, pruneForeignVariantsDetailed } from './variantFilter.js'
 
 // 最小节点 fake：children + parent.remove（与 three Object3D 接口同形）
 function node(extras = {}, children = []) {
@@ -65,5 +65,17 @@ describe('pruneForeignVariants', () => {
     expect(pruneForeignVariants(plain, 7)).toBe(0)
     expect(plain.children).toHaveLength(1)
     expect(pruneForeignVariants(node({ variantByMapId: { 7: 'md1' } }, [node({})]), 46)).toBe(0)
+  })
+})
+
+
+describe('pruneForeignVariantsDetailed：fail-closed 信号（运行时降级 / 烘焙中止）', () => {
+  it('正常裁剪 failClosed=false；映射缺失时 failClosed=true', () => {
+    const activeRoot = node({ variantByMapId: { 7: 'md1' } }, [node({ mdVariant: 'md3' }), node({})])
+    expect(pruneForeignVariantsDetailed(activeRoot, 7)).toEqual({ removed: 1, failClosed: false })
+    const noMapping = node({}, [node({ mdVariant: 'md3' })])
+    expect(pruneForeignVariantsDetailed(noMapping, 7)).toEqual({ removed: 1, failClosed: true })
+    const noTagged = node({}, [node({})])
+    expect(pruneForeignVariantsDetailed(noTagged, 7)).toEqual({ removed: 0, failClosed: false })
   })
 })
