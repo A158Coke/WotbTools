@@ -1,8 +1,8 @@
 name: CI / komodo-periphery
 
-# Pull-request validation for the Komodo Periphery owner (K3.1). This workflow
-# never reads production secrets, never SSHes Yecao, never touches production
-# state, and never downloads or executes the Periphery artifact.
+# Pull-request validation for the Komodo Periphery owner (K3.1+). This workflow
+# never reads production secrets, never SSHes a production host, never touches
+# production state, and never downloads or executes the Periphery artifact.
 on:
   workflow_call:
     inputs:
@@ -31,8 +31,44 @@ jobs:
           for script in deploy/periphery/*.sh; do
             bash -n "$script"
           done
-      # The owner's single fixture entrypoint: staging-root path safety, the
+      # The owner's existing fixture entrypoint: staging-root path safety, the
       # release/config/unit contract, the onboarding-credential lifecycle driven
       # through the real install.sh, and a real ":8120 has no listener" probe.
-      - name: Validate the Periphery owner contract and safety fixtures
+      - name: Validate the shared Periphery lifecycle and safety fixtures
         run: bash deploy/periphery/test-periphery.sh
+      - name: Validate Alibaba asset target profile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          out="$RUNNER_TEMP/ali-target.out"
+          bash deploy/periphery/read-target-profile.sh ali-sh-asset-01 "$out"
+          grep -Fxq 'connect_as=ali-sh-asset-01' "$out"
+          grep -Fxq 'lock_root=/opt/wotb-asset' "$out"
+          grep -Fxq 'staging_root=/opt/wotb-asset/periphery' "$out"
+          grep -Fxq 'privilege=sudo' "$out"
+
+          config=deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml
+          grep -Fxq 'root_directory = "/etc/komodo"' "$config"
+          grep -Fxq 'core_addresses = ["https://komodo.wotbtools.com"]' "$config"
+          grep -Fxq 'connect_as = "ali-sh-asset-01"' "$config"
+          grep -Fxq 'server_enabled = false' "$config"
+          grep -Fxq 'PERIPHERY_CORE_PORT=443' deploy/periphery/targets/ali-sh-asset-01/target.env
+          ! grep -Eq 'onboarding_key|passkeys|(^|[[:space:]])port[[:space:]]*=[[:space:]]*8120' "$config"
+
+          # Exercise the shared connection verifier with the reviewed public Core
+          # port. The PID must still match, so an unrelated :443 connection cannot
+          # satisfy the lifecycle proof.
+          stub="$RUNNER_TEMP/ali-bin"
+          mkdir -p "$stub"
+          cat > "$stub/ss" <<'EOF'
+          #!/usr/bin/env bash
+          printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:443 users:(("periphery",pid=4242,fd=9))'
+          EOF
+          chmod +x "$stub/ss"
+          PATH="$stub:$PATH" bash -c '
+            source deploy/periphery/lib.sh
+            load_target_profile ali-sh-asset-01 deploy/periphery
+            [[ "$periphery_core_port" == 443 ]]
+            [[ -n "$(established_core_connections 4242)" ]]
+            [[ -z "$(established_core_connections 9999)" ]]
+          '
