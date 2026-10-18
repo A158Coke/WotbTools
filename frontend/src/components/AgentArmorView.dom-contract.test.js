@@ -212,7 +212,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(thickness).toMatch(/float finalNorm = twoCal/)
     expect(thickness).toMatch(/float finalThick = thickness \/ cos\(max\(0\.0, angle - finalNorm\)\);/)
     expect(thickness).toMatch(/gl_FragColor = vec4\(finalThick \/ penetration, 1\.0, 0\.0, 1\.0\);/)
-    expect(thickness).toMatch(/if \(!threeCal && angle >= ricochet\)/)
+    // 跳弹只在 RT1 最近板状态通道判定；RT0 不得把后续高倾角板写成 R=1。
+    expect(thickness).not.toMatch(/angle >= ricochet/)
     expect(thickness).not.toMatch(/isFirstSpaced|linState|stateD|camNear|camFar|0\.05/)
     // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码；
     // B 不再承载转正差额（R 已逐层归一化），保持 0。
@@ -241,6 +242,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).not.toMatch(/bool threeCal = caliber > thickness \* 3\.0 \|\| underSpaced;/)
     expect(kernel).toMatch(/bool noRicochet = threeCal \|\| underSpaced;/)
     expect(kernel).toMatch(/float norm = twoCal/)
+    // 间隙甲作为整体参与 CDF（单层精确；GPU additive 只有聚合厚度）；外部模块 B=flat。
+    expect(kernel).toMatch(/gl_FragColor = vec4\(thickness \/ penetration, 0\.0, thickness \/ penetration, 1\.0\);/)
+    expect(kernel).toMatch(/if \(spacedEff > 0\.0\)/)
     const gapStart = kernel.indexOf('if (gapRicochet) {')
     expect(gapStart).toBeGreaterThan(-1)
     const gapSeg = kernel.slice(gapStart, gapStart + 900)
@@ -325,7 +329,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).not.toMatch(/chanceOutcome/)
     expect(kernel).toMatch(/const title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
     expect(kernel).toMatch(/const chanceHtml = partial/)
-    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits, false\)/)
+    // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
+    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
+    expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
     expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
   })
 })

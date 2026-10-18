@@ -378,6 +378,22 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(sim.penChance).toBeCloseTo(0.7257469, 5)
     })
 
+    it('概率停在首个主装甲：其后的车体底板/履带命中不参与', () => {
+        // 用户 2026-10-18 相邻点击复现：炮塔板 10(20) + 板 9(225) 后，
+        // 车体底板 5 与右侧履带 25 不应把补充概率压成 0。
+        const { sim, oracle } = runCase([
+            { section: 'spaced', thickness: 20, x: 2 },
+            { section: 'turret', thickness: 225, x: 4 },
+            { section: 'hull', thickness: 5, x: 6 },
+            { section: 'chassis', thickness: 25, x: 8 },
+        ], { ...P, remIn: 252, caliber: 120 })
+        expect(oracle).toBe(1)
+        expect(sim.cls).toBe(1)
+        expect(sim.layers.map(l => l.section)).toEqual(['spaced', 'turret'])
+        expect(sim.penChance).toBeGreaterThan(0.9)
+        expect(sim.penChance).toBeLessThan(1)
+    })
+
     it('严格大于才穿透：等厚 → 被挡（红）', () => {
         const { sim, oracle } = runCase([
             { section: 'hull', thickness: 250, x: 2 },

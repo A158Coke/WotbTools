@@ -354,7 +354,7 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   })
 })
 
-describe('probability_layers（完整命中链，供 Armor Inspector 概率模型）', () => {
+describe('probability_layers（到首个 Primary 为止的完整概率链，供 Armor Inspector 概率模型）', () => {
   it('确定性在间隙甲处截断时，概率链仍保留其后的主装甲', () => {
     const hits = [
       hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
@@ -381,18 +381,59 @@ describe('probability_layers（完整命中链，供 Armor Inspector 概率模�
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
   })
 
-  it('概率链继续收集首个 Primary 之后的多层主装甲（击穿第一层不再终结概率）', () => {
+  it('概率链停在首个 Primary：其后的车体/履带命中不参与', () => {
     const hits = [
       hit(ArmorSection.HULL, 30.0, [0, 0, 0]),
       hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
     ]
     const r = calculate(req('ap', 100.0, 100.0, hits))
-    // 确定性层链仍按 BlitzKit 在首个 Primary 截断（用于确定性判定展示）。
     expect(r.result).toBe('PENETRATION')
     expect(r.layers).toHaveLength(1)
-    // 概率链必须看到第二层主装甲，1× 消耗后概率为 0。
-    expect(r.probability_layers.map(l => l.section)).toEqual(['hull', 'hull'])
-    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+    expect(r.probability_layers.map(l => l.section)).toEqual(['hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(1)
+  })
+
+  it('Super Conqueror 炮塔相邻点击：首个 Primary 后的车体底板/履带不参与概率', () => {
+    // 用户 2026-10-18 调试快照：板10(20) + 板9(225) 确定性击穿；其后的
+    // Hull Plate 8(5) 与右侧履带(25) 曾把概率从 19% 压到 0（相邻点击 19% vs 0%）。
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [-0.7413889015023738, 2.2819733858516886, -1.653710476213479], {
+        plate_id: '10',
+        normal: [-0.6347682297419488, 0.4539353516594762, -0.6253095161790361],
+        part_name: 'Turret Plate 10',
+      }),
+      hit(ArmorSection.TURRET, 225.0, [-0.6509577896549565, 2.2321983421923504, -1.5360089235660648], {
+        plate_id: '9',
+        normal: [-0.4742724340731611, 0.5729971269861682, -0.6683860791069156],
+        part_name: 'Turret Plate 9',
+      }),
+      hit(ArmorSection.HULL, 5.0, [0.09604195528521053, 1.821035146713257, -0.5637436488115966], {
+        plate_id: '8', normal: [0, 1, 0], part_name: 'Hull Plate 8',
+      }),
+      hit(ArmorSection.CHASSIS, 25.0, [1.1176708936691284, 1.32302562660276, 0.6897291210208113], {
+        plate_id: 'rightTrack', normal: [-1, 0, 0], part_name: 'Track (Right)',
+      }),
+    ]
+    const r = calculate(req('ap', 252.0, 120.0, hits, {
+      view_dir: [-0.5776371359476701, 0.3179427198635244, -0.7518296123856505],
+      normalization_deg: 5,
+    }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(2)
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'turret'])
+    // 1× 区间：[239.4,264.6] −20 → [219.4,244.6]；板9 eff≈229.64 →
+    // Φ((232−229.64)/4.2) ≈ 0.713（不再被后方车体/履带耗尽）。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.713, 2)
+  })
+
+  it('同一块板的重合三角形命中只算一层（射线掠过四边形对角线）', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
   })
 
   it('Super Conqueror 首上：20mm 间隙板 + 155mm 主甲 @42°，252AP 等效厚度足够 → 穿透', () => {

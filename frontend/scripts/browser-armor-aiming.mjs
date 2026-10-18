@@ -363,6 +363,50 @@ try {
     check(m1 === m0, `拖动（车体上）= 相机不触发判定（judgments ${m0}→${m1}）`)
   }
 
+  // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
+  // #traj-info 是 position:fixed；页面滚动后 left/top 必须按 canvas 的实时 rect 重算。
+  // 先等相机 damping 停止：拖动用例刚结束，相机余滑会让投影点漂移，污染位移断言。
+  {
+    await page.waitForValue(`(() => {
+      const s = window.__armorRicochet.aimingState();
+      return s.cameraSettledMs > Math.max(400, 3 * s.frameIntervalMs);
+    })()`, (v) => v === true, { timeout: 20000, label: 'camera settle (scroll test)' }).catch(() => {})
+    const readRects = () => page.evaluate(`(() => {
+      const card = document.getElementById('traj-info');
+      const canvas = document.querySelector('canvas');
+      const c = card?.getBoundingClientRect();
+      const v = canvas?.getBoundingClientRect();
+      return c && v ? {
+        card: { x: c.x, y: c.y, w: c.width, h: c.height, display: getComputedStyle(card).display },
+        canvas: { x: v.x, y: v.y, w: v.width, h: v.height },
+        scrollY: window.scrollY,
+      } : null;
+    })()`)
+    const before = await readRects()
+    await page.evaluate(`(() => {
+      const d = document.createElement('div');
+      d.id = 'scroll-fixture';
+      d.style.height = '500px';
+      // 追加到正文末尾：滚动让画布整体上移，卡片目标点仍留在视口内（不触发
+      // 底部钳制），才能断言卡片按 canvas rect 同步位移而不是停在旧位置。
+      document.body.append(d);
+      window.scrollTo(0, 120);
+    })()`)
+    await delay(250)
+    const after = await readRects()
+    const movedCanvas = before && after && Math.abs(after.canvas.y - before.canvas.y) > 20
+    const sameDelta = before && after
+      && Math.abs((after.card.x - before.card.x) - (after.canvas.x - before.canvas.x)) < 2.5
+      && Math.abs((after.card.y - before.card.y) - (after.canvas.y - before.canvas.y)) < 2.5
+    check(movedCanvas, `结果卡锚定门禁：滚动夹具确实移动了画布（${JSON.stringify({ before, after })}）`)
+    check(sameDelta, `结果卡随画布滚动（fixed 卡按 canvas rect 重算；${JSON.stringify({ before, after })}）`)
+    await page.evaluate(`(() => {
+      document.getElementById('scroll-fixture')?.remove();
+      window.scrollTo(0, 0);
+    })()`)
+    await delay(200)
+  }
+
   // —— 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）——
   // 触屏路由此处起才启用触屏仿真（前面的鼠标分支保持鼠标语义）；第一指按部位、第二指收拢。
   await page.emulate({ width: 1400, height: 900, touch: true, deviceScaleFactor: 1 })

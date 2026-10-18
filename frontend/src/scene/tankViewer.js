@@ -395,6 +395,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   : normalization;
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
+                highp float spacedEff = 0.0;
                 // Armor Inspector 概率区间：±5% = ±3σ；两端一起平移，σ 保持不变。
                 highp float pMin = penetration * 0.95;
                 highp float pMax = penetration * 1.05;
@@ -405,6 +406,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   highp float rawTotal = spacedData.r;
                   highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
                     ? 1.0 : max(0.0, rawTotal);
+                  // B = 外部模块 flat 消耗；从总消费中分离间隙甲 normalized effective。
+                  highp float moduleFlat = max(0.0, spacedData.b * penetration);
+                  spacedEff = max(0.0, totalConsume * penetration - moduleFlat);
                   float spacedThick = totalConsume * penetration;
                   // 判定/热力图按实际等效厚度消耗一次（与 penetration.js 的
                   // remainingPen -= effective 一致）；不能用 3× 概率区间把确定性的
@@ -438,6 +442,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
                     highp float mu = 0.5 * (pMin + pMax);
                     penChance = clamp(aiNormalCdf((mu - finalThick) / sigma), 0.0, 1.0);
+                    // 间隙甲层也参与 CDF：GPU additive 只有总 normalized 厚度，
+                    // 用聚合厚度乘一次 CDF（单层精确；多层为同向近似）。
+                    if (spacedEff > 0.0) {
+                      highp float sSigma = max(penetration * 0.05 / 3.0, 1e-4);
+                      penChance *= clamp(aiNormalCdf((penetration - spacedEff) / sSigma), 0.0, 1.0);
+                    }
                   }
                   if (canSplash) {
                     float splash = 0.5 * damage - 1.1 * finalThick;
@@ -732,7 +742,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             #include <clipping_planes_pars_fragment>
             void main() {
               #include <clipping_planes_fragment>
-              gl_FragColor = vec4(thickness / penetration, 0.0, 0.0, 1.0);
+              gl_FragColor = vec4(thickness / penetration, 0.0, thickness / penetration, 1.0);
             }
         `;
         function externalMaterial(thickness, penetration, clip) {
@@ -766,11 +776,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
               if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
               float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
-              bool threeCal = caliber > thickness * 3.0;
-              if (!threeCal && angle >= ricochet) {
-                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-                return;
-              }
+              // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
+              // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
               bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
               float finalNorm = twoCal
                 ? (1.4 * normalization * caliber) / (2.0 * thickness)
@@ -2019,6 +2026,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             renderer.render(spacedArmorScene, camera);
             renderer.autoClear = false;
             renderer.setRenderTarget(null);
+            // scene.background=null 时 autoClear=false 不会隐式清屏；显式清理默认 framebuffer，
+            // 避免热力图相机移动时复用上一帧颜色/深度（拖影/新几何被旧深度拒绝）。
+            renderer.clear(true, true, true);
         }
 
         document.getElementById('penetration-btn').addEventListener('click', function() {
@@ -2504,6 +2514,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        // 本机复现开关：?armordebug=1（仅 dev）。点击后复制/查看本次判定的完整输入与层链。
+        const ARMOR_DEBUG = import.meta.env.DEV && QP.get('armordebug') === '1';
         let urlApplied = false;
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
@@ -3856,6 +3868,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 camera.position.copy(savedOverview.pos);
                                 controls.target.copy(savedOverview.target);
                             }
+                            // 相对命中视角 = 单车取景（15m/18.75° 标定）；双方位置恢复 50° 总览。
+                            worldOverviewMode = !on;
                             controls.update();
                             impactViewOn = on;
                             relBtn.setAttribute('aria-pressed', String(on));
@@ -3868,8 +3882,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         worldBtn.onclick = () => setImpactView(false);
                         viewSwitch.append(relBtn, worldBtn);
                         (document.getElementById('corner-br') || document.body).appendChild(viewSwitch);
-                        // Context and controls now exist: focus directly instead of clicking a not-yet-created button.
-                        setImpactView(true);
+                        // 默认 = 双方位置（world 总览，原生 50°），与按钮初始状态一致；
+                        // 用户点击「相对视角」后才切到命中点的 15m/18.75° 标定视角。
+                        // setImpactView(false) 在 impactViewOn 初值 false 时是幂等 no-op。
+                        setImpactView(false);
                         // 初始即按撤回状态隐藏全部标注（须在 debug=1 自动开启之前，否则被覆盖）
                         window.__debugSetVisible(false);
                         // URL debug=1 显式开启开发诊断标注
@@ -5065,6 +5081,47 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     : trajLayers;
                 const probabilityPen = Number.isFinite(res.probability_penetration)
                     ? res.probability_penetration : null;
+                if (ARMOR_DEBUG) {
+                    const cfg = currentConfig();
+                    armorDebugPanel({
+                        url: location.href,
+                        tank: {
+                            id: tankData?.tank_id,
+                            name: tankData?.name,
+                            configIndex: currentConfigIdx,
+                            config: cfg ? {
+                                caliber: cfg.caliber,
+                                turret_plates: cfg.turret_plates,
+                                gun_plates: cfg.gun_plates,
+                                turret_spaced: cfg.turret_spaced,
+                                gun_spaced: cfg.gun_spaced,
+                            } : null,
+                        },
+                        shell: selectedShell ? { ...selectedShell } : null,
+                        equipment: { ...equipmentCoeffs(), calibrated_shells: eqCal, enhanced_armor: eqEnh },
+                        camera: {
+                            position: camera.position.toArray(),
+                            target: controls.target.toArray(),
+                            fov: camera.fov, near: camera.near, far: camera.far,
+                            worldOverview: worldOverviewMode,
+                        },
+                        click: { ndcX, ndcY },
+                        point: point.toArray(),
+                        distance: dist,
+                        viewDir: viewDir.toArray(),
+                        hits: hitsForCheck.map(ah => ({
+                            section: ah.section,
+                            plateId: ah.plateId,
+                            thickness: ah.thickness,
+                            point: ah.point.toArray(),
+                            normal: ah.normal.toArray(),
+                            partName: ah.partName,
+                        })),
+                        deterministic: { result: res.result, damage: res.damage, layers: res.layers },
+                        probability: { penetration: res.probability_penetration, layers: res.probability_layers },
+                        heatmap: penetrationMode,
+                    });
+                }
 
                 if (res.ricochet && res.ricochet_remaining_pen > 0) {
                     const lastLayer = trajLayers[trajLayers.length - 1];
@@ -5117,26 +5174,60 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                             }))
                                             : ricLayers;
                                         const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
-                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0, [...probabilityLayers, ...ricProbability], probabilityPen);
-                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen); }
-                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen); });
+                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0, [...probabilityLayers, ...ricProbability], probabilityPen, !isHE);
+                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE); }
+                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE); });
                             return;
                         }
                     }
                 }
 
-                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen);
+                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE);
             }).catch(err => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null);
+                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false);
             });
         }
 
 
         let trajGroup = null;
         let trajInfoPos = null;
-        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null) {
+        function armorDebugPanel(snapshot) {
+            if (!ARMOR_DEBUG) return;
+            window.__armorDebugLast = snapshot;
+            console.log('[armor-debug]', JSON.stringify(snapshot));
+            let panel = document.getElementById('armor-debug-panel');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'armor-debug-panel';
+                // 面板挂在 body（不在 .armor-view 内），只能用全局 semantic token。
+                panel.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483000;max-width:min(52ch,48vw);max-height:42vh;overflow:auto;background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border-strong);border-radius:8px;padding:8px;font:11px/1.35 ui-monospace,Consolas,monospace;box-shadow:var(--elevation-2);';
+                const bar = document.createElement('div');
+                bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:4px;';
+                const title = document.createElement('b');
+                title.textContent = 'armor debug';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.textContent = '复制 JSON';
+                copy.style.cssText = 'margin-left:auto;padding:2px 6px;border:1px solid var(--color-border-subtle);border-radius:4px;background:var(--color-surface-2);color:var(--color-text-primary);cursor:pointer;';
+                copy.addEventListener('click', () => {
+                    const text = document.getElementById('armor-debug-json')?.textContent || '';
+                    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard')))
+                        .then(() => { copy.textContent = '已复制'; setTimeout(() => { copy.textContent = '复制 JSON'; }, 1200); })
+                        .catch(() => { copy.textContent = '复制失败'; });
+                });
+                bar.append(title, copy);
+                const pre = document.createElement('pre');
+                pre.id = 'armor-debug-json';
+                pre.style.cssText = 'margin:0;white-space:pre-wrap;overflow-wrap:anywhere;';
+                panel.append(bar, pre);
+                document.body.append(panel);
+            }
+            const pre = panel.querySelector('#armor-debug-json');
+            if (pre) pre.textContent = JSON.stringify(snapshot, null, 2);
+        }
+        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null, allowChance = true) {
             if (destroyed) return;
             // Armor Inspector 击穿概率：使用完整命中链（res.probability_layers），
             // 不能用会在首个未穿透层/首个 Primary 截断的确定性 layers。显示层仍用 layers。
@@ -5150,7 +5241,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const chancePct = probLayers.length > 0
                 ? Math.round(penetrationChance(chancePen, probLayers) * 100)
                 : 0;
-            const chancePartial = chancePct > 0 && chancePct < 100;
+            const chancePartial = allowChance && chancePct > 0 && chancePct < 100;
 
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
@@ -5300,6 +5391,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             html += `</div>`;
             div.innerHTML = html;
+            if (ARMOR_DEBUG && window.__armorDebugLast) {
+                window.__armorDebugLast.card = (div.textContent || '').replace(/\s+/g, ' ').slice(0, 600);
+                window.__armorDebugLast.chancePct = chancePct;
+                window.__armorDebugLast.chancePartial = chancePartial;
+                armorDebugPanel(window.__armorDebugLast);
+            }
             // 轨迹线与轨迹面板无条件展示(用户要求:与正常点击判定一致的轨迹展示)
             updateTrajInfoPos();
             scene.add(trajGroup);
