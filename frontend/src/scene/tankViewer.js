@@ -404,8 +404,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 highp float spacedEff = 0.0;
                 // 间隙甲 CDF 的区间基准：若 RT1 最近覆盖层是外部模块，模块 flat 在
                 // 间隙甲之前消耗，间隙层 CDF 必须用 P−moduleFlat；否则用原始 P。
-                // 这是单间隙层 + 前置模块的精确口径（review 2026-10-18 反例：
-                // chassis20 → spaced80 → hull1，卡片 13.7% vs 旧 shader 27.4%）。
+                // 均值必须保留符号：模块厚于穿深时区间仍可能保留正向尾部
+                // （P199/chassis200/spaced1/hull1 → 均值−1，5.0% 仍可穿），
+                // 不得用 max(0, ·) 截断（review 2026-10-18 第二反例）。
                 highp float spacedProbBase = penetration;
                 // Armor Inspector 概率区间：±5% = ±3σ；两端一起平移，σ 保持不变。
                 highp float pMin = penetration * 0.95;
@@ -420,7 +421,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   // B = 外部模块 flat 消耗；从总消费中分离间隙甲 normalized effective。
                   highp float moduleFlat = max(0.0, spacedData.b * penetration);
                   spacedEff = max(0.0, totalConsume * penetration - moduleFlat);
-                  spacedProbBase = moduleInFront ? max(0.0, penetration - moduleFlat) : penetration;
+                  spacedProbBase = moduleInFront ? (penetration - moduleFlat) : penetration;
                   float spacedThick = totalConsume * penetration;
                   // 判定/热力图按实际等效厚度消耗一次（与 penetration.js 的
                   // remainingPen -= effective 一致）；不能用 3× 概率区间把确定性的
