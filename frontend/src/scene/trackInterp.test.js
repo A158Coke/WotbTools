@@ -1,6 +1,6 @@
 import { sampleDetachedPose } from './trackInterp.js'
 import { describe, it, expect } from 'vitest'
-import { keyframeAt, sampleKeyframes, segmentAt, sampleChannel } from './trackInterp.js'
+import { coverageSpanAt, keyframeAt, sampleKeyframes, segmentAt, sampleChannel, sampleChannelWithin } from './trackInterp.js'
 
 describe('trackInterp：位姿关键帧折线（客户端渲染路径）', () => {
   it('keyframeAt：段定位与端点保持', () => {
@@ -98,5 +98,32 @@ describe('sampleDetachedPose: recorded rigid bodies and AoI spans', () => {
     expect(sampleDetachedPose(single, 10, out)).toBe(true)
     expect(out).toEqual({ x: -1, y: 2, z: 3, yaw: -0, pitch: 1, roll: -2 })
     expect(sampleDetachedPose(single, 12, out)).toBe(true)
+  })
+})
+
+
+describe('trackInterp：覆盖段内网格采样（禁止跨隐藏段插值）', () => {
+  it('coverageSpanAt：闭区间命中、区间外 null、浮点容差', () => {
+    const cov = [10, 12, 20, 24]
+    expect(coverageSpanAt(cov, 10)).toEqual([10, 12])
+    expect(coverageSpanAt(cov, 12)).toEqual([10, 12])
+    expect(coverageSpanAt(cov, 13)).toBeNull()
+    expect(coverageSpanAt(cov, 20.0000005)).toEqual([20, 24])
+    expect(coverageSpanAt([], 1)).toBeNull()
+    expect(coverageSpanAt(null, 1)).toBeNull()
+  })
+
+  it('sampleChannelWithin：只在段内网格点之间插值，段首保持第一个段内点', () => {
+    const a = [0, 1, 2, 3, 4, 5, 6]
+    const get = (i) => a[i]
+    // 网格 t0=0, dt=0.1；覆盖 [0.05, 0.25]：段内点 = 0.1/0.2
+    expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.25)).toBeCloseTo(1, 12)
+    expect(sampleChannelWithin(get, a.length, 0.15, 0, 0.1, 0.05, 0.25)).toBeCloseTo(1.5, 12)
+    expect(sampleChannelWithin(get, a.length, 0.25, 0, 0.1, 0.05, 0.25)).toBeCloseTo(2, 12)
+    // 段短于一个网格间隔：取段后第一个点，保持（不猜运动）
+    expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.08)).toBeCloseTo(1, 12)
+    // 空/单点安全
+    expect(sampleChannelWithin(() => 7, 1, 0.05, 0, 0.1, 0.05, 0.08)).toBe(7)
+    expect(sampleChannelWithin(() => 7, 0, 0.05, 0, 0.1, 0.05, 0.08)).toBe(0)
   })
 })

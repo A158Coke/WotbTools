@@ -1632,7 +1632,7 @@ function poseAtTime(track, t) {
   // 采样时刻还必须落在该实体的 **coverage 证据**内：覆盖外的端点钳位会把该实体未来的首帧位姿
   // 泄漏到过去（新实体的身份证据可能早于其首个位姿样本）→ 不覆盖即回落 canonical（fail-closed）。
   if (!def || !poseCoveredAt(def, rawAt)) return null
-  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch)
+  const pose = sampleVehiclePoseGame(def, source.grid, rawAt, _poseScratch, def.visibility ?? def.coverage)
   return { x: pose.x, y: pose.z, yawRad: pose.yaw, turretRelRad: pose.turretRel }
 }
 

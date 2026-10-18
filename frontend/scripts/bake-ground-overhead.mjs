@@ -61,7 +61,7 @@ import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from
 // 夜间图比 3D 档亮约 3 倍，见该模块头部说明）
 import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from '/src/scene/mapLighting.js'
 // 装配规则 SSOT：剔除/水面语义判定与运行时共用同一份（见该模块头部 2026-10-14 漂移事故说明）
-import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater } from '/src/scene/sceneryAssemblyRules.js'
+import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater, sceneHasSkyFlags } from '/src/scene/sceneryAssemblyRules.js'
 import { pruneForeignVariants } from '/src/scene/variantFilter.js'
 // 实例化合批：与 3D 运行时**同一模块同一序列**（sceneryInstancing.js；含 aLm 逐实例
 // 光照图变换的 InstancedBufferAttribute 口径）——此前本页手写的『单实例 InstancedMesh
@@ -194,30 +194,25 @@ async function load(key, span = 600, mapId = null) {
   // 地图图的水系配色承担；NewBay 海面 SkySeaSurface 这类"名字像天、材质是水"的节点
   // 也按材质标记保留，见规则模块 keepWater 注释）。
   const strictSurfaces = strictSurfacesOf(gltf.scene)
+  // 新包天空语义 = 材质 extras.sky（导出器按 Skyobject 模板写入）；旧包无 sky 标记才按名字。
+  // 烘焙与 3D 运行时同判，避免"名字不含 sky 的天穹被烘进俯视图 / 名字含 sky 的非天穹被剔"。
+  const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)
   const drop = []
   gltf.scene.traverse((o) => {
     const nm = o.name || ''
     if (bakeDropNode(nm, o.material,
                      { strictSurfaces, mdVariant: !!(o.userData && o.userData.mdVariant),
-                       keepWater: true })) drop.push(o)
+                       keepWater: true, skyFlagsAvailable })) drop.push(o)
   })
   for (const o of drop) o.removeFromParent()
   // ⚠️ 2026-10-14 删除"≥90% 图幅环境壳"几何剔除（用户报"米德尔堡右上角黑块"）：该规则把
   // **运行时正常渲染**的大件整块剔掉（erlenberg 外圈山体 mountain_3/land_main1 等、各图
   // 边缘地貌带/大地壳），露出可玩区外那条客户端 colormap 的暗色边带 → webp 黑块。
   // 探针实证：保留后该处恢复为山体（(23,24,18)→(155,131,56)）。
-  // 真天空穹已由规则模块的 /sky/ 判据（与运行时天空判据同式）剔除；本页的渲染集合自此
+  // 真天空穹已由规则模块 isSkyShell 剔除（新包 extras.sky，旧包 /sky/ fallback）；本页的渲染集合自此
   // 与 3D 运行时逐件一致（水件/穹顶/地形块均保留）——"完全照搬运行时"的最后一处收敛。
-  // 退化几何剔除（与 3D 运行时同式：撕裂批次不渲染）
-  const degenerate = []
-  gltf.scene.traverse((o) => {
-    if (!o.isMesh) return
-    const g0 = o.geometry
-    const vc = g0.attributes.position ? g0.attributes.position.count : 0
-    const ic = g0.index ? g0.index.count : vc
-    if (vc > 0 && (ic / 3) / vc > 15) degenerate.push(o)
-  })
-  for (const o of degenerate) o.removeFromParent()
+  // 旧"退化几何"按 (三角形/顶点) 比率逐网格删除已撤除：内容统计启发式无法区分旧导出器
+  // 损坏与合法高比率网格，且静默删数据；树批次撕裂由导出器修正。
   // 逐节点材质分派 = 共享装配模块（与 3D 运行时同一份实现与同一顺序）：
   //   水(对象)→blendByAngle→decal→lm(+env+detail)→混合层掩码→水下→convMat。
   //   groundLayers 传**真实分层**（贴花件按 cm(UV1) 不受光渲染，同运行时——此前传 null
@@ -279,7 +274,7 @@ async function load(key, span = 600, mapId = null) {
   const batches = groupInstanceBatches(instEntries, cellSize)
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh) }
   for (const e of instEntries) e.node.removeFromParent()
-  return { ok: true, degenerate: degenerate.length, span: effSpan, ground: groundReady }
+  return { ok: true, span: effSpan, ground: groundReady }
 }
 
 // 调试：对象 ID 拾取——每个 mesh 临时换唯一编码色渲染，读像素反查覆盖者

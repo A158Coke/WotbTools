@@ -151,7 +151,7 @@ describe('烘焙地形配对 fail-closed（真实 loadTerrain → requireBakeTer
   const N = 512                                     // decodeTerrainField 的缺省 size：json 缺失时恰好可解
   const BIN = new Uint8Array(N * N * 2)
   const sha = createHash('sha256').update(BIN).digest('hex')
-  const META = { size: N, zmin: -5, zmax: 60, worldBounds: { min: [-400, -400], max: [400, 400] }, terrainBinSha256: sha }
+  const META = { size: N, zmin: -5, zmax: 60, terrainLayout: 2, worldBounds: { min: [-400, -400], max: [400, 400] }, terrainBinSha256: sha }
   /** json/bin：undefined = 404；数字 = 该 HTTP 状态；否则为响应体（json 对象自动序列化） */
   async function terrainOf({ json, bin }) {
     const respond = (body) => (body === undefined ? new Response('nf', { status: 404 })
@@ -168,9 +168,11 @@ describe('烘焙地形配对 fail-closed（真实 loadTerrain → requireBakeTer
     expect(requireBakeTerrain(none)).toBe(false)
   })
 
-  it('terrain.json 404 + 恰好 512²×2 的 bin ⇒ 抛出（loadTerrain 会按缺省参数解出 field，不可信）', async () => {
+  it('terrain.json 404 + 恰好 512²×2 的 bin ⇒ 不产 field，但烘焙仍按 HTTP 事实抛出', async () => {
     const t = await terrainOf({ bin: BIN })
-    expect(t.field).not.toBeNull()                  // 反方向漏洞的前提：field 非空、meta 为空
+    // 2026-10-18：loadTerrain 不再按缺省 layout/zmax 解码 ⇒ field=null；
+    // requireBakeTerrain 仍据 metaStatus=404 / binStatus=200 判“不完整”，不会把 bin 当无地形。
+    expect(t.field).toBeNull()
     expect(t.meta).toEqual({})
     expect(() => requireBakeTerrain(t)).toThrow(/^terrain 不完整: terrain\.json 缺失（HTTP 404）但 terrain\.u16\.bin 存在/)
   })

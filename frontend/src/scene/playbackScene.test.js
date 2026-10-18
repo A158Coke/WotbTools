@@ -1050,7 +1050,7 @@ describe('playbackScene 资产发布顺序', () => {
     const groundFetch = vi.fn().mockImplementationOnce(() => parkedGround.promise)
       .mockResolvedValue({ ok: false })
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100 }) }
+      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2 }) }
       if (url.endsWith('terrain')) return { ok: true, arrayBuffer: readBuffer }
       if (url.endsWith('groundmeta')) return groundFetch()
       throw new Error('unexpected asset ' + url)
@@ -1111,6 +1111,15 @@ describe('playbackScene 资产发布顺序', () => {
     expect(warn.mock.calls.some((c) => String(c[0]).includes('sha256 不符'))).toBe(true)
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
+  })
+
+  it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
+    const raw = (await import('./playbackScene.js?raw')).default
+    expect(raw).toMatch(/store\.assetIssues = assetIssues/)
+    expect(raw).toMatch(/store\.assetDegraded = true/)
+    expect(raw).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
+    expect(raw).toMatch(/noteAsset\('terrain', 'unavailable'/)
+    expect(raw).toMatch(/noteAsset\('scenery', 'failed'/)
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {

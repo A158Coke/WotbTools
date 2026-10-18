@@ -4,10 +4,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   strictSurfacesOf, materialIsWater, isWaterNode, isSkyShellName,
-  isNonIntactStateName, bakeDropNode,
+  isNonIntactStateName, bakeDropNode, materialHasSky, sceneHasSkyFlags, isSkyShell,
 } from './sceneryAssemblyRules.js'
 
 const water = () => ({ userData: { water: { props: {} } } })
+const sky = () => ({ userData: { sky: true } })
 const plain = () => ({ userData: {} })
 
 describe('sceneryAssemblyRules：水面语义（SSOT）', () => {
@@ -39,7 +40,21 @@ describe('sceneryAssemblyRules：水面语义（SSOT）', () => {
     expect(isWaterNode('skit_ocean.sc2', plain(), legacy)).toBe(false)
   })
 
-  it('isSkyShellName：与运行时同式（/sky/）——穹顶建筑/舱室不再被当天空壳', () => {
+  it('天空语义：材质 extras.sky 权威；旧包无标记才按名字', () => {
+    expect(materialHasSky(sky())).toBe(true)
+    expect(materialHasSky([plain(), sky()])).toBe(true)
+    expect(materialHasSky(water())).toBe(false)
+    const root = { children: [{ isMesh: true, material: plain(), children: [] }, { isMesh: true, material: sky(), children: [] }] }
+    expect(sceneHasSkyFlags(root)).toBe(true)
+    expect(sceneHasSkyFlags({ children: [{ isMesh: true, material: plain(), children: [] }] })).toBe(false)
+    // 新包（有 sky 标记）：名字不含 sky 也按材质判；名字含 sky 但无标记不判
+    expect(isSkyShell('bld_x.sc2', sky(), { strictSurfaces: true, skyFlagsAvailable: true })).toBe(true)
+    expect(isSkyShell('sky_dome', plain(), { strictSurfaces: true, skyFlagsAvailable: true })).toBe(false)
+    // 旧包：名字 fallback 保持
+    expect(isSkyShell('sky_dome', plain(), { strictSurfaces: true, skyFlagsAvailable: false })).toBe(true)
+  })
+
+  it('isSkyShellName（旧包 fallback）：/sky/ ——穹顶建筑/舱室不再被当天空壳', () => {
     expect(isSkyShellName('SkySeaSurface.sc2')).toBe(true)     // 含 sky（再由水材质标记让位，见 keepWater 用例）
     expect(isSkyShellName('sky_dome')).toBe(true)
     expect(isSkyShellName('fa_sky_dome.sc2')).toBe(true)
