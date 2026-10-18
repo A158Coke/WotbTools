@@ -65,8 +65,9 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          mirrored=
           for attempt in $(seq 1 12); do
-            mirrored="$(git ls-remote https://gitee.com/A158Coke/Wotbtools.git refs/heads/main | awk '{print $1}')"
+            mirrored="$(timeout 15s git ls-remote https://gitee.com/A158Coke/Wotbtools.git refs/heads/main 2>/dev/null | awk '{print $1}' || true)"
             if [ "$mirrored" = "$SOURCE_SHA" ]; then
               echo "Gitee mirror verified at $SOURCE_SHA"
               exit 0
