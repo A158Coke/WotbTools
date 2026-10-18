@@ -9,7 +9,7 @@ import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import MorePage from './MorePage.vue'
 import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
-const menuRole = vi.hoisted(() => ({ tournament: false, authenticated: null }))
+const menuRole = vi.hoisted(() => ({ tournament: false, content: false, authenticated: null }))
 
 vi.mock('../composables/useAuth.js', async () => {
   const { ref } = await import('vue')
@@ -18,6 +18,7 @@ vi.mock('../composables/useAuth.js', async () => {
       isAdmin: ref(false),
       isHofAdmin: ref(false),
       isTournamentAdmin: ref(menuRole.tournament),
+      isContentAdmin: ref(menuRole.content),
       authenticated: menuRole.authenticated,
     }),
   }
@@ -42,20 +43,29 @@ function mountPage(navigate = vi.fn(), onboarding = null, creatorsAvailable = tr
 describe('MorePage language switcher', () => {
   it('keeps creator administration hidden on a legacy backend', () => {
     menuRole.tournament = true
+    menuRole.content = true
     const { wrapper } = mountPage(vi.fn(), null, false)
     expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
     wrapper.unmount()
   })
-  it('keeps creator administration available with an empty public snapshot without duplicating primary navigation', async () => {
+  it('keeps creator administration available to content-admin with an empty public snapshot without duplicating primary navigation', async () => {
     const navigate = vi.fn(), { wrapper } = mountPage(navigate)
     expect(wrapper.find('[data-testid="more-link-creators"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
     wrapper.unmount()
-    menuRole.tournament = true
+    menuRole.content = true
     const admin = mountPage().wrapper
     expect(admin.find('[data-testid="more-link-creators-config"]').exists()).toBe(true)
+    expect(admin.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(false)
     admin.unmount()
+  })
+  it('does not grant content administration to tournament-admin', () => {
+    menuRole.tournament = true
+    const { wrapper } = mountPage()
+    expect(wrapper.find('[data-testid="more-link-tournament-points-config"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="more-link-creators-config"]').exists()).toBe(false)
+    wrapper.unmount()
   })
   it('does not duplicate the primary broadcast entry in More', () => {
     const { wrapper } = mountPage()
@@ -65,6 +75,7 @@ describe('MorePage language switcher', () => {
   beforeEach(() => {
     localStorage.clear()
     menuRole.tournament = false
+    menuRole.content = false
     menuRole.authenticated = ref(false)
   })
   it('shows More guides only while signed in and reacts to login/logout', async () => {

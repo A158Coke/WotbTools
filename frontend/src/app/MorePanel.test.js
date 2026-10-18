@@ -10,7 +10,7 @@ import { ONBOARDING_KEY } from '../shared/onboarding.js'
 const authState = vi.hoisted(() => ({ authenticated: null }))
 
 vi.mock('../composables/useAuth.js', () => ({
-  useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false }, isTournamentAdmin: { value: false }, authenticated: authState.authenticated }),
+  useAuth: () => ({ isAdmin: { value: false }, isHofAdmin: { value: false }, isTournamentAdmin: { value: false }, isContentAdmin: { value: false }, authenticated: authState.authenticated }),
 }))
 
 function mountPanel(navigate = vi.fn(), onboarding = null) {

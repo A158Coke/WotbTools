@@ -14,6 +14,20 @@ jobs:
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: wotb
+          POSTGRES_USER: wotb
+          POSTGRES_PASSWORD: smoke-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wotb -d wotb"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v5
         with:
@@ -25,7 +39,29 @@ jobs:
           context: .
           file: docker/Dockerfile.business-api
           push: false
+          load: true
+          tags: business-api:ci
           build-args: BUILD_COMMIT=${{ inputs.head_sha }}
+      - name: Smoke test Business API startup
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.head_sha }}
+        run: |
+          set -euo pipefail
+          trap 'docker logs business-api-smoke; docker rm -f business-api-smoke' EXIT
+          test "$(docker image inspect business-api:ci --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^BUILD_COMMIT=')" = "BUILD_COMMIT=$EXPECTED_COMMIT"
+          # Fixture endpoints avoid contacting production Keycloak.
+          docker run -d --name business-api-smoke --network host \
+            -e POSTGRES_PASSWORD=smoke-only \
+            -e KEYCLOAK_ADMIN_CLIENT_SECRET=smoke-only \
+            -e KEYCLOAK_ADMIN_SERVER_URL=http://127.0.0.1:18080 \
+            -e KEYCLOAK_ISSUER_URI=http://127.0.0.1:18080/realms/smoke \
+            -e SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://127.0.0.1:18080/realms/smoke/certs \
+            business-api:ci
+          curl --fail --silent --show-error --retry 60 --retry-connrefused \
+            --retry-delay 2 --retry-max-time 120 --max-time 5 \
+            http://127.0.0.1:8088/actuator/health/readiness | jq -e '.status == "UP"'
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8087/api/health
   backend:
     name: Business API modules
     runs-on: ubuntu-latest

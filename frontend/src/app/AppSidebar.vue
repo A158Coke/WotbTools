@@ -16,7 +16,7 @@ import MorePanel from './MorePanel.vue'
 import BrandMark from '../components/BrandMark.vue'
 
 const route = useRoute()
-const { isAdmin, isHofAdmin, isTournamentAdmin, isAuthenticated, displayName } = useAuth()
+const { isAdmin, isHofAdmin, isTournamentAdmin, isContentAdmin, isAuthenticated, displayName } = useAuth()
 const { isExpanded } = useBreakpoint()
 const { collapsed, toggle } = useSidebar()
 
@@ -27,7 +27,7 @@ const items = primaryNavItems()
 const { available: creatorsAvailable, directoryVisible: creatorsVisible } = useCreatorAvailability()
 const sectionItems = computed(() => items.filter(item => item.id !== 'more' && (item.id !== 'creators' || creatorsVisible.value)))
 const moreItem = items.find(item => item.id === 'more')
-const adminPermissions = { admin: isAdmin, hofAdmin: isHofAdmin, tournamentAdmin: isTournamentAdmin }
+const adminPermissions = { admin: isAdmin, hofAdmin: isHofAdmin, tournamentAdmin: isTournamentAdmin, contentAdmin: isContentAdmin }
 const adminItems = computed(() => ADMIN_NAV.filter(item => adminPermissions[item.role].value && (item.id !== 'creators-config' || creatorsAvailable.value)))
 const brandTarget = computed(() => locationForView(defaultView(), route))
 const accountLabel = computed(() => (isAuthenticated() && displayName.value) || null)
