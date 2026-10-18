@@ -72,3 +72,55 @@ jobs:
             [[ -n "$(established_core_connections 4242)" ]]
             [[ -z "$(established_core_connections 9999)" ]]
           '
+      - name: Validate Alibaba transport workflow contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
+
+          path = Path('.github/workflows/komodo-periphery-ali.yml')
+          doc = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          events = doc.get('on', doc.get(True, {}))
+          expected_paths = [
+              '.github/workflows/komodo-periphery-ali.yml',
+              'deploy/check-production-freshness.sh',
+              'deploy/periphery/**',
+          ]
+          assert events['push']['branches'] == ['main']
+          assert events['push']['paths'] == expected_paths
+          assert doc['env']['PRODUCTION_INPUT_PATHS'].splitlines() == expected_paths
+          assert doc['concurrency'] == {
+              'group': 'production-maintenance',
+              'cancel-in-progress': 'false',
+              'queue': 'max',
+          }
+          assert set(doc['jobs']) == {'reconcile_ali_asset'}
+          job = doc['jobs']['reconcile_ali_asset']
+          steps = {step.get('name'): step for step in job['steps']}
+          assert steps['Read the Alibaba asset target profile']['env']['TARGET'] == 'ali-sh-asset-01'
+          stage = steps['Stage exact Periphery inputs on Alibaba asset host']['with']['source']
+          staged = {p for p in ''.join(stage.split()).split(',') if p}
+          assert staged == {
+              'deploy/periphery/lib.sh',
+              'deploy/periphery/staging-root.sh',
+              'deploy/periphery/install.sh',
+              'deploy/periphery/verify.sh',
+              'deploy/periphery/reconcile.sh',
+              'deploy/periphery/periphery.release',
+              'deploy/periphery/periphery.service',
+              'deploy/periphery/targets/ali-sh-asset-01/target.env',
+              'deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml',
+              'periphery-x86_64',
+          }, sorted(staged)
+          text = json.dumps(doc, ensure_ascii=False)
+          for secret in ('ALI_ASSET_VPS_HOST', 'ALI_ASSET_VPS_USER', 'ALI_ASSET_VPS_PORT', 'ALI_ASSET_VPS_SSH_KEY'):
+              assert f'secrets.{secret}' in text, secret
+          assert 'ONBOARDING_KEY' not in text, 'adopted Alibaba lifecycle must be credential-free'
+          reconcile = steps['Reconcile Alibaba asset Periphery under the host lock']
+          assert reconcile['env']['PERIPHERY_TARGET'] == 'ali-sh-asset-01'
+          assert 'deploy/periphery/reconcile.sh' in reconcile['with']['script']
+          assert steps['Cleanup staged Alibaba asset inputs']['if'] == 'always()'
+          PY
