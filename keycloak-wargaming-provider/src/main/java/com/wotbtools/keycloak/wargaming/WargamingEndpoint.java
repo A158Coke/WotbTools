@@ -10,6 +10,8 @@ import org.keycloak.broker.provider.UserAuthenticationIdentityProvider.Authentic
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
+import java.util.Set;
+
 /**
  * WG 回调端点。职责：校验 state → 基础参数校验 → prolongate 验证 token 并取得
  * 服务端绑定的可信 account_id → account/info 获取官方昵称 → 构造稳定身份 → 立即 logout。
@@ -23,6 +25,15 @@ final class WargamingEndpoint {
 
     private static final Logger log = Logger.getLogger(WargamingEndpoint.class);
     private static final int MAX_DIAGNOSTIC_VALUE_LENGTH = 160;
+    private static final Set<String> SAFE_CALLBACK_ERROR_CLASSES = Set.of(
+            "INVALID_IP_ADDRESS",
+            "INVALID_APPLICATION_ID",
+            "APPLICATION_IS_BLOCKED",
+            "REQUEST_LIMIT_EXCEEDED",
+            "METHOD_NOT_FOUND",
+            "ACCESS_DENIED",
+            "AUTH_ERROR"
+    );
 
     private final KeycloakSession session;
     private final WargamingIdentityProvider provider;
@@ -70,8 +81,10 @@ final class WargamingEndpoint {
 
         // ── 2. 基础校验 ──────────────────────────────────────────────
         if (!"ok".equals(status)) {
-            log.warnf("Wargaming login rejected region=%s stage=callback-status reason=provider-error code=%s message=%s",
-                    regionName(), safeDiagnosticValue(errorCode), safeDiagnosticValue(errorMessage));
+            // code/message 均来自浏览器回调，属于不可信输入：code 只接受纯数字，
+            // message 只映射到固定 allowlist 分类，绝不把原始 callback 文本写入日志。
+            log.warnf("Wargaming login rejected region=%s stage=callback-status reason=provider-error code=%s providerError=%s",
+                    regionName(), safeProviderCode(errorCode), providerErrorClass(errorMessage));
             return WargamingIdentityProvider.errorResponse();
         }
         if (WargamingIdentityProvider.isBlank(accessToken)) {
@@ -131,8 +144,8 @@ final class WargamingEndpoint {
 
             return authCallback.authenticated(context);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 安全错误日志：允许 region / stage / 错误码 / message / field，不含 token /
-            // application_id / state / 完整响应 / error.value。
+            // 服务端 API client 已剔除 token/application_id/error.value；这里只记录
+            // region / stage 与有界、去控制字符后的内部安全诊断。
             log.warnf("Wargaming login rejected region=%s stage=%s reason=wg-api-error detail=%s",
                     regionName(), stage, safeMessage(e));
             return WargamingIdentityProvider.errorResponse();
@@ -194,7 +207,31 @@ final class WargamingEndpoint {
         }
     }
 
-    static String safeDiagnosticValue(final String value) {
+    static String safeProviderCode(final String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        final String trimmed = value.trim();
+        if (trimmed.length() > 6) {
+            return "unknown";
+        }
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (!Character.isDigit(trimmed.charAt(i))) {
+                return "unknown";
+            }
+        }
+        return trimmed;
+    }
+
+    static String providerErrorClass(final String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        final String normalized = value.trim();
+        return SAFE_CALLBACK_ERROR_CLASSES.contains(normalized) ? normalized : "UNKNOWN";
+    }
+
+    private static String safeDiagnosticValue(final String value) {
         if (value == null || value.isBlank()) {
             return "-";
         }
