@@ -224,6 +224,9 @@ export function assembleSceneryMaterials(gltf, {
     if (!waterMarked && isSkyNode(o)) {
       o.material = Array.isArray(o.material) ? o.material.map((m) => makeSkyMaterial(m))
                                              : makeSkyMaterial(o.material);
+      // 语义标记：合批过滤必须按它排除天穹（新包天穹名可能不含 sky；材质转换后
+      // extras 判据不可再取）。名字 fallback 已由 isSkyNode 统一处理。
+      o.userData.isSky = true;
       o.frustumCulled = false;
       skyMeshes++;
       if (debug && typeof window !== 'undefined') window.__skyMeshes = (window.__skyMeshes || 0) + 1;

@@ -223,6 +223,21 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(b.plank.material.isMeshBasicMaterial).toBe(true)
   })
 
+  it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const root = new THREE.Group()
+    const mat = new THREE.MeshStandardMaterial({ name: 'skyobject_mat' })
+    mat.userData.sky = true
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat)
+    mesh.name = 'bld_x.sc2'   // 名字不含 sky：必须靠 extras 标记
+    root.add(mesh)
+    const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(r.skyMeshes).toBe(1)
+    expect(mesh.userData.isSky).toBe(true)
+    expect(mesh.frustumCulled).toBe(false)
+  })
+
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
     // 逐图产物生命周期（删旧产物 / .tmp→rename / meta 内容）在 scripts/bake-overhead-key.mjs，
     // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本

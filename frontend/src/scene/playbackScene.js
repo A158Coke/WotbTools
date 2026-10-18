@@ -1342,8 +1342,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 唯一真透明物，保持独立节点让 three 按相机距离做透明排序（合批会把整批
         // 退化成一个排序单位）。
         gltf.scene.updateMatrixWorld(true);
+        // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
+        // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
+        // frustumCulled=false 的无限远语义。
         const entries = collectInstanceEntries(gltf.scene).filter((e) =>
-          !/sky/i.test(e.name) && !isWaterNode(e.name, e.material));
+          !(e.node.userData && e.node.userData.isSky) && !isWaterNode(e.name, e.material));
         // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
@@ -1517,7 +1520,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                                                // 每帧置脏 + force 传播把冻结整个击穿
       }
       }
-    } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
+    } catch (e) {
+      console.warn('场景模型加载失败（忽略）:', e);
+      // 装配/变体裁剪/实例化等后续步骤抛错同样意味着建筑缺失，必须进入降级状态
+      noteAsset('scenery', 'failed', e && e.message ? e.message : e);
+    }
     if (stale()) return;
     progress.complete('scenery');
   }

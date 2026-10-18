@@ -777,7 +777,8 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\/sceneryAssemblyRules\.js'/)
     expect(src).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
     expect(src).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
-    expect(src).toMatch(/!\/sky\/i\.test\(e\.name\) && !isWaterNode\(e\.name, e\.material\)\);/)
+    expect(src).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\) && !isWaterNode\(e\.name, e\.material\)\);/)
+    expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
     // MEDIUM 档水面是半透明大面：逐材质修整（depthWrite/DoubleSide/depthTest）必须保留——
     // 2026-10-09 随 LOW 档（不透明）删过一次，回退 MEDIUM 时一并恢复。
     // 2026-10-14 抽层：修整体在共享装配模块（asmSrc），运行时与烘焙同一份
