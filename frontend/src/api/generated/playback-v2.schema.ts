@@ -3048,6 +3048,115 @@ export default {
         }
       }
     },
+    "HallOfFameBattleType": {
+      "type": "string",
+      "enum": [
+        "RANDOM",
+        "RATING"
+      ]
+    },
+    "HallOfFameRecord": {
+      "type": "object",
+      "description": "Public page item from /api/hof; rank is always assigned in page context.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "tankId",
+        "tankName",
+        "nickname",
+        "damageDealt",
+        "battleType",
+        "mapName",
+        "version",
+        "battleTime",
+        "createdAt",
+        "replayAvailable"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": "integer"
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "battleType": {
+          "$ref": "#/$defs/HallOfFameBattleType"
+        },
+        "mapName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "battleTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HallOfFamePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HallOfFameRecord"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
     "HundredAdminListItem": {
       "type": "object",
       "additionalProperties": false,

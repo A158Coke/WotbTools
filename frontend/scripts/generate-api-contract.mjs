@@ -65,6 +65,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
   'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
+  'HallOfFamePage',
   'CreatorLevel', 'CreatorNameRequest', 'BackendHealth',
   'RecommendationType', 'RecommendationCategory', 'RecommendationCard', 'RecommendationDetail',
   'RecommendationSaveRequest', 'RecommendationCategoryRequest', 'RecommendationMetadata',
