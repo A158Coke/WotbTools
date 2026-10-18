@@ -1,23 +1,21 @@
 name: Komodo Periphery
 
-# Independent owner of every Komodo Periphery agent (K3.1 Yecao, K3.2 TX1).
+# Independent owner of every Komodo Periphery agent.
 #
 # One owner, one lifecycle implementation (`deploy/periphery`), one reviewed
 # profile per host in `deploy/periphery/targets/<target>`. GitHub Actions owns each
 # agent's systemd lifecycle; Komodo Core owns only the Server relationship and
 # never installs, restarts, or manages the agent that talks to it.
 #
-# The runner downloads and verifies the pinned release artifact and stages only the
-# verified bytes: no target host downloads a binary.
-#
-# The order is deliberate. Yecao reconciles first, forwarding no onboarding secret
-# at all, to prove that the multi-target refactor preserved its committed state
-# before TX1 is mutated for the first time.
+# The order is deliberate and fail-closed: Yecao -> TX1 -> TX2 -> Alibaba.
+# A shared lifecycle change cannot reach a later host until every established
+# earlier host has reconciled successfully.
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/komodo-periphery.yml
+      - .github/workflows/komodo-periphery-ali.yml
       - deploy/check-production-freshness.sh
       - deploy/periphery/**
   workflow_dispatch:
@@ -33,6 +31,7 @@ concurrency:
 env:
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/komodo-periphery.yml
+    .github/workflows/komodo-periphery-ali.yml
     deploy/check-production-freshness.sh
     deploy/periphery/**
 
@@ -64,8 +63,6 @@ jobs:
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
-      # The manifest is the single source of truth for the pinned release; the
-      # runner validates its internal consistency before trusting any of it.
       - name: Read the pinned Periphery release
         id: release
         shell: bash
@@ -86,7 +83,6 @@ jobs:
             echo "url=$PERIPHERY_URL"
           } >> "$GITHUB_OUTPUT"
 
-      # Neither target host ever downloads a Periphery binary.
       - name: Download and verify the pinned Periphery artifact
         shell: bash
         env:
@@ -101,7 +97,6 @@ jobs:
           printf '%s  %s\n' "$ARTIFACT_SHA256" "$ARTIFACT_NAME" | sha256sum --check --strict -
           echo "Verified $ARTIFACT_NAME ($ARTIFACT_SHA256)"
 
-      # Host parameters are data, reviewed in the repository, never inline here.
       - name: Read the Yecao target profile
         id: target
         shell: bash
@@ -111,10 +106,6 @@ jobs:
           set -euo pipefail
           bash deploy/periphery/read-target-profile.sh "$TARGET" "$GITHUB_OUTPUT"
 
-      # The staging root is reached before any other Periphery code exists on the
-      # host, so the audited helper runs straight from the checkout: the root, its
-      # incoming directory, and the SHA directory must all be real directories
-      # (mode 700) before SCP is allowed to write into them.
       - name: Prepare safe Yecao staging root
         uses: appleboy/ssh-action@v1
         with:
@@ -130,8 +121,6 @@ jobs:
           PERIPHERY_STAGING_ACTION: prepare
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
 
-      # Only the production inputs plus this target's own reviewed profile are
-      # staged: the fixtures and every other host's profile stay in CI.
       - name: Stage exact Periphery inputs on Yecao
         uses: appleboy/scp-action@v1
         with:
@@ -162,10 +151,6 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      # All mutation logic lives in the staged `reconcile.sh`, which also owns the
-      # host lock and the privilege model. Yecao's onboarding credential has been
-      # deleted, so this job forwards no secret at all: it must succeed from the
-      # committed marker plus the persistent identity.
       - name: Reconcile Yecao Periphery under the Yecao host lock
         uses: appleboy/ssh-action@v1
         with:
@@ -184,8 +169,6 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           PERIPHERY_TARGET: yecao
 
-      # Only the SHA-scoped staging directory is ever removed, and only after the
-      # helper re-proved the root and its incoming directory are real directories.
       - name: Cleanup staged Yecao inputs
         if: always()
         uses: appleboy/ssh-action@v1
@@ -202,8 +185,6 @@ jobs:
           PERIPHERY_STAGING_ACTION: cleanup
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
 
-  # TX1 must not be mutated until Yecao has proved that the multi-target refactor
-  # preserved its committed identity/marker and reconciled without any secret.
   reconcile_tx1:
     name: Reconcile Komodo Periphery on TX1
     needs: [reconcile_yecao]
@@ -275,9 +256,6 @@ jobs:
           set -euo pipefail
           bash deploy/periphery/read-target-profile.sh "$TARGET" "$GITHUB_OUTPUT"
 
-      # The TX1 SSH account is not assumed to be root, so the staging root lives
-      # under TX's deploy-owned root and this step needs no privilege. The root
-      # still has to be a real directory before SCP may write into it.
       - name: Prepare safe TX1 staging root
         uses: appleboy/ssh-action@v1
         with:
@@ -323,10 +301,6 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      # The first TX1 onboarding maps only the TX1 onboarding secret into the
-      # generic runtime variable. `reconcile.sh` re-executes itself through
-      # non-interactive sudo and preserves that one variable through the
-      # environment, so the credential never reaches argv, disk, or the log.
       - name: Reconcile TX1 Periphery under the TX1 host lock
         uses: appleboy/ssh-action@v1
         with:
@@ -362,9 +336,6 @@ jobs:
           PERIPHERY_STAGING_ACTION: cleanup
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
 
-  # TX2 is the third host. It follows the same per-host shape as TX1, and is only
-  # mutated after both established hosts have reconciled credential-free, so a
-  # regression in either of them stops this job before it runs.
   reconcile_tx2:
     name: Reconcile Komodo Periphery on TX2
     needs: [reconcile_tx1]
@@ -436,9 +407,6 @@ jobs:
           set -euo pipefail
           bash deploy/periphery/read-target-profile.sh "$TARGET" "$GITHUB_OUTPUT"
 
-      # The TX2 SSH account is not assumed to be root, so the staging root lives
-      # under TX2's deploy-owned root and this step needs no privilege. The root
-      # still has to be a real directory before SCP may write into it.
       - name: Prepare safe TX2 staging root
         uses: appleboy/ssh-action@v1
         with:
@@ -484,12 +452,6 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      # The first TX2 onboarding maps only the TX2 onboarding secret into the
-      # generic runtime variable. `reconcile.sh` re-executes itself through
-      # non-interactive sudo and preserves that one variable through the
-      # environment, so the credential never reaches argv, disk, or the log. On
-      # later runs the secret may already be deleted: the committed marker plus the
-      # persistent identity then make the reconcile succeed without it.
       - name: Reconcile TX2 Periphery under the TX2 host lock
         uses: appleboy/ssh-action@v1
         with:
@@ -524,3 +486,9 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           PERIPHERY_STAGING_ACTION: cleanup
           PERIPHERY_STAGING_ROOT: ${{ steps.target.outputs.staging_root }}
+
+  reconcile_ali_asset:
+    name: Reconcile Komodo Periphery on Alibaba asset host
+    needs: [reconcile_tx2]
+    uses: ./.github/workflows/komodo-periphery-ali.yml
+    secrets: inherit
