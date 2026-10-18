@@ -158,10 +158,6 @@ jobs:
           assert doc['env']['PRODUCTION_INPUT_PATHS'].splitlines() == expected_paths
           assert doc['concurrency'] == {
               'group': 'production-maintenance',
-              'cancel_in_progress': 'false',
-              'queue': 'max',
-          } if 'cancel_in_progress' in doc['concurrency'] else {
-              'group': 'production-maintenance',
               'cancel-in-progress': 'false',
               'queue': 'max',
           }
