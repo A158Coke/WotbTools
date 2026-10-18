@@ -1,34 +1,29 @@
 <script setup>
 /**
- * 首页 = 营销落地页（2026-10-18 重排）。信息架构的不变量有两条：
+ * 首页 = 纯展示页（2026-10-18 重排）。它**不承担导航**。
  *
- * 1. **首页只收一级功能** —— 一个条目只有在「自己本身就是顶层目的地」时才上首页。
- *    `app/viewRegistry.js:30-32` 写得很清楚：`replay` / `battle-playback` / `ai-review` /
- *    `agent-replay` / `agent-shots` 五个 view 全部落在同一个 `ReplayWorkspace`，只是
- *    `replayInitialCapability` 给的初始 tab 不同。它们是回放工作台的**能力 tab**，不是
- *    独立页面，因此只由 Hero 的唯一主 CTA 承接，不在下面重复出现。
- * 2. **每个目的地全页只出现一次** —— 按 view 解析到的组件去重，不是按 href 字符串去重
- *    （三个不同 href 指向同一个 ReplayWorkspace，比字符串会漏掉）。守卫见 HomePage.test.js。
+ * 依据：`AppSidebar.vue`（桌面 / 平板）与 `AppTabBar.vue` + `MorePage`（手机）已经覆盖
+ * `app/navigation.js:PRIMARY_NAV` 的全部功能入口，三档都在。首页再摆一排功能卡就是把
+ * 侧边栏抄一遍，所以这里只留一个转化动作（上传回放）和两个侧边栏没有的非功能入口。
  *
- * 重排前首页是三份互相重复的导航副本（hero 按钮 / feature 卡 / 快捷面板），回放出现四次，
- * 而坦克百科、联赛积分榜、联赛直播回放、bilibili 推荐完全没有首页入口。
+ * 另一条硬约束：`app/viewRegistry.js:30-32` 的 `replay` / `battle-playback` / `ai-review` /
+ * `agent-replay` / `agent-shots` 五个 view 落在同一个 `ReplayWorkspace`，只是初始 capability
+ * tab 不同。它们不是独立目的地，整页只能有 Hero 那一个回放入口。
  *
- * 分段职责：① Hero（价值主张 + 唯一主 CTA + 装饰插槽）② 数据带 ③ 全部功能 ④ 页脚条。
- * 项目历史 / 技术演进 / 联系我 不在首页重复，由 `useMoreMenu.js` 的「更多」信息组承载。
- *
- * 门禁边界：**请求**受 capability 门禁约束（名人堂数据），**导航链接**不受约束 —— 与
- * `app/navigation.js` 的 PRIMARY_NAV 一致（侧边栏 / 底部 Tab 栏同样无条件呈现这些入口），
- * 避免为「入口是否可见」建立第二个 owner；目标页各自拥有自己的离线态。
+ * 分段：① 全出血 Hero ② 实时数据带 ③ 能力展示（**无链接**，纯视觉）④ 极简页脚。
+ * ③ 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含真实用户的私有数据。
  */
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import * as api from '../utils/api.js'
-import { ArrowRight, Compass } from 'lucide-vue-next'
+import { ArrowRight } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import heroDecorImg from '../assets/showcase/home/hero-v4.webp'
-import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.webp'
+import shotPlayback3dImg from '../assets/showcase/home/showcase-playback-3d-v1.webp'
+import shotArmorImg from '../assets/showcase/home/showcase-armor-v1.webp'
+import shotTankopediaImg from '../assets/showcase/home/showcase-tankopedia-v1.webp'
+import shotRatingImg from '../assets/showcase/home/showcase-rating-v1.webp'
 import { useI18n } from 'vue-i18n'
 import { mapLabel } from '../utils/helpers.js'
-import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { RouterLink } from 'vue-router'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
@@ -41,6 +36,9 @@ const { locale } = useI18n()
 
 const topRecord = ref(null)
 const recordTotal = ref(null)
+/** 进场动效只跑一次；`prefers-reduced-motion` 由 CSS 短路，这里不做第二份判断。 */
+const revealed = ref(false)
+onMounted(() => requestAnimationFrame(() => { revealed.value = true }))
 
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
@@ -52,15 +50,12 @@ const recordTotalDisplay = computed(() => {
   return Number.isFinite(total) ? formatCount(total) : '--'
 })
 
-/**
- * 一级功能（回放工作台之外的顶层目的地）。名人堂带插图领衔：它是数据带那两个数字的来源，
- * 这个主次是有依据的，不是随手挑的。其余四项复用导航既有译文，不新增文案。
- */
-const topLevelEntries = [
-  { id: 'tankopedia', href: '/?view=agent-tankopedia', labelKey: 'nav.tankopedia' },
-  { id: 'tournament-points', href: '/?view=tournament-points', labelKey: 'tournament.title' },
-  { id: 'league-broadcasts', href: '/?view=league-broadcasts', labelKey: 'leagueBroadcasts.title' },
-  { id: 'creators', href: '/?view=recommendations', labelKey: 'creators.nav' },
+/** ③ 能力展示：纯视觉，没有链接。截图尺寸写死在模板里以免加载时抖版。 */
+const showcase = [
+  { id: 'playback-3d', image: shotPlayback3dImg, w: 1600, h: 798, titleKey: 'home.showcasePlaybackTitle', descKey: 'home.showcasePlaybackDesc' },
+  { id: 'armor', image: shotArmorImg, w: 1600, h: 1043, titleKey: 'home.showcaseArmorTitle', descKey: 'home.showcaseArmorDesc' },
+  { id: 'rating', image: shotRatingImg, w: 1600, h: 696, titleKey: 'home.showcaseRatingTitle', descKey: 'home.showcaseRatingDesc' },
+  { id: 'tankopedia', image: shotTankopediaImg, w: 1600, h: 1165, titleKey: 'home.showcaseTankopediaTitle', descKey: 'home.showcaseTankopediaDesc' },
 ]
 
 // 首次连通性检测完成前 HoF 门禁按设计 fail-closed（useFeatureGate.requireFeature）：
@@ -85,28 +80,29 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
 </script>
 
 <template>
-  <main class="homepage-landing layout-wide">
-    <!-- ① Hero：回放工作台是唯一主 CTA；装饰插槽（design-language §2）仅 Showcase 呈现 -->
+  <main class="home-stage" :class="{ 'is-revealed': revealed }">
+    <!-- ① 全出血 Hero -->
     <section class="home-hero" :style="{ '--home-hero-image': `url(${heroDecorImg})` }">
-      <div class="home-hero-copy">
+      <!-- 装饰层放在内容**之前**：两者都定位，后出现的内容自然压在上面，不需要 z-index。 -->
+      <div class="home-hero-decor" aria-hidden="true"></div>
+      <div class="home-hero-inner layout-wide">
         <h1>{{ $t('app.title') }}</h1>
         <p class="home-hero-subtitle">{{ $t('app.subtitle') }}</p>
         <div class="home-hero-actions">
-          <AppButton class="home-cta-primary" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="16" aria-hidden="true" /></AppButton>
-          <AppButton v-if="onboarding" class="home-cta-guide" size="lg" data-testid="home-onboarding" aria-describedby="home-onboarding-hint" @click="onboarding.openDirectory()"><Compass :size="18" aria-hidden="true" />{{ $t('onboarding.newbie') }}</AppButton>
+          <AppButton class="home-cta" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="18" aria-hidden="true" /></AppButton>
+          <button v-if="onboarding" type="button" class="home-cta-ghost" data-testid="home-onboarding" @click="onboarding.openDirectory()">{{ $t('onboarding.newbie') }}</button>
         </div>
-        <p v-if="onboarding" id="home-onboarding-hint" class="home-hero-hint">{{ $t('onboarding.newbieHint') }}</p>
 
-        <!-- ② 数据带：两个数字同源于一次 /api/hof 响应 -->
+        <!-- ② 实时数据带：两个数字同源于一次 /api/hof 响应 -->
         <dl class="home-stats">
           <div class="home-stat">
             <dt>{{ $t('home.highestDamageRecord') }}</dt>
             <dd>
               <strong>{{ topDamageDisplay }}</strong>
               <span v-if="topRecord" class="home-stat-meta">
-                <b>{{ topRecord.tankName || topRecord.vehicleName || '—' }}</b>
-                <small>{{ topRecord.nickname || topRecord.playerNickname || '—' }}</small>
-                <small>{{ mapLabel(topRecord.map || topRecord.mapName, locale) || '—' }}</small>
+                {{ topRecord.tankName || topRecord.vehicleName || '—' }}
+                · {{ topRecord.nickname || topRecord.playerNickname || '—' }}
+                · {{ mapLabel(topRecord.map || topRecord.mapName, locale) || '—' }}
               </span>
             </dd>
           </div>
@@ -116,161 +112,148 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
           </div>
         </dl>
       </div>
-      <div class="home-hero-decor" aria-hidden="true"></div>
     </section>
 
-    <!-- ③ 全部功能：只收顶层目的地。回放的五个能力是同一个工作台的 tab，由 Hero 承接。 -->
-    <section class="home-section" aria-labelledby="home-features-title">
-      <h2 id="home-features-title" class="home-section-title">{{ $t('home.featuresTitle') }}</h2>
-
-      <a class="home-feature-lead" href="/?view=hof">
-        <div class="home-feature-visual"><img :src="cardHofImg" width="840" height="560" loading="lazy" decoding="async" alt="" aria-hidden="true"></div>
-        <div class="home-feature-copy">
-          <h3>{{ $t('hof.btn') }}</h3>
-          <p>{{ $t('home.hofDesc') }}</p>
-          <span class="home-feature-action">{{ $t('hof.btn') }} <ArrowRight :size="16" aria-hidden="true" /></span>
+    <!-- ③ 能力展示：没有一个链接，导航由侧边栏 / 底部 Tab 栏承担 -->
+    <section class="home-showcase layout-wide" aria-labelledby="home-showcase-title">
+      <h2 id="home-showcase-title" class="home-showcase-title">{{ $t('home.showcaseTitle') }}</h2>
+      <article v-for="(item, index) in showcase" :key="item.id" class="home-shot" :class="{ 'is-flipped': index % 2 === 1 }">
+        <div class="home-shot-figure">
+          <img
+            :src="item.image" :width="item.w" :height="item.h"
+            :loading="index === 0 ? 'eager' : 'lazy'" :fetchpriority="index === 0 ? 'high' : 'auto'"
+            decoding="async" alt="" aria-hidden="true"
+          >
         </div>
-      </a>
-
-      <div class="home-feature-grid">
-        <a v-for="entry in topLevelEntries" :key="entry.id" class="home-feature-card" :href="entry.href">
-          <span>{{ $t(entry.labelKey) }}</span>
-          <ArrowRight :size="16" aria-hidden="true" />
-        </a>
-      </div>
+        <div class="home-shot-copy">
+          <h3>{{ $t(item.titleKey) }}</h3>
+          <p>{{ $t(item.descKey) }}</p>
+        </div>
+      </article>
     </section>
 
-    <!-- ④ 页脚条：项目历史 / 技术演进 / 联系我 由「更多」承载，首页不再抄一份 -->
-    <section class="home-footer-bar">
+    <!-- ④ 极简页脚 -->
+    <section class="home-footer-bar layout-wide">
       <RouterLink to="/sponsor">{{ $t('home.sponsorTitle') }} <ArrowRight :size="16" aria-hidden="true" /></RouterLink>
-      <a v-if="!isAndroidApp()" href="/download/android">{{ $t('android.nav') }} <ArrowRight :size="16" aria-hidden="true" /></a>
       <a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <ArrowRight :size="16" aria-hidden="true" /></a>
     </section>
   </main>
 </template>
 
 <style scoped>
-.homepage-landing {
-  display: grid;
-  gap: var(--space-8);
-  color: var(--color-text-primary);
-}
+.home-stage { display: grid; gap: var(--space-12); color: var(--color-text-primary); }
 
-/* ① Hero —— 装饰插槽（design-language §2）：Showcase 显示，Classic 置 none。
-   文案压在纯色表面上、图像只占右侧一栏，避免 WCAG 1.4.3 的「文字压图」对比度不可控。
-   图片 URL 由 JS import 经 `--home-hero-image` 内联传入（与全站资产引用方式一致）；
-   插槽开关是另一个变量 `--home-hero-decor`，因此 Profile 与断点仍能在 CSS 里把它关掉。 */
+/* ① Hero —— 全出血：它是页面唯一的「整屏」元素，所以自己负责左右留白，
+   不套 layout-wide 的最大宽度（内层才套）。 */
 .home-hero {
   --home-hero-decor: var(--home-hero-image);
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   align-items: center;
-  gap: var(--space-8);
+  min-height: 460px;
   overflow: hidden;
-  padding: var(--space-10) var(--space-8);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
+  padding-block: var(--space-12);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
-/* 插槽关闭时必须同时收回它占的那一栏，否则 hero 右侧留一大块死白。 */
-html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; grid-template-columns: minmax(0, 1fr); }
+.home-hero-inner { position: relative; width: 100%; }
+
+/* 装饰插槽（design-language §2）：Showcase 显示，Classic 关闭。
+   图只铺右半边并由 scrim 压到纯色，文字永远落在稳定底色上（WCAG 1.4.3）。 */
+.home-hero-decor {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, var(--color-canvas) 0%, var(--color-canvas) 38%, transparent 78%),
+    linear-gradient(to top, var(--color-canvas) 0%, transparent 42%),
+    var(--home-hero-decor);
+  background-position: center, center, right center;
+  background-size: cover, cover, cover;
+}
+html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; }
 html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
-.home-hero-copy { min-width: 0; }
-.home-hero h1 { margin: 0; color: var(--color-text-primary); font: var(--type-display); }
-.home-hero-subtitle { max-width: var(--reading-measure); margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
-.home-hero-actions { display: flex; gap: var(--space-3); flex-wrap: wrap; margin-top: var(--space-6); }
-.home-cta-primary, .home-cta-guide { white-space: normal; text-align: center; }
-.home-cta-guide { border-color: var(--color-accent); color: var(--color-accent-text); }
-.home-hero-hint { margin: var(--space-2) 0 0; color: var(--color-text-secondary); font: var(--type-caption); }
+.home-hero h1 { max-width: 16ch; margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
+.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); }
+.home-hero-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; margin-top: var(--space-8); }
+.home-cta { padding-inline: var(--space-8); }
+.home-cta-ghost {
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  font: var(--type-body);
+  cursor: pointer;
+}
+.home-cta-ghost:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
 /* ② 数据带 */
-.home-stats { display: flex; gap: var(--space-8); flex-wrap: wrap; margin: var(--space-8) 0 0; padding-top: var(--space-5); border-top: 1px solid var(--color-border-subtle); }
+.home-stats { display: flex; gap: var(--space-10); flex-wrap: wrap; margin: var(--space-10) 0 0; }
 .home-stat { min-width: 0; }
-.home-stat dt { color: var(--color-text-secondary); font: var(--type-caption); }
-.home-stat dd { margin: var(--space-2) 0 0; }
+.home-stat dt { color: var(--color-text-tertiary); font: var(--type-caption); text-transform: uppercase; letter-spacing: 0.08em; }
+.home-stat dd { margin: var(--space-1) 0 0; }
 .home-stat strong { display: block; color: var(--color-accent-text); font: var(--type-display); font-variant-numeric: tabular-nums; }
-.home-stat-meta { display: grid; gap: var(--space-1); margin-top: var(--space-2); color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
-.home-stat-meta b { color: var(--color-text-primary); }
-.home-stat-meta small { font: inherit; }
+.home-stat-meta { display: block; margin-top: var(--space-1); color: var(--color-text-secondary); font: var(--type-caption); overflow-wrap: anywhere; }
 
-.home-hero-decor {
-  align-self: stretch;
-  min-height: 260px;
-  border-radius: var(--radius-md);
-  background-image: var(--home-hero-decor);
-  background-position: center;
-  background-size: cover;
-}
+/* ③ 能力展示 */
+.home-showcase { display: grid; gap: var(--space-12); }
+.home-showcase-title { margin: 0; color: var(--color-text-tertiary); font: var(--type-caption); text-transform: uppercase; letter-spacing: 0.14em; }
 
-/* ③ 全部功能 */
-.home-section { display: grid; gap: var(--space-5); }
-.home-section-title { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
-
-.home-feature-lead,
-.home-feature-card {
+.home-shot { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); align-items: center; gap: var(--space-10); }
+.home-shot.is-flipped .home-shot-figure { order: 2; }
+.home-shot-figure {
   min-width: 0;
+  overflow: hidden;
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  background: var(--color-surface-1);
-  color: var(--color-text-primary);
-  text-decoration: none;
-  transition: border-color var(--duration-fast) var(--ease-standard);
+  background: var(--color-surface-2);
+  box-shadow: var(--elevation-3);
 }
-.home-feature-lead:focus-visible,
-.home-feature-card:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
-.home-feature-lead {
-  display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
-  /* center（不是 stretch）：让插图守住 3/1 比例，否则行高由文案撑开、图被拉成一块方砖。 */
-  align-items: center;
-  overflow: hidden;
-}
-.home-feature-visual { aspect-ratio: 3 / 1; overflow: hidden; background: var(--color-surface-2); }
-.home-feature-visual img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
-.home-feature-copy { display: flex; flex-direction: column; align-items: start; justify-content: center; min-width: 0; padding: var(--space-6); }
-.home-feature-copy h3 { margin: 0 0 var(--space-2); color: var(--color-text-primary); font: var(--type-h3); }
-.home-feature-copy p { margin: 0 0 var(--space-4); color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
-.home-feature-action { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-accent-text); font: var(--type-caption); font-weight: 600; }
-.home-feature-action svg { flex: none; }
-
-.home-feature-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
-.home-feature-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--control-h-md);
-  padding: var(--space-4);
-  font: var(--type-body);
-  font-weight: 600;
-}
-.home-feature-card span { min-width: 0; overflow-wrap: anywhere; }
-.home-feature-card svg { flex: none; margin-inline-start: auto; color: var(--color-accent-text); }
+.home-shot-figure img { display: block; width: 100%; height: auto; }
+.home-shot-copy { min-width: 0; }
+.home-shot-copy h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
+.home-shot-copy p { max-width: 42ch; margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
 
 /* ④ 页脚条 */
-.home-footer-bar { display: flex; gap: var(--space-6); flex-wrap: wrap; padding-top: var(--space-5); border-top: 1px solid var(--color-border-subtle); }
-.home-footer-bar a { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-md); color: var(--color-text-secondary); font: var(--type-body); text-decoration: none; }
+.home-footer-bar { display: flex; gap: var(--space-6); flex-wrap: wrap; padding-block: var(--space-6) var(--space-10); border-top: 1px solid var(--color-border-subtle); }
+.home-footer-bar a { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-md); color: var(--color-accent-text); font: var(--type-body); font-weight: 600; text-decoration: none; }
 .home-footer-bar a svg { flex: none; }
 .home-footer-bar a:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
-
 @media (hover: hover) {
-  .home-feature-lead:hover, .home-feature-card:hover { border-color: var(--color-accent); text-decoration: none; }
-  .home-footer-bar a:hover { color: var(--color-accent-text); text-decoration: none; }
+  .home-footer-bar a:hover { text-decoration: underline; }
 }
+
+/* 进场动效：只做一次淡入上浮，逐段延迟。 */
+.home-hero-inner, .home-shot, .home-footer-bar {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 620ms var(--ease-standard), transform 620ms var(--ease-standard);
+}
+.is-revealed .home-hero-inner, .is-revealed .home-shot, .is-revealed .home-footer-bar { opacity: 1; transform: none; }
+.is-revealed .home-shot:nth-of-type(2) { transition-delay: 80ms; }
+.is-revealed .home-shot:nth-of-type(3) { transition-delay: 160ms; }
+.is-revealed .home-shot:nth-of-type(4) { transition-delay: 240ms; }
+.is-revealed .home-shot:nth-of-type(5) { transition-delay: 320ms; }
+@media (prefers-reduced-motion: reduce) {
+  /* 动效整体短路：不做位移、不做延迟，内容直接就位。 */
+  .home-hero-inner, .home-shot, .home-footer-bar { opacity: 1; transform: none; transition: none; }
+  .is-revealed .home-shot { transition-delay: 0ms; }
+}
+
 @media (768px <= width < 1200px) {
-  .home-hero { grid-template-columns: minmax(0, 1fr); padding: var(--space-8) var(--space-6); }
-  .home-hero-decor { min-height: 180px; }
-  .home-feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-hero { min-height: 380px; }
+  .home-shot { gap: var(--space-8); }
 }
 @media (width < 768px) {
-  .homepage-landing { gap: var(--space-6); }
-  /* 手机：装饰插槽关闭，首屏留给价值主张、主 CTA 与数据带 */
-  .home-hero { --home-hero-decor: none; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); padding: var(--space-6) var(--space-5); }
+  .home-stage { gap: var(--space-10); }
+  /* 手机：装饰插槽关闭，首屏留给标题、主 CTA 与数据带 */
+  .home-hero { --home-hero-decor: none; min-height: 0; padding-block: var(--space-10); }
   .home-hero-decor { display: none; }
-  .home-hero-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .home-stats { gap: var(--space-5); margin-top: var(--space-6); }
-  .home-feature-lead { grid-template-columns: minmax(0, 1fr); }
-  .home-feature-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-hero-actions { gap: var(--space-3); }
+  .home-cta { width: 100%; }
+  .home-stats { gap: var(--space-6); margin-top: var(--space-8); }
+  .home-showcase { gap: var(--space-10); }
+  .home-shot { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  .home-shot.is-flipped .home-shot-figure { order: 0; }
 }
 </style>

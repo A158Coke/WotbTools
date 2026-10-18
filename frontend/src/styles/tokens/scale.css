@@ -52,6 +52,11 @@
     /* 字号阶梯（§4），最小 12px。
      * 原子 token：font-size / line-height 只能引用 --font-size-* / --line-height-*；
      * 组合 token：font 简写只能引用 --type-*。 */
+    /* 首页英雄区专用的第 8 级。只能在 design-language §2 的装饰插槽里用：工作区没有任何
+       表面需要这个字号，而 32px 的 display 撑不起一个整屏 hero。流体取值，在手机上回落到
+       40px，在宽屏停在 72px。 */
+    --font-size-display-hero: clamp(2.5rem, 6vw, 4.5rem);
+    --line-height-display-hero: 1.05;
     --font-size-display: 32px;
     --font-size-h1: 24px;
     --font-size-h2: 20px;
@@ -66,6 +71,7 @@
     --line-height-caption: 16px;
     /* 长文阅读（项目历史 / 技术演进等文档页）：比界面正文更松的行高 */
     --line-height-prose: 1.7;
+    --type-display-hero: 700 var(--font-size-display-hero) / var(--line-height-display-hero) var(--font-family-sans);
     --type-display: 700 var(--font-size-display) / var(--line-height-display) var(--font-family-sans);
     --type-h1: 700 var(--font-size-h1) / var(--line-height-h1) var(--font-family-sans);
     --type-h2: 600 var(--font-size-h2) / var(--line-height-h2) var(--font-family-sans);

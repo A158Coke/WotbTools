@@ -54,13 +54,15 @@ describe('Classic Profile CSS contract', () => {
   })
 
   it('首页拥有自己的装饰插槽，Classic 不再覆盖业务卡片', () => {
-    expect(stripComments(classic)).not.toMatch(/\.(home-hero|home-core-card|home-core-visual|home-community-card|home-stat)\b/)
-    expect(home).toContain('var(--color-surface-1)')
+    expect(stripComments(classic)).not.toMatch(/\.(home-hero|home-shot|home-stage|home-showcase|home-stat)\b/)
+    expect(home).toContain('var(--color-canvas)')
     expect(home).toContain('var(--color-text-primary)')
     // 装饰插槽由首页自己按 Profile 派生（design-language §2：Classic 关闭），不靠 classic-profile.css 覆盖。
     expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero \{[^}]*--home-hero-decor: none;/)
-    // 关插槽必须同时收回它占的栅格列，否则 Classic 下 hero 右侧是一块死白（2026-10-18 浏览器实测）。
-    expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero \{[^}]*grid-template-columns: minmax\(0, 1fr\);/)
+    // 插槽置 none 之后那个承载背景的元素也必须隐藏，否则 Classic 下留一块空占区。
+    expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero-decor \{[^}]*display: none;/)
+    // 进场动效必须在 prefers-reduced-motion 下整体短路（design-language 可访问性底线）。
+    expect(home).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
   })
 
   it('在 main.js 中必须最后导入(§43D / §33 顺序契约)', () => {
