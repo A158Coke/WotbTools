@@ -1039,7 +1039,7 @@
     "showcasePlaybackTitle": "The whole battle, rebuilt in 3D",
     "showcasePlaybackDesc": "Terrain, vehicles, HP, base captures and movement paths — every second reconstructed from one replay file.",
     "showcaseArmorTitle": "Every armour plate, layer by layer",
-    "showcaseArmorDesc": "Real hull models and collision structure: penetration, ricochet and hit probability per shell type.",
+    "showcaseArmorDesc": "Real hull models and collision structure: penetration, ricochet and the chance to penetrate for each shell type.",
     "showcaseRatingTitle": "Not just stats — a rating",
     "showcaseRatingDesc": "League Rating scores a single battle from 0 to 1000, with the MVP and best-in-team called out.",
     "showcaseTankopediaTitle": "Every tank, one search away",

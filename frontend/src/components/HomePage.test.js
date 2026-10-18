@@ -315,6 +315,20 @@ describe('HomePage reduced-motion contract', () => {
   })
 })
 
+describe('HomePage accent gradient capability fallback', () => {
+  it('only makes the accent line transparent when background-clip and color-mix are both supported', async () => {
+    const { default: source } = await import('./HomePage.vue?raw')
+    const style = source.slice(source.indexOf('<style scoped>') + '<style scoped>'.length, source.indexOf('</style>'))
+    const transparentAt = style.indexOf('color: transparent;')
+    expect(transparentAt).toBeGreaterThan(-1)
+    const supportsAt = style.lastIndexOf('@supports', transparentAt)
+    expect(supportsAt).toBeGreaterThan(-1)
+    const prelude = style.slice(supportsAt, style.indexOf('{', supportsAt))
+    expect(prelude).toContain('background-clip: text')
+    expect(prelude).toContain('color-mix')
+  })
+})
+
 describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
     api.hofList.mockReset()

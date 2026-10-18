@@ -213,7 +213,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
    `color: transparent` 只在 @supports 命中时才写——不加这层保护，一旦 background-clip
    不被支持，强调行就是**透明的**，整句话直接消失。不命中时回落到上面的纯强调色。
    动画只扫一次（fill-mode none + 零延迟）：没跑起来时就是渐变静止态，不会空白。 */
-@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+@supports (((background-clip: text) or (-webkit-background-clip: text)) and (color: color-mix(in oklab, red, blue))) {
   .home-hero-line.is-accent {
     background-image: linear-gradient(
       100deg,
@@ -388,7 +388,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-shot:nth-of-type(5) { animation-duration: 1180ms; }
 }
 /* 渐变强调行的扫光叠在 rise 上；放在基础动画之后，避免 nth-child 的 delay 污染 sheen。 */
-@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+@supports (((background-clip: text) or (-webkit-background-clip: text)) and (color: color-mix(in oklab, red, blue))) {
   @media (prefers-reduced-motion: no-preference) {
     .home-hero-line.is-accent { animation: home-rise 700ms var(--ease-standard) backwards, home-sheen 1800ms var(--ease-standard); }
   }
