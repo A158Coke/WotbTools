@@ -15,7 +15,9 @@ import {
   makeDecalMaterial, makeLightmappedMaterial, makeSkyMaterial, makeSpeedtreeStaticMaterial,
   makeWaterMaterial, patchSceneryDetail, SCENERY_LAMBERT_EXPOSURE,
 } from './sceneryMaterials.js';
-import { materialIsWater, isWaterNode } from './sceneryAssemblyRules.js';
+import {
+  materialIsWater, isWaterNode, isSkyShell, sceneHasSkyFlags,
+} from './sceneryAssemblyRules.js';
 
 /** extras 贴图预解析（material.extras 里存 glTF **texture 下标**；GLTFLoader 的 texture
  *  依赖是异步的、材质转换遍历是同步的 ⇒ 先解析成 Map，遍历时同步取用）。
@@ -125,11 +127,19 @@ export function makeUnderWater(waterSurfaces) {
  */
 export function assembleSceneryMaterials(gltf, {
   strictSurfaces = false, masks, groundLayers = null, waterCoast = null, debug = false, onMesh = null,
+  skyFlagsAvailable = null,
 } = {}) {
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } = masks;
   const waterSurfaces = collectWaterSurfaces(gltf.scene);
   const underWater = makeUnderWater(waterSurfaces);
   let skyMeshes = 0;
+  // 天空穹判据：优先材质 extras.sky（导出器按客户端 Skyobject 模板写入）；只有整份
+  // GLB 都没有该标记（旧包）才退回节点名 /sky/i。名字不是语义——新包一旦出现任何
+  // sky 标记，就禁止名字 fallback，避免把名字含 sky 的非天穹对象误判。
+  // 新包判据必须由调用方在**任何剔除之前**采样（烘焙会先移除天穹再装配）；缺省从当前
+  // 场景现算。判定本身只走共享 SSOT `isSkyShell`，本文件不得再复制一套开关。
+  const skyFlagAvailable = skyFlagsAvailable ?? sceneHasSkyFlags(gltf.scene);
+  const isSkyNode = (o) => isSkyShell(o.name, o.material, { skyFlagsAvailable: skyFlagAvailable });
   // 材质转换：与内核共享同一份实现。键组成必须与两侧历史口径一致——同 key 同材质、
   // 跨端观感一致（守卫锁定）。convMat 键指纹即本模块为准一来源（2026-10-14 抽层）。
   const convMat = (m, isCard) => cachedSceneryMat(
@@ -206,15 +216,17 @@ export function assembleSceneryMaterials(gltf, {
     // 网格清单钩子（运行时的走廊掩码取样）：水面/水下片按客户端水材质标记排除
     const waterMarked = materialIsWater(o.material);
     if (onMesh) onMesh(o, waterMarked);
-    // 天空穹（节点名 SkyFlattenSphere/Sky_sphere_*/sky_dome 等）：走 makeSkyMaterial
-    // 的"无限远"路径。⚠️ **名字不是语义**：`SkySeaSurface.sc2`（NewBay 的海面）名字
-    // 含 "sky"，但材质是客户端水材质（extras.water）——语义判据（材质标记）先于名字：
-    // 水材质命中 → 落到下面 assignMat 的水分支。
+    // 天空穹：走 makeSkyMaterial 的"无限远"路径。语义判据 = 材质 extras.sky
+    // （导出器按客户端 Skyobject 模板写入）；旧包无标记才退回节点名。⚠️ 水材质优先：
+    // `SkySeaSurface.sc2`（NewBay 的海面）名字含 sky，但材质是 extras.water。
     // ⚠️ frustumCulled 必须关：天穹顶点在网格局部空间里只是 ~10m 的小球，
     // 按真实包围球剔锥时镜头一转向天就整片消失——客户端由 w=0 的无限远投影天然免疫。
-    if (!waterMarked && /sky/i.test(o.name || '')) {
+    if (!waterMarked && isSkyNode(o)) {
       o.material = Array.isArray(o.material) ? o.material.map((m) => makeSkyMaterial(m))
                                              : makeSkyMaterial(o.material);
+      // 语义标记：合批过滤必须按它排除天穹（新包天穹名可能不含 sky；材质转换后
+      // extras 判据不可再取）。名字 fallback 已由 isSkyNode 统一处理。
+      o.userData.isSky = true;
       o.frustumCulled = false;
       skyMeshes++;
       if (debug && typeof window !== 'undefined') window.__skyMeshes = (window.__skyMeshes || 0) + 1;
@@ -262,7 +274,7 @@ export function assembleSceneryMaterials(gltf, {
       // ⚠️ 水面之下的静态件**不接光照图**（客户端那片水面不透明、折射通道不计漫反射；
       // 该类件在客户端图集里常落**未烘焙黑格** ⇒ 不接即对齐客户端可见结果。判据纯几何）。
       if (ud.lightmap !== undefined && !isWaterNode(o.name, m, { strictSurfaces })
-          && !/sky/i.test(o.name || '') && !underWater(o)) {
+          && !isSkyNode(o) && !underWater(o)) {
         const atlas = lmTexOf(m);
         if (atlas && o.geometry.attributes.uv1) {
           const et = envTexOf(m);

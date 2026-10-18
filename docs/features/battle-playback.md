@@ -606,14 +606,24 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   消费端镜像约定：游戏系→场景系是「x 取负」的镜像，故 yaw 与 roll 取负、pitch 不变；
   旧产物缺 `hull_roll` 时按 0 = 水平（不拿 pitch 顶替）。
 - 3D 场景内核 `frontend/src/scene/playbackScene.js` 是上游冻结 Agent 前端的**同源分叉**：上游已停止维护，
-  本仓按需移植其场景渲染实现（材质实例去重、叶卡/伪透明/水体管线、退化几何守卫、曝光修整等，
+  本仓按需移植其场景渲染实现（材质实例去重、叶卡/伪透明/水体管线、曝光修整等，
   见 `scene/sceneryMaterials.test.js` 的源码级接线守卫）。上游若有新的渲染修复，需要人工比对移植，
   不会自动同步。
 - **场景渲染向客户端对齐三则（2026-10-09；逐条依据见上游 `WoT-Blitz-Agent/docs/map-render-align-audit.md`）**：
   ① **天穹恢复**：此前整节点 `visible=false`（背景纯色），现按客户端 `skyobject-materials` 语义走
   `makeSkyMaterial`——顶点 `w=0` 丢弃平移（网格坐标是**方向**：多数图天穹网格半径仅 ~10m，当普通几何渲染
   只是地图中心一个小球）、深度钉远平面、unlit、不参与雾；`frustumCulled=false` 必须关，否则镜头一转天就整片消失。
+  **判据 = 材质 `extras.sky`（导出器按客户端 `Skyobject` 模板写入）**；旧包没有任何 sky 标记时才退回
+  节点名 `/sky/i`，避免名字含 sky 的非天穹对象被误判。俯视烘焙 `bakeDropNode` 用同一标记（SSOT）。
   云的 flowmap 动画待上游导出器补 flowmap 槽与 `flowAnimSpeed/Offset` 后接。
+  ④ **变体裁剪 fail-closed（2026-10-18）**：GLB 里存在 `mdVariant` 节点、但当前 `map_id`
+  没有可用激活映射（映射缺失或 id 不在映射）时，隐藏**全部**带标记节点并告警；旧行为 fail-open
+  全量渲染会让 Dead Rail/Middleburg 等 9 图出现游戏里不存在的幻影布景。导出器在组数/注册表数
+  不一致时写 `scene.extras.variantMappingIncomplete`，消费端仍以“有标记节点”事实兜底。
+  ⑤ **BLEND 语义标记（2026-10-18）**：导出器给所有 `alphaMode=BLEND` 材质写 `extras.alphaBlend`；
+  消费端的“opacity≈1 伪透明→不透明+裁切”启发式只作用于无标记的旧包材质，新包按真混合渲染。
+  ⑥ **资产失败状态（2026-10-18）**：地面/地形/场景/光照等 404 或解析失败写入
+  `store.assetIssues` 并置 `store.assetDegraded`，不再只打一行 console 就把该段计为“加载完成”。
   ② **场景 GLB 贴图各向异性**：按画质档 `Q.anisotropy` 逐纹理设置一次（此前场景侧漏设=默认 1，掠射角
   发糊闪烁；地面早就设了）。③ **法线用几何 authored NORMAL**：删掉 `flatShading=true`（它让渲染器改用屏幕
   导数现算面法线，把导出器 v0.4.1 起随导的 authored 法线整条作废）。俯视烘焙页与内核共用同一材质约定，
@@ -1000,9 +1010,12 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   **0–0.3 m**。**修复**：①上游（WoT-Blitz-Agent）`parse_heightmap` 改 corner 口径镜像
   `out[c] = src[min(size−c, size−1)]`，`terrain.json` / `X-Terrain-Meta` 写 `terrainLayout: 2`，提取缓存
   改名防旧缓存被当新数据打包；②本仓读取边界 `terrainMesh.js::decodeTerrainField`（唯一解码口径，网格 /
-  采样 / 拾取 / 岸线共用这一份）：`terrainLayout: 2` 原样用；**缺省（旧包）平移一列**
-  `field[c] = 旧[max(c−1, 0)]`；未知布局 fail-closed 返回 null（回退 2D）⇒ 资产包重导前后都正确、不会
-  双重补正。两种布局都丢掉场景 +x 边界那一列顶点（n 列表示不下 n+1 个顶点；在包围盒边缘、可玩区之外）。
+  采样 / 拾取 / 岸线共用这一份）：**只有 `terrainLayout`/`size`/`zmin`/`zmax`/`span` 齐全才解码**；
+  `terrainLayout: 2` 原样用，`terrainLayout: 1` 仅作为显式旧布局平移一列
+  `field[c] = 旧[max(c−1, 0)]`；缺字段/未知布局 fail-closed 返回 null（回退 2D）——不再按缺省
+  `layout=1`/`zmax=100` 猜（旧行为会把 layout 2 的 bin 平移一列、高度按 100 m 缩放，且
+  `heightMeta={}` 会让 `sampleHeight` 返回 NaN）。`worldBounds` 必须是居中正方形（当前消费口径），
+  非居中/非方形同样回退 2D。两种布局都丢掉场景 +x 边界那一列顶点（n 列表示不下 n+1 个顶点；在包围盒边缘、可玩区之外）。
   ⚠️ **配对约束（review P2，2026-10-14）**：上面"重导前后都正确"只在 **json 与 bin 来自同一版本**时成立
   ——`terrain.json`（no-cache）与 `terrain.u16.bin`（max-age=3600）是两个独立请求，发布切换期可能错配：
   旧 JSON+新 bin = 对已修正数据再平移一列（plant 新 bin+旧 JSON 实测 250019/262144 高度不同、最大差
@@ -1012,8 +1025,9 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （`terrain.u16.bin?sha256=<hex>`；浏览器 HTTP 缓存按完整 URL 区分，对象存储忽略该参数，Android 原生资产
   代理按 path 取并逐次 ETag 复验）⇒ 不会复用上一次发布缓存的旧 bin；解码前 `terrainBinMatchesMeta` 用
   WebCrypto 核对字节 sha256，不符（json/bin 不是同一次发布，只会出现在发布进行中）⇒ fail-closed 回退 2D，
-  不画错位一列的地形。无 `terrainBinSha256` 的旧包 / 无 WebCrypto 的非安全上下文：无从配对，沿用原行为。
-  守卫：`terrainMesh.test.js`（缓存键 / 字节核对 / 旧包与无 WebCrypto 兜底）+ `playbackScene.test.js`（场景层
+  不画错位一列的地形。无 `terrainBinSha256` 的旧包无从配对、沿用原行为；**有 sha 但无 WebCrypto
+  （非安全上下文/旧 WebView）⇒ fail-closed**，不能假装配对成功。
+  守卫：`terrainMesh.test.js`（缓存键 / 字节核对 / 旧包与无 WebCrypto 分支）+ `playbackScene.test.js`（场景层
   真实加载：sha 键取回才建地形、不同批不建地形）。此前的过渡约束（前端切换晚于 COS 发布 ≥ 1 h bin 缓存窗口；
   #615 部署满足）随之解除。
   ③顺带修水面岸线高度纹理的半纹素偏移：`DataTexture` 纹素中心在 `(j+0.5)/n`、顶点在 `j/n` ⇒ 采样
@@ -1299,7 +1313,13 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 2D 俯视**就是 3D 场景的俯视版本**（2026-10-16 定案）：车辆位置与朝向不再由 2D 自采原始观测，
 而是与 3D 场景共用**同一个位姿采样器** `replay-local/pose/vehiclePose.ts`——
 同一套通道选择（`pose_kf` 关键帧折线优先，缺省回退 10 Hz 滤波网格线性插值）、同一插值、同一
-解卷绕域，因此两个页签逐帧同一画面（含 AoI 重入时客户端滤波器的收敛行为）。
+解卷绕域，因此两个页签逐帧同一画面。
+
+AoI 段首的 `pose_kf` = 上游 2026-10-18 起生成的**显示重建**：客户端滤波器原始复位的
+latency 从 0.02s 缓慢收敛到 0.2s，段首数秒是 10Hz 保持-跳变阶梯；上游折线改按 10Hz 标称
+间隔铺满历史、稳态 0.2s 延迟起步，段首只保留 0.2s 静止，其后匀速插值。判定锚点（命中 /
+炮口位置）不受影响，仍是客户端 0.02s 复位语义。旧 pin 的产物仍带原始阶梯，升级 pin 后
+两者观感不同是预期行为。
 
 **分层契约**（决定改动落点）：
 
@@ -1314,6 +1334,29 @@ python common/python/extract_vehicle_sizes.py --check   # CI：过期即失败
 炮塔：facet 的 `turret_yaw` 为绝对角且与 `hull_yaw` 严格同长（上游"本车无 prop2 ⇒ 相对 0"回退），
 2D 换算 `wrapPi(绝对 − 车体)` 后渲染——**不再出现"prop2 首样本前炮塔整层消失"**
 （旧实现把 `turretRelativeYawDeg: null` 当"无炮塔"，实测开局最长 90 s 缺炮塔）。
+炮塔/炮管/侧倾只有 10Hz 网格列，采样器现在接收**协议精确的 `visibility[]` 段**
+（`buildPoseFacet` 逐车透出；缺省回退 `coverage`）：只在段内网格点之间插值
+（`sampleChannelWithin`），车辆刚进视野时不再从隐藏段的旧角缓慢滑到新角（旧行为在
+0.86s 可见起点会把 0.8s 的 0° 与 0.9s 的 90° 插成 54°）。段内第一个网格点之前保持该点值。
+短隐藏段（<2s）在 `coverage` 中不断开，因此必须用 `visibility[]` 而不是 `coverage`。
+2D 与 3D 共用 `visibilitySpansByEid` 投影（3D 从 `DATA.visibility` 建 eid 映射），末段
+`t_out` 缺省投影为 `+Infinity` 并作为合法段终点；两视图不得各自回退到 `coverage`。
+3D 活车的**显隐**也改读精确 `visibility`（`collision`/炮塔/尾迹同源），`coverage` 只表示
+"有采样可信"；短隐藏段内活车不渲染，死亡残骸仍按最后已知位姿保留。采样器若被要求在一
+隐藏段内取值（2D/标签/诊断），网格列夹到**前一段末**（最后已知），不得无约束地滑向下一段；
+短于一个网格间隔的可见窗口取**窗口结束前**的最近网格点，不能取窗口后的下一个 tick（否则会把
+后一段的炮塔角泄漏进短可见段）。透明材质（含 `extras.alphaBlend`）不进入实例化合批——three
+只按 object 排序，批内实例顺序固定会破坏软混合；保留独立节点由透明队列排序。其中带
+逐节点光照图变换（`node.userData.lm`）的透明网格用**单实例 InstancedMesh** 承载，既保持
+一个透明排序单位，又复用 `aLm` 的 atlas UV 变换（普通 Mesh 非实例分支会按原始 `uv1` 采错区域）。
+分层地表元数据形状错误（如缺 `tiling`）时记 `groundLayers/invalid` 降级、释放坏层并用烘焙
+底图重试，不能因异常跳过后续场景 GLB。烘焙侧同样排除透明材质，并在变体映射 fail-closed 或
+`variantMappingIncomplete` 时拒绝出图。
+核心资产缺失/失败时 3D 面板显示**非阻塞**降级提示（`scene3d-asset-degraded`），不再把
+`hasData=true` 当作健康加载完成；变体映射缺失/`variantMappingIncomplete` 标记导致的 fail-closed 裁剪同样计入降级。
+`extras.alphaBlend` 在 SpeedTree / 光照图 / 贴花等专用材质路由上也保持软混合（alpha 乘
+`m.opacity`）；多材质网格只有**整组**命中 `extras.sky` 才走无限远天空，混合组按普通网格
+fail-closed（不把普通 group 投到无限远，也不让烘焙整件剔除）。
 
 **失察即冻结**（2026-10-16 用户裁定）：车辆离开我方视野后，2D 图标**停在最后观测点**——采样时刻由
 `observedFreezeTimeAt`（`utils/battlePlaybackV2.ts`）给出（最后一个 OBSERVED 段的结束时刻），

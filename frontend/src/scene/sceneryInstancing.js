@@ -18,6 +18,13 @@ import * as THREE from 'three'
  *  matrix = 以 root 为父系的完整局部变换（含整条父链，.GLTFLoader 产出的叶子
  *  Mesh 单 primitive 单材质）。调用方负责先 root.updateMatrixWorld(true)（或等价地
  *  保证局部矩阵新鲜），本函数只读不写。 */
+/** 透明材质不能进 InstancedMesh：three 只按 object 排序，批内实例顺序固定，
+ *  重叠软混合物（alphaBlend 树/效果片）会随镜头出现错误混合。返回 true = 保留独立节点。 */
+export function hasTransparentMaterial(material) {
+  const ms = Array.isArray(material) ? material : [material]
+  return ms.some((m) => !!(m && m.transparent))
+}
+
 export function collectInstanceEntries(root) {
   const out = []
   const stack = [{ node: root, parent: new THREE.Matrix4() }]
@@ -112,6 +119,24 @@ export function buildInstancedMesh(batch) {
   mesh.computeBoundingSphere()
   mesh.matrixAutoUpdate = false   // 批自身变换恒为 root 本地单位阵，冻结由场景加载段统一处理
   return mesh
+}
+
+/**
+ * 不可合批（透明排序/单独节点）但带逐节点光照图变换的网格：用**单实例 InstancedMesh**
+ * 承载。这样既保留"一个 object 一个透明排序单位"，又复用 buildInstancedMesh 的 aLm
+ * 逐实例 UV 变换（否则非实例路径按原始 uv1 采样，会读错 atlas 区域）。
+ * @returns {{entry:object, mesh:THREE.InstancedMesh}[]}
+ */
+export function buildStandaloneLightmappedMeshes(entries, target) {
+  const out = []
+  for (const e of entries) {
+    if (!e || !e.lm || !e.geometry || !e.material) continue
+    const mesh = buildInstancedMesh({ geometry: e.geometry, material: e.material, items: [e] })
+    target.add(mesh)
+    e.node.removeFromParent()
+    out.push({ entry: e, mesh })
+  }
+  return out
 }
 
 /** 隐藏实例 = 远处 + 微缩：不用精确零矩阵（奇异矩阵进 raycast 的求逆会产生 NaN 路径），
