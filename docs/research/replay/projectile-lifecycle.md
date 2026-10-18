@@ -1,6 +1,8 @@
 # Projectile / tracer lifecycle — Blitz 11.19 China
 
 > Corpus: canonical 34 unique arenas, with loadout cross-checks from the same 11.19 population. Numeric Avatar method IDs are entity-class/version scoped.
+>
+> **2026-10-18 correction:** Type23 is recorder ARCADE/SNIPER camera-control state, not projectile/shot lifecycle. Recorder-shot ownership must come from method29 shooter identity or another independently closed weapon surface.
 
 ## Current lifecycle graph
 
@@ -247,20 +249,29 @@ Never use projectile geometry alone to manufacture HP damage or a killer.
 
 A projectile must be called `recorderShot` only when shooter identity is independently closed to the recorder vehicle.
 
-Unsafe shortcut:
+Unsafe shortcuts:
 
 ```text
 "method29 occurred at the same clock as recorder UI feedback"
 => recorder fired
 ```
 
-This is false in team combat because method29 contains many combatants' projectiles.
+or:
+
+```text
+"Type23 changed state"
+=> recorder fired
+```
+
+Both are false. Method29 contains many combatants' projectiles, and Type23 is camera/control state.
 
 Safe sources include:
 
 - embedded method29 shooter identity joined to the recorder vehicle;
-- recorder-local Type23/Type28/method17 lifecycle where identity is already proven;
+- method17 ammunition inventory/state joined to an already recorder-owned launch;
 - other independently version-gated recorder weapon telemetry.
+
+Type23 must not be used as a shot-ownership or shot-lifecycle source. See `recorder-camera-state.md`.
 
 # Remaining work
 
