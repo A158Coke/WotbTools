@@ -28,6 +28,11 @@ export const BROADCAST_CATEGORIES: BroadcastCategory['type'][] = ['POINTS', 'QUA
 const publicBase = '/api/tournament-broadcasts/v2'
 const adminBase = '/api/admin/tournament-broadcasts/v2'
 const coverBase = '/api/tournament-broadcasts/covers'
+// Released v2 servers do not supply a zone. Only this legacy read adapter uses
+// the released defaults; v3's backend-provided zone remains authoritative.
+const legacyServerZones: Record<BroadcastServer, string> = {
+  CN: 'Asia/Shanghai', ASIA: 'Asia/Shanghai', NA: 'America/Los_Angeles', EU: 'Europe/Berlin', LESTA: 'Europe/Moscow',
+}
 
 export function validateBroadcast<K extends keyof Schemas>(schema: K, value: unknown): Schemas[K] {
   const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
@@ -76,7 +81,20 @@ function timedCategory(path: string, admin = false, options: RequestInit = {}): 
 
 export const listBroadcasts = (server?: BroadcastServer, signal?: AbortSignal) => json(server ? `?server=${server}` : '', 'BroadcastIndex', false, { signal })
 export const getBroadcastSeason = (id: number, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', false, { signal })
-export const getBroadcastCategory = (id: number, signal?: AbortSignal) => timedCategory(`/categories/${id}`, false, { signal })
+export async function getBroadcastCategory(id: number, signal?: AbortSignal): Promise<BroadcastCategoryView> {
+  const path = `/categories/${id}`
+  try {
+    return await timedCategory(path, false, { signal })
+  } catch (error) {
+    // Older SecurityConfig denies unknown API paths (anonymous requests get
+    // 401); other deployments return 403/404/405. Retry only this public GET,
+    // through v2's existing validation. Never retry a write or a malformed v3.
+    if (!(error instanceof ApiError) || ![401, 403, 404, 405].includes(error.status ?? 0)) throw error
+    const value = await json(path, 'BroadcastCategoryView', false, { signal })
+    return { ...value, defaultTimeZone: legacyServerZones[value.season.server],
+      nodes: value.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: null })) })) }
+  }
+}
 export const createBroadcastSeason = (value: BroadcastSeasonCreate, signal?: AbortSignal) => json('/seasons', 'BroadcastSeasonView', true, body('POST', value, signal))
 export const updateBroadcastSeason = (id: number, value: BroadcastSeasonUpdate, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', true, body('PUT', value, signal))
 export const createBroadcastCategory = (id: number, value: BroadcastCategoryCreate, signal?: AbortSignal) => json(`/seasons/${id}/categories`, 'BroadcastSeasonView', true, body('POST', value, signal))
