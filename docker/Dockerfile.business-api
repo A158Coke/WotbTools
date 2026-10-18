@@ -29,9 +29,16 @@ COPY java/wotb-web/src java/wotb-web/src
 WORKDIR /build/java
 RUN mvn -s settings-docker.xml -pl wotb-core,wotb-web -am -DskipTests clean package -q
 
+RUN java -Djarmode=tools -jar wotb-web/target/wotb-web.jar extract --layers --destination /extracted
+
 FROM eclipse-temurin:25-jre
 ARG BUILD_COMMIT
 ENV BUILD_COMMIT=${BUILD_COMMIT}
-COPY --from=build /build/java/wotb-web/target/wotb-web.jar /app/app.jar
+WORKDIR /app
+# tools extracts a thin JAR referencing external dependencies.
+COPY --from=build /extracted/dependencies/ ./
+COPY --from=build /extracted/spring-boot-loader/ ./
+COPY --from=build /extracted/snapshot-dependencies/ ./
+COPY --from=build /extracted/application/ ./
 EXPOSE 8087
-CMD ["java", "-jar", "/app/app.jar"]
+CMD ["java", "-jar", "/app/wotb-web.jar"]
