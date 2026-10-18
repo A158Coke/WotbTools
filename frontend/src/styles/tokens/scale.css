@@ -26,6 +26,9 @@
     --broadcast-cover-max-h: 320px;
     --broadcast-cover-thumbnail-w: 160px;
     --broadcast-server-card-min-h: 200px;
+    /* 首页 Hero：桌面 / 平板的整屏高度。手机不强制高度，由组件置 0 把首屏留给标题与 CTA。 */
+    --home-hero-min-h-desktop: 460px;
+    --home-hero-min-h-tablet: 380px;
     --layout-content-max: 1420px;
     --layout-wide-max: 1720px;
     --layout-workspace-max: 1760px;

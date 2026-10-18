@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
 import { VIEW_COMPONENTS } from '../app/viewRegistry.js'
@@ -9,13 +9,20 @@ import { ONBOARDING_KEY } from '../shared/onboarding.js'
 const api = vi.hoisted(() => ({
   hofList: vi.fn(() => Promise.resolve({ items: [] }))
 }))
+const platform = vi.hoisted(() => ({ android: false }))
+const i18n = vi.hoisted(() => ({ locale: null }))
 
 vi.mock('../utils/api.js', () => api)
+vi.mock('../composables/usePlatformBridge.js', async importOriginal => ({
+  ...await importOriginal(),
+  isAndroidApp: () => platform.android,
+}))
 // locale 必须是真 ref：模板只自动解包真 ref，普通 { value } 会被 String() 成
 // "[object Object]" 并静默回落到 mapLabel 的 zh 兜底，地图名断言就验证不到 locale 的传递。
 vi.mock('vue-i18n', async () => {
   const { ref } = await import('vue')
-  return { useI18n: () => ({ t: key => key, locale: ref('en') }) }
+  i18n.locale = ref('en')
+  return { useI18n: () => ({ t: key => key, locale: i18n.locale }) }
 })
 
 const connectivityState = vi.hoisted(() => ({ state: null, settled: null }))
@@ -60,32 +67,43 @@ describe('HomePage is a showcase, not a navigation surface', () => {
   beforeEach(() => {
     api.hofList.mockReset()
     api.hofList.mockResolvedValue({ items: [], totalItems: 0 })
+    platform.android = false
+    i18n.locale.value = 'en'
   })
 
   /**
    * 首页不承担导航：侧边栏（AppSidebar）与底部 Tab 栏（AppTabBar）已经覆盖 PRIMARY_NAV 的
-   * 全部入口，首页只留一个转化动作加两个侧边栏没有的非功能入口。这条断言是那次回归的护栏。
+   * 全部入口。首页只保留一个功能入口（回放工作台）与少量非功能 / 转化入口；不写死「恰好 N 个链接」。
    */
-  it('exposes exactly four destinations: replay, Android, sponsor and feedback', () => {
+  it('treats the replay workspace as the only functional navigation entry', () => {
     const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
-    expect(hrefsOf(wrapper)).toEqual([
-      '/?view=replay',
-      '/download/android',
-      '/sponsor',
-      'https://github.com/A158Coke/WotbTools/issues/new',
-    ])
+    const replayLinks = hrefsOf(wrapper).filter(href => destinationOf(href) === VIEW_COMPONENTS.replay)
+    expect(replayLinks).toEqual(['/?view=replay'])
     wrapper.unmount()
   })
 
   // Android 下载与赞助是转化动作，不是功能导航（侧边栏里也没有它们），所以它们在首页
   // 有自己的版面，而不是页脚一行小字。
-  it('gives Android and sponsorship a section of their own, not a footer link', () => {
+  it('gives Android and sponsorship a section of their own on the web', () => {
     const wrapper = mountPage()
     const take = wrapper.get('.home-take')
     const ctas = take.findAll('.home-take-cta')
     expect(ctas.map(c => c.attributes('href'))).toEqual(['/download/android', '/sponsor'])
     expect(take.find('.home-take-phone img').exists()).toBe(true)
+    expect(wrapper.get('.home-take-grid').classes()).not.toContain('is-sponsor-only')
     expect(wrapper.get('.home-footer-bar').findAll('a')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('omits the entire Android promo inside the Android app but keeps sponsorship', () => {
+    platform.android = true
+    const wrapper = mountPage()
+    expect(wrapper.find('a[href="/download/android"]').exists()).toBe(false)
+    expect(wrapper.find('.home-take-phone').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('home.androidTitle')
+    expect(wrapper.findAll('.home-take-card')).toHaveLength(1)
+    expect(wrapper.get('.home-take-grid').classes()).toContain('is-sponsor-only')
+    expect(wrapper.get('.home-take-card.is-sponsor').find('a[href="/sponsor"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -181,11 +199,33 @@ describe('HomePage is a showcase, not a navigation surface', () => {
   })
 })
 
+/**
+ * 模板里 `$t(item.titleKey)` / `$t(item.descKey)` 是动态 key，literal `$t('...')` 扫描抓不到。
+ * 不在测试里解析 Vue SFC，显式列出 showcase 元数据的 key；showcase 增删项时这里同步。
+ */
+const SHOWCASE_KEYS = [
+  'home.showcasePlaybackTitle', 'home.showcasePlaybackDesc',
+  'home.showcaseArmorTitle', 'home.showcaseArmorDesc',
+  'home.showcaseRatingTitle', 'home.showcaseRatingDesc',
+  'home.showcaseTankopediaTitle', 'home.showcaseTankopediaDesc',
+]
+
+function missingKeys(keys, messages) {
+  const missing = []
+  for (const locale of ['zh', 'en', 'ru']) {
+    for (const key of keys) {
+      const value = key.split('.').reduce((node, part) => (node == null ? node : node[part]), messages[locale])
+      if (typeof value !== 'string' || !value) missing.push(`${locale}:${key}`)
+    }
+  }
+  return missing
+}
+
 // 这条是被实际 bug 逼出来的：模板引用了 `home.sponsorTag`，而那个 key 在更早一轮的
 // 孤儿清理里已经删掉，页面上直接显示出原始 key。$t 在单测里被 mock 成 identity，
 // 永远发现不了，所以改成拿模板源码对三份 locale 逐个核。
 describe('HomePage i18n keys all resolve', () => {
-  it('every key the template references exists in all three locales', async () => {
+  it('every literal key the template references exists in all three locales', async () => {
     // 用 Vite 的 `?raw` 取源码：它按**本文件**的位置解析，既不依赖 cwd
     // （从仓库根跑和从 frontend/ 跑不一样），在 happy-dom 下也没有 `import.meta.url`
     // 不是 file: URL 的问题。
@@ -194,21 +234,92 @@ describe('HomePage i18n keys all resolve', () => {
     ])
     const keys = [...new Set([...source.matchAll(/\$t\('([\w.]+)'\)/g)].map(m => m[1]))]
     expect(keys.length).toBeGreaterThan(10)
+    expect(missingKeys(keys, messages), 'literal keys must resolve in zh / en / ru').toEqual([])
+  })
 
-    const missing = []
-    for (const locale of ['zh', 'en', 'ru']) {
-      for (const key of keys) {
-        const value = key.split('.').reduce((node, part) => (node == null ? node : node[part]), messages[locale])
-        if (typeof value !== 'string' || !value) missing.push(`${locale}:${key}`)
+  it('every dynamic showcase key exists in all three locales', async () => {
+    const { messages } = await import('../locales/messages.js')
+    const missing = missingKeys(SHOWCASE_KEYS, messages)
+    expect(missing, `unresolved showcase keys: ${missing.join(', ')}`).toEqual([])
+  })
+})
+
+/**
+ * happy-dom 不会应用 media query，所以 reduce 行为用源码契约锁定：
+ * 1) 默认态没有 animation；所有 animation 只存在于 `prefers-reduced-motion: no-preference`。
+ * 2) hover 位移 / 图片缩放也只在 `hover: hover` + no-preference 下声明。
+ * 3) transition 只允许用 `--duration-*` token，不残留固定毫秒值（reduce 时 token 归零）。
+ */
+describe('HomePage reduced-motion contract', () => {
+  let style
+
+  beforeAll(async () => {
+    const { default: source } = await import('./HomePage.vue?raw')
+    const start = source.indexOf('<style scoped>') + '<style scoped>'.length
+    style = source.slice(start, source.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '')
+  })
+
+  function matchingBrace(css, open) {
+    let depth = 0
+    for (let i = open; i < css.length; i++) {
+      if (css[i] === '{') depth += 1
+      else if (css[i] === '}') {
+        depth -= 1
+        if (depth === 0) return i
       }
     }
-    expect(missing, `unresolved keys: ${missing.join(', ')}`).toEqual([])
+    throw new Error('unbalanced CSS block')
+  }
+
+  function motionMediaBlocks(css) {
+    const blocks = []
+    let index = 0
+    while ((index = css.indexOf('@media', index)) !== -1) {
+      const open = css.indexOf('{', index)
+      const prelude = css.slice(index + '@media'.length, open)
+      if (prelude.includes('prefers-reduced-motion: no-preference')) {
+        const close = matchingBrace(css, open)
+        blocks.push({ start: index, end: close + 1, body: css.slice(open + 1, close) })
+      }
+      index = open + 1
+    }
+    return blocks
+  }
+
+  function withoutMotionBlocks(css) {
+    const blocks = motionMediaBlocks(css).sort((a, b) => b.start - a.start)
+    let rest = css
+    for (const block of blocks) rest = rest.slice(0, block.start) + rest.slice(block.end)
+    return rest
+  }
+
+  it('only declares animation inside prefers-reduced-motion: no-preference', () => {
+    expect(style).not.toContain('prefers-reduced-motion: reduce')
+    const motion = motionMediaBlocks(style)
+    expect(motion.length).toBeGreaterThan(0)
+    for (const selector of ['.home-hero-line {', '.home-hero-subtitle {', '.home-hero-inner', '.home-footer-bar']) {
+      expect(motion.map(block => block.body).join('\n')).toContain(selector)
+    }
+    expect(withoutMotionBlocks(style)).not.toMatch(/\banimation\s*:/)
+  })
+
+  it('scopes hover transforms and image zoom to motion-enabled users', () => {
+    expect(style).toContain('@media (hover: hover) and (prefers-reduced-motion: no-preference)')
+    expect(style).not.toMatch(/transition:[^;{}]*\b\d+(?:\.\d+)?m?s\b/)
+    expect(style.match(/\.home-shot-figure img \{[^}]*\}/)?.[0] ?? '').not.toContain('transition')
+
+    const motion = motionMediaBlocks(style).map(block => block.body).join('\n')
+    expect(motion).toContain('.home-shot:hover .home-shot-figure img { transform: scale(1.04); }')
+    expect(motion).toContain('transition: transform var(--duration-slow)')
+    expect(withoutMotionBlocks(style)).not.toMatch(/:hover[^{}]*\{[^{}]*transform\s*:/)
   })
 })
 
 describe('HomePage Hall of Fame data band', () => {
   beforeEach(() => {
     api.hofList.mockReset()
+    platform.android = false
+    i18n.locale.value = 'en'
     connectivityState.state.value = 'online'
     connectivityState.settled.value = true
   })
@@ -226,15 +337,15 @@ describe('HomePage Hall of Fame data band', () => {
     connectivityState.settled.value = true
     await flushPromises()
     expect(api.hofList).toHaveBeenCalledTimes(1)
-    expect(stat(wrapper, 0).find('strong').text()).toBe('10 483')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('10,483')
     wrapper.unmount()
   })
 
-  it('formats damage with thousands separators (regression: formatCount regex)', async () => {
+  it('formats damage with locale-aware thousands separators', async () => {
     api.hofList.mockResolvedValue({ items: [{ damageDealt: 123456 }], totalItems: 1 })
     const wrapper = mountPage()
     await flushPromises()
-    expect(stat(wrapper, 0).find('strong').text()).toBe('123 456')
+    expect(stat(wrapper, 0).find('strong').text()).toBe('123,456')
     wrapper.unmount()
   })
 
@@ -243,7 +354,17 @@ describe('HomePage Hall of Fame data band', () => {
     const wrapper = mountPage()
     await flushPromises()
     expect(api.hofList).toHaveBeenCalledTimes(1)
-    expect(stat(wrapper, 1).find('strong').text()).toBe('2 048')
+    expect(stat(wrapper, 1).find('strong').text()).toBe('2,048')
+    wrapper.unmount()
+  })
+
+  it('formats counts with the active locale separator', async () => {
+    i18n.locale.value = 'ru'
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 123456 }], totalItems: 2048 })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(stat(wrapper, 0).find('strong').text()).toBe('123\u00a0456')
+    expect(stat(wrapper, 1).find('strong').text()).toBe('2\u00a0048')
     wrapper.unmount()
   })
 

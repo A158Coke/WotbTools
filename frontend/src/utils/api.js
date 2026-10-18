@@ -3,6 +3,9 @@ import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFacts.js'
+import { hallOfFamePageValidator } from '../api/generated/contract-validators.js'
+
+/** @typedef {import('../api/generated/http-contract.js').components['schemas']['HallOfFamePage']} HallOfFamePage */
 
 function requireHofOnline() {
   if (!useFeatureGate().requireFeature(Feature.HALL_OF_FAME)) {
@@ -32,12 +35,18 @@ async function downloadResponse(response, fallbackName) {
   URL.revokeObjectURL(url)
 }
 
-/** 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。 */
-
+/**
+ * 名人堂统一公开查询：nation / vehicleType / tier / tankId 可独立使用并取交集。
+ * 返回 generated `HallOfFamePage`；wire shape 在 transport 边界校验，调用方不再猜字段。
+ * @param {Record<string, string | number | boolean | null | undefined>} [params]
+ * @returns {Promise<HallOfFamePage>}
+ */
 export async function hofList(params = {}) {
   requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
-  return r.json()
+  const page = await r.json()
+  if (!hallOfFamePageValidator(page)) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+  return page
 }
 
 /** 公开单场车辆选项：当前名人堂实际存在的车辆及稳定分类码。 */

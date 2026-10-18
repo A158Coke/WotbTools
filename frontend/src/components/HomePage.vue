@@ -29,15 +29,21 @@ import { RouterLink } from 'vue-router'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
+import { isAndroidApp } from '../composables/usePlatformBridge.js'
 
 const onboarding = inject(ONBOARDING_KEY, null)
 // 地图名走 common/map_names.json 的三语表（与 Playback / Workspace 同一个 mapLabel），
 // 不把 `savanna` 这种原始 key 直接摆在 hero 上。
 const { locale } = useI18n()
+// Android App / WebView 内已经有应用本身，再给一个「下载 Android」既不可能也不合理。
+// 平台判断复用 `usePlatformBridge.js` 的唯一实现（与 useMoreMenu 的 Android 入口同一 owner）。
+const androidApp = isAndroidApp()
 
 const topRecord = ref(null)
 const recordTotal = ref(null)
 
+/** 数字格式跟随当前 locale（design-language §4）；Intl 自己决定千分位，不写死 ASCII 空格。 */
+const countFormatter = computed(() => new Intl.NumberFormat(locale.value, { maximumFractionDigits: 0 }))
 const topDamageDisplay = computed(() => {
   const damage = Number(topRecord.value?.damageDealt)
   return Number.isFinite(damage) ? formatCount(damage) : '--'
@@ -74,7 +80,7 @@ async function loadTopDamageRecord() {
     recordTotal.value = null
   }
 }
-function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') }
+function formatCount(value) { return countFormatter.value.format(Math.round(value)) }
 </script>
 
 <template>
@@ -101,9 +107,9 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
             <dd>
               <strong>{{ topDamageDisplay }}</strong>
               <span v-if="topRecord" class="home-stat-meta">
-                {{ topRecord.tankName || topRecord.vehicleName || '—' }}
-                · {{ topRecord.nickname || topRecord.playerNickname || '—' }}
-                · {{ mapLabel(topRecord.map || topRecord.mapName, locale) || '—' }}
+                {{ topRecord.tankName || '—' }}
+                · {{ topRecord.nickname || '—' }}
+                · {{ mapLabel(topRecord.mapName, locale) || '—' }}
               </span>
             </dd>
           </div>
@@ -133,11 +139,11 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
       </article>
     </section>
 
-    <!-- ④ 带走它，也养着它：Android 与赞助是两个转化动作，不是功能导航，所以它们留在首页 -->
+    <!-- ④ 带走它，也养着它：Android 与赞助是转化动作，不是功能导航。Android 卡只在 Web 出现；Sponsor 两端都保留。 -->
     <section class="home-take layout-wide" aria-labelledby="home-take-title">
       <h2 id="home-take-title" class="home-showcase-title">{{ $t('home.takeItTitle') }}</h2>
-      <div class="home-take-grid">
-        <article class="home-take-card">
+      <div class="home-take-grid" :class="{ 'is-sponsor-only': androidApp }">
+        <article v-if="!androidApp" class="home-take-card">
           <div class="home-take-phone">
             <img :src="phoneShotImg" width="390" height="844" loading="lazy" decoding="async" alt="" aria-hidden="true">
           </div>
@@ -174,7 +180,7 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
   position: relative;
   display: grid;
   align-items: center;
-  min-height: 460px;
+  min-height: var(--home-hero-min-h-desktop);
   overflow: hidden;
   padding-block: var(--space-12);
   border-bottom: 1px solid var(--color-border-subtle);
@@ -200,8 +206,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 .home-hero h1 { max-width: 16ch; margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
 /* 两行对句：第二行是强调行，承载渐变与扫光。 */
-.home-hero-line { display: block; animation: home-rise 700ms var(--ease-standard) backwards; }
-.home-hero-line:nth-child(2) { animation-delay: 110ms; }
+.home-hero-line { display: block; }
 .home-hero-line.is-accent { color: var(--color-accent-text); }
 
 /* 渐变文字 + 一次性扫光。
@@ -223,9 +228,6 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
     background-clip: text;
     color: transparent;
   }
-  @media (prefers-reduced-motion: no-preference) {
-    .home-hero-line.is-accent { animation: home-rise 700ms var(--ease-standard) backwards, home-sheen 1800ms var(--ease-standard); }
-  }
 }
 @keyframes home-sheen {
   from { background-position: 0 0; }
@@ -234,7 +236,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 /* 副标题只做位移。试过「从模糊里浮出来」，但 `filter: blur()` 踩的是同一个坑：
    不绘制的页面里动画卡在第一帧，副标题永久停在 blur(6px) —— 实测后台标签页就是这样，
    等于一段读不了的正文。首屏之上一律只动 transform。 */
-.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); animation: home-rise 900ms var(--ease-standard); }
+.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); }
 .home-hero-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; margin-top: var(--space-8); }
 .home-cta { padding-inline: var(--space-8); }
 .home-cta-ghost {
@@ -281,6 +283,8 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 /* ④ 带走它，也养着它 */
 .home-take { display: grid; gap: var(--space-5); }
 .home-take-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: stretch; gap: var(--space-4); }
+/* Android App 内整张 Android 转化卡不渲染：赞助卡独占一行，不留空列。 */
+.home-take-grid.is-sponsor-only { grid-template-columns: minmax(0, 1fr); }
 .home-take-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -335,25 +339,28 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 .home-footer-bar a:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) {
   .home-footer-bar a:hover { text-decoration: underline; }
+  .home-take-card:hover { border-color: var(--color-accent); }
+  .home-take-cta:hover { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
+}
+
+/* 位移 / 缩放 / 光晕都属于动效：reduce 用户连声明都拿不到，不依赖「补一条 reset」。 */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .home-footer-bar a svg { transition: transform var(--duration-base) var(--ease-standard); }
-  .home-footer-bar a:hover svg { transform: translateX(4px); }
+  .home-footer-bar a:hover svg { transform: translateX(var(--space-1)); }
 
   /* 主 CTA：箭头前移 + 强调色光晕，给一个「可以往下走」的暗示 */
   .home-cta svg { transition: transform var(--duration-base) var(--ease-standard); }
   .home-cta { transition: box-shadow var(--duration-base) var(--ease-standard); }
-  .home-cta:hover svg { transform: translateX(5px); }
+  .home-cta:hover svg { transform: translateX(var(--space-1)); }
   .home-cta:hover { box-shadow: 0 0 0 var(--space-2) color-mix(in oklab, var(--color-accent) 22%, transparent); }
 
-  /* 展示图：抬起 + 加深投影 + 内部缓慢推近，让静态截图有活物感 */
-  /* 没有边框可点亮了，悬停改为整体轻抬 + 画面缓慢推近 */
+  /* 展示图：抬起 + 内部缓慢推近，让静态截图有活物感。 */
   .home-shot-figure { transition: transform var(--duration-slow) var(--ease-standard); }
-  .home-shot-figure img { transition: transform 900ms var(--ease-standard); }
+  .home-shot-figure img { transition: transform var(--duration-slow) var(--ease-standard); }
   .home-shot:hover .home-shot-figure { transform: translateY(-6px); }
   .home-shot:hover .home-shot-figure img { transform: scale(1.04); }
 
-  .home-take-card:hover { border-color: var(--color-accent); }
-  .home-take-cta:hover { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
-  .home-take-cta:hover svg { transform: translateX(4px); }
+  .home-take-cta:hover svg { transform: translateX(var(--space-1)); }
 }
 
 /* 进场动效：一次淡入上浮。
@@ -369,11 +376,23 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 @keyframes home-rise {
   from { transform: translateY(18px); }
 }
-.home-hero-inner, .home-shot, .home-footer-bar { animation: home-rise 620ms var(--ease-standard); }
-.home-shot:nth-of-type(2) { animation-duration: 760ms; }
-.home-shot:nth-of-type(3) { animation-duration: 900ms; }
-.home-shot:nth-of-type(4) { animation-duration: 1040ms; }
-.home-shot:nth-of-type(5) { animation-duration: 1180ms; }
+/* 进场动画只在 no-preference 下存在；默认态（含 reduce）没有任何 animation。 */
+@media (prefers-reduced-motion: no-preference) {
+  .home-hero-line { animation: home-rise 700ms var(--ease-standard) backwards; }
+  .home-hero-line:nth-child(2) { animation-delay: 110ms; }
+  .home-hero-subtitle { animation: home-rise 900ms var(--ease-standard); }
+  .home-hero-inner, .home-shot, .home-footer-bar { animation: home-rise 620ms var(--ease-standard); }
+  .home-shot:nth-of-type(2) { animation-duration: 760ms; }
+  .home-shot:nth-of-type(3) { animation-duration: 900ms; }
+  .home-shot:nth-of-type(4) { animation-duration: 1040ms; }
+  .home-shot:nth-of-type(5) { animation-duration: 1180ms; }
+}
+/* 渐变强调行的扫光叠在 rise 上；放在基础动画之后，避免 nth-child 的 delay 污染 sheen。 */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  @media (prefers-reduced-motion: no-preference) {
+    .home-hero-line.is-accent { animation: home-rise 700ms var(--ease-standard) backwards, home-sheen 1800ms var(--ease-standard); }
+  }
+}
 
 /* 滚动驱动的逐块进场。只给**首屏以下**的展示块，所以这里可以放心用透明度——
    上面那条「不动透明度」的约束是为了保住首屏单帧抓取（社交预览只截视口），
@@ -410,12 +429,8 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   to { transform: scale(1.08) translateY(5%); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .home-hero-inner, .home-shot, .home-footer-bar, .home-hero-decor { animation: none; }
-}
-
 @media (768px <= width < 1200px) {
-  .home-hero { min-height: 380px; }
+  .home-hero { min-height: var(--home-hero-min-h-tablet); }
   .home-shot { gap: var(--space-8); }
 }
 @media (width < 768px) {
