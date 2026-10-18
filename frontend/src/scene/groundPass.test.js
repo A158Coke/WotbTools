@@ -238,6 +238,21 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(mesh.frustumCulled).toBe(false)
   })
 
+  it('多材质混合 sky 组整件走普通路径（不把普通 group 投到无限远）', () => {
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const root = new THREE.Group()
+    const skyMat = new THREE.MeshStandardMaterial({ name: 'skyobject' })
+    skyMat.userData.sky = true
+    const plainMat = new THREE.MeshStandardMaterial({ name: 'brick' })
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), [skyMat, plainMat])
+    mesh.name = 'mixed'
+    root.add(mesh)
+    const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(r.skyMeshes).toBe(0)
+    expect(mesh.userData.isSky).toBeUndefined()
+  })
+
   it('显式 skyFlagsAvailable 时，未标记的 sky 名网格不得转天空（预剔除后重算回归）', () => {
     const NO_TEX = () => null
     const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }

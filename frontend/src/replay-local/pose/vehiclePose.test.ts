@@ -143,6 +143,16 @@ describe('sampleVehiclePoseGame（2D/3D 共用的唯一位姿采样器）', () =
     expect(visibilitySpansByEid(null).size).toBe(0)
   })
 
+  it('短隐藏段内炮塔/炮管/侧倾冻结在最后已知端点（不提前滑向下一段）', () => {
+    const turret = new Array(GRID.samples).fill(0)
+    turret[9] = 90
+    turret[10] = 90
+    const def = gridDef({ coverage: [0, 1], turret_yaw: turret })
+    expect(sampleVehiclePoseGame(def, GRID, 0.85).turretAbs).toBeCloseTo(45, 6)
+    // 精确 visibility 在 0.75→0.86 断开：0.85 取前一段末（0.75s，0°）而不是 45°
+    expect(sampleVehiclePoseGame(def, GRID, 0.85, undefined, [0, 0.75, 0.86, 1]).turretAbs).toBeCloseTo(0, 6)
+  })
+
   it('炮塔相对角 = wrapPi(绝对 − 车体)（跨 ±π 不跳变）', () => {
     const def = gridDef({
       hull_yaw: new Array(GRID.samples).fill((170 * Math.PI) / 180),

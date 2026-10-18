@@ -24,11 +24,11 @@
  *
  * 纯函数、无 THREE/DOM 依赖（单测锁不变量）。
  */
-import { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt } from '../../scene/trackInterp.js'
+import { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling } from '../../scene/trackInterp.js'
 import { activeEntityAt } from '../canonical/facts.js'
 import type { AgentAoiPresence, AgentPoseKeyframes, AgentPlaybackFacet, AgentVehicleTrack } from '../../api/agent-replay-facets.js'
 
-export { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt }
+export { GRID_DT, coverageSpanAt, keyframeAt, sampleChannel, sampleChannelWithin, sampleKeyframes, segmentAt, visibilitySpanForSampling }
 export type { AgentPoseKeyframes, AgentVehicleTrack }
 
 /** 网格列的时间轴（`meta.t_start` + `meta.samples`，步长恒 `GRID_DT`）。 */
@@ -230,7 +230,8 @@ export function sampleVehiclePoseGame(
   out: VehiclePoseGame = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, turretAbs: 0, turretRel: 0, gunPitch: 0 },
   visibleSpans?: readonly number[] | null,
 ): VehiclePoseGame {
-  const span = visibleSpans ? (coverageSpanAt(visibleSpans, t) as readonly [number, number] | null) : null
+  // 段内采样：t 落在短隐藏段时夹到前一段（最后已知），不得退回无约束插值。
+  const span = visibleSpans ? (visibilitySpanForSampling(visibleSpans, t) as readonly [number, number] | null) : null
   const kf = poseKeyframesOf(def)
   if (kf) {
     const col = (c: number) => (i: number) => kf.pos[i * 3 + c]

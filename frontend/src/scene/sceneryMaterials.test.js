@@ -349,7 +349,7 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(st.slice(0, 400)).toMatch(/return makeSpeedtreeStaticMaterial\(m, opaqueEnough\);/)
     const fn = matSrc.slice(matSrc.indexOf('function makeSpeedtreeStaticMaterial'))
     // 客户端同式：albedo × vOcc × SH(L0)，伽马直采直写（无 tone mapping/输出重编码）
-    expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a\);/)
+    expect(fn).toMatch(/gl_FragColor = vec4\(c\.rgb \* \(vOcc \* uSH\), c\.a \* uOpacity\);/)
     expect(fn).toMatch(/uAlphaCut: \{ value: blend \? 0\.05 : 0\.33 \}/)
     expect(fn).toMatch(/transparent: blend,/)
     expect(fn).toMatch(/depthWrite: !blend,/)

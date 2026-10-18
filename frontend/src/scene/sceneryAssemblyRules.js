@@ -28,6 +28,14 @@ export function materialHasSky(mat) {
   return ms.some((m) => !!(m && m.userData && m.userData.sky))
 }
 
+/** 整份材质组都是天空语义（多材质网格按 group 共享一个节点；混合组无法安全拆分
+ *  无限远/普通两种投影，按 fail-closed 整件当普通网格处理，避免把普通 group 投到
+ *  无限远或让烘焙丢掉整件）。 */
+export function materialAllSky(mat) {
+  const ms = Array.isArray(mat) ? mat : [mat]
+  return ms.length > 0 && ms.every((m) => !!(m && m.userData && m.userData.sky))
+}
+
 /** 场景里是否存在任何 sky 语义标记（新包由导出器按 Skyobject 材质写入）。
  *  存在时天空判据只认材质标记；整份 GLB 都没有标记（旧包）才允许名字 fallback。 */
 export function sceneHasSkyFlags(root) {
@@ -65,8 +73,9 @@ export function isSkyShellName(name) {
 /** 天空语义判定：新包（存在 sky 标记）只认材质 `extras.sky`；旧包回退节点名。 */
 export function isSkyShell(name, mat, { skyFlagsAvailable = false } = {}) {
   // 新包只要存在 sky 标记就按材质语义判定；`strictSurfaces` 属于水面判定，不得把天空
-  // 退回节点名（否则烘焙与 3D 运行时会保留/剔除不同的网格）。
-  if (skyFlagsAvailable) return materialHasSky(mat)
+  // 退回节点名（否则烘焙与 3D 运行时会保留/剔除不同的网格）。多材质网格必须整组
+  // 命中才走天空路径（混合组见 materialAllSky 的 fail-closed 说明）。
+  if (skyFlagsAvailable) return materialAllSky(mat)
   return isSkyShellName(name)
 }
 

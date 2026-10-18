@@ -49,8 +49,8 @@ import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwne
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
-import { pruneForeignVariants } from './variantFilter.js'
-import { sampleDetachedPose } from './trackInterp.js'
+import { activeVariantOf, pruneForeignVariants } from './variantFilter.js'
+import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
 import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
@@ -461,9 +461,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
   function visibleAt(v, t) {
-    const c = v.def.coverage;
-    for (let k = 0; k + 1 < c.length; k += 2) if (t >= c[k] && t <= c[k+1]) return true;
-    return false;
+    // 活车按**协议精确 visibility** 显隐（coverage 只保证"有采样"，短隐藏段不断开）；
+    // 否则隐藏期仍会显示车辆并把炮塔/炮管插值到下一段。死亡残骸例外由 applyPose
+    // 的 `|| dead` 保留。
+    return spansContainAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, t);
   }
   // ---------- 场景 ----------
   function initScene() {
@@ -1230,6 +1231,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
         // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
         const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
+        const variantActive = activeVariantOf(gltf.scene.userData?.variantByMapId, DATA.meta.map_id);
         // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
         // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
         // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
@@ -1237,6 +1239,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
         const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
         if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
+        if (prunedVariants && !variantActive) {
+          // fail-closed 裁剪（映射缺失/当前 map_id 不在映射）隐藏了全部变体节点：这是
+          // 场景内容缺失，必须进入降级状态，不能只留一条 console.warn。
+          noteAsset('scenery', 'variant-fail-closed', '变体映射缺失/未知，已隐藏全部带标记节点');
+        }
         // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
         const sceneryExtras = await resolveSceneryExtras(gltf);
         if (stale()) { disposeObject3D(gltf.scene); return; }

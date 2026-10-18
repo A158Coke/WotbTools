@@ -99,6 +99,7 @@ export function makeBillboardMaterial(m) {
       uniform float uOccMean;
       uniform float uProdClamp;
       uniform float uAlphaCut;
+      uniform float uOpacity;
       varying vec2 vUv;
       varying float vOcc;
       #include <logdepthbuf_pars_fragment>
@@ -135,6 +136,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       map: { value: m.map || null },
       uSH: { value: sh },
       uAlphaCut: { value: blend ? 0.05 : 0.33 },
+      uOpacity: { value: m.opacity ?? 1 },
     },
     vertexShader: `
       ${hasVC ? 'attribute vec4 color;' : ''}
@@ -170,7 +172,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
         #include <logdepthbuf_fragment>
         vec4 c = texture2D(map, vUv);
         if (c.a < uAlphaCut) discard;
-        gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a);
+        gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a * uOpacity);
       }`,
     side: THREE.DoubleSide,
     transparent: blend,
@@ -388,6 +390,7 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
         lightmap: { value: atlasTex || map },
         uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
         uAlphaCut: { value: cut },
+        uOpacity: { value: m.opacity ?? 1 },
       }),
     vertexShader: `
       attribute vec2 uv1;    // 光照图 UV（客户端 texcoord1）
@@ -434,6 +437,7 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
       uniform sampler2D lightmap;
       uniform vec3 uTint;
       uniform float uAlphaCut;
+      uniform float uOpacity;
 #ifdef ENV_REFLECTION
       uniform sampler2D envMask;
       uniform sampler2D envCube;
@@ -502,7 +506,7 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
         color *= texture2D(uDetailTex, vDetailUv).rgb * 2.0;
 #endif
 #ifdef ALPHA_BLEND
-        gl_FragColor = vec4(color, c.a);
+        gl_FragColor = vec4(color, c.a * uOpacity);
 #else
         gl_FragColor = vec4(color, 1.0);
 #endif
@@ -548,7 +552,8 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
         colormap: { value: cmTex || map },
         colormapLm: { value: lmTex || cmTex || map },
         uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
-        uAlphaCut: { value: cut } },
+        uAlphaCut: { value: cut },
+        uOpacity: { value: m.opacity ?? 1 } },
       useAdj ? { uLmAdjust: { value: new THREE.Vector3(adj[0], adj[1], adj[2]) } } : {},
     ),
     vertexShader: `
@@ -576,6 +581,7 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
       uniform sampler2D colormapLm;
       uniform vec3 uTint;
       uniform float uAlphaCut;
+      uniform float uOpacity;
 #ifdef DECAL_LM_ADJUST
       uniform vec3 uLmAdjust;   // materialLightmapAdjustment = [brightness, contrast, gamma]
 #endif
@@ -597,7 +603,7 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
         shadowColor *= texture2D(colormapLm, vUv1).r;   // colormap 的 alpha 通道（本包 = lm.webp 的 R）
 #endif
 #ifdef ALPHA_BLEND
-        gl_FragColor = vec4(base.rgb * uTint * shadowColor * 2.0, base.a);
+        gl_FragColor = vec4(base.rgb * uTint * shadowColor * 2.0, base.a * uOpacity);
 #else
         gl_FragColor = vec4(base.rgb * uTint * shadowColor * 2.0, 1.0);
 #endif

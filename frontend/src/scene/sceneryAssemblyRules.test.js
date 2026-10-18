@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   strictSurfacesOf, materialIsWater, isWaterNode, isSkyShellName,
-  isNonIntactStateName, bakeDropNode, materialHasSky, sceneHasSkyFlags, isSkyShell,
+  isNonIntactStateName, bakeDropNode, materialHasSky, materialAllSky, sceneHasSkyFlags, isSkyShell,
 } from './sceneryAssemblyRules.js'
 import { pruneForeignVariants } from './variantFilter.js'
 
@@ -56,6 +56,11 @@ describe('sceneryAssemblyRules：水面语义（SSOT）', () => {
     // 只要存在 sky 标记就认材质语义，与 surfaceFlags/strictSurfaces 无关
     expect(isSkyShell('bld_x.sc2', sky(), { skyFlagsAvailable: true })).toBe(true)
     expect(isSkyShell('sky_dome', plain(), { skyFlagsAvailable: true })).toBe(false)
+    // 多材质网格：整组命中才走天空；混合组 fail-closed 当普通网格（不投无限远/不整件剔除）
+    expect(materialAllSky([sky(), sky()])).toBe(true)
+    expect(materialAllSky([sky(), plain()])).toBe(false)
+    expect(isSkyShell('mixed', [sky(), plain()], { skyFlagsAvailable: true })).toBe(false)
+    expect(isSkyShell('all', [sky(), sky()], { skyFlagsAvailable: true })).toBe(true)
   })
 
   it('包级 sky 标记在变体裁剪前采样：被裁变体里的唯一 sky 不触发名字 fallback', () => {
