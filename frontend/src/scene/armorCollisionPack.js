@@ -204,7 +204,6 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     highp float pMin = remIn * (1.0 - RC_BAND);
     highp float pMax = remIn * (1.0 + RC_BAND);
     highp float probChance = 1.0;
-    int armorIdx = 0;                  // 已处理的实际装甲层数（外部模块 flat 消耗不计入）
     int variantSeen = 0;
     int prevTri = -1;                  // 同三角形跨 cell 重复列表去重（凸区域连续出现）
     int L = 0;
@@ -267,15 +266,13 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             // 0mm 合法板厚：2× 增强转正在 thickness=0、normalization=0 时是 0/0，
             // 只对正厚度应用（与 penetration.js 同规则），0mm 板等效保持 0。
             bool twoCal = th > 0.0 && caliber > th * 2.0;
-            // 转正只作用于**首个实际装甲层**（armorIdx==0）——外部模块是 flat 消耗、不是装甲层，
-            // 击穿它不消耗首层转正资格（用户 2026-10-17 裁示）；与 penetration.js calculate 的
-            // armorLayerCount 及 JS 参考同规则；review 2026-10-13 / 2026-10-17。
-            highp float normR = (armorIdx == 0)
-                ? (twoCal ? (RC_TWO_CAL * normalization * caliber) / (2.0 * th) : normalization)
-                : 0.0;
+            // BlitzKit：每个非外部层都用自身 thickness/angle 重新套用转正
+            // （2× 口径增强转正也按本层厚度计算）；外部模块 flat 不计入。
+            highp float normR = twoCal
+                ? (RC_TWO_CAL * normalization * caliber) / (2.0 * th)
+                : normalization;
             highp float finA = max(angle - normR, 0.0);
             highp float eff = th / max(cos(finA), RC_COS_EPS);
-            armorIdx++;                                 // 本实际装甲层已计入
             // 每层先用当前区间乘 CDF，再把两端平移一次 eff（σ 保持初值/段首值）。
             highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
             highp float mu = 0.5 * (pMin + pMax);
@@ -747,7 +744,6 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     let probMin = remIn * (1 - RC.BAND);
     let probMax = remIn * (1 + RC.BAND);
     let probChance = 1;
-    let armorIdx = 0;                  // 已处理的实际装甲层数（外部模块不计入）
     const layers = [];
     for (const h of collected) {
         const th = h.thickness * thickMul;
@@ -763,14 +759,13 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             const angle = Math.acos(cosA);
             // 0mm 合法板厚：只对正厚度应用 2× 增强转正（与 penetration.js / GLSL 同规则）。
             const twoCal = th > 0 && caliber > th * 2;
-            // 转正只作用于首个实际装甲层（armorIdx===0）——外部模块不计入；与 calculate / GLSL 同规则
-            const normR = armorIdx === 0
-              ? (twoCal ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th) : normalizationRad)
-              : 0;
+            // BlitzKit：每个非外部层独立套用转正（不继承首层状态）。
+            const normR = twoCal
+              ? (RC.TWO_CAL_NORM * normalizationRad * caliber) / (2 * th)
+              : normalizationRad;
             const finA = Math.max(angle - normR, 0);
             eff = th / Math.max(Math.cos(finA), RC.COS_EPS);
             layPen = rem > eff;
-            armorIdx++;
             probChance *= penetrationChanceForInterval(probMin, probMax, eff);
             probMin -= eff;
             probMax -= eff;

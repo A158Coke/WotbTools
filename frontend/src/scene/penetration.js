@@ -97,7 +97,8 @@ function collectFilteredHits(hits, stopAtPrimary = true) {
 
 /**
  * 单层几何（确定性与概率链共用）：外部模块 flat；实际装甲算入射角、3×/2×
- * 口径规则、首层转正与等效厚度。概率链只需要几何量，不读取剩余穿深。
+ * 口径规则、逐层转正与等效厚度。概率链只需要几何量，不读取剩余穿深。
+ * 转正按 BlitzKit shoot() 对**每个非外部层**独立计算（不继承首层状态）。
  */
 function resolveLayerGeometry(ah, thickness, ctx) {
   if (isModule(ah.section)) {
@@ -122,8 +123,9 @@ function resolveLayerGeometry(ah, thickness, ctx) {
   const normalization = twoCalibersRule && thickness > 0.0
     ? (1.4 * ctx.normalization_deg * ctx.caliber) / (2.0 * thickness)
     : ctx.normalization_deg
-  // 转正只作用于首个实际装甲层；外部模块是 flat 消耗，不计入 armorLayerCount。
-  const effNormalization = ctx.armorLayerCount === 0 ? normalization : 0.0
+  // BlitzKit：每个非外部层都用自身 thickness/angle 重新套用转正；外部模块是
+  // flat 消耗，不参与 normalization，也不消耗后续层的转正资格。
+  const effNormalization = normalization
   const finalAngle = Math.max(angleRad - effNormalization * DEG, 0.0)
   const effective = thickness / Math.max(Math.cos(finalAngle), 1e-6)
   const ricochet = !noRicochet && angleDeg >= ctx.ricochet_deg
@@ -145,7 +147,6 @@ function resolveLayerGeometry(ah, thickness, ctx) {
  */
 function buildProbabilityLayers(filteredHits, ctx) {
   const layers = []
-  let armorLayerCount = 0
   for (let i = 0; i < filteredHits.length; i++) {
     const ah = filteredHits[i]
     if (ctx.isHeat && i > 0) {
@@ -166,7 +167,6 @@ function buildProbabilityLayers(filteredHits, ctx) {
     const geo = resolveLayerGeometry(ah, thickness, {
       ...ctx,
       layerIndex: i,
-      armorLayerCount,
     })
     layers.push({
       part_name: ah.part_name,
@@ -179,7 +179,6 @@ function buildProbabilityLayers(filteredHits, ctx) {
       overmatch: geo.overmatch,
       gap: false,
     })
-    if (!geo.external) armorLayerCount++
     if (geo.ricochet) break
   }
   return layers
@@ -264,10 +263,6 @@ export function calculate(req) {
   const layers = [] // 每层结果
   let firstArmorAngleDeg = -1.0
   let firstArmorNormDeg = -1.0
-  // 已处理的实际装甲层数（间隙甲/主装甲；外部模块是 flat 消耗，不计入）。
-  // 「转正只作用于首个装甲层」按它判定，而不是命中序号——动能弹击穿外部模块后
-  // 仍保留转正/2×口径增强转正资格（用户 2026-10-17 裁示）。
-  let armorLayerCount = 0
   let ricochet = false
   let ricochetRemainingPen = 0.0
 
@@ -314,8 +309,9 @@ export function calculate(req) {
         layerPenetrated = remainingPen > eff
       }
     } else {
-      // 几何规则与概率链共用 resolveLayerGeometry（转正只作用于首个实际装甲层；
-      // 外部模块是 flat 消耗，不消耗首层转正资格；0mm 板不套 2× 公式）。
+      // 几何规则与概率链共用 resolveLayerGeometry：BlitzKit 对每个非外部层
+      // 都用自身厚度/角度重新计算 normalization 与 2× 口径增强；外部模块 flat，
+      // 不参与转正；0mm 板不套 2× 公式。
       const geo = resolveLayerGeometry(ah, thickness, {
         view,
         caliber,
@@ -323,7 +319,6 @@ export function calculate(req) {
         ricochet_deg: ricochetDeg,
         allowRicochet,
         layerIndex,
-        armorLayerCount,
       })
       layerAngleDeg = geo.angle_deg
       if (firstArmorAngleDeg < 0.0) firstArmorAngleDeg = layerAngleDeg
@@ -350,7 +345,6 @@ export function calculate(req) {
       if (firstArmorNormDeg < 0.0) firstArmorNormDeg = geo.normalization_deg
       // HE 命中非 Primary（间隙甲）：blitzkit 标 blocked，但穿深照常消耗
       layerPenetrated = (isPrimary(ah.section) || !isHe) && remainingPen > eff
-      armorLayerCount++
     }
 
     totalEffective += eff
