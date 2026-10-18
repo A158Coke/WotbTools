@@ -22,6 +22,7 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 final class WargamingEndpoint {
 
     private static final Logger log = Logger.getLogger(WargamingEndpoint.class);
+    private static final int MAX_DIAGNOSTIC_VALUE_LENGTH = 160;
 
     private final KeycloakSession session;
     private final WargamingIdentityProvider provider;
@@ -47,30 +48,34 @@ final class WargamingEndpoint {
                                    @QueryParam("status") final String status,
                                    @QueryParam("access_token") final String accessToken,
                                    @QueryParam("nickname") final String nickname,
-                                   @QueryParam("account_id") final String accountId) {
+                                   @QueryParam("account_id") final String accountId,
+                                   @QueryParam("code") final String errorCode,
+                                   @QueryParam("message") final String errorMessage) {
 
         // ── 1. 会话校验（state 缺失/无效/过期/被篡改一律拒绝） ────────
         if (WargamingIdentityProvider.isBlank(state)) {
-            return WargamingIdentityProvider.errorResponse();
+            return reject("callback-state", "missing-state");
         }
         final AuthenticationSessionModel authenticationSession =
                 authCallback.getAndVerifyAuthenticationSession(state);
         if (authenticationSession == null) {
-            return WargamingIdentityProvider.errorResponse();
+            return reject("callback-state", "invalid-authentication-session");
         }
         session.getContext().setAuthenticationSession(authenticationSession);
 
         final String applicationId = WargamingIdentityProvider.applicationId();
         if (WargamingIdentityProvider.isBlank(applicationId)) {
-            return WargamingIdentityProvider.errorResponse();
+            return reject("configuration", "missing-application-id");
         }
 
         // ── 2. 基础校验 ──────────────────────────────────────────────
         if (!"ok".equals(status)) {
+            log.warnf("Wargaming login rejected region=%s stage=callback-status reason=provider-error code=%s message=%s",
+                    regionName(), safeDiagnosticValue(errorCode), safeDiagnosticValue(errorMessage));
             return WargamingIdentityProvider.errorResponse();
         }
         if (WargamingIdentityProvider.isBlank(accessToken)) {
-            return WargamingIdentityProvider.errorResponse();
+            return reject("callback-token", "missing-access-token");
         }
 
         String wgToken = accessToken;
@@ -88,7 +93,7 @@ final class WargamingEndpoint {
                 final Long callbackAccountId = parseAccountId(accountId);
                 if (callbackAccountId == null
                         || callbackAccountId.longValue() != trustedAccountId) {
-                    return WargamingIdentityProvider.errorResponse();
+                    return reject(stage, "account-id-mismatch");
                 }
             }
 
@@ -97,11 +102,11 @@ final class WargamingEndpoint {
             final String officialNickname =
                     apiClient.fetchOfficialNickname(applicationId, trustedAccountId, wgToken);
             if (WargamingIdentityProvider.isBlank(officialNickname)) {
-                return WargamingIdentityProvider.errorResponse();
+                return reject(stage, "missing-official-nickname");
             }
             stage = "callback-nickname-check";
             if (!WargamingIdentityProvider.isBlank(nickname) && !nickname.equals(officialNickname)) {
-                return WargamingIdentityProvider.errorResponse();
+                return reject(stage, "nickname-mismatch");
             }
 
             // ── 6. 构造稳定身份（全部来自可信 account_id） ────────────
@@ -126,14 +131,15 @@ final class WargamingEndpoint {
 
             return authCallback.authenticated(context);
         } catch (final WargamingApiClient.WargamingApiException e) {
-            // 安全错误日志：允许 stage / 错误码 / message / field，不含 token /
+            // 安全错误日志：允许 region / stage / 错误码 / message / field，不含 token /
             // application_id / state / 完整响应 / error.value。
-            log.warnf("Wargaming login rejected at stage=%s: %s", stage, safeMessage(e));
+            log.warnf("Wargaming login rejected region=%s stage=%s reason=wg-api-error detail=%s",
+                    regionName(), stage, safeMessage(e));
             return WargamingIdentityProvider.errorResponse();
         } catch (final RuntimeException e) {
             // 非预期异常：只记录安全的异常类名，不吞掉 JVM Error。
-            log.warnf("Wargaming login failed at stage=%s: %s",
-                    stage, e.getClass().getSimpleName());
+            log.warnf("Wargaming login failed region=%s stage=%s reason=unexpected-exception type=%s",
+                    regionName(), stage, e.getClass().getSimpleName());
             return WargamingIdentityProvider.errorResponse();
         } finally {
             // ── 7. 成功或失败路径都尽力立即销毁 token ────────────────
@@ -144,6 +150,25 @@ final class WargamingEndpoint {
         }
     }
 
+    /** 测试与内部调用兼容入口；生产 JAX-RS 回调使用包含 code/message 的七参数方法。 */
+    Response handleCallback(final String state,
+                            final String status,
+                            final String accessToken,
+                            final String nickname,
+                            final String accountId) {
+        return handleCallback(state, status, accessToken, nickname, accountId, null, null);
+    }
+
+    private Response reject(final String stage, final String reason) {
+        log.warnf("Wargaming login rejected region=%s stage=%s reason=%s",
+                regionName(), stage, reason);
+        return WargamingIdentityProvider.errorResponse();
+    }
+
+    private String regionName() {
+        return config.region().name();
+    }
+
     private void logoutBestEffort(final String applicationId, final String accessToken) {
         if (WargamingIdentityProvider.isBlank(accessToken)) {
             return;
@@ -152,8 +177,8 @@ final class WargamingEndpoint {
             apiClient.logout(applicationId, accessToken);
         } catch (final WargamingApiClient.WargamingApiException e) {
             // token 值绝不进日志。
-            log.warnf("Wargaming token logout failed (status-level warning only): %s",
-                    safeMessage(e));
+            log.warnf("Wargaming token logout failed region=%s reason=wg-api-error detail=%s",
+                    regionName(), safeMessage(e));
         }
     }
 
@@ -169,8 +194,24 @@ final class WargamingEndpoint {
         }
     }
 
+    static String safeDiagnosticValue(final String value) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        final int end = Math.min(value.length(), MAX_DIAGNOSTIC_VALUE_LENGTH);
+        final StringBuilder sanitized = new StringBuilder(end);
+        for (int i = 0; i < end; i++) {
+            final char current = value.charAt(i);
+            sanitized.append(Character.isISOControl(current) ? ' ' : current);
+        }
+        final String result = sanitized.toString().trim();
+        return result.isEmpty() ? "-" : result;
+    }
+
     private static String safeMessage(final Throwable e) {
         final String message = e.getMessage();
-        return message != null && !message.isBlank() ? message : e.getClass().getSimpleName();
+        return safeDiagnosticValue(message != null && !message.isBlank()
+                ? message
+                : e.getClass().getSimpleName());
     }
 }
