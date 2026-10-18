@@ -145,40 +145,10 @@ jobs:
           curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 0 \
             --connect-timeout 1 --max-time 10 "$base/index.json" >/dev/null
 
-          curl_common=(--silent --show-error --connect-timeout 2 --max-time 10)
-          curl "${curl_common[@]}" -I -D "$work/no-origin" -o /dev/null "$base/index.json"
-          grep -Eqi '^vary:.*origin' "$work/no-origin"
-          grep -Eqi '^cache-control:.*max-age=300' "$work/no-origin"
-          grep -qi '^etag:' "$work/no-origin"
-
-          for origin in https://wotbtools.com https://www.wotbtools.com; do
-            curl "${curl_common[@]}" --fail -D "$work/allowed" -o /dev/null \
-              -H "Origin: $origin" "$base/index.json"
-            grep -Fqi "access-control-allow-origin: $origin" "$work/allowed"
-            grep -Eqi '^vary:.*origin' "$work/allowed"
-          done
-
-          curl "${curl_common[@]}" --fail -D "$work/untrusted" -o /dev/null \
-            -H 'Origin: https://example.invalid' "$base/index.json"
-          ! grep -qi '^access-control-allow-origin:' "$work/untrusted"
-          grep -Eqi '^vary:.*origin' "$work/untrusted"
-
-          preflight_status="$(curl "${curl_common[@]}" -o /dev/null -D "$work/preflight" -w '%{http_code}' \
-            -X OPTIONS -H 'Origin: https://wotbtools.com' \
-            -H 'Access-Control-Request-Method: GET' "$base/index.json")"
-          [[ "$preflight_status" == 204 ]]
-          grep -Fqi 'access-control-allow-origin: https://wotbtools.com' "$work/preflight"
-
-          range_status="$(curl "${curl_common[@]}" -o /dev/null -D "$work/range" -w '%{http_code}' \
-            -H 'Range: bytes=0-0' "$base/index.json")"
-          [[ "$range_status" == 206 ]]
-          grep -qi '^content-range: bytes 0-0/' "$work/range"
-
-          etag="$(awk 'BEGIN{IGNORECASE=1} /^etag:/ {sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$work/no-origin")"
-          [[ -n "$etag" ]]
-          conditional_status="$(curl "${curl_common[@]}" -o /dev/null -w '%{http_code}' \
-            -H "If-None-Match: $etag" "$base/index.json")"
-          [[ "$conditional_status" == 304 ]]
+          # The production verifier owns request-level semantics and is deliberately
+          # reused here against the disposable real Caddy process. This keeps ETag
+          # parsing, timeouts, CORS, Range, and conditional GET behavior single-sourced.
+          bash deploy/assets/verify.sh "$base"
           echo 'asset-origin Compose and Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
         run: |
