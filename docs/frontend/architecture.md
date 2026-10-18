@@ -126,10 +126,12 @@ Android starts the same Vue application from `http://127.0.0.1:21653/index.html`
 
 `ReplayWorkspace` retains one selection/session owner and the existing five capability/view mappings. LOCAL data/Rating/2D/shooting inspection remain usable without Internet. ONLINE_REQUIRED 3D/AI/HoF/Profile are still discoverable and gate before mount, auth or request; the reason comes from the shared capability model rather than a network timeout. Disconnect preserves local state and cached Native auth; existing 3D session generations and AI AbortController stop remote work. Reconnect updates availability immediately, resumes a connectivity-blocked 3D/HoF/Profile once, and never automatically submits AI. The full matrix and snapshot source/update boundary live in [`replay-workspace.md`](replay-workspace.md).
 
-### 推荐目录的分批部署兼容
+### 推荐目录的接口与部署边界
 
-AppShell中的useCreatorAvailability提供唯一的健康能力与公开分类快照，按UP/VIDEO派生类型卡片、列表与总入口可见性。recommendations-v1启用typed API，一次类别快照包含两个类型；只有作品非空时总入口也可见。旧后端回退到UP-only API；creators-v1表示UP技术能力，creators-content-visibility-v1确认公开UP分类为非空子集。无新能力时作品不可进入，不发新接口请求。真实content-admin保留各技术可用类型的空目录和管理入口；tournament-admin不拥有内容域，也不再显示内容管理入口；完整管理字典不回流公开快照。
+AppShell 中的 useCreatorAvailability 提供唯一的健康能力与公开分类快照，按 UP/VIDEO 派生类型卡片、列表与总入口可见性。仅 recommendations-v1 启用现行推荐 API，一次公开分类快照包含两个类型的非空分类；仅有作品时总入口也可见。没有该能力时公开及管理入口均不可用，显示可重试提示，不请求旧 UP-only 接口。真实 content-admin 保留技术可用类型的空目录和管理入口；tournament-admin 不拥有内容域，也不显示内容管理入口；完整管理字典不回流公开快照。
 
-RecommendationsPage是类型入口，CreatorsPage以type prop复用UP和作品列表；旧creators深链继续直达UP，recommended-videos打开作品，两者属于同一导航栏目。CreatorsConfigPage用recommendationType query选择同一表单/类别管理，VIDEO不展示实力等级。Vue Router拥有类型与分类历史，切换前由路由guard确认放弃脏草稿/图片；保存中阻止切换。useCreators/useCreatorManagement将type纳入请求所有权，过期metadata/list/editor响应不得污染新类型。api/creators.ts集中适配新typed和旧UP wire，不让组件处理endpoint或兼容字段转换。
+RecommendationsPage 是类型入口，CreatorsPage 以 type prop 复用 UP 和作品列表；creators 深链直达 UP，recommended-videos 打开作品，两者属于同一导航栏目。CreatorsConfigPage 用 recommendationType query 选择同一表单/类别管理，VIDEO 不展示实力等级。Vue Router 拥有类型与分类历史，切换前由路由 guard 确认放弃脏草稿/图片；保存中阻止切换。useCreators/useCreatorManagement 将 type 纳入请求所有权，过期 metadata/list/editor 响应不得污染新类型。api/creators.ts 只消费 /api/recommendations 和 /api/admin/recommendations 的现行 wire；等级管理使用后者的 /levels，现行图片引用 /api/creators/avatars/{id} 保留，组件不处理 endpoint 或旧格式适配。
+
+先部署并验证现行后端，再协调网页及内部测试 APK 的接口切换；没有旧接口回退。失败时恢复成对的已验证版本，不回退到无法识别 VIDEO 数据的旧后端。本次用户确认旧内容接口仅内部使用、尚无用户，候选按明确例外使用 patch 3.12.1，Bridge v3 和最低支持版本 3000000 保持不变，见 [发布说明](../android/releases/3.12.1.md)。
 
 初次加载、恢复联网、窗口焦点、显式刷新及管理写入ACK触发共享读取；ACK会作废写前请求。失败保留最近成功快照，不伪造空目录或清掉已保存/正在编辑的草稿。公开分类失效后router.replace回全部，保留其他query/hash；管理员空分类不回退。该状态不替代useFeatureGate的网络判断，不轮询、不保存到localStorage，不承诺跨会话实时更新。
