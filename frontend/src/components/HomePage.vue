@@ -83,8 +83,11 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
       <!-- 装饰层放在内容**之前**：两者都定位，后出现的内容自然压在上面，不需要 z-index。 -->
       <div class="home-hero-decor" aria-hidden="true"></div>
       <div class="home-hero-inner layout-wide">
-        <h1>{{ $t('app.title') }}</h1>
-        <p class="home-hero-subtitle">{{ $t('app.subtitle') }}</p>
+        <h1>
+          <span class="home-hero-line">{{ $t('home.heroLine1') }}</span>
+          <span class="home-hero-line is-accent">{{ $t('home.heroLine2') }}</span>
+        </h1>
+        <p class="home-hero-subtitle">{{ $t('home.heroSubtitle') }}</p>
         <div class="home-hero-actions">
           <AppButton class="home-cta" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="18" aria-hidden="true" /></AppButton>
           <button v-if="onboarding" type="button" class="home-cta-ghost" data-testid="home-onboarding" @click="onboarding.openDirectory()">{{ $t('onboarding.newbie') }}</button>
@@ -172,7 +175,42 @@ html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; }
 html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 .home-hero h1 { max-width: 16ch; margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
-.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); }
+/* 两行对句：第二行是强调行，承载渐变与扫光。 */
+.home-hero-line { display: block; animation: home-rise 700ms var(--ease-standard) backwards; }
+.home-hero-line:nth-child(2) { animation-delay: 110ms; }
+.home-hero-line.is-accent { color: var(--color-accent-text); }
+
+/* 渐变文字 + 一次性扫光。
+   `color: transparent` 只在 @supports 命中时才写——不加这层保护，一旦 background-clip
+   不被支持，强调行就是**透明的**，整句话直接消失。不命中时回落到上面的纯强调色。
+   动画只扫一次（fill-mode none + 零延迟）：没跑起来时就是渐变静止态，不会空白。 */
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .home-hero-line.is-accent {
+    background-image: linear-gradient(
+      100deg,
+      var(--color-accent) 0%,
+      var(--color-accent-text) 34%,
+      color-mix(in oklab, var(--color-accent-text) 42%, var(--color-text-primary)) 58%,
+      var(--color-accent-text) 100%
+    );
+    background-size: 220% 100%;
+    background-position: 100% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .home-hero-line.is-accent { animation: home-rise 700ms var(--ease-standard) backwards, home-sheen 1800ms var(--ease-standard); }
+  }
+}
+@keyframes home-sheen {
+  from { background-position: 0 0; }
+}
+
+/* 副标题只做位移。试过「从模糊里浮出来」，但 `filter: blur()` 踩的是同一个坑：
+   不绘制的页面里动画卡在第一帧，副标题永久停在 blur(6px) —— 实测后台标签页就是这样，
+   等于一段读不了的正文。首屏之上一律只动 transform。 */
+.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); animation: home-rise 900ms var(--ease-standard); }
 .home-hero-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; margin-top: var(--space-8); }
 .home-cta { padding-inline: var(--space-8); }
 .home-cta-ghost {
