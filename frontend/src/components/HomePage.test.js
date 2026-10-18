@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import HomePage from './HomePage.vue'
 import { VIEW_COMPONENTS } from '../app/viewRegistry.js'
@@ -244,77 +244,9 @@ describe('HomePage i18n keys all resolve', () => {
   })
 })
 
-/**
- * happy-dom 不会应用 media query，所以 reduce 行为用源码契约锁定：
- * 1) 默认态没有 animation；所有 animation 只存在于 `prefers-reduced-motion: no-preference`。
- * 2) hover 位移 / 图片缩放也只在 `hover: hover` + no-preference 下声明。
- * 3) transition 只允许用 `--duration-*` token，不残留固定毫秒值（reduce 时 token 归零）。
- */
-describe('HomePage reduced-motion contract', () => {
-  let style
-
-  beforeAll(async () => {
-    const { default: source } = await import('./HomePage.vue?raw')
-    const start = source.indexOf('<style scoped>') + '<style scoped>'.length
-    style = source.slice(start, source.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '')
-  })
-
-  function matchingBrace(css, open) {
-    let depth = 0
-    for (let i = open; i < css.length; i++) {
-      if (css[i] === '{') depth += 1
-      else if (css[i] === '}') {
-        depth -= 1
-        if (depth === 0) return i
-      }
-    }
-    throw new Error('unbalanced CSS block')
-  }
-
-  function motionMediaBlocks(css) {
-    const blocks = []
-    let index = 0
-    while ((index = css.indexOf('@media', index)) !== -1) {
-      const open = css.indexOf('{', index)
-      const prelude = css.slice(index + '@media'.length, open)
-      if (prelude.includes('prefers-reduced-motion: no-preference')) {
-        const close = matchingBrace(css, open)
-        blocks.push({ start: index, end: close + 1, body: css.slice(open + 1, close) })
-      }
-      index = open + 1
-    }
-    return blocks
-  }
-
-  function withoutMotionBlocks(css) {
-    const blocks = motionMediaBlocks(css).sort((a, b) => b.start - a.start)
-    let rest = css
-    for (const block of blocks) rest = rest.slice(0, block.start) + rest.slice(block.end)
-    return rest
-  }
-
-  it('only declares animation inside prefers-reduced-motion: no-preference', () => {
-    expect(style).not.toContain('prefers-reduced-motion: reduce')
-    const motion = motionMediaBlocks(style)
-    expect(motion.length).toBeGreaterThan(0)
-    for (const selector of ['.home-hero-line {', '.home-hero-subtitle {', '.home-hero-inner', '.home-footer-bar']) {
-      expect(motion.map(block => block.body).join('\n')).toContain(selector)
-    }
-    expect(withoutMotionBlocks(style)).not.toMatch(/\banimation\s*:/)
-  })
-
-  it('scopes hover transforms and image zoom to motion-enabled users', () => {
-    expect(style).toContain('@media (hover: hover) and (prefers-reduced-motion: no-preference)')
-    expect(style).not.toMatch(/transition:[^;{}]*\b\d+(?:\.\d+)?m?s\b/)
-    expect(style.match(/\.home-shot-figure img \{[^}]*\}/)?.[0] ?? '').not.toContain('transition')
-
-    const motion = motionMediaBlocks(style).map(block => block.body).join('\n')
-    expect(motion).toContain('.home-shot:hover .home-shot-figure img { transform: scale(1.04); }')
-    expect(motion).toContain('transition: transform var(--duration-slow)')
-    expect(withoutMotionBlocks(style)).not.toMatch(/:hover[^{}]*\{[^{}]*transform\s*:/)
-  })
-})
-
+// 窄静态安全门：确认 `color: transparent` 仍被同时要求 background-clip + color-mix 的
+// @supports 包住。它不冒充浏览器行为验证；真实 motion / computed style 由
+// `scripts/browser-home-reduced-motion.mjs` 覆盖。
 describe('HomePage accent gradient capability fallback', () => {
   it('only makes the accent line transparent when background-clip and color-mix are both supported', async () => {
     const { default: source } = await import('./HomePage.vue?raw')

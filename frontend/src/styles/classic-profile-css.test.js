@@ -61,9 +61,8 @@ describe('Classic Profile CSS contract', () => {
     expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero \{[^}]*--home-hero-decor: none;/)
     // 插槽置 none 之后那个承载背景的元素也必须隐藏，否则 Classic 下留一块空占区。
     expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero-decor \{[^}]*display: none;/)
-    // 动效默认关闭：所有 animation 只存在于 no-preference，reduce 用户不进入任何动效分支。
-    expect(home).toContain('@media (prefers-reduced-motion: no-preference)')
-    expect(home).not.toContain('prefers-reduced-motion: reduce')
+    // reduced motion 的真实 computed 行为由 scripts/browser-home-reduced-motion.mjs 验证，
+    // 这里不再用 CSS 源码断言冒充浏览器验证。
     // Hero 内层不得自带 width：`.layout-wide` 的左右边距就是靠 width 算出来的，
     // 覆盖它会让 Hero 贴屏幕边缘、并比页面其余区块少一个 gutter（2026-10-18 QA 实测）。
     expect(home).not.toMatch(/\.home-hero-inner\s*\{[^}]*\bwidth:/)

@@ -4,14 +4,16 @@
  *
  * 依据：`AppSidebar.vue`（桌面 / 平板）与 `AppTabBar.vue` + `MorePage`（手机）已经覆盖
  * `app/navigation.js:PRIMARY_NAV` 的全部功能入口，三档都在。首页再摆一排功能卡就是把
- * 侧边栏抄一遍，所以这里只留一个转化动作（上传回放）和两个侧边栏没有的非功能入口。
+ * 侧边栏抄一遍，所以这里只留一个功能入口（Replay Workspace / 上传回放）和 Web 侧边栏没有的
+ * 非功能 / 转化入口：Android 下载、Sponsor、Feedback。Android App 内隐藏 Android 下载卡，
+ * Sponsor 保留并单列占满。
  *
  * 另一条硬约束：`app/viewRegistry.js:30-32` 的 `replay` / `battle-playback` / `ai-review` /
  * `agent-replay` / `agent-shots` 五个 view 落在同一个 `ReplayWorkspace`，只是初始 capability
  * tab 不同。它们不是独立目的地，整页只能有 Hero 那一个回放入口。
  *
- * 分段：① 全出血 Hero ② 实时数据带 ③ 能力展示（**无链接**，纯视觉）④ 极简页脚。
- * ③ 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含真实用户的私有数据。
+ * 分段：① 全出血 Hero ② 实时数据带 ③ 能力展示（**无链接**，纯视觉）④ 带走它 / 赞助
+ * ⑤ 极简页脚。③ 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含用户的私有数据。
  */
 import { computed, inject, ref, watch } from 'vue'
 import * as api from '../utils/api.js'
@@ -204,7 +206,7 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
 html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; }
 html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
-.home-hero h1 { max-width: 16ch; margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
+.home-hero h1 { max-width: var(--home-hero-title-measure); margin: 0; color: var(--color-text-primary); font: var(--type-display-hero); letter-spacing: -0.02em; }
 /* 两行对句：第二行是强调行，承载渐变与扫光。 */
 .home-hero-line { display: block; }
 .home-hero-line.is-accent { color: var(--color-accent-text); }
@@ -236,7 +238,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 /* 副标题只做位移。试过「从模糊里浮出来」，但 `filter: blur()` 踩的是同一个坑：
    不绘制的页面里动画卡在第一帧，副标题永久停在 blur(6px) —— 实测后台标签页就是这样，
    等于一段读不了的正文。首屏之上一律只动 transform。 */
-.home-hero-subtitle { max-width: 40ch; margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: clamp(1rem, 1.6vw, 1.25rem); line-height: var(--line-height-prose); }
+.home-hero-subtitle { max-width: var(--home-hero-subtitle-measure); margin: var(--space-4) 0 0; color: var(--color-text-secondary); font: var(--type-body); font-size: var(--home-hero-subtitle-size); line-height: var(--line-height-prose); }
 .home-hero-actions { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: center; margin-top: var(--space-8); }
 .home-cta { padding-inline: var(--space-8); }
 .home-cta-ghost {
@@ -278,7 +280,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 }
 .home-shot-copy { min-width: 0; }
 .home-shot-copy h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
-.home-shot-copy p { max-width: 42ch; margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
+.home-shot-copy p { max-width: var(--home-shot-copy-measure); margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
 
 /* ④ 带走它，也养着它 */
 .home-take { display: grid; gap: var(--space-5); }
@@ -300,7 +302,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 }
 .home-take-card.is-sponsor { grid-template-columns: minmax(0, 1fr); }
 /* 同样不裱框：手机截图从底部淡出，像是从页面里浮起来的，而不是贴上去的一张图 */
-.home-take-phone { width: 168px; height: 300px; min-width: 0; }
+.home-take-phone { width: var(--home-phone-preview-w); height: var(--home-phone-preview-h); min-width: 0; }
 .home-take-phone img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
 @supports (mask-composite: intersect) {
   .home-take-phone img {
@@ -357,8 +359,8 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   /* 展示图：抬起 + 内部缓慢推近，让静态截图有活物感。 */
   .home-shot-figure { transition: transform var(--duration-slow) var(--ease-standard); }
   .home-shot-figure img { transition: transform var(--duration-slow) var(--ease-standard); }
-  .home-shot:hover .home-shot-figure { transform: translateY(-6px); }
-  .home-shot:hover .home-shot-figure img { transform: scale(1.04); }
+  .home-shot:hover .home-shot-figure { transform: translateY(calc(-1 * var(--home-hover-lift))); }
+  .home-shot:hover .home-shot-figure img { transform: scale(var(--home-hover-zoom)); }
 
   .home-take-cta:hover svg { transform: translateX(var(--space-1)); }
 }
@@ -370,27 +372,27 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
    起步的进场动画都会让整页空白——后台标签页加载 10 秒后实测仍是 opacity 0。
    真人看不到这个空白（要看到就得切过去，一切过去就开始绘制），但**单帧抓取**会：
    社交分享预览、截图服务、打印，对一个营销首页正好要紧。
-   卡在第一帧的最坏情况现在只是「内容下移 18px」，始终可读。
+   卡在第一帧的最坏情况现在只是「内容下移一个 `--home-rise-travel`」，始终可读。
    同理不能用「默认 opacity: 0，等 JS 加 class 再显出来」：那把整页可见性挂在 rAF 回调上。
-   错落用递增**时长**而不是 `animation-delay`，避免延迟期的空窗。 */
+   错落统一用 duration + `animation-delay`；`backwards` 让延迟期保持初始位移，避免「先可见再跳」的空窗。 */
 @keyframes home-rise {
-  from { transform: translateY(18px); }
+  from { transform: translateY(var(--home-rise-travel)); }
 }
 /* 进场动画只在 no-preference 下存在；默认态（含 reduce）没有任何 animation。 */
 @media (prefers-reduced-motion: no-preference) {
-  .home-hero-line { animation: home-rise 700ms var(--ease-standard) backwards; }
-  .home-hero-line:nth-child(2) { animation-delay: 110ms; }
-  .home-hero-subtitle { animation: home-rise 900ms var(--ease-standard); }
-  .home-hero-inner, .home-shot, .home-footer-bar { animation: home-rise 620ms var(--ease-standard); }
-  .home-shot:nth-of-type(2) { animation-duration: 760ms; }
-  .home-shot:nth-of-type(3) { animation-duration: 900ms; }
-  .home-shot:nth-of-type(4) { animation-duration: 1040ms; }
-  .home-shot:nth-of-type(5) { animation-duration: 1180ms; }
+  .home-hero-line { animation: home-rise var(--home-enter-duration) var(--ease-standard) backwards; }
+  .home-hero-line:nth-child(2) { animation-delay: var(--home-enter-stagger); }
+  .home-hero-subtitle { animation: home-rise var(--home-enter-duration) var(--ease-standard) backwards; animation-delay: calc(var(--home-enter-stagger) * 2); }
+  .home-hero-inner, .home-shot, .home-footer-bar { animation: home-rise var(--home-enter-duration) var(--ease-standard) backwards; }
+  .home-shot:nth-of-type(2) { animation-delay: calc(var(--home-enter-stagger) * 1); }
+  .home-shot:nth-of-type(3) { animation-delay: calc(var(--home-enter-stagger) * 2); }
+  .home-shot:nth-of-type(4) { animation-delay: calc(var(--home-enter-stagger) * 3); }
+  .home-shot:nth-of-type(5) { animation-delay: calc(var(--home-enter-stagger) * 4); }
 }
 /* 渐变强调行的扫光叠在 rise 上；放在基础动画之后，避免 nth-child 的 delay 污染 sheen。 */
 @supports (((background-clip: text) or (-webkit-background-clip: text)) and (color: color-mix(in oklab, red, blue))) {
   @media (prefers-reduced-motion: no-preference) {
-    .home-hero-line.is-accent { animation: home-rise 700ms var(--ease-standard) backwards, home-sheen 1800ms var(--ease-standard); }
+    .home-hero-line.is-accent { animation: home-rise var(--home-enter-duration) var(--ease-standard) backwards, home-sheen var(--home-sheen-duration) var(--ease-standard); }
   }
 }
 
@@ -409,7 +411,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   }
 }
 @keyframes home-reveal {
-  from { opacity: 0; transform: translateY(56px) scale(.97); }
+  from { opacity: 0; transform: translateY(var(--home-reveal-travel)) scale(var(--home-reveal-scale)); }
 }
 
 /* Hero 装饰图的视差：随滚动缓慢下沉。先放大 8% 留出位移余量，避免露边。 */
@@ -420,13 +422,13 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
       /* 必须显式指定 root：`scroll()` 绑的是最近的滚动容器，而 `.home-hero` 自己带
          `overflow: hidden`，会被当成一个永不滚动的容器，动画直接不生效（实测 transform 恒为 none）。 */
       animation-timeline: scroll(root block);
-      animation-range: 0 640px;
+      animation-range: 0 var(--home-parallax-range);
     }
   }
 }
 @keyframes home-parallax {
-  from { transform: scale(1.08) translateY(0); }
-  to { transform: scale(1.08) translateY(5%); }
+  from { transform: scale(var(--home-parallax-scale)) translateY(0); }
+  to { transform: scale(var(--home-parallax-scale)) translateY(var(--home-parallax-shift)); }
 }
 
 @media (768px <= width < 1200px) {
@@ -446,6 +448,6 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-shot.is-flipped .home-shot-figure { order: 0; }
   .home-take-grid { grid-template-columns: minmax(0, 1fr); }
   .home-take-card { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-  .home-take-phone { width: 148px; max-height: 220px; }
+  .home-take-phone { width: var(--home-phone-preview-mobile-w); max-height: var(--home-phone-preview-mobile-max-h); }
 }
 </style>
