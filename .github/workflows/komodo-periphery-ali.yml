@@ -1,34 +1,24 @@
 name: Komodo Periphery / Alibaba Asset Host
 
-# The Alibaba Shanghai host uses the same repository-owned Periphery lifecycle
-# implementation as Yecao/TX. It has a separate transport job because its SSH
-# boundary and public-Core route differ, but install/reconcile/verify remain the
-# single shared implementation under deploy/periphery/**.
+# Reusable transport implementation for the Alibaba Shanghai host. It is invoked
+# only by the final dependent job in `.github/workflows/komodo-periphery.yml` so
+# Yecao -> TX1 -> TX2 must all succeed before Alibaba can mutate. The shared
+# install/reconcile/verify implementation remains under deploy/periphery/**.
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/komodo-periphery-ali.yml
-      - deploy/check-production-freshness.sh
-      - deploy/periphery/**
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-concurrency:
-  group: production-maintenance
-  cancel-in-progress: false
-  queue: max
-
 env:
   PRODUCTION_INPUT_PATHS: |
+    .github/workflows/komodo-periphery.yml
     .github/workflows/komodo-periphery-ali.yml
     deploy/check-production-freshness.sh
     deploy/periphery/**
 
 jobs:
-  reconcile_ali_asset:
+  reconcile:
     name: Reconcile Komodo Periphery on Alibaba asset host
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -142,10 +132,6 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      # If this is the already-onboarded manually installed host, first prove the
-      # current process is credential-free and connected, then atomically commit the
-      # lifecycle marker. On a fresh host this helper is a no-op and reconcile below
-      # performs the normal bootstrap when the optional onboarding secret is present.
       - name: Adopt already-onboarded Alibaba agent if present
         uses: appleboy/ssh-action@v1
         with:
@@ -164,10 +150,6 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           PERIPHERY_TARGET: ali-sh-asset-01
 
-      # On an adopted host the durable marker makes the bootstrap secret unnecessary
-      # and install.sh never reads it. On a future rebuild, create a fresh Core
-      # onboarding key and set the optional repository secret; the shared lifecycle
-      # then uses the same transient /run bootstrap path as TX1/TX2.
       - name: Reconcile Alibaba asset Periphery under the host lock
         uses: appleboy/ssh-action@v1
         with:
