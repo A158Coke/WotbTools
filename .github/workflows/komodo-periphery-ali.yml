@@ -120,6 +120,7 @@ jobs:
           key: ${{ secrets.ALI_ASSET_VPS_SSH_KEY }}
           source: >-
             deploy/periphery/lib.sh,deploy/periphery/staging-root.sh,
+            deploy/periphery/adopt-existing.sh,
             deploy/periphery/install.sh,deploy/periphery/verify.sh,
             deploy/periphery/reconcile.sh,deploy/periphery/periphery.release,
             deploy/periphery/periphery.service,
@@ -141,11 +142,32 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
-      # On the already-adopted host the durable marker makes the bootstrap secret
-      # unnecessary and install.sh never reads it. On a future rebuild, an operator
-      # may create a fresh Core onboarding key and set the optional repository secret;
-      # the shared lifecycle then performs the same transient /run bootstrap used by
-      # TX1/TX2 and commits a credential-free marker before completing.
+      # If this is the already-onboarded manually installed host, first prove the
+      # current process is credential-free and connected, then atomically commit the
+      # lifecycle marker. On a fresh host this helper is a no-op and reconcile below
+      # performs the normal bootstrap when the optional onboarding secret is present.
+      - name: Adopt already-onboarded Alibaba agent if present
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ALI_ASSET_VPS_HOST }}
+          username: ${{ secrets.ALI_ASSET_VPS_USER }}
+          port: ${{ secrets.ALI_ASSET_VPS_PORT }}
+          key: ${{ secrets.ALI_ASSET_VPS_SSH_KEY }}
+          command_timeout: 5m
+          envs: SOURCE_SHA,PERIPHERY_TARGET
+          script: |
+            set -Eeuo pipefail
+            stage="${{ steps.target.outputs.staging_root }}/incoming/$SOURCE_SHA"
+            chmod 700 "$stage/deploy/periphery/"*.sh
+            sudo -n bash "$stage/deploy/periphery/adopt-existing.sh" "$PERIPHERY_TARGET"
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PERIPHERY_TARGET: ali-sh-asset-01
+
+      # On an adopted host the durable marker makes the bootstrap secret unnecessary
+      # and install.sh never reads it. On a future rebuild, create a fresh Core
+      # onboarding key and set the optional repository secret; the shared lifecycle
+      # then uses the same transient /run bootstrap path as TX1/TX2.
       - name: Reconcile Alibaba asset Periphery under the host lock
         uses: appleboy/ssh-action@v1
         with:
