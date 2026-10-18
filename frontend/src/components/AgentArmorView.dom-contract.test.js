@@ -220,6 +220,12 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
     expect(state).not.toMatch(/losThick|normThick|delta/)
     expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, 0\.0, 0\.0\);/)
+    // 名义被挡但概率 1–99%：G 编码概率带而不是硬红 1.0；PBR 就地续飞同理。
+    expect(state).toMatch(/float pct = floor\(p \* 100\.0 \+ 0\.5\);/)
+    expect(state).toMatch(/bCode = \(pct >= 1\.0 && pct <= 99\.0\) \? 0\.2 \+ 0\.6 \* p : 1\.0;/)
+    expect(kernel).toMatch(/if \(pct >= 1\.0 && pct <= 99\.0\) penChance = p;/)
+    const packSrc = read('../scene/armorCollisionPack.js')
+    expect(packSrc).toMatch(/pct >= 1 && pct <= 99 \? p : 0/)
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
     // 外部模块状态：只写 A=1，RGB 保留；自定义混合 RGB src=0/dst=1、A src=1/dst=0；
     // PBR 用 A 抑制其后间隙板跳弹。

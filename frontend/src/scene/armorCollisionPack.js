@@ -286,6 +286,9 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                     penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
                     return 1;
                 }
+                // 名义被挡也可能是 1–99% 的边界情形：把部分概率交给状态通道，
+                // 让热力图与点击卡“可能击穿 p%”一致（review 2026-10-18）。
+                penOut = clamp(probChance, 0.0, 1.0);
                 return 2;
             }
             if (!layPen) { blocked = true; tCur = bestT + RC_ADV_EPS; continue; }
@@ -779,10 +782,16 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         probMin -= eff;
         probMax -= eff;
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
-        if (!layPen) return { cls: 2, penChance: 0, layers };
         if (isPrimary) {
-            return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers };
+            if (layPen) {
+                return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers };
+            }
+            // 名义被挡但概率 1–99%：保留部分概率供热力图（与点击卡一致）。
+            const p = Math.max(0, Math.min(1, probChance));
+            const pct = Math.round(p * 100);
+            return { cls: 2, penChance: pct >= 1 && pct <= 99 ? p : 0, layers };
         }
+        if (!layPen) return { cls: 2, penChance: 0, layers };
         rem -= eff;
     }
     return { cls: 0, penChance: 0, layers };
