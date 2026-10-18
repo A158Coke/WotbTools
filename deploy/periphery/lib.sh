@@ -284,14 +284,16 @@ listener_on_8120() {
 # a false negative — with a large environment this is a scheduling-dependent
 # "clean" verdict. Buffering first makes every later match deterministic.
 read_process_env() {
-  local pid="$1" target="$2" environ content
+  local pid="$1" target="$2" environ env_text
   environ="$periphery_proc_root/$pid/environ"
   [[ -r "$environ" ]] || return 2
   # A non-regular path is not an inspectable environment, and must be rejected
   # before the read: a FIFO here would otherwise block the check forever.
   [[ -f "$environ" ]] || return 2
-  content="$(tr '\0' '\n' < "$environ")" || return 2
-  printf -v "$target" '%s' "$content"
+  env_text="$(tr '\0' '\n' < "$environ")" || return 2
+  # Assign the CALLER's variable by name. The buffer above deliberately has its
+  # own name so printf -v can never write to this function's local copy instead.
+  printf -v "$target" '%s' "$env_text"
   return 0
 }
 
