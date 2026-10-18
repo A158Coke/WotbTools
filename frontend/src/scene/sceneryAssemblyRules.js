@@ -63,8 +63,10 @@ export function isSkyShellName(name) {
 }
 
 /** 天空语义判定：新包（存在 sky 标记）只认材质 `extras.sky`；旧包回退节点名。 */
-export function isSkyShell(name, mat, { strictSurfaces = false, skyFlagsAvailable = false } = {}) {
-  if (strictSurfaces && skyFlagsAvailable) return materialHasSky(mat)
+export function isSkyShell(name, mat, { skyFlagsAvailable = false } = {}) {
+  // 新包只要存在 sky 标记就按材质语义判定；`strictSurfaces` 属于水面判定，不得把天空
+  // 退回节点名（否则烘焙与 3D 运行时会保留/剔除不同的网格）。
+  if (skyFlagsAvailable) return materialHasSky(mat)
   return isSkyShellName(name)
 }
 

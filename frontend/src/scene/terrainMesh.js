@@ -199,7 +199,9 @@ export function terrainFieldMetaValid(meta) {
   if (!Number.isInteger(n) || n <= 0) return false;
   const layout = meta.terrainLayout;
   if (layout !== 1 && layout !== TERRAIN_LAYOUT_ENGINE_VERTEX) return false;
-  const zmin = Number(meta.zmin), zmax = Number(meta.zmax);
+  // 必须先是真正的 number：null / '' / false 经 Number() 会变成 0，会被误认为合法高度范围。
+  const zmin = meta.zmin, zmax = meta.zmax;
+  if (typeof zmin !== 'number' || typeof zmax !== 'number') return false;
   // 允许 zmax === zmin（完全平坦的地图，k=0）；只拒绝缺失/倒置范围
   return Number.isFinite(zmin) && Number.isFinite(zmax) && zmax >= zmin;
 }
@@ -211,12 +213,13 @@ export function terrainBoundsOk(meta) {
   if (!wb) return true;
   const min = wb.min, max = wb.max;
   if (!Array.isArray(min) || !Array.isArray(max) || min.length < 2 || max.length < 2) return false;
-  const cx = (Number(min[0]) + Number(max[0])) / 2;
-  const cz = (Number(min[1]) + Number(max[1])) / 2;
-  const dx = Number(max[0]) - Number(min[0]);
-  const dy = Number(max[1]) - Number(min[1]);
-  return [cx, cz, dx, dy].every(Number.isFinite)
-    && Math.abs(cx) <= 1e-6 && Math.abs(cz) <= 1e-6
+  const [minX, minZ, maxX, maxZ] = [min[0], min[1], max[0], max[1]];
+  if (![minX, minZ, maxX, maxZ].every((v) => typeof v === 'number' && Number.isFinite(v))) return false;
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const dx = maxX - minX;
+  const dy = maxZ - minZ;
+  return Math.abs(cx) <= 1e-6 && Math.abs(cz) <= 1e-6
     && dx > 0 && Math.abs(dx - dy) <= 1e-6;
 }
 

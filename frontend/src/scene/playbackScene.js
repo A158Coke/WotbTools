@@ -51,7 +51,7 @@ import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVi
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
 import { pruneForeignVariants } from './variantFilter.js'
 import { sampleDetachedPose } from './trackInterp.js'
-import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
+import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
@@ -196,6 +196,8 @@ export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  /** eid → 协议精确 AoI 段 flat [t0,t1,...]（来自 DATA.visibility；3D 炮塔/侧倾采样用） */
+  let VIS_BY_EID = new Map();
   /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts） */
   const POSE_GRID = { tStart: 0, samples: 0 };
   /** 位姿采样复用对象（每帧多车高频调用，零分配） */
@@ -399,7 +401,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 含 `pose_kf` 关键帧优先 / 10Hz 网格回退、以及炮塔绝对角 → 相对角的换算。
   // 本处只施加「场景系 = 游戏系 x 取负」的帧变换（符号约定见 glbRig.js 头注释）；
   // 车体侧倾 hull_roll 取自原始 type=10 volatile（滤波层不输出侧倾），旧产物缺列 → 0。
-  const poseOf = (v, t) => sampleVehiclePoseGame(v.def, POSE_GRID, t, _poseOut, v.def.visibility ?? v.def.coverage);
+  const poseOf = (v, t) => sampleVehiclePoseGame(
+    v.def, POSE_GRID, t, _poseOut, VIS_BY_EID.get(v.def.eid) ?? v.def.coverage,
+  );
   function posAt(v, t, out) {
     const p = poseOf(v, t);
     out.set(-p.x, p.y, p.z);
@@ -983,6 +987,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.assetIssues = assetIssues;
     store.assetDegraded = false;
     const noteAsset = (key, status, detail = '', { optional = false } = {}) => {
+      // 迟到请求（切换会话 / reset 后的 reject）不得把旧诊断写进新会话的 store。
+      if (stale()) return;
       const issue = { key, status, detail: String(detail || '') };
       assetIssues.push(issue);
       store.assetIssues = assetIssues.slice();
@@ -4171,6 +4177,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    VIS_BY_EID = new Map();
     POSE_GRID.tStart = 0;
     POSE_GRID.samples = 0;
     store.playbackSession = null;
@@ -4234,6 +4241,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      VIS_BY_EID = visibilitySpansByEid(data.visibility);
       POSE_GRID.tStart = data.meta.t_start;
       POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;

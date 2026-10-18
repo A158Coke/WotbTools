@@ -6,6 +6,7 @@ import {
   poseKeyframesOf,
   sampleVehiclePoseGame,
   selectActiveDef,
+  visibilitySpansByEid,
   wrapPi,
 } from './vehiclePose.js'
 import type { AgentVehicleTrack } from '../../api/agent-replay-facets.js'
@@ -125,6 +126,21 @@ describe('sampleVehiclePoseGame（2D/3D 共用的唯一位姿采样器）', () =
     expect(facet.vehicles[0].visibility).toEqual([0.5, 0.8, 0.9, Number.POSITIVE_INFINITY])
     // 无 visibility 证据时回退 coverage（fail-safe）
     expect(buildPoseFacet({ meta: playback.meta, vehicles: [gridDef()] }).vehicles[0].visibility).toEqual([0, 1])
+  })
+
+  it('开放末段（+Infinity）也走段内采样；visibilitySpansByEid 与 2D/3D 共用投影', () => {
+    const turret = new Array(GRID.samples).fill(0)
+    turret[9] = 90
+    turret[10] = 90
+    const def = gridDef({ coverage: [0.85, Number.POSITIVE_INFINITY], turret_yaw: turret })
+    // 无有限终点也必须识别为当前段，不能回退无约束插值（0.86s 应为 90，而不是 54）
+    expect(sampleVehiclePoseGame(def, GRID, 0.86, undefined, def.coverage).turretAbs).toBeCloseTo(90, 6)
+    const spans = visibilitySpansByEid([
+      { eid: 7, t_in: 0.5, t_out: 0.8 },
+      { eid: 7, t_in: 0.9 },
+    ])
+    expect(spans.get(7)).toEqual([0.5, 0.8, 0.9, Number.POSITIVE_INFINITY])
+    expect(visibilitySpansByEid(null).size).toBe(0)
   })
 
   it('炮塔相对角 = wrapPi(绝对 − 车体)（跨 ±π 不跳变）', () => {
