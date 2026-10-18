@@ -106,6 +106,7 @@ jobs:
           assert staged == {
               'deploy/periphery/lib.sh',
               'deploy/periphery/staging-root.sh',
+              'deploy/periphery/adopt-existing.sh',
               'deploy/periphery/install.sh',
               'deploy/periphery/verify.sh',
               'deploy/periphery/reconcile.sh',
@@ -118,6 +119,9 @@ jobs:
           text = json.dumps(doc, ensure_ascii=False)
           for secret in ('ALI_ASSET_VPS_HOST', 'ALI_ASSET_VPS_USER', 'ALI_ASSET_VPS_PORT', 'ALI_ASSET_VPS_SSH_KEY'):
               assert f'secrets.{secret}' in text, secret
+          adopt = steps['Adopt already-onboarded Alibaba agent if present']
+          assert 'sudo -n bash "$stage/deploy/periphery/adopt-existing.sh" "$PERIPHERY_TARGET"' in adopt['with']['script']
+          assert adopt['env']['PERIPHERY_TARGET'] == 'ali-sh-asset-01'
           reconcile = steps['Reconcile Alibaba asset Periphery under the host lock']
           assert reconcile['env']['PERIPHERY_TARGET'] == 'ali-sh-asset-01'
           assert reconcile['env']['KOMODO_PERIPHERY_ONBOARDING_KEY'] == '${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}'
