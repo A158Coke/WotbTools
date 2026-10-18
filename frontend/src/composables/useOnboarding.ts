@@ -513,13 +513,20 @@ export function useOnboarding(options: {
     if (!demoFailed.value) return prepareStep()
     demoFailed.value = false
     issue.value = 'loading'
+    const load = beginDemoLoad()
+    // A retry can outlive its guide. Capture this load's ownership before awaiting so a late
+    // rejection/success from the old load never writes into a guide started meanwhile.
+    const generation = demoGeneration
+    const owns = () => generation === demoGeneration && mode.value === 'tour'
     try {
-      await beginDemoLoad()
+      await load
     } catch {
-      if (mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
+      if (!owns()) return
+      issue.value = 'unavailable'
+      demoFailed.value = true
       return
     }
-    if (mode.value === 'tour') await prepareStep()
+    if (owns()) await prepareStep()
   }
 
   function next() {

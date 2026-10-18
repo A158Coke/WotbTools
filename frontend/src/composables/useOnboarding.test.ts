@@ -611,6 +611,32 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
 
+  it('never lets a stale Retry write into a guide started while it was loading', async () => {
+    const h = harness()
+    h.loadDemo.mockRejectedValueOnce(new Error('SAMPLE_UNAVAILABLE'))
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.issue.value).toBe('unavailable')
+
+    // Retry 的示例加载仍在进行时切换到非回放支线（名人堂），旧 promise 随后才拒绝。
+    const pending = deferred<void>()
+    h.loadDemo.mockImplementation(() => pending.promise)
+    void h.controller.retry()
+    await flushPromises()
+    h.controller.start('hof')
+    await h.controller.begin()
+    await flushPromises()
+    expect(h.controller.topic.value).toBe('hof')
+    expect(h.controller.issue.value).toBe('')
+
+    pending.reject(new DOMException('Replay workspace is busy', 'AbortError'))
+    await flushPromises()
+    expect(h.controller.topic.value).toBe('hof')
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
   it('drops the sample-load continuation after the guide is closed during navigation', async () => {
     const h = harness()
     h.controller.start()
