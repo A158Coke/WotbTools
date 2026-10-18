@@ -188,6 +188,12 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
 - **场景**（浏览器控制台，`?debug`）：
   - `window.__gdbg.layers === true` —— 分层地表就绪；
   - `window.__pbV.filter(v => v.glb).length` 等于车辆数 —— 车模 GLB 全部挂上。
+- **装甲判定快照**（`?view=agent-armor&…&armordebug=1`，仅 dev）：每次点击判定后，
+  右下角出现 `#armor-debug-panel`（可「复制 JSON」），同一对象在
+  `window.__armorDebugLast`，控制台另有 `[armor-debug]` 行。快照含 URL、坦克/配置、
+  弹种、装备、相机位姿/FOV、点击 NDC、命中点/距离/入射方向、逐层原始命中、确定性
+  结果、完整概率层链与卡片文案，便于按用户描述的情形复现。生产构建
+  （`import.meta.env.DEV === false`）不挂载该面板，URL 参数无效果。
 
 ## 7. 故障对照
 
@@ -214,6 +220,9 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   - `npm run test:browser-armor-aiming` —— 瞄准 / 指针交互；部位取样同时检查几何分类与
     `elementFromPoint` 实际命中 canvas，避免选车按钮等面板遮挡导致手势误入弹窗。
     既有像素扫描单测覆盖按钮 / 弹窗遮挡及空命中，浏览器门禁用临时覆盖控件验证重新取样。
+    结果卡锚定也在这里用真实布局验证：先等相机 damping 停止，再追加页面滚动夹具，
+    断言 `#traj-info` 的纵向位移跟随 canvas 的 `getBoundingClientRect()`（源码正则守卫
+    不能证明定位函数真的执行）。
   - agent 运行环境起不了 Chrome 时：明确说明并交给 PR CI（本机起不来 ≠ 改动有问题）。
 - 交互夹具的 Vite 依赖缓存隔离在 `node_modules/.vite-browser-interaction`，避免带 stub 的模块图使正在运行的开发页报 `504 Outdated Optimize Dep`。额外本地 smoke 也应使用独立 `cacheDir`；遇到旧缓存失效，停掉冲突实例并用 `npm run dev -- --force` 重启开发服务。
 - 无 GPU 的隔离 Chrome 夹具显式使用 SwiftShader 软件 WebGL。`browser-chrome.mjs` 的 `--enable-unsafe-swiftshader` 只用于受控本地测试页面，不改产品设置，也不能用来代替真实 3D 视觉验收。缺 WebGL 导致 fixture 无法建场时，先区分运行环境失败与布局断言失败。
