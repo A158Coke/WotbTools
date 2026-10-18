@@ -139,9 +139,9 @@ function isExternalLayer(layer) {
  * @param {number} [randomization]
  * @returns {number} 0..1
  */
-export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+export function evaluateProbabilityChain(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
   const all = layers || []
-  if (all.length === 0) return 1
+  if (all.length === 0) return { chance: 1, layers: [] }
 
   const firstContinuation = all.findIndex(layer => layer?.seg === 1)
   let startIndex = 0
@@ -154,6 +154,22 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
 
   let chance = 1
   let pendingSegmentReset = false
+  const evaluations = []
+  // 单层累计概率是 UI 的唯一层链：红色 0%、黄色 1–99%、绿色 100%。
+  const record = (layer, layerChance) => {
+    evaluations.push({
+      ...layer,
+      chance,
+      probChance: chance,
+      layerChance,
+    })
+  }
+  const fail = (layer, layerChance = 0) => {
+    chance = 0
+    if (layer) record(layer, layerChance)
+    return { chance: 0, layers: evaluations }
+  }
+
   for (let i = startIndex; i < all.length; i++) {
     const layer = all[i]
     // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
@@ -166,7 +182,8 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
 
     if (layer?.ricochet) {
       const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg === 1)
-      if (!hasLaterContinuation) return 0
+      if (!hasLaterContinuation) return fail(layer)
+      record(layer, 1)
       pendingSegmentReset = true
       continue
     }
@@ -178,8 +195,9 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
         const loss = Math.max(0, 1 - 0.5 * distance)
         min *= loss
         max *= loss
-        if (max <= 0) return 0
+        if (max <= 0) return fail(layer)
       }
+      record(layer, 1)
       continue
     }
 
@@ -187,16 +205,22 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
     if (isExternalLayer(layer)) {
       min -= thickness
       max -= thickness
-      if (max <= 0) return 0
+      if (max <= 0) return fail(layer)
+      record(layer, 1)
       continue
     }
 
     const eff = layerEffectiveThickness(layer)
-    if (eff == null || !(eff > 0)) continue
-    if (max <= 0) return 0
+    if (eff == null || !(eff > 0)) {
+      record(layer, 1)
+      continue
+    }
+    if (max <= 0) return fail(layer)
 
-    chance *= cdfForInterval(min, max, eff)
-    if (!(chance > 0)) return 0
+    const layerChance = cdfForInterval(min, max, eff)
+    chance *= layerChance
+    if (!(chance > 0)) return fail(layer, layerChance)
+    record(layer, layerChance)
 
     // Armor Inspector 层区间：每层同时平移一次等效厚度；σ 不变——不得按
     // 扣减后的均值重算 σ。此前误用 3× 会把 252AP 打 21.5+207 误判成 0%。
@@ -204,7 +228,18 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
     max -= eff
   }
 
-  return Math.max(0, Math.min(1, chance))
+  return { chance: Math.max(0, Math.min(1, chance)), layers: evaluations }
+}
+
+/**
+ * 兼容旧调用：只返回总概率。
+ * @param {number} penetration
+ * @param {Array<object>} layers
+ * @param {number} [randomization]
+ * @returns {number}
+ */
+export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+  return evaluateProbabilityChain(penetration, layers, randomization).chance
 }
 
 /**

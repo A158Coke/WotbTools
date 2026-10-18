@@ -170,6 +170,8 @@ function buildProbabilityLayers(filteredHits, ctx) {
         angle_deg: null,
         external: false,
         ricochet: false,
+        point: ah.point,
+        normal: ah.normal,
       })
     }
     const thickness = ah.thickness * ctx.thicknessCoeff
@@ -187,6 +189,8 @@ function buildProbabilityLayers(filteredHits, ctx) {
       ricochet: geo.ricochet,
       overmatch: geo.overmatch,
       gap: false,
+      point: ah.point,
+      normal: ah.normal,
     })
     if (geo.ricochet) break
   }
