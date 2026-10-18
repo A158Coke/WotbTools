@@ -779,6 +779,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
     expect(src).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\) && !isWaterNode\(e\.name, e\.material\)\);/)
     expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
+    // 运行时：包级天空标记在变体裁剪之前采样，并显式传入装配
+    const skyFlagAt = src.indexOf('const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)')
+    const pruneAt = src.indexOf('pruneForeignVariants(gltf.scene')
+    expect(skyFlagAt).toBeGreaterThan(-1)
+    expect(pruneAt).toBeGreaterThan(skyFlagAt)
+    expect(src).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
     // MEDIUM 档水面是半透明大面：逐材质修整（depthWrite/DoubleSide/depthTest）必须保留——
     // 2026-10-09 随 LOW 档（不透明）删过一次，回退 MEDIUM 时一并恢复。
     // 2026-10-14 抽层：修整体在共享装配模块（asmSrc），运行时与烘焙同一份
