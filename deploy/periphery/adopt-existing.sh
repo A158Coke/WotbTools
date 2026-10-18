@@ -6,8 +6,8 @@
 # only commits the lifecycle's durable onboarding marker after independently
 # proving that the *currently running* Periphery process already uses the reviewed
 # Server identity/Core route, is connected to that reviewed peer, has persistent
-# identity/trust files, exposes no inbound 8120, and has no onboarding credential
-# in its config or process environment.
+# identity/trust files, exposes no inbound 8120, and has no runtime environment
+# override that can change effective Periphery configuration.
 #
 # On a fresh/rebuilt host with no active established agent this is a no-op; the
 # normal install.sh state machine remains responsible for bootstrap (using the
@@ -62,6 +62,20 @@ process_env_is_clean "$pid" || process_env_state=$?
 [[ "$process_env_state" == 0 ]] \
   || fail "Refusing adoption: $(process_env_state_label "$process_env_state")."
 
+# Komodo v2.3.3 applies PERIPHERY_* environment variables on top of TOML,
+# including *_FILE credential/identity sources and boolean/string aliases such as
+# CONNECT_AS, ROOT_DIRECTORY, PRIVATE_KEY, CORE_ADDRESSES and TLS flags. The
+# repository-owned unit deliberately needs none of those during steady state.
+# Therefore adoption is fail-closed on *any* PERIPHERY_* entry in the live
+# process environment: otherwise validating only the TOML could certify an
+# identity/Core route that the running process is not actually using.
+process_environ="$periphery_proc_root/$pid/environ"
+[[ -r "$process_environ" && -f "$process_environ" ]] \
+  || fail 'Refusing adoption because the live Periphery environment cannot be inspected.'
+if tr '\0' '\n' < "$process_environ" | grep -Eq '^PERIPHERY_[A-Za-z0-9_]+='; then
+  fail 'Refusing adoption because the live Periphery process has a PERIPHERY_* environment override.'
+fi
+
 [[ -f "$periphery_config" && ! -L "$periphery_config" ]] \
   || fail 'Installed Periphery config is missing or unsafe; refusing adoption.'
 if grep -Eq '^[[:space:]]*onboarding_key[[:space:]]*=' "$periphery_config"; then
@@ -70,7 +84,8 @@ fi
 
 # The manually installed host can use Komodo's legacy singular `core_address`
 # while the reviewed target uses `core_addresses`. Parse TOML and normalize only
-# that representation difference; Core identity and connect_as must match exactly.
+# representation/default differences that are semantically identical; every
+# effective identity/Core/operator setting must otherwise match the reviewed target.
 validator="$script_dir/validate-adoption-config.py"
 require_real_file "$validator" 'Periphery adoption config validator'
 python3 "$validator" "$periphery_config" "$periphery_config_source" "$periphery_connect_as" \
