@@ -5,6 +5,7 @@ import {
   normalCdf,
   penetrationChanceForLayer,
   penetrationChance,
+  evaluateProbabilityChain,
 } from './armorInspectorChance.js'
 
 describe('normalCdf（高斯 CDF）', () => {
@@ -146,6 +147,20 @@ describe('Armor Inspector 逐层概率', () => {
     ]
     // 75 → [71.25,78.75]；第一层后 [51.25,58.75]；第二层 55mm → Φ(0)=0.5。
     expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
+  })
+
+  it('逐层累计概率：层点颜色数据与总概率同源', () => {
+    const layers = [
+      { part_name: 'A', section: 'hull', thickness: 98, effective: 98, external: false, gap: false, ricochet: false },
+      { part_name: 'B', section: 'hull', thickness: 2, effective: 2, external: false, gap: false, ricochet: false },
+    ]
+    const r = evaluateProbabilityChain(100, layers)
+    expect(r.chance).toBeCloseTo(penetrationChance(100, layers), 10)
+    expect(r.layers).toHaveLength(2)
+    expect(r.layers[0].chance).toBeCloseTo(normalCdf(1.2), 5)
+    expect(r.layers[0].layerChance).toBeCloseTo(normalCdf(1.2), 5)
+    expect(r.layers[1].layerChance).toBeCloseTo(0.5, 5)
+    expect(r.layers[1].chance).toBeCloseTo(r.chance, 10)
   })
 
   it('camelCase 字段（tankViewer trajLayers）同样可用', () => {
