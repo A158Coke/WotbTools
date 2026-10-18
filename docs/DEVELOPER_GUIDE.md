@@ -638,6 +638,11 @@ Komodo 域名 DNSPod 记录由独立 `infra/tofu/komodo` root 管理。旧 Yecao
 - `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
   `CI / Required Gate` 汇总受影响结果。Backend 运行 Maven，frontend 运行类型检查、单测、两套真实浏览器回归和 build；
   OpenTofu 每个 owner 只验证自己的 root。PR 验证不 push 镜像。
+- Business API 镜像采用 Spring Boot 默认四层（dependencies / spring-boot-loader /
+  snapshot-dependencies / application），tools 提取后运行精简 `wotb-web.jar`。
+  `ci-business-api.yml` 在一次性 PostgreSQL 下验证默认启动命令、readiness、`/api/health`
+  和 `BUILD_COMMIT`。第二次普通业务代码发布时应确认依赖层复用；生产 exact-SHA / digest
+  发布链不变，回滚可恢复旧 Dockerfile 后通过现有流程发布新 SHA。
 - `.github/workflows/business-api.yml`、`frontend.yml`、`keycloak.yml` 与 `ai-service.yml`
   分别拥有一个应用发布闭环。TX business-api/frontend 先主动 mirror exact GitHub SHA 到 Gitee，
   再在 TX 从该 SHA 构建并发布 immutable TCR tag，生产只消费输出的 `repo@sha256:<digest>`
