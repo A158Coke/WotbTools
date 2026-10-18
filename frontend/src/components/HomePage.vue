@@ -19,6 +19,8 @@ import heroDecorImg from '../assets/showcase/home/hero-v4.webp'
 import cardAiReviewImg from '../assets/showcase/home/card-ai-review-v1.webp'
 import cardBattlePlaybackImg from '../assets/showcase/home/card-battle-playback-v1.webp'
 import cardHofImg from '../assets/showcase/home/card-hall-of-fame-v1.webp'
+import { useI18n } from 'vue-i18n'
+import { mapLabel } from '../utils/helpers.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { RouterLink } from 'vue-router'
 import { ONBOARDING_KEY } from '../shared/onboarding.js'
@@ -26,6 +28,9 @@ import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 
 const onboarding = inject(ONBOARDING_KEY, null)
+// 地图名走 common/map_names.json 的三语表（与 Playback / Workspace 同一个 mapLabel），
+// 不把 `savanna` 这种原始 key 直接摆在 hero 上。
+const { locale } = useI18n()
 
 const topRecord = ref(null)
 const recordTotal = ref(null)
@@ -98,7 +103,7 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
               <span v-if="topRecord" class="home-stat-meta">
                 <b>{{ topRecord.tankName || topRecord.vehicleName || '—' }}</b>
                 <small>{{ topRecord.nickname || topRecord.playerNickname || '—' }}</small>
-                <small>{{ topRecord.map || topRecord.mapName || '—' }}</small>
+                <small>{{ mapLabel(topRecord.map || topRecord.mapName, locale) || '—' }}</small>
               </span>
             </dd>
           </div>
