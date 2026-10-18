@@ -1,6 +1,6 @@
 import { sampleDetachedPose } from './trackInterp.js'
 import { describe, it, expect } from 'vitest'
-import { coverageSpanAt, keyframeAt, sampleKeyframes, segmentAt, sampleChannel, sampleChannelWithin } from './trackInterp.js'
+import { coverageSpanAt, keyframeAt, sampleKeyframes, segmentAt, sampleChannel, sampleChannelWithin, spansContainAt, visibilitySpanForSampling } from './trackInterp.js'
 
 describe('trackInterp：位姿关键帧折线（客户端渲染路径）', () => {
   it('keyframeAt：段定位与端点保持', () => {
@@ -129,5 +129,22 @@ describe('trackInterp：覆盖段内网格采样（禁止跨隐藏段插值）',
     // 空/单点安全
     expect(sampleChannelWithin(() => 7, 1, 0.05, 0, 0.1, 0.05, 0.08)).toBe(7)
     expect(sampleChannelWithin(() => 7, 0, 0.05, 0, 0.1, 0.05, 0.08)).toBe(0)
+  })
+})
+
+
+describe('trackInterp：可见段采样/显隐（短隐藏段保持最后已知）', () => {
+  const spans = [42, 42.75, 42.85, 43]
+  it('spansContainAt：段外（含短隐藏段）为 false', () => {
+    expect(spansContainAt(spans, 42.75)).toBe(true)
+    expect(spansContainAt(spans, 42.8)).toBe(false)
+    expect(spansContainAt(spans, 42.85)).toBe(true)
+    expect(spansContainAt(spans, 41)).toBe(false)
+  })
+  it('visibilitySpanForSampling：隐藏段夹到前一段，段前取首段、段后取末段', () => {
+    expect(visibilitySpanForSampling(spans, 42.8)).toEqual([42, 42.75])
+    expect(visibilitySpanForSampling(spans, 41)).toEqual([42, 42.75])
+    expect(visibilitySpanForSampling(spans, 44)).toEqual([42.85, 43])
+    expect(visibilitySpanForSampling([0.85, Number.POSITIVE_INFINITY], 0.9)).toEqual([0.85, Number.POSITIVE_INFINITY])
   })
 })

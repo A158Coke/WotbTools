@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { makeSpeedtreeStaticMaterial, makeLightmappedMaterial, makeDecalMaterial } from './sceneryMaterials.js'
 
 const marked = (name = 'marked') => {
-  const m = new THREE.MeshStandardMaterial({ name, transparent: true, opacity: 1 })
+  const m = new THREE.MeshStandardMaterial({ name, transparent: true, opacity: 0.5 })
   m.userData.alphaBlend = true
   m.map = new THREE.Texture()
   return m
@@ -24,6 +24,8 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.transparent).toBe(true)
     expect(mat.depthWrite).toBe(false)
     expect(mat.uniforms.uAlphaCut.value).toBeCloseTo(0.05)
+    expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/c\.a \* uOpacity/)
     // 无标记的伪透明仍走原有裁切启发式
     const old = makeSpeedtreeStaticMaterial(plainPseudo('ST|leaf'), true)
     expect(old.transparent).toBe(false)
@@ -37,7 +39,8 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.depthWrite).toBe(false)
     expect(mat.defines.ALPHA_BLEND).toBe(1)
     expect(mat.uniforms.uAlphaCut.value).toBe(0)
-    expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(color, c\.a\);/)
+    expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(color, c\.a \* uOpacity\);/)
     const old = makeLightmappedMaterial(plainPseudo('lm'), new THREE.Texture(), null, null)
     expect(old.transparent).toBe(false)
     expect(old.defines.ALPHA_BLEND).toBeUndefined()
@@ -50,7 +53,8 @@ describe('extras.alphaBlend 专用材质路由', () => {
     expect(mat.depthWrite).toBe(false)
     expect(mat.defines.ALPHA_BLEND).toBe(1)
     expect(mat.uniforms.uAlphaCut.value).toBe(0)
-    expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(base\.rgb \* uTint \* shadowColor \* 2\.0, base\.a\);/)
+    expect(mat.uniforms.uOpacity.value).toBeCloseTo(0.5)
+    expect(mat.fragmentShader).toMatch(/gl_FragColor = vec4\(base\.rgb \* uTint \* shadowColor \* 2\.0, base\.a \* uOpacity\);/)
     const old = makeDecalMaterial(plainPseudo('decal'), new THREE.Texture(), null, {})
     expect(old.transparent).toBe(false)
     expect(old.defines.ALPHA_BLEND).toBeUndefined()

@@ -1341,8 +1341,14 @@ latency 从 0.02s 缓慢收敛到 0.2s，段首数秒是 10Hz 保持-跳变阶�
 短隐藏段（<2s）在 `coverage` 中不断开，因此必须用 `visibility[]` 而不是 `coverage`。
 2D 与 3D 共用 `visibilitySpansByEid` 投影（3D 从 `DATA.visibility` 建 eid 映射），末段
 `t_out` 缺省投影为 `+Infinity` 并作为合法段终点；两视图不得各自回退到 `coverage`。
+3D 活车的**显隐**也改读精确 `visibility`（`collision`/炮塔/尾迹同源），`coverage` 只表示
+"有采样可信"；短隐藏段内活车不渲染，死亡残骸仍按最后已知位姿保留。采样器若被要求在一
+隐藏段内取值（2D/标签/诊断），网格列夹到**前一段末**（最后已知），不得无约束地滑向下一段。
 核心资产缺失/失败时 3D 面板显示**非阻塞**降级提示（`scene3d-asset-degraded`），不再把
-`hasData=true` 当作健康加载完成。
+`hasData=true` 当作健康加载完成；变体映射缺失导致的 fail-closed 全量裁剪同样计入降级。
+`extras.alphaBlend` 在 SpeedTree / 光照图 / 贴花等专用材质路由上也保持软混合（alpha 乘
+`m.opacity`）；多材质网格只有**整组**命中 `extras.sky` 才走无限远天空，混合组按普通网格
+fail-closed（不把普通 group 投到无限远，也不让烘焙整件剔除）。
 
 **失察即冻结**（2026-10-16 用户裁定）：车辆离开我方视野后，2D 图标**停在最后观测点**——采样时刻由
 `observedFreezeTimeAt`（`utils/battlePlaybackV2.ts`）给出（最后一个 OBSERVED 段的结束时刻），

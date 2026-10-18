@@ -105,6 +105,40 @@ export function coverageSpanAt(coverage, t) {
 }
 
 /**
+ * 位姿可见段定位（采样用）：优先返回包含 `t` 的段；`t` 落在两段之间时返回**前一段**
+ * （最后已知），早于首段返回首段，晚于末段返回末段。与 `coverageSpanAt` 的 null 语义
+ * 分开——采样器需要"夹到最近端点保持"，而不是退回无约束插值。
+ */
+export function visibilitySpanForSampling(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
+  let first = null
+  let prev = null
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    const span = [start, end]
+    if (first === null) first = span
+    if (t < start - 1e-6) return prev ?? span
+    if (t <= end + 1e-6) return span
+    prev = span
+  }
+  return prev ?? first
+}
+
+/** 段集合是否包含 t（闭区间 + 1e-6 容差；空/畸形 → false）。 */
+export function spansContainAt(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return false
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    if (t >= start - 1e-6 && t <= end + 1e-6) return true
+  }
+  return false
+}
+
+/**
  * 覆盖段内的均匀网格采样（炮塔/炮管/侧倾等仅网格列）。
  *
  * 与 `sampleChannel` 的差别：只在 `[spanStart, spanEnd]` **内**的网格采样之间插值，

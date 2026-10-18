@@ -1127,6 +1127,22 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetIssues.some((i) => i.key === 'terrain' && i.status === 'missing')).toBe(true)
   })
 
+  it('变体映射缺失时 fail-closed 裁剪进入资产降级', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const root = new THREE.Group()
+    const tagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial())
+    tagged.userData.mdVariant = 'md1'
+    root.add(tagged)
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
+  })
+
   it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
