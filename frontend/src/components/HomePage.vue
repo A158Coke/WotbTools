@@ -169,7 +169,9 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
   border-radius: var(--radius-lg);
   background: var(--color-surface-1);
 }
-html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; }
+/* 插槽关闭时必须同时收回它占的那一栏，否则 hero 右侧留一大块死白。 */
+html[data-ui-profile="classic"] .home-hero { --home-hero-decor: none; grid-template-columns: minmax(0, 1fr); }
+html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 .home-hero-copy { min-width: 0; }
 .home-hero h1 { margin: 0; color: var(--color-text-primary); font: var(--type-display); }
