@@ -59,10 +59,12 @@ never triggers Komodo Core/Mongo/DNS reconciliation.
 
 Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml`
 is an input of `.github/workflows/asset-origin.yml`, which may mutate only the
-asset-owned Gitee transport branch `asset-origin` (never shared `main`). It must not
+asset-owned transport pair: the derived GitHub `asset-origin` pointer branch and the
+matching Gitee `asset-origin` transport branch (never shared `main`). It must not
 apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.
-The Stack tracks that same `asset-origin` branch, so the Frontend/Business API mirrors
-can move Gitee `main` without ever changing what this Stack deploys.
+The Stack tracks the Gitee `asset-origin` branch, and the GitHub pointer branch is
+what makes the application mirrors carry that ref instead of pruning it (the pinned
+mirror action force-pushes every GitHub branch to Gitee with `--prune`).
 `deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain
 mandatory, and ResourceSync Apply stays manual. No other file under
 `infra/komodo/resources/**` is a production input.

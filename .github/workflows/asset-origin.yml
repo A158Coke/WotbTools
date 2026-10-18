@@ -2,10 +2,22 @@ name: Asset Origin Source Mirror
 
 # Source-transport owner for the Komodo Stack `wotbtools-asset-origin`.
 #
-# It may mutate ONLY the asset-owned Gitee transport branch `asset-origin`
-# (never shared `main`, which the Frontend/Business API mirrors own). It never
-# applies ResourceSync, never mutates Komodo resources, and never deploys the Stack
-# (`deploy = false`, `webhook_enabled = false`, human ResourceSync Apply).
+# It may mutate ONLY the asset-owned transport pair:
+#   * the derived GitHub `asset-origin` branch (a pointer to the frozen reviewed
+#     main SHA), and
+#   * the matching Gitee `asset-origin` transport branch.
+# It never touches shared Gitee `main`, never applies ResourceSync, never mutates
+# Komodo resources, and never deploys the Stack (`deploy = false`,
+# `webhook_enabled = false`, human ResourceSync Apply).
+#
+# Why the GitHub pointer branch exists: the Frontend/Business API production mirrors
+# run a pinned Yikun/hub-mirror-action that force-pushes all GitHub branches as
+# `refs/remotes/origin/*:refs/heads/*` with `--prune` and `--tags`. A Gitee-only
+# `asset-origin` branch would therefore be deleted by the next application mirror.
+# Publishing the same frozen SHA to the GitHub `asset-origin` branch first makes the
+# ref part of the mirrored source set, so those mirrors carry it instead of pruning
+# it. The shared `production-gitee-mirror` concurrency group serializes this job with
+# both mirror jobs, so no mirror can interleave with the pair update.
 #
 # `infra/komodo/resources/asset-origin.toml` is the single reviewed exception to
 # the rule that the declarative resource tree is owned by no production workflow:
@@ -43,6 +55,10 @@ jobs:
       queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The job publishes the derived GitHub `asset-origin` pointer branch (so the
+    # all-branch Gitee mirrors carry it instead of pruning it) and nothing else.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -85,21 +101,21 @@ jobs:
 
       # hub-mirror mirrors whatever the source repository points at when it runs,
       # which can race a later unrelated main commit. Instead push the frozen event
-      # object already checked out above to the asset-owned transport ref. The
+      # object already checked out above to the asset-owned transport pair. The
       # shared production-gitee-mirror group serializes this mutation with the
-      # Frontend/Business API mirror jobs, but those jobs only ever move Gitee
-      # `main`; the Stack consumes `asset-origin`, which only this workflow moves.
-      # The following gate proves that exact ref before rollout.
+      # Frontend/Business API mirror jobs; because the GitHub pointer branch exists,
+      # those mirrors carry the same SHA instead of pruning the Gitee ref. The
+      # following step proves the exact Gitee ref before rollout.
       #
-      # The transport ref is asset-owned: ONLY this workflow moves
-      # `refs/heads/asset-origin`, so Frontend/Business API mirrors can never move
-      # the Stack's source underneath a human deploy. The ordinary freshness
-      # tolerance for "main advanced in unrelated commits" is still not enough for a
-      # force update: a run that is no longer exact current main must fail closed
-      # instead of pinning the asset ref to an older source.
+      # The transport pair is asset-owned: ONLY this workflow moves
+      # `refs/heads/asset-origin` (GitHub pointer and Gitee transport), so no other
+      # owner can move the Stack's source underneath a human deploy. The ordinary
+      # freshness tolerance for "main advanced in unrelated commits" is still not
+      # enough for a force update: a run that is no longer exact current main must
+      # fail closed instead of pinning the asset ref to an older source.
       # `PRODUCTION_REQUIRE_EXACT_MAIN=1` makes the shared helper fetch current
       # GitHub main and require it to still equal the frozen SOURCE_SHA, for both
-      # push and workflow_dispatch.
+      # push and workflow_dispatch; it runs before either ref is mutated.
       - name: Push frozen event SHA to the Gitee asset-origin ref
         shell: bash
         env:
@@ -133,6 +149,13 @@ jobs:
           # to the newer SHA.
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
+          # Publish the same frozen SHA to the derived GitHub pointer branch first.
+          # The application mirrors push every GitHub branch to Gitee with --prune,
+          # so this is what keeps the Gitee transport ref alive; without it they
+          # would delete the Gitee-only branch. actions/checkout persists the
+          # GITHUB_TOKEN credential for this push.
+          git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"
 
           # Never touch shared Gitee `main`: that ref belongs to the Frontend /
           # Business API mirrors. The Stack consumes this asset-owned ref only.
