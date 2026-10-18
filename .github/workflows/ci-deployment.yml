@@ -89,7 +89,7 @@ jobs:
           }
           docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
-      - name: Asset origin Caddy request-level smoke
+      - name: Asset origin Compose and Caddy request-level smoke
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -100,6 +100,28 @@ jobs:
             rm -rf "$work"
           }
           trap cleanup EXIT
+
+          # Native Compose validation owns the workload-shape contract; no source
+          # grep is used as a proxy for what Docker will actually run.
+          docker compose --project-directory deploy/assets -f deploy/assets/compose.yaml \
+            config --format json > "$work/compose.json"
+          python3 - "$work/compose.json" <<'PY'
+          import json, sys
+          compose = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert compose["name"] == "wotbtools-asset-origin", compose.get("name")
+          services = compose.get("services", {})
+          assert set(services) == {"caddy"}, sorted(services)
+          caddy = services["caddy"]
+          assert caddy["image"] == "caddy:2.10.2-alpine", caddy.get("image")
+          assert caddy.get("restart") == "unless-stopped", caddy.get("restart")
+          ports = {(int(p["target"]), str(p["published"]), p.get("protocol", "tcp")) for p in caddy.get("ports", [])}
+          assert ports == {(80, "80", "tcp"), (443, "443", "tcp")}, ports
+          by_target = {v["target"]: v for v in caddy.get("volumes", [])}
+          assert by_target["/etc/caddy/Caddyfile"].get("read_only") is True, by_target
+          assert by_target["/srv/wotb-assets"].get("type") == "bind", by_target
+          assert by_target["/srv/wotb-assets"].get("read_only") is True, by_target
+          assert "/data" in by_target and "/config" in by_target, by_target
+          PY
 
           mkdir -p "$work/assets/current"
           printf '%s\n' '{"asset-origin":"fixture"}' > "$work/assets/current/index.json"
@@ -157,7 +179,7 @@ jobs:
           conditional_status="$(curl "${curl_common[@]}" -o /dev/null -w '%{http_code}' \
             -H "If-None-Match: $etag" "$base/index.json")"
           [[ "$conditional_status" == 304 ]]
-          echo 'asset-origin Caddy request-level smoke: PASS'
+          echo 'asset-origin Compose and Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
         run: |
           set -euo pipefail
