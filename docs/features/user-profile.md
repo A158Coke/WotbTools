@@ -12,7 +12,7 @@
   复制成功才显示「已复制」。
 - **角色**：只读当前 access token 的 `realm_access.roles`（Keycloak 已展开 composite，持有 `wotbtools-admin`
   会同时看到它包含的业务角色），隐藏 Keycloak 内置的 `default-roles-*` / `offline_access` / `uma_authorization`，
-  其余按原始 key 排序展示，不做 i18n 翻译；dev `?admin=1` 旁路不影响这里的展示。client 角色（`resource_access`）不展示。
+  其余按原始 key 排序展示，不做 i18n 翻译；角色展示与权限判断都以真实 token claims 为事实源。client 角色（`resource_access`）不展示。
 - **不展示 group**：realm 未定义 group（`infra/tofu/keycloak` 无 group 资源），token 也没有 group-membership mapper。
   若以后启用 group，优先在 tofu 加 mapper 让前端读 token claim，而不是让资料接口依赖 Keycloak admin API。
 

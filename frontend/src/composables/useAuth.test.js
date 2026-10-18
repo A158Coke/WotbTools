@@ -764,10 +764,8 @@ describe('useAuth', () => {
     expect(auth.displayName.value).toBe('')
   })
 
-  it('?admin=1 只放行角色可见性，绝不伪造登录态（authenticated 仍为 false）', async () => {
-    // 回归锚点：曾有一条"本机验收旁路"把 authenticated 也置真（`authenticated ||= ?admin=1`），
-    // 被误扫进分支后撤出（49d4f757）。此用例在 dev 构建（vitest 下 import.meta.env.DEV=true）
-    // 且 URL 带 admin 参数时，断言「角色旁路生效 + 登录态不生效」两条同时成立。
+  it('?admin=1 不再提供角色旁路，也绝不伪造登录态', async () => {
+    // 历史回归锚点：URL 参数不得成为认证或授权事实源。
     window.history.replaceState({}, '', '/?admin=1&view=agent-replay')
     kcScenario.initResult = false // check-sso 未命中：真实未登录
     kcScenario.tokenParsed = null
@@ -778,15 +776,13 @@ describe('useAuth', () => {
       const auth = fresh.useAuth()
       await auth.initPromise
 
-      // 角色可见性旁路照旧（DEV_ADMIN_ROLES）：管理入口可见
-      expect(auth.hasRole('wotbtools-admin')).toBe(true)
-      expect(auth.hasRole('HoF-admin')).toBe(true)
-      expect(auth.isAdmin.value).toBe(true)
+      expect(auth.hasRole('wotbtools-admin')).toBe(false)
+      expect(auth.hasRole('HoF-admin')).toBe(false)
+      expect(auth.isAdmin.value).toBe(false)
       expect(auth.hasRole('content-admin')).toBe(false)
       expect(auth.isContentAdmin.value).toBe(false)
       expect(auth.isTournamentAdmin.value).toBe(false)
       expect(auth.isLeagueBroadcastAdmin.value).toBe(false)
-      // 但登录态不得被 URL 参数伪造——3D / shots / AI 的登录门必须照旧拦下
       expect(auth.authenticated.value).toBe(false)
       expect(auth.isAuthenticated()).toBe(false)
       expect(auth.authInitState.value).toBe('unauthenticated')
