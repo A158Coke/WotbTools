@@ -226,6 +226,8 @@ async function load(key, span = 600, mapId = null) {
     waterCoast,
     debug: false,
     onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
+    // 预剔除已移除天穹；必须沿用剔除前的标记，否则会退回 /sky/ 名字并误伤普通网格
+    skyFlagsAvailable,
   })
   // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）。必须在材质装配**之后**
   // 挂载（与运行时 mapScenery 同序）：装配内的水面片收集/水下判定按 GLB 世界包围盒取 z 为高度、

@@ -1113,6 +1113,20 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(false)
   })
 
+  it('terrain 双 404 是核心资产降级，不得标为 optional', async () => {
+    prepareAssets(['map', 'terrain', 'terrain-meta'])
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('/terrain')) return { ok: false, status: 404 }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'terrain' && i.status === 'missing')).toBe(true)
+  })
+
   it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])

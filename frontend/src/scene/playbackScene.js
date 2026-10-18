@@ -1105,7 +1105,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       } else if (field) {
         noteAsset('terrain', 'incomplete-meta', '忽略高度场（回退 2D）');
       } else if (metaStatus === 404 && binStatus === 404) {
-        noteAsset('terrain', 'missing', 'terrain.json + terrain.u16.bin 均 404（2D 回退）', { optional: true });
+        noteAsset('terrain', 'missing', 'terrain.json + terrain.u16.bin 均 404（2D 回退）');
       } else {
         noteAsset('terrain', 'unavailable', `meta=${metaStatus} bin=${binStatus}（回退 2D）`);
       }
