@@ -1346,7 +1346,12 @@ latency 从 0.02s 缓慢收敛到 0.2s，段首数秒是 10Hz 保持-跳变阶�
 隐藏段内取值（2D/标签/诊断），网格列夹到**前一段末**（最后已知），不得无约束地滑向下一段；
 短于一个网格间隔的可见窗口取**窗口结束前**的最近网格点，不能取窗口后的下一个 tick（否则会把
 后一段的炮塔角泄漏进短可见段）。透明材质（含 `extras.alphaBlend`）不进入实例化合批——three
-只按 object 排序，批内实例顺序固定会破坏软混合；保留独立节点由透明队列排序。
+只按 object 排序，批内实例顺序固定会破坏软混合；保留独立节点由透明队列排序。其中带
+逐节点光照图变换（`node.userData.lm`）的透明网格用**单实例 InstancedMesh** 承载，既保持
+一个透明排序单位，又复用 `aLm` 的 atlas UV 变换（普通 Mesh 非实例分支会按原始 `uv1` 采错区域）。
+分层地表元数据形状错误（如缺 `tiling`）时记 `groundLayers/invalid` 降级、释放坏层并用烘焙
+底图重试，不能因异常跳过后续场景 GLB。烘焙侧同样排除透明材质，并在变体映射 fail-closed 或
+`variantMappingIncomplete` 时拒绝出图。
 核心资产缺失/失败时 3D 面板显示**非阻塞**降级提示（`scene3d-asset-degraded`），不再把
 `hasData=true` 当作健康加载完成；变体映射缺失/`variantMappingIncomplete` 标记导致的 fail-closed 裁剪同样计入降级。
 `extras.alphaBlend` 在 SpeedTree / 光照图 / 贴花等专用材质路由上也保持软混合（alpha 乘
