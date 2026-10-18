@@ -44,9 +44,10 @@ print("asset-origin Compose contract: PASS")
 PY
 
 docker run --rm \
+  --entrypoint caddy \
   -v "$caddyfile:/etc/caddy/Caddyfile:ro" \
   caddy:2.10.2-alpine \
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 
 grep -Fq 'assets.wotbtools.com {' "$caddyfile"
 grep -Fq 'root * /srv/wotb-assets/current' "$caddyfile"
