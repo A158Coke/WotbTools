@@ -452,6 +452,20 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.049966, 5)
   })
 
+  it('HEAT 名义耗尽但区间仍有正尾：gap 衰减后继续概率链（spaced100→0.1m→hull1）', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 0.1]),
+    ]
+    const r = calculate(req('heat', 100.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.probability_layers.map(l => l.section)).toContain('gap')
+    expect(r.probability_layers.map(l => l.section)).toContain('hull')
+    // [95,105] → spaced100 CDF 0.5 → [−5,5]；gap 0.1m ×0.95 → [−4.75,4.75]；
+    // hull1 → Φ(−1/(9.5/6)) ≈ 0.2638；乘积 ≈ 13.1915483%。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.131915, 4)
+  })
+
   it('同一块板的重合三角形命中只算一层（射线掠过四边形对角线）', () => {
     const hits = [
       hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),

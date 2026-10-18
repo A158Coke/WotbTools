@@ -348,7 +348,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
     expect(kernel).not.toMatch(/isExplosive && rem > 0\.0/)
     expect(kernel).toMatch(/if \(isExplosive\) \{/)
-    expect(kernel).toMatch(/else if \(rem > 0\.0\) \{/)
+    // HE canSplash 强制非贯穿；HEAT 仍做 gap 衰减并进入 CDF（区间正尾可穿）。
+    expect(kernel).toMatch(/else \{\s*\/\/ HEAT gap decay/)
+    expect(kernel).not.toMatch(/HEAT 被间隙甲耗尽/)
   })
   it('单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间', () => {
     // review 2026-10-18 反例：chassis20 → spaced80 → hull1，卡片 13.7%；
