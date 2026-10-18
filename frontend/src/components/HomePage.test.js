@@ -10,6 +10,12 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('../utils/api.js', () => api)
+// locale 必须是真 ref：模板只自动解包真 ref，普通 { value } 会被 String() 成
+// "[object Object]" 并静默回落到 mapLabel 的 zh 兜底，这条断言就验证不到 locale 的传递。
+vi.mock('vue-i18n', async () => {
+  const { ref } = await import('vue')
+  return { useI18n: () => ({ t: key => key, locale: ref('en') }) }
+})
 
 const connectivityState = vi.hoisted(() => ({ state: null, settled: null }))
 vi.mock('../composables/useConnectivity.js', async () => {
@@ -74,6 +80,27 @@ describe('HomePage Hall of Fame data band', () => {
     const wrapper = mountPage()
     await flushPromises()
     expect(stat(wrapper, 0).find('strong').text()).toBe('123 456')
+    wrapper.unmount()
+  })
+
+  // 生产实测（2026-10-18）：/api/hof 的 mapName 是原始 key `savanna`，直接渲染就把
+  // 内部 key 摆在 hero 上。走 common/map_names.json 的三语表（与 Playback 同一个 mapLabel）。
+  it('localizes the map name instead of printing the raw map key', async () => {
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 10483, tankName: 'Leopard 1', nickname: 'xkdkw', mapName: 'savanna' }], totalItems: 591 })
+    const wrapper = mountPage()
+    await flushPromises()
+    const meta = stat(wrapper, 0).findAll('.home-stat-meta small').map(e => e.text())
+    expect(meta[0]).toBe('xkdkw')
+    expect(meta[1]).toBe('Oasis Palms')
+    expect(meta[1]).not.toBe('savanna')
+    wrapper.unmount()
+  })
+
+  it('falls back to the raw value when the map is not in the three-language table', async () => {
+    api.hofList.mockResolvedValue({ items: [{ damageDealt: 1, mapName: 'not_a_real_map' }], totalItems: 1 })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(stat(wrapper, 0).findAll('.home-stat-meta small')[1].text()).toBe('not_a_real_map')
     wrapper.unmount()
   })
 
