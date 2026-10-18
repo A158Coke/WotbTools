@@ -3526,6 +3526,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  "/api/tournament-broadcasts/v3/categories/{categoryId}":
+    get:
+      operationId: "getBroadcastCategoryV3"
+      summary: "get Broadcast Category"
+      parameters:
+        -
+          name: "categoryId"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 9007199254740991
+      responses:
+        "200":
+          description: "Public broadcast directory data"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
+        "400":
+          description: "Invalid input"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: "Not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "The season changed or the root already exists"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   "/api/tournament-broadcasts/covers/{coverId}":
     get:
       operationId: "getBroadcastCover"
@@ -4262,6 +4300,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  "/api/admin/tournament-broadcasts/v3/categories/{categoryId}/nodes":
+    post:
+      operationId: "createBroadcastNodeV3"
+      summary: "create Broadcast Node"
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "categoryId"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 9007199254740991
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastNodeCreate"
+      responses:
+        "200":
+          description: "Public broadcast directory data"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
+        "400":
+          description: "Invalid input"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: "Not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "The season changed or the root already exists"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: "Authentication required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: "Real site administrator required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   "/api/admin/tournament-broadcasts/nodes/{nodeId}/deletion-preview":
     get:
       operationId: "previewBroadcastNodeDeletion"
@@ -4670,6 +4767,93 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  "/api/admin/tournament-broadcasts/v3/nodes/{nodeId}/replays":
+    post:
+      operationId: "createBroadcastReplayV3"
+      summary: "create Broadcast Replay"
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "nodeId"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 9007199254740991
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: "object"
+              required: ["payload"]
+              properties:
+                payload:
+                  $ref: "#/components/schemas/BroadcastTimedReplaySave"
+                cover:
+                  type: "string"
+                  format: "binary"
+            encoding:
+              payload:
+                contentType: "application/json"
+      responses:
+        "200":
+          description: "Public broadcast directory data"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
+        "400":
+          description: "Invalid input"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: "Not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "The season changed or the root already exists"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: "Authentication required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: "Real site administrator required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: "Upload too large"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: "Cover storage request failed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: "Cover storage is not configured"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   "/api/admin/tournament-broadcasts/replays/{replayId}":
     put:
       operationId: "updateBroadcastReplay"
@@ -4966,6 +5150,93 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "403":
           description: "Real site administrator required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  "/api/admin/tournament-broadcasts/v3/replays/{replayId}":
+    put:
+      operationId: "updateBroadcastReplayV3"
+      summary: "update Broadcast Replay"
+      security:
+        -
+          bearerAuth: []
+      parameters:
+        -
+          name: "replayId"
+          in: "path"
+          required: true
+          schema:
+            type: "integer"
+            minimum: 1
+            maximum: 9007199254740991
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: "object"
+              required: ["payload"]
+              properties:
+                payload:
+                  $ref: "#/components/schemas/BroadcastTimedReplaySave"
+                cover:
+                  type: "string"
+                  format: "binary"
+            encoding:
+              payload:
+                contentType: "application/json"
+      responses:
+        "200":
+          description: "Public broadcast directory data"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
+        "400":
+          description: "Invalid input"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: "Not found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: "The season changed or the root already exists"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: "Authentication required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: "Real site administrator required"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "413":
+          description: "Upload too large"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "502":
+          description: "Cover storage request failed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: "Cover storage is not configured"
           content:
             application/json:
               schema:
@@ -5736,6 +6007,42 @@ components:
             $ref: "#/components/schemas/BroadcastCategory"
         coverUploadAvailable:
           type: "boolean"
+    BroadcastTimedCategoryView:
+      type: object
+      additionalProperties: false
+      required: [data, defaultTimeZone, replayStarts]
+      properties:
+        data:
+          $ref: "#/components/schemas/BroadcastCategoryView"
+        defaultTimeZone:
+          type: string
+          enum: [Asia/Shanghai, America/Los_Angeles, Europe/Berlin, Europe/Moscow]
+        replayStarts:
+          type: array
+          description: Only replays with a known start instant are included.
+          items:
+            type: object
+            additionalProperties: false
+            required: [replayId, startsAt]
+            properties:
+              replayId:
+                type: integer
+                minimum: 1
+                maximum: 9007199254740991
+              startsAt:
+                type: string
+                format: date-time
+    BroadcastTimedReplaySave:
+      type: object
+      additionalProperties: false
+      required: [replay, startsAt]
+      properties:
+        replay:
+          $ref: "#/components/schemas/BroadcastReplaySave"
+        startsAt:
+          type: [string, 'null']
+          format: date-time
+          description: Explicit null clears the time. When present, its date in the server tournament timezone must equal replay.matchDate.
     BroadcastCategoryView:
       type: "object"
       additionalProperties: false

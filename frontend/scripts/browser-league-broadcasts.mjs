@@ -16,9 +16,10 @@ function reset() {
   db = { seasons: [{ id: 10, server: 'CN', year: 2026, nameZh: '夏季联赛——国际赛事', nameEn: 'Summer league — international tournament', nameRu: null, startDate: '2026-08-16', createdAt: '2026-07-01T00:00:00Z', version: 0, rootCount: 1, replayCount: 1 }],
     categories: [{ id: 20, seasonId: 10, type: 'POINTS' }],
     nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'Final day — a long broadcast title for narrow screens', url: 'https://example.org/watch', matchDate: '2026-08-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed team', 'Other international team'], perspective: 'POV', coverId }] }],
-    nextId: 100, failNext: false }
+    replayStarts: { 40: '2026-08-16T11:00:00Z' }, nextId: 100, failNext: false }
 }
 const publicBase = '/api/tournament-broadcasts/v2', adminBase = '/api/admin/tournament-broadcasts/v2'
+const publicTimedBase = '/api/tournament-broadcasts/v3', adminTimedBase = '/api/admin/tournament-broadcasts/v3'
 const coverBase = '/api/tournament-broadcasts/covers/'
 function send(response, status, value) {
   response.statusCode = status
@@ -31,6 +32,12 @@ function failure(response, status, code) {
 }
 const seasonView = season => ({ season, categories: db.categories.filter(value => value.seasonId === season.id), coverUploadAvailable: true })
 const categoryView = category => ({ season: db.seasons.find(value => value.id === category.seasonId), category, nodes: db.nodes.filter(value => value.categoryId === category.id), coverUploadAvailable: true })
+function timedCategoryView(category) {
+  const data = categoryView(category)
+  const defaultTimeZone = { CN: 'Asia/Shanghai', ASIA: 'Asia/Shanghai', NA: 'America/Los_Angeles', EU: 'Europe/Berlin', LESTA: 'Europe/Moscow' }[data.season.server]
+  return { data, defaultTimeZone, replayStarts: data.nodes.flatMap(node => node.replays)
+    .filter(replay => db.replayStarts?.[replay.id]).map(replay => ({ replayId: replay.id, startsAt: db.replayStarts[replay.id] })) }
+}
 function recount(season) {
   const categories = db.categories.filter(value => value.seasonId === season.id).map(value => value.id)
   const nodes = db.nodes.filter(value => categories.includes(value.categoryId))
@@ -40,9 +47,12 @@ const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
   if (path.startsWith(coverBase)) { response.statusCode = 404; response.end(); return }
-  if (!path.startsWith(publicBase) && !path.startsWith(adminBase)) { next(); return }
+  if (![publicBase, adminBase, publicTimedBase, adminTimedBase].some(base => path.startsWith(base))) { next(); return }
   try {
-    const admin = path.startsWith(adminBase), base = admin ? adminBase : publicBase
+    const timed = path.startsWith(publicTimedBase) || path.startsWith(adminTimedBase)
+    const admin = path.startsWith(adminBase) || path.startsWith(adminTimedBase)
+    const base = timed ? (admin ? adminTimedBase : publicTimedBase) : (admin ? adminBase : publicBase)
+    const view = category => timed ? timedCategoryView(category) : categoryView(category)
     const parts = path.slice(base.length).split('/').filter(Boolean), targetId = Number(parts[1])
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { failure(response, 403, 'AUTH_FORBIDDEN'); return }
     if (!parts.length) { send(response, 200, { servers, seasons: db.seasons.filter(value => value.server === url.searchParams.get('server')), coverUploadAvailable: true }); return }
@@ -56,7 +66,7 @@ const middleware = async (request, response, next) => {
     if (request.method === 'GET') {
       if (!season) { failure(response, 404, 'RESOURCE_NOT_FOUND'); return }
       if (parts[2] === 'deletion-preview') send(response, 200, { seasonId: season.id, expectedVersion: season.version, rootCount: node ? 1 : season.rootCount, replayCount: node ? node.replays.length : season.replayCount })
-      else send(response, 200, category ? categoryView(category) : seasonView(season))
+      else send(response, 200, category ? view(category) : seasonView(season))
       return
     }
     let payload
@@ -65,6 +75,8 @@ const middleware = async (request, response, next) => {
       payload = String(request.headers['content-type']).startsWith('multipart/')
         ? JSON.parse(await (await incoming.formData()).get('payload').text()) : await incoming.json()
     }
+    const startsAt = timed && payload?.replay ? payload.startsAt : undefined
+    if (timed && payload?.replay) payload = payload.replay
     if (db.failNext) { db.failNext = false; failure(response, 400, 'INVALID_ARGUMENT'); return }
     if (season && (payload?.expectedVersion ?? Number(url.searchParams.get('expectedVersion'))) !== season.version) { failure(response, 409, 'BROADCAST_VERSION_CONFLICT'); return }
     if (request.method === 'DELETE') {
@@ -87,11 +99,16 @@ const middleware = async (request, response, next) => {
       db.nodes.push(node); season.version++; recount(season)
     } else {
       const { expectedVersion, coverAction, ...fields } = payload
-      if (replay) Object.assign(replay, fields)
-      else node.replays.push({ ...fields, id: db.nextId++, nodeId: node.id, coverId: null })
+      const previousDate = replay?.matchDate
+      const saved = replay || { id: db.nextId++, nodeId: node.id, coverId: null }
+      Object.assign(saved, fields)
+      if (!replay) node.replays.push(saved)
+      db.replayStarts ||= {}
+      if (timed) db.replayStarts[saved.id] = startsAt
+      else if (previousDate !== saved.matchDate) delete db.replayStarts[saved.id]
       season.version++; recount(season)
     }
-    send(response, 200, category ? categoryView(category) : seasonView(season))
+    send(response, 200, category ? view(category) : seasonView(season))
   } catch (error) { console.error(error); failure(response, 500, 'INTERNAL_ERROR') }
 }
 
@@ -174,7 +191,7 @@ try {
     const page = new Page(chrome.client, sessionId)
     try {
       await page.enable(); await page.emulate(scenario)
-      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
+      await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});localStorage.removeItem('wotb-broadcast-display-time-zone');` }, sessionId)
       const scenarioOrigin = scenario.productionHome ? origin.replace('127.0.0.1', 'wotbtools.com') : origin
       await page.goto(`${scenarioOrigin}/?view=more&ws-auth=0`)
       await page.waitForValue('!!document.querySelector("[data-testid=more-page]")', Boolean)
@@ -218,6 +235,11 @@ try {
       assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-replay-40] a")?.getAttribute("rel")'), 'noopener noreferrer')
       const groupLabel = scenario.locale === 'zh' ? '第7组' : scenario.locale === 'ru' ? 'Группа 7' : 'Group 7'
       assert.ok(await page.evaluate(`document.querySelector('[data-testid=broadcast-replay-40]').textContent.includes(${JSON.stringify(groupLabel)})`), 'group number follows the UI language')
+      assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-display-time-zone]").value'), 'server')
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('19:00') && value.includes('UTC+8'))
+      await fill(page, { 'broadcast-display-time-zone': 'UTC' })
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('11:00 UTC'))
+      await geometry(page)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
@@ -237,8 +259,15 @@ try {
         assert.equal(db.seasons[0].nameRu, null)
         await tap(page, '[data-testid=broadcast-enter-season-10]', scenario.touch)
         await tap(page, '[data-testid=broadcast-category-20]', scenario.touch)
+        await fill(page, { 'broadcast-display-time-zone': 'UTC' })
         await tap(page, '[data-testid=broadcast-new-replay-30]', scenario.touch)
-        await fill(page, { 'broadcast-title': 'Created in browser', 'broadcast-url': 'https://example.org/new', 'broadcast-date': '2026-10-16', 'broadcast-day': 7, 'broadcast-team-0': 'Followed', 'broadcast-team-1': 'Other', 'broadcast-group-number': 12 })
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-input-time-zone]").value'), '480', 'editor defaults to UTC+8 independently of viewer')
+        assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-group-number]").required'), false, 'group is optional')
+        await fill(page, { 'broadcast-title': 'Created in browser', 'broadcast-url': 'https://example.org/new', 'broadcast-date': '2026-10-16', 'broadcast-time': '19:15:30.125', 'broadcast-day': 7, 'broadcast-team-0': 'Followed', 'broadcast-team-1': 'Other', 'broadcast-group-number': 12 })
+        await fill(page, { 'broadcast-input-time-zone': '0' })
+        await page.waitForValue('document.querySelector("[data-testid=broadcast-time]").value', value => value === '11:15:30.125')
+        await fill(page, { 'broadcast-input-time-zone': '480' })
+        await page.waitForValue('document.querySelector("[data-testid=broadcast-time]").value', value => value === '19:15:30.125')
         db.failNext = true
         await tap(page, '[data-testid=broadcast-replay-save]', scenario.touch)
         await page.waitForValue('document.querySelectorAll("[data-testid=broadcast-replay-dialog] [role=alert]").length', value => value > 0)
@@ -250,16 +279,22 @@ try {
         const replayId = db.nodes[0].replays.at(-1).id
         assert.equal(db.nodes[0].replays.at(-1).groupNumber, 12, 'points groups are not limited to 1 through 4')
         assert.equal(Object.hasOwn(db.nodes[0].replays.at(-1), 'groupLabel'), false)
+        assert.equal(db.replayStarts[replayId], '2026-10-16T11:15:30.125Z')
         await tap(page, `[data-testid=broadcast-edit-replay-${replayId}]`, scenario.touch)
         db.seasons[0].version++
         await tap(page, '[data-testid=broadcast-replay-save]', scenario.touch)
         await page.waitForValue('!!document.querySelector("[data-testid=broadcast-editor-reload]")', Boolean)
         await tap(page, '[data-testid=broadcast-editor-reload]', scenario.touch)
         await page.waitForValue('!!document.querySelector("[data-testid=broadcast-replay-dialog]") && !document.querySelector("[data-testid=broadcast-editor-reload]")', Boolean)
-        await fill(page, { 'broadcast-title': 'Updated after conflict' })
+        await fill(page, { 'broadcast-title': 'Updated after conflict', 'broadcast-group-number': '', 'broadcast-time': '' })
         await tap(page, '[data-testid=broadcast-replay-save]', scenario.touch)
         await page.waitForValue('!document.querySelector("[data-testid=broadcast-replay-dialog]")', Boolean)
         assert.equal(db.nodes[0].replays.at(-1).title, 'Updated after conflict')
+        assert.equal(db.nodes[0].replays.at(-1).groupNumber, null)
+        assert.equal(db.replayStarts[replayId], null)
+        const dateOnlyText = await page.evaluate(`document.querySelector('[data-testid="broadcast-replay-${replayId}"]').textContent`)
+        assert.doesNotMatch(dateOnlyText, /UTC|00:00|Group number pending|组号待补|Номер группы не указан/)
+        assert.ok(dateOnlyText.includes('2026-10-16'))
         await tap(page, `[data-testid=broadcast-delete-replay-${replayId}]`, scenario.touch)
         await tap(page, '[data-testid=confirm-ok]', scenario.touch)
         await page.waitForValue(`!document.querySelector('[data-testid="broadcast-replay-${replayId}"]')`, Boolean)

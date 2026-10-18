@@ -6,19 +6,23 @@ import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
 import FileDrop from './FileDrop.vue'
 import { broadcastSeasonName } from '../utils/display.js'
+import { BROADCAST_ADMIN_OFFSET, BROADCAST_INPUT_OFFSETS, broadcastInputFields, broadcastInputInstant, broadcastMatchDate } from '../utils/broadcastTime.js'
 import { broadcastCoverUrl } from '../api/league-broadcasts.js'
-import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
+import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastReplaySave, BroadcastTimedReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
 
 const props = defineProps<{
   open: boolean; season: BroadcastSeason; category: BroadcastCategory; node: BroadcastNode;
-  replay?: BroadcastReplay | null; busy: boolean; coverUploadAvailable: boolean; errorText?: string
+  replay?: BroadcastReplay | null; busy: boolean; coverUploadAvailable: boolean; errorText?: string; defaultTimeZone: string
 }>()
-const emit = defineEmits<{ close: []; reload: []; save: [value: BroadcastReplaySave, cover: File | null] }>()
+const emit = defineEmits<{ close: []; reload: []; save: [value: BroadcastTimedReplaySave, cover: File | null] }>()
 const { t, locale } = useI18n()
 const formId = `broadcast-replay-${useId()}`
-const draft = ref({ title: '', url: '', matchDate: '', dayNumber: 1, groupNumber: '' as number | string,
+const draft = ref({ title: '', url: '', matchDate: '', time: '', dayNumber: 1, groupNumber: '' as number | string,
   bracket: 'DEFAULT' as NonNullable<BroadcastReplaySave['bracket']>, teams: ['', '', '', ''], perspective: 'POV' as BroadcastReplaySave['perspective'] })
 const files = ref<File[]>([]), preview = ref(''), removeCover = ref(false), invalid = ref(false)
+const inputOffset = ref<number>(BROADCAST_ADMIN_OFFSET)
+let originalInstant: string | null = null
+const matchDateEdited = ref(false)
 let expectedVersion = 0
 const points = computed(() => props.category.type === 'POINTS')
 const grouped = computed(() => props.category.type === 'SEMI_FINALS'
@@ -43,33 +47,57 @@ watch(() => props.open, open => {
   if (!open) return
   expectedVersion = props.season.version
   const value = props.replay
+  inputOffset.value = BROADCAST_ADMIN_OFFSET
+  originalInstant = value?.startsAt ?? null
+  matchDateEdited.value = false
   draft.value = {
-    title: value?.title ?? '', url: value?.url ?? '', matchDate: value?.matchDate ?? '', dayNumber: value?.dayNumber ?? 1,
-    groupNumber: value?.groupNumber ?? (points.value ? '' : 1), bracket: value?.bracket ?? 'DEFAULT',
+    title: value?.title ?? '', url: value?.url ?? '', ...broadcastInputFields(value?.matchDate ?? '', originalInstant), dayNumber: value?.dayNumber ?? 1,
+    groupNumber: value?.groupNumber ?? '', bracket: value?.bracket ?? 'DEFAULT',
     teams: Array.from({ length: 4 }, (_, index) => value?.teams[index] ?? ''), perspective: value?.perspective ?? 'POV',
   }
 }, { immediate: true })
+watch(() => draft.value.time, (time, previous) => {
+  if (!time && previous && originalInstant && !matchDateEdited.value && props.replay) {
+    draft.value.matchDate = props.replay.matchDate
+  }
+})
 onScopeDispose(releasePreview)
+
+function inputInstant() {
+  if (originalInstant) {
+    const original = broadcastInputFields('', originalInstant, inputOffset.value)
+    if (original.matchDate === draft.value.matchDate && original.time === draft.value.time) return originalInstant
+  }
+  return broadcastInputInstant(draft.value.matchDate, draft.value.time, inputOffset.value)
+}
+function changeInputOffset(event: Event) {
+  const next = Number((event.target as HTMLSelectElement).value)
+  const instant = inputInstant()
+  if (instant) Object.assign(draft.value, broadcastInputFields(draft.value.matchDate, instant, next))
+  inputOffset.value = next
+}
 
 function submit() {
   if (props.busy) return
   const value = draft.value
   let validUrl = false
   try { validUrl = ['http:', 'https:'].includes(new URL(value.url.trim()).protocol) } catch { /* Report with the other fields. */ }
-  const groupNumber = Number(value.groupNumber)
+  const groupNumber = value.groupNumber === '' ? null : Number(value.groupNumber)
+  const startsAt = inputInstant()
   const valid = value.title.trim() && value.title.trim().length <= 200 && validUrl && value.url.trim().length <= 2048
     && /^\d{4}-\d{2}-\d{2}$/.test(value.matchDate) && Number.isInteger(value.dayNumber) && value.dayNumber > 0
+    && startsAt !== undefined
     && value.teams[0].trim() && value.teams[1].trim() && value.teams.every(team => team.trim().length <= 100)
-    && (!(points.value || grouped.value) || (Number.isInteger(groupNumber) && groupNumber >= 1 && groupNumber <= (points.value ? 2147483647 : 4)))
+    && (!(points.value || grouped.value) || groupNumber === null || (Number.isInteger(groupNumber) && groupNumber >= 1 && groupNumber <= (points.value ? 2147483647 : 4)))
     && (!files.value.length || props.coverUploadAvailable)
   invalid.value = !valid
   if (!valid) return
-  emit('save', {
-    expectedVersion, title: value.title.trim(), url: value.url.trim(), matchDate: value.matchDate, dayNumber: value.dayNumber,
+  emit('save', { startsAt: startsAt ?? null, replay: {
+    expectedVersion, title: value.title.trim(), url: value.url.trim(), matchDate: startsAt ? broadcastMatchDate(startsAt, props.defaultTimeZone) : value.matchDate, dayNumber: value.dayNumber,
     groupNumber: points.value || grouped.value ? groupNumber : null,
     bracket: grouped.value ? value.bracket : null, teams: value.teams.map(team => team.trim()).filter(Boolean), perspective: value.perspective,
     coverAction: files.value.length ? 'REPLACE' : removeCover.value ? 'REMOVE' : 'KEEP',
-  }, files.value[0] ?? null)
+  } }, files.value[0] ?? null)
 }
 </script>
 
@@ -83,10 +111,12 @@ function submit() {
       <label class="broadcast-field"><span>{{ t('leagueBroadcasts.link') }}</span><input v-model="draft.url" type="url" required maxlength="2048" :disabled="busy" data-testid="broadcast-url"></label>
       <div class="broadcast-form-grid">
         <label class="broadcast-field"><span>{{ t('leagueBroadcasts.day') }}</span><input v-model.number="draft.dayNumber" type="number" min="1" max="2147483647" step="1" required :disabled="busy" data-testid="broadcast-day"></label>
-        <label class="broadcast-field"><span>{{ t('leagueBroadcasts.matchDate') }}</span><input v-model="draft.matchDate" type="date" required :disabled="busy" data-testid="broadcast-date"></label>
-        <label v-if="points" class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }}</span><input v-model.number="draft.groupNumber" type="number" min="1" max="2147483647" step="1" required :disabled="busy" data-testid="broadcast-group-number"></label>
+        <label class="broadcast-field"><span>{{ t('leagueBroadcasts.matchDate') }}</span><input v-model="draft.matchDate" type="date" required :disabled="busy" data-testid="broadcast-date" @input="matchDateEdited = true"></label>
+        <label class="broadcast-field"><span>{{ t('leagueBroadcasts.matchTime') }} · {{ t('leagueBroadcasts.optional') }}</span><input v-model="draft.time" type="time" step="0.001" :disabled="busy" data-testid="broadcast-time"><small>{{ t('leagueBroadcasts.matchTimeHint') }}</small></label>
+        <label class="broadcast-field"><span>{{ t('leagueBroadcasts.inputTimeZone') }}</span><select :value="inputOffset" :disabled="busy" data-testid="broadcast-input-time-zone" @change="changeInputOffset"><option v-for="offset in BROADCAST_INPUT_OFFSETS" :key="offset" :value="offset">{{ t(`leagueBroadcasts.inputOffsets.${offset}`) }}</option></select><small>{{ t('leagueBroadcasts.inputTimeZoneHint') }}</small></label>
+        <label v-if="points" class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }} · {{ t('leagueBroadcasts.optional') }}</span><input v-model.number="draft.groupNumber" type="number" min="1" max="2147483647" step="1" :disabled="busy" data-testid="broadcast-group-number"></label>
         <template v-if="grouped">
-          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }}</span><select v-model.number="draft.groupNumber" :disabled="busy" data-testid="broadcast-group-number"><option v-for="value in 4" :key="value" :value="value">{{ value }}</option></select></label>
+          <label class="broadcast-field"><span>{{ t('leagueBroadcasts.groupNumber') }} · {{ t('leagueBroadcasts.optional') }}</span><select v-model.number="draft.groupNumber" :disabled="busy" data-testid="broadcast-group-number"><option value="">{{ t('leagueBroadcasts.noGroup') }}</option><option v-for="value in 4" :key="value" :value="value">{{ value }}</option></select></label>
           <label class="broadcast-field"><span>{{ t('leagueBroadcasts.bracket') }}</span><select v-model="draft.bracket" :disabled="busy" data-testid="broadcast-bracket"><option v-for="value in ['DEFAULT', 'WINNERS', 'LOSERS']" :key="value" :value="value">{{ t(`leagueBroadcasts.brackets.${value}`) }}</option></select></label>
         </template>
       </div>

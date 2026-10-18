@@ -1,0 +1,2741 @@
+{
+  "checkedAt": "2026-10-18",
+  "policy": "Forward-only correction of unchanged initialization defaults; protect administrator names, titles and altered replay facts. Includes 71 new YouTube streams and three prior CN Bilibili parts. Nonofficial name translations are editorial.",
+  "entries": [
+    {
+      "sourceKey": "youtube:FXGodwWu1cw",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 1,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Турнир Spring Games | Путь мастерства #1 | День 4",
+        "url": "https://www.youtube.com/watch?v=FXGodwWu1cw",
+        "matchDate": "2026-03-05",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[MERCY] Vaporize",
+          "[AQVA] Mono"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第1轮 / Round 1 · 第4天 / Day 4 · MERCY vs AQVA"
+    },
+    {
+      "sourceKey": "youtube:ZcwvTGyUP9M",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 2,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Турнир Spring Games | Путь мастерства #2 | День 4",
+        "url": "https://www.youtube.com/watch?v=ZcwvTGyUP9M",
+        "matchDate": "2026-03-10",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[LQVID] 67",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第2轮 / Round 2 · 第4天 / Day 4 · LQVID vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:_u3nHqOfX5s",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Турнир Spring Games | Турнир Профессионалов | Финальный этап | День 2",
+        "url": "https://www.youtube.com/watch?v=_u3nHqOfX5s",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[BLOVE] Bedbug",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · BLOVE vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:qBqQwnb-CQw",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 1,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "Турнир Blitz Masters: Legacy | Путь мастерства #1 | День 4",
+        "url": "https://www.youtube.com/watch?v=qBqQwnb-CQw",
+        "matchDate": "2026-05-13",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[BLOVE] Bedbug",
+          "[EXL] Excellence"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第1轮 / Round 1 · 第4天 / Day 4 · BLOVE vs EXL"
+    },
+    {
+      "sourceKey": "youtube:M6F3kmIxGjg",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 2,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "Турнир Blitz Masters: Legacy | Путь мастерства #2 | День 4",
+        "url": "https://www.youtube.com/watch?v=M6F3kmIxGjg",
+        "matchDate": "2026-05-18",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[-BPS-] Push or Bench",
+          "[S-WIL] dep"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第2轮 / Round 2 · 第4天 / Day 4 · -BPS- vs S-WIL"
+    },
+    {
+      "sourceKey": "youtube:RKA0U8rzXF0",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 3,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "Турнир Blitz Masters: Legacy | Путь мастерства #3 | День 4",
+        "url": "https://www.youtube.com/watch?v=RKA0U8rzXF0",
+        "matchDate": "2026-05-24",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[TORND] TORNADO",
+          "[L333T] LEEET ALLIANCE"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第3轮 / Round 3 · 第4天 / Day 4 · TORND vs L333T"
+    },
+    {
+      "sourceKey": "youtube:09LHv_Hk4VI",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 3,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Турнир Autumn Games | Путь мастерства #3 | День 4",
+        "url": "https://www.youtube.com/watch?v=09LHv_Hk4VI",
+        "matchDate": "2026-09-26",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[LUV-] LostInNorway",
+          "[L333T] LEEEEEEEEEEEEET"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第3轮 / Round 3 · 第4天 / Day 4 · LUV- vs L333T"
+    },
+    {
+      "sourceKey": "youtube:HwtHTRndqCY",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Турнир Autumn Games | Финальный этап | День 2",
+        "url": "https://www.youtube.com/watch?v=HwtHTRndqCY",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[KOVA-] KOVA",
+          "[BLOVE] Bedbug"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · KOVA- vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:reSgKpylUwE",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World Of Tanks Blitz || REQM ||  Top4 stage Day 2",
+        "url": "https://www.youtube.com/watch?v=reSgKpylUwE",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "LOSERS",
+        "teams": [
+          "REQM",
+          "CHRD"
+        ],
+        "perspective": "POV"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · 败者组 / Lower Bracket · REQM vs CHRD"
+    },
+    {
+      "sourceKey": "youtube:Vh89K143B4k",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games. APAC TOP 4",
+        "url": "https://www.youtube.com/watch?v=Vh89K143B4k",
+        "matchDate": "2026-10-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[LEEET] LEEEEEEEET",
+          "[FL4ME] Jaded"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · LEEET vs FL4ME"
+    },
+    {
+      "sourceKey": "youtube:Lo9JZspuPr4",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games. APAC TOP 3",
+        "url": "https://www.youtube.com/watch?v=Lo9JZspuPr4",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[FL4ME] Jaded",
+          "[LEEET] LEEEEEEEET"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · FL4ME vs LEEET"
+    },
+    {
+      "sourceKey": "youtube:QdWSCdplcII",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Blitz Masters: Legacy. APAC Day 1 Double Elimination",
+        "url": "https://www.youtube.com/watch?v=QdWSCdplcII",
+        "matchDate": "2026-06-06",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[REQM] Primacy",
+          "[ISRL] Island Boys"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · REQM vs ISRL"
+    },
+    {
+      "sourceKey": "youtube:PetG1HegBTI",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Spring Season - Double Elimination - Day 1 - APAC",
+        "url": "https://www.youtube.com/watch?v=PetG1HegBTI",
+        "matchDate": "2026-03-24",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[REQM] Primacy",
+          "[CHRD] Last chance"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · REQM vs CHRD"
+    },
+    {
+      "sourceKey": "youtube:6a47CV6v1Fs",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Spring Season - Double Elimination - Day 2 - APAC",
+        "url": "https://www.youtube.com/watch?v=6a47CV6v1Fs",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[REQM] Primacy",
+          "[CHRD] Last chance"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · REQM vs CHRD"
+    },
+    {
+      "sourceKey": "youtube:FMmyzEl16_o",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Wot Blitz autumn games 2026 APAC TOP 4 DAY 2 [ENG]",
+        "url": "https://www.youtube.com/watch?v=FMmyzEl16_o",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[FL4ME] Jaded",
+          "[LEEET] LEEEEEEEET"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · FL4ME vs LEEET"
+    },
+    {
+      "sourceKey": "youtube:yOpc-sG7o4k",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Wot Blitz autumn games 2026 APAC TOP 4 DAY 1 [ENG]",
+        "url": "https://www.youtube.com/watch?v=yOpc-sG7o4k",
+        "matchDate": "2026-10-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[LEEET] LEEEEEEEET",
+          "[FL4ME] Jaded"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · LEEET vs FL4ME"
+    },
+    {
+      "sourceKey": "youtube:FrefK25xhEk",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "2026年10月11日　AUTUMN GAMES 2026　Regional Pros Playoffs — Day 2#worldoftanksblitz　＃ワールドオブタンクスブリッツ",
+        "url": "https://www.youtube.com/watch?v=FrefK25xhEk",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[FL4ME] Jaded",
+          "[LEEET] LEEEEEEEET"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · FL4ME vs LEEET"
+    },
+    {
+      "sourceKey": "youtube:KwBzUqpky_E",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "2026 3月25日 spring Games Double Elimination Day ２ FINAL #worldoftanksblitz　＃ワールドオブタンクスブリッツ",
+        "url": "https://www.youtube.com/watch?v=KwBzUqpky_E",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[YSL] Casino Royale",
+          "[REQM] Primacy"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · YSL vs REQM"
+    },
+    {
+      "sourceKey": "youtube:uBWcqQDlIK4",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Spring Season - Double Elimination - Day 1",
+        "url": "https://www.youtube.com/watch?v=uBWcqQDlIK4",
+        "matchDate": "2026-03-24",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[MERCY] Vaporize",
+          "[EXL] Excellence"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · MERCY vs EXL"
+    },
+    {
+      "sourceKey": "youtube:9MCy6iZpu0s",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "🇪🇸🏆 EU Gran Final Spring Games 2026 | Europa | Torneo Wot Blitz en Español",
+        "url": "https://www.youtube.com/watch?v=9MCy6iZpu0s",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[EXL] Excellence",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · EXL vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:ceJSSkGUHj4",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "[FR] Spring Games  - Finales Professionnelles -  Finales - Jour 2",
+        "url": "https://www.youtube.com/watch?v=ceJSSkGUHj4",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[BLOVE] Bedbug",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · BLOVE vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:zfG1ebtx2bU",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Spring Season - Double Elimination - Day 2",
+        "url": "https://www.youtube.com/watch?v=zfG1ebtx2bU",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[BLOVE] Bedbug",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · BLOVE vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:on7JjjO-Uok",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "World Of Tanks Blitz || EXL ||  Grand Finals",
+        "url": "https://www.youtube.com/watch?v=on7JjjO-Uok",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[EXL] Excellence",
+          "[MERCY] Vaporize"
+        ],
+        "perspective": "POV"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · EXL vs MERCY"
+    },
+    {
+      "sourceKey": "youtube:ea468wLLh08",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Blitz Masters: Legacy. EU Day 1 Double Elimination",
+        "url": "https://www.youtube.com/watch?v=ea468wLLh08",
+        "matchDate": "2026-06-06",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[EXL] Excellence",
+          "[-BPS-] Push or Bench"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · EXL vs -BPS-"
+    },
+    {
+      "sourceKey": "youtube:mWNEw1wTG0A",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games EU. Top 4",
+        "url": "https://www.youtube.com/watch?v=mWNEw1wTG0A",
+        "matchDate": "2026-10-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[BLOVE] Bedbug",
+          "[JESUS] Vaporize"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · BLOVE vs JESUS"
+    },
+    {
+      "sourceKey": "youtube:tISW8qtVzAI",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "TOP 4 AUTUMN GAMES PROFESSIONAL TOURNAMENT | GIVEAWAY! | WOTB 2026 | 2ND STAGE DAY 2",
+        "url": "https://www.youtube.com/watch?v=tISW8qtVzAI",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[KOVA-] KOVA",
+          "[BLOVE] Bedbug"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · KOVA- vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:DXncD0sLetg",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "[FR] Autumn Games 2026 - Finales Professionnelles Lower et Grande Finales",
+        "url": "https://www.youtube.com/watch?v=DXncD0sLetg",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[KOVA-] KOVA",
+          "[BLOVE] Bedbug"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · KOVA- vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:rgO8V0QOc2g",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games EU. Top 3 DE",
+        "url": "https://www.youtube.com/watch?v=rgO8V0QOc2g",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[JESUS] Vaporize",
+          "[BLOVE] Bedbug"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · JESUS vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:MxMlbXBZPpU",
+      "server": "EU",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "🍁2026 AUTUMN GAMES🍁GRAND FINALS🍁WATCH PARTY W/ TEAMMATES🍁",
+        "url": "https://www.youtube.com/watch?v=MxMlbXBZPpU",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[JESUS] Vaporize",
+          "[BLOVE] Bedbug"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · JESUS vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:bvBbgyFa4PQ",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Spring Games NA - Top 4 || World of Tanks Blitz Spring 2026",
+        "url": "https://www.youtube.com/watch?v=bvBbgyFa4PQ",
+        "matchDate": "2026-03-24",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[OBLVN] So Predictable",
+          "[-_X] Origin"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · OBLVN vs -_X"
+    },
+    {
+      "sourceKey": "youtube:QBkZvrl5ato",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Spring Games NA - Grand Finals || World of Tanks Blitz Spring 2026",
+        "url": "https://www.youtube.com/watch?v=QBkZvrl5ato",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[GG-] Good Game",
+          "[-_X] Origin"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · GG- vs -_X"
+    },
+    {
+      "sourceKey": "youtube:hVlLISeO-vE",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "🇪🇸🏆 NA Gran Final Spring Games 2026 | Norte América | Torneo Wot Blitz en Español",
+        "url": "https://www.youtube.com/watch?v=hVlLISeO-vE",
+        "matchDate": "2026-03-25",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[OBLVN] So Predictable",
+          "[-_X] Origin"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · OBLVN vs -_X"
+    },
+    {
+      "sourceKey": "youtube:a7nYJekObDU",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Blitz Masters: Legacy. NA Day 1 Double Elimination",
+        "url": "https://www.youtube.com/watch?v=a7nYJekObDU",
+        "matchDate": "2026-06-06",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[-_X] Origin",
+          "[JKR] Jokers"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · -_X vs JKR"
+    },
+    {
+      "sourceKey": "youtube:X1f0o05OoyM",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games. NA Day 1 Double Elimination Top 4",
+        "url": "https://www.youtube.com/watch?v=X1f0o05OoyM",
+        "matchDate": "2026-10-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[-NM-] Primus Nox",
+          "[322] Exterminatus"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · -NM- vs 322"
+    },
+    {
+      "sourceKey": "youtube:Ob5AAwDYKic",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Autumn Games 2026 NA - Pros Finals - Giveaways | WoT Blitz",
+        "url": "https://www.youtube.com/watch?v=Ob5AAwDYKic",
+        "matchDate": "2026-10-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[-NM-] Primus Nox",
+          "[322] Exterminatus"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · -NM- vs 322"
+    },
+    {
+      "sourceKey": "youtube:QRGPK3fSlYA",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Autumn Games. NA Day 2 Final Top 3. Giveaways after each set. By Megalion",
+        "url": "https://www.youtube.com/watch?v=QRGPK3fSlYA",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[-NM-] Primus Nox",
+          "[JKR] Joker"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -NM- vs JKR"
+    },
+    {
+      "sourceKey": "youtube:N1mnt_6z7D0",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Autumn Games",
+        "nameEn": "Autumn Games",
+        "nameRu": null,
+        "startDate": "2026-09-12"
+      },
+      "newSeason": {
+        "nameZh": "秋季赛",
+        "nameEn": "Autumn Games",
+        "nameRu": "Осенние игры",
+        "startDate": "2026-09-12"
+      },
+      "oldReplay": {
+        "title": "Autumn Games 2026 NA - Pros Grand Finals - Giveaways | WoT Blitz",
+        "url": "https://www.youtube.com/watch?v=N1mnt_6z7D0",
+        "matchDate": "2026-10-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[-NM-] Primus Nox",
+          "[JKR] Joker"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -NM- vs JKR"
+    },
+    {
+      "sourceKey": "youtube:sYURrUAi-oE",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Spring Games",
+        "nameEn": "Spring Games",
+        "nameRu": null,
+        "startDate": "2026-03-02"
+      },
+      "newSeason": {
+        "nameZh": "春季赛",
+        "nameEn": "Spring Games",
+        "nameRu": "Весенние игры",
+        "startDate": "2026-03-02"
+      },
+      "oldReplay": {
+        "title": "Spring Games NA Professionals - Round Robin, Day 1 || World of Tanks Blitz Spring 2026",
+        "url": "https://www.youtube.com/watch?v=sYURrUAi-oE",
+        "matchDate": "2026-03-18",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "[GG-] Good Game",
+          "[APX] Washed Gamers"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第1天 / Day 1 · GG- vs APX"
+    },
+    {
+      "sourceKey": "youtube:jR5Z5bMvOQQ",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "Blitz Masters: Legacy NA | Grand Finals | WoTB Summer 2026",
+        "url": "https://www.youtube.com/watch?v=jR5Z5bMvOQQ",
+        "matchDate": "2026-06-07",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[JKR] Jokers",
+          "[OBLVN] So Predictable"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · JKR vs OBLVN"
+    },
+    {
+      "sourceKey": "youtube:haxzkQHOYss",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "WoT Blitz. Blitz Masters: Legacy. NA Day 2 Double Elimination",
+        "url": "https://www.youtube.com/watch?v=haxzkQHOYss",
+        "matchDate": "2026-06-07",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[JKR] Jokers",
+          "[OBLVN] So Predictable"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · JKR vs OBLVN"
+    },
+    {
+      "sourceKey": "youtube:ddrhpWqhO0I",
+      "server": "NA",
+      "year": 2026,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 2,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "Blitz Masters: Legacy | PYS 2 Day 3 -_X/PONDA + Upper Bracket | Stream Giveaways!",
+        "url": "https://www.youtube.com/watch?v=ddrhpWqhO0I",
+        "matchDate": "2026-05-17",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "-_X",
+          "PONDA"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第2轮 / Round 2 · 第3天 / Day 3 · -_X vs PONDA"
+    },
+    {
+      "sourceKey": "youtube:sOj19MwBReQ",
+      "server": "ASIA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: Legacy",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": null,
+        "startDate": "2026-05-10"
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：传承",
+        "nameEn": "Blitz Masters: Legacy",
+        "nameRu": "Blitz Masters: Наследие",
+        "startDate": "2026-05-10"
+      },
+      "oldReplay": {
+        "title": "World Of Tanks Blitz || REQM ||  GRAND FINALS!",
+        "url": "https://www.youtube.com/watch?v=sOj19MwBReQ",
+        "matchDate": "2026-06-07",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "[REQM] Primacy",
+          "[ISRL] Island Boys"
+        ],
+        "perspective": "POV"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · REQM vs ISRL"
+    },
+    {
+      "sourceKey": "youtube:YvJe9n4L5Aw",
+      "server": "LESTA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Лига Блиц Поинт, Часть 4 — Сезон I",
+        "nameEn": "Лига Блиц Поинт, Часть 4 — Сезон I",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон I",
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击积分联赛·第4期·第I赛季",
+        "nameEn": "Blitz Point League — Part 4, Season I",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон I",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Плей-офф Сезона I Лиги Блиц Поинт. Финал",
+        "url": "https://www.youtube.com/watch?v=YvJe9n4L5Aw",
+        "matchDate": "2026-01-17",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": "LOSERS",
+        "teams": [
+          "CONSILIUM",
+          "ILLUMINATI"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · 败者组 / Lower Bracket · CONSILIUM vs ILLUMINATI"
+    },
+    {
+      "sourceKey": "youtube:khGt6Bfj8Zw",
+      "server": "LESTA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Лига Блиц Поинт, Часть 4 — Сезон II",
+        "nameEn": "Лига Блиц Поинт, Часть 4 — Сезон II",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон II",
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击积分联赛·第4期·第II赛季",
+        "nameEn": "Blitz Point League — Part 4, Season II",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон II",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Плей-офф Сезона II Лиги Блиц Поинт. ГРАНД-ФИНАЛ",
+        "url": "https://www.youtube.com/watch?v=khGt6Bfj8Zw",
+        "matchDate": "2026-04-18",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": "LOSERS",
+        "teams": [
+          "ZOMBI",
+          "new era"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · 败者组 / Lower Bracket · ZOMBI vs new era"
+    },
+    {
+      "sourceKey": "youtube:DApGlNljg60",
+      "server": "LESTA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Лига Блиц Поинт, Часть 4 — Сезон III",
+        "nameEn": "Лига Блиц Поинт, Часть 4 — Сезон III",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон III",
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击积分联赛·第4期·第III赛季",
+        "nameEn": "Blitz Point League — Part 4, Season III",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Сезон III",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "🤘 РОЖДЕНИЕ ЛЕГЕНД | День 3 | Лига Блиц Поинт, Хардкор | @KavayMan, @kastettv808 и @nYJI9_TV",
+        "url": "https://www.youtube.com/watch?v=DApGlNljg60",
+        "matchDate": "2026-07-10",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": "LOSERS",
+        "teams": [
+          "new era",
+          "ZOMBI"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · 败者组 / Lower Bracket · new era vs ZOMBI"
+    },
+    {
+      "sourceKey": "youtube:xAWKGZ2dAts",
+      "server": "LESTA",
+      "year": 2026,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Лига Блиц Поинт, Часть 4 — Финальный турнир (Tanks Blitz × RuStore)",
+        "nameEn": "Лига Блиц Поинт, Часть 4 — Финальный турнир (Tanks Blitz × RuStore)",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Финальный турнир (Tanks Blitz × RuStore)",
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击积分联赛·第4期总决赛（Tanks Blitz × RuStore）",
+        "nameEn": "Blitz Point League — Part 4 Finals (Tanks Blitz × RuStore)",
+        "nameRu": "Лига Блиц Поинт, Часть 4 — Финальный турнир (Tanks Blitz × RuStore)",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "КТО СТАНЕТ ЛЕГЕНДОЙ? | Tanks Blitz × RuStore: Финал Блиц Поинта | @KavayMan, @kastettv808 и @MEFODY",
+        "url": "https://www.youtube.com/watch?v=xAWKGZ2dAts",
+        "matchDate": "2026-09-04",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": "DEFAULT",
+        "teams": [
+          "ZOMBI",
+          "new era"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · ZOMBI vs new era"
+    },
+    {
+      "sourceKey": "youtube:L_pe55WT8RA",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 3,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Турнир Blitz Masters: New Horizons | Путь мастерства #3 | День 4",
+        "url": "https://www.youtube.com/watch?v=L_pe55WT8RA",
+        "matchDate": "2025-03-09",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "OSLI",
+          "BLOVE"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第3轮 / Round 3 · 第4天 / Day 4 · OSLI vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:L2m45TldVTA",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Round Robin - Day 1",
+        "url": "https://www.youtube.com/watch?v=L2m45TldVTA",
+        "matchDate": "2025-03-11",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "LUV-",
+          "BLOVE"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第1天 / Day 1 · LUV- vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:KR_ZtYsi0jI",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Round Robin - Day 2",
+        "url": "https://www.youtube.com/watch?v=KR_ZtYsi0jI",
+        "matchDate": "2025-03-12",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "-RDX",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第2天 / Day 2 · -RDX vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:xp395TEid_E",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Round Robin - Day 3",
+        "url": "https://www.youtube.com/watch?v=xp395TEid_E",
+        "matchDate": "2025-03-13",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "APA",
+          "LUV-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第3天 / Day 3 · APA vs LUV-"
+    },
+    {
+      "sourceKey": "youtube:Voc0UHRXKNA",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Round Robin - Day 4",
+        "url": "https://www.youtube.com/watch?v=Voc0UHRXKNA",
+        "matchDate": "2025-03-14",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "AQVA",
+          "APA"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第4天 / Day 4 · AQVA vs APA"
+    },
+    {
+      "sourceKey": "youtube:CUO58z3vr9U",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Final Stages - Day 1",
+        "url": "https://www.youtube.com/watch?v=CUO58z3vr9U",
+        "matchDate": "2025-03-15",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "AQVA",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · AQVA vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:VWT0AE2RmWc",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "PROFI TURNIER FINALE | BLITZ MASTERS DEUTSCH (WITH REWARDS)",
+        "url": "https://www.youtube.com/watch?v=VWT0AE2RmWc",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "DEMOH",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · DEMOH vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:GU9PXRxLG2I",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "ГРАНД-ФІНАЛ / ТУРНІР Blitz Masters: New Horizons 🔥 WoT Blitz",
+        "url": "https://www.youtube.com/watch?v=GU9PXRxLG2I",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "DEMOH",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · DEMOH vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:KTFGqgr9ee8",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Final Stages - Day 2",
+        "url": "https://www.youtube.com/watch?v=KTFGqgr9ee8",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "DEMOH",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · DEMOH vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:Fys8aexb8Qw",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "GRAND FINALS - PRO Tournament - DE 2/2",
+        "url": "https://www.youtube.com/watch?v=Fys8aexb8Qw",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "DEMOH",
+          "IMM0R"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · DEMOH vs IMM0R"
+    },
+    {
+      "sourceKey": "youtube:3owGIRLMsdM",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Diamond Cup - Round Robin - Round 1 and 2",
+        "url": "https://www.youtube.com/watch?v=3owGIRLMsdM",
+        "matchDate": "2025-09-03",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "DEMOH",
+          "BLOVE"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第1天 / Day 1 · DEMOH vs BLOVE"
+    },
+    {
+      "sourceKey": "youtube:aeXtzIpyXMQ",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Diamond Cup - Round Robin - Round 3 and 4",
+        "url": "https://www.youtube.com/watch?v=aeXtzIpyXMQ",
+        "matchDate": "2025-09-04",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "-BPS-",
+          "AQVA"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第2天 / Day 2 · -BPS- vs AQVA"
+    },
+    {
+      "sourceKey": "youtube:OyMQG6OR27o",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup — Challengers",
+        "nameEn": "Blitz Diamond Cup — Challengers",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯·挑战者赛",
+        "nameEn": "Blitz Diamond Cup — Challengers",
+        "nameRu": "Бриллиантовый кубок Blitz — Турнир претендентов",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Blitz Diamond Cup | Top 16 Finals 1/2 | GIVEAWAYS | 3min delay | GER/DE - World of Tanks Blitz",
+        "url": "https://www.youtube.com/watch?v=OyMQG6OR27o",
+        "matchDate": "2025-09-05",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "AFERA",
+          "DSRT_"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · AFERA vs DSRT_"
+    },
+    {
+      "sourceKey": "youtube:RRSFC-CGgbQ",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "QUARTER_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": "ROUND_ROBIN"
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Diamond Cup - Round Robin - Round 7",
+        "url": "https://www.youtube.com/watch?v=RRSFC-CGgbQ",
+        "matchDate": "2025-09-07",
+        "startsAt": null,
+        "dayNumber": 4,
+        "groupNumber": null,
+        "bracket": null,
+        "teams": [
+          "S-WIL",
+          "SNTY"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "八强 TOP 8 · 循环赛 / Round Robin · 第4天 / Day 4 · S-WIL vs SNTY"
+    },
+    {
+      "sourceKey": "youtube:guIa_J5h9bI",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Diamond Cup - Double Elimination - Day 1",
+        "url": "https://www.youtube.com/watch?v=guIa_J5h9bI",
+        "matchDate": "2025-09-10",
+        "startsAt": null,
+        "dayNumber": 1,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "DEMOH",
+          "-BPS-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第1天 / Day 1 · 第1组 / Group 1 · DEMOH vs -BPS-"
+    },
+    {
+      "sourceKey": "youtube:IdlBhevrwTs",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Blitz Diamond Cup | TOP6 | D2/2 | 3min delay | GER/DE - World of Tanks Blitz",
+        "url": "https://www.youtube.com/watch?v=IdlBhevrwTs",
+        "matchDate": "2025-09-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-BPS-",
+          "DEMOH"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -BPS- vs DEMOH"
+    },
+    {
+      "sourceKey": "youtube:uT5NdwISBGQ",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Diamond Cup - Double Elimination - Day 2",
+        "url": "https://www.youtube.com/watch?v=uT5NdwISBGQ",
+        "matchDate": "2025-09-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-BPS-",
+          "DEMOH"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -BPS- vs DEMOH"
+    },
+    {
+      "sourceKey": "youtube:KpYcmkxiP_0",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "PRO Tournament Top 6 DE 2/2",
+        "url": "https://www.youtube.com/watch?v=KpYcmkxiP_0",
+        "matchDate": "2025-09-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-BPS-",
+          "DEMOH"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -BPS- vs DEMOH"
+    },
+    {
+      "sourceKey": "youtube:FAzgtcD332k",
+      "server": "EU",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "LAST CHANCE FOR TOP 4! Blitz Diamond Cup EU Top 5 Elimination Stage",
+        "url": "https://www.youtube.com/watch?v=FAzgtcD332k",
+        "matchDate": "2025-09-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-BPS-",
+          "DEMOH"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -BPS- vs DEMOH"
+    },
+    {
+      "sourceKey": "youtube:2Te4Q2hwn7g",
+      "server": "NA",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Blitz Masters New Horizons NA - Grand Finals || World of Tanks Blitz Winter 2025",
+        "url": "https://www.youtube.com/watch?v=2Te4Q2hwn7g",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-_X",
+          "APX"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -_X vs APX"
+    },
+    {
+      "sourceKey": "youtube:1rPFxY60wXs",
+      "server": "NA",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Torneo Blitz Masters 2025 La Gran final",
+        "url": "https://www.youtube.com/watch?v=1rPFxY60wXs",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "-_X",
+          "APX"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · -_X vs APX"
+    },
+    {
+      "sourceKey": "youtube:425kzgiiN4Q",
+      "server": "NA",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Diamond Cup",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击钻石杯",
+        "nameEn": "Blitz Diamond Cup",
+        "nameRu": "Бриллиантовый кубок Blitz",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "Blitz Diamond Cup Top 6 Day 2 | -_X/REGI/APX | Battle Pass + Fan Container Giveaways",
+        "url": "https://www.youtube.com/watch?v=425kzgiiN4Q",
+        "matchDate": "2025-09-11",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "REGI",
+          "APX"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · REGI vs APX"
+    },
+    {
+      "sourceKey": "youtube:s1TUiB7oAgA",
+      "server": "ASIA",
+      "year": 2025,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 1,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "💥ASIA💥Prove Your Skill #1💥DAY-3💥 #BlitzMasterNewHorizons",
+        "url": "https://www.youtube.com/watch?v=s1TUiB7oAgA",
+        "matchDate": "2025-02-24",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": null,
+        "teams": [
+          "YSL",
+          "-KSR-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第1轮 / Round 1 · 第3天 / Day 3 · 第1组 / Group 1 · YSL vs -KSR-"
+    },
+    {
+      "sourceKey": "youtube:rM1wLYLEbPI",
+      "server": "ASIA",
+      "year": 2025,
+      "categoryType": "POINTS",
+      "node": {
+        "roundNumber": 2,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "💥ASIA💥Prove Your Skill #2💥DAY-3💥 #BlitzMasterNewHorizons",
+        "url": "https://www.youtube.com/watch?v=rM1wLYLEbPI",
+        "matchDate": "2025-03-02",
+        "startsAt": null,
+        "dayNumber": 3,
+        "groupNumber": 2,
+        "bracket": null,
+        "teams": [
+          "14582",
+          "RATS"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "积分赛 PYS · 第2轮 / Round 2 · 第3天 / Day 3 · 第2组 / Group 2 · 14582 vs RATS"
+    },
+    {
+      "sourceKey": "youtube:wVUQW5Acf74",
+      "server": "ASIA",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "Blitz Masters: New Horizons",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "闪击大师赛：新地平线",
+        "nameEn": "Blitz Masters: New Horizons",
+        "nameRu": "Blitz Masters: Новые горизонты",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "World of Tanks Blitz - Blitz Masters - Final Stages - Day 2 - APAC",
+        "url": "https://www.youtube.com/watch?v=wVUQW5Acf74",
+        "matchDate": "2025-03-16",
+        "startsAt": null,
+        "dayNumber": 2,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "YSL",
+          "ERZ"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第2天 / Day 2 · 第1组 / Group 1 · YSL vs ERZ"
+    },
+    {
+      "sourceKey": "bilibili:BV18j2CBWEMo:1",
+      "server": "CN",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": "Профессиональный кубок Blitz (BPC)",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "四强赛 CHRD VS -ACE-",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=1",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "CHRD",
+          "-ACE-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · CHRD vs -ACE-"
+    },
+    {
+      "sourceKey": "bilibili:BV18j2CBWEMo:2",
+      "server": "CN",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": "Профессиональный кубок Blitz (BPC)",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "四强赛 KSR VS -ACE-",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=2",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "KSR",
+          "-ACE-"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · KSR vs -ACE-"
+    },
+    {
+      "sourceKey": "bilibili:BV18j2CBWEMo:3",
+      "server": "CN",
+      "year": 2025,
+      "categoryType": "SEMI_FINALS",
+      "node": {
+        "roundNumber": null,
+        "format": null
+      },
+      "oldSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": null,
+        "startDate": null
+      },
+      "newSeason": {
+        "nameZh": "战火杯",
+        "nameEn": "Blitz Professional Cup (BPC)",
+        "nameRu": "Профессиональный кубок Blitz (BPC)",
+        "startDate": null
+      },
+      "oldReplay": {
+        "title": "四强赛 Ru7K1 VS KSR",
+        "url": "https://www.bilibili.com/video/BV18j2CBWEMo/?p=3",
+        "matchDate": "2025-12-07",
+        "dayNumber": 3,
+        "groupNumber": 1,
+        "bracket": "DEFAULT",
+        "teams": [
+          "Ru7K1",
+          "KSR"
+        ],
+        "perspective": "OBSERVER"
+      },
+      "newTitle": "四强 TOP 4 · 第3天 / Day 3 · Ru7K1 vs KSR"
+    }
+  ]
+}

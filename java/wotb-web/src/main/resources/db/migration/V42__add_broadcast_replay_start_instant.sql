@@ -1,0 +1,1 @@
+ALTER TABLE tournament_broadcast_replay ADD COLUMN match_starts_at TIMESTAMPTZ;
