@@ -259,21 +259,6 @@ config_before="$(file_sha "$periphery_config")"
 unit_before="$(file_sha "$periphery_unit")"
 binary_before="$(file_sha "$periphery_bin")"
 
-# A live process can still execute the previous (deleted) binary even when the
-# on-disk pathname already matches the pinned release: an earlier run may have
-# replaced the file and skipped its restart. Hash /proc/<pid>/exe, never the
-# pathname, so this reconcile cannot conclude "already at the desired state" for a
-# stale PID.
-live_binary_stale=false
-if [[ "$service_was_active" == true ]]; then
-  live_pid="$(main_pid 2>/dev/null || true)"
-  live_sha=
-  if [[ "$live_pid" =~ ^[0-9]+$ && "$live_pid" -gt 0 ]]; then
-    live_sha="$(live_executable_sha "$live_pid" 2>/dev/null || true)"
-  fi
-  [[ "$live_sha" == "$PERIPHERY_SHA256" ]] || live_binary_stale=true
-fi
-
 # --- persistent config + systemd unit (repo-owned, replaced deterministically) --
 install -m 600 "$periphery_config_source" "$periphery_config.incoming"
 mv -f -- "$periphery_config.incoming" "$periphery_config"
@@ -339,10 +324,7 @@ else
   # a completed, healthy host stays active and is not disturbed — and can never be
   # left stopped by an idempotent run.
   if [[ "$binary_changed" == true || "$config_changed" == true || "$unit_changed" == true \
-     || "$live_binary_stale" == true || "$service_was_active" != true ]]; then
-    if [[ "$live_binary_stale" == true ]]; then
-      echo "The running Periphery process does not execute the pinned release; restarting it to adopt $PERIPHERY_SHA256."
-    fi
+     || "$service_was_active" != true ]]; then
     "$systemctl_bin" restart periphery
   else
     echo "Komodo Periphery already at the desired state on $periphery_target: the running service is untouched."

@@ -64,7 +64,7 @@ current_main="$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')"
 [[ "$current_main" =~ ^[0-9a-f]{40}$ ]] || { echo 'Fetched main SHA is invalid.' >&2; exit 1; }
 
 if [[ "$require_exact_main" == 1 && "$source_sha" != "$current_main" ]]; then
-  echo "Source SHA $source_sha is stale: current main is $current_main. This owner mutates a shared ref, so it requires the exact current main SHA." >&2
+  echo "Source SHA $source_sha is stale: current main is $current_main. This owner mutates a pinned transport ref, so it requires the exact current main SHA." >&2
   exit 1
 fi
 

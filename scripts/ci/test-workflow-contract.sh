@@ -50,6 +50,8 @@ def covers_production_path(production_path, owner_pattern):
         return fnmatch.fnmatchcase(production_path, owner_pattern)
     if production_path == owner_pattern:
         return True
+    # A subtree glob can cover a narrower subtree glob; matching glob text
+    # with fnmatch alone would incorrectly accept narrower owner patterns.
     return (owner_pattern.endswith("/**")
             and production_path.startswith(owner_pattern[:-2]))
 assert affected("frontend/src/styles/base.css") == {"frontend"}
@@ -65,6 +67,9 @@ assert "android" in affected(".github/workflows/android-release.yml"), "release 
 assert affected("deploy/list-image-tags.sh") == {"business_api", "deployment", "observability"}
 assert affected("deploy/tx/publish-loaded-image-to-tcr.sh") == {"deployment"}
 assert affected("deploy/tx/validate-caddy-config.sh") == {"caddy", "deployment"}
+# The gateway fixture suite is owned by the Caddy gateway: ci-caddy.yml is the only
+# workflow that runs it, so a Caddyfile-only change still re-runs the runtime proof
+# of the compliance access log instead of only its staged text/JSON assertions.
 assert affected("deploy/test-caddy-route-inventory.sh") == {"caddy", "deployment"}
 assert "deploy/test-caddy-route-inventory.sh" in json.dumps(
     load(workflow_dir / "ci-caddy.yml"), ensure_ascii=False
@@ -74,21 +79,35 @@ assert not [
     for step in job.get("steps", [])
     if "bash deploy/test-caddy-route-inventory.sh" in step.get("run", "")
 ], "the gateway fixtures must run in exactly one owner"
+# Owner-boundary guards for the Komodo control plane:
+# - the Caddy gateway publishes Komodo but must never depend on Komodo-owned
+#   inputs (a Core release bump may not re-run, or fail, the gateway on its own);
+# - K2 documentation must live outside every production owner, so a docs-only
+#   change cannot trigger a Komodo Core/Mongo/DNS reconciliation.
 assert affected("deploy/komodo/verify.sh") == {"komodo_controller"}
 assert affected("deploy/tx/Caddyfile") == {"caddy"}
 assert affected("docs/operations/komodo-public-ingress.md") == set()
+# K3.1 owner boundary: the Yecao Periphery agent has its own owner, so a Periphery
+# change can neither trigger the Komodo Core/Mongo/DNS reconcile nor the Caddy
+# gateway, and its documentation lives outside every production owner.
 assert affected("deploy/periphery/install.sh") == {"komodo_periphery"}
 assert affected("deploy/periphery/periphery.release") == {"komodo_periphery"}
 assert affected(".github/workflows/komodo-periphery.yml") == {"komodo_periphery"}
-assert affected(".github/workflows/komodo-periphery-ali.yml") == {"komodo_periphery"}
 assert not (affected("deploy/periphery/install.sh") & {"komodo_controller", "caddy"})
 assert affected("docs/operations/komodo-periphery.md") == set()
+# K4.1 owner boundary: the declarative Komodo resource root is reviewed data that CI
+# only validates. Touching it must not reach the Komodo controller (whose production
+# workflow reconciles Core/Mongo/DNS) nor any other production owner, and the
+# controller's own production filter must not cover the new path.
 assert affected("infra/komodo/resources/servers.toml") == {"deployment"}
 assert affected("infra/komodo/resources/resource-sync.toml") == {"deployment"}
 assert not (affected("infra/komodo/resources/servers.toml") & {"komodo_controller", "komodo_periphery", "caddy"})
 komodo_controller_events = load(workflow_dir / "komodo-controller.yml")
 for production_path in komodo_controller_events["on"]["push"]["paths"]:
     assert not fnmatch.fnmatchcase("infra/komodo/resources/servers.toml", production_path), production_path
+# Frontend production builds now publish from TX through the Gitee exact-SHA builder.
+# The GitHub-runner registry-list/retry helpers are no longer frontend-owned inputs;
+# the Agent WASM pin/fetch contract and freshness gate remain production inputs.
 assert affected("deploy/agent/source.json") == {"frontend"}
 assert affected("scripts/fetch-agent-wasm.sh") == {"frontend"}
 assert affected("scripts/ci/run-with-network-retry.sh") == {"deployment"}
@@ -214,6 +233,10 @@ backup_text = json.dumps(backup, ensure_ascii=False)
 for script in ("business-postgres-backup.sh", "keycloak-postgres-backup.sh", "tofu-local-state-backup.sh"):
     assert script in backup_text, f"scheduled production backup must retain {script}"
 
+# PR #467 review: APK/bundle content assertions must never pipe into `grep -q`.
+# Under `set -o pipefail` a hit makes grep exit early, the producer takes SIGPIPE (141), and the
+# whole pipeline reports failure — i.e. a real file gets reported as missing.
+# stage 里 setup-node 只能有一个：重复声明是 review 发现的真实冗余（PR #467 P2）。
 _stage_sources = []
 for _name in ("ci-android.yml", "android-release.yml"):
   _stage_sources.append((_name, (workflow_dir / _name).read_text(encoding="utf-8")))
@@ -224,6 +247,7 @@ assert _stage_block.count("actions/setup-node@v4") == 1, \
 
 for android_workflow in ("ci-android.yml", "android-release.yml"):
   android_text = (workflow_dir / android_workflow).read_text(encoding="utf-8")
+  # 注释里可以解释这个坑，真实命令里不允许再出现（YAML 注释以 # 开头）。
   offenders = [
     line.strip() for line in android_text.splitlines()
     if "| grep -q" in line and not line.lstrip().startswith("#")
@@ -239,6 +263,9 @@ assert "FE_COMMIT" not in _publish_block
 assert "android_contract.py bundle" in _stage_block and "android_contract.py bundle" in _publish_block
 assert "android_contract.py cors" in _publish_block
 
+# PR #467 review P2: publish 的候选版本必须由 workflow_dispatch 的显式 version 输入决定，
+# 不能从「当前 main 的 android/gradle.properties」推导。这两条断言的 owner 是 YAML wiring，
+# 只测 shell helper 是锁不住的（helper 单测见 scripts/android-release/test-release.sh）。
 _release_yaml = yaml.safe_load(_release_source)
 _release_dispatch_inputs = _release_yaml.get(True, _release_yaml.get("on", {}))["workflow_dispatch"]["inputs"]
 assert "version" in _release_dispatch_inputs, \
@@ -249,11 +276,14 @@ _publish_job = _release_yaml["jobs"]["publish"]
 assert "inputs.version" in json.dumps(_publish_job, ensure_ascii=False), \
   "the publish job must consume the explicit version input"
 _publish_run_text = "\n".join(step.get("run") or "" for step in _publish_job["steps"])
+# 候选身份只能来自显式版本 + immutable tag target。
 assert "steps.version.outputs" not in _publish_run_text, \
   "publish must not derive the candidate from the current main committed version"
 assert "resolve-staged-version.sh" in _publish_run_text, \
   "publish must resolve the staged version from the tag target"
 assert 'TAG="android-v$REQUESTED_VERSION"' in _publish_run_text and "git archive" in _publish_run_text
+# staged versionCode：唯一来源是 stagedref 输出，且不得把 Python 局部变量当 shell 变量
+# （`$expected` 在 set -euo pipefail 下会 unbound variable，直接炸掉整个 publish）。
 _staged_step = next(step for step in _publish_job["steps"] if step.get("id") == "staged")
 assert _staged_step.get("env", {}).get("STAGED_VERSION_CODE") == "${{ steps.stagedref.outputs.versionCode }}", \
   _staged_step.get("env", {})
@@ -264,8 +294,10 @@ assert any('echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"' in line
   "publish must write the staged versionCode from STAGED_VERSION_CODE"
 assert not any("$expected" in line or "${expected}" in line for line in _staged_shell_lines), \
   "publish shell must not read the Python-local `expected` variable"
+# publish 绝不重建 / 重新签名。
 for _forbidden in ("assembleRelease", "wotbKeystorePath", "keystore.jks", "ANDROID_KEYSTORE_BASE64"):
   assert _forbidden not in _publish_run_text, f"publish must not rebuild or re-sign ({_forbidden})"
+# version.json 是最后一个 mutation，且只由 staged 身份写出。
 _publish_step_names = [step.get("name", "") for step in _publish_job["steps"]]
 _write_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Write version.json"))
 _upload_i = next(i for i, name in enumerate(_publish_step_names) if name.startswith("Upload version.json"))
@@ -274,6 +306,8 @@ assert _write_i < _upload_i < _verify_i, _publish_step_names
 assert "steps.staged.outputs" in _publish_job["steps"][_write_i]["run"], \
   "version.json must be written from the staged identity"
 
+# Production owner routing and freshness inputs are paired contracts. A workflow
+# may only proceed when its triggering SHA is still current for every owned input.
 owners = (
     "business-api", "frontend", "keycloak", "caddy",
     "business-postgres", "keycloak-postgres", "observability", "alloy-tx",
@@ -296,6 +330,9 @@ assert set(pr_owner_for_production) == set(owners)
 image_owners = {"business-api", "frontend", "keycloak"}
 queue = {"group": "production-maintenance", "cancel-in-progress": "false", "queue": "max"}
 
+# Business API and Frontend both mirror the same GitHub repository to Gitee and
+# build on the same constrained TX host. Those shared mutation points must stay
+# serialized across the two otherwise-independent owner workflows.
 for owner in ("business-api", "frontend"):
     workflow = load(workflow_dir / f"{owner}.yml")
     assert workflow["jobs"]["mirror_gitee"]["concurrency"] == {
@@ -310,6 +347,10 @@ for owner in ("business-api", "frontend"):
         "group": "tx-production-build", "cancel-in-progress": "false", "queue": "max",
     }, owner
 
+# Release identity must not cross the GitHub job-output boundary. GitHub may
+# redact arbitrary SHA/digest values when they happen to match a configured secret,
+# so deploy reconstructs the immutable tag from github.sha and resolves its digest
+# on TX immediately before mutation.
 for owner in ("business-api", "frontend"):
     workflow = load(workflow_dir / f"{owner}.yml")
     assert "outputs" not in workflow["jobs"]["build"], owner
@@ -331,6 +372,12 @@ frontend_script = frontend_deploy["with"]["script"]
 assert "with-deploy-lock.sh bash -s <<'LOCKED'" in frontend_script
 assert "exec 9>/opt/wotb-tx/.deploy.lock" not in frontend_script
 assert "flock -n 9" not in frontend_script
+# Release identity = 与 TX1 构建脚本**同公式同输入**：
+# sha256(source_sha + ASSET_BASE_URL + sponsor 内容指纹)[0:12]。
+# 2026-10-10 事故：构建脚本纳入第三输入（sponsor 指纹）后，Frontend deploy 与 Frontend
+# Replica 仍是两输入副本 ⇒ 每次 main 部署 `:sha-<另一枚> : not found`（CI 绿、部署红 ——
+# 本契约当时抄的也是两输入，与实现一起漂移）。公式唯一定义见
+# deploy/tx/build-frontend-from-gitee.sh；三处口径由 deploy/test_frontend_image_identity.py 看护。
 for invariant in (
     "sponsor_fingerprint=\"$(bash /opt/wotb-tx/deploy.incoming/deploy/tx/sponsor-fingerprint.sh /opt/wotb-tx/deploy.incoming)\"",
     "identity=\"$(printf '%s\\n%s\\n%s' \"$source_sha\" \"$ASSET_BASE_URL\" \"$sponsor_fingerprint\" | sha256sum | cut -c1-12)\"",
@@ -356,6 +403,7 @@ for invariant in (
 ):
     assert invariant in business_script, invariant
 
+# AI Service 的 CI 必须真正跑 wotb-ai 测试（不能退化成只 build image / -DskipTests）
 ai_service_ci = load(workflow_dir / "ci-ai-service.yml")
 ai_runs = [step.get("run", "") for job in ai_service_ci["jobs"].values() for step in job.get("steps", [])]
 assert any("-pl wotb-ai -am test" in run for run in ai_runs), "ci-ai-service.yml must run wotb-ai tests"
@@ -366,6 +414,11 @@ legacy_tcr_publisher = (root / "deploy/tx/publish-loaded-image-to-tcr.sh").read_
 assert "<backend|frontend|keycloak>" not in legacy_tcr_publisher
 assert "backend|frontend|keycloak)" not in legacy_tcr_publisher
 
+# Caddy owns public ingress. The Komodo route (K2) must be verified in two
+# layers so a failure distinguishes a gateway problem from a Yecao/WireGuard one,
+# and it must NOT depend on which Komodo release the Komodo owner has deployed:
+# comparing the public answer with the private one keeps a Core upgrade from
+# failing the gateway on its own.
 caddy_workflow = load(workflow_dir / "caddy.yml")
 caddy_events = caddy_workflow.get("on", caddy_workflow.get(True, {}))
 caddy_paths = caddy_events["push"]["paths"]
@@ -394,10 +447,32 @@ assert caddy_script.index("http://10.20.0.2:9120/version") \
 assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in caddy_script, "the private answer must be a semantic version"
 assert '[ "$komodo_public" = "$komodo_private" ]' in caddy_script, \
     "the public answer must be compared with the private one"
+# TLS verification must never be weakened. Match whole tokens: `.well-known`
+# contains "-k" but is not the curl insecure flag.
 caddy_tokens = {token for line in caddy_script.splitlines() for token in line.split()}
 assert "-k" not in caddy_tokens, "curl -k is forbidden in the Caddy gateway verification"
 assert "--insecure" not in caddy_tokens, "--insecure is forbidden in the Caddy gateway verification"
 
+# K6B logical endpoints: every owner that consumes a private placement dependency
+# pins the *active* value in its own workflow, and the read-only runtime gate asserts
+# exactly the same placement. That pairing is what keeps a merge from cutting
+# production over through an existing repository variable, and it keeps
+# `TX_RUNTIME_READY` from only proving that the gate agrees with itself. The Keycloak
+# owner's equivalent pin lives in scripts/ci/test-keycloak-tofu-contract.sh with its
+# own apply step.
+#
+# CURRENT_K6B_CUTOVERS is the reviewed production placement of every K6B-2 consumer, and
+# since K6B-2 COMPLETE it is a frozen baseline rather than a migration in progress:
+# K6B-2A moved Frontend -> Business API onto the TX1 WireGuard service endpoint,
+# K6B-2B moved Business API -> Business PostgreSQL onto the TX1 WireGuard service
+# endpoint at port 25432, K6B-2C moved Business API -> Keycloak Admin onto the TX1
+# WireGuard endpoint at port 8080, K6B-2D moved Keycloak -> Keycloak PostgreSQL onto the
+# TX1 WireGuard endpoint at port 15432, K6B-2E moved Caddy -> Frontend onto the TX1
+# WireGuard endpoint at port 8081, and K6B-2F moved Caddy -> Keycloak onto the TX1
+# WireGuard endpoint at port 8080. No private Docker-local TX placement remains, and the
+# assertions below are the permanent guard that a later PR cannot drift the production
+# baseline - by rolling a consumer back to its Docker-local rollback value, or by
+# silently moving one to TX2 - without an explicit, reviewed edit of this file.
 CURRENT_K6B_CUTOVERS = {
     "frontend": {"TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087"},
     "business-api": {
@@ -414,6 +489,10 @@ CURRENT_K6B_CUTOVERS = {
         "CADDY_KEYCLOAK_UPSTREAM": "10.20.0.1:8080",
     },
 }
+# K6B-2 is complete, so the only placement left outside CURRENT_K6B_CUTOVERS is the Yecao
+# AI upstream: it is not a TX placement consumer and must never move with one. An empty
+# dict for an owner means "this owner has no non-TX fixed dependency" rather than a
+# missing assertion.
 NON_TX_FIXED_DEPENDENCIES = {
     "frontend": (frontend_deploy, {
         "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
@@ -421,6 +500,9 @@ NON_TX_FIXED_DEPENDENCIES = {
     "business-api": (business_deploy, {}),
     "caddy": (caddy_deploy, {}),
 }
+# K6B-2 baseline invariant (frozen for K7): every TX consumer must sit on the reviewed TX1
+# logical placement, asserted as an exact matrix instead of the weaker "no Docker-local
+# value is left", so a future workload migration starts from an exact baseline.
 K6B_FINAL_PLACEMENT_MATRIX = {
     "TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087",
     "TX_BUSINESS_DB_HOST": "10.20.0.1",
@@ -433,11 +515,16 @@ K6B_FINAL_PLACEMENT_MATRIX = {
 }
 assert {name: value for cut_over in CURRENT_K6B_CUTOVERS.values() for name, value in cut_over.items()} \
     == K6B_FINAL_PLACEMENT_MATRIX, "the K6B-2 cut-over matrix must match the reviewed final matrix"
+# The Keycloak owner's own placement pin lives in scripts/ci/test-keycloak-tofu-contract.sh
+# with its apply step, so it is deliberately not duplicated here; the gate expectation
+# for the same consumer is asserted below.
 for owner, (step, placements) in NON_TX_FIXED_DEPENDENCIES.items():
     exported = step["with"]["envs"].split(",")
     for name, value in {**placements, **CURRENT_K6B_CUTOVERS.get(owner, {})}.items():
         assert step["env"][name] == value, (owner, name, step["env"].get(name))
         assert name in exported, (owner, name)
+# The Yecao AI upstream is the only non-TX placement left, and no consumer may be pinned
+# by an owner workflow that does not own it.
 for owner, (step, placements) in NON_TX_FIXED_DEPENDENCIES.items():
     for name, value in placements.items():
         assert not re.search(r"10\.20\.0\.[13]:", str(value)), (owner, name, value)
@@ -445,6 +532,8 @@ for owner, (step, placements) in NON_TX_FIXED_DEPENDENCIES.items():
         assert cut_over_name in step["env"], (owner, cut_over_name)
         assert cut_over_name in step["with"]["envs"].split(","), (owner, cut_over_name)
 
+# The secret-bearing readiness probe stays ahead of the deployment: it is the
+# step that must reject an unreviewed endpoint before a credential is sent.
 assert business_script.index("dependency-readiness.sh business-api") \
     < business_script.index("deploy/tx/deploy.sh"), \
     "dependency readiness must run before the Business API deployment"
@@ -454,6 +543,11 @@ runtime_gate_step = next(
     step for step in runtime_gate_workflow["jobs"]["runtime_check"]["steps"]
     if step.get("name") == "Run exact-SHA read-only TX runtime gate"
 )
+# The read-only gate must expect the same placement the owner workflows apply: the
+# reviewed WireGuard values for every consumer in CURRENT_K6B_CUTOVERS, and only the Yecao
+# AI upstream outside the TX service plane. A mismatch on either side fails the gate, so
+# the two halves of a cutover cannot be merged separately, and a reverted cutover cannot
+# be hidden behind a stale expectation.
 gate_expectations = {
     "TX_AI_UPSTREAM": "http://10.20.0.2:8089",
 }
@@ -464,6 +558,10 @@ for name, value in gate_expectations.items():
     assert name in runtime_gate_step["with"]["envs"].split(","), name
 assert {name: value for name, value in gate_expectations.items() if name != "TX_AI_UPSTREAM"} \
     == K6B_FINAL_PLACEMENT_MATRIX, "the runtime gate must expect the reviewed final matrix"
+# Only the cut-over consumers may carry a WireGuard expectation in the gate, and the
+# service-plane ports must never be swapped: 8081 is Frontend, 8080 is Keycloak,
+# 8087 is Business API, 25432 is Business PostgreSQL, 15432 is Keycloak PostgreSQL. After
+# K6B-2F the only non-cut-over expectation left is the Yecao AI upstream.
 cut_over_names = {name for cut_over in CURRENT_K6B_CUTOVERS.values() for name in cut_over}
 for name, value in gate_expectations.items():
     if name not in cut_over_names:
@@ -473,48 +571,31 @@ assert gate_expectations["TX_KEYCLOAK_DB_PORT"] == "15432", gate_expectations["T
 assert gate_expectations["TX_BUSINESS_DB_PORT"] == "25432", gate_expectations["TX_BUSINESS_DB_PORT"]
 assert gate_expectations["CADDY_FRONTEND_UPSTREAM"] == "10.20.0.1:8081", \
     gate_expectations["CADDY_FRONTEND_UPSTREAM"]
+# Caddy -> Keycloak is part of the frozen baseline too, so its Docker-local rollback value
+# must not appear as the reviewed placement.
 assert gate_expectations["CADDY_KEYCLOAK_UPSTREAM"] == "10.20.0.1:8080", \
     gate_expectations["CADDY_KEYCLOAK_UPSTREAM"]
 assert runtime_gate_step["env"]["TX_AI_UPSTREAM"] == "http://10.20.0.2:8089", \
     "the Yecao AI upstream must never move with a TX placement cutover"
 
-# One Komodo Periphery owner serves every reviewed target host. The established
-# private-WireGuard chain is followed by the Alibaba public-Core target, and the
-# reusable Alibaba transport may only be reached as the final dependent job.
+# K3.2: one Komodo Periphery owner serves every reviewed target host. GitHub
+# Actions owns each agent's systemd lifecycle, the hosts never download an
+# artifact, the bootstrap credential only ever lives in a transient /run file, and
+# every agent connects to Core's private WireGuard address rather than a public
+# name. One lifecycle implementation, per-host reviewed profiles.
 periphery_workflow = load(workflow_dir / "komodo-periphery.yml")
 periphery_events = periphery_workflow.get("on", periphery_workflow.get(True, {}))
 assert periphery_events["push"]["paths"] == periphery_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
-assert ".github/workflows/komodo-periphery-ali.yml" in periphery_events["push"]["paths"]
 periphery_jobs = periphery_workflow["jobs"]
-assert set(periphery_jobs) == {
-    "reconcile_yecao", "reconcile_tx1", "reconcile_tx2", "reconcile_ali_asset",
-}, sorted(periphery_jobs)
+assert set(periphery_jobs) == {"reconcile_yecao", "reconcile_tx1", "reconcile_tx2"}, sorted(periphery_jobs)
 assert periphery_jobs["reconcile_yecao"]["name"] == "Reconcile Komodo Periphery on Yecao"
 assert periphery_jobs["reconcile_tx1"]["name"] == "Reconcile Komodo Periphery on TX1"
 assert periphery_jobs["reconcile_tx2"]["name"] == "Reconcile Komodo Periphery on TX2"
-assert periphery_jobs["reconcile_ali_asset"]["name"] == "Reconcile Komodo Periphery on Alibaba asset host"
+# Each established host must be proven compatible before the next new host is
+# mutated for the first time, so the chain is strictly ordered.
 assert "needs" not in periphery_jobs["reconcile_yecao"], periphery_jobs["reconcile_yecao"]
 assert periphery_jobs["reconcile_tx1"]["needs"] == ["reconcile_yecao"], periphery_jobs["reconcile_tx1"]["needs"]
 assert periphery_jobs["reconcile_tx2"]["needs"] == ["reconcile_tx1"], periphery_jobs["reconcile_tx2"]["needs"]
-assert periphery_jobs["reconcile_ali_asset"]["needs"] == ["reconcile_tx2"], periphery_jobs["reconcile_ali_asset"]
-assert periphery_jobs["reconcile_ali_asset"]["uses"] == "./.github/workflows/komodo-periphery-ali.yml"
-# Credential scoping: the reusable Alibaba transport receives ONLY its five
-# declared secrets. `secrets: inherit` would expose every repository secret.
-ali_secrets = {
-    "ALI_ASSET_VPS_HOST": "${{ secrets.ALI_ASSET_VPS_HOST }}",
-    "ALI_ASSET_VPS_USER": "${{ secrets.ALI_ASSET_VPS_USER }}",
-    "ALI_ASSET_VPS_PORT": "${{ secrets.ALI_ASSET_VPS_PORT }}",
-    "ALI_ASSET_VPS_SSH_KEY": "${{ secrets.ALI_ASSET_VPS_SSH_KEY }}",
-    "KOMODO_ALI_ASSET_ONBOARDING_KEY": "${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}",
-}
-assert periphery_jobs["reconcile_ali_asset"]["secrets"] == ali_secrets, \
-    periphery_jobs["reconcile_ali_asset"]["secrets"]
-assert set(periphery_jobs["reconcile_ali_asset"]) == {"name", "needs", "uses", "secrets"}, \
-    sorted(periphery_jobs["reconcile_ali_asset"])
-assert "secrets: inherit" not in (workflow_dir / "komodo-periphery.yml").read_text(encoding="utf-8")
-
-# The first three hosts retain the original inline transport contract. Alibaba's
-# different SSH boundary is owned by the reusable workflow and validated below.
 periphery_hosts = {
     "yecao": {"job": "reconcile_yecao", "profile": "yecao", "label": "Yecao",
               "secrets": ("VPS_HOST", "VPS_USER", "VPS_PORT", "VPS_SSH_KEY")},
@@ -526,28 +607,35 @@ periphery_hosts = {
 for host, spec in periphery_hosts.items():
     job = periphery_jobs[spec["job"]]
     label = spec["label"]
-    assert "environment" not in job, f"Periphery uses repository-level secrets, never a GitHub Environment: {host}"
+    assert "environment" not in job, f"K3.2 uses repository-level secrets, never a GitHub Environment: {host}"
     steps = {step.get("name"): step for step in job["steps"]}
+    # The pinned release manifest and the same SHA-verified artifact, per job.
     release_step = steps["Read the pinned Periphery release"]["run"]
     assert "deploy/periphery/periphery.release" in release_step, release_step
     assert "PERIPHERY_SHA256" in release_step and "PERIPHERY_URL" in release_step
     artifact_step = steps["Download and verify the pinned Periphery artifact"]["run"]
     assert "sha256sum --check --strict" in artifact_step, artifact_step
     assert "--retry 3" in artifact_step, artifact_step
+    # Host parameters come from the reviewed profile, never from inline YAML.
     profile_step = steps[f"Read the {label} target profile"]
     assert profile_step["env"]["TARGET"] == spec["profile"], profile_step["env"]
     assert "read-target-profile.sh" in profile_step["run"], profile_step["run"]
+    # Host credentials.
     for secret in spec["secrets"]:
         assert secret in json.dumps(job), (host, secret)
+    # Every SSH/SCP step targets this host's own secrets.
     ssh_steps = [step for step in job["steps"] if step.get("uses", "").startswith(("appleboy/ssh-action", "appleboy/scp-action"))]
     assert ssh_steps, host
     for step in ssh_steps:
         assert step["with"]["host"] == f"${{{{ secrets.{spec['secrets'][0]} }}}}", (host, step["with"]["host"])
+    # Staging root handed to the pre-SCP helper and the cleanup step.
     for staging_name in (f"Prepare safe {label} staging root", f"Cleanup staged {label} inputs"):
         staging_step = steps[staging_name]
         assert staging_step["with"]["script_path"] == "deploy/periphery/staging-root.sh", staging_name
         assert staging_step["env"]["PERIPHERY_STAGING_ROOT"] == "${{ steps.target.outputs.staging_root }}", staging_name
     assert steps[f"Cleanup staged {label} inputs"]["if"] == "always()"
+    # Exactly the production inputs plus this target's own profile and the verified
+    # artifact are staged: fixtures and other hosts' profiles stay in CI.
     staged = " ".join(steps[f"Stage exact Periphery inputs on {label}"]["with"]["source"].split())
     staged_files = {part for part in staged.replace(" ", "").split(",") if part}
     assert staged_files == {
@@ -562,78 +650,23 @@ for host, spec in periphery_hosts.items():
         f"deploy/periphery/targets/{spec['profile']}/periphery.config.toml",
         "periphery-x86_64",
     }, (host, sorted(staged_files))
+    # The reconcile step runs the shared lifecycle with the target as data, and
+    # never fetches or executes an unverified artifact.
     reconcile = steps[f"Reconcile {label} Periphery under the {label} host lock"]
     assert 'bash "$stage/deploy/periphery/reconcile.sh" "$PERIPHERY_TARGET" "$SOURCE_SHA" "$stage"' in reconcile["with"]["script"], host
     assert reconcile["env"]["PERIPHERY_TARGET"] == spec["profile"], host
     for token in ("curl", "wget"):
         assert token not in reconcile["with"]["script"], (host, token)
+# Yecao's onboarding credential has been deleted: its job must not reference any
+# onboarding secret at all, because it must reconcile from the committed marker.
 yecao_json = json.dumps(periphery_jobs["reconcile_yecao"], ensure_ascii=False)
 assert "ONBOARDING_KEY" not in yecao_json, "the Yecao job must not reference an onboarding secret"
 assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensure_ascii=False)
 
-ali_workflow = load(workflow_dir / "komodo-periphery-ali.yml")
-ali_events = ali_workflow.get("on", ali_workflow.get(True, {}))
-assert set(ali_events) == {"workflow_call"}, ali_events
-# The `workflow_call` interface is exactly the caller's five-secret mapping.
-ali_call = ali_events["workflow_call"]
-assert set(ali_call) == {"secrets"}, sorted(ali_call)
-assert set(ali_call["secrets"]) == set(ali_secrets), sorted(ali_call["secrets"])
-assert {name: spec["required"] for name, spec in ali_call["secrets"].items()} == {
-    "ALI_ASSET_VPS_HOST": "true",
-    "ALI_ASSET_VPS_USER": "true",
-    "ALI_ASSET_VPS_PORT": "true",
-    "ALI_ASSET_VPS_SSH_KEY": "true",
-    "KOMODO_ALI_ASSET_ONBOARDING_KEY": "false",
-}, ali_call["secrets"]
-# The transport may not read any other repository secret, directly or through an
-# expression alias.
-ali_text = (workflow_dir / "komodo-periphery-ali.yml").read_text(encoding="utf-8")
-assert set(re.findall(r"secrets\.([A-Za-z0-9_]+)", ali_text)) == set(ali_secrets), \
-    sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", ali_text)))
-assert "secrets: inherit" not in ali_text
-assert "concurrency" not in ali_workflow
-assert set(ali_workflow["jobs"]) == {"reconcile"}
-ali_job = ali_workflow["jobs"]["reconcile"]
-assert "environment" not in ali_job
-ali_steps = {step.get("name"): step for step in ali_job["steps"]}
-assert ali_steps["Read the Alibaba asset target profile"]["env"]["TARGET"] == "ali-sh-asset-01"
-for secret in ("ALI_ASSET_VPS_HOST", "ALI_ASSET_VPS_USER", "ALI_ASSET_VPS_PORT", "ALI_ASSET_VPS_SSH_KEY"):
-    assert secret in json.dumps(ali_job), secret
-for step in ali_job["steps"]:
-    if step.get("uses", "").startswith(("appleboy/ssh-action", "appleboy/scp-action")):
-        assert step["with"]["host"] == "${{ secrets.ALI_ASSET_VPS_HOST }}", step["with"]["host"]
-assert ali_steps["Cleanup staged Alibaba asset inputs"]["if"] == "always()"
-ali_stage = " ".join(ali_steps["Stage exact Periphery inputs on Alibaba asset host"]["with"]["source"].split())
-ali_staged_files = {part for part in ali_stage.replace(" ", "").split(",") if part}
-assert {
-    "deploy/periphery/adopt-existing.sh",
-    "deploy/periphery/validate-adoption-config.py",
-    "deploy/periphery/targets/ali-sh-asset-01/target.env",
-    "deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml",
-} <= ali_staged_files, sorted(ali_staged_files)
-ali_reconcile = ali_steps["Reconcile Alibaba asset Periphery under the host lock"]
-assert ali_reconcile["env"]["PERIPHERY_TARGET"] == "ali-sh-asset-01"
-assert ali_reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == "${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}"
-# Alibaba performs TWO independent host mutations after one freeze. Adoption can
-# take minutes, so the shared freshness gate must run again immediately before the
-# reconcile mutation; a run whose lifecycle inputs changed on main meanwhile fails
-# closed and never switches to newer main.
-ali_step_names = [step.get("name") for step in ali_job["steps"]]
-first_gate_i = ali_step_names.index("Reject stale main before Alibaba asset mutation")
-adopt_i = ali_step_names.index("Adopt already-onboarded Alibaba agent if present")
-second_gate_i = ali_step_names.index("Reject stale main again immediately before the Alibaba reconcile")
-reconcile_i = ali_step_names.index("Reconcile Alibaba asset Periphery under the host lock")
-assert first_gate_i < adopt_i < second_gate_i < reconcile_i, ali_step_names
-assert second_gate_i + 1 == reconcile_i, ali_step_names
-for gate_i in (first_gate_i, second_gate_i):
-    gate = ali_job["steps"][gate_i]
-    assert "deploy/check-production-freshness.sh" in gate["run"], gate
-    assert gate["env"]["SOURCE_SHA"] == "${{ steps.source.outputs.source_sha }}", gate
-    assert gate["env"]["EVENT_SHA"] == "${{ github.sha }}", gate
-assert ali_reconcile["env"]["SOURCE_SHA"] == "${{ steps.source.outputs.source_sha }}"
-assert 'bash "$stage/deploy/periphery/reconcile.sh" "$PERIPHERY_TARGET" "$SOURCE_SHA" "$stage"' \
-    in ali_reconcile["with"]["script"]
-
+# K7A: the TX2 production-worker owner is a separate lifecycle from the Periphery
+# agent lifecycle and from every workload owner. It owns host Docker prerequisites
+# only (Compose, the reviewed daemon mirror, the root registry credential), so its
+# inputs must not reach - and must not be reachable from - any workload owner.
 worker_workflow = load(workflow_dir / "production-worker.yml")
 worker_events = worker_workflow.get("on", worker_workflow.get(True, {}))
 assert worker_events["push"]["branches"] == ["main"]
@@ -646,8 +679,11 @@ assert set(worker_events["push"]["paths"]) == {
 worker_jobs = worker_workflow["jobs"]
 assert set(worker_jobs) == {"reconcile_tx2"}, sorted(worker_jobs)
 worker_job = worker_jobs["reconcile_tx2"]
+# A host mutating workflow serializes with every other TX mutation through the shared maintenance queue.
 assert worker_workflow["concurrency"]["group"] == "production-maintenance"
 assert worker_workflow["concurrency"]["cancel-in-progress"] == "false"
+# One owner, one host: the worker owns no other domain, and no workload owner's
+# artifact may appear inside it.
 worker_text = json.dumps(worker_workflow, ensure_ascii=False)
 for forbidden in (
     "infra/komodo", "resource-sync", "komodo-", "CADDY_", "TX_BACKEND_UPSTREAM",
@@ -657,8 +693,10 @@ for forbidden in (
 ):
     assert forbidden not in worker_text, f"the production-worker owner must not own {forbidden}"
 worker_steps = {step.get("name"): step for step in worker_job["steps"]}
+# Host parameters come from the reviewed profile, exactly like the Periphery owner.
 assert worker_steps["Read the TX2 worker profile"]["env"]["TARGET"] == "tx2"
 assert "read-target-profile.sh" in worker_steps["Read the TX2 worker profile"]["run"]
+# TX2's own SSH boundary, and only that host's.
 for secret in ("TX2_VPS_HOST", "TX2_VPS_USER", "TX2_VPS_PORT", "TX2_VPS_SSH_KEY"):
     assert secret in json.dumps(worker_job, ensure_ascii=False), secret
 worker_ssh_steps = [step for step in worker_job["steps"]
@@ -671,6 +709,7 @@ for staging_name in ("Prepare safe TX2 worker staging root", "Cleanup staged TX2
     assert staging_step["with"]["script_path"] == "deploy/production-worker/staging-root.sh", staging_name
     assert staging_step["env"]["WORKER_STAGING_ROOT"] == "${{ steps.target.outputs.staging_root }}", staging_name
 assert worker_steps["Cleanup staged TX2 worker inputs"]["if"] == "always()"
+# Only this owner's reviewed inputs are staged: fixtures and every other owner stay in CI.
 staged = " ".join(worker_steps["Stage exact worker inputs on TX2"]["with"]["source"].split())
 staged_files = {part for part in staged.replace(" ", "").split(",") if part}
 assert staged_files == {
@@ -682,11 +721,15 @@ assert staged_files == {
     "deploy/production-worker/read-target-profile.sh",
     "deploy/production-worker/targets/tx2/target.env",
 }, sorted(staged_files)
+# The reconcile runs the staged lifecycle under the host lock and asserts the
+# host-scoped readiness token instead of trusting the exit status alone.
 worker_reconcile = worker_steps["Reconcile the TX2 production worker under the TX2 host lock"]
 assert 'bash "$stage/deploy/production-worker/reconcile.sh"' in worker_reconcile["with"]["script"]
 assert 'grep -qx "$WORKER_READY_TOKEN" "$log"' in worker_reconcile["with"]["script"]
 assert "TX2_PRODUCTION_WORKER_READY" not in json.dumps(worker_workflow, ensure_ascii=False), \
     "the readiness token must come from the reviewed host profile, never inlined"
+# The registry credential is read from repository-level Actions secrets and handed over
+# through the SSH action's environment: never inline, never an argument, never a file.
 worker_envs = worker_reconcile["with"]["envs"].split(",")
 for name in ("TCR_REGISTRY", "TCR_NAMESPACE", "TCR_CREDENTIAL_VERSION", "TCR_USERNAME", "TCR_PASSWORD"):
     assert name in worker_envs, name
@@ -694,9 +737,14 @@ assert worker_reconcile["env"]["TCR_USERNAME"] == "${{ secrets.TCR_USERNAME }}"
 assert worker_reconcile["env"]["TCR_PASSWORD"] == "${{ secrets.TCR_PASSWORD }}"
 assert worker_reconcile["env"]["TCR_REGISTRY"] == "${{ vars.TCR_REGISTRY }}"
 assert worker_reconcile["env"]["TCR_NAMESPACE"] == "${{ vars.TCR_NAMESPACE }}"
+# The credential generation is the authoritative, non-secret convergence input: it must
+# come from a reviewed repository variable, so a rotation can never be ignored just
+# because the previous credential still authenticates.
 assert worker_reconcile["env"]["TCR_CREDENTIAL_VERSION"] == "${{ vars.TCR_CREDENTIAL_VERSION }}"
 assert "secrets.TCR_CREDENTIAL_VERSION" not in json.dumps(worker_workflow, ensure_ascii=False)
 assert "--password" not in json.dumps(worker_workflow, ensure_ascii=False)
+# Ownership is mutual: worker inputs trigger only the worker owner, and no workload
+# owner's inputs can reach the worker lifecycle.
 assert affected("deploy/production-worker/install.sh") == {"production_worker"}
 assert affected(".github/workflows/production-worker.yml") == {"production_worker"}
 assert affected("deploy/production-worker/targets/tx2/target.env") == {"production_worker"}
@@ -706,12 +754,17 @@ assert not (affected("deploy/production-worker/install.sh")
 for workload_input in (".github/workflows/frontend.yml", "deploy/tx/Caddyfile",
                        "deploy/tx/business-api.compose.yml", "infra/komodo/resources/servers.toml"):
     assert "production_worker" not in affected(workload_input), workload_input
+# The worker never predicts or reads workload placement, and never expands the K4.1
+# declarative Komodo scope (Servers + ResourceSync only; Stacks arrive in K7B).
 for owner_path in ("deploy/production-worker/install.sh", "deploy/production-worker/verify.sh",
                    "deploy/production-worker/reconcile.sh", "deploy/production-worker/lib.sh"):
     worker_script = (root / owner_path).read_text(encoding="utf-8")
     for forbidden in ("infra/komodo", "resource-sync", "CADDY_", "TX_BACKEND_UPSTREAM",
                       "periphery.service", "wg set", "docker compose up"):
         assert forbidden not in worker_script, (owner_path, forbidden)
+# The worker serializes through the host's existing mutation lock. A second, worker-only
+# lock would let it race Periphery and any future workload, so the lifecycle must take
+# the deploy-owned lock and must not name or create another one.
 for lock_path in ("deploy/production-worker/install.sh", "deploy/production-worker/reconcile.sh"):
     lock_script = (root / lock_path).read_text(encoding="utf-8")
     assert "require_host_lock" in lock_script, lock_path
@@ -721,6 +774,9 @@ for lock_path in ("deploy/production-worker/install.sh", "deploy/production-work
                       'install -d "$WORKER_LOCK_ROOT', ' > "$WORKER_LOCK_ROOT/.deploy.lock'):
         assert forbidden not in lock_script, (lock_path, forbidden)
     assert lock_script.count(".deploy.lock") <= 2, lock_path
+# No tracked file may carry a Docker registry credential. The worker materialises it on
+# the host from repository-level Actions secrets, so the repository stays credential-free; only
+# the owner's own fixture may contain a deliberately fake credential document.
 for tracked in sorted(root.rglob("*")):
     if not tracked.is_file() or ".git" in tracked.parts:
         continue
@@ -729,10 +785,15 @@ for tracked in sorted(root.rglob("*")):
     text = tracked.read_text(encoding="utf-8", errors="ignore")
     if '"auths"' in text and '"auth":' in text:
         relative = str(tracked.relative_to(root))
+        # The owner's fixture carries a deliberately fake credential document, and this
+        # scanner necessarily contains the markers it looks for.
         assert relative in {
             "deploy/production-worker/test-production-worker.sh",
             "scripts/ci/test-workflow-contract.sh",
         }, f"a Docker credential must never be committed: {relative}"
+    # A registry credential assigned in a tracked file (a Compose file, a Komodo
+    # resource, the Periphery config, a tracked env file) is the same violation as a
+    # committed credential document: the worker reads it from the protected environment.
     for assignment in re.finditer(
         r"^\s*(?:export\s+)?(TCR_PASSWORD|TCR_USERNAME|DOCKER_PASSWORD)\s*[=:]\s*[\"']?([^\s\"']+)",
         text, re.MULTILINE,
@@ -741,6 +802,8 @@ for tracked in sorted(root.rglob("*")):
         value = assignment.group(2)
         assert relative.startswith("deploy/production-worker/test-") or value.startswith("$"), \
             f"a registry credential must never be assigned in the repository: {relative}"
+# Every sudo host maps only its own onboarding secret into the generic runtime
+# variable, and never echoes it.
 for host, spec in periphery_hosts.items():
     if host == "yecao":
         continue
@@ -754,11 +817,11 @@ for host, spec in periphery_hosts.items():
     assert reconcile["env"]["KOMODO_PERIPHERY_ONBOARDING_KEY"] == f"${{{{ secrets.{secret_name} }}}}", host
     script = reconcile["with"]["script"]
     assert "KOMODO_PERIPHERY_ONBOARDING_KEY" not in script.replace("$KOMODO_PERIPHERY_ONBOARDING_KEY", ""), host
+# The per-host parameters are reviewed data, not workflow text.
 for profile, expected in {
     "yecao": {"connect_as": "yecao", "lock_root": "/opt/wotb", "staging_root": "/opt/periphery", "privilege": "root"},
     "tx1": {"connect_as": "tx1", "lock_root": "/opt/wotb-tx", "staging_root": "/opt/wotb-tx/periphery", "privilege": "sudo"},
     "tx2": {"connect_as": "tx2", "lock_root": "/opt/wotb-tx2", "staging_root": "/opt/wotb-tx2/periphery", "privilege": "sudo"},
-    "ali-sh-asset-01": {"connect_as": "ali-sh-asset-01", "lock_root": "/opt/wotb-asset", "staging_root": "/opt/wotb-asset/periphery", "privilege": "sudo"},
 }.items():
     text = (root / f"deploy/periphery/targets/{profile}/target.env").read_text(encoding="utf-8")
     assert f"PERIPHERY_TARGET={profile}" in text, profile
@@ -766,8 +829,12 @@ for profile, expected in {
     assert f"PERIPHERY_LOCK_ROOT:={expected['lock_root']}" in text, profile
     assert f"PERIPHERY_STAGING_ROOT:={expected['staging_root']}" in text, profile
     assert f"PERIPHERY_PRIVILEGE={expected['privilege']}" in text, profile
+    # A profile is data: it may never assign a credential (comments excluded, and
+    # `load_target_profile` enforces the same rule at runtime).
     effective_profile = "\n".join(line for line in text.splitlines() if not line.strip().startswith("#"))
     assert not re.search(r"(?i)(secret|password|passwd|token|private_key|onboarding_key)\s*=", effective_profile), profile
+# Each target's config is outbound only, with its own Server identity, and the
+# effective bodies are otherwise identical.
 normalized_configs = {}
 for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1"), ("tx2", "tx2")):
     config_text = (root / f"deploy/periphery/targets/{profile}/periphery.config.toml").read_text(encoding="utf-8")
@@ -787,18 +854,7 @@ for profile, connect_as in (("yecao", "yecao"), ("tx1", "tx1"), ("tx2", "tx2")):
                                  if line.strip() and not line.strip().startswith("#"))
     normalized_configs[profile] = effective_config.replace(f'connect_as = "{connect_as}"', 'connect_as = "X"')
 assert len(set(normalized_configs.values())) == 1, sorted(normalized_configs)
-ali_config_text = (root / "deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml").read_text(encoding="utf-8")
-for invariant in (
-    'root_directory = "/etc/komodo"',
-    'core_addresses = ["https://komodo.wotbtools.com"]',
-    'connect_as = "ali-sh-asset-01"',
-    "server_enabled = false",
-    'private_key = "file:/etc/komodo/keys/periphery.key"',
-    'core_public_keys = ["file:/etc/komodo/keys/core.pub"]',
-):
-    assert invariant in ali_config_text, invariant
-for forbidden in ("onboarding_key", "passkeys", "core_tls_insecure_skip_verify = true"):
-    assert forbidden not in ali_config_text, forbidden
+# No per-host lifecycle script may exist: only reviewed profiles differ.
 for path in sorted((root / "deploy/periphery").glob("*.sh")):
     assert not any(host in path.name for host in periphery_hosts), path.name
 periphery_unit_text = (root / "deploy/periphery/periphery.service").read_text(encoding="utf-8")
@@ -811,6 +867,7 @@ for invariant in (
     assert invariant in periphery_unit_text, invariant
 assert "PERIPHERY_ONBOARDING_KEY" not in periphery_unit_text, \
     "the bootstrap credential must only reach Periphery through the transient /run file"
+# The pinned release is a sha256 manifest, never a floating tag or image.
 periphery_release_text = (root / "deploy/periphery/periphery.release").read_text(encoding="utf-8")
 assert "latest" not in periphery_release_text.lower()
 assert "40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13" in periphery_release_text
@@ -838,6 +895,65 @@ for owner in owners:
         assert workflow["jobs"]["deploy"]["concurrency"] == queue, owner
     else:
         assert workflow["concurrency"] == queue, owner
+
+# Replay parsing runs in the browser: the server-side parser plane, broker, and object store
+# (and their CI/production owners) are retired and must not come back.
+for retired in (
+    "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
+    "minio.yml", "ci-minio.yml",
+):
+    assert not (workflow_dir / retired).exists(), retired
+for retired_owner in ("parser_worker", "rabbitmq", "minio"):
+    assert retired_owner not in filters, retired_owner
+    assert retired_owner not in jobs, retired_owner
+
+freshness = (root / "deploy/check-production-freshness.sh").read_text(encoding="utf-8")
+for invariant in (
+    "Source SHA differs from the triggering event SHA.",
+    "Production workflows require the main ref.",
+    "Checkout SHA differs from the event SHA.",
+    "workflow_dispatch",
+    "git merge-base --is-ancestor",
+    "git diff --quiet",
+    "Production-owned inputs changed after the workflow source SHA.",
+):
+    assert invariant in freshness, invariant
+
+# 诊断通道的 cookie 脱敏契约（review blocker 3）：prod-diagnostics 会把线上 Set-Cookie
+# 打进 Actions 日志，而 AUTH_SESSION_ID / KC_RESTART 的值是动态 secret——GitHub 的
+# secret masking 不认它们。这里锁两件事：
+#   1) 任何读取 set-cookie 的管道之后必须紧跟脱敏（`=<redacted>`），且
+#   2) 出现裸打印的形态（grep set-cookie 但没有脱敏）即失败。
+diagnostics = (workflow_dir / "prod-diagnostics.yml").read_text(encoding="utf-8")
+assert "set-cookie" in diagnostics, "prod-diagnostics must still probe live cookie attributes"
+all_lines = diagnostics.splitlines()
+read_pipelines = [
+    index for index, line in enumerate(all_lines)
+    if "set-cookie" in line.lower() and "grep" in line
+]
+assert read_pipelines, "cookie probe step disappeared"
+assert "<redacted>" in diagnostics, "cookie values must be redacted before stdout"
+for index in read_pipelines:
+    # 脱敏必须出现在**读取 cookie 的管道本身**（同一段窗口内、到达 stdout 之前）
+    window = "\n".join(all_lines[index:index + 3])
+    assert "<redacted>" in window, (
+        "a set-cookie pipeline without redaction can leak live session identifiers: "
+        + all_lines[index].strip()
+    )
+
+# The exporter package may be private on first publication. Its pull credentials
+# belong only to the exporter mutation and must never become host Docker state.
+observability = load(workflow_dir / "observability.yml")
+obs_steps = observability["jobs"]["observability"]["steps"]
+obs_reconcile = next(step for step in obs_steps if step.get("name") == "Reconcile selected runtime, apply Grafana plan, and verify")
+obs_script = obs_reconcile["with"]["script"]
+assert "mktemp -d /run/wotb-dev-metrics-pull.XXXXXX" in obs_script
+assert "trap 'rm -rf -- \"$DOCKER_CONFIG\"' EXIT" in obs_script
+assert 'docker login ghcr.io --username "$DEV_METRICS_REGISTRY_USER" --password-stdin' in obs_script
+assert 'printf \'%s\' "$DEV_METRICS_REGISTRY_TOKEN"' in obs_script
+assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
+assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
+assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
 
 # --- asset origin source transport (Komodo Stack `wotbtools-asset-origin`) -----
 # This owner may mutate ONLY the asset-owned Gitee transport branch. It is also the
@@ -911,38 +1027,32 @@ verify_index = asset_step_names.index("Require Gitee asset-origin ref at the rev
 assert freeze_index < push_index < verify_index, asset_step_names
 assert asset_steps[freeze_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert asset_steps[push_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
-# For BOTH push and workflow_dispatch the shared-ref mutation requires the exact
-# current main SHA, not merely "owned inputs unchanged".
 assert asset_steps[push_index]["env"]["PRODUCTION_REQUIRE_EXACT_MAIN"] == "1"
 freeze_run = asset_steps[freeze_index]["run"]
 push_run = asset_steps[push_index]["run"]
 for gate_run in (freeze_run, push_run):
     assert "deploy/check-production-freshness.sh" in gate_run
-# The exact-current-main gate runs after local preparations and immediately
-# before the only ref mutation.
 assert push_run.index("git update-ref") < push_run.index("deploy/check-production-freshness.sh"), \
     push_run
 assert push_run.index("deploy/check-production-freshness.sh") < push_run.index("git push --force"), \
     push_run
 assert "refs/heads/asset-origin-frozen:refs/heads/asset-origin" in push_run
-assert ":refs/heads/main" not in push_run, \
-    "the asset transport must never push shared Gitee main"
+assert ":refs/heads/main" not in push_run, "the asset transport must never push shared Gitee main"
 verify_run = asset_steps[verify_index]["run"]
 assert "refs/heads/asset-origin" in verify_run
 assert "refs/heads/main" not in verify_run, \
     "the asset gate must verify its own transport ref, not shared main"
 assert "force_update" not in asset_text, "account-level mirroring cannot freeze the event SHA"
-# The Stack consumes ONLY the asset-owned transport ref: shared Gitee main is moved
-# by the Frontend/Business API mirrors and can never be this Stack's deploy source.
+# The Stack consumes ONLY the asset-owned transport ref and never holds a host lock.
 asset_toml = (root / "infra/komodo/resources/asset-origin.toml").read_text(encoding="utf-8")
 assert re.search(r'^branch = "asset-origin"$', asset_toml, re.MULTILINE), \
     "the asset Stack must track the asset-origin transport ref"
 assert not re.search(r'^branch = "main"$', asset_toml, re.MULTILINE), \
     "the asset Stack must never track shared Gitee main"
-
-# The canonical runbook must state the same narrow exception as the authoritative
-# workflow contract. Without this, a maintainer could read "the resource tree only
-# reaches a non-production gate" as "asset-origin.toml is production-inert".
+assert 'compose_cmd_wrapper = ""' in asset_toml
+assert 'compose_cmd_wrapper_include = []' in asset_toml
+# The canonical runbook and the authoritative workflow contract must state the same
+# narrow exception, so neither can drift into "the whole tree is production-inert".
 runbook_text = " ".join(
     (root / "docs/operations/komodo-resource-sync.md").read_text(encoding="utf-8").split()
 )
@@ -952,8 +1062,8 @@ for statement in (
     "is an input of `.github/workflows/asset-origin.yml`",
     "which may mutate only the asset-owned Gitee transport branch `asset-origin` "
     "(never shared `main`)",
-    "The Stack tracks that same `asset-origin` branch",
     "It must not apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.",
+    "The Stack tracks that same `asset-origin` branch",
     "`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain mandatory, "
     "and ResourceSync Apply stays manual.",
     "No other file under `infra/komodo/resources/**` is a production input.",
@@ -963,59 +1073,16 @@ assert "the resource tree reaches only the non-production deployment contract ga
 agents_text = " ".join((root / ".github/AGENTS.md").read_text(encoding="utf-8").split())
 assert "The single narrow exception is `infra/komodo/resources/asset-origin.toml`" in agents_text, \
     "the authoritative workflow contract lost its resource-tree exception"
-
-for retired in (
-    "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
-    "minio.yml", "ci-minio.yml",
-):
-    assert not (workflow_dir / retired).exists(), retired
-for retired_owner in ("parser_worker", "rabbitmq", "minio"):
-    assert retired_owner not in filters, retired_owner
-    assert retired_owner not in jobs, retired_owner
-
-freshness = (root / "deploy/check-production-freshness.sh").read_text(encoding="utf-8")
-for invariant in (
-    "Source SHA differs from the triggering event SHA.",
-    "Production workflows require the main ref.",
-    "Checkout SHA differs from the event SHA.",
-    "workflow_dispatch",
-    "git merge-base --is-ancestor",
-    "git diff --quiet",
-    "Production-owned inputs changed after the workflow source SHA.",
-):
-    assert invariant in freshness, invariant
-
-diagnostics = (workflow_dir / "prod-diagnostics.yml").read_text(encoding="utf-8")
-assert "set-cookie" in diagnostics, "prod-diagnostics must still probe live cookie attributes"
-all_lines = diagnostics.splitlines()
-read_pipelines = [
-    index for index, line in enumerate(all_lines)
-    if "set-cookie" in line.lower() and "grep" in line
-]
-assert read_pipelines, "cookie probe step disappeared"
-assert "<redacted>" in diagnostics, "cookie values must be redacted before stdout"
-for index in read_pipelines:
-    window = "\n".join(all_lines[index:index + 3])
-    assert "<redacted>" in window, (
-        "a set-cookie pipeline without redaction can leak live session identifiers: "
-        + all_lines[index].strip()
-    )
-
-observability = load(workflow_dir / "observability.yml")
-obs_steps = observability["jobs"]["observability"]["steps"]
-obs_reconcile = next(step for step in obs_steps if step.get("name") == "Reconcile selected runtime, apply Grafana plan, and verify")
-obs_script = obs_reconcile["with"]["script"]
-assert "mktemp -d /run/wotb-dev-metrics-pull.XXXXXX" in obs_script
-assert "trap 'rm -rf -- \"$DOCKER_CONFIG\"' EXIT" in obs_script
-assert 'docker login ghcr.io --username "$DEV_METRICS_REGISTRY_USER" --password-stdin' in obs_script
-assert 'printf \'%s\' "$DEV_METRICS_REGISTRY_TOKEN"' in obs_script
-assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
-assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
-assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
+assert "manually bootstrapped and manually lifecycle-managed" in agents_text, \
+    "the workflow contract must document the manual Alibaba Periphery boundary"
 
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
 
+# The "reuse only an existing immutable image" release step must not confuse a
+# brand-new application repository with a broken registry. Exercise the real gate
+# helper through fake crane binaries: a first publish has to fall through to
+# build + push, while an auth/server/network failure has to stay fatal.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
@@ -1064,6 +1131,7 @@ done
 
 echo "first publish falls through to build while registry failures stay fatal: PASS"
 
+# Exercise the real exporter lookup/verification blocks without registry writes.
 python3 - "$ROOT" "$work" <<'PY'
 import pathlib, sys, yaml
 root, work = map(pathlib.Path, sys.argv[1:])

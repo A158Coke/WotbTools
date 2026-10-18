@@ -58,24 +58,13 @@ registry_account = ""
 # `docker compose up -d` for a normal deploy, so force recreation explicitly.
 extra_args = ["--force-recreate"]
 build_extra_args = []
-# A Stack deploy mutates the same host that the Komodo Periphery lifecycle owns, so
-# the mutating Compose command must hold THE SAME host lock
-# (/opt/wotb-asset/.deploy.lock) that deploy/periphery/reconcile.sh takes. Without
-# this, a Periphery reconcile could replace/restart the agent while it is servicing
-# a Stack deploy. Komodo v2.3.3 substitutes [[COMPOSE_COMMAND]] and runs the result
-# through /bin/bash, so the wrapper keeps the whole `docker compose up` inside a
-# non-blocking flock: a reconcile in progress makes the deploy fail closed instead
-# of racing it.
-#
-# The lock file belongs to the host's deploy owner and MUST already exist. util-linux
-# flock's pathname form creates a missing file, so the wrapper never passes the path
-# to flock: it first requires a regular, non-symlink file, opens it read-only on fd 9
-# (`exec 9<` never creates), then locks that fd. A missing or symlinked lock fails
-# closed before any Compose command runs.
-# A Compose pull is outside the wrapper (compose_cmd_wrapper_include = ["up"])
-# because it does not mutate the running Stack.
-compose_cmd_wrapper = "test -f /opt/wotb-asset/.deploy.lock && test ! -L /opt/wotb-asset/.deploy.lock && exec 9</opt/wotb-asset/.deploy.lock && flock --exclusive --nonblock 9 && [[COMPOSE_COMMAND]]"
-compose_cmd_wrapper_include = ["up"]
+# No Compose wrapper / host lock: this PR does not run any GitHub-owned mutation on
+# the Alibaba host (its Periphery is manually lifecycle-managed), and a manual
+# Komodo Deploy is the only Stack mutation owner. A shared host lock can be
+# reintroduced together with a future Periphery automation PR, when a real second
+# mutation owner exists.
+compose_cmd_wrapper = ""
+compose_cmd_wrapper_include = []
 ignore_services = []
 file_contents = ""
 environment = ""
