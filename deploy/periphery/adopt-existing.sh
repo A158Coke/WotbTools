@@ -22,6 +22,13 @@ source "$script_dir/lib.sh"
 [[ "$(id -u)" == 0 ]] || fail 'Existing Periphery adoption must run as root.'
 load_target_profile "$TARGET" "$script_dir"
 
+# Adoption writes the durable marker, so it shares the host mutation lock with
+# every normal reconcile instead of creating an uncoordinated bootstrap mutation.
+require_existing_real_dir "$periphery_lock_root" "the $periphery_target host mutation lock root"
+require_existing_lock_file "$periphery_lock_file"
+exec 9>"$periphery_lock_file"
+flock -n 9 || fail "Another $periphery_target host mutation is running."
+
 marker_state="$(periphery_marker_state)"
 case "$marker_state" in
   valid)
