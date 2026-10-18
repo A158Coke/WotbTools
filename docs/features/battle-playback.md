@@ -1345,7 +1345,7 @@ latency 从 0.02s 缓慢收敛到 0.2s，段首数秒是 10Hz 保持-跳变阶�
 "有采样可信"；短隐藏段内活车不渲染，死亡残骸仍按最后已知位姿保留。采样器若被要求在一
 隐藏段内取值（2D/标签/诊断），网格列夹到**前一段末**（最后已知），不得无约束地滑向下一段。
 核心资产缺失/失败时 3D 面板显示**非阻塞**降级提示（`scene3d-asset-degraded`），不再把
-`hasData=true` 当作健康加载完成；变体映射缺失导致的 fail-closed 全量裁剪同样计入降级。
+`hasData=true` 当作健康加载完成；变体映射缺失/`variantMappingIncomplete` 标记导致的 fail-closed 裁剪同样计入降级。
 `extras.alphaBlend` 在 SpeedTree / 光照图 / 贴花等专用材质路由上也保持软混合（alpha 乘
 `m.opacity`）；多材质网格只有**整组**命中 `extras.sky` 才走无限远天空，混合组按普通网格
 fail-closed（不把普通 group 投到无限远，也不让烘焙整件剔除）。

@@ -1232,6 +1232,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
         const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
         const variantActive = activeVariantOf(gltf.scene.userData?.variantByMapId, DATA.meta.map_id);
+        const variantMappingIncomplete = gltf.scene.userData?.variantMappingIncomplete === true;
         // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
         // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
         // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
@@ -1239,10 +1240,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
         const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
         if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
-        if (prunedVariants && !variantActive) {
-          // fail-closed 裁剪（映射缺失/当前 map_id 不在映射）隐藏了全部变体节点：这是
-          // 场景内容缺失，必须进入降级状态，不能只留一条 console.warn。
-          noteAsset('scenery', 'variant-fail-closed', '变体映射缺失/未知，已隐藏全部带标记节点');
+        if (variantMappingIncomplete || (prunedVariants && !variantActive)) {
+          // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
+          // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
+          noteAsset('scenery', 'variant-fail-closed', variantMappingIncomplete
+            ? '导出器标记变体映射不完整，已 fail-closed 隐藏带标记节点'
+            : '变体映射缺失/未知，已隐藏全部带标记节点');
         }
         // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
         const sceneryExtras = await resolveSceneryExtras(gltf);

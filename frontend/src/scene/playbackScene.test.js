@@ -1143,6 +1143,24 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
   })
 
+  it('variantMappingIncomplete 标记本身也进入资产降级（active 映射存在但标签缺失）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const root = new THREE.Group()
+    root.userData.variantByMapId = { 1: 'md1' }
+    root.userData.variantMappingIncomplete = true
+    const tagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial())
+    tagged.userData.mdVariant = 'md2'
+    root.add(tagged)
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
+  })
+
   it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])
