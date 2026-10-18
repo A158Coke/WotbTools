@@ -1,0 +1,17 @@
+# Komodo Periphery configuration for the Alibaba Shanghai asset origin
+# (target: ali-sh-asset-01).
+#
+# Repository-owned: `.github/workflows/komodo-periphery.yml` copies this file
+# verbatim to /etc/komodo/periphery.config.toml on every reconcile, so the host
+# file is never hand-edited and never carries a bootstrap credential.
+#
+# This host is not on the WotBTools WireGuard mesh. It dials the existing public
+# Komodo HTTPS endpoint outbound; no Periphery inbound port is exposed.
+
+root_directory = "/etc/komodo"
+core_addresses = ["https://komodo.wotbtools.com"]
+connect_as = "ali-sh-asset-01"
+server_enabled = false
+
+disable_terminals = false
+disable_container_terminals = false
