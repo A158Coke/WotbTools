@@ -8,8 +8,16 @@ import { useFeatureGate } from './useFeatureGate.js'
 import { confirm } from './useConfirm.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { ApiError } from '../utils/http.js'
+import { BROADCAST_DISPLAY_ZONES } from '../utils/broadcastTime.js'
 
 const queryKeys = ['lbServer', 'lbSeason', 'lbCategory'] as const
+const displayZoneKey = 'wotb-broadcast-display-time-zone'
+function savedDisplayZone(): string {
+  try {
+    const value = localStorage.getItem(displayZoneKey)
+    return BROADCAST_DISPLAY_ZONES.some(zone => zone === value) ? value! : 'server'
+  } catch { return 'server' }
+}
 function single(value: unknown): string | null { return typeof value === 'string' && value.length ? value : null }
 function id(value: unknown): number | null {
   const raw = single(value)
@@ -22,6 +30,12 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   const allowed = computed(() => auth.isLeagueBroadcastAdmin.value)
   const index = ref<BroadcastIndex | null>(null)
   const snapshot = ref<BroadcastSeasonView | BroadcastCategoryView | null>(null)
+  const displayTimeZonePreference = ref(savedDisplayZone())
+  const defaultTimeZone = computed(() => snapshot.value && 'defaultTimeZone' in snapshot.value ? snapshot.value.defaultTimeZone : null)
+  const displayTimeZone = computed(() => displayTimeZonePreference.value === 'server' ? defaultTimeZone.value : displayTimeZonePreference.value)
+  watch(displayTimeZonePreference, value => {
+    try { localStorage.setItem(displayZoneKey, value) } catch { /* Preference remains usable when storage is unavailable. */ }
+  })
   const loading = ref(false), busy = ref(false), readFailed = ref(false), error = ref<unknown>(null), notice = ref(''), editorEpoch = ref(0)
   const servers = computed(() => index.value?.servers ?? [])
   const server = computed(() => servers.value.find(value => value === single(route.query.lbServer)) ?? null)
@@ -152,5 +166,6 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   }, { immediate: true })
   onScopeDispose(invalidate)
   return { network, allowed, index, server, servers, seasonId, categoryId, season, seasons, categories, category, nodes,
+    defaultTimeZone, displayTimeZonePreference, displayTimeZone,
     coverUploadAvailable, loading, busy, readFailed, error, notice, editorEpoch, contextKey, refresh, navigate, mutate, remove }
 }

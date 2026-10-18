@@ -675,7 +675,7 @@
       "title": "联赛直播回放",
       "navTitle": "直播回放",
       "serversTitle": "选择服务器",
-      "seasonsTitle": "季赛",
+      "seasonsTitle": "赛事",
       "categoriesTitle": "子赛事分类",
       "nodesTitle": "子赛事",
       "back": "返回上一级",
@@ -690,8 +690,8 @@
       "enter": "进入 {name}",
       "expand": "展开 {name}",
       "collapse": "收起 {name}",
-      "newSeason": "新增季赛",
-      "editSeason": "编辑季赛",
+      "newSeason": "新增赛事",
+      "editSeason": "编辑赛事",
       "newCategory": "新增子赛事分类",
       "newNode": "新增子赛事",
       "newReplay": "新增直播回放",
@@ -715,7 +715,6 @@
       "matchDate": "比赛日期",
       "groupNumber": "小组号",
       "groupNumberLabel": "第{number}组",
-      "groupNumberPending": "组号待补",
       "bracket": "组别",
       "teams": "队伍（2–4 支）",
       "followedTeam": "追随的队伍（必填）",
@@ -728,14 +727,14 @@
       "removeCover": "移除现有封面",
       "restoreCover": "保留现有封面",
       "coverAlt": "{title} 的封面",
-      "noSeasons": "此服务器还没有季赛。",
-      "noCategories": "此季赛还没有子赛事分类。",
+      "noSeasons": "此服务器还没有赛事。",
+      "noCategories": "此赛事还没有子赛事分类。",
       "noNodes": "此分类还没有子赛事根节点。",
       "noReplays": "此根节点还没有直播回放。",
-      "noMoreCategories": "该季赛已包含全部分类。",
+      "noMoreCategories": "该赛事已包含全部分类。",
       "nodeLimit": "此分类已创建全部允许的根节点。",
       "replayCount": "{count} 条回放",
-      "seasonDeleteTitle": "删除季赛",
+      "seasonDeleteTitle": "删除赛事",
       "seasonDeleteMessage": "将删除 {nodes} 个子赛事根节点和 {replays} 条直播回放。确认删除？",
       "nodeDeleteTitle": "删除子赛事",
       "nodeDeleteMessage": "将一并删除该节点下 {replays} 条直播回放；所属分类保留。确认删除？",
@@ -770,11 +769,34 @@
         "LOSERS": "败者组"
       },
       "perspectives": {
-        "POV": "POV",
-        "OBSERVER": "上帝视角"
+        "POV": "个人视角",
+        "OBSERVER": "观战视角"
       },
       "following": "追随 {team}",
-      "reloadEditor": "重新载入（放弃当前输入）"
+      "reloadEditor": "重新载入（放弃当前输入）",
+      "displayTimeZone": "显示时区",
+      "serverTimeZone": "区服赛事时区 · {zone}",
+      "matchTime": "具体时间",
+      "matchTimeHint": "未知时留空，仅显示比赛日期。",
+      "inputTimeZone": "录入时区",
+      "inputTimeZoneHint": "默认北京时间；切换时区会换算已填写的日期与时间。",
+      "noGroup": "不分组",
+      "timeZones": {
+        "Asia/Shanghai": "北京时间 (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "太平洋时间 PT (PST/PDT)",
+        "Europe/Berlin": "中欧时间 (CET/CEST)",
+        "Europe/Moscow": "莫斯科时间 (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · 北京时间",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · 莫斯科"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "目录已被其他管理员修改，请刷新后重新检查并保存。",
@@ -1216,7 +1238,7 @@
       "accountProfile": "Account data needs a connection.",
       "adminUsers": "User management needs a connection to read Keycloak and local profiles.",
       "syncPaused": "Offline: syncing is paused.",
-      "leagueBroadcasts": "League broadcasts require an internet connection. Reconnect to browse and manage them."
+      "leagueBroadcasts": "Tournament broadcasts require an internet connection. Reconnect to browse and manage them."
     },
     "connectivityNotice": {
       "unknownTitle": "Network status unavailable",
@@ -1457,10 +1479,10 @@
       "aiLoginRequired": "AI sample reviews also require sign-in"
     },
     "leagueBroadcasts": {
-      "title": "League broadcast replays",
+      "title": "Tournament broadcast replays",
       "navTitle": "Broadcasts",
       "serversTitle": "Choose a server",
-      "seasonsTitle": "Seasons",
+      "seasonsTitle": "Tournaments",
       "categoriesTitle": "Competition categories",
       "nodesTitle": "Competition stages",
       "back": "Back to parent",
@@ -1475,8 +1497,8 @@
       "enter": "Open {name}",
       "expand": "Expand {name}",
       "collapse": "Collapse {name}",
-      "newSeason": "Add season",
-      "editSeason": "Edit season",
+      "newSeason": "Add Tournament",
+      "editSeason": "Edit Tournament",
       "newCategory": "Add category",
       "newNode": "Add stage",
       "newReplay": "Add broadcast replay",
@@ -1489,8 +1511,8 @@
       "startDate": "Start date (optional)",
       "category": "Category",
       "round": "Round",
-      "roundLabel": "Points round {round}",
-      "format": "Quarterfinal format",
+      "roundLabel": "Prove Your Skill #{round}",
+      "format": "Top 8 format",
       "immutable": "Round and format are fixed after creation. Delete and recreate the stage to change them.",
       "titleField": "Title",
       "shortTitle": "A short title is enough",
@@ -1500,7 +1522,6 @@
       "matchDate": "Match date",
       "groupNumber": "Group number",
       "groupNumberLabel": "Group {number}",
-      "groupNumberPending": "Group number pending",
       "bracket": "Bracket",
       "teams": "Teams (2–4)",
       "followedTeam": "Team followed by this replay (required)",
@@ -1513,15 +1534,15 @@
       "removeCover": "Remove existing cover",
       "restoreCover": "Keep existing cover",
       "coverAlt": "Cover for {title}",
-      "noSeasons": "No seasons for this server yet.",
-      "noCategories": "No categories in this season yet.",
+      "noSeasons": "No tournaments for this server yet.",
+      "noCategories": "No categories in this tournament yet.",
       "noNodes": "No stages in this category yet.",
       "noReplays": "No broadcast replays in this stage yet.",
-      "noMoreCategories": "This season already has all categories.",
+      "noMoreCategories": "This tournament already has all categories.",
       "nodeLimit": "All available stages have been created.",
       "replayCount": "Replays: {count}",
-      "seasonDeleteTitle": "Delete season",
-      "seasonDeleteMessage": "Delete this season, its {nodes} stages and {replays} broadcast replays?",
+      "seasonDeleteTitle": "Delete Tournament",
+      "seasonDeleteMessage": "Delete this tournament, its {nodes} stages and {replays} broadcast replays?",
       "nodeDeleteTitle": "Delete stage",
       "nodeDeleteMessage": "Delete this stage and its {replays} broadcast replays? The category will remain.",
       "replayDeleteTitle": "Delete broadcast replay",
@@ -1541,9 +1562,9 @@
         "LESTA": "Lesta"
       },
       "categories": {
-        "POINTS": "Points competition",
-        "QUARTER_FINALS": "Quarterfinals",
-        "SEMI_FINALS": "Semifinals"
+        "POINTS": "Prove Your Skill",
+        "QUARTER_FINALS": "Top 8",
+        "SEMI_FINALS": "Top 4"
       },
       "formats": {
         "ROUND_ROBIN": "Round robin",
@@ -1559,7 +1580,30 @@
         "OBSERVER": "Observer"
       },
       "following": "Following {team}",
-      "reloadEditor": "Reload (discard current inputs)"
+      "reloadEditor": "Reload (discard current inputs)",
+      "displayTimeZone": "Display time zone",
+      "serverTimeZone": "Server time zone · {zone}",
+      "matchTime": "Start time",
+      "matchTimeHint": "Leave blank if unknown; only the match date is shown.",
+      "inputTimeZone": "Input time zone",
+      "inputTimeZoneHint": "Defaults to Beijing time. Switching zones converts the entered date and time.",
+      "noGroup": "No group",
+      "timeZones": {
+        "Asia/Shanghai": "Beijing (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Pacific Time (PST/PDT)",
+        "Europe/Berlin": "Central Europe (CET/CEST)",
+        "Europe/Moscow": "Moscow (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Beijing",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Moscow"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Another administrator changed this catalogue. Refresh and review before saving.",
@@ -2001,7 +2045,7 @@
       "accountProfile": "Для данных аккаунта нужно подключение.",
       "adminUsers": "Для управления пользователями нужно подключение к Keycloak и локальным профилям.",
       "syncPaused": "Нет сети: синхронизация приостановлена.",
-      "leagueBroadcasts": "Для трансляций лиги нужен интернет. Подключитесь для просмотра и управления."
+      "leagueBroadcasts": "Для трансляций турниров нужен интернет. Подключитесь для просмотра и управления."
     },
     "connectivityNotice": {
       "unknownTitle": "Не удалось определить состояние сети",
@@ -2242,10 +2286,10 @@
       "aiLoginRequired": "Для ИИ-разбора примера тоже нужен вход"
     },
     "leagueBroadcasts": {
-      "title": "Записи трансляций лиги",
+      "title": "Записи трансляций турниров",
       "navTitle": "Трансляции",
       "serversTitle": "Выберите сервер",
-      "seasonsTitle": "Сезоны",
+      "seasonsTitle": "Турниры",
       "categoriesTitle": "Категории соревнования",
       "nodesTitle": "Этапы соревнования",
       "back": "На уровень выше",
@@ -2260,8 +2304,8 @@
       "enter": "Открыть {name}",
       "expand": "Развернуть {name}",
       "collapse": "Свернуть {name}",
-      "newSeason": "Добавить сезон",
-      "editSeason": "Изменить сезон",
+      "newSeason": "Добавить турнир",
+      "editSeason": "Изменить турнир",
       "newCategory": "Добавить категорию",
       "newNode": "Добавить этап",
       "newReplay": "Добавить запись трансляции",
@@ -2274,8 +2318,8 @@
       "startDate": "Дата начала (необязательно)",
       "category": "Категория",
       "round": "Раунд",
-      "roundLabel": "Раунд {round} по очкам",
-      "format": "Формат четвертьфинала",
+      "roundLabel": "Путь мастерства №{round}",
+      "format": "Формат Топ-8",
       "immutable": "После создания раунд и формат неизменны. Для изменения удалите и создайте этап заново.",
       "titleField": "Заголовок",
       "shortTitle": "Достаточно короткого заголовка",
@@ -2285,7 +2329,6 @@
       "matchDate": "Дата матча",
       "groupNumber": "Номер группы",
       "groupNumberLabel": "Группа {number}",
-      "groupNumberPending": "Номер группы не указан",
       "bracket": "Сетка",
       "teams": "Команды (2–4)",
       "followedTeam": "Команда, за которой следует запись (обязательно)",
@@ -2298,15 +2341,15 @@
       "removeCover": "Удалить текущую обложку",
       "restoreCover": "Сохранить текущую обложку",
       "coverAlt": "Обложка: {title}",
-      "noSeasons": "Для этого сервера пока нет сезонов.",
-      "noCategories": "В этом сезоне пока нет категорий.",
+      "noSeasons": "Для этого сервера пока нет турниров.",
+      "noCategories": "В этом турнире пока нет категорий.",
       "noNodes": "В этой категории пока нет этапов.",
       "noReplays": "На этом этапе пока нет записей.",
-      "noMoreCategories": "В сезоне уже есть все категории.",
+      "noMoreCategories": "В этом турнире уже есть все категории.",
       "nodeLimit": "Все допустимые этапы уже созданы.",
       "replayCount": "Записей: {count}",
-      "seasonDeleteTitle": "Удалить сезон",
-      "seasonDeleteMessage": "Удалить сезон, его этапы ({nodes}) и записи трансляций ({replays})?",
+      "seasonDeleteTitle": "Удалить турнир",
+      "seasonDeleteMessage": "Удалить турнир, его этапы ({nodes}) и записи трансляций ({replays})?",
       "nodeDeleteTitle": "Удалить этап",
       "nodeDeleteMessage": "Удалить этап и его записи ({replays})? Категория сохранится.",
       "replayDeleteTitle": "Удалить запись трансляции",
@@ -2326,9 +2369,9 @@
         "LESTA": "Леста"
       },
       "categories": {
-        "POINTS": "Соревнование по очкам",
-        "QUARTER_FINALS": "Четвертьфинал",
-        "SEMI_FINALS": "Полуфинал"
+        "POINTS": "Путь мастерства",
+        "QUARTER_FINALS": "Топ-8",
+        "SEMI_FINALS": "Топ-4"
       },
       "formats": {
         "ROUND_ROBIN": "Круговой турнир",
@@ -2340,11 +2383,34 @@
         "LOSERS": "Нижняя сетка"
       },
       "perspectives": {
-        "POV": "POV",
-        "OBSERVER": "Наблюдатель"
+        "POV": "От лица игрока",
+        "OBSERVER": "От лица наблюдателя"
       },
       "following": "Следуя за {team}",
-      "reloadEditor": "Загрузить заново (сбросить ввод)"
+      "reloadEditor": "Загрузить заново (сбросить ввод)",
+      "displayTimeZone": "Часовой пояс отображения",
+      "serverTimeZone": "Часовой пояс сервера · {zone}",
+      "matchTime": "Время начала",
+      "matchTimeHint": "Если время неизвестно, оставьте поле пустым: будет показана только дата матча.",
+      "inputTimeZone": "Часовой пояс ввода",
+      "inputTimeZoneHint": "По умолчанию — пекинское время. При смене пояса введённые дата и время пересчитываются.",
+      "noGroup": "Без группы",
+      "timeZones": {
+        "Asia/Shanghai": "Пекин (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Тихоокеанское время (PST/PDT)",
+        "Europe/Berlin": "Центральная Европа (CET/CEST)",
+        "Europe/Moscow": "Москва (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Пекин",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Москва"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Другой администратор изменил каталог. Обновите и проверьте данные.",
