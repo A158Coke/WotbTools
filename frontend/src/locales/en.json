@@ -1027,9 +1027,14 @@
     "qaPlaybackHint": "Fixed 14-vehicle moving scene: two dense clusters stress player/tank name collisions, with destroyed/last-known/recorder states mixed in; the timeline loops at 0.5x–4x. Reuses the production BattlePlayback."
   },
   "home": {
-    "heroLine1": "The battle is over.",
-    "heroLine2": "Now rewind it.",
-    "heroSubtitle": "Drop in one .wotbreplay and get the whole fight back: a 3D battlefield, layer-by-layer armour, League Rating and AI tactical review.",
+    "sponsorCta": "Support the project",
+    "takeItTitle": "Take it with you. Keep it running.",
+    "androidTitle": "Put it in your pocket",
+    "androidDesc": "The same platform on Android: 3D rebuilds, the armour viewer and the Hall of Fame, away from your desk.",
+    "sponsorDesc": "No ads, no subscriptions. Servers and domains run on voluntary player support.",
+    "heroLine1": "More than a replay tool.",
+    "heroLine2": "Blitz's home ground.",
+    "heroSubtitle": "From a 3D rebuild of a single battle to the server-wide Hall of Fame, league standings and broadcast replays — a Blitz platform built by players, on the web and on Android.",
     "showcaseTitle": "What it does",
     "showcasePlaybackTitle": "The whole battle, rebuilt in 3D",
     "showcasePlaybackDesc": "Terrain, vehicles, HP, base captures and movement paths — every second reconstructed from one replay file.",
