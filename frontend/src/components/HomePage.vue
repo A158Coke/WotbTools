@@ -220,6 +220,24 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 .home-footer-bar a:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) {
   .home-footer-bar a:hover { text-decoration: underline; }
+  .home-footer-bar a svg { transition: transform var(--duration-base) var(--ease-standard); }
+  .home-footer-bar a:hover svg { transform: translateX(4px); }
+
+  /* 主 CTA：箭头前移 + 强调色光晕，给一个「可以往下走」的暗示 */
+  .home-cta svg { transition: transform var(--duration-base) var(--ease-standard); }
+  .home-cta { transition: box-shadow var(--duration-base) var(--ease-standard); }
+  .home-cta:hover svg { transform: translateX(5px); }
+  .home-cta:hover { box-shadow: 0 0 0 var(--space-2) color-mix(in oklab, var(--color-accent) 22%, transparent); }
+
+  /* 展示图：抬起 + 加深投影 + 内部缓慢推近，让静态截图有活物感 */
+  .home-shot-figure {
+    transition: transform var(--duration-slow) var(--ease-standard),
+      box-shadow var(--duration-slow) var(--ease-standard),
+      border-color var(--duration-slow) var(--ease-standard);
+  }
+  .home-shot-figure img { transition: transform 900ms var(--ease-standard); }
+  .home-shot:hover .home-shot-figure { transform: translateY(-6px); border-color: var(--color-accent); }
+  .home-shot:hover .home-shot-figure img { transform: scale(1.04); }
 }
 
 /* 进场动效：一次淡入上浮。
@@ -240,8 +258,44 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 .home-shot:nth-of-type(3) { animation-duration: 900ms; }
 .home-shot:nth-of-type(4) { animation-duration: 1040ms; }
 .home-shot:nth-of-type(5) { animation-duration: 1180ms; }
+
+/* 滚动驱动的逐块进场。只给**首屏以下**的展示块，所以这里可以放心用透明度——
+   上面那条「不动透明度」的约束是为了保住首屏单帧抓取（社交预览只截视口），
+   视口之外的内容本来就不在那张图里。
+   `animation-timeline` 不被支持时整条 @supports 不生效，退回上面基于时间线的
+   位移动画，内容照样可见。 */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .home-shot {
+      animation: home-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 8% cover 34%;
+    }
+  }
+}
+@keyframes home-reveal {
+  from { opacity: 0; transform: translateY(56px) scale(.97); }
+}
+
+/* Hero 装饰图的视差：随滚动缓慢下沉。先放大 8% 留出位移余量，避免露边。 */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .home-hero-decor {
+      animation: home-parallax linear both;
+      /* 必须显式指定 root：`scroll()` 绑的是最近的滚动容器，而 `.home-hero` 自己带
+         `overflow: hidden`，会被当成一个永不滚动的容器，动画直接不生效（实测 transform 恒为 none）。 */
+      animation-timeline: scroll(root block);
+      animation-range: 0 640px;
+    }
+  }
+}
+@keyframes home-parallax {
+  from { transform: scale(1.08) translateY(0); }
+  to { transform: scale(1.08) translateY(5%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .home-hero-inner, .home-shot, .home-footer-bar { animation: none; }
+  .home-hero-inner, .home-shot, .home-footer-bar, .home-hero-decor { animation: none; }
 }
 
 @media (768px <= width < 1200px) {
