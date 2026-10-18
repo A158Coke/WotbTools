@@ -268,7 +268,7 @@ const heroSubtitle = computed(() =>
 
 /**
  * 当前 token 的 realm 角色（`realm_access.roles`，Keycloak 已展开 composite），隐藏 Keycloak
- * 内置角色后按原始 key 展示。只读真实 token claim：dev `?admin=1` 旁路不改变这里的展示。
+ * 内置角色后按原始 key 展示。角色展示与权限判断都只认真实 token claims。
  */
 const KEYCLOAK_BUILTIN_ROLES = new Set(['offline_access', 'uma_authorization'])
 const realmRoles = computed(() => {
