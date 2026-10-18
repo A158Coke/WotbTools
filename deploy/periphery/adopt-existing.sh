@@ -5,7 +5,8 @@
 # This script never onboards a host and never accepts a bootstrap credential. It
 # only commits the lifecycle's durable onboarding marker after independently
 # proving that the *currently running* Periphery process already uses the reviewed
-# Server identity/Core route, is connected to that reviewed peer, has persistent
+# Server identity/Core route, was started from the reviewed binary with the
+# reviewed config path, is connected to that reviewed peer, has persistent
 # identity/trust files, exposes no inbound 8120, and has no runtime environment
 # override that can change effective Periphery configuration.
 #
@@ -57,22 +58,22 @@ periphery_core_pub_present \
 [[ ! -e "$periphery_bootstrap_env" && ! -L "$periphery_bootstrap_env" ]] \
   || fail 'Transient Periphery bootstrap environment still exists; refusing adoption.'
 
-process_env_state=0
-process_env_is_clean "$pid" || process_env_state=$?
-[[ "$process_env_state" == 0 ]] \
-  || fail "Refusing adoption: $(process_env_state_label "$process_env_state")."
-
 # Komodo v2.3.3 applies PERIPHERY_* environment variables on top of TOML,
 # including *_FILE credential/identity sources and boolean/string aliases such as
 # CONNECT_AS, ROOT_DIRECTORY, PRIVATE_KEY, CORE_ADDRESSES and TLS flags. The
-# repository-owned unit deliberately needs none of those during steady state.
-# Therefore adoption is fail-closed on *any* PERIPHERY_* entry in the live
-# process environment: otherwise validating only the TOML could certify an
-# identity/Core route that the running process is not actually using.
-process_environ="$periphery_proc_root/$pid/environ"
-[[ -r "$process_environ" && -f "$process_environ" ]] \
+# repository-owned unit deliberately needs none of those during steady state, so
+# adoption is fail-closed on *any* PERIPHERY_* entry (the onboarding credential is
+# one of them): otherwise validating only the TOML could certify an identity/Core
+# route that the running process is not actually using.
+#
+# Read the COMPLETE environment first and verify that the read itself succeeded.
+# A `producer | grep -q` pipeline can SIGPIPE the producer as soon as it matches
+# and, under `set -o pipefail`, report "no override" for an environment that does
+# contain one; buffering first makes the verdict deterministic at any size.
+process_env_text=
+read_process_env "$pid" process_env_text \
   || fail 'Refusing adoption because the live Periphery environment cannot be inspected.'
-if tr '\0' '\n' < "$process_environ" | grep -Eq '^PERIPHERY_[A-Za-z0-9_]+='; then
+if grep -Eq '^PERIPHERY_[A-Za-z0-9_]+=' <<<"$process_env_text"; then
   fail 'Refusing adoption because the live Periphery process has a PERIPHERY_* environment override.'
 fi
 
@@ -90,6 +91,19 @@ validator="$script_dir/validate-adoption-config.py"
 require_real_file "$validator" 'Periphery adoption config validator'
 python3 "$validator" "$periphery_config" "$periphery_config_source" "$periphery_connect_as" \
   || fail 'Installed Periphery identity/Core config does not match the reviewed target.'
+
+# A reviewed TOML on disk is not proof of the *effective* config: Komodo v2.3.3
+# lets the CLI choose the config path and gives that selection precedence over the
+# TOML and the environment. Prove the live process was started with exactly the
+# reviewed binary and config path, so the file validated above is the one the
+# running agent actually uses.
+argv_state=0
+assert_reviewed_argv "$pid" || argv_state=$?
+case "$argv_state" in
+  0) ;;
+  1) fail "Refusing adoption because the live Periphery argv is not exactly: $periphery_bin --config-path $periphery_config" ;;
+  *) fail 'Refusing adoption because the live Periphery cmdline cannot be inspected.' ;;
+esac
 
 [[ -n "$(established_core_connections "$pid")" ]] \
   || fail "Active Periphery process has no established connection to reviewed Core peer $periphery_core_peer_match."

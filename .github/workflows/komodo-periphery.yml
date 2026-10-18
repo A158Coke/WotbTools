@@ -491,4 +491,12 @@ jobs:
     name: Reconcile Komodo Periphery on Alibaba asset host
     needs: [reconcile_tx2]
     uses: ./.github/workflows/komodo-periphery-ali.yml
-    secrets: inherit
+    # Map ONLY the Alibaba transport/onboarding secrets declared in the reusable
+    # workflow's `workflow_call` interface. Inheriting every repository secret
+    # would hand this job credentials it never uses.
+    secrets:
+      ALI_ASSET_VPS_HOST: ${{ secrets.ALI_ASSET_VPS_HOST }}
+      ALI_ASSET_VPS_USER: ${{ secrets.ALI_ASSET_VPS_USER }}
+      ALI_ASSET_VPS_PORT: ${{ secrets.ALI_ASSET_VPS_PORT }}
+      ALI_ASSET_VPS_SSH_KEY: ${{ secrets.ALI_ASSET_VPS_SSH_KEY }}
+      KOMODO_ALI_ASSET_ONBOARDING_KEY: ${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}

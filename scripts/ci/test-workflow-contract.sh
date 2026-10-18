@@ -498,7 +498,20 @@ assert periphery_jobs["reconcile_tx1"]["needs"] == ["reconcile_yecao"], peripher
 assert periphery_jobs["reconcile_tx2"]["needs"] == ["reconcile_tx1"], periphery_jobs["reconcile_tx2"]["needs"]
 assert periphery_jobs["reconcile_ali_asset"]["needs"] == ["reconcile_tx2"], periphery_jobs["reconcile_ali_asset"]
 assert periphery_jobs["reconcile_ali_asset"]["uses"] == "./.github/workflows/komodo-periphery-ali.yml"
-assert periphery_jobs["reconcile_ali_asset"]["secrets"] == "inherit"
+# Credential scoping: the reusable Alibaba transport receives ONLY its five
+# declared secrets. `secrets: inherit` would expose every repository secret.
+ali_secrets = {
+    "ALI_ASSET_VPS_HOST": "${{ secrets.ALI_ASSET_VPS_HOST }}",
+    "ALI_ASSET_VPS_USER": "${{ secrets.ALI_ASSET_VPS_USER }}",
+    "ALI_ASSET_VPS_PORT": "${{ secrets.ALI_ASSET_VPS_PORT }}",
+    "ALI_ASSET_VPS_SSH_KEY": "${{ secrets.ALI_ASSET_VPS_SSH_KEY }}",
+    "KOMODO_ALI_ASSET_ONBOARDING_KEY": "${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}",
+}
+assert periphery_jobs["reconcile_ali_asset"]["secrets"] == ali_secrets, \
+    periphery_jobs["reconcile_ali_asset"]["secrets"]
+assert set(periphery_jobs["reconcile_ali_asset"]) == {"name", "needs", "uses", "secrets"}, \
+    sorted(periphery_jobs["reconcile_ali_asset"])
+assert "secrets: inherit" not in (workflow_dir / "komodo-periphery.yml").read_text(encoding="utf-8")
 
 # The first three hosts retain the original inline transport contract. Alibaba's
 # different SSH boundary is owned by the reusable workflow and validated below.
@@ -561,6 +574,23 @@ assert "KOMODO_YECAO_ONBOARDING_KEY" not in json.dumps(periphery_workflow, ensur
 ali_workflow = load(workflow_dir / "komodo-periphery-ali.yml")
 ali_events = ali_workflow.get("on", ali_workflow.get(True, {}))
 assert set(ali_events) == {"workflow_call"}, ali_events
+# The `workflow_call` interface is exactly the caller's five-secret mapping.
+ali_call = ali_events["workflow_call"]
+assert set(ali_call) == {"secrets"}, sorted(ali_call)
+assert set(ali_call["secrets"]) == set(ali_secrets), sorted(ali_call["secrets"])
+assert {name: spec["required"] for name, spec in ali_call["secrets"].items()} == {
+    "ALI_ASSET_VPS_HOST": "true",
+    "ALI_ASSET_VPS_USER": "true",
+    "ALI_ASSET_VPS_PORT": "true",
+    "ALI_ASSET_VPS_SSH_KEY": "true",
+    "KOMODO_ALI_ASSET_ONBOARDING_KEY": "false",
+}, ali_call["secrets"]
+# The transport may not read any other repository secret, directly or through an
+# expression alias.
+ali_text = (workflow_dir / "komodo-periphery-ali.yml").read_text(encoding="utf-8")
+assert set(re.findall(r"secrets\.([A-Za-z0-9_]+)", ali_text)) == set(ali_secrets), \
+    sorted(set(re.findall(r"secrets\.([A-Za-z0-9_]+)", ali_text)))
+assert "secrets: inherit" not in ali_text
 assert "concurrency" not in ali_workflow
 assert set(ali_workflow["jobs"]) == {"reconcile"}
 ali_job = ali_workflow["jobs"]["reconcile"]
@@ -790,6 +820,94 @@ for owner in owners:
     else:
         assert workflow["concurrency"] == queue, owner
 
+# --- asset origin source transport (Komodo Stack `wotbtools-asset-origin`) -----
+# This owner may mutate ONLY the Gitee source mirror. It is also the single,
+# narrowly scoped exception to "infra/komodo/resources/** is owned by no
+# production workflow": only asset-origin.toml is an input, and only for the
+# source-transport gate. It never applies ResourceSync, mutates Komodo resources,
+# or deploys the Stack.
+asset_workflow = load(workflow_dir / "asset-origin.yml")
+asset_events = asset_workflow.get("on", asset_workflow.get(True, {}))
+asset_inputs = [
+    ".github/workflows/asset-origin.yml",
+    "deploy/assets/**",
+    "deploy/check-production-freshness.sh",
+    "infra/komodo/resources/asset-origin.toml",
+]
+assert set(asset_events) == {"push", "workflow_dispatch"}, sorted(asset_events)
+assert asset_events["push"]["branches"] == ["main"]
+assert asset_events["push"]["paths"] == asset_inputs, asset_events["push"]["paths"]
+assert asset_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == asset_inputs
+assert not asset_events["workflow_dispatch"], "manual mirror dispatch takes no ref input"
+assert affected("infra/komodo/resources/asset-origin.toml") == {"deployment"}
+assert affected("deploy/assets/Caddyfile") == {"deployment"}
+assert "scripts/ci/test-komodo-resources.py" in (
+    workflow_dir / "ci-deployment.yml"
+).read_text(encoding="utf-8")
+# The resource tree stays non-production except this one source-transport input.
+resource_production_inputs = {}
+for candidate in sorted(workflow_dir.glob("*.yml")):
+    document = load(candidate)
+    for production_path in (
+        (document.get("env") or {}).get("PRODUCTION_INPUT_PATHS") or ""
+    ).splitlines():
+        if production_path.startswith("infra/komodo/resources"):
+            resource_production_inputs.setdefault(candidate.name, []).append(production_path)
+assert resource_production_inputs == {
+    "asset-origin.yml": ["infra/komodo/resources/asset-origin.toml"],
+}, resource_production_inputs
+resource_push_paths = []
+for candidate in sorted(workflow_dir.glob("*.yml")):
+    document = load(candidate)
+    events = document.get("on", document.get(True, {}))
+    push = events.get("push") if isinstance(events, dict) else None
+    if not isinstance(push, dict):
+        continue
+    for trigger_path in push.get("paths", []):
+        if trigger_path.startswith("infra/komodo/resources"):
+            resource_push_paths.append((candidate.name, trigger_path))
+assert resource_push_paths == [
+    ("asset-origin.yml", "infra/komodo/resources/asset-origin.toml")
+], resource_push_paths
+# A resource change must never reconcile Komodo Core/Mongo/DNS via the controller.
+controller = load(workflow_dir / "komodo-controller.yml")
+controller_paths = controller["on"]["push"]["paths"]
+assert controller_paths == controller["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+for controller_path in controller_paths:
+    assert not fnmatch.fnmatchcase("infra/komodo/resources/asset-origin.toml", controller_path), \
+        controller_path
+assert "infra/komodo/resources" not in (workflow_dir / "komodo-controller.yml").read_text(encoding="utf-8")
+# The source transport itself stays Gitee-only: no ResourceSync apply, no Stack
+# deploy, no controller coupling, and only the existing Gitee credential.
+asset_text = (workflow_dir / "asset-origin.yml").read_text(encoding="utf-8")
+for forbidden in ("docker compose up", "docker run", "komodo-controller", "tofu apply",
+                  "resource_sync", "infra/komodo/resources/**"):
+    assert forbidden not in asset_text, f"the asset source transport must not own {forbidden}"
+assert set(re.findall(r"secrets\.([A-Za-z0-9_]+)", asset_text)) == {"GITEE_TOKEN"}
+asset_steps = asset_workflow["jobs"]["mirror_gitee"]["steps"]
+asset_step_names = [step.get("name") for step in asset_steps]
+freeze_index = asset_step_names.index("Freeze reviewed main source")
+push_index = asset_step_names.index("Push frozen event SHA to Gitee main")
+verify_index = asset_step_names.index("Require Gitee main at the reviewed GitHub SHA")
+assert freeze_index < push_index < verify_index, asset_step_names
+assert asset_steps[freeze_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
+assert asset_steps[push_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
+# For BOTH push and workflow_dispatch the shared-ref mutation requires the exact
+# current main SHA, not merely "owned inputs unchanged".
+assert asset_steps[push_index]["env"]["PRODUCTION_REQUIRE_EXACT_MAIN"] == "1"
+freeze_run = asset_steps[freeze_index]["run"]
+push_run = asset_steps[push_index]["run"]
+for gate_run in (freeze_run, push_run):
+    assert "deploy/check-production-freshness.sh" in gate_run
+# The exact-current-main gate runs after local preparations and immediately
+# before the only ref mutation.
+assert push_run.index("git update-ref") < push_run.index("deploy/check-production-freshness.sh"), \
+    push_run
+assert push_run.index("deploy/check-production-freshness.sh") < push_run.index("git push --force"), \
+    push_run
+assert "refs/heads/asset-origin-frozen:refs/heads/main" in push_run
+assert "force_update" not in asset_text, "account-level mirroring cannot freeze the event SHA"
+
 for retired in (
     "parser-worker.yml", "ci-parser-worker.yml", "rabbitmq.yml", "ci-rabbitmq.yml",
     "minio.yml", "ci-minio.yml",
@@ -944,3 +1062,106 @@ for mode in changed wrong-revision; do
   fi
 done
 echo 'exporter reuses immutable digests and rejects registry/identity drift: PASS'
+
+# ---------------------------------------------------------------------------
+# asset-origin: the shared Gitee `main` ref may only be force-updated by a run
+# that is still EXACT current GitHub main. This executes the real workflow step
+# against a disposable GitHub origin and a URL-rewritten local Gitee remote, so a
+# stale queued run cannot roll that shared ref backward.
+# ---------------------------------------------------------------------------
+asset_work="$work/asset-origin"
+mkdir -p "$asset_work/runner-temp"
+git init -q --bare "$asset_work/hub-bare"
+git init -q --bare "$asset_work/gitee.git"
+git -C "$asset_work/hub-bare" symbolic-ref HEAD refs/heads/main
+git -C "$asset_work/gitee.git" symbolic-ref HEAD refs/heads/main
+
+git init -q "$asset_work/seed"
+git -C "$asset_work/seed" config user.email ci@example.invalid
+git -C "$asset_work/seed" config user.name 'CI fixture'
+mkdir -p "$asset_work/seed/deploy/assets"
+printf 'name: wotbtools-asset-origin\n' > "$asset_work/seed/deploy/assets/compose.yaml"
+git -C "$asset_work/seed" add -A
+git -C "$asset_work/seed" commit -qm 'asset change'
+sha_asset="$(git -C "$asset_work/seed" rev-parse HEAD)"
+git -C "$asset_work/seed" remote add origin "$asset_work/hub-bare"
+git -C "$asset_work/seed" push -q origin "$sha_asset":refs/heads/main
+printf 'unrelated\n' > "$asset_work/seed/unrelated.txt"
+git -C "$asset_work/seed" add -A
+git -C "$asset_work/seed" commit -qm 'unrelated main commit'
+sha_newer="$(git -C "$asset_work/seed" rev-parse HEAD)"
+git clone -q "$asset_work/hub-bare" "$asset_work/repo"
+
+# The workflow step pushes to the real Gitee URL; rewriting it to a disposable
+# bare repository keeps the run offline while exercising the same command. An
+# isolated HOME keeps the rewrite (and the runner's real git config) out of the
+# way on every git version.
+mkdir -p "$asset_work/home"
+git config --file "$asset_work/home/.gitconfig" \
+  url."$asset_work/gitee.git".insteadOf https://gitee.com/A158Coke/Wotbtools.git
+
+python3 - "$ROOT" "$asset_work" <<'PY'
+import pathlib, sys, yaml
+root, work = map(pathlib.Path, sys.argv[1:])
+workflow = yaml.load((root / '.github/workflows/asset-origin.yml').read_text(), Loader=yaml.BaseLoader)
+steps = {step.get('name'): step for step in workflow['jobs']['mirror_gitee']['steps']}
+(work / 'push-step.sh').write_text(steps['Push frozen event SHA to Gitee main']['run'])
+(work / 'input-paths').write_text(workflow['env']['PRODUCTION_INPUT_PATHS'])
+PY
+
+set_github_main() { git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$1:refs/heads/main"; }
+set_gitee_main() { git -C "$asset_work/seed" push -q "$asset_work/gitee.git" "+$1:refs/heads/main"; }
+gitee_main() { git -C "$asset_work/gitee.git" rev-parse --verify 'refs/heads/main^{commit}'; }
+run_asset_push() {  # <event-name> <event-sha> <log>
+  (
+    cd "$asset_work/repo" || exit 1
+    env \
+      EVENT_NAME="$1" \
+      EVENT_SHA="$2" \
+      EVENT_REF=refs/heads/main \
+      SOURCE_SHA="$2" \
+      PRODUCTION_REQUIRE_EXACT_MAIN=1 \
+      PRODUCTION_INPUT_PATHS="$(cat "$asset_work/input-paths")" \
+      GITEE_USERNAME=fixture \
+      GITEE_TOKEN=fixture \
+      GITHUB_WORKSPACE="$ROOT" \
+      RUNNER_TEMP="$asset_work/runner-temp" \
+      HOME="$asset_work/home" \
+      bash "$asset_work/push-step.sh"
+  ) >"$3" 2>&1
+}
+
+# A newer mirror already published the newer main: the queued run for the older
+# asset SHA must fail closed instead of force-updating the shared ref backward.
+set_github_main "$sha_newer"
+set_gitee_main "$sha_newer"
+for stale_kind in push workflow_dispatch; do
+  if run_asset_push "$stale_kind" "$sha_asset" "$asset_work/stale-$stale_kind.log"; then
+    echo "a stale asset-origin $stale_kind run reached the shared Gitee push" >&2
+    exit 1
+  fi
+  grep -Fq 'requires the exact current main SHA' "$asset_work/stale-$stale_kind.log" || {
+    echo "a stale asset-origin $stale_kind run failed for an unexpected reason" >&2
+    cat "$asset_work/stale-$stale_kind.log" >&2
+    exit 1
+  }
+  current="$(gitee_main)"
+  [ "$current" = "$sha_newer" ] || {
+    echo "a stale asset-origin $stale_kind run rolled Gitee main backward: $current" >&2
+    exit 1
+  }
+done
+
+# The same frozen SHA still reaches the shared ref while it IS exact current main.
+set_github_main "$sha_asset"
+if ! run_asset_push push "$sha_asset" "$asset_work/fresh-push.log"; then
+  echo 'a fresh asset-origin push run was rejected' >&2
+  cat "$asset_work/fresh-push.log" >&2
+  exit 1
+fi
+current="$(gitee_main)"
+[ "$current" = "$sha_asset" ] || {
+  echo "a fresh asset-origin run published the wrong Gitee main: $current" >&2
+  exit 1
+}
+echo 'asset-origin freezes the reviewed SHA and rejects stale push/dispatch before Gitee: PASS'

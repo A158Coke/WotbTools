@@ -274,6 +274,27 @@ listener_on_8120() {
   ss -Hltn 'sport = :8120' 2>/dev/null || true
 }
 
+# read_process_env <pid> <output variable>
+#   0 = the COMPLETE live environment was read into the named variable
+#   2 = the environment cannot be read or is not a regular file
+#
+# The whole environment is drained before anything is matched against it. A
+# `producer | grep -q` pipeline can SIGPIPE the producer as soon as the consumer
+# matches, and under `set -o pipefail` that producer status turns a real match into
+# a false negative — with a large environment this is a scheduling-dependent
+# "clean" verdict. Buffering first makes every later match deterministic.
+read_process_env() {
+  local pid="$1" target="$2" environ content
+  environ="$periphery_proc_root/$pid/environ"
+  [[ -r "$environ" ]] || return 2
+  # A non-regular path is not an inspectable environment, and must be rejected
+  # before the read: a FIFO here would otherwise block the check forever.
+  [[ -f "$environ" ]] || return 2
+  content="$(tr '\0' '\n' < "$environ")" || return 2
+  printf -v "$target" '%s' "$content"
+  return 0
+}
+
 # process_env_is_clean <pid>
 #   0 = the process environment is readable and holds no onboarding key
 #   1 = the credential is still present in the process environment
@@ -284,15 +305,45 @@ listener_on_8120() {
 # EnvironmentFile into the process environment, and only a successful inspection
 # can show that the credential is really gone.
 process_env_is_clean() {
-  local pid="$1" environ="$periphery_proc_root/$pid/environ" content
-  [[ -r "$environ" ]] || return 2
-  # A non-regular path is not an inspectable environment, and must be rejected
-  # before the read: a FIFO here would otherwise block the check forever.
-  [[ -f "$environ" ]] || return 2
-  content="$(tr '\0' '\n' < "$environ")" || return 2
+  local content
+  read_process_env "$1" content || return 2
   if grep -q '^PERIPHERY_ONBOARDING_KEY=' <<<"$content"; then
     return 1
   fi
+  return 0
+}
+
+# assert_reviewed_argv <pid>
+#   0 = argv is exactly <periphery_bin> --config-path <periphery_config>
+#   1 = argv is anything else
+#   2 = the cmdline cannot be read or is not a regular file
+#
+# Komodo v2.3.3 accepts CLI config selection and gives it precedence over TOML and
+# the environment (repeatable -c/--config-path plus --config-path=<path>), so a
+# process started with another config would otherwise be certified against a
+# reviewed file it is not actually using. The reviewed steady-state unit starts
+# exactly `periphery --config-path /etc/komodo/periphery.config.toml`; adoption is
+# deliberately strict about the complete argv instead of reimplementing Komodo's
+# CLI merge semantics, so an equivalent-but-different invocation fails closed.
+assert_reviewed_argv() {
+  local pid="$1" cmdline raw arg index
+  local -a raw_argv=() argv=()
+  local -a expected=("$periphery_bin" --config-path "$periphery_config")
+  cmdline="$periphery_proc_root/$pid/cmdline"
+  [[ -r "$cmdline" ]] || return 2
+  # Reject a non-regular cmdline before reading it, exactly like the environment.
+  [[ -f "$cmdline" ]] || return 2
+  raw="$(tr '\0' '\n' < "$cmdline")" || return 2
+  mapfile -t raw_argv <<< "$raw"
+  for arg in "${raw_argv[@]}"; do
+    if [[ -n "$arg" ]]; then
+      argv+=("$arg")
+    fi
+  done
+  [[ ${#argv[@]} -eq ${#expected[@]} ]] || return 1
+  for index in "${!expected[@]}"; do
+    [[ "${argv[$index]}" == "${expected[$index]}" ]] || return 1
+  done
   return 0
 }
 

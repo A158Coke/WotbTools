@@ -13,6 +13,7 @@ trap cleanup EXIT
 stub="$work/bin"
 host="$work/host"
 process_environ="$host/proc/4242/environ"
+process_cmdline="$host/proc/4242/cmdline"
 mkdir -p "$stub" "$host/etc/keys" "$host/unit" "$host/run" "$host/proc/4242" "$host/lock" "$host/stage"
 printf '%s\n' 'fixture-periphery-private-key' > "$host/etc/keys/periphery.key"
 printf '%s\n' 'fixture-core-public-key' > "$host/etc/keys/core.pub"
@@ -83,10 +84,43 @@ write_process_env() {
   done
 }
 
-run_adopt() {
-  local config="$1" peer="$2" log="$3" process_override="${4:-}"
-  cp "$config" "$host/etc/periphery.config.toml"
-  write_process_env "$process_override"
+# NUL-separated argv exactly as the kernel exposes it through /proc/<pid>/cmdline.
+# The path is recreated first so a fifo fixture can never be reused (opening a
+# fifo for writing blocks until a reader appears).
+write_cmdline() {
+  rm -f "$process_cmdline"
+  : > "$process_cmdline"
+  local arg
+  for arg in "$@"; do
+    printf '%s\0' "$arg" >> "$process_cmdline"
+  done
+}
+
+# The reviewed steady-state unit starts the agent with exactly
+# `/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml`.
+# The fixture keeps the reviewed binary path and only redirects the config root
+# into the disposable tree through the same helper variables production uses.
+write_cmdline_variant() {
+  case "$1" in
+    reviewed) write_cmdline /usr/local/bin/periphery --config-path "$host/etc/periphery.config.toml" ;;
+    other-config) write_cmdline /usr/local/bin/periphery --config-path "$host/etc/other.config.toml" ;;
+    duplicate-selector) write_cmdline /usr/local/bin/periphery \
+      --config-path "$host/etc/periphery.config.toml" \
+      --config-path "$host/etc/other.config.toml" ;;
+    short-selector) write_cmdline /usr/local/bin/periphery -c "$host/etc/other.config.toml" ;;
+    inline-selector) write_cmdline /usr/local/bin/periphery --config-path="$host/etc/other.config.toml" ;;
+    extra-argument) write_cmdline /usr/local/bin/periphery \
+      --config-path "$host/etc/periphery.config.toml" --debug ;;
+    wrong-binary) write_cmdline /opt/unreviewed/periphery \
+      --config-path "$host/etc/periphery.config.toml" ;;
+    missing) rm -f "$process_cmdline" ;;
+    fifo) rm -f "$process_cmdline"; mkfifo "$process_cmdline" ;;
+    *) echo "unknown cmdline fixture: $1" >&2; exit 2 ;;
+  esac
+}
+
+invoke_adopt() {
+  local peer="$1" log="$2" rc
   sudo rm -f "$marker" "$marker.incoming"
   set +e
   sudo env \
@@ -100,14 +134,27 @@ run_adopt() {
     PERIPHERY_LOCK_ROOT="$host/lock" \
     PERIPHERY_STAGING_ROOT="$host/stage" \
     bash "$ROOT/deploy/periphery/adopt-existing.sh" ali-sh-asset-01 >"$log" 2>&1
-  local rc=$?
+  rc=$?
   set -e
   return "$rc"
 }
 
+run_adopt() {
+  local config="$1" peer="$2" log="$3" process_override="${4:-}" cmdline_variant="${5:-reviewed}"
+  cp "$config" "$host/etc/periphery.config.toml"
+  write_process_env "$process_override"
+  write_cmdline_variant "$cmdline_variant"
+  invoke_adopt "$peer" "$log"
+}
+
+# rejects <label> <config> <peer> [process_override] [cmdline_variant] [reason]
+#
+# Every rejection must also fail for the intended reason, so a fixture cannot pass
+# because an earlier unrelated check tripped.
 rejects() {
-  local label="$1" config="$2" peer="$3" process_override="${4:-}" log="$work/$1.log"
-  if run_adopt "$config" "$peer" "$log" "$process_override"; then
+  local label="$1" config="$2" peer="$3" process_override="${4:-}" cmdline_variant="${5:-reviewed}"
+  local reason="${6:-}" log="$work/$label.log"
+  if run_adopt "$config" "$peer" "$log" "$process_override" "$cmdline_variant"; then
     echo "unsafe existing-host adoption was accepted: $label" >&2
     cat "$log" >&2
     exit 1
@@ -116,30 +163,81 @@ rejects() {
     echo "unsafe existing-host adoption committed the durable marker: $label" >&2
     exit 1
   }
+  if [[ -n "$reason" ]]; then
+    grep -Fq -- "$reason" "$log" || {
+      echo "adoption rejected '$label' for an unexpected reason (wanted: $reason)" >&2
+      cat "$log" >&2
+      exit 1
+    }
+  fi
 }
 
-rejects wrong-core "$wrong_core" "$peer_valid"
-rejects wrong-connect-as "$wrong_as" "$peer_valid"
-rejects insecure-core-tls "$insecure" "$peer_valid"
-rejects wrong-root-directory "$wrong_root" "$peer_valid"
-rejects wrong-private-key "$wrong_private_key" "$peer_valid"
-rejects wrong-core-public-keys "$wrong_core_pub" "$peer_valid"
-rejects extra-semantic-delta "$extra_semantic" "$peer_valid"
-rejects local-443xx "$valid" "$peer_local_443xx"
-rejects remote-4430 "$valid" "$peer_4430"
+config_delta_reason='Installed Periphery identity/Core config does not match the reviewed target.'
+rejects wrong-core "$wrong_core" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects wrong-connect-as "$wrong_as" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects insecure-core-tls "$insecure" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects wrong-root-directory "$wrong_root" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects wrong-private-key "$wrong_private_key" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects wrong-core-public-keys "$wrong_core_pub" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects extra-semantic-delta "$extra_semantic" "$peer_valid" '' reviewed "$config_delta_reason"
+rejects local-443xx "$valid" "$peer_local_443xx" '' reviewed 'no established connection to reviewed Core peer'
+rejects remote-4430 "$valid" "$peer_4430" '' reviewed 'no established connection to reviewed Core peer'
 
 # The running process's effective config may differ from TOML because Komodo
 # v2.3.3 gives PERIPHERY_* environment variables precedence. Adoption therefore
 # rejects every such override, including *_FILE forms used for credentials and
 # identity paths, instead of attempting an incomplete allowlist.
-rejects env-connect-as "$valid" "$peer_valid" 'PERIPHERY_CONNECT_AS=wrong-server'
-rejects env-root-directory "$valid" "$peer_valid" 'PERIPHERY_ROOT_DIRECTORY=/opt/other-komodo'
-rejects env-insecure-tls "$valid" "$peer_valid" 'PERIPHERY_CORE_TLS_INSECURE_SKIP_VERIFY=true'
-rejects env-core-addresses "$valid" "$peer_valid" 'PERIPHERY_CORE_ADDRESSES=https://wrong-core.invalid:4430'
-rejects env-private-key-file "$valid" "$peer_valid" 'PERIPHERY_PRIVATE_KEY_FILE=/tmp/unreviewed-periphery.key'
-rejects env-onboarding-key-file "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY_FILE=/tmp/onboarding-key'
-rejects env-onboarding-key "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY=secret-fixture'
-rejects env-passkeys-file "$valid" "$peer_valid" 'PERIPHERY_PASSKEYS_FILE=/tmp/passkeys'
+env_reason='PERIPHERY_* environment override'
+rejects env-connect-as "$valid" "$peer_valid" 'PERIPHERY_CONNECT_AS=wrong-server' reviewed "$env_reason"
+rejects env-root-directory "$valid" "$peer_valid" 'PERIPHERY_ROOT_DIRECTORY=/opt/other-komodo' reviewed "$env_reason"
+rejects env-insecure-tls "$valid" "$peer_valid" 'PERIPHERY_CORE_TLS_INSECURE_SKIP_VERIFY=true' reviewed "$env_reason"
+rejects env-core-addresses "$valid" "$peer_valid" 'PERIPHERY_CORE_ADDRESSES=https://wrong-core.invalid:4430' reviewed "$env_reason"
+rejects env-private-key-file "$valid" "$peer_valid" 'PERIPHERY_PRIVATE_KEY_FILE=/tmp/unreviewed-periphery.key' reviewed "$env_reason"
+rejects env-onboarding-key-file "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY_FILE=/tmp/onboarding-key' reviewed "$env_reason"
+rejects env-onboarding-key "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY=secret-fixture' reviewed "$env_reason"
+rejects env-passkeys-file "$valid" "$peer_valid" 'PERIPHERY_PASSKEYS_FILE=/tmp/passkeys' reviewed "$env_reason"
+
+# A matching PERIPHERY_* entry followed by ~1 MB of environment data: a
+# `tr ... | grep -q` pipeline is allowed to fail with SIGPIPE on the producer and,
+# under `set -o pipefail`, report "no match". Repeating the case makes any
+# size/scheduling-dependent false negative visible instead of flaky.
+big_filler="$(head -c 262144 /dev/zero | tr '\0' 'A')"
+for attempt in $(seq 1 20); do
+  cp "$valid" "$host/etc/periphery.config.toml"
+  : > "$process_environ"
+  printf '%s\0' 'PERIPHERY_CONNECT_AS=wrong-server' >> "$process_environ"
+  for name in FILLER_ONE FILLER_TWO FILLER_THREE FILLER_FOUR; do
+    printf '%s=%s\0' "$name" "$big_filler" >> "$process_environ"
+  done
+  write_cmdline_variant reviewed
+  if invoke_adopt "$peer_valid" "$work/large-env-$attempt.log"; then
+    echo "a large live environment hid a PERIPHERY_* override (attempt $attempt)" >&2
+    cat "$work/large-env-$attempt.log" >&2
+    exit 1
+  fi
+  [[ ! -e "$marker" ]] || {
+    echo "a large live environment let adoption commit the durable marker (attempt $attempt)" >&2
+    exit 1
+  }
+  grep -Fq -- "$env_reason" "$work/large-env-$attempt.log" || {
+    echo "large-environment adoption was rejected for an unexpected reason (attempt $attempt)" >&2
+    cat "$work/large-env-$attempt.log" >&2
+    exit 1
+  }
+done
+
+# A reviewed TOML on disk is not proof of the effective config. Komodo v2.3.3 gives
+# CLI config selection precedence over TOML/environment, so the live argv must be
+# exactly the reviewed steady-state invocation.
+argv_reason='live Periphery argv is not exactly'
+rejects other-config "$valid" "$peer_valid" '' other-config "$argv_reason"
+rejects duplicate-config-selector "$valid" "$peer_valid" '' duplicate-selector "$argv_reason"
+rejects short-config-selector "$valid" "$peer_valid" '' short-selector "$argv_reason"
+rejects inline-config-selector "$valid" "$peer_valid" '' inline-selector "$argv_reason"
+rejects extra-argument "$valid" "$peer_valid" '' extra-argument "$argv_reason"
+rejects wrong-executable "$valid" "$peer_valid" '' wrong-binary "$argv_reason"
+rejects missing-cmdline "$valid" "$peer_valid" '' missing 'cmdline cannot be inspected'
+rejects uninspectable-cmdline "$valid" "$peer_valid" '' fifo 'cmdline cannot be inspected'
 
 if ! run_adopt "$valid" "$peer_valid" "$work/valid.log"; then
   echo 'valid already-onboarded Alibaba host was rejected' >&2

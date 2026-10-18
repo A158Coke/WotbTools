@@ -110,7 +110,9 @@ The reviewed Stack set is also fail-closed:
 
 - `wotbtools-frontend-shadow` → `tx2`, GitHub authority with Gitee transport.
 - `wotbtools-asset-origin` → `ali-sh-asset-01`, `deploy/assets/compose.yaml`, GitHub
-  authority with Gitee transport for the mainland worker.
+  authority with Gitee transport for the mainland worker. Its mutating Compose `up`
+  also serializes on the host's existing `/opt/wotb-asset/.deploy.lock` through
+  `compose_cmd_wrapper`, so it can never overlap a Periphery reconcile.
 
 Both keep `deploy = false`, `webhook_enabled = false`, `auto_update = false`, and
 `poll_for_updates = false`. ResourceSync adoption/update is therefore separate from an
@@ -154,7 +156,12 @@ fails closed when:
   `ali-sh-asset-01`, uses inbound address/passkey/8120, or omits a v2.3.3 config field;
 - the Stack set differs from `wotbtools-frontend-shadow` +
   `wotbtools-asset-origin`, or either Stack gains unreviewed config, automatic update,
-  webhook deployment, or the wrong target Server.
+  webhook deployment, or the wrong target Server;
+- `wotbtools-asset-origin` loses its tracked Caddyfile `config_files` entry, its
+  `--force-recreate` deploy args, or its `compose_cmd_wrapper` (mandatory
+  `[[COMPOSE_COMMAND]]` placeholder, non-blocking `flock` on the **existing**
+  `/opt/wotb-asset/.deploy.lock` only, `compose_cmd_wrapper_include = ["up"]`, and no
+  second or Periphery-only lock).
 
 The test inspects TOML structure, never descriptions, so prose cannot make it pass.
 
