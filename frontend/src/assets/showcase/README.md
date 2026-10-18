@@ -9,10 +9,8 @@
 | 资产 | 当前用途 |
 |---|---|
 | `home/hero-v4.webp`（1920×768，108 KB） | 首页 Hero 装饰插槽（`design-language.md` §2）。`HomePage.vue` import 后经内联 `--home-hero-image` 传给 CSS；插槽开关是 `--home-hero-decor`，Classic Profile 与 `width < 768px` 两种情况下置 `none` |
-| `home/card-ai-review-v1.webp` | 首页 AI 复盘入口插图 |
-| `home/card-battle-playback-v1.webp` | 首页战局重建入口插图 |
-| `home/card-hall-of-fame-v1.webp` | 首页名人堂入口插图 |
-| `home/card-replay-parser-v1.webp`、`home/card-sponsor-v1.webp` | 2026-10-18 首页重排后不再被引用：回放解析由 Hero 的唯一主 CTA 承载、赞助移入页脚条，两处都不再是图片卡。保留作设计参考 |
+| `home/card-hall-of-fame-v1.webp` | 首页「全部功能」区的名人堂领衔卡插图 |
+| `home/card-replay-parser-v1.webp`、`home/card-ai-review-v1.webp`、`home/card-battle-playback-v1.webp`、`home/card-sponsor-v1.webp` | 2026-10-18 首页重排后不再被引用。首页只收一级功能：回放解析 / AI 复盘 / 战局重建 都是同一个 `ReplayWorkspace` 的 capability tab，由 Hero 的唯一主 CTA 承载；赞助移入页脚条。四张都保留作设计参考 |
 | 其余各页 `*-v1.webp` / SVG | 保留的历史设计素材，当前 SPA 不通过全局背景样式加载 |
 | `../../../public/sponsor-bg.webp` | `SponsorPage.vue` 自己引用的赞助页背景，用户提供，仅用于视觉氛围 |
 

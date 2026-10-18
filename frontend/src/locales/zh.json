@@ -1027,9 +1027,8 @@
     "qaPlaybackHint": "固定 14 车移动场景：双密集簇制造玩家名/坦克名碰撞，含阵亡/失察/录像者状态；时间线循环，倍速 0.5×–4×。直接复用生产 BattlePlayback。"
   },
   "home": {
+    "featuresTitle": "全部功能",
     "recordTotal": "名人堂收录记录",
-    "coreTitle": "核心能力",
-    "communityTitle": "社区与数据",
     "replayTitle": "回放提取器",
     "viewAnalysisHistory": "查看分析记录",
     "learnAnalysis": "了解战局分析",
@@ -1039,7 +1038,6 @@
     "replayDesc": "上传 .wotbreplay 回放文件，提取战斗数据并导出 Excel。",
     "highestDamageRecord": "最高伤害记录",
     "hofDesc": "随机战斗与评级战斗的单场伤害排行 — 上传回放即可进入名人堂。",
-    "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
     "available": "可用",
     "sponsorTitle": "支持项目",
     "footer": "WoTBTools - 社区工具，非 Wargaming 官方产品",
