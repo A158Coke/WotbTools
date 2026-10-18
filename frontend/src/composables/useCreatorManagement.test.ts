@@ -2,10 +2,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
 import { flushPromises } from '@vue/test-utils'
-import legacyDetail from '../../../contracts/http/fixtures/creator-detail.json'
-const detail = { ...legacyDetail, type: 'UP' as const, externalId: legacyDetail.bilibiliUid, imageUrl: legacyDetail.avatarUrl }
-import legacyRequest from '../../../contracts/http/fixtures/creator-save-request.json'
-const request = { ...legacyRequest, type: 'UP' as const, externalId: legacyRequest.bilibiliUid, imageAction: 'KEEP' as const }
+import videoDetail from '../../../contracts/http/fixtures/recommendation-detail.json'
+const detail = { ...videoDetail, id: 1, type: 'UP' as const, externalId: '123', categoryIds: [1], imageUrl: null }
+import videoRequest from '../../../contracts/http/fixtures/recommendation-save-request.json'
+const request = { ...videoRequest, type: 'UP' as const, externalId: '123', categoryIds: [1], imageAction: 'KEEP' as const }
 import type { RecommendationDetail, RecommendationMetadata, RecommendationSaveRequest } from '../api/creators.js'
 import { useCreatorManagement } from './useCreatorManagement.js'
 import { ApiError } from '../utils/http.js'
@@ -18,25 +18,11 @@ function fixture(withOnChanged = true) {
   const auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => epoch }
   const transport = { getRecommendationMetadata: vi.fn(async (): Promise<RecommendationMetadata> => structuredClone(metadata)), getRecommendationDetail: vi.fn(async (): Promise<RecommendationDetail> => detail), saveRecommendation: vi.fn(async () => detail), addRecommendationCategory: vi.fn(async () => ({ id: 2, name: 'new', type: 'UP' as const })), removeRecommendationCategory: vi.fn(async () => {}) }
   const onChanged = vi.fn(async () => {}), scope = effectScope()
-  const availability = { recommendationsSupported: ref(true), typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) }
+  const availability = { typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) }
   const owner = scope.run(() => useCreatorManagement({ type, api: transport, auth, availability, onChanged: withOnChanged ? onChanged : undefined, network: () => ({ available: online.value }) } as any))!
   return { type, owner, transport, auth, onChanged, scope, online, metadata, availability, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['content-admin'] } } } }
 }
 describe('creator directory management ownership', () => {
-  it('preserves an active UP draft and invalidates reads when the backend gains typed support', async () => {
-    const f = fixture(); f.availability.recommendationsSupported.value = false; await flushPromises()
-    await f.owner.editCreator(1); const draft = f.owner.draftEpoch.value
-    let done!: (value: RecommendationMetadata) => void
-    f.transport.getRecommendationMetadata.mockReturnValueOnce(new Promise(resolve => { done = resolve }))
-    const old = f.owner.refresh(); await flushPromises()
-    const signal = f.owner.operationSignal()
-    f.availability.recommendationsSupported.value = true; await flushPromises()
-    expect(signal.aborted).toBe(true); expect(f.owner.editorOpen.value).toBe(true)
-    expect(f.owner.detail.value?.id).toBe(1); expect(f.owner.draftEpoch.value).toBe(draft)
-    done({ ...f.metadata, categories: [] }); await old
-    expect(f.owner.categories.value).toEqual(f.metadata.categories)
-    expect(f.transport.getRecommendationMetadata).toHaveBeenLastCalledWith('UP', true, expect.any(AbortSignal)); f.scope.stop()
-  })
   it.each([401, 403])('preserves the current editor when a request is denied with %s', async status => {
     const f = fixture(); await flushPromises(); await f.owner.editCreator(1)
     const draft = f.owner.draftEpoch.value
@@ -54,7 +40,7 @@ describe('creator directory management ownership', () => {
     f.type.value = 'VIDEO'; await nextTick(); await flushPromises()
     oldDetail(detail); await reading
     expect(f.owner.detail.value).toBeNull(); expect(f.owner.editorOpen.value).toBe(false)
-    expect(f.transport.getRecommendationMetadata).toHaveBeenLastCalledWith('VIDEO', true, expect.any(AbortSignal))
+    expect(f.transport.getRecommendationMetadata).toHaveBeenLastCalledWith('VIDEO', expect.any(AbortSignal))
     let finish!: (value: typeof detail) => void
     f.transport.saveRecommendation.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
     const writing = f.owner.save({ ...payload(), type: 'VIDEO', externalId: 'BV1xx411c7mD' })
@@ -119,7 +105,7 @@ describe('creator directory management ownership', () => {
     expect(f.owner.detail.value?.id).toBe(1); expect(f.owner.editorOpen.value).toBe(true)
     expect(f.owner.detail.value?.version).toBe(detail.version); expect(f.onChanged).not.toHaveBeenCalled()
     expect(await f.owner.save({ ...payload(), expectedVersion: detail.version, imageAction: 'REPLACE' }, file, true)).toBe(true)
-    expect(f.transport.saveRecommendation).toHaveBeenLastCalledWith(1, expect.objectContaining({ imageAction: 'REPLACE', expectedVersion: detail.version }), file, true, expect.any(AbortSignal))
+    expect(f.transport.saveRecommendation).toHaveBeenLastCalledWith(1, expect.objectContaining({ imageAction: 'REPLACE', expectedVersion: detail.version }), file, expect.any(AbortSignal))
     f.owner.finishSave(true); expect(f.owner.editorOpen.value).toBe(false); f.scope.stop()
   })
   it('keeps a rejected in-use category deletion atomic in the view', async () => {

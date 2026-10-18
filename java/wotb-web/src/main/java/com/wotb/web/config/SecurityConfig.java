@@ -76,8 +76,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
                         ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()
-                .requestMatchers(HttpMethod.GET, ApiPaths.CREATORS, ApiPaths.CREATORS + "/categories",
-                        ApiPaths.CREATOR_AVATAR, ApiPaths.RECOMMENDATIONS, ApiPaths.RECOMMENDATIONS + "/categories").permitAll()
+                .requestMatchers(HttpMethod.GET, ApiPaths.CREATOR_AVATAR, ApiPaths.RECOMMENDATIONS, ApiPaths.RECOMMENDATIONS + "/categories").permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
@@ -92,7 +91,7 @@ public class SecurityConfig {
                 .requestMatchers(TOURNAMENTS_ADMIN_PATTERN)
                     .hasRole("tournament-admin")
 
-                .requestMatchers(ApiPaths.CREATORS_ADMIN_PATTERN, ApiPaths.RECOMMENDATIONS_ADMIN_PATTERN)
+                .requestMatchers(ApiPaths.RECOMMENDATIONS_ADMIN_PATTERN)
                     .hasRole("content-admin")
 
                 .requestMatchers(ADMIN_PATTERN)

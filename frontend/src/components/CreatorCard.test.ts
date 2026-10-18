@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { messages } from '../locales/messages.js'
-import legacyCard from '../../../contracts/http/fixtures/creator-card.json'
-const card = { ...legacyCard, type: 'UP' as const, externalId: legacyCard.bilibiliUid, targetUrl: legacyCard.homepageUrl, imageUrl: legacyCard.avatarUrl, categories: legacyCard.categories.map(value => ({ ...value, type: 'UP' as const })) }
+import videoCard from '../../../contracts/http/fixtures/recommendation-card.json'
+const card = { ...videoCard, id: 1, type: 'UP' as const, externalId: '123', targetUrl: 'https://space.bilibili.com/123', imageUrl: null, categories: [{ id: 1, name: 'Published', type: 'UP' as const }] }
 import CreatorCard from './CreatorCard.vue'
 const creator = { ...card, score: 6 as const }
 describe('manual creator recommendation card', () => {

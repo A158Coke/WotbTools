@@ -31,10 +31,8 @@ public final class ApiPaths {
     public static final String RECOMMENDATIONS = "/api/recommendations";
     public static final String RECOMMENDATIONS_ADMIN = "/api/admin/recommendations";
     public static final String RECOMMENDATIONS_ADMIN_PATTERN = RECOMMENDATIONS_ADMIN + "/**";
-    public static final String CREATORS = "/api/creators";
-    public static final String CREATORS_ADMIN = "/api/admin/creators";
-    public static final String CREATORS_ADMIN_PATTERN = CREATORS_ADMIN + "/**";
-    public static final String CREATOR_AVATAR = CREATORS + "/avatars/*";
+    public static final String CREATOR_AVATARS = "/api/creators/avatars";
+    public static final String CREATOR_AVATAR = CREATOR_AVATARS + "/*";
     public static final String TOURNAMENTS = "/api/tournaments";
     public static final String TOURNAMENTS_ADMIN = "/api/admin/tournaments";
     public static final String TOURNAMENT_STANDINGS = "/api/tournaments/*/standings";

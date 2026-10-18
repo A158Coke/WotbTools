@@ -1,6 +1,5 @@
 package com.wotb.web.creator;
 
-import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.dto.RecommendationDtos;
 import org.springframework.http.HttpMethod;
 import com.wotb.web.creator.repository.CreatorRepository;
@@ -156,7 +155,7 @@ class CreatorIntegrationTest {
     @Test void schemaContainsOnlySiteDirectoryTablesAndEnforcesUidAndStarConstraints() {
         assertEquals(List.of("creator", "creator_avatar", "creator_category", "creator_category_link", "creator_level"),
                 jdbc.queryForList("select tablename from pg_tables where schemaname='public' and tablename like 'creator%' order by tablename", String.class));
-        assertFalse(service.metadata().avatarUploadsAvailable());
+        assertFalse(service.recommendationMetadata("UP").imageUploadsAvailable());
         final Long id = jdbc.queryForObject(
                 "insert into creator(bilibili_uid,name,created_at) values ('900001','Default',now()) returning id", Long.class);
         jdbc.update("insert into creator_category_link(creator_id,category_id) values (?,1)", id);
@@ -176,76 +175,75 @@ class CreatorIntegrationTest {
     }
 
     @Test void createNormalizesUidAndProjectsHomepageAndManualStarsWithoutAnAvatar() {
-        final CreatorDtos.Detail detail = service.create(
-                new CreatorDtos.SaveRequest(" 000123 ", " Creator ", " Description ", List.of(2L, 1L), 1L, 3, "KEEP", null), null);
-        assertEquals("123", detail.bilibiliUid());
+        final RecommendationDtos.Detail detail = service.createRecommendation(
+                new RecommendationDtos.SaveRequest("UP", " 000123 ", " Creator ", " Description ", List.of(2L, 1L), 1L, 3, "KEEP", null), null);
+        assertEquals("123", detail.externalId());
         assertEquals("Creator", detail.name());
         assertEquals("Description", detail.description());
         assertEquals(List.of(1L, 2L), detail.categoryIds());
         assertEquals(3, detail.stars());
         assertEquals(0L, detail.version());
-        assertNull(detail.avatarUrl());
-        final CreatorDtos.Card card = card(detail.id());
+        assertNull(detail.imageUrl());
+        final RecommendationDtos.Card card = card(detail.id());
         assertEquals(detail.version(), card.version());
-        assertEquals("123", card.bilibiliUid());
-        assertEquals("https://space.bilibili.com/123", card.homepageUrl());
+        assertEquals("123", card.externalId());
+        assertEquals("https://space.bilibili.com/123", card.targetUrl());
         assertEquals(6, card.score());
         assertEquals(2, card.categories().size());
         assertEquals("Basic", card.level().name());
-        assertEquals(detail.id(), service.list(2L).getFirst().id());
-        assertEquals(1, service.list(null).size());
-        assertEquals(List.of(), service.list(999L));
+        assertEquals(detail.id(), service.recommendations("UP", 2L).getFirst().id());
+        assertEquals(1, service.recommendations("UP", null).size());
+        assertEquals(List.of(), service.recommendations("UP", 999L));
     }
 
     @Test void twentyDigitUidRemainsAnExactString() {
         final String uid = "12345678901234567890";
-        final CreatorDtos.Detail detail = service.create(save(uid, 5, List.of(1L), null, null), null);
-        assertEquals(uid, detail.bilibiliUid());
-        assertEquals(uid, service.detail(detail.id()).bilibiliUid());
-        assertEquals("https://space.bilibili.com/" + uid, card(detail.id()).homepageUrl());
+        final RecommendationDtos.Detail detail = service.createRecommendation(save(uid, 5, List.of(1L), null, null), null);
+        assertEquals(uid, detail.externalId());
+        assertEquals(uid, service.recommendationDetail("UP", detail.id()).externalId());
+        assertEquals("https://space.bilibili.com/" + uid, card(detail.id()).targetUrl());
         assertEquals(10, card(detail.id()).score());
     }
 
     @Test void publicCategoriesFollowCommittedMembershipWhileMetadataKeepsEmptyCategories() {
-        final List<CreatorDtos.Category> dictionary = List.of(new CreatorDtos.Category(1, "A"),
-                new CreatorDtos.Category(2, "B"), new CreatorDtos.Category(3, "C"));
-        assertEquals(List.of(), service.publicCategories());
-        assertEquals(dictionary, service.metadata().categories());
+        final List<RecommendationDtos.Category> dictionary = List.of(new RecommendationDtos.Category(1, "A", "UP"),
+                new RecommendationDtos.Category(2, "B", "UP"), new RecommendationDtos.Category(3, "C", "UP"));
+        assertEquals(List.of(), service.publicRecommendationCategories());
+        assertEquals(dictionary, service.recommendationMetadata("UP").categories());
 
-        final CreatorDtos.Detail first = create(3, List.of(2L), null);
-        assertEquals(List.of(dictionary.get(1)), service.publicCategories());
-        final CreatorDtos.Detail second = create(3, List.of(3L, 2L), null);
-        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), service.publicCategories());
+        final RecommendationDtos.Detail first = create(3, List.of(2L), null);
+        assertEquals(List.of(dictionary.get(1)), service.publicRecommendationCategories());
+        final RecommendationDtos.Detail second = create(3, List.of(3L, 2L), null);
+        assertEquals(List.of(dictionary.get(1), dictionary.get(2)), service.publicRecommendationCategories());
         assertEquals(List.of(dictionary.get(1), dictionary.get(2)), card(second.id()).categories());
-        assertEquals(dictionary, service.metadata().categories());
+        assertEquals(dictionary, service.recommendationMetadata("UP").categories());
 
-        final CreatorDtos.Detail moved = service.update(second.id(),
-                save(second.bilibiliUid(), 3, List.of(1L), null, second.version()), null);
-        assertEquals(List.of(dictionary.get(0), dictionary.get(1)), service.publicCategories());
+        final RecommendationDtos.Detail moved = service.updateRecommendation(second.id(),
+                save(second.externalId(), 3, List.of(1L), null, second.version()), null);
+        assertEquals(List.of(dictionary.get(0), dictionary.get(1)), service.publicRecommendationCategories());
         assertEquals(List.of(dictionary.get(0)), card(moved.id()).categories());
-        service.delete(first.id(), first.version());
-        assertEquals(List.of(dictionary.get(0)), service.publicCategories());
-        service.delete(moved.id(), moved.version());
-        assertEquals(List.of(), service.publicCategories());
-        assertEquals(dictionary, service.metadata().categories());
-        assertEquals(dictionary, service.categories());
+        service.deleteRecommendation("UP", first.id(), first.version());
+        assertEquals(List.of(dictionary.get(0)), service.publicRecommendationCategories());
+        service.deleteRecommendation("UP", moved.id(), moved.version());
+        assertEquals(List.of(), service.publicRecommendationCategories());
+        assertEquals(dictionary, service.recommendationMetadata("UP").categories());
     }
 
     @Test void publicCategoryHttpResponseIsTheSameForEveryRoleWhileAdminMetadataRemainsComplete() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
-        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/recommendations/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         create(3, List.of(2L), null);
-        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk())
+        mvc.perform(get("/api/recommendations/categories")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].id").value(2));
         for (final String role : List.of("wotbtools-user", "HoF-admin", "wotbtools-admin", "tournament-admin", "content-admin")) {
-            mvc.perform(get("/api/creators/categories").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+            mvc.perform(get("/api/recommendations/categories").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
                     .andExpect(jsonPath("$[0].id").value(2)).andExpect(jsonPath("$[0].name").value("B"));
         }
-        mvc.perform(get("/api/admin/creators/metadata")).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/admin/creators/metadata").with(jwt().authorities()))
+        mvc.perform(get("/api/admin/recommendations/metadata?type=UP")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/recommendations/metadata?type=UP").with(jwt().authorities()))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/api/admin/creators/metadata")
+        mvc.perform(get("/api/admin/recommendations/metadata?type=UP")
                         .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.categories.length()").value(3))
                 .andExpect(jsonPath("$.categories[0].name").value("A"))
@@ -254,47 +252,47 @@ class CreatorIntegrationTest {
 
     @Test void concurrentEquivalentUidsProduceOneCreatorAndOneCanonicalConflict() throws Exception {
         final List<String> results = race(
-                () -> outcome(() -> service.create(save("00123", 3, List.of(1L), null, null), null)),
-                () -> outcome(() -> service.create(save("123", 4, List.of(2L), null, null), null)));
+                () -> outcome(() -> service.createRecommendation(save("00123", 3, List.of(1L), null, null), null)),
+                () -> outcome(() -> service.createRecommendation(save("123", 4, List.of(2L), null, null), null)));
         assertEquals(1, results.stream().filter("SUCCESS"::equals).count());
         assertEquals(1, results.stream().filter(ApiErrorCode.CREATOR_UID_ALREADY_EXISTS.name()::equals).count());
         assertEquals(1, creators.count());
-        assertEquals("123", service.list(null).getFirst().bilibiliUid());
+        assertEquals("123", service.recommendations("UP", null).getFirst().externalId());
     }
 
     @Test void duplicateUidUpdateRollsBackAllEditableFields() {
-        final CreatorDtos.Detail first = service.create(save("123", 3, List.of(1L), 1L, null), null);
-        final CreatorDtos.Detail second = service.create(save("456", 2, List.of(2L), null, null), null);
+        final RecommendationDtos.Detail first = service.createRecommendation(save("123", 3, List.of(1L), 1L, null), null);
+        final RecommendationDtos.Detail second = service.createRecommendation(save("456", 2, List.of(2L), null, null), null);
         assertCode(ApiErrorCode.CREATOR_UID_ALREADY_EXISTS,
-                () -> service.update(second.id(), save("000123", 5, List.of(3L), 2L, second.version()), null));
-        assertEquals(second, service.detail(second.id()));
-        assertEquals(first, service.detail(first.id()));
+                () -> service.updateRecommendation(second.id(), save("000123", 5, List.of(3L), 2L, second.version()), null));
+        assertEquals(second, service.recommendationDetail("UP", second.id()));
+        assertEquals(first, service.recommendationDetail("UP", first.id()));
         assertEquals(2, creators.count());
     }
 
     @Test void editsKeepIdentityAndCreationTimeWhileReplacingAllAdministratorFields() {
-        final CreatorDtos.Detail created = service.create(save("123", 3, List.of(1L), 1L, null), null);
+        final RecommendationDtos.Detail created = service.createRecommendation(save("123", 3, List.of(1L), 1L, null), null);
         final var createdAt = card(created.id()).createdAt();
-        final CreatorDtos.Detail updated = service.update(created.id(),
-                new CreatorDtos.SaveRequest("000456", " Renamed ", null, List.of(2L, 3L), null, 5, "REMOVE", created.version()), null);
+        final RecommendationDtos.Detail updated = service.updateRecommendation(created.id(),
+                new RecommendationDtos.SaveRequest("UP", "000456", " Renamed ", null, List.of(2L, 3L), null, 5, "REMOVE", created.version()), null);
         assertEquals(created.id(), updated.id());
         assertEquals(created.version() + 1, updated.version());
         assertEquals(createdAt, card(created.id()).createdAt());
-        assertEquals("456", updated.bilibiliUid());
+        assertEquals("456", updated.externalId());
         assertEquals("Renamed", updated.name());
         assertNull(updated.description());
         assertNull(updated.levelId());
-        assertNull(updated.avatarUrl());
+        assertNull(updated.imageUrl());
         assertEquals(List.of(2L, 3L), updated.categoryIds());
         assertEquals(10, card(created.id()).score());
         assertNull(card(created.id()).level());
-        assertEquals("https://space.bilibili.com/456", card(created.id()).homepageUrl());
-        final CreatorDtos.Detail repeated = service.update(created.id(), new CreatorDtos.SaveRequest("456", "Renamed", null,
+        assertEquals("https://space.bilibili.com/456", card(created.id()).targetUrl());
+        final RecommendationDtos.Detail repeated = service.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "456", "Renamed", null,
                 List.of(2L, 3L), null, 5, "KEEP", updated.version()), null);
         assertEquals(updated.version() + 1, repeated.version());
-        assertEquals(updated.bilibiliUid(), repeated.bilibiliUid());
+        assertEquals(updated.externalId(), repeated.externalId());
         assertEquals(updated.categoryIds(), repeated.categoryIds());
-        assertEquals("123", service.create(save("123", 3, List.of(1L), null, null), null).bilibiliUid());
+        assertEquals("123", service.createRecommendation(save("123", 3, List.of(1L), null, null), null).externalId());
     }
 
     @Test void sortingUsesManualStarsThenOriginalCreationTimeAndStableId() {
@@ -303,39 +301,39 @@ class CreatorIntegrationTest {
         final long lower = create(4, List.of(1L), null).id();
         jdbc.update("update creator set created_at='2026-10-15T00:00:00Z' where id=?", older);
         jdbc.update("update creator set created_at='2026-10-16T00:00:00Z' where id in (?,?)", newer, lower);
-        assertEquals(List.of(newer, older, lower), service.list(1L).stream().map(CreatorDtos.Card::id).toList());
+        assertEquals(List.of(newer, older, lower), service.recommendations("UP", 1L).stream().map(RecommendationDtos.Card::id).toList());
         jdbc.update("update creator set created_at='2026-10-16T00:00:00Z' where id=?", older);
-        assertEquals(List.of(newer, older, lower), service.list(null).stream().map(CreatorDtos.Card::id).toList());
-        assertEquals(3, service.list(null).size());
+        assertEquals(List.of(newer, older, lower), service.recommendations("UP", null).stream().map(RecommendationDtos.Card::id).toList());
+        assertEquals(3, service.recommendations("UP", null).size());
         assertEquals(2, card(older).categories().size());
     }
 
     @Test void concurrentCategoryDeletesCannotLeaveACreatorWithoutAnyCategory() throws Exception {
         final long id = create(3, List.of(1L, 2L), null).id();
         final List<String> results = race(
-                () -> outcome(() -> service.deleteCategory(1)),
-                () -> outcome(() -> service.deleteCategory(2)));
+                () -> outcome(() -> service.deleteRecommendationCategory("UP", 1)),
+                () -> outcome(() -> service.deleteRecommendationCategory("UP", 2)));
         assertEquals(1, results.stream().filter("SUCCESS"::equals).count());
         assertEquals(1, results.stream().filter(ApiErrorCode.CREATOR_CATEGORY_IN_USE.name()::equals).count());
         final long remaining = card(id).categories().getFirst().id();
         assertEquals(1, card(id).categories().size());
         assertEquals(1, card(id).version());
-        assertCode(ApiErrorCode.CREATOR_CATEGORY_IN_USE, () -> service.deleteCategory(remaining));
-        assertEquals(2, service.categories().size());
+        assertCode(ApiErrorCode.CREATOR_CATEGORY_IN_USE, () -> service.deleteRecommendationCategory("UP", remaining));
+        assertEquals(2, service.recommendationMetadata("UP").categories().size());
     }
 
     @Test void categoryEditsAndLevelDeletesSerializeWithoutInvalidReferences() throws Exception {
         final long categoryCreator = create(3, List.of(1L, 2L), null).id();
-        race(() -> outcome(() -> service.update(categoryCreator,
-                        save(service.detail(categoryCreator).bilibiliUid(), 3, List.of(2L), null, 0L), null)),
-                () -> outcome(() -> service.deleteCategory(2)));
+        race(() -> outcome(() -> service.updateRecommendation(categoryCreator,
+                        save(service.recommendationDetail("UP", categoryCreator).externalId(), 3, List.of(2L), null, 0L), null)),
+                () -> outcome(() -> service.deleteRecommendationCategory("UP", 2)));
         assertEquals(0, jdbc.queryForObject("""
                 select count(*) from creator c where not exists
                 (select 1 from creator_category_link l where l.creator_id=c.id)
                 """, Integer.class));
         final long levelCreator = create(3, List.of(1L), null).id();
-        final String uid = service.detail(levelCreator).bilibiliUid();
-        race(() -> outcome(() -> service.update(levelCreator, save(uid, 3, List.of(1L), 2L, 0L), null)),
+        final String uid = service.recommendationDetail("UP", levelCreator).externalId();
+        race(() -> outcome(() -> service.updateRecommendation(levelCreator, save(uid, 3, List.of(1L), 2L, 0L), null)),
                 () -> outcome(() -> service.deleteLevel(2)));
         assertEquals(0, jdbc.queryForObject("""
                 select count(*) from creator c where c.level_id is not null and not exists
@@ -346,77 +344,77 @@ class CreatorIntegrationTest {
     @Test void dictionaryMaintenanceHonorsReferenceProtectionAndSupportsDisablingAssessment() {
         final long id = create(3, List.of(1L), 1L).id();
         assertCode(ApiErrorCode.CREATOR_LEVEL_IN_USE, () -> service.deleteLevel(1));
-        final CreatorDtos.Category category = service.addCategory(new CreatorDtos.DictionaryRequest(" New category "));
-        final CreatorDtos.Level level = service.addLevel(new CreatorDtos.DictionaryRequest(" New level "));
+        final RecommendationDtos.Category category = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", " New category "));
+        final RecommendationDtos.Level level = service.addLevel(new RecommendationDtos.DictionaryRequest(" New level "));
         assertEquals("New category", category.name());
         assertEquals("New level", level.name());
-        service.deleteCategory(category.id());
+        service.deleteRecommendationCategory("UP", category.id());
         service.deleteLevel(level.id());
-        service.update(id, save(service.detail(id).bilibiliUid(), 3, List.of(1L), null, service.detail(id).version()), null);
+        service.updateRecommendation(id, save(service.recommendationDetail("UP", id).externalId(), 3, List.of(1L), null, service.recommendationDetail("UP", id).version()), null);
         service.deleteLevel(1);
         assertNull(card(id).level());
-        assertEquals(1, service.metadata().levels().size());
+        assertEquals(1, service.recommendationMetadata("UP").levels().size());
     }
 
     @Test void invalidDirectoryInputsLeaveExistingRecordsUnchanged() {
-        final CreatorDtos.Detail original = create(3, List.of(1L), 1L);
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.create(null, null));
+        final RecommendationDtos.Detail original = create(3, List.of(1L), 1L);
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(null, null));
         assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
-                () -> service.update(original.id(), save(original.bilibiliUid(), 1, List.of(999L), null, original.version()), null));
-        assertEquals(original, service.detail(original.id()));
+                () -> service.updateRecommendation(original.id(), save(original.externalId(), 1, List.of(999L), null, original.version()), null));
+        assertEquals(original, service.recommendationDetail("UP", original.id()));
         assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
-                () -> service.create(save("999", 3, List.of(1L), 999L, null), null));
+                () -> service.createRecommendation(save("999", 3, List.of(1L), 999L, null), null));
         for (final String uid : Arrays.asList(null, "", " ", "0", "0000", "-1", "+1", "1.5",
                 "1e3", "１２３", "https://space.bilibili.com/123", "123456789012345678901")) {
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                    () -> service.create(save(uid, 3, List.of(1L), null, null), null));
+                    () -> service.createRecommendation(save(uid, 3, List.of(1L), null, null), null));
         }
         for (final int stars : new int[] {0, 6}) {
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                    () -> service.create(save("999", stars, List.of(1L), null, null), null));
+                    () -> service.createRecommendation(save("999", stars, List.of(1L), null, null), null));
         }
         for (final List<Long> ids : Arrays.<List<Long>>asList(null, List.of(), List.of(1L, 1L), List.of(0L), Arrays.asList(1L, null))) {
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                    () -> service.create(save("999", 3, ids, null, null), null));
+                    () -> service.createRecommendation(save("999", 3, ids, null, null), null));
         }
         for (final String name : Arrays.asList(null, "", " ", "x".repeat(101))) {
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                    () -> service.create(new CreatorDtos.SaveRequest("999", name, null, List.of(1L), null, 3, "KEEP", null), null));
+                    () -> service.createRecommendation(new RecommendationDtos.SaveRequest("UP", "999", name, null, List.of(1L), null, 3, "KEEP", null), null));
         }
         assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                () -> service.create(save("999", 3, List.of(1L), 0L, null), null));
+                () -> service.createRecommendation(save("999", 3, List.of(1L), 0L, null), null));
         assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                () -> service.create(new CreatorDtos.SaveRequest("999", "N", "x".repeat(2001), List.of(1L), null, 3, "KEEP", null), null));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addCategory(new CreatorDtos.DictionaryRequest(" ")));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addLevel(new CreatorDtos.DictionaryRequest("x".repeat(101))));
+                () -> service.createRecommendation(new RecommendationDtos.SaveRequest("UP", "999", "N", "x".repeat(2001), List.of(1L), null, 3, "KEEP", null), null));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", " ")));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addLevel(new RecommendationDtos.DictionaryRequest("x".repeat(101))));
         assertEquals(1, creators.count());
     }
 
-    @Test void avatarActionAndFilePresenceMustAgreeBeforeAnyDirectoryWrite() {
-        final MockMultipartFile file = new MockMultipartFile("avatar", "image.png", "image/png", new byte[] {1});
+    @Test void imageActionAndFilePresenceMustAgreeBeforeAnyDirectoryWrite() {
+        final MockMultipartFile file = new MockMultipartFile("image", "image.png", "image/png", new byte[] {1});
         for (final String action : Arrays.asList(null, "", "keep", "UNKNOWN", "REPLACE")) {
-            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.create(
-                    new CreatorDtos.SaveRequest("999", "N", null, List.of(1L), null, 3, action, null), null));
+            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(
+                    new RecommendationDtos.SaveRequest("UP", "999", "N", null, List.of(1L), null, 3, action, null), null));
         }
         for (final String action : List.of("KEEP", "REMOVE")) {
-            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.create(
-                    new CreatorDtos.SaveRequest("999", "N", null, List.of(1L), null, 3, action, null), file));
+            assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(
+                    new RecommendationDtos.SaveRequest("UP", "999", "N", null, List.of(1L), null, 3, action, null), file));
         }
         assertEquals(0, creators.count());
         assertEquals(0, jdbc.queryForObject("select count(*) from creator_avatar", Integer.class));
-        assertNull(service.create(save("999", 3, List.of(1L), null, null), null).avatarUrl());
+        assertNull(service.createRecommendation(save("999", 3, List.of(1L), null, null), null).imageUrl());
     }
 
     @Test void removalOnlyDeletesItsCreatorAndCategoryCompositionAndReleasesTheUid() {
-        final CreatorDtos.Detail removed = service.create(save("123", 3, List.of(1L, 2L), 1L, null), null);
-        final CreatorDtos.Detail retained = service.create(save("456", 3, List.of(2L), 2L, null), null);
-        service.delete(removed.id(), removed.version());
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.detail(removed.id()));
-        assertEquals(retained, service.detail(retained.id()));
+        final RecommendationDtos.Detail removed = service.createRecommendation(save("123", 3, List.of(1L, 2L), 1L, null), null);
+        final RecommendationDtos.Detail retained = service.createRecommendation(save("456", 3, List.of(2L), 2L, null), null);
+        service.deleteRecommendation("UP", removed.id(), removed.version());
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendationDetail("UP", removed.id()));
+        assertEquals(retained, service.recommendationDetail("UP", retained.id()));
         assertEquals(1, jdbc.queryForObject("select count(*) from creator_category_link", Integer.class));
-        assertEquals(3, service.categories().size());
-        assertEquals(2, service.metadata().levels().size());
-        assertEquals("123", service.create(save("123", 3, List.of(1L), null, null), null).bilibiliUid());
+        assertEquals(3, service.recommendationMetadata("UP").categories().size());
+        assertEquals(2, service.recommendationMetadata("UP").levels().size());
+        assertEquals("123", service.createRecommendation(save("123", 3, List.of(1L), null, null), null).externalId());
     }
 
     @Test void uidWhitespaceMatchesEcmascriptThroughMultipartAndPersistence() throws Exception {
@@ -427,12 +425,12 @@ class CreatorIntegrationTest {
                 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288, 65279};
         for (final int codePoint : whitespace) {
             final String padding = Character.toString(codePoint), uid = Integer.toString(600000 + codePoint);
-            final CreatorDtos.SaveRequest valid = save(padding + "000" + uid + padding, 3, List.of(1L), null, null);
-            mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
-                    .andExpect(status().isCreated()).andExpect(jsonPath("$.bilibiliUid").value(uid));
+            final RecommendationDtos.SaveRequest valid = save(padding + "000" + uid + padding, 3, List.of(1L), null, null);
+            mvc.perform(multipart("/api/admin/recommendations").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
+                    .andExpect(status().isCreated()).andExpect(jsonPath("$.externalId").value(uid));
             assertTrue(creators.existsByTypeAndExternalId("UP", uid));
             for (final String invalid : List.of(padding + "000" + padding, "12" + padding + "3")) {
-                mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json",
+                mvc.perform(multipart("/api/admin/recommendations").file(new MockMultipartFile("payload", "", "application/json",
                                 json.writeValueAsBytes(save(invalid, 3, List.of(1L), null, null)))).with(admin))
                         .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("CREATOR_INVALID_REQUEST"));
             }
@@ -441,7 +439,7 @@ class CreatorIntegrationTest {
         for (final int codePoint : new int[] {0, 8, 14, 28, 31, 133, 6158, 8191, 8203, 8234, 8288, 8289, 12289}) {
             final String padding = Character.toString(codePoint);
             assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                    () -> service.create(save(padding + "123" + padding, 3, List.of(1L), null, null), null));
+                    () -> service.createRecommendation(save(padding + "123" + padding, 3, List.of(1L), null, null), null));
         }
         assertEquals(whitespace.length, creators.count());
     }
@@ -449,20 +447,20 @@ class CreatorIntegrationTest {
     @Test void unicodeLimitsCountCodePointsForCreatorAndDictionaryNamesAndDescription() {
         final String name = "😀".repeat(100);
         final String description = "🚀".repeat(2000);
-        final CreatorDtos.Detail created = service.create(new CreatorDtos.SaveRequest("300001", " " + name + " ",
+        final RecommendationDtos.Detail created = service.createRecommendation(new RecommendationDtos.SaveRequest("UP", "300001", " " + name + " ",
                 description, List.of(1L), null, 3, "KEEP", null), null);
         assertEquals(name, created.name());
         assertEquals(description, created.description());
         assertEquals(100, jdbc.queryForObject("select length(name) from creator where id=?", Integer.class, created.id()));
         assertEquals(2000, jdbc.queryForObject("select length(description) from creator where id=?", Integer.class, created.id()));
-        assertEquals(name, service.addCategory(new CreatorDtos.DictionaryRequest(" " + name + " ")).name());
-        assertEquals(name, service.addLevel(new CreatorDtos.DictionaryRequest(" " + name + " ")).name());
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.create(new CreatorDtos.SaveRequest("300002", name + "😀",
+        assertEquals(name, service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", " " + name + " ")).name());
+        assertEquals(name, service.addLevel(new RecommendationDtos.DictionaryRequest(" " + name + " ")).name());
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(new RecommendationDtos.SaveRequest("UP", "300002", name + "😀",
                 null, List.of(1L), null, 3, "KEEP", null), null));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.create(new CreatorDtos.SaveRequest("300003", name,
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.createRecommendation(new RecommendationDtos.SaveRequest("UP", "300003", name,
                 description + "🚀", List.of(1L), null, 3, "KEEP", null), null));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addCategory(new CreatorDtos.DictionaryRequest(name + "😀")));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addLevel(new CreatorDtos.DictionaryRequest(name + "😀")));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", name + "😀")));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.addLevel(new RecommendationDtos.DictionaryRequest(name + "😀")));
         assertEquals(1, creators.count());
     }
 
@@ -471,80 +469,80 @@ class CreatorIntegrationTest {
         final var json = JsonMapper.builder().findAndAddModules().build();
         final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final String name = "😀".repeat(100), description = "🚀".repeat(2000);
-        final CreatorDtos.SaveRequest valid = new CreatorDtos.SaveRequest("300001", name, description, List.of(1L), null, 3, "KEEP", null);
-        mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
+        final RecommendationDtos.SaveRequest valid = new RecommendationDtos.SaveRequest("UP", "300001", name, description, List.of(1L), null, 3, "KEEP", null);
+        mvc.perform(multipart("/api/admin/recommendations").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(valid))).with(admin))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value(name))
                 .andExpect(jsonPath("$.description").value(description)).andExpect(jsonPath("$.version").value(0));
-        for (final CreatorDtos.SaveRequest invalid : List.of(
-                new CreatorDtos.SaveRequest("300002", name + "😀", null, List.of(1L), null, 3, "KEEP", null),
-                new CreatorDtos.SaveRequest("300003", name, description + "🚀", List.of(1L), null, 3, "KEEP", null))) {
-            mvc.perform(multipart("/api/admin/creators").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(invalid))).with(admin))
+        for (final RecommendationDtos.SaveRequest invalid : List.of(
+                new RecommendationDtos.SaveRequest("UP", "300002", name + "😀", null, List.of(1L), null, 3, "KEEP", null),
+                new RecommendationDtos.SaveRequest("UP", "300003", name, description + "🚀", List.of(1L), null, 3, "KEEP", null))) {
+            mvc.perform(multipart("/api/admin/recommendations").file(new MockMultipartFile("payload", "", "application/json", json.writeValueAsBytes(invalid))).with(admin))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("CREATOR_INVALID_REQUEST"));
         }
         for (final String dictionary : List.of("categories", "levels")) {
-            mvc.perform(post("/api/admin/creators/" + dictionary).contentType("application/json")
-                            .content(json.writeValueAsBytes(new CreatorDtos.DictionaryRequest(name))).with(admin))
+            mvc.perform(post("/api/admin/recommendations/" + dictionary).contentType("application/json")
+                            .content(json.writeValueAsBytes("categories".equals(dictionary) ? new RecommendationDtos.CategoryRequest("UP", name) : new RecommendationDtos.DictionaryRequest(name))).with(admin))
                     .andExpect(status().isCreated()).andExpect(jsonPath("$.name").value(name));
-            mvc.perform(post("/api/admin/creators/" + dictionary).contentType("application/json")
-                            .content(json.writeValueAsBytes(new CreatorDtos.DictionaryRequest(name + "😀"))).with(admin))
+            mvc.perform(post("/api/admin/recommendations/" + dictionary).contentType("application/json")
+                            .content(json.writeValueAsBytes("categories".equals(dictionary) ? new RecommendationDtos.CategoryRequest("UP", name + "😀") : new RecommendationDtos.DictionaryRequest(name + "😀"))).with(admin))
                     .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errorCode").value("CREATOR_INVALID_REQUEST"));
         }
         assertEquals(1, creators.count());
-        assertEquals(description, service.list(null).getFirst().description());
+        assertEquals(description, service.recommendations("UP", null).getFirst().description());
     }
 
     @Test void operationVersionsRejectInvalidRequestsAndStaleUpdateOrRemoval() {
         assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                () -> service.create(save("123", 3, List.of(1L), null, 0L), null));
-        final CreatorDtos.Detail original = service.create(save("123", 3, List.of(1L), null, null), null);
+                () -> service.createRecommendation(save("123", 3, List.of(1L), null, 0L), null));
+        final RecommendationDtos.Detail original = service.createRecommendation(save("123", 3, List.of(1L), null, null), null);
         assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                () -> service.update(original.id(), save("123", 4, List.of(1L), null, null), null));
+                () -> service.updateRecommendation(original.id(), save("123", 4, List.of(1L), null, null), null));
         assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST,
-                () -> service.update(original.id(), save("123", 4, List.of(1L), null, -1L), null));
-        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.delete(original.id(), -1));
-        final CreatorDtos.Detail changed = service.update(original.id(), save("123", 4, List.of(2L), null, original.version()), null);
+                () -> service.updateRecommendation(original.id(), save("123", 4, List.of(1L), null, -1L), null));
+        assertCode(ApiErrorCode.CREATOR_INVALID_REQUEST, () -> service.deleteRecommendation("UP", original.id(), -1));
+        final RecommendationDtos.Detail changed = service.updateRecommendation(original.id(), save("123", 4, List.of(2L), null, original.version()), null);
         assertEquals(1, changed.version());
         assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
-                () -> service.update(original.id(), save("456", 1, List.of(3L), null, original.version()), null));
-        assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT, () -> service.delete(original.id(), original.version()));
-        assertEquals(changed, service.detail(original.id()));
+                () -> service.updateRecommendation(original.id(), save("456", 1, List.of(3L), null, original.version()), null));
+        assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT, () -> service.deleteRecommendation("UP", original.id(), original.version()));
+        assertEquals(changed, service.recommendationDetail("UP", original.id()));
         assertEquals(1, creators.count());
-        service.delete(original.id(), changed.version());
+        service.deleteRecommendation("UP", original.id(), changed.version());
         assertEquals(0, creators.count());
     }
 
     @Test void concurrentEditsFromOneVersionHaveOneWinnerAndOneConflict() throws Exception {
-        final CreatorDtos.Detail original = service.create(save("123", 3, List.of(1L), null, null), null);
+        final RecommendationDtos.Detail original = service.createRecommendation(save("123", 3, List.of(1L), null, null), null);
         final List<String> results = race(
-                () -> outcome(() -> service.update(original.id(), save("123", 4, List.of(1L), null, original.version()), null)),
-                () -> outcome(() -> service.update(original.id(), save("123", 5, List.of(2L), null, original.version()), null)));
+                () -> outcome(() -> service.updateRecommendation(original.id(), save("123", 4, List.of(1L), null, original.version()), null)),
+                () -> outcome(() -> service.updateRecommendation(original.id(), save("123", 5, List.of(2L), null, original.version()), null)));
         assertEquals(1, results.stream().filter("SUCCESS"::equals).count());
         assertEquals(1, results.stream().filter(ApiErrorCode.CREATOR_CONFIG_CONFLICT.name()::equals).count());
-        assertEquals(1, service.detail(original.id()).version());
+        assertEquals(1, service.recommendationDetail("UP", original.id()).version());
         assertTrue(List.of(8, 10).contains(card(original.id()).score()));
     }
 
     @Test void deletingACategoryIncrementsOnlyLinkedCreatorVersionsAndRejectsTheirOldDrafts() {
-        final CreatorDtos.Detail first = create(3, List.of(1L, 2L), null);
-        final CreatorDtos.Detail second = create(3, List.of(1L, 3L), null);
-        final CreatorDtos.Detail untouched = create(3, List.of(2L), null);
-        service.deleteCategory(1);
-        assertEquals(1, service.detail(first.id()).version());
-        assertEquals(List.of(2L), service.detail(first.id()).categoryIds());
-        assertEquals(1, service.detail(second.id()).version());
-        assertEquals(List.of(3L), service.detail(second.id()).categoryIds());
-        assertEquals(untouched, service.detail(untouched.id()));
+        final RecommendationDtos.Detail first = create(3, List.of(1L, 2L), null);
+        final RecommendationDtos.Detail second = create(3, List.of(1L, 3L), null);
+        final RecommendationDtos.Detail untouched = create(3, List.of(2L), null);
+        service.deleteRecommendationCategory("UP", 1);
+        assertEquals(1, service.recommendationDetail("UP", first.id()).version());
+        assertEquals(List.of(2L), service.recommendationDetail("UP", first.id()).categoryIds());
+        assertEquals(1, service.recommendationDetail("UP", second.id()).version());
+        assertEquals(List.of(3L), service.recommendationDetail("UP", second.id()).categoryIds());
+        assertEquals(untouched, service.recommendationDetail("UP", untouched.id()));
         assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
-                () -> service.update(first.id(), save(first.bilibiliUid(), 5, List.of(2L), null, first.version()), null));
-        assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT, () -> service.delete(first.id(), first.version()));
-        assertCode(ApiErrorCode.CREATOR_CATEGORY_IN_USE, () -> service.deleteCategory(3));
-        assertEquals(1, service.detail(second.id()).version());
-        final CreatorDtos.Detail refreshed = service.detail(first.id());
-        assertEquals(2, service.update(first.id(), save(first.bilibiliUid(), 5, List.of(2L), null, refreshed.version()), null).version());
-        final long unused = service.addCategory(new CreatorDtos.DictionaryRequest("Unused")).id();
-        service.deleteCategory(unused);
-        assertEquals(2, service.detail(first.id()).version());
-        assertEquals(untouched, service.detail(untouched.id()));
+                () -> service.updateRecommendation(first.id(), save(first.externalId(), 5, List.of(2L), null, first.version()), null));
+        assertCode(ApiErrorCode.CREATOR_CONFIG_CONFLICT, () -> service.deleteRecommendation("UP", first.id(), first.version()));
+        assertCode(ApiErrorCode.CREATOR_CATEGORY_IN_USE, () -> service.deleteRecommendationCategory("UP", 3));
+        assertEquals(1, service.recommendationDetail("UP", second.id()).version());
+        final RecommendationDtos.Detail refreshed = service.recommendationDetail("UP", first.id());
+        assertEquals(2, service.updateRecommendation(first.id(), save(first.externalId(), 5, List.of(2L), null, refreshed.version()), null).version());
+        final long unused = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("UP", "Unused")).id();
+        service.deleteRecommendationCategory("UP", unused);
+        assertEquals(2, service.recommendationDetail("UP", first.id()).version());
+        assertEquals(untouched, service.recommendationDetail("UP", untouched.id()));
     }
 
     @Test void v36UpgradePreservesUpDataAndAddsOnlyTypedConstraints() {
@@ -576,15 +574,15 @@ class CreatorIntegrationTest {
         } finally { jdbc.execute("drop database recommendation_upgrade with (force)"); }
     }
 
-    @Test void typedCatalogPreservesBvCaseAndLegacyUpWireWhileKeepingEmptyDictionariesPrivate() {
+    @Test void typedCatalogPreservesBvCaseAndUpIdentityWhileKeepingEmptyDictionariesPrivate() {
         final long videoCategory = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
         final long unused = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Empty")).id();
-        final CreatorDtos.Detail up = create(3, List.of(1L), 1L);
+        final RecommendationDtos.Detail up = create(3, List.of(1L), 1L);
         final RecommendationDtos.Detail video = service.createRecommendation(video("  BV1AbCdEfGh2  ", List.of(videoCategory), null), null);
         final RecommendationDtos.Detail lower = service.createRecommendation(video("BV1abcdefgh2", List.of(videoCategory), null), null);
         assertEquals("VIDEO", video.type()); assertEquals("BV1AbCdEfGh2", video.externalId()); assertNull(video.levelId());
-        assertEquals(List.of(up.id()), service.list(null).stream().map(CreatorDtos.Card::id).toList());
-        assertEquals(List.of(1L), service.publicCategories().stream().map(CreatorDtos.Category::id).toList());
+        assertEquals(List.of(up.id()), service.recommendations("UP", null).stream().map(RecommendationDtos.Card::id).toList());
+        assertEquals(List.of(1L), service.publicRecommendationCategories().stream().filter(category -> "UP".equals(category.type())).map(RecommendationDtos.Category::id).toList());
         assertEquals(List.of(lower.id(), video.id()), service.recommendations("VIDEO", null).stream().map(RecommendationDtos.Card::id).toList());
         final RecommendationDtos.Card card = service.recommendations("VIDEO", null).getLast();
         assertEquals("https://www.bilibili.com/video/BV1AbCdEfGh2", card.targetUrl()); assertNull(card.level()); assertEquals(6, card.score());
@@ -593,24 +591,24 @@ class CreatorIntegrationTest {
         assertEquals(List.of(1L, videoCategory), service.publicRecommendationCategories().stream().map(RecommendationDtos.Category::id).toList());
         service.deleteRecommendation("VIDEO", video.id(), video.version());
         service.deleteRecommendation("VIDEO", lower.id(), lower.version());
-        assertEquals(service.publicCategories().size(), service.publicRecommendationCategories().size());
+        assertEquals(List.of(1L), service.publicRecommendationCategories().stream().map(RecommendationDtos.Category::id).toList());
     }
 
     @Test void crossTypeIdsCannotBeReadUpdatedDeletedOrAssociated() {
         final long videoCategory = service.addRecommendationCategory(new RecommendationDtos.CategoryRequest("VIDEO", "Clips")).id();
-        final CreatorDtos.Detail up = create(3, List.of(1L), null);
+        final RecommendationDtos.Detail up = create(3, List.of(1L), null);
         final RecommendationDtos.Detail video = service.createRecommendation(video("BV1AbCdEfGh2", List.of(videoCategory), null), null);
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.detail(video.id()));
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.delete(video.id(), video.version()));
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.update(video.id(), save("123", 3, List.of(1L), null, video.version()), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendationDetail("UP", video.id()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendation("UP", video.id(), video.version()));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.updateRecommendation(video.id(), save("123", 3, List.of(1L), null, video.version()), null));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendationDetail("VIDEO", up.id()));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendation("VIDEO", up.id(), up.version()));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.updateRecommendation(up.id(), video("BV1AbCdEfGh3", List.of(videoCategory), up.version()), null));
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteCategory(videoCategory));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendationCategory("UP", videoCategory));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.deleteRecommendationCategory("VIDEO", 1));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.createRecommendation(video("BV1AbCdEfGh3", List.of(1L), null), null));
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.create(save("555", 3, List.of(videoCategory), null, null), null));
-        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.list(videoCategory));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.createRecommendation(save("555", 3, List.of(videoCategory), null, null), null));
+        assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendations("UP", videoCategory));
         assertCode(ApiErrorCode.CREATOR_NOT_FOUND, () -> service.recommendations("VIDEO", 1L));
         assertEquals(2, creators.count());
     }
@@ -654,7 +652,7 @@ class CreatorIntegrationTest {
         }
     }
 
-    @Test void realHttpEnforcesNewRolesStrictRequestsAndBothLegacyAndTypedBoundaries() throws Exception {
+    @Test void realHttpEnforcesRolesStrictRequestsAndTypedBoundaries() throws Exception {
         final MockMvc mvc = MockMvcBuilders.webAppContextSetup(web).apply(springSecurity()).build();
         final var admin = jwt().authorities(new SimpleGrantedAuthority("ROLE_content-admin"));
         final var wrongAdmin = jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"));
@@ -680,21 +678,17 @@ class CreatorIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         final long id = json.readTree(created).path("id").asLong();
         mvc.perform(get("/api/recommendations?type=VIDEO")).andExpect(status().isOk()).andExpect(jsonPath("$[0].targetUrl").value("https://www.bilibili.com/video/BV1AbCdEfGh2"));
-        mvc.perform(get("/api/creators")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
-        mvc.perform(get("/api/creators/categories")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/recommendations?type=UP")).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         mvc.perform(get("/api/recommendations/categories")).andExpect(status().isOk()).andExpect(jsonPath("$[0].type").value("VIDEO"));
-        mvc.perform(get("/api/admin/creators/" + id).with(admin)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/admin/creators/" + id).with(admin)).andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/recommendations/" + id + "?type=UP").with(admin)).andExpect(status().isNotFound());
-        mvc.perform(delete("/api/admin/creators/" + id + "?expectedVersion=0").with(admin)).andExpect(status().isNotFound());
-        mvc.perform(delete("/api/admin/creators/categories/" + category).with(admin)).andExpect(status().isNotFound());
+        mvc.perform(delete("/api/admin/creators/" + id + "?expectedVersion=0").with(admin)).andExpect(status().isForbidden());
+        mvc.perform(delete("/api/admin/creators/categories/" + category).with(admin)).andExpect(status().isForbidden());
         for (final String invalid : List.of(payload.replace("\"VIDEO\"", "null"), payload.replace("\"BV1AbCdEfGh2\"", "123"),
                 payload.replace("\"levelId\":null", "\"levelId\":1"), payload.replace("\"stars\":3", "\"stars\":3.1"),
                 payload.replace("\"externalId\":", "\"extra\":true,\"externalId\":"))) {
             mvc.perform(multipart("/api/admin/recommendations").file(jsonPayload(invalid)).with(admin)).andExpect(status().isBadRequest());
         }
-        final String legacy = json.writeValueAsString(save("123", 3, List.of(1L), null, null));
-        mvc.perform(multipart("/api/admin/creators").file(jsonPayload(legacy.replaceFirst("\\{", "{\"type\":\"VIDEO\","))).with(admin))
-                .andExpect(status().isBadRequest());
         mvc.perform(multipart(HttpMethod.PUT, "/api/admin/recommendations/" + id).file(jsonPayload(json.writeValueAsString(video("BV1AbCdEfGh2", List.of(category), 0L)))).with(admin))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
         mvc.perform(delete("/api/admin/recommendations/" + id + "?type=VIDEO&expectedVersion=0").with(admin)).andExpect(status().isConflict());
@@ -742,15 +736,15 @@ class CreatorIntegrationTest {
         return new RecommendationDtos.SaveRequest("VIDEO", bv, "Video", null, categories, null, 3, "KEEP", version);
     }
 
-    private CreatorDtos.Detail create(final int stars, final List<Long> ids, final Long levelId) {
-        return service.create(save(Long.toString(++nextUid), stars, ids, levelId, null), null);
+    private RecommendationDtos.Detail create(final int stars, final List<Long> ids, final Long levelId) {
+        return service.createRecommendation(save(Long.toString(++nextUid), stars, ids, levelId, null), null);
     }
-    private static CreatorDtos.SaveRequest save(final String uid, final int stars, final List<Long> ids, final Long levelId,
+    private static RecommendationDtos.SaveRequest save(final String uid, final int stars, final List<Long> ids, final Long levelId,
                                               final Long expectedVersion) {
-        return new CreatorDtos.SaveRequest(uid, "Creator", null, ids, levelId, stars, "KEEP", expectedVersion);
+        return new RecommendationDtos.SaveRequest("UP", uid, "Creator", null, ids, levelId, stars, "KEEP", expectedVersion);
     }
-    private CreatorDtos.Card card(final long id) {
-        return service.list(null).stream().filter(creator -> creator.id() == id).findFirst().orElseThrow();
+    private RecommendationDtos.Card card(final long id) {
+        return service.recommendations("UP", null).stream().filter(creator -> creator.id() == id).findFirst().orElseThrow();
     }
     private static void assertCode(final ApiErrorCode code, final Runnable operation) {
         assertEquals(code, assertThrows(ApiException.class, operation::run).errorCode());

@@ -8,7 +8,7 @@ import { useCreatorManagement } from '../composables/useCreatorManagement.js'
 import { useAuth } from '../composables/useAuth.js'
 import { confirm } from '../composables/useConfirm.js'
 import { apiErrorLabel } from '../utils/display.js'
-import { creatorInputValid } from '../api/creators.js'
+import { creatorNameValid } from '../api/creators.js'
 import PageHeader from './PageHeader.vue'
 import AppButton from './AppButton.vue'
 import Banner from './Banner.vue'
@@ -38,7 +38,7 @@ function selectType(value: RecommendationType) {
 watch(draftEpoch, () => { formDirty.value = false })
 async function add(kind: 'categories' | 'levels') {
   const name = kind === 'categories' ? categoryName : levelName
-  dictionaryInvalid.value = !creatorInputValid('CreatorNameRequest', { name: name.value.trim() })
+  dictionaryInvalid.value = !creatorNameValid({ name: name.value.trim() })
   if (dictionaryInvalid.value) return
   if (await management.addDictionary(kind, name.value)) name.value = ''
 }
