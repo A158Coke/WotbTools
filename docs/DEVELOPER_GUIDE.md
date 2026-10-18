@@ -179,7 +179,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 - `mark3`：Tier X 单车最速三环人工审核排行榜（PENDING/CURRENT/REJECTED/CANCELLED/DELETED，无 SUPERSEDED）。
 - `user`：Profile、WoTB 账号（含「用回放验证」）。
 - `admin`：用户和后台管理。
-- `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和UID/BV标识，手动星级、UP可选实力等级、256px站点头像/封面；新typed API与旧UP-only API复用同一服务和事务锁。管理沿用 `tournament-admin`，数据不依附赛事。契约见 [Bilibili recommendations](features/bilibili-creators.md)。
+- `creator`：bilibili UP/优秀作品共用五表目录，按类型隔离分类和UID/BV标识，手动星级、UP可选实力等级、256px站点头像/封面；新typed API与旧UP-only API复用同一服务和事务锁。管理使用独立的最小权限 realm role `content-admin`（与积分赛 `tournament-admin` 完全分离），数据不依附赛事。契约见 [Bilibili recommendations](features/bilibili-creators.md)。
 - `tournament`：按年份/区服/季赛配置积分规则（全局默认、季赛覆盖、开始统计时固定快照），截图排名的共享草稿、CSV累计整表预览替换与永久来源、正式榜单、修正与审计；见 [`features/tournament-points.md`](features/tournament-points.md)。独立 AI Service 识别图片，Business API 按规则精确算分并持久化。
   同域 `Broadcast*` 独立管理五服联赛直播链接目录，不引用积分榜赛事；入口位于主导航的联赛积分榜之后，公开浏览和真实全站管理员操作共用 `?view=league-broadcasts`。季赛名称配置中英必填、俄文选填（缺省回退英文）；积分赛小组使用正整数与固定三语文案，历史不可解析组名保留待补。仅资料完整的分场参与V40初始化。封面由 Business API 转传腾讯 COS，配置与回收见 [功能契约](features/league-broadcasts.md)及 [COS 运维](operations/league-broadcast-covers.md)。
 - `replay`：只剩 `/api/health` 与名人堂共用的 `ReplayCapacityLimiter`。

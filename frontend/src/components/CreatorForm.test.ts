@@ -23,7 +23,7 @@ async function pick(wrapper: ReturnType<typeof mount>, name = 'avatar.png') {
 }
 const existing: RecommendationDetail = { type: 'UP', id: 1, version: 2, externalId: '456', name: 'Existing', description: null, categoryIds: [1], levelId: 1, stars: 3, imageUrl: '/api/creators/avatars/11111111-1111-4111-8111-111111111111' }
 beforeEach(() => {
-  epoch = 1; state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => epoch }
+  epoch = 1; state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => epoch }
   let next = 0
   vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => `blob:preview-${++next}`); static revokeObjectURL = vi.fn() })
   vi.stubGlobal('fetch', vi.fn())
@@ -121,7 +121,7 @@ describe('creator directory form and local avatar state', () => {
     let acknowledge!: (value: boolean) => void
     const save = vi.fn(() => new Promise<boolean>(resolve => { acknowledge = resolve })), { wrapper } = form(null, true, save)
     await fill(wrapper); await pick(wrapper); await wrapper.get('form').trigger('submit')
-    epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } }; await flushPromises()
+    epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['content-admin'] } }; await flushPromises()
     await fill(wrapper); await wrapper.get('[data-testid=creator-name]').setValue('New actor'); await pick(wrapper)
     acknowledge(true); await flushPromises()
     expect(wrapper.emitted('saved')).toBeUndefined(); expect((wrapper.get('[data-testid=creator-name]').element as HTMLInputElement).value).toBe('New actor')
