@@ -67,12 +67,13 @@ describe('Armor Inspector 单层概率（±range = ±3σ）', () => {
 })
 
 describe('Armor Inspector 逐层概率', () => {
-  it('两层 25mm @ P=100：第一层 100%，第二层 50%（3× 消耗后区间 25）', () => {
+  it('两层 25mm @ P=100：每层 1× 消耗，第二层仍约 100%', () => {
     const layers = [
       { section: 'hull', name: 'hull', thickness: 25, effective: 25, remaining_before: 100 },
-      { section: 'hull', name: 'hull', thickness: 25, effective: 25, remaining_before: 25 },
+      { section: 'hull', name: 'hull', thickness: 25, effective: 25, remaining_before: 75 },
     ]
-    expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
+    // [95,105] - 25 = [70,80]，25mm 远低于下界 → CDF≈1。
+    expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
   it('外部模块 flat 消耗：10mm 模块 + 90mm 装甲 @ P=100 → 50%', () => {
@@ -96,18 +97,18 @@ describe('Armor Inspector 逐层概率', () => {
       { name: 'Gap 0.50m', thickness: 0, remaining_before: 80 },
       { section: 'hull', name: 'hull', thickness: 30, effective: 30, remaining_before: 60 },
     ]
-    // 第一层后 [95,105]-3×20=[35,45]；gap 0.5m 衰减 25% → [26.25,33.75]；
-    // 第二层 30mm：μ=30、σ=1.25 → Φ(0)=0.5。remaining_before 是确定性截断链，不参与。
-    expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
+    // 第一层后 [95,105]-20=[75,85]；gap 0.5m 衰减 25% → [56.25,63.75]；
+    // 第二层 30mm 远低于下界 → CDF≈1。
+    expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
-  it('扣减剩余穿深时保留区间宽度：P100 → 20mm → 41mm ≈ 27.4%', () => {
+  it('扣减剩余穿深时保留区间宽度：P1000 → 300mm → 690mm ≈ 72.57%', () => {
     const layers = [
-      { section: 'spaced', name: 'spaced', thickness: 20, effective: 20 },
-      { section: 'hull', name: 'hull', thickness: 41, effective: 41 },
+      { section: 'spaced', name: 'spaced', thickness: 300, effective: 300 },
+      { section: 'hull', name: 'hull', thickness: 690, effective: 690 },
     ]
-    // [95,105] - 3×20 = [35,45]，σ 仍为 10/6；Φ((40-41)/(10/6)) = Φ(-0.6)。
-    expect(penetrationChance(100, layers)).toBeCloseTo(0.2742531, 5)
+    // [950,1050] - 300 = [650,750]，σ 仍为 100/6；Φ((700-690)/(100/6)) = Φ(0.6)。
+    expect(penetrationChance(1000, layers)).toBeCloseTo(0.7257469, 5)
   })
 
   it('外部模块 flat 耗尽：P10 遇 20mm 履带 → 0（不再返回 100%）', () => {
@@ -136,21 +137,22 @@ describe('Armor Inspector 逐层概率', () => {
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
-  it('续飞段只在段首初始化一次：连续两层 seg=1 不得每层清空累计状态', () => {
+  it('续飞段只在段首初始化一次：后续 seg=1 不重置区间', () => {
     const layers = [
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, ricochet: true, seg: 0 },
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, seg: 1 },
-      { name: 'hull', thickness: 20, eff: 20, remainBefore: 55, angle: 0, seg: 1 },
+      // 第二层 remaining_before 故意给 100；若每层 seg=1 都重置会得到 ≈1。
+      { name: 'hull', thickness: 55, eff: 55, remainBefore: 100, angle: 0, seg: 1 },
     ]
-    // 75 → [71.25,78.75]；第一层后 [11.25,18.75]；第二层 20mm → 0。
-    expect(penetrationChance(100, layers)).toBe(0)
+    // 75 → [71.25,78.75]；第一层后 [51.25,58.75]；第二层 55mm → Φ(0)=0.5。
+    expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
   })
 
   it('camelCase 字段（tankViewer trajLayers）同样可用', () => {
     const layers = [
       { name: 'hull', thickness: 25, eff: 25, remainBefore: 100, angle: 0 },
-      { name: 'hull', thickness: 25, eff: 25, remainBefore: 25, angle: 0 },
+      { name: 'hull', thickness: 25, eff: 25, remainBefore: 75, angle: 0 },
     ]
-    expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
+    expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 })

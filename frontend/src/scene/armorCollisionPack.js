@@ -276,14 +276,14 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             highp float finA = max(angle - normR, 0.0);
             highp float eff = th / max(cos(finA), RC_COS_EPS);
             armorIdx++;                                 // 本实际装甲层已计入
-            // 每层先用当前区间乘 CDF，再把两端平移 3×eff（σ 保持初值/段首值）。
+            // 每层先用当前区间乘 CDF，再把两端平移一次 eff（σ 保持初值/段首值）。
             highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
             highp float mu = 0.5 * (pMin + pMax);
             probChance *= pMax > 0.0
                 ? clamp(aiNormalCdf((mu - eff) / sigma), 0.0, 1.0)
                 : 0.0;
-            pMin -= 3.0 * eff;
-            pMax -= 3.0 * eff;
+            pMin -= eff;
+            pMax -= eff;
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
             if (sec <= 2) {                             // 主装甲 = 末层，定结论
                 if (layPen) {
@@ -743,7 +743,7 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     // 模拟（allowRicochet=false 动能出射段）
     const { remIn, caliber, normalizationRad, thickMul } = params;
     let rem = remIn;
-    // 概率区间从段首穿深初始化；后续层两端平移，σ 保持段首值（不在扣减后重算）。
+    // 概率区间从段首穿深初始化；每层两端平移一次等效厚度，σ 保持段首值。
     let probMin = remIn * (1 - RC.BAND);
     let probMax = remIn * (1 + RC.BAND);
     let probChance = 1;
@@ -772,8 +772,8 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             layPen = rem > eff;
             armorIdx++;
             probChance *= penetrationChanceForInterval(probMin, probMax, eff);
-            probMin -= 3 * eff;
-            probMax -= 3 * eff;
+            probMin -= eff;
+            probMax -= eff;
         }
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
         // 与 GLSL 同：模块 flat 已耗尽概率区间 → 红（即使确定性 rem 仍 > 厚度）。

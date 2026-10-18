@@ -365,7 +365,7 @@ describe('probability_layers（完整命中链，供 Armor Inspector 概率模�
     // 确定性：100mm 间隙甲等厚不穿透 → 只留下间隙甲层。
     expect(r.result).toBe('BLOCKED')
     expect(r.layers.map(l => l.part_name)).toEqual(['spaced'])
-    // 概率：完整路径含间隙甲 + 主装甲；3× 消耗后区间为负，主装甲 0%。
+    // 概率：完整路径含间隙甲 + 主装甲；1× 消耗后剩余 0，主装甲 0%。
     expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
   })
@@ -391,7 +391,7 @@ describe('probability_layers（完整命中链，供 Armor Inspector 概率模�
     // 确定性层链仍按 BlitzKit 在首个 Primary 截断（用于确定性判定展示）。
     expect(r.result).toBe('PENETRATION')
     expect(r.layers).toHaveLength(1)
-    // 概率链必须看到第二层主装甲，3× 消耗后概率为 0。
+    // 概率链必须看到第二层主装甲，1× 消耗后概率为 0。
     expect(r.probability_layers.map(l => l.section)).toEqual(['hull', 'hull'])
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
   })
@@ -412,6 +412,8 @@ describe('probability_layers（完整命中链，供 Armor Inspector 概率模�
     expect(r.damage).toBe(400.0)
     expect(Math.abs(r.layers[0].effective - 21.5)).toBeLessThan(0.2)
     expect(Math.abs(r.layers[1].effective - 207.0)).toBeLessThan(2.0)
+    // 1× 概率区间也必须给出穿透，不能是 0%：252−21.5=230.5 >207。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeGreaterThan(0.999)
   })
 })
 

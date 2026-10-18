@@ -6,12 +6,13 @@
  *   均值 μ=(min+max)/2，σ=(max-min)/6，概率为 Φ((μ-T)/σ)，区间外夹到 1/0。
  * - Blitz 弹数据：min/max = 0.95P / 1.05P（±5%，σ=P/60）；
  *   PC 弹数据：0.75P / 1.25P（±25%，σ=P/12）。
- * - 逐层：每层用当前剩余区间算一次 CDF，然后把 **min/max 同时**扣掉 3×该层
- *   等效厚度（`func[7696]` 的 3.0 常量）——平移不改变 σ；外部模块是 flat
- *   消耗（同样平移），不参与 CDF。
+ * - 逐层：每层用当前剩余区间算一次 CDF，然后把 **min/max 同时**扣掉一次该层
+ *   等效厚度——平移不改变 σ；外部模块是 flat 消耗（同样平移），不参与 CDF。
+ *   （2026-10-18 复核修正：Armor Inspector 的层区间是 1× 等效厚度扣减；
+ *   此前 3× 实现会把确定性穿透误判为 0%。）
  *
  * 本模块只负责“概率”，不改 penetration.js 的确定性判定。视图层把
- * 同一套 [min/max, 3×厚度] 语义用于：
+ * 同一套 [min/max, 1×等效厚度] 语义用于：
  * - 点击面板的击穿概率（输入必须是完整命中链，不能是确定性提前截断的层链）；
  * - 主装甲热力图着色；
  * - 跳弹续飞概率带。
@@ -122,7 +123,7 @@ function isExternalLayer(layer) {
  * 多层击穿概率（Armor Inspector 逐层模型）。
  *
  * - 初始区间 [P(1-r), P(1+r)]；每个实际装甲层用当前区间算 CDF，再把
- *   min/max 同时减去 3×等效厚度（σ 保持不变）。
+ *   min/max 同时减去一次等效厚度（σ 保持不变）。
  * - 外部模块：flat 消耗（min/max 同时减厚度），不参与 CDF；区间耗尽即 0。
  * - HEAT Gap 层：按 penetration.js 的 0.5/m 衰减缩放区间，不参与 CDF。
  * - 跳弹：确定性路径已跳弹，除非有后续续飞段，否则 0。
@@ -197,10 +198,10 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
     chance *= cdfForInterval(min, max, eff)
     if (!(chance > 0)) return 0
 
-    // Armor Inspector `func[7696]`：每层后 remaining_min/max -= 3 × thickness。
-    // 同时平移两端，σ 不变——不得按扣减后的均值重算 σ。
-    min -= 3 * eff
-    max -= 3 * eff
+    // Armor Inspector 层区间：每层同时平移一次等效厚度；σ 不变——不得按
+    // 扣减后的均值重算 σ。此前误用 3× 会把 252AP 打 21.5+207 误判成 0%。
+    min -= eff
+    max -= eff
   }
 
   return Math.max(0, Math.min(1, chance))
