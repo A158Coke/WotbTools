@@ -26,9 +26,31 @@
     --broadcast-cover-max-h: 320px;
     --broadcast-cover-thumbnail-w: 160px;
     --broadcast-server-card-min-h: 200px;
-    /* 首页 Hero：桌面 / 平板的整屏高度。手机不强制高度，由组件置 0 把首屏留给标题与 CTA。 */
+    /* 首页 landing page：组件语义尺寸（§4–§5），避免组件内出现第二套 scale。
+       手机 Hero 不强制高度，由组件置 0 把首屏留给标题与 CTA。 */
     --home-hero-min-h-desktop: 460px;
     --home-hero-min-h-tablet: 380px;
+    --home-hero-title-measure: 16ch;
+    --home-hero-subtitle-measure: 40ch;
+    --home-hero-subtitle-size: clamp(1rem, 1.6vw, 1.25rem);
+    --home-shot-copy-measure: 42ch;
+    --home-phone-preview-w: 168px;
+    --home-phone-preview-h: 300px;
+    --home-phone-preview-mobile-w: 148px;
+    --home-phone-preview-mobile-max-h: 220px;
+
+    /* 首页动效：统一时长 + 语义幅度（§5）。不要给每个 stagger 阶段单独造 duration。 */
+    --home-enter-duration: 700ms;
+    --home-enter-stagger: 110ms;
+    --home-sheen-duration: 1800ms;
+    --home-rise-travel: 18px;
+    --home-reveal-travel: 56px;
+    --home-reveal-scale: 0.97;
+    --home-hover-lift: 6px;
+    --home-hover-zoom: 1.04;
+    --home-parallax-range: 640px;
+    --home-parallax-scale: 1.08;
+    --home-parallax-shift: 5%;
     --layout-content-max: 1420px;
     --layout-wide-max: 1720px;
     --layout-workspace-max: 1760px;
