@@ -1028,14 +1028,20 @@ assert freeze_index < push_index < verify_index, asset_step_names
 assert asset_steps[freeze_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert asset_steps[push_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
 assert asset_steps[push_index]["env"]["PRODUCTION_REQUIRE_EXACT_MAIN"] == "1"
+# The job may only publish the derived GitHub pointer branch; nothing else.
+assert asset_workflow["jobs"]["mirror_gitee"]["permissions"] == {"contents": "write"}, \
+    asset_workflow["jobs"]["mirror_gitee"].get("permissions")
 freeze_run = asset_steps[freeze_index]["run"]
 push_run = asset_steps[push_index]["run"]
 for gate_run in (freeze_run, push_run):
     assert "deploy/check-production-freshness.sh" in gate_run
 assert push_run.index("git update-ref") < push_run.index("deploy/check-production-freshness.sh"), \
     push_run
-assert push_run.index("deploy/check-production-freshness.sh") < push_run.index("git push --force"), \
-    push_run
+assert push_run.index("deploy/check-production-freshness.sh") < \
+    push_run.index('git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"'), push_run
+assert 'git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"' in push_run
+assert push_run.index('git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"') < \
+    push_run.index("gitee.com/A158Coke/Wotbtools.git"), push_run
 assert "refs/heads/asset-origin-frozen:refs/heads/asset-origin" in push_run
 assert ":refs/heads/main" not in push_run, "the asset transport must never push shared Gitee main"
 verify_run = asset_steps[verify_index]["run"]
@@ -1060,10 +1066,12 @@ for statement in (
     "the resource tree routes only to the non-production `deployment` PR gate",
     "Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml` "
     "is an input of `.github/workflows/asset-origin.yml`",
-    "which may mutate only the asset-owned Gitee transport branch `asset-origin` "
-    "(never shared `main`)",
+    "which may mutate only the asset-owned transport pair: the derived GitHub "
+    "`asset-origin` pointer branch and the matching Gitee `asset-origin` transport "
+    "branch (never shared `main`)",
     "It must not apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.",
-    "The Stack tracks that same `asset-origin` branch",
+    "The Stack tracks the Gitee `asset-origin` branch",
+    "the pinned mirror action force-pushes every GitHub branch to Gitee with `--prune`",
     "`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain mandatory, "
     "and ResourceSync Apply stays manual.",
     "No other file under `infra/komodo/resources/**` is a production input.",
@@ -1312,3 +1320,42 @@ shared="$(gitee_main)"
   exit 1
 }
 echo 'asset-origin pins the reviewed SHA on its own ref and never touches shared main: PASS'
+
+# The push step also published the derived GitHub pointer branch. The pinned
+# Yikun/hub-mirror-action@ec47170 force-pushes
+# `refs/remotes/origin/*:refs/heads/* --tags --prune`, so that pointer branch is
+# what keeps the Gitee transport ref alive. Exercise the real mirror refspec.
+hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/asset-origin^{commit}')"
+[ "$hub_transport" = "$sha_asset" ] || {
+  echo "the asset workflow did not publish the GitHub pointer branch: $hub_transport" >&2
+  exit 1
+}
+mirror_push() {
+  rm -rf "$asset_work/mirror"
+  git clone -q "$asset_work/hub-bare" "$asset_work/mirror"
+  git -C "$asset_work/mirror" push -q --force "$asset_work/gitee.git" \
+    'refs/remotes/origin/*:refs/heads/*' --tags --prune
+}
+mirror_push
+current="$(gitee_transport)"
+[ "$current" = "$sha_asset" ] || {
+  echo "an application mirror pruned or changed the asset transport ref: $current" >&2
+  exit 1
+}
+# Negative control: WITHOUT the GitHub pointer branch the very same mirror push
+# deletes the Gitee-only ref. This is the failure mode the pointer branch prevents.
+git -C "$asset_work/hub-bare" update-ref -d refs/heads/asset-origin
+mirror_push
+if gitee_transport >/dev/null 2>&1; then
+  echo 'the application mirror did not prune the Gitee-only asset ref' >&2
+  exit 1
+fi
+# Restoring the pointer branch lets the next mirror carry the verified SHA again.
+git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$sha_asset:refs/heads/asset-origin"
+mirror_push
+current="$(gitee_transport)"
+[ "$current" = "$sha_asset" ] || {
+  echo "the application mirror did not restore the verified asset ref: $current" >&2
+  exit 1
+}
+echo 'asset-origin transport pair survives the application mirrors'"'"' prune: PASS'
