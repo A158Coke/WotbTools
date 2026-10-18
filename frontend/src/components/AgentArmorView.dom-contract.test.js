@@ -342,8 +342,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
     expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)
-    expect(kernel).toMatch(/probabilityColorCss\(layerPct\)/)
-    expect(kernel).toMatch(/chancePct > 0 \? dmgVal : 0/)
+    expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
+    expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
     // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
     expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
