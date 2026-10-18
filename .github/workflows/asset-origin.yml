@@ -16,6 +16,9 @@ concurrency:
   group: deploy-asset-origin-source
   cancel-in-progress: true
 
+env:
+  GITEE_ASSET_BRANCH: asset-origin
+
 jobs:
   mirror_gitee:
     name: Mirror exact GitHub source to Gitee
@@ -26,7 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Reject non-main invocation
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Freeze reviewed main source
+        id: source
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -46,35 +55,62 @@ jobs:
             echo "Asset-origin source SHA must be a full lowercase commit SHA." >&2
             exit 1
           }
+          [ "$(git rev-parse HEAD)" = "$SOURCE_SHA" ] || {
+            echo "Checked-out source differs from the frozen event SHA." >&2
+            exit 1
+          }
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Mirror WotbTools to Gitee
-        uses: Yikun/hub-mirror-action@ec47170fa9d126a4bee5a1ab9359845bb1395248
-        with:
-          src: github/A158Coke
-          dst: gitee/A158Coke
-          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
-          dst_token: ${{ secrets.GITEE_TOKEN }}
-          static_list: WotbTools
-          account_type: user
-          force_update: true
-          timeout: 10m
-
-      - name: Require Gitee main at the reviewed GitHub SHA
+      # Do not mirror whatever GitHub `main` happens to point at when this step
+      # starts. Push the already-checked-out event commit to a dedicated Gitee
+      # transport branch so unrelated newer main commits cannot make this gate
+      # verify or deploy the wrong source, and this workflow cannot move the
+      # shared Gitee `main` backward underneath Frontend/Business API builds.
+      - name: Push frozen event SHA to Gitee asset branch
         shell: bash
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          GITEE_USERNAME: A158Coke
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          askpass="$RUNNER_TEMP/gitee-askpass.sh"
+          cleanup() { rm -f -- "$askpass"; }
+          trap cleanup EXIT
+          cat > "$askpass" <<'EOF'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' "$GITEE_USERNAME" ;;
+            *Password*) printf '%s\n' "$GITEE_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+
+          git update-ref refs/heads/asset-origin-frozen "$SOURCE_SHA"
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
+            git push --force \
+              https://gitee.com/A158Coke/Wotbtools.git \
+              refs/heads/asset-origin-frozen:refs/heads/$GITEE_ASSET_BRANCH
+
+      - name: Require Gitee asset branch at the reviewed GitHub SHA
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
         run: |
           set -euo pipefail
           mirrored=
           for attempt in $(seq 1 12); do
-            mirrored="$(timeout 15s git ls-remote https://gitee.com/A158Coke/Wotbtools.git refs/heads/main 2>/dev/null | awk '{print $1}' || true)"
+            mirrored="$(timeout 15s git ls-remote \
+              https://gitee.com/A158Coke/Wotbtools.git \
+              "refs/heads/$GITEE_ASSET_BRANCH" 2>/dev/null | awk '{print $1}' || true)"
             if [ "$mirrored" = "$SOURCE_SHA" ]; then
-              echo "Gitee mirror verified at $SOURCE_SHA"
+              echo "Gitee $GITEE_ASSET_BRANCH verified at $SOURCE_SHA"
               exit 0
             fi
             if [ "$attempt" -lt 12 ]; then
               sleep 5
             fi
           done
-          echo "Gitee main does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
+          echo "Gitee $GITEE_ASSET_BRANCH does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
           exit 1
