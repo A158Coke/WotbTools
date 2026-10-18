@@ -3048,6 +3048,110 @@ export default {
         }
       }
     },
+    "HallOfFameRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "tankId",
+        "tankName",
+        "nickname",
+        "damageDealt",
+        "battleType",
+        "mapName",
+        "version",
+        "battleTime",
+        "createdAt",
+        "replayAvailable"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "battleType": {
+          "type": "string"
+        },
+        "mapName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "battleTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HallOfFamePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HallOfFameRecord"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
     "HundredAdminListItem": {
       "type": "object",
       "additionalProperties": false,
