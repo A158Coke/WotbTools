@@ -15,12 +15,12 @@ function fixture(withOnChanged = true) {
   let epoch = 1
   const type = ref<'UP' | 'VIDEO'>('UP')
   const online = ref(true), metadata: RecommendationMetadata = { type: 'UP', categories: [{ id: 1, name: 'category', type: 'UP' as const }], levels: [{ id: 1, name: 'level' }], imageUploadsAvailable: true }
-  const auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => epoch }
+  const auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => epoch }
   const transport = { getRecommendationMetadata: vi.fn(async (): Promise<RecommendationMetadata> => structuredClone(metadata)), getRecommendationDetail: vi.fn(async (): Promise<RecommendationDetail> => detail), saveRecommendation: vi.fn(async () => detail), addRecommendationCategory: vi.fn(async () => ({ id: 2, name: 'new', type: 'UP' as const })), removeRecommendationCategory: vi.fn(async () => {}) }
   const onChanged = vi.fn(async () => {}), scope = effectScope()
   const availability = { recommendationsSupported: ref(true), typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) }
   const owner = scope.run(() => useCreatorManagement({ type, api: transport, auth, availability, onChanged: withOnChanged ? onChanged : undefined, network: () => ({ available: online.value }) } as any))!
-  return { type, owner, transport, auth, onChanged, scope, online, metadata, availability, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } } } }
+  return { type, owner, transport, auth, onChanged, scope, online, metadata, availability, changeIdentity: () => { epoch++; auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['content-admin'] } } } }
 }
 describe('creator directory management ownership', () => {
   it('preserves an active UP draft and invalidates reads when the backend gains typed support', async () => {

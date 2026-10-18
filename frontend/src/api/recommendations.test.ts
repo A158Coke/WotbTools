@@ -20,7 +20,7 @@ const value = (): RecommendationSaveRequest => ({ type: 'VIDEO', externalId: ' B
 const respond = (body: unknown) => vi.mocked(apiFetch).mockResolvedValueOnce(new Response(JSON.stringify(body)))
 beforeEach(() => {
   vi.clearAllMocks(); state.online = true
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => 1, ensureToken: vi.fn(async () => true), token: () => 'token' }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => 1, ensureToken: vi.fn(async () => true), token: () => 'token' }
 })
 describe('typed recommendations boundary', () => {
   it('enforces type-specific identifiers, strength and category response constraints', () => {

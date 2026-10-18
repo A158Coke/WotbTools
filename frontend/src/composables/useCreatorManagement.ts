@@ -1,7 +1,7 @@
 import type { MaybeRefOrGetter } from 'vue'
 import { computed, onScopeDispose, ref, watch, toValue } from 'vue'
 import * as api from '../api/creators.js'
-import { useAuth, tournamentAdminAllowed } from './useAuth.js'
+import { useAuth, contentAdminAllowed } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
 import type { CreatorAvailability } from '../shared/creatorAvailability.js'
@@ -14,7 +14,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
   const type = computed(() => toValue(deps.type) ?? 'UP')
   const typed = () => availability.recommendationsSupported.value
   const network = computed(deps.network ?? (() => gate.availability(Feature.CREATORS)))
-  const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated' && availability.typeAvailable(type.value))
+  const allowed = computed(() => contentAdminAllowed(auth) && auth.authInitState.value === 'authenticated' && availability.typeAvailable(type.value))
   const categories = ref<api.RecommendationCategory[]>([]), levels = ref<api.CreatorLevel[]>([])
   const avatarUploadsAvailable = ref(false), metadataLoaded = ref(false), detail = ref<api.RecommendationDetail | null>(null)
   const loading = ref(false), busy = ref(false), editorLoading = ref(false), editorOpen = ref(false)

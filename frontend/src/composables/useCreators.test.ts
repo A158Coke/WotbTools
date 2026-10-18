@@ -69,7 +69,7 @@ describe('public creator directory ownership', () => {
       // Match useAuth.projectSession ordering: identity is projected before the settled state.
       if (settledState === 'authenticated') {
         auth.authenticated.value = true
-        auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+        auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
       }
       auth.authInitState.value = settledState; await flushPromises()
       expect(router.currentRoute.value.query.creatorCategory).toBe(settledState === 'authenticated' ? '99' : undefined)
@@ -94,7 +94,7 @@ describe('public creator directory ownership', () => {
     const f = fixture(); f.availability.contentKnown.value = false; f.route.query.creatorCategory = '99'; await flushPromises()
     expect(f.router.replace).not.toHaveBeenCalled()
     f.auth.authenticated.value = true; f.auth.authInitState.value = 'authenticated'
-    f.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } } as any
+    f.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } } as any
     f.availability.contentKnown.value = true; await flushPromises(); expect(f.router.replace).not.toHaveBeenCalled()
     f.auth.tokenParsed.value = null; await flushPromises(); expect(f.router.replace).toHaveBeenCalledTimes(1); f.scope.stop()
   })
