@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   GRID_DT,
+  buildPoseFacet,
   poseCoveredAt,
   poseKeyframesOf,
   sampleVehiclePoseGame,
   selectActiveDef,
+  visibilitySpansByEid,
   wrapPi,
 } from './vehiclePose.js'
 import type { AgentVehicleTrack } from '../../api/agent-replay-facets.js'
@@ -97,6 +99,58 @@ describe('sampleVehiclePoseGame（2D/3D 共用的唯一位姿采样器）', () =
     const pose = sampleVehiclePoseGame(gridDef(), GRID, -1)
     expect(pose.x).toBeCloseTo(0, 6)
     expect(pose.y).toBeCloseTo(0, 6)
+  })
+
+  it('覆盖段内炮塔只在段内网格点插值（禁止跨隐藏段滑移）', () => {
+    // 0.0..0.8s 炮塔 0°，0.9s 起 90°；覆盖从 0.85s 开始。
+    // 不给覆盖段时 0.86s 会在 0.8s(0°)→0.9s(90°) 之间插值成 54°（跨隐藏段滑移）；
+    // 给覆盖段后取段内第一个网格点 0.9s 的值，段首不再先指旧方向。
+    const turret = new Array(GRID.samples).fill(0)
+    turret[9] = 90
+    turret[10] = 90
+    const def = gridDef({ coverage: [0.85, 1], turret_yaw: turret })
+    expect(sampleVehiclePoseGame(def, GRID, 0.86).turretAbs).toBeCloseTo(54, 6)
+    expect(sampleVehiclePoseGame(def, GRID, 0.86, undefined, def.coverage).turretAbs).toBeCloseTo(90, 6)
+  })
+
+  it('buildPoseFacet 透出协议精确 visibility 段（末段缺 t_out = +∞）', () => {
+    const playback = {
+      meta: { t_start: 0, samples: GRID.samples } as never,
+      vehicles: [gridDef()],
+      visibility: [
+        { eid: 7, t_in: 0.5, t_out: 0.8 },
+        { eid: 7, t_in: 0.9 },
+      ],
+    }
+    const facet = buildPoseFacet(playback)
+    expect(facet.vehicles[0].visibility).toEqual([0.5, 0.8, 0.9, Number.POSITIVE_INFINITY])
+    // 无 visibility 证据时回退 coverage（fail-safe）
+    expect(buildPoseFacet({ meta: playback.meta, vehicles: [gridDef()] }).vehicles[0].visibility).toEqual([0, 1])
+  })
+
+  it('开放末段（+Infinity）也走段内采样；visibilitySpansByEid 与 2D/3D 共用投影', () => {
+    const turret = new Array(GRID.samples).fill(0)
+    turret[9] = 90
+    turret[10] = 90
+    const def = gridDef({ coverage: [0.85, Number.POSITIVE_INFINITY], turret_yaw: turret })
+    // 无有限终点也必须识别为当前段，不能回退无约束插值（0.86s 应为 90，而不是 54）
+    expect(sampleVehiclePoseGame(def, GRID, 0.86, undefined, def.coverage).turretAbs).toBeCloseTo(90, 6)
+    const spans = visibilitySpansByEid([
+      { eid: 7, t_in: 0.5, t_out: 0.8 },
+      { eid: 7, t_in: 0.9 },
+    ])
+    expect(spans.get(7)).toEqual([0.5, 0.8, 0.9, Number.POSITIVE_INFINITY])
+    expect(visibilitySpansByEid(null).size).toBe(0)
+  })
+
+  it('短隐藏段内炮塔/炮管/侧倾冻结在最后已知端点（不提前滑向下一段）', () => {
+    const turret = new Array(GRID.samples).fill(0)
+    turret[9] = 90
+    turret[10] = 90
+    const def = gridDef({ coverage: [0, 1], turret_yaw: turret })
+    expect(sampleVehiclePoseGame(def, GRID, 0.85).turretAbs).toBeCloseTo(45, 6)
+    // 精确 visibility 在 0.75→0.86 断开：0.85 取前一段末（0.75s，0°）而不是 45°
+    expect(sampleVehiclePoseGame(def, GRID, 0.85, undefined, [0, 0.75, 0.86, 1]).turretAbs).toBeCloseTo(0, 6)
   })
 
   it('炮塔相对角 = wrapPi(绝对 − 车体)（跨 ±π 不跳变）', () => {

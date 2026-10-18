@@ -1050,7 +1050,7 @@ describe('playbackScene 资产发布顺序', () => {
     const groundFetch = vi.fn().mockImplementationOnce(() => parkedGround.promise)
       .mockResolvedValue({ ok: false })
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100 }) }
+      if (url.endsWith('terrain-meta')) return { ok: true, json: async () => ({ size: 2, span: 600, zmin: 20, zmax: 100, terrainLayout: 2 }) }
       if (url.endsWith('terrain')) return { ok: true, arrayBuffer: readBuffer }
       if (url.endsWith('groundmeta')) return groundFetch()
       throw new Error('unexpected asset ' + url)
@@ -1098,6 +1098,108 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.hasData).toBe(true)
   })
 
+  it('迟到底图失败不得把旧会话诊断写进新 store（reset 后 assetIssues 保持干净）', async () => {
+    prepareAssets(['map'])
+    const parked = track(deferred())
+    vi.stubGlobal('fetch', vi.fn(() => parked.promise))
+    const { api, store } = createScene()
+    const loadA = api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    api.reset()
+    parked.reject(new Error('late map failure'))
+    await loadA
+    expect(store.assetIssues).toEqual([])
+    expect(store.assetDegraded).toBe(false)
+    expect(store.hasData).toBe(false)
+  })
+
+  it('terrain 双 404 是核心资产降级，不得标为 optional', async () => {
+    prepareAssets(['map', 'terrain', 'terrain-meta'])
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('/terrain')) return { ok: false, status: 404 }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'terrain' && i.status === 'missing')).toBe(true)
+  })
+
+  it('变体映射缺失时 fail-closed 裁剪进入资产降级', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const root = new THREE.Group()
+    const tagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial())
+    tagged.userData.mdVariant = 'md1'
+    root.add(tagged)
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
+  })
+
+  it('variantMappingIncomplete 标记本身也进入资产降级（active 映射存在但标签缺失）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const root = new THREE.Group()
+    root.userData.variantByMapId = { 1: 'md1' }
+    root.userData.variantMappingIncomplete = true
+    const tagged = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial())
+    tagged.userData.mdVariant = 'md2'
+    root.add(tagged)
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: root, parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
+  })
+
+  it('分层地表元数据畸形：记降级、回退烘焙底图，不跳过场景', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'groundmeta', 'groundtex', 'scenery'])
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url)
+      if (u.includes('terrain-meta')) return { ok: true, status: 200, json: async () => ({ size: 2, span: 600, zmin: 0, zmax: 1, terrainLayout: 2 }) }
+      if (u.includes('/terrain')) return { ok: true, status: 200, arrayBuffer: async () => new Uint16Array([0, 1, 2, 3]).buffer }
+      if (u.includes('groundmeta')) return { ok: true, status: 200, json: async () => ({}) } // 缺 tiling
+      if (u.includes('groundtex')) return { ok: true, status: 200, blob: async () => new Blob(['x']) }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    }))
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: new THREE.Group(), parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'groundLayers' && i.status === 'invalid')).toBe(true)
+    expect(window.__terrain).toBeTruthy()   // 回退烘焙底图后地形仍建成
+  })
+
+  it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['scenery'])
+    const boom = new THREE.Group()
+    boom.traverse = () => { throw new Error('assembly boom') }
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: boom,
+      parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'failed' && i.detail.includes('assembly boom'))).toBe(true)
+  })
+
   it('terrain bin 与 terrain.json 不同批（sha256 不符）⇒ 不建地形、回退 2D', async () => {
     prepareAssets(['terrain', 'terrain-meta'])
     window.__terrain = undefined
@@ -1111,6 +1213,18 @@ describe('playbackScene 资产发布顺序', () => {
     expect(warn.mock.calls.some((c) => String(c[0]).includes('sha256 不符'))).toBe(true)
     expect(store.hasData).toBe(true)
     expect(store.err).toBe('')
+  })
+
+  it('资产缺失/失败进入 assetIssues + assetDegraded（不再只写 console 后算完成）', async () => {
+    const raw = (await import('./playbackScene.js?raw')).default
+    expect(raw).toMatch(/store\.assetIssues = assetIssues/)
+    expect(raw).toMatch(/store\.assetDegraded = true/)
+    expect(raw).toMatch(/noteAsset\('map', `http-\$\{resp\.status\}`/)
+    expect(raw).toMatch(/noteAsset\('terrain', 'unavailable'/)
+    expect(raw).toMatch(/noteAsset\('scenery', 'failed'/)
+    // 3D 与 2D 共用同一 visibility 投影（短隐藏段在 3D 也不能回退到 coverage）
+    expect(raw).toMatch(/VIS_BY_EID = visibilitySpansByEid\(data\.visibility\)/)
+    expect(raw).toMatch(/VIS_BY_EID\.get\(v\.def\.eid\) \?\? v\.def\.coverage/)
   })
 
   it('迟到 scenery GLB 不入 B 场景，且释放局部资源与隔离进度', async () => {

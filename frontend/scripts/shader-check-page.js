@@ -8,6 +8,7 @@ import {
 } from '../src/scene/sceneryMaterials.js'
 import { applyTankDestroyedVisual, prepareTankDestroyedVisual } from '../src/scene/tankDestroyedVisual.js'
 import { FX_BUDGETS, createBattleFx } from '../src/scene/battleFx.js'
+import { groundShaderMaterial } from '../src/scene/groundPass.js'
 
 window.__step = 'module-start'
 const log = []
@@ -34,31 +35,16 @@ const envObj = {
   maskTex: T, cubeTex: T,
   props: { reflectionSpecParamGloss: 0.6, reflectionMetalFresnelReflectance: [0.4, 0.4, 0.4], reflectionBrightenEnvMap: 2.0 },
 }
-// 地面着色器（playbackScene 内联）：取源码原文 → 真编译。任何"改坏声明/结构"的改动
-// （例如删掉某段 varying 声明）都会在这里编译失败——地面是内联字符串、不在 sceneryMaterials
-// 的工厂覆盖范围内，守卫只能锁文本，实测踩过"地形整片不渲染"。
-async function groundMaterialCase() {
-  const res = await fetch('/src/scene/playbackScene.js')
-  const text = await res.text()
-  // 先定位地面材质函数体，再在**其内部**找两段着色器（GLSL 无内嵌反引号 ⇒ 下一个反引号即收尾）
-  const fn = text.indexOf('function groundShaderMaterial')
-  if (fn < 0) throw new Error('找不到 groundShaderMaterial')
-  const grab = (start) => {
-    const i = text.indexOf(start, fn)
-    if (i < 0) return null
-    const from = i + start.length
-    const end = text.indexOf('`', from)
-    if (end < 0) return null
-    return text.slice(from, end)
-  }
-  const vs = grab('vertexShader: `')
-  const fs = grab('fragmentShader: `')
-  if (!vs || !fs) throw new Error('地面着色器抽取失败（源码结构变了？）')
-  const m = new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs, uniforms: {} })
-  return m
-}
-const groundVar = { mat: null }
-try { groundVar.mat = await groundMaterialCase() } catch (e) { console.error('[gate] 地面着色器抽取失败:', e) }
+// 地面材质：分层地表 shader（groundPass 共享实现）——用最小合法 uniform 构造后真编译。
+const groundMat = groundShaderMaterial(
+  { flatcolor: false, separate_lm: false, scaled_tiles: false, height_blend: false,
+    tiling: [1, 1], tile_scale: [1, 1, 1, 1],
+    tile_colors: [[1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1]],
+    flat_color: [1, 1, 1], lm_adjust: [0, 1, 1], tilemask_weight: 1,
+    hb_scale: [1, 1, 1, 1], hb_offset: [0, 0, 0, 0], hb_softness: [1, 1, 1, 1] },
+  { cm: T, lm: T, tile0: T, tile1: T, mask0: T, mask1: T, hmap0: T, hmap1: T },
+  600, 0, 0,
+)
 
 function destroyedTankMaterial(material) {
   const root = new THREE.Group()
@@ -73,6 +59,7 @@ const cases = [
   ['lightmapped+detail(B1)', () => makeLightmappedMaterial(fakeMat(), T, null, { tex: T, scale: [3.6, 2.4] }), geo()],
   ['lightmapped+env', () => makeLightmappedMaterial(fakeMat(), T, envObj), geo()],
   ['lightmapped+alphaTest', () => makeLightmappedMaterial(fakeMat({ alphaTest: 0.33 }), T), geo()],
+  ['lightmapped+alphaBlend', () => makeLightmappedMaterial(fakeMat({ opacity: 0.5, userData: { alphaBlend: true } }), T), geo()],
   ['blend-layer', () => makeBlendLayerMaterial(fakeMat({ userData: { blendLayer: true, tex0ShiftPerSecond: [0.02, 0] } }), T), geo()],
   ['water', () => makeWaterMaterial(fakeMat(), { normalTex: T, cubeTex: T, props: {
     normal0Scale: 7.7, normal1Scale: 7.0, normal0ShiftPerSecond: [0, 0.015],
@@ -88,11 +75,13 @@ const cases = [
   ['sky', () => makeSkyMaterial(fakeMat()), geo({ uv1: false })],
   ['billboard', () => makeBillboardMaterial(fakeMat({ color: new THREE.Color(1.77, 1.77, 1.77) })), geo({ corner: true })],
   ['ST|static', () => makeSpeedtreeStaticMaterial(fakeMat({ name: 'ST|x' }), true), geo({ color: true })],
+  ['ST|static+alphaBlend', () => makeSpeedtreeStaticMaterial(fakeMat({ name: 'ST|x', opacity: 0.5, userData: { alphaBlend: true } }), true), geo({ color: true })],
   // 贴花（客户端 MATERIAL_DECAL）：UV1 采地图 colormap、不受光；含 separate_lm 与
   // GLOBAL_TINT 的 brightness/contrast/gamma 调整分支
   ['decal(贴花, UV1×colormap)', () => makeDecalMaterial(fakeMat(), T, T, { separateLm: true, lmAdjust: [0.1, 1.1, 0.9], globalTint: true }), geo()],
+  ['decal+alphaBlend', () => makeDecalMaterial(fakeMat({ opacity: 0.5, userData: { alphaBlend: true } }), T, null, {}), geo()],
   ['decal+alphaTest', () => makeDecalMaterial(fakeMat({ alphaTest: 0.33 }), T, null, {}), geo()],
-  ['ground(playbackScene 内联)', () => groundVar.mat, geo({ uv1: false })],
+  ['ground(分层地表 shader)', () => groundMat, geo({ uv1: false })],
 ]
 
 try {

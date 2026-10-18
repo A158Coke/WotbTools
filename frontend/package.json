@@ -26,7 +26,8 @@
     "api:lint": "node scripts/validate-openapi.mjs",
     "api:fixture": "node scripts/validate-playback-fixture.mjs",
     "lint:css": "stylelint \"src/**/*.{css,vue}\" --allow-empty-input",
-    "build:android": "node scripts/build-android-bundle.mjs"
+    "build:android": "node scripts/build-android-bundle.mjs",
+    "test:shader-check": "node scripts/check-scenery-shaders.mjs"
   },
   "dependencies": {
     "ajv": "^8.17.1",

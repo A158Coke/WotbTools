@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activeVariantOf, pruneForeignVariants } from './variantFilter.js'
+import { activeVariantOf, pruneForeignVariants, pruneForeignVariantsDetailed } from './variantFilter.js'
 
 // 最小节点 fake：children + parent.remove（与 three Object3D 接口同形）
 function node(extras = {}, children = []) {
@@ -23,7 +23,7 @@ describe('activeVariantOf', () => {
     expect(activeVariantOf(m, 7)).toBe('md1')
     expect(activeVariantOf(m, '47')).toBe('md3')
   })
-  it('无映射 / 口径外 mapId → null（不裁剪）', () => {
+  it('无映射 / 口径外 mapId → null（调用方据此 fail-closed）', () => {
     expect(activeVariantOf(null, 7)).toBeNull()
     expect(activeVariantOf({}, 7)).toBeNull()
     expect(activeVariantOf({ 7: 'md1' }, 46)).toBeNull()
@@ -50,11 +50,32 @@ describe('pruneForeignVariants', () => {
     expect(pruneForeignVariants(root, 7)).toBe(1)
     expect(group.children).toEqual([])
   })
-  it('无映射 / mapId 缺失 → 0 且不动树（fail-open）', () => {
-    const stone = node({ mdVariant: 'md3' })
-    const root = node({}, [stone])
-    expect(pruneForeignVariants(root, 7)).toBe(0)
-    expect(pruneForeignVariants(node({ variantByMapId: { 7: 'md1' } }, [stone]), 46)).toBe(0)
-    expect(root.children).toEqual([stone])
+  it('有变体节点但没有可用激活组 → fail-closed，隐藏全部带标记节点', () => {
+    // 旧行为是 fail-open 全量渲染（幻影布景）；现在映射缺失/mapId 缺失都不得猜默认组。
+    const noMapping = node({}, [node({ mdVariant: 'md3' })])
+    expect(pruneForeignVariants(noMapping, 7)).toBe(1)
+    expect(noMapping.children).toEqual([])
+
+    const missingId = node({ variantByMapId: { 7: 'md1' } }, [node({ mdVariant: 'md3' })])
+    expect(pruneForeignVariants(missingId, 46)).toBe(1)
+    expect(missingId.children).toEqual([])
+
+    // 没有变体节点时仍是 no-op（单变体/普通场景）
+    const plain = node({}, [node({})])
+    expect(pruneForeignVariants(plain, 7)).toBe(0)
+    expect(plain.children).toHaveLength(1)
+    expect(pruneForeignVariants(node({ variantByMapId: { 7: 'md1' } }, [node({})]), 46)).toBe(0)
+  })
+})
+
+
+describe('pruneForeignVariantsDetailed：fail-closed 信号（运行时降级 / 烘焙中止）', () => {
+  it('正常裁剪 failClosed=false；映射缺失时 failClosed=true', () => {
+    const activeRoot = node({ variantByMapId: { 7: 'md1' } }, [node({ mdVariant: 'md3' }), node({})])
+    expect(pruneForeignVariantsDetailed(activeRoot, 7)).toEqual({ removed: 1, failClosed: false })
+    const noMapping = node({}, [node({ mdVariant: 'md3' })])
+    expect(pruneForeignVariantsDetailed(noMapping, 7)).toEqual({ removed: 1, failClosed: true })
+    const noTagged = node({}, [node({})])
+    expect(pruneForeignVariantsDetailed(noTagged, 7)).toEqual({ removed: 0, failClosed: false })
   })
 })

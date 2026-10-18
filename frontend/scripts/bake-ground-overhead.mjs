@@ -61,12 +61,12 @@ import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from
 // 夜间图比 3D 档亮约 3 倍，见该模块头部说明）
 import { applyMapLighting, resetMapLighting, DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from '/src/scene/mapLighting.js'
 // 装配规则 SSOT：剔除/水面语义判定与运行时共用同一份（见该模块头部 2026-10-14 漂移事故说明）
-import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater } from '/src/scene/sceneryAssemblyRules.js'
-import { pruneForeignVariants } from '/src/scene/variantFilter.js'
+import { strictSurfacesOf, bakeDropNode, isWaterNode, materialIsWater, sceneHasSkyFlags } from '/src/scene/sceneryAssemblyRules.js'
+import { pruneForeignVariantsDetailed } from '/src/scene/variantFilter.js'
 // 实例化合批：与 3D 运行时**同一模块同一序列**（sceneryInstancing.js；含 aLm 逐实例
 // 光照图变换的 InstancedBufferAttribute 口径）——此前本页手写的『单实例 InstancedMesh
 // + 几何克隆』是第二套实现，已删除（2026-10-14 收编，用户裁示"直接用它的代码"）
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from '/src/scene/sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes, hasTransparentMaterial } from '/src/scene/sceneryInstancing.js'
 // 地面 pass SSOT（2026-10-14 收编，用户裁示"直接完全照搬 3D 回放的代码接入渲染"）：
 // 地形数据/几何、分层地表材质（cm×lm×tile/mask）、水面海岸线资源与 3D 运行时共用同一份——
 // 此前本页不渲染地面（底图 = 客户端自带地图图），与 3D 档实时分层渲染在夜图/带 lm 图上
@@ -179,8 +179,16 @@ async function load(key, span = 600, mapId = null) {
   const url = location.origin + '/pack/map/' + encodeURIComponent(key) + '/scenery.glb'
   const bytes = await (await fetch(url)).arrayBuffer()
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(bytes, '', res, rej))   // arrayBuffer() 已是 ArrayBuffer，别再取 .buffer
-  // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）
-  pruneForeignVariants(gltf.scene, mapId)
+  // 包级天空标记必须在**任何剔除之前**采样：变体组里的唯一 sky 节点被裁掉后，再从
+  // 缩减场景重算会退化为 false，bakeDropNode 会误启 /sky/ 名字 fallback。
+  const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)
+  // 变体裁剪：与 3D 运行时同一实现（mapId 对应激活的 LabelComponent 变体组）。
+  // fail-closed（映射缺失/当前 mapId 不在映射）时整图拒绝烘焙——否则会把缺少全部
+  // 变体布景的俯视图永久发布为正常资产。
+  const variantPrune = pruneForeignVariantsDetailed(gltf.scene, mapId)
+  if (variantPrune.failClosed || gltf.scene.userData?.variantMappingIncomplete === true) {
+    throw new Error(`变体映射缺失/不完整（mapId=${String(mapId)}）：拒绝烘焙不完整俯视图`)
+  }
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf)
   const masks = makeTexResolvers(gltf, sceneryExtras)
@@ -194,30 +202,24 @@ async function load(key, span = 600, mapId = null) {
   // 地图图的水系配色承担；NewBay 海面 SkySeaSurface 这类"名字像天、材质是水"的节点
   // 也按材质标记保留，见规则模块 keepWater 注释）。
   const strictSurfaces = strictSurfacesOf(gltf.scene)
+  // 新包天空语义 = 材质 extras.sky（导出器按 Skyobject 模板写入）；旧包无 sky 标记才按名字。
+  // 烘焙与 3D 运行时同判，避免"名字不含 sky 的天穹被烘进俯视图 / 名字含 sky 的非天穹被剔"。
   const drop = []
   gltf.scene.traverse((o) => {
     const nm = o.name || ''
     if (bakeDropNode(nm, o.material,
                      { strictSurfaces, mdVariant: !!(o.userData && o.userData.mdVariant),
-                       keepWater: true })) drop.push(o)
+                       keepWater: true, skyFlagsAvailable })) drop.push(o)
   })
   for (const o of drop) o.removeFromParent()
   // ⚠️ 2026-10-14 删除"≥90% 图幅环境壳"几何剔除（用户报"米德尔堡右上角黑块"）：该规则把
   // **运行时正常渲染**的大件整块剔掉（erlenberg 外圈山体 mountain_3/land_main1 等、各图
   // 边缘地貌带/大地壳），露出可玩区外那条客户端 colormap 的暗色边带 → webp 黑块。
   // 探针实证：保留后该处恢复为山体（(23,24,18)→(155,131,56)）。
-  // 真天空穹已由规则模块的 /sky/ 判据（与运行时天空判据同式）剔除；本页的渲染集合自此
+  // 真天空穹已由规则模块 isSkyShell 剔除（新包 extras.sky，旧包 /sky/ fallback）；本页的渲染集合自此
   // 与 3D 运行时逐件一致（水件/穹顶/地形块均保留）——"完全照搬运行时"的最后一处收敛。
-  // 退化几何剔除（与 3D 运行时同式：撕裂批次不渲染）
-  const degenerate = []
-  gltf.scene.traverse((o) => {
-    if (!o.isMesh) return
-    const g0 = o.geometry
-    const vc = g0.attributes.position ? g0.attributes.position.count : 0
-    const ic = g0.index ? g0.index.count : vc
-    if (vc > 0 && (ic / 3) / vc > 15) degenerate.push(o)
-  })
-  for (const o of degenerate) o.removeFromParent()
+  // 旧"退化几何"按 (三角形/顶点) 比率逐网格删除已撤除：内容统计启发式无法区分旧导出器
+  // 损坏与合法高比率网格，且静默删数据；树批次撕裂由导出器修正。
   // 逐节点材质分派 = 共享装配模块（与 3D 运行时同一份实现与同一顺序）：
   //   水(对象)→blendByAngle→decal→lm(+env+detail)→混合层掩码→水下→convMat。
   //   groundLayers 传**真实分层**（贴花件按 cm(UV1) 不受光渲染，同运行时——此前传 null
@@ -231,6 +233,8 @@ async function load(key, span = 600, mapId = null) {
     waterCoast,
     debug: false,
     onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
+    // 预剔除已移除天穹；必须沿用剔除前的标记，否则会退回 /sky/ 名字并误伤普通网格
+    skyFlagsAvailable,
   })
   // qFrame：与 playbackScene 同一帧变换（GLB 游戏系 z 上 → 回放场景系）。必须在材质装配**之后**
   // 挂载（与运行时 mapScenery 同序）：装配内的水面片收集/水下判定按 GLB 世界包围盒取 z 为高度、
@@ -273,13 +277,23 @@ async function load(key, span = 600, mapId = null) {
   // 实例化合批：与运行时**同一模块同一序列**（sceneryInstancing.js 的 collect → group →
   // buildInstancedMesh；aLm 逐实例属性、几何薄包装零拷贝都在模块内）。原节点摘除，
   // 批次挂回场景；D_ 损毁态/破坏匹配等运行时专属步骤本页无（相关节点已在剔除阶段移除）。
-  const instEntries = collectInstanceEntries(gltf.scene).filter((e) =>
-    !/sky/i.test(e.name) && !isWaterNode(e.name, e.material, { strictSurfaces }))
+  const allEntries = collectInstanceEntries(gltf.scene)
+  const batchable = (e) =>
+    !(e.node.userData && e.node.userData.isSky)
+    && !isWaterNode(e.name, e.material, { strictSurfaces })
+    && !hasTransparentMaterial(e.material)
+  const instEntries = allEntries.filter(batchable)
   const cellSize = Math.max(75, span / 8)
   const batches = groupInstanceBatches(instEntries, cellSize)
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh) }
+  // 透明材质不批（three 只按 object 排序）；带 lm 的用单实例保留逐节点 atlas 变换
+  buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
+    !batchable(e)
+    && hasTransparentMaterial(e.material)
+    && !(e.node.userData && e.node.userData.isSky)
+    && !isWaterNode(e.name, e.material, { strictSurfaces })), gltf.scene)
   for (const e of instEntries) e.node.removeFromParent()
-  return { ok: true, degenerate: degenerate.length, span: effSpan, ground: groundReady }
+  return { ok: true, span: effSpan, ground: groundReady }
 }
 
 // 调试：对象 ID 拾取——每个 mesh 临时换唯一编码色渲染，读像素反查覆盖者

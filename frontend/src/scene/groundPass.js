@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import {
   buildAdaptiveTerrain, buildRefineMask, groundMapUv, decodeTerrainField,
-  pairedTerrainBinUrl, terrainBinMatchesMeta,
+  pairedTerrainBinUrl, terrainBinMatchesMeta, terrainBoundsOk, terrainFieldMetaValid,
 } from './terrainMesh.js';
 
 /** 分层地表纹理键集（客户端 `height_blend` 决定是否带 hmap 对）。 */
@@ -47,8 +47,11 @@ export function setupGroundTextures(texs, anisotropy) {
  *     （PR #615 review P2，见 terrainMesh.js `pairedTerrainBinUrl`）。
  * @returns {{ field: Float32Array|null, meta: object, metaStatus: number|null, binStatus: number|null }}
  *   缺数据/校验不过 ⇒ field=null（调用方回落）。metaStatus/binStatus = 两次请求的 HTTP 状态（未发出 = null），
- *   供需要严格配对的调用方（俯视烘焙 fail-closed）按事实判定——⚠️ terrain.json 缺失时仍会按缺省
- *   size/layout/zmin/zmax 解码同名 bin，field 非空不代表配对完整。运行时只取 field/meta，行为不变。
+ *   供需要严格配对的调用方（俯视烘焙 fail-closed）按事实判定。
+ *   **runtime 口径**：只有 meta 完整（size/terrainLayout/zmin/zmax/span）且 worldBounds 居中时
+ *   才解码；terrain.json 缺失/缺字段绝不按缺省 size/layout/zmax 猜（旧行为会让 layout 2 的 bin
+ *   按 layout 1 平移一列、高度按 100 m 缩放）。bin 仍会请求，以便烘焙侧区分“双 404”和
+ *   “json 缺但 bin 在”两种事实。
  */
 export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => false }) {
   const meta = {};
@@ -74,6 +77,18 @@ export async function loadTerrain({ binUrl, metaUrl, fetchFn, stale = () => fals
   if (b.ok) {
     const tbuf = await b.arrayBuffer();
     if (stale()) return out(null);
+    if (!terrainFieldMetaValid(meta)) {
+      console.warn('地形元数据缺失/不完整（size/terrainLayout/zmin/zmax），拒绝按缺省值解码（回退 2D）');
+      return out(null);
+    }
+    if (!Number.isFinite(Number(meta.span)) || Number(meta.span) <= 0) {
+      console.warn('地形元数据缺 span（回退 2D）');
+      return out(null);
+    }
+    if (!terrainBoundsOk(meta)) {
+      console.warn('地形 worldBounds 不是居中正方形（当前消费口径不支持），回退 2D:', meta.worldBounds);
+      return out(null);
+    }
     if (await terrainBinMatchesMeta(tbuf, meta)) return out(decodeTerrainField(tbuf, meta));
     console.warn('地形 bin 与 terrain.json 不是同一次发布（sha256 不符，回退）');
   }
