@@ -239,10 +239,9 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             int sec = int(bestEnt.y + 0.5);
             highp float th = bestEnt.z * rcThickMul;
             if (sec <= 2) anyPrimary = true;            // 主装甲原始命中在场（无论链是否已断）
-            if (blocked) {
-                if (anyPrimary) return 2;
-                tCur = bestT + RC_ADV_EPS; continue;
-            }
+            // 注意：blocked 后不能立即返回——点击卡的概率链仍会继续评估到首个
+            // Primary（例如 spaced100 → hull1 名义被挡但概率约 13.7%）；这里继续
+            // 累计概率，但确定性结论保持 BLOCKED，由首个 Primary 分支统一返回 2。
             if (sec >= RC_SEC_CHASSIS) {                // 外部模块：variant 去重 + flat 消耗
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
                 if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
@@ -281,13 +280,13 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             pMax -= eff;
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
             if (sec <= 2) {                             // 首个主装甲 = 末层，定结论
-                if (layPen) {
+                if (!blocked && layPen) {
                     // 确定性 layPen 已成立；补充概率为 0 时仍呈现确定性击穿（不把绿翻红）。
                     penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
                     return 1;
                 }
-                // 名义被挡也可能是 1–99% 的边界情形：把部分概率交给状态通道，
-                // 让热力图与点击卡“可能击穿 p%”一致（review 2026-10-18）。
+                // 名义被挡（本层或之前层）也可能是 1–99% 的边界情形：把部分概率
+                // 交给状态通道，让热力图与点击卡“可能击穿 p%”一致（review 2026-10-18）。
                 penOut = clamp(probChance, 0.0, 1.0);
                 return 2;
             }
@@ -751,6 +750,7 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
     let probMin = remIn * (1 - RC.BAND);
     let probMax = remIn * (1 + RC.BAND);
     let probChance = 1;
+    let blocked = false;
     const layers = [];
     for (const h of collected) {
         const th = h.thickness * thickMul;
@@ -760,11 +760,11 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             eff = th;
             layPen = rem > eff;
             if (layPen) rem -= eff;
-            // 概率区间按 flat 消耗平移；概率耗尽不改变确定性命中结论。
+            // 概率区间按 flat 消耗平移；名义被挡也继续走到首个 Primary 累计概率。
             probMin -= eff;
             probMax -= eff;
             layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem + (layPen ? eff : 0), penetrated: layPen });
-            if (!layPen) return { cls: 2, penChance: 0, layers };
+            if (!layPen) blocked = true;
             continue;
         }
         const cosA = Math.min(Math.abs(h.normal.dot(reflDir)), 1);
@@ -783,16 +783,16 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         probMax -= eff;
         layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
         if (isPrimary) {
-            if (layPen) {
+            if (!blocked && layPen) {
                 return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers };
             }
-            // 名义被挡但概率 1–99%：保留部分概率供热力图（与点击卡一致）。
+            // 名义被挡（本层或之前层）但概率 1–99%：保留部分概率供热力图。
             const p = Math.max(0, Math.min(1, probChance));
             const pct = Math.round(p * 100);
             return { cls: 2, penChance: pct >= 1 && pct <= 99 ? p : 0, layers };
         }
-        if (!layPen) return { cls: 2, penChance: 0, layers };
-        rem -= eff;
+        if (!layPen) blocked = true;
+        else rem -= eff;
     }
     return { cls: 0, penChance: 0, layers };
 }

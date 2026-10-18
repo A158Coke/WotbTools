@@ -405,6 +405,30 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(sim.penChance).toBeCloseTo(0.1150697, 5)
     })
 
+    it('前置间隙甲名义被挡但到首个 Primary 的概率仍保留（spaced100→hull1）', () => {
+        // review 2026-10-18：续飞 100mm，spaced100 名义被挡；完整概率链
+        // spaced CDF 0.5 × hull1 CDF 0.274253 ≈ 13.71265%，不能提前返回 0。
+        const { sim, oracle } = runCase([
+            { section: 'spaced', thickness: 100, x: 2 },
+            { section: 'hull', thickness: 1, x: 4 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.layers.map(l => l.section)).toEqual(['spaced', 'hull'])
+        expect(sim.penChance).toBeCloseTo(0.1371265, 5)
+    })
+
+    it('前置外部模块名义被挡但首个 Primary 仍累计概率（chassis101→hull1）', () => {
+        const { sim, oracle } = runCase([
+            { section: 'chassis', thickness: 101, x: 2 },
+            { section: 'hull', thickness: 1, x: 4 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.layers.map(l => l.section)).toEqual(['chassis', 'hull'])
+        expect(sim.penChance).toBeCloseTo(0.1150697, 5)
+    })
+
     it('严格大于才穿透：等厚 → 被挡（红）', () => {
         const { sim, oracle } = runCase([
             { section: 'hull', thickness: 250, x: 2 },
