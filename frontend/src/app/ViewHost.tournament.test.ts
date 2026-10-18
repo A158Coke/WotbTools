@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, reactive, ref } from 'vue'
 import ViewHost from './ViewHost.vue'
-import { tournamentAdminAllowed } from '../composables/useAuth.js'
+import { contentAdminAllowed, tournamentAdminAllowed } from '../composables/useAuth.js'
 import { CREATOR_AVAILABILITY_KEY } from '../composables/useCreatorAvailability.js'
 const state = vi.hoisted(() => ({ route: null as any, auth: null as any }))
 vi.mock('vue-router', () => ({ useRoute: () => state.route, useRouter: () => ({ push: vi.fn() }) }))
@@ -22,6 +22,7 @@ beforeEach(() => {
   state.route = reactive({ path: '/', query: { view: 'tournament-points', admin: '1' }, hash: '' })
   state.auth = { authenticated: ref(false), tokenParsed: ref(null), isAdmin: ref(true) }
   state.auth.isTournamentAdmin = computed(() => tournamentAdminAllowed(state.auth))
+  state.auth.isContentAdmin = computed(() => contentAdminAllowed(state.auth))
 })
 function host() { return mount(ViewHost, { global: { mocks: { $t: (key: string) => key }, stubs: { ReplayCapabilityAuthGate: { template: '<div data-testid="login-gate" />' } } } }) }
 describe('tournament deep-link page gates', () => {
@@ -42,7 +43,7 @@ describe('tournament deep-link page gates', () => {
   it.each(['creators', 'creators-config'])('withholds %s until the backend explicitly advertises support', async view => {
     state.route.query.view = view
     state.auth.authenticated.value = true
-    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     const available = ref(false), refresh = vi.fn()
     const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
       provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => available.value, typeVisible: () => available.value, available, directoryVisible: available, contentKnown: ref(false), error: ref(null), loading: ref(false), refresh } } } })
@@ -61,6 +62,27 @@ describe('tournament deep-link page gates', () => {
     const wrapper = host()
     expect(wrapper.find('[data-testid="login-gate"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="admin-editor"], [data-testid="admin-config"], [data-testid="creator-config"]').exists()).toBe(false)
+  })
+  it('keeps content and tournament administration independent in both directions', async () => {
+    state.route.query.view = 'creators-config'
+    state.auth.authenticated.value = true
+    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    const available = ref(true)
+    const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
+      provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => true, typeVisible: () => true, available, directoryVisible: available, contentKnown: ref(true), error: ref(null), loading: ref(false), refresh: vi.fn() } } } })
+    expect(wrapper.find('[data-testid="creator-config"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('tournament.adminRequired')
+    state.auth.tokenParsed.value.realm_access.roles = ['content-admin']
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="creator-config"]').exists()).toBe(true)
+    state.route.query.view = 'tournament-points-admin'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('tournament.adminRequired')
+    state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin', 'content-admin', 'tournament-admin']
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="admin-editor"]').exists()).toBe(true)
+    wrapper.unmount()
   })
   it('denies HoF-only roles and admits actual tournament or site roles, then removes access on role loss', async () => {
     state.route.query.view = 'tournament-points-admin'

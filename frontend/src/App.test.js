@@ -55,6 +55,7 @@ const authState = vi.hoisted(() => ({
   authInitState: null,
   isAdminRef: null,
   isTournamentAdminRef: null,
+  isContentAdminRef: null,
   initPromise: Promise.resolve(false),
   displayName: '',
   login: vi.fn(),
@@ -66,6 +67,7 @@ authState.authInitState = ref('unauthenticated')
 // 管理角色仅控制真正管理入口，默认普通用户。
 authState.isAdminRef = ref(false)
 authState.isTournamentAdminRef = ref(false)
+authState.isContentAdminRef = ref(false)
 vi.mock('./composables/useAuth.js', () => ({
   useAuth: () => ({
     initPromise: authState.initPromise,
@@ -79,6 +81,7 @@ vi.mock('./composables/useAuth.js', () => ({
     isAdmin: authState.isAdminRef,
     isHofAdmin: authState.isAdminRef,
     isTournamentAdmin: computed(() => authState.isAdminRef.value || authState.isTournamentAdminRef.value),
+    isContentAdmin: computed(() => authState.isAdminRef.value || authState.isContentAdminRef.value),
   }),
 }))
 
@@ -616,6 +619,25 @@ describe('App shell navigation, 更多 and account', () => {
       expect(wrapper.find('[data-testid="nav-tournament-points-admin"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="nav-admin-users"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="nav-hof-admin"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="nav-creators-config"]').exists()).toBe(false)
+    } finally { authState.isTournamentAdminRef.value = false }
+  })
+
+  it('separates content and tournament administration at the page gate', async () => {
+    setAuthState('authenticated', true)
+    authState.isContentAdminRef.value = true
+    try {
+      const { wrapper } = await mountApp('/?view=creators-config')
+      expect(wrapper.text()).not.toContain('tournament.adminRequired')
+    } finally { authState.isContentAdminRef.value = false }
+
+    authState.isTournamentAdminRef.value = true
+    try {
+      const content = await mountApp('/?view=creators-config')
+      expect(content.wrapper.text()).toContain('tournament.adminRequired')
+      const tournament = await mountApp('/?view=tournament-points-admin')
+      expect(tournament.wrapper.text()).not.toContain('tournament.adminRequired')
+      expect(tournament.wrapper.find('[data-test="view-tournament-admin"]').exists()).toBe(true)
     } finally { authState.isTournamentAdminRef.value = false }
   })
 

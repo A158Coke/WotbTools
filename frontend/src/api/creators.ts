@@ -2,7 +2,7 @@ import type { components } from './generated/http-contract.js'
 import * as validators from './generated/contract-validators.js'
 import { optionalBearer } from './replay-capabilities.js'
 import { ApiError, apiFetch, requireOk } from '../utils/http.js'
-import { useAuth, tournamentAdminAllowed } from '../composables/useAuth.js'
+import { useAuth, contentAdminAllowed } from '../composables/useAuth.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { resolveApiUrl } from '../platform/runtime.js'
@@ -41,7 +41,7 @@ async function request<T>(path: string, access: 'public' | 'admin', options: Req
   requireOnline()
   const auth = useAuth(), epoch = auth.authEpoch()
   const ownsIdentity = () => auth.authenticated.value && auth.authInitState.value === 'authenticated'
-    && epoch === auth.authEpoch() && tournamentAdminAllowed(auth)
+    && epoch === auth.authEpoch() && contentAdminAllowed(auth)
   if (access === 'admin' && !ownsIdentity()) throw new ApiError({ errorCode: 'AUTH_FORBIDDEN', status: 403 })
   const headers = access === 'public' ? {} : await optionalBearer(auth)
   if (access === 'admin' && !headers.Authorization) throw new ApiError({ errorCode: 'AUTH_UNAUTHENTICATED', status: 401 })

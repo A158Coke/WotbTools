@@ -22,7 +22,7 @@ let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   vi.clearAllMocks()
   state.epoch = 1
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => state.epoch }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => state.epoch }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 async function host(stub = true) {
@@ -89,7 +89,7 @@ describe('creator configuration drafts', () => {
     await flushPromises()
     await wrapper!.get('[data-testid=creator-new-category]').setValue('Account A private category')
     await wrapper!.get('[data-testid=creator-new-level]').setValue('Account A private level')
-    state.epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } }
+    state.epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['content-admin'] } }
     await flushPromises()
     expect((wrapper!.get('[data-testid=creator-new-category]').element as HTMLInputElement).value).toBe('')
     expect((wrapper!.get('[data-testid=creator-new-level]').element as HTMLInputElement).value).toBe('')
