@@ -247,6 +247,14 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
   })
+  it('热力图与点击判定共用几何面法线（不随 GLB 平滑顶点法线漂移）', () => {
+    // 点击/判定用 hit.face.normal；热力图 shader 若用插值 vNormal，平滑法线会让
+    // 同一像素的入射角/等效厚度与卡片不一致（卡片击穿、热图偏红）。
+    expect(kernel).toMatch(/vec3 nFace = normalize\(cross\(dFdx\(vViewPos\), dFdy\(vViewPos\)\)\);/)
+    expect(kernel).toMatch(/highp vec3 nVR = nFace;/)
+    expect(kernel).not.toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
+    expect(kernel).toMatch(/extensions: \{ derivatives: true \},/)
+  })
   it('管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）', () => {
     // 两块 20mm@60°（相隔 0.02m）+ 100mm 主装甲@0°，AP 100/164/5°。
     // 每块间隙板 2× 增强转正 17.5° → 27.1268；RT0 累加两层的 finalThick/P；
