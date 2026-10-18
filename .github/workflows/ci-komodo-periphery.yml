@@ -1,7 +1,7 @@
 name: CI / komodo-periphery
 
-# Pull-request validation for the Komodo Periphery owner (K3.1+). This workflow
-# never reads production secrets, never SSHes a production host, never touches
+# Pull-request validation for the Komodo Periphery owner. This workflow never
+# reads production secrets, never SSHes a production host, never touches
 # production state, and never downloads or executes the Periphery artifact.
 on:
   workflow_call:
@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.head_sha }}
+
       - name: Bash and Python syntax
         run: |
           set -euo pipefail
@@ -32,13 +33,15 @@ jobs:
             bash -n "$script"
           done
           python3 -m py_compile deploy/periphery/validate-adoption-config.py
-      # The owner's existing fixture entrypoint: staging-root path safety, the
-      # release/config/unit contract, the onboarding-credential lifecycle driven
-      # through the real install.sh, and a real ":8120 has no listener" probe.
+
+      # One CI fixture step owns the lifecycle contract. The adoption helper is a
+      # subordinate fixture, not another test-*.sh entrypoint.
       - name: Validate the shared Periphery lifecycle and safety fixtures
-        run: bash deploy/periphery/test-periphery.sh
-      - name: Validate existing-host adoption marker gate
-        run: bash deploy/periphery/test-adopt-existing.sh
+        run: |
+          set -euo pipefail
+          bash deploy/periphery/test-periphery.sh
+          bash deploy/periphery/adopt-existing-fixture.sh
+
       - name: Validate Alibaba asset target and adoption identity
         shell: bash
         run: |
@@ -56,13 +59,15 @@ jobs:
           grep -Fxq 'core_addresses = ["https://komodo.wotbtools.com"]' "$config"
           grep -Fxq 'connect_as = "ali-sh-asset-01"' "$config"
           grep -Fxq 'server_enabled = false' "$config"
+          grep -Fxq 'private_key = "file:/etc/komodo/keys/periphery.key"' "$config"
+          grep -Fxq 'core_public_keys = ["file:/etc/komodo/keys/core.pub"]' "$config"
           grep -Fxq 'PERIPHERY_CORE_PORT=443' "$target_env"
           grep -Fxq 'PERIPHERY_CORE_PEER_MATCH=:443' "$target_env"
           ! grep -Eq 'onboarding_key|passkeys|(^|[[:space:]])port[[:space:]]*=[[:space:]]*8120' "$config"
 
-          # The manually installed live host uses the legacy singular core_address;
-          # that representation is accepted only when Core + connect_as are exactly
-          # the reviewed target and TLS verification is not weakened.
+          # The live manually installed file uses singular core_address and
+          # implicit defaults. Those are accepted only when they resolve to the
+          # exact reviewed identity, trust, operator, and Core semantics.
           valid="$RUNNER_TEMP/ali-installed-valid.toml"
           cat > "$valid" <<'EOF'
           root_directory = "/etc/komodo"
@@ -71,31 +76,47 @@ jobs:
           EOF
           python3 deploy/periphery/validate-adoption-config.py "$valid" "$config" ali-sh-asset-01
 
+          reject_config() {
+            local label="$1" path="$2"
+            if python3 deploy/periphery/validate-adoption-config.py "$path" "$config" ali-sh-asset-01; then
+              echo "$label was accepted for existing-host adoption" >&2
+              exit 1
+            fi
+          }
+
           wrong_core="$RUNNER_TEMP/ali-installed-wrong-core.toml"
           sed 's#https://komodo.wotbtools.com#https://wrong-core.invalid:4430#' "$valid" > "$wrong_core"
-          if python3 deploy/periphery/validate-adoption-config.py "$wrong_core" "$config" ali-sh-asset-01; then
-            echo 'wrong Core address was accepted for existing-host adoption' >&2
-            exit 1
-          fi
+          reject_config 'wrong Core address' "$wrong_core"
 
           wrong_as="$RUNNER_TEMP/ali-installed-wrong-connect-as.toml"
           sed 's/connect_as = "ali-sh-asset-01"/connect_as = "wrong-server"/' "$valid" > "$wrong_as"
-          if python3 deploy/periphery/validate-adoption-config.py "$wrong_as" "$config" ali-sh-asset-01; then
-            echo 'wrong connect_as was accepted for existing-host adoption' >&2
-            exit 1
-          fi
+          reject_config 'wrong connect_as' "$wrong_as"
 
           insecure="$RUNNER_TEMP/ali-installed-insecure.toml"
           cp "$valid" "$insecure"
           printf '%s\n' 'core_tls_insecure_skip_verify = true' >> "$insecure"
-          if python3 deploy/periphery/validate-adoption-config.py "$insecure" "$config" ali-sh-asset-01; then
-            echo 'TLS-insecure existing Core config was accepted for adoption' >&2
-            exit 1
-          fi
+          reject_config 'TLS-insecure Core config' "$insecure"
+
+          wrong_root="$RUNNER_TEMP/ali-installed-wrong-root.toml"
+          sed 's#root_directory = "/etc/komodo"#root_directory = "/opt/other-komodo"#' "$valid" > "$wrong_root"
+          reject_config 'wrong root_directory' "$wrong_root"
+
+          wrong_key="$RUNNER_TEMP/ali-installed-wrong-key.toml"
+          cp "$valid" "$wrong_key"
+          printf '%s\n' 'private_key = "file:/tmp/unreviewed-periphery.key"' >> "$wrong_key"
+          reject_config 'wrong private_key' "$wrong_key"
+
+          wrong_trust="$RUNNER_TEMP/ali-installed-wrong-trust.toml"
+          cp "$valid" "$wrong_trust"
+          printf '%s\n' 'core_public_keys = ["file:/tmp/unreviewed-core.pub"]' >> "$wrong_trust"
+          reject_config 'wrong core_public_keys' "$wrong_trust"
+
+          extra_semantic="$RUNNER_TEMP/ali-installed-extra-semantic.toml"
+          cp "$valid" "$extra_semantic"
+          printf '%s\n' 'disable_terminals = true' >> "$extra_semantic"
+          reject_config 'extra semantic delta' "$extra_semantic"
 
           # Exercise the shared socket proof using only ss's remote Peer field.
-          # These cases reproduce the review finding: local :44321 and remote :4430
-          # must not pass merely because the line contains the substring ':443'.
           stub="$RUNNER_TEMP/ali-bin"
           mkdir -p "$stub"
           cat > "$stub/ss" <<'EOF'
@@ -123,8 +144,6 @@ jobs:
             '
           done
 
-          # Existing WireGuard targets keep the stronger exact peer identity rather
-          # than regressing to a generic :9120 suffix.
           printf '%s\n' 'ESTAB 0 0 10.20.0.3:40000 10.20.0.2:9120 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/wg-valid"
           printf '%s\n' 'ESTAB 0 0 10.20.0.3:40000 10.20.0.20:9120 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/wg-wrong-peer"
           PATH="$stub:$PATH" SS_FIXTURE="$RUNNER_TEMP/wg-valid" bash -c '
@@ -138,7 +157,8 @@ jobs:
             load_target_profile tx2 deploy/periphery
             [[ -z "$(established_core_connections 4242)" ]]
           '
-      - name: Validate Alibaba transport workflow contract
+
+      - name: Validate single-owner Alibaba dependency-chain contract
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -147,24 +167,38 @@ jobs:
           from pathlib import Path
           import yaml
 
-          path = Path('.github/workflows/komodo-periphery-ali.yml')
-          doc = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
-          events = doc.get('on', doc.get(True, {}))
+          main_path = Path('.github/workflows/komodo-periphery.yml')
+          main = yaml.load(main_path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          main_events = main.get('on', main.get(True, {}))
           expected_paths = [
+              '.github/workflows/komodo-periphery.yml',
               '.github/workflows/komodo-periphery-ali.yml',
               'deploy/check-production-freshness.sh',
               'deploy/periphery/**',
           ]
-          assert events['push']['branches'] == ['main']
-          assert events['push']['paths'] == expected_paths
-          assert doc['env']['PRODUCTION_INPUT_PATHS'].splitlines() == expected_paths
-          assert doc['concurrency'] == {
+          assert main_events['push']['branches'] == ['main']
+          assert main_events['push']['paths'] == expected_paths
+          assert main['env']['PRODUCTION_INPUT_PATHS'].splitlines() == expected_paths
+          assert main['concurrency'] == {
               'group': 'production-maintenance',
               'cancel-in-progress': 'false',
               'queue': 'max',
           }
-          assert set(doc['jobs']) == {'reconcile_ali_asset'}
-          job = doc['jobs']['reconcile_ali_asset']
+          jobs = main['jobs']
+          assert jobs['reconcile_tx1']['needs'] == ['reconcile_yecao']
+          assert jobs['reconcile_tx2']['needs'] == ['reconcile_tx1']
+          ali_call = jobs['reconcile_ali_asset']
+          assert ali_call['needs'] == ['reconcile_tx2']
+          assert ali_call['uses'] == './.github/workflows/komodo-periphery-ali.yml'
+          assert ali_call['secrets'] == 'inherit'
+
+          reusable_path = Path('.github/workflows/komodo-periphery-ali.yml')
+          reusable = yaml.load(reusable_path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          reusable_events = reusable.get('on', reusable.get(True, {}))
+          assert set(reusable_events) == {'workflow_call'}, reusable_events
+          assert 'concurrency' not in reusable
+          assert set(reusable['jobs']) == {'reconcile'}
+          job = reusable['jobs']['reconcile']
           steps = {step.get('name'): step for step in job['steps']}
           assert steps['Read the Alibaba asset target profile']['env']['TARGET'] == 'ali-sh-asset-01'
           stage = steps['Stage exact Periphery inputs on Alibaba asset host']['with']['source']
@@ -183,7 +217,7 @@ jobs:
               'deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml',
               'periphery-x86_64',
           }, sorted(staged)
-          text = json.dumps(doc, ensure_ascii=False)
+          text = json.dumps(reusable, ensure_ascii=False)
           for secret in ('ALI_ASSET_VPS_HOST', 'ALI_ASSET_VPS_USER', 'ALI_ASSET_VPS_PORT', 'ALI_ASSET_VPS_SSH_KEY'):
               assert f'secrets.{secret}' in text, secret
           adopt = steps['Adopt already-onboarded Alibaba agent if present']
