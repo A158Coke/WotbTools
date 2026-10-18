@@ -25,18 +25,19 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.head_sha }}
-      - name: Bash syntax
+      - name: Bash and Python syntax
         run: |
           set -euo pipefail
           for script in deploy/periphery/*.sh; do
             bash -n "$script"
           done
+          python3 -m py_compile deploy/periphery/validate-adoption-config.py
       # The owner's existing fixture entrypoint: staging-root path safety, the
       # release/config/unit contract, the onboarding-credential lifecycle driven
       # through the real install.sh, and a real ":8120 has no listener" probe.
       - name: Validate the shared Periphery lifecycle and safety fixtures
         run: bash deploy/periphery/test-periphery.sh
-      - name: Validate Alibaba asset target profile
+      - name: Validate Alibaba asset target and adoption identity
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -47,30 +48,93 @@ jobs:
           grep -Fxq 'staging_root=/opt/wotb-asset/periphery' "$out"
           grep -Fxq 'privilege=sudo' "$out"
 
+          target_env=deploy/periphery/targets/ali-sh-asset-01/target.env
           config=deploy/periphery/targets/ali-sh-asset-01/periphery.config.toml
           grep -Fxq 'root_directory = "/etc/komodo"' "$config"
           grep -Fxq 'core_addresses = ["https://komodo.wotbtools.com"]' "$config"
           grep -Fxq 'connect_as = "ali-sh-asset-01"' "$config"
           grep -Fxq 'server_enabled = false' "$config"
-          grep -Fxq 'PERIPHERY_CORE_PORT=443' deploy/periphery/targets/ali-sh-asset-01/target.env
+          grep -Fxq 'PERIPHERY_CORE_PORT=443' "$target_env"
+          grep -Fxq 'PERIPHERY_CORE_PEER_MATCH=:443' "$target_env"
           ! grep -Eq 'onboarding_key|passkeys|(^|[[:space:]])port[[:space:]]*=[[:space:]]*8120' "$config"
 
-          # Exercise the shared connection verifier with the reviewed public Core
-          # port. The PID must still match, so an unrelated :443 connection cannot
-          # satisfy the lifecycle proof.
+          # The manually installed live host uses the legacy singular core_address;
+          # that representation is accepted only when Core + connect_as are exactly
+          # the reviewed target and TLS verification is not weakened.
+          valid="$RUNNER_TEMP/ali-installed-valid.toml"
+          cat > "$valid" <<'EOF'
+          root_directory = "/etc/komodo"
+          core_address = "https://komodo.wotbtools.com"
+          connect_as = "ali-sh-asset-01"
+          EOF
+          python3 deploy/periphery/validate-adoption-config.py "$valid" "$config" ali-sh-asset-01
+
+          wrong_core="$RUNNER_TEMP/ali-installed-wrong-core.toml"
+          sed 's#https://komodo.wotbtools.com#https://wrong-core.invalid:4430#' "$valid" > "$wrong_core"
+          if python3 deploy/periphery/validate-adoption-config.py "$wrong_core" "$config" ali-sh-asset-01; then
+            echo 'wrong Core address was accepted for existing-host adoption' >&2
+            exit 1
+          fi
+
+          wrong_as="$RUNNER_TEMP/ali-installed-wrong-connect-as.toml"
+          sed 's/connect_as = "ali-sh-asset-01"/connect_as = "wrong-server"/' "$valid" > "$wrong_as"
+          if python3 deploy/periphery/validate-adoption-config.py "$wrong_as" "$config" ali-sh-asset-01; then
+            echo 'wrong connect_as was accepted for existing-host adoption' >&2
+            exit 1
+          fi
+
+          insecure="$RUNNER_TEMP/ali-installed-insecure.toml"
+          cp "$valid" "$insecure"
+          printf '%s\n' 'core_tls_insecure_skip_verify = true' >> "$insecure"
+          if python3 deploy/periphery/validate-adoption-config.py "$insecure" "$config" ali-sh-asset-01; then
+            echo 'TLS-insecure existing Core config was accepted for adoption' >&2
+            exit 1
+          fi
+
+          # Exercise the shared socket proof using only ss's remote Peer field.
+          # These cases reproduce the review finding: local :44321 and remote :4430
+          # must not pass merely because the line contains the substring ':443'.
           stub="$RUNNER_TEMP/ali-bin"
           mkdir -p "$stub"
           cat > "$stub/ss" <<'EOF'
           #!/usr/bin/env bash
-          printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:443 users:(("periphery",pid=4242,fd=9))'
+          cat "${SS_FIXTURE:?}"
           EOF
           chmod +x "$stub/ss"
-          PATH="$stub:$PATH" bash -c '
+
+          printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:443 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/peer-valid"
+          printf '%s\n' 'ESTAB 0 0 172.24.21.88:44321 1.2.3.4:80 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/peer-local-443xx"
+          printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:4430 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/peer-4430"
+          printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:443 users:(("periphery",pid=9999,fd=9))' > "$RUNNER_TEMP/peer-wrong-pid"
+
+          PATH="$stub:$PATH" SS_FIXTURE="$RUNNER_TEMP/peer-valid" bash -c '
             source deploy/periphery/lib.sh
             load_target_profile ali-sh-asset-01 deploy/periphery
-            [[ "$periphery_core_port" == 443 ]]
+            [[ "$periphery_core_peer_match" == :443 ]]
             [[ -n "$(established_core_connections 4242)" ]]
-            [[ -z "$(established_core_connections 9999)" ]]
+          '
+          for fixture in peer-local-443xx peer-4430 peer-wrong-pid; do
+            PATH="$stub:$PATH" SS_FIXTURE="$RUNNER_TEMP/$fixture" bash -c '
+              source deploy/periphery/lib.sh
+              load_target_profile ali-sh-asset-01 deploy/periphery
+              [[ -z "$(established_core_connections 4242)" ]]
+            '
+          done
+
+          # Existing WireGuard targets keep the stronger exact peer identity rather
+          # than regressing to a generic :9120 suffix.
+          printf '%s\n' 'ESTAB 0 0 10.20.0.3:40000 10.20.0.2:9120 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/wg-valid"
+          printf '%s\n' 'ESTAB 0 0 10.20.0.3:40000 10.20.0.20:9120 users:(("periphery",pid=4242,fd=9))' > "$RUNNER_TEMP/wg-wrong-peer"
+          PATH="$stub:$PATH" SS_FIXTURE="$RUNNER_TEMP/wg-valid" bash -c '
+            source deploy/periphery/lib.sh
+            load_target_profile tx2 deploy/periphery
+            [[ "$periphery_core_peer_match" == 10.20.0.2:9120 ]]
+            [[ -n "$(established_core_connections 4242)" ]]
+          '
+          PATH="$stub:$PATH" SS_FIXTURE="$RUNNER_TEMP/wg-wrong-peer" bash -c '
+            source deploy/periphery/lib.sh
+            load_target_profile tx2 deploy/periphery
+            [[ -z "$(established_core_connections 4242)" ]]
           '
       - name: Validate Alibaba transport workflow contract
         shell: bash
@@ -94,6 +158,10 @@ jobs:
           assert doc['env']['PRODUCTION_INPUT_PATHS'].splitlines() == expected_paths
           assert doc['concurrency'] == {
               'group': 'production-maintenance',
+              'cancel_in_progress': 'false',
+              'queue': 'max',
+          } if 'cancel_in_progress' in doc['concurrency'] else {
+              'group': 'production-maintenance',
               'cancel-in-progress': 'false',
               'queue': 'max',
           }
@@ -107,6 +175,7 @@ jobs:
               'deploy/periphery/lib.sh',
               'deploy/periphery/staging-root.sh',
               'deploy/periphery/adopt-existing.sh',
+              'deploy/periphery/validate-adoption-config.py',
               'deploy/periphery/install.sh',
               'deploy/periphery/verify.sh',
               'deploy/periphery/reconcile.sh',
