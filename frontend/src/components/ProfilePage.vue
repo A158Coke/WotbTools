@@ -46,11 +46,11 @@ function requireHofOnline() {
   return requireFeature(Feature.HALL_OF_FAME)
 }
 
-const phase = ref('init')
-
-/** 账户归属复核（Phase 7.2）：epoch 相同且仍处于登录态，迟到结果才允许写入。 */
-function ownEpoch(epoch) {
-  return authEpoch() === epoch && isAuthenticated()
+const phase = ref('init')
+
+/** 账户归属复核（Phase 7.2）：epoch 相同且仍处于登录态，迟到结果才允许写入。 */
+function ownEpoch(epoch) {
+  return authEpoch() === epoch && isAuthenticated()
 }
 
 /** 模板 @click 直连 handler 时 Vue 会把事件对象塞进第一个参数：只接受整数 epoch。 */
@@ -268,7 +268,7 @@ const heroSubtitle = computed(() =>
 
 /**
  * 当前 token 的 realm 角色（`realm_access.roles`，Keycloak 已展开 composite），隐藏 Keycloak
- * 内置角色后按原始 key 展示。角色展示与权限判断都只认真实 token claims。
+ * 内置角色后按原始 key 展示。只读真实 token claim：dev `?admin=1` 旁路不改变这里的展示。
  */
 const KEYCLOAK_BUILTIN_ROLES = new Set(['offline_access', 'uma_authorization'])
 const realmRoles = computed(() => {
