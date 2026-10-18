@@ -16,9 +16,6 @@ concurrency:
   group: deploy-asset-origin-source
   cancel-in-progress: true
 
-env:
-  GITEE_ASSET_BRANCH: asset-origin
-
 jobs:
   mirror_gitee:
     name: Mirror exact GitHub source to Gitee
@@ -61,12 +58,12 @@ jobs:
           }
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
-      # Do not mirror whatever GitHub `main` happens to point at when this step
-      # starts. Push the already-checked-out event commit to a dedicated Gitee
-      # transport branch so unrelated newer main commits cannot make this gate
-      # verify or deploy the wrong source, and this workflow cannot move the
-      # shared Gitee `main` backward underneath Frontend/Business API builds.
-      - name: Push frozen event SHA to Gitee asset branch
+      # hub-mirror mirrors whatever the source repository points at when it runs,
+      # which can race a later unrelated main commit. Instead push the frozen event
+      # object already checked out above. The shared production-gitee-mirror group
+      # serializes this ref mutation with the existing Frontend/Business API mirror
+      # jobs, and the following gate proves the exact ref before rollout.
+      - name: Push frozen event SHA to Gitee main
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
@@ -91,9 +88,9 @@ jobs:
           GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
             git push --force \
               https://gitee.com/A158Coke/Wotbtools.git \
-              refs/heads/asset-origin-frozen:refs/heads/$GITEE_ASSET_BRANCH
+              refs/heads/asset-origin-frozen:refs/heads/main
 
-      - name: Require Gitee asset branch at the reviewed GitHub SHA
+      - name: Require Gitee main at the reviewed GitHub SHA
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
@@ -103,14 +100,14 @@ jobs:
           for attempt in $(seq 1 12); do
             mirrored="$(timeout 15s git ls-remote \
               https://gitee.com/A158Coke/Wotbtools.git \
-              "refs/heads/$GITEE_ASSET_BRANCH" 2>/dev/null | awk '{print $1}' || true)"
+              refs/heads/main 2>/dev/null | awk '{print $1}' || true)"
             if [ "$mirrored" = "$SOURCE_SHA" ]; then
-              echo "Gitee $GITEE_ASSET_BRANCH verified at $SOURCE_SHA"
+              echo "Gitee main verified at $SOURCE_SHA"
               exit 0
             fi
             if [ "$attempt" -lt 12 ]; then
               sleep 5
             fi
           done
-          echo "Gitee $GITEE_ASSET_BRANCH does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
+          echo "Gitee main does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
           exit 1
