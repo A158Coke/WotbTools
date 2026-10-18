@@ -27,7 +27,7 @@ import {
   terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere, hasTransparentMaterial } from './sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes, writeHiddenInstance, fallMatrix, refreshBatchSphere, hasTransparentMaterial } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
 import { applyMaterialTextureAnisotropy, clearSceneryMatCache } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
@@ -1189,7 +1189,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 诊断钩子：window.__gdbg 查看地表实际走的路径与已加载分层（仅 ?debug）
     if (DEBUG) window.__gdbg = { layers: !!groundLayers, texs: groundLayers ? Object.keys(groundLayers.texs) : [],
                                  meta: !!mapMetaInfo, sizeM: mapMetaInfo?.size_m ?? null };
-    rebuildGround();
+    try {
+      rebuildGround();
+    } catch (e) {
+      // 分层地表元数据形状错误（如缺 tiling）会在 groundShaderMaterial 抛错；这不是
+      // 「无分层」而是资产故障——必须记降级，清掉坏层并用烘焙底图重试，且不能因此
+      // 跳过后续场景 GLB。
+      noteAsset('groundLayers', 'invalid', e && e.message ? e.message : e);
+      if (groundLayers) {
+        for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.();
+        groundLayers = null;
+      }
+      try { rebuildGround(); } catch (e2) {
+        console.warn('地面重建回退失败（保留 2D 底图）:', e2);
+      }
+    }
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
@@ -1359,10 +1373,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
         // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
         // frustumCulled=false 的无限远语义。
-        const entries = collectInstanceEntries(gltf.scene).filter((e) =>
+        const allEntries = collectInstanceEntries(gltf.scene);
+        const batchable = (e) =>
           !(e.node.userData && e.node.userData.isSky)
           && !isWaterNode(e.name, e.material)
-          && !hasTransparentMaterial(e.material));
+          && !hasTransparentMaterial(e.material);
+        const entries = allEntries.filter(batchable);
+        // 透明材质保留独立排序单位；其中带逐节点光照图变换的用单实例 InstancedMesh，
+        // 以保留 aLm 变换（普通 Mesh 的非实例分支会按原始 uv1 采错 atlas 区域）。
+        buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
+          !batchable(e)
+          && hasTransparentMaterial(e.material)
+          && !(e.node.userData && e.node.userData.isSky)
+          && !isWaterNode(e.name, e.material)), gltf.scene);
         // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;

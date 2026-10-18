@@ -66,7 +66,7 @@ import { pruneForeignVariantsDetailed } from '/src/scene/variantFilter.js'
 // 实例化合批：与 3D 运行时**同一模块同一序列**（sceneryInstancing.js；含 aLm 逐实例
 // 光照图变换的 InstancedBufferAttribute 口径）——此前本页手写的『单实例 InstancedMesh
 // + 几何克隆』是第二套实现，已删除（2026-10-14 收编，用户裁示"直接用它的代码"）
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh } from '/src/scene/sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes, hasTransparentMaterial } from '/src/scene/sceneryInstancing.js'
 // 地面 pass SSOT（2026-10-14 收编，用户裁示"直接完全照搬 3D 回放的代码接入渲染"）：
 // 地形数据/几何、分层地表材质（cm×lm×tile/mask）、水面海岸线资源与 3D 运行时共用同一份——
 // 此前本页不渲染地面（底图 = 客户端自带地图图），与 3D 档实时分层渲染在夜图/带 lm 图上
@@ -186,8 +186,8 @@ async function load(key, span = 600, mapId = null) {
   // fail-closed（映射缺失/当前 mapId 不在映射）时整图拒绝烘焙——否则会把缺少全部
   // 变体布景的俯视图永久发布为正常资产。
   const variantPrune = pruneForeignVariantsDetailed(gltf.scene, mapId)
-  if (variantPrune.failClosed) {
-    throw new Error(`变体映射缺失/未知（mapId=${String(mapId)}）：拒绝烘焙不完整俯视图`)
+  if (variantPrune.failClosed || gltf.scene.userData?.variantMappingIncomplete === true) {
+    throw new Error(`变体映射缺失/不完整（mapId=${String(mapId)}）：拒绝烘焙不完整俯视图`)
   }
   // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享装配模块同一实现
   const sceneryExtras = await resolveSceneryExtras(gltf)
@@ -277,11 +277,21 @@ async function load(key, span = 600, mapId = null) {
   // 实例化合批：与运行时**同一模块同一序列**（sceneryInstancing.js 的 collect → group →
   // buildInstancedMesh；aLm 逐实例属性、几何薄包装零拷贝都在模块内）。原节点摘除，
   // 批次挂回场景；D_ 损毁态/破坏匹配等运行时专属步骤本页无（相关节点已在剔除阶段移除）。
-  const instEntries = collectInstanceEntries(gltf.scene).filter((e) =>
-    !/sky/i.test(e.name) && !isWaterNode(e.name, e.material, { strictSurfaces }))
+  const allEntries = collectInstanceEntries(gltf.scene)
+  const batchable = (e) =>
+    !(e.node.userData && e.node.userData.isSky)
+    && !isWaterNode(e.name, e.material, { strictSurfaces })
+    && !hasTransparentMaterial(e.material)
+  const instEntries = allEntries.filter(batchable)
   const cellSize = Math.max(75, span / 8)
   const batches = groupInstanceBatches(instEntries, cellSize)
   for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh) }
+  // 透明材质不批（three 只按 object 排序）；带 lm 的用单实例保留逐节点 atlas 变换
+  buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
+    !batchable(e)
+    && hasTransparentMaterial(e.material)
+    && !(e.node.userData && e.node.userData.isSky)
+    && !isWaterNode(e.name, e.material, { strictSurfaces })), gltf.scene)
   for (const e of instEntries) e.node.removeFromParent()
   return { ok: true, span: effSpan, ground: groundReady }
 }

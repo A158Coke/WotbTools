@@ -845,6 +845,12 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 烘焙先剔天穹再装配：必须把剔除前的标记传进去，否则会退回 /sky/ 名字
     const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
     expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
+    // 合批/透明/lm 与运行时同口径；烘焙同样拒绝不完整变体映射
+    expect(src).toMatch(/buildStandaloneLightmappedMeshes\(allEntries/)
+    expect(bakeSkySrc).toMatch(/buildStandaloneLightmappedMeshes\(allEntries/)
+    expect(bakeSkySrc).toMatch(/hasTransparentMaterial\(e\.material\)/)
+    expect(bakeSkySrc).toMatch(/variantMappingIncomplete === true/)
+    expect(bakeSkySrc).not.toMatch(/\/sky\/i\.test\(e\.name/)
     const bakeFlagAt = bakeSkySrc.indexOf('sceneHasSkyFlags(gltf.scene)')
     const bakePruneAt = bakeSkySrc.indexOf('pruneForeignVariantsDetailed(gltf.scene')
     expect(bakeFlagAt).toBeGreaterThan(-1)

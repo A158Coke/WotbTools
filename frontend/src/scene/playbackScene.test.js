@@ -1161,6 +1161,29 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetIssues.some((i) => i.key === 'scenery' && i.status === 'variant-fail-closed')).toBe(true)
   })
 
+  it('分层地表元数据畸形：记降级、回退烘焙底图，不跳过场景', async () => {
+    window.history.replaceState(null, '', '/?debug&q=high')
+    prepareAssets(['map', 'terrain', 'terrain-meta', 'groundmeta', 'groundtex', 'scenery'])
+    vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockResolvedValue(new THREE.Texture())
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      const u = String(url)
+      if (u.includes('terrain-meta')) return { ok: true, status: 200, json: async () => ({ size: 2, span: 600, zmin: 0, zmax: 1, terrainLayout: 2 }) }
+      if (u.includes('/terrain')) return { ok: true, status: 200, arrayBuffer: async () => new Uint16Array([0, 1, 2, 3]).buffer }
+      if (u.includes('groundmeta')) return { ok: true, status: 200, json: async () => ({}) } // 缺 tiling
+      if (u.includes('groundtex')) return { ok: true, status: 200, blob: async () => new Blob(['x']) }
+      return { ok: true, status: 200, headers: new Headers(), blob: async () => new Blob(['map']) }
+    }))
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementationOnce((_url, onLoad) => onLoad({
+      scene: new THREE.Group(), parser: { json: { materials: [] }, associations: new Map() },
+    }))
+    const { api, store } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['a'], 'a') })
+    expect(store.hasData).toBe(true)
+    expect(store.assetDegraded).toBe(true)
+    expect(store.assetIssues.some((i) => i.key === 'groundLayers' && i.status === 'invalid')).toBe(true)
+    expect(window.__terrain).toBeTruthy()   // 回退烘焙底图后地形仍建成
+  })
+
   it('场景装配步骤抛错也进入资产降级（不只 loader 返回空）', async () => {
     window.history.replaceState(null, '', '/?debug&q=high')
     prepareAssets(['scenery'])

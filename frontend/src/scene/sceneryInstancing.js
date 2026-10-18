@@ -121,6 +121,24 @@ export function buildInstancedMesh(batch) {
   return mesh
 }
 
+/**
+ * 不可合批（透明排序/单独节点）但带逐节点光照图变换的网格：用**单实例 InstancedMesh**
+ * 承载。这样既保留"一个 object 一个透明排序单位"，又复用 buildInstancedMesh 的 aLm
+ * 逐实例 UV 变换（否则非实例路径按原始 uv1 采样，会读错 atlas 区域）。
+ * @returns {{entry:object, mesh:THREE.InstancedMesh}[]}
+ */
+export function buildStandaloneLightmappedMeshes(entries, target) {
+  const out = []
+  for (const e of entries) {
+    if (!e || !e.lm || !e.geometry || !e.material) continue
+    const mesh = buildInstancedMesh({ geometry: e.geometry, material: e.material, items: [e] })
+    target.add(mesh)
+    e.node.removeFromParent()
+    out.push({ entry: e, mesh })
+  }
+  return out
+}
+
 /** 隐藏实例 = 远处 + 微缩：不用精确零矩阵（奇异矩阵进 raycast 的求逆会产生 NaN 路径），
  *  微缩退化三角形 GPU 直接丢弃、包围球/射线球测都不可能命中。 */
 export function writeHiddenInstance(mesh, idx) {
