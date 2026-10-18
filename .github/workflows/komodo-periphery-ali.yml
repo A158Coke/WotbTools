@@ -120,7 +120,7 @@ jobs:
           key: ${{ secrets.ALI_ASSET_VPS_SSH_KEY }}
           source: >-
             deploy/periphery/lib.sh,deploy/periphery/staging-root.sh,
-            deploy/periphery/adopt-existing.sh,
+            deploy/periphery/adopt-existing.sh,deploy/periphery/validate-adoption-config.py,
             deploy/periphery/install.sh,deploy/periphery/verify.sh,
             deploy/periphery/reconcile.sh,deploy/periphery/periphery.release,
             deploy/periphery/periphery.service,
