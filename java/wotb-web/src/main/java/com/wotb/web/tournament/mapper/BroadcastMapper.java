@@ -40,6 +40,9 @@ public class BroadcastMapper implements Mapper<BroadcastReplay, BroadcastDtos.Re
                         points ? (replay.groupNumber == null ? replay.legacyGroupLabel : replay.groupNumber.toString()) : null,
                         points ? null : replay.groupNumber,replay.bracket,List.copyOf(replay.teams),replay.perspective,replay.coverId)).toList());
     }
+    public BroadcastDtos.ReplayStart replayStart(final BroadcastReplay replay) {
+        return new BroadcastDtos.ReplayStart(replay.id, replay.matchStartsAt);
+    }
     @Override
     public BroadcastDtos.Replay toDto(final BroadcastReplay replay) {
         return new BroadcastDtos.Replay(replay.id, replay.nodeId, replay.title, replay.url, replay.matchDate,

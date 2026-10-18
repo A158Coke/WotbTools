@@ -14,8 +14,9 @@ import Banner from './Banner.vue'
 import LeagueBroadcastReplayDialog from './LeagueBroadcastReplayDialog.vue'
 import { useLeagueBroadcasts } from '../composables/useLeagueBroadcasts.js'
 import * as api from '../api/league-broadcasts.js'
-import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
+import type { BroadcastCategory, BroadcastNode, BroadcastReplay, BroadcastTimedReplaySave, BroadcastSeason } from '../api/league-broadcasts.js'
 import { apiErrorLabel, broadcastSeasonName } from '../utils/display.js'
+import { BROADCAST_DISPLAY_ZONES, formatBroadcastDate } from '../utils/broadcastTime.js'
 
 const { t, te, locale } = useI18n()
 const state = reactive(useLeagueBroadcasts())
@@ -67,10 +68,9 @@ function nodeTitle(node: BroadcastNode) {
 }
 const displayNodes = computed(() => state.nodes.map(node => ({ ...node, label: nodeTitle(node),
   records: node.replays.map(replay => ({ ...replay,
-    metadata: [replay.matchDate, t('leagueBroadcasts.dayLabel', { day: replay.dayNumber }),
+    metadata: [state.displayTimeZone ? formatBroadcastDate(replay.matchDate, replay.startsAt, state.displayTimeZone, locale.value) : replay.matchDate, t('leagueBroadcasts.dayLabel', { day: replay.dayNumber }),
       state.category?.type === 'POINTS' ? t('leagueBroadcasts.roundLabel', { round: node.roundNumber }) : '',
-      replay.groupNumber ? t('leagueBroadcasts.groupNumberLabel', { number: replay.groupNumber })
-        : state.category?.type === 'POINTS' ? t('leagueBroadcasts.groupNumberPending') : '',
+      replay.groupNumber ? t('leagueBroadcasts.groupNumberLabel', { number: replay.groupNumber }) : '',
       replay.bracket ? t(`leagueBroadcasts.brackets.${replay.bracket}`) : '', t(`leagueBroadcasts.perspectives.${replay.perspective}`)].filter(Boolean).join(' · '),
     teamLabel: [t('leagueBroadcasts.following', { team: replay.teams[0] }), ...replay.teams.slice(1)].join(' / '),
     coverUrl: replay.coverId && !failedCovers.value.has(replay.coverId) ? api.broadcastCoverUrl(replay.coverId) : '',
@@ -112,7 +112,7 @@ async function saveStructure() {
     await state.mutate(signal => api.createBroadcastNode(state.category!.id, value, signal))
   }
 }
-async function saveReplay(value: BroadcastReplaySave, cover: File | null) {
+async function saveReplay(value: BroadcastTimedReplaySave, cover: File | null) {
   const editor = replayEditor.value
   if (!editor) return
   expanded.value = new Set([...expanded.value, editor.node.id])
@@ -146,6 +146,7 @@ async function refreshPage() {
   <div class="broadcast-page layout-wide" data-testid="league-broadcasts-page">
     <PageHeader :title="pageTitle"><template #actions>
       <AppButton v-if="state.server" :disabled="state.busy" data-testid="broadcast-back" @click="goBack">{{ t('leagueBroadcasts.back') }}</AppButton>
+      <label v-if="state.category && state.defaultTimeZone" class="broadcast-field broadcast-time-zone"><span>{{ t('leagueBroadcasts.displayTimeZone') }}</span><select v-model="state.displayTimeZonePreference" data-testid="broadcast-display-time-zone"><option value="server">{{ t('leagueBroadcasts.serverTimeZone', { zone: t(`leagueBroadcasts.timeZones.${state.defaultTimeZone}`) }) }}</option><option v-for="zone in BROADCAST_DISPLAY_ZONES" :key="zone" :value="zone">{{ t(`leagueBroadcasts.timeZones.${zone}`) }}</option></select></label>
       <AppButton :disabled="state.loading || state.busy || !state.network.available" data-testid="broadcast-refresh" @click="refreshPage">{{ t('leagueBroadcasts.refresh') }}</AppButton>
       <template v-if="state.allowed && state.network.available && !state.loading">
         <AppButton v-if="state.server && !state.seasonId" variant="primary" :disabled="state.busy" data-testid="broadcast-new-season" @click="openSeason()"><Plus :size="18" aria-hidden="true" />{{ t('leagueBroadcasts.newSeason') }}</AppButton>
@@ -226,7 +227,7 @@ async function refreshPage() {
       </form>
       <template #actions><AppButton :disabled="state.busy" @click="dialog = ''">{{ t('leagueBroadcasts.cancel') }}</AppButton><AppButton v-if="errorText" :disabled="state.busy" data-testid="broadcast-editor-reload" @click="reloadEditor">{{ t('leagueBroadcasts.reloadEditor') }}</AppButton><AppButton type="submit" form="broadcast-structure-form" variant="primary" :disabled="state.busy" data-testid="broadcast-structure-save">{{ t(state.busy ? 'leagueBroadcasts.saving' : 'leagueBroadcasts.save') }}</AppButton></template>
     </AppDialog>
-    <LeagueBroadcastReplayDialog v-if="replayEditor && state.season && state.category && state.allowed" :open="true" :season="state.season" :category="state.category" :node="replayEditor.node" :replay="replayEditor.replay" :busy="state.busy" :cover-upload-available="state.coverUploadAvailable" :error-text="errorText" @close="replayEditor = null" @reload="reloadEditor" @save="saveReplay" />
+    <LeagueBroadcastReplayDialog v-if="replayEditor && state.season && state.category && state.defaultTimeZone && state.allowed" :open="true" :season="state.season" :category="state.category" :default-time-zone="state.defaultTimeZone" :node="replayEditor.node" :replay="replayEditor.replay" :busy="state.busy" :cover-upload-available="state.coverUploadAvailable" :error-text="errorText" @close="replayEditor = null" @reload="reloadEditor" @save="saveReplay" />
   </div>
 </template>
 
@@ -283,6 +284,7 @@ async function refreshPage() {
 .broadcast-form, .broadcast-field { display: grid; gap: var(--space-2); }
 .broadcast-form { gap: var(--space-4); }
 .broadcast-field { min-width: 0; color: var(--color-text-primary); font: var(--type-body); }
+.broadcast-time-zone { max-width: 100%; font: var(--type-caption); }
 .broadcast-field input, .broadcast-field select { width: 100%; min-width: 0; min-height: var(--control-h-md); padding: var(--space-2); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-surface-1); color: var(--color-text-primary); font: inherit; }
 .broadcast-choice:focus-visible, .broadcast-disclosure:focus-visible, .broadcast-breadcrumbs button:focus-visible, .broadcast-field input:focus-visible, .broadcast-field select:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 @media (hover: hover) { .broadcast-choice:hover { border-color: var(--color-accent); background: var(--color-surface-2); } }
