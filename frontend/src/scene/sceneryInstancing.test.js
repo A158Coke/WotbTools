@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   collectInstanceEntries, groupInstanceBatches, buildInstancedMesh,
-  writeHiddenInstance, fallMatrix,
+  writeHiddenInstance, fallMatrix, hasTransparentMaterial,
 } from './sceneryInstancing.js'
 
 const geo = (h = 1) => {
@@ -306,5 +306,16 @@ describe('损毁态批次球（评审五轮回归）', () => {
     // 隐藏槽位 base 位置 (60,0,0) 必须在球覆盖内（激活后无需重算球）
     const far = new THREE.Vector3(60, 0, 0).distanceTo(mesh.boundingSphere.center)
     expect(far).toBeLessThanOrEqual(mesh.boundingSphere.radius)
+  })
+})
+
+
+describe('透明材质不进入实例化批', () => {
+  it('单材质/多材质任一 transparent 都保留独立节点（three 批内不排序）', () => {
+    expect(hasTransparentMaterial({ transparent: false })).toBe(false)
+    expect(hasTransparentMaterial(null)).toBe(false)
+    expect(hasTransparentMaterial({ transparent: true })).toBe(true)
+    expect(hasTransparentMaterial([{ transparent: false }, { transparent: true }])).toBe(true)
+    expect(hasTransparentMaterial([{ transparent: false }])).toBe(false)
   })
 })

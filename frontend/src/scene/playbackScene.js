@@ -27,7 +27,7 @@ import {
   terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere, hasTransparentMaterial } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
 import { applyMaterialTextureAnisotropy, clearSceneryMatCache } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
@@ -49,7 +49,7 @@ import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwne
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
-import { activeVariantOf, pruneForeignVariants } from './variantFilter.js'
+import { pruneForeignVariantsDetailed } from './variantFilter.js'
 import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
 import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
@@ -1231,16 +1231,16 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
         // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
         const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
-        const variantActive = activeVariantOf(gltf.scene.userData?.variantByMapId, DATA.meta.map_id);
         const variantMappingIncomplete = gltf.scene.userData?.variantMappingIncomplete === true;
         // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
         // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
         // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
         // 节点标签由导出器随 GLB extras 下发；有变体节点但没有可用映射时
         // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
-        const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
+        const variantPrune = pruneForeignVariantsDetailed(gltf.scene, DATA.meta.map_id);
+        const prunedVariants = variantPrune.removed;
         if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
-        if (variantMappingIncomplete || (prunedVariants && !variantActive)) {
+        if (variantMappingIncomplete || variantPrune.failClosed) {
           // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
           // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
           noteAsset('scenery', 'variant-fail-closed', variantMappingIncomplete
@@ -1360,7 +1360,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
         // frustumCulled=false 的无限远语义。
         const entries = collectInstanceEntries(gltf.scene).filter((e) =>
-          !(e.node.userData && e.node.userData.isSky) && !isWaterNode(e.name, e.material));
+          !(e.node.userData && e.node.userData.isSky)
+          && !isWaterNode(e.name, e.material)
+          && !hasTransparentMaterial(e.material));
         // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;

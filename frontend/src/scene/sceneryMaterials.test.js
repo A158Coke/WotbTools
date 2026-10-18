@@ -777,11 +777,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     expect(src).toMatch(/import \{[^}]*isWaterNode as isWaterNodeRule[^}]*\} from '\.\/sceneryAssemblyRules\.js'/)
     expect(src).toMatch(/const strictSurfaces = strictSurfacesOf\(gltf\.scene\);/)
     expect(src).toMatch(/const isWaterNode = \(name, mat\) => isWaterNodeRule\(name, mat, \{ strictSurfaces \}\);/)
-    expect(src).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\) && !isWaterNode\(e\.name, e\.material\)\);/)
+    expect(src).toMatch(/!\(e\.node\.userData && e\.node\.userData\.isSky\)[\s\S]{0,120}!isWaterNode\(e\.name, e\.material\)[\s\S]{0,120}!hasTransparentMaterial\(e\.material\)/)
     expect(asmSrc).toMatch(/o\.userData\.isSky = true;/)
     // 运行时：包级天空标记在变体裁剪之前采样，并显式传入装配
     const skyFlagAt = src.indexOf('const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene)')
-    const pruneAt = src.indexOf('pruneForeignVariants(gltf.scene')
+    const pruneAt = src.indexOf('pruneForeignVariantsDetailed(gltf.scene')
     expect(skyFlagAt).toBeGreaterThan(-1)
     expect(pruneAt).toBeGreaterThan(skyFlagAt)
     expect(src).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
@@ -846,9 +846,11 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
     expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
     const bakeFlagAt = bakeSkySrc.indexOf('sceneHasSkyFlags(gltf.scene)')
-    const bakePruneAt = bakeSkySrc.indexOf('pruneForeignVariants(gltf.scene')
+    const bakePruneAt = bakeSkySrc.indexOf('pruneForeignVariantsDetailed(gltf.scene')
     expect(bakeFlagAt).toBeGreaterThan(-1)
     expect(bakePruneAt).toBeGreaterThan(bakeFlagAt)
+    // fail-closed 变体裁剪必须中止本图烘焙，不能继续写不完整俯视图
+    expect(bakeSkySrc).toMatch(/variantPrune\.failClosed[\s\S]{0,200}throw new Error/)
     const skyAt = asmSrc.indexOf('if (!waterMarked && isSkyNode(o))');
     expect(skyAt).toBeGreaterThan(-1);
     const skyBranch = asmSrc.slice(skyAt, skyAt + 500);

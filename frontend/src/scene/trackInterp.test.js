@@ -122,8 +122,8 @@ describe('trackInterp：覆盖段内网格采样（禁止跨隐藏段插值）',
     expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.25)).toBeCloseTo(1, 12)
     expect(sampleChannelWithin(get, a.length, 0.15, 0, 0.1, 0.05, 0.25)).toBeCloseTo(1.5, 12)
     expect(sampleChannelWithin(get, a.length, 0.25, 0, 0.1, 0.05, 0.25)).toBeCloseTo(2, 12)
-    // 段短于一个网格间隔：取段后第一个点，保持（不猜运动）
-    expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.08)).toBeCloseTo(1, 12)
+    // 段短于一个网格间隔：取段末之前的最近证据（不得取段后下一点，防下一段角度泄漏）
+    expect(sampleChannelWithin(get, a.length, 0.05, 0, 0.1, 0.05, 0.08)).toBeCloseTo(0, 12)
     // 开放的末段（+Infinity）从段内第一个点起正常插值
     expect(sampleChannelWithin(get, a.length, 0.25, 0, 0.1, 0.05, Number.POSITIVE_INFINITY)).toBeCloseTo(2.5, 12)
     // 空/单点安全
