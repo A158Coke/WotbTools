@@ -517,22 +517,48 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.canResume.value).toBe(false)
     h.wrapper.unmount()
   })
-  it('passes cancellation to sample loading and ignores its late continuation after Next', async () => {
+  it('keeps the official sample loading across Next so the advanced step can use it', async () => {
+    // #668：示例下载不再被“下一步”取消，否则播放步骤会等一个永远不会就绪的示例。
     const h = harness()
     const pending = deferred<void>()
-    h.loadDemo.mockImplementation(() => pending.promise)
+    h.loadDemo.mockImplementation(async () => {
+      await pending.promise
+      h.selected.value = true
+      h.revision.value++
+    })
     h.controller.start()
     const beginning = h.controller.begin()
     await flushPromises()
     const signal = h.loadDemo.mock.calls[0][0]
     expect(signal).toBeInstanceOf(AbortSignal)
     h.controller.next()
-    expect(signal?.aborted).toBe(true)
+    expect(signal?.aborted).toBe(false)
+    expect(h.controller.issue.value).toBe('loading')
     pending.resolve()
     await beginning
     await flushPromises()
     expect(h.controller.index.value).toBe(1)
     expect(h.controller.currentStage.value.anchor).toBe('data-toolbar')
+    expect(h.controller.issue.value).toBe('')
+    h.wrapper.unmount()
+  })
+
+  it('reloads the official sample when Retry recovers an unavailable step', async () => {
+    const h = harness()
+    h.loadDemo.mockRejectedValueOnce(new Error('SAMPLE_UNAVAILABLE'))
+    h.controller.start()
+    await h.controller.begin()
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('unavailable')
+    expect(h.controller.index.value).toBe(0)
+    expect(h.loadDemo).toHaveBeenCalledTimes(1)
+
+    h.loadDemo.mockImplementation(async () => { h.selected.value = true; h.revision.value++ })
+    h.controller.retry()
+    await flushPromises()
+    expect(h.loadDemo).toHaveBeenCalledTimes(2)
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.issue.value).toBe('')
     h.wrapper.unmount()
   })
 

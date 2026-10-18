@@ -412,8 +412,9 @@ defineExpose({ __classify: classify })
           <span>{{ $t(`recon.stages.${progressStage || 'call1'}`) }}</span>
         </div>
       </div>
-      <!-- 断流/失败时已到达的正文不丢弃：明确标注不完整，用户仍可读已生成部分。 -->
-      <div v-if="partialAnalysis" class="ai-stream-text" data-testid="ai-partial">
+      <!-- 流式中显示已到达正文；断流/失败时保留并标注不完整。完成后只留格式化报告，
+           不再与完成报告并列展示原始 Markdown（#679）。 -->
+      <div v-if="partialAnalysis && !analysisResult" class="ai-stream-text" data-testid="ai-partial">
         <p v-if="failure" class="ai-partial-note">{{ $t('recon.partial_incomplete') }}</p>
         {{ partialAnalysis }}
       </div>

@@ -170,6 +170,8 @@ export function useOnboarding(options: {
   const demoFailed = ref(false)
   let runGeneration = 0
   let runAbort = new AbortController()
+  let demoAbort = new AbortController()
+  let demoLoad: Promise<void> | null = null
   let syncGeneration = 0
   let syncAbort = new AbortController()
   let previousIdentity = identity.value
@@ -227,6 +229,9 @@ export function useOnboarding(options: {
     ++runGeneration
     runAbort.abort()
     runAbort = new AbortController()
+    demoAbort.abort()
+    demoAbort = new AbortController()
+    demoLoad = null
     issue.value = ''
     demoFailed.value = false
     for (const surface of Object.values(surfaces.value)) {
@@ -396,6 +401,35 @@ export function useOnboarding(options: {
     if (!REPLAY_VIEWS.has(options.view.value)) await options.navigate('replay')
   }
 
+  /**
+   * Official-sample loading owns its own lifecycle: only leaving the guide cancels it.
+   * Sharing the step's AbortController cancelled the download on Next, so the playback step
+   * waited for a sample that would never arrive and Retry could not recover (#668).
+   */
+  function beginDemoLoad() {
+    demoAbort.abort()
+    demoAbort = new AbortController()
+    const signal = demoAbort.signal
+    const promise = (async () => {
+      await ensureReplayView()
+      const owner = await waitForValue(() => workspace.value, signal)
+      preparingDemo = true
+      try { await owner.loadDemo(signal) } finally { preparingDemo = false }
+    })()
+    demoLoad = promise
+    void promise.catch(() => {}).then(() => { if (demoLoad === promise) demoLoad = null })
+    return promise
+  }
+
+  /** A capability step waits for the sample instead of timing out; a failed load makes Retry reload it. */
+  async function awaitDemoLoad() {
+    if (!demoLoad) return
+    try { await demoLoad } catch {
+      if (mode.value === 'tour') demoFailed.value = true
+      throw new Error('GUIDE_SAMPLE_UNAVAILABLE')
+    }
+  }
+
   async function prepareStep() {
     const generation = ++runGeneration
     runAbort.abort()
@@ -405,6 +439,8 @@ export function useOnboarding(options: {
     const owns = () => generation === runGeneration && mode.value === 'tour' && !signal.aborted
     issue.value = 'loading'
     try {
+      await awaitDemoLoad()
+      if (!owns()) return
       if (current?.view) await options.navigate(current.view)
       if (current?.capability) {
         await ensureReplayView()
@@ -441,18 +477,13 @@ export function useOnboarding(options: {
     if (needsReplay) {
       issue.value = 'loading'
       const generation = ++runGeneration
-      const signal = runAbort.signal
       try {
-        await ensureReplayView()
-        const owner = await waitForValue(() => workspace.value, signal)
-        if (generation !== runGeneration || mode.value !== 'tour') return
-        preparingDemo = true
-        try { await owner.loadDemo(signal) } finally { preparingDemo = false }
-        if (generation !== runGeneration || mode.value !== 'tour') return
+        await beginDemoLoad()
       } catch {
         if (generation === runGeneration && mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
         return
       }
+      if (generation !== runGeneration || mode.value !== 'tour') return
     }
     await prepareStep()
   }

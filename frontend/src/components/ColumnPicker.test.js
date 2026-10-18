@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import ColumnPicker from './ColumnPicker.vue'
 
@@ -66,6 +66,23 @@ describe('ColumnPicker 上下移按钮（触屏/键盘重排序）', () => {
     await firstUp.trigger('click')
     await lastDown.trigger('click')
     expect(wrapper.emitted('reorder')).toBeFalsy()
+  })
+})
+
+describe('ColumnPicker 浮层键盘契约（非模态对话框）', () => {
+  it('role=dialog；打开即取焦点；Esc 关闭并 emit close', async () => {
+    // #669 回归：浮层若既无 role 也不处理 Esc，引导会把 Esc 当成“退出教程”，面板反而留在原地。
+    const wrapper = mount(ColumnPicker, {
+      attachTo: document.body,
+      props: { scope: 'player', order: ORDER, visible: ORDER, fixedKeys: FIXED },
+      global: { mocks: { $t: key => key } },
+    })
+    await flushPromises()
+    expect(wrapper.attributes('role')).toBe('dialog')
+    expect(document.activeElement).toBe(wrapper.element)
+    wrapper.element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
   })
 })
 

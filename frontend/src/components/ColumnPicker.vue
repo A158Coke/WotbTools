@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { catOf } from '../utils/helpers.js'
 
 const props = defineProps({
@@ -12,6 +12,14 @@ const props = defineProps({
 
 const emit = defineEmits(['toggle', 'selectAll', 'reset', 'reorder'])
 const dragIdx = ref(-1)
+const panelEl = ref(null)
+
+// 浮层即非模态对话框：打开时焦点进入面板，Esc 先关面板（引导据此把 Esc 交给它，而不是退出教程）。
+onMounted(() => panelEl.value?.focus())
+function onEscape(event) {
+  event.preventDefault()
+  emit('close')
+}
 
 function onDragStart(i) { dragIdx.value = i }
 /** 合法移动判断（▲/▼ 按钮与 drag/drop 共用，唯一语义）：目标不越界、被移列非固定列，
@@ -39,7 +47,9 @@ function onDrop(i) {
 </script>
 
 <template>
-  <div class="colpanel">
+  <div ref="panelEl" class="colpanel" role="dialog" tabindex="-1"
+       :aria-label="scope === 'agg' ? $t('col_picker.title_agg') : $t('col_picker.title_player')"
+       @keydown.esc="onEscape">
     <div class="colpanel-head">
       <span class="cph-title">{{ scope === 'agg' ? $t('col_picker.title_agg') : $t('col_picker.title_player') }} · {{ $t('col_picker.desc') }}</span>
       <button class="linkbtn" @click="$emit('selectAll', scope)">{{ $t('col_picker.select_all') }}</button>
