@@ -12,10 +12,11 @@ trap cleanup EXIT
 
 stub="$work/bin"
 host="$work/host"
+process_environ="$host/proc/4242/environ"
 mkdir -p "$stub" "$host/etc/keys" "$host/unit" "$host/run" "$host/proc/4242" "$host/lock" "$host/stage"
 printf '%s\n' 'fixture-periphery-private-key' > "$host/etc/keys/periphery.key"
 printf '%s\n' 'fixture-core-public-key' > "$host/etc/keys/core.pub"
-: > "$host/proc/4242/environ"
+: > "$process_environ"
 touch "$host/lock/.deploy.lock"
 
 cat > "$stub/systemctl" <<'EOF'
@@ -73,9 +74,19 @@ printf '%s\n' 'ESTAB 0 0 172.24.21.88:40000 1.2.3.4:4430 users:(("periphery",pid
 
 marker="$host/etc/keys/onboarding-complete"
 
+write_process_env() {
+  : > "$process_environ"
+  local item
+  for item in "$@"; do
+    [[ -n "$item" ]] || continue
+    printf '%s\0' "$item" >> "$process_environ"
+  done
+}
+
 run_adopt() {
-  local config="$1" peer="$2" log="$3"
+  local config="$1" peer="$2" log="$3" process_override="${4:-}"
   cp "$config" "$host/etc/periphery.config.toml"
+  write_process_env "$process_override"
   sudo rm -f "$marker" "$marker.incoming"
   set +e
   sudo env \
@@ -95,8 +106,8 @@ run_adopt() {
 }
 
 rejects() {
-  local label="$1" config="$2" peer="$3" log="$work/$1.log"
-  if run_adopt "$config" "$peer" "$log"; then
+  local label="$1" config="$2" peer="$3" process_override="${4:-}" log="$work/$1.log"
+  if run_adopt "$config" "$peer" "$log" "$process_override"; then
     echo "unsafe existing-host adoption was accepted: $label" >&2
     cat "$log" >&2
     exit 1
@@ -116,6 +127,19 @@ rejects wrong-core-public-keys "$wrong_core_pub" "$peer_valid"
 rejects extra-semantic-delta "$extra_semantic" "$peer_valid"
 rejects local-443xx "$valid" "$peer_local_443xx"
 rejects remote-4430 "$valid" "$peer_4430"
+
+# The running process's effective config may differ from TOML because Komodo
+# v2.3.3 gives PERIPHERY_* environment variables precedence. Adoption therefore
+# rejects every such override, including *_FILE forms used for credentials and
+# identity paths, instead of attempting an incomplete allowlist.
+rejects env-connect-as "$valid" "$peer_valid" 'PERIPHERY_CONNECT_AS=wrong-server'
+rejects env-root-directory "$valid" "$peer_valid" 'PERIPHERY_ROOT_DIRECTORY=/opt/other-komodo'
+rejects env-insecure-tls "$valid" "$peer_valid" 'PERIPHERY_CORE_TLS_INSECURE_SKIP_VERIFY=true'
+rejects env-core-addresses "$valid" "$peer_valid" 'PERIPHERY_CORE_ADDRESSES=https://wrong-core.invalid:4430'
+rejects env-private-key-file "$valid" "$peer_valid" 'PERIPHERY_PRIVATE_KEY_FILE=/tmp/unreviewed-periphery.key'
+rejects env-onboarding-key-file "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY_FILE=/tmp/onboarding-key'
+rejects env-onboarding-key "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY=secret-fixture'
+rejects env-passkeys-file "$valid" "$peer_valid" 'PERIPHERY_PASSKEYS_FILE=/tmp/passkeys'
 
 if ! run_adopt "$valid" "$peer_valid" "$work/valid.log"; then
   echo 'valid already-onboarded Alibaba host was rejected' >&2
