@@ -40,6 +40,7 @@ jobs:
           deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
           deploy/tx/publish-loaded-image-to-tcr.sh deploy/tx/k7c-preflight.sh
           deploy/tx/k7c-sync-runtime-content.sh
+          deploy/assets/verify.sh deploy/test-asset-origin.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
@@ -99,7 +100,7 @@ jobs:
         run: python3 scripts/ci/test-komodo-resources.py
       - name: PR area label advisory tests
         run: python3 scripts/ci/test_pr_area_labels.py
-      - name: TX and Yecao owner runtime fixtures
+      - name: TX, Yecao, and asset-origin runtime fixtures
         run: |
           set -euo pipefail
           bash deploy/test-check-latest-main.sh
@@ -112,6 +113,7 @@ jobs:
           bash deploy/test-tx-runtime-check.sh
           bash deploy/test-user-profile-reset-audit.sh
           bash deploy/test-deploy-contract.sh
+          bash deploy/test-asset-origin.sh
       - name: Keycloak PostgreSQL backup runtime smoke
         run: bash deploy/test-keycloak-postgres-backup.sh
       - name: Production Compose configuration contract
