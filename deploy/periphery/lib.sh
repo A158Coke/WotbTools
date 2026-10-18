@@ -68,6 +68,7 @@ periphery_lock_file=
 periphery_staging_root=
 periphery_config_source=
 periphery_core_port=
+periphery_core_peer_match=
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -121,7 +122,7 @@ require_real_file() {
 # Sources the reviewed per-host profile and derives everything target-specific.
 # The profile is data: no credential may appear in it, `connect_as` must equal the
 # target name (so one host can never install another host's Server identity), and
-# the lock / staging roots and outbound Core port are validated before use.
+# the lock / staging roots plus reviewed outbound Core peer are validated before use.
 load_target_profile() {
   local target="$1" runtime="$2"
   [[ -z "$periphery_target" ]] || fail 'A Komodo Periphery target profile was already loaded.'
@@ -149,6 +150,10 @@ load_target_profile() {
   periphery_lock_root="${PERIPHERY_LOCK_ROOT:-}"
   periphery_staging_root="${PERIPHERY_STAGING_ROOT:-}"
   periphery_core_port="${PERIPHERY_CORE_PORT:-9120}"
+  # Existing WireGuard targets keep the exact reviewed peer. A public-DNS target
+  # may explicitly use a port-only suffix (for example :443) because its address
+  # can resolve to multiple or changing IPs while TLS pins the Core identity.
+  periphery_core_peer_match="${PERIPHERY_CORE_PEER_MATCH:-10.20.0.2:$periphery_core_port}"
   for path_name in periphery_lock_root periphery_staging_root; do
     path_value="${!path_name}"
     [[ "$path_value" == /* && "$path_value" != *..* ]] \
@@ -157,6 +162,17 @@ load_target_profile() {
   [[ "$periphery_core_port" =~ ^[0-9]+$ ]] \
     && (( periphery_core_port >= 1 && periphery_core_port <= 65535 )) \
     || fail "Invalid outbound Core port for target '$target': $periphery_core_port"
+  [[ -n "$periphery_core_peer_match" && "$periphery_core_peer_match" != *[[:space:]]* ]] \
+    || fail "Invalid outbound Core peer match for target '$target': ${periphery_core_peer_match:-<unset>}"
+  [[ "$periphery_core_peer_match" == *":$periphery_core_port" ]] \
+    || fail "Core peer match '$periphery_core_peer_match' must end in the reviewed port :$periphery_core_port"
+  if [[ "$periphery_core_peer_match" == :* ]]; then
+    [[ "$periphery_core_peer_match" == ":$periphery_core_port" ]] \
+      || fail "Port-only Core peer match must be exactly :$periphery_core_port"
+  else
+    [[ "$periphery_core_peer_match" != ":$periphery_core_port" ]] \
+      || fail "Exact Core peer match is missing a host"
+  fi
   periphery_lock_file="$periphery_lock_root/.deploy.lock"
   periphery_config_source="$runtime/targets/$target/periphery.config.toml"
 }
@@ -231,13 +247,26 @@ service_enabled() { "$systemctl_bin" is-enabled --quiet periphery; }
 
 main_pid() { "$systemctl_bin" show periphery -p MainPID --value; }
 
-# established_core_connections <pid>: outbound-established sockets to the reviewed
-# Core port for this target. Yecao/TX use private WireGuard :9120; the Alibaba host
-# uses the public HTTPS/WSS endpoint on :443. The PID check keeps the proof scoped
-# to the Periphery process rather than any unrelated host connection.
+# established_core_connections <pid>: outbound ESTAB sockets from exactly this
+# Periphery PID to the reviewed remote Core peer. Match only ss's Peer field: a
+# local :44321 socket or a remote :4430 must never satisfy an Alibaba :443 proof.
+# Existing WireGuard targets require exact peer 10.20.0.2:9120; public-DNS targets
+# can review a port-only suffix such as :443 while TLS/config validation pins the
+# logical Core identity.
 established_core_connections() {
   local pid="$1"
-  ss -Htnp 2>/dev/null | grep -F ":$periphery_core_port" | grep -F "pid=$pid," || true
+  ss -Htnp 2>/dev/null | awk -v wanted_pid="$pid" -v peer_match="$periphery_core_peer_match" '
+    $1 == "ESTAB" {
+      pid_needle = "pid=" wanted_pid ","
+      if (index($0, pid_needle) == 0) next
+      peer = $5
+      if (substr(peer_match, 1, 1) == ":") {
+        if (length(peer) >= length(peer_match) && substr(peer, length(peer) - length(peer_match) + 1) == peer_match) print
+      } else if (peer == peer_match) {
+        print
+      }
+    }
+  ' || true
 }
 
 # listener_on_8120: any host listener on the Periphery inbound port (must be none).
