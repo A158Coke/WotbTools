@@ -5,6 +5,11 @@
 assets.wotbtools.com {
 	root * /srv/wotb-assets/current
 
+	# Every cacheable response varies by Origin, including requests with no Origin or
+	# an untrusted Origin. Otherwise a shared cache can reuse a headerless response
+	# for an allowed browser request and cause a transient CORS failure.
+	header +Vary "Origin"
+
 	# Web fetches are cross-origin. Reflect only the two production site origins;
 	# Android uses its native proxy and does not depend on browser CORS.
 	@allowed_origin header_regexp Origin ^https://(www\.)?wotbtools\.com$
@@ -13,7 +18,6 @@ assets.wotbtools.com {
 		Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
 		Access-Control-Allow-Headers "Range, If-None-Match, If-Modified-Since"
 		Access-Control-Expose-Headers "Accept-Ranges, Content-Length, Content-Range, Etag, Last-Modified"
-		Vary "Origin"
 	}
 
 	@preflight {
