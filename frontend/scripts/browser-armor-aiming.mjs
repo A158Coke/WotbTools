@@ -394,8 +394,11 @@ try {
     else check(false, '触屏视口下未找到炮塔像素（pinch 用例）')
   }
   {
-    // 车体按压用例：pinch 之后相机已变，需要重新采样；这一次把 turret/hull 一起取足，
-    // 供「画布外释放」复用（两者之间没有新的相机动/转角动作，采样不会失效）。
+    // 车体按压/画布外 capture 用例不依赖 pinch 状态。慢 runner 上 pinch 后的 damping
+    // 可能持续数秒（CI 曾因相机仍在滑行而扫不到 turret），这里重置到初始静态机位再采样。
+    await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${TANK}&shell=0&heatmap=1${cameraQuery}&assets=${assets}`)
+    await page.waitFor(() => window.__armorRicochet?.info?.()?.meshCount > 0, { timeout: 30000, label: 'reset armor model' })
+    await delay(500)
     const s = await findSpots(['hull', 'turret'])
     if (s.hull) {
       const cdp = chromeCdp.client
