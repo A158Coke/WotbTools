@@ -331,12 +331,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               bool moduleInFront = spacedState.a > 0.5;
               bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
               float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              // 与点击判定 hit.face.normal 同源：几何面法线，不用插值顶点法线。
+              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
+              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
 
               highp mat3 vRotT = transpose(mat3(viewMatrix));
               highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
               highp vec3 incR = normalize(vViewPos);
-              highp vec3 nVR = normalize(vNormal);
+              highp vec3 nVR = nFace;
               highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
               highp vec3 reflR = normalize(vRotT * rVR);
               bool threeCal = caliber > thickness * 3.0;
@@ -676,6 +679,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
                 vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
+                extensions: { derivatives: true },
                 transparent: true, depthWrite: false,
                 uniforms: {
                     thickness: { value: thickness },
@@ -758,7 +762,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             uniform float normalization;
             void main() {
               float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              // 与点击判定同源：几何面法线（非插值顶点法线）。
+              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
+              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               if (!threeCal && angle >= ricochet) {
                 gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
@@ -789,7 +796,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ${RC_GLSL_FUNCS}
             void main() {
               float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              // 与点击判定同源：几何面法线（非插值顶点法线）。
+              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
+              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
               // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
@@ -798,7 +808,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
                 highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
                 highp vec3 incR = normalize(vViewPos);
-                highp vec3 nVR = normalize(vNormal);
+                highp vec3 nVR = nFace;
                 highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
                 highp vec3 reflR = normalize(vRotT * rVR);
                 highp float contChance = 0.0;
@@ -837,6 +847,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
+                extensions: { derivatives: true },
                 depthWrite: false, depthTest: true,
                 blending: THREE.AdditiveBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
@@ -845,6 +856,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedStateMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
+                extensions: { derivatives: true },
                 // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
                 depthWrite: true, depthTest: true, blending: THREE.NoBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
