@@ -2,11 +2,11 @@
 
 > Base corpus: 34 unique arenas / 476 settled players.
 >
-> Additional evidence: current 11.19 controlled probes for HP/death, ammunition, special modifiers, components/crew, penetration/explosion flags, targeting, movement, physical-unit calibration, airborne motion, and `method38 0x0200`.
+> Additional evidence: current 11.19 controlled probes for HP/death, ammunition, special modifiers, components/crew, penetration/explosion flags, targeting, movement, physical-unit calibration, airborne motion, `method38 0x0200`, and corpus-wide recorder camera-state closure.
 >
 > Current gate: **P0=0 / P1=0**.
 >
-> Top-level authority: `WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`.
+> Top-level authority: `WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`, except where a newer focused closure explicitly marks an older interpretation `SUPERSEDED/REJECTED`. For Type23/Type31 camera state, use `recorder-camera-state.md`.
 
 ## Evidence grades
 
@@ -93,10 +93,10 @@ High-value semantics:
 | 13 | settlement/result family | AFFIRMED |
 | 14 | stream close marker | AFFIRMED |
 | 17 | recorder aim/control init boundary | AFFIRMED |
-| 23 | recorder projectile/shot lifecycle toggle | AFFIRMED |
+| 23 | recorder ARCADE/SNIPER scope-control state | AFFIRMED current 11.19 |
 | 26 | incoming hostile-shell warning family | AFFIRMED |
 | 28 | recorder ammunition selection | AFFIRMED |
-| 31 | aiming-circle/gun-marker size | AFFIRMED |
+| 31 | scoped-camera automatic zoom/FOV-like raw trajectory | AFFIRMED relationship / behavior |
 | 32 | auxiliary effect/state envelope | AFFIRMED |
 | 33 | pre-materialization companion | AFFIRMED |
 | 35 | monotonic decisecond low byte | AFFIRMED |
@@ -207,7 +207,7 @@ Vehicle method0 firing
 -> Avatar method27 explosion/terminal branch when present
 ```
 
-method29 is a global observed projectile feed; recorder ownership requires shooter filtering.
+method29 is a global observed projectile feed; recorder ownership requires shooter filtering. Type23 is not part of the projectile lifecycle; its older shot-lifecycle label is superseded by the recorder camera-state closure.
 
 # Ammunition
 
@@ -337,22 +337,46 @@ modifier2 = Tungsten Shells      AFFIRMED
 same-hit modifiers [1,2]         AFFIRMED
 ```
 
-# Targeting
+# Recorder camera / targeting
 
 ```text
-Type31 = aiming-circle/gun-marker size                       AFFIRMED
-Type39 f5 = turret/gun-relative yaw family                   AFFIRMED relationship
-Type39 f6 = local gun pitch                                  AFFIRMED relationship
+Type23 low31=1 = ARCADE/default mode                       AFFIRMED current 11.19
+Type23 low31=0 = SNIPER/scoped mode                        AFFIRMED current 11.19
+Type23 high bit                                             UNKNOWN raw-preserve
+Type31 = scoped-camera automatic zoom/FOV-like raw state    AFFIRMED relationship / behavior
+Type31 smaller raw value = deeper zoom                      AFFIRMED behavioral direction
+Type31 exact unit / optical multiplier                      UNKNOWN
+Type39 f5 = turret/gun-relative yaw family                  AFFIRMED relationship
+Type39 f6 = local gun pitch                                 AFFIRMED relationship
 
-method36.root.field1 = turret/gun relative yaw               AFFIRMED
-method36.root.field2 = gun pitch                             AFFIRMED
-method36.root.field3 = max horizontal angular speed          AFFIRMED controlled
-method36.root.field4 = max vertical angular speed            AFFIRMED controlled
-method36.root.field5 = aiming-time physical scalar           AFFIRMED
-method36.field6.field1 = dynamic gun dispersion/bloom        AFFIRMED
+method36.root.field1 = turret/gun relative yaw              AFFIRMED
+method36.root.field2 = gun pitch                            AFFIRMED
+method36.root.field3 = max horizontal angular speed         AFFIRMED controlled
+method36.root.field4 = max vertical angular speed           AFFIRMED controlled
+method36.root.field5 = aiming-time physical scalar          AFFIRMED
+method36.field6.field1 = dynamic gun dispersion/bloom       AFFIRMED
 ```
 
-Controlled perturbations:
+Camera-state closure:
+
+```text
+Type23 scoped sessions   703
+Type31 active runs       703
+Type31 range             6.75 .. 54.0
+Type31 -> proven bloom correlation ~= -0.01168
+clean 54->27 camera transition median ~= 0.616959 s
+```
+
+The old primary labels:
+
+```text
+Type23 = recorder projectile/shot lifecycle toggle
+Type31 = aiming-circle/gun-marker size
+```
+
+are `REJECTED / SUPERSEDED` for current 11.19. See `recorder-camera-state.md`.
+
+Controlled targeting perturbations:
 
 ```text
 shot boundary        -> field6.field1 positive bloom jump
@@ -370,7 +394,7 @@ Remaining static/nested coefficients are `GUESS/UNKNOWN` private-schema work and
 Type4 = leaves recorder-observed AoI       AFFIRMED
 ```
 
-Single POV is not omniscient. Hidden trajectories and four settlement-second death fallbacks are explicit information boundaries.
+Single POV is not omniscient. Hidden trajectories and four settlement-second death fallbacks are explicit information boundaries. Recorder-local Type23/31/39 closure applies to the replay author only; it does not create original camera telemetry for teammates or enemies.
 
 # Settlement
 
@@ -381,6 +405,9 @@ Single POV is not omniscient. Hidden trajectories and four settlement-second dea
 # Remaining bounded P2/P3 research
 
 ```text
+Type23 0x80000000 high-bit exact meaning                  UNKNOWN
+Type31 exact physical unit/private symbol/magnification   UNKNOWN
+post-death recorder-vs-observer camera ownership          UNKNOWN/PARTIAL
 component42 exact private identity                         UNKNOWN
 method38 rawState0 exact private symbol                    UNKNOWN
 method16 sparse transition-code private names              UNKNOWN
