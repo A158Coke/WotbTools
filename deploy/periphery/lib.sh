@@ -67,6 +67,7 @@ periphery_lock_root=
 periphery_lock_file=
 periphery_staging_root=
 periphery_config_source=
+periphery_core_port=
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -120,7 +121,7 @@ require_real_file() {
 # Sources the reviewed per-host profile and derives everything target-specific.
 # The profile is data: no credential may appear in it, `connect_as` must equal the
 # target name (so one host can never install another host's Server identity), and
-# the lock and staging roots must be absolute.
+# the lock / staging roots and outbound Core port are validated before use.
 load_target_profile() {
   local target="$1" runtime="$2"
   [[ -z "$periphery_target" ]] || fail 'A Komodo Periphery target profile was already loaded.'
@@ -147,11 +148,15 @@ load_target_profile() {
   periphery_privilege="$PERIPHERY_PRIVILEGE"
   periphery_lock_root="${PERIPHERY_LOCK_ROOT:-}"
   periphery_staging_root="${PERIPHERY_STAGING_ROOT:-}"
+  periphery_core_port="${PERIPHERY_CORE_PORT:-9120}"
   for path_name in periphery_lock_root periphery_staging_root; do
     path_value="${!path_name}"
     [[ "$path_value" == /* && "$path_value" != *..* ]] \
       || fail "Refusing unsafe $path_name for target '$target': ${path_value:-<unset>}"
   done
+  [[ "$periphery_core_port" =~ ^[0-9]+$ ]] \
+    && (( periphery_core_port >= 1 && periphery_core_port <= 65535 )) \
+    || fail "Invalid outbound Core port for target '$target': $periphery_core_port"
   periphery_lock_file="$periphery_lock_root/.deploy.lock"
   periphery_config_source="$runtime/targets/$target/periphery.config.toml"
 }
@@ -226,11 +231,13 @@ service_enabled() { "$systemctl_bin" is-enabled --quiet periphery; }
 
 main_pid() { "$systemctl_bin" show periphery -p MainPID --value; }
 
-# established_connections <pid>: outbound-established sockets to the pinned Core.
-# Periphery dials Core over WireGuard; the check never uses a Komodo credential.
+# established_core_connections <pid>: outbound-established sockets to the reviewed
+# Core port for this target. Yecao/TX use private WireGuard :9120; the Alibaba host
+# uses the public HTTPS/WSS endpoint on :443. The PID check keeps the proof scoped
+# to the Periphery process rather than any unrelated host connection.
 established_core_connections() {
   local pid="$1"
-  ss -Htnp 2>/dev/null | grep -F "10.20.0.2:9120" | grep -F "pid=$pid," || true
+  ss -Htnp 2>/dev/null | grep -F ":$periphery_core_port" | grep -F "pid=$pid," || true
 }
 
 # listener_on_8120: any host listener on the Periphery inbound port (must be none).
