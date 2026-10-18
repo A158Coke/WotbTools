@@ -244,23 +244,23 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(Math.abs(sim.layers[0].eff - 100)).toBeLessThan(0.5)
     })
 
-    it('转正只作用于首个命中层：20mm 间隙@60° + 100mm 主装甲@60°（review 2026-10-13 数值锚点）', () => {
-        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× overmatch 增强转正 17.5°）：
-        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）**不再转正**：eff = 100/cos(60°) = 200。
-        // 修前逐层转正给 100/cos(55°) ≈ 174.34——同一射线 calculate(200) 与续飞(174) 分歧。
+    it('每层独立转正：20mm 间隙@60° + 100mm 主装甲@60°（BlitzKit）', () => {
+        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× 增强转正 17.5°）：
+        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）也用自身 5° 转正：
+        // eff = 100/cos(55°) ≈ 174.34；220−27.13 >174.34 → 穿透。
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 20, x: 2, rotYDeg: -90 + 60 },
             { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
         ], { remIn: 220, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
         expect(Math.abs(sim.layers[0].eff - 27.1268)).toBeLessThan(0.02)
-        expect(Math.abs(sim.layers[1].eff - 200)).toBeLessThan(0.01)
-        expect(sim.layers[1].eff).toBeGreaterThan(190)   // 判别：旧规则 ≈174.34
-        expect(sim.cls).toBe(2)
-        expect(oracle).toBe(2)                            // 与 calculate 平价（分歧已闭合）
+        expect(Math.abs(sim.layers[1].eff - 100 / Math.cos(55 * Math.PI / 180))).toBeLessThan(0.05)
+        expect(sim.layers[1].eff).toBeLessThan(180)       // 判别：首层专用旧规则 200
+        expect(sim.cls).toBe(1)
+        expect(oracle).toBe(1)
     })
 
-    it('外部模块不消耗首层转正资格：履带 + 主装甲@60°，转正 5°（用户 2026-10-17）', () => {
-        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 仍是首个实际装甲层，转正 5° →
+    it('外部模块不参与转正：履带 + 主装甲@60°，仍独立转正 5°', () => {
+        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 独立转正 5° →
         // eff = 100/cos(55°) ≈ 174.34，190 > 174.34 → 穿透（绿）。
         // 旧规则把模块计入首层 → 不转正 eff = 200 → 190 被挡（红）——本用例有判别力。
         const { sim, oracle } = runCase([
@@ -365,6 +365,68 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(edge.sim.penChance).toBeGreaterThan(0.5)
         expect(edge.sim.penChance).toBeLessThanOrEqual(1.0)
         expect(edge.oracle).toBe(1)
+    })
+
+    it('穿透概率带保留段首区间宽度：300→690 @1000 ≈ 72.57%', () => {
+        // 每层扣一次：1000 → [950,1050] − 300 = [650,750]，σ 仍 100/6；
+        // 主甲 690 → Φ((700−690)/(100/6)) = Φ(0.6) ≈ 0.7257469。
+        const { sim } = runCase([
+            { section: 'spaced', thickness: 300, x: 2 },
+            { section: 'hull', thickness: 690, x: 4 },
+        ], { ...P, remIn: 1000 })
+        expect(sim.cls).toBe(1)
+        expect(sim.penChance).toBeCloseTo(0.7257469, 5)
+    })
+
+    it('概率停在首个主装甲：其后的车体底板/履带命中不参与', () => {
+        // 用户 2026-10-18 相邻点击复现：炮塔板 10(20) + 板 9(225) 后，
+        // 车体底板 5 与右侧履带 25 不应把补充概率压成 0。
+        const { sim, oracle } = runCase([
+            { section: 'spaced', thickness: 20, x: 2 },
+            { section: 'turret', thickness: 225, x: 4 },
+            { section: 'hull', thickness: 5, x: 6 },
+            { section: 'chassis', thickness: 25, x: 8 },
+        ], { ...P, remIn: 252, caliber: 120 })
+        expect(oracle).toBe(1)
+        expect(sim.cls).toBe(1)
+        expect(sim.layers.map(l => l.section)).toEqual(['spaced', 'turret'])
+        expect(sim.penChance).toBeGreaterThan(0.9)
+        expect(sim.penChance).toBeLessThan(1)
+    })
+
+    it('续飞名义被挡但概率 1–99%：保留部分概率供热力图', () => {
+        // review 2026-10-18：remaining 100mm、主甲 102mm 名义被挡，但
+        // [95,105] 区间下 Φ((100−102)/(100/60)) ≈ 11.5%，卡片显示“可能击穿 12%”。
+        const { sim, oracle } = runCase([
+            { section: 'hull', thickness: 102, x: 2 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.penChance).toBeCloseTo(0.1150697, 5)
+    })
+
+    it('前置间隙甲名义被挡但到首个 Primary 的概率仍保留（spaced100→hull1）', () => {
+        // review 2026-10-18：续飞 100mm，spaced100 名义被挡；完整概率链
+        // spaced CDF 0.5 × hull1 CDF 0.274253 ≈ 13.71265%，不能提前返回 0。
+        const { sim, oracle } = runCase([
+            { section: 'spaced', thickness: 100, x: 2 },
+            { section: 'hull', thickness: 1, x: 4 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.layers.map(l => l.section)).toEqual(['spaced', 'hull'])
+        expect(sim.penChance).toBeCloseTo(0.1371265, 5)
+    })
+
+    it('前置外部模块名义被挡但首个 Primary 仍累计概率（chassis101→hull1）', () => {
+        const { sim, oracle } = runCase([
+            { section: 'chassis', thickness: 101, x: 2 },
+            { section: 'hull', thickness: 1, x: 4 },
+        ], { remIn: 100, caliber: 100, normalizationRad: 0, thickMul: 1 })
+        expect(oracle).toBe(2)
+        expect(sim.cls).toBe(2)
+        expect(sim.layers.map(l => l.section)).toEqual(['chassis', 'hull'])
+        expect(sim.penChance).toBeCloseTo(0.1150697, 5)
     })
 
     it('严格大于才穿透：等厚 → 被挡（红）', () => {
