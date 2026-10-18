@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **3.13.0 / 3013000**（`android/gradle.properties`）。
+截至 2026-10-18，本候选源码为 **3.13.1 / 3013001**（`android/gradle.properties`）。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
@@ -15,12 +15,16 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 旧 APK 继续按 `tournament-admin` 判定，因此只持有 `content-admin` 的管理员需要更新 APK 才能管理内容；
 全站管理员由 Keycloak composite 展开同时具备两个角色，不受影响。后端先行部署不会让旧 APK 失去目录。
 `android-v3.10.0`、`android-v3.11.0` 与 `android-v3.11.2` 已固定旧源码身份；对应版本不能复用来发布新 bundle。
-本 PR 改变随 APK 打包的装甲查看器判定/概率与场景运行时：Armor Inspector 逐层概率、BlitzKit 逐层转正/2×、
+3.13.0 改变随 APK 打包的装甲查看器判定/概率与场景运行时：Armor Inspector 逐层概率、BlitzKit 逐层转正/2×、
 确定性 1× 热力图、相机标定与主题场景。这是 bundled frontend/scene runtime 的行为变更，不改 wire / Bridge，
 在 main 的 3.12.0 之后按 **minor** 递增为 **3.13.0**，说明见 [3.13.0](releases/3.13.0.md)。
 Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这次功能强制升级。
 3.12.0 保留上述 3.11.2 内容管理权限修复，新增联赛回放的可选开赛时刻、显示和录入时区切换、小组号选填，以及三语术语修正；按新增中小功能选 **minor**（3.11.2 → 3.12.0），详见 [3.12.0](releases/3.12.0.md)。
 3.12.0 新增 71 条已核实回放；加上原有国服 3 条，共 74 条中英标题，20 个赛事均填完整三语名称。具体战斗时刻未知时留空，不补占位时间。
+#683 已先合入 main，源码版本为 3.13.0；本次内容接口清理以它为基线递增为 **3.13.1 / 3013001**，说明见 [3.13.1](releases/3.13.1.md)。
+用户确认被清理的旧联赛/推荐接口仅内部使用、尚无用户使用，本次明确例外选 patch，不升 major、不强制升级；一般版本规则不变。
+本候选继承 3.13.0 的装甲查看器改动以及此前联赛三语、时间和初始化事实；不复用旧候选号，不修改历史迁移。
+Native Bridge 保持 v3，`ANDROID_MIN_SUPPORTED_VERSION_CODE` 保持 `3000000`。合并前仍须核对前置后端与成对切换安排，随后按 stage、真机验收、publish 发布；本次不修改生产变量。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。

@@ -6,7 +6,6 @@ import com.qcloud.cos.exception.CosServiceException;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.COSObjectInputStream;
 import com.wotb.web.creator.entity.CreatorAvatar;
-import com.wotb.web.creator.dto.CreatorDtos;
 import com.wotb.web.creator.dto.RecommendationDtos;
 import com.wotb.web.creator.repository.CreatorAvatarRepository;
 import com.wotb.web.creator.repository.CreatorRepository;
@@ -154,33 +153,33 @@ class CreatorAvatarIntegrationTest {
     }
 
     @Test void directorySaveOwnsImageReplacementRemovalAndFailedDuplicateCleanup() throws Exception {
-        final CreatorDtos.SaveRequest replace = new CreatorDtos.SaveRequest("123", "Creator", null, List.of(1L), null, 3, "REPLACE", null);
-        final CreatorDtos.Detail created = directory.create(replace, png(512, 256));
+        final RecommendationDtos.SaveRequest replace = new RecommendationDtos.SaveRequest("UP", "123", "Creator", null, List.of(1L), null, 3, "REPLACE", null);
+        final RecommendationDtos.Detail created = directory.createRecommendation(replace, png(512, 256));
         final String original = avatarReference(created.id());
         assertNotNull(original);
         assertNull(reservations.findById(original).orElseThrow().unreferencedAt);
-        final CreatorDtos.Detail edited = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Edited", null,
+        final RecommendationDtos.Detail edited = directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Edited", null,
                 List.of(1L), null, 4, "KEEP", created.version()), null);
         assertEquals(original, avatarReference(created.id()));
         assertEquals(ApiErrorCode.CREATOR_UID_ALREADY_EXISTS,
-                assertThrows(ApiException.class, () -> directory.create(replace, png(32, 32))).errorCode());
+                assertThrows(ApiException.class, () -> directory.createRecommendation(replace, png(32, 32))).errorCode());
         assertEquals(original, avatarReference(created.id()));
         final String orphan = reservations.findAll().stream().filter(row -> !row.id.equals(original)).findFirst().orElseThrow().id;
         assertNotNull(reservations.findById(orphan).orElseThrow().unreferencedAt);
-        final CreatorDtos.Detail replaced = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+        final RecommendationDtos.Detail replaced = directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Creator", null,
                 List.of(1L), null, 3, "REPLACE", edited.version()), png(64, 32));
         final String replacement = avatarReference(created.id());
         assertFalse(original.equals(replacement));
         assertNotNull(reservations.findById(original).orElseThrow().unreferencedAt);
         assertNull(reservations.findById(replacement).orElseThrow().unreferencedAt);
-        final CreatorDtos.Detail cleared = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+        final RecommendationDtos.Detail cleared = directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Creator", null,
                 List.of(1L), null, 3, "REMOVE", replaced.version()), null);
         assertNull(avatarReference(created.id()));
         assertNotNull(reservations.findById(replacement).orElseThrow().unreferencedAt);
-        final CreatorDtos.Detail finalImage = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Creator", null,
+        final RecommendationDtos.Detail finalImage = directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Creator", null,
                 List.of(1L), null, 3, "REPLACE", cleared.version()), png(32, 32));
         final String removed = avatarReference(created.id());
-        directory.delete(created.id(), finalImage.version());
+        directory.deleteRecommendation("UP", created.id(), finalImage.version());
         assertNotNull(reservations.findById(removed).orElseThrow().unreferencedAt);
         reservations.findAll().forEach(row -> age(row.id));
         avatars.cleanup();
@@ -189,21 +188,21 @@ class CreatorAvatarIntegrationTest {
     }
 
     @Test void staleDirectoryWritesKeepTheCurrentImageAndLeaveOnlyRecoverableReplacementObjects() throws Exception {
-        final CreatorDtos.Detail created = directory.create(new CreatorDtos.SaveRequest("123", "Original", null,
+        final RecommendationDtos.Detail created = directory.createRecommendation(new RecommendationDtos.SaveRequest("UP", "123", "Original", null,
                 List.of(1L), null, 3, "REPLACE", null), png(64, 32));
         final String original = avatarReference(created.id());
         final byte[] originalBytes = objects.get(PREFIX + original);
-        final CreatorDtos.Detail changed = directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Current", null,
+        final RecommendationDtos.Detail changed = directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Current", null,
                 List.of(1L), null, 4, "KEEP", created.version()), null);
         assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, assertThrows(ApiException.class,
-                () -> directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Stale removal", null,
+                () -> directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Stale removal", null,
                         List.of(1L), null, 1, "REMOVE", created.version()), null)).errorCode());
         assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT, assertThrows(ApiException.class,
-                () -> directory.update(created.id(), new CreatorDtos.SaveRequest("123", "Stale replacement", null,
+                () -> directory.updateRecommendation(created.id(), new RecommendationDtos.SaveRequest("UP", "123", "Stale replacement", null,
                         List.of(1L), null, 1, "REPLACE", created.version()), png(32, 32))).errorCode());
         assertEquals(ApiErrorCode.CREATOR_CONFIG_CONFLICT,
-                assertThrows(ApiException.class, () -> directory.delete(created.id(), created.version())).errorCode());
-        assertEquals(changed, directory.detail(created.id()));
+                assertThrows(ApiException.class, () -> directory.deleteRecommendation("UP", created.id(), created.version())).errorCode());
+        assertEquals(changed, directory.recommendationDetail("UP", created.id()));
         assertEquals(original, avatarReference(created.id()));
         assertNull(reservations.findById(original).orElseThrow().unreferencedAt);
         assertArrayEquals(originalBytes, avatars.load(original).bytes());
@@ -218,9 +217,9 @@ class CreatorAvatarIntegrationTest {
 
     @Test void invalidFilesAndMissingConfigurationNeverCreateLedgerRows() throws Exception {
         assertEquals(ApiErrorCode.CREATOR_INVALID_REQUEST, assertThrows(ApiException.class,
-                () -> avatars.upload(new MockMultipartFile("avatar", new byte[] {1,2,3}))).errorCode());
+                () -> avatars.upload(new MockMultipartFile("image", new byte[] {1,2,3}))).errorCode());
         assertEquals(ApiErrorCode.FILE_TOO_LARGE, assertThrows(ApiException.class,
-                () -> avatars.upload(new MockMultipartFile("avatar", new byte[ImageValidation.MAX_BYTES + 1]))).errorCode());
+                () -> avatars.upload(new MockMultipartFile("image", new byte[ImageValidation.MAX_BYTES + 1]))).errorCode());
         final CosImageStorage unavailable = new CosImageStorage((COSClient) null, "images-1251234567", PREFIX);
         try {
             final CreatorAvatarService disabled = new CreatorAvatarService(reservations, creators, unavailable, transactions, PREFIX);
@@ -430,6 +429,6 @@ class CreatorAvatarIntegrationTest {
     private static MockMultipartFile png(final int width, final int height) throws Exception {
         final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         ImageIO.write(new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB), "png", bytes);
-        return new MockMultipartFile("avatar", "untrusted.exe", "application/octet-stream", bytes.toByteArray());
+        return new MockMultipartFile("image", "untrusted.exe", "application/octet-stream", bytes.toByteArray());
     }
 }

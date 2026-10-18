@@ -18,8 +18,7 @@ function reset() {
     nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ id: 40, nodeId: 30, title: 'Final day — a long broadcast title for narrow screens', url: 'https://example.org/watch', matchDate: '2026-08-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed team', 'Other international team'], perspective: 'POV', coverId }] }],
     replayStarts: { 40: '2026-08-16T11:00:00Z' }, nextId: 100, failNext: false }
 }
-const publicBase = '/api/tournament-broadcasts/v2', adminBase = '/api/admin/tournament-broadcasts/v2'
-const publicTimedBase = '/api/tournament-broadcasts/v3', adminTimedBase = '/api/admin/tournament-broadcasts/v3'
+const publicBase = '/api/tournament-broadcasts', adminBase = '/api/admin/tournament-broadcasts'
 const coverBase = '/api/tournament-broadcasts/covers/'
 function send(response, status, value) {
   response.statusCode = status
@@ -47,12 +46,10 @@ const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
   if (path === '/api/observability/events') { send(response, 204); return }
   if (path.startsWith(coverBase)) { response.statusCode = 404; response.end(); return }
-  if (![publicBase, adminBase, publicTimedBase, adminTimedBase].some(base => path.startsWith(base))) { next(); return }
+  if (![publicBase, adminBase].some(base => path === base || path.startsWith(`${base}/`))) { next(); return }
   try {
-    const timed = path.startsWith(publicTimedBase) || path.startsWith(adminTimedBase)
-    const admin = path.startsWith(adminBase) || path.startsWith(adminTimedBase)
-    const base = timed ? (admin ? adminTimedBase : publicTimedBase) : (admin ? adminBase : publicBase)
-    const view = category => timed ? timedCategoryView(category) : categoryView(category)
+    const admin = path.startsWith(adminBase)
+    const base = admin ? adminBase : publicBase
     const parts = path.slice(base.length).split('/').filter(Boolean), targetId = Number(parts[1])
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { failure(response, 403, 'AUTH_FORBIDDEN'); return }
     if (!parts.length) { send(response, 200, { servers, seasons: db.seasons.filter(value => value.server === url.searchParams.get('server')), coverUploadAvailable: true }); return }
@@ -66,17 +63,17 @@ const middleware = async (request, response, next) => {
     if (request.method === 'GET') {
       if (!season) { failure(response, 404, 'RESOURCE_NOT_FOUND'); return }
       if (parts[2] === 'deletion-preview') send(response, 200, { seasonId: season.id, expectedVersion: season.version, rootCount: node ? 1 : season.rootCount, replayCount: node ? node.replays.length : season.replayCount })
-      else send(response, 200, category ? view(category) : seasonView(season))
+      else send(response, 200, category ? timedCategoryView(category) : seasonView(season))
       return
     }
-    let payload
+    let payload, startsAt
     if (request.method !== 'DELETE') {
       const incoming = new Request(url, { method: request.method, headers: request.headers, body: Readable.toWeb(request), duplex: 'half' })
-      payload = String(request.headers['content-type']).startsWith('multipart/')
-        ? JSON.parse(await (await incoming.formData()).get('payload').text()) : await incoming.json()
+      if (String(request.headers['content-type']).startsWith('multipart/')) {
+        const envelope = JSON.parse(await (await incoming.formData()).get('payload').text())
+        payload = envelope.replay; startsAt = envelope.startsAt
+      } else payload = await incoming.json()
     }
-    const startsAt = timed && payload?.replay ? payload.startsAt : undefined
-    if (timed && payload?.replay) payload = payload.replay
     if (db.failNext) { db.failNext = false; failure(response, 400, 'INVALID_ARGUMENT'); return }
     if (season && (payload?.expectedVersion ?? Number(url.searchParams.get('expectedVersion'))) !== season.version) { failure(response, 409, 'BROADCAST_VERSION_CONFLICT'); return }
     if (request.method === 'DELETE') {
@@ -99,16 +96,13 @@ const middleware = async (request, response, next) => {
       db.nodes.push(node); season.version++; recount(season)
     } else {
       const { expectedVersion, coverAction, ...fields } = payload
-      const previousDate = replay?.matchDate
       const saved = replay || { id: db.nextId++, nodeId: node.id, coverId: null }
       Object.assign(saved, fields)
       if (!replay) node.replays.push(saved)
-      db.replayStarts ||= {}
-      if (timed) db.replayStarts[saved.id] = startsAt
-      else if (previousDate !== saved.matchDate) delete db.replayStarts[saved.id]
+      db.replayStarts[saved.id] = startsAt
       season.version++; recount(season)
     }
-    send(response, 200, category ? view(category) : seasonView(season))
+    send(response, 200, category ? timedCategoryView(category) : seasonView(season))
   } catch (error) { console.error(error); failure(response, 500, 'INTERNAL_ERROR') }
 }
 
@@ -237,14 +231,14 @@ try {
       assert.ok(await page.evaluate(`document.querySelector('[data-testid=broadcast-replay-40]').textContent.includes(${JSON.stringify(groupLabel)})`), 'group number follows the UI language')
       assert.equal(await page.evaluate('document.querySelector("[data-testid=broadcast-display-time-zone]").value'), 'server')
       await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('19:00') && value.includes('UTC+8'))
-      await fill(page, { 'broadcast-display-time-zone': 'UTC' })
-      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('11:00 UTC'))
-      await geometry(page)
       if (screenshots && ['showcase-desktop', 'classic-mobile'].includes(scenario.name)) {
         await mkdir(screenshots, { recursive: true })
         const image = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, sessionId)
         await writeFile(join(screenshots, `${scenario.name}.png`), Buffer.from(image.data, 'base64'))
       }
+      await fill(page, { 'broadcast-display-time-zone': 'UTC' })
+      await page.waitForValue('document.querySelector("[data-testid=broadcast-replay-40]").textContent', value => value.includes('11:00 UTC'))
+      await geometry(page)
       if (!scenario.geometryOnly) {
         await page.goto(`${origin}/?view=league-broadcasts&lbServer=CN&ws-auth=1&ws-roles=wotbtools-admin`)
         await tap(page, '[data-testid=broadcast-edit-season-10]', scenario.touch)

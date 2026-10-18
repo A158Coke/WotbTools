@@ -1,7 +1,6 @@
 package com.wotb.web.tournament.service;
 
 import com.wotb.web.tournament.dto.BroadcastDtos;
-import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.entity.BroadcastCategory;
 import com.wotb.web.tournament.entity.BroadcastNode;
 import com.wotb.web.tournament.entity.BroadcastReplay;
@@ -31,7 +30,6 @@ import java.util.Comparator;
 import java.util.Objects;
 import java.util.List;
 import java.util.Set;
-import java.util.function.BiFunction;
 
 /** The season lock serializes tree edits; COS upload runs before that transaction. */
 @Service
@@ -65,72 +63,9 @@ public class BroadcastService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public BroadcastDtos.SeasonView season(final long id) { return seasonView(findSeason(id)); }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public BroadcastDtos.CategoryView category(final long id) {
+    public BroadcastDtos.TimedCategoryView category(final long id) {
         final BroadcastCategory category = findCategory(id);
         return categoryView(findSeason(category.seasonId), category);
-    }
-
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public BroadcastDtos.TimedCategoryView timedCategory(final long id) {
-        final BroadcastCategory category = findCategory(id);
-        return timedCategoryView(findSeason(category.seasonId), category);
-    }
-    public BroadcastDtos.TimedCategoryView timedCreateNode(final long categoryId, final BroadcastDtos.NodeCreate request) {
-        return createNode(categoryId, request, this::timedCategoryView);
-    }
-    public BroadcastDtos.TimedCategoryView timedCreateReplay(final long nodeId, final BroadcastDtos.TimedReplaySave request, final MultipartFile cover) {
-        return saveReplay(nodeId, null, request.replay(), cover, null, false, true, request.startsAt(), this::timedCategoryView);
-    }
-    public BroadcastDtos.TimedCategoryView timedUpdateReplay(final long replayId, final BroadcastDtos.TimedReplaySave request, final MultipartFile cover) {
-        final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId, replayId, request.replay(), cover, null, false, true, request.startsAt(), this::timedCategoryView);
-    }
-
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public BroadcastLegacyDtos.Index legacyIndex(final String server) { return mapper.legacyIndex(index(server)); }
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public BroadcastLegacyDtos.SeasonView legacySeason(final long id) { return mapper.legacySeasonView(season(id)); }
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public BroadcastLegacyDtos.CategoryView legacyCategory(final long id) {
-        final BroadcastCategory category = findCategory(id);
-        return legacyCategoryView(findSeason(category.seasonId),category);
-    }
-    public BroadcastLegacyDtos.SeasonView legacyCreateSeason(final BroadcastLegacyDtos.SeasonCreate request) {
-        return mapper.legacySeasonView(createSeason(new BroadcastDtos.SeasonCreate(request.server(),request.year(),request.name(),request.name(),null,request.startDate())));
-    }
-    public BroadcastLegacyDtos.SeasonView legacyUpdateSeason(final long id, final BroadcastLegacyDtos.SeasonUpdate request) {
-        return mapper.legacySeasonView(updateSeason(id,new BroadcastDtos.SeasonUpdate(request.expectedVersion(),request.year(),request.name(),request.name(),null,request.startDate()),true));
-    }
-    public BroadcastLegacyDtos.SeasonView legacyCreateCategory(final long id, final BroadcastDtos.CategoryCreate request) {
-        return mapper.legacySeasonView(createCategory(id,request));
-    }
-    public BroadcastLegacyDtos.CategoryView legacyCreateNode(final long id, final BroadcastDtos.NodeCreate request) {
-        return createNode(id,request,this::legacyCategoryView);
-    }
-    public BroadcastLegacyDtos.CategoryView legacyCreateReplay(final long nodeId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
-        return saveReplay(nodeId,null,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,true,false,null,this::legacyCategoryView);
-    }
-    public BroadcastLegacyDtos.CategoryView legacyUpdateReplay(final long replayId, final BroadcastLegacyDtos.ReplaySave request, final MultipartFile cover) {
-        final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId,replayId,legacyReplaySave(nodeId,request),cover,StringUtils.hasText(request.groupLabel()) ? request.groupLabel().strip() : null,true,false,null,this::legacyCategoryView);
-    }
-    private BroadcastDtos.ReplaySave legacyReplaySave(final long nodeId, final BroadcastLegacyDtos.ReplaySave request) {
-        final Integer number = transactions.execute(status -> {
-            final BroadcastNode node = findNode(nodeId); final BroadcastCategory category = findCategory(node.categoryId);
-            if (!POINTS.equals(category.type)) {
-                if (StringUtils.hasText(request.groupLabel())) { throw invalid(); }
-                return request.groupNumber();
-            }
-            if (request.groupNumber() != null || request.bracket() != null) { throw invalid(); }
-            if (!StringUtils.hasText(request.groupLabel())) { return null; }
-            text(request.groupLabel(),100);
-            final String label = request.groupLabel().strip();
-            if (!label.matches("[0-9]+")) { return null; }
-            try { final int parsed = Integer.parseInt(label); return parsed > 0 ? parsed : null; }
-            catch (final NumberFormatException failure) { return null; }
-        });
-        return new BroadcastDtos.ReplaySave(request.expectedVersion(),request.title(),request.url(),request.matchDate(),request.dayNumber(),number,
-                request.bracket(),request.teams(),request.perspective(),request.coverAction());
     }
 
     public BroadcastDtos.SeasonView createSeason(final BroadcastDtos.SeasonCreate request) {
@@ -144,16 +79,13 @@ public class BroadcastService {
         });
     }
     public BroadcastDtos.SeasonView updateSeason(final long id, final BroadcastDtos.SeasonUpdate request) {
-        return updateSeason(id,request,false);
-    }
-    private BroadcastDtos.SeasonView updateSeason(final long id, final BroadcastDtos.SeasonUpdate request, final boolean legacy) {
         validateSeason(request.year(), request.nameZh(), request.nameEn(), request.nameRu(), request.startDate());
         return transactions.execute(status -> {
             final BroadcastSeason season = locked(id, request.expectedVersion());
             season.year = request.year();
-            if (!legacy || season.nameZh.equals(season.nameEn)) { season.nameZh = request.nameZh().strip(); }
+            season.nameZh = request.nameZh().strip();
             season.nameEn = request.nameEn().strip();
-            if (!legacy) { season.nameRu = StringUtils.hasText(request.nameRu()) ? request.nameRu().strip() : null; }
+            season.nameRu = StringUtils.hasText(request.nameRu()) ? request.nameRu().strip() : null;
             season.startDate = request.startDate();
             season.version++; return seasonView(season);
         });
@@ -169,11 +101,7 @@ public class BroadcastService {
             season.version++; return seasonView(season);
         });
     }
-    public BroadcastDtos.CategoryView createNode(final long categoryId, final BroadcastDtos.NodeCreate request) {
-        return createNode(categoryId,request,this::categoryView);
-    }
-    private <T> T createNode(final long categoryId, final BroadcastDtos.NodeCreate request,
-                             final BiFunction<BroadcastSeason,BroadcastCategory,T> response) {
+    public BroadcastDtos.TimedCategoryView createNode(final long categoryId, final BroadcastDtos.NodeCreate request) {
         return transactions.execute(status -> {
             final BroadcastCategory category = findCategory(categoryId);
             final BroadcastSeason season = locked(category.seasonId, request.expectedVersion());
@@ -191,27 +119,26 @@ public class BroadcastService {
             if (nodes.existsByCategoryIdAndRootKey(categoryId, key)) { throw new ApiException(ApiErrorCode.BROADCAST_NODE_CONFLICT); }
             final BroadcastNode node = new BroadcastNode(); node.categoryId = categoryId; node.rootKey = key;
             node.roundNumber = request.roundNumber(); node.format = request.format(); nodes.save(node);
-            season.version++; return response.apply(season,category);
+            season.version++; return categoryView(season, category);
         });
     }
 
-    public BroadcastDtos.CategoryView createReplay(final long nodeId, final BroadcastDtos.ReplaySave request,
-                                                  final MultipartFile cover) {
-        return saveReplay(nodeId, null, request, cover,null,false,false,null,this::categoryView);
+    public BroadcastDtos.TimedCategoryView createReplay(final long nodeId, final BroadcastDtos.TimedReplaySave request,
+                                                       final MultipartFile cover) {
+        return saveReplay(nodeId, null, request.replay(), cover, request.startsAt());
     }
-    public BroadcastDtos.CategoryView updateReplay(final long replayId, final BroadcastDtos.ReplaySave request,
-                                                  final MultipartFile cover) {
+    public BroadcastDtos.TimedCategoryView updateReplay(final long replayId, final BroadcastDtos.TimedReplaySave request,
+                                                       final MultipartFile cover) {
         final long nodeId = transactions.execute(status -> findReplay(replayId).nodeId);
-        return saveReplay(nodeId, replayId, request, cover,null,false,false,null,this::categoryView);
+        return saveReplay(nodeId, replayId, request.replay(), cover, request.startsAt());
     }
-    private <T> T saveReplay(final long nodeId, final Long replayId, final BroadcastDtos.ReplaySave request,
-                             final MultipartFile file, final String legacyGroupLabel, final boolean legacyWrite, final boolean timedWrite, final Instant startsAt,
-                             final BiFunction<BroadcastSeason,BroadcastCategory,T> response) {
+    private BroadcastDtos.TimedCategoryView saveReplay(final long nodeId, final Long replayId, final BroadcastDtos.ReplaySave request,
+                                                       final MultipartFile file, final Instant startsAt) {
         final long seasonId = transactions.execute(status -> {
             final BroadcastNode node = findNode(nodeId); final BroadcastCategory category = findCategory(node.categoryId);
             final BroadcastSeason season = findSeason(category.seasonId); version(season, request.expectedVersion());
-            validateReplay(request, category.type, node.format, file, legacyGroupLabel);
-            if (timedWrite && startsAt != null) {
+            validateReplay(request, category.type, node.format, file);
+            if (startsAt != null) {
                 try {
                     if (!startsAt.atZone(serverZone(season.server)).toLocalDate().equals(request.matchDate())) { throw invalid(); }
                 } catch (final DateTimeException failure) { throw invalid(); }
@@ -229,15 +156,10 @@ public class BroadcastService {
             final String previousCover = replay.coverId;
             if (uploaded != null) { covers.attach(seasonId, uploaded); }
             replay.nodeId = nodeId; replay.title = request.title().strip(); replay.url = request.url().strip();
-            // Old clients know only the date: preserve the instant unless they change that date.
-            if (timedWrite) { replay.matchStartsAt = startsAt == null ? null : startsAt.truncatedTo(ChronoUnit.MICROS); }
-            else if (!Objects.equals(replay.matchDate, request.matchDate())) { replay.matchStartsAt = null; }
+            replay.matchStartsAt = startsAt == null ? null : startsAt.truncatedTo(ChronoUnit.MICROS);
             replay.matchDate = request.matchDate(); replay.dayNumber = request.dayNumber();
-            // Current clients cannot see the legacy spelling; unrelated edits must retain the archive.
-            // A legacy editor can clear it explicitly; an actual group-number change also replaces it.
-            if (legacyWrite || !Objects.equals(request.groupNumber(), replay.groupNumber)) {
-                replay.legacyGroupLabel = legacyGroupLabel;
-            }
+            // Unrelated edits retain the archived spelling; changing the group replaces it.
+            if (!Objects.equals(request.groupNumber(), replay.groupNumber)) { replay.legacyGroupLabel = null; }
             replay.groupNumber = request.groupNumber(); replay.bracket = request.bracket();
             replay.teams = request.teams().stream().map(String::strip).toList(); replay.perspective = request.perspective();
             if (uploaded != null) { replay.coverId = uploaded; }
@@ -245,7 +167,7 @@ public class BroadcastService {
             if (replayId == null) { replay.createdAt = Instant.now(); }
             replays.saveAndFlush(replay);
             if (previousCover != null && !previousCover.equals(replay.coverId)) { covers.detach(previousCover); }
-            season.version++; return response.apply(season,category);
+            season.version++; return categoryView(season, category);
         });
     }
 
@@ -300,27 +222,19 @@ public class BroadcastService {
         return new BroadcastDtos.SeasonView(seasonDto(season), categories.findBySeasonIdOrderByIdAsc(season.id)
                 .stream().map(mapper::category).toList(), covers.configured());
     }
-    private BroadcastDtos.CategoryView categoryView(final BroadcastSeason season, final BroadcastCategory category) {
-        return categoryView(season, category, null);
-    }
-    private BroadcastDtos.TimedCategoryView timedCategoryView(final BroadcastSeason season, final BroadcastCategory category) {
+    private BroadcastDtos.TimedCategoryView categoryView(final BroadcastSeason season, final BroadcastCategory category) {
         final List<BroadcastDtos.ReplayStart> starts = new ArrayList<>();
-        final BroadcastDtos.CategoryView data = categoryView(season, category, starts);
-        return new BroadcastDtos.TimedCategoryView(data, serverZone(season.server).getId(), List.copyOf(starts));
-    }
-    private BroadcastDtos.CategoryView categoryView(final BroadcastSeason season, final BroadcastCategory category,
-                                                    final List<BroadcastDtos.ReplayStart> starts) {
-        return new BroadcastDtos.CategoryView(seasonDto(season), mapper.category(category),
+        final BroadcastDtos.CategoryView data = new BroadcastDtos.CategoryView(seasonDto(season), mapper.category(category),
                 nodes.findByCategoryIdOrderByRootKeyAscIdAsc(category.id).stream().map(node -> {
-                    final List<BroadcastReplay> stored = replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id);
-                    if (starts == null) { return mapper.node(node, stored); }
                     // Unknown times follow timed entries on the same day, retaining their existing id order.
-                    final List<BroadcastReplay> ordered = stored.stream().sorted(Comparator.comparing((BroadcastReplay replay) -> replay.matchDate)
-                            .thenComparing(replay -> replay.matchStartsAt, Comparator.nullsLast(Comparator.naturalOrder()))
-                            .thenComparing(replay -> replay.id)).toList();
+                    final List<BroadcastReplay> ordered = replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id).stream()
+                            .sorted(Comparator.comparing((BroadcastReplay replay) -> replay.matchDate)
+                                    .thenComparing(replay -> replay.matchStartsAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                                    .thenComparing(replay -> replay.id)).toList();
                     ordered.stream().filter(replay -> replay.matchStartsAt != null).map(mapper::replayStart).forEach(starts::add);
                     return mapper.node(node, ordered);
                 }).toList(), covers.configured());
+        return new BroadcastDtos.TimedCategoryView(data, serverZone(season.server).getId(), List.copyOf(starts));
     }
     private static ZoneId serverZone(final String server) {
         return ZoneId.of(switch (server) {
@@ -330,11 +244,6 @@ public class BroadcastService {
             case "LESTA" -> "Europe/Moscow";
             default -> throw invalid();
         });
-    }
-    private BroadcastLegacyDtos.CategoryView legacyCategoryView(final BroadcastSeason season, final BroadcastCategory category) {
-        return new BroadcastLegacyDtos.CategoryView(mapper.legacySeason(seasonDto(season)),mapper.category(category),
-                nodes.findByCategoryIdOrderByRootKeyAscIdAsc(category.id).stream()
-                        .map(node -> mapper.legacyNode(node,replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id),category.type)).toList(),covers.configured());
     }
     private BroadcastSeason findSeason(final long id) { return seasons.findById(id).orElseThrow(BroadcastService::notFound); }
     private BroadcastCategory findCategory(final long id) { return categories.findById(id).orElseThrow(BroadcastService::notFound); }
@@ -354,7 +263,7 @@ public class BroadcastService {
         if (startDate != null) { date(startDate); }
     }
     private static void validateReplay(final BroadcastDtos.ReplaySave request, final String type,
-                                       final String format, final MultipartFile file, final String legacyGroupLabel) {
+                                       final String format, final MultipartFile file) {
         text(request.title(), 200); text(request.url(), 2048); date(request.matchDate());
         try {
             final URI uri = URI.create(request.url().strip());
@@ -364,10 +273,6 @@ public class BroadcastService {
         if (request.dayNumber() < 1 || request.teams() == null || request.teams().size() < 2 || request.teams().size() > 4
                 || !contains(Set.of("POV", "OBSERVER"), request.perspective())) { throw invalid(); }
         request.teams().forEach(team -> text(team, 100));
-        // Only the legacy write boundary supplies a text label; current clients use an optional number.
-        if (legacyGroupLabel != null) {
-            text(legacyGroupLabel,100); if (!POINTS.equals(type)) { throw invalid(); }
-        }
         if (POINTS.equals(type)) {
             if ((request.groupNumber() != null && request.groupNumber() < 1) || request.bracket() != null) { throw invalid(); }
         } else if (SEMI_FINALS.equals(type) || "KNOCKOUT".equals(format)) {
