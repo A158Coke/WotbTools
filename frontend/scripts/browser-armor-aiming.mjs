@@ -365,12 +365,35 @@ try {
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
   // #traj-info 是 position:fixed；页面滚动后 left/top 必须按 canvas 的实时 rect 重算。
-  // 先等相机 damping 停止：拖动用例刚结束，相机余滑会让投影点漂移，污染位移断言。
+  // 先等结果卡在屏幕上真正稳定：拖动用例刚结束，OrbitControls damping 的渐近余滑会让
+  // cameraSettledMs 长时间不达阈值；直接观测卡片连续帧的位置范围，超时则 fail（review
+  // 2026-10-18：不得吞掉 timeout，也不得用固定 delay）。
   {
-    await page.waitForValue(`(() => {
-      const s = window.__armorRicochet.aimingState();
-      return s.cameraSettledMs > Math.max(400, 3 * s.frameIntervalMs);
-    })()`, (v) => v === true, { timeout: 20000, label: 'camera settle (scroll test)' }).catch(() => {})
+    const cardStable = await page.evaluate(`new Promise((resolve) => {
+      const started = performance.now();
+      let samples = [];
+      const tick = () => {
+        const el = document.getElementById('traj-info');
+        const r = el?.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          samples.push({ x: r.x, y: r.y });
+          if (samples.length > 5) samples.shift();
+          if (samples.length === 5) {
+            const xs = samples.map(s => s.x), ys = samples.map(s => s.y);
+            if (Math.max(...xs) - Math.min(...xs) < 0.5 && Math.max(...ys) - Math.min(...ys) < 0.5) {
+              resolve(true);
+              return;
+            }
+          }
+        } else {
+          samples = [];
+        }
+        if (performance.now() - started > 20000) { resolve(false); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })`)
+    if (!cardStable) throw new Error('result card never stabilized before scroll test')
     const readRects = () => page.evaluate(`(() => {
       const card = document.getElementById('traj-info');
       const canvas = document.querySelector('canvas');
@@ -392,7 +415,13 @@ try {
       document.body.append(d);
       window.scrollTo(0, 120);
     })()`)
-    await delay(250)
+    // 等卡片真正被渲染循环重摆位（状态等待），不要用固定 delay：慢 runner/相机余滑
+    // 时固定延迟会把相机运动混进位移断言（review 2026-10-18）。
+    await page.waitForValue(`(() => {
+      const c = document.getElementById('traj-info')?.getBoundingClientRect();
+      return c ? c.y : null;
+    })()`, (v) => Number.isFinite(v) && Math.abs(v - before.card.y) > 20,
+    { timeout: 5000, label: 'post-scroll card reposition' })
     const after = await readRects()
     const movedCanvas = before && after && Math.abs(after.canvas.y - before.canvas.y) > 20
     const sameDelta = before && after

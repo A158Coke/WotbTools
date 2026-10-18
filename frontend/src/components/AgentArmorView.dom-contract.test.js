@@ -236,7 +236,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(stateScene).toMatch(/primaryMeshes\.forEach/)
     expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
     // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
-    expect(kernel).toMatch(/highp float totalConsume = \(spacedSatGuard > 0\.5 && rawTotal >= 1\.0\)[\s\S]*?: max\(0\.0, rawTotal\);/)
+    expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
     expect(kernel).not.toMatch(/spacedState\.b/)
     expect(kernel).toMatch(/float spacedThick = totalConsume \* penetration;/)
     expect(kernel).toMatch(/bool moduleInFront = spacedState\.a > 0\.5;/)
@@ -287,6 +287,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/spacedSatGuard: \{ value: 0 \},/)
     expect(kernel).toMatch(/spacedSatGuard\.value = rtIsFloat \? 0 : 1;/)
     expect(kernel).toMatch(/const rtIsFloat = spacedRTFloatCapable\(\);/)
+    // 8 位 R 饱和 = 真实累计厚度未知，必须 fail-closed，不能当成恰好一份穿深算 CDF。
+    expect(kernel).toMatch(/spacedSatBlocked = spacedSatGuard > 0\.5 && rawTotal >= 1\.0;/)
+    expect(kernel).toMatch(/if \(spacedSatBlocked\) \{/)
   })
   it('累计格式：逐层 normalized R 可 >1；8 位饱和按整穿深保守处理', () => {
     // 两块 40mm 间隙甲均 @69°（相隔 0.2m）+ 25mm 主装甲 @0°，AP 100/100/5°。
@@ -339,6 +342,13 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
     expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
+  })
+  it('爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF', () => {
+    // review 2026-10-18：100mm HE 打 100mm 间隙甲 + 1mm 主甲，rem<=0 时
+    // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
+    expect(kernel).not.toMatch(/isExplosive && rem > 0\.0/)
+    expect(kernel).toMatch(/if \(isExplosive\) \{/)
+    expect(kernel).toMatch(/else if \(rem > 0\.0\) \{/)
   })
   it('单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间', () => {
     // review 2026-10-18 反例：chassis20 → spaced80 → hull1，卡片 13.7%；
