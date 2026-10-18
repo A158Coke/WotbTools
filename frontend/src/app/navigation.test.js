@@ -41,7 +41,7 @@ describe('primary navigation', () => {
     expect(primarySection('creators')).toBe('creators')
     expect(sectionTitleKey('creators')).toBe('creators.nav')
     expect(viewFromRoute({ path: '/', query: { view: 'creators' } })).toBe('creators')
-    expect(ADMIN_NAV.find(item => item.view === 'creators-config')?.role).toBe('tournamentAdmin')
+    expect(ADMIN_NAV.find(item => item.view === 'creators-config')?.role).toBe('contentAdmin')
     const route = { path: '/', query: { view: 'creators', creatorCategory: '3', lang: 'ru' } }
     expect(locationForView('replay', route).query).toEqual({ view: 'replay', lang: 'ru' })
     expect(locationForView('creators', route).query).toEqual(route.query)
