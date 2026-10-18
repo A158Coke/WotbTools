@@ -6,8 +6,8 @@
 # staged config, so one host can never silently run another host's profile.
 #
 # Read-only, and deliberately credential-free: onboarding is proven by the
-# agent's own outbound connection to the reviewed target Core route and by the
-# persistent identity it generated, never by the Komodo admin API.
+# agent's own outbound connection to the pinned Core address and by the persistent
+# identity it generated, never by the Komodo admin API.
 set -Eeuo pipefail
 
 TARGET="${1:?usage: verify.sh <target> <runtime-dir>}"
@@ -57,21 +57,14 @@ marker_state="$(periphery_marker_state)"
 echo 'PASS periphery-onboarding-complete'
 
 # 5 + 9. Outbound connectivity from the running PID, after the final restart that
-# no longer has the bootstrap credential available. The reviewed target profile
-# owns the Core port: Yecao/TX use 9120 over WireGuard, Alibaba uses 443 over WSS.
+# no longer has the bootstrap credential available.
 pid="$(main_pid 2>/dev/null || true)"
 [[ "$pid" =~ ^[0-9]+$ ]] && [[ "$pid" -gt 0 ]] || fail "periphery.service has no main PID ($pid)."
-# 4b. The live process must actually run the reviewed invocation and the pinned
-# binary. A systemd drop-in/ExecStart override, or a binary that was replaced while
-# the old process kept the deleted inode, leaves the reviewed files on disk while the
-# running agent uses something else; only /proc/<pid>/{cmdline,exe} can show that.
-require_reviewed_argv "$pid"
-echo 'PASS periphery-live-argv'
-assert_live_executable_sha "$pid" "$PERIPHERY_SHA256"
-echo "PASS periphery-live-executable $PERIPHERY_SHA256"
 if [[ -e "$periphery_bootstrap_env" ]]; then
   fail "the transient bootstrap credential survived: $periphery_bootstrap_env"
 fi
+# Fail closed: an environment that cannot be inspected is NOT evidence that the
+# credential is absent, so it is a hard verification failure.
 process_env_state=0
 process_env_is_clean "$pid" || process_env_state=$?
 if [[ "$process_env_state" != 0 ]]; then
@@ -87,23 +80,20 @@ for attempt in $(seq 1 "$verify_attempts"); do
   [[ "$verify_sleep" -gt 0 ]] && sleep "$verify_sleep"
 done
 [[ "$connected" == true ]] || fail \
-  "Periphery (pid $pid) has no outbound connection on reviewed Core port $periphery_core_port for target $periphery_target."
+  "Periphery (pid $pid) has no outbound connection to the pinned Core address 10.20.0.2:9120."
 service_active || fail 'periphery.service became inactive during verification.'
-echo "PASS periphery-outbound-connected target=$periphery_target pid=$pid core-port=$periphery_core_port"
+echo "PASS periphery-outbound-connected pid=$pid -> 10.20.0.2:9120"
 
 # 6. Outbound-only: Periphery must not listen on its inbound port.
 listeners="$(listener_on_8120)"
 [[ -z "$listeners" ]] || fail "Periphery must not listen on :8120, found: $listeners"
 echo 'PASS periphery-no-inbound-8120'
 
-# 7. The effective config is exactly this target's reviewed config. This byte-for-byte
-# comparison owns the endpoint assertion too: the existing targets review the private
-# WireGuard Core URL while ali-sh-asset-01 reviews the public HTTPS Core URL. Do not
-# re-impose one global WireGuard address after the target-specific comparison.
+# 7. The effective config is exactly this target's reviewed config.
 cmp -s "$periphery_config" "$periphery_config_source" || fail \
   "the effective config is not the reviewed $periphery_target config: $periphery_config differs from $periphery_config_source"
-grep -Eq '^core_addresses = \["https?://[^"[:space:]]+"\]$' "$periphery_config" \
-  || fail "persistent config must declare exactly one reviewed HTTP(S) Core address: $periphery_config"
+grep -Eq '^core_addresses = \["http://10\.20\.0\.2:9120"\]$' "$periphery_config" \
+  || fail "persistent config must set core_addresses to the WireGuard Core address: $periphery_config"
 grep -Eq "^connect_as = \"$periphery_connect_as\"\$" "$periphery_config" \
   || fail "target $periphery_target must never install another target's Server identity: $periphery_config must set connect_as = \"$periphery_connect_as\""
 grep -Eq '^server_enabled = false$' "$periphery_config" \

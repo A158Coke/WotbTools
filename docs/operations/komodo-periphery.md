@@ -1,4 +1,4 @@
-# Komodo Periphery on Yecao, TX1, TX2 and the Alibaba asset host (K3.1 + K3.2 + K3.3 + Alibaba)
+# Komodo Periphery on Yecao, TX1 and TX2 (K3.1 + K3.2 + K3.3)
 
 Komodo **Periphery** runs on each production host as a repository-owned,
 systemd-managed agent, so Komodo Core can present those hosts as Servers. One
@@ -13,32 +13,21 @@ TX1    periphery v2.3.3 ──┼──>  Komodo Core  http://10.20.0.2:9120  (W
 TX2    periphery v2.3.3 ──┘                 │
                                             v
                           Komodo UI → Servers → yecao OK / tx1 OK / tx2 OK
-
-Alibaba ali-sh-asset-01  periphery v2.3.3 ──> https://komodo.wotbtools.com :443
-                                              (public TLS/WSS, outbound only,
-                                               outside the WireGuard mesh)
 ```
 
-Every agent uses **Periphery v2.3.3**, connects **outbound only**, and never opens an
-inbound port. Yecao, TX1 and TX2 reach Core over the private WireGuard route
-`http://10.20.0.2:9120`. `ali-sh-asset-01` is the single reviewed exception: it is
-not on the WireGuard mesh and dials the existing public Komodo endpoint
-`https://komodo.wotbtools.com` on remote port `443`. That exception exists only for
-this asset host; it is **not** a new default for future hosts, which must use the
-private route unless an equally explicit review says otherwise.
+Every agent uses **Periphery v2.3.3**, connects **outbound only** to
+`http://10.20.0.2:9120`, and never opens an inbound port.
 
 | Phase | Host | State |
 | --- | --- | --- |
 | K3.1 | Yecao | **COMPLETE**, production-proven; onboarding credential deleted after success |
 | K3.2 | TX1 | **COMPLETE**, production-proven; onboarding credential deleted, reconciles credential-free |
 | K3.3 | TX2 | **COMPLETE**, production-proven; first onboarding committed the marker, the credential was then deleted, and the follow-up credential-free run reconciled to the desired state with the running service untouched |
-| Alibaba asset origin | `ali-sh-asset-01` | **Existing-host adoption**: the agent was onboarded manually before repository ownership; `adopt-existing.sh` commits the durable marker only after the reviewed live-process proofs below |
 
-The three WireGuard Servers are online in Komodo and reconcile credential-free. Their
-declarative desired state lives in `infra/komodo/resources/servers.toml` (K4.1),
+All three Servers are online in Komodo and reconcile credential-free. The declarative
+desired state for them now lives in `infra/komodo/resources/servers.toml` (K4.1),
 under the review-before-apply Resource Sync — see
-[`komodo-resource-sync.md`](komodo-resource-sync.md). The Alibaba Server is the
-default `address = ""` outbound relationship; Core never dials it.
+[`komodo-resource-sync.md`](komodo-resource-sync.md).
 
 ## TX2 WireGuard MTU precondition
 
@@ -67,7 +56,6 @@ neither fix nor break it. Diagnosing it is `ss -tin` (retransmits, `Send-Q`) plu
 | Public HTTP ingress (`https://komodo.wotbtools.com`) | `.github/workflows/caddy.yml` (`deploy/tx/Caddyfile`) |
 | DNS for the control plane | `infra/tofu/komodo` (Komodo controller owner) |
 | Server communication and future workload orchestration | Komodo Core |
-| Alibaba Stack `wotbtools-asset-origin` (deploy) | human Komodo action; its Compose `up` holds the same host lock (see below) |
 
 The boundaries are enforced by contract tests: `deploy/periphery/**` is the only
 input of the Periphery owner, so a Periphery change triggers neither the Komodo
@@ -86,7 +74,6 @@ target-agnostic. Everything host-specific lives in
 | `yecao` | `yecao` | `/opt/wotb/.deploy.lock` | `/opt/periphery` | `root` (the SSH account is root) |
 | `tx1` | `tx1` | `/opt/wotb-tx/.deploy.lock` | `/opt/wotb-tx/periphery` | `sudo` (non-interactive) |
 | `tx2` | `tx2` | `/opt/wotb-tx2/.deploy.lock` | `/opt/wotb-tx2/periphery` | `sudo` (non-interactive) |
-| `ali-sh-asset-01` | `ali-sh-asset-01` | `/opt/wotb-asset/.deploy.lock` | `/opt/wotb-asset/periphery` | `sudo` (non-interactive, `admin` SSH account) |
 
 `target.env` is validated by the same `load_target_profile` code on the host and in
 the workflow: the target name must match its directory, `connect_as` must equal the
@@ -112,16 +99,6 @@ and never creates its own:
   and Alloy, so no two TX mutations can overlap.
 - **TX2:** `/opt/wotb-tx2/.deploy.lock`, the host's own deploy-owned lock, so no two
   TX2 mutations can overlap.
-- **Alibaba asset origin:** `/opt/wotb-asset/.deploy.lock`, the host's own deploy-owned
-  lock. The Komodo Stack `wotbtools-asset-origin` serializes its mutating Compose
-  `up` on the **same** lock through `compose_cmd_wrapper`
-  (`test -f … && test ! -L … && exec 9<… && flock --exclusive --nonblock 9 &&
-  [[COMPOSE_COMMAND]]`, `compose_cmd_wrapper_include = ["up"]`). The wrapper never
-  hands the pathname to flock (its pathname form would create the file): it requires
-  an existing regular non-symlink lock, opens it read-only on fd 9, and locks that fd,
-  so a missing or symlinked lock fails closed. A Stack deploy and a Periphery
-  reconcile can never overlap, and a Compose pull stays outside the lock because it
-  does not mutate the running Stack. No second lock is introduced.
 
 The lock root and its lock file belong to the host's deploy owner, so the reconcile
 **requires them to already exist** and fails closed if they do not. Creating the
@@ -133,13 +110,13 @@ assert that no two targets share one.
 
 - **Yecao** runs the reconcile directly as its (root) SSH account; the script
   asserts it is root.
-- **TX1**, **TX2** and **Alibaba** do not assume root. The same generic
-  `PERIPHERY_PRIVILEGE=sudo` path applies to all three: `reconcile.sh` re-executes
-  itself through **non-interactive sudo** (`sudo -n`) and requires that to be
-  available, failing closed otherwise. Only the generic onboarding variable is
-  preserved (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential
-  travels in the environment — never in argv, on disk, or in a log. A deterministic
-  `PATH` is set for the privileged half. There is no per-host sudo implementation.
+- **TX1** and **TX2** do not assume root. The same generic `PERIPHERY_PRIVILEGE=sudo`
+  path applies to both: `reconcile.sh` re-executes itself through
+  **non-interactive sudo** (`sudo -n`) and requires that to be available, failing
+  closed otherwise. Only the generic onboarding variable is preserved
+  (`sudo --preserve-env=KOMODO_PERIPHERY_ONBOARDING_KEY`), so the credential travels
+  in the environment — never in argv, on disk, or in a log. A deterministic `PATH`
+  is set for the privileged half. There is no per-host sudo implementation.
 
 ## Binary pin
 
@@ -187,11 +164,10 @@ ExecStart=/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.to
 
 ## Outbound only
 
-Every target config expresses exactly one connection mode and differs only in
+All three target configs express exactly one connection mode and differ only in
 `connect_as`:
 
 ```toml
-# Yecao / TX1 / TX2 (private WireGuard route)
 root_directory = "/etc/komodo"
 core_addresses = ["http://10.20.0.2:9120"]
 connect_as = "yecao"        # "yecao" / "tx1" / "tx2", one per target
@@ -202,28 +178,9 @@ disable_terminals = false
 disable_container_terminals = false
 ```
 
-```toml
-# ali-sh-asset-01 (the single reviewed public-Core exception)
-root_directory = "/etc/komodo"
-core_addresses = ["https://komodo.wotbtools.com"]
-connect_as = "ali-sh-asset-01"
-server_enabled = false
-private_key = "file:/etc/komodo/keys/periphery.key"
-core_public_keys = ["file:/etc/komodo/keys/core.pub"]
-disable_terminals = false
-disable_container_terminals = false
-```
-
-- **Yecao/TX1/TX2** reach Core only on the **private WireGuard address**
-  `10.20.0.2:9120`; the public name and any wildcard bind are forbidden and asserted
-  absent.
-- **Alibaba** is the narrow reviewed exception: it is outside the WireGuard mesh and
-  reaches the existing public Core ingress `https://komodo.wotbtools.com` outbound on
-  remote port **`443`** (TLS/WSS). Its target profile declares
-  `PERIPHERY_CORE_PORT=443` and `PERIPHERY_CORE_PEER_MATCH=:443`; the TOML/TLS checks
-  pin the logical Core identity, and only an ESTABLISHED socket to remote port 443
-  from the exact Periphery PID satisfies the peer proof. The exception does not
-  weaken the private-route rule for the other three hosts.
+- Core is reached on the **private WireGuard address**. The public name
+  (`https://komodo.wotbtools.com`), any host public address, and any wildcard bind
+  are forbidden and asserted absent.
 - `server_enabled = false` means Periphery never opens its inbound port, so **no
   listener exists on `:8120`** on any host. Production verification proves the
   absence at runtime, and the fixture proves the probe detects a deliberately bound
@@ -238,17 +195,15 @@ with `core_address` kept only as a legacy alias.
 
 The runtime variable is generic: **`KOMODO_PERIPHERY_ONBOARDING_KEY`**. The workflow
 maps each host's own GitHub secret into it (TX1: `KOMODO_TX1_ONBOARDING_KEY`, TX2:
-`KOMODO_TX2_ONBOARDING_KEY`, Alibaba: optional `KOMODO_ALI_ASSET_ONBOARDING_KEY`),
-and the scripts never know a host-specific secret name.
+`KOMODO_TX2_ONBOARDING_KEY`), and the scripts never know a host-specific secret name.
 
-**The three WireGuard hosts' onboarding credentials have been deleted** (the GitHub
-secrets and the UI onboarding keys, including `KOMODO_TX2_ONBOARDING_KEY` and
-`tx2-periphery-bootstrap` after TX2's first onboarding succeeded), so no job forwards
-a secret and every host reconciles from `onboarding-complete` + `periphery.key` +
+**All three hosts' onboarding credentials have been deleted** (the GitHub secrets and
+the UI onboarding keys, including `KOMODO_TX2_ONBOARDING_KEY` and
+`tx2-periphery-bootstrap` after TX2's first onboarding succeeded), so no job forwards a
+secret and every host reconciles from `onboarding-complete` + `periphery.key` +
 `core.pub`. That is the steady state: a reconcile on a completed host never needs a
 credential, and the workflow deliberately has no check that would require one to exist
-again. The Alibaba host is already onboarded, so its optional secret is not required
-either; it exists only for a fresh rebuild.
+again.
 
 1. `install.sh` decides from the host state, never from the identity file:
    - **marker valid + identity valid + `core.pub` valid** → onboarding is complete
@@ -284,48 +239,6 @@ The credential is never written to the config, the unit, a persistent
 startup config it logs (v2.3.3 `PeripheryConfig::sanitized`), and the workflow never
 echoes it.
 
-## Existing-host adoption boundary (Alibaba only)
-
-`deploy/periphery/adopt-existing.sh <target>` is a one-time bridge for a host that
-was onboarded manually before repository ownership. It never onboards, never accepts
-a bootstrap credential, and is a no-op on a host with no active agent (normal
-`install.sh` bootstrap then applies). Under the host mutation lock, and only when an
-existing service is active, it must prove **all** of the following before it
-commits `/etc/komodo/keys/onboarding-complete`:
-
-- a persistent identity and a pinned Core public key already exist;
-- the transient `/run/komodo/periphery-bootstrap.env` is gone;
-- the **complete** live `/proc/<MainPID>/environ` is readable and contains **no**
-  Periphery-prefixed entry in **any case** (`PERIPHERY_*` / `periphery_*`).
-  Komodo v2.3.3 lets environment variables override TOML and parses lowercase names
-  too (including `*_FILE` variants and aliases such as `CONNECT_AS`,
-  `ROOT_DIRECTORY`, `CORE_ADDRESSES` and the TLS flags), so a single override could
-  certify an identity/Core route the process is not using. The read is buffered
-  first and matched through the shared normalized-prefix helper, so a large
-  environment can never turn a match into a SIGPIPE false negative and the later
-  credential-free verification applies the same rule;
-- the installed TOML has no `onboarding_key` and canonicalizes to **exactly** the
-  reviewed target's effective config (only the legacy singular `core_address` and
-  semantically identical v2.3.3 defaults may differ);
-- the live `/proc/<MainPID>/cmdline` is exactly
-  `/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml`. Komodo
-  gives CLI config selection precedence over TOML/environment, so another config
-  path, a duplicate `--config-path`, a `-c` selector, an extra argument, or a
-  different executable rejects adoption instead of being normalized. This is a
-  deliberately strict boundary: the reviewed steady-state unit uses exactly that
-  `ExecStart`;
-- the executable behind `/proc/<MainPID>/exe` hashes to the staged release's
-  `PERIPHERY_SHA256`. The argv pathname is not proof that the process executes the
-  current inode: after an atomic replace the old process keeps the deleted file, so
-  adoption hashes the live inode and rejects a replaced-but-not-restarted agent;
-- an ESTABLISHED outbound connection exists from that exact PID to the reviewed
-  Core peer (remote `:443` for Alibaba; exact `10.20.0.2:9120` for the WireGuard
-  targets);
-- no listener exists on `:8120`.
-
-Adoption is fail-closed on any unreadable, ambiguous, or unsafe input; it never
-repairs or normalizes host state beyond the atomic marker write.
-
 ## Recovery behaviour
 
 | Situation | Behaviour |
@@ -336,9 +249,6 @@ repairs or normalizes host state beyond the atomic marker write.
 | Marker valid but identity or `core.pub` missing/unsafe, or the marker itself unsafe | **Fail closed**; corrupted state is never silently repaired |
 | Onboarding never completes, or the credential-free restart never reconnects | Bounded wait, then fail closed: credential removed, service **stopped**, marker stays absent |
 | The process environment cannot be inspected | **Fail closed** (never treated as evidence of absence) |
-| Existing-host adoption cannot prove identity/Core/env/argv/live-executable/peer | **Fail closed**; no marker is written and the host is left as it was |
-| Marker valid, on-disk binary exact, but the live `/proc/<pid>/exe` SHA differs from the pin (replaced-but-not-restarted process) | Reconcile **restarts** the service; the next `verify.sh` requires the live inode to hash to the pin |
-| Live executable or argv cannot be inspected | Reconcile restarts (cannot prove the desired live state); `verify.sh` **fails closed** |
 | `stop` does not take effect after a failed bootstrap | Escalated to a forced kill; a `CRITICAL` diagnostic if the unit still will not die |
 | Symlinked/irregular `/etc/komodo`, keys, binary, unit, or staged path | Refused; the install never follows a link |
 | Staged artifact SHA mismatch, or a staged config for another target | Refused before installation |
@@ -354,18 +264,15 @@ whose marker committed needs no credential ever again.
 An already-completed host whose binary, config, and unit already match the staged
 desired state, and whose service is already active, is **left running untouched**:
 the reconcile never stops a healthy service, and it restarts only when something the
-running agent consumes actually changed, when the live executable is not the pinned
-inode, or when the service is not running. Replacing the binary is safe while
-Periphery runs — the process keeps the inode it started from — so no preemptive stop
-is needed; the restart decision hashes `/proc/<pid>/exe` so "the path already
-matches" can never hide a stale live process. The directions are all required and
+running agent consumes actually changed or when the service is not running. Replacing
+the binary is safe while Periphery runs — the process keeps the inode it started
+from — so no preemptive stop is needed. The two directions are both required and
 covered by the fixture:
 
 | State observed | Reconcile behaviour |
 | --- | --- |
-| marker valid, service active, binary/config/unit already exact, live executable == pin | no stop, no restart; the service stays active |
+| marker valid, service active, binary/config/unit already exact | no stop, no restart; the service stays active |
 | marker valid, binary/config/unit changed | restart, so the new binary/config/unit takes effect |
-| marker valid, on-disk binary exact, live executable != pin | restart, so the old inode stops running |
 | marker valid, any of binary/config/unit already exact but the service is **not** active | restart, so a stopped agent is brought back up |
 
 ## Production verification
@@ -379,20 +286,11 @@ without any Komodo credential:
 4. `keys/periphery.key` and `keys/core.pub` exist, are non-empty, real, non-symlink.
 5. `keys/onboarding-complete` is a valid root-owned mode 0600 marker (never inferred
    from the identity file).
-5b. The live argv is exactly
-   `/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml`
-   (another config path, duplicate selector, `-c`, `--config-path=<...>`, extra
-   argument, wrong executable, or unreadable cmdline fails closed). The same shared
-   helper is used by adoption.
-5c. The executable behind `/proc/<MainPID>/exe` hashes to `PERIPHERY_SHA256`; a
-   missing/unreadable link fails closed. This detects a replaced-but-not-restarted
-   process that a pathname hash cannot.
-6. An established outbound connection exists from the Periphery main PID to the
-   target's reviewed Core peer: exact `10.20.0.2:9120` for Yecao/TX1/TX2, remote
-   `:443` for `ali-sh-asset-01` (bounded retries).
+6. An established outbound connection exists from the Periphery main PID to
+   `10.20.0.2:9120` (bounded retries).
 7. No listener exists on `:8120`.
 8. The effective config is **byte-identical** to this target's reviewed config, and
-   still declares `connect_as = "<target>"`, the reviewed Core address(es),
+   still declares `connect_as = "<target>"`, the private Core address,
    `server_enabled = false`, and `root_directory = "/etc/komodo"`.
 9. No onboarding credential is persisted in the config or the unit, the transient
    `/run` file is gone, and the process environment is provably credential-free.
@@ -405,11 +303,10 @@ is Core-side state and intentionally not probed with the admin API.
 ### Known verification limitation (tracked debt, not fixed here)
 
 Check 6 proves that an **ESTABLISHED TCP connection** exists from the Periphery main
-PID to the reviewed Core peer. That is necessary but **not sufficient** proof of a
-healthy Komodo RPC session: a connection can remain ESTABLISHED while the session is
+PID to `10.20.0.2:9120`. That is necessary but **not sufficient** proof of a healthy
+Komodo RPC session: a connection can remain ESTABLISHED while the session is
 black-holed (the TX2 MTU `1420` incident looked exactly like that — retransmissions
-and growing `Send-Q` on an established socket, with a ~10 s reconnect loop). For
-Alibaba the same limitation applies to the public TLS/WSS peer.
+and growing `Send-Q` on an established socket, with a ~10 s reconnect loop).
 
 So a green `verify.sh` means "the agent is running, configured as reviewed, and holds
 a socket to Core", not "Core and Periphery are exchanging healthy RPC". Hardening
@@ -427,8 +324,7 @@ systemctl is-enabled periphery && systemctl is-active periphery
 /usr/local/bin/periphery --version           # 2.3.3
 sha256sum /usr/local/bin/periphery           # 40b78f377626799afad8331246a501f077d4ebcfb6d9096894cf55b64f6dcf13
 cat /etc/komodo/keys/onboarding-complete     # komodo-periphery-onboarding-v1
-grep '^connect_as' /etc/komodo/periphery.config.toml   # "yecao" / "tx1" / "tx2" / "ali-sh-asset-01"
-grep '^core_addresses' /etc/komodo/periphery.config.toml  # private route, or https://komodo.wotbtools.com for Alibaba
+grep '^connect_as' /etc/komodo/periphery.config.toml   # "yecao" on Yecao, "tx1" on TX1, "tx2" on TX2
 ss -ltn | grep ':8120' || true               # must print nothing
 ```
 
@@ -436,10 +332,9 @@ Then open `https://komodo.wotbtools.com` and confirm:
 
 ```text
 Servers
-├── yecao           OK   v2.3.3
-├── tx1             OK   v2.3.3
-├── tx2             OK   v2.3.3
-└── ali-sh-asset-01 OK   v2.3.3
+├── yecao   OK   v2.3.3
+├── tx1     OK   v2.3.3
+└── tx2     OK   v2.3.3
 ```
 
 ## Rollback
@@ -457,8 +352,7 @@ Server identity *and* the onboarding marker: a later reconcile would then need t
 host's bootstrap credential again. Keeping `/etc/komodo` lets a later reconcile
 reattach the same Server without any credential. Komodo Core/Mongo, the public
 ingress, and DNS are untouched by either choice, and a Server entry can be deleted
-from the UI independently. The Alibaba host lock belongs to that host's deploy owner
-and is never removed or recreated by the Periphery lifecycle or by a Stack deploy.
+from the UI independently.
 
 ## Out of scope
 
@@ -466,6 +360,4 @@ Any further host (TX3+), TX2 workload deployments, Business API / Frontend /
 Keycloak / AI service migration, stacks, deployments, repos, builds, procedures,
 actions, resource sync, automatic updates, OIDC/SSO, registry or git credentials,
 WireGuard management (TX2's tunnel predates this phase), Mongo backup changes,
-Komodo Core changes, Caddy changes, and DNS changes. The Alibaba public-Core route is
-a single reviewed exception for `ali-sh-asset-01`; it does not change the private
-WireGuard rule for the original three hosts.
+Komodo Core changes, Caddy changes, and DNS changes.

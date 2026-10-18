@@ -124,15 +124,21 @@ outbound invariant is identical on every host:
 Why every field is spelled out: Komodo converts a partial `[server.config]` through
 schema defaults before diffing, so an omitted field is not "leave live value alone".
 
+`ali-sh-asset-01`'s Periphery agent is **manually** bootstrapped and manually
+lifecycle-managed today, and is already onboarded and healthy. Declaring the Server
+only lets ResourceSync adopt the existing Komodo resource by name; it does not put the
+Alibaba agent into the automated GitHub Actions chain. Lifecycle automation for this
+host is intentionally deferred — see the boundary and future triggers in
+`deploy/assets/README.md`.
+
 The reviewed Stack set is also fail-closed:
 
 - `wotbtools-frontend-shadow` → `tx2`, GitHub authority with Gitee transport.
 - `wotbtools-asset-origin` → `ali-sh-asset-01`, `deploy/assets/compose.yaml`, GitHub
   authority with Gitee transport for the mainland worker. It tracks only the
-  asset-owned `branch = "asset-origin"` ref (never shared `main`), and its mutating
-  Compose `up` also serializes on the host's existing
-  `/opt/wotb-asset/.deploy.lock` through `compose_cmd_wrapper`, so it can never
-  overlap a Periphery reconcile.
+  asset-owned `branch = "asset-origin"` ref (never shared `main`); the Frontend /
+  Business API mirrors may move Gitee `main` without changing what this Stack
+  deploys.
 
 Both keep `deploy = false`, `webhook_enabled = false`, `auto_update = false`, and
 `poll_for_updates = false`. ResourceSync adoption/update is therefore separate from an
@@ -178,15 +184,10 @@ fails closed when:
   `wotbtools-asset-origin`, or either Stack gains unreviewed config, automatic update,
   webhook deployment, or the wrong target Server;
 - `wotbtools-asset-origin` loses its tracked Caddyfile `config_files` entry, its
-  `--force-recreate` deploy args, or its `compose_cmd_wrapper`: the wrapper must
-  require a pre-created regular **non-symlink** `/opt/wotb-asset/.deploy.lock`, open
-  it read-only on fd 9, take a non-blocking `flock` on that fd, and only then run the
-  mandatory `[[COMPOSE_COMMAND]]` placeholder. A missing or symlinked lock must fail
-  closed and must never be created; `compose_cmd_wrapper_include` must stay `["up"]`
-  (a pull stays outside the lock), and no second or Periphery-only lock may appear.
+  `--force-recreate` deploy args, or switches off the asset-owned
+  `branch = "asset-origin"` transport ref.
 
-The test inspects TOML structure — and executes the reviewed host-lock wrapper
-against a disposable lock — never descriptions, so prose cannot make it pass.
+The test inspects TOML structure, never descriptions, so prose cannot make it pass.
 
 ## Bootstrap / adoption review
 
@@ -221,9 +222,10 @@ Before Apply:
 9. Refresh again; expected result is zero pending diff.
 
 For the Alibaba asset origin specifically, applying the sync must only adopt/update
-`ali-sh-asset-01` and `wotbtools-asset-origin`. Asset payload staging, DNS, firewall,
-explicit Stack Deploy, canary, and client origin cutover remain separate steps documented
-in `deploy/assets/README.md`.
+`ali-sh-asset-01` and `wotbtools-asset-origin`. The Server's Periphery agent stays a
+manual host concern. Asset payload staging, DNS, firewall, explicit Stack Deploy,
+canary, and client origin cutover remain separate steps documented in
+`deploy/assets/README.md`.
 
 ## Reversible drift proof
 

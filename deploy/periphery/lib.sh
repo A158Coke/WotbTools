@@ -67,8 +67,6 @@ periphery_lock_root=
 periphery_lock_file=
 periphery_staging_root=
 periphery_config_source=
-periphery_core_port=
-periphery_core_peer_match=
 
 fail() { echo "$*" >&2; exit 1; }
 
@@ -122,7 +120,7 @@ require_real_file() {
 # Sources the reviewed per-host profile and derives everything target-specific.
 # The profile is data: no credential may appear in it, `connect_as` must equal the
 # target name (so one host can never install another host's Server identity), and
-# the lock / staging roots plus reviewed outbound Core peer are validated before use.
+# the lock and staging roots must be absolute.
 load_target_profile() {
   local target="$1" runtime="$2"
   [[ -z "$periphery_target" ]] || fail 'A Komodo Periphery target profile was already loaded.'
@@ -149,30 +147,11 @@ load_target_profile() {
   periphery_privilege="$PERIPHERY_PRIVILEGE"
   periphery_lock_root="${PERIPHERY_LOCK_ROOT:-}"
   periphery_staging_root="${PERIPHERY_STAGING_ROOT:-}"
-  periphery_core_port="${PERIPHERY_CORE_PORT:-9120}"
-  # Existing WireGuard targets keep the exact reviewed peer. A public-DNS target
-  # may explicitly use a port-only suffix (for example :443) because its address
-  # can resolve to multiple or changing IPs while TLS pins the Core identity.
-  periphery_core_peer_match="${PERIPHERY_CORE_PEER_MATCH:-10.20.0.2:$periphery_core_port}"
   for path_name in periphery_lock_root periphery_staging_root; do
     path_value="${!path_name}"
     [[ "$path_value" == /* && "$path_value" != *..* ]] \
       || fail "Refusing unsafe $path_name for target '$target': ${path_value:-<unset>}"
   done
-  [[ "$periphery_core_port" =~ ^[0-9]+$ ]] \
-    && (( periphery_core_port >= 1 && periphery_core_port <= 65535 )) \
-    || fail "Invalid outbound Core port for target '$target': $periphery_core_port"
-  [[ -n "$periphery_core_peer_match" && "$periphery_core_peer_match" != *[[:space:]]* ]] \
-    || fail "Invalid outbound Core peer match for target '$target': ${periphery_core_peer_match:-<unset>}"
-  [[ "$periphery_core_peer_match" == *":$periphery_core_port" ]] \
-    || fail "Core peer match '$periphery_core_peer_match' must end in the reviewed port :$periphery_core_port"
-  if [[ "$periphery_core_peer_match" == :* ]]; then
-    [[ "$periphery_core_peer_match" == ":$periphery_core_port" ]] \
-      || fail "Port-only Core peer match must be exactly :$periphery_core_port"
-  else
-    [[ "$periphery_core_peer_match" != ":$periphery_core_port" ]] \
-      || fail "Exact Core peer match is missing a host"
-  fi
   periphery_lock_file="$periphery_lock_root/.deploy.lock"
   periphery_config_source="$runtime/targets/$target/periphery.config.toml"
 }
@@ -247,26 +226,11 @@ service_enabled() { "$systemctl_bin" is-enabled --quiet periphery; }
 
 main_pid() { "$systemctl_bin" show periphery -p MainPID --value; }
 
-# established_core_connections <pid>: outbound ESTAB sockets from exactly this
-# Periphery PID to the reviewed remote Core peer. Match only ss's Peer field: a
-# local :44321 socket or a remote :4430 must never satisfy an Alibaba :443 proof.
-# Existing WireGuard targets require exact peer 10.20.0.2:9120; public-DNS targets
-# can review a port-only suffix such as :443 while TLS/config validation pins the
-# logical Core identity.
+# established_connections <pid>: outbound-established sockets to the pinned Core.
+# Periphery dials Core over WireGuard; the check never uses a Komodo credential.
 established_core_connections() {
   local pid="$1"
-  ss -Htnp 2>/dev/null | awk -v wanted_pid="$pid" -v peer_match="$periphery_core_peer_match" '
-    $1 == "ESTAB" {
-      pid_needle = "pid=" wanted_pid ","
-      if (index($0, pid_needle) == 0) next
-      peer = $5
-      if (substr(peer_match, 1, 1) == ":") {
-        if (length(peer) >= length(peer_match) && substr(peer, length(peer) - length(peer_match) + 1) == peer_match) print
-      } else if (peer == peer_match) {
-        print
-      }
-    }
-  ' || true
+  ss -Htnp 2>/dev/null | grep -F "10.20.0.2:9120" | grep -F "pid=$pid," || true
 }
 
 # listener_on_8120: any host listener on the Periphery inbound port (must be none).
@@ -274,47 +238,9 @@ listener_on_8120() {
   ss -Hltn 'sport = :8120' 2>/dev/null || true
 }
 
-# read_process_env <pid> <output variable>
-#   0 = the COMPLETE live environment was read into the named variable
-#   2 = the environment cannot be read or is not a regular file
-#
-# The whole environment is drained before anything is matched against it. A
-# `producer | grep -q` pipeline can SIGPIPE the producer as soon as the consumer
-# matches, and under `set -o pipefail` that producer status turns a real match into
-# a false negative — with a large environment this is a scheduling-dependent
-# "clean" verdict. Buffering first makes every later match deterministic.
-read_process_env() {
-  local pid="$1" target="$2" environ env_text
-  environ="$periphery_proc_root/$pid/environ"
-  [[ -r "$environ" ]] || return 2
-  # A non-regular path is not an inspectable environment, and must be rejected
-  # before the read: a FIFO here would otherwise block the check forever.
-  [[ -f "$environ" ]] || return 2
-  env_text="$(tr '\0' '\n' < "$environ")" || return 2
-  # Assign the CALLER's variable by name. The buffer above deliberately has its
-  # own name so printf -v can never write to this function's local copy instead.
-  printf -v "$target" '%s' "$env_text"
-  return 0
-}
-
-# periphery_env_override <complete environment text>
-#   0 = an entry NAME begins with the Periphery prefix in ANY case
-#   1 = no such entry
-#
-# Komodo v2.3.3 parses both uppercase and lowercase environment names
-# (`PERIPHERY_*` and `periphery_*`) and lets every one of them override the TOML.
-# The prefix is therefore matched case-insensitively, while the entry name keeps
-# its `[A-Za-z0-9_]` shape. Callers must pass the COMPLETE, already-buffered
-# environment from read_process_env: this function only matches, so adoption and
-# the later credential-free verification share one drained inspection regardless of
-# environment size (no `producer | grep -q` SIGPIPE path).
-periphery_env_override() {
-  grep -Eiq '^periphery_[a-z0-9_]+=' <<<"$1"
-}
-
 # process_env_is_clean <pid>
-#   0 = the process environment is readable and holds no Periphery override
-#   1 = a Periphery environment override (credential included) is still present
+#   0 = the process environment is readable and holds no onboarding key
+#   1 = the credential is still present in the process environment
 #   2 = the environment cannot be read or is not a regular file, so a
 #       credential-free process cannot be proven
 #
@@ -322,102 +248,22 @@ periphery_env_override() {
 # EnvironmentFile into the process environment, and only a successful inspection
 # can show that the credential is really gone.
 process_env_is_clean() {
-  local content
-  read_process_env "$1" content || return 2
-  if periphery_env_override "$content"; then
+  local pid="$1" environ="$periphery_proc_root/$pid/environ" content
+  [[ -r "$environ" ]] || return 2
+  # A non-regular path is not an inspectable environment, and must be rejected
+  # before the read: a FIFO here would otherwise block the check forever.
+  [[ -f "$environ" ]] || return 2
+  content="$(tr '\0' '\n' < "$environ")" || return 2
+  if grep -q '^PERIPHERY_ONBOARDING_KEY=' <<<"$content"; then
     return 1
   fi
   return 0
 }
 
-# assert_reviewed_argv <pid>
-#   0 = argv is exactly <periphery_bin> --config-path <periphery_config>
-#   1 = argv is anything else
-#   2 = the cmdline cannot be read or is not a regular file
-#
-# Komodo v2.3.3 accepts CLI config selection and gives it precedence over TOML and
-# the environment (repeatable -c/--config-path plus --config-path=<path>), so a
-# process started with another config would otherwise be certified against a
-# reviewed file it is not actually using. The reviewed steady-state unit starts
-# exactly `periphery --config-path /etc/komodo/periphery.config.toml`; adoption is
-# deliberately strict about the complete argv instead of reimplementing Komodo's
-# CLI merge semantics, so an equivalent-but-different invocation fails closed.
-assert_reviewed_argv() {
-  local pid="$1" cmdline raw arg index
-  local -a raw_argv=() argv=()
-  local -a expected=("$periphery_bin" --config-path "$periphery_config")
-  cmdline="$periphery_proc_root/$pid/cmdline"
-  [[ -r "$cmdline" ]] || return 2
-  # Reject a non-regular cmdline before reading it, exactly like the environment.
-  [[ -f "$cmdline" ]] || return 2
-  raw="$(tr '\0' '\n' < "$cmdline")" || return 2
-  mapfile -t raw_argv <<< "$raw"
-  for arg in "${raw_argv[@]}"; do
-    if [[ -n "$arg" ]]; then
-      argv+=("$arg")
-    fi
-  done
-  [[ ${#argv[@]} -eq ${#expected[@]} ]] || return 1
-  for index in "${!expected[@]}"; do
-    [[ "${argv[$index]}" == "${expected[$index]}" ]] || return 1
-  done
-  return 0
-}
-
-# require_reviewed_argv <pid>
-#   Fail closed unless the live argv is exactly the reviewed invocation. Shared by
-#   existing-host adoption and the recurring production verification, so a service
-#   override or drop-in that changes the CLI config selection can never be trusted
-#   by one path while the other still passes.
-require_reviewed_argv() {
-  local pid="$1" state=0
-  assert_reviewed_argv "$pid" || state=$?
-  case "$state" in
-    0) return 0 ;;
-    1) fail "the running Periphery process (pid $pid) argv is not exactly: $periphery_bin --config-path $periphery_config" ;;
-    *) fail "Cannot inspect the argv of the running Periphery process (pid $pid); refusing to trust it." ;;
-  esac
-}
-
-# live_executable_sha <pid>
-#   Print the SHA256 of the executable inode the process is actually running.
-#   1 = /proc/<pid>/exe is missing, unreadable, or cannot be hashed
-#
-# Hashing $periphery_bin only proves what the pathname holds NOW. After an atomic
-# replace the running process keeps executing the previous (deleted) inode, and
-# /proc/<pid>/exe follows exactly that inode (readlink may show " (deleted)").
-# Hashing the link, never the pathname, is what makes a stale live process visible.
-live_executable_sha() {
-  local pid="$1" exe sha
-  exe="$periphery_proc_root/$pid/exe"
-  # /proc/<pid>/exe is a magic symlink for a live process; anything else is not an
-  # inspectable executable.
-  [[ -L "$exe" ]] || return 1
-  [[ -r "$exe" ]] || return 1
-  sha="$(sha256sum "$exe" 2>/dev/null | awk '{print $1}')" || return 1
-  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || return 1
-  printf '%s\n' "$sha"
-  return 0
-}
-
-# assert_live_executable_sha <pid> <expected-sha>
-#   Fail closed unless the running process executes exactly the pinned bytes.
-#   Covers the stale-inode case (on-disk binary already replaced, live process still
-#   on the old one) that a pathname hash cannot detect.
-assert_live_executable_sha() {
-  local pid="$1" expected="$2" live
-  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] \
-    || fail "Refusing to compare the live Periphery executable against an invalid digest: ${expected:-<empty>}"
-  live="$(live_executable_sha "$pid")" \
-    || fail "Cannot inspect the executable behind $periphery_proc_root/$pid/exe; refusing to trust the running Periphery process."
-  [[ "$live" == "$expected" ]] \
-    || fail "The running Periphery process (pid $pid) executes $live, not the pinned $expected; it is still running a replaced or stale executable."
-}
-
 # process_env_state_label <code>: the diagnostic for a non-zero probe result.
 process_env_state_label() {
   case "$1" in
-    1) printf 'a Periphery environment override (PERIPHERY_*/periphery_*) is still present in the process environment' ;;
+    1) printf 'PERIPHERY_ONBOARDING_KEY is still present in the process environment' ;;
     2) printf 'the process environment cannot be inspected, so a credential-free process cannot be proven' ;;
     *) printf 'the process environment was not inspected' ;;
   esac

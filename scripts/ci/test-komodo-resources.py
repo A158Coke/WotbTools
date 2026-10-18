@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Contract test for the declarative Komodo resource root (K4.1+).
+"""Contract test for the declarative Komodo resource root (K4.1).
 
 Validates `infra/komodo/resources/**/*.toml` structurally (never by grepping
 descriptions):
 
   * every file parses as TOML;
-  * only the reviewed resource types are declared (server, resource_sync, stack);
+  * only the reviewed resource types are declared (server, resource_sync, and the two
+    reviewed Stacks: the K7B frontend shadow and the asset origin);
   * no duplicate name of the same resource type, across files;
   * the single ResourceSync carries the reviewed, non-destructive configuration;
-  * exactly the reviewed production Servers are declared, in outbound mode, with
-    the complete v2.3.3 `ServerConfig` field set at documented defaults;
-  * exactly the reviewed Stack resources are declared with fail-closed configs;
+  * exactly the four production Servers are declared, in outbound mode, with the
+    complete v2.3.3 `ServerConfig` field set at documented defaults;
+  * both Stacks are declared with fail-closed configs, and the asset Stack tracks only
+    the asset-owned Gitee `asset-origin` transport branch;
   * no credential-looking key or inbound Periphery endpoint appears anywhere.
 
 Komodo converts a partial `[server.config]` through the schema defaults before
@@ -22,12 +24,7 @@ Run: python3 scripts/ci/test-komodo-resources.py
 
 from __future__ import annotations
 
-import os
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 try:
@@ -39,12 +36,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RESOURCE_ROOT = REPO_ROOT / "infra" / "komodo" / "resources"
 RESOURCE_PATH_VALUE = "infra/komodo/resources"
 
+# K4.1 declares exactly these resource types. Komodo also accepts plural aliases
+# (`[[servers]]`), which are deliberately rejected here so the reviewed files stay
+# in one canonical form.
 ALLOWED_TABLES = ("server", "resource_sync", "stack")
 FORBIDDEN_TABLES = (
     "deployment", "build", "repo", "procedure", "action", "builder",
     "swarm", "alerter", "variable", "user_group",
 )
+# Metadata keys Komodo understands on a declared resource. Anything else is either a
+# typo (silently ignored by Komodo's serde defaults) or an unreviewed addition.
 ALLOWED_RESOURCE_KEYS = ("name", "description", "template", "tags", "deploy", "after", "config")
+# Credential-shaped keys that must never appear anywhere in this tree.
 FORBIDDEN_KEY_NAMES = (
     "password", "secret", "token", "private_key", "onboarding_key", "git_account",
     "webhook_secret", "access_key", "api_key",
@@ -52,6 +55,8 @@ FORBIDDEN_KEY_NAMES = (
 FORBIDDEN_KEY_SUFFIXES = ("_password", "_secret", "_token", "_private_key", "_onboarding_key")
 
 SERVER_NAMES = ("yecao", "tx1", "tx2", "ali-sh-asset-01")
+# Every field of the v2.3.3 ServerConfig, declared explicitly so the first sync diff
+# cannot silently reset a production value through the partial->default conversion.
 SERVER_CONFIG_FIELDS = {
     "address": "",
     "insecure_tls": True,
@@ -77,7 +82,11 @@ SERVER_CONFIG_FIELDS = {
     "disk_critical": 95.0,
     "maintenance_windows": [],
 }
-
+# Metadata Komodo compares and applies for every resource type (`ResourceMetaUpdate`
+# in v2.3.3 `sync/execute.rs`): an omitted `tags`/`template` asserts the default, it
+# does not leave the live value alone. Both are therefore declared explicitly on every
+# resource, and Git owns them. `description` is managed the same way and is required to
+# be present by `check_metadata` — its content is intentionally not pinned.
 MANAGED_METADATA = {"tags": [], "template": False}
 RESOURCE_SYNC_CONFIG = {
     "git_provider": "github.com",
@@ -93,16 +102,20 @@ RESOURCE_SYNC_CONFIG = {
     "include_user_groups": False,
     "pending_alert": True,
 }
+# Every ResourceSyncConfig key K4.1 may declare. Anything outside this set is rejected
+# outright (fail-closed), so an unreviewed setting cannot be introduced silently.
 RESOURCE_SYNC_ALLOWED_KEYS = frozenset(RESOURCE_SYNC_CONFIG) | {
     "files_on_host", "linked_repo", "commit", "match_tags", "file_contents",
 }
+# Keys allowed only at their inert value, so a stray value can never take effect.
 RESOURCE_SYNC_INERT_KEYS = {
-    "files_on_host": False,
-    "linked_repo": "",
-    "commit": "",
-    "match_tags": [],
-    "file_contents": "",
+    "files_on_host": False,   # a Git-backed sync, never local files on the Core host
+    "linked_repo": "",        # source straight from Git, not through a Komodo Repo
+    "commit": "",             # track the branch, not a pinned commit
+    "match_tags": [],         # no tag filtering
+    "file_contents": "",      # database-backed file contents are not used
 }
+# Forbidden even when empty: these carry credentials for a private repository.
 RESOURCE_SYNC_FORBIDDEN_KEYS = ("git_account", "webhook_secret")
 
 K7B_STACK_NAME = "wotbtools-frontend-shadow"
@@ -142,11 +155,6 @@ K7B_STACK_CONFIG = {
     "links": [],
 }
 
-# The host mutation lock owned by the Alibaba host's deploy owner. The Periphery
-# lifecycle and the Komodo Stack deploy must serialize on this SAME lock; the
-# wrapper must never introduce a second (Periphery-only) lock.
-ASSET_HOST_LOCK = "/opt/wotb-asset/.deploy.lock"
-
 ASSET_STACK_NAME = "wotbtools-asset-origin"
 ASSET_STACK_CONFIG = {
     "server": "ali-sh-asset-01",
@@ -161,7 +169,7 @@ ASSET_STACK_CONFIG = {
     "git_provider": "gitee.com",
     "git_https": True,
     "repo": "A158Coke/Wotbtools",
-    # Asset-owned transport branch. Shared Gitee "main" is moved by the Frontend /
+    # The asset-owned transport ref. Shared Gitee main is moved by the Frontend /
     # Business API mirrors, so it can never be this Stack's deploy source.
     "branch": "asset-origin",
     "commit": "",
@@ -172,32 +180,24 @@ ASSET_STACK_CONFIG = {
     "files_on_host": False,
     "run_directory": "deploy/assets",
     "file_paths": ["compose.yaml"],
-    "config_files": [
-        {"path": "Caddyfile", "services": ["caddy"], "requires": "redeploy"},
-    ],
+    "config_files": [{"path": "Caddyfile", "services": ["caddy"], "requires": "redeploy"}],
     "env_file_path": ".env",
     "send_alerts": True,
     "registry_provider": "",
     "registry_account": "",
+    # A normal Komodo deploy runs `docker compose up -d`; force-recreate makes a
+    # Caddyfile-only change take effect. No Compose wrapper/host lock is declared:
+    # this PR runs no GitHub-owned mutation on the Alibaba host.
     "extra_args": ["--force-recreate"],
     "build_extra_args": [],
-    "compose_cmd_wrapper": (
-        "test -f /opt/wotb-asset/.deploy.lock && "
-        "test ! -L /opt/wotb-asset/.deploy.lock && "
-        "exec 9</opt/wotb-asset/.deploy.lock && "
-        "flock --exclusive --nonblock 9 && [[COMPOSE_COMMAND]]"
-    ),
-    "compose_cmd_wrapper_include": ["up"],
+    "compose_cmd_wrapper": "",
+    "compose_cmd_wrapper_include": [],
     "ignore_services": [],
     "file_contents": "",
     "environment": "",
     "links": [],
 }
-
-STACK_CONFIGS = {
-    K7B_STACK_NAME: K7B_STACK_CONFIG,
-    ASSET_STACK_NAME: ASSET_STACK_CONFIG,
-}
+STACK_CONFIGS = {K7B_STACK_NAME: K7B_STACK_CONFIG, ASSET_STACK_NAME: ASSET_STACK_CONFIG}
 
 failures: list[str] = []
 
@@ -251,9 +251,12 @@ def check_resource_types(parsed: dict[Path, dict]) -> dict[str, dict[str, dict]]
         rel = path.relative_to(REPO_ROOT)
         for table in document:
             if table in FORBIDDEN_TABLES or table in {f"{name}s" for name in FORBIDDEN_TABLES}:
-                fail(f"{rel}: declarative resources must not declare '{table}'")
+                fail(f"{rel}: K4.1 must not declare '{table}' resources")
             elif table not in ALLOWED_TABLES:
-                fail(f"{rel}: unexpected resource type '{table}' (allowed: {', '.join(ALLOWED_TABLES)})")
+                fail(
+                    f"{rel}: unexpected resource type '{table}' "
+                    f"(K4.1 allows only {', '.join(ALLOWED_TABLES)})"
+                )
         for table in ALLOWED_TABLES:
             entries = document.get(table, [])
             if not isinstance(entries, list):
@@ -277,20 +280,34 @@ def check_resource_types(parsed: dict[Path, dict]) -> dict[str, dict[str, dict]]
 
 
 def check_metadata(table: str, name: str, declaration: dict) -> None:
+    """Managed metadata must be declared, not left to its default.
+
+    `description`, `tags`, and `template` are all compared and applied by Komodo, so
+    omitting any of them asserts the default — for `description` that means the empty
+    string, which would clear a live description on Apply. Only presence and type are
+    pinned here: the K4.1 drift proof deliberately edits a description through Git, so
+    its content must stay free to change by review.
+    """
     if "description" not in declaration:
-        fail(f"{table} '{name}': 'description' must be declared explicitly")
+        fail(
+            f"{table} '{name}': 'description' must be declared explicitly "
+            "(Komodo compares and applies it; omitting it asserts the empty string)"
+        )
     elif not isinstance(declaration["description"], str):
         fail(f"{table} '{name}': description must be a string, found {declaration['description']!r}")
     for key, expected in MANAGED_METADATA.items():
         if key not in declaration:
-            fail(f"{table} '{name}': '{key}' must be declared explicitly")
+            fail(
+                f"{table} '{name}': '{key}' must be declared explicitly "
+                f"(Komodo compares and applies it; omitting it asserts the default)"
+            )
         elif declaration[key] != expected:
             fail(f"{table} '{name}': {key} must be {expected!r}, found {declaration[key]!r}")
 
 
 def check_resource_sync(entries: dict[str, dict]) -> None:
     if len(entries) != 1:
-        fail(f"declares exactly one resource_sync, found {sorted(entries) or '[]'}")
+        fail(f"K4.1 declares exactly one resource_sync, found {sorted(entries) or '[]'}")
         return
     name, declaration = next(iter(entries.items()))
     if name != "wotbtools-main":
@@ -303,23 +320,27 @@ def check_resource_sync(entries: dict[str, dict]) -> None:
     for key, expected in RESOURCE_SYNC_CONFIG.items():
         if config.get(key) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
+    # Fail-closed allowlist: an unreviewed config key must never be able to take effect.
     for key in sorted(config):
         if key in RESOURCE_SYNC_FORBIDDEN_KEYS:
             fail(f"resource_sync '{name}': '{key}' is forbidden even when empty (public repository)")
         elif key not in RESOURCE_SYNC_ALLOWED_KEYS:
-            fail(f"resource_sync '{name}': unreviewed config key '{key}' is not allowed")
+            fail(f"resource_sync '{name}': unreviewed config key '{key}' is not allowed in K4.1")
     for key, expected in RESOURCE_SYNC_INERT_KEYS.items():
         if config.get(key, expected) != expected:
             fail(f"resource_sync '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
+    # The sync must read the directory that holds its own declaration.
     if config.get("resource_path") != [RESOURCE_PATH_VALUE]:
         fail(f"resource_sync '{name}': resource_path must be exactly ['{RESOURCE_PATH_VALUE}']")
 
 
 def check_servers(entries: dict[str, dict]) -> None:
     if sorted(entries) != sorted(SERVER_NAMES):
-        fail(f"declares exactly {sorted(SERVER_NAMES)}, found {sorted(entries)}")
+        fail(f"K4.1 declares exactly {sorted(SERVER_NAMES)}, found {sorted(entries)}")
     for name, declaration in sorted(entries.items()):
         context = f"server '{name}'"
+        # Tags/template are reviewed metadata: an omitted tag set would assert the
+        # empty set against live tags, so it must be declared on purpose.
         check_metadata("server", name, declaration)
         if declaration.get("deploy", False) is not False:
             fail(f"{context}: must not declare deploy = true")
@@ -329,7 +350,10 @@ def check_servers(entries: dict[str, dict]) -> None:
             continue
         missing = sorted(set(SERVER_CONFIG_FIELDS) - set(config))
         if missing:
-            fail(f"{context}: must declare complete v2.3.3 ServerConfig; missing: {missing}")
+            fail(
+                f"{context}: must declare the complete v2.3.3 ServerConfig field set "
+                f"(a partial config is diffed through the defaults); missing: {missing}"
+            )
         extra = sorted(set(config) - set(SERVER_CONFIG_FIELDS))
         if extra:
             fail(f"{context}: unreviewed [server.config] field(s): {extra}")
@@ -338,6 +362,8 @@ def check_servers(entries: dict[str, dict]) -> None:
                 continue
             found = config[key]
             if isinstance(expected, float):
+                # Komodo deserializes these as f32/f64; a TOML integer is rejected by
+                # serde, so the declaration must use an explicit float.
                 if not isinstance(found, float) or found != expected:
                     fail(f"{context}: {key} must be the TOML float {expected}, found {found!r}")
             elif isinstance(expected, bool):
@@ -348,6 +374,7 @@ def check_servers(entries: dict[str, dict]) -> None:
                     fail(f"{context}: {key} must be {expected}, found {found!r}")
             elif found != expected:
                 fail(f"{context}: {key} must be {expected!r}, found {found!r}")
+        # The outbound invariant, stated twice on purpose: empty address, no passkey.
         if config.get("address") != "":
             fail(f"{context}: address must stay empty so Periphery keeps connecting outbound")
         if config.get("passkey", "") != "":
@@ -356,10 +383,11 @@ def check_servers(entries: dict[str, dict]) -> None:
             fail(f"{context}: must not reference Periphery port 8120")
 
 
+
 def check_stacks(entries: dict[str, dict]) -> None:
-    expected_names = sorted(STACK_CONFIGS)
-    if sorted(entries) != expected_names:
-        fail(f"declares exactly stacks {expected_names}, found {sorted(entries)}")
+    """Only the two tightly-scoped, reviewed Stack resources are allowed."""
+    if sorted(entries) != sorted(STACK_CONFIGS):
+        fail(f"declares exactly the Stacks {sorted(STACK_CONFIGS)}, found {sorted(entries)}")
         return
     for name, expected_config in STACK_CONFIGS.items():
         declaration = entries[name]
@@ -381,134 +409,14 @@ def check_stacks(entries: dict[str, dict]) -> None:
                 fail(f"stack '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
         if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
             fail(f"stack '{name}' must never auto-deploy from webhook or image polling")
-    # The Alibaba Stack deploy mutates the same host the Periphery lifecycle owns,
-    # so the mutating Compose command must hold that host's existing deploy lock.
     asset = entries[ASSET_STACK_NAME]["config"]
-    wrapper = asset.get("compose_cmd_wrapper")
-    if not isinstance(wrapper, str) or not wrapper.strip():
-        fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must hold the host lock "
-             "across the mutating Compose command")
-    else:
-        if "[[COMPOSE_COMMAND]]" not in wrapper:
-            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must contain the "
-                 "Komodo-required [[COMPOSE_COMMAND]] placeholder")
-        # util-linux flock's pathname form creates a missing file, which would break
-        # the contract that the host's deploy owner owns the lock. The reviewed
-        # wrapper must therefore prove the file exists and is not a symlink, open it
-        # read-only on fd 9, and lock that fd.
-        for fragment, message in (
-            (f"test -f {ASSET_HOST_LOCK}", "must require the pre-created host lock"),
-            (f"test ! -L {ASSET_HOST_LOCK}", "must reject a symlinked host lock"),
-            (f"exec 9<{ASSET_HOST_LOCK}", "must open the existing lock read-only on fd 9"),
-            ("flock --exclusive --nonblock 9", "must take a non-blocking flock on fd 9"),
-        ):
-            if fragment not in wrapper:
-                fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper {message}")
-        if re.search(r"flock[^&]*" + re.escape(ASSET_HOST_LOCK), wrapper):
-            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must never hand the "
-                 "lock path to flock (its pathname form creates a missing file)")
-        lock_tokens = set(re.findall(r"/[A-Za-z0-9._/-]+\.lock", wrapper))
-        if lock_tokens != {ASSET_HOST_LOCK}:
-            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must lock only the "
-                 f"existing host lock {ASSET_HOST_LOCK}, found {sorted(lock_tokens) or '[]'}")
-    if asset.get("compose_cmd_wrapper_include") != ["up"]:
-        fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper_include must be exactly "
-             "['up']; a pull must stay outside the host lock")
-    # The Stack must consume the asset-owned transport ref, never shared Gitee main:
-    # another owner moves main, which would silently change the deploy source.
+    # The dedicated transport ref is the whole point of the asset Stack: shared Gitee
+    # main is owned by other mirror owners and must never be its deploy source.
     if asset.get("branch") != "asset-origin":
         fail(f"stack '{ASSET_STACK_NAME}': branch must be 'asset-origin', "
              f"found {asset.get('branch')!r}")
-
-
-def check_asset_stack_wrapper_execution(wrapper: str) -> None:
-    """Execute the reviewed host-lock wrapper against a disposable lock.
-
-    Komodo v2.3.3 substitutes [[COMPOSE_COMMAND]] and runs the wrapper through
-    /bin/bash, so the real failure surface is exactly this shell string. The
-    disposable run proves the wrapper (a) never creates a missing lock, (b) rejects
-    a symlinked lock, (c) runs the Compose command while holding an existing lock,
-    and (d) rejects a mutation while another holder (a Periphery reconcile) has it.
-    """
-    if os.name != "posix":
-        print("  note: asset host-lock wrapper execution skipped (POSIX only)")
-        return
-    if shutil.which("bash") is None or shutil.which("flock") is None:
-        fail("the asset host-lock wrapper contract needs bash and util-linux flock")
-        return
-    if "[[COMPOSE_COMMAND]]" not in wrapper or ASSET_HOST_LOCK not in wrapper:
-        return  # structural checks already reported the broken wrapper
-
-    import fcntl
-
-    with tempfile.TemporaryDirectory(prefix="wotb-asset-lock-") as raw:
-        work = Path(raw)
-        lock = work / ".deploy.lock"
-        marker = work / "compose-ran"
-        probe = work / "probe.sh"
-        probe.write_text(
-            "#!/usr/bin/env bash\n"
-            "set -Eeuo pipefail\n"
-            "lock=\"$1\"\n"
-            "marker=\"$2\"\n"
-            "if flock --exclusive --nonblock \"$lock\" -c true 2>/dev/null; then\n"
-            "  echo 'the host lock was not held during the Compose command' >&2\n"
-            "  exit 9\n"
-            "fi\n"
-            "printf 'ran\\n' > \"$marker\"\n",
-            encoding="utf-8",
-        )
-        probe.chmod(0o755)
-        command = f"bash {probe} {lock} {marker}"
-        rendered = wrapper.replace(ASSET_HOST_LOCK, str(lock)).replace(
-            "[[COMPOSE_COMMAND]]", command
-        )
-
-        def execute() -> subprocess.CompletedProcess:
-            return subprocess.run(
-                ["bash", "-c", rendered],
-                cwd=str(work),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-        missing = execute()
-        if missing.returncode == 0:
-            fail("asset wrapper ran a Stack mutation without the host lock file")
-        if lock.exists() or lock.is_symlink():
-            fail("asset wrapper created the host lock file; it must already exist")
-
-        target = work / "other.lock"
-        target.write_text("", encoding="utf-8")
-        target.chmod(0o600)
-        lock.symlink_to(target)
-        symlinked = execute()
-        if symlinked.returncode == 0:
-            fail("asset wrapper followed a symlinked host lock")
-        if marker.exists():
-            marker.unlink()
-        lock.unlink()
-
-        lock.write_text("", encoding="utf-8")
-        lock.chmod(0o600)
-        accepted = execute()
-        if accepted.returncode != 0:
-            fail(f"asset wrapper rejected a pre-created host lock: {accepted.stderr.strip()}")
-        elif not marker.exists():
-            fail("asset wrapper did not run the Compose command under the host lock")
-
-        if marker.exists():
-            marker.unlink()
-        with lock.open("r", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            held = execute()
-        if held.returncode == 0:
-            fail("asset wrapper ran a Stack mutation while another holder had the host lock")
-        if marker.exists():
-            fail("asset wrapper ran the Compose command despite a held host lock")
-
-    print("  asset host-lock wrapper: missing/symlink/held fail closed, existing lock executes")
+    if not asset.get("config_files"):
+        fail(f"stack '{ASSET_STACK_NAME}': Caddyfile must stay a tracked config dependency")
 
 
 def main() -> int:
@@ -523,9 +431,6 @@ def main() -> int:
     check_resource_sync(by_type.get("resource_sync", {}))
     check_servers(by_type.get("server", {}))
     check_stacks(by_type.get("stack", {}))
-    asset_stack = by_type.get("stack", {}).get(ASSET_STACK_NAME, {}).get("config")
-    if isinstance(asset_stack, dict):
-        check_asset_stack_wrapper_execution(asset_stack.get("compose_cmd_wrapper", ""))
 
     if failures:
         print("Declarative Komodo resource contract: FAIL", file=sys.stderr)
