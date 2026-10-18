@@ -756,12 +756,12 @@ describe('real lesson lifecycle', () => {
     expect(boundary.auth.login).toHaveBeenCalledWith('ai-review')
     expect(h.controller.mode.value).toBe('idle')
     expect(JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')?.guide)
-      .toEqual({ topic: 'ai', index: 0, stageIndex: 0 })
+      .toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
     // Android: the RPC returns before the external user-agent reports success.
     boundary.auth.loginInFlight.value = false
     await nextTick()
     expect(JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')?.guide)
-      .toEqual({ topic: 'ai', index: 0, stageIndex: 0 })
+      .toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
     account('signed-in')
     await flushPromises()
     await flushPromises()
@@ -799,6 +799,12 @@ describe('login continuity (#670)', () => {
   function pendingGuide() {
     return pending()?.guide
   }
+  function authenticatedWithoutClaims() {
+    boundary.epoch++
+    boundary.auth.authenticated.value = true
+    boundary.auth.tokenParsed.value = null
+    boundary.auth.authInitState.value = 'authenticated'
+  }
 
   it('resumes the AI guide at its first lesson after a successful web redirect', async () => {
     boundary.auth.login.mockImplementation(() => { boundary.auth.loginInFlight.value = true })
@@ -806,7 +812,7 @@ describe('login continuity (#670)', () => {
     guest.controller.start('ai')
     guest.controller.loginAiGuide()
     expect(guest.controller.mode.value).toBe('idle')
-    expect(pendingGuide()).toEqual({ topic: 'ai', index: 0, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
     // Full-document redirect: the next document starts with no login in flight.
     guest.wrapper.unmount()
     boundary.auth.loginInFlight.value = false
@@ -840,7 +846,7 @@ describe('login continuity (#670)', () => {
     expect(guest.controller.index.value).toBe(2)
     expect(guest.controller.currentStage.value.anchor).toBe('settings-account')
     boundary.auth.loginInFlight.value = true
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 2, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
     guest.wrapper.unmount()
     boundary.auth.loginInFlight.value = false
 
@@ -863,13 +869,13 @@ describe('login continuity (#670)', () => {
     h.controller.next(); await flushPromises()
     expect(h.controller.index.value).toBe(2)
     boundary.auth.loginInFlight.value = true
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 2, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
 
     // Android native login RPC returns before the external user-agent authenticates.
     boundary.auth.loginInFlight.value = false
     await nextTick()
     await nextTick()
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 2, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
     expect(h.controller.mode.value).toBe('tour')
 
     // wotbtoolsOnAuthChanged pushes the authenticated session later.
@@ -894,7 +900,7 @@ describe('login continuity (#670)', () => {
     guest.controller.start('settings')
     await guest.controller.begin()
     boundary.auth.loginInFlight.value = true
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 0, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 0, stageIndex: 0 }))
     guest.wrapper.unmount()
 
     // Page B: full reload, auth init settles unauthenticated because Keycloak was canceled.
@@ -932,7 +938,7 @@ describe('login continuity (#670)', () => {
     guest.controller.start('settings')
     await guest.controller.begin()
     boundary.auth.loginInFlight.value = true
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 0, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 0, stageIndex: 0 }))
     expect(pending()?.receipt).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
     guest.wrapper.unmount()
 
@@ -958,7 +964,7 @@ describe('login continuity (#670)', () => {
     h.controller.start('settings')
     await h.controller.begin()
     boundary.auth.loginInFlight.value = true
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 0, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 0, stageIndex: 0 }))
     boundary.auth.loginInFlight.value = false
     h.controller.interrupt()
     boundary.auth.loginInFlight.value = true
@@ -975,7 +981,7 @@ describe('login continuity (#670)', () => {
     boundary.auth.authInitState.value = 'initializing'
     const h = harness({ view: 'more' })
     await flushPromises()
-    expect(pendingGuide()).toEqual({ topic: 'settings', index: 0, stageIndex: 0 })
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 0, stageIndex: 0 }))
     expect(h.controller.mode.value).toBe('idle')
     account('A')
     await flushPromises()
@@ -996,5 +1002,178 @@ describe('login continuity (#670)', () => {
     expect(h.controller.mode.value).toBe('idle')
     expect(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY)).toBeNull()
     h.wrapper.unmount()
+  })
+
+  it('does not resurrect a skipped guide when the late auth callback arrives', async () => {
+    const h = harness({ view: 'more' })
+    h.controller.start('settings')
+    await h.controller.begin()
+    h.controller.next(); await flushPromises()
+    h.controller.next(); await flushPromises()
+    boundary.auth.loginInFlight.value = true
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'settings', index: 2, stageIndex: 0 }))
+    boundary.auth.loginInFlight.value = false
+    h.controller.skip()
+    expect(pendingGuide()).toBeUndefined()
+
+    account('A')
+    await flushPromises()
+    expect(h.controller.mode.value).not.toBe('tour')
+    expect(pending()).toBeNull()
+    h.wrapper.unmount()
+  })
+
+  it('does not resurrect an abandoned AI login when the user starts another guide', async () => {
+    boundary.auth.login.mockImplementation(() => { boundary.auth.loginInFlight.value = true })
+    const h = harness()
+    h.controller.start('ai')
+    await h.controller.begin()
+    h.controller.loginAiGuide()
+    expect(pendingGuide()).toEqual(expect.objectContaining({ topic: 'ai', index: 0, stageIndex: 0 }))
+    boundary.auth.loginInFlight.value = false
+    h.controller.start('hof')
+    expect(pendingGuide()).toBeUndefined()
+
+    account('A')
+    await flushPromises()
+    expect(h.controller.mode.value).not.toBe('tour')
+    expect(h.loadDemo).not.toHaveBeenCalled()
+    expect(h.route.value).not.toBe('ai-review')
+    h.wrapper.unmount()
+  })
+
+  it('withdraws the continuation when the user opens the directory or finishes', async () => {
+    const directory = harness({ view: 'more' })
+    directory.controller.start('settings')
+    await directory.controller.begin()
+    boundary.auth.loginInFlight.value = true
+    expect(pendingGuide()).not.toBeUndefined()
+    boundary.auth.loginInFlight.value = false
+    directory.controller.openDirectory()
+    expect(pendingGuide()).toBeUndefined()
+    account('A')
+    await flushPromises()
+    expect(directory.controller.mode.value).not.toBe('tour')
+    directory.wrapper.unmount()
+
+    account(null)
+    const finished = harness({ view: 'more' })
+    finished.controller.start('settings')
+    await finished.controller.begin()
+    boundary.auth.loginInFlight.value = true
+    boundary.auth.loginInFlight.value = false
+    finished.controller.next(); await flushPromises()
+    finished.controller.next(); await flushPromises()
+    expect(finished.controller.index.value).toBe(2)
+    expect(pendingGuide()).not.toBeUndefined()
+    finished.controller.next()
+    expect(finished.controller.mode.value).toBe('finish')
+    expect(pendingGuide()).toBeUndefined()
+    account('A')
+    await flushPromises()
+    expect(finished.controller.mode.value).not.toBe('tour')
+    finished.wrapper.unmount()
+  })
+
+  it('refuses a same-document continuation older than the 30-minute TTL', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-18T18:00:00Z'))
+      // A terminal receipt from an earlier document: only the pending marker can migrate it.
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ version: 1, receipts: {
+        anonymous: { coreEpoch: 1, disposition: 'SKIPPED' },
+      } }))
+      const h = harness({ view: 'more' })
+      h.controller.start('settings')
+      await h.controller.begin()
+      h.controller.next(); await flushPromises()
+      h.controller.next(); await flushPromises()
+      boundary.auth.loginInFlight.value = true
+      expect(pending()?.receipt).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
+      boundary.auth.loginInFlight.value = false
+      vi.setSystemTime(new Date('2026-10-18T18:31:00Z'))
+
+      account('A')
+      await flushPromises()
+      expect(h.controller.mode.value).not.toBe('tour')
+      expect(pending()).toBeNull()
+      expect(cache().anonymous.migrationConsumed).toBeUndefined()
+      expect(boundary.save).not.toHaveBeenCalled()
+      expect(cache()['sub:A']).toEqual({ coreEpoch: 0, disposition: 'NONE' })
+      h.wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still resumes and migrates inside the 30-minute window', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-18T18:00:00Z'))
+      localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ version: 1, receipts: {
+        anonymous: { coreEpoch: 1, disposition: 'SKIPPED' },
+      } }))
+      const h = harness({ view: 'more' })
+      h.controller.start('settings')
+      await h.controller.begin()
+      h.controller.next(); await flushPromises()
+      h.controller.next(); await flushPromises()
+      boundary.auth.loginInFlight.value = true
+      boundary.auth.loginInFlight.value = false
+      vi.setSystemTime(new Date('2026-10-18T18:29:59Z'))
+
+      account('A')
+      await flushPromises()
+      expect(h.controller.mode.value).toBe('tour')
+      expect(h.controller.index.value).toBe(2)
+      expect(pending()).toBeNull()
+      expect(cache()['sub:A']).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
+      expect(cache().anonymous.migrationConsumed).toBe(true)
+      h.wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resumes the guide from a confirmed session before claims/sub are available', async () => {
+    sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify({ requestedAt: Date.now(),
+      guide: { topic: 'settings', index: 2, stageIndex: 0 } }))
+    authenticatedWithoutClaims()
+    const h = harness({ view: 'profile' })
+    await flushPromises()
+    expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.topic.value).toBe('settings')
+    expect(h.controller.index.value).toBe(2)
+    expect(h.controller.currentStage.value.anchor).toBe('settings-account')
+    expect(pending()).toBeNull()
+    expect(cache()['unknown-account']).toBeUndefined()
+    h.wrapper.unmount()
+  })
+
+  it('keeps an account receipt pending until a stable sub exists', async () => {
+    const guest = harness()
+    guest.controller.start()
+    guest.controller.skip()
+    guest.controller.start('settings')
+    await guest.controller.begin()
+    boundary.auth.loginInFlight.value = true
+    expect(pending()?.receipt).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
+    guest.wrapper.unmount()
+
+    authenticatedWithoutClaims()
+    const resumed = harness({ view: 'profile' })
+    await flushPromises()
+    expect(resumed.controller.mode.value).toBe('tour')
+    expect(pending()?.guide).toBeUndefined()
+    expect(pending()?.receipt).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
+    expect(cache()['unknown-account']).toBeUndefined()
+    expect(boundary.save).not.toHaveBeenCalled()
+
+    account('A')
+    await flushPromises()
+    expect(cache()['sub:A']).toEqual({ coreEpoch: 1, disposition: 'SKIPPED' })
+    expect(cache().anonymous.migrationConsumed).toBe(true)
+    expect(pending()).toBeNull()
+    resumed.wrapper.unmount()
   })
 })

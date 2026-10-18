@@ -18,7 +18,7 @@ const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agen
 type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
 export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
 /** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */
-interface OnboardingGuidePosition { topic: OnboardingTopic; index: number; stageIndex: number }
+interface OnboardingGuidePosition { topic: OnboardingTopic; index: number; stageIndex: number; generation?: number }
 interface PendingLogin { requestedAt: number; receipt?: LocalOnboardingReceipt; guide?: OnboardingGuidePosition }
 const EMPTY_RECEIPT: LocalOnboardingReceipt = { coreEpoch: 0, disposition: 'NONE' }
 const PRECEDENCE: Record<Disposition, number> = { NONE: 0, OFFERED: 1, SKIPPED: 2, COMPLETED: 3 }
@@ -129,16 +129,27 @@ function validGuidePosition(value: unknown): value is OnboardingGuidePosition {
   return typeof position.topic === 'string' && Object.hasOwn(ONBOARDING_GUIDES, position.topic)
     && Number.isSafeInteger(position.index) && position.index >= 0
     && Number.isSafeInteger(position.stageIndex) && position.stageIndex >= 0
+    && (position.generation === undefined || Number.isSafeInteger(position.generation) && position.generation >= 0)
+}
+
+/**
+ * The 30-minute TTL must be re-checked at consume time, not only when the storage is read:
+ * Android keeps one document alive while the external user-agent authenticates, so a marker
+ * can sit in memory long after it became stale.
+ */
+function pendingLoginFresh(pending: PendingLogin | null | undefined): pending is PendingLogin {
+  if (!pending) return false
+  const age = Date.now() - pending.requestedAt
+  return Number.isFinite(age) && age >= 0 && age <= PENDING_LOGIN_MAX_AGE_MS
 }
 
 function readPendingLogin(): PendingLogin | null {
   try {
     const pending = JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')
-    const age = Date.now() - pending?.requestedAt
     const receipt = validOnboardingReceipt(pending?.receipt) && ['COMPLETED', 'SKIPPED'].includes(pending.receipt.disposition)
       ? pending.receipt : null
     const guide = validGuidePosition(pending?.guide) ? pending.guide : null
-    if (Number.isFinite(age) && age >= 0 && age <= PENDING_LOGIN_MAX_AGE_MS && (receipt || guide)) {
+    if ((receipt || guide) && pendingLoginFresh(pending)) {
       return { requestedAt: pending.requestedAt, ...(receipt ? { receipt } : {}), ...(guide ? { guide } : {}) }
     }
     sessionStorage.removeItem(ONBOARDING_PENDING_LOGIN_KEY)
@@ -209,6 +220,8 @@ export function useOnboarding(options: {
    * pending. Only the former may be discarded by a settled unauthenticated init.
    */
   let guideFromBoot = Boolean(pendingLogin?.guide)
+  /** Ownership generation: a guide login stamps it, user cancel/replace bumps it. */
+  let guideLoginGeneration = pendingLogin?.guide?.generation ?? 0
   /** Set by `loginAiGuide()` so the loginInFlight watcher knows this login owns the AI lesson. */
   let guideLoginIntent: OnboardingGuidePosition | null = null
   let preparingDemo = false
@@ -292,9 +305,24 @@ export function useOnboarding(options: {
     const anonymous = cache.value.anonymous
     const receipt = pendingLogin?.receipt || (identity.value === 'anonymous' && anonymous && !anonymous.migrationConsumed
       && ['COMPLETED', 'SKIPPED'].includes(anonymous.disposition) ? anonymous : null)
-    pendingLogin = receipt || position
-      ? { requestedAt: Date.now(), ...(receipt ? { receipt } : {}), ...(position ? { guide: position } : {}) }
+    const guide = position ? { ...position, generation: ++guideLoginGeneration } : null
+    pendingLogin = receipt || guide
+      ? { requestedAt: Date.now(), ...(receipt ? { receipt } : {}), ...(guide ? { guide } : {}) }
       : null
+    guideFromBoot = false
+    writePendingLogin(pendingLogin)
+  }
+
+  /**
+   * A user action that withdraws the pending guide continuation (skip/close, start/switch guide,
+   * open the directory, finish). Bumping the generation makes a late auth result unable to
+   * resume the abandoned lesson. Internal lifecycle interrupts (identity change, view change,
+   * loginAiGuide) must never call this.
+   */
+  function cancelGuideContinuation() {
+    if (!pendingLogin?.guide) return
+    guideLoginGeneration += 1
+    pendingLogin = withoutGuide(pendingLogin)
     guideFromBoot = false
     writePendingLogin(pendingLogin)
   }
@@ -330,17 +358,35 @@ export function useOnboarding(options: {
       interrupt()
       if (migration) transferAnonymous(migration, identity.value)
     }
-    // sessionStorage survives the browser's explicit OIDC redirect, but the marker is used once.
-    if (identity.value.startsWith('sub:') && auth.authInitState.value === 'authenticated' && pendingLogin) {
-      const receipt = pendingLogin.receipt
-      if (receipt && receipt.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed) transferAnonymous(receipt, identity.value)
-      else if (receipt) { pendingLogin = withoutReceipt(pendingLogin); writePendingLogin(pendingLogin) }
-      const position = pendingLogin?.guide
-      if (position) {
+    // A confirmed session is enough to resume a tutorial, even before claims/sub are available
+    // (Android can report authenticated=true with tokenParsed=null). Account receipt migration
+    // still requires a stable subject, so the two concerns are judged separately.
+    if (auth.authenticated.value && auth.authInitState.value === 'authenticated' && pendingLogin) {
+      if (!pendingLoginFresh(pendingLogin)) {
+        // Same-document Android can consume 30+ minutes after the marker was written; the TTL
+        // applies to the whole pending-login object and to both consumption paths.
         pendingLogin = null
         guideFromBoot = false
         writePendingLogin(null)
-        void begin(false, position)
+      } else {
+        if (identity.value.startsWith('sub:')) {
+          const receipt = pendingLogin.receipt
+          if (receipt && receipt.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed) transferAnonymous(receipt, identity.value)
+          else if (receipt) { pendingLogin = withoutReceipt(pendingLogin); writePendingLogin(pendingLogin) }
+        }
+        const position = pendingLogin?.guide
+        if (position && (position.generation ?? guideLoginGeneration) === guideLoginGeneration) {
+          // Guide consumed; an account-owned receipt (no stable subject yet) stays pending.
+          pendingLogin = withoutGuide(pendingLogin)
+          guideFromBoot = false
+          writePendingLogin(pendingLogin)
+          void begin(false, position)
+        } else if (position) {
+          // Ownership was withdrawn; never resurrect the lesson, but keep the receipt.
+          pendingLogin = withoutGuide(pendingLogin)
+          guideFromBoot = false
+          writePendingLogin(pendingLogin)
+        }
       }
     }
     // Fresh document + settled unauthenticated init = the OIDC round-trip produced no session
@@ -430,6 +476,7 @@ export function useOnboarding(options: {
   })
 
   function start(selectedTopic: OnboardingTopic = 'core') {
+    cancelGuideContinuation()
     stopRun()
     hintVisible.value = false
     mode.value = 'welcome'
@@ -440,6 +487,7 @@ export function useOnboarding(options: {
   }
 
   function openDirectory() {
+    cancelGuideContinuation()
     stopRun()
     hintVisible.value = false
     record('OFFERED')
@@ -605,6 +653,7 @@ export function useOnboarding(options: {
   function next() {
     if (mode.value !== 'tour') return
     if (index.value >= steps.value.length - 1) {
+      cancelGuideContinuation()
       stopRun()
       if (topic.value === 'core') { record('COMPLETED'); void synchronize() }
       mode.value = 'finish'
@@ -621,6 +670,7 @@ export function useOnboarding(options: {
     void prepareStep()
   }
   function skip() {
+    cancelGuideContinuation()
     if (topic.value === 'core' && (mode.value === 'welcome' || mode.value === 'tour')) { record('SKIPPED'); void synchronize() }
     interrupt()
   }
