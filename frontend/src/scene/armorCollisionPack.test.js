@@ -244,23 +244,23 @@ describe('simulateContinuation ↔ penetration.js calculate（续飞语义等价
         expect(Math.abs(sim.layers[0].eff - 100)).toBeLessThan(0.5)
     })
 
-    it('转正只作用于首个命中层：20mm 间隙@60° + 100mm 主装甲@60°（review 2026-10-13 数值锚点）', () => {
-        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× overmatch 增强转正 17.5°）：
-        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）**不再转正**：eff = 100/cos(60°) = 200。
-        // 修前逐层转正给 100/cos(55°) ≈ 174.34——同一射线 calculate(200) 与续飞(174) 分歧。
+    it('每层独立转正：20mm 间隙@60° + 100mm 主装甲@60°（BlitzKit）', () => {
+        // AP 口径 100mm、转正 5°、出射剩余 220mm。层0（20mm，2× 增强转正 17.5°）：
+        // eff = 20/cos(42.5°) ≈ 27.1268；层1（100mm）也用自身 5° 转正：
+        // eff = 100/cos(55°) ≈ 174.34；220−27.13 >174.34 → 穿透。
         const { sim, oracle } = runCase([
             { section: 'spaced', thickness: 20, x: 2, rotYDeg: -90 + 60 },
             { section: 'hull', thickness: 100, x: 4, rotYDeg: -90 + 60 },
         ], { remIn: 220, caliber: 100, normalizationRad: 5 * Math.PI / 180, thickMul: 1 })
         expect(Math.abs(sim.layers[0].eff - 27.1268)).toBeLessThan(0.02)
-        expect(Math.abs(sim.layers[1].eff - 200)).toBeLessThan(0.01)
-        expect(sim.layers[1].eff).toBeGreaterThan(190)   // 判别：旧规则 ≈174.34
-        expect(sim.cls).toBe(2)
-        expect(oracle).toBe(2)                            // 与 calculate 平价（分歧已闭合）
+        expect(Math.abs(sim.layers[1].eff - 100 / Math.cos(55 * Math.PI / 180))).toBeLessThan(0.05)
+        expect(sim.layers[1].eff).toBeLessThan(180)       // 判别：首层专用旧规则 200
+        expect(sim.cls).toBe(1)
+        expect(oracle).toBe(1)
     })
 
-    it('外部模块不消耗首层转正资格：履带 + 主装甲@60°，转正 5°（用户 2026-10-17）', () => {
-        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 仍是首个实际装甲层，转正 5° →
+    it('外部模块不参与转正：履带 + 主装甲@60°，仍独立转正 5°', () => {
+        // 出射剩余 210：履带 20 → 190；主装甲 100 @60° 独立转正 5° →
         // eff = 100/cos(55°) ≈ 174.34，190 > 174.34 → 穿透（绿）。
         // 旧规则把模块计入首层 → 不转正 eff = 200 → 190 被挡（红）——本用例有判别力。
         const { sim, oracle } = runCase([

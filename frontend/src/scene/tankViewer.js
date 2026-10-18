@@ -304,7 +304,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             uniform sampler2D spacedArmorBuffer;   // R=外部/间隙甲 thickness/penetration, alpha!=0 表示有覆盖
             uniform highp sampler2D spacedArmorDepth; // 深度（HE 溅射用）
             uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
-            uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时禁止在其上退差额；半浮点下恒 0
+            uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
             uniform mat4 inverseProjectionMatrix;
             #include <clipping_planes_pars_fragment>
             float getDist(vec2 coord, float depth) {
@@ -326,10 +326,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               vec4 spacedData = texture2D(spacedArmorBuffer, sc);
               vec4 spacedState = texture2D(spacedStateBuffer, sc);
               bool underSpaced = spacedData.a != 0.0;
-              // RT0.G = 间隙甲层标记（SPACED_FRAG 写入 1；外部模块只写 R/coverage）。
-              // 外部模块是 flat 消耗、不是装甲层：主装甲在「只穿模块」时仍是首个实际装甲层，
-              // 保留转正/2×口径增强转正资格（用户 2026-10-17 裁示）；间隙甲才是首层。
-              bool hasSpacedArmor = spacedData.g > 0.0;
               // RT1.A = 1：最近覆盖层是外部模块（moduleStateMaterial 写；间隙甲写 0）。
               // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
               bool moduleInFront = spacedState.a > 0.5;
@@ -389,25 +385,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
                 bool twoCal = ratio > 2.0;
-                // 转正只作用于首个**实际装甲层**：已有间隙甲覆盖（= 首层装甲已被消耗）时不再转正；
-                // 外部模块覆盖不算装甲层（RT0.G 未置位）→ 本主装甲仍是首层，保留转正与
-                // 2×口径增强转正（用户 2026-10-13/2026-10-17 裁示，与点击链 armorLayerCount 同规则）
-                float norm = hasSpacedArmor ? 0.0
-                  : (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization);
+                // BlitzKit：主装甲对自身厚度/角度独立套用转正；前置间隙甲/外部模块
+                // 不会取消它的 normalization（逐层，不继承首层状态）。
+                float norm = twoCal
+                  ? (1.4 * normalization * caliber) / (2.0 * thickness)
+                  : normalization;
                 float finalThick = thickness / cos(max(0.0, angle - norm));
                 float rem = penetration;
                 // Armor Inspector 概率区间：±5% = ±3σ；两端一起平移，σ 保持不变。
                 highp float pMin = penetration * 0.95;
                 highp float pMax = penetration * 1.05;
                 if (underSpaced) {
-                  // 厚度通道 = 全板裸 LOS 之和；状态通道 B = 最近层转正差额 → 修正总消费
-                  // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）。
-                  // 累计格式契约（review 2026-10-13 P2 饱和回归）：Σ裸LOS/pen 与差额/pen 都可能
-                  // >1——半浮点 RT 保留未饱和总量，此处代数恒等成立；8 位回退格式下 R 先被钳到 1
-                  // （超额已丢失），不得再在饱和 R 上退差额（spacedSatGuard=1，按整穿深计）。
+                  // RT0.R = 各间隙板/模块的逐层 actual effective / penetration 累加
+                  // （SPACED_FRAG 与 EXTERNAL_FRAG 同口径）；不再用 RT1 最近层差额修正。
+                  // 累计值可能 >1：半浮点 RT 保留；8 位回退在 R 饱和时按整穿深保守处理。
                   highp float rawTotal = spacedData.r;
                   highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
-                    ? 1.0 : max(0.0, rawTotal - spacedState.b);
+                    ? 1.0 : max(0.0, rawTotal);
                   float spacedThick = totalConsume * penetration;
                   // 判定/热力图按实际等效厚度消耗一次（与 penetration.js 的
                   // remainingPen -= effective 一致）；不能用 3× 概率区间把确定性的
@@ -480,19 +474,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // ===== 穿透热力图：对齐 BlitzKit SpacedArmorScene（Armor/index.tsx useFrame）=====
         // spacedArmorScene 在【单次】gl.render 内按 renderOrder 排序：
         //   0 主装甲 omit(colorWrite:false, depthWrite:true，仅供 RT 遮挡)；
-        //   1-2 间隙甲 additive(R=裸 LOS 厚度/穿深累计)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   1-2 间隙甲 additive(R=逐层 normalized effective/穿深累计)；
+        //   3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
         // 状态通道（RT1，独立 pass，NoBlending+depthWrite）：最近层独占写 R=跳弹标志 /
-        //   G=续飞编码 / B=首层转正差额——身份 = GPU 深度测试的精确最近层，无容差阈值。
-        //   就地续飞在自身几何上算毕，屏幕侧只解读)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   G=续飞编码——身份 = GPU 深度测试的精确最近层，无容差阈值。
+        //   就地续飞在自身几何上算毕，屏幕侧只解读。
         // 结果写入 RT，primaryArmorScene(renderOrder 1) 读 RT 着色到屏幕。
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
         let penetrationRT = null;
         let spacedStateRT = null;
-        // 累计格式能力（review 2026-10-13 P2 饱和回归）：R=Σ裸LOS/pen 与 B=差额/pen 都可能 >1，
-        // 8 位 unorm 在逐片元 additive 累计时会先钳到 1——差额修正就落在已饱和的值上。优先请求
-        // 可保留 >1 且支持混合的半浮点可渲染格式（RGBA16F；其混合不需要 EXT_float_blend）；
-        // 无 EXT_color_buffer_{float,half_float} 时回退 8 位，PBR 侧以 spacedSatGuard 禁止对饱和 R 退差额。
+        // 累计格式能力：R=Σ逐层 normalized effective/pen 可能 >1，8 位 unorm 在逐片元
+        // additive 累计时会先钳到 1。优先请求可保留 >1 且支持混合的半浮点可渲染格式
+        // （RGBA16F；其混合不需要 EXT_float_blend）；无扩展时回退 8 位，PBR 侧以
+        // spacedSatGuard 在 R 饱和时按整穿深保守处理。
         function spacedRTFloatCapable() {
             return renderer.extensions.has('EXT_color_buffer_float')
                 || renderer.extensions.has('EXT_color_buffer_half_float');
@@ -747,37 +742,40 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         const SPACED_VERT = PBR_VERT;
-        // 厚度通道（RT0，additive，R 累计）：每个间隙板写 R=裸 LOS（thickness/cos 入射角）、
-        // G=间隙甲层标记；外部模块只写 R/coverage、不写 G。PBR 用 G 判断主装甲前方是否已有
-        // 实际装甲层（决定是否保留首层转正资格）；外部模块是 flat 消耗，不计入装甲层。
-        // **首层判定**用状态通道（RT1）的最近间隙板深度；外部模块不阻塞间隙板状态，
-        // 而是写 A=1 让 PBR 抑制「模块在前」时其后间隙板的跳弹/续飞。首层 → 全效应
-        // （3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
-        // （与点击链同规则；review 2026-10-13）。
-        // 厚度通道（RT0，additive）：**每块间隙板只贡献裸 LOS 厚度**（thickness/cos 入射角），
-        // 不做任何首层判定——本通道里没有任何浮点深度邻近阈值可被合法小层距反例击穿
-        // （review 2026-10-13：任何"距离最近层 < δ"的推断都不是身份）。首层身份与转正差额
-        // 由状态通道（RT1，深度独占的精确最近层）携带，PBR 侧做代数修正：
-        //   总消费 = Σ裸LOS − RT1.差额(最近层) = 转正首层 + 其余各层裸 LOS
-        //   该恒等要求累计值保留 >1 的总量：RT 用半浮点格式；8 位仅在无扩展回退时钳位 + PBR 饱和守卫。
+        // 厚度通道（RT0，additive，R 累计）：每块间隙板按 BlitzKit 独立计算
+        // finalNorm（2× 口径增强按本层厚度）与 finalThickness，写 R=finalThickness/penetration；
+        // G=间隙甲层标记；外部模块写 flat R/coverage、不写 G。
+        // 状态通道（RT1）只负责最近层的跳弹标志/续飞编码；外部模块写 A=1 抑制其后的
+        // 间隙板跳弹/续飞。PBR 直接累加 RT0.R，不再做“首层/最近层差额”修正。
         const SPACED_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
             varying vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
+            uniform float caliber;
+            uniform float ricochet;
+            uniform float normalization;
             void main() {
               float viewDistance = length(vViewPos);
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
-              float losThick = thickness / max(cos(angle), 1e-6);
-              gl_FragColor = vec4(losThick / penetration, 1.0, 0.0, 1.0);
+              bool threeCal = caliber > thickness * 3.0;
+              if (!threeCal && angle >= ricochet) {
+                gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                return;
+              }
+              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
+              float finalNorm = twoCal
+                ? (1.4 * normalization * caliber) / (2.0 * thickness)
+                : normalization;
+              float finalThick = thickness / cos(max(0.0, angle - finalNorm));
+              gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
             }
         `;
         // 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
-        // 不可累加的跳弹标志/续飞编码与 R 厚度累计分离（review 2026-10-13：additive 下多块板
-        // 各写 B，0.8+0.8→1.6 被钳到 1，误进「被挡」红分支）。续飞就地执行，反射起点/法线 =
-        // 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；G = 续飞结果编码
-        // （0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
+        // 不可累加的跳弹标志/续飞编码与逐层 normalized R 累计分离。续飞就地执行，反射起点/
+        // 法线 = 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；
+        // G = 续飞结果编码（0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
         const SPACED_STATE_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
@@ -794,16 +792,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
-              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
-              float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
-              float losThick = thickness / max(cos(angle), 1e-6);
-              float normThick = thickness / cos(max(0.0, angle - norm));
-              // B = 首层（= 本最近层）转正差额/穿深 = (裸LOS − 转正后)/pen ≥ 0。
-              // 厚度通道全板按裸 LOS 累计，PBR 用本差额把最近层的贡献修正为转正后值
-              // ——身份 = 深度独占的精确最近层（GPU 逐片元深度测试），无任何容差阈值。
-              // 不做上钳：差额 >1（转正节省超过整穿深）在浮点格式下须精确参与 r−b 恒等；
-              // 8 位回退格式由硬件钳位，PBR 饱和守卫兜底（review 2026-10-13 P2）。
-              float delta = max(0.0, losThick - normThick) / max(penetration, 1.0);
+              // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
               float bCode = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -821,8 +810,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (rcDiag > 1e30) bCode = -1.0;
               }
               // A=0：本片元是间隙甲（不是外部模块）；模块状态材质写 A=1，PBR 据此抑制
-              // 「模块在前」时其后间隙板的跳弹/续飞。RGB 仍供 PBR 使用（B=转正差额）。
-              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, delta, 0.0);
+              // 「模块在前」时其后间隙板的跳弹/续飞。
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, 0.0, 0.0);
             }
         `;
         /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
@@ -862,9 +851,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         // 外部模块状态材质（RT1）：只把 A 置 1（= 最近覆盖层是外部模块），RGB 保留——
-        // 其后间隙板的转正差额/跳弹状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
-        // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞（用户 2026-10-17），但间隙甲
-        // 仍是首个实际装甲层，其转正差额继续由 PBR 使用。
+        // 其后间隙板的跳弹/续飞状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
+        // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。
         const MODULE_STATE_FRAG = `
             #include <clipping_planes_pars_fragment>
             void main() {
@@ -1160,9 +1148,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         /** 状态通道场景（RT1）：主装甲深度（阻挡其后间隙板/模块）→ 间隙板状态（depthWrite
-         *  独占最近板；R/G/B=跳弹/续飞/转正差额，A=0）→ 外部模块状态（更近时写 A=1，
-         *  RGB 保留）。模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞，但间隙甲仍是
-         *  首个实际装甲层，其转正差额继续由 PBR 使用（用户 2026-10-17）。 */
+         *  独占最近板；R/G=跳弹/续飞，A=0）→ 外部模块状态（更近时写 A=1，RGB 保留）。
+         *  模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。 */
         function buildSpacedStateScene() {
             if (!armorModel) return;
             if (spacedStateScene) spacedStateScene.clear();
@@ -1994,15 +1981,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
-            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G/B（A=0）→ 更近的外部模块写
-            //    A=1（RGB 保留：间隙甲仍是首个实际装甲层，转正差额/续飞状态不被模块覆盖）
+            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G（A=0）→ 更近的外部模块写
+            //    A=1（RGB 保留：模块后间隙板的跳弹/续飞状态不被覆盖）
             if (spacedStateScene) {
                 renderer.autoClear = true;
                 renderer.setRenderTarget(srt);
                 renderer.setClearColor(0x000000, 0);
                 renderer.render(spacedStateScene, camera);
             }
-            // ② 厚度通道：全板 additive（裸 LOS 累计，无身份判定）；状态缓冲整体留给 PBR 解读
+            // ② 厚度通道：全板 additive（逐层 normalized effective 累计）；状态缓冲留给 PBR 解读
             const rtIsFloat = spacedRTFloatCapable();
             const inject = (obj) => { obj.traverse(function(node){
                 if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.spacedArmorBuffer) {
