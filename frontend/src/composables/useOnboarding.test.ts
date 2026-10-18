@@ -742,7 +742,7 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
 
-  it('requires sign-in before preparing even an official AI sample guide', async () => {
+  it('keeps an anonymous AI guide request parked until sign-in completes, then resumes it (#670)', async () => {
     const h = harness()
     h.controller.start('ai')
     await h.controller.begin()
@@ -754,10 +754,10 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.mode.value).toBe('idle')
     account('signed-in')
     await flushPromises()
-    h.controller.start('ai')
-    await h.controller.begin()
-    expect(h.loadDemo).toHaveBeenCalledTimes(1)
+    await flushPromises()
     expect(h.controller.mode.value).toBe('tour')
+    expect(h.controller.topic.value).toBe('ai')
+    expect(h.loadDemo).toHaveBeenCalledTimes(1)
     h.wrapper.unmount()
   })
   it('advances the optional shot guide from real row selection to the real armor handoff', async () => {
@@ -777,6 +777,98 @@ describe('real lesson lifecycle', () => {
     expect(h.controller.index.value).toBe(2)
     expect(h.controller.currentStage.value.anchor).toBe('armor-workspace')
     expect(h.controller.mode.value).toBe('tour')
+    h.wrapper.unmount()
+  })
+})
+
+describe('login continuity (#670)', () => {
+  function pendingGuide() {
+    return JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')?.guide
+  }
+
+  it('resumes the AI guide at its first lesson after an explicit login redirect', async () => {
+    const guest = harness()
+    guest.controller.start('ai')
+    guest.controller.loginAiGuide()
+    expect(guest.controller.mode.value).toBe('idle')
+    // The provider flips loginInFlight synchronously when auth.login() runs; the AI marker must survive it.
+    boundary.auth.loginInFlight.value = true
+    expect(pendingGuide()).toEqual({ topic: 'ai', index: 0, stageIndex: 0 })
+    guest.wrapper.unmount()
+    boundary.auth.loginInFlight.value = false
+
+    account('A')
+    const resumed = harness()
+    await flushPromises()
+    await flushPromises()
+    expect(resumed.controller.mode.value).toBe('tour')
+    expect(resumed.controller.topic.value).toBe('ai')
+    expect(resumed.controller.index.value).toBe(0)
+    expect(resumed.loadDemo).toHaveBeenCalledTimes(1)
+    expect(resumed.setCapability).toHaveBeenCalledWith('ai')
+    expect(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY)).toBeNull()
+    resumed.wrapper.unmount()
+
+    // One-shot: a reload without a new login never reopens the guide.
+    const nextPage = harness()
+    await flushPromises()
+    expect(nextPage.controller.mode.value).not.toBe('tour')
+    expect(nextPage.loadDemo).not.toHaveBeenCalled()
+    nextPage.wrapper.unmount()
+  })
+
+  it('restores the account settings lesson at the step where login was clicked', async () => {
+    const guest = harness({ view: 'more' })
+    guest.controller.start('settings')
+    await guest.controller.begin()
+    guest.controller.next(); await flushPromises()
+    guest.controller.next(); await flushPromises()
+    expect(guest.controller.index.value).toBe(2)
+    expect(guest.controller.currentStage.value.anchor).toBe('settings-account')
+    boundary.auth.loginInFlight.value = true
+    expect(pendingGuide()).toEqual({ topic: 'settings', index: 2, stageIndex: 0 })
+    guest.wrapper.unmount()
+
+    account('A')
+    const resumed = harness({ view: 'profile' })
+    await flushPromises()
+    expect(resumed.controller.mode.value).toBe('tour')
+    expect(resumed.controller.topic.value).toBe('settings')
+    expect(resumed.controller.index.value).toBe(2)
+    expect(resumed.controller.currentStage.value.anchor).toBe('settings-account')
+    expect(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY)).toBeNull()
+    resumed.wrapper.unmount()
+  })
+
+  it('clears a canceled login continuation and never resumes without authentication', async () => {
+    const h = harness({ view: 'more' })
+    h.controller.start('settings')
+    await h.controller.begin()
+    boundary.auth.loginInFlight.value = true
+    expect(pendingGuide()).toEqual({ topic: 'settings', index: 0, stageIndex: 0 })
+    boundary.auth.loginInFlight.value = false
+    await nextTick()
+    expect(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY)).toBeNull()
+    h.wrapper.unmount()
+
+    sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify({ requestedAt: Date.now(),
+      guide: { topic: 'settings', index: 2, stageIndex: 0 } }))
+    const anonymous = harness({ view: 'profile' })
+    await flushPromises()
+    expect(anonymous.controller.mode.value).toBe('idle')
+    anonymous.wrapper.unmount()
+  })
+
+  it('ignores an expired continuation', async () => {
+    sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify({
+      requestedAt: Date.now() - 31 * 60 * 1000,
+      guide: { topic: 'settings', index: 2, stageIndex: 0 },
+    }))
+    account('A')
+    const h = harness({ view: 'profile' })
+    await flushPromises()
+    expect(h.controller.mode.value).toBe('idle')
+    expect(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY)).toBeNull()
     h.wrapper.unmount()
   })
 })

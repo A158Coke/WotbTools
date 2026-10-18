@@ -17,6 +17,9 @@ const PENDING_LOGIN_MAX_AGE_MS = 30 * 60 * 1000
 const REPLAY_VIEWS = new Set(['replay', 'battle-playback', 'agent-replay', 'agent-shots', 'ai-review'])
 type Disposition = OnboardingReceipt['disposition'] | 'OFFERED'
 export interface LocalOnboardingReceipt { coreEpoch: number; disposition: Disposition; coreStep?: number; migrationConsumed?: boolean }
+/** Where a guide was when an explicit login took the document away (OIDC redirect, #670). */
+interface OnboardingGuidePosition { topic: OnboardingTopic; index: number; stageIndex: number }
+interface PendingLogin { requestedAt: number; receipt?: LocalOnboardingReceipt; guide?: OnboardingGuidePosition }
 const EMPTY_RECEIPT: LocalOnboardingReceipt = { coreEpoch: 0, disposition: 'NONE' }
 const PRECEDENCE: Record<Disposition, number> = { NONE: 0, OFFERED: 1, SKIPPED: 2, COMPLETED: 3 }
 
@@ -120,22 +123,38 @@ function readCache(): Record<string, LocalOnboardingReceipt> {
   } catch { return {} }
 }
 
-function readPendingLogin(): LocalOnboardingReceipt | null {
+function validGuidePosition(value: unknown): value is OnboardingGuidePosition {
+  if (!value || typeof value !== 'object') return false
+  const position = value as OnboardingGuidePosition
+  return typeof position.topic === 'string' && Object.hasOwn(ONBOARDING_GUIDES, position.topic)
+    && Number.isSafeInteger(position.index) && position.index >= 0
+    && Number.isSafeInteger(position.stageIndex) && position.stageIndex >= 0
+}
+
+function readPendingLogin(): PendingLogin | null {
   try {
     const pending = JSON.parse(sessionStorage.getItem(ONBOARDING_PENDING_LOGIN_KEY) || 'null')
     const age = Date.now() - pending?.requestedAt
-    if (validOnboardingReceipt(pending?.receipt) && ['COMPLETED', 'SKIPPED'].includes(pending.receipt.disposition)
-      && Number.isFinite(age) && age >= 0 && age <= PENDING_LOGIN_MAX_AGE_MS) return pending.receipt
+    const receipt = validOnboardingReceipt(pending?.receipt) && ['COMPLETED', 'SKIPPED'].includes(pending.receipt.disposition)
+      ? pending.receipt : null
+    const guide = validGuidePosition(pending?.guide) ? pending.guide : null
+    if (Number.isFinite(age) && age >= 0 && age <= PENDING_LOGIN_MAX_AGE_MS && (receipt || guide)) {
+      return { requestedAt: pending.requestedAt, ...(receipt ? { receipt } : {}), ...(guide ? { guide } : {}) }
+    }
     sessionStorage.removeItem(ONBOARDING_PENDING_LOGIN_KEY)
   } catch { /* The same-SPA handoff can still use session memory. */ }
   return null
 }
 
-function writePendingLogin(receipt: LocalOnboardingReceipt | null) {
+function writePendingLogin(pending: PendingLogin | null) {
   try {
-    if (receipt) sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify({ requestedAt: Date.now(), receipt }))
+    if (pending) sessionStorage.setItem(ONBOARDING_PENDING_LOGIN_KEY, JSON.stringify(pending))
     else sessionStorage.removeItem(ONBOARDING_PENDING_LOGIN_KEY)
   } catch { /* Login and manual guides remain usable without storage. */ }
+}
+
+function withoutReceipt(pending: PendingLogin | null): PendingLogin | null {
+  return pending?.guide ? { requestedAt: pending.requestedAt, guide: pending.guide } : null
 }
 
 /** AppShell is the single lifecycle owner; panes only register their existing commands. */
@@ -248,23 +267,34 @@ export function useOnboarding(options: {
     hintVisible.value = false
   }
 
+  /**
+   * A login can take the whole document away (OIDC redirect), so remember *why* it was requested in
+   * the same one-shot handoff the receipt migration uses. Only a terminal anonymous receipt and the
+   * guide position are kept — never replay files or account data.
+   */
+  function rememberLogin(position: OnboardingGuidePosition | null) {
+    const anonymous = cache.value.anonymous
+    const receipt = pendingLogin?.receipt || (identity.value === 'anonymous' && anonymous && !anonymous.migrationConsumed
+      && ['COMPLETED', 'SKIPPED'].includes(anonymous.disposition) ? anonymous : null)
+    const guide = position || pendingLogin?.guide || null
+    pendingLogin = receipt || guide
+      ? { requestedAt: Date.now(), ...(receipt ? { receipt } : {}), ...(guide ? { guide } : {}) }
+      : null
+    writePendingLogin(pendingLogin)
+  }
+
   function transferAnonymous(value: LocalOnboardingReceipt, owner: string) {
     persist(owner, { coreEpoch: value.coreEpoch, disposition: value.disposition })
     const anonymous = cache.value.anonymous
     if (anonymous?.coreEpoch === value.coreEpoch) persist('anonymous', { ...anonymous, migrationConsumed: true })
-    pendingLogin = null
-    writePendingLogin(null)
+    pendingLogin = withoutReceipt(pendingLogin)
+    writePendingLogin(pendingLogin)
   }
 
   if (auth.loginInFlight) watch(auth.loginInFlight, requested => {
     if (requested) {
       explicitLoginPending = true
-      const anonymous = cache.value.anonymous
-      if (identity.value === 'anonymous' && anonymous && !anonymous.migrationConsumed
-        && ['COMPLETED', 'SKIPPED'].includes(anonymous.disposition)) {
-        pendingLogin = anonymous
-        writePendingLogin(anonymous)
-      }
+      rememberLogin(mode.value === 'tour' ? { topic: topic.value, index: index.value, stageIndex: stageIndex.value } : null)
     } else void nextTick(() => {
       if (!auth.authenticated.value) { explicitLoginPending = false; pendingLogin = null; writePendingLogin(null) }
     })
@@ -283,8 +313,15 @@ export function useOnboarding(options: {
     }
     // sessionStorage survives the browser's explicit OIDC redirect, but the marker is used once.
     if (identity.value.startsWith('sub:') && auth.authInitState.value === 'authenticated' && pendingLogin) {
-      if (pendingLogin.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed) transferAnonymous(pendingLogin, identity.value)
-      else { pendingLogin = null; writePendingLogin(null) }
+      const receipt = pendingLogin.receipt
+      if (receipt && receipt.coreEpoch === anonymous.coreEpoch && !anonymous.migrationConsumed) transferAnonymous(receipt, identity.value)
+      else if (receipt) { pendingLogin = withoutReceipt(pendingLogin); writePendingLogin(pendingLogin) }
+      const position = pendingLogin?.guide
+      if (position) {
+        pendingLogin = null
+        writePendingLogin(null)
+        void begin(false, position)
+      }
     }
     // `bootstrap.state` 是依赖，但**失败态不是触发源**：whenBusinessUserSettled 在非 ready 时会
     // 主动 ensure，失败再落回 failed ⇒ 本 watcher 被自己的状态翻转反复唤醒 =
@@ -483,11 +520,18 @@ export function useOnboarding(options: {
     } catch { if (owns()) issue.value = 'unavailable' }
   }
 
-  async function begin(resume = false) {
+  async function begin(resume = false, position?: OnboardingGuidePosition) {
+    if (position) {
+      topic.value = position.topic
+      index.value = Math.min(position.index, steps.value.length - 1)
+      stageIndex.value = Math.min(position.stageIndex, steps.value[index.value].stages.length - 1)
+    } else {
+      index.value = resume && canResume.value ? Math.min(receipt.value.coreStep || 0, steps.value.length - 1) : 0
+      stageIndex.value = 0
+    }
     if (topic.value === 'ai' && !isSignedIn.value) return
     demoFailed.value = false
-    index.value = resume && canResume.value ? Math.min(receipt.value.coreStep || 0, steps.value.length - 1) : 0
-    stageIndex.value = 0
+    hintVisible.value = false
     mode.value = 'tour'
     const needsReplay = steps.value.some(step => step.capability)
     if (needsReplay) {
@@ -578,6 +622,7 @@ export function useOnboarding(options: {
     if (mode.value === 'tour' && currentStep.value.id === 'demo' && issue.value === '') next()
   }
   function loginAiGuide() {
+    rememberLogin({ topic: 'ai', index: 0, stageIndex: 0 })
     interrupt()
     return auth.login('ai-review')
   }
