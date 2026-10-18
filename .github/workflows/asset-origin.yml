@@ -2,9 +2,10 @@ name: Asset Origin Source Mirror
 
 # Source-transport owner for the Komodo Stack `wotbtools-asset-origin`.
 #
-# It may mutate ONLY the Gitee source mirror. It never applies ResourceSync,
-# never mutates Komodo resources, and never deploys the Stack (`deploy = false`,
-# `webhook_enabled = false`, human ResourceSync Apply).
+# It may mutate ONLY the asset-owned Gitee transport branch `asset-origin`
+# (never shared `main`, which the Frontend/Business API mirrors own). It never
+# applies ResourceSync, never mutates Komodo resources, and never deploys the Stack
+# (`deploy = false`, `webhook_enabled = false`, human ResourceSync Apply).
 #
 # `infra/komodo/resources/asset-origin.toml` is the single reviewed exception to
 # the rule that the declarative resource tree is owned by no production workflow:
@@ -77,24 +78,29 @@ jobs:
           # Shared production gate: reject a non-ancestor source and any later
           # change to this owner's inputs. A stale workflow_dispatch already fails
           # here; the stricter exact-current-main check runs immediately before the
-          # shared Gitee ref mutation below.
+          # asset-owned Gitee ref mutation below.
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       # hub-mirror mirrors whatever the source repository points at when it runs,
       # which can race a later unrelated main commit. Instead push the frozen event
-      # object already checked out above. The shared production-gitee-mirror group
-      # serializes this ref mutation with the existing Frontend/Business API mirror
-      # jobs, and the following gate proves the exact ref before rollout.
+      # object already checked out above to the asset-owned transport ref. The
+      # shared production-gitee-mirror group serializes this mutation with the
+      # Frontend/Business API mirror jobs, but those jobs only ever move Gitee
+      # `main`; the Stack consumes `asset-origin`, which only this workflow moves.
+      # The following gate proves that exact ref before rollout.
       #
-      # This step force-updates the SHARED Gitee `main` ref, so the ordinary
-      # freshness tolerance for "main advanced in unrelated commits" is not enough:
-      # a run that is no longer exact current main must fail closed instead of
-      # rolling that shared ref backward. `PRODUCTION_REQUIRE_EXACT_MAIN=1` makes
-      # the shared helper fetch current GitHub main and require it to still equal
-      # the frozen SOURCE_SHA, for both push and workflow_dispatch.
-      - name: Push frozen event SHA to Gitee main
+      # The transport ref is asset-owned: ONLY this workflow moves
+      # `refs/heads/asset-origin`, so Frontend/Business API mirrors can never move
+      # the Stack's source underneath a human deploy. The ordinary freshness
+      # tolerance for "main advanced in unrelated commits" is still not enough for a
+      # force update: a run that is no longer exact current main must fail closed
+      # instead of pinning the asset ref to an older source.
+      # `PRODUCTION_REQUIRE_EXACT_MAIN=1` makes the shared helper fetch current
+      # GitHub main and require it to still equal the frozen SOURCE_SHA, for both
+      # push and workflow_dispatch.
+      - name: Push frozen event SHA to the Gitee asset-origin ref
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -128,12 +134,14 @@ jobs:
           bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
             "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
 
+          # Never touch shared Gitee `main`: that ref belongs to the Frontend /
+          # Business API mirrors. The Stack consumes this asset-owned ref only.
           GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
             git push --force \
               https://gitee.com/A158Coke/Wotbtools.git \
-              refs/heads/asset-origin-frozen:refs/heads/main
+              refs/heads/asset-origin-frozen:refs/heads/asset-origin
 
-      - name: Require Gitee main at the reviewed GitHub SHA
+      - name: Require Gitee asset-origin ref at the reviewed GitHub SHA
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
@@ -143,14 +151,14 @@ jobs:
           for attempt in $(seq 1 12); do
             mirrored="$(timeout 15s git ls-remote \
               https://gitee.com/A158Coke/Wotbtools.git \
-              refs/heads/main 2>/dev/null | awk '{print $1}' || true)"
+              refs/heads/asset-origin 2>/dev/null | awk '{print $1}' || true)"
             if [ "$mirrored" = "$SOURCE_SHA" ]; then
-              echo "Gitee main verified at $SOURCE_SHA"
+              echo "Gitee asset-origin ref verified at $SOURCE_SHA"
               exit 0
             fi
             if [ "$attempt" -lt 12 ]; then
               sleep 5
             fi
           done
-          echo "Gitee main does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
+          echo "Gitee asset-origin ref does not match reviewed GitHub SHA $SOURCE_SHA (found ${mirrored:-<missing>})." >&2
           exit 1

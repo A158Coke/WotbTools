@@ -2,13 +2,16 @@
 #
 # The Stack is created/adopted declaratively by ResourceSync, but ResourceSync Apply
 # must never deploy the workload implicitly. Deployment remains an explicit Komodo
-# action after Gitee main contains the exact reviewed GitHub commit and the host asset
-# tree has been staged and verified.
+# action after the asset-owned Gitee `asset-origin` ref contains the exact reviewed
+# GitHub commit and the host asset tree has been staged and verified.
 #
 # GitHub remains source/review authority. The Shanghai worker cannot reliably reach
 # GitHub, so Gitee is transport only, matching the existing TX2 domestic-worker
 # pattern. `.github/workflows/asset-origin.yml` pushes the frozen triggering GitHub
-# SHA itself to Gitee main and verifies that exact ref before rollout.
+# SHA itself to the asset-owned Gitee branch `asset-origin` and verifies that exact
+# ref before rollout. The Frontend/Business API mirrors may move shared Gitee `main`
+# at any time; the Stack deliberately tracks only `asset-origin`, so another owner
+# can never change the source this Stack deploys.
 [[stack]]
 name = "wotbtools-asset-origin"
 description = "Alibaba Cloud Shanghai static origin for WotBTools Agent 3D assets"
@@ -29,7 +32,12 @@ skip_secret_interp = false
 git_provider = "gitee.com"
 git_https = true
 repo = "A158Coke/Wotbtools"
-branch = "main"
+# Asset-owned transport branch: only `.github/workflows/asset-origin.yml` moves it,
+# and it always moves it to the exact SHA that passed the asset source gate. Shared
+# Gitee `main` is owned by the Frontend/Business API mirrors and MUST NOT be the
+# deploy source for this Stack. `commit = ""` keeps Komodo v2.3.3 on the tracked
+# branch tip, which for this ref is the verified frozen SHA.
+branch = "asset-origin"
 commit = ""
 clone_path = ""
 reclone = false

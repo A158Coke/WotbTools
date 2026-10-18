@@ -314,6 +314,10 @@ commits `/etc/komodo/keys/onboarding-complete`:
   different executable rejects adoption instead of being normalized. This is a
   deliberately strict boundary: the reviewed steady-state unit uses exactly that
   `ExecStart`;
+- the executable behind `/proc/<MainPID>/exe` hashes to the staged release's
+  `PERIPHERY_SHA256`. The argv pathname is not proof that the process executes the
+  current inode: after an atomic replace the old process keeps the deleted file, so
+  adoption hashes the live inode and rejects a replaced-but-not-restarted agent;
 - an ESTABLISHED outbound connection exists from that exact PID to the reviewed
   Core peer (remote `:443` for Alibaba; exact `10.20.0.2:9120` for the WireGuard
   targets);
@@ -332,7 +336,9 @@ repairs or normalizes host state beyond the atomic marker write.
 | Marker valid but identity or `core.pub` missing/unsafe, or the marker itself unsafe | **Fail closed**; corrupted state is never silently repaired |
 | Onboarding never completes, or the credential-free restart never reconnects | Bounded wait, then fail closed: credential removed, service **stopped**, marker stays absent |
 | The process environment cannot be inspected | **Fail closed** (never treated as evidence of absence) |
-| Existing-host adoption cannot prove identity/Core/env/argv/peer | **Fail closed**; no marker is written and the host is left as it was |
+| Existing-host adoption cannot prove identity/Core/env/argv/live-executable/peer | **Fail closed**; no marker is written and the host is left as it was |
+| Marker valid, on-disk binary exact, but the live `/proc/<pid>/exe` SHA differs from the pin (replaced-but-not-restarted process) | Reconcile **restarts** the service; the next `verify.sh` requires the live inode to hash to the pin |
+| Live executable or argv cannot be inspected | Reconcile restarts (cannot prove the desired live state); `verify.sh` **fails closed** |
 | `stop` does not take effect after a failed bootstrap | Escalated to a forced kill; a `CRITICAL` diagnostic if the unit still will not die |
 | Symlinked/irregular `/etc/komodo`, keys, binary, unit, or staged path | Refused; the install never follows a link |
 | Staged artifact SHA mismatch, or a staged config for another target | Refused before installation |
@@ -348,15 +354,18 @@ whose marker committed needs no credential ever again.
 An already-completed host whose binary, config, and unit already match the staged
 desired state, and whose service is already active, is **left running untouched**:
 the reconcile never stops a healthy service, and it restarts only when something the
-running agent consumes actually changed or when the service is not running. Replacing
-the binary is safe while Periphery runs — the process keeps the inode it started
-from — so no preemptive stop is needed. The two directions are both required and
+running agent consumes actually changed, when the live executable is not the pinned
+inode, or when the service is not running. Replacing the binary is safe while
+Periphery runs — the process keeps the inode it started from — so no preemptive stop
+is needed; the restart decision hashes `/proc/<pid>/exe` so "the path already
+matches" can never hide a stale live process. The directions are all required and
 covered by the fixture:
 
 | State observed | Reconcile behaviour |
 | --- | --- |
-| marker valid, service active, binary/config/unit already exact | no stop, no restart; the service stays active |
+| marker valid, service active, binary/config/unit already exact, live executable == pin | no stop, no restart; the service stays active |
 | marker valid, binary/config/unit changed | restart, so the new binary/config/unit takes effect |
+| marker valid, on-disk binary exact, live executable != pin | restart, so the old inode stops running |
 | marker valid, any of binary/config/unit already exact but the service is **not** active | restart, so a stopped agent is brought back up |
 
 ## Production verification
@@ -370,6 +379,14 @@ without any Komodo credential:
 4. `keys/periphery.key` and `keys/core.pub` exist, are non-empty, real, non-symlink.
 5. `keys/onboarding-complete` is a valid root-owned mode 0600 marker (never inferred
    from the identity file).
+5b. The live argv is exactly
+   `/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml`
+   (another config path, duplicate selector, `-c`, `--config-path=<...>`, extra
+   argument, wrong executable, or unreadable cmdline fails closed). The same shared
+   helper is used by adoption.
+5c. The executable behind `/proc/<MainPID>/exe` hashes to `PERIPHERY_SHA256`; a
+   missing/unreadable link fails closed. This detects a replaced-but-not-restarted
+   process that a pathname hash cannot.
 6. An established outbound connection exists from the Periphery main PID to the
    target's reviewed Core peer: exact `10.20.0.2:9120` for Yecao/TX1/TX2, remote
    `:443` for `ali-sh-asset-01` (bounded retries).

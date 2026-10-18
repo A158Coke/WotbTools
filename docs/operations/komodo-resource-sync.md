@@ -58,11 +58,14 @@ Two invariants are enforced by tests, not by convention:
 never triggers Komodo Core/Mongo/DNS reconciliation.
 
 Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml`
-is an input of `.github/workflows/asset-origin.yml`, which may mutate only the Gitee
-source mirror. It must not apply ResourceSync, must not mutate Komodo resources, and
-must not deploy the Stack. `deploy = false`, `webhook_enabled = false`, and
-`auto_update = false` remain mandatory, and ResourceSync Apply stays manual. No other
-file under `infra/komodo/resources/**` is a production input.
+is an input of `.github/workflows/asset-origin.yml`, which may mutate only the
+asset-owned Gitee transport branch `asset-origin` (never shared `main`). It must not
+apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.
+The Stack tracks that same `asset-origin` branch, so the Frontend/Business API mirrors
+can move Gitee `main` without ever changing what this Stack deploys.
+`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain
+mandatory, and ResourceSync Apply stays manual. No other file under
+`infra/komodo/resources/**` is a production input.
 
 ## The declared resources
 
@@ -125,9 +128,11 @@ The reviewed Stack set is also fail-closed:
 
 - `wotbtools-frontend-shadow` → `tx2`, GitHub authority with Gitee transport.
 - `wotbtools-asset-origin` → `ali-sh-asset-01`, `deploy/assets/compose.yaml`, GitHub
-  authority with Gitee transport for the mainland worker. Its mutating Compose `up`
-  also serializes on the host's existing `/opt/wotb-asset/.deploy.lock` through
-  `compose_cmd_wrapper`, so it can never overlap a Periphery reconcile.
+  authority with Gitee transport for the mainland worker. It tracks only the
+  asset-owned `branch = "asset-origin"` ref (never shared `main`), and its mutating
+  Compose `up` also serializes on the host's existing
+  `/opt/wotb-asset/.deploy.lock` through `compose_cmd_wrapper`, so it can never
+  overlap a Periphery reconcile.
 
 Both keep `deploy = false`, `webhook_enabled = false`, `auto_update = false`, and
 `poll_for_updates = false`. ResourceSync adoption/update is therefore separate from an

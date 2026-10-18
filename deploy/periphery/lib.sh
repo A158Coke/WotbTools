@@ -364,6 +364,56 @@ assert_reviewed_argv() {
   return 0
 }
 
+# require_reviewed_argv <pid>
+#   Fail closed unless the live argv is exactly the reviewed invocation. Shared by
+#   existing-host adoption and the recurring production verification, so a service
+#   override or drop-in that changes the CLI config selection can never be trusted
+#   by one path while the other still passes.
+require_reviewed_argv() {
+  local pid="$1" state=0
+  assert_reviewed_argv "$pid" || state=$?
+  case "$state" in
+    0) return 0 ;;
+    1) fail "the running Periphery process (pid $pid) argv is not exactly: $periphery_bin --config-path $periphery_config" ;;
+    *) fail "Cannot inspect the argv of the running Periphery process (pid $pid); refusing to trust it." ;;
+  esac
+}
+
+# live_executable_sha <pid>
+#   Print the SHA256 of the executable inode the process is actually running.
+#   1 = /proc/<pid>/exe is missing, unreadable, or cannot be hashed
+#
+# Hashing $periphery_bin only proves what the pathname holds NOW. After an atomic
+# replace the running process keeps executing the previous (deleted) inode, and
+# /proc/<pid>/exe follows exactly that inode (readlink may show " (deleted)").
+# Hashing the link, never the pathname, is what makes a stale live process visible.
+live_executable_sha() {
+  local pid="$1" exe sha
+  exe="$periphery_proc_root/$pid/exe"
+  # /proc/<pid>/exe is a magic symlink for a live process; anything else is not an
+  # inspectable executable.
+  [[ -L "$exe" ]] || return 1
+  [[ -r "$exe" ]] || return 1
+  sha="$(sha256sum "$exe" 2>/dev/null | awk '{print $1}')" || return 1
+  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || return 1
+  printf '%s\n' "$sha"
+  return 0
+}
+
+# assert_live_executable_sha <pid> <expected-sha>
+#   Fail closed unless the running process executes exactly the pinned bytes.
+#   Covers the stale-inode case (on-disk binary already replaced, live process still
+#   on the old one) that a pathname hash cannot detect.
+assert_live_executable_sha() {
+  local pid="$1" expected="$2" live
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "Refusing to compare the live Periphery executable against an invalid digest: ${expected:-<empty>}"
+  live="$(live_executable_sha "$pid")" \
+    || fail "Cannot inspect the executable behind $periphery_proc_root/$pid/exe; refusing to trust the running Periphery process."
+  [[ "$live" == "$expected" ]] \
+    || fail "The running Periphery process (pid $pid) executes $live, not the pinned $expected; it is still running a replaced or stale executable."
+}
+
 # process_env_state_label <code>: the diagnostic for a non-zero probe result.
 process_env_state_label() {
   case "$1" in

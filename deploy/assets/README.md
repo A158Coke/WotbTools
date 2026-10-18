@@ -9,7 +9,8 @@ It does **not** cut production traffic over by itself.
 - Stack: `wotbtools-asset-origin`
 - Public name: `assets.wotbtools.com`
 - Compose source: GitHub is review authority; Gitee is transport for the mainland worker.
-- Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering GitHub `main` event SHA, force-pushes that frozen commit itself to Gitee `main`, and then requires Gitee `main` to equal the same SHA. It must not mirror whatever GitHub `main` happens to point at later in the run. Because that shared ref is force-updated, the workflow also requires the frozen SHA to still be **exact current GitHub `main`** immediately before the push (`PRODUCTION_REQUIRE_EXACT_MAIN=1` on the shared freshness gate): a queued `push` or `workflow_dispatch` run that main has moved past fails closed, pushes nothing, and never switches to the newer SHA.
+- Stack source ref: `branch = "asset-origin"`. This asset-owned Gitee branch is moved **only** by `.github/workflows/asset-origin.yml`; the Frontend/Business API mirrors move shared Gitee `main` and can never change what this Stack deploys.
+- Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering GitHub `main` event SHA, force-pushes that frozen commit itself to the asset-owned Gitee `asset-origin` branch, and then requires `refs/heads/asset-origin` to equal the same SHA. It must not mirror whatever GitHub `main` happens to point at later in the run, and it never writes shared Gitee `main`. Because the transport ref is force-updated, the workflow also requires the frozen SHA to still be **exact current GitHub `main`** immediately before the push (`PRODUCTION_REQUIRE_EXACT_MAIN=1` on the shared freshness gate): a queued `push` or `workflow_dispatch` run that main has moved past fails closed, pushes nothing, and never switches to the newer SHA.
 - Periphery lifecycle: the Alibaba target under `deploy/periphery/targets/ali-sh-asset-01/` uses the shared repository-owned install/reconcile/verify implementation and is the final dependent job in the single `.github/workflows/komodo-periphery.yml` owner chain (`Yecao -> TX1 -> TX2 -> Alibaba`).
 - Payload: host state under `/srv/wotb-assets`, mounted read-only into Caddy.
 
@@ -40,15 +41,17 @@ TX1, and TX2 all reconcile successfully first. The reviewed `adopt-existing.sh`
 bridge takes the host mutation lock and, only if an existing service is already
 active, independently proves: persistent identity and Core trust files exist, the
 **complete** live `/proc/<MainPID>/environ` was read successfully and holds no
-`PERIPHERY_*` override (the environment is buffered first, so a large environment
-cannot turn a match into a SIGPIPE false negative), the installed config contains no
-onboarding credential and resolves to the exact reviewed Core/identity/operator
-semantics, the live `/proc/<MainPID>/cmdline` is exactly
+Periphery-prefixed override in any case (the environment is buffered first, so a
+large environment cannot turn a match into a SIGPIPE false negative), the installed
+config contains no onboarding credential and resolves to the exact reviewed
+Core/identity/operator semantics, the live `/proc/<MainPID>/cmdline` is exactly
 `/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml` (another
 config path, a duplicate `--config-path`, `-c`, an extra argument, or a different
 executable rejects adoption, because Komodo gives CLI config selection precedence
-over TOML/environment), the process has an established connection to the reviewed
-Core peer, and no inbound `:8120` listener exists. Only then does it atomically
+over TOML/environment), the executable behind `/proc/<MainPID>/exe` hashes to the
+pinned `PERIPHERY_SHA256` (a pathname match is not proof that a replaced binary was
+adopted), the process has an established connection to the reviewed Core peer, and
+no inbound `:8120` listener exists. Only then does it atomically
 commit the root-owned mode-0600 `/etc/komodo/keys/onboarding-complete` marker. The
 same job immediately runs the normal shared reconcile and must finish
 credential-free.
@@ -82,7 +85,7 @@ Keep the current release plus at least one previous release while the migration 
 ## First rollout
 
 1. Complete the host-side SSH/sudo/lock prerequisites above, then merge the reviewed GitHub change.
-2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA push and verification prove Gitee `main` contains the triggering reviewed GitHub commit; an account-level mirror or informal/manual freshness check is not sufficient. A run whose frozen SHA is no longer exact current GitHub `main` fails closed without touching Gitee — re-dispatch it on the new exact `main` instead of reusing the stale result.
+2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA push and verification prove Gitee `refs/heads/asset-origin` contains the triggering reviewed GitHub commit; an account-level mirror, shared Gitee `main`, or informal/manual freshness check is not sufficient. A run whose frozen SHA is no longer exact current GitHub `main` fails closed without touching its transport ref — re-dispatch it on the new exact `main` instead of reusing the stale result.
 3. Require the single **Komodo Periphery** workflow to pass through the full dependency chain `Yecao -> TX1 -> TX2 -> Alibaba`. For this already-onboarded host, the Alibaba job must complete adoption and the following normal credential-free reconcile successfully before any ResourceSync Apply.
 4. In ResourceSync `wotbtools-main`, review the pending diff. The existing `ali-sh-asset-01` Server and `wotbtools-asset-origin` Stack must be adopted by name; `address` stays empty and no inbound Periphery `:8120` is introduced.
 5. Apply the ResourceSync diff. This must not deploy the Stack (`deploy = false`).

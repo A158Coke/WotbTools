@@ -6,9 +6,10 @@
 # only commits the lifecycle's durable onboarding marker after independently
 # proving that the *currently running* Periphery process already uses the reviewed
 # Server identity/Core route, was started from the reviewed binary with the
-# reviewed config path, is connected to that reviewed peer, has persistent
-# identity/trust files, exposes no inbound 8120, and has no runtime environment
-# override that can change effective Periphery configuration.
+# reviewed config path, is executing the pinned release bytes (the live inode behind
+# /proc/<pid>/exe, not merely the on-disk pathname), is connected to that reviewed
+# peer, has persistent identity/trust files, exposes no inbound 8120, and has no
+# runtime environment override that can change effective Periphery configuration.
 #
 # On a fresh/rebuilt host with no active established agent this is a no-op; the
 # normal install.sh state machine remains responsible for bootstrap (using the
@@ -23,6 +24,9 @@ source "$script_dir/lib.sh"
 
 [[ "$(id -u)" == 0 ]] || fail 'Existing Periphery adoption must run as root.'
 load_target_profile "$TARGET" "$script_dir"
+# The staged release manifest is the reviewed binary pin. Adoption needs its digest
+# to prove the *live* process executes the pinned bytes, not just the pathname.
+load_release_manifest "$script_dir/periphery.release"
 
 # Adoption writes the durable marker, so it shares the host mutation lock with
 # every normal reconcile instead of creating an uncoordinated bootstrap mutation.
@@ -101,13 +105,12 @@ python3 "$validator" "$periphery_config" "$periphery_config_source" "$periphery_
 # TOML and the environment. Prove the live process was started with exactly the
 # reviewed binary and config path, so the file validated above is the one the
 # running agent actually uses.
-argv_state=0
-assert_reviewed_argv "$pid" || argv_state=$?
-case "$argv_state" in
-  0) ;;
-  1) fail "Refusing adoption because the live Periphery argv is not exactly: $periphery_bin --config-path $periphery_config" ;;
-  *) fail 'Refusing adoption because the live Periphery cmdline cannot be inspected.' ;;
-esac
+require_reviewed_argv "$pid"
+
+# The argv pathname is not proof that the process executes the current inode: an
+# atomically replaced binary leaves the old process on the deleted inode. Prove the
+# executable behind /proc/<pid>/exe is exactly the pinned release before adopting.
+assert_live_executable_sha "$pid" "$PERIPHERY_SHA256"
 
 [[ -n "$(established_core_connections "$pid")" ]] \
   || fail "Active Periphery process has no established connection to reviewed Core peer $periphery_core_peer_match."

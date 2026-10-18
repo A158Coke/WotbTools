@@ -164,6 +164,23 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
           PERIPHERY_TARGET: ali-sh-asset-01
 
+      # Adoption can take minutes (bounded SSH + host proofs). Re-run the shared
+      # production freshness gate immediately before the second, independent host
+      # mutation: if deploy/periphery/** changed on main while adoption ran, the run
+      # must fail closed instead of reconciling obsolete lifecycle inputs. The gate
+      # uses the SAME frozen SOURCE_SHA; it never switches to newer main.
+      - name: Reject stale main again immediately before the Alibaba reconcile
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
       - name: Reconcile Alibaba asset Periphery under the host lock
         uses: appleboy/ssh-action@v1
         with:
