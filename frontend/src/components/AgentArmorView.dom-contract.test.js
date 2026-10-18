@@ -344,6 +344,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)
     expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
     expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
+    // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
+    expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
+    expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
     expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)

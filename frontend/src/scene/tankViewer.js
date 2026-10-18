@@ -5123,8 +5123,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 逐层累计概率决定层点颜色，整体概率决定标题与伤害。
                 // HE（isHE）与跳弹/续飞保留原确定性分支。
                 const hasProbabilityChain = Array.isArray(res.probability_layers) && res.probability_layers.length > 0;
-                const useProbabilityMode = !isHE && !res.ricochet
-                    && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain;
+                // HE 命中首个 Primary 时也有穿深浮动；只有命中非 Primary 的
+                // 间隙甲/模块才保持 HE 首面爆炸/溅射（不把 CDF 当穿透概率）。
+                const heFirstPrimary = isHE && hitsForCheck.length > 0
+                    && isPrimary(hitsForCheck[0].section);
+                const hePenChance = heFirstPrimary && hasProbabilityChain
+                    ? evaluateProbabilityChain(probabilityPen ?? pen, res.probability_layers).chance
+                    : 0;
+                const useProbabilityMode = !res.ricochet
+                    && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain
+                    && (!isHE || (heFirstPrimary && hePenChance > 0));
                 const isGapProbLayer = (layer) => layer.gap === true
                     || String(layer.part_name || '').startsWith('Gap ');
                 const probRawLayers = useProbabilityMode
