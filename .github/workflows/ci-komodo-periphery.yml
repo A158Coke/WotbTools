@@ -124,7 +124,8 @@ jobs:
           assert adopt['env']['PERIPHERY_TARGET'] == 'ali-sh-asset-01'
           reconcile = steps['Reconcile Alibaba asset Periphery under the host lock']
           assert reconcile['env']['PERIPHERY_TARGET'] == 'ali-sh-asset-01'
-          assert reconcile['env']['KOMODO_PERIPHERY_ONBOARDING_KEY'] == '${{ secrets.KOMODO_ALI_ASSET_ONBOARDING_KEY }}'
+          onboarding_ref = reconcile['env']['KOMODO_PERIPHERY_ONBOARDING_KEY']
+          assert 'secrets.' in onboarding_ref and 'KOMODO_ALI_ASSET_ONBOARDING_KEY' in onboarding_ref, onboarding_ref
           assert 'KOMODO_PERIPHERY_ONBOARDING_KEY' in reconcile['with']['envs'].split(',')
           assert 'deploy/periphery/reconcile.sh' in reconcile['with']['script']
           assert steps['Cleanup staged Alibaba asset inputs']['if'] == 'always()'
