@@ -1,7 +1,6 @@
 package com.wotb.web.tournament.mapper;
 
 import com.wotb.web.tournament.dto.BroadcastDtos;
-import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.entity.BroadcastCategory;
 import com.wotb.web.tournament.entity.BroadcastNode;
 import com.wotb.web.tournament.entity.BroadcastReplay;
@@ -22,23 +21,6 @@ public class BroadcastMapper implements Mapper<BroadcastReplay, BroadcastDtos.Re
     public BroadcastDtos.Node node(final BroadcastNode node, final List<BroadcastReplay> replays) {
         return new BroadcastDtos.Node(node.id, node.categoryId, node.roundNumber, node.format,
                 replays.stream().map(this::toDto).toList());
-    }
-    public BroadcastLegacyDtos.Season legacySeason(final BroadcastDtos.Season season) {
-        return new BroadcastLegacyDtos.Season(season.id(),season.server(),season.year(),season.nameEn(),season.startDate(),
-                season.createdAt(),season.version(),season.rootCount(),season.replayCount());
-    }
-    public BroadcastLegacyDtos.Index legacyIndex(final BroadcastDtos.Index index) {
-        return new BroadcastLegacyDtos.Index(index.servers(),index.seasons().stream().map(this::legacySeason).toList(),index.coverUploadAvailable());
-    }
-    public BroadcastLegacyDtos.SeasonView legacySeasonView(final BroadcastDtos.SeasonView view) {
-        return new BroadcastLegacyDtos.SeasonView(legacySeason(view.season()),view.categories(),view.coverUploadAvailable());
-    }
-    public BroadcastLegacyDtos.Node legacyNode(final BroadcastNode node, final List<BroadcastReplay> replays, final String categoryType) {
-        final boolean points = "POINTS".equals(categoryType);
-        return new BroadcastLegacyDtos.Node(node.id,node.categoryId,node.roundNumber,node.format,replays.stream().map(replay ->
-                new BroadcastLegacyDtos.Replay(replay.id,replay.nodeId,replay.title,replay.url,replay.matchDate,replay.dayNumber,
-                        points ? (replay.groupNumber == null ? replay.legacyGroupLabel : replay.groupNumber.toString()) : null,
-                        points ? null : replay.groupNumber,replay.bracket,List.copyOf(replay.teams),replay.perspective,replay.coverId)).toList());
     }
     public BroadcastDtos.ReplayStart replayStart(final BroadcastReplay replay) {
         return new BroadcastDtos.ReplayStart(replay.id, replay.matchStartsAt);

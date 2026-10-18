@@ -9,49 +9,47 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 // Production router, components, multipart transport and CSS; only external HTTP/auth are fixtures.
 let db
 function reset() {
-  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, visibilityAvailable: true, recommendationsAvailable: true, creatorReads: 0, publicListReads: 0, metadataReads: 0, typedReads: 0,
+  db = { categories: [{ id: 1, name: 'High damage replays' }, { id: 2, name: 'Live commentary' }, { id: 3, name: 'Empty category' }, { id: 4, name: 'LongCategoryName'.repeat(6) }], levels: [{ id: 1, name: 'Professional' }], avatars: new Map(), uploadAvailable: true, apiAvailable: true, recommendationsAvailable: true, creatorReads: 0, publicListReads: 0, metadataReads: 0, recommendationReads: 0,
     creators: [{ id: 1, version: 0, bilibiliUid: '1000001', name: 'A creator with a long name for narrow screens', description: 'Recommended replays and commentary.', categoryIds: [1, 2], levelId: null, stars: 3, avatarId: null, createdAt: '2026-10-16T00:00:00Z' },
       { id: 2, version: 0, bilibiliUid: '1000002', name: 'Assessed creator', description: null, categoryIds: [1], levelId: 1, stars: 4, avatarId: null, createdAt: '2026-10-15T00:00:00Z' }], nextId: 10, failSave: false, writes: 0 }
   db.categories.forEach(value => { value.type = 'UP' }); db.creators.forEach(value => { value.type = 'UP' })
 }
 const avatarUrl = id => id ? `/api/creators/avatars/${id}` : null
-const legacyCategory = ({ id, name }) => ({ id, name })
-const detail = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, avatarUrl: avatarUrl(value.avatarId) })
-const card = value => ({ id: value.id, version: value.version, bilibiliUid: value.bilibiliUid, name: value.name, description: value.description, homepageUrl: `https://space.bilibili.com/${value.bilibiliUid}`, avatarUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)).map(legacyCategory), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
 const recommendationDetail = value => ({ id: value.id, version: value.version, type: value.type, externalId: value.bilibiliUid, name: value.name, description: value.description, categoryIds: value.categoryIds, levelId: value.levelId, stars: value.stars, imageUrl: avatarUrl(value.avatarId) })
 const recommendationCard = value => ({ id: value.id, version: value.version, type: value.type, externalId: value.bilibiliUid, name: value.name, description: value.description, targetUrl: value.type === 'VIDEO' ? `https://www.bilibili.com/video/${value.bilibiliUid}` : `https://space.bilibili.com/${value.bilibiliUid}`, imageUrl: avatarUrl(value.avatarId), categories: db.categories.filter(category => value.categoryIds.includes(category.id)), level: db.levels.find(level => level.id === value.levelId) ?? null, score: value.stars * 2, createdAt: value.createdAt })
 function send(response, status, value) { response.statusCode = status; if (value === undefined) { response.end(); return }; response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)) }
 function fail(response, status, errorCode) { send(response, status, { id: 'creator-browser-fixture', errorCode, errorMsg: null, status, retryable: false, details: {}, timestamp: null }) }
 const middleware = async (request, response, next) => {
   const url = new URL(request.url, 'http://fixture'), path = url.pathname
-  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, ...(db.apiAvailable ? { capabilities: ['creators-v1', ...(db.visibilityAvailable ? ['creators-content-visibility-v1'] : []), ...(db.recommendationsAvailable ? ['recommendations-v1'] : [])] } : {}) }); return }
+  if (path === '/api/health') { send(response, 200, { status: 'ok', tanks: 0, ...(db.apiAvailable ? { capabilities: db.recommendationsAvailable ? ['recommendations-v1'] : ['creators-v1', 'creators-content-visibility-v1'] } : {}) }); return }
   if (path === '/api/observability/events') { send(response, 204); return }
-  const typed = path.startsWith('/api/recommendations') || path.startsWith('/api/admin/recommendations')
-  if (typed) db.typedReads++
-  if (!typed && !path.startsWith('/api/creators') && !path.startsWith('/api/admin/creators')) { next(); return }
-  if (typed && !db.recommendationsAvailable) { fail(response, 404, 'RESOURCE_NOT_FOUND'); return }
+  if (path.startsWith('/api/creators/avatars/')) {
+    const id = path.slice('/api/creators/avatars/'.length)
+    const file = db.creators.some(value => value.avatarId === id) ? db.avatars.get(id) : null
+    if (!file) { response.statusCode = 404; response.end() } else { response.setHeader('Content-Type', file.type); response.end(Buffer.from(await file.arrayBuffer())) }
+    return
+  }
+  if (!path.startsWith('/api/recommendations') && !path.startsWith('/api/admin/recommendations')) { next(); return }
+  db.recommendationReads++
+  if (!db.recommendationsAvailable) { fail(response, 404, 'RESOURCE_NOT_FOUND'); return }
   try {
-    const admin = path.startsWith('/api/admin/'), base = `${admin ? '/api/admin' : '/api'}/${typed ? 'recommendations' : 'creators'}`
-    const parts = path.slice(base.length).split('/').filter(Boolean), type = typed ? url.searchParams.get('type') : 'UP'
+    const admin = path.startsWith('/api/admin/'), base = `${admin ? '/api/admin' : '/api'}/recommendations`
+    const parts = path.slice(base.length).split('/').filter(Boolean), type = url.searchParams.get('type')
     if (admin && request.headers.authorization !== 'Bearer fixture-access-token') { fail(response, 403, 'AUTH_FORBIDDEN'); return }
     if (request.method === 'GET') {
       db.creatorReads++
       if (!admin && parts[0] === 'categories') {
-        const categories = db.categories.filter(category => (typed || category.type === 'UP') && ((!typed && !db.visibilityAvailable) || db.creators.some(value => value.type === category.type && value.categoryIds.includes(category.id))))
-        send(response, 200, typed ? categories : categories.map(legacyCategory))
+        const categories = db.categories.filter(category => db.creators.some(value => value.type === category.type && value.categoryIds.includes(category.id)))
+        send(response, 200, categories)
       } else if (admin && parts[0] === 'metadata') {
         db.metadataReads++
         if (!['UP', 'VIDEO'].includes(type)) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
         const categories = db.categories.filter(value => value.type === type)
-        send(response, 200, typed ? { type, categories, levels: type === 'UP' ? db.levels : [], imageUploadsAvailable: db.uploadAvailable } : { categories: categories.map(legacyCategory), levels: db.levels, avatarUploadsAvailable: db.uploadAvailable })
-      }
-      else if (!admin && parts[0] === 'avatars') {
-        const file = db.creators.some(value => value.avatarId === parts[1]) ? db.avatars.get(parts[1]) : null
-        if (!file) { response.statusCode = 404; response.end() } else { response.setHeader('Content-Type', file.type); response.end(Buffer.from(await file.arrayBuffer())) }
-      } else if (admin && /^\d+$/.test(parts[0] ?? '')) { const value = db.creators.find(item => item.id === Number(parts[0]) && item.type === type); if (value) send(response, 200, typed ? recommendationDetail(value) : detail(value)); else fail(response, 404, 'CREATOR_NOT_FOUND') }
+        send(response, 200, { type, categories, levels: type === 'UP' ? db.levels : [], imageUploadsAvailable: db.uploadAvailable })
+      } else if (admin && /^\d+$/.test(parts[0] ?? '')) { const value = db.creators.find(item => item.id === Number(parts[0]) && item.type === type); if (value) send(response, 200, recommendationDetail(value)); else fail(response, 404, 'CREATOR_NOT_FOUND') }
       else if (!admin && !parts.length) {
         if (!['UP', 'VIDEO'].includes(type)) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
-        db.publicListReads++; send(response, 200, db.creators.filter(value => value.type === type && (!url.searchParams.get('categoryId') || value.categoryIds.includes(Number(url.searchParams.get('categoryId'))))).sort((a, b) => b.stars - a.stars || b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map(typed ? recommendationCard : card))
+        db.publicListReads++; send(response, 200, db.creators.filter(value => value.type === type && (!url.searchParams.get('categoryId') || value.categoryIds.includes(Number(url.searchParams.get('categoryId'))))).sort((a, b) => b.stars - a.stars || b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map(recommendationCard))
       }
       else fail(response, 404, 'RESOURCE_NOT_FOUND')
       return
@@ -65,16 +63,16 @@ const middleware = async (request, response, next) => {
       send(response, 204); return
     }
     const incoming = new Request(url, { method: request.method, headers: request.headers, body: Readable.toWeb(request), duplex: 'half' })
-    if (parts[0] === 'categories' || parts[0] === 'levels') { const payload = await incoming.json(), value = { id: db.nextId++, name: payload.name, ...(parts[0] === 'categories' ? { type: typed ? payload.type : 'UP' } : {}) }; db[parts[0]].push(value); send(response, 201, typed || parts[0] === 'levels' ? value : legacyCategory(value)); return }
+    if (parts[0] === 'categories' || parts[0] === 'levels') { const payload = await incoming.json(), value = { id: db.nextId++, name: payload.name, ...(parts[0] === 'categories' ? { type: payload.type } : {}) }; db[parts[0]].push(value); send(response, 201, value); return }
     assert.match(String(request.headers['content-type']), /^multipart\/form-data; boundary=/)
     const form = await incoming.formData(), payloadPart = form.get('payload')
     assert.equal(payloadPart.type, 'application/json')
-    const input = JSON.parse(await payloadPart.text()), recordType = typed ? input.type : 'UP'
-    const payload = typed ? { ...input, bilibiliUid: input.externalId, avatarAction: input.imageAction } : input, avatar = form.get(typed ? 'image' : 'avatar')
-    assert.equal(payload.avatarAction === 'REPLACE', !!avatar, 'action matches the one optional avatar part')
+    const input = JSON.parse(await payloadPart.text()), recordType = input.type
+    const payload = input, avatar = form.get('image')
+    assert.equal(payload.imageAction === 'REPLACE', !!avatar, 'action matches the one optional avatar part')
     if (!['UP', 'VIDEO'].includes(recordType) || (recordType === 'VIDEO' && payload.levelId !== null)
       || payload.categoryIds.some(id => !db.categories.some(value => value.id === id && value.type === recordType))) { fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
-    const bilibiliUid = recordType === 'UP' ? payload.bilibiliUid.trim().replace(/^0+/, '') : payload.bilibiliUid.trim(), id = parts.length ? Number(parts[0]) : null
+    const bilibiliUid = recordType === 'UP' ? payload.externalId.trim().replace(/^0+/, '') : payload.externalId.trim(), id = parts.length ? Number(parts[0]) : null
     if (db.creators.some(value => value.type === recordType && value.bilibiliUid === bilibiliUid && value.id !== id)) { fail(response, 409, recordType === 'UP' ? 'CREATOR_UID_ALREADY_EXISTS' : 'RECOMMENDATION_ID_ALREADY_EXISTS'); return }
     const current = db.creators.find(item => item.id === id)
     if (current && current.type !== recordType) { fail(response, 404, 'CREATOR_NOT_FOUND'); return }
@@ -82,11 +80,11 @@ const middleware = async (request, response, next) => {
     if (db.failSave) { db.failSave = false; fail(response, 400, 'CREATOR_INVALID_REQUEST'); return }
     let value = db.creators.find(item => item.id === id)
     if (!value) { value = { id: db.nextId++, type: recordType, version: 0, avatarId: null, createdAt: '2026-10-17T00:00:00Z' }; db.creators.push(value) }
-    if (payload.avatarAction === 'REPLACE') { assert.ok(db.uploadAvailable); const avatarId = crypto.randomUUID(); db.avatars.set(avatarId, avatar); value.avatarId = avatarId }
-    else if (payload.avatarAction === 'REMOVE') value.avatarId = null
+    if (payload.imageAction === 'REPLACE') { assert.ok(db.uploadAvailable); const avatarId = crypto.randomUUID(); db.avatars.set(avatarId, avatar); value.avatarId = avatarId }
+    else if (payload.imageAction === 'REMOVE') value.avatarId = null
     Object.assign(value, { bilibiliUid, name: payload.name, description: payload.description, categoryIds: payload.categoryIds, levelId: payload.levelId, stars: payload.stars })
     if (id !== null) value.version++
-    send(response, id ? 200 : 201, typed ? recommendationDetail(value) : detail(value))
+    send(response, id ? 200 : 201, recommendationDetail(value))
   } catch (error) { console.error(error); fail(response, 500, 'INTERNAL_ERROR') }
 }
 async function tap(page, selector, touch) {
@@ -153,17 +151,13 @@ async function videoLifecycle(page, origin, scenario) {
   assert.deepEqual(await page.evaluate('({view:new URL(location.href).searchParams.get("view"),category:new URL(location.href).searchParams.get("creatorCategory"),keep:new URL(location.href).searchParams.get("keep"),hash:location.hash})'), { view: 'recommendations', category: null, keep: '1', hash: '#catalog' })
 
   reset(); db.recommendationsAvailable = false
-  await page.goto(`${origin}/?view=recommendations&ws-auth=0`)
-  await page.waitForValue('!!document.querySelector("[data-testid=recommendation-card-UP]")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=recommendation-card-VIDEO]")'), false)
-  await tap(page, '[data-testid=recommendation-card-UP]', touch)
-  await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-  await page.goto(`${origin}/?view=recommended-videos&ws-auth=0`)
-  await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
-  assert.equal(db.typedReads, 0, 'legacy backend is only called through the UP API')
-  await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=content-admin`)
-  await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean)
-  assert.equal(await page.evaluate('document.querySelector("[data-testid=recommendation-type-VIDEO]").disabled'), true)
+  for (const view of ['recommendations', 'creators', 'recommended-videos', 'creators-config']) {
+    await page.goto(`${origin}/?view=${view}&ws-auth=1&ws-roles=content-admin`)
+    await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
+    await page.waitForValue('document.querySelector("[data-testid=creators-availability-retry]")?.disabled', value => value === false)
+    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators],[data-testid=tab-creators]")'), false)
+  }
+  assert.equal(db.recommendationReads, 0, 'obsolete capabilities never authorize recommendation API requests')
 
   reset()
   await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=content-admin`)
@@ -234,7 +228,6 @@ const scenarios = ['showcase', 'classic'].flatMap(profile => [
   ...[320, 351, 352, 360].map(width => ({ name: `${profile}-production-${width}`, profile, width, height: 844, touch: true, locale: 'ru', productionHome: true, compactNavigation: true })),
   { name: `${profile}-old-backend`, profile, width: 1440, height: 900, touch: false, locale: 'en', oldBackend: true },
   { name: `${profile}-content-lifecycle`, profile, width: 390, height: 1000, touch: true, locale: 'en', contentLifecycle: true },
-  { name: `${profile}-legacy-creators`, profile, width: 1440, height: 900, touch: false, locale: 'en', legacyCreators: true },
   { name: `${profile}-local-320`, profile, width: 320, height: 844, touch: true, locale: 'zh', compactNavigation: true },
   ...[1440, 390].map(width => ({ name: `${profile}-videos-${width}`, profile, width, height: 1000, touch: width < 768, locale: 'en', videos: true })),
 ])
@@ -303,22 +296,6 @@ try {
         await page.evaluate('window.dispatchEvent(new Event("focus"))')
         await page.waitForValue('!!document.querySelector("[data-testid=creators-not-published]")', Boolean)
         assert.equal(await page.evaluate('!!document.querySelector("[data-testid=tab-creators]")'), false, 'focus refresh also detects removal of the final UP')
-        assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
-      }
-      if (scenario.legacyCreators) {
-        db.recommendationsAvailable = false
-        db.visibilityAvailable = false
-        await page.goto(`${origin}/?view=creators&ws-auth=0`)
-        await page.waitForValue('!!document.querySelector("[data-testid=creators-unavailable]")', Boolean)
-        await page.waitForValue('document.querySelector("[data-testid=creators-availability-retry]")?.disabled', value => value === false)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=nav-creators]")'), false)
-        assert.equal(db.creatorReads, 0, 'old complete dictionary is not mistaken for published public content')
-        await page.goto(`${origin}/?view=creators&ws-auth=1&ws-roles=content-admin`)
-        await page.waitForValue('document.querySelectorAll(".creator-card").length', value => value === 2)
-        await tap(page, '[data-testid=creator-categories-toggle]', false)
-        assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-filter-3]")'), true)
-        await page.goto(`${origin}/?view=creators-config&ws-auth=1&ws-roles=content-admin`)
-        await page.waitForValue('!!document.querySelector("[data-testid=creator-form]")', Boolean)
         assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
       }
       if (scenario.oldBackend) {
