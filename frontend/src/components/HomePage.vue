@@ -15,9 +15,10 @@
  */
 import { computed, inject, ref, watch } from 'vue'
 import * as api from '../utils/api.js'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, Heart, Smartphone } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import heroDecorImg from '../assets/showcase/home/hero-v4.webp'
+import phoneShotImg from '../assets/showcase/home/showcase-android-v1.webp'
 import shotPlayback3dImg from '../assets/showcase/home/showcase-playback-3d-v1.webp'
 import shotArmorImg from '../assets/showcase/home/showcase-armor-v1.webp'
 import shotTankopediaImg from '../assets/showcase/home/showcase-tankopedia-v1.webp'
@@ -132,9 +133,32 @@ function formatCount(value) { return String(Math.round(value)).replace(/\B(?=(\d
       </article>
     </section>
 
-    <!-- ④ 极简页脚 -->
+    <!-- ④ 带走它，也养着它：Android 与赞助是两个转化动作，不是功能导航，所以它们留在首页 -->
+    <section class="home-take layout-wide" aria-labelledby="home-take-title">
+      <h2 id="home-take-title" class="home-showcase-title">{{ $t('home.takeItTitle') }}</h2>
+      <div class="home-take-grid">
+        <article class="home-take-card">
+          <div class="home-take-phone">
+            <img :src="phoneShotImg" width="390" height="844" loading="lazy" decoding="async" alt="" aria-hidden="true">
+          </div>
+          <div class="home-take-copy">
+            <h3><Smartphone :size="20" aria-hidden="true" />{{ $t('home.androidTitle') }}</h3>
+            <p>{{ $t('home.androidDesc') }}</p>
+            <a class="home-take-cta" href="/download/android">{{ $t('android.nav') }} <ArrowRight :size="16" aria-hidden="true" /></a>
+          </div>
+        </article>
+        <article class="home-take-card is-sponsor">
+          <div class="home-take-copy">
+            <h3><Heart :size="20" aria-hidden="true" />{{ $t('home.sponsorTitle') }}</h3>
+            <p>{{ $t('home.sponsorDesc') }}</p>
+            <RouterLink class="home-take-cta" to="/sponsor">{{ $t('home.sponsorCta') }} <ArrowRight :size="16" aria-hidden="true" /></RouterLink>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ⑤ 极简页脚 -->
     <section class="home-footer-bar layout-wide">
-      <RouterLink to="/sponsor">{{ $t('home.sponsorTitle') }} <ArrowRight :size="16" aria-hidden="true" /></RouterLink>
       <a href="https://github.com/A158Coke/WotbTools/issues/new" target="_blank" rel="noopener">{{ $t('app.feedback') }} <ArrowRight :size="16" aria-hidden="true" /></a>
     </section>
   </main>
@@ -238,20 +262,73 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
 
 .home-shot { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); align-items: center; gap: var(--space-10); }
 .home-shot.is-flipped .home-shot-figure { order: 2; }
-.home-shot-figure {
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-2);
-  box-shadow: var(--elevation-3);
-}
+/* 截图不加边框、不加底色、不加投影：四边用 mask 淡出，直接化进页面底色里，
+   而不是摆成一张裱好的卡片。两条渐变取交集，所以四边都软。 */
+.home-shot-figure { min-width: 0; }
 .home-shot-figure img { display: block; width: 100%; height: auto; }
+@supports (mask-composite: intersect) {
+  .home-shot-figure img {
+    mask-image:
+      linear-gradient(to bottom, transparent 0%, currentcolor 7%, currentcolor 90%, transparent 100%),
+      linear-gradient(to right, transparent 0%, currentcolor 6%, currentcolor 94%, transparent 100%);
+    mask-composite: intersect;
+  }
+}
 .home-shot-copy { min-width: 0; }
 .home-shot-copy h3 { margin: 0; color: var(--color-text-primary); font: var(--type-h2); }
 .home-shot-copy p { max-width: 42ch; margin: var(--space-3) 0 0; color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
 
-/* ④ 页脚条 */
+/* ④ 带走它，也养着它 */
+.home-take { display: grid; gap: var(--space-5); }
+.home-take-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: stretch; gap: var(--space-4); }
+.home-take-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-6);
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-1);
+  transition: border-color var(--duration-slow) var(--ease-standard);
+}
+.home-take-card.is-sponsor { grid-template-columns: minmax(0, 1fr); }
+/* 同样不裱框：手机截图从底部淡出，像是从页面里浮起来的，而不是贴上去的一张图 */
+.home-take-phone { width: 168px; height: 300px; min-width: 0; }
+.home-take-phone img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+@supports (mask-composite: intersect) {
+  .home-take-phone img {
+    mask-image:
+      linear-gradient(to bottom, currentcolor 56%, transparent 100%),
+      linear-gradient(to right, transparent 0%, currentcolor 9%, currentcolor 91%, transparent 100%);
+    mask-composite: intersect;
+  }
+}
+.home-take-copy { min-width: 0; }
+.home-take-copy h3 { display: flex; align-items: center; gap: var(--space-2); margin: 0; color: var(--color-text-primary); font: var(--type-h3); }
+.home-take-copy h3 svg { flex: none; color: var(--color-accent-text); }
+.home-take-copy p { margin: var(--space-2) 0 var(--space-5); color: var(--color-text-secondary); font: var(--type-body); line-height: var(--line-height-prose); }
+/* 轮廓按钮而非实心：design-language §3.2 每个视图只留一个橙色实心主操作，那个名额归 Hero 的 CTA */
+.home-take-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  color: var(--color-accent-text);
+  font: var(--type-body);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--duration-base) var(--ease-standard);
+}
+.home-take-cta svg { flex: none; transition: transform var(--duration-base) var(--ease-standard); }
+.home-take-cta:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
+
+/* ⑤ 页脚条 */
 .home-footer-bar { display: flex; gap: var(--space-6); flex-wrap: wrap; padding-block: var(--space-6) var(--space-10); border-top: 1px solid var(--color-border-subtle); }
 .home-footer-bar a { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--control-h-md); color: var(--color-accent-text); font: var(--type-body); font-weight: 600; text-decoration: none; }
 .home-footer-bar a svg { flex: none; }
@@ -268,14 +345,15 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-cta:hover { box-shadow: 0 0 0 var(--space-2) color-mix(in oklab, var(--color-accent) 22%, transparent); }
 
   /* 展示图：抬起 + 加深投影 + 内部缓慢推近，让静态截图有活物感 */
-  .home-shot-figure {
-    transition: transform var(--duration-slow) var(--ease-standard),
-      box-shadow var(--duration-slow) var(--ease-standard),
-      border-color var(--duration-slow) var(--ease-standard);
-  }
+  /* 没有边框可点亮了，悬停改为整体轻抬 + 画面缓慢推近 */
+  .home-shot-figure { transition: transform var(--duration-slow) var(--ease-standard); }
   .home-shot-figure img { transition: transform 900ms var(--ease-standard); }
-  .home-shot:hover .home-shot-figure { transform: translateY(-6px); border-color: var(--color-accent); }
+  .home-shot:hover .home-shot-figure { transform: translateY(-6px); }
   .home-shot:hover .home-shot-figure img { transform: scale(1.04); }
+
+  .home-take-card:hover { border-color: var(--color-accent); }
+  .home-take-cta:hover { background: color-mix(in oklab, var(--color-accent) 16%, transparent); }
+  .home-take-cta:hover svg { transform: translateX(4px); }
 }
 
 /* 进场动效：一次淡入上浮。
@@ -351,5 +429,8 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-showcase { gap: var(--space-10); }
   .home-shot { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
   .home-shot.is-flipped .home-shot-figure { order: 0; }
+  .home-take-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-take-card { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  .home-take-phone { width: 148px; max-height: 220px; }
 }
 </style>

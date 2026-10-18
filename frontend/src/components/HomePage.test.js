@@ -66,13 +66,26 @@ describe('HomePage is a showcase, not a navigation surface', () => {
    * 首页不承担导航：侧边栏（AppSidebar）与底部 Tab 栏（AppTabBar）已经覆盖 PRIMARY_NAV 的
    * 全部入口，首页只留一个转化动作加两个侧边栏没有的非功能入口。这条断言是那次回归的护栏。
    */
-  it('exposes exactly three destinations: the replay workspace, sponsor and feedback', () => {
+  it('exposes exactly four destinations: replay, Android, sponsor and feedback', () => {
     const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
     expect(hrefsOf(wrapper)).toEqual([
       '/?view=replay',
+      '/download/android',
       '/sponsor',
       'https://github.com/A158Coke/WotbTools/issues/new',
     ])
+    wrapper.unmount()
+  })
+
+  // Android 下载与赞助是转化动作，不是功能导航（侧边栏里也没有它们），所以它们在首页
+  // 有自己的版面，而不是页脚一行小字。
+  it('gives Android and sponsorship a section of their own, not a footer link', () => {
+    const wrapper = mountPage()
+    const take = wrapper.get('.home-take')
+    const ctas = take.findAll('.home-take-cta')
+    expect(ctas.map(c => c.attributes('href'))).toEqual(['/download/android', '/sponsor'])
+    expect(take.find('.home-take-phone img').exists()).toBe(true)
+    expect(wrapper.get('.home-footer-bar').findAll('a')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -165,6 +178,31 @@ describe('HomePage is a showcase, not a navigation surface', () => {
       expect(wrapper.find(selector).exists(), selector).toBe(false)
     }
     wrapper.unmount()
+  })
+})
+
+// 这条是被实际 bug 逼出来的：模板引用了 `home.sponsorTag`，而那个 key 在更早一轮的
+// 孤儿清理里已经删掉，页面上直接显示出原始 key。$t 在单测里被 mock 成 identity，
+// 永远发现不了，所以改成拿模板源码对三份 locale 逐个核。
+describe('HomePage i18n keys all resolve', () => {
+  it('every key the template references exists in all three locales', async () => {
+    // 用 Vite 的 `?raw` 取源码：它按**本文件**的位置解析，既不依赖 cwd
+    // （从仓库根跑和从 frontend/ 跑不一样），在 happy-dom 下也没有 `import.meta.url`
+    // 不是 file: URL 的问题。
+    const [{ default: source }, { messages }] = await Promise.all([
+      import('./HomePage.vue?raw'), import('../locales/messages.js'),
+    ])
+    const keys = [...new Set([...source.matchAll(/\$t\('([\w.]+)'\)/g)].map(m => m[1]))]
+    expect(keys.length).toBeGreaterThan(10)
+
+    const missing = []
+    for (const locale of ['zh', 'en', 'ru']) {
+      for (const key of keys) {
+        const value = key.split('.').reduce((node, part) => (node == null ? node : node[part]), messages[locale])
+        if (typeof value !== 'string' || !value) missing.push(`${locale}:${key}`)
+      }
+    }
+    expect(missing, `unresolved keys: ${missing.join(', ')}`).toEqual([])
   })
 })
 
