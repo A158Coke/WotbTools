@@ -204,6 +204,7 @@ komodo_controller:
   - 'infra/tofu/komodo/**'
 komodo_periphery:
   - '.github/workflows/komodo-periphery.yml'
+  - '.github/workflows/komodo-periphery-ali.yml'
   - '.github/workflows/ci-komodo-periphery.yml'
   - 'deploy/check-production-freshness.sh'
   - 'deploy/periphery/**'
