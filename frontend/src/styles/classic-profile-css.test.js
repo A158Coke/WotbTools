@@ -63,6 +63,9 @@ describe('Classic Profile CSS contract', () => {
     expect(home).toMatch(/html\[data-ui-profile="classic"\] \.home-hero-decor \{[^}]*display: none;/)
     // 进场动效必须在 prefers-reduced-motion 下整体短路（design-language 可访问性底线）。
     expect(home).toMatch(/@media \(prefers-reduced-motion: reduce\)/)
+    // Hero 内层不得自带 width：`.layout-wide` 的左右边距就是靠 width 算出来的，
+    // 覆盖它会让 Hero 贴屏幕边缘、并比页面其余区块少一个 gutter（2026-10-18 QA 实测）。
+    expect(home).not.toMatch(/\.home-hero-inner\s*\{[^}]*\bwidth:/)
   })
 
   it('在 main.js 中必须最后导入(§43D / §33 顺序契约)', () => {
