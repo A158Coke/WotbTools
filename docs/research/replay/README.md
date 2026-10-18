@@ -19,15 +19,29 @@
 
 后续实现、审查和研究必须按以下优先级读取：
 
-1. **`WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`** — 新的中英双语顶层权威文档；同时区分 protocol truth 与 `main` 当前实现状态。
-2. 当前 focused closure 文档，例如 `type10-movement-transform-closure.md`、
+1. **`WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md`** — 中英双语顶层综合参考；同时区分 protocol truth 与 `main` 当前实现状态。
+2. 当前 focused closure 文档，例如 `recorder-camera-state.md`、`type10-movement-transform-closure.md`、
    `method38-0200-device-not-pierced-closure.md`、`assault-base-state.md`、method36 / HP /
-   ammo / component 专项 closure。
+   ammo / component 专项 closure。**当 focused closure 明确标记旧解释为 SUPERSEDED/REJECTED 时，以 focused closure 为准，直到综合参考完成下一次 consolidation。**
 3. `inventory.md` — canonical fact ledger。
 4. `research-completion-audit-11.19.md` — completion gate / remaining-boundary audit。
 5. `WOTB_REPLAY_PROTOCOL_11_19_COMPLETE_REFERENCE.md` — 较早英文综合参考；若与 1–4 冲突，以 1–4 为准。
 6. `protocol.md` 和早期 broad probe notes — 研究轨迹与历史上下文。
 7. `external-wot-blitz-agent-cross-validation.md` — 外部 WoT-Blitz-Agent 研究的 clean-room 交叉验证与待本地闭合候选；**external evidence 不能单独提升 canonical evidence grade**。2026-10-02 已按对方后续证据修订，且**固定了两个不可混淆的快照**（线上产物 = `v0.3.8` / `f35baa46`；研究引文 = commit `e37e6a7d` + 各文档 blob 号）：§3 记录上游已显式整理 supersede 链并统一为 method8 hash6 两点 AABB 编码的当前结论，但 WotbTools 仍保持 **EXTERNAL_CANDIDATE**，必须本地复现后才能提升；§6 记 method27 args\[21..33) 为**弹道末段速度方向向量**（其受控裁决 0/79 位置、79/79 方向），§5 按载荷长度分族并撤回 24/25B 的"模块损伤百分比"，§7 记搭载选择为**分层证据**（仅 comp blob 为确定性，末档取顶级属启发式），§10 队列逐项加注（标注 ≠ 本地闭合）。
+
+### 2026-10-18 camera-state correction
+
+`recorder-camera-state.md` supersedes the older Type23/Type31 labels still present in pre-consolidation broad references:
+
+```text
+Type23 old: recorder projectile/shot lifecycle toggle
+Type23 now: recorder ARCADE/SNIPER scope-control state
+
+Type31 old: aiming-circle/gun-marker size
+Type31 now: scoped-camera automatic zoom/FOV-like raw trajectory
+```
+
+The old primary semantics are `REJECTED / SUPERSEDED` for the current 11.19 corpus. Exact Type31 physical units/private symbol and the Type23 high-bit meaning remain bounded P2 work.
 
 `main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
 
@@ -56,6 +70,8 @@ Type10 vertical/airborne movement     CLOSED
 Type10 trailing byte == onGround      REJECTED and corrected
 method36 high-value targeting roles   CLOSED
 method38 0x0200 positive sample       CLOSED
+recorder ARCADE/SNIPER timing         CLOSED for 11.19
+scoped auto-zoom raw trajectory       CLOSED behaviorally for 11.19
 ```
 
 ### Type10 movement
@@ -137,22 +153,27 @@ Rhm airborne controlled replay independently gives a ballistic Type10-Y trajecto
 22 crew healed/clear
 ```
 
-### Targeting
+### Targeting / recorder camera
 
 ```text
-Type31 = aiming-circle/gun-marker size                     PROVEN
-Type39 f5 = turret/gun relative yaw family                 PROVEN relationship
-Type39 f6 = local gun pitch                                PROVEN relationship
+Type23 low31=1 = ARCADE/default mode                    PROVEN current 11.19
+Type23 low31=0 = SNIPER/scoped mode                     PROVEN current 11.19
+Type23 high bit                                          UNKNOWN raw-preserve
+Type31 = scoped-camera auto zoom/FOV-like raw trajectory PROVEN relationship / VERY STRONG behavior
+Type31 smaller raw value = deeper zoom                   VERY STRONG
+Type31 exact unit / optical multiplier                   PARTIAL/UNKNOWN
+Type39 f5 = turret/gun relative yaw family               PROVEN relationship
+Type39 f6 = local gun pitch                              PROVEN relationship
 
-method36.root.field1 = turret/gun relative yaw             PROVEN
-method36.root.field2 = gun pitch                           PROVEN
-method36.root.field3 = max horizontal angular speed        PROVEN controlled
-method36.root.field4 = max vertical angular speed          PROVEN controlled
-method36.root.field5 = aiming-time physical scalar         PROVEN
-method36.field6.field1 = dynamic gun dispersion/bloom      PROVEN
+method36.root.field1 = turret/gun relative yaw           PROVEN
+method36.root.field2 = gun pitch                         PROVEN
+method36.root.field3 = max horizontal angular speed      PROVEN controlled
+method36.root.field4 = max vertical angular speed        PROVEN controlled
+method36.root.field5 = aiming-time physical scalar       PROVEN
+method36.field6.field1 = dynamic gun dispersion/bloom    PROVEN
 ```
 
-Gun damage makes `field6.field1 ×2`; Reticle Calibration makes both aiming-time and bloom scalars exactly `×0.70` and they restore at the end boundary.
+The old `Type23 = shot lifecycle` and `Type31 = aiming-circle/gun-marker size` labels are `REJECTED / SUPERSEDED`. Gun damage makes method36 `field6.field1 ×2`; Reticle Calibration makes both aiming-time and bloom scalars exactly `×0.70` and they restore at the end boundary.
 
 ### HP / death
 
@@ -182,6 +203,9 @@ modifier 2 = Tungsten Shells                 PROVEN
 Not P0/P1 blockers:
 
 ```text
+Type23 0x80000000 high-bit exact meaning
+Type31 exact physical unit / private symbol / optical multiplier
+post-death recorder-vs-observer camera ownership
 component42 exact private identity
 method38 rawState0 exact enum symbol
 method16 sparse transition-code private names
