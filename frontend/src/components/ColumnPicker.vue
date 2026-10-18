@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { catOf } from '../utils/helpers.js'
 
 const props = defineProps({
@@ -10,12 +10,23 @@ const props = defineProps({
   fixedKeys: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['toggle', 'selectAll', 'reset', 'reorder'])
+const emit = defineEmits(['toggle', 'selectAll', 'reset', 'reorder', 'close'])
 const dragIdx = ref(-1)
 const panelEl = ref(null)
+let opener = null
 
-// 浮层即非模态对话框：打开时焦点进入面板，Esc 先关面板（引导据此把 Esc 交给它，而不是退出教程）。
-onMounted(() => panelEl.value?.focus())
+// 浮层即非模态对话框：打开时焦点进入面板，Esc/Done/卸载后归还给打开它的控件
+// （引导据此把 Esc 交给它，而不是退出教程）。
+onMounted(() => {
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  panelEl.value?.focus()
+})
+onBeforeUnmount(() => {
+  const active = document.activeElement
+  const focusStayedOnPanel = !active || active === document.body || !!panelEl.value?.contains(active)
+  if (focusStayedOnPanel && opener?.isConnected && typeof opener.focus === 'function') opener.focus()
+  opener = null
+})
 function onEscape(event) {
   event.preventDefault()
   emit('close')

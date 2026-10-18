@@ -172,6 +172,8 @@ export function useOnboarding(options: {
   let runAbort = new AbortController()
   let demoAbort = new AbortController()
   let demoLoad: Promise<void> | null = null
+  /** Sample-load ownership: only stopRun()/a newer load invalidates a continuation (step changes do not). */
+  let demoGeneration = 0
   let syncGeneration = 0
   let syncAbort = new AbortController()
   let previousIdentity = identity.value
@@ -229,6 +231,7 @@ export function useOnboarding(options: {
     ++runGeneration
     runAbort.abort()
     runAbort = new AbortController()
+    ++demoGeneration
     demoAbort.abort()
     demoAbort = new AbortController()
     demoLoad = null
@@ -409,10 +412,18 @@ export function useOnboarding(options: {
   function beginDemoLoad() {
     demoAbort.abort()
     demoAbort = new AbortController()
+    const generation = ++demoGeneration
     const signal = demoAbort.signal
+    // A late continuation after skip/interrupt must never call loadDemo(): its ready fast path
+    // could still switch capability after the guide is gone.
+    const owns = () => generation === demoGeneration && mode.value === 'tour' && !signal.aborted
     const promise = (async () => {
       await ensureReplayView()
+      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
+      signal.throwIfAborted()
       const owner = await waitForValue(() => workspace.value, signal)
+      if (!owns()) throw new Error('GUIDE_SAMPLE_CANCELLED')
+      signal.throwIfAborted()
       preparingDemo = true
       try { await owner.loadDemo(signal) } finally { preparingDemo = false }
     })()
@@ -421,10 +432,15 @@ export function useOnboarding(options: {
     return promise
   }
 
-  /** A capability step waits for the sample instead of timing out; a failed load makes Retry reload it. */
+  /**
+   * Wait for the sample when the step needs it.
+   * @returns false when this wait became stale (guide closed / newer sample load), so the caller stops.
+   */
   async function awaitDemoLoad() {
-    if (!demoLoad) return
-    try { await demoLoad } catch {
+    if (!demoLoad) return true
+    const generation = demoGeneration
+    try { await demoLoad; return true } catch {
+      if (generation !== demoGeneration) return false
       if (mode.value === 'tour') demoFailed.value = true
       throw new Error('GUIDE_SAMPLE_UNAVAILABLE')
     }
@@ -439,7 +455,7 @@ export function useOnboarding(options: {
     const owns = () => generation === runGeneration && mode.value === 'tour' && !signal.aborted
     issue.value = 'loading'
     try {
-      await awaitDemoLoad()
+      if (!await awaitDemoLoad()) return
       if (!owns()) return
       if (current?.view) await options.navigate(current.view)
       if (current?.capability) {
@@ -486,6 +502,24 @@ export function useOnboarding(options: {
       if (generation !== runGeneration || mode.value !== 'tour') return
     }
     await prepareStep()
+  }
+
+  /**
+   * Retry reloads the sample in place: the current topic/index/stage stays put.
+   * begin(false) would reset an optional guide to its first page, so it must not be used here.
+   */
+  async function retry() {
+    if (mode.value !== 'tour') return
+    if (!demoFailed.value) return prepareStep()
+    demoFailed.value = false
+    issue.value = 'loading'
+    try {
+      await beginDemoLoad()
+    } catch {
+      if (mode.value === 'tour') { issue.value = 'unavailable'; demoFailed.value = true }
+      return
+    }
+    if (mode.value === 'tour') await prepareStep()
   }
 
   function next() {
@@ -545,7 +579,7 @@ export function useOnboarding(options: {
   }
   const context: OnboardingContext = { start, openDirectory, sampleOpened, registerWorkspace, registerSurface }
   return { ...context, context, mode, topic, index, stageIndex, issue, currentStep, currentStage, steps, hasFiles, hintVisible, canResume, isSignedIn,
-    begin, next, back, skip, interrupt, useOwnReplay, loginAiGuide, reserveShotGuideSpace, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry: () => demoFailed.value ? begin(canResume.value) : prepareStep() }
+    begin, next, back, skip, interrupt, useOwnReplay, loginAiGuide, reserveShotGuideSpace, resume: () => begin(true), dismissHint: () => { hintVisible.value = false }, retry }
 }
 
 export type OnboardingController = ReturnType<typeof useOnboarding>

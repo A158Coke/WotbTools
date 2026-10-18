@@ -6,6 +6,7 @@ import { createI18n } from 'vue-i18n'
 import OnboardingHost from './OnboardingHost.vue'
 import { ONBOARDING_GUIDES } from '../composables/useOnboarding.js'
 import { messages } from '../locales/messages.js'
+import { downloadBlob } from '../utils/exportReplayPng.js'
 
 let wrappers = []
 let originalFullscreen
@@ -319,6 +320,96 @@ describe('OnboardingHost', () => {
     expect(closeMenu).toHaveBeenCalledTimes(1)
     expect(guide.skip).not.toHaveBeenCalled()
     expect(document.querySelector('[data-testid="onboarding-layer"]')).not.toBeNull()
+  })
+
+  it('lets the real export download activation through while blocking background clicks', async () => {
+    // #680 回归：downloadBlob 在 body 上点击隐藏 anchor；引导的背景点击隔离不能取消这次程序化下载。
+    const originalCreate = URL.createObjectURL
+    const originalRevoke = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:test')
+    URL.revokeObjectURL = vi.fn()
+    const activations = []
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+      this.dispatchEvent(event)
+      activations.push({ filename: this.getAttribute('download'), marked: this.hasAttribute('data-app-download'), prevented: event.defaultPrevented })
+    })
+    try {
+      const trigger = button('data-export')
+      trigger.setAttribute('aria-controls', 'real-export-menu')
+      const menu = document.createElement('div')
+      menu.id = 'real-export-menu'
+      menu.setAttribute('role', 'menu')
+      menu.getBoundingClientRect = () => new DOMRect(800, 160, 200, 120)
+      document.body.append(menu)
+      const downloads = []
+      for (const [anchor, filename] of [['export-aggregate', 'summary.xlsx'], ['export-png', 'view.png']]) {
+        button(anchor, menu).addEventListener('click', () => { downloads.push(downloadBlob(new Blob(['x']), filename)) })
+      }
+      const guide = controller('tour')
+      guide.topic.value = 'data'
+      guide.index.value = 3
+      render(guide)
+      await settle()
+      document.querySelector('[data-tour="export-aggregate"]').click()
+      document.querySelector('[data-tour="export-png"]').click()
+      await Promise.all(downloads)
+      expect(activations).toEqual([
+        { filename: 'summary.xlsx', marked: true, prevented: false },
+        { filename: 'view.png', marked: true, prevented: false },
+      ])
+      expect(guide.skip).not.toHaveBeenCalled()
+
+      // 普通背景点击仍然被教程拦截，不因下载放行而放宽隔离。
+      const background = document.createElement('button')
+      document.body.append(background)
+      const backgroundClick = vi.fn()
+      background.addEventListener('click', backgroundClick)
+      const event = new MouseEvent('click', { bubbles: true, cancelable: true })
+      background.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+      expect(backgroundClick).not.toHaveBeenCalled()
+    } finally {
+      clickSpy.mockRestore()
+      URL.createObjectURL = originalCreate
+      URL.revokeObjectURL = originalRevoke
+    }
+  })
+
+  it('lets an expanded combobox close its own popup before the guide exits', async () => {
+    // ARIA combobox 打开时焦点仍在 input 上：第一次 Escape 必须关 dropdown，教程保持当前步骤。
+    const anchor = document.createElement('div')
+    anchor.dataset.tour = 'data-export'
+    document.body.append(anchor)
+    const combobox = document.createElement('input')
+    combobox.setAttribute('role', 'combobox')
+    combobox.setAttribute('aria-expanded', 'true')
+    combobox.setAttribute('aria-controls', 'vehicle-options')
+    anchor.append(combobox)
+    const listbox = document.createElement('div')
+    listbox.id = 'vehicle-options'
+    listbox.setAttribute('role', 'listbox')
+    listbox.getBoundingClientRect = () => new DOMRect(100, 200, 200, 160)
+    document.body.append(listbox)
+    const closePopup = vi.fn(() => {
+      listbox.remove()
+      combobox.setAttribute('aria-expanded', 'false')
+    })
+    combobox.addEventListener('keydown', event => { if (event.key === 'Escape') closePopup() })
+    const guide = controller('tour')
+    guide.topic.value = 'data'
+    guide.index.value = 3
+    render(guide)
+    await settle()
+    combobox.focus()
+    combobox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(closePopup).toHaveBeenCalledTimes(1)
+    expect(guide.skip).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="onboarding-layer"]')).not.toBeNull()
+
+    // dropdown 关闭后，第二次 Escape 才回到教程。
+    combobox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(guide.skip).toHaveBeenCalledTimes(1)
   })
 
   it('keeps guide keyboard shortcuts from controlling background panes while allowing real target keys', async () => {
