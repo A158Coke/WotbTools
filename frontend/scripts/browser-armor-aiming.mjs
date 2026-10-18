@@ -146,8 +146,8 @@ try {
     const c = document.querySelector('canvas');
     const r = c.getBoundingClientRect();
     const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
-    for (let cy = Math.round(c.height * 0.18); cy < Math.round(c.height * 0.8); cy += 6) {
-      for (let cx = Math.round(c.width * 0.25); cx < Math.round(c.width * 0.75); cx += 6) {
+    for (let cy = Math.round(c.height * 0.05); cy < Math.round(c.height * 0.95); cy += 6) {
+      for (let cx = Math.round(c.width * 0.05); cx < Math.round(c.width * 0.95); cx += 6) {
         const px = r.left + cx, py = r.top + cy;
         const hits = H.__raytrace(px, py);
         if (!hits || !hits.length) continue;
@@ -363,6 +363,79 @@ try {
     check(m1 === m0, `拖动（车体上）= 相机不触发判定（judgments ${m0}→${m1}）`)
   }
 
+  // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
+  // #traj-info 是 position:fixed；页面滚动后 left/top 必须按 canvas 的实时 rect 重算。
+  // 先等结果卡在屏幕上真正稳定：拖动用例刚结束，OrbitControls damping 的渐近余滑会让
+  // cameraSettledMs 长时间不达阈值；直接观测卡片连续帧的位置范围，超时则 fail（review
+  // 2026-10-18：不得吞掉 timeout，也不得用固定 delay）。
+  {
+    const cardStable = await page.evaluate(`new Promise((resolve) => {
+      const started = performance.now();
+      let samples = [];
+      const tick = () => {
+        const el = document.getElementById('traj-info');
+        const r = el?.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          samples.push({ x: r.x, y: r.y });
+          if (samples.length > 5) samples.shift();
+          if (samples.length === 5) {
+            const xs = samples.map(s => s.x), ys = samples.map(s => s.y);
+            if (Math.max(...xs) - Math.min(...xs) < 0.5 && Math.max(...ys) - Math.min(...ys) < 0.5) {
+              resolve(true);
+              return;
+            }
+          }
+        } else {
+          samples = [];
+        }
+        if (performance.now() - started > 20000) { resolve(false); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })`)
+    if (!cardStable) throw new Error('result card never stabilized before scroll test')
+    const readRects = () => page.evaluate(`(() => {
+      const card = document.getElementById('traj-info');
+      const canvas = document.querySelector('canvas');
+      const c = card?.getBoundingClientRect();
+      const v = canvas?.getBoundingClientRect();
+      return c && v ? {
+        card: { x: c.x, y: c.y, w: c.width, h: c.height, display: getComputedStyle(card).display },
+        canvas: { x: v.x, y: v.y, w: v.width, h: v.height },
+        scrollY: window.scrollY,
+      } : null;
+    })()`)
+    const before = await readRects()
+    await page.evaluate(`(() => {
+      const d = document.createElement('div');
+      d.id = 'scroll-fixture';
+      d.style.height = '500px';
+      // 追加到正文末尾：滚动让画布整体上移，卡片目标点仍留在视口内（不触发
+      // 底部钳制），才能断言卡片按 canvas rect 同步位移而不是停在旧位置。
+      document.body.append(d);
+      window.scrollTo(0, 120);
+    })()`)
+    // 等卡片真正被渲染循环重摆位（状态等待），不要用固定 delay：慢 runner/相机余滑
+    // 时固定延迟会把相机运动混进位移断言（review 2026-10-18）。
+    await page.waitForValue(`(() => {
+      const c = document.getElementById('traj-info')?.getBoundingClientRect();
+      return c ? c.y : null;
+    })()`, (v) => Number.isFinite(v) && Math.abs(v - before.card.y) > 20,
+    { timeout: 5000, label: 'post-scroll card reposition' })
+    const after = await readRects()
+    const movedCanvas = before && after && Math.abs(after.canvas.y - before.canvas.y) > 20
+    const sameDelta = before && after
+      && Math.abs((after.card.x - before.card.x) - (after.canvas.x - before.canvas.x)) < 2.5
+      && Math.abs((after.card.y - before.card.y) - (after.canvas.y - before.canvas.y)) < 2.5
+    check(movedCanvas, `结果卡锚定门禁：滚动夹具确实移动了画布（${JSON.stringify({ before, after })}）`)
+    check(sameDelta, `结果卡随画布滚动（fixed 卡按 canvas rect 重算；${JSON.stringify({ before, after })}）`)
+    await page.evaluate(`(() => {
+      document.getElementById('scroll-fixture')?.remove();
+      window.scrollTo(0, 0);
+    })()`)
+    await delay(200)
+  }
+
   // —— 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）——
   // 触屏路由此处起才启用触屏仿真（前面的鼠标分支保持鼠标语义）；第一指按部位、第二指收拢。
   await page.emulate({ width: 1400, height: 900, touch: true, deviceScaleFactor: 1 })
@@ -394,8 +467,11 @@ try {
     else check(false, '触屏视口下未找到炮塔像素（pinch 用例）')
   }
   {
-    // 车体按压用例：pinch 之后相机已变，需要重新采样；这一次把 turret/hull 一起取足，
-    // 供「画布外释放」复用（两者之间没有新的相机动/转角动作，采样不会失效）。
+    // 车体按压/画布外 capture 用例不依赖 pinch 状态。慢 runner 上 pinch 后的 damping
+    // 可能持续数秒（CI 曾因相机仍在滑行而扫不到 turret），这里重置到初始静态机位再采样。
+    await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${TANK}&shell=0&heatmap=1${cameraQuery}&assets=${assets}`)
+    await page.waitFor(() => window.__armorRicochet?.info?.()?.meshCount > 0, { timeout: 30000, label: 'reset armor model' })
+    await delay(500)
     const s = await findSpots(['hull', 'turret'])
     if (s.hull) {
       const cdp = chromeCdp.client
