@@ -16,7 +16,7 @@ import {
   makeWaterMaterial, patchSceneryDetail, SCENERY_LAMBERT_EXPOSURE,
 } from './sceneryMaterials.js';
 import {
-  materialIsWater, isWaterNode, materialHasSky, sceneHasSkyFlags,
+  materialIsWater, isWaterNode, isSkyShell, sceneHasSkyFlags,
 } from './sceneryAssemblyRules.js';
 
 /** extras 贴图预解析（material.extras 里存 glTF **texture 下标**；GLTFLoader 的 texture
@@ -127,6 +127,7 @@ export function makeUnderWater(waterSurfaces) {
  */
 export function assembleSceneryMaterials(gltf, {
   strictSurfaces = false, masks, groundLayers = null, waterCoast = null, debug = false, onMesh = null,
+  skyFlagsAvailable = null,
 } = {}) {
   const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } = masks;
   const waterSurfaces = collectWaterSurfaces(gltf.scene);
@@ -135,11 +136,10 @@ export function assembleSceneryMaterials(gltf, {
   // 天空穹判据：优先材质 extras.sky（导出器按客户端 Skyobject 模板写入）；只有整份
   // GLB 都没有该标记（旧包）才退回节点名 /sky/i。名字不是语义——新包一旦出现任何
   // sky 标记，就禁止名字 fallback，避免把名字含 sky 的非天穹对象误判。
-  const skyFlagAvailable = sceneHasSkyFlags(gltf.scene);
-  const isSkyNode = (o) => {
-    if (materialHasSky(o.material)) return true;
-    return !skyFlagAvailable && /sky/i.test(o.name || '');
-  };
+  // 新包判据必须由调用方在**任何剔除之前**采样（烘焙会先移除天穹再装配）；缺省从当前
+  // 场景现算。判定本身只走共享 SSOT `isSkyShell`，本文件不得再复制一套开关。
+  const skyFlagAvailable = skyFlagsAvailable ?? sceneHasSkyFlags(gltf.scene);
+  const isSkyNode = (o) => isSkyShell(o.name, o.material, { skyFlagsAvailable: skyFlagAvailable });
   // 材质转换：与内核共享同一份实现。键组成必须与两侧历史口径一致——同 key 同材质、
   // 跨端观感一致（守卫锁定）。convMat 键指纹即本模块为准一来源（2026-10-14 抽层）。
   const convMat = (m, isCard) => cachedSceneryMat(

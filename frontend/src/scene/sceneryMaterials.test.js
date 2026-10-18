@@ -832,9 +832,13 @@ describe('场景 GLB 材质管线（对齐上游的渲染实现）', () => {
     // 2026-10-14 抽层：天空分派在共享装配模块（asmSrc），运行时与烘焙同一份
     // 语义标记优先：material extras.sky（导出器按客户端 Skyobject 模板写入）；只有整份
     // GLB 都没有该标记（旧包）才退回节点名 /sky/i。
-    expect(asmSrc).toMatch(/materialHasSky\(o\.material\)/)
+    // 判据 SSOT：装配只调用共享 isSkyShell（运行时/烘焙不得各持一套开关）
+    expect(asmSrc).toMatch(/isSkyShell\(o\.name, o\.material, \{ skyFlagsAvailable: skyFlagAvailable \}\)/)
     expect(asmSrc).toMatch(/sceneHasSkyFlags\(gltf\.scene\)/)
-    expect(asmSrc).toMatch(/skyFlagAvailable/)
+    expect(asmSrc).not.toMatch(/\/sky\/i\.test\(o\.name/)
+    // 烘焙先剔天穹再装配：必须把剔除前的标记传进去，否则会退回 /sky/ 名字
+    const bakeSkySrc = readSrc(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'))
+    expect(bakeSkySrc).toMatch(/assembleSceneryMaterials\(gltf, \{[\s\S]{0,500}skyFlagsAvailable,/)
     const skyAt = asmSrc.indexOf('if (!waterMarked && isSkyNode(o))');
     expect(skyAt).toBeGreaterThan(-1);
     const skyBranch = asmSrc.slice(skyAt, skyAt + 500);
