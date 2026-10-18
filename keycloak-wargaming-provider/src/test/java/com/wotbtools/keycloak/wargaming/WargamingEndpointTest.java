@@ -12,6 +12,7 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -186,8 +187,28 @@ class WargamingEndpointTest {
     }
 
     @Test
-    void wargamingDeniedLoginRejected() {
-        assertEquals(500, endpoint.handleCallback(VALID_STATE, "error", "t", "P", "1").getStatus());
+    void wargamingDeniedLoginAcceptsProviderDiagnosticsWithoutCallingApi() {
+        config.getConfig().put(WargamingIdentityProviderConfig.REGION_CONFIG_KEY, "NA");
+
+        final Response response = endpoint.handleCallback(
+                VALID_STATE, "error", null, null, null,
+                "407", "INVALID_IP_ADDRESS");
+
+        assertEquals(500, response.getStatus());
+        assertNull(authFake.captured);
+        assertTrue(stub.requests.isEmpty());
+    }
+
+    @Test
+    void diagnosticValuesStripControlCharactersAndAreBounded() {
+        final String sanitized = WargamingEndpoint.safeDiagnosticValue(
+                "AUTH_ERROR\r\nforged=true\t" + "x".repeat(200));
+
+        assertFalse(sanitized.contains("\r"));
+        assertFalse(sanitized.contains("\n"));
+        assertFalse(sanitized.contains("\t"));
+        assertTrue(sanitized.length() <= 160);
+        assertEquals("-", WargamingEndpoint.safeDiagnosticValue(" \r\n\t "));
     }
 
     @Test
