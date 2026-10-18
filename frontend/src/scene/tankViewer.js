@@ -5326,34 +5326,42 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     ? (probLayers[0].remaining_before ?? probLayers[0].remainBefore)
                     : penVal);
             let probabilityEval = null;
+            let overallChance = null;
             let chancePct = 0;
             if (probabilityMode) {
                 probabilityEval = evaluateProbabilityChain(chancePen, probLayers);
-                chancePct = Math.round(probabilityEval.chance * 100);
+                overallChance = probabilityEval.chance;
+                chancePct = Math.round(overallChance * 100);
                 layers = probabilityEval.layers;
             } else {
                 chancePct = probLayers.length > 0
                     ? Math.round(penetrationChance(chancePen, probLayers) * 100)
                     : 0;
             }
-            const chancePartial = allowChance && chancePct > 0 && chancePct < 100;
+            const hasChance = probabilityMode && overallChance > 0;
+            const probabilityPartial = hasChance && overallChance < 1;
+            const chancePartial = probabilityMode
+                ? probabilityPartial
+                : (allowChance && chancePct > 0 && chancePct < 100);
 
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
 
-            const probabilityColorHex = (pct) => pct >= 100 ? 0x4CAF50 : (pct > 0 ? 0xffcf5c : 0xf44336);
-            const probabilityColorCss = (pct) => pct >= 100 ? 'var(--green)' : (pct > 0 ? 'var(--yellow)' : 'var(--red)');
+            // 概率色按精确累计概率分档：0 红、0–1 黄、1 绿；显示用四舍五入百分比，
+            // <1% 时显示 <1%，但伤害仍按“只要 >0”给全额（用户裁定）。
+            const probabilityColorHex = (chance) => chance >= 1 ? 0x4CAF50 : (chance > 0 ? 0xffcf5c : 0xf44336);
+            const probabilityColorCss = (chance) => chance >= 1 ? 'var(--green)' : (chance > 0 ? 'var(--yellow)' : 'var(--red)');
             const finalOutcome = probabilityMode
-                ? (chancePct >= 100 ? 'PENETRATION' : (chancePct > 0 ? 'MAY_PENETRATE' : 'BLOCKED'))
+                ? (overallChance >= 1 ? 'PENETRATION' : (hasChance ? 'MAY_PENETRATE' : 'BLOCKED'))
                 : result.split('→').pop().trim();
             const color = probabilityMode
-                ? probabilityColorHex(chancePct)
+                ? probabilityColorHex(overallChance)
                 : (finalOutcome === 'PENETRATION' ? 0x4CAF50
                     : (finalOutcome === 'RICOCHET' ? 0xFF8800
                     : (finalOutcome === 'BLOCKED' || finalOutcome === 'ERROR' ? 0xf44336 : 0xff8800)));
             // 只要有概率击穿就展示全额伤害；0% 才归 0。HE/跳弹仍用确定性伤害。
             const displayDamage = probabilityMode
-                ? (chancePct > 0 ? dmgVal : 0)
+                ? (hasChance ? dmgVal : 0)
                 : dmgDealt;
             const camDir = camera.position.clone().sub(firstPoint).normalize();
 
@@ -5397,9 +5405,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
-                const layerPct = probabilityMode ? Math.round((l.chance ?? 0) * 100) : null;
+                const layerChance = probabilityMode ? (l.chance ?? 0) : null;
                 const pColor = probabilityMode
-                    ? probabilityColorHex(layerPct)
+                    ? probabilityColorHex(layerChance)
                     : (l.penetrated ? 0x4CAF50 : (l.ricochet ? 0xFF8800 : 0xf44336));
 
                 const dotGeo = new THREE.SphereGeometry(0.04, 8, 8);
@@ -5430,7 +5438,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const colorHex = '#' + color.toString(16).padStart(6, '0');
             // 概率模式：0% 红、1–99% 黄、100% 绿；HE/跳弹保持确定性/黄色补充规则。
             const cardBorder = probabilityMode
-                ? probabilityColorCss(chancePct)
+                ? probabilityColorCss(overallChance)
                 : (chancePartial ? 'var(--yellow)' : colorHex);
             let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${cardBorder};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             // 交战距离（射线起点→命中点）——距离衰减判定的输入参数，随面板展示；
@@ -5441,13 +5449,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const titleHtml = (st, final = false) => {
                 const d = (typeof displayDamage === 'number') ? displayDamage : 0;
                 if (probabilityMode && final) {
-                    const partial = chancePct > 0 && chancePct < 100;
+                    const partial = hasChance && overallChance < 1;
                     const title = partial
                         ? L.mayPenetrate
-                        : L.resultName(chancePct >= 100 ? 'PENETRATION' : 'BLOCKED');
-                    const titleColor = probabilityColorCss(chancePct);
+                        : L.resultName(overallChance >= 1 ? 'PENETRATION' : 'BLOCKED');
+                    const titleColor = probabilityColorCss(overallChance);
                     const chanceHtml = partial
-                        ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${chancePct}%</span>`
+                        ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${chancePct > 0 ? chancePct : '<1'}%</span>`
                         : '';
                     return `<div style="font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;">${escapeText(title)}${chanceHtml}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
                 }
@@ -5477,9 +5485,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
                     html += titleHtml(segments[segments.length - 1], true);
                 }
-                const layerPct = probabilityMode ? Math.round((l.chance ?? 0) * 100) : null;
+                const layerChance = probabilityMode ? (l.chance ?? 0) : null;
                 const pc = probabilityMode
-                    ? probabilityColorCss(layerPct)
+                    ? probabilityColorCss(layerChance)
                     : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'));
                 const th = Number(l.thickness);
                 const isGap = /^Gap /.test(l.name || '');
