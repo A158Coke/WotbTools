@@ -63,6 +63,16 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([t
 function styleRect(rect: GuideRect) {
   return { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }
 }
+/** Union of clipped rects: the card must clear the real anchor and any companion panel it opened. */
+function unionRects(rects: (GuideRect | null)[]): GuideRect | null {
+  const valid = rects.filter((rect): rect is GuideRect => !!rect)
+  if (!valid.length) return null
+  const left = Math.min(...valid.map(rect => rect.left))
+  const top = Math.min(...valid.map(rect => rect.top))
+  const right = Math.max(...valid.map(rect => rect.left + rect.width))
+  const bottom = Math.max(...valid.map(rect => rect.top + rect.height))
+  return { left, top, width: right - left, height: bottom - top }
+}
 const cardStyle = computed(() => ({ left: `${cardPosition.value.left}px`, top: `${cardPosition.value.top}px`, width: `${cardPosition.value.width}px`, maxHeight: `${cardPosition.value.maxHeight}px` }))
 
 function visible(element: HTMLElement) {
@@ -131,7 +141,11 @@ function measure() {
     props.onboarding.reserveShotGuideSpace(viewport.value.top + viewport.value.height - position.top + gap)
   } else {
     props.onboarding.reserveShotGuideSpace(0)
-    const avoid = inspector ? guideCutout(inspector.getBoundingClientRect(), viewport.value, padding) : highlight.value
+    // The anchor alone is not enough: an opened companion panel (the export menu connected by
+    // aria-controls) extends past the trigger and must not be covered by the card (#680).
+    const avoid = inspector
+      ? guideCutout(inspector.getBoundingClientRect(), viewport.value, padding)
+      : unionRects([highlight.value, ...controlledTargets.value.map(element => guideCutout(element.getBoundingClientRect(), viewport.value, padding))])
     cardPosition.value = guideCardPosition(avoid, cardViewport, { width: cardWidth, height: naturalHeight || 220 }, gap, compact.value)
   }
 }
@@ -159,8 +173,17 @@ function allowedTarget(eventTarget: EventTarget | null) {
   return eventTarget instanceof Node && (card.value?.contains(eventTarget) || targetScope.value?.contains(eventTarget)
     || interactionTargets.value.some(element => element.contains(eventTarget)) || controlledTargets.value.some(element => element.contains(eventTarget)))
 }
+/** App-owned download activation: downloadBlob() clicks a hidden anchor after an allowed export
+ *  action. It is programmatic (not a background pointer target), so the guide must not cancel it (#680). */
+function isAppDownloadActivation(eventTarget: EventTarget | null) {
+  if (!(eventTarget instanceof Element)) return false
+  const anchor = eventTarget.closest('a[data-app-download][download]')
+  if (!anchor) return false
+  const rect = anchor.getBoundingClientRect()
+  return rect.width === 0 && rect.height === 0
+}
 function restrictPointer(event: Event) {
-  if (mode.value !== 'tour' || suspended.value || allowedTarget(event.target)) return
+  if (mode.value !== 'tour' || suspended.value || allowedTarget(event.target) || isAppDownloadActivation(event.target)) return
   event.preventDefault()
   event.stopImmediatePropagation()
 }
@@ -201,12 +224,23 @@ function focusables() {
   candidates.push(...card.value?.querySelectorAll<HTMLElement>(FOCUSABLE) || [])
   return [...new Set(candidates)].filter(visible)
 }
+/** An ARIA combobox keeps focus on the input while its controlled listbox/menu is open. */
+function expandedComboboxOwnsEscape(target: Element) {
+  const combobox = target.closest('[role="combobox"][aria-expanded="true"]')
+  if (!combobox) return false
+  return (combobox.getAttribute('aria-controls') || '').split(/\s+/).some(id => {
+    const layer = id ? document.getElementById(id) : null
+    return !!layer && visible(layer) && !!layer.closest('[role="listbox"], [role="menu"], [role="dialog"]')
+  })
+}
 function onKeydown(event: KeyboardEvent) {
   if (mode.value !== 'tour' || suspended.value) return
   if (event.key === 'Escape') {
-    // A real target dialog owns Escape for events originating inside it.
-    if (event.target instanceof Element && !card.value?.contains(event.target)
-      && allowedTarget(event.target) && event.target.closest('[role="dialog"]')) return
+    // A real target dialog / menu / listbox — or an expanded combobox's open popup — owns Escape
+    // for events originating inside it: it closes first and the guide keeps its step (#669).
+    if (event.target instanceof Element && !card.value?.contains(event.target) && allowedTarget(event.target)
+      && (event.target.closest('[role="dialog"], [role="menu"], [role="listbox"]')
+        || expandedComboboxOwnsEscape(event.target))) return
     event.preventDefault()
     event.stopImmediatePropagation()
     props.onboarding.skip()
