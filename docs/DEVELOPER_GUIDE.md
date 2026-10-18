@@ -2,7 +2,7 @@
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
-联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。用户确认旧接口仅内部测试使用，本次按 patch 发布且不抬强制更新门槛，见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.12.1](android/releases/3.12.1.md)。
+联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。用户确认旧接口仅内部测试使用，本次按 patch 发布且不抬强制更新门槛，见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.13.1](android/releases/3.13.1.md)。
 
 ---
 
