@@ -100,16 +100,22 @@ The Periphery lifecycle holds it while it installs/restarts the agent, so the Ko
 Stack deploy must hold the **same** lock: the resource declares
 
 ```toml
-compose_cmd_wrapper = "flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'"
+compose_cmd_wrapper = "test -f /opt/wotb-asset/.deploy.lock && test ! -L /opt/wotb-asset/.deploy.lock && exec 9</opt/wotb-asset/.deploy.lock && flock --exclusive --nonblock 9 && [[COMPOSE_COMMAND]]"
 compose_cmd_wrapper_include = ["up"]
 ```
 
 Komodo v2.3.3 substitutes the full Compose command into `[[COMPOSE_COMMAND]]` (the
-placeholder is mandatory) and runs the wrapped string through the shell, so the
-mutating `docker compose up` runs under a non-blocking `flock`. If a Periphery
-reconcile holds the lock, the deploy fails closed instead of racing it. A Compose
-`pull` stays outside the lock because it does not mutate the running Stack, and no
-second lock is introduced.
+placeholder is mandatory) and runs the wrapped string through `/bin/bash`, so the
+mutating `docker compose up` runs under a non-blocking `flock`.
+
+The wrapper never hands the pathname to `flock`: util-linux flock's pathname form
+would **create** the file, breaking the contract that the host's deploy owner owns it.
+Instead it requires an existing regular, non-symlink file, opens it read-only on fd 9
+(`exec 9<` never creates), and locks that fd. A missing or symlinked lock fails
+closed before any Compose command runs, a lock held by a Periphery reconcile makes
+the deploy fail closed instead of racing it, and no second lock is ever introduced.
+A Compose `pull` stays outside the lock because it does not mutate the running
+Stack.
 
 ## Caddy config/redeploy contract
 

@@ -798,7 +798,7 @@ for expected in \
   'require_real_file "$periphery_core_pub"' \
   'established_core_connections' \
   'listener_on_8120' \
-  '^PERIPHERY_ONBOARDING_KEY=' \
+  'periphery_env_override' \
   'docker info' \
   'Requires=docker.service'; do
   grep -Fq -- "$expected" "$verify_script" "$ROOT/periphery.service" "$ROOT/lib.sh" \

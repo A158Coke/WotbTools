@@ -31,7 +31,7 @@ Komodo resources                       (Servers + tightly reviewed Stacks)
 
 | Concern | Owner |
 | --- | --- |
-| Declarative Komodo resources | `infra/komodo/resources/**` (this layer) |
+| Declarative Komodo resources | `infra/komodo/resources/**` (this layer: non-production `deployment` PR gate + human ResourceSync Apply) |
 | Komodo Core + MongoDB lifecycle | GitHub Actions + `deploy/komodo/**` |
 | Komodo DNS | OpenTofu under `infra/tofu/komodo/**` |
 | Periphery agents (systemd) | `deploy/periphery/**` where automated; one-time/manual bootstrap remains a separate host concern |
@@ -41,13 +41,28 @@ Komodo resources                       (Servers + tightly reviewed Stacks)
 Two invariants are enforced by tests, not by convention:
 
 1. **A change under `infra/komodo/resources/**` cannot restart or mutate Komodo
-   Core/Mongo/DNS.** The controller's production workflow is wired to
-   `deploy/komodo/**` and `infra/tofu/komodo/**` only; the resource tree reaches only
-   the non-production deployment contract gate.
+   Core/Mongo/DNS, and ResourceSync Apply stays human.** The controller's production
+   workflow is wired to `deploy/komodo/**` and `infra/tofu/komodo/**` only; the
+   resource tree routes only to the non-production `deployment` PR gate, and the
+   diff is applied by a human. The single narrow exception is documented in the next
+   subsection.
 2. **Komodo never manages its own controller runtime or Periphery service through
    ResourceSync.** Only `server`, `resource_sync`, and the explicitly reviewed `stack`
    resources are allowed. Periphery addresses, keys, onboarding credentials, and
    inbound `:8120` endpoints are forbidden.
+
+### Production exception: `infra/komodo/resources/asset-origin.toml`
+
+`infra/komodo/resources/**` stays owned by this layer: the non-production
+`deployment` PR gate validates it, and a human applies the ResourceSync diff. It
+never triggers Komodo Core/Mongo/DNS reconciliation.
+
+Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml`
+is an input of `.github/workflows/asset-origin.yml`, which may mutate only the Gitee
+source mirror. It must not apply ResourceSync, must not mutate Komodo resources, and
+must not deploy the Stack. `deploy = false`, `webhook_enabled = false`, and
+`auto_update = false` remain mandatory, and ResourceSync Apply stays manual. No other
+file under `infra/komodo/resources/**` is a production input.
 
 ## The declared resources
 
@@ -158,12 +173,15 @@ fails closed when:
   `wotbtools-asset-origin`, or either Stack gains unreviewed config, automatic update,
   webhook deployment, or the wrong target Server;
 - `wotbtools-asset-origin` loses its tracked Caddyfile `config_files` entry, its
-  `--force-recreate` deploy args, or its `compose_cmd_wrapper` (mandatory
-  `[[COMPOSE_COMMAND]]` placeholder, non-blocking `flock` on the **existing**
-  `/opt/wotb-asset/.deploy.lock` only, `compose_cmd_wrapper_include = ["up"]`, and no
-  second or Periphery-only lock).
+  `--force-recreate` deploy args, or its `compose_cmd_wrapper`: the wrapper must
+  require a pre-created regular **non-symlink** `/opt/wotb-asset/.deploy.lock`, open
+  it read-only on fd 9, take a non-blocking `flock` on that fd, and only then run the
+  mandatory `[[COMPOSE_COMMAND]]` placeholder. A missing or symlinked lock must fail
+  closed and must never be created; `compose_cmd_wrapper_include` must stay `["up"]`
+  (a pull stays outside the lock), and no second or Periphery-only lock may appear.
 
-The test inspects TOML structure, never descriptions, so prose cannot make it pass.
+The test inspects TOML structure — and executes the reviewed host-lock wrapper
+against a disposable lock — never descriptions, so prose cannot make it pass.
 
 ## Bootstrap / adoption review
 

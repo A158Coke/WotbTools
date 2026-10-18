@@ -58,23 +58,27 @@ periphery_core_pub_present \
 [[ ! -e "$periphery_bootstrap_env" && ! -L "$periphery_bootstrap_env" ]] \
   || fail 'Transient Periphery bootstrap environment still exists; refusing adoption.'
 
-# Komodo v2.3.3 applies PERIPHERY_* environment variables on top of TOML,
-# including *_FILE credential/identity sources and boolean/string aliases such as
-# CONNECT_AS, ROOT_DIRECTORY, PRIVATE_KEY, CORE_ADDRESSES and TLS flags. The
-# repository-owned unit deliberately needs none of those during steady state, so
-# adoption is fail-closed on *any* PERIPHERY_* entry (the onboarding credential is
-# one of them): otherwise validating only the TOML could certify an identity/Core
-# route that the running process is not actually using.
+# Komodo v2.3.3 applies environment variables on top of TOML, including *_FILE
+# credential/identity sources and boolean/string aliases such as CONNECT_AS,
+# ROOT_DIRECTORY, PRIVATE_KEY, CORE_ADDRESSES and TLS flags. It parses uppercase
+# AND lowercase names, so `periphery_connect_as` overrides the TOML exactly like
+# `PERIPHERY_CONNECT_AS`. The repository-owned unit deliberately needs none of
+# them during steady state, so adoption is fail-closed on *any* Periphery-prefixed
+# entry in any case (the onboarding credential is one of them): otherwise
+# validating only the TOML could certify an identity/Core route that the running
+# process is not actually using.
 #
 # Read the COMPLETE environment first and verify that the read itself succeeded.
 # A `producer | grep -q` pipeline can SIGPIPE the producer as soon as it matches
 # and, under `set -o pipefail`, report "no override" for an environment that does
-# contain one; buffering first makes the verdict deterministic at any size.
+# contain one; buffering first makes the verdict deterministic at any size. The
+# case-insensitive match itself lives in the shared lib helper so adoption and the
+# credential-free verification cannot drift.
 process_env_text=
 read_process_env "$pid" process_env_text \
   || fail 'Refusing adoption because the live Periphery environment cannot be inspected.'
-if grep -Eq '^PERIPHERY_[A-Za-z0-9_]+=' <<<"$process_env_text"; then
-  fail 'Refusing adoption because the live Periphery process has a PERIPHERY_* environment override.'
+if periphery_env_override "$process_env_text"; then
+  fail 'Refusing adoption because the live Periphery process has a Periphery environment override (any case).'
 fi
 
 [[ -f "$periphery_config" && ! -L "$periphery_config" ]] \

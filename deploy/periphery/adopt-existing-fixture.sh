@@ -184,10 +184,11 @@ rejects local-443xx "$valid" "$peer_local_443xx" '' reviewed 'no established con
 rejects remote-4430 "$valid" "$peer_4430" '' reviewed 'no established connection to reviewed Core peer'
 
 # The running process's effective config may differ from TOML because Komodo
-# v2.3.3 gives PERIPHERY_* environment variables precedence. Adoption therefore
-# rejects every such override, including *_FILE forms used for credentials and
-# identity paths, instead of attempting an incomplete allowlist.
-env_reason='PERIPHERY_* environment override'
+# v2.3.3 gives environment variables precedence, and it parses UPPERCASE and
+# lowercase names alike. Adoption therefore rejects every Periphery-prefixed entry
+# in any case, including *_FILE forms used for credentials and identity paths,
+# instead of attempting an incomplete allowlist.
+env_reason='Periphery environment override'
 rejects env-connect-as "$valid" "$peer_valid" 'PERIPHERY_CONNECT_AS=wrong-server' reviewed "$env_reason"
 rejects env-root-directory "$valid" "$peer_valid" 'PERIPHERY_ROOT_DIRECTORY=/opt/other-komodo' reviewed "$env_reason"
 rejects env-insecure-tls "$valid" "$peer_valid" 'PERIPHERY_CORE_TLS_INSECURE_SKIP_VERIFY=true' reviewed "$env_reason"
@@ -196,6 +197,14 @@ rejects env-private-key-file "$valid" "$peer_valid" 'PERIPHERY_PRIVATE_KEY_FILE=
 rejects env-onboarding-key-file "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY_FILE=/tmp/onboarding-key' reviewed "$env_reason"
 rejects env-onboarding-key "$valid" "$peer_valid" 'PERIPHERY_ONBOARDING_KEY=secret-fixture' reviewed "$env_reason"
 rejects env-passkeys-file "$valid" "$peer_valid" 'PERIPHERY_PASSKEYS_FILE=/tmp/passkeys' reviewed "$env_reason"
+# Komodo v2.3.3 also accepts lowercase environment names, and they override the
+# TOML just the same. A case-sensitive prefix match would certify the reviewed
+# config while an unreviewed identity/Core route is actually in force.
+rejects env-lowercase-connect-as "$valid" "$peer_valid" 'periphery_connect_as=wrong-server' reviewed "$env_reason"
+rejects env-lowercase-private-key "$valid" "$peer_valid" 'periphery_private_key=file:/tmp/unreviewed-periphery.key' reviewed "$env_reason"
+rejects env-lowercase-core-addresses "$valid" "$peer_valid" 'periphery_core_addresses=https://wrong-core.invalid:4430' reviewed "$env_reason"
+rejects env-lowercase-onboarding-key "$valid" "$peer_valid" 'periphery_onboarding_key=secret-fixture' reviewed "$env_reason"
+rejects env-mixed-case-connect-as "$valid" "$peer_valid" 'PeRiPhErY_CONNECT_AS=wrong-server' reviewed "$env_reason"
 
 # A matching PERIPHERY_* entry followed by ~1 MB of environment data: a
 # `tr ... | grep -q` pipeline is allowed to fail with SIGPIPE on the producer and,
