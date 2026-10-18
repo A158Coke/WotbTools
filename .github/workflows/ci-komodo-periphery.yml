@@ -164,6 +164,7 @@ jobs:
           set -Eeuo pipefail
           python3 - <<'PY'
           import json
+          import re
           from pathlib import Path
           import yaml
 
@@ -190,12 +191,42 @@ jobs:
           ali_call = jobs['reconcile_ali_asset']
           assert ali_call['needs'] == ['reconcile_tx2']
           assert ali_call['uses'] == './.github/workflows/komodo-periphery-ali.yml'
-          assert ali_call['secrets'] == 'inherit'
+          # Only the five declared Alibaba secrets are handed to the reusable
+          # transport; inheriting the whole repository secret set is forbidden.
+          # The expression is assembled from parts so this run block never holds
+          # a literal Actions secret expression (the engine would interpolate it).
+          def secret_ref(name):
+              return '$' + '{{ secrets.' + name + ' }}'
+
+          ali_secret_names = (
+              'ALI_ASSET_VPS_HOST',
+              'ALI_ASSET_VPS_USER',
+              'ALI_ASSET_VPS_PORT',
+              'ALI_ASSET_VPS_SSH_KEY',
+              'KOMODO_ALI_ASSET_ONBOARDING_KEY',
+          )
+          ali_secrets = {name: secret_ref(name) for name in ali_secret_names}
+          assert ali_call['secrets'] == ali_secrets, ali_call['secrets']
+          assert set(ali_call) == {'name', 'needs', 'uses', 'secrets'}, sorted(ali_call)
+          assert 'secrets: inherit' not in main_path.read_text(encoding='utf-8')
 
           reusable_path = Path('.github/workflows/komodo-periphery-ali.yml')
-          reusable = yaml.load(reusable_path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+          reusable_text = reusable_path.read_text(encoding='utf-8')
+          reusable = yaml.load(reusable_text, Loader=yaml.BaseLoader)
           reusable_events = reusable.get('on', reusable.get(True, {}))
           assert set(reusable_events) == {'workflow_call'}, reusable_events
+          call_interface = reusable_events['workflow_call']
+          assert set(call_interface) == {'secrets'}, sorted(call_interface)
+          assert set(call_interface['secrets']) == set(ali_secrets), sorted(call_interface['secrets'])
+          assert {name: spec['required'] for name, spec in call_interface['secrets'].items()} == {
+              'ALI_ASSET_VPS_HOST': 'true',
+              'ALI_ASSET_VPS_USER': 'true',
+              'ALI_ASSET_VPS_PORT': 'true',
+              'ALI_ASSET_VPS_SSH_KEY': 'true',
+              'KOMODO_ALI_ASSET_ONBOARDING_KEY': 'false',
+          }, call_interface['secrets']
+          assert set(re.findall(r'secrets\.([A-Za-z0-9_]+)', reusable_text)) == set(ali_secrets), \
+              sorted(set(re.findall(r'secrets\.([A-Za-z0-9_]+)', reusable_text)))
           assert 'concurrency' not in reusable
           assert set(reusable['jobs']) == {'reconcile'}
           job = reusable['jobs']['reconcile']

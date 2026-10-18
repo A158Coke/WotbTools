@@ -1,11 +1,21 @@
 name: Asset Origin Source Mirror
 
+# Source-transport owner for the Komodo Stack `wotbtools-asset-origin`.
+#
+# It may mutate ONLY the Gitee source mirror. It never applies ResourceSync,
+# never mutates Komodo resources, and never deploys the Stack (`deploy = false`,
+# `webhook_enabled = false`, human ResourceSync Apply).
+#
+# `infra/komodo/resources/asset-origin.toml` is the single reviewed exception to
+# the rule that the declarative resource tree is owned by no production workflow:
+# it is an input of this source-transport gate only (see .github/AGENTS.md).
 on:
   push:
     branches: [main]
     paths:
       - .github/workflows/asset-origin.yml
       - deploy/assets/**
+      - deploy/check-production-freshness.sh
       - infra/komodo/resources/asset-origin.toml
   workflow_dispatch:
 
@@ -15,6 +25,13 @@ permissions:
 concurrency:
   group: deploy-asset-origin-source
   cancel-in-progress: true
+
+env:
+  PRODUCTION_INPUT_PATHS: |
+    .github/workflows/asset-origin.yml
+    deploy/assets/**
+    deploy/check-production-freshness.sh
+    infra/komodo/resources/asset-origin.toml
 
 jobs:
   mirror_gitee:
@@ -37,6 +54,7 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -56,6 +74,12 @@ jobs:
             echo "Checked-out source differs from the frozen event SHA." >&2
             exit 1
           }
+          # Shared production gate: reject a non-ancestor source and any later
+          # change to this owner's inputs. A stale workflow_dispatch already fails
+          # here; the stricter exact-current-main check runs immediately before the
+          # shared Gitee ref mutation below.
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
       # hub-mirror mirrors whatever the source repository points at when it runs,
@@ -63,10 +87,21 @@ jobs:
       # object already checked out above. The shared production-gitee-mirror group
       # serializes this ref mutation with the existing Frontend/Business API mirror
       # jobs, and the following gate proves the exact ref before rollout.
+      #
+      # This step force-updates the SHARED Gitee `main` ref, so the ordinary
+      # freshness tolerance for "main advanced in unrelated commits" is not enough:
+      # a run that is no longer exact current main must fail closed instead of
+      # rolling that shared ref backward. `PRODUCTION_REQUIRE_EXACT_MAIN=1` makes
+      # the shared helper fetch current GitHub main and require it to still equal
+      # the frozen SOURCE_SHA, for both push and workflow_dispatch.
       - name: Push frozen event SHA to Gitee main
         shell: bash
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          PRODUCTION_REQUIRE_EXACT_MAIN: "1"
           GITEE_USERNAME: A158Coke
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
@@ -85,6 +120,14 @@ jobs:
           chmod 700 "$askpass"
 
           git update-ref refs/heads/asset-origin-frozen "$SOURCE_SHA"
+
+          # The ref mutation follows immediately. Re-run the shared freshness gate
+          # with the exact-current-main requirement, so a run that is no longer
+          # exact current main fails before anything is pushed and never switches
+          # to the newer SHA.
+          bash "$GITHUB_WORKSPACE/deploy/check-production-freshness.sh" \
+            "$SOURCE_SHA" "$EVENT_NAME" "$EVENT_REF" "$EVENT_SHA"
+
           GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 \
             git push --force \
               https://gitee.com/A158Coke/Wotbtools.git \

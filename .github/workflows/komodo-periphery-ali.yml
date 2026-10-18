@@ -6,6 +6,20 @@ name: Komodo Periphery / Alibaba Asset Host
 # install/reconcile/verify implementation remains under deploy/periphery/**.
 on:
   workflow_call:
+    # Explicit, job-scoped credential interface. The caller maps ONLY these five
+    # secrets, so this transport cannot read Yecao/TX1/TX2, database, registry, or
+    # any other repository secret.
+    secrets:
+      ALI_ASSET_VPS_HOST:
+        required: true
+      ALI_ASSET_VPS_USER:
+        required: true
+      ALI_ASSET_VPS_PORT:
+        required: true
+      ALI_ASSET_VPS_SSH_KEY:
+        required: true
+      KOMODO_ALI_ASSET_ONBOARDING_KEY:
+        required: false
 
 permissions:
   contents: read

@@ -22,6 +22,7 @@ Run: python3 scripts/ci/test-komodo-resources.py
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -137,6 +138,11 @@ K7B_STACK_CONFIG = {
     "links": [],
 }
 
+# The host mutation lock owned by the Alibaba host's deploy owner. The Periphery
+# lifecycle and the Komodo Stack deploy must serialize on this SAME lock; the
+# wrapper must never introduce a second (Periphery-only) lock.
+ASSET_HOST_LOCK = "/opt/wotb-asset/.deploy.lock"
+
 ASSET_STACK_NAME = "wotbtools-asset-origin"
 ASSET_STACK_CONFIG = {
     "server": "ali-sh-asset-01",
@@ -169,8 +175,10 @@ ASSET_STACK_CONFIG = {
     "registry_account": "",
     "extra_args": ["--force-recreate"],
     "build_extra_args": [],
-    "compose_cmd_wrapper": "",
-    "compose_cmd_wrapper_include": [],
+    "compose_cmd_wrapper": (
+        "flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'"
+    ),
+    "compose_cmd_wrapper_include": ["up"],
     "ignore_services": [],
     "file_contents": "",
     "environment": "",
@@ -364,6 +372,27 @@ def check_stacks(entries: dict[str, dict]) -> None:
                 fail(f"stack '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
         if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
             fail(f"stack '{name}' must never auto-deploy from webhook or image polling")
+    # The Alibaba Stack deploy mutates the same host the Periphery lifecycle owns,
+    # so the mutating Compose command must hold that host's existing deploy lock.
+    asset = entries[ASSET_STACK_NAME]["config"]
+    wrapper = asset.get("compose_cmd_wrapper")
+    if not isinstance(wrapper, str) or not wrapper.strip():
+        fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must hold the host lock "
+             "across the mutating Compose command")
+    else:
+        if "[[COMPOSE_COMMAND]]" not in wrapper:
+            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must contain the "
+                 "Komodo-required [[COMPOSE_COMMAND]] placeholder")
+        if "flock" not in wrapper or "--nonblock" not in wrapper:
+            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must take a "
+                 "non-blocking flock")
+        lock_tokens = set(re.findall(r"[^\s'\"]+\.lock", wrapper))
+        if lock_tokens != {ASSET_HOST_LOCK}:
+            fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper must lock only the "
+                 f"existing host lock {ASSET_HOST_LOCK}, found {sorted(lock_tokens) or '[]'}")
+    if asset.get("compose_cmd_wrapper_include") != ["up"]:
+        fail(f"stack '{ASSET_STACK_NAME}': compose_cmd_wrapper_include must be exactly "
+             "['up']; a pull must stay outside the host lock")
 
 
 def main() -> int:

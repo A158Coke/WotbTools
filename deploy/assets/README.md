@@ -9,7 +9,7 @@ It does **not** cut production traffic over by itself.
 - Stack: `wotbtools-asset-origin`
 - Public name: `assets.wotbtools.com`
 - Compose source: GitHub is review authority; Gitee is transport for the mainland worker.
-- Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering GitHub `main` event SHA, force-pushes that frozen commit itself to Gitee `main`, and then requires Gitee `main` to equal the same SHA. It must not mirror whatever GitHub `main` happens to point at later in the run.
+- Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering GitHub `main` event SHA, force-pushes that frozen commit itself to Gitee `main`, and then requires Gitee `main` to equal the same SHA. It must not mirror whatever GitHub `main` happens to point at later in the run. Because that shared ref is force-updated, the workflow also requires the frozen SHA to still be **exact current GitHub `main`** immediately before the push (`PRODUCTION_REQUIRE_EXACT_MAIN=1` on the shared freshness gate): a queued `push` or `workflow_dispatch` run that main has moved past fails closed, pushes nothing, and never switches to the newer SHA.
 - Periphery lifecycle: the Alibaba target under `deploy/periphery/targets/ali-sh-asset-01/` uses the shared repository-owned install/reconcile/verify implementation and is the final dependent job in the single `.github/workflows/komodo-periphery.yml` owner chain (`Yecao -> TX1 -> TX2 -> Alibaba`).
 - Payload: host state under `/srv/wotb-assets`, mounted read-only into Caddy.
 
@@ -32,18 +32,26 @@ Before merging:
 3. Create `/opt/wotb-asset` and `/opt/wotb-asset/periphery` as real directories
    owned by `admin`, and create the real `/opt/wotb-asset/.deploy.lock` owned by
    `admin`. The Periphery lifecycle deliberately refuses to create another owner's
-   host mutation lock.
+   host mutation lock, and the Komodo Stack serializes its mutating Compose `up` on
+   that same lock (see below).
 
 After merge, the normal `Komodo Periphery` workflow reaches Alibaba only if Yecao,
 TX1, and TX2 all reconcile successfully first. The reviewed `adopt-existing.sh`
 bridge takes the host mutation lock and, only if an existing service is already
 active, independently proves: persistent identity and Core trust files exist, the
-live process has no `PERIPHERY_*` environment override, the installed config contains
-no onboarding credential and resolves to the exact reviewed Core/identity/operator
-semantics, the process has an established connection to the reviewed Core peer, and
-no inbound `:8120` listener exists. Only then does it atomically commit the
-root-owned mode-0600 `/etc/komodo/keys/onboarding-complete` marker. The same job
-immediately runs the normal shared reconcile and must finish credential-free.
+**complete** live `/proc/<MainPID>/environ` was read successfully and holds no
+`PERIPHERY_*` override (the environment is buffered first, so a large environment
+cannot turn a match into a SIGPIPE false negative), the installed config contains no
+onboarding credential and resolves to the exact reviewed Core/identity/operator
+semantics, the live `/proc/<MainPID>/cmdline` is exactly
+`/usr/local/bin/periphery --config-path /etc/komodo/periphery.config.toml` (another
+config path, a duplicate `--config-path`, `-c`, an extra argument, or a different
+executable rejects adoption, because Komodo gives CLI config selection precedence
+over TOML/environment), the process has an established connection to the reviewed
+Core peer, and no inbound `:8120` listener exists. Only then does it atomically
+commit the root-owned mode-0600 `/etc/komodo/keys/onboarding-complete` marker. The
+same job immediately runs the normal shared reconcile and must finish
+credential-free.
 
 The marker contains no credential. The adoption bridge is a no-op on a fresh/rebuilt
 host with no active existing Periphery; in that case normal reconcile performs a clean
@@ -74,7 +82,7 @@ Keep the current release plus at least one previous release while the migration 
 ## First rollout
 
 1. Complete the host-side SSH/sudo/lock prerequisites above, then merge the reviewed GitHub change.
-2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA push and verification prove Gitee `main` contains the triggering reviewed GitHub commit; an account-level mirror or informal/manual freshness check is not sufficient.
+2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA push and verification prove Gitee `main` contains the triggering reviewed GitHub commit; an account-level mirror or informal/manual freshness check is not sufficient. A run whose frozen SHA is no longer exact current GitHub `main` fails closed without touching Gitee — re-dispatch it on the new exact `main` instead of reusing the stale result.
 3. Require the single **Komodo Periphery** workflow to pass through the full dependency chain `Yecao -> TX1 -> TX2 -> Alibaba`. For this already-onboarded host, the Alibaba job must complete adoption and the following normal credential-free reconcile successfully before any ResourceSync Apply.
 4. In ResourceSync `wotbtools-main`, review the pending diff. The existing `ali-sh-asset-01` Server and `wotbtools-asset-origin` Stack must be adopted by name; `address` stays empty and no inbound Periphery `:8120` is introduced.
 5. Apply the ResourceSync diff. This must not deploy the Stack (`deploy = false`).
@@ -84,6 +92,24 @@ Keep the current release plus at least one previous release while the migration 
 9. Run `bash deploy/assets/verify.sh https://assets.wotbtools.com`.
 10. Canary the Web client with `?assets=https://assets.wotbtools.com` before changing the production `ASSET_BASE_URL`.
 11. Migrate the Android native asset origin in a separate client change. Old Android binaries keep using the old COS origin until retired.
+
+## Host lock / deploy serialization
+
+The Alibaba host has one deploy-owned mutation lock, `/opt/wotb-asset/.deploy.lock`.
+The Periphery lifecycle holds it while it installs/restarts the agent, so the Komodo
+Stack deploy must hold the **same** lock: the resource declares
+
+```toml
+compose_cmd_wrapper = "flock --exclusive --nonblock /opt/wotb-asset/.deploy.lock -c '[[COMPOSE_COMMAND]]'"
+compose_cmd_wrapper_include = ["up"]
+```
+
+Komodo v2.3.3 substitutes the full Compose command into `[[COMPOSE_COMMAND]]` (the
+placeholder is mandatory) and runs the wrapped string through the shell, so the
+mutating `docker compose up` runs under a non-blocking `flock`. If a Periphery
+reconcile holds the lock, the deploy fails closed instead of racing it. A Compose
+`pull` stays outside the lock because it does not mutate the running Stack, and no
+second lock is introduced.
 
 ## Caddy config/redeploy contract
 

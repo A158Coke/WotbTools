@@ -851,7 +851,15 @@ default_proc="$(env -u PERIPHERY_PROC_ROOT bash -c 'source "$1/lib.sh"; printf "
 default_socket="$(env -u PERIPHERY_DOCKER_SOCKET bash -c 'source "$1/lib.sh"; printf "%s" "$periphery_docker_socket"' _ "$ROOT")"
 [[ "$default_socket" == '/var/run/docker.sock' ]] \
   || die "the Docker socket default is not /var/run/docker.sock: $default_socket"
-pass 'production defaults for the /proc root and the Docker socket'
+# The live-argv adoption proof compares against exactly these two helper values,
+# so the production paths themselves are pinned here as well.
+default_bin="$(env -u PERIPHERY_BIN_PATH bash -c 'source "$1/lib.sh"; printf "%s" "$periphery_bin"' _ "$ROOT")"
+[[ "$default_bin" == '/usr/local/bin/periphery' ]] \
+  || die "the reviewed Periphery binary path is not /usr/local/bin/periphery: $default_bin"
+default_config="$(env -u PERIPHERY_ETC_DIR bash -c 'source "$1/lib.sh"; printf "%s" "$periphery_config"' _ "$ROOT")"
+[[ "$default_config" == '/etc/komodo/periphery.config.toml' ]] \
+  || die "the reviewed config path is not /etc/komodo/periphery.config.toml: $default_config"
+pass 'production defaults for the /proc root, Docker socket, binary and config paths'
 
 # ---------------------------------------------------------------------------
 # G. production verify.sh, executed against a fixture host tree
