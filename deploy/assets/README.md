@@ -9,7 +9,7 @@ It does **not** cut production traffic over by itself.
 - Stack: `wotbtools-asset-origin`
 - Public name: `assets.wotbtools.com`
 - Compose source: GitHub is review authority; Gitee is transport for the mainland worker.
-- Source mirror gate: `.github/workflows/asset-origin.yml` force-mirrors `main` and then requires Gitee `main` to equal the exact reviewed GitHub SHA.
+- Source mirror gate: `.github/workflows/asset-origin.yml` checks out the triggering GitHub `main` event SHA, force-pushes that frozen commit itself to Gitee `main`, and then requires Gitee `main` to equal the same SHA. It must not mirror whatever GitHub `main` happens to point at later in the run.
 - Periphery lifecycle: the Alibaba target under `deploy/periphery/targets/ali-sh-asset-01/` uses the shared repository-owned install/reconcile/verify implementation and is the final dependent job in the single `.github/workflows/komodo-periphery.yml` owner chain (`Yecao -> TX1 -> TX2 -> Alibaba`).
 - Payload: host state under `/srv/wotb-assets`, mounted read-only into Caddy.
 
@@ -38,12 +38,12 @@ After merge, the normal `Komodo Periphery` workflow reaches Alibaba only if Yeca
 TX1, and TX2 all reconcile successfully first. The reviewed `adopt-existing.sh`
 bridge takes the host mutation lock and, only if an existing service is already
 active, independently proves: persistent identity and Core trust files exist, the
-process environment and installed config contain no onboarding credential, the
-installed config resolves to the exact reviewed Core/identity/operator semantics,
-the process has an established connection to the reviewed Core peer, and no inbound
-`:8120` listener exists. Only then does it atomically commit the root-owned mode-0600
-`/etc/komodo/keys/onboarding-complete` marker. The same job immediately runs the
-normal shared reconcile and must finish credential-free.
+live process has no `PERIPHERY_*` environment override, the installed config contains
+no onboarding credential and resolves to the exact reviewed Core/identity/operator
+semantics, the process has an established connection to the reviewed Core peer, and
+no inbound `:8120` listener exists. Only then does it atomically commit the
+root-owned mode-0600 `/etc/komodo/keys/onboarding-complete` marker. The same job
+immediately runs the normal shared reconcile and must finish credential-free.
 
 The marker contains no credential. The adoption bridge is a no-op on a fresh/rebuilt
 host with no active existing Periphery; in that case normal reconcile performs a clean
@@ -74,7 +74,7 @@ Keep the current release plus at least one previous release while the migration 
 ## First rollout
 
 1. Complete the host-side SSH/sudo/lock prerequisites above, then merge the reviewed GitHub change.
-2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA check proves the Gitee transport contains the reviewed GitHub commit; an informal/manual freshness check is not sufficient.
+2. Require **Asset Origin Source Mirror** to pass. Its exact-SHA push and verification prove Gitee `main` contains the triggering reviewed GitHub commit; an account-level mirror or informal/manual freshness check is not sufficient.
 3. Require the single **Komodo Periphery** workflow to pass through the full dependency chain `Yecao -> TX1 -> TX2 -> Alibaba`. For this already-onboarded host, the Alibaba job must complete adoption and the following normal credential-free reconcile successfully before any ResourceSync Apply.
 4. In ResourceSync `wotbtools-main`, review the pending diff. The existing `ali-sh-asset-01` Server and `wotbtools-asset-origin` Stack must be adopted by name; `address` stays empty and no inbound Periphery `:8120` is introduced.
 5. Apply the ResourceSync diff. This must not deploy the Stack (`deploy = false`).
