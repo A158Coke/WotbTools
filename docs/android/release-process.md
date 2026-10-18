@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **3.12.0 / 3012000**（`android/gradle.properties`）。
+截至 2026-10-18，本候选源码为 **3.11.2 / 3011002**（`android/gradle.properties`）。
 保留 main 的 3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、
 动能弹外部模块转正/口径碾压修复，3.9.1 积分榜公开展示优化、3.9.0 工具栏折叠、3.8.1 地球图标
@@ -13,7 +13,8 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 `android-v3.10.0` 与 `android-v3.11.0` 已固定旧源码身份；3.11.0 的联赛季赛中英必填/俄文选填名称
 与 v2 联赛接口、3.11.1 的 bundled 前端回放/地图修复都已进入 main，对应版本不能复用来发布新 bundle。
 本 PR 改变随 APK 打包的推荐内容管理权限判定：内容域入口与请求所有权改认 `content-admin`，
-`tournament-admin` 不再获得内容管理；按 **minor** 递增为 **3.12.0**，说明见 [3.12.0](releases/3.12.0.md)。
+`tournament-admin` 不再获得内容管理；这是 bundled frontend-only 的权限行为修正，不改 wire / Bridge，
+按 **patch** 递增为 **3.11.2**，说明见 [3.11.2](releases/3.11.2.md)。
 旧 APK 继续按 `tournament-admin` 判定，因此只持有 `content-admin` 的管理员需要更新 APK 才能管理内容；
 全站管理员由 Keycloak composite 展开同时具备两个角色，不受影响。后端先行部署不会让旧 APK 失去目录。
 Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这次功能强制升级。
