@@ -184,6 +184,7 @@ function startViewer() {
             shotBlocked: t('armor.shot_blocked'),
             shotDistance: t('armor.distance'),
             distanceUnit: t('armor.distance_unit'),
+            mayPenetrate: t('armor.may_penetrate'),
             armorStateLabel: t('armor.armor_state'),
             armorStateDefaultSuffix: t('armor.armor_state_default'),
             armorStateAutoTitle: t('armor.armor_state_auto'),
@@ -388,7 +389,7 @@ onBeforeUnmount(() => {
     --tooltip-bg: var(--color-surface-1); --scrub: var(--color-info);
     position: relative; display: flex; flex-direction: column; isolation: isolate;
     inline-size: 100%; block-size: calc(100dvh - var(--header-h) - var(--tabbar-h)); min-block-size: 420px;
-    margin: 0; padding: 0; overflow: hidden; background: var(--bg); color: var(--txt); font: var(--type-body);
+    margin: 0; padding: 0; overflow: hidden; background: var(--color-canvas); color: var(--txt); font: var(--type-body);
 }
 .armor-view .armor-stage { position: relative; flex: 1; min-block-size: 0; inline-size: 100%; }
 .armor-view.is-unsupported { block-size: auto; min-block-size: 0; overflow: visible; background: transparent; }

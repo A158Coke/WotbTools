@@ -71,10 +71,36 @@ describe('armor adjacent-shot teardown ownership', () => {
 // FOV 50°→6.4238°，受击锚点 NDC-y 0.317→2.633（出视锥）。
 describe('dolly-zoom world-overview scope guard', () => {
   const kernel = read('../scene/tankViewer.js')
-  it('animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态以 k=1 幂等还原原生', () => {
+  it('animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态还原原生 50°', () => {
     expect(kernel).toMatch(/applyLongRangeCompensation\(!worldOverviewMode\)/)
     expect(kernel).not.toMatch(/applyLongRangeCompensation\(!window\.__worldPenMode\)/)   // 旧门控仅命中置位，MISS 漏置
-    expect(kernel).toMatch(/const k = enabled \? Math\.max\(1, d \/ DOLLY_REF_DIST\) : 1;/)
+    expect(kernel).toMatch(/if \(!enabled\) \{[\s\S]*?fov = OVERVIEW_BASE_FOV;[\s\S]*?near = 0\.1;[\s\S]*?far = Math\.max\(1000, d \* 3\);/)
+  })
+  it('单车装甲检视与 shot replay 共用 Armor Inspector 实测标定', () => {
+    expect(kernel).toMatch(/const ARMOR_REF_DIST = 15;/)
+    expect(kernel).toMatch(/const ARMOR_BASE_FOV = 18\.75;/)
+    expect(kernel).toMatch(/const ARMOR_MAX_FOV = 40;/)
+    expect(kernel).toMatch(/const ARMOR_MIN_FOV = 0\.5;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_GAIN = 0\.0128;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_MAX = 2\.8;/)
+    expect(kernel).toMatch(/camera\.position\.set\(0, 0, -ARMOR_REF_DIST\);/)
+    expect(kernel).toMatch(/controls\.minDistance = 3;/)
+    expect(kernel).toMatch(/controls\.maxDistance = 500;/)
+    expect(kernel).toMatch(/fov = dollyZoomFov\(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX\);/)
+    expect(kernel).toMatch(/near = 0\.05 \* d;/)
+    expect(kernel).toMatch(/far = d \+ 30;/)
+    expect(kernel).toMatch(/controls\.target\.set\(aimCenter\.x, aimCenter\.y, aimCenter\.z\);/)
+    expect(kernel).toMatch(/camera\.position\.set\(aimCenter\.x, aimCenter\.y, aimCenter\.z - ARMOR_REF_DIST\);/)
+    expect(kernel).toMatch(/controls\.target\.set\(0, P\.ty, 0\);/)
+    expect(kernel).toMatch(/const camView = QP\.get\('camview'\) \|\| \(CAMERA_VIEW_PRESETS\.has\(view\) \? view : null\);/)
+  })
+  it('场景风格跟随网页 UI：透明画布、无地面网格、半球光主题表面色', () => {
+    const view = read('./AgentArmorView.vue')
+    expect(kernel).not.toContain('GridHelper')
+    expect(kernel).toContain('scene.background = null;')
+    expect(kernel).toContain('antialias: true, alpha: true')
+    expect(kernel).toContain("readThemeColor('--color-surface-2'")
+    expect(view).toContain('background: var(--color-canvas);')
   })
   it('worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）', () => {
     // 脱靶分支入口置位（结构锚点：isMiss 分支首行）——此前 MISS 在弹道标注后提前返回，漏置
@@ -104,12 +130,53 @@ describe('dolly-zoom world-overview scope guard', () => {
     const { dollyZoomFov } = await import('../scene/tankViewer.js')
     expect(dollyZoomFov(30, true)).toBeCloseTo(50, 6)       // 基准距离 = 原生视角
     expect(dollyZoomFov(249.3, false)).toBeCloseTo(50, 6)   // world 总览恒原生
+    // 默认参数（base 50/ref30）：d<30 也走 dolly-zoom（shot 旧 0-30m 原生分支已移除）。
+    expect(dollyZoomFov(15, true)).toBeGreaterThan(50)
+    // 单车装甲检视 / shot replay：15m/18.75° 基准，d<15 变宽；6.5m 处 40° 封顶；
+    // product 从 15m 的 ≈2.477 随距离 +0.0128/m 增大（28.35m≈2.648），远距车体略小；
+    // product 封顶 2.8（500m 仍 2.8，比 15m 小约 12%），不再让车体尺寸完全恒定。
+    const armorFov = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.0128, 2.8)
+    expect(armorFov(15)).toBeCloseTo(18.75, 6)
+    expect(armorFov(6.5)).toBeCloseTo(40, 6)
+    const armorProduct = (d) => Math.min(2.8, Math.tan(18.75 * Math.PI / 360) * 15 + Math.max(0, d - 15) * 0.0128)
+    const armorFov30 = 2 * Math.atan(armorProduct(30) / 30) * 180 / Math.PI
+    expect(armorFov(30)).toBeCloseTo(armorFov30, 6)
+    expect(armorFov(30)).toBeLessThan(11)
+    expect(armorFov(28.35)).toBeCloseTo(10.67, 1)       // Armor Inspector 实测点
+    expect(armorFov(28.35)).toBeLessThan(armorFov(15))  // 远距车体略小
+    expect(armorFov(8.94)).toBeGreaterThan(18.75)
+    expect(armorFov(8.94)).toBeLessThan(40)
+    const armorFov500 = 2 * Math.atan(2.8 / 500) * 180 / Math.PI
+    expect(armorFov(500)).toBeCloseTo(armorFov500, 6)
+    expect(armorFov(500)).toBeGreaterThan(0.5)
+    expect(armorFov(500)).toBeLessThan(0.7)
+    expect(armorFov(500)).toBeLessThan(armorFov(15))
+    expect(dollyZoomFov(15, false)).toBeCloseTo(50, 6)
     const fovOn = dollyZoomFov(249.3, true)
     expect(fovOn).toBeCloseTo(6.4238, 2)                    // reviewer 实测值（k=8.31）
     // 垂直 NDC-y = tan(偏心角)/tan(fov/2)：同一 8.41° 偏心锚点，原生在视锥内、误套补偿越界
     const ndcY = (offDeg, fovDeg) => Math.tan(offDeg * Math.PI / 180) / Math.tan(fovDeg * Math.PI / 360)
     expect(ndcY(8.41, 50)).toBeLessThan(1)                  // ≈0.317（reviewer 实测）
     expect(ndcY(8.41, fovOn)).toBeGreaterThan(2)            // ≈2.63（越界）
+  })
+})
+
+// 结果卡片是 position:fixed，left/top 是视口坐标；投影必须基于画布实际矩形。
+// 若用 window.innerWidth/Height，页面/容器滚动或窗口缩放时画布移动而卡片停在旧视口位置。
+describe('traj-info canvas anchoring', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('按画布 getBoundingClientRect 投影，而不是视口尺寸', () => {
+    const start = kernel.indexOf('function updateTrajInfoPos()')
+    expect(start).toBeGreaterThan(-1)
+    const end = kernel.indexOf('div.style.transform', start)
+    expect(end).toBeGreaterThan(start)
+    const fn = kernel.slice(start, end)
+    expect(fn).toMatch(/getElementById\('canvas-container'\)/)
+    expect(fn).toMatch(/getBoundingClientRect\(\)/)
+    expect(fn).toMatch(/const x = rect\.left \+ \(v\.x \* 0\.5 \+ 0\.5\) \* rect\.width;/)
+    expect(fn).toMatch(/const y = rect\.top \+ \(-v\.y \* 0\.5 \+ 0\.5\) \* rect\.height;/)
+    expect(fn).not.toMatch(/\(v\.x \* 0\.5 \+ 0\.5\) \* window\.innerWidth/)
+    expect(fn).not.toMatch(/\(-v\.y \* 0\.5 \+ 0\.5\) \* window\.innerHeight/)
   })
 })
 

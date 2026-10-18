@@ -31,6 +31,8 @@ import {
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary } from './penetration.js'
+// Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 3× 厚度传播
+import { penetrationChance } from './armorInspectorChance.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../data/armorStates.js'
 
@@ -57,14 +59,19 @@ function resetViewerGlobals() {
 }
 
 /**
- * dolly-zoom FOV（纯函数，内核与单测共用）：enabled 时按 k=max(1,d/refDist) 收窄 FOV，
- * 使 refDist 处定标的车体在任意 k 倍距离上屏幕尺寸不变；enabled=false 恒原生（k=1）。
- * 两车 world 总览（__worldPenMode）必须传 false——总览取景由射手/目标决定，
- * 套单车 dolly-zoom 会把远距受击车裁出视锥（review P2 回归锚点）。
+ * dolly-zoom FOV（纯函数，内核与单测共用）。
+ * enabled 时按 k=d/refDist 缩放：d<refDist 时 FOV 变宽，车体屏幕尺寸保持 refDist 处比例；
+ * farProductGain/farProductMax 可选：product = baseProduct + max(0,d-refDist)×gain，封顶 max；
+ * product 随距离增大 → 远距车体略小（Armor Inspector 实测标定）。enabled=false 恒原生。
+ * maxFovDeg 封顶近距，minFovDeg 封顶远距——两车 world 总览必须传 false，否则会把远距
+ * 受击车裁出视锥。
  */
-export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1) {
-    const k = enabled ? Math.max(1, distanceM / refDistM) : 1;
-    return Math.max(minFovDeg, 2 * Math.atan(Math.tan(baseFovDeg * Math.PI / 360) / k) * 180 / Math.PI);
+export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity) {
+    if (!enabled) return Math.min(maxFovDeg, Math.max(minFovDeg, baseFovDeg));
+    const baseProduct = Math.tan(baseFovDeg * Math.PI / 360) * refDistM;
+    const product = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const fov = 2 * Math.atan(product / Math.max(distanceM, 1e-4)) * 180 / Math.PI;
+    return Math.min(maxFovDeg, Math.max(minFovDeg, fov));
 }
 
 /**
@@ -126,6 +133,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             shotNominal: 'nominal',
             shotBlocked: 'blocked',
             shotDistance: 'Engagement distance', distanceUnit: 'm',
+            mayPenetrate: 'May penetrate',
             heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
             technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
@@ -134,6 +142,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ...labels,
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
+
+        // Armor Inspector 单车装甲检视实测标定（PC T-34，2026-10-18）：
+        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；product = tan(fov/2)×d
+        // 从 15m 的 ≈2.477 随距离缓慢增大到 28.35m 的 ≈2.648（约 +0.0128/m），
+        // 远距车体因此略小；封顶 2.8（比 15m 小约 12%），避免 500m 缩得过小。
+        // near=0.05d / far=d+30；相机距离沿用查看器 3–500m。
+        // shot replay 与装甲检视共用这套标定；两车 world overview 保持原生 50° 取景。
+        const ARMOR_REF_DIST = 15;
+        const ARMOR_BASE_FOV = 18.75;
+        const ARMOR_MAX_FOV = 40;
+        const ARMOR_MIN_FOV = 0.5;
+        const ARMOR_FAR_PRODUCT_GAIN = 0.0128;
+        const ARMOR_FAR_PRODUCT_MAX = 2.8;
+        const OVERVIEW_BASE_FOV = 50;
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -401,9 +423,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 if (penChance < 0.0) {
                   rem = max(0.0, rem);
-                  float delta = finalThick - rem;
-                  float rand = rem * 0.05;               // ±5% randomization band
-                  penChance = clamp(1.0 - (delta + rand) / (2.0 * rand), 0.0, 1.0);
+                  // Armor Inspector：±5% 视为 ±3σ 正态分布（σ=rem/60），概率用高斯 CDF。
+                  float sigma = rem * 0.0166666667;
+                  penChance = rem > 0.0
+                    ? clamp(aiNormalCdf((rem - finalThick) / max(sigma, 1e-4)), 0.0, 1.0)
+                    : 0.0;
                   if (canSplash) {
                     float splash = 0.5 * damage - 1.1 * finalThick;
                     splashChance = step(0.0, splash);
@@ -414,11 +438,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               vec3 base = vec3(1.0, splashChance * 0.392, 0.0);
               if (advancedHighlighting && ricocheted) base = vec3(1.0, base.g, 1.0);
               if (greenPenetration || advancedHighlighting) {
-                float fall = 1.0 - penChance * penChance;
-                float gain = 1.0 - (penChance - 1.0) * (penChance - 1.0);
-                // 续飞击穿用纯绿（不套掠射 overmatch 的青蓝指示色——炮弹确实穿了）
+                // 概率色带：红 → 橙 → 黄 → 绿；高概率端保留 overmatch 青蓝/续飞纯绿。
+                // 旧的 base/penColor 二次混合在 30%–60% 之间几乎都是暗红/橄榄色，
+                // 这里加入橙/黄中间色相，让相邻概率段的颜色差异一眼可辨。
                 vec3 penColor = contPen ? vec3(0.0, 1.0, 0.0) : getPenetrationColor(threeCal, mayRicochet);
-                gl_FragColor = vec4(fall * base + gain * penColor, alpha);
+                float p = clamp(penChance, 0.0, 1.0);
+                vec3 orange = vec3(1.0, 0.45, 0.0);
+                vec3 yellow = vec3(1.0, 0.90, 0.0);
+                vec3 heat;
+                if (p < 0.34) {
+                  heat = mix(base, orange, p / 0.34);
+                } else if (p < 0.67) {
+                  heat = mix(orange, yellow, (p - 0.34) / 0.33);
+                } else {
+                  heat = mix(yellow, penColor, (p - 0.67) / 0.33);
+                }
+                gl_FragColor = vec4(heat, alpha);
               } else {
                 gl_FragColor = vec4(base, (1.0 - penChance) * alpha);
               }
@@ -2444,7 +2479,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 document.getElementById('loading').style.display = 'none';
                 window.__LOAD__ = 'ok:' + tankData.tank_id;
-                controls.target.set(0, 0, 0);   // 旋转中心 = 地面网格原点（模型锚点）
+                // 初始占位；applyUrlOptionsOnce 的默认分支会把目标改到炮线高度（车体居中）。
+                controls.target.set(0, 0, 0);
                 controls.update();
                 syncTransforms();
                 applyConfig(currentConfigIdx);
@@ -2479,10 +2515,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 updateTurretGun(currentTurretDeg, currentGunDeg);
             }
             const view = QP.get('view');
+            // `view` 同时是 SPA 路由 id（agent-armor）。只有已知相机预设才按预设处理；
+            // 否则 ?view=agent-armor 会命中 fallback（0.8×模型尺寸）覆盖默认 15m 相机距离。
+            // 显式相机预设优先用 ?camview=front|top|...，兼容旧的 ?view=<preset>。
+            const CAMERA_VIEW_PRESETS = new Set(['front', 'rear', 'left', 'right', 'hull_down', 'top', 'front_left', 'front_right', 'rear_left', 'rear_right']);
+            const camView = QP.get('camview') || (CAMERA_VIEW_PRESETS.has(view) ? view : null);
             const azOv = num('az'), distOv = num('dist'), hOv = num('h');
-            if (view || azOv !== null || hOv !== null || distOv !== null) {
-                // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）
-                const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
+            // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）。默认目标也用它，
+            // 让车体垂直居中（地面原点会让坦克落在屏幕上半）。
+            const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
+            if (camView || azOv !== null || hOv !== null || distOv !== null) {
                 // 视角预设（对齐 BlitzKit 语义）：front/rear/left/right = 炮线高度水平视角；
                 // hull_down = 低机位仰视炮塔；top = 俯视。机位距离 = 模型最长边倍数
                 //（取景需要，与数据无关）：水平 0.80×、斜角 0.87×、顶视 1.17×；顶视高度 = 炮线 + 2×模型长
@@ -2497,14 +2539,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     front_right: {az:315, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
                     rear_left:   {az:135, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
                     rear_right:  {az:225, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
-                })[view] || {az:0, h:gunLine, ty:gunLine, d:0.80*modelMaxDim};
+                })[camView] || {az:0, h:gunLine, ty:gunLine, d:0.80*modelMaxDim};
                 const d = distOv !== null ? distOv : P.d;
                 const a = (azOv !== null ? azOv : P.az) * Math.PI / 180;
                 const h = hOv !== null ? hOv : P.h;
                 camera.position.set(Math.sin(a) * d, h, -Math.cos(a) * d);
-                controls.target.set(0, 0, 0);   // 旋转中心 = 地面网格原点（与初始状态一致）
-                controls.update();
+                controls.target.set(0, P.ty, 0);   // 预设目标高度（炮线/顶视），不再回地面原点
+            } else {
+                // 默认目标 = 装甲模型包围盒中心（车体视觉中心）；包围盒为空时退回炮线高度。
+                // 同时把默认相机距离归一到 15m，保持 Armor Inspector 的 18.75° 基准。
+                const aimModel = armorModel || tankModel;
+                aimModel.updateWorldMatrix(true, true);
+                const aimBox = new THREE.Box3().setFromObject(aimModel);
+                if (!aimBox.isEmpty()) {
+                    const aimCenter = aimBox.getCenter(new THREE.Vector3());
+                    controls.target.set(aimCenter.x, aimCenter.y, aimCenter.z);
+                    // 默认正对车头（-Z）且平视：与目标同高，距离 15m；tank 在屏幕中心。
+                    camera.position.set(aimCenter.x, aimCenter.y, aimCenter.z - ARMOR_REF_DIST);
+                } else {
+                    controls.target.set(0, gunLine, 0);
+                    camera.position.set(0, gunLine, -ARMOR_REF_DIST);
+                }
             }
+            controls.update();
             if (QP.get('heatmap') === '1' && !penetrationMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
@@ -2762,8 +2819,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             return { sd: sd, sModel: sModel, breechGunLocal: breechGunLocal };
                         });
                     }
-                        // 解除装甲检视的近距限制（fog 15-50 / maxDistance 30 会吞掉远距离交战）
-                        scene.fog = null;
+                        // world overview：解除近距限制（原 30m 上限会吞掉远距离交战）
                         controls.maxDistance = 1e6;
                         controls.minDistance = 0.5;
                         // 右键 = 平移视角（地面平面），禁用手动炮塔/炮管拖拽（回放姿态由数据驱动）
@@ -4305,17 +4361,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function initScene() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1c1410);
-            scene.fog = new THREE.Fog(0x1c1410, 15, 50);
+            // 3D 场景不再自带棕色调背景/雾与地面网格：画布透明，直接继承网页 UI 的
+            // --color-canvas；场景只保留车体与光照，风格与页面外壳一致。
+            scene.background = null;
 
             // SPA 壳内渲染：视口尺寸取 canvas 容器（main 区域），而非整窗（顶部导航占 67px）
             const view = document.getElementById('canvas-container');
-            camera = new THREE.PerspectiveCamera(50, view.clientWidth / view.clientHeight, 0.1, 1000);
-            camera.position.set(2.5, 3.2, -8);
+            camera = new THREE.PerspectiveCamera(ARMOR_BASE_FOV, view.clientWidth / view.clientHeight, 0.1, 1000);
+            // 默认正对车头（-Z）且平视：目标高度在模型加载后由装甲包围盒中心决定；距离 15m。
+            camera.position.set(0, 0, -ARMOR_REF_DIST);
 
             // preserveDrawingBuffer 不再开启：本查看器没有任何像素回读（无 toDataURL/readPixels/
             // 录屏），开启它只会阻止浏览器做缓冲区交换优化（每帧多一次全分辨率拷贝）。
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setClearColor(0x000000, 0);
             renderer.setSize(view.clientWidth, view.clientHeight);
             // DPR 上限 2：此前直接取 devicePixelRatio（3× 屏上按 3× 全屏渲染，像素数 ×2.25）
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -4329,7 +4388,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             controls.dampingFactor = 0.05;
             controls.rotateSpeed = 0.35;   // 降低旋转灵敏度（默认 1.0 过快，精细对位困难）
             controls.minDistance = 3;
-            controls.maxDistance = 500;   // 交战距离上限 500m（dolly-zoom 保持车体视角尺寸，见 applyLongRangeCompensation）
+            controls.maxDistance = 500;   // 查看器距离范围；Armor Inspector 的 6.5–30m 仅作 FOV 标定参考
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.DOLLY,
@@ -4337,8 +4396,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             };
 
 
-            const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f6e, 2.2);
+            const readThemeColor = (name, fallback) => {
+                const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+                if (!raw) return new THREE.Color(fallback);
+                try { return new THREE.Color(raw); } catch { return new THREE.Color(fallback); }
+            };
+            const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#172024'), 2.2);
             scene.add(hemi);
+            // 网页主题（showcase/classic）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
+            const themeObserver = new MutationObserver(() => {
+                hemi.groundColor.copy(readThemeColor('--color-surface-2', '#172024'));
+            });
+            themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            cleanups.push(() => themeObserver.disconnect());
             scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const spot1 = new THREE.SpotLight(0xfff5e1, 500, 60, 0.55, 0.6);
             spot1.position.set(10, 15, 8);
@@ -4346,9 +4416,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const spot2 = new THREE.SpotLight(0x88aaff, 260, 50, 0.45, 0.5);
             spot2.position.set(-10, 12, -6);
             scene.add(spot2);
-
-            const grid = new THREE.GridHelper(20, 20, 0x4a3a26, 0x2c241c);
-            scene.add(grid);
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -5120,18 +5187,32 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return Math.abs(r - v) < 0.05 ? String(r) : (Math.round(v * 10) / 10).toFixed(1);
             };
             const segments = result.split('→').map(x => x.trim()).filter(Boolean);
+            // Armor Inspector 击穿概率：首层前的有效穿深作为区间均值；
+            // 逐层 CDF + 3× 厚度消耗（外部模块 flat，跳弹 0）。
+            const chancePen = layers.length > 0 && Number.isFinite(layers[0].remainBefore)
+                ? layers[0].remainBefore : penVal;
+            const chancePct = Math.round(penetrationChance(chancePen, layers) * 100);
+            const chancePartial = chancePct > 0 && chancePct < 100;
             const colorHex = '#' + color.toString(16).padStart(6, '0');
-            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            // 结果不确定时整张卡走黄色（与“可能击穿”标题同色），不再沿用确定性结果的红色。
+            const cardBorder = chancePartial ? 'var(--yellow)' : colorHex;
+            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${cardBorder};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             // 交战距离（射线起点→命中点）——距离衰减判定的输入参数，随面板展示；
             // 标签与单位走 labels（三语，review P3）
             if (distVal > 0) {
                 html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}</div>`;
             }
-            const titleHtml = (st) => {
+            const titleHtml = (st, final = false) => {
                 const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
-                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${escapeText(L.resultName(st))}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
+                const partial = final && chancePartial;
+                const title = partial ? L.mayPenetrate : L.resultName(st);
+                const titleColor = partial ? 'var(--yellow)' : stColor(st);
+                const chanceHtml = final
+                    ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${chancePct}%</span>`
+                    : '';
+                return `<div style="font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;">${escapeText(title)}${chanceHtml}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
             };
-            html += titleHtml(segments[0]);
+            html += titleHtml(segments[0], segments.length === 1);
             // 距离衰减生效时（d>100）显示判定穿深（首层 remaining = 衰减后 × 装备系数）
             if (distVal > 100 && layers.length > 0) {
                 html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${fmtNum(layers[0].remainBefore)}mm @ ${Math.round(distVal)}m</div>`;
@@ -5147,7 +5228,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
                     html += `<span style="font-size:11px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
-                    html += titleHtml(segments[segments.length - 1]);
+                    html += titleHtml(segments[segments.length - 1], true);
                 }
                 const pc = l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)');
                 const th = Number(l.thickness);
@@ -5189,18 +5270,28 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function updateTrajInfoPos() {
             if (!trajInfoPos) { document.getElementById('traj-info').style.display = 'none'; return; }
-            const v = trajInfoPos.clone().project(camera);
-            const x = (v.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
             const div = document.getElementById('traj-info');
+            const host = document.getElementById('canvas-container');
+            const rect = host ? host.getBoundingClientRect() : null;
+            if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
+            const v = trajInfoPos.clone().project(camera);
             if (v.z > 1) { div.style.display = 'none'; return; }
+            // 卡片是 position:fixed，left/top 是视口坐标；必须按画布实际矩形换算，
+            // 否则页面/容器滚动或窗口缩放后画布移动而卡片停在旧视口位置。
+            const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+            const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
             const offX = 0, offY = 160;
             let px = x + offX, py = y + offY;
             div.style.display = 'block';   // 先显示才能量取实际尺寸
             const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
-            // 视口钳制（translateX(-50%)：left 是面板中心 x）
-            const clampX = (v2) => Math.max(w / 2 + 10, Math.min(window.innerWidth - w / 2 - 10, v2));
-            const clampY = (v2) => Math.max(10, Math.min(window.innerHeight - h - 10, v2));
+            // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
+            const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
+            const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
+            if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
+            const minX = clipL + w / 2 + 10, maxX = clipR - w / 2 - 10;
+            const minY = clipT + 10, maxY = clipB - h - 10;
+            const clampX = (v2) => maxX >= minX ? Math.max(minX, Math.min(maxX, v2)) : (clipL + clipR) / 2;
+            const clampY = (v2) => maxY >= minY ? Math.max(minY, Math.min(maxY, v2)) : clipT + 10;
             px = clampX(px); py = clampY(py);
             // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
             const blockers = [];
@@ -5216,7 +5307,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const l = px - w / 2, t = py, rr = l + w, b = t + h;
                 if (l >= r.right || rr <= r.left || t >= r.bottom || b <= r.top) continue;
                 // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边
-                if (r.top - h - 12 >= 10) { py = clampY(r.top - h - 12); continue; }
+                if (r.top - h - 12 >= clipT + 10) { py = clampY(r.top - h - 12); continue; }
                 px = clampX(px < (r.left + r.right) / 2 ? r.left - w / 2 - 12 : r.right + w / 2 + 12);
             }
             div.style.transform = 'translateX(-50%)';
@@ -5248,31 +5339,33 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
-        // ===== 远距离检视（相机可达 500m 交战距离）：dolly-zoom =====
-        // Armor Inspector 式透视：相机拉远时 FOV 按 tan(fov/2) = tan(25°)×(30/d) 收窄，
-        // 车体屏幕尺寸保持不变（30m 处 = 原生视角比例）；雾带与近远裁剪面随 k=d/30
-        // 等比缩放，保持同等雾化观感与深度精度。d≤30 时全部还原原生（k=1）。
-        // enabled=false（两车 world 总览）以 k=1 幂等还原原生全组值——总览按射手/目标
-        // 取景，套单车 dolly-zoom 会把远距受击车裁出视锥（review P2）。
-        const DOLLY_REF_DIST = 30;    // 基准距离 = 旧 maxDistance（原生视觉比例）
-        const DOLLY_BASE_FOV = 50;    // 原生 FOV
-        const DOLLY_MIN_FOV = 1.0;    // FOV 下限（约 1600m 处触底，其后车体才开始变小）
+        // ===== 单车装甲检视 / shot replay 的相机标定 =====
+        // Armor Inspector 实测（PC T-34）：基准 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶），
+        // 实测取景点 6.5–28.35m；near=0.05d，far=d+30；d<15 时 FOV 变宽、车体屏幕尺寸保持 15m 比例。
+        // 单车装甲检视与 shot replay 共用这套标定；shot replay 的 0.5–500m 由 minFov=0.5° 兜底。
+        // enabled=false（两车 world 总览）以原生 50° 幂等还原——总览按射手/目标取景，
+        // 套单车 dolly-zoom 会把远距受击车裁出视锥（review P2）。
         function applyLongRangeCompensation(enabled) {
             const d = camera.position.distanceTo(controls.target);
-            const k = enabled ? Math.max(1, d / DOLLY_REF_DIST) : 1;
-            const fov = dollyZoomFov(d, enabled, DOLLY_BASE_FOV, DOLLY_REF_DIST, DOLLY_MIN_FOV);
+            let fov, near, far;
+            if (!enabled) {
+                // world overview：原生 50° 取景（far 随距离防裁切）
+                fov = OVERVIEW_BASE_FOV;
+                near = 0.1;
+                far = Math.max(1000, d * 3);
+            } else {
+                // 单车装甲检视 / shot replay：同一套 Armor Inspector 实测 FOV 标定。
+                // product 随距离缓慢增大（远距车体略小），封顶 2.8；minFov=0.5° 留作远端兜底。
+                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX);
+                near = 0.05 * d;
+                far = d + 30;
+            }
             let dirty = false;
             if (Math.abs(camera.fov - fov) > 0.005) { camera.fov = fov; dirty = true; }
-            const near = 0.1 * k;
-            const far = Math.max(1000, d * 3);
             if (Math.abs(camera.near - near) > 1e-4 || Math.abs(camera.far - far) > 1) {
                 camera.near = near; camera.far = far; dirty = true;
             }
             if (dirty) camera.updateProjectionMatrix();
-            if (scene.fog) {
-                scene.fog.near = 15 * k;
-                scene.fog.far = 50 * k;
-            }
         }
 
         function animate() {
@@ -5280,9 +5373,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
-            // dolly-zoom：静态单车检视远距拉远时收窄 FOV（车体视角尺寸不变）；
-            // world 总览（命中/脱靶同置 worldOverviewMode）传 false → k=1 幂等原生
-            // （review P2：总览不适用单车补偿；MISS 路径同规则）
+            // 单车装甲检视：Armor Inspector 实测 15m/18.75° + 40° 上限；
+            // shot replay：旧 30m/50° dolly-zoom；world 总览传 false → 原生 50°。
             applyLongRangeCompensation(!worldOverviewMode);
             trackCameraMotion();
             if (penetrationMode && armorModel) {

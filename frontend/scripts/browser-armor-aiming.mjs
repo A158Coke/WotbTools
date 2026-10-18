@@ -146,8 +146,8 @@ try {
     const c = document.querySelector('canvas');
     const r = c.getBoundingClientRect();
     const PRIMARY = ${JSON.stringify(PRIMARY_SECTIONS)};
-    for (let cy = Math.round(c.height * 0.18); cy < Math.round(c.height * 0.8); cy += 6) {
-      for (let cx = Math.round(c.width * 0.25); cx < Math.round(c.width * 0.75); cx += 6) {
+    for (let cy = Math.round(c.height * 0.05); cy < Math.round(c.height * 0.95); cy += 6) {
+      for (let cx = Math.round(c.width * 0.05); cx < Math.round(c.width * 0.95); cx += 6) {
         const px = r.left + cx, py = r.top + cy;
         const hits = H.__raytrace(px, py);
         if (!hits || !hits.length) continue;
