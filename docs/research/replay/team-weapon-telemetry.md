@@ -3,6 +3,8 @@
 > Corpus: 44 replay files / 34 unique arenas, Blitz 11.19.0 China.
 >
 > This document records an empirical protocol family discovered under Avatar Type-8 method 48 / wrapper 15 / protobuf root field 14. The outer wrapper's original Blitz symbolic enum name is not yet independently available, so the document uses a descriptive research name rather than inventing an RPC symbol.
+>
+> **2026-10-18 correction:** Type23 is recorder ARCADE/SNIPER camera-control state, not a shot/projectile lifecycle source. All Type23-based shot-timing claims in the older version of this document are superseded.
 
 ## Target scope
 
@@ -32,7 +34,7 @@ The important point is that field2 and field4 are not interchangeable: observed 
 
 This is the strongest closed relationship.
 
-For the recorder vehicle, where Type23 provides an independent shot/projectile lifecycle and settlement provides authoritative `shots`:
+For the recorder vehicle, settlement provides authoritative `shots`, while recorder-owned projectile launches can be isolated independently through Avatar method29 shooter identity:
 
 ```text
 sum(wrapper15 field2=3 for recorder) = 432
@@ -62,17 +64,15 @@ Verdict:
 
 > `field2=3` is a **shot-associated team telemetry event** — `PROVEN` on the current corpus.
 
-It is not the raw firing instant itself. For the recorder it is delivered near the Type23 projectile-resolution/impact side of the shot lifecycle:
+### Timestamp boundary correction
 
-```text
-median |Δt| to nearest Type23 payload=1 ≈ 0.137 s
-≈79.9% within 0.25 s
-≈97.0% within 1.0 s
-```
+The previous version of this document used Type23 transitions to argue that field2=3 is delivered around projectile resolution rather than the raw firing instant. That timing argument is now `SUPERSEDED` because Type23 has been closed as recorder ARCADE/SNIPER camera state.
 
-By contrast, distance to Type23 payload=0 (the firing/in-flight transition) has median ≈1.86 s.
+Current safe statement:
 
-Therefore the event is best described as **shot-associated telemetry delivered around projectile resolution**, not as an exact fire timestamp.
+> field2=3 has a one-per-shot count identity for the recorder and very strong own-team shot association, but its exact fire-vs-resolution timestamp semantic must be re-established using recorder-owned method29/method20 timing rather than Type23.
+
+Therefore production consumers should treat field2=3 as **shot-associated telemetry**, not as an exact firing timestamp, until that direct timing join is re-run.
 
 ## field3 on field2=3 — reload/gun-cycle duration family
 
@@ -116,7 +116,7 @@ The paired low/high modes have a remarkably consistent ratio:
 13.227 / 15.492≈ 0.8538
 ```
 
-That is a repeated ~14.6–14.7% reduction across unrelated vehicles. This is characteristic of the same gun-cycle/reload quantity under a reload-speed modifier rather than a random shot-result scalar.
+That is a repeated ~14.6–14.7% duration reduction across unrelated vehicles. This is characteristic of the same gun-cycle/reload quantity under a reload-speed modifier rather than a random shot-result scalar.
 
 Additional timing evidence: for many records, a later field4 state transition occurs approximately `field3` seconds after the `field2=3` event; overlap and subsequent state changes create ambiguous pairings in rapid/modified firing sequences, so field4's exact enum semantics remain separate.
 
@@ -252,10 +252,12 @@ Those names remain hypotheses until isolated by controlled or independently sche
 Wrapper15 is **not** currently supported as:
 
 - a generic enemy visibility/spotted stream — all current targets are own-team;
-- an authoritative shot timestamp — field2=3 arrives around projectile resolution, not the initial Type23 firing transition;
+- an authoritative exact shot timestamp — field2=3 has one-per-shot count identity, but its precise timestamp semantic must be re-joined to recorder-owned method29/method20 after the Type23 correction;
 - authoritative damage/penetration evidence — shot-count correlation does not encode HP loss;
 - an independent death source — field2=5 is downstream of the already-authoritative death chain;
 - a low-HP crew-skill stream for the ~0.853 fast mode — high-HP/full-HP counterexamples reject that explanation.
+
+Type23 must not be used to time or count weapon events; it is recorder camera/control state. See `recorder-camera-state.md`.
 
 ## Consumer guidance
 
@@ -264,6 +266,8 @@ Current safe facts:
 ```text
 wrapper15 / field2=3
   -> observed own-team shot telemetry
+  -> one-per-shot count identity for recorder
+  -> exact timestamp phase needs direct method29/method20 re-join
   -> field3 is reload/gun-cycle-duration family
   -> dynamic ~0.853 mode matches the modern Adrenaline reload-speed effect
 
