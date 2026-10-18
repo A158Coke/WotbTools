@@ -146,13 +146,12 @@
   说明（新增了哪些字段、为什么），**不得**写成"与 main 逐字段一致、仅 provenance 变化"。漏跑则该文件 3 个
   fixture 因 provenance 失配而红、Required Gate 拦下；失败信息只显示 release/commit 不符，先比对
   两个 release 的 `wotb_replay_wasm_bg.wasm` sha256（可能字节相同）再排查行为回归。
-- admin 视图的 dev-gated 旁路参数 `?admin=1`（**已入库**：`frontend/src/composables/useAuth.js`
-  的 `DEV_ADMIN_ROLES`，dev 构建把 `wotbtools-admin` / `HoF-admin` 视为已持有；生产构建忽略，
-  见 runbook §4）。真正管理功能只认角色，任何 URL 参数都不得放行。Replay 五能力公开可见，
-  个人回放的 3D / shots 与全部 AI 要求登录；已验证的官方示例额外匿名放行 3D / shots，
-  不放行 AI 或服务端写操作；装甲查看器（含 Tankopedia 入口卡）匿名可用，不依赖 admin；
+- 管理视图与管理 API 的权限事实源统一为当前 access token 的 `realm_access.roles`：本机调试使用具有
+  `wotbtools-admin` / `HoF-admin` 等真实 realm role 的测试账号；任何 URL 参数都不得提升权限，见 runbook §4。
+  Replay 五能力公开可见，个人回放的 3D / shots 与全部 AI 要求登录；已验证的官方示例额外匿名放行
+  3D / shots，不放行 AI 或服务端写操作；装甲查看器（含 Tankopedia 入口卡）匿名可用，不依赖 admin；
   `viewFromRoute` 不再承担 Agent capability 的 admin 闸门。
-- 需要真实 realm 角色的功能（`/api/admin/**`、`/api/ai/**`）本地旁路绕不过，边界见 runbook §5。
+- `/api/admin/**`、`/api/ai/**` 等受保护能力按真实 token 鉴权，边界见 runbook §5。
 
 ## 禁止
 
