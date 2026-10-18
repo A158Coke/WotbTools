@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { makeGroundMaterial } from './groundPass.js'
+import { loadTerrain, makeGroundMaterial } from './groundPass.js'
 import { assembleSceneryMaterials } from './sceneryAssembly.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -43,7 +43,7 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(src).toMatch(/waterCoast = makeWaterCoast\(\{/)
     expect(src).toMatch(/const need = groundLayerKeys\(L\);/)
     expect(src).toMatch(/setupGroundTextures\(texs, ani\);/)
-    expect(src).toMatch(/const \{ field, meta: tmeta \} = await loadTerrain\(\{/)
+    expect(src).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
     // 副本禁令（本地零残留）
     expect(src).not.toMatch(/function groundShaderMaterial/)
     expect(src).not.toMatch(/uniform sampler2D uCM;/)
@@ -69,6 +69,13 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(bakeSrc).not.toMatch(/function decodeTerrainField/)
   })
 
+  it('地形读取 fail-closed：meta 不完整/非居中 bounds 不得按缺省 layout/zmax 解码', () => {
+    expect(gpSrc).toMatch(/if \(!terrainFieldMetaValid\(meta\)\) \{/)
+    expect(gpSrc).toMatch(/terrainBoundsOk\(meta\)/)
+    expect(gpSrc).toMatch(/Number\.isFinite\(Number\(meta\.span\)\)/)
+    expect(gpSrc).toMatch(/拒绝按缺省值解码/)
+  })
+
   it('贴图上传契约单实现：tile/hmap Repeat + 全层各向异性都在共享函数里', () => {
     expect(gpSrc).toMatch(/for \(const k of \['tile0', 'tile1', 'hmap0', 'hmap1'\]\) if \(texs\[k\]\) \{/)
     expect(gpSrc).toMatch(/texs\[k\]\.wrapS = texs\[k\]\.wrapT = THREE\.RepeatWrapping;/)
@@ -78,6 +85,43 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
       gpSrc.indexOf('export async function loadTerrain'))
     expect(setupFn.length).toBeGreaterThan(200)
     expect(setupFn).not.toMatch(/colorSpace/)
+  })
+})
+
+describe('loadTerrain fail-closed（runtime 口径）', () => {
+  const size = 4
+  const bin = new Uint16Array(size * size).buffer
+  const valid = {
+    size, terrainLayout: 2, zmin: 0, zmax: 10, span: 600,
+    worldBounds: { min: [-300, -300, 0], max: [300, 300, 10] },
+  }
+  const resp = (status, body) => ({
+    status, ok: status >= 200 && status < 300,
+    json: async () => body, arrayBuffer: async () => bin,
+  })
+  const run = (meta, metaStatus = 200, binStatus = 200) => loadTerrain({
+    binUrl: '/map/x/terrain.u16.bin', metaUrl: '/map/x/terrain.json',
+    fetchFn: async (u) => (u.includes('terrain.json') ? resp(metaStatus, meta) : resp(binStatus, null)),
+  })
+
+  it('完整 meta + 居中 bounds ⇒ 解码', async () => {
+    const r = await run(valid)
+    expect(r.field).toBeInstanceOf(Float32Array)
+    expect(r.metaStatus).toBe(200)
+    expect(r.binStatus).toBe(200)
+  })
+
+  it('meta 404 + bin 200 ⇒ field=null（不得按缺省 layout/zmax 解码）', async () => {
+    const r = await run({}, 404, 200)
+    expect(r.field).toBeNull()
+    expect(r.metaStatus).toBe(404)
+    expect(r.binStatus).toBe(200)
+  })
+
+  it('meta 缺 layout / 缺 zmax / 非居中 bounds ⇒ field=null', async () => {
+    expect((await run({ ...valid, terrainLayout: undefined })).field).toBeNull()
+    expect((await run({ ...valid, zmax: undefined })).field).toBeNull()
+    expect((await run({ ...valid, worldBounds: { min: [-200, -300, 0], max: [400, 300, 10] } })).field).toBeNull()
   })
 })
 
@@ -117,7 +161,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
   })
 
   it('水语义件保留渲染（keepWater）；"≥90% 图幅壳"几何剔除已删（运行时渲染件不得被剔）', () => {
-    expect(bakeSrc).toMatch(/keepWater: true \}\)\) drop\.push\(o\)/)
+    expect(bakeSrc).toMatch(/keepWater: true, skyFlagsAvailable \}\)\) drop\.push\(o\)/)
     // 2026-10-14 用户报"米尔德堡右上角黑块"后删除：该规则把运行时正常渲染的外圈山体/
     // 大地壳整块剔掉，露出可玩区外 colormap 暗色边带；真天空穹由 /sky/ 判据处理
     expect(bakeSrc).not.toMatch(/span \* 0\.9/)
@@ -179,6 +223,48 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(b.plank.material.isMeshBasicMaterial).toBe(true)
   })
 
+  it('新包 sky 标记在装配期打 userData.isSky（实例化过滤不再按名字猜）', () => {
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const root = new THREE.Group()
+    const mat = new THREE.MeshStandardMaterial({ name: 'skyobject_mat' })
+    mat.userData.sky = true
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat)
+    mesh.name = 'bld_x.sc2'   // 名字不含 sky：必须靠 extras 标记
+    root.add(mesh)
+    const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(r.skyMeshes).toBe(1)
+    expect(mesh.userData.isSky).toBe(true)
+    expect(mesh.frustumCulled).toBe(false)
+  })
+
+  it('多材质混合 sky 组整件走普通路径（不把普通 group 投到无限远）', () => {
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const root = new THREE.Group()
+    const skyMat = new THREE.MeshStandardMaterial({ name: 'skyobject' })
+    skyMat.userData.sky = true
+    const plainMat = new THREE.MeshStandardMaterial({ name: 'brick' })
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), [skyMat, plainMat])
+    mesh.name = 'mixed'
+    root.add(mesh)
+    const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks })
+    expect(r.skyMeshes).toBe(0)
+    expect(mesh.userData.isSky).toBeUndefined()
+  })
+
+  it('显式 skyFlagsAvailable 时，未标记的 sky 名网格不得转天空（预剔除后重算回归）', () => {
+    const NO_TEX = () => null
+    const masks = { maskTexOf: NO_TEX, lmTexOf: NO_TEX, detailTexOf: NO_TEX, envTexOf: NO_TEX, waterTexOf: NO_TEX, decalTexOf: NO_TEX }
+    const root = new THREE.Group()
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ name: 'ordinary' }))
+    mesh.name = 'sky_dome'   // 名字像天，但材质无 extras.sky
+    root.add(mesh)
+    const r = assembleSceneryMaterials({ scene: root }, { strictSurfaces: true, masks, skyFlagsAvailable: true })
+    expect(r.skyMeshes).toBe(0)
+    expect(mesh.userData.isSky).toBeUndefined()
+  })
+
   it('meta 携带 ground 标志与有效跨度（合成器据 ground 以"覆盖即替换"口径合并）', () => {
     // 逐图产物生命周期（删旧产物 / .tmp→rename / meta 内容）在 scripts/bake-overhead-key.mjs，
     // 行为回归见 bake-overhead-key.test.mjs；CLI 只调用、不得复辟本地副本
@@ -186,7 +272,9 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(bakeSrc).not.toMatch(/async function bakeKey\(/)
     expect(bakeSrc).toMatch(/bakeKey\(\{ page, key, outDir, span: spans\[key\], size: SIZE,\s*mapId: primaryMapIdOf\(key\), uploadPath: UPLOAD \}\)/)
     expect(bakeSrc).toMatch(/writeFileSync\(UPLOAD, body\)/)
-    expect(bakeSrc).toMatch(/return \{ ok: true, degenerate: degenerate\.length, span: effSpan, ground: groundReady \}/)
+    expect(bakeSrc).toMatch(/return \{ ok: true, span: effSpan, ground: groundReady \}/)
+    // 退化几何按 (ic/3)/vc 比率删除已撤除（同 3D 运行时；统计启发式不得复活）
+    expect(bakeSrc).not.toMatch(/degenerate|\(ic \/ 3\) \/ vc > 15/)
   })
 
   it('Test C：ground=true 只来自分层地面网格建成（PR #621 blocker：缺层 → 白地面 → ground=true 覆盖 ground.webp）', () => {
@@ -197,7 +285,7 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(bakeSrc).toMatch(/if \(field\) \{\s*groundLayers = await loadBakeGroundLayers\(\{/)
     // 地形同样 fail-closed：terrain.json 读到（meta 有键）而 field=null ⇒ 抛出，且先于分层读取/出图
     // 地形配对按 loadTerrain 回报的 HTTP 事实判定（requireBakeTerrain，行为回归见 bake-ground-layers.test.js），
-    // 不得再靠 meta 是否有键猜——json 404 时 loadTerrain 仍会按缺省参数解码同名 bin
+    // 不得再靠 meta 是否有键猜——json 404/缺字段时 loadTerrain 返回 field=null（bin 仍请求以记录事实）
     expect(bakeSrc).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
     expect(bakeSrc).not.toMatch(/Object\.keys\(tmeta\)/)
     const terrainAt = bakeSrc.indexOf('requireBakeTerrain({ field, metaStatus, binStatus })')

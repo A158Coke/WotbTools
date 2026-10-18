@@ -1,13 +1,14 @@
 /**
  * 采样轨迹求值（3D 回放的位姿/角度插值核心）。
  *
- * 背景：facet 的位姿是**客户端滤波器输出**（filter.rs 移植，`FilteredTimeline` 60Hz 逐帧
- * 求值 = 游戏每帧渲染的位姿）。滤波器在「预测-保持」阶段（刚进 AoI 的数秒内 latency 尚未
- * 收敛到位置更新间隔）逐帧输出是**保持-跳变阶梯**；后续阶段才是平滑滑行。
+ * 背景：客户端滤波器在刚进 AoI 的数秒内 latency 尚未收敛到位置更新间隔，60Hz 逐帧输出是
+ * **保持-跳变阶梯**；后续阶段才是平滑滑行。游戏内这段阶梯被模型加载/入场遮挡，我们的查看器
+ * 模型常驻，直接复现就是用户可见的"刚进视野一顿一顿"。
  *
- * 因此渲染**以 `pose_kf`（关键帧折线）为准**：上游把 60Hz 帧序列压成折点序列（保持段两端
- * + 跳变段，实测 ≈7.5 点/秒、对帧序列偏差 ≤1cm/0.2°），在下游**在关键帧之间线性插值**即可
- * 复现客户端画面。
+ * 因此上游 `pose_kf`（关键帧折线）是**显示重建**：每个在场段按 10Hz 标称间隔铺满历史、
+ * 从稳态 0.2s 延迟起步，段首只保留 0.2s 静止，其后输出时刻落在两个真实采样之间。折线点数
+ * ≈7.5 点/秒、对重建帧偏差 ≤1cm/0.2°；下游在关键帧之间线性插值即可复现平滑画面。
+ * 判定锚点（命中/炮口）仍用客户端原始 0.02s 复位语义，与这里的渲染折线分属两层。
  *
  * 为什么不能沿用「10Hz 网格 + 线性插值」：0.1s 网格与 ≈10~12Hz 的位置更新不同相 → 阶梯被
  * 混叠成速度大幅摆动的滑行（实测某 0.5s 窗内线速度 4.5→29.6 m/s，同段真值稳定；全时线
@@ -83,6 +84,84 @@ export function sampleChannel(get, n, t, t0, dt) {
   if (n === 0) return 0
   if (n === 1) return get(0)
   const { i, f } = segmentAt(t, t0, dt, n)
+  const a = get(i)
+  return a + (get(i + 1) - a) * f
+}
+
+/**
+ * 位姿覆盖段（coverage 闭区间对）定位：返回包含 `t` 的段 `[start, end]`，无覆盖返回 null。
+ * 浮点容差与 `poseCoveredAt` 一致（1e-6s）。
+ */
+export function coverageSpanAt(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    // 末次可见段允许 +Infinity 终点（buildPoseFacet 对缺省 t_out 的投影）。
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    if (t >= start - 1e-6 && t <= end + 1e-6) return [start, end]
+  }
+  return null
+}
+
+/**
+ * 位姿可见段定位（采样用）：优先返回包含 `t` 的段；`t` 落在两段之间时返回**前一段**
+ * （最后已知），早于首段返回首段，晚于末段返回末段。与 `coverageSpanAt` 的 null 语义
+ * 分开——采样器需要"夹到最近端点保持"，而不是退回无约束插值。
+ */
+export function visibilitySpanForSampling(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return null
+  let first = null
+  let prev = null
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    const span = [start, end]
+    if (first === null) first = span
+    if (t < start - 1e-6) return prev ?? span
+    if (t <= end + 1e-6) return span
+    prev = span
+  }
+  return prev ?? first
+}
+
+/** 段集合是否包含 t（闭区间 + 1e-6 容差；空/畸形 → false）。 */
+export function spansContainAt(coverage, t) {
+  if (!Array.isArray(coverage) || !Number.isFinite(t)) return false
+  for (let i = 0; i + 1 < coverage.length; i += 2) {
+    const start = coverage[i]
+    const end = coverage[i + 1]
+    if (!Number.isFinite(start) || (!Number.isFinite(end) && end !== Number.POSITIVE_INFINITY)) continue
+    if (t >= start - 1e-6 && t <= end + 1e-6) return true
+  }
+  return false
+}
+
+/**
+ * 覆盖段内的均匀网格采样（炮塔/炮管/侧倾等仅网格列）。
+ *
+ * 与 `sampleChannel` 的差别：只在 `[spanStart, spanEnd]` **内**的网格采样之间插值，
+ * 不允许跨隐藏段取端点——车辆刚进视野时，旧实现会让炮塔角从前一段（可能数秒前）的
+ * 值缓慢滑到新值，表现为炮塔先指错方向再回正。段内第一个网格点之前保持该点值（与
+ * 网格端点保持语义一致）；段短于一个网格间隔时取段内第一个点（不猜运动）。
+ */
+export function sampleChannelWithin(get, n, t, t0, dt, spanStart, spanEnd) {
+  if (!(n >= 1) || !(dt > 0)) return 0
+  const xMin = (spanStart - t0) / dt
+  const xMax = (spanEnd - t0) / dt
+  let lo = Math.max(0, Math.min(n - 1, Math.ceil(xMin - 1e-9)))
+  let hi = Math.max(0, Math.min(n - 1, Math.floor(xMax + 1e-9)))
+  if (lo > hi) {
+    // 段内没有网格点：取段末**之前**的最近证据（最后已知），不得取段后第一个点——
+    // 下一可见段若在下一个 tick 前开始，会把后一段的炮塔角泄漏进这次短可见段。
+    hi = Math.max(0, Math.min(n - 1, Math.floor(xMax + 1e-9)))
+    lo = hi
+  }
+  if (hi === lo) return get(lo)
+  const x = Math.max(lo, Math.min(hi, (t - t0) / dt))
+  const i = Math.min(hi - 1, Math.floor(x))
+  const f = Math.max(0, Math.min(1, x - i))
   const a = get(i)
   return a + (get(i + 1) - a) * f
 }

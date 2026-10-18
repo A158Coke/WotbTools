@@ -27,7 +27,7 @@ import {
   terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
 import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, writeHiddenInstance, fallMatrix, refreshBatchSphere } from './sceneryInstancing.js'
+import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes, writeHiddenInstance, fallMatrix, refreshBatchSphere, hasTransparentMaterial } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
 import { applyMaterialTextureAnisotropy, clearSceneryMatCache } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
@@ -37,7 +37,7 @@ import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
          groundLayerKeys, setupGroundTextures, buildCorridorRefineMask } from './groundPass.js'
 // 装配规则 SSOT（2026-10-14 抽层）：水面语义判定与俯视烘焙共用同一份——
 // 此前烘焙自持一份名字启发式、未随本文件的"材质标记权威"修复同步而漂移（见该模块头部）
-import { strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
+import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
 // 场景装配 SSOT（extras 贴图解 + 逐节点材质分派；2026-10-14 抽层——本文件与俯视烘焙
 // 共用同一份，用户裁示"直接用它的代码"）：下方引用其 resolve/makeTexResolvers/assemble
 import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from './sceneryAssembly.js'
@@ -49,9 +49,9 @@ import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwne
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
-import { pruneForeignVariants } from './variantFilter.js'
-import { sampleDetachedPose } from './trackInterp.js'
-import { sampleVehiclePoseGame } from '../replay-local/pose/vehiclePose.js'
+import { pruneForeignVariantsDetailed } from './variantFilter.js'
+import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
+import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
 import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
@@ -196,6 +196,8 @@ export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
   let DATA = null;                 // PlaybackData（当前会话）
+  /** eid → 协议精确 AoI 段 flat [t0,t1,...]（来自 DATA.visibility；3D 炮塔/侧倾采样用） */
+  let VIS_BY_EID = new Map();
   /** 共享位姿采样器的时间轴（DATA 就位时写入；见 replay-local/pose/vehiclePose.ts） */
   const POSE_GRID = { tStart: 0, samples: 0 };
   /** 位姿采样复用对象（每帧多车高频调用，零分配） */
@@ -399,7 +401,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 含 `pose_kf` 关键帧优先 / 10Hz 网格回退、以及炮塔绝对角 → 相对角的换算。
   // 本处只施加「场景系 = 游戏系 x 取负」的帧变换（符号约定见 glbRig.js 头注释）；
   // 车体侧倾 hull_roll 取自原始 type=10 volatile（滤波层不输出侧倾），旧产物缺列 → 0。
-  const poseOf = (v, t) => sampleVehiclePoseGame(v.def, POSE_GRID, t, _poseOut);
+  const poseOf = (v, t) => sampleVehiclePoseGame(
+    v.def, POSE_GRID, t, _poseOut, VIS_BY_EID.get(v.def.eid) ?? v.def.coverage,
+  );
   function posAt(v, t, out) {
     const p = poseOf(v, t);
     out.set(-p.x, p.y, p.z);
@@ -457,9 +461,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function deathAt(v, t) { return sceneLifeAt(v, t)?.lifeState === 'DESTROYED'; }
   function visibleAt(v, t) {
-    const c = v.def.coverage;
-    for (let k = 0; k + 1 < c.length; k += 2) if (t >= c[k] && t <= c[k+1]) return true;
-    return false;
+    // 活车按**协议精确 visibility** 显隐（coverage 只保证"有采样"，短隐藏段不断开）；
+    // 否则隐藏期仍会显示车辆并把炮塔/炮管插值到下一段。死亡残骸例外由 applyPose
+    // 的 `|| dead` 保留。
+    return spansContainAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, t);
   }
   // ---------- 场景 ----------
   function initScene() {
@@ -976,6 +981,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 资产阶段进度（审计 3D-23）：按画质档实际会请求的段登记，每段完成（含缺失降级）计满；
     // 分层地表按纹理张数、场景 GLB 按字节推进。写入 store.assetProgress（0–1）
     const progress = createLoadProgress((snap) => { if (!stale()) store.assetProgress = snap.fraction; });
+    // 资产完整性：404/解码失败可以让该进度段结束（loadProgress 的完成=结束），但必须写
+    // assetIssues/assetDegraded，不能表现为“健康完成”。核心缺失（map/terrain/scenery/lighting）
+    // 置 assetDegraded；分层/IBL/可破坏物等可选件只记录、不降级整场。
+    const assetIssues = [];
+    store.assetIssues = assetIssues;
+    store.assetDegraded = false;
+    const noteAsset = (key, status, detail = '', { optional = false } = {}) => {
+      // 迟到请求（切换会话 / reset 后的 reject）不得把旧诊断写进新会话的 store。
+      if (stale()) return;
+      const issue = { key, status, detail: String(detail || '') };
+      assetIssues.push(issue);
+      store.assetIssues = assetIssues.slice();
+      if (!optional) store.assetDegraded = true;
+      console.warn(`[map-assets] ${key}: ${status}${detail ? ' — ' + detail : ''}`);
+    };
     const mapUrlPlanned = mapStaticUrl('map', undefined, resolvedKey);
     if (mapUrlPlanned) progress.expect('map');
     if (mapStaticUrl('terrain', undefined, resolvedKey)) progress.expect('terrain');
@@ -989,10 +1009,12 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // client-only：仅资产平面静态路径；未配置基址/索引未命中 → 无底图（回退网格），
       // 不存在服务端回退
       const mapUrl = mapStaticUrl('map', undefined, resolvedKey);
-      if (mapUrl) {
+      if (!mapUrl) noteAsset('map', 'missing-url', resolvedKey ? 'ground.webp URL 为空' : '未解析到资产索引 key');
+      else {
         const resp = await assetProvider.fetch(mapUrl);
         if (stale()) return;
-        if (resp.ok) {
+        if (!resp.ok) noteAsset('map', `http-${resp.status}`, 'ground.webp 获取失败');
+        else {
           const meta = JSON.parse(resp.headers.get('X-Map-Meta') || '{}');
           const blob = await resp.blob();
           if (stale()) return;
@@ -1011,7 +1033,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           if (mapMetaInfo.flip_x) { mapTexture.wrapS = THREE.RepeatWrapping; mapTexture.repeat.x = -1; mapTexture.offset.x = 1; }
         }
       }
-    } catch (e) { console.warn('底图加载失败（回退网格）:', e); }
+    } catch (e) { noteAsset('map', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
     progress.complete('map');
     // 逐图光照（客户端 DirectionalLightComponent → lighting.json）：方向/色/强度 + 环境色。
@@ -1027,9 +1049,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           const L = await lresp.json();
           if (stale()) return;
           applyMapLighting(L);
+        } else {
+          noteAsset('lighting', `http-${lresp.status}`, '保留兜底灯光');
         }
       }
-    } catch (e) { console.warn('逐图光照加载失败（保留兜底灯光）:', e); }
+    } catch (e) { noteAsset('lighting', 'failed', e && e.message ? e.message : e); }
     // 逐图 IBL（环境反射）：客户端 IBLComponent 的 specular 立方图（上游转等距柱状投影）。
     // 只影响 glTF PBR 材质（坦克）——自定义 ShaderMaterial（场景/地面/植被）不吃 enviroment。
     // `ibl.environmentMultiplier`（逐图 0.8–4.0）经 scene.environmentIntensity 施加（three r163+）。
@@ -1056,25 +1080,37 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
             scene.environment = tex;
             scene.environmentIntensity = envMultiplier;
           }
+        } else {
+          noteAsset('ibl', `http-${iresp.status}`, '不设环境贴图', { optional: true });
         }
       }
-    } catch (e) { console.warn('逐图 IBL 加载失败（不设环境贴图）:', e); }
+    } catch (e) { noteAsset('ibl', 'failed', e && e.message ? e.message : e, { optional: true }); }
     try {
       // 3D 地形：仅资产平面静态路径 + terrain.json sidecar 尺度；无静态资产 → 保持 2D。
       // 读取与解码（span 自愈 / json-bin sha 配对 / 布局补正）在共享模块 groundPass.loadTerrain
       // ——俯视烘焙同一份；本处只做宿主接线（assetProvider/stale/会话写回）。
       // 米制高度场 = 场景系引擎顶点口径（见 terrainMesh.js `decodeTerrainField`）；
       // 网格 / sampleHeight / 拾取诊断 / 水面岸线全读这一份
-      const { field, meta: tmeta } = await loadTerrain({
+      const { field, meta: tmeta, metaStatus, binStatus } = await loadTerrain({
         binUrl: mapStaticUrl('terrain', undefined, resolvedKey),
         metaUrl: mapStaticUrl('terrain-meta', undefined, resolvedKey),
         fetchFn: (u) => assetProvider.fetch(u),
         stale,
       });
       if (stale()) return;
-      if (field) { heightMeta = tmeta; heightField = field; }
-      else if (tmeta.size !== undefined) console.warn('地形数据尺寸或布局不认识（回退 2D）:', tmeta.size, tmeta.terrainLayout);
-    } catch (e) { console.warn('地形加载失败（回退 2D）:', e); }
+      // 只在完整元数据下发布 heightField：loadTerrain 已 fail-closed，这里再守一次
+      // size/layout，防止任何未来调用把它改成“有 field 就发布”（sampleHeight 的 n
+      // 必须有限；缺失曾让 fx/fy 变 NaN，坦克贴地/遮挡全部失效）。
+      if (field && Number.isFinite(Number(tmeta?.size)) && tmeta.terrainLayout !== undefined) {
+        heightMeta = tmeta; heightField = field;
+      } else if (field) {
+        noteAsset('terrain', 'incomplete-meta', '忽略高度场（回退 2D）');
+      } else if (metaStatus === 404 && binStatus === 404) {
+        noteAsset('terrain', 'missing', 'terrain.json + terrain.u16.bin 均 404（2D 回退）');
+      } else {
+        noteAsset('terrain', 'unavailable', `meta=${metaStatus} bin=${binStatus}（回退 2D）`);
+      }
+    } catch (e) { noteAsset('terrain', 'failed', e && e.message ? e.message : e); }
     if (stale()) return;
     progress.complete('terrain');
     // 客户端同款分层地表：colormap/lightmap/tile 细节/mask/(HeightBlend 高度图)，
@@ -1085,7 +1121,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 低/中档跳过分层地表：直接走整图烘焙底图（省 4–8 张纹理下载与显存）
     if (Q.groundLayers) try {
       const gmUrl = mapStaticUrl('groundmeta', undefined, resolvedKey);
-      if (!gmUrl) { /* 未配置资产面/未命中索引：跳过分层地表，回退烘焙底图/网格 */ }
+      if (!gmUrl) {
+        noteAsset('groundLayers', 'missing-url', '跳过分层地表（回退烘焙底图）', { optional: true });
+      }
       else {
       const mresp = await assetProvider.fetch(gmUrl);
       if (stale()) return;
@@ -1130,6 +1168,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           return;
         }
         const ok = loaded.every(Boolean);
+        if (!ok) noteAsset('groundLayers', 'incomplete', '部分分层纹理缺失（回退烘焙底图）', { optional: true });
         if (ok) {
           const ani = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
           // tile/hmap Repeat 平铺 + 全部各向异性（colormap/mask 也开：掠射角下不糊）——
@@ -1140,15 +1179,31 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           // 半途失效/缺失：已加载的分层纹理就地释放，不留悬挂 GPU 资源
           for (const k in texs) texs[k]?.dispose?.();
         }
+      } else {
+        noteAsset('groundLayers', `http-${mresp.status}`, 'ground.layers.json 获取失败（回退烘焙底图）', { optional: true });
       }
       }
-    } catch (e) { console.warn('分层地表加载失败（回退烘焙底图）:', e); }
+    } catch (e) { noteAsset('groundLayers', 'failed', e && e.message ? e.message : e, { optional: true }); }
     if (stale()) return;
     progress.complete('ground');
     // 诊断钩子：window.__gdbg 查看地表实际走的路径与已加载分层（仅 ?debug）
     if (DEBUG) window.__gdbg = { layers: !!groundLayers, texs: groundLayers ? Object.keys(groundLayers.texs) : [],
                                  meta: !!mapMetaInfo, sizeM: mapMetaInfo?.size_m ?? null };
-    rebuildGround();
+    try {
+      rebuildGround();
+    } catch (e) {
+      // 分层地表元数据形状错误（如缺 tiling）会在 groundShaderMaterial 抛错；这不是
+      // 「无分层」而是资产故障——必须记降级，清掉坏层并用烘焙底图重试，且不能因此
+      // 跳过后续场景 GLB。
+      noteAsset('groundLayers', 'invalid', e && e.message ? e.message : e);
+      if (groundLayers) {
+        for (const k in groundLayers.texs) groundLayers.texs[k]?.dispose?.();
+        groundLayers = null;
+      }
+      try { rebuildGround(); } catch (e2) {
+        console.warn('地面重建回退失败（保留 2D 底图）:', e2);
+      }
+    }
     // 静态场景模型（建筑/桥/岩石，tools/export_map_glb.py 预生成；缺失静默跳过）。
     // GLB 为游戏系（z 上、+y 北），qFrame = Ry(π)·Rx(-π/2)（YXZ 序）转到回放场景系——
     // 与坦克 GLB 同一帧变换，纯旋转无镜像，绕序天然正确。
@@ -1161,11 +1216,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 必须走透传的 fetch + resp.json()（与下方 terrain-meta 同款用法）
       const destructUrl = mapStaticUrl('destructibles', undefined, resolvedKey);
       const destructDocPromise = destructUrl
-        ? assetProvider.fetch(destructUrl).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        ? assetProvider.fetch(destructUrl).then((r) => {
+            if (!r.ok) noteAsset('destructibles', `http-${r.status}`, '可破坏物特性禁用', { optional: true });
+            return r.ok ? r.json() : null;
+          }).catch((e) => {
+            noteAsset('destructibles', 'failed', e && e.message ? e.message : e, { optional: true });
+            return null;
+          })
         : Promise.resolve(null);
       if (DEBUG) destructDocPromise.then((d) => { window.__destructStage = d ? 'doc-ok' : 'doc-missing'; });
       const sceneryUrl = mapStaticUrl('scenery', undefined, resolvedKey);
-      if (!sceneryUrl) { /* 未配置资产面/未命中索引：跳过场景 GLB（无服务端回退） */ }
+      if (!sceneryUrl) {
+        noteAsset('scenery', 'missing-url', '未配置资产面/未命中索引（无场景 GLB）');
+      }
       else {
       const gltf = await new Promise((res) => {
         new GLTFLoader().load(sceneryUrl,
@@ -1177,13 +1240,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (gltf?.scene) disposeObject3D(gltf.scene);
         return;
       }
+      if (!gltf || !gltf.scene) noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
       if (gltf && gltf.scene) {
+        // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
+        // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
+        const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
+        const variantMappingIncomplete = gltf.scene.userData?.variantMappingIncomplete === true;
         // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
         // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
         // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
-        // 节点标签由导出器随 GLB extras 下发；无映射（旧包/单变体图）为空操作。
-        const prunedVariants = pruneForeignVariants(gltf.scene, DATA.meta.map_id);
+        // 节点标签由导出器随 GLB extras 下发；有变体节点但没有可用映射时
+        // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
+        const variantPrune = pruneForeignVariantsDetailed(gltf.scene, DATA.meta.map_id);
+        const prunedVariants = variantPrune.removed;
         if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
+        if (variantMappingIncomplete || variantPrune.failClosed) {
+          // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
+          // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
+          noteAsset('scenery', 'variant-fail-closed', variantMappingIncomplete
+            ? '导出器标记变体映射不完整，已 fail-closed 隐藏带标记节点'
+            : '变体映射缺失/未知，已隐藏全部带标记节点');
+        }
         // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
         const sceneryExtras = await resolveSceneryExtras(gltf);
         if (stale()) { disposeObject3D(gltf.scene); return; }
@@ -1193,28 +1270,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
         const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
           makeTexResolvers(gltf, sceneryExtras);
-        // 退化几何隔离（防护）：旧版导出器把树的三角列表误判为 strip 解析，
-        // 产生横跨整个模型的长条三角形（撕裂）并使面数虚高（实测 20–29 面/顶点，
-        // 修正后同批树为 7–10）。阈值 15 恰好区分：已重导出的地图保留树，
-        // 未重导出地图的撕裂批次整批移除（不渲染/不占 draw call/回收显存）。
-        // 允许 ?degrade=N 覆盖（调试用）。
-        const degradedMeshes = [];
-        gltf.scene.traverse((o) => {
-          if (!o.isMesh) return;
-          const g0 = o.geometry;
-          const vc = g0.attributes.position ? g0.attributes.position.count : 0;
-          const ic = g0.index ? g0.index.count : vc;
-          const degLimit = (() => {
-            const q = Number(new URLSearchParams(location.search).get('degrade'));
-            return Number.isFinite(q) && q > 0 ? q : 15;
-          })();
-          if (vc > 0 && (ic / 3) / vc > degLimit) degradedMeshes.push(o);
-        });
-        for (const o of degradedMeshes) {
-          o.removeFromParent();
-          o.geometry.dispose();   // 每 mesh 独立几何；材质为共享（缓存）不在此释放
-        }
-        if (DEBUG) window.__degradedSkipped = degradedMeshes.length;
+        // 退化几何隔离（旧版导出器撕裂批次）已删除：按 (三角形/顶点) 比率逐网格
+        // 判废是内容统计启发式，无法区分"旧导出器损坏"与合法高比率网格，且会静默
+        // 删掉数据。树批次撕裂已由导出器修正；若未来再出现几何损坏，应由导出器写
+        // 语义标记或 fail-closed 报错，不得在消费端按比率猜。
         // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
         // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
         // 见 terrainRefineMask 声明处的方案说明。
@@ -1258,6 +1317,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
           groundLayers, waterCoast, debug: DEBUG,
           onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
+          skyFlagsAvailable,
         });
 
         // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
@@ -1310,8 +1370,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         // 唯一真透明物，保持独立节点让 three 按相机距离做透明排序（合批会把整批
         // 退化成一个排序单位）。
         gltf.scene.updateMatrixWorld(true);
-        const entries = collectInstanceEntries(gltf.scene).filter((e) =>
-          !/sky/i.test(e.name) && !isWaterNode(e.name, e.material));
+        // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
+        // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
+        // frustumCulled=false 的无限远语义。
+        const allEntries = collectInstanceEntries(gltf.scene);
+        const batchable = (e) =>
+          !(e.node.userData && e.node.userData.isSky)
+          && !isWaterNode(e.name, e.material)
+          && !hasTransparentMaterial(e.material);
+        const entries = allEntries.filter(batchable);
+        // 透明材质保留独立排序单位；其中带逐节点光照图变换的用单实例 InstancedMesh，
+        // 以保留 aLm 变换（普通 Mesh 的非实例分支会按原始 uv1 采错 atlas 区域）。
+        buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
+          !batchable(e)
+          && hasTransparentMaterial(e.material)
+          && !(e.node.userData && e.node.userData.isSky)
+          && !isWaterNode(e.name, e.material)), gltf.scene);
         // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
         const meshGrid = new Map();
         const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
@@ -1485,15 +1559,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
                                                // 每帧置脏 + force 传播把冻结整个击穿
       }
       }
-    } catch (e) { console.warn('场景模型加载失败（忽略）:', e); }
+    } catch (e) {
+      console.warn('场景模型加载失败（忽略）:', e);
+      // 装配/变体裁剪/实例化等后续步骤抛错同样意味着建筑缺失，必须进入降级状态
+      noteAsset('scenery', 'failed', e && e.message ? e.message : e);
+    }
     if (stale()) return;
     progress.complete('scenery');
   }
 
-  // 双线性采样世界 (x,z) 处高度（米）；无高度场返回 0
+  // 双线性采样世界 (x,z) 处高度（米）；无高度场/元数据不完整返回 0
   function sampleHeight(x, z) {
-    if (!heightField) return 0;
-    const n = heightMeta.size, span = heightMeta.span || 600;
+    if (!heightField || !heightMeta) return 0;
+    const n = Number(heightMeta.size), span = Number(heightMeta.span);
+    if (!Number.isInteger(n) || n < 2 || !Number.isFinite(span) || span <= 0) return 0;
     // 引擎口径（`Landscape::GetHeightAtPoint` 逐行）：`fx = hmSize·(x−min)/span` —— **除 size，
     // 不是 size−1**；整数部 = texel 下标、小数部 = 相邻 texel 间权重。此前用 `(n−1)`（等价于把
     // texel 当中心）⇒ 0.2% 水平拉伸：地图中部偏半格（0.59 m）、+x 边缘偏一整格（1.17 m）。
@@ -4144,6 +4223,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     glbCache = new Map();
     DATA = null;
+    VIS_BY_EID = new Map();
     POSE_GRID.tStart = 0;
     POSE_GRID.samples = 0;
     store.playbackSession = null;
@@ -4207,6 +4287,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (gen !== sessionGen) return;   // 迟到：新数据随旧代数 GC（loading 由新所有者管理）
       teardownSession();   // 拆旧会话资源；会话身份已在入口领取，本调用仍是当前会话
       DATA = data;
+      VIS_BY_EID = visibilitySpansByEid(data.visibility);
       POSE_GRID.tStart = data.meta.t_start;
       POSE_GRID.samples = data.meta.samples;
       store.playbackSession = playbackSession;
@@ -4390,6 +4471,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.loading = false;
       store.assetStage = false;
       store.assetProgress = null;
+      store.assetIssues = [];
+      store.assetDegraded = false;
       store.err = '';
       store.scoreFriend = 0;
       store.scoreEnemy = 0;
@@ -4468,6 +4551,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       store.loading = false;
       store.assetStage = false;
       store.assetProgress = null;
+      store.assetIssues = [];
+      store.assetDegraded = false;
       // 使本实例所有在途 loadData 的归属判定永久失效：仅有 `destroyed` 也能挡住，
       // 但把加载令牌一并推进让「被销毁的实例」与「被取代的加载」走同一条判定路径
       // （ownsLoading 同时看 destroyed 与 loadGeneration），不依赖单一标志。
@@ -4479,7 +4564,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (DEBUG) {
         delete window.__scene; delete window.__camera; delete window.__controls; delete window.__setFollow; delete window.__renderer;
         delete window.__pbV; delete window.__gdbg; delete window.__battleFx;
-        delete window.__destructStage; delete window.__degradedSkipped; delete window.__destructDebug;
+        delete window.__destructStage; delete window.__destructDebug;
         delete window.__waterCoast;
       }
       // ?perf 看门狗随实例销毁停表并摘除调试句柄：实例没了帧循环自然停，但心跳

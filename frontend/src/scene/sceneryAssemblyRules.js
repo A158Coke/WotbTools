@@ -22,13 +22,40 @@ export function materialIsWater(mat) {
   return !!(m0 && m0.userData && m0.userData.water)
 }
 
+/** 材质级天空标记（`extras.sky`；材质或材质数组，任一命中）。 */
+export function materialHasSky(mat) {
+  const ms = Array.isArray(mat) ? mat : [mat]
+  return ms.some((m) => !!(m && m.userData && m.userData.sky))
+}
+
+/** 整份材质组都是天空语义（多材质网格按 group 共享一个节点；混合组无法安全拆分
+ *  无限远/普通两种投影，按 fail-closed 整件当普通网格处理，避免把普通 group 投到
+ *  无限远或让烘焙丢掉整件）。 */
+export function materialAllSky(mat) {
+  const ms = Array.isArray(mat) ? mat : [mat]
+  return ms.length > 0 && ms.every((m) => !!(m && m.userData && m.userData.sky))
+}
+
+/** 场景里是否存在任何 sky 语义标记（新包由导出器按 Skyobject 材质写入）。
+ *  存在时天空判据只认材质标记；整份 GLB 都没有标记（旧包）才允许名字 fallback。 */
+export function sceneHasSkyFlags(root) {
+  let found = false
+  const walk = (o) => {
+    if (found || !o) return
+    if (o.isMesh && materialHasSky(o.material)) { found = true; return }
+    for (const c of o.children || []) walk(c)
+  }
+  walk(root)
+  return found
+}
+
 /** 水面语义判定：新包看材质标记，旧包回退节点名启发式（含 fountain）。 */
 export function isWaterNode(name, mat, { strictSurfaces }) {
   if (!strictSurfaces) return isWaterName(name)
   return materialIsWater(mat)
 }
 
-/** 天空判据（**与运行时同式**：运行时只按 `/sky/` 名走 makeSkyMaterial）。
+/** 旧包天空壳名字 fallback（新包用 `isSkyShell` 的材质 extras.sky 判据）。
  *
  *  ⚠️ 2026-10-14 收窄（用户报障"顶棚类构件没渲染"）：此前词表为
  *  `/sky|dome|loonar|spacedome|stars/i`，把**地图上的穹顶建筑/舱室**一并剔除——实测
@@ -43,6 +70,15 @@ export function isSkyShellName(name) {
   return /sky/i.test(name || '')
 }
 
+/** 天空语义判定：新包（存在 sky 标记）只认材质 `extras.sky`；旧包回退节点名。 */
+export function isSkyShell(name, mat, { skyFlagsAvailable = false } = {}) {
+  // 新包只要存在 sky 标记就按材质语义判定；`strictSurfaces` 属于水面判定，不得把天空
+  // 退回节点名（否则烘焙与 3D 运行时会保留/剔除不同的网格）。多材质网格必须整组
+  // 命中才走天空路径（混合组见 materialAllSky 的 fail-closed 说明）。
+  if (skyFlagsAvailable) return materialAllSky(mat)
+  return isSkyShellName(name)
+}
+
 /** 非完好态可破坏件（`D_` 前缀 / `State N`，N≥1，与旧烘焙正则逐字同式）：
  *  烘焙只烘当前完好态；运行时按回放时刻切换（不走此判定）。 */
 export function isNonIntactStateName(name) {
@@ -52,9 +88,8 @@ export function isNonIntactStateName(name) {
 /**
  * 俯视烘焙的节点剔除判定（SSOT）。
  *
- * 语义优先：**水面按 `isWaterNode`**（strict 包 = 材质标记）——名字只用于**天空壳/环境壳**
- * 与"非完好态/隐形/图幅壳"这类烘焙专有策略，**不参与水面判定**（修正 `ocean`/浮冰漏剔与
- * 水塔/探照灯过剔）。
+ * 语义优先：**水面按 `isWaterNode`、天空按 `isSkyShell`**（strict 包 = 材质标记）——名字只作
+ * 旧包天空 fallback，与"非完好态/隐形/图幅壳"这类烘焙专有策略，**不参与水面判定**。
  *
  * `keepWater`（2026-10-14，地面 pass 落地后）：烘焙接管地面渲染（`cm×lm×tile/mask` 实时
  * 合成，见 groundPass.js），底图不再由客户端地图图的水系配色承担 ⇒ 水语义件**渲染**而非
@@ -71,11 +106,13 @@ export function isNonIntactStateName(name) {
  *
  * `mdVariant`（跨变体标记节点）另算。
  */
-export function bakeDropNode(name, mat, { strictSurfaces, mdVariant = false, keepWater = false } = {}) {
+export function bakeDropNode(name, mat, {
+  strictSurfaces, mdVariant = false, keepWater = false, skyFlagsAvailable = false,
+} = {}) {
   if (mdVariant) return true
   if (isNonIntactStateName(name)) return true
   if (/invisible/i.test(name || '')) return true
   if (!keepWater && isWaterNode(name, mat, { strictSurfaces })) return true
-  if (isSkyShellName(name) && !materialIsWater(mat)) return true
+  if (isSkyShell(name, mat, { strictSurfaces, skyFlagsAvailable }) && !materialIsWater(mat)) return true
   return false
 }

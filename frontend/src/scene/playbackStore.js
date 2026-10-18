@@ -10,6 +10,10 @@ export function createPlaybackStore() {
     loading: false,
     assetStage: false,   // 进入场景前正在获取地图/地形/地表/场景资产（WotBTools：资产就绪才进场）
     assetProgress: null, // 资产阶段进度 0–1（loadProgress 聚合）；null = 尚未登记任何资产
+    // 资产完整性（loadMapImage 写入）：缺失/404 不再静默算“加载完成”。
+    // 数组项 { key, status, detail }；assetDegraded = 任一核心资产缺失/失败。
+    assetIssues: [],
+    assetDegraded: false,
     err: '',
     qualityKey: '',
     qualityLabel: '',

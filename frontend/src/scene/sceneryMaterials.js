@@ -122,6 +122,10 @@ export function makeBillboardMaterial(m) {
 // 与叶卡同方程。vOcc = COLOR_0.r（gen2 刚体叶片带该属性；无属性的正则树干 = 1）。
 export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
   if (m.map) { m.map.colorSpace = THREE.NoColorSpace; m.map.needsUpdate = true; }
+  // extras.alphaBlend（新包 BLEND 语义）优先于「不透明度≈1 → 裁切」的旧包启发式：
+  // 软混合效果片必须留在透明管线，不能削成硬边。
+  const softAlpha = !!(m.userData && m.userData.alphaBlend);
+  const blend = !opaqueEnough || softAlpha;
   const c0 = m.color;
   const factorOk = c0 && [c0.r, c0.g, c0.b].every((v) => Number.isFinite(v) && v > 0);
   const sh = factorOk ? new THREE.Vector3(c0.r, c0.g, c0.b) : new THREE.Vector3(1, 1, 1);
@@ -130,7 +134,8 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
     uniforms: {
       map: { value: m.map || null },
       uSH: { value: sh },
-      uAlphaCut: { value: opaqueEnough ? 0.33 : 0.05 },
+      uAlphaCut: { value: blend ? 0.05 : 0.33 },
+      uOpacity: { value: m.opacity ?? 1 },
     },
     vertexShader: `
       ${hasVC ? 'attribute vec4 color;' : ''}
@@ -159,6 +164,7 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
       uniform sampler2D map;
       uniform vec3 uSH;
       uniform float uAlphaCut;
+      uniform float uOpacity;
       varying vec2 vUv;
       varying float vOcc;
       #include <logdepthbuf_pars_fragment>
@@ -166,11 +172,11 @@ export function makeSpeedtreeStaticMaterial(m, opaqueEnough) {
         #include <logdepthbuf_fragment>
         vec4 c = texture2D(map, vUv);
         if (c.a < uAlphaCut) discard;
-        gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a);
+        gl_FragColor = vec4(c.rgb * (vOcc * uSH), c.a * uOpacity);
       }`,
     side: THREE.DoubleSide,
-    transparent: !opaqueEnough,
-    depthWrite: opaqueEnough,
+    transparent: blend,
+    depthWrite: !blend,
   });
 }
 
@@ -351,8 +357,9 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (atlasTex) { atlasTex.colorSpace = THREE.NoColorSpace; atlasTex.needsUpdate = true; }
   if (detail && detail.tex) { detail.tex.colorSpace = THREE.NoColorSpace; detail.tex.needsUpdate = true; }
-  const cut = (m.alphaTest > 0 || (m.transparent && (m.opacity ?? 1) >= 0.99))
-    ? Math.max(m.alphaTest || 0, 0.33) : 0;
+  const softAlpha = !!(m.userData && m.userData.alphaBlend);
+  const cut = softAlpha ? 0 : ((m.alphaTest > 0 || (m.transparent && (m.opacity ?? 1) >= 0.99))
+    ? Math.max(m.alphaTest || 0, 0.33) : 0);
   return new THREE.ShaderMaterial({
     uniforms: Object.assign(
       env ? {
@@ -383,6 +390,7 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
         lightmap: { value: atlasTex || map },
         uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
         uAlphaCut: { value: cut },
+        uOpacity: { value: m.opacity ?? 1 },
       }),
     vertexShader: `
       attribute vec2 uv1;    // 光照图 UV（客户端 texcoord1）
@@ -429,6 +437,7 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
       uniform sampler2D lightmap;
       uniform vec3 uTint;
       uniform float uAlphaCut;
+      uniform float uOpacity;
 #ifdef ENV_REFLECTION
       uniform sampler2D envMask;
       uniform sampler2D envCube;
@@ -496,12 +505,18 @@ export function makeLightmappedMaterial(m, atlasTex, env, detail) {
         // 客户端 DRAW PHASE 末尾（materials-fp.sl:347-349）：color *= detail × 2.0
         color *= texture2D(uDetailTex, vDetailUv).rgb * 2.0;
 #endif
+#ifdef ALPHA_BLEND
+        gl_FragColor = vec4(color, c.a * uOpacity);
+#else
         gl_FragColor = vec4(color, 1.0);
+#endif
       }`,
     defines: Object.assign(env ? { ENV_REFLECTION: 1 } : {},
-                           detail && detail.tex ? { MATERIAL_DETAIL: 1 } : {}),
+                           detail && detail.tex ? { MATERIAL_DETAIL: 1 } : {},
+                           softAlpha ? { ALPHA_BLEND: 1 } : {}),
     side: THREE.DoubleSide,
-    transparent: false,
+    transparent: softAlpha,
+    depthWrite: !softAlpha,
   });
 }
 
@@ -526,8 +541,9 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
   if (map) { map.colorSpace = THREE.NoColorSpace; map.needsUpdate = true; }
   if (cmTex) { cmTex.colorSpace = THREE.NoColorSpace; cmTex.needsUpdate = true; }
   if (lmTex) { lmTex.colorSpace = THREE.NoColorSpace; lmTex.needsUpdate = true; }
-  const cut = (m.alphaTest > 0 || (m.transparent && (m.opacity ?? 1) >= 0.99))
-    ? Math.max(m.alphaTest || 0, 0.33) : 0;
+  const softAlpha = !!(m.userData && m.userData.alphaBlend);
+  const cut = softAlpha ? 0 : ((m.alphaTest > 0 || (m.transparent && (m.opacity ?? 1) >= 0.99))
+    ? Math.max(m.alphaTest || 0, 0.33) : 0);
   const adj = Array.isArray(opts.lmAdjust) && opts.lmAdjust.length === 3 ? opts.lmAdjust : null;
   const useAdj = !!(adj && opts.globalTint);
   return new THREE.ShaderMaterial({
@@ -536,7 +552,8 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
         colormap: { value: cmTex || map },
         colormapLm: { value: lmTex || cmTex || map },
         uTint: { value: m.color ? m.color.clone() : new THREE.Color(0xffffff) },
-        uAlphaCut: { value: cut } },
+        uAlphaCut: { value: cut },
+        uOpacity: { value: m.opacity ?? 1 } },
       useAdj ? { uLmAdjust: { value: new THREE.Vector3(adj[0], adj[1], adj[2]) } } : {},
     ),
     vertexShader: `
@@ -564,6 +581,7 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
       uniform sampler2D colormapLm;
       uniform vec3 uTint;
       uniform float uAlphaCut;
+      uniform float uOpacity;
 #ifdef DECAL_LM_ADJUST
       uniform vec3 uLmAdjust;   // materialLightmapAdjustment = [brightness, contrast, gamma]
 #endif
@@ -584,13 +602,19 @@ export function makeDecalMaterial(m, cmTex, lmTex, opts = {}) {
 #ifdef DECAL_SEPARATE_LM
         shadowColor *= texture2D(colormapLm, vUv1).r;   // colormap 的 alpha 通道（本包 = lm.webp 的 R）
 #endif
+#ifdef ALPHA_BLEND
+        gl_FragColor = vec4(base.rgb * uTint * shadowColor * 2.0, base.a * uOpacity);
+#else
         gl_FragColor = vec4(base.rgb * uTint * shadowColor * 2.0, 1.0);
+#endif
       }`,
     defines: Object.assign({},
                            lmTex && opts.separateLm ? { DECAL_SEPARATE_LM: 1 } : {},
-                           useAdj ? { DECAL_LM_ADJUST: 1 } : {}),
+                           useAdj ? { DECAL_LM_ADJUST: 1 } : {},
+                           softAlpha ? { ALPHA_BLEND: 1 } : {}),
     side: THREE.DoubleSide,
-    transparent: false,
+    transparent: softAlpha,
+    depthWrite: !softAlpha,
   });
 }
 
