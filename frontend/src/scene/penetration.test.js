@@ -452,6 +452,16 @@ describe('probability_layers（到首个 Primary 为止的完整概率链，供 
     expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.049966, 5)
   })
 
+  it('HE 命中首个 Primary 仍有击穿浮动（100 HE vs 102mm → 约 11.5%）', () => {
+    const r = calculate(req('he', 100.0, 100.0, [hit(ArmorSection.HULL, 102.0, [0, 0, 0])], {
+      explosion_radius: 3.0,
+    }))
+    // 名义溅射结果仍由 SPLASH/BLOCKED 分支持有；概率链单独给出击穿机会。
+    expect(r.result).toBe('SPLASH')
+    expect(r.probability_layers.map(l => l.section)).toEqual(['hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1150697, 5)
+  })
+
   it('HEAT 名义耗尽但区间仍有正尾：gap 衰减后继续概率链（spaced100→0.1m→hull1）', () => {
     const hits = [
       hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
