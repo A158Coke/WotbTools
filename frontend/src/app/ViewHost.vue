@@ -26,6 +26,9 @@ const adminAllowed = computed(() => activeView.value === 'creators-config' ? isC
 const adminNeedsLogin = computed(() => adminView.value && !authenticated.value)
 const adminDenied = computed(() => adminView.value && authenticated.value && !adminAllowed.value)
 const adminTitleKey = computed(() => activeView.value === 'creators-config' ? 'creators.configTitle' : 'tournament.adminTitle')
+// 内容管理页的登录/权限提示必须说「内容管理员」，不能复用联赛文案（否则会告诉已具备联赛权限的人缺联赛权限）。
+const adminLoginKey = computed(() => activeView.value === 'creators-config' ? 'creators.loginRequired' : 'tournament.loginRequired')
+const adminDeniedKey = computed(() => activeView.value === 'creators-config' ? 'creators.adminRequired' : 'tournament.adminRequired')
 const loginDestination = computed(() => ({ path: route.path, query: { ...route.query }, hash: route.hash }))
 const currentView = computed(() => VIEW_COMPONENTS[activeView.value] || VIEW_COMPONENTS.replay)
 const initialCapability = computed(() => replayInitialCapability(activeView.value))
@@ -37,10 +40,10 @@ const initialCapability = computed(() => replayInitialCapability(activeView.valu
       v-if="adminNeedsLogin"
       :icon="Shield"
       :title="$t(adminTitleKey)"
-      :description="$t('tournament.loginRequired')"
+      :description="$t(adminLoginKey)"
       :login-destination="loginDestination"
     />
-    <Banner v-if="adminDenied" tone="danger" data-testid="admin-required">{{ $t('tournament.adminRequired') }}</Banner>
+    <Banner v-if="adminDenied" tone="danger" data-testid="admin-required">{{ $t(adminDeniedKey) }}</Banner>
     <Banner v-if="creatorUnavailable && !adminNeedsLogin && !adminDenied" :data-testid="creatorsNotPublished ? 'creators-not-published' : 'creators-unavailable'">
       {{ $t(creatorsChecking ? 'creators.checkingAvailability' : creatorsError ? 'creators.availabilityFailed' : creatorsNotPublished ? 'creators.notPublished' : 'creators.notAvailable') }}
       <AppButton :disabled="creatorsChecking" data-testid="creators-availability-retry" @click="retryCreators">{{ $t('creators.retry') }}</AppButton>

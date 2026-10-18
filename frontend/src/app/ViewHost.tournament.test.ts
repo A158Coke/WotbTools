@@ -71,7 +71,7 @@ describe('tournament deep-link page gates', () => {
     const wrapper = mount(ViewHost, { global: { mocks: { $t: (key: string) => key },
       provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => true, typeVisible: () => true, available, directoryVisible: available, contentKnown: ref(true), error: ref(null), loading: ref(false), refresh: vi.fn() } } } })
     expect(wrapper.find('[data-testid="creator-config"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('tournament.adminRequired')
+    expect(wrapper.text()).toContain('creators.adminRequired')
     state.auth.tokenParsed.value.realm_access.roles = ['content-admin']
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="creator-config"]').exists()).toBe(true)

@@ -634,7 +634,7 @@ describe('App shell navigation, 更多 and account', () => {
     authState.isTournamentAdminRef.value = true
     try {
       const content = await mountApp('/?view=creators-config')
-      expect(content.wrapper.text()).toContain('tournament.adminRequired')
+      expect(content.wrapper.text()).toContain('creators.adminRequired')
       const tournament = await mountApp('/?view=tournament-points-admin')
       expect(tournament.wrapper.text()).not.toContain('tournament.adminRequired')
       expect(tournament.wrapper.find('[data-test="view-tournament-admin"]').exists()).toBe(true)
