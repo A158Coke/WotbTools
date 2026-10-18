@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-18，本候选源码为 **3.13.2 / 3013002**（`android/gradle.properties`）。
+截至 2026-10-18，本候选源码为 **3.14.0 / 3014000**（`android/gradle.properties`）。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
@@ -28,6 +28,14 @@ Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这�
 PR #688 修复教程导出/焦点与 Escape、名人堂上传弹层键盘、AI 复盘原始 Markdown 残留与战队汇总三语表头，随 APK 打包后按 **patch** 递增为 **3.13.2 / 3013002**，说明见 [3.13.2](releases/3.13.2.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
 3.13.2 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+`android-v3.13.2` tag 已指向 `7749b77ada9770785f45fcbe206a30816e7af20a`（3.13.2 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #670 修复教程内登录 OIDC 回跳后丢失教程位置，随 APK 打包后按 **patch** 递增为 **3.13.3 / 3013003**，说明见 [3.13.3](releases/3.13.3.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
+3.13.3 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+`android-v3.13.3` tag 已指向 `b333c8c8b21a7a500ae33db99fa80fefd6fff1fa`（3.13.3 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #685 重做首页 IA（纯展示页、Android 条件渲染、reduced-motion、Intl 数字与 `/api/hof` 合同消费），随 APK 打包后按 **minor** 递增为 **3.14.0 / 3014000**，说明见 [3.14.0](releases/3.14.0.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
+3.14.0 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。

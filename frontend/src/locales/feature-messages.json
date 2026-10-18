@@ -47,12 +47,7 @@
       "login_required": "请先登录 WotBTools 账号后再下载 Android 安装包"
     },
     "home": {
-      "replayParse": "回放解析",
-      "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
-      "aiReview": "AI 复盘",
-      "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
-      "battlePlayback": "战局重建",
-      "battlePlaybackDesc": "通过地图、时间轴、车辆状态、HP 与战斗事件重现整场战斗。"
+      "replayParse": "回放解析"
     },
     "upload": {
       "clear_confirm": "清空后需要重新解析，确定清空？",
@@ -854,12 +849,7 @@
       "login_required": "Please sign in to your WotBTools account before downloading the Android package"
     },
     "home": {
-      "replayParse": "Replay Analysis",
-      "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
-      "aiReview": "AI Review",
-      "aiReviewDesc": "Upload a single replay and AI Review returns a tactical debrief with improvement tips. Sign-in required.",
-      "battlePlayback": "Battle Reconstruction",
-      "battlePlaybackDesc": "Reconstruct the battle with maps, timeline, vehicle state, HP, and events."
+      "replayParse": "Replay Analysis"
     },
     "upload": {
       "clear_confirm": "Clearing removes the parsed results. Clear anyway?",
@@ -1661,12 +1651,7 @@
       "login_required": "Войдите в аккаунт WotBTools перед загрузкой Android-пакета"
     },
     "home": {
-      "replayParse": "Анализ реплеев",
-      "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
-      "aiReview": "ИИ-разбор",
-      "aiReviewDesc": "Загрузите один реплей — AI Review составит тактический разбор и советы. Нужен вход.",
-      "battlePlayback": "Реконструкция боя",
-      "battlePlaybackDesc": "Восстановление боя по карте, таймлайну, состоянию техники, HP и событиям."
+      "replayParse": "Анализ реплеев"
     },
     "upload": {
       "clear_confirm": "Очистка удалит результаты разбора. Очистить?",
