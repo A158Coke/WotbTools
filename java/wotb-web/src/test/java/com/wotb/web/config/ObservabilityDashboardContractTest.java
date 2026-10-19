@@ -55,9 +55,18 @@ class ObservabilityDashboardContractTest {
     }
 
     @Test
-    void downloadsDoNotCombinePartialRequestsWithCompleteDownloads() throws Exception {
-        assertTrue(query("wotbtools-android-downloads", "完整响应请求（200）").contains("status=\"200\""));
-        assertTrue(query("wotbtools-android-downloads", "分段响应请求（206）").contains("status=\"206\""));
+    void downloadsCountOnlyFinalWebApkButtonClicks() throws Exception {
+        final String total = query("wotbtools-android-downloads", "下载 APK 点击次数");
+        assertTrue(total.contains("container_name=\"wotb-backend\""));
+        assertTrue(total.contains("telemetry_event=\"feature_open\""));
+        assertTrue(total.contains("feature=\"android_download\""));
+        assertTrue(total.contains("platform=\"web\""));
+        assertFalse(total.contains("android_apk_download"));
+        assertFalse(total.contains("status=\"200\""));
+        assertFalse(total.contains("status=\"206\""));
+
+        final String featureUsage = query("wotbtools-feature-usage", "功能打开次数");
+        assertTrue(featureUsage.contains("feature != \"android_download\""));
     }
 
     @Test
