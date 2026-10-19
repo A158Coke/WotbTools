@@ -2,30 +2,76 @@
 import { describe, expect, it, vi } from 'vitest'
 import { installPreloadErrorRecovery } from './preloadRecovery.js'
 
-function fakeWindow() {
+function fakeWindow({ status = 404, storageThrows = false } = {}) {
   const target = new EventTarget()
   const values = new Map()
+  target.location = {
+    href: 'https://wotbtools.com/?view=profile',
+    origin: 'https://wotbtools.com',
+    reload: vi.fn(),
+  }
   target.sessionStorage = {
     getItem: key => values.has(key) ? values.get(key) : null,
-    setItem: (key, value) => values.set(key, value),
+    setItem: (key, value) => {
+      if (storageThrows) throw new Error('storage denied')
+      values.set(key, value)
+    },
   }
-  target.location = { reload: vi.fn() }
+  target.performance = {
+    getEntriesByName: vi.fn(() => [{ responseStatus: status }]),
+  }
   return target
 }
 
+function preloadError(url = 'https://wotbtools.com/assets/ProfilePage-CeTt6kMP.js') {
+  const event = new Event('vite:preloadError', { cancelable: true })
+  event.payload = new TypeError(`Failed to fetch dynamically imported module: ${url}`)
+  return event
+}
+
 describe('preload error recovery', () => {
-  it('reloads once and suppresses the first stale chunk error', () => {
+  it('reloads once only when the failed same-origin asset is confirmed 404', () => {
     const target = fakeWindow()
     installPreloadErrorRecovery(target)
 
-    const first = new Event('vite:preloadError', { cancelable: true })
+    const first = preloadError()
     target.dispatchEvent(first)
     expect(first.defaultPrevented).toBe(true)
     expect(target.location.reload).toHaveBeenCalledTimes(1)
 
-    const second = new Event('vite:preloadError', { cancelable: true })
+    const second = preloadError()
     target.dispatchEvent(second)
     expect(second.defaultPrevented).toBe(false)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([0, 503, undefined])('preserves the existing error path for non-404 status %s', (status) => {
+    const target = fakeWindow({ status })
+    installPreloadErrorRecovery(target)
+
+    const event = preloadError()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('does not auto-reload cross-origin preload failures', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+
+    const event = preloadError('https://cdn.example.com/assets/ProfilePage.js')
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('still reloads and suppresses a confirmed 404 when sessionStorage is unavailable', () => {
+    const target = fakeWindow({ storageThrows: true })
+    installPreloadErrorRecovery(target)
+
+    const event = preloadError()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
     expect(target.location.reload).toHaveBeenCalledTimes(1)
   })
 })
