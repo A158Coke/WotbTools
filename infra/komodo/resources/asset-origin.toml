@@ -22,7 +22,10 @@ deploy = false
 [stack.config]
 server = "ali-sh-asset-01"
 project_name = "wotbtools-asset-origin"
-auto_pull = true
+# Docker Hub is not reliably reachable from the mainland host. The exact Caddy image
+# is preloaded on the server before deployment, so Komodo must use the local image
+# instead of forcing a registry pull on every manual Deploy.
+auto_pull = false
 run_build = false
 poll_for_updates = false
 auto_update = false
