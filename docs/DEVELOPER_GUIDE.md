@@ -142,7 +142,7 @@ Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service（生产） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |

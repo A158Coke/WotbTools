@@ -12,7 +12,7 @@
 | `DEVELOPER_GUIDE.md` | 接手维护 / 找环境、构建、仓库结构、架构速览时（最先） |
 | `frontend/local-testing.md` | **本机全功能测试 runbook**：起环境（Agent 引擎 / 资产面 / 认证门禁）、自检探针、故障对照、自动化门禁时（本机测试最先读） |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 链路与安全边界时 |
-| `../README.md` / `../README.en-US.md` | 了解当前产品是什么、功能与工程取舍 |
+| `../README.md` | 了解当前产品是什么、功能与工程取舍 |
 | `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定、接手与调整固定流程） |
 
 ## 开发与性能
