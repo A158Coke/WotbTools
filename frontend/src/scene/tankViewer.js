@@ -274,7 +274,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮
         const PBR_VERT = `
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             void main() {
               vec4 mv = modelViewMatrix * vec4(position, 1.0);
               vViewPos = mv.xyz;
@@ -285,7 +285,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const PBR_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -330,17 +330,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
               bool moduleInFront = spacedState.a > 0.5;
               bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
-              float viewDistance = length(vViewPos);
+              highp vec3 viewDir = normalize(vViewPos);
               // 装甲几何在加载时 toNonIndexed + computeVertexNormals ⇒ vNormal 已是逐面
               // 几何法线，与点击判定 hit.face.normal 同源。不得改用 dFdx/dFdy(vViewPos)：
               // 本 shader 是 mediump（移动端 fp16），屏幕空间位置的逐像素导数会量化/退化，
-              // 导致热力图颜色错乱（2026-10-19 回归）。
-              vec3 nFace = normalize(vNormal);
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              // 导致热力图颜色错乱（2026-10-19 回归）。视线方向必须 highp：500 m 处的
+              // mediump length() 会在平方时溢出，进而把入射角算成 90°/NaN。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
 
               highp mat3 vRotT = transpose(mat3(viewMatrix));
               highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-              highp vec3 incR = normalize(vViewPos);
+              highp vec3 incR = viewDir;
               highp vec3 nVR = nFace;
               highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
               highp vec3 reflR = normalize(vRotT * rVR);
@@ -403,7 +404,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   : normalization;
                 // 掠射角保护：mediump 下 cos 可能为 0/负，必须与 resolveLayerGeometry 的
                 // 1e-6 下界一致，否则会写入 inf/负厚度并反向扣减覆盖（review 2026-10-18）。
-                float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
+                highp float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
                 float rem = penetration;
                 highp float spacedEff = 0.0;
                 // 8 位回退格式 R 饱和：累计值只知 >=1，真实消耗未知；不得当成恰好
@@ -794,17 +795,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const SPACED_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
             uniform float ricochet;
             uniform float normalization;
             void main() {
-              float viewDistance = length(vViewPos);
+              highp vec3 viewDir = normalize(vViewPos);
               // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
-              vec3 nFace = normalize(vNormal);
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
               // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
               // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
               bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
@@ -812,7 +814,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 ? (1.4 * normalization * caliber) / (2.0 * thickness)
                 : normalization;
               // 与 resolveLayerGeometry 同一 1e-6 余弦下界，防掠射角 inf/负厚度。
-              float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
+              highp float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
               gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
             }
         `;
@@ -823,7 +825,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const SPACED_STATE_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -832,10 +834,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ${RC_GLSL_CONST}
             ${RC_GLSL_FUNCS}
             void main() {
-              float viewDistance = length(vViewPos);
+              highp vec3 viewDir = normalize(vViewPos);
               // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
-              vec3 nFace = normalize(vNormal);
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
               // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
@@ -843,7 +846,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
                 highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-                highp vec3 incR = normalize(vViewPos);
+                highp vec3 incR = viewDir;
                 highp vec3 nVR = nFace;
                 highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
                 highp vec3 reflR = normalize(vRotT * rVR);
