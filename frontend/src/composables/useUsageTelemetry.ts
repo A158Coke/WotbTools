@@ -48,7 +48,7 @@ const FEATURE_BY_VIEW: Readonly<Record<string, UsageEvent['feature']>> = Object.
   home: 'home', 'battle-playback': 'replay_2d', 'agent-replay': 'replay_3d',
   'agent-shots': 'replay_shots', 'ai-review': 'ai_review',
   'agent-tankopedia': 'tankopedia', 'agent-armor': 'armor', hof: 'hall_of_fame',
-  'tournament-points': 'tournament', android: 'android_download', sponsor: 'sponsor', profile: 'profile',
+  'tournament-points': 'tournament', sponsor: 'sponsor', profile: 'profile',
 })
 
 // One foreground lifecycle owner even if a shell is temporarily mounted twice during navigation.
