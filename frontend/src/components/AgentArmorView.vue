@@ -165,6 +165,7 @@ function startViewer() {
             loading: t('armor.loading'),
             shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
+            contextLost: t('armor.context_lost'),
             type: (value) => tankTypeLabel(t, te, value),
             nation: (value) => tankNationLabel(t, te, value),
             showCollision: t('armor.show_collision'),
@@ -437,9 +438,24 @@ onBeforeUnmount(() => {
 .armor-view #corner-br { inset-block-end: var(--space-5); inset-inline-end: var(--space-5); align-items: flex-end; flex-direction: column; max-inline-size: 38%; }
 .armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
 .armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }
-/* Desktop mirrors the mobile portrait top bar: tank info and the setup panel are one
-   top-left card, and the setup panel starts collapsed behind the 参数 toggle. */
-@media (width >= 768px) {
+/* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
+   最小高度——360px 高的横屏视口不再被撑出屏幕。竖屏手机仍走下面的 mobile 规则。 */
+@media (pointer: coarse) and (orientation: landscape) {
+    .armor-view { min-block-size: 0; }
+}
+/* 横屏手机：左上卡沿用平板浮层，但信息行压成单行——360px 高视口下避免信息卡被
+   长车名/多行 stat 撑高，把设置面板挤出卡片。 */
+@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
+    .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
+    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
+    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+    .armor-view #info-panel .label { display: none; }
+}
+/* Desktop/tablet and landscape touch phones mirror the mobile portrait top bar: tank info
+   and the setup panel are one top-left card, and the setup panel starts collapsed behind
+   the 参数 toggle. */
+@media (width >= 768px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #corner-tl {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -552,10 +568,11 @@ onBeforeUnmount(() => {
 .armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
 .armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
-@media (768px <= width < 1200px) {
+@media (768px <= width < 1200px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #tank-selectors { max-block-size: 38dvh; }
 }
-@media (width < 768px) {
+/* 竖屏手机 + 窄桌面窗口保持既有 mobile 布局；横屏粗指针手机由上面的 tablet 规则接管。 */
+@media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
     .armor-view .armor-interaction-help { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
     .armor-view .armor-interaction-help h2 { font: var(--type-caption); font-weight: 600; }
     .armor-view .armor-interaction-help dl { gap: var(--space-2); }

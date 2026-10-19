@@ -494,6 +494,8 @@ async function runMobileBackScenario(env, scenario) {
 
 /** 桌面 / 平板回归：移动端规则只作用于 <768px；桌面复用左上信息卡，参数面板默认收起。 */
 const DESKTOP_SCENARIOS = [
+  // 横屏粗指针手机必须走平板式布局（左上信息卡 + 四角浮层），而不是竖屏 mobile 的上下窄带。
+  { name: 'armor-740x360-landscape-coarse', width: 740, height: 360, touch: true },
   // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
@@ -517,6 +519,7 @@ async function runDesktopScenario(env, scenario) {
   const layout = await page.probe(armorLayoutProbe)
   check(failures, layout.hasStage && !layout.unsupported, `${label}: 场景未渲染（hasStage=${layout.hasStage} unsupported=${layout.unsupported}）`)
   checkCommonGeometry(failures, layout, label)
+  if (scenario.touch) checkTouchTargets(failures, layout, label)
   check(failures, layout.tools?.visible === true,
     `${label}: 桌面档参数开关必须可见（display=${layout.tools?.display}）`)
   check(failures, layout.selectors?.visible === false,
