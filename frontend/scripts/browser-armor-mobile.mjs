@@ -126,6 +126,11 @@ function armorLayoutProbe() {
       const el = document.querySelector('#info-panel')
       return el ? Math.round(el.getBoundingClientRect().height) : null
     })(),
+    /** 单行信息必须裁剪，长车名不得画到「参数」按钮下面 */
+    infoPanelOverflowX: (() => {
+      const el = document.querySelector('#info-panel')
+      return el ? getComputedStyle(el).overflowX : null
+    })(),
     scrollWidth: document.documentElement.scrollWidth,
     clientWidth: document.documentElement.clientWidth,
     statusOverlays: document.querySelectorAll('[data-testid="scene3d-error"], [data-testid="scene3d-loading"]').length,
@@ -293,6 +298,8 @@ async function runMobileScenario(env, scenario) {
     // 越界由省略号接管，不许换行把顶栏撑高）
     check(failures, initial.infoPanel?.visible === true && initial.infoPanelHeight !== null && initial.infoPanelHeight <= 26,
       `${label}: 顶栏信息行不是单行（#info-panel 高 ${initial.infoPanelHeight}px；长车名 + ru 等级/类型/国籍不得换行）`)
+    check(failures, initial.infoPanelOverflowX === 'hidden',
+      `${label}: 顶栏信息行没有裁剪（overflow-x=${initial.infoPanelOverflowX}；长车名会画到「参数」按钮下面）`)
   }
   check(failures, initial.topBar && initial.root && Math.abs((initial.topBar.top - initial.root.top) - 8) <= 2,
     `${label}: 顶栏没有贴 armor-view 顶边（top=${initial.topBar?.top} root top=${initial.root?.top}，期望间距 8）`)
@@ -996,6 +1003,72 @@ async function runContextLossScenario(env, scenario, { prepare = null, verify = 
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/**
+ * Same-view route rebuild: the replacement viewer must not resurrect the previous route's
+ * picker selection. Delayed tank_cache keeps the "before onTankSelection" window open.
+ */
+const CONTEXT_LOSS_ROUTE_REBUILD_SCENARIO = { name: 'armor-context-lost-route-rebuild', width: 1024, height: 768, touch: false }
+async function runContextLossRouteRebuildScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.contextLossRouteRebuildAssets)}`)
+  await selectSecondFixtureTarget(page)
+  await page.evaluate(`window.__OLD_ARMOR_CANVAS__ = document.querySelector('#canvas-container canvas')`)
+  // 同一 view 只换 query：URL 目标仍是 9001，旧 picker 选择是 9002。
+  const navigated = await page.evaluate(`(() => {
+    const router = document.querySelector('#app').__vue_app__.config.globalProperties.$router
+    const query = Object.fromEntries(new URLSearchParams(location.search))
+    query.shooter = '${FIXTURE_SECOND_TANK_ID}'
+    return router.push({ query }).then(() => true).catch(() => false)
+  })()`)
+  check(failures, navigated === true, `${scenario.name}: same-view 导航失败`)
+  const replaced = await page.waitFor(() => {
+    const canvas = document.querySelector('#canvas-container canvas')
+    return !!canvas && canvas !== window.__OLD_ARMOR_CANVAS__
+  }, { timeout: 10000, label: 'route rebuild creates the replacement canvas' }).then(() => true).catch(() => false)
+  check(failures, replaced, `${scenario.name}: 路由重建没有生成新 canvas`)
+  // tank_cache 延迟 1.5s：此刻新 viewer 尚未发布 onTankSelection，选择 refs 仍是旧路线的。
+  const lost = await page.evaluate(`(() => {
+    const canvas = document.querySelector('#canvas-container canvas')
+    const gl = canvas && canvas.getContext('webgl2')
+    const ext = gl && gl.getExtension('WEBGL_lose_context')
+    if (!ext) return false
+    ext.loseContext()
+    return true
+  })()`)
+  check(failures, lost === true, `${scenario.name}: WEBGL_lose_context 不可用`)
+  const errorSeen = await page.waitFor(() => !!document.querySelector('[data-testid="scene3d-error"]'),
+    { timeout: 5000, label: 'route-rebuild context-lost error card' }).then(() => true).catch(() => false)
+  check(failures, errorSeen, `${scenario.name}: 重建期间 context lost 没有显示错误卡`)
+  const retry = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="scene3d-retry"]')
+    if (!button) return null
+    const rect = button.getBoundingClientRect()
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  })()`)
+  if (retry) await page.tap({ ...retry, touch: scenario.touch })
+  const recovered = await page.waitFor(() => {
+    const error = document.querySelector('[data-testid="scene3d-error"]')
+    const loading = document.querySelector('[data-testid="scene3d-loading"]')
+    const target = document.querySelector('#target-select')
+    return !error && !loading && !!target && !target.disabled
+  }, { timeout: 30000, label: 'route-rebuild retry recreates the renderer' }).then(() => true).catch(() => false)
+  check(failures, recovered, `${scenario.name}: 重试没有重建 renderer/恢复场景`)
+  const labels = await page.evaluate(`(() => ({
+    target: document.querySelector('#target-select')?.textContent || '',
+    shooter: document.querySelector('#shooter-select')?.textContent || '',
+  }))()`)
+  check(failures, labels.target.includes('Fixture Medium') && labels.shooter.includes('Fixture Heavy'),
+    `${scenario.name}: retry 恢复了上一条路由的选择（${JSON.stringify(labels)}）`)
+  check(failures, page.consoleErrors.length === 0, `${scenario.name}: JS errors: ${page.consoleErrors.join(' | ')}`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /** Load-order regression: collision enabled before the delayed armor GLB finishes, visual first. */
 const STAGGERED_LOAD_SCENARIO = { name: 'armor-staggered-visual-first', width: 1024, height: 768, touch: false }
 async function runStaggeredLoadScenario(env, scenario) {
@@ -1060,6 +1133,10 @@ const assets = await startFixtureAssetPack()
 const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
 const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
 const contextLossSelectionAssets = await startFixtureAssetPack({ tankCache: CONTEXT_LOSS_SELECTION_TANK_CACHE })
+const contextLossRouteRebuildAssets = await startFixtureAssetPack({
+  tankCache: CONTEXT_LOSS_SELECTION_TANK_CACHE,
+  delays: { tankCache: 1500 },
+})
 let chromeCdp = null
 
 try {
@@ -1073,7 +1150,7 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin, contextLossRouteRebuildAssets: contextLossRouteRebuildAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
@@ -1093,6 +1170,7 @@ try {
         },
       }),
     },
+    { scenario: CONTEXT_LOSS_ROUTE_REBUILD_SCENARIO, run: () => runContextLossRouteRebuildScenario(env, CONTEXT_LOSS_ROUTE_REBUILD_SCENARIO) },
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
@@ -1134,4 +1212,5 @@ try {
   await staggeredAssets.close()
   await pickerAssets.close()
   await contextLossSelectionAssets.close()
+  await contextLossRouteRebuildAssets.close()
 }

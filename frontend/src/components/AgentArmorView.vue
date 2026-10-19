@@ -156,6 +156,12 @@ function startViewer(preserveSelection = false) {
     const seq = navigationSeq
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
+    if (!preserveSelection) {
+        // 同一 view 的路由重建：先丢掉上一条路由的选择。新 viewer 在 populateTankLists
+        // 发布 onTankSelection 之前若丢失上下文，retry(true) 才不会恢复旧路线。
+        selectedShooterId.value = null
+        selectedTargetId.value = null
+    }
     // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）。
     // context-lost full rebuild 时沿用当前 shooter/target（picker 选择不写 URL），
     // 否则用户切车后点“重试”会被重置回 URL 里的初始坦克。
@@ -448,16 +454,6 @@ onBeforeUnmount(() => {
 .armor-view #corner-br { inset-block-end: var(--space-5); inset-inline-end: var(--space-5); align-items: flex-end; flex-direction: column; max-inline-size: 38%; }
 .armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
 .armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }
-/* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
-   最小高度；信息行压成单行，避免短视口下设置面板被挤出卡片。竖屏手机仍走下面 mobile 规则。 */
-@media (pointer: coarse) and (orientation: landscape) {
-    .armor-view { min-block-size: 0; }
-    .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
-    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
-    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
-    .armor-view #info-panel .label { display: none; }
-}
 /* Desktop/tablet and landscape touch phones mirror the mobile portrait top bar: tank info
    and the setup panel are one top-left card, and the setup panel starts collapsed behind
    the 参数 toggle. */
@@ -521,6 +517,18 @@ onBeforeUnmount(() => {
         box-shadow: none;
     }
     .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
+}
+/* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
+   最小高度；信息行压成单行，避免短视口下设置面板被挤出卡片。竖屏手机仍走下面 mobile 规则。
+   必须排在上面大卡片的 `overflow: visible` 之后：同特异度下后者会覆盖裁剪，
+   长车名就会画到「参数」按钮下面。 */
+@media (pointer: coarse) and (orientation: landscape) {
+    .armor-view { min-block-size: 0; }
+    .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
+    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
+    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+    .armor-view #info-panel .label { display: none; }
 }
 .armor-view .ctrl-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; font: var(--type-caption); }
 .armor-view .ctrl-row > * { min-inline-size: 0; }

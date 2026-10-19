@@ -269,8 +269,8 @@ const CORS_HEADERS = {
 /**
  * 起一个极小的资产源（127.0.0.1 随机端口，CORS 放行）。路由与真实资产包同形：
  * /data/tank_cache.json、/tank/{id}.json、/glb/{id}/{armor,visual}.glb。
- * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {armor?: number, visual?: number}}} [options]
- *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制两个 GLB 的完成顺序（加载竞态回归）。
+ * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {tankCache?: number, armor?: number, visual?: number}}} [options]
+ *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制名册/两个 GLB 的完成顺序（加载竞态回归）。
  * @returns {Promise<{server: import('node:http').Server, origin: string, close: () => Promise<void>, requests: string[]}>}
  */
 export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {} } = {}) {
@@ -310,7 +310,8 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, de
       res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': route.type, 'Content-Length': route.body.length })
       res.end(route.body)
     }
-    const delay = path.endsWith('/armor.glb') ? (delays.armor || 0)
+    const delay = path === '/data/tank_cache.json' ? (delays.tankCache || 0)
+      : path.endsWith('/armor.glb') ? (delays.armor || 0)
       : path.endsWith('/visual.glb') ? (delays.visual || 0) : 0
     if (delay > 0) setTimeout(send, delay)
     else send()
