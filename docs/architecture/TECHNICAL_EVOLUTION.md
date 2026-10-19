@@ -6,66 +6,6 @@ HISTORY.md 记录产品/业务演进；本文只聚焦架构、数据流、ident
 
 ---
 
-## 当前架构一览
-
-~~~text
-User device
-+---------------------------------------------------------+
-| Browser / Android GeckoView                             |
-|   (bundled Vue + Native LocalRuntimeServer)             |
-| .wotbreplay                                             |
-|   -> pinned WoT-Blitz-Agent Rust Core WASM             |
-|   -> WotbTools replay-local canonical facts            |
-|      -> Data / League Rating / Export                   |
-|      -> 2D Playback                                     |
-|      -> AI projection                                   |
-|   -> 3D Playback / shot replay consume Agent facets    |
-+--------------------------+------------------------------+
-                           |
-                         HTTPS
-                           |
-                           v
-Tencent TX1
-+---------------------------------------------------------+
-| Caddy / Public Edge                                     |
-| Frontend instance (~20% steady-state weight)            |
-| Keycloak                                                |
-| Business API                                            |
-| Business PostgreSQL                                     |
-+-------------+-----------------------------+-------------+
-              |                             |
-              | WireGuard                   | Frontend pool
-              |                             |
-              v                             v
-Yecao Cloud                              Tencent TX2
-+----------------------------------+     +-----------------------------+
-| AI Service                       |     | Frontend instance (~80%)    |
-| Observability                    |     | Komodo Periphery            |
-| Komodo Core                      |     | production-worker host      |
-| Komodo Periphery                 |     +-----------------------------+
-+----------------------------------+
-
-TX1 also runs Komodo Periphery. Caddy remains the single public ingress owner.
-~~~
-
-当前 Replay 主链路：
-
-~~~text
-.wotbreplay (parsing is local; bytes leave the device only for explicit evidence upload, e.g. HoF)
-   -> pinned Agent WASM
-   -> frontend trust-boundary validation
-   -> WotbTools canonical replay facts
-        +-> batch compute / League Rating / export
-        +-> 2D playback projection
-        +-> AI projection --gzip--> Yecao ai-service
-        +-> HoF submission facts + replay evidence attachment
-~~~
-
-服务器**没有 Replay parser，也没有 Replay Processing Job / Parser Worker / RabbitMQ / MinIO temporary dataset 链路**。上游 Agent Rust Core 负责锁定版本下的字节解码；WotbTools 的 `replay-local/canonical` 负责领域语义与消费边界。外部 Agent 研究材料是 provenance，不因其同时提供生产 parser 而自动成为 WotbTools canonical authority。LLM 只负责战术解释，不拥有 Replay Facts。
-
-生产运行面当前也不再等价于“一台腾讯云服务器”：TX1 仍拥有公网入口、身份、Business API 与权威业务数据库；Frontend 已由 TX1 / TX2 两个实例组成健康检查后的生产池；Yecao 承担独立 AI Service、Observability 与 Komodo Core。Komodo 提供主机与 workload 的声明式控制面，但不会取代 Git / immutable artifact / owner workflow 的 release authority。
-
----
 ## 1. 2026-06-23 — 从 Python Replay Extractor 到 Java Application
 
 WotbTools 起点是 Python Replay 数据提取工具。Git 仓库建立后，主实现迁移到 Java 21，并形成共享的 wotb-core；Spring Boot、Vue、Docker 与 jpackage 承担不同交付形态。
@@ -618,34 +558,6 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 `content-admin` 是新增的独立领域角色，后台接口、前端入口与浏览器验收只认该角色；全站管理员仍通过 Keycloak 复合角色同时获得两个域，应用代码不重复做 super-admin 判断。切换顺序必须先创建角色并授予实际内容管理员，重新登录拿到包含 `content-admin` 的 claim，再切换应用侧授权；旧 access token 不会凭空出现新的复合角色。
 
 联赛回放的三语名称、数字小组和具体时刻逐步加入时，曾为旧客户端并行提供多种接口形状。功能完成后，网站与新版客户端统一使用现代结构和无版本路径，移除旧格式转换与运行时回退；UP 主与视频推荐也统一使用现行分类接口，删除仅面向 UP 主的接口适配与前端回退。历史迁移、已保存回放和文字小组归档仍保留；旧客户端需要升级，接口切换与前后端部署作为同一次发布验收。
-
-## Current Authority Model
-
-| Concern | Authority |
-|---|---|
-| Authentication identity | Keycloak |
-| Browser auth lifecycle | `keycloak-js` / browser AuthProvider |
-| Android auth lifecycle | Native AppAuth + PKCE / Android AuthProvider |
-| Business user binding | `user_profile` / PostgreSQL |
-| Game identity | `(server, WotB accountId)` |
-| Replay bytes | user device, except explicit business evidence uploads |
-| Replay byte decoding | pinned WoT-Blitz-Agent Rust Core WASM (`deploy/agent/source.json`) |
-| Battle settlement facts | `battle_results.dat`, decoded by the pinned Agent parser |
-| WotbTools replay-domain semantics | `frontend/src/replay-local/canonical` + version-gated consumer contract |
-| Batch compute / League Rating / export | deterministic client compute under `frontend/src/replay-local/` |
-| 2D playback facts | WotbTools canonical facts + playback projection |
-| 3D / shot specialized rendering facts | version-gated Agent facets + consumer-local evidence rules |
-| AI request facts | `ClientAiReviewProjection` produced from client canonical facts |
-| AI canonical timeline | deterministic `ClientAiProjectionAdapter` / reconstruction inside `ai-service` |
-| AI provider runtime / secrets | Yecao `ai-service` owner |
-| Tournament scoring rules / publication | Business API / PostgreSQL; AI only performs bounded recognition |
-| Hall of Fame authenticity decision | replay evidence + administrator review; client facts are intentionally untrusted |
-| Tactical interpretation | LLM — interpretation only |
-| Public ingress | TX1 Caddy |
-| Frontend runtime | TX1 + TX2 health-checked pool; TX1/TX2 consume immutable TCR release artifact |
-| Business runtime / durable business state | TX1 Business API + Business PostgreSQL |
-| Komodo control plane | Yecao Komodo Core + Git-reviewed ResourceSync metadata |
-| Periphery lifecycle / host bootstrap | repository owner workflows, not Komodo Core itself |
 
 ## Retired / Transitional Architecture
 
