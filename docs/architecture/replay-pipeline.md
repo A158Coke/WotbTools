@@ -4,7 +4,6 @@
 > Rust Core，编译成 WASM 在浏览器 / Android APK 自带的 GeckoView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
 > 消费契约 `contracts/agent/replay-facets-v2.md`）。对解析结果的一切计算（去重、League Rating、指标、列投影、
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
-> 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
 
 ## Agent 产物身份（content-addressed）
 
@@ -116,7 +115,8 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 ## 缺字段怎么办
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），
-不在客户端启发式推导，也不在服务端解析。已知待补项见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
+不在客户端启发式推导，也不在服务端解析。已知消费缺口以当前 pin 的上游 Release 为准，消费契约随
+`contracts/agent/replay-facets-v2.md` 更新。
 
 ## Android bundled runtime
 

@@ -173,7 +173,6 @@ TX2_PRODUCTION_WORKER_READY
 
 ## 参考
 
-- 前置条件的 K5 历史状态：`docs/operations/komodo-k5-runtime-acceptance.md`
 - Periphery 边界：`docs/operations/komodo-periphery.md`
 - Komodo 声明式资源（K4.1）：`docs/operations/komodo-resource-sync.md`
 - TX service plane 与 K6B baseline：`docs/operations/tx-service-plane.md`
