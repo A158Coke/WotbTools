@@ -561,14 +561,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                       // 输出连续伤害渐变（不再用 0/1 的 splashChance 二值橙色）。
                       // 没有爆点（尚未点击）时保持透明，不拿间隙距离伪造分布。
                       if (heActive) {
-                        // Armor Inspector HE 热力图（shader 67）：满伤距离衰减 − 1.3×装甲，
-                        // 按满伤归一。与面板 0.5·D·(0.75/1.25) − Σ名义装甲是两条路径；
-                        // 热力图用 1.3 的装甲系数和满伤基准，薄板/近爆点才会明显发热。
-                        float heArmor = (thickness + spacedThick) * 1.3;
-                        float heDist = length(wPosR - heCenter);
-                        float splashDamage = damage * (1.0 - heDist / max(explosionRadius, 1e-3)) - heArmor;
-                        splashChance = step(0.0, splashDamage);
-                        heDamageNorm = clamp(splashDamage / max(damage, 1e-3), 0.0, 1.0);
+                        // 8 位 RT 的 R 饱和：累计间隙甲厚度只知 >=1 倍穿深，真实装甲未知；
+                        // HE 热力图必须按 0 伤害端 fail-closed，不能用 penetration 冒充
+                        // 实际厚度去画正值（评审 P2）。
+                        if (spacedSatBlocked) {
+                          splashChance = 0.0;
+                          heDamageNorm = 0.0;
+                        } else {
+                          // Armor Inspector HE 热力图（shader 67）：满伤距离衰减 − 1.3×装甲，
+                          // 按满伤归一。与面板 0.5·D·(0.75/1.25) − Σ名义装甲是两条路径；
+                          // 热力图用 1.3 的装甲系数和满伤基准，薄板/近爆点才会明显发热。
+                          float heArmor = (thickness + spacedThick) * 1.3;
+                          float heDist = length(wPosR - heCenter);
+                          float splashDamage = damage * (1.0 - heDist / max(explosionRadius, 1e-3)) - heArmor;
+                          splashChance = step(0.0, splashDamage);
+                          heDamageNorm = clamp(splashDamage / max(damage, 1e-3), 0.0, 1.0);
+                        }
                       } else {
                         splashChance = 0.0;
                         heDamageNorm = 0.0;
@@ -4350,6 +4358,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             __penCheckSeq++;
             urlApplied = false;
             tidyTrajectory();
+            // 换目标车后旧点击坐标已无意义：不清会在切弹时对新车的同一屏幕坐标
+            // 误跑判定（评审 P2）。
+            lastClickNdc = null;
             reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
             const nextTankData = await fetchTankData(tid);
             if (destroyed || gen !== targetLoadGen) return false;
