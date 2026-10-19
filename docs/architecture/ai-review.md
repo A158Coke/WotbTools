@@ -30,12 +30,7 @@ SSE 事件集合固定为 `call1_start` / `call1_done` / `evidence_done` / `call
 
 `TeamAiPromptBuilder` 提供 canonical facts、timeline、team context 和 deterministic evidence；Team Call #2 只在既有 LLM call、`TeamAiReviewResult`、SSE/API 和前端渲染契约内组织推理，不引入后端战术语义裁判或第二套 episode 模型。
 
-Team Call #2 的内部顺序固定为：权威事实 → Information state / Remaining uncertainty →
-objective obligation → pivotal local engagements → effective local participation →
-tactical transition → propagation → HP/damage/deaths downstream validation → training targets
-→ episode-grounded individual candidates → canonical structured JSON。Information 要形成
-`Known → Remaining uncertainty → New observation → reduced uncertainty → Decision impact`；
-`UNSEEN` 只代表没有证据，不代表空路或没有敌人。
+Team Call #2 的内部顺序固定为：权威事实 → 信息状态（Information state）/ 剩余不确定性（Remaining uncertainty）→ 目标义务（objective obligation）→ 关键局部交战（pivotal local engagements）→ 有效局部参与（effective local participation）→ 战术转换（tactical transition）→ 传播（propagation）→ 把 HP/伤害/死亡用作下游验证（HP/damage/deaths downstream validation）→ 训练目标（training targets）→ 有 episode 依据的个人候选（episode-grounded individual candidates）→ canonical 结构化 JSON。Information 要形成 `Known → Remaining uncertainty → New observation → reduced uncertainty → Decision impact`；`UNSEEN` 只代表没有证据，不代表空路或没有敌人。
 
 局部参与以实际影响窗口的能力判断，综合 line of fire、遮挡、time-to-influence、机动性、目标、
 交叉火力、敌方固定、目标贡献和安全路径，距离仅是证据。每个 episode 都要解释
@@ -60,7 +55,7 @@ Backend 只负责 JSON、类型、数量上限、roster/episode 引用和字符�
 前端按固定组件层级渲染并用该映射显示身份，Markdown 只允许出现在字段值内。
 技术层面的 schema 校验与确定性 salvage / normalization 见「Team Call #2 结果契约」。
 
-## Team AI Review 稳定性契约：structured JSON + single recovery
+## Team AI Review 稳定性契约：结构化 JSON + 单次 recovery
 
 Team Call #2 只接受满足最低技术 contract 的 `TeamAiReviewResult` JSON。解析器只判断 JSON、类型、数量上限和 roster/episode 引用，不判断战术结论是否正确，也不把部分 JSON 或 Markdown 暴露给用户。
 
@@ -122,7 +117,7 @@ Contract 失败处理由以下确定性规则组成
    - **Canonical Timeline hard gate**：随机战 harness 在录像者解析后立即构建 `BattleTimeline`（battle-relative 时钟：IDENTIFIED / ESTIMATED（`BattleEnded.raw − duration`）/ UNRESOLVED→拒绝）；无法构建 → `AI_TIMELINE_UNUSABLE` 业务错误，**不执行 settlement-only fallback 调用 AI**；`PlayerReplayAnalysisService.analyzePlayerOrFallback` 无重建/录像者未解析同样拒绝。团队 prompt 经 `TeamAiContextCompiler` 注入双方对称 timeline 段。
 
 
-## Backend Evidence Boundary
+## 后端证据边界
 
 > 核心原则：**Backend 负责把战局事实整理到 LLM 能可靠理解的程度，但停在战术判断之前。**
 
@@ -159,14 +154,14 @@ Recommendation / Natural Review
 - Backend：「某成员在窗口内与主要友军集群保持 >150m 距离，期间损失血量 900。」✅ 允许
 - Backend：「该成员严重脱节。」❌ 交给 LLM
 
-### Backend 可以做什么（不是 tactical judgement）
+### 后端可以做什么（不是战术判断）
 
 1. **原始事实**：时间 / HP / 伤害 / 损失血量 / 阵亡 / 存活 / 玩家/车辆 / team / position / movement / observed/unknown / capture event / battle result / roster / vehicle class / authoritative settlement。
 2. **确定性计算**：减员窗口与人数比（如 109–128s 3:1、7v7→4v6）、HP 差变化、damage dealt/received、两车/两 cluster 距离、distance growth、stationary ratio、observed enemy count、unknown enemy count、cluster member count、friendly/enemy nearby count、区域内车辆出现、region 移动、窗口内阵亡。
 3. **中性结构分类**：`OPENING_SPREAD`（开局阶段空间分离结构）、`DEATH_CLUSTER`、`FOCUS_WINDOW`、`FORMATION_CLUSTER`、`SEPARATION_WINDOW`、`LOCAL_NUMBERS_CHANGE`、`CONTROL_REGION_ENTRY_WINDOW`。
 4. **Salience / ranking**：哪个 HP swing 最大、哪个死亡窗口人数 swing 最大、哪几个窗口最值得送 LLM、`EvidencePriority = NORMAL/IMPORTANT/CRITICAL`——表示「Prompt 输入优先级 / 数据变化显著程度」，**不是**「战术上正确/错误程度」。
 
-### Backend 禁止做什么
+### 后端禁止做什么
 
 Backend Evidence 层不得直接输出：正确/错误打法、拖延、无效拖延、脱节、失败合流、图控成功、拿视野、侦察行为、合理/错误转场、bad trade、favorable tactical trade、misplay、team mistake、好的/没有支援、无掩护、卡点、守点、谁从谁的行为中获利、tactical benefit/payoff、tactical intent。
 
@@ -174,13 +169,13 @@ Backend Evidence 层不得直接输出：正确/错误打法、拖延、无效�
 
 交火段只输出确定性数字（damageDealt / damageReceived / 存活变化 / 局部人数 / HP swing / 集火目标 / 目标切换），不输出「结果：有利/不利/均势」；「交换是否值得」与拖延/脱节/图控一样由 LLM 综合多事实判断。
 
-### Evidence 输出规范
+### 证据输出规范
 
 - 复用 `AiEvidence`（type / startSec / endSec / entities / numbers / labels / confidence / priority / provenance / summary）。
 - `type` / `labels` / `summary` 保持中性：如 `type=SPATIAL_SEPARATION`、`labels: phase=OPENING, region=GRID_REGION_5, movementState=STATIONARY`、`numbers: distanceM=180, distanceGrowthM=25, stationaryRatio=0.72, observedEnemyNearby=2, damageReceived=800`。
 - summary 禁止：单走拖延成功 / 单走脱节 / 没有队友获利 / 无掩护。
 
-### 保留的防 hallucination 边界（LLM 不得伪造事实）
+### 保留的防幻觉边界（LLM 不得伪造事实）
 
 - 未观察敌军不能当已知位置；enemy unknown 不得填满；不能 future leak；没 terrain/LOS evidence 不说具体掩体/射界；没 visibility evidence 不说谁点亮谁；不从 settlement aggregate 推具体 timeline causality；不编 magic number；不自创车辆 role；UNKNOWN selective；Canonical Timeline hard gate。
 
@@ -248,7 +243,7 @@ mvn -pl wotb-ai -am test `
 
 ### 当前证据语义
 
-- **空间分离证据（Backend Evidence Boundary）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/损失血量/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。
+- **空间分离证据（后端证据边界）**：`TeamSeparationEvidenceSkill` / `PlayerSeparationEvidenceSkill`（wotb-core）从阵型簇/移动段/交火推导中性 `SPATIAL_SEPARATION` 证据（`kind=OPENING_SPREAD` / `SEPARATION_WINDOW` + 距离/距离增长/静止占比/局部敌情/损失血量/输出/阵亡/主力簇位移等确定性测量），`TeamEvidenceFormatter` 渲染 `SPATIAL_SEPARATION_EVIDENCE` 段（P3 optional）。不输出 `SOLO_DELAY` / `SOLO_DETACHED` / `teammateBenefit` 等战术 verdict——是否拖延/脱节由 LLM 综合判断。
 - **player 路径同规则**：`PlayerSeparationEvidenceSkill`（wotb-core）复用 `RouteSkill` 空间分离窗口推导同口径中性证据（个人复盘同样不输出拖延/脱节 verdict），在 `EvidenceSkillEngine` 注册；player prompt（fallback/single/tactical）包含三语 `SEPARATION_EVIDENCE_RULE`。
 - **争霸赛占点与点数胜负结束方式**：`FriendlyEnemyResult.resolveTeamBattle` 派生 `pointsEndReason`（`REACHED_1000`=双方均有存活 + 标准业务规则 + 时长<420s：某一方达到 1000 分上限导致提前结束，与胜方解耦，不使用任何点数字段；`TIME_EXPIRED`=标准规则 + 时长≥420s：时间耗尽，双方终局比分未解码；`UNKNOWN`=类别未知 / rosterComplete=false / 时长缺失；全歼=NOT_APPLICABLE），`TeamEvidenceFormatter` 在 `CAPTURE_AND_POINTS` 段输出 `pointsEndReason`（逐人/双方占点分、`pointsDecided`、占领点区域）；`TeamAiPromptBuilder` mandatory header 同时输出 `result` 与 `resultSource`（BATTLE_RESULTS 权威 / SURVIVOR_SETTLEMENT 结算存活推导 / UNKNOWN；POINTS_INFERENCE 枚举保留但不产出（fail closed））；**所有依赖完整逐人结算的存活/点数推断共享"结算阵容完整"前提**（`Battle.rosterComplete`：上游 Agent 的 `parseResult.roster_complete`（结算花名册与战绩账号集合一致，`contracts/agent/replay-facets-v2.md` §6）经客户端 `frontend/src/replay-local/battleFacts.ts` 写入 canonical facts，再随 `AiReviewBattle` 进入 ai-service；不写死每队 7 人，完整名册的非 7v7 训练房同样生效）：SURVIVOR_SETTLEMENT 推导与 `annihilationSuffix` 在阵容不完整时一律 fail-closed；winnerTeam 缺失 + 双方均有存活 → 胜方 UNKNOWN（结束方式仍按标准时限证据判定，用于结果行后缀，禁止比较占点字段推断）；winnerTeam 存在时胜方为 BATTLE_RESULTS，`pointsEndReason` 正常判定（rosterComplete=false 时 UNKNOWN，result 只写通用「点数判定」）；`CAPTURE_AND_POINTS` 在阵容不完整时输出 `SETTLEMENT_ROSTER_INCOMPLETE=true` / `pointsTotalsUnavailable=true` 并抑制占点分总量；提示词 `CAPTURE_RULE`（ZH/EN/RU，含 2d 条阵容不完整口径）写明结束条件三分法——全歼胜（双向：全歼敌方获胜 / 被敌方全歼落败）/ 1000 分提前结束（某一方达到 1000 分上限，具体胜方由 winnerTeam 决定；缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分一律 UNKNOWN，不把 1000 分配给任何队伍）/ 时间耗尽点数决胜（仅双方均有存活且标准规则可证），`TIME_EXPIRED` 叙述必须写「时间耗尽」，禁止用 <1000 的中间比分作为获胜理由，禁止把失败方被全歼写成「全歼敌方获胜」；团队复盘胜负标签按结束方式输出「（时间耗尽点数判定）/（达到 1000 分提前获胜）/（某一方达到 1000 分提前结束，具体胜方未知）/（时间耗尽点数判定，具体胜方未知）/（点数判定）/（全歼敌方）/（被敌方全歼）」。`TeamPromptLocalizer` 三语 `SOLO_INTENT_RULE` / `CAPTURE_RULE`。
 - **争霸赛点数口径（未证明项，禁止用于终局比分）**：`victoryPointsEarned`(#32) 的精确定义及是否包含被动占点增长/击杀夺分等调整仍未证明；证据只输出原始结算字段（victoryPointsEarned/Seized、kills、deaths）；每据点每 tick 产分与 tick 间隔均未解码（无任何已验证的 tick 产分规则），不得用 tick 数或占点分计算终局比分；击杀夺分 40 分仅作叙述口径（`KILL_STEAL_POINTS` 不参与计算）；实时点数/基地占领/终局比分尚未解码（`PointsEvidenceProbeTest`/`ShotSpottingStreamProbeTest` 记录候选，语义 UNKNOWN）。
@@ -272,7 +267,7 @@ mvn -pl wotb-ai -am test `
 - **Opening Spread 推断门**：「敌方主力确认后本方没有及时合流」是本场具体结论，不是一般战术解释；必须同时满足 4 个证据门（enemy-known 支持主力确认 + 本方多分离集群 + 后续未靠近 + 首次关键交火在一侧集群）。`known=4` / `unknown=3` 时只能说「至少观察到 4 辆，其余 3 辆位置不明确」，禁止「7 辆主力已集中在这一侧」；anti-future-leak 禁止后知信息回填。
 - **车辆角色来源**：`tankName` / `vehicleClass` / `tier` 三路径（主复盘与赛前）同源 `ReplayDisplayNames`，角色语义唯一来源 `TankTacticalProfileRegistry`；prompt 禁止自创「薄皮输出型/前排/肉盾/狙击车」等标签。
 - **契约回归**：`TeamReviewQualityGateContractTest` / `TeamFocusWindowsRenderTest` / `TeamTankRoleConsistencyTest` / `OpeningSpreadProductionIntegrationTest` / `ClientAiProjectionParityTest` 与 golden case 覆盖上述约束；产品语义入口见 `docs/features/team-ai-review.md`。
-- **相对纵深/血量测量（中性）与区域覆盖测量**：`RelativeDepthHpEvidence`（wotb-ai）确定性测量——reference 由**纯几何算法**选择（本阶段距观测敌方最近的存活本方成员，不是「扛线队友」之类的战术角色）；成员血量比率 ≥ reference × 1.2 且距敌比 reference 更远 是 salience filter（只决定哪些成员值得给 LLM 看，不是战术判定；tank profile 只作为静态事实附注，不参与筛选）；输出只报成员/reference 的 accountId + 静态 profile 事实 + hpRatio/hpRatio差 + memberDist/referenceDist/relativeDepthM + observedAttackEvents + coverage（COMPLETE/PARTIAL；partial 时 0 个已观测攻击事件 ≠ 无输出，禁止推断「避战」）+ HP_RATIO_UNKNOWN（血量数据不足只给位置与观测事实）；跨阶段出现次数是中性 salience，不是负面分级；不输出吸血/避战/利用队友/「前线型未上前线」/degree 轻中重。团队路径遍历本队全体，个人路径仅录像者自己。`FormationDepthEvidence` 纯几何纵深三分位（GEOMETRIC_FORWARD/GEOMETRIC_MIDDLE/GEOMETRIC_REAR 恒输出，不引用 tank profile 分类）+ 九宫格「区域覆盖测量 REGION_COVERAGE_MEASUREMENTS」（每区输出 ownPositionPresence/enemyPositionPresence、ownWeightedCoverageScore/enemyWeightedCoverageScore（距离加权火力覆盖分 F=Σ 火力权重/(1+d/100)，权重只按车种/burst/sustained 静态事实）、ratio、coverageCompleteness；位置参考不完整时只输出 ownPositionPresence，不输出分数对比）——只输出确定性测量，不输出 own/contested/enemy 权威控制权标签；哪方「实际控制/压制某区」由 LLM 综合判断（Backend Evidence Boundary）。
+- **相对纵深/血量测量（中性）与区域覆盖测量**：`RelativeDepthHpEvidence`（wotb-ai）确定性测量——reference 由**纯几何算法**选择（本阶段距观测敌方最近的存活本方成员，不是「扛线队友」之类的战术角色）；成员血量比率 ≥ reference × 1.2 且距敌比 reference 更远 是 salience filter（只决定哪些成员值得给 LLM 看，不是战术判定；tank profile 只作为静态事实附注，不参与筛选）；输出只报成员/reference 的 accountId + 静态 profile 事实 + hpRatio/hpRatio差 + memberDist/referenceDist/relativeDepthM + observedAttackEvents + coverage（COMPLETE/PARTIAL；partial 时 0 个已观测攻击事件 ≠ 无输出，禁止推断「避战」）+ HP_RATIO_UNKNOWN（血量数据不足只给位置与观测事实）；跨阶段出现次数是中性 salience，不是负面分级；不输出吸血/避战/利用队友/「前线型未上前线」/degree 轻中重。团队路径遍历本队全体，个人路径仅录像者自己。`FormationDepthEvidence` 纯几何纵深三分位（GEOMETRIC_FORWARD/GEOMETRIC_MIDDLE/GEOMETRIC_REAR 恒输出，不引用 tank profile 分类）+ 九宫格「区域覆盖测量 REGION_COVERAGE_MEASUREMENTS」（每区输出 ownPositionPresence/enemyPositionPresence、ownWeightedCoverageScore/enemyWeightedCoverageScore（距离加权火力覆盖分 F=Σ 火力权重/(1+d/100)，权重只按车种/burst/sustained 静态事实）、ratio、coverageCompleteness；位置参考不完整时只输出 ownPositionPresence，不输出分数对比）——只输出确定性测量，不输出 own/contested/enemy 权威控制权标签；哪方「实际控制/压制某区」由 LLM 综合判断（后端证据边界）。
 
 - **共享资源**：`common/tank_tactical_profiles.json`（精选 Tier X + 车型级默认 fallback），由 `wotb-core/pom.xml` 与 `docker/Dockerfile.business-api` 同步打包。
 
@@ -360,7 +355,7 @@ AI 复盘区分两种 scope，互不混用：
 
 ---
 
-### SSE error 诊断契约
+### SSE 错误诊断契约
 
 运行时 `error` 事件使用 `contracts/http/openapi.yaml#AiReviewErrorEventPayload`：`{id, errorCode}`。`id` 复用当前请求的 `correlationId`，因此前端展示的错误 ID 可以直接在 Loki 中检索 `ai_review_contract_failed` / `ai_review_contract_salvage_*`、`ai_review_recovery_triggered` / `ai_review_recovery_failed`、`team_review_completed`、`ai_prompt_budget` 与上游事件（`ai_upstream_call_started` / `ai_upstream_call_completed` / `ai_upstream_call_failed` / `ai_transport_retry`）。`errorCode` 是稳定枚举（`AiReviewErrorCode`），只允许安全、可本地化的诊断码，不携带 prompt、原始模型输出、回放内容或凭据。
 
@@ -467,7 +462,7 @@ ai-service 侧 `ClientAiProjectionAdapter`（wotb-core `replay/projection`）只
 | `poses` / `turrets`（原始 type10 / prop2） | 位置 / 朝向证据（渲染网格重入后有收敛滞后） |
 | `roster_complete` / `author_vehicle_codename`（结果能力） | 「一方全员阵亡 → 全歼」推导的守卫；录像者车辆 |
 
-### 语义 parity（永久测试）
+### 语义一致性（parity，永久测试）
 
 `java/wotb-ai/.../ClientAiProjectionParityTest`：三场 fixture（随机 / CW / 联赛）上，冻结的 canonical 重建基线（`common/fixtures/replay-facts`，测试 oracle）与「锁定 WASM → canonical facts → 投影（`common/fixtures/ai-projection`，前端测试保证与现场 WASM 逐字段一致）→ adapter」两条输入走同一套下游，逐层断言：
 

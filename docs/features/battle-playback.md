@@ -12,7 +12,7 @@
 - **契约来源**：`BattlePlaybackDataset` 的形状以 `contracts/http/openapi.yaml` 的 schema component 为唯一事实源（端点已删除，schema 保留）；前端 types 与 runtime 校验从该文件生成，本机转换层的输出必须通过同一校验。
 - **前端 V2-only**：`BattlePlaybackPanel` 本机生成 V2 dataset 并注入 `playbackV2`；`BattlePlayback.vue` 的 marker / HP HUD / Details Panel / team HP / 事件 feed 全部直接消费 canonical tracks（`healthDisplayAt` / `friendlyHealthAt` / `healthAt` / `lifeAt` / `positionAtV2` / `orientationAtV2`），不经过 compatibility view，也不回退 `MapOverview.Playback`。
 - **数据源状态**：时间线不可用 → `dataset = null` → UNAVAILABLE（capability unavailable，不是解析失败）；解析失败 / 引擎不可用 → ERROR（可重试，不回退其他解析路径）。
-- **单次解析**：工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）；2D / 3D 复用同一份 playback session，3D 只等待 scene readiness，canonical 后台就绪后增强已打开的 Details。
+- **解析复用是方向性的，不是 universal single-parse**：工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）。3D 先加载时，scene playback facet 可被 canonical projection 复用；2D 先加载时 canonical playback 已解析，之后首次打开 3D 仍会重新加载/解码 scene playback facet。当前共享 selection / session，但不保证两种顺序都只解析一次；不要把它描述成未来的共享缓存设计。
 
 ### Canonical 数据形状
 

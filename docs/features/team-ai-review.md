@@ -10,16 +10,16 @@
 
 ## 1. 产品语义
 
-- Recorder raw team 1 → team 1 为分析对象
-- Recorder raw team 2 → team 2 为分析对象
+- 录像者 raw team 1 → team 1 为分析对象
+- 录像者 raw team 2 → team 2 为分析对象
 - 未知 team → UNKNOWN
 - 胜负三态：TEAM_WIN / TEAM_LOSS / DRAW_OR_UNKNOWN
-- draw/unknown 不压缩为 loss
+- 平局/未知不压缩为失败
 - PLAYER_FOCUSED（随机战斗）使用 FRIENDLY/ENEMY/UNKNOWN 标签
-- TEAM_PERSPECTIVE（训练房/联赛）使用 dominant clan 标签
-- 同场双方 perspectives 各自独立分析，不得合并
-- Recorder 只用于确定视角，不被 AI 视为分析对象
-- 单文件：一次请求 = 一场战斗的一个 perspective；Team 路径逐 context 单队调用
+- TEAM_PERSPECTIVE（训练房/联赛）使用 dominant clan（主导军团）标签
+- 同场双方视角各自独立分析，不得合并
+- 录像者只用于确定视角，不被 AI 视为分析对象
+- 单文件：一次请求 = 一场战斗的一个视角（perspective）；Team 路径逐 context 单队调用
 
 ## 2. 入口和分层（独立 ai-service，无 Dataset 依赖）
 
@@ -41,7 +41,7 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
 
 - AI Review 只消费客户端 projection，不消费 Processing Dataset；服务器不解析回放，Business Backend 不承载也不代理 AI 请求。
 - 前端没有维护状态卡，`ai_maintenance` 三语 key 无消费者；AI tab / 深链直接挂载 `AiReviewPanel.vue`，受登录门控与客户端投影可用性约束。
-- 取消使用 `POST /api/ai/reviews/{correlationId}/cancel`；取消是 best-effort，已完成、已取消或从未注册都视为目标状态已达成。
+- 取消使用 `POST /api/ai/reviews/{correlationId}/cancel`；取消为尽力而为（best-effort），已完成、已取消或从未注册都视为目标状态已达成。
 
 ## 3. AI 输入 = client canonical AI projection
 
@@ -51,7 +51,7 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
 - 请求信封校验先于投影结构校验：locale 仅接受 `zh-CN` / `en-US` / `ru-RU`；correlationId 必须是 canonical UUID；请求体上限 16 MiB，`Content-Encoding` 仅接受 identity / gzip，gzip 解压后同样限 16 MiB；不支持的战斗类别返回 422。
 - `done.capability` 是 request 级判定，不来自 Team 编排：只会是 `AVAILABLE` / `AVAILABLE_WITH_LIMITED_TIMELINE`；客户端时钟缺失或 projection 声明了 limitations 时为后者。`UNAVAILABLE` 保留在 wire enum 中但生产不产出，时间线不可用走 `AI_TIMELINE_UNUSABLE` 错误。
 
-## 4. Team Evidence
+## 4. 团队证据（Team Evidence）
 
 | 类型 | 来源 | 说明 |
 |------|------|------|
@@ -97,7 +97,7 @@ Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 �
 ### 4.5 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。
-
+仅涉及敌方的伤害不得延长 Team phase。
 ### 4.6 战斗结束
 
 `BattleEndResolver.resolve()` 按优先级：
@@ -107,7 +107,7 @@ Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 �
 3. Scope-local evidence（该 perspective 的最后有效 position/damage）
 4. UNKNOWN（返回 BATTLE_END_UNRESOLVED limitation，phases 为空）
 
-Enemy-only damage 不得延长 Team phase。
+仅涉及敌方的伤害不得延长 Team phase。
 
 ## 5. 地图和时间
 
@@ -119,7 +119,7 @@ Enemy-only damage 不得延长 Team phase。
 - 坐标三态：VALID / CLAMPED / INVALID
 - 不可信数据通过 `PromptDataQuoter.quote()` JSON 转义
 
-## 6. Prompt Budget
+## 6. Prompt 预算
 
 ### 6.1 三层优先级
 
@@ -144,27 +144,27 @@ Enemy-only damage 不得延长 Team phase。
 
 Team Call #2 必须先读权威事实，再按以下顺序内部推理，最后才生成结构化 JSON：
 
-1. **Read authoritative facts**：区分权威结算/阵容与事件流观测子集，确认时间、人数、位置、伤害覆盖和结果来源。
-2. **Establish information state**：每个关键窗口写清当时 Known、敌方已确认信息和信息状态（CURRENT / LAST_KNOWN / UNSEEN）。
-3. **Identify remaining uncertainty**：明确尚未确认的敌方数量、另一方向兵力、LAST_KNOWN 是否仍有效；UNSEEN 是没有证据，不是无人。
-4. **Evaluate objective obligation**：结合基地归属、当前点数、点数增长、剩余时间、存活车辆、位置和可用火力，判断谁必须主动、谁可以等待、谁承担基地/时间压力。
-5. **Identify pivotal local engagements**：分析实际参与者、短时间内可补枪者、存活但无法影响该窗口者，以及外围提供有效侧射、信息或目标压力者。局部有效人数不是全队存活数。
-6. **Determine effective local participation**：综合射界、地形/遮挡、time-to-influence、机动性、目标可用性、交叉火力、敌方固定、目标贡献和安全路径；distance 只是 evidence，不是 supportability verdict。
-7. **Trace tactical transition**：每个关键 episode 按 `State before → Change → Immediate local consequence` 展开；不要把时间接近的死亡事件自动串成因果 episode。
-8. **Trace propagation**：检查局部结果如何影响后续局部的火力、空间、固定、释放车辆、支援路径、信息状态和 objective obligation；证据不足时明确无法确认直接传播。
-9. **Use HP/damage/deaths as downstream validation**：HP、伤害、死亡是 position/decision 因果链的下游结果或验证信号，不是默认 episode 入口。
-10. **Select training targets**：每条建议使用 `Trigger → Decision target → Training goal`，来自本局已解释的状态和因果链；通常 2–4 条，简单局可更少，不得凑数量。
-11. **Select individual candidates only if episode-grounded**：重点复查与高贡献者只能从已展开的 tactical episode 选择，必须有实际 role/action 与 decision/execution 依据；没有证据就输出空数组。
-12. **Produce structured JSON**：只输出 `summary`、`episodes`、`trainingSuggestions`、`reviewFocus`、`highContributors`，不新增字段。
+1. **读取权威事实**：区分权威结算/阵容与事件流观测子集，确认时间、人数、位置、伤害覆盖和结果来源。
+2. **建立信息状态**：每个关键窗口写清当时 Known、敌方已确认信息和信息状态（CURRENT / LAST_KNOWN / UNSEEN）。
+3. **识别剩余不确定性**：明确尚未确认的敌方数量、另一方向兵力、LAST_KNOWN 是否仍有效；UNSEEN 是没有证据，不是无人。
+4. **评估目标义务**：结合基地归属、当前点数、点数增长、剩余时间、存活车辆、位置和可用火力，判断谁必须主动、谁可以等待、谁承担基地/时间压力。
+5. **识别关键局部交战**：分析实际参与者、短时间内可补枪者、存活但无法影响该窗口者，以及外围提供有效侧射、信息或目标压力者。局部有效人数不是全队存活数。
+6. **判定有效局部参与**：综合射界、地形/遮挡、time-to-influence、机动性、目标可用性、交叉火力、敌方固定、目标贡献和安全路径；距离只是证据（evidence），不是可支援性判定（supportability verdict）。
+7. **追踪战术转换**：每个关键 episode 按 `State before → Change → Immediate local consequence` 展开；不要把时间接近的死亡事件自动串成因果 episode。
+8. **追踪传播**：检查局部结果如何影响后续局部的火力、空间、固定、释放车辆、支援路径、信息状态和 objective obligation；证据不足时明确无法确认直接传播。
+9. **把 HP/伤害/死亡用作下游验证**：HP、伤害、死亡是 position/decision 因果链的下游结果或验证信号，不是默认 episode 入口。
+10. **选择训练目标**：每条建议使用 `Trigger → Decision target → Training goal`，来自本局已解释的状态和因果链；通常 2–4 条，简单局可更少，不得凑数量。
+11. **仅在 episode 有据时选择个人候选**：重点复查与高贡献者只能从已展开的 tactical episode 选择，必须有实际 role/action 与 decision/execution 依据；没有证据就输出空数组。
+12. **产出结构化 JSON**：只输出 `summary`、`episodes`、`trainingSuggestions`、`reviewFocus`、`highContributors`，不新增字段。
 
 ### 7.2 选择性完整表达
 
 - 不逐秒复述时间线、不为格式凑段落，但被选中的关键 episode 要完整说明「发生了什么 → 当时知道什么 → 哪些车辆参与 → 为什么重要 → 如何影响下一阶段」。
-- Information 必须说明它如何改变 decision input；Objectives/点数、局部交战和多个局部之间的传播不能为了简洁省略。距离只能作为空间证据，不能单独判定脱节或支援价值。
+- 信息（Information）必须说明它如何改变决策输入（decision input）；Objectives/点数、局部交战和多个局部之间的传播不能为了简洁省略。距离只能作为空间证据，不能单独判定脱节或支援价值。
 - 目标状态改变行动义务时，应说明谁必须行动、谁可以等待。点数领先不自动等于必须进攻，点数落后也不自动等于立即冲锋。
-- 正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时应完全省略。
+- 正文优先级为团队战术分析、信息（Information）/目标（Objectives）、关键 episode、传播（propagation）、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少结构性证据（structural evidence）或可复查的决策/执行问题时应完全省略。
 - 普通 7v7 约 1200–2200 字、复杂局约 2500–3500 字是软目标；Team Call #2 专用输出上限为 8192 tokens。
-- 证据不足时保留 UNKNOWN，不把相邻死亡自动串成因果，也不把 vehicle class 当作 tactical role。
+- 证据不足时保留 UNKNOWN，不把相邻死亡自动串成因果，也不把车型（vehicle class）当作战术角色（tactical role）。
 
 ### 7.3 Team Tactical Skill 模块
 
@@ -172,7 +172,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 - 先重建当时信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地/点数义务、空间结构和局部有效兵力，再解释动作与结果；信息更新必须继续追踪是否被解释并转化为行动。
 - 局部不是封闭盒子：检查外部火力、固定、逼位、交叉和释放车辆造成的信息/火力/空间传播；分析谁创造了击杀条件，而不只看最后一炮。
-- 复盘 observable execution，不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因；证据不足时跳过判断。
+- 复盘可观察执行（observable execution），不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因；证据不足时跳过判断。
 - `summary.primaryDiagnosis` 是本场最重要的结论，可以是关键成功因素、对手处理更好或没有明显确认错误，不要求制造问题。
 - Strategic Prior 是阵容与可能性空间的战略基线，不是队伍实际计划；实际执行偏离它不能单独构成失误。
 - `TeamAiContextCompiler` 复用 canonical timeline 额外输出 `OBJECTIVE_STATE_TIMELINE`，携带已解码的实时基地归属/捕获进度/实时点数；缺失不被当作零值，战术结论仍由 LLM 负责。
@@ -186,7 +186,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 - 回放不能证明语音、call、沟通或指挥责任时不得猜测；Strategic Prior 只是非实际赛前战术的战略基线。
 - 不生成通用的米数阈值、固定时刻或 vehicle-class mandatory role；没有证据时不写具体点亮、侦察收益、地形/掩体/LOS 或玩家心理。
 
-## 8. Result Contract
+## 8. 结果契约（Result Contract）
 
 `POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），`AiReviewController` 直接向 `SseEmitter` 写入（自定 JSON event，`data` 为 JSON）：
 
@@ -212,7 +212,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 | 字段 | 约束 |
 |---|---|
-| `summary.verdict` / `summary.primaryDiagnosis` | 可为 null 的字符串；`primaryDiagnosis` 是本场主判断摘要，不是独立的问题清单 |
+| `summary.verdict` / `summary.primaryDiagnosis` | **必填、非 null、非空白字符串，长度 ≤ 4000**；`primaryDiagnosis` 是本场主判断摘要，不是独立的问题清单。缺失/空白由 `TeamAiReviewResultParser` 记为 INVALID_FIELD；最低 contract 不成立时触发一次 recovery，不接受 null 或空字符串 |
 | `episodes` | 最多 6 条；`id` / `title` / `analysis` 必填且非空；`startSec` / `endSec` 可为 null，非 null 时 `endSec >= startSec`；`playerKeys` 最多 8 个且必须来自当前 roster；`id` 唯一 |
 | `trainingSuggestions` | 最多 12 条；`title` / `content` 必填；`episodeId` 必须为 null 或引用已存在的 episode |
 | `reviewFocus` | 最多 2 条；`playerKey` 必须来自 roster，`episodeId` 必须存在，`reason` 非空 |
@@ -239,20 +239,20 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 ## 9. 质量验证（0-token CI + 手动真实回放）
 
-- **deterministic prompt contract tests** 校验三语推理锚点、推理顺序、未知状态、目标义务、局部参与、传播、下游验证、结构化输出边界和反 settlement-shortcut 规则；默认 CI 不调用模型，保持 0 provider token。
-- **offline harness**（`TeamReplayOfflineEvalHarnessTest`）用冻结的客户端投影夹具（`common/fixtures/replay-facts/*.json.gz`）走 canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型。
+- **确定性 prompt 契约测试**校验三语推理锚点、推理顺序、未知状态、目标义务、局部参与、传播、下游验证、结构化输出边界和反 settlement-shortcut 规则；默认 CI 不调用模型，保持 0 provider token。
+- **离线 harness**（`TeamReplayOfflineEvalHarnessTest`）用冻结的客户端投影夹具（`common/fixtures/replay-facts/*.json.gz`）走 canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型。
 - `team-tactical-skill-v01-*` 与 `TeamTacticalSkillScenarioContractTest` 只证明 prompt contract，不证明真实 LLM 行为；synthetic contract PASS 不代表真实模型语义 PASS。
 - 手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`：必须显式设置 `-Dai.quality.enabled=true` 并选择 case/all，提供 `AI_API_KEY` 后才会创建 provider gateway；不注入 synthetic scenario，运行次数默认 1。报告包含 model / prompt version / git SHA / generatedAt / runsPerCase、契约结果、确定性 gold/lexical 分数和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。它不进入普通 `mvn test`、默认 CI 或 PR 合并条件。
-- 手动 live behavior eval 使用 `TeamTacticalSkillLiveBehaviorEvalTest`：`@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，按 A–H 的明确 contract checks 解析最终输出，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。真实 provider evaluation 具有 token 成本和模型随机性，永远不进入默认 CI。
+- 手动 live 行为评估使用 `TeamTacticalSkillLiveBehaviorEvalTest`：`@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，按 A–H 的明确 contract checks 解析最终输出，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。真实 provider evaluation 具有 token 成本和模型随机性，永远不进入默认 CI。
 - 真实 `.wotbreplay` 质量仍通过显式手动 KSR / benchmark 回归确认，不能用 synthetic fixture 代替。
 
-## 10. Limitations
+## 10. 限制（Limitations）
 
-### Global（prompt 内容中的全局限制行）
+### 全局（Global，prompt 内容中的全局限制行）
 
 - `AI_INPUT_TRUNCATED`
 
-### Per-unit（prompt 中 `unitLimitations=[...]` 头部）
+### 逐单元（Per-unit，prompt 中 `unitLimitations=[...]` 头部）
 
 - `DUPLICATE_TEAM_MEMBER_ACCOUNT_IDS`
 - `TEAM_MEMBER_ENTITY_UNMAPPED`
