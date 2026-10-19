@@ -1,8 +1,9 @@
 import { tryReloadForFreshBundle } from '../utils/lazyModule.js'
 
 const STALE_ASSET_MESSAGES = [
-  /^Failed to fetch dynamically imported module:\s+(.+)$/,
-  /^Unable to preload CSS for\s+(.+)$/,
+  /^Failed to fetch dynamically imported module:\s+(.+)$/i,
+  /^error loading dynamically imported module:\s+(.+)$/i,
+  /^Unable to preload CSS for\s+(.+)$/i,
 ]
 
 function failedAssetUrl(error, target) {
@@ -38,9 +39,32 @@ export function installPreloadErrorRecovery(target = window) {
   target.addEventListener('vite:preloadError', event => {
     if (!isConfirmedStaleAsset(event.payload, target)) return
 
-    // Share the existing fresh-bundle guard with the workspace Reload action.
-    // Suppress Vite's throw only when this call will really reload; if the guard
-    // blocks a second attempt, let the normal lazy-module boundary show the error.
-    tryReloadForFreshBundle(() => event.preventDefault(), target)
+    // Share the existing fresh-bundle cooldown/key with the workspace Reload
+    // action, but automatic recovery is stricter: the guard must actually be
+    // persisted before we suppress the import error or reload. If storage is
+    // denied, keep the normal lazy-module failure UI instead of risking a
+    // reload loop that cannot survive navigation.
+    let guardPersisted = false
+    const guardedTarget = {
+      sessionStorage: {
+        getItem: key => target.sessionStorage.getItem(key),
+        setItem: (key, value) => {
+          target.sessionStorage.setItem(key, value)
+          guardPersisted = true
+        },
+      },
+      location: {
+        reload: () => {
+          if (guardPersisted) target.location.reload()
+        },
+      },
+    }
+
+    tryReloadForFreshBundle(
+      () => {
+        if (guardPersisted) event.preventDefault()
+      },
+      guardedTarget,
+    )
   })
 }
