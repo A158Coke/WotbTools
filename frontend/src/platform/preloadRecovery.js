@@ -6,6 +6,41 @@ const STALE_ASSET_MESSAGES = [
   /^Unable to preload CSS for\s+(.+)$/i,
 ]
 
+/**
+ * The browser default Resource Timing buffer is small (often 250 entries). A tab
+ * kept open across deployments can fill it long before the next stale-chunk 404,
+ * after which the failed request's entry may never be recorded and
+ * isConfirmedStaleAsset() loses its only safe signal. Reserve headroom up front
+ * and keep doubling on resourcetimingbufferfull; never clear existing entries.
+ */
+const RESOURCE_TIMING_BUFFER_SIZE = 1000
+const installedTargets = new WeakSet()
+const timingCapacityOwners = new WeakSet()
+
+function ensureResourceTimingCapacity(performance) {
+  if (typeof performance?.setResourceTimingBufferSize !== 'function') return
+  if (timingCapacityOwners.has(performance)) return
+  timingCapacityOwners.add(performance)
+
+  let size = RESOURCE_TIMING_BUFFER_SIZE
+  const resize = () => {
+    try {
+      performance.setResourceTimingBufferSize(size)
+    } catch {
+      // Sizing is best-effort; stale detection keeps its existing fallback.
+    }
+  }
+  resize()
+  try {
+    performance.addEventListener?.('resourcetimingbufferfull', () => {
+      size *= 2
+      resize()
+    })
+  } catch {
+    // No listener support: the initial reservation is still useful.
+  }
+}
+
 function failedAssetUrl(error, target) {
   const message = error instanceof Error ? error.message : String(error || '')
   const rawUrl = STALE_ASSET_MESSAGES
@@ -36,6 +71,10 @@ export function isConfirmedStaleAsset(error, target = window) {
 }
 
 export function installPreloadErrorRecovery(target = window) {
+  // Idempotent for repeated installs (tests / HMR / future bootstrap changes): no duplicate
+  // preload or resourcetimingbufferfull listeners.
+  if (installedTargets.has(target)) return
+  ensureResourceTimingCapacity(target.performance)
   target.addEventListener('vite:preloadError', event => {
     if (!isConfirmedStaleAsset(event.payload, target)) return
 
@@ -50,4 +89,5 @@ export function installPreloadErrorRecovery(target = window) {
       { requirePersistentGuard: true },
     )
   })
+  installedTargets.add(target)
 }
