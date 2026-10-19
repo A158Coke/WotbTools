@@ -589,4 +589,18 @@ describe('matchHitsByOccurrence（同名装甲板按命中次序匹配）', () =
     expect(matched[1]).toBeNull()
     expect(matched[2]).toBeNull()
   })
+
+  it('先按判定规则过滤重合三角形，再做 occurrence 匹配', () => {
+    const hits = [
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [0, 0, 0] },
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [0, 0, 0] },
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [1, 0, 0] },
+      { section: ArmorSection.HULL, plate_id: '1', partName: 'hull', point: [2, 0, 0] },
+    ]
+    const layers = [{ part_name: 'screen' }, { part_name: 'screen' }, { part_name: 'hull' }]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBe(hits[2])
+    expect(matched[2]).toBe(hits[3])
+  })
 })
