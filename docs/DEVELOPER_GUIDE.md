@@ -236,9 +236,9 @@ Replay/管理宽表必须保持高 information density；允许横向滚动，�
 
 全站使用统一页面标题、按钮、提示与表格样式；首页内容按正常文档流排列，更多页复用可滚动分段导航，文档页限制阅读宽度并允许代码/表格局部横滚。`showcase-regressions.css` 只保留既有布局 guard；共享外壳与回放样式在其后导入，`classic-profile.css` 最后提供 Profile 映射。新增规则应写入实际组件或样式 owner，避免继续叠加全局覆盖。
 
-### Replay capabilities
+### 回放能力
 
-`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：选择一次、分析一次，数据/导出/2D/3D/射击/AI 共用。
+`?view=replay` 专注批量解析、结果预览和汇总；`?view=battle-playback` 是同一工作台的 2D 模式，`?view=ai-review` 为 AI 复盘。工作台持有唯一一份文件选择与本机分析结果（`useReplaySession` + `useLocalReplayAnalysis`）：共享 selection/session，但不保证所有能力只解析一次。3D-first 时 scene playback facet 可被 canonical projection 复用；2D-first 后首次打开 3D 仍会重新加载/解码 scene facet；数据/导出/2D/3D/射击/AI 共享选择，但按各自 facet 边界加载。
 
 规则：
 

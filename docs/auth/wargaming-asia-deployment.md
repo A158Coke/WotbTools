@@ -118,11 +118,12 @@ OpenTofu 为 `wotbtools-web` 声明 5 个 mapper（ID/Access/UserInfo 三个 tok
 - 三个 token 开关（id.token.claim / access.token.claim / userinfo.token.claim）必须均为 On；
 - 若生产 realm 缺失任意 mapper，后端将收不到 WG claims，WG 登录会退化为 CN 手动流程——这是 WG 登录后仍显示「设置游戏账号」的常见根因之一。
 
-## 5. Caddy 访问日志脱敏（仓库外运维项）
+## 5. Caddy 访问日志脱敏（仓库内强制执行）
 
 - Keycloak 保持默认，不开启含请求 URI 的访问日志。
-- host 级 Caddy 若记录访问日志，三个 WG 回调路径（`.../broker/wargaming-asia/endpoint`、`.../broker/wargaming-eu/endpoint`、`.../broker/wargaming-na/endpoint`，含 `?state=...&access_token=...`）的 Query String 需要脱敏或裁剪，避免 token 落盘。建议 Caddyfile 使用 `log` 的过滤器或关闭该路径的查询参数记录。
-- 已知限制：WG 回调机制导致 token 会短暂出现在浏览器地址栏；服务端不落日志即可。
+- `deploy/tx/Caddyfile` 对认证域访问日志统一处理：始终记录访问日志，但在写 stdout 前删除原始 URI（含 query string）、请求头与响应头，再用 `log_append` 只写回 path 与 User-Agent；`compliance="security"` 标签使其进入 190 天安全日志留存。该过滤不是 host 级可选运维项，新增/修改网关必须保持并由 Caddy config/route inventory 回归验证。
+- 已知限制（WG API 错误）：Keycloak provider 的 `WargamingApiClient` 会把上游 `error.message` / `error.field` 拼进异常，`WargamingEndpoint` 的 `safeMessage` 只清控制字符并截断；因此“日志不含 token”只覆盖浏览器回调与固定分类，不覆盖上游 API 错误正文。字段级 allowlist 尚未实现。
+- 已知限制：WG 回调机制导致 token 会短暂出现在浏览器地址栏；服务端与仓库 Caddy 日志不落 token。
 
 ## 6. 上线后手工验收（三个区服各一遍）
 

@@ -223,7 +223,9 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   `victory_points_seized` / `traded_deaths` / `account_id` / `tank_id` 已随 B6 从公共列与
   Excel 移除，导出层不再输出；`survival_avg` 已改名 `survival_time_avg`。
   账号 / 车辆 ID 仍作为响应行的结构化身份字段（`accountId` / `vehicleId`）保留，
-  但不再是可导出列。
+  但不再是公共导出列。
+- **例外（原始字段 worksheet）**：单场 / `mode=each` 的「原始字段」worksheet 仍按原始输入写
+  `account_id`；它不是公共列，也不进入汇总，但分享工作簿前应视为包含账号标识。
 - 普通模式 Excel 保持现状（同样只导出 canonical 字段集）。
 - League 单场工作簿：玩家数据（身份 + 单场 stats + Rating 关键原始字段 + 占点得分
   + 七维度实际分/满分/百分比 + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、
