@@ -735,6 +735,7 @@
     "identity": "Identity",
     "authProvider": "Auth provider",
     "keycloakUserId": "Keycloak user ID",
+    "keycloakUsername": "Keycloak username",
     "roles": "Roles",
     "copy": "Copy",
     "copied": "Copied",

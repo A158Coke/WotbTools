@@ -745,6 +745,7 @@
     "identity": "身份信息",
     "authProvider": "认证服务",
     "keycloakUserId": "Keycloak 用户 ID",
+    "keycloakUsername": "Keycloak 用户名",
     "roles": "角色",
     "copy": "复制",
     "copied": "已复制",
