@@ -92,6 +92,10 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
   settlementLifeTimeSec / settlementDeathReasonRaw / settled stat facts。非 Rating identity
   （rosterComplete、#201 evidence、clan、killer/resultEntity、live provenance）不参与指纹，
   不会改变 League 身份。
+- **已知限制（全部副本冲突）**：当批次只有一个 arenaId 且其全部副本互相冲突时，`collectLeague()`
+  会记录 `CONFLICTING_REPLAYS_FOR_ARENA` 并丢弃该场全部战斗，随后 `finalizeBatch()` 在错误可展示前
+  抛 `NO_VALID_REPLAYS`。当前 UI/导出只看到 `NO_VALID_REPLAYS`，看不到具体 arena 冲突原因。
+  该缺陷待修复；排查时应先看解析进度中的冲突记录，不要把该批次误判为文件损坏或无可解析回放。
 
 ## 七维度公式（合计 1000）
 
