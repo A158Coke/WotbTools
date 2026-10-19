@@ -63,17 +63,17 @@ class ObservabilityServiceTest {
     }
 
     @Test
-    void androidDownloadClickMarkerCoexistsWithLegacyPageOpenDuringRollout() {
+    void androidDownloadClickIsDedicatedAndLegacyPageOpenRemainsAcceptedDuringRollout() {
         service.accept(batch(downloadClick()), null, "192.0.2.1");
 
-        final String legacyPageOpen = downloadClick().replaceFirst(",\\\"operation_id\\\":\\\"[^\\\"]+\\\"", "");
+        final String legacyPageOpen = downloadClick().replace("\"android_download_click\"", "\"feature_open\"");
         service.accept(batch(legacyPageOpen), null, "192.0.2.1");
 
-        final String unrelatedFeatureWithMarker = event("feature_open", ",\"operation_id\":\"" + UUID.randomUUID() + "\"");
-        rejects(HttpStatus.BAD_REQUEST, batch(unrelatedFeatureWithMarker));
-
-        final String clickWithOutcome = downloadClick().replace("}", ",\"outcome\":\"start\"}");
-        rejects(HttpStatus.BAD_REQUEST, batch(clickWithOutcome));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("\"web\"", "\"android\"")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("\"android_download\"", "\"home\"")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"operation_id\":\"" + UUID.randomUUID() + "\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}", ",\"outcome\":\"start\"}")));
     }
 
     @Test
@@ -286,10 +286,9 @@ class ObservabilityServiceTest {
     }
 
     private static String downloadClick() {
-        final String id = UUID.randomUUID().toString();
-        return "{\"event_id\":\"" + id + "\",\"event\":\"feature_open\",\"platform\":\"web\","
-                + "\"feature\":\"android_download\",\"occurred_at\":\"" + Instant.now()
-                + "\",\"operation_id\":\"" + id + "\"}";
+        return "{\"event_id\":\"" + UUID.randomUUID() + "\",\"event\":\"android_download_click\","
+                + "\"platform\":\"web\",\"feature\":\"android_download\",\"occurred_at\":\""
+                + Instant.now() + "\"}";
     }
 
     private static String event(final String type, final String extra) {
