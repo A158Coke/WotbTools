@@ -99,6 +99,9 @@ function formatCount(value) { return countFormatter.value.format(Math.round(valu
         <p class="home-hero-subtitle">{{ $t('home.heroSubtitle') }}</p>
         <div class="home-hero-actions">
           <AppButton class="home-cta" variant="primary" size="lg" href="/?view=replay">{{ $t('home.replayParse') }}<ArrowRight :size="18" aria-hidden="true" /></AppButton>
+          <AppButton v-if="!androidApp" class="home-cta-android" variant="secondary" size="lg" href="/download/android">
+            <Smartphone :size="18" aria-hidden="true" />{{ $t('android.nav') }}
+          </AppButton>
           <button v-if="onboarding" type="button" class="home-cta-ghost" data-testid="home-onboarding" @click="onboarding.openDirectory()">{{ $t('onboarding.newbie') }}</button>
         </div>
 
@@ -442,6 +445,7 @@ html[data-ui-profile="classic"] .home-hero-decor { display: none; }
   .home-hero-decor { display: none; }
   .home-hero-actions { gap: var(--space-3); }
   .home-cta { width: 100%; }
+  .home-cta-android { width: 100%; }
   .home-stats { gap: var(--space-6); margin-top: var(--space-8); }
   .home-showcase { gap: var(--space-10); }
   .home-shot { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }

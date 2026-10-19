@@ -92,6 +92,7 @@
 | `research/replay/visibility.md` | 查可见性 / 点亮证据时 |
 | `research/replay/capture-probe.md` | 查占点时间线探测结论时 |
 | `research/maps/3d-playback-client-map-research.md` | 查 3D playback 客户端地图研究时 |
+| `research/armor-inspector-he-damage.md` | 查 Armor Inspector HE 伤害公式、首面 3× 规则、R 内采样域、当前回退取舍与实验归档时 |
 
 ## Android
 
