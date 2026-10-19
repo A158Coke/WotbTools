@@ -44,27 +44,10 @@ export function installPreloadErrorRecovery(target = window) {
     // persisted before we suppress the import error or reload. If storage is
     // denied, keep the normal lazy-module failure UI instead of risking a
     // reload loop that cannot survive navigation.
-    let guardPersisted = false
-    const guardedTarget = {
-      sessionStorage: {
-        getItem: key => target.sessionStorage.getItem(key),
-        setItem: (key, value) => {
-          target.sessionStorage.setItem(key, value)
-          guardPersisted = true
-        },
-      },
-      location: {
-        reload: () => {
-          if (guardPersisted) target.location.reload()
-        },
-      },
-    }
-
     tryReloadForFreshBundle(
-      () => {
-        if (guardPersisted) event.preventDefault()
-      },
-      guardedTarget,
+      () => event.preventDefault(),
+      target,
+      { requirePersistentGuard: true },
     )
   })
 }
