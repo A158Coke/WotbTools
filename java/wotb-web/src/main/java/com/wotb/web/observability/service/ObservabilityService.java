@@ -126,7 +126,7 @@ public class ObservabilityService {
                 throw rejected(HttpStatus.SERVICE_UNAVAILABLE);
             }
         }
-        final boolean androidDownloadClick = "feature_open".equals(type)
+        final boolean androidDownloadSignal = "feature_open".equals(type)
                 && "web".equals(platform) && "android_download".equals(feature);
         if ("replay_parse".equals(type)) {
             uuid(event, "operation_id", true);
@@ -134,9 +134,10 @@ public class ObservabilityService {
                     || !Set.of("start", "success", "failure", "cancelled").contains(text(event, "outcome"))) {
                 throw rejected(HttpStatus.BAD_REQUEST);
             }
-        } else if (androidDownloadClick) {
-            // operation_id is the per-click marker. Legacy page-open events lacked it and are retired.
-            uuid(event, "operation_id", true);
+        } else if (androidDownloadSignal) {
+            // New APK-button clicks carry operation_id as a marker. Legacy page-open events did not;
+            // accept them for rolling compatibility, but the Android Downloads dashboard excludes them.
+            uuid(event, "operation_id", false);
             if (event.has("outcome")) {
                 throw rejected(HttpStatus.BAD_REQUEST);
             }
