@@ -32,17 +32,15 @@ async function loadManifest() {
 
 function recordDownloadClick() {
   // 这个页面的最终 APK 按钮是 Android downloads 唯一产品统计口径。
-  // operation_id 是新点击信号的独立 marker：旧版 page-open telemetry 没有它，因此不会污染新指标。
+  // 独立事件与旧版 page-open telemetry 在协议层区分，历史页面打开不会污染点击指标。
   // 直接 best-effort + keepalive 上报，不走 5 秒 usage queue，也绝不阻塞链接跳转。
   try {
-    const clickId = crypto.randomUUID()
     void postUsageEvents([{
-      event_id: clickId,
-      event: 'feature_open',
+      event_id: crypto.randomUUID(),
+      event: 'android_download_click',
       platform: 'web',
       feature: 'android_download',
       occurred_at: new Date().toISOString(),
-      operation_id: clickId,
     }]).catch(() => {})
   } catch {
     // Telemetry failure must never prevent the APK navigation.
