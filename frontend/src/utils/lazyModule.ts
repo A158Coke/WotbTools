@@ -157,19 +157,42 @@ interface AsyncWrapper {
   __asyncLoader: () => Promise<unknown>
 }
 
+interface FreshBundleReloadTarget {
+  sessionStorage: Pick<Storage, 'getItem' | 'setItem'>
+  location: Pick<Location, 'reload'>
+}
+
+/**
+ * 共享的一次性 fresh-bundle reload owner。
+ *
+ * 返回 true 代表本次确实会 reload；false 代表 guard 拦截。`beforeReload` 只在确定要跳转时
+ * 同步执行，供 `vite:preloadError` 在 dispatch 返回前 `preventDefault()`，而普通按钮调用不需要它。
+ * sessionStorage 不可用时仍允许一次 reload；这时没有持久 guard，但恢复动作不能被 storage failure 吞掉。
+ */
+export function tryReloadForFreshBundle(
+  beforeReload: () => void = () => {},
+  target: FreshBundleReloadTarget = window,
+): boolean {
+  const now = Date.now()
+  try {
+    const last = Number(target.sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
+    if (last && now - last < RELOAD_GUARD_WINDOW_MS) return false
+    target.sessionStorage.setItem(RELOAD_GUARD_KEY, String(now))
+  } catch {
+    // sessionStorage 不可用（隐私模式）时仍继续：reload 本身不依赖 storage。
+  }
+
+  beforeReload()
+  target.location.reload()
+  return true
+}
+
 /**
  * 拿到与新部署一致的 bundle：chunk 名是内容哈希，旧 URL 不可恢复，只有重新加载有效。
  *
- * 用一次性 guard 防止「部署本身坏掉」时刷新成环：窗口内第二次调用不再自动跳转，
+ * 用共享 guard 防止「部署本身坏掉」时刷新成环：窗口内第二次调用不再自动跳转，
  * 让用户看清失败态而不是被无限刷新。
  */
 export function reloadForFreshBundle(): void {
-  try {
-    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
-    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
-    if (last && Date.now() - last < RELOAD_GUARD_WINDOW_MS) return
-  } catch {
-    // sessionStorage 不可用（隐私模式）时直接刷新：一次可恢复的刷新优于停在坏页面上。
-  }
-  window.location.reload()
+  tryReloadForFreshBundle()
 }
