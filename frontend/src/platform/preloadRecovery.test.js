@@ -7,6 +7,9 @@ function fakeWindow(options = {}) {
     storageThrows = false,
     bufferSizeSupport = true,
     bufferSizeThrows = false,
+    observerSupport = true,
+    mainBufferEntry = true,
+    now = 10_000,
   } = options
   const status = Object.prototype.hasOwnProperty.call(options, 'status')
     ? options.status
@@ -26,12 +29,26 @@ function fakeWindow(options = {}) {
     },
   }
   const performance = new EventTarget()
-  performance.getEntriesByName = vi.fn(() => [{ responseStatus: status }])
+  performance.getEntriesByName = vi.fn(() => (mainBufferEntry ? [{ responseStatus: status }] : []))
   performance.clearResourceTimings = vi.fn()
+  performance.now = vi.fn(() => now)
   if (bufferSizeSupport) {
     performance.setResourceTimingBufferSize = vi.fn(() => {
       if (bufferSizeThrows) throw new Error('buffer size denied')
     })
+  }
+  if (observerSupport) {
+    target.__performanceObservers = []
+    target.PerformanceObserver = class {
+      constructor(callback) {
+        this.callback = callback
+        this.records = []
+        target.__performanceObservers.push(this)
+      }
+      observe() {}
+      takeRecords() { return this.records.splice(0) }
+      disconnect() {}
+    }
   }
   target.performance = performance
   return target
@@ -156,15 +173,216 @@ describe('Resource Timing capacity', () => {
     const target = fakeWindow()
     const addEventListener = vi.fn(target.addEventListener.bind(target))
     target.addEventListener = addEventListener
+    const addPerformanceListener = vi.fn(target.performance.addEventListener.bind(target.performance))
+    target.performance.addEventListener = addPerformanceListener
     installPreloadErrorRecovery(target)
     installPreloadErrorRecovery(target)
 
     expect(addEventListener.mock.calls.filter(([type]) => type === 'vite:preloadError')).toHaveLength(1)
+    expect(addPerformanceListener.mock.calls.filter(([type]) => type === 'resourcetimingbufferfull')).toHaveLength(1)
     expect(target.performance.setResourceTimingBufferSize).toHaveBeenCalledTimes(1)
+    expect(target.__performanceObservers).toHaveLength(1)
 
     const event = preloadError()
     target.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Resource Timing observer fallback', () => {
+  const staleUrl = 'https://wotbtools.com/assets/ProfilePage-CeTt6kMP.js'
+
+  it('recovers when the 404 entry is still pending in the secondary buffer', () => {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    const observer = target.__performanceObservers[0]
+    observer.records.push({ name: staleUrl, responseStatus: 404 })
+
+    const event = preloadError(staleUrl)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+    expect(observer.records).toHaveLength(0)
+  })
+
+  it('recovers when the observer already delivered the 404 entry', () => {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    const observer = target.__performanceObservers[0]
+    observer.callback({ getEntries: () => [{ name: staleUrl, responseStatus: 404 }] })
+
+    const event = preloadError(staleUrl)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not auto-reload when the pending observer entry is not 404', () => {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    target.__performanceObservers[0].records.push({ name: staleUrl, responseStatus: 503 })
+
+    const event = preloadError(staleUrl)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('ignores observer entries outside same-origin /assets', () => {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    target.__performanceObservers[0].records.push({
+      name: 'https://cdn.example.com/assets/ProfilePage.js',
+      responseStatus: 404,
+    })
+
+    const event = preloadError(staleUrl)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('falls back to getEntriesByName when PerformanceObserver is unavailable', () => {
+    const target = fakeWindow({ observerSupport: false })
+    expect(target.PerformanceObserver).toBeUndefined()
+    installPreloadErrorRecovery(target)
+
+    const event = preloadError(staleUrl)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Safari URL-less dynamic import correlation', () => {
+  const staleUrl = 'https://wotbtools.com/assets/Foo-AbC123.js'
+  const now = 10_000
+
+  function safariEvent(message = 'Importing a module script failed.') {
+    return preloadError('', message)
+  }
+
+  function recoverTarget(options = {}) {
+    const target = fakeWindow({ mainBufferEntry: false, ...options })
+    installPreloadErrorRecovery(target)
+    return target
+  }
+
+  function pushRecord(target, overrides = {}) {
+    target.__performanceObservers[0].records.push({
+      name: staleUrl,
+      responseStatus: 404,
+      initiatorType: 'script',
+      startTime: now - 200,
+      responseEnd: now - 100,
+      ...overrides,
+    })
+  }
+
+  it('recovers from a unique recent same-origin JS 404', () => {
+    const target = recoverTarget()
+    pushRecord(target)
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([503, 0, undefined])('does not recover with status %s', (status) => {
+    const target = recoverTarget()
+    pushRecord(target, { responseStatus: status })
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('does not recover without a matching timing entry', () => {
+    const target = recoverTarget()
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('does not choose between multiple recent JS 404 candidates', () => {
+    const target = recoverTarget()
+    pushRecord(target)
+    pushRecord(target, { name: 'https://wotbtools.com/assets/Bar-Def456.js' })
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('ignores cross-origin and non-JS 404 records', () => {
+    const target = recoverTarget()
+    pushRecord(target, { name: 'https://other.example/assets/Foo-AbC123.js' })
+    pushRecord(target, { name: 'https://wotbtools.com/assets/Foo-AbC123.css' })
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('ignores a candidate older than the correlation window', () => {
+    const target = recoverTarget()
+    pushRecord(target, { responseEnd: 1 })
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('does not correlate a URL-less failure from the main buffer alone', () => {
+    const target = fakeWindow({ observerSupport: false })
+    installPreloadErrorRecovery(target)
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('does not expand beyond the known Safari wording', () => {
+    const target = recoverTarget()
+    pushRecord(target)
+
+    const event = safariEvent('Importing a module script failed with extra detail')
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
+  it('keeps the shared cooldown for a second Safari recovery attempt', () => {
+    const target = recoverTarget()
+    pushRecord(target)
+
+    const first = safariEvent()
+    target.dispatchEvent(first)
+    expect(first.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+
+    const second = safariEvent()
+    target.dispatchEvent(second)
+    expect(second.defaultPrevented).toBe(false)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not suppress or reload when the persistent guard is denied', () => {
+    const target = recoverTarget({ storageThrows: true })
+    pushRecord(target)
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
   })
 })

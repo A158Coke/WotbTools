@@ -5,27 +5,48 @@ const STALE_ASSET_MESSAGES = [
   /^error loading dynamically imported module:\s+(.+)$/i,
   /^Unable to preload CSS for\s+(.+)$/i,
 ]
+/** Safari reports a URL-less dynamic-import failure; never treat it as evidence by itself. */
+const SAFARI_URL_LESS_DYNAMIC_IMPORT = /^Importing a module script failed\.?$/i
 
 /**
  * The browser default Resource Timing buffer is small (often 250 entries). A tab
  * kept open across deployments can fill it long before the next stale-chunk 404,
- * after which the failed request's entry may never be recorded and
- * isConfirmedStaleAsset() loses its only safe signal. Reserve headroom up front
- * and keep doubling on resourcetimingbufferfull; never clear existing entries.
+ * after which the failed request's entry may never reach the primary buffer.
+ * Reserve headroom up front and keep doubling on resourcetimingbufferfull; never
+ * clear existing entries. Correctness still comes from the observer below.
  */
 const RESOURCE_TIMING_BUFFER_SIZE = 1000
-const installedTargets = new WeakSet()
-const timingCapacityOwners = new WeakSet()
+/** Only keep enough recent resource records for correlation; never a telemetry store. */
+const RESOURCE_TIMING_RECENT_LIMIT = 200
+/** A Safari URL-less failure must correlate with a 404 within this recent window. */
+const SAFARI_STALE_ASSET_WINDOW_MS = 2000
 
-function ensureResourceTimingCapacity(performance) {
+/** One recovery state per target: timing capacity, observer cache and installed flag. */
+const recoveryStates = new WeakMap()
+
+function ensureRecoveryState(target) {
+  let state = recoveryStates.get(target)
+  if (state) return state
+
+  state = {
+    installed: false,
+    timingBufferSize: RESOURCE_TIMING_BUFFER_SIZE,
+    recentResources: new Map(),
+    takePending() {},
+  }
+  recoveryStates.set(target, state)
+  ensureResourceTimingCapacity(target, state)
+  ensureResourceTimingObserver(target, state)
+  return state
+}
+
+function ensureResourceTimingCapacity(target, state) {
+  const performance = target.performance
   if (typeof performance?.setResourceTimingBufferSize !== 'function') return
-  if (timingCapacityOwners.has(performance)) return
-  timingCapacityOwners.add(performance)
 
-  let size = RESOURCE_TIMING_BUFFER_SIZE
   const resize = () => {
     try {
-      performance.setResourceTimingBufferSize(size)
+      performance.setResourceTimingBufferSize(state.timingBufferSize)
     } catch {
       // Sizing is best-effort; stale detection keeps its existing fallback.
     }
@@ -33,7 +54,7 @@ function ensureResourceTimingCapacity(performance) {
   resize()
   try {
     performance.addEventListener?.('resourcetimingbufferfull', () => {
-      size *= 2
+      state.timingBufferSize *= 2
       resize()
     })
   } catch {
@@ -41,13 +62,8 @@ function ensureResourceTimingCapacity(performance) {
   }
 }
 
-function failedAssetUrl(error, target) {
-  const message = error instanceof Error ? error.message : String(error || '')
-  const rawUrl = STALE_ASSET_MESSAGES
-    .map(pattern => message.match(pattern)?.[1])
-    .find(Boolean)
+function sameOriginAssetUrl(rawUrl, target) {
   if (!rawUrl) return null
-
   try {
     const url = new URL(rawUrl, target.location.href)
     if (url.origin !== target.location.origin || !url.pathname.startsWith('/assets/')) return null
@@ -57,24 +73,128 @@ function failedAssetUrl(error, target) {
   }
 }
 
+function isJavaScriptAsset(url) {
+  try {
+    return new URL(url).pathname.endsWith('.js')
+  } catch {
+    return false
+  }
+}
+
+function failedAssetUrl(error, target) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  const rawUrl = STALE_ASSET_MESSAGES
+    .map(pattern => message.match(pattern)?.[1])
+    .find(Boolean)
+  return sameOriginAssetUrl(rawUrl, target)
+}
+
+/**
+ * Performance Timeline queues a resource entry to observers before the resource
+ * timing buffer logic runs. Keeping a bounded recent cache plus takeRecords()
+ * lets the synchronous preloadError decision see a 404 even when that entry is
+ * still in the secondary buffer or has not reached getEntriesByName() yet.
+ */
+function ensureResourceTimingObserver(target, state) {
+  const performance = target.performance
+  if (typeof performance?.getEntriesByName !== 'function') return
+  const PerformanceObserverCtor = target.PerformanceObserver
+  if (typeof PerformanceObserverCtor !== 'function') return
+
+  const remember = (entry) => {
+    const name = sameOriginAssetUrl(entry?.name, target)
+    if (!name) return
+    const record = {
+      name,
+      responseStatus: entry.responseStatus,
+      initiatorType: entry.initiatorType,
+      startTime: entry.startTime,
+      responseEnd: entry.responseEnd,
+    }
+    // Move updated URLs to the end so the bounded map evicts the least recently seen asset.
+    state.recentResources.delete(name)
+    state.recentResources.set(name, record)
+    while (state.recentResources.size > RESOURCE_TIMING_RECENT_LIMIT) {
+      state.recentResources.delete(state.recentResources.keys().next().value)
+    }
+  }
+
+  let observer
+  try {
+    observer = new PerformanceObserverCtor((list) => {
+      try {
+        for (const entry of list.getEntries()) remember(entry)
+      } catch {
+        // Best-effort observation; getEntriesByName remains the URL-ful fallback.
+      }
+    })
+    observer.observe({ type: 'resource', buffered: true })
+  } catch {
+    try {
+      observer?.observe({ entryTypes: ['resource'] })
+    } catch {
+      return
+    }
+  }
+
+  state.takePending = () => {
+    try {
+      for (const entry of observer.takeRecords()) remember(entry)
+    } catch {
+      // Partial implementations still expose entries delivered via callback.
+    }
+  }
+}
+
 /**
  * A Vite preload error is not enough to prove a stale deployment: transient
- * network failures emit the same event. Only auto-reload when Resource Timing
- * confirms that the same-origin hashed asset actually returned 404. Browsers
- * without responseStatus support keep the existing user-controlled error path.
+ * network failures emit the same event. Only auto-reload when a same-origin
+ * hashed asset is confirmed 404. Browsers without responseStatus support keep
+ * the existing user-controlled error path.
  */
 export function isConfirmedStaleAsset(error, target = window) {
+  const state = recoveryStates.get(target)
+  state?.takePending()
+
   const url = failedAssetUrl(error, target)
-  if (!url) return false
+  if (url) return isConfirmedAsset404(url, target, state)
+  return isConfirmedSafariUrlLessFailure(error, target, state)
+}
+
+function isConfirmedAsset404(url, target, state) {
+  const recent = state?.recentResources.get(url)
+  if (recent) return recent.responseStatus === 404
   const entries = target.performance?.getEntriesByName?.(url) || []
   return entries.at(-1)?.responseStatus === 404
 }
 
+/**
+ * Safari reports a URL-less "Importing a module script failed." payload. Require
+ * exactly one recent same-origin /assets/*.js 404 in a short window; anything
+ * ambiguous, old, cross-origin, non-script, or non-404 keeps the normal error UI.
+ */
+function isConfirmedSafariUrlLessFailure(error, target, state) {
+  if (!state) return false
+  const message = error instanceof Error ? error.message : String(error || '')
+  if (!SAFARI_URL_LESS_DYNAMIC_IMPORT.test(message.trim())) return false
+  const now = typeof target.performance?.now === 'function' ? target.performance.now() : null
+  if (now == null) return false
+
+  const candidates = []
+  for (const record of state.recentResources.values()) {
+    if (record.responseStatus !== 404) continue
+    if (!isJavaScriptAsset(record.name)) continue
+    if (typeof record.responseEnd !== 'number' || record.responseEnd <= 0) continue
+    const age = now - record.responseEnd
+    if (age < 0 || age > SAFARI_STALE_ASSET_WINDOW_MS) continue
+    candidates.push(record)
+  }
+  return candidates.length === 1
+}
+
 export function installPreloadErrorRecovery(target = window) {
-  // Idempotent for repeated installs (tests / HMR / future bootstrap changes): no duplicate
-  // preload or resourcetimingbufferfull listeners.
-  if (installedTargets.has(target)) return
-  ensureResourceTimingCapacity(target.performance)
+  const state = ensureRecoveryState(target)
+  if (state.installed) return
   target.addEventListener('vite:preloadError', event => {
     if (!isConfirmedStaleAsset(event.payload, target)) return
 
@@ -89,5 +209,5 @@ export function installPreloadErrorRecovery(target = window) {
       { requirePersistentGuard: true },
     )
   })
-  installedTargets.add(target)
+  state.installed = true
 }
