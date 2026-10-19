@@ -103,9 +103,11 @@ public class ObservabilityService {
         }
         uuid(event, "event_id", true);
         final String type = text(event, "event");
+        final String platform = text(event, "platform");
+        final String feature = text(event, "feature");
         if (!Set.of("active_user", "feature_open", "replay_parse").contains(type)
-                || !Set.of("web", "android").contains(text(event, "platform"))
-                || !FEATURES.contains(text(event, "feature"))) {
+                || !Set.of("web", "android").contains(platform)
+                || !FEATURES.contains(feature)) {
             throw rejected(HttpStatus.BAD_REQUEST);
         }
         try {
@@ -124,10 +126,18 @@ public class ObservabilityService {
                 throw rejected(HttpStatus.SERVICE_UNAVAILABLE);
             }
         }
+        final boolean androidDownloadClick = "feature_open".equals(type)
+                && "web".equals(platform) && "android_download".equals(feature);
         if ("replay_parse".equals(type)) {
             uuid(event, "operation_id", true);
-            if (!"replay_parse".equals(text(event, "feature"))
+            if (!"replay_parse".equals(feature)
                     || !Set.of("start", "success", "failure", "cancelled").contains(text(event, "outcome"))) {
+                throw rejected(HttpStatus.BAD_REQUEST);
+            }
+        } else if (androidDownloadClick) {
+            // operation_id is the per-click marker. Legacy page-open events lacked it and are retired.
+            uuid(event, "operation_id", true);
+            if (event.has("outcome")) {
                 throw rejected(HttpStatus.BAD_REQUEST);
             }
         } else if (event.has("outcome") || event.has("operation_id")) {
