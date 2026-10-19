@@ -24,7 +24,7 @@ marker         business-postgres.tofu-provisioned       keycloak.tofu-provisione
 - 镜像 `postgres:18-alpine`：固定 PostgreSQL 18 major 与 Alpine tag，不是 digest pin；每次 `docker compose pull` 可能解析到新的 18.x / Alpine 重建，属于当前受控的 patch 跟踪，不是 immutable artifact；
 - 管理端口 `127.0.0.1:25432:5432` —— 宿主本地 OpenTofu/管理用途；
 - 私有 service endpoint `10.20.0.1:25432:5432` —— 仅 WireGuard；
-  生产消费者仍使用 `business-postgres:5432`；
+  生产消费者使用 WireGuard `10.20.0.1:25432`；`business-postgres:5432` 只保留为允许的 rollback placement；
 - volume `business_postgres_data`；
 - `POSTGRES_DB=postgres`，这样当 bootstrap 管理员名为 `wotb` 时，
   镜像 entrypoint 绝不会自动创建由 OpenTofu 拥有的业务数据库；
