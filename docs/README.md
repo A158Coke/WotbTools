@@ -40,7 +40,6 @@
 | `architecture/engineering-metrics.md` | GitHub engineering exporter、classification、freshness 与 Engineering Overview |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
-| `architecture/opentofu-postgres-business.md` | 改 Business PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 

@@ -89,12 +89,12 @@ ocr delegate preview --from origin/main --to HEAD --format json -b "<compact con
 示例（约 10 行，勿复制整个 plan）：
 
 ```text
-Task: Battle replay detail panel improvements.
-Critical invariants:
-- Detail panel represents current replay state, not final battle results.
-- Tankopedia HP is base HP only; actual HP comes from replay parsing.
-- Do not infer consumable/equipment HP bonus source.
-- Selected marker must remain visible while map is zoomed.
+任务：改进战局回放详情面板。
+关键不变量：
+- 详情面板表示当前回放状态，不是最终战斗结果。
+- Tankopedia HP 只是 base HP；实际 HP 来自回放解析。
+- 不推断消耗品/装备 HP 加成的来源。
+- 地图缩放时选中的标记必须保持可见。
 ```
 
 ### B3. 解析规则
