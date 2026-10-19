@@ -82,7 +82,7 @@
       "title": "统计口径",
       "options": {
         "mode": "markdown",
-        "content": "仅统计 Web `/download/android` 页面最终「下载 APK」按钮的点击次数。新点击事件带非空 `operation_id` marker；旧版下载页打开事件没有该 marker，因此不会进入本指标。旧 200/206 APK 请求指标已退休，不与点击数据拼接。后续 302、文件传输是否完成、是否安装均不属于本指标。客户端遥测为 best-effort，可能少量丢失。"
+        "content": "仅统计 Web `/download/android` 页面最终「下载 APK」按钮产生的 `android_download_click` 事件。旧版下载页 `feature_open`、旧 200/206 APK 请求指标均已退休，不与点击数据拼接。后续 302、文件传输是否完成、是否安装均不属于本指标。客户端遥测为 best-effort，可能少量丢失。"
       },
       "id": 1,
       "gridPos": {
@@ -102,7 +102,7 @@
       "description": "所选时间范围内最终 APK 下载按钮被点击并被后端接收的总次数。",
       "targets": [
         {
-          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | feature=\"android_download\" | platform=\"web\" | operation_id != \"\" | keep operation_id [$__range]))",
+          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"android_download_click\" | feature=\"android_download\" | platform=\"web\" [$__range]))",
           "refId": "A",
           "queryType": "instant",
           "legendFormat": ""
@@ -145,7 +145,7 @@
       "description": "按 Grafana 自动时间桶聚合最终 APK 下载按钮点击次数。",
       "targets": [
         {
-          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | feature=\"android_download\" | platform=\"web\" | operation_id != \"\" | keep operation_id [$__interval]))",
+          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"android_download_click\" | feature=\"android_download\" | platform=\"web\" [$__interval]))",
           "refId": "A",
           "queryType": "range",
           "legendFormat": "下载 APK 点击"
@@ -167,5 +167,5 @@
       }
     }
   ],
-  "description": "Android APK download-button clicks received as best-effort product telemetry. Legacy page opens and HTTP transfer requests are retired and excluded. No data means no matching received click events, not verified zero usage."
+  "description": "Android APK download-button clicks received as dedicated best-effort product telemetry. Legacy page opens and HTTP transfer requests are retired and excluded. No data means no matching received click events, not verified zero usage."
 }
