@@ -653,14 +653,18 @@ try {
 
     const cardSpots = await findSpots(['gun', 'turret'])
     const turretCard = cardSpots.turret ? await tapReadCard(cardSpots.turret) : null
-    check(!!turretCard && turretCard.title.startsWith('击穿') && turretCard.title.includes('320'),
-      `概率卡·必穿：炮塔短按显示“击穿”与全额伤害（${turretCard?.title || '无卡片'}）`)
+    check(!!turretCard && turretCard.title.startsWith('击穿') && turretCard.text.includes('320')
+        && /击穿概率[:：]?\s*100%/.test(turretCard.text),
+      `概率卡·必穿：炮塔短按显示“击穿”、100% 概率与全额伤害（${turretCard?.text || '无卡片'}）`)
     check(!!turretCard && turretCard.titleColor === turretCard.green && turretCard.dotColor === turretCard.green,
       `概率卡·必穿：标题/层点为绿色（${turretCard?.titleColor}/${turretCard?.dotColor}）`)
 
     const gunCard = cardSpots.gun ? await tapReadCard(cardSpots.gun) : null
-    check(!!gunCard && gunCard.title.startsWith('未击穿') && !gunCard.title.includes('320'),
-      `概率卡·0%：炮管+炮盾短按显示“未击穿”且无伤害（${gunCard?.title || '无卡片'}）`)
+    check(!!gunCard && gunCard.title.startsWith('未击穿') && !gunCard.text.includes('320')
+        && /击穿概率[:：]?\s*0%/.test(gunCard.text),
+      `概率卡·0%：炮管+炮盾短按显示“未击穿”、0% 概率且无伤害（${gunCard?.text || '无卡片'}）`)
+    check(!!gunCard && /未击穿\s*·\s*0/.test(gunCard.text),
+      `概率卡·0%：判定结果右侧仍显示伤害 0（${gunCard?.text || '无卡片'}）`)
     check(!!gunCard && gunCard.titleColor === gunCard.red,
       `概率卡·0%：标题为红色（${gunCard?.titleColor}）`)
 
@@ -671,21 +675,21 @@ try {
       const spotsNow = await findSpots(['turret'])
       if (!spotsNow.turret) break
       const card = await tapReadCard(spotsNow.turret)
-      const m = card && /^可能击穿\s*(>99|<1|\d+)%/.exec(card.title)
-      if (m && m[1] !== '>99' && Number(m[1]) > 0 && Number(m[1]) < 100) {
+      const m = card && /击穿概率[:：]?\s*(>99|<1|\d+(?:\.\d+)?)%/.exec(card.text)
+      if (card && card.title.startsWith('可能击穿') && m && m[1] !== '>99' && Number(m[1]) > 0 && Number(m[1]) < 100) {
         partial = { card, pct: Number(m[1]) }
         break
       }
       await mouseDrag(spotsNow.turret, 32, 0)
     }
-    check(!!partial, `概率卡·中间区间：真实点击出现“可能击穿 1–99%”（${partial?.card?.title || '未找到'}）`)
+    check(!!partial, `概率卡·中间区间：真实点击出现“可能击穿 1–99%”（${partial?.card?.text || '未找到'}）`)
     if (partial) {
       check(partial.card.titleColor === partial.card.yellow && partial.card.dotColor === partial.card.yellow,
         `概率卡·中间区间：标题/层点为黄色（${partial.card.titleColor}/${partial.card.dotColor}）`)
-      check(partial.card.title.includes('320'),
-        `概率卡·中间区间：非零概率仍显示全额伤害（${partial.card.title}）`)
-      check(!partial.card.title.includes('100%'),
-        `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.title}）`)
+      check(partial.card.text.includes('320'),
+        `概率卡·中间区间：非零概率仍显示全额伤害（${partial.card.text}）`)
+      check(!/击穿概率[:：]?\s*100%/.test(partial.card.text),
+        `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.text}）`)
     }
   }
 

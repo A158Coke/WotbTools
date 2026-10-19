@@ -5,7 +5,7 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-19，本候选源码为 **3.15.0 / 3015000**（`android/gradle.properties`）。
+截至 2026-10-20，本候选源码为 **3.16.0 / 3016000**（`android/gradle.properties`）。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
@@ -45,6 +45,10 @@ PR #694 修复移动端装甲查看器热力图面法线精度回归（`dFdx/dFd
 PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命中首个 Primary 的 HE；含 0% 层链保留、纯外部命中回退确定性、同名板 occurrence 匹配与 `>99%` 显示边界），并在 Web 首页 Hero 增加 Android 下载按钮，随 APK 打包后按 **minor** 递增为 **3.15.0 / 3015000**，说明见 [3.15.0](releases/3.15.0.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
+`android-v3.15.0` tag 已指向 `5b28c00438837731d15d1d683d1828c7080686c8`（3.15.0 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+本 PR 把装甲查看器 HE/HESH 改为 Armor Inspector legacy 800 射线溅射采样（`func7695`），并重做 HE 热力图投影与结果卡（有效穿深顶行、判定行右侧伤害、溅射平均/范围、最佳样本），随 APK 打包后按 **minor** 递增为 **3.16.0 / 3016000**，说明见 [3.16.0](releases/3.16.0.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
+3.16.0 成为当前候选；3.15.0 若尚未 publish，由 3.16.0 取代，不再 stage/publish 旧候选。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
