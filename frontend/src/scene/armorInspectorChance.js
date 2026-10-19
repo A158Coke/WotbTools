@@ -46,6 +46,24 @@ export function normalCdf(z) {
   return 0.5 * (1 + sign * erf)
 }
 
+/**
+ * 概率标题的百分比显示：不确定性不能被四舍五入成确定性。
+ * 0 < chance < 1 且四舍五入为 100 时显示 `>99`（而不是 `100`），
+ * 亚 1% 显示 `<1`；精确 1 才是 `100`。返回值不含 `%`。
+ *
+ * @param {number} chance 0..1
+ * @returns {string}
+ */
+export function formatProbabilityPercent(chance) {
+  const value = Number(chance)
+  if (!(value > 0)) return '0'
+  if (value >= 1) return '100'
+  const pct = value * 100
+  if (pct < 1) return '<1'
+  if (pct >= 99.5) return '>99'
+  return String(Math.round(pct))
+}
+
 /** ±range 随机化区间；randomization=0 时退化为单点（确定性穿深）。 */
 function intervalFor(penetration, randomization) {
   const p = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
@@ -164,9 +182,12 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
       layerChance,
     })
   }
-  const fail = (layer, layerChance = 0) => {
+  const fail = (index, layer, layerChance = 0) => {
     chance = 0
     if (layer) record(layer, layerChance)
+    // 概率归零后仍保留到首个 Primary 的完整层链：结果卡/轨迹用这条链，
+    // 提前截断会让后续主装甲层行、层点与轨迹终点整段消失；剩余层统一累计 0%。
+    for (let j = index + 1; j < all.length; j++) record(all[j], 0)
     return { chance: 0, layers: evaluations }
   }
 
@@ -182,7 +203,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
 
     if (layer?.ricochet) {
       const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg === 1)
-      if (!hasLaterContinuation) return fail(layer)
+      if (!hasLaterContinuation) return fail(i, layer)
       record(layer, 1)
       pendingSegmentReset = true
       continue
@@ -195,7 +216,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
         const loss = Math.max(0, 1 - 0.5 * distance)
         min *= loss
         max *= loss
-        if (max <= 0) return fail(layer)
+        if (max <= 0) return fail(i, layer)
       }
       record(layer, 1)
       continue
@@ -205,7 +226,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
     if (isExternalLayer(layer)) {
       min -= thickness
       max -= thickness
-      if (max <= 0) return fail(layer)
+      if (max <= 0) return fail(i, layer)
       record(layer, 1)
       continue
     }
@@ -215,11 +236,11 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
       record(layer, 1)
       continue
     }
-    if (max <= 0) return fail(layer)
+    if (max <= 0) return fail(i, layer)
 
     const layerChance = cdfForInterval(min, max, eff)
     chance *= layerChance
-    if (!(chance > 0)) return fail(layer, layerChance)
+    if (!(chance > 0)) return fail(i, layer, layerChance)
     record(layer, layerChance)
 
     // Armor Inspector 层区间：每层同时平移一次等效厚度；σ 不变——不得按
