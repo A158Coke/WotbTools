@@ -453,8 +453,8 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 
 修改任何专项能力时，以对应专题文档 + 实际代码共同作为验收基线。
 
-## Product observability
+## 产品可观测性
 
-Grafana has six TF-managed dashboards: WotbTools Engineering Overview plus five product dashboards: Active users (home), Feature usage, Android downloads, AI token usage and Backend error logs. Client telemetry uses the bounded `/api/observability/events` contract; authenticated activity requires runtime-only `WOTB_OBSERVABILITY_HASH_KEY`. Yecao Alloy also collects ai-service logs. Dashboard deletes/replacements have no allowlist; datasource deletion remains protected. Queryable history is seven days, with asynchronous Loki deletion and size-based Docker raw-log rotation. See [`operations/observability.md`](operations/observability.md) for exact counting, privacy, missing-usage and retention limits.
+Grafana 有六个由 OpenTofu 管理的看板：WotbTools Engineering Overview 加五个产品看板：Active users (home)、Feature usage、Android downloads、AI token usage 与 Backend error logs。客户端遥测使用有界的 `/api/observability/events` 契约；认证活动需要仅运行时的 `WOTB_OBSERVABILITY_HASH_KEY`。Yecao Alloy 还采集 ai-service 日志。看板删除/替换没有 allowlist；数据源删除仍受保护。可查询历史为七天，Loki 异步删除，Docker 原始日志按大小轮转。精确计数、隐私、缺失用量与保留限制见 [`operations/observability.md`](operations/observability.md)。
 
-Engineering health: Yecao `dev-metrics-exporter`, 15-minute GitHub refresh, in-memory snapshots and independent 15-second Prometheus scrape. Canonical semantics and recovery: [`architecture/engineering-metrics.md`](architecture/engineering-metrics.md). No developer ranking or productivity score.
+工程健康：Yecao `dev-metrics-exporter`、每 15 分钟刷新 GitHub、内存快照与独立的 15 秒 Prometheus 抓取。canonical 语义与恢复见 [`architecture/engineering-metrics.md`](architecture/engineering-metrics.md)。不提供开发者排名或生产力评分。

@@ -151,9 +151,7 @@ deploy/tx/business-postgres-backup.sh [--backup-root DIR] [--retention-minutes N
 - **绝不** drop、truncate 或删除源数据库或其行。备份脚本中没有
   `DROP`/`DELETE`/`TRUNCATE` 路径。
 
-备份文件按上述方式存放在 TX 的 root-only 存储中。定时的 `database-backup.yml` workflow
-运行该脚本与独立的 Keycloak PostgreSQL 备份 owner，然后备份本地 Tofu state。本次 PR 不
-引入外部备份平台或对象存储上传。
+备份文件只存放在 TX 的 root-only 本地存储（owner-host storage）；当前没有对象存储上传、异地副本或外部备份平台。定时的 `database-backup.yml` workflow 运行该脚本与独立的 Keycloak PostgreSQL 备份 owner，然后备份本地 Tofu state。
 
 ## 恢复
 
