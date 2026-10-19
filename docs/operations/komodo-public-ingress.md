@@ -90,8 +90,8 @@ Yecao 上不发布任何 Komodo 相关内容，也没有中间容器代理它。
 ## 人工验收
 
 ```sh
-curl -fsS https://komodo.wotbtools.com/version   # the deployed Core release, e.g. 2.3.3
-curl -fsSI https://komodo.wotbtools.com/         # successful HTTP response
+curl -fsS https://komodo.wotbtools.com/version   # 当前部署的 Core release，例如 2.3.3
+curl -fsSI https://komodo.wotbtools.com/         # 成功 HTTP 响应
 ```
 
 然后打开 `https://komodo.wotbtools.com`，用现有 `KOMODO_INIT_ADMIN_PASSWORD` 以 `admin` 登录。
