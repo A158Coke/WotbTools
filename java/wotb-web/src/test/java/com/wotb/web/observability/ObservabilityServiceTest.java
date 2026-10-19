@@ -63,6 +63,20 @@ class ObservabilityServiceTest {
     }
 
     @Test
+    void androidDownloadClickRequiresMarkerAndLegacyPageOpenIsRejected() {
+        service.accept(batch(downloadClick()), null, "192.0.2.1");
+
+        final String legacyPageOpen = downloadClick().replaceFirst(",\\\"operation_id\\\":\\\"[^\\\"]+\\\"", "");
+        rejects(HttpStatus.BAD_REQUEST, batch(legacyPageOpen));
+
+        final String unrelatedFeatureWithMarker = event("feature_open", ",\"operation_id\":\"" + UUID.randomUUID() + "\"");
+        rejects(HttpStatus.BAD_REQUEST, batch(unrelatedFeatureWithMarker));
+
+        final String clickWithOutcome = downloadClick().replace("}", ",\"outcome\":\"start\"}");
+        rejects(HttpStatus.BAD_REQUEST, batch(clickWithOutcome));
+    }
+
+    @Test
     void activeUserRequiresVerifiedSubjectAndConfiguredKey() {
         rejects(HttpStatus.UNAUTHORIZED, batch(event("active_user", "")));
         final Jwt jwt = Jwt.withTokenValue("secret-token").header("alg", "none").subject("private-user").build();
@@ -269,6 +283,13 @@ class ObservabilityServiceTest {
 
     private static byte[] batch(final String events) {
         return ("{\"events\":[" + events + "]}").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String downloadClick() {
+        final String id = UUID.randomUUID().toString();
+        return "{\"event_id\":\"" + id + "\",\"event\":\"feature_open\",\"platform\":\"web\","
+                + "\"feature\":\"android_download\",\"occurred_at\":\"" + Instant.now()
+                + "\",\"operation_id\":\"" + id + "\"}";
     }
 
     private static String event(final String type, final String extra) {
