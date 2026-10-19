@@ -208,6 +208,7 @@ AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.
 | tactical-skills/position-tempo | `prompts/tactical-skills/position-tempo.zh.md` | `TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE` |
 | tactical-skills/hp-trades | `prompts/tactical-skills/hp-trades.zh.md` | `TeamPromptLocalizer.HP_TRADES_SKILL_RULE` |
 | tactical-skills/mode-objectives | `prompts/tactical-skills/mode-objectives.zh.md` | `TeamPromptLocalizer.MODE_OBJECTIVES_SKILL_RULE` |
+| tactical-skills/coach-standard | `prompts/tactical-skills/coach-standard.zh.md` | `TeamPromptLocalizer.COACH_STANDARD_RULE`（Coach Lab 争霸赛复盘规范，最高优先级，由 `team/single` 紧跟 `team/reasoning-contract` include） |
 
 编辑约定：
 
@@ -222,6 +223,16 @@ Team `Call #2` 在既有 `Canonical BattleTimeline → deterministic evidence �
 Team Review 不接受战术地图计划，也没有语音/通信证据。模型先重建当时的信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地与点数义务、空间结构和局部有效兵力，再分析局部之间的信息/火力/空间传播、推进/等待/脱离/角色转换和交换结果；无法由证据支持的推断直接跳过。`summary.primaryDiagnosis` 表示本场最重要的结论，允许“没有明显确认错误”“关键成功因素”或“对手处理更好”。Strategic Prior 明确只是阵容与可能性的基线，不能作为实际队伍计划或单独的判错依据。
 
 `TeamAiContextCompiler` 复用 canonical timeline 的已验证事件，额外输出 `OBJECTIVE_STATE_TIMELINE`：已解码的实时基地 owner/capturing/progress 与 Supremacy points。该段只输出中立事实；缺少状态不等于没有占点/没有点数，基地和点数的战术意义仍由 LLM 解释。模式模块中的 Supremacy +40 击杀价值、约 750–800/800+ 点数压力梯度，以及 Assault 约 100 秒完整捕获、70–80 秒警戒区，均是 LLM 的经验参考，不是精确阈值状态机。Golden cases (`team-tactical-skill-v01-a` 至 `h`) 扩展覆盖信息状态、局部传播、基地/点数主动权和反捷径约束。
+
+### Coach Lab 争霸赛复盘规范 v1.0
+
+Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach-standard`：2026 国服夏季赛四强 34 局逐局人工复盘沉淀的规范（完整出处 `docs/ai-coach/`）。它与上面 v0.2 六个模块冲突时以它为准，六个模块作补充：
+
+- 每个改变局势的关键决策只给 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），写进 v0.5 结果的 `summary` 与 `episodes[].analysis`，不新增字段、不新增 LLM call、不产生后端 verdict label。
+- 开局布置窗口不逐车判、因果去重、逐车细节、单车牵制与送的区分、计分顺序决定的均势局不编造根因。
+- 点位几何、地形高低差与炮线、点数账。`OBJECTIVE_STATE_TIMELINE` 提供 `SUPREMACY_POINTS` 时用它做点数账；`CAPTURE_RULE` 8a 的“比分未解码”限制只适用于没有该段的时段。
+- 车辆定位按版本（11.19 国服 SPHT = 肉车为人工确认，其余待确认）；`team/reasoning-contract` 的“vehicle class 只是能力因素”只适用于表外车型。
+- RULE-001–020 速查与常见错误清单。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 

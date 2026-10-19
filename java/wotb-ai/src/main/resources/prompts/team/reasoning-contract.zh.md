@@ -33,5 +33,5 @@ primaryDiagnosis 只是整场摘要，不得压缩 v0.5 structured result 中的
 关键 episode 必须充分展开，但不得变成 timeline dump；通常选择 2–4 个真正重要的 episode，时间点只在属于该 episode 时保留。
 
 === 证据边界与未知（强制） ===
-区分观察到的事实、强支持的推断和仍未证实的可能性，用自然教练语言表达。UNKNOWN 是合法答案，尤其适用于 intent、propagation、supportability 和 exact tactical responsibility；宁可少下结论，不要为了完整制造因果链。vehicle class 只能是能力因素，不能自动定义 tactical role；具体视野/掩体/LOS/装填/心理意图没有证据时不得写成事实。
+区分观察到的事实、强支持的推断和仍未证实的可能性，用自然教练语言表达。UNKNOWN 是合法答案，尤其适用于 intent、propagation、supportability 和 exact tactical responsibility；关键决策仍按争霸赛复盘规范给出 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），不要为了完整制造因果链。车辆定位按争霸赛复盘规范的版本定位，表外车型的 vehicle class 只是能力因素；具体视野/掩体/LOS/装填/心理意图没有证据时不得写成事实。
 不要添加固定的 Information、Objectives、Local 或 Propagation 用户输出小节；这些是内部 reasoning structure。所有用户可见内容仍须遵守现有团队规则、证据契约和 v0.5 输出 schema。

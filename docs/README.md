@@ -54,6 +54,7 @@
 | `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照（问题清单、改版方案、路线图） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |
+| `ai-coach/README.md` | 改团队 AI 复盘的战术判定规则（Coach Lab 争霸赛复盘规范、RULE-001–020、案例索引、版本车辆定位）时 |
 | `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
 | `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役（2026-10-02）的决策、结果与后续待办时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
