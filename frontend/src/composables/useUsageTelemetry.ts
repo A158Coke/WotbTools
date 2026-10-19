@@ -1,5 +1,5 @@
 import { onMounted, onUnmounted, watch, type Ref } from 'vue'
-import { postUsageEvents, type UsageEvent } from '../api/usage-events.js'
+import { postUsageEvents, type GenericUsageEvent } from '../api/usage-events.js'
 import { useAuth } from './useAuth.js'
 import { useConnectivity } from './useConnectivity.js'
 import { isAndroidApp } from './usePlatformBridge.js'
@@ -9,7 +9,7 @@ const HEARTBEAT_MS = 5 * 60_000
 const FLUSH_MS = 5_000
 const MAX_QUEUE = 100
 const BATCH_SIZE = 20
-const queue: UsageEvent[] = []
+const queue: GenericUsageEvent[] = []
 let sending = false
 let flushTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -21,7 +21,7 @@ function discardQueue(): void {
 }
 
 /** No disk queue, persistent visitor identifier, file names or raw exceptions. */
-export function recordUsage(input: Pick<UsageEvent, 'event' | 'feature'> & Partial<Pick<UsageEvent,
+export function recordUsage(input: Pick<GenericUsageEvent, 'event' | 'feature'> & Partial<Pick<GenericUsageEvent,
   'outcome' | 'operation_id' | 'error_code' | 'error_id'>>): void {
   try {
     if (!online() || queue.length >= MAX_QUEUE) return
@@ -44,7 +44,7 @@ async function flushUsage(): Promise<void> {
   } finally { sending = false }
 }
 
-const FEATURE_BY_VIEW: Readonly<Record<string, UsageEvent['feature']>> = Object.freeze({
+const FEATURE_BY_VIEW: Readonly<Record<string, GenericUsageEvent['feature']>> = Object.freeze({
   home: 'home', 'battle-playback': 'replay_2d', 'agent-replay': 'replay_3d',
   'agent-shots': 'replay_shots', 'ai-review': 'ai_review',
   'agent-tankopedia': 'tankopedia', 'agent-armor': 'armor', hof: 'hall_of_fame',

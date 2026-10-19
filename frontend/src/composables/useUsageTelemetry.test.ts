@@ -64,9 +64,14 @@ describe('foreground product telemetry', () => {
   })
 
   it('does not count opening the Android download page as a download', async () => {
-    start(ref('android'))
+    const view = ref('home')
+    start(view)
     await vi.advanceTimersByTimeAsync(5_000)
-    expect(events().filter(e => e.feature === 'android_download')).toHaveLength(0)
+    mocks.post.mockClear()
+    view.value = 'android'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(events().filter(e => e.feature === 'android_download' || e.event === 'android_download_click')).toHaveLength(0)
   })
 
   it('drops the initial page when the first connectivity result is offline', async () => {

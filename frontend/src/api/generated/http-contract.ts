@@ -1499,11 +1499,14 @@ export interface components {
         ObservabilityEventsRequest: {
             events: components["schemas"]["ObservabilityEvent"][];
         };
-        ObservabilityEvent: {
+        /** @description Event-family discriminated union. Android download clicks use an exact tuple and cannot carry replay-parse-only fields. */
+        ObservabilityEvent: components["schemas"]["GenericObservabilityEvent"] | components["schemas"]["AndroidDownloadClickEvent"];
+        /** @description All product telemetry except the dedicated Android download click event. */
+        GenericObservabilityEvent: {
             /** Format: uuid */
             event_id: string;
             /** @enum {string} */
-            event: "active_user" | "feature_open" | "replay_parse" | "android_download_click";
+            event: "active_user" | "feature_open" | "replay_parse";
             /** @enum {string} */
             platform: "web" | "android";
             /** @enum {string} */
@@ -1530,6 +1533,19 @@ export interface components {
              * @description Allowed only for failed replay_parse.
              */
             error_id?: string;
+        };
+        /** @description One click on the final "下载 APK" button on /download/android. Intent only; never implies a completed transfer or installation. */
+        AndroidDownloadClickEvent: {
+            /** Format: uuid */
+            event_id: string;
+            /** @enum {string} */
+            event: "android_download_click";
+            /** @enum {string} */
+            platform: "web";
+            /** @enum {string} */
+            feature: "android_download";
+            /** Format: date-time */
+            occurred_at: string;
         };
         TournamentEvent: {
             /** Format: int64 */

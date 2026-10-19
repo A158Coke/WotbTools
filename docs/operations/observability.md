@@ -55,6 +55,8 @@ The dashboard reports **known consumption**, not the provider's invoice; missing
 
 Each new click is logged as `event=product_telemetry telemetry_event=android_download_click feature=android_download platform=web`. Legacy download-page-open telemetry uses `telemetry_event=feature_open feature=android_download platform=web`; it can remain accepted during a rolling Web deployment but is a different protocol event and is never queried as a download click. Retained page-open rows and old cached Web bundles therefore cannot be relabeled as new download clicks.
 
+The wire contract models this as a dedicated `oneOf` event branch (`ObservabilityEvent` = `GenericObservabilityEvent` | `AndroidDownloadClickEvent`). The click branch fixes `event`, `platform=web` and `feature=android_download` and omits replay-only fields, so generated clients cannot construct the invalid combinations the backend rejects.
+
 The click event is sent immediately with `keepalive` and never gates navigation. It expresses download intent only. The dashboard deliberately ignores the later Caddy 302, Tsinghua Cloud transfer, HTTP 200/206/range behavior, bytes served and installation. The former frontend APK HTTP-request metric is **retired and replaced**, not merged into this series, so pre-cutover request/page-view history is not presented as click history.
 
 ## Error logs
