@@ -74,18 +74,18 @@ Business PostgreSQL 不在 loopback 之外发布任何内容。
 （`root=business-postgres`）把这套顺序拆开；没有 `all` 选择器：
 
 ```text
-Deploy lane (deploy/tx/deploy.sh)
-1. validate inputs and render the Compose document with the owner fragments
-2. start the business-postgres runtime and wait for pg_isready
-3. require the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
+Deploy 路径（deploy/tx/deploy.sh）
+1. 校验输入，并用 owner fragments 渲染 Compose 文档
+2. 启动 business-postgres runtime，等待 pg_isready
+3. 要求 root-only 的 /opt/wotb-tx/business-postgres.tofu-provisioned marker
 
-OpenTofu phase in `.github/workflows/business-postgres.yml` (same TX host-lock session)
-4. TX-local OpenTofu init -lockfile=readonly / validate / saved plan
-5. plan safety validation
-6. apply the exact saved plan
+`.github/workflows/business-postgres.yml` 中的 OpenTofu 阶段（同一 TX host-lock 会话）
+4. TX 本地 OpenTofu init -lockfile=readonly / validate / saved plan
+5. plan safety 校验
+6. apply 精确保存的 plan
 7. second plan
-8. require a completely clean (no-op) second plan
-9. write the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
+8. 要求完全干净（no-op）的 second plan
+9. 写 root-only 的 /opt/wotb-tx/business-postgres.tofu-provisioned marker
 ```
 
 独立 workflow 在同一把宿主锁会话中排序运行时阶段与 OpenTofu 阶段。第二次 plan 不干净即
