@@ -23,9 +23,12 @@ function fakeWindow({ status = 404, storageThrows = false } = {}) {
   return target
 }
 
-function preloadError(url = 'https://wotbtools.com/assets/ProfilePage-CeTt6kMP.js') {
+function preloadError(
+  url = 'https://wotbtools.com/assets/ProfilePage-CeTt6kMP.js',
+  message = `Failed to fetch dynamically imported module: ${url}`,
+) {
   const event = new Event('vite:preloadError', { cancelable: true })
-  event.payload = new TypeError(`Failed to fetch dynamically imported module: ${url}`)
+  event.payload = new TypeError(message)
   return event
 }
 
@@ -42,6 +45,17 @@ describe('preload error recovery', () => {
     const second = preloadError()
     target.dispatchEvent(second)
     expect(second.defaultPrevented).toBe(false)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('recognizes the Firefox dynamic-import error message', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+
+    const url = 'https://wotbtools.com/assets/ProfilePage-CeTt6kMP.js'
+    const event = preloadError(url, `error loading dynamically imported module: ${url}`)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
     expect(target.location.reload).toHaveBeenCalledTimes(1)
   })
 
@@ -65,13 +79,13 @@ describe('preload error recovery', () => {
     expect(target.location.reload).not.toHaveBeenCalled()
   })
 
-  it('still reloads and suppresses a confirmed 404 when sessionStorage is unavailable', () => {
+  it('preserves the normal error path when the reload guard cannot be persisted', () => {
     const target = fakeWindow({ storageThrows: true })
     installPreloadErrorRecovery(target)
 
     const event = preloadError()
     target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(true)
-    expect(target.location.reload).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
   })
 })
