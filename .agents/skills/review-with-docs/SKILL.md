@@ -15,6 +15,30 @@ description: >
 > **final gate ownership**：只有本 Skill 可以判定 final quality gate / zero blocker。Designer 不 review；
 > Executor 不自行判定 review pass；Prompt Repair 不自行判定 final pass。
 > **前置**：Executor 已完成实现与 targeted validation；内部 `code-quality.md` 6 项检查按需加载。
+
+## Candidate Tree Review Contract（scope owner）
+
+审查对象不是单独的 `HEAD` commit，而是 **candidate tree**：
+
+```text
+merge-base(origin/main, HEAD)..HEAD
+∪ git diff --cached             (staged)
+∪ git diff                      (unstaged tracked)
+∪ untracked implementation files
+```
+
+- **Case A — clean committed feature branch**：只用 range preview `ocr delegate preview --from origin/main --to HEAD --format json`，覆盖 merge-base..HEAD。
+- **Case B — HEAD == origin/main / first implementation / dirty worktree**：使用 workspace preview `ocr delegate preview --format json`；不能因 branch range = 0 判定 no meaningful diff。
+- **Case C — committed branch + fresh uncommitted repair**：同时运行 range preview 与 workspace preview，对 `reviewable_files` 按 path 做 deterministic union / dedupe；两个 scope 都必须进入审查。
+- **Untracked**：与任务相关的 untracked source/config/test/doc 必须进入审查；只有 gitignored、generated transient output、或明确不属于 candidate implementation 的临时文件可 skip，且必须写明理由。
+- **Fail-closed**：若 `git status --porcelain` 显示存在 candidate changes，但最终 calculated review scope == 0，则 BLOCKER：
+
+```text
+Candidate tree contains changes but review scope is empty.
+```
+
+不得用 `reviewable_count == 0` 单独判定 PASS。
+
 > **架构**：三层审查引擎 ——
 >   Layer A: Requirement/Plan Auditor（主代理自审，不可交给 diff reviewer）
 >   Layer B: OpenCodeReview Code Auditor（OCR delegate mode，通用 diff/code review）
@@ -40,7 +64,12 @@ description: >
 > OCR 是外部确定性 CLI（delegate mode 不调用 OCR 侧 LLM，推理由主代理完成），
 > 属于主代理直接驱动的工具链，不是子代理。
 
-0. **Product QA（仅明确适用时）** — 必须在任何源码/diff 审计之前完成黑盒 QA；若当前主代理已读业务源码，不得在同一会话声称满足 product-qa 的黑盒隔离，改为单独 QA pass 或标记该 gate 不适用。
+0. **Product QA（按任务 scope 判定是否适用）** — 必须在任何源码/diff 审计之前完成黑盒 QA。
+   - Applicable + clean context → 先执行黑盒 QA。
+   - Applicable + contaminated context（已读源码/diff/实现细节）→ 必须执行 fresh isolated QA pass；不得改成 N/A。
+   - Applicable + isolated pass unavailable → BLOCKER / coverage limitation，不得宣称 PASS 或 N/A。
+   - Not applicable by task scope（纯后端/文档治理/无 UI 用户流程影响/未要求浏览器验收）→ N/A。
+   “已经看过源码”永远不能成为“不适用”的理由。
 1. **OCR 就绪检查** — 确认 `ocr` CLI 可用（缺失则按固定版本安装），见「OCR 就绪检查」
 2. **Layer B — OpenCodeReview Code Audit** — OCR delegate mode 产出审查范围 + 规则，
    主代理逐文件按规则审查 diff，产出结构化 finding
@@ -72,24 +101,28 @@ description: >
 > OCR 负责确定性工程（文件筛选 / 分组 / 规则匹配 / diff 定位），主代理负责推理。
 > 禁止用自然语言重新手搓一套与 OCR 重复的 diff reviewer（§十一 避免重复 Review）。
 
-### B1. 计算审查范围（merge-base，不是 HEAD~1）
+### B1. 计算 candidate-tree 审查范围（不是 HEAD~1）
 
 ```bash
-# 分支范围（默认）：feature branch vs 正确 merge-base
+# 先看 candidate tree 是否有任何变化
+git status --porcelain
+
+# Case A：clean committed feature branch
 ocr delegate preview --from origin/main --to HEAD --format json
 
-# 工作区变更（无分支对比场景）
+# Case B：HEAD == origin/main / dirty worktree / first implementation
 ocr delegate preview --format json
 
-# 单 commit
-ocr delegate preview -c <hash> --format json
+# Case C：committed branch + fresh uncommitted repair
+# 同时运行上面两条 preview，并按 path union/dedupe reviewable_files
 ```
 
 - 输出包含：`mode`、`merge_base`、`reviewable_files`（path/status/insertions/deletions）、
   `excluded_files`（含 exclude_reason）
 - **多 commit 分支**：OCR 自动基于 merge_base 覆盖 feature branch 全部变更，不是只 review HEAD~1
-- **无有效 diff**：`reviewable_count == 0` 时按「Case 6 — No meaningful diff」处理，
-  但 **Layer A plan audit 仍继续**（无 diff ≠ plan 完成）
+- **混合 scope**：range preview 与 workspace preview 的结果按 path 做 deterministic union / dedupe；不得二选一
+- **Fail-closed**：`git status --porcelain` 有 candidate changes 而 union 后 `reviewable_count == 0` → BLOCKER；
+  不得按「Case 6 — No meaningful diff」PASS。Layer A plan audit 仍继续，但 final gate 不得通过。
 
 ### B2. 传入业务背景（compact，不塞整个 plan）
 

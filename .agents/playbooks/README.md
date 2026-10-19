@@ -5,7 +5,7 @@
 顶层只有四个 orchestrating Skills：
 
 1. `designer` — 需求澄清与方案设计，产出 approved `docs/current-plan.md`。
-2. `executor` — 执行已批准计划、targeted validation、commit/push/open PR、merge 后 cleanup。
+2. `executor` — 执行已批准计划、targeted validation；review-with-docs PASS 后 commit/push/open PR；merge 后 cleanup。
 3. `prompt-repair` — 基于现成 repair prompt / PR findings 做增量修复。
 4. `review-with-docs` — 唯一 final quality gate。
 

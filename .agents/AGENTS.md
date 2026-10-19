@@ -67,10 +67,7 @@
 
    Targeted / Module / Full 的具体命令与分层见 `java/AGENTS.md` 与 `frontend/AGENTS.md`。
 
-   **PR 快速上线规范**：用户已明确给出实现计划并要求直接上线时，Agent 完成实现后默认直接
-   `commit → push → open PR`，由 PR CI 作为验证入口；不因等待本地全量测试而阻塞推送。只有用户明确
-   要求本地验证、CI 前必须复现/排查、或安全上无法通过静态检查确认时，才运行本地测试。推送前仍必须
-   做必要的 `git diff --check`、生成契约检查和安全/配置静态检查；CI 失败后只复现失败 job 的最小范围。
+   **PR 快速上线规范**：Fast path 只表示不等待本地 repository-level full validation，绝不跳过 `review-with-docs`。实现完成后先做 targeted/static validation，再运行 `review-with-docs` 对完整 candidate tree（committed range + staged + unstaged + untracked）审查；PASS 后才 `commit → push → open PR`，由 PR CI 做 repository-level authoritative validation。只有用户明确要求本地验证、CI 前必须复现/排查、或安全上无法通过静态检查确认时，才运行本地测试。推送前仍必须做必要的 `git diff --check`、生成契约检查和安全/配置静态检查；CI 失败后只复现失败 job 的最小范围。
 
    选档决策树：
    ├─ 单一 class / function / component → Targeted tests
@@ -108,7 +105,7 @@
    只有存在无法合理并入现有入口的独立职责时，才允许新增 shell test entrypoint，并在计划/PR 中明确说明
    为什么现有入口无法承载。不得为普通字段存在性、文档 wording、可由 `tofu validate` /
    `docker compose config` / compiler / typechecker / real runtime smoke 覆盖的检查新增独立脚本。
-7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部检查阶段。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
+7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部检查阶段。审查范围必须是完整 candidate tree：committed range + staged + unstaged tracked + untracked implementation files；`git status` 有 candidate changes 而 calculated review scope = 0 时 = BLOCKER。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
 10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-with-docs final gate。
