@@ -5422,7 +5422,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     // 纯外部模块/0mm 板链没有可被 CDF 评估的主装甲：概率模式会把
                     // 模块 flat 消耗后的剩余区间误读成“必穿”；保持确定性卡片。
                     && hasPositivePrimary(res.probability_layers)
-                    && (!isHE || (heFirstPrimary && hePenChance > 0));
+                    // HE 还必须有合法 splash data（positive explosion radius / res.he）。
+                    // 半径缺失或 <=0 时计算层已 fail-closed：res.result=BLOCKED、damage=0、
+                    // res.he=null；不能再因 first Primary + chain 进入 generic probability card，
+                    // 否则会显示 May penetrate / PENETRATION full damage 覆盖底层结果。
+                    && (!isHE || (heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0));
                 const isGapProbLayer = (layer) => layer.gap === true
                     || String(layer.part_name || '').startsWith('Gap ');
                 const probabilityMatches = matchHitsByOccurrence(res.probability_layers, hitsForCheck);

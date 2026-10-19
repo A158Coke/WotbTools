@@ -413,6 +413,14 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
     expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
   })
+  it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
+    // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须
+    // 要求合法 splash data，否则 first Primary + chain 会把结果覆盖成
+    // May penetrate / PENETRATION full damage。
+    expect(kernel).toMatch(/heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0/)
+    expect(kernel).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
+  })
+
   it('爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF', () => {
     // review 2026-10-18：100mm HE 打 100mm 间隙甲 + 1mm 主甲，rem<=0 时
     // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
