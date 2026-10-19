@@ -35,7 +35,7 @@ GitHub main
 - TCR 是 TX2 的 release-artifact authority；TX2 不通过检查 TX1 运行容器推导部署镜像。
 - Komodo 只保留 TX2 Stack 的声明式元数据与运行时可见性；该 Stack 的 polling、webhook 部署与自动 workload 更新保持关闭，镜像 rollout 由 `.github/workflows/frontend-replica.yml` 执行，避免与生产 Frontend Replica 竞争。
 
-## Runtime content ownership
+## 运行时内容归属
 
 Frontend image 不是全部生产面。当前 Android 公网下载面是 host-owned runtime content；Sponsor QR 不属于 host content——它在构建期从固定 Release asset 注入，随 Frontend image / APK 发布（见 [sponsor-runtime-content.md](sponsor-runtime-content.md)）。
 
