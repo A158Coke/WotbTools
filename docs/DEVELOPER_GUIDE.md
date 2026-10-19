@@ -190,7 +190,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 League Rating 的适用范围、完整性门槛、公式、批次汇总与导出语义由 [`features/league-rating.md`](features/league-rating.md) 与 [`WotBTools_League_Rating_V6.md`](WotBTools_League_Rating_V6.md) 拥有。实现只在客户端 `frontend/src/replay-local/compute/` 与 `export/`；必须复用这一份，禁止为某个 UI 再造第二套。
 
-名人堂/百场/三环的信任模型、审核门禁、归属与删除语义由 [`features/hall-of-fame.md`](features/hall-of-fame.md) 拥有。跨层不变量：提交事实由浏览器本机解析并以 `Battle` 形状上传，原始回放作为证据附件；服务端只做结构校验与持久化，不重新解析、不验证事实真实性；归属身份是 `(区服, WotB 游戏账号)` 而非 Keycloak 用户；admin 只能审核/删除，不能改写 replay-derived facts。
+名人堂/百场/三环的信任模型、审核门禁、归属与删除语义由 [`features/hall-of-fame.md`](features/hall-of-fame.md) 拥有。跨层不变量：提交事实由浏览器本机解析并以 `Battle` 形状上传，原始回放作为证据附件；服务端只做结构校验与持久化，不重新解析、不验证事实真实性；admin 只能审核/删除，不能改写 replay-derived facts。**归属身份分两种**：百场 / 三环使用 `(区服, WotB 游戏账号)`；单场 Hall of Fame 当前只按 `accountId` 查询/归属，没有 server 维度，跨区同号可能误关联（已知当前限制，见 feature doc）。
 
 ---
 
@@ -372,7 +372,7 @@ Grafana dashboard root 管理 `deploy/observability/grafana/dashboards` 中的�
 
 ### TX service plane 与运行时所有权
 
-TX 运行时由独立 owner workflow 管理：Business API、Keycloak、Caddy 与两套 PostgreSQL 运行在 TX1；Frontend 为 TX1 + TX2 active-active（`10.20.0.1:8081` / `10.20.0.3:8081`，steady-state 权重 20/80，Caddy 在 TX1 健康检查两侧）；TX2 还承载 production-worker 主机前置条件；Yecao 只承载 AI service 与观测服务。唯一公网 HTTP/HTTPS 入口是 TX1 Caddy 80/443；固定 WireGuard 端口为 Business API app `10.20.0.1:8087` / management `10.20.0.1:8088`、Keycloak `10.20.0.1:8080`、Keycloak PostgreSQL `10.20.0.1:15432`、Business PostgreSQL `10.20.0.1:25432`。`TX_BACKEND_UPSTREAM` 等 logical endpoint 由 `deploy/tx/deploy.sh` 的 canonical validator 守护：staged deploy、dependency readiness 与 runtime gate 共用同一份 allowlist，declared 必须等于 active；公网 hostname、错误端口与未审核地址一律 fail closed。`KEYCLOAK_ISSUER_URI` 始终是公开 realm URL，不是 placement endpoint。
+TX 运行时由独立 owner workflow 管理：Business API、Keycloak、Caddy 与两套 PostgreSQL 运行在 TX1；Frontend 为 TX1 + TX2 active-active（`10.20.0.1:8081` / `10.20.0.3:8081`，steady-state 权重 20/80，Caddy 在 TX1 健康检查两侧）；TX2 还承载 production-worker 主机前置条件；Yecao 承载 AI service、Observability stack、Komodo Core（WireGuard `10.20.0.2:9120`）与 Komodo MongoDB 持久控制面数据。唯一公网 HTTP/HTTPS 入口是 TX1 Caddy 80/443；固定 WireGuard 端口为 Business API app `10.20.0.1:8087` / management `10.20.0.1:8088`、Keycloak `10.20.0.1:8080`、Keycloak PostgreSQL `10.20.0.1:15432`、Business PostgreSQL `10.20.0.1:25432`。`TX_BACKEND_UPSTREAM` 等 logical endpoint 由 `deploy/tx/deploy.sh` 的 canonical validator 守护：staged deploy、dependency readiness 与 runtime gate 共用同一份 allowlist，declared 必须等于 active；公网 hostname、错误端口与未审核地址一律 fail closed。`KEYCLOAK_ISSUER_URI` 始终是公开 realm URL，不是 placement endpoint。
 
 两套 PostgreSQL 完全独立，Compose 通过 `include` 使用各自 owner 文件，固定 project `deploy`；OpenTofu 只管理 database/role/grant，业务表由 Flyway 单一拥有；备份/恢复工具不交叉，Business 归档只能用 `business-postgres-restore.sh` 恢复到经确认的 disposable 库。完整端点矩阵、rollback 值、Keycloak/PostgreSQL 拓扑与验收见 [`operations/tx-service-plane.md`](operations/tx-service-plane.md)、[`operations/business-postgres.md`](operations/business-postgres.md)、[`auth/keycloak-tx-bootstrap.md`](auth/keycloak-tx-bootstrap.md)；Frontend active-active 见 [`operations/komodo-k7c-frontend-cutover.md`](operations/komodo-k7c-frontend-cutover.md)，TX2 主机前置条件见 [`operations/tx2-production-worker.md`](operations/tx2-production-worker.md)；state/bootstrap 见 [`operations/opentofu-local-state.md`](operations/opentofu-local-state.md)。
 

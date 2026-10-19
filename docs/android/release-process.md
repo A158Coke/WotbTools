@@ -181,6 +181,21 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 ## Rollout 与验证
 
+### 物理 Android 发布验收矩阵（每个 production release 必跑）
+
+publish 之前必须在至少一台 Android 9 问题机 + 一台 Android 13+ 真机上完成，记录型号 / Android / ABI / GeckoView 版本 / APK SHA。CI 只构建 debug APK 与 JVM 单测，不覆盖以下真机项：
+
+- **启动与基础运行**：冷启动、飞行模式启动、重启后偏好保留。
+- **认证**：QQ 登录 → 回跳 → 登出；登录态刷新；授权中 process death/resume；expired token offline。
+- **回放**：单/多文件导入、分享/打开 replay、目录导入、WASM 解析、统计、Rating、2D、3D / Armor / 贴图、连续切换 replay、前后台切换（含系统回收恢复）、断网 / 恢复。
+- **导出 / 下载（GeckoView blob 链）**：网页 PNG blob 导出、HoF replay 下载、tournament XLSX 导出 → 保存成功；核对文件内容 / 文件名 / MIME；取消与失败后重试。
+- **文件选择 / 导航**：select 打开时页面导航、选项更新后导航、file picker 打开时导航及迟到结果（新页面不可收到旧文件）。
+- **更新**：检查更新 → 下载 → 安装（含旧版本覆盖安装当前版本）；外链交系统浏览器；软键盘不遮挡输入。
+- **出站网络**：用 PCAPdroid 等免 root 工具观察一次「冷启动 → 闲置 → replay → 3D → 登录」；只应出现 wotbtools.com / 对象存储 / auth / 下载源；出现 Mozilla / Google 服务流量时先用 GeckoView 公开设置关闭，关不掉即阻塞发布。
+- **界面**：fullscreen 进出与 Back、横竖屏、软键盘。
+
+没有物理设备时不能把真机项目标为 PASS，production `version.json` 保持不变。
+
 stage 不探测 API CORS、asset gateway 或 Keycloak client；它们是 **publish** 的就绪前提（publish 的 readiness 步骤会 fail-closed）。随候选 PR 一起修改的网关配置由合并后的 main-only workflow 部署，必须在 publish 之前成功。完成物理 Android 矩阵后才手工 `workflow_dispatch(mode=publish, version=<已 staged 版本>)`。没有物理设备时不能把真机项目标为 PASS，production version.json 保持不变。
 
 `scripts/android-release/test-release.sh` 覆盖版本/幂等分类、cutover floor、schema2 stage/publish roundtrip、每个证据字段被破坏时 fail-closed、APK 文件损坏、真实版本不符、CORS wildcard/credentials/headers/methods/HTTP 错误；同时锁定 publish 不重建与 version.json 最后写入，并覆盖 publish 候选解析（显式 staged 版本优先于已前进的 main、缺版本、未 staged 版本、tag target 版本不符、staged 源码不自洽）。`scripts/ci/test-workflow-contract.sh` 校验 owner 与实际 workflow 接线（含显式 `version` 输入、publish 不读当前 main 版本、version.json 由 staged 身份写出）。

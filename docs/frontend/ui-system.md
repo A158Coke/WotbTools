@@ -1,8 +1,8 @@
-# Frontend UI system（当前实现索引）
+# 前端 UI 系统（当前实现索引）
 
 本文档是前端 UI 约定的 canonical 入口。具体 token 数值与页面规则以当前 CSS 和 `docs/DEVELOPER_GUIDE.md` 为准；本文件不复制页面级设计稿。
 
-## Design language
+## 设计语言
 
 - 设计规则（颜色、字号、间距、圆角、层级、组件、状态、文案）的 canonical 是 [`design-language.md`](design-language.md)；本文件只记录实现位置与不变量。
 - 设计语言 token：`frontend/src/styles/tokens/scale.css`（刻度，并声明 `@layer` 顺序）与 `frontend/src/styles/tokens/color.css`（两套主题的语义色）。`data-theme` 由 profile 派生：`showcase → dark`、`classic → light`。
@@ -10,14 +10,14 @@
 - `npm run lint:css`（stylelint，CI 必过）强制执行设计语言；`frontend/stylelint.legacy.json` 是旧文件的忽略名单，只减不增。
 - 设计语言组件（`frontend/src/components/`，均只用语义 token）：`AppButton`（Button）· `SegmentedControl` · `PageHeader` · `EmptyState` · `Banner` · `MenuButton`（Menu：方向键 / Esc / 外部点击关闭）· `BattlePicker`（SearchSelect 单选：超过 6 项显示搜索；手机为底部 sheet）· `StatStrip`（Stat）· `PlayerCardList`（DataTable 的手机卡片形态） · `FilterChips`（手机筛选入口：「筛选」按钮 + 已生效条件 chip，配合底部 sheet） · `AppDialog`（Dialog：焦点陷阱、Esc、关闭后焦点回到触发元素、手机底部 sheet；`keepMounted` 保留表单草稿）· `confirm()` + `ConfirmDialogHost`（应用内确认，禁止 `window.confirm`）· `MarkdownDocPage`（长文档：二级标题目录、吸顶 / 折叠目录、回到顶部）· `ReplayCapabilityTabs`（Tabs）。新界面优先复用它们，不新增一次性按钮 / 下拉样式。
 
-## UI Profile
+## 界面档位（UI Profile）
 
 - `frontend/src/composables/useUiProfile.js` 是 profile 的唯一 reactive owner，持久化 key 为 `wotb-ui-profile`。
 - `showcase` 与 `classic` 只改变 Presentation 层；`data-theme` 从 profile 派生。两种 profile 共用组件、业务状态、API、spacing 和 layout。
 - 用户偏好可以是 `showcase` / `classic` / `auto`（跟随系统 `prefers-color-scheme`，系统切换时实时跟随）。`uiProfile` 是实际生效的 profile，`uiProfilePreference` 是用户的选择；持久化存的是偏好。`<meta name="theme-color">` 随生效主题取两套 `--color-canvas`（`THEME_COLOR`），首屏脚本与运行时一致。
 - 首屏投影在 `frontend/index.html`，运行时 token 与 profile 覆盖分别位于 `frontend/src/styles/tokens.css` 和 `frontend/src/styles/classic-profile.css`。
 
-## Layout and responsive contract
+## 布局与响应式契约
 
 - 应用壳：`app/AppSidebar.vue`（平板图标栏 / 桌面可折叠侧栏）、`AppTopBar.vue` + `AppTabBar.vue`（手机标题栏 / 底部导航）。导航、账户及 Profile owner 不变；导航表面使用不透明语义色，当前栏目同时用背景、强调色和位置标识区分。
 - 通用元素：`frontend/src/styles/app-shell.css` 负责页面底色、基础按钮、表格、提示、footer 与列选择器；`PageHeader.vue` 负责标题 / 说明 / 操作的对齐与分隔；两者只使用设计语言 token，并受 CSS lint 严格检查。列选择器手机布局把分类说明放到下一行，重排按钮保持 `--hit-min`，不与字段名称争抢横向空间。
@@ -43,7 +43,7 @@
 - 选车菜单与坦克百科列表共用 `components/TankCatalogMenu.vue` 的同一实现：模糊搜索 + 搜索别名、tier/nation/type 筛选、name/tier/hp/pen 排序、手机 chips + 筛选 sheet、增量卡片网格与空/加载/错误态一致。装甲页弹窗只保留外壳与 `tankViewer` 的 `onTankList` / `onTankSelection` / `selectTank` 接线。选车网格按卡片内容确定行高，图片、车型名、等级/类型/国家信息不能被视口高度压缩裁切；大名册在弹窗内部纵向滚动，滚到边界不带动外层页面，分批加载（首屏 48，哨兵/滚轮续页）。`npm run test:browser-armor-mobile` 以真实名册响应覆盖共 121 张卡片，在 Showcase / Classic 和手机 / 平板 / 桌面三档（含 4K、筛选、筛选 sheet 与视口扩大）检查内容边界、首末车型名命中区域与无横向溢出。
 - 视觉回归至少检查对比度、overflow、sticky、hover/focus、loading/empty/error；页面级验收细节见 [`docs/DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md)。
 
-## Canonical feature references
+## Canonical 文档索引
 
 - Replay / Reconstruction workspace 样式归属：[`docs/frontend/replay-workspace.md`](replay-workspace.md)
 - 地图与 Playback 视觉/数据契约：[`docs/features/battle-playback.md`](../features/battle-playback.md)
