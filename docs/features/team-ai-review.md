@@ -1,62 +1,12 @@
-# WotbTools：训练房 / 联赛 Team-Level AI 战术复盘 — 设计文档
+# WotbTools：训练房 / 联赛 Team-Level AI 战术复盘
 
 > 当前模式入口以 `BattleCategoryUtils.fromArenaBonusType` 为准：1=个人、2=团队、3..10 也映射为团队（包含 raw 7 评级战）。这是现行宽范围分类行为，不代表 3..10 均经协议证明为联赛；League 与 HoF 另有独立 policy。见 [AI 架构的分类限制](../architecture/ai-review.md#raw-模式分类的实现限制)。
 
-## Quality harness v1（0-token CI + 手动真实回放）
-
-### Team AI Review v0.6：战术因果推理深度
-
-v0.6 是 Team Call #2 的 reasoning-quality upgrade，不改变 v0.5 的
-`TeamAiReviewResult` JSON、SSE/API 或前端字段，也不新增模型调用、Team Autopsy、
-后端 tactical semantic validator 或第二套 `TacticalEpisode`。生产链仍由现有
-`TeamAiPromptBuilder` 提供事实、时间线和确定性证据，质量提升集中在 prompt 的推理顺序与
-contract tests。
-
-模型必须先读权威事实，再建立 Information state，区分 Known、Remaining uncertainty 和
-`CURRENT` / `LAST_KNOWN` / `UNSEEN`，说明新观察移除了哪种不确定性及其 Decision impact；
-随后评估基地/点数、时间、存活、位置和可用火力形成的 objective obligation。每个关键 local
-engagement 都要区分实际参与、潜在参与和无法影响窗口的存活车辆，并以射界、遮挡、
-time-to-influence、目标、交叉火力、敌方固定、目标贡献和安全路径判断有效参与，距离只是证据。
-
-选中的 episode 按 `State before → Change → Immediate local consequence → Propagation` 展开，
-第一次减员后检查射线、牵制、释放的敌方火力、角度和互保是否变化；HP、伤害和死亡只作为
-下游验证，不作为默认的 episode 入口。训练建议使用 `Trigger → Decision target → Training goal`，
-个人重点复查和高贡献者只能从已展开且有 decision/execution 依据的 episode 选择，没有证据就省略。
-证据不足时保留 UNKNOWN，不把相邻死亡自动串成因果，也不把 vehicle class 当作 tactical role。
-
-v0.6 的 deterministic prompt contract tests 检查三语推理锚点、顺序、未知状态、目标义务、
-局部参与、传播和下游验证；默认 CI 与现有规则一样保持 0 provider token。真实 `.wotbreplay`
-质量仍通过显式手动 KSR / benchmark 回归确认，synthetic contract PASS 不代表真实模型语义 PASS。
-
-### Team AI Review v0.5：结构化结果与前端渲染
-
-Team Call #2 现在返回稳定 JSON 结果：`summary`、`episodes`、`trainingSuggestions`、
-`reviewFocus`、`highContributors`。episodes 最多 6 条，后两类各最多 2 条；所有引用必须
-指向当前 roster 和已存在 episode。Backend 只做技术契约校验，不做 tactical validator、正文
-改写或 settlement-only Team Autopsy；SSE `done` 事件通过 `teamReview` 一次性传递最终结果。
-前端自行控制标题层级，空的可选区块不渲染，字段内部仍可使用 Markdown。
-SSE `done.teamPlayers` 同时携带由 authoritative Team roster 生成的 `playerKey` →
-`displayName` / `tankName` 映射；LLM structured JSON 仍只返回稳定 `playerKey`，前端展示和复制均使用该映射。
-
-### Team AI Review v0.4：从信息到决策影响
-
-v0.4 不改变 v0.3 的输出长度、自由正文或 evidence model，而是约束长篇复盘的因果精度：对关键 Information 依次检查当时已观察事实、剩余未知状态（CURRENT/LAST_KNOWN/UNSEEN）和 decision impact。没有把信息转成部署、风险或行动义务变化时，不能只写「拿到信息」。
-
-距离只能作为空间证据，不能单独判定脱节或支援价值。是否能支援局部要结合射界、遮挡、到达影响时间、机动性、目标、交叉火力、信息贡献、目标压力、敌方固定状态和安全路径。训练建议使用本局可观察状态触发，不生成通用的米数阈值、固定时刻或 vehicle-class mandatory role；目标状态改变行动义务时，应说明谁必须行动、谁可以等待。
-
-「重点复查」「高贡献者」和「关键威胁」只能绑定正文中已经展开的 tactical episode，不能重新从 settlement leaderboard 选择。重点复查要给出时间/窗口、局部位置、实际角色和决策/执行问题；高贡献者要回答「他改变了什么」，仅有伤害、击杀或存活数据时省略。传播需要检查，但不要求每次都找到传播；缺证据时保持不确定，也不猜测敌方意图。
-
-Team review 的质量验证不依赖默认 CI 调用模型。deterministic contract tests 校验 prompt 的推理顺序、结构化输出边界和反 settlement-shortcut 规则；offline harness（`TeamReplayOfflineEvalHarnessTest`）用冻结的客户端投影夹具（`common/fixtures/replay-facts/*.json.gz`）走 canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型；已有 synthetic golden cases 只证明 prompt contract，不证明真实 LLM 行为。
-
-手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`，显式选择 case/all 后才会创建 provider gateway。它不注入 synthetic scenario，运行次数默认 1，报告包含 model/prompt version/git SHA/date、grounding/结构化 basis 结果、`must_notice`/`must_not`、最终 review 和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。它原本依赖 legacy envelope（`primaryDiagnosis.evidenceBasis`）与 test-only `TeamQualityShortcutValidator`；后者已随 2026-10 legacy 契约收敛删除，runner 迁移到 v0.5 结构化解析或退役（以最终实现为准）。
-
 ## 概述
 
-训练房和联赛回放现在可以通过 AI Review 进行 Team-Level 战术复盘。
+训练房和联赛回放通过 AI Review 进行 Team-Level 战术复盘。分析对象是整支录像者所在队伍，而不是录像者个人；每次请求只承载一场战斗的一个视角，同场双方各自独立分析，不合并。
 
-分析对象是整支录像者所在队伍，而非录像者个人。
-
-> 2026-08-12：AI Review 收口为单文件（`AiReplayBatchPolicy.MAX_FILES=1`），多文件/多视角 partition 能力已移除（`analyzeMulti`、MULTI prompt、complete-link partition、多场 roster 趋势）。（2026-09 补充：`AiReplayBatchPolicy` 已随 AI 解耦删除；单文件约束由 `POST /api/ai/reviews` 的请求形态保证。）
+复盘输出是结构化 `TeamAiReviewResult`，由后端做技术校验后通过 SSE `done` 事件一次性下发；前端按字段渲染，不要求模型输出固定章节。
 
 ## 1. 产品语义
 
@@ -69,35 +19,14 @@ Team review 的质量验证不依赖默认 CI 调用模型。deterministic contr
 - TEAM_PERSPECTIVE（训练房/联赛）使用 dominant clan 标签
 - 同场双方 perspectives 各自独立分析，不得合并
 - Recorder 只用于确定视角，不被 AI 视为分析对象
-
-### Team Tactical Skill v0.2
-
-Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VISION → OBJECTIVES → LOCAL ENGAGEMENTS → POSITION/TEMPO → TEAM EXECUTION → HP/TRADES 注入六个紧凑的训练房/联赛推理模块：新增 `information-vision`、`local-engagements`，并升级已有四个模块。它们是给 LLM 的经验性思考框架，不是后端战术 verdict；后端仍只提供 Canonical Timeline 和确定性证据。
-
-- 先重建当时信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地/点数义务、空间结构和局部有效兵力，再解释动作与结果；信息更新必须继续追踪是否被解释并转化为行动。
-- 局部不是封闭盒子：检查外部火力、固定、逼位、交叉和释放车辆造成的信息/火力/空间传播；分析谁创造了击杀条件，而不只看最后一炮。
-- 复盘 observable execution，不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因；证据不足时跳过判断。
-- `primaryDiagnosis` 仍保留以避免契约变更，但含义是“本场最重要的结论”，可以是关键成功因素、对手处理更好或没有明显确认错误，不要求制造问题。
-- Strategic Prior 是阵容与可能性空间的战略基线，不是队伍实际计划；实际执行偏离它不能单独构成失误。
-- `TeamAiContextCompiler` 复用 canonical timeline 额外输出 `OBJECTIVE_STATE_TIMELINE`，携带已解码的实时基地归属/捕获进度/实时点数；缺失不被当作零值，战术结论仍由 LLM 负责。
-- 争霸赛使用约 +40 击杀价值、750–800 警戒区、800+ 高压力的经验梯度；攻防战使用约 100 秒完整捕获与 70–80 秒警戒区。阈值只影响 LLM 排序，不进入后端状态机。
-
-模块同时提供 EN/RU 本地化替换锚点，`PromptRuleContractTest` 保证 include 展开和三语规则不漂移。`team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，保留用于验证规则进入 prompt，但不单独声称已验证实际 AI tactical behavior。未来手动诊断可使用 opt-in 的 `TeamTacticalSkillLiveBehaviorEvalTest`：复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，解析最终输出并执行 A–H 的明确 contract checks；live scenario 只提供事实，expected behavior 只存在于测试 assertion，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。该测试带 `@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，永远不进入普通 `mvn test`、默认 CI 或 PR 合并条件；真实 provider evaluation 具有 token 成本和模型随机性。
-
-`NO_SIGNIFICANT_CONFIRMED_ERROR` 只表示当前可确认/可观察证据中没有确认的重大错误，不证明本场不存在任何错误。证据覆盖不足时跳过不受支持的判断；保留 `primaryDiagnosis` 字段，不新增 backend tactical verdict、权威 `GOOD_TRADE`/`BAD_PUSH`/`HALF_COMMIT_ERROR` 标签或第二套 episode/harness。Strategic Prior 仍只是非实际赛前战术的战略基线，回放不能证明语音、call、沟通或指挥责任时不得猜测。
-
-### Team AI Review v0.3：只选关键内容，但完整解释关键内容
-
-Team Review 不再以尽可能短为目标，而是采用 selective but complete tactical review：不逐秒复述时间线、不为格式凑段落，但被选中的关键 episode 要完整说明「发生了什么 → 当时知道什么 → 哪些车辆参与 → 为什么重要 → 如何影响下一阶段」。当证据存在时，Information 要写出它怎样改变决策空间，Objectives/点数、局部交战和多个局部之间的传播也不能为了简洁省略。
-
-`primaryDiagnosis` 只是整场摘要，正文 `reviewMarkdown` 可以继续保留次级关键 episode、信息变化、目标义务、传播和执行后果。正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时完全省略。普通 7v7 约 1200–2200 字、复杂局允许约 2500–3500 字只是软目标；Team Call #2 默认专用输出上限调整为 8192 tokens，仍不改变 SSE/API contract。
+- 单文件：一次请求 = 一场战斗的一个 perspective；Team 路径逐 context 单队调用
 
 ## 2. 入口和分层（独立 ai-service，无 Dataset 依赖）
 
 ```
 Replay selection（本地文件，不上传）
   -> 客户端 Rust/WASM 解析 → canonical replay facts → ClientAiReviewProjection
-  -> AiReviewRequest = { locale, correlationId, battle, projection }（`openapi#AiReviewRequest`，required 恰为这四个字段）
+  -> AiReviewRequest = { locale, correlationId, battle, projection }（openapi#AiReviewRequest，required 恰为这四个字段）
 
 AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
   ReplayPage Workspace -> AiReviewPanel
@@ -107,29 +36,22 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
      + ClientAiProjectionAdapter 装配 + BattleCategoryUtils.resolveScope 视角判定
   -> TacticalReviewHarness.analyzeWithPrior（个人）/ TeamReplayAnalysisService.analyzeTeam（团队）
    -> SSE 流式响应（call1_start / call1_done / evidence_done / call2_token / done / error；
-      Team v0.5 在 done 一次性返回结构化 teamReview + teamPlayers）
+      Team 在 done 一次性返回结构化 teamReview + teamPlayers）
 ```
 
-- AI Review 不再消费 Processing Dataset：`ai-facts.json`、`processingJobId`、`sourceId`、Dataset lease 全部退出 AI 链路；Processing Job 域本身也已随服务端解析器退役（`V27__drop_replay_processing_job.sql`），Battle Playback / Export / 2D 回放均在本机进行。
-- 旧 `POST /api/replay/analyze`（含 multipart legacy shim）与 `AiReplayReviewService` 已移除；Business Backend 不承载也不代理 AI 请求。
-- 前端「维护中」门已解除（提交 `83884790`）：当前前端没有维护状态卡，`ai_maintenance` 三语 key 全仓无消费者；AI tab / 深链直接挂载 `AiReviewPanel.vue`，受登录门控与客户端投影可用性约束。
+- AI Review 只消费客户端 projection，不消费 Processing Dataset；服务器不解析回放，Business Backend 不承载也不代理 AI 请求。
+- 前端没有维护状态卡，`ai_maintenance` 三语 key 无消费者；AI tab / 深链直接挂载 `AiReviewPanel.vue`，受登录门控与客户端投影可用性约束。
+- 取消使用 `POST /api/ai/reviews/{correlationId}/cancel`；取消是 best-effort，已完成、已取消或从未注册都视为目标状态已达成。
 
 ## 3. AI 输入 = client canonical AI projection
 
-- AI Review 的输入只有客户端投影：`projection` 由 `frontend/src/replay-local/ai/toClientAiReviewProjection.ts` 从 canonical replay facts 生成（上游 Agent WASM typed facets → `replay-local/canonical`），`ai-service` 侧由 `ClientAiProjectionAdapter` 装配成内存 `ReplayReconstruction`。
-- 投影内容与 canonical 规则（`participants` / `perspective` / `clock` / `observationWindows` / `positions` / `turrets` / `prop3Health`·`healthEvents` / `damageNotices` / `objectives` / `limitations` / `unavailableEvidence`）见 [`docs/architecture/ai-review.md`](../architecture/ai-review.md)「投影内容（`openapi#ClientAiReviewProjection`）」。
+- 输入只有客户端投影：`projection` 由 `frontend/src/replay-local/ai/toClientAiReviewProjection.ts` 从 canonical replay facts 生成（上游 Agent WASM typed facets → `replay-local/canonical`），`ai-service` 侧由 `ClientAiProjectionAdapter` 装配成内存 `ReplayReconstruction`。
+- 投影内容与 canonical 规则（`participants` / `perspective` / `clock` / `observationWindows` / `positions` / `turrets` / `prop3Health`·`healthEvents` / `damageNotices` / `objectives` / `limitations` / `unavailableEvidence`）见 [`docs/architecture/ai-review.md`](../architecture/ai-review.md) 的「投影内容（openapi#ClientAiReviewProjection）」。
 - 服务端不解析回放，投影不携带包解码覆盖率：`coverage = null`，prompt 显示 `decodedPacketRatio=UNAVAILABLE`。
-- AI Review 走 `POST /api/ai/reviews`（客户端投影），与任何服务端 Dataset 引用完全解耦。
+- 请求信封校验先于投影结构校验：locale 仅接受 `zh-CN` / `en-US` / `ru-RU`；correlationId 必须是 canonical UUID；请求体上限 16 MiB，`Content-Encoding` 仅接受 identity / gzip，gzip 解压后同样限 16 MiB；不支持的战斗类别返回 422。
+- `done.capability` 是 request 级判定，不来自 Team 编排：只会是 `AVAILABLE` / `AVAILABLE_WITH_LIMITED_TIMELINE`；客户端时钟缺失或 projection 声明了 limitations 时为后者。`UNAVAILABLE` 保留在 wire enum 中但生产不产出，时间线不可用走 `AI_TIMELINE_UNUSABLE` 错误。
 
-## 4. Grouping 与 Partition
-
-- Exact duplicate detection（同一文件上传多次）
-- Perspective grouping（同一战斗同一队伍合并为一个代表）
-- Opposing perspectives 永远不可合并（同战斗不同队伍）
-- 单文件策略：1 个文件 = 1 个 perspective group；Team 路径逐 context 单队调用
-- 多视角 complete-link partition 已移除（2026-08-12）
-
-## 5. Team Evidence
+## 4. Team Evidence
 
 | 类型 | 来源 | 说明 |
 |------|------|------|
@@ -143,63 +65,43 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
 | Key events | Battle + events | TEAM_MEMBER_DESTROYED / FIRST_CONTACT / BATTLE_END |
 | Coverage | Event stream | 解码率、完整度、CLAMPED/INVALID 计数 |
 
-### 5.3 死亡时刻口径与阶段语义
+### 4.1 死亡时刻口径与阶段语义
 
 - 业务死亡秒值只来自 settlement `#301 field24 lifeTime`；Playback/live reconstruction 仅用于播放、HP/动画和诊断，不能覆盖或回写 `PlayerResult`。EntityLeave、最后位置和 damage threshold 不是死亡 authority；无有效结算秒值时依赖死亡时刻的 prompt 证据必须 fail-closed。
 - 阶段时间线行明确「至阶段末」存活人数（`阶段末friendlyAlive` / `至阶段末 我方存活`），system prompt 禁止把阶段末人数解读为「某时刻前已全灭」；prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`，本队/对方 + 昵称 + 坦克 + X分XX秒）。
 
-### 5.4 观测伤害抑制
+### 4.2 观测伤害抑制
 
-事件流迄今只逆向出 sub3 直接伤害，观测聚合与权威结算不一致时标记 `OBSERVED_DAMAGE_IS_PARTIAL`（条件触发：观测=权威时自动消失），prompt 层抑制观测数字、强制以 `AUTHORITATIVE_TEAM_RESULT` 为唯一可信口径；随机战交火段同步抑制「观测输出子集 + 百分比」。待事件流覆盖达 100%（type 5/31/35/39 与更多 EntityMethod subtype 逆向完成）后数字自动恢复输出。
+事件流当前只逆向出 sub3 直接伤害；观测聚合与权威结算不一致时标记 `OBSERVED_DAMAGE_IS_PARTIAL`（条件触发：观测=权威时自动消失），prompt 层抑制观测数字、强制以 `AUTHORITATIVE_TEAM_RESULT` 为唯一可信口径；随机战交火段同步抑制「观测输出子集 + 百分比」。事件流覆盖达到 100% 后数字自动恢复输出。
 
-### 5.5 位置知识状态契约（CURRENT / LAST_KNOWN，2026-08 第六轮）
+### 4.3 位置知识状态契约（CURRENT / LAST_KNOWN）
 
-FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考带 knowledge provenance
-（`PhasePositionReference`：accountId / team / x / z / knowledge / observedAtSec / ageSec，
-knowledge 复用 canonical `PositionKnowledge`）：
+FormationDepthEvidence / RelativeDepthHpEvidence 的阶段位置参考带 knowledge provenance（`PhasePositionReference`：accountId / team / x / z / knowledge / observedAtSec / ageSec，knowledge 复用 canonical `PositionKnowledge`）：
 
-- **friendly actual combatant**（last position + 无 EntityLeave + 未阵亡）→ **CURRENT**
-  （含 phase 内无新 PositionChanged 的 carry-forward，与 canonical BattleTimeline 同口径）；
-- **enemy** → 最后观测 age ≤ canonical 当前阈值（`BattleTimelineBuilder.POSITION_GAP_SEC=5s`）
-  → **CURRENT**，否则 **LAST_KNOWN**；
-- **exact 阵型/覆盖/距离数学只消费 CURRENT**：enemy LAST_KNOWN 不得满足 current-position completeness、
-  不得作为当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标、不生成
-  memberDist/referenceDist/relativeDepthM exact 距离；
-- CURRENT 不完整时 FormationDepth fail-close 只输出 `POSITION_COVERAGE_INSUFFICIENT` + CURRENT presence
-  + 独立信息段 `ENEMY_LAST_KNOWN_POSITION_REFERENCES`（account + region + observedAtSec + ageSec +
-  knowledge=LAST_KNOWN，不伪装 current）；RelativeDepthHp 直接 fail-close 该 phase 的 exact 距离测量；
-- **Region presence 基于 resolved 车辆位置 state**（每辆 CURRENT 车辆 +1，不是位置包数量）——同一车辆
-  100 个包 presence 仍 1，coverageCompleteness 与 presence 同一套 resolved state；
-- **Actual Combatant 边界**：证据层只消费 battle_results #301（battle.players）成员位置；
-  spectator/observer/camera/静态实体位置绝不进入战术位置覆盖。
+- **friendly actual combatant**（last position + 无 EntityLeave + 未阵亡）→ **CURRENT**（含 phase 内无新 PositionChanged 的 carry-forward，与 canonical BattleTimeline 同口径）；
+- **enemy** → 最后观测 age ≤ canonical 当前阈值（`BattleTimelineBuilder.POSITION_GAP_SEC=5s`）→ **CURRENT**，否则 **LAST_KNOWN**；
+- **exact 阵型/覆盖/距离数学只消费 CURRENT**：enemy LAST_KNOWN 不得满足 current-position completeness、不得作为当前 enemy centroid / enemyPositionPresence / enemyWeightedCoverageScore 坐标，也不生成 memberDist/referenceDist/relativeDepthM exact 距离；
+- CURRENT 不完整时 FormationDepth fail-close 只输出 `POSITION_COVERAGE_INSUFFICIENT` + CURRENT presence + 独立信息段 `ENEMY_LAST_KNOWN_POSITION_REFERENCES`（account + region + observedAtSec + ageSec + knowledge=LAST_KNOWN，不伪装 current）；RelativeDepthHp 直接 fail-close 该 phase 的 exact 距离测量；
+- **Region presence 基于 resolved 车辆位置 state**（每辆 CURRENT 车辆 +1，不是位置包数量）——同一车辆 100 个包 presence 仍 1，coverageCompleteness 与 presence 同一套 resolved state；
+- **Actual Combatant 边界**：证据层只消费 battle_results #301（battle.players）成员位置；spectator/observer/camera/静态实体位置绝不进入战术位置覆盖。
 
-### 5.6 ActualCombatantEntitySet（Canonical BattleTimeline 边界，2026-08 第七轮）
+### 4.4 ActualCombatantEntitySet（Canonical BattleTimeline 边界）
 
 Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 过滤（实际参战实体集）：
 
-- **建立方式**：`TeamEntityMapping.actualCombatantEntityIds(#301 账号集)`——
-  #301 账号集 = battle.players 中 accountId > 0 的账号（battle_results #301 actual combatant）；
-  实体集 = mapping.entitiesById 中 identity.usable 且 identity.accountId ∈ #301 账号集的实体；
-  `BattleTimelineBuilder` 帧循环只对 `knownEntityIdsAt(t) ∩ actualCombatantEntityIds` 构造 FrameVehicle；
-  空实体集 → fail-close `TIMELINE_MAPPING_INSUFFICIENT`（timeline 不进入 AI Review）。
-- **为何必须源头过滤**：`BattleDeltaEngine` 以 `isEnemy = !friendly()` 判定敌方，team=null 的
-  spectator/camera 实体会被当作 enemy，产生假的 FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED，
-  POSITION_CHANGE / REGION_CHANGE 本身无 team gate——只在 FrameVehicle 层过滤才能堵死全部 delta 路径。
-- **broad-roster 完整身份也不放行**：即使 #201 / ParticipantMapping / reconstruction participants 给
-  spectator 提供 accountId / team / nickname / 坦克元数据（usable identity），只要 account 不在 #301，
-  仍从 tactical timeline 排除（防止未来 spectator metadata 更完整后重新污染）。
-- **下游确认**：WorldSummary（#301 roster 为战术名单）、BattleDeltaEngine、EpisodeDetector、
-  TimelineFocusWindowSelector、TeamAiContextCompiler / PersonalAiContextCompiler 全部只消费过滤后的
-  universe（compiler 输出不得出现 spectator 的 车辆#<eid> / account）；raw timeline.events 保留原始事件
-  供必要协议用途。
+- **建立方式**：`TeamEntityMapping.actualCombatantEntityIds(#301 账号集)`——#301 账号集 = battle.players 中 accountId > 0 的账号；实体集 = mapping.entitiesById 中 identity.usable 且 identity.accountId ∈ #301 账号集的实体；`BattleTimelineBuilder` 帧循环只对 `knownEntityIdsAt(t) ∩ actualCombatantEntityIds` 构造 FrameVehicle；空实体集 → fail-close `TIMELINE_MAPPING_INSUFFICIENT`（timeline 不进入 AI Review）。
+- **必须源头过滤**：`BattleDeltaEngine` 以 `isEnemy = !friendly()` 判定敌方，team=null 的 spectator/camera 实体会被当作 enemy，产生假的 FIRST_KNOWN / ENEMY_LOST / ENEMY_REACQUIRED；POSITION_CHANGE / REGION_CHANGE 本身无 team gate——只在 FrameVehicle 层过滤才能堵死全部 delta 路径。
+- **broad-roster 完整身份也不放行**：即使 #201 / ParticipantMapping / reconstruction participants 给 spectator 提供 accountId / team / nickname / 坦克元数据（usable identity），只要 account 不在 #301，仍从 tactical timeline 排除。
+- **下游确认**：WorldSummary（#301 roster 为战术名单）、BattleDeltaEngine、EpisodeDetector、TimelineFocusWindowSelector、TeamAiContextCompiler / PersonalAiContextCompiler 全部只消费过滤后的 universe（compiler 输出不得出现 spectator 的 车辆#<eid> / account）；raw timeline.events 保留原始事件供必要协议用途。
 
-### 5.1 战斗开始
+### 4.5 战斗开始
 
 `BattleStartResolver.resolve()` 返回 `BattleStartResolution`（IDENTIFIED / ESTIMATED / UNRESOLVED）。所有事件时间通过 `tryRelative()` 转换为 battle-relative（即开战后第 N 秒）。准备阶段事件被排除。
 
-### 5.2 战斗结束
+### 4.6 战斗结束
 
 `BattleEndResolver.resolve()` 按优先级：
+
 1. `battle.durationS`（finite 且 > 0）
 2. RoundFinishedEvent（battle-relative）
 3. Scope-local evidence（该 perspective 的最后有效 position/damage）
@@ -207,129 +109,148 @@ Canonical BattleTimeline 的 tactical FrameVehicle universe 从源头按 #301 �
 
 Enemy-only damage 不得延长 Team phase。
 
-## 6. 地图和时间
+## 5. 地图和时间
 
 - 地图名通过 `common/map_names.json` 映射为中/英/俄
 - Tank 名通过 `common/tankopedia-tier{1..10}.json` 解析（单一数据源，按等级拆分）
 - 地图坐标 500x500 canonical 米
 - X/Z 为水平轴，Y 仅作高度
-- 九宫格 region 1-9（对随机战斗和团队赛共用）
+- 九宫格 region 1-9（随机战斗和团队赛共用）
 - 坐标三态：VALID / CLAMPED / INVALID
 - 不可信数据通过 `PromptDataQuoter.quote()` JSON 转义
 
-## 7. Prompt Budget
+## 6. Prompt Budget
 
-### 三层优先级
+### 6.1 三层优先级
 
 | 层级 | 内容 | 保证 |
 |------|------|------|
-| P1 Mandatory | context type, analysisUnitId, perspective header, unitLimitations, isolation/omission contract | 原子写入，超出预算抛 AiPromptBudgetExceededException（HTTP 400） |
-| P2 High-priority facts | authoritative aggregate, observed aggregate, memberFacts, coverage | 原子写入，无法容纳时该 perspective 整体 omitted |
-| P3 Optional | memberMovements, formation, battlePhases, engagements, keyEvents | 可按 unit 整块省略，不影响其他 unit |
+| P1 Mandatory | context type, analysisUnitId, perspective header, unitLimitations | 原子写入，超出预算抛 `AiPromptBudgetExceededException`（流内 `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE`） |
+| P2 High-priority facts | authoritative aggregate, observed aggregate, memberFacts, coverage | 原子写入，优先于 optional 证据保留 |
+| P3 Optional | memberMovements, formation, battlePhases, engagements, keyEvents | 可按证据块整块省略，不影响 mandatory/high-priority facts |
 
-### 预构建与原子写入
+### 6.2 预构建与原子写入
 
-- Budget planning 使用 `AiTokenEstimator` 估算 token（保守系数 `codePointCount * 1.25`），输入硬上限由 `AiModelProperties.singleReplayMaxInputTokens` 配置（默认 940,000）；不再使用固定字符数（历史 `MAX_INPUT_CHARS=30,000` 按 `String.length()` 计数的实现已移除）。
+- Budget planning 使用 `AiTokenEstimator` 估算 token（保守系数 `codePointCount * 1.25`），输入硬上限由 `AiModelProperties.singleReplayMaxInputTokens` 配置（默认 940,000）。
 - `appendRequiredBlock()` 保证 block 整体写入或抛出异常
 - 被截断的 unit 加入 `truncatedUnitIds`
 - `globalLimitations` 包含 `AI_INPUT_TRUNCATED`
 - 总 token 预算由 `BudgetWriter.finish(estimator, maxInputTokens, ...)` 在写入时判定，超限标记 truncated
 - Optional 截断不影响其他 perspective 的 mandatory/high-priority facts
 
+## 7. Team 推理契约
+
+### 7.1 推理顺序与因果质量
+
+Team Call #2 必须先读权威事实，再按以下顺序内部推理，最后才生成结构化 JSON：
+
+1. **Read authoritative facts**：区分权威结算/阵容与事件流观测子集，确认时间、人数、位置、伤害覆盖和结果来源。
+2. **Establish information state**：每个关键窗口写清当时 Known、敌方已确认信息和信息状态（CURRENT / LAST_KNOWN / UNSEEN）。
+3. **Identify remaining uncertainty**：明确尚未确认的敌方数量、另一方向兵力、LAST_KNOWN 是否仍有效；UNSEEN 是没有证据，不是无人。
+4. **Evaluate objective obligation**：结合基地归属、当前点数、点数增长、剩余时间、存活车辆、位置和可用火力，判断谁必须主动、谁可以等待、谁承担基地/时间压力。
+5. **Identify pivotal local engagements**：分析实际参与者、短时间内可补枪者、存活但无法影响该窗口者，以及外围提供有效侧射、信息或目标压力者。局部有效人数不是全队存活数。
+6. **Determine effective local participation**：综合射界、地形/遮挡、time-to-influence、机动性、目标可用性、交叉火力、敌方固定、目标贡献和安全路径；distance 只是 evidence，不是 supportability verdict。
+7. **Trace tactical transition**：每个关键 episode 按 `State before → Change → Immediate local consequence` 展开；不要把时间接近的死亡事件自动串成因果 episode。
+8. **Trace propagation**：检查局部结果如何影响后续局部的火力、空间、固定、释放车辆、支援路径、信息状态和 objective obligation；证据不足时明确无法确认直接传播。
+9. **Use HP/damage/deaths as downstream validation**：HP、伤害、死亡是 position/decision 因果链的下游结果或验证信号，不是默认 episode 入口。
+10. **Select training targets**：每条建议使用 `Trigger → Decision target → Training goal`，来自本局已解释的状态和因果链；通常 2–4 条，简单局可更少，不得凑数量。
+11. **Select individual candidates only if episode-grounded**：重点复查与高贡献者只能从已展开的 tactical episode 选择，必须有实际 role/action 与 decision/execution 依据；没有证据就输出空数组。
+12. **Produce structured JSON**：只输出 `summary`、`episodes`、`trainingSuggestions`、`reviewFocus`、`highContributors`，不新增字段。
+
+### 7.2 选择性完整表达
+
+- 不逐秒复述时间线、不为格式凑段落，但被选中的关键 episode 要完整说明「发生了什么 → 当时知道什么 → 哪些车辆参与 → 为什么重要 → 如何影响下一阶段」。
+- Information 必须说明它如何改变 decision input；Objectives/点数、局部交战和多个局部之间的传播不能为了简洁省略。距离只能作为空间证据，不能单独判定脱节或支援价值。
+- 目标状态改变行动义务时，应说明谁必须行动、谁可以等待。点数领先不自动等于必须进攻，点数落后也不自动等于立即冲锋。
+- 正文优先级为团队战术分析、Information/Objectives、关键 episode、propagation、训练建议，之后才是可选的「重点复查」和「高贡献者」；两个个人 section 各自最多 0–2 人，缺少 structural evidence 或可复查的决策/执行问题时应完全省略。
+- 普通 7v7 约 1200–2200 字、复杂局约 2500–3500 字是软目标；Team Call #2 专用输出上限为 8192 tokens。
+- 证据不足时保留 UNKNOWN，不把相邻死亡自动串成因果，也不把 vehicle class 当作 tactical role。
+
+### 7.3 Team Tactical Skill 模块
+
+Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VISION → OBJECTIVES → LOCAL ENGAGEMENTS → POSITION/TEMPO → TEAM EXECUTION → HP/TRADES 注入六个紧凑的训练房/联赛推理模块：`information-vision`、`mode-objectives`、`local-engagements`、`position-tempo`、`team-execution`、`hp-trades`。它们是给 LLM 的经验性思考框架，不是后端战术 verdict；后端仍只提供 Canonical Timeline 和确定性证据。
+
+- 先重建当时信息状态（CURRENT/LAST_KNOWN/UNSEEN）、基地/点数义务、空间结构和局部有效兵力，再解释动作与结果；信息更新必须继续追踪是否被解释并转化为行动。
+- 局部不是封闭盒子：检查外部火力、固定、逼位、交叉和释放车辆造成的信息/火力/空间传播；分析谁创造了击杀条件，而不只看最后一炮。
+- 复盘 observable execution，不假设赛前战术计划，也不推断语音、call、指挥责任或心理原因；证据不足时跳过判断。
+- `summary.primaryDiagnosis` 是本场最重要的结论，可以是关键成功因素、对手处理更好或没有明显确认错误，不要求制造问题。
+- Strategic Prior 是阵容与可能性空间的战略基线，不是队伍实际计划；实际执行偏离它不能单独构成失误。
+- `TeamAiContextCompiler` 复用 canonical timeline 额外输出 `OBJECTIVE_STATE_TIMELINE`，携带已解码的实时基地归属/捕获进度/实时点数；缺失不被当作零值，战术结论仍由 LLM 负责。
+- 争霸赛使用约 +40 击杀价值、750–800 警戒区、800+ 高压力的经验梯度；攻防战使用约 100 秒完整捕获与 70–80 秒警戒区。阈值只影响 LLM 排序，不进入后端状态机。
+- 模块同时提供 EN/RU 本地化替换锚点，`PromptRuleContractTest` 保证 include 展开和三语规则不漂移。`team-tactical-skill-v01-*.json` 是 prompt contract / static golden cases，只用于验证规则进入 prompt，不单独声称已验证实际 AI tactical behavior。
+
+### 7.4 证据边界
+
+- `NO_SIGNIFICANT_CONFIRMED_ERROR` 只表示当前可确认/可观察证据中没有确认的重大错误，不证明本场不存在任何错误。
+- 证据覆盖不足时跳过不受支持的判断；不新增 backend tactical verdict、权威 `GOOD_TRADE`/`BAD_PUSH`/`HALF_COMMIT_ERROR` 标签或第二套 episode/harness。
+- 回放不能证明语音、call、沟通或指挥责任时不得猜测；Strategic Prior 只是非实际赛前战术的战略基线。
+- 不生成通用的米数阈值、固定时刻或 vehicle-class mandatory role；没有证据时不写具体点亮、侦察收益、地形/掩体/LOS 或玩家心理。
+
 ## 8. Result Contract
 
-`POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），
-`AiReviewController` 直接向 `SseEmitter` 写入（自定 JSON event，`data` 为 JSON）：
+`POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），`AiReviewController` 直接向 `SseEmitter` 写入（自定 JSON event，`data` 为 JSON）：
 
 | event | data | 说明 |
 |-------|------|------|
 | `call1_start` | `{}` | Call #1（赛前战略基线）开始 |
 | `call1_done` | `{}` | Call #1 结束（真实发起调用时必发，无论成败） |
-| `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在 `TeamReplayAnalysisService.analyzeTeam` 首轮 Call #2 前补发，前端阶段指示随之推进） |
-| `call2_token` | `{"delta":"..."}` | 主复盘 token 增量 |
-| `done` | `{"analysis":null,"preBattleSection":"...","teamReview":{...}}` | Team v0.5 结构化结果一次性完成；个人旧文本结果仍可使用 `analysis` |
+| `evidence_done` | `{}` | 后端证据分析完成（随机战 harness 与团队路径均发射；团队路径在首轮 Call #2 前补发，前端阶段指示随之推进） |
+| `call2_token` | `{"delta":"..."}` | 主复盘 token 增量；仅个人路径产生，团队结构化路径不产生 |
+| `done` | `{"analysis":...,"preBattleSection":...,"capability":...,"teamReview":...,"teamPlayers":...}` | 终点事件；五个 key 必须全部存在，null 按 wire contract 保留 |
 | `error` | `{"id":"...","errorCode":"AI_..."}` | 流中途失败（稳定错误码；`id` 复用 `correlationId`） |
 
-异常传达规则：request-envelope 校验（`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` /
-`INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID` / `UNSUPPORTED_BATTLE_CATEGORY` /
-`AI_REQUEST_TOO_LARGE`）与 worker 池饱和
-（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP
-400 / 409 / 413 / 415 / 422 / 503；worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` /
-`PERSPECTIVE_TEAM_*` / `TEAM_FEATURES_UNAVAILABLE` / `AI_NOT_CONFIGURED` /
-`AI_*` 等）经 `error` 事件传达（HTTP 已 200），客户端断开时终止上游调用不向
-已断开的连接写入。`AiChatGateway.stream` 单次尝试不流内重试，
-`AI_TIMEOUT` / `AI_CANCELLED`（`correlationId` cancel）语义与同步 `chat()` 一致；
-同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
+`done` 的两个分支：
 
-**Call #2 流式保证**：Call #2 自由文本复盘默认关闭 thinking（`AI_THINKING_ENABLED_CALL2`
-默认 `false`，见 DEVELOPER_GUIDE 配置表）——DeepSeek 推理模式下 `reasoning_content` 先流、
-content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 另对单块 >512 字符的 delta
-按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端 `stream-text` 在 `done`
-前持续出字。
+- **个人**：`analysis` 为随机战复盘正文（末尾由后端追加三语免责句），`teamReview` 为 null，`teamPlayers` 为空数组。
+- **团队**：`analysis` 为 `teamReview.summary.verdict` 的兼容文本，`teamReview` 非 null，`teamPlayers` 为 authoritative roster 生成的 `playerKey` → `displayName` / `tankName` 映射；LLM 结构化 JSON 只返回稳定 `playerKey`，前端展示和复制使用该映射。
 
-**Historical Natural Coach Mode + Factual Consistency Guard（legacy，2026-08；相关类已随 2026-10 契约收敛删除）**：
-> 以下条目描述的是**已删除的旧设计**（只用于解释历史演化），不是当前生产行为；当前生产行为见紧随其后的
-> 「Technical schema resilience（当前生产行为）」。
-- Team Call #2 输出改为 JSON envelope（`primaryDiagnosis` / `reviewMarkdown` / `claims`，
-  由 `TeamReviewEnvelopeParser` 解析）；`done.analysis` 仍为 `reviewMarkdown`（用户看到的
-  完整自然语言复盘，主标题 `## 团队复盘`），structured 字段为内部 grounding 契约，不进正文。
-- **claims 机器字段（三语通用）**：涉及数值/时间/位置/玩家事件的 claim 携带
-  `timeSec`（battle-relative 秒）/ `region`（1-9）/ `count`（车辆数）/ `subject`（玩家昵称或坦克名）/
-  `value`（存活变化机器格式如 `7v7 -> 4v6`）/ `claimType` / `side`（FRIENDLY/ENEMY）/
-  `countSemantics`（EXACT/AT_LEAST/SUBSET）/ `knowledge`（CURRENT/LAST_KNOWN）；validator 优先按机器字段做语言无关校验，
-  正文自然语言（ZH/EN/RU）仅作兜底；`region + count` 为精确语义（exact），at-least/subset 标记放行下界/子集。
-- **Evidence Binding（最终）**：claims 的 `evidenceIds` 必须真正绑定支撑它的证据——
-  claimType→允许证据类型统一映射（DEATH→PLAYER_DESTROYED / ALIVE_TRANSITION→ALIVE_COUNT_TRANSITION·
-  FOCUS_WINDOW / POSITION_REGION→POSITION_REGION / ENEMY_POSITION→ENEMY_POSITION_KNOWN），每个引用必须
-  存在且属于允许类型（借用无关编号 → BINDING FAIL），且至少一个引用证据完整支撑该 claim（身份/时间/数值/
-  区域/knowledge 一致）；重复坦克名（如两辆 IS-7）必须用 `subjectAccountId`（可选稳定身份）或昵称，
-  禁止仅凭 tankName 绑定。有 evidenceIds 时引用证据是 primary source，全局列表/最近快照只作 defense-in-depth。
-- 输入注入确定性 `GROUNDING FACTS` 段（证据编号 E1xx）；`TeamFactualConsistencyValidator`
-  （V1–V6）校验通过后才把 `reviewMarkdown` 以 `call2_token` 增量流式转给前端——
-  **Call #2 在通过校验前不流式输出**（避免把待改写的草稿暴露给用户，代价是 draft 阶段
-  前端保持「战术复盘生成中…」）。
-- 校验失败 → LLM 自修循环（targeted rewrite → full rewrite → fail-safe），Backend 绝不
-  代改句子；重试耗尽 → `error` 事件 `AI_REVIEW_GROUNDING_FAILED`（HTTP 已 200）。
-  （`AI_REVIEW_GROUNDING_FAILED` 与执行它的 `TeamFactualConsistencyValidator` 已随 2026-10 契约收敛删除，
-  `java/*/src/main/**` 已无生产者。）
-**Technical schema resilience（当前生产行为）**：Team Call #2 保持 v0.5 JSON/API 契约，backend
-parser 对局部 optional reference/field 做确定性过滤或规范化，并在形成最低可用 contract 时直接
-返回结果；不会因为 `INVALID_REFERENCE` 触发额外模型调用。空响应、不可解析 JSON、非 object 或
-规范化后仍缺少 summary/episodes 最低结构时，最多执行一次基于 canonical battle context 的
-`SINGLE_TEAM_BATTLE_RECOVERY`；不把失败 completion 传回模型，也不将 Markdown 或部分 JSON 直接展示。
-episodes 数量超限、optional reference 无效或 optional array 被截断时会确定性 salvage，仍保留可用结果，
-不会触发 recovery。recovery 指令跟随允许语言（中文、English、Русский），但复用同一 canonical contract。
-recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`。对应事件和低基数指标见
-`docs/operations/observability.md`。
+`capability` 只有 `AVAILABLE` / `AVAILABLE_WITH_LIMITED_TIMELINE` 由 producer 产出；`UNAVAILABLE` 保留在 contract 中但不出现于 `done`。
 
-**Team Call #2 严格 JSON contract（当前生产行为）**：Team Call #2 使用 provider
-`response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player /
-Pre-battle / Harness 保持 TEXT），并且 backend 只接受严格、技术上有效的
-`TeamAiReviewResult` JSON。provider 负责 JSON 语法层，`TeamAiReviewResultParser` 负责 DTO、
-字段类型、数量上限及 roster/episode 引用等技术 contract；局部可安全修复的 reference 由 backend
-确定性 salvage，root/nested unknown field 不进入最终 DTO；后端不判断战术结论是否正确，也不
-改写或直接展示失败 completion。
+### 8.1 Team 结构化结果
 
-只有 primary 完全不可用或规范化后仍缺少最低 contract 时，记录低基数 WARN 并基于 canonical
-battle context 发起恰好一次新的 `SINGLE_TEAM_BATTLE_RECOVERY` JSON 调用；失败 completion 不会
-传回 recovery，也不会降级为 Markdown/纯文本。recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`，
-provider 错误继续沿用原始错误码。成功 recovery 的 Team Call #2 汇总日志和 token 指标包含
-primary 与 recovery 两次调用的累计值；日志不记录 prompt、completion 或 review 正文（见
-`docs/operations/observability.md`）。
+`done.teamReview` 是 `TeamAiReviewResult`：
 
-历史上响应的四类计数（`analysisUnitCount` / `analyzedUnitCount` /
-`omittedAnalysisUnitCount` / `unavailableAnalysisUnitCount`）、`files`、
-`analyses`、`keyEvents`、`limitations` 等统计/诊断字段均无消费者
-（前端只渲染 `analysis`），已作为提前性载荷删除；对应不变量只存在于
-prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集合）。
+| 字段 | 约束 |
+|---|---|
+| `summary.verdict` / `summary.primaryDiagnosis` | 可为 null 的字符串；`primaryDiagnosis` 是本场主判断摘要，不是独立的问题清单 |
+| `episodes` | 最多 6 条；`id` / `title` / `analysis` 必填且非空；`startSec` / `endSec` 可为 null，非 null 时 `endSec >= startSec`；`playerKeys` 最多 8 个且必须来自当前 roster；`id` 唯一 |
+| `trainingSuggestions` | 最多 12 条；`title` / `content` 必填；`episodeId` 必须为 null 或引用已存在的 episode |
+| `reviewFocus` | 最多 2 条；`playerKey` 必须来自 roster，`episodeId` 必须存在，`reason` 非空 |
+| `highContributors` | 最多 2 条；约束同 `reviewFocus` |
 
-## 9. Limitations
+所有数组必须存在，可为空。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
+
+### 8.2 技术校验与 recovery
+
+- Call #2 使用 provider `response_format=json_object`（`AiChatRequest.responseFormat=JSON_OBJECT`；Player / Pre-battle / Harness 保持 TEXT）。
+- `TeamAiReviewResultParser` 只校验 DTO、字段类型、数量上限及 roster/episode 引用，不判断战术结论是否正确。
+- 局部可安全修复的 optional reference 由 backend 确定性 salvage：超限 episodes 截断、无效 optional reference 丢弃、optional array 截断、root/nested unknown field 不进入最终 DTO；形成最低可用 contract（`summary` + `episodes`）时直接返回，不触发额外模型调用。
+- 只有 primary 空响应、不可解析 JSON、非 object，或规范化后仍缺少最低 contract（`summary` 的 `verdict`/`primaryDiagnosis` 与 `episodes` 根数组）时，才基于同一 canonical battle context 发起恰好一次 `SINGLE_TEAM_BATTLE_RECOVERY`；失败 completion 不传回模型，也不把 Markdown 或部分 JSON 直接展示。recovery 指令跟随允许语言（中文、English、Русский），复用同一 canonical contract。
+- recovery 仍失败时返回 `AI_REVIEW_SCHEMA_FAILED`；provider 原始错误继续沿用原错误码。成功 recovery 的汇总日志和 token 指标包含 primary 与 recovery 两次调用的累计值。
+- 日志不记录 prompt、completion 或 review 正文；对应事件和低基数指标见 `docs/operations/observability.md`。
+
+### 8.3 流式与错误
+
+- `AiChatGateway.stream` 单次尝试不流内重试，`AI_TIMEOUT` / `AI_CANCELLED`（correlationId cancel）语义与同步 `chat()` 一致；同步测试路径委托流式实现（`AiReviewStreamListener.NOOP`）。
+- 个人路径 Call #2 自由文本默认关闭 thinking（`AI_THINKING_ENABLED_CALL2` 默认 `false`）——DeepSeek 推理模式下 `reasoning_content` 先流、content 末尾一次性到达会破坏逐段流式；`SpringAiChatGateway` 对单块 >512 字符的 delta 按句切分（≤128 字符/片、间隔 ~20ms、上限 512 片）兜底，保证前端在 `done` 前持续出字。
+- 团队结构化路径不产生 `call2_token`，前端在 `done` 一次性渲染。
+- request-envelope 校验（`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` / `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID` / `UNSUPPORTED_BATTLE_CATEGORY` / `AI_REQUEST_TOO_LARGE` / `UNSUPPORTED_CONTENT_ENCODING`）与 worker 池饱和（`AI_REVIEW_BUSY`）在返回 `SseEmitter` 前由 `@ExceptionHandler` 映射 HTTP 400 / 409 / 413 / 415 / 422 / 503。
+- worker 启动后的运行时/业务失败（`NO_BATTLE_DATA` / `PERSPECTIVE_TEAM_*` / `TEAM_FEATURES_UNAVAILABLE` / `AI_TIMELINE_UNUSABLE` / `AI_NOT_CONFIGURED` / `AI_PROMPT_MANDATORY_SECTION_TOO_LARGE` / `AI_EMPTY_RESPONSE` / `AI_REVIEW_SCHEMA_FAILED` / `AI_UPSTREAM_UNAVAILABLE` / `AI_TIMEOUT` / `AI_CANCELLED` 等）经 `error` 事件传达（HTTP 已 200）；客户端断开时终止上游调用，不向已断开的连接写入。
+
+## 9. 质量验证（0-token CI + 手动真实回放）
+
+- **deterministic prompt contract tests** 校验三语推理锚点、推理顺序、未知状态、目标义务、局部参与、传播、下游验证、结构化输出边界和反 settlement-shortcut 规则；默认 CI 不调用模型，保持 0 provider token。
+- **offline harness**（`TeamReplayOfflineEvalHarnessTest`）用冻结的客户端投影夹具（`common/fixtures/replay-facts/*.json.gz`）走 canonical timeline、team context、prompt 和 grounding facts 链，只校验证据类型与结构性 gold constraint。gold 不包含标准 review，也不会发送给模型。
+- `team-tactical-skill-v01-*` 与 `TeamTacticalSkillScenarioContractTest` 只证明 prompt contract，不证明真实 LLM 行为；synthetic contract PASS 不代表真实模型语义 PASS。
+- 手动 benchmark 使用非默认 `ai-live` 的 `TeamReplayQualityBenchmarkRunner`：必须显式设置 `-Dai.quality.enabled=true` 并选择 case/all，提供 `AI_API_KEY` 后才会创建 provider gateway；不注入 synthetic scenario，运行次数默认 1。报告包含 model / prompt version / git SHA / generatedAt / runsPerCase、契约结果、确定性 gold/lexical 分数和可选 baseline 对比；不持久化 prompt、API key 或用户 token usage。它不进入普通 `mvn test`、默认 CI 或 PR 合并条件。
+- 手动 live behavior eval 使用 `TeamTacticalSkillLiveBehaviorEvalTest`：`@Tag("ai-live")` 且需要 `-Dai.tactical.live.enabled=true`，复用现有 DeepSeek gateway 与 Team Call #2 JSON contract，按 A–H 的明确 contract checks 解析最终输出，生成 `target/ai-eval-report/team-tactical-skill-live-report.{md,json}`。真实 provider evaluation 具有 token 成本和模型随机性，永远不进入默认 CI。
+- 真实 `.wotbreplay` 质量仍通过显式手动 KSR / benchmark 回归确认，不能用 synthetic fixture 代替。
+
+## 10. Limitations
 
 ### Global（prompt 内容中的全局限制行）
 
 - `AI_INPUT_TRUNCATED`
-
-（`PERSPECTIVE_TIMELINES_ISOLATED` / `ROSTER_CONSISTENCY_UNCONFIRMED` / `PERSPECTIVES_OMITTED_COUNT_<TOTAL>` 为多文件 partition 历史限制，2026-08-12 移除后不再产生）
 
 ### Per-unit（prompt 中 `unitLimitations=[...]` 头部）
 
@@ -337,22 +258,16 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 - `TEAM_MEMBER_ENTITY_UNMAPPED`
 - `TEAM_MEMBER_POSITION_UNAVAILABLE`
 - `BATTLE_END_UNRESOLVED`
-- `AI_PERSPECTIVE_OMITTED_FROM_PROMPT`
-- `AI_INPUT_TRUNCATED`（仅当该 unit 实际发生 truncation）
+- `OBSERVED_DAMAGE_IS_PARTIAL`
+- `OPPOSING_LINEUP_UNAVAILABLE`
 
-### 隔离规则
+### 注入规则
 
-- Global limitations 不出现在 unit report
-- Per-unit limitations 不出现在 global list
-- Per-unit limitation 始终绑定 `analysisUnitId`
+- `globalLimitations` 与 `unitLimitations` 分开注入，不互相复制
+- Per-unit limitation 绑定 `analysisUnitId`
+- 限制代码只作为内部字段传给模型；用户正文不得出现这些机器标签
 
-### Omission 本地化
-
-- `AI_PERSPECTIVE_OMITTED_FROM_PROMPT` -> 三语静态文本（`recon.limitations.*`）
-- `PERSPECTIVES_OMITTED_COUNT_<N>` -> 动态模板（`recon.limitations.PERSPECTIVES_OMITTED`，`{count}` 参数）
-- 前端 `localizeLimitation()` 统一处理两种形式
-
-## 10. Provider 安全
+## 11. Provider 安全
 
 - Provider body 只用于内存错误分类（HTTP status 判断/context length 检测）
 - 非空 body 日志统一替换为 `[PROVIDER_BODY_REDACTED]`
@@ -361,23 +276,20 @@ prompt 构建内部（`TeamAiPromptBuilder` 的 included/omitted/truncated 集�
 - Provider body 不进入 exception message 或 API response
 - `stable code`, `status`, `correlationId` 保留
 
-## 11. 前端展示
+## 12. 前端展示
 
-- `ReplayWorkspace.vue`：工作台编排层（五种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果
-- `FileDrop.vue`：全站唯一的文件投放面（单文件选择替换而非追加），超限拒绝，单文件删除，clear all
-- `AnalysisResultPanel.vue`：仅渲染最终 Markdown 报告（`MarkdownContent.vue`）
-- `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），修复 AI 输出 `##一、` 导致 `##` 字面显示的问题；归一化逻辑在 `utils/markdownHeadingNormalize.js`（happy-dom 下 DOMPurify 会剥掉 h1-h6，组件测试断言文本，语义由 utils 单测 + markdown-it 断言）
-- `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）
-- limitation code 由后端合并去重写入报告；前端不再逐单元渲染 limitation 明细
-- 文件交互：单文件选择（替换而非追加），超限拒绝，单文件删除，clear all
-- Fetch Response body 只读取一次（text -> JSON.parse）
-- JSON structured error 使用 `code`/`maxFiles`/`actualFiles`
-- zh/en/ru 三语
+- `ReplayWorkspace.vue`：工作台编排层（五种能力的唯一载体），capability=ai 的切换 / 深链直接挂载 `AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`（登录门控 + 客户端投影可用性），触发分析并展示结果。
+- AI Review 权限：已登录且 realm role 含 `wotbtools-user` 或 `wotbtools-admin`；登录成功但缺 role 时渲染显式权限态，不静默隐藏入口。投影未就绪时显示准备中/失败状态，失败可触发重建投影。
+- `FileDrop.vue`：全站唯一的文件投放面（单文件选择替换而非追加），超限拒绝，单文件删除，clear all。前端不支持 drag-and-drop 文件上传。
+- `AnalysisResultPanel.vue`：个人路径渲染最终 Markdown 报告；团队路径按 `summary` / `episodes` / `trainingSuggestions` / `reviewFocus` / `highContributors` 分区渲染，空的可选区块不渲染；身份使用 `done.teamPlayers` 的 authoritative 映射，缺失时显示未知玩家/未知坦克。
+- `MarkdownContent`：渲染前对 `^(#{1,6})(?!#|\s)` 行补空格（跳过围栏代码块），避免 AI 输出 `##一、` 时 `##` 字面显示；归一化逻辑在 `utils/markdownHeadingNormalize.js`，语义由 utils 单测 + markdown-it 断言覆盖。
+- 个人路径 `analysis` 末尾由后端统一追加三语免责句（AI复盘仅供参考 / This AI review is for reference only / Разбор ИИ приведён только для справки）；团队结构化结果不追加。
+- 流式阶段按 `call1` / `evidence` / `call2` 推进；失败分类覆盖登录/权限、AI 服务不可达、繁忙、超时、provider 失败、返回格式异常、已取消，可重试的失败给「重试」，取消只给中性提示并展示/复制 diagnostic id。
+- Fetch Response body 只读取一次（text -> JSON.parse）；SSE 事件经 `aiReviewSse` runtime guard 校验，畸形事件被忽略。
+- zh/en/ru 三语。
 
-## 12. 已知限制
+## 13. 已知限制
 
-- Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`
-- Player path 暂无 prompt omission（prompt 构建内部无省略单位）
-- 多文件/多视角 partition 已移除（2026-08-12）：AI 复盘仅单文件，Team 路径逐 context 单队调用；perspective 省略仍由 token 预算（mandatory/high-priority 原子写入）决定，省略单位进入 `truncatedUnitIds`/`omittedUnitIds`（prompt 构建内部；响应不再暴露单元计数）
-- 不支持 drag-and-drop 文件上传
-- 不要求真实 `.wotbreplay` E2E fixture
+- Custom auth scheme（非 Bearer/Basic/Digest）在 provider body 中不做特定脱敏——统一返回 `[PROVIDER_BODY_REDACTED]`。
+- AI 复盘仅单文件；P3 optional evidence 可整块省略，省略/截断集合只在 prompt 构建内部（`truncatedUnitIds`/`omittedUnitIds`），响应不暴露单元计数。
+- 不要求真实 `.wotbreplay` E2E fixture；synthetic/golden case 只锁定 prompt 与结构契约，不证明真实模型语义质量。
