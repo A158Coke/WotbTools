@@ -96,6 +96,8 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
   会记录 `CONFLICTING_REPLAYS_FOR_ARENA` 并丢弃该场全部战斗，随后 `finalizeBatch()` 在错误可展示前
   抛 `NO_VALID_REPLAYS`。当前 UI/导出只看到 `NO_VALID_REPLAYS`，看不到具体 arena 冲突原因。
   该缺陷待修复；当前没有用户可见的冲突明细，只能调试内部批次计算。维护者不要把该批次误判为文件损坏或无可解析回放。
+- **已知限制（clan tag 未归一化）**：`battleFacts.ts` 原样转发 `clan_tag`，`autoName()` 做字面比较，`teamKey()` 因此把 `CHRD` 与 `CHRD ` 视为不同战队；混合批次可能生成重复战队汇总或覆盖 key。golden fixtures 已包含带 padding 的形式；当前未做 trim/normalize。
+- **已知限制（导出失败标签）**：`export/sheets.ts:failureLabel()` 未覆盖 `LEAGUE_ARENA_ID_MISSING` / `LEAGUE_INVALID_TEAM` / `LEAGUE_DUPLICATE_ACCOUNT_ID` / `LEAGUE_MISSING_TANK` / `LEAGUE_INVALID_STAT_FACTS`；这些失败在中文战斗列表 sheet 中会显示原始 error code。已有本地化描述，但导出映射尚未接上。
 
 ## 七维度公式（合计 1000）
 
