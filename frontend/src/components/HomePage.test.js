@@ -95,6 +95,16 @@ describe('HomePage is a showcase, not a navigation surface', () => {
     wrapper.unmount()
   })
 
+  it('places a secondary Android download button in the hero on the web', () => {
+    const wrapper = mountPage()
+    const heroLink = wrapper.get('.home-hero a[href="/download/android"]')
+    expect(heroLink.classes()).toContain('is-secondary')
+    expect(heroLink.text()).toContain('android.nav')
+    // 底部转化卡保留：Hero 是快速入口，不是替换原有内容。
+    expect(wrapper.get('.home-take').find('a[href="/download/android"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('omits the entire Android promo inside the Android app but keeps sponsorship', () => {
     platform.android = true
     const wrapper = mountPage()
@@ -126,12 +136,20 @@ describe('HomePage is a showcase, not a navigation surface', () => {
 
   it('no destination is duplicated, counted by component not by href', () => {
     const wrapper = mountPage({ start: vi.fn(), openDirectory: vi.fn() })
+    // Android 下载在 Hero 与底部转化卡各有一个入口是有意的转化重复，不是功能导航重复；
+    // 其余目的地仍必须唯一。
+    const intentionalConversionDuplicates = new Set(['/download/android'])
     const seen = new Map()
     const duplicated = []
     for (const href of hrefsOf(wrapper)) {
       const destination = destinationOf(href)
-      if (seen.has(destination)) duplicated.push(`${href} (same destination as ${seen.get(destination)})`)
-      else seen.set(destination, href)
+      if (seen.has(destination)) {
+        if (!intentionalConversionDuplicates.has(destination)) {
+          duplicated.push(`${href} (same destination as ${seen.get(destination)})`)
+        }
+      } else {
+        seen.set(destination, href)
+      }
     }
     expect(duplicated, duplicated.join('; ')).toEqual([])
     wrapper.unmount()
