@@ -2,7 +2,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { installPreloadErrorRecovery } from './preloadRecovery.js'
 
-function fakeWindow({ status = 404, storageThrows = false } = {}) {
+function fakeWindow(options = {}) {
+  const { storageThrows = false } = options
+  const status = Object.prototype.hasOwnProperty.call(options, 'status')
+    ? options.status
+    : 404
   const target = new EventTarget()
   const values = new Map()
   target.location = {
