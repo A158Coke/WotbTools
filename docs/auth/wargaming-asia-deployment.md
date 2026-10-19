@@ -141,9 +141,9 @@ IdP representation 的 `client_id` 由占位值 `not-used` 收敛为真实 `WG_A
 
 ```
 `.github/workflows/keycloak.yml`（main 路径触发或单目标手动 dispatch）
-  -> Build immutable Keycloak image and run disposable provider/runtime smoke
+  -> 构建 immutable Keycloak image，并跑 disposable provider/runtime smoke
   -> 在 TX host lock 内检查 PostgreSQL、bootstrap/reconcile Keycloak runtime
-  -> `infra/tofu/keycloak`：plan safety gate + exact apply + clean second-plan gate
+  -> `infra/tofu/keycloak`：plan safety gate、exact apply 与 clean second-plan gate
   -> 核对 OIDC / providers / IdP 配置，成功后更新 Keycloak image metadata
 ```
 

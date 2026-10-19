@@ -316,8 +316,8 @@ Blocker count: N
 OCR 是 code-review 引擎，不是 review 本身。区分：
 
 - **Review finding**：代码问题（BLOCKER/MAJOR/MINOR）
-- **Tool failure**：OCR executable missing / provider unavailable / timeout / invalid config /
-  delegate integration error / parser failure / 输出无法解析
+- **工具失败**：OCR 可执行文件缺失 / provider 不可用 / 超时 / 配置无效 /
+  delegate 集成错误 / parser 失败 / 输出无法解析
 
 Tool failure 必须：
 

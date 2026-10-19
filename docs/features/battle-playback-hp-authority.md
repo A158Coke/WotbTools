@@ -81,9 +81,9 @@ source            = replay source
 示例：
 
 ```text
-t=0   enemy provisional: current=3400 capacity=3400  (Tankopedia display reference)
-t=10  first replay HP:   current=3200 capacity=null  (replay authority switched)
-t=20  later replay fact: current=2800 capacity=3560  (replay capacity now known)
+t=0   敌方临时值：current=3400 capacity=3400（Tankopedia 展示参考）
+t=10  首次 replay HP：current=3200 capacity=null（权威切换到 replay）
+t=20  后续 replay 事实：current=2800 capacity=3560（replay 容量已知）
 ```
 
 任何时刻，权威切换都不得回退到 Tankopedia。
@@ -125,17 +125,17 @@ EXACT 80% -> PARTIAL 100% -> EXACT 75%
 ## 职责边界
 
 ```text
-pinned Agent WASM facets + settlement facts + application Tankopedia reference
+pinned Agent WASM facets + settlement facts + 应用级 Tankopedia reference
         ↓
 frontend replay-local canonical facts
         ↓
-client playback projection (HP authority)
+client playback projection（HP 权威）
         ↓
 BattlePlaybackDataset.healthTransitions
         ↓
-UI query-at-time + pure presentation aggregation
+UI query-at-time + 纯展示聚合
         ↓
-display only
+只展示
 ```
 
 客户端 canonical/playback 投影拥有：
