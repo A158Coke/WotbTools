@@ -82,7 +82,7 @@
       "title": "统计口径",
       "options": {
         "mode": "markdown",
-        "content": "回放按文件解析次数，批量 10 个文件算 10 次；重复解析重新计数。其他功能按页面/标签打开计数。含匿名访问，区分 Web / Android；客户端上报可丢失，不是审计数据。"
+        "content": "回放按文件解析次数，批量 10 个文件算 10 次；重复解析重新计数。其他功能按页面/标签打开计数。Android APK 下载点击由独立 Android downloads 面板统计，不混入功能打开次数。含匿名访问，区分 Web / Android；客户端上报可丢失，不是审计数据。"
       },
       "id": 1,
       "gridPos": {
@@ -181,10 +181,10 @@
         "type": "loki",
         "uid": "loki"
       },
-      "description": "",
+      "description": "Android APK 下载点击由 Android downloads 单独统计。",
       "targets": [
         {
-          "expr": "sum by (feature, platform) (count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | keep feature, platform [$__range]))",
+          "expr": "sum by (feature, platform) (count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | feature != \"android_download\" | keep feature, platform [$__range]))",
           "refId": "A",
           "queryType": "instant",
           "legendFormat": ""
