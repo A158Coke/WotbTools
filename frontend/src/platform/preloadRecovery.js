@@ -16,6 +16,8 @@ const SAFARI_URL_LESS_DYNAMIC_IMPORT = /^Importing a module script failed\.?$/i
  * clear existing entries. Correctness still comes from the observer below.
  */
 const RESOURCE_TIMING_BUFFER_SIZE = 1000
+/** Cap browser-side retention; the observer cache, not the main buffer, is the correctness source. */
+const RESOURCE_TIMING_BUFFER_MAX = 4000
 /** Only keep enough recent resource records for correlation; never a telemetry store. */
 const RESOURCE_TIMING_RECENT_LIMIT = 200
 /** A Safari URL-less failure must correlate with a 404 within this recent window. */
@@ -54,7 +56,9 @@ function ensureResourceTimingCapacity(target, state) {
   resize()
   try {
     performance.addEventListener?.('resourcetimingbufferfull', () => {
-      state.timingBufferSize *= 2
+      const next = Math.min(state.timingBufferSize * 2, RESOURCE_TIMING_BUFFER_MAX)
+      if (next === state.timingBufferSize) return
+      state.timingBufferSize = next
       resize()
     })
   } catch {
@@ -170,8 +174,10 @@ function isConfirmedAsset404(url, target, state) {
 
 /**
  * Safari reports a URL-less "Importing a module script failed." payload. Require
- * exactly one recent same-origin /assets/*.js 404 in a short window; anything
- * ambiguous, old, cross-origin, non-script, or non-404 keeps the normal error UI.
+ * exactly one recent script-initiated same-origin /assets/*.js 404 in a short
+ * window; a second script request or a non-404 status makes correlation unsafe.
+ * Anything ambiguous, old, cross-origin, non-script, or non-404 keeps the normal
+ * error UI (fail closed).
  */
 function isConfirmedSafariUrlLessFailure(error, target, state) {
   if (!state) return false
@@ -182,14 +188,16 @@ function isConfirmedSafariUrlLessFailure(error, target, state) {
 
   const candidates = []
   for (const record of state.recentResources.values()) {
-    if (record.responseStatus !== 404) continue
+    if (record.initiatorType !== 'script') continue
     if (!isJavaScriptAsset(record.name)) continue
     if (typeof record.responseEnd !== 'number' || record.responseEnd <= 0) continue
     const age = now - record.responseEnd
     if (age < 0 || age > SAFARI_STALE_ASSET_WINDOW_MS) continue
     candidates.push(record)
   }
-  return candidates.length === 1
+  // Exactly one script asset may have failed in the window; any other recent script
+  // request (404, 0, 503 or unknown) makes the URL-less correlation ambiguous.
+  return candidates.length === 1 && candidates[0].responseStatus === 404
 }
 
 export function installPreloadErrorRecovery(target = window) {
