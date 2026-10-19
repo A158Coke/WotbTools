@@ -48,7 +48,7 @@ For AI, search the correlation/error ID and follow `ai_upstream_call_failed`, `a
 
 ## Downloads and token questions
 
-- Android downloads separates 200, 206 and failures. A partial-request count is not an installation count. Check nginx access output and sanitized frontend Loki stream if a version is missing.
+- Android downloads counts only clicks on the final **下载 APK** button on the Web `/download/android` page. Opening that page does not count. The metric does not inspect the later 302/file transfer and does not prove a completed download or installation. In DevTools, verify the click emits a best-effort `/api/observability/events` request and then check `event=product_telemetry telemetry_event=feature_open feature=android_download platform=web` in backend/Loki logs.
 - AI totals count known usage at receipt time. Average counts terminal reviews at completion time. Check missing-usage calls before comparing to a provider invoice; cancellation/timeouts can hide billed usage the provider never returned.
 - Page views are not successful operations. Replay parsing counts files with separate starts and outcomes, not opening the workspace.
 
@@ -58,4 +58,4 @@ Queryable history is limited to seven days. Loki physical compaction is asynchro
 
 Dashboard changes are applied through `infra/tofu/grafana` and the observability owner workflow. Any dashboard can be deleted/replaced without an allowlist; datasource deletes remain blocked. Recover content from Git by restoring declarations and applying a reviewed plan, never by overwriting live state. A partial apply requires inspecting current state and a new plan; do not automatically restore old state.
 
-Production acceptance: verify real user activity, a batch of ten replay files with success/failure/cancel paths, a page re-entry, APK 200/206 behavior, and AI known/missing usage. Deployment canaries alone do not prove these user flows.
+Production acceptance: verify real user activity, a batch of ten replay files with success/failure/cancel paths, a page re-entry, one real click on the final Web **下载 APK** button with a matching backend telemetry event, and AI known/missing usage. Deployment canaries alone do not prove these user flows.
