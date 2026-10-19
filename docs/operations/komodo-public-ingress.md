@@ -45,7 +45,7 @@ komodo.wotbtools.com {
 
 Host header 保持原样，因为 `KOMODO_HOST` 已经是 `https://komodo.wotbtools.com`。Caddy 通过其常规
 自动 HTTPS 流程获取证书；DNS 记录已经指向 TX（`118.25.18.105`），因此不需要任何手工证书操作。
-Yecao 上不发布任何 Komodo 相关内容，也没有中间容器代理它。
+Yecao 上不以公网方式发布任何 Komodo 相关内容；Core 只在 WireGuard `10.20.0.2:9120` 绑定，MongoDB 不发布宿主端口；也没有中间容器代理它。
 
 ## 验证
 

@@ -54,7 +54,7 @@ Prometheus 必须有七个 UP job：wotb-backend（WireGuard `10.20.0.1:8088`）
 
 ## 保留与恢复
 
-可查询历史限制为七天。Loki 物理 compaction 是异步的；原始 Docker 日志仍按大小轮转，可能比查询窗口活得更久。不要声称严格的七天物理擦除，不要添加长期 telemetry 备份，不要删除活跃的 Docker 日志文件，也不要使用 `docker compose down -v`。
+普通 telemetry stream 的可查询历史限制为七天；`{compliance="security"}` stream 保留 4560h（190 天），查询回看可到 190 天，但单次查询长度仍限制在 7 天。Loki 物理 compaction 是异步的；原始 Docker 日志仍按大小轮转，可能比查询窗口活得更久。不要声称严格的七天物理擦除，不要添加长期 telemetry 备份，不要删除活跃的 Docker 日志文件，也不要使用 `docker compose down -v`。
 
 dashboard 变更通过 `infra/tofu/grafana` 与 observability owner workflow 应用。任何 dashboard 都可以无 allowlist 地删除/替换；datasource 删除仍然禁止。从 Git 恢复内容的方式是恢复声明并 apply 经评审的 plan，而不是覆写线上 state。部分 apply 需要先检查当前 state 并重新 plan；不要自动恢复旧 state。
 
