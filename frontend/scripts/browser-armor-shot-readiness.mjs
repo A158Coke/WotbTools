@@ -11,6 +11,12 @@ import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, FIXTURE_TANK_DATA, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 const shooterId = FIXTURE_TANK_ID + 1
+/**
+ * 15 m default FOV after the viewer's 1.1 display product scale.
+ * 18.75° is the Armor Inspector reference; the shipped profile is
+ * 2*atan(tan(18.75/2)*1.1) ≈ 20.58668°.
+ */
+const ARMOR_DEFAULT_FOV = 2 * Math.atan(Math.tan(18.75 * Math.PI / 360) * 1.1) * 180 / Math.PI
 const labels = featureMessages.zh.armor
 const penetrationText = labels.outcomes.penetration
 const shellFailurePrefix = labels.load_failed.replace('{phase}', labels.phase_shell_data).replace('{msg}', '')
@@ -267,8 +273,8 @@ try {
       await page.goto(plainUrl + '&shot=1&scfg=0&shell=0&config=0')
       // 只断言视图就绪与视图参数；基础初始化的错误面（夹具拦截器状态的既有噪音，
       // 同场景历史用例同样容忍）不在本回归范围——终检仅对 uncaught: 计数。
-      // 命中弹默认 = 命中点相对视角（15m/18.75° 标定）；MISS 无命中点 = world 总览 50°。
-      // shot-ready 标记必须存在：普通检视初始状态也满足 15m/18.75° 或 50°，
+      // 命中弹默认 = 命中点相对视角（15m/20.59° display profile；18.75° 是曲线参考）；MISS 无命中点 = world 总览 50°。
+      // shot-ready 标记必须存在：普通检视初始状态也满足 15m/20.59° 或 50°，
       // 不能只凭相机数值判断。__shotCtx.shot 只在射击复现场景数据装载后出现，
       // 且 target_eid 区分 MISS/HIT；相机数值再证明自动视角已执行。
       if (mode === 'overview') {
@@ -278,12 +284,12 @@ try {
             && window.__shotCtx?.shot?.target_eid == null
         }, { timeout: 30000, label: 'MISS world overview ready (50° FOV, shot loaded)' })
       } else {
-        await page.waitFor(() => {
+        await page.waitForValue(`(() => {
           const v = window.__armorRicochet?.info()?.view
-          return v && v.worldOverview === false && Math.abs(v.fov - 18.75) < 0.01
+          return v && v.worldOverview === false && Math.abs(v.fov - ${ARMOR_DEFAULT_FOV}) < 0.01
             && Math.abs(v.cameraDistance - 15) < 0.2
             && window.__shotCtx?.shot?.target_eid != null
-        }, { timeout: 30000, label: 'HIT default impact view ready (15m / 18.75° FOV, shot loaded)' })
+        })()`, value => value === true, { timeout: 30000, label: 'HIT default impact view ready (15m / 20.59° FOV, shot loaded)' })
       }
       return page.evaluate('window.__armorRicochet.info().view')
     }
@@ -291,10 +297,10 @@ try {
     assert.ok(Math.abs(missView.fov - 50) < 0.01, `MISS overview must keep native FOV (got ${missView.fov})`)
     console.log('[shot-readiness] PASS: miss world overview keeps native FOV (no dolly compensation)')
     const hitView = await loadShot(shot, 'impact')
-    assert.ok(Math.abs(hitView.fov - 18.75) < 0.01, `HIT impact view must use calibrated FOV (got ${hitView.fov})`)
+    assert.ok(Math.abs(hitView.fov - ARMOR_DEFAULT_FOV) < 0.01, `HIT impact view must use display FOV (got ${hitView.fov})`)
     assert.ok(Math.abs(hitView.cameraDistance - 15) < 0.2, `HIT impact camera must be at 15m (got ${hitView.cameraDistance})`)
-    console.log('[shot-readiness] PASS: HIT default impact view uses calibrated 18.75° FOV at 15m')
-    // 相对视角 ↔ 双方位置切换：overview 必须 50°，切回命中视角必须回到 18.75°。
+    console.log('[shot-readiness] PASS: HIT default impact view uses display 20.59° FOV at 15m')
+    // 相对视角 ↔ 双方位置切换：overview 必须 50°，切回命中视角必须回到 20.59°。
     // 先等按钮真实挂上：viewer 初始化/夹具迟到响应期间 DOM 会短暂重建。
     const clickViewToggle = async (selector) => {
       await page.waitForValue(`!!document.querySelector(${JSON.stringify(selector)})`,
@@ -308,12 +314,12 @@ try {
     }, { timeout: 30000, label: 'HIT overview toggle ready (50° FOV)' })
     console.log('[shot-readiness] PASS: hit impact → overview keeps native 50° FOV')
     await clickViewToggle('#rel-view-toggle')
-    await page.waitFor(() => {
+    await page.waitForValue(`(() => {
       const v = window.__armorRicochet?.info()?.view
-      return v && v.worldOverview === false && Math.abs(v.fov - 18.75) < 0.01
+      return v && v.worldOverview === false && Math.abs(v.fov - ${ARMOR_DEFAULT_FOV}) < 0.01
         && Math.abs(v.cameraDistance - 15) < 0.2
-    }, { timeout: 30000, label: 'HIT impact toggle ready (15m / 18.75° FOV)' })
-    console.log('[shot-readiness] PASS: hit overview → impact returns to calibrated 15m / 18.75° FOV')
+    })()`, value => value === true, { timeout: 30000, label: 'HIT impact toggle ready (15m / 20.59° FOV)' })
+    console.log('[shot-readiness] PASS: hit overview → impact returns to display 15m / 20.59° FOV')
   }
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)
