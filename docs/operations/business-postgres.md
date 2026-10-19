@@ -1,8 +1,7 @@
-# TX Business PostgreSQL infrastructure boundary
+# TX Business PostgreSQL 基础设施边界
 
-PostgreSQL is the authoritative business state. The server has no replay parser
-and no replay job tables; Business PostgreSQL is deliberately independent from
-Keycloak PostgreSQL:
+PostgreSQL 是权威业务状态。服务器没有回放解析器，也没有回放任务表；
+Business PostgreSQL 刻意独立于 Keycloak PostgreSQL：
 
 ```text
 Compose        business-postgres.compose.yml             keycloak-postgres.compose.yml
@@ -14,36 +13,31 @@ Docker volume  deploy_business_postgres_data             deploy_keycloak_postgre
 marker         business-postgres.tofu-provisioned       keycloak.tofu-provisioned
 ```
 
-Business tables never live in `keycloak-postgres`, and no business table is
-created outside Flyway.
+业务表永不位于 `keycloak-postgres`，且任何业务表都不在 Flyway 之外创建。
 
-## Resource ownership
+## 资源归属
 
-`deploy/tx/business-postgres.compose.yml` is the single owner definition for
-the `business-postgres` runtime. `deploy/tx/docker-compose.yml` includes this
-fragment alongside the independent Keycloak PostgreSQL fragment so application
-deployments share the same service and volume definition:
+`deploy/tx/business-postgres.compose.yml` 是 `business-postgres` 运行时的唯一定义 owner。
+`deploy/tx/docker-compose.yml` 把该 fragment 与独立的 Keycloak PostgreSQL fragment 一并 include，
+使应用部署共享同一 service 与 volume 定义：
 
-- image `postgres:18-alpine` (never a floating tag);
-- administration port `127.0.0.1:25432:5432` - host-local OpenTofu/administration;
-- private service endpoint `10.20.0.1:25432:5432` - WireGuard only;
-  production consumers still use `business-postgres:5432`;
-- volume `business_postgres_data`;
-- `POSTGRES_DB=postgres` so the image entrypoint never auto-creates the
-  OpenTofu-owned business database when the bootstrap administrator is named
-  `wotb`;
-- bootstrap administrator `TX_BUSINESS_POSTGRES_ADMIN_USER` /
-  `TX_BUSINESS_POSTGRES_ADMIN_PASSWORD`, distinct from the application role;
-- `pg_isready` healthcheck, `restart: unless-stopped`, and a 512m memory limit.
+- 镜像 `postgres:18-alpine`（绝不使用浮动 tag）；
+- 管理端口 `127.0.0.1:25432:5432` —— 宿主本地 OpenTofu/管理用途；
+- 私有 service endpoint `10.20.0.1:25432:5432` —— 仅 WireGuard；
+  生产消费者仍使用 `business-postgres:5432`；
+- volume `business_postgres_data`；
+- `POSTGRES_DB=postgres`，这样当 bootstrap 管理员名为 `wotb` 时，
+  镜像 entrypoint 绝不会自动创建由 OpenTofu 拥有的业务数据库；
+- bootstrap 管理员 `TX_BUSINESS_POSTGRES_ADMIN_USER` /
+  `TX_BUSINESS_POSTGRES_ADMIN_PASSWORD`，与应用 role 不同；
+- `pg_isready` healthcheck、`restart: unless-stopped`，以及 512m 内存限制。
 
-The application credential is intentionally absent from the `business-postgres`
-service: that runtime never receives it. Its only consumer is the TX business
-runtime `business-api` (`deploy/tx/docker-compose.yml`), which is also the
-process that runs Flyway. Both TX PostgreSQL owner fragments use Compose project
-`deploy`; changing that project or either volume key would select a different
-Docker volume and is a production data migration, not routine cleanup.
+应用凭据刻意不在 `business-postgres` service 中：该运行时从不接收它。它唯一的消费者是
+TX business 运行时 `business-api`（`deploy/tx/docker-compose.yml`），后者也是运行 Flyway 的进程。
+两个 TX PostgreSQL owner fragment 都使用 Compose project `deploy`；改动该 project 或任一
+volume key 都会选中不同的 Docker volume，属于生产数据迁移，而不是例行清理。
 
-`infra/tofu/postgres-business` owns exactly three logical resources:
+`infra/tofu/postgres-business` 恰好拥有三个逻辑资源：
 
 ```text
 postgresql_database.wotb                        owner = control_api, UTF8, template0
@@ -51,12 +45,10 @@ postgresql_role.control_api                     login, no superuser/createdb/cre
 postgresql_grant.control_api_database_access    CONNECT, CREATE, TEMPORARY on the database
 ```
 
-All three use `prevent_destroy`. Flyway
-(`java/wotb-web/src/main/resources/db/migration`) remains the single owner of
-the application schema, tables, indexes, and sequences; the OpenTofu root
-declares no schema object.
+三者都使用 `prevent_destroy`。Flyway（`java/wotb-web/src/main/resources/db/migration`）
+仍是应用 schema、表、索引与序列的唯一 owner；该 OpenTofu root 不声明任何 schema 对象。
 
-## Credentials and state
+## 凭据与 state
 
 ```text
 TX_BUSINESS_POSTGRES_ADMIN_USER       GitHub Actions Variable
@@ -67,21 +59,19 @@ TX_BUSINESS_DB_PASSWORD               GitHub Actions Secret
 TX_BUSINESS_DB_PASSWORD_VERSION       GitHub Actions Variable (rotation version)
 ```
 
-Values are forwarded only to the TX process environment and then to OpenTofu
-`TF_VAR_*` inputs. They must never be committed, written to a server env file,
-printed in logs, or stored in tfvars. The application role password uses the
-provider write-only field (`password_wo` plus `password_wo_version`), so it is
-not persisted as a state attribute. Sensitive local state lives at
-`/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate` under a 0700
-parent directory, separate from the Keycloak PostgreSQL state.
+这些值只转发到 TX 进程环境，再作为 OpenTofu `TF_VAR_*` 输入。它们绝不能提交、写入服务器
+env 文件、打印到日志或存入 tfvars。应用 role 密码使用 provider 的 write-only 字段
+（`password_wo` 加 `password_wo_version`），因此不会作为 state 属性持久化。敏感本地 state 位于
+`/opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate`，父目录权限 0700，与 Keycloak
+PostgreSQL state 分离。
 
-A `business-postgres`-only deployment requires none of the Keycloak, frontend
-image, or Caddy inputs. Business PostgreSQL publishes nothing outside loopback.
+仅部署 `business-postgres` 时不需要任何 Keycloak、frontend 镜像或 Caddy 输入。
+Business PostgreSQL 不在 loopback 之外发布任何内容。
 
-## TX provisioning sequence
+## TX 开通顺序
 
-The single-service Deploy (`service=business-postgres`) and the single-root Tofu
-Apply (`root=business-postgres`) split this sequence; there is no `all` selector:
+单 service 的 Deploy（`service=business-postgres`）与单 root 的 Tofu Apply
+（`root=business-postgres`）把这套顺序拆开；没有 `all` 选择器：
 
 ```text
 Deploy lane (deploy/tx/deploy.sh)
@@ -98,105 +88,91 @@ OpenTofu phase in `.github/workflows/business-postgres.yml` (same TX host-lock s
 9. write the root-only /opt/wotb-tx/business-postgres.tofu-provisioned marker
 ```
 
-The standalone workflow orders the runtime and OpenTofu phases in the same
-locked host session. A non-clean second plan fails the workflow. Unknown
-resource addresses, destructive actions, and unexpected updates are rejected
-before apply. GitHub
-Actions never connects to the database: it only transfers the root over SSH and
-the TX host calls the provider on `127.0.0.1:25432`.
+独立 workflow 在同一把宿主锁会话中排序运行时阶段与 OpenTofu 阶段。第二次 plan 不干净即
+workflow 失败。未知 resource address、破坏性动作与预期之外的更新会在 apply 前被拒绝。
+GitHub Actions 从不连接数据库：它只通过 SSH 传输 root，由 TX 宿主调用
+`127.0.0.1:25432` 上的 provider。
 
-The Tofu Apply lane chains each provisioning step explicitly and never invokes the
-provisioning helpers from an `||` list, because bash disables `errexit` inside a
-function called that way and a dirty plan would otherwise be ignored.
+Tofu Apply lane 显式串接每个 provisioning 步骤，绝不从 `||` 列表中调用 provisioning helper，
+因为以那种方式调用的函数内 bash 会禁用 `errexit`，否则脏 plan 会被忽略。
 
-## Runtime check
+## 运行时检查
 
-`deploy/tx/runtime-check.sh` reads `TX_BUSINESS_POSTGRES_ADMIN_USER` and
-refuses `TX_RUNTIME_READY` until Business PostgreSQL is fully ready:
+`deploy/tx/runtime-check.sh` 读取 `TX_BUSINESS_POSTGRES_ADMIN_USER`，并在 Business PostgreSQL
+完全就绪之前拒绝输出 `TX_RUNTIME_READY`：
 
-- the `business-postgres` container exists and reports `healthy`;
-- `pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres` succeeds;
-- published TCP bindings are exactly `127.0.0.1:25432:5432` and
-  `10.20.0.1:25432:5432`; missing/extra bindings, wildcard/public addresses,
-  bare ports, wrong targets or UDP fail the `wireguard-service-plane` check;
-- `/opt/wotb-tx/business-postgres.tofu-provisioned` exists and contains exactly
-  `tx-local-opentofu-business-postgres`.
+- `business-postgres` 容器存在并报告 `healthy`；
+- `pg_isready -U "$TX_BUSINESS_POSTGRES_ADMIN_USER" -d postgres` 成功；
+- 发布的 TCP binding 恰好是 `127.0.0.1:25432:5432` 与
+  `10.20.0.1:25432:5432`；缺失/多余 binding、通配/公网地址、
+  裸端口、错误目标或 UDP 都会使 `wireguard-service-plane` 检查失败；
+- `/opt/wotb-tx/business-postgres.tofu-provisioned` 存在且内容恰好为
+  `tx-local-opentofu-business-postgres`。
 
-Any failure emits `TX_RUNTIME_NOT_READY`. These checks are read-only: they
-never create, modify, or delete a database, table, or row.
+任何失败都会输出 `TX_RUNTIME_NOT_READY`。这些检查是只读的：它们从不创建、修改或删除
+数据库、表或行。
 
-## Provider mirror
+## Provider 镜像源
 
-Production provider installation is mirror-based and fail-closed. An operator
-installs the exact locked `cyrilgdn/postgresql 1.27.0` archive beneath
-`/opt/wotb-tx/tofu-provider-mirror`. `deploy/tx/business-postgres.tofurc`
-includes only that filesystem mirror for this provider and excludes direct
-installation, so a missing mirror fails the deployment instead of downloading
-from the public registry. The mirror may also hold the RabbitMQ provider; each
-`.tofurc` allowlists only its own provider.
+生产 provider 安装基于 mirror 且 fail-closed。运维人员把精确锁定的
+`cyrilgdn/postgresql 1.27.0` 归档安装到 `/opt/wotb-tx/tofu-provider-mirror` 下。
+`deploy/tx/business-postgres.tofurc` 只包含该 provider 的这份文件系统 mirror，并排除直接
+安装，因此 mirror 缺失会让部署失败，而不是从公共 registry 下载。该 mirror 也可以存放
+RabbitMQ provider；每个 `.tofurc` 只把自己那个 provider 列入 allowlist。
 
-## Application password rotation
+## 应用密码轮换
 
-1. Generate a new password and set the `TX_BUSINESS_DB_PASSWORD` secret.
-2. Increment `TX_BUSINESS_DB_PASSWORD_VERSION`.
-3. Run the `business-postgres` target.
+1. 生成新密码并设置 `TX_BUSINESS_DB_PASSWORD` secret。
+2. 递增 `TX_BUSINESS_DB_PASSWORD_VERSION`。
+3. 运行 `business-postgres` target。
 
-The plan must contain a single in-place `update` of
-`postgresql_role.control_api`, which is the only accepted non-create change. The
-second plan must then be entirely no-op. A `delete`+`create` replacement is
-rejected because it would detach the role from the authoritative database owner.
+plan 必须只包含一次对 `postgresql_role.control_api` 的原地 `update`，这是唯一被接受的
+create 之外变更。第二次 plan 随后必须完全 no-op。`delete`+`create` 替换会被拒绝，因为它
+会让 role 脱离权威数据库 owner。
 
-## Backup
+## 备份
 
-Business PostgreSQL is authoritative state, so backups are a required operation:
+Business PostgreSQL 是权威状态，因此备份是必需操作：
 
 ```text
 deploy/tx/business-postgres-backup.sh [--backup-root DIR] [--retention-minutes N] [--skip-retention]
 ```
 
-- Runs `pg_dump --format=custom --no-owner --no-privileges` as the bootstrap
-  administrator, so the archive carries no ownership or privilege coupling and a
-  data-only restore can be applied by the application role's owner.
-- Writes `<database>-<UTC timestamp>.dump` plus a `.dump.sha256` sidecar into
-  `/opt/wotb-tx/backups/business-postgres` (0700 directory, 0600 files).
-- Validates the archive catalog (`pg_restore --list`) and every compressed data
-  block (`pg_restore --file=/dev/null`) before the file is published, and only
-  then renames the temporary file into place.
-- Applies retention to older `*.dump` files (default 10080 minutes).
-- Requires the existing `deploy_business_postgres_data` volume, its Compose
-  ownership labels, and a running Business PostgreSQL container mounted on that
-  exact volume. Backup refuses to start a missing runtime or select another
-  project/volume.
-- **Never** drops, truncates, or deletes the source database or its rows. There
-  is no `DROP`/`DELETE`/`TRUNCATE` path in the backup script.
+- 以 bootstrap 管理员身份运行 `pg_dump --format=custom --no-owner --no-privileges`，
+  因此归档不携带 ownership 或 privilege 耦合，data-only 恢复可由应用 role 的 owner 执行。
+- 把 `<database>-<UTC timestamp>.dump` 与 `.dump.sha256` sidecar 写入
+  `/opt/wotb-tx/backups/business-postgres`（目录 0700，文件 0600）。
+- 在发布文件之前校验归档 catalog（`pg_restore --list`）与每个压缩数据块
+  （`pg_restore --file=/dev/null`），然后才把临时文件 rename 到位。
+- 对更早的 `*.dump` 文件应用保留策略（默认 10080 分钟）。
+- 要求既有 `deploy_business_postgres_data` volume、其 Compose ownership label，以及挂载在
+  该确切 volume 上的运行中 Business PostgreSQL 容器。备份拒绝启动缺失的运行时，也不会
+  选择其他 project/volume。
+- **绝不** drop、truncate 或删除源数据库或其行。备份脚本中没有
+  `DROP`/`DELETE`/`TRUNCATE` 路径。
 
-Backup files are stored on TX root-only storage as above. The scheduled
-`database-backup.yml` workflow runs this script and the separate Keycloak
-PostgreSQL backup owner, then backs up local Tofu state. This PR does not
-introduce an external backup platform or object-storage upload.
+备份文件按上述方式存放在 TX 的 root-only 存储中。定时的 `database-backup.yml` workflow
+运行该脚本与独立的 Keycloak PostgreSQL 备份 owner，然后备份本地 Tofu state。本次 PR 不
+引入外部备份平台或对象存储上传。
 
-## Restore
+## 恢复
 
-Restores are verified into a disposable database, never over the authoritative
-one:
+恢复一律校验到一次性数据库，绝不覆盖权威库：
 
 ```text
 deploy/tx/business-postgres-restore.sh --file <dump> --database <scratch> --confirm RESTORE-<scratch>
 deploy/tx/business-postgres-restore.sh --file <dump> --verify-only
 ```
 
-- `--verify-only` checks the SHA-256 sidecar and the full archive integrity
-  without creating, modifying, or deleting any database.
-- The restore tool requires the existing Business PostgreSQL runtime and
-  verifies the `deploy_business_postgres_data` volume identity. It never starts
-  the database runtime automatically.
-- The script refuses to target the authoritative source database (`wotb`), and
-  requires the exact `--confirm RESTORE-<scratch>` opt-in token.
-- It creates the scratch database, restores with `--exit-on-error`, and prints
-  the verification SQL an operator must run before declaring the archive
-  restorable.
+- `--verify-only` 校验 SHA-256 sidecar 与完整归档完整性，不创建、修改或删除任何数据库。
+- 恢复工具要求既有 Business PostgreSQL 运行时，并校验 `deploy_business_postgres_data`
+  volume 身份。它从不自动启动数据库运行时。
+- 脚本拒绝以权威源数据库（`wotb`）为目标，并要求确切的
+  `--confirm RESTORE-<scratch>` opt-in token。
+- 它创建 scratch 数据库，使用 `--exit-on-error` 恢复，并打印运维人员在宣布归档可恢复之前
+  必须执行的校验 SQL。
 
-Verification after a restore (also documented by the script output):
+恢复后的校验（脚本输出中也有记录）：
 
 ```sql
 select count(*) from hall_of_fame_record;
@@ -209,23 +185,21 @@ select arena_id, account_id, count(*) from hall_of_fame_record
 select count(*) from hall_of_fame_record where replay_uploaded_by is not null;
 ```
 
-## Hall of Fame schema contract
+## 名人堂 schema 契约
 
-`hall_of_fame_record` is owned by Flyway. Current compatibility invariants:
+`hall_of_fame_record` 由 Flyway 拥有。当前兼容性不变量：
 
-- explicit ids survive dump/restore because `pg_dump` emits `setval`; after any
-  restore the operator must confirm `last_value` is at or above `max(id)`;
-- the unique key remains `(arena_id, account_id)`;
-- the table has no outbound foreign key, so it never couples to Keycloak users
-  or to `user_profile`;
-- `replay_uploaded_by` stays a nullable literal `varchar` holding historical
-  Keycloak UUIDs as opaque data. No FK to any Keycloak-owned identity may be
-  introduced.
+- 显式 id 能在 dump/restore 中存活，因为 `pg_dump` 会输出 `setval`；任何恢复之后，
+  运维人员必须确认 `last_value` 不低于 `max(id)`；
+- unique key 仍为 `(arena_id, account_id)`；
+- 该表没有出向外键，因此永不与 Keycloak 用户或 `user_profile` 耦合；
+- `replay_uploaded_by` 仍是可空字面 `varchar`，以不透明数据保存历史 Keycloak UUID。
+  不得引入指向任何 Keycloak 拥有身份的 FK。
 
-Schema and product semantics live in [`features/hall-of-fame.md`](../features/hall-of-fame.md);
-this document owns only the runtime, backup and restore boundary.
+schema 与产品语义位于 [`features/hall-of-fame.md`](../features/hall-of-fame.md)；
+本文只拥有运行时、备份与恢复边界。
 
-## Verification
+## 验证
 
 ```text
 bash infra/tofu/postgres-business/test-validate-plan.sh          # plan-policy fixtures
@@ -235,9 +209,7 @@ bash deploy/test-tx-runtime-config.sh                            # Compose + iso
 mvn -pl wotb-web -Dtest=HofOwnershipMigrationTest test           # empty-database Flyway build and HoF properties
 ```
 
-`deploy/test-business-postgres-runtime.sh` mirrors the provider into a temporary
-directory, applies the root against a disposable `postgres:18-alpine` container,
-proves the application role is a non-superuser that can create tables in its own
-database, requires a clean second plan, and then exercises the real
-backup/restore scripts on a Hall-of-Fame-shaped table (explicit ids, unique key,
-literal Keycloak UUID, identity sequence).
+`deploy/test-business-postgres-runtime.sh` 把 provider mirror 到临时目录，对一次性
+`postgres:18-alpine` 容器 apply root，证明应用 role 是非 superuser 且能在自己的数据库中
+建表，要求第二次 plan 干净，然后在一个 Hall-of-Fame 形状的表（显式 id、unique key、
+字面 Keycloak UUID、identity sequence）上实际运行备份/恢复脚本。
