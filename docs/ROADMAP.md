@@ -11,6 +11,7 @@
 
 ## Next
 
+- **QQ ↔ WG 账号关联**：现有 QQ/CN 用户通过 Wargaming 登录会得到独立账号；在 Keycloak account linking 与 CN Profile 迁移语义明确前不自动合并，保留为待设计方向。
 - 暂无需要在 Roadmap 中冻结的近期大型产品项；具体执行工作以 GitHub Issues / Pull Requests 为准。
 
 ## Later
