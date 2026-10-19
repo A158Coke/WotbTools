@@ -26,4 +26,11 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
         expect(splash).toContain('raycastGridAll');
         expect(viewer).toContain('buildRicochetGrid(hePack)');
     });
+    it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {
+        expect(viewer).toContain('lastClickNdc');
+        expect(viewer).toContain('clipPlane: gunClipPlane');
+        expect(viewer).toContain('explosion_radius: isHE ? heRadius : 0');
+        expect(viewer).toContain("document.getElementById('canvas-container')");
+        expect(viewer).not.toContain('100vw');
+    });
 });

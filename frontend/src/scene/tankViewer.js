@@ -4692,6 +4692,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         __shotRayOrigin = null; __shotRayTarget = null;
                     } else if (QP.get('shot')) {
                         doPenetrationCheck(0, 0);
+                    } else if (penetrationMode && lastClickNdc) {
+                        // 普通检视：换弹（含 HE→HE/HESH）后按最后点击位置重跑判定，
+                        // 球/热力图与结果卡必须是同一发弹的参数（评审 P2）。
+                        doPenetrationCheck(lastClickNdc.x, lastClickNdc.y);
                     }
                 }
             });
@@ -4993,6 +4997,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         let mouseDownPos = null, isDragging = false;
+        // 普通检视最后一次点击的 NDC：切弹种时重跑判定，避免球/热力图用新弹参数
+        // 而结果卡仍是旧弹（评审 P2 切 HE 弹种场景）。
+        let lastClickNdc = null;
         function onClick(event) {
             if (!armorModel) return;
             // 世界模式(射击复现)：判定结果锁定——初始判定射线已切换为 DecodeShotSegment
@@ -5001,6 +5008,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rect = renderer.domElement.getBoundingClientRect();
             const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
         }
 
@@ -5284,6 +5292,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         explosionRadius: heRadius,
                         liningFactor: equipmentCoeffs().thickMul,
                         grid: heGrid && heGrid.ok ? heGrid : null,
+                        // 与点击链同口径：gun_mask 裁切面之后的炮管命中不参与采样。
+                        clipPlane: gunClipPlane,
                     });
                 } else {
                     console.warn('[he-splash] collision pack failed:', hePack.reason);
@@ -5313,7 +5323,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 penetration: pen,
                 caliber: caliber,
                 damage: dmg,
-                explosion_radius: isHE ? ((selectedShell && selectedShell.explosion_radius) || 3.0) : 0,
+                // 与采样/半径球同一来源：缺失或 0 即 fail-closed（不再单方面回退 3m，
+                // 否则卡片声称 3m 溅射而热力图/球体被禁用——评审 P2）。
+                explosion_radius: isHE ? heRadius : 0,
                 calibrated_shells: eqCal,
                 enhanced_armor: eqEnh,
                 normalization_deg: shellNormDeg,
@@ -5746,7 +5758,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const cardBorder = heInfo
                 ? heTitleCss
                 : (probabilityMode ? cardChanceCss : (chancePartial ? 'var(--yellow)' : colorHex));
-            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${cardBorder};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            // 卡片宽度以画布容器为界（不是视口）：窄屏/侧栏画布下整张卡片（含顶行、
+            // 标题/伤害行）都能换行，不能只限制最佳样本子行（评审 P1/P2）。
+            const cardHost = document.getElementById('canvas-container');
+            const cardHostRect = cardHost ? cardHost.getBoundingClientRect() : null;
+            const cardMaxWidth = cardHostRect && cardHostRect.width > 0
+                ? Math.max(220, Math.floor(cardHostRect.width - 32))
+                : null;
+            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${cardBorder};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             // 顶行：交战距离 · 有效穿深（距离衰减后） · 溅射半径（仅 HE）。
             // 有效穿深取判定链的 probability_penetration（d>100 时已按 far 衰减；
             // HE 恒 near），不再单独占一行。
@@ -5757,7 +5776,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (heInfo && Number.isFinite(heInfo.explosion_radius) && heInfo.explosion_radius > 0) {
                     top.push(`${escapeText(L.heRadius)}: ${fmtNum(heInfo.explosion_radius)} ${escapeText(L.distanceUnit)}`);
                 }
-                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${top.join(' · ')}</div>`;
+                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;">${top.join(' · ')}</div>`;
             }
             // HE 卡片数值：判定结果右侧显示主伤害值；溅射情形把范围放小字。
             const heFull = heInfo ? Math.round(dmgVal) : 0;
@@ -5805,7 +5824,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         damageHtml = `<span style="${damageValueCss}">· ${Math.round(displayDamage || 0)}</span>`;
                     }
                 }
-                return `<div style="display:flex;align-items:baseline;font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;">`
+                return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;">`
                     + `<span>${escapeText(title)}</span>${damageHtml}</div>`;
             };
             html += titleHtml(segments[0], segments.length === 1);
@@ -5843,7 +5862,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             : '';
                         return `${shown}${more} @ ${Number(sample.distance).toFixed(2)} ${L.distanceUnit}`;
                     };
-                    const bestLineStyle = 'font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;max-width:min(560px,calc(100vw - 32px));';
+                    const bestLineStyle = 'font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;';
                     const same = heInfo.best_lower
                         && heInfo.best_lower.distance === heInfo.best.distance
                         && heInfo.best_lower.armor === heInfo.best.armor;
@@ -5926,6 +5945,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const host = document.getElementById('canvas-container');
             const rect = host ? host.getBoundingClientRect() : null;
             if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
+            // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新。
+            div.style.maxWidth = `${Math.max(220, Math.floor(rect.width - 32))}px`;
+            div.style.whiteSpace = 'normal';
+            div.style.boxSizing = 'border-box';
             const v = trajInfoPos.clone().project(camera);
             if (v.z > 1) { div.style.display = 'none'; return; }
             // 卡片是 position:fixed，left/top 是视口坐标；必须按画布实际矩形换算，

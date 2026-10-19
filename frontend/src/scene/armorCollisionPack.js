@@ -804,6 +804,8 @@ export function raycastGridAll(grid, ro, dir, tMin = 0, tMax = RC.FAR) {
                 thickness: entriesData[ei + 2],
                 variant: null,
                 slot,
+                // 世界系命中点：HE 采样用 gunClipPlane 过滤被裁掉的炮管段。
+                point: new THREE.Vector3(o[0] + d[0] * tHit, o[1] + d[1] * tHit, o[2] + d[2] * tHit),
             });
         }
         const tExit = Math.min(tMaxX, tMaxY, tMaxZ);
