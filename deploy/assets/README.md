@@ -77,6 +77,37 @@ Keep the current release plus at least one previous release while the migration 
 being proven. Do not overwrite the live tree in place. Initial payload upload remains
 manual; Git tracks configuration, not the multi-GB asset pack.
 
+## Caddy image preload contract
+
+The mainland asset host does not reliably reach Docker Hub, so the Stack keeps
+`auto_pull = false`. Before the first deploy, after a host rebuild, or whenever the
+pinned Caddy tag changes, preload the exact Linux/amd64 image from a trusted host that
+can reach the registry.
+
+On the source host:
+
+```bash
+docker pull --platform linux/amd64 caddy:2.10.2-alpine
+SOURCE_IMAGE_ID="$(docker image inspect caddy:2.10.2-alpine --format '{{.Id}}')"
+docker save caddy:2.10.2-alpine -o /tmp/caddy-2.10.2-alpine-amd64.tar
+sha256sum /tmp/caddy-2.10.2-alpine-amd64.tar
+```
+
+Transfer the archive to `ali-sh-asset-01` out of band. Compare the archive SHA256 on
+both ends before loading it. Then on Alibaba:
+
+```bash
+sha256sum /tmp/caddy-2.10.2-alpine-amd64.tar
+docker load -i /tmp/caddy-2.10.2-alpine-amd64.tar
+docker image inspect caddy:2.10.2-alpine \
+  --format 'ID={{.Id}} OS={{.Os}} ARCH={{.Architecture}}'
+```
+
+The destination image ID must equal `SOURCE_IMAGE_ID`, and the inspection must report
+`OS=linux` and `ARCH=amd64`. Only then run the manual Komodo Stack Deploy. Delete the
+temporary tar after the destination verification succeeds. Do not use Komodo **Pull
+Images** on this host unless Docker Hub reachability has been deliberately restored.
+
 ## First rollout
 
 1. Merge the reviewed GitHub change (Server + Stack declarations and the asset
@@ -94,14 +125,15 @@ manual; Git tracks configuration, not the multi-GB asset pack.
    (`deploy = false`).
 5. Stage the asset pack under `/srv/wotb-assets/releases/<pack-id>`, verify
    `manifest.json`, then atomically point `current` at that release.
-6. Ensure the Alibaba firewall allows public TCP 80/443. Do not expose Periphery
+6. Preload and verify `caddy:2.10.2-alpine` using the image preload contract above.
+7. Ensure the Alibaba firewall allows public TCP 80/443. Do not expose Periphery
    `:8120`.
-7. Point `assets.wotbtools.com` at the server when ready for certificate issuance,
+8. Point `assets.wotbtools.com` at the server when ready for certificate issuance,
    then explicitly deploy the Stack in Komodo (the only Stack mutation owner).
-8. Run `bash deploy/assets/verify.sh https://assets.wotbtools.com`.
-9. Canary the Web client with `?assets=https://assets.wotbtools.com` before changing
-   the production `ASSET_BASE_URL`.
-10. Migrate the Android native asset origin in a separate client change. Old Android
+9. Run `bash deploy/assets/verify.sh https://assets.wotbtools.com`.
+10. Canary the Web client with `?assets=https://assets.wotbtools.com` before changing
+    the production `ASSET_BASE_URL`.
+11. Migrate the Android native asset origin in a separate client change. Old Android
     binaries keep using the old COS origin until retired.
 
 ## Caddy config/redeploy contract
