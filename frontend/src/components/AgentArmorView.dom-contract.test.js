@@ -258,13 +258,17 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
   })
-  it('热力图与点击判定共用几何面法线（不随 GLB 平滑顶点法线漂移）', () => {
-    // 点击/判定用 hit.face.normal；热力图 shader 若用插值 vNormal，平滑法线会让
-    // 同一像素的入射角/等效厚度与卡片不一致（卡片击穿、热图偏红）。
-    expect(kernel).toMatch(/vec3 nFace = normalize\(cross\(dFdx\(vViewPos\), dFdy\(vViewPos\)\)\);/)
+  it('热力图用 flat vNormal 面法线（不用屏幕空间导数；移动端 mediump 回归）', () => {
+    // 装甲几何在 loadModels 中 toNonIndexed + computeVertexNormals ⇒ 每个三角形的
+    // vNormal 已是几何面法线，与点击判定 hit.face.normal 同源。3.13.0 的
+    // dFdx/dFdy(vViewPos) 在移动端 mediump(fp16) 下逐像素导数量化/退化，导致热力图错乱
+    // （2026-10-19 修复）；这里锁定三个热力图 shader 都使用 flat vNormal。
+    expect(kernel).toMatch(/toNonIndexed\(\)/)
+    expect(kernel).toMatch(/computeVertexNormals\(\)/)
+    expect([...kernel.matchAll(/vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
+    expect(kernel).not.toMatch(/dFdx\(vViewPos\)/)
     expect(kernel).toMatch(/highp vec3 nVR = nFace;/)
-    expect(kernel).not.toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
-    expect(kernel).toMatch(/extensions: \{ derivatives: true \},/)
+    expect(kernel).not.toMatch(/extensions: \{ derivatives: true \},/)
   })
   it('管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）', () => {
     // 两块 20mm@60°（相隔 0.02m）+ 100mm 主装甲@0°，AP 100/164/5°。

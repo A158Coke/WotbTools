@@ -331,9 +331,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               bool moduleInFront = spacedState.a > 0.5;
               bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
               float viewDistance = length(vViewPos);
-              // 与点击判定 hit.face.normal 同源：几何面法线，不用插值顶点法线。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              // 装甲几何在加载时 toNonIndexed + computeVertexNormals ⇒ vNormal 已是逐面
+              // 几何法线，与点击判定 hit.face.normal 同源。不得改用 dFdx/dFdy(vViewPos)：
+              // 本 shader 是 mediump（移动端 fp16），屏幕空间位置的逐像素导数会量化/退化，
+              // 导致热力图颜色错乱（2026-10-19 回归）。
+              vec3 nFace = normalize(vNormal);
               float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
 
               highp mat3 vRotT = transpose(mat3(viewMatrix));
@@ -718,7 +720,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
                 vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
-                extensions: { derivatives: true },
                 transparent: true, depthWrite: false,
                 uniforms: {
                     thickness: { value: thickness },
@@ -801,9 +802,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             uniform float normalization;
             void main() {
               float viewDistance = length(vViewPos);
-              // 与点击判定同源：几何面法线（非插值顶点法线）。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              vec3 nFace = normalize(vNormal);
               float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
               // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
               // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
@@ -833,9 +833,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ${RC_GLSL_FUNCS}
             void main() {
               float viewDistance = length(vViewPos);
-              // 与点击判定同源：几何面法线（非插值顶点法线）。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              vec3 nFace = normalize(vNormal);
               float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
@@ -890,7 +889,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
-                extensions: { derivatives: true },
                 depthWrite: false, depthTest: true,
                 blending: THREE.AdditiveBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
@@ -899,7 +897,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedStateMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
-                extensions: { derivatives: true },
                 // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
                 depthWrite: true, depthTest: true, blending: THREE.NoBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
