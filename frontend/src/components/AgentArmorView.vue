@@ -439,13 +439,9 @@ onBeforeUnmount(() => {
 .armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
 .armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }
 /* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
-   最小高度——360px 高的横屏视口不再被撑出屏幕。竖屏手机仍走下面的 mobile 规则。 */
+   最小高度；信息行压成单行，避免短视口下设置面板被挤出卡片。竖屏手机仍走下面 mobile 规则。 */
 @media (pointer: coarse) and (orientation: landscape) {
     .armor-view { min-block-size: 0; }
-}
-/* 横屏手机：左上卡沿用平板浮层，但信息行压成单行——360px 高视口下避免信息卡被
-   长车名/多行 stat 撑高，把设置面板挤出卡片。 */
-@media (pointer: coarse) and (orientation: landscape) and (height <= 500px) {
     .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
     .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
     .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }

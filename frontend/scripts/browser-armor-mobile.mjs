@@ -496,6 +496,8 @@ async function runMobileBackScenario(env, scenario) {
 const DESKTOP_SCENARIOS = [
   // 横屏粗指针手机必须走平板式布局（左上信息卡 + 四角浮层），而不是竖屏 mobile 的上下窄带。
   { name: 'armor-740x360-landscape-coarse', width: 740, height: 360, touch: true },
+  // 横屏粗指针平板同一套布局（信息行压单行；不再有额外的 height 断点）。
+  { name: 'armor-1024x768-landscape-tablet-coarse', width: 1024, height: 768, touch: true },
   // 断点边界：768px 起进入桌面档（左上信息卡 + 可收起设置面板、四角布局）
   { name: 'armor-768x1024-tablet-boundary', width: 768, height: 1024, touch: false },
   { name: 'armor-1024x768-tablet', width: 1024, height: 768, touch: false },
@@ -900,6 +902,65 @@ async function runPickerCardsScenario(env, scenario) {
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
 
+/**
+ * Context-loss lifecycle: losing WebGL during initialization must keep the error card
+ * (no later modelProgress/ready overwrite) and retry must recreate the renderer.
+ */
+const CONTEXT_LOSS_SCENARIO = { name: 'armor-context-lost-init', width: 1024, height: 768, touch: false }
+async function runContextLossScenario(env, scenario) {
+  const failures = []
+  const { targetId, sessionId } = await env.chrome.openPage()
+  const page = new Page(env.chrome.client, sessionId)
+  lastPage = page
+  await page.enable()
+  await page.emulate(scenario)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`)
+  await page.waitFor(() => !!document.querySelector('#canvas-container canvas'), { label: 'canvas before context loss' })
+  const lost = await page.evaluate(`(() => {
+    const canvas = document.querySelector('#canvas-container canvas')
+    const gl = canvas && canvas.getContext('webgl2')
+    const ext = gl && gl.getExtension('WEBGL_lose_context')
+    if (!ext) return false
+    ext.loseContext()
+    return true
+  })()`)
+  check(failures, lost === true, `${scenario.name}: WEBGL_lose_context 不可用，无法模拟 context lost`)
+  const errorSeen = await page.waitFor(
+    () => !!document.querySelector('[data-testid="scene3d-error"]'),
+    { timeout: 5000, label: 'context-lost error card' },
+  ).then(() => true).catch(() => false)
+  check(failures, errorSeen, `${scenario.name}: context lost 后没有显示错误卡`)
+  const errorText = await page.evaluate(`document.querySelector('[data-testid="scene3d-error"]')?.textContent || ''`)
+  check(failures, /3D|WebGL|context/i.test(errorText),
+    `${scenario.name}: context-lost 错误卡文案异常：${JSON.stringify(errorText.slice(0, 160))}`)
+  // 给仍在途的 JSON/GLB/modelProgress 链足够时间走完；错误卡不得被 loading/ready 覆盖。
+  await delay(1500)
+  const afterLoad = await page.evaluate(`(() => ({
+    error: !!document.querySelector('[data-testid="scene3d-error"]'),
+    loading: !!document.querySelector('[data-testid="scene3d-loading"]'),
+    retry: !!document.querySelector('[data-testid="scene3d-retry"]'),
+  }))()`)
+  check(failures, afterLoad.error && afterLoad.retry && !afterLoad.loading,
+    `${scenario.name}: context-lost 错误态被后续加载覆盖（${JSON.stringify(afterLoad)}）`)
+  const retry = await page.evaluate(`(() => {
+    const button = document.querySelector('[data-testid="scene3d-retry"]')
+    if (!button) return null
+    const rect = button.getBoundingClientRect()
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+  })()`)
+  check(failures, !!retry, `${scenario.name}: 错误卡没有可点击的重试按钮`)
+  if (retry) await page.tap({ ...retry, touch: scenario.touch })
+  const recovered = await page.waitFor(() => {
+    const error = document.querySelector('[data-testid="scene3d-error"]')
+    const loading = document.querySelector('[data-testid="scene3d-loading"]')
+    const target = document.querySelector('#target-select')
+    return !error && !loading && !!target && !target.disabled
+  }, { timeout: 30000, label: 'context-lost retry recreates the renderer' }).then(() => true).catch(() => false)
+  check(failures, recovered, `${scenario.name}: 重试没有重建 renderer/恢复场景`)
+  await env.chrome.client.send('Target.closeTarget', { targetId })
+  results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
+}
+
 /** Load-order regression: collision enabled before the delayed armor GLB finishes, visual first. */
 const STAGGERED_LOAD_SCENARIO = { name: 'armor-staggered-visual-first', width: 1024, height: 768, touch: false }
 async function runStaggeredLoadScenario(env, scenario) {
@@ -983,6 +1044,7 @@ try {
     { scenario: BACK_SCENARIO, run: () => runMobileBackScenario(env, BACK_SCENARIO) },
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
     { scenario: STAGGERED_LOAD_SCENARIO, run: () => runStaggeredLoadScenario(env, STAGGERED_LOAD_SCENARIO) },
+    { scenario: CONTEXT_LOSS_SCENARIO, run: () => runContextLossScenario(env, CONTEXT_LOSS_SCENARIO) },
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]

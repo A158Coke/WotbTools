@@ -48,7 +48,11 @@ describe('armor destroyed scene async ownership', () => {
     ]) {
       const start = kernel.indexOf(step)
       expect(start, step).toBeGreaterThan(-1)
-      expect(kernel.slice(start + step.length).trimStart().startsWith('if (destroyed) return;'), step).toBe(true)
+      const guard = kernel.slice(start + step.length).trimStart()
+      expect(
+        guard.startsWith('if (destroyed) return;') || guard.startsWith('if (destroyed || contextLost) return;'),
+        step,
+      ).toBe(true)
     }
   })
 })
@@ -163,6 +167,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 生产显示 profile：+0.028/m、封顶 3.8、整体 ×1.1；车体随距离缩放明显强于实测参考。
     const productionFov = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.028, 3.8, 1.1)
     const productAt = (d) => Math.tan(productionFov(d) * Math.PI / 360) * d
+    expect(productionFov(15)).toBeCloseTo(20.59, 1)             // 1.1 整体缩放后的实际默认 FOV
     expect(productAt(30) / productAt(15)).toBeGreaterThan(1.1)   // 30m 约小 14%
     expect(productAt(100) / productAt(15)).toBeGreaterThan(1.4)  // 100m 约小 35%
     expect(productAt(500)).toBeCloseTo(productAt(100), 6)        // 远距封顶
@@ -181,7 +186,10 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/UNMASKED_RENDERER_WEBGL/)
     expect(kernel).toMatch(/contextLost = true/)
     expect(kernel).toMatch(/if \(destroyed \|\| contextLost \|\| !initDone/)
-    expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\) \}\)/)
+    expect(kernel).toMatch(/if \(contextLost && !\(state && state\.contextLost\)\) return;/)
+    expect(kernel).toMatch(/loadGen\+\+;\s*targetLoadGen\+\+;\s*shooterLoadGen\+\+;/)
+    expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
+    expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
   })
 })
 
