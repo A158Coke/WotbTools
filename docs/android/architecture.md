@@ -343,9 +343,7 @@ APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同
   Cookie → Native token 复制、Native → JS refresh token 暴露。
 - **单飞 refresh**：并发 `authGetAccessToken` 只触发一次 refresh；refresh 的永久 token 拒绝清空 Native 会话；离线/网络/服务失败保留加密 cached session 并回报
   `refresh-failed`（`authGetAccessToken` 的 `error` 字段），Web 侧清除不可用的 API token，但保留 Native cached session 的登录投影和本地回放状态。
-  Logout / account replacement advances the session generation under the same persistence lock.
-  Late refresh success/rejection cannot restore a logged-out session, overwrite/clear a new account,
-  or release a newer generation's waiters. Transient failures emit no authChanged retry loop.
+  Logout / 账号替换在同一把持久化锁下推进 session generation。迟到的 refresh 成功/拒绝不能恢复已登出会话、覆盖/清空新账号，也不能释放更新 generation 的 waiter。瞬时失败不会产生 authChanged 重试循环。
 
 
 ### 登录 / 登出语义

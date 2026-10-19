@@ -118,19 +118,9 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 不在客户端启发式推导，也不在服务端解析。已知消费缺口以当前 pin 的上游 Release 为准，消费契约随
 `contracts/agent/replay-facets-v2.md` 更新。
 
-## Android bundled runtime
+## Android 内置运行时
 
-Android runs the same ReplayWorkspace at `http://127.0.0.1:21653/index.html` (bundled GeckoView + Native LocalRuntimeServer since 3.0).
-Replay import, Rust/WASM parsing, Result/Rating, 2D maps keep using bundled resources.
-Shooting-inspection inputs (compact pitch/config shell identity) and the shell-kind table are
-fetched from the asset pack at runtime since 2026-10-15 (`tank/{id}.json` projection +
-`/data/shellKinds.json`); the bundled snapshot `common/shot-tank-data.json` is retired.
-Pending intents stream only from the exact local `/__native/replay-pending` resource with UUID header
-and compare-and-clear ACK after analysis completion. Parser-load failure preserves pending for retry.
-AI, HoF, remote Profile and remote 3D assets require connectivity before auth or requests.
-The runtime URL boundary sends Android business requests to production with native Bearer and no cookies;
-ordinary Web requests retain their same-origin behavior. Release validates the APK's frontend identity,
-not the production Web deployment's commit. See `docs/android/architecture.md` and `release-process.md`.
+Android 在 `http://127.0.0.1:21653/index.html` 运行同一个 ReplayWorkspace（3.0 起 bundled GeckoView + Native LocalRuntimeServer）。Replay 导入、Rust/WASM 解析、Result/Rating、2D 地图继续使用 bundled 资源。射击检视输入（compact pitch/config shell identity）与弹种表自 2026-10-15 起运行期从资产包读取（`tank/{id}.json` 投影 + `/data/shellKinds.json`）；bundled `common/shot-tank-data.json` 已退役。Pending intent 只从精确的本地 `/__native/replay-pending` 资源流式读取，带 UUID header，并在分析完成后 compare-and-clear ACK；parser 加载失败保留 pending 供重试。AI、HoF、remote Profile 与 remote 3D assets 在认证或请求前需要连通性。runtime URL 边界把 Android 业务请求发往 production，带 native Bearer、无 cookies；普通 Web 请求保持 same-origin。Release 校验 APK 的 frontend identity，不校验 production Web deployment 的 commit。见 `docs/android/architecture.md` 与 `release-process.md`。
 
 ## Canonical 投影的线程边界
 
