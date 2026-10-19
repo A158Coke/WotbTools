@@ -132,7 +132,7 @@ describe('positionAtV2', () => {
   })
 
   it('anti-future-leak: future-only OBSERVED segment is invisible (never leaks 186s)', () => {
-    // plan §26: currentTime=23, 敌方第一次观测=186 → 绝不能提前显示
+    // anti-future-leak: currentTime=23, 敌方第一次观测=186 → 绝不能提前显示
     const segs = [
       { knowledge: 'OBSERVED', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 999, y: 888 }] },
     ]
@@ -152,7 +152,7 @@ describe('positionAtV2', () => {
   })
 
   it('anti-future-leak: future LAST_KNOWN segment must not freeze into lastSeen', () => {
-    // plan §17：不得因为段标记为 LAST_KNOWN 就取它的最后样本
+    // anti-future-leak：不得因为段标记为 LAST_KNOWN 就取它的最后样本
     const segs = [
       { knowledge: 'OBSERVED', startSec: 10, endSec: 15, samples: [{ timeSec: 10, x: 10, y: 20 }, { timeSec: 15, x: 11, y: 21 }] },
       { knowledge: 'LAST_KNOWN', startSec: 186, endSec: 190, samples: [{ timeSec: 186, x: 500, y: 500 }, { timeSec: 190, x: 600, y: 600 }] },

@@ -15,7 +15,7 @@ const props = defineProps({
   enemyPoints: { type: Number, default: null },
   baseStates: { type: Array, default: () => [] },
   friendlyTeam: { type: Number, default: null },
-  // §13：seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
+  // seek/恢复帧不补播 HP 伤害动画（与单车 hpNoTransition 同源，父组件传入）。
   hpNoTransition: { type: Boolean, default: false },
 })
 
@@ -56,12 +56,12 @@ function hasPoints() {
   return props.friendlyPoints != null || props.enemyPoints != null
 }
 
-// ---- §13：Team HP delayed-damage bar ----
+// ---- Team HP delayed-damage bar ----
 // authoritative current HP 立即更新；delayed bar 短暂停留在旧值，随后追赶当前值
 //（150–250ms 克制过渡）；seek/恢复（hpNoTransition）直接同步，不补播伤害动画。
 function fillPctNum(hp) {
   if (!hp || typeof hp !== 'object') return 0
-  // §13 aggregated states only：FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN
+  // Aggregated states only：FULL_RELATIVE / EXACT / PARTIAL / UNKNOWN
   // （TEAM HUD 用 friendlyHealthAt 聚合态，不用单车 RELATIVE_FULL/CURRENT/LAST_KNOWN/DESTROYED）。
   if (hp.state === 'UNKNOWN') return 0
   if (hp.state === 'FULL_RELATIVE') return 100
