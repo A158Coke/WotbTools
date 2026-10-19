@@ -71,6 +71,7 @@ describe('AndroidDownloadPage', () => {
       platform: 'web',
     })
     expect(events[0].event_id).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(events[0].operation_id).toBe(events[0].event_id)
     expect(Number.isNaN(Date.parse(events[0].occurred_at))).toBe(false)
   })
 
