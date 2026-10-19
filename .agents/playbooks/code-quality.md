@@ -1,6 +1,6 @@
 # Code Quality Checklist（内部检查单）
 
-> 内部 checklist：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 checklist：**loaded by review-with-docs**；只服务 final review，不参与 lifecycle routing。不是顶层 Skill。
 
 ## 输入 / 输出 / 不负责
 

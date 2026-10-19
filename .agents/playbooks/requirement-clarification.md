@@ -1,7 +1,7 @@
 
 # Grill-Me（需求澄清）
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 playbook：**loaded by designer**，用于需求澄清阶段；不属于 executor / prompt-repair / review-with-docs 的通用入口。不是顶层 Skill，也不参与生命周期选择。
 
 > 定位：开发前把"模糊诉求"grill 成"可验收需求"。不写代码、不查实现；实现角度交给 designer（其会自动前置本 playbook，已完成澄清则跳过）。
 

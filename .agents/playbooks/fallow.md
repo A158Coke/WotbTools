@@ -1,7 +1,7 @@
 
 # fallow
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 playbook：**loaded by review-with-docs**；只用于 final review 的前端诊断，不参与 lifecycle routing。不是顶层 Skill。
 
 ## 前置条件
 

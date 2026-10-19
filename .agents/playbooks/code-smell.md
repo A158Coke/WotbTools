@@ -1,7 +1,7 @@
 
 # code-smell
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 checklist：**loaded by review-with-docs**；不是独立 workflow，不参与 lifecycle routing。不是顶层 Skill。
 
 > **定位**：`review-with-docs` 内部品味 checklist，检查"好不好"；不是独立 workflow。
 > **输入**：current diff / changed files。**输出**：findings。

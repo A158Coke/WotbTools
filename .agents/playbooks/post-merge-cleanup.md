@@ -1,7 +1,7 @@
 
 # Post-merge Cleanup（内部 playbook）
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 playbook：**loaded by executor**；仅用于 merge 后 cleanup，不参与其他生命周期阶段。不是顶层 Skill，也不参与生命周期选择。
 
 > 全程主代理执行，不 spawn 子代理。
 

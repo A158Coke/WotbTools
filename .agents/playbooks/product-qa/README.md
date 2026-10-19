@@ -1,7 +1,7 @@
 
 # Product QA（真实用户黑盒探索）
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+> 内部 playbook：**loaded by review-with-docs**；designer / executor / prompt-repair 不直接把它当 lifecycle stage 执行。不是顶层 Skill，也不参与生命周期选择。
 
 > 定位：把 agent 当成真实 QA / 新用户 / 重度用户，而不是 code reviewer。
 > 核心顺序固定为：**真实使用 → 观察异常 → 重复复现 → 固化证据 → 再决定是否看代码**。
@@ -317,21 +317,21 @@ UI/UX finding 还需说明用户要完成什么任务、具体阻力、可用绕
 ## 11. 推荐触发语句
 
 ```text
-Use product-qa. Run full-site QA against production WotBTools, including UI/UX and every tutorial. Inventory every visible feature and report per-case results and coverage gaps.
+使用 product-qa 对 production WotBTools 执行 full-site QA，覆盖 UI/UX 与每个 tutorial。清点所有可见功能，逐用例报告结果与 coverage gaps。
 ```
 
 ```text
-Use product-qa in replay-power-user mode. Black-box only; do not inspect code yet.
+使用 product-qa 的 replay-power-user 模式。只做 black-box；暂时不要检查代码。
 ```
 
 ```text
-Use product-qa for mobile exploratory QA. After the black-box report, inspect code only for confirmed bugs and prepare GitHub-ready issues, but do not create them.
+使用 product-qa 做 mobile exploratory QA。完成 black-box 报告后，只针对已确认 bug 检查代码，并准备 GitHub-ready issues，但不要创建。
 ```
 
 ```text
-Use product-qa. Reproduce confirmed findings twice, then create GitHub issues only for high-confidence bugs.
+使用 product-qa。对已确认 findings 复现两次，只对 high-confidence bugs 创建 GitHub issues。
 ```
 
 ```text
-Use product-qa in usability-and-onboarding mode. Test first-visit discovery, tutorial actions, mobile layout, keyboard dismissal and recovery. Save evidence, then update the skill only with reusable lessons.
+使用 product-qa 的 usability-and-onboarding 模式。测试 first-visit discovery、tutorial actions、mobile layout、keyboard dismissal 与 recovery。保存 evidence，然后只用可复用 lessons 更新 skill。
 ```
