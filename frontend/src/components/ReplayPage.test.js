@@ -255,6 +255,7 @@ function makeResp(overrides = {}) {
 function mountPage(overrides = {}) {
   const navigate = overrides.navigate || vi.fn()
   return mount(ReplayPage, {
+    props: overrides.props || {},
     global: {
       mocks: { $t: i18n.t },
       provide: {
@@ -344,6 +345,34 @@ function stripOffscreen() {
 }
 
 afterEach(() => columnsState.reset())
+
+describe('ReplayPage data picker visibility (workspace capability v-show)', () => {
+  beforeEach(() => {
+    state.clear()
+    state.init = {
+      activeTab: 'b0',
+      resp: makeResp({
+        battles: [
+          { sourceId: 'r0', mapName: 'Lagoon', players: [] },
+          { sourceId: 'r1', mapName: 'Frozen', players: [] }
+        ]
+      }),
+      error: '', loading: false, locale: 'en', files: []
+    }
+  })
+
+  it('capability 隐藏（active=false）时关闭已打开的数据模式 BattlePicker', async () => {
+    const wrapper = mountPage({ props: { active: true } })
+    await flushPromises()
+    await wrapper.get('[data-testid="battle-picker"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="battle-picker-panel"]').exists()).toBe(true)
+    await wrapper.setProps({ active: false })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="battle-picker-panel"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
 
 describe('ReplayPage data hydration (embedded-only)', () => {
   beforeEach(() => {
