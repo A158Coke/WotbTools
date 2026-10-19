@@ -52,6 +52,7 @@
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |
 | `features/battle-playback-hp-authority.md` | 改战局回放 HP 权威来源 / settlement 优先级时 |
 | `features/hall-of-fame.md` | 改名人堂时 |
+| `features/user-profile.md` | 改 Profile、游戏账号绑定/验证或个人资料展示时 |
 | `features/tournament-points.md` | 改积分赛规则、截图识别、共享草稿、正式榜单、修正或证据生命周期时 |
 | `features/league-broadcasts.md` | 改全服联赛直播回放目录、同页管理、季赛／分类／根节点与回放时 |
 | `features/bilibili-creators.md` | 改 bilibili UP/优秀作品推荐、类型隔离、手动星级、站点头像/封面、实力评估或管理权限时 |
@@ -102,7 +103,8 @@
 | `operations/komodo-periphery.md` | Komodo Periphery agent（Yecao / TX1 / TX2）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、三把宿主锁、TX2 WireGuard MTU 1380 前置条件与恢复时 |
 | `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层 `infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
 | `operations/tx-service-plane.md` | TX1 WireGuard-only service endpoints、loopback administration、Docker-local production dependency 与回滚时 |
-| `operations/tx2-production-worker.md` | TX2 production worker（K7A）：独立 host 前置条件、Compose/镜像/凭据生命周期、ownership 边界、fail-closed 矩阵与从零重建流程时 |
+| `operations/tx2-production-worker.md` | TX2 production worker：独立 host 前置条件、Compose/镜像/凭据生命周期、ownership 边界、fail-closed 矩阵与从零重建流程时 |
+| `operations/komodo-k7c-frontend-cutover.md` | 查当前 TX1/TX2 frontend active-active 拓扑、frontend release ownership、runtime-content 复制边界与 rollback 时 |
 
 ## 参考
 
