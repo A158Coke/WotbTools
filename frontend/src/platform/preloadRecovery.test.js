@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { installPreloadErrorRecovery } from './preloadRecovery.js'
 
 function fakeWindow(options = {}) {
-  const { storageThrows = false } = options
+  const {
+    storageThrows = false,
+    bufferSizeSupport = true,
+    bufferSizeThrows = false,
+  } = options
   const status = Object.prototype.hasOwnProperty.call(options, 'status')
     ? options.status
     : 404
@@ -21,9 +25,15 @@ function fakeWindow(options = {}) {
       values.set(key, value)
     },
   }
-  target.performance = {
-    getEntriesByName: vi.fn(() => [{ responseStatus: status }]),
+  const performance = new EventTarget()
+  performance.getEntriesByName = vi.fn(() => [{ responseStatus: status }])
+  performance.clearResourceTimings = vi.fn()
+  if (bufferSizeSupport) {
+    performance.setResourceTimingBufferSize = vi.fn(() => {
+      if (bufferSizeThrows) throw new Error('buffer size denied')
+    })
   }
+  target.performance = performance
   return target
 }
 
@@ -91,5 +101,70 @@ describe('preload error recovery', () => {
     target.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(false)
     expect(target.location.reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('Resource Timing capacity', () => {
+  it('reserves headroom for the stale asset entry at install time', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+
+    const setBufferSize = target.performance.setResourceTimingBufferSize
+    expect(setBufferSize).toHaveBeenCalledTimes(1)
+    expect(setBufferSize.mock.calls[0][0]).toBeGreaterThanOrEqual(1000)
+    expect(target.performance.clearResourceTimings).not.toHaveBeenCalled()
+  })
+
+  it('doubles capacity on resourcetimingbufferfull without clearing existing entries', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+
+    const setBufferSize = target.performance.setResourceTimingBufferSize
+    const initial = setBufferSize.mock.calls.at(-1)[0]
+    target.performance.dispatchEvent(new Event('resourcetimingbufferfull'))
+    const firstGrowth = setBufferSize.mock.calls.at(-1)[0]
+    expect(firstGrowth).toBeGreaterThan(initial)
+
+    target.performance.dispatchEvent(new Event('resourcetimingbufferfull'))
+    expect(setBufferSize.mock.calls.at(-1)[0]).toBeGreaterThan(firstGrowth)
+    expect(target.performance.clearResourceTimings).not.toHaveBeenCalled()
+  })
+
+  it('installs without throwing when setResourceTimingBufferSize is unavailable', () => {
+    const target = fakeWindow({ bufferSizeSupport: false })
+    expect(target.performance.setResourceTimingBufferSize).toBeUndefined()
+    expect(() => installPreloadErrorRecovery(target)).not.toThrow()
+
+    const event = preloadError()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps stale recovery working when Resource Timing sizing throws', () => {
+    const target = fakeWindow({ bufferSizeThrows: true })
+    expect(() => installPreloadErrorRecovery(target)).not.toThrow()
+    expect(() => target.performance.dispatchEvent(new Event('resourcetimingbufferfull'))).not.toThrow()
+
+    const event = preloadError()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not duplicate listeners on repeated installs', () => {
+    const target = fakeWindow()
+    const addEventListener = vi.fn(target.addEventListener.bind(target))
+    target.addEventListener = addEventListener
+    installPreloadErrorRecovery(target)
+    installPreloadErrorRecovery(target)
+
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'vite:preloadError')).toHaveLength(1)
+    expect(target.performance.setResourceTimingBufferSize).toHaveBeenCalledTimes(1)
+
+    const event = preloadError()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
   })
 })
