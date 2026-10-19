@@ -26,7 +26,7 @@
 3. **文档生命周期与权威归属** — 持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
    - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
    - `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
-   - **当前状态文档**（以下全部只描述合并后的当前系统状态）：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**`。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。
+   - **当前状态文档**（以下全部只描述合并后的当前系统状态）：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**`。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。`README.md` 与 `README.en-US.md` 是活跃双语对：产品可见变更必须同步更新两者，不能只改中文 README 就宣称完成。
    - **例外（不按当前状态文档要求）**：
      - `HISTORY.md`：产品/业务历史。
      - `docs/architecture/TECHNICAL_EVOLUTION.md`：技术/架构历史。
