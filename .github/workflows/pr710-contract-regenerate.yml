@@ -1,0 +1,64 @@
+name: PR710 contract regenerate
+
+on:
+  push:
+    branches:
+      - fix/android-download-click-observability
+    paths:
+      - .github/workflows/pr710-contract-regenerate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/android-download-click-observability
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Add dedicated Android download click event to HTTP contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('contracts/http/openapi.yaml')
+          text = path.read_text()
+          old = 'enum: [active_user, feature_open, replay_parse]'
+          new = 'enum: [active_user, feature_open, replay_parse, android_download_click]'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one observability event enum, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Regenerate HTTP contract artifacts
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run api:generate
+      - name: Verify generated contract contains dedicated event
+        shell: bash
+        run: |
+          grep -Fq 'android_download_click' contracts/http/openapi.yaml
+          grep -Fq 'android_download_click' frontend/src/api/generated/http-contract.ts
+          grep -Fq 'android_download_click' frontend/src/api/generated/playback-v2.schema.ts
+      - name: Commit generated contract and remove temporary workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/pr710-contract-regenerate.yml
+          git add contracts/http/openapi.yaml \
+            frontend/src/api/generated/http-contract.ts \
+            frontend/src/api/generated/playback-v2.schema.ts \
+            frontend/src/api/generated/api-error-codes.ts \
+            frontend/src/api/generated/contract-validators.js
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(observability): add Android download click contract event'
+          git push origin HEAD:fix/android-download-click-observability
