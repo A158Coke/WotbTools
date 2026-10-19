@@ -28,9 +28,13 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     });
     it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {
         expect(viewer).toContain('lastClickNdc');
+        expect(viewer).toContain('lastClickNdc = null;');
         expect(viewer).toContain('clipPlane: gunClipPlane');
         expect(viewer).toContain('explosion_radius: isHE ? heRadius : 0');
         expect(viewer).toContain("document.getElementById('canvas-container')");
         expect(viewer).not.toContain('100vw');
+    });
+    it('8 位 RT 饱和时 HE 热力图走 0 伤害端', () => {
+        expect(viewer).toMatch(/if \(spacedSatBlocked\) \{\s*\n\s*splashChance = 0\.0;\s*\n\s*heDamageNorm = 0\.0;/);
     });
 });
