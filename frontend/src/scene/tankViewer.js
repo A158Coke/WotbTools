@@ -186,6 +186,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 加载状态上报（宿主页进度条 / 错误态）；宿主回调异常不影响场景
         const reportLoad = (state) => {
             if (destroyed || typeof onLoadState !== 'function') return;
+            // Context loss 后所有 load/ready 上报都必须让位于错误态；只有带 contextLost
+            // 标记的错误本身可以写入，否则 in-flight GLTF/modelProgress 回调会把错误卡
+            // 覆盖成 loading/ready，retry 入口消失。
+            if (contextLost && !(state && state.contextLost)) return;
             try { onLoadState(state); } catch (_) {}
         };
         const errorMessage = (error) => (typeof error === 'string') ? error
@@ -195,13 +199,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (event && typeof event.preventDefault === 'function') event.preventDefault();
             if (destroyed) return;
             contextLost = true;
+            // 让所有 in-flight 资产/目标加载 continuation 失效，避免它们在错误态之后
+            // 继续写 loading/ready 或启动渲染。
+            loadGen++;
+            targetLoadGen++;
+            shooterLoadGen++;
             if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-            reportLoad({ state: 'error', message: contextLostMessage() });
+            reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
         }
         function reportContextRestored() {
             // 浏览器允许恢复上下文，但 Three.js 的 GPU 资源已失效；保持错误态，由宿主
             // “重试”销毁并重新创建整个 renderer，不在这里重建半套 GL 资源。
-            if (!destroyed && contextLost) reportLoad({ state: 'error', message: contextLostMessage() });
+            if (!destroyed && contextLost) reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
         }
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
@@ -2441,6 +2450,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function loadModels() {
+            if (destroyed || contextLost) return;
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').textContent = L.loading;
             window.__LOAD__ = 'start';
@@ -4193,6 +4203,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadTarget(tid) {
+            if (destroyed || contextLost) return false;
             const gen = ++targetLoadGen;
             loadGen++; // 立即使旧模型/射击 continuation 失效，不等新 JSON 返回
             __penCheckSeq++;
@@ -4325,7 +4336,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadShooter(tid) {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             const gen = ++shooterLoadGen;
             shooterLoading = true;
             selectedShell = null;
@@ -4611,17 +4622,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const initTargetId = window.__INITIAL_TANK__ || 28689;
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             // 模型回调可立即恢复射击并判定，因此弹药必须先完成，不能靠定时器猜网络耗时。
             initPhase = 'shell data';
             await loadShooter(initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             initDone = true;
             updateTankLabels();
             initPhase = 'tank data';
             await loadTarget(initTargetId);
-            if (destroyed) return;
-            if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
+            if (destroyed || contextLost) return;
+            if (!destroyed && !contextLost) animate();   // await 期间路由已离开/上下文已丢失则不再启动渲染
         }
 
         /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
@@ -5576,7 +5587,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function animate() {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
