@@ -63,13 +63,16 @@ function resetViewerGlobals() {
  * enabled 时按 k=d/refDist 缩放：d<refDist 时 FOV 变宽，车体屏幕尺寸保持 refDist 处比例；
  * farProductGain/farProductMax 可选：product = baseProduct + max(0,d-refDist)×gain，封顶 max；
  * product 随距离增大 → 远距车体略小（Armor Inspector 实测标定）。enabled=false 恒原生。
- * maxFovDeg 封顶近距，minFovDeg 封顶远距——两车 world 总览必须传 false，否则会把远距
- * 受击车裁出视锥。
+ * productScale 可选：整体放大 product（车体屏幕尺寸按 1/scale 缩小），默认 1；
+ * 用于查看器的显示缩放，不改变距离曲线形状。maxFovDeg 封顶近距，minFovDeg 封顶远距——
+ * 两车 world 总览必须传 false，否则会把远距受击车裁出视锥。
  */
-export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity) {
+export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity, productScale = 1) {
     if (!enabled) return Math.min(maxFovDeg, Math.max(minFovDeg, baseFovDeg));
+    const scale = Number.isFinite(productScale) && productScale > 0 ? productScale : 1;
     const baseProduct = Math.tan(baseFovDeg * Math.PI / 360) * refDistM;
-    const product = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const unscaledProduct = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const product = unscaledProduct * scale;
     const fov = 2 * Math.atan(product / Math.max(distanceM, 1e-4)) * 180 / Math.PI;
     return Math.min(maxFovDeg, Math.max(minFovDeg, fov));
 }
@@ -122,6 +125,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             loading: 'Loading tank model...',
             shellUnavailable: 'Shell data is missing or invalid.',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
+            contextLost: '3D rendering context was lost (GPU/driver reset). Please retry.',
             type: (value) => value,
             nation: (value) => value,
             showCollision: 'Show Collision',
@@ -143,18 +147,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
 
-        // Armor Inspector 单车装甲检视实测标定（PC T-34，2026-10-18）：
-        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；product = tan(fov/2)×d
-        // 从 15m 的 ≈2.477 随距离缓慢增大到 28.35m 的 ≈2.648（约 +0.0128/m），
-        // 远距车体因此略小；封顶 2.8（比 15m 小约 12%），避免 500m 缩得过小。
+        // Armor Inspector 单车装甲检视实测参考（PC T-34，2026-10-18）：
+        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；实测 product 从 15m 的
+        // ≈2.477 按 +0.0128/m 缓慢增大、封顶 2.8。用户 2026-10-19 要求车体随距离
+        // 缩放更明显：显示 profile 改用 +0.028/m、封顶 3.8（再乘 1.1 整体缩放），
+        // 15m 基准不变；30m 约小 14%，100m/500m 约小 35%（实测参考仍保留在上面的注释）。
         // near=0.05d / far=d+30；相机距离沿用查看器 3–500m。
-        // shot replay 与装甲检视共用这套标定；两车 world overview 保持原生 50° 取景。
+        // shot replay 与装甲检视共用这套显示 profile；两车 world overview 保持原生 50° 取景。
         const ARMOR_REF_DIST = 15;
         const ARMOR_BASE_FOV = 18.75;
         const ARMOR_MAX_FOV = 40;
         const ARMOR_MIN_FOV = 0.5;
-        const ARMOR_FAR_PRODUCT_GAIN = 0.0128;
-        const ARMOR_FAR_PRODUCT_MAX = 2.8;
+        const ARMOR_FAR_PRODUCT_GAIN = 0.028;
+        const ARMOR_FAR_PRODUCT_MAX = 3.8;
+        const ARMOR_PRODUCT_SCALE = 1.1;
         const OVERVIEW_BASE_FOV = 50;
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
@@ -162,6 +168,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const cleanups = [];
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
+        let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
+        let gpuLabel = '';       // 上下文丢失诊断：UNMASKED_RENDERER_WEBGL / RENDERER
         // Navigation between shots replaces the scene before delayed shell/trajectory work can finish.
         const pendingTimers = new Set();
         const setTimeout = (callback, delay) => {
@@ -182,6 +190,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         };
         const errorMessage = (error) => (typeof error === 'string') ? error
             : (error && (error.message || error.statusText || String(error))) || 'unknown';
+        const contextLostMessage = () => gpuLabel ? `${L.contextLost} (${gpuLabel})` : L.contextLost;
+        function reportContextLost(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (destroyed) return;
+            contextLost = true;
+            if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+            reportLoad({ state: 'error', message: contextLostMessage() });
+        }
+        function reportContextRestored() {
+            // 浏览器允许恢复上下文，但 Three.js 的 GPU 资源已失效；保持错误态，由宿主
+            // “重试”销毁并重新创建整个 renderer，不在这里重建半套 GL 资源。
+            if (!destroyed && contextLost) reportLoad({ state: 'error', message: contextLostMessage() });
+        }
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
         let shooterLoadGen = 0;
@@ -4447,6 +4468,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             renderer.localClippingEnabled = true;
             view.appendChild(renderer.domElement);
+            try {
+                const gl = renderer.getContext();
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                gpuLabel = String((debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || '');
+            } catch (_) { gpuLabel = ''; }
+            const canvas = renderer.domElement;
+            canvas.addEventListener('webglcontextlost', reportContextLost);
+            canvas.addEventListener('webglcontextrestored', reportContextRestored);
+            cleanups.push(() => {
+                canvas.removeEventListener('webglcontextlost', reportContextLost);
+                canvas.removeEventListener('webglcontextrestored', reportContextRestored);
+            });
+            // 某些环境（模拟器的 GL 翻译层）在 listener 挂上之前就已经丢了上下文。
+            try { if (renderer.getContext().isContextLost()) reportContextLost(); } catch (_) {}
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.15;
 
@@ -4591,7 +4626,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
         function retry() {
-            if (destroyed || !initDone || currentTargetId == null) return false;
+            if (destroyed || contextLost || !initDone || currentTargetId == null) return false;
             let phase = 'shell data';
             const ready = selectedShell && !shooterLoading
                 ? Promise.resolve() : loadShooter(currentShooterId);
@@ -5526,9 +5561,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 near = 0.1;
                 far = Math.max(1000, d * 3);
             } else {
-                // 单车装甲检视 / shot replay：同一套 Armor Inspector 实测 FOV 标定。
-                // product 随距离缓慢增大（远距车体略小），封顶 2.8；minFov=0.5° 留作远端兜底。
-                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX);
+                // 单车装甲检视 / shot replay：同一套 Armor Inspector 参考 + 更强的距离缩放
+                // display profile（+0.028/m、封顶 3.8、整体 ×1.1），远距车体缩小更明显。
+                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX, ARMOR_PRODUCT_SCALE);
                 near = 0.05 * d;
                 far = d + 30;
             }
