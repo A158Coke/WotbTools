@@ -147,7 +147,7 @@ description: >
 2. 前端：`useAuth.js` composable（Keycloak adapter check-sso 游客模式）。
 3. 后端：Spring Security Resource Server + `application.yml` JWT 验证。
 4. 新表（user/binding）：Flyway migration，`ddl-auto: validate` 验证。
-5. 验证 + 文档（WG 登录见 `docs/auth/wargaming-asia-login.md` 与 `keycloak-wargaming-provider/AGENTS.md`）。
+5. 验证 + 文档（WG 登录/身份/安全契约见 `docs/auth/wargaming-asia-deployment.md`，Profile/绑定语义见 `docs/features/user-profile.md`，provider 约束见 `keycloak-wargaming-provider/AGENTS.md`）。
 
 ## 配方 L：FE ↔ BE HTTP contract
 
