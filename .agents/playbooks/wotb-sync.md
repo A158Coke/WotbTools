@@ -1,12 +1,7 @@
----
-name: wotb-sync
-description: >
-  改回放解析（含上游 WASM pin）、数据列、前端交互、排行榜 schema、auth、i18n 时使用。
-  同步检查单：客户端解析/计算 → 列 key → locale JSON → 导出标签 → 测试 → 文档。
-  Trigger: 新增列、改解析语义/上游 pin、改表结构、改 i18n、改 Flyway、改 Keycloak。
----
 
 # wotb-sync — 跨层改动检查单（工具无关，单一事实源）
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > 本文件是**工具无关**的改动 playbook，供任意 AI coder / 人类贡献者使用，
 > 也是本技能的唯一维护点（内容只增删于此）。

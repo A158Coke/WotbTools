@@ -1,16 +1,9 @@
----
-name: grill-me
-description: >
-  开发前的需求澄清 grill：通过逐层提问把模糊/一句话需求变成可验收的需求清单
-  （目标 / 范围 / 非目标 / 验收标准 / 假设 / 待确认项）。
-  Trigger: 用户给出模糊需求、一句话需求或需求文档草稿，边界不清、含义有歧义、
-  或用户说"帮我做个 X"但说不清要什么时；发生在任何 Plan 与编码之前。
-  与 review-fix（代码变更后审查）互补，本技能只澄清需求，不做实现。
----
 
 # Grill-Me（需求澄清）
 
-> 定位：开发前把"模糊诉求"grill 成"可验收需求"。不写代码、不查实现；实现角度交给 plan-designer（其会自动前置本技能，已完成澄清则跳过）。
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+
+> 定位：开发前把"模糊诉求"grill 成"可验收需求"。不写代码、不查实现；实现角度交给 designer（其会自动前置本 playbook，已完成澄清则跳过）。
 
 ## 启动信号
 
@@ -35,7 +28,7 @@ description: >
    - 验收标准（可测、可演示）
    - 关键假设
    - 待确认项（区分"阻塞性"与"可默认"）
-6. **交接**：需求确认后转 `plan-designer`（实现角度；其自动前置 grill-me 已满足）→ Plan → 用户批准 → 开发。
+6. **交接**：需求确认后转 `designer`（实现角度；其自动前置 requirement-clarification 已满足）→ Plan → 用户批准 → 开发。
 
 ## 规则
 

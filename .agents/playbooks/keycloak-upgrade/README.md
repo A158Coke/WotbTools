@@ -1,13 +1,7 @@
----
-name: keycloak-upgrade
-description: >
-  Keycloak 版本升级（patch/minor/major）全流程：版本同步点检查、自定义 SPI（Identity Provider）
-  兼容性评估与修复、构建测试、本地与生产验证、回滚预案和边界情况清单。
-  Trigger: 升级 Keycloak 镜像 tag 或依赖版本、改 provider pom 的 keycloak.version、
-  Keycloak provider 编译/运行失败、评估 Keycloak 大版本升级影响、同步 frontend keycloak-js。
----
 
 # keycloak-upgrade
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 自定义 Identity Provider SPI
 （`keycloak-wargaming-provider` / `keycloak-qq-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
@@ -33,7 +27,7 @@ description: >
 
 ### Phase 0 — 盘点现状（只读）
 
-1. 运行 `python .agents/skills/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
+1. 运行 `python .agents/playbooks/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
 2. 记录：镜像 tag、各 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
 3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
 
@@ -77,7 +71,7 @@ description: >
 ### Phase 6 — 收尾
 
 - 更新 `java/README.md`、`docs/auth/*`；升级若带来长期认证/身份模型演进则记录到 `HISTORY.md`（判据见 `.agents/AGENTS.md` 规则 3）。
-- 走 `review-with-docs`（影响构建/认证/文档时）+ `review-fix` 闭环。
+- 走 `review-with-docs`（影响构建/认证/文档时）+ `review-with-docs` 闭环。
 
 ## 边界情况必查清单（Edge Cases）
 

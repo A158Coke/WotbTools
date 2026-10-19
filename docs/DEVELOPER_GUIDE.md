@@ -10,7 +10,7 @@
 
 这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 25 + Spring Boot 4 业务与 AI 服务、Vue 3 Web/Android 客户端、上游 Rust/WASM 回放引擎、Keycloak + PostgreSQL。
 
-动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
+动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
 
 固定接手方法：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。完整流程以 `.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准。
 
@@ -23,7 +23,7 @@
 | `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 最先 |
 | `.agents/AGENTS.md` | 仓库级硬约定、接手与调整固定流程 | 动手前必读 |
 | `frontend/AGENTS.md` / `java/AGENTS.md` 等 | 目录级约束 | 进入对应目录时 |
-| `.agents/skills/wotb-sync/SKILL.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
+| `.agents/playbooks/wotb-sync.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
 | `java/README.md` | Java/Web 运行、接口、构建 | 跑后端时 |
 | `docs/README.md` | 全部专题文档索引 | 查专项设计时 |
 
@@ -83,7 +83,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
 - **单一数据源**：车辆库为 `common/tankopedia-tier{1..10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。坦克百科搜索别名 `common/tank_aliases.json` 是独立的**搜索 metadata**（开发者审校维护，允许有来源记录的客户端名称批量导入；稀疏存储、只扩搜索召回，不参与车辆身份与显示名）；按任意 `tank_id` 离线校验/查询用生成的完整名册 `common/tank_ids.json`（全 tier，只有 id ↔ 名字，不是属性来源）。两者契约见 [`architecture/tankopedia-reference-data.md`](architecture/tankopedia-reference-data.md)。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
-- 跨层联动必须执行 `wotb-sync`。
+- 跨层联动必须执行 `.agents/playbooks/wotb-sync.md`。
 - **UI Profile（展示风格）**：`showcase`（深色，默认）/ `classic`（浅色）共用同一套业务组件、布局、状态与 API；`auto` 偏好按系统深浅色解析到其中一种。共享外壳和已迁移页面使用语义 token，Classic 在 `frontend/src/styles/classic-profile.css` 中提供浅色映射。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
 
 ---

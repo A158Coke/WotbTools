@@ -1,12 +1,7 @@
----
-name: fallow
-description: >
-  Codebase intelligence for TypeScript and JavaScript.
-  可检测未使用代码、重复代码、循环依赖、复杂度热点、架构漂移。
-  Trigger: 前端代码审查时使用，补充 review-fix。
----
 
 # fallow
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 ## 前置条件
 
@@ -35,7 +30,7 @@ npx fallow check complexity
 
 ## 集成到 Review-Fix
 
-在前端代码变更后的 review-fix 阶段，可选执行：
+在前端代码变更后的 review-with-docs 阶段，可选执行：
 
 ```bash
 cd frontend && npx fallow check dead-code

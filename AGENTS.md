@@ -22,9 +22,12 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 
 ## 技能库（按需显式加载）
 
-`.agents/skills/`：grill-me（需求澄清）· plan-designer（方案设计）· plan-executer ·
-prompt-repair-executor（基于现成修复提示词增量修复）· review-fix · review-with-docs · code-smell ·
-product-qa（真实浏览器黑盒产品 QA）· column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
+`.agents/skills/` 只有四个 lifecycle Skills：**designer**（需求澄清 + 方案设计）· **executor**（执行 + PR 收尾）·
+**prompt-repair**（增量修复）· **review-with-docs**（唯一 final quality gate）。
+
+领域 playbook / checklist / tool guidance 在 `.agents/playbooks/`（wotb-sync、column-sync、frontend-architecture、
+keycloak-upgrade、komodo-server-lifecycle、product-qa、code-quality、code-smell、fallow、requirement-clarification、post-merge-cleanup），
+由四个 Skills 按需加载，不是顶层 Skill。
 
 ## PR area 标签
 

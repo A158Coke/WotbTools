@@ -1,14 +1,17 @@
 ---
-name: plan-executer
+name: executor
 description: >
-  执行 docs/current-plan.md 中已批准的分步开发计划：基于计划主题创建分支 → 读取计划 → 逐项实现 →
-  每步验证 → 更新计划状态 → 按验收标准收尾并汇报。
-  Trigger: 用户说"执行 current-plan / 按计划执行 / 执行 docs/current-plan.md /
-  继续执行计划"，或计划文件已由 plan-designer 产出《开发方案单》且用户已批准。
-  与 plan-designer（开发前方案设计）、review-with-docs（变更后审查）互补。
+  开发生命周期的实现与收尾阶段：执行 docs/current-plan.md 中已批准的计划，做 targeted validation，
+  在 review-with-docs PASS 后 commit/push/open PR，并在 merge 后清理 worktree、分支与计划文件。
+  Trigger: 用户说"执行 current-plan / 按计划执行 / 继续执行计划"，或计划已由 designer 批准。
+  它不设计需求、不自行判定 review pass；final quality gate 只属于 review-with-docs。
 ---
 
-# Plan Executer（计划执行）
+# Executor（计划执行 + PR 收尾）
+
+> 生命周期位置：approved current-plan → **Executor** → targeted validation → Review With Docs。
+> 只有 review-with-docs PASS 后，Executor 才 commit/push/open PR；merge 后加载
+> `.agents/playbooks/post-merge-cleanup.md` 做 post-merge cleanup。
 
 定位：把已批准的《开发方案单》（`docs/current-plan.md`）落地为代码。
 不重新讨论方案、不扩大范围、每步可独立验证。
@@ -44,7 +47,7 @@ description: >
 5. **逐项执行（每步）**：
    - 读该步文件清单与影响面，定位相关代码（用 `rg` / `rg --files`）；
    - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
-   - 实现，遵循项目约定（`.agents/AGENTS.md`、`wotb-sync` 跨层检查单）；
+   - 实现，遵循项目约定（`.agents/AGENTS.md`、`.agents/playbooks/wotb-sync.md` 跨层检查单）；
    - 运行该步对应测试/构建验证；失败先修复再前进；
    - 更新计划状态表（进行中 → 完成），并在 commentary 简短汇报。
 6. **阻塞处理**：遇到依赖用户决策、外部数据或超出计划范围的改动时，
@@ -66,7 +69,7 @@ description: >
 8. **计划文件收尾**：状态表全部置为完成；按 `current-plan.md` 头部约定
    决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 直接开 PR。
-   PR 合并后由 `finish-task` 清理分支与计划文件。
+   PR 合并后加载 `.agents/playbooks/post-merge-cleanup.md` 清理分支、worktree 与计划文件。
 
 ## HTTP Contract Audit
 
@@ -83,3 +86,11 @@ description: >
 - 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 零问题），
   审查结果写入最终汇报；本技能不替代审查。review-with-docs 零 blocker 后允许
   直接提交并开 PR（无需再等用户指示）；存在 blocker/未闭环时不得开 PR。
+
+## Post-merge cleanup
+
+PR merge 后，加载 `.agents/playbooks/post-merge-cleanup.md`：切回 main 并更新、清理 `docs/current-plan.md`、删除任务 worktree、删除已合并 PR 的本地/远端分支。
+
+## 内部 playbooks
+
+按需加载 `.agents/playbooks/`：`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`post-merge-cleanup.md`。它们不是顶层 Skill，不参与生命周期选择。

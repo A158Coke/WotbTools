@@ -1,14 +1,7 @@
----
-name: komodo-server-lifecycle
-description: >
-  WotbTools Komodo 服务器生命周期与迁移技能。用于新增服务器、迁移 Stack/Deployment/容器、
-  更换 VPS、下线旧服务器，以及判断数据库/Volume/本地文件如何处理。强制区分 deployment
-  orchestration 与 persistent-data migration，并以现有 Komodo/Periphery/Resource Sync 文档
-  和仓库声明为事实源。Trigger: 用户提到新增/删除服务器、迁移容器、迁移 Komodo workload、
-  更换云服务器、server A -> server B、Server retirement/cutover/rollback。
----
 
 # Komodo Server Lifecycle
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > 目标：让服务器新增、迁移与退役成为可复核、可回滚、尽量声明式的运维流程，而不是临时 SSH
 > 搬运。完整运行手册见 `docs/operations/komodo-server-lifecycle.md`。

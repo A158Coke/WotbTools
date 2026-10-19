@@ -1,11 +1,7 @@
----
-name: column-sync
-description: >
-  新增/重命名/删除数据列时的跨层同步检查单。比 wotb-sync 更聚焦于列定义同步。
-  Trigger: 新增列、删除列、重命名列、改列 key。
----
 
 # column-sync
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > 本技能聚焦**列同步**。改动涉及上游 WASM pin、Flyway/Keycloak、auth 时请同时走 `wotb-sync`。
 >
@@ -63,4 +59,4 @@ description: >
 | 子 agent | type | 负责 |
 |----------|------|------|
 | compute-export-sync | implementer | 步骤 1-2（列定义 + 导出表头/标签） |
-| ui-doc-sync | implementer | 步骤 3-6（三语 i18n + 映射可见集 + 测试 + 文档），最后 review-fix |
+| ui-doc-sync | implementer | 步骤 3-6（三语 i18n + 映射可见集 + 测试 + 文档），最后 review-with-docs |

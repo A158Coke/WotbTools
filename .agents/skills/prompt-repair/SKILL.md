@@ -1,18 +1,18 @@
 ---
-name: prompt-repair-executor
+name: prompt-repair
 description: >
-  基于现成修复提示词执行增量代码修复（REPAIR EXECUTOR）：解析 blockers → Delta Discovery
-  （diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
-  禁止默认重新阅读整个 repository、禁止重新设计需求。
-  Trigger: 用户提供 repair prompt / review 修复意见 / PR review blockers / cleanup prompt /
-  bug fix prompt / hotfix instructions / follow-up review findings，需要快速进入修复时。
-  与 plan-designer（开发前方案）、review-with-docs（变更后审查）互补；本技能只执行修复，
-  不重复完整 review、不自动开 branch/PR。
+  开发生命周期的修复阶段：基于现成修复提示词 / PR review findings 做增量修复（REPAIR）：
+  解析 blockers → Delta Discovery（diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
+  Trigger: 用户提供 repair prompt / review 修复意见 / PR blockers / cleanup prompt / bug fix prompt /
+  hotfix instructions / follow-up findings。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
 ---
 
-# Prompt Repair Executor（增量修复执行器）
+# Prompt Repair（增量修复）
 
-定位：**REPAIR EXECUTOR**，不是 PLAN DESIGNER / PLAN EXECUTOR / ARCHITECTURE EXPLORER /
+> 生命周期位置：PR reviewer findings → **Prompt Repair** → review-with-docs。
+> 本 Skill 只修复已指出的问题；final quality gate / zero blocker 只由 `review-with-docs` 判定。
+
+定位：**REPAIR SPECIALIST**，不是 Designer / Executor / Architecture Explorer /
 FULL REPOSITORY REVIEW / REQUIREMENT DISCOVERY。
 
 涉及 FE ↔ BE HTTP shape 的 repair prompt 仍必须遵守 `contracts/http/openapi.yaml`、generated artifact 与显式 domain→transport mapping 规则；repair 不得新增平行 wire contract。
@@ -243,11 +243,12 @@ suite。PR CI 是完整验证入口；已有 PR branch 可在 changed-file tests
 
 ## 边界
 
-- **vs Plan Executor**：用户提供 feature plan / current-plan.md / 大型新功能 /
-  多模块实现计划 → 用 plan-executer（Deep Discovery）。用户提供 review repair prompt /
+- **vs Executor**：用户提供 feature plan / current-plan.md / 大型新功能 /
+  多模块实现计划 → 用 `executor`（Deep Discovery）。用户提供 review repair prompt /
   bug repair prompt / cleanup prompt / 已明确 blockers → 用本技能（Delta Discovery）。
-- **vs Review Skill**：review-with-docs / review-fix 是"找问题"；本技能是
-  "修 reviewer 已经找到的问题"。本技能不重新做完整 review，修完才运行 final review。
+- **vs Review Skill**：`review-with-docs` 是唯一 final quality gate；内部 `code-quality.md` 是代码质量检查单。
+  本技能是“修 reviewer 已经找到的问题”，不重新做完整 review，不自行判定 final pass；修完才交给
+  `review-with-docs`。
 
 ## Anti-pattern（防止 12 分钟 Step 1）
 
@@ -271,7 +272,7 @@ Blocker: leagueMode contract
 ```
 
 禁止默认执行：`read whole repository` / 读所有 README / 从头读 current-plan.md /
-读完整 docs tree / 修前运行 review-with-docs / 修前运行 fallow full scan。
+读完整 docs tree / 修前运行 review-with-docs / 修前运行 `.agents/playbooks/fallow.md` full scan。
 
 ## 报告模板
 

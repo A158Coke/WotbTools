@@ -1,11 +1,7 @@
----
-name: review-fix
-description: >
-  代码变更后自动审查闭环。grep 残留→硬编码→未用 import→命名不一致→空值边界→并发安全，修复后循环直到零问题。
-  Trigger: 任何代码变更完成后、提交前。
----
 
-# review-fix
+# Code Quality Checklist（内部 playbook）
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > **前置条件**：Plan 已获用户批准，代码变更已执行完毕。
 > **自动闭环**：Review-Fix 全程不需用户介入，自动审查→修复→循环。
@@ -23,7 +19,7 @@ description: >
    `npx vitest run <related-test-files>`）；修复只影响单 feature 时禁止升级成 repository full test。
    若修复跨模块 / build / test infrastructure，再按 `.agents/AGENTS.md` 的 Full-test 例外规则执行
    full validation（并先声明 Affected scope / Selected validation / Why）。
-   review-fix **不负责** repository exhaustive validation——那由 PR CI 承担。
+   本 playbook **不负责** repository exhaustive validation——那由 PR CI 承担。
 7. **出具报告**（见下方模板）→ 零问题闭环时允许直接提交并开 PR；
    存在未闭环问题时等待用户审批后提交
 

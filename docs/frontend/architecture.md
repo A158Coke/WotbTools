@@ -107,14 +107,14 @@ The UI profile remains presentation-only: `wotb-ui-profile` is the single persis
 The architecture cleanup is intentionally completed inside one PR so `main` never contains half-migrated boundaries. The consolidated boundary is complete when these layers are reviewed together:
 
 - [x] feature-neutral typed application navigation contract;
-- [x] Dataset-only AI Review / Map Overview / Battle Playback API ownership moved out of panels;
-- [x] Replay Workspace string service-locator dependencies replaced with direct auth consumption and explicit parent-child replay/workspace props;
-- [x] high-value Battle Playback persistence ownership extracted from the orchestration root;
-- [x] architecture guards for removed service-locator keys and replay capability transport ownership;
-- [x] real-browser Playback geometry / form-isolation gate added to frontend CI;
-- [x] final architecture/code-smell pass removed stale navigation/auth/replay injection bridges and duplicate Playback persistence ownership.
+- [x] 仅 Dataset 的 AI Review / Map Overview / Battle Playback API ownership 已移出 panels；
+- [x] Replay Workspace 的 string service-locator 依赖已替换为直接 auth 消费与显式 parent-child replay/workspace props；
+- [x] 高价值 Battle Playback persistence ownership 已从 orchestration root 抽出；
+- [x] 已为移除的 service-locator keys 与 replay capability transport ownership 增加 architecture guards；
+- [x] 真实浏览器 Playback geometry / form-isolation gate 已加入 frontend CI；
+- [x] final architecture/code-smell pass 已移除 stale navigation/auth/replay injection bridges 与重复 Playback persistence ownership。
 
-Directory-only rewrites, Pinia adoption without a demonstrated ownership need, broad visual redesign, and unrelated product changes are explicitly outside this PR. The existing `?view=` compatibility contract remains in place because deleting that compatibility layer is a product URL migration, not a prerequisite for fixing the ownership problems above.
+纯目录重写、无明确 ownership 需求的 Pinia 引入、广泛视觉改版与无关产品改动明确不在本次范围内。现有 `?view=` 兼容契约继续保留：删除该兼容层是产品 URL migration，不是修复上述 ownership 问题的前置条件。
 
 ## Canonical feature references
 
@@ -124,7 +124,7 @@ Directory-only rewrites, Pinia adoption without a demonstrated ownership need, b
 
 ## Verification expectations
 
-Architecture work starts with `.agents/skills/frontend-architecture/SKILL.md`. Cover the changed boundary with focused tests. Routing work must cover legacy/deep links, Back/Forward, authentication destinations when affected, and the Android route. Playback layout changes must keep `npm run test:browser-layout` green, and Playback / Replay Workspace **interaction** changes (hit targets, pointer-events, capability switching, auth gating, transport controls) must keep `npm run test:browser-interaction` green, in addition to focused Vitest suites. Dependency or router changes require `npm run build`; full frontend CI remains the final repository-wide gate.
+架构工作从 `.agents/playbooks/frontend-architecture.md` 开始。用 focused tests 覆盖改动边界。路由改动必须覆盖 legacy / deep links、Back/Forward、受影响时的 authentication destinations 与 Android route。Playback 布局改动必须保持 `npm run test:browser-layout` 绿色；Playback / Replay Workspace **interaction** 改动（hit targets、pointer-events、capability switching、auth gating、transport controls）还必须保持 `npm run test:browser-interaction` 绿色，并辅以 focused Vitest suites。依赖或 router 改动要求 `npm run build`；完整 frontend CI 仍是 repository-wide final gate。
 
 ## Android local-first runtime and capability ownership
 

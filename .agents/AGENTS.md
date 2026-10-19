@@ -13,20 +13,20 @@
 
 1. **入口阅读** — 先读根 `AGENTS.md`、本文件、`docs/DEVELOPER_GUIDE.md`；进入具体目录再读该目录 `AGENTS.md`；改专项能力时读 `docs/README.md` 指向的对应专题文档。
 2. **现实审计** — 先确认 `git status --short --branch`、`git remote -v`、当前分支/HEAD 与已有未提交改动；再用 `rg` 追真实调用链、配置、测试与文档。真实代码是 source of truth，文档只作为待校验线索。
-3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。跨层改动加载 `wotb-sync`；增删列加载 `column-sync`；feature/大范围改动走 Feature 流程。
+3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。跨层改动加载 `.agents/playbooks/wotb-sync.md`；增删列加载 `.agents/playbooks/column-sync.md`；feature/大范围改动走 Designer → approved current-plan → Executor → Review With Docs 生命周期。
 4. **计划契约** — 需要 Plan-First 时，计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理；feature 类计划写入 `docs/current-plan.md` 并等批准。
 5. **Reuse / SSOT 执行** — 新增 production abstraction 前先做 Reuse Audit；优先复用/扩展现有结构，避免第二份事实源。改动影响界面、导出、数据、构建、用法或运维时，同步更新文档。
 6. **分层验证** — 先 targeted，再 module/feature，只有触发 Full-test 例外才跑 repository-level full validation；每次说明 Affected scope / Selected validation / Why，避免重复跑已失效范围外的测试。
-7. **收尾交接** — 执行 Review-Fix；需要时走 review-with-docs；最终说明改了什么、验证了什么、未验证什么、剩余风险和下一步。
+7. **收尾交接** — Review With Docs 是唯一 final quality gate；通过后 Executor 再 commit/push/open PR；最终说明改了什么、验证了什么、未验证什么、剩余风险和下一步。
 
 ## 规则
 
 1. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。小修小补（bug fix、CSS、i18n 缺漏）可跳过。
-2. **Feature 流程** — feature 类/大范围改动：grill-me（需求澄清）→ plan-designer（方案设计）→ plan 写入 `docs/current-plan.md` → 等批准 → 执行 → Review-Fix 闭环 → 审查报告。未批准不得编码。
+2. **生命周期** — 模糊需求 / 明确需求 → `designer`（需求澄清 + 方案设计）→ approved `docs/current-plan.md` → `executor`（实现 + targeted validation）→ `review-with-docs`（唯一 final gate）→ PASS 后 executor commit/push/open PR → merge 后 executor 加载 `.agents/playbooks/post-merge-cleanup.md`。PR reviewer findings → `prompt-repair` → `review-with-docs`。未批准不得编码；review-with-docs 未 PASS 不得开 PR。
 3. **文档生命周期与权威归属** — 持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
    - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
    - `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
-   - **当前状态文档**（以下全部只描述合并后的当前系统状态）：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**`。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。`README.md` 是仓库唯一当前 canonical README；维护者/开发者文档正文统一使用简体中文，不维护英文镜像副本。
+   - **当前状态文档**（以下全部只描述合并后的当前系统状态）：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**` / `.agents/playbooks/**`。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。`README.md` 是仓库唯一当前 canonical README；维护者/开发者文档正文统一使用简体中文，不维护英文镜像副本。
    - **例外（不按当前状态文档要求）**：
      - `HISTORY.md`：产品/业务历史。
      - `docs/architecture/TECHNICAL_EVOLUTION.md`：技术/架构历史。
@@ -40,7 +40,7 @@
    - 禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录，也禁止用 “Historical” 标签保留过期现状。Git 历史就是归档。
    - **更新文档 = 描述结果状态，不是追加变更日记**。行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
    - 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、`DEVELOPER_GUIDE.md` 或 README；新增知识先找现有 owner，不靠新建 Markdown 文件分摊旧段落。
-4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/skills/wotb-sync/SKILL.md`（单一事实源）；增删列再走 `column-sync`。
+4. **跨层一致** — 列 key（snake_case）API/前端/导出三方一致；显示名前端三语 locale + 导出两处一致。跨层改动走 `.agents/playbooks/wotb-sync.md`（单一事实源）；增删列再走 `.agents/playbooks/column-sync.md`。
 5. **API 纯英文** — 只回 key+数据；中文归前端/导出。
 5a. **HTTP Contract First** — FE ↔ BE 序列化契约唯一事实源是 `contracts/http/openapi.yaml`；generated FE transport 不手改，domain enum 必须显式映射，旧 artifact 兼容只放读取边界。服务器没有回放解析器，不存在 Control ↔ Worker / MQ 契约。
 6. **测试策略 — Fast Feedback First** — 开发过程中禁止无理由重复运行 repository-level full test。
@@ -111,7 +111,7 @@
 7. **Review-Fix 闭环** — 每次代码变更后自审（残留/硬编码/未用 import/命名/空值/并发），修复后循环到零问题；影响界面/导出/数据/构建的变更再走 `review-with-docs`（含文档同步 + AI 死代码清理）。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
-10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-fix。
+10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-with-docs final gate。
 11. **Ponytail — 懒资深工程师模式** — 懒=高效：先理解问题（读任务+读它触碰的代码+端到端追真实流程），沿梯子往上爬，停在第一个成立的档（不建→复用→标准库→平台特性→已装依赖→一行→最小代码）。Bug fix 修根因不修表象（grep 全部调用方，在共享函数处修一次）。删优于增、文件数最少；故意抄近路留 `ponytail:` 注释（写明天花板+升级路径）。带非平凡逻辑的懒代码留一个最小自检。不许偷懒：理解问题、输入校验、防数据丢失、安全、可访问性、被明确要求的东西。
 12. **Reuse / Extend First — 单一 SSOT 优先** — 新建 abstraction 的优先级：`reuse > extend > simplify/merge > create`。
    任何新增 production class / interface / record / DTO / util / helper / service / manager /
@@ -126,7 +126,7 @@
    禁止：「发现一段逻辑 → 默认新建一个类」；单调用方无必要 wrapper/helper/manager/resolver/facade；
    为所谓 clean architecture 机械新增 abstraction；两个类维护同一业务 switch/rule/validation contract；
    用新 abstraction 转移而非减少复杂度。Agents/skills 只引用并执行本规则，不复制维护第二份完整定义。
-   具体执行点：`.agents/skills/plan-executer/SKILL.md`（Reuse Audit）与
+   具体执行点：`.agents/skills/executor/SKILL.md`（Reuse Audit）与
    `.agents/skills/review-with-docs/SKILL.md`（新增 abstraction 审查 gate）。
 13. **外部数据生命周期** — 持久化外部 API 返回的个人或统计数据时，必须同时提供明确的 retention/deletion path；删除流程需限定数据来源、遵守真实 FK 顺序，并保护仍被其他业务引用的共享文件或记录。
 14. **Android Version-as-Code** — Android production runtime 改动必须递增 committed `android/gradle.properties:wotbVersion`；不得手工编辑 `versionCode` 或依赖 release workflow 版本参数。Native Bridge wire breaking change 必须同时更新 `contracts/android-native-bridge.json`、递增 `bridgeVersion`、更新 Native/FE，并在同一 PR 通过 deterministic compatibility tests。FE 远程加载时先让 FE 兼容旧/新协议，再发布 Native；FE 随 APK 打包（local-first，当前形态）时 FE 与 Native 同版本发布、只声明新版本，由 contract gate 与 `guard_bridge_covered` 强制 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 覆盖这次 cutover。**顺序：major / bridge cutover 的 floor 必须在合并（触发自动 stage）之前设好**——stage preflight 自己执行 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 未到位时合并触发的自动 stage 会 fail-closed（修好变量后幂等重跑只是恢复路径，不是正常流程）。完整顺序：设 floor → 合并 → main 自动运行 Android stage 与随 PR 带来的基础设施 workflow（如 `caddy.yml`；生产网关只从 fresh main 部署，不得在合并前手工 SSH / 复制 PR 文件 / 放宽门禁）→ 两者都成功 → 真机验收 → publish（Android 客户端 rollout / production `version.json` 的唯一 commit point；网关等基础设施变更在合并后即已上线）。
@@ -176,11 +176,13 @@
 - 在付款/赞助页面或代码中硬编码个人收款信息
 - 用推测值冒充权威方向/可见性（回放数据只信已证明的解码，见 `docs/research/replay/protocol.md`）
 
-## 技能库（.agents/skills/，按需显式加载）
+## Skills（.agents/skills/，只有四个 lifecycle Skills）
 
-开发前：grill-me · plan-designer · plan-executer · frontend-architecture · column-sync · wotb-sync
-修复：prompt-repair-executor（基于现成 repair prompt 增量修复，Delta Discovery）
-开发后：review-fix · review-with-docs · code-smell · fallow
-收尾：finish-task；Keycloak 版本升级：keycloak-upgrade
+1. **designer** — 需求澄清 + 方案设计，产出 approved `docs/current-plan.md`。
+2. **executor** — 执行 approved plan、targeted validation、review-with-docs PASS 后 commit/push/open PR、merge 后 cleanup。
+3. **prompt-repair** — 基于现成 repair prompt / PR findings 做增量修复。
+4. **review-with-docs** — 唯一 final quality gate。
+
+领域知识、检查单与工具指南在 `.agents/playbooks/`，由四个 Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。
 
 > 深入背景见 `docs/DEVELOPER_GUIDE.md`；本文件与各 scope AGENTS.md 以真实代码为准，发现漂移先修正文档。

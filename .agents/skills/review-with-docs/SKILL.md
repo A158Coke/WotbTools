@@ -1,24 +1,38 @@
 ---
 name: review-with-docs
 description: >
-  代码变更后审查代码质量 + 文档同步 + AI 死代码清理。在 review-fix 基础上增加文档检查：
-  canonical 专题文档 / DEVELOPER_GUIDE / README / API 文档 / i18n / 代码注释 / current-plan；并清理
-  AI 生成的提前性/投机死代码（单实现抽象、从不覆盖的字段/参数、占位空壳等）。
-  Trigger: 任何影响界面/导出/数据/构建/API/配置的代码变更完成后；或需要清理
-  AI 生成代码中的死代码/过度设计时。
+  唯一 final quality gate：代码质量 / code smell / fallow / 文档同步 / AI 死代码 / 架构与领域 playbook /
+  明确适用时的 product QA。审查 executor 的实现与 prompt-repair 的修复，判定 final PASS / zero blocker。
+  Trigger: 任何影响界面/导出/数据/构建/API/配置/文档的代码变更完成后；PR reviewer findings 修复后；
+  或 merge 前需要 final gate 时。只有本 Skill 可以判定 final pass。
   Code-review engine: 内置 Alibaba OpenCodeReview（OCR）delegate mode 作为通用
   diff/code review 引擎（确定性文件筛选 + 规则解析，推理由主代理 DeepSeek 完成）。
 ---
 
-# review-with-docs
+# Review With Docs（唯一 final quality gate）
 
-> **前置条件**：review-fix 6 项代码审查已完成。
+> **生命周期位置**：Executor 实现 + targeted validation → **Review With Docs** → PASS 后 Executor 才 commit/push/open PR。
+> **final gate ownership**：只有本 Skill 可以判定 final quality gate / zero blocker。Designer 不 review；
+> Executor 不自行判定 review pass；Prompt Repair 不自行判定 final pass。
+> **前置**：Executor 已完成实现与 targeted validation；内部 `code-quality.md` 6 项检查按需加载。
 > **架构**：三层审查引擎 ——
 >   Layer A: Requirement/Plan Auditor（主代理自审，不可交给 diff reviewer）
 >   Layer B: OpenCodeReview Code Auditor（OCR delegate mode，通用 diff/code review）
 >   Layer C: Review Reconciler（主代理汇总、去重、重定级、判定 blocker）
-> **扩展**：本文档同步检查是 review-fix 的补充层，聚焦"改了什么文档就跟什么"；
-> 同时负责清理 AI 生成代码中的提前性/投机死代码。
+> **范围**：代码质量、code smell、fallow 诊断、文档同步、AI 生成代码的提前性/投机死代码、架构/领域 playbook 检查；明确适用时加载 product QA。
+
+## 内部 playbooks（本 Skill 专用）
+
+按需加载 `.agents/playbooks/`：
+
+- `code-quality.md` — 6 项代码质量检查
+- `code-smell.md` — 过度设计 / 无意义抽象 / 架构复杂化
+- `fallow.md` — 前端 dead-code / circular-deps / duplication / complexity
+- `wotb-sync.md`、`column-sync.md`、`frontend-architecture.md` — 跨层与前端 ownership 检查
+- `keycloak-upgrade/`、`komodo-server-lifecycle.md` — 对应领域变更时
+- `product-qa/` — 明确要求真实浏览器黑盒 QA / 易用性验收时
+
+这些是内部 checklist/tool guidance，不是顶层 Skill，也不参与生命周期选择。
 
 ## 流程（全程主代理，禁止 spawn 子代理）
 
@@ -226,7 +240,7 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 
 ### A4. AI 死代码 / 提前性代码清理
 
-> 定位：review-fix 管"对不对"，code-smell 管"好不好的品味"，本节负责**执行清理**——
+> 定位：内部 `code-quality.md` 管"对不对"，`code-smell.md` 管"好不好的品味"，本节负责**执行清理**——
 > 针对 AI 生成代码常见的"为未来准备却没换来灵活性"的提前性死代码。
 
 - [ ] **识别模式**：单实现接口/工厂/策略/观察者；从不覆盖的字段与参数（含恒为 `null` 的元数据字段）；为"可测试性"引入的抽象层；无引用构造函数/空壳实现；仅测试引用的方法
@@ -236,7 +250,7 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
        （repository-level full validation 交由 PR CI；仅当删除触及公共 contract / build / test infrastructure 时，
       才按 `.agents/AGENTS.md` 的 Full-test 例外规则跑 full，并先声明 Affected scope / Selected validation / Why）
 - [ ] **安全边界（绝不能删）**：前端消费的 JSON 字段/DTO/错误码；Flyway 迁移与实体列；Spring bean 装配/Jackson 反序列化/反射引用；Prometheus/Grafana 指标名（dashboards 引用）；i18n keys（三语 locale）；文档承诺的功能；测试夹具仍需要的行为
-- [ ] **品味判断**引用 `.agents/skills/code-smell/SKILL.md`（不复制其清单）
+- [ ] **品味判断**引用 `.agents/playbooks/code-smell.md`（不复制其清单）
 
 ### A5. 新增 abstraction 审查 gate（Reuse / Extend First）
 
@@ -300,7 +314,7 @@ resolver / facade / enum / module / file：
 Blocker count: N
 ```
 
-只有 `Blocker count: 0` 才允许 review-with-docs 判定完成（plan-executer 以此作为开 PR 门槛）。
+只有 `Blocker count: 0` 才允许 review-with-docs 判定完成（executor 以此作为开 PR 门槛）。
 
 ## 修复 → 重审（循环）
 
@@ -326,7 +340,7 @@ Tool failure 必须：
 1. 清楚报告（不伪造 OCR 结果、不当作 no findings）
 2. Layer A plan audit **继续执行**（不受 OCR 失败影响）
 3. OCR 是本次 review 的 mandatory code-review engine 时，最终**不得假装 blocker=0**
-   —— 使用主代理按 review-fix 6 项检查单 + Layer B 规则手工兜底审查 diff，
+   —— 使用主代理按 `code-quality.md` 6 项检查单 + Layer B 规则手工兜底审查 diff，
    或明确标记 `review incomplete` 并给出相应 blocker
 
 **绝对禁止**：`OCR crash → 当作 no findings`。
@@ -367,7 +381,7 @@ Tool failure 必须：
 ```
 ### Review-With-Docs 审查报告
 
-| 项目 | review-fix | OCR (Layer B) | Plan (Layer A) | docs |
+| 项目 | code-quality | OCR (Layer B) | Plan (Layer A) | docs |
 |------|-----------|--------------|----------------|------|
 | 发现问题 | N | N | N | N |
 | 已修复 | N | N | N | N |
@@ -452,7 +466,7 @@ Blocker count: N   （0 才允许判定完成）
 > `docs/current-plan.md` 是临时任务状态，不是当前系统契约；canonical 文档/源码/配置不得引用它作为架构或行为权威。
 
 - [ ] plan source（A0 解析结果，仓库约定 `docs/current-plan.md`）中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
-- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件；无计划文件时以用户显式 requirements 为准）
+- [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（designer 产出的确认单与方案单已落入计划文件；无计划文件时以用户显式 requirements 为准）
 
 ### 8. HISTORY.md / TECHNICAL_EVOLUTION.md（长期历史）
 > 判据见 `.agents/AGENTS.md` 规则 3；站点 History 页（`?view=history`）在构建期以 `?raw` 读取 `HISTORY.md`。

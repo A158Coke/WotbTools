@@ -1,12 +1,7 @@
----
-name: finish-task
-description: >
-  PR 合并后的收尾清理——切回 main 并更新、清理 current-plan.md 就绪下一个任务、
-  删除任务 worktree、删除已合并 PR 的本地/远端分支。Trigger 为用户说"PR 已合并/开始清理/收尾"，
-  或任何以 PR 合并方式完成的任务需要清理工作区、计划文件与分支时。
----
 
-# finish-task
+# Post-merge Cleanup（内部 playbook）
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > 全程主代理执行，不 spawn 子代理。
 
@@ -39,7 +34,7 @@ description: >
      ```markdown
      # Current Development Plan
 
-     > 本地开发计划载体（gitignore，不入库）。由 `grill-me` / `plan-designer` 写入，`review-with-docs` 同步；任务完成后清理回初始状态。
+     > 本地开发计划载体（gitignore，不入库）。由 `designer` / `designer` 写入，`review-with-docs` 同步；任务完成后清理回初始状态。
      ```
    - 无任务条目时保持现状即可。
 

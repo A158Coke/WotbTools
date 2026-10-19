@@ -1,15 +1,7 @@
----
-name: product-qa
-description: >
-  用真实浏览器对整个 WotBTools 网站做全量黑盒 QA，逐项覆盖公开、登录后及管理功能，发现可复现的用户侧问题。
-  包括 UI/UX、易用性与新手教程：以完成真实用户任务评估入口、指引、反馈、布局及恢复路径。
-  第一阶段禁止先看源码、GitHub issue、实现细节或网络内部；必须先真实操作 UI、复现、截图、
-  记录精确步骤，再按用户要求进入源码定位或创建 issue。
-  Trigger: 用户说“真正试用网站 / try to use / exploratory QA / 找产品问题 / 黑盒测试 /
-  mobile QA / replay power-user QA / UI UX 易用性 / 教程体验”等，或明确要求 agent 像真实用户一样操作 wotbtools.com。
----
 
 # Product QA（真实用户黑盒探索）
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
 > 定位：把 agent 当成真实 QA / 新用户 / 重度用户，而不是 code reviewer。
 > 核心顺序固定为：**真实使用 → 观察异常 → 重复复现 → 固化证据 → 再决定是否看代码**。
