@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
 import { penetrationChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
@@ -540,5 +540,53 @@ describe('isPrimary（Primary = 击穿判定的触发面；spaced/外部模块�
     const r = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])]))
     expect(r.result).toBe('PENETRATION')
     expect(r.damage).toBe(400.0)
+  })
+})
+
+describe('hasPositivePrimary（概率卡前置条件）', () => {
+  it('链上存在正厚度 Primary 才允许概率模式', () => {
+    expect(hasPositivePrimary([
+      { section: ArmorSection.CHASSIS, thickness: 30 },
+      { section: ArmorSection.HULL, thickness: 100 },
+    ])).toBe(true)
+  })
+
+  it('纯外部模块或 0mm Primary 链不得进入概率模式', () => {
+    expect(hasPositivePrimary([
+      { section: ArmorSection.CHASSIS, thickness: 100 },
+      { section: ArmorSection.GUN_BARREL, thickness: 60 },
+    ])).toBe(false)
+    expect(hasPositivePrimary([{ section: ArmorSection.HULL, thickness: 0 }])).toBe(false)
+    expect(hasPositivePrimary([])).toBe(false)
+  })
+})
+
+describe('matchHitsByOccurrence（同名装甲板按命中次序匹配）', () => {
+  it('重复同名板各匹配各自的命中点；gap 层无对应 hit', () => {
+    const hits = [
+      { partName: 'screen', point: [1, 0, 0] },
+      { partName: 'screen', point: [2, 0, 0] },
+      { partName: 'hull', point: [3, 0, 0] },
+    ]
+    const layers = [
+      { part_name: 'screen' },
+      { part_name: 'Gap 0.50m' },
+      { part_name: 'screen' },
+      { part_name: 'hull' },
+    ]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBeNull()
+    expect(matched[2]).toBe(hits[1])
+    expect(matched[3]).toBe(hits[2])
+  })
+
+  it('无匹配时返回 null，不重复消费同一命中', () => {
+    const hits = [{ partName: 'screen', point: [1, 0, 0] }]
+    const layers = [{ part_name: 'screen' }, { part_name: 'screen' }, { part_name: 'unknown' }]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBeNull()
+    expect(matched[2]).toBeNull()
   })
 })

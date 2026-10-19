@@ -30,9 +30,9 @@ import {
     buildPack, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary } from './penetration.js'
+import { isPrimary, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
-import { penetrationChance, evaluateProbabilityChain } from './armorInspectorChance.js'
+import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../data/armorStates.js'
 
@@ -5143,8 +5143,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // wire 形状与 /api/penetrate 响应一致，消费链无感
             judgePenetration(req).then(res => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
-                let trajLayers = res.layers.map(l => {
-                    const ah = hitsForCheck.find(ah => ah.partName === l.part_name);
+                const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
+                let trajLayers = res.layers.map((l, i) => {
+                    const ah = deterministicMatches[i];
                     return {
                         point: ah?.point || point,
                         name: l.part_name,
@@ -5178,26 +5179,27 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     : 0;
                 const useProbabilityMode = !res.ricochet
                     && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain
+                    // 纯外部模块/0mm 板链没有可被 CDF 评估的主装甲：概率模式会把
+                    // 模块 flat 消耗后的剩余区间误读成“必穿”；保持确定性卡片。
+                    && hasPositivePrimary(res.probability_layers)
                     && (!isHE || (heFirstPrimary && hePenChance > 0));
                 const isGapProbLayer = (layer) => layer.gap === true
                     || String(layer.part_name || '').startsWith('Gap ');
+                const probabilityMatches = matchHitsByOccurrence(res.probability_layers, hitsForCheck);
                 const probRawLayers = useProbabilityMode
                     ? res.probability_layers.map((l, i) => {
                         // 概率层的 point 是判定局部坐标（world 模式会被换算）；轨迹/层点
-                        // 必须用 hitsForCheck 的世界点。gap 层取其后（无则其前）装甲命中点。
-                        let ah = isGapProbLayer(l)
-                            ? null
-                            : hitsForCheck.find(h => h.partName === l.part_name);
+                        // 必须用 hitsForCheck 的世界点。同名板按命中次序匹配（第二块
+                        // 同名间隙板的轨迹点不能复用第一块）；gap 层借用相邻装甲层。
+                        let ah = probabilityMatches[i];
                         if (!ah && isGapProbLayer(l)) {
                             for (let j = i + 1; j < res.probability_layers.length && !ah; j++) {
-                                const n = res.probability_layers[j];
-                                if (isGapProbLayer(n)) continue;
-                                ah = hitsForCheck.find(h => h.partName === n.part_name);
+                                if (isGapProbLayer(res.probability_layers[j])) continue;
+                                ah = probabilityMatches[j];
                             }
                             for (let j = i - 1; j >= 0 && !ah; j--) {
-                                const n = res.probability_layers[j];
-                                if (isGapProbLayer(n)) continue;
-                                ah = hitsForCheck.find(h => h.partName === n.part_name);
+                                if (isGapProbLayer(res.probability_layers[j])) continue;
+                                ah = probabilityMatches[j];
                             }
                         }
                         return {
@@ -5509,7 +5511,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         : L.resultName(overallChance >= 1 ? 'PENETRATION' : 'BLOCKED');
                     const titleColor = probabilityColorCss(overallChance);
                     const chanceHtml = partial
-                        ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${chancePct > 0 ? chancePct : '<1'}%</span>`
+                        ? ` <span style="font-size:14px;font-weight:600;color:var(--txt);font-variant-numeric:tabular-nums;margin-left:8px;">${formatProbabilityPercent(overallChance)}%</span>`
                         : '';
                     return `<div style="font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;">${escapeText(title)}${chanceHtml}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
                 }

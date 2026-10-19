@@ -64,6 +64,45 @@ const isModule = (section) => section === ArmorSection.CHASSIS || section === Ar
 // （spaced/外部模块网格挂的是空 handler，只为进入 event.intersections）——射线未触达
 // Primary 时不发起判定。查看器相机点击路径据此过滤，勿在别处复制这份分类（唯一事实源）。
 export const isPrimary = (section) => section === ArmorSection.HULL || section === ArmorSection.TURRET || section === ArmorSection.GUN
+
+/**
+ * 概率卡的前置条件：链上存在**正厚度**的 Primary 层。
+ * 只有外部模块（履带/炮管）或 0mm 板的射线不构成概率判定——确定性语义下
+ * 它们要么 BLOCKED，要么只穿透模块；把模块的 flat 消耗当成“剩余区间仍大于 0”
+ * 会让纯外部命中被概率卡显示成必穿全额伤害。
+ *
+ * @param {Array<object>} layers probability_layers / trajLayers
+ * @returns {boolean}
+ */
+export function hasPositivePrimary(layers) {
+  return Array.isArray(layers) && layers.some(layer =>
+    isPrimary(layer?.section) && Number(layer?.thickness) > 0)
+}
+
+/**
+ * 把判定层链按**命中次序**匹配回 hitsForCheck：同名装甲板可能被射线打穿两次
+ * （collectFilteredHits 有意保留为两个非重合层），按 partName 查找第一个会把
+ * 两个轨迹点都放到第一块板上。gap 层没有对应 hit，返回 null 由调用方借用
+ * 相邻层；未匹配的层同样返回 null。
+ *
+ * @param {Array<object>} layers 判定层链（part_name）
+ * @param {Array<object>} hits 与判定同源的命中链（partName）
+ * @returns {Array<object|null>}
+ */
+export function matchHitsByOccurrence(layers, hits) {
+  const used = new Array(hits.length).fill(false)
+  return (layers || []).map(layer => {
+    const name = layer?.part_name
+    if (typeof name !== 'string' || !name) return null
+    for (let i = 0; i < hits.length; i++) {
+      if (!used[i] && hits[i].partName === name) {
+        used[i] = true
+        return hits[i]
+      }
+    }
+    return null
+  })
+}
 // BlitzKit 外部模块按 variant 去重（"gun" | "track"），而非逐板 ID；spaced/primary 不参与
 function moduleVariant(section) {
   if (section === ArmorSection.CHASSIS) return 'track'

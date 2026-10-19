@@ -594,6 +594,85 @@ try {
     }
   }
 
+  // —— 概率结果卡（真实点击 → 渲染标题 / 颜色 / 伤害）——
+  // 放在所有指针/触屏用例之后：本段会重载页面并转动炮塔，避免影响前面的交互断言。
+  // 源级守卫只能证明文本存在；这里用真实短按读 DOM：200mm AP 打炮塔（必穿）、
+  // 炮管+炮盾（0%）、以及转动炮塔到 200mm 穿深 ±5% 概率带内的中间区间（1–99%）。
+  // 夹具模式专用：真实资产覆盖下装甲/弹道参数不同，无法构造固定概率区间。
+  if (useRealAssets) {
+    console.log('[armor-aiming] 跳过（模式条件）：真实资产覆盖不保证可构造固定概率区间的目标')
+  } else {
+    await page.emulate({ width: 1400, height: 900, touch: false, deviceScaleFactor: 1 })
+    await delay(300)
+    await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${TANK}&shell=0&heatmap=1&config=0&az=0&h=2.4&dist=9&assets=${assets}`)
+    await page.waitFor(() => window.__armorRicochet?.info?.()?.meshCount > 0,
+      { timeout: 30000, label: 'probability card armor model' })
+    await delay(500)
+    const readResultCard = () => page.evaluate(`(() => {
+      const el = document.getElementById('traj-info');
+      if (!el || el.style.display === 'none') return null;
+      const title = [...el.querySelectorAll('div')]
+        .find(d => /font-size:18px/.test(d.getAttribute('style') || ''));
+      const dot = [...el.querySelectorAll('span')]
+        .find(s => (s.textContent || '').includes('●'));
+      const probe = (name) => {
+        const s = document.createElement('span');
+        s.style.color = 'var(' + name + ')';
+        el.append(s);
+        const c = getComputedStyle(s).color;
+        s.remove();
+        return c;
+      };
+      return {
+        text: (el.textContent || '').replace(/\\s+/g, ' ').trim(),
+        title: (title?.textContent || '').replace(/\\s+/g, ' ').trim(),
+        titleColor: title ? getComputedStyle(title).color : null,
+        dotColor: dot ? getComputedStyle(dot).color : null,
+        green: probe('--green'),
+        yellow: probe('--yellow'),
+        red: probe('--red'),
+      };
+    })()`)
+    const tapReadCard = async (point) => { await mouseTap(point); return readResultCard() }
+
+    const cardSpots = await findSpots(['gun', 'turret'])
+    const turretCard = cardSpots.turret ? await tapReadCard(cardSpots.turret) : null
+    check(!!turretCard && turretCard.title.startsWith('击穿') && turretCard.title.includes('320'),
+      `概率卡·必穿：炮塔短按显示“击穿”与全额伤害（${turretCard?.title || '无卡片'}）`)
+    check(!!turretCard && turretCard.titleColor === turretCard.green && turretCard.dotColor === turretCard.green,
+      `概率卡·必穿：标题/层点为绿色（${turretCard?.titleColor}/${turretCard?.dotColor}）`)
+
+    const gunCard = cardSpots.gun ? await tapReadCard(cardSpots.gun) : null
+    check(!!gunCard && gunCard.title.startsWith('未击穿') && !gunCard.title.includes('320'),
+      `概率卡·0%：炮管+炮盾短按显示“未击穿”且无伤害（${gunCard?.title || '无卡片'}）`)
+    check(!!gunCard && gunCard.titleColor === gunCard.red,
+      `概率卡·0%：标题为红色（${gunCard?.titleColor}）`)
+
+    // 转动炮塔让 150mm 首上进入 190–210mm 等效区间（200mm AP ±5% 概率带），
+    // 逐步扫描到“可能击穿 1–99%”；真实点击 + 真实概率链，不用源级断言代替渲染。
+    let partial = null
+    for (let step = 0; step < 14 && !partial; step++) {
+      const spotsNow = await findSpots(['turret'])
+      if (!spotsNow.turret) break
+      const card = await tapReadCard(spotsNow.turret)
+      const m = card && /^可能击穿\s*(>99|<1|\d+)%/.exec(card.title)
+      if (m && m[1] !== '>99' && Number(m[1]) > 0 && Number(m[1]) < 100) {
+        partial = { card, pct: Number(m[1]) }
+        break
+      }
+      await mouseDrag(spotsNow.turret, 32, 0)
+    }
+    check(!!partial, `概率卡·中间区间：真实点击出现“可能击穿 1–99%”（${partial?.card?.title || '未找到'}）`)
+    if (partial) {
+      check(partial.card.titleColor === partial.card.yellow && partial.card.dotColor === partial.card.yellow,
+        `概率卡·中间区间：标题/层点为黄色（${partial.card.titleColor}/${partial.card.dotColor}）`)
+      check(partial.card.title.includes('320'),
+        `概率卡·中间区间：非零概率仍显示全额伤害（${partial.card.title}）`)
+      check(!partial.card.title.includes('100%'),
+        `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.title}）`)
+    }
+  }
+
   await chromeCdp.client.send('Target.closeTarget', { targetId })
 } catch (error) {
   failures.push(`脚本异常：${error.message}`)
