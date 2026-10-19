@@ -383,12 +383,20 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).not.toMatch(/3\.0 \* spacedEff/)
     expect(kernel).toMatch(/highp float sigma = max\(\(pMax - pMin\) \/ 6\.0, 1e-4\);/)
   })
-  it('判定/热力图由确定性等效厚度决定；Armor Inspector 概率只做 1–99% 补充显示', () => {
+  it('AP/APCR/HEAT 使用概率链统一判定；HE/跳弹保留确定性分支', () => {
     // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
     // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
     expect(kernel).not.toMatch(/chanceOutcome/)
     expect(kernel).toMatch(/const title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
     expect(kernel).toMatch(/const chanceHtml = partial/)
+    // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
+    expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
+    expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)
+    expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
+    expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
+    // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
+    expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
+    expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
     expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)

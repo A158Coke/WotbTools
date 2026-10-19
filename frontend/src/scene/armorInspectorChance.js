@@ -46,6 +46,24 @@ export function normalCdf(z) {
   return 0.5 * (1 + sign * erf)
 }
 
+/**
+ * 概率标题的百分比显示：不确定性不能被四舍五入成确定性。
+ * 0 < chance < 1 且四舍五入为 100 时显示 `>99`（而不是 `100`），
+ * 亚 1% 显示 `<1`；精确 1 才是 `100`。返回值不含 `%`。
+ *
+ * @param {number} chance 0..1
+ * @returns {string}
+ */
+export function formatProbabilityPercent(chance) {
+  const value = Number(chance)
+  if (!(value > 0)) return '0'
+  if (value >= 1) return '100'
+  const pct = value * 100
+  if (pct < 1) return '<1'
+  if (pct >= 99.5) return '>99'
+  return String(Math.round(pct))
+}
+
 /** ±range 随机化区间；randomization=0 时退化为单点（确定性穿深）。 */
 function intervalFor(penetration, randomization) {
   const p = Number.isFinite(penetration) ? Math.max(0, penetration) : 0
@@ -139,9 +157,9 @@ function isExternalLayer(layer) {
  * @param {number} [randomization]
  * @returns {number} 0..1
  */
-export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+export function evaluateProbabilityChain(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
   const all = layers || []
-  if (all.length === 0) return 1
+  if (all.length === 0) return { chance: 1, layers: [] }
 
   const firstContinuation = all.findIndex(layer => layer?.seg === 1)
   let startIndex = 0
@@ -154,6 +172,25 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
 
   let chance = 1
   let pendingSegmentReset = false
+  const evaluations = []
+  // 单层累计概率是 UI 的唯一层链：红色 0%、黄色 1–99%、绿色 100%。
+  const record = (layer, layerChance) => {
+    evaluations.push({
+      ...layer,
+      chance,
+      probChance: chance,
+      layerChance,
+    })
+  }
+  const fail = (index, layer, layerChance = 0) => {
+    chance = 0
+    if (layer) record(layer, layerChance)
+    // 概率归零后仍保留到首个 Primary 的完整层链：结果卡/轨迹用这条链，
+    // 提前截断会让后续主装甲层行、层点与轨迹终点整段消失；剩余层统一累计 0%。
+    for (let j = index + 1; j < all.length; j++) record(all[j], 0)
+    return { chance: 0, layers: evaluations }
+  }
+
   for (let i = startIndex; i < all.length; i++) {
     const layer = all[i]
     // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
@@ -166,7 +203,8 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
 
     if (layer?.ricochet) {
       const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg === 1)
-      if (!hasLaterContinuation) return 0
+      if (!hasLaterContinuation) return fail(i, layer)
+      record(layer, 1)
       pendingSegmentReset = true
       continue
     }
@@ -178,8 +216,9 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
         const loss = Math.max(0, 1 - 0.5 * distance)
         min *= loss
         max *= loss
-        if (max <= 0) return 0
+        if (max <= 0) return fail(i, layer)
       }
+      record(layer, 1)
       continue
     }
 
@@ -187,16 +226,22 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
     if (isExternalLayer(layer)) {
       min -= thickness
       max -= thickness
-      if (max <= 0) return 0
+      if (max <= 0) return fail(i, layer)
+      record(layer, 1)
       continue
     }
 
     const eff = layerEffectiveThickness(layer)
-    if (eff == null || !(eff > 0)) continue
-    if (max <= 0) return 0
+    if (eff == null || !(eff > 0)) {
+      record(layer, 1)
+      continue
+    }
+    if (max <= 0) return fail(i, layer)
 
-    chance *= cdfForInterval(min, max, eff)
-    if (!(chance > 0)) return 0
+    const layerChance = cdfForInterval(min, max, eff)
+    chance *= layerChance
+    if (!(chance > 0)) return fail(i, layer, layerChance)
+    record(layer, layerChance)
 
     // Armor Inspector 层区间：每层同时平移一次等效厚度；σ 不变——不得按
     // 扣减后的均值重算 σ。此前误用 3× 会把 252AP 打 21.5+207 误判成 0%。
@@ -204,7 +249,18 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
     max -= eff
   }
 
-  return Math.max(0, Math.min(1, chance))
+  return { chance: Math.max(0, Math.min(1, chance)), layers: evaluations }
+}
+
+/**
+ * 兼容旧调用：只返回总概率。
+ * @param {number} penetration
+ * @param {Array<object>} layers
+ * @param {number} [randomization]
+ * @returns {number}
+ */
+export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
+  return evaluateProbabilityChain(penetration, layers, randomization).chance
 }
 
 /**

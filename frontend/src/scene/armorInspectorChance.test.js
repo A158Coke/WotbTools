@@ -5,6 +5,8 @@ import {
   normalCdf,
   penetrationChanceForLayer,
   penetrationChance,
+  evaluateProbabilityChain,
+  formatProbabilityPercent,
 } from './armorInspectorChance.js'
 
 describe('normalCdf（高斯 CDF）', () => {
@@ -148,11 +150,52 @@ describe('Armor Inspector 逐层概率', () => {
     expect(penetrationChance(100, layers)).toBeCloseTo(0.5, 5)
   })
 
+  it('逐层累计概率：层点颜色数据与总概率同源', () => {
+    const layers = [
+      { part_name: 'A', section: 'hull', thickness: 98, effective: 98, external: false, gap: false, ricochet: false },
+      { part_name: 'B', section: 'hull', thickness: 2, effective: 2, external: false, gap: false, ricochet: false },
+    ]
+    const r = evaluateProbabilityChain(100, layers)
+    expect(r.chance).toBeCloseTo(penetrationChance(100, layers), 10)
+    expect(r.layers).toHaveLength(2)
+    expect(r.layers[0].chance).toBeCloseTo(normalCdf(1.2), 5)
+    expect(r.layers[0].layerChance).toBeCloseTo(normalCdf(1.2), 5)
+    expect(r.layers[1].layerChance).toBeCloseTo(0.5, 5)
+    expect(r.layers[1].chance).toBeCloseTo(r.chance, 10)
+  })
+
   it('camelCase 字段（tankViewer trajLayers）同样可用', () => {
     const layers = [
       { name: 'hull', thickness: 25, eff: 25, remainBefore: 100, angle: 0 },
       { name: 'hull', thickness: 25, eff: 25, remainBefore: 75, angle: 0 },
     ]
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
+  })
+
+  it('概率归零后仍保留到首个 Primary 的完整层链（不提前截断显示层）', () => {
+    const layers = [
+      { part_name: 'track', section: 'chassis', thickness: 20, effective: 20, external: true, gap: false, ricochet: false },
+      { part_name: 'hull', section: 'hull', thickness: 50, effective: 50, external: false, gap: false, ricochet: false },
+    ]
+    const r = evaluateProbabilityChain(10, layers)
+    expect(r.chance).toBe(0)
+    expect(r.layers.map(l => l.part_name)).toEqual(['track', 'hull'])
+    expect(r.layers.map(l => l.chance)).toEqual([0, 0])
+  })
+})
+
+describe('formatProbabilityPercent（概率标题显示边界）', () => {
+  it('99.5%–100% 的不确定区间不得显示成 100%', () => {
+    expect(formatProbabilityPercent(0.996)).toBe('>99')
+    expect(formatProbabilityPercent(0.995)).toBe('>99')
+    expect(formatProbabilityPercent(0.9999)).toBe('>99')
+  })
+
+  it('恰好 100% 才显示 100；中段与亚 1% 保持原语义', () => {
+    expect(formatProbabilityPercent(1)).toBe('100')
+    expect(formatProbabilityPercent(0.9949)).toBe('99')
+    expect(formatProbabilityPercent(0.5)).toBe('50')
+    expect(formatProbabilityPercent(0.004)).toBe('<1')
+    expect(formatProbabilityPercent(0)).toBe('0')
   })
 })
