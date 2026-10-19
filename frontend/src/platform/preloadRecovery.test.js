@@ -9,7 +9,6 @@ function fakeWindow(options = {}) {
     bufferSizeThrows = false,
     observerSupport = true,
     mainBufferEntry = true,
-    now = 10_000,
   } = options
   const status = Object.prototype.hasOwnProperty.call(options, 'status')
     ? options.status
@@ -31,7 +30,6 @@ function fakeWindow(options = {}) {
   const performance = new EventTarget()
   performance.getEntriesByName = vi.fn(() => (mainBufferEntry ? [{ responseStatus: status }] : []))
   performance.clearResourceTimings = vi.fn()
-  performance.now = vi.fn(() => now)
   if (bufferSizeSupport) {
     performance.setResourceTimingBufferSize = vi.fn(() => {
       if (bufferSizeThrows) throw new Error('buffer size denied')
@@ -255,138 +253,6 @@ describe('Resource Timing observer fallback', () => {
   })
 })
 
-describe('Safari URL-less dynamic import correlation', () => {
-  const staleUrl = 'https://wotbtools.com/assets/Foo-AbC123.js'
-  const now = 10_000
-
-  function safariEvent(message = 'Importing a module script failed.') {
-    return preloadError('', message)
-  }
-
-  function recoverTarget(options = {}) {
-    const target = fakeWindow({ mainBufferEntry: false, ...options })
-    installPreloadErrorRecovery(target)
-    return target
-  }
-
-  function pushRecord(target, overrides = {}) {
-    target.__performanceObservers[0].records.push({
-      name: staleUrl,
-      responseStatus: 404,
-      initiatorType: 'script',
-      startTime: now - 200,
-      responseEnd: now - 100,
-      ...overrides,
-    })
-  }
-
-  it('recovers from a unique recent same-origin JS 404', () => {
-    const target = recoverTarget()
-    pushRecord(target)
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(true)
-    expect(target.location.reload).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([503, 0, undefined])('does not recover with status %s', (status) => {
-    const target = recoverTarget()
-    pushRecord(target, { responseStatus: status })
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('does not recover without a matching timing entry', () => {
-    const target = recoverTarget()
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('does not choose between multiple recent JS 404 candidates', () => {
-    const target = recoverTarget()
-    pushRecord(target)
-    pushRecord(target, { name: 'https://wotbtools.com/assets/Bar-Def456.js' })
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('ignores cross-origin and non-JS 404 records', () => {
-    const target = recoverTarget()
-    pushRecord(target, { name: 'https://other.example/assets/Foo-AbC123.js' })
-    pushRecord(target, { name: 'https://wotbtools.com/assets/Foo-AbC123.css' })
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('ignores a candidate older than the correlation window', () => {
-    const target = recoverTarget()
-    pushRecord(target, { responseEnd: 1 })
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('does not correlate a URL-less failure from the main buffer alone', () => {
-    const target = fakeWindow({ observerSupport: false })
-    installPreloadErrorRecovery(target)
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('does not expand beyond the known Safari wording', () => {
-    const target = recoverTarget()
-    pushRecord(target)
-
-    const event = safariEvent('Importing a module script failed with extra detail')
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-
-  it('keeps the shared cooldown for a second Safari recovery attempt', () => {
-    const target = recoverTarget()
-    pushRecord(target)
-
-    const first = safariEvent()
-    target.dispatchEvent(first)
-    expect(first.defaultPrevented).toBe(true)
-    expect(target.location.reload).toHaveBeenCalledTimes(1)
-
-    const second = safariEvent()
-    target.dispatchEvent(second)
-    expect(second.defaultPrevented).toBe(false)
-    expect(target.location.reload).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not suppress or reload when the persistent guard is denied', () => {
-    const target = recoverTarget({ storageThrows: true })
-    pushRecord(target)
-
-    const event = safariEvent()
-    target.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
-    expect(target.location.reload).not.toHaveBeenCalled()
-  })
-})
-
 describe('Resource Timing buffer bound', () => {
   it('caps browser-side growth instead of doubling forever', () => {
     const target = fakeWindow()
@@ -406,40 +272,36 @@ describe('Resource Timing buffer bound', () => {
   })
 })
 
-describe('Safari URL-less ambiguity hardening', () => {
+describe('URL-less Safari dynamic import fails closed', () => {
   const staleUrl = 'https://wotbtools.com/assets/Foo-AbC123.js'
-  const now = 10_000
-
-  function recoverTarget() {
-    const target = fakeWindow({ mainBufferEntry: false })
-    installPreloadErrorRecovery(target)
-    return target
-  }
-
-  function pushRecord(target, overrides = {}) {
-    target.__performanceObservers[0].records.push({
-      name: staleUrl,
-      responseStatus: 404,
-      initiatorType: 'script',
-      startTime: now - 200,
-      responseEnd: now - 100,
-      ...overrides,
-    })
-  }
 
   function safariEvent() {
     return preloadError('', 'Importing a module script failed.')
   }
 
+  function targetWithRecords(records) {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    target.__performanceObservers[0].records.push(...records)
+    return target
+  }
+
+  it('does not recover from a lone recent JS 404 (no timing record for the actual failure)', () => {
+    const target = targetWithRecords([{ name: staleUrl, responseStatus: 404 }])
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+
   it.each([503, 0, undefined])(
-    'fails closed when another script request with status %s is in the window',
+    'does not recover when an unrelated 404 is followed by an actual import failure with status %s',
     (status) => {
-      const target = recoverTarget()
-      pushRecord(target)
-      pushRecord(target, {
-        name: 'https://wotbtools.com/assets/Bar-Def456.js',
-        responseStatus: status,
-      })
+      const target = targetWithRecords([
+        { name: staleUrl, responseStatus: 404 },
+        { name: 'https://wotbtools.com/assets/Bar-Def456.js', responseStatus: status },
+      ])
 
       const event = safariEvent()
       target.dispatchEvent(event)
@@ -448,13 +310,25 @@ describe('Safari URL-less ambiguity hardening', () => {
     },
   )
 
-  it('ignores a non-script 404 even when it is the only recent asset record', () => {
-    const target = recoverTarget()
-    pushRecord(target, { initiatorType: 'fetch' })
+  it('does not recover without any resource records', () => {
+    const target = targetWithRecords([])
 
     const event = safariEvent()
     target.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(false)
     expect(target.location.reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('URL-ful stale asset messages', () => {
+  it('recognizes the CSS preload error message', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+    const url = 'https://wotbtools.com/assets/Foo-AbC123.css'
+
+    const event = preloadError(url, 'Unable to preload CSS for ' + url)
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(true)
+    expect(target.location.reload).toHaveBeenCalledTimes(1)
   })
 })
