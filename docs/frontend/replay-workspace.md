@@ -132,20 +132,18 @@ Display 是锚定在 Gear 上、不可拖动的工作台面；空间允许时在
 
 | 几何职责 | 负责方 |
 |---|---|
-| Shared columns, fluid roster bounds, renderer-specific Stage capacity, center stack | `playback-workspace.css` |
-| Phone portrait flow | `playback-mobile.css` |
-| 3D portrait order ladder, 3D scene/HUD presentation | `Replay3DPane.vue` scoped rules |
-| Workspace height | 2D `BattlePlayback.writeSquareAvailHeight()`; 3D viewport tokens from the pane |
-| Stage budget (HUD + Transport + gaps) | `BattlePlayback.writeSquareAvailHeight()` for 2D; grid rows `auto minmax(0,1fr) auto` for 3D |
-| Primary controls and speed disclosure | `PlaybackTransport.vue` |
-| Persistent HUD and compact bases | `BattlePlaybackHud.vue` / `BaseStatusBar.vue` |
-| Display anchor and workspace bounds | `PlaybackDisplaySurface.vue` |
-| Details drag placement | Existing `usePlaybackDetailsPlacement` |
-| Fullscreen lifecycle / replay selection | Existing fullscreen composable / ReplayWorkspace |
+| 共享列、流体名册边界、renderer 专属 Stage 容量、中央栈 | `playback-workspace.css` |
+| 手机竖屏流 | `playback-mobile.css` |
+| 3D 竖屏顺序阶梯、3D 场景/HUD 呈现 | `Replay3DPane.vue` scoped rules |
+| 工作台高度 | 2D `BattlePlayback.writeSquareAvailHeight()`；3D viewport token 来自 pane |
+| Stage 预算（HUD + Transport + 间距） | 2D 用 `BattlePlayback.writeSquareAvailHeight()`；3D 用 grid rows `auto minmax(0,1fr) auto` |
+| 主控件与速度展开 | `PlaybackTransport.vue` |
+| 常驻 HUD 与紧凑基地 | `BattlePlaybackHud.vue` / `BaseStatusBar.vue` |
+| Display 锚定与工作台边界 | `PlaybackDisplaySurface.vue` |
+| Details 拖动放置 | 既有 `usePlaybackDetailsPlacement` |
+| 全屏生命周期 / replay 选择 | 既有 fullscreen composable / ReplayWorkspace |
 
-3D visual acceptance remains manual: check 740×360, 844×390 fullscreen, 1600×900 and 1792×922 fullscreen
-for battlefield prominence, compact HUD/Transport and comfortable Display presentation. Browser
-geometry and interaction checks establish layout/state invariants, not GPU/material appearance.
+3D 视觉验收仍需人工完成：检查 740×360、844×390 全屏、1600×900 与 1792×922 全屏下的战场突出度、紧凑 HUD/Transport 与舒适的 Display 呈现。浏览器几何与交互检查只建立布局/状态不变量，不证明 GPU/材质外观。
 
 ### 3D Details canonical parity
 

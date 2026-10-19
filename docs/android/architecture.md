@@ -1,7 +1,5 @@
 # WotBTools Android — 架构
 
-> Translation pending: ordinary file chooser cache ownership and TTL (3.5.2).
-
 ## 定位
 
 Android 是同一 Vue 应用的 Local-First App Shell。APK 自带 Vue chunks、唯一 Agent Rust/WASM

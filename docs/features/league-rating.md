@@ -161,13 +161,13 @@ Exchange: 180 × (0.30T + 0.70G)
           efficiency = O / (O + received) × participation（零安全）
 Blocked:  50 × (0.70T + 0.30G)
 RC:       winner survived = 75；dead + enemy death ∈ [playerDeath, playerDeath+5s] = 50；否则 0
-Shooting: rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
+射击：rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
           softAcc = 0.9×Wilson95%(hits,shots) + 0.1×rawAcc
           softPen = 0.9×Wilson95%(pens,hits) + 0.1×rawPen
           conf = 0.3×softAcc + 0.7×softPen
           score = 110 × min(1, conf/0.70) × min(1, dmg/teamAvgDamage)
 
-Winner final = min(1000, base × 1.05)；Loser final = base
+胜者 final = min(1000, base × 1.05)；败者 final = base
 单场 Team Rating = 本队 7 人 finalRating 算术平均；batch（选手/战队）= pooled sum/count + prior
 Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 killer attribution
 禁止：Tankopedia HP normalization / role bonus / LOSER_TOP4 / dual algorithm / 调参
