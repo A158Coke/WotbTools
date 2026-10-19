@@ -61,6 +61,7 @@ class ObservabilityDashboardContractTest {
         assertTrue(total.contains("telemetry_event=\"feature_open\""));
         assertTrue(total.contains("feature=\"android_download\""));
         assertTrue(total.contains("platform=\"web\""));
+        assertTrue(total.contains("operation_id != \"\""));
         assertFalse(total.contains("android_apk_download"));
         assertFalse(total.contains("status=\"200\""));
         assertFalse(total.contains("status=\"206\""));
