@@ -573,6 +573,26 @@ describe('ProfilePage identity card', () => {
     expect(roles).toEqual(['HoF-admin', 'wotbtools-user'])
   })
 
+  it('shows the Keycloak username read-only next to the user id', async () => {
+    currentProfile = { ...currentProfile, username: 'wg_asia_512345678' }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('profile.keycloakUsername')
+    const value = wrapper.get('[data-testid="profile-keycloak-username"]')
+    expect(value.text()).toBe('wg_asia_512345678')
+    // 只读：Keycloak 用户名不允许站内编辑（无输入控件 / 编辑入口）。
+    expect(value.findAll('input, textarea, select, button, [contenteditable]')).toHaveLength(0)
+  })
+
+  it('shows a placeholder when the profile carries no Keycloak username', async () => {
+    currentProfile = { ...currentProfile, username: '' }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-keycloak-username"]').text()).toBe('--')
+  })
+
   it('shows a placeholder when the token carries only Keycloak built-in roles', async () => {
     tokenRef.value = { sub: keycloakUserId, realm_access: { roles: ['offline_access', 'default-roles-wotbtools'] } }
     const wrapper = mountProfile()
