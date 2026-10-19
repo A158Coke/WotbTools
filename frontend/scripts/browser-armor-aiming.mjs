@@ -388,7 +388,9 @@ try {
         } else {
           samples = [];
         }
-        if (performance.now() - started > 20000) { resolve(false); return; }
+        // CI 慢 runner 约 3fps：OrbitControls damping 0.05 需要 ~90 帧才能把余滑
+        // 压到 0.5px；20s 只够 ~60 帧。保持“必须真正稳定”的判据，只放宽等待预算。
+        if (performance.now() - started > 45000) { resolve(false); return; }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
