@@ -215,7 +215,8 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 - [ ] **无历史堆放**：不得以 `archive/` / `old/` / `historical/` / “Historical” 标签保留过期现状；已完成迁移/验收/审计文档不得仅作为历史存储保留。
 - [ ] **research 例外**：`docs/research/**` 可保留实验与证据史，但不得把已退役架构描述成当前生产状态。
 - [ ] **Android 发布记录例外**：`docs/android/releases/**` 是临时版本化发布记录，豁免当前状态要求；本阶段不得删除，迁移到 GitHub Release / tag / APK / `version.json` 后由 CI/CD 审计推进。
-- [ ] **current-plan 权威**：新增/修改的永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（BLOCKER）；D4 之前已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件是明确例外。D4 完成后可按绝对规则执行。
+- [ ] **current-plan 权威**：新增/修改的永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（BLOCKER）；已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件是明确例外。当仓库中除允许的 planning/execution 工作流与上述两类例外外，`current-plan` 权威引用清零时，此门禁自动转为绝对规则。
+- [ ] **存量偏差过渡**：D0 之前已存在的 current-state / 历史文档偏差，在对应 D2/D3/D4 wave 修正前按整改债务保留；新增或修改的持久文档必须满足本门禁。
 - [ ] **中文正文**：本次新增/修改的持久开发者/维护者/运维文档，人类可读正文是否统一使用简体中文？类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用可保留规范英文；英文正文 = BLOCKER。
 - [ ] **路由而非占有**：`DEVELOPER_GUIDE.md` 指向领域 SSOT，不复制业务规则；`docs/README.md` 只回答「今天该读哪份文档」。
 
