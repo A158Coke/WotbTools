@@ -209,14 +209,14 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 
 逐项门禁：
 
-- [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对当前 main 成立，不依赖读者知道 PR 过程。
+- [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对候选 HEAD 作为合并后系统成立，不依赖读者知道 PR 过程（不是要求对当前 main 成立）。
 - [ ] **变更日记泄漏扫描**（字符串是信号，不是自动失败）：`本 PR` / `本次` / `本期` / `Step 0` / `review P1` / `P2` / `审查基线` / 只对某 commit 或 run 成立的 id / 作为发布日记的 `当前候选版本` / `未来 Kx` / `下一阶段` / `以最终实现为准` / `migration completed` / 先旧实现后新实现的对比叙事。
 - [ ] **五分类**：每个命中必须判定 A 当前契约（改写为状态描述并保留）、B 产品/业务历史（只进入 `HISTORY.md`）、C 技术历史（只进入 `docs/architecture/TECHNICAL_EVOLUTION.md`）、D 研究证据/来源/实验/被否证假设（保留在 `docs/research/**`，不得被迫搬进 HISTORY 或 TECHNICAL_EVOLUTION）、E 一次性实现/审查/PR 日记（删除；Git 历史足够）。B/C 不得留在 canonical 文档，E 不得搬进历史文档。
 - [ ] **无历史堆放**：不得以 `archive/` / `old/` / `historical/` / “Historical” 标签保留过期现状；已完成迁移/验收/审计文档不得仅作为历史存储保留。
 - [ ] **research 例外**：`docs/research/**` 可保留实验与证据史，但不得把已退役架构描述成当前生产状态。
 - [ ] **Android 发布记录例外**：`docs/android/releases/**` 是临时版本化发布记录，豁免当前状态要求；本阶段不得删除，迁移到 GitHub Release / tag / APK / `version.json` 后由 CI/CD 审计推进。
 - [ ] **current-plan 权威**：新增/修改的永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（BLOCKER）；已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件是明确例外。当仓库中除允许的 planning/execution 工作流与上述两类例外外，`current-plan` 权威引用清零时，此门禁自动转为绝对规则。
-- [ ] **存量偏差过渡**：D0 之前已存在的 current-state / 历史文档偏差，在对应 D2/D3/D4 wave 修正前按整改债务保留；新增或修改的持久文档必须满足本门禁。
+- [ ] **存量偏差过渡**：D0 之前已存在的 current-state / 历史文档偏差，在对应偏差被实际修复或登记为例外前按整改债务保留；新增或修改的持久文档必须满足本门禁。不得用未跟踪的 wave 名称作为判定依据。
 - [ ] **中文正文**：本次新增/修改的持久开发者/维护者/运维文档，人类可读正文是否统一使用简体中文？类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用可保留规范英文；英文正文 = BLOCKER。
 - [ ] **路由而非占有**：`DEVELOPER_GUIDE.md` 指向领域 SSOT，不复制业务规则；`docs/README.md` 只回答「今天该读哪份文档」。
 
@@ -458,6 +458,6 @@ Blocker count: N   （0 才允许判定完成）
 - [ ] 产品/业务决策与用户能力演进写入 `HISTORY.md`；架构、数据流、authority、拓扑、身份模型与已退役技术方案写入 `docs/architecture/TECHNICAL_EVOLUTION.md`
 - [ ] 只记录具有长期产品/业务或技术演进意义的变化；纯版本号、逐提交细节、实现过程、review 轮次**不写**
 - [ ] 追加到对应时间线的正确位置，不重写既有历史结论
-- [ ] 面向读者表述：不含 PR 号 / commit hash / 内部实现模块名
+- [ ] 面向读者表述：叙事正文不含 PR 号 / commit hash / 内部实现模块名；允许在每节末尾用独立的 `Git 证据` 块列出来源，它不算叙事正文
 - [ ] 措辞变动不引入与 README / DEVELOPER_GUIDE / ROADMAP 冲突的现状描述
 - [ ] 同一事实不同时写入两份历史：产品理由进 HISTORY，技术理由进 TECHNICAL_EVOLUTION
