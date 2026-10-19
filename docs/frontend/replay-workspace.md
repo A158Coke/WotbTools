@@ -88,13 +88,13 @@
 
 ## 能力访问策略
 
-Replay Workspace contains five publicly discoverable capabilities. Anonymous users can use Data and 2D Playback. Personal replays require authentication for 3D Playback and Shot Analysis / Reconstruction; the verified official demo also permits anonymous access to these two capabilities. AI Review always requires authentication, including for the official demo. `wotbtools-admin` does not alter Replay Workspace capabilities.
+Replay Workspace 有五个公开可发现的能力。匿名用户可使用 Data 与 2D Playback。个人回放的 3D Playback 与 Shot Analysis / Reconstruction 需要登录；已验证官方示例也允许匿名使用这两项。AI Review 始终需要登录，包括官方示例。`wotbtools-admin` 不改变 Replay Workspace 能力。
 
 `ReplayCapabilityAuthGate.vue` 复用 `EmptyState` 与登录按钮：匿名使用个人回放时不挂载 `Replay3DPane` / `ReplayShotsPane`，不启动对应解析、场景或远端资产加载；已验证的官方示例可按需挂载这两个 pane，3D 仍受连通性门禁约束。普通选择、追加、清空或 Android 导入会撤销示例资格。登录分别以 `agent-replay` / `agent-shots` 为返回目的地。登出卸载不具备示例资格的受限 pane，但不清空 Workspace 的 replay selection/session。AI 保留自己的 projection/error lifecycle，全部匿名选择均不构建投影，登录返回 `ai-review`。
 
 装甲查看器 `agent-armor` 保持独立页面，且**匿名可用**：登录用户或匿名官方示例用户可从 shots 选择命中弹并打开复现场景；普通用户从 Tankopedia 详情入口卡（对全员开放）进入；匿名深链由 `ViewHost` 直接挂载装甲页面，不做登录拦截。场景 query（`tank/shooter/config/scfg/shell/shot/world/heatmap/az/h/d/…`）原样保留。登录门禁不会主动清空 selection；浏览器 OIDC 整页跳转受现有 session 持久化能力限制，回放字节不持久化。
 
-## Local-first capability boundary
+## 本地优先能力边界
 
 `app/featureCapabilities.js` 是唯一连通性能力模型；组件消费 `useFeatureGate()`，不自行读 `navigator.onLine`。连通性与登录是**两条独立门禁**：ONLINE_REQUIRED 能力在非-online 时连挂载都不做，登录门禁只决定「已连通但未登录」时的引导。连通性首次检测完成前（`availability().pending`）只 fail-closed、不下结论：不显示任何 connectivity 提示，也不落到登录门禁；检测完成后按真实结论（含仍为 UNKNOWN）渲染。
 
@@ -120,32 +120,17 @@ Playback 布局有两条**真实浏览器门禁**（jsdom / happy-dom 没有布�
 - `npm run test:browser-layout`（`scripts/browser-playback-layout.mjs`）：几何夹具按生产顺序加载**生产样式表**（`tokens/scale.css` → `playback-shared.css` → `playback-mobile.css` → `playback-workspace.css`，只把 `:fullscreen` 换成根类标记），并用脚本**合成**生产由 JS 写入的容量变量（`--pb-workspace-h` / `--pb-square-avail-h`，按与 `writeSquareAvailHeight()` 相同的口径算）。夹具自己的控件盒（`.pb-controls` / `.pb-btn`）是独立的小尺寸替身，因此这里锁的是宏几何，中心栈与控件尺寸由 `test:browser-interaction` 用真实组件覆盖。视口用 CDP `Emulation.setDeviceMetricsOverride` 而不是 `--window-size`（headless 窗口最小宽 500px，`390×844` 会被静默放大），并断言页面实测视口与请求一致。
 - `npm run test:browser-interaction`：真实应用。`ws2d-*` 场景挂载生产 `BattlePlayback`（`playback-controls.html?players=7&recorder=1|2`），`roster-geometry-*` 场景驱动真实 `Replay3DPane`，覆盖 375×812、390×844、740×360、844×390（含全屏与录像者在 Team 2）、1024×460、1024×768、1366×1024、1600×900、1792×922（全屏）：竖屏纵向流、横屏三段式、2D 正方形 / 3D 横屏填满与竖屏正方形、Recorder 视角左右、车道不滚动、行信息完整且 HP 文字位于血条内、主控件一行且顺序不变、HUD↔Stage↔Transport 间距紧凑、Display 从 gear 打开并夹在 workspace 内（竖屏必须是紧跟传输控件的流内面）、详情浮窗挂在 workspace 上并能拖过三栏且不压传输控件、连点 Team 2 更新同一个窗且位置不动、× 不清选中、名册关闭 / 打开保留状态、3D 全屏不重建场景。
 
-### Playback fluid geometry and controls
+### Playback 流体几何与控件
 
 3D 回放下方工具栏右上角支持收起／展开，默认展开。收起后仅保留恢复按钮，播放继续，进度、倍速、选车和相机保持；切换文件恢复展开，全屏和视口变化保留状态。此开关独立于“隐藏全部 UI”。
 
-2D/3D share the primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`.
-Speed options open on demand; all six controls keep their intrinsic touch targets. HUD, Stage and
-Transport form one compact center stack. The 2D Stage stays square; the 3D canvas fills the available
-center width and height in landscape and stays square in portrait. Recorder allies stay left and enemies right; portrait
-retains natural document flow. Roster widths grow within bounded limits relative to the workspace.
-Viewport capacity and measured persistent HUD/Transport heights determine Stage capacity; scrolling,
-selection and presentation toggles do not recreate renderers, reparse a replay or reload assets.
+2D/3D 共用 primary composition `-5 / Play-Pause / +5 / current speed / Fullscreen / Display`。速度选项按需展开；六个控件都保留自身触控目标。HUD、Stage 与 Transport 形成一个紧凑的中央栈。2D Stage 保持正方形；3D canvas 横屏填满可用中央宽高、竖屏保持正方形。录像者友军保持左侧、敌军右侧；竖屏保留自然文档流。名册宽度在工作台相对范围内有界增长。视口容量与实测 persistent HUD/Transport 高度决定 Stage 容量；滚动、选择和展示切换不重建 renderer、不重新解析回放、不重新加载资产。
 
-Display is a non-draggable workspace surface anchored to Gear, above it when space permits and
-clamped within the workspace; portrait uses a full-width inline surface with bounded scroll, ordered
-by its host (2D `.pb-main` follows the document flow, 3D `.portrait-flow` carries an explicit order
-ladder). Details remain a separate draggable contextual surface. Persistent HUD shares map/time,
-HP/score and compact base metadata; transient kill feed is bounded and excluded from height
-measurement.
+Display 是锚定在 Gear 上、不可拖动的工作台面；空间允许时在 Gear 上方，并夹在工作台内；竖屏使用全宽内联面、有界滚动，由宿主排序（2D `.pb-main` 跟随文档流，3D `.portrait-flow` 有明确顺序阶梯）。Details 仍是独立的可拖动上下文面。Persistent HUD 共享地图/时间、HP/比分与紧凑基地元数据；瞬态 kill feed 有界且不参与高度测量。
 
-The real browser matrix also covers 1792×922 fullscreen and checks maximal 2D square capacity and 3D landscape fill / portrait square, compact
-stack gaps, fluid roster bounds, primary DOM/x order, Display anchoring and the portrait Display
-order. Replay file reselection at 740×360 uses raw touch; no synthetic click is added. A drag on the
-file chip is a scroll gesture and must not select anything, while one tap selects exactly once and
-clearing a pending replay still aborts its parse before loading the new file.
+真实浏览器矩阵还覆盖 1792×922 全屏，并检查最大 2D 正方形容量、3D 横屏填满/竖屏正方形、紧凑栈间距、流体名册边界、primary DOM/x 顺序、Display 锚定与竖屏 Display 顺序。740×360 重新选择 replay 文件使用原生 touch；不添加 synthetic click。文件 chip 上的拖动是滚动手势，不得选中任何内容；一次 tap 只选中一次，清除 pending replay 仍会在加载新文件前中止其解析。
 
-| Geometry responsibility | Owner |
+| 几何职责 | 负责方 |
 |---|---|
 | Shared columns, fluid roster bounds, renderer-specific Stage capacity, center stack | `playback-workspace.css` |
 | Phone portrait flow | `playback-mobile.css` |
