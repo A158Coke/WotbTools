@@ -608,6 +608,16 @@ try {
     await page.waitFor(() => window.__armorRicochet?.info?.()?.meshCount > 0,
       { timeout: 30000, label: 'probability card armor model' })
     await delay(500)
+    // 判定结果由动态 import 的 judgePenetration() promise 异步写回 #traj-info；
+    // 固定 delay 在慢 runner 上会读到上一张卡。用 MutationObserver 等本次渲染。
+    await page.waitFor(() => !!document.getElementById('traj-info'),
+      { timeout: 5000, label: 'traj-info element' })
+    await page.evaluate(`(() => {
+      const el = document.getElementById('traj-info');
+      window.__probCardRenders = 0;
+      new MutationObserver(() => { window.__probCardRenders++ })
+        .observe(el, { childList: true, subtree: true, characterData: true });
+    })()`)
     const readResultCard = () => page.evaluate(`(() => {
       const el = document.getElementById('traj-info');
       if (!el || el.style.display === 'none') return null;
@@ -633,7 +643,13 @@ try {
         red: probe('--red'),
       };
     })()`)
-    const tapReadCard = async (point) => { await mouseTap(point); return readResultCard() }
+    const tapReadCard = async (point) => {
+      const before = await page.evaluate('window.__probCardRenders')
+      await mouseTap(point)
+      const updated = await page.waitForValue('window.__probCardRenders', (v) => v > before,
+        { timeout: 5000, label: 'probability result card render' }).then(() => true).catch(() => false)
+      return updated ? readResultCard() : null
+    }
 
     const cardSpots = await findSpots(['gun', 'turret'])
     const turretCard = cardSpots.turret ? await tapReadCard(cardSpots.turret) : null

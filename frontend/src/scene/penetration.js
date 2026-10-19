@@ -90,14 +90,17 @@ export function hasPositivePrimary(layers) {
  * @returns {Array<object|null>}
  */
 export function matchHitsByOccurrence(layers, hits) {
-  const used = new Array(hits.length).fill(false)
+  // 必须先走与判定相同的命中收集：同一网格的重合三角形在 collectFilteredHits
+  // 中已被合并，直接索引未过滤的原始命中会把后续层错配到重复三角形的位置。
+  const chain = collectFilteredHits(hits || [])
+  const used = new Array(chain.length).fill(false)
   return (layers || []).map(layer => {
     const name = layer?.part_name
     if (typeof name !== 'string' || !name) return null
-    for (let i = 0; i < hits.length; i++) {
-      if (!used[i] && hits[i].partName === name) {
+    for (let i = 0; i < chain.length; i++) {
+      if (!used[i] && hitNameOf(chain[i]) === name) {
         used[i] = true
-        return hits[i]
+        return chain[i]
       }
     }
     return null
@@ -108,6 +111,16 @@ function moduleVariant(section) {
   if (section === ArmorSection.CHASSIS) return 'track'
   if (section === ArmorSection.GUN_BARREL) return 'gun'
   return null
+}
+
+const plateIdOf = (hit) => hit.plate_id ?? hit.plateId
+const hitNameOf = (hit) => hit.partName ?? hit.part_name
+const pointsCoincide = (a, b) => {
+  if (Array.isArray(a) && Array.isArray(b)) return dist3(a, b) < 1e-6
+  if (a && b && [a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-6
+  }
+  return false
 }
 
 /**
@@ -130,10 +143,11 @@ function collectFilteredHits(hits) {
     } else {
       // 同一网格的重合三角形（射线掠过四边形对角线时）是同一层，不是两层。
       const prev = filteredHits[filteredHits.length - 1]
+      const prevId = prev ? plateIdOf(prev) : null
+      const id = plateIdOf(ah)
       const samePlate = prev && prev.section === ah.section
-        && (ah.plate_id == null || prev.plate_id == null || String(ah.plate_id) === String(prev.plate_id))
-        && Array.isArray(ah.point) && Array.isArray(prev.point)
-        && dist3(ah.point, prev.point) < 1e-6
+        && (id == null || prevId == null || String(id) === String(prevId))
+        && pointsCoincide(ah.point, prev.point)
       if (samePlate) continue
       filteredHits.push(ah)
       if (isPrimary(ah.section)) break
