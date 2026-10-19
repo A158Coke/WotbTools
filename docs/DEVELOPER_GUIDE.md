@@ -2,7 +2,7 @@
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
-联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。旧接口仅供内部测试使用；当前发布版本与最低支持门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.13.1](android/releases/3.13.1.md)。
+联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。旧接口仅供内部测试使用；当前发布版本与最低支持门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换) 与 [推荐目录](features/bilibili-creators.md)。Android 版本与兼容性由 [Android release process](android/release-process.md) 声明。
 
 ---
 
@@ -188,7 +188,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 ### 客户端 Replay Engine（上游 Agent）
 
-`.wotbreplay` 的唯一解析器是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者，可以直接改上游、发版）。本仓库**不维护第二份解析器**：此前的 `replay-engine/` 移植已于 2026-09-30 退役；服务端 Java `ReplayParser`、parser-worker、parser MQ、processing-jobs、导出任务与 2D 产物已于 2026-10-02 删除（[迁移记录](architecture/client-replay-engine-migration.md)）。
+`.wotbreplay` 的唯一解析器是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者，可以直接改上游、发版）。本仓库**不维护第二份解析器**：此前的 `replay-engine/` 移植已退役；服务端 Java `ReplayParser`、parser-worker、parser MQ、processing-jobs、导出任务与 2D 产物已删除。当前解析链路见 [replay-pipeline.md](architecture/replay-pipeline.md)。
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
