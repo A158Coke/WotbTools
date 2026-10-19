@@ -2414,9 +2414,9 @@ async function runMultiFileWorkspaceScenario(env) {
       resolve(frontendRoot, '../common/fixtures/replays/cw-training-15-14-example.wotbreplay'),
       resolve(frontendRoot, '../common/fixtures/replays/tournament-14-14-example.wotbreplay'),
     ] }, sessionId)
-    const hit = async selector => {
+    const hit = async (selector, { touch = false } = {}) => {
       const point = await page.waitForValue(clickCenterExpression(selector), Boolean, { label: selector })
-      await page.tap({ ...point, touch: false })
+      await page.tap({ ...point, touch })
     }
     await hit('.replay-primary-actions button')
     await page.waitFor(() => !!document.querySelector('[data-test="battle-playback"]'), { timeout: 60_000, label: 'first batch battle loaded in 2D' })
@@ -2431,10 +2431,41 @@ async function runMultiFileWorkspaceScenario(env) {
     await hit('[data-testid="playback-battle-picker"]')
     await hit('[data-testid="battle-picker-option"][data-value="r0"]')
     await page.waitForValue(roster, value => value === firstRoster, { timeout: 60_000, label: 'cached first battle restored' })
+
+    // 手机回归：picker 是 fixed 底部 sheet。Replay Workspace 的 layout-data-workspace 有
+    // isolation: isolate，曾把仍留在局部层叠上下文里的 sheet 压在根层 AppTabBar 之下。
+    // 断言 sheet 贴住视口底部、覆盖导航栏且第二场在视口内，并用真实触摸完成切换。
+    await page.emulate({ width: 390, height: 844, touch: true })
+    await page.waitFor(() => !!document.querySelector('[data-testid="app-tab-bar"]'), { label: 'mobile app tab bar after resize' })
+    await hit('[data-testid="playback-battle-picker"]', { touch: true })
+    const sheet = await page.waitForValue(`(() => {
+      const panel = document.querySelector('[data-testid="battle-picker-panel"]')
+      const option = document.querySelector('[data-testid="battle-picker-option"][data-value="r1"]')
+      if (!panel || !option) return null
+      const rect = panel.getBoundingClientRect()
+      const optionRect = option.getBoundingClientRect()
+      const bottomHit = document.elementFromPoint(Math.round(innerWidth / 2), Math.round(innerHeight - 8))
+      return {
+        teleported: panel.parentElement === document.body && !panel.closest('.battle-picker'),
+        bottom: Math.round(rect.bottom),
+        viewportHeight: innerHeight,
+        bottomOverTabBar: !!bottomHit && panel.contains(bottomHit),
+        optionInViewport: optionRect.top >= 0 && optionRect.left >= 0
+          && optionRect.right <= innerWidth && optionRect.bottom <= innerHeight,
+      }
+    })()`, Boolean, { label: 'mobile battle picker sheet' })
+    check(failures, sheet.teleported, `mobile battle picker sheet is not teleported to body: ${JSON.stringify(sheet)}`)
+    check(failures, Math.abs(sheet.bottom - sheet.viewportHeight) <= 1, `mobile battle picker sheet must end at viewport bottom: ${JSON.stringify(sheet)}`)
+    check(failures, sheet.bottomOverTabBar, `app tab bar paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
+    check(failures, sheet.optionInViewport, `Battle 2 option is outside the viewport: ${JSON.stringify(sheet)}`)
+    await hit('[data-testid="battle-picker-option"][data-value="r1"]', { touch: true })
+    await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
+    check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
+      'mobile battle picker sheet did not close after selection')
   } finally {
     await env.chrome.client.send('Target.closeTarget', { targetId })
   }
-  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900' })
+  results.push({ name: 'multifile-workspace-playback', failures, viewport: '1600x900 → 390x844' })
 }
 
 /* ------------------------------------------------------------------ 2D 战场 workspace（正方形 Stage 契约） */
