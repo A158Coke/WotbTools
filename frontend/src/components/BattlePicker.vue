@@ -5,6 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Search } from 'lucide-vue-next'
+import { useBreakpoint } from '../composables/useBreakpoint.js'
 
 defineOptions({ inheritAttrs: false })
 
@@ -16,6 +17,10 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
+// 手机 sheet 必须 teleport 到 body：Replay Workspace 的 layout-data-workspace 有
+// isolation: isolate，fixed 元素会被困在局部层叠上下文里，被根层 fixed AppTabBar（--z-header）盖住；
+// 桌面 dropdown 是 absolute 定位、依赖 trigger 旁的祖先，所以只在 compact 时 teleport。
+const { isCompact } = useBreakpoint()
 
 const SEARCH_THRESHOLD = 6
 const open = ref(false)
@@ -23,6 +28,7 @@ const query = ref('')
 const activeIndex = ref(-1)
 const root = ref(null)
 const trigger = ref(null)
+const panel = ref(null)
 const searchInput = ref(null)
 const list = ref(null)
 const uid = Math.random().toString(36).slice(2, 9)
@@ -93,7 +99,10 @@ function onKeydown(event) {
 watch(query, () => { activeIndex.value = filtered.value.length ? 0 : -1 })
 
 function onDocumentPointerDown(event) {
-  if (!root.value?.contains(event.target)) closePicker()
+  // Teleport 后 panel 不再是 root 的 DOM 后代；点击 sheet 内的 option 不能被误判成 outside click。
+  const insideTrigger = root.value?.contains(event.target)
+  const insidePanel = panel.value?.contains(event.target)
+  if (!insideTrigger && !insidePanel) closePicker()
 }
 watch(open, (value) => {
   if (value) document.addEventListener('pointerdown', onDocumentPointerDown)
@@ -121,56 +130,58 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPoin
       <ChevronDown :size="16" aria-hidden="true" />
     </button>
 
-    <template v-if="open">
-      <div class="picker-scrim" aria-hidden="true" @click="closePicker()"></div>
-      <div class="picker-panel" data-testid="battle-picker-panel">
-        <label v-if="searchable" class="picker-search">
-          <Search :size="16" aria-hidden="true" />
-          <input
-            ref="searchInput"
-            v-model="query"
-            type="search"
-            role="combobox"
-            aria-autocomplete="list"
-            :aria-expanded="true"
-            :aria-controls="listId"
-            :aria-activedescendant="activeId"
-            :aria-label="t('workspace.battle_search')"
-            :placeholder="t('workspace.battle_search')"
-            data-testid="battle-picker-search"
+    <Teleport to="body" :disabled="!isCompact">
+      <template v-if="open">
+        <div class="picker-scrim" aria-hidden="true" @click="closePicker()"></div>
+        <div ref="panel" class="picker-panel" data-testid="battle-picker-panel">
+          <label v-if="searchable" class="picker-search">
+            <Search :size="16" aria-hidden="true" />
+            <input
+              ref="searchInput"
+              v-model="query"
+              type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              :aria-expanded="true"
+              :aria-controls="listId"
+              :aria-activedescendant="activeId"
+              :aria-label="t('workspace.battle_search')"
+              :placeholder="t('workspace.battle_search')"
+              data-testid="battle-picker-search"
+              @keydown="onKeydown"
+            />
+          </label>
+          <ul
+            :id="listId"
+            ref="list"
+            class="picker-list"
+            role="listbox"
+            :aria-label="ariaLabel"
+            :tabindex="searchable ? -1 : 0"
+            :aria-activedescendant="searchable ? undefined : activeId"
             @keydown="onKeydown"
-          />
-        </label>
-        <ul
-          :id="listId"
-          ref="list"
-          class="picker-list"
-          role="listbox"
-          :aria-label="ariaLabel"
-          :tabindex="searchable ? -1 : 0"
-          :aria-activedescendant="searchable ? undefined : activeId"
-          @keydown="onKeydown"
-        >
-          <li
-            v-for="(option, index) in filtered"
-            :id="`${listId}-${index}`"
-            :key="option.value"
-            role="option"
-            class="picker-option"
-            :class="{ 'is-highlighted': index === activeIndex }"
-            :aria-selected="option.value === modelValue"
-            :data-value="option.value"
-            data-testid="battle-picker-option"
-            @click="choose(option)"
-            @pointermove="activeIndex = index"
           >
-            <span class="picker-label">{{ option.label }}</span>
-            <span v-if="option.meta" class="picker-meta">{{ option.meta }}</span>
-          </li>
-          <li v-if="!filtered.length" class="picker-empty" role="presentation">{{ t('workspace.battle_search_empty') }}</li>
-        </ul>
-      </div>
-    </template>
+            <li
+              v-for="(option, index) in filtered"
+              :id="`${listId}-${index}`"
+              :key="option.value"
+              role="option"
+              class="picker-option"
+              :class="{ 'is-highlighted': index === activeIndex }"
+              :aria-selected="option.value === modelValue"
+              :data-value="option.value"
+              data-testid="battle-picker-option"
+              @click="choose(option)"
+              @pointermove="activeIndex = index"
+            >
+              <span class="picker-label">{{ option.label }}</span>
+              <span v-if="option.meta" class="picker-meta">{{ option.meta }}</span>
+            </li>
+            <li v-if="!filtered.length" class="picker-empty" role="presentation">{{ t('workspace.battle_search_empty') }}</li>
+          </ul>
+        </div>
+      </template>
+    </Teleport>
   </div>
 </template>
 

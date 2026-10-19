@@ -221,6 +221,8 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 回放、3D 等组件内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。
 
+需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。
+
 ---
 
 ## 6. 响应式与输入方式
