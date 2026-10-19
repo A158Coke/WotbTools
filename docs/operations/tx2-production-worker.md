@@ -23,13 +23,14 @@ Docker Compose v2
 production-worker owner **只**建立最后两个箭头之外的全部前置条件，并证明私有镜像可以被 root 上下文认证拉取。
 它不创建 Komodo Stack，不启用 ResourceSync 自动 apply，不改 `infra/komodo/resources/**`。
 
-## 三个 lifecycle 的 ownership 区分
+## lifecycle 与 workload 的 ownership 区分
 
 | Owner | 拥有 | 不拥有 |
 |---|---|---|
 | `deploy/periphery/**` + `komodo-periphery.yml` | Periphery 二进制、配置、systemd 生命周期、身份、Core 信任、onboarding | 通用 Docker 主机 provisioning |
 | **`deploy/production-worker/**` + `production-worker.yml`** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
-| Komodo workload owner（TX2 Frontend Stack） | Stack / Deployment / ResourceSync 内容与 Frontend 镜像 rollout | 本文件的 host 前置条件 |
+| Komodo Stack owner（TX2 Frontend Stack） | `infra/komodo/resources/frontend-shadow.toml` 的声明式 Stack / Deployment / ResourceSync 元数据与运行时可见性 | Frontend 镜像 rollout；本文件的 host 前置条件 |
+| Frontend Replica workflow（`.github/workflows/frontend-replica.yml`） | TX2 frontend 的 immutable TCR pull、`docker compose` 运行部署、发布/回滚执行 | Komodo Stack 元数据；本文件的 host 前置条件 |
 
 `deploy/production-worker/**` 的任何改动只触发 production-worker owner（生产 reconcile）与
 `ci-production-worker.yml`（PR 校验），不会触发 frontend / business-api / keycloak / caddy /
