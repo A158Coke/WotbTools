@@ -5388,7 +5388,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 间隙甲/模块才保持 HE 首面爆炸/溅射（不把 CDF 当穿透概率）。
                 const heFirstPrimary = isHE && hitsForCheck.length > 0
                     && isPrimary(hitsForCheck[0].section);
+                // 0mm Primary 不能当“必穿”（与下方 useProbabilityMode 的
+                // hasPositivePrimary 门同源）；否则 HE 卡会显示 100% 满伤。
                 const hePenChance = heFirstPrimary && hasProbabilityChain
+                    && hasPositivePrimary(res.probability_layers)
                     ? evaluateProbabilityChain(probabilityPen ?? pen, res.probability_layers).chance
                     : 0;
                 // HE 溅射面板：he_min/he_max 是采样器给出的两个浮动界最大值，
