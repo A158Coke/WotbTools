@@ -145,7 +145,6 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时（D1 迁移并删除前仍为当前契约） |
 | `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时（当前契约） |
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
