@@ -8,7 +8,7 @@
  * HEAT 间隙衰减系数 0.5 为项目裁定（客户端 shells.xml 的 0.05 系数据错误，见 gap
  * 分支注释）。
  *
- * 为什么客户端判定：装甲查看器/射击复现数据面是纯静态资产（契约 §13），无 Agent
+ * 为什么客户端判定：装甲查看器/射击复现数据面是纯静态资产（静态资产契约），无 Agent
  * 服务端可 POST /api/penetrate；判定输入（板厚/法线/口径/弹参）全部来自静态 tank
  * JSON 与 raycast，纯数学无副作用——随消费端移动是架构既定方向（Agent Rust Core
  * 负责解析，WotBTools 负责消费/编排）。不变量由 penetration.test.js 锁定（上游

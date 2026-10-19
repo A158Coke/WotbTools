@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// AI Review payload audit（开发/测试用途，plan §9）。
+// AI Review payload audit（开发/测试用途）。
 //
 // 收集并打印：
 //   - 原始 .wotbreplay 字节数，以及 zip 内每个成员的压缩/未压缩字节（含 data.wotreplay）

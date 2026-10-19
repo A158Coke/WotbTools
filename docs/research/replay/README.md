@@ -29,6 +29,21 @@
 6. `protocol.md` 和早期 broad probe notes — 研究轨迹与历史上下文。
 7. `external-wot-blitz-agent-cross-validation.md` — 外部 WoT-Blitz-Agent 研究的 clean-room 交叉验证与待本地闭合候选；**external evidence 不能单独提升 canonical evidence grade**。2026-10-02 已按对方后续证据修订，且**固定了两个不可混淆的快照**（线上产物 = `v0.3.8` / `f35baa46`；研究引文 = commit `e37e6a7d` + 各文档 blob 号）：§3 记录上游已显式整理 supersede 链并统一为 method8 hash6 两点 AABB 编码的当前结论，但 WotbTools 仍保持 **EXTERNAL_CANDIDATE**，必须本地复现后才能提升；§6 记 method27 args\[21..33) 为**弹道末段速度方向向量**（其受控裁决 0/79 位置、79/79 方向），§5 按载荷长度分族并撤回 24/25B 的"模块损伤百分比"，§7 记搭载选择为**分层证据**（仅 comp blob 为确定性，末档取顶级属启发式），§10 队列逐项加注（标注 ≠ 本地闭合）。
 
+## 生产契约的权威关系
+
+研究与生产文档不在同一语义层，读取与同步顺序固定为：
+
+```text
+raw evidence / focused closure（本目录）
+    -> consolidated research reference（bilingual complete reference）
+    -> production canonical contract（docs/reference/replay-data.md / replay-parsed-fields.md）
+    -> code / tests
+```
+
+- production contract 是当前实现与生产语义的 canonical；研究结论只有被 production contract 吸收后才进入生产语义。
+- focused closure 明确标 SUPERSEDED/REJECTED 时，以 closure 为准，并把 production contract 的同步作为待办；不能用旧 production 文本反向覆盖新证据。
+- 生产契约已按 current 11.19 controlled evidence 维护，不再视为 11.18-era 文档；其中未证明的语义仍标 UNKNOWN。
+
 ### 2026-10-18 camera-state correction
 
 `recorder-camera-state.md` supersedes the older Type23/Type31 labels still present in pre-consolidation broad references:
@@ -43,7 +58,7 @@ Type31 now: scoped-camera automatic zoom/FOV-like raw trajectory
 
 The old primary semantics are `REJECTED / SUPERSEDED` for the current 11.19 corpus. Exact Type31 physical units/private symbol and the Type23 high-bit meaning remain bounded P2 work.
 
-`main/docs/reference/replay-data.md` 等 11.18-era production docs 不能覆盖 PR147 current controlled evidence；其中部分 Type4、Type10 tail、legacy direct-damage 解释已被后续研究推翻或收敛。
+`docs/reference/replay-data.md` 是当前 production contract，已按 11.19 controlled evidence 维护；若其中某条 Type4 / Type10 tail / legacy direct-damage 解释与 focused closure 冲突，以 focused closure 为准并尽快同步 production contract。
 
 ## 研究原则
 
