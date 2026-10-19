@@ -1249,7 +1249,8 @@ export default {
           "enum": [
             "active_user",
             "feature_open",
-            "replay_parse"
+            "replay_parse",
+            "android_download_click"
           ]
         },
         "platform": {

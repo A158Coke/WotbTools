@@ -4496,7 +4496,7 @@ components:
           format: uuid
         event:
           type: string
-          enum: [active_user, feature_open, replay_parse]
+          enum: [active_user, feature_open, replay_parse, android_download_click]
         platform:
           type: string
           enum: [web, android]

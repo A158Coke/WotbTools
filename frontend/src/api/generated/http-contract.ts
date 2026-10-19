@@ -1503,7 +1503,7 @@ export interface components {
             /** Format: uuid */
             event_id: string;
             /** @enum {string} */
-            event: "active_user" | "feature_open" | "replay_parse";
+            event: "active_user" | "feature_open" | "replay_parse" | "android_download_click";
             /** @enum {string} */
             platform: "web" | "android";
             /** @enum {string} */
