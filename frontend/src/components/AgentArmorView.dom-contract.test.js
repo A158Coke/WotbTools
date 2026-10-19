@@ -190,6 +190,12 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/loadGen\+\+;\s*targetLoadGen\+\+;\s*shooterLoadGen\+\+;/)
     expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
     expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
+    expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
+    expect(kernel).toMatch(/return \{ destroy, retry, selectTank, canPick, isContextLost \};/)
+    const view = read('./AgentArmorView.vue')
+    expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
+    expect(view).toMatch(/preserveSelection && selectedTargetId\.value != null/)
+    expect(view).toMatch(/previous\?\.isContextLost\?\.\(\) === true/)
   })
 })
 

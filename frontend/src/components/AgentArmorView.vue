@@ -152,13 +152,21 @@ function onPickerKeydown(event) {
 onMounted(() => window.addEventListener('keydown', onPickerKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onPickerKeydown))
 
-function startViewer() {
+function startViewer(preserveSelection = false) {
     const seq = navigationSeq
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
-    // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）
-    window.__INITIAL_TANK__ = tank || 1
-    window.__INITIAL_SHOOTER__ = Number(q.get('shooter')) || window.__INITIAL_TANK__
+    // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）。
+    // context-lost full rebuild 时沿用当前 shooter/target（picker 选择不写 URL），
+    // 否则用户切车后点“重试”会被重置回 URL 里的初始坦克。
+    const initialTarget = preserveSelection && selectedTargetId.value != null
+        ? selectedTargetId.value
+        : (tank || 1)
+    const initialShooter = preserveSelection && selectedShooterId.value != null
+        ? selectedShooterId.value
+        : (Number(q.get('shooter')) || initialTarget)
+    window.__INITIAL_TANK__ = initialTarget
+    window.__INITIAL_SHOOTER__ = initialShooter
     // 审计 3D-16：场景脚本写入的文案与枚举值按当前语言提供
     viewer = initTankViewer({
         labels: {
@@ -209,17 +217,19 @@ function startViewer() {
 async function retry() {
     if (!alive) return
     load.value = { state: 'loading', progress: null, message: '' }
-    if (viewer?.retry?.()) return
+    const previous = viewer
+    if (previous?.retry?.()) return
+    const preserveSelection = previous?.isContextLost?.() === true
     const seq = ++navigationSeq
     requestSeq++
     navigating.value = false
     // 名册都没拿到（或渲染器创建失败）：销毁后重建整个场景
     viewerReady.value = false
-    viewer?.destroy?.()
+    previous?.destroy?.()
     viewer = null
     attempt.value += 1
     await nextTick()
-    if (alive && seq === navigationSeq && webgl.supported) startViewer()
+    if (alive && seq === navigationSeq && webgl.supported) startViewer(preserveSelection)
 }
 
 onMounted(async () => {

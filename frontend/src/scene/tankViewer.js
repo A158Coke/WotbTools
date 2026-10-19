@@ -5637,9 +5637,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
+        function isContextLost() { return contextLost; }
+
         init().catch((e) => {
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry, selectTank, canPick };
+        return { destroy, retry, selectTank, canPick, isContextLost };
     }

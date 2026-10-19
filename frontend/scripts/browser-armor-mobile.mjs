@@ -1,7 +1,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_SECOND_TANK_ID, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 
 /**
  * 装甲查看器（?view=agent-armor）移动端布局的浏览器几何门禁。
@@ -907,15 +907,49 @@ async function runPickerCardsScenario(env, scenario) {
  * (no later modelProgress/ready overwrite) and retry must recreate the renderer.
  */
 const CONTEXT_LOSS_SCENARIO = { name: 'armor-context-lost-init', width: 1024, height: 768, touch: false }
-async function runContextLossScenario(env, scenario) {
+const CONTEXT_LOSS_SELECTION_SCENARIO = { name: 'armor-context-lost-selection', width: 1024, height: 768, touch: false }
+/** 选择场景专用名册：默认夹具名册保持单车，避免影响其它门禁的首卡选择。 */
+const CONTEXT_LOSS_SELECTION_TANK_CACHE = {
+  ...FIXTURE_TANK_CACHE,
+  [FIXTURE_SECOND_TANK_ID]: { id: FIXTURE_SECOND_TANK_ID, name: 'Fixture Heavy', tier: 8, nation: 'ussr', type: 'heavyTank' },
+}
+
+async function selectSecondFixtureTarget(page) {
+  await page.waitFor(() => {
+    const button = document.querySelector('#target-select')
+    return !!button && !button.disabled
+  }, { timeout: 30000, label: 'viewer ready for target selection' })
+  await page.evaluate(`document.querySelector('#target-select').click()`)
+  await page.waitFor(() => !!document.querySelector('#tank-picker.open')
+    && document.querySelectorAll('[data-testid="tank-card"]').length >= 2,
+  { timeout: 5000, label: 'target picker with second fixture tank' })
+  const selected = await page.evaluate(`(() => {
+    const card = document.querySelector('[data-testid="tank-card"][data-tank-id="${FIXTURE_SECOND_TANK_ID}"]')
+    if (!card) return null
+    card.click()
+    return card.querySelector('.tp-card-name')?.textContent || null
+  })()`)
+  if (!selected) throw new Error('second fixture tank card missing')
+  await page.waitFor(() => {
+    const picker = document.querySelector('#tank-picker.open')
+    const target = document.querySelector('#target-select')
+    return !picker && !!target && !target.disabled
+  }, { timeout: 30000, label: 'second fixture target loaded' })
+  const text = await page.evaluate(`document.querySelector('#target-select')?.textContent || ''`)
+  if (!text.includes(selected)) throw new Error(`target label did not switch to ${selected}: ${text}`)
+  return selected
+}
+
+async function runContextLossScenario(env, scenario, { prepare = null, verify = null, assets = null } = {}) {
   const failures = []
   const { targetId, sessionId } = await env.chrome.openPage()
   const page = new Page(env.chrome.client, sessionId)
   lastPage = page
   await page.enable()
   await page.emulate(scenario)
-  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(env.assets)}`)
+  await page.goto(`${env.origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&assets=${encodeURIComponent(assets || env.assets)}`)
   await page.waitFor(() => !!document.querySelector('#canvas-container canvas'), { label: 'canvas before context loss' })
+  const prepared = prepare ? await prepare(page) : null
   const lost = await page.evaluate(`(() => {
     const canvas = document.querySelector('#canvas-container canvas')
     const gl = canvas && canvas.getContext('webgl2')
@@ -957,6 +991,7 @@ async function runContextLossScenario(env, scenario) {
     return !error && !loading && !!target && !target.disabled
   }, { timeout: 30000, label: 'context-lost retry recreates the renderer' }).then(() => true).catch(() => false)
   check(failures, recovered, `${scenario.name}: 重试没有重建 renderer/恢复场景`)
+  if (recovered && verify) await verify(page, prepared, failures)
   await env.chrome.client.send('Target.closeTarget', { targetId })
   results.push({ name: scenario.name, failures, viewport: `${scenario.width}x${scenario.height}` })
 }
@@ -1024,6 +1059,7 @@ const { server, origin } = await startFixtureServer()
 const assets = await startFixtureAssetPack()
 const staggeredAssets = await startFixtureAssetPack({ delays: { armor: 6000, visual: 4000 } })
 const pickerAssets = await startFixtureAssetPack({ tankCache: PICKER_TANK_CACHE })
+const contextLossSelectionAssets = await startFixtureAssetPack({ tankCache: CONTEXT_LOSS_SELECTION_TANK_CACHE })
 let chromeCdp = null
 
 try {
@@ -1037,7 +1073,7 @@ try {
       '--enable-unsafe-swiftshader',
     ],
   })
-  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin }
+  const env = { origin, chrome: chromeCdp, assets: assets.origin, pickerAssets: pickerAssets.origin, staggeredAssets: staggeredAssets.origin, contextLossSelectionAssets: contextLossSelectionAssets.origin }
   const runs = [
     ...SHOT_SCENARIOS.map(scenario => ({ scenario, run: () => runShotActionsScenario(env, scenario) })),
     ...MOBILE_SCENARIOS.map((scenario) => ({ scenario, run: () => runMobileScenario(env, scenario) })),
@@ -1045,6 +1081,18 @@ try {
     ...DESKTOP_SCENARIOS.map((scenario) => ({ scenario, run: () => runDesktopScenario(env, scenario) })),
     { scenario: STAGGERED_LOAD_SCENARIO, run: () => runStaggeredLoadScenario(env, STAGGERED_LOAD_SCENARIO) },
     { scenario: CONTEXT_LOSS_SCENARIO, run: () => runContextLossScenario(env, CONTEXT_LOSS_SCENARIO) },
+    {
+      scenario: CONTEXT_LOSS_SELECTION_SCENARIO,
+      run: () => runContextLossScenario(env, CONTEXT_LOSS_SELECTION_SCENARIO, {
+        assets: env.contextLossSelectionAssets,
+        prepare: selectSecondFixtureTarget,
+        verify: async (page, expected, failures) => {
+          const text = await page.evaluate(`document.querySelector('#target-select')?.textContent || ''`)
+          check(failures, !!expected && text.includes(expected),
+            `${CONTEXT_LOSS_SELECTION_SCENARIO.name}: context-loss retry 丢失了 picker 选择（期望 ${expected}，实际 ${JSON.stringify(text)}）`)
+        },
+      }),
+    },
     { scenario: ASSETLESS_SCENARIO, run: () => runMobileScenario(env, ASSETLESS_SCENARIO) },
     ...PICKER_SCENARIOS.map(scenario => ({ scenario, run: () => runPickerCardsScenario(env, scenario) })),
   ]
@@ -1085,4 +1133,5 @@ try {
   await assets.close()
   await staggeredAssets.close()
   await pickerAssets.close()
+  await contextLossSelectionAssets.close()
 }

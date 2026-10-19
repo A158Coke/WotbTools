@@ -16,6 +16,8 @@ import { createServer } from 'node:http'
 
 /** 夹具坦克 id（数字 id：visual_model_url 的 /glb/<id>/ 替换逻辑要求数字） */
 export const FIXTURE_TANK_ID = 9001
+/** 第二个可切换目标 id；默认名册保持单车，避免改变其它门禁“首张卡”的既有假设。 */
+export const FIXTURE_SECOND_TANK_ID = 9002
 
 /* ------------------------------------------------------------------ 几何 */
 
@@ -275,10 +277,20 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, de
   const requests = []
   const routes = new Map([
     ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(tankCache)) }],
-    [`/tank/${FIXTURE_TANK_ID}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(FIXTURE_TANK_DATA)) }],
-    [`/glb/${FIXTURE_TANK_ID}/armor.glb`, { type: 'model/gltf-binary', body: FIXTURE_ARMOR_GLB }],
-    [`/glb/${FIXTURE_TANK_ID}/visual.glb`, { type: 'model/gltf-binary', body: FIXTURE_VISUAL_GLB }],
   ])
+  // 名册里的每个 id 都提供同形 tank JSON + 同一夹具 GLB；picker 选择任意车都能加载，
+  // context-loss retry 的“保留已选目标”门禁因此可确定复现。
+  for (const [id, info] of Object.entries(tankCache)) {
+    const tankId = Number(id)
+    const data = structuredClone(FIXTURE_TANK_DATA)
+    data.tank_id = tankId
+    data.name = info.name || data.name
+    data.model_url = `/glb/${tankId}/armor.glb`
+    data.visual_model_url = `/glb/${tankId}/visual.glb`
+    routes.set(`/tank/${tankId}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(data)) })
+    routes.set(`/glb/${tankId}/armor.glb`, { type: 'model/gltf-binary', body: FIXTURE_ARMOR_GLB })
+    routes.set(`/glb/${tankId}/visual.glb`, { type: 'model/gltf-binary', body: FIXTURE_VISUAL_GLB })
+  }
   const server = createServer((req, res) => {
     const path = (req.url || '').split('?')[0]
     requests.push(path)
