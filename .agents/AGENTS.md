@@ -35,7 +35,8 @@
      - `docs/current-plan.md`：临时任务状态（gitignore），不是架构/行为权威。
      - `docs/android/releases/**`：**临时版本化发布记录**，豁免当前状态要求；迁移到 GitHub Release / tag / APK / `version.json` 后删除，迁移由 CI/CD 审计推进。
    - **语言**：持久开发者/维护者/运维文档的人类可读正文统一使用简体中文；类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用保留规范英文。英文正文（非上述技术字面量）= BLOCKER。
-   - **current-plan 过渡门禁**：新增/修改的永久源码、配置、文档不得引用 `docs/current-plan.md` 作为架构/行为权威（BLOCKER）。D4 之前已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件属于明确例外，只能在合法 migration/版本发布中移除。D4 完成后此门禁可按绝对规则执行。
+   - **current-plan 过渡门禁**：新增/修改的永久源码、配置、文档不得引用 `docs/current-plan.md` 作为架构/行为权威（BLOCKER）。已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件属于明确例外，只能在合法 migration/版本发布中移除。当仓库中除允许的 planning/execution 工作流与上述两类例外外，`current-plan` 权威引用清零时，此门禁自动转为绝对规则。
+   - **存量偏差过渡**：D0 之前已存在的 current-state / 历史文档偏差，在对应 D2/D3/D4 wave 修正前按整改债务保留；新增或修改的持久文档必须满足本规则。
    - 禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录，也禁止用 “Historical” 标签保留过期现状。Git 历史就是归档。
    - **更新文档 = 描述结果状态，不是追加变更日记**。行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
    - 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、`DEVELOPER_GUIDE.md` 或 README；新增知识先找现有 owner，不靠新建 Markdown 文件分摊旧段落。
