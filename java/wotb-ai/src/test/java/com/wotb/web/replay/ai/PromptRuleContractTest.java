@@ -65,6 +65,7 @@ class PromptRuleContractTest {
                     TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE,
                     TeamPromptLocalizer.HP_TRADES_SKILL_RULE,
                     TeamPromptLocalizer.MODE_OBJECTIVES_SKILL_RULE,
+                    TeamPromptLocalizer.COACH_STANDARD_RULE,
                     TeamPromptLocalizer.TEAM_PRIOR_RULE,
                     TeamPromptLocalizer.TEAM_REGION_RULE,
                     TeamPromptLocalizer.SEPARATION_EVIDENCE_RULE,
@@ -117,6 +118,7 @@ class PromptRuleContractTest {
             assertFalse(localized.contains("=== 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ==="), lang + " 残留中文占点规则");
             assertFalse(localized.contains("=== 信息与视野战术技能 v0.2 ==="), lang + " 残留中文信息技能");
             assertFalse(localized.contains("=== 局部战场与传播战术技能 v0.2 ==="), lang + " 残留中文局部技能");
+            assertFalse(localized.contains("=== 争霸赛复盘规范 v1.0（Coach Lab，最高优先级） ==="), lang + " 残留中文复盘规范");
             assertFalse(localized.contains("=== 团队推理顺序与质量约束（强制） ==="),
                     lang + " 残留中文 reasoning contract");
         }
