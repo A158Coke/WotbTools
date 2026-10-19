@@ -82,7 +82,7 @@
       "title": "统计口径",
       "options": {
         "mode": "markdown",
-        "content": "APK HTTP 请求次数，按文件版本和状态统计。200 是完整响应请求；206 是分段响应请求，可能由一次下载产生多个请求。两者均不代表安装人数。重试可能重复计数。"
+        "content": "仅统计 Web `/download/android` 页面最终「下载 APK」按钮的点击次数。进入下载页不计数；后续 302、文件传输是否完成、是否安装均不属于本指标。客户端遥测为 best-effort，可能少量丢失。"
       },
       "id": 1,
       "gridPos": {
@@ -93,16 +93,16 @@
       }
     },
     {
-      "title": "完整响应请求（200）",
+      "title": "下载 APK 点击次数",
       "type": "stat",
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
-      "description": "",
+      "description": "所选时间范围内最终 APK 下载按钮被点击的总次数。",
       "targets": [
         {
-          "expr": "sum(count_over_time({container_name=\"wotb-frontend\",event=\"android_apk_download\"} | logfmt | status=\"200\" [$__range]))",
+          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | feature=\"android_download\" | platform=\"web\" | keep telemetry_event [$__range]))",
           "refId": "A",
           "queryType": "instant",
           "legendFormat": ""
@@ -136,19 +136,19 @@
       }
     },
     {
-      "title": "分段响应请求（206）",
-      "type": "stat",
+      "title": "下载点击趋势",
+      "type": "timeseries",
       "datasource": {
         "type": "loki",
         "uid": "loki"
       },
-      "description": "",
+      "description": "按 Grafana 自动时间桶聚合最终 APK 下载按钮点击次数。",
       "targets": [
         {
-          "expr": "sum(count_over_time({container_name=\"wotb-frontend\",event=\"android_apk_download\"} | logfmt | status=\"206\" [$__range]))",
+          "expr": "sum(count_over_time({container_name=\"wotb-backend\"} |= \"event=product_telemetry \" | json message=\"message\" | line_format \"{{.message}}\" | logfmt | telemetry_event=\"feature_open\" | feature=\"android_download\" | platform=\"web\" | keep telemetry_event [$__interval]))",
           "refId": "A",
-          "queryType": "instant",
-          "legendFormat": ""
+          "queryType": "range",
+          "legendFormat": "下载 APK 点击"
         }
       ],
       "fieldConfig": {
@@ -157,97 +157,15 @@
           "noValue": "No data"
         },
         "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "graphMode": "none",
-        "textMode": "auto",
-        "colorMode": "value"
       },
       "id": 3,
       "gridPos": {
         "x": 0,
         "y": 10,
         "w": 24,
-        "h": 5
-      }
-    },
-    {
-      "title": "按版本与状态",
-      "type": "table",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "",
-      "targets": [
-        {
-          "expr": "sum by (apk, status) (count_over_time({container_name=\"wotb-frontend\",event=\"android_apk_download\"} | logfmt [$__range]))",
-          "refId": "A",
-          "queryType": "instant",
-          "legendFormat": ""
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "transformations": [
-        {
-          "id": "labelsToFields",
-          "options": {
-            "mode": "columns"
-          }
-        }
-      ],
-      "id": 4,
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 24,
-        "h": 8
-      }
-    },
-    {
-      "title": "请求趋势",
-      "type": "timeseries",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "",
-      "targets": [
-        {
-          "expr": "sum by (status) (count_over_time({container_name=\"wotb-frontend\",event=\"android_apk_download\"} | logfmt [$__interval]))",
-          "refId": "A",
-          "queryType": "range",
-          "legendFormat": "{{status}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "id": 5,
-      "gridPos": {
-        "x": 0,
-        "y": 23,
-        "w": 24,
-        "h": 8
+        "h": 10
       }
     }
   ],
-  "description": "Last seven days only. No data means no matching received events, not verified zero usage."
+  "description": "Android APK download-button clicks received as best-effort product telemetry. No data means no matching received events, not verified zero usage."
 }
