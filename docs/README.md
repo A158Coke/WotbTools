@@ -42,10 +42,6 @@
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `operations/business-postgres.md` | 改 Business PostgreSQL 运行时、OpenTofu root、state、凭据或恢复边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
-| `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照时 |
-| `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役的决策与后续待办时 |
-| `operations/komodo-k5-runtime-acceptance.md` | 查 Komodo K5 disposable Stack 验收记录时 |
-| `operations/komodo-k7b-frontend-shadow.md` | 查 Komodo K7B TX2 Frontend shadow 的 Stack ownership 与零流量边界时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 
 ## 功能契约

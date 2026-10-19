@@ -118,8 +118,7 @@ Tofu Apply lane 显式串接每个 provisioning 步骤，绝不从 `||` 列表�
 生产 provider 安装基于 mirror 且 fail-closed。运维人员把精确锁定的
 `cyrilgdn/postgresql 1.27.0` 归档安装到 `/opt/wotb-tx/tofu-provider-mirror` 下。
 `deploy/tx/business-postgres.tofurc` 只包含该 provider 的这份文件系统 mirror，并排除直接
-安装，因此 mirror 缺失会让部署失败，而不是从公共 registry 下载。该 mirror 也可以存放
-RabbitMQ provider；每个 `.tofurc` 只把自己那个 provider 列入 allowlist。
+安装，因此 mirror 缺失会让部署失败，而不是从公共 registry 下载。该 mirror 只存放当前 `.tofurc` allowlist 需要的 provider；每个 `.tofurc` 只把自己那个 provider 列入 allowlist，退役 provider 不进入 mirror。
 
 ## 应用密码轮换
 
