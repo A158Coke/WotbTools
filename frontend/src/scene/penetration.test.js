@@ -320,6 +320,20 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     })
   })
 
+  it('he_zero_or_missing_explosion_radius_fails_closed', () => {
+    // 半径缺失/0 时不允许回退满伤：即使存在正厚度 Primary 与概率链，
+    // 也必须保持 BLOCKED / 0 damage / 无 he 数据，供 UI 走确定性 fail-closed 卡。
+    const hits = [hit(ArmorSection.HULL, 100.0, [0, 0, 0])]
+    for (const radius of [0, undefined]) {
+      const r = calculate(req('he', 300.0, 150.0, hits, { explosion_radius: radius }))
+      expect(r.result).toBe('BLOCKED')
+      expect(r.damage).toBe(0)
+      expect(r.he).toBeNull()
+      expect(r.probability_layers.length).toBeGreaterThan(0)
+      expect(hasPositivePrimary(r.probability_layers)).toBe(true)
+    }
+  })
+
   it('he_splash_fallback_uses_func7695_formula', () => {
     // HE：履带(20mm) → 主装甲(100mm, 0°)；名义层厚 120，d = 0.1 + 1m。
     // upper = 0.5·400·1.25·0.78 - 120 = 75；lower = 0.5·400·0.75·0.78 - 120 → 0
