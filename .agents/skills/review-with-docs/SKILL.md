@@ -200,21 +200,23 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 - [ ] **测试可构造**：改造后单测可直接 `new XxxService(mockDep)` 构造，无需 `@SpringBootTest` / 反射字段注入
 - [ ] **首批 vs 增量**：本次变更新增/修改的类强制审计；历史存量字段注入随所在类改动顺手改造，暂不开专项大扫除
 
-### A3. Current-State Documentation Gate（强制）
+### A3. 当前状态文档门禁（强制）
 
 > 文档同步不只检查「有没有改文档」，更要检查「文档描述的是不是合并后的当前系统」。
 > 完整检查项见文末「文档检查清单（完整）」。
 
-审查者必须显式回答：**Does the canonical documentation describe only the resulting post-merge system state?**
+审查者必须显式回答：**本次改动涉及的 canonical 文档，是否只描述合并后的当前系统状态？**
 
-逐项 gate：
+逐项门禁：
 
 - [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对当前 main 成立，不依赖读者知道 PR 过程。
 - [ ] **变更日记泄漏扫描**（字符串是信号，不是自动失败）：`本 PR` / `本次` / `本期` / `Step 0` / `review P1` / `P2` / `审查基线` / 只对某 commit 或 run 成立的 id / 作为发布日记的 `当前候选版本` / `未来 Kx` / `下一阶段` / `以最终实现为准` / `migration completed` / 先旧实现后新实现的对比叙事。
-- [ ] **三分类**：每个命中必须判定 A 当前契约（改写为状态描述并保留）、B 有长期价值的产品/技术历史（只进入 `HISTORY.md` 或 `docs/architecture/TECHNICAL_EVOLUTION.md`）、C 一次性的实现日记（删除；Git 历史足够）。B 不得留在 canonical 文档，C 不得搬进两份历史。
+- [ ] **五分类**：每个命中必须判定 A 当前契约（改写为状态描述并保留）、B 产品/业务历史（只进入 `HISTORY.md`）、C 技术历史（只进入 `docs/architecture/TECHNICAL_EVOLUTION.md`）、D 研究证据/来源/实验/被否证假设（保留在 `docs/research/**`，不得被迫搬进 HISTORY 或 TECHNICAL_EVOLUTION）、E 一次性实现/审查/PR 日记（删除；Git 历史足够）。B/C 不得留在 canonical 文档，E 不得搬进历史文档。
 - [ ] **无历史堆放**：不得以 `archive/` / `old/` / `historical/` / “Historical” 标签保留过期现状；已完成迁移/验收/审计文档不得仅作为历史存储保留。
 - [ ] **research 例外**：`docs/research/**` 可保留实验与证据史，但不得把已退役架构描述成当前生产状态。
-- [ ] **current-plan 权威**：永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（仅 planning/execution/finish-task 等工作流可引用）。
+- [ ] **Android 发布记录例外**：`docs/android/releases/**` 是临时版本化发布记录，豁免当前状态要求；本阶段不得删除，迁移到 GitHub Release / tag / APK / `version.json` 后由 CI/CD 审计推进。
+- [ ] **current-plan 权威**：新增/修改的永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（BLOCKER）；D4 之前已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件是明确例外。D4 完成后可按绝对规则执行。
+- [ ] **中文正文**：本次新增/修改的持久开发者/维护者/运维文档，人类可读正文是否统一使用简体中文？类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用可保留规范英文；英文正文 = BLOCKER。
 - [ ] **路由而非占有**：`DEVELOPER_GUIDE.md` 指向领域 SSOT，不复制业务规则；`docs/README.md` 只回答「今天该读哪份文档」。
 
 任一项不满足 → **BLOCKER**，修复后重审。
@@ -369,7 +371,7 @@ Tool failure 必须：
 | BLOCKER | N | N | N | — |
 | 字段注入改造 | — | — | [扫描 N / 改造 N / 保留 N] | — |
 | 文档同步 | — | — | — | [齐全 / 缺 N 项] |
-| Current-state gate | — | — | — | [PASS / FAIL] |
+| 当前状态门禁 | — | — | — | [PASS / FAIL] |
 | AI 死代码清理 | — | — | [扫描 N / 删除 N / 保留 N] | — |
 
 #### Plan compliance

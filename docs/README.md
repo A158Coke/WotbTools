@@ -5,7 +5,7 @@
 
 固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
 
-## Start here（入口）
+## 入口
 
 | 文档 | 何时读 |
 |---|---|
@@ -15,14 +15,14 @@
 | `../README.md` / `../README.en-US.md` | 了解当前产品是什么、功能与工程取舍 |
 | `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定、接手与调整固定流程） |
 
-## Development（开发与性能）
+## 开发与性能
 
 | 文档 | 何时读 |
 |---|---|
 | `development/contribution-map.md` | 想加新功能、找后端/前端/契约入口或判断贡献点归属时 |
 | `development/ai-virtual-thread-benchmark.md` | 运行真实 provider 的 Platform vs Virtual blocking-call A/B 时 |
 
-## Architecture（架构）
+## 架构
 
 > 这一节描述当前架构；技术历史在 `architecture/TECHNICAL_EVOLUTION.md`。
 
@@ -44,7 +44,7 @@
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 
-## Features（功能契约）
+## 功能契约
 
 - [新手引导与官方示例](features/onboarding.md)：真实页面教学、匿名示例、引导版本与账号完成记录。
 
@@ -55,12 +55,12 @@
 | `features/hall-of-fame.md` | 改名人堂时 |
 | `features/tournament-points.md` | 改积分赛规则、截图识别、共享草稿、正式榜单、修正或证据生命周期时 |
 | `features/league-broadcasts.md` | 改全服联赛直播回放目录、同页管理、季赛／分类／根节点与回放时 |
-| `features/bilibili-creators.md` | 改 bilibili UP/优秀作品推荐、类型隔离、手动星级、站点头像/封面、实力评估或管理权限时（English primary） |
+| `features/bilibili-creators.md` | 改 bilibili UP/优秀作品推荐、类型隔离、手动星级、站点头像/封面、实力评估或管理权限时 |
 | `features/team-ai-review.md` | 改团队复盘产品语义时 |
 | `features/league-rating.md` | 改训练赛/联赛评分（League Rating）公式 / 模式 / 完整性门槛 / 导出时 |
 | `WotBTools_League_Rating_V6.md` | 改 League Rating V6 批次 pooled sum/count 算法 / 回放解析「算法说明」入口正文时 |
 
-## Research（逆向研究）
+## 研究证据
 
 > 本目录刻意保留实验、被否证假设与证据来源；其中已退役架构不作为当前生产描述。
 
@@ -85,7 +85,7 @@
 | `android/release-process.md` | 改 Android 发布流程或版本门禁时 |
 | `android/version-manifest.md` | 改 APK version manifest / update contract 时 |
 
-## Operations（运维）
+## 运维
 
 | 文档 | 何时读 |
 |---|---|
@@ -104,9 +104,8 @@
 | `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层 `infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
 | `operations/tx-service-plane.md` | TX1 WireGuard-only service endpoints、loopback administration、Docker-local production dependency 与回滚时 |
 | `operations/tx2-production-worker.md` | TX2 production worker（K7A）：独立 host 前置条件、Compose/镜像/凭据生命周期、ownership 边界、fail-closed 矩阵与从零重建流程时 |
-| `operations/komodo-k7c-frontend-cutover.md` | 查当前 TX1/TX2 frontend active-active 拓扑、frontend release ownership、runtime-content 复制边界与 rollback 时 |
 
-## Reference（参考字典）
+## 参考
 
 | 文档 | 何时读 |
 |---|---|
@@ -118,37 +117,38 @@
 | `assets/tier-x-models/svg-generation-spec.md` | 生成/修复车型资产（WebP bake）时（唯一全局规则） |
 | `assets/tier-x-models/tier-x-inventory.md` | 查 Tier X 清单 / baseModelKey / 参考链接时 |
 
-## AI engineering（AI 工程）
+## AI 工程
 
 | 文档 | 何时读 |
 |---|---|
 | `ai-eval/feedback-checklist.md` | 登记 AI 复盘评估反馈时 |
 | `ai-lessons/*.md` | 查阅 AI 复盘经验教训时 |
 
-## Project history（项目历史）
+## 项目历史
 
 | 文档 | 何时读 |
 |---|---|
 | `../HISTORY.md` | 查产品/业务能力为何引入、变化或退役，以及产品方向决策时（产品历史，不是当前契约） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构、数据流、authority、身份模型与生产拓扑的演进时（技术历史，不是当前契约） |
 
-## Roadmap（路线图）
+## 路线图
 
 | 文档 | 何时读 |
 |---|---|
 | `ROADMAP.md` | 了解产品方向（Now / Next / Later / Research）；它不描述当前系统状态 |
 
-## Auth（认证）
+## 认证
 
 | 文档 | 何时读 |
 |---|---|
+| `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时（D1 迁移并删除前仍为当前契约） |
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
 | `auth/keycloak-tx-bootstrap.md` | TX 新 Keycloak realm / IdP 启动与凭据交接时 |
 | `auth/keycloak-admin-user-search.md` | 改 Keycloak Admin 用户检索 / Admin Users 分页与 IdP 过滤时 |
 
-## Test（测试）
+## 测试
 
 | 文档 | 何时读 |
 |---|---|

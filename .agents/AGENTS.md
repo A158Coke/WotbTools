@@ -26,10 +26,16 @@
 3. **文档生命周期与权威归属** — 持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
    - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
    - `docs/architecture/TECHNICAL_EVOLUTION.md`：**仅技术演进**——架构迁移、数据流/权威归属变化、基础设施与拓扑、身份模型、被引入又退役的技术方案。不是产品 changelog。
-   - 其他所有持久文档（`docs/**` 除 `docs/research/**`、README、AGENTS、runbook、契约、参考）：**只描述合并后的当前系统状态**。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。
-   - `docs/research/**` 可保留实验、逆向证据、被否证假设与样本来源（证据史本身就是目的），但不得把已退役架构描述成当前生产状态。
-   - `docs/ROADMAP.md` 只描述未来方向，不描述当前系统状态。
-   - `docs/current-plan.md` 是临时任务状态（gitignore），不是架构/行为权威；源码、配置、持久文档不得引用它作为契约依据。
+   - **当前状态文档**（以下全部只描述合并后的当前系统状态）：`README.md`、`docs/DEVELOPER_GUIDE.md`、架构现状文档、功能契约、运维 runbook、认证文档、Android 文档、前端文档、`docs/reference/**`、`contracts/**`，以及描述当前工作流的 `AGENTS.md` / `.agents/skills/**`。维护者打开任一份都应能假设「这就是 WotbTools 现在的工作方式」。
+   - **例外（不按当前状态文档要求）**：
+     - `HISTORY.md`：产品/业务历史。
+     - `docs/architecture/TECHNICAL_EVOLUTION.md`：技术/架构历史。
+     - `docs/ROADMAP.md`：仅未来方向。
+     - `docs/research/**`：实验、逆向证据、被否证假设与样本来源；证据史本身就是目的，但不得把已退役架构描述成当前生产状态。
+     - `docs/current-plan.md`：临时任务状态（gitignore），不是架构/行为权威。
+     - `docs/android/releases/**`：**临时版本化发布记录**，豁免当前状态要求；迁移到 GitHub Release / tag / APK / `version.json` 后删除，迁移由 CI/CD 审计推进。
+   - **语言**：持久开发者/维护者/运维文档的人类可读正文统一使用简体中文；类名、函数/类型名、源路径、API path、HTTP method、环境/配置 key、error code、enum、event 名、schema 字段、命令、外部产品/项目名与上游原文引用保留规范英文。英文正文（非上述技术字面量）= BLOCKER。
+   - **current-plan 过渡门禁**：新增/修改的永久源码、配置、文档不得引用 `docs/current-plan.md` 作为架构/行为权威（BLOCKER）。D4 之前已存在的遗留引用登记为整改债务，不因本条在同一提交内追溯失败；已应用 Flyway migration 注释与受 Android release 版本门禁控制的 runtime 文件属于明确例外，只能在合法 migration/版本发布中移除。D4 完成后此门禁可按绝对规则执行。
    - 禁止 `archive/`、`old/`、`legacy-docs/`、`historical/` 等历史堆放目录，也禁止用 “Historical” 标签保留过期现状。Git 历史就是归档。
    - **更新文档 = 描述结果状态，不是追加变更日记**。行为从 A 变成 B 再变成 C 时，canonical 文档只写「系统使用 C」；A/B 只在不写就会丢失产品/技术决策理由时分别进入 `HISTORY.md` 或 `TECHNICAL_EVOLUTION.md`，否则删除。禁止在 canonical 文档写「本 PR / 本次 / 审查基线 / Step / review P1 / 当前候选 / 未来 Kx / 以最终实现为准 / 迁移完成」等实现过程叙事。
    - 影响界面、导出、数据、构建、用法或运维时，同提交更新对应的 canonical 专题文档、`DEVELOPER_GUIDE.md` 或 README；新增知识先找现有 owner，不靠新建 Markdown 文件分摊旧段落。
