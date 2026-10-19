@@ -1,8 +1,8 @@
 # WotbTools 设计语言（Design Language）
 
-> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12–§13）· 适用范围：`frontend/` 全部页面、Android GeckoView
-> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。§12–§13 的后续验证与迁移目标不能当作已经完成的能力。
-> 原则：**以业界通用最佳实践为准**。尚未实现的已批准设计要求保持为目标；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
+> 状态：**v1.0 已批准**（2026-10-01）· 已落地：token 分层、`@layer`、stylelint（见 §12）· 适用范围：`frontend/` 全部页面、Android WebView
+> 维护方式：没有设计师，也没有 Storybook。本文件是当前设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。未来方向只进 ROADMAP，具体任务由 Issue / Git history 跟踪。
+> 原则：**以业界通用最佳实践为准**。本文件只记录当前已执行的设计规则；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
 
 ---
 
@@ -32,7 +32,7 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 - **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
 - **CSS 分层：** 目标顺序是 `reset, tokens, base, layout, components, patterns, pages, utilities`，靠层级顺序解决优先级，从此不需要 `!important`。**只声明已经在用的层**：目前 `scale.css` 顶部只有 `@layer tokens;`，第一次需要新层时按上面的顺序把它追加进这条语句（全站只有这一处声明）。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
-- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除（§13）。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
+- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件改动时直接改用新 token；某个旧变量不再被任何地方引用时就删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
 
 ---
 
@@ -265,7 +265,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 每个组件都必须具备这些状态：`default / hover / focus-visible / active / disabled / loading`（适用的部分）。
 
-- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值，迁移后删除。
+- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值，已废弃，不得在新代码中使用。
 
 | 组件 | 变体 | 规则 |
 |---|---|---|
@@ -295,7 +295,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 8. 图标
 
-**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 Android GeckoView 上渲染不一致，也无法控制颜色，不应该当图标用。
+**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 WebView 上渲染不一致，也无法控制颜色，不应该当图标用。
 
 - 统一使用 **Lucide**（MIT 协议，支持按需引入，线性风格，1.5–2px 描边）。
 - 尺寸：16（行内）· 20（按钮默认）· 24（导航、空状态）。颜色用 `currentColor`。
@@ -340,7 +340,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 **依据：** 同一个概念只用一个名字；使用用户的语言，不用实现层的术语。
 
 - **禁止出现在界面上的词：** WebAssembly、WASM、资产源、静态资产包、滤波、位姿、eid、（Agent）、Keycloak、内部枚举值（如 `heavyTank`、`china`、`map_43`、`tank_6929`）。
-- **术语表（设计目标）：** 下表是中文术语约定，三语运行时文案在 `frontend/src/locales/` 维护。独立的 `docs/frontend/glossary.md` 尚未建立，不能作为当前文档入口。初始条目取自审计 §7.3：
+- **术语表（当前约定）：** 下表是中文术语约定，三语运行时文案在 `frontend/src/locales/` 维护。
 
 | 概念 | 中文 | 说明 |
 |---|---|---|
@@ -365,25 +365,14 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - `color-no-hex`、`color-named: never`、`function-disallowed-list: rgb/rgba/hsl/hsla`：组件里不出现色值；只有 `src/styles/tokens/**` 例外。需要半透明时用 `color-mix()`。
    - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
    - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
-   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；每迁完一个文件就从名单里删掉，名单长度即迁移进度。
+   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；名单只减不增。
 2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
-3. **视觉回归（后续 PR）：** 在已有的 `test:browser-layout` 里加上两套主题 × 三档宽度的截图，以及基于 axe-core 的对比度检查。
-4. **PR 自查清单：**
+3. **PR 自查清单：**
    - [ ] 只用了语义 token
    - [ ] 两套主题都截了图
    - [ ] 三档宽度都截了图
    - [ ] 键盘能走完整个流程
    - [ ] 新文案进了 i18n 和术语表
-
----
-
-## 13. 迁移策略（不推倒重来）
-
-1. **建立基础：** 新增 tokens 分层文件和 `@layer tokens` 声明；同名同值的间距、圆角迁入 `scale.css`，其余旧变量原值保留、与新 token 并存；接入 stylelint。视觉上保持不变。
-2. **组件：** 先实现 Button / Input / FileDrop / Dialog / Sheet / DataTable / EmptyState / PlaybackControls，再逐页替换。
-3. **删除 showcase 覆盖层：** 每迁完一页，就删掉 `showcase*.css` 和 `classic-profile.css` 里对应的选择器。简约主题改为纯语义映射。
-4. **收紧 lint：** 迁移完成的目录开启严格规则，并在 CI 里阻断。
-5. **收尾：** 删除 `tokens.css`、`classic-profile.css`、`showcase*.css` 中已无人引用的旧 token 与覆盖规则。`!important` 数量作为进度指标，目标是 0。
 
 ---
 
