@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { KeepAlive, defineComponent, h, onUnmounted } from 'vue'
 import BattlePicker from './BattlePicker.vue'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, locale: { value: 'en' } }) }))
@@ -176,6 +177,35 @@ describe('BattlePicker', () => {
     await open()
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
+    expect(panelElement()).toBeNull()
+  })
+
+  it('KeepAlive 停用（离开 Replay 页面）时关闭 teleported sheet', async () => {
+    setViewportWidth(390)
+    // 模拟真实层级：KeepAlive 缓存的是 ReplayWorkspace，BattlePicker 是其后代（不是缓存根）；
+    // 切换 currentView 触发 deactivate，而不是卸载整棵子树。
+    const unmounted = []
+    const WorkspaceLike = defineComponent({
+      name: 'WorkspaceLike',
+      setup() {
+        onUnmounted(() => unmounted.push('workspace'))
+        return () => h(BattlePicker, { options: options(2), modelValue: 'r0', ariaLabel: 'Choose battle' })
+      },
+    })
+    const OtherView = defineComponent({ name: 'OtherView', setup: () => () => h('div', { 'data-test': 'other-view' }) })
+    const Host = defineComponent({
+      props: { workspace: { type: Boolean, default: true } },
+      setup(hostProps) {
+        return () => h(KeepAlive, null, () => (hostProps.workspace ? h(WorkspaceLike) : h(OtherView)))
+      },
+    })
+    wrapper = mount(Host, { attachTo: document.body })
+    await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+    await flushPromises()
+    expect(panelElement()).not.toBeNull()
+    await wrapper.setProps({ workspace: false })
+    await flushPromises()
+    expect(unmounted).toEqual([])
     expect(panelElement()).toBeNull()
   })
 

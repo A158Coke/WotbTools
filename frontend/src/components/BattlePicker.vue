@@ -2,7 +2,7 @@
 // 场次选择器（design-language §7 SearchSelect，单选）：WAI-ARIA combobox + listbox。
 // 桌面 / 平板为下拉面板；手机为底部 sheet（遮罩点击关闭）。超过 6 场显示搜索框，按地图 / 文件名 / 胜方过滤。
 // 焦点留在搜索框（或列表），方向键移动高亮项，Enter 选中，Esc 关闭并把焦点还给触发按钮。
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Search } from 'lucide-vue-next'
 import { useBreakpoint } from '../composables/useBreakpoint.js'
@@ -14,6 +14,8 @@ const props = defineProps({
   options: { type: Array, required: true },
   modelValue: { type: String, default: null },
   ariaLabel: { type: String, required: true },
+  /** 父级 capability 可见性；false 时关闭已打开的 overlay（v-show 隐藏不会移除 Teleport 到 body 的 sheet）。 */
+  visible: { type: Boolean, default: true },
 })
 const emit = defineEmits(['update:modelValue'])
 const { t } = useI18n()
@@ -108,6 +110,11 @@ watch(open, (value) => {
   if (value) document.addEventListener('pointerdown', onDocumentPointerDown)
   else document.removeEventListener('pointerdown', onDocumentPointerDown)
 })
+watch(() => props.visible, (visible) => {
+  if (!visible) closePicker()
+})
+// KeepAlive 停用（离开 Replay 页面）时组件不会 unmount：Teleport 到 body 的 sheet 不随父 DOM 隐藏，必须主动关闭。
+onDeactivated(() => closePicker())
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocumentPointerDown))
 </script>
 

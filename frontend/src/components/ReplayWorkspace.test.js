@@ -64,7 +64,7 @@ vi.mock('../composables/useAuth.js', async () => {
 vi.mock('./ReplayPage.vue', () => ({
   default: {
     name: 'ReplayPageMock',
-    props: ['embedded', 'replayContext', 'workspaceContext'],
+    props: ['embedded', 'replayContext', 'workspaceContext', 'active'],
     template: '<div data-test="data-pane" />',
   },
 }))
@@ -1062,6 +1062,12 @@ describe('ReplayWorkspace', () => {
     expect(dataVm.props('embedded')).toBe(true)
     expect(dataVm.props('replayContext')).toBe(replayState)
     expect(dataVm.props('workspaceContext')).toBeTruthy()
+    // v-show 隐藏 Data capability 时，ReplayPage 必须收到 active=false 才能关闭自己的 picker。
+    expect(dataVm.props('active')).toBe(true)
+    await switchTo(wrapper, 'playback')
+    expect(dataVm.props('active')).toBe(false)
+    await switchTo(wrapper, 'data')
+    expect(dataVm.props('active')).toBe(true)
     wrapper.unmount()
   })
 
