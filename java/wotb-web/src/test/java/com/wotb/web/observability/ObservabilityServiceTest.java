@@ -63,11 +63,11 @@ class ObservabilityServiceTest {
     }
 
     @Test
-    void androidDownloadClickRequiresMarkerAndLegacyPageOpenIsRejected() {
+    void androidDownloadClickMarkerCoexistsWithLegacyPageOpenDuringRollout() {
         service.accept(batch(downloadClick()), null, "192.0.2.1");
 
         final String legacyPageOpen = downloadClick().replaceFirst(",\\\"operation_id\\\":\\\"[^\\\"]+\\\"", "");
-        rejects(HttpStatus.BAD_REQUEST, batch(legacyPageOpen));
+        service.accept(batch(legacyPageOpen), null, "192.0.2.1");
 
         final String unrelatedFeatureWithMarker = event("feature_open", ",\"operation_id\":\"" + UUID.randomUUID() + "\"");
         rejects(HttpStatus.BAD_REQUEST, batch(unrelatedFeatureWithMarker));
