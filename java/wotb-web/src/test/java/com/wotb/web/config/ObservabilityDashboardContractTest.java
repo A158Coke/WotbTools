@@ -63,8 +63,16 @@ class ObservabilityDashboardContractTest {
         assertTrue(total.contains("platform=\"web\""));
         assertFalse(total.contains("operation_id"));
         assertFalse(total.contains("android_apk_download"));
+        assertFalse(total.contains("feature_open"));
         assertFalse(total.contains("status=\"200\""));
         assertFalse(total.contains("status=\"206\""));
+
+        final JsonNode dashboard = dashboard("wotbtools-android-downloads");
+        assertTrue(dashboard.path("description").asText().contains("click"));
+        for (final JsonNode panel : dashboard.path("panels")) {
+            assertFalse(panel.path("title").asText().contains("200"));
+            assertFalse(panel.path("title").asText().contains("206"));
+        }
 
         final String featureUsage = query("wotbtools-feature-usage", "功能打开次数");
         assertTrue(featureUsage.contains("feature != \"android_download\""));

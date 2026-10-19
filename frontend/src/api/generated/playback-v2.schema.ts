@@ -1230,6 +1230,18 @@ export default {
       }
     },
     "ObservabilityEvent": {
+      "description": "Event-family discriminated union. Android download clicks use an exact tuple and cannot carry replay-parse-only fields.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/GenericObservabilityEvent"
+        },
+        {
+          "$ref": "#/$defs/AndroidDownloadClickEvent"
+        }
+      ]
+    },
+    "GenericObservabilityEvent": {
+      "description": "All product telemetry except the dedicated Android download click event.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -1249,8 +1261,7 @@ export default {
           "enum": [
             "active_user",
             "feature_open",
-            "replay_parse",
-            "android_download_click"
+            "replay_parse"
           ]
         },
         "platform": {
@@ -1312,6 +1323,46 @@ export default {
           "type": "string",
           "format": "uuid",
           "description": "Allowed only for failed replay_parse."
+        }
+      }
+    },
+    "AndroidDownloadClickEvent": {
+      "description": "One click on the final \"下载 APK\" button on /download/android. Intent only; never implies a completed transfer or installation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event",
+        "platform",
+        "feature",
+        "occurred_at"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "event": {
+          "type": "string",
+          "enum": [
+            "android_download_click"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "web"
+          ]
+        },
+        "feature": {
+          "type": "string",
+          "enum": [
+            "android_download"
+          ]
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
         }
       }
     },

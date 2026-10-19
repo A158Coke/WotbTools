@@ -53,7 +53,7 @@ describe('AndroidDownloadPage', () => {
     expect(telemetry.post).not.toHaveBeenCalled()
   })
 
-  it('records one aggregate Android download event only when the final APK button is clicked', async () => {
+  it('records exactly one aggregate event with the exact Android download payload per final-button click', async () => {
     authHolder.authenticated = true
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(manifestResponse()))
     const wrapper = mount(AndroidDownloadPage, { global: { plugins: [i18n] } })
@@ -65,14 +65,55 @@ describe('AndroidDownloadPage', () => {
     expect(telemetry.post).toHaveBeenCalledTimes(1)
     const [events] = telemetry.post.mock.calls[0]
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({
+    expect(events[0]).toEqual({
+      event_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
       event: 'android_download_click',
-      feature: 'android_download',
       platform: 'web',
+      feature: 'android_download',
+      occurred_at: expect.any(String),
     })
-    expect(events[0].event_id).toMatch(/^[0-9a-f-]{36}$/i)
-    expect(events[0].operation_id).toBeUndefined()
     expect(Number.isNaN(Date.parse(events[0].occurred_at))).toBe(false)
+  })
+
+  it('counts every repeated final-button click without deduplicating', async () => {
+    authHolder.authenticated = true
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(manifestResponse()))
+    const wrapper = mount(AndroidDownloadPage, { global: { plugins: [i18n] } })
+    await flushPromises()
+
+    const link = wrapper.get('[data-testid="android-download-link"]')
+    await link.trigger('click')
+    await link.trigger('click')
+
+    expect(telemetry.post).toHaveBeenCalledTimes(2)
+    for (const [events] of telemetry.post.mock.calls) expect(events).toHaveLength(1)
+    const first = telemetry.post.mock.calls[0][0][0]
+    const second = telemetry.post.mock.calls[1][0][0]
+    expect(first.event_id).not.toBe(second.event_id)
+    expect(first).toMatchObject({ event: 'android_download_click', platform: 'web', feature: 'android_download' })
+    expect(second).toMatchObject({ event: 'android_download_click', platform: 'web', feature: 'android_download' })
+  })
+
+  it('starts the APK navigation even when telemetry throws or rejects', async () => {
+    authHolder.authenticated = true
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(manifestResponse()))
+    const wrapper = mount(AndroidDownloadPage, { global: { plugins: [i18n] } })
+    await flushPromises()
+
+    const link = wrapper.get('[data-testid="android-download-link"]')
+    let prevented = true
+    link.element.addEventListener('click', event => { prevented = event.defaultPrevented }, { once: true })
+    telemetry.post
+      .mockImplementationOnce(() => { throw new Error('synchronous telemetry failure') })
+      .mockImplementationOnce(() => Promise.reject(new Error('asynchronous telemetry failure')))
+    await link.trigger('click')
+    await link.trigger('click')
+    await flushPromises()
+
+    expect(telemetry.post).toHaveBeenCalledTimes(2)
+    expect(prevented).toBe(false)
+    expect(wrapper.get('[data-testid="android-download-link"]').attributes('href'))
+      .toContain('wotbtools-android-v1.2.0.apk')
   })
 
   it('shows unavailable message when the manifest fetch fails', async () => {

@@ -74,6 +74,14 @@ class ObservabilityServiceTest {
         rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
                 ",\"operation_id\":\"" + UUID.randomUUID() + "\"}")));
         rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}", ",\"outcome\":\"start\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_code\":\"PARSE_FAILED\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_id\":\"" + UUID.randomUUID() + "\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_type\":\"parse\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_stage\":\"decode\"}")));
     }
 
     @Test
