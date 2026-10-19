@@ -159,7 +159,7 @@ ASSET_STACK_NAME = "wotbtools-asset-origin"
 ASSET_STACK_CONFIG = {
     "server": "ali-sh-asset-01",
     "project_name": "wotbtools-asset-origin",
-    "auto_pull": True,
+    "auto_pull": False,
     "run_build": False,
     "poll_for_updates": False,
     "auto_update": False,
