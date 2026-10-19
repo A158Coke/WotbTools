@@ -63,13 +63,16 @@ function resetViewerGlobals() {
  * enabled 时按 k=d/refDist 缩放：d<refDist 时 FOV 变宽，车体屏幕尺寸保持 refDist 处比例；
  * farProductGain/farProductMax 可选：product = baseProduct + max(0,d-refDist)×gain，封顶 max；
  * product 随距离增大 → 远距车体略小（Armor Inspector 实测标定）。enabled=false 恒原生。
- * maxFovDeg 封顶近距，minFovDeg 封顶远距——两车 world 总览必须传 false，否则会把远距
- * 受击车裁出视锥。
+ * productScale 可选：整体放大 product（车体屏幕尺寸按 1/scale 缩小），默认 1；
+ * 用于查看器的显示缩放，不改变距离曲线形状。maxFovDeg 封顶近距，minFovDeg 封顶远距——
+ * 两车 world 总览必须传 false，否则会把远距受击车裁出视锥。
  */
-export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity) {
+export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity, productScale = 1) {
     if (!enabled) return Math.min(maxFovDeg, Math.max(minFovDeg, baseFovDeg));
+    const scale = Number.isFinite(productScale) && productScale > 0 ? productScale : 1;
     const baseProduct = Math.tan(baseFovDeg * Math.PI / 360) * refDistM;
-    const product = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const unscaledProduct = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const product = unscaledProduct * scale;
     const fov = 2 * Math.atan(product / Math.max(distanceM, 1e-4)) * 180 / Math.PI;
     return Math.min(maxFovDeg, Math.max(minFovDeg, fov));
 }
@@ -122,6 +125,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             loading: 'Loading tank model...',
             shellUnavailable: 'Shell data is missing or invalid.',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
+            contextLost: '3D rendering context was lost (GPU/driver reset). Please retry.',
             type: (value) => value,
             nation: (value) => value,
             showCollision: 'Show Collision',
@@ -143,18 +147,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
 
-        // Armor Inspector 单车装甲检视实测标定（PC T-34，2026-10-18）：
-        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；product = tan(fov/2)×d
-        // 从 15m 的 ≈2.477 随距离缓慢增大到 28.35m 的 ≈2.648（约 +0.0128/m），
-        // 远距车体因此略小；封顶 2.8（比 15m 小约 12%），避免 500m 缩得过小。
+        // Armor Inspector 单车装甲检视实测参考（PC T-34，2026-10-18）：
+        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；实测 product 从 15m 的
+        // ≈2.477 按 +0.0128/m 缓慢增大、封顶 2.8。用户 2026-10-19 要求车体随距离
+        // 缩放更明显：显示 profile 改用 +0.028/m、封顶 3.8（再乘 1.1 整体缩放），
+        // 15m 基准不变；30m 约小 14%，100m/500m 约小 35%（实测参考仍保留在上面的注释）。
         // near=0.05d / far=d+30；相机距离沿用查看器 3–500m。
-        // shot replay 与装甲检视共用这套标定；两车 world overview 保持原生 50° 取景。
+        // shot replay 与装甲检视共用这套显示 profile；两车 world overview 保持原生 50° 取景。
         const ARMOR_REF_DIST = 15;
         const ARMOR_BASE_FOV = 18.75;
         const ARMOR_MAX_FOV = 40;
         const ARMOR_MIN_FOV = 0.5;
-        const ARMOR_FAR_PRODUCT_GAIN = 0.0128;
-        const ARMOR_FAR_PRODUCT_MAX = 2.8;
+        const ARMOR_FAR_PRODUCT_GAIN = 0.028;
+        const ARMOR_FAR_PRODUCT_MAX = 3.8;
+        const ARMOR_PRODUCT_SCALE = 1.1;
         const OVERVIEW_BASE_FOV = 50;
 
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
@@ -162,6 +168,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const cleanups = [];
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
+        let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
+        let gpuLabel = '';       // 上下文丢失诊断：UNMASKED_RENDERER_WEBGL / RENDERER
         // Navigation between shots replaces the scene before delayed shell/trajectory work can finish.
         const pendingTimers = new Set();
         const setTimeout = (callback, delay) => {
@@ -178,10 +186,32 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 加载状态上报（宿主页进度条 / 错误态）；宿主回调异常不影响场景
         const reportLoad = (state) => {
             if (destroyed || typeof onLoadState !== 'function') return;
+            // Context loss 后所有 load/ready 上报都必须让位于错误态；只有带 contextLost
+            // 标记的错误本身可以写入，否则 in-flight GLTF/modelProgress 回调会把错误卡
+            // 覆盖成 loading/ready，retry 入口消失。
+            if (contextLost && !(state && state.contextLost)) return;
             try { onLoadState(state); } catch (_) {}
         };
         const errorMessage = (error) => (typeof error === 'string') ? error
             : (error && (error.message || error.statusText || String(error))) || 'unknown';
+        const contextLostMessage = () => gpuLabel ? `${L.contextLost} (${gpuLabel})` : L.contextLost;
+        function reportContextLost(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (destroyed) return;
+            contextLost = true;
+            // 让所有 in-flight 资产/目标加载 continuation 失效，避免它们在错误态之后
+            // 继续写 loading/ready 或启动渲染。
+            loadGen++;
+            targetLoadGen++;
+            shooterLoadGen++;
+            if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+            reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
+        }
+        function reportContextRestored() {
+            // 浏览器允许恢复上下文，但 Three.js 的 GPU 资源已失效；保持错误态，由宿主
+            // “重试”销毁并重新创建整个 renderer，不在这里重建半套 GL 资源。
+            if (!destroyed && contextLost) reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
+        }
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
         let shooterLoadGen = 0;
@@ -274,7 +304,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮
         const PBR_VERT = `
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             void main() {
               vec4 mv = modelViewMatrix * vec4(position, 1.0);
               vViewPos = mv.xyz;
@@ -285,7 +315,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const PBR_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -330,15 +360,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
               bool moduleInFront = spacedState.a > 0.5;
               bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
-              float viewDistance = length(vViewPos);
-              // 与点击判定 hit.face.normal 同源：几何面法线，不用插值顶点法线。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              highp vec3 viewDir = normalize(vViewPos);
+              // 装甲几何在加载时 toNonIndexed + computeVertexNormals ⇒ vNormal 已是逐面
+              // 几何法线，与点击判定 hit.face.normal 同源。不得改用 dFdx/dFdy(vViewPos)：
+              // 本 shader 是 mediump（移动端 fp16），屏幕空间位置的逐像素导数会量化/退化，
+              // 导致热力图颜色错乱（2026-10-19 回归）。视线方向必须 highp：500 m 处的
+              // mediump length() 会在平方时溢出，进而把入射角算成 90°/NaN。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
 
               highp mat3 vRotT = transpose(mat3(viewMatrix));
               highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-              highp vec3 incR = normalize(vViewPos);
+              highp vec3 incR = viewDir;
               highp vec3 nVR = nFace;
               highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
               highp vec3 reflR = normalize(vRotT * rVR);
@@ -401,7 +434,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                   : normalization;
                 // 掠射角保护：mediump 下 cos 可能为 0/负，必须与 resolveLayerGeometry 的
                 // 1e-6 下界一致，否则会写入 inf/负厚度并反向扣减覆盖（review 2026-10-18）。
-                float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
+                highp float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
                 float rem = penetration;
                 highp float spacedEff = 0.0;
                 // 8 位回退格式 R 饱和：累计值只知 >=1，真实消耗未知；不得当成恰好
@@ -718,7 +751,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
                 vertexShader: PBR_VERT, fragmentShader: PBR_FRAG,
-                extensions: { derivatives: true },
                 transparent: true, depthWrite: false,
                 uniforms: {
                     thickness: { value: thickness },
@@ -793,18 +825,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const SPACED_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
             uniform float ricochet;
             uniform float normalization;
             void main() {
-              float viewDistance = length(vViewPos);
-              // 与点击判定同源：几何面法线（非插值顶点法线）。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              highp vec3 viewDir = normalize(vViewPos);
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
               // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
               // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
               bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
@@ -812,7 +844,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 ? (1.4 * normalization * caliber) / (2.0 * thickness)
                 : normalization;
               // 与 resolveLayerGeometry 同一 1e-6 余弦下界，防掠射角 inf/负厚度。
-              float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
+              highp float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
               gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
             }
         `;
@@ -823,7 +855,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         const SPACED_STATE_FRAG = `
             precision mediump float;
             varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -832,11 +864,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ${RC_GLSL_CONST}
             ${RC_GLSL_FUNCS}
             void main() {
-              float viewDistance = length(vViewPos);
-              // 与点击判定同源：几何面法线（非插值顶点法线）。
-              vec3 nFace = normalize(cross(dFdx(vViewPos), dFdy(vViewPos)));
-              if (dot(nFace, normalize(vNormal)) < 0.0) nFace = -nFace;
-              float angle = acos(clamp(dot(nFace, -vViewPos) / viewDistance, -1.0, 1.0));
+              highp vec3 viewDir = normalize(vViewPos);
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
               // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
@@ -844,7 +876,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
                 highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-                highp vec3 incR = normalize(vViewPos);
+                highp vec3 incR = viewDir;
                 highp vec3 nVR = nFace;
                 highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
                 highp vec3 reflR = normalize(vRotT * rVR);
@@ -890,7 +922,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_FRAG,
-                extensions: { derivatives: true },
                 depthWrite: false, depthTest: true,
                 blending: THREE.AdditiveBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
@@ -899,7 +930,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         function spacedStateMaterial(thickness, penetration) {
             return new THREE.ShaderMaterial({
                 vertexShader: SPACED_VERT, fragmentShader: SPACED_STATE_FRAG,
-                extensions: { derivatives: true },
                 // 状态不可累加：最近板写入后，其余板深度测试失败（独占写入）
                 depthWrite: true, depthTest: true, blending: THREE.NoBlending,
                 uniforms: spacedCommonUniforms(thickness, penetration),
@@ -2420,6 +2450,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function loadModels() {
+            if (destroyed || contextLost) return;
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').textContent = L.loading;
             window.__LOAD__ = 'start';
@@ -4172,6 +4203,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadTarget(tid) {
+            if (destroyed || contextLost) return false;
             const gen = ++targetLoadGen;
             loadGen++; // 立即使旧模型/射击 continuation 失效，不等新 JSON 返回
             __penCheckSeq++;
@@ -4304,7 +4336,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadShooter(tid) {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             const gen = ++shooterLoadGen;
             shooterLoading = true;
             selectedShell = null;
@@ -4447,6 +4479,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             renderer.localClippingEnabled = true;
             view.appendChild(renderer.domElement);
+            try {
+                const gl = renderer.getContext();
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                gpuLabel = String((debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || '');
+            } catch (_) { gpuLabel = ''; }
+            const canvas = renderer.domElement;
+            canvas.addEventListener('webglcontextlost', reportContextLost);
+            canvas.addEventListener('webglcontextrestored', reportContextRestored);
+            cleanups.push(() => {
+                canvas.removeEventListener('webglcontextlost', reportContextLost);
+                canvas.removeEventListener('webglcontextrestored', reportContextRestored);
+            });
+            // 某些环境（模拟器的 GL 翻译层）在 listener 挂上之前就已经丢了上下文。
+            try { if (renderer.getContext().isContextLost()) reportContextLost(); } catch (_) {}
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.15;
 
@@ -4576,22 +4622,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const initTargetId = window.__INITIAL_TANK__ || 28689;
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             // 模型回调可立即恢复射击并判定，因此弹药必须先完成，不能靠定时器猜网络耗时。
             initPhase = 'shell data';
             await loadShooter(initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             initDone = true;
             updateTankLabels();
             initPhase = 'tank data';
             await loadTarget(initTargetId);
-            if (destroyed) return;
-            if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
+            if (destroyed || contextLost) return;
+            if (!destroyed && !contextLost) animate();   // await 期间路由已离开/上下文已丢失则不再启动渲染
         }
 
         /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
         function retry() {
-            if (destroyed || !initDone || currentTargetId == null) return false;
+            if (destroyed || contextLost || !initDone || currentTargetId == null) return false;
             let phase = 'shell data';
             const ready = selectedShell && !shooterLoading
                 ? Promise.resolve() : loadShooter(currentShooterId);
@@ -5628,9 +5674,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 near = 0.1;
                 far = Math.max(1000, d * 3);
             } else {
-                // 单车装甲检视 / shot replay：同一套 Armor Inspector 实测 FOV 标定。
-                // product 随距离缓慢增大（远距车体略小），封顶 2.8；minFov=0.5° 留作远端兜底。
-                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX);
+                // 单车装甲检视 / shot replay：同一套 Armor Inspector 参考 + 更强的距离缩放
+                // display profile（+0.028/m、封顶 3.8、整体 ×1.1），远距车体缩小更明显。
+                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX, ARMOR_PRODUCT_SCALE);
                 near = 0.05 * d;
                 far = d + 30;
             }
@@ -5643,7 +5689,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function animate() {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
@@ -5693,9 +5739,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
+        function isContextLost() { return contextLost; }
+
         init().catch((e) => {
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry, selectTank, canPick };
+        return { destroy, retry, selectTank, canPick, isContextLost };
     }

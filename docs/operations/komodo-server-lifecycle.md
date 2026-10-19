@@ -29,8 +29,11 @@ Therefore every migration must explicitly separate:
 
 - Komodo resources are declared under `infra/komodo/resources/` and reviewed through
   Git before manual application in the Komodo UI.
-- The existing Servers are `yecao`, `tx1`, and `tx2`; server declarations are adopted
-  by name rather than recreated.
+- The existing Servers are `yecao`, `tx1`, `tx2`, and `ali-sh-asset-01`; server
+  declarations are adopted by name rather than recreated. The Alibaba asset host is
+  outside the WireGuard mesh and reaches Core only outbound over
+  `https://komodo.wotbtools.com:443`, while the other three keep the private
+  `10.20.0.2:9120` route.
 - Periphery lifecycle is owned outside Komodo by `deploy/periphery/**` plus GitHub
   Actions/systemd. Komodo must not manage its own Core or Periphery lifecycle.
 - Resource Sync remains non-destructive: changes are reviewed as diffs and manually

@@ -6,10 +6,12 @@
 
 ## 身份信息卡
 
-「身份信息」卡展示展示名、认证服务、Keycloak 用户 ID 与 realm 角色，所有登录用户可见（只显示本人信息）：
+「身份信息」卡展示展示名、认证服务、Keycloak 用户 ID、Keycloak 用户名与 realm 角色，所有登录用户可见（只显示本人信息）：
 
 - **Keycloak 用户 ID**：取 `GET /api/users/profile` 的 `keycloakUserId`（= token `sub`），等宽显示并可复制；
   复制成功才显示「已复制」。
+- **Keycloak 用户名**：取 `GET /api/users/profile` 的 `username`（= token `preferred_username`，内部登录名，如
+  `wg_asia_512345678`），等宽只读展示，不提供站内编辑入口；缺失时显示 `--`。绑定卡的展示名仍只认 `displayName` / WoTB 昵称。
 - **角色**：只读当前 access token 的 `realm_access.roles`（Keycloak 已展开 composite，持有 `wotbtools-admin`
   会同时看到它包含的业务角色），隐藏 Keycloak 内置的 `default-roles-*` / `offline_access` / `uma_authorization`，
   其余按原始 key 排序展示，不做 i18n 翻译；角色展示与权限判断都以真实 token claims 为事实源。client 角色（`resource_access`）不展示。

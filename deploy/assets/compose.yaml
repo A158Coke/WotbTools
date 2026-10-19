@@ -1,0 +1,26 @@
+name: wotbtools-asset-origin
+
+# Static-only origin for the Agent 3D asset pack. The asset payload is host state
+# under /srv/wotb-assets and is intentionally not baked into this image or repo.
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/wotb-assets:/srv/wotb-assets:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

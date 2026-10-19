@@ -478,25 +478,6 @@ export default {
         }
       }
     },
-    "CreatorCategory": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "name"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        }
-      }
-    },
     "CreatorLevel": {
       "type": "object",
       "additionalProperties": false,
@@ -530,257 +511,6 @@ export default {
         }
       }
     },
-    "CreatorCard": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "bilibiliUid",
-        "name",
-        "description",
-        "homepageUrl",
-        "avatarUrl",
-        "categories",
-        "level",
-        "score",
-        "createdAt",
-        "version"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "bilibiliUid": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]{0,19}$",
-          "maxLength": 20
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 2000
-        },
-        "homepageUrl": {
-          "type": "string",
-          "format": "uri",
-          "pattern": "^https://space\\.bilibili\\.com/[1-9][0-9]{0,19}$",
-          "maxLength": 47
-        },
-        "avatarUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "categories": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CreatorCategory"
-          },
-          "minItems": 1
-        },
-        "level": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/CreatorLevel"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "score": {
-          "type": "integer",
-          "enum": [
-            2,
-            4,
-            6,
-            8,
-            10
-          ]
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "CreatorSaveRequest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "bilibiliUid",
-        "name",
-        "description",
-        "categoryIds",
-        "levelId",
-        "stars",
-        "avatarAction",
-        "expectedVersion"
-      ],
-      "properties": {
-        "bilibiliUid": {
-          "type": "string",
-          "pattern": "^\\s*(?=0*[1-9])[0-9]{1,20}\\s*$",
-          "description": "Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server."
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 2000
-        },
-        "categoryIds": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "levelId": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1
-        },
-        "stars": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5
-        },
-        "avatarAction": {
-          "type": "string",
-          "enum": [
-            "KEEP",
-            "REPLACE",
-            "REMOVE"
-          ]
-        },
-        "expectedVersion": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0
-        }
-      }
-    },
-    "CreatorDetail": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "bilibiliUid",
-        "name",
-        "description",
-        "categoryIds",
-        "levelId",
-        "stars",
-        "avatarUrl",
-        "version"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "bilibiliUid": {
-          "type": "string",
-          "pattern": "^[1-9][0-9]{0,19}$",
-          "maxLength": 20
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "description": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 2000
-        },
-        "categoryIds": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {
-            "type": "integer",
-            "minimum": 1
-          }
-        },
-        "levelId": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1
-        },
-        "stars": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5
-        },
-        "avatarUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "CreatorMetadata": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "categories",
-        "levels",
-        "avatarUploadsAvailable"
-      ],
-      "properties": {
-        "categories": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CreatorCategory"
-          }
-        },
-        "levels": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/CreatorLevel"
-          }
-        },
-        "avatarUploadsAvailable": {
-          "type": "boolean"
-        }
-      }
-    },
     "BackendHealth": {
       "type": "object",
       "additionalProperties": true,
@@ -797,7 +527,7 @@ export default {
           "minimum": 0
         },
         "capabilities": {
-          "description": "recommendations-v1 enables typed UP/VIDEO endpoints. Additive technical capability markers, independent of directory contents and read without querying the creator database. creators-v1 enables the creator APIs; creators-content-visibility-v1 additionally guarantees that the public categories endpoint returns only populated categories. New clients must not infer content availability from the complete dictionary returned by legacy creators-v1 backends.",
+          "description": "recommendations-v1 enables the UP/VIDEO recommendation APIs and their populated public categories. Technical capability markers are independent of directory contents and read without querying the database; clients fetch public categories to decide which recommendation types have content.",
           "type": "array",
           "items": {
             "type": "string"
@@ -3301,6 +3031,115 @@ export default {
           "type": "array",
           "items": {
             "$ref": "#/$defs/HundredLeaderboardItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "HallOfFameBattleType": {
+      "type": "string",
+      "enum": [
+        "RANDOM",
+        "RATING"
+      ]
+    },
+    "HallOfFameRecord": {
+      "type": "object",
+      "description": "Public page item from /api/hof; rank is always assigned in page context.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "tankId",
+        "tankName",
+        "nickname",
+        "damageDealt",
+        "battleType",
+        "mapName",
+        "version",
+        "battleTime",
+        "createdAt",
+        "replayAvailable"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": "integer"
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "battleType": {
+          "$ref": "#/$defs/HallOfFameBattleType"
+        },
+        "mapName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "battleTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HallOfFamePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HallOfFameRecord"
           }
         },
         "page": {
@@ -6166,446 +6005,6 @@ export default {
         "UPSTREAM_TIMEOUT",
         "RATE_LIMITED"
       ]
-    },
-    "LegacyBroadcastSeason": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "server",
-        "year",
-        "name",
-        "startDate",
-        "createdAt",
-        "version",
-        "rootCount",
-        "replayCount"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "server": {
-          "$ref": "#/$defs/BroadcastServer"
-        },
-        "year": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9999
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "startDate": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "format": "date"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "version": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "rootCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2147483647
-        },
-        "replayCount": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2147483647
-        }
-      }
-    },
-    "LegacyBroadcastReplay": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "nodeId",
-        "title",
-        "url",
-        "matchDate",
-        "dayNumber",
-        "groupLabel",
-        "groupNumber",
-        "bracket",
-        "teams",
-        "perspective",
-        "coverId"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "nodeId": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "url": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2048,
-          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
-        },
-        "matchDate": {
-          "type": "string",
-          "format": "date"
-        },
-        "dayNumber": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
-        },
-        "groupLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "groupNumber": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1,
-          "maximum": 4
-        },
-        "bracket": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BroadcastBracket"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "teams": {
-          "type": "array",
-          "minItems": 2,
-          "maxItems": 4,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          }
-        },
-        "perspective": {
-          "$ref": "#/$defs/BroadcastPerspective"
-        },
-        "coverId": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "format": "uuid"
-        }
-      }
-    },
-    "LegacyBroadcastNode": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "categoryId",
-        "roundNumber",
-        "format",
-        "replays"
-      ],
-      "properties": {
-        "id": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "categoryId": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        "roundNumber": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1,
-          "maximum": 5
-        },
-        "format": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BroadcastFormat"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "replays": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LegacyBroadcastReplay"
-          }
-        }
-      }
-    },
-    "LegacyBroadcastIndex": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "servers",
-        "seasons",
-        "coverUploadAvailable"
-      ],
-      "properties": {
-        "servers": {
-          "type": "array",
-          "minItems": 5,
-          "maxItems": 5,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/BroadcastServer"
-          }
-        },
-        "seasons": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LegacyBroadcastSeason"
-          }
-        },
-        "coverUploadAvailable": {
-          "type": "boolean"
-        }
-      }
-    },
-    "LegacyBroadcastSeasonView": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "season",
-        "categories",
-        "coverUploadAvailable"
-      ],
-      "properties": {
-        "season": {
-          "$ref": "#/$defs/LegacyBroadcastSeason"
-        },
-        "categories": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/BroadcastCategory"
-          }
-        },
-        "coverUploadAvailable": {
-          "type": "boolean"
-        }
-      }
-    },
-    "LegacyBroadcastCategoryView": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "season",
-        "category",
-        "nodes",
-        "coverUploadAvailable"
-      ],
-      "properties": {
-        "season": {
-          "$ref": "#/$defs/LegacyBroadcastSeason"
-        },
-        "category": {
-          "$ref": "#/$defs/BroadcastCategory"
-        },
-        "nodes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/LegacyBroadcastNode"
-          }
-        },
-        "coverUploadAvailable": {
-          "type": "boolean"
-        }
-      }
-    },
-    "LegacyBroadcastSeasonCreate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "server",
-        "year",
-        "name",
-        "startDate"
-      ],
-      "properties": {
-        "server": {
-          "$ref": "#/$defs/BroadcastServer"
-        },
-        "year": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9999
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "startDate": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "format": "date"
-        }
-      }
-    },
-    "LegacyBroadcastSeasonUpdate": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "expectedVersion",
-        "year",
-        "name",
-        "startDate"
-      ],
-      "properties": {
-        "expectedVersion": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "year": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9999
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "startDate": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "format": "date"
-        }
-      }
-    },
-    "LegacyBroadcastReplaySave": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "expectedVersion",
-        "title",
-        "url",
-        "matchDate",
-        "dayNumber",
-        "groupLabel",
-        "groupNumber",
-        "bracket",
-        "teams",
-        "perspective",
-        "coverAction"
-      ],
-      "properties": {
-        "expectedVersion": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 200
-        },
-        "url": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2048,
-          "pattern": "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
-        },
-        "matchDate": {
-          "type": "string",
-          "format": "date"
-        },
-        "dayNumber": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2147483647
-        },
-        "groupLabel": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "groupNumber": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 1,
-          "maximum": 4
-        },
-        "bracket": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BroadcastBracket"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "teams": {
-          "type": "array",
-          "minItems": 2,
-          "maxItems": 4,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          }
-        },
-        "perspective": {
-          "$ref": "#/$defs/BroadcastPerspective"
-        },
-        "coverAction": {
-          "type": "string",
-          "enum": [
-            "KEEP",
-            "REMOVE",
-            "REPLACE"
-          ]
-        }
-      }
     }
   }
 } as const
