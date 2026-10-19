@@ -735,6 +735,7 @@
     "identity": "Личность",
     "authProvider": "Провайдер",
     "keycloakUserId": "ID пользователя Keycloak",
+    "keycloakUsername": "Имя пользователя Keycloak",
     "roles": "Роли",
     "copy": "Копировать",
     "copied": "Скопировано",
