@@ -386,3 +386,75 @@ describe('Safari URL-less dynamic import correlation', () => {
     expect(target.location.reload).not.toHaveBeenCalled()
   })
 })
+
+describe('Resource Timing buffer bound', () => {
+  it('caps browser-side growth instead of doubling forever', () => {
+    const target = fakeWindow()
+    installPreloadErrorRecovery(target)
+    const setBufferSize = target.performance.setResourceTimingBufferSize
+
+    for (let i = 0; i < 12; i++) {
+      target.performance.dispatchEvent(new Event('resourcetimingbufferfull'))
+    }
+
+    const sizes = setBufferSize.mock.calls.map(([size]) => size)
+    const max = Math.max(...sizes)
+    expect(max).toBeGreaterThanOrEqual(1000)
+    expect(max).toBeLessThanOrEqual(4000)
+    expect(sizes.at(-1)).toBe(max)
+    expect(target.performance.clearResourceTimings).not.toHaveBeenCalled()
+  })
+})
+
+describe('Safari URL-less ambiguity hardening', () => {
+  const staleUrl = 'https://wotbtools.com/assets/Foo-AbC123.js'
+  const now = 10_000
+
+  function recoverTarget() {
+    const target = fakeWindow({ mainBufferEntry: false })
+    installPreloadErrorRecovery(target)
+    return target
+  }
+
+  function pushRecord(target, overrides = {}) {
+    target.__performanceObservers[0].records.push({
+      name: staleUrl,
+      responseStatus: 404,
+      initiatorType: 'script',
+      startTime: now - 200,
+      responseEnd: now - 100,
+      ...overrides,
+    })
+  }
+
+  function safariEvent() {
+    return preloadError('', 'Importing a module script failed.')
+  }
+
+  it.each([503, 0, undefined])(
+    'fails closed when another script request with status %s is in the window',
+    (status) => {
+      const target = recoverTarget()
+      pushRecord(target)
+      pushRecord(target, {
+        name: 'https://wotbtools.com/assets/Bar-Def456.js',
+        responseStatus: status,
+      })
+
+      const event = safariEvent()
+      target.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(target.location.reload).not.toHaveBeenCalled()
+    },
+  )
+
+  it('ignores a non-script 404 even when it is the only recent asset record', () => {
+    const target = recoverTarget()
+    pushRecord(target, { initiatorType: 'fetch' })
+
+    const event = safariEvent()
+    target.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.location.reload).not.toHaveBeenCalled()
+  })
+})
