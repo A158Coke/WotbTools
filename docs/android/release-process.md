@@ -10,7 +10,7 @@ publish 阶段的候选版本改由操作者显式指定（见下节）。
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
 转正/口径碾压修复，3.9.1 积分榜公开展示优化、3.9.0 工具栏折叠、3.8.1 地球图标和此前推荐目录等功能，
-以及上游 **v0.4.9** WASM pin。3.12.0 已被 #672 占用，不能复用来发布本 bundle。
+以及上游 **v0.4.10** WASM pin（车辆集合修复 + 装甲厚度 0.01mm）。3.12.0 已被 #672 占用，不能复用来发布本 bundle。
 3.11.2 的内容管理权限修正：内容域入口与请求所有权改认 `content-admin`，`tournament-admin` 不再获得内容管理；
 旧 APK 继续按 `tournament-admin` 判定，因此只持有 `content-admin` 的管理员需要更新 APK 才能管理内容；
 全站管理员由 Keycloak composite 展开同时具备两个角色，不受影响。后端先行部署不会让旧 APK 失去目录。
@@ -46,7 +46,7 @@ PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命�
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
 `android-v3.15.0` tag 已指向 `5b28c00438837731d15d1d683d1828c7080686c8`（3.15.0 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
-本 PR 把装甲查看器 HE/HESH 改为 Armor Inspector legacy 800 射线溅射采样（`func7695`），并重做 HE 热力图投影与结果卡（有效穿深顶行、判定行右侧伤害、溅射平均/范围、最佳样本），随 APK 打包后按 **minor** 递增为 **3.16.0 / 3016000**，说明见 [3.16.0](releases/3.16.0.md)。
+本 PR 把装甲查看器 HE/HESH 改为 Armor Inspector legacy 800 射线溅射采样（`func7695`），并重做 HE 热力图投影与结果卡（有效穿深顶行、判定行右侧伤害、溅射平均/范围、最佳样本），同时把上游 WASM pin bump 到 **v0.4.10**（车辆集合修复 + 0.01mm 装甲精度；AI 投影 golden 仅 provenance 变化），随 APK 打包后按 **minor** 递增为 **3.16.0 / 3016000**，说明见 [3.16.0](releases/3.16.0.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.16.0 成为当前候选；3.15.0 若尚未 publish，由 3.16.0 取代，不再 stage/publish 旧候选。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
