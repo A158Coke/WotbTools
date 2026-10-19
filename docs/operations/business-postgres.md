@@ -21,7 +21,7 @@ marker         business-postgres.tofu-provisioned       keycloak.tofu-provisione
 `deploy/tx/docker-compose.yml` 把该 fragment 与独立的 Keycloak PostgreSQL fragment 一并 include，
 使应用部署共享同一 service 与 volume 定义：
 
-- 镜像 `postgres:18-alpine`（绝不使用浮动 tag）；
+- 镜像 `postgres:18-alpine`：固定 PostgreSQL 18 major 与 Alpine tag，不是 digest pin；每次 `docker compose pull` 可能解析到新的 18.x / Alpine 重建，属于当前受控的 patch 跟踪，不是 immutable artifact；
 - 管理端口 `127.0.0.1:25432:5432` —— 宿主本地 OpenTofu/管理用途；
 - 私有 service endpoint `10.20.0.1:25432:5432` —— 仅 WireGuard；
   生产消费者仍使用 `business-postgres:5432`；
@@ -66,7 +66,7 @@ env 文件、打印到日志或存入 tfvars。应用 role 密码使用 provider
 PostgreSQL state 分离。
 
 仅部署 `business-postgres` 时不需要任何 Keycloak、frontend 镜像或 Caddy 输入。
-Business PostgreSQL 不在 loopback 之外发布任何内容。
+Business PostgreSQL 只通过 loopback 管理端口与 WireGuard 私网 endpoint `10.20.0.1:25432` 发布；没有公网发布。
 
 ## TX 开通顺序
 

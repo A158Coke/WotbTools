@@ -20,7 +20,7 @@ Keycloak state / session
 
 - **唯一可信身份来源**：`prolongate` 返回的 `account_id`。浏览器回调的 `account_id` / `nickname` 只做一致性检查，`expires_at` 不参与判断；`account_id` 与可信值不一致、或 `nickname` 与官方昵称不一致时拒绝登录；`account/info` 只提供官方昵称，不能单独证明 token 归属。
 - **稳定身份**：broker id `wg:{region}:{account_id}`；Keycloak username `wg_{region}_{account_id}`；`wotb.account_id` 只存纯数字字符串；`(region, account_id)` 唯一。重复登录刷新 `displayName` / `wotb.nickname`，不改稳定身份。
-- **安全边界**：只用 HTTPS；API Host 只来自固定 Region 白名单；state 缺失/无效/过期/篡改一律拒绝；WG token 用完立即 logout，不写入数据库、用户属性、JWT、日志、指标或 Trace；前端不接触 WG token，也不采集 WG 用户名/密码/账号 ID。**浏览器回调**的 WG 错误只做安全映射，不回传原始正文；日志记录 region、stage、reason、安全数字 code 与固定分类。**Keycloak provider 的 WG API 错误**会把上游 `error.message` / `error.field` 经控制字符清理与截断后进入 warning log，尚未实现字段级 allowlist；这条链不承诺“日志不含 token”。
+- **安全边界**：只用 HTTPS；API Host 只来自固定 Region 白名单；state 缺失/无效/过期/篡改一律拒绝；WG token 用完立即 logout，不写入数据库、用户属性、JWT、指标或 Trace；**浏览器回调链**不把 token 写入日志。前端不接触 WG token，也不采集 WG 用户名/密码/账号 ID。**浏览器回调**的 WG 错误只做安全映射，不回传原始正文；日志记录 region、stage、reason、安全数字 code 与固定分类。**Keycloak provider 的 WG API 错误**会把上游 `error.message` / `error.field` 经控制字符清理与截断后进入 warning log，尚未实现字段级 allowlist；这条链不承诺“日志不含 token”。
 - **超时与已知限制**：WG 请求连接超时约 5 秒、总请求约 10 秒，不无限重试；WG 回调机制会让 token 短暂出现在浏览器地址栏，服务端不落日志，Caddy 侧脱敏见 §5。
 - **账号语义**：WG 登录创建独立账号，不按昵称/邮箱自动合并到 QQ 账号；当前不提供 QQ→WG 关联；WG Profile（ASIA/EU/NA）只读，不提供站内解绑/删除；CN 手动绑定只允许 `CN`。
 - **配置 ownership**：IdP、protocol mapper、default role 由 `infra/tofu/keycloak` 声明；Provider 运行期只读 `WG_APPLICATION_ID`；JWT claims 映射见 §4；业务 Profile 同步见 [`../features/user-profile.md`](../features/user-profile.md) 与 [`../../java/README.md`](../../java/README.md)。

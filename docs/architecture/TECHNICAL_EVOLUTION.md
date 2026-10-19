@@ -534,15 +534,15 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 - **Yecao legacy application runtime** — 原 production application host；TX cutover 后退役。Yecao 当前保留 AI Service、Observability 与 Komodo Core，不是旧整站 runtime 的恢复。
 - **WebView-owned Android authentication** — Android 2.0 后由 Native AppAuth / PKCE 取代；不允许通过 bridge v1 回退。
 - **PRE/POST cutover machinery** — 一次性 migration verification；迁移完成后删除。
-- **business-data-integrity migration token** — 用于搬迁验收的 snapshot invariant，不是长期 production invariant。
+- **业务数据完整性迁移 token** — 用于搬迁验收的 snapshot invariant，不是长期 production invariant。
 
 ## 从演进中形成的长期原则
 
-1. **Facts before interpretation.** Canonical facts 层决定可陈述的事实；LLM 只解释事实。
-2. **Authority must be explicit.** Parser、domain semantics、storage、identity、deployment control 与 business state 不互相冒充 authority。
-3. **Client canonical facts are the Replay capability boundary.** Replay 在用户设备解析一次，再投影给 Data / Rating / Export / Playback / AI；不恢复服务器 Processed Dataset。
-4. **Authentication identity is not game identity.** Keycloak lifecycle 不拥有长期游戏数据生命周期。
-5. **The server has no Replay parser.** 缺字段向锁定的上游 parser 补；解析失败不回退服务端，也不在消费端复制第二套协议解码。
+1. **事实先于解释。** Canonical facts 层决定可陈述的事实；LLM 只解释事实。
+2. **权威必须显式。** Parser、domain semantics、storage、identity、deployment control 与 business state 不互相冒充 authority。
+3. **客户端 canonical facts 是 Replay 能力边界。** Replay 在用户设备解析一次，再投影给 Data / Rating / Export / Playback / AI；不恢复服务器 Processed Dataset。
+4. **认证身份不是游戏身份。** Keycloak lifecycle 不拥有长期游戏数据生命周期。
+5. **服务器没有 Replay parser。** 缺字段向锁定的上游 parser 补；解析失败不回退服务端，也不在消费端复制第二套协议解码。
 6. **pinned parser 不是语义权威**：Agent Release 决定“实际运行哪份 decoder”；WotbTools canonical 层决定领域语义。上游研究结论不会因为来自 parser producer 就自动提升 evidence grade。
 7. **运行时 provenance 与研究 provenance 分离**：production artifact 用 release commit + hash 锁定；研究引用用独立 commit / blob 锁定，避免“运行版本”与“研究文本”混为一谈。
 8. **控制平面不自动成为 release authority**：Komodo 可以管理资源与 workload lifecycle，但 immutable artifact identity、Git-reviewed placement、数据库 authority 与 owner workflow 仍保持独立。
