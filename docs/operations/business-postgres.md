@@ -77,15 +77,16 @@ Business PostgreSQL 只通过 loopback 管理端口与 WireGuard 私网 endpoint
 Deploy 路径（deploy/tx/deploy.sh）
 1. 校验输入，并用 owner fragments 渲染 Compose 文档
 2. 启动 business-postgres runtime，等待 pg_isready
-3. 要求 root-only 的 /opt/wotb-tx/business-postgres.tofu-provisioned marker
 
 `.github/workflows/business-postgres.yml` 中的 OpenTofu 阶段（同一 TX host-lock 会话）
-4. TX 本地 OpenTofu init -lockfile=readonly / validate / saved plan
-5. plan safety 校验
-6. apply 精确保存的 plan
-7. second plan
-8. 要求完全干净（no-op）的 second plan
-9. 写 root-only 的 /opt/wotb-tx/business-postgres.tofu-provisioned marker
+3. TX 本地 OpenTofu init -lockfile=readonly / validate / saved plan
+4. plan safety 校验
+5. apply 精确保存的 plan
+6. second plan
+7. 要求完全干净（no-op）的 second plan
+8. 写 root-only 的 /opt/wotb-tx/business-postgres.tofu-provisioned marker
+
+该 marker 是 OpenTofu 完成后的状态凭证，不是 Deploy 路径的前置条件；首次 bootstrap 或 marker 缺失时，Deploy 仍先启动并健康检查 PostgreSQL，再由 OpenTofu 阶段写入 marker。
 ```
 
 独立 workflow 在同一把宿主锁会话中排序运行时阶段与 OpenTofu 阶段。第二次 plan 不干净即

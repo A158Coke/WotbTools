@@ -4,7 +4,8 @@ description: >
   唯一 final quality gate：代码质量 / code smell / fallow / 文档同步 / AI 死代码 / 架构与领域 playbook /
   明确适用时的 product QA。审查 executor 的实现与 prompt-repair 的修复，判定 final PASS / zero blocker。
   Trigger: 任何影响界面/导出/数据/构建/API/配置/文档的代码变更完成后；PR reviewer findings 修复后；
-  或 merge 前需要 final gate 时。只有本 Skill 可以判定 final pass。
+  merge 前需要 final gate 时；或用户直接请求 exploratory / mobile / usability / full-site black-box QA
+  （即使没有 implementation diff）。只有本 Skill 可以判定 final pass。
   Code-review engine: 内置 Alibaba OpenCodeReview（OCR）delegate mode 作为通用
   diff/code review 引擎（确定性文件筛选 + 规则解析，推理由主代理 DeepSeek 完成）。
 ---
@@ -31,7 +32,9 @@ merge-base(origin/main, HEAD)..HEAD
 - **Case B — HEAD == origin/main / first implementation / dirty worktree**：使用 workspace preview `ocr delegate preview --format json`；不能因 branch range = 0 判定 no meaningful diff。
 - **Case C — committed branch + fresh uncommitted repair**：同时运行 range preview 与 workspace preview，对 `reviewable_files` 按 path 做 deterministic union / dedupe；两个 scope 都必须进入审查。
 - **Untracked**：与任务相关的 untracked source/config/test/doc 必须进入审查；只有 gitignored、generated transient output、或明确不属于 candidate implementation 的临时文件可 skip，且必须写明理由。
-- **Fail-closed**：若 `git status --porcelain` 显示存在 candidate changes，但最终 calculated review scope == 0，则 BLOCKER：
+- **Docs-only candidate**：OCR 可能把所有 `.md` 标为 `unsupported_ext`。此时 A3 必须人工审查每个 changed doc，并把它们计入 calculated review scope；不得因 OCR reviewable_count=0 直接 PASS，也不得因此无条件 BLOCKER。
+- **Calculated review scope = OCR reviewable files ∪ A3 已人工审查的 docs**。
+- **Fail-closed**：若 `git status --porcelain` 显示存在 candidate changes，但最终 calculated review scope == 0（OCR 无 reviewable 且 A3 无人工审查记录），则 BLOCKER：
 
 ```text
 Candidate tree contains changes but review scope is empty.
@@ -121,8 +124,8 @@ ocr delegate preview --format json
   `excluded_files`（含 exclude_reason）
 - **多 commit 分支**：OCR 自动基于 merge_base 覆盖 feature branch 全部变更，不是只 review HEAD~1
 - **混合 scope**：range preview 与 workspace preview 的结果按 path 做 deterministic union / dedupe；不得二选一
-- **Fail-closed**：`git status --porcelain` 有 candidate changes 而 union 后 `reviewable_count == 0` → BLOCKER；
-  不得按「Case 6 — No meaningful diff」PASS。Layer A plan audit 仍继续，但 final gate 不得通过。
+- **Fail-closed**：`git status --porcelain` 有 candidate changes 而 union 后 `reviewable_count == 0`，且 A3 没有对 changed docs 的人工审查记录 → BLOCKER；
+  不得按「Case 6 — No meaningful diff」PASS。docs-only 时 A3 必须覆盖全部 changed docs 并计入 scope；Layer A plan audit 仍继续，但 final gate 不得在未审查 docs 时通过。
 
 ### B2. 传入业务背景（compact，不塞整个 plan）
 

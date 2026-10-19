@@ -174,14 +174,14 @@ Fix → Targeted Test → Fix Remaining Failure → Targeted Test Green
 - 没有对应测试：明确报告未找到，不用无关的全量测试替代。
 
 禁止在本技能中主动运行 repository-level full test、完整 backend suite 或完整 frontend
-suite。PR CI 是完整验证入口；已有 PR branch 可在 changed-file tests 通过后 commit + push，
-由 CI 继续验证。后续 CI 失败时，只复现失败 job 涉及的最小测试范围；修复后追加测试并 push，
-禁止 force push / 改写已公开历史。
+suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6 final gate；
+不得在 final gate 前 commit/push。后续 CI 失败时，只复现失败 job 涉及的最小测试范围；
+修复后追加测试并 push，禁止 force push / 改写已公开历史。
 
 ### PHASE 6 — FINAL CLEANUP
 
-- **review-with-docs / fallow 只在此阶段运行**（REPAIR → TEST → FINAL REVIEW），
-  禁止在 repair 开局运行。
+- **review-with-docs / fallow 只在此阶段运行**（REPAIR → TEST → FINAL REVIEW）；
+  `review-with-docs` PASS 后才 commit + push，禁止在 repair 开局运行。
 - 收到 `zero technical debt / 零技术债 / final cleanup / cleanup / 不留 TODO` 时进入
   **ZERO-DEBT REPAIR MODE**，但仍用 Delta Discovery：
   sweep 范围 = 当前 PR touched files + 本轮 direct dependencies；搜索
@@ -232,12 +232,12 @@ suite。PR CI 是完整验证入口；已有 PR branch 可在 changed-file tests
 
 - **Git**：继续当前 branch / 当前 PR；不自动新建 branch、不自动开 PR（除非用户明确要求）。
   保护用户未提交修改：禁止 `git reset --hard` / `git checkout .` / `git clean -fd`。
-  是否自动 commit/push 遵循现有 DSH workflow 约定（repo 默认：review-with-docs 零 blocker
-  后可提交开 PR；见 `.agents/AGENTS.md`）。
-  **省时优化**：处于已存在 PR branch 的 repair 流程中，changed-file tests 通过即可
-  commit + push（让 CI 与本地测试并行）；push 后由 CI 完成 repository validation，发现
-  新问题追加 commit 再 push——禁止 force push / 改写已公开历史，
-  推送前按仓库约定确认 remote。
+  是否自动 commit/push 遵循现有 DSH workflow 约定：`review-with-docs` PASS 后才 commit/push；
+  见 `.agents/AGENTS.md`。
+  **省时优化**：处于已存在 PR branch 的 repair 流程中，changed-file tests 通过后直接进入
+  `review-with-docs` final gate；PASS 后立即 commit + push（让 CI 与本地测试并行），
+  不先 push 后 review。push 后由 CI 完成 repository validation，发现新问题追加 commit 再 push——
+  禁止 force push / 改写已公开历史，推送前按仓库约定确认 remote。
 - **Build-to-Learn 兼容**：若当前流程有 build-to-learn，Repair 模式下保持简短，只解释
   本次涉及的关键机制 / 旧实现为何错 / 新实现为何对；不为教学扩大 Discovery。
 
