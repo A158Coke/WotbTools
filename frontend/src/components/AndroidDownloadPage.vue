@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { postUsageEvents } from '../api/usage-events.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { resolveApiUrl } from '../platform/runtime.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -26,6 +27,22 @@ async function loadManifest() {
     manifest.value = await res.json()
   } catch {
     loadFailed.value = true
+  }
+}
+
+function recordDownloadClick() {
+  // 这个页面的最终 APK 按钮是 Android downloads 唯一产品统计口径。
+  // 直接 best-effort + keepalive 上报，不走 5 秒 usage queue，也绝不阻塞链接跳转。
+  try {
+    void postUsageEvents([{
+      event_id: crypto.randomUUID(),
+      event: 'feature_open',
+      platform: 'web',
+      feature: 'android_download',
+      occurred_at: new Date().toISOString(),
+    }]).catch(() => {})
+  } catch {
+    // Telemetry failure must never prevent the APK navigation.
   }
 }
 
@@ -78,7 +95,7 @@ onMounted(async () => {
         <span>{{ manifest.releaseNotes }}</span>
       </p>
       <div class="download-actions">
-        <AppButton v-if="manifest.apkUrl" variant="primary" size="lg" :href="manifest.apkUrl" data-testid="android-download-link">
+        <AppButton v-if="manifest.apkUrl" variant="primary" size="lg" :href="manifest.apkUrl" data-testid="android-download-link" @click="recordDownloadClick">
           <Download :size="20" aria-hidden="true" />{{ t('android.download') }}
         </AppButton>
         <span v-else class="muted">{{ t('android.apk_unavailable') }}</span>
