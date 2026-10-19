@@ -35,6 +35,16 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     expect(r.samples).toBe(1)
   })
 
+  it('liningFactor 乘到每层装甲（强化装甲 1.04 与判定链同口径）', () => {
+    const r = computeHeSplash([[L(50, true, 0.1)]], {
+      damage: 200, explosionRadius: 1.09, liningFactor: 1.04,
+    })
+    expect(r.best.armor).toBeCloseTo(52, 6)
+    const falloff = 1 - 0.1 / 1.09
+    expect(r.max).toBeCloseTo(0.5 * 200 * 1.25 * falloff - 52, 6)
+    expect(r.min).toBeCloseTo(0.5 * 200 * 0.75 * falloff - 52, 6)
+  })
+
   it('履带+主装 20+20 @0.3542m → 10.63 / 44.38（层装甲直接相加）', () => {
     const r = splash([[L(20, false, 0.1072), L(20, true, 0.3542)]])
     expect(r.min).toBeCloseTo(10.63, 2)

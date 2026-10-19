@@ -712,6 +712,123 @@ function sectionName(code) {
     return '?';
 }
 
+/**
+ * JS 网格版射线求交：与 `raycastPackAll` 同口径（全量命中、FrontSide 背面剔除、按 t
+ * 排序），但只访问 DDA 覆盖的 cell 内三角形。HE 的 800 射线采样用它替代逐个三角形
+ * 全扫（评审 P1：800 × triTotal 会卡住 UI 线程）。返回 null 表示网格不可用，调用方
+ * 回退暴力实现。
+ *
+ * 数据布局与 `buildRicochetGrid` 一致：世界顶点每 texel 4 float、每条目
+ * (triSlot, section, thickness, 0)、每 cell (entryOffset, entryCount)。
+ * 不输出 point/normal/variant——HE 采样只消费 t/section/thickness。
+ */
+export function raycastGridAll(grid, ro, dir, tMin = 0, tMax = RC.FAR) {
+    if (!grid || !grid.ok) return null;
+    const { dims, cellSize, gridMin, cellsData, entriesData, worldTrisData } = grid;
+    const o = [ro.x, ro.y, ro.z];
+    const d = [dir.x, dir.y, dir.z];
+    const lo = [gridMin[0], gridMin[1], gridMin[2]];
+    const hi = [lo[0] + dims[0] * cellSize, lo[1] + dims[1] * cellSize, lo[2] + dims[2] * cellSize];
+    // 网格 AABB slab：把射线限制在网格内（也用于空方向分量的 inside/miss 判定）
+    let t0 = tMin, t1 = Math.min(tMax, RC.FAR);
+    for (let a = 0; a < 3; a++) {
+        if (Math.abs(d[a]) < 1e-12) {
+            if (o[a] < lo[a] || o[a] > hi[a]) return [];
+            continue;
+        }
+        let ta = (lo[a] - o[a]) / d[a];
+        let tb = (hi[a] - o[a]) / d[a];
+        if (ta > tb) { const s = ta; ta = tb; tb = s; }
+        if (ta > t0) t0 = ta;
+        if (tb < t1) t1 = tb;
+    }
+    if (!(t1 > t0)) return [];
+    const startT = t0 + Math.min(1e-7, (t1 - t0) * 0.5);
+    const px = o[0] + d[0] * startT;
+    const py = o[1] + d[1] * startT;
+    const pz = o[2] + d[2] * startT;
+    const cell = (v, a) => Math.min(dims[a] - 1, Math.max(0, Math.floor((v - lo[a]) / cellSize)));
+    let cx = cell(px, 0), cy = cell(py, 1), cz = cell(pz, 2);
+    const stepX = d[0] > 0 ? 1 : d[0] < 0 ? -1 : 0;
+    const stepY = d[1] > 0 ? 1 : d[1] < 0 ? -1 : 0;
+    const stepZ = d[2] > 0 ? 1 : d[2] < 0 ? -1 : 0;
+    const inf = Infinity;
+    const tDeltaX = stepX ? Math.abs(cellSize / d[0]) : inf;
+    const tDeltaY = stepY ? Math.abs(cellSize / d[1]) : inf;
+    const tDeltaZ = stepZ ? Math.abs(cellSize / d[2]) : inf;
+    let tMaxX = stepX ? (lo[0] + (cx + (stepX > 0 ? 1 : 0)) * cellSize - o[0]) / d[0] : inf;
+    let tMaxY = stepY ? (lo[1] + (cy + (stepY > 0 ? 1 : 0)) * cellSize - o[1]) / d[1] : inf;
+    let tMaxZ = stepZ ? (lo[2] + (cz + (stepZ > 0 ? 1 : 0)) * cellSize - o[2]) / d[2] : inf;
+    const hits = [];
+    const seen = new Set();
+    const maxSteps = dims[0] + dims[1] + dims[2] + 8;
+    for (let s = 0; s < maxSteps; s++) {
+        const ci = cx + dims[0] * (cy + dims[1] * cz);
+        const off = cellsData[ci * 4] | 0;
+        const cnt = cellsData[ci * 4 + 1] | 0;
+        for (let e = 0; e < cnt; e++) {
+            const ei = (off + e) * 4;
+            const slot = entriesData[ei] | 0;
+            if (seen.has(slot)) continue;
+            const b = slot * 12;
+            const ax = worldTrisData[b], ay = worldTrisData[b + 1], az = worldTrisData[b + 2];
+            const bx = worldTrisData[b + 4], by = worldTrisData[b + 5], bz = worldTrisData[b + 6];
+            const cx2 = worldTrisData[b + 8], cy2 = worldTrisData[b + 9], cz2 = worldTrisData[b + 10];
+            const e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            const e2x = cx2 - ax, e2y = cy2 - ay, e2z = cz2 - az;
+            // FrontSide：绕序法线必须朝来向（与 raycastPackAll/GLSL rcTriW 同）
+            const nx = e1y * e2z - e1z * e2y;
+            const ny = e1z * e2x - e1x * e2z;
+            const nz = e1x * e2y - e1y * e2x;
+            if (nx * d[0] + ny * d[1] + nz * d[2] >= 0) continue;
+            const pvx = d[1] * e2z - d[2] * e2y;
+            const pvy = d[2] * e2x - d[0] * e2z;
+            const pvz = d[0] * e2y - d[1] * e2x;
+            const det = e1x * pvx + e1y * pvy + e1z * pvz;
+            if (Math.abs(det) < 1e-9) continue;
+            const inv = 1 / det;
+            const tvx = o[0] - ax, tvy = o[1] - ay, tvz = o[2] - az;
+            const u = (tvx * pvx + tvy * pvy + tvz * pvz) * inv;
+            if (u < 0 || u > 1) continue;
+            const qvx = tvy * e1z - tvz * e1y;
+            const qvy = tvz * e1x - tvx * e1z;
+            const qvz = tvx * e1y - tvy * e1x;
+            const v = (d[0] * qvx + d[1] * qvy + d[2] * qvz) * inv;
+            if (v < 0 || u + v > 1) continue;
+            const tHit = (e2x * qvx + e2y * qvy + e2z * qvz) * inv;
+            if (tHit <= tMin || tHit > t1) continue;
+            seen.add(slot);
+            hits.push({
+                t: tHit,
+                section: sectionName(entriesData[ei + 1] | 0),
+                thickness: entriesData[ei + 2],
+                variant: null,
+                slot,
+            });
+        }
+        const tExit = Math.min(tMaxX, tMaxY, tMaxZ);
+        if (!(tExit <= t1)) break;
+        if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+            if (!stepX) break;
+            cx += stepX;
+            if (cx < 0 || cx >= dims[0]) break;
+            tMaxX += tDeltaX;
+        } else if (tMaxY <= tMaxZ) {
+            if (!stepY) break;
+            cy += stepY;
+            if (cy < 0 || cy >= dims[1]) break;
+            tMaxY += tDeltaY;
+        } else {
+            if (!stepZ) break;
+            cz += stepZ;
+            if (cz < 0 || cz >= dims[2]) break;
+            tMaxZ += tDeltaZ;
+        }
+    }
+    hits.sort((x, y) => x.t - y.t);
+    return hits;
+}
+
 const _PRIM = new Set(['hull', 'turret', 'gun']);
 
 /**

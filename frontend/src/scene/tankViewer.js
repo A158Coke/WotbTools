@@ -34,7 +34,7 @@ import { isPrimary, hasPositivePrimary, matchHitsByOccurrence } from './penetrat
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
-import { sampleHeSplash } from './heSplash.js'
+import { sampleHeSplash, HE_SAMPLE } from './heSplash.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../data/armorStates.js'
 
@@ -269,6 +269,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             trajInfoPos = null;
             document.getElementById('traj-info').style.display = 'none';
             document.getElementById('click-info').style.display = 'none';
+            // HE 爆点/半径球属于上一发判定：无命中、切车或清空轨迹时必须一起清掉，
+            // 否则空白短按/不相交 tick 会保留上次爆炸的着色与球体（评审 P2）。
+            heHeatmapCenter = null;
+            updateHeHeatmapUniforms();
+            disposeHeSplashVisual();
         }
 
         // ===== HE 溅射可视化：只标注一个半径球面 =====
@@ -287,6 +292,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!scene || !center || !(radius > 0)) return;
             const group = new THREE.Group();
             group.position.copy(center);
+            group.userData.radius = radius;
             const sphere = new THREE.Mesh(
                 new THREE.SphereGeometry(radius, 48, 24),
                 new THREE.MeshBasicMaterial({
@@ -620,7 +626,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               if (canSplash) {
                 // 每块板自身的局部伤害：thickness+spacedThick 与到爆点距离。
                 vec3 heColor = heDamageRamp(heDamageNorm);
-                float heAlpha = heDamageNorm > 0.0 ? mix(0.18, 0.95, heDamageNorm) : 0.0;
+                // 零伤害仍是热力图的 0 端（暗红），不能整块透明——只有未激活/无爆点
+                // 才透明；否则无法区分“零伤害的装甲”和“没开热力图”（评审 P2）。
+                float heAlpha = heActive ? mix(0.18, 0.95, heDamageNorm) : 0.0;
                 gl_FragColor = vec4(heColor, heAlpha);
               } else if (greenPenetration || advancedHighlighting) {
                 // 概率色带：红 → 橙 → 黄 → 绿；高概率端保留 overmatch 青蓝/续飞纯绿。
@@ -2117,8 +2125,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 heHeatmapCenter = null;
                 disposeHeSplashVisual();
                 updateHeHeatmapUniforms();
-            } else if (heSplashGroup) {
-                heSplashGroup.visible = penetrationMode;
+            } else {
+                // 切换 HE/HESH 弹种时爆炸半径会变：旧球的 SphereGeometry 半径必须重建，
+                // 否则球面与当前热力图不一致（评审 P2）。爆点保留到下一次点击。
+                const nextRadius = sh.explosion_radius || 0;
+                if (heSplashGroup && heHeatmapCenter && nextRadius > 0
+                    && heSplashGroup.userData.radius !== nextRadius) {
+                    updateHeSplashVisual(heHeatmapCenter, nextRadius);
+                } else if (heSplashGroup && !(nextRadius > 0)) {
+                    disposeHeSplashVisual();
+                } else if (heSplashGroup) {
+                    heSplashGroup.visible = penetrationMode;
+                }
             }
         }
         function refreshPenetrationResolution() {
@@ -5122,10 +5140,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             if (armorHits.length === 0) {
                 console.warn('[shot-replay] check: 0 armor hits, intersects=' + intersects.length);
-                document.getElementById('click-info').style.display = 'none';
-                document.getElementById('traj-info').style.display = 'none';
-                trajInfoPos = null;
-                if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+                // 无结果出口：卡片/轨迹与 HE 爆点/半径球一起清理（评审 P2）。
+                tidyTrajectory();
                 // 弦不再与装甲相交（滑块拖到命中前位姿等）：同步清掉上次判定的命中
                 // 标记，避免旧位置的绿/红点残留与"不相交"提示并存
                 if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
@@ -5243,23 +5259,31 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // fail-closed：不猜，回退单射线同公式兜底。
             const heRadius = isHE ? ((selectedShell && selectedShell.explosion_radius) || 0) : 0;
             let heSplash = null;
+            // 爆点外向方向：__segRay.dir 是 P1→P2（指向目标），反转得到朝射手方向；
+            // 静态检视的 viewDir 已是“命中点→相机”。采样与可视化共用同一方向，
+            // 保证采样失败时半径球/热力图中心仍是 0.1m 外移后的真实爆点。
+            const heOutsideDir = isHE
+                ? (window.__segRay ? window.__segRay.dir.clone().negate() : viewDir.clone())
+                : null;
+            if (heOutsideDir && heOutsideDir.lengthSq() < 1e-12) heOutsideDir.copy(first.normal);
             if (isHE && heRadius > 0 && dmg > 0) {
                 // 姿态未变时复用跳弹包（世界系几何同一份）；姿态脏才重建。
                 const hePack = (!ricochetPoseDirty && ricochetPack)
                     ? ricochetPack
                     : buildPack(collectRicochetEntries());
                 if (hePack.ok) {
-                    // __segRay.dir 是 P1→P2（指向目标）；反转得到朝射手方向。
-                    // 静态检视的 viewDir 已是“命中点→相机”，直接使用。
-                    const heOutsideDir = window.__segRay
-                        ? window.__segRay.dir.clone().negate()
-                        : viewDir.clone();
-                    if (heOutsideDir.lengthSq() < 1e-12) heOutsideDir.copy(first.normal);
+                    // 800 射线走空间网格（DDA），不能每次点击全扫三角形（评审 P1）。
+                    // 复用跳弹网格；姿态脏重建的新包现场建一份。
+                    const heGrid = (hePack === ricochetPack && ricochetGrid)
+                        ? ricochetGrid
+                        : buildRicochetGrid(hePack);
                     heSplash = sampleHeSplash(hePack, point, {
                         originDir: heOutsideDir,
                         normal: first.normal,
                         damage: dmg,
                         explosionRadius: heRadius,
+                        liningFactor: equipmentCoeffs().thickMul,
+                        grid: heGrid && heGrid.ok ? heGrid : null,
                     });
                 } else {
                     console.warn('[he-splash] collision pack failed:', hePack.reason);
@@ -5269,10 +5293,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // thickness + spacedThick 与到爆点的距离计算，不再用方向累计装甲。
             if (isHE && heRadius > 0) {
                 // 半径球/热力图中心 = 采样器的真实爆点（点击面沿射向退 0.1m）；
-                // 没有采样结果时退回点击表面。
+                // 采样失败（无有效 Primary/碰撞包失败）也保持同一外移原点，
+                // 不能退回未偏移的点击表面（评审 P2）。
                 const heCenter = (heSplash && Array.isArray(heSplash.origin))
                     ? new THREE.Vector3(heSplash.origin[0], heSplash.origin[1], heSplash.origin[2])
-                    : point.clone();
+                    : point.clone().addScaledVector(heOutsideDir || first.normal, HE_SAMPLE.ORIGIN_OFFSET);
                 heHeatmapCenter = heCenter;
                 updateHeHeatmapUniforms();
                 updateHeSplashVisual(heCenter, heRadius);
@@ -5585,15 +5610,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             let probabilityEval = null;
             let overallChance = null;
             let chancePct = 0;
+            // 精确概率（未取整）用于卡片显示：0.4% 必须显示 <1%、99.6% 显示 >99%，
+            // 不能先取整成 0/100 再交给 formatProbabilityPercent（评审 P2）。
+            let rawChance = 0;
             if (probabilityMode) {
                 probabilityEval = evaluateProbabilityChain(chancePen, probLayers);
                 overallChance = probabilityEval.chance;
+                rawChance = overallChance;
                 chancePct = Math.round(overallChance * 100);
                 layers = probabilityEval.layers;
             } else {
-                chancePct = probLayers.length > 0
-                    ? Math.round(penetrationChance(chancePen, probLayers) * 100)
-                    : 0;
+                rawChance = probLayers.length > 0 ? penetrationChance(chancePen, probLayers) : 0;
+                chancePct = Math.round(rawChance * 100);
             }
             const hasChance = probabilityMode && overallChance > 0;
             const probabilityPartial = hasChance && overallChance < 1;
@@ -5604,9 +5632,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // AP/APCR/HEAT 用概率链/穿透链，HE 用 CDF 概率；模块首面 HE 为 0%。
             const cardChance = heInfo
                 ? heChance
-                : (probabilityMode
-                    ? (overallChance ?? 0)
-                    : (Number.isFinite(chancePct) ? chancePct / 100 : 0));
+                : (probabilityMode ? (overallChance ?? 0) : rawChance);
 
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
@@ -5804,17 +5830,28 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         + `</div>`;
                 }
                 if (heInfo.best && Array.isArray(heInfo.best.layers) && heInfo.best.layers.length > 0) {
-                    const fmtBest = (sample) => `${sample.layers
-                        .map(l => `${L.sectionName(l.section)} ${fmtArmor(l.armor)}mm`)
-                        .join(' → ')} @ ${Number(sample.distance).toFixed(2)} ${L.distanceUnit}`;
+                    // 最佳射线可能穿过 17 层履带/模块：只展示前 4 层 + 剩余层数，
+                    // 并允许窄屏换行（卡片容器是 nowrap，评审 P2：360/390px 会横向溢出）。
+                    const BEST_LAYER_LIMIT = 4;
+                    const fmtBest = (sample) => {
+                        const bestLayers = sample.layers;
+                        const shown = bestLayers.slice(0, BEST_LAYER_LIMIT)
+                            .map(l => `${L.sectionName(l.section)} ${fmtArmor(l.armor)}mm`)
+                            .join(' → ');
+                        const more = bestLayers.length > BEST_LAYER_LIMIT
+                            ? ` → +${bestLayers.length - BEST_LAYER_LIMIT}`
+                            : '';
+                        return `${shown}${more} @ ${Number(sample.distance).toFixed(2)} ${L.distanceUnit}`;
+                    };
+                    const bestLineStyle = 'font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;max-width:min(560px,calc(100vw - 32px));';
                     const same = heInfo.best_lower
                         && heInfo.best_lower.distance === heInfo.best.distance
                         && heInfo.best_lower.armor === heInfo.best.armor;
                     if (same || !heInfo.best_lower) {
-                        html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${L.heBestSample}: ${fmtBest(heInfo.best)}</div>`;
+                        html += `<div style="${bestLineStyle}">${L.heBestSample}: ${fmtBest(heInfo.best)}</div>`;
                     } else {
-                        html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${L.heBestSampleUpper}: ${fmtBest(heInfo.best)}</div>`;
-                        html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${L.heBestSampleLower}: ${fmtBest(heInfo.best_lower)}</div>`;
+                        html += `<div style="${bestLineStyle}">${L.heBestSampleUpper}: ${fmtBest(heInfo.best)}</div>`;
+                        html += `<div style="${bestLineStyle}">${L.heBestSampleLower}: ${fmtBest(heInfo.best_lower)}</div>`;
                     }
                 }
             }
