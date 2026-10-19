@@ -66,12 +66,12 @@ describe('AndroidDownloadPage', () => {
     const [events] = telemetry.post.mock.calls[0]
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
-      event: 'feature_open',
+      event: 'android_download_click',
       feature: 'android_download',
       platform: 'web',
     })
     expect(events[0].event_id).toMatch(/^[0-9a-f-]{36}$/i)
-    expect(events[0].operation_id).toBe(events[0].event_id)
+    expect(events[0].operation_id).toBeUndefined()
     expect(Number.isNaN(Date.parse(events[0].occurred_at))).toBe(false)
   })
 
