@@ -232,11 +232,20 @@ describe('engagement-distance result line localization', () => {
   it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
     expect(view).toContain("shotDistance: t('armor.distance')")
     expect(view).toContain("distanceUnit: t('armor.distance_unit')")
+    expect(view).toContain("effectivePenetration: t('armor.effective_penetration')")
+    expect(view).toContain("shotAvgShort: t('armor.avg_short')")
+    expect(kernel).toContain('L.shotAvgShort')
     const locales = JSON.parse(read('../locales/feature-messages.json'))
     expect(locales.en.armor.distance).toBe('Engagement distance')
     expect(locales.ru.armor.distance).toBe('Дистанция боя')
     expect(locales.en.armor.distance_unit).toBe('m')
     expect(locales.ru.armor.distance_unit).toBe('м')
+    expect(locales.zh.armor.effective_penetration).toBe('有效穿深')
+    expect(locales.en.armor.effective_penetration).toBe('Effective penetration')
+    expect(locales.ru.armor.effective_penetration).toBe('Эффективное пробитие')
+    expect(locales.zh.armor.avg_short).toBe('平均')
+    expect(locales.en.armor.avg_short).toBe('avg')
+    expect(locales.ru.armor.avg_short).toBe('сред.')
   })
 })
 
@@ -387,8 +396,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
     // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
     expect(kernel).not.toMatch(/chanceOutcome/)
-    expect(kernel).toMatch(/const title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
-    expect(kernel).toMatch(/const chanceHtml = partial/)
+    expect(kernel).toMatch(/title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
+    // 统一概率行：所有弹种同一口径（0%/1–99%/100%），不再按 partial 生成 chanceHtml。
+    expect(kernel).toMatch(/L\.shotPenChance\}: \$\{formatProbabilityPercent\(cardChance\)\}%/)
     // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
     expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)

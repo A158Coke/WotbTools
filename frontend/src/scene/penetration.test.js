@@ -264,13 +264,15 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   it('distance_decay_he_is_exempt', () => {
     // HE 豁免（客户端 flag 分支 = kind==kHighExplosive）：远 300 仍给 near。
     const r = calculate(
-      req('he', 400.0, 100.0, [hit(ArmorSection.HULL, 250.0, [0, 0, 0])], {
+      req('he', 400.0, 100.0, [hit(ArmorSection.HULL, 50.0, [0, 0, 0])], {
         distance_m: 1000,
         penetration_far: 300.0,
+        explosion_radius: 5.0,
       }),
     )
     expect(Math.abs(r.layers[0].remaining_before - 400)).toBeLessThan(1e-3)
-    expect(r.result).toBe('PENETRATION')
+    // HE 的伤害形态是溅射界（满伤由外层概率表达）；距离衰减只影响 remaining_before。
+    expect(r.result).toBe('SPLASH')
   })
 
   it('distance_decay_heat_flat_when_far_equals_near', () => {
@@ -302,30 +304,85 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   })
 
   it('he_track_only_splashes_like_game', () => {
-    // HE 仅命中履带：游戏判有伤害(GB109 shot2 实测掉血 126)。履带 flat 20mm 参与衰减:
-    // final = 0.5·100·(1-0/5) - 1.1·(20+min(100,20)) = 50 - 44 = +6 → SPLASH
+    // HE 仅命中履带：单射线兜底用 func7695 同公式；射向 [0,1,0] 与板法线
+    // 同向 → base = 0.1m。upper = 0.5·400·1.25·0.98-20 = 225；
+    // lower = 0.5·400·0.75·0.98-20 = 127
     const r = calculate(req('he', 100.0, 150.0, [hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0])], { explosion_radius: 5.0 }))
     expect(r.result).toBe('SPLASH')
-    expect(r.damage).toBeGreaterThan(0.0)
+    expect(r.damage).toBeCloseTo(176.0, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 127.0,
+      splash_max: 225.0,
+      splash_avg: 176.0,
+      samples: 1,
+      best: null,
+      best_lower: null,
+    })
   })
 
-  it('he_splash_formula_matches_blitzkit', () => {
-    // HE：履带(20mm flat) → 主装甲(100mm, 0°)。
-    // totalSpaced = 20；dist = 1；final = 0.5·400·(1-1/5) - 1.1·(100 + 20)
+  it('he_splash_fallback_uses_func7695_formula', () => {
+    // HE：履带(20mm) → 主装甲(100mm, 0°)；名义层厚 120，d = 0.1 + 1m。
+    // upper = 0.5·400·1.25·0.78 - 120 = 75；lower = 0.5·400·0.75·0.78 - 120 → 0
     const rq = req('he', 250.0, 150.0, [
       hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
       hit(ArmorSection.HULL, 100.0, [0, 0, 1.0]),
     ], { explosion_radius: 5.0 })
     const r = calculate(rq)
-    const expectDmg = 0.5 * 400.0 * (1.0 - 1.0 / 5.0) - 1.1 * (100.0 + 20.0)
     expect(r.result).toBe('SPLASH')
-    expect(Math.abs(r.damage - expectDmg)).toBeLessThan(1e-3)
+    expect(r.damage).toBeCloseTo(37.5, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 75.0,
+      splash_avg: 37.5,
+      samples: 1,
+    })
   })
 
-  it('he_single_primary_penetration_full_damage', () => {
+  it('he_splash_sampler_overrides_legacy_formula', () => {
+    // tankViewer 的 800 射线采样结果优先：Armor Inspector func7695 的
+    // he_min/he_max 是两个 roll 界的最大值，avg 取中点；旧 1.1 公式不再参与。
+    const r = calculate(req('he', 39.0, 76.0, [hit(ArmorSection.HULL, 50.0, [0, 0, 0])], {
+      explosion_radius: 1.09,
+      damage: 200.0,
+      he_splash: { min: 21.59, max: 69.32, avg: 45.455, samples: 325 },
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(45.455, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 21.59,
+      splash_max: 69.32,
+      splash_avg: 45.455,
+      full_damage: 200.0,
+      samples: 325,
+    })
+  })
+
+  it('he_single_primary_uses_splash_bounds_not_full_damage', () => {
+    // HE 的单层主装不再走旧 BlitzKit“穿透=满伤”分支：func7695 的口径始终是
+    // 0.75/1.25 两个溅射界；满伤由外层击穿概率表达。d=0.1m（正入射），100mm：
+    // upper = 245-100 = 145；lower = 147-100 = 47；avg = 96
     const r = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], { explosion_radius: 5.0 }))
-    expect(r.result).toBe('PENETRATION')
-    expect(r.damage).toBe(400.0)
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(96.0, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 47.0,
+      splash_max: 145.0,
+      splash_avg: 96.0,
+      samples: 1,
+    })
+  })
+
+  it('he_fallback_distance_uses_shot_normal_cos', () => {
+    // 兜底层距离与采样器同口径：base = 0.1×|cos(shot, plateNormal)|。
+    // 60° 入射 → base=0.05；100mm/R=5：upper=250·0.99-100=147.5，
+    // lower=150·0.99-100=48.5，avg=98。
+    const h = hit(ArmorSection.HULL, 100.0, [0, 0, 0], {
+      normal: [Math.sin(Math.PI / 3), Math.cos(Math.PI / 3), 0.0],
+    })
+    const r = calculate(req('he', 300.0, 150.0, [h], { explosion_radius: 5.0 }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(98.0, 3)
+    expect(r.he).toMatchObject({ splash_min: 48.5, splash_max: 147.5, splash_avg: 98.0 })
   })
 
   it('out_ray_without_primary_returns_no_shot', () => {

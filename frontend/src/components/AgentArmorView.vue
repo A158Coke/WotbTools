@@ -162,12 +162,13 @@ function startViewer(preserveSelection = false) {
         selectedShooterId.value = null
         selectedTargetId.value = null
     }
-    // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）。
+    // 初始坦克：?tank=（缺省给 Super Conqueror = 19281，避免空参打开白屏；
+    // 2026-10-19 用户指定默认测试车辆）。
     // context-lost full rebuild 时沿用当前 shooter/target（picker 选择不写 URL），
     // 否则用户切车后点“重试”会被重置回 URL 里的初始坦克。
     const initialTarget = preserveSelection && selectedTargetId.value != null
         ? selectedTargetId.value
-        : (tank || 1)
+        : (tank || 19281)
     const initialShooter = preserveSelection && selectedShooterId.value != null
         ? selectedShooterId.value
         : (Number(q.get('shooter')) || initialTarget)
@@ -193,11 +194,29 @@ function startViewer(preserveSelection = false) {
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
             shotDamage: t('armor.shot_damage'),
+            shotPenChance: t('armor.penetration_chance'),
+            shotPenDamage: t('armor.penetration_damage'),
+            shotSplashDamage: t('armor.splash_damage'),
+            shotMinDamage: t('armor.min_damage'),
+            shotMaxDamage: t('armor.max_damage'),
+            shotAvgDamage: t('armor.avg_damage'),
+            shotAvgShort: t('armor.avg_short'),
+            heRadius: t('armor.splash_radius'),
+            heBestSample: t('armor.best_sample'),
+            directHit: t('armor.direct_hit'),
+            expectedDamage: t('armor.expected_damage'),
+            heBestSampleUpper: t('armor.best_sample_upper'),
+            heBestSampleLower: t('armor.best_sample_lower'),
+            sectionName: (section) => {
+                const key = section === 'gunBarrel' ? 'gun_barrel' : section
+                return t(`armor.sections.${key}`)
+            },
             shotRicochetSeg: t('armor.shot_ricochet_seg'),
             shotLoss: t('armor.shot_loss'),
             shotNominal: t('armor.shot_nominal'),
             shotBlocked: t('armor.shot_blocked'),
             shotDistance: t('armor.distance'),
+            effectivePenetration: t('armor.effective_penetration'),
             distanceUnit: t('armor.distance_unit'),
             mayPenetrate: t('armor.may_penetrate'),
             armorStateLabel: t('armor.armor_state'),
