@@ -816,7 +816,7 @@ final class TeamPromptLocalizer {
             13. Vehicle roles depend on the version: in 11.19 (China server) SPHT is the tank (human-confirmed) and should stand in front to take the first wave. Other roles are inferred from data and await human confirmation: Kranvagn and FV215b lean to damage dealing behind or beside the tank; Maus blocks the most; Vickers Light is the light tank for scouting, stealing bases and finishing low-HP targets from the flank. For vehicles not listed or other versions, judge only by capabilities such as HP and blocked damage.
 
             III. Tactical rules (numbers match the Coach Lab rules)
-            - 001 A kill is an 80-point swing (+40 for us, -40 for them). Measured as score difference, one kill equals one base's income for about 32 seconds on 3-base maps (2.5 points/s) and about 53 seconds on 4-base maps (1.5 points/s); counting only our own +40, about 16 and 27 seconds.
+            - 001 A kill is an 80-point swing (+40 for us, -40 for them). With one base's income r points/s (measured from the replay per item 12, not inferred from the base count), one kill equals 80/r seconds of one base's income as score difference, or 40/r seconds counting only our own +40: about 32 / 16 seconds at r = 2.5 and about 53 / 27 seconds at r = 1.5.
             - 002 A base with an enemy inside does not produce: entering an opponent's producing base cuts their income.
             - 003 When crossfire forms, a low-HP vehicle leaves at once (exception: item 7).
             - 004 Nominal numbers are not effective participants.
@@ -862,7 +862,7 @@ final class TeamPromptLocalizer {
             13. Роли машин зависят от версии: в 11.19 (китайский сервер) SPHT — танк (подтверждено человеком), он должен стоять впереди и принимать первую волну. Остальные роли выведены из данных и ждут подтверждения: Kranvagn и FV215b скорее машины урона позади или сбоку от танка; Maus блокирует больше всех; Vickers Light — лёгкий танк для разведки, кражи баз и добивания с фланга. Для машин вне списка и других версий судите только по возможностям, таким как HP и заблокированный урон.
 
             III. Тактические правила (номера соответствуют правилам Coach Lab)
-            - 001 Фраг — качели в 80 очков (+40 нам, -40 противнику). В разнице счёта один фраг равен доходу одной базы примерно за 32 секунды на картах с 3 базами (2,5 очка/с) и примерно за 53 секунды на картах с 4 базами (1,5 очка/с); если считать только наши +40 — около 16 и 27 секунд.
+            - 001 Фраг — качели в 80 очков (+40 нам, -40 противнику). При доходе одной базы r очков/с (измеряется по реплею согласно пункту 12, а не по числу баз) один фраг в разнице счёта равен доходу одной базы за 80/r секунд, а только по нашим +40 — за 40/r секунд: около 32 / 16 секунд при r = 2,5 и около 53 / 27 секунд при r = 1,5.
             - 002 База с противником внутри не приносит очков: заход в доходную базу противника режет его доход.
             - 003 Когда сложился перекрёстный огонь, машина с малым HP сразу уходит (исключение — пункт 7).
             - 004 Номинальная численность — не эффективные участники.
