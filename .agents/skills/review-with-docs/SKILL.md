@@ -209,7 +209,7 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 
 逐项门禁：
 
-- [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对候选 HEAD 作为合并后系统成立，不依赖读者知道 PR 过程（不是要求对当前 main 成立）。
+- [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对候选 HEAD 作为合并后系统成立，不依赖读者知道 PR 过程（不是要求对当前 main 成立）。例外：`docs/ROADMAP.md` 只写尚未完成的未来方向，不按当前状态判定；`docs/frontend/design-language.md` 不保留未实现的未来目标，未来方向归 ROADMAP。
 - [ ] **变更日记泄漏扫描**（字符串是信号，不是自动失败）：`本 PR` / `本次` / `本期` / `Step 0` / `review P1` / `P2` / `审查基线` / 只对某 commit 或 run 成立的 id / 作为发布日记的 `当前候选版本` / `未来 Kx` / `下一阶段` / `以最终实现为准` / `migration completed` / 先旧实现后新实现的对比叙事。
 - [ ] **五分类**：每个命中必须判定 A 当前契约（改写为状态描述并保留）、B 产品/业务历史（只进入 `HISTORY.md`）、C 技术历史（只进入 `docs/architecture/TECHNICAL_EVOLUTION.md`）、D 研究证据/来源/实验/被否证假设（保留在 `docs/research/**`，不得被迫搬进 HISTORY 或 TECHNICAL_EVOLUTION）、E 一次性实现/审查/PR 日记（删除；Git 历史足够）。B/C 不得留在 canonical 文档，E 不得搬进历史文档。
 - [ ] **无历史堆放**：不得以 `archive/` / `old/` / `historical/` / “Historical” 标签保留过期现状；已完成迁移/验收/审计文档不得仅作为历史存储保留。
