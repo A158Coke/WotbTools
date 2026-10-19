@@ -130,15 +130,18 @@ class PromptRuleContractTest {
 
     @Test
     void coachStandardKillValueUsesConsistentScoreBasis() {
-        // 80-point swing (+40/-40) vs one base's income: 80 / 2.5 = 32 s, 80 / 1.5 = 53 s; own +40 only: 16 s / 27 s.
-        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("3 点图（2.5 分/秒）约 32 秒，4 点图（1.5 分/秒）约 53 秒"));
-        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("只算己方 +40 时分别约 16 秒、27 秒"));
-        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("about 53 seconds on 4-base maps (1.5 points/s)"));
-        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("примерно за 53 секунды на картах с 4 базами"));
+        // 80-point swing (+40/-40) vs one base's measured income r: 80/r and 40/r; r is not inferred from the base count
+        // (lagoon and forgecity have 3 bases but 1.5 points/s).
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("80/r 秒"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE.contains("r = 2.5 时约 32 / 16 秒，r = 1.5 时约 53 / 27 秒"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("about 32 / 16 seconds at r = 2.5 and about 53 / 27 seconds at r = 1.5"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("около 32 / 16 секунд при r = 2,5 и около 53 / 27 секунд при r = 1,5"));
         for (final String rule : List.of(TeamPromptLocalizer.COACH_STANDARD_RULE,
                 TeamPromptLocalizer.COACH_STANDARD_RULE_EN, TeamPromptLocalizer.COACH_STANDARD_RULE_RU)) {
             assertFalse(rule.contains("一个点 27 秒的收入") || rule.contains("worth about 27 seconds")
                     || rule.contains("стоит примерно 27 секунд"), "80 分摇摆不能等同于 27 秒单点收入");
+            assertFalse(rule.contains("3 点图（2.5 分/秒）") || rule.contains("3-base maps (2.5 points/s)")
+                    || rule.contains("картах с 3 базами (2,5"), "产分速率不能按点数固定");
         }
     }
 }
