@@ -616,8 +616,8 @@ state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 `/opt/wotb-tx/tofu-provider-mirror` 的 filesystem mirror fail-closed 安装。业务表仍
 由 Flyway 单一拥有，OpenTofu 不声明任何表/索引/序列。`business-postgres`-only
 部署不需要 Keycloak/frontend/Caddy 输入；`infra/tofu/postgres-business/**`
-变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）
-与名人堂迁移前置见 `docs/operations/business-postgres.md`，边界见
+变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）与名人堂 schema 兼容性不变量见
+`docs/operations/business-postgres.md`，架构边界见
 `docs/architecture/opentofu-postgres-business.md`。
 
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；

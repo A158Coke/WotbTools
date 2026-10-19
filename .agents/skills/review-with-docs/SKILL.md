@@ -34,7 +34,8 @@ merge-base(origin/main, HEAD)..HEAD
 - **Untracked**：与任务相关的 untracked source/config/test/doc 必须进入审查；只有 gitignored、generated transient output、或明确不属于 candidate implementation 的临时文件可 skip，且必须写明理由。
 - **Docs-only candidate**：OCR 可能把所有 `.md` 标为 `unsupported_ext`。此时 A3 必须人工审查每个 changed doc，并把它们计入 calculated review scope；不得因 OCR reviewable_count=0 直接 PASS，也不得因此无条件 BLOCKER。
 - **Calculated review scope = OCR reviewable files ∪ A3 已人工审查的 docs**。
-- **Fail-closed**：若 `git status --porcelain` 显示存在 candidate changes，但最终 calculated review scope == 0（OCR 无 reviewable 且 A3 无人工审查记录），则 BLOCKER：
+- **Candidate changes** = `git status --porcelain` 非空 **或** `git diff --name-only merge-base..HEAD` 非空。
+- **Fail-closed**：若存在 candidate changes，但最终 calculated review scope == 0（OCR 无 reviewable 且 A3 无人工审查记录），则 BLOCKER：
 
 ```text
 Candidate tree contains changes but review scope is empty.
@@ -80,9 +81,10 @@ Candidate tree contains changes but review scope is empty.
    （发现不到计划文件则 fallback 用户显式 requirements / acceptance criteria），
    逐条审计完成度，产出 Plan compliance
 4. **Layer A 补充审计** — DI 注入审计 + AI 死代码清理 + 文档自检（按下方检查单，OCR 不覆盖的领域）
-5. **Layer C — Reconciler** — 合并 Layer A + Layer B finding，去重、验证、重定级，输出 blocker count
-6. **修复 → 重审** — 对 BLOCKER/MAJOR 逐项修复并重审，循环直到零 blocker
-7. **出具报告** — Plan compliance + Findings + Validation + Final（Blocker count）
+5. **Internal checklists（正常路径必跑）** — 运行 `code-quality.md` 6 项检查；代码变更同时跑 `code-smell.md`，前端变更适用时跑 `fallow.md`；findings 进入 Layer C。不得只在 OCR 失败 fallback 时运行。
+6. **Layer C — Reconciler** — 合并 Layer A + Layer B + internal checklist finding，去重、验证、重定级，输出 blocker count
+7. **修复 → 重审** — 对 BLOCKER/MAJOR 逐项修复并重审，循环直到零 blocker
+8. **出具报告** — Plan compliance + Findings + Validation + Final（Blocker count）
 
 ---
 
@@ -124,8 +126,8 @@ ocr delegate preview --format json
   `excluded_files`（含 exclude_reason）
 - **多 commit 分支**：OCR 自动基于 merge_base 覆盖 feature branch 全部变更，不是只 review HEAD~1
 - **混合 scope**：range preview 与 workspace preview 的结果按 path 做 deterministic union / dedupe；不得二选一
-- **Fail-closed**：`git status --porcelain` 有 candidate changes 而 union 后 `reviewable_count == 0`，且 A3 没有对 changed docs 的人工审查记录 → BLOCKER；
-  不得按「Case 6 — No meaningful diff」PASS。docs-only 时 A3 必须覆盖全部 changed docs 并计入 scope；Layer A plan audit 仍继续，但 final gate 不得在未审查 docs 时通过。
+- **Fail-closed**：candidate changes（worktree **或** committed range）存在而 union 后 `reviewable_count == 0`，且 A3 没有对 changed docs 的人工审查记录 → BLOCKER；
+  不得按「Case 6 — No meaningful diff」PASS。clean committed branch 上只有 OCR-unsupported 且非 Markdown 的文件时，OCR scope=0 且 A3 docs=0，同样 BLOCKER。docs-only 时 A3 必须覆盖全部 changed docs 并计入 scope；Layer A plan audit 仍继续，但 final gate 不得在未审查 docs 时通过。
 
 ### B2. 传入业务背景（compact，不塞整个 plan）
 

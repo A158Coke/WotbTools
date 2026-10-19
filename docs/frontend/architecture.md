@@ -138,6 +138,6 @@ AppShell 中的 useCreatorAvailability 提供唯一的健康能力与公开分�
 
 RecommendationsPage 是类型入口，CreatorsPage 以 type prop 复用 UP 和作品列表；creators 深链直达 UP，recommended-videos 打开作品，两者属于同一导航栏目。CreatorsConfigPage 用 recommendationType query 选择同一表单/类别管理，VIDEO 不展示实力等级。Vue Router 拥有类型与分类历史，切换前由路由 guard 确认放弃脏草稿/图片；保存中阻止切换。useCreators/useCreatorManagement 将 type 纳入请求所有权，过期 metadata/list/editor 响应不得污染新类型。api/creators.ts 只消费 /api/recommendations 和 /api/admin/recommendations 的现行 wire；等级管理使用后者的 /levels，现行图片引用 /api/creators/avatars/{id} 保留，组件不处理 endpoint 或旧格式适配。
 
-先部署并验证现行后端，再协调网页及内部测试 APK 的接口切换；没有旧接口回退。失败时恢复成对的已验证版本，不回退到无法识别 VIDEO 数据的旧后端。旧内容接口仅内部使用、尚无用户，因此候选版本按明确例外使用 patch 3.13.1，Bridge v3 和最低支持版本 3000000 保持不变，见 [发布说明](../android/releases/3.13.1.md)。
+先部署并验证现行后端，再协调网页及内部测试 APK 的接口切换；没有旧接口回退。失败时恢复成对的已验证版本，不回退到无法识别 VIDEO 数据的旧后端。旧内容接口仅内部使用、尚无用户；Bridge v3 与最低支持版本 3000000 保持不变。版本发布约束见 [Android release process](../android/release-process.md)。
 
 初次加载、恢复联网、窗口焦点、显式刷新及管理写入ACK触发共享读取；ACK会作废写前请求。失败保留最近成功快照，不伪造空目录或清掉已保存/正在编辑的草稿。公开分类失效后router.replace回全部，保留其他query/hash；管理员空分类不回退。该状态不替代useFeatureGate的网络判断，不轮询、不保存到localStorage，不承诺跨会话实时更新。
