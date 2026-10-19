@@ -200,11 +200,24 @@ requirement 未完成 → **即使 OCR 无 finding 也必须成为 BLOCKER**。
 - [ ] **测试可构造**：改造后单测可直接 `new XxxService(mockDep)` 构造，无需 `@SpringBootTest` / 反射字段注入
 - [ ] **首批 vs 增量**：本次变更新增/修改的类强制审计；历史存量字段注入随所在类改动顺手改造，暂不开专项大扫除
 
-### A3. 文档检查清单
+### A3. Current-State Documentation Gate（强制）
 
-> 与现有 review-with-docs 文档检查完全一致（canonical 专题文档 / DEVELOPER_GUIDE / README /
-> API 文档 / i18n / 代码注释 / 配置依赖 / current-plan / AI 死代码清理），
-> 逐项见文末「文档检查清单（完整）」。
+> 文档同步不只检查「有没有改文档」，更要检查「文档描述的是不是合并后的当前系统」。
+> 完整检查项见文末「文档检查清单（完整）」。
+
+审查者必须显式回答：**Does the canonical documentation describe only the resulting post-merge system state?**
+
+逐项 gate：
+
+- [ ] **当前状态**：逐份打开本次改动涉及的 canonical 文档，按「合并后新维护者第一次阅读」检查；每句话必须对当前 main 成立，不依赖读者知道 PR 过程。
+- [ ] **变更日记泄漏扫描**（字符串是信号，不是自动失败）：`本 PR` / `本次` / `本期` / `Step 0` / `review P1` / `P2` / `审查基线` / 只对某 commit 或 run 成立的 id / 作为发布日记的 `当前候选版本` / `未来 Kx` / `下一阶段` / `以最终实现为准` / `migration completed` / 先旧实现后新实现的对比叙事。
+- [ ] **三分类**：每个命中必须判定 A 当前契约（改写为状态描述并保留）、B 有长期价值的产品/技术历史（只进入 `HISTORY.md` 或 `docs/architecture/TECHNICAL_EVOLUTION.md`）、C 一次性的实现日记（删除；Git 历史足够）。B 不得留在 canonical 文档，C 不得搬进两份历史。
+- [ ] **无历史堆放**：不得以 `archive/` / `old/` / `historical/` / “Historical” 标签保留过期现状；已完成迁移/验收/审计文档不得仅作为历史存储保留。
+- [ ] **research 例外**：`docs/research/**` 可保留实验与证据史，但不得把已退役架构描述成当前生产状态。
+- [ ] **current-plan 权威**：永久源码/配置/文档不得依赖 `docs/current-plan.md` 作为架构或行为权威（仅 planning/execution/finish-task 等工作流可引用）。
+- [ ] **路由而非占有**：`DEVELOPER_GUIDE.md` 指向领域 SSOT，不复制业务规则；`docs/README.md` 只回答「今天该读哪份文档」。
+
+任一项不满足 → **BLOCKER**，修复后重审。
 
 ### A4. AI 死代码 / 提前性代码清理
 
@@ -356,6 +369,7 @@ Tool failure 必须：
 | BLOCKER | N | N | N | — |
 | 字段注入改造 | — | — | [扫描 N / 改造 N / 保留 N] | — |
 | 文档同步 | — | — | — | [齐全 / 缺 N 项] |
+| Current-state gate | — | — | — | [PASS / FAIL] |
 | AI 死代码清理 | — | — | [扫描 N / 删除 N / 保留 N] | — |
 
 #### Plan compliance
@@ -399,7 +413,8 @@ Blocker count: N   （0 才允许判定完成）
 ### 1. Canonical documentation
 - [ ] 变更对应的 canonical 文档（`docs/README.md` 索引指向的专题文档）是否同步
 - [ ] 变更描述是否准确（不含实现细节，面向读者）
-- [ ] SSOT 划分是否与 `.agents/AGENTS.md` 规则 3 一致（现状 → README / DEVELOPER_GUIDE / 专题文档；长期演进 → `HISTORY.md`；未来方向 → `docs/ROADMAP.md`）
+- [ ] SSOT 划分与 `.agents/AGENTS.md` 规则 3 一致：当前状态 → README / DEVELOPER_GUIDE / 专题文档 / runbook；产品与业务演进 → `HISTORY.md`；技术/架构演进 → `docs/architecture/TECHNICAL_EVOLUTION.md`；未来方向 → `docs/ROADMAP.md`
+- [ ] 文档只描述合并后的当前系统状态，不是本次改动的日记（详见 A3 gate）
 
 ### 2. DEVELOPER_GUIDE
 - [ ] 新增字段/API 是否更新字段表
@@ -429,13 +444,17 @@ Blocker count: N   （0 才允许判定完成）
 - [ ] Docker 构建变更是否同步到相关 Dockerfile 注释
 
 ### 7. plan source（计划文件同步，按 A0 发现）
+> `docs/current-plan.md` 是临时任务状态，不是当前系统契约；canonical 文档/源码/配置不得引用它作为架构或行为权威。
+
 - [ ] plan source（A0 解析结果，仓库约定 `docs/current-plan.md`）中是否有与本变更相关的进行中任务；有则任务状态是否与实际一致（IN PROGRESS → COMPLETED / BLOCKED）
 - [ ] 计划的业务目标/范围/验收标准是否与本次变更一致（grill-me / plan-designer 产出的确认单与方案单已落入计划文件；无计划文件时以用户显式 requirements 为准）
 
-### 8. HISTORY.md（项目演进）
-> 判据见 `.agents/AGENTS.md` 规则 3；站点 History 页（`?view=history`）在构建期以 `?raw` 读取该文件。
+### 8. HISTORY.md / TECHNICAL_EVOLUTION.md（长期历史）
+> 判据见 `.agents/AGENTS.md` 规则 3；站点 History 页（`?view=history`）在构建期以 `?raw` 读取 `HISTORY.md`。
 
-- [ ] 本变更是否具有长期产品/架构/工程意义；纯版本号、逐提交细节、临时修复**不写**
+- [ ] 产品/业务决策与用户能力演进写入 `HISTORY.md`；架构、数据流、authority、拓扑、身份模型与已退役技术方案写入 `docs/architecture/TECHNICAL_EVOLUTION.md`
+- [ ] 只记录具有长期产品/业务或技术演进意义的变化；纯版本号、逐提交细节、实现过程、review 轮次**不写**
 - [ ] 追加到对应时间线的正确位置，不重写既有历史结论
-- [ ] 面向读者表述：不含 PR 号 / commit hash / 内部模块名
+- [ ] 面向读者表述：不含 PR 号 / commit hash / 内部实现模块名
 - [ ] 措辞变动不引入与 README / DEVELOPER_GUIDE / ROADMAP 冲突的现状描述
+- [ ] 同一事实不同时写入两份历史：产品理由进 HISTORY，技术理由进 TECHNICAL_EVOLUTION

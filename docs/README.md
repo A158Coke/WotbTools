@@ -1,29 +1,9 @@
 # WotBTools 文档索引
 
-> 每个文档「什么时候该读」。动手前先读 `DEVELOPER_GUIDE.md` 与 `../.agents/AGENTS.md`。
+> 本索引的唯一职责：**今天该读哪份文档？**
+> 当前状态文档只描述合并后的系统；产品/业务演进见 `../HISTORY.md`，技术/架构演进见 `architecture/TECHNICAL_EVOLUTION.md`，逆向证据见 `research/**`。
 
 固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
-
-## Language map（中英分类与未来拆分）
-
-| 分类 | 范围 | 维护规则 |
-|---|---|---|
-| 中文 / mixed primary | `README.md`、`DEVELOPER_GUIDE.md`、本索引、功能/运维/Auth/Android/前端契约文档 | 作为接手、开发、运维入口；面向维护者，允许中英术语混排 |
-| English primary | 大部分 `research/replay/*.md`、`research/maps/*.md`、部分 architecture/development benchmark 文档 | 作为逆向研究、实验、benchmark 原始记录；除结论已收敛的入口外，不要求逐篇翻译 |
-| Bilingual canonical | `research/replay/WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md` | Replay protocol 顶层权威参考；与英文旧综合参考冲突时优先读它 |
-| Localized prompt docs | `java/wotb-ai/src/main/resources/prompts/**/*.zh.md` | 不是 `docs/` 索引文档；按 prompt 资源随代码维护 |
-
-### `docs/cn` / `docs/en` 迁移准备
-
-本次整理只固定分类与同步规则，不在同一 PR 内批量移动历史路径。后续如拆目录，应使用单独文档迁移 PR，先保留或修复相对链接，再调整本索引。
-
-| 目标目录 | 预期内容 | 迁移规则 |
-|---|---|---|
-| `docs/cn/` | 中文或 mixed primary 的接手、功能、运维、Auth、Android、前端契约文档 | 作为维护者入口；产品/运维/契约类文档发生语义变更时，应同步对应英文翻译或在索引标记 translation pending |
-| `docs/en/` | 英文翻译、English primary 的 benchmark / research 入口与对外说明 | 作为英文阅读入口；如果中文 canonical 先更新，应在同一 PR 更新已有英文对应文档 |
-| `docs/research/` | 大体量逆向研究原始记录与 replay protocol 证据链 | 暂不强制迁入 `cn` / `en`；以子目录索引和 bilingual canonical 文件决定阅读顺序 |
-
-翻译同步遵循“先定 canonical，再同步 counterpart”：每个迁移后的文档应在索引里标明主维护语言。已有对应翻译时，同一功能/契约/运维改动必须同步更新；没有对应翻译时，不静默漂移，应在索引或文档头部标记待翻译。
 
 ## Start here（入口）
 
@@ -33,7 +13,6 @@
 | `frontend/local-testing.md` | **本机全功能测试 runbook**：起环境（Agent 引擎 / 资产面 / 认证门禁）、自检探针、故障对照、自动化门禁时（本机测试最先读） |
 | `frontend/local-production-dev.md` | 本地前端连接生产后端 / Keycloak 链路与安全边界时 |
 | `../README.md` / `../README.en-US.md` | 了解当前产品是什么、功能与工程取舍 |
-| `../HISTORY.md` | 了解项目从 Replay 提取器到当前架构的关键产品与技术演进 |
 | `../.agents/AGENTS.md` | 动手前必读（仓库级硬约定、接手与调整固定流程） |
 
 ## Development（开发与性能）
@@ -45,22 +24,23 @@
 
 ## Architecture（架构）
 
+> 这一节描述当前架构；技术历史在 `architecture/TECHNICAL_EVOLUTION.md`。
+
 | 文档 | 何时读 |
 |---|---|
 | `frontend/architecture.md` | 改 Vue 应用壳、路由、依赖方向或状态 ownership 时 |
 | `frontend/replay-workspace.md` | 改 Replay Workspace capability、selection 或 dataset 边界时 |
 | `frontend/ui-system.md` | 改 UI Profile、token、layout primitive 或响应式规则时 |
 | `frontend/design-language.md` | 改任何界面前：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
-| `frontend/layout-audit-2026-09-30.md` | 查看多端布局与 UI/UX 审计快照（问题清单、改版方案、路线图） |
-| `architecture/TECHNICAL_EVOLUTION.md` | 查技术决策、authority / boundary、分布式 Replay 与双云架构的 canonical 演进时 |
+| `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构决策、authority / boundary、分布式 Replay 与双云拓扑的 canonical 技术演进时（历史，不是当前契约） |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |
 | `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
-| `architecture/client-replay-engine-migration.md` | 了解服务端解析器退役（2026-10-02）的决策、结果与后续待办时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
 | `architecture/engineering-metrics.md` | GitHub engineering exporter、classification、freshness 与 Engineering Overview |
 | `architecture/grafana-opentofu.md` | 改 Grafana OpenTofu API 管理方式时 |
 | `architecture/opentofu-postgres-keycloak.md` | 改 TX Keycloak PostgreSQL OpenTofu root、state 或本地执行边界时 |
+| `architecture/opentofu-postgres-business.md` | 改 Business PostgreSQL OpenTofu root、state 或本地执行边界时 |
 | `architecture/tankopedia-reference-data.md` | 改 Tankopedia reference data 同步 / 单一来源时 |
 | `api/error-contract.md` | 新增/修改 API error code、Security 401/403、前端错误展示或 traceId 时 |
 
@@ -82,17 +62,19 @@
 
 ## Research（逆向研究）
 
+> 本目录刻意保留实验、被否证假设与证据来源；其中已退役架构不作为当前生产描述。
+
 | 文档 | 何时读 |
 |---|---|
 | `research/replay/README.md` | 进入 replay protocol 逆向研究前；按其中权威读取顺序继续读 |
-| `research/replay/WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md` | 查 11.19 replay protocol 中英双语顶层权威参考时 |
+| `research/replay/WOTB_REPLAY_PROTOCOL_11_19_BILINGUAL_COMPLETE_REFERENCE.md` | 查 11.19 replay protocol 中英双语顶层权威参考时；与英文旧综合参考冲突时优先读它 |
 | `research/replay/protocol.md` | 逆向 data.wotreplay 包类型 / 协议时 |
 | `research/replay/assault-base-state.md` | 查 11.20 Assault wrapper8/root8 字段解析、raw/canonical 边界与受控样本证据时 |
 | `research/replay/turret-direction.md` | 查炮塔相对方向证据时 |
 | `research/replay/visibility.md` | 查可见性 / 点亮证据时 |
 | `research/replay/capture-probe.md` | 查占点时间线探测结论时 |
 | `research/maps/3d-playback-client-map-research.md` | 查 3D playback 客户端地图研究时 |
-| `research/armor-inspector-he-damage.md` | 查 Armor Inspector HE 伤害公式、首面 3× 规则、R 内采样域、当前回退取舍与实验归档时 |
+| `research/armor-inspector-he-damage.md` | 查 Armor Inspector HE 伤害公式、首面 3× 规则、R 内采样域与实验归档时 |
 
 ## Android
 
@@ -108,22 +90,21 @@
 | 文档 | 何时读 |
 |---|---|
 | `operations/observability.md` | 监控 / 日志 / Grafana / 保留策略 / 排障时 |
-| `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与名人堂迁移前置时 |
-| `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、bootstrap/adoption 与备份时 |
 | `operations/observability-runbook.md` | 生产观测链路排障和人工 runbook 时 |
+| `operations/business-postgres.md` | TX Business PostgreSQL runtime/OpenTofu ownership、凭据、备份/恢复与当前运行验证时 |
+| `operations/opentofu-local-state.md` | OpenTofu owner-host persistent local state、bootstrap/adoption 与备份时 |
 | `operations/security-log-retention.md` | 安全日志 190 天留存边界、脱敏规则、合规查询与投诉举报渠道（公安自评估事实源）时 |
 | `operations/ai-evaluation.md` | 运行 / 复盘 AI evaluation 运维流程时 |
 | `operations/agent-asset-origin.md` | 部署/更换 Agent 3D 静态资产源（GLB/地图/坦克数据）时 |
 | `operations/league-broadcast-covers.md` | 配置联赛直播封面 COS、权限、上传失败和孤立对象回收时 |
 | `operations/sponsor-runtime-content.md` | 更新/轮换赞助收款码、关闭赞助入口，或排查「赞助页显示暂未配置」时 |
-| `operations/ai-service.md` | Yecao 独立 AI 服务的预部署、私网边界与健康验收时 |
-| `operations/komodo-public-ingress.md` | Komodo 控制平面公网入口（K2）ownership、两层验证、手工验收与回滚时 |
-| `operations/komodo-periphery.md` | Komodo Periphery agent（K3.1 Yecao / K3.2 TX1 / K3.3 TX2，均已生产验证）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、三把宿主锁、TX2 WireGuard MTU 1380 前置条件与恢复时 |
-| `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层（K4.1）：`infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、首次手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
-| `operations/tx-service-plane.md` | TX1 K6A WireGuard-only service endpoints、loopback administration、保持 Docker-local production dependency、合并后验收与回滚时 |
-| `operations/komodo-k5-runtime-acceptance.md` | Komodo K5：TX2 disposable Stack 的真实 create/deploy/run/log/stop/destroy/delete 验收、Compose 与腾讯云 Docker Hub mirror 前置、零残留清理证明及后续 workload migration 边界时 |
-| `operations/komodo-k7b-frontend-shadow.md` | Komodo K7B TX2 Frontend shadow 的声明式 Stack ownership、零流量切换边界、runtime-content 非等价边界与 `TX2_FRONTEND_SHADOW_READY` 验收时 |
-| `operations/tx2-production-worker.md` | TX2 production worker（K7A）：独立 host 前置条件 owner（Compose v2、`daemon.json` 镜像、root 执行上下文的 TCR pull 凭据）、三段 ownership 边界、凭据生命周期、fail-closed 矩阵、`TX2_PRODUCTION_WORKER_READY` 与从零重建流程时 |
+| `operations/ai-service.md` | Yecao 独立 AI 服务的生产运行、私网边界与健康验收时 |
+| `operations/komodo-public-ingress.md` | Komodo 控制平面公网入口 ownership、DNS/TLS/Caddy、验证与回滚时 |
+| `operations/komodo-periphery.md` | Komodo Periphery agent（Yecao / TX1 / TX2）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、三把宿主锁、TX2 WireGuard MTU 1380 前置条件与恢复时 |
+| `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层 `infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
+| `operations/tx-service-plane.md` | TX1 WireGuard-only service endpoints、loopback administration、Docker-local production dependency 与回滚时 |
+| `operations/tx2-production-worker.md` | TX2 production worker（K7A）：独立 host 前置条件、Compose/镜像/凭据生命周期、ownership 边界、fail-closed 矩阵与从零重建流程时 |
+| `operations/komodo-k7c-frontend-cutover.md` | 查当前 TX1/TX2 frontend active-active 拓扑、frontend release ownership、runtime-content 复制边界与 rollback 时 |
 
 ## Reference（参考字典）
 
@@ -148,20 +129,19 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `../HISTORY.md` | 查关键产品方向、架构边界、身份模型、Replay / Evidence 与生产拓扑的历史演进时；Git 保留逐提交细节 |
-| `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构决策的 canonical timeline、当前 authority model 与已退役迁移机制时 |
+| `../HISTORY.md` | 查产品/业务能力为何引入、变化或退役，以及产品方向决策时（产品历史，不是当前契约） |
+| `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构、数据流、authority、身份模型与生产拓扑的演进时（技术历史，不是当前契约） |
 
 ## Roadmap（路线图）
 
 | 文档 | 何时读 |
 |---|---|
-| `ROADMAP.md` | 了解产品方向（Now / Next / Later / Research） |
+| `ROADMAP.md` | 了解产品方向（Now / Next / Later / Research）；它不描述当前系统状态 |
 
 ## Auth（认证）
 
 | 文档 | 何时读 |
 |---|---|
-| `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时 |
 | `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
