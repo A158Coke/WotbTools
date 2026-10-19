@@ -365,37 +365,72 @@ try {
 
   // —— 结果卡随画布滚动（真实布局，替代纯源码正则守卫）——
   // #traj-info 是 position:fixed；页面滚动后 left/top 必须按 canvas 的实时 rect 重算。
-  // 先等结果卡在屏幕上真正稳定：拖动用例刚结束，OrbitControls damping 的渐近余滑会让
-  // cameraSettledMs 长时间不达阈值；直接观测卡片连续帧的位置范围，超时则 fail（review
-  // 2026-10-18：不得吞掉 timeout，也不得用固定 delay）。
+  //
+  // 同步契约（2026-10-19）：这个 scroll-layout 用例真正需要的不变量是「卡片锚定在画布上」，
+  // 不是「卡片绝对屏幕坐标连续 5 帧不动」。旧实现把后者当成相机停止的判据，等于要求
+  // OrbitControls damping（每帧只衰减 5%）在慢 runner（~2fps 时 45s 仅 ~90 帧）内收敛到
+  // 亚像素；按 0.95^n 计算需要 135+ 帧，所以它必然随帧率翻车——是测试同步错误，不是产品 bug。
+  // 新同步链（全部等状态，不吞超时、不新增固定 delay）：
+  //   1) 前一个 hull drag 的指针会话释放（aiming=false / controls enabled）；
+  //   2) 用 animate 每帧同一个 controls.update() 把余滑快进到收敛（400 次后残量 0.95^400），
+  //      相机到达与自然收敛完全一致的静止位姿，只是不再等慢 runner 的真实帧；
+  //   3) 等产品自己的静止状态 cameraSettledMs > max(400, 3×frameIntervalMs)；
+  //   4) 等「卡片相对画布」的锚点连续 3 帧稳定，这才是不变量；
+  //   5) 滚动后先等画布 rect 移动，再等卡片重新锚定回同一相对偏移，最后对比 delta。
   {
-    const cardStable = await page.evaluate(`new Promise((resolve) => {
+    await page.waitForValue(`(() => {
+      const s = window.__armorRicochet.aimingState();
+      return s.aiming === false && s.controlsEnabled === true;
+    })()`, (v) => v === true, { timeout: 10000, label: 'aiming released before scroll test' })
+
+    // 快进 damping：与 animate 每帧调用的是同一个 OrbitControls.update()，400 帧后
+    // 余滑 = 0.95^400 ≈ 1e-9，相机位姿与自然收敛一致；不修改产品配置（damping 仍为开）。
+    await page.waitForValue('!!window.__DBG__?.controls', (v) => v === true,
+      { timeout: 10000, label: 'controls debug handle' })
+    const flushed = await page.evaluate(`(() => {
+      const controls = window.__DBG__.controls;
+      for (let i = 0; i < 400; i++) controls.update();
+      return true;
+    })()`).catch((error) => ({ error: error.message }))
+    if (flushed !== true) throw new Error(`camera damping flush failed (${JSON.stringify(flushed)})`)
+
+    // 先让下一帧观测到这次跳跃（trackCameraMotion 复位 cameraMovedAt），再等产品静止状态。
+    await page.evaluate('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))')
+    await page.waitForValue(`(() => {
+      const s = window.__armorRicochet.aimingState();
+      return s.cameraSettledMs > Math.max(400, 3 * s.frameIntervalMs);
+    })()`, (v) => v === true, { timeout: 20000, label: 'camera settled before scroll test' })
+
+    // 锚定不变量的就绪门：卡片相对画布的偏移（而不是绝对屏幕坐标）连续 3 帧稳定。
+    const anchorReady = await page.evaluate(`new Promise((resolve) => {
       const started = performance.now();
-      let samples = [];
+      let prev = null, stableFrames = 0, last = null;
       const tick = () => {
-        const el = document.getElementById('traj-info');
-        const r = el?.getBoundingClientRect();
-        if (r && r.width > 0 && r.height > 0) {
-          samples.push({ x: r.x, y: r.y });
-          if (samples.length > 5) samples.shift();
-          if (samples.length === 5) {
-            const xs = samples.map(s => s.x), ys = samples.map(s => s.y);
-            if (Math.max(...xs) - Math.min(...xs) < 0.5 && Math.max(...ys) - Math.min(...ys) < 0.5) {
-              resolve(true);
-              return;
-            }
-          }
+        const card = document.getElementById('traj-info');
+        const canvas = document.querySelector('canvas');
+        const c = card && card.getBoundingClientRect();
+        const v = canvas && canvas.getBoundingClientRect();
+        last = c && v && c.width > 0 && c.height > 0
+          ? { anchorX: c.x - v.x, anchorY: c.y - v.y, cardW: c.width, cardH: c.height }
+          : null;
+        if (last) {
+          stableFrames = prev && Math.abs(last.anchorX - prev.anchorX) < 0.5
+            && Math.abs(last.anchorY - prev.anchorY) < 0.5 ? stableFrames + 1 : 1;
+          prev = last;
+          if (stableFrames >= 3) { resolve({ ok: true, anchor: last }); return; }
         } else {
-          samples = [];
+          stableFrames = 0;
+          prev = null;
         }
-        // CI 慢 runner 约 3fps：OrbitControls damping 0.05 需要 ~90 帧才能把余滑
-        // 压到 0.5px；20s 只够 ~60 帧。保持“必须真正稳定”的判据，只放宽等待预算。
-        if (performance.now() - started > 45000) { resolve(false); return; }
+        if (performance.now() - started > 15000) { resolve({ ok: false, anchor: last }); return; }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     })`)
-    if (!cardStable) throw new Error('result card never stabilized before scroll test')
+    if (!anchorReady.ok) {
+      throw new Error(`result card never anchored to canvas before scroll test (${JSON.stringify(anchorReady)})`)
+    }
+
     const readRects = () => page.evaluate(`(() => {
       const card = document.getElementById('traj-info');
       const canvas = document.querySelector('canvas');
@@ -404,10 +439,12 @@ try {
       return c && v ? {
         card: { x: c.x, y: c.y, w: c.width, h: c.height, display: getComputedStyle(card).display },
         canvas: { x: v.x, y: v.y, w: v.width, h: v.height },
+        anchor: { x: c.x - v.x, y: c.y - v.y },
         scrollY: window.scrollY,
       } : null;
     })()`)
     const before = await readRects()
+    if (!before) throw new Error('result card / canvas rect missing before scroll test')
     await page.evaluate(`(() => {
       const d = document.createElement('div');
       d.id = 'scroll-fixture';
@@ -417,13 +454,21 @@ try {
       document.body.append(d);
       window.scrollTo(0, 120);
     })()`)
-    // 等卡片真正被渲染循环重摆位（状态等待），不要用固定 delay：慢 runner/相机余滑
-    // 时固定延迟会把相机运动混进位移断言（review 2026-10-18）。
+    // 画布真的因滚动移动（状态等待，不用固定 delay）。
     await page.waitForValue(`(() => {
-      const c = document.getElementById('traj-info')?.getBoundingClientRect();
-      return c ? c.y : null;
-    })()`, (v) => Number.isFinite(v) && Math.abs(v - before.card.y) > 20,
-    { timeout: 5000, label: 'post-scroll card reposition' })
+      const v = document.querySelector('canvas')?.getBoundingClientRect();
+      return v ? v.y : null;
+    })()`, (v) => Number.isFinite(v) && Math.abs(v - before.canvas.y) > 20,
+    { timeout: 5000, label: 'canvas moved by scroll' })
+    // 卡片按新的画布 rect 重摆位：相对画布的锚点回到滚动前的值（产品契约）。
+    await page.waitForValue(`(() => {
+      const card = document.getElementById('traj-info');
+      const canvas = document.querySelector('canvas');
+      const c = card?.getBoundingClientRect();
+      const v = canvas?.getBoundingClientRect();
+      return c && v ? { x: c.x - v.x, y: c.y - v.y } : null;
+    })()`, (a) => !!a && Math.abs(a.x - before.anchor.x) < 1.5 && Math.abs(a.y - before.anchor.y) < 1.5,
+    { timeout: 5000, label: 'result card re-anchored after scroll' })
     const after = await readRects()
     const movedCanvas = before && after && Math.abs(after.canvas.y - before.canvas.y) > 20
     const sameDelta = before && after
@@ -435,7 +480,12 @@ try {
       document.getElementById('scroll-fixture')?.remove();
       window.scrollTo(0, 0);
     })()`)
-    await delay(200)
+    // 布局恢复原状后再进入下一个用例（替代原来的固定 delay）。
+    await page.waitForValue(`(() => {
+      const v = document.querySelector('canvas')?.getBoundingClientRect();
+      return v ? v.y : null;
+    })()`, (v) => Number.isFinite(v) && Math.abs(v - before.canvas.y) < 1,
+    { timeout: 5000, label: 'canvas restored after scroll fixture' })
   }
 
   // —— 双指缩放（评审 BLOCKER：炮塔/炮管上的第一根手指不得吃掉 pinch）——
