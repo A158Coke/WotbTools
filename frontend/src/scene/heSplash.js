@@ -31,7 +31,7 @@
  */
 
 import * as THREE from 'three'
-import { raycastPackAll, RC } from './armorCollisionPack.js'
+import { raycastPackAll, raycastGridAll, RC } from './armorCollisionPack.js'
 
 export const HE_SAMPLE = Object.freeze({
     LAT_STEPS: 20,
@@ -160,8 +160,10 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
  * @param {object} pack buildPack() 结果
  * @param {THREE.Vector3} origin 命中点（世界坐标）
  * @param {{originDir?:THREE.Vector3, normal?:THREE.Vector3, damage:number,
- *   explosionRadius:number, liningFactor?:number, originOffset?:number}} opts
+ *   explosionRadius:number, liningFactor?:number, originOffset?:number,
+ *   grid?:object}} opts
  *   originDir = 命中点指向射手/相机的外向单位向量（优先）；缺省时退回 normal。
+ *   grid = buildRicochetGrid() 结果；提供时 800 条射线走 DDA，避免全扫三角形（评审 P1）。
  * @returns {ReturnType<typeof computeHeSplash>}
  */
 export function sampleHeSplash(pack, origin, opts) {
@@ -176,8 +178,10 @@ export function sampleHeSplash(pack, origin, opts) {
     }
     const rays = new Array(HE_SAMPLE_DIRECTIONS.length)
     for (let i = 0; i < HE_SAMPLE_DIRECTIONS.length; i++) {
-        const hits = raycastPackAll(pack, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T)
-        rays[i] = heLayersFromHits(hits)
+        const hits = opts.grid && opts.grid.ok
+            ? raycastGridAll(opts.grid, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T)
+            : raycastPackAll(pack, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T)
+        rays[i] = heLayersFromHits(hits || [])
     }
     const result = computeHeSplash(rays, { damage, explosionRadius, liningFactor })
     if (result) {

@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
-    raycastPackAll, simulateContinuation,
+    raycastPackAll, raycastGridAll, simulateContinuation,
 } from './armorCollisionPack.js'
 import { calculate } from './penetration.js'
 
@@ -140,6 +140,31 @@ describe('buildPack 守卫（fail-closed）', () => {
         expect(tex.worldTrisTex.image.width).toBe(RC.TRI_ROW)
         expect(tex.cellsTex.image.height).toBe(Math.ceil(grid.cellTotal / RC.CELL_ROW))
         expect(tex.entriesTex.image.height).toBe(Math.ceil(grid.entryTotal / RC.ENTRY_ROW))
+    })
+    it('网格求交与暴力求交同口径（HE 800 射线走 DDA，不再全扫三角形）', () => {
+        const { meshes } = buildChainScene([
+            { section: 'hull', thickness: 100, x: 0 },
+            { section: 'chassis', thickness: 20, x: 2.2 },
+        ])
+        const pack = packOf(meshes)
+        const grid = buildRicochetGrid(pack)
+        expect(grid.ok).toBe(true)
+        const rays = [
+            { ro: new THREE.Vector3(-5, 0.31, 0.17), dir: new THREE.Vector3(1, 0, 0) },
+            { ro: new THREE.Vector3(-5, 0.3, 0.2), dir: new THREE.Vector3(1, 0.05, 0.02).normalize() },
+            { ro: new THREE.Vector3(-5, 2, 2), dir: new THREE.Vector3(1, -0.1, -0.1).normalize() },
+        ]
+        for (const { ro, dir } of rays) {
+            const brute = raycastPackAll(pack, ro, dir, 0)
+            const fast = raycastGridAll(grid, ro, dir, 0)
+            expect(fast, JSON.stringify({ ro, dir })).not.toBeNull()
+            expect(fast.length, JSON.stringify({ ro, dir })).toBe(brute.length)
+            for (let i = 0; i < fast.length; i++) {
+                expect(fast[i].t).toBeCloseTo(brute[i].t, 6)
+                expect(fast[i].section).toBe(brute[i].section)
+                expect(fast[i].thickness).toBe(brute[i].thickness)
+            }
+        }
     })
 })
 

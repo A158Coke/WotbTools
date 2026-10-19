@@ -385,6 +385,17 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(r.he).toMatchObject({ splash_min: 48.5, splash_max: 147.5, splash_avg: 98.0 })
   })
 
+  it('he_fallback_applies_enhanced_armor_coefficient', () => {
+    // 强化装甲 +4%：100mm → 104mm。d=0.1/R=5：
+    // upper=250·0.98-104=141，lower=150·0.98-104=43，avg=92。
+    const r = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], {
+      explosion_radius: 5.0,
+      enhanced_armor: true,
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.he).toMatchObject({ splash_min: 43.0, splash_max: 141.0, splash_avg: 92.0 })
+  })
+
   it('out_ray_without_primary_returns_no_shot', () => {
     const r = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0])], { allow_ricochet: false }))
     expect(r.result).toBe('-')

@@ -503,7 +503,8 @@ export function calculate(req) {
     let primaryIdx = -1
     for (let i = 0; i < layers.length; i++) {
       const h = filteredHits[i]
-      splashArmor += Number(h ? h.thickness : layers[i].thickness) || 0.0
+      // 与 800 射线采样器同一装甲系数：强化装甲对 HE 兜底同样生效。
+      splashArmor += (Number(h ? h.thickness : layers[i].thickness) || 0.0) * thicknessCoeff
       if (h && isPrimary(h.section)) { primaryIdx = i; break }
     }
     const R = req.explosion_radius
