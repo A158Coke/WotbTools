@@ -165,7 +165,7 @@ ABSENT -> IN_FLIGHT -> COMMITTED(jobId)
 
 **Git 证据：** 97aad637、166000d4、cdd122b8、f4eeaac7、4915e820。
 
-## 8. 2026-08-31～09 — Planned Dual-Cloud Foundation
+## 8. 2026-08-31～09 — 双云基础规划
 
 最初 production 在 Yecao 香港服务器。大陆访问不稳定后，项目增加 Tencent Cloud 国内服务器。
 
@@ -207,7 +207,7 @@ Yecao: Replay Processing
 
 **Git 证据：** 8c6e8c9e、bfe14714、c85b9a27。
 
-## 10. 2026-09 — Durable Game Identity
+## 10. 2026-09 — 持久游戏身份
 
 Keycloak 用户可能被删除或重新创建，认证体系本身也可能迁移。长期游戏数据因此不能继续依赖可变的 Keycloak subject。
 
@@ -237,19 +237,19 @@ HoF 等游戏域数据由 Game Identity 持有。这样 Authentication lifecycle
 
 基础设施开始实现之前已经确定的责任边界。
 
-### PostgreSQL — Job State Authority
+### PostgreSQL — Job 状态权威
 
 Processing Job、Source、Operation identity 与 lifecycle 状态迁入 PostgreSQL。PostgreSQL 成为 durable authority，而不是依赖单进程内存。
 
-### MinIO — Temporary Dataset Workspace
+### MinIO — 临时 Dataset 工作区
 
 MinIO 部署在 Yecao。它保存 temp/jobs/<job-id>/... 这类 distributed Replay workspace，不是 Business DB，也不是 HoF 永久 Replay archive。API 仅通过 WireGuard 暴露，Console 仅本机访问；TX Control Plane 与 Yecao Parser Worker 使用独立 MinIO Identity。Object Storage Port 获得 MinIO Production Adapter，Dataset 和 Artifact 读取收敛到统一存储边界。
 
-### RabbitMQ — Delivery Layer
+### RabbitMQ — 投递层
 
 RabbitMQ 部署在 TX，靠近 Control Plane。它负责 request/result/failure delivery，但不拥有 retry counter、attempt limit 或 Job State；这些仍由 PostgreSQL authority 决定。任务拓扑使用 `wotb.jobs` Exchange 与 Parser Queue、Retry Queue、DLQ，并通过 TTL + Dead Letter Exchange 实现延迟重试。Compose 负责 Runtime，OpenTofu 管理 VHost、用户、权限、Exchange、Queue 与 Binding；Control API 与 Parser Worker 使用独立 RabbitMQ Identity 和最小权限。真实 AMQP Contract Test 验证 Dispatch、Retry、DLQ 与越权拒绝。
 
-### Parser Worker — Execution
+### Parser Worker — 执行
 
 Yecao Parser Worker 没有 Business DB credentials，也没有 public HTTP endpoint。它是 executor / outcome reporter，不是 state authority。
 
@@ -559,7 +559,7 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 
 联赛回放的三语名称、数字小组和具体时刻逐步加入时，曾为旧客户端并行提供多种接口形状。功能完成后，网站与新版客户端统一使用现代结构和无版本路径，移除旧格式转换与运行时回退；UP 主与视频推荐也统一使用现行分类接口，删除仅面向 UP 主的接口适配与前端回退。历史迁移、已保存回放和文字小组归档仍保留；旧客户端需要升级，接口切换与前后端部署作为同一次发布验收。
 
-## Retired / Transitional Architecture
+## 已退役 / 过渡架构
 
 - **Boost / Coaching** — 曾经形成完整有状态业务，后续连同 DB / frontend / roles 一并退役。
 - **In-repo `replay-engine/` Rust parser** — Java→Rust 客户端迁移的过渡实现；确认上游 Agent Rust Core 为唯一 parser 后删除，避免双解析权威。
@@ -589,7 +589,7 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 11. **Migration checks should retire after migration.** 长期只保留 live runtime invariants。
 12. **Unknown stays unknown.** 无法从 Replay 或 Git 历史证明的事实与决策理由不补写猜测。
 
-## Known Historical Uncertainties
+## 已知历史不确定项
 
 ### 为什么最初选择 WireGuard
 
