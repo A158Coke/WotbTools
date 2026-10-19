@@ -3,8 +3,9 @@
 
 > 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
-> **定位**：review-with-docs 检查"对不对"，code-smell 检查"好不好"。
-> **执行时机**：review-with-docs 闭环之后、测试之前。
+> **定位**：`review-with-docs` 内部品味 checklist，检查"好不好"；不是独立 workflow。
+> **输入**：current diff / changed files。**输出**：findings。
+> **不负责**：spawn verifier、final PASS、commit/push/open PR；这些只属于 top-level Skill。
 > **哲学**：Less is enough. 每一行代码都应该证明它的存在价值。
 
 ## 检查清单
@@ -77,29 +78,16 @@
 - 不要为只有一处引用的字符串创建常量文件（除非是 i18n）
 - 不要为"可能以后会改"引入配置抽象——等到真的要改时再提取
 
-## 使用方式
+## Findings 格式
 
-与 review-with-docs 链式调用：
+```text
+CODE SMELL FINDINGS
+SCOPE: [changed files]
+CHECKS: 1-8
+FINDINGS:
+- <file>:<line> [BLOCKER/MAJOR/MINOR] <smell> -> <simplification>
+OVER_ENGINEERING_WARNINGS: <过度工程化迹象>
+GAPS: <无法确认的项>
+```
 
-```
-1. 代码变更
-2. review-with-docs（标准质量）
-3. code-smell（品味审查）
-4. 跑测试
-5. 出报告
-```
-
-Verifier brief 模板：
-
-```
-QUESTION: 按 code-smell 8 项检查单审查以下文件的代码异味
-Scope: [文件列表]
-ALREADY_KNOWN: [已自查处理的问题]
-EFFORT: quick (只报告明确问题，不推测)
-STOP_CONDITION: 完成全部 8 项或发现 ≥3 个明确问题
-OUTPUT:
-  VERDICT: 通过 / 有问题（列出数量）
-  EVIDENCE: 逐项列出具体问题（文件:行号 → 问题 → 建议修复）
-  OVER_ENGINEERING_WARNINGS: 列出过度工程化迹象
-  PRIORITY: 按严重程度排序
-```
+本 checklist 只输出 findings；由 `review-with-docs` 在 final gate 内汇总判定。

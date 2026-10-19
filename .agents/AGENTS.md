@@ -108,7 +108,7 @@
    只有存在无法合理并入现有入口的独立职责时，才允许新增 shell test entrypoint，并在计划/PR 中明确说明
    为什么现有入口无法承载。不得为普通字段存在性、文档 wording、可由 `tofu validate` /
    `docker compose config` / compiler / typechecker / real runtime smoke 覆盖的检查新增独立脚本。
-7. **Review-Fix 闭环** — 每次代码变更后自审（残留/硬编码/未用 import/命名/空值/并发），修复后循环到零问题；影响界面/导出/数据/构建的变更再走 `review-with-docs`（含文档同步 + AI 死代码清理）。
+7. **Review With Docs 闭环** — 任何实现完成后都进入 `review-with-docs`；代码质量、code-smell、fallow、文档、架构与领域 playbook 检查均作为其内部检查阶段。只有 `review-with-docs` 可以输出 final PASS / zero blocker；通过后 Executor 才 commit/push/open PR。
 8. **Git** — 推送前先 `git remote -v` 确认实际 remote（本机 remote 名/SSH 别名以本机配置为准，不写死）；仓库账号 A158Coke。中文提交、尾带 `Co-Authored-By`；禁止 force push、禁止改写已公开历史、禁止动与当前任务无关的分支/PR。
 9. **子代理** — spawn 子代理后必须显式验证其完成状态与产物（不可假设自动完成），完成后以醒目格式通知用户。
 10. **大需求拆分** — 一次性大需求拆为多个小任务，每个小任务一个子代理，主代理最后执行 review-with-docs final gate。

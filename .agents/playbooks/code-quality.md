@@ -1,31 +1,13 @@
+# Code Quality Checklist（内部检查单）
 
-# Code Quality Checklist（内部 playbook）
+> 内部 checklist：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
-> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+## 输入 / 输出 / 不负责
 
-> **前置条件**：Plan 已获用户批准，代码变更已执行完毕。
-> **自动闭环**：Review-Fix 全程不需用户介入，自动审查→修复→循环。
-> **结束后**：必须出具可视化审查报告。
-
-## 流程
-
-1. **主 agent 自查** — 按下方检查单逐项自查本次变更涉及的所有文件
-2. **spawn verifier 子 agent** — `type: verifier`，逐项审查，报告具体代码位置
-3. **修复** — 根据 verifier 报告逐项修复
-4. **重审** — 再次 spawn verifier 审查修复后的代码
-5. **循环** — 直到 verifier 返回零新问题
-6. **Validation（targeted regression）** — 根据 review 修复点运行受影响的
-   targeted / module / feature regression tests（如 `mvn -pl wotb-core -Dtest=<Test> test`、
-   `npx vitest run <related-test-files>`）；修复只影响单 feature 时禁止升级成 repository full test。
-   若修复跨模块 / build / test infrastructure，再按 `.agents/AGENTS.md` 的 Full-test 例外规则执行
-   full validation（并先声明 Affected scope / Selected validation / Why）。
-   本 playbook **不负责** repository exhaustive validation——那由 PR CI 承担。
-7. **出具报告**（见下方模板）→ 零问题闭环时允许直接提交并开 PR；
-   存在未闭环问题时等待用户审批后提交
-
-## HTTP contract check
-
-涉及 HTTP contract 时，先确认 OpenAPI/生成产物为 authority；不得通过让 FE 同时接受 producer 违规的两套 enum 来“修复”兼容性。
+- **输入**：current diff / changed files（不需要 approved plan；小修、repair、docs-only review 都可使用）。
+- **负责**：6 项代码质量检查，输出 findings。
+- **不负责**：spawn verifier 或任何子 agent、修复循环 orchestration、final PASS 判定、commit、push、open PR。
+- **final PASS**：只由 `review-with-docs` 判定；本 checklist 的通过不等于 final gate 通过。
 
 ## 检查单
 
@@ -61,38 +43,15 @@
 - 数据库：是否有并发冲突处理（`DataIntegrityViolationException`）
 - 前端：异步状态是否有竞态保护（abort、cleanup）
 
-## Verifier 子 agent brief 模板
+## Findings 格式
 
-```
-QUESTION: 审查以下文件本次变更的代码质量
-SCOPE: [变更文件路径列表]
-ALREADY_KNOWN: [已自查并处理的问题]
-EFFORT: medium
-STOP_CONDITION: 完成全部 6 项检查，每项报告具体代码位置或确认通过
-OUTPUT:
-  VERDICT: 通过 / 有问题（列出数量）
-  EVIDENCE: 逐项列出问题（文件:行号 → 问题描述）
-  GAPS: 无法确认的项
-  NEXT: 建议修复优先级
+```text
+CODE QUALITY FINDINGS
+SCOPE: [changed files]
+CHECK: 1-6
+FINDINGS:
+- <file>:<line> [BLOCKER/MAJOR/MINOR] <problem> -> <suggested fix>
+GAPS: <无法确认的项>
 ```
 
-## 可视化审查报告模板
-
-结束后输出以下格式的报告：
-
-```
-### Review-Fix 审查报告
-
-| 项目 | 结果 |
-|------|------|
-| 变更文件 | [N 个文件，列出路径] |
-| 代码行数 | +A / -B |
-| 审查轮次 | [N] 轮 |
-| 发现问题 | [N] 个 |
-| 已修复 | [N] 个 |
-| 测试状态 | 通过 / 未跑（原因） |
-
-#### 问题清单
-1. (`文件:行号`) 问题描述 → ✅ 已修复
-2. (`文件:行号`) 问题描述 → ✅ 已修复
-```
+本 checklist 只输出 findings；修复、重审、final PASS 与 PR 由对应 top-level Skill 处理。

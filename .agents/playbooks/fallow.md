@@ -28,9 +28,9 @@ npx fallow check duplication
 npx fallow check complexity
 ```
 
-## 集成到 Review-Fix
+## 集成到 Review With Docs
 
-在前端代码变更后的 review-with-docs 阶段，可选执行：
+在前端代码变更后的 `review-with-docs` final gate 内，可选执行：
 
 ```bash
 cd frontend && npx fallow check dead-code
