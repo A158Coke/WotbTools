@@ -42,7 +42,7 @@ PR #694 修复移动端装甲查看器热力图面法线精度回归（`dFdx/dFd
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；按用户指令把 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 从 `3014001` 抬到 **`3014002`**（= 本版本 versionCode），这是 patch 强制更新的显式例外延续（见下）。3.14.1 不再 publish（3014001 < 3014002，会被 floor guard 拒绝）。
 3.14.2 继承 3.14.1 并成为当前候选；3.14.1 若尚未 publish，由 3.14.2 取代，不再 stage/publish 旧候选。
 `android-v3.14.2` tag 已指向 `5ae0cc36cf494e20dbde421d78b64263956e416f`（3.14.2 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
-PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命中首个 Primary 的 HE；含 0% 层链保留、纯外部命中回退确定性、同名板 occurrence 匹配与 `>99%` 显示边界），随 APK 打包后按 **minor** 递增为 **3.15.0 / 3015000**，说明见 [3.15.0](releases/3.15.0.md)。
+PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命中首个 Primary 的 HE；含 0% 层链保留、纯外部命中回退确定性、同名板 occurrence 匹配与 `>99%` 显示边界），并在 Web 首页 Hero 增加 Android 下载按钮，随 APK 打包后按 **minor** 递增为 **3.15.0 / 3015000**，说明见 [3.15.0](releases/3.15.0.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
