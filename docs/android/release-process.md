@@ -37,7 +37,7 @@ PR #685 重做首页 IA（纯展示页、Android 条件渲染、reduced-motion�
 3.14.0 已取得 immutable release identity 且已被 3.14.1 取代；不再 stage / publish 3.14.0（3014000 < 当前门槛 3014002）。
 PR #694 修复移动端装甲查看器热力图面法线精度回归（`dFdx/dFdy` → flat `vNormal` + highp 视线方向），随 APK 打包后按 **patch** 递增为 **3.14.1 / 3014001**，说明见 [3.14.1](releases/3.14.1.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；按用户明确指令把 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 从 `3000000` 抬到 **`3014001`**，这是 patch 强制更新的显式例外（见下）。
-3.14.1 仍按 stage、真机验收、publish 发布；门槛只在 publish 时写入 production `version.json`，stage 不写。
+3.14.1 已取得 immutable release identity（staged）；其发布流程已被 3.14.2 候选取代，不再 stage/publish 3.14.1（3014001 < 3014002，会被 floor guard 拒绝）。门槛只在 publish 时写入 production `version.json`，stage 不写。
 3.14.1 已取得 immutable release identity（staged）；本次装甲查看器显示调整（相机 product 显示缩放 + 横屏手机平板式布局 + WebGL context-lost 错误反馈/重建重试）按 **patch** 递增为 **3.14.2 / 3014002**，说明见 [3.14.2](releases/3.14.2.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；按用户指令把 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 从 `3014001` 抬到 **`3014002`**（= 本版本 versionCode），这是 patch 强制更新的显式例外延续（见下）。3.14.1 不再 publish（3014001 < 3014002，会被 floor guard 拒绝）。
 3.14.2 继承 3.14.1 并成为当前候选；3.14.1 若尚未 publish，由 3.14.2 取代，不再 stage/publish 旧候选。
