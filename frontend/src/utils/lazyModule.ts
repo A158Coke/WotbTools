@@ -162,16 +162,28 @@ interface FreshBundleReloadTarget {
   location: Pick<Location, 'reload'>
 }
 
+interface FreshBundleReloadOptions {
+  /**
+   * true = automatic preload recovery：guard 必须真正写入 sessionStorage 才允许 reload。
+   * 缺省 = manual reload：storage 不可用时仍允许用户主动 reload，不能被 storage failure 吞掉。
+   */
+  requirePersistentGuard?: boolean
+}
+
 /**
  * 共享的一次性 fresh-bundle reload owner。
  *
- * 返回 true 代表本次确实会 reload；false 代表 guard 拦截。`beforeReload` 只在确定要跳转时
- * 同步执行，供 `vite:preloadError` 在 dispatch 返回前 `preventDefault()`，而普通按钮调用不需要它。
- * sessionStorage 不可用时仍允许一次 reload；这时没有持久 guard，但恢复动作不能被 storage failure 吞掉。
+ * 返回 true 代表本次已确定发起真实 reload；false 代表没有发生 reload（guard 拦截，或
+ * requirePersistentGuard 下 guard 无法持久化）。`beforeReload` 只在确定要 reload 时同步执行，
+ * 供 `vite:preloadError` 在 dispatch 返回前 `preventDefault()`，而普通按钮调用不需要它。
+ *
+ * automatic recovery 必须用 requirePersistentGuard=true：storage 被拒时既不能 reload，也不能
+ * preventDefault，否则跨 navigation 的自动跳转无法被同一个 guard 拦住。
  */
 export function tryReloadForFreshBundle(
   beforeReload: () => void = () => {},
   target: FreshBundleReloadTarget = window,
+  { requirePersistentGuard = false }: FreshBundleReloadOptions = {},
 ): boolean {
   const now = Date.now()
   try {
@@ -179,7 +191,9 @@ export function tryReloadForFreshBundle(
     if (last && now - last < RELOAD_GUARD_WINDOW_MS) return false
     target.sessionStorage.setItem(RELOAD_GUARD_KEY, String(now))
   } catch {
-    // sessionStorage 不可用（隐私模式）时仍继续：reload 本身不依赖 storage。
+    // sessionStorage 不可用（隐私模式）：manual reload 仍继续（reload 本身不依赖 storage）；
+    // automatic recovery 必须放弃，否则这次 reload 不会被持久 guard 约束。
+    if (requirePersistentGuard) return false
   }
 
   beforeReload()
