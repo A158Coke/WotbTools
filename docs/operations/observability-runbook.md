@@ -20,7 +20,7 @@ docker compose -f docker-compose.yml ps
 docker compose -f docker-compose.yml logs --tail=100 alloy-tx business-api keycloak
 ```
 
-Prometheus must have six UP jobs: wotb-backend (WireGuard `10.20.0.1:8088`), ai-service, node-exporter, prometheus, loki, grafana. Node-exporter covers Yecao only; use existing Komodo for other host resource views. Keycloak has no Prometheus job or separate management-endpoint contract; use OIDC discovery and logs.
+Prometheus must have seven UP jobs: wotb-backend (WireGuard `10.20.0.1:8088`), ai-service, node-exporter, prometheus, loki, grafana, dev-metrics (engineering exporter `dev-metrics-exporter:9108`). Node-exporter covers Yecao only; use existing Komodo for other host resource views. Keycloak has no Prometheus job or separate management-endpoint contract; use OIDC discovery and logs.
 
 ## Missing activity or feature data
 
@@ -40,7 +40,7 @@ Open **Backend error logs**, choose time/source, then enter a literal keyword or
 
 For Keycloak callbacks, use the login row plus Caddy/Keycloak sources and OIDC discovery; retain the existing deployment E2E auth-token probe. Never weaken TLS verification to make a probe pass.
 
-For AI, search the correlation/error ID and follow `ai_upstream_call_failed`, `ai_review_contract_failed`, `ai_review_recovery_triggered`, `ai_review_recovery_failed`, `team_review_completed`, and the safe `ai_review_error` event. These events now come from `container_name="ai-service"`, not the old backend stream. Legacy `ai_review_started/finished/failed` lifecycle names have no producers; do not depend on them.
+For AI, search the correlation/error ID and follow `ai_upstream_call_failed`, `ai_review_contract_failed`, `ai_review_recovery_triggered`, `ai_review_recovery_failed`, `team_review_completed`, and the safe `ai_review_error` event. These events come from `container_name="ai-service"`, not the backend stream. Legacy `ai_review_started/finished/failed` lifecycle names have no producers; do not depend on them.
 
 ```logql
 {container_name="ai-service"} | json | line_format "{{.message}}" | logfmt | event=~"ai_token_usage|ai_review_usage|ai_review_error"

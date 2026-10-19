@@ -232,7 +232,7 @@ Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
   「Login」入口，provider 选择发生在 Keycloak 登录主题里，因此**增加 / 删除 IdP、临时关闭某地区、
   更换 provider 都不需要发 APK**。
 - **协议不手写**：使用 `net.openid:appauth`（RFC 8252 外部 user-agent、Custom Tabs、PKCE、App Links、
-  private-use redirect，且明确不使用 WebView 做 OAuth）。**版本固定 `0.11.1`**：这是 Maven Central
+  private-use redirect，且明确不使用内嵌 WebView/GeckoView 做 OAuth）。**版本固定 `0.11.1`**：这是 Maven Central
   上的最新发布，上游 release 节奏停滞属于已知维护风险，依赖审计结论记录在
   `docs/current-plan.md`；升级路径是评估 maintained 的 RFC 8252 兼容实现，永远不是自己实现 OAuth。
 - **Chrome Auth Tab 不是 2.0 的前置条件**（上游对它的 first-class 支持尚未完成）。
@@ -421,46 +421,6 @@ CI 覆盖 Native JVM 单测、前端单测、bridge contract 三方一致、rele
 引擎层的真实行为（冷启动 / 离线、replay 导入、3D、fullscreen、认证回跳、自更新、后台回收恢复）由
 发布前的真机验收负责（至少一台 Android 9 设备 + 一台 Android 13+ 设备），见 `release-process.md`。
 
-## PR B 历史验收快照（2026-10-03）
+执行真机矩阵时记录 model / Android / GeckoView 版本、最终 APK SHA256、bundle buildCommit 和每项 PASS/FAIL。
 
-以下状态和测试计数仅属于当次 PR B，不代表当前源码或线上发布状态。当前版本由
-`android/gradle.properties`、Agent pin 由 `deploy/agent/source.json` 决定；每次发布重新记录真机证据。
-
-Automated B13/B14 已验证；Physical B13/B14 为 **PENDING HUMAN VALIDATION**。
-模拟器为 API34，Native JVM 98 项、真实 local Vue/Intent/WASM/ACK 与过期缓存角色 smoke 2 项通过。
-Browser offline matrix 使用真实 pinned WASM，覆盖手动导入、Data/Rating/2D/shots、深链门禁与连接切换。
-执行真机矩阵时记录 model/Android/WebView、最终 APK SHA256、bundle buildCommit 和每项 PASS/FAIL。
-
-- B13：飞行模式 cold start/restart；手动及外部回放；Result/Rating/2D/shots；坏文件可重试；
-  pending process death/resume 后成功 ACK；AI/HoF/3D/Profile 入口保留、即时提示、零请求/离线登录。
-- B13：联网→断网→联网保留回放/车辆/shot；3D 由用户 quality→Start；断网释放场景、重连无风暴。
-  人工核验 GPU/3D 画面/地图方向/装甲 viewer 交接；既有角色权限保持。
-- B14：Keycloak chooser、QQ、具备测试账号的 WG ASIA/EU/NA；preferred App Link/fallback scheme；
-  access token、refresh、logout/relogin/account switch、授权中 process death/resume；
-  authenticated→offline 与 expired token offline 本地可用，无 WebView OIDC 导航。无账号项标为未测。
-- 发布：先部署 exact-origin CORS/gateway 与 Keycloak client，minSupported 至少 2000001。
-  本轮只读 repo variable 为 2000000，publish 将拒绝。本 PR 未 stage/publish，未写 production version.json。
-
-Android 严格 CSP 只允许本地脚本/现有 bootstrap hash 与 WASM 编译；业务 connect 仅 self 和
-生产 wotbtools origin。既有 OpenAPI generator 生成 Ajv standalone ESM validators，
-WebView 无 runtime eval/new Function。Bundle URL graph/CSS references/APK 文件 SHA 全部 fail-closed。
-
-### B15 critical review
-
-| 项 | 结论与证据 |
-|---|---|
-| 1–4 cold start/document/BASE/file | 即时 APK /index.html；appassets 文档；无远程 frontend startup/file URL。MainActivity + emulator smoke。 |
-| 5 bridge | 仅 appassets、https://wotbtools.com、https://www.wotbtools.com，main frame；合同/JVM。 |
-| 6–8 API/CORS/Bearer | Android absolute API；Caddy exact-origin 匿名预检与真实响应；Native Bearer、omit cookies；实际 Caddy HTTP。 |
-| 9 offline auth | capability 先于 login/API，browser matrix 零离线 login，Native transient failure 保留 cached session。 |
-| 10 parser | APK commit-addressed JS/WASM，与当次 deploy/agent/source.json v0.3.11 pin 一致（历史值；当前 pin 以该文件为准）。 |
-| 11–13 pending | exact local synthetic GET、无网络回退；full UUID/compare-clear ACK；JVM 持久恢复与 emulator Activity recreation。完整 OS process-death 属真机矩阵。 |
-| 14–17 local | Result/Rating/2D bundled，shots compact tank parameters/shell table bundled；真实 WASM offline matrix。 |
-| 18–20 remote offline | AI/HoF/3D 在 mount/login/data/dispatch 前门控，matrix 零业务 HTTP/远程资产。 |
-| 21–22 owner | ReplayWorkspace/session 是唯一 orchestrator/selection owner，无 Android fork。 |
-| 23 reconnect | HoF/Profile 去重，AI 不自动提交，3D 保留 main quality→Start；local selection 不 reset。 |
-| 24 refresh | Native lock/generation 与 FE generation 防迟到回复；transient failure 不 logout/clear replay。 |
-| 25 release APK | signed stage 复用 build:android、签名后实际 APK inventory/SHA/aapt gate；debug实包/CI验证。本轮未 stage/sign release。 |
-| 26–27 publish/Web | immutable staged APK，不 rebuild/resign；production Web commit 不再是 Android runtime 依赖。 |
-| 28–29 readiness | Keycloak client gate 保留；真实 profile preflight/401、gateway JSON/exposed headers fail-closed。 |
-| 30 commit point | version.json 仍是最后 production mutation，release helpers 锁定顺序。 |
+Android 严格 CSP 只允许本地脚本 / 现有 bootstrap hash 与 WASM 编译；业务 connect 仅 self 和 production wotbtools origin。既有 OpenAPI generator 生成 Ajv standalone ESM validators，GeckoView 无 runtime eval/new Function。Bundle URL graph / CSS references / APK 文件 SHA 全部 fail-closed。

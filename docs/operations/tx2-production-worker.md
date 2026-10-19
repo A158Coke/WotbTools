@@ -1,20 +1,15 @@
-# TX2 production worker（K7A）
+# TX2 production worker
 
-K7A 为 **TX2** 建立仓库拥有的 “未来可跑生产 workload” 主机前置条件。它**不**迁移、部署、
-adopt、搬迁任何生产 workload，也**不**改变 K6B placement、DNS 或公网流量。
-
-```text
-K7A IMPLEMENTED / NOT PRODUCTION ACCEPTED
-```
-
-在 merge + 生产 reconcile + runtime acceptance 通过之前，本文不写 `K7A COMPLETE`。
+TX2 production worker 建立并维护 TX2 作为可承载生产 workload 的主机前置条件。它**不**拥有任何
+workload 的部署、迁移或流量切换；TX2 当前运行生产 Frontend 实例，由 Komodo workload 与
+Frontend release owner 管理。
 
 ## 目标能力与边界
 
 ```text
 Komodo Core
     ↓
-TX2 Periphery（K3.3，已生产验证）
+TX2 Periphery（已生产验证）
     ↓
 root Docker 执行上下文
     ↓
@@ -22,10 +17,10 @@ Docker Compose v2
     ↓
 已认证的 TCR 私有镜像拉取
     ↓
-（K7B 才会创建的真实 WotBTools 生产容器）
+（TX2 上运行的真实 WotBTools 生产容器）
 ```
 
-K7A **只**建立最后两个箭头之外的全部前置条件，并证明私有镜像可以被 root 上下文认证拉取。
+production-worker owner **只**建立最后两个箭头之外的全部前置条件，并证明私有镜像可以被 root 上下文认证拉取。
 它不创建 Komodo Stack，不启用 ResourceSync 自动 apply，不改 `infra/komodo/resources/**`。
 
 ## 三个 lifecycle 的 ownership 区分
@@ -33,8 +28,8 @@ K7A **只**建立最后两个箭头之外的全部前置条件，并证明私有
 | Owner | 拥有 | 不拥有 |
 |---|---|---|
 | `deploy/periphery/**` + `komodo-periphery.yml` | Periphery 二进制、配置、systemd 生命周期、身份、Core 信任、onboarding | 通用 Docker 主机 provisioning |
-| **`deploy/production-worker/**` + `production-worker.yml`（K7A）** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
-| 未来的 Komodo workload owner（K7B） | Stack / Deployment / ResourceSync 内容 | 本文件的 host 前置条件 |
+| **`deploy/production-worker/**` + `production-worker.yml`** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
+| Komodo workload owner（TX2 Frontend Stack） | Stack / Deployment / ResourceSync 内容与 Frontend 镜像 rollout | 本文件的 host 前置条件 |
 
 `deploy/production-worker/**` 的任何改动只触发 production-worker owner（生产 reconcile）与
 `ci-production-worker.yml`（PR 校验），不会触发 frontend / business-api / keycloak / caddy /
@@ -52,7 +47,7 @@ postgres / Komodo owner；反之 workload 改动也不会触发 worker reconcile
 | 私有镜像可拉取 | 用当前 main 约定的私有镜像 `wotbtools-frontend:latest` 做 manifest 解析 **与真实 pull** | 任一失败 ⇒ fail closed |
 | 主机锁 | 复用 `/opt/wotb-tx2/.deploy.lock`（TX2 deploy owner 拥有，不新建 worker 专用锁） | 缺失/被占用 ⇒ fail closed |
 | Periphery 回归 | unit active/enabled、有出站 Core 连接、**没有** `:8120` 监听、身份/信任/配置文件仍在 | 任一失败 ⇒ fail closed |
-| WireGuard 回归 | 期望地址仍在、K6B 冻结的 service-plane endpoint 可达（`10.20.0.1:8087`、`10.20.0.1:8080`、`10.20.0.2:8089`） | 任一失败 ⇒ fail closed |
+| WireGuard 回归 | 期望地址仍在、已冻结的 service-plane endpoint 可达（`10.20.0.1:8087`、`10.20.0.1:8080`、`10.20.0.2:8089`） | 任一失败 ⇒ fail closed |
 | 不创建 workload | reconcile 前后运行中的容器集合必须完全一致 | 变化 ⇒ fail closed |
 
 Docker daemon 只在 `daemon.json` **确实发生变化**时重启（mirror 只在启动时读取）；重启前会记录
@@ -62,7 +57,7 @@ Docker daemon 只在 `daemon.json` **确实发生变化**时重启（mirror 只�
 
 Komodo Periphery 以 **root** 操作 Docker，因此私有生产镜像的凭据必须存在于 **root 的 Docker
 凭据存储**里，而不是某个交互账号的 store。`deploy/tx/publish-loaded-image-to-tcr.sh` 已经确立
-同一条边界（“Docker reads TCR credentials only from this host's credential store”）；K7A 让
+同一条边界（“Docker reads TCR credentials only from this host's credential store”）；production-worker owner 让
 TX2 拥有自己的这一份，而不是从 TX1 复制。
 
 凭据因此**绝不**出现在：
@@ -162,17 +157,16 @@ TX2_PRODUCTION_WORKER_READY
 
 没有 Compose、mirror 或凭据需要手工保留：它们全部由该 owner 重建。
 
-## 仍未授权（K7B 及以后）
+## 与 workload 的边界（当前）
 
-```text
-创建/采纳生产 Komodo Stack
-把 Frontend / Business API / Keycloak / PostgreSQL / Caddy / AI 放到 TX2
-修改任何 K6B placement、Caddy upstream、DNS 或公网流量
-启用 ResourceSync 自动 apply、managed=true、delete=true
-```
+production-worker owner 只拥有 TX2 host prerequisites：Docker / Compose、Docker Hub mirror、
+root TCR pull 凭据与回归检查。它不创建或采纳 Komodo Stack，不部署、迁移或回滚任何 workload，
+也不修改 Caddy upstream、DNS 或公网流量。TX2 的 Frontend Stack 与镜像 rollout 由 Komodo
+workload 与 Frontend Replica workflow 拥有；`TX2_PRODUCTION_WORKER_READY` 只表示宿主可承载
+生产负载，不表示任何 workload 已部署。
 
 ## 参考
 
 - Periphery 边界：`docs/operations/komodo-periphery.md`
 - Komodo 声明式资源（K4.1）：`docs/operations/komodo-resource-sync.md`
-- TX service plane 与 K6B baseline：`docs/operations/tx-service-plane.md`
+- TX service plane 与 placement baseline：`docs/operations/tx-service-plane.md`

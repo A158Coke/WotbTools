@@ -2,7 +2,7 @@
 
 本文记录 WotbTools 的 canonical technical evolution：重点不是逐版本列功能，而是解释关键技术决策为什么出现、哪些边界或权威发生了变化，以及哪些方案后来只是迁移机制并已退役。
 
-HISTORY.md 记录项目整体产品与工程历史；本文只聚焦架构、数据流、identity、authority 与 production topology。Git Commit / Pull Request 仍是实现事实源。
+HISTORY.md 记录产品/业务演进；本文只聚焦架构、数据流、identity、authority 与 production topology。Git Commit / Pull Request 仍是实现事实源。
 
 ---
 
@@ -11,7 +11,8 @@ HISTORY.md 记录项目整体产品与工程历史；本文只聚焦架构、数
 ~~~text
 User device
 +---------------------------------------------------------+
-| Browser / Android WebView                               |
+| Browser / Android GeckoView                             |
+|   (bundled Vue + Native LocalRuntimeServer)             |
 | .wotbreplay                                             |
 |   -> pinned WoT-Blitz-Agent Rust Core WASM             |
 |   -> WotbTools replay-local canonical facts            |
@@ -262,7 +263,7 @@ Game Identity: (server, WotB accountId)
 
 HoF 等游戏域数据由 Game Identity 持有。这样 Authentication lifecycle 与 Game-data lifecycle 被真正解耦，也让后续身份迁移更容易。
 
-Replay recorder 后来还能作为绑定账号的 proof：只有 canonical recorder account 与绑定的 (server, accountId) 匹配才标记 verified；换绑会使验证失效，只改昵称不会。
+Replay recorder 的信任模型在 2026-10 明确收敛：它不再被当作绑定账号的 proof，而是**客户端声称的便利徽章**。服务器没有 parser，客户端只提交录像者数值 `accountId`，服务端仅与当前绑定账号比较；它不授予权限、不参与授权、不构成回放真实性证明。换绑会使验证失效，只改昵称不会。Wargaming IdP 的 `wotb_verified` 是另一条链路：由 IdP 服务端验证后写入 JWT，属于认证侧可信 claim。
 
 **Git evidence:** e5550a0e、8fac89ff、79d1fe50、ed737605、314e3fb1。
 
@@ -540,7 +541,7 @@ Git 历史能够证明 wotb-control 是 planned dual-cloud split 期间的独立
 
 ## 阅读关系
 
-- HISTORY.md：产品、架构与工程整体历史。
+- HISTORY.md：产品/业务演进历史；技术/架构演进见本文。
 - docs/architecture/TECHNICAL_EVOLUTION.md：技术决策、authority 与 boundary 的 canonical timeline。
 - docs/architecture/*.md：当前各子系统详细架构。
 - docs/operations/ai-service.md：独立 AI Service 的生产边界与验收。

@@ -142,7 +142,7 @@ Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端 AI Review 正式开放（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
@@ -617,8 +617,8 @@ state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 由 Flyway 单一拥有，OpenTofu 不声明任何表/索引/序列。`business-postgres`-only
 部署不需要 Keycloak/frontend/Caddy 输入；`infra/tofu/postgres-business/**`
 变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）
-与名人堂迁移前置见 `docs/operations/business-postgres.md`，边界见
-`docs/architecture/opentofu-postgres-business.md`。
+与失败语义见 `docs/operations/business-postgres.md`；名人堂 schema / 数据语义见
+`docs/features/hall-of-fame.md`，边界见 `docs/architecture/opentofu-postgres-business.md`。
 
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
 随后 `infra/tofu/keycloak` 在 `127.0.0.1:18080` 声明 fresh realm、`wotbtools-web`、

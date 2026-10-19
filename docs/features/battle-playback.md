@@ -216,7 +216,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   loadout/runtime transitions。battle-level `events` 按 battle-relative 秒升序，稳定码为
   `DAMAGE`/`DESTROYED`/`KILL`/`POSITION_REPORTED`/`POSITION_STALE`；`DAMAGE` 只有
   `observedHpLoss` 非空时才可作为确定伤害。位置事件只表达服务器位置流覆盖变化，不是点亮。
-  - **位置上报区间口径（2026-08-15 修复）**：`positionSegments` 是 backend 标注的 AoI/position boundary；
+  - **位置上报区间口径（2026-08-15 修复）**：`positionSegments` 是 client canonical projection 标注的 AoI/position boundary；
     EntityLeave(type-4) 只表示实体离开/停止存在，不代表阵亡，也不代表点亮/失察——每一次 leave 都是
     coverage 的 hard segment boundary：leave 强制关闭当前区间，leave 后第一条 position（无论 gap 大小）
     开启新区间；同一实体位置流中断后重新上报的新区间必须保留（此前 leave 被当作单点截断，
@@ -361,7 +361,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   - **双方总血量条 + 争霸赛实时点数**：地图下方两条 bar（本方/敌方阵营色）——
     `friendlyHealthAt` 只聚合 canonical `healthTransitions`、`lifeTransitions` 与 `friendly`；
     `EXACT` 才显示已证明的 current/displayCapacityHp 分数；己方的 `FULL_RELATIVE` 只消费
-    backend 在 HealthTransition 上直接投影的 `relativeFull` fact，敌方无 evidence 为 UNKNOWN。
+    client playback projection 在 HealthTransition 上直接投影的 `relativeFull` fact，敌方无 evidence 为 UNKNOWN。
     不得使用静态参考容量或旧 artifact 字段推导本局总 HP。
      争霸赛实时点数来自回放广播 `pointsSamples`（type-8 subtype48 root field12，PROVEN；纯函数
      `teamPointsAt` 取最近一次 ≤currentTime 的广播值，随进度条变化；非争霸赛/无广播不显示，
@@ -1216,10 +1216,10 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   是 Battle Playback 的单一展示查询入口。它们只消费 `friendly`、`healthTransitions`、
   `lifeTransitions`、team 与不晚于 t 的 transition：`DESTROYED` 显示权威 0；CURRENT/
   LAST_KNOWN 显示最近可信 current 与 anti-future-leak 的 `displayCapacityHp`；己方存活且
-  backend 已证明相对满血时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
+  client playback projection 已证明相对满血时返回 `relativeFull`，只渲染 100% presentation；敌方没有 health
   evidence 时保持 UNKNOWN。relative-full 不代表具体 HP 或 actual max。
   perspective 聚合只在每辆车都有可证 current/capacity 时返回 `EXACT`；己方 opening 时只消费
-  backend 提供的 `relativeFull=true`，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
+  client playback projection 提供的 `relativeFull=true`，混合 exact-full/relative-full 仍返回 `FULL_RELATIVE`；已知掉血/阵亡返回
   `PARTIAL`，无证据返回 `UNKNOWN`，不读取 tankopedia base 或旧 sample 推导本局分母。
 - **HP HUD**：每辆可显示车辆常驻「HP 数字 + 定宽 bar」（screen-space 恒定，friendly=地图 tone、
   enemy=red 与整车 team token 同源）；last-known 冻结最后可信值并弱化；destroyed（lifeState 权威）
@@ -1240,7 +1240,7 @@ suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fi
   （-N，受击方阵营色，约 1s 可读时长，同车连续受击纵向 stack）+ HP 数字立即切换 +
   bar 150–300ms 缩短（CSS transition，seek 单帧禁用）+ hit flash + lost-HP ghost
   （同阵营色浅版，约 600ms 消退）。`DamageLoss.transientAllowed`、`fromHp`、`toHp` 与
-  `displayCapacityHp` 均由 backend 直接投影；无法证明时前端不显示 transient/ghost。
+  `displayCapacityHp` 均由 client playback projection 直接投影；无法证明时前端不显示 transient/ghost。
   DESTROYED → 克制 2D burst；KILL → Event Banner（Map Workspace top-center）
   （「玩家名（车辆名）被击毁」，victim-only，来自 canonical playerName+tankName，最多 2 条队列、约 3s 生命周期）。
   失察期间受击（事件时刻无位置流覆盖）不跳伤害、不更新 HP、不显示 attacker；

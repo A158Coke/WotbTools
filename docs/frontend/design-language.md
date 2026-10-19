@@ -1,6 +1,6 @@
 # WotbTools 设计语言（Design Language）
 
-> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12–§13）· 适用范围：`frontend/` 全部页面、Android WebView
+> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12–§13）· 适用范围：`frontend/` 全部页面、Android GeckoView
 > 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。§12–§13 的后续验证与迁移目标不能当作已经完成的能力。
 > 原则：**以业界通用最佳实践为准**。尚未实现的已批准设计要求保持为目标；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
 
@@ -295,7 +295,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 8. 图标
 
-**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 WebView 上渲染不一致，也无法控制颜色，不应该当图标用。
+**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 Android GeckoView 上渲染不一致，也无法控制颜色，不应该当图标用。
 
 - 统一使用 **Lucide**（MIT 协议，支持按需引入，线性风格，1.5–2px 描边）。
 - 尺寸：16（行内）· 20（按钮默认）· 24（导航、空状态）。颜色用 `currentColor`。
