@@ -34,7 +34,7 @@
      ```markdown
      # Current Development Plan
 
-     > 本地开发计划载体（gitignore，不入库）。由 `designer` / `designer` 写入，`review-with-docs` 同步；任务完成后清理回初始状态。
+     > 本地开发计划载体（gitignore，不入库）。由 `designer` 创建 approved plan，`executor` 更新执行状态，`review-with-docs` 做 final audit；任务完成后清理回初始状态。
      ```
    - 无任务条目时保持现状即可。
 

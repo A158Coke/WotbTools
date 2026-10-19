@@ -40,6 +40,7 @@ description: >
 > OCR 是外部确定性 CLI（delegate mode 不调用 OCR 侧 LLM，推理由主代理完成），
 > 属于主代理直接驱动的工具链，不是子代理。
 
+0. **Product QA（仅明确适用时）** — 必须在任何源码/diff 审计之前完成黑盒 QA；若当前主代理已读业务源码，不得在同一会话声称满足 product-qa 的黑盒隔离，改为单独 QA pass 或标记该 gate 不适用。
 1. **OCR 就绪检查** — 确认 `ocr` CLI 可用（缺失则按固定版本安装），见「OCR 就绪检查」
 2. **Layer B — OpenCodeReview Code Audit** — OCR delegate mode 产出审查范围 + 规则，
    主代理逐文件按规则审查 diff，产出结构化 finding
