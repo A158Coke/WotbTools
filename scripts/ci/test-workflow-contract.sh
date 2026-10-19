@@ -955,6 +955,135 @@ assert "unset DEV_METRICS_REGISTRY_TOKEN" in obs_script
 assert obs_reconcile["env"]["DEV_METRICS_REGISTRY_TOKEN"] == "${{ contains(steps.source.outputs.runtime_services, 'dev-metrics-exporter') && secrets.GITHUB_TOKEN || '' }}"
 assert "DEV_METRICS_REGISTRY_TOKEN" not in (root / "deploy/docker-compose.prod.yml").read_text(encoding="utf-8")
 
+# --- asset origin source transport (Komodo Stack `wotbtools-asset-origin`) -----
+# This owner may mutate ONLY the asset-owned Gitee transport branch. It is also the
+# single, narrowly scoped exception to "infra/komodo/resources/** is owned by no
+# production workflow": only asset-origin.toml is an input, and only for the
+# source-transport gate. It never applies ResourceSync, mutates Komodo resources,
+# or deploys the Stack.
+asset_workflow = load(workflow_dir / "asset-origin.yml")
+asset_events = asset_workflow.get("on", asset_workflow.get(True, {}))
+asset_inputs = [
+    ".github/workflows/asset-origin.yml",
+    "deploy/assets/**",
+    "deploy/check-production-freshness.sh",
+    "infra/komodo/resources/asset-origin.toml",
+]
+assert set(asset_events) == {"push", "workflow_dispatch"}, sorted(asset_events)
+assert asset_events["push"]["branches"] == ["main"]
+assert asset_events["push"]["paths"] == asset_inputs, asset_events["push"]["paths"]
+assert asset_workflow["env"]["PRODUCTION_INPUT_PATHS"].splitlines() == asset_inputs
+assert not asset_events["workflow_dispatch"], "manual mirror dispatch takes no ref input"
+assert affected("infra/komodo/resources/asset-origin.toml") == {"deployment"}
+assert affected("deploy/assets/Caddyfile") == {"deployment"}
+assert "scripts/ci/test-komodo-resources.py" in (
+    workflow_dir / "ci-deployment.yml"
+).read_text(encoding="utf-8")
+# The resource tree stays non-production except this one source-transport input.
+resource_production_inputs = {}
+for candidate in sorted(workflow_dir.glob("*.yml")):
+    document = load(candidate)
+    for production_path in (
+        (document.get("env") or {}).get("PRODUCTION_INPUT_PATHS") or ""
+    ).splitlines():
+        if production_path.startswith("infra/komodo/resources"):
+            resource_production_inputs.setdefault(candidate.name, []).append(production_path)
+assert resource_production_inputs == {
+    "asset-origin.yml": ["infra/komodo/resources/asset-origin.toml"],
+}, resource_production_inputs
+resource_push_paths = []
+for candidate in sorted(workflow_dir.glob("*.yml")):
+    document = load(candidate)
+    events = document.get("on", document.get(True, {}))
+    push = events.get("push") if isinstance(events, dict) else None
+    if not isinstance(push, dict):
+        continue
+    for trigger_path in push.get("paths", []):
+        if trigger_path.startswith("infra/komodo/resources"):
+            resource_push_paths.append((candidate.name, trigger_path))
+assert resource_push_paths == [
+    ("asset-origin.yml", "infra/komodo/resources/asset-origin.toml")
+], resource_push_paths
+# A resource change must never reconcile Komodo Core/Mongo/DNS via the controller.
+controller = load(workflow_dir / "komodo-controller.yml")
+controller_paths = controller["on"]["push"]["paths"]
+assert controller_paths == controller["env"]["PRODUCTION_INPUT_PATHS"].splitlines()
+for controller_path in controller_paths:
+    assert not fnmatch.fnmatchcase("infra/komodo/resources/asset-origin.toml", controller_path), \
+        controller_path
+assert "infra/komodo/resources" not in (workflow_dir / "komodo-controller.yml").read_text(encoding="utf-8")
+# The source transport itself stays Gitee-only: no ResourceSync apply, no Stack
+# deploy, no controller coupling, and only the existing Gitee credential.
+asset_text = (workflow_dir / "asset-origin.yml").read_text(encoding="utf-8")
+for forbidden in ("docker compose up", "docker run", "komodo-controller", "tofu apply",
+                  "resource_sync", "infra/komodo/resources/**"):
+    assert forbidden not in asset_text, f"the asset source transport must not own {forbidden}"
+assert set(re.findall(r"secrets\.([A-Za-z0-9_]+)", asset_text)) == {"GITEE_TOKEN"}
+asset_steps = asset_workflow["jobs"]["mirror_gitee"]["steps"]
+asset_step_names = [step.get("name") for step in asset_steps]
+freeze_index = asset_step_names.index("Freeze reviewed main source")
+push_index = asset_step_names.index("Push frozen event SHA to the Gitee asset-origin ref")
+verify_index = asset_step_names.index("Require Gitee asset-origin ref at the reviewed GitHub SHA")
+assert freeze_index < push_index < verify_index, asset_step_names
+assert asset_steps[freeze_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
+assert asset_steps[push_index]["env"]["EVENT_SHA"] == "${{ github.sha }}"
+assert asset_steps[push_index]["env"]["PRODUCTION_REQUIRE_EXACT_MAIN"] == "1"
+# The job may only publish the derived GitHub pointer branch; nothing else.
+assert asset_workflow["jobs"]["mirror_gitee"]["permissions"] == {"contents": "write"}, \
+    asset_workflow["jobs"]["mirror_gitee"].get("permissions")
+freeze_run = asset_steps[freeze_index]["run"]
+push_run = asset_steps[push_index]["run"]
+for gate_run in (freeze_run, push_run):
+    assert "deploy/check-production-freshness.sh" in gate_run
+assert push_run.index("git update-ref") < push_run.index("deploy/check-production-freshness.sh"), \
+    push_run
+assert push_run.index("deploy/check-production-freshness.sh") < \
+    push_run.index('git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"'), push_run
+assert 'git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"' in push_run
+assert push_run.index('git push --force origin "$SOURCE_SHA:refs/heads/asset-origin"') < \
+    push_run.index("gitee.com/A158Coke/Wotbtools.git"), push_run
+assert "refs/heads/asset-origin-frozen:refs/heads/asset-origin" in push_run
+assert ":refs/heads/main" not in push_run, "the asset transport must never push shared Gitee main"
+verify_run = asset_steps[verify_index]["run"]
+assert "refs/heads/asset-origin" in verify_run
+assert "refs/heads/main" not in verify_run, \
+    "the asset gate must verify its own transport ref, not shared main"
+assert "force_update" not in asset_text, "account-level mirroring cannot freeze the event SHA"
+# The Stack consumes ONLY the asset-owned transport ref and never holds a host lock.
+asset_toml = (root / "infra/komodo/resources/asset-origin.toml").read_text(encoding="utf-8")
+assert re.search(r'^branch = "asset-origin"$', asset_toml, re.MULTILINE), \
+    "the asset Stack must track the asset-origin transport ref"
+assert not re.search(r'^branch = "main"$', asset_toml, re.MULTILINE), \
+    "the asset Stack must never track shared Gitee main"
+assert 'compose_cmd_wrapper = ""' in asset_toml
+assert 'compose_cmd_wrapper_include = []' in asset_toml
+# The canonical runbook and the authoritative workflow contract must state the same
+# narrow exception, so neither can drift into "the whole tree is production-inert".
+runbook_text = " ".join(
+    (root / "docs/operations/komodo-resource-sync.md").read_text(encoding="utf-8").split()
+)
+for statement in (
+    "the resource tree routes only to the non-production `deployment` PR gate",
+    "Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml` "
+    "is an input of `.github/workflows/asset-origin.yml`",
+    "which may mutate only the asset-owned transport pair: the derived GitHub "
+    "`asset-origin` pointer branch and the matching Gitee `asset-origin` transport "
+    "branch (never shared `main`)",
+    "It must not apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.",
+    "The Stack tracks the Gitee `asset-origin` branch",
+    "the pinned mirror action force-pushes every GitHub branch to Gitee with `--prune`",
+    "`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain mandatory, "
+    "and ResourceSync Apply stays manual.",
+    "No other file under `infra/komodo/resources/**` is a production input.",
+):
+    assert statement in runbook_text, statement
+assert "the resource tree reaches only the non-production deployment contract gate" not in runbook_text
+agents_text = " ".join((root / ".github/AGENTS.md").read_text(encoding="utf-8").split())
+assert "The single narrow exception is `infra/komodo/resources/asset-origin.toml`" in agents_text, \
+    "the authoritative workflow contract lost its resource-tree exception"
+assert "manually bootstrapped and manually lifecycle-managed" in agents_text, \
+    "the workflow contract must document the manual Alibaba Periphery boundary"
+
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")
 PY
 
@@ -1065,3 +1194,168 @@ for mode in changed wrong-revision; do
   fi
 done
 echo 'exporter reuses immutable digests and rejects registry/identity drift: PASS'
+
+# ---------------------------------------------------------------------------
+# asset-origin: only the asset-owned transport ref `asset-origin` may be
+# force-updated, and only by a run that is still EXACT current GitHub main. This
+# executes the real workflow step against a disposable GitHub origin and a
+# URL-rewritten local Gitee remote, so a stale queued run cannot move the asset ref
+# and the Frontend/Business API mirror movement of shared `main` stays irrelevant.
+# ---------------------------------------------------------------------------
+asset_work="$work/asset-origin"
+mkdir -p "$asset_work/runner-temp"
+git init -q --bare "$asset_work/hub-bare"
+git init -q --bare "$asset_work/gitee.git"
+git -C "$asset_work/hub-bare" symbolic-ref HEAD refs/heads/main
+git -C "$asset_work/gitee.git" symbolic-ref HEAD refs/heads/main
+
+git init -q "$asset_work/seed"
+git -C "$asset_work/seed" config user.email ci@example.invalid
+git -C "$asset_work/seed" config user.name 'CI fixture'
+mkdir -p "$asset_work/seed/deploy/assets"
+printf 'name: wotbtools-asset-origin\n' > "$asset_work/seed/deploy/assets/compose.yaml"
+git -C "$asset_work/seed" add -A
+git -C "$asset_work/seed" commit -qm 'asset change'
+sha_asset="$(git -C "$asset_work/seed" rev-parse HEAD)"
+git -C "$asset_work/seed" remote add origin "$asset_work/hub-bare"
+git -C "$asset_work/seed" push -q origin "$sha_asset":refs/heads/main
+printf 'unrelated\n' > "$asset_work/seed/unrelated.txt"
+git -C "$asset_work/seed" add -A
+git -C "$asset_work/seed" commit -qm 'unrelated main commit'
+sha_newer="$(git -C "$asset_work/seed" rev-parse HEAD)"
+git clone -q "$asset_work/hub-bare" "$asset_work/repo"
+
+# The workflow step pushes to the real Gitee URL; rewriting it to a disposable
+# bare repository keeps the run offline while exercising the same command. An
+# isolated HOME keeps the rewrite (and the runner's real git config) out of the
+# way on every git version.
+mkdir -p "$asset_work/home"
+git config --file "$asset_work/home/.gitconfig" \
+  url."$asset_work/gitee.git".insteadOf https://gitee.com/A158Coke/Wotbtools.git
+
+python3 - "$ROOT" "$asset_work" <<'PY'
+import pathlib, sys, yaml
+root, work = map(pathlib.Path, sys.argv[1:])
+workflow = yaml.load((root / '.github/workflows/asset-origin.yml').read_text(), Loader=yaml.BaseLoader)
+steps = {step.get('name'): step for step in workflow['jobs']['mirror_gitee']['steps']}
+(work / 'push-step.sh').write_text(steps['Push frozen event SHA to the Gitee asset-origin ref']['run'])
+(work / 'input-paths').write_text(workflow['env']['PRODUCTION_INPUT_PATHS'])
+PY
+
+set_github_main() { git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$1:refs/heads/main"; }
+# Shared main is moved by the Frontend/Business API mirrors, never by this owner.
+set_gitee_main() { git -C "$asset_work/seed" push -q "$asset_work/gitee.git" "+$1:refs/heads/main"; }
+# The asset-owned transport ref is moved only by the asset source-transport step.
+set_gitee_transport() { git -C "$asset_work/seed" push -q "$asset_work/gitee.git" "+$1:refs/heads/asset-origin"; }
+gitee_main() { git -C "$asset_work/gitee.git" rev-parse --verify 'refs/heads/main^{commit}'; }
+gitee_transport() { git -C "$asset_work/gitee.git" rev-parse --verify 'refs/heads/asset-origin^{commit}'; }
+run_asset_push() {  # <event-name> <event-sha> <log>
+  (
+    cd "$asset_work/repo" || exit 1
+    env \
+      EVENT_NAME="$1" \
+      EVENT_SHA="$2" \
+      EVENT_REF=refs/heads/main \
+      SOURCE_SHA="$2" \
+      PRODUCTION_REQUIRE_EXACT_MAIN=1 \
+      PRODUCTION_INPUT_PATHS="$(cat "$asset_work/input-paths")" \
+      GITEE_USERNAME=fixture \
+      GITEE_TOKEN=fixture \
+      GITHUB_WORKSPACE="$ROOT" \
+      RUNNER_TEMP="$asset_work/runner-temp" \
+      HOME="$asset_work/home" \
+      bash "$asset_work/push-step.sh"
+  ) >"$3" 2>&1
+}
+
+# The step may only mutate its own transport ref.
+if grep -q 'refs/heads/main' "$asset_work/push-step.sh"; then
+  echo 'the asset source-transport step references shared Gitee main' >&2
+  exit 1
+fi
+
+# A newer mirror and a newer asset run already published newer refs: the queued run
+# for the older asset SHA must fail closed instead of moving its transport ref back.
+set_github_main "$sha_newer"
+set_gitee_main "$sha_newer"
+set_gitee_transport "$sha_newer"
+for stale_kind in push workflow_dispatch; do
+  if run_asset_push "$stale_kind" "$sha_asset" "$asset_work/stale-$stale_kind.log"; then
+    echo "a stale asset-origin $stale_kind run reached the Gitee asset-origin push" >&2
+    exit 1
+  fi
+  grep -Fq 'requires the exact current main SHA' "$asset_work/stale-$stale_kind.log" || {
+    echo "a stale asset-origin $stale_kind run failed for an unexpected reason" >&2
+    cat "$asset_work/stale-$stale_kind.log" >&2
+    exit 1
+  }
+  current="$(gitee_transport)"
+  [ "$current" = "$sha_newer" ] || {
+    echo "a stale asset-origin $stale_kind run moved the asset transport ref: $current" >&2
+    exit 1
+  }
+  shared="$(gitee_main)"
+  [ "$shared" = "$sha_newer" ] || {
+    echo "a stale asset-origin $stale_kind run touched shared Gitee main: $shared" >&2
+    exit 1
+  }
+done
+
+# The same frozen SHA still reaches the asset-owned ref while it IS exact current
+# main, and shared Gitee main (another owner's ref) is left exactly where it was.
+set_github_main "$sha_asset"
+if ! run_asset_push push "$sha_asset" "$asset_work/fresh-push.log"; then
+  echo 'a fresh asset-origin push run was rejected' >&2
+  cat "$asset_work/fresh-push.log" >&2
+  exit 1
+fi
+current="$(gitee_transport)"
+[ "$current" = "$sha_asset" ] || {
+  echo "a fresh asset-origin run published the wrong asset transport ref: $current" >&2
+  exit 1
+}
+shared="$(gitee_main)"
+[ "$shared" = "$sha_newer" ] || {
+  echo "a fresh asset-origin run moved shared Gitee main (Frontend/Business owner): $shared" >&2
+  exit 1
+}
+echo 'asset-origin pins the reviewed SHA on its own ref and never touches shared main: PASS'
+
+# The push step also published the derived GitHub pointer branch. The pinned
+# Yikun/hub-mirror-action@ec47170 force-pushes
+# `refs/remotes/origin/*:refs/heads/* --tags --prune`, so that pointer branch is
+# what keeps the Gitee transport ref alive. Exercise the real mirror refspec.
+hub_transport="$(git -C "$asset_work/hub-bare" rev-parse --verify 'refs/heads/asset-origin^{commit}')"
+[ "$hub_transport" = "$sha_asset" ] || {
+  echo "the asset workflow did not publish the GitHub pointer branch: $hub_transport" >&2
+  exit 1
+}
+mirror_push() {
+  rm -rf "$asset_work/mirror"
+  git clone -q "$asset_work/hub-bare" "$asset_work/mirror"
+  git -C "$asset_work/mirror" push -q --force "$asset_work/gitee.git" \
+    'refs/remotes/origin/*:refs/heads/*' --tags --prune
+}
+mirror_push
+current="$(gitee_transport)"
+[ "$current" = "$sha_asset" ] || {
+  echo "an application mirror pruned or changed the asset transport ref: $current" >&2
+  exit 1
+}
+# Negative control: WITHOUT the GitHub pointer branch the very same mirror push
+# deletes the Gitee-only ref. This is the failure mode the pointer branch prevents.
+git -C "$asset_work/hub-bare" update-ref -d refs/heads/asset-origin
+mirror_push
+if gitee_transport >/dev/null 2>&1; then
+  echo 'the application mirror did not prune the Gitee-only asset ref' >&2
+  exit 1
+fi
+# Restoring the pointer branch lets the next mirror carry the verified SHA again.
+git -C "$asset_work/seed" push -q "$asset_work/hub-bare" "+$sha_asset:refs/heads/asset-origin"
+mirror_push
+current="$(gitee_transport)"
+[ "$current" = "$sha_asset" ] || {
+  echo "the application mirror did not restore the verified asset ref: $current" >&2
+  exit 1
+}
+echo 'asset-origin transport pair survives the application mirrors'"'"' prune: PASS'

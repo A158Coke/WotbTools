@@ -48,7 +48,11 @@ describe('armor destroyed scene async ownership', () => {
     ]) {
       const start = kernel.indexOf(step)
       expect(start, step).toBeGreaterThan(-1)
-      expect(kernel.slice(start + step.length).trimStart().startsWith('if (destroyed) return;'), step).toBe(true)
+      const guard = kernel.slice(start + step.length).trimStart()
+      expect(
+        guard.startsWith('if (destroyed) return;') || guard.startsWith('if (destroyed || contextLost) return;'),
+        step,
+      ).toBe(true)
     }
   })
 })
@@ -81,12 +85,13 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(kernel).toMatch(/const ARMOR_BASE_FOV = 18\.75;/)
     expect(kernel).toMatch(/const ARMOR_MAX_FOV = 40;/)
     expect(kernel).toMatch(/const ARMOR_MIN_FOV = 0\.5;/)
-    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_GAIN = 0\.0128;/)
-    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_MAX = 2\.8;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_GAIN = 0\.028;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_MAX = 3\.8;/)
+    expect(kernel).toMatch(/const ARMOR_PRODUCT_SCALE = 1\.1;/)
     expect(kernel).toMatch(/camera\.position\.set\(0, 0, -ARMOR_REF_DIST\);/)
     expect(kernel).toMatch(/controls\.minDistance = 3;/)
     expect(kernel).toMatch(/controls\.maxDistance = 500;/)
-    expect(kernel).toMatch(/fov = dollyZoomFov\(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX\);/)
+    expect(kernel).toMatch(/fov = dollyZoomFov\(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX, ARMOR_PRODUCT_SCALE\);/)
     expect(kernel).toMatch(/near = 0\.05 \* d;/)
     expect(kernel).toMatch(/far = d \+ 30;/)
     expect(kernel).toMatch(/controls\.target\.set\(aimCenter\.x, aimCenter\.y, aimCenter\.z\);/)
@@ -151,6 +156,21 @@ describe('dolly-zoom world-overview scope guard', () => {
     expect(armorFov(500)).toBeGreaterThan(0.5)
     expect(armorFov(500)).toBeLessThan(0.7)
     expect(armorFov(500)).toBeLessThan(armorFov(15))
+    // 显示缩放：production 调用传 ARMOR_PRODUCT_SCALE=1.1；15m/500m 的屏幕角尺寸整体缩小 1/1.1。
+    const armorFovScaled = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.0128, 2.8, 1.1)
+    for (const d of [15, 500]) {
+      const base = armorFov(d)
+      const scaled = armorFovScaled(d)
+      expect(scaled).toBeGreaterThan(base)
+      expect(Math.tan(scaled * Math.PI / 360) / Math.tan(base * Math.PI / 360)).toBeCloseTo(1.1, 6)
+    }
+    // 生产显示 profile：+0.028/m、封顶 3.8、整体 ×1.1；车体随距离缩放明显强于实测参考。
+    const productionFov = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.028, 3.8, 1.1)
+    const productAt = (d) => Math.tan(productionFov(d) * Math.PI / 360) * d
+    expect(productionFov(15)).toBeCloseTo(20.59, 1)             // 1.1 整体缩放后的实际默认 FOV
+    expect(productAt(30) / productAt(15)).toBeGreaterThan(1.1)   // 30m 约小 14%
+    expect(productAt(100) / productAt(15)).toBeGreaterThan(1.4)  // 100m 约小 35%
+    expect(productAt(500)).toBeCloseTo(productAt(100), 6)        // 远距封顶
     expect(dollyZoomFov(15, false)).toBeCloseTo(50, 6)
     const fovOn = dollyZoomFov(249.3, true)
     expect(fovOn).toBeCloseTo(6.4238, 2)                    // reviewer 实测值（k=8.31）
@@ -158,6 +178,27 @@ describe('dolly-zoom world-overview scope guard', () => {
     const ndcY = (offDeg, fovDeg) => Math.tan(offDeg * Math.PI / 180) / Math.tan(fovDeg * Math.PI / 360)
     expect(ndcY(8.41, 50)).toBeLessThan(1)                  // ≈0.317（reviewer 实测）
     expect(ndcY(8.41, fovOn)).toBeGreaterThan(2)            // ≈2.63（越界）
+  })
+  it('WebGL context lost 显示带 GPU 信息的错误态，retry 重建 renderer', () => {
+    expect(kernel).toMatch(/addEventListener\('webglcontextlost', reportContextLost\)/)
+    expect(kernel).toMatch(/addEventListener\('webglcontextrestored', reportContextRestored\)/)
+    expect(kernel).toMatch(/event\.preventDefault\(\)/)
+    expect(kernel).toMatch(/UNMASKED_RENDERER_WEBGL/)
+    expect(kernel).toMatch(/contextLost = true/)
+    expect(kernel).toMatch(/if \(destroyed \|\| contextLost \|\| !initDone/)
+    expect(kernel).toMatch(/if \(contextLost && !\(state && state\.contextLost\)\) return;/)
+    expect(kernel).toMatch(/loadGen\+\+;\s*targetLoadGen\+\+;\s*shooterLoadGen\+\+;/)
+    expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
+    expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
+    expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
+    expect(kernel).toMatch(/return \{ destroy, retry, selectTank, canPick, isContextLost \};/)
+    const view = read('./AgentArmorView.vue')
+    expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
+    expect(view).toMatch(/if \(!preserveSelection\) \{/)
+    expect(view).toMatch(/selectedShooterId\.value = null/)
+    expect(view).toMatch(/selectedTargetId\.value = null/)
+    expect(view).toMatch(/preserveSelection && selectedTargetId\.value != null/)
+    expect(view).toMatch(/previous\?\.isContextLost\?\.\(\) === true/)
   })
 })
 
@@ -258,13 +299,22 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
   })
-  it('热力图与点击判定共用几何面法线（不随 GLB 平滑顶点法线漂移）', () => {
-    // 点击/判定用 hit.face.normal；热力图 shader 若用插值 vNormal，平滑法线会让
-    // 同一像素的入射角/等效厚度与卡片不一致（卡片击穿、热图偏红）。
-    expect(kernel).toMatch(/vec3 nFace = normalize\(cross\(dFdx\(vViewPos\), dFdy\(vViewPos\)\)\);/)
+  it('热力图用 flat vNormal 面法线 + highp 视线方向（移动端 mediump 回归）', () => {
+    // 装甲几何在 loadModels 中 toNonIndexed + computeVertexNormals ⇒ 每个三角形的
+    // vNormal 已是几何面法线，与点击判定 hit.face.normal 同源。3.13.0 的
+    // dFdx/dFdy(vViewPos) 在移动端 mediump(fp16) 下逐像素导数量化/退化，导致热力图错乱
+    // （2026-10-19 修复）；这里锁定三个热力图 shader 都使用 flat vNormal。
+    // 视线方向必须 highp：500 m 处 mediump length(vViewPos) 在平方时溢出，角度会坏。
+    expect(kernel).toMatch(/toNonIndexed\(\)/)
+    expect(kernel).toMatch(/computeVertexNormals\(\)/)
+    expect([...kernel.matchAll(/highp vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/varying highp vec3 vViewPos;/g)]).toHaveLength(4)
+    expect([...kernel.matchAll(/highp vec3 viewDir = normalize\(vViewPos\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/highp float angle = acos\(/g)]).toHaveLength(3)
+    expect(kernel).not.toMatch(/dFdx\(vViewPos\)/)
+    expect(kernel).not.toMatch(/length\(vViewPos\)/)
     expect(kernel).toMatch(/highp vec3 nVR = nFace;/)
-    expect(kernel).not.toMatch(/highp vec3 nVR = normalize\(vNormal\);/)
-    expect(kernel).toMatch(/extensions: \{ derivatives: true \},/)
+    expect(kernel).not.toMatch(/extensions: \{ derivatives: true \},/)
   })
   it('管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）', () => {
     // 两块 20mm@60°（相隔 0.02m）+ 100mm 主装甲@0°，AP 100/164/5°。

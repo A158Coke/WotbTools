@@ -29,7 +29,7 @@ async function host(stub = true) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push('/?view=creators-config&keep=yes#form'); await router.isReady()
   wrapper = mount(CreatorsConfigPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })],
-    provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { recommendationsSupported: ref(true), typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) } },
+    provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) } },
     stubs: stub ? { CreatorForm: { template: '<div />' } } : {} } })
   await flushPromises(); return router
 }
@@ -79,7 +79,7 @@ describe('creator configuration drafts', () => {
     const input = wrapper!.get(`[data-testid=creator-new-${kind}]`), form = input.element.closest('form')!
     expect(input.attributes('maxlength')).toBeUndefined()
     await input.setValue('😀'.repeat(100)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
-    expect(add).toHaveBeenCalledWith(...(kind === 'category' ? ['UP', '😀'.repeat(100), true, expect.any(AbortSignal)] : ['😀'.repeat(100), expect.any(AbortSignal)]))
+    expect(add).toHaveBeenCalledWith(...(kind === 'category' ? ['UP', '😀'.repeat(100), expect.any(AbortSignal)] : ['😀'.repeat(100), expect.any(AbortSignal)]))
     await input.setValue('😀'.repeat(101)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     expect(add).toHaveBeenCalledTimes(1)
     expect(wrapper!.find('[role=alert]').exists()).toBe(true)

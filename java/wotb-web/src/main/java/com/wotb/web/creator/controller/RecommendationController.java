@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
-/** Typed recommendations use the same catalog service and image lifecycle as legacy UP clients. */
+/** Typed recommendations and their shared dictionaries. */
 @RestController
 public class RecommendationController {
     private final CreatorService service;
@@ -66,6 +66,15 @@ public class RecommendationController {
     @DeleteMapping(ApiPaths.RECOMMENDATIONS_ADMIN + "/categories/{id}")
     public ResponseEntity<Void> deleteCategory(@PathVariable final long id, @RequestParam(name = "type") final String type) {
         service.deleteRecommendationCategory(type, id); return ResponseEntity.noContent().build();
+    }
+    @PostMapping(ApiPaths.RECOMMENDATIONS_ADMIN + "/levels")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RecommendationDtos.Level level(@RequestBody final RecommendationDtos.DictionaryRequest request) {
+        return service.addLevel(request);
+    }
+    @DeleteMapping(ApiPaths.RECOMMENDATIONS_ADMIN + "/levels/{id}")
+    public ResponseEntity<Void> deleteLevel(@PathVariable final long id) {
+        service.deleteLevel(id); return ResponseEntity.noContent().build();
     }
     private static MultipartFile singleImage(final List<MultipartFile> files) {
         if (files == null || files.isEmpty()) { return null; }

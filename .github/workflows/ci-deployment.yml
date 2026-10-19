@@ -40,6 +40,7 @@ jobs:
           deploy/tx/runtime-check.sh deploy/tx/runtime-check-lib.sh
           deploy/tx/publish-loaded-image-to-tcr.sh deploy/tx/k7c-preflight.sh
           deploy/tx/k7c-sync-runtime-content.sh
+          deploy/assets/verify.sh
           deploy/test-tx-runtime-config.sh deploy/test-user-profile-reset-audit.sh
           deploy/test-yecao-wireguard-boundary.sh deploy/test-tx-runtime-check.sh
           deploy/test-deploy-contract.sh deploy/test-nginx-grafana-recreate.sh
@@ -88,6 +89,67 @@ jobs:
           }
           docker compose -p deploy -f deploy/tx/common.compose.yml -f deploy/tx/caddy.compose.yml \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
+      - name: Asset origin Compose and Caddy request-level smoke
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          work="$(mktemp -d)"
+          container="wotb-asset-origin-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          # Native Compose validation owns the workload-shape contract; no source
+          # grep is used as a proxy for what Docker will actually run.
+          docker compose --project-directory deploy/assets -f deploy/assets/compose.yaml \
+            config --format json > "$work/compose.json"
+          python3 - "$work/compose.json" <<'PY'
+          import json, sys
+          compose = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert compose["name"] == "wotbtools-asset-origin", compose.get("name")
+          services = compose.get("services", {})
+          assert set(services) == {"caddy"}, sorted(services)
+          caddy = services["caddy"]
+          assert caddy["image"] == "caddy:2.10.2-alpine", caddy.get("image")
+          assert caddy.get("restart") == "unless-stopped", caddy.get("restart")
+          ports = {(int(p["target"]), str(p["published"]), p.get("protocol", "tcp")) for p in caddy.get("ports", [])}
+          assert ports == {(80, "80", "tcp"), (443, "443", "tcp")}, ports
+          by_target = {v["target"]: v for v in caddy.get("volumes", [])}
+          assert by_target["/etc/caddy/Caddyfile"].get("read_only") is True, by_target
+          assert by_target["/srv/wotb-assets"].get("type") == "bind", by_target
+          assert by_target["/srv/wotb-assets"].get("read_only") is True, by_target
+          assert "/data" in by_target and "/config" in by_target, by_target
+          PY
+
+          mkdir -p "$work/assets/current"
+          printf '%s\n' '{"asset-origin":"fixture"}' > "$work/assets/current/index.json"
+          sed 's/^assets\.wotbtools\.com {/http:\/\/:8080 {/' deploy/assets/Caddyfile > "$work/Caddyfile"
+
+          docker run --rm --entrypoint caddy \
+            -v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10.2-alpine \
+            validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+
+          docker run -d --name "$container" --entrypoint caddy \
+            -p 127.0.0.1::8080 \
+            -v "$work/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            -v "$work/assets:/srv/wotb-assets:ro" \
+            caddy:2.10.2-alpine \
+            run --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+
+          host_port="$(docker port "$container" 8080/tcp | sed -n 's/.*://p' | head -n1)"
+          [[ "$host_port" =~ ^[0-9]+$ ]] || { echo "could not resolve disposable Caddy port: $host_port" >&2; exit 1; }
+          base="http://127.0.0.1:$host_port"
+          curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 0 \
+            --connect-timeout 1 --max-time 10 "$base/index.json" >/dev/null
+
+          # The production verifier owns request-level semantics and is deliberately
+          # reused here against the disposable real Caddy process. This keeps ETag
+          # parsing, timeouts, CORS, Range, and conditional GET behavior single-sourced.
+          bash deploy/assets/verify.sh "$base"
+          echo 'asset-origin Compose and Caddy request-level smoke: PASS'
       - name: Workflow and ToFu safety fixtures
         run: |
           set -euo pipefail
@@ -99,7 +161,7 @@ jobs:
         run: python3 scripts/ci/test-komodo-resources.py
       - name: PR area label advisory tests
         run: python3 scripts/ci/test_pr_area_labels.py
-      - name: TX and Yecao owner runtime fixtures
+      - name: TX and Yecao runtime fixtures
         run: |
           set -euo pipefail
           bash deploy/test-check-latest-main.sh

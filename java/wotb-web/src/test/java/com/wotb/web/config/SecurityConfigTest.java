@@ -135,7 +135,7 @@ class SecurityConfigTest {
                 .claim("realm_access", Map.of("roles", List.of("content-admin"))).build();
         when(decoder.decode("content-token")).thenReturn(token);
 
-        for (final String path : List.of("/api/admin/creators/probe", "/api/admin/recommendations/probe")) {
+        for (final String path : List.of("/api/admin/recommendations/probe")) {
             mvc.perform(get(path)).andExpect(status().isUnauthorized());
             mvc.perform(get(path).header("Authorization", "Bearer content-token")).andExpect(status().isOk());
             for (final String role : List.of("wotbtools-user", "HoF-admin", "tournament-admin", "wotbtools-admin")) {
@@ -149,7 +149,7 @@ class SecurityConfigTest {
         }
 
         for (final String path : List.of("/api/admin/tournaments/probe", "/api/admin/hof/probe",
-                "/api/admin/users/probe", "/api/admin/other/probe")) {
+                "/api/admin/users/probe", "/api/admin/other/probe", "/api/admin/creators/probe")) {
             mvc.perform(get(path).header("Authorization", "Bearer content-token")).andExpect(status().isForbidden());
         }
     }
@@ -344,7 +344,6 @@ class SecurityConfigTest {
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
                 "/api/admin/tournaments/probe",
-                "/api/admin/creators/probe",
                 "/api/admin/recommendations/probe",
                 "/static-probe"
         })

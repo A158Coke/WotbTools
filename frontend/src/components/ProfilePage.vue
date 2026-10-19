@@ -558,6 +558,10 @@ async function removeAccount() {
               </span>
             </div>
             <div class="info-row">
+              <span class="info-label">{{ $t('profile.keycloakUsername') }}</span>
+              <span class="info-value"><code data-testid="profile-keycloak-username">{{ profile.username || '--' }}</code></span>
+            </div>
+            <div class="info-row">
               <span class="info-label">{{ $t('profile.roles') }}</span>
               <span class="info-value role-list" data-testid="profile-roles">
                 <span v-for="role in realmRoles" :key="role" class="role-chip">{{ role }}</span>
@@ -780,7 +784,7 @@ async function removeAccount() {
 .info-label { color: #a3a6a0; font-size: .85rem; flex-shrink: 0; }
 .info-value { color: var(--showcase-tactical-text); font-size: .85rem; font-weight: 500; text-align: right; word-break: break-all; }
 .info-value-copy { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.info-value-copy code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+.info-value code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
 .role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .account-bound { display: flex; flex-direction: column; gap: 10px; }
