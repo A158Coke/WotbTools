@@ -418,6 +418,7 @@ watch(() => props.initialCapability, (val) => {
     <div class="workspace-content">
       <ReplayPage
         v-show="activeCapability === 'data'"
+        :active="activeCapability === 'data'"
         data-testid="ws-data"
         :embedded="true"
         :replay-context="workspace.replay"
