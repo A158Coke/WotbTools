@@ -258,15 +258,20 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
   })
-  it('热力图用 flat vNormal 面法线（不用屏幕空间导数；移动端 mediump 回归）', () => {
+  it('热力图用 flat vNormal 面法线 + highp 视线方向（移动端 mediump 回归）', () => {
     // 装甲几何在 loadModels 中 toNonIndexed + computeVertexNormals ⇒ 每个三角形的
     // vNormal 已是几何面法线，与点击判定 hit.face.normal 同源。3.13.0 的
     // dFdx/dFdy(vViewPos) 在移动端 mediump(fp16) 下逐像素导数量化/退化，导致热力图错乱
     // （2026-10-19 修复）；这里锁定三个热力图 shader 都使用 flat vNormal。
+    // 视线方向必须 highp：500 m 处 mediump length(vViewPos) 在平方时溢出，角度会坏。
     expect(kernel).toMatch(/toNonIndexed\(\)/)
     expect(kernel).toMatch(/computeVertexNormals\(\)/)
-    expect([...kernel.matchAll(/vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/highp vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/varying highp vec3 vViewPos;/g)]).toHaveLength(4)
+    expect([...kernel.matchAll(/highp vec3 viewDir = normalize\(vViewPos\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/highp float angle = acos\(/g)]).toHaveLength(3)
     expect(kernel).not.toMatch(/dFdx\(vViewPos\)/)
+    expect(kernel).not.toMatch(/length\(vViewPos\)/)
     expect(kernel).toMatch(/highp vec3 nVR = nFace;/)
     expect(kernel).not.toMatch(/extensions: \{ derivatives: true \},/)
   })
