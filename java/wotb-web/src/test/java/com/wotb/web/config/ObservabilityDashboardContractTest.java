@@ -58,10 +58,10 @@ class ObservabilityDashboardContractTest {
     void downloadsCountOnlyFinalWebApkButtonClicks() throws Exception {
         final String total = query("wotbtools-android-downloads", "下载 APK 点击次数");
         assertTrue(total.contains("container_name=\"wotb-backend\""));
-        assertTrue(total.contains("telemetry_event=\"feature_open\""));
+        assertTrue(total.contains("telemetry_event=\"android_download_click\""));
         assertTrue(total.contains("feature=\"android_download\""));
         assertTrue(total.contains("platform=\"web\""));
-        assertTrue(total.contains("operation_id != \"\""));
+        assertFalse(total.contains("operation_id"));
         assertFalse(total.contains("android_apk_download"));
         assertFalse(total.contains("status=\"200\""));
         assertFalse(total.contains("status=\"206\""));
