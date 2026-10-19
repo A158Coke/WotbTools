@@ -102,9 +102,7 @@
    - 同一任务内测试已通过且对应代码/依赖代码/测试配置均未变化 → 不得重复运行同一测试。
    - review 修复后按修改决定哪些验证已失效：改了 A 对应代码 → A 失效需重跑；只改 README → 不失效。
 
-   **测试层级去重** — Prefer native validators and real integration tests over source-text
-   assertions. Add custom contract/policy tests only for project-specific architectural or
-   production-safety invariants that native tooling would consider valid.
+   **测试层级去重** — 优先使用原生校验器与真实集成测试，而不是源码文本断言；只有项目特有的架构或生产安全不变量（原生工具会认为合法）才新增自定义 contract/policy test。
    **测试入口最小化** — 默认禁止新增 standalone `test-*.sh` / `*-contract.sh`。必须先按
    `reuse > extend > merge > create` 复用现有 native validation、policy test 或 integration smoke；
    只有存在无法合理并入现有入口的独立职责时，才允许新增 shell test entrypoint，并在计划/PR 中明确说明
