@@ -157,19 +157,56 @@ interface AsyncWrapper {
   __asyncLoader: () => Promise<unknown>
 }
 
+interface FreshBundleReloadTarget {
+  sessionStorage: Pick<Storage, 'getItem' | 'setItem'>
+  location: Pick<Location, 'reload'>
+}
+
+interface FreshBundleReloadOptions {
+  /**
+   * true = automatic preload recovery：guard 必须真正写入 sessionStorage 才允许 reload。
+   * 缺省 = manual reload：storage 不可用时仍允许用户主动 reload，不能被 storage failure 吞掉。
+   */
+  requirePersistentGuard?: boolean
+}
+
+/**
+ * 共享的一次性 fresh-bundle reload owner。
+ *
+ * 返回 true 代表本次已确定发起真实 reload；false 代表没有发生 reload（guard 拦截，或
+ * requirePersistentGuard 下 guard 无法持久化）。`beforeReload` 只在确定要 reload 时同步执行，
+ * 供 `vite:preloadError` 在 dispatch 返回前 `preventDefault()`，而普通按钮调用不需要它。
+ *
+ * automatic recovery 必须用 requirePersistentGuard=true：storage 被拒时既不能 reload，也不能
+ * preventDefault，否则跨 navigation 的自动跳转无法被同一个 guard 拦住。
+ */
+export function tryReloadForFreshBundle(
+  beforeReload: () => void = () => {},
+  target: FreshBundleReloadTarget = window,
+  { requirePersistentGuard = false }: FreshBundleReloadOptions = {},
+): boolean {
+  const now = Date.now()
+  try {
+    const last = Number(target.sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
+    if (last && now - last < RELOAD_GUARD_WINDOW_MS) return false
+    target.sessionStorage.setItem(RELOAD_GUARD_KEY, String(now))
+  } catch {
+    // sessionStorage 不可用（隐私模式）：manual reload 仍继续（reload 本身不依赖 storage）；
+    // automatic recovery 必须放弃，否则这次 reload 不会被持久 guard 约束。
+    if (requirePersistentGuard) return false
+  }
+
+  beforeReload()
+  target.location.reload()
+  return true
+}
+
 /**
  * 拿到与新部署一致的 bundle：chunk 名是内容哈希，旧 URL 不可恢复，只有重新加载有效。
  *
- * 用一次性 guard 防止「部署本身坏掉」时刷新成环：窗口内第二次调用不再自动跳转，
+ * 用共享 guard 防止「部署本身坏掉」时刷新成环：窗口内第二次调用不再自动跳转，
  * 让用户看清失败态而不是被无限刷新。
  */
 export function reloadForFreshBundle(): void {
-  try {
-    const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0)
-    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()))
-    if (last && Date.now() - last < RELOAD_GUARD_WINDOW_MS) return
-  } catch {
-    // sessionStorage 不可用（隐私模式）时直接刷新：一次可恢复的刷新优于停在坏页面上。
-  }
-  window.location.reload()
+  tryReloadForFreshBundle()
 }
