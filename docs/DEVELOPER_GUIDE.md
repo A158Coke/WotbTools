@@ -2,7 +2,7 @@
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
-联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。用户确认旧接口仅内部测试使用，本次按 patch 发布且不抬强制更新门槛，见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.13.1](android/releases/3.13.1.md)。
+联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。旧接口仅供内部测试使用；当前发布版本与最低支持门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.13.1](android/releases/3.13.1.md)。
 
 ---
 
@@ -244,11 +244,11 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 4) 有意清理其余记录，然后重跑迁移（Flyway 重新执行 V22）
 ```
 
-**失败时刻的处置工具可用性**：新版本起不来，本次新增的 bulk-delete 端点不可用；只有旧版本提供的
+**失败时刻的处置工具可用性**：新版本起不来，当前 bulk-delete 端点不可用；只有旧版本提供的
 `POST /api/admin/hof/{hundred,mark3}/submissions/{id}/delete` 可用，且只接受 `CURRENT`。非 `CURRENT` 的行
 （如被点名的 `PENDING`）需要运维显式 DB 动作，且 evidence 外键为 `RESTRICT`，删 submission 前先删证据行。
 
-> 已知缺口（待产品决策，非本 PR 范围）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
+> 已知缺口（待产品决策）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
 
 详细契约见 `docs/features/hall-of-fame.md`（含三个域的删除语义对照与 IAM≠HoF 不变量）。
 
@@ -265,7 +265,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 列表行 DTO（`AdminUserListItemDto`，旧的 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——**Keycloak 没有按 ids 批量查询用户的能力**，这是客户端/服务端的能力事实，见 [`docs/auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)（该文档同时记录 admin-client 26.0.9 的重载缺口与「IdP 过滤在 CI 端到端验证前不得宣称生产可用」的局限）。
 
-**Admin DTO 的 WotB 身份字段（本轮同步）**：百场/三环的 admin DTO 现在都携带 `wotbServer`，与 `wotbAccountId` 一起表示归属身份，避免管理页只显示账号 ID 时把跨服同号看成同一个账号。
+**Admin DTO 的 WotB 身份字段**：百场/三环的 admin DTO 现在都携带 `wotbServer`，与 `wotbAccountId` 一起表示归属身份，避免管理页只显示账号 ID 时把跨服同号看成同一个账号。
 
 | DTO | 身份字段 | 前端渲染 |
 |---|---|---|
@@ -288,9 +288,9 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 新增错误码（`util/ErrorCode.java`）：`BULK_LIMIT_EXCEEDED`、`INVALID_USER_SEGMENT`、`IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`。
 
-**契约覆盖范围（本轮更新）**：`contracts/http/openapi.yaml` 本轮新增 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
+**契约覆盖范围**：`contracts/http/openapi.yaml` 包含 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
 
-**既有缺口（如实记录，本轮未补全）**：mark3 的 admin GET 家族（`Mark3AdminListItemDto` / `Mark3AdminDetailDto`）**从未进入 OpenAPI**——即便 Java 侧两个 DTO 本轮同样新增了 `wotbServer`，`openapi.yaml` 里也不存在对应的 mark3 admin schema；单场 HoF admin 列表/详情的完整字段同样未覆盖。补全它们超出本次改动范围。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+**既有缺口（如实记录）**：mark3 的 admin GET 家族（`Mark3AdminListItemDto` / `Mark3AdminDetailDto`）**从未进入 OpenAPI**——即便 Java 侧两个 DTO 已有 `wotbServer`，`openapi.yaml` 里也不存在对应的 mark3 admin schema；单场 HoF admin 列表/详情的完整字段同样未覆盖。该缺口尚未纳入当前 OpenAPI contract。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
 
 **Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看 / 搜索 / 筛选 / 下载 / 删除 / 审计，禁止人工修改 replay-derived authoritative facts。
 
@@ -500,7 +500,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
-站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者，本次连同 Controller / Repository / DTO / 前端通知面板与三语文案一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
+站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者；其 Controller / Repository / DTO / 前端通知面板与三语文案已一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
 
 ---
 
@@ -705,7 +705,7 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
 runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
 
-**Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
+**Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow

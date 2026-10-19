@@ -59,4 +59,4 @@
 | 子 agent | type | 负责 |
 |----------|------|------|
 | compute-export-sync | implementer | 步骤 1-2（列定义 + 导出表头/标签） |
-| ui-doc-sync | implementer | 步骤 3-6（三语 i18n + 映射可见集 + 测试 + 文档），最后 review-with-docs |
+| ui-doc-sync | implementer | 步骤 3-6（三语 i18n + 映射可见集 + 测试 + 文档）；不运行、也不声称 final gate；final gate 由 parent 的 `review-with-docs` 执行 |
