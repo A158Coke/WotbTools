@@ -79,7 +79,7 @@ Python Replay Extractor
         -> shared Web + Desktop runtime
 ~~~
 
-**Git evidence:** 6edb2d36、05049a7e、00fc0713。
+**Git 证据：** 6edb2d36、05049a7e、00fc0713。
 
 ## 2. 2026-06-24～06-27 — Event Stream、Rating 与持久业务状态
 
@@ -102,7 +102,7 @@ Settlement Result
 Replay processing + PostgreSQL -> Leaderboard
 ~~~
 
-**Git evidence:** 87857033、f21cec8c、33bfe19a、81135740、51339c00。
+**Git 证据：** 87857033、f21cec8c、33bfe19a、81135740、51339c00。
 
 ## 3. 2026-06-26～07 — Authentication Identity 与 Business Identity 分离
 
@@ -167,7 +167,7 @@ Replay Binary
 
 死亡事实形成明确 authority 优先级：settlement authority 优先，其次是可证明的 live exact evidence，否则保持 unknown。
 
-**Git evidence:** 91c6f5c4、01412d57、ab3c5a0d、a795c603、d78e35a5、a0a5bc49、2f78e06a。
+**Git 证据：** 91c6f5c4、01412d57、ab3c5a0d、a795c603、d78e35a5、a0a5bc49、2f78e06a。
 
 ## 5. 2026-08 — Replay Artifact 与可审核 Evidence
 
@@ -199,7 +199,7 @@ Replay File
 
 Dataset identity 最终由 processingJobId + sourceId 表示；文件名不再是 processed Dataset 的 identity authority。Workspace 拥有 selection 与 Processing Job lifecycle，各 capability 消费 Dataset，但不共享自己的业务状态，因此 AI failure 不等于 Playback failure。
 
-**Git evidence:** 62f2e7ac、f30ef415、a22b2508、ec956315。
+**Git 证据：** 62f2e7ac、f30ef415、a22b2508、ec956315。
 
 ## 7. 2026-08-29 起 — Android Thin Client 与 Replay Operation Identity
 
@@ -223,7 +223,7 @@ ABSENT -> IN_FLIGHT -> COMMITTED(jobId)
 
 只有 dispatcher 接受任务后才能 COMMIT。后来的 Distributed Replay 沿用了这一 invariant，并进一步把 accepted 收紧为 RabbitMQ publisher-confirmed 且 routable。Replay Export 也统一进入认证边界，避免通过导出接口绕过受保护 Dataset。Native Bridge 同时建立 capability check 与安全边界；APK 签名、版本与自动发布能力使客户端具备分发条件。
 
-**Git evidence:** 97aad637、166000d4、cdd122b8、f4eeaac7、4915e820。
+**Git 证据：** 97aad637、166000d4、cdd122b8、f4eeaac7、4915e820。
 
 ## 8. 2026-08-31～09 — Planned Dual-Cloud Foundation
 
@@ -242,7 +242,7 @@ Yecao mainland accessibility problem
 
 wotb-control 后来没有成为最终独立 production service；正式 Replay Control Plane 留在 TX Business API。仓库能证明这一结果，但已经无法可靠恢复当时没有保留 standalone control service 的完整决策理由，因此本文不补写猜测。
 
-**Git evidence:** d4d9a459、c8482c91、d2a823ed、ff311c87、ad4eff6a。
+**Git 证据：** d4d9a459、c8482c91、d2a823ed、ff311c87、ad4eff6a。
 
 ## 9. 2026-09 — Replay Coordinator / Processing 分离
 
@@ -265,7 +265,7 @@ Yecao: Replay Processing
 
 性能工程也开始使用 Benchmark、JFR 与 Fingerprint 证明优化没有改变 Canonical Replay Facts；CPU 解析使用受限 Platform Worker，AI 等待使用受控 Virtual Thread。
 
-**Git evidence:** 8c6e8c9e、bfe14714、c85b9a27。
+**Git 证据：** 8c6e8c9e、bfe14714、c85b9a27。
 
 ## 10. 2026-09 — Durable Game Identity
 
@@ -291,7 +291,7 @@ HoF 等游戏域数据由 Game Identity 持有。这样 Authentication lifecycle
 
 2026-10 服务端 parser 退役后，Replay recorder 的信任模型明确收敛：它不再被当作绑定账号的 proof，而是**客户端声称的便利徽章**。服务器没有 parser，客户端只提交录像者数值 `accountId`，服务端仅与当前绑定账号比较；它不授予权限、不参与授权、不构成回放真实性证明。换绑会使验证失效，只改昵称不会。Wargaming IdP 的 `wotb_verified` 是另一条链路：由 IdP 服务端验证后写入 JWT，属于认证侧可信 claim。
 
-**Git evidence:** e5550a0e、8fac89ff、79d1fe50、ed737605、314e3fb1。
+**Git 证据：** e5550a0e、8fac89ff、79d1fe50、ed737605、314e3fb1。
 
 ## 11. 2026-09-19～09-22 — Distributed Replay 成为唯一生产执行架构
 
@@ -338,7 +338,7 @@ Local execution 从一开始就是迁移兼容方案。Distributed Replay 完成
 
 2026-09-22，项目删除 `ReplayParseScheduler`、`LocalReplayProcessingDispatcher`、`LocalReplayProcessingExecutor` 和 Local Dataset 等旧执行路径，不再维护 Local / Distributed 双模式。生产 Replay Pipeline 收敛为：用户 → TX Business API → PostgreSQL / MinIO / RabbitMQ → Yecao Parser Worker → MinIO Derived Dataset → TX 消费能力。
 
-**Git evidence:** 5da8926b、a81267b5、04e02e76、6b915712、21378900、f2bea028、89d1d372、5f3781d2、90a09492、d4bb20db、ad02b09c。
+**Git 证据：** 5da8926b、a81267b5、04e02e76、6b915712、21378900、f2bea028、89d1d372、5f3781d2、90a09492、d4bb20db、ad02b09c。
 
 ## 12. 2026-09-16～09-23 — Tencent 成为 Production Authority
 
@@ -373,7 +373,7 @@ Flyway   = tables / indexes / sequences / application schema
 Migration invariant != Runtime invariant
 ~~~
 
-**Git evidence:** 81097302、966181da、6a5e17ed、050d423a、6942f2c7、532542ae、036eef8e、86d9fe50。
+**Git 证据：** 81097302、966181da、6a5e17ed、050d423a、6942f2c7、532542ae、036eef8e、86d9fe50。
 
 ---
 
@@ -421,7 +421,7 @@ AI Review 也随之退出 Processed Dataset 模型：浏览器本地建立 `Clie
 
 同一轮还把**运行依赖 provenance**与**研究证据 provenance**分开。生产依赖由 `deploy/agent/source.json` 锁 Release commit + artifact hash；外部交叉验证文档则锁具体 upstream research commit / blob。上游项目既是 parser producer 又是 research source，但这两个身份不改变 WotbTools evidence promotion rule：external-only claim 仍需本地 corpus 或 controlled probe 独立复现。
 
-**Git evidence:** `82f1e26c`（上游 WASM 成为客户端解析方向）、`0dc4767e`（#447：服务端 parser 与 distributed replay pipeline 退役）、PR #451（3D 装填遥测消费）；upstream releases `v0.3.8` = `f35baa46…`、`v0.3.9` = `b4e50e13…`、`v0.3.10` = `5029e103…`。
+**Git 证据：** `82f1e26c`（上游 WASM 成为客户端解析方向）、`0dc4767e`（#447：服务端 parser 与 distributed replay pipeline 退役）、PR #451（3D 装填遥测消费）；upstream releases `v0.3.8` = `f35baa46…`、`v0.3.9` = `b4e50e13…`、`v0.3.10` = `5029e103…`。
 
 ## 14. 2026-09-30～10-03 — AI Review 从 Business Backend 拆成独立无状态服务
 
@@ -443,7 +443,7 @@ Browser canonical facts
 
 后续积分赛截图识别复用同一个 AI Service，但只让模型提取小组军团与名次；积分规则、草稿、审核与发布仍由 Business API 拥有。这保持了“AI 做非确定性识别，业务规则做确定性计算”的 authority 分离。
 
-**Git evidence:** `cec5b6f9`、`c24e7b06`、`9fef1540`、`615d79fa`、`83884790`；PR #536。
+**Git 证据：** `cec5b6f9`、`c24e7b06`、`9fef1540`、`615d79fa`、`83884790`；PR #536。
 
 ## 15. 2026-10-03 — Android Authentication Owner 从 WebView 迁到 Native
 
@@ -509,7 +509,7 @@ Frontend 的 release identity 仍由 Git commit / immutable TCR artifact 决定�
 
 因此 Komodo 的长期角色是：**提供声明式资源、主机/Stack 可见性与受控 workload lifecycle；但 release provenance、immutable artifact、owner workflow、业务数据库 authority 与公网入口 ownership 仍由各自系统持有。** K7C 增加了 Frontend workload redundancy，但没有消除 TX1 Caddy 这个公网 ingress single point of failure。
 
-**Git evidence:** `619f0d60`、`ad3a07ef`、`01633609`；K7C closeout 与 production runs `37236109552`、`37283193116`、`37283700560`。
+**Git 证据：** `619f0d60`、`ad3a07ef`、`01633609`；K7C closeout 与 production runs `37236109552`、`37283193116`、`37283700560`。
 
 ## 17. 2026-08-02～09-07 — Observability 进入事故诊断与发布门禁
 
@@ -519,7 +519,7 @@ AI Review 带来长耗时调用、外部依赖、超时与失败路径，单纯�
 
 可观测性随后进入发布门禁：生产部署不仅检查应用健康，也验证 Metrics、Prometheus Target、Loki Stream、Grafana Datasource 与 Dashboard 等运行链路。一次生产恢复问题后，回滚权威从简单 Previous Deployment 收敛为经过完整验证的 Last Known Good。LKG 保存已验证的部署树、Compose、SHA，后来加入 Capability Metadata；缺少可靠 LKG 时默认 Fail Closed，而不是盲目把时间上较旧的版本当作可恢复版本。Application Availability 与 Observability Availability 被划分为不同故障域：观测栈故障需要报告和修复，但不能在应用本身健康时错误阻止建立恢复基线或导致不必要的业务回滚。
 
-**Git evidence:** `5f4cdc2a`、`d9459530`、`4cd46ffc`、`1356752f`、`cc00b5f7`、`de46255c`、`f6a4b165`、`422fa4a0`、`e357b786`、`f91df447`、`b7474a0b`、`3269cc31`、`f803fc84`、`69cb6e2b`、`8e8cd8fb`、`39d2dcb3`、`bef1d91d`、`4d0db653`、`d559e899`、`761b358e`。
+**Git 证据：** `5f4cdc2a`、`d9459530`、`4cd46ffc`、`1356752f`、`cc00b5f7`、`de46255c`、`f6a4b165`、`422fa4a0`、`e357b786`、`f91df447`、`b7474a0b`、`3269cc31`、`f803fc84`、`69cb6e2b`、`8e8cd8fb`、`39d2dcb3`、`bef1d91d`、`4d0db653`、`d559e899`、`761b358e`。
 
 ## 18. 2026-08-06～09-30 — 不可变 Release、回滚权威与 Release Contract
 
@@ -531,7 +531,7 @@ AI Review 带来长耗时调用、外部依赖、超时与失败路径，单纯�
 
 2026-09-30，前端镜像发布从“构建、缓存导出、镜像导出与 registry 上传合并为一个无超时步骤”拆成“构建 → 校验 → 发布 → 晋升”：构建只在本地产出镜像，不再直接写 registry；内容校验（源码身份、资产源、三维回放 WASM 产物、期望静态文件）前移到任何 registry 写入之前，校验对象是即将被推送的字节；immutable tag 上传成为独立步骤，带每次尝试的超时与有界瞬态重试，registry 内容寻址使重试只补传未完成的层；发布后只验证 registry 上的 digest 就是本次发布的那一个。生产发布仍按部署位置选择 registry：TX 工作负载用腾讯云 TCR，Yecao 工作负载用 GHCR；前端发布也不再写入外部构建缓存。
 
-**Git evidence:** `9460f5b4`、`9fea9a47`、`42b42904`、`29b3dc87`、`3a5c12c7`、`0167aefe`、`348d892d`、`cdccf816`、`4a6b5fcc`、`6c6e30ce`、`efa976da`、`7aacc0b6`、`2f945221`、`fc9a54c1`、`e9a1e25a`、`85af3bd7`、`8466c29c`、`7a136e6f`、`7537656c`。
+**Git 证据：** `9460f5b4`、`9fea9a47`、`42b42904`、`29b3dc87`、`3a5c12c7`、`0167aefe`、`348d892d`、`cdccf816`、`4a6b5fcc`、`6c6e30ce`、`efa976da`、`7aacc0b6`、`2f945221`、`fc9a54c1`、`e9a1e25a`、`85af3bd7`、`8466c29c`、`7a136e6f`、`7537656c`。
 
 ## 19. 2026-10-03～10-12 — 客户端交付、会话与还原边界
 
