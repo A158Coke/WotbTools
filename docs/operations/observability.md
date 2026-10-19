@@ -13,7 +13,7 @@ The dashboards answer the maintainer's questions: who used the product, which fe
 
 ## Dashboards
 
-The five product dashboards default to last 24 hours, use `Asia/Shanghai`, and link to each other while preserving the selected range. **Today** means midnight Beijing time to now. Choose last 7 days or a custom range within the retention window. Empty results are displayed as No data, not a verified zero.
+The five product dashboards and the Engineering Overview (six current dashboards total) default to last 24 hours, use `Asia/Shanghai`, and link to each other while preserving the selected range. **Today** means midnight Beijing time to now. Choose last 7 days or a custom range within the retention window. Empty results are displayed as No data, not a verified zero.
 
 | Dashboard | UID | What it measures |
 |---|---|---|
@@ -24,7 +24,7 @@ The five product dashboards default to last 24 hours, use `Asia/Shanghai`, and l
 | AI token usage | wotbtools-ai-token-usage | Known input/output/total tokens, per-review average and missing usage |
 | Backend error logs | wotbtools-backend-error-logs | Login, HoF, tournament, AI, client parsing and other error sections |
 
-The six former dashboards are deleted through OpenTofu. Dashboard deletion and replacement are ordinary desired-state operations: **no delete allowlist**. Datasource deletion stays prohibited. Never remove the Grafana volume or edit state to delete a dashboard.
+The six retired dashboards (a different set from the six current UIDs) are deleted through OpenTofu. Dashboard deletion and replacement are ordinary desired-state operations: **no delete allowlist**. Datasource deletion stays prohibited. Never remove the Grafana volume or edit state to delete a dashboard.
 
 ## Client telemetry
 
@@ -80,7 +80,7 @@ Account-group queries have an explicit `max_query_series=10000` ceiling; exceedi
 
 PR CI performs native Prometheus/Loki/Alloy validation, real Docker emitter → Alloy → Loki smoke, Grafana datasource/dashboard API smoke, HTTP contract checks and targeted semantic tests. New producers are deployed after the receiver/collector where possible; independent service owners can otherwise produce a temporary undercount, not a product outage. Android bundled telemetry needs the new APK release; existing APKs cannot retroactively report usage.
 
-`observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all six current UIDs and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the seven-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana, dev-metrics) even though infrastructure charts no longer appear on the home dashboard.
+`observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all six current dashboards (five product dashboards + Engineering Overview) and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the seven-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana, dev-metrics) even though infrastructure charts no longer appear on the home dashboard.
 
 Deployment canaries prove ingestion paths, not actual activity from every production service. Runtime acceptance must check real received client activity, a parse batch, APK requests and AI usage/errors in the new dashboards. No historical client counts can be backfilled from absent events.
 
@@ -102,4 +102,4 @@ Rerunning the same source SHA reuses the existing exporter tag's digest. Only an
 
 The monthly table shows historical event-date labels. The daily Created/Merged line chart converts day labels to UTC midnight through native Grafana transformations; its x-axis follows the picker. They do not invent pre-Prometheus sample history. Months start June 2026; days cover the latest 90 days. Instant bucket queries require a snapshot at the picker end; selecting an end outside observed Prometheus retention can return No data. Workflow snapshot/production trends follow the picker and existing seven-day retention. Never use `increase()`/`rate()` on reconstructed GitHub totals. Areas overlap, drafts overlap open, cancelled runs are not failures, and Actions retention can limit CI completeness. PR creation-to-merge is not DORA lead time. Release/workflow completion does not prove mutation: deployment/publish panels explicitly show Not available.
 
-Activity is not productivity; production correlation does not establish causation. Links use the five real product dashboards. Production acceptance must compare live GitHub totals/months, prove successful refresh under 30 minutes, check safe diagnostics for leakage, apply only the additional dashboard, and require the existing clean second-plan/UID checks.
+Activity is not productivity; production correlation does not establish causation. Links use the five product dashboards; Engineering Overview is the separate sixth current dashboard. Production acceptance must compare live GitHub totals/months, prove successful refresh under 30 minutes, check safe diagnostics for leakage, apply only the additional dashboard, and require the existing clean second-plan/UID checks.

@@ -1,4 +1,4 @@
-# Komodo public ingress (K2)
+# Komodo public ingress
 
 The Komodo control plane runs **privately** on Yecao (`deploy/komodo`): Core binds
 only the WireGuard address `10.20.0.2:9120` and MongoDB publishes no host port.
@@ -33,7 +33,7 @@ The boundaries are deliberate and enforced by contract tests:
   is why `deploy/komodo/**` is **not** a Caddy production input: a Komodo version
   bump must not re-run, or fail, the gateway by itself.
 - **Komodo documentation is not Komodo production input.** This file lives under
-  `docs/` precisely so a K2 docs change cannot trigger a Core/Mongo/DNS
+  `docs/` precisely so a docs change cannot trigger a Core/Mongo/DNS
   reconciliation through the Komodo controller path filter.
 
 ## Route
@@ -108,10 +108,6 @@ curl -fsSI https://komodo.wotbtools.com/         # successful HTTP response
 Then open `https://komodo.wotbtools.com` and sign in as `admin` with the existing
 `KOMODO_INIT_ADMIN_PASSWORD`. The admin password is never printed or stored in CI.
 
-Expected Komodo inventory after the private bootstrap and this ingress:
-Servers `0`, Stacks `0`, Deployments `0`, Procedures `0` — the controller plane
-starts empty on purpose (see `deploy/komodo/README.md`).
-
 ## Failure semantics
 
 | Situation | Behaviour |
@@ -121,11 +117,11 @@ starts empty on purpose (see `deploy/komodo/README.md`).
 | Public HTTPS up but reporting a different version | Caddy verification fails with a Caddy/TLS/DNS message plus the Caddy log tail |
 | Public HTTPS fails after deploy | Workflow fails; private success never counts as public success |
 | Caddy configuration invalid | `validate-caddy-config.sh` fails during staging, so the live gateway is not promoted |
-| DNS unavailable | K2 never creates or mutates DNS; the record stays OpenTofu-owned |
+| DNS unavailable | This ingress owner never creates or mutates DNS; the record stays OpenTofu-owned |
 
 ## Rollback
 
-Revert the K2 change: the next Caddy reconcile removes the site block. The DNS
+Revert the Caddy site block: the next Caddy reconcile removes it. The DNS
 record and the Komodo runtime are untouched, and the private Core keeps running —
 `https://komodo.wotbtools.com` simply stops being served.
 

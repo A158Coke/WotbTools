@@ -1,8 +1,7 @@
 # TX Business PostgreSQL infrastructure boundary
 
-PostgreSQL is the authoritative business state (the server has no replay parser:
-the replay job tables, RabbitMQ and MinIO were removed on 2026-10-02; Flyway V27
-drops the job tables). Business PostgreSQL is deliberately independent from
+PostgreSQL is the authoritative business state. The server has no replay parser
+and no replay job tables; Business PostgreSQL is deliberately independent from
 Keycloak PostgreSQL:
 
 ```text
@@ -27,7 +26,7 @@ deployments share the same service and volume definition:
 
 - image `postgres:18-alpine` (never a floating tag);
 - administration port `127.0.0.1:25432:5432` - host-local OpenTofu/administration;
-- private service endpoint `10.20.0.1:25432:5432` - WireGuard only (K6A);
+- private service endpoint `10.20.0.1:25432:5432` - WireGuard only;
   production consumers still use `business-postgres:5432`;
 - volume `business_postgres_data`;
 - `POSTGRES_DB=postgres` so the image entrypoint never auto-creates the
@@ -210,27 +209,21 @@ select arena_id, account_id, count(*) from hall_of_fame_record
 select count(*) from hall_of_fame_record where replay_uploaded_by is not null;
 ```
 
-## Hall of Fame migration compatibility
+## Hall of Fame schema contract
 
-Production Yecao currently holds `hall_of_fame_record` with explicit ids and a
-sequence that had reached 355. A data-only dump already exists externally and is
-**not** part of this repository; this PR does not import it and does not migrate
-production data. It only makes the TX database a valid future migration target:
+`hall_of_fame_record` is owned by Flyway. Current compatibility invariants:
 
-- explicit ids are preserved by `overriding system value` inserts and by
-  `pg_dump`'s `setval` statements, so a restored sequence continues past the
-  imported maximum;
-- `pg_dump` carries `setval`, so after a data-only import the operator must
-  confirm `last_value` is at or above `max(id)` (355 at the snapshot);
+- explicit ids survive dump/restore because `pg_dump` emits `setval`; after any
+  restore the operator must confirm `last_value` is at or above `max(id)`;
 - the unique key remains `(arena_id, account_id)`;
-- `hall_of_fame_record` has no outbound foreign key, so it never couples to
-  fresh Keycloak users or to `user_profile`;
+- the table has no outbound foreign key, so it never couples to Keycloak users
+  or to `user_profile`;
 - `replay_uploaded_by` stays a nullable literal `varchar` holding historical
   Keycloak UUIDs as opaque data. No FK to any Keycloak-owned identity may be
   introduced.
 
-The source Yecao database must never be deleted as part of a backup, restore, or
-import; retiring or dropping it is a separate, operator-approved migration.
+Schema and product semantics live in [`features/hall-of-fame.md`](../features/hall-of-fame.md);
+this document owns only the runtime, backup and restore boundary.
 
 ## Verification
 

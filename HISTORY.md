@@ -1,8 +1,8 @@
 # WotbTools 项目历史
 
-本文记录 WotbTools 的主要产品、架构与工程演进。它不是逐版本变更日志，也不试图重复 Git 已经保存的实现细节；重点记录当时为什么做出关键选择、这些选择解决了什么问题，以及它们如何影响后续设计。
+本文记录 WotbTools 的**产品/业务演进**：用户可见或商业能力为何引入、变化、退役，以及产品方向决策。它不是逐版本变更日志，也不是技术架构史；技术/架构演进见 [`docs/architecture/TECHNICAL_EVOLUTION.md`](docs/architecture/TECHNICAL_EVOLUTION.md)。
 
-Git Commit 与 Pull Request 是历史证据的事实源；本文是项目演进叙事的事实源。日期按关键决策进入主线的时间记录。
+Git Commit 与 Pull Request 是历史证据的事实源；本文是产品/业务演进叙事的事实源。日期按关键决策进入主线的时间记录。
 
 ---
 

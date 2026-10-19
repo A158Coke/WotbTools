@@ -3,22 +3,24 @@
 ## Status
 
 This document is the product/architecture authority for Battle Playback HP presentation.
-The frontend renders backend-projected canonical HP state; it must not infer opening HP,
-choose between replay/tankopedia sources, or reconstruct visibility-dependent HP truth.
+The client playback projection (`frontend/src/replay-local/playback`) derives canonical HP state
+from the pinned Agent WASM facets and settlement facts; the UI only renders it. The UI must not
+infer opening HP, choose between replay/tankopedia sources, or reconstruct visibility-dependent
+HP truth.
 
 ## Friendly vehicles
 
 Friendly vehicles are confirmed with their actual battle opening HP from battle results:
 
 ```text
-ReplayHpTimeline.settlementInitialHp(player)
+toBattlePlaybackDataset.ts#settlementInitialHp(player)
 = max(signed PlayerResults field1, 0) + damageReceived
 ```
 
 The 11.19 replay research corpus proves this reconstruction against initial Type5 materialization
 for 238/238 setup-window combatants. See `docs/research/replay/actual-hp-type5-settlement.md`.
 
-At battle-relative `t=0`, backend projection emits:
+At battle-relative `t=0`, the client playback projection emits:
 
 ```text
 currentHp         = actual opening HP
@@ -60,7 +62,7 @@ After the switch:
 - destroyed state reaches replay HP `0` when proven;
 - Tankopedia must never become the active HP source again for that vehicle in the same battle.
 
-The frontend must not know or reimplement this switch.
+The UI layer must not know or reimplement this switch; it only consumes the projected transitions.
 
 ### Replay capacity is independently authoritative
 
@@ -75,7 +77,7 @@ displayCapacityHp = null
 source            = replay source
 ```
 
-The backend must not create a fake `currentHp / currentHp` full-health pair. A later trusted replay
+The projection must not create a fake `currentHp / currentHp` full-health pair. A later trusted replay
 fact may provide a positive `displayCapacityHp`; only then is that replay capacity adopted.
 
 Example:
@@ -91,7 +93,7 @@ At no point may the authority switch revert to Tankopedia.
 ## Sparse timeline rule
 
 An absent/UNKNOWN frame is not a command to restore Tankopedia and is not automatically a transition
-to a new HP value. Backend projection emits sparse authoritative transitions; the frontend only uses
+to a new HP value. The client projection emits sparse authoritative transitions; the UI only uses
 `lastAtOrBefore(currentTime)`/equivalent query-at-time logic.
 
 For an enemy that has already switched to replay authority, a hidden/AoI gap therefore preserves the
@@ -129,18 +131,20 @@ not infer replay protocol semantics, visibility truth, opening HP, or authority 
 ## Responsibility boundary
 
 ```text
-replay + settlement + application Tankopedia reference
+pinned Agent WASM facets + settlement facts + application Tankopedia reference
         ↓
-backend HP authority projection
+frontend replay-local canonical facts
+        ↓
+client playback projection (HP authority)
         ↓
 BattlePlaybackDataset.healthTransitions
         ↓
-frontend query-at-time + pure presentation aggregation
+UI query-at-time + pure presentation aggregation
         ↓
 display only
 ```
 
-Backend owns:
+Client canonical/playback projection owns:
 
 - settlement opening-HP reconstruction;
 - friendly opening confirmation;
@@ -149,7 +153,7 @@ Backend owns:
 - replay capacity authority;
 - CURRENT / LAST_KNOWN HP provenance.
 
-Frontend owns only:
+UI/query layer owns only:
 
 - `lastAtOrBefore` / query-at-time;
 - retaining an already-disclosed positive presentation capacity until a newer positive capacity is
@@ -157,7 +161,7 @@ Frontend owns only:
 - pure team sum/percentage calculation;
 - formatting, localization and visual rendering.
 
-Frontend must not:
+UI/query code must not:
 
 - select Tankopedia vs replay as an HP source;
 - infer opening HP;

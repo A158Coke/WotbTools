@@ -13,7 +13,7 @@
 
 ## App 手动目录导入（独立于 external pending）
 
-目录入口不再依赖 WebView 的 `webkitdirectory`／`FileChooserParams.createIntent()`：后者在 Android 16 设备上实际发出普通 `ACTION_GET_CONTENT`，选目录会被文件管理器拒绝。普通 Web 浏览器继续使用 HTML 目录选择；Android 文件多选仍走既有 input。
+目录入口不再依赖旧 WebView 的 `webkitdirectory`／`FileChooserParams.createIntent()`：后者在 Android 16 设备上实际发出普通 `ACTION_GET_CONTENT`，选目录会被文件管理器拒绝。普通 Web 浏览器继续使用 HTML 目录选择；Android 文件多选仍走既有 input。
 
 - Bridge 可选 `replay-folder-picker` capability（v2 引入，v3 不变）；`pickReplayFolder(requestId)` 启动系统 SAF 目录选择，取消不修改既有文件；`cancelReplayFolderPicker(requestId)` 只关闭／取消该调用者尚未完成的选择或扫描，不会影响新请求。`releaseReplayFolderSelection(selectionId)` 只释放匹配的瞬时选择。
 - 系统只授权所选目录，App 不调用 `takePersistableUriPermission`，不申请 broad storage permission。Android 11+ 的根目录、Download 根及 Android/data 等限制由系统执行，不绕过。
