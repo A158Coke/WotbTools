@@ -118,7 +118,9 @@ def collect(client, repository, overrides, now=None, cache=None):
     prs = list(client.pages(base + '/pulls?state=all&per_page=100'))
     for pr in prs:
         number = str(pr['number'])
-        if number in overrides:
+        # Frozen overrides describe merged/closed history; open and reopened PRs are
+        # classified from their current changed paths.
+        if number in overrides and pr.get('state') != 'open':
             continue
         # Cache only the classification contribution, never paths/body/user data.
         key = (number, pr.get('updated_at'))

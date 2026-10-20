@@ -1,4 +1,4 @@
-# Internal Playbooks
+# 内部 Playbooks
 
 这些是内部 playbook / checklist / tool guidance，不是顶层 Skill，不参与“现在处于生命周期哪一阶段”的选择。
 
@@ -11,9 +11,9 @@
 
 ## 加载规则
 
-Domain implementation playbooks 由四个 lifecycle Skills 按需加载。`product-qa/` 是例外：它是独立 operational product-audit playbook，由用户显式触发（Product QA / 全站 QA / 周期产品审查），不由 lifecycle Skills 加载，也不属于 PR final gate。
+领域实现 playbook 由四个 lifecycle Skills 按需加载。`product-qa/` 是例外：它是独立 operational product-audit playbook，由用户显式触发（Product QA / 全站 QA / 周期产品审查），不由 lifecycle Skills 加载，也不属于 PR final gate。
 
-| Playbook | Loaded by | When |
+| Playbook | 加载方 | 时机 |
 |---|---|---|
 | `requirement-clarification.md` | designer | Designer Phase 1 中需求模糊、边界不清、验收标准缺失时 |
 | `wotb-sync.md` | designer / executor / prompt-repair / review-with-docs | 跨层改动：解析、列、API、导出、i18n、auth、Flyway |
@@ -30,7 +30,7 @@ Domain implementation playbooks 由四个 lifecycle Skills 按需加载。`produ
 ## 边界
 
 - Playbook 回答“这个领域具体应该怎么做”。
-- Top-level Skill 回答“现在处于生命周期哪一阶段”。
+- 顶层 Skill 回答“现在处于生命周期哪一阶段”。
 - 只有 `review-with-docs` 可以判定 final quality gate / zero blocker。
 - `designer` 不做 production implementation / final implementation review；`executor` 不自行判定 review pass；`prompt-repair` 不自行判定 final pass。
 - Product QA findings 需要开发时进入 GitHub Issue / `designer`；Product QA 不拥有 commit / push / PR / merge / final implementation PASS。

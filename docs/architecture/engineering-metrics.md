@@ -18,7 +18,7 @@ PR 状态先检查 `merged_at`；closed 且没有该字段表示 closed-unmerged
 
 ## 分类与隐私
 
-Areas: replay、playback、android、ai、frontend、backend、auth、infra、observability、docs，另加 unclassified。area 使用这组 bounded vocabulary。当前 PR 主要按 changed paths 分类；path 证据不足时使用 stable semantic fallback；历史 frozen overrides 保留已冻结的分类。人工 PR area label 不是分类权威，也不是必需的人工 metadata。一个 PR 可以有多个 area：柱状条重叠，不代表工作量份额。Frozen history 版本化在 exporter 目录；heuristic 改动不得静默重分类历史。需要显式纠正时，只通过该 versioned historical override 文件。
+Areas: replay、playback、android、ai、frontend、backend、auth、infra、observability、docs，另加 unclassified。area 使用这组 bounded vocabulary。当前 PR 主要按 changed paths 分类；path 证据不足时使用 stable semantic fallback；历史 frozen overrides 保留 merged / closed PR 已冻结的分类。open 或 reopen 的 PR 始终按当前 changed paths 分类，不会因历史 override 永久冻结。人工 PR area label 不是分类权威，也不是必需的人工 metadata。一个 PR 可以有多个 area：柱状条重叠，不代表工作量份额。Frozen history 版本化在 exporter 目录；heuristic 改动不得静默重分类历史。需要显式纠正时，只通过该 versioned historical override 文件。
 
 冻结记录共 655 个 PR 的 area 集合，包含初始 608 个基于 2026-10-16 分页获取的 GitHub file list 的分类，以及之后显式冻结的既有 PR 分类；记录只包含 PR 编号与 area 集合，不保存 file path、title 与 body。Feature-specific path 规则同时保留产品 area 与其实现层（例如 frontend replay processing 中的 playback）。Runtime cache 只保留分类/job 聚合贡献，并清理被取代的 PR 更新/run attempt；重启后重建。
 

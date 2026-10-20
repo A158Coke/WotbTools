@@ -1,8 +1,8 @@
 """Stable V1 classification.
 
-PR areas come from frozen historical overrides, then changed paths, then a bounded
-semantic fallback. Manual PR labels are not an input; rule changes require explicit
-historical overrides.
+PR areas come from frozen historical overrides (merged/closed PRs only), then changed
+paths, then a bounded semantic fallback. Manual PR labels are not an input; rule changes
+require explicit historical overrides.
 """
 import re
 import json
@@ -41,8 +41,10 @@ KEYWORDS = {
 
 
 def classify_area(pr, paths=(), overrides=None):
+    # Frozen overrides describe merged/closed history only. An open or reopened PR
+    # always uses its current changed paths so an active PR is not permanently frozen.
     override = (overrides or {}).get(str(pr['number']))
-    if override is not None:
+    if override is not None and pr.get('state') != 'open':
         return frozenset(override)
     found = {area for prefix, areas in PATH_RULES.items() for area in areas
              if any(path.startswith(prefix) for path in paths)}

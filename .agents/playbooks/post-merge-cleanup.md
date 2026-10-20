@@ -48,7 +48,7 @@
    - merge-commit 路径：`git branch --merged <main-ref>` 应包含该分支，使用 `git branch -d <task-branch>` 删除（`-d` 会拒绝未合并分支）。
    - squash / rebase merge 路径：branch tip 不是 `<main-ref>` 的 ancestor，`--merged` 不包含且 `-d` 会拒绝；在 merge 事实与 head SHA 都已验证的前提下，使用 `git branch -D <task-branch>` 明确删除当前任务分支。
    - 其他任务分支一律 preserve；merge 事实或 head SHA 无法确认时停止，不得使用 `-D`。
-   - 远端：`git ls-remote --heads <remote> <task-branch>` 检查；若仍存在且已确认属于目标 merged PR，执行 `git push <remote> --delete <task-branch>`。
+   - 远端：`git ls-remote --heads <remote> <task-branch>` 取得当前 remote SHA；只有该 SHA 等于已验证 PR 的 `headRefOid` 时才删除。删除使用 expected-old-value guard：`git push <remote> --delete --force-with-lease=<task-branch>:<remote-sha> <task-branch>`；若 remote 在检查后前进或分支名被复用，lease 失败并中止删除。remote SHA 与 PR head 不一致时停止并汇报，不删除。
    - 本地/远端分支名不一致时按目标 PR 的真实 head ref 与用户指定处理；不确定时先列出现状再操作。
 
 5. **清理当前任务临时文件**：仅删除本任务产生的临时文件（如 PR 描述临时 md）；其他任务或归属不明的文件 preserve。
@@ -63,7 +63,7 @@
 
 - 仅在目标 PR 已合并（或用户明确确认）时删除当前任务分支。
 - cleanup ownership 只覆盖当前 merged task；其他 worktree / branch 无条件 preserve，不因其 clean、已合并或看似陈旧而顺手清理。
-- 默认 `git branch -d`；`-D` 只允许作为 squash / rebase merge 的明确路径，且必须先验证 PR merged 与本地 branch tip == PR `headRefOid`，不得作为通用兜底。远端删除前必须 `git ls-remote` 确认存在且属于目标已合并 PR。
+- 默认 `git branch -d`；`-D` 只允许作为 squash / rebase merge 的明确路径，且必须先验证 PR merged 与本地 branch tip == PR `headRefOid`，不得作为通用兜底。远端删除前必须用 `git ls-remote` 取回 SHA、确认等于已验证 PR `headRefOid`，并以 `--force-with-lease=<task-branch>:<remote-sha>` 作为 expected-old-value guard。
 - 禁止硬编码 `origin`；复用 Executor handoff 的 `<remote>`，或在 fresh-context cleanup 中重新核验 upstream/main remote。
 - 不清理含未提交改动的当前任务 worktree；绝不删除 `main` worktree、`main` 分支或主目录。
 - 删除当前任务独立 worktree 必须从主 worktree 执行，使用非强制 `git worktree remove`；其他任务 worktree 不属于本次 cleanup，不检查后删除、不强制删除。
