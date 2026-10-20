@@ -48,9 +48,6 @@ jobs:
             echo "::error::docs/current-plan.md must remain ignored." >&2
             exit 1
           }
-      - name: Advise on PR area labels
-        if: github.event_name == 'pull_request'
-        run: python3 scripts/ci/check-pr-area-labels.py
       - name: Resolve and verify pull request range
         id: revisions
         env:

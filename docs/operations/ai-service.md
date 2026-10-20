@@ -1,6 +1,6 @@
-# Yecao AI Service（预部署阶段）
+# Yecao AI Service
 
-`ai-service` 是 `java/wotb-ai` 构建的独立 Spring Boot 进程，镜像为 `ghcr.io/a158coke/ai-service`。服务只在 Yecao 部署与验证，TX 网关已有更具体的 `/api/ai/**` 反代路由指向它的 WireGuard 端点（不重写 path，SSE 1120s）；前端 AI Review 已解除「维护中」（提交 `83884790`，前端无维护门），个人随机战与训练房/联赛团队复盘都走正式生产链（`TacticalReviewHarness` / `TeamReplayAnalysisService`），输入为客户端 canonical AI projection，语义 parity 由 `ClientAiProjectionParityTest` 守护。AI provider 配置与 secret 只属于本服务的 Yecao 运行时（`deploy/docker-compose.prod.yml`）：TX 业务编排（`deploy/tx/business-api.compose.yml`、`deploy/tx/deploy.sh`、`business-api.yml`）已不再携带任何 `AI_*` 变量或 key，只保留 `/api/ai/**` 到本服务 WireGuard 端点的 ingress 路由。
+`ai-service` 是 `java/wotb-ai` 构建的独立 Spring Boot 进程，镜像为 `ghcr.io/a158coke/ai-service`，生产运行在 Yecao。TX 网关的 `/api/ai/**` 反代到它的 WireGuard 端点（不重写 path，SSE 1120s）；前端 AI Review 是正式开放能力（无维护门），个人随机战与训练房/联赛团队复盘都走生产链（`TacticalReviewHarness` / `TeamReplayAnalysisService`），输入为客户端 canonical AI projection，语义 parity 由 `ClientAiProjectionParityTest` 守护。AI provider 配置与 secret 只属于本服务的 Yecao 运行时（`deploy/docker-compose.prod.yml`）：TX 业务编排（`deploy/tx/business-api.compose.yml`、`deploy/tx/deploy.sh`、`business-api.yml`）不携带任何 `AI_*` 变量或 key，只保留 `/api/ai/**` 到本服务 WireGuard 端点的 ingress 路由。
 
 ## 发布与边界
 
