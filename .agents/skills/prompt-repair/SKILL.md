@@ -13,8 +13,7 @@ description: >
 > 生命周期位置：PR reviewer findings → **Prompt Repair** → review-with-docs。
 > 本 Skill 只修复已指出的问题；final quality gate / zero blocker 只由 `review-with-docs` 判定。
 
-定位：**REPAIR SPECIALIST**，不是 Designer / Executor / Architecture Explorer /
-FULL REPOSITORY REVIEW / REQUIREMENT DISCOVERY。
+定位：**增量修复执行者**，不是 Designer / Executor / 架构探索器 / 全仓库审查 / 需求发现。
 
 涉及 FE ↔ BE HTTP shape 的 repair prompt 仍必须遵守 `contracts/http/openapi.yaml`、generated artifact 与显式 domain→transport mapping 规则；repair 不得新增平行 wire contract。
 
@@ -25,16 +24,16 @@ FULL REPOSITORY REVIEW / REQUIREMENT DISCOVERY。
 核心原则：
 
 ```text
-READ ENOUGH, NOT EVERYTHING.
-DIFF BEFORE DISCOVERY.
-SYMBOL BEFORE DIRECTORY.
-BLOCKER BEFORE ARCHITECTURE.
-DIRECT DEPENDENCY BEFORE REPOSITORY.
-FIX BEFORE FULL REVIEW.
-CHANGED-FILE TESTS ONLY.
-PASSED + UNTOUCHED = LOCKED.
-EXPAND DISCOVERY ONLY WITH EVIDENCE.
-REPAIR PROMPT IS NOT A REQUEST TO REDISCOVER THE PROJECT.
+读到足够，不做全量阅读。
+先看 DIFF，再做 discovery。
+先定位 SYMBOL，再遍历 DIRECTORY。
+先处理 BLOCKER，再讨论 ARCHITECTURE。
+先看 DIRECT DEPENDENCY，再扩大到 REPOSITORY。
+先修复，再做完整 REVIEW。
+只运行 CHANGED-FILE TESTS。
+已通过且未触碰 = LOCKED。
+只有证据支持时才扩大 DISCOVERY。
+REPAIR PROMPT 不是要求重新发现整个项目。
 ```
 
 ## 输入
@@ -50,7 +49,7 @@ REPAIR PROMPT IS NOT A REQUEST TO REDISCOVER THE PROJECT.
 ## 核心模式：DELTA DISCOVERY
 
 ```text
-Repair Discovery != Full Discovery
+修复 discovery != 全量 discovery
 ```
 
 - 默认 **Discovery Budget：1~3 分钟进入实际修改**（执行策略，不是绝对超时）。
@@ -69,7 +68,7 @@ Repair Prompt
 
 ## 流程（7 个 Phase）
 
-### PHASE 1 — PARSE REPAIR CONTRACT
+### PHASE 1 — 解析修复契约
 
 把提示词内要求分成：
 
@@ -90,7 +89,7 @@ FINAL REPORT REQUIREMENTS
 - 1000+ 行长 Prompt：先结构化提取，不逐句验证、不把每段都变成阅读任务。
   **REGRESSION = 修改完成后验证不破坏，不是修改开始前重新审计整个 regression 区域。**
 
-### PHASE 2 — DELTA DISCOVERY
+### PHASE 2 — 增量发现
 
 1. 有 Reviewed SHA 时先回答内部问题："自上次 review 后到底改了什么？"
 
@@ -117,7 +116,7 @@ git log -5 --oneline
 Blocker 1 — leagueMode contract
 Symbols: leagueMode, LeagueRatingResult, leagueData
 Likely files: frontend/src/replay-local/compute/league-rating.ts, ReplayPage.vue, useColumns.js
-Direct deps: 相关 tests only
+Direct deps: 仅相关 tests
 ```
 
 4. **Symbol-first**（`rg`，不是目录遍历）：
@@ -147,7 +146,7 @@ Locked passed areas:
 Expanding discovery: NO
 ```
 
-### PHASE 3 — IMPLEMENT
+### PHASE 3 — 实现
 
 - 逐 blocker 修复；不要求修改前完整解释所有代码——root cause 有足够证据即改。
 - Prompt 要求删除 X 但真实代码已没有 X → 标记 `ALREADY RESOLVED`，继续下一 blocker。
@@ -157,7 +156,7 @@ Expanding discovery: NO
 - 默认只改：当前 blockers + 必要 dependency + 必要 regression test + 必要 stale cleanup。
 - 禁止 scope creep：不顺便重构整个模块 / 升级 dependency / 改 unrelated UI / 重新设计架构。
 
-### PHASE 4 — TARGETED VERIFY
+### PHASE 4 — 定向验证
 
 最相关测试先行，不是每改 5 行就跑全量：
 
@@ -167,7 +166,7 @@ Fix → Targeted Test → Fix Remaining Failure → Targeted Test Green
 
 例：`PlayerRatingRadar.test.js` / `ReplayPage.test.js` / 对应 service 的单测。
 
-### PHASE 5 — CHANGED-FILE VERIFY
+### PHASE 5 — 变更文件验证
 
 本轮所有 blockers 修改完成后，只运行本轮实际修改文件对应的最小测试集：
 
@@ -181,7 +180,7 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 不得在 final gate 前 commit/push。后续 CI 失败时，只复现失败 job 涉及的最小测试范围；
 修复后追加测试并 push，禁止 force push / 改写已公开历史。
 
-### PHASE 6 — FINAL CLEANUP
+### PHASE 6 — 最终清理
 
 - **review-with-docs / fallow 只在此阶段运行**（REPAIR → TEST → FINAL REVIEW）；
   `review-with-docs` PASS 后才 commit + push，禁止在 repair 开局运行。
@@ -194,7 +193,7 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 - pre-existing issue（当前 PR 未引入、本轮未触碰、不阻塞功能）→ 标记
   `PRE-EXISTING / OUT OF REPAIR SCOPE`，不顺手修（除非用户明确要求整个 repo 零债）。
 
-### PHASE 7 — REPORT
+### PHASE 7 — 汇报
 
 输出简洁最终报告（见"报告模板"），含效率日志。禁流水账、禁虚报 COMPLETE。
 
@@ -210,7 +209,7 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
   ```
 
   禁止静默无限扩展；禁止以"我想更完整理解一下"为由扩大。
-- **允许扩大的条件**（Escalation Policy，满足其一）：
+- **允许扩大的条件**（扩大范围策略，满足其一）：
   A. symbol 有多个真实实现，无法确认 runtime path
   B. caller contract 不明确
   C. test 与 production behavior 冲突
@@ -264,19 +263,19 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 正确：
 Blocker: PlayerRatingRadar size prop
 → rg PlayerRatingRadar
-→ read component + test
-→ confirm dead prop
-→ fix
+→ 读取 component + test
+→ 确认 dead prop
+→ 修复
 → targeted test
 
 Blocker: leagueMode contract
 → rg leagueMode
-→ read frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
+→ 读取 frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
   frontend/src/replay-local/analyzeReplays.ts / ReplayPage.vue / useColumns.js / 直接相关 tests
-→ stop
+→ 停止
 ```
 
-禁止默认执行：`read whole repository` / 读所有 README / 从头读 current-plan.md /
+禁止默认执行：`读取整个 repository` / 读所有 README / 从头读 current-plan.md /
 读完整 docs tree / 修前运行 review-with-docs / 修前运行 `.agents/playbooks/fallow.md` full scan。
 
 ## 报告模板
@@ -313,7 +312,7 @@ CHANGED-FILE TESTS
 - ...
 
 CI HANDOFF
-- PR CI validates the repository-level suite
+- PR CI 负责验证 repository-level suite
 
 DEBT SWEEP
 - ...
@@ -331,15 +330,15 @@ COMPLETE
 
 ```text
 DISCOVERY
-- files inspected: N
-- expanded discovery: yes/no（yes 时附 reason）
+- 已检查文件数: N
+- 是否扩大 discovery: yes/no（yes 时附 reason）
 
 IMPLEMENTATION
-- files modified: N
+- 修改文件数: N
 
 VERIFY
 - changed-file tests: ...
-- repository full tests: not run locally; delegated to PR CI
+- repository full tests: 本地不运行；交由 PR CI
 ```
 
 能可靠获取 phase duration 则加（Discovery/Implementation/Verification duration）；
