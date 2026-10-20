@@ -1,20 +1,21 @@
-# TX2 production worker（K7A）
+# TX2 production worker 与 Frontend replica
 
-K7A 为 **TX2** 建立仓库拥有的 “未来可跑生产 workload” 主机前置条件。它**不**迁移、部署、
-adopt、搬迁任何生产 workload，也**不**改变 K6B placement、DNS 或公网流量。
+TX2 当前承担两类已评审的生产职责：
+
+1. **production-worker owner** 建立 host 前置条件：Docker / Compose、registry mirror、root TCR 凭据生成、主机锁，以及 Periphery / WireGuard 回归。它不创建或迁移任何 workload。
+2. **frontend-replica owner** 把 TX2 接入生产 Frontend 双实例池：TX1 Caddy 是唯一公网入口，按权重把流量分给 TX1 Frontend（weight 2）与 TX2 Frontend（weight 8），对两个 peer 做 `/version.json` active health check。TX2 拉取与 TX1 相同的 immutable TCR artifact，不从 TX1 运行容器复制状态。
 
 ```text
-K7A IMPLEMENTED / NOT PRODUCTION ACCEPTED
+TX2_PRODUCTION_WORKER_READY  → host capability proven
+K7C frontend replica         → active production workload
 ```
-
-在 merge + 生产 reconcile + runtime acceptance 通过之前，本文不写 `K7A COMPLETE`。
 
 ## 目标能力与边界
 
 ```text
 Komodo Core
     ↓
-TX2 Periphery（K3.3，已生产验证）
+TX2 Periphery（已生产验证）
     ↓
 root Docker 执行上下文
     ↓
@@ -22,22 +23,26 @@ Docker Compose v2
     ↓
 已认证的 TCR 私有镜像拉取
     ↓
-（K7B 才会创建的真实 WotBTools 生产容器）
+frontend-replica：与 TX1 相同的 immutable Frontend artifact
 ```
 
-K7A **只**建立最后两个箭头之外的全部前置条件，并证明私有镜像可以被 root 上下文认证拉取。
-它不创建 Komodo Stack，不启用 ResourceSync 自动 apply，不改 `infra/komodo/resources/**`。
+`production-worker` 只建立最后两个箭头之外的全部 host 前置条件，并证明私有镜像可以被 root 上下文认证拉取。它不创建 Komodo Stack，不启用 ResourceSync 自动 apply，不改 `infra/komodo/resources/**`，也不部署 frontend-replica。
+
+TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`frontend-replica.yml` 在 Frontend 发布成功后解析同一 TCR artifact，部署到 `/opt/wotb-tx2/frontend-replica`，并验证 TX2 的 `/version.json` 与 API health。Business API / Keycloak / PostgreSQL / Caddy / AI 仍只在 TX1。
 
 ## 三个 lifecycle 的 ownership 区分
 
 | Owner | 拥有 | 不拥有 |
 |---|---|---|
 | `deploy/periphery/**` + `komodo-periphery.yml` | Periphery 二进制、配置、systemd 生命周期、身份、Core 信任、onboarding | 通用 Docker 主机 provisioning |
-| **`deploy/production-worker/**` + `production-worker.yml`（K7A）** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
-| 未来的 Komodo workload owner（K7B） | Stack / Deployment / ResourceSync 内容 | 本文件的 host 前置条件 |
+| **`deploy/production-worker/**` + `production-worker.yml`** | TX2 的 host Docker 前置条件：Compose 能力、`/etc/docker/daemon.json` 的已评审 mirror、**root 执行上下文的 TCR pull 凭据** | Periphery、Komodo Core、Caddy、Frontend、Business API、Keycloak、PostgreSQL、AI、DNS、OpenTofu state、任何 workload |
+| **`frontend-replica.yml`** | TX2 Frontend 双实例副本：解析并拉取与 TX1 相同的 immutable TCR artifact、部署 `/opt/wotb-tx2/frontend-replica`、验证 peer `/version.json` 与 API health | Frontend 构建与 TCR 发布（TX1 Frontend owner）、Caddy ingress、其它服务、host 前置条件 |
+
+TX2 没有额外的 Komodo Stack / ResourceSync workload owner；除 Frontend replica 外，任何新 workload 都需要先经过 Designer / approved plan 与相应 owner workflow。
 
 `deploy/production-worker/**` 的任何改动只触发 production-worker owner（生产 reconcile）与
-`ci-production-worker.yml`（PR 校验），不会触发 frontend / business-api / keycloak / caddy /
+`ci-production-worker.yml`（PR 校验）；`frontend-replica.yml` 只由 Frontend workflow_run 或
+manual dispatch 触发。两者的改动都不会触发 frontend / business-api / keycloak / caddy /
 postgres / Komodo owner；反之 workload 改动也不会触发 worker reconcile。该互相隔离由
 `scripts/ci/test-workflow-contract.sh` 与 `.github/ci-owner-paths.yml` 断言。
 
@@ -62,8 +67,8 @@ Docker daemon 只在 `daemon.json` **确实发生变化**时重启（mirror 只�
 
 Komodo Periphery 以 **root** 操作 Docker，因此私有生产镜像的凭据必须存在于 **root 的 Docker
 凭据存储**里，而不是某个交互账号的 store。`deploy/tx/publish-loaded-image-to-tcr.sh` 已经确立
-同一条边界（“Docker reads TCR credentials only from this host's credential store”）；K7A 让
-TX2 拥有自己的这一份，而不是从 TX1 复制。
+同一条边界（“Docker reads TCR credentials only from this host's credential store”）；TX2 拥有
+自己的这一份，而不是从 TX1 复制。
 
 凭据因此**绝不**出现在：
 
@@ -162,12 +167,12 @@ TX2_PRODUCTION_WORKER_READY
 
 没有 Compose、mirror 或凭据需要手工保留：它们全部由该 owner 重建。
 
-## 仍未授权（K7B 及以后）
+## 仍未授权
 
 ```text
-创建/采纳生产 Komodo Stack
-把 Frontend / Business API / Keycloak / PostgreSQL / Caddy / AI 放到 TX2
-修改任何 K6B placement、Caddy upstream、DNS 或公网流量
+把 Business API / Keycloak / PostgreSQL / Caddy / AI 放到 TX2
+创建/采纳除已有 Frontend replica 之外的生产 Komodo Stack
+修改 K6B placement、Caddy upstream、DNS 或公网流量（已评审的 K7C frontend pool 除外）
 启用 ResourceSync 自动 apply、managed=true、delete=true
 ```
 
@@ -176,3 +181,5 @@ TX2_PRODUCTION_WORKER_READY
 - Periphery 边界：`docs/operations/komodo-periphery.md`
 - Komodo 声明式资源（K4.1）：`docs/operations/komodo-resource-sync.md`
 - TX service plane 与 K6B baseline：`docs/operations/tx-service-plane.md`
+- Frontend replica owner：`.github/workflows/frontend-replica.yml`
+- 当前 TX1 + TX2 Frontend 双实例拓扑：`docs/architecture/TECHNICAL_EVOLUTION.md`

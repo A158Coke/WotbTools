@@ -6,7 +6,7 @@ Usage:
 
 Scans (relative to the repo root, derived from this script's location):
   - docker/Dockerfile.keycloak          FROM quay.io/keycloak/keycloak:<tag>
-  - keycloak-{wargaming,qq}-provider/pom.xml  <keycloak.version> property
+  - keycloak-{wargaming,qq,session}-provider/pom.xml  <keycloak.version> property
   - frontend/package.json               keycloak-js dependency (informational)
   - frontend/package-lock.json          keycloak-js resolved version (informational)
 
@@ -57,8 +57,11 @@ def main() -> int:
     qq_pom = find_version(
         REPO_ROOT / "keycloak-qq-provider" / "pom.xml", POM_VERSION_RE, "qq pom"
     )
+    session_pom = find_version(
+        REPO_ROOT / "keycloak-session-provider" / "pom.xml", POM_VERSION_RE, "session pom"
+    )
 
-    server_versions = [v for v in (image_tag, wg_pom, qq_pom) if v]
+    server_versions = [v for v in (image_tag, wg_pom, qq_pom, session_pom) if v]
     if not server_versions:
         print("\nERROR: could not find any Keycloak version reference.")
         return 1
@@ -71,6 +74,7 @@ def main() -> int:
         ("image tag", image_tag),
         ("wargaming pom", wg_pom),
         ("qq pom", qq_pom),
+        ("session pom", session_pom),
     ):
         if version != server_versions[0]:
             mismatches.append(f"{label}={version!r}")

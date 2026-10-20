@@ -44,7 +44,10 @@
    - 无当前任务条目时保持现状即可。
 
 4. **清理当前已合并 PR 的任务分支**
-   - 本地：先 `git branch --merged <main-ref>` 核对；只对当前任务分支使用 `git branch -d <task-branch>` 删除（`-d` 会拒绝未合并分支）。其他任务分支一律 preserve。
+   - 先验证目标 PR 的 merge 事实：`gh pr view <n> --json state,headRefOid,mergeCommit` 的 `state == MERGED`，并确认本地当前任务分支 tip 等于该 PR 的 `headRefOid`。
+   - merge-commit 路径：`git branch --merged <main-ref>` 应包含该分支，使用 `git branch -d <task-branch>` 删除（`-d` 会拒绝未合并分支）。
+   - squash / rebase merge 路径：branch tip 不是 `<main-ref>` 的 ancestor，`--merged` 不包含且 `-d` 会拒绝；在 merge 事实与 head SHA 都已验证的前提下，使用 `git branch -D <task-branch>` 明确删除当前任务分支。
+   - 其他任务分支一律 preserve；merge 事实或 head SHA 无法确认时停止，不得使用 `-D`。
    - 远端：`git ls-remote --heads <remote> <task-branch>` 检查；若仍存在且已确认属于目标 merged PR，执行 `git push <remote> --delete <task-branch>`。
    - 本地/远端分支名不一致时按目标 PR 的真实 head ref 与用户指定处理；不确定时先列出现状再操作。
 
@@ -53,14 +56,14 @@
 6. **确认并汇报**
    - 当前任务 worktree 已从 `git worktree list --porcelain` 消失；其他 worktree 保持原样。
    - 当前任务本地分支已删除；若目标 remote 上原本存在该分支，则远端当前任务分支也已删除。不得要求 `git branch` 最终只剩 main。
-   - main 已包含目标 merge commit；若检查过主 worktree，其状态未被本次 cleanup 污染。
-   - 输出清理清单：合并的 PR / merge commit、当前任务删除的 worktree 与分支（本地+远端）、preserved 的其他 worktree / branch、current-plan 状态、使用的 `<remote>` / `<main-ref>`。
+   - main 已包含目标 PR 的 merge result（`git merge-base --is-ancestor <merge-sha> <main-ref>`）；若检查过主 worktree，其状态未被本次 cleanup 污染。
+   - 输出清理清单：合并的 PR / merge result SHA、当前任务删除的 worktree 与分支（本地+远端）、preserved 的其他 worktree / branch、current-plan 状态、使用的 `<remote>` / `<main-ref>`。
 
 ## 安全边界
 
 - 仅在目标 PR 已合并（或用户明确确认）时删除当前任务分支。
 - cleanup ownership 只覆盖当前 merged task；其他 worktree / branch 无条件 preserve，不因其 clean、已合并或看似陈旧而顺手清理。
-- 优先 `git branch -d`，禁用 `-D` 兜底；远端删除前必须 `git ls-remote` 确认存在且属于目标已合并 PR。
+- 默认 `git branch -d`；`-D` 只允许作为 squash / rebase merge 的明确路径，且必须先验证 PR merged 与本地 branch tip == PR `headRefOid`，不得作为通用兜底。远端删除前必须 `git ls-remote` 确认存在且属于目标已合并 PR。
 - 禁止硬编码 `origin`；复用 Executor handoff 的 `<remote>`，或在 fresh-context cleanup 中重新核验 upstream/main remote。
 - 不清理含未提交改动的当前任务 worktree；绝不删除 `main` worktree、`main` 分支或主目录。
 - 删除当前任务独立 worktree 必须从主 worktree 执行，使用非强制 `git worktree remove`；其他任务 worktree 不属于本次 cleanup，不检查后删除、不强制删除。

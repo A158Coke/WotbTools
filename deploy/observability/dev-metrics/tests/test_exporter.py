@@ -149,6 +149,13 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
         self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
 
+    def test_feature_paths_keep_specific_area_alongside_generic_layer(self):
+        self.assertEqual(
+            classify_area(pr(), ['java/wotb-core/src/main/java/com/wotb/core/ai/SingleReplayPromptPlanner.java']),
+            {'backend', 'ai'})
+        self.assertEqual(classify_area(pr(), ['.github/workflows/observability.yml']),
+                         {'infra', 'observability'})
+
     def test_semantic_fallback_only_without_path_evidence(self):
         # D: no path rule matches; the stable semantic fallback classifies.
         self.assertEqual(classify_area(pr(title='Fix replay parser regression'), ['scripts/tool.py']), {'replay'})

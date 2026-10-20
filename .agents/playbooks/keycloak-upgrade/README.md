@@ -3,8 +3,8 @@
 
 > 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
-本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 自定义 Identity Provider SPI
-（`keycloak-wargaming-provider` / `keycloak-qq-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
+本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 自定义 Identity Provider / Authenticator SPI
+（`keycloak-wargaming-provider` / `keycloak-qq-provider` / `keycloak-session-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
 
 ## 适用场景（Use Cases）
 
@@ -18,7 +18,7 @@
 
 ## 核心原则
 
-- **版本单一事实来源**：`docker/Dockerfile.keycloak` 的 FROM tag == 各 provider pom 的 `<keycloak.version>` ==（建议）frontend `keycloak-js` major。
+- **版本单一事实来源**：`docker/Dockerfile.keycloak` 的 FROM tag == 三个 provider pom（wargaming / qq / session）的 `<keycloak.version>` ==（建议）frontend `keycloak-js` major。
 - **自定义 SPI 是最大风险**：本项目的 provider 依赖 `keycloak-server-spi-private` 与 `keycloak-services`（内部 API），跨版本可能编译失败或运行期行为变化；升级 = 重编译 + 单测 + 真机冒烟。
 - **先读官方资料**：每次升级前查目标版本的 [Upgrading Guide](https://www.keycloak.org/docs/latest/upgrading/) 与 release notes，逐条对照本项目。
 - **Keycloak 不支持降级**：升级前必须备份 `keycloak`（与 `wotb`）数据库；回滚 = 旧镜像 + 数据库快照。
@@ -28,7 +28,7 @@
 ### Phase 0 — 盘点现状（只读）
 
 1. 运行 `python .agents/playbooks/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
-2. 记录：镜像 tag、各 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
+2. 记录：镜像 tag、三个 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
 3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
 
 ### Phase 1 — 官方资料审查
@@ -41,11 +41,11 @@
 
 按 [references/spi-compat.md](references/spi-compat.md) 执行：
 
-- 各 provider pom 的 `<keycloak.version>` 一起改，禁止只改一个。
-- `mvn -s java/settings.xml test`（在 `keycloak-wargaming-provider` 与 `keycloak-qq-provider` 各跑一次，JAVA_HOME → JDK21）。
+- 三个 provider pom 的 `<keycloak.version>` 一起改，禁止只改一个。
+- `mvn -s java/settings.xml test`（在 `keycloak-wargaming-provider`、`keycloak-qq-provider` 与 `keycloak-session-provider` 各跑一次，JAVA_HOME → JDK21）。
 - 修复编译错误；特别留意 `org.keycloak.broker.provider.*`、`org.keycloak.models.*`、`org.keycloak.sessions.*` 的签名变化。
-- 确认 `META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory` 注册文件未丢。
-- 跑现有单测（`WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes`）。
+- 确认 `META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory` 与 `org.keycloak.authentication.AuthenticatorFactory` 注册文件未丢。
+- 跑现有单测（`WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes` / `PersistentBrowserSessionAuthenticatorTest`）。
 
 ### Phase 3 — 代码与配置同步
 
@@ -57,7 +57,7 @@
 
 ### Phase 4 — 本地构建与冒烟
 
-1. 运行 `deploy/test-keycloak-runtime.sh` 确认 `kc.sh build` 成功、两个 jar 进 `/opt/keycloak/providers/`；需要 realm 集成验证时运行 `deploy/test-keycloak-tofu.sh`。
+1. 运行 `deploy/test-keycloak-runtime.sh` 确认 `kc.sh build` 成功、三个 jar 进 `/opt/keycloak/providers/`；需要 realm 集成验证时运行 `deploy/test-keycloak-tofu.sh`。
 2. 冒烟：`/realms/wotbtools/.well-known/openid-configuration` 正常；登录页出现 QQ + 三个 Wargaming IdP 按钮；三区服登录闭环；JWT 含 `wotb_region` / `wotb_account_id` / `wotb_nickname` / `wotb_verified`。
 3. 回归后端：`mvn -s settings.xml test`；前端 `npm run build`（若 keycloak-js 变化）。
 
@@ -77,7 +77,7 @@
 
 完整清单见 [references/edge-cases.md](references/edge-cases.md)。升级前至少过一遍：
 
-- [ ] 三处版本不同步：Dockerfile / 两个 pom / keycloak-js
+- [ ] 版本不同步：Dockerfile / 三个 provider pom / keycloak-js
 - [ ] major 升级的官方支持路径与逐步升级需求
 - [ ] 数据库自动迁移 + 不支持降级 + 备份/恢复脚本可用
 - [ ] 重启导致内存会话丢失 → 用户需重新登录
@@ -91,6 +91,6 @@
 
 ## 资源
 
-- `scripts/check_versions.py` — 全仓库 Keycloak 版本引用同步检查
-- `references/spi-compat.md` — 两个自定义 provider 的 SPI 表面、风险 API、修复方法
+- `scripts/check_versions.py` — 全仓库 Keycloak 版本引用同步检查（镜像 tag + 三个 provider pom）
+- `references/spi-compat.md` — 自定义 provider 的 SPI 表面、风险 API、修复方法
 - `references/edge-cases.md` — 完整边界情况清单与处置
