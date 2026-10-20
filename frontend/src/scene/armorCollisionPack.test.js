@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
-    RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
+    snapshotPackPose, packPoseChanged, RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
     raycastPackAll, simulateContinuation,
 } from './armorCollisionPack.js'
 import { calculate } from './penetration.js'
@@ -712,3 +712,30 @@ describe('GLSL 注入串完整性', () => {
         expect(RC.MAX_CELL_ENTRIES).toBe(256)
     })
 })
+
+
+describe('packed pose invalidation (#711)', () => {
+    it('copies matrix values and detects parent/mesh motion without manual dirty flags', () => {
+        const { meshes, scene } = buildChainScene([{ section: 'turret', thickness: 225, x: 2 }]);
+        const pack = packOf(meshes);
+        const snapshot = snapshotPackPose(pack);
+        expect(packPoseChanged(pack, snapshot)).toBe(false);
+        scene.position.x = 0.00000001; // Float32 rounding must not hide a source change
+        scene.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, snapshot)).toBe(true);
+        expect(snapshot[0][12]).toBe(2);
+        const rebuilt = snapshotPackPose(pack);
+        const camera = new THREE.PerspectiveCamera();
+        camera.position.set(20, 30, 40);
+        camera.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, rebuilt)).toBe(false);
+        meshes[0].rotation.y += 0.01;
+        scene.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, rebuilt)).toBe(true);
+    });
+    it('invalidates missing snapshots and changed geometry collections', () => {
+        const pack = packOf(buildChainScene([{ section: 'hull', thickness: 70, x: 1 }]).meshes);
+        expect(packPoseChanged(pack, null)).toBe(true);
+        expect(packPoseChanged(pack, [])).toBe(true);
+    });
+});
