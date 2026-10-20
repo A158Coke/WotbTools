@@ -134,6 +134,19 @@ jobs:
           exec 9>/opt/wotb-tx2/.deploy.lock
           flock -n 9 || { echo 'Another TX2 production deployment is running.' >&2; exit 1; }
 
+          docker_cmd() {
+            if docker info >/dev/null 2>&1; then
+              docker "$@"
+              return
+            fi
+            if sudo -n docker info >/dev/null 2>&1; then
+              sudo -n docker "$@"
+              return
+            fi
+            echo 'TX2 deploy user cannot access Docker directly or through passwordless sudo.' >&2
+            exit 1
+          }
+
           incoming=/opt/wotb-tx2/frontend-replica.incoming/deploy/tx
           stable=/opt/wotb-tx2/frontend-replica/deploy/tx
           [ -f "$incoming/frontend-shadow.compose.yml" ]
@@ -143,7 +156,8 @@ jobs:
           # TX2 uses the same Business API upstream as TX1. Fail before touching
           # runtime content or live files; never wait while holding the host lock.
           source "$incoming/runtime-check-lib.sh"
-          health="$(curl --fail --silent --show-error --connect-timeout 3 --max-time 10 \
+          health="$(docker_cmd run --rm --network host curlimages/curl:8.12.1 \
+            --fail --silent --show-error --connect-timeout 3 --max-time 10 \
             http://10.20.0.1:8087/api/health)"
           assert_frontend_backend_capabilities <<< "$health"
 
@@ -157,19 +171,6 @@ jobs:
             /opt/wotb-tx2/frontend-replica.next/deploy/tx
           rm -rf -- /opt/wotb-tx2/frontend-replica
           mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
-
-          docker_cmd() {
-            if docker info >/dev/null 2>&1; then
-              docker "$@"
-              return
-            fi
-            if sudo -n docker info >/dev/null 2>&1; then
-              sudo -n docker "$@"
-              return
-            fi
-            echo 'TX2 deploy user cannot access Docker directly or through passwordless sudo.' >&2
-            exit 1
-          }
 
           # TCR is the release-artifact source of truth. TX2 never derives its image
           # from TX1 runtime state; it pulls the immutable tag published by TX1's build.
