@@ -1,6 +1,6 @@
 # Tier X 专属俯视车型系统（Battle Playback Vehicle Marker System V2）
 
-> 总体路线：docs/ROADMAP.md（PR1–PR4）。本目录是 Tier X 车型系统的文档与资产生成规范。
+> 本目录是 Tier X 车型系统的文档与资产生成规范。
 > 当前状态：**PR2 DONE** —— 正式资产 = Source-faithful PBR top-view
 > WebP（BlitzKit LOD0 geometry + 内嵌纹理确定性 bake）；**Battle Playback 已集成 dedicated
 > models**（VehicleMarker + 战局级 preload + 单车 fallback；非 Tier X 继续 generic）；
@@ -170,20 +170,10 @@ xm66f / sheridan 等结构差异最大化组 + 其余批量组；spht / ac-teich
 2026-08-19 BlitzKit 数据确认 turreted 后加入，无 pending）。
 
 **turretPivot source-of-truth（PR92 Review）**：yaw 旋转中心 = BlitzKit useTankTransform 契约——
-`modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turret_origin)`（hullOrigin + turretOrigin
+`modelPivot = correctZYTuple(trackOrigin) + correctZYTuple(turretOrigin)`（hullOrigin + turretOrigin
 向量和；运行时 `turretPosition = R_init(R_yaw(-modelPivot)) + modelPivot`）。bake-report 记录
 `pivotSource`（origins + modelPivot）供 invariant 测试与审计；initial_turret_rotation 只影响
 初始朝向角，不影响顶视 pivot。
-
-## 状态流转
-
-```
-PR1 DONE（78 资产确定性生成，方向契约测试全绿，PR #91 已合并）
-  → PR2 DONE（Battle Playback 集成 dedicated models：
-     VehicleMarker 正式组件 + 战局级 preload + 3s 超时 + 单车 fallback）
-  → PR3 状态视觉重设计（team color / outline / Selected / Recorder / Destroyed / Last-known）
-  → PR4 玩家/坦克标签与碰撞
-```
 
 ## 变更记录
 
