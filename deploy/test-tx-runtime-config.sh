@@ -250,7 +250,14 @@ case "$verb" in
       }
       exec "$REAL_DOCKER" "${original[@]}"
     fi
-    if [[ "$*" == *":3100/ready"* ]]; then
+    if [[ "$*" == *"/api/health"* && "$*" != *"--write-out"* ]]; then
+      [ "${FAKE_BACKEND_OFFLINE:-0}" != 1 ] || exit 7
+      if [ -n "${FAKE_BACKEND_HEALTH:-}" ]; then
+        printf '%s' "$FAKE_BACKEND_HEALTH"
+      else
+        printf '{"status":"ok","capabilities":["recommendations-v1","broadcast-season-contents-v1"]}'
+      fi
+    elif [[ "$*" == *":3100/ready"* ]]; then
       printf 'ready'
     elif [[ "$*" == *loki/api/v1/query_range* ]]; then
       marker="$(printf '%s' "$*" | grep -oE 'observability-canary-[^" ]+\.apk' | head -n1 || true)"
@@ -278,6 +285,31 @@ run_frontend() {
 }
 run_frontend FAKE_DOCKER_LOG="$WORK/docker.log" >/dev/null
 run_frontend TX_BACKEND_UPSTREAM=http://10.20.0.1:8087 FAKE_DOCKER_LOG="$WORK/frontend-wg.log" >/dev/null
+
+# Old/offline backends must stop before pull, promotion, recreate or stopping the
+# live frontend. Test the real deploy entrypoint, not only a source-order assertion.
+find "$WORK/host/deploy" -type f -exec sha256sum {} + | sort > "$WORK/live-before-capability-check"
+for health in '{"status":"ok"}' '{"status":"ok","capabilities":["recommendations-v1"]}' \
+  '{"status":"ok","capabilities":"broadcast-season-contents-v1"}' \
+  '{"status":"error","capabilities":["broadcast-season-contents-v1"]}' 'not-json' 'null'; do
+  : > "$WORK/capability-rejection.log"
+  if run_frontend FAKE_BACKEND_HEALTH="$health" FAKE_DOCKER_LOG="$WORK/capability-rejection.log" >/dev/null 2>&1; then
+    echo 'frontend accepted a backend without the required capability' >&2; exit 1
+  fi
+  if grep -Eq '^(pull|up|stop) ' "$WORK/capability-rejection.log"; then
+    echo 'capability rejection mutated the runtime' >&2; exit 1
+  fi
+  find "$WORK/host/deploy" -type f -exec sha256sum {} + | sort > "$WORK/live-after-capability-check"
+  cmp "$WORK/live-before-capability-check" "$WORK/live-after-capability-check"
+done
+if run_frontend FAKE_BACKEND_OFFLINE=1 FAKE_DOCKER_LOG="$WORK/offline-backend.log" >/dev/null 2>&1; then
+  echo 'frontend accepted an unavailable backend' >&2; exit 1
+fi
+if grep -Eq '^(pull|up|stop) ' "$WORK/offline-backend.log"; then
+  echo 'offline backend check mutated the runtime' >&2; exit 1
+fi
+find "$WORK/host/deploy" -type f -exec sha256sum {} + | sort > "$WORK/live-after-capability-check"
+cmp "$WORK/live-before-capability-check" "$WORK/live-after-capability-check"
 if run_frontend TX_BACKEND_UPSTREAM=https://api.example.invalid FAKE_DOCKER_LOG="$WORK/frontend-public-upstream.log" >/dev/null 2>&1; then
   echo 'TX deployment accepted a public Business API upstream' >&2
   exit 1
