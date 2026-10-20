@@ -324,6 +324,10 @@ def remote_asset_origin(native_source: str | Path) -> str:
     if len(declarations) != 1:
         fail("staged AgentAssetProxy must declare exactly one reviewed remote asset origin")
     name, origin = declarations[0]
+    if origin != origin.strip() or any(char.isspace() for char in origin):
+        fail("staged AgentAssetProxy remote asset origin must not contain whitespace")
+    if not origin.startswith("https://") or origin.endswith("/"):
+        fail("staged AgentAssetProxy remote asset origin must be an HTTPS origin without a trailing slash")
     if REVIEWED_REMOTE_ASSET_ORIGINS.get(name) != origin:
         fail(f"staged AgentAssetProxy has an unreviewed remote asset origin: {origin}")
     return origin
