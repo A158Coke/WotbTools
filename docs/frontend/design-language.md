@@ -1,7 +1,7 @@
 # WotbTools 设计语言（Design Language）
 
 > 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12）· 适用范围：`frontend/` 全部页面、Android WebView
-> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。未完成的长期方向见 [ROADMAP](../ROADMAP.md)。
+> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。
 > 原则：**以业界通用最佳实践为准**。本文件只保留当前成立的设计约束；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
 > 背景：v1.0 设计语言基于多端布局与 UI/UX 审计的现状盘点：313 种硬编码 hex、83 种字号、154 种内边距、14 种圆角、60 种阴影、约 40 个 z-index、945 处 `!important`；"简约"主题在关键页面约 30–80% 的文字对比度不达标。
 
