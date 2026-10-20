@@ -25,7 +25,7 @@
  * 非刚性/超限/网格过密 → fail-closed，调用方禁用续飞（跳弹维持紫色 = 现状）。
  */
 import * as THREE from 'three';
-import { compareContinuationHitOrder } from './penetration.js';
+import { orderContinuationHits } from './penetration.js';
 import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
 
 /** 续飞链常量（GLSL 与 JS 参考实现共用；改这里即改两边） */
@@ -87,7 +87,12 @@ export const RC = Object.freeze({
 export const RC_DIAG = Object.freeze({ NO_HIT: 0, PENETRATED: 1, BLOCKED: 2, FETCH_BUDGET: 3, LAYER_LIMIT: 4, STEP_LIMIT: 5 });
 
 /** GLSL 常量声明（注入 PBR_FRAG；由 RC 生成，禁止手写数值） */
+const gamma32 = n => (n * 2 ** -24) / (1 - n * 2 ** -24);
+
 export const RC_GLSL_CONST = `
+#define RC_GAMMA2 ${gamma32(2)}
+#define RC_GAMMA3 ${gamma32(3)}
+#define RC_GAMMA5 ${gamma32(5)}
 ${Object.entries(RC_DIAG).map(([key, value]) => `#define RC_DIAG_${key} ${value}.0`).join("\n")}
 // ==== 跳弹续飞常量（单一来源 armorCollisionPack.js RC；禁止手改数值）====
 #define RC_FAR ${RC.FAR.toFixed(1)}
@@ -146,8 +151,31 @@ highp vec4 rcCellAt(int idx) {
 highp vec4 rcEntryAt(int idx) {
     return texelFetch(rcGridEntries, ivec2(idx % RC_ENTRY_ROW_I, idx / RC_ENTRY_ROW_I), 0);
 }
+// Float32 distance uncertainty from the ray-aligned triangle error bound (PBRT).
+// This is scale/angle dependent, not a fixed geometric gap tolerance.
+highp float rcDistanceError(highp vec3 a, highp vec3 b, highp vec3 c, highp vec3 ro, highp vec3 rd, highp float t) {
+    highp vec3 ad = abs(rd);
+    int z = ad.x > ad.y ? (ad.x > ad.z ? 0 : 2) : (ad.y > ad.z ? 1 : 2);
+    int x = (z + 1) % 3, y = (x + 1) % 3;
+    a -= ro; b -= ro; c -= ro;
+    highp vec3 pz = vec3(a[z], b[z], c[z]);
+    highp vec3 px = vec3(a[x], b[x], c[x]) - (rd[x] / rd[z]) * pz;
+    highp vec3 py = vec3(a[y], b[y], c[y]) - (rd[y] / rd[z]) * pz;
+    pz /= rd[z];
+    highp vec3 e = px.yzx * py.zxy - py.yzx * px.zxy;
+    highp float det = e.x + e.y + e.z;
+    if (det == 0.0) return 0.0; // keep strict ordering when the reference is degenerate
+    highp float mx = max(max(abs(px.x), abs(px.y)), abs(px.z));
+    highp float my = max(max(abs(py.x), abs(py.y)), abs(py.z));
+    highp float mz = max(max(abs(pz.x), abs(pz.y)), abs(pz.z));
+    highp float me = max(max(abs(e.x), abs(e.y)), abs(e.z));
+    highp float dx = RC_GAMMA5 * (mx + mz), dy = RC_GAMMA5 * (my + mz);
+    highp float de = 2.0 * (RC_GAMMA2 * mx * my + dy * mx + dx * my);
+    highp float dt = 3.0 * (RC_GAMMA3 * me * mz + de * mz + RC_GAMMA3 * mz * me) / abs(det);
+    return dt + abs(t - dot(e, pz) / det);
+}
 // Möller–Trumbore（世界系；t ∈ (tLo, tHi]；背面剔除）
-bool rcTriW(int slot, highp vec3 ro, highp vec3 rd, highp float tLo, highp float tHi, out highp float tHit) {
+bool rcTriW(int slot, highp vec3 ro, highp vec3 rd, highp float tLo, highp float tHi, out highp float tHit, out highp float tError) {
     highp vec3 a = rcVertW(slot * 3), b = rcVertW(slot * 3 + 1), c = rcVertW(slot * 3 + 2);
     highp vec3 e1 = b - a, e2 = c - a;
     if (dot(cross(e1, e2), rd) >= 0.0) return false;
@@ -164,6 +192,7 @@ bool rcTriW(int slot, highp vec3 ro, highp vec3 rd, highp float tLo, highp float
     highp float t = dot(e2, qv) * invD;
     if (t <= tLo || t > tHi) return false;
     tHit = t;
+    tError = rcDistanceError(a, b, c, ro, rd, t);
     return true;
 }
 // 出射段层链（网格 DDA 在线推进）。返回 0=无续飞(维持紫) 1=续飞击穿(绿, penOut=±5%带概率) 2=续飞被挡(红)
@@ -227,6 +256,11 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             if (L >= RC_MAX_LAYER) { rcDiag = RC_DIAG_LAYER_LIMIT; return 0; }            // 层上限 → 保守紫
             highp float bestT = hi;
             int bestSlot = -1;
+            highp float bestError = 0.0;
+            int moduleSlots[2];
+            highp float moduleT[2];
+            highp vec4 moduleEntries[2];
+            for (int k = 0; k < 2; k++) { moduleSlots[k] = -1; moduleT[k] = hi; }
             highp vec4 bestEnt = vec4(0.0);
             for (int e = 0; e < RC_MAX_CELL; e++) {
                 if (e >= cnt) break;
@@ -240,12 +274,61 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                     int candidateVariant = candidateSection == RC_SEC_CHASSIS ? 1 : 2;
                     if ((variantSeen & candidateVariant) != 0) continue;
                 }
-                highp float tHit;
-                // Exact ties must not depend on pack order: modules consume before Primary terminates.
-                bool moduleBeforeArmor = candidateSection >= RC_SEC_CHASSIS && int(bestEnt.y + 0.5) < RC_SEC_CHASSIS;
-                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) &&
-                    (bestSlot < 0 || tHit < bestT || (tHit == bestT && moduleBeforeArmor))) {
-                    bestT = tHit; bestSlot = slot; bestEnt = ent;
+                highp float tHit, tError;
+                if (!rcTriW(slot, ro, reflDir, tCur, hi, tHit, tError)) continue;
+                if (candidateSection >= RC_SEC_CHASSIS) {
+                    int k = candidateSection == RC_SEC_CHASSIS ? 0 : 1;
+                    if (moduleSlots[k] < 0 || tHit < moduleT[k]) {
+                        moduleSlots[k] = slot; moduleT[k] = tHit; moduleEntries[k] = ent;
+                    }
+                }
+                bool exactModuleTie = tHit == bestT && candidateSection >= RC_SEC_CHASSIS && int(bestEnt.y + 0.5) < RC_SEC_CHASSIS;
+                if (bestSlot < 0 || tHit < bestT || exactModuleTie) {
+                    bestT = tHit; bestSlot = slot; bestEnt = ent; bestError = tError;
+                }
+            }
+            // Anchor to the actual nearest hit, then resolve only module/armor uncertainty.
+            // Pairwise fuzzy sorting is non-transitive and would reintroduce pack-order dependence.
+            if (bestSlot >= 0 && int(bestEnt.y + 0.5) < RC_SEC_SPACED) {
+                // The nearest Primary owns the uncertainty window. Visit cells up to its
+                // upper bound before terminating; an equally located module may be indexed
+                // on the other side of a voxel boundary. Do not expand by a later hit's error.
+                highp float windowHi = bestT + bestError;
+                ivec3 probeCell = cell;
+                highp vec3 probeMax = tMax;
+                bool probeComplete = false;
+                for (int q = 0; q < RC_MAX_STEPS; q++) {
+                    highp float boundary = min(min(probeMax.x, probeMax.y), probeMax.z);
+                    if (boundary > windowHi) { probeComplete = true; break; }
+                    if (probeMax.x <= probeMax.y && probeMax.x <= probeMax.z) { probeCell.x += stp.x; probeMax.x += tDelta.x; }
+                    else if (probeMax.y <= probeMax.z) { probeCell.y += stp.y; probeMax.y += tDelta.y; }
+                    else { probeCell.z += stp.z; probeMax.z += tDelta.z; }
+                    if (any(lessThan(probeCell, ivec3(0))) || any(greaterThanEqual(probeCell, dims))) { probeComplete = true; break; }
+                    highp vec4 probe = rcCellAt(probeCell.x + dims.x * (probeCell.y + dims.y * probeCell.z));
+                    for (int e = 0; e < RC_MAX_CELL; e++) {
+                        if (e >= int(probe.y + 0.5)) break;
+                        if (--budget < 0) { rcDiag = RC_DIAG_FETCH_BUDGET; return 0; }
+                        highp vec4 ent = rcEntryAt(int(probe.x + 0.5) + e);
+                        int sec = int(ent.y + 0.5);
+                        if (sec < RC_SEC_CHASSIS) continue;
+                        int k = sec == RC_SEC_CHASSIS ? 0 : 1;
+                        if ((variantSeen & (k == 0 ? 1 : 2)) != 0) continue;
+                        highp float tHit, tError;
+                        int slot = int(ent.x + 0.5);
+                        if (rcTriW(slot, ro, reflDir, tCur, windowHi, tHit, tError) &&
+                            (moduleSlots[k] < 0 || tHit < moduleT[k])) {
+                            moduleSlots[k] = slot; moduleT[k] = tHit; moduleEntries[k] = ent;
+                        }
+                    }
+                }
+                if (!probeComplete) { rcDiag = RC_DIAG_STEP_LIMIT; return 0; }
+                int chosen = -1;
+                for (int k = 0; k < 2; k++) {
+                    if (moduleSlots[k] >= 0 && moduleT[k] <= windowHi &&
+                        (chosen < 0 || moduleT[k] < moduleT[chosen])) chosen = k;
+                }
+                if (chosen >= 0) {
+                    bestT = moduleT[chosen]; bestSlot = moduleSlots[chosen]; bestEnt = moduleEntries[chosen];
                 }
             }
             if (bestSlot < 0) break;                    // 本 cell 无更多层 → 前进
@@ -671,6 +754,29 @@ function meshData(pack, m) {
     };
 }
 
+/** PBRT ray-aligned triangle distance error, using float32 gamma for CPU/GPU parity.
+ * https://www.pbr-book.org/4ed/Shapes/Triangle_Meshes
+ * The additional difference covers the existing Moller/local-space distance evaluation. */
+export function continuationDistanceError(vertices, origin, direction, distance) {
+    const rd = direction.toArray(), ro = origin.toArray();
+    const z = Math.abs(rd[0]) > Math.abs(rd[1])
+        ? (Math.abs(rd[0]) > Math.abs(rd[2]) ? 0 : 2) : (Math.abs(rd[1]) > Math.abs(rd[2]) ? 1 : 2);
+    const x = (z + 1) % 3, y = (x + 1) % 3;
+    const p = vertices.map(v => v.toArray().map((c, i) => Math.fround(c) - ro[i]));
+    const px = p.map(v => v[x] - rd[x] / rd[z] * v[z]);
+    const py = p.map(v => v[y] - rd[y] / rd[z] * v[z]);
+    const pz = p.map(v => v[z] / rd[z]);
+    const e = [0, 1, 2].map(i => px[(i + 1) % 3] * py[(i + 2) % 3] - py[(i + 1) % 3] * px[(i + 2) % 3]);
+    const det = e[0] + e[1] + e[2];
+    if (!Number.isFinite(det) || det === 0) return 0;
+    const mx = Math.max(...px.map(Math.abs)), my = Math.max(...py.map(Math.abs));
+    const mz = Math.max(...pz.map(Math.abs)), me = Math.max(...e.map(Math.abs));
+    const dx = gamma32(5) * (mx + mz), dy = gamma32(5) * (my + mz);
+    const de = 2 * (gamma32(2) * mx * my + dy * mx + dx * my);
+    return 3 * (2 * gamma32(3) * me * mz + de * mz) / Math.abs(det)
+        + Math.abs(distance - e.reduce((sum, value, i) => sum + value * pz[i], 0) / det);
+}
+
 /**
  * JS 参考实现：沿射线收集全部命中（不去重、不截断），t 从 ro 起量，世界系输出。
  * 与 THREE.Raycaster(intersectObjects) 同口径（AABB/求交顺序内各异但全量+按 t 排序）。
@@ -728,7 +834,7 @@ export function raycastPackAll(pack, ro, dir, tMin = 0, tMax = RC.FAR) {
             const n0 = new THREE.Vector3().crossVectors(e1, e2);
             if (n0.dot(lrd) >= 0) continue;
             hits.push({
-                t: tHit, meshIdx: m, section: sectionName(md.sec), thickness: md.thickness,
+                t: tHit, distanceError: continuationDistanceError(P.map(v => v.clone().applyMatrix4(mw)), ro, dir, tHit), meshIdx: m, section: sectionName(md.sec), thickness: md.thickness,
                 triangleId: pack.units[m].localFrom + t,
                 variant: md.variant, slot: pack.units[m].triStart + t,   // 全局三角形槽（网格验证用）
                 point: lro.clone().addScaledVector(lrd, tHit).applyMatrix4(mw),
@@ -736,8 +842,7 @@ export function raycastPackAll(pack, ro, dir, tMin = 0, tMax = RC.FAR) {
             });
         }
     }
-    hits.sort((x, y) => compareContinuationHitOrder(x.t, x.section, y.t, y.section));
-    return hits;
+    return orderContinuationHits(hits);
 }
 
 function sectionName(code) {

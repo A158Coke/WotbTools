@@ -66,6 +66,26 @@ export function compareContinuationHitOrder(distanceA, sectionA, distanceB, sect
   return distanceA - distanceB || Number(isModule(sectionB)) - Number(isModule(sectionA))
 }
 
+/** Anchor uncertainty to the nearest Primary, never use a non-transitive epsilon comparator. */
+export function orderContinuationHits(hits) {
+  const distance = h => h.distance ?? h.t
+  hits.sort((a, b) => compareContinuationHitOrder(distance(a), a.section, distance(b), b.section))
+  const index = hits.findIndex(h => isPrimary(h.section))
+  if (index < 0) return hits
+  const primary = hits[index]
+  const tied = [], rest = []
+  const seen = new Set(hits.slice(0, index).map(h => moduleVariant(h.section)).filter(Boolean))
+  for (const h of hits.slice(index + 1)) {
+    const variant = moduleVariant(h.section)
+    const nearestVariant = variant && !seen.has(variant)
+    if (variant) seen.add(variant)
+    const overlaps = Math.abs(distance(h) - distance(primary)) <= (primary.distanceError || 0)
+    if (nearestVariant && overlaps) tied.push(h)
+    else rest.push(h)
+  }
+  return [...hits.slice(0, index), ...tied, primary, ...rest]
+}
+
 // 主装甲 Primary（hull/turret/炮盾板）：收集阶段 push 后立即停止。
 // 同时是【点击判定的触发面】：BlitzKit 的 shoot() 只挂在 Primary 网格的 onClick 上
 // （spaced/外部模块网格挂的是空 handler，只为进入 event.intersections）——射线未触达

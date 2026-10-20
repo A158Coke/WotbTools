@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
+import krvCoplanar from '../../scripts/browser-fixtures/kranvagn-coplanar.json'
 import {
     snapshotPackPose, packPoseChanged, RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
     raycastPackAll, simulateContinuation,
@@ -754,4 +755,37 @@ describe('exactly coplanar continuation order (#711)', () => {
         expect(simulateContinuation(pack, origin, dir, params).cls).toBe(2);
         expect(oracleClass(pack, origin, dir, params)).toBe(2);
     });
+});
+
+
+describe('KRV differently tessellated coplanar surfaces', () => {
+    it.each([true, false])('uses float32 error intervals with armorFirst=%s', (armorFirst) => {
+        const geo = points => new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+        const module = makeMesh(geo(krvCoplanar.module), 'gunBarrel', 50);
+        const primary = makeMesh(geo(krvCoplanar.primary), 'turret', 70);
+        const pack = packOf(armorFirst ? [primary, module] : [module, primary]);
+        const origin = new THREE.Vector3(...krvCoplanar.ray.origin), dir = new THREE.Vector3(...krvCoplanar.ray.direction);
+        const hits = raycastPackAll(pack, origin, dir, 0);
+        expect(hits.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+        expect(Math.abs(hits[0].t - hits[1].t)).toBeLessThan(hits[0].distanceError + hits[1].distanceError);
+        const sim = simulateContinuation(pack, origin, dir, { remIn: 187.5, caliber: 120, normalizationRad: 5 * Math.PI / 180, thickMul: 1 });
+        expect(sim.cls).toBe(2);
+        expect(sim.layers[1].remBefore).toBe(137.5);
+        expect(sim.layers[1].eff).toBeGreaterThan(150);
+    });
+});
+
+
+it('keeps a module within the nearest Primary uncertainty window across a voxel boundary', () => {
+    const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 70, m => { m.position.z = 0.4500004 });
+    const module = makeMesh(new THREE.PlaneGeometry(2, 2), 'gunBarrel', 50, m => { m.position.z = 0.4499996 });
+    const anchor = makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 70, m => { m.position.x = 5 });
+    const pack = packOf([primary, module, anchor]);
+    const grid = buildRicochetGrid(pack);
+    expect(grid.gridMin[2]).toBe(0);
+    expect(grid.cellSize).toBe(0.45);
+    const origin = new THREE.Vector3(0.13, 0.17, 1), dir = new THREE.Vector3(0, 0, -1);
+    const hits = raycastPackAll(pack, origin, dir, 0);
+    expect(hits.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+    expect(simulateContinuation(pack, origin, dir, { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 }).cls).toBe(2);
 });

@@ -27,10 +27,10 @@ import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
-    buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+    continuationDistanceError, buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPositivePrimary, matchHitsByOccurrence, compareContinuationHitOrder } from './penetration.js'
+import { isPrimary, hasPositivePrimary, matchHitsByOccurrence, orderContinuationHits } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
@@ -5437,15 +5437,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         // 在厘米级距离，原 +0.05m 偏移 + <0.1m 跳过会把它丢弃 → 续飞穿入车体内部。
                         const rc = new THREE.Raycaster(lastLayer.point, reflect);
                         const ricIntersects = rc.intersectObjects(objects, true);
-                        const ricHits = [];
+                        let ricHits = [];
                         for (const hit of ricIntersects) {
                             // 初始接受阈（评审 P1 三路一致）：t ≤ RC.MIN_CONTINUATION_T 一律滤——与 JS
                             // 参考 raycastPackAll 的 tMin、GLSL 的 tStart 同一严格口径（不含推进 eps）
                             if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
                             const entry = classifyHit(hit);
-                            if (entry) ricHits.push(entry);
+                            if (entry) {
+                                const vertices = [hit.face.a, hit.face.b, hit.face.c].map(i =>
+                                    new THREE.Vector3().fromBufferAttribute(hit.object.geometry.attributes.position, i).applyMatrix4(hit.object.matrixWorld));
+                                entry.distanceError = continuationDistanceError(vertices, rc.ray.origin, rc.ray.direction, hit.distance);
+                                ricHits.push(entry);
+                            }
                         }
-                        ricHits.sort((a, b) => compareContinuationHitOrder(a.distance, a.section, b.distance, b.section));
+                        ricHits = orderContinuationHits(ricHits);
                         // blitzkit：出射射线（allowRicochet=false）未命中 Primary → shoot 返回
                         // null（无出射段、伤害 0），不进行二次判定
                         const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');

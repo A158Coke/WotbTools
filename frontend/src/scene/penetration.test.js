@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { compareContinuationHitOrder, calculate, isPrimary, ArmorSection, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
+import { orderContinuationHits, compareContinuationHitOrder, calculate, isPrimary, ArmorSection, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
 import { penetrationChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
@@ -611,4 +611,18 @@ it('orders exactly coincident continuation modules first, without merging nearby
   expect(compareContinuationHitOrder(1, 'gunBarrel', 1, 'turret')).toBeLessThan(0)
   expect(compareContinuationHitOrder(1, 'turret', 1 + 1e-12, 'gunBarrel')).toBeLessThan(0)
   expect(compareContinuationHitOrder(1, 'turret', 1, 'hull')).toBe(0)
+})
+
+
+it('anchors module ambiguity only to the nearest Primary and the nearest variant', () => {
+  const primary = { section: 'turret', distance: 1, distanceError: 2e-6 }
+  const nearby = { section: 'gunBarrel', distance: 1 + 1e-6, distanceError: 0 }
+  expect(orderContinuationHits([primary, nearby])).toEqual([nearby, primary])
+  const separate = { section: 'gunBarrel', distance: 1.001, distanceError: 1 }
+  expect(orderContinuationHits([primary, separate])).toEqual([primary, separate])
+  const farther = { section: 'gunBarrel', distance: 1.002, distanceError: 10 }
+  expect(orderContinuationHits([farther, separate, primary])).toEqual([primary, separate, farther])
+  const spaced = { section: 'spaced', distance: 0.5, distanceError: 1 }
+  const module = { section: 'gunBarrel', distance: 0.500001, distanceError: 1 }
+  expect(orderContinuationHits([primary, module, spaced])).toEqual([spaced, module, primary])
 })
