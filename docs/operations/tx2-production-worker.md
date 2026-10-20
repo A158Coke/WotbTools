@@ -28,7 +28,7 @@ frontend-replica：与 TX1 相同的 immutable Frontend artifact
 
 `production-worker` 只建立最后两个箭头之外的全部 host 前置条件，并证明私有镜像可以被 root 上下文认证拉取。它不创建 Komodo Stack，不启用 ResourceSync 自动 apply，不改 `infra/komodo/resources/**`，也不部署 frontend-replica。
 
-TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`frontend-replica.yml` 在 Frontend 发布成功后解析同一 TCR artifact，部署到 `/opt/wotb-tx2/frontend-replica`，并验证 TX2 的 `/version.json` 与 API health。Business API / Keycloak / PostgreSQL / Caddy / AI 仍只在 TX1。
+TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`frontend-replica.yml` 在 Frontend 发布成功后解析同一 TCR artifact，部署到 `/opt/wotb-tx2/frontend-replica`，并验证 TX2 的 `/version.json` 与 API health。Business API / Keycloak / PostgreSQL / Caddy 仍在 TX1；AI service 位于 Yecao（`10.20.0.2:8089`），既不在 TX1 也不在 TX2。
 
 ## 三个 lifecycle 的 ownership 区分
 
@@ -57,7 +57,7 @@ postgres / Komodo owner；反之 workload 改动也不会触发 worker reconcile
 | 私有镜像可拉取 | 用当前 main 约定的私有镜像 `wotbtools-frontend:latest` 做 manifest 解析 **与真实 pull** | 任一失败 ⇒ fail closed |
 | 主机锁 | 复用 `/opt/wotb-tx2/.deploy.lock`（TX2 deploy owner 拥有，不新建 worker 专用锁） | 缺失/被占用 ⇒ fail closed |
 | Periphery 回归 | unit active/enabled、有出站 Core 连接、**没有** `:8120` 监听、身份/信任/配置文件仍在 | 任一失败 ⇒ fail closed |
-| WireGuard 回归 | 期望地址仍在、K6B 冻结的 service-plane endpoint 可达（`10.20.0.1:8087`、`10.20.0.1:8080`、`10.20.0.2:8089`） | 任一失败 ⇒ fail closed |
+| WireGuard 回归 | 期望地址仍在、当前 service-plane endpoint 可达（`10.20.0.1:8087`、`10.20.0.1:8080`、`10.20.0.2:8089`） | 任一失败 ⇒ fail closed |
 | 不创建 workload | reconcile 前后运行中的容器集合必须完全一致 | 变化 ⇒ fail closed |
 
 Docker daemon 只在 `daemon.json` **确实发生变化**时重启（mirror 只在启动时读取）；重启前会记录
@@ -170,7 +170,8 @@ TX2_PRODUCTION_WORKER_READY
 ## 仍未授权
 
 ```text
-把 Business API / Keycloak / PostgreSQL / Caddy / AI 放到 TX2
+把 Business API / Keycloak / PostgreSQL / Caddy 放到 TX2
+改变 AI service 的生产归属（当前 Yecao，`10.20.0.2:8089`）
 创建/采纳除已有 Frontend replica 之外的生产 Komodo Stack
 修改 K6B placement、Caddy upstream、DNS 或公网流量（已评审的 K7C frontend pool 除外）
 启用 ResourceSync 自动 apply、managed=true、delete=true

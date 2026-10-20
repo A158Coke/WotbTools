@@ -104,7 +104,7 @@
 | `operations/komodo-periphery.md` | Komodo Periphery agent（Yecao / TX1 / TX2）owner、一套 lifecycle + 多宿主 profile、二进制 pin、身份文件、凭据生命周期、三把宿主锁、TX2 WireGuard MTU 1380 前置条件与恢复时 |
 | `operations/komodo-server-lifecycle.md` | 新增/迁移/下线服务器、Komodo Stack/Deployment/容器迁移、持久数据 inventory/cutover/rollback 时 |
 | `operations/komodo-resource-sync.md` | 声明式 Komodo 资源层 `infra/komodo/resources/**` ownership、ResourceSync `wotbtools-main` 安全设置、Server 期望状态、手工 bootstrap、可逆 drift 验证与只读 diff → 人工 apply 流程时 |
-| `operations/tx-service-plane.md` | TX1 WireGuard 生产 service placement、loopback 管理与 Docker-local rollback 值时 |
+| `operations/tx-service-plane.md` | TX1 WireGuard service plane：current placement matrix、K7C TX1+TX2 Frontend pool、loopback 管理、canonical endpoint contract、runtime gate 与 rollback 值时 |
 | `operations/tx2-production-worker.md` | TX2 production worker 与 Frontend replica：独立 host 前置条件、Compose/镜像/凭据生命周期、K7C 双实例 ownership 边界、fail-closed 矩阵与从零重建流程时 |
 
 ## 参考
