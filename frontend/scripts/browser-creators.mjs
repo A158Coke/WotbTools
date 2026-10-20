@@ -122,6 +122,69 @@ async function tabGeometry(page, expectedCount) {
     if (tab.active) assert.ok(tab.left >= value.left - 0.5 && tab.right <= value.right + 0.5, 'active tab is visible after navigation')
   })
 }
+async function cardPresentation(page, origin, scenario, chrome, sessionId) {
+  const type = scenario.cardType
+  db.categories = ['混剪', '单车解析', '娱乐', '直播回放', '高手/大神类', '联赛类'].map((name, index) => ({ id: index + 1, name, type }))
+  const seed = db.creators[0]
+  db.creators = [
+    { ...seed, id: 1, name: 'Aetheris_Caeloru', description: '高质量 AE 创作者', categoryIds: [1], stars: 5 },
+    { ...seed, id: 2, name: 'ChineseMaoMao', description: '坦克世界闪击战实况与解说，分享比赛回放、单车解析和精彩瞬间。', categoryIds: [1, 2, 3, 4, 5, 6], stars: 5 },
+    { ...seed, id: 3, name: '【WOTB】所有游戏表达好感的方式都是转圈？', description: null, categoryIds: [3], stars: 4 },
+    { ...seed, id: 4, name: '坦闪人自己的 BMPT——AC-10 阿特拉斯', description: '侧面够硬，能哒哒哒，你就是 BMPT。\n装甲给了他相当高的下限，但上限受限于 DPM。各方面数据都有，但不够极致，感觉还是挺适合新手上手游玩的。\n视频仅代表个人观点，欢迎友善讨论。', categoryIds: [2], stars: 3, levelId: type === 'UP' ? 1 : null },
+  ].map((value, index) => ({ ...value, type, bilibiliUid: type === 'UP' ? `${1000 + index}` : `BV1xx411c7m${index}` }))
+  const view = type === 'UP' ? 'creators' : 'recommended-videos'
+  for (const admin of [false, true]) {
+    await page.goto(`${origin}/?view=${view}&ws-auth=${admin ? '1&ws-roles=content-admin' : '0'}`)
+    await page.waitForValue('document.querySelectorAll(".creator-card").length', count => count === 4)
+    await geometry(page, scenario.profile)
+    const cards = await page.evaluate(`Array.from(document.querySelectorAll('.creator-card'), card => {
+      const rect = card.getBoundingClientRect();
+      const top = selector => card.querySelector(selector)?.getBoundingClientRect().top ?? null;
+      const rating = card.querySelector('.creator-rating').getBoundingClientRect(), visit = card.querySelector('.creator-visit').getBoundingClientRect();
+      return {top:rect.top,bottom:rect.bottom,heading:top('.creator-card-heading'),tags:top('.creator-tags'),
+        rating:top('.creator-rating'),visit:top('.creator-visit'),admin:top('.creator-admin-actions'),
+        ratingCenter:rating.top+rating.height/2,visitCenter:visit.top+visit.height/2,ratingRight:rating.right,visitLeft:visit.left,visitHeight:visit.height,
+        overflow:card.scrollWidth>card.clientWidth+1};
+    })`)
+    for (const card of cards) {
+      assert.equal(card.overflow, false, 'long titles and categories remain inside the card')
+      assert.equal(card.admin !== null, admin)
+      if (scenario.width >= 1200 && scenario.locale === 'zh') {
+        assert.ok(Math.abs(card.ratingCenter - card.visitCenter) < 1, 'desktop score and external link share a row')
+        assert.ok(card.visitLeft >= card.ratingRight, 'desktop score is left of the external link')
+      }
+      if (scenario.touch) assert.ok(card.visitHeight >= 44, 'external links retain touch target height')
+      for (const peer of cards.filter(value => Math.abs(value.top - card.top) < 1)) {
+        for (const key of ['bottom', 'heading', 'tags', 'rating', 'visit', ...(admin ? ['admin'] : [])]) {
+          assert.ok(Math.abs(peer[key] - card[key]) < 1, `${type} ${scenario.width}: same-row ${key} aligned`)
+        }
+      }
+    }
+    assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-card-4] .creator-description").textContent'), db.creators[3].description, 'full descriptions remain readable')
+    if (process.env.CREATOR_SCREENSHOTS) {
+      await mkdir(process.env.CREATOR_SCREENSHOTS, { recursive: true })
+      const shot = await chrome.client.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, sessionId)
+      await writeFile(join(process.env.CREATOR_SCREENSHOTS, `${scenario.name}-${admin ? 'admin' : 'public'}.png`), Buffer.from(shot.data, 'base64'))
+    }
+  }
+  // Missing images return to the compact icon header without leaving a cover-sized hole.
+  db.creators[0].avatarId = 'missing-image'
+  await tap(page, '[data-testid=creator-refresh]', scenario.touch)
+  await page.waitForValue('performance.getEntriesByType("resource").some(entry => entry.name.endsWith("/api/creators/avatars/missing-image"))', Boolean)
+  await page.waitForValue('!!document.querySelector("[data-testid=creator-card-1] .creator-avatar-fallback") && !document.querySelector("[data-testid=creator-card-1] img")', Boolean)
+  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-card-1] .recommendation-video-heading")'), false)
+  if (scenario.width === 1920) {
+    db.avatars.set('valid-image', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }))
+    db.creators[0].avatarId = 'valid-image'
+    await tap(page, '[data-testid=creator-refresh]', scenario.touch)
+    await page.waitForValue('(() => {const img=document.querySelector("[data-testid=creator-card-1] img");return !!img?.complete && img.naturalWidth>0})()', Boolean)
+    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-card-1] .recommendation-video-heading")'), type === 'VIDEO')
+    await geometry(page, scenario.profile)
+    await chrome.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, sessionId)
+    assert.ok(await page.evaluate('getComputedStyle(document.querySelector(".creator-card")).transitionDuration.split(",").every(value => parseFloat(value) === 0)'), 'reduced motion disables card transitions')
+  }
+  assert.equal(db.writes, 0, 'presentation checks never mutate the directory')
+}
 async function videoLifecycle(page, origin, scenario) {
   const touch = scenario.touch, primary = scenario.width < 768 ? '[data-testid=tab-creators]' : '[data-testid=nav-creators]'
   db.categories.push({ id: 51, type: 'VIDEO', name: 'Video tutorials' }, { id: 52, type: 'VIDEO', name: 'Video highlights' }, { id: 53, type: 'VIDEO', name: 'Empty video category' })
@@ -224,6 +287,8 @@ async function videoLifecycle(page, origin, scenario) {
 }
 const { server, origin } = await startFixtureServer({ middleware, allowedHosts: ['wotbtools.com'] }), chrome = await launchChromeForCdp(findChrome(), { extraArgs: ['--host-resolver-rules=MAP wotbtools.com 127.0.0.1', '--no-proxy-server'] })
 const scenarios = ['showcase', 'classic'].flatMap(profile => [
+  ...['UP', 'VIDEO'].flatMap(cardType => [1920, 1600, 1024, 390, 320].map(width => ({ name: `${profile}-cards-${cardType}-${width}`, profile, cardType, width, height: 1000, touch: width < 1200, locale: 'zh' }))),
+  ...['en', 'ru'].map(locale => ({ name: `${profile}-cards-VIDEO-${locale}-1280`, profile, cardType: 'VIDEO', width: 1280, height: 1000, touch: false, locale })),
   ...[1440, 1024, 390, 360, 767, 768, 1199, 1200].map(width => ({ name: `${profile}-${width}`, profile, width, height: 1000, touch: width < 1200, full: [1440, 1024, 390].includes(width), locale: width === 1024 ? 'zh' : width === 390 ? 'ru' : 'en' })),
   ...[320, 351, 352, 360].map(width => ({ name: `${profile}-production-${width}`, profile, width, height: 844, touch: true, locale: 'ru', productionHome: true, compactNavigation: true })),
   { name: `${profile}-old-backend`, profile, width: 1440, height: 900, touch: false, locale: 'en', oldBackend: true },
@@ -240,6 +305,10 @@ try {
     try {
       await page.enable(); await page.emulate(scenario)
       await chrome.client.send('Page.addScriptToEvaluateOnNewDocument', { source: `localStorage.setItem('wotb-ui-profile',${JSON.stringify(scenario.profile)});localStorage.setItem('wotb-lang',${JSON.stringify(scenario.locale)});` }, sessionId)
+      if (scenario.cardType) {
+        await cardPresentation(page, origin, scenario, chrome, sessionId)
+        assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
+      }
       if (scenario.videos) {
         await videoLifecycle(page, origin, scenario)
         assert.deepEqual(page.consoleErrors, []); console.log(`PASS ${scenario.name}`); continue
