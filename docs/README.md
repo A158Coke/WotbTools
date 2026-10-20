@@ -138,8 +138,8 @@
 
 | 文档 | 何时读 |
 |---|---|
-| `auth/wargaming-asia-login.md` | 改 WG 登录需求 / 实现时（当前契约） |
-| `auth/wargaming-asia-deployment.md` | 上线 / 排障 WG 登录时 |
+| `auth/wargaming-asia-deployment.md` | 改 WG 登录身份 / 安全契约、上线或排障时 |
+| `features/user-profile.md` | 改 WG / QQ Profile 与绑定语义时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
 | `auth/keycloak-tx-bootstrap.md` | TX 新 Keycloak realm / IdP 启动与凭据交接时 |
