@@ -3,8 +3,9 @@ name: prompt-repair
 description: >
   开发生命周期的修复阶段：基于现成修复提示词 / PR review findings 做增量修复（REPAIR）：
   解析 blockers → Delta Discovery（diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
-  Trigger: 用户提供 repair prompt / review 修复意见 / PR blockers / cleanup prompt / bug fix prompt /
-  hotfix instructions / follow-up findings。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
+  Trigger: 用户提供已有 repair artifact / review 修复意见 / PR blockers / follow-up findings，或当前 PR 的
+  cleanup finding。新报告的 bug / hotfix 若没有既有 reviewer finding 或 repair artifact，不进入本 Skill，
+  按 Designer → approved plan → Executor 生命周期处理。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
 ---
 
 # Prompt Repair（增量修复）
@@ -17,7 +18,7 @@ FULL REPOSITORY REVIEW / REQUIREMENT DISCOVERY。
 
 涉及 FE ↔ BE HTTP shape 的 repair prompt 仍必须遵守 `contracts/http/openapi.yaml`、generated artifact 与显式 domain→transport mapping 规则；repair 不得新增平行 wire contract。
 
-用户已给出 repair prompt ⇒ 需求已确定、product contract 已确定、当前 blockers 已由 reviewer
+用户已给出已有 repair artifact / reviewer finding ⇒ 需求已确定、product contract 已确定、当前 blockers 已由 reviewer
 指出。Agent 的工作是：**验证真实代码 → 定位问题 → 修复问题 → 验证修复**，而不是重新理解
 已被 reviewer 理解过的整个项目。
 
@@ -38,8 +39,10 @@ REPAIR PROMPT IS NOT A REQUEST TO REDISCOVER THE PROJECT.
 
 ## 输入
 
-- 用户提供的修复提示词（一整份即可，无需拆参数）：repair prompt / review 修复意见 /
-  PR review blockers / cleanup prompt / bug fix prompt / hotfix instructions / follow-up findings。
+- 用户提供的已有修复提示词（一整份即可，无需拆参数）：repair prompt / review 修复意见 /
+  PR review blockers / follow-up findings / 当前 PR cleanup findings。
+- 新报告的独立 bug / hotfix（没有既有 review finding / repair artifact）不是 Prompt Repair 输入；
+  交由 Designer 定义工作并产出 approved plan，再由 Executor 实现。
 - Repair Prompt = 本次修复的 **primary task contract**（决定"要修成什么"）；
   真实代码 = **implementation reality**（决定"现在实际上是什么"）。
   不能因为代码当前实现不同，就擅自改变用户明确要求。
@@ -243,9 +246,11 @@ suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6
 
 ## 边界
 
+- **vs Designer**：新报告的 bug / hotfix 若没有既有 reviewer finding / repair artifact → 用 `designer`；
+  Prompt Repair 不以“修 bug”本身作为触发条件。
 - **vs Executor**：用户提供 feature plan / current-plan.md / 大型新功能 /
-  多模块实现计划 → 用 `executor`（Deep Discovery）。用户提供 review repair prompt /
-  bug repair prompt / cleanup prompt / 已明确 blockers → 用本技能（Delta Discovery）。
+  多模块实现计划 → 用 `executor`（Deep Discovery）。用户提供已有 review repair prompt /
+  PR blocker / follow-up finding / 当前 PR cleanup finding → 用本技能（Delta Discovery）。
 - **vs Review Skill**：`review-with-docs` 是唯一 final quality gate；内部 `code-quality.md` 是代码质量检查单。
   本技能是“修 reviewer 已经找到的问题”，不重新做完整 review，不自行判定 final pass；修完才交给
   `review-with-docs`。
