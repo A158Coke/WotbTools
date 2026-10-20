@@ -26,17 +26,19 @@ description: >
    "影响面清单"、"验收标准"、"待确认项"与"非目标"。
 2. **授权校验**：待确认项中存在未确认的"阻塞"项 → 停下汇报，不执行；
    用户明确说"执行/批准"即视为已授权。
-3. **从最新 `origin/main` 创建任务 worktree 与分支（分支名符合任务主题）**：
+3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
    - 从计划内容提取主题：优先计划标题 /《开发方案单》标题 / 业务目标第一句；
      无标题时用影响面中最核心的动词短语。
-   - 分支名规则：小写 `kebab-case`（连字符分隔），按变更类型加前缀
-     `feat/` / `fix/` / `refactor/` / `chore/`；长度 ≤ 60；只用字母、数字与连字符；
-     分支名须能直接看出任务主题。
-   - 先确认当前 worktree 的未提交改动、现有 worktree、remote 与同名分支；
-     不切换或修改其他任务的检出。执行 `git fetch origin main`，以更新后的
-     `origin/main` 为新任务的起点。
+   - 分支名 grammar：`<branch> = feat/<kebab-case-suffix> | fix/<kebab-case-suffix> | refactor/<kebab-case-suffix> | chore/<kebab-case-suffix>`。
+     suffix 必须为 lowercase，只允许字母、数字与连字符；不得有空格或额外 `/`；必须能直接看出任务主题；
+     总分支名长度 ≤ 60。`/` 只允许作为上述 prefix 与 suffix 之间的单个 separator。
+   - 先确认当前 worktree 的未提交改动、现有 worktree、`git remote -v` 与同名分支；
+     不切换或修改其他任务的检出。确认实际承载 upstream/main 的 remote，并记录为 `<remote>`；
+     后续 main baseline 统一使用这个已验证 remote，不重新硬编码 remote 名。
+   - 执行 `git fetch <remote> main`，以更新后的 `<remote>/main` 为新任务起点；涉及 main baseline 的
+     merge-base / compare / worktree 命令也统一使用 `<remote>/main`。
    - 新任务优先使用 Codex 的 `create_worktree`；工具不可用时用
-     `git worktree add -b <branch> <task-worktree-path> origin/main`。
+     `git worktree add -b <branch> <task-worktree-path> <remote>/main`。
      worktree 路径应独立且能识别任务。若同名分支或 worktree 已存在，确认其属于当前计划后
      复用并说明；无法确认时停下询问，不重置或覆盖。
    - 在任务 worktree 中确认分支与起点；后续读取、编辑、验证、提交、推送和开 PR
@@ -51,7 +53,8 @@ description: >
    - 运行该步对应测试/构建验证；失败先修复再前进；
    - 更新计划状态表（进行中 → 完成），并在 commentary 简短汇报。
 6. **阻塞处理**：遇到依赖用户决策、外部数据或超出计划范围的改动时，
-   停下汇报并给出选项；不静默扩大范围、不自行改方案。
+   停下汇报并给出选项；不静默扩大范围、不自行改方案。若 repository reality 证明 approved plan 的关键 assumption 错误，
+   停止执行并返回 Designer / 用户，不得在 Executor 内悄悄 redesign。
 7. **全部完成后**：
    - 按"验收标准"逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
    - 运行本任务 affected regression tests（targeted / module / feature）；
@@ -63,7 +66,7 @@ description: >
      `.agents/skills/review-with-docs/SKILL.md`，对本次全部变更执行其流程
      （代码质量审查 + 文档同步 + AI 死代码清理）。审查范围必须是完整 candidate tree：
      committed range + staged + unstaged tracked + untracked implementation files；
-     不得先 commit 以制造干净 diff，也不得只看 `origin/main..HEAD`。审查发现的问题先修复，
+     不得先 commit 以制造干净 diff，也不得只看 `<remote>/main..HEAD`。审查发现的问题先修复，
      再复查直到零问题；单轮无法闭环的阻塞项停下汇报。
    - **review-with-docs 零 blocker 即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
      中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
@@ -79,8 +82,7 @@ description: >
 
 ## 规则
 
-- 新任务必须基于最新 `origin/main` 创建独立 worktree 与主题分支；续做任务可复用其已有
-  worktree。所有变更只落在任务 worktree，不在 main 或其他任务的检出中执行。
+- 新任务必须先验证实际 upstream/main remote，再基于最新 `<remote>/main` 创建独立 worktree 与主题分支；续做任务可复用其已有 worktree。所有变更只落在任务 worktree，不在 main 或其他任务的检出中执行。
 - 只执行计划内任务："非目标"清单内的改动一律不做。
 - 每步必须有验证，禁止"改完就继续"。
 - 计划中标记"待确认"且阻塞的项，未获用户答复前不得执行。
