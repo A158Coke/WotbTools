@@ -1,0 +1,70 @@
+{
+  "season": {
+    "id": 1,
+    "server": "LESTA",
+    "year": 2026,
+    "nameZh": "夏季赛",
+    "nameEn": "Summer",
+    "nameRu": null,
+    "startDate": null,
+    "createdAt": "2026-10-16T00:00:00Z",
+    "version": 3,
+    "rootCount": 2,
+    "replayCount": 1
+  },
+  "categories": [
+    {
+      "id": 2,
+      "seasonId": 1,
+      "type": "POINTS"
+    },
+    {
+      "id": 5,
+      "seasonId": 1,
+      "type": "SEMI_FINALS"
+    }
+  ],
+  "nodes": [
+    {
+      "id": 3,
+      "categoryId": 2,
+      "roundNumber": 5,
+      "format": null,
+      "replays": [
+        {
+          "id": 4,
+          "nodeId": 3,
+          "title": "Match day",
+          "url": "https://example.com/live/1",
+          "matchDate": "2026-10-16",
+          "dayNumber": 6,
+          "groupNumber": 7,
+          "bracket": null,
+          "teams": [
+            "Team Alpha",
+            "Team Beta",
+            "Team Gamma",
+            "Team Delta"
+          ],
+          "perspective": "POV",
+          "coverId": "31481e30-6a46-42f4-ad2a-d001c5813436"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "categoryId": 5,
+      "roundNumber": null,
+      "format": null,
+      "replays": []
+    }
+  ],
+  "defaultTimeZone": "Europe/Moscow",
+  "replayStarts": [
+    {
+      "replayId": 4,
+      "startsAt": "2026-10-16T16:00:00Z"
+    }
+  ],
+  "coverUploadAvailable": false
+}

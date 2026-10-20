@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { LocationQueryRaw } from 'vue-router'
 import * as api from '../api/league-broadcasts.js'
-import type { BroadcastCategoryView, BroadcastIndex, BroadcastSeasonView } from '../api/league-broadcasts.js'
+import type { BroadcastIndex, BroadcastSeasonContents } from '../api/league-broadcasts.js'
 import { useAuth } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 import { confirm } from './useConfirm.js'
@@ -29,9 +29,9 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   const network = computed(() => deps.gate.availability(Feature.LEAGUE_BROADCASTS))
   const allowed = computed(() => auth.isLeagueBroadcastAdmin.value)
   const index = ref<BroadcastIndex | null>(null)
-  const snapshot = ref<BroadcastSeasonView | BroadcastCategoryView | null>(null)
+  const snapshot = ref<BroadcastSeasonContents | null>(null)
   const displayTimeZonePreference = ref(savedDisplayZone())
-  const defaultTimeZone = computed(() => snapshot.value && 'defaultTimeZone' in snapshot.value ? snapshot.value.defaultTimeZone : null)
+  const defaultTimeZone = computed(() => snapshot.value?.defaultTimeZone ?? null)
   const displayTimeZone = computed(() => displayTimeZonePreference.value === 'server' ? defaultTimeZone.value : displayTimeZonePreference.value)
   watch(displayTimeZonePreference, value => {
     try { localStorage.setItem(displayZoneKey, value) } catch { /* Preference remains usable when storage is unavailable. */ }
@@ -41,9 +41,9 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
   const server = computed(() => servers.value.find(value => value === single(route.query.lbServer)) ?? null)
   const seasonId = computed(() => id(route.query.lbSeason)), categoryId = computed(() => id(route.query.lbCategory))
   const season = computed(() => snapshot.value?.season ?? null)
-  const categories = computed(() => snapshot.value && 'categories' in snapshot.value ? snapshot.value.categories : [])
-  const category = computed(() => snapshot.value && 'category' in snapshot.value ? snapshot.value.category : null)
-  const nodes = computed(() => snapshot.value && 'nodes' in snapshot.value ? snapshot.value.nodes : [])
+  const categories = computed(() => snapshot.value?.categories ?? [])
+  const category = computed(() => categories.value.find(value => value.id === categoryId.value) ?? null)
+  const nodes = computed(() => snapshot.value?.nodes ?? [])
   const seasons = computed(() => index.value?.seasons ?? [])
   const coverUploadAvailable = computed(() => snapshot.value?.coverUploadAvailable ?? index.value?.coverUploadAvailable ?? false)
   const contextKey = computed(() => queryKeys.map(key => `${key}=${String(route.query[key] ?? '')}`).join('&'))
@@ -100,19 +100,19 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
       if (!index.value!.seasons.some(value => value.id === requestedSeason)) {
         await repair({ server: rawServer }); return
       }
-      const view = await transport.getBroadcastSeason(requestedSeason, signal)
+      const view = await transport.getBroadcastSeasonContents(requestedSeason, signal)
       if (!owns(gen, epoch)) return
-      if (view.season.server !== rawServer || view.season.id !== requestedSeason) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
+      const categoryIds = new Set(view.categories.map(category => category.id))
+      if (view.season.server !== rawServer || view.season.id !== requestedSeason
+        || view.categories.some(category => category.seasonId !== requestedSeason)
+        || view.nodes.some(node => !categoryIds.has(node.categoryId) || node.replays.some(replay => replay.nodeId !== node.id))) {
+        throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
+      }
       snapshot.value = view
       if (!requestedCategory || !view.categories.some(value => value.id === requestedCategory && value.seasonId === requestedSeason)) {
         if (route.query.lbCategory != null) await repair({ server: rawServer, season: requestedSeason })
         return
       }
-      const detail = await transport.getBroadcastCategory(requestedCategory, signal)
-      if (!owns(gen, epoch)) return
-      if (detail.season.id !== requestedSeason || detail.season.server !== rawServer
-        || detail.category.id !== requestedCategory || detail.category.seasonId !== requestedSeason) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
-      snapshot.value = detail
     } catch (value) {
       if (!owns(gen, epoch)) return
       if (value instanceof ApiError && value.status === 404) {
@@ -137,7 +137,7 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
     } finally { if (owns(gen, epoch)) busy.value = false }
   }
 
-  async function remove(kind: 'seasons' | 'nodes' | 'replays', targetId: number, title: string, t: (key: string, values?: Record<string, unknown>) => string) {
+  async function remove(kind: 'seasons' | 'categories' | 'nodes' | 'replays', targetId: number, title: string, t: (key: string, values?: Record<string, unknown>) => string) {
     if (!allowed.value || busy.value || loading.value || !network.value.available) return
     const gen = generation, epoch = auth.authEpoch(), signal = controller.signal
     busy.value = true; error.value = null; notice.value = ''
@@ -146,7 +146,7 @@ export function useLeagueBroadcasts(route = useRoute(), router = useRouter(), de
       if (!owns(gen, epoch) || !allowed.value) return
       const version = preview?.expectedVersion ?? season.value?.version
       if (version == null) return
-      const name = kind === 'seasons' ? 'season' : kind === 'nodes' ? 'node' : 'replay'
+      const name = { seasons: 'season', categories: 'category', nodes: 'node', replays: 'replay' }[kind]
       const accepted = await deps.confirm({ title: t(`leagueBroadcasts.${name}DeleteTitle`),
         message: t(`leagueBroadcasts.${name}DeleteMessage`, { title, nodes: preview?.rootCount, replays: preview?.replayCount }),
         confirmLabel: t('leagueBroadcasts.delete'), danger: true, signal })

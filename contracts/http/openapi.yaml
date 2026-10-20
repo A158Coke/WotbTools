@@ -3710,6 +3710,154 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
 
+  /api/tournament-broadcasts/seasons/{seasonId}/contents:
+    get:
+      operationId: getBroadcastSeasonContents
+      summary: Read all broadcast categories and roots in one tournament snapshot
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+      responses:
+        "200":
+          description: Public broadcast directory data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastSeasonContents"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The season changed or the root already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournament-broadcasts/categories/{categoryId}/deletion-preview:
+    get:
+      operationId: previewBroadcastCategoryDeletion
+      summary: Preview deletion of an entire broadcast category
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+      responses:
+        "200":
+          description: Public broadcast directory data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastDeletionPreview"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Real site administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The season changed or the root already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournament-broadcasts/categories/{categoryId}:
+    delete:
+      operationId: deleteBroadcastCategory
+      summary: Delete a category, all its roots and replays after versioned confirmation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+        - name: expectedVersion
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 9007199254740991
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: boolean
+            const: true
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "403":
+          description: Real site administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The season changed or the root already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 components:
   securitySchemes:
     bearerAuth:
@@ -4273,31 +4421,74 @@ components:
             $ref: "#/components/schemas/BroadcastCategory"
         coverUploadAvailable:
           type: "boolean"
-    BroadcastTimedCategoryView:
+    BroadcastTimeZone:
+      type: string
+      enum:
+        - Asia/Shanghai
+        - America/Los_Angeles
+        - Europe/Berlin
+        - Europe/Moscow
+    BroadcastReplayStart:
       type: object
       additionalProperties: false
-      required: [data, defaultTimeZone, replayStarts]
+      required:
+        - replayId
+        - startsAt
       properties:
-        data:
-          $ref: "#/components/schemas/BroadcastCategoryView"
-        defaultTimeZone:
+        replayId:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        startsAt:
           type: string
-          enum: [Asia/Shanghai, America/Los_Angeles, Europe/Berlin, Europe/Moscow]
+          format: date-time
+    BroadcastSeasonContents:
+      type: object
+      additionalProperties: false
+      required:
+        - season
+        - categories
+        - nodes
+        - defaultTimeZone
+        - replayStarts
+        - coverUploadAvailable
+      properties:
+        season:
+          $ref: "#/components/schemas/BroadcastSeason"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastCategory"
+        coverUploadAvailable:
+          type: boolean
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastNode"
+        defaultTimeZone:
+          $ref: "#/components/schemas/BroadcastTimeZone"
         replayStarts:
           type: array
           description: Only replays with a known start instant are included.
           items:
-            type: object
-            additionalProperties: false
-            required: [replayId, startsAt]
-            properties:
-              replayId:
-                type: integer
-                minimum: 1
-                maximum: 9007199254740991
-              startsAt:
-                type: string
-                format: date-time
+            $ref: "#/components/schemas/BroadcastReplayStart"
+    BroadcastTimedCategoryView:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - defaultTimeZone
+        - replayStarts
+      properties:
+        data:
+          $ref: "#/components/schemas/BroadcastCategoryView"
+        defaultTimeZone:
+          $ref: "#/components/schemas/BroadcastTimeZone"
+        replayStarts:
+          type: array
+          description: Only replays with a known start instant are included.
+          items:
+            $ref: "#/components/schemas/BroadcastReplayStart"
     BroadcastTimedReplaySave:
       type: object
       additionalProperties: false

@@ -860,6 +860,76 @@ export default {
         }
       }
     },
+    "BroadcastTimeZone": {
+      "type": "string",
+      "enum": [
+        "Asia/Shanghai",
+        "America/Los_Angeles",
+        "Europe/Berlin",
+        "Europe/Moscow"
+      ]
+    },
+    "BroadcastReplayStart": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replayId",
+        "startsAt"
+      ],
+      "properties": {
+        "replayId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "startsAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "BroadcastSeasonContents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "season",
+        "categories",
+        "nodes",
+        "defaultTimeZone",
+        "replayStarts",
+        "coverUploadAvailable"
+      ],
+      "properties": {
+        "season": {
+          "$ref": "#/$defs/BroadcastSeason"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastCategory"
+          }
+        },
+        "coverUploadAvailable": {
+          "type": "boolean"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BroadcastNode"
+          }
+        },
+        "defaultTimeZone": {
+          "$ref": "#/$defs/BroadcastTimeZone"
+        },
+        "replayStarts": {
+          "type": "array",
+          "description": "Only replays with a known start instant are included.",
+          "items": {
+            "$ref": "#/$defs/BroadcastReplayStart"
+          }
+        }
+      }
+    },
     "BroadcastTimedCategoryView": {
       "type": "object",
       "additionalProperties": false,
@@ -873,35 +943,13 @@ export default {
           "$ref": "#/$defs/BroadcastCategoryView"
         },
         "defaultTimeZone": {
-          "type": "string",
-          "enum": [
-            "Asia/Shanghai",
-            "America/Los_Angeles",
-            "Europe/Berlin",
-            "Europe/Moscow"
-          ]
+          "$ref": "#/$defs/BroadcastTimeZone"
         },
         "replayStarts": {
           "type": "array",
           "description": "Only replays with a known start instant are included.",
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "replayId",
-              "startsAt"
-            ],
-            "properties": {
-              "replayId": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 9007199254740991
-              },
-              "startsAt": {
-                "type": "string",
-                "format": "date-time"
-              }
-            }
+            "$ref": "#/$defs/BroadcastReplayStart"
           }
         }
       }
