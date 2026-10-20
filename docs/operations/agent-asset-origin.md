@@ -25,18 +25,19 @@ assetBase()  ← 解析出的 asset origin
 
 基础设施选择只出现在本文件与部署配置里，不出现在应用契约中。
 
-## 当前状态（2026-10-06 更新）
+## 当前状态（2026-10-20 更新）
 
 | 项 | 值 |
 |---|---|
-| origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com` |
-| 资产包位置 | **桶根目录**（`/index.json`、`/glb/...`、`/map/...`、`/tank/...`、`/data/...`） |
+| Web origin | `https://assets.wotbtools.com` |
+| Web 资产包位置 | Alibaba asset host 的 `/srv/wotb-assets/current`，由 `deploy/assets/` 的 Komodo Stack 提供 |
+| Android origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`；既有 APK 继续使用该 COS rollback/legacy origin |
 | 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
-| CORS | 已配置：`https://wotbtools.com` 与 `https://www.wotbtools.com` 均回 `Access-Control-Allow-Origin`，`GET,HEAD`，Max-Age 600 |
-| Android | 资产基址 = 本机路径 `/agent-assets`（`ANDROID_ASSET_BASE`），由 `AgentAssetProxy`（3.0 起经 Native `LocalRuntimeServer` 的 `/agent-assets/` 路由；2.x 为 `shouldInterceptRequest`）以原生 HttpURLConnection 直连本 origin 并做 ETag 磁盘缓存——**不依赖桶 CORS**（原生代码无 CORS），也不经生产网关 `/agent-assets` 反代（TX1 出口带宽不再被资产包占用；反代仅服务未升级的旧版本 APK）。Web 端 CSP 的 `connect-src`/`img-src` 因此无需任何放宽 |
-| 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；对象读正常） |
+| CORS | Alibaba Web origin 已验证允许 `https://wotbtools.com` 与 `https://www.wotbtools.com`，并支持浏览器 `GET,HEAD` |
+| Android | 资产基址 = 本机路径 `/agent-assets`（`ANDROID_ASSET_BASE`），由 `AgentAssetProxy`（3.0 起经 Native `LocalRuntimeServer` 的 `/agent-assets/` 路由；2.x 为 `shouldInterceptRequest`）以原生 HttpURLConnection 直连既有 COS origin 并做 ETag 磁盘缓存——**不依赖桶 CORS**（原生代码无 CORS），也不经生产网关 `/agent-assets` 反代（TX1 出口带宽不再被资产包占用；反代仅服务未升级的旧版本 APK）。Web 端 CSP 的 `connect-src`/`img-src` 因此无需任何放宽 |
+| COS 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；旧 Android 对象读正常） |
 | 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
-| 变量状态 | `ASSET_BASE_URL` Repository Variable **已设置**（Frontend 运行的 "Validate production asset origin" 步骤通过即证明，见 §接线） |
+| Web 配置 | `.github/workflows/frontend.yml` 与 `.github/workflows/frontend-replica.yml` 将 `ASSET_BASE_URL` 固定为 `https://assets.wotbtools.com`；Frontend 校验步骤验证 HTTPS origin 格式 |
 
 ## 配置来源与优先级
 
@@ -44,23 +45,23 @@ assetBase()  ← 解析出的 asset origin
 
 1. `?assets=<url>` URL 参数（开发/运维 override，非空时持久化到 localStorage）
 2. `localStorage.wotb_asset_base`（单浏览器 override）
-3. **生产构建默认 `VITE_ASSET_BASE_URL`**（部署注入，普通用户走这条）
+3. **生产构建默认 `VITE_ASSET_BASE_URL`**（由主 Frontend 与 TX2 replica workflow 的 `ASSET_BASE_URL` 输入注入，普通用户走这条）
 4. 均未设置 → 未配置：`assetProvider` 抛错，3D 视图显示"未配置资产源"提示
 
 `?assets=`（显式空）用于**清除 override**，回落到生产构建默认。
 
 ## 部署：接线
 
-资产包与 CORS 都已就绪，`ASSET_BASE_URL` 已设置——接线已完成。下列步骤用于**首次接线或更换 origin**：
+Web 生产默认由 tracked workflow 配置管理；Android 保留 COS origin。下列步骤用于**更换 Web origin**：
 
-1. **Settings → Secrets and variables → Actions → Variables** 新增（非敏感）：
+1. 在 `.github/workflows/frontend.yml` 与 `.github/workflows/frontend-replica.yml` 中将 `ASSET_BASE_URL` 更新为同一公开 origin：
 
    ```
-   ASSET_BASE_URL = https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com
+   ASSET_BASE_URL = https://assets.wotbtools.com
    ```
 
    必须 `https://` 开头且**不带结尾 `/`**；`frontend.yml` 的 "Validate production
-   asset origin" 步骤 fail-closed 校验这两点，缺变量时 Frontend 工作流直接失败。
+   asset origin" 步骤 fail-closed 校验 HTTPS 与无尾斜线格式。
 
 2. **触发一次 Frontend 工作流**（新 commit 或 `workflow_dispatch`）。资产源是构建期输入，
    已计入镜像身份：`identity = sha256(source SHA + ASSET_BASE_URL)[:12]`，tag 为
@@ -68,7 +69,7 @@ assetBase()  ← 解析出的 asset origin
    得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与该镜像的
    发布校验都会按 bundle 内容自证 source SHA 与 origin 两者一致（见下"发布边界"）。
 
-3. 验证（见下）。变量本身只放公开 origin，**不放任何密钥**。
+3. 合并后触发 Frontend 发布并验证（见下）。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
 
 ### 发布边界（frontend image → Tencent TCR）
 
@@ -100,7 +101,7 @@ Publish latest only from current main   确认 source SHA 仍是远端 main 后 
 ### 验证（不需要凭据——公开读）
 
 ```bash
-B=https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com
+B=https://assets.wotbtools.com
 curl -sI "$B/index.json" | head -1                                  # 期望 200
 curl -sI "$B/data/tank_cache.json" -H "Origin: https://wotbtools.com" \
   | grep -i access-control-allow-origin                             # 期望回该 origin
@@ -130,7 +131,7 @@ map/{key}/{ground,mini}.webp  terrain.u16.bin  terrain.json
 map/{key}/{scenery.glb,ground.layers.json}  map/{key}/ground/*.webp
 ```
 
-上传到桶**根目录**（当前布局；改前缀则 `ASSET_BASE_URL` 必须同步带该前缀）：
+为维持旧 Android 客户端，资产包仍同步上传到 COS **桶根目录**（`AgentAssetProxy` 继续从此读取）：
 
 ```bash
 pip install coscmd
@@ -141,10 +142,9 @@ coscmd upload -r release/asset_pack/ /
 
 要求：
 
-- **读权限**：桶需允许匿名读。前端按 HTTP GET 直取，无签名；Android 原生代理
-  （`AgentAssetProxy`）同样是匿名 GET，不涉及签名。
+- **COS 读权限**：为旧 Android 客户端保留匿名读；`AgentAssetProxy` 使用无签名 GET。Web 生产构建从 Alibaba origin 读取。
 - **CORS（Web 端必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
-  响应头。当前规则允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
+  响应头。Alibaba Web origin 允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
   封面图经 `<img>` 加载不需要 CORS，但 GLB / tank JSON / terrain 都走 `fetch`——
   "只配了图片可用"是常见误判：封面能出、模型和地形全挂。
   把站点换到新域名/新端口时，**必须同步加 CORS 规则**。
@@ -179,15 +179,12 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 
 - 单浏览器覆盖：`https://wotbtools.com/?assets=https://other-origin/`
 - 回到生产默认：访问 `?assets=`（显式空，清除 override）
-- 回滚：把 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像（原 origin 对应的旧 tag 仍在
-  仓库中，必要时可直接改回 compose 指向的 `latest` 提升源；镜像身份随 origin 变化，
+- 回滚：把主 Frontend 与 TX2 replica workflow 中的 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像（旧 origin 对应的镜像 tag 仍在 TCR 中；镜像身份随 origin 变化，
   不会出现"同 tag 不同内容"）
 
 ## 未来更换 origin
 
-> COS 为**临时**选择，存在持续下行流量成本。换到 GitHub Release 附件 / 静态服务器 /
-> 其他对象存储时，本文件是唯一需要改的文档：改 §"发布"与 §"接线"的地址即可，
-> 消费方代码零改动。评估替代方案时按上面的"验证"节核对读权限 + CORS + 缓存三项。
+> Web 当前使用 Alibaba asset origin；Android 仍保留 COS。若以后再次更换 Web origin，更新主 Frontend 与 TX2 replica workflow 中的 `ASSET_BASE_URL`，再按上面的验证节核对读权限、CORS 与缓存。
 
 ## 相关
 

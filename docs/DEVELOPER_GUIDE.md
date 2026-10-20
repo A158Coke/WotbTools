@@ -658,6 +658,9 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   `deploy/tx/build-frontend-from-gitee.sh` 复用 Business API 的持久 Gitee clone 与 host build lock，
   创建 exact-SHA worktree。镜像 identity 包含 source SHA、`ASSET_BASE_URL` 与 Sponsor bundle SHA256
   （无 pin 为留空）；existing immutable tag 先 pull digest 并核验，缺失才执行本机 `docker build`。
+  Web 生产 3D 资产 origin 固定为 `https://assets.wotbtools.com`，由 `frontend.yml` 与
+  `frontend-replica.yml` 共同传入构建与镜像 identity；Android 仍通过 Native `AgentAssetProxy`
+  使用 COS origin。Web 的 URL/localStorage override 优先级不变。
   内容/BUILD_COMMIT/Agent/Sponsor 校验全部在 registry 写入前完成；push 使用 per-attempt timeout
   与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX 本地 Docker 缓存，
   不设置 GHA build cache；build/publish 在同一 remote builder 调用中，deploy 是单独 job。
