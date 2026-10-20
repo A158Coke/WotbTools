@@ -34,11 +34,12 @@ description: >
      总分支名长度 ≤ 60。`/` 只允许作为上述 prefix 与 suffix 之间的单个 separator。
    - 先确认当前 worktree 的未提交改动、现有 worktree、`git remote -v` 与同名分支；
      不切换或修改其他任务的检出。确认实际承载 upstream/main 的 remote，并记录为 `<remote>`；
-     后续 main baseline 统一使用这个已验证 remote，不重新硬编码 remote 名。
-   - 执行 `git fetch <remote> main`，以更新后的 `<remote>/main` 为新任务起点；涉及 main baseline 的
-     merge-base / compare / worktree 命令也统一使用 `<remote>/main`。
+     同时记录精确 main baseline：`<main-ref> = <remote>/main`。后续所有 main baseline 命令与 final review handoff
+     都复用这个已验证 `<main-ref>`，不得重新猜 remote 或默认 `origin/main`。
+   - 执行 `git fetch <remote> main`，以更新后的 `<main-ref>` 为新任务起点；涉及 main baseline 的
+     merge-base / compare / worktree 命令也统一使用 `<main-ref>`。
    - 新任务优先使用 Codex 的 `create_worktree`；工具不可用时用
-     `git worktree add -b <branch> <task-worktree-path> <remote>/main`。
+     `git worktree add -b <branch> <task-worktree-path> <main-ref>`。
      worktree 路径应独立且能识别任务。若同名分支或 worktree 已存在，确认其属于当前计划后
      复用并说明；无法确认时停下询问，不重置或覆盖。
    - 在任务 worktree 中确认分支与起点；后续读取、编辑、验证、提交、推送和开 PR
@@ -63,10 +64,11 @@ description: >
    - 影响行为/文档时更新对应 canonical 当前状态文档；只有确有长期历史价值时才更新历史：产品 / 业务演进归 `HISTORY.md`，技术 / 架构 / 数据流 / 身份 / 生产拓扑 / 工程演进归 `docs/architecture/TECHNICAL_EVOLUTION.md`，不要求每个改动都更新历史；
    - 汇总：修改文件、测试结果、仍存在的真实限制；
    - **自动调用 review-with-docs 审查**（必须执行，不是建议）：读
-     `.agents/skills/review-with-docs/SKILL.md`，对本次全部变更执行其流程
+     `.agents/skills/review-with-docs/SKILL.md`，并把步骤 3 已验证的精确 `<main-ref>` 作为 final-gate 输入交给它；
+     Review With Docs 必须复用这个 baseline，不得重新默认 `origin/main`。对本次全部变更执行其流程
      （代码质量审查 + 文档同步 + AI 死代码清理）。审查范围必须是完整 candidate tree：
-     committed range + staged + unstaged tracked + untracked implementation files；
-     不得先 commit 以制造干净 diff，也不得只看 `<remote>/main..HEAD`。审查发现的问题先修复，
+     committed range（以 `<main-ref>` 为 base）+ staged + unstaged tracked + untracked implementation files；
+     不得先 commit 以制造干净 diff，也不得只看 `<main-ref>..HEAD`。审查发现的问题先修复，
      再复查直到零问题；单轮无法闭环的阻塞项停下汇报。
    - **review-with-docs 零 blocker 即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
      中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
@@ -82,7 +84,8 @@ description: >
 
 ## 规则
 
-- 新任务必须先验证实际 upstream/main remote，再基于最新 `<remote>/main` 创建独立 worktree 与主题分支；续做任务可复用其已有 worktree。所有变更只落在任务 worktree，不在 main 或其他任务的检出中执行。
+- 新任务必须先验证实际 upstream/main remote，再基于最新 `<main-ref> = <remote>/main` 创建独立 worktree 与主题分支；续做任务可复用其已有 worktree。所有变更只落在任务 worktree，不在 main 或其他任务的检出中执行。
+- 已验证 `<main-ref>` 是 Executor → Review With Docs 的 lifecycle handoff 信息；final gate 必须复用它，不得重新硬编码或猜测 remote。
 - 只执行计划内任务："非目标"清单内的改动一律不做。
 - 每步必须有验证，禁止"改完就继续"。
 - 计划中标记"待确认"且阻塞的项，未获用户答复前不得执行。
