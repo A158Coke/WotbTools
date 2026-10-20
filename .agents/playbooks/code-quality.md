@@ -33,7 +33,7 @@
 - 前端 locale key 三语是否同步
 
 ### 5. 空值边界
-- null/undefined 是否有兜底（`|| '—'`、`??`、Optional）
+- null/undefined 是否使用 `??` 或显式 `value == null` / nullish 检查兜底；Java 可使用 Optional 等合适模式。只有业务明确将所有 falsy 值都视为缺失时才使用 `||`，不得吞掉合法的 `0`、`false` 或空串
 - 数组/集合空值是否有空安全处理
 - 数字运算是否处理 NaN/Infinity
 - 字符串操作是否处理空串

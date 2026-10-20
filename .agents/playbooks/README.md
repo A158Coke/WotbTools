@@ -17,8 +17,8 @@
 | `wotb-sync.md` | designer / executor / prompt-repair / review-with-docs | 跨层改动：解析、列、API、导出、i18n、auth、Flyway |
 | `column-sync.md` | designer / executor / prompt-repair / review-with-docs | 新增/重命名/删除数据列 |
 | `frontend-architecture.md` | designer / executor / prompt-repair / review-with-docs | 前端目录、路由、状态 ownership、API transport 边界 |
-| `keycloak-upgrade`（目录） | executor / prompt-repair / review-with-docs | Keycloak / SPI / provider 版本升级 |
-| `komodo-server-lifecycle.md` | executor / prompt-repair / review-with-docs | 新增/迁移/下线服务器、Komodo Stack、持久数据迁移 |
+| `keycloak-upgrade`（目录） | designer / executor / prompt-repair / review-with-docs | Keycloak / SPI / provider 版本升级 |
+| `komodo-server-lifecycle.md` | designer / executor / prompt-repair / review-with-docs | 新增/迁移/下线服务器、Komodo Stack、持久数据迁移 |
 | `product-qa/`（目录） | review-with-docs | final gate 明确适用，或用户直接请求真实浏览器黑盒 / exploratory / mobile / usability / full-site QA |
 | `code-quality.md` | review-with-docs | 代码质量 6 项检查 |
 | `code-smell.md` | review-with-docs | 过度设计 / 无意义抽象 / 架构复杂化品味审查 |

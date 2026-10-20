@@ -69,6 +69,8 @@ Candidate tree contains changes but review scope is empty.
 > 属于主代理直接驱动的工具链，不是子代理。
 
 0. **Product QA（按任务 scope 判定是否适用）** — 必须在任何源码/diff 审计之前完成黑盒 QA。
+   - 用于未合并 candidate 的 final gate 时，先确认包含该 candidate tree 的专属目标（local / preview / candidate deployment），记录 URL 与 candidate 身份依据，再执行黑盒 QA；独立探索式 QA 才可默认 production `https://wotbtools.com`。
+   - Product QA 适用但 candidate 专属环境不可用 → BLOCKER / 明确 coverage limitation，不得宣称 PASS；旧版 production 的 PASS 不能代替 candidate QA。
    - Applicable + clean context → 先执行黑盒 QA。
    - Applicable + contaminated context（已读源码/diff/实现细节）→ 必须执行 fresh isolated QA pass；不得改成 N/A。
    - Applicable + isolated pass unavailable → BLOCKER / coverage limitation，不得宣称 PASS 或 N/A。

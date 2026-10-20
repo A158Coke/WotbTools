@@ -11,7 +11,8 @@
 
 ## Next
 
-- 暂无需要在 Roadmap 中冻结的近期大型产品项；具体执行工作以 GitHub Issues / Pull Requests 为准。
+- **设计系统收敛**：逐步统一基础组件与语义 token，缩减旧样式覆盖层和 stylelint 基线，消除 `!important`；CSS 完整分层方向为 `reset, tokens, base, layout, components, patterns, pages, utilities`。当前已生效约束见 [设计语言](frontend/design-language.md)，具体实施任务以 GitHub Issues 为准。
+- **视觉回归覆盖**：扩展 `test:browser-layout` 的两套主题 × 三档宽度截图覆盖，并补充基于 axe-core 的对比度检查。
 
 ## Later
 

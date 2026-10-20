@@ -1,8 +1,8 @@
 # WotbTools 设计语言（Design Language）
 
-> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12–§13）· 适用范围：`frontend/` 全部页面、Android WebView
-> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。§12–§13 的后续验证与迁移目标不能当作已经完成的能力。
-> 原则：**以业界通用最佳实践为准**。尚未实现的已批准设计要求保持为目标；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
+> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12）· 适用范围：`frontend/` 全部页面、Android WebView
+> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。未完成的长期方向见 [ROADMAP](../ROADMAP.md)。
+> 原则：**以业界通用最佳实践为准**。本文件只保留当前成立的设计约束；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
 > 背景：v1.0 设计语言基于多端布局与 UI/UX 审计的现状盘点：313 种硬编码 hex、83 种字号、154 种内边距、14 种圆角、60 种阴影、约 40 个 z-index、945 处 `!important`；"简约"主题在关键页面约 30–80% 的文字对比度不达标。
 
 ---
@@ -31,9 +31,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 - **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层与两套主题的语义映射、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
 - **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
-- **CSS 分层：** 目标顺序是 `reset, tokens, base, layout, components, patterns, pages, utilities`，靠层级顺序解决优先级，从此不需要 `!important`。**只声明已经在用的层**：目前 `scale.css` 顶部只有 `@layer tokens;`，第一次需要新层时按上面的顺序把它追加进这条语句（全站只有这一处声明）。
+- **CSS 分层：** 目前 `scale.css` 顶部只有 `@layer tokens;`（全站只有这一处声明），只声明已经在用的层。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
-- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除（§13）。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
+- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
 
 ---
 
@@ -266,7 +266,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 每个组件都必须具备这些状态：`default / hover / focus-visible / active / disabled / loading`（适用的部分）。
 
-- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值，迁移后删除。
+- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值。
 
 | 组件 | 变体 | 规则 |
 |---|---|---|
@@ -274,7 +274,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **IconButton** | — | 图标 20px，点击区域遵守 §5 的最小尺寸 |
 | **Input / Select / Textarea** | — | 标签放在控件上方（不能只靠 placeholder）；下方放说明文字和错误文字；错误态 = 边框用 `danger` + 图标 + 文字 |
 | **SearchSelect** | 单选 / 多选 | 选项超过 15 项时必须可搜索，例如名人堂的选车器 |
-| **FileDrop** | 单文件 / 多文件 | **全站只有这一个上传组件**，替换现在的 3 套。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
+| **FileDrop** | 单文件 / 多文件 | 上传交互遵守以下键盘规则。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
 | **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；`scrollable` 保持单行横向滚动；回放能力栏使用 `wrap`，空间不足时自然换行，手机上每行填满可用宽度、长标签完整显示 |
 | **Tabs** | — | 页面级分区。和 SegmentedControl 的区别：Tabs 切换的是内容区域，SegmentedControl 切换的是同一内容的呈现方式 |
 | **Chip** | 筛选 chip · 状态 chip | 已生效的筛选条件显示为可移除的 chip |
@@ -341,7 +341,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 **依据：** 同一个概念只用一个名字；使用用户的语言，不用实现层的术语。
 
 - **禁止出现在界面上的词：** WebAssembly、WASM、资产源、静态资产包、滤波、位姿、eid、（Agent）、Keycloak、内部枚举值（如 `heavyTank`、`china`、`map_43`、`tank_6929`）。
-- **术语表（设计目标）：** 下表是中文术语约定，三语运行时文案在 `frontend/src/locales/` 维护。独立的 `docs/frontend/glossary.md` 尚未建立，不能作为当前文档入口。初始条目取自审计 §7.3：
+- **术语表：** 下表是中文术语约定，三语运行时文案在 `frontend/src/locales/` 维护。
 
 | 概念 | 中文 | 说明 |
 |---|---|---|
@@ -366,25 +366,14 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - `color-no-hex`、`color-named: never`、`function-disallowed-list: rgb/rgba/hsl/hsla`：组件里不出现色值；只有 `src/styles/tokens/**` 例外。需要半透明时用 `color-mix()`。
    - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
    - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
-   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；每迁完一个文件就从名单里删掉，名单长度即迁移进度。
+   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；移出名单的文件同样受严格检查。
 2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
-3. **视觉回归（后续 PR）：** 在已有的 `test:browser-layout` 里加上两套主题 × 三档宽度的截图，以及基于 axe-core 的对比度检查。
-4. **PR 自查清单：**
+3. **PR 自查清单：**
    - [ ] 只用了语义 token
    - [ ] 两套主题都截了图
    - [ ] 三档宽度都截了图
    - [ ] 键盘能走完整个流程
    - [ ] 新文案进了 i18n 和术语表
-
----
-
-## 13. 迁移策略（不推倒重来）
-
-1. **建立基础：** 新增 tokens 分层文件和 `@layer tokens` 声明；同名同值的间距、圆角迁入 `scale.css`，其余旧变量原值保留、与新 token 并存；接入 stylelint。视觉上保持不变。
-2. **组件：** 先实现 Button / Input / FileDrop / Dialog / Sheet / DataTable / EmptyState / PlaybackControls，再逐页替换。
-3. **删除 showcase 覆盖层：** 每迁完一页，就删掉 `showcase*.css` 和 `classic-profile.css` 里对应的选择器。简约主题改为纯语义映射。
-4. **收紧 lint：** 迁移完成的目录开启严格规则，并在 CI 里阻断。
-5. **收尾：** 删除 `tokens.css`、`classic-profile.css`、`showcase*.css` 中已无人引用的旧 token 与覆盖规则。`!important` 数量作为进度指标，目标是 0。
 
 ---
 
@@ -394,7 +383,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 - 两套主题的定位：沉浸 = 暗色 + 装饰插槽，简约 = 亮色 + 无装饰；布局、组件、密度完全一致。
 - 默认主题跟随系统（通过 profile 的 `auto` 值实现）。
 - 色盲模式的开关放在"我的 → 显示设置"。
-- 图标库使用 Lucide（第一个使用它的组件 PR 再引入依赖）。
+- 图标库使用 Lucide。
 - 每个视图只允许一个橙色主按钮。
 
 2026-10-02 已确认：

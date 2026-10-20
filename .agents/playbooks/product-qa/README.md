@@ -44,7 +44,9 @@ Node REPL 若无法通过 ESM 导入本地 Playwright，可用 `node:module` 的
 
 **禁止**用 `curl`、源码阅读、静态 DOM 搜索或普通 HTTP 抓取冒充“真实使用网站”。
 
-默认目标：`https://wotbtools.com`。
+独立探索式 Product QA 默认目标：`https://wotbtools.com`。
+
+用于未合并 candidate 的 review-with-docs final gate 时，必须测试包含该 candidate tree 的专属环境（local / preview / candidate deployment），执行前记录目标 URL 与 candidate 身份依据。不得用旧版 production 的正常结果替代 candidate QA。若 Product QA 适用但无法提供 candidate 专属环境，报告 BLOCKER 或明确 coverage limitation，不得宣称 PASS。
 
 ## 1. 黑盒隔离规则
 
