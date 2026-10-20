@@ -13,6 +13,13 @@ description: >
 > 生命周期：Executor implementation + targeted validation → **Review With Docs** → PASS 后 Executor 才 commit/push/open PR。
 > Review 不是第二个 Designer：它验证 approved plan + repository reality + canonical docs + runtime evidence，不重新选择 ambition 或擅自 redesign。
 
+## 输入与 main baseline
+
+- 从 Executor 进入 final gate 时，必须接收并复用 Executor 已验证的精确 `<main-ref>`，其值为步骤 3 记录的 `<remote>/main`。
+- 从 Prompt Repair 进入时，优先复用该 PR / task 已有的已验证 `<main-ref>`；如果当前上下文没有，则先验证实际承载 upstream/main 的 remote，再记录 `<main-ref> = <remote>/main`。
+- standalone review / QA 没有 lifecycle handoff 时，也必须先验证真实 canonical main remote/ref，再记录 `<main-ref>`。
+- **任何路径都不得默认或硬编码 `origin/main`。** 一旦 `<main-ref>` 已验证，本轮 range、merge-base、compare、OCR committed preview 全程复用同一值。
+
 ## Candidate Tree Review Contract
 
 审查对象是当前 task 的完整 candidate tree：
@@ -87,7 +94,7 @@ Task-related candidate tree contains changes but review scope is empty.
 > 全程主代理，不 spawn verifier 子代理。OCR delegate mode 是确定性工具链，不是第二个 agent。
 
 0. **Product QA applicability**：源码/diff audit 前判定。
-1. **OCR readiness**：固定版本 OCR 可用性。
+1. **Baseline + OCR readiness**：确认 / 接收本轮唯一 `<main-ref>`，再检查固定版本 OCR 可用性。
 2. **Candidate classification**：task-related files + explicit exclusions。
 3. **Layer B**：range/workspace preview → 过滤到 task-related scope → rules → 逐文件 audit。
 4. **Layer A**：发现真实 plan source，逐条验证 requirement / acceptance criteria。
@@ -126,10 +133,11 @@ producer violation 修 producer/mapper，不放宽 FE schema 掩盖。
 - delegate mode 不需要 OCR 侧 LLM key；推理由主代理完成。
 - tool failure ≠ no findings；明确报告并人工 fallback，不能伪造 blocker=0。
 
-先确认真实 main baseline，记作 `<main-ref>`：
+复用本轮已经 handoff / verified 的 `<main-ref>`：
 
 ```bash
 git status --porcelain
+git merge-base <main-ref> HEAD
 ocr delegate preview --from <main-ref> --to HEAD --format json   # committed
 ocr delegate preview --format json                               # workspace
 ocr delegate rule --format json <task-related-paths...>
@@ -137,7 +145,7 @@ ocr delegate rule --format json <task-related-paths...>
 
 mixed candidate 两个 preview 都运行并按 path union/dedupe。OCR 返回 scope 后再次应用 task-related classification；exclusion 仍显式记录。
 
-每个 task-related reviewable file 必须 `reviewed` 或有具体原因的 `skipped`。range 读 merge-base diff，tracked workspace 读 `git diff HEAD -- <path>`，task-related untracked 读全文。
+每个 task-related reviewable file 必须 `reviewed` 或有具体原因的 `skipped`。range 读 `merge-base(<main-ref>, HEAD)..HEAD` diff，tracked workspace 读 `git diff HEAD -- <path>`，task-related untracked 读全文。
 
 ## Layer A — Plan Auditor
 
@@ -258,6 +266,7 @@ executable missing / timeout / parser/provider error 都是 tool failure：明�
 
 ```text
 Candidate classification:
+- main baseline: <main-ref>
 - task-related: ...
 - exclusions: path / category / reason
 
@@ -284,8 +293,8 @@ Blocker count: N
 ## 边界
 
 - Designer = deeply define the work。
-- Executor = execute approved plan。
+- Executor = execute approved plan，并把已验证 `<main-ref>` 交给 final gate。
 - Prompt Repair = minimum-delta reviewer finding repair。
-- Review With Docs = verify implementation against plan + reality + docs + runtime evidence，并拥有唯一 final PASS authority。
+- Review With Docs = verify implementation against plan + reality + docs + runtime evidence，并拥有唯一 final PASS authority；复用已验证 baseline，不自行硬编码 remote。
 
 本 Skill 不创建 future-wishlist owner、不重新做 Ambition/Design、不 commit/push/open PR/merge。
