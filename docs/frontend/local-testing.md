@@ -195,6 +195,26 @@ Keycloak 配置是硬编码的生产（`auth.wotbtools.com` / realm `wotbtools` 
   结果、完整概率层链与卡片文案，便于按用户描述的情形复现。生产构建
   （`import.meta.env.DEV === false`）不挂载该面板，URL 参数无效果。
 
+- **装甲原始像素对照（#711）**：热力图开启后调用
+  `window.__armorRicochet.readPixels({x, y, width: 3, height: 3})`，参数为 viewport
+  左上角 CSS 坐标；内部按 canvas rect / drawing-buffer 换算，并统一 readPixels 的 Y 方向。
+  返回值含逐像素板索引（查 `identities` 得 meshName / plateId）、原网格局部 triangleId、
+  原始 cls / rcDiag / probability，以及相同像素中心射线的 CPU 首命中和完整续飞层链。
+  GPU 与 CPU 的 triangleId 均为原网格局部索引；CPU 另带 pack 全局 `slot`。
+  同步 pass 使用全分辨率、单样本浮点 RT、NoBlending、最近邻、无色彩转换；第一遍固定 ID
+  绕过续飞，随后读取真实 PBR 判定、跳弹世界坐标和反射方向；`cpuAtGpuInput` 使用 GPU
+  实际几何输入再次模拟，区分光栅插值差异与求交差异。探针保留当前 Primary 的深度预通道，
+  因而可检查其遮挡差异。`covered=false` 表示分类 pass 未写片元，不可解释为正常无续飞。
+  `rcDiag`：0 正常无续飞、1 续飞击穿、2 续飞被挡、3 取数预算、4 层上限、5 DDA 步数上限。
+  非跳弹像素的 cls 为显示分类，CPU `skip` 标记不参与续飞等价比较；不要把零对照样本当作通过。
+  探针需要 `EXT_color_buffer_float`，不支持时显式报错；仅按需分配临时 geometry/material/RT，
+  `finally` 恢复材质与 renderer 状态并释放临时资源。`readbackMs` 是同步 CPU+GPU 读回墙钟时间，
+  **不是 GPU 热力图帧耗时**。大 ROI 的 CPU 对拍很慢，先单点、再小块连续采样。
+  `info().gridGeneration / poseMatchesGrid` 可检查姿态同步：相机运动不重建网格；源矩阵变化后，
+  网格必须在 RT1/RT0/Primary 之前完成重建，失败时所有通道统一关闭续飞。
+  鼠标 5 px 内微动保持点击语义且不改炮塔/炮管角度；超过阈值才进入瞄准拖动。
+  原始数据不能证明最终半透明画面的视觉效果，3D 画面仍由用户实际设备验收。
+
 ## 7. 故障对照
 
 | 症状 | 原因 | 处置 |

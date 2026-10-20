@@ -82,8 +82,12 @@ export const RC = Object.freeze({
     VARIANT_BIT: Object.freeze({ track: 1, gun: 2 }),
 });
 
+/** Stable raw diagnostic codes; class 0 alone must not hide budget exhaustion. */
+export const RC_DIAG = Object.freeze({ NO_HIT: 0, PENETRATED: 1, BLOCKED: 2, FETCH_BUDGET: 3, LAYER_LIMIT: 4, STEP_LIMIT: 5 });
+
 /** GLSL 常量声明（注入 PBR_FRAG；由 RC 生成，禁止手写数值） */
 export const RC_GLSL_CONST = `
+${Object.entries(RC_DIAG).map(([key, value]) => `#define RC_DIAG_${key} ${value}.0`).join("\n")}
 // ==== 跳弹续飞常量（单一来源 armorCollisionPack.js RC；禁止手改数值）====
 #define RC_FAR ${RC.FAR.toFixed(1)}
 #define RC_OFF ${RC.ORIGIN_OFFSET.toFixed(6)}
@@ -120,14 +124,14 @@ ${AI_NORMAL_CDF_GLSL}
 // 世界系三角形顶点纹理。着色器沿 DDA 步进，只测路径覆盖的 cell 内三角形（~10² 级，替代全量 10³ 级扫描），
 // 命中天然按 t 有序（无需逐层重扫）；背面剔除 = Raycaster FrontSide 口径（绕序法线）。
 uniform int rcMode;                 // 1/2=全分辨率逐像素续飞（v5.3） 0=关闭
-uniform float rcThickMul;
+uniform highp float rcThickMul;
 uniform highp sampler2D rcWorldTris;  // 世界系顶点：每 texel 一顶点 (x,y,z)（网格重建时上传）
 uniform float rcTriRows;
 uniform highp sampler2D rcGridCells;   // 每 cell 1 texel: (entryOffset, entryCount)
 uniform highp sampler2D rcGridEntries; // 每条目 1 texel: (triSlot, sectionCode, thickness, 0)
-uniform vec3 rcGridMin;
-uniform float rcCell;
-uniform vec3 rcGridDimsF;
+uniform highp vec3 rcGridMin;
+uniform highp float rcCell;
+uniform highp vec3 rcGridDimsF;
 uniform float rcCellRows;
 uniform float rcEntryRows;
 uniform int rcEntryTotal;
@@ -208,8 +212,9 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
     int prevTri = -1;                  // 同三角形跨 cell 重复列表去重（凸区域连续出现）
     int L = 0;
     int budget = RC_BUDGET;            // 全局取数预算：超出即保守退出（防执行超时杀 draw）
+    rcDiag = RC_DIAG_STEP_LIMIT;
     for (int s = 0; s < RC_MAX_STEPS; s++) {
-        if (budget <= 0) return 0;
+        if (budget <= 0) { rcDiag = RC_DIAG_FETCH_BUDGET; return 0; }
         highp float tCell = min(min(tMax.x, tMax.y), tMax.z);
         highp float hi = min(tCell + RC_ADV_EPS, tEnd);
         int cidx = cell.x + dims.x * (cell.y + dims.y * cell.z);
@@ -218,19 +223,24 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
         int off = int(cel.x + 0.5);
         // 当前 cell 窗口 (tCur, hi] 内逐层收集（同一 cell 可含多层）
         for (int l = 0; l < RC_MAX_LAYER; l++) {
-            if (L >= RC_MAX_LAYER) return 0;            // 层上限 → 保守紫
+            if (L >= RC_MAX_LAYER) { rcDiag = RC_DIAG_LAYER_LIMIT; return 0; }            // 层上限 → 保守紫
             highp float bestT = hi;
             int bestSlot = -1;
             highp vec4 bestEnt = vec4(0.0);
             for (int e = 0; e < RC_MAX_CELL; e++) {
                 if (e >= cnt) break;
                 budget -= 1;
-                if (budget < 0) return 0;
+                if (budget < 0) { rcDiag = RC_DIAG_FETCH_BUDGET; return 0; }
                 highp vec4 ent = rcEntryAt(off + e);
                 int slot = int(ent.x + 0.5);
                 if (slot == prevTri) continue;
+                int candidateSection = int(ent.y + 0.5);
+                if (candidateSection >= RC_SEC_CHASSIS) {
+                    int candidateVariant = candidateSection == RC_SEC_CHASSIS ? 1 : 2;
+                    if ((variantSeen & candidateVariant) != 0) continue;
+                }
                 highp float tHit;
-                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) && tHit < bestT) {
+                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) && (bestSlot < 0 || tHit < bestT)) {
                     bestT = tHit; bestSlot = slot; bestEnt = ent;
                 }
             }
@@ -244,7 +254,6 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
             // 累计概率，但确定性结论保持 BLOCKED，由首个 Primary 分支统一返回 2。
             if (sec >= RC_SEC_CHASSIS) {                // 外部模块：variant 去重 + flat 消耗
                 int vbit = (sec == RC_SEC_CHASSIS) ? 1 : 2;
-                if ((variantSeen & vbit) != 0) { tCur = bestT + RC_ADV_EPS; continue; }   // 同 variant 已消耗（不计层）
                 variantSeen |= vbit;
                 bool modPen = rem > th;
                 if (modPen) rem -= th;
@@ -253,7 +262,11 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 pMin -= th;
                 pMax -= th;
                 if (!modPen) blocked = true;   // 模块挡下：余下只查主装甲存在性
-                tCur = bestT + RC_ADV_EPS; continue;
+                // 去重对象是模块 variant，不是距离区间。模块与主装甲可共面（KRV 炮管/炮盾）；
+                // 推进 bestT+eps 会把仍未处理的主装甲吞掉，舍入差异使相邻像素随机返回无命中。
+                // 保留当前 cell 游标，下一轮跳过已消费 variant，再取最近的其它候选。
+                L++;
+                continue;
             }
             // 间隙/主装甲：角度等效 + 2×口径增强转正；出射段强制不跳弹（threeCal 恒真）
             highp vec3 a = rcVertW(bestSlot * 3), b = rcVertW(bestSlot * 3 + 1), c = rcVertW(bestSlot * 3 + 2);
@@ -283,11 +296,13 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                 if (!blocked && layPen) {
                     // 确定性 layPen 已成立；补充概率为 0 时仍呈现确定性击穿（不把绿翻红）。
                     penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
+                    rcDiag = RC_DIAG_PENETRATED;
                     return 1;
                 }
                 // 名义被挡（本层或之前层）也可能是 1–99% 的边界情形：把部分概率
                 // 交给状态通道，让热力图与点击卡“可能击穿 p%”一致（review 2026-10-18）。
                 penOut = clamp(probChance, 0.0, 1.0);
+                rcDiag = RC_DIAG_BLOCKED;
                 return 2;
             }
             if (!layPen) { blocked = true; tCur = bestT + RC_ADV_EPS; continue; }
@@ -299,8 +314,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
         if (tMax.x <= tMax.y && tMax.x <= tMax.z) { cell.x += stp.x; tCur = max(tCur, tMax.x); tMax.x += tDelta.x; }
         else if (tMax.y <= tMax.z) { cell.y += stp.y; tCur = max(tCur, tMax.y); tMax.y += tDelta.y; }
         else { cell.z += stp.z; tCur = max(tCur, tMax.z); tMax.z += tDelta.z; }
-        if (cell.x < 0 || cell.x >= dims.x || cell.y < 0 || cell.y >= dims.y || cell.z < 0 || cell.z >= dims.z) break;
-        if (tCur >= tEnd) break;
+        if (cell.x < 0 || cell.x >= dims.x || cell.y < 0 || cell.y >= dims.y || cell.z < 0 || cell.z >= dims.z || tCur >= tEnd) {
+            rcDiag = RC_DIAG_NO_HIT;
+            break;
+        }
     }
     if (blocked) return anyPrimary ? 2 : 0;
     return 0;
@@ -400,6 +417,17 @@ export function buildPack(entries) {
     const matsData = new Float32Array(units.length * 16);
     updatePackMatrices({ meshes, matsData, metaData });
     return { ok: true, units, meshes, meshCount: units.length, triTotal, triRows, triData, metaData, matsData };
+}
+
+/** Copy doubles, not Float32 GPU data or mutable Matrix4 references. */
+export function snapshotPackPose(pack) {
+    return pack.meshes.map(mesh => mesh.matrixWorld.elements.slice());
+}
+
+/** Caller propagates source matrices before comparing; camera motion is irrelevant. */
+export function packPoseChanged(pack, snapshot) {
+    return !snapshot || snapshot.length !== pack.meshes.length || pack.meshes.some((mesh, i) =>
+        mesh.matrixWorld.elements.some((value, j) => value !== snapshot[i][j]));
 }
 
 /**
@@ -697,6 +725,7 @@ export function raycastPackAll(pack, ro, dir, tMin = 0, tMax = RC.FAR) {
             if (n0.dot(lrd) >= 0) continue;
             hits.push({
                 t: tHit, meshIdx: m, section: sectionName(md.sec), thickness: md.thickness,
+                triangleId: pack.units[m].localFrom + t,
                 variant: md.variant, slot: pack.units[m].triStart + t,   // 全局三角形槽（网格验证用）
                 point: lro.clone().addScaledVector(lrd, tHit).applyMatrix4(mw),
                 normal: n0.transformDirection(mw),
@@ -763,7 +792,7 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             // 概率区间按 flat 消耗平移；名义被挡也继续走到首个 Primary 累计概率。
             probMin -= eff;
             probMax -= eff;
-            layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem + (layPen ? eff : 0), penetrated: layPen });
+            layers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff, remBefore: rem + (layPen ? eff : 0), penetrated: layPen });
             if (!layPen) blocked = true;
             continue;
         }
@@ -781,7 +810,7 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
         probChance *= penetrationChanceForInterval(probMin, probMax, eff);
         probMin -= eff;
         probMax -= eff;
-        layers.push({ section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
+        layers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff, remBefore: rem, penetrated: layPen });
         if (isPrimary) {
             if (!blocked && layPen) {
                 return { cls: 1, penChance: probChance > 0 ? Math.max(0, Math.min(1, probChance)) : 1, layers };
