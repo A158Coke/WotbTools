@@ -19,6 +19,7 @@
  * 不是"资产不可达即绿"；夹具模式（CI 默认）找不到屏幕仍然硬失败。
  */
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import krvCoplanar from './browser-fixtures/kranvagn-coplanar.json' with { type: 'json' }
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
@@ -280,6 +281,108 @@ try {
     }
   }
 
+  for (const part of ['turret', 'hull']) {
+    const sample = spots[part]
+    const roi = await page.evaluate(`window.__armorRicochet.readPixels(${JSON.stringify({ x: sample.x, y: sample.y, width: 3, height: 3 })})`)
+    check(roi?.pixels.length > 0 && roi.identities.length > 0, '原始 ID / 分类通道可读回连续像素')
+    check(roi?.pixels.every(p => Number.isInteger(p.id) && Number.isInteger(p.triangleId) && [0, 1, 2].includes(p.cls)),
+      '原始身份/分类不受透明混色或 MSAA 污染')
+    const repeat = await page.evaluate(`window.__armorRicochet.readPixels(${JSON.stringify({ x: sample.x, y: sample.y, width: 3, height: 3 })})`)
+    check(JSON.stringify(roi?.pixels) === JSON.stringify(repeat?.pixels), '同姿态连续读回身份/分类/CPU 层链稳定')
+    const reflected = roi?.pixels.filter(p => p.cpu && !p.cpu.skip) || []
+    if (part === 'hull' && !useRealAssets) check(reflected.length > 0, '夹具斜车体提供非零跳弹对照样本')
+    if (reflected.length) check(reflected.every(p => p.cls === p.cpu.cls), `跳弹采样 GPU 与同输入 CPU 一致（${reflected.length} 个）`)
+    else console.log(`[armor-aiming] ${part} ROI 无跳弹样本，仅验证身份/重复读回`)
+    check(reflected.every(p => p.triangleId === p.cpu.detail.first.triangleId), 'GPU/CPU 三角形编号使用同一网格局部索引')
+  }
+
+  if (!useRealAssets) {
+    const retry = await page.evaluate(`(() => {
+      const h=window.__armorRicochet, model=window.__DBG__.armorModel;
+      const scale=model.scale.clone(), before=h.info();
+      let failed;
+      try {
+        model.scale.setScalar(1000); // real oversized geometry failure, no mocked dirty flag
+        for(let i=0;i<240;i++) h.predict(-1,-1);
+        failed=h.info();
+      } finally { model.scale.copy(scale); }
+      h.predict(-1,-1); // return to the exact last successful pose A
+      return {before,failed,recovered:h.info()};
+    })()`)
+    check(!retry.failed.enabled && !retry.failed.grid && !retry.failed.poseDirty,
+      '坏姿态 B 耗尽重试后统一关闭续飞')
+    check(retry.recovered.enabled && retry.recovered.poseMatchesGrid && retry.recovered.gridGeneration > retry.before.gridGeneration,
+      'B → 原成功姿态 A 无手动 dirty 标记也重新建立网格')
+  }
+
+  // Execute the production GLSL with coincident module/Primary geometry. The old
+  // bestT+ADVANCE_EPS module cursor drops the Primary in both of these scenes.
+  const coplanar = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const results = [], krv = ${JSON.stringify(krvCoplanar)};
+    const realGeometry = points => new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(points.flat(),3));
+    const moduleGeometry = realGeometry(krv.module), primaryGeometry = realGeometry(krv.primary);
+    try {
+      for (const armorFirst of [true, false]) for (const gap of [0, 0.00005, -0.00005, null, 'boundary', 'slanted-boundary']) {
+        const real = gap === null;
+        const module = new T.Mesh(real ? moduleGeometry : geometry, sourceMaterial);
+        const primary = new T.Mesh(real ? primaryGeometry : geometry, sourceMaterial); primary.position.z = real ? 0 : -gap;
+        const boundary = typeof gap === 'string';
+        if (boundary) {
+          module.position.z = gap === 'boundary' ? 0.4499996 : 0.449995;
+          primary.position.z = gap === 'boundary' ? 0.4500004 : 0.4630335073711086;
+          if (gap === 'slanted-boundary') primary.rotation.y = 0.1;
+        }
+        const entries = [{mesh:module,section:'gunBarrel',thickness:50}, {mesh:primary,section:'turret',thickness:70}];
+        if (armorFirst) entries.reverse();
+        if (boundary) {const anchor = new T.Mesh(geometry,sourceMaterial);anchor.position.x=5;entries.push({mesh:anchor,section:'hull',thickness:70});}
+        const pack = buildPack(entries);
+        const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+        const material = new T.ShaderMaterial({
+          vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+          fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float remIn; uniform vec3 rayOrigin; uniform vec3 rayDirection;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+            'void main(){float p;float d;int c=rcContinue(rayOrigin,rayDirection,remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+          uniforms: { rayOrigin:{value:new T.Vector3(...(real ? krv.ray.origin : [0.13,0.17,1]))},
+            rayDirection:{value:new T.Vector3(...(real ? krv.ray.direction : [0,0,-1]))}, caliber:{value:120}, normalization:{value:0}, remIn:{value:187.5}, rcThickMul:{value:1},
+            rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+            rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+        });
+        try {
+          const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+          for (const normalization of [5, 2]) for (const rem of (real ? [187.5, 250] : [187.5, 100])) {
+            material.uniforms.normalization.value=normalization * Math.PI / 180;
+            material.uniforms.remIn.value=rem;
+            renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+            const pixel=new Uint8Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+            results.push({armorFirst,gap,rem,normalization,expected:real ? (rem===187.5?2:1) : (gap<0 || rem>120?1:2),cls:pixel[0],diag:pixel[1]});
+          }
+        } finally {material.dispose();Object.values(tex).forEach(t=>t.dispose());}
+      }
+    } finally {target.dispose();geometry.dispose();moduleGeometry.dispose();primaryGeometry.dispose();sourceMaterial.dispose();renderer.dispose();renderer.forceContextLoss();}
+    return results;
+  })()`)
+  check(coplanar.length === 48 && coplanar.every(r => r.cls === r.expected && r.diag === r.cls),
+    `共面/真实 KRV 舍入样本正确消费模块，前后 0.05 mm 分离表面保持几何顺序：${JSON.stringify(coplanar)}`)
+
+  // #711: sub-threshold movement remains a click and must not rotate the model or rebuild its grid.
+  for (const part of ['turret', 'gun']) {
+    const point = (await findSpots())[part]
+    const before = await page.evaluate('({ info: window.__armorRicochet.info(), pose: window.__armorRicochet.aimingState() })')
+    await mouseDrag(point, 3, 1)
+    const after = await page.evaluate('({ info: window.__armorRicochet.info(), pose: window.__armorRicochet.aimingState() })')
+    check(after.pose.turretDeg === before.pose.turretDeg && after.pose.gunDeg === before.pose.gunDeg,
+      `微动·${part} 不改变精确姿态`)
+    check(after.info.judgments === before.info.judgments + 1, `微动·${part} 仍为单次点击`)
+    check(after.info.gridGeneration === before.info.gridGeneration && after.info.poseMatchesGrid,
+      `微动·${part} 复用同一碰撞网格`)
+  }
+
   // —— 交互分支断言 ——
   // 注意：炮塔/炮管一旦转动，之前扫描到的部位像素会移到别处（`aimPartAt` 按当前几何判定，
   // 陈旧像素会落进错误的部位分支）。每次操作前重新扫描，断言才指向真实部位。
@@ -296,6 +399,7 @@ try {
     const beforeTurret = await readAim()
     await mouseDrag(s.turret, 150, 60)
     const afterTurret = await readAim()
+    check(await page.evaluate('window.__armorRicochet.info().poseMatchesGrid'), '拖动后所有通道使用当前姿态网格')
     check(afterTurret.t !== beforeTurret.t && afterTurret.g === beforeTurret.g,
       `鼠标·炮塔壳拖动 = 只 yaw 不俯仰（${beforeTurret.t}/${beforeTurret.g} → ${afterTurret.t}/${afterTurret.g}）`)
   }

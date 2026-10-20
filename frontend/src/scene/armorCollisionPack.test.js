@@ -9,8 +9,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
+import krvCoplanar from '../../scripts/browser-fixtures/kranvagn-coplanar.json'
 import {
-    RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
+    snapshotPackPose, packPoseChanged, RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
     raycastPackAll, simulateContinuation,
 } from './armorCollisionPack.js'
 import { calculate } from './penetration.js'
@@ -712,3 +713,79 @@ describe('GLSL 注入串完整性', () => {
         expect(RC.MAX_CELL_ENTRIES).toBe(256)
     })
 })
+
+
+describe('packed pose invalidation (#711)', () => {
+    it('copies matrix values and detects parent/mesh motion without manual dirty flags', () => {
+        const { meshes, scene } = buildChainScene([{ section: 'turret', thickness: 225, x: 2 }]);
+        const pack = packOf(meshes);
+        const snapshot = snapshotPackPose(pack);
+        expect(packPoseChanged(pack, snapshot)).toBe(false);
+        scene.position.x = 0.00000001; // Float32 rounding must not hide a source change
+        scene.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, snapshot)).toBe(true);
+        expect(snapshot[0][12]).toBe(2);
+        const rebuilt = snapshotPackPose(pack);
+        const camera = new THREE.PerspectiveCamera();
+        camera.position.set(20, 30, 40);
+        camera.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, rebuilt)).toBe(false);
+        meshes[0].rotation.y += 0.01;
+        scene.updateMatrixWorld(true);
+        expect(packPoseChanged(pack, rebuilt)).toBe(true);
+    });
+    it('invalidates missing snapshots and changed geometry collections', () => {
+        const pack = packOf(buildChainScene([{ section: 'hull', thickness: 70, x: 1 }]).meshes);
+        expect(packPoseChanged(pack, null)).toBe(true);
+        expect(packPoseChanged(pack, [])).toBe(true);
+    });
+});
+
+
+describe('exactly coplanar continuation order (#711)', () => {
+    it.each([true, false])('consumes the module with armorFirst=%s', (armorFirst) => {
+        const module = makeMesh(new THREE.PlaneGeometry(2, 2), 'gunBarrel', 50);
+        const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 70);
+        const meshes = armorFirst ? [primary, module] : [module, primary];
+        const pack = packOf(meshes);
+        const origin = new THREE.Vector3(0.13, 0.17, 1), dir = new THREE.Vector3(0, 0, -1);
+        const raw = raycastPackAll(pack, origin, dir, 0);
+        expect(raw.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+        const params = { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 };
+        expect(simulateContinuation(pack, origin, dir, params).cls).toBe(2);
+        expect(oracleClass(pack, origin, dir, params)).toBe(2);
+    });
+});
+
+
+describe('KRV differently tessellated coplanar surfaces', () => {
+    it.each([true, false])('uses float32 error intervals with armorFirst=%s', (armorFirst) => {
+        const geo = points => new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(points.flat(), 3));
+        const module = makeMesh(geo(krvCoplanar.module), 'gunBarrel', 50);
+        const primary = makeMesh(geo(krvCoplanar.primary), 'turret', 70);
+        const pack = packOf(armorFirst ? [primary, module] : [module, primary]);
+        const origin = new THREE.Vector3(...krvCoplanar.ray.origin), dir = new THREE.Vector3(...krvCoplanar.ray.direction);
+        const hits = raycastPackAll(pack, origin, dir, 0);
+        expect(hits.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+        expect(Math.abs(hits[0].t - hits[1].t)).toBeLessThan(hits[0].distanceError + hits[1].distanceError);
+        const sim = simulateContinuation(pack, origin, dir, { remIn: 187.5, caliber: 120, normalizationRad: 5 * Math.PI / 180, thickMul: 1 });
+        expect(sim.cls).toBe(2);
+        expect(sim.layers[1].remBefore).toBe(137.5);
+        expect(sim.layers[1].eff).toBeGreaterThan(150);
+    });
+});
+
+
+it('keeps a module within the nearest Primary uncertainty window across a voxel boundary', () => {
+    const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 70, m => { m.position.z = 0.4500004 });
+    const module = makeMesh(new THREE.PlaneGeometry(2, 2), 'gunBarrel', 50, m => { m.position.z = 0.4499996 });
+    const anchor = makeMesh(new THREE.PlaneGeometry(2, 2), 'hull', 70, m => { m.position.x = 5 });
+    const pack = packOf([primary, module, anchor]);
+    const grid = buildRicochetGrid(pack);
+    expect(grid.gridMin[2]).toBe(0);
+    expect(grid.cellSize).toBe(0.45);
+    const origin = new THREE.Vector3(0.13, 0.17, 1), dir = new THREE.Vector3(0, 0, -1);
+    const hits = raycastPackAll(pack, origin, dir, 0);
+    expect(hits.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+    expect(simulateContinuation(pack, origin, dir, { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 }).cls).toBe(2);
+});

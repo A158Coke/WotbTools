@@ -27,10 +27,10 @@ import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
-    buildPack, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+    continuationDistanceError, buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
+import { isPrimary, hasPositivePrimary, matchHitsByOccurrence, orderContinuationHits } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
@@ -303,7 +303,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // fragment shader 逐像素计算击穿概率着色：绿=稳定击穿 红=稳定挡住 渐变=概率过渡；
         // 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮
         const PBR_VERT = `
-            varying vec3 vNormal;
+            varying highp vec3 vNormal;
             varying highp vec3 vViewPos;
             void main() {
               vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -313,8 +313,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         `;
         const PBR_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
+            precision highp float;
+            varying highp vec3 vNormal;
             varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
@@ -363,9 +363,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               highp vec3 viewDir = normalize(vViewPos);
               // 装甲几何在加载时 toNonIndexed + computeVertexNormals ⇒ vNormal 已是逐面
               // 几何法线，与点击判定 hit.face.normal 同源。不得改用 dFdx/dFdy(vViewPos)：
-              // 本 shader 是 mediump（移动端 fp16），屏幕空间位置的逐像素导数会量化/退化，
-              // 导致热力图颜色错乱（2026-10-19 回归）。视线方向必须 highp：500 m 处的
-              // mediump length() 会在平方时溢出，进而把入射角算成 90°/NaN。
+              // 几何输入与运算全程 highp，避免法线/穿深先量化再提升精度；仍使用碰撞逐面
+              // 法线，不改为屏幕导数。500 m 视空间 length() 在 mediump 下会溢出。
               highp vec3 nFace = normalize(vNormal);
               highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
 
@@ -392,6 +391,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 着色器**在其自身几何（真实起点/法线）上算毕并编码进 B——此处只解读，
                 // 不得在本面重算（review 2026-10-13：两块板无平行约束）。
                 //   0.0 = 无续飞结果 → 维持紫；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡 → 红
+                rcDiag = floor(spacedState.b * 255.0 + 0.5);
                 float code = spacedState.g;
                 if (code <= 0.0) {
                   penChance = 0.0; ricocheted = true;
@@ -730,6 +730,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let ricochetPack = null;
         let ricochetGrid = null;          // 网格加速结构（含纹理）
         let ricochetPoseDirty = true;     // 几何姿态变化（炮塔/配置/模型）→ 需重建网格
+        let ricochetPoseSnapshot = null;
+        let ricochetFailedPose = null;
+        let ricochetGridGeneration = 0;
         let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
         const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
 
@@ -823,8 +826,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 状态通道（RT1）只负责最近层的跳弹标志/续飞编码；外部模块写 A=1 抑制其后的
         // 间隙板跳弹/续飞。PBR 直接累加 RT0.R，不再做“首层/最近层差额”修正。
         const SPACED_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
+            precision highp float;
+            varying highp vec3 vNormal;
             varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
@@ -853,8 +856,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 法线 = 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；
         // G = 续飞结果编码（0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
         const SPACED_STATE_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
+            precision highp float;
+            varying highp vec3 vNormal;
             varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
@@ -873,6 +876,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               bool ricocheted = !threeCal && angle >= ricochet;
               // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
               float bCode = 0.0;
+              highp float rcDiag = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
                 highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
@@ -881,7 +885,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
                 highp vec3 reflR = normalize(vRotT * rVR);
                 highp float contChance = 0.0;
-                highp float rcDiag = 0.0;
                 int contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
                 if (contCls == 1) bCode = 0.2 + 0.6 * clamp(contChance, 0.0, 1.0);
                 else if (contCls == 2) {
@@ -896,7 +899,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               }
               // A=0：本片元是间隙甲（不是外部模块）；模块状态材质写 A=1，PBR 据此抑制
               // 「模块在前」时其后间隙板的跳弹/续飞。
-              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, 0.0, 0.0);
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, rcDiag / 255.0, 0.0);
             }
         `;
         /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
@@ -1364,14 +1367,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 penetrationRT.dispose();
                 penetrationRT = null;
             }
-            // 续飞 pack/网格随热力图资源整体废弃（纹理已释放；下次重建重新打包）
-            if (ricochetGrid && ricochetGrid.textures) {
-                ricochetGrid.textures.cellsTex.dispose();
-                ricochetGrid.textures.entriesTex.dispose();
-                ricochetGrid.textures.worldTrisTex.dispose();
-            }
+            disposeRicochetGrid();
             ricochetPack = null;
             ricochetGrid = null;
+            ricochetPoseSnapshot = null;
+            ricochetFailedPose = null;
             ricochetPoseDirty = true;
             rcUniforms.rcWorldTris.value = null;
             rcUniforms.rcGridCells.value = null;
@@ -1414,10 +1414,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             return list;
         }
         function rebuildRicochetPack() {
+            disposeRicochetGrid();
             ricochetPack = null;
-            ricochetGrid = null;
+            ricochetPoseSnapshot = null;
+            ricochetFailedPose = null;
             ricochetPackReason = '';
             rcUniforms.rcEnabled.value = false;
+            rcUniforms.rcMode.value = 0;
+            updateCollisionWorldMatrices();
             const entries = collectRicochetEntries();
             const pack = buildPack(entries);
             if (!pack.ok) {
@@ -1441,12 +1445,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!ricochetPack) return false;
             const grid = buildRicochetGrid(ricochetPack);
             if (!grid.ok) {
-                ricochetGrid = null;
+                disposeRicochetGrid();
+                rcUniforms.rcEnabled.value = false;
+                rcUniforms.rcMode.value = 0;
                 ricochetPackReason = grid.reason;
                 ricochetGridRetries++;
                 if (ricochetGridRetries >= RC_GRID_RETRY_MAX) {
                     rcUniforms.rcEnabled.value = false;
-                    ricochetPoseDirty = false;   // 放弃重试（跳弹维持紫 = 现状）
+                    ricochetPoseDirty = false;
+                    ricochetFailedPose = snapshotPackPose(ricochetPack); // 新姿态才重新尝试
                     console.warn('[armor-ricochet] grid disabled after retries:', grid.reason);
                     return false;
                 }
@@ -1454,12 +1461,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return false;
             }
             ricochetGridRetries = 0;
-            // 旧网格纹理释放（disposeMaterial 不会碰它们——不在材质 uniforms 表里）
-            if (ricochetGrid && ricochetGrid.textures) {
-                ricochetGrid.textures.cellsTex.dispose();
-                ricochetGrid.textures.entriesTex.dispose();
-                ricochetGrid.textures.worldTrisTex.dispose();
-            }
+            disposeRicochetGrid();
             const tex = createGridTextures(grid);
             grid.textures = tex;
             ricochetGrid = grid;
@@ -1473,8 +1475,44 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rcUniforms.rcCellRows.value = Math.ceil(grid.cellTotal / RC.CELL_ROW);
             rcUniforms.rcEntryRows.value = Math.ceil(grid.entryTotal / RC.ENTRY_ROW);
             rcUniforms.rcEntryTotal.value = grid.entryTotal;
+            ricochetPoseSnapshot = snapshotPackPose(ricochetPack);
+            ricochetFailedPose = null;
+            ricochetPackReason = '';
+            ricochetGridGeneration++;
             ricochetPoseDirty = false;
             return true;
+        }
+        function disposeRicochetGrid() {
+            if (ricochetGrid?.textures) {
+                for (const texture of Object.values(ricochetGrid.textures)) texture.dispose();
+            }
+            ricochetGrid = null;
+            ricochetPoseSnapshot = null; // a disposed grid has no valid successful-pose snapshot
+            rcUniforms.rcWorldTris.value = null;
+            rcUniforms.rcGridCells.value = null;
+            rcUniforms.rcGridEntries.value = null;
+        }
+        function updateCollisionWorldMatrices() {
+            // 只传播矩阵；syncTransforms 会重新收集/对齐模块，不能作为每帧准备。
+            armorModel?.updateWorldMatrix(true, true);
+            tankModel?.updateWorldMatrix(true, true);
+            camera.updateWorldMatrix(true, false);
+        }
+        function prepareRicochetFrame() {
+            updateCollisionWorldMatrices();
+            if (ricochetPack) {
+                const changed = packPoseChanged(ricochetPack, ricochetPoseSnapshot);
+                const retryStopped = ricochetFailedPose && !packPoseChanged(ricochetPack, ricochetFailedPose);
+                if (ricochetPoseDirty || (changed && !retryStopped)) {
+                    if (ricochetFailedPose) {
+                        ricochetGridRetries = 0;
+                        ricochetFailedPose = null;
+                    }
+                    rebuildRicochetGrid();
+                }
+            }
+            const sh = selectedShell || shooterShells[0];
+            if (sh) syncRicochetEnabled(sh);
         }
         // 弹种门：仅动能弹（AP/APCR）可跳弹；爆炸弹（HE/HEAT，跳弹角 90°）续飞恒关；
         // 还需网格在位（矩阵未就位的宽限期内跳弹维持紫，网格就位后自动恢复）。
@@ -1669,7 +1707,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         if (aimPendingPart && !aimClaimed && !aimMultiTouch) claimAim(e, aimPendingPart);
                     }
                 }
-                if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
+                if (aiming && isDragging) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
             },
             up(e) {
                 if (aimPointerId.active !== e.pointerId) return;
@@ -1701,7 +1739,120 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (e.button === 0) rcLastClick = { x: e.clientX, y: e.clientY };
             });
         }
+        // Raw diagnostic readback, never decode IDs/classes from the blended display RGB.
+        // Synchronous passes freeze one prepared frame; temporary geometry belongs only to this probe.
+        function readArmorPixels({ x, y, width = 1, height = 1 }) {
+            if (!penetrationMode || !primaryArmorScene || !ricochetPack) return null;
+            const rect = renderer.domElement.getBoundingClientRect();
+            const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+            const left = Math.floor((x - rect.left) * size.x / rect.width);
+            const top = Math.floor((y - rect.top) * size.y / rect.height);
+            const w = Math.ceil(width * size.x / rect.width), h = Math.ceil(height * size.y / rect.height);
+            if (![left, top, w, h].every(Number.isFinite) || w < 1 || h < 1 || left < 0 || top < 0 || left + w > size.x || top + h > size.y) {
+                throw new RangeError('ROI must be inside the canvas (CSS client coordinates)');
+            }
+            if (!renderer.extensions.has('EXT_color_buffer_float')) throw new Error('Float readback unavailable');
+            const savedTarget = renderer.getRenderTarget();
+            const savedClear = renderer.getClearColor(new THREE.Color()), savedAlpha = renderer.getClearAlpha();
+            const savedAutoClear = renderer.autoClear;
+            const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+                type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true, samples: 0,
+                minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false,
+            });
+            target.texture.colorSpace = THREE.NoColorSpace;
+            const saved = [];
+            const identities = [];
+            const ids = new Float32Array(w * h * 4), values = new Float32Array(w * h * 4);
+            const positions = new Float32Array(w * h * 4), reflections = new Float32Array(w * h * 4);
+            const started = performance.now();
+            try {
+                prepareRicochetFrame();
+                updatePenetrationDistanceUniforms();
+                renderSpacedArmorPass();
+                syncCloneMatrices(primaryArmorScene);
+                for (const node of primaryArmorScene.children) {
+                    const original = { node, material: node.material, geometry: node.geometry };
+                    saved.push(original);
+                    if (!node.material.uniforms) continue; // preserve the display depth prepass
+                    const src = node.userData._src;
+                    const id = identities.length + 1;
+                    identities.push({ id, meshName: src.name, plateId: src.userData.armorPlateId,
+                        matrixWorld: src.matrixWorld.elements.slice(), penetration: node.material.uniforms.penetration.value,
+                        caliber: node.material.uniforms.caliber.value, normalization: node.material.uniforms.normalization.value });
+                    node.geometry = node.geometry.index ? node.geometry.toNonIndexed() : node.geometry.clone();
+                    const count = node.geometry.attributes.position.count;
+                    node.geometry.setAttribute('debugTriangle', new THREE.BufferAttribute(Float32Array.from({ length: count }, (_, j) => Math.floor(j / 3) + 1), 1));
+                    node.material = node.material.clone();
+                    node.material.uniforms = { ...original.material.uniforms }; // share textures; probe owns no collision textures
+                    node.material.transparent = false;
+                    node.material.blending = THREE.NoBlending;
+                    node.material.toneMapped = false;
+                    node.material.vertexShader = 'attribute float debugTriangle; varying highp float vDebugTriangle;\n' +
+                        PBR_VERT.replace('void main() {', 'void main() { vDebugTriangle = debugTriangle;');
+                    node.material.uniforms.debugPlate = { value: id };
+                    node.material.fragmentShader = `precision highp float;
+                        uniform float debugPlate; varying highp float vDebugTriangle;
+                        void main() { gl_FragColor = vec4(debugPlate, floor(vDebugTriangle + 0.5), 0.0, 1.0); }`;
+                }
+                const read = (buffer) => {
+                    renderer.autoClear = true;
+                    renderer.setClearColor(0, 0);
+                    renderer.setRenderTarget(target);
+                    renderer.render(primaryArmorScene, camera);
+                    renderer.readRenderTargetPixels(target, left, size.y - top - h, w, h, buffer);
+                };
+                read(ids); // identity-only: bypass continuation entirely
+                for (const { node, material } of saved) {
+                    if (!material.uniforms) continue;
+                    node.material.fragmentShader = PBR_FRAG.replace('gl_FragColor.a *= opacity;',
+                        'gl_FragColor = vec4(gapRicochet ? (rcDiag <= 2.0 ? rcDiag : 0.0) : (!noRicochet && mayRicochet) ? float(contCls) : (ricocheted ? 0.0 : (penChance > 0.0 ? 1.0 : 2.0)), rcDiag, penChance, 1.0);');
+                    node.material.needsUpdate = true;
+                }
+                read(values);
+                for (const [expression, buffer] of [['wPosR', positions], ['reflR', reflections]]) {
+                    for (const { node, material } of saved) {
+                        if (!material.uniforms) continue;
+                        node.material.fragmentShader = PBR_FRAG.replace('gl_FragColor.a *= opacity;', `gl_FragColor = vec4(${expression}, 1.0);`);
+                        node.material.needsUpdate = true;
+                    }
+                    read(buffer);
+                }
+                const pixels = [];
+                for (let row = 0; row < h; row++) for (let col = 0; col < w; col++) {
+                    const at = ((h - row - 1) * w + col) * 4;
+                    if (!ids[at + 3]) continue;
+                    const cpu = window.__armorRicochet.predict(left + col, size.y - top - row - 1);
+                    const inputs = identities[ids[at] - 1];
+                    const cpuAtGpuInput = cpu && !cpu.skip && values[at + 3] > 0
+                        ? simulateContinuation(ricochetPack, new THREE.Vector3().fromArray(positions, at),
+                            new THREE.Vector3().fromArray(reflections, at), { remIn: inputs.penetration * RC.RICO_REMAIN_MUL,
+                                caliber: inputs.caliber, normalizationRad: inputs.normalization, thickMul: rcUniforms.rcThickMul.value })
+                        : null;
+                    pixels.push({ x: left + col, y: top + row, id: ids[at], triangleId: ids[at + 1] - 1,
+                        gpu: { origin: Array.from(positions.slice(at, at + 3)), direction: Array.from(reflections.slice(at, at + 3)) },
+                        covered: values[at + 3] > 0, cls: values[at], rcDiag: values[at + 1], probability: values[at + 2],
+                        cpu, cpuAtGpuInput });
+                }
+                return { coordinateSpace: 'drawing-buffer-top-left', width: size.x, height: size.y,
+                    cssRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+                    cameraMatrix: camera.matrixWorld.elements.slice(), projectionMatrix: camera.projectionMatrix.elements.slice(),
+                    turretDeg: currentTurretDeg, gunDeg: currentGunDeg, gridGeneration: ricochetGridGeneration,
+                    shell: { ...selectedShell }, equipment: equipmentCoeffs(), identities, pixels,
+                    readbackMs: performance.now() - started };
+            } finally {
+                for (const { node, material, geometry } of saved) {
+                    if (node.material !== material) node.material.dispose();
+                    if (node.geometry !== geometry) node.geometry.dispose();
+                    node.material = material; node.geometry = geometry;
+                }
+                target.dispose();
+                renderer.setRenderTarget(savedTarget);
+                renderer.setClearColor(savedClear, savedAlpha);
+                renderer.autoClear = savedAutoClear;
+            }
+        }
         window.__armorRicochet = {
+            readPixels: readArmorPixels,
             info() {
                 return {
                     enabled: rcUniforms.rcEnabled.value,
@@ -1709,6 +1860,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     triTotal: ricochetPack ? ricochetPack.triTotal : 0,
                     grid: ricochetGrid ? { dims: ricochetGrid.dims, cell: ricochetGrid.cellSize, entries: ricochetGrid.entryTotal } : null,
                     poseDirty: ricochetPoseDirty,
+                    gridGeneration: ricochetGridGeneration,
+                    poseMatchesGrid: !!ricochetPack && !packPoseChanged(ricochetPack, ricochetPoseSnapshot),
                     reason: ricochetPackReason,
                     judgments: judgmentCount,
                     // 相机/视图诊断：门禁据此断言 dolly 补偿门控（world 总览——命中/脱靶
@@ -1747,7 +1900,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 相机射线 → 首命中为主装甲且满足跳弹判据 → 反射 + JS 参考续飞 → cls。
             // skip=true 的像素（首命中非主装甲/不跳弹/无命中）不在比对范围。
             predict(px, py) {
+                prepareRicochetFrame();
+                updatePenetrationDistanceUniforms();
                 if (!ricochetPack || !selectedShell) return null;
+                if (!rcUniforms.rcEnabled.value) return { skip: true, why: 'continuation-disabled' };
                 const c = renderer.domElement;
                 const w = c.width, h = c.height;
                 if (px < 0 || py < 0 || px >= w || py >= h) return { skip: true };
@@ -1761,11 +1917,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!(first.section === 'hull' || first.section === 'turret' || first.section === 'gun')) {
                     return { skip: true, why: 'first-not-primary:' + first.section, camHits };
                 }
-                const PRIM = first.section === 'hull' || first.section === 'turret' || first.section === 'gun';
-                if (!PRIM) return { skip: true };   // 首命中为间隙/模块 → 着色器 underSpaced 口径，不比对
                 const sh = selectedShell;
-                const { penMul, thickMul } = equipmentCoeffs();
-                const pen = (sh.penetration || 0) * penMul;
+                const { thickMul } = equipmentCoeffs();
+                const src = ricochetPack.meshes[first.meshIdx];
+                const primary = primaryArmorScene?.children.find(n => n.userData._src === src && n.material.uniforms);
+                if (!primary) return { skip: true, why: 'no-primary-uniform' };
+                const pen = primary.material.uniforms.penetration.value;
                 const caliber = sh.caliber || 120;
                 const th = first.thickness * thickMul;
                 const angle = Math.acos(Math.min(Math.abs(first.normal.dot(dir)), 1));
@@ -1781,8 +1938,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 });
                 return {
                     skip: false, cls: sim.cls,
+                    penetration: pen, penChance: sim.penChance,
+                    ray: { origin: camera.position.toArray(), direction: dir.toArray() },
+                    continuation: { origin: first.point.toArray(), direction: r.toArray(), normal: first.normal.toArray(), ...sim },
                     detail: {
-                        first: { section: first.section, thickness: first.thickness, angleDeg: +(angle * 180 / Math.PI).toFixed(1), point: [first.point.x.toFixed(2), first.point.y.toFixed(2), first.point.z.toFixed(2)] },
+                        first: { meshName: src.name, plateId: src.userData.armorPlateId, triangleId: first.triangleId, slot: first.slot, section: first.section, thickness: first.thickness, angleDeg: +(angle * 180 / Math.PI).toFixed(1), point: [first.point.x.toFixed(2), first.point.y.toFixed(2), first.point.z.toFixed(2)] },
                         reflect: [r.x.toFixed(3), r.y.toFixed(3), r.z.toFixed(3)],
                         layers: (sim.layers || []).map(l => ({ s: l.section, t: +l.t.toFixed(2), eff: +l.eff.toFixed(0), pen: l.penetrated })),
                     },
@@ -1796,6 +1956,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             aimingState() {
                 return {
                     aiming,
+                    turretDeg: currentTurretDeg, gunDeg: currentGunDeg,
                     controlsEnabled: controls ? controls.enabled : null,
                     cameraDistance: (controls && controls.target)
                         ? +camera.position.distanceTo(controls.target).toFixed(4) : null,
@@ -4914,7 +5075,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const disp = hit.object.userData.armorSectionOrig || section;
                 partName = `${disp.charAt(0).toUpperCase() + disp.slice(1)} Plate ${plateId}`;
             }
-            return { section, plateId, thickness, point: hit.point, normal, partName };
+            return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance };
         }
 
         function doPenetrationCheck(ndcX, ndcY) {
@@ -4925,7 +5086,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return;
             }
             // 首次判定可能早于首帧渲染；raycast 必须使用已恢复的当前姿态。
-            scene.updateMatrixWorld(true);
+            updateCollisionWorldMatrices();
             judgmentCount++;
             // 代数序号：仅最新一次判定的响应可上屏（滑块拖动会连续触发判定）
             const penSeq = ++__penCheckSeq;
@@ -5075,6 +5236,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 : (__shotRayOrigin && __shotRayTarget)
                     ? __shotRayOrigin.clone().sub(point).normalize()
                     : camera.position.clone().sub(point).normalize();
+            const incomingDirection = raycaster.ray.direction.clone();
             const shotRayO = (window.__segRay || __shotRayOrigin)
                 ? raycaster.ray.origin.clone() : null;
 
@@ -5264,7 +5426,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (res.ricochet && res.ricochet_remaining_pen > 0) {
                     const lastLayer = trajLayers[trajLayers.length - 1];
                     if (lastLayer && lastLayer.point) {
-                        const shellDir = viewDir.clone().negate(); // incoming shell direction
+                        const shellDir = incomingDirection.clone(); // 与首段求交同一入射方向
                         let n = lastLayer.normal;
                         if (!n) {
                             const hitMatch = hitsForCheck.find(ah => ah.point.distanceToSquared(lastLayer.point) < 1e-6);
@@ -5275,14 +5437,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         // 在厘米级距离，原 +0.05m 偏移 + <0.1m 跳过会把它丢弃 → 续飞穿入车体内部。
                         const rc = new THREE.Raycaster(lastLayer.point, reflect);
                         const ricIntersects = rc.intersectObjects(objects, true);
-                        const ricHits = [];
+                        let ricHits = [];
                         for (const hit of ricIntersects) {
                             // 初始接受阈（评审 P1 三路一致）：t ≤ RC.MIN_CONTINUATION_T 一律滤——与 JS
                             // 参考 raycastPackAll 的 tMin、GLSL 的 tStart 同一严格口径（不含推进 eps）
                             if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
                             const entry = classifyHit(hit);
-                            if (entry) ricHits.push(entry);
+                            if (entry) {
+                                const vertices = [hit.face.a, hit.face.b, hit.face.c].map(i =>
+                                    new THREE.Vector3().fromBufferAttribute(hit.object.geometry.attributes.position, i).applyMatrix4(hit.object.matrixWorld));
+                                entry.distanceError = continuationDistanceError(vertices, rc.ray.origin, rc.ray.direction, hit.distance);
+                                ricHits.push(entry);
+                            }
                         }
+                        ricHits = orderContinuationHits(ricHits);
                         // blitzkit：出射射线（allowRicochet=false）未命中 Primary → shoot 返回
                         // null（无出射段、伤害 0），不进行二次判定
                         const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');
@@ -5703,14 +5871,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (SESS && heatFrames < 5) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
+                prepareRicochetFrame(); // 所有通道先共享本帧几何，RT1 不再消费上一帧网格
                 updatePenetrationDistanceUniforms();   // 交战距离衰减（相机/炮口→命中板，每帧刷 pen uniform）
                 renderSpacedArmorPass();
-                // 全分辨率逐像素续飞（v5.3）：姿态变化时重建世界网格（相机移动无需重建）
-                if (ricochetPoseDirty && ricochetPack) {
-                    rebuildRicochetGrid();
-                    const sh0 = selectedShell || (shooterShells[0]) || null;
-                    if (sh0) syncRicochetEnabled(sh0);
-                }
                 renderer.render(scene, camera);                       // 背景/网格（autoClear 已置 false）
                 renderer.clearDepth();                                 // 清除深度，让 exclude 深度遮罩生效
                 if (primaryArmorScene) { syncCloneMatrices(primaryArmorScene); renderer.render(primaryArmorScene, camera); }
