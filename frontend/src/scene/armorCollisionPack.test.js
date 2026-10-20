@@ -739,3 +739,19 @@ describe('packed pose invalidation (#711)', () => {
         expect(packPoseChanged(pack, [])).toBe(true);
     });
 });
+
+
+describe('exactly coplanar continuation order (#711)', () => {
+    it.each([true, false])('consumes the module with armorFirst=%s', (armorFirst) => {
+        const module = makeMesh(new THREE.PlaneGeometry(2, 2), 'gunBarrel', 50);
+        const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 70);
+        const meshes = armorFirst ? [primary, module] : [module, primary];
+        const pack = packOf(meshes);
+        const origin = new THREE.Vector3(0.13, 0.17, 1), dir = new THREE.Vector3(0, 0, -1);
+        const raw = raycastPackAll(pack, origin, dir, 0);
+        expect(raw.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+        const params = { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 };
+        expect(simulateContinuation(pack, origin, dir, params).cls).toBe(2);
+        expect(oracleClass(pack, origin, dir, params)).toBe(2);
+    });
+});

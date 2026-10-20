@@ -30,7 +30,7 @@ import {
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
+import { isPrimary, hasPositivePrimary, matchHitsByOccurrence, compareContinuationHitOrder } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
@@ -1487,6 +1487,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 for (const texture of Object.values(ricochetGrid.textures)) texture.dispose();
             }
             ricochetGrid = null;
+            ricochetPoseSnapshot = null; // a disposed grid has no valid successful-pose snapshot
             rcUniforms.rcWorldTris.value = null;
             rcUniforms.rcGridCells.value = null;
             rcUniforms.rcGridEntries.value = null;
@@ -5074,7 +5075,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const disp = hit.object.userData.armorSectionOrig || section;
                 partName = `${disp.charAt(0).toUpperCase() + disp.slice(1)} Plate ${plateId}`;
             }
-            return { section, plateId, thickness, point: hit.point, normal, partName };
+            return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance };
         }
 
         function doPenetrationCheck(ndcX, ndcY) {
@@ -5444,6 +5445,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             const entry = classifyHit(hit);
                             if (entry) ricHits.push(entry);
                         }
+                        ricHits.sort((a, b) => compareContinuationHitOrder(a.distance, a.section, b.distance, b.section));
                         // blitzkit：出射射线（allowRicochet=false）未命中 Primary → shoot 返回
                         // null（无出射段、伤害 0），不进行二次判定
                         const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');

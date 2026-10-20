@@ -25,6 +25,7 @@
  * 非刚性/超限/网格过密 → fail-closed，调用方禁用续飞（跳弹维持紫色 = 现状）。
  */
 import * as THREE from 'three';
+import { compareContinuationHitOrder } from './penetration.js';
 import { AI_NORMAL_CDF_GLSL, penetrationChanceForInterval } from './armorInspectorChance.js';
 
 /** 续飞链常量（GLSL 与 JS 参考实现共用；改这里即改两边） */
@@ -240,7 +241,10 @@ int rcContinue(highp vec3 bouncePos, highp vec3 reflDir, highp float remIn, out 
                     if ((variantSeen & candidateVariant) != 0) continue;
                 }
                 highp float tHit;
-                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) && (bestSlot < 0 || tHit < bestT)) {
+                // Exact ties must not depend on pack order: modules consume before Primary terminates.
+                bool moduleBeforeArmor = candidateSection >= RC_SEC_CHASSIS && int(bestEnt.y + 0.5) < RC_SEC_CHASSIS;
+                if (rcTriW(slot, ro, reflDir, tCur, hi, tHit) &&
+                    (bestSlot < 0 || tHit < bestT || (tHit == bestT && moduleBeforeArmor))) {
                     bestT = tHit; bestSlot = slot; bestEnt = ent;
                 }
             }
@@ -732,7 +736,7 @@ export function raycastPackAll(pack, ro, dir, tMin = 0, tMax = RC.FAR) {
             });
         }
     }
-    hits.sort((x, y) => x.t - y.t);
+    hits.sort((x, y) => compareContinuationHitOrder(x.t, x.section, y.t, y.section));
     return hits;
 }
 

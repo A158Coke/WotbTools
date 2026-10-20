@@ -295,6 +295,25 @@ try {
     check(reflected.every(p => p.triangleId === p.cpu.detail.first.triangleId), 'GPU/CPU 三角形编号使用同一网格局部索引')
   }
 
+  if (!useRealAssets) {
+    const retry = await page.evaluate(`(() => {
+      const h=window.__armorRicochet, model=window.__DBG__.armorModel;
+      const scale=model.scale.clone(), before=h.info();
+      let failed;
+      try {
+        model.scale.setScalar(1000); // real oversized geometry failure, no mocked dirty flag
+        for(let i=0;i<240;i++) h.predict(-1,-1);
+        failed=h.info();
+      } finally { model.scale.copy(scale); }
+      h.predict(-1,-1); // return to the exact last successful pose A
+      return {before,failed,recovered:h.info()};
+    })()`)
+    check(!retry.failed.enabled && !retry.failed.grid && !retry.failed.poseDirty,
+      '坏姿态 B 耗尽重试后统一关闭续飞')
+    check(retry.recovered.enabled && retry.recovered.poseMatchesGrid && retry.recovered.gridGeneration > retry.before.gridGeneration,
+      'B → 原成功姿态 A 无手动 dirty 标记也重新建立网格')
+  }
+
   // Execute the production GLSL with coincident module/Primary geometry. The old
   // bestT+ADVANCE_EPS module cursor drops the Primary in both of these scenes.
   const coplanar = await page.evaluate(`(async () => {
@@ -307,10 +326,12 @@ try {
     const sourceMaterial = new T.MeshBasicMaterial();
     const results = [];
     try {
-      for (const gap of [0, 0.00005]) {
+      for (const armorFirst of [true, false]) for (const gap of [0, 0.00005]) {
         const module = new T.Mesh(geometry, sourceMaterial);
         const primary = new T.Mesh(geometry, sourceMaterial); primary.position.z = -gap;
-        const pack = buildPack([{mesh:module,section:'gunBarrel',thickness:50}, {mesh:primary,section:'turret',thickness:70}]);
+        const entries = [{mesh:module,section:'gunBarrel',thickness:50}, {mesh:primary,section:'turret',thickness:70}];
+        if (armorFirst) entries.reverse();
+        const pack = buildPack(entries);
         const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
         const material = new T.ShaderMaterial({
           vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
@@ -327,14 +348,14 @@ try {
             material.uniforms.remIn.value=rem;
             renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
             const pixel=new Uint8Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
-            results.push({gap,rem,normalization,cls:pixel[0],diag:pixel[1]});
+            results.push({armorFirst,gap,rem,normalization,cls:pixel[0],diag:pixel[1]});
           }
         } finally {material.dispose();Object.values(tex).forEach(t=>t.dispose());}
       }
     } finally {target.dispose();geometry.dispose();sourceMaterial.dispose();renderer.dispose();renderer.forceContextLoss();}
     return results;
   })()`)
-  check(coplanar.length === 8 && coplanar.every(r => r.cls === (r.rem > 120 ? 1 : 2) && r.diag === r.cls),
+  check(coplanar.length === 16 && coplanar.every(r => r.cls === (r.rem > 120 ? 1 : 2) && r.diag === r.cls),
     `共面/0.05 mm 后方主装甲不被模块吞掉，消耗仍生效：${JSON.stringify(coplanar)}`)
 
   // #711: sub-threshold movement remains a click and must not rotate the model or rebuild its grid.
