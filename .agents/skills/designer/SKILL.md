@@ -131,7 +131,7 @@ Step 0 — Evidence Collection / Baseline
 
 ## PHASE 4 — RANGE
 
-原则：**Borrow methods, not personas.**
+原则：**借方法，不借角色人设。**
 
 只借真正相关的方法，例如：
 
@@ -192,7 +192,7 @@ Step 0 — Evidence Collection / Baseline
 ## Validation / Outside Judge
 ```
 
-核心问题：**How do we know this worked independently of the implementation?**
+核心问题：**如何独立于实现本身证明它确实有效？**
 
 Outside Judge 应尽量独立于 implementation logic，可使用 unit test、integration test、contract test、CI、benchmark、production metric、real browser、real device、log、trace、DB query、replay corpus、controlled failure、independent reviewer 等。
 
