@@ -172,13 +172,20 @@ async function cardPresentation(page, origin, scenario, chrome, sessionId) {
   await tap(page, '[data-testid=creator-refresh]', scenario.touch)
   await page.waitForValue('performance.getEntriesByType("resource").some(entry => entry.name.endsWith("/api/creators/avatars/missing-image"))', Boolean)
   await page.waitForValue('!!document.querySelector("[data-testid=creator-card-1] .creator-avatar-fallback") && !document.querySelector("[data-testid=creator-card-1] img")', Boolean)
-  assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-card-1] .recommendation-video-heading")'), false)
+  const compactHeading = await page.evaluate('document.querySelector("[data-testid=creator-card-1] .creator-card-heading").getBoundingClientRect().height')
   if (scenario.width === 1920) {
     db.avatars.set('valid-image', new Blob([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')], { type: 'image/png' }))
     db.creators[0].avatarId = 'valid-image'
     await tap(page, '[data-testid=creator-refresh]', scenario.touch)
     await page.waitForValue('(() => {const img=document.querySelector("[data-testid=creator-card-1] img");return !!img?.complete && img.naturalWidth>0})()', Boolean)
-    assert.equal(await page.evaluate('!!document.querySelector("[data-testid=creator-card-1] .recommendation-video-heading")'), type === 'VIDEO')
+    const mixed = await page.evaluate(`(() => {
+      const card = document.querySelector('[data-testid=creator-card-1]'), heading = card.querySelector('.creator-card-heading');
+      const titles = [...document.querySelectorAll('.creator-card h2')].map(el=>el.getBoundingClientRect().top);
+      return {headingHeight:heading.getBoundingClientRect().height, coverInCopy:!!card.querySelector('.creator-card-copy > .recommendation-cover'), titles};
+    })()`)
+    assert.equal(mixed.headingHeight, compactHeading, 'loading a cover never expands the shared title track')
+    assert.equal(mixed.coverInCopy, type === 'VIDEO')
+    assert.ok(mixed.titles.every(top => Math.abs(top - mixed.titles[0]) < 1), 'mixed covered/coverless cards retain aligned title text')
     await geometry(page, scenario.profile)
     await chrome.client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] }, sessionId)
     assert.ok(await page.evaluate('getComputedStyle(document.querySelector(".creator-card")).transitionDuration.split(",").every(value => parseFloat(value) === 0)'), 'reduced motion disables card transitions')

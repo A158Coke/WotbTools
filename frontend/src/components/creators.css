@@ -18,8 +18,8 @@
   .creator-card:hover { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
 }
 .creator-card h2, .creator-panel h2 { margin: 0; font: var(--type-h2); overflow-wrap: anywhere; }
-.creator-card-heading { display: flex; align-items: center; gap: var(--space-3); }
-.creator-card-heading h2 { min-width: 0; }
+.creator-card-heading { display: flex; align-items: start; align-self: start; gap: var(--space-3); }
+.creator-card-heading h2 { min-width: 0; padding-top: var(--space-2); }
 .creator-avatar { flex: none; width: var(--space-12); height: var(--space-12); border-radius: var(--radius-full); object-fit: cover; }
 .creator-avatar-fallback { padding: var(--space-3); color: var(--color-accent-text); background: var(--color-surface-2); border: 1px solid var(--color-border-subtle); }
 .creator-card-copy { display: grid; align-content: start; gap: var(--space-3); min-width: 0; }
@@ -72,5 +72,4 @@
 .recommendation-type-card strong { font: var(--type-h2); }
 .recommendation-type-card small { color: var(--color-text-secondary); font: var(--type-body); }
 .recommendation-type-card svg { flex: none; }
-.recommendation-video-heading { flex-direction: column; align-items: stretch; }
 .recommendation-cover { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-radius: var(--radius-sm); background: var(--color-surface-2); }
