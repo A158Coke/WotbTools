@@ -49,7 +49,7 @@
    2. **Module / Feature**：一个实现阶段完成后运行 affected module / feature 测试，捕获本次改动影响范围内的回归；
    3. **Regression**：review/fix 后运行相关 regression tests；
    4. **Repository validation 由 PR CI 统一执行**（唯一 authoritative gate）；唯一 PR workflow 对每个 PR 执行实际 validation jobs，并以稳定的 `CI / Required Gate` 作为 merge gate。
-   Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `npm test`、frontend `npm run build`；PR CI 是 repository-level full validation 入口；本地 full validation 仍按下方例外控制。
+   **Targeted / affected Module / Feature / Regression 属于实现路径的必做本地验证，不受 Full-test 例外限制。** Agent 开 PR 前不默认重新运行 java 全量 `mvn test`、frontend 全量 `npm test`、frontend `npm run build`；这些 repository-level full validation 由 PR CI 统一执行，本地 full validation 仅按下方例外控制。
 
    **Full-test 例外（仅以下情形允许 Agent 主动运行 repository-level full validation）**：
    1. 用户明确要求 full test；
@@ -64,7 +64,7 @@
 
    Targeted / Module / Full 的具体命令与分层见 `java/AGENTS.md` 与 `frontend/AGENTS.md`。
 
-   **PR 快速上线规范**：Fast path 只表示不等待本地 repository-level full validation，绝不跳过 `review-with-docs`。实现完成后先做 targeted/static validation，再运行 `review-with-docs` 对完整 **task-related candidate tree**（committed range + staged + unstaged + task-related untracked）审查；PASS 后才 `commit → push → open PR`，由 PR CI 做 repository-level authoritative validation。与当前 task 无关的 preserved user work / scratch 必须显式 exclusion + reason，但不得让 candidate predicate 误判为非空。只有用户明确要求本地验证、CI 前必须复现/排查、或安全上无法通过静态检查确认时，才运行本地测试。推送前仍必须做必要的 `git diff --check`、生成契约检查和安全/配置静态检查；CI 失败后只复现失败 job 的最小范围。
+   **PR 快速上线规范**：Fast path 只表示不等待本地 repository-level full validation；**affected targeted tests / static validation 仍为 mandatory**，并且绝不跳过 `review-with-docs`。实现完成后先运行与本次改动直接相关的 targeted tests；一个实现阶段跨多个文件时按 affected scope 运行对应 module / feature tests；review/fix 后运行相关 regression tests。完成这些 affected validation 后，再运行 `review-with-docs` 对完整 **task-related candidate tree**（committed range + staged + unstaged + task-related untracked）审查；PASS 后才 `commit → push → open PR`，由 PR CI 做 repository-level authoritative validation。与当前 task 无关的 preserved user work / scratch 必须显式 exclusion + reason，但不得让 candidate predicate 误判为非空。只有用户明确要求 **repository-level full validation**、CI 前必须用 full suite 复现/排查，或安全上无法通过 targeted/static validation 确认时，才在本地运行 full test。推送前仍必须做必要的 `git diff --check`、生成契约检查和安全/配置静态检查；CI 失败后只复现失败 job 的最小范围。
 
    选档决策树：
    ├─ 单一 class / function / component → Targeted tests
