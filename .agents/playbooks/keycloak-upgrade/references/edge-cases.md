@@ -4,8 +4,8 @@
 
 ## 1. 版本不同步（最高频）
 
-- 症状：Dockerfile FROM tag、两个 pom `keycloak.version`、frontend `keycloak-js` 三者不一致。
-- 处置：运行 `scripts/check_versions.py`；以镜像 tag 为目标，两个 pom 必须一起改；
+- 症状：Dockerfile FROM tag、三个 provider pom（wargaming / qq / session）的 `keycloak.version`、frontend `keycloak-js` 不一致。
+- 处置：运行 `scripts/check_versions.py`；以镜像 tag 为目标，三个 provider pom 必须一起改；
   major 变化时同步 `keycloak-js`（26.2+ 独立发版，向后兼容所有受支持的服务器版本，但建议匹配）。
 
 ## 2. 升级路径与跨版本

@@ -42,12 +42,29 @@ KEYWORDS = {
 }
 
 
+def override_areas(value):
+    """Normalize a frozen override: history list, or head-bound object for active PRs."""
+    if isinstance(value, dict):
+        return frozenset(value.get('areas') or ())
+    return frozenset(value or ())
+
+
+def head_bound_areas(override, head_sha):
+    """Active-PR fallback is available only when bound to this exact head."""
+    if not isinstance(override, dict) or not head_sha:
+        return None
+    areas = override.get('areas')
+    if not areas or override.get('headRefOid') != head_sha:
+        return None
+    return frozenset(areas)
+
+
 def classify_area(pr, paths=(), overrides=None):
     # Frozen overrides describe merged/closed history only. An open or reopened PR
     # always uses its current changed paths so an active PR is not permanently frozen.
     override = (overrides or {}).get(str(pr['number']))
     if override is not None and pr.get('state') != 'open':
-        return frozenset(override)
+        return override_areas(override)
     found = {area for prefix, areas in PATH_RULES.items() for area in areas
              if any(path.startswith(prefix) for path in paths)}
     if found:

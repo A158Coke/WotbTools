@@ -1,7 +1,7 @@
 """Aggregate GitHub objects into an immutable tuple of bounded metric samples."""
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from classification import AREAS, actor_type, classify_area
+from classification import AREAS, actor_type, classify_area, head_bound_areas
 
 START = datetime(2026, 6, 22, tzinfo=timezone.utc)
 CONCLUSIONS = ('success', 'failure', 'cancelled', 'skipped', 'other')
@@ -127,14 +127,15 @@ def collect(client, repository, overrides, now=None, cache=None):
         if key not in area_cache:
             paths = [item['filename'] for item in client.pages(base + f"/pulls/{pr['number']}/files?per_page=100")]
             if len(paths) >= 3000:
-                # GitHub truncates the file list at this limit. A versioned override is the
-                # only non-truncating fallback for an oversized active PR; aborting here
-                # would freeze the exporter on a stale snapshot until the PR closes.
-                if number in overrides:
-                    area_cache[key] = frozenset(overrides[number])
+                # GitHub truncates the file list at this limit. Only an override bound to
+                # this exact active head may classify the PR; a stale or list-only record
+                # must never silently keep applying across a new HEAD.
+                areas = head_bound_areas(overrides.get(number), (pr.get('head') or {}).get('sha'))
+                if areas:
+                    area_cache[key] = areas
                 else:
                     from github_client import GitHubError
-                    raise GitHubError('PR file history exceeds API limit; add area override')
+                    raise GitHubError('PR file history exceeds API limit; add a head-bound area override')
             else:
                 area_cache[key] = classify_area(pr, paths)
         pr['_areas'] = area_cache[key]

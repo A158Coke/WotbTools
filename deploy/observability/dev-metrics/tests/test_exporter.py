@@ -13,7 +13,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from classification import actor_type, classify_area
 from collector import aggregate, collect
-from exporter import Snapshot, handler
+from exporter import Snapshot, handler, valid_override
 from github_client import GitHubClient, GitHubError
 from http.server import ThreadingHTTPServer
 from prometheus_client import CollectorRegistry
@@ -115,18 +115,34 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
         self.assertEqual(sum('/files?' in path for path in calls), 0)
 
-    def test_oversized_open_pr_uses_override_instead_of_aborting(self):
+    def test_oversized_open_pr_requires_head_bound_override(self):
+        head = 'a' * 40
         class Client:
             def pages(self, path, key=None):
                 if '/pulls?' in path:
-                    return iter([pr(number=1)])
+                    return iter([pr(number=1, head={'sha': head})])
                 if '/files?' in path:
                     return iter([{'filename': f'opaque/{n}.txt'} for n in range(3000)])
                 return iter([])
-        result = collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        result = collect(Client(), 'A158Coke/WotbTools',
+                         {'1': {'areas': ['docs'], 'headRefOid': head}}, NOW)
         self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
+        # A stale head binding and a list-only history entry are both rejected.
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools',
+                    {'1': {'areas': ['docs'], 'headRefOid': 'b' * 40}}, NOW)
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
         with self.assertRaises(GitHubError):
             collect(Client(), 'A158Coke/WotbTools', {}, NOW)
+
+    def test_override_schema_accepts_history_and_head_bound_entries(self):
+        self.assertTrue(valid_override(['docs']))
+        self.assertTrue(valid_override({'areas': ['docs'], 'headRefOid': 'a' * 40}))
+        self.assertFalse(valid_override([]))
+        self.assertFalse(valid_override({'areas': ['docs']}))
+        self.assertFalse(valid_override({'areas': ['docs'], 'headRefOid': 'HEAD'}))
+        self.assertFalse(valid_override({'areas': ['unknown'], 'headRefOid': 'a' * 40}))
 
     def test_open_or_reopened_frozen_pr_uses_current_paths(self):
         calls = []
