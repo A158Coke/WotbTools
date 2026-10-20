@@ -10,6 +10,7 @@ import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import PageHeader from './PageHeader.vue'
 import Banner from './Banner.vue'
+import EmptyState from './EmptyState.vue'
 import AppButton from './AppButton.vue'
 import AppDialog from './AppDialog.vue'
 import FileDrop from './FileDrop.vue'
@@ -20,7 +21,7 @@ import { localizedDayLabel } from '../utils/tournamentPointsExport.js'
 import '../styles/tournament-points.css'
 const { t, te } = useI18n()
 const owner = useTournamentPointsAdmin()
-const { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
+const { allowed, events, eventsLoading, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
   busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError } = owner
 const { historicalPreview, historicalRequest, historicalState, historicalFileIssue, canImportHistorical } = owner
 const { csvSupported, csvCapabilityError, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, dataSource, dataSourceError } = owner
@@ -102,11 +103,11 @@ async function confirmCsv() {
 onScopeDispose(clearLocal)
 </script>
 <template>
-  <div class="tournament-page tournament-stack">
+  <div class="tournament-page tournament-stack tournament-admin">
     <PageHeader :title="$t('tournament.adminTitle')"><template #actions>
       <RouterLink :to="{ path: '/', query: { view: 'tournament-points-config' } }">{{ $t('tournament.configure') }}</RouterLink>
       <RouterLink :to="{ path: '/', query: { view: 'tournament-points' } }">{{ $t('tournament.publicBoard') }}</RouterLink>
-      <AppButton :disabled="busy || recognizing" @click="owner.loadSelection(); owner.loadEvents()">{{ $t('tournament.refresh') }}</AppButton>
+      <AppButton :disabled="busy || recognizing || eventsLoading" @click="owner.loadSelection(); owner.loadEvents()">{{ $t('tournament.refresh') }}</AppButton>
     </template></PageHeader>
     <Banner v-if="!allowed" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
     <template v-else>
@@ -114,18 +115,29 @@ onScopeDispose(clearLocal)
       <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>
       <Banner v-else-if="notice">{{ $t('tournament.' + notice) }}</Banner>
       <Banner v-if="reviews.length">{{ $t('tournament.unsaved') }}</Banner>
-      <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing" />
+      <section class="tournament-card tournament-selection" aria-labelledby="admin-selection-heading">
+        <div class="tournament-section-heading"><div><h2 id="admin-selection-heading">{{ $t('tournament.selectEvent') }}</h2><p class="tournament-muted">{{ $t('tournament.adminSelectionHint') }}</p></div></div>
+        <TournamentEventSelect v-model="eventId" :events="events" :disabled="busy || recognizing || eventsLoading" />
+      </section>
+      <header v-if="config" class="tournament-board-heading tournament-admin-summary" data-testid="tournament-admin-summary">
+        <h2><span class="tournament-board-year">{{ config.event.year }}</span> · {{ $t('tournament.regions.' + config.event.region) }} · {{ $t('tournament.seasons.' + config.event.season) }}</h2>
+        <dl class="tournament-board-stats">
+          <div class="tournament-stat"><dt>{{ $t('tournament.rounds') }}</dt><dd>{{ config.event.roundCount }}</dd></div>
+          <div class="tournament-stat"><dt>{{ $t('tournament.days') }}</dt><dd>{{ config.event.daysPerRound }}</dd></div>
+        </dl>
+      </header>
       <Banner v-if="dataSourceError" tone="warning" data-testid="tournament-data-source-error">{{ $t('tournament.dataSourceLoadFailed') }} {{ apiErrorLabel(t, te, dataSourceError) }}</Banner>
       <Banner v-if="csvCapabilityError" tone="warning" data-testid="tournament-csv-capability-error">{{ $t('tournament.csvCapabilityLoadFailed') }} {{ apiErrorLabel(t, te, csvCapabilityError) }}</Banner>
       <div v-if="dataSource?.csvImported && dataSource.attribution" class="tournament-actions" data-testid="tournament-data-source">
         <span>{{ $t('tournament.dataSource') }}</span><AppButton :href="dataSource.attribution.url" target="_blank" rel="noopener noreferrer" size="sm">{{ dataSource.attribution.name }}</AppButton>
       </div>
-      <p v-if="busy" role="status">{{ $t('tournament.loading') }}</p>
-      <p v-if="!events.length && !busy" class="tournament-muted">{{ $t('tournament.noEvents') }}</p>
-      <section v-if="config && csvSupported" class="tournament-card tournament-stack" data-testid="csv-import">
+      <p v-if="busy || eventsLoading" role="status">{{ $t('tournament.loading') }}</p>
+      <EmptyState v-if="!eventId && !busy && !eventsLoading && !error && network.available" :title="$t(events.length ? 'tournament.selectEvent' : 'tournament.noEvents')" :description="$t(events.length ? 'tournament.adminSelectionHint' : 'tournament.noEventsHint')" data-testid="tournament-admin-empty">
+        <RouterLink v-if="!events.length" :to="{ path: '/', query: { view: 'tournament-points-config' } }">{{ $t('tournament.newEvent') }}</RouterLink>
+      </EmptyState>
+      <section v-if="config && csvSupported" class="tournament-card tournament-import" data-testid="csv-import">
         <h2>{{ $t('tournament.csvImport') }}</h2>
         <p class="tournament-muted">{{ $t('tournament.csvHint') }}</p>
-        <p>{{ config.event.year }} · {{ $t('tournament.regions.' + config.event.region) }} · {{ $t('tournament.seasons.' + config.event.season) }}</p>
         <Banner v-if="csvWorkspaceBusy" tone="warning">{{ $t('tournament.csvWorkspaceBusy') }}</Banner>
         <label class="tournament-field"><span>{{ $t('tournament.csvFile') }}</span><input type="file" accept=".csv,text/csv" :disabled="!canImportCsv" data-testid="csv-file" @change="selectCsvFile" /></label>
         <Banner v-if="csvFileIssue" tone="danger">{{ $t('tournament.' + csvFileIssue) }}</Banner>
@@ -136,11 +148,11 @@ onScopeDispose(clearLocal)
           <p>{{ $t('tournament.historicalSummary', { rows: csvPreview.sourceRowCount, clans: csvPreview.clanCount, blanks: csvPreview.missingCellCount }) }}</p>
           <ul class="tournament-csv-changes"><li>{{ $t('tournament.csvClanChanges', { added: csvPreview.changes.addedClans, changed: csvPreview.changes.changedClans, removed: csvPreview.changes.removedClans }) }}</li><li>{{ $t('tournament.csvScoreChanges', { added: csvPreview.changes.addedScores, changed: csvPreview.changes.changedScores, removed: csvPreview.changes.removedScores }) }}</li><li>{{ $t('tournament.csvPreservedClears', { count: csvPreview.changes.preservedClears }) }}</li></ul>
           <Banner tone="warning">{{ $t('tournament.csvReplaceWarning') }}</Banner>
-          <TournamentPointsTable :standings="csvPreview.standings" />
+          <TournamentPointsTable :standings="csvPreview.standings" grouped />
           <AppButton variant="primary" :disabled="!canImportCsv" data-testid="csv-publish" @click="csvConfirm = true">{{ $t('tournament.csvPublish') }}</AppButton>
         </template>
       </section>
-      <section v-if="config && (historicalState?.canImport || historicalPreview)" class="tournament-card tournament-stack" data-testid="historical-import">
+      <section v-if="config && (historicalState?.canImport || historicalPreview)" class="tournament-card tournament-import" data-testid="historical-import">
         <h2>{{ $t('tournament.historicalImport') }}</h2>
         <p class="tournament-muted">{{ $t('tournament.historicalHint') }}</p>
         <label class="tournament-field"><span>{{ $t('tournament.historicalFile') }}</span><input type="file" accept=".json,application/json" :disabled="!canImportHistorical" data-testid="historical-file" @change="selectHistoricalFile" /></label>
@@ -148,16 +160,19 @@ onScopeDispose(clearLocal)
         <template v-if="historicalPreview">
           <p>{{ historicalRequest?.sourceName }}</p>
           <p>{{ $t('tournament.historicalSummary', { rows: historicalPreview.sourceRowCount, clans: historicalPreview.clanCount, blanks: historicalPreview.missingCellCount }) }}</p>
-          <TournamentPointsTable :standings="historicalPreview.standings" />
+          <TournamentPointsTable :standings="historicalPreview.standings" grouped />
           <AppButton variant="primary" :disabled="!canImportHistorical" data-testid="historical-publish" @click="historicalConfirm = true">{{ $t('tournament.historicalPublish') }}</AppButton>
         </template>
       </section>
-      <div v-if="config" class="tournament-toolbar">
+      <section v-if="config" class="tournament-card tournament-day-selection">
+        <h2>{{ $t('tournament.matchDay') }}</h2>
+        <div class="tournament-toolbar">
         <label class="tournament-field"><span>{{ $t('tournament.rounds') }}</span><select v-model.number="round"><option v-for="value in config.event.roundCount" :key="value" :value="value">{{ $t('tournament.round', { number: value }) }}</option></select></label>
         <label class="tournament-field"><span>{{ $t('tournament.days') }}</span><select v-model.number="day"><option v-for="value in config.event.daysPerRound" :key="value" :value="value">{{ localizedDayLabel(config.event.dayLabels[value - 1], value, t) }}</option></select></label>
-      </div>
+        </div>
+        <div v-if="dayState" class="tournament-actions"><span class="tournament-status" :class="{ 'is-finalized': dayState.status === 'FINALIZED' }">{{ $t('tournament.' + dayState.status) }}</span><span v-if="!historicalState?.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
+      </section>
       <template v-if="dayState && config">
-        <div class="tournament-actions"><span>{{ $t('tournament.' + dayState.status) }}</span><span v-if="!historicalState?.historical">{{ $t('tournament.count', { actual: previewState?.groups.length ?? dayState.groups.length, expected: dayState.expectedGroupCount ?? '—' }) }}</span></div>
         <Banner v-if="historicalState?.historical">{{ $t('tournament.historicalSource') }}</Banner>
         <Banner v-if="!roundRule?.complete" tone="warning">{{ $t('tournament.rulesMissing') }}</Banner>
         <Banner v-else-if="dayState.status === 'FINALIZED'">{{ $t('tournament.locked') }}</Banner>
@@ -182,9 +197,9 @@ onScopeDispose(clearLocal)
             <AppButton size="sm" :disabled="evidenceLoading || busy" @click="openEvidence(group.evidenceId)">{{ $t('tournament.evidence') }}</AppButton>
           </div>
         </section>
-        <section v-if="standings" class="tournament-stack">
+        <section v-if="standings" class="tournament-stack tournament-admin-preview">
           <h2>{{ $t('tournament.previewTitle') }}</h2><p class="tournament-muted">{{ $t('tournament.draftHint') }}</p>
-          <TournamentPointsTable :standings="standings" />
+          <TournamentPointsTable :standings="standings" grouped />
         </section>
         <div class="tournament-actions">
           <AppButton v-if="dayState.status !== 'FINALIZED'" :disabled="!editable || !!reviewError || !reviews.length" @click="owner.saveDraft" data-testid="save-points-draft">{{ $t('tournament.saveDraft') }}</AppButton>
@@ -193,7 +208,7 @@ onScopeDispose(clearLocal)
           <AppButton v-if="dayState.status === 'FINALIZED'" :disabled="busy || stale" @click="dialog = 'correction'">{{ $t('tournament.correction') }}</AppButton>
           <AppButton v-if="dayState.published" :disabled="busy || recognizing || stale || dayState.status === 'CORRECTION'" @click="openClear">{{ $t('tournament.clearPoints') }}</AppButton>
         </div>
-        <section class="tournament-card"><h2>{{ $t('tournament.audit') }}</h2><p v-if="!audit.length" class="tournament-muted">{{ $t('tournament.auditEmpty') }}</p>
+        <section class="tournament-card tournament-audit-card"><h2>{{ $t('tournament.audit') }}</h2><p v-if="!audit.length" class="tournament-muted">{{ $t('tournament.auditEmpty') }}</p>
           <ol v-else class="tournament-audit"><li v-for="entry in audit" :key="entry.id"><time>{{ formatDateTimeMinute(entry.createdAt) }}</time> · {{ entry.actor }} · {{ $t('tournament.auditActions.' + entry.action) }}<template v-if="entry.roundNumber"> · {{ $t('tournament.round', { number: entry.roundNumber }) }}</template><template v-if="entry.dayNumber"> · {{ $t('tournament.day', { number: entry.dayNumber }) }}</template><p v-if="entry.reason">{{ entry.reason }}</p></li></ol>
         </section>
       </template>
