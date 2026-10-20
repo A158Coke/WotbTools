@@ -13,6 +13,7 @@ PATH_RULES = {
     'android/': ('android',), 'frontend/': ('frontend',), 'java/': ('backend',),
     'infra/': ('infra',), 'deploy/': ('infra',),
     'deploy/observability/': ('observability',), 'docs/': ('docs',),
+    '.github/workflows/': ('infra',), '.agents/': ('docs',), 'scripts/ci/': ('infra',),
     'keycloak-': ('auth',),
     'java/wotb-ai/': ('ai',),
     'java/wotb-core/src/main/java/com/wotb/core/replay/': ('replay',),

@@ -144,6 +144,10 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(classify_area(pr(), ['java/wotb-ai/README.md']), {'backend', 'ai'})
         # C: Keycloak provider -> auth.
         self.assertEqual(classify_area(pr(), ['keycloak-wargaming-provider/pom.xml']), {'auth'})
+        # Repository-owned workflow, governance and CI paths keep their area without a label.
+        self.assertEqual(classify_area(pr(title='Bump checkout action'), ['.github/workflows/ci-gate.yml']), {'infra'})
+        self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
+        self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
 
     def test_semantic_fallback_only_without_path_evidence(self):
         # D: no path rule matches; the stable semantic fallback classifies.
@@ -159,10 +163,12 @@ class ClassificationTests(unittest.TestCase):
 
     def test_historical_frozen_overrides_are_stable(self):
         data = json.loads((Path(__file__).resolve().parents[1] / 'historical-area-overrides.json').read_text(encoding='utf-8-sig'))
-        self.assertTrue({'635', '709'} <= set(data))
+        self.assertTrue({'635', '673', '709'} <= set(data))
         # Pre-existing PRs keep their recorded area sets regardless of current labels/paths.
         self.assertEqual(classify_area(pr(number=635, labels=[{'name': 'area/frontend'}]), ['frontend/changed.vue'], data),
                          {'docs', 'infra', 'observability'})
+        self.assertEqual(classify_area(pr(number=673), ['.github/workflows/ci-gate.yml'], data),
+                         {'android', 'docs', 'frontend', 'playback', 'replay'})
         self.assertEqual(classify_area(pr(number=709), ['frontend/src/App.vue'], data), {'docs'})
 
     def test_feature_paths_preserve_cross_cutting_areas(self):
