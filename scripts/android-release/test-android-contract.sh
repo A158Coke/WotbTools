@@ -61,6 +61,19 @@ with tempfile.TemporaryDirectory() as temp:
         pass
     else:
         raise AssertionError("unreviewed staged asset origins must fail closed")
+    for malformed in (
+        'private const val COS_BASE = "http://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"\n',
+        'private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com/"\n',
+        'private const val REMOTE_ASSET_BASE = " https://assets.wotbtools.com"\n',
+        'private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com "\n',
+    ):
+        legacy_proxy.write_text(malformed, encoding="utf-8")
+        try:
+            remote_asset_origin(legacy_proxy)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError(f"malformed staged asset origin must fail closed: {malformed!r}")
 validate_native_sources(base := json.loads((root / "contracts/android-native-bridge.json").read_text()), [
     str(root / "android/app/src/main/java/com/wotbtools/app/NativeBridge.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/MainActivity.kt"),
