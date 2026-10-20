@@ -267,10 +267,11 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(thickness).not.toMatch(/angle >= ricochet/)
     expect(thickness).not.toMatch(/isFirstSpaced|linState|stateD|camNear|camFar|0\.05/)
     // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码；
-    // B 不再承载转正差额（R 已逐层归一化），保持 0。
+    // B 不承载转正差额（R 已逐层归一化）；它传递可在 8-bit RT 往返的续飞退出码。
     expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
     expect(state).not.toMatch(/losThick|normThick|delta/)
-    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, 0\.0, 0\.0\);/)
+    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, rcDiag \/ 255\.0, 0\.0\);/)
+    expect(kernel).toMatch(/rcDiag = floor\(spacedState\.b \* 255\.0 \+ 0\.5\);/)
     // 名义被挡但概率 1–99%：G 编码概率带而不是硬红 1.0；PBR 就地续飞同理。
     expect(state).toMatch(/float pct = floor\(p \* 100\.0 \+ 0\.5\);/)
     expect(state).toMatch(/bCode = \(pct >= 1\.0 && pct <= 99\.0\) \? 0\.2 \+ 0\.6 \* p : 1\.0;/)
@@ -288,7 +289,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
     // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
     expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
-    expect(kernel).not.toMatch(/spacedState\.b/)
+    // B 的唯一消费者是上方锁定的诊断解码，不参与厚度或穿深计算。
+    expect(kernel.match(/spacedState\.b/g)).toHaveLength(1)
     expect(kernel).toMatch(/float spacedThick = totalConsume \* penetration;/)
     expect(kernel).toMatch(/bool moduleInFront = spacedState\.a > 0\.5;/)
     expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5 && !moduleInFront;/)
