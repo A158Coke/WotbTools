@@ -13,24 +13,30 @@ watch(() => props.creator.imageUrl, () => { imageFailed.value = false })
 
 <template>
   <article class="creator-card" :data-testid="`creator-card-${creator.id}`">
-    <header class="creator-card-heading" :class="{ 'recommendation-video-heading': creator.type === 'VIDEO' }">
+    <header class="creator-card-heading" :class="{ 'recommendation-video-heading': creator.type === 'VIDEO' && creator.imageUrl && !imageFailed }">
       <img v-if="creator.imageUrl && !imageFailed" class="creator-avatar" :class="{ 'recommendation-cover': creator.type === 'VIDEO' }" :src="recommendationImageUrl(creator.imageUrl)" :alt="$t(creator.type === 'VIDEO' ? 'creators.coverAlt' : 'creators.avatarAlt', { name: creator.name })" loading="lazy" @error="imageFailed = true">
       <component :is="creator.type === 'VIDEO' ? Clapperboard : UserRound" v-else class="creator-avatar creator-avatar-fallback" :size="32" aria-hidden="true" />
       <h2>{{ creator.name }}</h2>
     </header>
-    <p v-if="creator.description" class="creator-description">{{ creator.description }}</p>
+    <div class="creator-card-copy">
+      <p v-if="creator.description" class="creator-description">{{ creator.description }}</p>
+      <p v-if="creator.type === 'UP' && creator.level" class="creator-strength"><span>{{ $t('creators.level') }}: {{ creator.level.name }}</span><small>{{ $t('creators.assessmentDisclaimer') }}</small></p>
+    </div>
     <ul class="creator-tags" :aria-label="$t('creators.categories')"><li v-for="category in creator.categories" :key="category.id">{{ category.name }}</li></ul>
-    <div class="creator-rating" :aria-label="$t('creators.scoreLabel', { score: creator.score })">
-      <span class="creator-stars" aria-hidden="true"><template v-for="index in 5" :key="index"><Star v-if="creator.score >= index * 2" :size="20" class="is-filled" /><Star v-else :size="20" /></template></span>
-      <strong>{{ creator.score }}/10</strong>
-    </div>
-    <p v-if="creator.type === 'UP' && creator.level" class="creator-strength"><span>{{ $t('creators.level') }}: {{ creator.level.name }}</span><small>{{ $t('creators.assessmentDisclaimer') }}</small></p>
-    <div class="creator-actions">
-      <AppButton :href="creator.targetUrl" target="_blank" rel="noopener noreferrer">{{ $t(creator.type === 'VIDEO' ? 'creators.visitVideo' : 'creators.visitHomepage') }}<ExternalLink :size="16" aria-hidden="true" /></AppButton>
-    </div>
-    <div v-if="admin" class="creator-actions creator-admin-actions">
-      <AppButton :disabled="adminDisabled" :data-testid="`creator-edit-${creator.id}`" @click="$emit('edit')"><Pencil :size="16" aria-hidden="true" />{{ $t(creator.type === 'VIDEO' ? 'creators.editVideo' : 'creators.edit') }}</AppButton>
-      <AppButton variant="danger" :disabled="adminDisabled" :data-testid="`creator-remove-${creator.id}`" @click="$emit('remove')"><Trash2 :size="16" aria-hidden="true" />{{ $t('creators.remove') }}</AppButton>
-    </div>
+    <footer class="creator-card-footer">
+      <div class="creator-card-primary">
+        <div class="creator-rating" :aria-label="$t('creators.scoreLabel', { score: creator.score })">
+          <span class="creator-stars" aria-hidden="true"><template v-for="index in 5" :key="index"><Star v-if="creator.score >= index * 2" :size="20" class="is-filled" /><Star v-else :size="20" /></template></span>
+          <strong>{{ creator.score }}/10</strong>
+        </div>
+        <div class="creator-actions creator-visit">
+          <AppButton :href="creator.targetUrl" target="_blank" rel="noopener noreferrer">{{ $t(creator.type === 'VIDEO' ? 'creators.visitVideo' : 'creators.visitHomepage') }}<ExternalLink :size="16" aria-hidden="true" /></AppButton>
+        </div>
+      </div>
+      <div v-if="admin" class="creator-actions creator-admin-actions">
+        <AppButton :disabled="adminDisabled" :data-testid="`creator-edit-${creator.id}`" @click="$emit('edit')"><Pencil :size="16" aria-hidden="true" />{{ $t(creator.type === 'VIDEO' ? 'creators.editVideo' : 'creators.edit') }}</AppButton>
+        <AppButton variant="danger" :disabled="adminDisabled" :data-testid="`creator-remove-${creator.id}`" @click="$emit('remove')"><Trash2 :size="16" aria-hidden="true" />{{ $t('creators.remove') }}</AppButton>
+      </div>
+    </footer>
   </article>
 </template>
