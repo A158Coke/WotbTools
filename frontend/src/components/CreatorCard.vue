@@ -13,12 +13,13 @@ watch(() => props.creator.imageUrl, () => { imageFailed.value = false })
 
 <template>
   <article class="creator-card" :data-testid="`creator-card-${creator.id}`">
-    <header class="creator-card-heading" :class="{ 'recommendation-video-heading': creator.type === 'VIDEO' && creator.imageUrl && !imageFailed }">
-      <img v-if="creator.imageUrl && !imageFailed" class="creator-avatar" :class="{ 'recommendation-cover': creator.type === 'VIDEO' }" :src="recommendationImageUrl(creator.imageUrl)" :alt="$t(creator.type === 'VIDEO' ? 'creators.coverAlt' : 'creators.avatarAlt', { name: creator.name })" loading="lazy" @error="imageFailed = true">
+    <header class="creator-card-heading">
+      <img v-if="creator.type === 'UP' && creator.imageUrl && !imageFailed" class="creator-avatar" :src="recommendationImageUrl(creator.imageUrl)" :alt="$t('creators.avatarAlt', { name: creator.name })" loading="lazy" @error="imageFailed = true">
       <component :is="creator.type === 'VIDEO' ? Clapperboard : UserRound" v-else class="creator-avatar creator-avatar-fallback" :size="32" aria-hidden="true" />
       <h2>{{ creator.name }}</h2>
     </header>
     <div class="creator-card-copy">
+      <img v-if="creator.type === 'VIDEO' && creator.imageUrl && !imageFailed" class="recommendation-cover" :src="recommendationImageUrl(creator.imageUrl)" :alt="$t('creators.coverAlt', { name: creator.name })" loading="lazy" @error="imageFailed = true">
       <p v-if="creator.description" class="creator-description">{{ creator.description }}</p>
       <p v-if="creator.type === 'UP' && creator.level" class="creator-strength"><span>{{ $t('creators.level') }}: {{ creator.level.name }}</span><small>{{ $t('creators.assessmentDisclaimer') }}</small></p>
     </div>
