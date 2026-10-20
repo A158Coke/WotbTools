@@ -1408,7 +1408,7 @@ export interface components {
         BackendHealth: {
             status: string;
             tanks: number;
-            /** @description recommendations-v1 enables the UP/VIDEO recommendation APIs and their populated public categories. Technical capability markers are independent of directory contents and read without querying the database; clients fetch public categories to decide which recommendation types have content. */
+            /** @description recommendations-v1 enables the UP/VIDEO recommendation APIs and their populated public categories. Technical capability markers are independent of directory contents and read without querying the database; clients fetch public categories to decide which recommendation types have content. broadcast-season-contents-v1 enables the consistent season contents endpoint and version-confirmed category deletion; frontend deployment requires this marker before replacing live containers. */
             capabilities?: string[];
         } & {
             [key: string]: unknown;

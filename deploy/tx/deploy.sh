@@ -394,6 +394,20 @@ assert_routing_boundary() {
 pull_images() {
   docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" pull "$DEPLOY_SERVICES_RAW"
 }
+require_frontend_backend() {
+  is_selected wotb-frontend || return 0
+  local health
+  # Check the validated upstream used by this frontend, before promoting any live
+  # files. Do not wait under the shared deploy lock: the backend may be queued.
+  if ! health="$(docker compose -p deploy -f "$INCOMING_DIR/common.compose.yml" -f "$EFFECTIVE_COMPOSE" \
+    run --rm --no-deps health-probe --fail --silent --show-error \
+    --connect-timeout "$PROBE_CONNECT_TIMEOUT_SEC" --max-time "$PROBE_MAX_TIME_SEC" \
+    "$BACKEND_UPSTREAM_VALUE/api/health")"; then
+    die "Business API capability probe failed; live frontend was not changed. Rerun after backend readiness."
+  fi
+  assert_frontend_backend_capabilities <<< "$health" \
+    || die "Business API is not ready for this frontend; live frontend was not changed."
+}
 promote_files() {
   local next_deploy="$WOTB_DIR/deploy.next.$$" old_deploy="$WOTB_DIR/deploy.old.$$"
   rm -rf -- "$next_deploy" || return 1
@@ -800,6 +814,7 @@ main() {
   mkdir -p "$WOTB_DIR" "$INCOMING_DIR"
   acquire_deploy_lock
   stage_and_validate
+  require_frontend_backend
   assert_stateful_volume_identity
   pull_images || die "TX image pull failed; live TX deployment was not changed."
   promote_files || die "TX live-file promotion failed; prior TX files were restored when possible."
