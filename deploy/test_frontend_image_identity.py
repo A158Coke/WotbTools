@@ -40,7 +40,8 @@ FRONTEND_WF = ROOT / ".github/workflows/frontend.yml"
 REPLICA_WF = ROOT / ".github/workflows/frontend-replica.yml"
 FINGERPRINT_SCRIPT = ROOT / "deploy/tx/sponsor-fingerprint.sh"
 
-ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+HISTORICAL_ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+PRODUCTION_ASSET_BASE_URL = "https://assets.wotbtools.com"
 # 数据点来自真实 run 的构建日志（`RESULT image=...:sha-<12>`）：
 #   76cf8acb… = Merge PR #581（Frontend run 38060016028 / build 侧 tag f52430fb1b7f）
 #   e3ba28f0… = 事故期间的 main 提交（run 38046307993 / build 侧 tag ff0a703af8f8）
@@ -77,8 +78,9 @@ def identity_inputs(text: str) -> tuple[str, list[str]]:
     return match.group("fmt"), names
 
 
-def expected_identity(source_sha: str, fingerprint: str) -> str:
-    digest = hashlib.sha256(f"{source_sha}\n{ASSET_BASE_URL}\n{fingerprint}".encode()).hexdigest()
+def expected_identity(source_sha: str, fingerprint: str,
+                      asset_base_url: str = HISTORICAL_ASSET_BASE_URL) -> str:
+    digest = hashlib.sha256(f"{source_sha}\n{asset_base_url}\n{fingerprint}".encode()).hexdigest()
     return f"sha-{digest[:12]}"
 
 
@@ -122,11 +124,36 @@ class IdentityFormula(unittest.TestCase):
     def test_dropping_any_input_changes_identity(self) -> None:
         sha = DATA_POINTS[0][0]
         full = expected_identity(sha, SPONSOR_FINGERPRINT)
-        two_input = hashlib.sha256(f"{sha}\n{ASSET_BASE_URL}".encode()).hexdigest()[:12]
+        two_input = hashlib.sha256(f"{sha}\n{HISTORICAL_ASSET_BASE_URL}".encode()).hexdigest()[:12]
         self.assertNotEqual(full, f"sha-{two_input}",
                             "两输入（漏 sponsor 指纹）必须与三输入不同——这正是事故形态")
         replaced = expected_identity(sha, "0" * 64)
         self.assertNotEqual(full, replaced, "换 sponsor 内容必须换 tag（immutable 复用不得吞掉）")
+
+
+class ProductionAssetOrigin(unittest.TestCase):
+    def test_primary_build_and_deploy_use_alibaba_origin(self) -> None:
+        workflow = yaml.safe_load(FRONTEND_WF.read_text(encoding="utf-8"))
+        self.assertEqual(workflow["env"]["ASSET_BASE_URL"], PRODUCTION_ASSET_BASE_URL)
+        build_steps = workflow["jobs"]["build"]["steps"]
+        build_names = (
+            "Validate production asset origin",
+            "Build and publish immutable frontend image on TX",
+        )
+        for name in build_names:
+            step = next(step for step in build_steps if step.get("name") == name)
+            self.assertNotIn("ASSET_BASE_URL", step.get("env", {}), name)
+        deploy_steps = workflow["jobs"]["deploy"]["steps"]
+        name = "Reconcile only Frontend under the TX host lock"
+        step = next(step for step in deploy_steps if step.get("name") == name)
+        self.assertNotIn("ASSET_BASE_URL", step.get("env", {}), name)
+
+    def test_replica_artifact_identity_uses_alibaba_origin(self) -> None:
+        workflow = yaml.safe_load(REPLICA_WF.read_text(encoding="utf-8"))
+        self.assertEqual(workflow["env"]["ASSET_BASE_URL"], PRODUCTION_ASSET_BASE_URL)
+        steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+        step = next(step for step in steps if step.get("name") == "Resolve published Frontend artifact identity")
+        self.assertNotIn("ASSET_BASE_URL", step.get("env", {}))
 
 
 class FrontendWorkflowDeployFormula(unittest.TestCase):

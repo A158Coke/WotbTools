@@ -28,7 +28,7 @@ import java.security.MessageDigest
 object AgentAssetProxy {
     private const val TAG = "AgentAssetProxy"
 
-    /** 与 Web 构建默认（ASSET_BASE_URL Repository Variable）同一对象存储 origin。 */
+    /** Android 原生资产 origin；独立于 Web 构建默认，供既有 APK 继续使用 COS。 */
     private const val COS_BASE = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
 
     /** 本机资产路径前缀；runtime.js 的 ANDROID_ASSET_BASE 与这里保持一致。 */
