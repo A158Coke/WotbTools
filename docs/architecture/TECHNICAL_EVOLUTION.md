@@ -444,6 +444,8 @@ Git-reviewed Komodo resources
         -> yecao / tx1 / tx2 Periphery
 ~~~
 
+同期，TX1 的私有 service plane 从 Docker-local 依赖收敛为 WireGuard logical placement。K6A 建立 TX1 上的 WG-only published endpoints；K6B 把 Frontend → Business API、Business API → PostgreSQL / Keycloak Admin、Keycloak → PostgreSQL、Caddy → Frontend / Keycloak 六个 consumer 迁移到 reviewed logical endpoints，并由 resolve → validate → fail closed 的 canonical validator 守护。迁移刻意采用同宿主 hairpin：consumer 经 TX1 自己的 WG 地址回到同一台机器，用来在真实生产流量下验证 logical placement 路径、allowlist 与 runtime gate，而不是只在配置层成立。Caddy 的 upstream 由运行容器 env + 只读 bind-mounted Caddyfile 的 `{$VAR}` 替换决定，没有渲染中间层，因此 active gate 读取容器 env 就是读取实际生效的 upstream。`tx-logical-endpoints-declared` / `-active` / `wireguard-service-plane` 在迁移完成后继续保留，成为永久 runtime gate，持续证明 Git desired = rendered declared = running active；K7C Frontend 双实例继续以它为 placement 验收基础。
+
 TX2 再通过独立 `production-worker` owner 获得 Docker Compose、registry mirror、TCR root credential generation、WireGuard / Periphery regression 等生产 workload 前置条件。主机 ready 与 workload deployment 被刻意分开：`TX2_PRODUCTION_WORKER_READY` 只说明宿主可承载生产负载，不等于已经迁移任何服务。
 
 K7C 才是第一次真实 workload cutover。Frontend 形成 TX1 + TX2 双实例生产池，Caddy 仍在 TX1：

@@ -2,7 +2,7 @@
 
 > 动手前先读这一份。接手维护的人或 AI 都适用。
 
-联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。用户确认旧接口仅内部测试使用，本次按 patch 发布且不抬强制更新门槛，见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换)、[推荐目录](features/bilibili-creators.md) 与 [Android 3.13.1](android/releases/3.13.1.md)。
+联赛回放统一使用无版本路径；Bilibili UP/视频推荐统一使用 recommendations 接口。旧 APK 内容接口适配及前端回退已移除，现代数据结构以 OpenAPI 为准；历史迁移、归档及图片 URL 保留。旧接口仅供内部测试使用；当前发布版本与最低支持门槛见 [联赛回放](features/league-broadcasts.md#停止旧-apk-支持与部署切换) 与 [推荐目录](features/bilibili-creators.md)。Android 版本与兼容性由 [Android release process](android/release-process.md) 声明。
 
 ---
 
@@ -10,7 +10,7 @@
 
 这是一个单人维护的 WoT Blitz 回放分析 Web 工具：Java 25 + Spring Boot 4 业务与 AI 服务、Vue 3 Web/Android 客户端、上游 Rust/WASM 回放引擎、Keycloak + PostgreSQL。
 
-动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/skills/wotb-sync/SKILL.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
+动手前读 `.agents/AGENTS.md`、当前目录的 `AGENTS.md` 和本文件；跨层改动按 `.agents/playbooks/wotb-sync.md`。真实代码始终是 source of truth，发现文档漂移时必须在同一次改动里修正文档。
 
 固定接手方法：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。完整流程以 `.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准。
 
@@ -23,7 +23,7 @@
 | `docs/DEVELOPER_GUIDE.md` | 开发入口、环境、结构、架构约束 | 最先 |
 | `.agents/AGENTS.md` | 仓库级硬约定、接手与调整固定流程 | 动手前必读 |
 | `frontend/AGENTS.md` / `java/AGENTS.md` 等 | 目录级约束 | 进入对应目录时 |
-| `.agents/skills/wotb-sync/SKILL.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
+| `.agents/playbooks/wotb-sync.md` | 跨层改动检查单 | 增删列、改解析、导出、前端时 |
 | `java/README.md` | Java/Web 运行、接口、构建 | 跑后端时 |
 | `docs/README.md` | 全部专题文档索引 | 查专项设计时 |
 
@@ -83,7 +83,7 @@ Wargaming ASIA/EU/NA 登录继续使用 Keycloak 的 `WG_APPLICATION_ID`。backe
 - **显示名分两类出口**：前端三语 locale + Excel 导出中文标签；改列必须同步两边。
 - **单一数据源**：车辆库为 `common/tankopedia-tier{1..10}.json`，地图名为 `common/map_names.json`；禁止模块内复制一份。坦克百科搜索别名 `common/tank_aliases.json` 是独立的**搜索 metadata**（开发者审校维护，允许有来源记录的客户端名称批量导入；稀疏存储、只扩搜索召回，不参与车辆身份与显示名）；按任意 `tank_id` 离线校验/查询用生成的完整名册 `common/tank_ids.json`（全 tier，只有 id ↔ 名字，不是属性来源）。两者契约见 [`architecture/tankopedia-reference-data.md`](architecture/tankopedia-reference-data.md)。
 - 不引入 Lombok；record 用于不可变模型；Controller 只处理 HTTP，业务逻辑进入 service/core。
-- 跨层联动必须执行 `wotb-sync`。
+- 跨层联动必须执行 `.agents/playbooks/wotb-sync.md`。
 - **UI Profile（展示风格）**：`showcase`（深色，默认）/ `classic`（浅色）共用同一套业务组件、布局、状态与 API；`auto` 偏好按系统深浅色解析到其中一种。共享外壳和已迁移页面使用语义 token，Classic 在 `frontend/src/styles/classic-profile.css` 中提供浅色映射。业务组件不得按 Profile fork，禁止 `:key="uiProfile"` 触发组件重建。详见 [`docs/frontend/ui-system.md`](frontend/ui-system.md)。
 
 ---
@@ -142,7 +142,7 @@ Gitee 构建路径的一次性验证 `tx-gitee-build-path-validation.yml` 已退
 | Owner | Source / shared inputs | Runtime inputs | PR validation | OpenTofu root | Production workflow |
 |---|---|---|---|---|---|
 | Business API | Java web/core modules、HTTP contract、shared common data | business-api image、TX Compose、dependency readiness | Maven、HTTP contract | — | `business-api.yml` |
-| AI Service（预部署） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
+| AI Service（生产） | `java/wotb-ai`、shared core | GHCR image、Yecao Compose、TX ingress `/api/ai/**` 反代（不重写 path）、WireGuard readiness；前端已解除维护（`AiReviewWorkspacePane` 直接挂载，无维护门） | Maven、AI image build、Compose | — | `ai-service.yml` |
 | Frontend | Vue、HTTP contract、shared assets/map/tier data | frontend image、nginx、TX Compose | typecheck、unit/browser、bundle | — | `frontend.yml` |
 | Keycloak | QQ/Wargaming providers、Keycloak image | realm runtime、TX Compose | provider/runtime、Tofu | `keycloak` | `keycloak.yml` |
 | Android | Android source、native bridge、release helpers | APK release | JVM/assemble、bridge/version | — | `android-release.yml` |
@@ -188,7 +188,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 ### 客户端 Replay Engine（上游 Agent）
 
-`.wotbreplay` 的唯一解析器是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者，可以直接改上游、发版）。本仓库**不维护第二份解析器**：此前的 `replay-engine/` 移植已于 2026-09-30 退役；服务端 Java `ReplayParser`、parser-worker、parser MQ、processing-jobs、导出任务与 2D 产物已于 2026-10-02 删除（[迁移记录](architecture/client-replay-engine-migration.md)）。
+`.wotbreplay` 的唯一解析器是上游 [fanypcd/WoT-Blitz-Agent](https://github.com/fanypcd/WoT-Blitz-Agent) 的 Rust Core（作者同为 WotbTools 贡献者，可以直接改上游、发版）。本仓库**不维护第二份解析器**：此前的 `replay-engine/` 移植已退役；服务端 Java `ReplayParser`、parser-worker、parser MQ、processing-jobs、导出任务与 2D 产物已删除。当前解析链路见 [replay-pipeline.md](architecture/replay-pipeline.md)。
 
 - **产物锁定（content-addressed）**：`deploy/agent/source.json` 是 Agent identity 的**唯一来源**（`ref` = 上游完整 commit，`artifact.release` = Release tag，`artifact.sha256` = 附件校验）。`scripts/fetch-agent-wasm.sh` 下载 Release 附件、校验 sha256 与产物自带 `fingerprint.json` 后落位到 `common/assets/wasm/<ref>/`；`scripts/build-agent-wasm.sh` 是按源码自建的后备路径，产出同一形状。落位目录名就是 URL identity：运行期加载 `/wasm/<ref>/wotb_replay_wasm.js`（wrapper 从同目录取 `_bg.wasm`），**stable `/wasm/wotb_replay_wasm.js` 已废除且由测试/构建/发布三处断言不存在**。`frontend/vite.config.js:agentWasmIdentity()` 在 build 时把 `ref`/`release` 注入 `__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载器据此拼 URL 并先校验 fingerprint，不一致抛 `AgentWasmVersionMismatchError`（fail closed，UI 提示刷新）。缓存失效靠 URL identity，`/wasm/<40 位 commit>/` 因此是长期 `immutable`——普通刷新即可生效，不需要 Ctrl+F5。CI（`ci-frontend.yml`）与发布（`frontend.yml`）执行同一校验；细节见 [replay-pipeline.md](architecture/replay-pipeline.md)「Agent 产物身份」。
 - **消费契约**：`contracts/agent/replay-facets-v2.md`。四个独立的 WASM 入口：`parseResult`（结算，毫秒级，适合批量与 HoF 投影；可选 `tankNamesJson` 注入车型名）、`parsePlayback`（时序与花名册；可选 `tankNamesJson`）、`parseShotReplays`（射击复现；可选俯仰锚定表与弹种反解表）、`parseAiReview`（AI 事件数据）。前端唯一装载与校验边界是 `frontend/src/api/agent-replay-facets.ts`。
@@ -244,11 +244,11 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 4) 有意清理其余记录，然后重跑迁移（Flyway 重新执行 V22）
 ```
 
-**失败时刻的处置工具可用性**：新版本起不来，本次新增的 bulk-delete 端点不可用；只有旧版本提供的
+**失败时刻的处置工具可用性**：新版本起不来，当前 bulk-delete 端点不可用；只有旧版本提供的
 `POST /api/admin/hof/{hundred,mark3}/submissions/{id}/delete` 可用，且只接受 `CURRENT`。非 `CURRENT` 的行
 （如被点名的 `PENDING`）需要运维显式 DB 动作，且 evidence 外键为 `RESTRICT`，删 submission 前先删证据行。
 
-> 已知缺口（待产品决策，非本 PR 范围）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
+> 已知缺口（待产品决策）：被 preflight 点名的 `PENDING` 行目前没有受支持的 admin 处置路径。
 
 详细契约见 `docs/features/hall-of-fame.md`（含三个域的删除语义对照与 IAM≠HoF 不变量）。
 
@@ -265,7 +265,7 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 列表行 DTO（`AdminUserListItemDto`，旧的 `AdminUserDto` 已删除）：`keycloakUserId, keycloakUsername, keycloakEmail, keycloakEnabled, profileId, displayName, wotbAccountId, wotbNickname, wotbServer, profileCreatedAt, hasLocalProfile, keycloakUserMissing`。两个 segment 都不做「拉一页再在内存里筛」的伪造分页。`segment=local` 的代价是每页产生 N（≤ size）次 Keycloak Admin 调用——**Keycloak 没有按 ids 批量查询用户的能力**，这是客户端/服务端的能力事实，见 [`docs/auth/keycloak-admin-user-search.md`](auth/keycloak-admin-user-search.md)（该文档同时记录 admin-client 26.0.9 的重载缺口与「IdP 过滤在 CI 端到端验证前不得宣称生产可用」的局限）。
 
-**Admin DTO 的 WotB 身份字段（本轮同步）**：百场/三环的 admin DTO 现在都携带 `wotbServer`，与 `wotbAccountId` 一起表示归属身份，避免管理页只显示账号 ID 时把跨服同号看成同一个账号。
+**Admin DTO 的 WotB 身份字段**：百场/三环的 admin DTO 现在都携带 `wotbServer`，与 `wotbAccountId` 一起表示归属身份，避免管理页只显示账号 ID 时把跨服同号看成同一个账号。
 
 | DTO | 身份字段 | 前端渲染 |
 |---|---|---|
@@ -288,9 +288,9 @@ API 错误由 `GlobalExceptionHandler` 与 Security 的 canonical entry point/ac
 
 新增错误码（`util/ErrorCode.java`）：`BULK_LIMIT_EXCEEDED`、`INVALID_USER_SEGMENT`、`IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT`。
 
-**契约覆盖范围（本轮更新）**：`contracts/http/openapi.yaml` 本轮新增 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
+**契约覆盖范围**：`contracts/http/openapi.yaml` 包含 `GET /api/admin/users`（服务端分页）、`DELETE /api/admin/users`（body 为 Keycloak sub 数组，单条即长度 1）、`POST /api/admin/hof/records/bulk-delete`（单场，无 reason）、`POST /api/admin/hof/mark3/submissions/bulk-delete`，以及 6 个 schema（`AdminUserListItem`、`AdminUserPage`、`DeleteUserResult`、`DeleteUsersResponse`、`BulkDeleteModerationRequest`、`BulkDeleteRecordsRequest`）；百场 admin 的 `gameAccountIdSnapshot` 已改名为 `wotbAccountId` 并新增 `wotbServer`，`HundredAdminListItem` / `HundredAdminDetail` 两个 schema 覆盖该字段。
 
-**既有缺口（如实记录，本轮未补全）**：mark3 的 admin GET 家族（`Mark3AdminListItemDto` / `Mark3AdminDetailDto`）**从未进入 OpenAPI**——即便 Java 侧两个 DTO 本轮同样新增了 `wotbServer`，`openapi.yaml` 里也不存在对应的 mark3 admin schema；单场 HoF admin 列表/详情的完整字段同样未覆盖。补全它们超出本次改动范围。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
+**既有缺口（如实记录）**：mark3 的 admin GET 家族（`Mark3AdminListItemDto` / `Mark3AdminDetailDto`）**从未进入 OpenAPI**——即便 Java 侧两个 DTO 已有 `wotbServer`，`openapi.yaml` 里也不存在对应的 mark3 admin schema；单场 HoF admin 列表/详情的完整字段同样未覆盖。该缺口尚未纳入当前 OpenAPI contract。生成产物 `frontend/src/api/generated/*` 由 `npm run api:generate` 重建，禁止手改。
 
 **Admin HoF 治理边界**：admin 是 governance，不是数据编辑器——`/api/admin/hof/**` 只做查看 / 搜索 / 筛选 / 下载 / 删除 / 审计，禁止人工修改 replay-derived authoritative facts。
 
@@ -500,7 +500,7 @@ Keycloak 登录页为 V8 Unified Theme（深色=Battlefield/浅色=Minimal、深
 
 API 只输出稳定英文 key/enum。前端 `player_labels` / `agg_labels` 渲染三语；Excel 继续使用中文表头。新增任何 `code/error/warningCode` 必须同步三语 `api_codes/api_errors`。
 
-站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者，本次连同 Controller / Repository / DTO / 前端通知面板与三语文案一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
+站内通知子系统已随 Boost 域退役删除：其唯一写入方 `UserNotificationService` 随 `com.wotb.web.boost` 一并删除后该子系统不再有任何生产者；其 Controller / Repository / DTO / 前端通知面板与三语文案已一并删除，表由 forward-only `V26__drop_user_notification.sql` 永久删除。
 
 ---
 
@@ -616,8 +616,8 @@ state `/opt/wotb-tx/postgres-business-tofu-state`，provider 经
 `/opt/wotb-tx/tofu-provider-mirror` 的 filesystem mirror fail-closed 安装。业务表仍
 由 Flyway 单一拥有，OpenTofu 不声明任何表/索引/序列。`business-postgres`-only
 部署不需要 Keycloak/frontend/Caddy 输入；`infra/tofu/postgres-business/**`
-变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）
-与名人堂迁移前置见 `docs/operations/business-postgres.md`，边界见
+变更只选择该部署路径，不重建应用镜像。备份/恢复（`pg_dump` + SHA-256 + 恢复到一次性库）与名人堂 schema 兼容性不变量见
+`docs/operations/business-postgres.md`，架构边界见
 `docs/architecture/opentofu-postgres-business.md`。
 
 TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/grant；
@@ -707,7 +707,7 @@ Android publish 的运行时依赖；schema2 staging evidence 从实际 APK 内 
 发布前的卸载链路体检（`android-offload-probe.yml`，手工 dispatch，只写删一个探针对象）测
 runner → 上海 COS → TX1 → 清华网盘 这条候选链路，现状与判据见 `docs/android/release-process.md`「卸载链路体检」。
 
-**Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob（本次 V18 是一次性例外）。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
+**Flyway 迁移不可变（canonical policy 见 `java/AGENTS.md`）**：`java/wotb-web/src/main/resources/db/migration/V*.sql` 中已存在的 versioned migration 是 immutable historical artifact——禁止修改、重命名、删除、格式化、改注释、转换换行或编码；schema 变化只能新增更高版本 forward-only `V<N>__*.sql`。仅当 Git history 证明生产已执行且文件发生 checksum drift 时，才允许恢复 exact deployed blob；该恢复不改变 migration 的 immutable 语义。CI `deploy-smoke` 用 `deploy/check-flyway-immutability.sh` 以 PR base SHA 做 diff 检测，任何既有 migration 的 M/D/R 一律失败，新 migration 版本号必须高于 base 最大版本。
 
 Deploy job、固定基础设施的 Tofu/runtime workflows 与 database backup 共用
 `production-maintenance` concurrency（`cancel-in-progress: false`、`queue: max`）。应用 workflow
@@ -777,6 +777,6 @@ Sponsor QR 不进仓库：配置与收款码作为 **GitHub Release 资产**发�
 
 ## Product observability
 
-Grafana now has six TF-managed dashboards: WotbTools Engineering Overview plus five product dashboards: Active users (home), Feature usage, Android downloads, AI token usage and Backend error logs. Client telemetry uses the bounded `/api/observability/events` contract; authenticated activity requires runtime-only `WOTB_OBSERVABILITY_HASH_KEY`. Yecao Alloy also collects ai-service logs. Dashboard deletes/replacements have no allowlist; datasource deletion remains protected. Queryable history is seven days, with asynchronous Loki deletion and size-based Docker raw-log rotation. See `docs/operations/observability.md` for exact counting, privacy, missing-usage and retention limits.
+Grafana 现有六个由 TF 管理的 dashboard：WotbTools Engineering Overview，以及五个产品 dashboard：Active users (home)、Feature usage、Android downloads、AI token usage 和 Backend error logs。客户端遥测使用有界的 `/api/observability/events` 契约；已认证活动需要仅在运行时提供的 `WOTB_OBSERVABILITY_HASH_KEY`。Yecao Alloy 同时采集 ai-service 日志。dashboard 删除或替换没有允许名单；datasource 删除仍受保护。可查询历史保留七天，Loki 异步删除，Docker 原始日志按大小轮转。精确计数、隐私、用量缺失与保留限制见 `docs/operations/observability.md`。
 
-Engineering health: Yecao `dev-metrics-exporter`, 15-minute GitHub refresh, in-memory snapshots and independent 15-second Prometheus scrape. Canonical semantics and recovery: [Engineering metrics](architecture/engineering-metrics.md). No developer ranking or productivity score.
+工程健康：Yecao `dev-metrics-exporter` 每 15 分钟刷新 GitHub 数据，使用内存快照，Prometheus 每 15 秒独立抓取。权威语义与恢复方式见[工程指标](architecture/engineering-metrics.md)。不提供开发者排名或生产力评分。
