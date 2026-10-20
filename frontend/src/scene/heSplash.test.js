@@ -1,8 +1,11 @@
 // Armor Inspector HE 溅射采样（wasm func7695）纯函数测试。
 // 数值锚点来自 Agent 仓 tmp_analysis/armor-inspector/HE_MECHANISM_EXACT_DECOMPILED.md。
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
 import * as THREE from 'three'
-import { computeHeSplash, heLayersFromHits, sampleHeSplash, HE_SAMPLE_DIRECTIONS } from './heSplash.js'
+import { computeHeSplash, heLayersFromHits, heSampleFromHits, sampleHeSplash, HE_SAMPLE_DIRECTIONS } from './heSplash.js'
+
+const splashSource = fs.readFileSync(new URL('./heSplash.js', import.meta.url), 'utf8')
 
 const L = (armor, primary, distance) => ({ armor, primary, distance })
 const splash = (rays, damage = 200, R = 1.09) => computeHeSplash(rays, { damage, explosionRadius: R })
@@ -19,6 +22,21 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     const r = sampleHeSplash({ ok: true }, new THREE.Vector3(0, 0, 0), {
       damage: 500,
       explosionRadius: 2.4,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('热力图方向子集仍走同一网格 DDA；没有网格同样 fail-closed', () => {
+    expect(splashSource).toContain('Array.isArray(opts.directions)')
+    expect(splashSource).toContain('result.inwardLayers = rays[rays.length - 1] || []')
+    // 射线截到爆炸半径：超过 R 的层 falloff ≤ 0，不可能抬高 min/max。
+    expect(splashSource).toContain('const tMax = explosionRadius + 1e-4')
+    expect(splashSource).toContain(
+      'raycastGridAll(opts.grid, ro, dirs[i], RC.MIN_CONTINUATION_T, tMax, twoSidedSpaced)')
+    const r = sampleHeSplash({ ok: true }, new THREE.Vector3(0, 0, 0), {
+      damage: 500,
+      explosionRadius: 2.4,
+      directions: HE_SAMPLE_DIRECTIONS.slice(0, 4),
     })
     expect(r).toBeNull()
   })
@@ -42,6 +60,14 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     expect(r.max).toBeCloseTo(69.32, 2)
     expect(r.avg).toBeCloseTo((21.59 + 69.32) / 2, 2)
     expect(r.samples).toBe(1)
+  })
+
+  it('爆炸半径之外的层对 min/max 没有贡献（DDA 截断到 R 的依据）', () => {
+    const r = splash([[L(50, true, 1.5)]], 200, 1.0)
+    expect(r).not.toBeNull()
+    expect(r.min).toBe(0)
+    expect(r.max).toBe(0)
+    expect(r.avg).toBe(0)
   })
 
   it('liningFactor 乘到每层装甲（强化装甲 1.04 与判定链同口径）', () => {
@@ -110,5 +136,41 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
       { armor: 20, primary: false, distance: 0.2, section: 'chassis' },
       { armor: 50, primary: true, distance: 0.3, section: 'hull' },
     ])
+  })
+
+  it('lean 单射线积分与层链口径逐值一致（热力图快路径）', () => {
+    const cases = [
+      // 模块 + 主装
+      [{ t: 0.1, section: 'chassis', thickness: 20 }, { t: 0.25, section: 'hull', thickness: 50 }],
+      // 重合三角形去重 + 多模块累加 + 主装截断
+      [
+        { t: 0.1, section: 'chassis', thickness: 20 },
+        { t: 0.1, section: 'chassis', thickness: 20 },
+        { t: 0.2, section: 'chassis', thickness: 20 },
+        { t: 0.3, section: 'hull', thickness: 50 },
+        { t: 0.4, section: 'turret', thickness: 60 },
+      ],
+      // 仅模块 → 无效
+      [{ t: 0.1, section: 'chassis', thickness: 20 }],
+      // 主装超出爆炸半径 → 有效但 negative（热点不会选它）
+      [{ t: 1.5, section: 'hull', thickness: 50 }],
+      // 半径边界：模块在 R 内、主装刚越过 R
+      [{ t: 0.99, section: 'spaced', thickness: 20 }, { t: 1.2, section: 'hull', thickness: 50 }],
+    ]
+    const opts = { damage: 200, explosionRadius: 1.09, liningFactor: 1.04 }
+    for (const hits of cases) {
+      const ref = computeHeSplash([heLayersFromHits(hits)], opts)
+      const got = heSampleFromHits(hits, opts)
+      if (!ref) {
+        expect(got.valid).toBe(false)
+        continue
+      }
+      const stat = ref.sampleStats[0]
+      expect(got.valid).toBe(true)
+      expect(got.armor).toBeCloseTo(stat.armor, 10)
+      expect(got.distance).toBeCloseTo(stat.distance, 10)
+      expect(got.upper).toBeCloseTo(stat.upper, 10)
+      expect(got.lower).toBeCloseTo(stat.lower, 10)
+    }
   })
 })
