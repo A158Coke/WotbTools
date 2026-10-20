@@ -24,6 +24,7 @@ describe('HE 热力图投影到可见主装甲（源码级锁）', () => {
     });
     it('800 射线采样走空间网格，不在 UI 线程全扫三角形', () => {
         expect(splash).toContain('raycastGridAll');
+        expect(splash).not.toContain('raycastPackAll');
         expect(viewer).toContain('buildRicochetGrid(hePack)');
     });
     it('HE 弹种切换重跑判定、炮管裁切面进采样、半径回退单一来源、卡片按画布限宽', () => {

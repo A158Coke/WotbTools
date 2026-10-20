@@ -31,7 +31,7 @@
  */
 
 import * as THREE from 'three'
-import { raycastPackAll, raycastGridAll, RC } from './armorCollisionPack.js'
+import { raycastGridAll, RC } from './armorCollisionPack.js'
 
 export const HE_SAMPLE = Object.freeze({
     LAT_STEPS: 20,
@@ -163,13 +163,15 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
  *   explosionRadius:number, liningFactor?:number, originOffset?:number,
  *   grid?:object, clipPlane?:THREE.Plane}} opts
  *   originDir = 命中点指向射手/相机的外向单位向量（优先）；缺省时退回 normal。
- *   grid = buildRicochetGrid() 结果；提供时 800 条射线走 DDA，避免全扫三角形（评审 P1）。
+ *   grid = buildRicochetGrid() 结果，**必须有**：800 条射线走 DDA；网格缺失/失败
+ *   即 fail-closed 返回 null，禁止回退 800×triTotal 的暴力全扫（评审 P1）。
  *   clipPlane = 当前 gun_mask 裁切面；被裁掉的炮管命中与点击链一样不参与采样（评审 P2）。
  * @returns {ReturnType<typeof computeHeSplash>}
  */
 export function sampleHeSplash(pack, origin, opts) {
     const { originDir, normal, damage, explosionRadius, liningFactor = 1.0 } = opts
     if (!pack || !pack.ok || !origin || !(damage > 0) || !(explosionRadius > 0)) return null
+    if (!opts.grid || !opts.grid.ok) return null
     const offset = opts.originOffset != null ? opts.originOffset : HE_SAMPLE.ORIGIN_OFFSET
     const clipPlane = opts.clipPlane || null
     const ro = origin.clone()
@@ -180,9 +182,7 @@ export function sampleHeSplash(pack, origin, opts) {
     }
     const rays = new Array(HE_SAMPLE_DIRECTIONS.length)
     for (let i = 0; i < HE_SAMPLE_DIRECTIONS.length; i++) {
-        const raw = (opts.grid && opts.grid.ok
-            ? raycastGridAll(opts.grid, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T)
-            : raycastPackAll(pack, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T)) || []
+        const raw = raycastGridAll(opts.grid, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T) || []
         const hits = clipPlane
             ? raw.filter(h => !(h.section === 'gunBarrel' && clipPlane.distanceToPoint(h.point) < 0))
             : raw
