@@ -79,7 +79,7 @@ K7C Frontend pool 的 active 语义：
 
 生产事故时按 consumer 回退：每一步只回退一个 consumer，回退值使用上表的 Docker-local rollback。回退必须同步 owner workflow、gate expectation 与 `CURRENT_K6B_CUTOVERS` / `K6B_FINAL_PLACEMENT_MATRIX`；只改一侧必然 FAIL。
 
-| Consumer | 回滚值 | 必须同步的位置 |
+| 消费方 | 回滚值 | 必须同步的位置 |
 |---|---|---|
 | Frontend → Business API | `http://business-api:8087` | `.github/workflows/frontend.yml`、`.github/workflows/tx-runtime-check.yml`、`CURRENT_K6B_CUTOVERS["frontend"]` |
 | Business API → Business PostgreSQL | `business-postgres:5432` | `.github/workflows/business-api.yml`、`.github/workflows/tx-runtime-check.yml`、`CURRENT_K6B_CUTOVERS["business-api"]` |
