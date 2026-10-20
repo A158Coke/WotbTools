@@ -167,8 +167,12 @@ cd java && JAVA_HOME=<JDK 25> mvn -pl wotb-web -am -Dtest=WebApiTest test
 > JDK 版本是 **25**（不是 21）；系统默认 `java` 可能不是 JDK 25，跑 mvn 必须先把 `JAVA_HOME` 指向 JDK 25。
 > 本环境/沙箱可能无法真正监听端口，用 MockMvc 测试（`WebApiTest`）即可，不必起服务。
 
-## 收尾
+## 收尾检查
 
-1. **更新文档**：`docs/DEVELOPER_GUIDE.md` + 相关 `README.md` / `java/README.md`（任何影响界面/导出/数据/构建/用法的改动）。
-2. 提交：中文信息，结尾 `Co-Authored-By`。
-3. 推送：执行前先 `git remote -v` 确认实际 remote（个人仓库；本机 remote 名/SSH 别名以本机配置为准，不写死）。
+- 更新受影响的 canonical current-state docs。
+- 执行 applicable targeted validation。
+- 确认跨层 key / schema / i18n / export / contract 同步。
+- 将 findings 与 validation evidence 返回调用它的 lifecycle Skill。
+
+Git commit / push / open PR / merge、final PASS、plan approval 与 review authority 都不属于本 playbook。
+只有 Executor 在 Review With Docs PASS 后拥有 commit / push / open PR 权限。
