@@ -1,7 +1,8 @@
 // Armor Inspector HE 溅射采样（wasm func7695）纯函数测试。
 // 数值锚点来自 Agent 仓 tmp_analysis/armor-inspector/HE_MECHANISM_EXACT_DECOMPILED.md。
 import { describe, it, expect } from 'vitest'
-import { computeHeSplash, heLayersFromHits, HE_SAMPLE_DIRECTIONS } from './heSplash.js'
+import * as THREE from 'three'
+import { computeHeSplash, heLayersFromHits, sampleHeSplash, HE_SAMPLE_DIRECTIONS } from './heSplash.js'
 
 const L = (armor, primary, distance) => ({ armor, primary, distance })
 const splash = (rays, damage = 200, R = 1.09) => computeHeSplash(rays, { damage, explosionRadius: R })
@@ -12,6 +13,14 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     for (const d of HE_SAMPLE_DIRECTIONS) {
       expect(d.length()).toBeCloseTo(1, 6)
     }
+  })
+
+  it('没有空间网格时 fail-closed（不回落 800×triTotal 暴力全扫）', () => {
+    const r = sampleHeSplash({ ok: true }, new THREE.Vector3(0, 0, 0), {
+      damage: 500,
+      explosionRadius: 2.4,
+    })
+    expect(r).toBeNull()
   })
 
   it('sampleStats 按射线顺序暴露 armor/upper/valid，供方向化热力图', () => {
