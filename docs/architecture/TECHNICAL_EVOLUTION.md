@@ -448,6 +448,8 @@ Git-reviewed Komodo resources
 
 TX2 再通过独立 `production-worker` owner 获得 Docker Compose、registry mirror、TCR root credential generation、WireGuard / Periphery regression 等生产 workload 前置条件。主机 ready 与 workload deployment 被刻意分开：`TX2_PRODUCTION_WORKER_READY` 只说明宿主可承载生产负载，不等于已经迁移任何服务。
 
+在真实 cutover 前，K5 先用 disposable Stack 验证 Komodo Core → Periphery → Docker / Compose 的 create / deploy / log / stop / destroy / delete 生命周期；K7B 再以零流量 Frontend shadow 验证 TX2 的 Stack ownership、WireGuard 绑定与 runtime-content 非等价边界。K7C 把 TX2 frontend 纳入真实流量后，**零流量 shadow 行为结束**，但 `wotbtools-frontend-shadow` Stack 资源仍是 TX2 production replica 的声明式元数据/运行时可见性依赖：`infra/komodo/resources/frontend-shadow.toml` 继续声明它，operator 不得把它当作可删除的过期资源。
+
 K7C 才是第一次真实 workload cutover。Frontend 形成 TX1 + TX2 双实例生产池，Caddy 仍在 TX1：
 
 ~~~text
