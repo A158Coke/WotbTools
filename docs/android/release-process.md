@@ -5,9 +5,10 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-20，本候选源码为 **3.16.0 / 3016000**（`android/gradle.properties`）。
+截至 2026-10-20，本候选源码为 **3.16.1 / 3016001**（`android/gradle.properties`）。
 源码已包含装甲续飞修复和积分管理界面修复（见 [3.15.3](releases/3.15.3.md)、[3.15.4](releases/3.15.4.md)）。
 3.16.0 新增联赛回放同页展开及整个子赛事分类删除，按 **minor** 选位，详见 [3.16.0](releases/3.16.0.md)。
+3.16.1 将新 APK 的 Native 3D 资产 upstream 与 Web 统一到 Alibaba origin；本机 `/agent-assets` 路由、Native Bridge v3、ETag 磁盘缓存与 stale-cache fallback 不变。旧 APK 仍按已编译 origin 访问 COS，COS 暂留作旧客户端与回滚，详见 [3.16.1](releases/3.16.1.md)。
 Native Bridge 保持 v3；最低支持门槛保持 **3015003**，不回退也不额外抬高。后端新增接口必须先就绪，再切换网页或发布 APK。
 版本声明不代表已 stage、Android 真机验收或 publish。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
@@ -401,11 +402,11 @@ publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/downl
    `validate-caddy-config.sh` 对两者做同样校验）；新 origin 的 Caddy 改动必须在 publish 前已部署。
 3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），
    由 Native `AgentAssetProxy` 直连对象存储——原生代码不受 CORS 约束，因此本项探测的是
-   **对象存储匿名可读性**：`https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com/index.json`
-   GET 成功且返回 JSON object（readiness 步骤里的 `COS_BASE` 与 `AgentAssetProxy.kt` 的
-   `COS_BASE` 一致，换 origin 两处同步，见 docs/operations/agent-asset-origin.md）。
+   **新版本对象源匿名可读性**：`https://assets.wotbtools.com/index.json`
+   GET 成功且返回 JSON object（readiness 步骤里的 `REMOTE_ASSET_BASE` 与 `AgentAssetProxy.kt` 的
+   `REMOTE_ASSET_BASE` 一致，换 origin 两处同步，见 docs/operations/agent-asset-origin.md）。
    CORS/Expose-Headers 对 Android 资产链路不再适用；Gateway `/agent-assets` 反代仅服务
-   未升级的旧版本 APK（历史背景：旧 APK 的 WebView fetch 走该反代并依赖网关 CORS，
+   仍使用 legacy gateway identity 的旧 APK（历史背景：旧 APK 的 WebView fetch 走该反代并依赖网关 CORS，
    这也是旧版第 3 条探测网关 exact-origin CORS 的原因）。
 4. `ANDROID_MIN_SUPPORTED_VERSION_CODE >= 2000001` 且不超过 latestVersionCode。
    Bridge 已是 v2 也不能绕过这条门槛：PR A 2.0.0 仍依赖远程 Web frontend。

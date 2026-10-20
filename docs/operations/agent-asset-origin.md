@@ -31,12 +31,14 @@ assetBase()  ← 解析出的 asset origin
 |---|---|
 | Web origin | `https://assets.wotbtools.com` |
 | Web 资产包位置 | Alibaba asset host 的 `/srv/wotb-assets/current`，由 `deploy/assets/` 的 Komodo Stack 提供 |
-| Android origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`；既有 APK 继续使用该 COS rollback/legacy origin |
+| Android 新版本 origin | Native `AgentAssetProxy` 直连 `https://assets.wotbtools.com`；`/agent-assets` 本机路径保持不变 |
+| COS legacy origin | `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`；旧 APK 与临时回滚使用，桶和对象暂不删除 |
 | 包完整性 | 抽查 14 条关键路径全部 `200`（GLB / 碰撞 / tank JSON / 封面 / tanks.pb / models.pb / 底图 / 小地图 / 地形 bin / terrain.json / 场景 GLB / 地表分层 / 卷积贴图） |
 | CORS | Alibaba Web origin 已验证允许 `https://wotbtools.com` 与 `https://www.wotbtools.com`，并支持浏览器 `GET,HEAD` |
-| Android | 资产基址 = 本机路径 `/agent-assets`（`ANDROID_ASSET_BASE`），由 `AgentAssetProxy`（3.0 起经 Native `LocalRuntimeServer` 的 `/agent-assets/` 路由；2.x 为 `shouldInterceptRequest`）以原生 HttpURLConnection 直连既有 COS origin 并做 ETag 磁盘缓存——**不依赖桶 CORS**（原生代码无 CORS），也不经生产网关 `/agent-assets` 反代（TX1 出口带宽不再被资产包占用；反代仅服务未升级的旧版本 APK）。Web 端 CSP 的 `connect-src`/`img-src` 因此无需任何放宽 |
-| COS 桶列举 | `/` 返回 `403`（仅列举被拒，属预期；旧 Android 对象读正常） |
-| 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连该 origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
+| HTTP 行为 | HTTPS、Range/206、ETag/304、Content-Type 与缓存头均已验证 |
+| Android | 资产基址 = 本机路径 `/agent-assets`（`ANDROID_ASSET_BASE`），新版本由 Native `LocalRuntimeServer` 路由到 `AgentAssetProxy`，使用原生 `HttpURLConnection` 直连 Alibaba 并做 ETag 磁盘缓存；不依赖 CORS，也不经过生产网关。旧 APK 可继续访问其编译时 COS origin；旧 gateway identity 的 `/agent-assets` 兼容反代保持指向 COS |
+| COS 桶列举 | `/` 返回 `403`（仅列举被拒，属预期）；匿名对象读为旧 APK 与回滚保留 |
+| 本地开发 | **未覆盖** `http://localhost:*`——本地 dev 直连 Alibaba origin 时 GLB/JSON 的 `fetch` 会被 CORS 拦截（见下"本地开发"） |
 | Web 配置 | `.github/workflows/frontend.yml` 与 `.github/workflows/frontend-replica.yml` 将 `ASSET_BASE_URL` 固定为 `https://assets.wotbtools.com`；Frontend 校验步骤验证 HTTPS origin 格式 |
 
 ## 配置来源与优先级
@@ -52,7 +54,7 @@ assetBase()  ← 解析出的 asset origin
 
 ## 部署：接线
 
-Web 生产默认由 tracked workflow 配置管理；Android 保留 COS origin。下列步骤用于**更换 Web origin**：
+Web 与新 Android 版本当前统一使用 Alibaba origin。Web 由 tracked workflow 配置，Android Native 常量与 release readiness probe 成对维护。下列步骤用于**更换生产 origin**：
 
 1. 在 `.github/workflows/frontend.yml` 与 `.github/workflows/frontend-replica.yml` 中将 `ASSET_BASE_URL` 更新为同一公开 origin：
 
@@ -69,7 +71,7 @@ Web 生产默认由 tracked workflow 配置管理；Android 保留 COS origin。
    得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与该镜像的
    发布校验都会按 bundle 内容自证 source SHA 与 origin 两者一致（见下"发布边界"）。
 
-3. 合并后触发 Frontend 发布并验证（见下）。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
+3. Android 同步更新 `AgentAssetProxy.kt` 的 `REMOTE_ASSET_BASE` 与 `.github/workflows/android-release.yml` 的 readiness probe，并增加 Android 版本号。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
 
 ### 发布边界（frontend image → Tencent TCR）
 
@@ -131,7 +133,7 @@ map/{key}/{ground,mini}.webp  terrain.u16.bin  terrain.json
 map/{key}/{scenery.glb,ground.layers.json}  map/{key}/ground/*.webp
 ```
 
-为维持旧 Android 客户端，资产包仍同步上传到 COS **桶根目录**（`AgentAssetProxy` 继续从此读取）：
+为维持旧 Android 客户端与回滚能力，资产包仍同步上传到 COS **桶根目录**（旧 APK 的 `AgentAssetProxy` 继续从此读取；新版本使用 Alibaba）：
 
 ```bash
 pip install coscmd
@@ -142,7 +144,7 @@ coscmd upload -r release/asset_pack/ /
 
 要求：
 
-- **COS 读权限**：为旧 Android 客户端保留匿名读；`AgentAssetProxy` 使用无签名 GET。Web 生产构建从 Alibaba origin 读取。
+- **COS 读权限**：为旧 Android 客户端与临时回滚保留匿名读。新 Android `AgentAssetProxy` 和 Web 生产构建均从 Alibaba origin 匿名读取。
 - **CORS（Web 端必需）**：`assetProvider.bytes()` / `.json()` 走 `fetch()`，跨域需要 CORS
   响应头。Alibaba Web origin 允许 `wotbtools.com` 与 `www.wotbtools.com` + `GET`/`HEAD`。
   封面图经 `<img>` 加载不需要 CORS，但 GLB / tank JSON / terrain 都走 `fetch`——
@@ -179,12 +181,11 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 
 - 单浏览器覆盖：`https://wotbtools.com/?assets=https://other-origin/`
 - 回到生产默认：访问 `?assets=`（显式空，清除 override）
-- 回滚：把主 Frontend 与 TX2 replica workflow 中的 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像（旧 origin 对应的镜像 tag 仍在 TCR 中；镜像身份随 origin 变化，
-  不会出现"同 tag 不同内容"）
+- 回滚：Web 将主 Frontend 与 TX2 replica workflow 的 `ASSET_BASE_URL` 改回上一个 origin 并重建镜像；Android 如需回滚，改 `REMOTE_ASSET_BASE` 并按 Android 版本规则发布新 APK。旧 APK 仍使用编译时的 COS origin，旧镜像 tag 与 COS 对象保留。
 
 ## 未来更换 origin
 
-> Web 当前使用 Alibaba asset origin；Android 仍保留 COS。若以后再次更换 Web origin，更新主 Frontend 与 TX2 replica workflow 中的 `ASSET_BASE_URL`，再按上面的验证节核对读权限、CORS 与缓存。
+> Web 与新 Android release 当前均使用 Alibaba asset origin；COS 仅保留给旧 APK 与临时回滚。更换 origin 时同步更新两份 Frontend workflow、Android Native `REMOTE_ASSET_BASE`、Android release readiness 检查及本文件；保留旧客户端兼容，直至明确结束退役窗口。
 
 ## 相关
 
