@@ -310,11 +310,12 @@ main
         start = script.index('source "$incoming/runtime-check-lib.sh"')
         end = script.index('assert_frontend_backend_capabilities <<< "$health"', start)
         preflight = script[start:end] + 'assert_frontend_backend_capabilities <<< "$health"\n'
-        # Execute the actual workflow preflight and shared JSON predicate. Curl
+        # Execute the actual workflow preflight and shared JSON predicate. Docker
         # is a shell fixture; no production host or credential is accessed.
         harness = '''set -euo pipefail
 incoming="$1"
-curl() {
+docker_cmd() {
+  [[ "$*" == *"--network host curlimages/curl:8.12.1"* ]] || return 99
   [ "${PROBE_OFFLINE:-0}" != 1 ] || return 7
   printf '%s' "$PROBE_HEALTH"
 }

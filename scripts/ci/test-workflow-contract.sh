@@ -784,7 +784,7 @@ for tracked in sorted(root.rglob("*")):
         continue
     text = tracked.read_text(encoding="utf-8", errors="ignore")
     if '"auths"' in text and '"auth":' in text:
-        relative = str(tracked.relative_to(root))
+        relative = tracked.relative_to(root).as_posix()
         # The owner's fixture carries a deliberately fake credential document, and this
         # scanner necessarily contains the markers it looks for.
         assert relative in {
@@ -798,7 +798,7 @@ for tracked in sorted(root.rglob("*")):
         r"^\s*(?:export\s+)?(TCR_PASSWORD|TCR_USERNAME|DOCKER_PASSWORD)\s*[=:]\s*[\"']?([^\s\"']+)",
         text, re.MULTILINE,
     ):
-        relative = str(tracked.relative_to(root))
+        relative = tracked.relative_to(root).as_posix()
         value = assignment.group(2)
         assert relative.startswith("deploy/production-worker/test-") or value.startswith("$"), \
             f"a registry credential must never be assigned in the repository: {relative}"
