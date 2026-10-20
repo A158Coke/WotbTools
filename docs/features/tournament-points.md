@@ -17,6 +17,10 @@
 摘要；管理员预览仍明确包含共享草稿，导入预览不代表已经发布。两套主题共用结构，
 手机表单单列、名次积分双列，宽表只在表格内部滚动。
 
+管理配置视觉参考：[深色](../assets/tournament-admin/showcase-tournament-points-config-locked.png) /
+[浅色](../assets/tournament-admin/classic-tournament-points-config-locked.png)。
+截图来自本地浏览器测试夹具，展示锁定态；账号、赛事与分值均为测试数据。
+
 公开入口为主导航「联赛积分榜」，位于「坦克百科」下方；手机端位于底部主导航。页面、浏览器标题及 Excel/PDF 导出名称共用三语标题，原有 `?view=tournament-points` 深链保持有效。管理页面及业务/图片识别接口要求独立的 `tournament-admin` realm role；`wotbtools-admin` 在 Keycloak 中通过复合角色继承它，应用不把全站角色作为联赛权限旁路。联赛管理员不具有用户管理、名人堂审核或其它管理权限。所有有联赛权限的管理员共享同一份当天草稿；公开接口不返回草稿、未发布军团、小组截图或识别材料。
 
 角色由 `infra/tofu/keycloak/roles.tf` 管理，随 Keycloak owner 发布创建，不是默认角色。为具体用户分配角色需在 Keycloak 的用户角色映射中操作；重新登录后新 token 才携带新权限。前端侧栏、手机「更多」、业务 `/api/admin/tournaments/**` 和独立 AI 截图识别入口使用相同的角色边界。
