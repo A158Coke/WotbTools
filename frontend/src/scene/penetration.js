@@ -60,12 +60,6 @@ const isExplosiveType = (shell) => shell === 'heat' || shell === 'he'
 // 外部模块（BlitzKit External）：flat 抵消，无角度/转正/跳弹
 const isModule = (section) => section === ArmorSection.CHASSIS || section === ArmorSection.GUN_BARREL
 
-/** Exactly equal continuation distances: consume external modules before Primary can end the chain.
- * No proximity tolerance: genuinely separated hits retain their geometric order. */
-export function compareContinuationHitOrder(distanceA, sectionA, distanceB, sectionB) {
-  return distanceA - distanceB || Number(isModule(sectionB)) - Number(isModule(sectionA))
-}
-
 // 主装甲 Primary（hull/turret/炮盾板）：收集阶段 push 后立即停止。
 // 同时是【点击判定的触发面】：BlitzKit 的 shoot() 只挂在 Primary 网格的 onClick 上
 // （spaced/外部模块网格挂的是空 handler，只为进入 event.intersections）——射线未触达
@@ -73,17 +67,17 @@ export function compareContinuationHitOrder(distanceA, sectionA, distanceB, sect
 export const isPrimary = (section) => section === ArmorSection.HULL || section === ArmorSection.TURRET || section === ArmorSection.GUN
 
 /**
- * 概率卡的前置条件：链上存在**正厚度**的 Primary 层。
- * 只有外部模块（履带/炮管）或 0mm 板的射线不构成概率判定——确定性语义下
- * 它们要么 BLOCKED，要么只穿透模块；把模块的 flat 消耗当成“剩余区间仍大于 0”
- * 会让纯外部命中被概率卡显示成必穿全额伤害。
+ * 概率卡的前置条件：链上存在 Primary 层。
+ * 0mm 是合法的 fail-closed 板厚（与 10mm 板同一处理方式）：它仍然是 Primary，
+ * 只是等效厚度为 0，不因为它没有正厚度而走另一套卡面语义。
+ * 只有外部模块（履带/炮管）而没有 Primary 的射线不构成概率判定——把模块的
+ * flat 消耗当成“剩余区间仍大于 0”会让纯外部命中显示成必穿全额伤害。
  *
  * @param {Array<object>} layers probability_layers / trajLayers
  * @returns {boolean}
  */
-export function hasPositivePrimary(layers) {
-  return Array.isArray(layers) && layers.some(layer =>
-    isPrimary(layer?.section) && Number(layer?.thickness) > 0)
+export function hasPrimaryLayer(layers) {
+  return Array.isArray(layers) && layers.some(layer => isPrimary(layer?.section))
 }
 
 /**

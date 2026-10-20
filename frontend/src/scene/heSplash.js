@@ -31,7 +31,7 @@
  */
 
 import * as THREE from 'three'
-import { raycastGridAll, RC } from './armorCollisionPack.js'
+import { raycastGridAll, RC, isClippedModuleHit } from './armorCollisionPack.js'
 
 export const HE_SAMPLE = Object.freeze({
     LAT_STEPS: 20,
@@ -93,6 +93,44 @@ export function heLayersFromHits(hits) {
     // 只命中履带/炮管而没有主装的射线不是有效样本（Armor Inspector 的
     // primaryFlag 只落在 hull/turret/gun 上；best sample 不会选到履带）。
     return layers
+}
+
+/**
+ * 单条射线（原始命中列表）→ 采样值：与 `computeHeSplash([heLayersFromHits(hits)], …)`
+ * 同一口径，但不物化层对象/样本统计。热力图每顶点只读 avg，构建时 52 万条射线
+ * 若都建层数组和 sampleStats 会产生上百万个小对象，这是纯分配开销。
+ *
+ * @param {Array<{t:number, section:string, thickness:number}>} hits
+ * @param {{damage:number, explosionRadius:number, liningFactor?:number}} opts
+ * @returns {{armor:number, distance:number, upper:number, lower:number, valid:boolean}}
+ */
+export function heSampleFromHits(hits, { damage, explosionRadius, liningFactor = 1.0 }) {
+    let armor = 0
+    let dist = 0
+    let hitPrimary = false
+    let prevT = Infinity
+    let prevSection = null
+    if (Array.isArray(hits)) {
+        for (const h of hits) {
+            if (!(dist < explosionRadius)) break
+            // 同位置同 section 的重合三角形是同一块板（射线掠过四边形对角线），
+            // 与 heLayersFromHits 的去重规则一致。
+            if (h.section === prevSection && Math.abs(h.t - prevT) < 1e-6) continue
+            armor += h.thickness * liningFactor
+            dist = h.t
+            prevT = h.t
+            prevSection = h.section
+            if (PRIMARY.has(h.section)) { hitPrimary = true; break }
+        }
+    }
+    if (!hitPrimary) return { armor, distance: dist, upper: 0, lower: 0, valid: false }
+    const falloff = 1 - dist / explosionRadius
+    return {
+        armor, distance: dist,
+        upper: 0.5 * damage * HE_SAMPLE.UPPER * falloff - armor,
+        lower: 0.5 * damage * HE_SAMPLE.LOWER * falloff - armor,
+        valid: true,
+    }
 }
 
 /**
@@ -161,43 +199,79 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
  * @param {THREE.Vector3} origin 命中点（世界坐标）
  * @param {{originDir?:THREE.Vector3, normal?:THREE.Vector3, damage:number,
  *   explosionRadius:number, liningFactor?:number, originOffset?:number,
- *   grid?:object, clipPlane?:THREE.Plane}} opts
+ *   grid?:object, clipPlane?:THREE.Plane, directions?:Array<THREE.Vector3>}} opts
  *   originDir = 命中点指向射手/相机的外向单位向量（优先）；缺省时退回 normal。
  *   grid = buildRicochetGrid() 结果，**必须有**：800 条射线走 DDA；网格缺失/失败
  *   即 fail-closed 返回 null，禁止回退 800×triTotal 的暴力全扫（评审 P1）。
+ *   directions = 可选方向子集（热力图预计算用低分辨率方向表）；缺省固定 800 方向。
  *   clipPlane = 当前 gun_mask 裁切面；被裁掉的炮管命中与点击链一样不参与采样（评审 P2）。
+ *   lean = true 时只累计 min/max/avg（热力图逐顶点场），不物化层链与 sampleStats；
+ *   lean 结果的 best/bestLower/sampleStats 为 null，只有 min/max/avg/samples/origin。
  * @returns {ReturnType<typeof computeHeSplash>}
  */
 export function sampleHeSplash(pack, origin, opts) {
     const { originDir, normal, damage, explosionRadius, liningFactor = 1.0 } = opts
     if (!pack || !pack.ok || !origin || !(damage > 0) || !(explosionRadius > 0)) return null
     if (!opts.grid || !opts.grid.ok) return null
+    const dirs = Array.isArray(opts.directions) && opts.directions.length
+        ? opts.directions : HE_SAMPLE_DIRECTIONS
     const offset = opts.originOffset != null ? opts.originOffset : HE_SAMPLE.ORIGIN_OFFSET
     const clipPlane = opts.clipPlane || null
+    // 间隙甲按双面参与 HE 采样（背面命中的间隙屏可见）；需要单面时显式传 false。
+    const twoSidedSpaced = opts.twoSidedSpaced !== false
+    const lean = opts.lean === true
     const ro = origin.clone()
     const out = originDir || normal
     if (out && offset !== 0) {
         const n = out.clone().normalize()
         ro.addScaledVector(n, offset)
     }
-    const rays = new Array(HE_SAMPLE_DIRECTIONS.length)
-    for (let i = 0; i < HE_SAMPLE_DIRECTIONS.length; i++) {
-        const raw = raycastGridAll(opts.grid, ro, HE_SAMPLE_DIRECTIONS[i], RC.MIN_CONTINUATION_T) || []
+    const rays = lean ? null : new Array(dirs.length)
+    let leanMin = -Infinity, leanMax = -Infinity, leanSamples = 0
+    // 超过爆炸半径 R 的层不可能产生正伤害：computeHeSplash 的衰减项在 d ≥ R 时
+    // ≤ 0，取 max 后夹 0；越过 R 的模块层也不可能抬高结果。因此把射线截到 R
+    // 与投到 RC.FAR 逐值一致，而网格 DDA 的格子步进从最多 ~133 格降到 R/0.45 格。
+    const tMax = explosionRadius + 1e-4
+    for (let i = 0; i < dirs.length; i++) {
+        const raw = raycastGridAll(opts.grid, ro, dirs[i], RC.MIN_CONTINUATION_T, tMax, twoSidedSpaced) || []
         const hits = clipPlane
-            ? raw.filter(h => !(h.section === 'gunBarrel' && clipPlane.distanceToPoint(h.point) < 0))
+            ? raw.filter(h => !isClippedModuleHit(h.section, h.point, clipPlane))
             : raw
-        rays[i] = heLayersFromHits(hits)
+        if (lean) {
+            const s = heSampleFromHits(hits, { damage, explosionRadius, liningFactor })
+            if (!s.valid) continue
+            leanSamples++
+            if (s.upper > leanMax) leanMax = s.upper
+            if (s.lower > leanMin) leanMin = s.lower
+        } else {
+            rays[i] = heLayersFromHits(hits)
+        }
+    }
+    if (lean) {
+        if (!leanSamples) return null
+        const min = Math.max(leanMin, 0)
+        const max = Math.max(leanMax, 0)
+        return {
+            min, max, avg: (min + max) / 2, samples: leanSamples,
+            origin: [ro.x, ro.y, ro.z],
+            best: null, bestLower: null, sampleStats: null,
+        }
     }
     const result = computeHeSplash(rays, { damage, explosionRadius, liningFactor })
     if (result) {
         // 方向化热力图/半径球的真实爆点：沿射向外移后的 origin（不是点击表面点）。
         result.origin = [ro.x, ro.y, ro.z]
+        // 热力图方向表约定最后一个方向 = 该顶点内法线（直射）：把该射线的层链
+        // 一并返回，热力图的“可直接击穿”判定无需再重复一条网格射线。
+        if (Array.isArray(opts.directions) && opts.directions.length) {
+            result.inwardLayers = rays[rays.length - 1] || []
+        }
         // 可视化/诊断：记录 max-upper / max-lower 两个样本的方向（世界系）。
         for (const key of ['best', 'bestLower']) {
             const sample = result[key]
             if (!sample) continue
             const idx = rays.indexOf(sample.layers)
-            const dir = idx >= 0 ? HE_SAMPLE_DIRECTIONS[idx] : null
+            const dir = idx >= 0 ? dirs[idx] : null
             if (dir) sample.direction = [dir.x, dir.y, dir.z]
         }
     }

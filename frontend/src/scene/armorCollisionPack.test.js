@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
     snapshotPackPose, packPoseChanged, RC, RC_GLSL_CONST, RC_GLSL_FUNCS, buildPack, buildRicochetGrid, createGridTextures, updatePackMatrices,
-    raycastPackAll, raycastGridAll, simulateContinuation,
+    raycastPackAll, raycastGridAll, simulateContinuation, isClippedModuleHit, isBackfaceNormal,
 } from './armorCollisionPack.js'
 import { calculate } from './penetration.js'
 
@@ -63,7 +63,7 @@ function packOf(meshes) {
 /** 前端口径的 oracle：raw 命中无 primary → 紫（不做二次判定）；有 → calculate */
 function oracleClass(pack, bouncePos, reflDir, params) {
     const ro = bouncePos.clone().addScaledVector(reflDir, RC.ORIGIN_OFFSET)
-    const raw = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T)
+    const raw = raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T, RC.FAR, false, params.clipPlane || null)
     if (!raw.some(h => PRIM.has(h.section))) return 0
     const req = {
         shell_type: 'ap',
@@ -165,6 +165,28 @@ describe('buildPack 守卫（fail-closed）', () => {
                 expect(fast[i].thickness).toBe(brute[i].thickness)
             }
         }
+    })
+})
+
+describe('间隙甲双面命中（从背面命中间隙屏）', () => {
+    it('默认仍按 FrontSide 剔除；twoSidedSpaced=true 时暴力/网格都命中且法线朝来向', () => {
+        const { meshes } = buildChainScene([
+            { section: 'spaced', thickness: 20, x: 0 },
+        ])
+        const pack = packOf(meshes)
+        const grid = buildRicochetGrid(pack)
+        expect(grid.ok).toBe(true)
+        const ro = new THREE.Vector3(5, 0.31, 0.17)
+        const dir = new THREE.Vector3(-1, 0, 0)
+        expect(raycastPackAll(pack, ro, dir, 0)).toHaveLength(0)
+        const brute = raycastPackAll(pack, ro, dir, 0, RC.FAR, true)
+        expect(brute).toHaveLength(1)
+        expect(brute[0].section).toBe('spaced')
+        expect(brute[0].normal.dot(dir)).toBeLessThan(0)
+        expect(raycastGridAll(grid, ro, dir, 0)).toHaveLength(0)
+        const fast = raycastGridAll(grid, ro, dir, 0, RC.FAR, true)
+        expect(fast).toHaveLength(1)
+        expect(fast[0].section).toBe('spaced')
     })
 })
 
@@ -687,7 +709,7 @@ describe('续飞初始接受阈三路一致（评审 P1）', () => {
     });
     it('JS 参考入口与 click 路径使用同一初始接受阈（源码级锁，防回归到 +eps 口径）', () => {
         const src = require('fs').readFileSync(new URL('./armorCollisionPack.js', import.meta.url), 'utf8');
-        expect(src).toContain('raycastPackAll(pack, ro, reflDir, RC.MIN_CONTINUATION_T);');
+        expect(src).toContain('raycastPackAll(pack, ro, dir, RC.MIN_CONTINUATION_T, RC.FAR, false, clipPlane);');
         expect(src).not.toContain('RC.MIN_CONTINUATION_T + RC.ADVANCE_EPSILON');
         // click 路径（tankViewer.js）严格同一口径：t <= MIN 滤（此前是 t < MIN，且 GLSL/JS 侧 +eps）
         const viewer = require('fs').readFileSync(new URL('./tankViewer.js', import.meta.url), 'utf8');
@@ -766,17 +788,97 @@ describe('packed pose invalidation (#711)', () => {
 });
 
 
-describe('exactly coplanar continuation order (#711)', () => {
-    it.each([true, false])('consumes the module with armorFirst=%s', (armorFirst) => {
-        const module = makeMesh(new THREE.PlaneGeometry(2, 2), 'gunBarrel', 50);
-        const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 70);
-        const meshes = armorFirst ? [primary, module] : [module, primary];
+describe('gun_mask 裁切面之后的炮管不参与续飞（2026-10-20 KRV）', () => {
+    const origin = new THREE.Vector3(-5, 0, 0);
+    const dir = new THREE.Vector3(1, 0, 0);
+    const params = { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 };
+    // 射线 +X：裁切面 normal=+X、constant=-0.5 时，x=0 处的炮管/炮盾在负侧；
+    // constant=+1 时同一几何全部在正侧（可见）。
+    const hidden = new THREE.Plane(new THREE.Vector3(1, 0, 0), -0.5);
+    const visible = new THREE.Plane(new THREE.Vector3(1, 0, 0), 1.0);
+
+    it('isClippedModuleHit 只过滤 gunBarrel；null 平面/其它 section 不误伤', () => {
+        const point = new THREE.Vector3(0, 0, 0);
+        expect(isClippedModuleHit('gunBarrel', point, hidden)).toBe(true);
+        expect(isClippedModuleHit('gunBarrel', point, visible)).toBe(false);
+        expect(isClippedModuleHit('gunBarrel', point, null)).toBe(false);
+        expect(isClippedModuleHit('turret', point, hidden)).toBe(false);
+        expect(isClippedModuleHit('chassis', point, hidden)).toBe(false);
+    });
+
+    it('隐藏炮管从命中集合移除；可见炮管仍按模块先消费', () => {
+        const { meshes } = buildChainScene([
+            { section: 'gunBarrel', thickness: 50, x: 0 },
+            { section: 'turret', thickness: 70, x: 0 },
+        ]);
         const pack = packOf(meshes);
-        const origin = new THREE.Vector3(0.13, 0.17, 1), dir = new THREE.Vector3(0, 0, -1);
-        const raw = raycastPackAll(pack, origin, dir, 0);
-        expect(raw.map(h => h.section)).toEqual(['gunBarrel', 'turret']);
-        const params = { remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1 };
+        expect(raycastPackAll(pack, origin, dir, 0).map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+        expect(raycastPackAll(pack, origin, dir, 0, RC.FAR, false, hidden).map(h => h.section)).toEqual(['turret']);
+        expect(raycastPackAll(pack, origin, dir, 0, RC.FAR, false, visible).map(h => h.section)).toEqual(['gunBarrel', 'turret']);
+    });
+
+    it('隐藏炮管不再吞掉 50mm：100mm 剩余穿深从 BLOCKED 变 PENETRATED', () => {
+        const { meshes } = buildChainScene([
+            { section: 'gunBarrel', thickness: 50, x: 0 },
+            { section: 'turret', thickness: 70, x: 0 },
+        ]);
+        const pack = packOf(meshes);
+        // 无裁切：炮管 50 + 炮盾 70 → 100mm 余量被炮盾挡下。
         expect(simulateContinuation(pack, origin, dir, params).cls).toBe(2);
         expect(oracleClass(pack, origin, dir, params)).toBe(2);
+        // 裁切隐藏炮管：只消费 70mm 炮盾 → 击穿；CPU 参考与 calculate oracle 一致。
+        const withClip = { ...params, clipPlane: hidden };
+        const sim = simulateContinuation(pack, origin, dir, withClip);
+        expect(sim.cls).toBe(1);
+        expect(sim.layers.map(l => l.section)).toEqual(['turret']);
+        expect(oracleClass(pack, origin, dir, withClip)).toBe(1);
+        // 裁切面在几何之前（可见）：炮管仍参与，结果保持 BLOCKED。
+        expect(simulateContinuation(pack, origin, dir, { ...params, clipPlane: visible }).cls).toBe(2);
+    });
+
+    it('GLSL rcContinue 与 JS 参考共用同一裁切判据', () => {
+        expect(RC_GLSL_CONST).toContain('#define RC_SEC_GUN_BARREL 5');
+        expect(RC_GLSL_FUNCS).toContain('uniform vec4 rcClipPlane;');
+        expect(RC_GLSL_FUNCS).toContain('uniform bool rcClipEnabled;');
+        expect(RC_GLSL_FUNCS).toContain('rcClipEnabled && candidateSection == RC_SEC_GUN_BARREL');
+        expect(RC_GLSL_FUNCS).toContain('dot(rcClipPlane.xyz, clipPoint) + rcClipPlane.w < 0.0');
+    });
+});
+
+describe('第二次跳弹即终态（2026-10-20）', () => {
+    it('续飞段再次跳弹后炮弹消失，不再进入第三段', () => {
+        // 唯一一块：法线 (-sin10,0,cos10)，+X 入射角 80° → 续飞段跳弹（总第 2 次）。
+        const plate = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 50, (m) => {
+            m.rotation.y = -10 * Math.PI / 180;
+            m.position.set(0, 0, 0);
+            m.updateMatrix();
+        });
+        const pack = packOf([plate]);
+        const sim = simulateContinuation(pack, new THREE.Vector3(-2, 0, 0), new THREE.Vector3(1, 0, 0), {
+            remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1,
+            ricochetRad: 70 * Math.PI / 180,
+        });
+        // 第二段没有最终击穿/被挡结论；只记录这次（终态）跳弹。
+        expect(sim.cls).toBe(0);
+        expect(sim.layers.map(l => l.ricochet)).toEqual([true]);
+        expect(sim.layers[0].seg).toBe(1);
+    });
+});
+
+describe('背面命中过滤（FrontSide 判定口径）', () => {
+    it('双面闭合盒的正/背两个交点只保留迎面一个', () => {
+        const box = makeMesh(new THREE.BoxGeometry(2, 2, 2), 'spaced', 50);
+        box.material.side = THREE.DoubleSide;
+        box.updateWorldMatrix(true, false);
+        // 偏离面中心，避开 BoxGeometry 每个面的对角分割线（否则每个面命中两个三角形）。
+        const ray = new THREE.Raycaster(new THREE.Vector3(0.3, 0.2, 3), new THREE.Vector3(0, 0, -1));
+        const hits = ray.intersectObject(box, false);
+        // DoubleSide 显示材质会返回闭合壳的正、背两面；判定收集必须剔背面，
+        // 否则同一块间隙甲被计两次厚度（KRV gun_01_armor_9 结果卡的重复层）。
+        expect(hits).toHaveLength(2);
+        const front = hits.filter(h => !isBackfaceNormal(
+            h.face.normal.clone().transformDirection(box.matrixWorld), ray.ray.direction));
+        expect(front).toHaveLength(1);
+        expect(front[0].point.z).toBeCloseTo(1, 6);
     });
 });

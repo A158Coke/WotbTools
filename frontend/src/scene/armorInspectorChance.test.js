@@ -139,6 +139,14 @@ describe('Armor Inspector 逐层概率', () => {
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
+  it('第二次跳弹（续飞段 ricochet）→ 0：炮弹消失，不再有第三段', () => {
+    const layers = [
+      { name: 'hull', thickness: 50, eff: 0, remainBefore: 100, ricochet: true, seg: 0 },
+      { name: 'hull', thickness: 50, eff: 0, remainBefore: 75, ricochet: true, seg: 1 },
+    ]
+    expect(penetrationChance(100, layers)).toBe(0)
+  })
+
   it('续飞段只在段首初始化一次：后续 seg=1 不重置区间', () => {
     const layers = [
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, ricochet: true, seg: 0 },
@@ -181,6 +189,13 @@ describe('Armor Inspector 逐层概率', () => {
     expect(r.chance).toBe(0)
     expect(r.layers.map(l => l.part_name)).toEqual(['track', 'hull'])
     expect(r.layers.map(l => l.chance)).toEqual([0, 0])
+  })
+})
+
+describe('空层链 fail-closed', () => {
+  it('空层链为 0%，不得默认必穿', () => {
+    expect(evaluateProbabilityChain(100, [])).toMatchObject({ chance: 0, layers: [] })
+    expect(evaluateProbabilityChain(100, null)).toMatchObject({ chance: 0, layers: [] })
   })
 })
 

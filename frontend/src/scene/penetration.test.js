@@ -1,7 +1,7 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { compareContinuationHitOrder, calculate, isPrimary, ArmorSection, hasPositivePrimary, matchHitsByOccurrence } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 import { penetrationChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
@@ -330,7 +330,7 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
       expect(r.damage).toBe(0)
       expect(r.he).toBeNull()
       expect(r.probability_layers.length).toBeGreaterThan(0)
-      expect(hasPositivePrimary(r.probability_layers)).toBe(true)
+      expect(hasPrimaryLayer(r.probability_layers)).toBe(true)
     }
   })
 
@@ -625,21 +625,21 @@ describe('isPrimary（Primary = 击穿判定的触发面；spaced/外部模块�
   })
 })
 
-describe('hasPositivePrimary（概率卡前置条件）', () => {
+describe('hasPrimaryLayer（概率卡前置条件）', () => {
   it('链上存在正厚度 Primary 才允许概率模式', () => {
-    expect(hasPositivePrimary([
+    expect(hasPrimaryLayer([
       { section: ArmorSection.CHASSIS, thickness: 30 },
       { section: ArmorSection.HULL, thickness: 100 },
     ])).toBe(true)
   })
 
   it('纯外部模块或 0mm Primary 链不得进入概率模式', () => {
-    expect(hasPositivePrimary([
+    expect(hasPrimaryLayer([
       { section: ArmorSection.CHASSIS, thickness: 100 },
       { section: ArmorSection.GUN_BARREL, thickness: 60 },
     ])).toBe(false)
-    expect(hasPositivePrimary([{ section: ArmorSection.HULL, thickness: 0 }])).toBe(false)
-    expect(hasPositivePrimary([])).toBe(false)
+    expect(hasPrimaryLayer([{ section: ArmorSection.HULL, thickness: 0 }])).toBe(true)
+    expect(hasPrimaryLayer([])).toBe(false)
   })
 })
 
@@ -685,12 +685,4 @@ describe('matchHitsByOccurrence（同名装甲板按命中次序匹配）', () =
     expect(matched[1]).toBe(hits[2])
     expect(matched[2]).toBe(hits[3])
   })
-})
-
-
-it('orders exactly coincident continuation modules first, without merging nearby surfaces', () => {
-  expect(compareContinuationHitOrder(1, 'turret', 1, 'gunBarrel')).toBeGreaterThan(0)
-  expect(compareContinuationHitOrder(1, 'gunBarrel', 1, 'turret')).toBeLessThan(0)
-  expect(compareContinuationHitOrder(1, 'turret', 1 + 1e-12, 'gunBarrel')).toBeLessThan(0)
-  expect(compareContinuationHitOrder(1, 'turret', 1, 'hull')).toBe(0)
 })

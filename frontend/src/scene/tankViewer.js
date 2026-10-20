@@ -28,9 +28,10 @@ import { createLoadProgress } from './loadProgress.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+    isClippedModuleHit, isBackfaceNormal,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary, hasPositivePrimary, matchHitsByOccurrence, compareContinuationHitOrder } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
 import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
@@ -2646,7 +2647,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
-                } else if (/^gun_\d+_/.test(parentName)) {
+                } else if (/^gun_\d+_mask$/.test(parentName)) {
                     node.userData.armorSection = 'gunBarrel';
                     node.userData.armorPlateId = 'gun';
                     node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
@@ -2654,6 +2655,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
+                } else if (/^gun_\d+_/.test(parentName)) {
+                    // hide_elements / state_XX 等拆件只是视觉模型，不是 50mm 炮管外部模块；
+                    // 保留渲染，但不参与点击判定/续飞/热力图。
+                    node.userData.armorSection = 'deco';
+                    node.userData.armorPlateId = '';
+                    node.userData.armorThickness = 0;
                 }
             });
         }
@@ -5200,13 +5207,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
-        // 命中分类 → armorHits 条目（原主循环与跳弹出射循环两段重复实现合并）：
-        // parent 不可见 / configHidden / deco 过滤 + userData 或父链正则取名 +
-        // getPlateThickness + partName 构造；被过滤或无厚度返回 null。
-        // 注意：gunBarrel 的 gunClipPlane 过滤仅主判定循环有，留在调用点
-        function classifyHit(hit) {
-            if (hit.object.parent && hit.object.parent.visible === false) return null;
-            if (hit.object.userData.configHidden) return null;
+        function isEffectivelyVisible(node) {
+            // 模型根节点的 visible 是视图模式开关（collision 视图会隐藏视觉车体），
+            // 不是部件级隐藏；逐级检查到根之前即可。
+            for (let n = node; n && n !== tankModel && n !== armorModel; n = n.parent) {
+                if (n.visible === false) return false;
+                if (n.userData && n.userData.configHidden) return false;
+            }
+            return true;
+        }
+        function classifyHit(hit, rayDir = null) {
+            if (!isEffectivelyVisible(hit.object)) return null;
             if (hit.object.userData.armorSection === 'deco') return null;
             let section = null, plateId = null, thickness = null;
             if (hit.object.userData.armorSection) {
@@ -5226,6 +5237,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const normal = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
             const nm = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
             normal.applyNormalMatrix(nm).normalize();
+            // 材质可以是 DoubleSide（间隙甲显示），但判定只接受迎面命中：绕序法线
+            // 朝向来向 = 背面。BlitzKit 的装甲材质与采样网格都是 FrontSide 口径。
+            const backface = !!rayDir && isBackfaceNormal(normal, rayDir);
+            if (backface) normal.negate();
             let partName;
             if (section === 'chassis') {
                 partName = plateId === 'leftTrack' ? 'Track (Left)' : 'Track (Right)';
@@ -5235,7 +5250,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const disp = hit.object.userData.armorSectionOrig || section;
                 partName = `${disp.charAt(0).toUpperCase() + disp.slice(1)} Plate ${plateId}`;
             }
-            return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance };
+            return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance, object: hit.object, backface };
         }
 
         function doPenetrationCheck(ndcX, ndcY) {
@@ -5288,10 +5303,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // blitzkit：非外部模块不做去重（外部模块的 variant 去重在判定侧进行）
             const armorHits = [];
             for (const hit of intersects) {
-                if (hit.object.userData.armorSection === 'gunBarrel' && gunClipPlane &&
-                    gunClipPlane.distanceToPoint(hit.point) < 0) continue;
-                const entry = classifyHit(hit);
-                if (entry) armorHits.push(entry);
+                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
+                const entry = classifyHit(hit, raycaster.ray.direction);
+                if (entry && !entry.backface) armorHits.push(entry);
             }
 
             // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
@@ -5528,7 +5542,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
-            judgePenetration(req).then(res => {
+            judgePenetration(req).then(async res => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
                 const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
                 let trajLayers = res.layers.map((l, i) => {
@@ -5561,10 +5575,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 间隙甲/模块才保持 HE 首面爆炸/溅射（不把 CDF 当穿透概率）。
                 const heFirstPrimary = isHE && hitsForCheck.length > 0
                     && isPrimary(hitsForCheck[0].section);
-                // 0mm Primary 不能当“必穿”（与下方 useProbabilityMode 的
-                // hasPositivePrimary 门同源）；否则 HE 卡会显示 100% 满伤。
+                // 0mm Primary 也是合法主装甲（与其它板一致）：与下方 useProbabilityMode
+                // 的 hasPrimaryLayer 门同源，不能把 0mm 当“必穿/无主装甲”。
                 const hePenChance = heFirstPrimary && hasProbabilityChain
-                    && hasPositivePrimary(res.probability_layers)
+                    && hasPrimaryLayer(res.probability_layers)
                     ? evaluateProbabilityChain(probabilityPen ?? pen, res.probability_layers).chance
                     : 0;
                 // HE 溅射面板：he_min/he_max 是采样器给出的两个浮动界最大值，
@@ -5583,7 +5597,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain
                     // 纯外部模块/0mm 板链没有可被 CDF 评估的主装甲：概率模式会把
                     // 模块 flat 消耗后的剩余区间误读成“必穿”；保持确定性卡片。
-                    && hasPositivePrimary(res.probability_layers)
+                    && hasPrimaryLayer(res.probability_layers)
                     // HE 还必须有合法 splash data（positive explosion radius / res.he）。
                     // 半径缺失或 <=0 时计算层已 fail-closed：res.result=BLOCKED、damage=0、
                     // res.he=null；不能再因 first Primary + chain 进入 generic probability card，
@@ -5668,62 +5682,115 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
 
                 if (res.ricochet && res.ricochet_remaining_pen > 0) {
-                    const lastLayer = trajLayers[trajLayers.length - 1];
-                    if (lastLayer && lastLayer.point) {
-                        const shellDir = incomingDirection.clone(); // 与首段求交同一入射方向
-                        let n = lastLayer.normal;
-                        if (!n) {
-                            const hitMatch = hitsForCheck.find(ah => ah.point.distanceToSquared(lastLayer.point) < 1e-6);
-                            n = hitMatch ? hitMatch.normal : first.normal;
-                        }
-                        const reflect = shellDir.clone().sub(n.clone().multiplyScalar(2 * shellDir.dot(n))).normalize();
-                        // BlitzKit 对齐：出射射线原点=跳弹点、near=0、无近距过滤——接缝处另一侧板
-                        // 在厘米级距离，原 +0.05m 偏移 + <0.1m 跳过会把它丢弃 → 续飞穿入车体内部。
-                        const rc = new THREE.Raycaster(lastLayer.point, reflect);
-                        const ricIntersects = rc.intersectObjects(objects, true);
-                        const ricHits = [];
-                        for (const hit of ricIntersects) {
-                            // 初始接受阈（评审 P1 三路一致）：t ≤ RC.MIN_CONTINUATION_T 一律滤——与 JS
-                            // 参考 raycastPackAll 的 tMin、GLSL 的 tStart 同一严格口径（不含推进 eps）
-                            if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
-                            const entry = classifyHit(hit);
-                            if (entry) ricHits.push(entry);
-                        }
-                        ricHits.sort((a, b) => compareContinuationHitOrder(a.distance, a.section, b.distance, b.section));
-                        // blitzkit：出射射线（allowRicochet=false）未命中 Primary → shoot 返回
-                        // null（无出射段、伤害 0），不进行二次判定
-                        const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');
-                        if (ricHits.length > 0 && ricHasPrimary) {
+                    const firstLast = trajLayers[trajLayers.length - 1];
+                    if (firstLast && firstLast.point) {
+                        let current = res;
+                        let currentPoint = firstLast.point.clone();
+                        let currentNormal = firstLast.normal ? firstLast.normal.clone() : null;
+                        let currentDir = incomingDirection.clone();
+                        const allLayers = trajLayers.slice();
+                        const allProbability = Array.isArray(probabilityLayers) ? probabilityLayers.slice() : [];
+                        const segmentResults = [res.result];
+                        const bounceDebug = [];
+                        let finalDamage = res.damage || 0;
+                        let bounced = 0;
+
+                        while (current.ricochet && current.ricochet_remaining_pen > 0
+                            && bounced < RC.MAX_CONTINUATIONS && currentNormal) {
+                            const reflect = currentDir.clone()
+                                .sub(currentNormal.clone().multiplyScalar(2 * currentDir.dot(currentNormal)))
+                                .normalize();
+                            const rc = new THREE.Raycaster(currentPoint, reflect);
+                            const ricIntersects = rc.intersectObjects(objects, true);
+                            const ricHits = [];
+                            for (const hit of ricIntersects) {
+                                if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
+                                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
+                                const entry = classifyHit(hit, rc.ray.direction);
+                                if (entry && !entry.backface) ricHits.push(entry);
+                            }
+                            ricHits.sort((a, b) => a.distance - b.distance);
+                            if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
+
                             const ricReq = {
-                                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null, penetration: res.ricochet_remaining_pen, caliber: caliber,
+                                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null,
+                                penetration: current.ricochet_remaining_pen, caliber,
                                 damage: dmg,
                                 enhanced_armor: eqEnh,
                                 normalization_deg: shellNormDeg,
                                 ricochet_deg: shellRicoDeg,
-                                allow_ricochet: false,
+                                // 跳弹后的炮弹可以再次跳弹；API 的 layerIndex>0 仍会
+                                // 抑制“先穿过模块/间隙甲再跳弹”的情形。
+                                allow_ricochet: true,
                                 view_dir: [reflect.x, reflect.y, reflect.z],
                                 hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
                             };
-                            judgePenetration(ricReq)
-                                .then(ricRes => {
-                                    if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应丢弃
-                                    if (ricRes) {
-                                        const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, angle: l.angle_deg != null ? l.angle_deg : null, seg: 1 }));
-                                        // 续飞段同样使用完整概率链；只在段首设置一次起点穿深，
-                                        // 该段内后续 seg=1 层由 helper 保持累计区间（不再重置）。
-                                        const ricProbability = Array.isArray(ricRes.probability_layers) && ricRes.probability_layers.length
-                                            ? ricRes.probability_layers.map((l, i) => ({
-                                                ...l,
-                                                seg: 1,
-                                                ...(i === 0 ? { remaining_before: Number.isFinite(ricRes.probability_penetration) ? ricRes.probability_penetration : res.ricochet_remaining_pen } : {}),
-                                            }))
-                                            : ricLayers;
-                                        const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
-                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0, [...probabilityLayers, ...ricProbability], probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined);
-                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined); }
-                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined); });
-                            return;
+                            const ricRes = await judgePenetration(ricReq);
+                            if (destroyed || penSeq !== __penCheckSeq) return;
+                            if (!ricRes || ricRes.result === '-') break;
+
+                            const seg = bounced + 1;
+                            segmentResults.push(ricRes.result);
+                            const matched = matchHitsByOccurrence(ricRes.layers, ricHits);
+                            const ricLayers = ricRes.layers.map((l, i) => {
+                                const hit = matched[i] || null;
+                                return {
+                                    point: hit?.point || currentPoint,
+                                    name: l.part_name,
+                                    thickness: l.thickness,
+                                    eff: l.effective,
+                                    remainBefore: l.remaining_before,
+                                    penetrated: l.penetrated,
+                                    ricochet: l.ricochet,
+                                    angle: l.angle_deg != null ? l.angle_deg : null,
+                                    seg,
+                                };
+                            });
+                            allLayers.push(...ricLayers);
+                            const ricProbability = Array.isArray(ricRes.probability_layers) && ricRes.probability_layers.length
+                                ? ricRes.probability_layers.map((l, i) => ({
+                                    ...l,
+                                    seg,
+                                    ...(i === 0 ? { remaining_before: Number.isFinite(ricRes.probability_penetration) ? ricRes.probability_penetration : current.ricochet_remaining_pen } : {}),
+                                }))
+                                : ricLayers;
+                            allProbability.push(...ricProbability);
+                            finalDamage = ricRes.damage || 0;
+                            bounceDebug.push({
+                                bounce: seg,
+                                result: ricRes.result,
+                                reflect: [reflect.x, reflect.y, reflect.z],
+                                layers: ricRes.layers,
+                                probability: ricRes.probability_layers || null,
+                                hits: ricHits.map(h => ({
+                                    partName: h.partName, section: h.section,
+                                    thickness: h.thickness,
+                                    point: h.point.toArray(), normal: h.normal.toArray(),
+                                })),
+                            });
+
+                            const lastMatch = matched[matched.length - 1];
+                            if (!ricRes.ricochet || !lastMatch) {
+                                current = ricRes;
+                                break;
+                            }
+                            currentPoint = lastMatch.point.clone();
+                            currentNormal = lastMatch.normal.clone();
+                            currentDir = reflect;
+                            current = ricRes;
+                            bounced++;
                         }
+
+                        if (ARMOR_DEBUG && window.__armorDebugLast) {
+                            window.__armorDebugLast.ricochet = {
+                                shellDir: [incomingDirection.x, incomingDirection.y, incomingDirection.z],
+                                result: segmentResults.join(' → '),
+                                bounces: bounceDebug,
+                            };
+                            armorDebugPanel(window.__armorDebugLast);
+                        }
+                        showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined);
+                        return;
                     }
                 }
 
@@ -6008,14 +6075,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;">`
                     + `<span>${escapeText(title)}</span>${damageHtml}</div>`;
             };
-            html += titleHtml(segments[0], segments.length === 1);
-            // 统一击穿概率行：所有弹种都显示，含 0% / 100%。
-            html += `<div style="font-size:14px;font-weight:600;color:${cardChanceCss};margin-bottom:4px;font-variant-numeric:tabular-nums;">${L.shotPenChance}: ${formatProbabilityPercent(cardChance)}%</div>`;
-            if (heInfo) {
-                // 伤害数值已上移到判定结果右侧；这里只保留部分击穿时的期望伤害。
-                if (heChance > 0 && heChance < 1 && Number.isFinite(heInfo.expected_damage)) {
-                    html += `<div style="font-size:12px;color:var(--muted);line-height:18px;">${L.expectedDamage}: ${fmtNum(heInfo.expected_damage)}</div>`;
+            // 击穿概率行：跳弹链只在【最终判定结果】下侧出现，不能挂在第一段“跳弹”下面。
+            const chanceRowHtml = () => {
+                let s = `<div style="font-size:14px;font-weight:600;color:${cardChanceCss};margin-bottom:4px;font-variant-numeric:tabular-nums;">${L.shotPenChance}: ${formatProbabilityPercent(cardChance)}%</div>`;
+                if (heInfo && heChance > 0 && heChance < 1 && Number.isFinite(heInfo.expected_damage)) {
+                    s += `<div style="font-size:12px;color:var(--muted);line-height:18px;">${L.expectedDamage}: ${fmtNum(heInfo.expected_damage)}</div>`;
                 }
+                return s;
+            };
+            html += titleHtml(segments[0], segments.length === 1);
+            if (segments.length === 1) html += chanceRowHtml();
+            if (heInfo) {
                 // 直接命中（爆炸面）紧贴最佳样本上方，只显示位置 + 名义厚度，
                 // 不显示等效/角度/概率链。
                 const hit = heDirectHit || (layers[0]
@@ -6058,17 +6128,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 有效穿深已并入顶行（距离衰减后），不再重复一行。
             if (!heInfo) {
                 let layerNo = 0;
-            let outStarted = false;
+            let prevSeg = 0;
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
-                // 跳弹分段：出射段首层前插分隔线+第二段标题（BlitzKit "ricochet (-25% penetration)"）
-                if (segments.length > 1 && l.seg === 1 && !outStarted) {
-                    outStarted = true;
+                // 每一段跳弹都在首层前插分隔线 + 该段标题；只有最后一段显示最终结果和概率。
+                if (segments.length > 1 && l.seg > 0 && l.seg !== prevSeg) {
+                    const finalSeg = l.seg === segments.length - 1;
                     html += `<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
                     html += `<span style="font-size:11px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
-                    html += titleHtml(segments[segments.length - 1], true);
+                    html += titleHtml(segments[l.seg] || segments[segments.length - 1], finalSeg);
+                    if (finalSeg) html += chanceRowHtml();
+                    prevSeg = l.seg;
                 }
                 const layerChance = probabilityMode ? (l.chance ?? 0) : null;
                 const pc = probabilityMode
