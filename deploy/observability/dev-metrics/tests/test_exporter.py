@@ -13,7 +13,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from classification import actor_type, classify_area
 from collector import aggregate, collect
-from exporter import Snapshot, handler
+from exporter import Snapshot, handler, valid_override
 from github_client import GitHubClient, GitHubError
 from http.server import ThreadingHTTPServer
 from prometheus_client import CollectorRegistry
@@ -90,6 +90,75 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(sum('/jobs?' in path for path in calls), 2)
         self.assertEqual(len(cache['gates']), 1)
 
+    def test_labels_do_not_bypass_path_classification(self):
+        calls = []
+        class Client:
+            def pages(self, path, key=None):
+                calls.append(path)
+                if '/pulls?' in path:
+                    return iter([pr(labels=[{'name': 'area/auth'}])])
+                if '/files?' in path:
+                    return iter([{'filename': 'frontend/a.vue'}])
+                return iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='frontend'), 1)
+        self.assertEqual(sample(result, 'pr_area_total', area='auth'), 0)
+        self.assertEqual(sum('/files?' in path for path in calls), 1)
+
+    def test_frozen_override_skips_file_history_for_closed_pr(self):
+        calls = []
+        class Client:
+            def pages(self, path, key=None):
+                calls.append(path)
+                return iter([pr(number=1, state='closed')]) if '/pulls?' in path else iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
+        self.assertEqual(sum('/files?' in path for path in calls), 0)
+
+    def test_oversized_open_pr_requires_head_bound_override(self):
+        head = 'a' * 40
+        class Client:
+            def pages(self, path, key=None):
+                if '/pulls?' in path:
+                    return iter([pr(number=1, head={'sha': head})])
+                if '/files?' in path:
+                    return iter([{'filename': f'opaque/{n}.txt'} for n in range(3000)])
+                return iter([])
+        result = collect(Client(), 'A158Coke/WotbTools',
+                         {'1': {'areas': ['docs'], 'headRefOid': head}}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
+        # A stale head binding and a list-only history entry are both rejected.
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools',
+                    {'1': {'areas': ['docs'], 'headRefOid': 'b' * 40}}, NOW)
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools', {}, NOW)
+
+    def test_override_schema_accepts_history_and_head_bound_entries(self):
+        self.assertTrue(valid_override(['docs']))
+        self.assertTrue(valid_override({'areas': ['docs'], 'headRefOid': 'a' * 40}))
+        self.assertFalse(valid_override([]))
+        self.assertFalse(valid_override({'areas': ['docs']}))
+        self.assertFalse(valid_override({'areas': ['docs'], 'headRefOid': 'HEAD'}))
+        self.assertFalse(valid_override({'areas': ['unknown'], 'headRefOid': 'a' * 40}))
+
+    def test_open_or_reopened_frozen_pr_uses_current_paths(self):
+        calls = []
+        class Client:
+            def pages(self, path, key=None):
+                calls.append(path)
+                if '/pulls?' in path:
+                    return iter([pr(number=1)])
+                if '/files?' in path:
+                    return iter([{'filename': 'frontend/a.vue'}])
+                return iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='frontend'), 1)
+        self.assertEqual(sample(result, 'pr_area_total', area='docs'), 0)
+        self.assertEqual(sum('/files?' in path for path in calls), 1)
+
     def test_saturated_run_window_splits_without_duplicate_boundary(self):
         calls = []
         class Client:
@@ -106,11 +175,59 @@ class CollectionTests(unittest.TestCase):
 
 class ClassificationTests(unittest.TestCase):
     def test_priority_and_multi_area(self):
-        self.assertEqual(classify_area(pr(labels=[{'name': 'area/auth'}]), ['android/a'], {'1': ['infra']}), {'auth'})
-        self.assertEqual(classify_area(pr(), ['android/a'], {'1': ['infra']}), {'infra'})
-        self.assertEqual(classify_area(pr(title='replay'), ['deploy/observability/a']), {'infra', 'observability'})
+        # Only a frozen historical override of a merged/closed PR precedes changed paths.
+        self.assertEqual(classify_area(pr(state='closed'), ['android/a'], {'1': ['infra']}), {'infra'})
+        self.assertEqual(classify_area(pr(), ['deploy/observability/a']), {'infra', 'observability'})
         self.assertEqual(classify_area(pr(title='Replay parser and 3D playback')), {'replay', 'playback'})
         self.assertEqual(classify_area(pr()), {'unclassified'})
+
+    def test_path_classification_cases(self):
+        # A: frontend path -> frontend.
+        self.assertEqual(classify_area(pr(), ['frontend/src/App.vue']), {'frontend'})
+        # B: java/wotb-ai keeps the implementation layer and the product area.
+        self.assertEqual(classify_area(pr(), ['java/wotb-ai/README.md']), {'backend', 'ai'})
+        # C: Keycloak provider -> auth.
+        self.assertEqual(classify_area(pr(), ['keycloak-wargaming-provider/pom.xml']), {'auth'})
+        # Repository-owned workflow, governance and CI paths keep their area without a label.
+        self.assertEqual(classify_area(pr(title='Bump checkout action'), ['.github/workflows/ci-gate.yml']), {'infra'})
+        self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
+        self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
+        # Root and GitHub maintainer documents are documentation even with a generic title.
+        for path in ('README.md', 'AGENTS.md', 'HISTORY.md', '.github/AGENTS.md',
+                     '.github/pull_request_template.md'):
+            self.assertEqual(classify_area(pr(title='Update contributor guidance'), [path]), {'docs'}, path)
+
+    def test_feature_paths_keep_specific_area_alongside_generic_layer(self):
+        self.assertEqual(
+            classify_area(pr(), ['java/wotb-core/src/main/java/com/wotb/core/ai/SingleReplayPromptPlanner.java']),
+            {'backend', 'ai'})
+        self.assertEqual(classify_area(pr(), ['.github/workflows/observability.yml']),
+                         {'infra', 'observability'})
+
+    def test_semantic_fallback_only_without_path_evidence(self):
+        # D: no path rule matches; the stable semantic fallback classifies.
+        self.assertEqual(classify_area(pr(title='Fix replay parser regression'), ['scripts/tool.py']), {'replay'})
+        # E: no path and no semantic evidence.
+        self.assertEqual(classify_area(pr(title='Adjust wording'), ['scripts/tool.py']), {'unclassified'})
+
+    def test_manual_area_label_never_overrides_changed_paths(self):
+        # F: an old area/* label is not an input unless the PR is a frozen historical one.
+        labeled = pr(labels=[{'name': 'area/auth'}], title='frontend layout fix')
+        self.assertEqual(classify_area(labeled, ['frontend/src/App.vue']), {'frontend'})
+        self.assertEqual(classify_area(pr(number=1, state='closed', labels=[{'name': 'area/auth'}]),
+                                       ['frontend/src/App.vue'], {'1': ['auth']}), {'auth'})
+
+    def test_historical_frozen_overrides_are_stable(self):
+        data = json.loads((Path(__file__).resolve().parents[1] / 'historical-area-overrides.json').read_text(encoding='utf-8-sig'))
+        self.assertTrue({'635', '673', '709'} <= set(data))
+        # Merged/closed PRs keep their recorded area sets regardless of current labels/paths.
+        self.assertEqual(classify_area(pr(number=635, state='closed', labels=[{'name': 'area/frontend'}]),
+                                       ['frontend/changed.vue'], data), {'docs', 'infra', 'observability'})
+        self.assertEqual(classify_area(pr(number=673, state='closed'), ['.github/workflows/ci-gate.yml'], data),
+                         {'android', 'docs', 'frontend', 'playback', 'replay'})
+        self.assertEqual(classify_area(pr(number=709, state='closed'), ['frontend/src/App.vue'], data), {'docs'})
+        # Open/reopened PRs use current paths even when a frozen record exists.
+        self.assertEqual(classify_area(pr(number=709), ['frontend/src/App.vue'], data), {'frontend'})
 
     def test_feature_paths_preserve_cross_cutting_areas(self):
         self.assertEqual(classify_area(pr(), ['frontend/src/replay-local/playback/index.ts']),
