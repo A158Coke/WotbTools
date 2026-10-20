@@ -100,7 +100,7 @@ python common/python/extract_map_bases.py <同上> --check   # CI：过期即失
 - 2D 地图鸟瞰与战局回放直接消费 `frontend/src/assets/maps/*.webp`（WebP q90），由 `mapImages.js` 静态 import 随前端镜像发布；不依赖远端资产源。现役来源 = Agent 仓 asset_pack 的 `ground.webp` 派生（见下节）。
 - 底图实际 raster 尺寸与本表一致（当前 29 张均为 1254×1254）。`mapImages.width/height` 是既有 logical frame 尺寸，与 raster 尺寸分开维护；更新图片不得改变地图坐标、车辆、基地与标注对齐。
 - `frontend/src/data/mapAssets.test.js` 校验注册表与本地底图的一一对应及实际 WebP 尺寸；真实浏览器布局回归覆盖底图加载与 overlay 对齐。
-- Web 的 3D 模型、纹理与地图资产由 `frontend/src/scene/assetProvider.js` 从 `https://assets.wotbtools.com` 读取；Android 继续通过 Native `AgentAssetProxy` 使用 COS origin。2D 底图不进入该 provider。
+- Web 的 3D 模型、纹理与地图资产由 `frontend/src/scene/assetProvider.js` 从 `https://assets.wotbtools.com` 读取；新 Android 版本通过 Native `AgentAssetProxy` 从相同 origin 读取，旧 APK 可继续使用编译时 COS origin。2D 底图不进入该 provider。
 - canonical 目录只维护**一套** 2D 底图（来源见下节），**Web 与 APK 共用同一份字节**；
   对照材料与中间产物不进入运行时或前端镜像。
 

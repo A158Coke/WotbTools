@@ -1356,14 +1356,14 @@ jobs:
             --headers "$RUNNER_TEMP/api-read.headers" --status "$STATUS" --expected-status 401 --origin "$ORIGIN"
           # Android 3D 资产由 Native AgentAssetProxy 直连对象存储（原生代码不受 CORS
           # 约束；staging.json 的 assetOrigin 是本机路径 /agent-assets，不可拼 URL）。
-          # 探测对象因此是对象存储的匿名可读性：/index.json 必须 200 且为 JSON object。
+          # 探测对象因此是新版本静态资产源的匿名可读性：/index.json 必须 200 且为 JSON object。
           # origin 字面量与 android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt
-          # 的 COS_BASE 一致，换 origin 时必须两处同步（见 docs/operations/agent-asset-origin.md）。
-          COS_BASE="https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+          # 的 REMOTE_ASSET_BASE 一致，换 origin 时必须两处同步（见 docs/operations/agent-asset-origin.md）。
+          REMOTE_ASSET_BASE="https://assets.wotbtools.com"
           STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$RUNNER_TEMP/asset-index.json" \
-            -w '%{http_code}' "$COS_BASE/index.json")"
+            -w '%{http_code}' "$REMOTE_ASSET_BASE/index.json")"
           if [ "$STATUS" != "200" ]; then
-            echo "::error::object storage asset origin is not anonymously readable (HTTP $STATUS): the native asset proxy cannot feed 3D assets." >&2
+            echo "::error::asset origin is not anonymously readable (HTTP $STATUS): the native asset proxy cannot feed 3D assets." >&2
             exit 1
           fi
           jq -e 'type == "object"' "$RUNNER_TEMP/asset-index.json" >/dev/null
