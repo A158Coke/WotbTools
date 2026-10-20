@@ -11,6 +11,7 @@ type Schemas = components['schemas']
 export type BroadcastIndex = Schemas['BroadcastIndex']
 export type BroadcastSeason = Schemas['BroadcastSeason']
 export type BroadcastSeasonView = Schemas['BroadcastSeasonView']
+export type BroadcastSeasonContents = Omit<Schemas['BroadcastSeasonContents'], 'nodes'> & { nodes: BroadcastNode[] }
 export type BroadcastCategory = Schemas['BroadcastCategory']
 export type BroadcastCategoryView = Omit<Schemas['BroadcastCategoryView'], 'nodes'> & { nodes: BroadcastNode[]; defaultTimeZone: string }
 export type BroadcastNode = Omit<Schemas['BroadcastNode'], 'replays'> & { replays: BroadcastReplay[] }
@@ -75,13 +76,16 @@ function timedCategory(path: string, admin = false, options: RequestInit = {}): 
 }
 
 export const listBroadcasts = (server?: BroadcastServer, signal?: AbortSignal) => json(server ? `?server=${server}` : '', 'BroadcastIndex', false, { signal })
-export const getBroadcastSeason = (id: number, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', false, { signal })
-export const getBroadcastCategory = (id: number, signal?: AbortSignal) => timedCategory(`/categories/${id}`, false, { signal })
+export const getBroadcastSeasonContents = (id: number, signal?: AbortSignal): Promise<BroadcastSeasonContents> => request(`/seasons/${id}/contents`, false, { signal }, async response => {
+  const value = validateBroadcast('BroadcastSeasonContents', await response.json())
+  const starts = new Map(value.replayStarts.map(replay => [replay.replayId, replay.startsAt]))
+  return { ...value, nodes: value.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: starts.get(replay.id) ?? null })) })) }
+})
 export const createBroadcastSeason = (value: BroadcastSeasonCreate, signal?: AbortSignal) => json('/seasons', 'BroadcastSeasonView', true, body('POST', value, signal))
 export const updateBroadcastSeason = (id: number, value: BroadcastSeasonUpdate, signal?: AbortSignal) => json(`/seasons/${id}`, 'BroadcastSeasonView', true, body('PUT', value, signal))
 export const createBroadcastCategory = (id: number, value: BroadcastCategoryCreate, signal?: AbortSignal) => json(`/seasons/${id}/categories`, 'BroadcastSeasonView', true, body('POST', value, signal))
 export const createBroadcastNode = (id: number, value: BroadcastNodeCreate, signal?: AbortSignal) => timedCategory(`/categories/${id}/nodes`, true, body('POST', value, signal))
-export const getBroadcastDeletionPreview = (kind: 'seasons' | 'nodes', id: number, signal?: AbortSignal) => json(`/${kind}/${id}/deletion-preview`, 'BroadcastDeletionPreview', true, { signal })
+export const getBroadcastDeletionPreview = (kind: 'seasons' | 'categories' | 'nodes', id: number, signal?: AbortSignal) => json(`/${kind}/${id}/deletion-preview`, 'BroadcastDeletionPreview', true, { signal })
 
 export function saveBroadcastReplay(target: { nodeId: number; replayId?: number }, value: BroadcastTimedReplaySave, cover: File | null, signal?: AbortSignal) {
   if ((value.replay.coverAction === 'REPLACE') !== Boolean(cover)) {
@@ -94,7 +98,7 @@ export function saveBroadcastReplay(target: { nodeId: number; replayId?: number 
     { method: target.replayId ? 'PUT' : 'POST', body: form, signal })
 }
 
-export async function deleteBroadcastResource(kind: 'seasons' | 'nodes' | 'replays', id: number, expectedVersion: number, signal?: AbortSignal) {
+export async function deleteBroadcastResource(kind: 'seasons' | 'categories' | 'nodes' | 'replays', id: number, expectedVersion: number, signal?: AbortSignal) {
   await request(`/${kind}/${id}?expectedVersion=${expectedVersion}&confirm=true`, true, { method: 'DELETE', signal }, async () => undefined)
 }
 

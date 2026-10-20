@@ -40,6 +40,8 @@ public class BroadcastAdminController {
             @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.updateReplay(id, request, cover); }
     @GetMapping("/seasons/{id}/deletion-preview")
     public BroadcastDtos.DeletionPreview seasonDeletionPreview(@PathVariable final long id) { return service.seasonDeletionPreview(id); }
+    @GetMapping("/categories/{id}/deletion-preview")
+    public BroadcastDtos.DeletionPreview categoryDeletionPreview(@PathVariable final long id) { return service.categoryDeletionPreview(id); }
     @GetMapping("/nodes/{id}/deletion-preview")
     public BroadcastDtos.DeletionPreview nodeDeletionPreview(@PathVariable final long id) { return service.nodeDeletionPreview(id); }
     @DeleteMapping("/seasons/{id}")
@@ -53,6 +55,12 @@ public class BroadcastAdminController {
             @RequestParam(name = "expectedVersion") final long expectedVersion,
             @RequestParam(name = "confirm") final boolean confirm) {
         service.deleteNode(id, expectedVersion, confirm); return ResponseEntity.noContent().build();
+    }
+    @DeleteMapping("/categories/{id}")
+    public ResponseEntity<Void> deleteCategory(@PathVariable final long id,
+            @RequestParam(name = "expectedVersion") final long expectedVersion,
+            @RequestParam(name = "confirm") final boolean confirm) {
+        service.deleteCategory(id, expectedVersion, confirm); return ResponseEntity.noContent().build();
     }
     @DeleteMapping("/replays/{id}")
     public ResponseEntity<Void> deleteReplay(@PathVariable final long id,

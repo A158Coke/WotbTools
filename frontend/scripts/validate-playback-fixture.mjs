@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import SwaggerParser from '@apidevtools/swagger-parser'
-import { broadcastTimedCategoryViewValidator, broadcastTimedReplaySaveValidator } from '../src/api/generated/contract-validators.js'
+import { broadcastSeasonContentsValidator, broadcastTimedCategoryViewValidator, broadcastTimedReplaySaveValidator } from '../src/api/generated/contract-validators.js'
 
 const openapiPath = fileURLToPath(new URL('../../contracts/http/openapi.yaml', import.meta.url))
 const fixturePath = fileURLToPath(new URL('../../contracts/http/fixtures/battle-playback-v2.json', import.meta.url))
@@ -36,6 +36,23 @@ for (const override of invalidRecommendations) {
   if (validateRecommendation({ ...recommendationRequest, ...override })) throw new Error(`Invalid recommendation request accepted: ${JSON.stringify(override)}`)
 }
 console.log('Recommendation request boundary fixtures: OK')
+
+const seasonContents = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-season-contents.json', import.meta.url), 'utf8'))
+if (!broadcastSeasonContentsValidator(seasonContents)) throw new Error(JSON.stringify(broadcastSeasonContentsValidator.errors, null, 2))
+for (const mutate of [
+  value => { delete value.categories },
+  value => { delete value.nodes },
+  value => { value.defaultTimeZone = 'UNKNOWN' },
+  value => { value.categories[0].type = 'UNKNOWN' },
+  value => { delete value.nodes[0].categoryId },
+  value => { value.replayStarts[0].startsAt = null },
+  value => { value.extra = true },
+]) {
+  const invalid = structuredClone(seasonContents)
+  mutate(invalid)
+  if (broadcastSeasonContentsValidator(invalid)) throw new Error('Invalid broadcast season contents accepted')
+}
+console.log('Broadcast season contents fixture and closed-field boundaries: OK')
 
 const timedBroadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-timed-category.json', import.meta.url), 'utf8'))
 const validateTimed = broadcastTimedCategoryViewValidator
