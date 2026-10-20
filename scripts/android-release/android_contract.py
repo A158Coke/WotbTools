@@ -307,6 +307,31 @@ REVIEWED_ASSET_ORIGINS = (
     "https://wotbtools.com/agent-assets",  # legacy-gateway：生产网关反代（≤ 2.1.6 已 staged 候选）
 )
 
+REVIEWED_REMOTE_ASSET_ORIGINS = {
+    "COS_BASE": "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com",
+    "REMOTE_ASSET_BASE": "https://assets.wotbtools.com",
+}
+
+
+def remote_asset_origin(native_source: str | Path) -> str:
+    source = Path(native_source).read_text(encoding="utf-8")
+    declarations = re.findall(
+        r'^[ \t]*(?:private[ \t]+)?const[ \t]+val[ \t]+'
+        r'(COS_BASE|REMOTE_ASSET_BASE)[ \t]*=[ \t]*"([^"]+)"',
+        source,
+        re.MULTILINE,
+    )
+    if len(declarations) != 1:
+        fail("staged AgentAssetProxy must declare exactly one reviewed remote asset origin")
+    name, origin = declarations[0]
+    if REVIEWED_REMOTE_ASSET_ORIGINS.get(name) != origin:
+        fail(f"staged AgentAssetProxy has an unreviewed remote asset origin: {origin}")
+    return origin
+
+
+def command_asset_origin(args: argparse.Namespace) -> None:
+    print(remote_asset_origin(args.native_source))
+
 
 def apk_bundle_identity(apk_path: str, contract: dict, pin: dict, source: str, version: str) -> dict:
     """Prove the bundle from APK bytes, rather than trusting a workspace manifest."""
@@ -439,6 +464,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("bundle"); p.add_argument("--apk", required=True); p.add_argument("--badging", required=True); p.add_argument("--contract", required=True); p.add_argument("--pin", required=True); p.add_argument("--source", required=True); p.add_argument("--version", required=True); p.add_argument("--evidence"); p.add_argument("--output"); p.set_defaults(func=command_bundle)
     p = sub.add_parser("cors"); p.add_argument("--headers", required=True); p.add_argument("--status", required=True); p.add_argument("--origin", required=True); p.add_argument("--methods", default=""); p.add_argument("--request-headers", default=""); p.add_argument("--expected-status", type=int); p.set_defaults(func=command_cors)
+    p = sub.add_parser("asset-origin"); p.add_argument("--native-source", required=True); p.set_defaults(func=command_asset_origin)
     p = sub.add_parser("version"); p.add_argument("version"); p.set_defaults(func=command_version)
     p = sub.add_parser("validate"); p.add_argument("--contract", required=True); p.add_argument("--gradle-properties", required=True); p.add_argument("--frontend", required=True); p.add_argument("--native-source", action="append", default=[]); p.add_argument("--frontend-source", action="append", default=[]); p.set_defaults(func=command_validate)
     p = sub.add_parser("version-bump"); p.add_argument("--base-version", required=True); p.add_argument("--head-version", required=True); p.add_argument("--paths", required=True); p.set_defaults(func=command_bump)

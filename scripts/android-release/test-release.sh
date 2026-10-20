@@ -28,9 +28,15 @@ assert "android-v*" in push["tags"], "Android tag recovery trigger is missing"
 android_proxy = (root / "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt").read_text(encoding="utf-8")
 assert 'REMOTE_ASSET_BASE = "https://assets.wotbtools.com"' in android_proxy
 assert "COS_BASE" not in android_proxy
-release_workflow = (root / ".github/workflows/android-release.yml").read_text(encoding="utf-8")
-assert 'REMOTE_ASSET_BASE="https://assets.wotbtools.com"' in release_workflow
-assert '"$REMOTE_ASSET_BASE/index.json"' in release_workflow
+release_workflow = yaml.safe_load((root / ".github/workflows/android-release.yml").read_text(encoding="utf-8"))
+staged_source = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "stagedref")
+assert "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt" in staged_source["run"]
+staged = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("id") == "staged")
+assert 'assetOrigin=$ASSET_ORIGIN' in staged["run"]
+readiness = next(step for step in release_workflow["jobs"]["publish"]["steps"] if step.get("name", "").startswith("Verify production API CORS"))
+assert '"${{ steps.staged.outputs.assetOrigin }}"' in readiness["run"]
+assert '"$ASSET_ORIGIN/index.json"' in readiness["run"]
+assert "REMOTE_ASSET_BASE=\"https://assets.wotbtools.com\"" not in readiness["run"]
 for name in ("frontend.yml", "frontend-replica.yml"):
     web_workflow = yaml.safe_load((root / ".github/workflows" / name).read_text(encoding="utf-8"))
     assert web_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com", name
@@ -520,7 +526,7 @@ assert "guard_local_first_cutover" in publish_runs and "guard_local_first_cutove
 assert "android_contract.py cors" in publish_runs and "/api/users/profile" in publish_runs
 # 资产源是本机路径 /agent-assets + Native AgentAssetProxy 直连 Alibaba（原生无 CORS），
 # readiness 探测对象是新版本对象源匿名可读性，而不是 legacy 网关 exact-origin CORS。
-assert "$REMOTE_ASSET_BASE/index.json" in publish_runs
+assert '"$ASSET_ORIGIN/index.json"' in publish_runs
 assert "$COS_BASE/index.json" not in publish_runs
 assert "https://wotbtools.com/version.json" not in publish_runs
 assert "FE_COMMIT" not in publish_runs and "frontend-version.json" not in publish_runs
