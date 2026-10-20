@@ -2,6 +2,7 @@
 
 > 本索引的唯一职责：**今天该读哪份文档？**
 > 当前状态文档只描述合并后的系统；产品/业务演进见 `../HISTORY.md`，技术/架构演进见 `architecture/TECHNICAL_EVOLUTION.md`，逆向证据见 `research/**`。
+> 未排期的 future wishlist 不进入 persistent repository docs；当前已批准任务只进入 `current-plan.md`，明确独立 follow-up 使用 GitHub Issue。
 
 固定接手方法以 `../.agents/AGENTS.md` 的「接手与调整方法（固定流程）」为准：入口阅读 → 现实审计 → 任务分类 → 计划契约 → Reuse / SSOT 执行 → 分层验证 → 收尾交接。
 
@@ -131,12 +132,6 @@
 |---|---|
 | `../HISTORY.md` | 查产品/业务能力为何引入、变化或退役，以及产品方向决策时（产品历史，不是当前契约） |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构、数据流、authority、身份模型与生产拓扑的演进时（技术历史，不是当前契约） |
-
-## 路线图
-
-| 文档 | 何时读 |
-|---|---|
-| `ROADMAP.md` | 了解产品方向（Now / Next / Later / Research）；它不描述当前系统状态 |
 
 ## 认证
 
