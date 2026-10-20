@@ -3,8 +3,9 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { TournamentStandings } from '../api/tournament-points.js'
 import { localizedDayLabel, projectTournamentPoints } from '../utils/tournamentPointsExport.js'
-const props = withDefaults(defineProps<{ standings: TournamentStandings; publicView?: boolean }>(), { publicView: false })
+const props = withDefaults(defineProps<{ standings: TournamentStandings; publicView?: boolean; grouped?: boolean }>(), { publicView: false })
 const { locale, t } = useI18n()
+const groupedView = computed(() => props.publicView || props.grouped)
 const number = computed(() => new Intl.NumberFormat(locale.value))
 const table = computed(() => projectTournamentPoints(props.standings, locale.value, t))
 const clanCount = computed(() => props.standings.rows.length)
@@ -12,7 +13,7 @@ const publishedDays = computed(() => props.standings.days.filter(day => day.publ
 const display = (value: number | string | null) => value == null ? '—' : typeof value === 'number' ? number.value.format(value) : value
 </script>
 <template>
-  <div class="tournament-board" :class="{ 'tournament-board-public': publicView }">
+  <div class="tournament-board" :class="{ 'tournament-board-public': publicView, 'tournament-board-grouped': groupedView }">
     <header v-if="publicView" class="tournament-board-heading" data-testid="tournament-public-summary">
       <h2><span class="tournament-board-year">{{ standings.event.year }}</span>{{ table.identity.slice(String(standings.event.year).length) }}</h2>
       <dl class="tournament-board-stats">
@@ -23,8 +24,8 @@ const display = (value: number | string | null) => value == null ? '—' : typeo
     <div class="tournament-table-wrap" tabindex="0" :aria-label="$t('tournament.title')">
       <table class="tournament-table" data-testid="tournament-table" :aria-label="publicView ? table.identity : undefined">
         <caption v-if="!publicView" class="tournament-muted">{{ table.identity }}</caption>
-        <template v-if="publicView"><colgroup span="3" /><colgroup v-for="round in standings.event.roundCount" :key="round" :span="standings.event.daysPerRound + 1" /></template>
-        <thead v-if="publicView">
+        <template v-if="groupedView"><colgroup span="3" /><colgroup v-for="round in standings.event.roundCount" :key="round" :span="standings.event.daysPerRound + 1" /></template>
+        <thead v-if="groupedView">
           <tr class="tournament-round-headings">
             <th v-for="column in table.columns.slice(0, 3)" :key="column.key" scope="col" rowspan="2" :class="column.kind">{{ column.label }}</th>
             <th v-for="round in standings.event.roundCount" :key="round" scope="colgroup" :colspan="standings.event.daysPerRound + 1" class="tournament-round-heading">{{ $t('tournament.round', { number: round }) }}</th>
