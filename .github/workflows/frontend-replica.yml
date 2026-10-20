@@ -114,7 +114,7 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh
+          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh,deploy/tx/runtime-check-lib.sh
           target: /opt/wotb-tx2/frontend-replica.incoming
           overwrite: true
 
@@ -139,6 +139,13 @@ jobs:
           [ -f "$incoming/frontend-shadow.compose.yml" ]
           [ -f "$incoming/nginx/frontend.conf.template" ]
           [ -f "$incoming/k7c-sync-runtime-content.sh" ]
+
+          # TX2 uses the same Business API upstream as TX1. Fail before touching
+          # runtime content or live files; never wait while holding the host lock.
+          source "$incoming/runtime-check-lib.sh"
+          health="$(curl --fail --silent --show-error --connect-timeout 3 --max-time 10 \
+            http://10.20.0.1:8087/api/health)"
+          assert_frontend_backend_capabilities <<< "$health"
 
           # Runtime content is part of the frontend surface. Refresh the Android
           # manifest and the currently published APK before the replica enters service.

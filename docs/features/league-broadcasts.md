@@ -46,6 +46,10 @@ URL 的 `lbServer/lbSeason/lbCategory` 由 Vue Router 所有，可分享、刷�
 和回放数量，删除单个根节点前显示回放数量。确认时携带最新季赛版本；预览后有其他管理员修改，
 返回 `BROADCAST_VERSION_CONFLICT`，须刷新数量后重新确认，防止按过期提示扩大删除范围。
 
+## 部署与兼容性
+
+部署使用 `/api/health` 的 `broadcast-season-contents-v1` 能力声明，表示后端具备赛事内容快照与分类删除端点。TX1 前端和 TX2 副本均在替换线上文件／容器之前检查实际 Business API 上游；旧健康响应、缺失能力或请求失败会阻止切换并保留旧前端。探测不持锁等待后端升级：后端部署成功后重新运行失败的 Frontend 工作流。原有接口仍保留给旧 APK。
+
 ## 封面
 
 封面选填，PNG/JPEG 单张最多 10 MiB，尺寸 16–8192 px、最多 20MP。

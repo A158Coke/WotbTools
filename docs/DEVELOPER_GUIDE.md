@@ -635,6 +635,8 @@ TX Compose 先启动 PostgreSQL，再由 TX-local OpenTofu 创建 database/role/
 Komodo 域名 DNSPod 记录由独立 `infra/tofu/komodo` root 管理。旧 Yecao 业务服务已退役，
 不把 Phase 1 的旧迁移审批清单作为当前启动步骤；启动细节见 `docs/auth/keycloak-tx-bootstrap.md`。
 
+Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Business API 上游 `/api/health` 的 `broadcast-season-contents-v1` 能力；只读探测有超时，旧健康响应、能力缺失或网络失败均保留旧前端并立即退出，释放部署锁。后端成功后重跑 Frontend。校验由 `deploy/tx/runtime-check-lib.sh` 复用，属于 Frontend trigger/freshness 输入；独立服务 workflow 的完成先后不作为兼容性保证。
+
 生产 CI/CD 使用唯一 PR 验证入口和独立的 service owner workflows：
 
 - `.github/workflows/ci-gate.yml` 是唯一 PR 入口；按 changed paths 调用受影响的 `ci-<owner>.yml`，
