@@ -31,13 +31,10 @@ description: >
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
-1. **完整读取计划**：实现路径读 `docs/current-plan.md`，确认"分步计划"状态表、
-   "影响面清单"、"验收标准"、"待确认项"与"非目标"。
-2. **授权校验**：待确认项中存在未确认的"阻塞"项 → 停下汇报，不执行；
-   用户明确说"执行/批准"即视为已授权。
+1. **完整读取计划**：实现路径读 `docs/current-plan.md`，按 Designer canonical schema 读取 `# Execution Steps`（每步的 `Status` / Goal / Scope / Files / Change / Validation / Commit boundary）、`# Impact Surface`、`# Validation / Outside Judge`、`# Non-Goals`、`# Unverified Assumptions` 与 `# Evidence Gaps`。不假设另外存在“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
+2. **授权校验**：plan 必须已获用户批准；`# Unverified Assumptions` / `# Evidence Gaps` 中存在未确认且会阻塞执行的项 → 停下汇报，不执行；用户明确说"执行/批准"即视为已授权。
 3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
-   - 从计划内容提取主题：优先计划标题 /《开发方案单》标题 / 业务目标第一句；
-     无标题时用影响面中最核心的动词短语。
+   - 从计划内容提取主题：优先 `# Goal` / `# Actual Outcome`；无明确标题时用 `# Impact Surface` 中最核心的动词短语。
    - 分支名 grammar：`<branch> = feat/<kebab-case-suffix> | fix/<kebab-case-suffix> | refactor/<kebab-case-suffix> | chore/<kebab-case-suffix>`。
      suffix 必须为 lowercase，只允许字母、数字与连字符；不得有空格或额外 `/`；必须能直接看出任务主题；
      总分支名长度 ≤ 60。`/` 只允许作为上述 prefix 与 suffix 之间的单个 separator。
@@ -54,19 +51,20 @@ description: >
    - 在任务 worktree 中确认分支与起点；后续读取、编辑、验证、提交、推送和开 PR
      均以该 worktree 为工作目录。若批准的计划仅存在于原检出，先将该计划文件带入任务
      worktree 并核对内容，保留原检出及其其他改动。
-4. **确定执行顺序**：按状态表顺序执行标记为"待批准/待执行"的任务；
-   只执行当前计划内任务。
+4. **确定执行顺序**：按 `# Execution Steps` 顺序执行 `Status: PENDING` 的步骤；
+   只执行当前计划内步骤。
 5. **逐项执行（每步）**：
-   - 读该步文件清单与影响面，定位相关代码（用 `rg` / `rg --files`）；
+   - 读该步 `Scope / Files`、`Change`、`Validation`，并对照 `# Impact Surface` 定位相关代码（用 `rg` / `rg --files`）；
    - **Reuse Audit（新增 production type/file 前）**：先 `rg` / repo-wide 搜索候选现有实现，优先 reuse / extend；如仍需新增，在实现 reasoning 中明确为什么现有 abstraction 无法合理承载（按 `.agents/AGENTS.md` 的 Reuse / Extend First contract，只引用不复制、无需长 ADR）；
+   - 开始该步前把 `Status` 置为 `IN_PROGRESS`；
    - 实现，遵循项目约定（`.agents/AGENTS.md`、`.agents/playbooks/wotb-sync.md` 跨层检查单）；
-   - 运行该步对应测试/构建验证；失败先修复再前进；
-   - 更新计划状态表（进行中 → 完成），并在 commentary 简短汇报。
-6. **阻塞处理**：遇到依赖用户决策、外部数据或超出计划范围的改动时，
-   停下汇报并给出选项；不静默扩大范围、不自行改方案。若 repository reality 证明 approved plan 的关键 assumption 错误，
-   停止执行并返回 Designer / 用户，不得在 Executor 内悄悄 redesign。
+   - 运行该步 `Validation`；失败先修复再前进；
+   - 该步 `Status` 置为 `DONE`，并在 commentary 简短汇报。
+6. **阻塞处理**：遇到依赖用户决策、外部数据或超出计划范围的改动时，把该步 `Status` 置为 `BLOCKED`，
+   停下汇报并给出选项；不静默扩大范围、不自行改方案。若 repository reality 证明 approved plan 的关键 assumption 错误
+   （`# Unverified Assumptions` 失效），停止执行并返回 Designer / 用户，不得在 Executor 内悄悄 redesign。
 7. **全部完成后**：
-   - 按"验收标准"逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
+   - 按 `# Validation / Outside Judge` 与 `# Final Verification` 逐条验证（映射到具体测试/检查，禁止口头宣称通过）；
    - 运行本任务 affected regression tests（targeted / module / feature）；
      repository-level full validation 交由 PR CI 统一执行，**不在任务结束重复跑全量**（仅在 `.agents/AGENTS.md`
      的 Full-test 例外情形下才跑全量，并须先声明 Affected scope / Selected validation / Why）；
@@ -82,7 +80,7 @@ description: >
    - **review-with-docs 零 blocker 即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
      中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
      无需再等用户指示；存在 blocker/未闭环问题时禁止开 PR。
-8. **计划文件收尾**：状态表全部置为完成；按 `current-plan.md` 头部约定
+8. **计划文件收尾**：所有 execution step 的 `Status` 置为 `DONE`；按 `current-plan.md` 头部约定
    决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 在 PASS 后开 PR。
    PR 合并后加载 `.agents/playbooks/post-merge-cleanup.md` 清理分支、worktree 与计划文件。
@@ -95,9 +93,9 @@ description: >
 
 - 新任务必须先验证实际 upstream/main remote，再基于最新 `<main-ref> = <remote>/main` 创建独立 worktree 与主题分支；续做任务可复用其已有 worktree。所有变更只落在任务 worktree，不在 main 或其他任务的检出中执行。
 - 已验证 `<main-ref>` 是 Executor → Review With Docs 的 lifecycle handoff 信息；final gate 必须复用它，不得重新硬编码或猜测 remote。
-- 只执行计划内任务："非目标"清单内的改动一律不做。
-- 每步必须有验证，禁止"改完就继续"。
-- 计划中标记"待确认"且阻塞的项，未获用户答复前不得执行。
+- 只执行计划内任务：`# Non-Goals` 内的改动一律不做。
+- 每步必须有验证，禁止"改完就继续"；每步 `Status` 按 `PENDING → IN_PROGRESS → DONE`，真实阻塞置 `BLOCKED`。
+- `# Unverified Assumptions` / `# Evidence Gaps` 中未确认且阻塞的项，未获用户答复前不得执行。
 - 发现方案与代码事实冲突时停下汇报（引用 `文件:行`），不擅自推翻已批准方案。
 - 执行完成后必须调用 review-with-docs 审查并闭环（修复 → 复查 → 零问题），
   审查结果写入最终汇报；本技能不替代审查。review-with-docs 零 blocker 后允许

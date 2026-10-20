@@ -1,7 +1,7 @@
 """Aggregate GitHub objects into an immutable tuple of bounded metric samples."""
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
-from classification import AREAS, actor_type, classify_area, label_areas
+from classification import AREAS, actor_type, classify_area
 
 START = datetime(2026, 6, 22, tzinfo=timezone.utc)
 CONCLUSIONS = ('success', 'failure', 'cancelled', 'skipped', 'other')
@@ -118,7 +118,7 @@ def collect(client, repository, overrides, now=None, cache=None):
     prs = list(client.pages(base + '/pulls?state=all&per_page=100'))
     for pr in prs:
         number = str(pr['number'])
-        if label_areas(pr) or number in overrides:
+        if number in overrides:
             continue
         # Cache only the classification contribution, never paths/body/user data.
         key = (number, pr.get('updated_at'))

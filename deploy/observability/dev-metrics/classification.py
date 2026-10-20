@@ -1,4 +1,9 @@
-"""Stable V1 classification. Rule changes require explicit historical overrides."""
+"""Stable V1 classification.
+
+PR areas come from frozen historical overrides, then changed paths, then a bounded
+semantic fallback. Manual PR labels are not an input; rule changes require explicit
+historical overrides.
+"""
 import re
 import json
 from pathlib import Path
@@ -32,15 +37,7 @@ KEYWORDS = {
 }
 
 
-def label_areas(pr):
-    return frozenset(label['name'][5:] for label in pr.get('labels', [])
-                     if label.get('name', '').startswith('area/') and label['name'][5:] in AREAS)
-
-
 def classify_area(pr, paths=(), overrides=None):
-    labels = label_areas(pr)
-    if labels:
-        return labels
     override = (overrides or {}).get(str(pr['number']))
     if override is not None:
         return frozenset(override)

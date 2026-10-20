@@ -13,15 +13,15 @@
 
 1. **入口阅读** — 先读根 `AGENTS.md`、本文件、`docs/DEVELOPER_GUIDE.md`；进入具体目录再读该目录 `AGENTS.md`；改专项能力时读 `docs/README.md` 指向的对应专题文档。
 2. **现实审计** — 先确认 `git status --short --branch`、`git remote -v`、当前分支/HEAD 与已有未提交改动；再用 `rg` 追真实调用链、配置、测试与文档。真实代码是 source of truth，文档只作为待校验线索。
-3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。跨层改动加载 `.agents/playbooks/wotb-sync.md`；增删列加载 `.agents/playbooks/column-sync.md`；feature/大范围改动走 Designer → approved current-plan → Executor → Review With Docs 生命周期。
-4. **计划契约** — 需要 Plan-First 时，计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理；feature 类计划写入 `docs/current-plan.md` 并等批准。
+3. **任务分类** — 判定是问答/排障、文档、小修、feature、大范围重构、跨层改动、数据/导出/API/部署/Android runtime。问答/排障可直接回答；任何会改变 repository 行为的 development task（含小修、bug fix、CSS、i18n、hotfix）统一进入 Designer → approved current-plan → Executor → Review With Docs。跨层改动加载 `.agents/playbooks/wotb-sync.md`；增删列加载 `.agents/playbooks/column-sync.md`。
+4. **计划契约** — 计划必须写清范围、非目标、影响面、SSOT、风险、验证档位、回滚/失败处理，写入 `docs/current-plan.md` 并等待用户批准。Plan schema 唯一来源是 `.agents/skills/designer/SKILL.md`；Executor 只消费该 schema，不定义第二套 current-plan format。
 5. **Reuse / SSOT 执行** — 新增 production abstraction 前先做 Reuse Audit；优先复用/扩展现有结构，避免第二份事实源。改动影响界面、导出、数据、构建、用法或运维时，同步更新文档。
 6. **分层验证** — 先 targeted，再 module/feature，只有触发 Full-test 例外才跑 repository-level full validation；每次说明 Affected scope / Selected validation / Why，避免重复跑已失效范围外的测试。
 7. **收尾交接** — Review With Docs 是唯一 final quality gate；通过后 Executor 再 commit/push/open PR；最终说明改了什么、验证了什么、未验证什么、剩余风险和下一步。
 
 ## 规则
 
-1. **Plan-First** — 代码改动前先出 plan（范围/影响/风险），待用户批准后执行。小修小补（bug fix、CSS、i18n 缺漏）可跳过；但需要 Designer 时，完整设计 authority 以 `.agents/skills/designer/SKILL.md` 为准。
+1. **Plan-First** — 所有 development task 先进入 `designer` 产出 approved plan，再交给 `executor`；不存在跳过 Designer 的小修 / CSS / i18n / hotfix / direct implementation 路径。简单任务的复杂度由 Designer 用 `Ambition = KEEP` 与轻量化 plan 控制，不扩大设计。Plan schema 与 lifecycle authority 以 `.agents/skills/designer/SKILL.md` 为准。
 2. **生命周期** — 模糊需求 / 明确需求 → `designer`（deeply define the work）→ approved `docs/current-plan.md` → `executor`（实现 + targeted validation）→ `review-with-docs`（唯一 final gate）→ PASS 后 executor commit/push/open PR → merge 后 executor 加载 `.agents/playbooks/post-merge-cleanup.md`。PR reviewer findings → `prompt-repair` → `review-with-docs`。未批准不得编码；review-with-docs 未 PASS 不得开 PR。Designer 的 Understand / Ambition / Depth / Range / Design / Outside Judge / Execution Plan / internal Design Grill 完整定义只维护在其 Skill，不在本文件复制。
 3. **文档生命周期与权威归属** — 持久文档按用途分层，任何改动都不得把「改动故事」写进 canonical 文档：
    - `HISTORY.md`：**仅产品/业务演进**——用户可见或商业能力为何引入、变化、退役，以及产品方向决策。不是技术架构史。
@@ -132,6 +132,8 @@
 3. **prompt-repair** — reviewer findings 的 minimum-delta 增量修复；只有 finding 证明 approved plan 失效才返回 Designer。
 4. **review-with-docs** — 验证 implementation against plan + repository reality + canonical docs + runtime evidence；唯一 final quality gate。
 
-领域知识、检查单与工具指南在 `.agents/playbooks/`，由四个 Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。
+Domain implementation playbooks、检查单与工具指南在 `.agents/playbooks/`，由四个 lifecycle Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。
+
+Product QA 是独立的 operational product-audit playbook（`.agents/playbooks/product-qa/`）：周期性或用户显式触发，默认目标 production `https://wotbtools.com`；不加入 implementation lifecycle，不属于 `review-with-docs` 的 gate，不拥有 commit/push/PR/merge/final implementation PASS。findings 进入 GitHub Issue / `designer`。
 
 > 深入背景见 `docs/DEVELOPER_GUIDE.md`；本文件与各 scope AGENTS.md 以真实代码为准，发现漂移先修正文档。

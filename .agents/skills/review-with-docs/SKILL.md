@@ -2,9 +2,9 @@
 name: review-with-docs
 description: >
   唯一 final quality gate：验证 implementation 是否符合 approved plan、repository reality、canonical docs
-  与必要的 runtime evidence；覆盖代码质量、文档同步、AI 死代码、架构/领域 playbook 与明确适用的 Product QA。
-  Trigger: Executor 实现完成后、Prompt Repair 修复 reviewer finding 后、merge 前需要 final gate 时，
-  或用户直接请求 exploratory / mobile / usability / full-site black-box QA。只有本 Skill 可以判定 final PASS。
+  与 acceptance criteria 要求的 runtime evidence；覆盖代码质量、文档同步、AI 死代码、架构/领域 playbook。
+  Trigger: Executor 实现完成后、Prompt Repair 修复 reviewer finding 后、merge 前需要 final gate 时。
+  只有本 Skill 可以判定 final PASS。周期性 Product QA 是独立 playbook，不是本 Skill 的 gate 或 trigger。
   Code-review engine: Alibaba OpenCodeReview（OCR）delegate mode 负责确定性文件筛选 / 规则解析，推理由主代理完成。
 ---
 
@@ -17,7 +17,7 @@ description: >
 
 - 从 Executor 进入 final gate 时，必须接收并复用 Executor 已验证的精确 `<main-ref>`，其值为步骤 3 记录的 `<remote>/main`。
 - 从 Prompt Repair 进入时，优先复用该 PR / task 已有的已验证 `<main-ref>`；如果当前上下文没有，则先验证实际承载 upstream/main 的 remote，再记录 `<main-ref> = <remote>/main`。
-- standalone review / QA 没有 lifecycle handoff 时，也必须先验证真实 canonical main remote/ref，再记录 `<main-ref>`。
+- standalone review 没有 lifecycle handoff 时，也必须先验证真实 canonical main remote/ref，再记录 `<main-ref>`。
 - **任何路径都不得默认或硬编码 `origin/main`。** 一旦 `<main-ref>` 已验证，本轮 range、merge-base、compare、OCR committed preview 全程复用同一值。
 
 ## Candidate Tree Review Contract
@@ -85,16 +85,15 @@ Task-related candidate tree contains changes but review scope is empty.
 
 ## 内部 playbooks
 
-按需加载 `.agents/playbooks/`：`code-quality.md`、`code-smell.md`、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`、`product-qa/`。
+按需加载 `.agents/playbooks/`：`code-quality.md`、`code-smell.md`、`fallow.md`、`wotb-sync.md`、`column-sync.md`、`frontend-architecture.md`、`keycloak-upgrade/`、`komodo-server-lifecycle.md`。
 
-它们是 checklist/tool guidance，不拥有 lifecycle actions，也不是顶层 Skill。
+它们是 checklist/tool guidance，不拥有 lifecycle actions，也不是顶层 Skill。`product-qa/` 是独立的周期性 production product audit playbook，不属于本 Skill 的审查阶段。
 
 ## 流程
 
 > 全程主代理，不 spawn verifier 子代理。OCR delegate mode 是确定性工具链，不是第二个 agent。
 
-0. **Product QA applicability**：源码/diff audit 前判定。
-1. **Baseline + OCR readiness**：确认 / 接收本轮唯一 `<main-ref>`，再检查固定版本 OCR 可用性。
+1. **Baseline + OCR readiness**：确认 / 接收本轮唯一 `<main-ref>`；先完成 OCR 版本安全检查，再进入任何 candidate repository rules 解析。
 2. **Candidate classification**：task-related files + explicit exclusions。
 3. **Layer B**：range/workspace preview → 过滤到 task-related scope → rules → 逐文件 audit。
 4. **Layer A**：发现真实 plan source，逐条验证 requirement / acceptance criteria。
@@ -103,15 +102,6 @@ Task-related candidate tree contains changes but review scope is empty.
 7. **Layer C**：reconcile findings，计算 blocker。
 8. **Fix → re-review**：BLOCKER/MAJOR 修复后只重跑受影响 scope；无法闭环则停止汇报。
 9. **Report**：Plan compliance + Findings + Validation + Final。
-
-## Product QA Gate
-
-- standalone exploratory QA 可默认 production；
-- final-gate Product QA 必须针对包含 candidate tree 的 local / preview / candidate environment，并记录 candidate 身份；
-- production success 不能代替未合并 candidate QA；
-- applicable 但 candidate-specific target 不可用 → BLOCKER / coverage limitation，不得伪造 PASS；
-- 已读源码导致上下文污染时，适用则执行 fresh isolated QA pass；
-- 纯后端 / 文档治理 / 无 UI 用户流程影响且用户未要求浏览器验收 → N/A。
 
 ## HTTP Contract Gate
 
@@ -129,7 +119,21 @@ producer violation 修 producer/mapper，不放宽 FE schema 掩盖。
 
 ## OCR execution
 
-- `ocr --version` → `open-code-review v1.9.10` 或明确兼容版本；缺失时固定安装 `@alibaba-group/open-code-review@1.9.10`，禁止 latest/main。
+### Version security gate（先于 candidate rules 解析）
+
+`ocr` 在 delegate mode 下会读取 candidate repository 的 `.opencodereview/rule.json`。安全下限是 `1.11.1`（GHSA-wwg6-qfxw-xffj：受影响版本可被 candidate 控制的 rule 文件通过绝对路径 / 越界符号链接读取 review 机器上的 Markdown/text 并送入模型上下文）。
+
+1. 在读取、解析或评估任何 candidate repository OCR rules（含 `.opencodereview/**`）之前，先运行 `ocr --version`。
+2. 安装版本必须 `>= 1.11.1`。
+3. 缺失或低于下限时，安装 exact pinned `@alibaba-group/open-code-review@1.11.1`；禁止 `latest`、`main` 或 floating range。
+4. 已安装版本低于下限时 fail closed：停止 Layer B，不解析 repository rules、不运行 `ocr delegate preview` / `ocr delegate rule`，明确报告版本 blocker；重新安装 pinned secure version 后才能继续。
+
+```bash
+ocr --version   # 必须 >= 1.11.1
+```
+
+### Delegate mode
+
 - delegate mode 不需要 OCR 侧 LLM key；推理由主代理完成。
 - tool failure ≠ no findings；明确报告并人工 fallback，不能伪造 blocker=0。
 
@@ -143,7 +147,7 @@ ocr delegate preview --format json                               # workspace
 ocr delegate rule --format json <task-related-paths...>
 ```
 
-mixed candidate 两个 preview 都运行并按 path union/dedupe。OCR 返回 scope 后再次应用 task-related classification；exclusion 仍显式记录。
+只有版本 gate 通过后才运行上述 delegate 命令。mixed candidate 两个 preview 都运行并按 path union/dedupe。OCR 返回 scope 后再次应用 task-related classification；exclusion 仍显式记录。
 
 每个 task-related reviewable file 必须 `reviewed` 或有具体原因的 `skipped`。range 读 `merge-base(<main-ref>, HEAD)..HEAD` diff，tracked workspace 读 `git diff HEAD -- <path>`，task-related untracked 读全文。
 
@@ -165,8 +169,10 @@ mixed candidate 两个 preview 都运行并按 path union/dedupe。OCR 返回 sc
 ```text
 | Requirement | Status | Evidence |
 |---|---|---|
-| ... | DONE / PARTIAL / MISSING / BLOCKED | 文件:行 / test / runtime evidence |
+| ... | SATISFIED / PARTIAL / MISSING / BLOCKED | 文件:行 / test / runtime evidence |
 ```
+
+这里的 Status 是 requirement compliance 结果，不是 plan execution step 状态（step 状态只使用 Designer 的 `PENDING / IN_PROGRESS / DONE / BLOCKED`）。
 
 检查 requirement、acceptance criteria、遗漏、partial implementation、scope regression 与关键验证。requirement missing → 即使 OCR no findings 也 BLOCKER。
 
@@ -195,6 +201,20 @@ rg -n '@Autowired\s+(?:private|protected|public)\s+' java/*/src/main/java
 必须证明普通两行与同行 field injection 都能命中，且命令本身不报 multiline error。发现后优先 constructor injection / `@RequiredArgsConstructor` + `final`；唯一可行时才保留并写具体原因。不引入 AST tooling。
 
 ### A3. Documentation Gate
+
+先做 changed behavior → canonical owner 的同步映射。candidate 改变下列任一行为时，对应 canonical 文档必须在同一 candidate tree 内同步；只审查已存在的文档不足以通过本门禁：
+
+| Changed behavior | 必须同步的 canonical owner |
+|---|---|
+| 用户可见界面 / 交互 / 导航 / i18n | 对应 `docs/frontend/**` 或专题文档 |
+| 导出 / 数据列 / 数据来源 | `docs/DEVELOPER_GUIDE.md`、对应数据/导出专题文档 |
+| 构建 / 部署 / 运维 / 配置 | `docs/DEVELOPER_GUIDE.md`、`docs/operations/**`、目录 `AGENTS.md` |
+| HTTP/API wire contract | `contracts/http/openapi.yaml` 及其 canonical 说明 |
+| 认证 / 身份 / 权限 | 对应 auth / Keycloak 文档 |
+| Android runtime / 发布契约 | `docs/android/**`，版本门槛归 `docs/android/release-process.md` |
+| 仓库工作流 / lifecycle / Skill | `AGENTS.md`、`.agents/AGENTS.md`、`.agents/skills/**`、`.agents/playbooks/**` |
+
+映射结果为「无需更新」时必须给出具体理由；遗漏对应 canonical owner → BLOCKER。
 
 分类只包含真实支持的 owner：
 
@@ -280,11 +300,11 @@ Findings:
 - MINOR ...
 
 Validation:
-- Product QA: candidate target / N/A + reason
-- OCR: range/workspace, reviewable N, reviewed N, skipped N
+- runtime evidence: acceptance criteria 要求的 browser / device / runtime response / benchmark 结果，或 N/A + 具体理由
+- OCR: version, range/workspace, reviewable N, reviewed N, skipped N
 - DI scan: multiline / same-line result
-- targeted tests / contract / runtime evidence
-- docs manual review: N files
+- targeted tests / contract evidence
+- docs behavior→owner mapping + manual review: N files
 
 Final:
 Blocker count: N
@@ -295,6 +315,7 @@ Blocker count: N
 - Designer = deeply define the work。
 - Executor = execute approved plan，并把已验证 `<main-ref>` 交给 final gate。
 - Prompt Repair = minimum-delta reviewer finding repair。
-- Review With Docs = verify implementation against plan + reality + docs + runtime evidence，并拥有唯一 final PASS authority；复用已验证 baseline，不自行硬编码 remote。
+- Review With Docs = verify implementation against plan + reality + docs + acceptance criteria 明确要求的 runtime evidence，并拥有唯一 final PASS authority；复用已验证 baseline，不自行硬编码 remote。
+- Product QA = 独立、周期性或用户显式触发的 production product audit；不拥有 final implementation PASS，也不属于本 Skill 的 gate。
 
-本 Skill 不创建 future-wishlist owner、不重新做 Ambition/Design、不 commit/push/open PR/merge。
+本 Skill 验证 implementation，而不是做周期性产品体验审计。它不创建 future-wishlist owner、不重新做 Ambition/Design、不 commit/push/open PR/merge。

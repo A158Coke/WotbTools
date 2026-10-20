@@ -1,7 +1,9 @@
 
 # Product QA（真实用户黑盒探索）
 
-> 内部 playbook：**loaded by review-with-docs**；designer / executor / prompt-repair 不直接把它当 lifecycle stage 执行。不是顶层 Skill，也不参与生命周期选择。
+> **独立 operational playbook**：周期性或用户显式触发的 production product audit。它不是 PR final gate，也不由 `review-with-docs` 加载或拥有。不是顶层 Skill，不加入实现生命周期，不拥有 commit / push / PR / merge / final implementation PASS。
+
+> 默认目标：`https://wotbtools.com`（production）。需要审查尚未发布的实现时，按该任务明确的 local / preview 目标执行；这不改变本 playbook 的周期性产品审计定位。
 
 > 定位：把 agent 当成真实 QA / 新用户 / 重度用户，而不是 code reviewer。
 > 核心顺序固定为：**真实使用 → 观察异常 → 重复复现 → 固化证据 → 再决定是否看代码**。
@@ -46,7 +48,7 @@ Node REPL 若无法通过 ESM 导入本地 Playwright，可用 `node:module` 的
 
 独立探索式 Product QA 默认目标：`https://wotbtools.com`。
 
-用于未合并 candidate 的 review-with-docs final gate 时，必须测试包含该 candidate tree 的专属环境（local / preview / candidate deployment），执行前记录目标 URL 与 candidate 身份依据。不得用旧版 production 的正常结果替代 candidate QA。若 Product QA 适用但无法提供 candidate 专属环境，报告 BLOCKER 或明确 coverage limitation，不得宣称 PASS。
+Product QA finding 需要开发时，路由固定为：Product QA → confirmed finding → GitHub Issue / 用户确认 → `designer` → `executor` → `review-with-docs`。finding 不直接进入 `prompt-repair`，因为它不是既有 PR reviewer finding。
 
 ## 1. 黑盒隔离规则
 

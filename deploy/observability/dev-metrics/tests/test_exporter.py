@@ -90,6 +90,31 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(sum('/jobs?' in path for path in calls), 2)
         self.assertEqual(len(cache['gates']), 1)
 
+    def test_labels_do_not_bypass_path_classification(self):
+        calls = []
+        class Client:
+            def pages(self, path, key=None):
+                calls.append(path)
+                if '/pulls?' in path:
+                    return iter([pr(labels=[{'name': 'area/auth'}])])
+                if '/files?' in path:
+                    return iter([{'filename': 'frontend/a.vue'}])
+                return iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='frontend'), 1)
+        self.assertEqual(sample(result, 'pr_area_total', area='auth'), 0)
+        self.assertEqual(sum('/files?' in path for path in calls), 1)
+
+    def test_frozen_override_skips_file_history(self):
+        calls = []
+        class Client:
+            def pages(self, path, key=None):
+                calls.append(path)
+                return iter([pr(number=1)]) if '/pulls?' in path else iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
+        self.assertEqual(sum('/files?' in path for path in calls), 0)
+
     def test_saturated_run_window_splits_without_duplicate_boundary(self):
         calls = []
         class Client:
@@ -106,11 +131,39 @@ class CollectionTests(unittest.TestCase):
 
 class ClassificationTests(unittest.TestCase):
     def test_priority_and_multi_area(self):
-        self.assertEqual(classify_area(pr(labels=[{'name': 'area/auth'}]), ['android/a'], {'1': ['infra']}), {'auth'})
+        # Only a frozen historical override precedes changed-path evidence.
         self.assertEqual(classify_area(pr(), ['android/a'], {'1': ['infra']}), {'infra'})
-        self.assertEqual(classify_area(pr(title='replay'), ['deploy/observability/a']), {'infra', 'observability'})
+        self.assertEqual(classify_area(pr(), ['deploy/observability/a']), {'infra', 'observability'})
         self.assertEqual(classify_area(pr(title='Replay parser and 3D playback')), {'replay', 'playback'})
         self.assertEqual(classify_area(pr()), {'unclassified'})
+
+    def test_path_classification_cases(self):
+        # A: frontend path -> frontend.
+        self.assertEqual(classify_area(pr(), ['frontend/src/App.vue']), {'frontend'})
+        # B: java/wotb-ai keeps the implementation layer and the product area.
+        self.assertEqual(classify_area(pr(), ['java/wotb-ai/README.md']), {'backend', 'ai'})
+        # C: Keycloak provider -> auth.
+        self.assertEqual(classify_area(pr(), ['keycloak-wargaming-provider/pom.xml']), {'auth'})
+
+    def test_semantic_fallback_only_without_path_evidence(self):
+        # D: no path rule matches; the stable semantic fallback classifies.
+        self.assertEqual(classify_area(pr(title='Fix replay parser regression'), ['scripts/tool.py']), {'replay'})
+        # E: no path and no semantic evidence.
+        self.assertEqual(classify_area(pr(title='Adjust wording'), ['scripts/tool.py']), {'unclassified'})
+
+    def test_manual_area_label_never_overrides_changed_paths(self):
+        # F: an old area/* label is not an input unless the PR is frozen explicitly.
+        labeled = pr(labels=[{'name': 'area/auth'}], title='frontend layout fix')
+        self.assertEqual(classify_area(labeled, ['frontend/src/App.vue']), {'frontend'})
+        self.assertEqual(classify_area(labeled, ['frontend/src/App.vue'], {'1': ['auth']}), {'auth'})
+
+    def test_historical_frozen_overrides_are_stable(self):
+        data = json.loads((Path(__file__).resolve().parents[1] / 'historical-area-overrides.json').read_text(encoding='utf-8-sig'))
+        self.assertTrue({'635', '709'} <= set(data))
+        # Pre-existing PRs keep their recorded area sets regardless of current labels/paths.
+        self.assertEqual(classify_area(pr(number=635, labels=[{'name': 'area/frontend'}]), ['frontend/changed.vue'], data),
+                         {'docs', 'infra', 'observability'})
+        self.assertEqual(classify_area(pr(number=709), ['frontend/src/App.vue'], data), {'docs'})
 
     def test_feature_paths_preserve_cross_cutting_areas(self):
         self.assertEqual(classify_area(pr(), ['frontend/src/replay-local/playback/index.ts']),

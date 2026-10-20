@@ -29,7 +29,7 @@
 2. **切到 main 并更新**
    - `git checkout main`
    - `git pull --ff-only <remote> main`
-   - `git log --oneline -3` 确认本地 main 已包含目标 PR 的 merge commit。
+   - 用已知 merge SHA 做 ancestry 校验：`git merge-base --is-ancestor <merge-sha> <main-ref>`（退出码 0 = 本地 main 已包含）；不得只检查最近几条 `git log`，后续已有其他提交时该确认仍必须成立。
 
 3. **清理 `docs/current-plan.md`，就绪下一个任务**
    - 读取该文件（gitignore，本地不入库）。

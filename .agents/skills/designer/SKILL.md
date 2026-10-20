@@ -146,6 +146,8 @@ Step 0 — Evidence Collection / Baseline
 
 ## PHASE 5 — DESIGN
 
+本阶段内容分别落入 canonical plan 的 `# Current State`、`# Target State`、`# Design`、`# Alternatives / Trade-offs`、`# Impact Surface`、`# Rollback`、`# Known Risks`。
+
 所有 non-trivial plan 至少考虑：
 
 ### Current State
@@ -209,39 +211,108 @@ Target: derive threshold from baseline + product requirement
 
 ## PHASE 7 — EXECUTION PLAN
 
-最终计划必须达到 Executor 无需重新设计即可直接执行。推荐结构：
+最终计划必须达到 Executor 无需重新设计即可直接执行。本 Skill 是 plan schema 的唯一 SSOT。
+
+### Canonical plan schema
 
 ```text
 # Goal
+
 # Literal Request
+
 # Actual Outcome
+
 # Constraints
+
+# Non-Goals
+
 # Ambition Decision
+
 # Evidence
+
 # Evidence Gaps
+
 # Unverified Assumptions
+
 # Borrowed Methods
+
 # Current State
+
 # Target State
+
 # Design
+
 # Alternatives / Trade-offs
+
+# Impact Surface
+
 # Validation / Outside Judge
+
 # Execution Steps
+
+## Step 1
+
+Status: PENDING
+
+Goal:
+...
+
+Scope / Files:
+...
+
+Change:
+...
+
+Validation:
+...
+
+Commit boundary: <optional>
+
+## Step N
+...
+
 # Final Verification
+
 # Rollback
+
 # Known Risks
 ```
 
-每个执行步骤尽量包含：
+所有 canonical section 必须存在。内容可以极简：不适用时写 `N/A` 并给出具体理由，不得删除 section 或用自由格式替代 schema。
+
+### Step 状态契约
+
+执行步骤只使用四个状态：
 
 ```text
-## Step N
-Goal:
-Scope / Files:
-Change:
-Validation:
-Commit boundary: <only if meaningful>
+PENDING
+IN_PROGRESS
+DONE
+BLOCKED
 ```
+
+- 用户批准计划后：plan 整体 = approved；每个 execution step 初始 `PENDING`。
+- Executor 执行时：`PENDING → IN_PROGRESS → DONE`。
+- 遇到真实 blocker（缺少外部输入、依赖不可用、计划外冲突）→ `BLOCKED`，停止该步并汇报。
+- 若 repository reality 证明 plan assumption 失效 → 停止执行并返回 Designer / 用户，不在 Executor 内改写 schema。
+
+禁止维护第二套平行状态词汇（如待批准 / 待执行 / 进行中 / 完成）。
+
+### KEEP 任务的轻量 plan
+
+所有 development task 都进入本 Skill，包括明确 bug、单点 CSS、i18n 缺漏等小修。规模由 `Ambition = KEEP` 控制：KEEP 任务仍输出同一 canonical schema，但每节可以一行，Execution Steps 通常只有 1 步。
+
+例如修复一个明确 CSS overflow：
+
+```text
+Ambition Decision: KEEP
+Evidence: 明确的 DOM/CSS behavior
+Design: 单点修复
+Validation / Outside Judge: specified viewport regression
+Execution Steps: 1 step
+```
+
+不要把 KEEP 任务扩大成系统重构，也不要因为没有明显设计空间而跳过 plan approval。
 
 不要机械要求“一步一 commit”；只有自然边界才写 Commit boundary。
 
@@ -271,7 +342,7 @@ Design Grill 不是新的 Skill，不是 final implementation review，也不替
 
 不要创建 `idea-refine` / `grill` 等独立顶层 Skill。像“增强 AI Review”“让 IaC 更完整”“做个联赛系统”这类 idea 在 Phase 1 加载 `requirement-clarification.md`，澄清后仍继续完整 pipeline。
 
-明确 bug / performance / alias / role / login 等任务直接进入 Designer；明确需求只减少 clarification，不缩短后续设计 pipeline。
+明确 bug / performance / alias / role / login / CSS / i18n 小修等任务都直接进入 Designer；所有会改变 repository 行为的 development task 都走本 Skill。明确需求只减少 clarification，不缩短后续设计 pipeline；简单任务由 `Ambition = KEEP` 与轻量 plan 控制复杂度。
 
 ## Continual refinement principle
 

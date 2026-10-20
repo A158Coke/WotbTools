@@ -15,8 +15,6 @@ The repository has one pull-request routing entry point and service-owned produc
 
 ## Change rules
 
-- Every new PR selects at least one `area/*` label from `deploy/observability/dev-metrics/area-taxonomy.json`; multiple areas are allowed. The PR gate emits an advisory for missing or unknown areas. Extend the taxonomy through an explicit reviewed change, never an ad hoc label.
-
 - Before changing a workflow, read its real scripts and the relevant `deploy/AGENTS.md`/OpenTofu contracts. Keep CI commands consistent with local commands and the pinned JDK/Node versions.
 - Do not place credentials in workflow files. Scope `secrets.*`, `vars.*`, and job permissions to the job that consumes them. TX production jobs use the existing repository-level Actions secrets / variables; do not invent an unconfigured Yecao environment.
 - Main-triggered production workflows must reject non-ancestor sources and changes to owned inputs before expensive work, then recheck immediately before staging or host mutation as applicable. Application workflows also recheck immediately before publishing `latest`: unchanged owned inputs on current main publish; changed owned inputs mark the run superseded (`check-latest-main.sh` exit 10 → `latest_published=false`, downstream smoke/deploy skipped, run stays green). Same-service runs still cancel older ones when new main arrives. Manual dispatch must remain pinned to the exact current `main` SHA. Keep TX and Yecao host locks held across runtime mutation, OpenTofu plan/apply/second-plan, and verification where the service contract requires it.
