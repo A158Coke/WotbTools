@@ -1080,6 +1080,7 @@ jobs:
             android/gradle.properties \
             contracts/android-native-bridge.json \
             deploy/agent/source.json \
+            android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt \
             frontend/src/platform/nativeBridgeContract.js \
             frontend/src/platform/androidAuthProvider.js \
             android/app/src/main/java/com/wotbtools/app/NativeBridge.kt \
@@ -1220,6 +1221,9 @@ jobs:
           echo "versionCode=$STAGED_VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "nativeBridgeVersion=$STAGED_BRIDGE" >> "$GITHUB_OUTPUT"
           echo "stagedSource=$TAG_TARGET" >> "$GITHUB_OUTPUT"
+          ASSET_ORIGIN="$(python3 scripts/android-release/android_contract.py asset-origin \
+            --native-source "$RUNNER_TEMP/android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt")"
+          echo "assetOrigin=$ASSET_ORIGIN" >> "$GITHUB_OUTPUT"
           echo "apkSha=$ACTUAL_APK_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Preflight publication state and cutover guards (idempotent)
@@ -1354,14 +1358,12 @@ jobs:
             -D "$RUNNER_TEMP/api-read.headers" -w '%{http_code}' -H "Origin: $ORIGIN" "$API/api/users/profile")"
           python3 scripts/android-release/android_contract.py cors \
             --headers "$RUNNER_TEMP/api-read.headers" --status "$STATUS" --expected-status 401 --origin "$ORIGIN"
-          # Android 3D 资产由 Native AgentAssetProxy 直连对象存储（原生代码不受 CORS
+          # Android 3D 资产由 Native AgentAssetProxy 直连资产源（原生代码不受 CORS
           # 约束；staging.json 的 assetOrigin 是本机路径 /agent-assets，不可拼 URL）。
-          # 探测对象因此是新版本静态资产源的匿名可读性：/index.json 必须 200 且为 JSON object。
-          # origin 字面量与 android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt
-          # 的 REMOTE_ASSET_BASE 一致，换 origin 时必须两处同步（见 docs/operations/agent-asset-origin.md）。
-          REMOTE_ASSET_BASE="https://assets.wotbtools.com"
+          # 探测来源取自已核验 immutable tag 的源码，兼容仍可发布的旧 COS staged APK。
+          ASSET_ORIGIN="${{ steps.staged.outputs.assetOrigin }}"
           STATUS="$(curl -sS --connect-timeout 5 --max-time 20 -o "$RUNNER_TEMP/asset-index.json" \
-            -w '%{http_code}' "$REMOTE_ASSET_BASE/index.json")"
+            -w '%{http_code}' "$ASSET_ORIGIN/index.json")"
           if [ "$STATUS" != "200" ]; then
             echo "::error::asset origin is not anonymously readable (HTTP $STATUS): the native asset proxy cannot feed 3D assets." >&2
             exit 1

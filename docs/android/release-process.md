@@ -402,9 +402,11 @@ publish 的第一步就是按公开 URL 取证据（`https://wotbtools.com/downl
    `validate-caddy-config.sh` 对两者做同样校验）；新 origin 的 Caddy 改动必须在 publish 前已部署。
 3. APK 资产源是**本机路径** `/agent-assets`（bundle identity 钉死，见 `android_contract.py`），
    由 Native `AgentAssetProxy` 直连对象存储——原生代码不受 CORS 约束，因此本项探测的是
-   **新版本对象源匿名可读性**：`https://assets.wotbtools.com/index.json`
-   GET 成功且返回 JSON object（readiness 步骤里的 `REMOTE_ASSET_BASE` 与 `AgentAssetProxy.kt` 的
-   `REMOTE_ASSET_BASE` 一致，换 origin 两处同步，见 docs/operations/agent-asset-origin.md）。
+   **候选 APK 对应对象源的匿名可读性**：publish 从已验证 immutable release tag 导出的
+   `AgentAssetProxy.kt` 解析 origin，并只接受 `https://assets.wotbtools.com`（新版本）或
+   `https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com`（旧 staged APK）。随后对该
+   origin 的 `index.json` 做 GET 并要求返回 JSON object。这样 main 前进不会让旧 staged APK
+   错探新 origin；新版本仍探测 Alibaba，见 docs/operations/agent-asset-origin.md。
    CORS/Expose-Headers 对 Android 资产链路不再适用；Gateway `/agent-assets` 反代仅服务
    仍使用 legacy gateway identity 的旧 APK（历史背景：旧 APK 的 WebView fetch 走该反代并依赖网关 CORS，
    这也是旧版第 3 条探测网关 exact-origin CORS 的原因）。
