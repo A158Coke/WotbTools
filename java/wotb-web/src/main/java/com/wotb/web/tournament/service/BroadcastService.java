@@ -63,6 +63,16 @@ public class BroadcastService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public BroadcastDtos.SeasonView season(final long id) { return seasonView(findSeason(id)); }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public BroadcastDtos.SeasonContents seasonContents(final long id) {
+        final BroadcastSeason season = findSeason(id);
+        final List<BroadcastCategory> stored = categories.findBySeasonIdOrderByIdAsc(id);
+        final List<BroadcastDtos.ReplayStart> starts = new ArrayList<>();
+        final List<BroadcastDtos.Node> contents = stored.stream()
+                .flatMap(category -> categoryNodes(category.id, starts).stream()).toList();
+        return new BroadcastDtos.SeasonContents(seasonDto(season), stored.stream().map(mapper::category).toList(),
+                contents, serverZone(season.server).getId(), List.copyOf(starts), covers.configured());
+    }
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public BroadcastDtos.TimedCategoryView category(final long id) {
         final BroadcastCategory category = findCategory(id);
         return categoryView(findSeason(category.seasonId), category);
@@ -182,6 +192,14 @@ public class BroadcastService {
         final BroadcastSeason season = findSeason(category.seasonId);
         return new BroadcastDtos.DeletionPreview(season.id, season.version, 1, replays.countByNodeId(id));
     }
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public BroadcastDtos.DeletionPreview categoryDeletionPreview(final long id) {
+        final BroadcastCategory category = findCategory(id);
+        final BroadcastSeason season = findSeason(category.seasonId);
+        final List<BroadcastNode> stored = nodes.findByCategoryIdOrderByRootKeyAscIdAsc(id);
+        return new BroadcastDtos.DeletionPreview(season.id, season.version, stored.size(),
+                stored.stream().mapToLong(node -> replays.countByNodeId(node.id)).sum());
+    }
     public void deleteSeason(final long id, final long expectedVersion, final boolean confirm) {
         requireConfirmation(confirm);
         transactions.executeWithoutResult(status -> {
@@ -196,6 +214,17 @@ public class BroadcastService {
             final BroadcastNode node = findNode(id); final BroadcastCategory category = findCategory(node.categoryId);
             final BroadcastSeason season = locked(category.seasonId, expectedVersion); findNode(id);
             deleteNodeContents(id); nodes.delete(node); season.version++;
+        });
+    }
+    public void deleteCategory(final long id, final long expectedVersion, final boolean confirm) {
+        requireConfirmation(confirm);
+        transactions.executeWithoutResult(status -> {
+            final BroadcastCategory category = findCategory(id);
+            final BroadcastSeason season = locked(category.seasonId, expectedVersion); findCategory(id);
+            for (final BroadcastNode node : nodes.findByCategoryIdOrderByRootKeyAscIdAsc(id)) {
+                deleteNodeContents(node.id); nodes.delete(node);
+            }
+            nodes.flush(); categories.delete(category); season.version++;
         });
     }
     public void deleteReplay(final long id, final long expectedVersion, final boolean confirm) {
@@ -225,16 +254,19 @@ public class BroadcastService {
     private BroadcastDtos.TimedCategoryView categoryView(final BroadcastSeason season, final BroadcastCategory category) {
         final List<BroadcastDtos.ReplayStart> starts = new ArrayList<>();
         final BroadcastDtos.CategoryView data = new BroadcastDtos.CategoryView(seasonDto(season), mapper.category(category),
-                nodes.findByCategoryIdOrderByRootKeyAscIdAsc(category.id).stream().map(node -> {
-                    // Unknown times follow timed entries on the same day, retaining their existing id order.
-                    final List<BroadcastReplay> ordered = replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id).stream()
-                            .sorted(Comparator.comparing((BroadcastReplay replay) -> replay.matchDate)
-                                    .thenComparing(replay -> replay.matchStartsAt, Comparator.nullsLast(Comparator.naturalOrder()))
-                                    .thenComparing(replay -> replay.id)).toList();
-                    ordered.stream().filter(replay -> replay.matchStartsAt != null).map(mapper::replayStart).forEach(starts::add);
-                    return mapper.node(node, ordered);
-                }).toList(), covers.configured());
+                categoryNodes(category.id, starts), covers.configured());
         return new BroadcastDtos.TimedCategoryView(data, serverZone(season.server).getId(), List.copyOf(starts));
+    }
+    private List<BroadcastDtos.Node> categoryNodes(final long categoryId, final List<BroadcastDtos.ReplayStart> starts) {
+        return nodes.findByCategoryIdOrderByRootKeyAscIdAsc(categoryId).stream().map(node -> {
+            // Unknown times follow timed entries on the same day, retaining their existing id order.
+            final List<BroadcastReplay> ordered = replays.findByNodeIdOrderByMatchDateAscIdAsc(node.id).stream()
+                    .sorted(Comparator.comparing((BroadcastReplay replay) -> replay.matchDate)
+                            .thenComparing(replay -> replay.matchStartsAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(replay -> replay.id)).toList();
+            ordered.stream().filter(replay -> replay.matchStartsAt != null).map(mapper::replayStart).forEach(starts::add);
+            return mapper.node(node, ordered);
+        }).toList();
     }
     private static ZoneId serverZone(final String server) {
         return ZoneId.of(switch (server) {
