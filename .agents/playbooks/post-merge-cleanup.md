@@ -23,7 +23,7 @@
 1. **清理当前任务 worktree（如本任务使用了独立 worktree）**
    - 只对已确认属于当前 merged task 的 worktree 执行 `git status --short`；存在未提交改动时立即停止并向用户确认，禁止使用 `--force` 删除或覆盖。
    - 记录当前任务 worktree 的绝对路径与分支，然后切换命令工作目录到主 worktree；不得在待删除 worktree 内执行删除自身的操作。
-   - 在主 worktree 执行 `git worktree remove <task-worktree-path>`，再执行 `git worktree prune`。
+   - 在主 worktree 执行 `git worktree remove <task-worktree-path>`。该命令会移除被删除 worktree 自身的 administrative record；不得执行仓库级 `git worktree prune`，因为它可能删除其他任务暂时不可用或超期的 worktree 记录。
    - 复核 `git worktree list --porcelain`：当前任务 worktree 必须消失；其他任务 worktree 必须保持原样。
 
 2. **切到 main 并更新**

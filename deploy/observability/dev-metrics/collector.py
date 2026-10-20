@@ -127,9 +127,16 @@ def collect(client, repository, overrides, now=None, cache=None):
         if key not in area_cache:
             paths = [item['filename'] for item in client.pages(base + f"/pulls/{pr['number']}/files?per_page=100")]
             if len(paths) >= 3000:
-                from github_client import GitHubError
-                raise GitHubError('PR file history exceeds API limit; add area override')
-            area_cache[key] = classify_area(pr, paths)
+                # GitHub truncates the file list at this limit. A versioned override is the
+                # only non-truncating fallback for an oversized active PR; aborting here
+                # would freeze the exporter on a stale snapshot until the PR closes.
+                if number in overrides:
+                    area_cache[key] = frozenset(overrides[number])
+                else:
+                    from github_client import GitHubError
+                    raise GitHubError('PR file history exceeds API limit; add area override')
+            else:
+                area_cache[key] = classify_area(pr, paths)
         pr['_areas'] = area_cache[key]
     active_prs = {(str(pr['number']), pr.get('updated_at')) for pr in prs}
     cache['areas'] = {key: areas for key, areas in area_cache.items() if key in active_prs}

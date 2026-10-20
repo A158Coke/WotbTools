@@ -115,6 +115,19 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
         self.assertEqual(sum('/files?' in path for path in calls), 0)
 
+    def test_oversized_open_pr_uses_override_instead_of_aborting(self):
+        class Client:
+            def pages(self, path, key=None):
+                if '/pulls?' in path:
+                    return iter([pr(number=1)])
+                if '/files?' in path:
+                    return iter([{'filename': f'opaque/{n}.txt'} for n in range(3000)])
+                return iter([])
+        result = collect(Client(), 'A158Coke/WotbTools', {'1': ['docs']}, NOW)
+        self.assertEqual(sample(result, 'pr_area_total', area='docs'), 1)
+        with self.assertRaises(GitHubError):
+            collect(Client(), 'A158Coke/WotbTools', {}, NOW)
+
     def test_open_or_reopened_frozen_pr_uses_current_paths(self):
         calls = []
         class Client:
@@ -163,6 +176,10 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(classify_area(pr(title='Bump checkout action'), ['.github/workflows/ci-gate.yml']), {'infra'})
         self.assertEqual(classify_area(pr(title='Adjust agent routing'), ['.agents/skills/executor/SKILL.md']), {'docs'})
         self.assertEqual(classify_area(pr(title='Tidy fixtures'), ['scripts/ci/test-workflow-contract.sh']), {'infra'})
+        # Root and GitHub maintainer documents are documentation even with a generic title.
+        for path in ('README.md', 'AGENTS.md', 'HISTORY.md', '.github/AGENTS.md',
+                     '.github/pull_request_template.md'):
+            self.assertEqual(classify_area(pr(title='Update contributor guidance'), [path]), {'docs'}, path)
 
     def test_feature_paths_keep_specific_area_alongside_generic_layer(self):
         self.assertEqual(

@@ -13,6 +13,8 @@ PATH_RULES = {
     'android/': ('android',), 'frontend/': ('frontend',), 'java/': ('backend',),
     'infra/': ('infra',), 'deploy/': ('infra',),
     'deploy/observability/': ('observability',), 'docs/': ('docs',),
+    'README.md': ('docs',), 'AGENTS.md': ('docs',), 'HISTORY.md': ('docs',),
+    '.github/AGENTS.md': ('docs',), '.github/pull_request_template.md': ('docs',),
     '.github/workflows/': ('infra',), '.github/workflows/observability': ('observability',),
     '.agents/': ('docs',), 'scripts/ci/': ('infra',),
     'keycloak-': ('auth',),

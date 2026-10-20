@@ -1,4 +1,4 @@
-# TX WireGuard service plane
+# TX WireGuard service plane 运行手册
 
 TX1 的私有 service plane 为 TX 内服务提供 reviewed、fail-closed 的跨宿主 endpoint。TX 内 consumer 不再直接依赖 Docker bridge 名称；所有 placement 由 Git 中的 reviewed 值表达，并同时受 staged deploy、只读 dependency readiness 与 runtime gate 三处 canonical validator 约束。
 
@@ -10,7 +10,7 @@ Yecao  10.20.0.2   非 TX 依赖：AI service（8089）、monitor
 TX2    10.20.0.3   Frontend replica peer（8081）
 ```
 
-## Current production placement
+## 当前生产 placement
 
 ```text
 Frontend → Business API             TX_BACKEND_UPSTREAM=http://10.20.0.1:8087
@@ -21,7 +21,7 @@ Caddy → Frontend pool               CADDY_FRONTEND_UPSTREAM=10.20.0.1:8081
                                     CADDY_FRONTEND_PEER=10.20.0.3:8081
 Caddy → Keycloak                    CADDY_KEYCLOAK_UPSTREAM=10.20.0.1:8080
 
-Non-TX fixed dependency
+非 TX 固定依赖
 Frontend → AI Service（Yecao）      TX_AI_UPSTREAM=http://10.20.0.2:8089
 ```
 
@@ -37,9 +37,9 @@ Frontend → AI Service（Yecao）      TX_AI_UPSTREAM=http://10.20.0.2:8089
 
 rollback 与 TX2 值保留在 allowlist 里是刻意的：如果迁移完成后把它们从 validator 删除，生产事故时回退会被自己的 guard rail 阻断。validator 继续拒绝退役 Yecao 地址当作 TX placement、公网 hostname 当私有 placement、任意 host、错误端口/协议、path/query/userinfo，以及 wildcard/公网发布。
 
-## Endpoint contract
+## Endpoint 契约
 
-| Service | TX1 WG TCP endpoint | Container port | 保留的 loopback administration |
+| 服务 | TX1 WG TCP endpoint | 容器端口 | 保留的 loopback 管理入口 |
 |---|---|---|---|
 | Frontend | 10.20.0.1:8081 | 80 | — |
 | Business API app | 10.20.0.1:8087 | 8087 | — |
@@ -52,11 +52,11 @@ TX2 只发布 `10.20.0.3:8081` 的 Frontend replica peer；TX2 上没有其它�
 
 Loopback 供宿主本地管理/OpenTofu；WG endpoint 供私有跨宿主访问。唯一公网 HTTP/HTTPS ingress 仍是 Caddy 的 80/443。UFW inactive 不允许使用 wildcard/public bind；服务入口只接受表中精确 TCP 绑定，禁止 `0.0.0.0`、`::`、公网 IP 或裸 `5432` 发布。两套 PostgreSQL 可同时在不同宿主地址上使用相同的各自 host port。
 
-### Logical endpoint contract
+### Logical endpoint 契约
 
-`Active value` 是当前生产实际 placement；`Docker-local default` 现在只表示 **rollback 值**（仍在 canonical allowlist 内）。
+`当前生效值` 是当前生产实际 placement；`Docker-local 回滚值` 只用于紧急回退（仍在 canonical allowlist 内）。
 
-| Consumer | Variable(s) | Docker-local rollback | Reviewed WG values | Active value |
+| 消费方 | 变量 | Docker-local 回滚值 | 已评审 WG 值 | 当前生效值 |
 |---|---|---|---|---|
 | Frontend → Business API | `TX_BACKEND_UPSTREAM` | `http://business-api:8087` | `http://10.20.0.1:8087`, `http://10.20.0.3:8087` | `http://10.20.0.1:8087` |
 | Business API → Business PostgreSQL | `TX_BUSINESS_DB_HOST/PORT` | `business-postgres:5432` | `10.20.0.1:25432`, `10.20.0.3:25432` | `10.20.0.1:25432` |
@@ -75,7 +75,7 @@ K7C Frontend pool 的 active 语义：
 
 `KEYCLOAK_ISSUER_URI` 不是 placement endpoint，始终保持 `https://auth.wotbtools.com/realms/wotbtools`。Yecao AI 固定 `http://10.20.0.2:8089`，不随任何 TX placement 切换移动；monitor/Komodo/Loki 边界不变。公网 host、未审核 WG 地址、错误协议或错误端口在 live mutation 前 fail closed。
 
-## Rollback contract
+## 回滚契约
 
 生产事故时按 consumer 回退：每一步只回退一个 consumer，回退值使用上表的 Docker-local rollback。回退必须同步 owner workflow、gate expectation 与 `CURRENT_K6B_CUTOVERS` / `K6B_FINAL_PLACEMENT_MATRIX`；只改一侧必然 FAIL。
 
@@ -124,7 +124,7 @@ bash deploy/test-business-postgres-runtime.sh
 
 前两个 fixture 分别证明 real rendered Compose/selected-owner gate 与 readiness failure。mutation checks 覆盖缺少 WG/loopback 入口、通配/公网/无地址绑定、错误端口、UDP、重复绑定与 app/management target 混用。PostgreSQL smoke 继续使用 disposable loopback DB，验证 ownership、provider、备份恢复；不连接生产 DB。仓库 deployment validation 由 PR CI 执行。
 
-## Placement change acceptance
+## Placement 变更验收
 
 任何 placement 变更都必须一次只移动一个 workload，并保持 consumer contract 不变：
 

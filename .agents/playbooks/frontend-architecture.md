@@ -1,4 +1,4 @@
-# Frontend Architecture Playbook
+# 前端架构 Playbook
 
 > 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
 
