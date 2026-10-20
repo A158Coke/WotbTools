@@ -19,6 +19,7 @@
  * 不是"资产不可达即绿"；夹具模式（CI 默认）找不到屏幕仍然硬失败。
  */
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import krvCoplanar from './browser-fixtures/kranvagn-coplanar.json' with { type: 'json' }
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
 import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
@@ -324,39 +325,50 @@ try {
     const target = new T.WebGLRenderTarget(1, 1);
     const geometry = new T.PlaneGeometry(2, 2);
     const sourceMaterial = new T.MeshBasicMaterial();
-    const results = [];
+    const results = [], krv = ${JSON.stringify(krvCoplanar)};
+    const realGeometry = points => new T.BufferGeometry().setAttribute('position', new T.Float32BufferAttribute(points.flat(),3));
+    const moduleGeometry = realGeometry(krv.module), primaryGeometry = realGeometry(krv.primary);
     try {
-      for (const armorFirst of [true, false]) for (const gap of [0, 0.00005]) {
-        const module = new T.Mesh(geometry, sourceMaterial);
-        const primary = new T.Mesh(geometry, sourceMaterial); primary.position.z = -gap;
+      for (const armorFirst of [true, false]) for (const gap of [0, 0.00005, -0.00005, null, 'boundary', 'slanted-boundary']) {
+        const real = gap === null;
+        const module = new T.Mesh(real ? moduleGeometry : geometry, sourceMaterial);
+        const primary = new T.Mesh(real ? primaryGeometry : geometry, sourceMaterial); primary.position.z = real ? 0 : -gap;
+        const boundary = typeof gap === 'string';
+        if (boundary) {
+          module.position.z = gap === 'boundary' ? 0.4499996 : 0.449995;
+          primary.position.z = gap === 'boundary' ? 0.4500004 : 0.4630335073711086;
+          if (gap === 'slanted-boundary') primary.rotation.y = 0.1;
+        }
         const entries = [{mesh:module,section:'gunBarrel',thickness:50}, {mesh:primary,section:'turret',thickness:70}];
         if (armorFirst) entries.reverse();
+        if (boundary) {const anchor = new T.Mesh(geometry,sourceMaterial);anchor.position.x=5;entries.push({mesh:anchor,section:'hull',thickness:70});}
         const pack = buildPack(entries);
         const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
         const material = new T.ShaderMaterial({
           vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
-          fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
-            'void main(){float p;float d;int c=rcContinue(vec3(0.13,0.17,1.0),vec3(0.0,0.0,-1.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
-          uniforms: { caliber:{value:120}, normalization:{value:0}, remIn:{value:187.5}, rcThickMul:{value:1},
+          fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float remIn; uniform vec3 rayOrigin; uniform vec3 rayDirection;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+            'void main(){float p;float d;int c=rcContinue(rayOrigin,rayDirection,remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+          uniforms: { rayOrigin:{value:new T.Vector3(...(real ? krv.ray.origin : [0.13,0.17,1]))},
+            rayDirection:{value:new T.Vector3(...(real ? krv.ray.direction : [0,0,-1]))}, caliber:{value:120}, normalization:{value:0}, remIn:{value:187.5}, rcThickMul:{value:1},
             rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
             rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
         });
         try {
           const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
-          for (const normalization of [5, 2]) for (const rem of [187.5, 100]) {
+          for (const normalization of [5, 2]) for (const rem of (real ? [187.5, 250] : [187.5, 100])) {
             material.uniforms.normalization.value=normalization * Math.PI / 180;
             material.uniforms.remIn.value=rem;
             renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
             const pixel=new Uint8Array(4);renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
-            results.push({armorFirst,gap,rem,normalization,cls:pixel[0],diag:pixel[1]});
+            results.push({armorFirst,gap,rem,normalization,expected:real ? (rem===187.5?2:1) : (gap<0 || rem>120?1:2),cls:pixel[0],diag:pixel[1]});
           }
         } finally {material.dispose();Object.values(tex).forEach(t=>t.dispose());}
       }
-    } finally {target.dispose();geometry.dispose();sourceMaterial.dispose();renderer.dispose();renderer.forceContextLoss();}
+    } finally {target.dispose();geometry.dispose();moduleGeometry.dispose();primaryGeometry.dispose();sourceMaterial.dispose();renderer.dispose();renderer.forceContextLoss();}
     return results;
   })()`)
-  check(coplanar.length === 16 && coplanar.every(r => r.cls === (r.rem > 120 ? 1 : 2) && r.diag === r.cls),
-    `共面/0.05 mm 后方主装甲不被模块吞掉，消耗仍生效：${JSON.stringify(coplanar)}`)
+  check(coplanar.length === 48 && coplanar.every(r => r.cls === r.expected && r.diag === r.cls),
+    `共面/真实 KRV 舍入样本正确消费模块，前后 0.05 mm 分离表面保持几何顺序：${JSON.stringify(coplanar)}`)
 
   // #711: sub-threshold movement remains a click and must not rotate the model or rebuild its grid.
   for (const part of ['turret', 'gun']) {
