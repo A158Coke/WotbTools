@@ -1,11 +1,11 @@
 # Observability and product usage
 
-The dashboards answer the maintainer's questions: who used the product, which features were opened, how many replays were parsed, which APK versions were requested, what AI tokens were consumed, and which errors occurred. There is no new alert or notification system.
+The dashboards answer the maintainer's questions: who used the product, which features were opened, how many replays were parsed, how many times users clicked the final Web APK download button, what AI tokens were consumed, and which errors occurred. There is no new alert or notification system.
 
 ## Ownership and topology
 
 - Yecao hosts Prometheus, Loki, Alloy, Grafana, node-exporter, dev-metrics-exporter and the independent ai-service.
-- TX business-api exposes management metrics on WireGuard `10.20.0.1:8088`. TX `alloy-tx` sends business-api, Keycloak, frontend APK download and Caddy logs to Yecao Loki at `10.20.0.2:3100`.
+- TX business-api exposes management metrics on WireGuard `10.20.0.1:8088`. TX `alloy-tx` sends business-api, Keycloak, frontend and Caddy logs to Yecao Loki at `10.20.0.2:3100`.
 - Yecao Alloy collects `ai-service` by its exact Compose service label. Its name-based backend/Keycloak/frontend rules remain for deployment canaries.
 - Grafana is private on `10.20.0.2:3000`, exposed through TX Caddy at https://monitor.wotbtools.com. Anonymous login and sign-up are disabled.
 - `infra/tofu/grafana` alone owns dashboards; canonical JSON lives in `deploy/observability/grafana/dashboards`. Datasources remain read-only file provisioning, UIDs `prometheus` and `loki`.
@@ -20,7 +20,7 @@ The five product dashboards default to last 24 hours, use `Asia/Shanghai`, and l
 | Engineering Overview | wotbtools-engineering-overview | GitHub PR/CI aggregates, history, freshness and production correlation |
 | Active users (home) | wotbtools-active-users | Distinct authenticated accounts with received foreground activity signals |
 | Feature usage | wotbtools-feature-usage | Per-file parse starts/outcomes and page/capability opens, by Web/Android |
-| Android downloads | wotbtools-android-downloads | APK request counts by filename/version and HTTP status |
+| Android downloads | wotbtools-android-downloads | Final **下载 APK** button clicks on the Web `/download/android` page |
 | AI token usage | wotbtools-ai-token-usage | Known input/output/total tokens, per-review average and missing usage |
 | Backend error logs | wotbtools-backend-error-logs | Login, HoF, tournament, AI, client parsing and other error sections |
 
@@ -35,10 +35,10 @@ The six former dashboards are deleted through OpenTofu. Dashboard deletion and r
 - Authenticated foreground activity: app initialization, login settlement, foreground return, page changes and at most one regular five-minute heartbeat. Hidden tabs pause activity. Backend validates the bearer token and hashes its subject; the client cannot name an account.
 - Deployment secret `WOTB_OBSERVABILITY_HASH_KEY` must contain at least 32 characters. It is supplied only to the business-api workflow/runtime, never committed. Empty/short keys disable authenticated activity ingestion; feature/parse telemetry remains available. Provision it as a repository-level Actions secret before relying on user counts. Keep it stable for at least the seven-day query window; rotation splits identities across the window.
 - Account hashes stay in the log **content**, not indexed stream labels or Prometheus labels. Active users are deduplicated across Web/Android; platform counts overlap and must not be added.
-- Other telemetry can be anonymous. Feature opens include initial entry, refresh and returning to a feature; parameter-only navigation within one feature does not count again. Managed/admin, documentation, contact and More pages are excluded.
+- Other telemetry can be anonymous. Feature opens include initial entry, refresh and returning to a feature; parameter-only navigation within one feature does not count again. Managed/admin, documentation, contact and More pages are excluded. The current Web download page does not emit a `feature_open/android_download` signal; the final APK button emits the distinct `android_download_click` event instead, and Feature usage excludes `android_download`. Legacy cached bundles may still send the former `feature_open/android_download` page-open shape during rollout; the backend accepts it for compatibility but Android Downloads ignores it.
 - Replay counters are per file entering a parse task. Ten selected files mean ten starts. Each operation has at most one success/failure/cancelled outcome. In-flight/page crashes are not automatically classified as failure. Re-parsing counts again.
-- Only the authoritative online connectivity state permits enqueueing or sending. Disconnect discards queued events; reconnect never replays offline usage. The first page can wait for initial connectivity settlement and is counted once if online.
-- The sender holds only a bounded in-memory queue; it does not persist visitor identity or offline history, and does not retry failed batches. Offline, old clients, blocked telemetry and page shutdown can undercount. Do not use these counts for billing, security audit or exact population estimates.
+- Ordinary queued telemetry only enqueues or sends while the authoritative connectivity state is online. Disconnect discards queued events; reconnect never replays offline usage. The first page can wait for initial connectivity settlement and is counted once if online. The final Web APK click is an immediate best-effort exception: it attempts a `keepalive` send on click without a separate connectivity gate and may simply fail if connectivity is unavailable.
+- The ordinary sender holds only a bounded in-memory queue; it does not persist visitor identity or offline history, and does not retry failed batches. Offline, old clients, blocked telemetry and page shutdown can undercount. The final Web APK click bypasses the five-second queue and never retries or blocks the download link. Do not use these counts for billing, security audit or exact population estimates.
 - Foreground activity is periodic, so the newest few minutes can be incomplete. Requests are recorded at backend reception time; client `occurred_at` is diagnostic content, not a trusted Loki timestamp.
 
 ## AI token semantics
@@ -51,11 +51,17 @@ The dashboard reports **known consumption**, not the provider's invoice; missing
 
 ## Android downloads
 
-Only `GET /download/android/*.apk` access events enter this log stream. Alloy removes IP, Referer and User-Agent and retains APK filename, status and bytes. HTTP 200 counts complete-response requests; 206 counts partial/range-response requests separately. Repeated/range requests may refer to one download; neither count proves installation. Failed requests remain visible by status. Download-page views are a separate Feature usage event.
+`Android downloads` is the product-interaction metric for the final **下载 APK** button on the Web `/download/android` page. Opening `/download/android`, including navigation from Home or any other entry point, is not a download and is not counted.
+
+Each new click is logged as `event=product_telemetry telemetry_event=android_download_click feature=android_download platform=web`. Legacy download-page-open telemetry uses `telemetry_event=feature_open feature=android_download platform=web`; it can remain accepted during a rolling Web deployment but is a different protocol event and is never queried as a download click. Retained page-open rows and old cached Web bundles therefore cannot be relabeled as new download clicks.
+
+The wire contract models this as a dedicated `oneOf` event branch (`ObservabilityEvent` = `GenericObservabilityEvent` | `AndroidDownloadClickEvent`). The click branch fixes `event`, `platform=web` and `feature=android_download` and omits replay-only fields, so generated clients cannot construct the invalid combinations the backend rejects.
+
+The click event is sent immediately with `keepalive` and never gates navigation. It expresses download intent only. The dashboard deliberately ignores the later Caddy 302, Tsinghua Cloud transfer, HTTP 200/206/range behavior, bytes served and installation. The former frontend APK HTTP-request metric is **retired and replaced**, not merged into this series, so pre-cutover request/page-view history is not presented as click history.
 
 ## Error logs
 
-`Backend error logs` has functional rows for account/login, HoF (including hundred/mark3), tournament, AI, client-reported replay parsing and other backend errors. Filter the source service, literal keyword and literal Error ID, then expand the log entry. Functional matching uses existing path/event/error-code context and can overlap; the Other section excludes recognized sections.
+`Backend error logs` has functional rows for account/login, HoF (including hundred/mark3), tournament, AI, client-reported replay parsing and other errors. Filter the source service, literal keyword and Error ID, then expand the log entry. Functional matching uses existing path/event/error-code context and can overlap; the Other section excludes recognized sections.
 
 Server error logs retain existing safe diagnostics. AI uses safe event/error-code fields without raw provider bodies; client parser errors contain only approved classifications and generated IDs. Do not send tokens, authorization headers, user identifiers, raw model output/prompt or replay data to telemetry.
 
@@ -78,11 +84,11 @@ Account-group queries have an explicit `max_query_series=10000` ceiling; exceedi
 
 ## Validation and deployment
 
-PR CI performs native Prometheus/Loki/Alloy validation, real Docker emitter → Alloy → Loki smoke, Grafana datasource/dashboard API smoke, HTTP contract checks and targeted semantic tests. New producers are deployed after the receiver/collector where possible; independent service owners can otherwise produce a temporary undercount, not a product outage. Android bundled telemetry needs the new APK release; existing APKs cannot retroactively report usage.
+PR CI performs native Prometheus/Loki/Alloy validation, real Docker emitter → Alloy → Loki smoke, Grafana datasource/dashboard API smoke, HTTP contract checks and targeted semantic tests. New producers are deployed after the receiver/collector where possible; independent service owners can otherwise produce a temporary undercount, not a product outage. Web APK-click telemetry requires the new Web bundle; old cached bundles cannot emit `android_download_click`, so their legacy page-open events remain accepted only for rolling compatibility and are excluded from the click dashboard.
 
 `observability.yml` reconciles the runtime, plans the Grafana root against its existing local state, applies the exact saved plan, requires a clean second plan, verifies all six current UIDs and verifies the six retired UIDs return 404. The default home file and runtime probes use Active users. Keep the seven-target Prometheus gate (backend, AI, node-exporter, Prometheus, Loki, Grafana, dev-metrics) even though infrastructure charts no longer appear on the home dashboard.
 
-Deployment canaries prove ingestion paths, not actual activity from every production service. Runtime acceptance must check real received client activity, a parse batch, APK requests and AI usage/errors in the new dashboards. No historical client counts can be backfilled from absent events.
+Deployment canaries prove ingestion paths, not actual activity from every production service. Runtime acceptance must check real received client activity, a parse batch, one final Web **下载 APK** click with a matching `android_download_click` backend telemetry event, and AI usage/errors in the dashboards. No historical client click counts can be backfilled from the retired request/page-view metrics.
 
 See [runbook](observability-runbook.md) and [Grafana OpenTofu ownership](../architecture/grafana-opentofu.md).
 

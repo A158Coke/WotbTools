@@ -103,9 +103,15 @@ public class ObservabilityService {
         }
         uuid(event, "event_id", true);
         final String type = text(event, "event");
-        if (!Set.of("active_user", "feature_open", "replay_parse").contains(type)
-                || !Set.of("web", "android").contains(text(event, "platform"))
-                || !FEATURES.contains(text(event, "feature"))) {
+        final String platform = text(event, "platform");
+        final String feature = text(event, "feature");
+        if (!Set.of("active_user", "feature_open", "replay_parse", "android_download_click").contains(type)
+                || !Set.of("web", "android").contains(platform)
+                || !FEATURES.contains(feature)) {
+            throw rejected(HttpStatus.BAD_REQUEST);
+        }
+        if ("android_download_click".equals(type)
+                && (!"web".equals(platform) || !"android_download".equals(feature))) {
             throw rejected(HttpStatus.BAD_REQUEST);
         }
         try {
@@ -126,7 +132,7 @@ public class ObservabilityService {
         }
         if ("replay_parse".equals(type)) {
             uuid(event, "operation_id", true);
-            if (!"replay_parse".equals(text(event, "feature"))
+            if (!"replay_parse".equals(feature)
                     || !Set.of("start", "success", "failure", "cancelled").contains(text(event, "outcome"))) {
                 throw rejected(HttpStatus.BAD_REQUEST);
             }

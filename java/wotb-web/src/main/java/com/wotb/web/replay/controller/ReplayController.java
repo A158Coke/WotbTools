@@ -20,7 +20,7 @@ public class ReplayController {
         return Map.of(
                 "status", "ok",
                 "tanks", Tankopedia.load().size(),
-                "capabilities", List.of("recommendations-v1")
+                "capabilities", List.of("recommendations-v1", "broadcast-season-contents-v1")
         );
     }
 }

@@ -135,20 +135,20 @@ OpenTofu 为 `wotbtools-web` 声明 5 个 mapper（ID/Access/UserInfo 三个 tok
 6. 安全验证：登录身份只来自 `prolongate` 服务端返回的 `account_id`（浏览器回调参数不可信）；攻击者无法用账号 A 的有效 token 篡改回调登录成账号 B。
 7. 中国大陆 QQ 登录路径不变，CN 手动绑定仍可用。
 
-## 7. 凭据接线变更后的生产收敛路径
+## 7. 配置变更的生产部署流程
 
-IdP representation 的 `client_id` 由占位值 `not-used` 收敛为真实 `WG_APPLICATION_ID` 后，**不要手工改 Admin Console**；用既有 CI/CD 路径收敛：
+需要变更 `WG_APPLICATION_ID` 或 IdP representation 时，**不要手工修改 Admin Console**；使用现有 CI/CD 路径部署：
 
 ```
 `.github/workflows/keycloak.yml`（main 路径触发或单目标手动 dispatch）
-  -> Build immutable Keycloak image and run disposable provider/runtime smoke
+  -> 构建不可变 Keycloak 镜像，并运行 disposable provider/runtime smoke
   -> 在 TX host lock 内检查 PostgreSQL、bootstrap/reconcile Keycloak runtime
-  -> `infra/tofu/keycloak`：plan safety gate + exact apply + clean second-plan gate
-  -> 核对 OIDC / providers / IdP 配置，成功后更新 Keycloak image metadata
+  -> `infra/tofu/keycloak`：执行 plan safety gate、exact apply 与 clean second-plan gate
+  -> 核对 OIDC / providers / IdP 配置，成功后更新 Keycloak 镜像 metadata
 ```
 
 手动收敛只需 dispatch `Keycloak` workflow，且只接受当前 main 完整 SHA；PostgreSQL runtime 与独立 root 仍由 `keycloak-postgres.yml` 所有，不再有第二个 Deploy/Tofu dispatch。
 
 - 不删除/重建 realm，也不删除/重建 IdP；`infra/tofu/keycloak/validate-plan.sh` 对 `keycloak_oidc_identity_provider.*` 的 delete/replace 一律 fail-closed。
-- `WG_APPLICATION_ID` 的 runtime 注入（Keycloak 容器 env）在 apply 之后的精确 runtime 部署步骤中继续生效，无需额外操作。
+- Keycloak runtime 部署在 OpenTofu apply 后从容器环境注入 `WG_APPLICATION_ID`，无需单独操作。
 - 收敛后按第 2 节表格只读核对三个 IdP 的 Client ID 是否等于生产 `WG_APPLICATION_ID`（值不落文档、不落日志）。

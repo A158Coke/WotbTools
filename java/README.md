@@ -4,7 +4,7 @@
 
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端。**服务器没有 parser**：回放解析（上游 Rust Core WASM）与汇总 / 评分 / 导出 / 2D 数据都在浏览器完成，后端只负责存储、去重、授权、名人堂记录与 AI 编排（见 `../docs/architecture/replay-pipeline.md`）。
 
-当前 Web 版已实现。路线图见 [docs/ROADMAP.md](../docs/ROADMAP.md)。
+当前 Web 版已实现。
 
 ## 模块
 

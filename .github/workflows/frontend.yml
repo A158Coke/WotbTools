@@ -25,6 +25,7 @@ on:
       - deploy/sponsor/**
       - deploy/tx/frontend.compose.yml
       - deploy/tx/deploy.sh
+      - deploy/tx/runtime-check-lib.sh
       - deploy/tx/with-deploy-lock.sh
       - deploy/tx/common.compose.yml
       - deploy/tx/docker-compose.yml
@@ -57,6 +58,7 @@ env:
     deploy/sponsor/**
     deploy/tx/frontend.compose.yml
     deploy/tx/deploy.sh
+    deploy/tx/runtime-check-lib.sh
     deploy/tx/with-deploy-lock.sh
     deploy/tx/common.compose.yml
     deploy/tx/docker-compose.yml

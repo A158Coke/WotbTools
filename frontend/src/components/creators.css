@@ -8,22 +8,49 @@
 .creator-filter-summary { min-width: 0; color: var(--color-text-secondary); overflow-wrap: anywhere; font: var(--type-caption); }
 .creator-filters [aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-surface-3); }
 .creator-card, .creator-panel { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; padding: var(--space-5); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); background: var(--color-surface-1); }
+.creator-card { border-top: var(--space-1) solid var(--color-accent); border-radius: var(--radius-lg); box-shadow: var(--elevation-1); transition: border-color var(--duration-base) var(--ease-standard), box-shadow var(--duration-base) var(--ease-standard); }
+/* Share content tracks within each row; long copy never separates the footer actions. */
+@supports (grid-template-rows: subgrid) {
+  .creator-card { display: grid; grid-row: span 4; grid-template-rows: subgrid; }
+}
+.creator-card:focus-within { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
+@media (hover: hover) {
+  .creator-card:hover { border-color: var(--color-accent); box-shadow: var(--elevation-2); }
+}
 .creator-card h2, .creator-panel h2 { margin: 0; font: var(--type-h2); overflow-wrap: anywhere; }
-.creator-card-heading { display: flex; align-items: center; gap: var(--space-3); }
+.creator-card-heading { display: flex; align-items: start; align-self: start; gap: var(--space-3); }
+.creator-card-heading h2 { min-width: 0; padding-top: var(--space-2); }
+.creator-card-media { flex: none; width: var(--space-12); height: var(--space-12); }
+.creator-card-media.is-video { width: calc(var(--space-12) * 16 / 9); }
+.creator-card-media.is-video > img, .creator-card-media.is-video > svg { width: 100%; height: 100%; border-radius: var(--radius-sm); }
 .creator-avatar { flex: none; width: var(--space-12); height: var(--space-12); border-radius: var(--radius-full); object-fit: cover; }
-.creator-avatar-fallback { padding: var(--space-2); color: var(--color-text-secondary); background: var(--color-surface-2); }
+.creator-avatar-fallback { padding: var(--space-3); color: var(--color-accent-text); background: var(--color-surface-2); border: 1px solid var(--color-border-subtle); }
+.creator-card-copy { display: grid; align-content: start; gap: var(--space-3); min-width: 0; }
 .creator-description { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.creator-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
-.creator-tags li { padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface-2); overflow-wrap: anywhere; font: var(--type-caption); }
+.creator-tags { display: flex; flex-wrap: wrap; align-content: start; align-items: start; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.creator-tags li { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); color: var(--color-text-secondary); background: var(--color-surface-2); overflow-wrap: anywhere; font: var(--type-caption); }
 .creator-rating, .creator-stars { display: flex; align-items: center; gap: var(--space-1); }
-.creator-rating { gap: var(--space-3); font-variant-numeric: tabular-nums; }
+.creator-rating { justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); font-variant-numeric: tabular-nums; }
+.creator-rating strong { color: var(--color-accent-text); font: var(--type-h2); }
 .creator-stars { color: var(--color-text-tertiary); }
 .creator-stars .is-filled { color: var(--color-accent-text); fill: currentColor; }
-.creator-strength { display: grid; gap: var(--space-1); margin: 0; }
+.creator-strength { display: grid; gap: var(--space-1); margin: 0; padding-inline-start: var(--space-3); border-inline-start: var(--space-1) solid var(--color-border-subtle); overflow-wrap: anywhere; }
 .creator-strength small, .creator-muted, .creator-field small, .creator-fieldset small { color: var(--color-text-secondary); font: var(--type-caption); }
 .creator-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .creator-actions .app-button { white-space: normal; }
-.creator-admin-actions { margin-top: auto; }
+.creator-card-footer { display: grid; align-content: end; gap: var(--space-3); min-width: 0; margin-top: auto; }
+.creator-card-primary { display: grid; gap: var(--space-3); min-width: 0; }
+.creator-visit .app-button { width: 100%; justify-content: space-between; }
+.creator-visit svg, .creator-admin-actions svg { flex: none; }
+.creator-admin-actions { padding-top: var(--space-3); border-top: 1px solid var(--color-border-subtle); }
+.creator-admin-actions .app-button { flex: 1; }
+@media (width >= 1200px) {
+  .creator-card-primary { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .creator-card-primary .creator-rating { flex: 1; flex-wrap: nowrap; gap: var(--space-2); padding: var(--space-2); }
+  .creator-card-primary .creator-stars svg { width: var(--space-4); height: var(--space-4); flex: none; }
+  .creator-card-primary .creator-rating strong { font: var(--type-h3); }
+  .creator-visit .app-button { width: auto; padding-inline: var(--space-2); }
+}
 .creator-config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-6); align-items: start; margin-top: var(--space-4); }
 .creator-config-sections, .creator-form, .creator-avatar-editor { display: grid; gap: var(--space-4); min-width: 0; }
 .creator-field { display: grid; gap: var(--space-1); min-width: 0; }
@@ -48,5 +75,4 @@
 .recommendation-type-card strong { font: var(--type-h2); }
 .recommendation-type-card small { color: var(--color-text-secondary); font: var(--type-body); }
 .recommendation-type-card svg { flex: none; }
-.recommendation-video-heading { flex-direction: column; align-items: stretch; }
 .recommendation-cover { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-radius: var(--radius-sm); background: var(--color-surface-2); }

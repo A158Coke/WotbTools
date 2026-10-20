@@ -12,6 +12,10 @@ Administrators maintain both recommendation types and their separate category di
 
 ## Category filter presentation
 
+UP and VIDEO cards share aligned heading, description/assessment, category and footer tracks within each grid row. Descriptions and all categories remain fully visible; there is no text truncation or extra expand action. The footer groups the manual score, external link and a separated administrator action row so differing copy lengths do not leave gaps between actions. Desktop cards place the score on the left and the external link on the right, wrapping when needed for long translations; tablet/mobile retain a stacked score and full-width link. Browsers supporting CSS subgrid align these tracks; other browsers retain the flex layout with the footer anchored at the bottom.
+
+Cards use the same structure in Showcase and Classic, with semantic-token accent edges, icon badges, rating surfaces and hover/keyboard-focus elevation. Motion duration follows the existing reduced-motion tokens. VIDEO headers use a fixed-height horizontal thumbnail slot beside the title: valid covers are contained without cropping, and missing/failed images show an icon in the identical slot. UP headers retain a circular avatar slot of the same height. Loading a cover therefore cannot stretch adjacent coverless headers, copy tracks or cards. This presentation change does not enable uploads or change storage configuration.
+
 Without a category link, the directory initially shows all creators with other category choices collapsed. An independent filter button reveals compact, wrapping category buttons; opening or closing this area makes no API request or history entry. The All categories button always clears the filter. When a selected category is collapsed, its name remains visible; an unknown category uses a neutral current-filter label.
 
 Category deep links and Back/Forward into a category expand the choices. Data refresh and UI profile changes preserve the disclosure state. Collapsed choices leave the keyboard tab order, and closing returns focus to the toggle. An empty category dictionary has no toggle.
