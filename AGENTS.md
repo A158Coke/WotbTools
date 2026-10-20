@@ -22,9 +22,10 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 
 ## 技能库（按需显式加载）
 
-`.agents/skills/` 只有四个 lifecycle Skills：**designer**（需求澄清 + 方案设计）· **executor**（执行 + PR 收尾）·
+`.agents/skills/` 只有四个 lifecycle Skills：**designer**（deeply define the work）· **executor**（执行 + PR 收尾）·
 **prompt-repair**（增量修复）· **review-with-docs**（唯一 final quality gate）。
 
+Designer 的完整 pipeline authority 只在 `.agents/skills/designer/SKILL.md`；本文件不复制其阶段定义。
 领域 playbook / checklist / tool guidance 在 `.agents/playbooks/`（wotb-sync、column-sync、frontend-architecture、
 keycloak-upgrade、komodo-server-lifecycle、product-qa、code-quality、code-smell、fallow、requirement-clarification、post-merge-cleanup），
 由四个 Skills 按需加载，不是顶层 Skill。
@@ -37,4 +38,4 @@ taxonomy 唯一来源为 `deploy/observability/dev-metrics/area-taxonomy.json`�
 
 ## 文档入口
 
-README.md · HISTORY.md（项目演进）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/ROADMAP.md
+README.md · HISTORY.md（产品/业务历史）· docs/architecture/TECHNICAL_EVOLUTION.md（技术/架构历史）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md
