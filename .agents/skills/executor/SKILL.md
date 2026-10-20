@@ -3,7 +3,8 @@ name: executor
 description: >
   开发生命周期的实现与收尾阶段：执行 docs/current-plan.md 中已批准的计划，做 targeted validation，
   在 review-with-docs PASS 后 commit/push/open PR，并在 merge 后清理 worktree、分支与计划文件。
-  Trigger: 用户说"执行 current-plan / 按计划执行 / 继续执行计划"，或计划已由 designer 批准。
+  Trigger: 用户说"执行 current-plan / 按计划执行 / 继续执行计划"、计划已由 designer 批准，
+  或用户针对已合并 PR 明确要求 post-merge cleanup / 清理 worktree / 清理已合并分支 / 收尾。
   它不设计需求、不自行判定 review pass；final quality gate 只属于 review-with-docs。
 ---
 
@@ -13,16 +14,24 @@ description: >
 > 只有 review-with-docs PASS 后，Executor 才 commit/push/open PR；merge 后加载
 > `.agents/playbooks/post-merge-cleanup.md` 做 post-merge cleanup。
 
-定位：把已批准的《开发方案单》（`docs/current-plan.md`）落地为代码。
-不重新讨论方案、不扩大范围、每步可独立验证。
+定位：把已批准的《开发方案单》（`docs/current-plan.md`）落地为代码；或在 PR 已确认 merge 后执行
+生命周期收尾。实现阶段不重新讨论方案、不扩大范围、每步可独立验证。
 
 ## 输入
 
-- `docs/current-plan.md`（必须完整读取，不要跳过任何章节）
+二选一：
+
+- 实现路径：`docs/current-plan.md`（必须完整读取，不要跳过任何章节）；
+- post-merge cleanup 路径：已合并 PR / merge commit / 已确认合并的任务分支。此路径不要求存在
+  `docs/current-plan.md`，先验证 merge 事实，再加载 `.agents/playbooks/post-merge-cleanup.md`。
 
 ## 流程
 
-1. **完整读取计划**：读 `docs/current-plan.md`，确认"分步计划"状态表、
+0. **Post-merge cleanup fast path**：若用户请求仅为已合并 PR 的 cleanup / 收尾，先验证目标 PR
+   的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
+   执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
+   下方 implementation phases，也不要求重新创建/读取 approved plan。
+1. **完整读取计划**：实现路径读 `docs/current-plan.md`，确认"分步计划"状态表、
    "影响面清单"、"验收标准"、"待确认项"与"非目标"。
 2. **授权校验**：待确认项中存在未确认的"阻塞"项 → 停下汇报，不执行；
    用户明确说"执行/批准"即视为已授权。
@@ -96,7 +105,7 @@ description: >
 
 ## Post-merge cleanup
 
-PR merge 后，加载 `.agents/playbooks/post-merge-cleanup.md`：切回 main 并更新、清理 `docs/current-plan.md`、删除任务 worktree、删除已合并 PR 的本地/远端分支。
+PR merge 后，加载 `.agents/playbooks/post-merge-cleanup.md`：切回 main 并更新、清理 `docs/current-plan.md`、删除任务 worktree、删除已合并 PR 的本地/远端分支。fresh-context 的 cleanup 请求也由本 Skill 的 fast path 进入这里，不要求重新拥有 approved plan。
 
 ## 内部 playbooks
 
