@@ -46,9 +46,10 @@ PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命�
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
 3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
 `android-v3.15.0` tag 已指向 `5b28c00438837731d15d1d683d1828c7080686c8`（3.15.0 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+3.15.1 / 3015001 的 Android download telemetry patch（[3.15.1](releases/3.15.1.md)）已随 main 合并；3.16.0 继承该修复。
 本 PR 把装甲查看器 HE/HESH 改为 Armor Inspector legacy 800 射线溅射采样（`func7695`），并重做 HE 热力图投影与结果卡（有效穿深顶行、判定行右侧伤害、溅射平均/范围、最佳样本），同时把上游 WASM pin bump 到 **v0.4.10**（车辆集合修复 + 0.01mm 装甲精度；AI 投影 golden 仅 provenance 变化），随 APK 打包后按 **minor** 递增为 **3.16.0 / 3016000**，说明见 [3.16.0](releases/3.16.0.md)。
 本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
-3.16.0 成为当前候选；3.15.0 若尚未 publish，由 3.16.0 取代，不再 stage/publish 旧候选。
+3.16.0 成为当前候选；3.15.1 若尚未 publish，由 3.16.0 取代，不再 stage/publish 旧候选。
 这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
 实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
 `contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
