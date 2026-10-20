@@ -92,7 +92,7 @@ Komodo 是 **部署/控制平面**，不是数据搬运工具。
 7. 观察目标运行状态；
 8. 确认成功后才停止源 workload。
 
-能影子部署或重叠运行就不要先停源服务。现有 K7B/K7C 文档可作为 frontend 迁移先例。
+能影子部署或重叠运行就不要先停源服务。具体操作以本 playbook、`docs/operations/komodo-server-lifecycle.md` 与该 workload 的当前权威文档为准，不以历史迁移 wave 文档作为操作 authority。
 
 ### 5. 有状态迁移
 
