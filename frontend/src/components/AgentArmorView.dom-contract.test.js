@@ -463,6 +463,9 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
   it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
     expect(kernel).toContain("sub = l.ricochet ? L.shotRicochetSeg : '';")
   })
+  it('跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0', () => {
+    expect(kernel).toContain(': (chancePartial ? dmgVal : dmgDealt));')
+  })
 })
 
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
