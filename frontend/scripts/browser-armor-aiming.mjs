@@ -396,6 +396,41 @@ try {
   })()`)
   check(bounceCase.cls === 0 && bounceCase.diag === 0,
     `续飞段再次跳弹（第二次）→ 炮弹消失/无最终结论：${JSON.stringify(bounceCase)}`)
+  // 续飞首层是间隙甲时同样必须执行第二次跳弹判定（production GLSL）。
+  const spacedBounceCase = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const first = new T.Mesh(geometry, sourceMaterial);
+    first.rotation.y = -10 * Math.PI / 180; first.updateMatrix();
+    const pack = buildPack([{ section: 'spaced', mesh: first, thickness: 50 }]);
+    const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+    const material = new T.ShaderMaterial({
+      vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float ricochet; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+        'void main(){float p;float d;int c=rcContinue(vec3(-2.0,0.0,0.0),vec3(1.0,0.0,0.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+      uniforms: { caliber:{value:120}, normalization:{value:0}, ricochet:{value:70 * Math.PI / 180}, remIn:{value:100}, rcThickMul:{value:1},
+        rcClipEnabled:{value:0}, rcClipPlane:{value:new T.Vector4()},
+        rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+        rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+    });
+    try {
+      const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+      renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+      const pixel = new Uint8Array(4); renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+      return { cls: pixel[0], diag: pixel[1] };
+    } finally {
+      material.dispose(); Object.values(tex).forEach(t=>t.dispose());
+      target.dispose(); geometry.dispose(); sourceMaterial.dispose();
+      renderer.dispose(); renderer.forceContextLoss();
+    }
+  })()`)
+  check(spacedBounceCase.cls === 0 && spacedBounceCase.diag === 0,
+    `续飞首层间隙甲跳弹（第二次）→ 炮弹消失/无最终结论：${JSON.stringify(spacedBounceCase)}`)
 
   // #711: sub-threshold movement remains a click and must not rotate the model or rebuild its grid.
   for (const part of ['turret', 'gun']) {

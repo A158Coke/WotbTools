@@ -865,6 +865,44 @@ describe('第二次跳弹即终态（2026-10-20）', () => {
     });
 });
 
+describe('续飞首层间隙甲跳弹（2026-10-21）', () => {
+    it('续飞段首个命中是间隙甲且达跳弹角 → 第二次跳弹即终态', () => {
+        const plate = makeMesh(new THREE.PlaneGeometry(2, 2), 'spaced', 50, (m) => {
+            m.rotation.y = -10 * Math.PI / 180;
+            m.position.set(0, 0, 0);
+            m.updateMatrix();
+        });
+        // 间隙甲后方必须存在主装甲，否则前端门按 fail-closed 直接跳过续飞。
+        const primary = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 50, (m) => {
+            m.position.set(4, 0, 0);
+            m.rotation.y = -Math.PI / 2;
+            m.updateMatrix();
+        });
+        const pack = packOf([plate, primary]);
+        const sim = simulateContinuation(pack, new THREE.Vector3(-2, 0, 0), new THREE.Vector3(1, 0, 0), {
+            remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1,
+            ricochetRad: 70 * Math.PI / 180,
+        });
+        expect(sim.cls).toBe(0);
+        expect(sim.layers.map(l => [l.section, l.ricochet])).toEqual([['spaced', true]]);
+    });
+
+    it('外部模块先消耗（hitIndex>0）后，间隙甲不再跳弹', () => {
+        const { meshes } = buildChainScene([
+            { section: 'chassis', thickness: 5, x: 0 },
+            { section: 'spaced', thickness: 50, x: 2, rotYDeg: -10 },
+            { section: 'turret', thickness: 50, x: 4 },
+        ]);
+        const pack = packOf(meshes);
+        const sim = simulateContinuation(pack, new THREE.Vector3(-2, 0, 0), new THREE.Vector3(1, 0, 0), {
+            remIn: 400, caliber: 120, normalizationRad: 0, thickMul: 1,
+            ricochetRad: 70 * Math.PI / 180,
+        });
+        expect(sim.layers.some(l => l.ricochet)).toBe(false);
+        expect(sim.layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'turret']);
+    });
+});
+
 describe('背面命中过滤（FrontSide 判定口径）', () => {
     it('双面闭合盒的正/背两个交点只保留迎面一个', () => {
         const box = makeMesh(new THREE.BoxGeometry(2, 2, 2), 'spaced', 50);

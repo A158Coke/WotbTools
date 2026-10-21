@@ -309,19 +309,19 @@ int rcSegment(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out f
             pMin -= eff;
             pMax -= eff;
             bool layPen = rem > eff;                    // 严格大于才穿透（penetration.js 同）
+            // 跳弹后的炮弹可以再次跳弹：仅本段首个非外部层（主装甲或间隙甲）、
+            // 非 3× 口径、入射角达到当前弹种跳弹角时，带 75% 剩余穿深反射进入下一段。
+            // 外部模块（chassis/gunBarrel）已在上面 flat 消费并递增 hitIndex，不会走到这里。
+            bool threeCal = th > 0.0 && caliber > th * 3.0;
+            if (sec <= 3 && hitIndex == 0 && !threeCal && angle >= ricochet) {
+                nextOrigin = ro + reflDir * bestT;
+                nextDir = normalize(reflect(reflDir, nW));
+                nextRem = rem * RC_RICO_MUL;
+                penOut = 0.0;
+                rcDiag = RC_DIAG_NO_HIT;
+                return 3;
+            }
             if (sec <= 2) {                             // 首个主装甲 = 末层，定结论
-                // 跳弹后的炮弹可以再次跳弹：仅本段首个命中层、非 3× 口径、
-                // 入射角达到当前弹种跳弹角时，带 75% 剩余穿深反射进入下一段。
-                bool threeCal = th > 0.0 && caliber > th * 3.0;
-                bool ricocheted = !threeCal && hitIndex == 0 && angle >= ricochet;
-                if (ricocheted) {
-                    nextOrigin = ro + reflDir * bestT;
-                    nextDir = normalize(reflect(reflDir, nW));
-                    nextRem = rem * RC_RICO_MUL;
-                    penOut = 0.0;
-                    rcDiag = RC_DIAG_NO_HIT;
-                    return 3;
-                }
                 if (!blocked && layPen) {
                     // 确定性 layPen 已成立；补充概率为 0 时仍呈现确定性击穿（不把绿翻红）。
                     penOut = probChance > 0.0 ? clamp(probChance, 0.0, 1.0) : 1.0;
@@ -1017,9 +1017,9 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             const cosA = Math.min(Math.abs(h.normal.dot(dir)), 1);
             const angle = Math.acos(cosA);
             const threeCal = th > 0 && caliber > th * 3;
-            // 与 penetration.js 相同：只有本段首个命中层可以新跳弹；
-            // 之前穿过模块/间隙甲（hitIndex > 0）时不再跳弹。
-            const ricocheted = isPrimary && hitIndex === 0 && !threeCal && angle >= ricochetRad;
+            // 与 penetration.js 相同：只有本段首个非外部层可以新跳弹（首个命中可以是
+            // 间隙甲；外部模块已在 variant 分支 flat 消费并递增 hitIndex）。
+            const ricocheted = (isPrimary || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
             if (ricocheted) {
                 allLayers.push({ meshName: pack.meshes[h.meshIdx].name, plateId: pack.meshes[h.meshIdx].userData.armorPlateId, triangleId: h.triangleId, slot: h.slot, point: h.point.toArray(), normal: h.normal.toArray(), section: h.section, t: h.t, thickness: th, eff: 0, remBefore: rem, penetrated: false, ricochet: true, angle, seg });
                 // 第二次跳弹：炮弹消失，不再做后续判定。

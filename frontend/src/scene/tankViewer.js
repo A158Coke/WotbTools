@@ -33,7 +33,7 @@ import {
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
 // Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
-import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent } from './armorInspectorChance.js'
+import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent, resolveCardChance } from './armorInspectorChance.js'
 // HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
 import { sampleHeSplash, HE_SAMPLE } from './heSplash.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
@@ -869,6 +869,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rcCellRows: { value: 1 },
             rcEntryRows: { value: 1 },
             rcEntryTotal: { value: 0 },
+            // gun_mask 裁切面（世界系 xyz=normal, w=constant）：只过滤 gunBarrel 命中。
+            rcClipPlane: { value: new THREE.Vector4() },
+            rcClipEnabled: { value: false },
         };
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
@@ -910,6 +913,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     rcCellRows: rcUniforms.rcCellRows,
                     rcEntryRows: rcUniforms.rcEntryRows,
                     rcEntryTotal: rcUniforms.rcEntryTotal,
+                    rcClipPlane: rcUniforms.rcClipPlane,
+                    rcClipEnabled: rcUniforms.rcClipEnabled,
                 },
             });
         }
@@ -1041,6 +1046,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 rcCellRows: rcUniforms.rcCellRows,
                 rcEntryRows: rcUniforms.rcEntryRows,
                 rcEntryTotal: rcUniforms.rcEntryTotal,
+                rcClipPlane: rcUniforms.rcClipPlane,
+                rcClipEnabled: rcUniforms.rcClipEnabled,
             };
         }
         function spacedMaterial(thickness, penetration) {
@@ -1947,7 +1954,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const cpuAtGpuInput = cpu && !cpu.skip && values[at + 3] > 0
                         ? simulateContinuation(ricochetPack, new THREE.Vector3().fromArray(positions, at),
                             new THREE.Vector3().fromArray(reflections, at), { remIn: inputs.penetration * RC.RICO_REMAIN_MUL,
-                                caliber: inputs.caliber, normalizationRad: inputs.normalization, thickMul: rcUniforms.rcThickMul.value })
+                                caliber: inputs.caliber, normalizationRad: inputs.normalization, thickMul: rcUniforms.rcThickMul.value,
+                                clipPlane: gunClipPlane })
                         : null;
                     pixels.push({ x: left + col, y: top + row, id: ids[at], triangleId: ids[at + 1] - 1,
                         gpu: { origin: Array.from(positions.slice(at, at + 3)), direction: Array.from(reflections.slice(at, at + 3)) },
@@ -2007,6 +2015,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     caliber: sh.caliber || 120,
                     normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
                     thickMul: equipmentCoeffs().thickMul,
+                    clipPlane: gunClipPlane,
                 });
             },
             // GLSL 侧 uniform 当前值（布局对照用）
@@ -2015,6 +2024,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     triRows: rcUniforms.rcTriRows.value, cellRows: rcUniforms.rcCellRows.value, entryRows: rcUniforms.rcEntryRows.value, entryTotal: rcUniforms.rcEntryTotal.value,
                     gridMin: ricochetGrid ? ricochetGrid.gridMin : null, cell: rcUniforms.rcCell.value,
                     dimsF: rcUniforms.rcGridDimsF.value.toArray(), mode: rcUniforms.rcMode.value, thickMul: rcUniforms.rcThickMul.value,
+                    clipEnabled: rcUniforms.rcClipEnabled.value, clipPlane: rcUniforms.rcClipPlane.value.toArray(),
                 };
             },
             // CPU 侧逐像素预测类通道（差分测试参照）：RT 像素坐标（左下原点）→
@@ -2056,6 +2066,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     caliber,
                     normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
                     thickMul,
+                    clipPlane: gunClipPlane,
                 });
                 return {
                     skip: false, cls: sim.cls,
@@ -2375,6 +2386,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
+            // gun_mask 裁切面同步到续飞着色器：与点击/JS 参考同一判据，只滤 gunBarrel。
+            if (gunClipPlane) {
+                rcUniforms.rcClipPlane.value.set(
+                    gunClipPlane.normal.x, gunClipPlane.normal.y, gunClipPlane.normal.z, gunClipPlane.constant);
+                rcUniforms.rcClipEnabled.value = true;
+            } else {
+                rcUniforms.rcClipEnabled.value = false;
+            }
             // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G（A=0）→ 更近的外部模块写
             //    A=1（RGB 保留：模块后间隙板的跳弹/续飞状态不被覆盖）
             if (spacedStateScene) {
@@ -5890,9 +5909,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 : (allowChance && chancePct > 0 && chancePct < 100);
             // 统一击穿概率（所有弹种卡片都显示，含 0% / 100%）：
             // AP/APCR/HEAT 用概率链/穿透链，HE 用 CDF 概率；模块首面 HE 为 0%。
-            const cardChance = heInfo
-                ? heChance
-                : (probabilityMode ? (overallChance ?? 0) : rawChance);
+            // 无效 HE 数据（零/缺失半径 → heInfo=null, allowChance=false）由该 helper
+            // fail-closed 为 0%，概率行不会沿用 rawChance 显示 100%/50%。
+            const { chance: cardChance } = resolveCardChance({
+                heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance,
+            });
 
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
