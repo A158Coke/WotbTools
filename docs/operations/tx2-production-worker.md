@@ -30,7 +30,7 @@ frontend-replica：与 TX1 相同的 immutable Frontend artifact
 
 TX2 上唯一由生产 workflow 部署的 workload 是 Frontend replica：`frontend-replica.yml` 在 Frontend 发布成功后解析同一 TCR artifact，部署到 `/opt/wotb-tx2/frontend-replica`，并验证 TX2 的 `/version.json` 与 API health。Business API / Keycloak / PostgreSQL / Caddy 仍在 TX1；AI service 位于 Yecao（`10.20.0.2:8089`），既不在 TX1 也不在 TX2。
 
-## 三个 lifecycle 的 ownership 区分
+## lifecycle 与 workload 的 ownership 区分
 
 | Owner | 拥有 | 不拥有 |
 |---|---|---|

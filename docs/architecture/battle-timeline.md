@@ -44,9 +44,9 @@ Playback HTTP 端点已删除，OpenAPI schema component 继续作为本地 `Bat
 `positionSegments` / `orientationSegments` / `healthTransitions` / `lifeTransitions` /
 `consumableTransitions` / `moduleCrewTransitions` / `loadout` / `damageLosses`，加 battle 级
 `events` / `pointsSamples`。每条 track 自带 `knowledge / provenance / observation boundary`；
-`damageLosses` 是 Playback 数值伤害的唯一来源，并携带 backend 已证明的
+`damageLosses` 是 Playback 数值伤害的唯一来源，并携带 client playback projection 已证明的
 `fromHp/toHp/displayCapacityHp/transientAllowed`；事件中的 `observedHpLoss` 只服务通知展示。
-module/crew transition 的 `state=null` 表示 backend 已证明该 component 当前无 active fault；
+module/crew transition 的 `state=null` 表示 canonical projection 已证明该 component 当前无 active fault；
 consumable 的 `invalidation=true` 是 runtime 全局失效边界，前端不解释 protocol UNKNOWN。
 
 前端（`battlePlaybackV2.ts` 查询 + `V2VehicleInspector`）**只消费**这些已标注事实，
