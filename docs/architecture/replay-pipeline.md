@@ -4,7 +4,7 @@
 > Rust Core，编译成 WASM 在浏览器 / Android APK 自带的 GeckoView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
 > 消费契约 `contracts/agent/replay-facets-v2.md`）。对解析结果的一切计算（去重、League Rating、指标、列投影、
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
-> 迁移过程见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
+> 当前解析链路以本文与 `contracts/agent/replay-facets-v2.md` 为准。
 
 ## Agent 产物身份（content-addressed）
 
@@ -76,8 +76,7 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 
 ## 服务端边界
 
-- **名人堂**（`com.wotb.web.replayfile.ClientReplayFacts`）：**client facts are intentionally untrusted; server validates
-  structure, not authenticity.** 只做结构校验（arenaId / 录像者 / 1..64 名战斗者 / 账号与车辆 ID / 队伍）；不重新解析回放、
+- **名人堂**（`com.wotb.web.replayfile.ClientReplayFacts`）：**客户端事实被有意视为不可信；服务端只校验结构，不校验真实性。** 只做结构校验（arenaId / 录像者 / 1..64 名战斗者 / 账号与车辆 ID / 队伍）；不重新解析回放、
   不比对回放与 facts。防伪造靠管理员审核与回放附件（有意的产品决策，见 `docs/features/hall-of-fame.md`「信任模型」）。
 - **账号验证**：客户端声称的便利徽章——只比较客户端提交的录像者数值 accountId 与当前绑定账号；不授予权限、不参与
   授权、不是身份安全边界（`docs/features/user-profile.md`）。
@@ -116,21 +115,20 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 ## 缺字段怎么办
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），
-不在客户端启发式推导，也不在服务端解析。已知待补项见 [client-replay-engine-migration.md](client-replay-engine-migration.md)。
+不在客户端启发式推导，也不在服务端解析。已知待补项在上游 Rust Core 的 issue 与发布中跟踪。
 
-## Android bundled runtime
+## Android 内置运行时
 
-Android runs the same ReplayWorkspace at `http://127.0.0.1:21653/index.html` (bundled GeckoView + Native LocalRuntimeServer since 3.0).
-Replay import, Rust/WASM parsing, Result/Rating, 2D maps keep using bundled resources.
-Shooting-inspection inputs (compact pitch/config shell identity) and the shell-kind table are
-fetched from the asset pack at runtime since 2026-10-15 (`tank/{id}.json` projection +
-`/data/shellKinds.json`); the bundled snapshot `common/shot-tank-data.json` is retired.
-Pending intents stream only from the exact local `/__native/replay-pending` resource with UUID header
-and compare-and-clear ACK after analysis completion. Parser-load failure preserves pending for retry.
-AI, HoF, remote Profile and remote 3D assets require connectivity before auth or requests.
-The runtime URL boundary sends Android business requests to production with native Bearer and no cookies;
-ordinary Web requests retain their same-origin behavior. Release validates the APK's frontend identity,
-not the production Web deployment's commit. See `docs/android/architecture.md` and `release-process.md`.
+Android 在 `http://127.0.0.1:21653/index.html` 运行同一个 ReplayWorkspace（自 3.0 起使用内置 GeckoView + Native LocalRuntimeServer）。
+回放导入、Rust/WASM 解析、Result/Rating 与 2D 地图继续使用内置资源。
+射击分析输入（紧凑的俯仰角 / 配置炮弹身份）与炮弹类型表自 2026-10-15 起在运行时从资产包获取
+（`tank/{id}.json` 投影 + `/data/shellKinds.json`）；内置快照 `common/shot-tank-data.json` 已退役。
+pending intent 仅从精确匹配的本机 `/__native/replay-pending` 资源以流方式读取，携带 UUID 请求头，
+分析完成后通过比较并清除的 ACK 确认。解析器加载失败时保留 pending，供重试使用。
+AI、名人堂、远程 Profile 和远程 3D 资产在认证或请求之前需要联网。
+运行时 URL 边界将 Android 业务请求发送到生产环境，使用 Native Bearer，不带 cookie；
+普通 Web 请求保持同源行为。发布校验 APK 内前端的身份，而非生产 Web 部署的 commit。
+详见 `docs/android/architecture.md` 与 `docs/android/release-process.md`。
 
 ## Canonical 投影的线程边界
 

@@ -1,0 +1,345 @@
+---
+name: prompt-repair
+description: >
+  开发生命周期的修复阶段：基于现成修复提示词 / PR review findings 做增量修复（REPAIR）：
+  解析 blockers → Delta Discovery（diff / symbol / direct dependency）→ 立即修改 → changed-file tests。
+  Trigger: 用户提供已有 repair artifact / review 修复意见 / PR blockers / follow-up findings，或当前 PR 的
+  cleanup finding。新报告的 bug / hotfix 若没有既有 reviewer finding 或 repair artifact，不进入本 Skill，
+  按 Designer → approved plan → Executor 生命周期处理。它不重新设计需求、不自行判定 final pass；修完交给 review-with-docs。
+---
+
+# Prompt Repair（增量修复）
+
+> 生命周期位置：PR reviewer findings → **Prompt Repair** → review-with-docs。
+> 本 Skill 只修复已指出的问题；final quality gate / zero blocker 只由 `review-with-docs` 判定。
+
+定位：**增量修复执行者**，不是 Designer / Executor / 架构探索器 / 全仓库审查 / 需求发现。
+
+涉及 FE ↔ BE HTTP shape 的 repair prompt 仍必须遵守 `contracts/http/openapi.yaml`、generated artifact 与显式 domain→transport mapping 规则；repair 不得新增平行 wire contract。
+
+用户已给出已有 repair artifact / reviewer finding ⇒ 需求已确定、product contract 已确定、当前 blockers 已由 reviewer
+指出。Agent 的工作是：**验证真实代码 → 定位问题 → 修复问题 → 验证修复**，而不是重新理解
+已被 reviewer 理解过的整个项目。
+
+核心原则：
+
+```text
+读到足够，不做全量阅读。
+先看 DIFF，再做 discovery。
+先定位 SYMBOL，再遍历 DIRECTORY。
+先处理 BLOCKER，再讨论 ARCHITECTURE。
+先看 DIRECT DEPENDENCY，再扩大到 REPOSITORY。
+先修复，再做完整 REVIEW。
+只运行 CHANGED-FILE TESTS。
+已通过且未触碰 = LOCKED。
+只有证据支持时才扩大 DISCOVERY。
+REPAIR PROMPT 不是要求重新发现整个项目。
+```
+
+## 输入
+
+- 用户提供的已有修复提示词（一整份即可，无需拆参数）：repair prompt / review 修复意见 /
+  PR review blockers / follow-up findings / 当前 PR cleanup findings。
+- 新报告的独立 bug / hotfix（没有既有 review finding / repair artifact）不是 Prompt Repair 输入；
+  交由 Designer 定义工作并产出 approved plan，再由 Executor 实现。
+- Repair Prompt = 本次修复的 **primary task contract**（决定"要修成什么"）；
+  真实代码 = **implementation reality**（决定"现在实际上是什么"）。
+  不能因为代码当前实现不同，就擅自改变用户明确要求。
+
+## 核心模式：DELTA DISCOVERY
+
+```text
+修复 discovery != 全量 discovery
+```
+
+- 默认 **Discovery Budget：1~3 分钟进入实际修改**（执行策略，不是绝对超时）。
+- 默认最大 discovery scope：
+
+```text
+Repair Prompt
+↓ 当前 HEAD
+↓ 若有 Last Reviewed SHA：SHA..HEAD diff
+↓ 当前 blocker symbols
+↓ 直接相关 changed files
+↓ direct caller/callee 一层（最多）
+```
+
+- 只有证据不足时才扩大，扩大必须写明原因（见"规则"）。
+
+## 流程（7 个 Phase）
+
+### PHASE 1 — 解析修复契约
+
+把提示词内要求分成：
+
+```text
+ACTIVE BLOCKERS        当前要修的项
+LOCKED PASSED AREAS    已通过、不得回滚的项
+REGRESSIONS TO PROTECT 不得破坏的项
+NON-GOALS              明确不做的事
+TEST REQUIREMENTS      要求的验证
+FINAL REPORT REQUIREMENTS
+```
+
+- Prompt 已写明的直接使用，**不重复向用户询问已有信息**。
+- 自动提取 Reviewed SHA：`Reviewed head/Reviewed HEAD/Last reviewed/Base reviewed SHA:`
+  后跟合法 git SHA 即采用，用于 `git diff <sha>..HEAD`，不要求用户另外输入。
+- 自动提取 LOCKED 标记：`保留 / 不要重做 / already passed / locked / 已通过 / 不得回滚`
+  → 并入 LOCKED PASSED AREAS。
+- 1000+ 行长 Prompt：先结构化提取，不逐句验证、不把每段都变成阅读任务。
+  **REGRESSION = 修改完成后验证不破坏，不是修改开始前重新审计整个 regression 区域。**
+
+### PHASE 2 — 增量发现
+
+1. 有 Reviewed SHA 时先回答内部问题："自上次 review 后到底改了什么？"
+
+```bash
+git rev-parse HEAD
+git status --short
+git diff --stat <reviewed-sha>..HEAD
+git diff --name-only <reviewed-sha>..HEAD
+```
+
+2. 无 SHA 时**不做 full scan**：
+
+```bash
+git status --short
+git log -5 --oneline
+```
+
+   处于 PR branch 且已有 git/GitHub 信息时：识别 current branch / HEAD / base /
+   recent repair commits，然后以 **blocker symbols 为主入口**。
+
+3. 建立 **BLOCKER MAP**（每个 blocker：symbols → likely files → direct dependencies）：
+
+```text
+Blocker 1 — leagueMode contract
+Symbols: leagueMode, LeagueRatingResult, leagueData
+Likely files: frontend/src/replay-local/compute/league-rating.ts, ReplayPage.vue, useColumns.js
+Direct deps: 仅相关 tests
+```
+
+4. **Symbol-first**（`rg`，不是目录遍历）：
+
+```bash
+rg -n "<symbol1>|<symbol2>|<symbol3>" relevant-root
+```
+
+5. 只读：target file + direct caller + direct callee/helper + related test。一层通常足够。
+6. 输出最小报告（不写长篇架构分析），然后**立即进入修改**：
+
+```text
+REPAIR DISCOVERY
+
+HEAD: <sha>
+
+Relevant changed files:
+- ...
+
+Blocker mapping:
+1. Blocker → files
+2. Blocker → files
+
+Locked passed areas:
+- ...
+
+Expanding discovery: NO
+```
+
+### PHASE 3 — 实现
+
+- 逐 blocker 修复；不要求修改前完整解释所有代码——root cause 有足够证据即改。
+- Prompt 要求删除 X 但真实代码已没有 X → 标记 `ALREADY RESOLVED`，继续下一 blocker。
+- Prompt 路径不准（如 `frontend/src/foo.js` 实际在 `frontend/src/utils/foo.js`）→ 用真实路径。
+- 发现 blocker 已被后续 commit 修复 → 确认真实代码 + 测试 → `ALREADY RESOLVED`，
+  不为了"执行 prompt"重复修改。
+- 默认只改：当前 blockers + 必要 dependency + 必要 regression test + 必要 stale cleanup。
+- 禁止 scope creep：不顺便重构整个模块 / 升级 dependency / 改 unrelated UI / 重新设计架构。
+
+### PHASE 4 — 定向验证
+
+最相关测试先行，不是每改 5 行就跑全量：
+
+```text
+Fix → Targeted Test → Fix Remaining Failure → Targeted Test Green
+```
+
+例：`PlayerRatingRadar.test.js` / `ReplayPage.test.js` / 对应 service 的单测。
+
+### PHASE 5 — 变更文件验证
+
+本轮所有 blockers 修改完成后，只运行本轮实际修改文件对应的最小测试集：
+
+- 修改 production file：运行覆盖该文件行为的直接相关测试；
+- 修改 test file：运行该测试文件；
+- 修改多个文件：合并这些文件对应的直接相关测试，去重后运行；
+- 没有对应测试：明确报告未找到，不用无关的全量测试替代。
+
+禁止在本技能中主动运行 repository-level full test、完整 backend suite 或完整 frontend
+suite。PR CI 是完整验证入口。changed-file tests 通过后进入 Phase 6 final gate；
+不得在 final gate 前 commit/push。后续 CI 失败时，只复现失败 job 涉及的最小测试范围；
+修复后追加测试并 push，禁止 force push / 改写已公开历史。
+
+### PHASE 6 — 最终清理
+
+- **review-with-docs / fallow 只在此阶段运行**（REPAIR → TEST → FINAL REVIEW）；
+  `review-with-docs` PASS 后才 commit + push，禁止在 repair 开局运行。
+- 收到 `zero technical debt / 零技术债 / final cleanup / cleanup / 不留 TODO` 时进入
+  **ZERO-DEBT REPAIR MODE**，但仍用 Delta Discovery：
+  sweep 范围 = 当前 PR touched files + 本轮 direct dependencies；搜索
+  `TODO FIXME HACK TEMP workaround deprecated legacy fallback review archaeology plan §
+  BLOCKER unused code duplicated domain constants stale API stale comments stale tests`。
+  不把整个多年 repository 的历史技术债算进当前 PR。
+- pre-existing issue（当前 PR 未引入、本轮未触碰、不阻塞功能）→ 标记
+  `PRE-EXISTING / OUT OF REPAIR SCOPE`，不顺手修（除非用户明确要求整个 repo 零债）。
+
+### PHASE 7 — 汇报
+
+输出简洁最终报告（见"报告模板"），含效率日志。禁流水账、禁虚报 COMPLETE。
+
+## 规则
+
+- **依赖深度默认 1 层**（target + direct caller + direct callee/helper + related test）。
+  扩大搜索必须明确输出：
+
+  ```text
+  EXPANDING DISCOVERY
+  Reason: 当前证据无法确认 X，因为 Y。
+  Additional files: ...
+  ```
+
+  禁止静默无限扩展；禁止以"我想更完整理解一下"为由扩大。
+- **允许扩大的条件**（扩大范围策略，满足其一）：
+  A. symbol 有多个真实实现，无法确认 runtime path
+  B. caller contract 不明确
+  C. test 与 production behavior 冲突
+  D. backend/frontend contract 无法从当前文件确认
+  E. 修改会影响 shared infrastructure
+- **Discovery Stop Condition**：满足全部即停（立刻改代码，不再读"可能相关"的文件）：
+  1. 每个 blocker 已映射到具体文件
+  2. root cause 有代码证据
+  3. expected fix contract 明确
+  4. direct regression tests 已定位
+- **LOCKED PASSED AREAS**：已通过 且 当前 repair diff 未触碰 ⇒ 不重新审计 / 不重新设计 /
+  不重新实现 / 不主动重构。本轮没触碰的 regression 区域不重新阅读实现，也不为其运行测试；
+  只有本轮 diff 触碰其 shared dependency 才运行对应的 changed-file tests。
+- **不创建 TODO / FIXME / follow-up**。能解决现在解决；确实无法解决则明确：
+
+  ```text
+  BLOCKED
+  Reason: ...
+  Evidence: ...
+  Required external input: ...
+  ```
+
+- **Git**：继续当前 branch / 当前 PR；不自动新建 branch、不自动开 PR（除非用户明确要求）。
+  保护用户未提交修改：禁止 `git reset --hard` / `git checkout .` / `git clean -fd`。
+  是否自动 commit/push 遵循现有 DSH workflow 约定：`review-with-docs` PASS 后才 commit/push；
+  见 `.agents/AGENTS.md`。
+  **省时优化**：处于已存在 PR branch 的 repair 流程中，changed-file tests 通过后直接进入
+  `review-with-docs` final gate；PASS 后立即 commit + push（让 CI 与本地测试并行），
+  不先 push 后 review。push 后由 CI 完成 repository validation，发现新问题追加 commit 再 push——
+  禁止 force push / 改写已公开历史，推送前按仓库约定确认 remote。
+- **Build-to-Learn 兼容**：若当前流程有 build-to-learn，Repair 模式下保持简短，只解释
+  本次涉及的关键机制 / 旧实现为何错 / 新实现为何对；不为教学扩大 Discovery。
+
+## 边界
+
+- **vs Designer**：新报告的 bug / hotfix 若没有既有 reviewer finding / repair artifact → 用 `designer`；
+  Prompt Repair 不以“修 bug”本身作为触发条件。
+- **vs Executor**：用户提供 feature plan / current-plan.md / 大型新功能 /
+  多模块实现计划 → 用 `executor`（Deep Discovery）。用户提供已有 review repair prompt /
+  PR blocker / follow-up finding / 当前 PR cleanup finding → 用本技能（Delta Discovery）。
+- **vs Review Skill**：`review-with-docs` 是唯一 final quality gate；内部 `code-quality.md` 是代码质量检查单。
+  本技能是“修 reviewer 已经找到的问题”，不重新做完整 review，不自行判定 final pass；修完才交给
+  `review-with-docs`。
+
+## Anti-pattern（防止 12 分钟 Step 1）
+
+```text
+错误：收到已详细列出 5 个 blocker 的 repair prompt，
+     然后花 10+ 分钟重读整个 service / 全部 DTO / 整个 frontend / 全部 docs。
+
+正确：
+Blocker: PlayerRatingRadar size prop
+→ rg PlayerRatingRadar
+→ 读取 component + test
+→ 确认 dead prop
+→ 修复
+→ targeted test
+
+Blocker: leagueMode contract
+→ rg leagueMode
+→ 读取 frontend/src/replay-local/compute/league-rating.ts / frontend/src/api/ai-review.ts /
+  frontend/src/replay-local/analyzeReplays.ts / ReplayPage.vue / useColumns.js / 直接相关 tests
+→ 停止
+```
+
+禁止默认执行：`读取整个 repository` / 读所有 README / 从头读 current-plan.md /
+读完整 docs tree / 修前运行 review-with-docs / 修前运行 `.agents/playbooks/fallow.md` full scan。
+
+## 报告模板
+
+### 修改前最小报告
+
+```text
+REPAIR DISCOVERY
+HEAD: <sha>
+Relevant changed files: ...
+Blocker mapping: ...
+Locked passed areas: ...
+Expanding discovery: NO
+```
+
+### 最终报告
+
+```text
+PROMPT REPAIR REPORT
+
+HEAD: ...
+
+RESOLVED
+1. ...
+2. ...
+
+ALREADY RESOLVED
+- ...
+
+FILES MODIFIED
+- ...
+
+CHANGED-FILE TESTS
+- ...
+
+CI HANDOFF
+- PR CI 负责验证 repository-level suite
+
+DEBT SWEEP
+- ...
+
+BLOCKERS
+0
+
+STATUS
+COMPLETE
+```
+
+仍有 blocker 时：`BLOCKERS: 1` + `REMAINING: ...`，禁止虚报 COMPLETE。
+
+### 效率日志
+
+```text
+DISCOVERY
+- 已检查文件数: N
+- 是否扩大 discovery: yes/no（yes 时附 reason）
+
+IMPLEMENTATION
+- 修改文件数: N
+
+VERIFY
+- changed-file tests: ...
+- repository full tests: 本地不运行；交由 PR CI
+```
+
+能可靠获取 phase duration 则加（Discovery/Implementation/Verification duration）；
+无法可靠获取时**不伪造时间**。

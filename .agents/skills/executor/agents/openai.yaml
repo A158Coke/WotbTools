@@ -1,0 +1,4 @@
+interface:
+  display_name: "Executor"
+  short_description: "执行已批准计划并在 review-with-docs PASS 后提交/开 PR；merge 后清理"
+  default_prompt: "Use $executor to execute docs/current-plan.md."

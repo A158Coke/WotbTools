@@ -25,6 +25,8 @@ public class BroadcastController {
     public BroadcastDtos.Index index(@RequestParam(name = "server", required = false) final String server) { return service.index(server); }
     @GetMapping("/seasons/{id}")
     public BroadcastDtos.SeasonView season(@PathVariable final long id) { return service.season(id); }
+    @GetMapping("/seasons/{id}/contents")
+    public BroadcastDtos.SeasonContents seasonContents(@PathVariable final long id) { return service.seasonContents(id); }
     @GetMapping("/categories/{id}")
     public BroadcastDtos.TimedCategoryView category(@PathVariable final long id) { return service.category(id); }
     @GetMapping("/covers/{id}")

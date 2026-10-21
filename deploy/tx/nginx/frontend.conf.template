@@ -74,7 +74,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # 独立 AI 微服务（Yecao 预部署，仅 WireGuard 10.20.0.2:8089 可达，无公网端口）。
+    # 独立 AI 微服务（Yecao 生产，仅 WireGuard 10.20.0.2:8089 可达，无公网端口）。
     # 公开路径与 ai-service controller 路径保持一致（/api/ai/reviews...），因此
     # proxy_pass 不带 URI：绝不重写 path。
     # ^~ 前缀优先于下方通用 location /api/，AI 流量不会落到 TX Business Backend。

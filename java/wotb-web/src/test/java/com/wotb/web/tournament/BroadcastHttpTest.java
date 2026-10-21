@@ -8,6 +8,8 @@ import com.wotb.web.tournament.controller.BroadcastController;
 import com.wotb.web.tournament.dto.BroadcastDtos;
 import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.tournament.service.BroadcastService;
+import com.wotb.web.util.apierror.ApiErrorCode;
+import com.wotb.web.util.apierror.ApiException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -83,6 +86,59 @@ class BroadcastHttpTest {
                 .andExpect(jsonPath("$.season.nameEn").value("Summer"))
                 .andExpect(jsonPath("$.season.nameRu").value(nullValue()))
                 .andExpect(jsonPath("$.season.name").doesNotExist());
+    }
+    @Test void seasonContentsIsAnonymousAndSerializesTheCompleteFlatEnvelope() throws Exception {
+        final var replay = new BroadcastDtos.Replay(4,3,"Title","https://example.org/replay",LocalDate.of(2026,10,16),1,null,null,List.of("A","B"),"OBSERVER",null);
+        final var contents = new BroadcastDtos.SeasonContents(season(),
+                List.of(new BroadcastDtos.Category(2,1,"POINTS"),new BroadcastDtos.Category(5,1,"SEMI_FINALS")),
+                List.of(new BroadcastDtos.Node(3,2,1,null,List.of(replay))),"Europe/Moscow",
+                List.of(new BroadcastDtos.ReplayStart(4,Instant.parse("2026-10-16T16:00:00Z"))),false);
+        when(context.getBean(BroadcastService.class).seasonContents(1)).thenReturn(contents);
+        final String json = mvc.perform(get("/api/tournament-broadcasts/seasons/1/contents")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.season.nameEn").value("Summer"))
+                .andExpect(jsonPath("$.categories.length()").value(2))
+                .andExpect(jsonPath("$.nodes[0].categoryId").value(2))
+                .andExpect(jsonPath("$.nodes[0].replays[0].matchDate").value("2026-10-16"))
+                .andExpect(jsonPath("$.nodes[0].replays[0].coverId").value(nullValue()))
+                .andExpect(jsonPath("$.defaultTimeZone").value("Europe/Moscow"))
+                .andExpect(jsonPath("$.replayStarts[0].startsAt").value("2026-10-16T16:00:00Z"))
+                .andExpect(jsonPath("$.coverUploadAvailable").value(false))
+                .andExpect(jsonPath("$.data").doesNotExist()).andReturn().getResponse().getContentAsString();
+        assertEquals(6,new JsonMapper().readTree(json).size());
+        mvc.perform(get("/api/tournament-broadcasts/seasons/1/contents/other")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/tournament-broadcasts/seasons/1/contents")).andExpect(status().isUnauthorized());
+    }
+    @Test void categoryDeletionRequiresGlobalAdministratorVersionAndExplicitConfirmation() throws Exception {
+        final String resource = "/api/admin/tournament-broadcasts/categories/2";
+        final String preview = resource+"/deletion-preview";
+        final BroadcastService service = context.getBean(BroadcastService.class);
+        mvc.perform(get(preview)).andExpect(status().isUnauthorized());
+        mvc.perform(delete(resource+"?expectedVersion=2&confirm=true")).andExpect(status().isUnauthorized());
+        for (final String role : List.of("tournament-admin","HoF-admin","wotbtools-user")) {
+            mvc.perform(get(preview).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_"+role)))).andExpect(status().isForbidden());
+            mvc.perform(delete(resource+"?expectedVersion=2&confirm=true")
+                    .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_"+role)))).andExpect(status().isForbidden());
+        }
+        verifyNoInteractions(service);
+        when(service.categoryDeletionPreview(2)).thenReturn(new BroadcastDtos.DeletionPreview(1,2,3,4));
+        mvc.perform(get(preview).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.seasonId").value(1))
+                .andExpect(jsonPath("$.expectedVersion").value(2)).andExpect(jsonPath("$.rootCount").value(3))
+                .andExpect(jsonPath("$.replayCount").value(4));
+        for (final String query : List.of("?expectedVersion=2","?confirm=true","?expectedVersion=bad&confirm=true")) {
+            mvc.perform(delete(resource+query).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"))))
+                    .andExpect(status().isBadRequest());
+        }
+        doThrow(new ApiException(ApiErrorCode.INVALID_ARGUMENT)).when(service).deleteCategory(2,2,false);
+        mvc.perform(delete(resource+"?expectedVersion=2&confirm=false")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isBadRequest());
+        doThrow(new ApiException(ApiErrorCode.BROADCAST_VERSION_CONFLICT)).when(service).deleteCategory(2,1,true);
+        mvc.perform(delete(resource+"?expectedVersion=1&confirm=true")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("BROADCAST_VERSION_CONFLICT"));
+        mvc.perform(delete(resource+"?expectedVersion=2&confirm=true")
+                .with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin")))).andExpect(status().isNoContent());
+        verify(service).deleteCategory(2,2,true);
     }
     @Test void multipartRequiresExplicitTimeAndRetainsAdministratorAuthorization() throws Exception {
         final var replay = new BroadcastDtos.ReplaySave(2,"Title","https://example.org/replay",LocalDate.of(2026,10,16),1,null,null,List.of("A","B"),"OBSERVER","KEEP");

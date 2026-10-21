@@ -4,7 +4,7 @@
 
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端。**服务器没有 parser**：回放解析（上游 Rust Core WASM）与汇总 / 评分 / 导出 / 2D 数据都在浏览器完成，后端只负责存储、去重、授权、名人堂记录与 AI 编排（见 `../docs/architecture/replay-pipeline.md`）。
 
-当前 Web 版已实现。路线图见 [docs/ROADMAP.md](../docs/ROADMAP.md)。
+当前 Web 版已实现。
 
 ## 模块
 
@@ -169,7 +169,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 - **用回放验证** — `POST /api/users/wotb-account/verify-replay`（body `{recorderAccountId}`）：个人主页按钮在浏览器本机解析回放（服务器没有 parser），只提交录像者数值 accountId；与当前绑定账号**数值相等**才把 `wotb_account_verified_at` 置为首次验证时间（已验证则原样返回）；不一致 409 `REPLAY_RECORDER_MISMATCH`，未绑定 400 `WOTB_ACCOUNT_NOT_BOUND`，缺录像者 400 `REPLAY_RECORDER_REQUIRED`。录像者 accountId 来自客户端，已验证状态只用于主页徽章、不授予权限。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证，与账号身份无关的编辑（如昵称）不清空。列由 `V12__add_wotb_asia_fields.sql` 引入。
 
-资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md) 与业务契约 [docs/features/user-profile.md](../docs/features/user-profile.md)。
 
 ### 管理后台：用户管理（`/api/admin/users/**`，需 `wotbtools-admin`）
 
