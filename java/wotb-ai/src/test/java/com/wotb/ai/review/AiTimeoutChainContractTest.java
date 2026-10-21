@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Yecao ai-service Compose 必须保持一致，防止任一层漂移重新引入「前端 400s / nginx 420s / 后端 400s」式的旧链路。
  *
  * <p>AI Review 已随服务拆分迁出 wotb-web（独立 stateless {@code ai-service}，模块 {@code java/wotb-ai}）：
- * SSE {@code SseEmitter} 超时与 {@code wotb.ai.*} 配置由 {@code com.wotb.ai.review.AiReviewController} 与
+ * SSE {@code SseEmitter} 超时由 {@code com.wotb.ai.review.service.AiReviewSubmissionService} 与
  * {@code java/wotb-ai/.../application.yml} 承担，因此本契约的 Java 锚点指向那里。wotb-ai 是 wotb-web 的
  * test-scope 依赖，测试类仍留在 wotb-web 测试树内。</p>
  *
@@ -111,7 +111,7 @@ class AiTimeoutChainContractTest {
 
     /** ai-service 的 SSE 超时常量（{@code private static final long}）——跨模块契约锚点。 */
     private static long aiServiceSseTimeoutMs() throws Exception {
-        final Class<?> controller = Class.forName("com.wotb.ai.review.AiReviewController");
+        final Class<?> controller = Class.forName("com.wotb.ai.review.service.AiReviewSubmissionService");
         final Field field = controller.getDeclaredField("SSE_TIMEOUT_MS");
         field.setAccessible(true);
         return field.getLong(null);
