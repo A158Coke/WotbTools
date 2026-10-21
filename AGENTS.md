@@ -22,16 +22,18 @@ WoT Blitz（坦克世界闪击战）回放工具集：Java 25 + Spring Boot 后�
 
 ## 技能库（按需显式加载）
 
-`.agents/skills/`：grill-me（需求澄清）· plan-designer（方案设计）· plan-executer ·
-prompt-repair-executor（基于现成修复提示词增量修复）· review-fix · review-with-docs · code-smell ·
-product-qa（真实浏览器黑盒产品 QA）· column-sync · wotb-sync · fallow · finish-task · keycloak-upgrade
+`.agents/skills/` 只有四个 lifecycle Skills：**designer**（deeply define the work）· **executor**（执行 + PR 收尾）·
+**prompt-repair**（增量修复）· **review-with-docs**（唯一 final quality gate）。
 
-## PR area 标签
+Designer 的完整 pipeline authority 只在 `.agents/skills/designer/SKILL.md`；本文件不复制其阶段定义。
+Domain implementation playbook / checklist / tool guidance 在 `.agents/playbooks/`（wotb-sync、column-sync、
+frontend-architecture、keycloak-upgrade、komodo-server-lifecycle、code-quality、code-smell、fallow、
+requirement-clarification、post-merge-cleanup），由四个 lifecycle Skills 按需加载，不是顶层 Skill。
 
-新建 PR 至少添加一个正式 `area/*` 标签，按实际 changed scope 可选多个。
-taxonomy 唯一来源为 `deploy/observability/dev-metrics/area-taxonomy.json`；
-不得临时创建任意 area，扩充 taxonomy 必须作为明确变更。CI V1 仅 advisory，不阻断合入。
+Product QA 是独立的 operational product-audit playbook（`.agents/playbooks/product-qa/`）：用户说 Product QA /
+全站 QA / 周期产品审查时可直接执行，默认目标 `https://wotbtools.com`，不加入 implementation lifecycle。
+findings 进入 GitHub Issue / `designer`；它不拥有 commit/push/PR/merge/final implementation PASS。
 
 ## 文档入口
 
-README.md · HISTORY.md（项目演进）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md · docs/ROADMAP.md
+README.md · HISTORY.md（产品/业务历史）· docs/architecture/TECHNICAL_EVOLUTION.md（技术/架构历史）· docs/README.md（文档索引）· docs/DEVELOPER_GUIDE.md

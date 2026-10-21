@@ -1,4 +1,9 @@
-"""Stable V1 classification. Rule changes require explicit historical overrides."""
+"""Stable V1 classification.
+
+PR areas come from frozen historical overrides (merged/closed PRs only), then changed
+paths, then a bounded semantic fallback. Manual PR labels are not an input; rule changes
+require explicit historical overrides.
+"""
 import re
 import json
 from pathlib import Path
@@ -8,8 +13,13 @@ PATH_RULES = {
     'android/': ('android',), 'frontend/': ('frontend',), 'java/': ('backend',),
     'infra/': ('infra',), 'deploy/': ('infra',),
     'deploy/observability/': ('observability',), 'docs/': ('docs',),
+    'README.md': ('docs',), 'AGENTS.md': ('docs',), 'HISTORY.md': ('docs',),
+    '.github/AGENTS.md': ('docs',), '.github/pull_request_template.md': ('docs',),
+    '.github/workflows/': ('infra',), '.github/workflows/observability': ('observability',),
+    '.agents/': ('docs',), 'scripts/ci/': ('infra',),
     'keycloak-': ('auth',),
     'java/wotb-ai/': ('ai',),
+    'java/wotb-core/src/main/java/com/wotb/core/ai/': ('ai',),
     'java/wotb-core/src/main/java/com/wotb/core/replay/': ('replay',),
     'frontend/src/replay-local/': ('replay',),
     'frontend/src/replay-local/ai/': ('ai',),
@@ -32,18 +42,29 @@ KEYWORDS = {
 }
 
 
-def label_areas(pr):
-    return frozenset(label['name'][5:] for label in pr.get('labels', [])
-                     if label.get('name', '').startswith('area/') and label['name'][5:] in AREAS)
+def override_areas(value):
+    """Normalize a frozen override: history list, or head-bound object for active PRs."""
+    if isinstance(value, dict):
+        return frozenset(value.get('areas') or ())
+    return frozenset(value or ())
+
+
+def head_bound_areas(override, head_sha):
+    """Active-PR fallback is available only when bound to this exact head."""
+    if not isinstance(override, dict) or not head_sha:
+        return None
+    areas = override.get('areas')
+    if not areas or override.get('headRefOid') != head_sha:
+        return None
+    return frozenset(areas)
 
 
 def classify_area(pr, paths=(), overrides=None):
-    labels = label_areas(pr)
-    if labels:
-        return labels
+    # Frozen overrides describe merged/closed history only. An open or reopened PR
+    # always uses its current changed paths so an active PR is not permanently frozen.
     override = (overrides or {}).get(str(pr['number']))
-    if override is not None:
-        return frozenset(override)
+    if override is not None and pr.get('state') != 'open':
+        return override_areas(override)
     found = {area for prefix, areas in PATH_RULES.items() for area in areas
              if any(path.startswith(prefix) for path in paths)}
     if found:

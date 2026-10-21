@@ -3,6 +3,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import threading
 import time
@@ -12,6 +13,17 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from classification import AREAS
 from collector import collect
 from github_client import GitHubClient
+
+
+def valid_override(value):
+    """History entries are area lists; active fallbacks bind the exact head SHA."""
+    areas = value.get('areas') if isinstance(value, dict) else value
+    if not isinstance(areas, list) or not areas or not set(areas) <= set((*AREAS, 'unclassified')):
+        return False
+    return isinstance(value, list) or (
+        isinstance(value.get('headRefOid'), str)
+        and re.fullmatch(r'[0-9a-f]{40}', value['headRefOid']) is not None
+    )
 
 
 class Snapshot:
@@ -85,7 +97,7 @@ def main():
     if repository != 'A158Coke/WotbTools':
         raise ValueError('unsupported repository')
     overrides = json.loads(Path(__file__).with_name('historical-area-overrides.json').read_text(encoding='utf-8-sig'))
-    if any(not isinstance(areas, list) or not areas or not set(areas) <= set((*AREAS, 'unclassified')) for areas in overrides.values()):
+    if any(not valid_override(value) for value in overrides.values()):
         raise ValueError('invalid historical area overrides')
     client = GitHubClient(os.environ.get('DEV_METRICS_GITHUB_TOKEN_FILE', '/run/secrets/github-dev-metrics-token'))
     cache = {}  # Aggregate contributions only; rebuilt from GitHub after restart.
