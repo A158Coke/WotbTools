@@ -1,5 +1,10 @@
 # AI Review 架构（随机战双 Call / 团队复盘）
 
+AI Service 的 Java 所有权位于 `com.wotb.ai`：`config` 管服务配置，`gateway` 管 provider-neutral
+调用与上游执行状态，`prompt` 管 Prompt Library，`review` 管 AI Review 生命周期和业务链，
+`tournament` 管军团赛组识别。Review 与 Tournament 共享 gateway，但彼此不依赖；`AiServiceApplication`
+从根包自然扫描，HTTP/security 行为保持原有契约。
+
 > 输入边界：**服务器没有 parser**。浏览器用锁定版本的上游 Agent WASM 解析回放，
 > 经 WotbTools canonical replay facts 产出 **client canonical AI projection**，以 `AiReviewRequest`（gzip）提交给
 > Yecao 独立 `ai-service`；ai-service 由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）把投影装配成

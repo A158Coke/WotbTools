@@ -115,6 +115,10 @@ AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `a
 战局回放（2D）的数据在浏览器本机生成（`frontend/src/replay-local/playback`）；AI 复盘只消费客户端投影，
 服务端不再有重建器（恢复 AI 复盘时基于上游 `parseAiReview` 重建投影）。
 
+代码按独立运行时归属在 `com.wotb.ai`：`config`、`gateway`、`prompt`、`review` 和 `tournament`。
+Gateway 由 Review 与 Tournament 共用，两项 feature 保持隔离；Spring 从 `AiServiceApplication`
+根包自然扫描。Maven 依赖方向为 `wotb-ai → wotb-core`，不依赖 `wotb-web`。
+
 - `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `AiReviewRequest = {locale, correlationId, battle, projection}`
   （唯一事实源 `contracts/http/openapi.yaml`，required 恰为这四个字段；**没有** `schemaVersion`）：
   `locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID，`battle` 与 `projection`
