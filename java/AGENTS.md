@@ -58,7 +58,11 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 - `@RequestParam(name="x")` 必须显式写 name；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
 - 不可变模型用 `record`，可变模型用公有字段 POJO（不引入 Lombok）。
 
-## AI Review 边界（wotb-ai/.../replay/ai + wotb-core/.../replay）
+## AI Service 边界（`wotb-ai`：`com.wotb.ai`；共享领域模型：`wotb-core/.../replay`）
+
+`wotb-ai` 根包 `com.wotb.ai` 由 `AiServiceApplication` 自然扫描；AI-owned 代码按 `config/`、
+`gateway/`、`prompt/`、`review/`、`tournament/` 归属。Gateway 供 Review 与 Tournament 共用，
+Review 与 Tournament 是隔离的兄弟 feature；本 Maven module 只依赖 `wotb-core`，不依赖 `wotb-web`。
 
 AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入是客户端 canonical AI projection（`AiReviewRequest = {locale, correlationId, battle, projection}`，required 恰为这四个字段），由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）装配成内存 `ReplayReconstruction`。前端已无维护门（提交 `83884790` 解除；`ai_maintenance` 三语 key 无消费者），AI tab / 深链直接挂载 `AiReviewPanel.vue`。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
 
