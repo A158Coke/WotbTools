@@ -1,10 +1,18 @@
 # Armor Inspector HE 伤害机制探索进度（2026-10-19）
 
+> **2026-10-19 反编译更正（已实现，本文 §0 及后续拟合结论作废）**：
+> wasm 函数级插桩已还原 `func7695` 的精确 legacy 算法——800 条世界空间方向
+> （20×40，步长 π/20）、名义层装甲累加（系数 1.0，不是 1.1）、roll 0.75/1.25、
+> `R = shell.explosion_radius`、`he_min/he_max` 分别是 lower/upper 两个 roll 界
+> 的最大值（不是区域 min/max）、`he_avg=(he_min+he_max)/2`。
+> WotbTools 已在 `frontend/src/scene/heSplash.js` 实现，`penetration.js` 通过
+> 可选 `he_splash` 消费；无采样数据时的单射线兜底也使用同一公式，不再使用
+> 1.1/effective/min(pen) 旧式。权威证据与 5 目标验证表见 Agent 仓
+> `tmp_analysis/armor-inspector/HE_MECHANISM_EXACT_DECOMPILED.md`。
+> 本文以下内容仅作探索历史记录，不得作为实现依据。
+>
 > 目标对象：`static.wotinspector.com/ai/webapp4.5.3-4/armor-inspector.wasm` +
 > `armor-inspector.data`（Blitz 11.21.0）。
->
-> 本文只记录探索结论与当前取舍，不代表 Armor Inspector 的 HE 伤害已经逐像素复刻。
-> 当前发布版 WotbTools 仍使用 BlitzKit 的 HE 溅射公式。
 
 ## 0. 当前结论
 
