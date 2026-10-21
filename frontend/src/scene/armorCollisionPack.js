@@ -400,6 +400,10 @@ export function buildPack(entries) {
         if (!PRIMARY_SECTIONS.has(e.section) && e.section !== 'spaced' && !MODULE_SECTIONS.has(e.section)) {
             return { ok: false, reason: 'bad-section:' + e.section };
         }
+        // 板厚是判定输入：NaN/负数不是“0mm 板”，是数据坏了 → 整包 fail-closed。
+        if (!Number.isFinite(e.thickness) || e.thickness < 0) {
+            return { ok: false, reason: 'bad-thickness:' + (e.section || '?') };
+        }
         const mesh = e.mesh;
         mesh.updateWorldMatrix(true, false);
         mesh.matrixWorld.decompose(_pos, _quat, _scale);
@@ -408,7 +412,8 @@ export function buildPack(entries) {
             return { ok: false, reason: 'non-rigid-matrix:' + (mesh.name || '?') };
         }
         const pos = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.position;
-        if (!pos) continue;
+        // 装甲 mesh 缺顶点属性是模型/数据损坏，不能静默把它从判定几何里剔除。
+        if (!pos) return { ok: false, reason: 'no-position:' + (mesh.name || '?') };
         const idx = mesh.geometry.index;
         const triCountAll = Math.floor((idx ? idx.count : pos.count) / 3);
         if (triCountAll <= 0) continue;
