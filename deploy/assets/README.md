@@ -131,10 +131,11 @@ Images** on this host unless Docker Hub reachability has been deliberately resto
 8. Point `assets.wotbtools.com` at the server when ready for certificate issuance,
    then explicitly deploy the Stack in Komodo (the only Stack mutation owner).
 9. Run `bash deploy/assets/verify.sh https://assets.wotbtools.com`.
-10. Canary the Web client with `?assets=https://assets.wotbtools.com` before changing
-    the production `ASSET_BASE_URL`.
-11. Migrate the Android native asset origin in a separate client change. Old Android
-    binaries keep using the old COS origin until retired.
+10. 修改主 Frontend 与 TX2 replica workflow 中的 tracked `ASSET_BASE_URL` 前，先用
+    `?assets=https://assets.wotbtools.com` 对 Web 客户端做 canary。
+11. Web 与新 Android 版本统一使用 `https://assets.wotbtools.com`。Android 保留本机
+    `/agent-assets` 路由，由 `AgentAssetProxy` 直连该 origin；旧 APK 仍使用编译时 COS
+    origin，COS 桶、对象与旧 gateway `/agent-assets` 反代继续保留，供 legacy 客户端和临时回滚使用。
 
 ## Caddy config/redeploy contract
 

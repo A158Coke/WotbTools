@@ -1,6 +1,13 @@
 {
   "zh": {
     "tournament": {
+      "newEvent": "新建赛事",
+      "configSelectionHint": "选择已有赛事修改配置，或新建一届赛事。",
+      "adminSelectionHint": "依次选择年份、区服和季赛，查看积分并管理比赛日。",
+      "noEventsHint": "先创建赛事并配置积分规则，再开始统计。",
+      "configLockedLabel": "赛程已锁定",
+      "roundRules": "每轮积分规则",
+      "matchDay": "比赛日",
       "title": "联赛积分榜",
       "configTitle": "积分规则配置",
       "adminTitle": "积分赛统计",
@@ -247,6 +254,13 @@
   },
   "en": {
     "tournament": {
+      "newEvent": "New event",
+      "configSelectionHint": "Select an existing event to edit, or create a new one.",
+      "adminSelectionHint": "Choose a year, region and season to view standings and manage match days.",
+      "noEventsHint": "Create an event and configure its points rules before recording results.",
+      "configLockedLabel": "Schedule locked",
+      "roundRules": "Points rules by round",
+      "matchDay": "Match day",
       "title": "League standings",
       "configTitle": "Tournament point rules",
       "adminTitle": "Tournament scoring",
@@ -493,6 +507,13 @@
   },
   "ru": {
     "tournament": {
+      "newEvent": "Новое событие",
+      "configSelectionHint": "Выберите событие для редактирования или создайте новое.",
+      "adminSelectionHint": "Выберите год, регион и сезон, чтобы посмотреть очки и управлять игровыми днями.",
+      "noEventsHint": "Создайте событие и настройте правила начисления очков перед подсчётом результатов.",
+      "configLockedLabel": "Расписание заблокировано",
+      "roundRules": "Правила начисления очков по раундам",
+      "matchDay": "Игровой день",
       "title": "Таблица лиги",
       "configTitle": "Правила начисления очков",
       "adminTitle": "Подсчёт очков турнира",

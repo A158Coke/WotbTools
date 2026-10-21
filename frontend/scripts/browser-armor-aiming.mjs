@@ -280,6 +280,208 @@ try {
     }
   }
 
+  for (const part of ['turret', 'hull']) {
+    const sample = spots[part]
+    const roi = await page.evaluate(`window.__armorRicochet.readPixels(${JSON.stringify({ x: sample.x, y: sample.y, width: 3, height: 3 })})`)
+    check(roi?.pixels.length > 0 && roi.identities.length > 0, '原始 ID / 分类通道可读回连续像素')
+    check(roi?.pixels.every(p => Number.isInteger(p.id) && Number.isInteger(p.triangleId) && [0, 1, 2].includes(p.cls)),
+      '原始身份/分类不受透明混色或 MSAA 污染')
+    const repeat = await page.evaluate(`window.__armorRicochet.readPixels(${JSON.stringify({ x: sample.x, y: sample.y, width: 3, height: 3 })})`)
+    check(JSON.stringify(roi?.pixels) === JSON.stringify(repeat?.pixels), '同姿态连续读回身份/分类/CPU 层链稳定')
+    const reflected = roi?.pixels.filter(p => p.cpu && !p.cpu.skip) || []
+    if (part === 'hull' && !useRealAssets) check(reflected.length > 0, '夹具斜车体提供非零跳弹对照样本')
+    if (reflected.length) check(reflected.every(p => p.cls === p.cpu.cls), `跳弹采样 GPU 与同输入 CPU 一致（${reflected.length} 个）`)
+    else console.log(`[armor-aiming] ${part} ROI 无跳弹样本，仅验证身份/重复读回`)
+    check(reflected.every(p => p.triangleId === p.cpu.detail.first.triangleId), 'GPU/CPU 三角形编号使用同一网格局部索引')
+  }
+
+  if (!useRealAssets) {
+    // __DBG__ 在初始化时先于异步 armour model 建立；等非 null 再缩放，避免把
+    // “hook 尚未挂上”误报成坏姿态恢复失败。
+    await page.waitForValue('!!window.__DBG__?.armorModel', (v) => v === true,
+      { label: 'debug armor model', timeout: 30000 })
+    const retry = await page.evaluate(`(() => {
+      const h=window.__armorRicochet, model=window.__DBG__.armorModel;
+      const scale=model.scale.clone(), before=h.info();
+      let failed;
+      try {
+        model.scale.setScalar(1000); // real oversized geometry failure, no mocked dirty flag
+        for(let i=0;i<240;i++) h.predict(-1,-1);
+        failed=h.info();
+      } finally { model.scale.copy(scale); }
+      h.predict(-1,-1); // return to the exact last successful pose A
+      return {before,failed,recovered:h.info()};
+    })()`)
+    check(!retry.failed.enabled && !retry.failed.grid && !retry.failed.poseDirty,
+      '坏姿态 B 耗尽重试后统一关闭续飞')
+    check(retry.recovered.enabled && retry.recovered.poseMatchesGrid && retry.recovered.gridGeneration > retry.before.gridGeneration,
+      'B → 原成功姿态 A 无手动 dirty 标记也重新建立网格')
+  }
+
+  // Execute the production GLSL with gun_mask clipping. The module/primary are
+  // coincident at z=0; the clip plane hides the 50mm gunBarrel, so only the
+  // 70mm turret plate remains and remIn=100 must penetrate.
+  const clipCase = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const module = new T.Mesh(geometry, sourceMaterial);
+    const primary = new T.Mesh(geometry, sourceMaterial);
+    const pack = buildPack([
+      { section: 'gunBarrel', mesh: module, thickness: 50 },
+      { section: 'turret', mesh: primary, thickness: 70 },
+    ]);
+    const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+    const material = new T.ShaderMaterial({
+      vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float ricochet; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+        'void main(){float p;float d;int c=rcContinue(vec3(0.13,0.17,1.0),vec3(0.0,0.0,-1.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+      uniforms: { caliber:{value:120}, normalization:{value:5 * Math.PI / 180}, remIn:{value:100}, rcThickMul:{value:1}, ricochet:{value:70 * Math.PI / 180},
+        rcClipEnabled:{value:1}, rcClipPlane:{value:new T.Vector4(0,0,-1,-0.5)},
+        rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+        rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+    });
+    try {
+      const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+      renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+      const pixel = new Uint8Array(4); renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+      return { cls: pixel[0], diag: pixel[1] };
+    } finally {
+      material.dispose(); Object.values(tex).forEach(t=>t.dispose());
+      target.dispose(); geometry.dispose(); sourceMaterial.dispose();
+      renderer.dispose(); renderer.forceContextLoss();
+    }
+  })()`)
+  check(clipCase.cls === 1 && clipCase.diag === 1,
+    `gun_mask 负侧炮管被 rcContinue 剔除，只剩炮盾必穿：${JSON.stringify(clipCase)}`)
+
+  // 第二次跳弹（production GLSL）：续飞段 80° 跳弹 → 炮弹消失，无最终结论。
+  const bounceCase = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const first = new T.Mesh(geometry, sourceMaterial);
+    first.rotation.y = -10 * Math.PI / 180; first.updateMatrix();
+    const pack = buildPack([
+      { section: 'turret', mesh: first, thickness: 50 },
+    ]);
+    const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+    const material = new T.ShaderMaterial({
+      vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float ricochet; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+        'void main(){float p;float d;int c=rcContinue(vec3(-2.0,0.0,0.0),vec3(1.0,0.0,0.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+      uniforms: { caliber:{value:120}, normalization:{value:0}, ricochet:{value:70 * Math.PI / 180}, remIn:{value:100}, rcThickMul:{value:1},
+        rcClipEnabled:{value:0}, rcClipPlane:{value:new T.Vector4()},
+        rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+        rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+    });
+    try {
+      const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+      renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+      const pixel = new Uint8Array(4); renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+      return { cls: pixel[0], diag: pixel[1] };
+    } finally {
+      material.dispose(); Object.values(tex).forEach(t=>t.dispose());
+      target.dispose(); geometry.dispose(); sourceMaterial.dispose();
+      renderer.dispose(); renderer.forceContextLoss();
+    }
+  })()`)
+  check(bounceCase.cls === 0 && bounceCase.diag === 0,
+    `续飞段再次跳弹（第二次）→ 炮弹消失/无最终结论：${JSON.stringify(bounceCase)}`)
+  // 续飞首层是间隙甲时同样必须执行第二次跳弹判定（production GLSL）。
+  const spacedBounceCase = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const first = new T.Mesh(geometry, sourceMaterial);
+    first.rotation.y = -10 * Math.PI / 180; first.updateMatrix();
+    const pack = buildPack([{ section: 'spaced', mesh: first, thickness: 50 }]);
+    const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+    const material = new T.ShaderMaterial({
+      vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float ricochet; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+        'void main(){float p;float d;int c=rcContinue(vec3(-2.0,0.0,0.0),vec3(1.0,0.0,0.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+      uniforms: { caliber:{value:120}, normalization:{value:0}, ricochet:{value:70 * Math.PI / 180}, remIn:{value:100}, rcThickMul:{value:1},
+        rcClipEnabled:{value:0}, rcClipPlane:{value:new T.Vector4()},
+        rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+        rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+    });
+    try {
+      const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+      renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+      const pixel = new Uint8Array(4); renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+      return { cls: pixel[0], diag: pixel[1] };
+    } finally {
+      material.dispose(); Object.values(tex).forEach(t=>t.dispose());
+      target.dispose(); geometry.dispose(); sourceMaterial.dispose();
+      renderer.dispose(); renderer.forceContextLoss();
+    }
+  })()`)
+  check(spacedBounceCase.cls === 0 && spacedBounceCase.diag === 0,
+    `续飞首层间隙甲跳弹（第二次）→ 炮弹消失/无最终结论：${JSON.stringify(spacedBounceCase)}`)
+
+  const zeroPlateCase = await page.evaluate(`(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    const { buildPack, buildRicochetGrid, createGridTextures, RC_GLSL_CONST, RC_GLSL_FUNCS } =
+      await import('/src/scene/armorCollisionPack.js');
+    const renderer = new T.WebGLRenderer(); renderer.setSize(1, 1);
+    const target = new T.WebGLRenderTarget(1, 1);
+    const geometry = new T.PlaneGeometry(2, 2);
+    const sourceMaterial = new T.MeshBasicMaterial();
+    const first = new T.Mesh(geometry, sourceMaterial);
+    first.rotation.y = -10 * Math.PI / 180; first.updateMatrix();
+    const pack = buildPack([
+      { section: 'turret', mesh: first, thickness: 0 },
+    ]);
+    const grid = buildRicochetGrid(pack), tex = createGridTextures(grid);
+    const material = new T.ShaderMaterial({
+      vertexShader: 'void main(){gl_Position=vec4(position.xy,0.0,1.0);}',
+      fragmentShader: 'precision highp float; uniform float caliber; uniform float normalization; uniform float ricochet; uniform float remIn;\\n' + RC_GLSL_CONST + RC_GLSL_FUNCS +
+        'void main(){float p;float d;int c=rcContinue(vec3(-2.0,0.0,0.0),vec3(1.0,0.0,0.0),remIn,p,d);gl_FragColor=vec4(float(c)/255.0,d/255.0,p,1.0);}',
+      uniforms: { caliber:{value:120}, normalization:{value:0}, ricochet:{value:70 * Math.PI / 180}, remIn:{value:100}, rcThickMul:{value:1},
+        rcClipEnabled:{value:0}, rcClipPlane:{value:new T.Vector4()},
+        rcWorldTris:{value:tex.worldTrisTex},rcGridCells:{value:tex.cellsTex},rcGridEntries:{value:tex.entriesTex},
+        rcGridMin:{value:new T.Vector3(...grid.gridMin)},rcGridDimsF:{value:new T.Vector3(...grid.dims)},rcCell:{value:grid.cellSize} }
+    });
+    try {
+      const scene = new T.Scene(); scene.add(new T.Mesh(geometry,material));
+      renderer.setRenderTarget(target); renderer.render(scene,new T.Camera());
+      const pixel = new Uint8Array(4); renderer.readRenderTargetPixels(target,0,0,1,1,pixel);
+      return { cls: pixel[0], diag: pixel[1] };
+    } finally {
+      material.dispose(); Object.values(tex).forEach(t=>t.dispose());
+      target.dispose(); geometry.dispose(); sourceMaterial.dispose();
+      renderer.dispose(); renderer.forceContextLoss();
+    }
+  })()`)
+  check(zeroPlateCase.cls === 1 && zeroPlateCase.diag === 1,
+    `续飞命中 0mm 主装甲按 3× 口径 overmatch 击穿，不判跳弹：${JSON.stringify(zeroPlateCase)}`)
+
+  // #711: sub-threshold movement remains a click and must not rotate the model or rebuild its grid.
+  for (const part of ['turret', 'gun']) {
+    const point = (await findSpots())[part]
+    const before = await page.evaluate('({ info: window.__armorRicochet.info(), pose: window.__armorRicochet.aimingState() })')
+    await mouseDrag(point, 3, 1)
+    const after = await page.evaluate('({ info: window.__armorRicochet.info(), pose: window.__armorRicochet.aimingState() })')
+    check(after.pose.turretDeg === before.pose.turretDeg && after.pose.gunDeg === before.pose.gunDeg,
+      `微动·${part} 不改变精确姿态`)
+    check(after.info.judgments === before.info.judgments + 1, `微动·${part} 仍为单次点击`)
+    check(after.info.gridGeneration === before.info.gridGeneration && after.info.poseMatchesGrid,
+      `微动·${part} 复用同一碰撞网格`)
+  }
+
   // —— 交互分支断言 ——
   // 注意：炮塔/炮管一旦转动，之前扫描到的部位像素会移到别处（`aimPartAt` 按当前几何判定，
   // 陈旧像素会落进错误的部位分支）。每次操作前重新扫描，断言才指向真实部位。
@@ -296,6 +498,7 @@ try {
     const beforeTurret = await readAim()
     await mouseDrag(s.turret, 150, 60)
     const afterTurret = await readAim()
+    check(await page.evaluate('window.__armorRicochet.info().poseMatchesGrid'), '拖动后所有通道使用当前姿态网格')
     check(afterTurret.t !== beforeTurret.t && afterTurret.g === beforeTurret.g,
       `鼠标·炮塔壳拖动 = 只 yaw 不俯仰（${beforeTurret.t}/${beforeTurret.g} → ${afterTurret.t}/${afterTurret.g}）`)
   }
@@ -653,14 +856,18 @@ try {
 
     const cardSpots = await findSpots(['gun', 'turret'])
     const turretCard = cardSpots.turret ? await tapReadCard(cardSpots.turret) : null
-    check(!!turretCard && turretCard.title.startsWith('击穿') && turretCard.title.includes('320'),
-      `概率卡·必穿：炮塔短按显示“击穿”与全额伤害（${turretCard?.title || '无卡片'}）`)
+    check(!!turretCard && turretCard.title.startsWith('击穿') && turretCard.text.includes('320')
+        && /击穿概率[:：]?\s*100%/.test(turretCard.text),
+      `概率卡·必穿：炮塔短按显示“击穿”、100% 概率与全额伤害（${turretCard?.text || '无卡片'}）`)
     check(!!turretCard && turretCard.titleColor === turretCard.green && turretCard.dotColor === turretCard.green,
       `概率卡·必穿：标题/层点为绿色（${turretCard?.titleColor}/${turretCard?.dotColor}）`)
 
     const gunCard = cardSpots.gun ? await tapReadCard(cardSpots.gun) : null
-    check(!!gunCard && gunCard.title.startsWith('未击穿') && !gunCard.title.includes('320'),
-      `概率卡·0%：炮管+炮盾短按显示“未击穿”且无伤害（${gunCard?.title || '无卡片'}）`)
+    check(!!gunCard && gunCard.title.startsWith('未击穿') && !gunCard.text.includes('320')
+        && /击穿概率[:：]?\s*0%/.test(gunCard.text),
+      `概率卡·0%：炮管+炮盾短按显示“未击穿”、0% 概率且无伤害（${gunCard?.text || '无卡片'}）`)
+    check(!!gunCard && /未击穿\s*·\s*0/.test(gunCard.text),
+      `概率卡·0%：判定结果右侧仍显示伤害 0（${gunCard?.text || '无卡片'}）`)
     check(!!gunCard && gunCard.titleColor === gunCard.red,
       `概率卡·0%：标题为红色（${gunCard?.titleColor}）`)
 
@@ -671,21 +878,21 @@ try {
       const spotsNow = await findSpots(['turret'])
       if (!spotsNow.turret) break
       const card = await tapReadCard(spotsNow.turret)
-      const m = card && /^可能击穿\s*(>99|<1|\d+)%/.exec(card.title)
-      if (m && m[1] !== '>99' && Number(m[1]) > 0 && Number(m[1]) < 100) {
+      const m = card && /击穿概率[:：]?\s*(>99|<1|\d+(?:\.\d+)?)%/.exec(card.text)
+      if (card && card.title.startsWith('可能击穿') && m && m[1] !== '>99' && Number(m[1]) > 0 && Number(m[1]) < 100) {
         partial = { card, pct: Number(m[1]) }
         break
       }
       await mouseDrag(spotsNow.turret, 32, 0)
     }
-    check(!!partial, `概率卡·中间区间：真实点击出现“可能击穿 1–99%”（${partial?.card?.title || '未找到'}）`)
+    check(!!partial, `概率卡·中间区间：真实点击出现“可能击穿 1–99%”（${partial?.card?.text || '未找到'}）`)
     if (partial) {
       check(partial.card.titleColor === partial.card.yellow && partial.card.dotColor === partial.card.yellow,
         `概率卡·中间区间：标题/层点为黄色（${partial.card.titleColor}/${partial.card.dotColor}）`)
-      check(partial.card.title.includes('320'),
-        `概率卡·中间区间：非零概率仍显示全额伤害（${partial.card.title}）`)
-      check(!partial.card.title.includes('100%'),
-        `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.title}）`)
+      check(partial.card.text.includes('320'),
+        `概率卡·中间区间：非零概率仍显示全额伤害（${partial.card.text}）`)
+      check(!/击穿概率[:：]?\s*100%/.test(partial.card.text),
+        `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.text}）`)
     }
   }
 

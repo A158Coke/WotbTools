@@ -303,7 +303,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 - **透明与变体**：`extras.alphaBlend` 材质按真软混合渲染（alpha 乘 `m.opacity`）；透明材质不进入实例化合批（three 只按 object 排序），带逐节点光照图变换的透明网格用单实例 `InstancedMesh` 承载以复用 `aLm` 的 atlas UV。GLB 存在 `mdVariant` 节点但当前 `map_id` 无可用激活映射时，隐藏全部带标记节点并告警（fail-closed）；导出器在映射不完整时写 `scene.extras.variantMappingIncomplete`。烘焙侧同样排除透明材质，并在变体映射 fail-closed / 标记不完整时拒绝出图。
 - **材质参数**：场景 GLB 贴图按画质档 `Q.anisotropy` 逐纹理设置一次；法线使用几何 authored NORMAL（不由 `flatShading` 现算面法线）；地面分层着色器的 uniform 声明类型必须与 JS 下发类型一致（`uHbSoft` 为 `vec4`，错写 `float` 会让 9 张 HEIGHT_BLEND 图取错层色）。空场景占位地面 / 网格（`THREE.GridHelper`）统一 `visible=false`，对象仍保留入 scene（拾取过滤、bbox 拟合按对象引用走，不看 visible）；边界提示由 `buildBoundary` 负责。
 - **光照与出屏**：客户端发布版没有 filmic 出屏曲线，生效路径是线性 → sRGB；本仓 `renderer.toneMapping = LinearToneMapping`、`toneMappingExposure = 1.0`（基线），逐图太阳按 `DEFAULT_SUN_INTENSITY / sun.intensity` 钳制到 0.05–4 做曝光归一；hemi 与 IBL 基准同样除以 expo，三通道输出端净值与基线图逐项同档。太阳方向 / 颜色 / 强度、环境色、IBL 倍率来自 `lighting.json`，3D 运行时与俯视烘焙共用 `mapLighting.js`。**已知缺口**：客户端运行时自动曝光尚未实现，画面整体亮度可能与客户端有系统性差异；不提供手调 `?tonemap` / `?exposure` 旋钮。出屏曲线 / 曝光只作用于走 three 内建管线的材质（坦克）；非 PBR 类材质在客户端也 raw 写出。装甲查看器（`tankViewer.js`）仍用 ACES + 1.15。
-- **资产边界**：3D 模型、纹理及地图资产经 `frontend/src/scene/assetProvider.js` 读取 remote asset origin；2D 底图是本地静态资源。2D 底图资源更新不改变 3D provider、缓存策略或资产托管。地面贴图统一使用契约化的 `ground.webp`（±300 全幅，与 2D 底图同源同框），不使用客户端 HUD 小地图。
+- **资产边界**：Web 的 3D 模型、纹理及地图资产由 `frontend/src/scene/assetProvider.js` 从 `https://assets.wotbtools.com` 读取；Android 新版本经本机 `/agent-assets` 路径由 Native `AgentAssetProxy` 读取相同 Alibaba origin。旧 APK 继续使用编译时 COS origin，COS 仅供 legacy/rollback；2D 底图仍为本地静态资源。地面贴图统一使用契约化的 `ground.webp`（±300 全幅，与 2D 底图同源同框），不使用客户端 HUD 小地图。
 
 ### 悬挂与履带
 

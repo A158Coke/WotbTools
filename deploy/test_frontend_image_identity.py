@@ -40,7 +40,8 @@ FRONTEND_WF = ROOT / ".github/workflows/frontend.yml"
 REPLICA_WF = ROOT / ".github/workflows/frontend-replica.yml"
 FINGERPRINT_SCRIPT = ROOT / "deploy/tx/sponsor-fingerprint.sh"
 
-ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+HISTORICAL_ASSET_BASE_URL = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+PRODUCTION_ASSET_BASE_URL = "https://assets.wotbtools.com"
 # 数据点来自真实 run 的构建日志（`RESULT image=...:sha-<12>`）：
 #   76cf8acb… = Merge PR #581（Frontend run 38060016028 / build 侧 tag f52430fb1b7f）
 #   e3ba28f0… = 事故期间的 main 提交（run 38046307993 / build 侧 tag ff0a703af8f8）
@@ -77,8 +78,9 @@ def identity_inputs(text: str) -> tuple[str, list[str]]:
     return match.group("fmt"), names
 
 
-def expected_identity(source_sha: str, fingerprint: str) -> str:
-    digest = hashlib.sha256(f"{source_sha}\n{ASSET_BASE_URL}\n{fingerprint}".encode()).hexdigest()
+def expected_identity(source_sha: str, fingerprint: str,
+                      asset_base_url: str = HISTORICAL_ASSET_BASE_URL) -> str:
+    digest = hashlib.sha256(f"{source_sha}\n{asset_base_url}\n{fingerprint}".encode()).hexdigest()
     return f"sha-{digest[:12]}"
 
 
@@ -122,11 +124,36 @@ class IdentityFormula(unittest.TestCase):
     def test_dropping_any_input_changes_identity(self) -> None:
         sha = DATA_POINTS[0][0]
         full = expected_identity(sha, SPONSOR_FINGERPRINT)
-        two_input = hashlib.sha256(f"{sha}\n{ASSET_BASE_URL}".encode()).hexdigest()[:12]
+        two_input = hashlib.sha256(f"{sha}\n{HISTORICAL_ASSET_BASE_URL}".encode()).hexdigest()[:12]
         self.assertNotEqual(full, f"sha-{two_input}",
                             "两输入（漏 sponsor 指纹）必须与三输入不同——这正是事故形态")
         replaced = expected_identity(sha, "0" * 64)
         self.assertNotEqual(full, replaced, "换 sponsor 内容必须换 tag（immutable 复用不得吞掉）")
+
+
+class ProductionAssetOrigin(unittest.TestCase):
+    def test_primary_build_and_deploy_use_alibaba_origin(self) -> None:
+        workflow = yaml.safe_load(FRONTEND_WF.read_text(encoding="utf-8"))
+        self.assertEqual(workflow["env"]["ASSET_BASE_URL"], PRODUCTION_ASSET_BASE_URL)
+        build_steps = workflow["jobs"]["build"]["steps"]
+        build_names = (
+            "Validate production asset origin",
+            "Build and publish immutable frontend image on TX",
+        )
+        for name in build_names:
+            step = next(step for step in build_steps if step.get("name") == name)
+            self.assertNotIn("ASSET_BASE_URL", step.get("env", {}), name)
+        deploy_steps = workflow["jobs"]["deploy"]["steps"]
+        name = "Reconcile only Frontend under the TX host lock"
+        step = next(step for step in deploy_steps if step.get("name") == name)
+        self.assertNotIn("ASSET_BASE_URL", step.get("env", {}), name)
+
+    def test_replica_artifact_identity_uses_alibaba_origin(self) -> None:
+        workflow = yaml.safe_load(REPLICA_WF.read_text(encoding="utf-8"))
+        self.assertEqual(workflow["env"]["ASSET_BASE_URL"], PRODUCTION_ASSET_BASE_URL)
+        steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+        step = next(step for step in steps if step.get("name") == "Resolve published Frontend artifact identity")
+        self.assertNotIn("ASSET_BASE_URL", step.get("env", {}))
 
 
 class FrontendWorkflowDeployFormula(unittest.TestCase):
@@ -246,6 +273,98 @@ class StagingContinuity(unittest.TestCase):
                                   str(Path(tmp) / "deploy.incoming")],
                                  check=True, capture_output=True, text=True).stdout
             self.assertEqual(out.strip(), "")
+
+
+class BackendCapabilityTests(unittest.TestCase):
+    def test_tx1_deploy_entrypoint_checks_before_pull_or_promotion(self) -> None:
+        # Exercise production main() and its probe, replacing host-specific setup
+        # and mutation commands. This also runs without Linux flock or Docker.
+        harness = '''set -euo pipefail
+TX_DEPLOY_LIBRARY_ONLY=1 source "$1/deploy.sh"
+source "$1/runtime-check-lib.sh"
+validate_inputs() { DEPLOY_SERVICES=(wotb-frontend); DEPLOY_SERVICES_RAW=wotb-frontend; }
+preflight_host() { :; }
+require_tofu_provisioning() { :; }
+acquire_deploy_lock() { :; }
+stage_and_validate() { EFFECTIVE_COMPOSE=fixture.compose.yml; }
+assert_stateful_volume_identity() { :; }
+pull_images() { echo PULLED; }
+promote_files() { echo PROMOTED; }
+apply_and_check() { echo RECREATED; }
+docker() {
+  [[ "$*" == *"--fail"* && "$*" == *"http://10.20.0.1:8087/api/health"* ]] || return 99
+  [ "${PROBE_OFFLINE:-0}" != 1 ] || return 7
+  printf '%s' "$PROBE_HEALTH"
+}
+main
+'''
+        cases = [
+            ('{"status":"ok","capabilities":["broadcast-season-contents-v1"]}', False, True),
+            ('{"status":"ok","capabilities":["recommendations-v1"]}', False, False),
+            ('{"status":"ok"}', False, False),
+            ('{"status":"ok","capabilities":"broadcast-season-contents-v1"}', False, False),
+            ('{"status":"error","capabilities":["broadcast-season-contents-v1"]}', False, False),
+            ('not-json', False, False), ('null', False, False),
+            ('{"status":"ok","capabilities":["broadcast-season-contents-v1"]}', True, False),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            for health, offline, accepted in cases:
+                with self.subTest(health=health, offline=offline):
+                    result = subprocess.run(
+                        ["bash", "-c", harness, "bash", str(ROOT / "deploy/tx")],
+                        env={**os.environ, "WOTB_TX_DIR": tmp, "TX_BACKEND_UPSTREAM": "http://10.20.0.1:8087",
+                             "PROBE_HEALTH": health, "PROBE_OFFLINE": str(int(offline))},
+                        text=True, capture_output=True,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                    for mutation in ("PULLED", "PROMOTED", "RECREATED"):
+                        self.assertEqual(mutation in result.stdout, accepted)
+
+    def test_replica_checks_backend_before_any_live_promotion(self) -> None:
+        workflow = yaml.safe_load(REPLICA_WF.read_text(encoding="utf-8"))
+        steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+        stage = next(step for step in steps if step.get("name") == "Stage TX2 frontend replica inputs")
+        self.assertIn("deploy/tx/runtime-check-lib.sh", stage["with"]["source"])
+        script = next(step["run"] for step in steps if step.get("name") == "Pull TCR artifact and reconcile TX2")
+        check = script.index('assert_frontend_backend_capabilities <<< "$health"')
+        for mutation in ('bash "$incoming/k7c-sync-runtime-content.sh"', "rm -rf -- /opt/wotb-tx2/frontend-replica.next", "up -d --pull never"):
+            self.assertLess(check, script.index(mutation))
+
+    def test_replica_preflight_rejects_old_bad_and_offline_backends(self) -> None:
+        workflow = yaml.safe_load(REPLICA_WF.read_text(encoding="utf-8"))
+        steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+        script = next(step["run"] for step in steps if step.get("name") == "Pull TCR artifact and reconcile TX2")
+        start = script.index('source "$incoming/runtime-check-lib.sh"')
+        end = script.index('assert_frontend_backend_capabilities <<< "$health"', start)
+        preflight = script[start:end] + 'assert_frontend_backend_capabilities <<< "$health"\n'
+        # Execute the actual workflow preflight and shared JSON predicate. Docker
+        # is a shell fixture; no production host or credential is accessed.
+        harness = '''set -euo pipefail
+incoming="$1"
+docker_cmd() {
+  [[ "$*" == *"--network host curlimages/curl:8.12.1"* ]] || return 99
+  [ "${PROBE_OFFLINE:-0}" != 1 ] || return 7
+  printf '%s' "$PROBE_HEALTH"
+}
+''' + preflight + '\nprintf "PROMOTED\\n"\n'
+        cases = [
+            ('{"status":"ok","capabilities":["recommendations-v1","broadcast-season-contents-v1"]}', False, True),
+            ('{"status":"ok","capabilities":["recommendations-v1"]}', False, False),
+            ('{"status":"ok"}', False, False),
+            ('{"status":"ok","capabilities":"broadcast-season-contents-v1"}', False, False),
+            ('{"status":"error","capabilities":["broadcast-season-contents-v1"]}', False, False),
+            ('not-json', False, False), ('null', False, False),
+            ('{"status":"ok","capabilities":["broadcast-season-contents-v1"]}', True, False),
+        ]
+        for health, offline, accepted in cases:
+            with self.subTest(health=health, offline=offline):
+                result = subprocess.run(
+                    ["bash", "-c", harness, "bash", str(ROOT / "deploy/tx")],
+                    env={**os.environ, "PROBE_HEALTH": health, "PROBE_OFFLINE": str(int(offline))},
+                    text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                self.assertEqual("PROMOTED" in result.stdout, accepted)
 
 
 if __name__ == "__main__":

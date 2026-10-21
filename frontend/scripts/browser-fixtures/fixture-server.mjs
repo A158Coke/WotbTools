@@ -8,6 +8,7 @@
  * 本文件从 browser-workspace-interaction.mjs 原样搬出（单一来源，避免第二份分叉）。
  */
 import { dirname, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -46,12 +47,14 @@ function authBoundaryStubPlugin() {
   }
 }
 
-export async function startFixtureServer({ middleware, allowedHosts } = {}) {
+export async function startFixtureServer({ middleware, allowedHosts, plugins = [], port = 0 } = {}) {
   const server = await createServer({
     configFile: false,
     root: frontendRoot,
+    // Concurrent preview variants must not share optimized Vue runtime chunks.
+    cacheDir: resolve(tmpdir(), 'wotb-browser-fixtures', `${process.pid}-${port}`),
     logLevel: 'error',
-    plugins: [authBoundaryStubPlugin(), vue(), {
+    plugins: [...plugins, authBoundaryStubPlugin(), vue(), {
       name: 'wotb-browser-fixture-http-boundary',
       configureServer(instance) {
         if (middleware) instance.middlewares.use(middleware)
@@ -70,7 +73,7 @@ export async function startFixtureServer({ middleware, allowedHosts } = {}) {
     define: { __BUILD_COMMIT__: '"browser-fixture"', __BUILD_TIME__: '"browser-fixture"' },
     // 与 vite.config.js 一致：logo / icon / silent-check-sso 等 public 资源来自 common/assets。
     publicDir: resolve(frontendRoot, '../common/assets'),
-    server: { host: '127.0.0.1', port: 0, strictPort: false, allowedHosts },
+    server: { host: '127.0.0.1', port, strictPort: port !== 0, allowedHosts },
   })
   await server.listen()
   const url = server.resolvedUrls?.local?.[0]

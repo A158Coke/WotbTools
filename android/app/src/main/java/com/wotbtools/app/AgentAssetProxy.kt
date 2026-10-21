@@ -9,27 +9,27 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * 3D 资产原生代理：App 本机 origin（`MainActivity.LOCAL_APP_ORIGIN`）不在对象存储桶的
- * CORS 白名单里，页面内 `fetch` 直连会被 CORS 拦截；改由 Native 在 LocalRuntimeServer 的
- * `/agent-assets/` 前缀路由里以 HttpURLConnection 匿名 GET 对象存储（CORS 是浏览器机制，原生代码
- * 不受约束），字节 COS → 设备直连、不经过生产网关——TX1 出口带宽不再被资产包流量占用。
+ * 3D 资产原生代理：App 本机 origin（`MainActivity.LOCAL_APP_ORIGIN`）不在资产服务器的
+ * 浏览器 CORS allowlist 里，页面内 `fetch` 直连会被 CORS 拦截；改由 Native 在 LocalRuntimeServer 的
+ * `/agent-assets/` 前缀路由里以 HttpURLConnection 匿名 GET 静态资产服务器（CORS 是浏览器机制，原生代码
+ * 不受约束），字节从 Alibaba asset origin 直达设备、不经过生产网关——TX1 出口带宽不再被资产包流量占用。
  *
  * 资产基址因此保持本机路径（frontend/src/platform/runtime.js 的 ANDROID_ASSET_BASE =
- * '/agent-assets'），请求 same-origin，无需桶 CORS，也无需额外 CSP 白名单。
+ * '/agent-assets'），请求 same-origin，无需浏览器 CORS，也无需额外 CSP 白名单。
  *
  * ETag 磁盘缓存：条目 = <sha256(path)>.body + <sha256(path)>.meta（首行 ETag，次行
  * Content-Type）。命中时带 If-None-Match 条件请求，304 回放缓存；200 先全量落盘再回放
  * （先落盘换取实现简单：资产不可变，重取即得同一字节）。网络/上游失败回退陈旧缓存——
  * 资产不可变，陈旧即正确。缓存总量超限按 lastModified LRU 修剪。
  *
- * 对象存储侧无需任何配置（桶匿名可读；条件请求只依赖 ETag）。换 origin 时同步
+ * 静态资产源允许匿名读取，条件请求只依赖 ETag。换 origin 时同步
  * docs/operations/agent-asset-origin.md 与 runtime.js 的注释。
  */
 object AgentAssetProxy {
     private const val TAG = "AgentAssetProxy"
 
-    /** 与 Web 构建默认（ASSET_BASE_URL Repository Variable）同一对象存储 origin。 */
-    private const val COS_BASE = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+    /** 与 Web 构建默认相同的生产资产 origin。 */
+    private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com"
 
     /** 本机资产路径前缀；runtime.js 的 ANDROID_ASSET_BASE 与这里保持一致。 */
     const val LOCAL_PATH_PREFIX = "/agent-assets/"
@@ -93,12 +93,14 @@ object AgentAssetProxy {
     }
 
     private fun open(path: String, etag: String?): HttpURLConnection =
-        (URL(COS_BASE + upstreamPath(path)).openConnection() as HttpURLConnection).apply {
+        (URL(upstreamUrl(path)).openConnection() as HttpURLConnection).apply {
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             instanceFollowRedirects = true
             etag?.takeIf { it.isNotEmpty() }?.let { setRequestProperty("If-None-Match", it) }
         }
+
+    internal fun upstreamUrl(path: String): String = REMOTE_ASSET_BASE + upstreamPath(path)
 
     private fun store(context: Context, path: String, conn: HttpURLConnection): Entry {
         val dir = cacheDir(context)
@@ -170,7 +172,7 @@ object AgentAssetProxy {
             .joinToString("") { "%02x".format(it) }
 
     /**
-     * 纯函数（纯 JVM 单测覆盖）：本机路由路径 → 对象存储 key。资产包在**桶根目录**
+     * 纯函数（纯 JVM 单测覆盖）：本机路由路径 → 远端资产路径。资产包在**origin 根目录**
      * （/index.json、/glb/...），而页面请求带本机路由前缀 /agent-assets——拼上游
      * URL 前必须剥掉前缀并保证根路径斜杠，否则冷缓存请求会 404。
      * 缓存键（[cacheKey]）仍使用完整本机路径，两者语义不同、不得混用。
@@ -180,7 +182,7 @@ object AgentAssetProxy {
         return if (stripped.startsWith("/")) stripped else "/$stripped"
     }
 
-    /** 纯函数：COS Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
+    /** 纯函数：上游 Content-Type（可能带 charset 参数/大小写随意）归一化为 MIME。 */
     fun normalizeContentType(raw: String?): String =
         raw?.substringBefore(';')?.trim()?.lowercase()
             ?.takeIf { it.isNotEmpty() } ?: DEFAULT_CONTENT_TYPE

@@ -1,8 +1,9 @@
 # WotbTools 设计语言（Design Language）
 
-> 适用范围：`frontend/` 全部页面、Android GeckoView。
-> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束；页面级实现位置、token 与响应式不变量见 [ui-system.md](ui-system.md)，Replay Workspace 的呈现契约见 [replay-workspace.md](replay-workspace.md)。
-> 原则：**以业界通用最佳实践为准**。本文件定义设计规则；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
+> 状态：**v1.0 已批准**（2026-10-01）· 基础设施已落地：token 分层、`@layer`、stylelint（见 §12）· 适用范围：`frontend/` 全部页面、Android GeckoView
+> 维护方式：没有设计师，也没有 Storybook。本文件是设计规范入口，stylelint 执行其中可静态校验的约束（§12）；当前实现与迁移状态以代码、[ui-system.md](ui-system.md) 和 [replay-workspace.md](replay-workspace.md) 为准。
+> 原则：**以业界通用最佳实践为准**。本文件只保留当前成立的设计约束；事实描述漂移应按当前代码修正，不能把文档对齐任务隐式扩大为产品改动。每一节都注明依据。
+> 背景：v1.0 设计语言基于多端布局与 UI/UX 审计的现状盘点：313 种硬编码 hex、83 种字号、154 种内边距、14 种圆角、60 种阴影、约 40 个 z-index、945 处 `!important`；"简约"主题在关键页面约 30–80% 的文字对比度不达标。
 
 ---
 
@@ -30,9 +31,9 @@ Component（可选）       --button-primary-bg: var(--color-accent)     仅复�
 
 - **文件：** `src/styles/tokens/scale.css`（间距、字号、圆角、层级、控件尺寸、动效等与主题无关的量，并在文件顶部声明 `@layer` 顺序）· `src/styles/tokens/color.css`（原始色层与两套主题的语义映射、层级阴影）。**原始层只收录被两个及以上语义 token 共用的颜色**（目前是 `--green-400/700`、`--red-400/700`，被 success / danger 与阵营色共用）；只被一个语义 token 使用的颜色直接写在语义映射里，等出现第二个引用方时再抽出。
 - **主题切换：** `<html data-theme="dark|light">`。主题文件只重新映射**语义层**；原始层和 scale 层两套主题共用。
-- **CSS 分层：** 层顺序是 `reset, tokens, base, layout, components, patterns, pages, utilities`，靠层级顺序解决优先级，不需要 `!important`。**只声明已经在用的层**：`scale.css` 顶部当前只有 `@layer tokens;`；新增层按上面的顺序追加到这条语句（全站只有这一处声明）。
+- **CSS 分层：** 目前 `scale.css` 顶部只有 `@layer tokens;`（全站只有这一处声明），只声明已经在用的层。
 - **命名：** `--{类别}-{角色}-{变体}-{状态}`，例如 `--color-text-secondary`、`--color-surface-2`、`--color-border-focus`。
-- **旧 token：** 间距与圆角由 `tokens/scale.css` 定义（`--space-*`、`--radius-*`）；导出文档的纸张样式在 `tokens/tournament-print.css` 内按 mm 重映射。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）位于 deprecated 的 `tokens.css`，保持原值并与新 token 并存；新代码只引用设计语言 token，某个旧变量不再被任何地方引用时删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
+- **旧 token 迁移：** 与新刻度同名、同值的旧变量（`--space-1…4`、`--radius-sm/md/lg`）已迁入 `scale.css`，保持单一事实源；`--space-5/6` 的旧用法已改指取值相同的 `--space-6/8`。其余旧变量（颜色、`--z-*`、`--font-*`、`--friendly/--enemy` 等）保持原值、标注 deprecated，与新 token 并存。组件迁移时直接改用新 token；某个旧变量不再被任何地方引用时就删除。**不把旧变量整体改成指向新值的 alias**：新旧色值不同，整体 alias 会一次性改变全站视觉。
 
 ---
 
@@ -264,7 +265,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 每个组件都必须具备这些状态：`default / hover / focus-visible / active / disabled / loading`（适用的部分）。
 
-- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。
+- **焦点环统一：** `outline: var(--focus-outline); outline-offset: var(--focus-outline-offset);`（即 2px 实线强调色、偏移 2px），只在 `:focus-visible` 时显示。旧的 `--focus-ring` 是颜色值。
 
 | 组件 | 变体 | 规则 |
 |---|---|---|
@@ -272,7 +273,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 | **IconButton** | — | 图标 20px，点击区域遵守 §5 的最小尺寸 |
 | **Input / Select / Textarea** | — | 标签放在控件上方（不能只靠 placeholder）；下方放说明文字和错误文字；错误态 = 边框用 `danger` + 图标 + 文字 |
 | **SearchSelect** | 单选 / 多选 | 选项超过 15 项时必须可搜索，例如名人堂的选车器 |
-| **FileDrop** | 单文件 / 多文件 | **全站只有这一个上传组件**。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
+| **FileDrop** | 单文件 / 多文件 | 上传交互遵守以下键盘规则。原生 `<input type=file>` 视觉隐藏、**不进 Tab 顺序**（`tabindex="-1"` + `aria-hidden`），由可见的真实按钮 `click()` 触发它——**禁止只有鼠标可点的容器**：键盘用户必须能 Tab 到那个按钮，且按钮是唯一的 picker 触发点（hidden input 不得再进 Tab 顺序，避免同一动作出现两个焦点目标） |
 | **SegmentedControl** | — | 页面内的视图切换，例如 汇总 / 单场、数据 / 2D / 3D / 射击 / AI。键盘：方向键循环、Home / End 跳首尾（radiogroup 模型）；`scrollable` 保持单行横向滚动；回放能力栏使用 `wrap`，空间不足时自然换行，手机上每行填满可用宽度、长标签完整显示 |
 | **Tabs** | — | 页面级分区。和 SegmentedControl 的区别：Tabs 切换的是内容区域，SegmentedControl 切换的是同一内容的呈现方式 |
 | **Chip** | 筛选 chip · 状态 chip | 已生效的筛选条件显示为可移除的 chip |
@@ -294,7 +295,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 ## 8. 图标
 
-**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 Android GeckoView 上渲染不一致，也无法控制颜色，不应该当图标用。
+**依据：** 一个项目只用一套图标，风格才一致。emoji 在不同系统和 GeckoView 上渲染不一致，也无法控制颜色，不应该当图标用。
 
 - 统一使用 **Lucide**（MIT 协议，支持按需引入，线性风格，1.5–2px 描边）。
 - 尺寸：16（行内）· 20（按钮默认）· 24（导航、空状态）。颜色用 `currentColor`。
@@ -310,7 +311,7 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 |---|---|
 | **AppShell** | 平板 / 桌面：左侧边栏（`--z-header`，铺满视口高度），没有顶栏（`--header-h: 0`）。桌面默认展开（240px，图标 + 文字），可折叠成 72px 图标栏并记住偏好；平板固定为图标栏。侧边栏从上到下：品牌 · 主栏目（首页 · 回放 · 名人堂 · 坦克百科 · 联赛积分榜 · 联赛直播回放 · UP 推荐）· 管理组（按角色）；底部：更多（弹出面板，只放低频的显示设置与关于 / 支持）· 账户 · 折叠开关。手机 / App：48px 标题栏 + 底部 Tab 栏（56px + 安全区），推荐目录后端就绪时主站八项导航（APK / 本地七项）的标签限制在各自栏目内、最多两行；直播入口使用短标题并保留完整辅助名称。空间不足时底栏自身横向滚动，每个触控目标仍至少44px且互不重叠；路由切换和键盘焦点会显露对应栏目，不把主导航移入更多。更多是整页。当前侧边栏宽度写入 `--sidebar-w`（手机为 0），顶栏高度写入 `--header-h`；布局偏移只读这两个值 |
 | **PageHeader** | 只有 `compact`（工作区用：标题 + 右侧操作，一行，≤ 56px）。不提供 `hero` 变体；首页 hero 是 `HomePage.vue` 自己的整段落地页板块。**工作区禁止用 kicker + h1 + 说明 + 标签块占掉首屏** |
-| **容器宽度** | `content`（阅读类，≤ 760）· `wide`（≤ 1280）· `full`（回放、数据工作台，铺满可用宽度） |
+| **容器宽度** | `content` → `--layout-content-max`；`wide` → `--layout-wide-max`；`workspace` → `--layout-workspace-max`；长文阅读宽度 → `--reading-measure`。具体数值由 `frontend/src/styles/tokens/scale.css` 定义，布局原语见 [UI 系统](ui-system.md) |
 | **Master–Detail** | expanded：列表 + 常驻详情。medium：列表 + 推开式详情。compact：列表 → 全屏详情（支持左右滑动切换）。回放工作台、射击分析、坦克百科都用这个模式 |
 | **筛选** | expanded / medium：行内工具栏。compact：一个"筛选"按钮 → sheet，已生效的条件以 chip 显示在列表上方 |
 | **主操作位置** | expanded：页面头部右侧。compact：底部固定操作栏（带安全区） |
@@ -364,5 +365,28 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
    - `color-no-hex`、`color-named: never`、`function-disallowed-list: rgb/rgba/hsl/hsla`：组件里不出现色值；只有 `src/styles/tokens/**` 例外。需要半透明时用 `color-mix()`。
    - `media-feature-range-notation: context`、`media-feature-name-value-allowed-list: width → 768px / 1200px`、`media-feature-name-disallowed-list: min-width / max-width / device-width`：断点只有三档，且必须写 range 语法。
    - `declaration-property-unit-disallowed-list`：块方向尺寸（`height`、`block-size` 及其 min/max，`top`、`bottom`、`inset`、`inset-block*`）禁止 `vh`，用 `dvh` / `svh`；行方向尺寸（`width`、`inline-size` 及其 min/max）禁止 `vw`，用 `%`；`flex-basis` 两者都禁。
-   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里；新文件一律严格检查，不得加入该名单。
+   - 旧文件列在 `frontend/stylelint.legacy.json` 忽略名单里（基线），新文件一律严格检查；移出名单的文件同样受严格检查。
 2. **frontend/AGENTS.md** 引用本文件："改动 UI 前必须阅读 design-language.md；新增视觉值必须先加 token。"
+3. **PR 自查清单：**
+   - [ ] 只用了语义 token
+   - [ ] 两套主题都截了图
+   - [ ] 三档宽度都截了图
+   - [ ] 键盘能走完整个流程
+   - [ ] 新文案进了 i18n 和术语表
+
+---
+
+## 决策记录
+
+2026-10-01 已确认：
+- 两套主题的定位：沉浸 = 暗色 + 装饰插槽，简约 = 亮色 + 无装饰；布局、组件、密度完全一致。
+- 默认主题跟随系统（通过 profile 的 `auto` 值实现）。
+- 色盲模式的开关放在"我的 → 显示设置"。
+- 图标库使用 Lucide。
+- 每个视图只允许一个橙色主按钮。
+
+2026-10-02 已确认：
+- 平板 / 桌面的主导航从顶栏移到左侧边栏（顶栏放不下主栏目 + 管理入口）；"更多"在侧边栏里是弹出面板，只放不常用的设置与关于 / 支持。
+
+2026-10-04 已确认：
+- 全局采用 **fluid bounded sizing**：固定值只定义最小可用 / 最大合理边界，中间尺寸优先随所属 container 连续变化（百分比、`fr`、`clamp()`、`cqw/cqh`）；breakpoint 只负责 topology 变化，不再为普通尺寸维护多套 fixed values。Playback #518 是参考实现。

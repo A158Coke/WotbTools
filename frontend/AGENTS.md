@@ -26,7 +26,7 @@
 ## Architecture boundaries
 
 - 需要路由、页面/组件归属、composable 状态、API 边界或跨 feature import 时，必须先读取
-  [`.agents/skills/frontend-architecture/SKILL.md`](../.agents/skills/frontend-architecture/SKILL.md)，并以
+  [`.agents/playbooks/frontend-architecture.md`](../.agents/playbooks/frontend-architecture.md)，并以
   [`docs/frontend/architecture.md`](../docs/frontend/architecture.md) 为当前实现事实。
 - 依赖方向为 `app → features → shared`。现有 flat `components/`、`composables/`、`utils/` 是当前代码布局；不得为了“对齐架构”创建空壳目录或虚构尚未实现的迁移。
 - 跨 app/feature 的注入 contract 使用 `shared/` 中的 typed `InjectionKey<T>`；禁止新增 magic-string service locator。直接父子组件优先使用显式 props/emits，不得用 provide/inject 隐藏本来就可见的 Replay/Workspace 依赖。
@@ -72,7 +72,7 @@
 - 修改装甲查看器**初始化 / 弹药 / 单发判定 / 重试 / 销毁生命周期**时保持 `npm run test:browser-armor-shot-readiness` 通过；该 gate 用真实应用和确定性夹具资产包控制异步响应，覆盖慢弹药、初始化期间选车反馈、自动选弹、错误阶段、重试及迟到响应隔离，无需真实资产或 WASM，不做 3D 画面验收。已接入 `ci-frontend.yml` 的浏览器矩阵。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 浏览器门禁里**不要用固定 `delay` 采样手势中间态、也不要刚做完相机手势就立刻采样部位像素**：OrbitControls 的 damping 会在拖动/捏合结束后继续滑行若干帧（CI 无 GPU、帧间隔可达数百 ms，滑行可持续数秒），此时"采样的像素"与"按下时的像素"已不是同一部位（`aimingState().cameraSettledMs` 就是给这件事用的：采样前等它 > `max(400ms, 3×frameIntervalMs)`）；断言中间态一律用 `page.waitForValue('<状态表达式>', 判定, { timeout })` 等状态成立。这也解释了 `browser-armor-aiming` 早期两次 CI 失败（本地快渲染掩盖）。
-- 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。
+- 变更后由 `review-with-docs` 执行唯一 final gate；影响界面、构建或文档时同样走该 gate。
 
 ## Forbidden patterns
 

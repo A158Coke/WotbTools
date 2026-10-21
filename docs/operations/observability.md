@@ -1,6 +1,6 @@
 # Observability 与产品用量
 
-dashboard 回答维护者的问题：谁使用了产品、打开了哪些功能、解析了多少份回放、请求了哪些 APK 版本、消耗了多少 AI token，以及出现了哪些错误。没有新增告警或通知系统。
+dashboard 回答维护者的问题：谁使用了产品、打开了哪些功能、解析了多少份回放、用户点击了多少次最终 APK 下载按钮、消耗了多少 AI token，以及出现了哪些错误。没有新增告警或通知系统。
 
 ## 归属与拓扑
 
@@ -13,14 +13,14 @@ dashboard 回答维护者的问题：谁使用了产品、打开了哪些功能�
 
 ## 看板
 
-五个产品 dashboard 加 Engineering Overview（当前共六个 dashboard）默认显示最近 24 小时，使用 `Asia/Shanghai` 时区，并互相链接且保留所选时间范围。**Today** 指北京时间当天零点到现在。可选择最近 7 天，或在保留窗口内的自定义范围。空结果展示为 No data，而不是已验证的零。
+五个产品 dashboard 默认显示最近 24 小时，使用 `Asia/Shanghai` 时区，并在五个产品看板之间互相导航且保留所选时间范围。Engineering Overview 是独立的第六个 dashboard，可单向跳转到这五个产品看板；产品看板不反向链接 Engineering Overview。**Today** 指北京时间当天零点到现在。可选择最近 7 天，或在保留窗口内的自定义范围。空结果展示为 No data，而不是已验证的零。
 
 | 看板 | UID | 度量内容 |
 |---|---|---|
 | Engineering Overview | wotbtools-engineering-overview | GitHub PR/CI 聚合、历史、新鲜度与生产相关性 |
 | Active users (home) | wotbtools-active-users | 收到前台活动信号去重后的认证账号数 |
 | Feature usage | wotbtools-feature-usage | 按 Web/Android 划分的逐文件解析启动/结果与页面/能力打开数 |
-| Android downloads | wotbtools-android-downloads | 按文件名/版本与 HTTP 状态统计的 APK 请求数 |
+| Android downloads | wotbtools-android-downloads | Web `/download/android` 页面最终「下载 APK」按钮点击次数 |
 | AI token usage | wotbtools-ai-token-usage | 已知的输入/输出/总 token、单次评审平均值与缺失用量 |
 | Backend error logs | wotbtools-backend-error-logs | 登录、HoF、积分赛、AI、客户端解析及其他错误分区 |
 
@@ -51,7 +51,7 @@ dashboard 报告的是**已知消耗**，不是 provider 的账单；缺失 usag
 
 ## Android 下载
 
-只有 `GET /download/android/*.apk` 访问事件进入该日志流。Alloy 移除 IP、Referer 与 User-Agent，保留 APK 文件名、状态与字节数。HTTP 200 统计完整响应请求；206 单独统计部分/范围响应请求。重复/范围请求可能指向同一次下载；两种计数都不证明已安装。失败请求仍按状态可见。下载页浏览是单独的 Feature usage 事件。
+Android downloads 只统计用户在 Web `/download/android` 页面点击最终「下载 APK」按钮的行为。打开下载页或其它入口不会计入。新点击记录为 `event=product_telemetry telemetry_event=android_download_click feature=android_download platform=web`；旧的下载页打开事件 `feature_open` 是不同契约，不能当作下载点击。事件通过 `keepalive` 立即发送，不阻塞导航，只表达下载意图。dashboard 不把后续 Caddy 302、网盘传输、HTTP 200/206、传输字节或安装当作下载完成；旧 APK HTTP 请求指标已退役，不能与点击次数合并。
 
 ## 错误日志
 
@@ -82,7 +82,7 @@ PR CI 执行原生 Prometheus/Loki/Alloy 校验、真实 Docker emitter → Allo
 
 `observability.yml` 对运行时做 reconcile，针对既有本地 state 对 Grafana root 做 plan，apply 精确保存的 plan，要求第二次 plan 干净，验证全部六个当前 dashboard（五个产品 dashboard + Engineering Overview），并验证六个 retired UID 返回 404。默认 home 文件与运行时探针使用 Active users。保留七目标 Prometheus 门禁（backend、AI、node-exporter、Prometheus、Loki、Grafana、dev-metrics），即使基础设施图表已不再出现在 home dashboard 上。
 
-deployment canary 只证明采集路径，不证明每个生产服务都有真实活动。运行时验收必须在新 dashboard 中检查真实收到的客户端活动、一次解析批量、APK 请求与 AI 用量/错误。无法从缺失事件回填任何历史客户端计数。
+deployment canary 只证明采集路径，不证明每个生产服务都有真实活动。运行时验收必须在 dashboard 中检查真实收到的客户端活动、一次解析批量、一次 Web 最终 APK 下载按钮点击及对应的 `android_download_click` backend telemetry event，以及 AI 用量/错误。无法从缺失事件回填任何历史客户端点击计数。
 
 参见 [runbook](observability-runbook.md) 与 [Grafana OpenTofu ownership](../architecture/grafana-opentofu.md)。
 
@@ -102,4 +102,4 @@ Engineering Overview 显示：距上次成功不足 30 分钟为 Healthy，30–
 
 月度表展示历史 event-date 标签。每日 Created/Merged 折线图通过原生 Grafana transformation 把 day 标签转换为 UTC 零点；其 x 轴跟随选择器。它们不虚构 Prometheus 之前的样本历史。月份从 2026 年 6 月开始；天数覆盖最近 90 天。instant bucket 查询要求选择器末端存在快照；选择超出观测到的 Prometheus 保留范围的末端可能返回 No data。workflow snapshot/生产趋势跟随选择器与既有七天保留。永远不要在重建的 GitHub 总量上使用 `increase()`/`rate()`。Area 会重叠，draft 会与 open 重叠，cancelled run 不是失败，Actions 保留期限可能限制 CI 完整性。PR 创建到合并不是 DORA lead time。Release/workflow 完成不证明已改动：deployment/publish 面板明确显示 Not available。
 
-活动量不等于生产力，生产相关性也不证明因果关系。导航链接使用 5 个产品 dashboard；Engineering Overview 是独立的第 6 个当前 dashboard。生产验收必须比对实时 GitHub 总量/月份、证明 30 分钟内成功刷新、检查诊断信息无泄漏，并对完整 Grafana OpenTofu root 执行 plan、apply exact saved plan、clean second plan，验证全部 6 个当前 dashboard UID（5 个产品 dashboard + Engineering Overview），确认 6 个 retired UID 不存在/404，确认 7 个 Prometheus UP job（含 dev-metrics），同时保留 datasource/state 安全规则。
+活动量不等于生产力，生产相关性也不证明因果关系。五个产品 dashboard 在彼此之间互相导航；Engineering Overview 是独立的第六个当前 dashboard，并可单向链接到五个产品 dashboard。生产验收必须比对实时 GitHub 总量/月份、证明 30 分钟内成功刷新、检查诊断信息无泄漏，并对完整 Grafana OpenTofu root 执行 plan、apply exact saved plan、clean second plan，验证全部 6 个当前 dashboard UID（5 个产品 dashboard + Engineering Overview），确认 6 个 retired UID 不存在/404，确认 7 个 Prometheus UP job（含 dev-metrics），同时保留 datasource/state 安全规则。

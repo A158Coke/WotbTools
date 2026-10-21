@@ -1,6 +1,6 @@
 # WotbTools 技术演进
 
-本文记录 WotbTools 的 canonical technical evolution：重点不是逐版本列功能，而是解释关键技术决策为什么出现、哪些边界或权威发生了变化，以及哪些方案后来只是迁移机制并已退役。
+本文记录 WotbTools 的技术演进：解释关键技术决策为何出现、哪些边界或权威发生变化，以及哪些方案只是迁移机制并已退役，而不是逐版本罗列功能。
 
 HISTORY.md 记录产品/业务演进；本文只聚焦架构、数据流、identity、authority 与 production topology。Git Commit / Pull Request 仍是实现事实源。
 
@@ -449,10 +449,6 @@ AI Review 带来长耗时调用、外部依赖、超时与失败路径，单纯�
 
 2026-10-03 的五个能力工作台按首次激活懒加载，Three.js、装甲与射击数据不进入首屏包；切走只停渲染不销毁会话，3D 场景切回时保留时间轴与相机。文件入口收敛为全站唯一投放面，旧深链保留为工作台能力入口，不再是独立页面。
 
-### 前端 ownership 收敛
-
-前端没有用目录重写或新的全局 store 解决状态分散，而是保留 flat `components/` / `composables/` / `utils/`，把导航收敛到 typed `NAVIGATE_VIEW_KEY`，把 replay session、分析生命周期与播放偏好收敛到单一 composable owner；capability pane 只接收 props/commands，不再各自持有 API transport。`?view=` 兼容深链保留，跨组件布局与交互回归交给真实浏览器 geometry/interaction gates。
-
 ### 分块加载失败的恢复协议
 
 SPA 产物文件名带内容哈希，部署整目录替换时，仍打开的页面会按旧 bundle 记录的文件名请求已经消失的代码块。项目把懒加载从单个动态 import 改成显式可用性边界：加载失败成为持久、可见、可操作的状态，页面其余部分继续工作；主操作是重新加载，次要操作是重试网络瞬断。恢复必须换一代异步组件定义，因为框架的异步组件会记住失败的加载 promise，重复调用同一 loader 或重新挂载同一组件定义都无法恢复。AI 复盘同时区分服务繁忙、不可达、超时、返回格式异常、用户取消、未配置，以及登录门禁、已登录但缺权限、AI 输入准备失败等不同失败态。
@@ -461,7 +457,7 @@ SPA 产物文件名带内容哈希，部署整目录替换时，仍打开的页�
 
 2026-10-04，Playback sizing 的 authority 从断点固定值改为可用空间：断点只决定结构，尺寸由 Playback workspace 的可用宽高决定，可用高度由视口容量减去实测 persistent HUD 与 Transport 得出，避免读取根元素内容高度形成自指。`playback-workspace.css` 成为共享宏几何的唯一 owner，原先按断点拆分的 `playback-pc.css`、`playback-tablet.css`、`playback-mobile-fullscreen.css`、`playback-fullscreen-form-contract.css` 删除。2D 与 3D 共用 primary composition；Display 是锚定在 ⚙ 上的配置面，Details 是可拖动的上下文浮窗。
 
-### 交付流量与发布权威分离
+### Playback 尺寸权威从断点改为可用空间
 
 2026-10-05～12 的交付调整先处理 APK 下载挤占 TX 公网带宽，再处理发布上传耗时。APK 公网分发进入副本链路，Android 的 3D 资产由 `AgentAssetProxy.kt` 截获固定路径、直连对象存储并使用磁盘缓存；WebView 消费的受控路径与 Native 实际获取字节的网络路径因此不同，不能仅根据页面 URL 判断资产是否经过 TX 网关。
 
@@ -543,13 +539,13 @@ UI 现代化与教程共用现有外壳与组件，不另造演示页面或业�
 3. **客户端 canonical facts 是 Replay 能力边界。** Replay 在用户设备解析一次，再投影给 Data / Rating / Export / Playback / AI；不恢复服务器 Processed Dataset。
 4. **认证身份不是游戏身份。** Keycloak lifecycle 不拥有长期游戏数据生命周期。
 5. **服务器没有 Replay parser。** 缺字段向锁定的上游 parser 补；解析失败不回退服务端，也不在消费端复制第二套协议解码。
-6. **pinned parser 不是语义权威**：Agent Release 决定“实际运行哪份 decoder”；WotbTools canonical 层决定领域语义。上游研究结论不会因为来自 parser producer 就自动提升 evidence grade。
-7. **运行时 provenance 与研究 provenance 分离**：production artifact 用 release commit + hash 锁定；研究引用用独立 commit / blob 锁定，避免“运行版本”与“研究文本”混为一谈。
-8. **控制平面不自动成为 release authority**：Komodo 可以管理资源与 workload lifecycle，但 immutable artifact identity、Git-reviewed placement、数据库 authority 与 owner workflow 仍保持独立。
-9. **host readiness 不是 workload readiness，service readiness 也不是端到端验收**：TX2 host ready、AI readiness=UP、容器 healthy 都不能替代真实生产路径验收。
-10. **兼容层只用于迁移，不成为永久架构。**
-11. **迁移检查在迁移完成后应退役**：长期只保留 live runtime invariants。
-12. **未知保持未知**：无法从 Replay 或 Git 历史证明的事实与决策理由不补写猜测。
+6. **固定版本的 parser 不等于语义权威。** Agent Release 决定实际运行哪份 decoder；WotbTools canonical 层决定领域语义。上游研究结论不会仅因来自 parser producer 就自动提升 evidence grade。
+7. **运行时来源与研究来源必须分离。** Production artifact 用 release commit + hash 锁定；研究引用用独立 commit / blob 锁定，避免把运行版本与研究文本混为一谈。
+8. **control plane 不会自动成为 release authority。** Komodo 可以管理资源与 workload lifecycle，但 immutable artifact identity、Git-reviewed placement、数据库 authority 与 owner workflow 保持独立。
+9. **宿主 ready 不等于 workload ready，service ready 也不等于端到端验收。** TX2 host ready、AI readiness=UP、容器 healthy 都不能替代真实生产路径验收。
+10. **兼容层的目的是帮助迁移，不是成为永久架构。**
+11. **迁移检查应在迁移结束后退役。** 长期只保留仍然有效的 runtime invariant。
+12. **未知就保持未知。** 无法从 Replay 或 Git 历史证明的事实与决策理由，不补写猜测。
 
 ## 已知历史不确定项
 

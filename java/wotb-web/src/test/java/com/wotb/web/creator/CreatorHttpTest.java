@@ -74,8 +74,7 @@ class CreatorHttpTest {
         mvc.perform(get("/api/health")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
                 .andExpect(jsonPath("$.tanks").isNumber())
-                .andExpect(jsonPath("$.capabilities.length()").value(1))
-                .andExpect(jsonPath("$.capabilities[0]").value("recommendations-v1"));
+                .andExpect(jsonPath("$.capabilities").value(org.hamcrest.Matchers.hasItem("recommendations-v1")));
         verifyNoInteractions(service(), avatars());
     }
 

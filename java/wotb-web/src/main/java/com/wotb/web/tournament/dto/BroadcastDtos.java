@@ -28,6 +28,8 @@ public final class BroadcastDtos {
     public record Node(long id, long categoryId, Integer roundNumber, String format, List<Replay> replays) { }
     public record Index(List<String> servers, List<Season> seasons, boolean coverUploadAvailable) { }
     public record SeasonView(Season season, List<Category> categories, boolean coverUploadAvailable) { }
+    public record SeasonContents(Season season, List<Category> categories, List<Node> nodes,
+                                 String defaultTimeZone, List<ReplayStart> replayStarts, boolean coverUploadAvailable) { }
     public record CategoryView(Season season, Category category, List<Node> nodes, boolean coverUploadAvailable) { }
     public record ReplayStart(long replayId, Instant startsAt) { }
     public record TimedCategoryView(CategoryView data, String defaultTimeZone, List<ReplayStart> replayStarts) { }
