@@ -25,7 +25,7 @@ const LOCAL_3D_ASSET_DIR = resolve(configDirectory, '../common/assets/map-3d-loc
  * 本机验收用的**按需**资产代理：`WOTB_ASSET_PROXY=<remote asset origin>` 时把 `/__assets/*`
  * 透传到该 origin（去掉前缀）。
  *
- * 为什么需要它：浏览器 v1 的资产源是远端 origin（`?assets=<url>`），而生产 COS 的 CORS
+ * 为什么需要它：浏览器 v1 的资产源是远端 origin（`?assets=<url>`），而生产资产源的 CORS
  * 白名单不含 localhost —— 于是本机打开 3D 回放必然被浏览器拦下（`connect-src`/CORS），
  * 与代码无关。代理让请求从同源 dev server 出去，浏览器不再做跨域判定。
  *

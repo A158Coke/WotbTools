@@ -4,8 +4,8 @@
  * 形状（判据与理由见 Agent 仓 docs/game-data-sources.md §5.6 与
  * docs/reference/maps.md §2026-10-16）：
  *   包内  = `src/assets/maps/*.webp`（随 APK，离线永远可用）——兜底层；
- *   远端  = COS `/agent-assets/map2d/<code>.webp`（经 AgentAssetProxy 直连 + ETag 磁盘缓存）；
- *   判据  = COS `/agent-assets/map2d/index.json`（逐图 sha256 + `generated`）。
+ *   远端  = Alibaba `/agent-assets/map2d/<code>.webp`（经 AgentAssetProxy 直连 + ETag 磁盘缓存）；
+ *   判据  = Alibaba `/agent-assets/map2d/index.json`（逐图 sha256 + `generated`）。
  *
  * 决策规则（纯函数 `selectMap2dSources` / `pickNewestIndex`，无启发式）：
  *   1) 无包内清单（web / 旧包）⇒ 关闭通道，全部包内；
