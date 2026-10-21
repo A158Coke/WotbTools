@@ -423,6 +423,31 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
   })
 
+  it('HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底', () => {
+    // 判定层：采样结果（含 samples:0）优先；采样器跑不了时 ERROR，绝不回退单射线。
+    expect(pen).toContain('he_splash_error')
+    expect(pen).toMatch(/\(heData && heData\.unavailable\)\s*\n?\s*\?\s*'ERROR'/)
+    expect(pen).toContain("source: 'sampler'")
+    expect(pen).toContain('unavailable: true')
+    expect(pen).toContain("source: 'single-ray'")
+    // 视图层：三种失败原因都上抛 reason，网格失败不再静默。
+    expect(kernel).toContain('he_splash_error: heSplashError')
+    expect(kernel).toContain("'collision-pack:'")
+    expect(kernel).toContain("'collision-grid:'")
+    expect(kernel).toContain("'sampler:invalid-input'")
+    expect(kernel).toContain('heInfo.unavailable')
+    expect(kernel).toContain('L.heSamplingUnavailable')
+  })
+
+  it('判定输入缺数据时 fail-closed：无 120mm 静默默认、未知弹种不落到 HE', () => {
+    expect(kernel).not.toMatch(/sh\.caliber \|\| 120/)
+    expect(kernel).not.toContain('shooterCaliber = 120')
+    expect(kernel).toContain('function resolveCaliberFor')
+    expect(kernel).toContain('resolveCaliberFor(sh)')
+    expect(kernel).toContain('未知弹种必须 fail-closed')
+    expect(kernel).toContain('resolveShotCaliber() > 0')
+  })
+
   it('爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF', () => {
     // review 2026-10-18：100mm HE 打 100mm 间隙甲 + 1mm 主甲，rem<=0 时
     // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
