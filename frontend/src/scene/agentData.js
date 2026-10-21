@@ -91,6 +91,9 @@ export async function fetchShells(id) {
   const cfgs = data.configs || []
   const cfg = cfgs.length ? cfgs[cfgs.length - 1] : null
   const shells = (cfg && cfg.shells ? cfg.shells : data.shells || []).map((s, i) => ({
+    // 判定字段（type_id / normalization / ricochet / penetration_far / caliber）必须原样保留：
+    // 这里曾只挑显示字段，导致走该回退路径的弹体丢失转正角/弹种 id，判定只能 fail-closed。
+    ...s,
     type: s.type,
     // 全局弹种 id（与回放 shell_id 同域）：射击复现按 shell_id 反查槽位弹种用
     global_id: (cfg && cfg.shell_global_ids && cfg.shell_global_ids[i]) ?? null,
@@ -100,7 +103,11 @@ export async function fetchShells(id) {
     module_damage: s.module_damage,
     explosion_radius: s.explosion_radius,
   }))
-  return { caliber: (cfg && cfg.caliber) || data.caliber || 120, shells }
+  // 口径缺失返回 0（调用方 fail-closed），不再静默用 120mm。
+  const caliber = (cfg && Number.isFinite(cfg.caliber) && cfg.caliber > 0)
+    ? cfg.caliber
+    : ((Number.isFinite(data.caliber) && data.caliber > 0) ? data.caliber : 0)
+  return { caliber, shells }
 }
 
 // ---------- 击穿判定（客户端移植；wire 形状与 /api/penetrate 响应一致） ----------

@@ -272,7 +272,7 @@ APK 里随包携带 29 张 2D 离线底图，**就是 `frontend/src/assets/maps/
 
 ### 2D 底图的运行时更新（包内兜底 + 在线校验）
 
-APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 向 COS 的 `map2d/index.json`
+APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 经 `/agent-assets` 与 Native `AgentAssetProxy` 从 Alibaba 的 `map2d/index.json`
 （经 `AgentAssetProxy` 同源直连）核对：先取候选索引中 **`generated` 最大者**（stale proxy 的旧缓存
 不得覆盖见过的新版），若它**比包内内容更新**（`generated > 包内 contentGeneratedAt`，该时间戳是
 底图内容的生成时刻、不是构建时间）且该图 `sha256` 与包内不同，则拉取远端图、**sha256 校验通过**后

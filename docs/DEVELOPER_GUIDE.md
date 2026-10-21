@@ -355,7 +355,7 @@ Web 登录回程先由 `useAuth` / keycloak-js 处理，再动态加载 Router�
 
 APK 由自带 GeckoView 渲染同一套 Vue 产品，从固定 loopback `http://127.0.0.1:21653/index.html` 启动；Native `LocalRuntimeServer` 把 `/` 映射到 APK `assets/web/`。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
 
-`src/platform/runtime.js` 只把 Android 业务 `/api/**` 与下载 metadata URL 解析为 `https://wotbtools.com`；Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact 本机 origin（loopback 与 appassets）放行实际方法/headers，先响应匿名 OPTIONS。Android 远端 3D 资产固定使用 `/agent-assets/` 网关，本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取；Native 过期 token 无法离线刷新时保留 encrypted session，前端只清 API token，离线不会清 replay selection。
+`src/platform/runtime.js` 只把 Android 业务 `/api/**` 与下载 metadata URL 解析为 `https://wotbtools.com`；Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact 本机 origin（loopback 与 appassets）放行实际方法/headers，先响应匿名 OPTIONS。Android 新版本远端 3D 资产使用 `/agent-assets/` 本机路径，由 Native `AgentAssetProxy` 直连 Web 同用的 Alibaba origin `https://assets.wotbtools.com`；旧 APK 继续使用编译时 COS origin，COS 与 legacy gateway 仅供旧客户端兼容和回滚。本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取；Native 过期 token 无法离线刷新时保留 encrypted session，前端只清 API token，离线不会清 replay selection。
 
 - **文件选择与目录导入**：Gecko file prompt 的系统 picker URI 先在后台复制到独立 private cache，整批成功后才确认本地文件给 Gecko（1h TTL）；`FileDrop` 按可选 Native bridge capability `replay-folder-picker` 使用 SAF `ACTION_OPEN_DOCUMENT_TREE`，取消、超限或读取失败保留当前回放，目录不触发自动分析，授权不持久化。未提供该 capability 的 APK 保留文件多选，普通 Web 使用 `webkitdirectory`。详见 [`Android 架构`](android/architecture.md)。
 - **外部 replay 自动解析**：仅 Android external intent 触发——Native 以固定同源 `__native/replay-pending` stream 缓存字节，Web 构造 `File` 后替换 selection 并本机分析一次（完成后 data tab 展示结果，绝不自动启动 AI）。读取用 `X-Wotb-Pending-Id` 校验 metadata 与文件 identity；无 pending 404、identity 不匹配 409、读取失败 500，禁止网络 fallback，响应 no-store。ACK 边界是「本机分析已完成」，回放引擎装载失败不 ACK；pending metadata（1h TTL）持久化并跨 process death 恢复。认证不参与页面导航。生命周期与验收见 [`Android Replay Intent`](android/replay-intent.md#app-手动目录导入独立于-external-pending)。
@@ -593,6 +593,9 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   `deploy/tx/build-frontend-from-gitee.sh` 复用 Business API 的持久 Gitee clone 与 host build lock，
   创建 exact-SHA worktree。镜像 identity 包含 source SHA、`ASSET_BASE_URL` 与 Sponsor bundle SHA256
   （无 pin 为留空）；existing immutable tag 先 pull digest 并核验，缺失才执行本机 `docker build`。
+  Web 生产 3D 资产 origin 固定为 `https://assets.wotbtools.com`，由 `frontend.yml` 与
+  `frontend-replica.yml` 共同传入构建与镜像 identity；Android 仍通过 Native `AgentAssetProxy`
+  使用与 Web 相同的 Alibaba origin `https://assets.wotbtools.com`。旧 APK 可继续使用编译时的 COS origin；COS 仅供 legacy/rollback。Web 的 URL/localStorage override 优先级不变。
   内容/BUILD_COMMIT/Agent/Sponsor 校验全部在 registry 写入前完成；push 使用 per-attempt timeout
   与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX 本地 Docker 缓存，
   不设置 GHA build cache；build/publish 在同一 remote builder 调用中，deploy 是单独 job。

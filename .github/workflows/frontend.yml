@@ -36,6 +36,7 @@ permissions:
 
 
 env:
+  ASSET_BASE_URL: https://assets.wotbtools.com
   PRODUCTION_INPUT_PATHS: |
     .github/workflows/frontend.yml
     .dockerignore
@@ -123,12 +124,10 @@ jobs:
           ref: ${{ github.sha }}
 
       - name: Validate production asset origin
-        env:
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "$ASSET_BASE_URL" ] || { echo 'Repository variable ASSET_BASE_URL is required.' >&2; exit 1; }
+          [ -n "$ASSET_BASE_URL" ] || { echo 'Production ASSET_BASE_URL is required.' >&2; exit 1; }
           case "$ASSET_BASE_URL" in https://*) ;; *) echo 'ASSET_BASE_URL must be an https:// origin.' >&2; exit 1 ;; esac
           case "$ASSET_BASE_URL" in *[[:space:]]*) echo 'ASSET_BASE_URL must not contain whitespace.' >&2; exit 1 ;; esac
           [ "${ASSET_BASE_URL%/}" = "$ASSET_BASE_URL" ] || { echo 'ASSET_BASE_URL must not end with /.' >&2; exit 1; }
@@ -296,7 +295,6 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           AGENT_ASSET: ${{ steps.agent.outputs.asset }}
@@ -501,7 +499,6 @@ jobs:
           WOTB_DEPLOY_SERVICE: frontend
           WOTB_DEPLOY_CONFIG_SHA: ${{ github.sha }}
           TX_IMAGE_REGISTRY_PREFIX: ${{ vars.TCR_REGISTRY }}/${{ vars.TCR_NAMESPACE }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
           # K6B-2A: this consumer is cut over to the reviewed TX1 WireGuard service
           # endpoint for the Business API application port. It is the only consumer
           # moved in K6B-2A; every other private placement stays Docker-local until
