@@ -232,11 +232,20 @@ describe('engagement-distance result line localization', () => {
   it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
     expect(view).toContain("shotDistance: t('armor.distance')")
     expect(view).toContain("distanceUnit: t('armor.distance_unit')")
+    expect(view).toContain("effectivePenetration: t('armor.effective_penetration')")
+    expect(view).toContain("shotAvgShort: t('armor.avg_short')")
+    expect(kernel).toContain('L.shotAvgShort')
     const locales = JSON.parse(read('../locales/feature-messages.json'))
     expect(locales.en.armor.distance).toBe('Engagement distance')
     expect(locales.ru.armor.distance).toBe('Дистанция боя')
     expect(locales.en.armor.distance_unit).toBe('m')
     expect(locales.ru.armor.distance_unit).toBe('м')
+    expect(locales.zh.armor.effective_penetration).toBe('有效穿深')
+    expect(locales.en.armor.effective_penetration).toBe('Effective penetration')
+    expect(locales.ru.armor.effective_penetration).toBe('Эффективное пробитие')
+    expect(locales.zh.armor.avg_short).toBe('平均')
+    expect(locales.en.armor.avg_short).toBe('avg')
+    expect(locales.ru.armor.avg_short).toBe('сред.')
   })
 })
 
@@ -367,7 +376,7 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   it('rcContinue 双实现：每个非外部层独立转正（BlitzKit）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')
     expect(packSrc).not.toMatch(/armorIdx|hitIdx/)
-    expect(packSrc).toMatch(/highp float normR = twoCal/)
+    expect(packSrc).toMatch(/float normR = twoCal/)
     expect(packSrc).toMatch(/const normR = twoCal/)
   })
   it('点击链：每个非外部层独立转正（BlitzKit）', () => {
@@ -389,8 +398,9 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
     // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
     expect(kernel).not.toMatch(/chanceOutcome/)
-    expect(kernel).toMatch(/const title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
-    expect(kernel).toMatch(/const chanceHtml = partial/)
+    expect(kernel).toMatch(/title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
+    // 统一概率行：所有弹种同一口径（0%/1–99%/100%），不再按 partial 生成 chanceHtml。
+    expect(kernel).toMatch(/L\.shotPenChance\}: \$\{formatProbabilityPercent\(cardChance\)\}%/)
     // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
     expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
     expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)
@@ -398,12 +408,21 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
     // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
     expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
+    expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
     expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
     // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
     expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
     expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
     expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
   })
+  it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
+    // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须
+    // 要求合法 splash data，否则 first Primary + chain 会把结果覆盖成
+    // May penetrate / PENETRATION full damage。
+    expect(kernel).toMatch(/heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0/)
+    expect(kernel).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
+  })
+
   it('爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF', () => {
     // review 2026-10-18：100mm HE 打 100mm 间隙甲 + 1mm 主甲，rem<=0 时
     // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
@@ -427,6 +446,22 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // TankCatalogMenu）：卡片图按逐车内容框缩放定位，盒比例是变换数学的契约——组件常数
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
+describe('production gun_mask clip wiring (2026-10-21)', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
+    const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
+    expect(occurrences).toHaveLength(2)
+    expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
+    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(kernel).toContain('clipPlane: gunClipPlane')
+  })
+  it('无效 HE 概率行走 resolveCardChance fail-closed', () => {
+    expect(kernel).toContain('resolveCardChance({')
+    expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
+  })
+})
+
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   const menu = read('./TankCatalogMenu.vue')
 

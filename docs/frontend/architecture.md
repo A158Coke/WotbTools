@@ -141,3 +141,11 @@ RecommendationsPage 是类型入口，CreatorsPage 以 type prop 复用 UP 和�
 先部署并验证现行后端，再协调网页及内部测试 APK 的接口切换；没有旧接口回退。失败时恢复成对的已验证版本，不回退到无法识别 VIDEO 数据的旧后端。旧内容接口仅内部使用、尚无用户；Native Bridge 保持 v3。Android 最低支持版本门槛由 [Android 发布流程](../android/release-process.md)及 production `version.json` 的当前发布状态拥有，本架构文档不重复固定数值。
 
 初次加载、恢复联网、窗口焦点、显式刷新及管理写入ACK触发共享读取；ACK会作废写前请求。失败保留最近成功快照，不伪造空目录或清掉已保存/正在编辑的草稿。公开分类失效后router.replace回全部，保留其他query/hash；管理员空分类不回退。该状态不替代useFeatureGate的网络判断，不轮询、不保存到localStorage，不承诺跨会话实时更新。
+
+## 装甲判定更新（2026-10-21，本分支保留）
+
+- 闭合间隙甲按 FrontSide 判定：`classifyHit` 返回 `backface`，主判定与续飞命中收集都剔除闭合壳的背面，避免同一板正/背两面各计一层；显示材质仍为双面。
+- 最多两次跳弹：首段跳弹后仅执行一段续飞；该段首个非外部层（主装甲或间隙甲）可再次跳弹，第二次跳弹即终态（炮弹消失、无第三段）。模块/间隙甲前置仍按 `layerIndex > 0` 抑制。结果卡概率行置于最终判定段标题下。
+- `gun_mask` 裁切面接入生产材质：`penetrationMaterial` 与 `spacedCommonUniforms` 都携带 `rcClipPlane`/`rcClipEnabled`，`renderSpacedArmorPass` 每帧同步 `gunClipPlane`；JS 调试 `simulate` 也传同一裁切面。
+- 无效 HE（零/缺失爆炸半径）的结果卡概率行经 `resolveCardChance` fail-closed 为 0%，不再沿用 rawChance。
+- 本次不恢复 main 上另一套共面浮点误差排序；装甲判定以本分支修复为准。
