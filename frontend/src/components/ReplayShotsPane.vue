@@ -78,7 +78,7 @@ let parseSeq = 0
 let decoding = Promise.resolve()
 
 /**
- * 弹种表与搭载输入都来自资产包（/data/shellKinds.json 与 tank/{id}.json，COS 分发，
+ * 弹种表与搭载输入都来自资产包（/data/shellKinds.json 与 tank/{id}.json，静态资产源分发，
  * 与上游 tanks.pb 同批刷新）：弹种表只在首次解析时按需加载一次，搭载输入逐车取。
  * 资产源未配置 / 请求失败时按降级语义继续（弹种走槽位/id 兜底、俯仰如实降级标记）。
  */

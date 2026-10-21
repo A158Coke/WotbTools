@@ -91,6 +91,17 @@ describe('public tournament presentation', () => {
       .toEqual([i18n.global.t('tournament.participatingClans'), i18n.global.t('tournament.publishedMatchDays')])
     wrapper.unmount()
   })
+  it('groups administrator scores without presenting the snapshot as published standings', async () => {
+    const { wrapper } = mountTable(fixture(), false)
+    const cells = wrapper.findAll('tbody tr').map(row => row.text())
+    await wrapper.setProps({ grouped: true })
+    expect(wrapper.findAll('thead tr')).toHaveLength(2)
+    expect(wrapper.findAll('tbody tr').map(row => row.text())).toEqual(cells)
+    expect(wrapper.get('caption').text()).toBe('2026 · China · Fire Cup')
+    expect(wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="tournament-published-days"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('updates only the two factual statistics with a new snapshot and keeps the empty table accessible', async () => {
     const { wrapper } = mountTable(fixture())
     const empty = fixture()

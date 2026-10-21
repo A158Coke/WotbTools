@@ -231,8 +231,7 @@ Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
   更换 provider 都不需要发 APK**。
 - **协议不手写**：使用 `net.openid:appauth`（RFC 8252 外部 user-agent、Custom Tabs、PKCE、App Links、
   private-use redirect，且明确不使用内嵌 WebView/GeckoView 做 OAuth）。**版本固定 `0.11.1`**：这是 Maven Central
-  上的最新发布，上游 release 节奏停滞属于已知维护风险；升级路径是评估 maintained 的 RFC 8252 兼容实现，
-  永远不是自己实现 OAuth。
+  上的最新发布；上游 release 节奏停滞是已知维护风险。升级时评估仍在维护的 RFC 8252 兼容实现，不自行实现 OAuth。
 - **Chrome Auth Tab 不是 2.0 的前置条件**（上游对它的 first-class 支持尚未完成）。
 
 ### Redirect transport（两条，同一套实现）
@@ -273,7 +272,7 @@ APK 里随包携带 29 张 2D 离线底图，**就是 `frontend/src/assets/maps/
 
 ### 2D 底图的运行时更新（包内兜底 + 在线校验）
 
-APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 向 COS 的 `map2d/index.json`
+APK 里那套 29 张底图是**兜底层**（离线永远可用，且与 Web 同字节）。在线时 App 经 `/agent-assets` 与 Native `AgentAssetProxy` 从 Alibaba 的 `map2d/index.json`
 （经 `AgentAssetProxy` 同源直连）核对：先取候选索引中 **`generated` 最大者**（stale proxy 的旧缓存
 不得覆盖见过的新版），若它**比包内内容更新**（`generated > 包内 contentGeneratedAt`，该时间戳是
 底图内容的生成时刻、不是构建时间）且该图 `sha256` 与包内不同，则拉取远端图、**sha256 校验通过**后

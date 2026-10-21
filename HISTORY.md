@@ -144,10 +144,6 @@ AI 复盘同时被明确为**正式能力**而不是管理员内测项：普通�
 
 回放工作台的五种能力统一为公开可发现：数据与 2D 回放匿名可用，3D 回放、射击分析 / 复现与 AI 复盘登录后可用。管理员不再拥有额外的回放能力。匿名深链保留原目标并显示登录引导；射击到装甲查看器的复现场景对普通登录用户完整开放，登录返回保留场景参数。
 
-## 2026-10-01～10-03 — 双 UI Profile 与侧栏导航
-
-前端从单套深色工具界面收敛为两个共享同一布局、组件、状态与 API 的 UI Profile：沉浸（深色）与简约（浅色）。Profile 由单一 `wotb-ui-profile` 偏好派生，`auto` 跟随系统；主题只重映射语义 token，不 fork 业务组件。同期主导航从单条顶栏扩展为桌面侧栏 + 移动底栏 / 更多页，让同一套产品在 Web、平板、手机与 Android 壳内共享同一导航语义。设计规则见 [`docs/frontend/design-language.md`](docs/frontend/design-language.md)。
-
 ## 2026-10-04 — Playback 从“固定尺寸的三栏”收敛成共享的 fluid shell
 
 2D 与 3D 是同一个 Playback 产品的两个 renderer，Team 1 固定左、Team 2 固定右、Stage 保持正方形、Details 是整个战场 workspace 级的可拖动浮窗。但此前尺寸仍按断点各写一套固定值：名册车道恒宽，正方形边长按视口扣减估算，导致 desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小，而 roster 继续膨胀。

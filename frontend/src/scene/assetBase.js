@@ -3,7 +3,7 @@ import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
 // WotBTools Playback 拓扑 client-only：生产构建提供默认 remote asset origin；
 // ?assets=<remote origin> 仅作为开发/运维 override，并持久化到 localStorage。
 // 打包器 export_asset_pack.py 布局：/glb/*、/map/*、/tank/*、/tank_images/*、/data/*。
-// 本模块只负责"origin 从哪里读"，不假设具体基础设施。当前生产默认可以指向 COS，
+// 本模块只负责"origin 从哪里读"，不假设具体基础设施。生产构建默认由发布 workflow 配置，
 // 后续迁移静态服务器/CDN/其它对象存储时只需更换构建配置，消费方无需改动。
 // 解析优先级：URL 参数 > localStorage override > production build default。
 

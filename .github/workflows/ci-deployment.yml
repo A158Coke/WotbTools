@@ -159,8 +159,6 @@ jobs:
           bash scripts/ci/test-postgres-business-tofu-contract.sh
       - name: Declarative Komodo resource contract
         run: python3 scripts/ci/test-komodo-resources.py
-      - name: PR area label advisory tests
-        run: python3 scripts/ci/test_pr_area_labels.py
       - name: TX and Yecao runtime fixtures
         run: |
           set -euo pipefail

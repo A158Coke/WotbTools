@@ -12,11 +12,11 @@ import type { BroadcastCategoryView, BroadcastSeason } from '../api/league-broad
 const state = vi.hoisted(() => ({ admin: null as any, list: vi.fn(), season: vi.fn(), category: vi.fn(), createNode: vi.fn(), createSeason: vi.fn(), updateSeason: vi.fn() }))
 vi.mock('../composables/useAuth.js', () => ({ useAuth: () => ({ isLeagueBroadcastAdmin: state.admin, tokenParsed: ref({ sub: 'user' }), authEpoch: () => 1 }) }))
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true, pending: false }) }) }))
-vi.mock('../api/league-broadcasts.js', async original => ({ ...await original<object>(), listBroadcasts: state.list, getBroadcastSeason: state.season, getBroadcastCategory: state.category, createBroadcastNode: state.createNode, createBroadcastSeason: state.createSeason, updateBroadcastSeason: state.updateSeason }))
+vi.mock('../api/league-broadcasts.js', async original => ({ ...await original<object>(), listBroadcasts: state.list, getBroadcastSeasonContents: state.category, createBroadcastNode: state.createNode, createBroadcastSeason: state.createSeason, updateBroadcastSeason: state.updateSeason }))
 const season: BroadcastSeason = { id: 10, server: 'CN', year: 2026, nameZh: '独立赛事', nameEn: 'Independent season', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 4, rootCount: 1, replayCount: 1 }
 const detail: BroadcastCategoryView = { defaultTimeZone: 'Asia/Shanghai', season, category: { id: 20, seasonId: 10, type: 'POINTS' }, coverUploadAvailable: true,
   nodes: [{ id: 30, categoryId: 20, roundNumber: 1, format: null, replays: [{ startsAt: null, id: 40, nodeId: 30, title: 'League final', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 7, groupNumber: 7, bracket: null, teams: ['Followed', 'Other'], perspective: 'POV', coverId: '493199ec-c421-456b-a865-dcd69ef4c62a' }] }] }
-async function page(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20') {
+async function page(url = '/?view=league-broadcasts&lbServer=CN&lbSeason=10') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push(url); await router.isReady()
   const i18n = createI18n({ legacy: false, locale: 'zh', messages })
@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); state.admin = ref(false)
   state.list.mockImplementation(async server => ({ servers: ['CN', 'ASIA', 'NA', 'EU', 'LESTA'], seasons: server === 'CN' ? [season] : [], coverUploadAvailable: true }))
   state.season.mockResolvedValue({ season, categories: [detail.category], coverUploadAvailable: true })
-  state.category.mockResolvedValue(detail)
+  state.category.mockResolvedValue({ ...detail, categories: [detail.category] })
   state.createNode.mockResolvedValue(detail)
   state.createSeason.mockResolvedValue({ season, categories: [], coverUploadAvailable: true })
   state.updateSeason.mockResolvedValue({ season, categories: [], coverUploadAvailable: true })
@@ -36,7 +36,7 @@ beforeEach(() => {
 describe('shared broadcast catalogue rendering', () => {
   it('uses server time by default, remembers only the viewing preference and keeps admin input independent', async () => {
     state.admin.value = true
-    state.category.mockResolvedValue({ ...detail, nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: '2026-10-16T11:00:00Z' })) })) })
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category], nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: '2026-10-16T11:00:00Z' })) })) })
     const { wrapper } = await page()
     await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     expect(wrapper.get('[data-testid=broadcast-replay-40]').text()).toContain('2026-10-16 19:00 UTC+8')
@@ -93,7 +93,7 @@ describe('shared broadcast catalogue rendering', () => {
     wrapper.unmount()
   })
   it('omits an optional empty group in every language', async () => {
-    state.category.mockResolvedValue({ ...detail, nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, groupNumber: null })) })) })
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category], nodes: detail.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, groupNumber: null })) })) })
     const { wrapper, i18n } = await page()
     await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
     for (const [locale, label] of [['zh', '组号待补'], ['en', 'Group number pending'], ['ru', 'Номер группы не указан']] as const) {
@@ -113,13 +113,25 @@ describe('shared broadcast catalogue rendering', () => {
     expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(true)
     wrapper.unmount()
   })
-  it('shows existing category cards as a separate layer and never mixes all roots into a season', async () => {
-    const { wrapper, router } = await page('/?view=league-broadcasts&lbServer=CN&lbSeason=10')
-    expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(false)
-    await wrapper.get('[data-testid=broadcast-category-20]').trigger('click'); await flushPromises()
-    expect(router.currentRoute.value.query.lbCategory).toBe('20')
+  it('renders season roots inline and expands old category deep links without a detail page', async () => {
+    const { wrapper, router } = await page()
     expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(false)
+    await router.push('/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20'); await flushPromises()
+    expect(wrapper.find('[data-testid=broadcast-replay-40]').exists()).toBe(true)
+    expect(wrapper.get('h1').text()).toContain('独立赛事')
+    wrapper.unmount()
+  })
+  it('keeps category and individual-round management distinct without expanding a round', async () => {
+    state.admin.value = true
+    const { wrapper } = await page()
+    await wrapper.get('[data-testid=broadcast-category-menu-20]').trigger('click')
+    expect(wrapper.get('[role=menu]').text()).toContain('删除整个分类')
+    await wrapper.get('[role=menu]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('[data-testid=broadcast-node-menu-30]').trigger('click')
+    expect(wrapper.find('[data-testid=broadcast-delete-node-30]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-delete-category-20]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid=broadcast-node-toggle-30]').attributes('aria-expanded')).toBe('false')
     wrapper.unmount()
   })
   it('updates the list, heading, breadcrumbs and replay context with the current locale', async () => {
@@ -133,12 +145,26 @@ describe('shared broadcast catalogue rendering', () => {
     i18n.global.locale.value = 'ru'; await flushPromises()
     expect(wrapper.get('h1').text()).toContain('Independent season')
     expect(wrapper.get('.broadcast-breadcrumbs').text()).toContain('Independent season')
-    await wrapper.get('[data-testid=broadcast-category-20]').trigger('click'); await flushPromises()
     await wrapper.get('[data-testid=broadcast-new-replay-30]').trigger('click')
     expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('Independent season')
     i18n.global.locale.value = 'zh'; await flushPromises()
     expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('独立赛事')
     expect(state.category).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('binds node creation and replay editing to their own inline category', async () => {
+    state.admin.value = true
+    const quarter = { id: 21, seasonId: 10, type: 'QUARTER_FINALS' }
+    const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category, quarter, semi], nodes: [...detail.nodes,
+      { id: 31, categoryId: 21, roundNumber: null, format: 'KNOCKOUT', replays: [] }] })
+    const { wrapper } = await page()
+    await wrapper.get('[data-testid=broadcast-new-replay-31]').trigger('click')
+    expect(wrapper.get('[data-testid=broadcast-replay-context]').text()).toContain('八强')
+    await wrapper.findAll('[data-testid=broadcast-replay-dialog] button').find(button => button.text() === '取消')!.trigger('click')
+    await wrapper.get('[data-testid=broadcast-new-node-22]').trigger('click')
+    await wrapper.get('#broadcast-structure-form').trigger('submit'); await flushPromises()
+    expect(state.createNode.mock.calls[0].slice(0, 2)).toEqual([22, { expectedVersion: 4, roundNumber: null, format: null }])
     wrapper.unmount()
   })
   it('requires trimmed Chinese and English names, limits all names and saves blank Russian as null', async () => {

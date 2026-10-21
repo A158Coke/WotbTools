@@ -54,6 +54,33 @@ beforeEach(() => {
   state.api.importTournamentCsv.mockResolvedValue(preview)
 })
 describe('independent CSV administration flow', () => {
+  it('guides event selection without showing a create prompt for existing events', async () => {
+    const p = page(); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-admin-empty"]').text()).toContain(p.i18n.global.t('tournament.adminSelectionHint'))
+    expect(p.wrapper.find('[data-testid="tournament-admin-empty"] a').exists()).toBe(false)
+    await p.select()
+    expect(p.wrapper.find('[data-testid="tournament-admin-empty"]').exists()).toBe(false)
+    expect(p.wrapper.get('[data-testid="tournament-admin-summary"]').text()).toContain('2026 · 国服 · 战火杯')
+    expect(p.wrapper.get('.tournament-admin-preview').text()).toContain(p.i18n.global.t('tournament.draftHint'))
+    expect(p.wrapper.findAll('.tournament-admin-preview thead tr')).toHaveLength(2)
+    expect(p.wrapper.find('[data-testid="tournament-public-summary"]').exists()).toBe(false)
+    p.wrapper.unmount()
+  })
+  it('offers creation only for a successfully loaded empty event list', async () => {
+    state.api.listTournamentEvents.mockResolvedValue([])
+    const p = page(); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-admin-empty"] a').text()).toBe(p.i18n.global.t('tournament.newEvent'))
+    p.wrapper.unmount()
+  })
+  it('does not mistake a loading or failed event list for an empty list', async () => {
+    let reject!: (reason: unknown) => void
+    state.api.listTournamentEvents.mockImplementation(() => new Promise((_, fail) => { reject = fail }))
+    const p = page(); await flushPromises()
+    expect(p.wrapper.find('[data-testid="tournament-admin-empty"]').exists()).toBe(false)
+    reject({ errorCode: 'NETWORK_ERROR' }); await flushPromises()
+    expect(p.wrapper.find('[data-testid="tournament-admin-empty"]').exists()).toBe(false)
+    p.wrapper.unmount()
+  })
   it.each([
     ['getTournamentDataSource', 'tournament-data-source-error', 'tournament.dataSourceLoadFailed'],
     ['supportsTournamentCsvImport', 'tournament-csv-capability-error', 'tournament.csvCapabilityLoadFailed'],

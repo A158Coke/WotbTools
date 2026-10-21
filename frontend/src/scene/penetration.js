@@ -48,7 +48,7 @@ export function parseShellType(s, id) {
   const t = String(s || '').toLowerCase()
   if (t === 'ap' || t === 'ap_premium') return 'ap'
   if (t === 'apcr' || t === 'ap_cr' || t === 'ap_cr_premium') return 'apcr'
-  if (t === 'he' || t === 'he_premium') return 'he'
+  if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he'
   if (t === 'heat' || t === 'hc' || t === 'hc_premium' || t === 'atgm_heat') return 'heat'
   return 'he'
 }
@@ -59,6 +59,7 @@ const isExplosive = (shell) => shell === 'he'
 const isExplosiveType = (shell) => shell === 'heat' || shell === 'he'
 // 外部模块（BlitzKit External）：flat 抵消，无角度/转正/跳弹
 const isModule = (section) => section === ArmorSection.CHASSIS || section === ArmorSection.GUN_BARREL
+
 // 主装甲 Primary（hull/turret/炮盾板）：收集阶段 push 后立即停止。
 // 同时是【点击判定的触发面】：BlitzKit 的 shoot() 只挂在 Primary 网格的 onClick 上
 // （spaced/外部模块网格挂的是空 handler，只为进入 event.intersections）——射线未触达
@@ -66,17 +67,17 @@ const isModule = (section) => section === ArmorSection.CHASSIS || section === Ar
 export const isPrimary = (section) => section === ArmorSection.HULL || section === ArmorSection.TURRET || section === ArmorSection.GUN
 
 /**
- * 概率卡的前置条件：链上存在**正厚度**的 Primary 层。
- * 只有外部模块（履带/炮管）或 0mm 板的射线不构成概率判定——确定性语义下
- * 它们要么 BLOCKED，要么只穿透模块；把模块的 flat 消耗当成“剩余区间仍大于 0”
- * 会让纯外部命中被概率卡显示成必穿全额伤害。
+ * 概率卡的前置条件：链上存在 Primary 层。
+ * 0mm 是合法的 fail-closed 板厚（与 10mm 板同一处理方式）：它仍然是 Primary，
+ * 只是等效厚度为 0，不因为它没有正厚度而走另一套卡面语义。
+ * 只有外部模块（履带/炮管）而没有 Primary 的射线不构成概率判定——把模块的
+ * flat 消耗当成“剩余区间仍大于 0”会让纯外部命中显示成必穿全额伤害。
  *
  * @param {Array<object>} layers probability_layers / trajLayers
  * @returns {boolean}
  */
-export function hasPositivePrimary(layers) {
-  return Array.isArray(layers) && layers.some(layer =>
-    isPrimary(layer?.section) && Number(layer?.thickness) > 0)
+export function hasPrimaryLayer(layers) {
+  return Array.isArray(layers) && layers.some(layer => isPrimary(layer?.section))
 }
 
 /**
@@ -267,6 +268,29 @@ function dot(a, b) {
 }
 
 const DEG = Math.PI / 180
+const HIT_SECTIONS = new Set(Object.values(ArmorSection))
+
+/**
+ * 判定输入的结构完整性。缺 section / 板厚 NaN / 缺法线或命中点都会让后续几何
+ * 静默失真（NaN 传染、按 0mm 板处理、拿 [0,1,0] 猜法线），必须在进入几何链之前
+ * 返回结构化 ERROR，而不是崩溃或产出伪造数字。
+ * @returns {string|null} 失败原因；null = 通过
+ */
+function invalidHitReason(hits) {
+  if (!Array.isArray(hits)) return 'hits-not-array'
+  for (const h of hits) {
+    if (!h || typeof h !== 'object') return 'invalid-hit'
+    if (!HIT_SECTIONS.has(h.section)) return 'invalid-hit-section'
+    if (!Number.isFinite(h.thickness) || h.thickness < 0) return 'invalid-hit-thickness'
+    if (!Array.isArray(h.normal) || h.normal.length !== 3 || !h.normal.every(Number.isFinite)) {
+      return 'missing-hit-normal'
+    }
+    if (!Array.isArray(h.point) || h.point.length !== 3 || !h.point.every(Number.isFinite)) {
+      return 'invalid-hit-point'
+    }
+  }
+  return null
+}
 
 /**
  * 击穿判定（上游 PenetrationRequest/PenetrationResult 的 wire 形状，snake_case 保持）。
@@ -283,6 +307,57 @@ export function calculate(req) {
   const shell = parseShellType(req.shell_type, req.shell_type_id)
   const isHe = isExplosive(shell)
   const isHeat = shell === 'heat'
+  // 结构非法 → 直接 ERROR。几何链对 NaN/缺字段没有安全语义，不能进。
+  const invalidHits = invalidHitReason(req.hits)
+  if (invalidHits) {
+    return {
+      result: 'ERROR',
+      total_effective: 0,
+      layers: [],
+      probability_layers: [],
+      probability_penetration: Math.max(Number(req.penetration) || 0, 0),
+      first_armor_angle_deg: -1,
+      first_armor_norm_deg: -1,
+      ricochet: false,
+      ricochet_remaining_pen: 0,
+      damage: 0,
+      he: isHe ? {
+        splash_min: 0,
+        splash_max: 0,
+        splash_avg: 0,
+        full_damage: req.damage,
+        explosion_radius: req.explosion_radius,
+        samples: 0,
+        best: null,
+        best_lower: null,
+        source: 'single-ray',
+        degraded: true,
+        unavailable: true,
+        reason: invalidHits,
+      } : null,
+    }
+  }
+  // Armor Inspector HE 溅射采样结果（tankViewer 的 800 射线采样器给出）。
+  //
+  // 三态，语义不可混用：
+  // - he_splash 存在：采样器跑了。`samples === 0` 是**权威的零伤害**
+  //   （没有任何射线在 R 内遇到主装，func7695 对这类样本 skip）。
+  // - he_splash_error 存在：采样器**跑不了**（碰撞包/网格/入参）。显式错误，
+  //   禁止用单射线公式冒充采样结果。
+  // - 两者都没有：调用方没有采样器（上游纯函数 / `/api/penetrate`）。此时单射线
+  //   func7695 公式就是该契约的定义行为，结果标记 `source:'single-ray', degraded:true`。
+  const heSplashInput = isHe && req.he_splash != null ? req.he_splash : null
+  const heSplashShapeOk = heSplashInput
+    && Number.isFinite(heSplashInput.min) && Number.isFinite(heSplashInput.max)
+    && Number.isFinite(heSplashInput.avg)
+    && Number.isInteger(heSplashInput.samples) && heSplashInput.samples >= 0
+  const heSplash = heSplashShapeOk ? heSplashInput : null
+  // 采样结果形状非法（字段缺失/NaN）= 采样器输出不可信 → 显式错误，不得静默落回单射线。
+  const heSplashError = isHe
+    ? (typeof req.he_splash_error === 'string' && req.he_splash_error.length > 0
+      ? req.he_splash_error
+      : (heSplashInput && !heSplashShapeOk ? 'sampler:invalid-result' : null))
+    : null
   const caliber = req.caliber
   // 装备修正（对齐 BlitzKit resolvePenetrationCoefficient）：Calibrated 穿深 +6%(动能)/+7%，Enhanced Armor 装甲 +4%
   const calibCoeff = req.calibrated_shells ? (isKinetic(shell) ? 1.06 : 1.07) : 1.0
@@ -448,43 +523,123 @@ export function calculate(req) {
     isHeat,
   })
 
-  // —— HE 判定 & 溅射伤害（对齐 BlitzKit）—— totalSpaced = 非 Primary 层（外部 flat + 间隙角度等效）
-  // 等效厚度和；finalDamage = 0.5*dmg*(1-dist/radius) - 1.1*(lastLayer 厚度 + min(pen, totalSpaced))。
-  // 多层或末层 blocked → splash/blocked；单层穿透 → 全额 damage。
+  // —— HE 判定 & 溅射伤害 ——
+  // 优先使用 req.he_splash：tankViewer 的 800 条世界空间方向采样（Armor Inspector
+  // wasm func7695 的精确语义：0.75/1.25 两个浮动界、名义层装甲累加、R=explosion_radius、
+  // he_min/max = 两个界各自的最大值、avg 取中点）。概率击穿仍由外层 CDF 决定。
+  //
+  // 采样器跑不了（req.he_splash_error）时结果是 ERROR + 零伤害，绝不回退单射线：
+  // 单射线估算与 800 射线采样不是同一个语义，冒充采样会把面板数字拉离 AI。
+  // 只有从未提供采样器的调用方（上游纯函数 / `/api/penetrate`）才使用单射线
+  // func7695 公式，并在 he 上标记 `source:'single-ray', degraded:true`。
   let resultDamage
   let isSplash
   let hePenetrated
-  if (isHe && layers.length > 0) {
-    let totalSpacedThickness = 0.0
-    filteredHits.forEach((h, i) => {
-      if (!isPrimary(h.section)) totalSpacedThickness += layers[i].effective
-    })
-    // blitzkit：lastLayer.thicknessAngled 对 external 层不存在 → NaN → 永不 splash，
-    // 导致 HE 打履带/外部模块时永远 BLOCKED(0 伤害)，与游戏不符(GB109 shot2: HE 打履带掉血 126)。
-    // 修正：外部模块末层按 flat 厚度参与溅射衰减（伤害数值可能仍偏大，游戏对履带吞噬溅射有额外衰减）。
-    const lastEff = layers[layers.length - 1].effective
-    const dist = dist3(filteredHits[filteredHits.length - 1].point, filteredHits[0].point)
-    if (req.explosion_radius > 0.0) {
-      const finalDamage = 0.5 * req.damage * (1.0 - dist / req.explosion_radius)
-        - 1.1 * (lastEff + Math.min(totalSpacedThickness, pen))
-      const multiOrBlocked = layers.length > 1 || !layers[layers.length - 1].penetrated
-      if (multiOrBlocked) {
-        const s = finalDamage > 0.0
-        resultDamage = s ? finalDamage : 0.0
-        isSplash = s
-        hePenetrated = false
-      } else {
-        resultDamage = req.damage
-        isSplash = false
-        hePenetrated = true
+  let heData = null
+  if (isHe && heSplashError) {
+    resultDamage = 0.0
+    isSplash = false
+    hePenetrated = false
+    heData = {
+      splash_min: 0.0,
+      splash_max: 0.0,
+      splash_avg: 0.0,
+      full_damage: req.damage,
+      explosion_radius: req.explosion_radius,
+      samples: 0,
+      best: null,
+      best_lower: null,
+      source: 'sampler',
+      unavailable: true,
+      reason: heSplashError,
+    }
+  } else if (isHe && heSplash) {
+    resultDamage = heSplash.avg > 0.0 ? heSplash.avg : 0.0
+    isSplash = heSplash.avg > 0.0
+    hePenetrated = false
+    heData = {
+      splash_min: heSplash.min,
+      splash_max: heSplash.max,
+      splash_avg: heSplash.avg,
+      full_damage: req.damage,
+      explosion_radius: req.explosion_radius,
+      // samples === 0：采样跑了但没有有效主装射线 → 权威的零溅射（不是“不可用”）。
+      samples: heSplash.samples,
+      source: 'sampler',
+      // 诊断：最佳射线（max upper）的层链；armordebug=1 可直接对照 Armor Inspector
+      best: heSplash.best ? {
+        upper: heSplash.best.upper,
+        lower: heSplash.best.lower,
+        armor: heSplash.best.armor,
+        distance: heSplash.best.distance,
+        direction: heSplash.best.direction || null,
+        layers: heSplash.best.layers,
+      } : null,
+      // he_min 是 lower 的最大值，可能与 max-upper 样本不是同一条射线。
+      best_lower: heSplash.bestLower ? {
+        upper: heSplash.bestLower.upper,
+        lower: heSplash.bestLower.lower,
+        armor: heSplash.bestLower.armor,
+        distance: heSplash.bestLower.distance,
+        direction: heSplash.bestLower.direction || null,
+        layers: heSplash.bestLower.layers,
+      } : null,
+    }
+  } else if (isHe && layers.length > 0) {
+    // 单射线路径：只服务**从未提供采样器**的调用方（上游纯函数 / `/api/penetrate`，
+    // 上游 Rust `calculate()` 同口径）。客户端在采样器不可用时走 he_splash_error，
+    // 不会到达这里。名义层厚（不是等效）累加到首个主装（含）；没有主装时累加全部
+    // 模块层并仍给溅射——这是上游契约的历史行为，结果以 degraded 标记，不能当作
+    // 800 射线采样的替代。
+    let splashArmor = 0.0
+    let primaryIdx = -1
+    for (let i = 0; i < layers.length; i++) {
+      const h = filteredHits[i]
+      // 与 800 射线采样器同一装甲系数：强化装甲对 HE 兜底同样生效。
+      // 板厚/法线已由 invalidHitReason 在入口保证有限，这里不再做 ||0 掩盖。
+      splashArmor += Number(h ? h.thickness : layers[i].thickness) * thicknessCoeff
+      if (h && isPrimary(h.section)) { primaryIdx = i; break }
+    }
+    const R = req.explosion_radius
+    if (R > 0.0 && filteredHits.length > 0) {
+      // 与采样器一致：原点是命中点沿射向反方向（朝射手）外移 10cm，因此点击
+      // 射线到首板的层距离是 0.1×|cos(shot, plateNormal)|（AI 锚点：T-34
+      // 0.0496 / Pz IV 0.0751 / D2 0.0593）。多层的几何间隔就是命中点之间的
+      // 距离（点击射线共线）；薄板内部行程没有逐层 t，兜底不建模。
+      const firstNormal = normalize(filteredHits[0].normal)
+      const base = 0.1 * Math.abs(dot(view, firstNormal))
+      const endIdx = primaryIdx >= 0 ? primaryIdx : layers.length - 1
+      const endPoint = (filteredHits[endIdx] || filteredHits[0]).point
+      const d = base + dist3(endPoint, filteredHits[0].point)
+      const falloff = 1.0 - d / R
+      const upper = Math.max(0.0, 0.5 * req.damage * 1.25 * falloff - splashArmor)
+      const lower = Math.max(0.0, 0.5 * req.damage * 0.75 * falloff - splashArmor)
+      resultDamage = (upper + lower) / 2.0
+      isSplash = resultDamage > 0.0
+      hePenetrated = false
+      heData = {
+        splash_min: lower,
+        splash_max: upper,
+        splash_avg: resultDamage,
+        full_damage: req.damage,
+        explosion_radius: R,
+        samples: 1,
+        best: null,
+        best_lower: null,
+        // 不是 800 射线采样：UI/诊断必须能区分（客户端正常路径不会走到这里）。
+        source: 'single-ray',
+        degraded: true,
       }
     } else {
-      // 无爆炸半径（数据缺失兜底，blitzkit 无此分支）：仅单层穿透拿全额伤害
-      const singlePen = layers.length === 1 && layers[0].penetrated
-      resultDamage = singlePen ? req.damage : 0.0
+      // 无爆炸半径：fail-closed，不猜单层满伤。
+      resultDamage = 0.0
       isSplash = false
-      hePenetrated = singlePen
+      hePenetrated = false
     }
+  } else if (isHe) {
+    resultDamage = 0.0
+    isSplash = false
+    hePenetrated = false
   } else {
     // 伤害归属（对齐 blitzkit lastLayer.status）：末层被穿透 → 全额 armor_damage
     //（含仅穿透履带/间隙甲的情形）；否则 0。跳弹段伤害由前端二次判定补充。
@@ -502,13 +657,15 @@ export function calculate(req) {
 
   const result = ricochet
     ? 'RICOCHET'
-    : isSplash
-      ? 'SPLASH'
-      : hePenetrated
-        ? 'PENETRATION'
-        : pen > 0.0
-          ? 'BLOCKED'
-          : '-'
+    : (heData && heData.unavailable)
+      ? 'ERROR'
+      : isSplash
+        ? 'SPLASH'
+        : hePenetrated
+          ? 'PENETRATION'
+          : pen > 0.0
+            ? 'BLOCKED'
+            : '-'
 
   return {
     result,
@@ -521,5 +678,10 @@ export function calculate(req) {
     ricochet,
     ricochet_remaining_pen: ricochetRemainingPen,
     damage: resultDamage,
+    // HE 溅射界（Armor Inspector func7695 口径）。`source` 标明来源：
+    // - 'sampler'（samples 可为 0 = 权威零伤害，或 unavailable:true + reason = 采样器跑不了）
+    // - 'single-ray'（degraded:true；仅无采样器的上游/纯函数调用方）
+    // 非 HE 为 null。概率/期望伤害由外层结合 CDF 计算。
+    he: heData,
   }
 }
