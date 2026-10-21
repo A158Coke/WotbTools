@@ -6149,6 +6149,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                 }
             }
+            // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色：最终段 1–99%
+            // 时标题是“可能击穿”，对应装甲板不能仍是确定性红色；按概率链的
+            // 累计 chance 着色，首段跳弹仍保持橙色。
+            const partialEval = !probabilityMode && chancePartial
+                ? evaluateProbabilityChain(chancePen, probLayers).layers
+                : null;
+            let partialCursor = 0;
+            const nextPartialChance = (layer) => {
+                if (!partialEval || !(layer.seg > 0)) return null;
+                while (partialCursor < partialEval.length && partialEval[partialCursor].seg < layer.seg) partialCursor++;
+                const ev = partialEval[partialCursor];
+                if (!ev || ev.seg !== layer.seg) return null;
+                partialCursor++;
+                return Number.isFinite(ev.chance) ? ev.chance : null;
+            };
             // 有效穿深已并入顶行（距离衰减后），不再重复一行。
             if (!heInfo) {
                 let layerNo = 0;
@@ -6167,9 +6182,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     prevSeg = l.seg;
                 }
                 const layerChance = probabilityMode ? (l.chance ?? 0) : null;
+                const partialChance = probabilityMode ? null : nextPartialChance(l);
                 const pc = probabilityMode
                     ? probabilityColorCss(layerChance)
-                    : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'));
+                    : (partialChance != null
+                        ? probabilityColorCss(partialChance)
+                        : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)')));
                 const th = Number(l.thickness);
                 const isGap = /^Gap /.test(l.name || '');
                 let main, sub;
