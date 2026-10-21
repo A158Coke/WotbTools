@@ -6180,9 +6180,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     main = `${fmtNum(l.eff)}mm @ ${Math.round(l.angle)}°`;
                     sub = `${L.shotNominal} ${fmtArmor(th)}mm`;
                 } else if (l.angle != null) {
-                    // 跳弹层：等效为 0，显示名义厚度 @ 角度
+                    // 有入射角但非跳弹的层（含 0mm 口径碾压板）只显示厚度/角度；
+                    // “跳弹 (-25% 穿深)”只能挂在真正 ricochet=true 的层上。
                     main = `${fmtArmor(th)}mm @ ${Math.round(l.angle)}°`;
-                    sub = L.shotRicochetSeg;
+                    sub = l.ricochet ? L.shotRicochetSeg : '';
                 } else {
                     // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
                     main = `${fmtArmor(th)}mm`;
