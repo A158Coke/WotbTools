@@ -5944,7 +5944,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 ? dmgVal
                 : (probabilityMode
                     ? (hasChance ? dmgVal : 0)
-                    : dmgDealt);
+                    // 跳弹续飞的非概率分支：最终段 1–99% 时标题是“可能击穿”，
+                    // 伤害必须对应满伤（与概率模式 hasChance 同口径），不能沿用
+                    // 确定性 BLOCKED 的 0。0%/100% 仍按终态伤害。
+                    : (chancePartial ? dmgVal : dmgDealt));
             const camDir = camera.position.clone().sub(firstPoint).normalize();
 
             // 轨迹管原点：调用方传入的弹道起点（如炮口）优先；否则沿视线反向
