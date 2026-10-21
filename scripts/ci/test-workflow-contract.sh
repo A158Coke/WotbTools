@@ -784,7 +784,7 @@ for tracked in sorted(root.rglob("*")):
         continue
     text = tracked.read_text(encoding="utf-8", errors="ignore")
     if '"auths"' in text and '"auth":' in text:
-        relative = str(tracked.relative_to(root))
+        relative = tracked.relative_to(root).as_posix()
         # The owner's fixture carries a deliberately fake credential document, and this
         # scanner necessarily contains the markers it looks for.
         assert relative in {
@@ -798,7 +798,7 @@ for tracked in sorted(root.rglob("*")):
         r"^\s*(?:export\s+)?(TCR_PASSWORD|TCR_USERNAME|DOCKER_PASSWORD)\s*[=:]\s*[\"']?([^\s\"']+)",
         text, re.MULTILINE,
     ):
-        relative = str(tracked.relative_to(root))
+        relative = tracked.relative_to(root).as_posix()
         value = assignment.group(2)
         assert relative.startswith("deploy/production-worker/test-") or value.startswith("$"), \
             f"a registry credential must never be assigned in the repository: {relative}"
@@ -1079,9 +1079,9 @@ for statement in (
     assert statement in runbook_text, statement
 assert "the resource tree reaches only the non-production deployment contract gate" not in runbook_text
 agents_text = " ".join((root / ".github/AGENTS.md").read_text(encoding="utf-8").split())
-assert "The single narrow exception is `infra/komodo/resources/asset-origin.toml`" in agents_text, \
+assert "唯一狭窄例外是 `infra/komodo/resources/asset-origin.toml`" in agents_text, \
     "the authoritative workflow contract lost its resource-tree exception"
-assert "manually bootstrapped and manually lifecycle-managed" in agents_text, \
+assert "手动 bootstrap、手动管理 lifecycle" in agents_text, \
     "the workflow contract must document the manual Alibaba Periphery boundary"
 
 print("PR gate, production freshness/ownership, ToFu validation, and backup safety OK")

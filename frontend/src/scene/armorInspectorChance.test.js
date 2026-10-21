@@ -7,6 +7,7 @@ import {
   penetrationChance,
   evaluateProbabilityChain,
   formatProbabilityPercent,
+  resolveCardChance,
 } from './armorInspectorChance.js'
 
 describe('normalCdf（高斯 CDF）', () => {
@@ -139,6 +140,14 @@ describe('Armor Inspector 逐层概率', () => {
     expect(penetrationChance(100, layers)).toBeGreaterThan(0.999)
   })
 
+  it('第二次跳弹（续飞段 ricochet）→ 0：炮弹消失，不再有第三段', () => {
+    const layers = [
+      { name: 'hull', thickness: 50, eff: 0, remainBefore: 100, ricochet: true, seg: 0 },
+      { name: 'hull', thickness: 50, eff: 0, remainBefore: 75, ricochet: true, seg: 1 },
+    ]
+    expect(penetrationChance(100, layers)).toBe(0)
+  })
+
   it('续飞段只在段首初始化一次：后续 seg=1 不重置区间', () => {
     const layers = [
       { name: 'hull', thickness: 20, eff: 20, remainBefore: 75, angle: 0, ricochet: true, seg: 0 },
@@ -184,6 +193,13 @@ describe('Armor Inspector 逐层概率', () => {
   })
 })
 
+describe('空层链 fail-closed', () => {
+  it('空层链为 0%，不得默认必穿', () => {
+    expect(evaluateProbabilityChain(100, [])).toMatchObject({ chance: 0, layers: [] })
+    expect(evaluateProbabilityChain(100, null)).toMatchObject({ chance: 0, layers: [] })
+  })
+})
+
 describe('formatProbabilityPercent（概率标题显示边界）', () => {
   it('99.5%–100% 的不确定区间不得显示成 100%', () => {
     expect(formatProbabilityPercent(0.996)).toBe('>99')
@@ -197,5 +213,33 @@ describe('formatProbabilityPercent（概率标题显示边界）', () => {
     expect(formatProbabilityPercent(0.5)).toBe('50')
     expect(formatProbabilityPercent(0.004)).toBe('<1')
     expect(formatProbabilityPercent(0)).toBe('0')
+  })
+})
+
+describe('resolveCardChance（结果卡概率 fail-closed）', () => {
+  it('无效 HE（heInfo=null 且 allowChance=false）→ 0%，不沿用 rawChance', () => {
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 1, allowChance: false,
+    })).toEqual({ chance: 0, unavailable: true })
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.5, allowChance: false,
+    }).chance).toBe(0)
+  })
+
+  it('正常 HE / 概率链 / 确定性路径仍取原值', () => {
+    expect(resolveCardChance({
+      heInfo: { chance: 1 }, heChance: 1, probabilityMode: false,
+      overallChance: null, rawChance: 0, allowChance: false,
+    }).chance).toBe(1)
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: true,
+      overallChance: 0.83, rawChance: 0, allowChance: true,
+    }).chance).toBe(0.83)
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.5, allowChance: true,
+    }).chance).toBe(0.5)
   })
 })

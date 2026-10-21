@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({ auth: null as any, fetch: vi.fn(), online: tru
 vi.mock('../composables/useAuth.js', async original => ({ ...await original<object>(), useAuth: () => state.auth }))
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ requireFeature: () => state.online }) }))
 vi.mock('../utils/http.js', async original => ({ ...await original<object>(), apiFetch: state.fetch }))
-import { broadcastCoverUrl, createBroadcastCategory, createBroadcastNode, createBroadcastSeason, deleteBroadcastResource, getBroadcastCategory, getBroadcastDeletionPreview, getBroadcastSeason, listBroadcasts, saveBroadcastReplay, updateBroadcastSeason, validateBroadcast } from './league-broadcasts.js'
+import { broadcastCoverUrl, createBroadcastCategory, createBroadcastNode, createBroadcastSeason, deleteBroadcastResource, getBroadcastDeletionPreview, getBroadcastSeasonContents, listBroadcasts, saveBroadcastReplay, updateBroadcastSeason, validateBroadcast } from './league-broadcasts.js'
 
 const season = { id: 1, server: 'CN' as const, year: 2026, nameZh: '夏季赛', nameEn: 'Summer', nameRu: null, startDate: null, createdAt: '2026-10-16T12:00:00Z', version: 0, rootCount: 1, replayCount: 0 }
 const detail = { season, category: { id: 2, seasonId: 1, type: 'POINTS' }, nodes: [{ id: 3, categoryId: 2, roundNumber: 1, format: null, replays: [] }], coverUploadAvailable: true }
@@ -32,9 +32,10 @@ describe('broadcast HTTP boundary', () => {
     expect(() => validateBroadcast('BroadcastReplaySave', { ...payload, dayNumber: 7 })).not.toThrow()
   })
   it('uses public reads without waiting for authentication or attaching a bearer', async () => {
-    await getBroadcastCategory(2)
+    state.fetch.mockResolvedValueOnce(response({ season, categories: [detail.category], nodes: detail.nodes, coverUploadAvailable: true, defaultTimeZone: 'Asia/Shanghai', replayStarts: [] }))
+    await getBroadcastSeasonContents(1)
     expect(state.auth.ensureToken).not.toHaveBeenCalled()
-    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/categories/2')
+    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/seasons/1/contents')
     expect(state.fetch.mock.calls[0][1].headers).toEqual({})
   })
   it('adapts the validated time envelope and preserves historical date-only records', async () => {
@@ -42,11 +43,34 @@ describe('broadcast HTTP boundary', () => {
       groupNumber: null, bracket: null, teams: ['A', 'B'], perspective: 'OBSERVER', coverId: null }
     const data = { ...detail, nodes: [{ ...detail.nodes[0], replays: [replay, { ...replay, id: 5 }] }] }
     state.fetch.mockResolvedValueOnce(response({ data, defaultTimeZone: 'Europe/Berlin', replayStarts: [{ replayId: 4, startsAt: '2026-10-16T11:00:00Z' }] }))
-    const value = await getBroadcastCategory(2)
+    const value = await createBroadcastNode(2, { expectedVersion: 0, roundNumber: 1, format: null })
     expect(value.defaultTimeZone).toBe('Europe/Berlin')
     expect(value.nodes[0].replays.map(replay => replay.startsAt)).toEqual(['2026-10-16T11:00:00Z', null])
     state.fetch.mockResolvedValueOnce(response(detail))
-    await expect(getBroadcastCategory(2)).rejects.toThrow('INVALID_RESPONSE')
+    await expect(createBroadcastNode(2, { expectedVersion: 0, roundNumber: 1, format: null })).rejects.toThrow('INVALID_RESPONSE')
+  })
+  it('validates complete contents and maps replay starts at the transport boundary', async () => {
+    const replay = { id: 4, nodeId: 3, title: 'Match', url: 'https://example.org/video', matchDate: '2026-10-16', dayNumber: 1,
+      groupNumber: null, bracket: null, teams: ['A', 'B'], perspective: 'OBSERVER', coverId: null }
+    const contents = { season, categories: [detail.category], nodes: [{ ...detail.nodes[0], replays: [replay, { ...replay, id: 5 }] }],
+      coverUploadAvailable: true, defaultTimeZone: 'Asia/Shanghai', replayStarts: [{ replayId: 4, startsAt: '2026-10-16T11:00:00Z' }] }
+    state.fetch.mockResolvedValueOnce(response(contents))
+    const value = await getBroadcastSeasonContents(1)
+    expect(value.nodes[0].replays.map(replay => replay.startsAt)).toEqual(['2026-10-16T11:00:00Z', null])
+    expect(state.fetch.mock.calls[0][0]).toBe('/api/tournament-broadcasts/seasons/1/contents')
+    state.fetch.mockResolvedValueOnce(response({ ...contents, nodes: undefined }))
+    await expect(getBroadcastSeasonContents(1)).rejects.toThrow('INVALID_RESPONSE')
+  })
+  it('uses category deletion preview and sends its version with explicit confirmation', async () => {
+    const preview = { seasonId: 1, expectedVersion: 7, rootCount: 3, replayCount: 6 }
+    state.fetch.mockResolvedValueOnce(response(preview))
+    expect(await getBroadcastDeletionPreview('categories', 2)).toEqual(preview)
+    state.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await deleteBroadcastResource('categories', 2, 7)
+    expect(state.fetch.mock.calls.map(call => call[0])).toEqual([
+      '/api/admin/tournament-broadcasts/categories/2/deletion-preview',
+      '/api/admin/tournament-broadcasts/categories/2?expectedVersion=7&confirm=true',
+    ])
   })
   it('uses canonical catalogue and deletion routes while retaining optimistic locking and cover URLs', async () => {
     state.fetch.mockResolvedValueOnce(response({ servers: ['CN', 'ASIA', 'NA', 'EU', 'LESTA'], seasons: [season], coverUploadAvailable: true }))
@@ -58,22 +82,21 @@ describe('broadcast HTTP boundary', () => {
     expect(state.fetch.mock.calls[1][1].method).toBe('DELETE')
     expect(broadcastCoverUrl('493199ec-c421-456b-a865-dcd69ef4c62a')).toBe('/api/tournament-broadcasts/covers/493199ec-c421-456b-a865-dcd69ef4c62a')
   })
-  it('keeps season reads and writes on the modern multilingual shape with canonical routes', async () => {
+  it('keeps season writes on the modern multilingual shape with canonical routes', async () => {
     const view = { season, categories: [detail.category], coverUploadAvailable: true }
     const signal = new AbortController().signal
     const fields = { year: season.year, nameZh: season.nameZh, nameEn: season.nameEn, nameRu: null, startDate: null }
     const create = { server: season.server, ...fields }
     const update = { ...fields, expectedVersion: season.version }
     state.fetch.mockImplementation(async () => response(view))
-    expect(await getBroadcastSeason(1, signal)).toEqual(view)
     expect(await createBroadcastSeason(create, signal)).toEqual(view)
     expect(await updateBroadcastSeason(1, update, signal)).toEqual(view)
     expect(await createBroadcastCategory(1, { expectedVersion: 0, type: 'POINTS' }, signal)).toEqual(view)
     expect(state.fetch.mock.calls.map(([path, options]) => [path, options.method ?? 'GET'])).toEqual([
-      ['/api/tournament-broadcasts/seasons/1', 'GET'], ['/api/admin/tournament-broadcasts/seasons', 'POST'],
+      ['/api/admin/tournament-broadcasts/seasons', 'POST'],
       ['/api/admin/tournament-broadcasts/seasons/1', 'PUT'], ['/api/admin/tournament-broadcasts/seasons/1/categories', 'POST'],
     ])
-    expect(JSON.parse(state.fetch.mock.calls[2][1].body)).toEqual(update)
+    expect(JSON.parse(state.fetch.mock.calls[1][1].body)).toEqual(update)
     for (const [, options] of state.fetch.mock.calls) expect(options.signal).toBe(signal)
   })
   it('uses the time envelope for node creation and preserves the deletion preview version', async () => {
@@ -90,21 +113,21 @@ describe('broadcast HTTP boundary', () => {
   it.each([401, 403, 404, 405, 429, 500, 502, 503])('propagates HTTP %s failures with one canonical read', async status => {
     state.fetch.mockResolvedValueOnce(new Response(null, { status }))
     const signal = new AbortController().signal
-    await expect(getBroadcastCategory(2, signal)).rejects.toMatchObject({ status })
+    await expect(getBroadcastSeasonContents(1, signal)).rejects.toMatchObject({ status })
     expect(state.fetch).toHaveBeenCalledTimes(1)
-    expect(state.fetch.mock.calls[0]).toEqual(['/api/tournament-broadcasts/categories/2', { headers: {}, signal }])
+    expect(state.fetch.mock.calls[0]).toEqual(['/api/tournament-broadcasts/seasons/1/contents', { headers: {}, signal }])
   })
   it('propagates network and cancellation errors without retrying', async () => {
     for (const error of [new TypeError('network'), new DOMException('aborted', 'AbortError')]) {
       state.fetch.mockRejectedValueOnce(error)
-      await expect(getBroadcastCategory(2)).rejects.toBe(error)
+      await expect(getBroadcastSeasonContents(1)).rejects.toBe(error)
     }
     expect(state.fetch).toHaveBeenCalledTimes(2)
   })
   it('requires the backend time zone and rejects unknown envelope fields', async () => {
     for (const value of [{ ...timedDetail, defaultTimeZone: undefined }, { ...timedDetail, unknown: true }]) {
       state.fetch.mockResolvedValueOnce(response(value))
-      await expect(getBroadcastCategory(2)).rejects.toThrow('INVALID_RESPONSE')
+      await expect(createBroadcastNode(2, { expectedVersion: 0, roundNumber: 1, format: null })).rejects.toThrow('INVALID_RESPONSE')
     }
     expect(state.fetch).toHaveBeenCalledTimes(2)
   })

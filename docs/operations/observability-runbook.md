@@ -48,7 +48,7 @@ Prometheus 必须有七个 UP job：wotb-backend（WireGuard `10.20.0.1:8088`）
 
 ## 下载与 token 问题
 
-- Android downloads 区分 200、206 与失败。部分请求计数不是安装计数。若缺少某个版本，检查 nginx 访问输出与脱敏后的 frontend Loki stream。
+- Android downloads 统计 Web `/download/android` 页面最终「下载 APK」按钮点击，不统计后续 HTTP 200/206、网盘传输或安装。若缺少点击事件，确认新 Web bundle 已部署，并检查 `/api/observability/events` 与 backend/Loki 中的 `android_download_click`。
 - AI 总量统计接收时刻的已知用量。平均值统计完成时刻的终态评审。在与 provider 账单比较之前先检查 usage-missing 调用；取消/超时会隐藏 provider 从未返回的计费用量。
 - 页面浏览不是成功操作。回放解析按文件统计独立的启动与结果，而不是打开工作区。
 
@@ -58,4 +58,4 @@ Prometheus 必须有七个 UP job：wotb-backend（WireGuard `10.20.0.1:8088`）
 
 dashboard 变更通过 `infra/tofu/grafana` 与 observability owner workflow 应用。任何 dashboard 都可以无 allowlist 地删除/替换；datasource 删除仍然禁止。从 Git 恢复内容的方式是恢复声明并 apply 经评审的 plan，而不是覆写线上 state。部分 apply 需要先检查当前 state 并重新 plan；不要自动恢复旧 state。
 
-生产验收：验证真实用户活动、一批十个回放文件的成功/失败/取消路径、页面重新进入、APK 200/206 行为，以及 AI 已知/缺失用量。仅靠 deployment canary 不能证明这些用户流程。
+生产验收：验证真实用户活动、一批十个回放文件的成功/失败/取消路径、页面重新进入、一次最终 APK 下载按钮点击及对应 telemetry event，以及 AI 已知/缺失用量。仅靠 deployment canary 不能证明这些用户流程。

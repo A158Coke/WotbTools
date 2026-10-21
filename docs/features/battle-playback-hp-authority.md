@@ -125,15 +125,15 @@ EXACT 80% -> PARTIAL 100% -> EXACT 75%
 ## 职责边界
 
 ```text
-pinned Agent WASM facets + settlement facts + 应用级 Tankopedia reference
+pinned Agent WASM facets + settlement facts + application Tankopedia reference
         ↓
 frontend replay-local canonical facts
         ↓
-client playback projection（HP 权威）
+client playback projection (HP authority)
         ↓
 BattlePlaybackDataset.healthTransitions
         ↓
-UI query-at-time + 纯展示聚合
+UI query-at-time + pure presentation aggregation
         ↓
 只展示
 ```

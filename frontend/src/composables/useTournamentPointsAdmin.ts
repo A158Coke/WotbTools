@@ -44,6 +44,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   const transport = deps.api
   const allowed = computed(() => api.tournamentAdminAllowed(auth))
   const events = ref<TournamentEvent[]>([])
+  const eventsLoading = ref(false)
   const eventId = ref<number | null>(null)
   const round = ref(1)
   const day = ref(1)
@@ -90,6 +91,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
     controller.abort()
     controller = new AbortController()
     busy.value = false
+    eventsLoading.value = false
     recognizing.value = false
     error.value = null
     stale.value = false
@@ -168,10 +170,12 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   async function loadEvents() {
     if (!allowed.value || !networkAvailable.value) return
     const gen = generation, epoch = auth.authEpoch()
+    eventsLoading.value = true
     try {
       const value = await transport.listTournamentEvents(true, controller.signal)
       if (owns(gen, epoch)) events.value = value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
+    finally { if (owns(gen, epoch)) eventsLoading.value = false }
   }
   const canImportHistorical = computed(() => allowed.value && networkAvailable.value && !!config.value && !!dayState.value
     && historicalState.value?.canImport === true
@@ -438,7 +442,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
   }, { immediate: true })
   watch(reviews, () => { previewState.value = null; clearCsvPreview() }, { deep: true })
   onScopeDispose(() => { invalidate(); events.value = []; audit.value = []; config.value = null; dayState.value = null })
-  return { allowed, events, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
+  return { allowed, events, eventsLoading, eventId, round, day, config, dayState, previewState, standings, audit, reviews,
     historicalRequest, historicalPreview, historicalState, historicalFileIssue, canImportHistorical, previewHistorical, publishHistorical,
     networkAvailable, csvSupported, csvCapabilityError, csvFile, csvPreview, csvFileIssue, csvWorkspaceBusy, canImportCsv, selectCsvFile, previewCsv, publishCsv, dataSource, dataSourceError,
     busy, recognizing, progress, error, stale, notice, roundRule, editable, canUpload, canFinalize, reviewError,

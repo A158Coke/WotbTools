@@ -231,8 +231,7 @@ Vue login() ──bridge──▶ authLogin() ──▶ AuthManager
   更换 provider 都不需要发 APK**。
 - **协议不手写**：使用 `net.openid:appauth`（RFC 8252 外部 user-agent、Custom Tabs、PKCE、App Links、
   private-use redirect，且明确不使用内嵌 WebView/GeckoView 做 OAuth）。**版本固定 `0.11.1`**：这是 Maven Central
-  上的最新发布，上游 release 节奏停滞属于已知维护风险；升级路径是评估 maintained 的 RFC 8252 兼容实现，
-  永远不是自己实现 OAuth。
+  上的最新发布；上游 release 节奏停滞是已知维护风险。升级时评估仍在维护的 RFC 8252 兼容实现，不自行实现 OAuth。
 - **Chrome Auth Tab 不是 2.0 的前置条件**（上游对它的 first-class 支持尚未完成）。
 
 ### Redirect transport（两条，同一套实现）

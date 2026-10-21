@@ -4,6 +4,7 @@
 > Rust Core，编译成 WASM 在浏览器 / Android APK 自带的 GeckoView 里运行（版本与 sha256 锁定在 `deploy/agent/source.json`，
 > 消费契约 `contracts/agent/replay-facets-v2.md`）。对解析结果的一切计算（去重、League Rating、指标、列投影、
 > xlsx 导出、2D 回放数据）也都在客户端完成；服务端只负责存储、去重键、授权、名人堂记录与 AI 编排。
+> 当前解析链路以本文与 `contracts/agent/replay-facets-v2.md` 为准。
 
 ## Agent 产物身份（content-addressed）
 
@@ -75,8 +76,7 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 
 ## 服务端边界
 
-- **名人堂**（`com.wotb.web.replayfile.ClientReplayFacts`）：**client facts are intentionally untrusted; server validates
-  structure, not authenticity.** 只做结构校验（arenaId / 录像者 / 1..64 名战斗者 / 账号与车辆 ID / 队伍）；不重新解析回放、
+- **名人堂**（`com.wotb.web.replayfile.ClientReplayFacts`）：**客户端事实被有意视为不可信；服务端只校验结构，不校验真实性。** 只做结构校验（arenaId / 录像者 / 1..64 名战斗者 / 账号与车辆 ID / 队伍）；不重新解析回放、
   不比对回放与 facts。防伪造靠管理员审核与回放附件（有意的产品决策，见 `docs/features/hall-of-fame.md`「信任模型」）。
 - **账号验证**：客户端声称的便利徽章——只比较客户端提交的录像者数值 accountId 与当前绑定账号；不授予权限、不参与
   授权、不是身份安全边界（`docs/features/user-profile.md`）。
@@ -115,12 +115,20 @@ WotbTools 不把 interaction / segment 展开成额外“射击”，也不在�
 ## 缺字段怎么办
 
 后端或前端需要的回放字段，一律向上游 Rust Core 要（直接改上游、发版、升级 `deploy/agent/source.json`），
-不在客户端启发式推导，也不在服务端解析。已知消费缺口以当前 pin 的上游 Release 为准，消费契约随
-`contracts/agent/replay-facets-v2.md` 更新。
+不在客户端启发式推导，也不在服务端解析。已知待补项在上游 Rust Core 的 issue 与发布中跟踪。
 
 ## Android 内置运行时
 
-Android 在 `http://127.0.0.1:21653/index.html` 运行同一个 ReplayWorkspace（3.0 起 bundled GeckoView + Native LocalRuntimeServer）。Replay 导入、Rust/WASM 解析、Result/Rating、2D 地图继续使用 bundled 资源。射击检视输入（compact pitch/config shell identity）与弹种表自 2026-10-15 起运行期从资产包读取（`tank/{id}.json` 投影 + `/data/shellKinds.json`）；bundled `common/shot-tank-data.json` 已退役。Pending intent 只从精确的本地 `/__native/replay-pending` 资源流式读取，带 UUID header，并在分析完成后 compare-and-clear ACK；parser 加载失败保留 pending 供重试。AI、HoF、remote Profile 与 remote 3D assets 在认证或请求前需要连通性。runtime URL 边界把 Android 业务请求发往 production，带 native Bearer、无 cookies；普通 Web 请求保持 same-origin。Release 校验 APK 的 frontend identity，不校验 production Web deployment 的 commit。见 `docs/android/architecture.md` 与 `release-process.md`。
+Android 在 `http://127.0.0.1:21653/index.html` 运行同一个 ReplayWorkspace（自 3.0 起使用内置 GeckoView + Native LocalRuntimeServer）。
+回放导入、Rust/WASM 解析、Result/Rating 与 2D 地图继续使用内置资源。
+射击分析输入（紧凑的俯仰角 / 配置炮弹身份）与炮弹类型表自 2026-10-15 起在运行时从资产包获取
+（`tank/{id}.json` 投影 + `/data/shellKinds.json`）；内置快照 `common/shot-tank-data.json` 已退役。
+pending intent 仅从精确匹配的本机 `/__native/replay-pending` 资源以流方式读取，携带 UUID 请求头，
+分析完成后通过比较并清除的 ACK 确认。解析器加载失败时保留 pending，供重试使用。
+AI、名人堂、远程 Profile 和远程 3D 资产在认证或请求之前需要联网。
+运行时 URL 边界将 Android 业务请求发送到生产环境，使用 Native Bearer，不带 cookie；
+普通 Web 请求保持同源行为。发布校验 APK 内前端的身份，而非生产 Web 部署的 commit。
+详见 `docs/android/architecture.md` 与 `docs/android/release-process.md`。
 
 ## Canonical 投影的线程边界
 

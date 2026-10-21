@@ -63,6 +63,17 @@ describe('foreground product telemetry', () => {
     expect(events().map(e => e.feature)).toEqual(['home'])
   })
 
+  it('does not count opening the Android download page as a download', async () => {
+    const view = ref('home')
+    start(view)
+    await vi.advanceTimersByTimeAsync(5_000)
+    mocks.post.mockClear()
+    view.value = 'android'
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(events().filter(e => e.feature === 'android_download' || e.event === 'android_download_click')).toHaveLength(0)
+  })
+
   it('drops the initial page when the first connectivity result is offline', async () => {
     mocks.connectivity.value = 'unknown'
     mocks.settled.value = false

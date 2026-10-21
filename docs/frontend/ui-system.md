@@ -45,6 +45,10 @@
 
 ## Canonical 文档索引
 
+- 联赛积分管理两页使用 `tournament-admin` 局部样式，选择区、赛事摘要与表单分区沿用
+  公开榜单语义 token。`TournamentPointsTable` 的 `grouped` 只启用分组表头与表格样式；
+  `publicView` 继续拥有公开摘要，管理草稿与导入预览不因此获得“已发布”语义。
+
 - Replay / Reconstruction workspace 样式归属：[`docs/frontend/replay-workspace.md`](replay-workspace.md)
 - 地图与 Playback 视觉/数据契约：[`docs/features/battle-playback.md`](../features/battle-playback.md)
 - tank marker 资产与 overlay 规则：[`frontend/src/assets/tank-icons/README.md`](../../frontend/src/assets/tank-icons/README.md)

@@ -1,95 +1,52 @@
-# TX Business PostgreSQL OpenTofu boundary
+# TX Business PostgreSQL OpenTofu 边界
 
-`infra/tofu/postgres-business` is an isolated OpenTofu root for the TX Business
-PostgreSQL application role, database, and database grant. It is independent
-of the Grafana and Keycloak PostgreSQL roots and uses local TX-only state:
+`infra/tofu/postgres-business` 是 TX Business PostgreSQL 应用 role、database 与 database grant 的独立 OpenTofu root。它独立于 Grafana 和 Keycloak 的 PostgreSQL root，并使用 TX-local state：
 
 ```text
 /opt/wotb-tx/postgres-business-tofu-state/terraform.tfstate
 ```
 
-`deploy/tx/deploy.sh` creates the parent directory with mode 0700, and the
-application role password uses the provider write-only field, so the state holds
-no application credential attribute.
+`deploy/tx/deploy.sh` 以 0700 创建父目录；application role 密码使用 provider 的 write-only 字段，因此 state 不保存 application credential attribute。
 
-Docker Compose creates and runs `business-postgres`; it exposes the
-administration port on TX loopback as `127.0.0.1:25432:5432`, plus the private K6A
-service endpoint `10.20.0.1:25432:5432`. Production dependencies stay Docker-local. The
-PostgreSQL provider is hard-constrained to `127.0.0.1:25432`, so it cannot reach
-a public endpoint, the WireGuard network, or the Keycloak PostgreSQL runtime.
+Docker Compose 创建并运行 `business-postgres`；管理端口只在 TX loopback `127.0.0.1:25432:5432`，另在 WireGuard 私网暴露 service endpoint `10.20.0.1:25432:5432`。生产 `business-api` consumer 使用 `10.20.0.1:25432`；`business-postgres:5432` 只保留为允许的 rollback placement。PostgreSQL provider 硬限制在 `127.0.0.1:25432`，不能访问公网、WireGuard 网络或 Keycloak PostgreSQL runtime。
 
-## Ownership split
+## Ownership 划分
 
 ```text
-Compose   runtime, image, volume, loopback admin + WG service ports, healthcheck, restart, memory limit
-OpenTofu  wotb database, control_api role, database-level grant
-Flyway    application schema, tables, indexes, sequences, rows
+Compose   runtime、image、volume、loopback 管理端口 + WG service 端口、healthcheck、restart、内存限制
+OpenTofu  wotb database、control_api role、database-level grant
+Flyway    application schema、tables、indexes、sequences、rows
 ```
 
-The OpenTofu root declares no schema, table, index, sequence, or extension. It
-also declares no application business table, and no table may be created outside
-Flyway.
+OpenTofu root 不声明 schema、table、index、sequence 或 extension，也不声明 application business table；任何 table 都不得在 Flyway 之外创建。
 
-The application role is a least-privilege login role: no `superuser`,
-`createdb`, `createrole`, `replication`, or `bypassrls`. The database-level grant
-covers `CONNECT`, `CREATE`, and `TEMPORARY`; schema objects stay owned by Flyway.
+Application role 是最小权限 login role：没有 `superuser`、`createdb`、`createrole`、`replication` 或 `bypassrls`。Database-level grant 覆盖 `CONNECT`、`CREATE` 与 `TEMPORARY`；schema 对象仍由 Flyway 拥有。
 
-## Workflow split
+## Workflow 划分
 
-1. Pull requests run `tofu fmt -check`, `tofu init -backend=false`,
-   `tofu validate`, the plan-policy fixtures, and the contract script on
-   GitHub-hosted runners. A pull request never reaches TX: no SSH step, no
-   production-local state and no database plan or connection exists there.
-2. A merged main change is staged into an immutable SHA-named directory on
-   TX through SSH, and the `business-postgres` Deploy lane starts the runtime and
-   waits for `pg_isready`.
-3. The TX host creates one saved plan against `127.0.0.1:25432`, rejects
-   destructive changes, applies that exact plan, requires a completely clean
-   second plan, and only then writes the root-only
-   `/opt/wotb-tx/business-postgres.tofu-provisioned` marker. The runtime and
-   root run in one locked SSH session owned by
-   `.github/workflows/business-postgres.yml`.
+1. Pull request 在 GitHub-hosted runner 上运行 `tofu fmt -check`、`tofu init -backend=false`、`tofu validate`、plan-policy fixtures 与 contract script。Pull request 从不触达 TX：没有 SSH step，也没有 production-local state、database plan 或连接。
+2. 合并后的 main 变更通过 SSH 暂存到 TX 的 immutable SHA-named 目录；`business-postgres` Deploy lane 启动 runtime 并等待 `pg_isready`。
+3. TX host 针对 `127.0.0.1:25432` 创建一份 saved plan，拒绝 destructive changes，apply 该精确 plan，要求完全干净的 second plan，之后才写入 root-only 的 `/opt/wotb-tx/business-postgres.tofu-provisioned` marker。Runtime 与 root 在 `.github/workflows/business-postgres.yml` 拥有的同一把 locked SSH session 中运行。
 
-The standalone workflow uses the shared `production-maintenance` GitHub Actions
-concurrency group and a TX host `flock` covering runtime, apply, second plan,
-verification, and marker update. GitHub Actions does not connect directly to
-the database; OpenTofu runs on TX.
+Standalone workflow 使用共享的 `production-maintenance` GitHub Actions concurrency group，以及 TX host 上的 `flock`，覆盖 runtime、apply、second plan、verification 与 marker update。GitHub Actions 不直接连接数据库；OpenTofu 在 TX 上运行。
 
-Provider installation is mirror-based and fail-closed:
-`deploy/tx/business-postgres.tofurc` allowlists only
-`/opt/wotb-tx/tofu-provider-mirror` for `cyrilgdn/postgresql` and explicitly
-excludes direct installation.
+Provider 安装基于 mirror 并 fail-closed：`deploy/tx/business-postgres.tofurc` 只 allowlist `/opt/wotb-tx/tofu-provider-mirror` 中的 `cyrilgdn/postgresql`，并明确排除直接安装。
 
-## Safety behavior
+## 安全行为
 
-`prevent_destroy` protects the managed role, database, and grant, and
-`infra/tofu/postgres-business/validate-plan.sh` rejects every delete and
-replacement before apply:
+`prevent_destroy` 保护受管的 role、database 与 grant；`infra/tofu/postgres-business/validate-plan.sh` 在 apply 前拒绝任何 delete 与 replacement：
 
-- any `delete` action, including role deletion and `delete`+`create`;
-- any update to the database or the grant;
-- any resource address outside the three declared addresses;
-- a non-empty change set for the post-apply second plan (`--require-no-changes`).
+- 任何 `delete` action，包括 role deletion 与 `delete`+`create`；
+- 对 database 或 grant 的任何 update；
+- 三个已声明 address 之外的任何 resource address；
+- post-apply second plan 的非空 change set（`--require-no-changes`）。
 
-A known safe application password rotation is an in-place `update` of
-`postgresql_role.control_api` only; the second plan must then be entirely no-op.
+已知安全的 application password rotation 只是对 `postgresql_role.control_api` 的 in-place `update`；随后 second plan 必须完全 no-op。
 
-Because the helper runs the provisioning steps from inside an `if`/`||`
-context, the steps are chained explicitly rather than relying on `errexit`,
-which bash disables for functions invoked in that position.
+由于 helper 在 `if`/`||` 上下文中运行 provisioning steps，steps 显式串联，而不是依赖 `errexit`——bash 在该位置调用 function 时不会启用 `errexit`。
 
-## Runtime check
+## Runtime 检查
 
-Business PostgreSQL is authoritative state, so the read-only
-`deploy/tx/runtime-check.sh` check requires its container health,
-`pg_isready`, exactly the `127.0.0.1:25432:5432` + `10.20.0.1:25432:5432`
-TCP publications, and the
-`tx-local-opentofu-business-postgres` provisioning marker before it may emit
-`TX_RUNTIME_READY`. Any failure emits `TX_RUNTIME_NOT_READY`; the check never
-creates, modifies, or deletes a database or row.
+Business PostgreSQL 是权威状态，因此只读的 `deploy/tx/runtime-check.sh` 要求容器 health、`pg_isready`、精确的 `127.0.0.1:25432:5432` + `10.20.0.1:25432:5432` TCP publications，以及 `tx-local-opentofu-business-postgres` provisioning marker，之后才允许输出 `TX_RUNTIME_READY`。任何失败输出 `TX_RUNTIME_NOT_READY`；检查从不创建、修改或删除 database 或 row。
 
-Removing an address from this root is not a supported retirement process.
-Database retirement, Keycloak user migration, and production data movement are
-separate, operator-approved operations; the source database is never deleted as
-part of a backup or restore. Operational details, credential names, and the
-backup/restore procedure are in `docs/operations/business-postgres.md`.
+从该 root 移除 address 不是受支持的 retirement process。Database retirement、Keycloak user migration 与 production data movement 是独立的、operator-approved 操作；source database 从不会作为 backup 或 restore 的一部分被删除。操作细节、credential 名称与 backup/restore 流程见 `docs/operations/business-postgres.md`。
