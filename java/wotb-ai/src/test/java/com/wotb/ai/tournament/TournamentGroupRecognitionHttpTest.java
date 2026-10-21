@@ -1,7 +1,7 @@
 package com.wotb.ai.tournament;
 
 import com.wotb.ai.AiServiceApplication;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.ai.gateway.AiChatGateway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

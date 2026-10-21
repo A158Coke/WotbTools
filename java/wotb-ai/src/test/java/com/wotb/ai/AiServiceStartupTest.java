@@ -1,6 +1,8 @@
 package com.wotb.ai;
 
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.ai.gateway.AiChatGateway;
+import com.wotb.ai.review.AiReviewController;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

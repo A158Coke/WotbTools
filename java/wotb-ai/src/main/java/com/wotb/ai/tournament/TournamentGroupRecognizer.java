@@ -1,12 +1,12 @@
 package com.wotb.ai.tournament;
 
-import com.wotb.ai.tournament.TournamentGroupRecognitionParser.Recognition;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
-import com.wotb.web.replay.ai.AiPromptLibrary;
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
-import com.wotb.web.replay.ai.gateway.AiChatRequest;
-import com.wotb.web.replay.ai.gateway.AiResponseFormat;
-import com.wotb.web.replay.ai.gateway.AiUpstreamException;
+import com.wotb.ai.prompt.AiPromptLibrary;
+import com.wotb.ai.tournament.TournamentGroupRecognitionParser.Recognition;
+import com.wotb.ai.gateway.AiChatGateway;
+import com.wotb.ai.gateway.AiChatRequest;
+import com.wotb.ai.gateway.AiResponseFormat;
+import com.wotb.ai.gateway.AiUpstreamException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
