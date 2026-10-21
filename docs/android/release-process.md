@@ -5,17 +5,17 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-20，本候选源码为 **3.16.1 / 3016001**（`android/gradle.properties`）。
-源码已包含装甲续飞修复和积分管理界面修复（见 [3.15.3](releases/3.15.3.md)、[3.15.4](releases/3.15.4.md)）。
-3.16.0 新增联赛回放同页展开及整个子赛事分类删除，按 **minor** 选位，详见 [3.16.0](releases/3.16.0.md)。
-3.16.1 将新 APK 的 Native 3D 资产 upstream 与 Web 统一到 Alibaba origin；本机 `/agent-assets` 路由、Native Bridge v3、ETag 磁盘缓存与 stale-cache fallback 不变。旧 APK 仍按已编译 origin 访问 COS，COS 暂留作旧客户端与回滚，详见 [3.16.1](releases/3.16.1.md)。
+截至 2026-10-21，本候选源码为 **3.17.1 / 3017001**（`android/gradle.properties`）。
+3.16.0 已按联赛回放同页展开/整类删除与视觉优化发布（tag `android-v3.16.0`，对应 `6f5ca3ca`），其 APK 早于 #703 的装甲合并，不能复用该版本承载 armor 修复。
+3.17.0 承载 bundled armor viewer 的 HE/HESH 800 射线溅射、结果卡/热力图重做与装甲判定修复（双面间隙甲、二次跳弹、gun_mask 裁切、无效 HE fail-closed），按 **minor** 选位，详见 [3.17.0](releases/3.17.0.md)。
+3.17.1 将新 APK 的 Native 3D 资产 upstream 与 Web 统一到 Alibaba origin；本机 `/agent-assets` 路由、Native Bridge v3、ETag 磁盘缓存与 stale-cache fallback 不变。旧 APK 仍按已编译 origin 访问 COS，COS 暂留作旧客户端与回滚，详见 [3.17.1](releases/3.17.1.md)。
 Native Bridge 保持 v3；最低支持门槛保持 **3015003**，不回退也不额外抬高。后端新增接口必须先就绪，再切换网页或发布 APK。
 版本声明不代表已 stage、Android 真机验收或 publish。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
 3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
 （基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
 转正/口径碾压修复，3.9.1 积分榜公开展示优化、3.9.0 工具栏折叠、3.8.1 地球图标和此前推荐目录等功能，
-以及上游 **v0.4.9** WASM pin。3.12.0 已被 #672 占用，不能复用来发布本 bundle。
+以及上游 **v0.4.10** WASM pin。3.12.0 已被 #672 占用，不能复用来发布本 bundle。
 3.11.2 的内容管理权限修正：内容域入口与请求所有权改认 `content-admin`，`tournament-admin` 不再获得内容管理；
 旧 APK 继续按 `tournament-admin` 判定，因此只持有 `content-admin` 的管理员需要更新 APK 才能管理内容；
 全站管理员由 Keycloak composite 展开同时具备两个角色，不受影响。后端先行部署不会让旧 APK 失去目录。

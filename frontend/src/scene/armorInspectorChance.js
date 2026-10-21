@@ -159,9 +159,10 @@ function isExternalLayer(layer) {
  */
 export function evaluateProbabilityChain(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
   const all = layers || []
-  if (all.length === 0) return { chance: 1, layers: [] }
+  // 空链没有可判定的层：fail-closed 返回 0%，不得默认必穿。
+  if (all.length === 0) return { chance: 0, layers: [] }
 
-  const firstContinuation = all.findIndex(layer => layer?.seg === 1)
+  const firstContinuation = all.findIndex(layer => layer?.seg > 0)
   let startIndex = 0
   let { min, max } = intervalFor(penetration, randomization)
   if (firstContinuation >= 0) {
@@ -194,7 +195,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
   for (let i = startIndex; i < all.length; i++) {
     const layer = all[i]
     // 同一续飞段内的后续层共享区间；只有再次跳弹后的新段才重置一次。
-    if (layer?.seg === 1 && i !== startIndex && pendingSegmentReset) {
+    if (layer?.seg > 0 && i !== startIndex && pendingSegmentReset) {
       const start = layerRemainingBefore(layer)
       ;({ min, max } = intervalFor(start != null ? start : penetration, randomization))
       chance = 1
@@ -202,7 +203,7 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
     }
 
     if (layer?.ricochet) {
-      const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg === 1)
+      const hasLaterContinuation = all.slice(i + 1).some(l => l?.seg > 0)
       if (!hasLaterContinuation) return fail(i, layer)
       record(layer, 1)
       pendingSegmentReset = true
@@ -261,6 +262,24 @@ export function evaluateProbabilityChain(penetration, layers, randomization = AR
  */
 export function penetrationChance(penetration, layers, randomization = ARMOR_INSPECTOR_BLITZ_RANDOMIZATION) {
   return evaluateProbabilityChain(penetration, layers, randomization).chance
+}
+
+/**
+ * 结果卡击穿概率的单一取值口径。无效 HE（零/缺失爆炸半径导致 heInfo=null 且
+ * allowChance=false）必须 fail-closed 为 0%，不能沿用穿透原始值 rawChance。
+ * 正常 HE 用 heChance；概率模式用累计概率；其余用穿透链概率。
+ * @param {{heInfo:object|null, heChance:number, probabilityMode:boolean,
+ *   overallChance:number|null, rawChance:number, allowChance:boolean}} input
+ * @returns {{chance:number, unavailable:boolean}}
+ */
+export function resolveCardChance({ heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance }) {
+  const unavailable = !heInfo && allowChance === false
+  const chance = unavailable
+    ? 0
+    : (heInfo
+      ? heChance
+      : (probabilityMode ? (overallChance ?? 0) : rawChance))
+  return { chance, unavailable }
 }
 
 /**
