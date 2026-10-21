@@ -317,6 +317,8 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
       samples: 1,
       best: null,
       best_lower: null,
+      source: 'single-ray',
+      degraded: true,
     })
   })
 
@@ -349,6 +351,8 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
       splash_max: 75.0,
       splash_avg: 37.5,
       samples: 1,
+      source: 'single-ray',
+      degraded: true,
     })
   })
 
@@ -368,7 +372,93 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
       splash_avg: 45.455,
       full_damage: 200.0,
       samples: 325,
+      source: 'sampler',
     })
+  })
+
+  it('he_splash_zero_samples_is_authoritative_zero', () => {
+    // 60TP 炮口命中：炮弹在 z≈-8.27m，60TP 主装最前缘 ≤3.62m，R=3.66m——
+    // 800 条射线在半径内只碰到炮管（模块），func7695 全部 skip。
+    // 这是确定的零溅射，不是“采样器不可用”，不得回退单射线公式造出 285.5。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash: { min: 0, max: 0, avg: 0, samples: 0 },
+    }))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 0,
+      splash_avg: 0,
+      samples: 0,
+      source: 'sampler',
+    })
+    expect(r.he.unavailable).toBeUndefined()
+  })
+
+  it('he_splash_error_is_explicit_error_without_fallback', () => {
+    // 采样器跑不了（碰撞包/网格/入参）：显式 ERROR，禁止拿单射线 285.5 冒充。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash_error: 'collision-grid:grid-too-dense',
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 0,
+      splash_avg: 0,
+      samples: 0,
+      source: 'sampler',
+      unavailable: true,
+      reason: 'collision-grid:grid-too-dense',
+    })
+  })
+
+  it('he_without_sampler_keeps_upstream_single_ray_contract', () => {
+    // 无采样器的调用方（上游纯函数 / /api/penetrate）仍按上游单射线契约给值，
+    // 但必须标记 degraded——客户端正常路径不会消费这条结果。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.he).toMatchObject({ samples: 1, source: 'single-ray', degraded: true })
+  })
+
+  it('he_splash_malformed_result_is_explicit_error', () => {
+    // 采样器给了对象但缺字段/NaN：输出不可信 → ERROR，不得静默落回单射线。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash: { min: 0, max: 0 },   // 缺 avg / samples
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'sampler:invalid-result', samples: 0 })
+  })
+
+  it('he_invalid_hit_thickness_fails_closed', () => {
+    // 板厚 NaN/负数不是 0mm 板：单射线路径也不能拿 ||0 把伤害抬高。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.HULL, Number.NaN, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'invalid-hit-thickness' })
+  })
+
+  it('he_missing_hit_normal_fails_closed', () => {
+    // 0.1m 起点偏移的层距离依赖首板法线；缺法线时不能拿 [0,1,0] 猜。
+    const r = calculate(req('he', 80.0, 152.4, [
+      hit(ArmorSection.HULL, 100.0, [0, 0, 0], { normal: undefined }),
+    ], { explosion_radius: 3.66, damage: 720.0 }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'missing-hit-normal' })
   })
 
   it('he_single_primary_uses_splash_bounds_not_full_damage', () => {
