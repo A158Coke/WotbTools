@@ -22,6 +22,7 @@ description: >
 二选一：
 
 - 实现路径：`docs/current-plan.md`（必须完整读取，不要跳过任何章节）；
+- 或者用户手动贴出的 plan 文本；
 - post-merge cleanup 路径：已合并 PR / merge commit / 已确认合并的任务分支。此路径不要求存在
   `docs/current-plan.md`，先验证 merge 事实，再加载 `.agents/playbooks/post-merge-cleanup.md`。
 
