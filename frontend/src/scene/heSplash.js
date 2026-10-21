@@ -136,12 +136,17 @@ export function heSampleFromHits(hits, { damage, explosionRadius, liningFactor =
 /**
  * 纯函数：800 条（或任意条）层链 → he_min/he_max/he_avg。
  *
+ * `samples === 0` 是**权威结果**：采样跑了，但没有任何射线在 R 内遇到主装
+ * （func7695 对这类样本 `skip`）。它不是“采样器不可用”——后者由
+ * `sampleHeSplash` 的 pack/grid 前置条件以 null 表达，调用方必须报错而不是回退。
+ *
  * @param {Array<Array<{armor:number, primary:boolean, distance:number}>>} rays
  * @param {{damage:number, explosionRadius:number, liningFactor?:number}} opts
  * @returns {{min:number, max:number, avg:number, samples:number,
  *   best:{upper:number, lower:number, armor:number, distance:number, index:number,
  *   layers:Array<object>}|null, bestLower:object|null,
  *   sampleStats:Array<{armor:number, distance:number, upper:number, lower:number, valid:boolean}>}|null}
+ *   null 仅表示入参非法（damage/radius 非正、rays 非数组）。
  */
 export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 1.0 }) {
     if (!(damage > 0) || !(explosionRadius > 0) || !Array.isArray(rays)) return null
@@ -186,7 +191,8 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
         // 无效方向（没有主装）保留 valid=false，渲染层据此透明。
         sampleStats[i] = { armor, distance: dist, upper, lower, valid: hitPrimary }
     }
-    if (!samples) return null
+    // samples === 0：全部射线都没遇到主装 → 零伤害，但结果仍然有效。
+    // 不要合并进 null（那是“跑不了”，调用方必须显式报错）。
     const min = Math.max(maxLower, 0)
     const max = Math.max(maxUpper, 0)
     return { min, max, avg: (min + max) / 2, samples, best, bestLower, sampleStats }
@@ -207,7 +213,11 @@ export function computeHeSplash(rays, { damage, explosionRadius, liningFactor = 
  *   clipPlane = 当前 gun_mask 裁切面；被裁掉的炮管命中与点击链一样不参与采样（评审 P2）。
  *   lean = true 时只累计 min/max/avg（热力图逐顶点场），不物化层链与 sampleStats；
  *   lean 结果的 best/bestLower/sampleStats 为 null，只有 min/max/avg/samples/origin。
+ *   lean 是逐顶点热力图：无有效样本的顶点按透明处理，继续用 null（这是正常场值，
+ *   不是“采样器不可用”）；面板路径不使用 lean。
  * @returns {ReturnType<typeof computeHeSplash>}
+ *   null = 采样器**跑不了**（pack/grid/入参不合法），调用方必须报错或显式降级，
+ *   不得用单射线公式冒充采样结果。samples === 0 = 跑了但没有有效射线（权威 0）。
  */
 export function sampleHeSplash(pack, origin, opts) {
     const { originDir, normal, damage, explosionRadius, liningFactor = 1.0 } = opts
@@ -222,6 +232,10 @@ export function sampleHeSplash(pack, origin, opts) {
     const lean = opts.lean === true
     const ro = origin.clone()
     const out = originDir || normal
+    // 0.1m 起点偏移是 func7695 语义的一部分（见文件头），不是可选美化。
+    // 两个方向都没有时静默从命中表面起射会把所有层距离少算 ~0.05m、系统性高估伤害：
+    // 直接视为“采样器跑不了”，由调用方报错。
+    if ((!out || out.lengthSq?.() === 0) && offset !== 0) return null
     if (out && offset !== 0) {
         const n = out.clone().normalize()
         ro.addScaledVector(n, offset)
@@ -248,6 +262,7 @@ export function sampleHeSplash(pack, origin, opts) {
         }
     }
     if (lean) {
+        // 逐顶点热力图场值：该顶点方向没有有效样本 → 透明，不是采样失败。
         if (!leanSamples) return null
         const min = Math.max(leanMin, 0)
         const max = Math.max(leanMax, 0)
