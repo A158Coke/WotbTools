@@ -118,7 +118,7 @@ const body = `/**
  * 单一来源：en 取自 \`common/wotb-item-catalog-json/**\` authoritative catalog；zh 默认取 catalog，
  * 仅允许生成脚本内显式 UI 术语 overlay；ru 由生成脚本内 RU overlay 提供。后端 DTO 只返回稳定协议标识
  * （logicalItemId / equipmentId），用户可见文案一律由本模块 + i18n 提供，绝不裸露
- * raw protocol ID（plan §21/§22/§23）。
+ * raw protocol ID（装载契约见 docs/features/battle-playback.md）。
  *
  * 契约：unknown 条目（null logicalItemId / 无映射 equipmentId）由调用方走
  * \`recon.map.playback.loadout_unknown\` fallback 并保留 raw id 仅作诊断。

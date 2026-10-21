@@ -184,7 +184,7 @@ describe('Classic 迁移边界：语义 owner 与仍需要的 legacy 桥接', ()
     expect(contact).toContain('var(--color-text-primary)')
   })
 
-  // 用户管理 / 名人堂管理 / 玩家详情抽屉已迁到设计语言语义 token（design-language §13）：
+  // 用户管理 / 名人堂管理 / 玩家详情抽屉已迁到设计语言语义 token（design-language）：
   // 浅色由 tokens/color.css 的语义映射提供，classic 不得再用 !important 覆盖其内部元素（避免第二个样式 owner）。
   it('已迁移组件（Admin Users / HoF Admin / Player Drawer）不再有 classic 覆盖', () => {
     for (const chunk of css.split(/}/).filter((c2) => c2.includes('{'))) {

@@ -102,7 +102,7 @@ describe('BattlePlaybackHud', () => {
     expect(css).toMatch(/\.pb-hud-value \{[^}]*justify-self: center/)
   })
 
-  it('§13 delayed-damage bar: lag chip exists; hpNoTransition syncs immediately (no replay)', async () => {
+  it('delayed-damage bar: lag chip exists; hpNoTransition syncs immediately (no replay)', async () => {
     const wrapper = mountHud({ friendlyHp: hp('EXACT', 3000, 3000) })
     expect(wrapper.find('[data-test="pb-hud-lag-friendly"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="pb-hud-lag-enemy"]').exists()).toBe(true)

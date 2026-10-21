@@ -54,7 +54,7 @@
 | `features/battle-playback.md` | 改地图鸟瞰 / 战局回放 / 双层坦克标记时 |
 | `features/battle-playback-hp-authority.md` | 改战局回放 HP 权威来源 / settlement 优先级时 |
 | `features/hall-of-fame.md` | 改名人堂时 |
-| `features/user-profile.md` | 改 Profile、游戏账号绑定/验证或个人资料展示时 |
+| `features/user-profile.md` | 改 Profile、WoTB 账号绑定/验证、WG 登录同步或「用回放验证」时 |
 | `features/tournament-points.md` | 改积分赛规则、截图识别、共享草稿、正式榜单、修正或证据生命周期时 |
 | `features/league-broadcasts.md` | 改全服联赛直播回放目录、同页管理、季赛／分类／根节点与回放时 |
 | `features/bilibili-creators.md` | 改 bilibili UP/优秀作品推荐、类型隔离、手动星级、站点头像/封面、实力评估或管理权限时 |
@@ -140,7 +140,6 @@
 | 文档 | 何时读 |
 |---|---|
 | `auth/wargaming-asia-deployment.md` | 改 WG 登录身份 / 安全契约、上线或排障时 |
-| `features/user-profile.md` | 改 WG / QQ Profile 与绑定语义时 |
 | `auth/keycloak-login-theme.md` | 改 Keycloak 登录页主题或 realm theme 配置时 |
 | `auth/keycloak-mapper-guide.md` | JWT 缺 claim / 改 claims 时 |
 | `auth/keycloak-tx-bootstrap.md` | TX 新 Keycloak realm / IdP 启动与凭据交接时 |

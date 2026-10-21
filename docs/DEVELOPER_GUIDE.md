@@ -377,9 +377,7 @@ JWT mapper 提供 `wotb_region / wotb_account_id / wotb_nickname / wotb_verified
 
 ### 绑定账号的验证状态（`wotb_account_verified_at`）
 
-`user_profile.wotb_account_verified_at` 是「**当前**绑定账号是否已验证」的唯一表达：NULL = 未验证，非 NULL = 已验证（保留**首次**成功验证时间，不重写）。写入方只有 canonical WG provisioning / 空 Profile 升级（`wotb_account_source=WARGAMING`）与 `POST /api/users/wotb-account/verify-replay`。
-
-「用回放验证」由浏览器本机解析回放，只提交录像者数值 accountId；服务端比较该数值与当前绑定账号，相等则写入首次验证时间，否则 `REPLAY_RECORDER_MISMATCH`（未绑定 `WOTB_ACCOUNT_NOT_BOUND`，缺录像者 `REPLAY_RECORDER_REQUIRED`）。昵称相同不通过，账号只出现在同局名册不通过。这是客户端声称的便利徽章：不授予权限、不参与授权、不是身份安全边界；换绑或解绑会清空验证，与身份无关的编辑不清空。产品/信任模型与页面行为以 [`features/user-profile.md`](features/user-profile.md) 为准。
+`user_profile.wotb_account_verified_at` 的语义、绑定 / 解绑 / WG 登录同步 / 「用回放验证」的信任模型与错误码，见 [`features/user-profile.md`](features/user-profile.md)。本文件只保留实现入口：`UserProfileService`、`POST /api/users/wotb-account/verify-replay`、`ProfilePage.vue`。
 
 ### 身份两层与 profile self-heal
 

@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code POST /api/ai/reviews} 的 HTTP 边界契约：JWT 角色门 + 返回 worker 之前的失败必须是契约
  * {@code ApiError} 信封（含稳定 {@code errorCode}），而不是 Spring 默认错误体。
  *
- * <p>覆盖 plan §25 的 HTTP 用例：无 JWT、角色不足、未知 locale、非法
+ * <p>覆盖 AI Review HTTP 边界用例：无 JWT、角色不足、未知 locale、非法
  * correlationId。SSE 事件流与取消端点由 {@link AiReviewControllerTest} 在 controller 层覆盖。</p>
  *
  * <p>MockMvc 按本仓库既有形态手工装配（{@code webAppContextSetup + springSecurity()}），

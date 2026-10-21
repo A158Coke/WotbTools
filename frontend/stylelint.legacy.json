@@ -1,5 +1,5 @@
 {
-  "$comment": "迁移前的旧样式文件基线（docs/frontend/design-language.md §12–§13）。只减不增：文件迁移到设计语言 token 后从此名单删除。",
+  "$comment": "迁移前的旧样式文件基线（见 docs/frontend/design-language.md 与 docs/frontend/ui-system.md）。只减不增：文件迁移到设计语言 token 后从此名单删除。",
   "files": [
     "src/App.vue",
     "src/app/GlobalErrorDialog.vue",
