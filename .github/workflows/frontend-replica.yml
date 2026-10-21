@@ -114,7 +114,7 @@ jobs:
           username: ${{ secrets.TX2_VPS_USER }}
           port: ${{ secrets.TX2_VPS_PORT }}
           key: ${{ secrets.TX2_VPS_SSH_KEY }}
-          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh
+          source: deploy/tx/frontend-shadow.compose.yml,deploy/tx/nginx/frontend.conf.template,deploy/tx/k7c-sync-runtime-content.sh,deploy/tx/runtime-check-lib.sh
           target: /opt/wotb-tx2/frontend-replica.incoming
           overwrite: true
 
@@ -134,23 +134,6 @@ jobs:
           exec 9>/opt/wotb-tx2/.deploy.lock
           flock -n 9 || { echo 'Another TX2 production deployment is running.' >&2; exit 1; }
 
-          incoming=/opt/wotb-tx2/frontend-replica.incoming/deploy/tx
-          stable=/opt/wotb-tx2/frontend-replica/deploy/tx
-          [ -f "$incoming/frontend-shadow.compose.yml" ]
-          [ -f "$incoming/nginx/frontend.conf.template" ]
-          [ -f "$incoming/k7c-sync-runtime-content.sh" ]
-
-          # Runtime content is part of the frontend surface. Refresh the Android
-          # manifest and the currently published APK before the replica enters service.
-          bash "$incoming/k7c-sync-runtime-content.sh"
-
-          rm -rf -- /opt/wotb-tx2/frontend-replica.next
-          mkdir -p /opt/wotb-tx2/frontend-replica.next/deploy
-          cp -a /opt/wotb-tx2/frontend-replica.incoming/deploy/tx \
-            /opt/wotb-tx2/frontend-replica.next/deploy/tx
-          rm -rf -- /opt/wotb-tx2/frontend-replica
-          mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
-
           docker_cmd() {
             if docker info >/dev/null 2>&1; then
               docker "$@"
@@ -163,6 +146,31 @@ jobs:
             echo 'TX2 deploy user cannot access Docker directly or through passwordless sudo.' >&2
             exit 1
           }
+
+          incoming=/opt/wotb-tx2/frontend-replica.incoming/deploy/tx
+          stable=/opt/wotb-tx2/frontend-replica/deploy/tx
+          [ -f "$incoming/frontend-shadow.compose.yml" ]
+          [ -f "$incoming/nginx/frontend.conf.template" ]
+          [ -f "$incoming/k7c-sync-runtime-content.sh" ]
+
+          # TX2 uses the same Business API upstream as TX1. Fail before touching
+          # runtime content or live files; never wait while holding the host lock.
+          source "$incoming/runtime-check-lib.sh"
+          health="$(docker_cmd run --rm --network host curlimages/curl:8.12.1 \
+            --fail --silent --show-error --connect-timeout 3 --max-time 10 \
+            http://10.20.0.1:8087/api/health)"
+          assert_frontend_backend_capabilities <<< "$health"
+
+          # Runtime content is part of the frontend surface. Refresh the Android
+          # manifest and the currently published APK before the replica enters service.
+          bash "$incoming/k7c-sync-runtime-content.sh"
+
+          rm -rf -- /opt/wotb-tx2/frontend-replica.next
+          mkdir -p /opt/wotb-tx2/frontend-replica.next/deploy
+          cp -a /opt/wotb-tx2/frontend-replica.incoming/deploy/tx \
+            /opt/wotb-tx2/frontend-replica.next/deploy/tx
+          rm -rf -- /opt/wotb-tx2/frontend-replica
+          mv /opt/wotb-tx2/frontend-replica.next /opt/wotb-tx2/frontend-replica
 
           # TCR is the release-artifact source of truth. TX2 never derives its image
           # from TX1 runtime state; it pulls the immutable tag published by TX1's build.

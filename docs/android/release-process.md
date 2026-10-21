@@ -2,9 +2,69 @@
 
 ## 版本与 Bridge 契约
 
-`android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，`versionCode=major*1_000_000+minor*1_000+patch`；`wotbNativeBridgeVersion` 必须等于 `contracts/android-native-bridge.json` 的 `bridgeVersion`。stage 阶段以它为准，不接受版本覆盖；publish 阶段的候选版本由操作者显式指定（见「publish 的候选身份」）。当前值直接读取文件，本文不复制。
+`android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
+`versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
+publish 阶段的候选版本改由操作者显式指定（见下节）。
+截至 2026-10-21，本候选源码为 **3.17.0 / 3017000**（`android/gradle.properties`）。
+3.16.0 已按联赛回放同页展开/整类删除与视觉优化发布（tag `android-v3.16.0`，对应 `6f5ca3ca`），其 APK 早于 #703 的装甲合并，不能复用该版本承载 armor 修复。
+3.17.0 承载 bundled armor viewer 的 HE/HESH 800 射线溅射、结果卡/热力图重做与装甲判定修复（双面间隙甲、二次跳弹、gun_mask 裁切、无效 HE fail-closed），按 **minor** 选位，详见 [3.17.0](releases/3.17.0.md)。
+Native Bridge 保持 v3；最低支持门槛保持 **3015003**，不回退也不额外抬高。后端新增接口必须先就绪，再切换网页或发布 APK。
+版本声明不代表已 stage、Android 真机验收或 publish。
+保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
+3.11.2 推荐内容管理权限 cutover、3.11.1 3D 回放可见性/地图资产加载修复、3.10.1 全等级坦克百科资料修复
+（基础资料覆盖 tiers 1–10，装备/补给建模仍限 7–10），以及 3.10.0 共享选车菜单、搜索别名、动能弹外部模块
+转正/口径碾压修复，3.9.1 积分榜公开展示优化、3.9.0 工具栏折叠、3.8.1 地球图标和此前推荐目录等功能，
+以及上游 **v0.4.10** WASM pin。3.12.0 已被 #672 占用，不能复用来发布本 bundle。
+3.11.2 的内容管理权限修正：内容域入口与请求所有权改认 `content-admin`，`tournament-admin` 不再获得内容管理；
+旧 APK 继续按 `tournament-admin` 判定，因此只持有 `content-admin` 的管理员需要更新 APK 才能管理内容；
+全站管理员由 Keycloak composite 展开同时具备两个角色，不受影响。后端先行部署不会让旧 APK 失去目录。
+`android-v3.10.0`、`android-v3.11.0` 与 `android-v3.11.2` 已固定旧源码身份；对应版本不能复用来发布新 bundle。
+3.13.0 改变随 APK 打包的装甲查看器判定/概率与场景运行时：Armor Inspector 逐层概率、BlitzKit 逐层转正/2×、
+确定性 1× 热力图、相机标定与主题场景。这是 bundled frontend/scene runtime 的行为变更，不改 wire / Bridge，
+在 main 的 3.12.0 之后按 **minor** 递增为 **3.13.0**，说明见 [3.13.0](releases/3.13.0.md)。
+Native Bridge 仍为 v3，最低支持版本门槛保持 `3000000`，不为这次功能强制升级。
+3.12.0 保留上述 3.11.2 内容管理权限修复，新增联赛回放的可选开赛时刻、显示和录入时区切换、小组号选填，以及三语术语修正；按新增中小功能选 **minor**（3.11.2 → 3.12.0），详见 [3.12.0](releases/3.12.0.md)。
+3.12.0 新增 71 条已核实回放；加上原有国服 3 条，共 74 条中英标题，20 个赛事均填完整三语名称。具体战斗时刻未知时留空，不补占位时间。
+#683 已先合入 main，源码版本为 3.13.0；本次内容接口清理以它为基线递增为 **3.13.1 / 3013001**，说明见 [3.13.1](releases/3.13.1.md)。
+用户确认被清理的旧联赛/推荐接口仅内部使用、尚无用户使用，本次明确例外选 patch，不升 major、不强制升级；一般版本规则不变。
+本候选继承 3.13.0 的装甲查看器改动以及此前联赛三语、时间和初始化事实；不复用旧候选号，不修改历史迁移。
+`android-v3.13.1` tag 已指向 `1f00bc66e75890cbe8bc116307cebffcb5ee403f`（3.13.1 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #688 修复教程导出/焦点与 Escape、名人堂上传弹层键盘、AI 复盘原始 Markdown 残留与战队汇总三语表头，随 APK 打包后按 **patch** 递增为 **3.13.2 / 3013002**，说明见 [3.13.2](releases/3.13.2.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
+3.13.2 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+`android-v3.13.2` tag 已指向 `7749b77ada9770785f45fcbe206a30816e7af20a`（3.13.2 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #670 修复教程内登录 OIDC 回跳后丢失教程位置，随 APK 打包后按 **patch** 递增为 **3.13.3 / 3013003**，说明见 [3.13.3](releases/3.13.3.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`、不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`，只声明新的候选版本。
+3.13.3 不涉及后端切换，仍按 stage、真机验收、publish 发布，本次不修改生产变量。
+`android-v3.13.3` tag 已指向 `b333c8c8b21a7a500ae33db99fa80fefd6fff1fa`（3.13.3 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #685 重做首页 IA（纯展示页、Android 条件渲染、reduced-motion、Intl 数字与 `/api/hof` 合同消费），随 APK 打包后按 **minor** 递增为 **3.14.0 / 3014000**，说明见 [3.14.0](releases/3.14.0.md)。
+3.14.0 已取得 immutable release identity 且已被 3.14.1 取代；不再 stage / publish 3.14.0（3014000 < 当前门槛 3014002）。
+PR #694 修复移动端装甲查看器热力图面法线精度回归（`dFdx/dFdy` → flat `vNormal` + highp 视线方向），随 APK 打包后按 **patch** 递增为 **3.14.1 / 3014001**，说明见 [3.14.1](releases/3.14.1.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；按用户明确指令把 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 从 `3000000` 抬到 **`3014001`**，这是 patch 强制更新的显式例外（见下）。
+3.14.1 已取得 immutable release identity（staged）；其发布流程已被 3.14.2 候选取代，不再 stage/publish 3.14.1（3014001 < 3014002，会被 floor guard 拒绝）。门槛只在 publish 时写入 production `version.json`，stage 不写。
+3.14.1 已取得 immutable release identity（staged）；本次装甲查看器显示调整（相机 product 显示缩放 + 横屏手机平板式布局 + WebGL context-lost 错误反馈/重建重试）按 **patch** 递增为 **3.14.2 / 3014002**，说明见 [3.14.2](releases/3.14.2.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；按用户指令把 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 从 `3014001` 抬到 **`3014002`**（= 本版本 versionCode），这是 patch 强制更新的显式例外延续（见下）。3.14.1 不再 publish（3014001 < 3014002，会被 floor guard 拒绝）。
+3.14.2 继承 3.14.1 并成为当前候选；3.14.1 若尚未 publish，由 3.14.2 取代，不再 stage/publish 旧候选。
+`android-v3.14.2` tag 已指向 `5ae0cc36cf494e20dbde421d78b64263956e416f`（3.14.2 已取得 immutable release identity），不能复用来承载新的 bundled frontend：
+PR #701 把装甲查看器结果卡改为概率链驱动（AP/APCR/HEAT 与命中首个 Primary 的 HE；含 0% 层链保留、纯外部命中回退确定性、同名板 occurrence 匹配与 `>99%` 显示边界），并在 Web 首页 Hero 增加 Android 下载按钮，随 APK 打包后按 **minor** 递增为 **3.15.0 / 3015000**，说明见 [3.15.0](releases/3.15.0.md)。
+本次不改 Native Bridge（保持 v3）、不改 `contracts/android-native-bridge.json`；不抬 `ANDROID_MIN_SUPPORTED_VERSION_CODE`（3.14.2 的门槛继续生效），只声明新的候选版本。
+3.15.0 成为当前候选；3.14.2 若尚未 publish，由 3.15.0 取代，不再 stage/publish 旧候选。
+这不是线上已发布版本的证明。线上版本以 production `version.json` 回读为准，
+实际发布仍须按下面的 stage、真机验证与 publish 流程完成。
+`contracts/android-native-bridge.json` 是协议 SSOT；Gradle、Native 与前端声明必须一致。
 
-Native Bridge 为 **v3**：可信本地 origin 是 LocalRuntimeServer 的固定 loopback `http://127.0.0.1:21653`，transport 是 GeckoView 内置扩展；RPC 方法 / 参数 / 结果 / capability 以 `contracts/android-native-bridge.json` 为 SSOT，Gradle、Native 与前端声明必须一致。前端随 APK 打包、与 Native 同版本发布，因此只声明 `[3]`；`guard_bridge_covered` 因此要求 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 覆盖任何前端已不再支持的 bridge。注意该守卫在 **stage preflight 与 publish 两处都执行**：floor 是 stage prerequisite，必须在合并（触发自动 stage）之前设好，见下节「强制更新门槛（minSupportedVersionCode）的抬升」。删除方法、改变参数/字段类型等 breaking 变更仍须递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、immutable origin APK、staging evidence 或 production `version.json` 后不能复用；修改 runtime 必须选新版本。
+Native Bridge 为 **v3**（3.0.0 起）：可信本地 origin 是 LocalRuntimeServer 的固定 loopback
+`http://127.0.0.1:21653`，transport 是 GeckoView 内置扩展；RPC 方法 / 参数 / 结果 / capability 与 v2 完全相同。
+v2 → v3 只因 origin 与 synthetic resource URL 改变（`android_contract.py` 把 origin 变化判为 breaking）。
+前端随 APK 打包、与 Native 同版本发布，因此只声明 `[3]`；`guard_bridge_covered` 因此要求
+`ANDROID_MIN_SUPPORTED_VERSION_CODE ≥ 3000000`，与 major 规则一致。注意该守卫在 **stage preflight 与
+publish 两处都执行**：floor 是 stage prerequisite，必须在合并（触发自动 stage）之前设好，见下节
+「强制更新门槛（minSupportedVersionCode）的抬升」。删除方法、改变参数/字段类型等
+breaking 变更仍须递增 bridgeVersion 并同步 Native/FE。版本已经产生 immutable tag、immutable origin APK
+或 staging evidence 后不能复用；修改 runtime 必须选新版本。
+
+PR B 的初始候选版本是 **2.0.1 / 2000001**。2026-10-03 的只读审计确认它没有 tag/release，
+公开 APK 与 staging evidence 均为 404；已 staged 的 2.0.0 属于 PR A，不能作为 local-first APK 发布。
 
 ## 版本号递增规则（major / minor / patch）
 
@@ -17,6 +77,8 @@ Native Bridge 为 **v3**：可信本地 origin 是 LocalRuntimeServer 的固定 
 | **patch** | 小 bug 修复 | `X.Y.Z` | 默认不抬、不强制升级；用户明确要求强制更新时为例外（见下） |
 
 **用户指令例外**：用户明确要求把强制更新门槛抬到当前候选时，patch/minor 也可以抬；必须在 PR 描述、release notes 与门槛变更记录写明理由。该例外覆盖 patch 默认不抬门槛的惯例，但不改变 major 的默认义务。
+
+**用户指令例外（2026-10-20，3.15.3）**：PR #713 按用户裁定保留 patch 等级，同时按其明确要求把门槛从 `3014002` 抬到 **`3015003`**，强制旧客户端更新到包含共面续飞判定修复的版本；不再为旧候选维持此次错误判定行为。此门槛随 3.15.3 的 publish 写入线上 `version.json`。
 
 - **归零**：minor 递增时 patch 归 0；major 递增时 minor、patch 都归 0。
 - **取最高**：一个 PR 同时含多个等级的改动，按最高等级递增。两次 publish 之间合并的多个 PR 各自在当时的 committed 版本上按自己的等级递增，最终发布版本自然体现其中最高的等级。
@@ -38,12 +100,25 @@ Native Bridge 为 **v3**：可信本地 origin 是 LocalRuntimeServer 的固定 
   - TX2 origin 是否已有该 APK（两项都以 stage 日志「Classify origin APK on TX1/TX2」的 SSH 直查结果为准；不要用公网 URL 判断——它被 302 到可覆盖的清华副本）；
   - staging evidence `wotbtools-android-vX.Y.Z.staging.json` 是否已存在；
   - production `version.json` 是否已 publish 该版本。
-  全部不存在 → 版本尚未被消耗，可以继续修复并复用；任意一项存在 → 版本已锁：已完整 stage 的候选可以照常 publish（main 上的无关修改不影响它）；部分 stage 只有在 `origin/main` 仍是原提交时才能幂等重跑补齐；任何会改变 candidate identity 的修改都必须使用更高版本。也就是：PR 合并前的 review fix 通常保持原版本；合并后 stage 一旦部分成功，就可能已经锁定版本，此后改变 Android candidate 的修改不能再复用原版本。
-- **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时由用户裁定——等级决定是否强制全部用户更新，是产品决策。
-- **记录**：PR 描述写明所选等级与理由；`docs/android/releases/<版本>.md` 的 `Minimum supported version` 行与等级一致（major 写 `raised to <新 versionCode> (<版本>)`，minor/patch 写 `unchanged at …`）。
-- **门槛按发布候选相对线上版本判定（批量发布）**：两次 publish 之间可以合并多个 PR，最终只 publish 其中最新的候选。门槛义务看**候选 major 与线上 `version.json` 的 `latestVersionName` major** 的比较，不看候选自身最后一次递增的等级：
-  - 候选 major **大于**线上 major（中间合并过尚未发布的 major）⇒ publish 前必须把门槛设为候选 major 的 `X.0.0`（`X×1_000_000`）——**即使候选本身是 minor/patch**。未发布的 major 的强制义务由最终候选继承，不会因为候选是 patch 而丢失。
-  - 候选与线上**同 major** ⇒ 默认不得改动门槛（minor/patch 不强制）；用户明确指令的例外见上。
+
+  全部不存在 → 版本尚未被消耗，可以继续修复并复用；任意一项存在 → 版本已锁：已完整 stage 的候选可以照常
+  publish（main 上的无关修改不影响它）；部分 stage 只有在 `origin/main` 仍是原提交时才能幂等重跑补齐；任何会
+  改变 candidate identity 的修改都必须使用更高版本。也就是：PR 合并前的 review fix 通常保持原版本；合并后
+  stage 一旦部分成功，就可能已经锁定版本，此后改变 Android candidate 的修改不能再复用 3.0.0。
+- **bug 的大小**：中大型 = 影响核心结果的正确性或可用性（回放/统计/判定结果错误、崩溃、无法登录、
+  数据丢失等），或旧客户端继续使用会持续得到错误结果；小 = 显示/样式/边缘场景，影响面有限。拿不准时
+  由用户裁定——等级决定是否强制全部用户更新，是产品决策。
+- **记录**：PR 描述写明所选等级与理由；`docs/android/releases/<版本>.md` 的
+  `Minimum supported version` 行与等级一致（major 写 `raised to <新 versionCode> (<版本>)`，
+  minor/patch 写 `unchanged at …`）。
+- **门槛按发布候选相对线上版本判定（批量发布）**：两次 publish 之间可以合并多个 PR，最终只 publish
+  其中最新的候选。门槛义务看**候选 major 与线上 `version.json` 的 `latestVersionName` major** 的比较，
+  不看候选自身最后一次递增的等级：
+  - 候选 major **大于**线上 major（中间合并过尚未发布的 major）⇒ publish 前必须把门槛设为候选 major 的
+    `X.0.0`（`X×1_000_000`）——**即使候选本身是 minor/patch**。例：线上 2.3.3，先合并 3.0.0、再合并
+    3.0.1，只 publish 3.0.1 ⇒ 门槛 = `3000000`，旧客户端被强制更新到 3.0.1；未发布的 major 的强制义务
+    由最终候选继承，不会因为候选是 patch 而丢失。
+  - 候选与线上**同 major** ⇒ 默认不得改动门槛（minor/patch 不强制）；用户明确指令的例外见上（3.14.1 / 3014001；3.14.2 / 3014002；3.15.3 / 3015003）。
   - 包含 Native Bridge wire breaking 时，门槛还须满足 publish 现有的 bridge / cutover 守卫（以守卫为准）。
   - 现有 publish 守卫在 bridge 不变时**不会**从历史推导未发布 major 的门槛要求（只校验门槛 ≤ 候选 versionCode），这一步由操作者按本条执行。也可以选择先 publish 每个 major 再发布后续 minor/patch；在没有更严格的 bridge / cutover 要求时两种做法的门槛结果相同。
 - **major 的发布动作（顺序固定）**：① **先把仓库变量 `ANDROID_MIN_SUPPORTED_VERSION_CODE` 设为 `X×1_000_000`** → ② 合并候选 PR → ③ 合并到 main 后由正式 workflow 自动执行：Android 自动 stage，以及该 PR 一并带来的基础设施改动（如 Caddy）→ ④ 等两者**都**成功 → ⑤ 真机验收 → ⑥ `publish(version=<候选>)`。变量必须在合并/stage **之前**设置——stage preflight 本身就跑 `guard_min_supported` / `guard_local_first_cutover` / `guard_bridge_covered`，floor 没到位会 fail-closed，所以它不只是 publish 的前提。随候选 PR 一起改的基础设施**只能**在合并后由 main-only 的正式 workflow 部署（`caddy.yml` 的手动 dispatch 也只接受 `refs/heads/main` 且做 freshness 校验），不要求、也不允许在合并前部署——不要手工 SSH 改生产、不要从 PR 分支复制文件、不要放宽 workflow 门禁。
@@ -167,7 +242,11 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 
 ## 强制更新门槛（minSupportedVersionCode）的抬升
 
-门槛值来自 GitHub Actions variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（**不在仓库内**，见 `gh variable list`；本文不记录逐次抬升历史），但它**只能随一次 "严格更新版本" 的 publish 写进 version.json**：`classify_prod` 把 `minSupportedVersionCode` 计入同版本一致性判定，对 production 同版本直接注入新门槛会得到 `prod_equal_conflict`（fail-closed）——同位改写被刻意禁止，抬门槛必然伴随一次新版本发布。按「版本号递增规则」，抬门槛默认只在发布候选的 major 高于线上 major 时发生（含继承未发布 major 的 minor/patch 候选），门槛值为候选 major 的 `X.0.0`；用户明确指令的 patch/minor 例外见「版本号递增规则」。最小动作四步（**顺序不可交换**）：
+门槛值来自 GitHub Actions variable `ANDROID_MIN_SUPPORTED_VERSION_CODE`（**不在仓库内**，见
+`gh variable list`），但它**只能随一次"严格更新版本"的 publish 写进 version.json**：
+`classify_prod` 把 `minSupportedVersionCode` 计入同版本一致性判定，对 production 同版本直接注入
+新门槛会得到 `prod_equal_conflict`（fail-closed）——同位改写被刻意禁止，抬门槛必然伴随一次
+新版本发布。按「版本号递增规则」，抬门槛默认只在发布候选的 major 高于线上 major 时发生（含继承未发布 major 的 minor/patch 候选），门槛值为候选 major 的 `X.0.0`；用户明确指令的 patch/minor 例外（3.14.1 → `3014001`；3.14.2 → `3014002`；3.15.3 → `3015003`）见「版本号递增规则」。最小动作四步（**顺序不可交换**）：
 
 1. 按变更等级递增 `android/gradle.properties:wotbVersion`（major，或同一未发布 major 之后的 minor/patch 候选；Version-as-Code，普通 PR），先不合并；
 2. **先把变量设为目标门槛值**（`guard_min_supported` 校验 ≤ 新版本 code）——对 bridge / major cutover 这是 **stage prerequisite**：变量仍是旧 major 门槛时，合并触发的自动 stage 会在 `guard_bridge_covered` 上 fail-closed；
@@ -177,6 +256,8 @@ Native Bearer runtime 请求头集合为 Authorization、Content-Type、Content-
 设置变量本身**不动** production `version.json`，因此**不会立刻**强制线上旧客户端更新——真正影响客户端的 commit point 仍是 publish 最后写入 `version.json`。但变量设为 `X×1_000_000` 之后，**不要再 stage / publish 任何低于该门槛的旧 major 候选**；这是有意的 cutover。若顺序搞错导致 stage fail-closed，修好变量后对同一版本幂等重跑即可（恢复路径，不是正常流程）——floor 守卫在 stage preflight 就失败，发生在任何 immutable artifact 之前，版本未被消耗。
 
 客户端语义（`MainActivity.onVersionReady`，读 `version.json`）：`installedVersionCode < minSupportedVersionCode` ⇒ **强制更新**屏（阻塞入口）；`installedVersionCode < latestVersionCode` ⇒ 仅可选更新提示；其余不动。
+
+- **3015003（3.15.3；2026-10-20 用户要求，随本候选 publish 生效）** —— 本次是用户指令的 patch 强制更新例外：所有低于 3.15.3 的客户端必须升级，以取得共面续飞判定修复。目标为 `latestVersionCode = minSupportedVersionCode = 3015003`；设置仓库变量或完成 stage 均不代表该门槛已经对线上客户端生效。
 
 ## Rollout 与验证
 
