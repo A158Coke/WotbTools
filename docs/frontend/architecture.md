@@ -29,7 +29,7 @@ App.vue
 
 **视图私有 query 键**（`navigation.js: locationForView`）：名人堂筛选（tab/page/nation/type/tier/bt/nick/limit）、坦克百科筛选与详情（q/sort/tank/config…）、以及装甲查看器 / 射击复现场景参数（tank/shooter/config/scfg/shell/shot/world/heatmap + 相机与显示档 az/h/d/eqcal/eqenh/quality/move/rel/clean/debug）只属于各自的视图：导航到别的视图时整组丢掉（`locationForView` 三条清理规则），否则从场景切走会在 URL 里留下上一发的 `tank/shot/shooter/…`。留在同一视图内的导航保留全部参数。
 
-3D 回放与射击分析是工作台能力（不再有独立页面）：`agent-replay` / `agent-shots` 深链与工作台 tab 都解析为同一个 kept-alive Replay Workspace 的 `3d` / `shots` pane，与 2D / AI 共用同一条 session（`props.file` 消费工作台已选回放，自身不再有上传入口），并保留工作台上层导航。五个能力永久对所有用户展示，导航不按 admin role 收敛 Agent 深链。3D / shots 在匿名使用个人回放时显示 `ReplayCapabilityAuthGate`；登录或选择已验证的官方示例后才加载 pane；AI 在现有投影边界前门控。`test:browser-interaction` 用真实输入验证普通用户与匿名路径以及 shots → armor 交接。
+3D 回放与射击分析是工作台能力：`agent-replay` / `agent-shots` 深链与工作台 tab 都解析为同一个 kept-alive Replay Workspace 的 `3d` / `shots` pane，与 2D / AI 共用同一条 session（`props.file` 消费工作台已选回放，自身没有上传入口），并保留工作台上层导航。五个能力永久对所有用户展示，导航不按 admin role 收敛 Agent 深链。3D / shots 在匿名使用个人回放时显示 `ReplayCapabilityAuthGate`；登录或选择已验证的官方示例后才加载 pane；AI 在现有投影边界前门控。`test:browser-interaction` 用真实输入验证普通用户与匿名路径以及 shots → armor 交接。
 
 AI Review 正常挂载：`?view=ai-review` deep link 与 workspace tab 都解析为同一个 keep-alive 的 Replay Workspace 及其 `ai` 能力，该 pane 在共享的 auth + local-projection 门控之后挂载 `AiReviewWorkspacePane.vue` / `AiReviewPanel.vue`（不存在前端维护门控；`ai_maintenance` locale 字符串没有消费者）。传输逻辑留在 `api/ai-review.ts`；AI 输入是客户端规范投影（`replay-local/ai`），后端是 Yecao ai-service（见 `docs/operations/ai-service.md`）。Replay 解析与 Battle Playback 仍可通过各自现有的 tabs 使用。
 
@@ -39,7 +39,7 @@ AI Review 正常挂载：`?view=ai-review` deep link 与 workspace tab 都解析
 
 应用导航由 `frontend/src/shared/navigation.ts` 中与 feature 解耦的类型化 `NAVIGATE_VIEW_KEY` 定义。`AppShell` 提供该命令；app 与 feature 消费者注入共享契约，而不导入 router 内部实现或 `app/` 实现模块。生产代码不得引入魔法字符串形式的 `inject('navigate')` / `provide('navigate')` 调用。
 
-积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开「联赛积分榜」是主导航栏目，位于坦克百科之后；主导航、页面/浏览器标题与导出标题共用 `tournament.title`，公开入口不再重复放到更多面板/页面中。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
+积分赛管理入口由 `useAuth.isTournamentAdmin` 所有（真实 token 中的 `tournament-admin`，全站管理员通过 Keycloak 复合角色继承），不复用全站 `isAdmin` 放大专属角色权限。公开「联赛积分榜」是主导航栏目，位于坦克百科之后；主导航、页面/浏览器标题与导出标题共用 `tournament.title`，公开入口不重复放到更多面板/页面中。公开积分页持有正式 standings，`utils/tournamentPointsExport.ts` 提供屏幕/Excel/打印文档共享的列投影；管理页的历史导入、预览和幂等提交状态仍归 `useTournamentPointsAdmin` 所有，JSON 文件只在文件边界转为 OpenAPI request，经 `api/tournament-points.ts` 发起请求。
 
 ## 依赖与状态规则
 

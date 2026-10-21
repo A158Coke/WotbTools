@@ -319,7 +319,7 @@ Replay stays on user device
    -> Agent WASM
    -> WotbTools canonical facts / projections
    -> local consumers
-   -> only explicit server-side capability payloads cross the network (for example AI projection or HoF evidence)
+   -> 只有显式的服务器侧能力 payload 过网（例如 AI projection 或 HoF evidence）
 ~~~
 
 这次切换因此删除服务端 Java parser、Processing Job / Dataset API、Parser Worker、RabbitMQ、MinIO temporary replay workspace 以及相关 processing tables、deployment、CI 与 IaC。这里不是把 executor 从 Yecao 搬到 TX，而是**删除服务器侧 Replay execution 这个职责本身**。
@@ -457,7 +457,7 @@ SPA 产物文件名带内容哈希，部署整目录替换时，仍打开的页�
 
 2026-10-04，Playback sizing 的 authority 从断点固定值改为可用空间：断点只决定结构，尺寸由 Playback workspace 的可用宽高决定，可用高度由视口容量减去实测 persistent HUD 与 Transport 得出，避免读取根元素内容高度形成自指。`playback-workspace.css` 成为共享宏几何的唯一 owner，原先按断点拆分的 `playback-pc.css`、`playback-tablet.css`、`playback-mobile-fullscreen.css`、`playback-fullscreen-form-contract.css` 删除。2D 与 3D 共用 primary composition；Display 是锚定在 ⚙ 上的配置面，Details 是可拖动的上下文浮窗。
 
-### 交付流量与发布权威分离
+### Playback 尺寸权威从断点改为可用空间
 
 2026-10-05～12 的交付调整先处理 APK 下载挤占 TX 公网带宽，再处理发布上传耗时。APK 公网分发进入副本链路，Android 的 3D 资产由 `AgentAssetProxy.kt` 截获固定路径、直连对象存储并使用磁盘缓存；WebView 消费的受控路径与 Native 实际获取字节的网络路径因此不同，不能仅根据页面 URL 判断资产是否经过 TX 网关。
 
