@@ -903,6 +903,23 @@ describe('续飞首层间隙甲跳弹（2026-10-21）', () => {
     });
 });
 
+describe('0mm 主装甲 3× 口径规则（2026-10-21）', () => {
+    it('续飞命中 0mm 主装甲且角度≥跳弹角时按 overmatch 击穿，不判跳弹', () => {
+        const plate = makeMesh(new THREE.PlaneGeometry(2, 2), 'turret', 0, (m) => {
+            m.rotation.y = -10 * Math.PI / 180;
+            m.position.set(0, 0, 0);
+            m.updateMatrix();
+        });
+        const pack = packOf([plate]);
+        const sim = simulateContinuation(pack, new THREE.Vector3(-2, 0, 0), new THREE.Vector3(1, 0, 0), {
+            remIn: 100, caliber: 120, normalizationRad: 0, thickMul: 1,
+            ricochetRad: 70 * Math.PI / 180,
+        });
+        expect(sim.cls).toBe(1);
+        expect(sim.layers.map(l => [l.thickness, l.ricochet, l.penetrated])).toEqual([[0, false, true]]);
+    });
+});
+
 describe('背面命中过滤（FrontSide 判定口径）', () => {
     it('双面闭合盒的正/背两个交点只保留迎面一个', () => {
         const box = makeMesh(new THREE.BoxGeometry(2, 2, 2), 'spaced', 50);
