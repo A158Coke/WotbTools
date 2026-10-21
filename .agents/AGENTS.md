@@ -73,12 +73,7 @@
    ├─ build / config / dependency / architecture → broader validation（可能触发 Full）
    └─ 无法确定影响范围 → Full-test 例外，先说明原因
 
-   **CI 结果获取——实时 watch，禁止 sleep 轮询**：等待 CI 一律用阻塞式 watch（流式输出、失败退出非 0），不要 `sleep N` 之后再查状态：
-   - 实时看整个 PR：`gh pr checks <pr-number> --watch`；
-   - 等某个 run 的结论：`gh run watch <run-id> --exit-status --compact`；
-   - 取 run-id：`gh run list --branch <branch> --limit 1 --json databaseId,headSha`。
-   刚 push 完 checks 尚未创建时，先取得绑定 current head 的 run-id 再 watch。`--exit-status` 不得被无 `pipefail` 的管道吞掉。
-   Agent 等待时使用任务自带完成通知或一次阻塞式等待；有其它工作则并行推进，禁止 `sleep N` 轮询。
+   **CI 结果归属**：实现 Agent 完成本地必要验证并 push/open PR 后即停止，不等待或监控 CI；由审计侧之后读取 CI 结果。PR CI 执行 repository-level authoritative validation。CI 失败后只复现失败 job 对应的本地范围，修复后 push 让 PR CI 重新验证。
 
    迭代验证去重与失效：
    - CI 失败后只复现失败 job 对应的本地范围，修复后 push 让 PR CI 重新成为权威验证；
