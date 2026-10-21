@@ -460,6 +460,9 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
     expect(kernel).toContain('resolveCardChance({')
     expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
   })
+  it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
+    expect(kernel).toContain("sub = l.ricochet ? L.shotRicochetSeg : '';")
+  })
 })
 
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {

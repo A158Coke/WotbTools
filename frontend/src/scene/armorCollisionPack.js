@@ -312,7 +312,9 @@ int rcSegment(vec3 bouncePos, vec3 reflDir, float remIn, out float penOut, out f
             // 跳弹后的炮弹可以再次跳弹：仅本段首个非外部层（主装甲或间隙甲）、
             // 非 3× 口径、入射角达到当前弹种跳弹角时，带 75% 剩余穿深反射进入下一段。
             // 外部模块（chassis/gunBarrel）已在上面 flat 消费并递增 hitIndex，不会走到这里。
-            bool threeCal = th > 0.0 && caliber > th * 3.0;
+            // 0mm 是合法板厚：3× 口径规则按 0 计算为 true（与 penetration.js 同），
+            // 不能因厚度为 0 而漏掉 overmatch 并误判跳弹。
+            bool threeCal = caliber > th * 3.0;
             if (sec <= 3 && hitIndex == 0 && !threeCal && angle >= ricochet) {
                 nextOrigin = ro + reflDir * bestT;
                 nextDir = normalize(reflect(reflDir, nW));
@@ -1016,7 +1018,8 @@ export function simulateContinuation(pack, bouncePos, reflDir, params) {
             }
             const cosA = Math.min(Math.abs(h.normal.dot(dir)), 1);
             const angle = Math.acos(cosA);
-            const threeCal = th > 0 && caliber > th * 3;
+            // 与 penetration.js 一致：0mm 板也满足 3× 口径规则（overmatch）。
+            const threeCal = caliber > th * 3;
             // 与 penetration.js 相同：只有本段首个非外部层可以新跳弹（首个命中可以是
             // 间隙甲；外部模块已在 variant 分支 flat 消费并递增 hitIndex）。
             const ricocheted = (isPrimary || h.section === 'spaced') && hitIndex === 0 && !threeCal && angle >= ricochetRad;
