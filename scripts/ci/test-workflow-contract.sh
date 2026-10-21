@@ -357,13 +357,14 @@ for owner in ("business-api", "frontend"):
     assert "needs.build.outputs" not in json.dumps(workflow, ensure_ascii=False), owner
 
 frontend_workflow = load(workflow_dir / "frontend.yml")
+assert frontend_workflow["env"]["ASSET_BASE_URL"] == "https://assets.wotbtools.com"
 frontend_deploy = next(
     step for step in frontend_workflow["jobs"]["deploy"]["steps"]
     if step.get("name") == "Reconcile only Frontend under the TX host lock"
 )
 frontend_env = frontend_deploy["env"]
 assert frontend_env["WOTB_DEPLOY_CONFIG_SHA"] == "${{ github.sha }}"
-assert frontend_env["ASSET_BASE_URL"] == "${{ vars.ASSET_BASE_URL }}"
+assert "ASSET_BASE_URL" not in frontend_env
 assert "TX_FRONTEND_IMAGE_REF" not in frontend_env
 frontend_events = frontend_workflow.get("on", frontend_workflow.get(True, {}))
 assert "deploy/tx/with-deploy-lock.sh" in frontend_events["push"]["paths"]
