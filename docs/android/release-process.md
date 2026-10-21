@@ -5,9 +5,10 @@
 `android/gradle.properties:wotbVersion=X.Y.Z` 是**当前源码**版本，
 `versionCode=major*1_000_000+minor*1_000+patch`。stage 阶段以它为准，不接受版本覆盖；
 publish 阶段的候选版本改由操作者显式指定（见下节）。
-截至 2026-10-21，本候选源码为 **3.17.0 / 3017000**（`android/gradle.properties`）。
+截至 2026-10-21，本候选源码为 **3.17.1 / 3017001**（`android/gradle.properties`）。
 3.16.0 已按联赛回放同页展开/整类删除与视觉优化发布（tag `android-v3.16.0`，对应 `6f5ca3ca`），其 APK 早于 #703 的装甲合并，不能复用该版本承载 armor 修复。
 3.17.0 承载 bundled armor viewer 的 HE/HESH 800 射线溅射、结果卡/热力图重做与装甲判定修复（双面间隙甲、二次跳弹、gun_mask 裁切、无效 HE fail-closed），按 **minor** 选位，详见 [3.17.0](releases/3.17.0.md)。
+3.17.0 已取得 immutable tag（`android-v3.17.0`）并完成 stage，不能复用来承载后续修复；PR #721 修正 HE 溅射三态语义（零有效样本=0、采样器不可用显式报错、客户端不再单射线兜底），按 **patch** 递增为 **3.17.1 / 3017001**，说明见 [3.17.1](releases/3.17.1.md)。影响限于 HE 命中履带/炮管/间隙甲等主装全在爆炸半径外的边缘场景，不强制旧客户端更新，门槛保持 `3015003`。
 Native Bridge 保持 v3；最低支持门槛保持 **3015003**，不回退也不额外抬高。后端新增接口必须先就绪，再切换网页或发布 APK。
 版本声明不代表已 stage、Android 真机验收或 publish。
 保留 main 已合并的 3.12.0 联赛回放开赛时刻/显示与录入时区/小组号选填/三语术语修正与 71 条已核实回放、
