@@ -15,7 +15,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class AiReviewControllerTest {
+class AiReviewControllersTest {
     @Test void submissionControllerOnlyConvertsAndSubmits() {
         final AiReviewRequestConverter converter = mock(AiReviewRequestConverter.class);
         final AiReviewSubmissionService service = mock(AiReviewSubmissionService.class);

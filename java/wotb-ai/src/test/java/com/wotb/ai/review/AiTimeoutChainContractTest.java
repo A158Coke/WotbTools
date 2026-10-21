@@ -16,8 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>AI Review 已随服务拆分迁出 wotb-web（独立 stateless {@code ai-service}，模块 {@code java/wotb-ai}）：
  * SSE {@code SseEmitter} 超时由 {@code com.wotb.ai.review.service.AiReviewSubmissionService} 与
- * {@code java/wotb-ai/.../application.yml} 承担，因此本契约的 Java 锚点指向那里。wotb-ai 是 wotb-web 的
- * test-scope 依赖，测试类仍留在 wotb-web 测试树内。</p>
+ * {@code java/wotb-ai/.../application.yml} 承担，因此本契约的 Java 锚点指向那里。</p>
  *
  * <p><b>归属</b>：AI provider 配置与 secret 只属于 Yecao {@code ai-service}
  * （{@code deploy/docker-compose.prod.yml} + {@code .github/workflows/ai-service.yml}）。TX 业务编排
