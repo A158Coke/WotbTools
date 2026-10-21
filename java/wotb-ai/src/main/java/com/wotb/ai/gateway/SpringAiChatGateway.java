@@ -9,7 +9,6 @@ import com.openai.errors.OpenAIServiceException;
 import com.openai.models.completions.CompletionUsage;
 import com.wotb.core.replay.processing.AiNotConfiguredException;
 import com.wotb.ai.config.AiModelProperties;
-import com.wotb.ai.review.AiReviewEventLog;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
@@ -835,7 +834,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                 totals.totalTokens += total;
             }
         }
-        LOGGER.info(AiReviewEventLog.line("ai_token_usage", correlationId,
+        LOGGER.info(AiEventLog.line("ai_token_usage", correlationId,
                 "mode", mode, "inputTokens", input, "outputTokens", output,
                 "totalTokens", total, "usageMissing", missing ? 1 : 0,
                 "reasoningTokens", reasoningTokens(usage), "cacheHitTokens", cacheHitTokens(usage),
@@ -993,7 +992,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private void logUpstreamStarted(final AiChatRequest request, final String model,
                                     final String correlationId, final int attempt,
                                     final long remainingNanos) {
-        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_started", correlationId,
+        LOGGER.info(AiEventLog.line("ai_upstream_call_started", correlationId,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "attempt", attempt,
@@ -1012,7 +1011,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private void logUpstreamCompleted(final String correlationId, final int attempt,
                                       final long attemptStartNanos,
                                       final AiChatResponse result) {
-        LOGGER.info(AiReviewEventLog.line("ai_upstream_call_completed", correlationId,
+        LOGGER.info(AiEventLog.line("ai_upstream_call_completed", correlationId,
                 "attempt", attempt,
                 "durationMs", Math.max(0L,
                         (nanoTimeSource.getAsLong() - attemptStartNanos) / NANOS_PER_MILLI),
@@ -1034,7 +1033,7 @@ public class SpringAiChatGateway implements AiChatGateway {
                                    final int retryNumber,
                                    final AiUpstreamException failure,
                                    final long backoffMillis) {
-        LOGGER.warn(AiReviewEventLog.line("ai_transport_retry", correlationId,
+        LOGGER.warn(AiEventLog.line("ai_transport_retry", correlationId,
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "retryNumber", retryNumber,
@@ -1046,7 +1045,7 @@ public class SpringAiChatGateway implements AiChatGateway {
     private void logUpstreamFailed(final AiChatRequest request,
                                    final AiUpstreamException failure,
                                    final int attempt) {
-        LOGGER.warn(AiReviewEventLog.line("ai_upstream_call_failed", failure.correlationId(),
+        LOGGER.warn(AiEventLog.line("ai_upstream_call_failed", failure.correlationId(),
                 "stage", stageOf(request.analysisMode()),
                 "mode", request.analysisMode(),
                 "attempt", attempt,

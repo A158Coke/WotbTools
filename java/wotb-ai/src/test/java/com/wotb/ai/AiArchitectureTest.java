@@ -45,6 +45,19 @@ class AiArchitectureTest {
     }
 
     @Test
+    void commonPackagesDoNotDependOnFeatures() throws IOException {
+        try (Stream<Path> sources = javaSources()) {
+            final List<Path> violations = sources.filter(source -> {
+                final String content = read(source);
+                final boolean common = content.matches("(?s).*?package com\\.wotb\\.ai\\.(?:gateway|config|prompt)(?:\\.[\\w.]+)?;.*");
+                return common && (content.contains("com.wotb.ai.review.")
+                        || content.contains("com.wotb.ai.tournament."));
+            }).toList();
+            assertTrue(violations.isEmpty(), "Common AI packages must not depend on features: " + violations);
+        }
+    }
+
+    @Test
     void aiModuleDoesNotDependOnWebModule() throws IOException {
         final String pom = Files.readString(MODULE_POM);
         assertFalse(pom.contains("<artifactId>wotb-web</artifactId>"),
