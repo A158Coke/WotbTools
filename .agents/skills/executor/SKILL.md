@@ -19,10 +19,10 @@ description: >
 
 ## 输入
 
-二选一：
+实现路径（二选一），或 post-merge cleanup 路径：
 
 - 实现路径：`docs/current-plan.md`（必须完整读取，不要跳过任何章节）；
-- 或者用户手动贴出的 plan 文本；
+- 实现路径：用户手动贴出的 plan 文本（先按步骤 1、2 校验；执行前按步骤 3 写入任务 worktree 的唯一 `docs/current-plan.md`）；
 - post-merge cleanup 路径：已合并 PR / merge commit / 已确认合并的任务分支。此路径不要求存在
   `docs/current-plan.md`，先验证 merge 事实，再加载 `.agents/playbooks/post-merge-cleanup.md`。
 
@@ -32,8 +32,8 @@ description: >
    的 `merged=true` 或等价 merge commit 事实；确认后直接加载 `.agents/playbooks/post-merge-cleanup.md`
    执行其 cleanup contract。若无法确认已合并，停止并汇报，不把未合并任务当 cleanup。此路径不进入
    下方 implementation phases，也不要求重新创建/读取 approved plan。
-1. **完整读取计划**：实现路径读 `docs/current-plan.md`，按 Designer canonical schema 读取 `# Execution Steps`（每步的 `Status` / Goal / Scope / Files / Change / Validation / Commit boundary）、`# Impact Surface`、`# Validation / Outside Judge`、`# Non-Goals`、`# Unverified Assumptions` 与 `# Evidence Gaps`。不假设另外存在“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
-2. **授权校验**：plan 必须已获用户批准；`# Unverified Assumptions` / `# Evidence Gaps` 中存在未确认且会阻塞执行的项 → 停下汇报，不执行；用户明确说"执行/批准"即视为已授权。
+1. **读取并校验计划**：实现路径按来源读取完整计划：文件来源读取 `docs/current-plan.md`；手贴来源使用用户提供的完整文本。两种来源都必须符合 `.agents/skills/designer/SKILL.md` 的 canonical schema，检查全部必需 section、`# Execution Steps` 每步的 `Status` / Goal / Scope / Files / Change / Validation / Commit boundary，以及步骤状态值；缺失或结构不符时停止并返回 Designer 修正，不自行补写计划。不得假设另有“分步计划状态表”“影响面清单”“验收标准”“待确认项”等第二套字段。
+2. **授权校验**：无论来源，plan 都必须已获用户批准；手贴文本只有在当前对话或随附上下文中能确认其已获批准时才可继续。`# Unverified Assumptions` / `# Evidence Gaps` 中存在未确认且会阻塞执行的项 → 停下汇报，不执行；用户明确说"执行/批准"即视为已授权。
 3. **从已验证的最新 main remote 创建任务 worktree 与分支（分支名符合任务主题）**：
    - 从计划内容提取主题：优先 `# Goal` / `# Actual Outcome`；无明确标题时用 `# Impact Surface` 中最核心的动词短语。
    - 分支名 grammar：`<branch> = feat/<kebab-case-suffix> | fix/<kebab-case-suffix> | refactor/<kebab-case-suffix> | chore/<kebab-case-suffix>`。
@@ -52,6 +52,10 @@ description: >
    - 在任务 worktree 中确认分支与起点；后续读取、编辑、验证、提交、推送和开 PR
      均以该 worktree 为工作目录。若批准的计划仅存在于原检出，先将该计划文件带入任务
      worktree 并核对内容，保留原检出及其其他改动。
+   - 手贴来源必须在执行任何计划步骤前物化为任务 worktree 中唯一的 `docs/current-plan.md`：
+     目标文件不存在时，将用户提供的完整文本原样写入；目标文件已存在且内容完全一致时复用；
+     已存在但内容不同则停止为 `BLOCKED`，不得覆盖、合并或选择其中一份，交由用户 / Designer
+     明确唯一获批版本。文件来源若需从原检出搬入，也遵守同一冲突规则。确认唯一文件内容与已校验、已批准的计划一致后才可进入步骤 4。
 4. **确定执行顺序**：按 `# Execution Steps` 顺序执行 `Status: PENDING` 的步骤；
    只执行当前计划内步骤。
 5. **逐项执行（每步）**：
@@ -81,7 +85,8 @@ description: >
    - **review-with-docs 零 blocker 即验收通过，PASS 后才提交并开 PR**：提交（git add/commit，
      中文信息 + Co-Authored-By，按 `.agents/AGENTS.md` 约定）→ 推送 → `gh pr create`，
      无需再等用户指示；存在 blocker/未闭环问题时禁止开 PR。
-8. **计划文件收尾**：所有 execution step 的 `Status` 置为 `DONE`；按 `current-plan.md` 头部约定
+8. **计划文件收尾**：无论计划最初来自文件还是手贴文本，状态更新与收尾都只操作任务 worktree
+   中唯一的 `docs/current-plan.md`。所有 execution step 的 `Status` 置为 `DONE`；按该文件头部约定
    决定清理回初始状态（默认保留完成记录，询问用户是否清理）。
    任务分支与提交保留；review-with-docs 零 blocker 时按步骤 7 在 PASS 后开 PR。
    PR 合并后加载 `.agents/playbooks/post-merge-cleanup.md` 清理分支、worktree 与计划文件。
