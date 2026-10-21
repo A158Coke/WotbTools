@@ -1,7 +1,6 @@
 package com.wotb.ai.config;
 
-import com.wotb.ai.review.AiReviewExceptionHandler;
-
+import com.wotb.ai.http.AiSecurityErrorWriter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -31,14 +30,14 @@ public class AiServiceSecurityConfig {
         final BearerTokenAccessDeniedHandler bearerAccessDenied = new BearerTokenAccessDeniedHandler();
         final AuthenticationEntryPoint entryPoint = (request, response, error) -> {
             if (request.getRequestURI().startsWith("/api/ai/tournament-groups/")) {
-                AiReviewExceptionHandler.writeSecurityError(response, 401, "AUTH_UNAUTHENTICATED");
+                AiSecurityErrorWriter.write(response, 401, "AUTH_UNAUTHENTICATED");
             } else {
                 bearerEntryPoint.commence(request, response, error);
             }
         };
         final AccessDeniedHandler deniedHandler = (request, response, error) -> {
             if (request.getRequestURI().startsWith("/api/ai/tournament-groups/")) {
-                AiReviewExceptionHandler.writeSecurityError(response, 403, "AUTH_FORBIDDEN");
+                AiSecurityErrorWriter.write(response, 403, "AUTH_FORBIDDEN");
             } else {
                 bearerAccessDenied.handle(request, response, error);
             }

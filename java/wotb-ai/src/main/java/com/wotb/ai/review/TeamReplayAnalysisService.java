@@ -1,5 +1,7 @@
 package com.wotb.ai.review;
 
+import com.wotb.ai.gateway.AiEventLog;
+
 import com.wotb.core.model.Battle;
 import com.wotb.core.replay.reconstruction.ReplayReconstruction;
 import com.wotb.core.replay.evidence.TeamAiReviewResult;
@@ -385,7 +387,7 @@ public class TeamReplayAnalysisService {
                                     final TeamAiReviewResultParser.ParseResult parsed,
                                     final int attempt,
                                     final boolean countAsSchemaFailure) {
-        LOGGER.warn(AiReviewEventLog.line("ai_review_contract_failed", correlationId,
+        LOGGER.warn(AiEventLog.line("ai_review_contract_failed", correlationId,
                 "attempt", attempt,
                 "failureCategory", failureCategories(parsed),
                 "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
@@ -401,7 +403,7 @@ public class TeamReplayAnalysisService {
     private void logContractSalvage(final String correlationId,
                                     final TeamAiReviewResultParser.ParseResult parsed) {
         final String failurePaths = failurePaths(parsed);
-        LOGGER.info(AiReviewEventLog.line("ai_review_contract_salvage_started", correlationId,
+        LOGGER.info(AiEventLog.line("ai_review_contract_salvage_started", correlationId,
                 "failureCategory", failureCategories(parsed),
                 "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
                 "failurePath", failurePaths));
@@ -413,7 +415,7 @@ public class TeamReplayAnalysisService {
                         || normalization.type().equals("training_suggestion_dropped"))
                 .mapToInt(TeamAiReviewResultParser.Normalization::count)
                 .sum();
-        LOGGER.info(AiReviewEventLog.line("ai_review_contract_salvage_completed", correlationId,
+        LOGGER.info(AiEventLog.line("ai_review_contract_salvage_completed", correlationId,
                 "failureCategory", failureCategories(parsed),
                 "failureCode", parsed.failure() == null ? "UNKNOWN" : parsed.failure(),
                 "failurePath", failurePaths,
@@ -448,7 +450,7 @@ public class TeamReplayAnalysisService {
 
     private void logRecoveryTriggered(final String correlationId, final int primaryResponseLength,
                                       final String reason) {
-        LOGGER.warn(AiReviewEventLog.line("ai_review_recovery_triggered", correlationId,
+        LOGGER.warn(AiEventLog.line("ai_review_recovery_triggered", correlationId,
                 "reason", reason, "primaryResponseLength", primaryResponseLength));
         if (meterRegistry != null) {
             meterRegistry.counter("wotb_ai_team_review_repair_total", "result", "triggered").increment();
@@ -456,7 +458,7 @@ public class TeamReplayAnalysisService {
     }
 
     private void logRecoveryFailed(final String correlationId, final String reason) {
-        LOGGER.warn(AiReviewEventLog.line("ai_review_recovery_failed", correlationId,
+        LOGGER.warn(AiEventLog.line("ai_review_recovery_failed", correlationId,
                 "reason", reason));
     }
 
@@ -551,7 +553,7 @@ public class TeamReplayAnalysisService {
                 maxOutput,
                 config.promptSafetyMarginTokens());
         // 发送前记录 prompt 预算（~234k×3 的 token amplification 必须可观测）。
-        LOGGER.info(AiReviewEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
+        LOGGER.info(AiEventLog.line("ai_prompt_budget", AiRequestContext.correlationId(),
                 "stage", "TEAM_CALL_2",
                 "attempt", attempt,
                 "estimatedInputTokens", estimatedInputTokens,
@@ -605,7 +607,7 @@ public class TeamReplayAnalysisService {
     /** 只记录低基数 grounding facts 计数（不打印事实内容）。 */
     private void logGroundingReady(final TeamGroundingFacts.GroundingFacts facts,
                                    final String correlationId) {
-        LOGGER.info(AiReviewEventLog.line("team_review_grounding_ready", correlationId,
+        LOGGER.info(AiEventLog.line("team_review_grounding_ready", correlationId,
                 "factsTotal", facts.facts().size(),
                 "deathFacts", facts.facts().stream()
                         .filter(TeamGroundingFacts.EvidenceFact::isDeath).count(),
@@ -624,7 +626,7 @@ public class TeamReplayAnalysisService {
                                         final long cumulativeCompletionTokens,
                                         final String result,
                                         final long reviewStartNanos) {
-        LOGGER.info(AiReviewEventLog.line("team_review_completed", correlationId,
+        LOGGER.info(AiEventLog.line("team_review_completed", correlationId,
                 "validationAttempts", validationAttempts,
                 "totalPromptTokens", cumulativePromptTokens,
                 "totalCompletionTokens", cumulativeCompletionTokens,

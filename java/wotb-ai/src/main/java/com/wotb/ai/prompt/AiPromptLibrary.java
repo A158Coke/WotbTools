@@ -14,7 +14,8 @@ import java.util.regex.Pattern;
  * AI 提示词加载器（单一事实源：classpath:/prompts/*.zh.md）。
  * <p>提示词正文以 Markdown 文件维护（可读、可 review、可 diff），运行期按 key 惰性加载并缓存。
  * 编辑约定：UTF-8、LF 换行；CRLF 会被归一化。规则片段（EN/RU 本地化替换锚点）仍留在
- * {@link PlayerPromptRules} / {@link TeamPromptLocalizer} 常量中，与 md 内 ZH 文本保持一致。</p>
+ * {@code PlayerPromptRules} / {@code TeamPromptLocalizer} 常量中，
+ * 与 md 内 ZH 文本保持一致。</p>
  * <p>支持占位符包含：md 内的 {@code {{key}}} 会在加载时递归展开为
  * {@code prompts/{key}.zh.md} 的内容（如 {@code {{common/rules-core}}}），
  * 用于在多个 prompt 间复用公共规则块；循环包含会显式抛错（fail loud），

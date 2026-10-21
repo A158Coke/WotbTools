@@ -1,5 +1,7 @@
 package com.wotb.ai.review;
 
+import com.wotb.ai.gateway.AiEventLog;
+
 import com.wotb.core.replay.projection.ClientAiProjection;
 import com.wotb.core.replay.projection.ClientAiProjectionAdapter;
 
@@ -266,7 +268,7 @@ public class AiReviewController {
                 cancellations.cancel(request.correlationId());
             }
             if (!(error instanceof ClientDisconnectedException)) {
-                LOGGER.warn(AiReviewEventLog.line("ai_review_error", request.correlationId(),
+                LOGGER.warn(AiEventLog.line("ai_review_error", request.correlationId(),
                         "feature", "ai_review", "errorCode", errorType,
                         "exceptionType", error.getClass().getSimpleName()));
                 try {
@@ -284,7 +286,7 @@ public class AiReviewController {
                 meterRegistry.counter("wotb_ai_review_errors_total", "type", errorType).increment();
             }
             final AiRequestContext.UsageTotals usage = AiRequestContext.usageTotals();
-            LOGGER.info(AiReviewEventLog.line(
+            LOGGER.info(AiEventLog.line(
                     "ai_review_usage", request.correlationId(),
                     "inputTokens", usage.inputTokens, "outputTokens", usage.outputTokens,
                     "totalTokens", usage.totalTokens, "calls", usage.calls,
