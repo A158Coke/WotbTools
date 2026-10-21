@@ -100,9 +100,14 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     expect(r.bestLower.distance).toBeCloseTo(0.5, 6)
   })
 
-  it('没有主装层的射线被跳过；没有有效样本返回 null', () => {
-    expect(splash([[L(20, false, 0.1)]])).toBeNull()
-    expect(splash([])).toBeNull()
+  it('没有主装层的射线被跳过；零有效样本返回 samples:0 的权威零结果（不是 null）', () => {
+    // null 只表示“采样器跑不了”（pack/grid/入参），调用方要报错；
+    // “跑了但所有射线都没遇到主装”是确定性的零伤害（func7695 skip 所有样本）。
+    for (const r of [splash([[L(20, false, 0.1)]]), splash([])]) {
+      expect(r).not.toBeNull()
+      expect(r).toMatchObject({ min: 0, max: 0, avg: 0, samples: 0, best: null, bestLower: null })
+    }
+    expect(splash([]).sampleStats).toEqual([])
   })
 
   it('主装之后的层不再计入（遇到 primary 即停）', () => {
@@ -118,7 +123,7 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     ])
     expect(layers).toHaveLength(1)
     expect(layers[0]).toMatchObject({ armor: 20, primary: false, section: 'chassis' })
-    expect(splash([layers])).toBeNull()
+    expect(splash([layers])).toMatchObject({ min: 0, max: 0, avg: 0, samples: 0 })
   })
 
   it('heLayersFromHits：同一模块的不同层全部累加、同位置同 section 去重、主装后截断', () => {
@@ -161,7 +166,7 @@ describe('HE 溅射采样（Armor Inspector func7695）', () => {
     for (const hits of cases) {
       const ref = computeHeSplash([heLayersFromHits(hits)], opts)
       const got = heSampleFromHits(hits, opts)
-      if (!ref) {
+      if (!ref || ref.samples === 0) {
         expect(got.valid).toBe(false)
         continue
       }
