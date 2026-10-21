@@ -396,7 +396,7 @@ Vue 产品；Native `LocalRuntimeServer`（固定 loopback 端口）把 `/` 映�
 `/index.html` alias 与历史路由共用工作台。离线冷启动不等待更新 manifest；联网后 Native 最佳努力检查版本，已确认 mandatory update 仍阻断。
 `src/platform/runtime.js` 只把 Android 业务 `/api/**` 与下载 metadata URL 解析为 `https://wotbtools.com`；
 Web 保持同源。Native Bearer 请求不发送 cookies，Caddy 对 exact 本机 origin（3.0+ loopback 与 2.x appassets）放行实际方法/headers、
-先响应匿名 OPTIONS。Android 远端 3D 资产固定使用 `/agent-assets/` 网关（固定 reviewed COS upstream），
+先响应匿名 OPTIONS。Android 新版本远端 3D 资产使用 `/agent-assets/` 本机路径，由 Native `AgentAssetProxy` 直连 `https://assets.wotbtools.com`；旧 APK 的 COS upstream 与 legacy gateway 兼容路径继续保留，
 不接受 Web 的 `?assets=` override；本地 JS/WASM、2D 地图和射击参数快照始终从 APK 读取。
 Native 过期 token 无法离线刷新时保留 encrypted session；前端只清 API token，离线不会清 replay selection。
 
@@ -658,6 +658,9 @@ Frontend 的 TX1/TX2 发布在切换线上文件或容器前，校验实际 Busi
   `deploy/tx/build-frontend-from-gitee.sh` 复用 Business API 的持久 Gitee clone 与 host build lock，
   创建 exact-SHA worktree。镜像 identity 包含 source SHA、`ASSET_BASE_URL` 与 Sponsor bundle SHA256
   （无 pin 为留空）；existing immutable tag 先 pull digest 并核验，缺失才执行本机 `docker build`。
+  Web 生产 3D 资产 origin 固定为 `https://assets.wotbtools.com`，由 `frontend.yml` 与
+  `frontend-replica.yml` 共同传入构建与镜像 identity；Android 仍通过 Native `AgentAssetProxy`
+  使用与 Web 相同的 Alibaba origin `https://assets.wotbtools.com`。旧 APK 可继续使用编译时的 COS origin；COS 仅供 legacy/rollback。Web 的 URL/localStorage override 优先级不变。
   内容/BUILD_COMMIT/Agent/Sponsor 校验全部在 registry 写入前完成；push 使用 per-attempt timeout
   与有界瞬态重试，发布后回读 digest、pull digest 并再次校验。构建使用 TX 本地 Docker 缓存，
   不设置 GHA build cache；build/publish 在同一 remote builder 调用中，deploy 是单独 job。

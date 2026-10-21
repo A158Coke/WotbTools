@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ASSET_BASE_URL: https://assets.wotbtools.com
+
 concurrency:
   group: production-maintenance
   cancel-in-progress: false
@@ -57,7 +60,6 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
-          ASSET_BASE_URL: ${{ vars.ASSET_BASE_URL }}
           TCR_REGISTRY: ${{ vars.TCR_REGISTRY }}
           TCR_NAMESPACE: ${{ vars.TCR_NAMESPACE }}
         run: |
