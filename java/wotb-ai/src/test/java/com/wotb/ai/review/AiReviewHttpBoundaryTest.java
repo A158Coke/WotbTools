@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code ApiError} 信封（含稳定 {@code errorCode}），而不是 Spring 默认错误体。
  *
  * <p>覆盖 AI Review HTTP 边界用例：无 JWT、角色不足、未知 locale、非法
- * correlationId。SSE 事件流与取消端点由 {@link AiReviewControllerTest} 在 controller 层覆盖。</p>
+ * correlationId。SSE 准入、取消与执行期行为由 Review service tests 覆盖。</p>
  *
  * <p>MockMvc 按本仓库既有形态手工装配（{@code webAppContextSetup + springSecurity()}），
  * 不依赖 {@code @AutoConfigureMockMvc}（Spring Boot 4.1 该切片不在现有测试依赖内）。</p>

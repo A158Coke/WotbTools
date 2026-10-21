@@ -1,154 +1,39 @@
 package com.wotb.ai.review;
 
-import com.wotb.core.model.Battle;
-import com.wotb.core.replay.reconstruction.ReplayReconstruction;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import com.wotb.ai.review.controller.AiReviewCancellationController;
+import com.wotb.ai.review.controller.AiReviewSubmissionController;
+import com.wotb.ai.review.converter.AiReviewRequestConverter;
+import com.wotb.ai.review.service.AiReviewCancellationService;
+import com.wotb.ai.review.service.AiReviewSubmissionService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.UUID;
-import java.util.List;
-
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AiReviewControllerTest {
-    private final AiReviewWorkerExecutor worker = mock(AiReviewWorkerExecutor.class);
-    private final AiReviewController controller = new AiReviewController(
-            mock(TacticalReviewHarness.class), mock(TeamReplayAnalysisService.class), worker,
-            new AiCancellationRegistry(), new SimpleMeterRegistry());
-
-    @Test
-    void acceptsTeamModeAndSchedulesDirectAnalysis() {
-        final var emitter = controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
-        assertNotNull(emitter);
-        verify(worker).execute(any(Runnable.class));
+    @Test void submissionControllerOnlyConvertsAndSubmits() {
+        final AiReviewRequestConverter converter = mock(AiReviewRequestConverter.class);
+        final AiReviewSubmissionService service = mock(AiReviewSubmissionService.class);
+        final HttpServletRequest httpRequest = mock(HttpServletRequest.class);
+        final AiReviewRequest converted = mock(AiReviewRequest.class);
+        final SseEmitter emitter = new SseEmitter();
+        when(converter.convert(httpRequest)).thenReturn(converted);
+        when(service.submit(converted)).thenReturn(emitter);
+        assertSame(emitter, new AiReviewSubmissionController(converter, service).review(httpRequest));
+        verify(converter).convert(httpRequest);
+        verify(service).submit(converted);
     }
 
-    @Test
-    void cancelIsIdempotentWhenReviewIsAlreadyFinished() {
-        final var response = controller.cancel(UUID.randomUUID().toString());
-        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-    }
-
-    @Test
-    void cancelStillRejectsInvalidCorrelationId() {
-        final var error = assertThrows(ResponseStatusException.class, () -> controller.cancel("not-a-uuid"));
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
-        assertEquals("INVALID_CORRELATION_ID", error.getReason());
-    }
-
-    @Test
-    void rejectsMissingReconstructionFactsBeforeStartingWorker() {
-        final Battle battle = new Battle();
-        battle.arenaBonusType = 1;
-        battle.players = List.of();
-        final var error = assertThrows(ResponseStatusException.class,
-                () -> controller.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), battle, null, List.of())));
-        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
-        assertEquals("INVALID_AI_REQUEST", error.getReason());
-    }
-
-    /**
-     * 生产看板/告警依赖的 Review 指标必须由 ai-service 的 controller 边界产出
-     * （docs/operations/observability.md §10）：{@code requests_total} 每次进入 worker +1，
-     * {@code results_total{result}} 区分成功/失败/事实校验退回，
-     * {@code errors_total{type}} 只记流内失败分类，{@code duration_seconds} 成功与异常都结束。
-     */
-    @Test
-    void recordsReviewMetricsClassifiedByStreamFailure() {
-        final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        final AiReviewAnalysisServiceStub stub = new AiReviewAnalysisServiceStub();
-        stub.failure = new AiTimelineUnusableException("TIMELINE_CLOCK_UNRESOLVED");
-        final AiReviewController metricsController = new AiReviewController(
-                mock(TacticalReviewHarness.class), stub.service, synchronousWorker(),
-                new AiCancellationRegistry(), registry);
-
-        metricsController.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(), teamBattle(), teamReconstruction(), List.of()));
-
-        assertEquals(1.0, registry.get("wotb_ai_review_requests_total").counter().count(),
-                "each accepted review must increment requests_total");
-        assertEquals(1.0, registry.get("wotb_ai_review_results_total")
-                        .tag("result", "rejected").counter().count(),
-                "timeline-unusable is an in-stream rejection, not a failure");
-        assertEquals(1.0, registry.get("wotb_ai_review_errors_total")
-                        .tag("type", AiTimelineUnusableException.STABLE_ERROR_CODE).counter().count(),
-                "error classification must use the stable error code");
-        assertEquals(1.0, registry.get("wotb_ai_review_duration_seconds").timer().count(),
-                "duration timer must stop on the failure path too");
-    }
-
-    @Test
-    void failedReviewEmitsOneTerminalUsageSummaryAndClearsContext() {
-        final var logger = (ch.qos.logback.classic.Logger)
-                org.slf4j.LoggerFactory.getLogger(AiReviewController.class);
-        final var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
-        appender.start();
-        logger.addAppender(appender);
-        final TeamReplayAnalysisService service = mock(TeamReplayAnalysisService.class);
-        when(service.analyzeTeam(any(), any(), any(), any())).thenAnswer(invocation -> {
-            com.wotb.ai.gateway.AiRequestContext.usageTotals().add(8, 2, 10, false);
-            com.wotb.ai.gateway.AiRequestContext.usageTotals().add(0, 0, 0, true);
-            throw new IllegalStateException("private provider text");
-        });
-        try {
-            final AiReviewController subject = new AiReviewController(
-                    mock(TacticalReviewHarness.class), service, synchronousWorker(),
-                    new AiCancellationRegistry(), new SimpleMeterRegistry());
-            subject.review(new AiReviewController.AiReviewRequest("zh-CN", UUID.randomUUID().toString(),
-                    teamBattle(), teamReconstruction(), List.of()));
-            final var summaries = appender.list.stream().map(event -> event.getFormattedMessage())
-                    .filter(message -> message.startsWith("event=ai_review_usage ")).toList();
-            assertEquals(1, summaries.size());
-            org.junit.jupiter.api.Assertions.assertTrue(summaries.getFirst().contains("totalTokens=10 calls=2 missingUsageCalls=1 result=failure"));
-            org.junit.jupiter.api.Assertions.assertFalse(appender.list.stream()
-                    .anyMatch(event -> event.getFormattedMessage().contains("private provider text")));
-            org.junit.jupiter.api.Assertions.assertNull(com.wotb.ai.gateway.AiRequestContext.usageTotals());
-        } finally {
-            logger.detachAppender(appender);
-            appender.stop();
-        }
-    }
-
-    private static AiReviewWorkerExecutor synchronousWorker() {
-        final AiReviewWorkerExecutor executor = mock(AiReviewWorkerExecutor.class);
-        doAnswer(invocation -> {
-            invocation.getArgument(0, Runnable.class).run();
-            return null;
-        }).when(executor).execute(any(Runnable.class));
-        return executor;
-    }
-
-    private static Battle teamBattle() {
-        final Battle battle = new Battle();
-        battle.arenaBonusType = 2;
-        battle.players = List.of();
-        return battle;
-    }
-
-    private static ReplayReconstruction teamReconstruction() {
-        final ReplayReconstruction reconstruction = mock(ReplayReconstruction.class);
-        when(reconstruction.participants()).thenReturn(List.of());
-        when(reconstruction.events()).thenReturn(List.of());
-        return reconstruction;
-    }
-
-    /** 让 team 分支在 worker 线程内确定性失败，用于验证指标分类。 */
-    private static final class AiReviewAnalysisServiceStub {
-        private final TeamReplayAnalysisService service = mock(TeamReplayAnalysisService.class);
-        private RuntimeException failure;
-
-        private AiReviewAnalysisServiceStub() {
-            when(service.analyzeTeam(any(), any(), any(), any())).thenAnswer(invocation -> {
-                throw failure;
-            });
-        }
+    @Test void cancellationControllerReturnsNoContentThroughService() {
+        final AiReviewCancellationService service = mock(AiReviewCancellationService.class);
+        assertEquals(HttpStatus.NO_CONTENT,
+                new AiReviewCancellationController(service).cancel("6f1e6f1e-0000-4000-8000-000000000001")
+                        .getStatusCode());
+        verify(service).cancel("6f1e6f1e-0000-4000-8000-000000000001");
     }
 }

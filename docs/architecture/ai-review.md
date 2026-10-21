@@ -13,19 +13,19 @@ AI Service 的 Java 所有权位于 `com.wotb.ai`：`config` 管服务配置，`
 
 ## 生产链总览
 
-`POST /api/ai/reviews` → `AiReviewController.reviewJson`：限额 gzip 解压（传输体与解压后都 ≤ 16 MiB）→
-请求信封只校验 `locale` 白名单（`zh-CN` / `en-US` / `ru-RU`，未知值 400 `UNKNOWN_LOCALE`）与 canonical UUID
-`correlationId`（400 `INVALID_CORRELATION_ID`）→ `ReplayFactsCodec.battleFromJson` / `projectionFromJson` →
-`ClientAiProjectionAdapter.toReconstruction` + `enrichBattle` → `BattleCategoryUtils.resolveScope` 判定视角：
+`POST /api/ai/reviews` → `AiReviewSubmissionController` → `AiReviewRequestConverter`：限额 gzip 解压（传输体与解压后都 ≤ 16 MiB）→
+请求信封校验（`locale` 白名单 `zh-CN` / `en-US` / `ru-RU`；canonical UUID `correlationId`）→ `ReplayFactsCodec` 解码 battle / projection →
+`ClientAiProjectionAdapter` 装配 `ReplayReconstruction` 并 enrich battle → `AiReviewSubmissionService` 校验内部请求、解析 scope / capability、注册取消并提交 worker →
+`AiReviewExecutionService` 管理 SSE 与执行期可观测性；取消请求由 `AiReviewCancellationController` → `AiReviewCancellationService` 处理。PLAYER / TEAM 分析路由由 `AiReviewAnalysisService` 持有：
 
 - `RANDOM` → `PLAYER_FOCUSED`；`TRAINING` / `TOURNAMENT` → `TEAM_PERSPECTIVE`；`UNKNOWN` → HTTP 422
-  `UNSUPPORTED_BATTLE_CATEGORY`（在返回 `SseEmitter` 之前）。
+  `UNSUPPORTED_BATTLE_CATEGORY`（由 Submission Service 在返回 `SseEmitter` 之前抛出）。
 
 对应生产链：
 
 | 视角 | 编排 | SSE `done` 载荷 |
 |---|---|---|
-| PLAYER_FOCUSED | `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` 确定性证据 → `TacticalReviewPromptBuilder` → Call #2） | `analysis` / `preBattleSection`（`teamReview` 为 `null`） |
+| PLAYER_FOCUSED | `PlayerAiReviewService` → `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` 确定性证据 → `TacticalReviewPromptBuilder` → Call #2） | `analysis` / `preBattleSection`（`teamReview` 为 `null`） |
 | TEAM_PERSPECTIVE | `TeamReplayAnalysisService.analyzeTeam` → `analyzeTeamContexts`（timeline hard gate）→ `callSingleTeamContext` → `callStructuredTeamReview`；contract 失败时恰好一次 `recoverTeamReview`（`SINGLE_TEAM_BATTLE_RECOVERY`） | 结构化 `teamReview`（`TeamAiReviewResult`）+ 权威 roster 派生的 `teamPlayers` |
 
 SSE 事件集合固定为 `call1_start` / `call1_done` / `evidence_done` / `call2_token` / `done` / `error`
@@ -379,7 +379,7 @@ AI 复盘区分两种 scope，互不混用：
 - **Call #1 覆盖可观测性**：`PreBattleStrategicService` 每次调用前输出 `Pre-battle Call #1 input`（map、mapSemantics=found/UNKNOWN、verified、areas/relationships/spawnSemantics 数量、source、displayName、team1/team2 人数、curatedProfiles/fallbackProfiles 车辆 Profile 覆盖），成功后输出 `Pre-battle Call #1 success`（hypotheses/matchups/winConditions/双方 strengths·plans 数量）；`TacticalReviewHarness` 输出 `Harness prior obtained`（prior 已注入 Call #2）与 `Harness fell back to old path: <reason>`。指标 `wotb_ai_review_map_semantics_total{status=found|unknown}`。按 requestId 可在 Loki 逐请求验证地图/车辆语义是否进入 Call #1 并注入 Call #2。
 - **回放解析覆盖率可观测**：包解码覆盖率在客户端投影里**不存在**——`ClientAiProjectionAdapter` 不读回放字节，投影不携带 packets / decoded / decodedRatio，因此 `coverage = null`，prompt 显示 `decodedPacketRatio=UNAVAILABLE`。
 - 测试不调用真实 AI API：`SpringAiChatGatewayTest`/`SpringAiChatGatewayMetricsTest` 使用 mock `ChatModel`。
-- **AI 输出语言跟随前端 locale**：`/api/ai/reviews` 的 JSON body 字段 `locale`（`AiReviewRequest` 请求体 `{locale, correlationId, battle, projection}`，必填，白名单 `zh-CN`/`en-US`/`ru-RU`，`contracts/http/openapi.yaml#AiReviewRequest`）控制 AI 复盘输出语言；未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 `AiReviewController.languageOf` → `TacticalReviewHarness` / `TeamReplayAnalysisService` → Prompt Builder：ZH 使用中文 system prompt；EN/RU 在中文基座上替换互斥的中文输出强制句（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。覆盖 player fallback/single/tactical 与 team single 路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
+- **AI 输出语言跟随前端 locale**：`/api/ai/reviews` 的 JSON body 字段 `locale`（`AiReviewRequest` 请求体 `{locale, correlationId, battle, projection}`，必填，白名单 `zh-CN`/`en-US`/`ru-RU`，`contracts/http/openapi.yaml#AiReviewRequest`）控制 AI 复盘输出语言；未知值返回 `400 UNKNOWN_LOCALE`。语言穿透 `AiReviewRequestConverter` → `TacticalReviewHarness` / `TeamReplayAnalysisService` → Prompt Builder：ZH 使用中文 system prompt；EN/RU 在中文基座上替换互斥的中文输出强制句（输出语言、称谓、车种、时间格式、未知字段与无法确定措辞），业务事实约束（不编造、坦克专有名词原样、perspective/friendly-enemy、权威结算与观测子集、注入防护、数据限制）不变。en 时间格式统一为 `Xm Xs`（如 `1m 15s`、`3m 0s`、`3m 12s`），ru 为 `X мин X с`（如 `1 мин 15 с`、`3 мин 0 с`、`3 мин 12 с`）。覆盖 player fallback/single/tactical 与 team single 路径；地图/坦克/clan/昵称等专有名词不翻译；`limitations` 与错误码仍为英文稳定码、由前端本地化。前端由 vue-i18n 当前 locale 携带 `lang`。
 
 ---
 
@@ -395,13 +395,12 @@ AI 复盘区分两种 scope，互不混用：
   → POST /api/ai/reviews（application/json，Content-Encoding: gzip）
 
 POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao 独立 ai-service
-  → AiReviewController.reviewJson：限额 gzip 解压（传输体与解压后都 ≤ 16 MiB）→ 信封校验（locale 白名单 /
-    canonical UUID correlationId）→ ReplayFactsCodec + ClientAiProjectionAdapter（结构校验 + 装配 canonical
-    事件流 + checkpoints）→ ObservedMaxHp 回填
-  → 视角判定（BattleCategoryUtils.resolveScope：RANDOM→PLAYER_FOCUSED，TRAINING/TOURNAMENT→TEAM_PERSPECTIVE，
-    UNKNOWN→422 UNSUPPORTED_BATTLE_CATEGORY）
-        ├─ PLAYER_FOCUSED → TacticalReviewHarness.analyzeWithPrior（Call #1 → Call #2）
-        └─ TEAM_PERSPECTIVE → TeamReplayAnalysisService.analyzeTeam（结构化 TeamAiReviewResult）
+  → AiReviewSubmissionController → AiReviewRequestConverter（gzip 限额 / wire 校验 / canonical 投影装配）
+  → AiReviewSubmissionService（请求校验 / scope 与 capability / cancellation registration / SSE session / worker admission）
+  → AiReviewExecutionService（worker 生命周期 / SSE / metrics / structured logs / error classification / cleanup）
+  → AiReviewAnalysisService（PLAYER vs TEAM）
+        ├─ PLAYER → PlayerAiReviewService → TacticalReviewHarness.analyzeWithPrior（Call #1 → Call #2）
+        └─ TEAM → TeamReplayAnalysisService.analyzeTeam（结构化 TeamAiReviewResult）
   → timeline / features / evidence → Prompt → Spring AI → LLM provider
   → SSE 流式：call1_start / call1_done / evidence_done / call2_token / done / error
   → 取消：POST /api/ai/reviews/{correlationId}/cancel（传播到 in-flight 上游 provider 调用）
@@ -411,7 +410,7 @@ POST /api/ai/reviews → TX ingress /api/ai/** → WireGuard 私网 → Yecao �
 
 ### Team Perspective 语义
 
-- `RANDOM` 是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘（`BattleCategoryUtils.resolveScope`；`UNKNOWN` 在 controller 层返回 422，不进入 AI）。
+- `RANDOM` 是录像者个人复盘；`TRAINING` / `TOURNAMENT` 是录像者所在整队复盘（`BattleCategoryUtils.resolveScope`；`UNKNOWN` 在 Submission Service 返回 422，不进入 AI）。
 - 录像者不获得特殊个人分析权重，只用于解析 `perspectiveTeam`。
 - 同场双方 perspectives 各自独立分析，不得合并：`POST /api/ai/reviews` 每次只承载一场战斗的一个视角（客户端投影的 `perspective` 决定 `perspectiveTeam`），后端不存在跨请求的同场去重或「代表场次」选择。
 - **死亡时刻口径**：业务死亡秒值只来自 settlement `#301 field24 lifeTime`；settlement 无效时依赖死亡时刻的证据 fail-closed。Playback/live reconstruction 不覆盖 `PlayerResult`，也不产生额外死亡 provenance 层。阶段存活人数为「至阶段末」语义（`BattlePhaseTimelineSection`），prompt 注入双方逐车阵亡时间线（`DEATH_TIMELINE`）。
@@ -488,7 +487,7 @@ ai-service 侧 `ClientAiProjectionAdapter`（wotb-core `replay/projection`）只
 | tournament-14-14-example | 1,133,015 | 380,115 |
 
 前端 `authedReplayPost(..., { gzip: true })` 同步压缩（不引入取消 / 超时的异步窗口），`Content-Encoding: gzip`；
-`AiReviewController.readBody` 限额解压（传输体 / 解压后任一超过 16 MiB → 413，非 gzip / identity 编码 → 415）。
+`AiReviewRequestConverter` 限额解压（传输体 / 解压后任一超过 16 MiB → 413，非 gzip / identity 编码 → 415）。
 审计工具：`node frontend/scripts/audit-ai-payload.mjs --request <AiReviewRequest.json>`。
 
 ---
