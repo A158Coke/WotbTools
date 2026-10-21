@@ -460,6 +460,17 @@ describe('production gun_mask clip wiring (2026-10-21)', () => {
     expect(kernel).toContain('resolveCardChance({')
     expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
   })
+  it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
+    expect(kernel).toContain("sub = l.ricochet ? L.shotRicochetSeg : '';")
+  })
+  it('跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0', () => {
+    expect(kernel).toContain(': (chancePartial ? dmgVal : dmgDealt));')
+  })
+  it('跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）', () => {
+    expect(kernel).toContain('const partialEval = !probabilityMode && chancePartial')
+    expect(kernel).toContain('const partialChance = probabilityMode ? null : nextPartialChance(l);')
+    expect(kernel).toContain('partialChance != null')
+  })
 })
 
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {

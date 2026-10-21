@@ -5944,7 +5944,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 ? dmgVal
                 : (probabilityMode
                     ? (hasChance ? dmgVal : 0)
-                    : dmgDealt);
+                    // 跳弹续飞的非概率分支：最终段 1–99% 时标题是“可能击穿”，
+                    // 伤害必须对应满伤（与概率模式 hasChance 同口径），不能沿用
+                    // 确定性 BLOCKED 的 0。0%/100% 仍按终态伤害。
+                    : (chancePartial ? dmgVal : dmgDealt));
             const camDir = camera.position.clone().sub(firstPoint).normalize();
 
             // 轨迹管原点：调用方传入的弹道起点（如炮口）优先；否则沿视线反向
@@ -6146,6 +6149,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     }
                 }
             }
+            // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色：最终段 1–99%
+            // 时标题是“可能击穿”，对应装甲板不能仍是确定性红色；按概率链的
+            // 累计 chance 着色，首段跳弹仍保持橙色。
+            const partialEval = !probabilityMode && chancePartial
+                ? evaluateProbabilityChain(chancePen, probLayers).layers
+                : null;
+            let partialCursor = 0;
+            const nextPartialChance = (layer) => {
+                if (!partialEval || !(layer.seg > 0)) return null;
+                while (partialCursor < partialEval.length && partialEval[partialCursor].seg < layer.seg) partialCursor++;
+                const ev = partialEval[partialCursor];
+                if (!ev || ev.seg !== layer.seg) return null;
+                partialCursor++;
+                return Number.isFinite(ev.chance) ? ev.chance : null;
+            };
             // 有效穿深已并入顶行（距离衰减后），不再重复一行。
             if (!heInfo) {
                 let layerNo = 0;
@@ -6164,9 +6182,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     prevSeg = l.seg;
                 }
                 const layerChance = probabilityMode ? (l.chance ?? 0) : null;
+                const partialChance = probabilityMode ? null : nextPartialChance(l);
                 const pc = probabilityMode
                     ? probabilityColorCss(layerChance)
-                    : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'));
+                    : (partialChance != null
+                        ? probabilityColorCss(partialChance)
+                        : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)')));
                 const th = Number(l.thickness);
                 const isGap = /^Gap /.test(l.name || '');
                 let main, sub;
@@ -6180,9 +6201,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     main = `${fmtNum(l.eff)}mm @ ${Math.round(l.angle)}°`;
                     sub = `${L.shotNominal} ${fmtArmor(th)}mm`;
                 } else if (l.angle != null) {
-                    // 跳弹层：等效为 0，显示名义厚度 @ 角度
+                    // 有入射角但非跳弹的层（含 0mm 口径碾压板）只显示厚度/角度；
+                    // “跳弹 (-25% 穿深)”只能挂在真正 ricochet=true 的层上。
                     main = `${fmtArmor(th)}mm @ ${Math.round(l.angle)}°`;
-                    sub = L.shotRicochetSeg;
+                    sub = l.ricochet ? L.shotRicochetSeg : '';
                 } else {
                     // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
                     main = `${fmtArmor(th)}mm`;
