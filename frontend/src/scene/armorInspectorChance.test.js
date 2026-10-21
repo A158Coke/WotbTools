@@ -7,6 +7,7 @@ import {
   penetrationChance,
   evaluateProbabilityChain,
   formatProbabilityPercent,
+  resolveCardChance,
 } from './armorInspectorChance.js'
 
 describe('normalCdf（高斯 CDF）', () => {
@@ -212,5 +213,33 @@ describe('formatProbabilityPercent（概率标题显示边界）', () => {
     expect(formatProbabilityPercent(0.5)).toBe('50')
     expect(formatProbabilityPercent(0.004)).toBe('<1')
     expect(formatProbabilityPercent(0)).toBe('0')
+  })
+})
+
+describe('resolveCardChance（结果卡概率 fail-closed）', () => {
+  it('无效 HE（heInfo=null 且 allowChance=false）→ 0%，不沿用 rawChance', () => {
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 1, allowChance: false,
+    })).toEqual({ chance: 0, unavailable: true })
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.5, allowChance: false,
+    }).chance).toBe(0)
+  })
+
+  it('正常 HE / 概率链 / 确定性路径仍取原值', () => {
+    expect(resolveCardChance({
+      heInfo: { chance: 1 }, heChance: 1, probabilityMode: false,
+      overallChance: null, rawChance: 0, allowChance: false,
+    }).chance).toBe(1)
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: true,
+      overallChance: 0.83, rawChance: 0, allowChance: true,
+    }).chance).toBe(0.83)
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.5, allowChance: true,
+    }).chance).toBe(0.5)
   })
 })

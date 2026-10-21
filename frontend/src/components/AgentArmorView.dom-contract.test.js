@@ -446,6 +446,22 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // TankCatalogMenu）：卡片图按逐车内容框缩放定位，盒比例是变换数学的契约——组件常数
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
+describe('production gun_mask clip wiring (2026-10-21)', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
+    const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
+    expect(occurrences).toHaveLength(2)
+    expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
+    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(kernel).toContain('clipPlane: gunClipPlane')
+  })
+  it('无效 HE 概率行走 resolveCardChance fail-closed', () => {
+    expect(kernel).toContain('resolveCardChance({')
+    expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
+  })
+})
+
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   const menu = read('./TankCatalogMenu.vue')
 

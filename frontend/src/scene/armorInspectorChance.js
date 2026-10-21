@@ -265,6 +265,24 @@ export function penetrationChance(penetration, layers, randomization = ARMOR_INS
 }
 
 /**
+ * 结果卡击穿概率的单一取值口径。无效 HE（零/缺失爆炸半径导致 heInfo=null 且
+ * allowChance=false）必须 fail-closed 为 0%，不能沿用穿透原始值 rawChance。
+ * 正常 HE 用 heChance；概率模式用累计概率；其余用穿透链概率。
+ * @param {{heInfo:object|null, heChance:number, probabilityMode:boolean,
+ *   overallChance:number|null, rawChance:number, allowChance:boolean}} input
+ * @returns {{chance:number, unavailable:boolean}}
+ */
+export function resolveCardChance({ heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance }) {
+  const unavailable = !heInfo && allowChance === false
+  const chance = unavailable
+    ? 0
+    : (heInfo
+      ? heChance
+      : (probabilityMode ? (overallChance ?? 0) : rawChance))
+  return { chance, unavailable }
+}
+
+/**
  * GLSL 版本的正态 CDF（与 normalCdf 同系数），供主装甲热力图与续飞着色器注入。
  * 约束：GLSL ES 1.0（mediump/highp 由调用方声明）。
  */
