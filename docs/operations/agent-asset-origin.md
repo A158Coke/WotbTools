@@ -54,7 +54,7 @@ assetBase()  ← 解析出的 asset origin
 
 ## 部署：接线
 
-Web 与新 Android 版本当前统一使用 Alibaba origin。Web 由 tracked workflow 配置，Android Native 常量与 release readiness probe 成对维护。下列步骤用于**更换生产 origin**：
+Web 与新 Android 版本当前统一使用 Alibaba origin。Web 由 tracked workflow 配置；Android publish readiness 从已验证 immutable release tag 的 `AgentAssetProxy.kt` 解析候选 origin，并由 `android_contract.py` 的 `REVIEWED_REMOTE_ASSET_ORIGINS` 做 allowlist 校验。下列步骤用于**更换生产 origin**：
 
 1. 在 `.github/workflows/frontend.yml` 与 `.github/workflows/frontend-replica.yml` 中将 `ASSET_BASE_URL` 更新为同一公开 origin：
 
@@ -71,7 +71,7 @@ Web 与新 Android 版本当前统一使用 Alibaba origin。Web 由 tracked wor
    得到新 tag、必然重建**——不会被"镜像已存在"复用而停留在旧 origin。复用检查与该镜像的
    发布校验都会按 bundle 内容自证 source SHA 与 origin 两者一致（见下"发布边界"）。
 
-3. Android 同步更新 `AgentAssetProxy.kt` 的 `REMOTE_ASSET_BASE` 与 `.github/workflows/android-release.yml` 的 readiness probe，并增加 Android 版本号。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
+3. Android 同步更新 `AgentAssetProxy.kt` 中实际使用的远端 origin 常量、`scripts/android-release/android_contract.py` 的 `REVIEWED_REMOTE_ASSET_ORIGINS`，以及对应的 origin 解析测试；增加 Android 版本号。release readiness 必须继续从已验证 staged tag 源码解析 origin，不要在 workflow 中写死当前生产 origin。`ASSET_BASE_URL` 只包含公开 origin，**不放任何密钥**。
 
 ### 发布边界（frontend image → Tencent TCR）
 
@@ -185,7 +185,7 @@ CORS 未覆盖 `http://localhost:*`，本地 dev 直连该 origin 时 GLB/JSON �
 
 ## 未来更换 origin
 
-> Web 与新 Android release 当前均使用 Alibaba asset origin；COS 仅保留给旧 APK 与临时回滚。更换 origin 时同步更新两份 Frontend workflow、Android Native `REMOTE_ASSET_BASE`、Android release readiness 检查及本文件；保留旧客户端兼容，直至明确结束退役窗口。
+> Web 与新 Android release 当前均使用 Alibaba asset origin；COS 仅保留给旧 APK 与临时回滚。更换 origin 时同步更新两份 Frontend workflow、Android Native 远端 origin 常量、`android_contract.py` 的 `REVIEWED_REMOTE_ASSET_ORIGINS` allowlist、对应解析测试及本文件。Android readiness 会从 immutable staged candidate 源码取值，workflow probe 保持动态，不复制当前 origin；保留旧客户端兼容，直至明确结束退役窗口。
 
 ## 相关
 
