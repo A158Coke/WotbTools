@@ -12,7 +12,7 @@ import {
 import { loadoutItemLabel } from '../data/loadoutItems.js'
 
 /**
- * V2 车辆检查器（plan §24）：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
+ * V2 车辆检查器：选中任意 materialized vehicle 后，展示「在 t 时刻我们到底知道什么」。
  * 只消费 canonical facts / knowledge / provenance，前端不再做 HP/AoI/death/loadout 推理。
  */
 const props = defineProps({

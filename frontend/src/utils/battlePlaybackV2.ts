@@ -22,8 +22,8 @@ import type {
 /**
  * Battle Playback V2（canonical sparse transition tracks）纯查询工具。
  *
- * 设计原则（docs/current-plan.md / plan §18/§20/§23）：
- * - 前端<b>不再</b>做 HP/AoI/death/loadout 业务推理 —— 只消费 backend 已标注的
+ * 设计原则（见 docs/features/battle-playback-hp-authority.md 与 docs/architecture/battle-timeline.md）：
+ * - 前端<b>不再</b>做 HP/AoI/death/loadout 业务推理 —— 只消费 canonical projection 已标注的
  *   knowledge / provenance / observation boundary；
  * - {@code displayCapacityHp} 是 presentation-only HP bar 量程（anti-future-leak），
  *   不是 canonical max HP；绝不用未来采样；
@@ -52,7 +52,7 @@ function lastAtOrBefore<T extends { timeSec: number }>(
   return ans
 }
 
-/** 最近一次 <= t 的 backend health fact。 */
+/** 最近一次 <= t 的 canonical health fact。 */
 export function healthAt(
   track: Pick<VehiclePlaybackTrack, 'healthTransitions'> | null | undefined,
   t: number,
@@ -139,7 +139,7 @@ export function defLifeAt(def: DefLifeFields | null | undefined, t: number): Def
 /**
  * Canonical HP presentation for one track at t.
  *
- * `relativeFull` is a backend-projected presentation-safe fact: it never
+ * `relativeFull` is a client-projection presentation-safe fact: it never
  * invents an actual current/max HP pair. A missing enemy fact remains UNKNOWN.
  */
 export function healthDisplayAt(
@@ -199,7 +199,7 @@ export function healthDisplayAt(
   }
 }
 
-/** Aggregate canonical health by the backend-resolved friendly perspective. */
+/** Aggregate canonical health by the canonical friendly perspective. */
 export function friendlyHealthAt(
   tracks: readonly VehiclePlaybackTrack[] | null | undefined,
   friendly: boolean,
@@ -367,7 +367,7 @@ export function victimFeedbackAllowedV2(
   return Number.isFinite(eventTimeSec) && positionCoveredAtV2(track?.positionSegments, eventTimeSec)
 }
 
-/** Lost-HP ghost percentages from backend-projected canonical facts. */
+/** Lost-HP ghost percentages from client-projected canonical facts. */
 export function ghostAroundV2(
   loss: Pick<DamageLoss, 'fromHp' | 'toHp' | 'displayCapacityHp'> | null | undefined,
 ) {
@@ -463,7 +463,7 @@ export function positionAtV2(
       }
     } else {
       // LAST_KNOWN 段：整段即最后已知范围，冻结在「最后一个 <= t」的样本。
-      // 绝不能因为段标记为 LAST_KNOWN 就取未来样本（future leak，plan §17）。
+      // 绝不能因为段标记为 LAST_KNOWN 就取未来样本（anti-future-leak）。
       let cand: PositionSample | null = null
       for (const s of samples) {
         if (s.timeSec <= t + 1e-6 && (cand == null || s.timeSec > cand.timeSec)) cand = s
@@ -475,7 +475,7 @@ export function positionAtV2(
 }
 
 /**
- * t 时刻方向知识（backend 已切 CURRENT/LAST_KNOWN；不存在 → UNKNOWN）。
+ * t 时刻方向知识（canonical projection 已切 CURRENT/LAST_KNOWN；不存在 → UNKNOWN）。
  * LAST_KNOWN 表示敌方离开 AoI，前端<b>不得</b>把它当实时炮塔方向。
  */
 export function orientationKnownAt(
@@ -517,7 +517,7 @@ export function orientationAtV2(
     if (t >= lo.timeSec - 1e-6 && t <= hi.timeSec + 1e-6) {
       if (seg.knowledge !== 'CURRENT' && seg.knowledge !== 'LAST_KNOWN') continue
       if (seg.knowledge === 'LAST_KNOWN') {
-        // LAST_KNOWN 段：冻结在「最后一个 <= t」的样本（绝不返回未来方向，plan §18）。
+        // LAST_KNOWN 段：冻结在「最后一个 <= t」的样本（绝不返回未来方向）。
         let cand: OrientationSample | null = null
         for (const s of samples) {
           if (s.timeSec <= t + 1e-6 && (cand == null || s.timeSec > cand.timeSec)) cand = s

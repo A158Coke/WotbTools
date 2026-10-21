@@ -1,5 +1,5 @@
 import { ANDROID_ASSET_BASE, isAndroidRuntime } from '../platform/runtime.js'
-// 资产 origin 解析（架构契约 §13）：GLB/地图/坦克静态数据的 remote asset origin。
+// 资产 origin 解析（见 docs/operations/agent-asset-origin.md）：GLB/地图/坦克静态数据的 remote asset origin。
 // WotBTools Playback 拓扑 client-only：生产构建提供默认 remote asset origin；
 // ?assets=<remote origin> 仅作为开发/运维 override，并持久化到 localStorage。
 // 打包器 export_asset_pack.py 布局：/glb/*、/map/*、/tank/*、/tank_images/*、/data/*。

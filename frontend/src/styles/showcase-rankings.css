@@ -99,7 +99,7 @@
   margin: 0 auto !important;
   padding: 22px 0 64px !important;
 }
-/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language §13），这里只保留页面容器宽度。 */
+/* 用户管理 / 名人堂管理页内部元素由组件自身按设计语言 token 定义（design-language），这里只保留页面容器宽度。 */
 
 @media(max-width:1199px) {
   .lb-wrap,

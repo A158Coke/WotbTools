@@ -1,8 +1,8 @@
 # 个人主页 · WoTB 账号绑定与「用回放验证」
 
-> 实现：`java/wotb-web/.../user/`（`UserProfileService.verifyWotbAccountFromReplay`）、
-> `frontend/src/components/ProfilePage.vue`、`frontend/src/replay-local/submissionFacts.ts#replayRecorderAccountId`。
-> 绑定 / 解绑 / WG 登录同步的完整规则见 `docs/DEVELOPER_GUIDE.md`「绑定账号的验证状态」。
+> 实现：`java/wotb-web/.../user/`（`UserProfileService`）、`frontend/src/components/ProfilePage.vue`、
+> `frontend/src/replay-local/submissionFacts.ts#replayRecorderAccountId`。
+> 本文是当前 Profile / 绑定 / 验证的产品契约；实现位置见下。
 
 ## 身份信息卡
 
@@ -18,7 +18,23 @@
 - **不展示 group**：realm 未定义 group（`infra/tofu/keycloak` 无 group 资源），token 也没有 group-membership mapper。
   若以后启用 group，优先在 tofu 加 mapper 让前端读 token claim，而不是让资料接口依赖 Keycloak admin API。
 
-## 「用回放验证」的信任模型（产品决策，2026-10）
+## WoTB 账号绑定与验证状态
+
+`user_profile.wotb_account_verified_at`（可空）是「**当前**绑定账号是否已验证」的唯一表达：NULL = 未验证，非 NULL = 已验证（保留**首次**成功验证时间，不重写）。写入方只有两个：
+
+1. 可信 WG claims 的 canonical provisioning / 空 Profile 升级（`wotb_account_source=WARGAMING`）；
+2. 「用回放验证」的客户端便利徽章（见下）。
+
+### 绑定来源与只读边界
+
+- **CN**：用户在个人主页手动填写国服账号；`PATCH /api/users/wotb-account` 只允许 `wotbServer=CN`，不得写入 source/verified。
+- **ASIA / EU / NA**：Wargaming 登录写入可信 JWT claims；`PUT /api/users/wotb-account/from-login`（无 body，只读 JWT）幂等创建或同步 WARGAMING Profile。WG Profile 的 server / account_id / source / verified 只读，不提供站内解绑或删除。
+- **ensure**：`PUT /api/users/profile` 是幂等账号 bootstrap，不覆盖已有绑定；缺失时按可信 WG claims 创建 WARGAMING Profile，否则创建 CN MANUAL Profile。并发 ensure 由 `keycloak_user_id` 唯一约束兜底。
+- **唯一性**：一个 WotBTools Profile 对应一个主要 WoTB 游戏账号；`(server, account_id)` 全局唯一。
+- **冲突/失败**：已绑定 CN Profile 被 WG 登录覆盖 → 409 `PROFILE_REGION_MISMATCH`；换账号 → 409 `WOTB_ACCOUNT_MISMATCH`；账号被他人占用 → 409 `WOTB_ACCOUNT_ALREADY_USED`；JWT claims 缺失/无效 → 400 `WOTB_CLAIMS_INVALID`；WARGAMING source 的手动修改/解绑 → 400 `ASIA_PROFILE_READONLY` / `WARGAMING_PROFILE_READONLY`。
+- **验证清除**：换绑（`(server, account_id)` 任一变化）或解绑会清空 `wotb_account_verified_at`；只刷新昵称或 ensure 不清空。
+
+## 「用回放验证」的信任模型
 
 **这是客户端声称的便利徽章，不是身份证明。**
 

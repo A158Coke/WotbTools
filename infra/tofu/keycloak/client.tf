@@ -51,7 +51,7 @@ resource "keycloak_openid_client" "web" {
 #      而 App Link（https://auth.wotbtools.com/android/oauth/callback）要求**精确**
 #      redirect URI，两者不能共存于同一个 client；
 #   2. 崩一个不牵连另一个：Android 侧 redirect/flow 变更不得触碰线上 Web 登录的客户端契约。
-# 关键契约（改动前先读 docs/current-plan.md「SSOT / 冻结接口」）：
+# 关键契约（Android 认证边界见 docs/android/architecture.md）：
 #   - PUBLIC：App 无法保管 client secret；安全边界是 PKCE S256，不是 secret。
 #   - 只开 standard flow：implicit / direct access grants 对原生 App 都是降级。
 #   - PKCE 由 Keycloak 强制（pkce_code_challenge_method = "S256"），非仅客户端行为。

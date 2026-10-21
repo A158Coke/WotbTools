@@ -5,7 +5,7 @@ const UI_PROFILE_ATTR = 'data-ui-profile'
 export const UI_THEME_ATTR = 'data-theme'
 export const UI_PROFILES = ['classic', 'showcase']
 export const DEFAULT_UI_PROFILE = 'showcase'
-/** 用户可选的偏好：两套主题之一，或 auto（跟随系统深浅色，design-language 决策记录）。 */
+/** 用户可选的偏好：两套主题之一，或 auto（跟随系统深浅色，见 docs/frontend/design-language.md）。 */
 export const UI_PROFILE_AUTO = 'auto'
 export const UI_PROFILE_PREFERENCES = ['showcase', 'classic', UI_PROFILE_AUTO]
 /** 浏览器 / 系统界面颜色（<meta name="theme-color">），与两套主题的 --color-canvas 一致。 */
