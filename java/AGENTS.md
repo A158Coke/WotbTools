@@ -81,3 +81,7 @@ AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载�
 - Agent 执行 targeted/module/full test 时不得主动解除 `ai-live` exclusion；只有用户明确要求运行 real AI probe 时，才可同时显式选择测试、清空 `-Dai.probe.excludedGroups=` 并通过环境变量提供 key。
 - 不得把真实 API key 写入 repo、test resource、命令记录或日志；普通 CI 不注入 DeepSeek secret，也不新增 paid/live AI job。
 - `AiEvalHarnessTest`、prompt contract/eval 和 fake/mock/loopback gateway tests 是 deterministic 测试，不属于 `ai-live`，继续随普通 CI 执行。
+
+## CSV 共享语法能力
+
+Tournament CSV syntax/encoding 使用 `wotb.web.util.csv.CsvDecoder`；该共享 decoder 只处理严格 UTF-8/RFC4180 字节与 ordered string records，错误保持中性。文件限制、HTTP 错误映射、header 和业务校验仍归调用方。Apache Commons CSV 已在 `wotb-web` 声明，禁止再引入解析依赖。
