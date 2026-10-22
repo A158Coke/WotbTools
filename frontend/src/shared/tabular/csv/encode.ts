@@ -7,10 +7,15 @@ function encodeField(value: string): string {
   return `"${value.replaceAll('"', '""')}"`
 }
 
+function encodeRecord(row: readonly string[]): string {
+  const fields = row.map(encodeField)
+  return fields.length === 1 && fields[0] === '' ? '""' : fields.join(',')
+}
+
 /** Encode a string table as UTF-8 RFC4180 records separated by CRLF. */
 export function encodeCsv(document: CsvDocument, options: CsvEncodeOptions = {}): Uint8Array {
   const records = [document.headers, ...document.rows]
-    .map((row) => row.map(encodeField).join(','))
+    .map(encodeRecord)
     .join('\r\n')
   const content = encoder.encode(records)
   if (!options.includeBom) return content

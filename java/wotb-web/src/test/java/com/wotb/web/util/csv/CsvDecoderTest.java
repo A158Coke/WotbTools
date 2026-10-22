@@ -28,6 +28,19 @@ class CsvDecoderTest {
         assertEquals("line", decoder.decode(fixture("lf.csv")).rows().getFirst().cells().get(1));
     }
 
+    @Test void preservesSingleColumnEmptyRecordsAtEndAndBetweenNeighbors() throws IOException {
+        final var trailing = decoder.decode(fixture("trailing-empty-single.csv"));
+        assertEquals(2, trailing.rows().size());
+        assertEquals(java.util.List.of("before"), trailing.rows().get(0).cells());
+        assertEquals(java.util.List.of(""), trailing.rows().get(1).cells());
+
+        final var middle = decoder.decode(fixture("middle-empty-single.csv"));
+        assertEquals(3, middle.rows().size());
+        assertEquals(java.util.List.of("before"), middle.rows().get(0).cells());
+        assertEquals(java.util.List.of(""), middle.rows().get(1).cells());
+        assertEquals(java.util.List.of("after"), middle.rows().get(2).cells());
+    }
+
     @Test void rejectsMalformedEncodingAndSyntaxWithNeutralErrors() {
         assertThrows(CsvEncodingException.class, () -> decoder.decode(new byte[] {(byte) 0xff}));
         assertThrows(CsvSyntaxException.class, () -> decoder.decode("a,b\r\n\"unterminated".getBytes(java.nio.charset.StandardCharsets.UTF_8)));

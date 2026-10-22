@@ -28,6 +28,16 @@ describe('shared CSV encoder', () => {
     expect(encodeCsv(document)).toEqual(fixture('multiline.csv'))
   })
 
+  it('preserves a trailing one-column empty record', () => {
+    const document: CsvDocument = { headers: ['value'], rows: [['before'], ['']] }
+    expect(encodeCsv(document)).toEqual(fixture('trailing-empty-single.csv'))
+  })
+
+  it('preserves a one-column empty record between neighboring records', () => {
+    const document: CsvDocument = { headers: ['value'], rows: [['before'], [''], ['after']] }
+    expect(encodeCsv(document)).toEqual(fixture('middle-empty-single.csv'))
+  })
+
   it('adds only an optional leading UTF-8 BOM', () => {
     const document: CsvDocument = { headers: ['name', 'value'], rows: [['start', 'with BOM']] }
     const withoutBom = encodeCsv(document)
