@@ -5,3 +5,5 @@
 /common/fixtures/tabular/csv/quoted.csv text eol=crlf
 /common/fixtures/tabular/csv/unicode.csv text eol=crlf
 /common/fixtures/tabular/csv/lf.csv text eol=lf
+/common/fixtures/tabular/csv/trailing-empty-single.csv text eol=crlf
+/common/fixtures/tabular/csv/middle-empty-single.csv text eol=crlf
