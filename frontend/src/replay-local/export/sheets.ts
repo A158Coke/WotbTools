@@ -163,7 +163,7 @@ function writePlayers(wb: WorkbookSpec, b: Battle, ctx: SheetContext, extraHeade
     }
     if (tail !== null) tail(ws, row, p, fill, c)
   }
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
   autoFilter(ws, players.length, header.length - 1)
 }
 
@@ -188,8 +188,8 @@ function writeBattleInfo(wb: WorkbookSpec, b: Battle, ctx: SheetContext, extraRo
     put(ws, i + 2, 0, key, 'bold')
     put(ws, i + 2, 1, value ?? '')
   })
-  ws.cols.set(0, keyWidth)
-  ws.cols.set(1, 40)
+  ws.columns[0] = { width: keyWidth }
+  ws.columns[1] = { width: 40 }
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -328,7 +328,7 @@ function summarySheet(wb: WorkbookSpec, battles: readonly Battle[], ctx: SheetCo
       setCell(ws, row, c, summaryValue(key, a, perfById, ctx.tankopedia), 'plain', c < 2 ? 'nickname' : 'x')
     })
   }
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
   autoFilter(ws, rows.length, SUMMARY_KEYS.length - 1)
 }
 
@@ -363,7 +363,7 @@ function detailSheet(wb: WorkbookSpec, battles: readonly Battle[], sourceNames: 
       }
     }
   })
-  ws.freeze = [2, 1]
+  ws.freeze = { xSplit: 2, ySplit: 1 }
   autoFilter(ws, rIdx - 1, hdrSpec.length - 1)
 }
 
@@ -445,7 +445,7 @@ function leaguePlayerSummaries(wb: WorkbookSpec, batch: LeagueRatingBatch): void
     setCell(ws, row, c++, s.assistTotal, 'plain', 'assist_total')
     setCell(ws, row, c++, s.killsTotal, 'plain', 'kills_total')
   }
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
 }
 
 function leagueTeamSummaries(wb: WorkbookSpec, batch: LeagueRatingBatch, summaryOverrides: ReadonlyMap<string, string>): void {
@@ -468,7 +468,7 @@ function leagueTeamSummaries(wb: WorkbookSpec, batch: LeagueRatingBatch, summary
     for (const d of s.dimensionMeans) setCell(ws, row, c++, r1(d), 'plain', 'league_score')
     setCell(ws, row, c++, s.wins, 'plain', 'wins')
   }
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
 }
 
 function leagueBattleDetails(wb: WorkbookSpec, battles: readonly Battle[], sourceNames: readonly string[],
@@ -505,7 +505,7 @@ function leagueBattleDetails(wb: WorkbookSpec, battles: readonly Battle[], sourc
       for (const score of dimensionScores(p)) setCell(ws, row, c++, r1(score), 'plain', 'league_score')
     }
   })
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
 }
 
 function leagueBattleList(wb: WorkbookSpec, battles: readonly Battle[], sourceNames: readonly string[],
@@ -543,7 +543,7 @@ function leagueBattleList(wb: WorkbookSpec, battles: readonly Battle[], sourceNa
     setCell(ws, row, 1, f.arenaId, 'plain', 'clan')
     setCell(ws, row, 5, failureLabel(f.code), 'plain', 'nickname')
   }
-  ws.freeze = [1, 1]
+  ws.freeze = { xSplit: 1, ySplit: 1 }
 }
 
 /** League 批量工作簿：Replay 汇总/明细/战斗列表 + 选手汇总/战队汇总/每场明细/战斗列表（Java `writeAggregateLeague`）。 */

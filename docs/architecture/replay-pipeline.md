@@ -47,7 +47,7 @@ frontend/src/replay-local/
     ├── battleFacts.ts                      parseResult → Battle 事实（与已退役 Java ReplayParser 逐字段一致）
     ├── compute/                            去重 → League Rating → 指标 → Preview 列投影
     ├── analyzeReplays.ts                   全链路：逐文件失败隔离，0 场有效 → NoValidReplaysError
-    ├── export/                             xlsx 汇总 / 逐场 zip（exceljs、fflate 按需加载）
+    ├── export/                             Replay XLSX 投影与逐场 ZIP（XLSX 由 shared/tabular/xlsx 渲染；fflate 按需加载）
     ├── canonical/                          WotbTools canonical replay facts：身份 / 视角 / AoI / 血量 / 归属 / 终态
     │                                       （已退役 Java canonical 层逐条移植；2D 与 AI 共用的语义边界）
     ├── playback/                           canonical facts + 原始位姿 → BattlePlaybackDataset + MapOverview
@@ -60,7 +60,7 @@ frontend/src/replay-local/
 | 能力 | 入口 | 说明 |
 |---|---|---|
 | 回放工作台 · 数据 | `composables/useLocalReplayAnalysis.ts` | 选择文件 → Worker 解析 → 批次计算 → 表格；失败只显示原因，不回退服务端 |
-| 回放工作台 · 导出 | 同上 `exportExcel(mode)` | 复用最近一次分析的批次结果，客户端生成 xlsx / zip |
+| 回放工作台 · 导出 | 同上 `exportExcel(mode)` | 复用最近一次分析的批次结果；shared XLSX capability 生成工作簿，Replay 负责逐场 ZIP |
 | 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 共享 playback session → `parseLocalPlaybackOffThread` → canonical Worker（三切面 → canonical facts）；线程设施失败才退回主线程 |
 | AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequest`（gzip）→ ai-service |
 | 3D 回放 / 射击分析 | `components/Replay3DPane.vue`、`components/ReplayShotsPane.vue`（回放工作台能力面板）、`scene/*` | 直接消费 WASM 时序 / 射击切面 |
