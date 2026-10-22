@@ -21,7 +21,7 @@
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page, delay } from './browser-page.mjs'
 import { startFixtureServer } from './browser-fixtures/fixture-server.mjs'
-import { FIXTURE_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
+import { FIXTURE_TANK_ID, FIXTURE_TURRETLESS_TANK_ID, startFixtureAssetPack } from './browser-fixtures/fixture-asset-pack.mjs'
 // 判定触发面（Primary = 主装甲板）与产品同源：射线未触达 Primary 的点击不构成判定
 //（BlitzKit 的 shoot() 只挂在 Primary 网格上）。门禁断言依赖这份分类，勿在脚本里另抄一份。
 import { ArmorSection, isPrimary } from '../src/scene/penetration.js'
@@ -894,6 +894,55 @@ try {
       check(!/击穿概率[:：]?\s*100%/.test(partial.card.text),
         `概率卡·中间区间：不确定概率不得显示 100%（${partial.card.text}）`)
     }
+  }
+
+  // —— 固定战斗室（GLB 无 turret_NN）：拖炮管必须真的驱动视觉/装甲矩阵 ——
+  // 此前的盲区：aimFromDrag 先写 #turret-val/#gun-val，即使 updateTurretGun 因
+  // collectTurretGunNodes 早退而完全没摆位，UI 数字仍会变——只读角度抓不到这个 bug。
+  // 这里读 rigState() 的真实 matrix，并且夹具没有任何 turret 节点。
+  if (!useRealAssets) {
+    let turretlessPack = null
+    try {
+      turretlessPack = await startFixtureAssetPack({
+        variant: 'turretless',
+        tankCache: {
+          [FIXTURE_TURRETLESS_TANK_ID]: {
+            id: FIXTURE_TURRETLESS_TANK_ID, name: 'Fixture Casemate TD',
+            tier: 8, nation: 'ussr', type: 'AT-SPG',
+          },
+        },
+      })
+      await page.emulate({ width: 1400, height: 900, touch: false, deviceScaleFactor: 1 })
+      await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TURRETLESS_TANK_ID}&shell=0&heatmap=0&az=35&h=2.4&dist=9&assets=${turretlessPack.origin}`)
+      const rigReady = await page.waitFor(() => {
+        const r = window.__armorRicochet?.rigState?.()
+        return !!r && r.turret === null && r.guns.length > 0 && r.armorGuns.length > 0
+      }, { label: 'turretless rig', timeout: 30000 }).then(() => true).catch(() => false)
+      check(rigReady, '固定战斗室：无 turret 节点、炮管组与炮管装甲板均建立姿态表')
+      if (!rigReady) throw new Error('turretless rig never became ready')
+      await delay(500)
+      const rig0 = await page.evaluate('window.__armorRicochet.rigState()')
+      const aim0 = await readAim()
+      const tdSpots = await findSpots(['gun', 'hull'])
+      check(!!tdSpots.gun, `固定战斗室：找到炮管像素（${tdSpots.gun?.name || '无'}）`)
+      if (tdSpots.gun) {
+        await mouseDrag(tdSpots.gun, 150, 60)
+        const rig1 = await page.evaluate('window.__armorRicochet.rigState()')
+        const aim1 = await readAim()
+        check(JSON.stringify(rig0.guns[0].matrix) !== JSON.stringify(rig1.guns[0].matrix),
+          '固定战斗室：拖炮管真的改变视觉炮管矩阵（不只 UI 角度）')
+        check(JSON.stringify(rig0.armorGuns[0].matrix) !== JSON.stringify(rig1.armorGuns[0].matrix),
+          '固定战斗室：拖炮管真的改变炮管装甲板矩阵')
+        check(aim1.t !== aim0.t && aim1.g !== aim0.g,
+          `固定战斗室：炮管拖动 = yaw+俯仰（${aim0.t}/${aim0.g} → ${aim1.t}/${aim1.g}）`)
+        check(Math.abs(parseFloat(aim1.t)) <= 10.5,
+          `固定战斗室：yaw 受 yaw_limits ±10° 限制（${aim1.t}）`)
+      }
+    } finally {
+      if (turretlessPack) await turretlessPack.close()
+    }
+  } else {
+    console.log('[armor-aiming] 跳过（模式条件）：真实资产覆盖不做固定战斗室夹具回归')
   }
 
   await chromeCdp.client.send('Target.closeTarget', { targetId })

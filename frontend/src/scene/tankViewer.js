@@ -2109,6 +2109,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     },
                 };
             },
+            // 诊断：炮塔/炮管 rig 的实际姿态（门禁验证“模型真的动了”，不只读 UI 角度；
+            // 无炮塔车辆的 turret 必须为 null、guns 非空——固定战斗室回归）。
+            rigState() {
+                const mat = (node) => node ? node.matrix.elements.slice() : null;
+                const armorGuns = [];
+                if (armorOrigMatrices) {
+                    for (const node of armorOrigMatrices.keys()) {
+                        if (/^gun_\d+(?:_state_\d+)?_armor_/.test(node.name || '')) {
+                            armorGuns.push({ name: node.name, matrix: mat(node) });
+                        }
+                    }
+                }
+                const guns = gunBarrelNodes.length ? gunBarrelNodes : gunNodesList;
+                return {
+                    turret: turretNode ? { name: turretNode.name, matrix: mat(turretNode) } : null,
+                    guns: guns.map(n => ({ name: n.name, matrix: mat(n) })),
+                    armorGuns,
+                    pivots: {
+                        turret: armorPivotTurret ? armorPivotTurret.toArray() : null,
+                        gun: armorPivotGun ? armorPivotGun.toArray() : null,
+                    },
+                };
+            },
             // 诊断：克隆网格 matrix vs matrixWorld（坐标框架核对）
             __clones() {
                 if (!primaryArmorScene) return null;
@@ -5045,9 +5068,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function collectTurretGunNodes() {
-            if (!tankModel || !configTurretNodes.length) return;
+            // 固定战斗室车辆（歼击车）的 GLB 没有 turret_NN 实体，炮管组直接挂在车体上；
+            // 只要存在炮管组就必须建立姿态表，横转由炮管组吃 mG = mT·Rx(gr)（与回放同一语义）。
+            if (!tankModel || (!configTurretNodes.length && !configGunGroups.length)) return;
             const cfg = currentConfig();
-            turretNode = configTurretNodes[cfg.turret_index % configTurretNodes.length] || null;
+            turretNode = configTurretNodes.length
+                ? configTurretNodes[cfg.turret_index % configTurretNodes.length] || null
+                : null;
             if (configGunGroups.length) {
                 const grp = configGunGroups[cfg.gun_index % configGunGroups.length];
                 gunNodesList = grp || [];
