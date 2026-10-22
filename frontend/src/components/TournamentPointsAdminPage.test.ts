@@ -7,13 +7,14 @@ import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import TournamentPointsAdminPage from './TournamentPointsAdminPage.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 
-const state = vi.hoisted(() => ({ api: {} as Record<string, any>, auth: null as any }))
+const state = vi.hoisted(() => ({ api: {} as Record<string, any>, auth: null as any, download: vi.fn() }))
 vi.mock('../composables/useAuth.js', async importOriginal => {
   const { ref } = await import('vue')
   state.auth = { authenticated: ref(true), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => 1 }
   return { ...await importOriginal<object>(), useAuth: () => state.auth }
 })
 vi.mock('../composables/useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
+vi.mock('../utils/exportReplayPng.js', async importOriginal => ({ ...await importOriginal<object>(), downloadBlob: state.download }))
 vi.mock('../api/tournament-points.js', async importOriginal => {
   const original = await importOriginal<Record<string, any>>()
   const mock = { ...original }
@@ -45,7 +46,7 @@ beforeEach(() => {
   state.api.getTournamentConfig.mockResolvedValue({ event, clans: [], rounds: [] })
   state.api.getTournamentRuleSource.mockResolvedValue(null)
   state.api.getTournamentDay.mockResolvedValue({ eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, version: 1,
-    rulesVersion: 0, status: 'EMPTY', expectedGroupCount: null, groups: [], published: false, standings })
+    rulesVersion: 0, status: 'EMPTY', expectedGroupCount: null, groups: [], published: false, standings, canonicalStandings: standings })
   state.api.getTournamentAudit.mockResolvedValue([])
   state.api.getTournamentHistoricalState.mockResolvedValue({ canImport: true, imported: false, historical: false, eventVersion: 1 })
   state.api.supportsTournamentCsvImport.mockResolvedValue(true)
@@ -54,6 +55,31 @@ beforeEach(() => {
   state.api.importTournamentCsv.mockResolvedValue(preview)
 })
 describe('independent CSV administration flow', () => {
+  it('exports the authenticated pre-clear standings rather than the visible sanction overlay', async () => {
+    const canonicalStandings = { ...standings, rows: [{ rank: 1, clanTag: 'A', totalPoints: 900,
+      rounds: [{ roundNumber: 1, days: [{ dayNumber: 1, points: 900 }, { dayNumber: 2, points: null }] }] }] }
+    const visibleStandings = { ...standings, rows: [{ rank: 1, clanTag: 'A', totalPoints: 0,
+      rounds: [{ roundNumber: 1, days: [{ dayNumber: 1, points: 0 }, { dayNumber: 2, points: null }] }] }] }
+    state.api.getTournamentDay.mockResolvedValue({ eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, version: 1,
+      rulesVersion: 0, status: 'FINALIZED', expectedGroupCount: null, groups: [], published: true,
+      standings: visibleStandings, canonicalStandings })
+    const p = page(); await p.select()
+    expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
+    await p.wrapper.get('[data-testid="tournament-admin-export-csv"]').trigger('click'); await flushPromises()
+    expect(state.download).toHaveBeenCalledOnce()
+    expect(state.download.mock.calls[0][1]).toBe('2026_CN_FIRE_CUP.csv')
+    expect(await state.download.mock.calls[0][0].text()).toContain('A,900')
+    expect(await state.download.mock.calls[0][0].text()).not.toContain('A,0')
+    p.wrapper.unmount()
+  })
+  it('keeps admin editing compatible when an older backend omits canonical standings', async () => {
+    state.api.getTournamentDay.mockResolvedValue({ eventId: 7, roundNumber: 1, dayNumber: 1, eventVersion: 1, version: 1,
+      rulesVersion: 0, status: 'EMPTY', expectedGroupCount: null, groups: [], published: false, standings })
+    const p = page(); await p.select()
+    expect(p.wrapper.get('[data-testid="tournament-admin-export-csv"]').attributes('disabled')).toBeDefined()
+    expect(p.wrapper.find('[data-testid="tournament-admin-summary"]').exists()).toBe(true)
+    p.wrapper.unmount()
+  })
   it('guides event selection without showing a create prompt for existing events', async () => {
     const p = page(); await flushPromises()
     expect(p.wrapper.get('[data-testid="tournament-admin-empty"]').text()).toContain(p.i18n.global.t('tournament.adminSelectionHint'))

@@ -140,21 +140,11 @@ describe('public tournament summary', () => {
 })
 
 describe('public tournament export lifecycle', () => {
-  it('offers localized canonical CSV guidance and downloads the selected standings', async () => {
+  it('keeps CSV export out of the anonymous public board', async () => {
     const p = page(); await flushPromises()
-    expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
     await p.wrapper.get('[data-testid="tournament-export"]').trigger('click')
-    expect(p.wrapper.get('[data-testid="tournament-export-csv"]').text()).toBe(p.i18n.global.t('tournament.exportCsv'))
-    await p.wrapper.get('[data-testid="tournament-export-csv"]').trigger('click')
-    await flushPromises()
-    expect(state.download).toHaveBeenCalledOnce()
-    expect(state.download.mock.calls[0][1]).toBe('2026_CN_SUMMER.csv')
-    expect(state.download.mock.calls[0][0].type).toBe('text/csv;charset=utf-8')
-    for (const locale of ['en', 'ru']) {
-      p.i18n.global.locale.value = locale
-      await nextTick()
-      expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
-    }
+    expect(p.wrapper.find('[data-testid="tournament-export-csv"]').exists()).toBe(false)
+    expect(p.wrapper.find('[data-testid="tournament-csv-hint"]').exists()).toBe(false)
     p.wrapper.unmount()
   })
 

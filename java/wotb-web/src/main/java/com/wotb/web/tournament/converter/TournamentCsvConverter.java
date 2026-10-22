@@ -1,4 +1,4 @@
-package com.wotb.web.tournament.mapper;
+package com.wotb.web.tournament.converter;
 
 import com.wotb.web.util.csv.CsvDocument;
 import org.springframework.util.StringUtils;

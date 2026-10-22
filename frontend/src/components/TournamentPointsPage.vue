@@ -14,7 +14,7 @@ import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { isAndroidApp } from '../composables/usePlatformBridge.js'
 import { downloadBlob } from '../utils/exportReplayPng.js'
-import { projectTournamentPoints, createTournamentPointsCsv, createTournamentPointsXlsx, printTournamentPoints } from '../utils/tournamentPointsExport.js'
+import { projectTournamentPoints, createTournamentPointsXlsx, printTournamentPoints } from '../utils/tournamentPointsExport.js'
 import '../styles/tournament-points.css'
 const { t, te, locale } = useI18n()
 const { availability } = useFeatureGate()
@@ -32,7 +32,6 @@ const exportMessage = ref('')
 const exportDisabled = computed(() => exporting.value || loading.value || !!error.value || !standings.value?.rows.length || standings.value.event.id !== eventId.value)
 const exportItems = computed(() => [
   { key: 'xlsx', label: t('tournament.exportExcel'), testid: 'tournament-export-xlsx' },
-  { key: 'csv', label: t('tournament.exportCsv'), testid: 'tournament-export-csv' },
   { key: 'pdf', label: t('tournament.exportPdf'), testid: 'tournament-export-pdf' },
 ])
 async function exportBoard(format: string) {
@@ -41,13 +40,10 @@ async function exportBoard(format: string) {
   if (format === 'pdf' && isAndroidApp()) { exportMessage.value = t('tournament.exportPdfBrowser'); return }
   const source = standings.value
   // Freeze values at click time before any asynchronous download or renderer work.
-  const table = format === 'csv' ? null : projectTournamentPoints(source, locale.value, t)
+  const table = projectTournamentPoints(source, locale.value, t)
   exporting.value = true
   try {
-    if (format === 'csv') {
-      const file = createTournamentPointsCsv(source)
-      await downloadBlob(file.blob, file.filename)
-    } else if (format === 'xlsx' && table) {
+    if (format === 'xlsx' && table) {
       const file = await createTournamentPointsXlsx(table)
       await downloadBlob(file.blob, file.filename)
     } else if (format === 'pdf' && table) await printTournamentPoints(table)
@@ -139,7 +135,6 @@ onScopeDispose(() => { generation++; controller.abort() })
       <MenuButton :label="$t(exporting ? 'tournament.exporting' : 'tournament.export')" :items="exportItems" :disabled="exportDisabled" data-testid="tournament-export" data-tour="tournament-export" @select="exportBoard" />
       <AppButton :disabled="loading || !network.available" @click="eventId ? loadBoard() : loadEvents(true)">{{ $t('tournament.refresh') }}</AppButton>
     </template></PageHeader>
-    <p class="tournament-muted" data-testid="tournament-csv-hint">{{ $t('tournament.csvExportHint') }}</p>
     <Banner v-if="!network.available">{{ $t(network.messageKey || 'featureOffline.tournamentPoints') }}</Banner>
     <Banner v-if="error" tone="danger">{{ apiErrorLabel(t, te, error) }}</Banner>
     <Banner v-if="exportMessage" role="status">{{ exportMessage }}</Banner>

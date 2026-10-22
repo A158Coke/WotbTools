@@ -2457,6 +2457,14 @@ export default {
         },
         "standings": {
           "$ref": "#/$defs/TournamentStandings"
+        },
+        "canonicalStandings": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/TournamentStandings"
+            }
+          ],
+          "description": "Optional authenticated admin import/export facts before sanctions and clear overlays; absent on older servers."
         }
       }
     },
