@@ -7,14 +7,15 @@
  *   const zip = await exportEachZip(dataset, tankopedia, { teamNames })         // mode=each
  *   download(file.blob, file.filename)
  *
- * 工作簿结构是纯数据（sheets.ts，同步、可测）；exceljs / fflate 只在 render.ts 中动态加载。
+ * 工作簿结构由 Replay 投影为 shared WorkbookSpec；XLSX renderer 与 ZIP packaging 分属各自能力。
  * 与 Java 的逐格一致由 `__golden__/java-export.json` 锁定（export.golden.test.ts）。
  */
 
 import type { ProcessedDataset } from '../compute/finalize.js'
 import { resultFor } from '../compute/league-batch.js'
 import type { Tankopedia } from '../compute/tankopedia.js'
-import { renderXlsx, zipFiles } from './render.js'
+import { renderXlsx } from '../../shared/tabular/xlsx/index.js'
+import { zipFiles } from './render.js'
 import {
   aggregateLeagueWorkbook,
   aggregateWorkbook,
@@ -26,17 +27,16 @@ import {
 import type { WorkbookSpec } from './spec.js'
 
 export type { TeamNameOverrides } from './sheets.js'
-export type { CellSpec, SheetSpec, StyleKey, WorkbookSpec } from './spec.js'
-export { renderXlsx } from './render.js'
+export type { WorkbookSpec } from './spec.js'
 
 export const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 export const ZIP_MIME = 'application/zip'
 /** 多场纯 League（CW）汇总文件名（Java `ReplayExportNames.LEAGUE_AGGREGATE`）。 */
-export const LEAGUE_AGGREGATE_FILENAME = '联赛汇总.xlsx'
+const LEAGUE_AGGREGATE_FILENAME = '联赛汇总.xlsx'
 /** 多场 Standard / Mixed 汇总文件名（Java `ReplayExportNames.STANDARD_AGGREGATE`）。 */
-export const STANDARD_AGGREGATE_FILENAME = '回放汇总.xlsx'
+const STANDARD_AGGREGATE_FILENAME = '回放汇总.xlsx'
 /** 逐场导出 zip 文件名。 */
-export const EACH_ZIP_FILENAME = '逐场导出.zip'
+const EACH_ZIP_FILENAME = '逐场导出.zip'
 
 /**
  * 战队名称覆盖输入（与服务端 `teamNames` 参数同一契约）：
@@ -116,7 +116,7 @@ function uniqueName(preferred: string, used: Set<string>): string {
 }
 
 /** mode=aggregate 的文件名：单场 = 源文件名.xlsx；多场 League = 联赛汇总；否则回放汇总。 */
-export function aggregateFilename(dataset: ProcessedDataset): string {
+function aggregateFilename(dataset: ProcessedDataset): string {
   if (dataset.battles.length === 1) return `${stripExt(dataset.battleSourceNames[0])}.xlsx`
   return dataset.league !== null ? LEAGUE_AGGREGATE_FILENAME : STANDARD_AGGREGATE_FILENAME
 }
@@ -142,7 +142,7 @@ export function buildAggregateWorkbook(dataset: ProcessedDataset, tankopedia: Ta
 }
 
 /** mode=each 的逐场工作簿（Java `processEachFromResult`）：未评分的 League 场次也导出普通单场。 */
-export function buildEachWorkbooks(dataset: ProcessedDataset, tankopedia: Tankopedia,
+function buildEachWorkbooks(dataset: ProcessedDataset, tankopedia: Tankopedia,
   options: ExportOptions = {}): { name: string; workbook: WorkbookSpec }[] {
   const ctx: SheetContext = { tankopedia, timeZone: options.timeZone }
   const names = parseTeamNames(options.teamNames)

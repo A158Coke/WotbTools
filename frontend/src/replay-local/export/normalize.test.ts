@@ -10,6 +10,8 @@
  */
 
 import type { Cell, Color, Workbook, Worksheet } from 'exceljs'
+import ExcelJS from 'exceljs'
+import { describe, expect, it } from 'vitest'
 
 export interface NormalizedSheet {
   name: string
@@ -100,3 +102,17 @@ export async function normalizeXlsx(bytes: Uint8Array): Promise<NormalizedWorkbo
     sheets: wb.worksheets.map(sheet),
   }
 }
+
+describe('XLSX test normalization', () => {
+  it('distinguishes formula, numeric zero and blank cells', async () => {
+    const workbook = new ExcelJS.Workbook()
+    workbook.addWorksheet('Values').addRow([{ formula: 'SUM(A1:A2)' }, 0, null, 'tail'])
+    const bytes = await workbook.xlsx.writeBuffer()
+    const normalized = await normalizeXlsx(new Uint8Array(bytes as ArrayBuffer))
+    const cells = normalized.sheets[0].rows[0]!
+    expect(cells[0]?.[0]).toEqual({ f: 'SUM(A1:A2)' })
+    expect(cells[1]?.[0]).toBe(0)
+    expect(cells[2]).toBeNull()
+    expect(cells[3]?.[0]).toBe('tail')
+  })
+})

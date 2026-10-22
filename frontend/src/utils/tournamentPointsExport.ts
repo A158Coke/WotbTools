@@ -1,5 +1,7 @@
 import type { TournamentStandings } from '../api/tournament-points.js'
 import { sanitizeFilename } from './exportReplayPng.js'
+import { renderXlsx } from '../shared/tabular/xlsx/index.js'
+import type { CellStyle, RowSpec, WorkbookSpec } from '../shared/tabular/xlsx/index.js'
 import printStyles from '../styles/tokens/tournament-print.css?inline'
 import tournamentMessages from '../locales/tournament-messages.json'
 
@@ -73,39 +75,60 @@ export function projectTournamentPoints(standings: TournamentStandings, locale: 
 }
 
 /** No formulas or score recalculation: all numbers are the public API's finalized values. */
-export async function createTournamentPointsXlsx(table: TournamentTableProjection): Promise<{ blob: Blob; filename: string }> {
-  const module = await import('exceljs')
-  const ExcelJS = module.default ?? module
-  const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet(table.sheetName, {
-    views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }],
-    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:3' },
-  })
-  sheet.addRow([table.title])
-  sheet.mergeCells(1, 1, 1, table.columns.length)
-  sheet.addRow([table.finalizedLabel])
-  sheet.mergeCells(2, 1, 2, table.columns.length)
-  sheet.addRow(table.columns.map(column => column.label))
-  table.rows.forEach(row => sheet.addRow([...row.cells]))
-  table.columns.forEach((column, index) => {
-    const target = sheet.getColumn(index + 1)
-    target.width = column.kind === 'clan' ? 24 : column.kind === 'rank' ? 8 : 16
-    target.alignment = { horizontal: column.kind === 'clan' ? 'left' : 'right', vertical: 'middle', wrapText: true }
-    if (column.kind === 'clan') {
-      // ExcelJS treats string values as text; '@' also preserves tag punctuation in Excel.
-      for (let row = 4; row <= sheet.rowCount; row++) sheet.getCell(row, index + 1).numFmt = '@'
-    } else target.numFmt = '0'
-  })
-  for (let row = 1; row <= 3; row++) {
-    sheet.getRow(row).font = { bold: true, size: row === 1 ? 14 : 11 }
-    sheet.getRow(row).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }
+function buildTournamentWorkbook(table: TournamentTableProjection): WorkbookSpec {
+  const columnStyles = table.columns.map((column): CellStyle => ({
+    alignment: { horizontal: column.kind === 'clan' ? 'left' : 'right', vertical: 'middle', wrapText: true },
+    // Text formatting keeps clan tags literal; all score and rank cells remain numeric.
+    numberFormat: column.kind === 'clan' ? '@' : '0',
+  }))
+  const headerStyle: CellStyle = {
+    font: { bold: true, size: 11 },
+    alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
   }
-  sheet.getRow(1).height = 30
-  sheet.getRow(3).height = 42
-  sheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: sheet.rowCount, column: table.columns.length } }
-  const buffer = await workbook.xlsx.writeBuffer()
+  const titleStyle: CellStyle = {
+    font: { bold: true, size: 14 },
+    alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
+    numberFormat: columnStyles[0]?.numberFormat,
+  }
+  const statusStyle: CellStyle = {
+    font: { bold: true, size: 11 },
+    alignment: { horizontal: 'left', vertical: 'middle', wrapText: true },
+    numberFormat: columnStyles[0]?.numberFormat,
+  }
+  const rows: RowSpec[] = [
+    { cells: [{ value: table.title, style: titleStyle }], height: 30 },
+    { cells: [{ value: table.finalizedLabel, style: statusStyle }] },
+    {
+      cells: table.columns.map((column, index) => ({ value: column.label, style: { ...columnStyles[index], ...headerStyle } })),
+      height: 42,
+    },
+    ...table.rows.map(row => ({
+      cells: row.cells.map((value, index) => ({ value, style: columnStyles[index] })),
+    })),
+  ]
+
   return {
-    blob: new Blob([new Uint8Array(buffer as ArrayBuffer)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    activeTab: 0,
+    sheets: [{
+      name: table.sheetName,
+      columns: table.columns.map(column => ({ width: column.kind === 'clan' ? 24 : column.kind === 'rank' ? 8 : 16 })),
+      rows,
+      freeze: { xSplit: 2, ySplit: 3 },
+      autoFilter: { from: { row: 3, column: 1 }, to: { row: rows.length, column: table.columns.length } },
+      merges: [
+        { startRow: 1, startColumn: 1, endRow: 1, endColumn: table.columns.length },
+        { startRow: 2, startColumn: 1, endRow: 2, endColumn: table.columns.length },
+      ],
+      pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:3' },
+    }],
+  }
+}
+
+export async function createTournamentPointsXlsx(table: TournamentTableProjection): Promise<{ blob: Blob; filename: string }> {
+  const bytes = await renderXlsx(buildTournamentWorkbook(table))
+  const blobBytes = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+  return {
+    blob: new Blob([blobBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     filename: `${sanitizeFilename(table.title)}.xlsx`,
   }
 }

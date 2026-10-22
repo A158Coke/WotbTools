@@ -1,78 +1,78 @@
-/**
- * 工作簿的纯数据描述（与 exceljs 解耦）：sheets.ts 构建，render.ts 才按需加载 exceljs 渲染成 xlsx。
- * 样式只有 Java `ExcelStyles` 里出现过的几种，用 key 引用。
- */
+/** Replay workbook helpers and Replay-owned presentation styles. */
 
 import { columnLetter, displayWidth } from './format.js'
+import type { CellStyle, CellValue, SheetSpec, WorkbookSpec } from '../../shared/tabular/xlsx/index.js'
 
-/**
- * - hdr：表头（粗体白字 + DARK_BLUE 填充 + 居中 + 细边框）
- * - team1/team2/plain + L/C：细边框（+ 队伍底色）+ 左/居中对齐（`ExcelStyles.setCell`）
- * - title：14 号粗体（战斗信息标题）；bold：粗体（战斗信息键名）
- * - dupLabel：红色粗体（「已跳过的重复上传」）
- * - none：无样式（POI 默认 xf）
- */
-export type StyleKey =
+export type { SheetSpec, WorkbookSpec } from '../../shared/tabular/xlsx/index.js'
+
+type StyleKey =
   | 'hdr'
   | 'team1L' | 'team1C' | 'team2L' | 'team2C' | 'plainL' | 'plainC'
   | 'title' | 'bold' | 'dupLabel' | 'none'
 
 export type Fill = 'team1' | 'team2' | 'plain'
 
-export interface CellSpec {
-  /** string → 文本单元格；number → 数值单元格（Java `setCellValue(double)`）。 */
-  v: string | number
-  s: StyleKey
-}
-
-export interface SheetSpec {
-  name: string
-  /** 0 基列号 → 列宽（字符数，= POI `setColumnWidth(c, w * 256)` 的 w）。 */
-  cols: Map<number, number>
-  /** [xSplit, ySplit]（POI `createFreezePane(col, row)`）。 */
-  freeze: [number, number] | null
-  autoFilter: string | null
-  /** 稀疏行：rows[r][c]，缺失 = 未创建的行/单元格。 */
-  rows: (CellSpec | undefined)[][]
-}
-
-export interface WorkbookSpec {
-  sheets: SheetSpec[]
-  activeTab: number
-}
-
-/** 左对齐（文本）列 key（Java `Columns.LEFT_ALIGN`）。 */
 const LEFT_ALIGN = new Set(['nickname', 'clan', 'tank_name', 'date', 'map_name'])
+const indexed = (index: number) => ({ indexed: index })
+const solid = (argb?: string, index?: number): NonNullable<CellStyle['fill']> => ({
+  type: 'pattern',
+  pattern: 'solid',
+  fgColor: argb ? { argb } : { indexed: index },
+})
+const thin = { style: 'thin' as const }
+const border = { top: thin, bottom: thin, left: thin, right: thin }
+const baseFont = { name: 'Calibri', size: 11, family: 2 }
+const team1Fill = solid('FFDDEBF7')
+const team2Fill = solid('FFFCE4D6')
+const STYLES: Readonly<Record<StyleKey, CellStyle>> = {
+  hdr: { font: { ...baseFont, bold: true, color: indexed(9) }, fill: solid(undefined, 18), alignment: { horizontal: 'center' }, border },
+  team1L: { fill: team1Fill, alignment: { horizontal: 'left' }, border },
+  team1C: { fill: team1Fill, alignment: { horizontal: 'center' }, border },
+  team2L: { fill: team2Fill, alignment: { horizontal: 'left' }, border },
+  team2C: { fill: team2Fill, alignment: { horizontal: 'center' }, border },
+  plainL: { alignment: { horizontal: 'left' }, border },
+  plainC: { alignment: { horizontal: 'center' }, border },
+  title: { font: { ...baseFont, bold: true, size: 14 } },
+  bold: { font: { ...baseFont, bold: true } },
+  dupLabel: { font: { ...baseFont, bold: true, color: indexed(10) } },
+  none: {},
+}
 
 export function newSheet(wb: WorkbookSpec, name: string): SheetSpec {
-  const sheet: SheetSpec = { name, cols: new Map(), freeze: null, autoFilter: null, rows: [] }
+  const sheet: SheetSpec = { name, columns: [], rows: [], freeze: null, autoFilter: null }
   wb.sheets.push(sheet)
   return sheet
 }
 
-export function put(sheet: SheetSpec, row: number, col: number, v: string | number, s: StyleKey = 'none'): void {
-  const cells = sheet.rows[row] ?? (sheet.rows[row] = [])
-  cells[col] = { v, s }
+export function put(sheet: SheetSpec, row: number, col: number, value: CellValue, styleKey: StyleKey = 'none'): void {
+  const targetRow = sheet.rows[row] ?? (sheet.rows[row] = { cells: [] })
+  if (targetRow === null) return
+  targetRow.cells[col] = { value, style: STYLES[styleKey] }
 }
 
-/** Java `ExcelStyles.setCell`：Number → 数值；null → 空串；其余 toString；按 key 选左/居中 + 填充。 */
-export function setCell(sheet: SheetSpec, row: number, col: number, val: unknown, fill: Fill, key: string): void {
-  let v: string | number
-  if (typeof val === 'number') v = val
-  else if (val === null || val === undefined) v = ''
-  else v = String(val)
-  put(sheet, row, col, v, `${fill}${LEFT_ALIGN.has(key) ? 'L' : 'C'}` as StyleKey)
+function setColumnWidth(sheet: SheetSpec, index: number, width: number): void {
+  const column = sheet.columns ?? (sheet.columns = [])
+  column[index] = { ...column[index], width }
 }
 
-/** Java `ExcelStyles.writeHeader`：第 0 行表头；列宽 = max(宽, 显示宽 + 4)（防筛选箭头截断）。 */
+/** Replay's presentation rules stay in the feature and become generic cell styles here. */
+export function setCell(sheet: SheetSpec, row: number, col: number, value: unknown, fill: Fill, key: string): void {
+  let cellValue: string | number
+  if (typeof value === 'number') cellValue = value
+  else if (value === null || value === undefined) cellValue = ''
+  else cellValue = String(value)
+  put(sheet, row, col, cellValue, `${fill}${LEFT_ALIGN.has(key) ? 'L' : 'C'}` as StyleKey)
+}
+
+/** Java `ExcelStyles.writeHeader`: preserve POI column widths and header padding. */
 export function writeHeader(sheet: SheetSpec, titleWidth: readonly (readonly [string, number])[]): void {
-  titleWidth.forEach(([title, width], c) => {
-    put(sheet, 0, c, title, 'hdr')
-    sheet.cols.set(c, Math.max(width, displayWidth(title) + 4))
+  titleWidth.forEach(([title, width], column) => {
+    put(sheet, 0, column, title, 'hdr')
+    setColumnWidth(sheet, column, Math.max(width, displayWidth(title) + 4))
   })
 }
 
-/** POI `setAutoFilter(new CellRangeAddress(0, lastRow, 0, lastCol))`。 */
+/** POI `setAutoFilter(new CellRangeAddress(0, lastRow, 0, lastCol))`. */
 export function autoFilter(sheet: SheetSpec, lastRow: number, lastCol: number): void {
   sheet.autoFilter = `A1:${columnLetter(lastCol)}${lastRow + 1}`
 }
