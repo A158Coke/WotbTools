@@ -16,7 +16,7 @@ import com.wotb.web.tournament.entity.TournamentEvidence;
 import com.wotb.web.tournament.entity.TournamentRule;
 import com.wotb.web.tournament.entity.TournamentSnapshot;
 import com.wotb.web.tournament.mapper.TournamentMapper;
-import com.wotb.web.tournament.mapper.TournamentCsvConverter;
+import com.wotb.web.tournament.converter.TournamentCsvConverter;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
 import com.wotb.web.tournament.repository.TournamentDayRepository;
@@ -443,8 +443,12 @@ public class TournamentService {
     }
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TournamentDtos.DayView day(final long id, final int round, final int number) {
+        return day(id, round, number, false);
+    }
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TournamentDtos.DayView day(final long id, final int round, final int number, final boolean includeCanonicalStandings) {
         final TournamentEvent event = event(id); dimension(event, round, number);
-        return dayView(event, existingDay(id, round, number).orElseGet(() -> newDay(id, round, number)), null);
+        return dayView(event, existingDay(id, round, number).orElseGet(() -> newDay(id, round, number)), null, includeCanonicalStandings);
     }
     public TournamentDtos.DayView expectedGroups(final long id, final int round, final int number, final TournamentDtos.ExpectedGroupsRequest request) {
         final TournamentEvent event = locked(id, request.expectedEventVersion()); dimension(event, round, number);
@@ -619,6 +623,9 @@ public class TournamentService {
         return standings(event, storedDays, previewDay, preview, admin, historicalRoster, false);
     }
     private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin, final Set<String> historicalRoster, final boolean replaceRoster) {
+        return standings(event, storedDays, previewDay, preview, admin, historicalRoster, replaceRoster, true);
+    }
+    private TournamentDtos.Standings standings(final TournamentEvent event, final List<TournamentDay> storedDays, final TournamentDay previewDay, final List<TournamentSnapshot.Group> preview, final boolean admin, final Set<String> historicalRoster, final boolean replaceRoster, final boolean applyClears) {
         final Map<String, Map<String, Long>> scores = new HashMap<>();
         clans.findByEventIdOrderByClanTag(event.id).stream().filter(clan -> !replaceRoster && clan.historicalPublished)
                 .forEach(clan -> scores.put(clan.clanTag, new HashMap<>()));
@@ -636,15 +643,15 @@ public class TournamentService {
                 if (selected == null && day.publishedHistoricalPoints == null) { continue; }
                 final Map<Integer, Integer> points = rulePoints(ruleByRound.get(round), number);
                 if (selected == null) {
-                    day.publishedHistoricalPoints.forEach((tag, value) -> scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, day.clearedClans.contains(tag) ? 0L : value.longValue()));
+                    day.publishedHistoricalPoints.forEach((tag, value) -> scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, applyClears && day.clearedClans.contains(tag) ? 0L : value.longValue()));
                 }
                 for (final TournamentSnapshot.Group group : selected == null ? List.<TournamentSnapshot.Group>of() : selected) {
                     for (final TournamentSnapshot.Team team : group.teams()) {
                         final Integer value = points.get(team.rank()); if (value == null) { throw error(ApiErrorCode.TOURNAMENT_RULES_INCOMPLETE); }
-                        scores.computeIfAbsent(team.clanTag(), ignored -> new HashMap<>()).put(key, day.clearedClans.contains(team.clanTag()) ? 0L : value.longValue());
+                        scores.computeIfAbsent(team.clanTag(), ignored -> new HashMap<>()).put(key, applyClears && day.clearedClans.contains(team.clanTag()) ? 0L : value.longValue());
                     }
                 }
-                for (final String tag : day.clearedClans) {
+                for (final String tag : applyClears ? day.clearedClans : Set.<String>of()) {
                     if ((!event.csvImported && !replaceRoster) || (selected != null && scores.containsKey(tag))) {
                         scores.computeIfAbsent(tag, ignored -> new HashMap<>()).put(key, 0L);
                     }
@@ -673,11 +680,15 @@ public class TournamentService {
         return new TournamentDtos.Standings(mapper.toDto(event), List.copyOf(columns), List.copyOf(ranked));
     }
     private TournamentDtos.DayView dayView(final TournamentEvent event, final TournamentDay day, final List<TournamentSnapshot.Group> preview) {
+        return dayView(event, day, preview, false);
+    }
+    private TournamentDtos.DayView dayView(final TournamentEvent event, final TournamentDay day, final List<TournamentSnapshot.Group> preview, final boolean includeCanonicalStandings) {
         final List<TournamentSnapshot.Group> selected = preview != null ? preview : day.draftGroups != null ? day.draftGroups : day.publishedGroups != null ? day.publishedGroups : List.of();
         final String status = day.correction ? "CORRECTION" : published(day) ? "FINALIZED" : day.draftGroups != null || preview != null ? "DRAFT" : "EMPTY";
         return new TournamentDtos.DayView(event.id, day.roundNumber, day.dayNumber, event.version, effectiveRules(event).stream().filter(rule -> rule.roundNumber == day.roundNumber).findFirst().orElseThrow().rulesVersion,
                 day.version, status, day.expectedGroupCount, selected.stream().map(mapper::group).toList(), published(day),
-                standings(event, dayList(event.id), preview == null ? null : day, preview, true));
+                standings(event, dayList(event.id), preview == null ? null : day, preview, true),
+                includeCanonicalStandings ? standings(event, dayList(event.id), null, null, false, Set.of(), false, false) : null);
     }
     private TournamentDtos.Config configView(final TournamentEvent event) {
         return new TournamentDtos.Config(mapper.toDto(event), effectiveRules(event).stream()

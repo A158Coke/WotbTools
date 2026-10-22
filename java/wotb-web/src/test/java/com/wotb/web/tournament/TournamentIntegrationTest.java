@@ -1,6 +1,7 @@
 package com.wotb.web.tournament;
 
 import com.wotb.web.tournament.dto.TournamentDtos;
+import com.wotb.web.tournament.converter.TournamentCsvConverter;
 import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
@@ -59,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class TournamentIntegrationTest {
+    private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Path EVIDENCE_ROOT;
     static {
         try { EVIDENCE_ROOT = Files.createTempDirectory("wotb-tournament-it-"); }
@@ -163,6 +165,67 @@ class TournamentIntegrationTest {
                 assertCanonicalFacts(actual, "=CMD+1", java.util.Arrays.asList(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null), 1);
             }
         }
+    }
+    @Test void canonicalCsvRoundTripPreservesUnderlyingScoresAcrossActiveClearOverlays() throws Exception {
+        final var initialCsv = csv(csvText("A,900,,,,,,,,,,900\n"));
+        var version = service.config(id).event().version();
+        var preview = service.previewCsv(id, version, initialCsv);
+        service.importCsv("admin", id, version, initialCsv, preview.sourceSha256(), true, "initial-900");
+        service.clearPoints("admin", id, new TournamentDtos.ClearRequest(service.config(id).event().version(), 1, 1, "A", "sanction", false));
+        assertCanonicalCsvPreservesClearAndRestore(id, "historical-csv", 900);
+
+        final long groupEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"))).event().id();
+        final var config = service.config(groupEvent);
+        service.saveRules("admin", groupEvent, 1, new TournamentDtos.RuleRequest(config.event().version(), config.rounds().getFirst().rulesVersion(), ruleDays(900)));
+        save(groupEvent, 1, 1, List.of(group(groupEvent, 1, 1, 1, 0, "A", "B", "C")), List.of("A", "B", "C"));
+        publish(groupEvent, 1, 1, "publish-900-group");
+        service.clearPoints("admin", groupEvent, new TournamentDtos.ClearRequest(service.config(groupEvent).event().version(), 1, 1, "A", "sanction", false));
+        assertCanonicalCsvPreservesClearAndRestore(groupEvent, "published-groups", 900);
+    }
+    private void assertCanonicalCsvPreservesClearAndRestore(final long eventId, final String key, final long score) throws Exception {
+        final TournamentDtos.DayView adminDay = JSON.treeToValue(JSON.valueToTree(service.day(eventId, 1, 1, true)), TournamentDtos.DayView.class);
+        assertEquals(0L, point(adminDay.standings(), "A"));
+        assertEquals(score, point(adminDay.canonicalStandings(), "A"));
+        final var canonicalFile = canonicalCsv(adminDay.canonicalStandings());
+        final var preview = service.previewCsv(eventId, adminDay.eventVersion(), canonicalFile);
+        service.importCsv("admin", eventId, preview.eventVersion(), canonicalFile, preview.sourceSha256(), true, "round-trip-" + key);
+        assertEquals(0L, point(service.publicStandings(eventId), "A"), "clear overlay remains active after import");
+        assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(eventId, 1, 1).orElseThrow().clearedClans.contains("A"));
+        service.clearPoints("admin", eventId, new TournamentDtos.ClearRequest(service.config(eventId).event().version(), 1, 1, "A", "restore", true));
+        assertEquals(score, point(service.publicStandings(eventId), "A"), "restoring the clear reveals the original score");
+    }
+    private long point(final TournamentDtos.Standings standings, final String tag) {
+        return standings.rows().stream().filter(row -> row.clanTag().equals(tag)).findFirst().orElseThrow()
+                .rounds().getFirst().days().getFirst().points();
+    }
+    private MockMultipartFile canonicalCsv(final TournamentDtos.Standings standings) throws Exception {
+        final List<String> headers = new ArrayList<>(List.of("军团标签"));
+        for (int round = 1; round <= standings.event().roundCount(); round++) {
+            for (int day = 1; day <= standings.event().daysPerRound(); day++) { headers.add("R" + round + "D" + day); }
+        }
+        headers.add("总积分");
+        final StringWriter output = new StringWriter();
+        final CSVFormat format = CSVFormat.RFC4180.builder().setRecordSeparator("\r\n").get();
+        try (final CSVPrinter printer = new CSVPrinter(output, format)) {
+            printer.printRecord(headers);
+            for (final var row : standings.rows()) {
+                final List<Object> cells = new ArrayList<>(); cells.add(row.clanTag());
+                for (int round = 1; round <= standings.event().roundCount(); round++) {
+                    final int roundNumber = round;
+                    final var roundPoints = row.rounds().stream().filter(value -> value.roundNumber() == roundNumber).findFirst().orElseThrow();
+                    for (int day = 1; day <= standings.event().daysPerRound(); day++) {
+                        final int dayNumber = day;
+                        final var dayPoints = roundPoints.days().stream().filter(value -> value.dayNumber() == dayNumber).findFirst().orElseThrow();
+                        cells.add(dayPoints.points() == null ? "" : dayPoints.points());
+                    }
+                }
+                cells.add(row.totalPoints()); printer.printRecord(cells);
+            }
+        }
+        final byte[] bytes = output.toString().getBytes(StandardCharsets.UTF_8);
+        final var decoded = new com.wotb.web.util.csv.CsvDecoder().decode(bytes);
+        assertEquals(standings.rows().size(), TournamentCsvConverter.convert(decoded, standings.event().roundCount(), standings.event().daysPerRound()).size());
+        return new MockMultipartFile("file", "canonical.csv", "text/csv", bytes);
     }
     private static void assertCanonicalFacts(final TournamentDtos.Standings standings, final String clanTag,
                                              final List<Long> expectedPoints, final long expectedTotal) {

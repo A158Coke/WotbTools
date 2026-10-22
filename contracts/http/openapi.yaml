@@ -1376,6 +1376,13 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: includeCanonicalStandings
+          in: query
+          required: false
+          description: Return pre-clear daily facts for authenticated canonical CSV export.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Tournament result
@@ -5525,6 +5532,10 @@ components:
           type: boolean
         standings:
           $ref: "#/components/schemas/TournamentStandings"
+        canonicalStandings:
+          allOf:
+            - $ref: "#/components/schemas/TournamentStandings"
+          description: Optional authenticated admin import/export facts before sanctions and clear overlays; absent on older servers.
     TournamentHistoricalState:
       type: object
       additionalProperties: false
