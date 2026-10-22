@@ -39,7 +39,7 @@ function page() {
     await nextTick()
     await flushPromises()
   }
-  const exportItem = async (format: 'xlsx' | 'pdf') => {
+  const exportItem = async (format: 'xlsx' | 'csv' | 'pdf') => {
     await wrapper.get('[data-testid="tournament-export"]').trigger('click')
     await wrapper.get(`[data-testid="tournament-export-${format}"]`).trigger('click')
   }
@@ -140,6 +140,24 @@ describe('public tournament summary', () => {
 })
 
 describe('public tournament export lifecycle', () => {
+  it('offers localized canonical CSV guidance and downloads the selected standings', async () => {
+    const p = page(); await flushPromises()
+    expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
+    await p.wrapper.get('[data-testid="tournament-export"]').trigger('click')
+    expect(p.wrapper.get('[data-testid="tournament-export-csv"]').text()).toBe(p.i18n.global.t('tournament.exportCsv'))
+    await p.wrapper.get('[data-testid="tournament-export-csv"]').trigger('click')
+    await flushPromises()
+    expect(state.download).toHaveBeenCalledOnce()
+    expect(state.download.mock.calls[0][1]).toBe('2026_CN_SUMMER.csv')
+    expect(state.download.mock.calls[0][0].type).toBe('text/csv;charset=utf-8')
+    for (const locale of ['en', 'ru']) {
+      p.i18n.global.locale.value = locale
+      await nextTick()
+      expect(p.wrapper.get('[data-testid="tournament-csv-hint"]').text()).toBe(p.i18n.global.t('tournament.csvExportHint'))
+    }
+    p.wrapper.unmount()
+  })
+
   it('ignores an older initial event list after a reconnect search has completed', async () => {
     let finishOld!: (value: TournamentEvent[]) => void
     state.list.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
