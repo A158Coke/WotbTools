@@ -177,6 +177,8 @@ class TournamentIntegrationTest {
         final long groupEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"))).event().id();
         final var config = service.config(groupEvent);
         service.saveRules("admin", groupEvent, 1, new TournamentDtos.RuleRequest(config.event().version(), config.rounds().getFirst().rulesVersion(), ruleDays(900)));
+        final var groupDay = service.day(groupEvent, 1, 1);
+        service.expectedGroups(groupEvent, 1, 1, new TournamentDtos.ExpectedGroupsRequest(groupDay.eventVersion(), groupDay.version(), 1));
         save(groupEvent, 1, 1, List.of(group(groupEvent, 1, 1, 1, 0, "A", "B", "C")), List.of("A", "B", "C"));
         publish(groupEvent, 1, 1, "publish-900-group");
         service.clearPoints("admin", groupEvent, new TournamentDtos.ClearRequest(service.config(groupEvent).event().version(), 1, 1, "A", "sanction", false));
