@@ -19,6 +19,8 @@ class AiArchitectureTest {
             "^\\s*package\\s+com\\.wotb\\.web\\.(?:replay\\.(?:ai|dto|exception)|config)(?:\\.|;)");
     private static final Pattern LEGACY_AI_REFERENCE = Pattern.compile(
             "com\\.wotb\\.web\\.(?:config\\.AiModelProperties|replay\\.(?:ai|dto|exception))");
+    private static final Pattern PACKAGE_DECLARATION = Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;");
+    private static final Pattern IMPORT_DECLARATION = Pattern.compile("(?m)^\\s*import\\s+(?:static\\s+)?([\\w.*]+)\\s*;");
 
     @Test
     void productionSourcesDoNotDeclareLegacyAiPackages() throws IOException {
@@ -62,6 +64,41 @@ class AiArchitectureTest {
         final String pom = Files.readString(MODULE_POM);
         assertFalse(pom.contains("<artifactId>wotb-web</artifactId>"),
                 "wotb-ai must depend on wotb-core only, not wotb-web");
+    }
+
+    @Test
+    void reviewControllersDependOnlyOnInboundBoundaryAndWebTransport() throws IOException {
+        try (Stream<Path> sources = javaSources()) {
+            final List<String> violations = sources.filter(source -> {
+                final String content = read(source);
+                final var packageMatcher = PACKAGE_DECLARATION.matcher(content);
+                if (!packageMatcher.find() || !(packageMatcher.group(1).equals("com.wotb.ai.review.controller")
+                        || packageMatcher.group(1).startsWith("com.wotb.ai.review.controller."))) {
+                    return false;
+                }
+                final var imports = IMPORT_DECLARATION.matcher(content);
+                while (imports.find()) {
+                    if (!allowedControllerImport(imports.group(1))) {
+                        return true;
+                    }
+                }
+                return false;
+            }).map(Path::toString).toList();
+            assertTrue(violations.isEmpty(),
+                    "Review controllers may depend only on their package, review converter/service, and HTTP transport: "
+                            + violations);
+        }
+    }
+
+    private static boolean allowedControllerImport(final String importedType) {
+        return importedType.startsWith("java.")
+                || importedType.startsWith("com.wotb.ai.review.controller.")
+                || importedType.startsWith("com.wotb.ai.review.converter.")
+                || importedType.startsWith("com.wotb.ai.review.service.")
+                || importedType.startsWith("org.springframework.web.bind.annotation.")
+                || importedType.startsWith("org.springframework.web.servlet.mvc.method.annotation.")
+                || importedType.startsWith("org.springframework.http.")
+                || importedType.startsWith("jakarta.servlet.");
     }
 
     private static Stream<Path> javaSources() throws IOException {

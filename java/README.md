@@ -122,8 +122,9 @@ Gateway 由 Review 与 Tournament 共用，两项 feature 保持隔离；Spring 
 - `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `AiReviewRequest = {locale, correlationId, battle, projection}`
   （唯一事实源 `contracts/http/openapi.yaml`，required 恰为这四个字段；**没有** `schemaVersion`）：
   `locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID，`battle` 与 `projection`
-  分别是客户端 canonical 结算事实与 AI 投影（`ClientAiReviewProjection`）。`AiReviewController` 只校验
-  locale + correlationId，投影/战斗结构不合法统一 → `INVALID_AI_REQUEST`。客户端负责解析与事实投影，
+  分别是客户端 canonical 结算事实与 AI 投影（`ClientAiReviewProjection`）。处理链为
+  `AiReviewSubmissionController` → `AiReviewRequestConverter` → `AiReviewSubmissionService`；locale 与
+  correlationId 校验后，投影/战斗结构不合法统一 → `INVALID_AI_REQUEST`。客户端负责解析与事实投影，
   服务端不读 processing dataset。稳定错误码：`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` /
   `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/
   `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限，gzip 解压后同样受限）/

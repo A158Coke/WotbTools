@@ -5,6 +5,8 @@
 Java 包所有权以 `com.wotb.ai` 为根，包含 `config`、`gateway`、`prompt`、`review` 与 `tournament`；
 Review 与 Tournament 共享 gateway 能力并保持 feature 隔离。`AiServiceApplication` 使用根包自然扫描。
 
+AI Review HTTP 边界分布在 `review.controller` / `review.converter` / `review.service`：Submission Controller 仅聚合 request converter 与 submission service；Cancellation Controller 仅调用 cancellation service。Converter 负责受限 body 解码、wire validation 与客户端投影到内部 request 的装配；Submission Service 负责 scope / capability 判定、取消注册、SSE session 与 worker admission；Execution Service 负责 worker runtime、SSE 事件、Review metrics、structured logs、错误分类与清理；Analysis Service 路由到 Player Review 或既有 `TeamReplayAnalysisService`。`UNKNOWN` battle category 在创建 SSE 与 worker admission 前返回 HTTP 422。
+
 ## 发布与边界
 
 积分赛截图识别同样由本服务承载：`POST /api/ai/tournament-groups/recognize` 仅允许管理员，

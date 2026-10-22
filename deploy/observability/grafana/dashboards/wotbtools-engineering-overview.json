@@ -1493,7 +1493,7 @@
       "id": 32,
       "type": "timeseries",
       "title": "AI Review errors / second",
-      "description": "Existing ai-service counter from AiReviewController. Errors grouped by bounded error type. Missing series is No data; no attribution to PR activity.",
+      "description": "Existing ai-service counter from the AI Review execution lifecycle. Errors grouped by bounded error type. Missing series is No data; no attribution to PR activity.",
       "gridPos": {
         "x": 0,
         "y": 74,
