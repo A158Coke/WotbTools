@@ -1,0 +1,7 @@
+
+/common/fixtures/tabular/csv/basic.csv text eol=crlf
+/common/fixtures/tabular/csv/bom.csv text eol=crlf
+/common/fixtures/tabular/csv/multiline.csv text eol=crlf
+/common/fixtures/tabular/csv/quoted.csv text eol=crlf
+/common/fixtures/tabular/csv/unicode.csv text eol=crlf
+/common/fixtures/tabular/csv/lf.csv text eol=lf
