@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import com.wotb.ai.review.controller.AiReviewCancellationController;
+import com.wotb.ai.review.controller.AiReviewSubmissionController;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -14,15 +16,15 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * 把 {@link AiReviewController} 在返回 SSE 流之前抛出的失败映射为契约的 {@code ApiError} envelope，
+ * 把 AI Review controllers 在 SSE 响应之前抛出的失败映射为契约的 {@code ApiError} envelope，
  * 使客户端始终拿到稳定 {@code errorCode}（而不是 Spring 默认的 {@code {timestamp,status,error,path}}）。
  *
  * <p>只有「提交 worker 之前」的失败会到达这里（信封校验 / 准入饱和 / 请求体上限）；进入 worker 后的
  * 运行时与业务失败仍以 SSE {@code error} 事件传达，见 {@code docs/architecture/ai-review.md}。</p>
  *
- * <p>限定到 {@link AiReviewController}，避免影响 Actuator 等其它端点的错误语义。</p>
+ * <p>限定到 AI Review controllers，避免影响 Actuator 等其它端点的错误语义。</p>
  */
-@RestControllerAdvice(assignableTypes = AiReviewController.class)
+@RestControllerAdvice(assignableTypes = {AiReviewSubmissionController.class, AiReviewCancellationController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class AiReviewExceptionHandler {
 

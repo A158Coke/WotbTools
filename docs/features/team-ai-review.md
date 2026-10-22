@@ -32,9 +32,13 @@ AI（独立 ai-service，无 DB / MinIO / Business Backend 依赖）：
   ReplayPage Workspace -> AiReviewPanel
   -> POST /api/ai/reviews   (Content-Type: application/json, Content-Encoding: gzip)
   -> TX ingress /api/ai/** → WireGuard 私网 → Yecao ai-service
-  -> AiReviewController.reviewJson：信封校验（locale 白名单 / canonical UUID correlationId）
-     + ClientAiProjectionAdapter 装配 + BattleCategoryUtils.resolveScope 视角判定
-  -> TacticalReviewHarness.analyzeWithPrior（个人）/ TeamReplayAnalysisService.analyzeTeam（团队）
+  -> AiReviewSubmissionController
+  -> AiReviewRequestConverter（信封校验 / ClientAiProjectionAdapter 装配）
+  -> AiReviewSubmissionService（BattleCategoryUtils.resolveScope 视角判定）
+  -> AiReviewExecutionService（执行生命周期与 SSE）
+  -> AiReviewAnalysisService
+     ├─ PlayerAiReviewService → TacticalReviewHarness.analyzeWithPrior（个人）
+     └─ TeamReplayAnalysisService.analyzeTeam（团队）
    -> SSE 流式响应（call1_start / call1_done / evidence_done / call2_token / done / error；
       Team 在 done 一次性返回结构化 teamReview + teamPlayers）
 ```
@@ -188,7 +192,7 @@ Team Call #2 通过 `AiPromptLibrary` 的模块化 include，按 INFORMATION/VIS
 
 ## 8. 结果契约（Result Contract）
 
-`POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），`AiReviewController` 直接向 `SseEmitter` 写入（自定 JSON event，`data` 为 JSON）：
+`POST /api/ai/reviews`（由独立 `ai-service` 承载）返回 **SSE 流式**（`text/event-stream`，无同步 JSON 响应），执行生命周期由 `AiReviewExecutionService` 管理，并向 `SseEmitter` 写入自定义 JSON event（`data` 为 JSON）：
 
 | event | data | 说明 |
 |-------|------|------|
