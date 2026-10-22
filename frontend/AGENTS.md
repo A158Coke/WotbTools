@@ -29,6 +29,8 @@
   [`.agents/playbooks/frontend-architecture.md`](../.agents/playbooks/frontend-architecture.md)，并以
   [`docs/frontend/architecture.md`](../docs/frontend/architecture.md) 为当前实现事实。
 - 依赖方向为 `app → features → shared`。现有 flat `components/`、`composables/`、`utils/` 是当前代码布局；不得为了“对齐架构”创建空壳目录或虚构尚未实现的迁移。
+- XLSX rendering 由 `src/shared/tabular/xlsx/` 唯一持有；feature 负责构建 `WorkbookSpec`，production code 不得直接依赖 ExcelJS。
+- 通用 CSV 字符串编码由 `src/shared/tabular/csv/` 唯一持有；前端共享层不提供 CSV decoder，也不改写公式样字符串。
 - 跨 app/feature 的注入 contract 使用 `shared/` 中的 typed `InjectionKey<T>`；禁止新增 magic-string service locator。直接父子组件优先使用显式 props/emits，不得用 provide/inject 隐藏本来就可见的 Replay/Workspace 依赖。
 - 每个业务状态只有一个权威 owner；其他组件只通过 props、事件、typed context 或 computed 消费，不复制并行状态。`watch()` 只用于真实副作用或生命周期桥接。
 
