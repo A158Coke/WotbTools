@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import ExcelJS from 'exceljs'
 import { createI18n } from 'vue-i18n'
 import { messages } from '../locales/messages.js'
 import type { TournamentStandings } from '../api/tournament-points.js'
-import { createTournamentPointsXlsx, printTournamentPoints, projectTournamentPoints, renderTournamentPointsPrintDocument } from './tournamentPointsExport.js'
+import { createTournamentPointsCsv, createTournamentPointsXlsx, printTournamentPoints, projectTournamentCsv, projectTournamentPoints, renderTournamentPointsPrintDocument } from './tournamentPointsExport.js'
+import { encodeCsv } from '../shared/tabular/csv/index.js'
+
+const TOURNAMENT_CSV_FIXTURES = resolve(process.cwd(), '../common/fixtures/tournament/csv')
+const tournamentCsvFixture = (name: string) => new Uint8Array(readFileSync(resolve(TOURNAMENT_CSV_FIXTURES, name)))
 
 function standings(roundCount = 5, daysPerRound = 2): TournamentStandings {
   return {
@@ -18,6 +24,26 @@ function standings(roundCount = 5, daysPerRound = 2): TournamentStandings {
 const projection = (input = standings(), locale = 'zh') => {
   const i18n = createI18n({ legacy: false, locale, messages: messages as Record<string, any> })
   return projectTournamentPoints(input, locale, i18n.global.t)
+}
+
+function canonicalStandings(roundCount: number, daysPerRound: number, rows: readonly { clanTag: string; points: readonly (number | null)[]; total: number }[]): TournamentStandings {
+  return {
+    event: { id: 7, year: 2026, region: 'CN', season: 'SUMMER', roundCount, daysPerRound, dayLabels: Array.from({ length: daysPerRound }, (_, index) => `Day ${index + 1}`), version: 1, configLocked: true },
+    days: [],
+    rows: rows.map((row, index) => ({
+      rank: index + 1,
+      clanTag: row.clanTag,
+      totalPoints: row.total,
+      rounds: Array.from({ length: roundCount }, (_, roundIndex) => ({
+        roundNumber: roundIndex + 1,
+        totalPoints: 0,
+        days: Array.from({ length: daysPerRound }, (_, dayIndex) => ({
+          dayNumber: dayIndex + 1,
+          points: row.points[roundIndex * daysPerRound + dayIndex],
+        })),
+      })),
+    })),
+  } as TournamentStandings
 }
 
 describe('public standings export projection', () => {
@@ -54,6 +80,38 @@ describe('public standings export projection', () => {
     const table = projection(input, locale)
     const i18n = createI18n({ legacy: false, locale, messages: messages as Record<string, any> })
     expect(table.columns[5].label).toBe(`${i18n.global.t('tournament.round', { number: 1 })} · ${i18n.global.t('tournament.day', { number: 3 })}`)
+  })
+})
+
+describe('canonical Tournament CSV contract', () => {
+  it.each([
+    ['4x2.csv', 4, 2, [
+      { clanTag: '-KSR-', points: [100, null, 0, 50, null, 25, 10, 15], total: 200 },
+      { clanTag: '雪,豹*', points: [0, 0, null, 0, 0, null, 0, 0], total: 0 },
+      { clanTag: '=SUM(A1:A2)', points: [1, null, null, null, null, null, null, 1], total: 2 },
+    ]],
+    ['5x3.csv', 5, 3, [
+      { clanTag: 'ALPHA*', points: [100, null, 0, 50, null, 25, 10, 15, null, 20, 0, 30, null, 40, 10], total: 300 },
+      { clanTag: '雪,豹*', points: [0, 100, null, 0, 100, null, 0, 100, null, 0, 100, null, 0, 100, null], total: 500 },
+      { clanTag: '=CMD+1', points: [1, ...Array(14).fill(null)], total: 1 },
+    ]],
+  ] as const)('matches %s exact bytes with fixed locale-independent headers and null/zero values', (fixtureName, rounds, days, rows) => {
+    const document = projectTournamentCsv(canonicalStandings(rounds, days, [...rows]))
+    expect(document.headers).toEqual(['军团标签', ...Array.from({ length: rounds * days }, (_, index) => `R${Math.floor(index / days) + 1}D${(index % days) + 1}`), '总积分'])
+    expect(encodeCsv(document, { includeBom: false })).toEqual(tournamentCsvFixture(fixtureName))
+    expect(document.rows[0][2]).toBe('')
+    expect(document.rows[0][3]).toBe('0')
+    expect(document.rows.at(-1)?.[0]).toBe(rows.at(-1)?.clanTag)
+  })
+
+  it('creates a stable CSV filename and UTF-8 download without rewriting formula-like clan identity', async () => {
+    const file = createTournamentPointsCsv(canonicalStandings(4, 2, [
+      { clanTag: '=SUM(A1:A2)', points: [1, null, null, null, null, null, null, 1], total: 2 },
+    ]))
+    expect(file.filename).toBe('2026_CN_SUMMER.csv')
+    expect(file.blob.type).toBe('text/csv;charset=utf-8')
+    expect(await file.blob.text()).toContain('=SUM(A1:A2)')
+    expect([...new Uint8Array(await file.blob.arrayBuffer()).slice(0, 3)]).not.toEqual([0xef, 0xbb, 0xbf])
   })
 })
 

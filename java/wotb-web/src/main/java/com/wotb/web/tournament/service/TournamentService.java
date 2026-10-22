@@ -16,6 +16,7 @@ import com.wotb.web.tournament.entity.TournamentEvidence;
 import com.wotb.web.tournament.entity.TournamentRule;
 import com.wotb.web.tournament.entity.TournamentSnapshot;
 import com.wotb.web.tournament.mapper.TournamentMapper;
+import com.wotb.web.tournament.mapper.TournamentCsvConverter;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
 import com.wotb.web.tournament.repository.TournamentDayRepository;
@@ -364,39 +365,34 @@ public class TournamentService {
         final String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().replace('\\', '/');
         final String sourceName = name.substring(name.lastIndexOf('/') + 1).strip();
         if (!StringUtils.hasText(sourceName) || sourceName.codePointCount(0, sourceName.length()) > 200 || sourceName.codePoints().anyMatch(Character::isISOControl)) { throw csvInvalid(0, "file", "name"); }
+        final List<TournamentDtos.HistoricalRow> rows = new ArrayList<>();
+        final List<TournamentCsvConverter.Row> sourceRows;
+        try {
+            final var document = new CsvDecoder().decode(bytes);
+            sourceRows = TournamentCsvConverter.convert(document, event.roundCount, event.daysPerRound);
+        } catch (final CsvEncodingException failure) { throw csvInvalid(0, "file", "encoding"); }
+        catch (final CsvSyntaxException failure) { throw csvInvalid(0, "file", "syntax"); }
+        catch (final TournamentCsvConverter.InvalidCsv failure) { throw csvInvalid(failure.rowNumber(), failure.column(), failure.reason()); }
+        catch (final IllegalArgumentException invalidHeader) { throw csvInvalid(1, "header", "header"); }
         final List<String> pointColumns = new ArrayList<>();
         for (int round = 1; round <= event.roundCount; round++) {
             for (int day = 1; day <= event.daysPerRound; day++) { pointColumns.add("R" + round + "D" + day); }
         }
-        final Set<String> required = new HashSet<>(pointColumns); required.add("军团标签"); required.add("总积分");
-        final List<TournamentDtos.HistoricalRow> rows = new ArrayList<>();
-        try {
-            final var document = new CsvDecoder().decode(bytes);
-            final List<String> headers = document.headers(); final Set<String> actual = new HashSet<>(headers);
-            if (actual.size() != headers.size() || !actual.containsAll(required) || actual.stream().anyMatch(header -> !required.contains(header) && !"积分排名".equals(header))) { throw csvInvalid(1, "header", "header"); }
-            for (final var row : document.rows()) {
-                final long rowNumber = row.recordNumber() + 1;
-                final List<String> cells = row.cells();
-                if (cells.stream().allMatch(value -> !StringUtils.hasText(value))) { continue; }
-                if (cells.size() != headers.size()) { throw csvInvalid(rowNumber, "header", "columns"); }
-                if (rows.size() >= 10000) { throw csvInvalid(rowNumber, "file", "rows"); }
-                final Map<String, String> values = new LinkedHashMap<>();
-                for (int index = 0; index < headers.size(); index++) { values.put(headers.get(index), cells.get(index)); }
-                final String tag;
-                try { tag = clanTag(values.get("军团标签")); } catch (final ApiException invalidTag) { throw csvInvalid(rowNumber, "军团标签", "clanTag"); }
-                final List<Integer> points = new ArrayList<>(); long sum = 0;
-                for (final String column : pointColumns) {
-                    final String value = values.get(column).strip();
-                    final Integer point = value.isEmpty() ? null : (int) csvNumber(value, 1_000_000, rowNumber, column);
-                    points.add(point); if (point != null) { sum += point; }
-                }
-                final long total = csvNumber(values.get("总积分").strip(), (long) pointColumns.size() * 1_000_000, rowNumber, "总积分");
-                if (sum != total) { throw csvInvalid(rowNumber, "总积分", "total"); }
-                rows.add(new TournamentDtos.HistoricalRow(tag, points, total));
+        for (final TournamentCsvConverter.Row sourceRow : sourceRows) {
+            final long rowNumber = sourceRow.rowNumber();
+            if (rows.size() >= 10000) { throw csvInvalid(rowNumber, "file", "rows"); }
+            final String tag;
+            try { tag = clanTag(sourceRow.clanTag()); } catch (final ApiException invalidTag) { throw csvInvalid(rowNumber, "军团标签", "clanTag"); }
+            final List<Integer> points = new ArrayList<>(); long sum = 0;
+            for (int index = 0; index < pointColumns.size(); index++) {
+                final String value = sourceRow.pointCells().get(index).strip();
+                final Integer point = value.isEmpty() ? null : (int) csvNumber(value, 1_000_000, rowNumber, pointColumns.get(index));
+                points.add(point); if (point != null) { sum += point; }
             }
-        } catch (final CsvEncodingException failure) { throw csvInvalid(0, "file", "encoding"); }
-        catch (final CsvSyntaxException failure) { throw csvInvalid(0, "file", "syntax"); }
-        catch (final IllegalArgumentException invalidHeader) { throw csvInvalid(1, "header", "header"); }
+            final long total = csvNumber(sourceRow.totalCell().strip(), (long) pointColumns.size() * 1_000_000, rowNumber, "总积分");
+            if (sum != total) { throw csvInvalid(rowNumber, "总积分", "total"); }
+            rows.add(new TournamentDtos.HistoricalRow(tag, points, total));
+        }
         if (rows.isEmpty()) { throw csvInvalid(0, "file", "empty"); }
         try { return new CsvSource(sourceName, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)), List.copyOf(rows)); }
         catch (final NoSuchAlgorithmException impossible) { throw new IllegalStateException("SHA-256 unavailable", impossible); }

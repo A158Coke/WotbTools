@@ -135,6 +135,42 @@ class TournamentIntegrationTest {
                 () -> service.importCsv("csv-admin", id, initialVersion, original, preview.sourceSha256(), true, "csv-day-one")).errorCode());
         assertEquals(snapshot, service.publicStandings(id));
     }
+    @Test void canonicalTournamentCsvFixturesRoundTripThroughPreviewImportAndPublicStandings() throws Exception {
+        final var fourEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "SUMMER", 4, 2, List.of("Day 1", "Day 2"))).event();
+        final var fiveEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "NA", "SUMMER", 5, 3, List.of("Day 1", "Day 2", "Day 3"))).event();
+        final var cases = List.of(
+                new Object[] {fourEvent, "4x2.csv", "canonical-4x2"},
+                new Object[] {fiveEvent, "5x3.csv", "canonical-5x3"});
+        for (final Object[] testCase : cases) {
+            final var event = (TournamentDtos.Event) testCase[0];
+            final String filename = (String) testCase[1];
+            final String idempotencyKey = (String) testCase[2];
+            final byte[] bytes = Files.readAllBytes(Path.of("../../common/fixtures/tournament/csv", filename));
+            final var file = new MockMultipartFile("file", filename, "text/csv", bytes);
+            final var version = service.config(event.id()).event().version();
+            final var preview = service.previewCsv(event.id(), version, file);
+            final var imported = service.importCsv("csv-admin", event.id(), version, file, preview.sourceSha256(), true, idempotencyKey);
+            final var actual = service.publicStandings(event.id());
+            assertEquals(imported.standings().rows(), actual.rows());
+            assertEquals(3, actual.rows().size());
+            if (filename.equals("4x2.csv")) {
+                assertCanonicalFacts(actual, "-KSR-", java.util.Arrays.asList(100L, null, 0L, 50L, null, 25L, 10L, 15L), 200);
+                assertCanonicalFacts(actual, "雪,豹*", java.util.Arrays.asList(0L, 0L, null, 0L, 0L, null, 0L, 0L), 0);
+                assertCanonicalFacts(actual, "=SUM(A1:A2)", java.util.Arrays.asList(1L, null, null, null, null, null, null, 1L), 2);
+            } else {
+                assertCanonicalFacts(actual, "ALPHA*", java.util.Arrays.asList(100L, null, 0L, 50L, null, 25L, 10L, 15L, null, 20L, 0L, 30L, null, 40L, 10L), 300);
+                assertCanonicalFacts(actual, "雪,豹*", java.util.Arrays.asList(0L, 100L, null, 0L, 100L, null, 0L, 100L, null, 0L, 100L, null, 0L, 100L, null), 500);
+                assertCanonicalFacts(actual, "=CMD+1", java.util.Arrays.asList(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null), 1);
+            }
+        }
+    }
+    private static void assertCanonicalFacts(final TournamentDtos.Standings standings, final String clanTag,
+                                             final List<Long> expectedPoints, final long expectedTotal) {
+        final TournamentDtos.StandingRow row = standings.rows().stream().filter(value -> value.clanTag().equals(clanTag)).findFirst().orElseThrow();
+        final List<Long> actualPoints = row.rounds().stream().flatMap(round -> round.days().stream()).map(TournamentDtos.DayPoints::points).toList();
+        assertEquals(expectedPoints, actualPoints);
+        assertEquals(expectedTotal, row.totalPoints());
+    }
     @Test void csvReplacementRemovesOmittedClansAndOldGroupsWhilePreservingExplicitClears() throws Exception {
         final var batch = group(id, 1, 1, 1, 0, "A", "B", "C");
         save(id, 1, 1, List.of(batch), List.of("A", "B", "C")); publish(id, 1, 1, "screenshots");

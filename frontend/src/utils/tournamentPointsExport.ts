@@ -1,4 +1,5 @@
 import type { TournamentStandings } from '../api/tournament-points.js'
+import { encodeCsv, type CsvDocument } from '../shared/tabular/csv/index.js'
 import { sanitizeFilename } from './exportReplayPng.js'
 import { renderXlsx } from '../shared/tabular/xlsx/index.js'
 import type { CellStyle, RowSpec, WorkbookSpec } from '../shared/tabular/xlsx/index.js'
@@ -34,6 +35,41 @@ export interface TournamentTableProjection {
   finalizedLabel: string
   columns: readonly Column[]
   rows: readonly { clanTag: string; cells: readonly Cell[] }[]
+}
+
+/** Canonical re-importable data projection; display labels and derived ranks are intentionally absent. */
+export function projectTournamentCsv(standings: TournamentStandings): CsvDocument {
+  const { roundCount, daysPerRound } = standings.event
+  const headers = ['军团标签']
+  for (let round = 1; round <= roundCount; round++) {
+    for (let day = 1; day <= daysPerRound; day++) headers.push(`R${round}D${day}`)
+  }
+  headers.push('总积分')
+
+  const rows = standings.rows.map(row => {
+    const cells = [row.clanTag]
+    for (let round = 1; round <= roundCount; round++) {
+      const roundPoints = row.rounds.find(value => value.roundNumber === round)
+      for (let day = 1; day <= daysPerRound; day++) {
+        const points = roundPoints?.days.find(value => value.dayNumber === day)?.points
+        cells.push(points == null ? '' : String(points))
+      }
+    }
+    cells.push(String(row.totalPoints))
+    return Object.freeze(cells)
+  })
+  return Object.freeze({ headers: Object.freeze(headers), rows: Object.freeze(rows) })
+}
+
+/** Build canonical bytes without locale-dependent labels or spreadsheet-specific rewriting. */
+export function createTournamentPointsCsv(standings: TournamentStandings): { blob: Blob; filename: string } {
+  const bytes = encodeCsv(projectTournamentCsv(standings), { includeBom: false })
+  const blobBytes = Uint8Array.from(bytes)
+  const identity = `${standings.event.year}_${standings.event.region}_${standings.event.season}`
+  return {
+    blob: new Blob([blobBytes.buffer as ArrayBuffer], { type: 'text/csv;charset=utf-8' }),
+    filename: `${sanitizeFilename(identity)}.csv`,
+  }
 }
 
 /** Shared display/export projection: labels and server scores are copied synchronously. */
