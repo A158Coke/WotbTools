@@ -11,11 +11,11 @@ import {
   whenBusinessUserSettled,
 } from './useBusinessUserBootstrap.js'
 
-vi.mock('../utils/api-user.js', () => ({
+vi.mock('../api/user-profile.js', () => ({
   ensureUserProfile: vi.fn(async () => ({})),
 }))
 
-const { ensureUserProfile } = await import('../utils/api-user.js')
+const { ensureUserProfile } = await import('../api/user-profile.js')
 
 /**
  * 业务用户 bootstrap 的**离线准入**（PR B review blocker）。

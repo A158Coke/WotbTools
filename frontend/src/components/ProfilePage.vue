@@ -14,9 +14,9 @@ import {
   syncUserWotbAccountFromLogin,
   updateUserWotbAccount,
   verifyUserWotbAccountFromReplay
-} from '../utils/api-user.js'
+} from '../api/user-profile.js'
 import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
-import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
+import { hofHundredCancel, hofHundredMyStatus } from '../api/hall-of-fame.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { copyText } from '../utils/clipboard.js'
@@ -32,7 +32,7 @@ const { initPromise, login, logout, isAuthenticated, authenticated: authState, i
  *  - 账号资料读写（get / sync / update / verify / delete）走 [Feature.ACCOUNT_PROFILE]；
  *  - 名人堂记录 / 百场状态 / 撤销走 [Feature.HALL_OF_FAME]。
  * 判定一律来自 `useFeatureGate()`（capability SSOT），页面**不写** `connectivity === 'online'`
- * 这类第二套规则，也不在 transport 层（utils/api-user.js）里塞连通性判断。
+ * 这类第二套规则，也不在 transport 层（api/user-profile.ts）里塞连通性判断。
  */
 const { availability, requireFeature, connectivity } = useFeatureGate()
 

@@ -110,7 +110,7 @@ function setAuthState(state, isAuthenticated = state === 'authenticated', initPr
 
 // 只保留 bootstrap 需要的 ensure；真实 composable 仍被执行（去重/重试/状态机都是被测行为）。
 const bootstrapApi = vi.hoisted(() => ({ ensureUserProfile: vi.fn() }))
-vi.mock('./utils/api-user.js', () => ({
+vi.mock('./api/user-profile.js', () => ({
   ensureUserProfile: bootstrapApi.ensureUserProfile,
 }))
 

@@ -12,7 +12,7 @@ const api = vi.hoisted(() => ({
 const platform = vi.hoisted(() => ({ android: false }))
 const i18n = vi.hoisted(() => ({ locale: null }))
 
-vi.mock('../utils/api.js', () => api)
+vi.mock('../api/hall-of-fame.js', () => api)
 vi.mock('../composables/usePlatformBridge.js', async importOriginal => ({
   ...await importOriginal(),
   isAndroidApp: () => platform.android,

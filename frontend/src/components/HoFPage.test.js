@@ -51,7 +51,7 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-vi.mock('../utils/api.js', () => lbApi)
+vi.mock('../api/hall-of-fame.js', () => lbApi)
 
 vi.mock('../utils/helpers.js', () => ({
   mapLabel: () => '',
