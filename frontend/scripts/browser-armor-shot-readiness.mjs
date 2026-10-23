@@ -321,6 +321,29 @@ try {
     })()`, value => value === true, { timeout: 30000, label: 'HIT impact toggle ready (15m / 20.59° FOV)' })
     console.log('[shot-readiness] PASS: hit overview → impact returns to display 15m / 20.59° FOV')
   }
+  // 客户端解码盒缺失：shot 仍带姿态/弹道，但不得回退炮口弦出结论。
+  // 世界初始化与后续时间轴重判共用 doPenetrationCheck 的 __segBoxMissing 门。
+  {
+    const boxlessShot = { ...shot, hit_token: '3da6fd8a71d4', server_part_index: 1, armor_group: 1 }
+    const boxlessTarget = structuredClone(FIXTURE_TANK_DATA)
+    delete boxlessTarget.collision_boxes
+    targetResponse = boxlessTarget
+    await page.goto(`${origin}/?view=home&ws-auth=1`)
+    await page.evaluate(`(async () => {
+      const { storeShotsForViewer } = await import('/src/scene/agentData.js');
+      storeShotsForViewer([${JSON.stringify(boxlessShot)}]);
+    })()`)
+    await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${shooterId}&heatmap=1&shot=1&shell=0&scfg=0&assets=${encodeURIComponent(assets.origin)}`)
+    // 错误面板可能被 World View 控件随后重绘；行为断言以显式状态/无判定为准，
+    // 文案只核对 console 诊断，不依赖会被 HUD 覆盖的 #turret-controls。
+    await page.waitForValue('window.__segBoxMissing', value => value === true, { timeout: 30000, label: 'missing box state' })
+    assert.ok(page.consoleErrors.some(message => message.includes('缺少客户端部件盒')), 'missing box diagnosis is logged')
+    assert.equal(await page.evaluate('window.__segBoxMissing'), true, 'missing box state is explicit')
+    assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'missing box blocks world judgment')
+    assert.equal(await page.evaluate('document.querySelector("#traj-info")?.textContent || ""'), '', 'missing box leaves no result card')
+    targetResponse = null
+    console.log('[shot-readiness] PASS: missing client box blocks world judgment instead of muzzle-chord fallback')
+  }
   assert.deepEqual(page.consoleErrors.filter(message => message.startsWith('uncaught:')), [])
   await Promise.all(operations)
 } catch (error) {

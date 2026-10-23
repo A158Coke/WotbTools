@@ -671,14 +671,17 @@ export function calculate(req) {
   // 末层规则会给出 PENETRATION + 全额伤害，但服务器对这类 hit 的 result=1/2/4、damage=0。
   // 查看器相机点击仍沿用 BlitzKit 末层语义（默认 false）；射击复现请求 true，
   // 无 Primary（hull/turret/gun，0mm 也算）且非 HE/非跳弹 → BLOCKED、0 伤害。
-  if (req.require_primary === true && !isHe && !ricochet
-      && result === 'PENETRATION' && !hasPrimaryLayer(probabilityLayers)) {
+  const blockedNoPrimary = req.require_primary === true && !isHe && !ricochet
+    && result === 'PENETRATION' && !hasPrimaryLayer(probabilityLayers)
+  if (blockedNoPrimary) {
     result = 'BLOCKED'
     resultDamage = 0
   }
 
   return {
     result,
+    // 无主装甲门禁命中：消费方必须禁用概率/满伤回填，不能只读 result/damage。
+    blocked_no_primary: blockedNoPrimary,
     total_effective: totalEffective,
     layers,
     probability_layers: probabilityLayers,

@@ -206,6 +206,7 @@ function startViewer(preserveSelection = false) {
             directHit: t('armor.direct_hit'),
             expectedDamage: t('armor.expected_damage'),
             heSamplingUnavailable: t('armor.sampling_unavailable'),
+            noPrimaryBlocked: t('armor.no_primary_blocked'),
             heBestSampleUpper: t('armor.best_sample_upper'),
             heBestSampleLower: t('armor.best_sample_lower'),
             sectionName: (section) => {
