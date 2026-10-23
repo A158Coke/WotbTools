@@ -451,49 +451,35 @@ final class PlayerPromptRules {
     static final String SOLO_STANDARD_RULE = AiPromptLibrary.zh("tactical-skills/solo-standard");
 
     static final String SOLO_STANDARD_RULE_EN = """
-            === RANDOM BATTLE PERSONAL REVIEW STANDARD v1.0 (Coach Lab) ===
-            Source: the 2026 China summer final-four, 34 replays re-reviewed from a random-battle personal perspective plus full statistics (324 shots fired, 246 damaging hits taken). Judge only you; mechanics weigh 80%, awareness 20%; teammates' positions and coordination are not your responsibility. If this conflicts with other rules in this prompt, evidence-boundary rules take precedence; otherwise this standard wins.
+            === RANDOM BATTLE PERSONAL REVIEW STANDARD v1.1 (Coach Lab) ===
+            Source: rules Coach Lab derived by reviewing all 34 games of the 2026 China-server summer top-four playoffs (3 recording players) from a personal point of view; only the parts this prompt's input can judge are kept. The sample comes from high-level tournament play, does not represent random-battle players' skill, and must not be used as a prior for this battle. Judge only you; teammates' positioning and coordination are not your responsibility. When this conflicts with other rules in this prompt, the evidence-boundary rules win.
 
             I. Verdicts
-            1. Each key action gets exactly one of three verdicts: mistake / correct / cannot be judged; "cannot be judged" must name the missing data (for example reload times, vision or LOS, equipment loadout).
-            2. Start from the baseline: in the sample about 90% of shots hit and about 81% penetrated, so gunnery is usually not the problem; points are lost on whom to shoot, when to shoot and which side faces whom. Do not spend the review on generic "improve accuracy" advice.
-            3. Every mistake states: facts (time, opponent tank name, distance, damage) -> why -> what to do instead -> evidence boundary. The one-line conclusion names only the biggest problem of the battle.
+            1. Every key action gets exactly one of three verdicts: mistake / correct / cannot determine; "cannot determine" must name the missing data.
+            2. Data boundary: the input has no complete shot record, aimed target, or reload and ammunition data, only damage events from hits. No damage record does not mean no shot was fired; never use it to claim "did not return fire", "fired late", "shot the wrong target" or "the enemy was loaded".
+            3. Judge gunnery, penetration and trade efficiency only from this battle's evidence (whom you damaged and how much, who hit you and how often); never apply hit rates, penetration rates or weights from an external sample.
+            4. Each mistake states: fact (time, enemy tank name, distance, damage) -> why -> the action that should have been taken -> evidence boundary. Use only the battle's biggest problem as the one-sentence conclusion.
 
-            II. Mechanics (ordered by frequency in the sample)
-            4. Finish low-HP tanks first: when you fire while a visible nearby enemy has no more HP than one of your shots, especially if it is shooting you, and you shoot a healthier target instead -> mistake. Without the enemy's HP or visibility at that moment, write cannot be judged.
-            5. Deal with whoever is shooting you: the same enemy hits you 3 times within about 40 seconds and you neither shoot back at it nor leave its line of fire -> mistake. Most often a light tank or Kranvagn on high ground, on the flank or behind you.
-            6. Do not peek into a loaded gun: the enemy has not fired for more than one reload cycle, you peek, take the first shot, then trade 1-for-1 with a same-type tank that has more HP than you -> mistake. Let it fire first, then come out while it reloads.
-            7. Hull front and rear: in a brawl you turn to a second target and give your rear or side to the first; or you move with your rear towards a known enemy -> mistake. If your front already stops a tank's shells, keep your front on it.
-            8. Fire when loaded: in a fight you fire more than 5 seconds after reloading and get hit meanwhile -> mistake, unless you were relocating or behind cover. Within 30 m do not wait to stop for aim.
-            9. Consumables: a broken track, damaged ammo rack or injured crew should be fixed within about 1.5 seconds; use adrenaline right after firing. Without loadout data, do not judge.
-
-            III. Awareness
-            10. Expose yourself to one enemy at a time: do not push forward from a spot where you are not being hit; before moving, count how many lines of fire you will enter, and do not push into two or more. Being hit by two different enemies within about 2 seconds signals you are in a crossfire.
-            11. After a hit from one direction, treat it as a known line of fire: before the next shot either move where it cannot reach you or shoot back; this is the same issue as item 5 and is counted under item 5 when deduplicating causes.
-            12. Do not judge a final-phase death that did not affect the result.
+            II. Rules
+            5. Deal first with whoever is shooting you: the same enemy hits you 3 or more times within about 40 seconds, you stay in its firing line the whole time (your position does not leave and it keeps hitting), and you deal no damage to it -> mistake: you should fire back at it or move where it cannot hit you. State that you have no damage record on it (misses are not in the data). Light tanks on high ground, on the flank or behind you are the most common case.
+            6. Expose yourself to one vehicle at a time: being hit by two different enemies within about 2 seconds means you entered crossfire. If you drove forward into it on your own from a stationary spot where you were not being hit -> mistake; crossfire formed by an enemy push or flank is not your mistake, so look at whether you left it afterwards.
+            7. Deaths at the end of the battle that did not affect the result are not judged.
             """;
 
     static final String SOLO_STANDARD_RULE_RU = """
-            === СТАНДАРТ ЛИЧНОГО РАЗБОРА СЛУЧАЙНОГО БОЯ v1.0 (Coach Lab) ===
-            Источник: 34 реплея финала четырёх летнего турнира Китая 2026, заново разобранные с личной точки зрения случайного боя, плюс полная статистика (324 выстрела, 246 попаданий с уроном по игроку). Оценивается только вы; механика — 80%, понимание боя — 20%; позиции и действия союзников не на вашей ответственности. При конфликте с другими правилами этого запроса приоритет у правил границ доказательств, в остальном действует этот стандарт.
+            === СТАНДАРТ ЛИЧНОГО РАЗБОРА СЛУЧАЙНОГО БОЯ v1.1 (Coach Lab) ===
+            Источник: правила, которые Coach Lab вывел из личного разбора всех 34 боёв плей-офф топ-4 летнего турнира китайского сервера 2026 года (3 записывающих игрока); оставлены только части, которые можно оценить по входным данным этого промпта. Выборка взята из турнирных боёв высокого уровня, не отражает уровень игроков случайных боёв и не должна использоваться как априорное допущение для этого боя. Оценивается только вы; позиции и взаимодействие союзников — не ваша ответственность. При противоречии с другими правилами этого промпта приоритет у правил границ доказательств.
 
             I. Вердикты
-            1. Каждое ключевое действие получает ровно один вердикт: ошибка / верно / нельзя определить; «нельзя определить» должно называть недостающие данные (например, время перезарядки, обзор или LOS, комплектацию).
-            2. Исходите из базы: в выборке около 90% выстрелов попали и около 81% пробили, поэтому стрельба обычно не проблема; очки теряются на выборе цели, моменте выстрела и том, какой стороной вы стоите к кому. Не тратьте разбор на общие советы «стреляйте точнее».
-            3. Каждая ошибка содержит: факты (время, название танка противника, дистанция, урон) -> почему -> что делать вместо этого -> граница доказательств. Вывод в одну строку называет только главную проблему боя.
+            1. Каждое ключевое действие получает ровно один из трёх вердиктов: ошибка / верно / невозможно определить; «невозможно определить» обязано назвать недостающие данные.
+            2. Граница данных: во входе нет полной записи выстрелов, выбранной цели, данных о перезарядке и боекомплекте — есть только события урона от попаданий. Отсутствие записи урона не значит, что выстрела не было; не утверждайте на этом основании «не отвечал огнём», «выстрелил поздно», «стрелял не в ту цель» или «противник был заряжен».
+            3. Стрельбу, пробитие и эффективность размена оценивайте только по данным этого боя (кому и сколько урона вы нанесли, кто и сколько раз попал по вам); не применяйте процент попаданий, пробитий или веса из внешней выборки.
+            4. Для каждой ошибки укажите: факт (время, название танка противника, дистанция, урон) -> почему -> нужное действие -> граница доказательств. Однострочным выводом делайте только главную проблему боя.
 
-            II. Механика (по частоте в выборке)
-            4. Сначала добивайте танки с малым HP: если в момент выстрела рядом виден противник, у которого HP не больше одного вашего выстрела, особенно если он стреляет по вам, а вы стреляете по более здоровой цели -> ошибка. Без HP или видимости противника в этот момент пишите «нельзя определить».
-            5. Сначала разберитесь с тем, кто стреляет по вам: один и тот же противник попадает по вам 3 раза примерно за 40 секунд, а вы не отвечаете ему и не уходите с его линии огня -> ошибка. Чаще всего это лёгкий танк или Kranvagn на высоте, с фланга или сзади.
-            6. Не выезжайте под заряженное орудие: противник не стрелял дольше одного цикла перезарядки, вы выезжаете, получаете первый выстрел и затем размениваетесь 1 на 1 с однотипным танком, у которого HP больше вашего -> ошибка. Дайте ему выстрелить первым и выезжайте, пока он перезаряжается.
-            7. Лоб и корма: в ближнем бою вы разворачиваетесь на вторую цель и подставляете корму или борт первой; или движетесь кормой к известному противнику -> ошибка. Если ваш лоб уже держит снаряды какого-то танка, держите лоб к нему.
-            8. Стреляйте, как только зарядились: в бою вы стреляете позже чем через 5 секунд после перезарядки и в это время получаете попадание -> ошибка, кроме случаев смены позиции или укрытия. В пределах 30 м не ждите остановки для сведения.
-            9. Расходники: сбитую гусеницу, повреждённую боеукладку или раненый экипаж нужно чинить примерно за 1,5 секунды; адреналин — сразу после выстрела. Без данных о комплектации не оценивайте.
-
-            III. Понимание боя
-            10. Подставляйтесь одному противнику за раз: не продвигайтесь вперёд с позиции, где по вам не попадают; перед движением посчитайте, на сколько линий огня вы выйдете, и не выходите на две и больше. Два попадания от разных противников примерно за 2 секунды — признак перекрёстного огня.
-            11. После попадания с одного направления считайте его известной линией огня: до следующего выстрела либо уйдите туда, где он вас не достанет, либо ответьте; это тот же вопрос, что пункт 5, и при устранении дублирования причин учитывается в пункте 5.
-            12. Не оценивайте гибель в концовке, не повлиявшую на результат.
+            II. Правила
+            5. Сначала разберитесь с тем, кто по вам стреляет: одна и та же машина противника попала по вам 3 и более раз примерно за 40 секунд, всё это время вы оставались на её линии огня (позиция не менялась, она продолжала попадать), и вы не нанесли ей урона -> ошибка: нужно было ответить ей или уйти туда, где она вас не достаёт. Укажите, что записей вашего урона по ней нет (промахи в данных отсутствуют). Чаще всего это ЛТ на высоте, на фланге или сзади.
+            6. Открывайтесь одной машине за раз: попадания от двух разных противников примерно за 2 секунды означают, что вы вошли под перекрёстный огонь. Если вы сами выехали туда вперёд с неподвижной позиции, где по вам не попадали, -> ошибка; перекрёстный огонь, созданный натиском или обходом противника, не ваша ошибка — смотрите, ушли ли вы из него потом.
+            7. Гибель в конце боя, не повлиявшая на результат, не оценивается.
             """;
 
     static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {

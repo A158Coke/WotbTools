@@ -3,15 +3,15 @@
   "mode": "TEAM_PERSPECTIVE",
   "arenaBonusType": 3,
   "fixtureKey": "cw-cap-defense-01",
-  "expectedJudgment": "Coach Lab 争霸赛复盘规范为最高优先级：关键决策只给失误/正确/无法判定，先看点位几何、点数账和版本车辆定位，伤害要和击杀一起看",
+  "expectedJudgment": "Coach Lab 争霸赛复盘规范：关键决策只给失误/正确/无法判定，战术规则只在前提有证据时适用，先看点位几何、点数账和版本车辆定位，伤害要和击杀一起看",
   "checks": [
-    { "kind": "system_prompt_contains", "text": "争霸赛复盘规范 v1.0（Coach Lab，最高优先级）" },
-    { "kind": "system_prompt_contains", "text": "以本规范为准" },
+    { "kind": "system_prompt_contains", "text": "争霸赛复盘规范 v1.1（Coach Lab）" },
+    { "kind": "system_prompt_contains", "text": "前提缺证据或命中例外时不套用规则" },
     { "kind": "system_prompt_contains", "text": "失误 / 正确 / 无法判定" },
     { "kind": "system_prompt_contains", "text": "开局到首次点亮敌车后约 5 秒内是开局布置" },
     { "kind": "system_prompt_contains", "text": "11.19 国服 SPHT 是肉车" },
     { "kind": "system_prompt_contains", "text": "019 团战集火" },
     { "kind": "system_prompt_contains", "text": "020 收入落后或相同、点数落后时" }
   ],
-  "note": "Golden I：2026 国服夏季赛四强 34 局人工复盘沉淀的 Coach Lab 规范，作为团队复盘最高优先级规则注入。"
+  "note": "Golden I：2026 国服夏季赛四强 34 局人工复盘沉淀的 Coach Lab 规范，注入团队复盘：判定格式加条件规则（带前提和例外）。"
 }
