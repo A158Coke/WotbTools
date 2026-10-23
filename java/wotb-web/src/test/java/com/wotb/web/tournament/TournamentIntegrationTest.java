@@ -232,9 +232,18 @@ class TournamentIntegrationTest {
     private static void assertCanonicalFacts(final TournamentDtos.Standings standings, final String clanTag,
                                              final List<Long> expectedPoints, final long expectedTotal) {
         final TournamentDtos.StandingRow row = standings.rows().stream().filter(value -> value.clanTag().equals(clanTag)).findFirst().orElseThrow();
-        final List<Long> actualPoints = row.rounds().stream().flatMap(round -> round.days().stream()).map(TournamentDtos.DayPoints::points).toList();
-        assertEquals(expectedPoints, actualPoints);
+        assertEquals(expectedPoints, points(standings, clanTag));
         assertEquals(expectedTotal, row.totalPoints());
+    }
+    private static List<Long> points(final TournamentDtos.Standings standings, final String tag) {
+        return standings.rows().stream()
+                .filter(row -> row.clanTag().equals(tag))
+                .findFirst()
+                .orElseThrow()
+                .rounds().stream()
+                .flatMap(round -> round.days().stream())
+                .map(TournamentDtos.DayPoints::points)
+                .toList();
     }
     @Test void csvReplacementRemovesOmittedClansAndOldGroupsWhilePreservingExplicitClears() throws Exception {
         final var batch = group(id, 1, 1, 1, 0, "A", "B", "C");
