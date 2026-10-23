@@ -227,6 +227,13 @@ class PromptRuleContractTest {
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("7. Союзники в случайном бою ненадёжны"));
         // Teammate support is proven only by positive evidence; partial coverage or missing hits never prove absence.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("位置或距离单独不够"));
+        // No-support needs the same standard as support: distance alone is never proof.
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("CURRENT 位置很远"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("a distant CURRENT position"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("далёкая CURRENT позиция"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("距离远本身不算证明"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("distance alone proves nothing"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("одна большая дистанция ничего не доказывает"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不得从队友后来没来或数据缺失反推"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("也没有交火证据的队友"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("或 CURRENT 位置显示能打到"));
