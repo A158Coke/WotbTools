@@ -25,6 +25,7 @@ import {
 } from './agentData.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
+import { shotResultClass } from '../utils/shotResultClass.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -1190,30 +1191,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             for (let b = 0; b < 13; b++) if (mask & (1 << b)) out.push(NAMES[b] || ('bit' + b));
             return out;
         }
-        // 命中结果分类：作者 = method38 位图（权威）；他人 hit_flags 恒 0 → 用 game_hit_result 枚举映射
-        function shotResultClass(s) {
-            // 伤害仲裁优先：一发命中可与目标多次装甲交互（method38 多消息已按位图并集合并，
-            // combat.rs ③'）——先弹开又击穿的弹同时带 0x0008 与 0x0010 位，此时以 HP 伤害
-            // 定性（伤害>0 = 击穿级结果）；HE 弹（0x1000）无论如何先按 HE 分类；
-            // 伤害=0 时才按跳弹/未穿位与结果枚举细分。
-            if (!s.target_name) return 'MISS';
-            const flg = s.hit_flags || 0;
-            const dmg = s.damage || 0;
-            if (flg & 0x1000) return 'HE BLAST';
-            if (dmg > 0) return 'PENETRATION';
-            if (flg & 0x0008) return 'RICOCHET';
-            if (flg & 0x0020 || flg & 0x0040 || flg & 0x0080) return 'NO PENETRATION';
-            const r = s.game_hit_result;
-            if (r === 4) return 'RICOCHET';
-            if (r === 3) return 'PENETRATION';
-            if (r === 1 || r === 2) return 'NO PENETRATION';
-            return 'HIT';   // 0/255：服务器未通知，仅知有目标
-        }
+        // 命中结果分类：作者 = method38 位图（权威）；他人 hit_flags 恒 0 → 用 game_hit_result 枚举映射。
+        // 唯一映射在 ../utils/shotResultClass.js（result=4 = raw 未定；0/255 = 结果未知）；此处仅消费。
         // 单发数据质量提示（ShotQuality 降级/回退项，3D 面板展示）
         function srQualityIssues(s) {
             const q = s.quality;
             const issues = [];
             if (!q) return issues;
+            if (q.target_dead) issues.push('受击方开火前已死亡（残骸命中，按未命中处理）');
             if (q.shooter_pos_from_muzzle) issues.push('射手位置为炮口坐标兜底');
             if (q.target_anchor_src === 'nearest') issues.push('命中通知缺失，目标锚点回退命中时刻最近包');
             else if (q.target_anchor_src === 'extrapolated') issues.push('命中通知缺失，目标锚点按末段速度外推');
@@ -3757,12 +3742,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 // hash6 = 游戏客户端 DecodeShotSegment 两点编码：服务器命中判定
                                 // 时刻的入点 P1/出点 P2，部件 AABB 1/255 量化，轴序 x右←b2/b5、
                                 // y前←b4/b7、z高←b3/b6（b4 恒 255 = 入点钉盒前界面）。
-                                // 盒源：game_data collision.*_bbox（游戏原生部件盒，x右/y前/z上）
-                                // 优先，缺失回退装甲网格 rest 顶点级紧致盒；部件帧：hull/chassis=
-                                // 模型原点、turret/gun=枢轴系。判定射线 __segRay = {P1−0.5·方向,
-                                // P1→P2 解码弦}：raycast 与入射角同源此射线（服务器编码的位置
-                                // 与弹向），世界系，随位姿联动。
+                                // 盒源：game_data collision.*_bbox（客户端 Parameters YAML 的
+                                // 权威部件盒，x右/y前/z上）。盒缺失 → fail-closed，不从装甲网格
+                                // 自算 AABB；部件帧：hull/chassis=模型原点、turret/gun=枢轴系。
+                                // 判定射线 __segRay = {P1−0.5·方向, P1→P2 解码弦}：raycast 与
+                                // 入射角同源此射线（服务器编码的位置与弹向），世界系，随位姿联动。
                                 window.__worldSegMk = null;
+                                window.__segRay = null;
                                 // 判定段线组：独立于调试标注层（非调试模式也常显）
                                 if (window.__worldSegGroup) { scene.remove(window.__worldSegGroup); window.__worldSegGroup = null; }
                                 if (s.hit_token && /^[0-9a-f]{12}$/i.test(s.hit_token)) {
@@ -3783,7 +3769,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                         if (sPart2 != null && partOfS(n) !== sPart2) return;
                                         partNodes.push(n);
                                     });
-                                    // part 0（底盘/履带）在装甲模型无网格——回退 hull 盒近似
+                                    // part 0（底盘/履带）在装甲模型无网格——回退 hull 装甲网格近似
+                                    // （解码盒仍取客户端 chassis 盒，不合成）
                                     const partFallback = partNodes.length === 0 && sPart2 === 0;
                                     if (partFallback) {
                                         armorModel.traverse(function(n) {
@@ -3793,36 +3780,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                             if (partOfS(n) === 1) partNodes.push(n);
                                         });
                                     }
-                                    if (partNodes.length) {
-                                        const cdBoxes = (tankData && tankData.collision_boxes) || null;
-                                        const gameBoxRaw = cdBoxes ? (sPart2 === 0 ? cdBoxes.chassis
-                                            : sPart2 === 1 ? cdBoxes.hull : sPart2 === 2 ? cdBoxes.turret
-                                            : sPart2 === 3 ? cdBoxes.gun : null) : null;
-                                        let boxMin = null, boxMax, boxFrame = null;   // boxMax 无 null 初始化：首分支必然赋值
-                                        let refNode = null, refRest = null;
-                                        if (gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max) {
-                                            boxMin = gameBoxRaw.min; boxMax = gameBoxRaw.max;
-                                            boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
-                                        } else {
-                                            // 回退：装甲网格 rest 顶点级紧致盒（旋转 AABB 会虚胀）
-                                            const box = new THREE.Box3();
-                                            const vv = new THREE.Vector3();
-                                            for (const n of partNodes) {
-                                                if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
-                                                const rest = (armorOrigMatrices && armorOrigMatrices.get(n)) || n.matrix;
-                                                const pos = n.geometry.attributes.position;
-                                                for (let i = 0; i < pos.count; i++) {
-                                                    vv.fromBufferAttribute(pos, i).applyMatrix4(rest);
-                                                    box.expandByPoint(vv);
-                                                }
-                                                if (!refNode && armorOrigMatrices && armorOrigMatrices.has(n)) {
-                                                    refNode = n; refRest = armorOrigMatrices.get(n);
-                                                }
-                                            }
-                                            boxMin = box.min.toArray(); boxMax = box.max.toArray();
-                                            boxFrame = 'mesh-tight';
-                                        }
+                                    const cdBoxes = (tankData && tankData.collision_boxes) || null;
+                                    const gameBoxRaw = cdBoxes ? (sPart2 === 0 ? cdBoxes.chassis
+                                        : sPart2 === 1 ? cdBoxes.hull : sPart2 === 2 ? cdBoxes.turret
+                                        : sPart2 === 3 ? cdBoxes.gun : null) : null;
+                                    // 只用客户端权威部件盒；缺失时不解码/不判定（fail-closed），
+                                    // 不再按装甲网格 rest 顶点自算 AABB。
+                                    if (partNodes.length && gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max) {
+                                        const boxMin = gameBoxRaw.min, boxMax = gameBoxRaw.max;
+                                        const boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
                                         const szv = [boxMax[0] - boxMin[0], boxMax[1] - boxMin[1], boxMax[2] - boxMin[2]];
+                                        // 客户端 DecodeShotSegment 用 255.0f（@0x364B110）：b=0→min、
+                                        // b=255→max，两端都可表示；不能用 /256（max 面永远差一步）。
                                         const qc = (b, ax) => boxMin[ax] + szv[ax] * (b / 255);
                                         const mkP1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.12),
                                             new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.95, depthTest: false }));
@@ -3869,10 +3838,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                 }
                                                 return armorModel.localToWorld(pl);
                                             }
-                                            if (boxFrame === 'mesh-tight' && refNode && refRest) {
-                                                return pl.applyMatrix4(refRest.clone().invert()).applyMatrix4(
-                                                    refNode.matrixWorld.clone().multiply(refRest.clone().invert()));
-                                            }
                                             return armorModel.localToWorld(pl);
                                         };
                                         const updSeg = function(visible) {
@@ -3893,8 +3858,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                 } else if (boxFrame === 'gun-pivot') {
                                                     const gm = findPartMesh(/^gun_\d+_armor/);
                                                     if (gm) { gm.updateWorldMatrix(true, false); m = gm.matrixWorld; }
-                                                } else if (boxFrame === 'mesh-tight' && refNode && refRest) {
-                                                    m = refNode.matrixWorld.clone().multiply(refRest.clone().invert());
                                                 } else {
                                                     m = armorModel.matrixWorld;
                                                 }
@@ -3935,7 +3898,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                     ' · P2 ' + fmt3(mkP2.position.x + cx, mkP2.position.y + cy, mkP2.position.z + cz) +
                                                     ' · 俯仰' + (THREE.MathUtils.radToDeg(Math.asin(
                                                         chordL.clone().normalize().z)).toFixed(2)) + '°（炮塔系）' +
-                                                    (boxFrame === 'mesh-tight' ? ' · 网格盒回退' : ' · 游戏部件盒'));
+                                                    ' · 客户端部件盒');
                                             }
                                         };
                                         window.__worldSegMk = { update: updSeg, p1: mkP1, p2: mkP2 };
@@ -3961,6 +3924,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                     + (sPart2 != null ? ' · 部件P' + sPart2 : ''));
                                             }
                                         }, 1500);
+                                    } else if (window.__debugOn) {
+                                        dbgInfo('dbg-seg', '#ffa500', 'DecodeShotSegment',
+                                            '缺少客户端部件盒（part ' + sPart2 + '），fail-closed 未解码');
                                     }
                                 }
                             }
@@ -4122,7 +4088,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         const cls2 = shotResultClass(s) === 'MISS' ? 'MISS'
                             : (shotResultClass(s) === 'RICOCHET') ? 'RICO'
                             : (shotResultClass(s) === 'PENETRATION') ? 'PEN'
-                            : (shotResultClass(s) === 'HE BLAST') ? 'HE' : 'NOPEN';
+                            : (shotResultClass(s) === 'HE BLAST') ? 'HE'
+                            : (shotResultClass(s) === 'UNVERIFIED') ? 'R4?'
+                            : (shotResultClass(s) === 'NO PENETRATION') ? 'NOPEN' : 'HIT';
                         const qIssues = srQualityIssues(s);
                         const tksW = s.tick_samples || [];
                         if (tksW.length > 1) {
@@ -5609,6 +5577,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
 
             // blitzkit shoot() 只用 near 穿深（无距离衰减）；dist 仅用于显示
+            // 射击复现：射线只命中外部模块/间隙甲时按 BLOCKED/0 伤处理（服务器 result=1/2/4）；
+            // 相机点击保持 BlitzKit 末层语义（不传该门禁）。
+            const requirePrimary = window.__worldPenMode === true;
             const req = {
                 shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null,
                 penetration: pen,
@@ -5622,6 +5593,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 normalization_deg: shellNormDeg,
                 ricochet_deg: shellRicoDeg,
                 allow_ricochet: true,
+                require_primary: requirePrimary,
                 // 距离衰减（对齐客户端指示器 0x719740）：d>100 且 far>0 才生效；
                 // penetration_far 随 tank/{id}.json 透出（数据缺失 → undefined → 不衰减）
                 distance_m: effDistM > 0 ? effDistM : undefined,
@@ -5828,6 +5800,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 // 跳弹后的炮弹可以再次跳弹；API 的 layerIndex>0 仍会
                                 // 抑制“先穿过模块/间隙甲再跳弹”的情形。
                                 allow_ricochet: true,
+                                require_primary: requirePrimary,
                                 view_dir: [reflect.x, reflect.y, reflect.z],
                                 hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
                             };
