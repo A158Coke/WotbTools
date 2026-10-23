@@ -1,7 +1,8 @@
 import type { components } from './generated/http-contract.js'
 // 用户域 transport（profile / wotb-account）。
+import { userProfileValidator } from './generated/contract-validators.js'
 import { useAuth } from '../composables/useAuth.js'
-import { apiErrorFromResponse, apiFetch } from '../utils/http.js'
+import { ApiError, apiErrorFromResponse, apiFetch } from '../utils/http.js'
 
 async function userJsonHeaders(): Promise<Record<string, string>> {
   const { token, ensureToken } = useAuth()
@@ -21,31 +22,45 @@ async function userHandle(r: Response) {
   return r.json()
 }
 
+async function userProfileResponse(response: Response): Promise<components['schemas']['UserProfile'] | null> {
+  let value: unknown
+  try {
+    value = await userHandle(response)
+  } catch (cause) {
+    if (response.ok && cause instanceof SyntaxError) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false, cause })
+    throw cause
+  }
+  if (response.status === 204) return null
+  if (!userProfileValidator(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+  return value as components['schemas']['UserProfile']
+}
+
 export async function getUserProfile(): Promise<components['schemas']['UserProfile'] | null> {
-  return userHandle(await apiFetch('/api/users/profile', { headers: await userJsonHeaders() }))
+  return userProfileResponse(await apiFetch('/api/users/profile', { headers: await userJsonHeaders() }))
 }
 
 /** canonical owner 是全局 business bootstrap（useBusinessUserBootstrap），页面不自行调用。 */
 export async function ensureUserProfile(): Promise<components['schemas']['UserProfile'] | null> {
-  return userHandle(await apiFetch('/api/users/profile', { method: 'PUT', headers: await userJsonHeaders() }))
+  return userProfileResponse(await apiFetch('/api/users/profile', { method: 'PUT', headers: await userJsonHeaders() }))
 }
 
-export async function updateUserWotbAccount(body) {
-  return userHandle(await apiFetch('/api/users/wotb-account', { method: 'PATCH', headers: await userJsonHeaders(), body: JSON.stringify(body) }))
+export async function updateUserWotbAccount(body: components['schemas']['UpdateWotbAccountRequest']) {
+  return userProfileResponse(await apiFetch('/api/users/wotb-account', { method: 'PATCH', headers: await userJsonHeaders(), body: JSON.stringify(body) }))
 }
 
 export async function deleteUserWotbAccount() {
-  return userHandle(await apiFetch('/api/users/wotb-account', { method: 'DELETE', headers: await userJsonHeaders() }))
+  return userProfileResponse(await apiFetch('/api/users/wotb-account', { method: 'DELETE', headers: await userJsonHeaders() }))
 }
 
 export async function verifyUserWotbAccountFromReplay(recorderAccountId: number) {
-  return userHandle(await apiFetch('/api/users/wotb-account/verify-replay', {
-    method: 'POST', headers: await userJsonHeaders(), body: JSON.stringify({ recorderAccountId }),
+  const body: components['schemas']['VerifyWotbAccountFromReplayRequest'] = { recorderAccountId }
+  return userProfileResponse(await apiFetch('/api/users/wotb-account/verify-replay', {
+    method: 'POST', headers: await userJsonHeaders(), body: JSON.stringify(body),
   }))
 }
 
 export async function syncUserWotbAccountFromLogin() {
-  return userHandle(await apiFetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await userJsonHeaders() }))
+  return userProfileResponse(await apiFetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await userJsonHeaders() }))
 }
 
 export async function getUserHofRecords() {

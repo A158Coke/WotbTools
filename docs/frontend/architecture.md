@@ -55,7 +55,11 @@ app → features → shared
 
 核心 Replay/API/AI/Playback 契约位于 `frontend/src/types/`，并在外部 JSON/SSE 边界处校验。迁移期间 JavaScript 与 TypeScript 可以共存；`.js` import specifier 可能经 Vite/TypeScript resolver 解析到其 `.ts` 实现，但只能有一个实现。
 
-业务 HTTP endpoint 的唯一 owner 是 `frontend/src/api/**`。`user-profile.ts` 持有用户资料、账号绑定与验证；`admin-users.ts` 持有管理用户搜索、详情与删除；`hall-of-fame.ts` 持有单场、百场、三环的公开/登录/管理请求、个人状态与证据上传下载。组件/composable 消费领域 API，资料 provisioning/retry 状态机仍归 `useBusinessUserBootstrap`。wire 类型以 generated OpenAPI transport 为准；已接入的 runtime validator 保留在 API 边界。
+业务 HTTP endpoint 的唯一 owner 是 `frontend/src/api/**`。`user-profile.ts` 持有用户资料、账号绑定与验证；`admin-users.ts` 持有管理用户搜索、详情与删除；`hall-of-fame.ts` 持有单场、百场、三环的公开/登录/管理请求、个人状态与证据上传下载。组件/composable 消费领域 API，资料 provisioning/retry 状态机仍归 `useBusinessUserBootstrap`。wire 类型以 generated OpenAPI transport 为准。
+
+用户资料与账号绑定的六条请求、管理用户的搜索/详情/删除、名人堂公开单场分页、百场的公开/提交/个人状态/管理 JSON，以及单场/百场/三环的批量删除结果，在 API owner 内将网络 JSON 视为 `unknown`，通过 generated OpenAPI runtime validator 后才返回 typed wire value。积分赛、推荐与联赛直播也在各自 API owner 完成校验与视图投影。上述边界的 JSON 语法错误或形状不符均抛出不可重试的 `INVALID_RESPONSE`，不补字段、不接受契约外 enum；合法 optional/nullable 值保持原样。个人单场战绩、其余单场管理/上传与三环 JSON 不属于上述已覆盖范围。
+
+Blob 下载直接读取二进制；无内容响应保持各领域的 `null`/`void` 返回，不调用 `json()`。HTTP 200 的 JSON `null` 不能冒充 204。AI Review 的 SSE 继续由 `utils/aiReviewSse.ts` 校验事件协议，取消与遥测保持既有 best-effort 通知语义；静态/WASM/Native 资源不套用业务 JSON validator。
 
 `frontend/src/utils/http.ts` 持有共享 transport、Android URL 解析、credentials、canonical ApiError 与错误归一化；其 path→feature 表仅为 defense-in-depth，不接管页面/composable 的产品 gate。静态地图/模型、官方示例回放、WASM fingerprint、APK manifest、Native/WebView 资源 fetch 不属于业务 HTTP endpoint 规则。`src/api/http-ownership.test.ts` 检查生产代码中的 endpoint literal，明确允许 API 目录及 `utils/http.ts` 基础设施例外，不禁止资源 fetch。
 

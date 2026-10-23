@@ -3851,6 +3851,227 @@ export default {
         }
       }
     },
+    "UpdateWotbAccountRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "VerifyWotbAccountFromReplayRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recorderAccountId"
+      ],
+      "properties": {
+        "recorderAccountId": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
+    },
+    "AdminUserDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keycloakUserId",
+        "profile",
+        "keycloak",
+        "warnings"
+      ],
+      "properties": {
+        "keycloakUserId": {
+          "type": "string"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdminUserDetailProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keycloak": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdminUserDetailKeycloak"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AdminUserDetailProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "wotbNickname",
+        "wotbServer",
+        "createdAt",
+        "updatedAt",
+        "wotbAccountId"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbNickname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbServer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wotbAccountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      }
+    },
+    "AdminUserDetailKeycloak": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "username",
+        "email",
+        "firstName",
+        "lastName",
+        "enabled",
+        "federatedIdentities"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "username": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "firstName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "federatedIdentities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminUserFederatedIdentity"
+          }
+        }
+      }
+    },
+    "AdminUserFederatedIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identityProvider",
+        "userId",
+        "userName"
+      ],
+      "properties": {
+        "identityProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "userName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "AdminUserListItem": {
       "type": "object",
       "additionalProperties": false,

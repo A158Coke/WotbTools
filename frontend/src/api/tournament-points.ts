@@ -46,6 +46,15 @@ export function validateTournament<K extends keyof Schemas>(schema: K, data: unk
   return data as Schemas[K]
 }
 
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+    throw error
+  }
+}
+
 async function request(url: string, admin: boolean, options: RequestInit = {}): Promise<Response> {
   requireOnline()
   const auth = useAuth()
@@ -64,13 +73,13 @@ async function request(url: string, admin: boolean, options: RequestInit = {}): 
 }
 
 async function json<K extends keyof Schemas>(url: string, schema: K, admin = true, options: RequestInit = {}): Promise<Schemas[K]> {
-  return validateTournament(schema, await (await request(url, admin, options)).json())
+  return validateTournament(schema, await readJson(await request(url, admin, options)))
 }
 function body(method: string, value: unknown, signal?: AbortSignal): RequestInit {
   return { method, body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' }, signal }
 }
 export async function listTournamentEvents(admin = false, signal?: AbortSignal): Promise<TournamentEvent[]> {
-  const value: unknown = await (await request(admin ? base : '/api/tournaments', admin, { signal })).json()
+  const value: unknown = await readJson(await request(admin ? base : '/api/tournaments', admin, { signal }))
   if (!Array.isArray(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return value.map(event => validateTournament('TournamentEvent', event))
 }
@@ -148,7 +157,7 @@ export async function deleteTournament(id: number, value: Schemas['TournamentDel
   await request(eventPath(id), true, body('DELETE', value, signal))
 }
 export async function getTournamentAudit(id: number, signal?: AbortSignal): Promise<TournamentAudit[]> {
-  const value: unknown = await (await request(`${eventPath(id)}/audit`, true, { signal })).json()
+  const value: unknown = await readJson(await request(`${eventPath(id)}/audit`, true, { signal }))
   if (!Array.isArray(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
   return value.map(entry => validateTournament('TournamentAudit', entry))
 }

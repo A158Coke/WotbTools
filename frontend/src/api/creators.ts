@@ -30,6 +30,15 @@ function requireOnline() {
   if (!useFeatureGate().requireFeature(Feature.CREATORS)) throw new ApiError({ errorCode: 'NETWORK_ERROR', retryable: true })
 }
 
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+    throw error
+  }
+}
+
 async function request<T>(path: string, access: 'public' | 'admin', options: RequestInit,
   read: (response: Response) => Promise<T>): Promise<T> {
   requireOnline()
@@ -49,15 +58,15 @@ async function request<T>(path: string, access: 'public' | 'admin', options: Req
 
 export async function getCreatorAvailability(signal?: AbortSignal): Promise<{ supported: boolean }> {
   const response = await requireOk(await apiFetch('/api/health', { signal, cache: 'no-store' }))
-  const capabilities = validateCreator('BackendHealth', await response.json()).capabilities ?? []
+  const capabilities = validateCreator('BackendHealth', await readJson(response)).capabilities ?? []
   return { supported: capabilities.includes('recommendations-v1') }
 }
 function json<K extends keyof Schemas>(path: string, schema: K, access: 'public' | 'admin', options: RequestInit = {}): Promise<Schemas[K]> {
-  return request(path, access, options, async response => validateCreator(schema, await response.json()))
+  return request(path, access, options, async response => validateCreator(schema, await readJson(response)))
 }
 function list<K extends keyof Schemas>(path: string, schema: K, access: 'public' | 'admin', signal?: AbortSignal): Promise<Schemas[K][]> {
   return request(path, access, { signal }, async response => {
-    const value: unknown = await response.json()
+    const value: unknown = await readJson(response)
     if (!Array.isArray(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE' })
     return value.map(item => validateCreator(schema, item))
   })

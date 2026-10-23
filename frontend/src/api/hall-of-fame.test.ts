@@ -46,6 +46,37 @@ function jsonResponse(status: number, body: unknown): Response {
   return Response.json(body, { status })
 }
 
+const summary = {
+  id: 17, vehicleId: 385, vehicleName: 'Tank', status: 'CURRENT',
+  claimedAverageDamage: 4000, claimedBattleCount: 100,
+}
+const nullableSummary = {
+  ...summary, approvedAverageDamage: null, approvedBattleCount: null,
+  submittedAt: null, approvedAt: null, rejectReason: null, rejectReasonText: null,
+}
+const page = { items: [], page: 0, size: 25, totalItems: 0, totalPages: 0 }
+const detail = {
+  ...summary, wotbServer: 'EU', wotbAccountId: 123, nicknameSnapshot: 'Player',
+  replayParseOk: true, replayGameIdMatch: true, replayVehicleMatch: true, replayDistinctBattles: true,
+}
+const evidence = { id: 7, slot: 1, originalFilename: 'battle.wotbreplay', fileSize: 123, arenaId: 'arena', sha256: 'a'.repeat(64), createdAt: null }
+const bulk = { requested: 2, deleted: 1, failed: 1, results: [{ id: 1, deleted: true }, { id: 2, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }] }
+const hardened: { name: keyof typeof hof, args: () => unknown[], valid: unknown, nullable: unknown }[] = [
+  { name: 'hofAdminBulkDeleteRecords', args: () => [[1, 2]], valid: bulk, nullable: { ...bulk, results: [{ id: 1, deleted: true, errorCode: null }] } },
+  { name: 'hofHundredList', args: () => [], valid: page, nullable: { ...page, vehicleId: null, vehicleName: null, items: [{ id: 1, rank: null, vehicleId: 385, vehicleName: 'Tank', nickname: 'Player', approvedAverageDamage: 4000, approvedBattleCount: 100, approvedAt: null }] } },
+  { name: 'hofHundredSubmit', args: () => [new FormData()], valid: { id: 17, status: 'PENDING' }, nullable: { id: 17, status: 'PENDING' } },
+  { name: 'hofHundredCancel', args: () => [17], valid: summary, nullable: nullableSummary },
+  { name: 'hofHundredMyStatus', args: () => [], valid: { current: [], pending: [], rejected: [] }, nullable: { current: [nullableSummary], pending: [], rejected: [] } },
+  { name: 'hofAdminHundredList', args: () => [], valid: page, nullable: { ...page, items: [{ id: 17, status: 'CURRENT', vehicleId: 385, vehicleName: 'Tank', wotbServer: 'EU', wotbAccountId: 123, nicknameSnapshot: 'Player', approvedAverageDamage: null, approvedAt: null }] } },
+  { name: 'hofAdminHundredDetail', args: () => [17], valid: detail, nullable: { ...detail, proofScreenshot: null, approvedAt: null, approvedBy: null, deletedAt: null, deleteReasonText: null } },
+  { name: 'hofAdminHundredReplays', args: () => [17], valid: [], nullable: [evidence] },
+  { name: 'hofAdminHundredApprove', args: () => [17], valid: summary, nullable: nullableSummary },
+  { name: 'hofAdminHundredReject', args: () => [17, { rejectReason: 'OTHER' }], valid: summary, nullable: nullableSummary },
+  { name: 'hofAdminHundredDelete', args: () => [17, { deleteReason: 'OTHER' }], valid: summary, nullable: nullableSummary },
+  { name: 'hofAdminBulkDeleteHundred', args: () => [[17], { reason: 'OTHER' }], valid: bulk, nullable: { ...bulk, results: [{ id: 17, deleted: true, errorCode: null }] } },
+  { name: 'hofAdminBulkDeleteMark3', args: () => [[23], { reason: 'OTHER' }], valid: bulk, nullable: { ...bulk, results: [{ id: 23, deleted: true, errorCode: null }] } },
+]
+
 describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', () => {
   const file = new File(['bytes'], 'battle.wotbreplay', { type: 'application/octet-stream' })
 
@@ -94,9 +125,10 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   ]
 
   it.each(requests)('%s preserves endpoint, method, payload and result', async (name, args, url, method, body) => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { preserved: true }))
+    const responseBody = hardened.find(entry => entry.name === name)?.valid ?? { preserved: true }
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, responseBody))
     const result = await (hof[name] as (...args: any[]) => Promise<unknown>)(...args)
-    expect(result).toEqual(name === 'hofAdminDelete' ? undefined : { preserved: true })
+    expect(result).toEqual(name === 'hofAdminDelete' ? undefined : responseBody)
     const [actualUrl, options] = vi.mocked(fetch).mock.calls[0]
     expect(actualUrl).toBe(url)
     expect(options?.method ?? 'GET').toBe(method)
@@ -107,6 +139,51 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
       expect(auth.ensureToken).toHaveBeenCalledWith(30)
       expect(options?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
     }
+  })
+
+  it.each(hardened)('$name accepts canonical and optional/null payloads unchanged', async ({ name, args, valid, nullable }) => {
+    for (const payload of [valid, nullable]) {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(name === 'hofHundredSubmit' ? 201 : 200, payload))
+      await expect((hof[name] as (...args: any[]) => Promise<unknown>)(...args())).resolves.toEqual(payload)
+    }
+  })
+
+  it.each(hardened)('$name rejects malformed shapes and JSON syntax safely', async ({ name, args }) => {
+    for (const response of [jsonResponse(200, { wrong: true }), new Response('{invalid-json')]) {
+      vi.mocked(fetch).mockResolvedValueOnce(response)
+      await expect((hof[name] as (...args: any[]) => Promise<unknown>)(...args())).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+    }
+  })
+
+  it.each([
+    ['hofList', {}], ['hofHundredList', { ...page, items: [{}] }],
+    ['hofHundredMyStatus', { current: [{}], pending: [], rejected: [] }],
+    ['hofAdminHundredList', { ...page, items: [{}] }],
+    ['hofAdminHundredReplays', [evidence, { ...evidence, slot: 'one' }]],
+    ['hofAdminBulkDeleteRecords', { ...bulk, results: [{}] }],
+  ] as const)('%s rejects invalid array items and roots', async (name, payload) => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    await expect((hof[name] as (...args: any[]) => Promise<unknown>)(17)).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it.each([
+    { ...summary, status: 'UNKNOWN' }, { ...summary, id: '17' }, { ...summary, vehicleName: undefined },
+  ])('rejects invalid summary enum, scalar and missing required values', async payload => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    await expect(hof.hofHundredCancel(17)).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it.each(['hofList', 'hofHundredList', 'hofAdminHundredReplays'] as const)('%s preserves body-read abort semantics', async name => {
+    const response = new Response('{}')
+    const abort = new DOMException('Aborted', 'AbortError')
+    vi.spyOn(response, 'json').mockRejectedValueOnce(abort)
+    vi.mocked(fetch).mockResolvedValueOnce(response)
+    await expect((hof[name] as (...args: any[]) => Promise<unknown>)(17)).rejects.toBe(abort)
+  })
+
+  it('normalizes public HoF JSON syntax failures', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response('{broken'))
+    await expect(hof.hofList()).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
   })
 
   it('keeps the export surface covered', () => {
@@ -261,7 +338,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   it('approves a hundred-battle submission without a score payload', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'CURRENT' }))
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, summary))
 
     await hofAdminHundredApprove(17)
 
