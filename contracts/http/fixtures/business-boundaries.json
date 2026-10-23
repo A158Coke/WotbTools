@@ -1,0 +1,181 @@
+[
+  {
+    "schema": "UserProfile",
+    "value": {
+      "id": 7,
+      "keycloakUserId": "fixture-user",
+      "displayName": null,
+      "username": "fixture-login",
+      "wotbAccountId": null,
+      "wotbNickname": null,
+      "wotbServer": "CN",
+      "wotbAccountSource": "MANUAL",
+      "wotbAccountVerifiedAt": null
+    }
+  },
+  {
+    "schema": "AdminUserPage",
+    "value": {
+      "items": [
+        {
+          "keycloakUserId": "fixture-user",
+          "keycloakUsername": "fixture-login",
+          "keycloakEmail": null,
+          "keycloakEnabled": true,
+          "profileId": null,
+          "displayName": null,
+          "wotbAccountId": null,
+          "wotbNickname": null,
+          "wotbServer": null,
+          "profileCreatedAt": null,
+          "hasLocalProfile": false,
+          "keycloakUserMissing": false
+        },
+        {
+          "keycloakUserId": "fixture-user",
+          "keycloakUsername": null,
+          "keycloakEmail": null,
+          "keycloakEnabled": null,
+          "profileId": 7,
+          "displayName": null,
+          "wotbAccountId": null,
+          "wotbNickname": null,
+          "wotbServer": "CN",
+          "profileCreatedAt": "2026-10-01T12:00:00Z",
+          "hasLocalProfile": true,
+          "keycloakUserMissing": true
+        }
+      ],
+      "page": 0,
+      "size": 25,
+      "totalItems": 2,
+      "totalPages": 1
+    }
+  },
+  {
+    "schema": "AdminUserDetail",
+    "value": {
+      "keycloakUserId": "fixture-user",
+      "profile": null,
+      "keycloak": {
+        "id": "fixture-user",
+        "username": "fixture-login",
+        "email": null,
+        "firstName": null,
+        "lastName": null,
+        "enabled": true,
+        "federatedIdentities": []
+      },
+      "warnings": []
+    }
+  },
+  {
+    "schema": "AdminUserDetail",
+    "value": {
+      "keycloakUserId": "fixture-user",
+      "profile": {
+        "id": 7,
+        "displayName": null,
+        "wotbAccountId": null,
+        "wotbNickname": null,
+        "wotbServer": "CN",
+        "createdAt": "2026-10-01T12:00Z",
+        "updatedAt": null
+      },
+      "keycloak": null,
+      "warnings": [
+        "KEYCLOAK_USER_MISSING"
+      ]
+    }
+  },
+  {
+    "schema": "DeleteUsersResponse",
+    "value": {
+      "requested": 2,
+      "deleted": 1,
+      "failed": 1,
+      "results": [
+        {
+          "userId": "fixture-user",
+          "deleted": true,
+          "errorCode": null
+        },
+        {
+          "userId": "fixture-admin",
+          "deleted": false,
+          "errorCode": "AUTH_FORBIDDEN"
+        }
+      ]
+    }
+  },
+  {
+    "schema": "HundredSubmissionSummary",
+    "value": {
+      "id": 11,
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "status": "PENDING",
+      "claimedAverageDamage": 3000,
+      "claimedBattleCount": 100,
+      "approvedAverageDamage": null,
+      "approvedBattleCount": null,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "rejectReason": null,
+      "rejectReasonText": null
+    }
+  },
+  {
+    "schema": "HundredAdminDetail",
+    "value": {
+      "id": 11,
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "status": "DELETED",
+      "claimedAverageDamage": 3000,
+      "claimedBattleCount": 100,
+      "approvedAverageDamage": null,
+      "approvedBattleCount": null,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "rejectReason": null,
+      "rejectReasonText": null,
+      "wotbServer": "CN",
+      "wotbAccountId": 123,
+      "nicknameSnapshot": "Fixture player",
+      "proofScreenshot": null,
+      "replayParseOk": true,
+      "replayGameIdMatch": true,
+      "replayVehicleMatch": true,
+      "replayDistinctBattles": true,
+      "approvedBy": null,
+      "rejectedAt": null,
+      "rejectedBy": null,
+      "cancelledAt": null,
+      "deletedAt": "2026-10-02T12:00:00Z",
+      "deletedBy": "fixture-admin",
+      "deleteReason": "OTHER",
+      "deleteReasonText": "Fixture cleanup"
+    }
+  },
+  {
+    "schema": "BulkDeleteResult",
+    "value": {
+      "requested": 2,
+      "deleted": 1,
+      "failed": 1,
+      "results": [
+        {
+          "id": 11,
+          "deleted": true,
+          "errorCode": null
+        },
+        {
+          "id": 12,
+          "deleted": false,
+          "errorCode": "HUNDRED_NOT_CURRENT"
+        }
+      ]
+    }
+  }
+]

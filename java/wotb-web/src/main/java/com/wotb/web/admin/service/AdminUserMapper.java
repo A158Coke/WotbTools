@@ -9,6 +9,7 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.format.DateTimeFormatter;
 
 /** 管理端用户列表与详情 DTO 映射。 */
 @Service
@@ -38,7 +39,8 @@ public class AdminUserMapper implements Mapper<UserProfile, AdminUserListItemDto
                 profile != null ? profile.getWotbAccountId() : null,
                 profile != null ? profile.getWotbNickname() : null,
                 profile != null ? profile.getWotbServer() : null,
-                profile != null && profile.getCreatedAt() != null ? profile.getCreatedAt().toString() : null,
+                profile != null && profile.getCreatedAt() != null
+                        ? profile.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 profile != null,
                 profile != null && keycloakUser == null
         );

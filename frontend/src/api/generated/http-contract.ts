@@ -1022,6 +1022,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/users/{keycloakUserId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取本地资料与 Keycloak 用户详情 */
+        get: operations["getAdminUser"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/wotb-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 解除当前用户账号绑定 */
+        delete: operations["deleteUserWotbAccount"];
+        options?: never;
+        head?: never;
+        /** 更新当前用户账号绑定 */
+        patch: operations["updateUserWotbAccount"];
+        trace?: never;
+    };
+    "/api/users/wotb-account/verify-replay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 以回放录像者账号验证当前绑定 */
+        post: operations["verifyUserWotbAccountFromReplay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/wotb-account/from-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 从可信登录信息同步账号绑定 */
+        put: operations["syncUserWotbAccountFromLogin"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/reviews": {
         parameters: {
             query?: never;
@@ -2204,6 +2273,47 @@ export interface components {
             wotbAccountSource: "MANUAL" | "WARGAMING";
             /** Format: date-time */
             wotbAccountVerifiedAt?: string | null;
+        };
+        UpdateWotbAccountRequest: {
+            /** Format: int64 */
+            wotbAccountId?: number | null;
+            wotbNickname?: string | null;
+            wotbServer?: string | null;
+        };
+        VerifyWotbAccountFromReplayRequest: {
+            /** Format: int64 */
+            recorderAccountId: number;
+        };
+        AdminUserDetail: {
+            keycloakUserId: string;
+            profile: components["schemas"]["AdminUserDetailProfile"] | null;
+            keycloak: components["schemas"]["AdminUserDetailKeycloak"] | null;
+            warnings: string[];
+        };
+        AdminUserDetailProfile: {
+            /** Format: int64 */
+            id: number | null;
+            displayName: string | null;
+            wotbNickname: string | null;
+            wotbServer: string | null;
+            createdAt: string | null;
+            updatedAt: string | null;
+            /** Format: int64 */
+            wotbAccountId: number | null;
+        };
+        AdminUserDetailKeycloak: {
+            id: string | null;
+            username: string | null;
+            email: string | null;
+            firstName: string | null;
+            lastName: string | null;
+            enabled: boolean;
+            federatedIdentities: components["schemas"]["AdminUserFederatedIdentity"][];
+        };
+        AdminUserFederatedIdentity: {
+            identityProvider: string | null;
+            userId: string | null;
+            userName: string | null;
         };
         AdminUserListItem: {
             keycloakUserId: string;
@@ -6470,6 +6580,116 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getAdminUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                keycloakUserId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 管理用户详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetail"];
+                };
+            };
+        };
+    };
+    deleteUserWotbAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前用户资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+        };
+    };
+    updateUserWotbAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWotbAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description 当前用户资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+        };
+    };
+    verifyUserWotbAccountFromReplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyWotbAccountFromReplayRequest"];
+            };
+        };
+        responses: {
+            /** @description 当前用户资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
+                };
+            };
+        };
+    };
+    syncUserWotbAccountFromLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前用户资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfile"];
                 };
             };
         };
