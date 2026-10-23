@@ -220,6 +220,11 @@ class PromptRuleContractTest {
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("它的方向对你已经已知"));
         // Rule 5 judges sustained exposure only; no damage is a trade result, never proof the player did not respond.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不作为判失误的依据"));
+        // Random teammates are not trusted by default; reliance is judged by the information at decision time.
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("7. 野队队友不可靠"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("判的是依赖本身，不看队友后来有没有来"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("7. Random teammates are unreliable"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("7. Союзники в случайном бою ненадёжны"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("而你对它没有造成伤害"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("写明应该回击它"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("never as grounds for a mistake"));
