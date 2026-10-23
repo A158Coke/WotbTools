@@ -38,7 +38,7 @@
 
 - **HTTP contract boundary**：`contracts/http/openapi.yaml` 是 FE ↔ BE wire SSOT；优先消费 `src/api/generated/` transport types，经过 runtime validation/adapter 后再进入 view model。不得复制手写 wire interface，也不得为了兼容 producer 违规而同时接受两套 enum。
 - Vue 组件负责渲染、交互编排和局部视图状态；可复用业务规则放在 composable 或纯函数模块，并由测试覆盖。
-- API 请求集中在 `src/api/` / shared transport 边界；组件不得重造鉴权、上传、错误解析、endpoint 字符串或 dataset identity 逻辑。
+- 业务 HTTP endpoint 由 `src/api/**` 唯一持有；组件/composable 只调用领域 API，不重造鉴权、上传、错误解析、endpoint 字符串或 dataset identity 逻辑。`utils/http.ts` 持有共享 transport、Android URL/credentials、错误归一化与 path→feature 防御映射；静态资产、WASM fingerprint、示例回放和 Native/WebView 资源 fetch 不属于业务 API 规则。`src/api/http-ownership.test.ts` 守护生产 endpoint literal 的归属。
 - `src/api/replay-capabilities.ts` 只提供共享 Bearer/transport helper（`ReplayAuthSession` / `optionalBearer` / `authedReplayPost`），供 `/api/ai/**` 调用方复用；AI wire 组装在 `src/api/ai-review.ts`。相关 panel 不得重新出现 `authedFetch` 或直接 `apiFetch`。
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。

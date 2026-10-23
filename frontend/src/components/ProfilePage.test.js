@@ -97,7 +97,7 @@ const userApi = vi.hoisted(() => ({
   verifyUserWotbAccountFromReplay: vi.fn(() => Promise.resolve(null))
 }))
 
-vi.mock('../utils/api-user.js', () => ({
+vi.mock('../api/user-profile.js', () => ({
   // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
   ensureUserProfile: userApi.ensureUserProfile,
   getUserProfile: (...args) =>
@@ -123,7 +123,7 @@ const hundredApi = vi.hoisted(() => ({
   hofHundredCancel: vi.fn()
 }))
 
-vi.mock('../utils/api.js', () => ({
+vi.mock('../api/hall-of-fame.js', () => ({
   hofHundredMyStatus: hundredApi.hofHundredMyStatus,
   hofHundredCancel: hundredApi.hofHundredCancel
 }))

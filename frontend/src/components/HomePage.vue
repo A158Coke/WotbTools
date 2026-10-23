@@ -16,7 +16,7 @@
  * ⑤ 极简页脚。③ 的截图全部来自产品自带的匿名官方示例回放与公开页面，不含用户的私有数据。
  */
 import { computed, inject, ref, watch } from 'vue'
-import * as api from '../utils/api.js'
+import * as api from '../api/hall-of-fame.js'
 import { ArrowRight, Heart, Smartphone } from 'lucide-vue-next'
 import AppButton from './AppButton.vue'
 import heroDecorImg from '../assets/showcase/home/hero-v4.webp'
