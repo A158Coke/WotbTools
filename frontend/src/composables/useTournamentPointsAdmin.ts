@@ -156,7 +156,7 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       void loadDataSource(eventId.value, gen, epoch, signal)
       void loadCsvSupport(gen, epoch, signal)
       const [value, entries, history] = await Promise.all([
-        transport.getTournamentDay(eventId.value, round.value, day.value, signal),
+        transport.getTournamentDay(eventId.value, round.value, day.value, signal, true),
         transport.getTournamentAudit(eventId.value, signal),
         transport.getTournamentHistoricalState(eventId.value, round.value, day.value, signal),
       ])
@@ -328,10 +328,15 @@ export function useTournamentPointsAdmin(deps = { api, auth: useAuth() }) {
       applyDay(value)
       if (resetReviews) clearReviews()
       const source = await transport.getTournamentRuleSource(eventId.value!, controller.signal)
-      const [cfg, entries, history] = await Promise.all([transport.getTournamentConfig(eventId.value!, controller.signal), transport.getTournamentAudit(eventId.value!, controller.signal),
+      const [canonicalDay, cfg, entries, history] = await Promise.all([
+        transport.getTournamentDay(eventId.value!, round.value, day.value, controller.signal, true),
+        transport.getTournamentConfig(eventId.value!, controller.signal), transport.getTournamentAudit(eventId.value!, controller.signal),
         transport.getTournamentHistoricalState(eventId.value!, round.value, day.value, controller.signal)])
       if (source && source.eventVersion !== cfg.event.version) throw new ApiError({ errorCode: 'TOURNAMENT_VERSION_CONFLICT', status: 409 })
-      if (owns(gen, epoch)) { config.value = cfg; ruleSource.value = source; audit.value = entries; historicalState.value = history; notice.value = 'saved' }
+      if (owns(gen, epoch)) {
+        dayState.value = { ...value, canonicalStandings: canonicalDay.canonicalStandings }
+        config.value = cfg; ruleSource.value = source; audit.value = entries; historicalState.value = history; notice.value = 'saved'
+      }
       return value
     } catch (value) { if (owns(gen, epoch)) fail(value) }
     finally { if (owns(gen, epoch)) busy.value = false }
