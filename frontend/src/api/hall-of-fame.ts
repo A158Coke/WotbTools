@@ -1,11 +1,12 @@
-import { ApiError, apiErrorFromResponse, apiFetch, requireOk } from './http.js'
+import type { components } from './generated/http-contract.js'
+import { ApiError, apiErrorFromResponse, apiFetch, requireOk } from '../utils/http.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFacts.js'
-import { hallOfFamePageValidator } from '../api/generated/contract-validators.js'
+import { hallOfFamePageValidator } from './generated/contract-validators.js'
 
-/** @typedef {import('../api/generated/http-contract.js').components['schemas']['HallOfFamePage']} HallOfFamePage */
+type HallOfFamePage = components['schemas']['HallOfFamePage']
 
 function requireHofOnline() {
   if (!useFeatureGate().requireFeature(Feature.HALL_OF_FAME)) {
@@ -13,16 +14,16 @@ function requireHofOnline() {
   }
 }
 
-function withQuery(path, params = {}) {
+function withQuery(path: string, params: Record<string, string | number | boolean | null | undefined> = {}) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') query.set(key, value)
+    if (value !== undefined && value !== null && value !== '') query.set(key, value as string)
   }
   const serialized = query.toString()
   return serialized ? `${path}?${serialized}` : path
 }
 
-async function downloadResponse(response, fallbackName) {
+async function downloadResponse(response: Response, fallbackName: string) {
   const blob = await response.blob()
   const disposition = response.headers.get('Content-Disposition') || ''
   const url = URL.createObjectURL(blob)
@@ -41,7 +42,7 @@ async function downloadResponse(response, fallbackName) {
  * @param {Record<string, string | number | boolean | null | undefined>} [params]
  * @returns {Promise<HallOfFamePage>}
  */
-export async function hofList(params = {}) {
+export async function hofList(params = {}): Promise<HallOfFamePage> {
   requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
   const page = await r.json()
@@ -108,12 +109,12 @@ export async function hofDownload(id) {
 
 // ── 名人堂管理后台（/api/admin/hof/**，需 HoF-admin 或 wotbtools-admin）────────────────
 
-async function hofAdminRequest(url, options = {}) {
+async function hofAdminRequest(url: string, options: RequestInit = {}) {
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
   requireHofOnline()
-  const headers = { ...(options.headers || {}) }
+  const headers = { ...(options.headers || {}) } as Record<string, string>
   if (token()) headers.Authorization = `Bearer ${token()}`
   const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
@@ -165,7 +166,7 @@ export async function hofAdminDownload(id) {
 }
 
 /** 解析 Content-Disposition 的 filename*=UTF-8''...（RFC 5987）；退化回 filename="..."。 */
-function filenameFromDisposition(cd) {
+function filenameFromDisposition(cd: string) {
   const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)
   if (star) {
     try {
@@ -181,12 +182,12 @@ function filenameFromDisposition(cd) {
 // ── 名人堂「百场」（/api/hof/hundred）────────────────────────────────────
 
 /** 已登录通用请求（401 → 跳转登录后回到 ?view=hof）。 */
-async function hofAuthRequest(url, options = {}) {
+async function hofAuthRequest(url: string, options: RequestInit = {}) {
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
   requireHofOnline()
-  const headers = { ...(options.headers || {}) }
+  const headers = { ...(options.headers || {}) } as Record<string, string>
   if (token()) headers.Authorization = `Bearer ${token()}`
   const r = await apiFetch(url, { ...options, headers })
   if (r.status === 401) {
@@ -395,54 +396,4 @@ export async function hofAdminBulkDeleteMark3(ids, body) {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
   })
   return r.json()
-}
-
-// ── 管理端用户（/api/admin/users，需 wotbtools-admin）────────────────────────────
-
-/** 管理端 authed JSON 请求：401 交由调用方/上层按既有语义处理（不在这里 redirect）。 */
-async function adminUsersRequest(url, options = {}) {
-  const { token, ensureToken } = useAuth()
-  await ensureToken(30)
-  const headers = { ...(options.headers || {}) }
-  if (token()) headers.Authorization = `Bearer ${token()}`
-  const r = await apiFetch(url, { ...options, headers })
-  if (!r.ok) {
-    throw await apiErrorFromResponse(r)
-  }
-  if (r.status === 204) return null
-  return r.json()
-}
-
-/**
- * 管理端用户搜索（服务端分页，0-based page）。
- * segment=keycloak（默认）行来自 Keycloak；segment=local 行来自本地 user_profile。
- * idpAlias 仅 keycloak segment 支持（local 传它后端 400 IDP_FILTER_REQUIRES_KEYCLOAK_SEGMENT）。
- * 返回 { items, page, size, totalItems, totalPages }。
- */
-export async function adminSearchUsers(query = '', { segment = 'keycloak', idpAlias = '', page = 0, size = 25 } = {}) {
-  const params = new URLSearchParams()
-  if (query) params.set('query', query)
-  if (segment) params.set('segment', segment)
-  if (idpAlias && segment === 'keycloak') params.set('idpAlias', idpAlias)
-  params.set('page', String(page))
-  params.set('size', String(size))
-  return adminUsersRequest(`/api/admin/users?${params}`)
-}
-
-export async function adminGetUser(keycloakUserId) {
-  return adminUsersRequest(`/api/admin/users/${encodeURIComponent(keycloakUserId)}`)
-}
-
-/**
- * 删除用户：请求体是 Keycloak sub 数组——删除单个用户就是长度为 1 的数组，
- * 因此没有单独的「批量删除」端点，也没有单条 /{keycloakUserId} 删除端点。
- * confirm 必须为 true，否则整个请求 400 CONFIRMATION_REQUIRED；单次上限 100。
- * 返回 { requested, deleted, failed, results: [{ userId, deleted, errorCode }] }。
- */
-export async function adminDeleteUsers(userIds, confirm) {
-  return adminUsersRequest(`/api/admin/users?confirm=${confirm === true}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userIds),
-  })
 }

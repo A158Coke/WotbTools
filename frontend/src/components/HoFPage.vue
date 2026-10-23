@@ -13,7 +13,7 @@ import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import { formatGameVersion } from '../utils/gameVersion.js'
 import { resolveVehicleName, vehicleNameIndex } from '../utils/hofVehicles.js'
-import * as api from '../utils/api.js'
+import * as api from '../api/hall-of-fame.js'
 import ImageDataUploader from './ImageDataUploader.vue'
 import FilterChips from './FilterChips.vue'
 import AppDialog from './AppDialog.vue'
