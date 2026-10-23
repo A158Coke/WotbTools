@@ -26,6 +26,7 @@ import {
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
 import { shotResultClass } from '../utils/shotResultClass.js'
+import { isCompactShotResultCard, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
     buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
@@ -6094,10 +6095,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 标题/伤害行）都能换行，不能只限制最佳样本子行（评审 P1/P2）。
             const cardHost = document.getElementById('canvas-container');
             const cardHostRect = cardHost ? cardHost.getBoundingClientRect() : null;
+            const compactCard = isCompactShotResultCard(window.innerWidth, window.innerHeight);
+            const cardMetrics = shotResultCardMetrics(compactCard);
             const cardMaxWidth = cardHostRect && cardHostRect.width > 0
-                ? Math.max(220, Math.floor(cardHostRect.width - 32))
+                ? Math.max(compactCard ? 180 : 220, Math.floor(cardHostRect.width - (compactCard ? 16 : 32)))
                 : null;
-            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${cardBorder};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            let html = `<div style="background:var(--tooltip-bg);border-radius:${cardMetrics.radius}px;border-left:${cardMetrics.borderWidth}px solid ${cardBorder};padding:${cardMetrics.padding};font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
             // 顶行：交战距离 · 有效穿深（距离衰减后） · 溅射半径（仅 HE）。
             // 有效穿深取判定链的 probability_penetration（d>100 时已按 far 衰减；
             // HE 恒 near），不再单独占一行。
@@ -6108,7 +6111,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (heInfo && Number.isFinite(heInfo.explosion_radius) && heInfo.explosion_radius > 0) {
                     top.push(`${escapeText(L.heRadius)}: ${fmtNum(heInfo.explosion_radius)} ${escapeText(L.distanceUnit)}`);
                 }
-                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;">${top.join(' · ')}</div>`;
+                html += `<div style="font-size:${cardMetrics.topFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">${top.join(' · ')}</div>`;
             }
             // HE 卡片数值：判定结果右侧显示主伤害值；溅射情形把范围放小字。
             const heFull = heInfo ? Math.round(dmgVal) : 0;
@@ -6142,18 +6145,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 可能击穿的 HE 同时用小字保留溅射平均/范围。非 HE 显示本次判定伤害（未击穿也显式给 0）。
                 let damageHtml = '';
                 if (final) {
-                    const damageValueCss = 'font-size:16px;color:var(--txt);font-weight:600;margin-left:8px;';
+                    const damageValueCss = `font-size:${cardMetrics.damageFont}px;color:var(--txt);font-weight:600;margin-left:${cardMetrics.damageGap}px;`;
                     if (heInfo) {
                         if (heInfo.unavailable) {
                             damageHtml = `<span style="${damageValueCss}">· —</span>`;
                         } else if (heChance > 0) {
                             const splashDetail = heChance < 1
-                                ? ` <span style="font-size:12px;color:var(--muted);font-weight:normal;">(${escapeText(L.shotSplashDamage)} ${heAvg} · ${heMin} - ${heMax})</span>`
+                                ? ` <span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);font-weight:normal;">(${escapeText(L.shotSplashDamage)} ${heAvg} · ${heMin} - ${heMax})</span>`
                                 : '';
                             damageHtml = `<span style="${damageValueCss}">· ${heFull}${splashDetail}</span>`;
                         } else if (heInfo.splash_avg > 0) {
                             damageHtml = `<span style="${damageValueCss}">· ${escapeText(L.shotAvgShort)} ${heAvg}`
-                                + ` <span style="font-size:12px;color:var(--muted);font-weight:normal;">(${heMin} - ${heMax})</span></span>`;
+                                + ` <span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);font-weight:normal;">(${heMin} - ${heMax})</span></span>`;
                         } else {
                             damageHtml = `<span style="${damageValueCss}">· 0</span>`;
                         }
@@ -6161,19 +6164,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         damageHtml = `<span style="${damageValueCss}">· ${Math.round(displayDamage || 0)}</span>`;
                     }
                 }
-                return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:18px;font-weight:bold;color:${titleColor};margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;">`
+                return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:${cardMetrics.titleFont}px;font-weight:bold;color:${titleColor};margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">`
                     + `<span>${escapeText(title)}</span>${damageHtml}</div>`;
             };
             // 击穿概率行：跳弹链只在【最终判定结果】下侧出现，不能挂在第一段“跳弹”下面。
             const chanceRowHtml = () => {
                 if (heInfo && heInfo.unavailable) {
                     // 采样不可用时概率行是误导（0% 看起来像“挡下”），换成显式原因。
-                    return `<div style="font-size:12px;color:var(--red);margin-bottom:4px;overflow-wrap:anywhere;">`
+                    return `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--red);margin-bottom:${cardMetrics.marginTight}px;overflow-wrap:anywhere;">`
                         + `${escapeText(L.heSamplingUnavailable)}<span style="color:var(--muted);"> · ${escapeText(heInfo.reason || 'unknown')}</span></div>`;
                 }
-                let s = `<div style="font-size:14px;font-weight:600;color:${cardChanceCss};margin-bottom:4px;font-variant-numeric:tabular-nums;">${L.shotPenChance}: ${formatProbabilityPercent(cardChance)}%</div>`;
+                let s = `<div style="font-size:${cardMetrics.chanceFont}px;font-weight:600;color:${cardChanceCss};margin-bottom:${cardMetrics.marginTight}px;font-variant-numeric:tabular-nums;">${L.shotPenChance}: ${formatProbabilityPercent(cardChance)}%</div>`;
                 if (heInfo && heChance > 0 && heChance < 1 && Number.isFinite(heInfo.expected_damage)) {
-                    s += `<div style="font-size:12px;color:var(--muted);line-height:18px;">${L.expectedDamage}: ${fmtNum(heInfo.expected_damage)}</div>`;
+                    s += `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);line-height:${cardMetrics.expectedLine}px;">${L.expectedDamage}: ${fmtNum(heInfo.expected_damage)}</div>`;
                 }
                 return s;
             };
@@ -6186,11 +6189,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     ? { name: layers[0].name, thickness: layers[0].thickness }
                     : null);
                 if (hit) {
-                    html += `<div style="font-size:13px;line-height:20px;margin-top:2px;">`
-                        + `<span style="display:inline-block;width:14px;color:${heTitleCss};">●</span>`
-                        + `<span style="color:var(--muted);margin-right:6px;">${escapeText(L.directHit)}:</span>`
+                    html += `<div style="font-size:${cardMetrics.layerFont}px;line-height:${cardMetrics.layerLine}px;margin-top:${cardMetrics.marginTight}px;">`
+                        + `<span style="display:inline-block;width:${cardMetrics.bulletWidth}px;color:${heTitleCss};">●</span>`
+                        + `<span style="color:var(--muted);margin-right:${cardMetrics.damageGap}px;">${escapeText(L.directHit)}:</span>`
                         + `<span style="color:var(--txt);">${escapeText(L.partName(hit.name))}</span>`
-                        + `<span style="color:var(--txt);margin-left:14px;">${fmtArmor(hit.thickness)}mm</span>`
+                        + `<span style="color:var(--txt);margin-left:${cardMetrics.inlineGap}px;">${fmtArmor(hit.thickness)}mm</span>`
                         + `</div>`;
                 }
                 if (heInfo.best && Array.isArray(heInfo.best.layers) && heInfo.best.layers.length > 0) {
@@ -6207,7 +6210,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             : '';
                         return `${shown}${more} @ ${Number(sample.distance).toFixed(2)} ${L.distanceUnit}`;
                     };
-                    const bestLineStyle = 'font-size:12px;color:var(--muted);margin-bottom:4px;white-space:normal;overflow-wrap:anywhere;';
+                    const bestLineStyle = `font-size:${cardMetrics.expectedFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;`;
                     const same = heInfo.best_lower
                         && heInfo.best_lower.distance === heInfo.best.distance
                         && heInfo.best_lower.armor === heInfo.best.armor;
@@ -6243,9 +6246,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 每一段跳弹都在首层前插分隔线 + 该段标题；只有最后一段显示最终结果和概率。
                 if (segments.length > 1 && l.seg > 0 && l.seg !== prevSeg) {
                     const finalSeg = l.seg === segments.length - 1;
-                    html += `<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">`;
+                    html += `<div style="display:flex;align-items:center;gap:${cardMetrics.damageGap}px;margin:${cardMetrics.marginNormal}px 0;">`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
-                    html += `<span style="font-size:11px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
+                    html += `<span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
                     html += titleHtml(segments[l.seg] || segments[segments.length - 1], finalSeg);
                     if (finalSeg) html += chanceRowHtml();
@@ -6283,12 +6286,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         : (l.penetrated ? '' : L.shotBlocked);
                 }
                 const idx = isGap ? '' : `${++layerNo}.`;
-                html += `<div style="font-size:13px;line-height:20px;">`;
-                html += `<span style="display:inline-block;width:14px;color:${pc};">●</span>`;
-                html += `<span style="color:var(--muted);display:inline-block;min-width:20px;">${idx}</span>`;
+                html += `<div style="font-size:${cardMetrics.layerFont}px;line-height:${cardMetrics.layerLine}px;">`;
+                html += `<span style="display:inline-block;width:${cardMetrics.bulletWidth}px;color:${pc};">●</span>`;
+                html += `<span style="color:var(--muted);display:inline-block;min-width:${cardMetrics.indexWidth}px;">${idx}</span>`;
                 html += `<span style="color:var(--txt);" title="${escapeText(l.name)}">${escapeText(L.partName(l.name))}</span>`;
-                html += `<span style="color:${pc};margin-left:14px;">${main}</span>`;
-                if (sub) html += `<span style="color:var(--muted);margin-left:14px;">${sub}</span>`;
+                html += `<span style="color:${pc};margin-left:${cardMetrics.inlineGap}px;">${main}</span>`;
+                if (sub) html += `<span style="color:var(--muted);margin-left:${cardMetrics.inlineGap}px;">${sub}</span>`;
                 html += `</div>`;
             }
             }
