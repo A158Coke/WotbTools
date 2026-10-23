@@ -1865,6 +1865,8 @@ export interface components {
             groups: components["schemas"]["TournamentGroup"][];
             published: boolean;
             standings: components["schemas"]["TournamentStandings"];
+            /** @description Optional authenticated admin import/export facts before sanctions and clear overlays; absent on older servers. */
+            canonicalStandings?: components["schemas"]["TournamentStandings"];
         };
         TournamentHistoricalState: {
             /** Format: int64 */
@@ -4447,7 +4449,10 @@ export interface operations {
     };
     getTournamentDay: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Return pre-clear daily facts for authenticated canonical CSV export. */
+                includeCanonicalStandings?: boolean;
+            };
             header?: never;
             path: {
                 eventId: number;

@@ -17,7 +17,8 @@ import FileDrop from './FileDrop.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 import TournamentPointsTable from './TournamentPointsTable.vue'
 import TournamentGroupReview from './TournamentGroupReview.vue'
-import { localizedDayLabel } from '../utils/tournamentPointsExport.js'
+import { createTournamentPointsCsv, localizedDayLabel } from '../utils/tournamentPointsExport.js'
+import { downloadBlob } from '../utils/exportReplayPng.js'
 import '../styles/tournament-points.css'
 const { t, te } = useI18n()
 const owner = useTournamentPointsAdmin()
@@ -33,6 +34,20 @@ const clearClan = ref(''), clearDay = ref<number | null>(null), restore = ref(fa
 const dialog = ref<'' | 'finalize' | 'correction' | 'clear' | 'discard'>('')
 const historicalConfirm = ref(false)
 const csvConfirm = ref(false)
+const exportingCsv = ref(false)
+const csvExportError = ref(false)
+const canExportCanonicalCsv = computed(() => allowed.value && network.value.available && !busy.value && !recognizing.value
+  && csvSupported.value && !stale.value && !exportingCsv.value && !!dayState.value?.canonicalStandings?.rows.length
+  && dayState.value.canonicalStandings?.event.id === eventId.value)
+async function exportCanonicalCsv() {
+  if (!canExportCanonicalCsv.value || !dayState.value?.canonicalStandings) return
+  exportingCsv.value = true; csvExportError.value = false
+  try {
+    const file = createTournamentPointsCsv(dayState.value.canonicalStandings)
+    await downloadBlob(file.blob, file.filename)
+  } catch { csvExportError.value = true }
+  finally { exportingCsv.value = false }
+}
 const csvErrorLocation = computed(() => {
   const value = error.value as { errorCode?: string; details?: { rowNumber?: number; column?: string; reason?: string } } | null
   return value?.errorCode === 'TOURNAMENT_CSV_INVALID' ? value.details : null
@@ -108,11 +123,14 @@ onScopeDispose(clearLocal)
       <RouterLink :to="{ path: '/', query: { view: 'tournament-points-config' } }">{{ $t('tournament.configure') }}</RouterLink>
       <RouterLink :to="{ path: '/', query: { view: 'tournament-points' } }">{{ $t('tournament.publicBoard') }}</RouterLink>
       <AppButton :disabled="busy || recognizing || eventsLoading" @click="owner.loadSelection(); owner.loadEvents()">{{ $t('tournament.refresh') }}</AppButton>
+      <AppButton v-if="allowed" data-testid="tournament-admin-export-csv" :disabled="!canExportCanonicalCsv" @click="exportCanonicalCsv">{{ $t(exportingCsv ? 'tournament.exporting' : 'tournament.exportCsv') }}</AppButton>
     </template></PageHeader>
     <Banner v-if="!allowed" tone="danger">{{ $t('tournament.adminRequired') }}</Banner>
     <template v-else>
+      <p class="tournament-muted" data-testid="tournament-csv-hint">{{ $t('tournament.csvExportHint') }}</p>
       <Banner v-if="!network.available">{{ $t(network.messageKey || 'featureOffline.tournamentPoints') }}</Banner>
       <Banner v-if="error" tone="danger">{{ stale ? $t('tournament.stale') : apiErrorLabel(t, te, error) }}</Banner>
+      <Banner v-if="csvExportError" role="status">{{ $t('tournament.exportFailed') }}</Banner>
       <Banner v-else-if="notice">{{ $t('tournament.' + notice) }}</Banner>
       <Banner v-if="reviews.length">{{ $t('tournament.unsaved') }}</Banner>
       <section class="tournament-card tournament-selection" aria-labelledby="admin-selection-heading">

@@ -38,14 +38,15 @@ async function exportBoard(format: string) {
   if (exportDisabled.value || !standings.value) return
   exportMessage.value = ''
   if (format === 'pdf' && isAndroidApp()) { exportMessage.value = t('tournament.exportPdfBrowser'); return }
-  // Copy the public values and every label before an async library load or event change.
-  const table = projectTournamentPoints(standings.value, locale.value, t)
+  const source = standings.value
+  // Freeze values at click time before any asynchronous download or renderer work.
+  const table = projectTournamentPoints(source, locale.value, t)
   exporting.value = true
   try {
-    if (format === 'xlsx') {
+    if (format === 'xlsx' && table) {
       const file = await createTournamentPointsXlsx(table)
       await downloadBlob(file.blob, file.filename)
-    } else if (format === 'pdf') await printTournamentPoints(table)
+    } else if (format === 'pdf' && table) await printTournamentPoints(table)
   } catch { exportMessage.value = t('tournament.exportFailed') }
   finally { exporting.value = false }
 }

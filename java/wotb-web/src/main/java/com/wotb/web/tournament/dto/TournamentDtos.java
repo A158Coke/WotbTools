@@ -2,6 +2,7 @@ package com.wotb.web.tournament.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.Nulls;
 import com.wotb.web.util.JsonNumberInputs.IntegerInput;
 import com.wotb.web.util.JsonNumberInputs.LongInput;
@@ -194,7 +195,9 @@ public final class TournamentDtos {
             Integer expectedGroupCount,
             List<Group> groups,
             boolean published,
-            Standings standings
+            Standings standings,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            Standings canonicalStandings
     ) { }
     public record HistoricalState(long eventVersion, boolean imported, boolean canImport, boolean historical) { }
     public record Attribution(String name, String url) { }
