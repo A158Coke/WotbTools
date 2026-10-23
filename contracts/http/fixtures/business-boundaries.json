@@ -179,7 +179,7 @@
     }
   },
   {
-    "schema": "HallOfFameRecord",
+    "schema": "PersonalHallOfFameRecord",
     "value": {
       "id": 21,
       "rank": null,

@@ -412,7 +412,7 @@ export async function hofAdminBulkDeleteMark3(ids: BulkDeleteModerationRequest['
 }
 
 /** 个人单场战绩归 HoF；保留用户资料路径既有的认证与登录目标。 */
-export async function getUserHofRecords(): Promise<Schemas['HallOfFameRecord'][] | null> {
+export async function getUserHofRecords(): Promise<Schemas['PersonalHallOfFameRecord'][] | null> {
   const { token, ensureToken, login } = useAuth()
   await ensureToken(30)
   const accessToken = token()
@@ -425,6 +425,6 @@ export async function getUserHofRecords(): Promise<Schemas['HallOfFameRecord'][]
   }
   await requireOk(r)
   if (r.status === 204) return null
-  return readHofJson<Schemas['HallOfFameRecord'][]>(r, value =>
-    Array.isArray(value) && value.every(item => validators.hallOfFameRecordValidator(item)))
+  return readHofJson<Schemas['PersonalHallOfFameRecord'][]>(r, value =>
+    Array.isArray(value) && value.every(item => validators.personalHallOfFameRecordValidator(item)))
 }

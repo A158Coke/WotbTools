@@ -4185,7 +4185,7 @@ export default {
     },
     "HallOfFameRecord": {
       "type": "object",
-      "description": "单场记录；公开列表以外的 rank 为 null，归属仅按 accountId。",
+      "description": "公开单场榜单记录；rank 为分页筛选上下文中的正整数排名。",
       "additionalProperties": false,
       "required": [
         "id",
@@ -4207,10 +4207,78 @@ export default {
           "format": "int64"
         },
         "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "battleType": {
+          "$ref": "#/$defs/HallOfFameBattleType"
+        },
+        "mapName": {
           "type": [
-            "integer",
+            "string",
             "null"
           ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "battleTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PersonalHallOfFameRecord": {
+      "type": "object",
+      "description": "个人单场记录；rank 不适用于个人记录并固定为 null，归属仅按 accountId。",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "tankId",
+        "tankName",
+        "nickname",
+        "damageDealt",
+        "battleType",
+        "mapName",
+        "version",
+        "battleTime",
+        "createdAt",
+        "replayAvailable"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": "null"
         },
         "tankId": {
           "type": "integer",

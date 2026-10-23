@@ -166,7 +166,7 @@ class ApiContractTest {
         evidence.setSha256("a".repeat(64));
         evidence.setCreatedAt(submittedAt);
         return List.of(
-                new WireCase("HallOfFameRecord", hof.toDto(record)),
+                new WireCase("PersonalHallOfFameRecord", hof.toDto(record)),
                 new WireCase("HofVehicleOption", new HofVehicleOptionDto(42L, "Fixture tank", "EUROPE", "MEDIUM_TANK", 10)),
                 new WireCase("HofAdminPage", hof.toAdminPageDto(new PageImpl<>(List.of(record)), 1, 25)),
                 new WireCase("HofAdminAuditPage", new HofAdminAuditPageDto(List.of(new HofAdminAuditDto(
