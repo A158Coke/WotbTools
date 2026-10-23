@@ -162,6 +162,11 @@ class PromptRuleContractTest {
         assertTrue(zh.contains("唯一在点里卡点或拒止的车"));
         assertTrue(zh.contains("对方只剩 1 辆或极少数车"));
         assertFalse(zh.contains("010 多打一时优先全歼"));
+        // Support: a hit proves a firing line; no hit never proves no support. Only human-confirmed roles carry a verdict.
+        assertTrue(zh.contains("没有命中不能反推没有支援"));
+        assertFalse(zh.contains("看队友是否实际打到攻击者，不看距离"));
+        assertTrue(zh.contains("只有标“人工确认”的定位能单独支撑"));
+        assertTrue(AiPromptLibrary.zh("team/reasoning-contract").contains("只有争霸赛复盘规范里人工确认的版本定位可以作为角色依据"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("only when every listed precondition is supported"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("только когда каждая перечисленная предпосылка подтверждена"));
         for (final String rule : List.of(TeamPromptLocalizer.COACH_STANDARD_RULE_EN, TeamPromptLocalizer.COACH_STANDARD_RULE_RU)) {
@@ -200,6 +205,12 @@ class PromptRuleContractTest {
         }
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("没有伤害记录不等于没开炮"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不得把它当成本局的先验"));
+        // No hindsight: a later double hit or third hit alone does not make the earlier decision a mistake.
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("本身不证明前压是错的"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("前压前至少两条威胁已经 CURRENT 或可靠的 LAST_KNOWN"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("它的方向对你已经已知"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("does not by itself prove the advance was wrong"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("сами по себе не доказывают, что выезд был ошибкой"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("No damage record does not mean no shot was fired"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("Отсутствие записи урона не значит, что выстрела не было"));
     }

@@ -228,7 +228,8 @@ Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach
 - 每个改变局势的关键决策只给 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），写进 v0.5 结果的 `summary` 与 `episodes[].analysis`，不新增字段、不新增 LLM call、不产生后端 verdict label。这一判定格式取代 v0.2 模块里“宁可少下结论”的措辞。
 - 开局布置窗口不逐车判、因果去重、逐车细节、单车牵制与送的区分、计分顺序决定的均势局不编造根因。
 - 点位几何、地形高低差与炮线、点数账。`OBJECTIVE_STATE_TIMELINE` 提供 `SUPREMACY_POINTS` 时用它做点数账；`CAPTURE_RULE` 8a 的“比分未解码”限制只适用于没有该段的时段。
-- 车辆定位按版本（11.19 国服 SPHT = 肉车为人工确认，其余待确认）；`team/reasoning-contract` 的“vehicle class 只是能力因素”只适用于表外车型。
+- 车辆定位按版本（11.19 国服 SPHT = 肉车为人工确认，其余待确认）。只有人工确认的定位可以作为角色依据、单独支撑“前后排放反 / 职责错误”判定；待确认条目只是低置信度假设和能力提示，`team/reasoning-contract` 对它们和表外车型都按“vehicle class 只是能力因素”处理。
+- 支援判断单向成立：队友实际命中攻击者证明有支援炮线；没有命中不得反推没有支援，要结合 LOS/遮挡、位置、到位时间和目标可用性，证据不足判无法判定。
 - RULE-001–020 是**条件规则**：每条带 `docs/ai-coach/rules.md` 的关键前提与例外，只在前提都有当时证据时适用；前提缺证据或命中例外时不套用，回到 reasoning contract 的炮线、遮挡、到位时间、目标与安全路线推理。规范不声明覆盖其他模块，与证据边界规则冲突时证据边界优先。
 
 ### Coach Lab 随机战个人复盘规范 v1.1
@@ -236,7 +237,7 @@ Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach
 随机战个人复盘（`player/single`、`player/fallback`、`player/tactical`）在 `common/evidence-logic` 之后注入 `tactical-skills/solo-standard`。完整规范 `docs/ai-coach/solo-standard.md` 是 Coach Lab 用 34 局赛事回放（3 名录像者）和离线脚本（能读完整开炮、装填、朝向数据）归纳的；生产 prompt 只取当前 `ClientAiReviewProjection` 能判定的部分：
 
 - 投影把 `SHOT_LIFECYCLE`、`TARGETING`、`AMMUNITION` 标为 unavailable，只有命中造成的伤害事件。依赖开炮时间、瞄准目标、装填或消耗品的规则（残血先收、别在对方装好弹时冒头、装好就打、消耗品）不进生产 prompt；prompt 明确“没有伤害记录不等于没开炮”。
-- 只保留两条：同一敌车约 40 秒内命中 3 发以上而玩家一直留在它的炮线里、且对它无伤害记录；约 2 秒内被两辆不同敌车命中、且是玩家主动前压进去的。
+- 只保留两条，且都要求当时的信息状态，避免用后来的命中倒推早先决策：同一敌车约 40 秒内命中 3 发以上而玩家一直留在它的炮线里、对它无伤害记录，并且它的方向在后面几发前已知、当时有脱离或回击的可行选择；约 2 秒内被两辆不同敌车命中，只有前压前两条威胁已经 CURRENT / 可靠 LAST_KNOWN、且有更安全的可行选择时，才判主动前压失误。
 - 赛事样本的命中率、击穿率和“操作 80% / 意识 20%”权重只是研究背景，不进生产 prompt；枪法和击穿只按本局证据判断。
 
 ### AI 复盘评估 harness（golden cases + lessons）
