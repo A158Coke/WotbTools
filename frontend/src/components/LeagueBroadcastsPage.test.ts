@@ -6,6 +6,7 @@ import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { messages } from '../locales/messages.js'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
+import { BROADCAST_DISPLAY_ZONES } from '../utils/broadcastTime.js'
 import LeagueBroadcastsPage from './LeagueBroadcastsPage.vue'
 import type { BroadcastCategoryView, BroadcastSeason } from '../api/league-broadcasts.js'
 
@@ -53,11 +54,59 @@ describe('shared broadcast catalogue rendering', () => {
   it('keeps a date-only replay stable when selecting another viewing zone', async () => {
     const { wrapper } = await page()
     await wrapper.get('[data-testid=broadcast-node-toggle-30]').trigger('click')
-    await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue('America/Los_Angeles')
-    const text = wrapper.get('[data-testid=broadcast-replay-40]').text()
-    expect(text).toContain('2026-10-16')
-    expect(text).not.toContain('00:00')
-    expect(text).not.toContain('UTC-')
+    for (const zone of BROADCAST_DISPLAY_ZONES) {
+      await wrapper.get('[data-testid=broadcast-display-time-zone]').setValue(zone)
+      const text = wrapper.get('[data-testid=broadcast-replay-40]').text()
+      expect(text).toContain('2026-10-16')
+      expect(text).not.toContain('00:00')
+      expect(text).not.toContain('UTC')
+    }
+    wrapper.unmount()
+  })
+  it.each([false, true])('shows empty categories and their management controls only to administrators (admin=%s)', async admin => {
+    state.admin.value = admin
+    const quarter = { id: 21, seasonId: 10, type: 'QUARTER_FINALS' }
+    const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category, quarter, semi], nodes: [...detail.nodes,
+      { id: 31, categoryId: 21, roundNumber: null, format: 'KNOCKOUT', replays: [] }] })
+    const { wrapper } = await page()
+    expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-category-21]').exists()).toBe(admin)
+    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(admin)
+    expect(wrapper.find('[data-testid=broadcast-new-node-22]').exists()).toBe(admin)
+    expect(wrapper.find('[data-testid=broadcast-new-replay-31]').exists()).toBe(admin)
+    if (admin) {
+      await wrapper.get('[data-testid=broadcast-category-menu-22]').trigger('click')
+      expect(wrapper.find('[data-testid=broadcast-delete-category-22]').exists()).toBe(true)
+    }
+    wrapper.unmount()
+  })
+  it.each([false, true])('keeps an empty state when all categories lack replays (empty nodes=%s)', async withEmptyNode => {
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category],
+      nodes: withEmptyNode ? detail.nodes.map(node => ({ ...node, replays: [] })) : [] })
+    const { wrapper } = await page()
+    expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid=broadcast-nodes]').text()).toContain(messages.zh.leagueBroadcasts.noCategories)
+    wrapper.unmount()
+  })
+  it.each([false, true])('does not reveal an empty category through an old deep link (empty nodes=%s)', async withEmptyNode => {
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category],
+      nodes: withEmptyNode ? detail.nodes.map(node => ({ ...node, replays: [] })) : [] })
+    const { wrapper } = await page('/?view=league-broadcasts&lbServer=CN&lbSeason=10&lbCategory=20')
+    expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=broadcast-node-toggle-30]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('hides empty categories after an administrator loses management permission', async () => {
+    state.admin.value = true
+    const semi = { id: 22, seasonId: 10, type: 'SEMI_FINALS' }
+    state.category.mockResolvedValue({ ...detail, categories: [detail.category, semi] })
+    const { wrapper } = await page()
+    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(true)
+    state.admin.value = false; await flushPromises()
+    expect(wrapper.find('[data-testid=broadcast-category-22]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid=broadcast-category-20]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid=broadcast-category-menu-22]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('keeps roots collapsed, retains text on cover failure and retries the image on explicit refresh', async () => {
