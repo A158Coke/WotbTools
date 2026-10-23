@@ -177,5 +177,354 @@
         }
       ]
     }
+  },
+  {
+    "schema": "HallOfFameRecord",
+    "value": {
+      "id": 21,
+      "rank": null,
+      "tankId": 42,
+      "tankName": "Fixture tank",
+      "nickname": "Fixture player",
+      "damageDealt": 6000,
+      "battleType": "RANDOM",
+      "mapName": "Fixture map",
+      "version": "11.0",
+      "battleTime": "2026-10-01T12:00:00Z",
+      "createdAt": "2026-10-01T12:00:00Z",
+      "replayAvailable": false
+    }
+  },
+  {
+    "schema": "HofVehicleOption",
+    "value": {
+      "tankId": 42,
+      "tankName": "Fixture tank",
+      "nation": "EUROPE",
+      "type": "MEDIUM_TANK",
+      "tier": 10
+    }
+  },
+  {
+    "schema": "HofAdminPage",
+    "value": {
+      "items": [
+        {
+          "id": 21,
+          "accountId": 123,
+          "nickname": "Fixture player",
+          "tankId": 42,
+          "tankName": "Fixture tank",
+          "battleType": "RANDOM",
+          "damageDealt": 6000,
+          "mapName": "Fixture map",
+          "version": "11.0",
+          "battleTime": "2026-10-01T12:00:00Z",
+          "createdAt": "2026-10-01T12:00:00Z",
+          "replayHash": null,
+          "replayFileName": null,
+          "replaySize": null,
+          "replayUploadedBy": null,
+          "replayAvailable": false
+        }
+      ],
+      "page": 1,
+      "size": 25,
+      "totalItems": 1,
+      "totalPages": 1
+    }
+  },
+  {
+    "schema": "HofAdminAuditPage",
+    "value": {
+      "items": [
+        {
+          "id": 22,
+          "action": "DELETE_ENTRY",
+          "recordId": 21,
+          "arenaId": "fixture-arena",
+          "accountId": 123,
+          "nickname": "Fixture player",
+          "tankId": 42,
+          "tankName": "Fixture tank",
+          "damageDealt": 6000,
+          "battleType": "RANDOM",
+          "arenaBonusType": 1,
+          "replayHash": null,
+          "adminKeycloakUserId": "fixture-admin",
+          "adminUsername": null,
+          "createdAt": "2026-10-01T12:00:00Z"
+        }
+      ],
+      "page": 1,
+      "size": 25,
+      "totalItems": 1,
+      "totalPages": 1
+    }
+  },
+  {
+    "schema": "Mark3CreateResult",
+    "value": {
+      "id": 31,
+      "status": "PENDING"
+    }
+  },
+  {
+    "schema": "Mark3SubmissionSummary",
+    "value": {
+      "id": 31,
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "status": "PENDING",
+      "claimedBattleCount": 36,
+      "claimedAverageDamage": 4000,
+      "claimedWinRate": 75,
+      "approvedBattleCount": null,
+      "approvedAverageDamage": null,
+      "approvedWinRate": null,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "rejectReason": null,
+      "rejectReasonText": null
+    }
+  },
+  {
+    "schema": "Mark3SubmissionSummary",
+    "value": {
+      "id": 31,
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "status": "REJECTED",
+      "claimedBattleCount": 36,
+      "claimedAverageDamage": 4000,
+      "claimedWinRate": 75,
+      "approvedBattleCount": null,
+      "approvedAverageDamage": null,
+      "approvedWinRate": null,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "rejectReason": "OTHER",
+      "rejectReasonText": "Fixture reason"
+    }
+  },
+  {
+    "schema": "Mark3SubmissionSummary",
+    "value": {
+      "id": 31,
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "status": "CANCELLED",
+      "claimedBattleCount": 36,
+      "claimedAverageDamage": 4000,
+      "claimedWinRate": 75,
+      "approvedBattleCount": null,
+      "approvedAverageDamage": null,
+      "approvedWinRate": null,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "rejectReason": null,
+      "rejectReasonText": null
+    }
+  },
+  {
+    "schema": "Mark3UserStatus",
+    "value": {
+      "current": [
+        {
+          "id": 31,
+          "vehicleId": 42,
+          "vehicleName": "Fixture tank",
+          "status": "CURRENT",
+          "claimedBattleCount": 36,
+          "claimedAverageDamage": 4000,
+          "claimedWinRate": 75,
+          "approvedBattleCount": 36,
+          "approvedAverageDamage": 4000,
+          "approvedWinRate": 75,
+          "submittedAt": "2026-10-01T12:00:00Z",
+          "approvedAt": "2026-10-02T12:00:00Z",
+          "rejectReason": null,
+          "rejectReasonText": null
+        }
+      ],
+      "pending": [
+        {
+          "id": 31,
+          "vehicleId": 42,
+          "vehicleName": "Fixture tank",
+          "status": "PENDING",
+          "claimedBattleCount": 36,
+          "claimedAverageDamage": 4000,
+          "claimedWinRate": 75,
+          "approvedBattleCount": null,
+          "approvedAverageDamage": null,
+          "approvedWinRate": null,
+          "submittedAt": "2026-10-01T12:00:00Z",
+          "approvedAt": null,
+          "rejectReason": null,
+          "rejectReasonText": null
+        }
+      ],
+      "rejected": [
+        {
+          "id": 31,
+          "vehicleId": 42,
+          "vehicleName": "Fixture tank",
+          "status": "REJECTED",
+          "claimedBattleCount": 36,
+          "claimedAverageDamage": 4000,
+          "claimedWinRate": 75,
+          "approvedBattleCount": null,
+          "approvedAverageDamage": null,
+          "approvedWinRate": null,
+          "submittedAt": "2026-10-01T12:00:00Z",
+          "approvedAt": null,
+          "rejectReason": "OTHER",
+          "rejectReasonText": "Fixture reason"
+        }
+      ]
+    }
+  },
+  {
+    "schema": "Mark3LeaderboardPage",
+    "value": {
+      "vehicleId": null,
+      "vehicleName": null,
+      "items": [
+        {
+          "id": 31,
+          "rank": 1,
+          "vehicleId": 42,
+          "vehicleName": "Fixture tank",
+          "nickname": "Fixture player",
+          "approvedBattleCount": 36,
+          "approvedAverageDamage": 4000,
+          "approvedWinRate": 75,
+          "approvedAt": "2026-10-02T12:00:00Z"
+        }
+      ],
+      "page": 1,
+      "size": 10,
+      "totalItems": 1,
+      "totalPages": 1
+    }
+  },
+  {
+    "schema": "Mark3AdminPage",
+    "value": {
+      "items": [
+        {
+          "id": 31,
+          "status": "DELETED",
+          "vehicleId": 42,
+          "vehicleName": "Fixture tank",
+          "wotbServer": "CN",
+          "wotbAccountId": 123,
+          "nicknameSnapshot": "Fixture player",
+          "claimedBattleCount": 36,
+          "claimedAverageDamage": 4000,
+          "claimedWinRate": 75,
+          "approvedBattleCount": 36,
+          "approvedAverageDamage": 4000,
+          "approvedWinRate": 75,
+          "replayParseOk": true,
+          "replayGameIdMatch": true,
+          "replayVehicleMatch": true,
+          "replayDistinctBattles": true,
+          "submittedAt": "2026-10-01T12:00:00Z",
+          "approvedAt": "2026-10-02T12:00:00Z",
+          "rejectReason": null,
+          "deleteReason": "OTHER"
+        }
+      ],
+      "page": 1,
+      "size": 25,
+      "totalItems": 1,
+      "totalPages": 1
+    }
+  },
+  {
+    "schema": "Mark3AdminDetail",
+    "value": {
+      "id": 31,
+      "status": "PENDING",
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "wotbServer": "CN",
+      "wotbAccountId": 123,
+      "nicknameSnapshot": "Fixture player",
+      "claimedBattleCount": 36,
+      "claimedAverageDamage": 4000,
+      "claimedWinRate": 75,
+      "approvedBattleCount": null,
+      "approvedAverageDamage": null,
+      "approvedWinRate": null,
+      "proofScreenshots": [
+        "data:image/png;base64,AAAA"
+      ],
+      "replayParseOk": true,
+      "replayGameIdMatch": true,
+      "replayVehicleMatch": true,
+      "replayDistinctBattles": true,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": null,
+      "approvedBy": null,
+      "rejectedAt": null,
+      "rejectedBy": null,
+      "rejectReason": null,
+      "rejectReasonText": null,
+      "cancelledAt": null,
+      "deletedAt": null,
+      "deletedBy": null,
+      "deleteReason": null,
+      "deleteReasonText": null
+    }
+  },
+  {
+    "schema": "Mark3AdminDetail",
+    "value": {
+      "id": 31,
+      "status": "DELETED",
+      "vehicleId": 42,
+      "vehicleName": "Fixture tank",
+      "wotbServer": "CN",
+      "wotbAccountId": 123,
+      "nicknameSnapshot": "Fixture player",
+      "claimedBattleCount": 36,
+      "claimedAverageDamage": 4000,
+      "claimedWinRate": 75,
+      "approvedBattleCount": 36,
+      "approvedAverageDamage": 4000,
+      "approvedWinRate": 75,
+      "proofScreenshots": [],
+      "replayParseOk": true,
+      "replayGameIdMatch": true,
+      "replayVehicleMatch": true,
+      "replayDistinctBattles": true,
+      "submittedAt": "2026-10-01T12:00:00Z",
+      "approvedAt": "2026-10-02T12:00:00Z",
+      "approvedBy": "fixture-admin",
+      "rejectedAt": null,
+      "rejectedBy": null,
+      "rejectReason": null,
+      "rejectReasonText": null,
+      "cancelledAt": null,
+      "deletedAt": "2026-10-02T12:00:00Z",
+      "deletedBy": "fixture-admin",
+      "deleteReason": "OTHER",
+      "deleteReasonText": "Fixture cleanup"
+    }
+  },
+  {
+    "schema": "Mark3ReplayEvidence",
+    "value": {
+      "id": 41,
+      "slot": 1,
+      "originalFilename": "fixture.wotbreplay",
+      "fileSize": 100,
+      "arenaId": "fixture-arena",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "createdAt": "2026-10-01T12:00:00Z"
+    }
   }
 ]

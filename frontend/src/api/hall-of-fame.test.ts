@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import type { Ref } from 'vue'
 import * as hof from './hall-of-fame.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -61,7 +62,32 @@ const detail = {
 }
 const evidence = { id: 7, slot: 1, originalFilename: 'battle.wotbreplay', fileSize: 123, arenaId: 'arena', sha256: 'a'.repeat(64), createdAt: null }
 const bulk = { requested: 2, deleted: 1, failed: 1, results: [{ id: 1, deleted: true }, { id: 2, deleted: false, errorCode: 'HUNDRED_NOT_CURRENT' }] }
+const producerCases = JSON.parse(readFileSync(new URL('../../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8')) as { schema: string, value: any }[]
+function producer(schema: string) {
+  return structuredClone(producerCases.find(entry => entry.schema === schema)!.value)
+}
+const personalRecord = producer('HallOfFameRecord')
+const vehicleOption = producer('HofVehicleOption')
+const mark3Summary = producer('Mark3SubmissionSummary')
+const mark3Detail = producer('Mark3AdminDetail')
+const mark3Terminal = producerCases.find(entry => entry.schema === 'Mark3AdminDetail' && entry.value.status === 'DELETED')!.value
 const hardened: { name: keyof typeof hof, args: () => unknown[], valid: unknown, nullable: unknown }[] = [
+  { name: 'hofMark3List', args: () => [], valid: producer('Mark3LeaderboardPage'), nullable: { ...producer('Mark3LeaderboardPage'), vehicleId: null, vehicleName: null, items: [] } },
+  { name: 'hofMark3Submit', args: () => [new FormData()], valid: producer('Mark3CreateResult'), nullable: producer('Mark3CreateResult') },
+  { name: 'hofMark3Cancel', args: () => [23], valid: mark3Summary, nullable: { ...mark3Summary, status: 'CANCELLED' } },
+  { name: 'hofMark3MyStatus', args: () => [], valid: { current: [], pending: [], rejected: [] }, nullable: producer('Mark3UserStatus') },
+  { name: 'hofAdminMark3List', args: () => [], valid: page, nullable: producer('Mark3AdminPage') },
+  { name: 'hofAdminMark3Detail', args: () => [23], valid: mark3Detail, nullable: mark3Terminal },
+  { name: 'hofAdminMark3Replays', args: () => [23], valid: [], nullable: [producer('Mark3ReplayEvidence')] },
+  { name: 'hofAdminMark3Approve', args: () => [23], valid: { ...mark3Summary, status: 'CURRENT' }, nullable: mark3Summary },
+  { name: 'hofAdminMark3Reject', args: () => [23, { rejectReason: 'OTHER' }], valid: { ...mark3Summary, status: 'REJECTED', rejectReason: 'OTHER' }, nullable: mark3Summary },
+  { name: 'hofAdminMark3Delete', args: () => [23, { deleteReason: 'OTHER' }], valid: { ...mark3Summary, status: 'DELETED' }, nullable: mark3Summary },
+  { name: 'getUserHofRecords', args: () => [], valid: [], nullable: [personalRecord] },
+  { name: 'hofVehicleOptions', args: () => [], valid: [], nullable: [vehicleOption] },
+  { name: 'hofUpload', args: () => [new File(['bytes'], 'battle.wotbreplay')], valid: { status: 'ok', arenaId: '' }, nullable: { status: 'skipped', arenaId: '', reasonCode: 'REPLAY_HASH_CONFLICT' } },
+  { name: 'hofAdminList', args: () => [], valid: page, nullable: producer('HofAdminPage') },
+  { name: 'hofAdminVehicleOptions', args: () => [], valid: [], nullable: [vehicleOption] },
+  { name: 'hofAdminAudit', args: () => [], valid: page, nullable: producer('HofAdminAuditPage') },
   { name: 'hofAdminBulkDeleteRecords', args: () => [[1, 2]], valid: bulk, nullable: { ...bulk, results: [{ id: 1, deleted: true, errorCode: null }] } },
   { name: 'hofHundredList', args: () => [], valid: page, nullable: { ...page, vehicleId: null, vehicleName: null, items: [{ id: 1, rank: null, vehicleId: 385, vehicleName: 'Tank', nickname: 'Player', approvedAverageDamage: 4000, approvedBattleCount: 100, approvedAt: null }] } },
   { name: 'hofHundredSubmit', args: () => [new FormData()], valid: { id: 17, status: 'PENDING' }, nullable: { id: 17, status: 'PENDING' } },
@@ -96,6 +122,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   const requests: [keyof typeof hof, unknown[], string, string, unknown?][] = [
+    ['getUserHofRecords', [], '/api/users/profile/records', 'GET'],
     ['hofVehicleOptions', [], '/api/hof/vehicle-options', 'GET'],
     ['hofAdminList', [{ page: 2, skip: null, empty: '', active: false }], '/api/admin/hof?page=2&active=false', 'GET'],
     ['hofAdminVehicleOptions', [], '/api/admin/hof/vehicle-options', 'GET'],
@@ -149,7 +176,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   it.each(hardened)('$name rejects malformed shapes and JSON syntax safely', async ({ name, args }) => {
-    for (const response of [jsonResponse(200, { wrong: true }), new Response('{invalid-json')]) {
+    for (const response of [jsonResponse(200, { wrong: true }), jsonResponse(200, null), new Response('{invalid-json')]) {
       vi.mocked(fetch).mockResolvedValueOnce(response)
       await expect((hof[name] as (...args: any[]) => Promise<unknown>)(...args())).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
     }
@@ -179,6 +206,72 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
     vi.spyOn(response, 'json').mockRejectedValueOnce(abort)
     vi.mocked(fetch).mockResolvedValueOnce(response)
     await expect((hof[name] as (...args: any[]) => Promise<unknown>)(17)).rejects.toBe(abort)
+  })
+
+  it.each([
+    ['getUserHofRecords', [{ ...personalRecord, battleType: 'UNKNOWN' }]],
+    ['getUserHofRecords', [{ ...personalRecord, damageDealt: '3000' }]],
+    ['hofVehicleOptions', [{ ...vehicleOption, nation: 'UNKNOWN' }]],
+    ['hofAdminVehicleOptions', [{ ...vehicleOption, tier: '10' }]],
+    ['hofAdminList', { ...producer('HofAdminPage'), items: [{}] }],
+    ['hofAdminAudit', { ...producer('HofAdminAuditPage'), items: [{ ...producer('HofAdminAuditPage').items[0], action: 'UNKNOWN' }] }],
+  ] as const)('%s rejects bad items/enums/types', async (name, payload) => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    await expect(hof[name]()).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it('preserves personal records auth headers, default login and 204 semantics', async () => {
+    const response = new Response(null, { status: 204 })
+    const json = vi.spyOn(response, 'json')
+    vi.mocked(fetch).mockResolvedValueOnce(response)
+    await expect(hof.getUserHofRecords()).resolves.toBeNull()
+    expect(json).not.toHaveBeenCalled()
+    expect(vi.mocked(fetch).mock.calls[0][1]?.headers).toEqual({ 'Content-Type': 'application/json', Authorization: 'Bearer test-token' })
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(401, {}))
+    await expect(hof.getUserHofRecords()).rejects.toMatchObject({ code: 'AUTH_UNAUTHENTICATED' })
+    expect(auth.login.mock.calls).toEqual([[]])
+  })
+
+  it.each([
+    { status: 'already_recorded', arenaId: 'arena' },
+    { status: 'skipped', arenaId: '', reasonCode: 'DUPLICATE_OR_UNKNOWN_RECORDER' },
+  ])('accepts all upload business branches', async payload => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    await expect(hofUpload(file)).resolves.toEqual(payload)
+  })
+  it.each([
+    { status: 'skipped', arenaId: '', reasonCode: 'UNKNOWN' },
+    { status: 'ok', arenaId: 3 }, { status: 'ok' },
+  ])('rejects invalid upload status-dependent shape', async payload => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    await expect(hofUpload(file)).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it.each([
+    ['hofMark3List', { ...producer('Mark3LeaderboardPage'), items: [{}] }],
+    ['hofMark3Cancel', { ...mark3Summary, status: 'SUPERSEDED' }],
+    ['hofMark3MyStatus', { current: [{}], pending: [], rejected: [] }],
+    ['hofMark3Submit', { id: 23, status: 'CURRENT' }],
+    ['hofAdminMark3List', { ...producer('Mark3AdminPage'), items: [{}] }],
+    ['hofAdminMark3Detail', { ...mark3Detail, status: 'SUPERSEDED' }],
+    ['hofAdminMark3Replays', [{ ...producer('Mark3ReplayEvidence'), slot: 'one' }]],
+    ['hofAdminMark3Approve', { ...mark3Summary, claimedWinRate: '75' }],
+    ['hofAdminMark3Reject', { ...mark3Summary, rejectReason: 'UNKNOWN' }],
+    ['hofAdminMark3Delete', { ...mark3Summary, vehicleId: null }],
+  ] as const)('%s rejects Mark3 enum/type/item violations', async (name, payload) => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, payload))
+    const args = hardened.find(entry => entry.name === name)!.args()
+    await expect((hof[name] as (...args: any[]) => Promise<unknown>)(...args)).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it('retains terminal Mark3 metadata and empty evidence arrays', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, mark3Terminal))
+    const value = await hof.hofAdminMark3Detail(23)
+    expect(value).toEqual(mark3Terminal)
+    expect(value.proofScreenshots).toEqual([])
+    expect(value.deletedAt).not.toBeNull()
+    expect(value.deleteReason).toBe('OTHER')
+    expect(value.cancelledAt).toBeNull()
   })
 
   it('normalizes public HoF JSON syntax failures', async () => {
@@ -381,7 +474,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   it('approves a Mark 3 submission without a score payload', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'CURRENT' }))
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ...mark3Summary, status: 'CURRENT' }))
 
     await hofAdminMark3Approve(23)
 
@@ -398,7 +491,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   it('hofUpload appends locally parsed facts next to the raw replay', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'ok' }))
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { status: 'ok', arenaId: '' }))
 
     await hofUpload(file)
 
@@ -434,7 +527,7 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
   })
 
   it('hofMark3Submit replaces stale facts and maps a parse failure to INVALID_REPLAY_FILE', async () => {
-    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 1 }))
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { id: 1, status: 'PENDING' }))
     const formData = new FormData()
     formData.append('facts', 'stale')
     formData.append('replays', new File(['a'], 'a.wotbreplay'))

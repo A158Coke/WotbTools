@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import * as businessValidators from './generated/contract-validators.js'
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import Ajv2020 from 'ajv/dist/2020.js'
@@ -285,5 +287,18 @@ describe('HTTP contract runtime validator', () => {
     const missing = { ...dataset() } as Record<string, unknown>
     delete missing.durationSec
     expect(validateBattlePlaybackDataset(missing).data).toBeNull()
+  })
+})
+
+// 与 Java ApiContractTest、api:fixture 共用真实 producer 样本，独立验证 standalone 接线。
+const producerCases: { schema: string, value: unknown }[] = JSON.parse(readFileSync(
+  new URL('../../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8',
+))
+describe('shared business producer fixtures', () => {
+  it.each(producerCases)('$schema passes the generated runtime validator', ({ schema, value }) => {
+    const name = `${schema[0].toLowerCase()}${schema.slice(1)}Validator`
+    const check = businessValidators[name as keyof typeof businessValidators] as (value: unknown) => boolean
+    expect(check, `${schema} validator export`).toBeTypeOf('function')
+    expect(check(value)).toBe(true)
   })
 })
