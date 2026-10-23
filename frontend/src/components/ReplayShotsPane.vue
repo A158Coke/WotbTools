@@ -365,6 +365,7 @@ function qualityIssues(s) {
   if (q.target_state_dt_ms != null && Math.abs(q.target_state_dt_ms) >= 300) issues.push(`${t('agentShots.q_target_dt')} ${q.target_state_dt_ms}ms`)
   if ((q.turret_degraded || []).includes('shooter')) issues.push(t('agentShots.q_shooter_turret'))
   if ((q.turret_degraded || []).includes('target')) issues.push(t('agentShots.q_target_turret'))
+  if (q.target_dead) issues.push(t('agentShots.q_target_dead'))
   if (q.dmg_unattributed) issues.push(t('agentShots.q_dmg_unattr'))
   if (q.target_anchor_src === 'nearest') issues.push(t('agentShots.q_target_nearest'))
   else if (q.target_anchor_src === 'extrapolated') issues.push(t('agentShots.q_target_extrap'))

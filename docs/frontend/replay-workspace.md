@@ -69,6 +69,8 @@
 - AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录）：联网能力先经 `useFeatureGate` 判定，离线/unknown/degraded/service-unavailable 先给 connectivity 提示，绝不启动登录；在线且未登录沿用 native/browser auth。可用深链挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束。切换 capability 不重新分析数据模式的结果。
 - 射击分析默认选择录像者（「我的射击」），汇总与列表仅统计当前射击者；「全部玩家」及其他玩家是可选筛选。录像者依次使用 shot facet 的 `author_eid`、playback meta、名册 `is_author`、逐发 `is_author`，不按昵称猜测。自己没有记录时保留诚实空态，并提供查看全部玩家入口。
 - 射击条目与详情突出双方车型及类型符号，昵称作为次要身份信息。车型名优先使用 playback roster，缺失时从已有本地 tankopedia 补全；名字解析不调用远程资产服务。`utils/shotPresentation.js` 是车型呈现与记录结果徽标的共享 owner，不重算伤害或击穿。
+- 命中结果徽标与 3D 射击复现头部共用 `utils/shotResultClass.js`：`game_hit_result=4` 的语义未定，统一显示「结果未定（4）」，不映射跳弹/履带/击穿；`0/255` 显示结果未知；作者 `hit_flags` 位图优先。解析层给出 `quality.target_dead`（开火前受击方已死亡）时，射击按未命中处理并在质量提示中标注「残骸命中」。
+- 3D 射击复现的 hash6 解码盒只取坦克数据里的客户端 `collision_boxes`（Parameters YAML 的部件代理盒，也是服务器量化框）；盒缺失时 fail-closed（不构建段线、不判定），**不从 collision.glb 的装甲网格自算 AABB**——网格 AABB 与客户端量化框不是同一份数据。
 - 射击面板按容器宽度使用 Master–Detail（expanded 常驻详情 / medium 有界双栏 / compact 模态详情）；窄屏详情保留焦点约束与关闭后焦点恢复。命中弹「在装甲查看器里打开」通过既有本地交接通道只保存当前筛选内可检查的命中弹，保留原始索引与时间，随后经注入的 `navigate` 打开装甲页。
 - 装甲页逐发导航复用 `scene/agentData.js` 的 `shotViewerQuery` 和 Router：上一发 / 下一发保持当前命中快照，返回恢复列表。相同页面 query 更新时先销毁旧场景再重建 DOM 契约；迟到的 snapshot、模型加载、计时器和状态回调不能覆盖下一发。页面顶部展示双方车型、记录时间、结果和伤害；模拟参数与记录结果明确分开，技术证据默认折叠。
 - AI/Playback 详细接口与回放管线以以下文档为准，不在本索引重复维护：

@@ -655,7 +655,7 @@ export function calculate(req) {
     }
   }
 
-  const result = ricochet
+  let result = ricochet
     ? 'RICOCHET'
     : (heData && heData.unavailable)
       ? 'ERROR'
@@ -666,6 +666,16 @@ export function calculate(req) {
           : pen > 0.0
             ? 'BLOCKED'
             : '-'
+
+  // 射击复现的“无主装甲链”门禁（require_primary）：射线只命中履带/炮管/间隙甲时，
+  // 末层规则会给出 PENETRATION + 全额伤害，但服务器对这类 hit 的 result=1/2/4、damage=0。
+  // 查看器相机点击仍沿用 BlitzKit 末层语义（默认 false）；射击复现请求 true，
+  // 无 Primary（hull/turret/gun，0mm 也算）且非 HE/非跳弹 → BLOCKED、0 伤害。
+  if (req.require_primary === true && !isHe && !ricochet
+      && result === 'PENETRATION' && !hasPrimaryLayer(probabilityLayers)) {
+    result = 'BLOCKED'
+    resultDamage = 0
+  }
 
   return {
     result,
