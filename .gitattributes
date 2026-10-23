@@ -7,3 +7,5 @@
 /common/fixtures/tabular/csv/lf.csv text eol=lf
 /common/fixtures/tabular/csv/trailing-empty-single.csv text eol=crlf
 /common/fixtures/tabular/csv/middle-empty-single.csv text eol=crlf
+/common/fixtures/tournament/csv/4x2.csv text eol=crlf
+/common/fixtures/tournament/csv/5x3.csv text eol=crlf

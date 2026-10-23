@@ -64,8 +64,9 @@ public class TournamentAdminController {
         return service.saveRules(JwtUtil.requireUserId(), eventId, roundNumber, request);
     }
     @GetMapping(DAY)
-    public TournamentDtos.DayView day(@PathVariable final long eventId, @PathVariable final int roundNumber, @PathVariable final int dayNumber) {
-        return service.day(eventId, roundNumber, dayNumber);
+    public TournamentDtos.DayView day(@PathVariable final long eventId, @PathVariable final int roundNumber, @PathVariable final int dayNumber,
+                                     @RequestParam(name = "includeCanonicalStandings", defaultValue = "false") final boolean includeCanonicalStandings) {
+        return service.day(eventId, roundNumber, dayNumber, includeCanonicalStandings);
     }
     @PutMapping(DAY + "/expected-groups")
     public TournamentDtos.DayView expected(@PathVariable final long eventId, @PathVariable final int roundNumber, @PathVariable final int dayNumber, @RequestBody final TournamentDtos.ExpectedGroupsRequest request) {
