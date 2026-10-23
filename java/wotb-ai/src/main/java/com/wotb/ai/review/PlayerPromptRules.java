@@ -448,6 +448,42 @@ final class PlayerPromptRules {
      * 组装 system prompt：ZH 返回原样（字节级不变）；EN/RU 在中文基座上替换中文输出强制句
      * （输出语言、时间格式、车种与称谓规则），保留业务事实约束与注入防护。
      */
+    static final String SOLO_STANDARD_RULE = AiPromptLibrary.zh("tactical-skills/solo-standard");
+
+    static final String SOLO_STANDARD_RULE_EN = """
+            === RANDOM BATTLE PERSONAL REVIEW STANDARD v1.1 (Coach Lab) ===
+            Source: rules Coach Lab derived by reviewing all 34 games of the 2026 China-server summer top-four playoffs (3 recording players) from a personal point of view; only the parts this prompt's input can judge are kept. The sample comes from high-level tournament play, does not represent random-battle players' skill, and must not be used as a prior for this battle. Judge only you; teammates' positioning and coordination are not your responsibility. When this conflicts with other rules in this prompt, the evidence-boundary rules win.
+
+            I. Verdicts
+            1. Every key action gets exactly one of three verdicts: mistake / correct / cannot determine; "cannot determine" must name the missing data.
+            2. Data boundary: the input has no complete shot record, aimed target, or reload and ammunition data, only damage events from hits. No damage record does not mean no shot was fired; never use it to claim "did not return fire", "fired late", "shot the wrong target" or "the enemy was loaded".
+            3. Judge gunnery, penetration and trade efficiency only from this battle's evidence (whom you damaged and how much, who hit you and how often); never apply hit rates, penetration rates or weights from an external sample.
+            4. Each mistake states: fact (time, enemy tank name, distance, damage) -> why -> the action that should have been taken -> evidence boundary. Use only the battle's biggest problem as the one-sentence conclusion.
+
+            II. Rules
+            5. Deal first with whoever is shooting you: the same enemy hits you 3 or more times within about 40 seconds and you stay in its firing line the whole time (your position does not leave and it keeps hitting). A mistake requires both: before the later hits its direction was already known to you (it was CURRENT, or earlier hits had exposed that firing line), and a feasible safe way out or repositioning spot existed. The mistake is staying exposed in a known firing line, and you should have moved where it cannot hit you; firing back may be written only as an option, never as something you failed to do (shots and misses are not in the data). Whether you damaged it is described only as the trade result, never as grounds for a mistake. Otherwise only describe "kept being hit by it" without a mistake verdict. Light tanks on high ground, on the flank or behind you are the most common case.
+            6. Expose yourself to one vehicle at a time: being hit by two different enemies within about 2 seconds only shows that crossfire formed after you moved in; it does not by itself prove the advance was wrong. Only when at least two threats were already CURRENT or reliably LAST_KNOWN before the advance (or earlier hits had exposed those firing lines), a safer feasible option existed, and you still drove forward from a stationary spot where you were not being hit -> mistake; otherwise only describe "entered crossfire after advancing" without judging the advance. Crossfire formed by an enemy push or flank is not your mistake, so look at whether you left it afterwards.
+            7. Random teammates are unreliable: they are far less trustworthy than league teammates, so when judging your decisions never assume teammates will follow, fill a gap, hold a line or remove a threat for you. Teammate support counts as one of your options only with positive evidence at the moment of the decision: a teammate actually hitting the relevant enemy directly proves a supporting firing line existed; otherwise it needs a CURRENT position together with provable LOS/cover, target availability and time to influence, and position or distance alone is not enough. Judging that you "relied on teammates not in position" requires positive position/time evidence from the moment of the decision that the teammates really could not support (held to the same evidence standard as positive support: a CURRENT position plus an arrival-time estimate clearly later than your exposure window, or known cover with no usable firing line and no time to reposition; distance alone proves nothing), plus a safer option that did not depend on teammates -> mistake; the verdict is on the reliance itself and must never be inferred from teammates not arriving later or from missing data. When coverage is partial (OBSERVED_DAMAGE_IS_PARTIAL), missing hits or engagement records never mean teammates were not supporting; write cannot determine. Teammates' own mistakes and absences are not your mistakes.
+            8. Deaths at the end of the battle that did not affect the result are not judged.
+            """;
+
+    static final String SOLO_STANDARD_RULE_RU = """
+            === СТАНДАРТ ЛИЧНОГО РАЗБОРА СЛУЧАЙНОГО БОЯ v1.1 (Coach Lab) ===
+            Источник: правила, которые Coach Lab вывел из личного разбора всех 34 боёв плей-офф топ-4 летнего турнира китайского сервера 2026 года (3 записывающих игрока); оставлены только части, которые можно оценить по входным данным этого промпта. Выборка взята из турнирных боёв высокого уровня, не отражает уровень игроков случайных боёв и не должна использоваться как априорное допущение для этого боя. Оценивается только вы; позиции и взаимодействие союзников — не ваша ответственность. При противоречии с другими правилами этого промпта приоритет у правил границ доказательств.
+
+            I. Вердикты
+            1. Каждое ключевое действие получает ровно один из трёх вердиктов: ошибка / верно / невозможно определить; «невозможно определить» обязано назвать недостающие данные.
+            2. Граница данных: во входе нет полной записи выстрелов, выбранной цели, данных о перезарядке и боекомплекте — есть только события урона от попаданий. Отсутствие записи урона не значит, что выстрела не было; не утверждайте на этом основании «не отвечал огнём», «выстрелил поздно», «стрелял не в ту цель» или «противник был заряжен».
+            3. Стрельбу, пробитие и эффективность размена оценивайте только по данным этого боя (кому и сколько урона вы нанесли, кто и сколько раз попал по вам); не применяйте процент попаданий, пробитий или веса из внешней выборки.
+            4. Для каждой ошибки укажите: факт (время, название танка противника, дистанция, урон) -> почему -> нужное действие -> граница доказательств. Однострочным выводом делайте только главную проблему боя.
+
+            II. Правила
+            5. Сначала разберитесь с тем, кто по вам стреляет: одна и та же машина противника попала по вам 3 и более раз примерно за 40 секунд, и всё это время вы оставались на её линии огня (позиция не менялась, она продолжала попадать). Для ошибки нужны оба условия: до последующих попаданий её направление уже было вам известно (она была CURRENT или прежние попадания раскрыли эту линию огня), и существовал реальный безопасный путь выхода или позиция для смены. Ошибка — это то, что вы оставались под известной линией огня, и нужно было уйти туда, где она вас не достаёт; ответный огонь можно писать только как вариант, но не как то, чего вы не сделали (выстрелы и промахи в данных отсутствуют). Нанесли ли вы ей урон, описывается только как итог размена и не служит основанием для ошибки. Иначе только опишите «продолжал получать попадания от неё» без вердикта ошибки. Чаще всего это ЛТ на высоте, на фланге или сзади.
+            6. Открывайтесь одной машине за раз: попадания от двух разных противников примерно за 2 секунды показывают лишь, что перекрёстный огонь сложился после вашего выезда, и сами по себе не доказывают, что выезд был ошибкой. Ошибка — только если до выезда как минимум две угрозы уже были CURRENT или надёжно LAST_KNOWN (или прежние попадания раскрыли эти линии огня), существовал более безопасный реальный вариант, и вы всё равно выехали вперёд с неподвижной позиции, где по вам не попадали; иначе только опишите «после выезда попал под перекрёстный огонь», не оценивая сам выезд. Перекрёстный огонь, созданный натиском или обходом противника, не ваша ошибка — смотрите, ушли ли вы из него потом.
+            7. Союзники в случайном бою ненадёжны: им можно доверять гораздо меньше, чем союзникам в лиге, поэтому при оценке ваших решений не предполагайте, что союзники пойдут за вами, закроют брешь, удержат линию или уберут угрозу за вас. Поддержка союзника считается вашим вариантом только при положительных доказательствах в момент решения: реальное попадание союзника по нужному противнику прямо доказывает, что линия огня поддержки была; иначе нужна CURRENT позиция вместе с доказуемыми LOS/укрытиями, доступностью цели и временем влияния — одной позиции или дистанции недостаточно. Вывод «вы опирались на союзников не на позиции» требует положительных данных о позиции/времени в момент решения, что союзники действительно не могли поддержать (по тому же стандарту доказательств, что и для поддержки: CURRENT позиция плюс расчёт времени прибытия явно позже окна вашего выхода под огонь, или известное укрытие без доступной линии огня и без времени на смену позиции; одна большая дистанция ничего не доказывает), и более надёжного варианта без опоры на союзников -> ошибка; оценивается сама опора, и её нельзя выводить из того, что союзники потом не пришли, или из отсутствия данных. При неполном покрытии (OBSERVED_DAMAGE_IS_PARTIAL) отсутствие попаданий или записей боя не значит, что союзники не поддерживали; пишите «невозможно определить». Собственные ошибки и отсутствие союзников — не ваши ошибки.
+            8. Гибель в конце боя, не повлиявшая на результат, не оценивается.
+            """;
+
     static String localizePlayerSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
         if (language == null || language == AllowedLanguage.ZH) {
             return zhPrompt;
@@ -478,7 +514,9 @@ final class PlayerPromptRules {
                 .replace(RELATIVE_DEPTH_HP_RULE,
                         en ? RELATIVE_DEPTH_HP_RULE_EN : RELATIVE_DEPTH_HP_RULE_RU)
                 .replace(POINTS_SITUATION_RULE,
-                        en ? POINTS_SITUATION_RULE_EN : POINTS_SITUATION_RULE_RU);
+                        en ? POINTS_SITUATION_RULE_EN : POINTS_SITUATION_RULE_RU)
+                .replace(SOLO_STANDARD_RULE.strip(),
+                        (en ? SOLO_STANDARD_RULE_EN : SOLO_STANDARD_RULE_RU).strip());
         if (zhPrompt.contains(ZH_TIME_RULE)) {
             return localized;
         }

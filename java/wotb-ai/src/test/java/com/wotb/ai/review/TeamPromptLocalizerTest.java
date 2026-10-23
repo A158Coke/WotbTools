@@ -19,6 +19,7 @@ class TeamPromptLocalizerTest {
         assertTrue(zh.contains("位置与节奏战术技能 v0.2"));
         assertTrue(zh.contains("HP 与火力交换战术技能 v0.2"));
         assertTrue(zh.contains("模式与目标战术技能 v0.2"));
+        assertTrue(zh.contains("争霸赛复盘规范 v1.1"));
 
         final String en = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.EN);
         assertTrue(en.contains("INFORMATION AND VISION TACTICAL SKILL v0.2"));
@@ -27,12 +28,14 @@ class TeamPromptLocalizerTest {
         assertTrue(en.contains("POSITION AND TEMPO TACTICAL SKILL v0.2"));
         assertTrue(en.contains("HP AND GUN-TRADE TACTICAL SKILL v0.2"));
         assertTrue(en.contains("MODE AND OBJECTIVE TACTICAL SKILL v0.2"));
+        assertTrue(en.contains("SUPREMACY REVIEW STANDARD v1.1"));
         assertFalse(en.contains("信息与视野战术技能 v0.2"));
         assertFalse(en.contains("局部战场与传播战术技能 v0.2"));
         assertFalse(en.contains("团队执行战术技能 v0.2"));
         assertFalse(en.contains("位置与节奏战术技能 v0.2"));
         assertFalse(en.contains("HP 与火力交换战术技能 v0.2"));
         assertFalse(en.contains("模式与目标战术技能 v0.2"));
+        assertFalse(en.contains("争霸赛复盘规范 v1.1"));
 
         final String ru = TeamPromptLocalizer.localizeTeamSystemPrompt(zh, AllowedLanguage.RU);
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ИНФОРМАЦИИ И ОБЗОРА v0.2"));
@@ -41,10 +44,12 @@ class TeamPromptLocalizerTest {
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.2"));
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.2"));
         assertTrue(ru.contains("ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.2"));
+        assertTrue(ru.contains("СТАНДАРТ РАЗБОРА SUPREMACY v1.1"));
         assertFalse(ru.contains("信息与视野战术技能 v0.2"));
         assertFalse(ru.contains("局部战场与传播战术技能 v0.2"));
         assertFalse(ru.contains("团队执行战术技能 v0.2"));
         assertFalse(ru.contains("位置与节奏战术技能 v0.2"));
+        assertFalse(ru.contains("争霸赛复盘规范 v1.1"));
     }
 
     @Test

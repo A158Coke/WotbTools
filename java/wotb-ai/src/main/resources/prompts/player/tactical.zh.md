@@ -34,6 +34,8 @@
 
 {{common/evidence-logic}}
 
+{{tactical-skills/solo-standard}}
+
 === 空间分离证据使用规则（强制，随机战个人复盘） ===
 1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（与队友/主力保持
    空间分离的窗口、距离、距离增长、静止占比、移动覆盖、窗口内输出/承伤、阵亡、目标点邻近关系），

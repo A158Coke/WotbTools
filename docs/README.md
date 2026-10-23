@@ -35,6 +35,7 @@
 | `frontend/design-language.md` | 改任何界面前：颜色 / 字号 / 间距 / 组件 / 文案的设计规则与 stylelint 守护 |
 | `architecture/TECHNICAL_EVOLUTION.md` | 查技术架构决策、authority / boundary、分布式 Replay 与双云拓扑的 canonical 技术演进时（历史，不是当前契约） |
 | `architecture/ai-review.md` | 改 AI 复盘 / 证据链 / prompt / 双 Call / 结构化团队结果（`TeamAiReviewResult`）时 |
+| `ai-coach/README.md` | 改团队 AI 复盘或随机战个人复盘的战术判定规则（Coach Lab 争霸赛复盘规范、随机战个人复盘规范、RULE-001–020、案例索引、版本车辆定位）时 |
 | `architecture/replay-pipeline.md` | 改客户端回放管线（上游 Rust Core WASM → 批次计算 / 导出 / 2D）或名人堂客户端事实时 |
 | `architecture/battle-timeline.md` | 改 battle timeline 事件模型 / 时间轴聚合时 |
 | `architecture/http-contracts.md` | 改 HTTP OpenAPI 契约、生成 transport 或 runtime schema 时 |
