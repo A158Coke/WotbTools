@@ -289,6 +289,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             return '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>'
                 + '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + escapeText(shotReplayError) + '</div>';
         }
+        function clearShotError() {
+            shotReplayError = '';
+            const el = document.getElementById('shot-replay-error');
+            if (el) { el.textContent = ''; el.style.display = 'none'; }
+        }
 
         // ===== HE 溅射可视化：只标注一个半径球面 =====
         // 800 方向采样不再画线；方向化信息交给热力图染色（best 方向白色高亮）。
@@ -3066,7 +3071,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
                      window.__segBoxMissing = false;
-                     shotReplayError = '';
+                     clearShotError();
                      worldOverviewMode = false;   // 命中/脱靶分支各自置位（见下）
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
@@ -5240,6 +5245,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (destroyed) return;
             shotReplayError = msg;
             console.error('[shot-replay] ' + msg);
+            // 用户可见的常显错误条；不进入 #turret-controls 的 debug details/隐藏逻辑。
+            const alert = document.getElementById('shot-replay-error');
+            if (alert) { alert.textContent = msg; alert.style.display = 'block'; }
             const st = document.getElementById('turret-controls');
             if (st) {
                 // 世界模式调试关闭时该面板被收纳——错误必须强制可见
@@ -5949,7 +5957,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
         function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null, allowChance = true, options = {}) {
             if (destroyed) return;
-            shotReplayError = '';
+            clearShotError();
             const blockedNoPrimary = options.blockedNoPrimary === true;
             const probabilityMode = options.probabilityMode === true && !blockedNoPrimary;
             // 无主装甲门禁的 BLOCKED/0 是终态：不能再用概率链的 rawChance/chancePartial
