@@ -148,6 +148,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             shotSplashDamage: 'splash damage', heRadius: 'splash radius', heBestSample: 'best sample',
             directHit: 'direct hit', expectedDamage: 'expected damage',
             heSamplingUnavailable: 'splash sampling unavailable',
+            noPrimaryBlocked: 'No primary armor hit; treated as non-penetration',
             heBestSampleUpper: 'best sample (upper)', heBestSampleLower: 'best sample (lower)',
             sectionName: (section) => section,
             mayPenetrate: 'May penetrate',
@@ -3056,6 +3057,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
+                     window.__segBoxMissing = false;
                      worldOverviewMode = false;   // 命中/脱靶分支各自置位（见下）
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
@@ -3787,7 +3789,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                         : sPart2 === 3 ? cdBoxes.gun : null) : null;
                                     // 只用客户端权威部件盒；缺失时不解码/不判定（fail-closed），
                                     // 不再按装甲网格 rest 顶点自算 AABB。
-                                    if (partNodes.length && gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max) {
+                                    const boxMissing = !(gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max)
+                                        || partNodes.length === 0;
+                                    if (!boxMissing) {
                                         const boxMin = gameBoxRaw.min, boxMax = gameBoxRaw.max;
                                         const boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
                                         const szv = [boxMax[0] - boxMin[0], boxMax[1] - boxMin[1], boxMax[2] - boxMin[2]];
@@ -3925,9 +3929,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                     + (sPart2 != null ? ' · 部件P' + sPart2 : ''));
                                             }
                                         }, 1500);
-                                    } else if (window.__debugOn) {
-                                        dbgInfo('dbg-seg', '#ffa500', 'DecodeShotSegment',
-                                            '缺少客户端部件盒（part ' + sPart2 + '），fail-closed 未解码');
+                                    } else {
+                                        window.__segBoxMissing = true;
+                                        tidyTrajectory();
+                                        showShotError('缺少客户端部件盒（part ' + sPart2 + '），射击复现已阻断');
                                     }
                                 }
                             }
@@ -5305,6 +5310,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function doPenetrationCheck(ndcX, ndcY) {
             if (destroyed || !armorModel || shooterLoading) return;
+            // 缺客户端解码盒的 world shot 不得回退炮口弦出结论：初始化/时间轴重判/
+            // 换弹都走这里，统一阻断并清掉上一发结果；普通相机点击路径不受影响。
+            if (window.__worldPenMode === true && window.__segBoxMissing === true) {
+                tidyTrajectory();
+                return;
+            }
             const shellTypeNow = selectedShell ? shellTypeOf(selectedShell) : null;
             if (!selectedShell || !shellTypeNow
                 || !Number.isFinite(selectedShell.penetration) || !(selectedShell.damage > 0)
@@ -5672,7 +5683,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const heDirectHit = (isHE && first)
                     ? { name: first.partName, thickness: first.thickness }
                     : null;
-                const useProbabilityMode = !res.ricochet
+                const useProbabilityMode = !res.ricochet && !res.blocked_no_primary
                     && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain
                     // 纯外部模块/0mm 板链没有可被 CDF 评估的主装甲：概率模式会把
                     // 模块 flat 消耗后的剩余区间误读成“必穿”；保持确定性卡片。
@@ -5869,15 +5880,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             };
                             armorDebugPanel(window.__armorDebugLast);
                         }
-                        showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined);
+                        showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
+                            ...(heInfo ? { heInfo, heDirectHit } : {}),
+                            blockedNoPrimary: res.blocked_no_primary === true,
+                        });
                         return;
                     }
                 }
 
+                const blockedNoPrimary = res.blocked_no_primary === true;
                 if (useProbabilityMode) {
-                    showTrajectory(point, res.result, res.total_effective, probRawLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit });
+                    showTrajectory(point, res.result, res.total_effective, probRawLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
                 } else {
-                    showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE, heInfo ? { heInfo, heDirectHit } : undefined);
+                    showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
                 }
             }).catch(err => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
@@ -5925,7 +5940,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
         function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null, allowChance = true, options = {}) {
             if (destroyed) return;
-            const probabilityMode = options.probabilityMode === true;
+            const blockedNoPrimary = options.blockedNoPrimary === true;
+            const probabilityMode = options.probabilityMode === true && !blockedNoPrimary;
+            // 无主装甲门禁的 BLOCKED/0 是终态：不能再用概率链的 rawChance/chancePartial
+            // 把标题/伤害回填成“可能击穿 + 满伤”。
+            allowChance = allowChance && !blockedNoPrimary;
             // HE 采样（Armor Inspector func7695）：min/max 是两个 roll 界的最大值，
             // avg 取中点；概率由外层 CDF 给出，expected = full*p + avg*(1-p)。
             const heInfo = options.heInfo || null;
@@ -6182,6 +6201,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             };
             html += titleHtml(segments[0], segments.length === 1);
             if (segments.length === 1) html += chanceRowHtml();
+            if (blockedNoPrimary) {
+                html += `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">${escapeText(L.noPrimaryBlocked)}</div>`;
+            }
             if (heInfo) {
                 // 直接命中（爆炸面）紧贴最佳样本上方，只显示位置 + 名义厚度，
                 // 不显示等效/角度/概率链。
@@ -6256,11 +6278,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 const layerChance = probabilityMode ? (l.chance ?? 0) : null;
                 const partialChance = probabilityMode ? null : nextPartialChance(l);
-                const pc = probabilityMode
-                    ? probabilityColorCss(layerChance)
-                    : (partialChance != null
-                        ? probabilityColorCss(partialChance)
-                        : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)')));
+                const pc = blockedNoPrimary
+                    ? 'var(--red)'
+                    : (probabilityMode
+                        ? probabilityColorCss(layerChance)
+                        : (partialChance != null
+                            ? probabilityColorCss(partialChance)
+                            : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'))));
                 const th = Number(l.thickness);
                 const isGap = /^Gap /.test(l.name || '');
                 let main, sub;

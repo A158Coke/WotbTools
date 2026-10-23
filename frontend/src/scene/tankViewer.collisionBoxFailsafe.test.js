@@ -11,7 +11,18 @@ describe('shot segment collision box source', () => {
   it('uses the client collision_boxes and a fail-closed missing-box branch', () => {
     expect(src).toContain('tankData.collision_boxes')
     expect(src).toContain('缺少客户端部件盒')
-    expect(src).toContain('fail-closed 未解码')
+    expect(src).toContain('射击复现已阻断')
+  })
+
+  it('blocks world judgment when the client box is missing, including rejudge paths', () => {
+    expect(src).toContain('window.__segBoxMissing = true')
+    expect(src).toContain('window.__worldPenMode === true && window.__segBoxMissing === true')
+  })
+
+  it('does not let the result card reopen a require_primary block via probability', () => {
+    expect(src).toContain('blockedNoPrimary')
+    expect(src).toContain('allowChance = allowChance && !blockedNoPrimary')
+    expect(src).toContain('!isHE && !blockedNoPrimary')
   })
 
   it('never synthesizes a mesh-tight AABB fallback', () => {
