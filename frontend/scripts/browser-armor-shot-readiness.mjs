@@ -334,8 +334,13 @@ try {
       storeShotsForViewer([${JSON.stringify(boxlessShot)}]);
     })()`)
     await page.goto(`${origin}/?view=agent-armor&ws-auth=1&tank=${FIXTURE_TANK_ID}&shooter=${shooterId}&heatmap=1&shot=1&shell=0&scfg=0&assets=${encodeURIComponent(assets.origin)}`)
-    // 错误行必须持久可见：World View HUD 重建后仍要重新插入。
-    await page.waitForValue(`document.querySelector('#turret-controls')?.textContent`, text => text?.includes('缺少客户端部件盒'), { timeout: 30000, label: 'missing box visible error' })
+    // 错误条必须真正可见（#turret-controls 的诊断隐藏/折叠不影响它）。
+    await page.waitForValue(`(() => {
+      const e = document.querySelector('#shot-replay-error');
+      return !!e && e.getClientRects().length > 0
+        && getComputedStyle(e).display !== 'none'
+        && e.textContent.includes('缺少客户端部件盒');
+    })()`, value => value === true, { timeout: 30000, label: 'missing box visible error' })
     assert.equal(await page.evaluate('window.__segBoxMissing'), true, 'missing box state is explicit')
     assert.ok(page.consoleErrors.some(message => message.includes('缺少客户端部件盒')), 'missing box diagnosis is logged')
     assert.equal(await page.evaluate('window.__armorRicochet?.info().judgments || 0'), 0, 'missing box blocks world judgment')
