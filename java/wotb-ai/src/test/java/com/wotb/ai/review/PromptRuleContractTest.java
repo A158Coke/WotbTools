@@ -160,6 +160,11 @@ class PromptRuleContractTest {
         // RULE-003 / RULE-010 keep the preconditions the Coach Book states.
         assertTrue(zh.contains("第二个方向的敌车当时 CURRENT") && zh.contains("自身血量只够再吃 2–3 发") && zh.contains("有撤离路线"));
         assertTrue(zh.contains("唯一在点里卡点或拒止的车"));
+        // RULE-003 keeps two separate fixing exceptions: sustained damage for numbers, and holding the main body for income (no damage needed).
+        assertTrue(zh.contains("它拖住对方主力、用时间保住己方收入，不要求持续输出"));
+        assertFalse(zh.contains("以多打少或保住收入"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("with no sustained damage required"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("постоянный урон не требуется"));
         assertTrue(zh.contains("对方只剩 1 辆或极少数车"));
         assertFalse(zh.contains("010 多打一时优先全歼"));
         // Support: a hit proves a firing line; no hit never proves no support. Only human-confirmed roles carry a verdict.
