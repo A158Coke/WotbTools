@@ -31,7 +31,8 @@ class PromptRuleContractTest {
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                     PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
                     PlayerPromptRules.POINTS_SITUATION_RULE,
-                    PlayerPromptRules.RELATIVE_DEPTH_HP_RULE),
+                    PlayerPromptRules.RELATIVE_DEPTH_HP_RULE,
+                    PlayerPromptRules.SOLO_STANDARD_RULE),
             "player/fallback", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
@@ -41,7 +42,8 @@ class PromptRuleContractTest {
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                     PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
-                    PlayerPromptRules.POINTS_SITUATION_RULE),
+                    PlayerPromptRules.POINTS_SITUATION_RULE,
+                    PlayerPromptRules.SOLO_STANDARD_RULE),
             "player/tactical", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
@@ -51,7 +53,8 @@ class PromptRuleContractTest {
                     PlayerPromptRules.HP_LOSS_TIME_RULE,
                     PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
                     PlayerPromptRules.SEPARATION_EVIDENCE_RULE,
-                    PlayerPromptRules.POINTS_SITUATION_RULE),
+                    PlayerPromptRules.POINTS_SITUATION_RULE,
+                    PlayerPromptRules.SOLO_STANDARD_RULE),
             "team/single", List.of(
                     PlayerPromptRules.COMMON_TANK_PROPER_NOUN_RULE,
                     PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
@@ -104,6 +107,7 @@ class PromptRuleContractTest {
                 assertFalse(localized.contains("=== 伤害语义（强制） ==="), lang + " 残留中文伤害语义");
                 assertFalse(localized.contains("=== 证据逻辑与术语（强制） ==="), lang + " 残留中文证据逻辑");
                 assertFalse(localized.contains("=== 语言规则（强制） ==="), lang + " 残留中文语言规则");
+                assertFalse(localized.contains("=== 随机战个人复盘规范 v1.0（Coach Lab） ==="), lang + " 残留中文个人复盘规范");
             }
         }
     }
@@ -145,5 +149,22 @@ class PromptRuleContractTest {
             assertFalse(rule.contains("3 点图（2.5 分/秒）") || rule.contains("3-base maps (2.5 points/s)")
                     || rule.contains("картах с 3 базами (2,5"), "产分速率不能按点数固定");
         }
+    }
+
+    @Test
+    void soloStandardIsInjectedIntoRandomBattlePromptsInAllLanguages() {
+        final String single = AiPromptLibrary.zh("player/single");
+        final String fallback = AiPromptLibrary.zh("player/fallback");
+        final String tactical = AiPromptLibrary.zh("player/tactical");
+        for (final String zh : List.of(single, fallback, tactical)) {
+            assertTrue(zh.contains("=== 随机战个人复盘规范 v1.0（Coach Lab） ==="));
+            assertTrue(zh.contains("4. 残血先收"));
+            assertTrue(PlayerPromptRules.localizePlayerSystemPrompt(zh, AllowedLanguage.EN)
+                    .contains("4. Finish low-HP tanks first"));
+            assertTrue(PlayerPromptRules.localizePlayerSystemPrompt(zh, AllowedLanguage.RU)
+                    .contains("4. Сначала добивайте танки с малым HP"));
+        }
+        // Team review keeps its own supremacy standard; the solo standard is random-battle only.
+        assertFalse(AiPromptLibrary.zh("team/single").contains("随机战个人复盘规范"));
     }
 }

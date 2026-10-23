@@ -205,6 +205,7 @@ AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.
 | tactical-skills/hp-trades | `prompts/tactical-skills/hp-trades.zh.md` | `TeamPromptLocalizer.HP_TRADES_SKILL_RULE` |
 | tactical-skills/mode-objectives | `prompts/tactical-skills/mode-objectives.zh.md` | `TeamPromptLocalizer.MODE_OBJECTIVES_SKILL_RULE` |
 | tactical-skills/coach-standard | `prompts/tactical-skills/coach-standard.zh.md` | `TeamPromptLocalizer.COACH_STANDARD_RULE`（Coach Lab 争霸赛复盘规范，最高优先级，由 `team/single` 紧跟 `team/reasoning-contract` include） |
+| tactical-skills/solo-standard | `prompts/tactical-skills/solo-standard.zh.md` | `PlayerPromptRules.SOLO_STANDARD_RULE`（Coach Lab 随机战个人复盘规范，由 `player/single`、`player/fallback`、`player/tactical` 紧跟 `common/evidence-logic` include） |
 
 编辑约定：
 
@@ -229,6 +230,14 @@ Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach
 - 点位几何、地形高低差与炮线、点数账。`OBJECTIVE_STATE_TIMELINE` 提供 `SUPREMACY_POINTS` 时用它做点数账；`CAPTURE_RULE` 8a 的“比分未解码”限制只适用于没有该段的时段。
 - 车辆定位按版本（11.19 国服 SPHT = 肉车为人工确认，其余待确认）；`team/reasoning-contract` 的“vehicle class 只是能力因素”只适用于表外车型。
 - RULE-001–020 速查与常见错误清单。
+
+### Coach Lab 随机战个人复盘规范 v1.0
+
+随机战个人复盘（`player/single`、`player/fallback`、`player/tactical`）在 `common/evidence-logic` 之后注入 `tactical-skills/solo-standard`：同一批 34 局回放按野队视角只评录像者本人，再用全量数据统计（324 发炮、246 发有伤害的挨打）归纳出的规范（完整出处 `docs/ai-coach/solo-standard.md`）。
+
+- 操作占八成、意识占两成；队友站位不归玩家负责。判定同样只用 失误 / 正确 / 无法判定。
+- 基线：命中约 90%、击穿约 81%，扣分主要在目标选择与时机：残血先收、谁在打你先处理谁、别在对方装好弹时冒头、车头车尾、装好就打、一次只露给一辆车。
+- 缺敌方实时血量、视野、装填或配件数据时判“无法判定”；与证据边界规则冲突时证据边界优先。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 
