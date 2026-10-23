@@ -62,7 +62,3 @@ export async function verifyUserWotbAccountFromReplay(recorderAccountId: number)
 export async function syncUserWotbAccountFromLogin() {
   return userProfileResponse(await apiFetch('/api/users/wotb-account/from-login', { method: 'PUT', headers: await userJsonHeaders() }))
 }
-
-export async function getUserHofRecords() {
-  return userHandle(await apiFetch('/api/users/profile/records', { headers: await userJsonHeaders() }))
-}

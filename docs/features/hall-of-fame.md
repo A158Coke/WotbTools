@@ -35,7 +35,7 @@
   **fixture gap**：仓内暂无真实 Rating 回放 —— Rating=7 目前由已入库文档 + 外部 tooling 证据支撑（生产已随 PR #97 生效）；未来拿到真实当前版本 Rating replay 后补 parser → RATING → upload success 的真实 fixture integration 验证（follow-up，不阻塞）。
 - **录像者识别**：结算事实里录像者以 `Battle.recorder`（昵称）给出。`HallOfFameService` 按 `nickname.equals(battle.recorder)` 在 `players` 中匹配；匹配不到则跳过（不猜）。成绩归**录像者（Player B）**；`uploadedBy` 只表示谁上传了回放，不覆盖成绩所有权。
 - **去重与 replay 状态机（DB 原子）**：唯一键 `(arena_id, account_id)`（不含 battle_type —— 同一场+同一玩家即一条真实 battle result；mode conflict 视为数据不一致，不允许双记录）。`recordRecorder` 返回 `RecordOutcome`：新建 → `SAVED`；已存在且 `replay_hash` NULL → 原子 conditional UPDATE → `ATTACHED`，败者 re-read winner 后分类；已存在且同 hash → `IDEMPOTENT`（仍落盘以自愈缺失文件；上传接口返回 `status: "already_recorded"`，前端提示「已在名人堂中」，不冒充新上榜）；已存在且异 hash → `SKIPPED_HASH_CONFLICT`（保留已有 hash，绝不覆盖）；insert unique 竞态 → re-read winner 重新分类。并发由 DB 行锁保证（多实例安全）。
-- **归属维度（已知遗留）**：单场 `hall_of_fame_record` 只按 `account_id` 归属，**没有区服维度**，`GET /api/users/profile/records` 同样只按账号 ID 返回个人成绩；跨服同号（`(CN, 123456)` 与 `(EU, 123456)`）在单场域仍可能被视作同一人。详见下文「单场 HoF 的区服限制（已知遗留 / follow-up debt）」。
+- **归属维度（业务决策）**：单场 `hall_of_fame_record` 的身份键仅为 `account_id`，归属、个人查询与去重语义不包含区服。CN / EU / NA 等不同区服相同 `accountId` 视为同一身份；记录唯一键仍为 `(arena_id, account_id)`。这是已确认的产品规则，不是 correctness gap、架构缺陷或技术债。详见下文「单场 HoF 的身份契约」。
 - **回放文件存储（V15 → hof）**：`HallOfFameReplayStorage` 内容寻址存储到 `{HOF_REPLAY_DIR:data/replays}/{sha256}.wotbreplay`（生产挂 `replay_data` volume → `/data/replays`）。流程：校验（复用 `ReplayUploadValidator`，类型+.wotbreplay+20MB）→ 登录（`JwtUtil.requireUserId`）→ 客户端事实结构校验（缺失 / 非法 400 `INVALID_REPLAY_FACTS`；浏览器本机解析失败在前端即报 `INVALID_REPLAY_FILE`，不会提交）→ **battle-type policy（不支持模式 → 400 `UNSUPPORTED_BATTLE_TYPE`，在 SHA-256 / preflight / storage / DB 任何持久化之前拒绝，DB=0 / metadata=0 / 文件=0）** → SHA-256 → 临时文件 `.tmp/` → `ATOMIC_MOVE` 原子发布 → 记录入库。上传的「落盘 + 入库」与 admin delete 的「删除事务 + 文件清理」由 `ReplayHashLock`（PostgreSQL advisory lock，session 级，hash 前 16 hex 为 key）串行化，保证不变量：**任何记录引用 hash H → 物理 H.wotbreplay 必须存在**（delete/upload 同 hash 并发见 WebApiTest）。磁盘保护：`usable - incoming < HOF_REPLAY_MIN_FREE_BYTES`（默认 512MiB）→ 507 `REPLAY_STORAGE_FULL`；文件系统失败 → 500 `REPLAY_STORAGE_ERROR`。`replay_hash/file_name/size/uploaded_by` 四列可空（老记录 NULL → 无下载按钮，tolerance）。
 - **下载**：`GET /api/hof/{id}/replay`（需登录，任意已登录用户可下载任何带 replay 的记录；不要求 uploadedBy==current user 或 recorder==current user）。无 hash / 文件丢失（best-effort 语义）→ 404 `REPLAY_FILE_NOT_FOUND`；原始文件名仅进 `Content-Disposition`（UTF-8 安全编码，绝不参与路径）。前端用 authenticated fetch → blob → `createObjectURL` 触发下载（禁止裸 `<a href>`）。
 - **统一公开查询**：`GET /api/hof?battleType=RANDOM|RATING&nation=&vehicleType=&tier=&tankId=&nickname=&page=&size=`（匿名可访问；`battleType` 未知值 → 400 `INVALID_BATTLE_TYPE_FILTER`）。`nation` / `vehicleType` / `tier` 任一项无需先选车辆即可直接过滤榜单，多个非空车辆条件与 `tankId` 取交集。排序 deterministic：`damage_dealt DESC` → **battle type 优先 RATING > RANDOM** → `battle_time ASC NULLS LAST` → `created_at ASC` → `id ASC`（后三者仅 deterministic pagination tie-breaker）。rank 为完整 filter 交集上下文的位置排名（`(page-1)*size+i+1`，不落库、无 shared rank）。公开字段边界：**不暴露** accountId / arenaId / replayHash / uploadedBy / admin audit data；显示 rank/nickname/tank/damage/battleType/map/version/battleTime/uploadTime/replayAvailable。旧 `/api/leaderboard/top-damage`、`/api/leaderboard/tanks/{tankId}/top-damage` 已移除（HomePage 最高伤害改读 `/api/hof?page=1&size=1`）。
@@ -212,10 +212,10 @@ V20 中用于识别历史 WG 申请的 source/snapshot 列保持 immutable schem
 删除 Keycloak 用户  ≠  删除 HoF 业务记录
 ```
 
-- HoF 数据属于 **WotB 游戏账号**，不属于 Keycloak 用户：V22 后百场/三环的 canonical owner 是 `(wotb_server, wotb_account_id)`，单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属（**无区服维度**，见下文「单场 HoF 的区服限制」）。
+- HoF 数据属于 **WotB 游戏账号**，不属于 Keycloak 用户：V22 后百场/三环的 canonical owner 是 `(wotb_server, wotb_account_id)`，单场 `hall_of_fame_record` 从一开始就按 `account_id` 归属（按已确认业务规则不含区服，见下文「单场 HoF 的身份契约」）。
 - 仓库中**没有任何 FK 指向 `user_profile`**；`on delete cascade` 曾只出现在已删除的 replay processing 表（V27 删除）上，现在仓库没有任何级联外键。因此删除 Keycloak 用户不会连带删除任何 HoF 行。
 - **删除用户必须走 WotBTools admin API**：`AdminUserService` 会先删本地 profile 再删 Keycloak 用户。绕过它直连 Keycloak 删除会留下**孤儿 profile**并阻塞后续重绑（`(wotb_server, wotb_account_id)` 唯一槽位仍被占用）；此时用 Admin Users 的 `segment=local` 找到这些孤儿绑定（行上 `keycloakUserMissing=true`）并删除以释放槽位。
-- 用户以全新 Keycloak 身份（例如旧第三方 IdP 用户被删除后改用 Official QQ 重建）重新绑定**同一个 `(区服, WotB 账号)`** 后，其百场/三环数据自然重新关联，不需要任何数据修复；单场 `hall_of_fame_record` 只认账号 ID，因此换服同号会被误关联（见下节）。
+- 用户以全新 Keycloak 身份（例如旧第三方 IdP 用户被删除后改用 Official QQ 重建）重新绑定**同一个 `(区服, WotB 账号)`** 后，其百场/三环数据自然重新关联，不需要任何数据修复；单场 `hall_of_fame_record` 仅按账号 ID 关联，换服但账号 ID 相同时仍属于同一业务身份；改绑到不同账号 ID 后查询该新账号的成绩。
 
 ## V22 迁移契约（fail-fast preflight，不做任何自动消解）
 
@@ -286,12 +286,11 @@ V22 的执行顺序（`V22__hof_ownership_by_wotb_account.sql`，百场与三环
 
 > **已知缺口（待产品决策，非本 PR 范围）**：preflight 点名的行若是 `PENDING`，现有 admin API 无受支持处置路径。
 
-## 单场 HoF 的区服限制（已知遗留 / follow-up debt）
+## 单场 HoF 的身份契约
 
-**`hall_of_fame_record` 仍然只按 `account_id` 归属，没有任何区服维度。** 这是本轮变更范围之外的既有设计：
+Single HoF 的 identity = `accountId` only。这是已确认的业务决策：归属与个人成绩查询不使用 `(server, accountId)`，CN / EU / NA 等不同区服相同 `accountId` 在单场域视为同一身份键。
 
-- 表结构：V1/V16 至今只有 `account_id`，去重唯一键是 `(arena_id, account_id)`，没有 `wotb_server` 列。
-- 个人中心：`GET /api/users/profile/records` → `HallOfFameService.recordsByAccountId(profile.wotbAccountId(), 50)`，**只按账号 ID 匹配**，不看当前绑定的区服。
-- 因此跨服同号（例如 `(CN, 123456)` 与 `(EU, 123456)`）在单场域**仍可能被当作同一个人**：个人中心可能展示到另一个区服同号账号的成绩，`(arena_id, account_id)` 去重也可能把两个区服的同号玩家判为同一条记录。
-
-**不要据此认为三个 HoF 域都已区服安全**：只有百场与三环在 V22 后是 `(区服, 账号)` 归属，单场仍是 account-only。这是**已声明的遗留问题**，不是本 PR（#287）的修复范围；把它纳入需要 `hall_of_fame_record` 加区服列 + 历史行区服回填 + 去重键改界，属于独立的 follow-up 工作项。
+- `hall_of_fame_record` 使用 `account_id`，不保存区服；记录去重唯一键为 `(arena_id, account_id)`，不含 `server`，也不是仅按 `accountId` 去重。
+- `GET /api/users/profile/records` 调用 `HallOfFameService.recordsByAccountId(profile.wotbAccountId(), 50)`，按当前绑定的账号 ID 查询，不以区服过滤。绑定区服改变但账号 ID 不变时，仍查询同一身份的成绩。
+- 百场与三环各自使用 `(wotb_server, wotb_account_id)` 作为身份契约，不要求与单场统一。
+- OpenAPI、前端 runtime validation 与文档保持上述语义；字段校验不改变业务身份键。
