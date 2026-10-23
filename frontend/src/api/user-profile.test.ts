@@ -22,7 +22,6 @@ describe('User/Profile HTTP boundary', () => {
     ['deleteUserWotbAccount', [], '/api/users/wotb-account', 'DELETE', undefined],
     ['verifyUserWotbAccountFromReplay', [42], '/api/users/wotb-account/verify-replay', 'POST', '{"recorderAccountId":42}'],
     ['syncUserWotbAccountFromLogin', [], '/api/users/wotb-account/from-login', 'PUT', undefined],
-    ['getUserHofRecords', [], '/api/users/profile/records', 'GET', undefined],
   ] as const)('%s preserves request and return value', async (name, args, url, method, body) => {
     const result = await (api[name] as (...args: any[]) => Promise<unknown>)(...args)
     expect(result).toEqual(profile)

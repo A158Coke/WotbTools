@@ -4,6 +4,278 @@
  */
 
 export interface paths {
+    "/api/users/profile/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前用户单场记录（仅按 accountId 归属） */
+        get: operations["getUserHofRecords"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/vehicle-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取公开车辆筛选选项 */
+        get: operations["getHofVehicleOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/vehicle-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取管理车辆筛选选项 */
+        get: operations["getHofAdminVehicleOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取管理单场记录分页 */
+        get: operations["getHofAdminPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取单场管理审计分页 */
+        get: operations["getHofAdminAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 上传单场回放 */
+        post: operations["uploadHofReplay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/mark3": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取三环公开排行榜 */
+        get: operations["listMark3Leaderboard"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/mark3/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交三环申请 */
+        post: operations["createMark3Submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hof/mark3/submissions/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 取消三环申请 */
+        post: operations["cancelMark3Submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/mark3/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前用户三环状态 */
+        get: operations["getMark3UserStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取三环审核分页 */
+        get: operations["listMark3AdminSubmissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取三环审核详情 */
+        get: operations["getMark3AdminSubmission"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/{id}/replays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取三环回放证据元数据 */
+        get: operations["listMark3ReplayEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 批准三环申请 */
+        post: operations["approveMark3Submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 拒绝三环申请 */
+        post: operations["rejectMark3Submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hof/mark3/submissions/{id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 删除当前三环记录 */
+        post: operations["deleteMark3Submission"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/recommendations": {
         parameters: {
             query?: never;
@@ -2050,6 +2322,244 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        HofVehicleOption: {
+            /** Format: int64 */
+            tankId: number;
+            tankName: string;
+            /** @enum {string} */
+            nation: "CHINA" | "GERMANY" | "JAPAN" | "EUROPE" | "FRANCE" | "USA" | "USSR" | "UK" | "OTHER";
+            /** @enum {string} */
+            type: "HEAVY_TANK" | "MEDIUM_TANK" | "LIGHT_TANK" | "TANK_DESTROYER" | "OTHER";
+            tier: number | null;
+        };
+        HofAdminRecord: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            accountId: number;
+            nickname: string;
+            /** Format: int64 */
+            tankId: number;
+            tankName: string;
+            battleType: components["schemas"]["HallOfFameBattleType"];
+            damageDealt: number;
+            mapName: string | null;
+            version: string | null;
+            /** Format: date-time */
+            battleTime: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            replayHash: string | null;
+            replayFileName: string | null;
+            /** Format: int64 */
+            replaySize: number | null;
+            replayUploadedBy: string | null;
+            replayAvailable: boolean;
+        };
+        HofAdminPage: {
+            items: components["schemas"]["HofAdminRecord"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        HofAdminAudit: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            action: "DELETE_ENTRY";
+            /** Format: int64 */
+            recordId: number;
+            arenaId: string;
+            /** Format: int64 */
+            accountId: number;
+            nickname: string;
+            /** Format: int64 */
+            tankId: number;
+            tankName: string;
+            damageDealt: number;
+            battleType: components["schemas"]["HallOfFameBattleType"];
+            arenaBonusType: number;
+            replayHash: string | null;
+            adminKeycloakUserId: string;
+            adminUsername: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HofAdminAuditPage: {
+            items: components["schemas"]["HofAdminAudit"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        Mark3CreateResult: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "PENDING";
+        };
+        Mark3SubmissionSummary: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** @enum {string} */
+            status: "PENDING" | "CURRENT" | "REJECTED" | "CANCELLED" | "DELETED";
+            claimedBattleCount: number;
+            claimedAverageDamage: number;
+            claimedWinRate: number;
+            approvedBattleCount: number | null;
+            approvedAverageDamage: number | null;
+            approvedWinRate: number | null;
+            /** Format: date-time */
+            submittedAt: string;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** @enum {string|null} */
+            rejectReason: "SCREENSHOT_MISMATCH" | "SCREENSHOT_UNREADABLE" | "INSUFFICIENT_PROOF" | "SUSPECTED_FRAUD" | "OTHER" | null;
+            rejectReasonText: string | null;
+        };
+        Mark3UserStatus: {
+            current: components["schemas"]["Mark3SubmissionSummary"][];
+            pending: components["schemas"]["Mark3SubmissionSummary"][];
+            rejected: components["schemas"]["Mark3SubmissionSummary"][];
+        };
+        Mark3LeaderboardItem: {
+            /** Format: int64 */
+            id: number;
+            rank: number | null;
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            nickname: string;
+            approvedBattleCount: number;
+            approvedAverageDamage: number;
+            approvedWinRate: number;
+            /** Format: date-time */
+            approvedAt: string;
+        };
+        Mark3LeaderboardPage: {
+            /** Format: int64 */
+            vehicleId: number | null;
+            vehicleName: string | null;
+            items: components["schemas"]["Mark3LeaderboardItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        Mark3AdminListItem: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "PENDING" | "CURRENT" | "REJECTED" | "CANCELLED" | "DELETED";
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** @enum {string} */
+            wotbServer: "CN" | "ASIA" | "EU" | "NA";
+            /** Format: int64 */
+            wotbAccountId: number;
+            nicknameSnapshot: string;
+            claimedBattleCount: number;
+            claimedAverageDamage: number;
+            claimedWinRate: number;
+            approvedBattleCount: number | null;
+            approvedAverageDamage: number | null;
+            approvedWinRate: number | null;
+            replayParseOk: boolean;
+            replayGameIdMatch: boolean;
+            replayVehicleMatch: boolean;
+            replayDistinctBattles: boolean;
+            /** Format: date-time */
+            submittedAt: string;
+            /** Format: date-time */
+            approvedAt: string | null;
+            /** @enum {string|null} */
+            rejectReason: "SCREENSHOT_MISMATCH" | "SCREENSHOT_UNREADABLE" | "INSUFFICIENT_PROOF" | "SUSPECTED_FRAUD" | "OTHER" | null;
+            /** @enum {string|null} */
+            deleteReason: "CHEATING_FORGERY" | "WRONG_REVIEW" | "PLAYER_IDENTITY_ISSUE" | "DATA_ERROR" | "ADMIN_CORRECTION" | "OTHER" | null;
+        };
+        Mark3AdminPage: {
+            items: components["schemas"]["Mark3AdminListItem"][];
+            page: number;
+            size: number;
+            /** Format: int64 */
+            totalItems: number;
+            totalPages: number;
+        };
+        Mark3AdminDetail: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            status: "PENDING" | "CURRENT" | "REJECTED" | "CANCELLED" | "DELETED";
+            /** Format: int64 */
+            vehicleId: number;
+            vehicleName: string;
+            /** @enum {string} */
+            wotbServer: "CN" | "ASIA" | "EU" | "NA";
+            /** Format: int64 */
+            wotbAccountId: number;
+            nicknameSnapshot: string;
+            claimedBattleCount: number;
+            claimedAverageDamage: number;
+            claimedWinRate: number;
+            approvedBattleCount: number | null;
+            approvedAverageDamage: number | null;
+            approvedWinRate: number | null;
+            proofScreenshots: string[];
+            replayParseOk: boolean;
+            replayGameIdMatch: boolean;
+            replayVehicleMatch: boolean;
+            replayDistinctBattles: boolean;
+            /** Format: date-time */
+            submittedAt: string;
+            /** Format: date-time */
+            approvedAt: string | null;
+            approvedBy: string | null;
+            /** Format: date-time */
+            rejectedAt: string | null;
+            rejectedBy: string | null;
+            /** @enum {string|null} */
+            rejectReason: "SCREENSHOT_MISMATCH" | "SCREENSHOT_UNREADABLE" | "INSUFFICIENT_PROOF" | "SUSPECTED_FRAUD" | "OTHER" | null;
+            rejectReasonText: string | null;
+            /** Format: date-time */
+            cancelledAt: string | null;
+            /** Format: date-time */
+            deletedAt: string | null;
+            deletedBy: string | null;
+            /** @enum {string|null} */
+            deleteReason: "CHEATING_FORGERY" | "WRONG_REVIEW" | "PLAYER_IDENTITY_ISSUE" | "DATA_ERROR" | "ADMIN_CORRECTION" | "OTHER" | null;
+            deleteReasonText: string | null;
+        };
+        Mark3ReplayEvidence: {
+            /** Format: int64 */
+            id: number;
+            slot: number;
+            originalFilename: string;
+            /** Format: int64 */
+            fileSize: number;
+            arenaId: string;
+            sha256: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        HofUploadResponse: {
+            /** @enum {string} */
+            status: "ok" | "already_recorded";
+            arenaId: string;
+        } | {
+            /** @constant */
+            status: "skipped";
+            arenaId: string;
+            /** @enum {string} */
+            reasonCode: "DUPLICATE_OR_UNKNOWN_RECORDER" | "REPLAY_HASH_CONFLICT";
+        };
         HundredCreateResult: {
             /** Format: int64 */
             id: number;
@@ -2106,11 +2616,11 @@ export interface components {
         };
         /** @enum {string} */
         HallOfFameBattleType: "RANDOM" | "RATING";
-        /** @description Public page item from /api/hof; rank is always assigned in page context. */
+        /** @description 单场记录；公开列表以外的 rank 为 null，归属仅按 accountId。 */
         HallOfFameRecord: {
             /** Format: int64 */
             id: number;
-            rank: number;
+            rank: number | null;
             /** Format: int64 */
             tankId: number;
             tankName: string;
@@ -2773,6 +3283,16 @@ export interface components {
         };
         /** @enum {string} */
         ApiErrorCode: "CREATOR_NOT_FOUND" | "CREATOR_INVALID_REQUEST" | "RECOMMENDATION_ID_ALREADY_EXISTS" | "CREATOR_UID_ALREADY_EXISTS" | "CREATOR_CATEGORY_IN_USE" | "CREATOR_LEVEL_IN_USE" | "CREATOR_CONFIG_CONFLICT" | "CREATOR_STORAGE_UNAVAILABLE" | "CREATOR_AVATAR_NOT_FOUND" | "TOURNAMENT_VERSION_CONFLICT" | "TOURNAMENT_LOCKED" | "TOURNAMENT_RULES_INCOMPLETE" | "TOURNAMENT_GROUP_CONFLICT" | "TOURNAMENT_DUPLICATE_GROUP" | "TOURNAMENT_NEW_CLAN_CONFIRMATION_REQUIRED" | "TOURNAMENT_GROUP_COUNT_MISMATCH" | "TOURNAMENT_RECOGNITION_UNAVAILABLE" | "TOURNAMENT_ALREADY_EXISTS" | "TOURNAMENT_EVIDENCE_INVALID" | "TOURNAMENT_STORAGE_FULL" | "TOURNAMENT_STORAGE_ERROR" | "TOURNAMENT_CSV_INVALID" | "TOURNAMENT_CSV_WORKSPACE_BUSY" | "BROADCAST_VERSION_CONFLICT" | "BROADCAST_NODE_CONFLICT" | "BROADCAST_COVER_INVALID" | "BROADCAST_STORAGE_UNAVAILABLE" | "BROADCAST_STORAGE_ERROR" | "INVALID_RECOGNITION_REQUEST" | "INVALID_RECOGNITION_PERMIT" | "TOURNAMENT_RECOGNITION_NOT_CONFIGURED" | "TOURNAMENT_RECOGNITION_BUSY" | "TOURNAMENT_RECOGNITION_RATE_LIMITED" | "INVALID_TOURNAMENT_IMAGE" | "INVALID_TOURNAMENT_IMAGE_DIMENSIONS" | "TOURNAMENT_IMAGE_TOO_LARGE" | "UNSUPPORTED_TOURNAMENT_IMAGE" | "AUTH_UNAUTHENTICATED" | "AUTH_FORBIDDEN" | "INVALID_ARGUMENT" | "MISSING_PARAM" | "INVALID_REQUEST" | "FILE_TOO_LARGE" | "DATASET_REFERENCE_REQUIRED" | "UNSUPPORTED_MEDIA_TYPE" | "METHOD_NOT_ALLOWED" | "RESOURCE_NOT_FOUND" | "REPLAY_BUSY" | "PROCESSING_QUEUE_FULL" | "EXPORT_QUEUE_FULL" | "AI_REVIEW_BUSY" | "AI_REQUEST_TOO_LARGE" | "INVALID_AI_REQUEST" | "UNKNOWN_LOCALE" | "INVALID_CORRELATION_ID" | "DUPLICATE_CORRELATION_ID" | "UNSUPPORTED_BATTLE_CATEGORY" | "AI_QUEUE_FULL" | "AI_RATE_LIMITED" | "AI_UPSTREAM_TIMEOUT" | "AI_UPSTREAM_UNAVAILABLE" | "AI_TIMEOUT" | "AI_CANCELLED" | "AI_NOT_CONFIGURED" | "AI_INVALID_REQUEST" | "AI_AUTHENTICATION_ERROR" | "AI_CONTEXT_TOO_LARGE" | "AI_EMPTY_RESPONSE" | "AI_RESPONSE_INVALID" | "AI_REVIEW_SCHEMA_FAILED" | "AI_REVIEW_GROUNDING_FAILED" | "AI_TIMELINE_UNUSABLE" | "AI_PROMPT_MANDATORY_SECTION_TOO_LARGE" | "JOB_NOT_FOUND" | "SOURCE_NOT_FOUND" | "SOURCE_NOT_READY" | "SOURCE_PROCESSING_FAILED" | "DATASET_UNAVAILABLE" | "INTERNAL_ERROR" | "SERVICE_UNAVAILABLE" | "UPSTREAM_UNAVAILABLE" | "UPSTREAM_TIMEOUT" | "RATE_LIMITED";
+        Mark3RejectRequest: {
+            /** @enum {string} */
+            rejectReason: "SCREENSHOT_MISMATCH" | "SCREENSHOT_UNREADABLE" | "INSUFFICIENT_PROOF" | "SUSPECTED_FRAUD" | "OTHER";
+            rejectReasonText?: string | null;
+        };
+        Mark3DeleteRequest: {
+            /** @enum {string} */
+            deleteReason: "CHEATING_FORGERY" | "WRONG_REVIEW" | "PLAYER_IDENTITY_ISSUE" | "DATA_ERROR" | "ADMIN_CORRECTION" | "OTHER";
+            deleteReasonText?: string | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -2782,6 +3302,396 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getUserHofRecords: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HallOfFameRecord"][];
+                };
+            };
+        };
+    };
+    getHofVehicleOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HofVehicleOption"][];
+                };
+            };
+        };
+    };
+    getHofAdminVehicleOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HofVehicleOption"][];
+                };
+            };
+        };
+    };
+    getHofAdminPage: {
+        parameters: {
+            query?: {
+                nickname?: string;
+                accountId?: number;
+                uploadedBy?: string;
+                battleType?: string;
+                tankId?: number;
+                nation?: string;
+                vehicleType?: string;
+                tier?: number;
+                replayAvailable?: boolean;
+                sort?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HofAdminPage"];
+                };
+            };
+        };
+    };
+    getHofAdminAudit: {
+        parameters: {
+            query?: {
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HofAdminAuditPage"];
+                };
+            };
+        };
+    };
+    uploadHofReplay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    facts: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HofUploadResponse"];
+                };
+            };
+        };
+    };
+    listMark3Leaderboard: {
+        parameters: {
+            query?: {
+                vehicleId?: number;
+                nation?: string;
+                vehicleType?: string;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3LeaderboardPage"];
+                };
+            };
+        };
+    };
+    createMark3Submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: int64 */
+                    vehicleId: number;
+                    battleCount: number;
+                    averageDamage: number;
+                    winRate: number;
+                    replays: string[];
+                    proofScreenshots: string[];
+                    facts: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3CreateResult"];
+                };
+            };
+        };
+    };
+    cancelMark3Submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3SubmissionSummary"];
+                };
+            };
+        };
+    };
+    getMark3UserStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3UserStatus"];
+                };
+            };
+        };
+    };
+    listMark3AdminSubmissions: {
+        parameters: {
+            query?: {
+                status?: string;
+                nation?: string;
+                vehicleType?: string;
+                vehicleId?: number;
+                page?: number;
+                size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3AdminPage"];
+                };
+            };
+        };
+    };
+    getMark3AdminSubmission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3AdminDetail"];
+                };
+            };
+        };
+    };
+    listMark3ReplayEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3ReplayEvidence"][];
+                };
+            };
+        };
+    };
+    approveMark3Submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3SubmissionSummary"];
+                };
+            };
+        };
+    };
+    rejectMark3Submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Mark3RejectRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3SubmissionSummary"];
+                };
+            };
+        };
+    };
+    deleteMark3Submission: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Mark3DeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Mark3SubmissionSummary"];
+                };
+            };
+        };
+    };
     listRecommendations: {
         parameters: {
             query: {

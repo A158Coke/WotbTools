@@ -1,29 +1,43 @@
 package com.wotb.web;
 
+import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.dto.DeleteUserResult;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
-import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.service.AdminUserMapper;
+import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.hof.dto.BulkDeleteItemResult;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
+import com.wotb.web.hof.dto.HofAdminAuditDto;
+import com.wotb.web.hof.dto.HofAdminAuditPageDto;
+import com.wotb.web.hof.dto.HofVehicleOptionDto;
+import com.wotb.web.hof.entity.HallOfFameRecord;
+import com.wotb.web.hof.service.HallOfFameRecordMapper;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.service.HundredBattleMapper;
+import com.wotb.web.mark3.dto.Mark3AdminPageDto;
+import com.wotb.web.mark3.dto.Mark3CreateResult;
+import com.wotb.web.mark3.dto.Mark3UserStatusDto;
+import com.wotb.web.mark3.entity.Mark3ReplayEvidence;
+import com.wotb.web.mark3.entity.Mark3Submission;
+import com.wotb.web.mark3.service.Mark3Mapper;
+import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileMapper;
-import com.wotb.web.exceptionhandler.GlobalExceptionHandler;
 import com.wotb.web.util.apierror.ApiErrorResponse;
-import com.wotb.web.replay.exception.ReplayBusyException;
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.UserRepresentation;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
-
-import java.util.List;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.OffsetDateTime;
-import org.keycloak.representations.idm.UserRepresentation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,7 +78,7 @@ class ApiContractTest {
         submission.setDeletedBy("fixture-admin");
         submission.setDeleteReason("OTHER");
         submission.setDeleteReasonText("Fixture cleanup");
-        final List<WireCase> cases = List.of(
+        final List<WireCase> cases = new ArrayList<>(List.of(
                 new WireCase("UserProfile", new UserProfileMapper().toDto(profile)),
                 new WireCase("AdminUserPage", new AdminUserPageDto(
                         List.of(admin.toListItem(keycloak, null), admin.toListItem(null, profile)), 0, 25, 2, 1)),
@@ -79,10 +93,95 @@ class ApiContractTest {
                 new WireCase("HundredAdminDetail", hundred.toAdminDetail(submission)),
                 new WireCase("BulkDeleteResult", new BulkDeleteResultDto(2, 1, 1, List.of(
                         new BulkDeleteItemResult(11L, true, null),
-                        new BulkDeleteItemResult(12L, false, "HUNDRED_NOT_CURRENT")))));
+                        new BulkDeleteItemResult(12L, false, "HUNDRED_NOT_CURRENT"))))));
+        cases.addAll(hofAndMark3Cases());
         final Path fixture = Path.of("../../contracts/http/fixtures/business-boundaries.json");
         assertThat(objectMapper.readTree(objectMapper.writeValueAsString(cases)))
                 .isEqualTo(objectMapper.readTree(Files.readString(fixture)));
+    }
+
+    private List<WireCase> hofAndMark3Cases() {
+        final OffsetDateTime submittedAt = OffsetDateTime.parse("2026-10-01T12:00:00Z");
+        final OffsetDateTime terminalAt = OffsetDateTime.parse("2026-10-02T12:00:00Z");
+        final HallOfFameRecord record = new HallOfFameRecord();
+        record.setId(21L);
+        record.setAccountId(123L);
+        record.setTankId(42L);
+        record.setTankName("Fixture tank");
+        record.setNickname("Fixture player");
+        record.setDamageDealt(6000);
+        record.setBattleType("RANDOM");
+        record.setMapName("Fixture map");
+        record.setVersion("11.0");
+        record.setBattleTime(submittedAt);
+        ReflectionTestUtils.setField(record, "createdAt", submittedAt);
+        final HallOfFameRecordMapper hof = new HallOfFameRecordMapper();
+        final Mark3Submission submission = new Mark3Submission();
+        submission.setId(31L);
+        submission.setVehicleId(42L);
+        submission.setVehicleName("Fixture tank");
+        submission.setWotbServer("CN");
+        submission.setWotbAccountId(123L);
+        submission.setNicknameSnapshot("Fixture player");
+        submission.setClaimedBattleCount(36);
+        submission.setClaimedAverageDamage(4000);
+        submission.setClaimedWinRate(new BigDecimal("75"));
+        submission.setSubmittedAt(submittedAt);
+        submission.setStatus("PENDING");
+        submission.setProofScreenshotFirst("data:image/png;base64,AAAA");
+        final Mark3Mapper mark3 = new Mark3Mapper();
+        final var pending = mark3.toSummary(submission);
+        final var pendingDetail = mark3.toAdminDetail(submission);
+        submission.setStatus("REJECTED");
+        submission.setRejectedAt(terminalAt);
+        submission.setRejectedBy("fixture-admin");
+        submission.setRejectReason("OTHER");
+        submission.setRejectReasonText("Fixture reason");
+        final var rejected = mark3.toSummary(submission);
+        submission.setRejectReason(null);
+        submission.setRejectReasonText(null);
+        submission.setRejectedAt(null);
+        submission.setRejectedBy(null);
+        submission.setStatus("CANCELLED");
+        final var cancelled = mark3.toSummary(submission);
+        submission.setStatus("CURRENT");
+        submission.setApprovedBattleCount(36);
+        submission.setApprovedAverageDamage(4000);
+        submission.setApprovedWinRate(new BigDecimal("75"));
+        submission.setApprovedAt(terminalAt);
+        submission.setApprovedBy("fixture-admin");
+        final var current = mark3.toSummary(submission);
+        final var leaderboard = mark3.toTopLeaderboardPage(List.of(submission), 10, Map.of(36, 1));
+        submission.setStatus("DELETED");
+        submission.setDeletedAt(terminalAt);
+        submission.setDeletedBy("fixture-admin");
+        submission.setDeleteReason("OTHER");
+        submission.setDeleteReasonText("Fixture cleanup");
+        final Mark3ReplayEvidence evidence = new Mark3ReplayEvidence();
+        evidence.setId(41L);
+        evidence.setSlot(1);
+        evidence.setOriginalFilename("fixture.wotbreplay");
+        evidence.setFileSize(100L);
+        evidence.setArenaId("fixture-arena");
+        evidence.setSha256("a".repeat(64));
+        evidence.setCreatedAt(submittedAt);
+        return List.of(
+                new WireCase("HallOfFameRecord", hof.toDto(record)),
+                new WireCase("HofVehicleOption", new HofVehicleOptionDto(42L, "Fixture tank", "EUROPE", "MEDIUM_TANK", 10)),
+                new WireCase("HofAdminPage", hof.toAdminPageDto(new PageImpl<>(List.of(record)), 1, 25)),
+                new WireCase("HofAdminAuditPage", new HofAdminAuditPageDto(List.of(new HofAdminAuditDto(
+                        22L, "DELETE_ENTRY", 21L, "fixture-arena", 123L, "Fixture player", 42L,
+                        "Fixture tank", 6000, "RANDOM", 1, null, "fixture-admin", null, submittedAt)), 1, 25, 1, 1)),
+                new WireCase("Mark3CreateResult", new Mark3CreateResult(31L, "PENDING")),
+                new WireCase("Mark3SubmissionSummary", pending),
+                new WireCase("Mark3SubmissionSummary", rejected),
+                new WireCase("Mark3SubmissionSummary", cancelled),
+                new WireCase("Mark3UserStatus", new Mark3UserStatusDto(List.of(current), List.of(pending), List.of(rejected))),
+                new WireCase("Mark3LeaderboardPage", leaderboard),
+                new WireCase("Mark3AdminPage", new Mark3AdminPageDto(List.of(mark3.toAdminListItem(submission)), 1, 25, 1, 1)),
+                new WireCase("Mark3AdminDetail", pendingDetail),
+                new WireCase("Mark3AdminDetail", mark3.toAdminDetail(submission)),
+                new WireCase("Mark3ReplayEvidence", mark3.toReplayEvidenceDto(evidence)));
     }
 
     private record WireCase(String schema, Object value) {}

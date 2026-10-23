@@ -2934,6 +2934,1026 @@ export default {
         }
       }
     },
+    "HofVehicleOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tankId",
+        "tankName",
+        "nation",
+        "type",
+        "tier"
+      ],
+      "properties": {
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "nation": {
+          "type": "string",
+          "enum": [
+            "CHINA",
+            "GERMANY",
+            "JAPAN",
+            "EUROPE",
+            "FRANCE",
+            "USA",
+            "USSR",
+            "UK",
+            "OTHER"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "HEAVY_TANK",
+            "MEDIUM_TANK",
+            "LIGHT_TANK",
+            "TANK_DESTROYER",
+            "OTHER"
+          ]
+        },
+        "tier": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "HofAdminRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "accountId",
+        "nickname",
+        "tankId",
+        "tankName",
+        "battleType",
+        "damageDealt",
+        "mapName",
+        "version",
+        "battleTime",
+        "createdAt",
+        "replayHash",
+        "replayFileName",
+        "replaySize",
+        "replayUploadedBy",
+        "replayAvailable"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "accountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "battleType": {
+          "$ref": "#/$defs/HallOfFameBattleType"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "mapName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "battleTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "replayHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replayFileName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replaySize": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "replayUploadedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replayAvailable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HofAdminPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HofAdminRecord"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "HofAdminAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "action",
+        "recordId",
+        "arenaId",
+        "accountId",
+        "nickname",
+        "tankId",
+        "tankName",
+        "damageDealt",
+        "battleType",
+        "arenaBonusType",
+        "replayHash",
+        "adminKeycloakUserId",
+        "adminUsername",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "DELETE_ENTRY"
+          ]
+        },
+        "recordId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "arenaId": {
+          "type": "string"
+        },
+        "accountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "tankId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "tankName": {
+          "type": "string"
+        },
+        "damageDealt": {
+          "type": "integer"
+        },
+        "battleType": {
+          "$ref": "#/$defs/HallOfFameBattleType"
+        },
+        "arenaBonusType": {
+          "type": "integer"
+        },
+        "replayHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adminKeycloakUserId": {
+          "type": "string"
+        },
+        "adminUsername": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "HofAdminAuditPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HofAdminAudit"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "Mark3CreateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING"
+          ]
+        }
+      }
+    },
+    "Mark3SubmissionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "vehicleId",
+        "vehicleName",
+        "status",
+        "claimedBattleCount",
+        "claimedAverageDamage",
+        "claimedWinRate",
+        "approvedBattleCount",
+        "approvedAverageDamage",
+        "approvedWinRate",
+        "submittedAt",
+        "approvedAt",
+        "rejectReason",
+        "rejectReasonText"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "CURRENT",
+            "REJECTED",
+            "CANCELLED",
+            "DELETED"
+          ]
+        },
+        "claimedBattleCount": {
+          "type": "integer"
+        },
+        "claimedAverageDamage": {
+          "type": "integer"
+        },
+        "claimedWinRate": {
+          "type": "number"
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedWinRate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SCREENSHOT_MISMATCH",
+            "SCREENSHOT_UNREADABLE",
+            "INSUFFICIENT_PROOF",
+            "SUSPECTED_FRAUD",
+            "OTHER",
+            null
+          ]
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Mark3UserStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current",
+        "pending",
+        "rejected"
+      ],
+      "properties": {
+        "current": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mark3SubmissionSummary"
+          }
+        },
+        "pending": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mark3SubmissionSummary"
+          }
+        },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mark3SubmissionSummary"
+          }
+        }
+      }
+    },
+    "Mark3LeaderboardItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rank",
+        "vehicleId",
+        "vehicleName",
+        "nickname",
+        "approvedBattleCount",
+        "approvedAverageDamage",
+        "approvedWinRate",
+        "approvedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "rank": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "nickname": {
+          "type": "string"
+        },
+        "approvedBattleCount": {
+          "type": "integer"
+        },
+        "approvedAverageDamage": {
+          "type": "integer"
+        },
+        "approvedWinRate": {
+          "type": "number"
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Mark3LeaderboardPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vehicleId",
+        "vehicleName",
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "vehicleId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mark3LeaderboardItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "Mark3AdminListItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "vehicleId",
+        "vehicleName",
+        "wotbServer",
+        "wotbAccountId",
+        "nicknameSnapshot",
+        "claimedBattleCount",
+        "claimedAverageDamage",
+        "claimedWinRate",
+        "approvedBattleCount",
+        "approvedAverageDamage",
+        "approvedWinRate",
+        "replayParseOk",
+        "replayGameIdMatch",
+        "replayVehicleMatch",
+        "replayDistinctBattles",
+        "submittedAt",
+        "approvedAt",
+        "rejectReason",
+        "deleteReason"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "CURRENT",
+            "REJECTED",
+            "CANCELLED",
+            "DELETED"
+          ]
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nicknameSnapshot": {
+          "type": "string"
+        },
+        "claimedBattleCount": {
+          "type": "integer"
+        },
+        "claimedAverageDamage": {
+          "type": "integer"
+        },
+        "claimedWinRate": {
+          "type": "number"
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedWinRate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "replayParseOk": {
+          "type": "boolean"
+        },
+        "replayGameIdMatch": {
+          "type": "boolean"
+        },
+        "replayVehicleMatch": {
+          "type": "boolean"
+        },
+        "replayDistinctBattles": {
+          "type": "boolean"
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SCREENSHOT_MISMATCH",
+            "SCREENSHOT_UNREADABLE",
+            "INSUFFICIENT_PROOF",
+            "SUSPECTED_FRAUD",
+            "OTHER",
+            null
+          ]
+        },
+        "deleteReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "CHEATING_FORGERY",
+            "WRONG_REVIEW",
+            "PLAYER_IDENTITY_ISSUE",
+            "DATA_ERROR",
+            "ADMIN_CORRECTION",
+            "OTHER",
+            null
+          ]
+        }
+      }
+    },
+    "Mark3AdminPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "page",
+        "size",
+        "totalItems",
+        "totalPages"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mark3AdminListItem"
+          }
+        },
+        "page": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "totalItems": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "totalPages": {
+          "type": "integer"
+        }
+      }
+    },
+    "Mark3AdminDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "vehicleId",
+        "vehicleName",
+        "wotbServer",
+        "wotbAccountId",
+        "nicknameSnapshot",
+        "claimedBattleCount",
+        "claimedAverageDamage",
+        "claimedWinRate",
+        "approvedBattleCount",
+        "approvedAverageDamage",
+        "approvedWinRate",
+        "proofScreenshots",
+        "replayParseOk",
+        "replayGameIdMatch",
+        "replayVehicleMatch",
+        "replayDistinctBattles",
+        "submittedAt",
+        "approvedAt",
+        "approvedBy",
+        "rejectedAt",
+        "rejectedBy",
+        "rejectReason",
+        "rejectReasonText",
+        "cancelledAt",
+        "deletedAt",
+        "deletedBy",
+        "deleteReason",
+        "deleteReasonText"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "CURRENT",
+            "REJECTED",
+            "CANCELLED",
+            "DELETED"
+          ]
+        },
+        "vehicleId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "vehicleName": {
+          "type": "string"
+        },
+        "wotbServer": {
+          "type": "string",
+          "enum": [
+            "CN",
+            "ASIA",
+            "EU",
+            "NA"
+          ]
+        },
+        "wotbAccountId": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "nicknameSnapshot": {
+          "type": "string"
+        },
+        "claimedBattleCount": {
+          "type": "integer"
+        },
+        "claimedAverageDamage": {
+          "type": "integer"
+        },
+        "claimedWinRate": {
+          "type": "number"
+        },
+        "approvedBattleCount": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedAverageDamage": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "approvedWinRate": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "proofScreenshots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "replayParseOk": {
+          "type": "boolean"
+        },
+        "replayGameIdMatch": {
+          "type": "boolean"
+        },
+        "replayVehicleMatch": {
+          "type": "boolean"
+        },
+        "replayDistinctBattles": {
+          "type": "boolean"
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approvedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approvedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "rejectedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rejectReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "SCREENSHOT_MISMATCH",
+            "SCREENSHOT_UNREADABLE",
+            "INSUFFICIENT_PROOF",
+            "SUSPECTED_FRAUD",
+            "OTHER",
+            null
+          ]
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cancelledAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deletedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "deletedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleteReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "CHEATING_FORGERY",
+            "WRONG_REVIEW",
+            "PLAYER_IDENTITY_ISSUE",
+            "DATA_ERROR",
+            "ADMIN_CORRECTION",
+            "OTHER",
+            null
+          ]
+        },
+        "deleteReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Mark3ReplayEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "slot",
+        "originalFilename",
+        "fileSize",
+        "arenaId",
+        "sha256",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "originalFilename": {
+          "type": "string"
+        },
+        "fileSize": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "arenaId": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "HofUploadResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "arenaId"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "ok",
+                "already_recorded"
+              ]
+            },
+            "arenaId": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "arenaId",
+            "reasonCode"
+          ],
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "skipped"
+            },
+            "arenaId": {
+              "type": "string"
+            },
+            "reasonCode": {
+              "type": "string",
+              "enum": [
+                "DUPLICATE_OR_UNKNOWN_RECORDER",
+                "REPLAY_HASH_CONFLICT"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "HundredCreateResult": {
       "type": "object",
       "additionalProperties": false,
@@ -3165,7 +4185,7 @@ export default {
     },
     "HallOfFameRecord": {
       "type": "object",
-      "description": "Public page item from /api/hof; rank is always assigned in page context.",
+      "description": "单场记录；公开列表以外的 rank 为 null，归属仅按 accountId。",
       "additionalProperties": false,
       "required": [
         "id",
@@ -3187,7 +4207,10 @@ export default {
           "format": "int64"
         },
         "rank": {
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "tankId": {
           "type": "integer",
@@ -6334,6 +7357,57 @@ export default {
         "UPSTREAM_TIMEOUT",
         "RATE_LIMITED"
       ]
+    },
+    "Mark3RejectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rejectReason"
+      ],
+      "properties": {
+        "rejectReason": {
+          "type": "string",
+          "enum": [
+            "SCREENSHOT_MISMATCH",
+            "SCREENSHOT_UNREADABLE",
+            "INSUFFICIENT_PROOF",
+            "SUSPECTED_FRAUD",
+            "OTHER"
+          ]
+        },
+        "rejectReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Mark3DeleteRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deleteReason"
+      ],
+      "properties": {
+        "deleteReason": {
+          "type": "string",
+          "enum": [
+            "CHEATING_FORGERY",
+            "WRONG_REVIEW",
+            "PLAYER_IDENTITY_ISSUE",
+            "DATA_ERROR",
+            "ADMIN_CORRECTION",
+            "OTHER"
+          ]
+        },
+        "deleteReasonText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 } as const

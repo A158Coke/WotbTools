@@ -105,7 +105,6 @@ vi.mock('../api/user-profile.js', () => ({
   syncUserWotbAccountFromLogin: () => userApi.syncUserWotbAccountFromLogin(),
   updateUserWotbAccount: (...args) => userApi.updateUserWotbAccount(...args),
   deleteUserWotbAccount: (...args) => userApi.deleteUserWotbAccount(...args),
-  getUserHofRecords: (...args) => userApi.getUserHofRecords(...args),
   verifyUserWotbAccountFromReplay: (...args) => userApi.verifyUserWotbAccountFromReplay(...args)
 }))
 
@@ -124,6 +123,7 @@ const hundredApi = vi.hoisted(() => ({
 }))
 
 vi.mock('../api/hall-of-fame.js', () => ({
+  getUserHofRecords: (...args) => userApi.getUserHofRecords(...args),
   hofHundredMyStatus: hundredApi.hofHundredMyStatus,
   hofHundredCancel: hundredApi.hofHundredCancel
 }))
