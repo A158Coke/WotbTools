@@ -118,3 +118,33 @@ describe('creator directory transport', () => {
     vi.stubEnv('MODE', 'android'); expect(recommendationImageUrl('/api/creators/avatars/id')).toBe('https://wotbtools.com/api/creators/avatars/id')
   })
 })
+
+describe('creators JSON decode failures', () => {
+  const reads = [['health', (signal?: AbortSignal) => getCreatorAvailability(signal)], ['json', (signal?: AbortSignal) => getRecommendationDetail(1, 'UP', signal)], ['list', (signal?: AbortSignal) => listRecommendations('UP', null, signal)]] as const
+  it.each(reads)('normalizes malformed %s JSON without exposing the body', async (_, read) => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(new Response('{private malformed body'))
+    await expect(read()).rejects.toMatchObject({ name: 'ApiError', errorCode: 'INVALID_RESPONSE', retryable: false, errorMsg: null, details: {} })
+  })
+  it.each(reads)('preserves %s body cancellation and transport failures', async (_, read) => {
+    const signal = new AbortController().signal
+    for (const error of [new DOMException('aborted', 'AbortError'), new TypeError('body stream failed')]) {
+      const response = new Response()
+      vi.spyOn(response, 'json').mockRejectedValueOnce(error)
+      vi.mocked(apiFetch).mockResolvedValueOnce(response)
+      await expect(read(signal)).rejects.toBe(error)
+      expect(vi.mocked(apiFetch)).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ signal }))
+    }
+  })
+})
+
+
+describe('creator valid response decoding', () => {
+  it('keeps optional health capabilities and empty recommendations', async () => {
+    for (const [health, supported] of [[{ status: 'UP', tanks: 0 }, false], [{ status: 'UP', tanks: 0, capabilities: ['recommendations-v1'] }, true]] as const) {
+      vi.mocked(apiFetch).mockResolvedValueOnce(new Response(JSON.stringify(health)))
+      await expect(getCreatorAvailability()).resolves.toEqual({ supported })
+    }
+    vi.mocked(apiFetch).mockResolvedValueOnce(new Response('[]'))
+    await expect(listRecommendations('UP', null)).resolves.toEqual([])
+  })
+})
