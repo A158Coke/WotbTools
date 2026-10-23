@@ -17,6 +17,14 @@ if (!validate(fixture)) {
 }
 console.log('Playback V2 contract fixture: OK')
 
+// 同一固定样本由 ApiContractTest 与真实 Java DTO/mapper 序列化结果逐字段比较。
+const businessBoundaries = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/business-boundaries.json', import.meta.url), 'utf8'))
+for (const { schema, value } of businessBoundaries) {
+  const check = ajv.compile(document.components.schemas[schema])
+  if (!check(value)) throw new Error(`${schema}: ${JSON.stringify(check.errors, null, 2)}`)
+}
+console.log('Business boundary producer serialization fixtures: OK')
+
 for (const [name, schema] of [
   ['recommendation-card', 'RecommendationCard'],
   ['recommendation-detail', 'RecommendationDetail'],
