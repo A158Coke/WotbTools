@@ -2,7 +2,7 @@
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
 import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
-import { penetrationChance } from './armorInspectorChance.js'
+import { penetrationChance, resolveCardChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
   return {
@@ -774,5 +774,80 @@ describe('matchHitsByOccurrence（同名装甲板按命中次序匹配）', () =
     expect(matched[0]).toBe(hits[0])
     expect(matched[1]).toBe(hits[2])
     expect(matched[2]).toBe(hits[3])
+  })
+})
+
+describe('require_primary（射击复现无主装甲链门禁）', () => {
+  const track = [hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0])]
+
+  it('纯外部模块：默认仍按 BlitzKit 末层给 PEN；射击复现门禁为 BLOCKED/0 伤', () => {
+    const base = calculate(req('ap', 100.0, 100.0, track))
+    expect(base.result).toBe('PENETRATION')
+    expect(base.damage).toBe(400.0)
+    expect(base.blocked_no_primary).toBe(false)
+    const gated = calculate(req('ap', 100.0, 100.0, track, { require_primary: true }))
+    expect(gated.result).toBe('BLOCKED')
+    expect(gated.damage).toBe(0)
+    expect(gated.blocked_no_primary).toBe(true)
+    expect(gated.layers).toHaveLength(1)
+    // 卡片不能用概率链把 BLOCKED/0 回填成「可能击穿 + 满伤」。
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.73, allowChance: false,
+    })).toEqual({ chance: 0, unavailable: true })
+  })
+
+  it('无主装甲阻断覆盖原结果已 BLOCKED 的临界厚度（99/100/101mm）', () => {
+    for (const thickness of [99, 100, 101]) {
+      const r = calculate(req('ap', 100, 100, [hit(ArmorSection.SPACED, thickness, [0, 0, 0])], {
+        require_primary: true,
+      }))
+      expect(r.blocked_no_primary, `spaced ${thickness}mm`).toBe(true)
+      expect(r.result).toBe('BLOCKED')
+      expect(r.damage).toBe(0)
+    }
+  })
+
+  it('纯间隙甲：同样被门禁拦下；有主装甲的链不受影响', () => {
+    const spaced = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])], { require_primary: true }))
+    expect(spaced.result).toBe('BLOCKED')
+    expect(spaced.damage).toBe(0)
+    expect(spaced.blocked_no_primary).toBe(true)
+
+    const withPrimary = calculate(req('ap', 200.0, 100.0, [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0.6, 0]),
+    ], { require_primary: true }))
+    expect(withPrimary.result).toBe('PENETRATION')
+    expect(withPrimary.damage).toBe(400.0)
+    expect(withPrimary.blocked_no_primary).toBe(false)
+  })
+
+  it('间隙甲跳弹保留 RICOCHET（门禁只拦“无主装甲的击穿”）', () => {
+    const a = 75 * Math.PI / 180
+    const h = hit(ArmorSection.SPACED, 100.0, [0, 0, 0], {
+      normal: [0.0, Math.cos(a), Math.sin(a)],
+    })
+    const r = calculate(req('ap', 300.0, 100.0, [h], { require_primary: true }))
+    expect(r.result).toBe('RICOCHET')
+    expect(r.blocked_no_primary).toBe(false)
+  })
+
+  it('HE 不受门禁影响（溅射仍按 800 射线/单射线语义）', () => {
+    const r = calculate(req('he', 80.0, 100.0, track, {
+      require_primary: true,
+      damage: 400.0,
+      explosion_radius: 3.0,
+    }))
+    expect(r.result).not.toBe('BLOCKED')
+    expect(r.blocked_no_primary).toBe(false)
+  })
+
+  it('0mm Primary 是合法主装甲，不触发门禁', () => {
+    const r = calculate(req('ap', 100.0, 100.0, [hit(ArmorSection.HULL, 0.0, [0, 0, 0])], {
+      require_primary: true,
+    }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.blocked_no_primary).toBe(false)
   })
 })

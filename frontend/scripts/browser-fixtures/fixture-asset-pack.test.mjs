@@ -9,7 +9,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import {
     FIXTURE_ARMOR_GLB, FIXTURE_ORIGINS, FIXTURE_TANK_CACHE, FIXTURE_TANK_DATA, FIXTURE_TANK_ID,
-    FIXTURE_VISUAL_GLB, startFixtureAssetPack,
+    FIXTURE_TURRETLESS_ARMOR_GLB, FIXTURE_TURRETLESS_TANK_DATA, FIXTURE_TURRETLESS_TANK_ID,
+    FIXTURE_TURRETLESS_VISUAL_GLB, FIXTURE_VISUAL_GLB, startFixtureAssetPack,
 } from './fixture-asset-pack.mjs'
 
 const load = async (buf) => {
@@ -143,6 +144,76 @@ describe('夹具 tank JSON / 名册契约', () => {
         expect(FIXTURE_TANK_DATA.visual_model_url).toBe(`/glb/${FIXTURE_TANK_ID}/visual.glb`)
         expect(FIXTURE_TANK_DATA.visual_model_url).toMatch(/\/glb\/\d+\//)
         expect(FIXTURE_TANK_CACHE[FIXTURE_TANK_ID].name).toBe(FIXTURE_TANK_DATA.name)
+    })
+})
+
+describe('固定战斗室夹具（无 turret_NN）', () => {
+    it('视觉模型没有炮塔节点，炮管组仍可被 aimPartAt / collectConfigNodes 识别', async () => {
+        const gltf = await load(FIXTURE_TURRETLESS_VISUAL_GLB)
+        const nodes = []
+        gltf.scene.traverse((n) => nodes.push(n))
+        expect(nodes.some((n) => /^turret_\d+$/.test(n.name || ''))).toBe(false)
+        expect(nodes.filter((n) => /^gun_\d+$/.test(n.name || '')).length).toBe(1)
+        const barrel = nodes.find((n) => n.isMesh && /^gun_\d+$/.test(n.parent?.name || ''))
+        expect(barrel).toBeTruthy()
+    })
+
+    it('装甲模型只有 hull/gun 板，装配数学与视觉模型一致', async () => {
+        const armor = await load(FIXTURE_TURRETLESS_ARMOR_GLB)
+        const visual = await load(FIXTURE_TURRETLESS_VISUAL_GLB)
+        const find = (gltf, name) => {
+            let found = null
+            gltf.scene.traverse((n) => { if (n.isMesh && n.name === name) found = n })
+            return found
+        }
+        const armorNames = []
+        armor.scene.traverse((n) => { if (n.isMesh) armorNames.push(n.name) })
+        expect(armorNames.sort()).toEqual(['gun_01_armor_1', 'hull_armor_1'])
+
+        const track = new THREE.Vector3(...FIXTURE_ORIGINS.track)
+        const tPivot = new THREE.Vector3(...FIXTURE_ORIGINS.turret)
+        const gPivot = track.clone().add(tPivot).add(new THREE.Vector3(...FIXTURE_TURRETLESS_TANK_DATA.configs[0].gun_origin))
+        expect(meshBoxCenter(find(armor, 'hull_armor_1')).add(track)
+            .distanceTo(meshBoxCenter(find(visual, 'hull_mesh')))).toBeLessThan(0.2)
+        expect(meshBoxCenter(find(armor, 'gun_01_armor_1')).add(gPivot)
+            .distanceTo(meshBoxCenter(find(visual, 'gun_01_mesh')))).toBeLessThan(0.2)
+    })
+
+    it('tank JSON 无炮塔装甲、yaw 限位与炮管厚度齐全', () => {
+        const cfg = FIXTURE_TURRETLESS_TANK_DATA.configs[0]
+        expect(FIXTURE_TURRETLESS_TANK_DATA.model_origins).toEqual(FIXTURE_ORIGINS)
+        expect(FIXTURE_TURRETLESS_TANK_DATA.armor_model.turret.plates).toEqual({})
+        expect(cfg.turret_plates).toEqual({})
+        expect(cfg.turret_spaced).toEqual([])
+        expect(cfg.yaw_limits).toEqual({ min: -10, max: 10 })
+        expect(cfg.gun_origin).toEqual([0, 0, 0.7])
+        expect(cfg.gun_thickness).toBeGreaterThan(0)
+        expect(FIXTURE_TURRETLESS_TANK_DATA.armor_model.gun.plates.gun).toBeGreaterThan(0)
+    })
+
+    it('服务器 variant 路由返回固定战斗室 tank JSON 与 GLB', async () => {
+        const pack = await startFixtureAssetPack({
+            variant: 'turretless',
+            tankCache: {
+                [FIXTURE_TURRETLESS_TANK_ID]: {
+                    id: FIXTURE_TURRETLESS_TANK_ID, name: 'Fixture Casemate TD',
+                    tier: 8, nation: 'ussr', type: 'AT-SPG',
+                },
+            },
+        })
+        try {
+            const tank = await (await fetch(`${pack.origin}/tank/${FIXTURE_TURRETLESS_TANK_ID}.json`)).json()
+            expect(tank.name).toBe('Fixture Casemate TD')
+            expect(tank.configs[0].yaw_limits).toEqual({ min: -10, max: 10 })
+            const visual = await load(Buffer.from(
+                await (await fetch(`${pack.origin}/glb/${FIXTURE_TURRETLESS_TANK_ID}/visual.glb`)).arrayBuffer()))
+            const names = []
+            visual.scene.traverse((n) => names.push(n.name || ''))
+            expect(names.some((n) => /^turret_\d+$/.test(n))).toBe(false)
+            expect(names.some((n) => /^gun_\d+$/.test(n))).toBe(true)
+        } finally {
+            await pack.close()
+        }
     })
 })
 
