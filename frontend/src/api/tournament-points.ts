@@ -112,7 +112,8 @@ export const saveTournamentDefaultConfiguration = (value: Schemas['TournamentDef
 export const createTournament = (value: Schemas['TournamentCreateRequest'], signal?: AbortSignal) => json(base, 'TournamentConfig', true, body('POST', value, signal))
 export const updateTournament = (id: number, value: Schemas['TournamentUpdateRequest'], signal?: AbortSignal) => json(eventPath(id), 'TournamentConfig', true, body('PUT', value, signal))
 export const saveTournamentRules = (id: number, round: number, value: TournamentRuleRequest, signal?: AbortSignal) => json(`${eventPath(id)}/rounds/${round}`, 'TournamentConfig', true, body('PUT', value, signal))
-export const getTournamentDay = (id: number, round: number, day: number, signal?: AbortSignal) => json(dayPath(id, round, day), 'TournamentDayView', true, { signal })
+export const getTournamentDay = (id: number, round: number, day: number, signal?: AbortSignal, includeCanonicalStandings = false) =>
+  json(`${dayPath(id, round, day)}${includeCanonicalStandings ? '?includeCanonicalStandings=true' : ''}`, 'TournamentDayView', true, { signal })
 export const setTournamentExpectedGroups = (id: number, round: number, day: number, value: Schemas['TournamentExpectedGroupsRequest'], signal?: AbortSignal) => json(`${dayPath(id, round, day)}/expected-groups`, 'TournamentDayView', true, body('PUT', value, signal))
 export const previewTournamentDay = (id: number, round: number, day: number, value: TournamentDraftRequest, signal?: AbortSignal) => json(`${dayPath(id, round, day)}/preview`, 'TournamentDayView', true, body('POST', value, signal))
 export const saveTournamentDraft = (id: number, round: number, day: number, value: TournamentDraftRequest, signal?: AbortSignal) => json(`${dayPath(id, round, day)}/draft`, 'TournamentDayView', true, body('PUT', value, signal))
