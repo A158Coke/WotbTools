@@ -66,7 +66,8 @@ const producerCases = JSON.parse(readFileSync(new URL('../../../contracts/http/f
 function producer(schema: string) {
   return structuredClone(producerCases.find(entry => entry.schema === schema)!.value)
 }
-const personalRecord = producer('HallOfFameRecord')
+const personalRecord = producer('PersonalHallOfFameRecord')
+const personalRecordWithNoRank = { ...personalRecord, rank: null }
 const vehicleOption = producer('HofVehicleOption')
 const mark3Summary = producer('Mark3SubmissionSummary')
 const mark3Detail = producer('Mark3AdminDetail')
@@ -166,6 +167,16 @@ describe('authenticated HoF API requests (real hall-of-fame.ts, fetch mocked)', 
       expect(auth.ensureToken).toHaveBeenCalledWith(30)
       expect(options?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
     }
+  })
+
+  it('rejects a public HoF record with null rank', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, { ...page, items: [personalRecordWithNoRank] }))
+    await expect(hof.hofList()).rejects.toMatchObject({ code: 'INVALID_RESPONSE', retryable: false })
+  })
+
+  it('accepts a personal HoF record with null rank', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, [personalRecordWithNoRank]))
+    await expect(hof.getUserHofRecords()).resolves.toEqual([personalRecordWithNoRank])
   })
 
   it.each(hardened)('$name accepts canonical and optional/null payloads unchanged', async ({ name, args, valid, nullable }) => {

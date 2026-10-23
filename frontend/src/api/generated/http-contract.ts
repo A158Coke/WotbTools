@@ -2616,11 +2616,30 @@ export interface components {
         };
         /** @enum {string} */
         HallOfFameBattleType: "RANDOM" | "RATING";
-        /** @description 单场记录；公开列表以外的 rank 为 null，归属仅按 accountId。 */
+        /** @description 公开单场榜单记录；rank 为分页筛选上下文中的正整数排名。 */
         HallOfFameRecord: {
             /** Format: int64 */
             id: number;
-            rank: number | null;
+            rank: number;
+            /** Format: int64 */
+            tankId: number;
+            tankName: string;
+            nickname: string;
+            damageDealt: number;
+            battleType: components["schemas"]["HallOfFameBattleType"];
+            mapName: string | null;
+            version: string | null;
+            /** Format: date-time */
+            battleTime: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            replayAvailable: boolean;
+        };
+        /** @description 个人单场记录；rank 不适用于个人记录并固定为 null，归属仅按 accountId。 */
+        PersonalHallOfFameRecord: {
+            /** Format: int64 */
+            id: number;
+            rank: null;
             /** Format: int64 */
             tankId: number;
             tankName: string;
@@ -3317,7 +3336,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HallOfFameRecord"][];
+                    "application/json": components["schemas"]["PersonalHallOfFameRecord"][];
                 };
             };
         };

@@ -65,7 +65,7 @@ for (const name of ['TournamentEvent', 'TournamentConfig', 'TournamentStandings'
   'TournamentHistoricalPreview', 'TournamentHistoricalPreviewRequest', 'TournamentHistoricalState',
   'TournamentCsvImportPreview', 'TournamentDataSource',
   'OnboardingReceipt', 'SaveOnboardingReceipt',
-  'HallOfFamePage', 'HallOfFameRecord',
+  'HallOfFamePage', 'HallOfFameRecord', 'PersonalHallOfFameRecord',
   'HofVehicleOption', 'HofAdminPage', 'HofAdminAuditPage', 'Mark3CreateResult', 'Mark3SubmissionSummary', 'Mark3UserStatus', 'Mark3LeaderboardPage', 'Mark3AdminPage', 'Mark3AdminDetail', 'Mark3ReplayEvidence', 'HofUploadResponse',
   'UserProfile', 'AdminUserPage', 'AdminUserDetail', 'DeleteUsersResponse',
   'HundredLeaderboardPage', 'HundredCreateResult', 'HundredSubmissionSummary', 'HundredUserStatus',
