@@ -43,6 +43,15 @@ function requireOnline() {
   }
 }
 
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+    throw error
+  }
+}
+
 async function request<T>(path: string, admin: boolean, options: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
   requireOnline()
   const auth = useAuth(), epoch = auth.authEpoch()
@@ -60,7 +69,7 @@ async function request<T>(path: string, admin: boolean, options: RequestInit, re
 }
 
 function json<K extends keyof Schemas>(path: string, schema: K, admin = false, options: RequestInit = {}): Promise<Schemas[K]> {
-  return request(path, admin, options, async response => validateBroadcast(schema, await response.json()))
+  return request(path, admin, options, async response => validateBroadcast(schema, await readJson(response)))
 }
 function body(method: string, value: unknown, signal?: AbortSignal): RequestInit {
   return { method, body: JSON.stringify(value), headers: { 'Content-Type': 'application/json' }, signal }
@@ -68,7 +77,7 @@ function body(method: string, value: unknown, signal?: AbortSignal): RequestInit
 
 function timedCategory(path: string, admin = false, options: RequestInit = {}): Promise<BroadcastCategoryView> {
   return request(path, admin, options, async response => {
-    const value = validateBroadcast('BroadcastTimedCategoryView', await response.json())
+    const value = validateBroadcast('BroadcastTimedCategoryView', await readJson(response))
     const starts = new Map(value.replayStarts.map(replay => [replay.replayId, replay.startsAt]))
     return { ...value.data, defaultTimeZone: value.defaultTimeZone,
       nodes: value.data.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: starts.get(replay.id) ?? null })) })) }
@@ -77,7 +86,7 @@ function timedCategory(path: string, admin = false, options: RequestInit = {}): 
 
 export const listBroadcasts = (server?: BroadcastServer, signal?: AbortSignal) => json(server ? `?server=${server}` : '', 'BroadcastIndex', false, { signal })
 export const getBroadcastSeasonContents = (id: number, signal?: AbortSignal): Promise<BroadcastSeasonContents> => request(`/seasons/${id}/contents`, false, { signal }, async response => {
-  const value = validateBroadcast('BroadcastSeasonContents', await response.json())
+  const value = validateBroadcast('BroadcastSeasonContents', await readJson(response))
   const starts = new Map(value.replayStarts.map(replay => [replay.replayId, replay.startsAt]))
   return { ...value, nodes: value.nodes.map(node => ({ ...node, replays: node.replays.map(replay => ({ ...replay, startsAt: starts.get(replay.id) ?? null })) })) }
 })
