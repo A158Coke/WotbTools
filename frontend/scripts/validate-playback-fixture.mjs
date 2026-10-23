@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import SwaggerParser from '@apidevtools/swagger-parser'
-import { broadcastCategoryViewValidator } from '../src/api/generated/contract-validators.js'
+import { broadcastSeasonContentsValidator, broadcastTimedCategoryViewValidator, broadcastTimedReplaySaveValidator } from '../src/api/generated/contract-validators.js'
 
 const openapiPath = fileURLToPath(new URL('../../contracts/http/openapi.yaml', import.meta.url))
 const fixturePath = fileURLToPath(new URL('../../contracts/http/fixtures/battle-playback-v2.json', import.meta.url))
@@ -18,10 +18,6 @@ if (!validate(fixture)) {
 console.log('Playback V2 contract fixture: OK')
 
 for (const [name, schema] of [
-  ['creator-card', 'CreatorCard'],
-  ['creator-detail', 'CreatorDetail'],
-  ['creator-save-request', 'CreatorSaveRequest'],
-  ['creator-metadata', 'CreatorMetadata'],
   ['recommendation-card', 'RecommendationCard'],
   ['recommendation-detail', 'RecommendationDetail'],
   ['recommendation-save-request', 'RecommendationSaveRequest'],
@@ -41,44 +37,68 @@ for (const override of invalidRecommendations) {
 }
 console.log('Recommendation request boundary fixtures: OK')
 
-const broadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-category.json', import.meta.url), 'utf8'))
-if (!broadcastCategoryViewValidator(broadcast)) {
-  throw new Error(JSON.stringify(broadcastCategoryViewValidator.errors, null, 2))
-}
-// These are independent business dimensions: days and points-group numbers must
-// not inherit the bounds on round numbers or knockout group numbers.
+const seasonContents = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-season-contents.json', import.meta.url), 'utf8'))
+if (!broadcastSeasonContentsValidator(seasonContents)) throw new Error(JSON.stringify(broadcastSeasonContentsValidator.errors, null, 2))
 for (const mutate of [
-  value => { delete value.season.startDate },
-  value => { value.season.server = 'UNKNOWN' },
-  value => { value.nodes[0].roundNumber = 6 },
-  value => { value.nodes[0].replays[0].dayNumber = 0 },
-  value => { value.nodes[0].replays[0].groupNumber = 0 },
-  value => { value.nodes[0].replays[0].groupNumber = 1.5 },
-  value => { value.nodes[0].replays[0].groupNumber = 2147483648 },
-  value => { value.nodes[0].replays[0].groupLabel = 'Group A' },
-  value => { value.nodes[0].replays[0].matchDate = '2026-02-30' },
-  value => { value.nodes[0].replays[0].teams.push('Fifth team') },
+  value => { delete value.categories },
+  value => { delete value.nodes },
+  value => { value.defaultTimeZone = 'UNKNOWN' },
+  value => { value.categories[0].type = 'UNKNOWN' },
+  value => { delete value.nodes[0].categoryId },
+  value => { value.replayStarts[0].startsAt = null },
+  value => { value.extra = true },
 ]) {
-  const invalid = structuredClone(broadcast)
+  const invalid = structuredClone(seasonContents)
   mutate(invalid)
-  if (broadcastCategoryViewValidator(invalid)) throw new Error('Invalid broadcast fixture unexpectedly accepted')
+  if (broadcastSeasonContentsValidator(invalid)) throw new Error('Invalid broadcast season contents accepted')
 }
-console.log('Broadcast directory contract fixture and boundary cases: OK')
+console.log('Broadcast season contents fixture and closed-field boundaries: OK')
 
-// Frozen v1 wire remains closed: extra translated fields would break installed APKs.
-const legacyBroadcastCategoryViewValidator = ajv.compile(document.components.schemas.LegacyBroadcastCategoryView)
-const legacyBroadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-category-v1.json', import.meta.url), 'utf8'))
-if (!legacyBroadcastCategoryViewValidator(legacyBroadcast)) {
-  throw new Error(JSON.stringify(legacyBroadcastCategoryViewValidator.errors, null, 2))
-}
+const timedBroadcast = JSON.parse(await readFile(new URL('../../contracts/http/fixtures/broadcast-timed-category.json', import.meta.url), 'utf8'))
+const validateTimed = broadcastTimedCategoryViewValidator
+if (!validateTimed(timedBroadcast)) throw new Error(JSON.stringify(validateTimed.errors, null, 2))
+const noGroup = structuredClone(timedBroadcast)
+noGroup.data.nodes[0].replays[0].groupNumber = null
+if (!validateTimed(noGroup)) throw new Error('Optional broadcast group rejected')
+// Days and points groups are independent of round and knockout group bounds.
 for (const mutate of [
-  value => { value.season.nameZh = '新增字段' },
-  value => { delete value.season.name },
-  value => { delete value.nodes[0].replays[0].groupLabel },
-  value => { value.nodes[0].replays[0].groupNumber = 5 },
+  value => { delete value.data.season.startDate },
+  value => { value.data.season.server = 'UNKNOWN' },
+  value => { value.data.season.name = 'Legacy name' },
+  value => { value.data.nodes[0].roundNumber = 6 },
+  value => { value.data.nodes[0].replays[0].dayNumber = 0 },
+  value => { delete value.data.nodes[0].replays[0].groupNumber },
+  value => { value.data.nodes[0].replays[0].groupNumber = 0 },
+  value => { value.data.nodes[0].replays[0].groupNumber = 1.5 },
+  value => { value.data.nodes[0].replays[0].groupNumber = 2147483648 },
+  value => { value.data.nodes[0].replays[0].groupLabel = 'Group A' },
+  value => { value.data.nodes[0].replays[0].matchDate = '2026-02-30' },
+  value => { value.data.nodes[0].replays[0].teams.push('Fifth team') },
+  value => { delete value.defaultTimeZone },
+  value => { value.defaultTimeZone = 'US/Pacific' },
+  value => { value.replayStarts[0].startsAt = null },
+  value => { value.replayStarts[0].startsAt = '2026-10-16' },
+  value => { value.data.nodes[0].replays[0].startsAt = '2026-10-16T16:00:00Z' },
 ]) {
-  const invalid = structuredClone(legacyBroadcast)
+  const invalid = structuredClone(timedBroadcast)
   mutate(invalid)
-  if (legacyBroadcastCategoryViewValidator(invalid)) throw new Error('Legacy APK shape unexpectedly changed')
+  if (validateTimed(invalid)) throw new Error('Invalid timed broadcast fixture unexpectedly accepted')
 }
-console.log('Legacy broadcast APK wire fixture and closed-field boundaries: OK')
+const { id, nodeId, coverId, ...replaySave } = timedBroadcast.data.nodes[0].replays[0]
+const timedSave = { replay: { ...replaySave, expectedVersion: 3, coverAction: 'KEEP', groupNumber: null }, startsAt: null }
+const validateTimedSave = broadcastTimedReplaySaveValidator
+if (!validateTimedSave(timedSave)) throw new Error(JSON.stringify(validateTimedSave.errors, null, 2))
+if (!validateTimedSave({ ...timedSave, startsAt: '2026-10-16T16:00:00Z' })) throw new Error('Known start instant rejected')
+for (const invalid of [
+  { replay: timedSave.replay },
+  { ...timedSave, startsAt: '2026-10-16' },
+  { ...timedSave, replay: null },
+  { ...timedSave, replay: { ...timedSave.replay, groupNumber: 0 } },
+  { ...timedSave, replay: { ...timedSave.replay, groupNumber: 1.5 } },
+  { ...timedSave, replay: { ...timedSave.replay, groupNumber: 2147483648 } },
+  { ...timedSave, replay: { ...timedSave.replay, groupLabel: 'Group A' } },
+  timedSave.replay,
+]) {
+  if (validateTimedSave(invalid)) throw new Error('Invalid timed save accepted')
+}
+console.log('Broadcast contract envelope, nested business boundaries, optional groups and explicit time precision: OK')

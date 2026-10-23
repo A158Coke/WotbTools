@@ -85,6 +85,43 @@ it('loads generated validators as native ESM and enforces Unicode tag lengths', 
     .toContain('native-esm validators OK')
 })
 
+describe('observability event wire contract', () => {
+  const eventId = '00000000-0000-4000-8000-000000000001'
+  const occurredAt = '2026-10-20T00:00:00Z'
+  const androidClick = {
+    event_id: eventId, event: 'android_download_click', platform: 'web',
+    feature: 'android_download', occurred_at: occurredAt,
+  }
+  const ajv = new Ajv2020({ strict: false })
+  addFormats(ajv)
+  const validate = ajv.compile({
+    $schema: contractSchema.$schema, $defs: contractSchema.$defs, $ref: '#/$defs/ObservabilityEvent',
+  })
+
+  it('accepts the exact Android download click tuple', () => {
+    expect(validate(androidClick)).toBe(true)
+  })
+
+  it.each([
+    ['android platform', { ...androidClick, platform: 'android' }],
+    ['generic feature', { ...androidClick, feature: 'home' }],
+    ['operation_id', { ...androidClick, operation_id: eventId }],
+    ['outcome', { ...androidClick, outcome: 'start' }],
+    ['error_code', { ...androidClick, error_code: 'PARSE_FAILED' }],
+    ['error_id', { ...androidClick, error_id: eventId }],
+  ])('rejects %s for android_download_click', (_label, invalid) => {
+    expect(validate(invalid)).toBe(false)
+  })
+
+  it('keeps generic and replay-parse telemetry valid', () => {
+    expect(validate({ ...androidClick, event: 'feature_open', feature: 'home' })).toBe(true)
+    expect(validate({
+      ...androidClick, event: 'replay_parse', feature: 'replay_parse',
+      operation_id: eventId, outcome: 'start',
+    })).toBe(true)
+  })
+})
+
 function dataset(confidence = 'HIGH') {
   return {
     durationSec: 60,

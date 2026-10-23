@@ -1,6 +1,8 @@
 package com.wotb.ai;
 
-import com.wotb.web.replay.ai.gateway.AiChatGateway;
+import com.wotb.ai.gateway.AiChatGateway;
+import com.wotb.ai.review.controller.AiReviewSubmissionController;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,13 +29,13 @@ class AiServiceStartupTest {
 
     @Test
     void bootsWithoutDatabaseObjectStorageOrProviderKey() {
-        assertNotNull(context.getBean(AiReviewController.class));
+        assertNotNull(context.getBean(AiReviewSubmissionController.class));
         assertNotNull(context.getBean(AiChatGateway.class));
         assertFalse(context.getBean(AiChatGateway.class).isConfigured());
         assertNull(context.getBeanProvider(DataSource.class).getIfAvailable());
         assertTrue(context.getBean("requestMappingHandlerMapping", RequestMappingHandlerMapping.class)
                 .getHandlerMethods().values()
-                .stream().anyMatch(method -> method.getBeanType() == AiReviewController.class
-                        && method.getMethod().getName().equals("reviewJson")));
+                .stream().anyMatch(method -> method.getBeanType() == AiReviewSubmissionController.class
+                        && method.getMethod().getName().equals("review")));
     }
 }

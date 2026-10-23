@@ -20,15 +20,17 @@
 3. 依赖上游引擎的调试先 `bash scripts/fetch-agent-wasm.sh`（`deploy/agent/source.json` pin 变更后必须重跑；**换 pin 还须重生成 AI 投影 golden**：`WOTB_UPDATE_AI_PROJECTION_GOLDEN=1 npx vitest run src/replay-local/ai/toClientAiReviewProjection.test.ts`，golden 内嵌 pin provenance，漏跑则 3 个 fixture 红）。
 4. `npm run dev` → `http://localhost:5173/`；个人回放的 3D / shots 与全部 AI 用普通账号登录；已验证的官方示例可匿名使用 3D / shots；装甲查看器匿名可用（Tankopedia 入口卡对全员开放）。
 
-仅真正管理功能需要 `?admin=1`：这是 `useAuth.js` 的 dev-gated 旁路（**已入库**，dev 构建把
-`wotbtools-admin` / `HoF-admin` 视为已持有，见 runbook §4）。管理功能仍只认角色；URL 参数不得作为产品权限来源。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
+真正管理功能必须使用具有真实 realm role 的测试账号；`hasRole()` 只认当前 access token 的
+`realm_access.roles`，任何 URL 参数都不得提升权限（见 runbook §4）。Replay 五能力不依赖 admin，匿名门禁由能力层负责。
 
 ## Architecture boundaries
 
 - 需要路由、页面/组件归属、composable 状态、API 边界或跨 feature import 时，必须先读取
-  [`.agents/skills/frontend-architecture/SKILL.md`](../.agents/skills/frontend-architecture/SKILL.md)，并以
+  [`.agents/playbooks/frontend-architecture.md`](../.agents/playbooks/frontend-architecture.md)，并以
   [`docs/frontend/architecture.md`](../docs/frontend/architecture.md) 为当前实现事实。
 - 依赖方向为 `app → features → shared`。现有 flat `components/`、`composables/`、`utils/` 是当前代码布局；不得为了“对齐架构”创建空壳目录或虚构尚未实现的迁移。
+- XLSX rendering 由 `src/shared/tabular/xlsx/` 唯一持有；feature 负责构建 `WorkbookSpec`，production code 不得直接依赖 ExcelJS。
+- 通用 CSV 字符串编码由 `src/shared/tabular/csv/` 唯一持有；前端共享层不提供 CSV decoder，也不改写公式样字符串。
 - 跨 app/feature 的注入 contract 使用 `shared/` 中的 typed `InjectionKey<T>`；禁止新增 magic-string service locator。直接父子组件优先使用显式 props/emits，不得用 provide/inject 隐藏本来就可见的 Replay/Workspace 依赖。
 - 每个业务状态只有一个权威 owner；其他组件只通过 props、事件、typed context 或 computed 消费，不复制并行状态。`watch()` 只用于真实副作用或生命周期桥接。
 
@@ -36,7 +38,7 @@
 
 - **HTTP contract boundary**：`contracts/http/openapi.yaml` 是 FE ↔ BE wire SSOT；优先消费 `src/api/generated/` transport types，经过 runtime validation/adapter 后再进入 view model。不得复制手写 wire interface，也不得为了兼容 producer 违规而同时接受两套 enum。
 - Vue 组件负责渲染、交互编排和局部视图状态；可复用业务规则放在 composable 或纯函数模块，并由测试覆盖。
-- API 请求集中在 `src/api/` / shared transport 边界；组件不得重造鉴权、上传、错误解析、endpoint 字符串或 dataset identity 逻辑。
+- 业务 HTTP endpoint 由 `src/api/**` 唯一持有；组件/composable 只调用领域 API，不重造鉴权、上传、错误解析、endpoint 字符串或 dataset identity 逻辑。`utils/http.ts` 持有共享 transport、Android URL/credentials、错误归一化与 path→feature 防御映射；静态资产、WASM fingerprint、示例回放和 Native/WebView 资源 fetch 不属于业务 API 规则。`src/api/http-ownership.test.ts` 守护生产 endpoint literal 的归属。
 - `src/api/replay-capabilities.ts` 只提供共享 Bearer/transport helper（`ReplayAuthSession` / `optionalBearer` / `authedReplayPost`），供 `/api/ai/**` 调用方复用；AI wire 组装在 `src/api/ai-review.ts`。相关 panel 不得重新出现 `authedFetch` 或直接 `apiFetch`。
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
@@ -72,7 +74,7 @@
 - 修改装甲查看器**初始化 / 弹药 / 单发判定 / 重试 / 销毁生命周期**时保持 `npm run test:browser-armor-shot-readiness` 通过；该 gate 用真实应用和确定性夹具资产包控制异步响应，覆盖慢弹药、初始化期间选车反馈、自动选弹、错误阶段、重试及迟到响应隔离，无需真实资产或 WASM，不做 3D 画面验收。已接入 `ci-frontend.yml` 的浏览器矩阵。
 - 修改架构边界时覆盖受影响的深链、历史导航、认证目的地或共享状态；修改 build/dependency 时运行 `npm run build`。
 - 浏览器门禁里**不要用固定 `delay` 采样手势中间态、也不要刚做完相机手势就立刻采样部位像素**：OrbitControls 的 damping 会在拖动/捏合结束后继续滑行若干帧（CI 无 GPU、帧间隔可达数百 ms，滑行可持续数秒），此时"采样的像素"与"按下时的像素"已不是同一部位（`aimingState().cameraSettledMs` 就是给这件事用的：采样前等它 > `max(400ms, 3×frameIntervalMs)`）；断言中间态一律用 `page.waitForValue('<状态表达式>', 判定, { timeout })` 等状态成立。这也解释了 `browser-armor-aiming` 早期两次 CI 失败（本地快渲染掩盖）。
-- 变更后执行 review-fix；影响界面、构建或文档时再执行 review-with-docs。
+- 变更后由 `review-with-docs` 执行唯一 final gate；影响界面、构建或文档时同样走该 gate。
 
 ## Forbidden patterns
 

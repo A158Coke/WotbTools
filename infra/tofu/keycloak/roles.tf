@@ -3,6 +3,7 @@ locals {
     "wotbtools-user"   = "WoTBTools user"
     "HoF-admin"        = "Hall of Fame administrator"
     "tournament-admin" = "Tournament administrator"
+    "content-admin"    = "Content administrator"
   }
 }
 
@@ -30,6 +31,7 @@ resource "keycloak_role" "wotbtools_admin" {
     keycloak_role.realm["wotbtools-user"].id,
     keycloak_role.realm["HoF-admin"].id,
     keycloak_role.realm["tournament-admin"].id,
+    keycloak_role.realm["content-admin"].id,
   ]
 }
 

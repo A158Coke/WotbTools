@@ -97,7 +97,7 @@ const userApi = vi.hoisted(() => ({
   verifyUserWotbAccountFromReplay: vi.fn(() => Promise.resolve(null))
 }))
 
-vi.mock('../utils/api-user.js', () => ({
+vi.mock('../api/user-profile.js', () => ({
   // 全局 bootstrap 才是 profile ensure 的 owner；页面只等待其结果。
   ensureUserProfile: userApi.ensureUserProfile,
   getUserProfile: (...args) =>
@@ -123,7 +123,7 @@ const hundredApi = vi.hoisted(() => ({
   hofHundredCancel: vi.fn()
 }))
 
-vi.mock('../utils/api.js', () => ({
+vi.mock('../api/hall-of-fame.js', () => ({
   hofHundredMyStatus: hundredApi.hofHundredMyStatus,
   hofHundredCancel: hundredApi.hofHundredCancel
 }))
@@ -571,6 +571,26 @@ describe('ProfilePage identity card', () => {
     expect(wrapper.get('[data-testid="profile-keycloak-user-id"]').text()).toBe(keycloakUserId)
     const roles = wrapper.get('[data-testid="profile-roles"]').findAll('.role-chip').map(chip => chip.text())
     expect(roles).toEqual(['HoF-admin', 'wotbtools-user'])
+  })
+
+  it('shows the Keycloak username read-only next to the user id', async () => {
+    currentProfile = { ...currentProfile, username: 'wg_asia_512345678' }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('profile.keycloakUsername')
+    const value = wrapper.get('[data-testid="profile-keycloak-username"]')
+    expect(value.text()).toBe('wg_asia_512345678')
+    // 只读：Keycloak 用户名不允许站内编辑（无输入控件 / 编辑入口）。
+    expect(value.findAll('input, textarea, select, button, [contenteditable]')).toHaveLength(0)
+  })
+
+  it('shows a placeholder when the profile carries no Keycloak username', async () => {
+    currentProfile = { ...currentProfile, username: '' }
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="profile-keycloak-username"]').text()).toBe('--')
   })
 
   it('shows a placeholder when the token carries only Keycloak built-in roles', async () => {

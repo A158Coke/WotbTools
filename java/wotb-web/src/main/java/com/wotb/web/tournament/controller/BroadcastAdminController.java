@@ -2,7 +2,6 @@ package com.wotb.web.tournament.controller;
 
 import com.wotb.web.config.ApiPaths;
 import com.wotb.web.tournament.dto.BroadcastDtos;
-import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
 import com.wotb.web.tournament.service.BroadcastService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,54 +23,46 @@ public class BroadcastAdminController {
     private final BroadcastService service;
     public BroadcastAdminController(final BroadcastService service) { this.service = service; }
     @PostMapping("/seasons")
-    public BroadcastLegacyDtos.SeasonView createSeason(@RequestBody final BroadcastLegacyDtos.SeasonCreate request) { return service.legacyCreateSeason(request); }
+    public BroadcastDtos.SeasonView createSeason(@RequestBody final BroadcastDtos.SeasonCreate request) { return service.createSeason(request); }
     @PutMapping("/seasons/{id}")
-    public BroadcastLegacyDtos.SeasonView updateSeason(@PathVariable final long id, @RequestBody final BroadcastLegacyDtos.SeasonUpdate request) { return service.legacyUpdateSeason(id,request); }
+    public BroadcastDtos.SeasonView updateSeason(@PathVariable final long id, @RequestBody final BroadcastDtos.SeasonUpdate request) { return service.updateSeason(id, request); }
     @PostMapping("/seasons/{id}/categories")
-    public BroadcastLegacyDtos.SeasonView createCategory(@PathVariable final long id, @RequestBody final BroadcastDtos.CategoryCreate request) { return service.legacyCreateCategory(id,request); }
+    public BroadcastDtos.SeasonView createCategory(@PathVariable final long id, @RequestBody final BroadcastDtos.CategoryCreate request) { return service.createCategory(id, request); }
     @PostMapping("/categories/{id}/nodes")
-    public BroadcastLegacyDtos.CategoryView createNode(@PathVariable final long id, @RequestBody final BroadcastDtos.NodeCreate request) { return service.legacyCreateNode(id,request); }
+    public BroadcastDtos.TimedCategoryView createNode(@PathVariable final long id, @RequestBody final BroadcastDtos.NodeCreate request) { return service.createNode(id, request); }
     @PostMapping(value = "/nodes/{id}/replays", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public BroadcastLegacyDtos.CategoryView createReplay(@PathVariable final long id,
-            @RequestPart(name = "payload") final BroadcastLegacyDtos.ReplaySave request,
-            @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.legacyCreateReplay(id,request,cover); }
-    @PutMapping(value = "/replays/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public BroadcastLegacyDtos.CategoryView updateReplay(@PathVariable final long id,
-            @RequestPart(name = "payload") final BroadcastLegacyDtos.ReplaySave request,
-            @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.legacyUpdateReplay(id,request,cover); }
-    @PostMapping("/v2/seasons")
-    public BroadcastDtos.SeasonView createSeasonV2(@RequestBody final BroadcastDtos.SeasonCreate request) { return service.createSeason(request); }
-    @PutMapping("/v2/seasons/{id}")
-    public BroadcastDtos.SeasonView updateSeasonV2(@PathVariable final long id, @RequestBody final BroadcastDtos.SeasonUpdate request) { return service.updateSeason(id, request); }
-    @PostMapping("/v2/seasons/{id}/categories")
-    public BroadcastDtos.SeasonView createCategoryV2(@PathVariable final long id, @RequestBody final BroadcastDtos.CategoryCreate request) { return service.createCategory(id, request); }
-    @PostMapping("/v2/categories/{id}/nodes")
-    public BroadcastDtos.CategoryView createNodeV2(@PathVariable final long id, @RequestBody final BroadcastDtos.NodeCreate request) { return service.createNode(id, request); }
-    @PostMapping(value = "/v2/nodes/{id}/replays", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public BroadcastDtos.CategoryView createReplayV2(@PathVariable final long id,
-            @RequestPart(name = "payload") final BroadcastDtos.ReplaySave request,
+    public BroadcastDtos.TimedCategoryView createReplay(@PathVariable final long id,
+            @RequestPart(name = "payload") final BroadcastDtos.TimedReplaySave request,
             @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.createReplay(id, request, cover); }
-    @PutMapping(value = "/v2/replays/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public BroadcastDtos.CategoryView updateReplayV2(@PathVariable final long id,
-            @RequestPart(name = "payload") final BroadcastDtos.ReplaySave request,
+    @PutMapping(value = "/replays/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public BroadcastDtos.TimedCategoryView updateReplay(@PathVariable final long id,
+            @RequestPart(name = "payload") final BroadcastDtos.TimedReplaySave request,
             @RequestPart(name = "cover", required = false) final MultipartFile cover) { return service.updateReplay(id, request, cover); }
-    @GetMapping({"/seasons/{id}/deletion-preview", "/v2/seasons/{id}/deletion-preview"})
+    @GetMapping("/seasons/{id}/deletion-preview")
     public BroadcastDtos.DeletionPreview seasonDeletionPreview(@PathVariable final long id) { return service.seasonDeletionPreview(id); }
-    @GetMapping({"/nodes/{id}/deletion-preview", "/v2/nodes/{id}/deletion-preview"})
+    @GetMapping("/categories/{id}/deletion-preview")
+    public BroadcastDtos.DeletionPreview categoryDeletionPreview(@PathVariable final long id) { return service.categoryDeletionPreview(id); }
+    @GetMapping("/nodes/{id}/deletion-preview")
     public BroadcastDtos.DeletionPreview nodeDeletionPreview(@PathVariable final long id) { return service.nodeDeletionPreview(id); }
-    @DeleteMapping({"/seasons/{id}", "/v2/seasons/{id}"})
+    @DeleteMapping("/seasons/{id}")
     public ResponseEntity<Void> deleteSeason(@PathVariable final long id,
             @RequestParam(name = "expectedVersion") final long expectedVersion,
             @RequestParam(name = "confirm") final boolean confirm) {
         service.deleteSeason(id, expectedVersion, confirm); return ResponseEntity.noContent().build();
     }
-    @DeleteMapping({"/nodes/{id}", "/v2/nodes/{id}"})
+    @DeleteMapping("/nodes/{id}")
     public ResponseEntity<Void> deleteNode(@PathVariable final long id,
             @RequestParam(name = "expectedVersion") final long expectedVersion,
             @RequestParam(name = "confirm") final boolean confirm) {
         service.deleteNode(id, expectedVersion, confirm); return ResponseEntity.noContent().build();
     }
-    @DeleteMapping({"/replays/{id}", "/v2/replays/{id}"})
+    @DeleteMapping("/categories/{id}")
+    public ResponseEntity<Void> deleteCategory(@PathVariable final long id,
+            @RequestParam(name = "expectedVersion") final long expectedVersion,
+            @RequestParam(name = "confirm") final boolean confirm) {
+        service.deleteCategory(id, expectedVersion, confirm); return ResponseEntity.noContent().build();
+    }
+    @DeleteMapping("/replays/{id}")
     public ResponseEntity<Void> deleteReplay(@PathVariable final long id,
             @RequestParam(name = "expectedVersion") final long expectedVersion,
             @RequestParam(name = "confirm") final boolean confirm) {

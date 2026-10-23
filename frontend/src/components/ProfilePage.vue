@@ -14,9 +14,9 @@ import {
   syncUserWotbAccountFromLogin,
   updateUserWotbAccount,
   verifyUserWotbAccountFromReplay
-} from '../utils/api-user.js'
+} from '../api/user-profile.js'
 import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
-import { hofHundredCancel, hofHundredMyStatus } from '../utils/api.js'
+import { hofHundredCancel, hofHundredMyStatus } from '../api/hall-of-fame.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { copyText } from '../utils/clipboard.js'
@@ -32,7 +32,7 @@ const { initPromise, login, logout, isAuthenticated, authenticated: authState, i
  *  - 账号资料读写（get / sync / update / verify / delete）走 [Feature.ACCOUNT_PROFILE]；
  *  - 名人堂记录 / 百场状态 / 撤销走 [Feature.HALL_OF_FAME]。
  * 判定一律来自 `useFeatureGate()`（capability SSOT），页面**不写** `connectivity === 'online'`
- * 这类第二套规则，也不在 transport 层（utils/api-user.js）里塞连通性判断。
+ * 这类第二套规则，也不在 transport 层（api/user-profile.ts）里塞连通性判断。
  */
 const { availability, requireFeature, connectivity } = useFeatureGate()
 
@@ -268,7 +268,7 @@ const heroSubtitle = computed(() =>
 
 /**
  * 当前 token 的 realm 角色（`realm_access.roles`，Keycloak 已展开 composite），隐藏 Keycloak
- * 内置角色后按原始 key 展示。只读真实 token claim：dev `?admin=1` 旁路不改变这里的展示。
+ * 内置角色后按原始 key 展示。角色展示与权限判断都只认真实 token claims。
  */
 const KEYCLOAK_BUILTIN_ROLES = new Set(['offline_access', 'uma_authorization'])
 const realmRoles = computed(() => {
@@ -558,6 +558,10 @@ async function removeAccount() {
               </span>
             </div>
             <div class="info-row">
+              <span class="info-label">{{ $t('profile.keycloakUsername') }}</span>
+              <span class="info-value"><code data-testid="profile-keycloak-username">{{ profile.username || '--' }}</code></span>
+            </div>
+            <div class="info-row">
               <span class="info-label">{{ $t('profile.roles') }}</span>
               <span class="info-value role-list" data-testid="profile-roles">
                 <span v-for="role in realmRoles" :key="role" class="role-chip">{{ role }}</span>
@@ -780,7 +784,7 @@ async function removeAccount() {
 .info-label { color: #a3a6a0; font-size: .85rem; flex-shrink: 0; }
 .info-value { color: var(--showcase-tactical-text); font-size: .85rem; font-weight: 500; text-align: right; word-break: break-all; }
 .info-value-copy { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.info-value-copy code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
+.info-value code { font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .role-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
 .role-chip { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-full); background: var(--color-surface-2); color: var(--color-text-secondary); font-family: var(--font-family-mono); font-size: var(--font-size-caption); }
 .account-bound { display: flex; flex-direction: column; gap: 10px; }

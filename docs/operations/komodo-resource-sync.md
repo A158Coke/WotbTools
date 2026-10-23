@@ -1,11 +1,12 @@
-# Komodo Resource Sync (K4.1)
+# Komodo Resource Sync (K4.1+)
 
-The first declarative Komodo control-plane layer: Komodo resources are declared in
-**this repository** under `infra/komodo/resources/`, Komodo computes a diff against
-the live control plane, and a human reviews and applies it.
+The declarative Komodo control-plane layer: Komodo resources are declared in **this
+repository** under `infra/komodo/resources/`, Komodo computes a diff against the live
+control plane, and a human reviews and applies it.
 
-Nothing in K4.1 migrates a workload, deploys anything automatically, or lets Komodo
-manage its own runtime.
+ResourceSync Apply changes Komodo resource definitions. It does **not** imply workload
+deployment unless a declaration explicitly opts into deploy scheduling; the reviewed
+Stacks in this repository keep `deploy = false`.
 
 ## Ownership model
 
@@ -25,41 +26,61 @@ manual review                          (a human reads every entry)
 manual apply                           (a human clicks Apply in the UI)
       │
       ▼
-Komodo resources                       (Servers; later phases add more)
+Komodo resources                       (Servers + tightly reviewed Stacks)
 ```
 
 | Concern | Owner |
 | --- | --- |
-| Declarative Komodo resources | `infra/komodo/resources/**` (this layer) |
+| Declarative Komodo resources | `infra/komodo/resources/**` (this layer: non-production `deployment` PR gate + human ResourceSync Apply) |
 | Komodo Core + MongoDB lifecycle | GitHub Actions + `deploy/komodo/**` |
 | Komodo DNS | OpenTofu under `infra/tofu/komodo/**` |
-| Periphery agents (systemd) | GitHub Actions + `deploy/periphery/**` — see [`komodo-periphery.md`](komodo-periphery.md) |
-| Public ingress | TX Caddy owner |
+| Periphery agents (systemd) | `deploy/periphery/**` where automated; one-time/manual bootstrap remains a separate host concern |
+| Public ingress | workload-specific owner (`deploy/tx/**` or `deploy/assets/**`) |
 | Applying a computed diff | **a human**, in the Komodo UI |
 
-Two invariants follow from that table and are enforced by tests, not by convention:
+Two invariants are enforced by tests, not by convention:
 
 1. **A change under `infra/komodo/resources/**` cannot restart or mutate Komodo
-   Core/Mongo/DNS.** The controller's production workflow is wired to
-   `deploy/komodo/**` and `infra/tofu/komodo/**` only;
-   `scripts/ci/test-workflow-contract.sh` asserts that no controller path pattern
-   matches a resource file, and that the only owner a resource change reaches is the
-   non-production `deployment` PR gate (which just runs the contract test below).
-2. **Komodo never manages its own controller runtime or the Periphery service.** No
-   Stack/Deployment/Build/Repo/Procedure/Action/Builder/Swarm/Alerter/Variable/
-   UserGroup is declared in K4.1, and no Server declaration carries a Periphery
-   address, key, or credential.
+   Core/Mongo/DNS, and ResourceSync Apply stays human.** The controller's production
+   workflow is wired to `deploy/komodo/**` and `infra/tofu/komodo/**` only; the
+   resource tree routes only to the non-production `deployment` PR gate, and the
+   diff is applied by a human. The single narrow exception is documented in the next
+   subsection.
+2. **Komodo never manages its own controller runtime or Periphery service through
+   ResourceSync.** Only `server`, `resource_sync`, and the explicitly reviewed `stack`
+   resources are allowed. Periphery addresses, keys, onboarding credentials, and
+   inbound `:8120` endpoints are forbidden.
 
-## The declared resources (K4.1)
+### Production exception: `infra/komodo/resources/asset-origin.toml`
 
-`infra/komodo/resources/resource-sync.toml` — the sync that reads its own directory:
+`infra/komodo/resources/**` stays owned by this layer: the non-production
+`deployment` PR gate validates it, and a human applies the ResourceSync diff. It
+never triggers Komodo Core/Mongo/DNS reconciliation.
+
+Exactly one file is also a production input: `infra/komodo/resources/asset-origin.toml`
+is an input of `.github/workflows/asset-origin.yml`, which may mutate only the
+asset-owned transport pair: the derived GitHub `asset-origin` pointer branch and the
+matching Gitee `asset-origin` transport branch (never shared `main`). It must not
+apply ResourceSync, must not mutate Komodo resources, and must not deploy the Stack.
+The Stack tracks the Gitee `asset-origin` branch, and the GitHub pointer branch is
+what makes the application mirrors carry that ref instead of pruning it (the pinned
+mirror action force-pushes every GitHub branch to Gitee with `--prune`).
+`deploy = false`, `webhook_enabled = false`, and `auto_update = false` remain
+mandatory, and ResourceSync Apply stays manual. No other file under
+`infra/komodo/resources/**` is a production input.
+
+## The declared resources
+
+`infra/komodo/resources/resource-sync.toml` declares `wotbtools-main` with the
+non-destructive posture:
 
 ```toml
 [[resource_sync]]
 name = "wotbtools-main"
-description = "Declarative Komodo resources for WotbTools, reviewed in Git and applied by hand"
+description = "Declarative Komodo resources for WotBTools, reviewed in Git and applied by hand"
 tags = []
 template = false
+
 [resource_sync.config]
 git_provider = "github.com"
 git_https = true
@@ -77,185 +98,162 @@ pending_alert = true
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `managed` | `false` | Core never writes back to this repository; Git stays the only source of truth |
-| `delete` | `false` | a sync can never delete a resource that is not declared here |
-| `webhook_enabled` | `false` | webhook-triggered execution/apply is disabled; Core may still discover Git changes during periodic resource polling (see below) |
-| `include_resources` | `true` | Servers are in scope |
-| `include_variables` / `include_user_groups` | `false` | no variable or user-group management in K4.1 |
+| `managed` | `false` | Core never writes back to this repository; Git stays the source of truth |
+| `delete` | `false` | a sync can never delete a resource merely because it is absent from Git |
+| `webhook_enabled` | `false` | no push-triggered execution/apply; discovery may still happen on periodic polling |
+| `include_resources` | `true` | Servers and reviewed Stacks are in scope |
+| `include_variables` / `include_user_groups` | `false` | no variable or user-group management |
 | `pending_alert` | `true` | a pending diff is visible instead of silent |
-| `git_account` / `webhook_secret` | **forbidden** | they exist to authenticate a private repository; the repository is public and no credential may live in Git |
-| every other config key | **not allowed** | `[resource_sync.config]` is checked against an explicit reviewed allowlist, so an unreviewed setting cannot take effect |
+| `git_account` / `webhook_secret` | **forbidden** | repository is public; credentials must not live here |
 
-`infra/komodo/resources/servers.toml` — the three existing production Servers
-(`yecao`, `tx1`, `tx2`) are **adopted by name**, never recreated, and every field of
-the Komodo v2.3.3 `ServerConfig` is declared explicitly:
+`infra/komodo/resources/servers.toml` adopts four existing production Servers by name:
 
-- `address = ""` — Periphery dials Core **outbound**, so Core must not dial
-  Periphery. No `:8120`, no public address, no WireGuard address ever appears here.
-- `enabled = true` — the Servers are live (the schema default is `false`).
+- `yecao`
+- `tx1`
+- `tx2`
+- `ali-sh-asset-01`
+
+Every field of the Komodo v2.3.3 `ServerConfig` is declared explicitly. The critical
+outbound invariant is identical on every host:
+
+- `address = ""` — Periphery dials Core outbound; Core never dials Periphery.
+- `enabled = true` — the Server is live.
 - `passkey = ""` — legacy inbound authentication is unused.
-- thresholds, alert toggles, `auto_prune`, `auto_rotate_keys`, `stats_monitoring`,
-  `ignore_mounts`, `links`, `maintenance_windows` — the documented v2.3.3 defaults.
+- no `:8120` endpoint appears anywhere.
+- thresholds, alerts, `auto_prune`, `auto_rotate_keys`, `stats_monitoring`,
+  `ignore_mounts`, `links`, and `maintenance_windows` stay at the reviewed defaults.
 
-Why every field is spelled out: Komodo converts a **partial** `[server.config]`
-through the schema defaults before diffing, so an omitted field does **not** mean
-"leave the live value alone" — it means "assert the default". Declaring the complete
-field set makes the first diff reviewable instead of silently resetting a production
-setting.
+Why every field is spelled out: Komodo converts a partial `[server.config]` through
+schema defaults before diffing, so an omitted field is not "leave live value alone".
+
+`ali-sh-asset-01`'s Periphery agent is **manually** bootstrapped and manually
+lifecycle-managed today, and is already onboarded and healthy. Declaring the Server
+only lets ResourceSync adopt the existing Komodo resource by name; it does not put the
+Alibaba agent into the automated GitHub Actions chain. Lifecycle automation for this
+host is intentionally deferred — see the boundary and future triggers in
+`deploy/assets/README.md`.
+
+The reviewed Stack set is also fail-closed:
+
+- `wotbtools-frontend-shadow` → `tx2`, GitHub authority with Gitee transport.
+- `wotbtools-asset-origin` → `ali-sh-asset-01`, `deploy/assets/compose.yaml`, GitHub
+  authority with Gitee transport for the mainland worker. It tracks only the
+  asset-owned `branch = "asset-origin"` ref (never shared `main`); the Frontend /
+  Business API mirrors may move Gitee `main` without changing what this Stack
+  deploys.
+
+Both keep `deploy = false`, `webhook_enabled = false`, `auto_update = false`, and
+`poll_for_updates = false`. ResourceSync adoption/update is therefore separate from an
+explicit workload Deploy action.
 
 ### Metadata Git owns: `tags`, `template`, `description`
 
-`ServerConfig` is not the only diffed surface. For every resource type, Komodo v2.3.3
-skips a resource only when the config diff is empty **and** `description`, `template`,
-and `tags` all match, and then applies those three through
-`ResourceMetaUpdate { description, template, tags }` (`bin/core/src/sync/view.rs` and
-`sync/execute.rs`). `ResourceToml::tags` defaults to `[]`, so an **omitted** `tags`
-asserts the *empty* tag set — it does not preserve live tags.
+For every resource type, Komodo v2.3.3 compares `description`, `template`, and `tags`
+as well as config. `ResourceToml::tags` defaults to `[]`, so omitting tags asserts the
+empty set rather than preserving live tags.
 
 Therefore:
 
-- `tags = []` and `template = false` are declared explicitly on every Server *and* on
-  the ResourceSync itself, and the contract test requires both to be present.
-- **Git owns the Server tag set.** The reviewed tag set for all three hosts is the
-  empty set: this repository owns no Komodo API tooling that could read a live tag
-  set, so no non-empty production tags are known. If a host genuinely uses tags, add
-  them here exactly and re-review.
-- A **tag diff in the first sync is a STOP condition** (see below), never noise to
-  apply: applying it would clear live tags.
-- `deploy` and `after` are deliberately omitted — they schedule deploys only for
-  deployments and stacks (none is declared here) and are not part of
-  `ResourceMetaUpdate`.
-
-Periphery keys, the Core trust anchor, onboarding credentials, and the
-`onboarding-complete` marker are **not** Server desired-state fields and remain owned
-by `deploy/periphery/**` + systemd.
+- `tags = []` and `template = false` are declared explicitly on every resource.
+- Git owns the Server tag set. The reviewed tag set for all four hosts is empty.
+- A tag diff on first adoption is a **STOP condition**, not noise to apply.
+- Periphery private/public keys, Core trust key, and onboarding credentials are not
+  Server desired-state fields and do not belong in this resource tree.
 
 ## How a pending diff appears
 
-Three independent things, easy to confuse:
-
-- **Webhook-triggered execution/apply is DISABLED** (`webhook_enabled = false`): a push
-  to `main` never applies anything.
-- **Core polls resources periodically.** Komodo Core's resource refresh loop
-  (`spawn_resource_refresh_loop` → `resource_poll_interval`, shipped v2.3.3 default
-  `1-hr`; this deployment does not override it) calls `RefreshResourceSyncPending`, so
-  Git changes are discovered **on their own** without any webhook and without anyone
-  clicking anything. A pending diff can therefore appear while nobody is watching —
-  it still does nothing until a human applies it.
-- **Manual Refresh forces immediate recomputation**, which is what the procedures below
-  use when you do not want to wait for the next poll.
-
-Apply is manual in K4.1 in every case.
+- Webhook-triggered execution/apply is disabled (`webhook_enabled = false`).
+- Core periodically recomputes pending sync state, so a Git change can appear without
+  a human pressing Refresh.
+- Manual Refresh forces immediate recomputation.
+- Apply remains manual in every case.
 
 ## Static validation
 
-`scripts/ci/test-komodo-resources.py` (Python stdlib `tomllib`, run by the
-non-production `deployment` PR gate) fails the build when:
+`scripts/ci/test-komodo-resources.py` (stdlib `tomllib`, run by the deployment PR gate)
+fails closed when:
 
-- a TOML file cannot be parsed, or a declared resource has no name;
-- two resources of the same type share a name (across files too);
-- a resource type outside `server` / `resource_sync` appears — `stack`,
-  `deployment`, `build`, `repo`, `procedure`, `action`, `builder`, `swarm`,
-  `alerter`, `variable`, `user_group` are rejected by name;
-- a declaration carries an unreviewed key (Komodo would ignore a typo silently);
-- a resource does not declare `description`, `tags`, and `template` explicitly (all
-  three are compared and applied as metadata, so leaving one to the default is not
-  ownership-neutral: an omitted `description` asserts the empty string and an omitted
-  `tags` asserts the empty tag set). The `description` **content** is deliberately not
-  pinned — the drift proof below edits one — but its presence and string type are;
-- the ResourceSync is not exactly `wotbtools-main` with the reviewed, non-destructive
-  configuration above;
-- **any** `[resource_sync.config]` key falls outside the explicit reviewed allowlist —
-  the check is fail-closed, so `file_contents`, or any setting not reviewed here, is
-  rejected rather than ignored. `files_on_host`, `linked_repo`, `commit`, `match_tags`
-  and `file_contents` may only appear at their inert values. `git_account` and
-  `webhook_secret` are forbidden even when empty, because they exist to authenticate a
-  private repository;
-- the Servers are not exactly `yecao`/`tx1`/`tx2`, are disabled, carry a non-empty
-  `address` or `passkey`, are declared `deploy = true`, omit any `ServerConfig` field,
-  or declare a value other than the reviewed default;
-- any key anywhere looks like a credential (`password`, `secret`, `token`,
-  `private_key`, `onboarding_key`, `git_account`, `webhook_secret`, …) or any value
-  references port `8120` or an `http(s)://` / `ws(s)://` address.
+- TOML cannot be parsed or a resource has no name;
+- duplicate resource names exist;
+- any resource type outside `server`, `resource_sync`, `stack` appears;
+- a declaration carries an unreviewed key;
+- `description`, `tags`, or `template` is omitted;
+- ResourceSync differs from the reviewed non-destructive configuration;
+- a credential-shaped key appears anywhere;
+- any Server differs from the exact set `yecao` / `tx1` / `tx2` /
+  `ali-sh-asset-01`, uses inbound address/passkey/8120, or omits a v2.3.3 config field;
+- the Stack set differs from `wotbtools-frontend-shadow` +
+  `wotbtools-asset-origin`, or either Stack gains unreviewed config, automatic update,
+  webhook deployment, or the wrong target Server;
+- `wotbtools-asset-origin` loses its tracked Caddyfile `config_files` entry, its
+  `--force-recreate` deploy args, or switches off the asset-owned
+  `branch = "asset-origin"` transport ref.
 
 The test inspects TOML structure, never descriptions, so prose cannot make it pass.
 
-## First bootstrap (manual, once)
+## Bootstrap / adoption review
 
-The first sync is created by hand, because the sync that reads this directory cannot
-create itself:
+`wotbtools-main` itself is bootstrapped once by hand. New resources may also be
+created manually first (for example a Server created by Periphery onboarding or an
+empty Stack created in the UI) and then **adopted by exact name** through this sync.
 
-1. Open the Komodo UI.
-2. Create a **Resource Sync**: name `wotbtools-main`, provider `github.com`,
-   repository `A158Coke/WotBTools`, branch `main`, resource path
-   `infra/komodo/resources`.
-3. Leave **Managed** mode **OFF**.
-4. Leave **Delete** mode **OFF**.
-5. Leave **Webhook execution** **OFF**.
-6. Refresh / compute pending changes.
-7. **Do not apply yet.**
-8. Review every diff entry.
-9. Expected resource scope — exactly these four, and nothing else:
+Before Apply:
+
+1. Refresh / compute pending changes.
+2. Review every diff entry.
+3. Current expected resource scope is exactly:
 
    ```text
    ResourceSync  wotbtools-main
    Server        yecao
    Server        tx1
    Server        tx2
+   Server        ali-sh-asset-01
+   Stack         wotbtools-frontend-shadow
+   Stack         wotbtools-asset-origin
    ```
 
-10. No Stack / Deployment / Build / Repo / Procedure / Action creation **or**
-    deletion is acceptable in K4.1.
-11. No Server may gain an inbound `address` (any `http(s)://…:8120` value is wrong).
-12. No Periphery identity/key field may change.
-13. **Any tag diff is a STOP condition.** This deployment declares the empty tag set
-    (`tags = []`) on purpose, because Git owns tags; applying a tag diff would clear
-    live tags on a production Server. If tags appear, stop and decide explicitly
-    whether to record the real tag set in Git instead.
-14. Only after that review: **Apply**.
-15. Refresh again.
-16. Expected result: **zero pending diff**.
+4. No Deployment / Build / Repo / Procedure / Action / Builder / Swarm / Alerter /
+   Variable / UserGroup creation or deletion is acceptable.
+5. No Server may gain an inbound address or passkey; no Periphery identity/key field
+   may change.
+6. Any unexpected tag diff is a STOP condition.
+7. For a newly adopted Stack, confirm `deploy = false` and the exact reviewed target
+   Server/source before Apply.
+8. Apply only after the diff is understood.
+9. Refresh again; expected result is zero pending diff.
 
-Expected first diff: the Servers already run at these defaults, so the only entries
-should be the description text (and possibly a ResourceSync-self entry). Anything else
-— a proposed `address`, **any tag change**, a deletion, or a threshold move — means the
-live control plane differs from the documented baseline: **stop, do not apply**, and
-reconcile the difference by hand first.
+For the Alibaba asset origin specifically, applying the sync must only adopt/update
+`ali-sh-asset-01` and `wotbtools-asset-origin`. The Server's Periphery agent stays a
+manual host concern. Asset payload staging, DNS, firewall, explicit Stack Deploy,
+canary, and client origin cutover remain separate steps documented in
+`deploy/assets/README.md`.
 
 ## Reversible drift proof
 
-Proves the loop end-to-end without touching a workload:
+A harmless metadata change can prove the loop end to end:
 
-1. Make a harmless metadata change in Git, e.g. edit one Server `description`.
-2. Merge it to `main`.
-3. Resource Sync shows **one precise Update** for that Server (no deletions, no other
-   resources).
-4. Manually **Apply**.
-5. Refresh → **zero** pending diff.
-6. Revert the Git change and merge.
-7. The reverse diff appears.
-8. Manually **Apply**.
-9. Refresh → **zero** pending diff.
-
-Reminder: a **manual Refresh** is what makes step 3 immediate. Webhook execution is
-off, but Core's periodic resource polling would also discover the change on its own
-(within `resource_poll_interval`, 1-hr by default here) — the diff appears either way,
-and it is never applied without a human.
+1. edit one Server/Stack description in Git;
+2. merge to `main`;
+3. confirm one precise Update and no unrelated changes;
+4. manually Apply;
+5. Refresh to zero pending;
+6. revert in Git and repeat the Apply in reverse.
 
 ## Routine operation
 
-- A merged change under `infra/komodo/resources/**` produces a pending diff (and a
-  pending alert) — either on the next periodic resource poll or on a manual Refresh.
-  Nothing is applied automatically, and no webhook is involved.
-- Review, then Apply, then Refresh to confirm zero pending.
-- Rollback is a Git revert plus a manual Apply — the same reviewed path in reverse.
-- If the sync reports an error, the UI stores it on the sync; a Git-side syntax
-  problem is caught earlier by `python3 scripts/ci/test-komodo-resources.py`.
+- A merged change under `infra/komodo/resources/**` produces a pending diff either on
+  periodic polling or manual Refresh; nothing is applied automatically.
+- Review, Apply, then Refresh to zero pending.
+- Rollback is a Git revert plus manual Apply.
+- Git-side syntax/contract errors are caught by
+  `python3 scripts/ci/test-komodo-resources.py` before merge.
 
-## Out of scope in K4.1
+## Out of scope
 
-General workload migration (Business API, Keycloak, AI service) remains out of scope. K7B adds one explicit exception: the declarative `wotbtools-frontend-shadow` Stack on TX2, documented in [`komodo-k7b-frontend-shadow.md`](komodo-k7b-frontend-shadow.md). The disposable TX2 workload (K5) is completed separately and documented in [`komodo-k5-runtime-acceptance.md`](komodo-k5-runtime-acceptance.md). Automatic or
-webhook-triggered apply, `managed = true`, `delete = true`, registry or Git credentials,
-Komodo API service accounts, secret migration, Periphery lifecycle changes, WireGuard
-management, Komodo Core/Mongo lifecycle changes, Caddy, DNS, and any change to
-`deploy/komodo/**` or `infra/tofu/komodo/**`.
+General workload migration (Business API, Keycloak, AI service), automatic or
+webhook-triggered apply, `managed = true`, `delete = true`, registry/Git credentials,
+secret migration, Periphery key lifecycle, Komodo Core/Mongo lifecycle, and unrelated
+DNS/Caddy ownership remain out of scope. The two reviewed Stack exceptions are the TX2
+frontend replica and the Alibaba Shanghai static asset origin; neither is deployed by
+ResourceSync Apply.

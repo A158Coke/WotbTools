@@ -133,3 +133,34 @@ mem_critical = 95.0
 disk_warning = 75.0
 disk_critical = 95.0
 maintenance_windows = []
+
+[[server]]
+name = "ali-sh-asset-01"
+description = "Alibaba Cloud Shanghai asset origin — Komodo Periphery outbound, declared by the wotbtools-main Resource Sync"
+tags = []                    # Git owns the tag set; empty is the reviewed production tag set
+template = false             # metadata the sync also compares and applies
+
+[server.config]
+address = ""                 # outbound mode: Core never dials Periphery
+insecure_tls = true          # v2.3.3 default; unused while `address` is empty
+external_address = ""
+region = ""
+enabled = true               # v2.3.3 default is false; this Server is live
+auto_rotate_keys = true
+passkey = ""                 # legacy inbound auth is not used
+ignore_mounts = []
+auto_prune = true
+links = []
+stats_monitoring = true
+send_unreachable_alerts = true
+send_cpu_alerts = true
+send_mem_alerts = true
+send_disk_alerts = true
+send_version_mismatch_alerts = true
+cpu_warning = 90.0
+cpu_critical = 99.0
+mem_warning = 75.0
+mem_critical = 95.0
+disk_warning = 75.0
+disk_critical = 95.0
+maintenance_windows = []

@@ -2125,7 +2125,7 @@ describe('PR5 — HP HUD / combat feedback / detail sidebar（§4–§16）', ()
     expect(info.text()).toContain('400')
   })
 
-  it('§12/§13 伤害记录：hpLoss 驱动；未点亮攻击者显示「来源未知」，不泄露身份', async () => {
+  it('伤害记录：hpLoss 驱动；未点亮攻击者显示「来源未知」，不泄露身份', async () => {
     stubRaf()
     const overview = makeOverview()
     // 2002 攻击 1001（hpLoss 540），但 2002 无位置流覆盖 → 来源未知

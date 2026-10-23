@@ -16,6 +16,10 @@ import { createServer } from 'node:http'
 
 /** 夹具坦克 id（数字 id：visual_model_url 的 /glb/<id>/ 替换逻辑要求数字） */
 export const FIXTURE_TANK_ID = 9001
+/** 第二个可切换目标 id；默认名册保持单车，避免改变其它门禁“首张卡”的既有假设。 */
+export const FIXTURE_SECOND_TANK_ID = 9002
+/** 固定战斗室夹具 id：GLB 没有 turret_NN，只有 gun_01（无炮塔拖曳回归）。 */
+export const FIXTURE_TURRETLESS_TANK_ID = 9003
 
 /* ------------------------------------------------------------------ 几何 */
 
@@ -52,6 +56,8 @@ const GUN_ORIGIN = [0, 0, 0.7]   // gun 枢轴 = track + turret + gun_origin
 /** 间隙甲屏幕板（turret 板 2，12mm）：悬在车体右前方之外，视线穿过它之后是空域，
  *  用来构造「整条射线只碰到间隙甲、没触达主装甲」的点击（BlitzKit 语义下不构成判定）。 */
 const SCREEN = { c: [2.6, 3.2, 1.35], s: [1.6, 0.10, 1.7] }
+/** 固定战斗室车体：比炮塔型夹具更高的整体盒，炮管直接挂在车体上（无 turret_NN 节点）。 */
+const TD_HULL = { c: [0, 0, 0.9], s: [3.0, 5.6, 1.8] }
 
 function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
 
@@ -84,6 +90,34 @@ function armorParts() {
     { node: 'hull_armor_1', mesh: 'hull_armor_1', geo: local(HULL, FIXTURE_ORIGINS.track), wrap: false },
     { node: 'turret_01_armor_1', mesh: 'turret_01_armor_1', geo: local(TURRET, tPivot), wrap: false },
     { node: 'turret_01_armor_2', mesh: 'turret_01_armor_2', geo: local(SCREEN, tPivot), wrap: false },
+    { node: 'gun_01_armor_1', mesh: 'gun_01_armor_1', geo: local(BARREL, gPivot), wrap: false },
+  ]
+}
+
+/** 固定战斗室视觉模型：没有 turret_01，只有 hull + gun_01 + 履带。 */
+function turretlessVisualParts() {
+  return [
+    { node: 'hull', mesh: 'hull_mesh', geo: boxMesh(...TD_HULL.c, ...TD_HULL.s) },
+    { node: 'gun_01', mesh: 'gun_01_mesh', geo: boxMesh(...BARREL.c, ...BARREL.s) },
+    { node: 'chassis_track_L', mesh: 'trackL_mesh', geo: boxMesh(...TRACK_L.c, ...TRACK_L.s) },
+    { node: 'chassis_track_R', mesh: 'trackR_mesh', geo: boxMesh(...TRACK_R.c, ...TRACK_R.s) },
+  ]
+}
+
+/** 固定战斗室装甲模型：hull + gun 板，无 turret 板。 */
+function turretlessArmorParts() {
+  const tPivot = FIXTURE_ORIGINS.turret
+  const gPivot = [
+    FIXTURE_ORIGINS.track[0] + tPivot[0] + GUN_ORIGIN[0],
+    FIXTURE_ORIGINS.track[1] + tPivot[1] + GUN_ORIGIN[1],
+    FIXTURE_ORIGINS.track[2] + tPivot[2] + GUN_ORIGIN[2],
+  ]
+  const local = (spec, pivot) => {
+    const c = sub(spec.c, pivot)
+    return boxMesh(c[0], c[1], c[2], ...spec.s)
+  }
+  return [
+    { node: 'hull_armor_1', mesh: 'hull_armor_1', geo: local(TD_HULL, FIXTURE_ORIGINS.track), wrap: false },
     { node: 'gun_01_armor_1', mesh: 'gun_01_armor_1', geo: local(BARREL, gPivot), wrap: false },
   ]
 }
@@ -169,6 +203,8 @@ function buildGlb(parts) {
 
 export const FIXTURE_ARMOR_GLB = buildGlb(armorParts())
 export const FIXTURE_VISUAL_GLB = buildGlb(visualParts())
+export const FIXTURE_TURRETLESS_ARMOR_GLB = buildGlb(turretlessArmorParts())
+export const FIXTURE_TURRETLESS_VISUAL_GLB = buildGlb(turretlessVisualParts())
 
 /* ------------------------------------------------------------------ tank JSON */
 
@@ -250,9 +286,61 @@ export const FIXTURE_TANK_DATA = {
   caliber: 105,
 }
 
+/** 固定战斗室坦克数据：无 turret 装甲/炮塔名，yaw 限位 ±10°（客户端固定战斗室口径）。 */
+export const FIXTURE_TURRETLESS_TANK_DATA = {
+  ...structuredClone(FIXTURE_TANK_DATA),
+  tank_id: FIXTURE_TURRETLESS_TANK_ID,
+  name: 'Fixture Casemate TD',
+  type: 'AT-SPG',
+  armor_model: {
+    hull: { plates: { 1: 200 }, spaced: [] },
+    turret: { plates: {}, spaced: [] },
+    gun: { plates: { 1: 200, gun: 60 }, spaced: [] },
+    chassis: { left_track: 30, right_track: 30 },
+  },
+  model_origins: FIXTURE_ORIGINS,
+  turret_traverse_left: 10,
+  turret_traverse_right: 10,
+  configs: [{
+    label: 'Fixture 105mm Casemate',
+    turret_name: '',
+    turret_index: 0,
+    gun_index: 0,
+    gun_thickness: 60,
+    gun_origin: GUN_ORIGIN,
+    turret_plates: {},
+    gun_plates: { 1: 200 },
+    turret_spaced: [],
+    gun_spaced: [],
+    yaw_limits: { min: -10, max: 10 },
+    pitch_limits: { min: -8, max: 20, transition: 20 },
+    caliber: 105,
+    shells: [{
+      type: 'ap',
+      name: 'AP',
+      penetration: 200,
+      damage: 320,
+      module_damage: 100,
+      explosion_radius: 0,
+      caliber: 105,
+      normalization: 5,
+      ricochet: 70,
+    }],
+    shell_global_ids: [1],
+  }],
+  shells: [{ type: 'ap', name: 'AP', penetration: 200, damage: 320, module_damage: 100, explosion_radius: 0, caliber: 105, normalization: 5, ricochet: 70 }],
+  caliber: 105,
+}
+
 /** 夹具名册（tank_cache.json：{id: info}）——populateTankLists 依赖该资产 */
 export const FIXTURE_TANK_CACHE = {
   [FIXTURE_TANK_ID]: { id: FIXTURE_TANK_ID, name: 'Fixture Medium', tier: 8, nation: 'ussr', type: 'mediumTank' },
+}
+
+/** 夹具变体：同一服务器可按车换成“有炮塔 / 固定战斗室”两套 GLB + tank JSON。 */
+const FIXTURE_PACKS = {
+  turreted: { data: FIXTURE_TANK_DATA, armorGlb: FIXTURE_ARMOR_GLB, visualGlb: FIXTURE_VISUAL_GLB },
+  turretless: { data: FIXTURE_TURRETLESS_TANK_DATA, armorGlb: FIXTURE_TURRETLESS_ARMOR_GLB, visualGlb: FIXTURE_TURRETLESS_VISUAL_GLB },
 }
 
 /* ------------------------------------------------------------------ 服务器 */
@@ -267,18 +355,31 @@ const CORS_HEADERS = {
 /**
  * 起一个极小的资产源（127.0.0.1 随机端口，CORS 放行）。路由与真实资产包同形：
  * /data/tank_cache.json、/tank/{id}.json、/glb/{id}/{armor,visual}.glb。
- * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {armor?: number, visual?: number}}} [options]
- *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制两个 GLB 的完成顺序（加载竞态回归）。
+ * @param {{tankCache?: typeof FIXTURE_TANK_CACHE, delays?: {tankCache?: number, armor?: number, visual?: number}, variant?: 'turreted' | 'turretless'}} [options]
+ *   tankCache 仅覆盖本实例名册（大列表布局回归）；delays 控制名册/两个 GLB 的完成顺序（加载竞态回归）；
+ *   variant 选择夹具车型（turretless = GLB 无 turret_NN 的固定战斗室，用于无炮塔拖曳回归）。
  * @returns {Promise<{server: import('node:http').Server, origin: string, close: () => Promise<void>, requests: string[]}>}
  */
-export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {} } = {}) {
+export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, delays = {}, variant = 'turreted' } = {}) {
+  const pack = FIXTURE_PACKS[variant]
+  if (!pack) throw new Error(`unknown fixture variant: ${variant}`)
   const requests = []
   const routes = new Map([
     ['/data/tank_cache.json', { type: 'application/json', body: Buffer.from(JSON.stringify(tankCache)) }],
-    [`/tank/${FIXTURE_TANK_ID}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(FIXTURE_TANK_DATA)) }],
-    [`/glb/${FIXTURE_TANK_ID}/armor.glb`, { type: 'model/gltf-binary', body: FIXTURE_ARMOR_GLB }],
-    [`/glb/${FIXTURE_TANK_ID}/visual.glb`, { type: 'model/gltf-binary', body: FIXTURE_VISUAL_GLB }],
   ])
+  // 名册里的每个 id 都提供同形 tank JSON + 同一夹具 GLB；picker 选择任意车都能加载，
+  // context-loss retry 的“保留已选目标”门禁因此可确定复现。
+  for (const [id, info] of Object.entries(tankCache)) {
+    const tankId = Number(id)
+    const data = structuredClone(pack.data)
+    data.tank_id = tankId
+    data.name = info.name || data.name
+    data.model_url = `/glb/${tankId}/armor.glb`
+    data.visual_model_url = `/glb/${tankId}/visual.glb`
+    routes.set(`/tank/${tankId}.json`, { type: 'application/json', body: Buffer.from(JSON.stringify(data)) })
+    routes.set(`/glb/${tankId}/armor.glb`, { type: 'model/gltf-binary', body: pack.armorGlb })
+    routes.set(`/glb/${tankId}/visual.glb`, { type: 'model/gltf-binary', body: pack.visualGlb })
+  }
   const server = createServer((req, res) => {
     const path = (req.url || '').split('?')[0]
     requests.push(path)
@@ -298,7 +399,8 @@ export async function startFixtureAssetPack({ tankCache = FIXTURE_TANK_CACHE, de
       res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': route.type, 'Content-Length': route.body.length })
       res.end(route.body)
     }
-    const delay = path.endsWith('/armor.glb') ? (delays.armor || 0)
+    const delay = path === '/data/tank_cache.json' ? (delays.tankCache || 0)
+      : path.endsWith('/armor.glb') ? (delays.armor || 0)
       : path.endsWith('/visual.glb') ? (delays.visual || 0) : 0
     if (delay > 0) setTimeout(send, delay)
     else send()

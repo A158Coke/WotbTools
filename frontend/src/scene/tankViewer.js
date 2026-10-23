@@ -25,12 +25,19 @@ import {
 } from './agentData.js'
 import { normalizeTankCache } from '../utils/tankopediaQuery.js'
 import { createLoadProgress } from './loadProgress.js'
+import { shotResultClass } from '../utils/shotResultClass.js'
+import { isCompactShotResultCard, shotResultCardMetrics } from '../utils/shotResultCardMetrics.js'
 import {
     RC, RC_GLSL_CONST, RC_GLSL_FUNCS,
-    buildPack, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+    buildPack, snapshotPackPose, packPoseChanged, buildRicochetGrid, createGridTextures, simulateContinuation, raycastPackAll,
+    isClippedModuleHit, isBackfaceNormal,
 } from './armorCollisionPack.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
-import { isPrimary } from './penetration.js'
+import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
+// Armor Inspector 概率模型：±range = ±3σ 的正态 CDF + 逐层 1× 等效厚度传播
+import { penetrationChance, evaluateProbabilityChain, formatProbabilityPercent, resolveCardChance } from './armorInspectorChance.js'
+// HE 溅射：Armor Inspector func7695 的 800 条世界空间方向采样（best-sample 语义）
+import { sampleHeSplash, HE_SAMPLE } from './heSplash.js'
 // 动态装甲（armorsStatesController，全库 6 车）：声明 / 初态 / 逐态激活板集（纯函数源）
 import { activePlateSet, controllablePlateSet, defaultStateId, dynamicDeclarationByTankId } from '../data/armorStates.js'
 
@@ -57,14 +64,22 @@ function resetViewerGlobals() {
 }
 
 /**
- * dolly-zoom FOV（纯函数，内核与单测共用）：enabled 时按 k=max(1,d/refDist) 收窄 FOV，
- * 使 refDist 处定标的车体在任意 k 倍距离上屏幕尺寸不变；enabled=false 恒原生（k=1）。
- * 两车 world 总览（__worldPenMode）必须传 false——总览取景由射手/目标决定，
- * 套单车 dolly-zoom 会把远距受击车裁出视锥（review P2 回归锚点）。
+ * dolly-zoom FOV（纯函数，内核与单测共用）。
+ * enabled 时按 k=d/refDist 缩放：d<refDist 时 FOV 变宽，车体屏幕尺寸保持 refDist 处比例；
+ * farProductGain/farProductMax 可选：product = baseProduct + max(0,d-refDist)×gain，封顶 max；
+ * product 随距离增大 → 远距车体略小（Armor Inspector 实测标定）。enabled=false 恒原生。
+ * productScale 可选：整体放大 product（车体屏幕尺寸按 1/scale 缩小），默认 1；
+ * 用于查看器的显示缩放，不改变距离曲线形状。maxFovDeg 封顶近距，minFovDeg 封顶远距——
+ * 两车 world 总览必须传 false，否则会把远距受击车裁出视锥。
  */
-export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1) {
-    const k = enabled ? Math.max(1, distanceM / refDistM) : 1;
-    return Math.max(minFovDeg, 2 * Math.atan(Math.tan(baseFovDeg * Math.PI / 360) / k) * 180 / Math.PI);
+export function dollyZoomFov(distanceM, enabled, baseFovDeg = 50, refDistM = 30, minFovDeg = 1, maxFovDeg = Infinity, farProductGain = 0, farProductMax = Infinity, productScale = 1) {
+    if (!enabled) return Math.min(maxFovDeg, Math.max(minFovDeg, baseFovDeg));
+    const scale = Number.isFinite(productScale) && productScale > 0 ? productScale : 1;
+    const baseProduct = Math.tan(baseFovDeg * Math.PI / 360) * refDistM;
+    const unscaledProduct = Math.min(farProductMax, baseProduct + Math.max(0, distanceM - refDistM) * farProductGain);
+    const product = unscaledProduct * scale;
+    const fov = 2 * Math.atan(product / Math.max(distanceM, 1e-4)) * 180 / Math.PI;
+    return Math.min(maxFovDeg, Math.max(minFovDeg, fov));
 }
 
 /**
@@ -115,6 +130,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             loading: 'Loading tank model...',
             shellUnavailable: 'Shell data is missing or invalid.',
             loadFailed: (phase, msg) => 'Failed to load ' + phase + ': ' + msg,
+            contextLost: '3D rendering context was lost (GPU/driver reset). Please retry.',
             type: (value) => value,
             nation: (value) => value,
             showCollision: 'Show Collision',
@@ -126,6 +142,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             shotNominal: 'nominal',
             shotBlocked: 'blocked',
             shotDistance: 'Engagement distance', distanceUnit: 'm',
+            effectivePenetration: 'effective penetration',
+            shotMinDamage: 'min damage', shotMaxDamage: 'max damage', shotAvgDamage: 'avg damage', shotAvgShort: 'avg',
+            shotPenChance: 'penetration chance', shotPenDamage: 'penetration damage',
+            shotSplashDamage: 'splash damage', heRadius: 'splash radius', heBestSample: 'best sample',
+            directHit: 'direct hit', expectedDamage: 'expected damage',
+            heSamplingUnavailable: 'splash sampling unavailable',
+            noPrimaryBlocked: 'No primary armor hit; treated as non-penetration',
+            heBestSampleUpper: 'best sample (upper)', heBestSampleLower: 'best sample (lower)',
+            sectionName: (section) => section,
+            mayPenetrate: 'May penetrate',
             heatmap: 'Penetration map', hideHeatmap: 'Hide penetration map',
             technicalEvidence: 'Technical evidence', shotView: 'Shot view', relativeView: 'Impact view', worldView: 'Overview',
             phase: (phase) => phase,   // 加载阶段名（armor model / tank model / tank data / tank list）
@@ -135,11 +161,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         };
         const loadFailed = (phase, msg) => L.loadFailed(L.phase(phase), msg);
 
+        // Armor Inspector 单车装甲检视实测参考（PC T-34，2026-10-18）：
+        // 默认 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶）；实测 product 从 15m 的
+        // ≈2.477 按 +0.0128/m 缓慢增大、封顶 2.8。用户 2026-10-19 要求车体随距离
+        // 缩放更明显：显示 profile 改用 +0.028/m、封顶 3.8（再乘 1.1 整体缩放），
+        // 15m 基准不变；30m 约小 14%，100m/500m 约小 35%（实测参考仍保留在上面的注释）。
+        // near=0.05d / far=d+30；相机距离沿用查看器 3–500m。
+        // shot replay 与装甲检视共用这套显示 profile；两车 world overview 保持原生 50° 取景。
+        const ARMOR_REF_DIST = 15;
+        const ARMOR_BASE_FOV = 18.75;
+        const ARMOR_MAX_FOV = 40;
+        const ARMOR_MIN_FOV = 0.5;
+        const ARMOR_FAR_PRODUCT_GAIN = 0.028;
+        const ARMOR_FAR_PRODUCT_MAX = 3.8;
+        const ARMOR_PRODUCT_SCALE = 1.1;
+        const OVERVIEW_BASE_FOV = 50;
+
         // window 级监听统一经 onWin 登记，destroy 时成对摘除
         const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
         const cleanups = [];
         let rafId = 0;
         let destroyed = false;   // destroy 后迟到的 init/ animate 不再启动渲染
+        let contextLost = false; // WebGL 上下文丢失后 retry 必须重建 renderer，而不是只 reload 数据
+        let gpuLabel = '';       // 上下文丢失诊断：UNMASKED_RENDERER_WEBGL / RENDERER
         // Navigation between shots replaces the scene before delayed shell/trajectory work can finish.
         const pendingTimers = new Set();
         const setTimeout = (callback, delay) => {
@@ -156,10 +200,32 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 加载状态上报（宿主页进度条 / 错误态）；宿主回调异常不影响场景
         const reportLoad = (state) => {
             if (destroyed || typeof onLoadState !== 'function') return;
+            // Context loss 后所有 load/ready 上报都必须让位于错误态；只有带 contextLost
+            // 标记的错误本身可以写入，否则 in-flight GLTF/modelProgress 回调会把错误卡
+            // 覆盖成 loading/ready，retry 入口消失。
+            if (contextLost && !(state && state.contextLost)) return;
             try { onLoadState(state); } catch (_) {}
         };
         const errorMessage = (error) => (typeof error === 'string') ? error
             : (error && (error.message || error.statusText || String(error))) || 'unknown';
+        const contextLostMessage = () => gpuLabel ? `${L.contextLost} (${gpuLabel})` : L.contextLost;
+        function reportContextLost(event) {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (destroyed) return;
+            contextLost = true;
+            // 让所有 in-flight 资产/目标加载 continuation 失效，避免它们在错误态之后
+            // 继续写 loading/ready 或启动渲染。
+            loadGen++;
+            targetLoadGen++;
+            shooterLoadGen++;
+            if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+            reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
+        }
+        function reportContextRestored() {
+            // 浏览器允许恢复上下文，但 Three.js 的 GPU 资源已失效；保持错误态，由宿主
+            // “重试”销毁并重新创建整个 renderer，不在这里重建半套 GL 资源。
+            if (!destroyed && contextLost) reportLoad({ state: 'error', message: contextLostMessage(), contextLost: true });
+        }
         // 两个 GLB（装甲 + 外观）字节进度聚合；loadGen 让切车后旧加载的回调不再上报
         let loadGen = 0;
         let shooterLoadGen = 0;
@@ -191,7 +257,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let tankModel = null, armorModel = null, tankData;   // tankData = target tank (model/armor/info)
         let armorStateDecl = null, armorStateCurrent = null; // 动态装甲声明与当前态（非动态车均 null）
         let shooterData = null;                              // shooter tank (caliber/shells)
-        let shooterShells = [], shooterCaliber = 120;
+        // 口径不再预置默认值：判定必须用实际数据（配置/弹体/坦克），缺失即报错。
+        let shooterShells = [], shooterCaliber = null;
         let selectedShell = null;
         let penetrationMode = false;   // 实时穿透热力图模式开关（animate/切弹/按钮共用）
         // 射击复现 world 总览（命中/脱靶【同置】）——dolly-zoom 补偿的门控。
@@ -200,12 +267,79 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let worldOverviewMode = false;
         let collisionMode = false;     // 碰撞模型显示开关（按钮与热力图退出恢复共用）
         let moduleMeshes = [];
+        let heHeatmapCenter = null;    // HE 爆点（世界系）；null = 热力图 HE 分支透明
+        let heSplashGroup = null;      // 溅射半径球面（无 800 方向线）
 
         function tidyTrajectory() {
             if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
             trajInfoPos = null;
             document.getElementById('traj-info').style.display = 'none';
             document.getElementById('click-info').style.display = 'none';
+            // HE 爆点/半径球属于上一发判定：无命中、切车或清空轨迹时必须一起清掉，
+            // 否则空白短按/不相交 tick 会保留上次爆炸的着色与球体（评审 P2）。
+            heHeatmapCenter = null;
+            updateHeHeatmapUniforms();
+            disposeHeSplashVisual();
+        }
+        // showShotError 的持久错误行：World View HUD 重建 #turret-controls 时
+        // 会覆盖它，所以错误消息保存在模块状态并在每次重建时重新插入。
+        let shotReplayError = '';
+        function shotErrorHtml() {
+            if (!shotReplayError) return '';
+            return '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>'
+                + '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + escapeText(shotReplayError) + '</div>';
+        }
+        function clearShotError() {
+            shotReplayError = '';
+            const el = document.getElementById('shot-replay-error');
+            if (el) { el.textContent = ''; el.style.display = 'none'; }
+        }
+
+        // ===== HE 溅射可视化：只标注一个半径球面 =====
+        // 800 方向采样不再画线；方向化信息交给热力图染色（best 方向白色高亮）。
+        function disposeHeSplashVisual() {
+            if (!heSplashGroup) return;
+            scene.remove(heSplashGroup);
+            heSplashGroup.traverse((o) => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material) o.material.dispose();
+            });
+            heSplashGroup = null;
+        }
+        function updateHeSplashVisual(center, radius) {
+            disposeHeSplashVisual();
+            if (!scene || !center || !(radius > 0)) return;
+            const group = new THREE.Group();
+            group.position.copy(center);
+            group.userData.radius = radius;
+            const sphere = new THREE.Mesh(
+                new THREE.SphereGeometry(radius, 48, 24),
+                new THREE.MeshBasicMaterial({
+                    color: 0xffaa00, transparent: true, opacity: 0.07,
+                    depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+                }),
+            );
+            sphere.raycast = () => {};
+            group.add(sphere);
+            group.renderOrder = 998;
+            group.visible = penetrationMode;
+            scene.add(group);
+            heSplashGroup = group;
+        }
+
+        function applyHeUniforms(u) {
+            if (!u) return;
+            const active = !!(heHeatmapCenter && selectedShell && shellTypeOf(selectedShell) === 'he');
+            if (u.heActive) u.heActive.value = active;
+            if (u.heCenter && heHeatmapCenter) u.heCenter.value.copy(heHeatmapCenter);
+        }
+
+        function updateHeHeatmapUniforms() {
+            const apply = (obj) => obj && obj.traverse((node) => {
+                if (!node.isMesh || !node.material || !node.material.uniforms) return;
+                applyHeUniforms(node.material.uniforms);
+            });
+            apply(primaryArmorScene);
         }
 
         function getPlateThickness(section, plateId) {
@@ -251,8 +385,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // fragment shader 逐像素计算击穿概率着色：绿=稳定击穿 红=稳定挡住 渐变=概率过渡；
         // 跳弹(角度≥ricochet 且不满足三倍口径规则)→蓝紫高亮
         const PBR_VERT = `
-            varying vec3 vNormal;
-            varying vec3 vViewPos;
+            varying highp vec3 vNormal;
+            varying highp vec3 vViewPos;
             void main() {
               vec4 mv = modelViewMatrix * vec4(position, 1.0);
               vViewPos = mv.xyz;
@@ -261,9 +395,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         `;
         const PBR_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
-            varying vec3 vViewPos;
+            precision highp float;
+            varying highp vec3 vNormal;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -274,6 +408,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             uniform bool canSplash;     // 仅 HE（BlitzKit canSplash）
             uniform float damage;
             uniform float explosionRadius;
+            // HE 溅射热力图：爆点（世界系）+ 每块板自身的局部伤害。
+            // 颜色 = 该像素自己的 thickness+spacedThick 与到爆点距离算出的伤害。
+            uniform bool heActive;
+            uniform highp vec3 heCenter;
             uniform bool greenPenetration;
             uniform bool advancedHighlighting;
             uniform bool opaque;
@@ -282,7 +420,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             uniform sampler2D spacedArmorBuffer;   // R=外部/间隙甲 thickness/penetration, alpha!=0 表示有覆盖
             uniform highp sampler2D spacedArmorDepth; // 深度（HE 溅射用）
             uniform sampler2D spacedStateBuffer;      // RT1 状态通道：R=首层跳弹标志, G=续飞结果编码
-            uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时禁止在其上退差额；半浮点下恒 0
+            uniform float spacedSatGuard;             // 8 位回退格式（无半浮点 RT）：R 饱和(>=1)时按整穿深保守处理；半浮点下恒 0
             uniform mat4 inverseProjectionMatrix;
             #include <clipping_planes_pars_fragment>
             float getDist(vec2 coord, float depth) {
@@ -296,6 +434,18 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               }
               return vec3(0.0, 1.0, 0.0);
             }
+            // Armor Inspector HE 伤害渐变：0 = 暗红/无伤害，1 = 绿（满溅射）。
+            vec3 heDamageRamp(float t) {
+              vec3 dark = vec3(0.20, 0.0, 0.0);
+              vec3 red = vec3(0.90, 0.08, 0.0);
+              vec3 orange = vec3(1.0, 0.45, 0.0);
+              vec3 yellow = vec3(1.0, 0.90, 0.0);
+              vec3 green = vec3(0.20, 0.90, 0.25);
+              if (t < 0.25) return mix(dark, red, t / 0.25);
+              if (t < 0.50) return mix(red, orange, (t - 0.25) / 0.25);
+              if (t < 0.75) return mix(orange, yellow, (t - 0.50) / 0.25);
+              return mix(yellow, green, (t - 0.75) / 0.25);
+            }
             ${RC_GLSL_CONST}
             ${RC_GLSL_FUNCS}
             void main() {
@@ -304,21 +454,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               vec4 spacedData = texture2D(spacedArmorBuffer, sc);
               vec4 spacedState = texture2D(spacedStateBuffer, sc);
               bool underSpaced = spacedData.a != 0.0;
-              // RT0.G = 间隙甲层标记（SPACED_FRAG 写入 1；外部模块只写 R/coverage）。
-              // 外部模块是 flat 消耗、不是装甲层：主装甲在「只穿模块」时仍是首个实际装甲层，
-              // 保留转正/2×口径增强转正资格（用户 2026-10-17 裁示）；间隙甲才是首层。
-              bool hasSpacedArmor = spacedData.g > 0.0;
               // RT1.A = 1：最近覆盖层是外部模块（moduleStateMaterial 写；间隙甲写 0）。
               // 模块在前时，其后间隙板不得跳弹/续飞（用户 2026-10-17）。
               bool moduleInFront = spacedState.a > 0.5;
               bool gapRicochet = underSpaced && spacedState.r > 0.5 && !moduleInFront;   // 首层跳弹标志（RT1，最近板独占）
-              float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              highp vec3 viewDir = normalize(vViewPos);
+              // 装甲几何在加载时 toNonIndexed + computeVertexNormals ⇒ vNormal 已是逐面
+              // 几何法线，与点击判定 hit.face.normal 同源。不得改用 dFdx/dFdy(vViewPos)：
+              // 几何输入与运算全程 highp，避免法线/穿深先量化再提升精度；仍使用碰撞逐面
+              // 法线，不改为屏幕导数。500 m 视空间 length() 在 mediump 下会溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
 
               highp mat3 vRotT = transpose(mat3(viewMatrix));
               highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-              highp vec3 incR = normalize(vViewPos);
-              highp vec3 nVR = normalize(vNormal);
+              highp vec3 incR = viewDir;
+              highp vec3 nVR = nFace;
               highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
               highp vec3 reflR = normalize(vRotT * rVR);
               bool threeCal = caliber > thickness * 3.0;
@@ -328,6 +479,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
               bool mayRicochet = angle >= ricochet;
               float penChance = -1.0;
               float splashChance = 0.0;
+              float heDamageNorm = 0.0;
               bool ricocheted = false;
               bool contPen = false;
               int contCls = 0;
@@ -338,6 +490,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 // 着色器**在其自身几何（真实起点/法线）上算毕并编码进 B——此处只解读，
                 // 不得在本面重算（review 2026-10-13：两块板无平行约束）。
                 //   0.0 = 无续飞结果 → 维持紫；(0.2,0.8) = 续飞击穿（概率带）；1.0 = 续飞被挡 → 红
+                rcDiag = floor(spacedState.b * 255.0 + 0.5);
                 float code = spacedState.g;
                 if (code <= 0.0) {
                   penChance = 0.0; ricocheted = true;
@@ -362,63 +515,165 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (rcMode >= 1) {
                   contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
                   if (contCls == 1) { penChance = contChance; ricocheted = false; contPen = true; }   // 续飞击穿→绿
-                  else if (contCls == 2) { ricocheted = false; }                                      // 续飞被挡→红
+                  else if (contCls == 2) {
+                    ricocheted = false;
+                    // 名义被挡但 1–99%：显示概率带，不写死红色（与结果卡一致）。
+                    float p = clamp(contChance, 0.0, 1.0);
+                    float pct = floor(p * 100.0 + 0.5);
+                    if (pct >= 1.0 && pct <= 99.0) penChance = p;
+                  }
                 }
               } else {
                 float ratio = thickness > 0.0 ? caliber / thickness : 0.0;
                 bool twoCal = ratio > 2.0;
-                // 转正只作用于首个**实际装甲层**：已有间隙甲覆盖（= 首层装甲已被消耗）时不再转正；
-                // 外部模块覆盖不算装甲层（RT0.G 未置位）→ 本主装甲仍是首层，保留转正与
-                // 2×口径增强转正（用户 2026-10-13/2026-10-17 裁示，与点击链 armorLayerCount 同规则）
-                float norm = hasSpacedArmor ? 0.0
-                  : (twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization);
-                float finalThick = thickness / cos(max(0.0, angle - norm));
+                // BlitzKit：主装甲对自身厚度/角度独立套用转正；前置间隙甲/外部模块
+                // 不会取消它的 normalization（逐层，不继承首层状态）。
+                float norm = twoCal
+                  ? (1.4 * normalization * caliber) / (2.0 * thickness)
+                  : normalization;
+                // 掠射角保护：mediump 下 cos 可能为 0/负，必须与 resolveLayerGeometry 的
+                // 1e-6 下界一致，否则会写入 inf/负厚度并反向扣减覆盖（review 2026-10-18）。
+                highp float finalThick = thickness / max(cos(max(0.0, angle - norm)), 1e-6);
                 float rem = penetration;
+                highp float spacedEff = 0.0;
+                // 8 位回退格式 R 饱和：累计值只知 >=1，真实消耗未知；不得当成恰好
+                // 一份穿深去算高斯 CDF（200mm 间隙甲/100mm 穿深会被算成 14%）。
+                // fail-closed：直接按 blocked 概率处理。
+                bool spacedSatBlocked = false;
+                // 间隙甲 CDF 的区间基准：若 RT1 最近覆盖层是外部模块，模块 flat 在
+                // 间隙甲之前消耗，间隙层 CDF 必须用 P−moduleFlat；否则用原始 P。
+                // 均值必须保留符号：模块厚于穿深时区间仍可能保留正向尾部
+                // （P199/chassis200/spaced1/hull1 → 均值−1，5.0% 仍可穿），
+                // 不得用 max(0, ·) 截断（review 2026-10-18 第二反例）。
+                highp float spacedProbBase = penetration;
+                // Armor Inspector 概率区间：±5% = ±3σ；两端一起平移，σ 保持不变。
+                highp float pMin = penetration * 0.95;
+                highp float pMax = penetration * 1.05;
                 if (underSpaced) {
-                  // 厚度通道 = 全板裸 LOS 之和；状态通道 B = 最近层转正差额 → 修正总消费
-                  // （= 转正首层 + 其余裸 LOS；无状态（模块最近/无板）时差额为 0）。
-                  // 累计格式契约（review 2026-10-13 P2 饱和回归）：Σ裸LOS/pen 与差额/pen 都可能
-                  // >1——半浮点 RT 保留未饱和总量，此处代数恒等成立；8 位回退格式下 R 先被钳到 1
-                  // （超额已丢失），不得再在饱和 R 上退差额（spacedSatGuard=1，按整穿深计）。
+                  // RT0.R = 各间隙板/模块的逐层 actual effective / penetration 累加
+                  // （SPACED_FRAG 与 EXTERNAL_FRAG 同口径）；不再用 RT1 最近层差额修正。
+                  // 累计值可能 >1：半浮点 RT 保留；8 位回退在 R 饱和时按整穿深保守处理。
                   highp float rawTotal = spacedData.r;
-                  highp float totalConsume = (spacedSatGuard > 0.5 && rawTotal >= 1.0)
-                    ? 1.0 : max(0.0, rawTotal - spacedState.b);
+                  spacedSatBlocked = spacedSatGuard > 0.5 && rawTotal >= 1.0;
+                  highp float totalConsume = spacedSatBlocked ? 1.0 : max(0.0, rawTotal);
+                  // B = 外部模块 flat 消耗；从总消费中分离间隙甲 normalized effective。
+                  highp float moduleFlat = max(0.0, spacedData.b * penetration);
+                  spacedEff = max(0.0, totalConsume * penetration - moduleFlat);
+                  spacedProbBase = moduleInFront ? (penetration - moduleFlat) : penetration;
                   float spacedThick = totalConsume * penetration;
+                  // 判定/热力图按实际等效厚度消耗一次（与 penetration.js 的
+                  // remainingPen -= effective 一致）；不能用 3× 概率区间把确定性的
+                  // 穿透判成红色。Armor Inspector 概率只作为结果卡上的补充数值。
+                  pMin -= totalConsume * penetration;
+                  pMax -= totalConsume * penetration;
                   rem -= spacedThick;
-                  if (isExplosive && rem > 0.0) {
+                  // HE（canSplash）即使 rem<=0 也走 SPLASH/BLOCKED，不能落进贯穿 CDF；
+                  // HEAT 没有溅射，名义 rem 耗尽时随机区间仍可能有正尾，必须继续 gap
+                  // 衰减并进入 CDF（review 2026-10-18：spaced100→0.1m→hull1 卡片 13.19%）。
+                  if (isExplosive) {
                     float spacedDist = getDist(sc, texture2D(spacedArmorDepth, sc).r);
                     float primaryDist = getDist(sc, gl_FragCoord.z);
                     // 深度反投影得到视空间距离；场景原生米制，metersPerUnit=1（恒等）
                     float distArmor = (primaryDist - spacedDist) * metersPerUnit;
                     if (canSplash) {
-                      float finalDamage = 0.5 * damage * (1.0 - distArmor / explosionRadius) - 1.1 * (finalThick + spacedThick);
-                      splashChance = step(0.0, finalDamage);
+                      // Armor Inspector HE 热力图：以爆点为圆心的距离衰减 + 名义装甲，
+                      // 输出连续伤害渐变（不再用 0/1 的 splashChance 二值橙色）。
+                      // 没有爆点（尚未点击）时保持透明，不拿间隙距离伪造分布。
+                      if (heActive) {
+                        // 8 位 RT 的 R 饱和：累计间隙甲厚度只知 >=1 倍穿深，真实装甲未知；
+                        // HE 热力图必须按 0 伤害端 fail-closed，不能用 penetration 冒充
+                        // 实际厚度去画正值（评审 P2）。
+                        if (spacedSatBlocked) {
+                          splashChance = 0.0;
+                          heDamageNorm = 0.0;
+                        } else {
+                          // Armor Inspector HE 热力图（shader 67）：满伤距离衰减 − 1.3×装甲，
+                          // 按满伤归一。与面板 0.5·D·(0.75/1.25) − Σ名义装甲是两条路径；
+                          // 热力图用 1.3 的装甲系数和满伤基准，薄板/近爆点才会明显发热。
+                          float heArmor = (thickness + spacedThick) * 1.3;
+                          float heDist = length(wPosR - heCenter);
+                          float splashDamage = damage * (1.0 - heDist / max(explosionRadius, 1e-3)) - heArmor;
+                          splashChance = step(0.0, splashDamage);
+                          heDamageNorm = clamp(splashDamage / max(damage, 1e-3), 0.0, 1.0);
+                        }
+                      } else {
+                        splashChance = 0.0;
+                        heDamageNorm = 0.0;
+                      }
                       penChance = 0.0;
                     } else {
-                      rem -= 0.5 * rem * distArmor;      // HEAT gap decay
+                      // HEAT gap decay：与 penetration.js 同一 0.5/m；概率区间同样衰减。
+                      // RT0 深度只保留最近覆盖层→主甲的总距离，多层前置时这里是
+                      // 1−0.5·Σd（卡片是逐 gap 乘积，严格更小）；精确需要逐层有序
+                      // 深度/depth peeling，与多间隙层 CDF 同一 RT0 限制（已知近似）。
+                      float gapLoss = max(0.0, 1.0 - 0.5 * distArmor);
+                      pMin *= gapLoss;
+                      pMax *= gapLoss;
+                      rem -= 0.5 * rem * distArmor;
                     }
                   }
                 }
                 if (penChance < 0.0) {
-                  rem = max(0.0, rem);
-                  float delta = finalThick - rem;
-                  float rand = rem * 0.05;               // ±5% randomization band
-                  penChance = clamp(1.0 - (delta + rand) / (2.0 * rand), 0.0, 1.0);
+                  // 均值与宽度同时传播：σ = (max-min)/6，不得按扣减后的 rem 重算。
+                  if (spacedSatBlocked) {
+                    // 8 位 R 饱和：真实累计厚度未知，按 blocked 处理（fail-closed）。
+                    penChance = 0.0;
+                  } else if (pMax <= 0.0) {
+                    penChance = 0.0;
+                  } else {
+                    highp float sigma = max((pMax - pMin) / 6.0, 1e-4);
+                    highp float mu = 0.5 * (pMin + pMax);
+                    penChance = clamp(aiNormalCdf((mu - finalThick) / sigma), 0.0, 1.0);
+                    // 间隙甲层也参与 CDF：GPU additive 只有总 normalized 厚度，
+                    // 用聚合厚度乘一次 CDF。前置模块用 spacedProbBase 先平移区间；
+                    // 单间隙层精确，多层仍为同向近似（RT0 无法恢复逐层顺序）。
+                    if (spacedEff > 0.0) {
+                      highp float sSigma = max(penetration * 0.05 / 3.0, 1e-4);
+                      penChance *= clamp(aiNormalCdf((spacedProbBase - spacedEff) / sSigma), 0.0, 1.0);
+                    }
+                  }
                   if (canSplash) {
-                    float splash = 0.5 * damage - 1.1 * finalThick;
-                    splashChance = step(0.0, splash);
+                    if (heActive) {
+                      // 同 shader 67 的热力图口径（满伤衰减 − 1.3×装甲，满伤归一）。
+                      float heArmor2 = thickness * 1.3;
+                      float heDist2 = length(wPosR - heCenter);
+                      float splash = damage * (1.0 - heDist2 / max(explosionRadius, 1e-3)) - heArmor2;
+                      splashChance = step(0.0, splash);
+                      heDamageNorm = clamp(splash / max(damage, 1e-3), 0.0, 1.0);
+                    } else {
+                      splashChance = 0.0;
+                      heDamageNorm = 0.0;
+                    }
                   }
                 }
               }
               float alpha = opaque ? 1.0 : 0.5;
               vec3 base = vec3(1.0, splashChance * 0.392, 0.0);
               if (advancedHighlighting && ricocheted) base = vec3(1.0, base.g, 1.0);
-              if (greenPenetration || advancedHighlighting) {
-                float fall = 1.0 - penChance * penChance;
-                float gain = 1.0 - (penChance - 1.0) * (penChance - 1.0);
-                // 续飞击穿用纯绿（不套掠射 overmatch 的青蓝指示色——炮弹确实穿了）
+              if (canSplash) {
+                // 每块板自身的局部伤害：thickness+spacedThick 与到爆点距离。
+                vec3 heColor = heDamageRamp(heDamageNorm);
+                // 零伤害仍是热力图的 0 端（暗红），不能整块透明——只有未激活/无爆点
+                // 才透明；否则无法区分“零伤害的装甲”和“没开热力图”（评审 P2）。
+                float heAlpha = heActive ? mix(0.18, 0.95, heDamageNorm) : 0.0;
+                gl_FragColor = vec4(heColor, heAlpha);
+              } else if (greenPenetration || advancedHighlighting) {
+                // 概率色带：红 → 橙 → 黄 → 绿；高概率端保留 overmatch 青蓝/续飞纯绿。
+                // 旧的 base/penColor 二次混合在 30%–60% 之间几乎都是暗红/橄榄色，
+                // 这里加入橙/黄中间色相，让相邻概率段的颜色差异一眼可辨。
                 vec3 penColor = contPen ? vec3(0.0, 1.0, 0.0) : getPenetrationColor(threeCal, mayRicochet);
-                gl_FragColor = vec4(fall * base + gain * penColor, alpha);
+                float p = clamp(penChance, 0.0, 1.0);
+                vec3 orange = vec3(1.0, 0.45, 0.0);
+                vec3 yellow = vec3(1.0, 0.90, 0.0);
+                vec3 heat;
+                if (p < 0.34) {
+                  heat = mix(base, orange, p / 0.34);
+                } else if (p < 0.67) {
+                  heat = mix(orange, yellow, (p - 0.34) / 0.33);
+                } else {
+                  heat = mix(yellow, penColor, (p - 0.67) / 0.33);
+                }
+                gl_FragColor = vec4(heat, alpha);
               } else {
                 gl_FragColor = vec4(base, (1.0 - penChance) * alpha);
               }
@@ -431,19 +686,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // ===== 穿透热力图：对齐 BlitzKit SpacedArmorScene（Armor/index.tsx useFrame）=====
         // spacedArmorScene 在【单次】gl.render 内按 renderOrder 排序：
         //   0 主装甲 omit(colorWrite:false, depthWrite:true，仅供 RT 遮挡)；
-        //   1-2 间隙甲 additive(R=裸 LOS 厚度/穿深累计)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   1-2 间隙甲 additive(R=逐层 normalized effective/穿深累计)；
+        //   3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
         // 状态通道（RT1，独立 pass，NoBlending+depthWrite）：最近层独占写 R=跳弹标志 /
-        //   G=续飞编码 / B=首层转正差额——身份 = GPU 深度测试的精确最近层，无容差阈值。
-        //   就地续飞在自身几何上算毕，屏幕侧只解读)；3-4 外部模块(3=depth, 4=additive)；5 间隙甲 depth。
+        //   G=续飞编码——身份 = GPU 深度测试的精确最近层，无容差阈值。
+        //   就地续飞在自身几何上算毕，屏幕侧只解读。
         // 结果写入 RT，primaryArmorScene(renderOrder 1) 读 RT 着色到屏幕。
         // 关键：omit/additive 是同一节点的两个独立 Mesh，深度缓冲贯穿全部 renderOrder → 被遮挡模块正确剔除。
         // 主循环顺序：autoClear=true 渲染 RT → autoClear=false 渲染场景 → clearDepth() 渲染 primaryArmorScene。
         let penetrationRT = null;
         let spacedStateRT = null;
-        // 累计格式能力（review 2026-10-13 P2 饱和回归）：R=Σ裸LOS/pen 与 B=差额/pen 都可能 >1，
-        // 8 位 unorm 在逐片元 additive 累计时会先钳到 1——差额修正就落在已饱和的值上。优先请求
-        // 可保留 >1 且支持混合的半浮点可渲染格式（RGBA16F；其混合不需要 EXT_float_blend）；
-        // 无 EXT_color_buffer_{float,half_float} 时回退 8 位，PBR 侧以 spacedSatGuard 禁止对饱和 R 退差额。
+        // 累计格式能力：R=Σ逐层 normalized effective/pen 可能 >1，8 位 unorm 在逐片元
+        // additive 累计时会先钳到 1。优先请求可保留 >1 且支持混合的半浮点可渲染格式
+        // （RGBA16F；其混合不需要 EXT_float_blend）；无扩展时回退 8 位，PBR 侧以
+        // spacedSatGuard 在 R 饱和时按整穿深保守处理。
         function spacedRTFloatCapable() {
             return renderer.extensions.has('EXT_color_buffer_float')
                 || renderer.extensions.has('EXT_color_buffer_half_float');
@@ -611,6 +867,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         let ricochetPack = null;
         let ricochetGrid = null;          // 网格加速结构（含纹理）
         let ricochetPoseDirty = true;     // 几何姿态变化（炮塔/配置/模型）→ 需重建网格
+        let ricochetPoseSnapshot = null;
+        let ricochetFailedPose = null;
+        let ricochetGridGeneration = 0;
         let ricochetPackReason = '';      // 最近一次失败原因（钩子透出，排查用）
         const resUniform = { value: new THREE.Vector2(1, 1) };   // 共享分辨率（低清/全清 pass 每帧切换）
 
@@ -628,6 +887,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rcCellRows: { value: 1 },
             rcEntryRows: { value: 1 },
             rcEntryTotal: { value: 0 },
+            // gun_mask 裁切面（世界系 xyz=normal, w=constant）：只过滤 gunBarrel 命中。
+            rcClipPlane: { value: new THREE.Vector4() },
+            rcClipEnabled: { value: false },
         };
         function penetrationMaterial(thickness) {
             return new THREE.ShaderMaterial({
@@ -646,6 +908,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     canSplash: { value: false },
                     damage: { value: 0 },
                     explosionRadius: { value: 0 },
+                    heActive: { value: false },
+                    heCenter: { value: new THREE.Vector3(0, 0, 0) },
                     resolution: resUniform,
                     metersPerUnit: { value: 1 },
                     opacity: { value: 1 },
@@ -667,6 +931,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     rcCellRows: rcUniforms.rcCellRows,
                     rcEntryRows: rcUniforms.rcEntryRows,
                     rcEntryTotal: rcUniforms.rcEntryTotal,
+                    rcClipPlane: rcUniforms.rcClipPlane,
+                    rcClipEnabled: rcUniforms.rcClipEnabled,
                 },
             });
         }
@@ -684,7 +950,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             #include <clipping_planes_pars_fragment>
             void main() {
               #include <clipping_planes_fragment>
-              gl_FragColor = vec4(thickness / penetration, 0.0, 0.0, 1.0);
+              gl_FragColor = vec4(thickness / penetration, 0.0, thickness / penetration, 1.0);
             }
         `;
         function externalMaterial(thickness, penetration, clip) {
@@ -698,41 +964,45 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         const SPACED_VERT = PBR_VERT;
-        // 厚度通道（RT0，additive，R 累计）：每个间隙板写 R=裸 LOS（thickness/cos 入射角）、
-        // G=间隙甲层标记；外部模块只写 R/coverage、不写 G。PBR 用 G 判断主装甲前方是否已有
-        // 实际装甲层（决定是否保留首层转正资格）；外部模块是 flat 消耗，不计入装甲层。
-        // **首层判定**用状态通道（RT1）的最近间隙板深度；外部模块不阻塞间隙板状态，
-        // 而是写 A=1 让 PBR 抑制「模块在前」时其后间隙板的跳弹/续飞。首层 → 全效应
-        // （3×/2× overmatch + 转正）；其后各层 → 裸 LOS 厚度、不转正、不跳弹
-        // （与点击链同规则；review 2026-10-13）。
-        // 厚度通道（RT0，additive）：**每块间隙板只贡献裸 LOS 厚度**（thickness/cos 入射角），
-        // 不做任何首层判定——本通道里没有任何浮点深度邻近阈值可被合法小层距反例击穿
-        // （review 2026-10-13：任何"距离最近层 < δ"的推断都不是身份）。首层身份与转正差额
-        // 由状态通道（RT1，深度独占的精确最近层）携带，PBR 侧做代数修正：
-        //   总消费 = Σ裸LOS − RT1.差额(最近层) = 转正首层 + 其余各层裸 LOS
-        //   该恒等要求累计值保留 >1 的总量：RT 用半浮点格式；8 位仅在无扩展回退时钳位 + PBR 饱和守卫。
+        // 厚度通道（RT0，additive，R 累计）：每块间隙板按 BlitzKit 独立计算
+        // finalNorm（2× 口径增强按本层厚度）与 finalThickness，写 R=finalThickness/penetration；
+        // G=间隙甲层标记；外部模块写 flat R/coverage、不写 G。
+        // 状态通道（RT1）只负责最近层的跳弹标志/续飞编码；外部模块写 A=1 抑制其后的
+        // 间隙板跳弹/续飞。PBR 直接累加 RT0.R，不再做“首层/最近层差额”修正。
         const SPACED_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
-            varying vec3 vViewPos;
+            precision highp float;
+            varying highp vec3 vNormal;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
+            uniform float caliber;
+            uniform float ricochet;
+            uniform float normalization;
             void main() {
-              float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
-              float losThick = thickness / max(cos(angle), 1e-6);
-              gl_FragColor = vec4(losThick / penetration, 1.0, 0.0, 1.0);
+              highp vec3 viewDir = normalize(vViewPos);
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
+              // RT1 只对最近的间隙板做跳弹判定；本 additive 通道只累计各层
+              // normalized effective，后续高倾角间隙板不能被写成 R=1（CPU layerIndex>0 已抑制跳弹）。
+              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
+              float finalNorm = twoCal
+                ? (1.4 * normalization * caliber) / (2.0 * thickness)
+                : normalization;
+              // 与 resolveLayerGeometry 同一 1e-6 余弦下界，防掠射角 inf/负厚度。
+              highp float finalThick = thickness / max(cos(max(0.0, angle - finalNorm)), 1e-6);
+              gl_FragColor = vec4(finalThick / penetration, 1.0, 0.0, 1.0);
             }
         `;
         // 状态通道（RT1，NoBlending + depthWrite=true）：只有沿视线**最近**的间隙板能写入——
-        // 不可累加的跳弹标志/续飞编码与 R 厚度累计分离（review 2026-10-13：additive 下多块板
-        // 各写 B，0.8+0.8→1.6 被钳到 1，误进「被挡」红分支）。续飞就地执行，反射起点/法线 =
-        // 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；G = 续飞结果编码
-        // （0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
+        // 不可累加的跳弹标志/续飞编码与逐层 normalized R 累计分离。续飞就地执行，反射起点/
+        // 法线 = 本间隙板自身（不得复用其后主装甲）。输出：R = 首层跳弹标志；
+        // G = 续飞结果编码（0.0 = 无结果（紫）；(0.2,0.8) = 击穿概率带；1.0 = 被挡（红））。
         const SPACED_STATE_FRAG = `
-            precision mediump float;
-            varying vec3 vNormal;
-            varying vec3 vViewPos;
+            precision highp float;
+            varying highp vec3 vNormal;
+            varying highp vec3 vViewPos;
             uniform float thickness;
             uniform float penetration;
             uniform float caliber;
@@ -741,39 +1011,39 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             ${RC_GLSL_CONST}
             ${RC_GLSL_FUNCS}
             void main() {
-              float viewDistance = length(vViewPos);
-              float angle = acos(dot(vNormal, -vViewPos) / viewDistance);
+              highp vec3 viewDir = normalize(vViewPos);
+              // 同一 flat vNormal 面法线；不要用 dFdx/dFdy(vViewPos)（移动端 mediump 导数会错乱）。
+              // 视线方向用 highp：500 m 处 mediump length() 会在平方时溢出。
+              highp vec3 nFace = normalize(vNormal);
+              highp float angle = acos(clamp(dot(nFace, -viewDir), -1.0, 1.0));
               bool threeCal = caliber > thickness * 3.0;
               bool ricocheted = !threeCal && angle >= ricochet;
-              bool twoCal = caliber > thickness * 2.0 && thickness > 0.0;
-              float norm = twoCal ? (1.4 * normalization * caliber) / (2.0 * thickness) : normalization;
-              float losThick = thickness / max(cos(angle), 1e-6);
-              float normThick = thickness / cos(max(0.0, angle - norm));
-              // B = 首层（= 本最近层）转正差额/穿深 = (裸LOS − 转正后)/pen ≥ 0。
-              // 厚度通道全板按裸 LOS 累计，PBR 用本差额把最近层的贡献修正为转正后值
-              // ——身份 = 深度独占的精确最近层（GPU 逐片元深度测试），无任何容差阈值。
-              // 不做上钳：差额 >1（转正节省超过整穿深）在浮点格式下须精确参与 r−b 恒等；
-              // 8 位回退格式由硬件钳位，PBR 饱和守卫兜底（review 2026-10-13 P2）。
-              float delta = max(0.0, losThick - normThick) / max(penetration, 1.0);
+              // R 通道已逐层写 normalized effective；状态通道不再需要 normalization 差额。
               float bCode = 0.0;
+              highp float rcDiag = 0.0;
               if (ricocheted && rcMode >= 1) {
                 highp mat3 vRotT = transpose(mat3(viewMatrix));
                 highp vec3 wPosR = vRotT * (vViewPos - viewMatrix[3].xyz);
-                highp vec3 incR = normalize(vViewPos);
-                highp vec3 nVR = normalize(vNormal);
+                highp vec3 incR = viewDir;
+                highp vec3 nVR = nFace;
                 highp vec3 rVR = incR - 2.0 * dot(incR, nVR) * nVR;
                 highp vec3 reflR = normalize(vRotT * rVR);
                 highp float contChance = 0.0;
-                highp float rcDiag = 0.0;
                 int contCls = rcContinue(wPosR, reflR, penetration * RC_RICO_MUL, contChance, rcDiag);
                 if (contCls == 1) bCode = 0.2 + 0.6 * clamp(contChance, 0.0, 1.0);
-                else if (contCls == 2) bCode = 1.0;
+                else if (contCls == 2) {
+                  // 名义被挡但概率为 1–99%：编码概率带（与卡片“可能击穿 p%”一致）；
+                  // 0%/100% 仍编码 1.0 = 硬红（卡片隐藏概率、显示 BLOCKED）。
+                  float p = clamp(contChance, 0.0, 1.0);
+                  float pct = floor(p * 100.0 + 0.5);
+                  bCode = (pct >= 1.0 && pct <= 99.0) ? 0.2 + 0.6 * p : 1.0;
+                }
                 // 防编译器消除 rcContinue 调用：out 参数副作用必须可能被观测
                 if (rcDiag > 1e30) bCode = -1.0;
               }
               // A=0：本片元是间隙甲（不是外部模块）；模块状态材质写 A=1，PBR 据此抑制
-              // 「模块在前」时其后间隙板的跳弹/续飞。RGB 仍供 PBR 使用（B=转正差额）。
-              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, delta, 0.0);
+              // 「模块在前」时其后间隙板的跳弹/续飞。
+              gl_FragColor = vec4(ricocheted ? 1.0 : 0.0, bCode, rcDiag / 255.0, 0.0);
             }
         `;
         /** 间隙板两通道共享 uniforms（与穿透材质同一对象引用共享续飞变量——单点更新全体生效）。 */
@@ -794,6 +1064,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 rcCellRows: rcUniforms.rcCellRows,
                 rcEntryRows: rcUniforms.rcEntryRows,
                 rcEntryTotal: rcUniforms.rcEntryTotal,
+                rcClipPlane: rcUniforms.rcClipPlane,
+                rcClipEnabled: rcUniforms.rcClipEnabled,
             };
         }
         function spacedMaterial(thickness, penetration) {
@@ -813,9 +1085,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         // 外部模块状态材质（RT1）：只把 A 置 1（= 最近覆盖层是外部模块），RGB 保留——
-        // 其后间隙板的转正差额/跳弹状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
-        // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞（用户 2026-10-17），但间隙甲
-        // 仍是首个实际装甲层，其转正差额继续由 PBR 使用。
+        // 其后间隙板的跳弹/续飞状态不得被模块覆盖。RGB src=0/dst=1，A src=1/dst=0。
+        // 模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。
         const MODULE_STATE_FRAG = `
             #include <clipping_planes_pars_fragment>
             void main() {
@@ -849,9 +1120,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const t = ((sh && sh.type) || '').toLowerCase();
             if (t === 'hc' || t === 'hc_premium' || t === 'heat' || t === 'atgm_heat') return 'heat';
             if (t === 'ap_cr' || t === 'ap_cr_premium' || t === 'apcr') return 'apcr';
-            if (t === 'he' || t === 'he_premium') return 'he';
+            if (t === 'he' || t === 'he_premium' || t === 'hesh' || t === 'hesh_premium') return 'he';
             if (t === 'ap' || t === 'ap_premium') return 'ap';
-            return t;
+            // 未知弹种必须 fail-closed：返回 null 让判定入口拒绝，而不是把原始串
+            // 交给 penetration.js 的“未知 → HE”上游兜底（会把 AP 变体当爆炸弹）。
+            return null;
         }
         const SHELL_LABEL = { ap: 'AP', apcr: 'APCR', heat: 'HEAT', he: 'HE' };
         function shellLabel(s) { return SHELL_LABEL[shellTypeOf(s)] || (s && s.type) || '?'; }
@@ -933,30 +1206,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             for (let b = 0; b < 13; b++) if (mask & (1 << b)) out.push(NAMES[b] || ('bit' + b));
             return out;
         }
-        // 命中结果分类：作者 = method38 位图（权威）；他人 hit_flags 恒 0 → 用 game_hit_result 枚举映射
-        function shotResultClass(s) {
-            // 伤害仲裁优先：一发命中可与目标多次装甲交互（method38 多消息已按位图并集合并，
-            // combat.rs ③'）——先弹开又击穿的弹同时带 0x0008 与 0x0010 位，此时以 HP 伤害
-            // 定性（伤害>0 = 击穿级结果）；HE 弹（0x1000）无论如何先按 HE 分类；
-            // 伤害=0 时才按跳弹/未穿位与结果枚举细分。
-            if (!s.target_name) return 'MISS';
-            const flg = s.hit_flags || 0;
-            const dmg = s.damage || 0;
-            if (flg & 0x1000) return 'HE BLAST';
-            if (dmg > 0) return 'PENETRATION';
-            if (flg & 0x0008) return 'RICOCHET';
-            if (flg & 0x0020 || flg & 0x0040 || flg & 0x0080) return 'NO PENETRATION';
-            const r = s.game_hit_result;
-            if (r === 4) return 'RICOCHET';
-            if (r === 3) return 'PENETRATION';
-            if (r === 1 || r === 2) return 'NO PENETRATION';
-            return 'HIT';   // 0/255：服务器未通知，仅知有目标
-        }
+        // 命中结果分类：作者 = method38 位图（权威）；他人 hit_flags 恒 0 → 用 game_hit_result 枚举映射。
+        // 唯一映射在 ../utils/shotResultClass.js（result=4 = raw 未定；0/255 = 结果未知）；此处仅消费。
         // 单发数据质量提示（ShotQuality 降级/回退项，3D 面板展示）
         function srQualityIssues(s) {
             const q = s.quality;
             const issues = [];
             if (!q) return issues;
+            if (q.target_dead) issues.push('受击方开火前已死亡（残骸命中，按未命中处理）');
             if (q.shooter_pos_from_muzzle) issues.push('射手位置为炮口坐标兜底');
             if (q.target_anchor_src === 'nearest') issues.push('命中通知缺失，目标锚点回退命中时刻最近包');
             else if (q.target_anchor_src === 'extrapolated') issues.push('命中通知缺失，目标锚点按末段速度外推');
@@ -984,6 +1241,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 : !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
             if (!calOn) return 1.0;
             const t = shellTypeOf(s);
+            // 未知弹种没有可用的装备口径系数；判定入口会 fail-closed，这里不猜 1.07。
+            if (!t) return 1.0;
             return (t === 'ap' || t === 'apcr') ? 1.06 : 1.07;
         }
         function shellOptionText(s) {
@@ -1111,9 +1370,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             });
         }
         /** 状态通道场景（RT1）：主装甲深度（阻挡其后间隙板/模块）→ 间隙板状态（depthWrite
-         *  独占最近板；R/G/B=跳弹/续飞/转正差额，A=0）→ 外部模块状态（更近时写 A=1，
-         *  RGB 保留）。模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞，但间隙甲仍是
-         *  首个实际装甲层，其转正差额继续由 PBR 使用（用户 2026-10-17）。 */
+         *  独占最近板；R/G=跳弹/续飞，A=0）→ 外部模块状态（更近时写 A=1，RGB 保留）。
+         *  模块不是装甲层：它在前时抑制其后间隙板的跳弹/续飞。 */
         function buildSpacedStateScene() {
             if (!armorModel) return;
             if (spacedStateScene) spacedStateScene.clear();
@@ -1193,7 +1451,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const isExplosive = t === 'he' || t === 'heat';
             const { penMul } = equipmentCoeffs();
             const pen = (sh.penetration || 0) * penMul;
-            const cal = sh.caliber || 120;
+            const cal = resolveCaliberFor(sh);
             // BlitzKit：degToRad(shell.normalization ?? 0)
             const norm = (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180;
             const rico = (isExplosive ? 90 : (sh.ricochet != null ? sh.ricochet : 70)) * Math.PI / 180;
@@ -1243,14 +1501,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 penetrationRT.dispose();
                 penetrationRT = null;
             }
-            // 续飞 pack/网格随热力图资源整体废弃（纹理已释放；下次重建重新打包）
-            if (ricochetGrid && ricochetGrid.textures) {
-                ricochetGrid.textures.cellsTex.dispose();
-                ricochetGrid.textures.entriesTex.dispose();
-                ricochetGrid.textures.worldTrisTex.dispose();
-            }
+            disposeRicochetGrid();
             ricochetPack = null;
             ricochetGrid = null;
+            ricochetPoseSnapshot = null;
+            ricochetFailedPose = null;
             ricochetPoseDirty = true;
             rcUniforms.rcWorldTris.value = null;
             rcUniforms.rcGridCells.value = null;
@@ -1293,10 +1548,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             return list;
         }
         function rebuildRicochetPack() {
+            disposeRicochetGrid();
             ricochetPack = null;
-            ricochetGrid = null;
+            ricochetPoseSnapshot = null;
+            ricochetFailedPose = null;
             ricochetPackReason = '';
             rcUniforms.rcEnabled.value = false;
+            rcUniforms.rcMode.value = 0;
+            updateCollisionWorldMatrices();
             const entries = collectRicochetEntries();
             const pack = buildPack(entries);
             if (!pack.ok) {
@@ -1320,12 +1579,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!ricochetPack) return false;
             const grid = buildRicochetGrid(ricochetPack);
             if (!grid.ok) {
-                ricochetGrid = null;
+                disposeRicochetGrid();
+                rcUniforms.rcEnabled.value = false;
+                rcUniforms.rcMode.value = 0;
                 ricochetPackReason = grid.reason;
                 ricochetGridRetries++;
                 if (ricochetGridRetries >= RC_GRID_RETRY_MAX) {
                     rcUniforms.rcEnabled.value = false;
-                    ricochetPoseDirty = false;   // 放弃重试（跳弹维持紫 = 现状）
+                    ricochetPoseDirty = false;
+                    ricochetFailedPose = snapshotPackPose(ricochetPack); // 新姿态才重新尝试
                     console.warn('[armor-ricochet] grid disabled after retries:', grid.reason);
                     return false;
                 }
@@ -1333,12 +1595,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 return false;
             }
             ricochetGridRetries = 0;
-            // 旧网格纹理释放（disposeMaterial 不会碰它们——不在材质 uniforms 表里）
-            if (ricochetGrid && ricochetGrid.textures) {
-                ricochetGrid.textures.cellsTex.dispose();
-                ricochetGrid.textures.entriesTex.dispose();
-                ricochetGrid.textures.worldTrisTex.dispose();
-            }
+            disposeRicochetGrid();
             const tex = createGridTextures(grid);
             grid.textures = tex;
             ricochetGrid = grid;
@@ -1352,8 +1609,44 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rcUniforms.rcCellRows.value = Math.ceil(grid.cellTotal / RC.CELL_ROW);
             rcUniforms.rcEntryRows.value = Math.ceil(grid.entryTotal / RC.ENTRY_ROW);
             rcUniforms.rcEntryTotal.value = grid.entryTotal;
+            ricochetPoseSnapshot = snapshotPackPose(ricochetPack);
+            ricochetFailedPose = null;
+            ricochetPackReason = '';
+            ricochetGridGeneration++;
             ricochetPoseDirty = false;
             return true;
+        }
+        function disposeRicochetGrid() {
+            if (ricochetGrid?.textures) {
+                for (const texture of Object.values(ricochetGrid.textures)) texture.dispose();
+            }
+            ricochetGrid = null;
+            ricochetPoseSnapshot = null; // a disposed grid has no valid successful-pose snapshot
+            rcUniforms.rcWorldTris.value = null;
+            rcUniforms.rcGridCells.value = null;
+            rcUniforms.rcGridEntries.value = null;
+        }
+        function updateCollisionWorldMatrices() {
+            // 只传播矩阵；syncTransforms 会重新收集/对齐模块，不能作为每帧准备。
+            armorModel?.updateWorldMatrix(true, true);
+            tankModel?.updateWorldMatrix(true, true);
+            camera.updateWorldMatrix(true, false);
+        }
+        function prepareRicochetFrame() {
+            updateCollisionWorldMatrices();
+            if (ricochetPack) {
+                const changed = packPoseChanged(ricochetPack, ricochetPoseSnapshot);
+                const retryStopped = ricochetFailedPose && !packPoseChanged(ricochetPack, ricochetFailedPose);
+                if (ricochetPoseDirty || (changed && !retryStopped)) {
+                    if (ricochetFailedPose) {
+                        ricochetGridRetries = 0;
+                        ricochetFailedPose = null;
+                    }
+                    rebuildRicochetGrid();
+                }
+            }
+            const sh = selectedShell || shooterShells[0];
+            if (sh) syncRicochetEnabled(sh);
         }
         // 弹种门：仅动能弹（AP/APCR）可跳弹；爆炸弹（HE/HEAT，跳弹角 90°）续飞恒关；
         // 还需网格在位（矩阵未就位的宽限期内跳弹维持紫，网格就位后自动恢复）。
@@ -1548,7 +1841,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         if (aimPendingPart && !aimClaimed && !aimMultiTouch) claimAim(e, aimPendingPart);
                     }
                 }
-                if (aiming) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
+                if (aiming && isDragging) aimFromDrag(e.clientX - aimStartX, aimPitchEnabled ? e.clientY - aimStartY : 0);
             },
             up(e) {
                 if (aimPointerId.active !== e.pointerId) return;
@@ -1580,7 +1873,121 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (e.button === 0) rcLastClick = { x: e.clientX, y: e.clientY };
             });
         }
+        // Raw diagnostic readback, never decode IDs/classes from the blended display RGB.
+        // Synchronous passes freeze one prepared frame; temporary geometry belongs only to this probe.
+        function readArmorPixels({ x, y, width = 1, height = 1 }) {
+            if (!penetrationMode || !primaryArmorScene || !ricochetPack) return null;
+            const rect = renderer.domElement.getBoundingClientRect();
+            const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+            const left = Math.floor((x - rect.left) * size.x / rect.width);
+            const top = Math.floor((y - rect.top) * size.y / rect.height);
+            const w = Math.ceil(width * size.x / rect.width), h = Math.ceil(height * size.y / rect.height);
+            if (![left, top, w, h].every(Number.isFinite) || w < 1 || h < 1 || left < 0 || top < 0 || left + w > size.x || top + h > size.y) {
+                throw new RangeError('ROI must be inside the canvas (CSS client coordinates)');
+            }
+            if (!renderer.extensions.has('EXT_color_buffer_float')) throw new Error('Float readback unavailable');
+            const savedTarget = renderer.getRenderTarget();
+            const savedClear = renderer.getClearColor(new THREE.Color()), savedAlpha = renderer.getClearAlpha();
+            const savedAutoClear = renderer.autoClear;
+            const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+                type: THREE.FloatType, format: THREE.RGBAFormat, depthBuffer: true, samples: 0,
+                minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false,
+            });
+            target.texture.colorSpace = THREE.NoColorSpace;
+            const saved = [];
+            const identities = [];
+            const ids = new Float32Array(w * h * 4), values = new Float32Array(w * h * 4);
+            const positions = new Float32Array(w * h * 4), reflections = new Float32Array(w * h * 4);
+            const started = performance.now();
+            try {
+                prepareRicochetFrame();
+                updatePenetrationDistanceUniforms();
+                renderSpacedArmorPass();
+                syncCloneMatrices(primaryArmorScene);
+                for (const node of primaryArmorScene.children) {
+                    const original = { node, material: node.material, geometry: node.geometry };
+                    saved.push(original);
+                    if (!node.material.uniforms) continue; // preserve the display depth prepass
+                    const src = node.userData._src;
+                    const id = identities.length + 1;
+                    identities.push({ id, meshName: src.name, plateId: src.userData.armorPlateId,
+                        matrixWorld: src.matrixWorld.elements.slice(), penetration: node.material.uniforms.penetration.value,
+                        caliber: node.material.uniforms.caliber.value, normalization: node.material.uniforms.normalization.value });
+                    node.geometry = node.geometry.index ? node.geometry.toNonIndexed() : node.geometry.clone();
+                    const count = node.geometry.attributes.position.count;
+                    node.geometry.setAttribute('debugTriangle', new THREE.BufferAttribute(Float32Array.from({ length: count }, (_, j) => Math.floor(j / 3) + 1), 1));
+                    node.material = node.material.clone();
+                    node.material.uniforms = { ...original.material.uniforms }; // share textures; probe owns no collision textures
+                    node.material.transparent = false;
+                    node.material.blending = THREE.NoBlending;
+                    node.material.toneMapped = false;
+                    node.material.vertexShader = 'attribute float debugTriangle; varying highp float vDebugTriangle;\n' +
+                        PBR_VERT.replace('void main() {', 'void main() { vDebugTriangle = debugTriangle;');
+                    node.material.uniforms.debugPlate = { value: id };
+                    node.material.fragmentShader = `precision highp float;
+                        uniform float debugPlate; varying highp float vDebugTriangle;
+                        void main() { gl_FragColor = vec4(debugPlate, floor(vDebugTriangle + 0.5), 0.0, 1.0); }`;
+                }
+                const read = (buffer) => {
+                    renderer.autoClear = true;
+                    renderer.setClearColor(0, 0);
+                    renderer.setRenderTarget(target);
+                    renderer.render(primaryArmorScene, camera);
+                    renderer.readRenderTargetPixels(target, left, size.y - top - h, w, h, buffer);
+                };
+                read(ids); // identity-only: bypass continuation entirely
+                for (const { node, material } of saved) {
+                    if (!material.uniforms) continue;
+                    node.material.fragmentShader = PBR_FRAG.replace('gl_FragColor.a *= opacity;',
+                        'gl_FragColor = vec4(gapRicochet ? (rcDiag <= 2.0 ? rcDiag : 0.0) : (!noRicochet && mayRicochet) ? float(contCls) : (ricocheted ? 0.0 : (penChance > 0.0 ? 1.0 : 2.0)), rcDiag, penChance, 1.0);');
+                    node.material.needsUpdate = true;
+                }
+                read(values);
+                for (const [expression, buffer] of [['wPosR', positions], ['reflR', reflections]]) {
+                    for (const { node, material } of saved) {
+                        if (!material.uniforms) continue;
+                        node.material.fragmentShader = PBR_FRAG.replace('gl_FragColor.a *= opacity;', `gl_FragColor = vec4(${expression}, 1.0);`);
+                        node.material.needsUpdate = true;
+                    }
+                    read(buffer);
+                }
+                const pixels = [];
+                for (let row = 0; row < h; row++) for (let col = 0; col < w; col++) {
+                    const at = ((h - row - 1) * w + col) * 4;
+                    if (!ids[at + 3]) continue;
+                    const cpu = window.__armorRicochet.predict(left + col, size.y - top - row - 1);
+                    const inputs = identities[ids[at] - 1];
+                    const cpuAtGpuInput = cpu && !cpu.skip && values[at + 3] > 0
+                        ? simulateContinuation(ricochetPack, new THREE.Vector3().fromArray(positions, at),
+                            new THREE.Vector3().fromArray(reflections, at), { remIn: inputs.penetration * RC.RICO_REMAIN_MUL,
+                                caliber: inputs.caliber, normalizationRad: inputs.normalization, thickMul: rcUniforms.rcThickMul.value,
+                                clipPlane: gunClipPlane })
+                        : null;
+                    pixels.push({ x: left + col, y: top + row, id: ids[at], triangleId: ids[at + 1] - 1,
+                        gpu: { origin: Array.from(positions.slice(at, at + 3)), direction: Array.from(reflections.slice(at, at + 3)) },
+                        covered: values[at + 3] > 0, cls: values[at], rcDiag: values[at + 1], probability: values[at + 2],
+                        cpu, cpuAtGpuInput });
+                }
+                return { coordinateSpace: 'drawing-buffer-top-left', width: size.x, height: size.y,
+                    cssRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+                    cameraMatrix: camera.matrixWorld.elements.slice(), projectionMatrix: camera.projectionMatrix.elements.slice(),
+                    turretDeg: currentTurretDeg, gunDeg: currentGunDeg, gridGeneration: ricochetGridGeneration,
+                    shell: { ...selectedShell }, equipment: equipmentCoeffs(), identities, pixels,
+                    readbackMs: performance.now() - started };
+            } finally {
+                for (const { node, material, geometry } of saved) {
+                    if (node.material !== material) node.material.dispose();
+                    if (node.geometry !== geometry) node.geometry.dispose();
+                    node.material = material; node.geometry = geometry;
+                }
+                target.dispose();
+                renderer.setRenderTarget(savedTarget);
+                renderer.setClearColor(savedClear, savedAlpha);
+                renderer.autoClear = savedAutoClear;
+            }
+        }
         window.__armorRicochet = {
+            readPixels: readArmorPixels,
             info() {
                 return {
                     enabled: rcUniforms.rcEnabled.value,
@@ -1588,6 +1995,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     triTotal: ricochetPack ? ricochetPack.triTotal : 0,
                     grid: ricochetGrid ? { dims: ricochetGrid.dims, cell: ricochetGrid.cellSize, entries: ricochetGrid.entryTotal } : null,
                     poseDirty: ricochetPoseDirty,
+                    gridGeneration: ricochetGridGeneration,
+                    poseMatchesGrid: !!ricochetPack && !packPoseChanged(ricochetPack, ricochetPoseSnapshot),
                     reason: ricochetPackReason,
                     judgments: judgmentCount,
                     // 相机/视图诊断：门禁据此断言 dolly 补偿门控（world 总览——命中/脱靶
@@ -1609,9 +2018,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const d = reflDir.isVector3 ? reflDir : new THREE.Vector3(reflDir.x, reflDir.y, reflDir.z);
                 return simulateContinuation(ricochetPack, p, d, {
                     remIn: pen * RC.RICO_REMAIN_MUL,
-                    caliber: sh.caliber || 120,
+                    caliber: resolveCaliberFor(sh),
                     normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
                     thickMul: equipmentCoeffs().thickMul,
+                    clipPlane: gunClipPlane,
                 });
             },
             // GLSL 侧 uniform 当前值（布局对照用）
@@ -1620,13 +2030,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     triRows: rcUniforms.rcTriRows.value, cellRows: rcUniforms.rcCellRows.value, entryRows: rcUniforms.rcEntryRows.value, entryTotal: rcUniforms.rcEntryTotal.value,
                     gridMin: ricochetGrid ? ricochetGrid.gridMin : null, cell: rcUniforms.rcCell.value,
                     dimsF: rcUniforms.rcGridDimsF.value.toArray(), mode: rcUniforms.rcMode.value, thickMul: rcUniforms.rcThickMul.value,
+                    clipEnabled: rcUniforms.rcClipEnabled.value, clipPlane: rcUniforms.rcClipPlane.value.toArray(),
                 };
             },
             // CPU 侧逐像素预测类通道（差分测试参照）：RT 像素坐标（左下原点）→
             // 相机射线 → 首命中为主装甲且满足跳弹判据 → 反射 + JS 参考续飞 → cls。
             // skip=true 的像素（首命中非主装甲/不跳弹/无命中）不在比对范围。
             predict(px, py) {
+                prepareRicochetFrame();
+                updatePenetrationDistanceUniforms();
                 if (!ricochetPack || !selectedShell) return null;
+                if (!rcUniforms.rcEnabled.value) return { skip: true, why: 'continuation-disabled' };
                 const c = renderer.domElement;
                 const w = c.width, h = c.height;
                 if (px < 0 || py < 0 || px >= w || py >= h) return { skip: true };
@@ -1640,12 +2054,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!(first.section === 'hull' || first.section === 'turret' || first.section === 'gun')) {
                     return { skip: true, why: 'first-not-primary:' + first.section, camHits };
                 }
-                const PRIM = first.section === 'hull' || first.section === 'turret' || first.section === 'gun';
-                if (!PRIM) return { skip: true };   // 首命中为间隙/模块 → 着色器 underSpaced 口径，不比对
                 const sh = selectedShell;
-                const { penMul, thickMul } = equipmentCoeffs();
-                const pen = (sh.penetration || 0) * penMul;
-                const caliber = sh.caliber || 120;
+                const { thickMul } = equipmentCoeffs();
+                const src = ricochetPack.meshes[first.meshIdx];
+                const primary = primaryArmorScene?.children.find(n => n.userData._src === src && n.material.uniforms);
+                if (!primary) return { skip: true, why: 'no-primary-uniform' };
+                const pen = primary.material.uniforms.penetration.value;
+                const caliber = resolveCaliberFor(sh);
                 const th = first.thickness * thickMul;
                 const angle = Math.acos(Math.min(Math.abs(first.normal.dot(dir)), 1));
                 const rico = (sh.ricochet != null ? sh.ricochet : 70) * Math.PI / 180;
@@ -1657,11 +2072,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     caliber,
                     normalizationRad: (sh.normalization != null ? sh.normalization : 0) * Math.PI / 180,
                     thickMul,
+                    clipPlane: gunClipPlane,
                 });
                 return {
                     skip: false, cls: sim.cls,
+                    penetration: pen, penChance: sim.penChance,
+                    ray: { origin: camera.position.toArray(), direction: dir.toArray() },
+                    continuation: { origin: first.point.toArray(), direction: r.toArray(), normal: first.normal.toArray(), ...sim },
                     detail: {
-                        first: { section: first.section, thickness: first.thickness, angleDeg: +(angle * 180 / Math.PI).toFixed(1), point: [first.point.x.toFixed(2), first.point.y.toFixed(2), first.point.z.toFixed(2)] },
+                        first: { meshName: src.name, plateId: src.userData.armorPlateId, triangleId: first.triangleId, slot: first.slot, section: first.section, thickness: first.thickness, angleDeg: +(angle * 180 / Math.PI).toFixed(1), point: [first.point.x.toFixed(2), first.point.y.toFixed(2), first.point.z.toFixed(2)] },
                         reflect: [r.x.toFixed(3), r.y.toFixed(3), r.z.toFixed(3)],
                         layers: (sim.layers || []).map(l => ({ s: l.section, t: +l.t.toFixed(2), eff: +l.eff.toFixed(0), pen: l.penetrated })),
                     },
@@ -1675,6 +2094,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             aimingState() {
                 return {
                     aiming,
+                    turretDeg: currentTurretDeg, gunDeg: currentGunDeg,
                     controlsEnabled: controls ? controls.enabled : null,
                     cameraDistance: (controls && controls.target)
                         ? +camera.position.distanceTo(controls.target).toFixed(4) : null,
@@ -1686,6 +2106,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         claimed: aimClaimed,
                         pending: aimPendingPart,
                         multiTouch: aimMultiTouch,
+                    },
+                };
+            },
+            // 诊断：炮塔/炮管 rig 的实际姿态（门禁验证“模型真的动了”，不只读 UI 角度；
+            // 无炮塔车辆的 turret 必须为 null、guns 非空——固定战斗室回归）。
+            rigState() {
+                const mat = (node) => node ? node.matrix.elements.slice() : null;
+                const armorGuns = [];
+                if (armorOrigMatrices) {
+                    for (const node of armorOrigMatrices.keys()) {
+                        if (/^gun_\d+(?:_state_\d+)?_armor_/.test(node.name || '')) {
+                            armorGuns.push({ name: node.name, matrix: mat(node) });
+                        }
+                    }
+                }
+                const guns = gunBarrelNodes.length ? gunBarrelNodes : gunNodesList;
+                return {
+                    turret: turretNode ? { name: turretNode.name, matrix: mat(turretNode) } : null,
+                    guns: guns.map(n => ({ name: n.name, matrix: mat(n) })),
+                    armorGuns,
+                    pivots: {
+                        turret: armorPivotTurret ? armorPivotTurret.toArray() : null,
+                        gun: armorPivotGun ? armorPivotGun.toArray() : null,
                     },
                 };
             },
@@ -1730,7 +2173,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (!sh) return null;
                 const { penMul, thickMul } = equipmentCoeffs();
                 return {
-                    type: shellTypeOf(sh), pen: (sh.penetration || 0) * penMul, caliber: sh.caliber || 120,
+                    type: shellTypeOf(sh), pen: (sh.penetration || 0) * penMul, caliber: resolveCaliberFor(sh),
                     ricoDeg: sh.ricochet != null ? sh.ricochet : 70, normDeg: sh.normalization ?? 0, thickMul,
                     remIn: (sh.penetration || 0) * penMul * RC.RICO_REMAIN_MUL,
                 };
@@ -1802,6 +2245,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (sh) { updatePenetrationUniforms(sh); updateSpacedUniforms(sh); }
             updateHeatmapThickness();
             refreshPenetrationResolution();
+            updateHeHeatmapUniforms();
         }
         // 本查看器替换过的装甲材质才可 dispose；GLTF 原始材质可能跨网格共享，不能动。
         function replaceArmorMaterial(node, material) {
@@ -1836,6 +2280,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             if (!armorModel) return;
             if (!on) {
                 disposePenetrationResources();
+                if (heSplashGroup) heSplashGroup.visible = false;
                 armorModel.visible = true;
                 // 回到进入热力图前的视图样式（collisionMode 仍开启则恢复碰撞视图）。
                 // 不触碰模块网格可见性：热力图开启路径从不隐藏它们；此前在这里按
@@ -1851,14 +2296,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             rebuildHeatmapScenes();
             armorModel.visible = true;
             externalMeshes.forEach(function(node){ node.visible = true; });
+            if (heSplashGroup) heSplashGroup.visible = true;
         }
 
         function updatePenetrationUniforms(sh) {
             const t = shellTypeOf(sh);
             const isHE = t === 'he';
             const isExplosive = isHE || t === 'heat';
+            // 深度遮罩对所有弹种保持开启：热力图只给相机可见的首层主装甲上色。
+            // HE 也不能例外——否则后层主装甲的颜色会穿透前板叠到画面上，
+            // 看起来像“着色落在主装甲上”，实际取的是后层板的伤害。
+            excludeMaterial.visible = true;
             syncRicochetEnabled(sh);
-            const cal = sh.caliber || 120;
+            const cal = resolveCaliberFor(sh);
             const { penMul } = equipmentCoeffs();
             const pen = (sh.penetration || 0) * penMul;
             // BlitzKit：degToRad(shell.normalization ?? 0)
@@ -1876,8 +2326,28 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 if (u.canSplash) u.canSplash.value = isHE;
                 if (u.damage) u.damage.value = sh.damage || 0;
                 if (u.explosionRadius) u.explosionRadius.value = sh.explosion_radius || 0;
+                if (u.heActive) u.heActive.value = isHE && !!heHeatmapCenter;
+                if (u.heCenter && heHeatmapCenter) u.heCenter.value.copy(heHeatmapCenter);
             };
             if (primaryArmorScene) primaryArmorScene.traverse(function(node){ if (node.isMesh) applyTo(node); });
+            // 切到非 HE 时清掉旧爆点/采样可视化；切回 HE 时保留到下一次点击。
+            if (!isHE) {
+                heHeatmapCenter = null;
+                disposeHeSplashVisual();
+                updateHeHeatmapUniforms();
+            } else {
+                // 切换 HE/HESH 弹种时爆炸半径会变：旧球的 SphereGeometry 半径必须重建，
+                // 否则球面与当前热力图不一致（评审 P2）。爆点保留到下一次点击。
+                const nextRadius = sh.explosion_radius || 0;
+                if (heSplashGroup && heHeatmapCenter && nextRadius > 0
+                    && heSplashGroup.userData.radius !== nextRadius) {
+                    updateHeSplashVisual(heHeatmapCenter, nextRadius);
+                } else if (heSplashGroup && !(nextRadius > 0)) {
+                    disposeHeSplashVisual();
+                } else if (heSplashGroup) {
+                    heSplashGroup.visible = penetrationMode;
+                }
+            }
         }
         function refreshPenetrationResolution() {
             const c = renderer.domElement;
@@ -1945,15 +2415,23 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             syncCloneMatrices(spacedArmorScene);
             syncCloneMatrices(spacedStateScene);
             computeGunClipPlane();
-            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G/B（A=0）→ 更近的外部模块写
-            //    A=1（RGB 保留：间隙甲仍是首个实际装甲层，转正差额/续飞状态不被模块覆盖）
+            // gun_mask 裁切面同步到续飞着色器：与点击/JS 参考同一判据，只滤 gunBarrel。
+            if (gunClipPlane) {
+                rcUniforms.rcClipPlane.value.set(
+                    gunClipPlane.normal.x, gunClipPlane.normal.y, gunClipPlane.normal.z, gunClipPlane.constant);
+                rcUniforms.rcClipEnabled.value = true;
+            } else {
+                rcUniforms.rcClipEnabled.value = false;
+            }
+            // ① 状态通道：主装甲深度 → 最近间隙板独占写 R/G（A=0）→ 更近的外部模块写
+            //    A=1（RGB 保留：模块后间隙板的跳弹/续飞状态不被覆盖）
             if (spacedStateScene) {
                 renderer.autoClear = true;
                 renderer.setRenderTarget(srt);
                 renderer.setClearColor(0x000000, 0);
                 renderer.render(spacedStateScene, camera);
             }
-            // ② 厚度通道：全板 additive（裸 LOS 累计，无身份判定）；状态缓冲整体留给 PBR 解读
+            // ② 厚度通道：全板 additive（逐层 normalized effective 累计）；状态缓冲留给 PBR 解读
             const rtIsFloat = spacedRTFloatCapable();
             const inject = (obj) => { obj.traverse(function(node){
                 if (node.isMesh && node.material && node.material.uniforms && node.material.uniforms.spacedArmorBuffer) {
@@ -1971,6 +2449,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             renderer.render(spacedArmorScene, camera);
             renderer.autoClear = false;
             renderer.setRenderTarget(null);
+            // scene.background=null 时 autoClear=false 不会隐式清屏；显式清理默认 framebuffer，
+            // 避免热力图相机移动时复用上一帧颜色/深度（拖影/新几何被旧深度拒绝）。
+            renderer.clear(true, true, true);
         }
 
         document.getElementById('penetration-btn').addEventListener('click', function() {
@@ -2214,7 +2695,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
-                } else if (/^gun_\d+_/.test(parentName)) {
+                } else if (/^gun_\d+_mask$/.test(parentName)) {
                     node.userData.armorSection = 'gunBarrel';
                     node.userData.armorPlateId = 'gun';
                     node.userData.armorThickness = getPlateThickness('gunBarrel', 'gun');
@@ -2222,6 +2703,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     const gm = parentName.match(/^gun_(\d+)/);
                     node.userData.gunConfig = gm ? parseInt(gm[1], 10) : null;
                     moduleMeshes.push(node);
+                } else if (/^gun_\d+_/.test(parentName)) {
+                    // hide_elements / state_XX 等拆件只是视觉模型，不是 50mm 炮管外部模块；
+                    // 保留渲染，但不参与点击判定/续飞/热力图。
+                    node.userData.armorSection = 'deco';
+                    node.userData.armorPlateId = '';
+                    node.userData.armorThickness = 0;
                 }
             });
         }
@@ -2315,6 +2802,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
             _armorPrefixCache = null;   // 装甲模型重建后前缀缓存失效
             if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+            disposeHeSplashVisual();
+            heHeatmapCenter = null;
             if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
             if (window.__endMarker) { scene.remove(window.__endMarker); window.__endMarker = null; }
             if (window.__dbgGroup) { scene.remove(window.__dbgGroup); window.__dbgGroup = null; }
@@ -2326,6 +2815,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function loadModels() {
+            if (destroyed || contextLost) return;
             document.getElementById('loading').style.display = 'block';
             document.getElementById('loading').textContent = L.loading;
             window.__LOAD__ = 'start';
@@ -2444,7 +2934,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 document.getElementById('loading').style.display = 'none';
                 window.__LOAD__ = 'ok:' + tankData.tank_id;
-                controls.target.set(0, 0, 0);   // 旋转中心 = 地面网格原点（模型锚点）
+                // 初始占位；applyUrlOptionsOnce 的默认分支会把目标改到炮线高度（车体居中）。
+                controls.target.set(0, 0, 0);
                 controls.update();
                 syncTransforms();
                 applyConfig(currentConfigIdx);
@@ -2455,6 +2946,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         const QP = new URLSearchParams(location.search);
+        // 本机复现开关：?armordebug=1（仅 dev）。点击后复制/查看本次判定的完整输入与层链。
+        const ARMOR_DEBUG = import.meta.env.DEV && QP.get('armordebug') === '1';
         let urlApplied = false;
         function applyUrlOptionsOnce() {
             if (urlApplied || !tankModel || !armorModel) return;
@@ -2479,10 +2972,16 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 updateTurretGun(currentTurretDeg, currentGunDeg);
             }
             const view = QP.get('view');
+            // `view` 同时是 SPA 路由 id（agent-armor）。只有已知相机预设才按预设处理；
+            // 否则 ?view=agent-armor 会命中 fallback（0.8×模型尺寸）覆盖默认 15m 相机距离。
+            // 显式相机预设优先用 ?camview=front|top|...，兼容旧的 ?view=<preset>。
+            const CAMERA_VIEW_PRESETS = new Set(['front', 'rear', 'left', 'right', 'hull_down', 'top', 'front_left', 'front_right', 'rear_left', 'rear_right']);
+            const camView = QP.get('camview') || (CAMERA_VIEW_PRESETS.has(view) ? view : null);
             const azOv = num('az'), distOv = num('dist'), hOv = num('h');
-            if (view || azOv !== null || hOv !== null || distOv !== null) {
-                // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）
-                const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
+            // 炮线高度（米）：gun 枢轴的 glb z（场景原生米制，无缩放）。默认目标也用它，
+            // 让车体垂直居中（地面原点会让坦克落在屏幕上半）。
+            const gunLine = (armorPivotGun ? armorPivotGun.z : 2.0);
+            if (camView || azOv !== null || hOv !== null || distOv !== null) {
                 // 视角预设（对齐 BlitzKit 语义）：front/rear/left/right = 炮线高度水平视角；
                 // hull_down = 低机位仰视炮塔；top = 俯视。机位距离 = 模型最长边倍数
                 //（取景需要，与数据无关）：水平 0.80×、斜角 0.87×、顶视 1.17×；顶视高度 = 炮线 + 2×模型长
@@ -2497,14 +2996,29 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     front_right: {az:315, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
                     rear_left:   {az:135, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
                     rear_right:  {az:225, h:gunLine,     ty:gunLine,      d:0.87*modelMaxDim},
-                })[view] || {az:0, h:gunLine, ty:gunLine, d:0.80*modelMaxDim};
+                })[camView] || {az:0, h:gunLine, ty:gunLine, d:0.80*modelMaxDim};
                 const d = distOv !== null ? distOv : P.d;
                 const a = (azOv !== null ? azOv : P.az) * Math.PI / 180;
                 const h = hOv !== null ? hOv : P.h;
                 camera.position.set(Math.sin(a) * d, h, -Math.cos(a) * d);
-                controls.target.set(0, 0, 0);   // 旋转中心 = 地面网格原点（与初始状态一致）
-                controls.update();
+                controls.target.set(0, P.ty, 0);   // 预设目标高度（炮线/顶视），不再回地面原点
+            } else {
+                // 默认目标 = 装甲模型包围盒中心（车体视觉中心）；包围盒为空时退回炮线高度。
+                // 同时把默认相机距离归一到 15m，保持 Armor Inspector 的 18.75° 基准。
+                const aimModel = armorModel || tankModel;
+                aimModel.updateWorldMatrix(true, true);
+                const aimBox = new THREE.Box3().setFromObject(aimModel);
+                if (!aimBox.isEmpty()) {
+                    const aimCenter = aimBox.getCenter(new THREE.Vector3());
+                    controls.target.set(aimCenter.x, aimCenter.y, aimCenter.z);
+                    // 默认正对车头（-Z）且平视：与目标同高，距离 15m；tank 在屏幕中心。
+                    camera.position.set(aimCenter.x, aimCenter.y, aimCenter.z - ARMOR_REF_DIST);
+                } else {
+                    controls.target.set(0, gunLine, 0);
+                    camera.position.set(0, gunLine, -ARMOR_REF_DIST);
+                }
             }
+            controls.update();
             if (QP.get('heatmap') === '1' && !penetrationMode) {
                 penetrationMode = true;
                 const btn = document.getElementById('penetration-btn');
@@ -2556,6 +3070,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
+                     window.__segBoxMissing = false;
+                     clearShotError();
                      worldOverviewMode = false;   // 命中/脱靶分支各自置位（见下）
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
@@ -2762,8 +3278,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             return { sd: sd, sModel: sModel, breechGunLocal: breechGunLocal };
                         });
                     }
-                        // 解除装甲检视的近距限制（fog 15-50 / maxDistance 30 会吞掉远距离交战）
-                        scene.fog = null;
+                        // world overview：解除近距限制（原 30m 上限会吞掉远距离交战）
                         controls.maxDistance = 1e6;
                         controls.minDistance = 0.5;
                         // 右键 = 平移视角（地面平面），禁用手动炮塔/炮管拖拽（回放姿态由数据驱动）
@@ -2935,7 +3450,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             // 信息面板：落点/材质 + 弹种
                             const st2 = document.getElementById('turret-controls');
                             const flgM = s.hit_flags || 0;
-                            if (st2) { st2.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
+                            if (st2) { st2.innerHTML = shotErrorHtml() + '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
                                 (function() {
                                     const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
                                     return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
@@ -3244,12 +3759,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 // hash6 = 游戏客户端 DecodeShotSegment 两点编码：服务器命中判定
                                 // 时刻的入点 P1/出点 P2，部件 AABB 1/255 量化，轴序 x右←b2/b5、
                                 // y前←b4/b7、z高←b3/b6（b4 恒 255 = 入点钉盒前界面）。
-                                // 盒源：game_data collision.*_bbox（游戏原生部件盒，x右/y前/z上）
-                                // 优先，缺失回退装甲网格 rest 顶点级紧致盒；部件帧：hull/chassis=
-                                // 模型原点、turret/gun=枢轴系。判定射线 __segRay = {P1−0.5·方向,
-                                // P1→P2 解码弦}：raycast 与入射角同源此射线（服务器编码的位置
-                                // 与弹向），世界系，随位姿联动。
+                                // 盒源：game_data collision.*_bbox（客户端 Parameters YAML 的
+                                // 权威部件盒，x右/y前/z上）。盒缺失 → fail-closed，不从装甲网格
+                                // 自算 AABB；部件帧：hull/chassis=模型原点、turret/gun=枢轴系。
+                                // 判定射线 __segRay = {P1−0.5·方向, P1→P2 解码弦}：raycast 与
+                                // 入射角同源此射线（服务器编码的位置与弹向），世界系，随位姿联动。
                                 window.__worldSegMk = null;
+                                window.__segRay = null;
                                 // 判定段线组：独立于调试标注层（非调试模式也常显）
                                 if (window.__worldSegGroup) { scene.remove(window.__worldSegGroup); window.__worldSegGroup = null; }
                                 if (s.hit_token && /^[0-9a-f]{12}$/i.test(s.hit_token)) {
@@ -3270,7 +3786,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                         if (sPart2 != null && partOfS(n) !== sPart2) return;
                                         partNodes.push(n);
                                     });
-                                    // part 0（底盘/履带）在装甲模型无网格——回退 hull 盒近似
+                                    // part 0（底盘/履带）在装甲模型无网格——回退 hull 装甲网格近似
+                                    // （解码盒仍取客户端 chassis 盒，不合成）
                                     const partFallback = partNodes.length === 0 && sPart2 === 0;
                                     if (partFallback) {
                                         armorModel.traverse(function(n) {
@@ -3280,36 +3797,20 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                             if (partOfS(n) === 1) partNodes.push(n);
                                         });
                                     }
-                                    if (partNodes.length) {
-                                        const cdBoxes = (tankData && tankData.collision_boxes) || null;
-                                        const gameBoxRaw = cdBoxes ? (sPart2 === 0 ? cdBoxes.chassis
-                                            : sPart2 === 1 ? cdBoxes.hull : sPart2 === 2 ? cdBoxes.turret
-                                            : sPart2 === 3 ? cdBoxes.gun : null) : null;
-                                        let boxMin = null, boxMax, boxFrame = null;   // boxMax 无 null 初始化：首分支必然赋值
-                                        let refNode = null, refRest = null;
-                                        if (gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max) {
-                                            boxMin = gameBoxRaw.min; boxMax = gameBoxRaw.max;
-                                            boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
-                                        } else {
-                                            // 回退：装甲网格 rest 顶点级紧致盒（旋转 AABB 会虚胀）
-                                            const box = new THREE.Box3();
-                                            const vv = new THREE.Vector3();
-                                            for (const n of partNodes) {
-                                                if (!n.geometry.boundingBox) n.geometry.computeBoundingBox();
-                                                const rest = (armorOrigMatrices && armorOrigMatrices.get(n)) || n.matrix;
-                                                const pos = n.geometry.attributes.position;
-                                                for (let i = 0; i < pos.count; i++) {
-                                                    vv.fromBufferAttribute(pos, i).applyMatrix4(rest);
-                                                    box.expandByPoint(vv);
-                                                }
-                                                if (!refNode && armorOrigMatrices && armorOrigMatrices.has(n)) {
-                                                    refNode = n; refRest = armorOrigMatrices.get(n);
-                                                }
-                                            }
-                                            boxMin = box.min.toArray(); boxMax = box.max.toArray();
-                                            boxFrame = 'mesh-tight';
-                                        }
+                                    const cdBoxes = (tankData && tankData.collision_boxes) || null;
+                                    const gameBoxRaw = cdBoxes ? (sPart2 === 0 ? cdBoxes.chassis
+                                        : sPart2 === 1 ? cdBoxes.hull : sPart2 === 2 ? cdBoxes.turret
+                                        : sPart2 === 3 ? cdBoxes.gun : null) : null;
+                                    // 只用客户端权威部件盒；缺失时不解码/不判定（fail-closed），
+                                    // 不再按装甲网格 rest 顶点自算 AABB。
+                                    const boxMissing = !(gameBoxRaw && gameBoxRaw.min && gameBoxRaw.max)
+                                        || partNodes.length === 0;
+                                    if (!boxMissing) {
+                                        const boxMin = gameBoxRaw.min, boxMax = gameBoxRaw.max;
+                                        const boxFrame = (sPart2 === 2) ? 'turret-pivot' : (sPart2 === 3) ? 'gun-pivot' : 'model';
                                         const szv = [boxMax[0] - boxMin[0], boxMax[1] - boxMin[1], boxMax[2] - boxMin[2]];
+                                        // 客户端 DecodeShotSegment 用 255.0f（@0x364B110）：b=0→min、
+                                        // b=255→max，两端都可表示；不能用 /256（max 面永远差一步）。
                                         const qc = (b, ax) => boxMin[ax] + szv[ax] * (b / 255);
                                         const mkP1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.12),
                                             new THREE.MeshBasicMaterial({ color: 0xffa500, transparent: true, opacity: 0.95, depthTest: false }));
@@ -3356,10 +3857,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                 }
                                                 return armorModel.localToWorld(pl);
                                             }
-                                            if (boxFrame === 'mesh-tight' && refNode && refRest) {
-                                                return pl.applyMatrix4(refRest.clone().invert()).applyMatrix4(
-                                                    refNode.matrixWorld.clone().multiply(refRest.clone().invert()));
-                                            }
                                             return armorModel.localToWorld(pl);
                                         };
                                         const updSeg = function(visible) {
@@ -3380,8 +3877,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                 } else if (boxFrame === 'gun-pivot') {
                                                     const gm = findPartMesh(/^gun_\d+_armor/);
                                                     if (gm) { gm.updateWorldMatrix(true, false); m = gm.matrixWorld; }
-                                                } else if (boxFrame === 'mesh-tight' && refNode && refRest) {
-                                                    m = refNode.matrixWorld.clone().multiply(refRest.clone().invert());
                                                 } else {
                                                     m = armorModel.matrixWorld;
                                                 }
@@ -3422,7 +3917,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                     ' · P2 ' + fmt3(mkP2.position.x + cx, mkP2.position.y + cy, mkP2.position.z + cz) +
                                                     ' · 俯仰' + (THREE.MathUtils.radToDeg(Math.asin(
                                                         chordL.clone().normalize().z)).toFixed(2)) + '°（炮塔系）' +
-                                                    (boxFrame === 'mesh-tight' ? ' · 网格盒回退' : ' · 游戏部件盒'));
+                                                    ' · 客户端部件盒');
                                             }
                                         };
                                         window.__worldSegMk = { update: updSeg, p1: mkP1, p2: mkP2 };
@@ -3448,6 +3943,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                                     + (sPart2 != null ? ' · 部件P' + sPart2 : ''));
                                             }
                                         }, 1500);
+                                    } else {
+                                        window.__segBoxMissing = true;
+                                        tidyTrajectory();
+                                        showShotError('缺少客户端部件盒（part ' + sPart2 + '），射击复现已阻断');
                                     }
                                 }
                             }
@@ -3609,7 +4108,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         const cls2 = shotResultClass(s) === 'MISS' ? 'MISS'
                             : (shotResultClass(s) === 'RICOCHET') ? 'RICO'
                             : (shotResultClass(s) === 'PENETRATION') ? 'PEN'
-                            : (shotResultClass(s) === 'HE BLAST') ? 'HE' : 'NOPEN';
+                            : (shotResultClass(s) === 'HE BLAST') ? 'HE'
+                            : (shotResultClass(s) === 'UNVERIFIED') ? 'R4?'
+                            : (shotResultClass(s) === 'NO PENETRATION') ? 'NOPEN' : 'HIT';
                         const qIssues = srQualityIssues(s);
                         const tksW = s.tick_samples || [];
                         if (tksW.length > 1) {
@@ -3663,7 +4164,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 }
                             }
                         }
-                        if (st) { st.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
+                        if (st) { st.innerHTML = shotErrorHtml() + '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
                             (function() {
                                 const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
                                 return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
@@ -3787,6 +4288,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 camera.position.copy(savedOverview.pos);
                                 controls.target.copy(savedOverview.target);
                             }
+                            // 相对命中视角 = 单车取景（15m/18.75° 标定）；双方位置恢复 50° 总览。
+                            worldOverviewMode = !on;
                             controls.update();
                             impactViewOn = on;
                             relBtn.setAttribute('aria-pressed', String(on));
@@ -3794,13 +4297,17 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         }
                         relBtn.setAttribute('aria-pressed', 'false');
                         worldBtn.setAttribute('aria-pressed', 'true');
-                        relBtn.disabled = !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
+                        // MISS 没有命中点可聚焦：相对视角按钮禁用，保持 world 总览。
+                        relBtn.disabled = !window.__shotIsHit || !window.__worldTickCtx?.launch || !window.__worldTickCtx?.lvDir;
                         relBtn.onclick = () => setImpactView(true);
                         worldBtn.onclick = () => setImpactView(false);
                         viewSwitch.append(relBtn, worldBtn);
                         (document.getElementById('corner-br') || document.body).appendChild(viewSwitch);
-                        // Context and controls now exist: focus directly instead of clicking a not-yet-created button.
-                        setImpactView(true);
+                        // 命中弹默认进入命中点相对视角（15m/18.75° 标定，与装甲查看器
+                        // 一致）；MISS 没有命中点，保持双方位置 world 总览（原生 50°）。
+                        // 用户可随时用「双方位置 / 相对视角」切换，切换时同步 FOV 模式。
+                        if (window.__shotIsHit) setImpactView(true);
+                        else setImpactView(false);
                         // 初始即按撤回状态隐藏全部标注（须在 debug=1 自动开启之前，否则被覆盖）
                         window.__debugSetVisible(false);
                         // URL debug=1 显式开启开发诊断标注
@@ -4049,11 +4556,15 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadTarget(tid) {
+            if (destroyed || contextLost) return false;
             const gen = ++targetLoadGen;
             loadGen++; // 立即使旧模型/射击 continuation 失效，不等新 JSON 返回
             __penCheckSeq++;
             urlApplied = false;
             tidyTrajectory();
+            // 换目标车后旧点击坐标已无意义：不清会在切弹时对新车的同一屏幕坐标
+            // 误跑判定（评审 P2）。
+            lastClickNdc = null;
             reportLoad({ state: 'loading', progress: null });   // 车辆数据（JSON）阶段：不确定进度
             const nextTankData = await fetchTankData(tid);
             if (destroyed || gen !== targetLoadGen) return false;
@@ -4125,7 +4636,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 把 scfg 域的弹表错换成目标当前配置的弹表
             if (shooterData && tankData && shooterData.tank_id === tankData.tank_id && !QP.get('shot')) {
                 shooterShells = cfg.shells || [];
-                shooterCaliber = cfg.caliber || shooterCaliber;
+                shooterCaliber = (Number.isFinite(cfg.caliber) && cfg.caliber > 0) ? cfg.caliber : null;
                 populateShellSelector(shooterShells);
             }
 
@@ -4181,7 +4692,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         async function loadShooter(tid) {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             const gen = ++shooterLoadGen;
             shooterLoading = true;
             selectedShell = null;
@@ -4204,7 +4715,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 }
                 if (!shells || shells.length === 0) {
                     shells = shooterData.shells || [];
-                    caliber = shooterData.caliber || 120;
+                    caliber = (Number.isFinite(shooterData.caliber) && shooterData.caliber > 0)
+                        ? shooterData.caliber : null;
                 }
                 if (!shells || shells.length === 0) {
                     const data = await fetchShells(tid);
@@ -4214,16 +4726,21 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         shells = data;
                     } else {
                         shells = data.shells || [];
-                        caliber = data.caliber || 120;
+                        caliber = (Number.isFinite(data.caliber) && data.caliber > 0) ? data.caliber : null;
                     }
                 }
-                shooterShells = shells.map(s => (s && s.caliber == null)
+                shooterShells = shells.map(s => (s && s.caliber == null && Number.isFinite(caliber) && caliber > 0)
                     ? Object.assign({}, s, { caliber: caliber }) : s);
                 shooterCaliber = caliber;
                 // 射击复现的 &shell= 属于射手配置；普通检视在配置完成后重新恢复该下标。
                 populateShellSelector(shooterShells, parseInt(QP.get('shell'), 10));
-                if (!selectedShell || !shellTypeOf(selectedShell)
-                    || !Number.isFinite(selectedShell.penetration) || !Number.isFinite(selectedShell.damage)) {
+                // 这里只校验“能不能构成一次判定”：弹种/穿深/伤害/口径。转正角属于判定输入，
+                // 由 doPenetrationCheck 在点击时校验——普通同车型检视会先用顶层展示弹表
+                // （可能不含 normalization），随后 applyConfig 换成当前配置的权威弹表。
+                const loadedShellType = selectedShell ? shellTypeOf(selectedShell) : null;
+                if (!selectedShell || !loadedShellType
+                    || !Number.isFinite(selectedShell.penetration) || !(selectedShell.damage > 0)
+                    || !(resolveShotCaliber() > 0)) {
                     selectedShell = null;
                     throw new Error(L.shellUnavailable);
                 }
@@ -4305,22 +4822,39 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function initScene() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x1c1410);
-            scene.fog = new THREE.Fog(0x1c1410, 15, 50);
+            // 3D 场景不再自带棕色调背景/雾与地面网格：画布透明，直接继承网页 UI 的
+            // --color-canvas；场景只保留车体与光照，风格与页面外壳一致。
+            scene.background = null;
 
             // SPA 壳内渲染：视口尺寸取 canvas 容器（main 区域），而非整窗（顶部导航占 67px）
             const view = document.getElementById('canvas-container');
-            camera = new THREE.PerspectiveCamera(50, view.clientWidth / view.clientHeight, 0.1, 1000);
-            camera.position.set(2.5, 3.2, -8);
+            camera = new THREE.PerspectiveCamera(ARMOR_BASE_FOV, view.clientWidth / view.clientHeight, 0.1, 1000);
+            // 默认正对车头（-Z）且平视：目标高度在模型加载后由装甲包围盒中心决定；距离 15m。
+            camera.position.set(0, 0, -ARMOR_REF_DIST);
 
             // preserveDrawingBuffer 不再开启：本查看器没有任何像素回读（无 toDataURL/readPixels/
             // 录屏），开启它只会阻止浏览器做缓冲区交换优化（每帧多一次全分辨率拷贝）。
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setClearColor(0x000000, 0);
             renderer.setSize(view.clientWidth, view.clientHeight);
             // DPR 上限 2：此前直接取 devicePixelRatio（3× 屏上按 3× 全屏渲染，像素数 ×2.25）
             renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
             renderer.localClippingEnabled = true;
             view.appendChild(renderer.domElement);
+            try {
+                const gl = renderer.getContext();
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                gpuLabel = String((debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) || '');
+            } catch (_) { gpuLabel = ''; }
+            const canvas = renderer.domElement;
+            canvas.addEventListener('webglcontextlost', reportContextLost);
+            canvas.addEventListener('webglcontextrestored', reportContextRestored);
+            cleanups.push(() => {
+                canvas.removeEventListener('webglcontextlost', reportContextLost);
+                canvas.removeEventListener('webglcontextrestored', reportContextRestored);
+            });
+            // 某些环境（模拟器的 GL 翻译层）在 listener 挂上之前就已经丢了上下文。
+            try { if (renderer.getContext().isContextLost()) reportContextLost(); } catch (_) {}
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.15;
 
@@ -4329,7 +4863,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             controls.dampingFactor = 0.05;
             controls.rotateSpeed = 0.35;   // 降低旋转灵敏度（默认 1.0 过快，精细对位困难）
             controls.minDistance = 3;
-            controls.maxDistance = 500;   // 交战距离上限 500m（dolly-zoom 保持车体视角尺寸，见 applyLongRangeCompensation）
+            controls.maxDistance = 500;   // 查看器距离范围；Armor Inspector 的 6.5–30m 仅作 FOV 标定参考
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.DOLLY,
@@ -4337,8 +4871,19 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             };
 
 
-            const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f6e, 2.2);
+            const readThemeColor = (name, fallback) => {
+                const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+                if (!raw) return new THREE.Color(fallback);
+                try { return new THREE.Color(raw); } catch { return new THREE.Color(fallback); }
+            };
+            const hemi = new THREE.HemisphereLight(0xffffff, readThemeColor('--color-surface-2', '#172024'), 2.2);
             scene.add(hemi);
+            // 网页主题（showcase/classic）切换时，半球光底面跟随 UI 表面色；画布背景由透明 CSS 继承。
+            const themeObserver = new MutationObserver(() => {
+                hemi.groundColor.copy(readThemeColor('--color-surface-2', '#172024'));
+            });
+            themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+            cleanups.push(() => themeObserver.disconnect());
             scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const spot1 = new THREE.SpotLight(0xfff5e1, 500, 60, 0.55, 0.6);
             spot1.position.set(10, 15, 8);
@@ -4346,9 +4891,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const spot2 = new THREE.SpotLight(0x88aaff, 260, 50, 0.45, 0.5);
             spot2.position.set(-10, 12, -6);
             scene.add(spot2);
-
-            const grid = new THREE.GridHelper(20, 20, 0x4a3a26, 0x2c241c);
-            scene.add(grid);
 
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
@@ -4371,6 +4913,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         __shotRayOrigin = null; __shotRayTarget = null;
                     } else if (QP.get('shot')) {
                         doPenetrationCheck(0, 0);
+                    } else if (penetrationMode && lastClickNdc) {
+                        // 普通检视：换弹（含 HE→HE/HESH）后按最后点击位置重跑判定，
+                        // 球/热力图与结果卡必须是同一发弹的参数（评审 P2）。
+                        doPenetrationCheck(lastClickNdc.x, lastClickNdc.y);
                     }
                 }
             });
@@ -4442,22 +4988,22 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const initTargetId = window.__INITIAL_TANK__ || 28689;
             const initShooterId = window.__INITIAL_SHOOTER__ || initTargetId;
             await populateTankLists(initTargetId, initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             // 模型回调可立即恢复射击并判定，因此弹药必须先完成，不能靠定时器猜网络耗时。
             initPhase = 'shell data';
             await loadShooter(initShooterId);
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             initDone = true;
             updateTankLabels();
             initPhase = 'tank data';
             await loadTarget(initTargetId);
-            if (destroyed) return;
-            if (!destroyed) animate();   // await 期间路由已离开则不再启动渲染
+            if (destroyed || contextLost) return;
+            if (!destroyed && !contextLost) animate();   // await 期间路由已离开/上下文已丢失则不再启动渲染
         }
 
         /// 宿主页"重试"：恢复缺失弹药并重载当前目标；初始化未完成则由宿主整体重建
         function retry() {
-            if (destroyed || !initDone || currentTargetId == null) return false;
+            if (destroyed || contextLost || !initDone || currentTargetId == null) return false;
             let phase = 'shell data';
             const ready = selectedShell && !shooterLoading
                 ? Promise.resolve() : loadShooter(currentShooterId);
@@ -4510,9 +5056,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         function collectTurretGunNodes() {
-            if (!tankModel || !configTurretNodes.length) return;
+            // 固定战斗室车辆（歼击车）的 GLB 没有 turret_NN 实体，炮管组直接挂在车体上；
+            // 只要存在炮管组就必须建立姿态表，横转由炮管组吃 mG = mT·Rx(gr)（与回放同一语义）。
+            if (!tankModel || (!configTurretNodes.length && !configGunGroups.length)) return;
             const cfg = currentConfig();
-            turretNode = configTurretNodes[cfg.turret_index % configTurretNodes.length] || null;
+            turretNode = configTurretNodes.length
+                ? configTurretNodes[cfg.turret_index % configTurretNodes.length] || null
+                : null;
             if (configGunGroups.length) {
                 const grp = configGunGroups[cfg.gun_index % configGunGroups.length];
                 gunNodesList = grp || [];
@@ -4672,6 +5222,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
 
         let mouseDownPos = null, isDragging = false;
+        // 普通检视最后一次点击的 NDC：切弹种时重跑判定，避免球/热力图用新弹参数
+        // 而结果卡仍是旧弹（评审 P2 切 HE 弹种场景）。
+        let lastClickNdc = null;
         function onClick(event) {
             if (!armorModel) return;
             // 世界模式(射击复现)：判定结果锁定——初始判定射线已切换为 DecodeShotSegment
@@ -4680,6 +5233,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const rect = renderer.domElement.getBoundingClientRect();
             const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
             const ndcY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            lastClickNdc = { x: ndcX, y: ndcY };
             doPenetrationCheck(ndcX, ndcY);
         }
 
@@ -4689,23 +5243,30 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 射击复现错误面板（模块级：doPenetrationCheck 等顶层函数也要调用）
         function showShotError(msg) {
             if (destroyed) return;
+            shotReplayError = msg;
             console.error('[shot-replay] ' + msg);
+            // 用户可见的常显错误条；不进入 #turret-controls 的 debug details/隐藏逻辑。
+            const alert = document.getElementById('shot-replay-error');
+            if (alert) { alert.textContent = msg; alert.style.display = 'block'; }
             const st = document.getElementById('turret-controls');
             if (st) {
                 // 世界模式调试关闭时该面板被收纳——错误必须强制可见
                 st.style.display = 'block';
-                st.innerHTML = '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>' +
-                    '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + msg + '</div>';
+                st.innerHTML = shotErrorHtml();
             }
         }
 
-        // 命中分类 → armorHits 条目（原主循环与跳弹出射循环两段重复实现合并）：
-        // parent 不可见 / configHidden / deco 过滤 + userData 或父链正则取名 +
-        // getPlateThickness + partName 构造；被过滤或无厚度返回 null。
-        // 注意：gunBarrel 的 gunClipPlane 过滤仅主判定循环有，留在调用点
-        function classifyHit(hit) {
-            if (hit.object.parent && hit.object.parent.visible === false) return null;
-            if (hit.object.userData.configHidden) return null;
+        function isEffectivelyVisible(node) {
+            // 模型根节点的 visible 是视图模式开关（collision 视图会隐藏视觉车体），
+            // 不是部件级隐藏；逐级检查到根之前即可。
+            for (let n = node; n && n !== tankModel && n !== armorModel; n = n.parent) {
+                if (n.visible === false) return false;
+                if (n.userData && n.userData.configHidden) return false;
+            }
+            return true;
+        }
+        function classifyHit(hit, rayDir = null) {
+            if (!isEffectivelyVisible(hit.object)) return null;
             if (hit.object.userData.armorSection === 'deco') return null;
             let section = null, plateId = null, thickness = null;
             if (hit.object.userData.armorSection) {
@@ -4725,6 +5286,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const normal = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
             const nm = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
             normal.applyNormalMatrix(nm).normalize();
+            // 材质可以是 DoubleSide（间隙甲显示），但判定只接受迎面命中：绕序法线
+            // 朝向来向 = 背面。BlitzKit 的装甲材质与采样网格都是 FrontSide 口径。
+            const backface = !!rayDir && isBackfaceNormal(normal, rayDir);
+            if (backface) normal.negate();
             let partName;
             if (section === 'chassis') {
                 partName = plateId === 'leftTrack' ? 'Track (Left)' : 'Track (Right)';
@@ -4734,18 +5299,52 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const disp = hit.object.userData.armorSectionOrig || section;
                 partName = `${disp.charAt(0).toUpperCase() + disp.slice(1)} Plate ${plateId}`;
             }
-            return { section, plateId, thickness, point: hit.point, normal, partName };
+            return { section, plateId, thickness, point: hit.point, normal, partName, distance: hit.distance, object: hit.object, backface };
+        }
+
+        /**
+         * 判定口径必须是实际数据：射手配置 → 射手数据 → 弹体 → 目标坦克。
+         * 历史实现缺数据时静默用 120mm，会改变 overmatch / 转正 / 3× 口径结果；
+         * 现在返回 0 由调用方 fail-closed（报 shellUnavailable），不再猜。
+         */
+        function resolveCaliberFor(shell) {
+            // 不用目标车的 caliber 兜底：射手/弹体都没口径时套用目标口径会改变
+            // overmatch/转正结果，属于跨车数据污染——返回 0 让判定 fail-closed。
+            const candidates = [
+                shell && shell.caliber,
+                shooterCaliber,
+                shooterData && shooterData.caliber,
+            ];
+            for (const value of candidates) {
+                if (Number.isFinite(value) && value > 0) return value;
+            }
+            return 0;
+        }
+
+        function resolveShotCaliber() {
+            return resolveCaliberFor(selectedShell);
         }
 
         function doPenetrationCheck(ndcX, ndcY) {
             if (destroyed || !armorModel || shooterLoading) return;
-            if (!selectedShell || !shellTypeOf(selectedShell)
-                || !Number.isFinite(selectedShell.penetration) || !Number.isFinite(selectedShell.damage)) {
+            // 缺客户端解码盒的 world shot 不得回退炮口弦出结论：初始化/时间轴重判/
+            // 换弹都走这里，统一阻断并清掉上一发结果；普通相机点击路径不受影响。
+            if (window.__worldPenMode === true && window.__segBoxMissing === true) {
+                tidyTrajectory();
+                return;
+            }
+            const shellTypeNow = selectedShell ? shellTypeOf(selectedShell) : null;
+            if (!selectedShell || !shellTypeNow
+                || !Number.isFinite(selectedShell.penetration) || !(selectedShell.damage > 0)
+                || !(resolveShotCaliber() > 0)
+                // 动能弹的转正角是判定输入；缺失（null/undefined）不能静默按 0 处理。
+                || ((shellTypeNow === 'ap' || shellTypeNow === 'apcr')
+                    && !Number.isFinite(selectedShell.normalization))) {
                 showShotError(L.shellUnavailable);
                 return;
             }
             // 首次判定可能早于首帧渲染；raycast 必须使用已恢复的当前姿态。
-            scene.updateMatrixWorld(true);
+            updateCollisionWorldMatrices();
             judgmentCount++;
             // 代数序号：仅最新一次判定的响应可上屏（滑块拖动会连续触发判定）
             const penSeq = ++__penCheckSeq;
@@ -4787,10 +5386,9 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // blitzkit：非外部模块不做去重（外部模块的 variant 去重在判定侧进行）
             const armorHits = [];
             for (const hit of intersects) {
-                if (hit.object.userData.armorSection === 'gunBarrel' && gunClipPlane &&
-                    gunClipPlane.distanceToPoint(hit.point) < 0) continue;
-                const entry = classifyHit(hit);
-                if (entry) armorHits.push(entry);
+                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
+                const entry = classifyHit(hit, raycaster.ray.direction);
+                if (entry && !entry.backface) armorHits.push(entry);
             }
 
             // BlitzKit 语义（SpacedArmorScene 的触发面）：判定只由【触达主装甲板】的射线发起——
@@ -4800,8 +5398,12 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 漏了间隙甲这一条会把「末层 = 屏幕」判成击穿整车（56TP 炮塔 10mm 屏幕板 plate 12
             // 即此类：约四成点击方向只穿过屏幕，无主装甲参与）。
             // 仅作用于相机点击路径；射击复现的弹道弦判定需要外部模块层参与穿深链，保持原样。
+            // HE/HESH 例外（2026-10-19 用户裁示）：爆炸弹命中履带/外部模块/炮管/间隙甲
+            // 本身就是一次有效的爆炸点，不需要弹道继续触达主装；只有纯动能弹保持
+            // “必须触达 Primary 才发起判定”的 BlitzKit 触发面语义。
             const isCameraClick = !window.__segRay && !(__shotRayOrigin && __shotRayTarget);
-            if (isCameraClick && armorHits.length > 0 && !armorHits.some(h => isPrimary(h.section))) {
+            if (isCameraClick && shellTypeNow !== 'he' && armorHits.length > 0
+                && !armorHits.some(h => isPrimary(h.section))) {
                 if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
                 // 不构成判定 = 无结果态（与「点击未命中装甲」同款清理）：清掉上一次的判定
                 // 面板/轨迹，避免旧结论被误读成本次点击的结论
@@ -4814,10 +5416,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             if (armorHits.length === 0) {
                 console.warn('[shot-replay] check: 0 armor hits, intersects=' + intersects.length);
-                document.getElementById('click-info').style.display = 'none';
-                document.getElementById('traj-info').style.display = 'none';
-                trajInfoPos = null;
-                if (trajGroup) { scene.remove(trajGroup); trajGroup = null; }
+                // 无结果出口：卡片/轨迹与 HE 爆点/半径球一起清理（评审 P2）。
+                tidyTrajectory();
                 // 弦不再与装甲相交（滑块拖到命中前位姿等）：同步清掉上次判定的命中
                 // 标记，避免旧位置的绿/红点残留与"不相交"提示并存
                 if (window.__hitMarker) { scene.remove(window.__hitMarker); window.__hitMarker = null; }
@@ -4844,7 +5444,6 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             // 全部连续命中会把两侧装甲都算进溅射衰减 → HE 溅射伤害被过度衰减而误判
             // BLOCKED(服务器同发判有伤害)。修正：HE 只保留【第一个非 deco 命中】为爆炸点。
             // AP/APCR/HEAT 的多层穿透语义不变。
-            const shellTypeNow = shellTypeOf(selectedShell);
             const hitsForCheck = (shellTypeNow === 'he' && armorHits.length > 1)
                 ? [armorHits[0]] : armorHits;
 
@@ -4895,6 +5494,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 : (__shotRayOrigin && __shotRayTarget)
                     ? __shotRayOrigin.clone().sub(point).normalize()
                     : camera.position.clone().sub(point).normalize();
+            const incomingDirection = raycaster.ray.direction.clone();
             const shotRayO = (window.__segRay || __shotRayOrigin)
                 ? raycaster.ray.origin.clone() : null;
 
@@ -4913,7 +5513,8 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const pen = selectedShell ? (selectedShell.penetration || 0) : 0;
             const dmg = selectedShell ? (selectedShell.damage || 0) : 0;
             const modDmg = selectedShell ? (selectedShell.module_damage || 0) : 0;   // 仅显示用
-            const caliber = shooterCaliber || (shooterData && shooterData.caliber) || tankData.caliber || 120;
+            // doPenetrationCheck 的入口 guard 已保证 > 0；这里不再有 120mm 静默默认。
+            const caliber = resolveShotCaliber();
             const isHE = shellType === 'he';
             const eqCal = !!(document.getElementById('eq-calibrated') && document.getElementById('eq-calibrated').checked);
             const eqEnh = !!(document.getElementById('eq-enhanced') && document.getElementById('eq-enhanced').checked);
@@ -4927,24 +5528,111 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             const shellNormDeg = (selectedShell && selectedShell.normalization != null) ? selectedShell.normalization : null;
             const shellRicoDeg = (selectedShell && selectedShell.ricochet > 0) ? selectedShell.ricochet : null;
 
+            // HE：Armor Inspector func7695 的 800 条世界空间方向采样。
+            // 复用点击链同一碰撞包（名义层厚 + section）。采样原点沿**射向反方向
+            // （朝射手）**外移 10cm：AI 的最佳样本层距离逐个目标都等于
+            // 0.1×|cos(shot, plateNormal)|（T-34 0.0496 / Pz IV 0.0751 /
+            // D2 0.0593 / M3 0.0511 / Vickers 0.0607），沿命中法线固定 5cm 只
+            // 能碰巧对上 T-34，会把 Pz IV 的 d 少算 2.5cm。半径缺失/<=0 时
+            // fail-closed：不猜，回退单射线同公式兜底。
+            const heRadius = isHE ? ((selectedShell && selectedShell.explosion_radius) || 0) : 0;
+            let heSplash = null;
+            // 采样器**跑不了**时的显式错误（传给判定层 → ERROR 卡，不用单射线冒充）。
+            // 采样器跑了但零有效射线不是错误：sampleHeSplash 返回 samples:0 的权威结果。
+            let heSplashError = null;
+            // 爆点外向方向：__segRay.dir 是 P1→P2（指向目标），反转得到朝射手方向；
+            // 静态检视的 viewDir 已是“命中点→相机”。采样与可视化共用同一方向，
+            // 保证采样失败时半径球/热力图中心仍是 0.1m 外移后的真实爆点。
+            const heOutsideDir = isHE
+                ? (window.__segRay ? window.__segRay.dir.clone().negate() : viewDir.clone())
+                : null;
+            if (heOutsideDir && heOutsideDir.lengthSq() < 1e-12) heOutsideDir.copy(first.normal);
+            if (isHE) {
+                if (!(heRadius > 0) || !(dmg > 0)) {
+                    heSplashError = 'shell-data:explosion-radius-or-damage';
+                    console.error('[he-splash] shell data incomplete — splash sampling unavailable:', heSplashError);
+                } else {
+                    // 姿态未变时复用跳弹包（世界系几何同一份）；姿态脏才重建。
+                    const hePack = (!ricochetPoseDirty && ricochetPack)
+                        ? ricochetPack
+                        : buildPack(collectRicochetEntries());
+                    if (!hePack.ok) {
+                        heSplashError = 'collision-pack:' + (hePack.reason || 'unknown');
+                        console.error('[he-splash] collision pack failed — splash sampling unavailable:', heSplashError);
+                    } else {
+                        // 800 射线走空间网格（DDA），不能每次点击全扫三角形（评审 P1）。
+                        // 复用跳弹网格；姿态脏重建的新包现场建一份。
+                        const heGrid = (hePack === ricochetPack && ricochetGrid)
+                            ? ricochetGrid
+                            : buildRicochetGrid(hePack);
+                        if (!heGrid || !heGrid.ok) {
+                            heSplashError = 'collision-grid:' + ((heGrid && heGrid.reason) || 'missing');
+                            console.error('[he-splash] collision grid failed — splash sampling unavailable:', heSplashError);
+                        } else {
+                            heSplash = sampleHeSplash(hePack, point, {
+                                originDir: heOutsideDir,
+                                normal: first.normal,
+                                damage: dmg,
+                                explosionRadius: heRadius,
+                                liningFactor: equipmentCoeffs().thickMul,
+                                grid: heGrid,
+                                // 与点击链同口径：gun_mask 裁切面之后的炮管命中不参与采样。
+                                clipPlane: gunClipPlane,
+                            });
+                            if (!heSplash) {
+                                heSplashError = 'sampler:invalid-input';
+                                console.error('[he-splash] sampler rejected its inputs:', heSplashError);
+                            }
+                        }
+                    }
+                }
+            }
+            // HE 热力图中心 + 半径球面。热力图基础色按每块板自身的
+            // thickness + spacedThick 与到爆点的距离计算，不再用方向累计装甲。
+            if (isHE && heRadius > 0) {
+                // 半径球/热力图中心 = 采样器的真实爆点（点击面沿射向退 0.1m）；
+                // 采样失败（无有效 Primary/碰撞包失败）也保持同一外移原点，
+                // 不能退回未偏移的点击表面（评审 P2）。
+                const heCenter = (heSplash && Array.isArray(heSplash.origin))
+                    ? new THREE.Vector3(heSplash.origin[0], heSplash.origin[1], heSplash.origin[2])
+                    : point.clone().addScaledVector(heOutsideDir || first.normal, HE_SAMPLE.ORIGIN_OFFSET);
+                heHeatmapCenter = heCenter;
+                updateHeHeatmapUniforms();
+                updateHeSplashVisual(heCenter, heRadius);
+            } else {
+                heHeatmapCenter = null;
+                updateHeHeatmapUniforms();
+                disposeHeSplashVisual();
+            }
+
             // blitzkit shoot() 只用 near 穿深（无距离衰减）；dist 仅用于显示
+            // 射击复现：射线只命中外部模块/间隙甲时按 BLOCKED/0 伤处理（服务器 result=1/2/4）；
+            // 相机点击保持 BlitzKit 末层语义（不传该门禁）。
+            const requirePrimary = window.__worldPenMode === true;
             const req = {
                 shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null,
                 penetration: pen,
                 caliber: caliber,
                 damage: dmg,
-                explosion_radius: isHE ? ((selectedShell && selectedShell.explosion_radius) || 3.0) : 0,
+                // 与采样/半径球同一来源：缺失或 0 即 fail-closed（不再单方面回退 3m，
+                // 否则卡片声称 3m 溅射而热力图/球体被禁用——评审 P2）。
+                explosion_radius: isHE ? heRadius : 0,
                 calibrated_shells: eqCal,
                 enhanced_armor: eqEnh,
                 normalization_deg: shellNormDeg,
                 ricochet_deg: shellRicoDeg,
                 allow_ricochet: true,
+                require_primary: requirePrimary,
                 // 距离衰减（对齐客户端指示器 0x719740）：d>100 且 far>0 才生效；
                 // penetration_far 随 tank/{id}.json 透出（数据缺失 → undefined → 不衰减）
                 distance_m: effDistM > 0 ? effDistM : undefined,
                 penetration_far: (selectedShell && selectedShell.penetration_far > 0)
                     ? selectedShell.penetration_far
                     : undefined,
+                // Armor Inspector 800 射线采样。三态：采样结果（samples 可为 0 = 权威零伤害）/
+                // null + he_splash_error（采样器跑不了 → ERROR 卡）/ 两者皆无（仅上游纯函数）。
+                he_splash: heSplash,
+                he_splash_error: heSplashError,
                 view_dir: [viewDir.x, viewDir.y, viewDir.z],
                 hits: hitsForCheck.map(ah => {
                     const lp = toLocalPt(ah.point);
@@ -4961,10 +5649,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             // 判定客户端执行（penetration.js 移植，上游 Rust calculate 同源单测锁定）；
             // wire 形状与 /api/penetrate 响应一致，消费链无感
-            judgePenetration(req).then(res => {
+            judgePenetration(req).then(async res => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应：更新位姿的判定已在途，直接丢弃
-                let trajLayers = res.layers.map(l => {
-                    const ah = hitsForCheck.find(ah => ah.partName === l.part_name);
+                const deterministicMatches = matchHitsByOccurrence(res.layers, hitsForCheck);
+                let trajLayers = res.layers.map((l, i) => {
+                    const ah = deterministicMatches[i];
                     return {
                         point: ah?.point || point,
                         name: l.part_name,
@@ -4978,79 +5667,385 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                         seg: 0,
                     };
                 });
+                // 概率必须使用完整命中链（res.probability_layers），不能复用上面会在
+                // 首个未穿透层截断的确定性 layers。显示层仍保持 BlitzKit 语义不变。
+                const probabilityLayers = Array.isArray(res.probability_layers) && res.probability_layers.length
+                    ? res.probability_layers.map(l => ({ ...l, seg: 0 }))
+                    : trajLayers;
+                const probabilityPen = Number.isFinite(res.probability_penetration)
+                    ? res.probability_penetration : null;
+                // AP/APCR/HEAT 的统一显示判定：用完整概率链作为唯一层链，
+                // 逐层累计概率决定层点颜色，整体概率决定标题与伤害。
+                // HE（isHE）与跳弹/续飞保留原确定性分支。
+                const hasProbabilityChain = Array.isArray(res.probability_layers) && res.probability_layers.length > 0;
+                // HE 命中首个 Primary 时也有穿深浮动；只有命中非 Primary 的
+                // 间隙甲/模块才保持 HE 首面爆炸/溅射（不把 CDF 当穿透概率）。
+                const heFirstPrimary = isHE && hitsForCheck.length > 0
+                    && isPrimary(hitsForCheck[0].section);
+                // 0mm Primary 也是合法主装甲（与其它板一致）：与下方 useProbabilityMode
+                // 的 hasPrimaryLayer 门同源，不能把 0mm 当“必穿/无主装甲”。
+                const hePenChance = heFirstPrimary && hasProbabilityChain
+                    && hasPrimaryLayer(res.probability_layers)
+                    ? evaluateProbabilityChain(probabilityPen ?? pen, res.probability_layers).chance
+                    : 0;
+                // HE 溅射面板：he_min/he_max 是采样器给出的两个浮动界最大值，
+                // 期望 = 满伤×概率 + 未击穿溅射×(1-概率)。
+                const heInfo = (isHE && res.he) ? {
+                    ...res.he,
+                    chance: hePenChance,
+                    expected_damage: dmg * hePenChance + res.he.splash_avg * (1 - hePenChance),
+                } : null;
+                // HE 卡片只展示直接命中的装甲板（位置 + 名义厚度），
+                // 不展示等效/角度/概率链；hitsForCheck[0] 是爆炸面。
+                const heDirectHit = (isHE && first)
+                    ? { name: first.partName, thickness: first.thickness }
+                    : null;
+                const useProbabilityMode = !res.ricochet && !res.blocked_no_primary
+                    && res.result !== '-' && res.result !== 'ERROR' && hasProbabilityChain
+                    // 纯外部模块/0mm 板链没有可被 CDF 评估的主装甲：概率模式会把
+                    // 模块 flat 消耗后的剩余区间误读成“必穿”；保持确定性卡片。
+                    && hasPrimaryLayer(res.probability_layers)
+                    // HE 还必须有合法 splash data（positive explosion radius / res.he）。
+                    // 半径缺失或 <=0 时计算层已 fail-closed：res.result=BLOCKED、damage=0、
+                    // res.he=null；不能再因 first Primary + chain 进入 generic probability card，
+                    // 否则会显示 May penetrate / PENETRATION full damage 覆盖底层结果。
+                    && (!isHE || (heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0));
+                const isGapProbLayer = (layer) => layer.gap === true
+                    || String(layer.part_name || '').startsWith('Gap ');
+                const probabilityMatches = matchHitsByOccurrence(res.probability_layers, hitsForCheck);
+                const probRawLayers = useProbabilityMode
+                    ? res.probability_layers.map((l, i) => {
+                        // 概率层的 point 是判定局部坐标（world 模式会被换算）；轨迹/层点
+                        // 必须用 hitsForCheck 的世界点。同名板按命中次序匹配（第二块
+                        // 同名间隙板的轨迹点不能复用第一块）；gap 层借用相邻装甲层。
+                        let ah = probabilityMatches[i];
+                        if (!ah && isGapProbLayer(l)) {
+                            for (let j = i + 1; j < res.probability_layers.length && !ah; j++) {
+                                if (isGapProbLayer(res.probability_layers[j])) continue;
+                                ah = probabilityMatches[j];
+                            }
+                            for (let j = i - 1; j >= 0 && !ah; j--) {
+                                if (isGapProbLayer(res.probability_layers[j])) continue;
+                                ah = probabilityMatches[j];
+                            }
+                        }
+                        return {
+                            ...l,
+                            name: l.part_name,
+                            eff: l.effective,
+                            angle: l.angle_deg != null ? l.angle_deg : null,
+                            point: ah?.point || (Array.isArray(l.point)
+                                ? new THREE.Vector3(l.point[0], l.point[1], l.point[2])
+                                : point),
+                            normal: ah?.normal || (Array.isArray(l.normal)
+                                ? new THREE.Vector3(l.normal[0], l.normal[1], l.normal[2])
+                                : null),
+                            // 距离衰减标头只读首层 remainBefore；概率链没有逐层剩余值。
+                            remainBefore: i === 0 ? (probabilityPen ?? pen) : undefined,
+                            seg: 0,
+                        };
+                    })
+                    : null;
+                if (ARMOR_DEBUG) {
+                    const cfg = currentConfig();
+                    armorDebugPanel({
+                        url: location.href,
+                        tank: {
+                            id: tankData?.tank_id,
+                            name: tankData?.name,
+                            configIndex: currentConfigIdx,
+                            config: cfg ? {
+                                caliber: cfg.caliber,
+                                turret_plates: cfg.turret_plates,
+                                gun_plates: cfg.gun_plates,
+                                turret_spaced: cfg.turret_spaced,
+                                gun_spaced: cfg.gun_spaced,
+                            } : null,
+                        },
+                        shell: selectedShell ? { ...selectedShell } : null,
+                        equipment: { ...equipmentCoeffs(), calibrated_shells: eqCal, enhanced_armor: eqEnh },
+                        camera: {
+                            position: camera.position.toArray(),
+                            target: controls.target.toArray(),
+                            fov: camera.fov, near: camera.near, far: camera.far,
+                            worldOverview: worldOverviewMode,
+                        },
+                        click: { ndcX, ndcY },
+                        point: point.toArray(),
+                        distance: dist,
+                        viewDir: viewDir.toArray(),
+                        hits: hitsForCheck.map(ah => ({
+                            section: ah.section,
+                            plateId: ah.plateId,
+                            thickness: ah.thickness,
+                            point: ah.point.toArray(),
+                            normal: ah.normal.toArray(),
+                            partName: ah.partName,
+                        })),
+                        deterministic: { result: res.result, damage: res.damage, layers: res.layers, he: res.he, heDirectHit },
+                        probability: { penetration: res.probability_penetration, layers: res.probability_layers },
+                        heatmap: penetrationMode,
+                    });
+                }
 
                 if (res.ricochet && res.ricochet_remaining_pen > 0) {
-                    const lastLayer = trajLayers[trajLayers.length - 1];
-                    if (lastLayer && lastLayer.point) {
-                        const shellDir = viewDir.clone().negate(); // incoming shell direction
-                        let n = lastLayer.normal;
-                        if (!n) {
-                            const hitMatch = hitsForCheck.find(ah => ah.point.distanceToSquared(lastLayer.point) < 1e-6);
-                            n = hitMatch ? hitMatch.normal : first.normal;
-                        }
-                        const reflect = shellDir.clone().sub(n.clone().multiplyScalar(2 * shellDir.dot(n))).normalize();
-                        // BlitzKit 对齐：出射射线原点=跳弹点、near=0、无近距过滤——接缝处另一侧板
-                        // 在厘米级距离，原 +0.05m 偏移 + <0.1m 跳过会把它丢弃 → 续飞穿入车体内部。
-                        const rc = new THREE.Raycaster(lastLayer.point, reflect);
-                        const ricIntersects = rc.intersectObjects(objects, true);
-                        const ricHits = [];
-                        for (const hit of ricIntersects) {
-                            // 初始接受阈（评审 P1 三路一致）：t ≤ RC.MIN_CONTINUATION_T 一律滤——与 JS
-                            // 参考 raycastPackAll 的 tMin、GLSL 的 tStart 同一严格口径（不含推进 eps）
-                            if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
-                            const entry = classifyHit(hit);
-                            if (entry) ricHits.push(entry);
-                        }
-                        // blitzkit：出射射线（allowRicochet=false）未命中 Primary → shoot 返回
-                        // null（无出射段、伤害 0），不进行二次判定
-                        const ricHasPrimary = ricHits.some(h => h.section === 'hull' || h.section === 'turret' || h.section === 'gun');
-                        if (ricHits.length > 0 && ricHasPrimary) {
+                    const firstLast = trajLayers[trajLayers.length - 1];
+                    if (firstLast && firstLast.point) {
+                        let current = res;
+                        let currentPoint = firstLast.point.clone();
+                        let currentNormal = firstLast.normal ? firstLast.normal.clone() : null;
+                        let currentDir = incomingDirection.clone();
+                        const allLayers = trajLayers.slice();
+                        const allProbability = Array.isArray(probabilityLayers) ? probabilityLayers.slice() : [];
+                        const segmentResults = [res.result];
+                        const bounceDebug = [];
+                        let finalDamage = res.damage || 0;
+                        let bounced = 0;
+
+                        while (current.ricochet && current.ricochet_remaining_pen > 0
+                            && bounced < RC.MAX_CONTINUATIONS && currentNormal) {
+                            const reflect = currentDir.clone()
+                                .sub(currentNormal.clone().multiplyScalar(2 * currentDir.dot(currentNormal)))
+                                .normalize();
+                            const rc = new THREE.Raycaster(currentPoint, reflect);
+                            const ricIntersects = rc.intersectObjects(objects, true);
+                            const ricHits = [];
+                            for (const hit of ricIntersects) {
+                                if (hit.distance <= RC.MIN_CONTINUATION_T) continue;
+                                if (isClippedModuleHit(hit.object.userData.armorSection, hit.point, gunClipPlane)) continue;
+                                const entry = classifyHit(hit, rc.ray.direction);
+                                if (entry && !entry.backface) ricHits.push(entry);
+                            }
+                            ricHits.sort((a, b) => a.distance - b.distance);
+                            if (!ricHits.length || !ricHits.some(h => isPrimary(h.section))) break;
+
                             const ricReq = {
-                                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null, penetration: res.ricochet_remaining_pen, caliber: caliber,
+                                shell_type: shellType, shell_type_id: selectedShell ? (selectedShell.type_id ?? null) : null,
+                                penetration: current.ricochet_remaining_pen, caliber,
                                 damage: dmg,
                                 enhanced_armor: eqEnh,
                                 normalization_deg: shellNormDeg,
                                 ricochet_deg: shellRicoDeg,
-                                allow_ricochet: false,
+                                // 跳弹后的炮弹可以再次跳弹；API 的 layerIndex>0 仍会
+                                // 抑制“先穿过模块/间隙甲再跳弹”的情形。
+                                allow_ricochet: true,
+                                require_primary: requirePrimary,
                                 view_dir: [reflect.x, reflect.y, reflect.z],
                                 hits: ricHits.map(ah => ({ section: ah.section, plate_id: ah.plateId, thickness: ah.thickness, normal: [ah.normal.x, ah.normal.y, ah.normal.z], point: [ah.point.x * mpu, ah.point.y * mpu, ah.point.z * mpu], part_name: ah.partName })),
                             };
-                            judgePenetration(ricReq)
-                                .then(ricRes => {
-                                    if (destroyed || penSeq !== __penCheckSeq) return;   // 过期响应丢弃
-                                    if (ricRes) {
-                                        const ricLayers = ricRes.layers.map(l => ({ point: ricHits.find(ah => ah.partName === l.part_name)?.point || lastLayer.point, name: l.part_name, thickness: l.thickness, eff: l.effective, remainBefore: l.remaining_before, penetrated: l.penetrated, ricochet: l.ricochet, angle: l.angle_deg != null ? l.angle_deg : null, seg: 1 }));
-                                        const combined = { result: 'RICOCHET → ' + ricRes.result, total_effective: res.total_effective, layers: [...trajLayers, ...ricLayers] };
-                                        showTrajectory(point, combined.result, combined.total_effective, combined.layers, penDisp, dmg, modDmg, dist, shotRayO, (ricRes && ricRes.damage) || 0);
-                                    } else { showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); }
-                                }).catch(() => { if (destroyed || penSeq !== __penCheckSeq) return; showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0); });
-                            return;
+                            const ricRes = await judgePenetration(ricReq);
+                            if (destroyed || penSeq !== __penCheckSeq) return;
+                            if (!ricRes || ricRes.result === '-') break;
+
+                            const seg = bounced + 1;
+                            segmentResults.push(ricRes.result);
+                            const matched = matchHitsByOccurrence(ricRes.layers, ricHits);
+                            const ricLayers = ricRes.layers.map((l, i) => {
+                                const hit = matched[i] || null;
+                                return {
+                                    point: hit?.point || currentPoint,
+                                    name: l.part_name,
+                                    thickness: l.thickness,
+                                    eff: l.effective,
+                                    remainBefore: l.remaining_before,
+                                    penetrated: l.penetrated,
+                                    ricochet: l.ricochet,
+                                    angle: l.angle_deg != null ? l.angle_deg : null,
+                                    seg,
+                                };
+                            });
+                            allLayers.push(...ricLayers);
+                            const ricProbability = Array.isArray(ricRes.probability_layers) && ricRes.probability_layers.length
+                                ? ricRes.probability_layers.map((l, i) => ({
+                                    ...l,
+                                    seg,
+                                    ...(i === 0 ? { remaining_before: Number.isFinite(ricRes.probability_penetration) ? ricRes.probability_penetration : current.ricochet_remaining_pen } : {}),
+                                }))
+                                : ricLayers;
+                            allProbability.push(...ricProbability);
+                            finalDamage = ricRes.damage || 0;
+                            bounceDebug.push({
+                                bounce: seg,
+                                result: ricRes.result,
+                                reflect: [reflect.x, reflect.y, reflect.z],
+                                layers: ricRes.layers,
+                                probability: ricRes.probability_layers || null,
+                                hits: ricHits.map(h => ({
+                                    partName: h.partName, section: h.section,
+                                    thickness: h.thickness,
+                                    point: h.point.toArray(), normal: h.normal.toArray(),
+                                })),
+                            });
+
+                            const lastMatch = matched[matched.length - 1];
+                            if (!ricRes.ricochet || !lastMatch) {
+                                current = ricRes;
+                                break;
+                            }
+                            currentPoint = lastMatch.point.clone();
+                            currentNormal = lastMatch.normal.clone();
+                            currentDir = reflect;
+                            current = ricRes;
+                            bounced++;
                         }
+
+                        if (ARMOR_DEBUG && window.__armorDebugLast) {
+                            window.__armorDebugLast.ricochet = {
+                                shellDir: [incomingDirection.x, incomingDirection.y, incomingDirection.z],
+                                result: segmentResults.join(' → '),
+                                bounces: bounceDebug,
+                            };
+                            armorDebugPanel(window.__armorDebugLast);
+                        }
+                        showTrajectory(point, segmentResults.join(' → '), res.total_effective, allLayers, penDisp, dmg, modDmg, dist, shotRayO, finalDamage, allProbability, probabilityPen, !isHE && !res.blocked_no_primary, {
+                            ...(heInfo ? { heInfo, heDirectHit } : {}),
+                            blockedNoPrimary: res.blocked_no_primary === true,
+                        });
+                        return;
                     }
                 }
 
-                showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0);
+                const blockedNoPrimary = res.blocked_no_primary === true;
+                if (useProbabilityMode) {
+                    showTrajectory(point, res.result, res.total_effective, probRawLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probRawLayers, probabilityPen, true, { probabilityMode: true, heInfo, heDirectHit, blockedNoPrimary });
+                } else {
+                    showTrajectory(point, res.result, res.total_effective, trajLayers, penDisp, dmg, modDmg, dist, shotRayO, res.damage || 0, probabilityLayers, probabilityPen, !isHE && !blockedNoPrimary, { ...(heInfo ? { heInfo, heDirectHit } : {}), blockedNoPrimary });
+                }
             }).catch(err => {
                 if (destroyed || penSeq !== __penCheckSeq) return;   // 过期请求的失败不覆盖最新结果
                 console.error('Penetration API error:', err);
-                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0);
+                showTrajectory(point, 'ERROR', 0, [], penDisp, dmg, modDmg, dist, shotRayO, 0, null, null, false);
             });
         }
 
 
         let trajGroup = null;
         let trajInfoPos = null;
-        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt) {
+        function armorDebugPanel(snapshot) {
+            if (!ARMOR_DEBUG) return;
+            window.__armorDebugLast = snapshot;
+            console.log('[armor-debug]', JSON.stringify(snapshot));
+            let panel = document.getElementById('armor-debug-panel');
+            if (!panel) {
+                panel = document.createElement('div');
+                panel.id = 'armor-debug-panel';
+                // 面板挂在 body（不在 .armor-view 内），只能用全局 semantic token。
+                panel.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483000;max-width:min(52ch,48vw);max-height:42vh;overflow:auto;background:var(--color-surface-1);color:var(--color-text-primary);border:1px solid var(--color-border-strong);border-radius:8px;padding:8px;font:11px/1.35 ui-monospace,Consolas,monospace;box-shadow:var(--elevation-2);';
+                const bar = document.createElement('div');
+                bar.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:4px;';
+                const title = document.createElement('b');
+                title.textContent = 'armor debug';
+                const copy = document.createElement('button');
+                copy.type = 'button';
+                copy.textContent = '复制 JSON';
+                copy.style.cssText = 'margin-left:auto;padding:2px 6px;border:1px solid var(--color-border-subtle);border-radius:4px;background:var(--color-surface-2);color:var(--color-text-primary);cursor:pointer;';
+                copy.addEventListener('click', () => {
+                    const text = document.getElementById('armor-debug-json')?.textContent || '';
+                    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard')))
+                        .then(() => { copy.textContent = '已复制'; setTimeout(() => { copy.textContent = '复制 JSON'; }, 1200); })
+                        .catch(() => { copy.textContent = '复制失败'; });
+                });
+                bar.append(title, copy);
+                const pre = document.createElement('pre');
+                pre.id = 'armor-debug-json';
+                pre.style.cssText = 'margin:0;white-space:pre-wrap;overflow-wrap:anywhere;';
+                panel.append(bar, pre);
+                document.body.append(panel);
+            }
+            const pre = panel.querySelector('#armor-debug-json');
+            if (pre) pre.textContent = JSON.stringify(snapshot, null, 2);
+        }
+        function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null, allowChance = true, options = {}) {
             if (destroyed) return;
+            clearShotError();
+            const blockedNoPrimary = options.blockedNoPrimary === true;
+            const probabilityMode = options.probabilityMode === true && !blockedNoPrimary;
+            // 无主装甲门禁的 BLOCKED/0 是终态：不能再用概率链的 rawChance/chancePartial
+            // 把标题/伤害回填成“可能击穿 + 满伤”。
+            allowChance = allowChance && !blockedNoPrimary;
+            // HE 采样（Armor Inspector func7695）：min/max 是两个 roll 界的最大值，
+            // avg 取中点；概率由外层 CDF 给出，expected = full*p + avg*(1-p)。
+            const heInfo = options.heInfo || null;
+            const heChance = heInfo && Number.isFinite(heInfo.chance) ? heInfo.chance : 0;
+            const heDirectHit = options.heDirectHit || null;
+            if (ARMOR_DEBUG) {
+                window.__heCardDebug = {
+                    heDirectHit,
+                    l0: layers[0] ? { name: layers[0].name, thickness: layers[0].thickness, eff: layers[0].eff, angle: layers[0].angle } : null,
+                    heBest: heInfo && heInfo.best ? { armor: heInfo.best.armor, layers: heInfo.best.layers } : null,
+                };
+            }
+            // AP/APCR/HEAT 的统一判定：使用完整概率链作为唯一层链，逐层累计概率
+            // 决定层点颜色；HE/跳弹/续飞仍走确定性分支。
+            const probLayers = Array.isArray(probabilityLayers) && probabilityLayers.length > 0
+                ? probabilityLayers : layers;
+            const chancePen = Number.isFinite(probabilityPen)
+                ? probabilityPen
+                : (probLayers.length > 0 && Number.isFinite(probLayers[0].remaining_before ?? probLayers[0].remainBefore)
+                    ? (probLayers[0].remaining_before ?? probLayers[0].remainBefore)
+                    : penVal);
+            let probabilityEval = null;
+            let overallChance = null;
+            let chancePct = 0;
+            // 精确概率（未取整）用于卡片显示：0.4% 必须显示 <1%、99.6% 显示 >99%，
+            // 不能先取整成 0/100 再交给 formatProbabilityPercent（评审 P2）。
+            let rawChance = 0;
+            if (probabilityMode) {
+                probabilityEval = evaluateProbabilityChain(chancePen, probLayers);
+                overallChance = probabilityEval.chance;
+                rawChance = overallChance;
+                chancePct = Math.round(overallChance * 100);
+                layers = probabilityEval.layers;
+            } else {
+                rawChance = probLayers.length > 0 ? penetrationChance(chancePen, probLayers) : 0;
+                chancePct = Math.round(rawChance * 100);
+            }
+            const hasChance = probabilityMode && overallChance > 0;
+            const probabilityPartial = hasChance && overallChance < 1;
+            const chancePartial = probabilityMode
+                ? probabilityPartial
+                : (allowChance && chancePct > 0 && chancePct < 100);
+            // 统一击穿概率（所有弹种卡片都显示，含 0% / 100%）：
+            // AP/APCR/HEAT 用概率链/穿透链，HE 用 CDF 概率；模块首面 HE 为 0%。
+            // 无效 HE 数据（零/缺失半径 → heInfo=null, allowChance=false）由该 helper
+            // fail-closed 为 0%，概率行不会沿用 rawChance 显示 100%/50%。
+            const { chance: cardChance } = resolveCardChance({
+                heInfo, heChance, probabilityMode, overallChance, rawChance, allowChance,
+            });
+
             if (trajGroup) scene.remove(trajGroup);
             trajGroup = new THREE.Group();
 
-            // 轨迹颜色按【最终能否击穿】染色(用户要求):最终击穿=绿,未穿=红,
-            // 跳弹但未击穿=橙。复合结果('RICOCHET → PENETRATION' 等)取末段判定。
-            const finalOutcome = result.split('→').pop().trim();
-            const color = finalOutcome === 'PENETRATION' ? 0x4CAF50
-                : (finalOutcome === 'RICOCHET' ? 0xFF8800
-                : (finalOutcome === 'BLOCKED' || finalOutcome === 'ERROR' ? 0xf44336 : 0xff8800));
+            // 概率色按精确累计概率分档：0 红、0–1 黄、1 绿；显示用四舍五入百分比，
+            // <1% 时显示 <1%，但伤害仍按“只要 >0”给全额（用户裁定）。
+            const probabilityColorHex = (chance) => chance >= 1 ? 0x4CAF50 : (chance > 0 ? 0xffcf5c : 0xf44336);
+            const probabilityColorCss = (chance) => chance >= 1 ? 'var(--green)' : (chance > 0 ? 'var(--yellow)' : 'var(--red)');
+            const cardChanceCss = probabilityColorCss(cardChance);
+            // HE 结果标题/圆点：0% 但仍有溅射 → 橙色（有效溅射），0% 且无伤害 → 红色；
+            // 概率行本身仍用统一的 0 红 / 1–99 黄 / 100 绿。
+            const heTitleCss = heInfo
+                ? (heChance > 0 ? cardChanceCss : (heInfo.splash_avg > 0 ? 'var(--orange)' : 'var(--red)'))
+                : cardChanceCss;
+            const finalOutcome = probabilityMode
+                ? (overallChance >= 1 ? 'PENETRATION' : (hasChance ? 'MAY_PENETRATE' : 'BLOCKED'))
+                : result.split('→').pop().trim();
+            const color = probabilityMode
+                ? probabilityColorHex(overallChance)
+                : (finalOutcome === 'PENETRATION' ? 0x4CAF50
+                    : (finalOutcome === 'RICOCHET' ? 0xFF8800
+                    : (finalOutcome === 'BLOCKED' || finalOutcome === 'ERROR' ? 0xf44336 : 0xff8800)));
+            // Armor Inspector 面板口径：HE 的 "damage" 始终显示满伤（元素
+            // elements["damage"] = getDamageArmorForDistance），未击穿/浮动信息走
+            // summary_min_damage（he_min）。这里主伤害保持满伤；min/max/avg/expected
+            // 在下一行单独列出，避免把 avg 当成 AI 的 damage 对比。
+            const displayDamage = heInfo
+                ? dmgVal
+                : (probabilityMode
+                    ? (hasChance ? dmgVal : 0)
+                    // 跳弹续飞的非概率分支：最终段 1–99% 时标题是“可能击穿”，
+                    // 伤害必须对应满伤（与概率模式 hasChance 同口径），不能沿用
+                    // 确定性 BLOCKED 的 0。0%/100% 仍按终态伤害。
+                    : (chancePartial ? dmgVal : dmgDealt));
             const camDir = camera.position.clone().sub(firstPoint).normalize();
 
             // 轨迹管原点：调用方传入的弹道起点（如炮口）优先；否则沿视线反向
@@ -5093,7 +6088,10 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
-                const pColor = l.penetrated ? 0x4CAF50 : (l.ricochet ? 0xFF8800 : 0xf44336);
+                const layerChance = probabilityMode ? (l.chance ?? 0) : null;
+                const pColor = probabilityMode
+                    ? probabilityColorHex(layerChance)
+                    : (l.penetrated ? 0x4CAF50 : (l.ricochet ? 0xFF8800 : 0xf44336));
 
                 const dotGeo = new THREE.SphereGeometry(0.04, 8, 8);
                 const dotMat = new THREE.MeshBasicMaterial({ color: pColor, depthTest: false, transparent: true, opacity: 0.95 });
@@ -5119,37 +6117,192 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const r = Math.round(v);
                 return Math.abs(r - v) < 0.05 ? String(r) : (Math.round(v * 10) / 10).toFixed(1);
             };
+            // 装甲厚度最多 2 位小数：6.35 不应显示成 6.4。
+            const fmtArmor = (v) => {
+                const n = Number(v);
+                return Number.isFinite(n) ? String(Number(n.toFixed(2))) : '-';
+            };
             const segments = result.split('→').map(x => x.trim()).filter(Boolean);
             const colorHex = '#' + color.toString(16).padStart(6, '0');
-            let html = `<div style="background:var(--tooltip-bg);border-radius:10px;border-left:4px solid ${colorHex};padding:10px 16px;font-family:'Segoe UI',sans-serif;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
-            // 交战距离（射线起点→命中点）——距离衰减判定的输入参数，随面板展示；
-            // 标签与单位走 labels（三语，review P3）
-            if (distVal > 0) {
-                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}</div>`;
+            // 概率模式：0% 红、1–99% 黄、100% 绿；HE/跳弹保持确定性/黄色补充规则。
+            const cardBorder = heInfo
+                ? heTitleCss
+                : (probabilityMode ? cardChanceCss : (chancePartial ? 'var(--yellow)' : colorHex));
+            // 卡片宽度以画布容器为界（不是视口）：窄屏/侧栏画布下整张卡片（含顶行、
+            // 标题/伤害行）都能换行，不能只限制最佳样本子行（评审 P1/P2）。
+            const cardHost = document.getElementById('canvas-container');
+            const cardHostRect = cardHost ? cardHost.getBoundingClientRect() : null;
+            const compactCard = isCompactShotResultCard(window.innerWidth, window.innerHeight);
+            const cardMetrics = shotResultCardMetrics(compactCard);
+            const cardMaxWidth = cardHostRect && cardHostRect.width > 0
+                ? Math.max(compactCard ? 180 : 220, Math.floor(cardHostRect.width - (compactCard ? 16 : 32)))
+                : null;
+            let html = `<div style="background:var(--tooltip-bg);border-radius:${cardMetrics.radius}px;border-left:${cardMetrics.borderWidth}px solid ${cardBorder};padding:${cardMetrics.padding};font-family:'Segoe UI',sans-serif;white-space:normal;box-sizing:border-box;${cardMaxWidth ? `max-width:${cardMaxWidth}px;` : ''}box-shadow:0 4px 20px rgba(0,0,0,0.5);">`;
+            // 顶行：交战距离 · 有效穿深（距离衰减后） · 溅射半径（仅 HE）。
+            // 有效穿深取判定链的 probability_penetration（d>100 时已按 far 衰减；
+            // HE 恒 near），不再单独占一行。
+            if (distVal > 0 || Number.isFinite(chancePen)) {
+                const top = [];
+                if (distVal > 0) top.push(`${escapeText(L.shotDistance)}: ${fmtNum(distVal)} ${escapeText(L.distanceUnit)}`);
+                if (Number.isFinite(chancePen)) top.push(`${escapeText(L.effectivePenetration)}: ${fmtNum(chancePen)}mm`);
+                if (heInfo && Number.isFinite(heInfo.explosion_radius) && heInfo.explosion_radius > 0) {
+                    top.push(`${escapeText(L.heRadius)}: ${fmtNum(heInfo.explosion_radius)} ${escapeText(L.distanceUnit)}`);
+                }
+                html += `<div style="font-size:${cardMetrics.topFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">${top.join(' · ')}</div>`;
             }
-            const titleHtml = (st) => {
-                const d = (typeof dmgDealt === 'number') ? dmgDealt : 0;
-                return `<div style="font-size:18px;font-weight:bold;color:${stColor(st)};margin-bottom:4px;">${escapeText(L.resultName(st))}${d > 0 ? ` <span style="font-size:13px;font-weight:normal;color:var(--muted);">· ${L.shotDamage} ${Math.round(d)}</span>` : ''}</div>`;
+            // HE 卡片数值：判定结果右侧显示主伤害值；溅射情形把范围放小字。
+            const heFull = heInfo ? Math.round(dmgVal) : 0;
+            const heMin = heInfo ? fmtNum(heInfo.splash_min) : '';
+            const heMax = heInfo ? fmtNum(heInfo.splash_max) : '';
+            const heAvg = heInfo ? fmtNum(heInfo.splash_avg) : '';
+            const titleHtml = (st, final = false) => {
+                let title, titleColor;
+                if (heInfo && final) {
+                    // 采样器跑不了：显式报错，不给“看起来正常”的溅射数字。
+                    title = heInfo.unavailable
+                        ? L.resultName('ERROR')
+                        : (heChance >= 1
+                            ? L.resultName('PENETRATION')
+                            : (heChance > 0
+                                ? L.mayPenetrate
+                                : (heInfo.splash_avg > 0 ? L.resultName('SPLASH') : L.resultName('BLOCKED'))));
+                    titleColor = heInfo.unavailable ? 'var(--red)' : heTitleCss;
+                } else if (probabilityMode && final) {
+                    const partial = hasChance && overallChance < 1;
+                    title = partial
+                        ? L.mayPenetrate
+                        : L.resultName(overallChance >= 1 ? 'PENETRATION' : 'BLOCKED');
+                    titleColor = probabilityColorCss(overallChance);
+                } else {
+                    const partial = final && chancePartial;
+                    title = partial ? L.mayPenetrate : L.resultName(st);
+                    titleColor = partial ? 'var(--yellow)' : stColor(st);
+                }
+                // 伤害数值贴在判定结果右侧：HE 击穿/可能击穿 = 满伤；纯溅射 = 平均伤害 + 范围小字；
+                // 可能击穿的 HE 同时用小字保留溅射平均/范围。非 HE 显示本次判定伤害（未击穿也显式给 0）。
+                let damageHtml = '';
+                if (final) {
+                    const damageValueCss = `font-size:${cardMetrics.damageFont}px;color:var(--txt);font-weight:600;margin-left:${cardMetrics.damageGap}px;`;
+                    if (heInfo) {
+                        if (heInfo.unavailable) {
+                            damageHtml = `<span style="${damageValueCss}">· —</span>`;
+                        } else if (heChance > 0) {
+                            const splashDetail = heChance < 1
+                                ? ` <span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);font-weight:normal;">(${escapeText(L.shotSplashDamage)} ${heAvg} · ${heMin} - ${heMax})</span>`
+                                : '';
+                            damageHtml = `<span style="${damageValueCss}">· ${heFull}${splashDetail}</span>`;
+                        } else if (heInfo.splash_avg > 0) {
+                            damageHtml = `<span style="${damageValueCss}">· ${escapeText(L.shotAvgShort)} ${heAvg}`
+                                + ` <span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);font-weight:normal;">(${heMin} - ${heMax})</span></span>`;
+                        } else {
+                            damageHtml = `<span style="${damageValueCss}">· 0</span>`;
+                        }
+                    } else {
+                        damageHtml = `<span style="${damageValueCss}">· ${Math.round(displayDamage || 0)}</span>`;
+                    }
+                }
+                return `<div style="display:flex;flex-wrap:wrap;align-items:baseline;font-size:${cardMetrics.titleFont}px;font-weight:bold;color:${titleColor};margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">`
+                    + `<span>${escapeText(title)}</span>${damageHtml}</div>`;
             };
-            html += titleHtml(segments[0]);
-            // 距离衰减生效时（d>100）显示判定穿深（首层 remaining = 衰减后 × 装备系数）
-            if (distVal > 100 && layers.length > 0) {
-                html += `<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${fmtNum(layers[0].remainBefore)}mm @ ${Math.round(distVal)}m</div>`;
+            // 击穿概率行：跳弹链只在【最终判定结果】下侧出现，不能挂在第一段“跳弹”下面。
+            const chanceRowHtml = () => {
+                if (heInfo && heInfo.unavailable) {
+                    // 采样不可用时概率行是误导（0% 看起来像“挡下”），换成显式原因。
+                    return `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--red);margin-bottom:${cardMetrics.marginTight}px;overflow-wrap:anywhere;">`
+                        + `${escapeText(L.heSamplingUnavailable)}<span style="color:var(--muted);"> · ${escapeText(heInfo.reason || 'unknown')}</span></div>`;
+                }
+                let s = `<div style="font-size:${cardMetrics.chanceFont}px;font-weight:600;color:${cardChanceCss};margin-bottom:${cardMetrics.marginTight}px;font-variant-numeric:tabular-nums;">${L.shotPenChance}: ${formatProbabilityPercent(cardChance)}%</div>`;
+                if (heInfo && heChance > 0 && heChance < 1 && Number.isFinite(heInfo.expected_damage)) {
+                    s += `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);line-height:${cardMetrics.expectedLine}px;">${L.expectedDamage}: ${fmtNum(heInfo.expected_damage)}</div>`;
+                }
+                return s;
+            };
+            html += titleHtml(segments[0], segments.length === 1);
+            if (segments.length === 1) html += chanceRowHtml();
+            if (blockedNoPrimary) {
+                html += `<div style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;">${escapeText(L.noPrimaryBlocked)}</div>`;
             }
-            let layerNo = 0;
-            let outStarted = false;
+            if (heInfo) {
+                // 直接命中（爆炸面）紧贴最佳样本上方，只显示位置 + 名义厚度，
+                // 不显示等效/角度/概率链。
+                const hit = heDirectHit || (layers[0]
+                    ? { name: layers[0].name, thickness: layers[0].thickness }
+                    : null);
+                if (hit) {
+                    html += `<div style="font-size:${cardMetrics.layerFont}px;line-height:${cardMetrics.layerLine}px;margin-top:${cardMetrics.marginTight}px;">`
+                        + `<span style="display:inline-block;width:${cardMetrics.bulletWidth}px;color:${heTitleCss};">●</span>`
+                        + `<span style="color:var(--muted);margin-right:${cardMetrics.damageGap}px;">${escapeText(L.directHit)}:</span>`
+                        + `<span style="color:var(--txt);">${escapeText(L.partName(hit.name))}</span>`
+                        + `<span style="color:var(--txt);margin-left:${cardMetrics.inlineGap}px;">${fmtArmor(hit.thickness)}mm</span>`
+                        + `</div>`;
+                }
+                if (heInfo.best && Array.isArray(heInfo.best.layers) && heInfo.best.layers.length > 0) {
+                    // 最佳射线可能穿过 17 层履带/模块：只展示前 4 层 + 剩余层数，
+                    // 并允许窄屏换行（卡片容器是 nowrap，评审 P2：360/390px 会横向溢出）。
+                    const BEST_LAYER_LIMIT = 4;
+                    const fmtBest = (sample) => {
+                        const bestLayers = sample.layers;
+                        const shown = bestLayers.slice(0, BEST_LAYER_LIMIT)
+                            .map(l => `${L.sectionName(l.section)} ${fmtArmor(l.armor)}mm`)
+                            .join(' → ');
+                        const more = bestLayers.length > BEST_LAYER_LIMIT
+                            ? ` → +${bestLayers.length - BEST_LAYER_LIMIT}`
+                            : '';
+                        return `${shown}${more} @ ${Number(sample.distance).toFixed(2)} ${L.distanceUnit}`;
+                    };
+                    const bestLineStyle = `font-size:${cardMetrics.expectedFont}px;color:var(--muted);margin-bottom:${cardMetrics.marginTight}px;white-space:normal;overflow-wrap:anywhere;`;
+                    const same = heInfo.best_lower
+                        && heInfo.best_lower.distance === heInfo.best.distance
+                        && heInfo.best_lower.armor === heInfo.best.armor;
+                    if (same || !heInfo.best_lower) {
+                        html += `<div style="${bestLineStyle}">${L.heBestSample}: ${fmtBest(heInfo.best)}</div>`;
+                    } else {
+                        html += `<div style="${bestLineStyle}">${L.heBestSampleUpper}: ${fmtBest(heInfo.best)}</div>`;
+                        html += `<div style="${bestLineStyle}">${L.heBestSampleLower}: ${fmtBest(heInfo.best_lower)}</div>`;
+                    }
+                }
+            }
+            // 跳弹续飞的非 probabilityMode 分支也保留逐层概率色：最终段 1–99%
+            // 时标题是“可能击穿”，对应装甲板不能仍是确定性红色；按概率链的
+            // 累计 chance 着色，首段跳弹仍保持橙色。
+            const partialEval = !probabilityMode && chancePartial
+                ? evaluateProbabilityChain(chancePen, probLayers).layers
+                : null;
+            let partialCursor = 0;
+            const nextPartialChance = (layer) => {
+                if (!partialEval || !(layer.seg > 0)) return null;
+                while (partialCursor < partialEval.length && partialEval[partialCursor].seg < layer.seg) partialCursor++;
+                const ev = partialEval[partialCursor];
+                if (!ev || ev.seg !== layer.seg) return null;
+                partialCursor++;
+                return Number.isFinite(ev.chance) ? ev.chance : null;
+            };
+            // 有效穿深已并入顶行（距离衰减后），不再重复一行。
+            if (!heInfo) {
+                let layerNo = 0;
+            let prevSeg = 0;
             for (let i = 0; i < layers.length; i++) {
                 const l = layers[i];
-                // 跳弹分段：出射段首层前插分隔线+第二段标题（BlitzKit "ricochet (-25% penetration)"）
-                if (segments.length > 1 && l.seg === 1 && !outStarted) {
-                    outStarted = true;
-                    html += `<div style="display:flex;align-items:center;gap:8px;margin:6px 0;">`;
+                // 每一段跳弹都在首层前插分隔线 + 该段标题；只有最后一段显示最终结果和概率。
+                if (segments.length > 1 && l.seg > 0 && l.seg !== prevSeg) {
+                    const finalSeg = l.seg === segments.length - 1;
+                    html += `<div style="display:flex;align-items:center;gap:${cardMetrics.damageGap}px;margin:${cardMetrics.marginNormal}px 0;">`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span>`;
-                    html += `<span style="font-size:11px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
+                    html += `<span style="font-size:${cardMetrics.expectedFont}px;color:var(--muted);">${L.shotRicochetSeg}</span>`;
                     html += `<span style="flex:1;border-top:1px solid var(--border);"></span></div>`;
-                    html += titleHtml(segments[segments.length - 1]);
+                    html += titleHtml(segments[l.seg] || segments[segments.length - 1], finalSeg);
+                    if (finalSeg) html += chanceRowHtml();
+                    prevSeg = l.seg;
                 }
-                const pc = l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)');
+                const layerChance = probabilityMode ? (l.chance ?? 0) : null;
+                const partialChance = probabilityMode ? null : nextPartialChance(l);
+                const pc = blockedNoPrimary
+                    ? 'var(--red)'
+                    : (probabilityMode
+                        ? probabilityColorCss(layerChance)
+                        : (partialChance != null
+                            ? probabilityColorCss(partialChance)
+                            : (l.penetrated ? 'var(--green)' : (l.ricochet ? 'var(--orange)' : 'var(--red)'))));
                 const th = Number(l.thickness);
                 const isGap = /^Gap /.test(l.name || '');
                 let main, sub;
@@ -5161,27 +6314,37 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 } else if (l.eff != null && l.eff > 0 && l.angle != null) {
                     // 主/间隙装甲：等效厚度 @ 入射角 + 名义厚度（BlitzKit thickness_and_angle + nominal）
                     main = `${fmtNum(l.eff)}mm @ ${Math.round(l.angle)}°`;
-                    sub = `${L.shotNominal} ${fmtNum(th)}mm`;
+                    sub = `${L.shotNominal} ${fmtArmor(th)}mm`;
                 } else if (l.angle != null) {
-                    // 跳弹层：等效为 0，显示名义厚度 @ 角度
-                    main = `${fmtNum(th)}mm @ ${Math.round(l.angle)}°`;
-                    sub = L.shotRicochetSeg;
+                    // 有入射角但非跳弹的层（含 0mm 口径碾压板）只显示厚度/角度；
+                    // “跳弹 (-25% 穿深)”只能挂在真正 ricochet=true 的层上。
+                    main = `${fmtArmor(th)}mm @ ${Math.round(l.angle)}°`;
+                    sub = l.ricochet ? L.shotRicochetSeg : '';
                 } else {
                     // 外部模块：flat 厚度（BlitzKit External 只显示厚度）
-                    main = `${fmtNum(th)}mm`;
-                    sub = l.penetrated ? '' : L.shotBlocked;
+                    main = `${fmtArmor(th)}mm`;
+                    sub = probabilityMode
+                        ? (l.chance > 0 ? '' : L.shotBlocked)
+                        : (l.penetrated ? '' : L.shotBlocked);
                 }
                 const idx = isGap ? '' : `${++layerNo}.`;
-                html += `<div style="font-size:13px;line-height:20px;">`;
-                html += `<span style="display:inline-block;width:14px;color:${pc};">●</span>`;
-                html += `<span style="color:var(--muted);display:inline-block;min-width:20px;">${idx}</span>`;
+                html += `<div style="font-size:${cardMetrics.layerFont}px;line-height:${cardMetrics.layerLine}px;">`;
+                html += `<span style="display:inline-block;width:${cardMetrics.bulletWidth}px;color:${pc};">●</span>`;
+                html += `<span style="color:var(--muted);display:inline-block;min-width:${cardMetrics.indexWidth}px;">${idx}</span>`;
                 html += `<span style="color:var(--txt);" title="${escapeText(l.name)}">${escapeText(L.partName(l.name))}</span>`;
-                html += `<span style="color:${pc};margin-left:14px;">${main}</span>`;
-                if (sub) html += `<span style="color:var(--muted);margin-left:14px;">${sub}</span>`;
+                html += `<span style="color:${pc};margin-left:${cardMetrics.inlineGap}px;">${main}</span>`;
+                if (sub) html += `<span style="color:var(--muted);margin-left:${cardMetrics.inlineGap}px;">${sub}</span>`;
                 html += `</div>`;
+            }
             }
             html += `</div>`;
             div.innerHTML = html;
+            if (ARMOR_DEBUG && window.__armorDebugLast) {
+                window.__armorDebugLast.card = (div.textContent || '').replace(/\s+/g, ' ').slice(0, 600);
+                window.__armorDebugLast.chancePct = chancePct;
+                window.__armorDebugLast.chancePartial = chancePartial;
+                armorDebugPanel(window.__armorDebugLast);
+            }
             // 轨迹线与轨迹面板无条件展示(用户要求:与正常点击判定一致的轨迹展示)
             updateTrajInfoPos();
             scene.add(trajGroup);
@@ -5189,18 +6352,32 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
 
         function updateTrajInfoPos() {
             if (!trajInfoPos) { document.getElementById('traj-info').style.display = 'none'; return; }
-            const v = trajInfoPos.clone().project(camera);
-            const x = (v.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
             const div = document.getElementById('traj-info');
+            const host = document.getElementById('canvas-container');
+            const rect = host ? host.getBoundingClientRect() : null;
+            if (!rect || !(rect.width > 0) || !(rect.height > 0)) { div.style.display = 'none'; return; }
+            // 卡片宽度跟画布容器走（侧栏/窄画布不能按视口算），窗口缩放后同步刷新。
+            div.style.maxWidth = `${Math.max(220, Math.floor(rect.width - 32))}px`;
+            div.style.whiteSpace = 'normal';
+            div.style.boxSizing = 'border-box';
+            const v = trajInfoPos.clone().project(camera);
             if (v.z > 1) { div.style.display = 'none'; return; }
+            // 卡片是 position:fixed，left/top 是视口坐标；必须按画布实际矩形换算，
+            // 否则页面/容器滚动或窗口缩放后画布移动而卡片停在旧视口位置。
+            const x = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+            const y = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
             const offX = 0, offY = 160;
             let px = x + offX, py = y + offY;
             div.style.display = 'block';   // 先显示才能量取实际尺寸
             const w = div.offsetWidth || 300, h = div.offsetHeight || 90;
-            // 视口钳制（translateX(-50%)：left 是面板中心 x）
-            const clampX = (v2) => Math.max(w / 2 + 10, Math.min(window.innerWidth - w / 2 - 10, v2));
-            const clampY = (v2) => Math.max(10, Math.min(window.innerHeight - h - 10, v2));
+            // 可见画布内钳制（translateX(-50%)：left 是面板中心 x）
+            const clipL = Math.max(rect.left, 0), clipT = Math.max(rect.top, 0);
+            const clipR = Math.min(rect.right, window.innerWidth), clipB = Math.min(rect.bottom, window.innerHeight);
+            if (clipR <= clipL || clipB <= clipT) { div.style.display = 'none'; return; }
+            const minX = clipL + w / 2 + 10, maxX = clipR - w / 2 - 10;
+            const minY = clipT + 10, maxY = clipB - h - 10;
+            const clampX = (v2) => maxX >= minX ? Math.max(minX, Math.min(maxX, v2)) : (clipL + clipR) / 2;
+            const clampY = (v2) => maxY >= minY ? Math.max(minY, Math.min(maxY, v2)) : clipT + 10;
             px = clampX(px); py = clampY(py);
             // 固定 UI 避让：不压四角与顶部信息面板（左下信息/右下按钮提示/右上栈/左上排）
             const blockers = [];
@@ -5216,7 +6393,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                 const l = px - w / 2, t = py, rr = l + w, b = t + h;
                 if (l >= r.right || rr <= r.left || t >= r.bottom || b <= r.top) continue;
                 // 首选：整体上移到面板上方；顶部放不下再水平平移到面板侧边
-                if (r.top - h - 12 >= 10) { py = clampY(r.top - h - 12); continue; }
+                if (r.top - h - 12 >= clipT + 10) { py = clampY(r.top - h - 12); continue; }
                 px = clampX(px < (r.left + r.right) / 2 ? r.left - w / 2 - 12 : r.right + w / 2 + 12);
             }
             div.style.transform = 'translateX(-50%)';
@@ -5248,55 +6425,51 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
-        // ===== 远距离检视（相机可达 500m 交战距离）：dolly-zoom =====
-        // Armor Inspector 式透视：相机拉远时 FOV 按 tan(fov/2) = tan(25°)×(30/d) 收窄，
-        // 车体屏幕尺寸保持不变（30m 处 = 原生视角比例）；雾带与近远裁剪面随 k=d/30
-        // 等比缩放，保持同等雾化观感与深度精度。d≤30 时全部还原原生（k=1）。
-        // enabled=false（两车 world 总览）以 k=1 幂等还原原生全组值——总览按射手/目标
-        // 取景，套单车 dolly-zoom 会把远距受击车裁出视锥（review P2）。
-        const DOLLY_REF_DIST = 30;    // 基准距离 = 旧 maxDistance（原生视觉比例）
-        const DOLLY_BASE_FOV = 50;    // 原生 FOV
-        const DOLLY_MIN_FOV = 1.0;    // FOV 下限（约 1600m 处触底，其后车体才开始变小）
+        // ===== 单车装甲检视 / shot replay 的相机标定 =====
+        // Armor Inspector 实测（PC T-34）：基准 15m/18.75°，FOV 最大 40°（约 6.5m 处封顶），
+        // 实测取景点 6.5–28.35m；near=0.05d，far=d+30；d<15 时 FOV 变宽、车体屏幕尺寸保持 15m 比例。
+        // 单车装甲检视与 shot replay 共用这套标定；shot replay 的 0.5–500m 由 minFov=0.5° 兜底。
+        // enabled=false（两车 world 总览）以原生 50° 幂等还原——总览按射手/目标取景，
+        // 套单车 dolly-zoom 会把远距受击车裁出视锥（review P2）。
         function applyLongRangeCompensation(enabled) {
             const d = camera.position.distanceTo(controls.target);
-            const k = enabled ? Math.max(1, d / DOLLY_REF_DIST) : 1;
-            const fov = dollyZoomFov(d, enabled, DOLLY_BASE_FOV, DOLLY_REF_DIST, DOLLY_MIN_FOV);
+            let fov, near, far;
+            if (!enabled) {
+                // world overview：原生 50° 取景（far 随距离防裁切）
+                fov = OVERVIEW_BASE_FOV;
+                near = 0.1;
+                far = Math.max(1000, d * 3);
+            } else {
+                // 单车装甲检视 / shot replay：同一套 Armor Inspector 参考 + 更强的距离缩放
+                // display profile（+0.028/m、封顶 3.8、整体 ×1.1），远距车体缩小更明显。
+                fov = dollyZoomFov(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX, ARMOR_PRODUCT_SCALE);
+                near = 0.05 * d;
+                far = d + 30;
+            }
             let dirty = false;
             if (Math.abs(camera.fov - fov) > 0.005) { camera.fov = fov; dirty = true; }
-            const near = 0.1 * k;
-            const far = Math.max(1000, d * 3);
             if (Math.abs(camera.near - near) > 1e-4 || Math.abs(camera.far - far) > 1) {
                 camera.near = near; camera.far = far; dirty = true;
             }
             if (dirty) camera.updateProjectionMatrix();
-            if (scene.fog) {
-                scene.fog.near = 15 * k;
-                scene.fog.far = 50 * k;
-            }
         }
 
         function animate() {
-            if (destroyed) return;
+            if (destroyed || contextLost) return;
             hookRcClickRecorder();   // 探针监听惰性挂载（首帧 renderer 就绪）
             rafId = requestAnimationFrame(animate);
             controls.update();
-            // dolly-zoom：静态单车检视远距拉远时收窄 FOV（车体视角尺寸不变）；
-            // world 总览（命中/脱靶同置 worldOverviewMode）传 false → k=1 幂等原生
-            // （review P2：总览不适用单车补偿；MISS 路径同规则）
+            // 单车装甲检视：Armor Inspector 实测 15m/18.75° + 40° 上限；
+            // shot replay：旧 30m/50° dolly-zoom；world 总览传 false → 原生 50°。
             applyLongRangeCompensation(!worldOverviewMode);
             trackCameraMotion();
             if (penetrationMode && armorModel) {
                 if (SESS && heatFrames < 5) {
                     heatFrames++;   // 就绪门控计数保留（上游语义）；上报端点已随 client-only 移除
                 }
+                prepareRicochetFrame(); // 所有通道先共享本帧几何，RT1 不再消费上一帧网格
                 updatePenetrationDistanceUniforms();   // 交战距离衰减（相机/炮口→命中板，每帧刷 pen uniform）
                 renderSpacedArmorPass();
-                // 全分辨率逐像素续飞（v5.3）：姿态变化时重建世界网格（相机移动无需重建）
-                if (ricochetPoseDirty && ricochetPack) {
-                    rebuildRicochetGrid();
-                    const sh0 = selectedShell || (shooterShells[0]) || null;
-                    if (sh0) syncRicochetEnabled(sh0);
-                }
                 renderer.render(scene, camera);                       // 背景/网格（autoClear 已置 false）
                 renderer.clearDepth();                                 // 清除深度，让 exclude 深度遮罩生效
                 if (primaryArmorScene) { syncCloneMatrices(primaryArmorScene); renderer.render(primaryArmorScene, camera); }
@@ -5327,9 +6500,11 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             }
         }
 
+        function isContextLost() { return contextLost; }
+
         init().catch((e) => {
             console.error('tank viewer init failed:', e);
             reportLoad({ state: 'error', message: loadFailed(initPhase, errorMessage(e)) });
         });
-        return { destroy, retry, selectTank, canPick };
+        return { destroy, retry, selectTank, canPick, isContextLost };
     }

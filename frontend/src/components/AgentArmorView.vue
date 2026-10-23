@@ -152,19 +152,35 @@ function onPickerKeydown(event) {
 onMounted(() => window.addEventListener('keydown', onPickerKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onPickerKeydown))
 
-function startViewer() {
+function startViewer(preserveSelection = false) {
     const seq = navigationSeq
     const q = new URLSearchParams(window.location.search)
     const tank = Number(q.get('tank')) || 0
-    // 初始坦克：?tank=（缺省给 T-34 = 1，避免空参打开白屏）
-    window.__INITIAL_TANK__ = tank || 1
-    window.__INITIAL_SHOOTER__ = Number(q.get('shooter')) || window.__INITIAL_TANK__
+    if (!preserveSelection) {
+        // 同一 view 的路由重建：先丢掉上一条路由的选择。新 viewer 在 populateTankLists
+        // 发布 onTankSelection 之前若丢失上下文，retry(true) 才不会恢复旧路线。
+        selectedShooterId.value = null
+        selectedTargetId.value = null
+    }
+    // 初始坦克：?tank=（缺省给 Super Conqueror = 19281，避免空参打开白屏；
+    // 2026-10-19 用户指定默认测试车辆）。
+    // context-lost full rebuild 时沿用当前 shooter/target（picker 选择不写 URL），
+    // 否则用户切车后点“重试”会被重置回 URL 里的初始坦克。
+    const initialTarget = preserveSelection && selectedTargetId.value != null
+        ? selectedTargetId.value
+        : (tank || 19281)
+    const initialShooter = preserveSelection && selectedShooterId.value != null
+        ? selectedShooterId.value
+        : (Number(q.get('shooter')) || initialTarget)
+    window.__INITIAL_TANK__ = initialTarget
+    window.__INITIAL_SHOOTER__ = initialShooter
     // 审计 3D-16：场景脚本写入的文案与枚举值按当前语言提供
     viewer = initTankViewer({
         labels: {
             loading: t('armor.loading'),
             shellUnavailable: t('armor.shell_unavailable'),
             loadFailed: (phase, msg) => t('armor.load_failed', { phase, msg }),
+            contextLost: t('armor.context_lost'),
             type: (value) => tankTypeLabel(t, te, value),
             nation: (value) => tankNationLabel(t, te, value),
             showCollision: t('armor.show_collision'),
@@ -178,12 +194,33 @@ function startViewer() {
             partName: (name) => armorPartLabel(name, t),
             resultName: (result) => armorResultLabel(result, t),
             shotDamage: t('armor.shot_damage'),
+            shotPenChance: t('armor.penetration_chance'),
+            shotPenDamage: t('armor.penetration_damage'),
+            shotSplashDamage: t('armor.splash_damage'),
+            shotMinDamage: t('armor.min_damage'),
+            shotMaxDamage: t('armor.max_damage'),
+            shotAvgDamage: t('armor.avg_damage'),
+            shotAvgShort: t('armor.avg_short'),
+            heRadius: t('armor.splash_radius'),
+            heBestSample: t('armor.best_sample'),
+            directHit: t('armor.direct_hit'),
+            expectedDamage: t('armor.expected_damage'),
+            heSamplingUnavailable: t('armor.sampling_unavailable'),
+            noPrimaryBlocked: t('armor.no_primary_blocked'),
+            heBestSampleUpper: t('armor.best_sample_upper'),
+            heBestSampleLower: t('armor.best_sample_lower'),
+            sectionName: (section) => {
+                const key = section === 'gunBarrel' ? 'gun_barrel' : section
+                return t(`armor.sections.${key}`)
+            },
             shotRicochetSeg: t('armor.shot_ricochet_seg'),
             shotLoss: t('armor.shot_loss'),
             shotNominal: t('armor.shot_nominal'),
             shotBlocked: t('armor.shot_blocked'),
             shotDistance: t('armor.distance'),
+            effectivePenetration: t('armor.effective_penetration'),
             distanceUnit: t('armor.distance_unit'),
+            mayPenetrate: t('armor.may_penetrate'),
             armorStateLabel: t('armor.armor_state'),
             armorStateDefaultSuffix: t('armor.armor_state_default'),
             armorStateAutoTitle: t('armor.armor_state_auto'),
@@ -207,17 +244,19 @@ function startViewer() {
 async function retry() {
     if (!alive) return
     load.value = { state: 'loading', progress: null, message: '' }
-    if (viewer?.retry?.()) return
+    const previous = viewer
+    if (previous?.retry?.()) return
+    const preserveSelection = previous?.isContextLost?.() === true
     const seq = ++navigationSeq
     requestSeq++
     navigating.value = false
     // 名册都没拿到（或渲染器创建失败）：销毁后重建整个场景
     viewerReady.value = false
-    viewer?.destroy?.()
+    previous?.destroy?.()
     viewer = null
     attempt.value += 1
     await nextTick()
-    if (alive && seq === navigationSeq && webgl.supported) startViewer()
+    if (alive && seq === navigationSeq && webgl.supported) startViewer(preserveSelection)
 }
 
 onMounted(async () => {
@@ -355,6 +394,7 @@ onBeforeUnmount(() => {
         </div>
         </div>
         <div id="traj-info" style="display:none;"></div>
+        <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
@@ -388,7 +428,7 @@ onBeforeUnmount(() => {
     --tooltip-bg: var(--color-surface-1); --scrub: var(--color-info);
     position: relative; display: flex; flex-direction: column; isolation: isolate;
     inline-size: 100%; block-size: calc(100dvh - var(--header-h) - var(--tabbar-h)); min-block-size: 420px;
-    margin: 0; padding: 0; overflow: hidden; background: var(--bg); color: var(--txt); font: var(--type-body);
+    margin: 0; padding: 0; overflow: hidden; background: var(--color-canvas); color: var(--txt); font: var(--type-body);
 }
 .armor-view .armor-stage { position: relative; flex: 1; min-block-size: 0; inline-size: 100%; }
 .armor-view.is-unsupported { block-size: auto; min-block-size: 0; overflow: visible; background: transparent; }
@@ -436,9 +476,10 @@ onBeforeUnmount(() => {
 .armor-view #corner-br { inset-block-end: var(--space-5); inset-inline-end: var(--space-5); align-items: flex-end; flex-direction: column; max-inline-size: 38%; }
 .armor-view #controls-hint { font: var(--type-caption); color: var(--color-playback-label-text); text-shadow: var(--text-shadow-playback-label); }
 .armor-view #turret-controls { position: absolute; inset-block-end: var(--space-5); inset-inline-start: var(--space-5); display: none; padding: var(--space-3) var(--space-4); min-inline-size: 16rem; max-inline-size: min(32rem, 44%); max-block-size: 40dvh; overflow-y: auto; overflow-wrap: anywhere; }
-/* Desktop mirrors the mobile portrait top bar: tank info and the setup panel are one
-   top-left card, and the setup panel starts collapsed behind the 参数 toggle. */
-@media (width >= 768px) {
+/* Desktop/tablet and landscape touch phones mirror the mobile portrait top bar: tank info
+   and the setup panel are one top-left card, and the setup panel starts collapsed behind
+   the 参数 toggle. */
+@media (width >= 768px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #corner-tl {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -499,6 +540,18 @@ onBeforeUnmount(() => {
     }
     .armor-view .armor-stage.is-tools-open #tank-selectors { display: block; }
 }
+/* 横屏手机/平板：使用平板/桌面式布局（左上信息卡 + 四角浮层），并解除竖屏的 420px
+   最小高度；信息行压成单行，避免短视口下设置面板被挤出卡片。竖屏手机仍走下面 mobile 规则。
+   必须排在上面大卡片的 `overflow: visible` 之后：同特异度下后者会覆盖裁剪，
+   长车名就会画到「参数」按钮下面。 */
+@media (pointer: coarse) and (orientation: landscape) {
+    .armor-view { min-block-size: 0; }
+    .armor-view #info-panel { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+    .armor-view #info-panel h1 { display: inline-block; max-inline-size: 52%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--type-body); margin: 0 var(--space-2) 0 0; }
+    .armor-view #info-panel .stat { display: inline-flex; gap: var(--space-1); vertical-align: bottom; }
+    .armor-view #info-panel .stat + .stat::before { content: '·'; color: var(--muted); }
+    .armor-view #info-panel .label { display: none; }
+}
 .armor-view .ctrl-row { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; font: var(--type-caption); }
 .armor-view .ctrl-row > * { min-inline-size: 0; }
 .armor-view .ctrl-row label { color: var(--muted); }
@@ -517,6 +570,7 @@ onBeforeUnmount(() => {
 .armor-view #click-info .bounce { color: var(--red); }
 .armor-view #click-info .ricochet { color: var(--orange); }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
+.armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
 .armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
 .armor-view .armor-bottom-controls { display: contents; }
@@ -551,10 +605,11 @@ onBeforeUnmount(() => {
 .armor-view .armor-interaction-help dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-6); margin: 0; min-inline-size: 0; }
 .armor-view .armor-interaction-help dt { color: var(--color-text-primary); font: var(--type-body); font-weight: 600; }
 .armor-view .armor-interaction-help dd { margin: 0; color: var(--color-text-secondary); font: var(--type-caption); }
-@media (768px <= width < 1200px) {
+@media (768px <= width < 1200px), (pointer: coarse) and (orientation: landscape) {
     .armor-view #tank-selectors { max-block-size: 38dvh; }
 }
-@media (width < 768px) {
+/* 竖屏手机 + 窄桌面窗口保持既有 mobile 布局；横屏粗指针手机由上面的 tablet 规则接管。 */
+@media (width < 768px) and (orientation: portrait), (width < 768px) and (pointer: fine) {
     .armor-view .armor-interaction-help { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-2) var(--space-3); }
     .armor-view .armor-interaction-help h2 { font: var(--type-caption); font-weight: 600; }
     .armor-view .armor-interaction-help dl { gap: var(--space-2); }

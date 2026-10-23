@@ -63,6 +63,28 @@ class ObservabilityServiceTest {
     }
 
     @Test
+    void androidDownloadClickIsDedicatedAndLegacyPageOpenRemainsAcceptedDuringRollout() {
+        service.accept(batch(downloadClick()), null, "192.0.2.1");
+
+        final String legacyPageOpen = downloadClick().replace("\"android_download_click\"", "\"feature_open\"");
+        service.accept(batch(legacyPageOpen), null, "192.0.2.1");
+
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("\"web\"", "\"android\"")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("\"android_download\"", "\"home\"")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"operation_id\":\"" + UUID.randomUUID() + "\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}", ",\"outcome\":\"start\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_code\":\"PARSE_FAILED\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_id\":\"" + UUID.randomUUID() + "\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_type\":\"parse\"}")));
+        rejects(HttpStatus.BAD_REQUEST, batch(downloadClick().replace("}",
+                ",\"error_stage\":\"decode\"}")));
+    }
+
+    @Test
     void activeUserRequiresVerifiedSubjectAndConfiguredKey() {
         rejects(HttpStatus.UNAUTHORIZED, batch(event("active_user", "")));
         final Jwt jwt = Jwt.withTokenValue("secret-token").header("alg", "none").subject("private-user").build();
@@ -269,6 +291,12 @@ class ObservabilityServiceTest {
 
     private static byte[] batch(final String events) {
         return ("{\"events\":[" + events + "]}").getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String downloadClick() {
+        return "{\"event_id\":\"" + UUID.randomUUID() + "\",\"event\":\"android_download_click\","
+                + "\"platform\":\"web\",\"feature\":\"android_download\",\"occurred_at\":\""
+                + Instant.now() + "\"}";
     }
 
     private static String event(final String type, final String extra) {

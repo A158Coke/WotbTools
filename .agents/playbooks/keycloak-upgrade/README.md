@@ -1,0 +1,96 @@
+
+# keycloak-upgrade
+
+> 内部 playbook：由 designer / executor / prompt-repair / review-with-docs 按需加载；不是顶层 Skill，也不参与生命周期选择。
+
+本技能面向 WotbTools 的 Keycloak 升级：`quay.io/keycloak/keycloak` 镜像 + 自定义 Identity Provider / Authenticator SPI
+（`keycloak-wargaming-provider` / `keycloak-qq-provider` / `keycloak-session-provider`）+ 前端 `keycloak-js` + 后端 Admin REST 调用。
+
+## 适用场景（Use Cases）
+
+| 场景 | 要点 |
+|------|------|
+| patch 升级（26.6.4 → 26.6.5） | 同 major.minor，官方支持零停机滚动升级；仍需读 migration guide 并跑 provider 测试 |
+| minor 升级（26.x → 26.7） | 26.0+ 起官方保证 minor 内向后兼容（fully supported API）；但 `spi-private`/`services` 内部 API 仍可能变，必须重编译 |
+| major 升级（26 → 27） | 不保证向后兼容；弃用 API 会在 next major 移除；必须逐项走本流程并预留 SPI 修复时间 |
+| 只升级 provider 依赖版本 | 服务端不动时，pom `keycloak.version` 仍必须与镜像 tag 一致，否则运行期类不匹配 |
+| 升级前影响评估 | 只读盘点 + 官方资料审查 + 风险清单，不写代码 |
+
+## 核心原则
+
+- **版本单一事实来源**：`docker/Dockerfile.keycloak` 的 FROM tag == 三个 provider pom（wargaming / qq / session）的 `<keycloak.version>` ==（建议）frontend `keycloak-js` major。
+- **自定义 SPI 是最大风险**：本项目的 provider 依赖 `keycloak-server-spi-private` 与 `keycloak-services`（内部 API），跨版本可能编译失败或运行期行为变化；升级 = 重编译 + 单测 + 真机冒烟。
+- **先读官方资料**：每次升级前查目标版本的 [Upgrading Guide](https://www.keycloak.org/docs/latest/upgrading/) 与 release notes，逐条对照本项目。
+- **Keycloak 不支持降级**：升级前必须备份 `keycloak`（与 `wotb`）数据库；回滚 = 旧镜像 + 数据库快照。
+
+## 流程
+
+### Phase 0 — 盘点现状（只读）
+
+1. 运行 `python .agents/playbooks/keycloak-upgrade/scripts/check_versions.py` 列出所有版本引用并确认同步。
+2. 记录：镜像 tag、三个 provider pom 的 `keycloak.version`、frontend `keycloak-js`（`package.json` + `package-lock.json`）、后端 admin REST 调用点、`infra/tofu/keycloak/` 的 realm 声明。
+3. 确认目标版本与升级路径（patch/minor/major），必要时查官方 [endoflife / release info](https://endoflife.date/keycloak)。
+
+### Phase 1 — 官方资料审查
+
+1. 打开目标版本 release notes + Upgrading Guide，重点看 Breaking changes / Notable changes / Deprecations。
+2. 逐条对照本项目：broker SPI、protocol mapper、Admin REST API、`keycloak-js`、redirect URI、token introspection、outgoing HTTP。
+3. 输出「与本项目相关」的变更清单；与本次升级无关的条目记录但不处理。
+
+### Phase 2 — 自定义 SPI 兼容性
+
+按 [references/spi-compat.md](references/spi-compat.md) 执行：
+
+- 三个 provider pom 的 `<keycloak.version>` 一起改，禁止只改一个。
+- `mvn -s java/settings.xml test`（在 `keycloak-wargaming-provider`、`keycloak-qq-provider` 与 `keycloak-session-provider` 各跑一次，JAVA_HOME → JDK21）。
+- 修复编译错误；特别留意 `org.keycloak.broker.provider.*`、`org.keycloak.models.*`、`org.keycloak.sessions.*` 的签名变化。
+- 确认 `META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory` 与 `org.keycloak.authentication.AuthenticatorFactory` 注册文件未丢。
+- 跑现有单测（`WargamingRegionTest` / `WargamingIdentityProviderTest` / `WargamingEndpointTest` / `WargamingApiClientTest` / `KeycloakFakes` / `PersistentBrowserSessionAuthenticatorTest`）。
+
+### Phase 3 — 代码与配置同步
+
+- `docker/Dockerfile.keycloak`：FROM tag 与 pom 对齐（镜像 tag 用固定版本，不用 `latest`）。
+- frontend：`keycloak-js` 26.2+ 独立发版、向后兼容；major 升级时同步 `package.json` + `package-lock.json`（`npm install`）。
+- 后端：`KeycloakAdminUserService` 等调用 Admin REST API 的位置，核对目标版本响应结构与弃用端点。
+- realm：`infra/tofu/keycloak/` resource schema 兼容性；realm 通过 OpenTofu reconciliation 验证，不恢复 JSON import 路径。
+- 环境变量不丢：`WG_APPLICATION_ID`、`KC_*`、`KEYCLOAK_*`（生产走 GitHub Secrets → `.github/workflows/keycloak.yml`）。
+
+### Phase 4 — 本地构建与冒烟
+
+1. 运行 `deploy/test-keycloak-runtime.sh` 确认 `kc.sh build` 成功、三个 jar 进 `/opt/keycloak/providers/`；需要 realm 集成验证时运行 `deploy/test-keycloak-tofu.sh`。
+2. 冒烟：`/realms/wotbtools/.well-known/openid-configuration` 正常；登录页出现 QQ + 三个 Wargaming IdP 按钮；三区服登录闭环；JWT 含 `wotb_region` / `wotb_account_id` / `wotb_nickname` / `wotb_verified`。
+3. 回归后端：`mvn -s settings.xml test`；前端 `npm run build`（若 keycloak-js 变化）。
+
+### Phase 5 — 生产升级（先出计划等用户批准）
+
+- 备份：先跑 `deploy` 的 wotb + keycloak 数据库备份，确认备份可读。
+- 固定镜像 tag（SHA 或精确版本）；单实例部署先起新容器验证 health 再停旧容器。
+- 升级后核对 OpenTofu plan/apply：三个 WG IdP 实例（alias `wargaming-asia/eu/na`、region、enabled）与 QQ IdP、5 个 protocol mapper、defaultRoles。
+- 保留回滚预案（见 [references/edge-cases.md](references/edge-cases.md) 的「回滚」节）。
+
+### Phase 6 — 收尾
+
+- 更新 `java/README.md`、`docs/auth/*`。产品/业务层认证变化 → `HISTORY.md`；Keycloak / SPI / identity model / auth architecture 技术演进 → `docs/architecture/TECHNICAL_EVOLUTION.md`（判据见 `.agents/AGENTS.md` 规则 3）。
+- 走 `review-with-docs` 作为唯一 final gate；它内部完成 code quality、docs、architecture 检查与 fix-and-rereview 闭环。
+
+## 边界情况必查清单（Edge Cases）
+
+完整清单见 [references/edge-cases.md](references/edge-cases.md)。升级前至少过一遍：
+
+- [ ] 版本不同步：Dockerfile / 三个 provider pom / keycloak-js
+- [ ] major 升级的官方支持路径与逐步升级需求
+- [ ] 数据库自动迁移 + 不支持降级 + 备份/恢复脚本可用
+- [ ] 重启导致内存会话丢失 → 用户需重新登录
+- [ ] OpenTofu realm reconciliation 与 provider schema 的兼容性；禁止恢复 realm JSON 或 `--import-realm`
+- [ ] redirect URI 通配符收紧（26.6.3+ hostname 通配符不再接受）
+- [ ] outgoing HTTP 默认不再跟随重定向（26.6.1+）对 WG/QQ API 调用是否成立
+- [ ] 扩展事务约束（26.6.3+ 事务只能 start 一次）与 provider 代码
+- [ ] token introspection audience 校验（26.6.2+）是否影响后端
+- [ ] Identity Brokering API V1 弃用（26.7+）— 本项目 Store tokens off，不检索外部 token
+- [ ] 升级窗口与回滚预案
+
+## 资源
+
+- `scripts/check_versions.py` — 全仓库 Keycloak 版本引用同步检查（镜像 tag + 三个 provider pom）
+- `references/spi-compat.md` — 自定义 provider 的 SPI 表面、风险 API、修复方法
+- `references/edge-cases.md` — 完整边界情况清单与处置

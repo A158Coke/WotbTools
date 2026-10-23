@@ -2,7 +2,7 @@
  * Keep this file last in main.js: these selectors intentionally reconcile legacy
  * component-scoped layout with the V2 Showcase shell. No theme state lives here. */
 
-/* HoF admin：页面容器宽度；表格滚动 / 吸顶 / Tab 由 HoFAdminPage.vue 自身定义（design-language §13）。 */
+/* HoF admin：页面容器宽度；表格滚动 / 吸顶 / Tab 由 HoFAdminPage.vue 自身定义（design-language）。 */
 .hof-admin {
   width: min(1760px, calc(100% - 48px)) !important;
   max-width: 1760px !important;

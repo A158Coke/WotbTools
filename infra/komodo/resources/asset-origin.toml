@@ -1,0 +1,74 @@
+# Dedicated static asset origin for Agent 3D assets.
+#
+# The Stack is created/adopted declaratively by ResourceSync, but ResourceSync Apply
+# must never deploy the workload implicitly. Deployment remains an explicit Komodo
+# action after the asset-owned Gitee `asset-origin` ref contains the exact reviewed
+# GitHub commit and the host asset tree has been staged and verified.
+#
+# GitHub remains source/review authority. The Shanghai worker cannot reliably reach
+# GitHub, so Gitee is transport only, matching the existing TX2 domestic-worker
+# pattern. `.github/workflows/asset-origin.yml` pushes the frozen triggering GitHub
+# SHA itself to the asset-owned Gitee branch `asset-origin` and verifies that exact
+# ref before rollout. The Frontend/Business API mirrors may move shared Gitee `main`
+# at any time; the Stack deliberately tracks only `asset-origin`, so another owner
+# can never change the source this Stack deploys.
+[[stack]]
+name = "wotbtools-asset-origin"
+description = "Alibaba Cloud Shanghai static origin for WotBTools Agent 3D assets"
+tags = []
+template = false
+deploy = false
+
+[stack.config]
+server = "ali-sh-asset-01"
+project_name = "wotbtools-asset-origin"
+# Docker Hub is not reliably reachable from the mainland host. The exact Caddy image
+# is preloaded on the server before deployment, so Komodo must use the local image
+# instead of forcing a registry pull on every manual Deploy.
+auto_pull = false
+run_build = false
+poll_for_updates = false
+auto_update = false
+auto_update_all_services = false
+destroy_before_deploy = false
+skip_secret_interp = false
+git_provider = "gitee.com"
+git_https = true
+repo = "A158Coke/Wotbtools"
+# Asset-owned transport branch: only `.github/workflows/asset-origin.yml` moves it,
+# and it always moves it to the exact SHA that passed the asset source gate. Shared
+# Gitee `main` is owned by the Frontend/Business API mirrors and MUST NOT be the
+# deploy source for this Stack. `commit = ""` keeps Komodo v2.3.3 on the tracked
+# branch tip, which for this ref is the verified frozen SHA.
+branch = "asset-origin"
+commit = ""
+clone_path = ""
+reclone = false
+webhook_enabled = false
+webhook_force_deploy = false
+files_on_host = false
+run_directory = "deploy/assets"
+file_paths = ["compose.yaml"]
+# A Caddyfile-only Git change is a real workload change. Komodo tracks it and a
+# changed-file deploy redeploys the caddy service instead of silently leaving the
+# running process on the old config.
+config_files = [{ path = "Caddyfile", services = ["caddy"], requires = "redeploy" }]
+env_file_path = ".env"
+send_alerts = true
+registry_provider = ""
+registry_account = ""
+# Full/manual Deploy must also apply a Caddyfile-only update. Komodo v2.3.3 runs
+# `docker compose up -d` for a normal deploy, so force recreation explicitly.
+extra_args = ["--force-recreate"]
+build_extra_args = []
+# No Compose wrapper / host lock: this PR does not run any GitHub-owned mutation on
+# the Alibaba host (its Periphery is manually lifecycle-managed), and a manual
+# Komodo Deploy is the only Stack mutation owner. A shared host lock can be
+# reintroduced together with a future Periphery automation PR, when a real second
+# mutation owner exists.
+compose_cmd_wrapper = ""
+compose_cmd_wrapper_include = []
+ignore_services = []
+file_contents = ""
+environment = ""
+links = []

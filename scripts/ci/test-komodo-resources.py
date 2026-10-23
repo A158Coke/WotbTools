@@ -5,11 +5,14 @@ Validates `infra/komodo/resources/**/*.toml` structurally (never by grepping
 descriptions):
 
   * every file parses as TOML;
-  * only the reviewed resource types are declared (server, resource_sync, and the single K7B frontend stack);
+  * only the reviewed resource types are declared (server, resource_sync, and the two
+    reviewed Stacks: the K7B frontend shadow and the asset origin);
   * no duplicate name of the same resource type, across files;
   * the single ResourceSync carries the reviewed, non-destructive configuration;
-  * exactly the three production Servers are declared, in outbound mode, with the
+  * exactly the four production Servers are declared, in outbound mode, with the
     complete v2.3.3 `ServerConfig` field set at documented defaults;
+  * both Stacks are declared with fail-closed configs, and the asset Stack tracks only
+    the asset-owned Gitee `asset-origin` transport branch;
   * no credential-looking key or inbound Periphery endpoint appears anywhere.
 
 Komodo converts a partial `[server.config]` through the schema defaults before
@@ -51,7 +54,7 @@ FORBIDDEN_KEY_NAMES = (
 )
 FORBIDDEN_KEY_SUFFIXES = ("_password", "_secret", "_token", "_private_key", "_onboarding_key")
 
-SERVER_NAMES = ("yecao", "tx1", "tx2")
+SERVER_NAMES = ("yecao", "tx1", "tx2", "ali-sh-asset-01")
 # Every field of the v2.3.3 ServerConfig, declared explicitly so the first sync diff
 # cannot silently reset a production value through the partial->default conversion.
 SERVER_CONFIG_FIELDS = {
@@ -151,6 +154,50 @@ K7B_STACK_CONFIG = {
     "environment": "",
     "links": [],
 }
+
+ASSET_STACK_NAME = "wotbtools-asset-origin"
+ASSET_STACK_CONFIG = {
+    "server": "ali-sh-asset-01",
+    "project_name": "wotbtools-asset-origin",
+    "auto_pull": False,
+    "run_build": False,
+    "poll_for_updates": False,
+    "auto_update": False,
+    "auto_update_all_services": False,
+    "destroy_before_deploy": False,
+    "skip_secret_interp": False,
+    "git_provider": "gitee.com",
+    "git_https": True,
+    "repo": "A158Coke/Wotbtools",
+    # The asset-owned transport ref. Shared Gitee main is moved by the Frontend /
+    # Business API mirrors, so it can never be this Stack's deploy source.
+    "branch": "asset-origin",
+    "commit": "",
+    "clone_path": "",
+    "reclone": False,
+    "webhook_enabled": False,
+    "webhook_force_deploy": False,
+    "files_on_host": False,
+    "run_directory": "deploy/assets",
+    "file_paths": ["compose.yaml"],
+    "config_files": [{"path": "Caddyfile", "services": ["caddy"], "requires": "redeploy"}],
+    "env_file_path": ".env",
+    "send_alerts": True,
+    "registry_provider": "",
+    "registry_account": "",
+    # A normal Komodo deploy runs `docker compose up -d`; force-recreate makes a
+    # Caddyfile-only change take effect. No Compose wrapper/host lock is declared:
+    # this PR runs no GitHub-owned mutation on the Alibaba host.
+    "extra_args": ["--force-recreate"],
+    "build_extra_args": [],
+    "compose_cmd_wrapper": "",
+    "compose_cmd_wrapper_include": [],
+    "ignore_services": [],
+    "file_contents": "",
+    "environment": "",
+    "links": [],
+}
+STACK_CONFIGS = {K7B_STACK_NAME: K7B_STACK_CONFIG, ASSET_STACK_NAME: ASSET_STACK_CONFIG}
 
 failures: list[str] = []
 
@@ -338,31 +385,38 @@ def check_servers(entries: dict[str, dict]) -> None:
 
 
 def check_stacks(entries: dict[str, dict]) -> None:
-    """K7B opens exactly one tightly-scoped Stack resource, and nothing generic."""
-    if sorted(entries) != [K7B_STACK_NAME]:
-        fail(f"K7B declares exactly stack '{K7B_STACK_NAME}', found {sorted(entries)}")
+    """Only the two tightly-scoped, reviewed Stack resources are allowed."""
+    if sorted(entries) != sorted(STACK_CONFIGS):
+        fail(f"declares exactly the Stacks {sorted(STACK_CONFIGS)}, found {sorted(entries)}")
         return
-    declaration = entries[K7B_STACK_NAME]
-    check_metadata("stack", K7B_STACK_NAME, declaration)
-    if declaration.get("deploy", False) is not False:
-        fail("K7B frontend shadow must keep deploy = false; ResourceSync Apply is not workload deploy")
-    config = declaration.get("config")
-    if not isinstance(config, dict):
-        fail(f"stack '{K7B_STACK_NAME}' has no [stack.config] table")
-        return
-    missing = sorted(set(K7B_STACK_CONFIG) - set(config))
-    extra = sorted(set(config) - set(K7B_STACK_CONFIG))
-    if missing:
-        fail(f"stack '{K7B_STACK_NAME}' is missing reviewed config keys: {missing}")
-    if extra:
-        fail(f"stack '{K7B_STACK_NAME}' has unreviewed config keys: {extra}")
-    for key, expected in K7B_STACK_CONFIG.items():
-        if config.get(key) != expected:
-            fail(f"stack '{K7B_STACK_NAME}': {key} must be {expected!r}, found {config.get(key)!r}")
-    if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
-        fail("K7B frontend shadow must never auto-deploy from webhook or image polling")
-    if config.get("server") != "tx2":
-        fail("K7B frontend shadow may run only on Komodo Server tx2")
+    for name, expected_config in STACK_CONFIGS.items():
+        declaration = entries[name]
+        check_metadata("stack", name, declaration)
+        if declaration.get("deploy", False) is not False:
+            fail(f"stack '{name}' must keep deploy = false; ResourceSync Apply is not workload deploy")
+        config = declaration.get("config")
+        if not isinstance(config, dict):
+            fail(f"stack '{name}' has no [stack.config] table")
+            continue
+        missing = sorted(set(expected_config) - set(config))
+        extra = sorted(set(config) - set(expected_config))
+        if missing:
+            fail(f"stack '{name}' is missing reviewed config keys: {missing}")
+        if extra:
+            fail(f"stack '{name}' has unreviewed config keys: {extra}")
+        for key, expected in expected_config.items():
+            if config.get(key) != expected:
+                fail(f"stack '{name}': {key} must be {expected!r}, found {config.get(key)!r}")
+        if config.get("webhook_enabled") is not False or config.get("auto_update") is not False:
+            fail(f"stack '{name}' must never auto-deploy from webhook or image polling")
+    asset = entries[ASSET_STACK_NAME]["config"]
+    # The dedicated transport ref is the whole point of the asset Stack: shared Gitee
+    # main is owned by other mirror owners and must never be its deploy source.
+    if asset.get("branch") != "asset-origin":
+        fail(f"stack '{ASSET_STACK_NAME}': branch must be 'asset-origin', "
+             f"found {asset.get('branch')!r}")
+    if not asset.get("config_files"):
+        fail(f"stack '{ASSET_STACK_NAME}': Caddyfile must stay a tracked config dependency")
 
 
 def main() -> int:

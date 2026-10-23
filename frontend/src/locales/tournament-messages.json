@@ -1,6 +1,13 @@
 {
   "zh": {
     "tournament": {
+      "newEvent": "新建赛事",
+      "configSelectionHint": "选择已有赛事修改配置，或新建一届赛事。",
+      "adminSelectionHint": "依次选择年份、区服和季赛，查看积分并管理比赛日。",
+      "noEventsHint": "先创建赛事并配置积分规则，再开始统计。",
+      "configLockedLabel": "赛程已锁定",
+      "roundRules": "每轮积分规则",
+      "matchDay": "比赛日",
       "title": "联赛积分榜",
       "configTitle": "积分规则配置",
       "adminTitle": "积分赛统计",
@@ -143,6 +150,8 @@
       "export": "导出",
       "exportExcel": "导出 Excel",
       "exportPdf": "打印 / 另存为 PDF",
+      "exportCsv": "导出可重新导入的 CSV",
+      "csvExportHint": "CSV 是可重新导入的数据交换文件；用 Excel 阅读请导出 Excel。",
       "exporting": "正在导出…",
       "exportFinalized": "正式积分排行榜",
       "exportFailed": "导出失败，请重试；打印时请允许打开新窗口。",
@@ -247,6 +256,13 @@
   },
   "en": {
     "tournament": {
+      "newEvent": "New event",
+      "configSelectionHint": "Select an existing event to edit, or create a new one.",
+      "adminSelectionHint": "Choose a year, region and season to view standings and manage match days.",
+      "noEventsHint": "Create an event and configure its points rules before recording results.",
+      "configLockedLabel": "Schedule locked",
+      "roundRules": "Points rules by round",
+      "matchDay": "Match day",
       "title": "League standings",
       "configTitle": "Tournament point rules",
       "adminTitle": "Tournament scoring",
@@ -389,6 +405,8 @@
       "export": "Export",
       "exportExcel": "Export Excel",
       "exportPdf": "Print / Save as PDF",
+      "exportCsv": "Export re-importable CSV",
+      "csvExportHint": "CSV is a re-importable data exchange file. Use Excel export for spreadsheet viewing.",
       "exporting": "Exporting…",
       "exportFinalized": "Finalized tournament standings",
       "exportFailed": "Export failed. Retry; allow the print window to open.",
@@ -493,6 +511,13 @@
   },
   "ru": {
     "tournament": {
+      "newEvent": "Новое событие",
+      "configSelectionHint": "Выберите событие для редактирования или создайте новое.",
+      "adminSelectionHint": "Выберите год, регион и сезон, чтобы посмотреть очки и управлять игровыми днями.",
+      "noEventsHint": "Создайте событие и настройте правила начисления очков перед подсчётом результатов.",
+      "configLockedLabel": "Расписание заблокировано",
+      "roundRules": "Правила начисления очков по раундам",
+      "matchDay": "Игровой день",
       "title": "Таблица лиги",
       "configTitle": "Правила начисления очков",
       "adminTitle": "Подсчёт очков турнира",
@@ -635,6 +660,8 @@
       "export": "Экспорт",
       "exportExcel": "Экспорт Excel",
       "exportPdf": "Печать / Сохранить PDF",
+      "exportCsv": "Экспорт CSV для повторного импорта",
+      "csvExportHint": "CSV предназначен для обмена данными и повторного импорта. Для просмотра таблицы используйте экспорт Excel.",
       "exporting": "Экспорт…",
       "exportFinalized": "Подтверждённая таблица очков",
       "exportFailed": "Не удалось экспортировать. Повторите попытку и разрешите открыть окно печати.",

@@ -37,7 +37,8 @@ export const PRIMARY_NAV = Object.freeze([
 ])
 
 /**
- * 侧边栏管理组（平板 / 桌面）。role 对应 useAuth 的各域管理权限；全站管理员具备所有管理入口。
+ * 侧边栏管理组（平板 / 桌面）。role 对应 useAuth 的各域管理权限（contentAdmin 独立于
+ * tournamentAdmin）；全站管理员通过 Keycloak composite 同时具备所有管理入口。
  * 手机没有侧边栏，这些入口留在"更多"页的管理分组里。
  */
 export const ADMIN_NAV = Object.freeze([
@@ -45,7 +46,7 @@ export const ADMIN_NAV = Object.freeze([
   Object.freeze({ id: 'hof-admin', view: 'hof-admin', labelKey: 'hofAdmin.cardTitle', role: 'hofAdmin' }),
   Object.freeze({ id: 'tournament-points-config', view: 'tournament-points-config', labelKey: 'tournament.configTitle', role: 'tournamentAdmin' }),
   Object.freeze({ id: 'tournament-points-admin', view: 'tournament-points-admin', labelKey: 'tournament.adminTitle', role: 'tournamentAdmin' }),
-  Object.freeze({ id: 'creators-config', view: 'creators-config', labelKey: 'creators.configTitle', role: 'tournamentAdmin' }),
+  Object.freeze({ id: 'creators-config', view: 'creators-config', labelKey: 'creators.configTitle', role: 'contentAdmin' }),
 ])
 
 // 视图 → 所属栏目。个人中心属于账户入口；管理视图各自是侧边栏的一项；

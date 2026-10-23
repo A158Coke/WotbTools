@@ -32,7 +32,7 @@ describe('xlsx round-trip', () => {
     wb.worksheets.forEach((ws, i) => {
       const sheet = spec.sheets[i]
       expect(ws.actualRowCount).toBe(sheet.rows.filter((r) => r !== undefined).length)
-      expect(ws.getRow(1).getCell(1).value).toBe(sheet.rows[0]?.[0]?.v)
+      expect(ws.getRow(1).getCell(1).value).toBe(sheet.rows[0]?.cells[0]?.value)
       expect(ws.autoFilter ?? null).toBe(sheet.autoFilter)
     })
   })

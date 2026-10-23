@@ -13,7 +13,7 @@ import { apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
 import { formatGameVersion } from '../utils/gameVersion.js'
 import { resolveVehicleName, vehicleNameIndex } from '../utils/hofVehicles.js'
-import * as api from '../utils/api.js'
+import * as api from '../api/hall-of-fame.js'
 import ImageDataUploader from './ImageDataUploader.vue'
 import FilterChips from './FilterChips.vue'
 import AppDialog from './AppDialog.vue'
@@ -1312,7 +1312,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
               <span class="up-icon"><svg class="ic" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 9l4-4 4 4M12 5v12" /></svg></span>
               <div class="up-title">{{ $t('hof.upload_title') }}</div>
               <div class="up-sub">{{ $t('hof.upload_hint') }}</div>
-              <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" @change="onFileChange" :disabled="uploading" />
+              <input ref="fileInput" type="file" accept=".wotbreplay" class="lb-hidden-input" tabindex="-1" aria-hidden="true" @change="onFileChange" :disabled="uploading" />
               <button type="button" class="filebtn" :class="{ 'lb-uploading': uploading }" @click="onUploadButtonClick">
                 <svg class="ic" viewBox="0 0 24 24"><path d="M14 3v4a1 1 0 0 0 1 1h4M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" /></svg>
                 {{ uploading ? $t('hof.uploading') : $t('hof.upload_btn') }}

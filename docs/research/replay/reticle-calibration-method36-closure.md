@@ -132,9 +132,15 @@ exact display/UI unit/formula     UNKNOWN/PARTIAL
 
 Do not automatically treat the raw scalar as the user-facing `dispersion at 100m` number.
 
-## Type31 boundary
+## Type31 boundary — corrected
 
-This replay's Type31 samples do not span the Reticle Calibration activation, so it does not directly close the user-visible marker-size conversion formula. That is a display/calibration boundary, not a blocker to the method36 physical-role identity.
+The earlier version of this document described Type31 as a user-visible marker-size/display-calibration boundary. That interpretation is now `SUPERSEDED`.
+
+Corpus-wide camera-state closure identifies Type31 as a scoped-camera automatic zoom/FOV-like raw trajectory, while method36 `field6.field1` is the independently proven gun-dispersion/bloom scalar.
+
+This replay's Type31 samples do not span the Reticle Calibration activation, so it provides no direct evidence about camera zoom/FOV behavior under the consumable. That absence does not affect the method36 physical-role closure.
+
+See `recorder-camera-state.md` and `gun-marker-stream.md` for the corrected Type31 semantic.
 
 ## Current method36 model
 

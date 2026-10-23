@@ -1,5 +1,5 @@
 import { computed, readonly, ref } from 'vue'
-import { ensureUserProfile } from '../utils/api-user.js'
+import { ensureUserProfile } from '../api/user-profile.js'
 import { Feature, getFeatureAvailability, profileBackendAllowed } from '../app/featureCapabilities.js'
 
 /**

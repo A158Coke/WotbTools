@@ -40,7 +40,8 @@ import static com.wotb.web.config.ApiPaths.USERS_PATTERN;
 /**
  * 安全配置: Keycloak JWT 认证 + 角色授权。
  * 权限层级:
- *   wotbtools-admin   → Keycloak composite super-admin（继承各领域管理员角色）
+ *   wotbtools-admin  → Keycloak composite super-admin（继承各领域管理员角色）
+ *   content-admin    → 推荐内容（UP / 优秀视频）管理接口
  *   tournament-admin → 积分赛管理接口
  *   HoF-admin        → 名人堂管理接口
  *   已登录用户         → 玩家接口
@@ -74,10 +75,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, ApiPaths.OBSERVABILITY_EVENTS).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.TOURNAMENTS, ApiPaths.TOURNAMENT_STANDINGS, ApiPaths.TOURNAMENT_DATA_SOURCE).permitAll()
                 .requestMatchers(HttpMethod.GET, ApiPaths.BROADCASTS, ApiPaths.BROADCAST_SEASON,
-                        ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER,ApiPaths.BROADCASTS_V2,
-                        ApiPaths.BROADCAST_SEASON_V2,ApiPaths.BROADCAST_CATEGORY_V2).permitAll()
-                .requestMatchers(HttpMethod.GET, ApiPaths.CREATORS, ApiPaths.CREATORS + "/categories",
-                        ApiPaths.CREATOR_AVATAR, ApiPaths.RECOMMENDATIONS, ApiPaths.RECOMMENDATIONS + "/categories").permitAll()
+                        ApiPaths.BROADCAST_SEASON_CONTENTS, ApiPaths.BROADCAST_CATEGORY, ApiPaths.BROADCAST_COVER).permitAll()
+                .requestMatchers(HttpMethod.GET, ApiPaths.CREATOR_AVATAR, ApiPaths.RECOMMENDATIONS, ApiPaths.RECOMMENDATIONS + "/categories").permitAll()
                 .requestMatchers(HOF_UPLOAD, HOF_REPLAY_PATTERN).authenticated()
                 .requestMatchers(HOF_HUNDRED_SUBMISSIONS_PATTERN).authenticated()
                 .requestMatchers(HOF_MARK3_SUBMISSIONS_PATTERN).authenticated()
@@ -92,8 +91,8 @@ public class SecurityConfig {
                 .requestMatchers(TOURNAMENTS_ADMIN_PATTERN)
                     .hasRole("tournament-admin")
 
-                .requestMatchers(ApiPaths.CREATORS_ADMIN_PATTERN, ApiPaths.RECOMMENDATIONS_ADMIN_PATTERN)
-                    .hasRole("tournament-admin")
+                .requestMatchers(ApiPaths.RECOMMENDATIONS_ADMIN_PATTERN)
+                    .hasRole("content-admin")
 
                 .requestMatchers(ADMIN_PATTERN)
                     .hasRole("wotbtools-admin")

@@ -48,7 +48,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 - **HTTP contract boundary**：涉及 Web JSON shape 时先核对 `contracts/http/openapi.yaml`；`wotb-core` domain enum/facts 不得直接泄漏到 `wotb-web` response。使用显式 domain→transport mapper，并用实际 Jackson serialization test 锁定 required/nullable/enum；不要生成 Java DTO。
 
-- Controller → Service → Repository：Controller 只调 Service；Service 只调自己域的 Repository 或其他域的 Service（禁止跨域调 Repository）。新 endpoint 逻辑写进 service。
+- Controller → Converter / Service → Repository：Controller 是 HTTP 聚合器，只接收 transport input、调用 Mapper / Converter 与 Service、返回 transport output；不得包含业务规则、流程编排、Repository / Gateway 调用或业务指标生命周期。新 endpoint 的业务逻辑写进 Service。简单、直接、无业务判断的结构映射使用 Mapper；多输入合并、条件分支、字段派生、规范化、上下文相关转换或多步骤装配使用 Converter。Mapper / Converter 只负责表示转换，不拥有业务规则、Repository、外部 provider I/O 或业务流程。
 - **Mapper 替代 toXxx**：禁止 Service/Entity 手写 `toDto()/toEntity()`；独立 Mapper 类（泛型接口 `Mapper<E,D>`）集中转换。
 - Flyway migration immutability：`src/main/resources/db/migration/V*.sql` 中已经存在于
   base branch 的 versioned migration 是 immutable historical artifact，禁止修改、重命名、删除、
@@ -58,12 +58,16 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 - `@RequestParam(name="x")` 必须显式写 name；字符串判空统一 `org.springframework.util.StringUtils.hasText`；集合遍历优先 Stream；禁止 `import *`；局部变量/入参 `final`；DI 用构造器注入（禁止 `@Autowired` 字段注入）。
 - 不可变模型用 `record`，可变模型用公有字段 POJO（不引入 Lombok）。
 
-## AI Review 边界（wotb-ai/.../replay/ai + wotb-core/.../replay）
+## AI Service 边界（`wotb-ai`：`com.wotb.ai`；共享领域模型：`wotb-core/.../replay`）
+
+`wotb-ai` 根包 `com.wotb.ai` 由 `AiServiceApplication` 自然扫描；AI-owned 代码按 `config/`、
+`gateway/`、`prompt/`、`review/`、`tournament/` 归属。Gateway 供 Review 与 Tournament 共用，
+Review 与 Tournament 是隔离的兄弟 feature；本 Maven module 只依赖 `wotb-core`，不依赖 `wotb-web`。
 
 AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入是客户端 canonical AI projection（`AiReviewRequest = {locale, correlationId, battle, projection}`，required 恰为这四个字段），由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）装配成内存 `ReplayReconstruction`。前端已无维护门（提交 `83884790` 解除；`ai_maintenance` 三语 key 无消费者），AI tab / 深链直接挂载 `AiReviewPanel.vue`。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
 
-- 单文件策略：`POST /api/ai/reviews` wire request 只承载一场战斗（一个 `battle` + 一个 `projection`）；Controller 验证投影后才生成内部 `AiReviewRequest.reconstruction`，结构上不存在多文件/多视角批量形态；旧多文件批量端点 `/process`、`/reconstruct-batch` 已无 Controller 映射，批量分析模式 `MULTI_*` 已删除。
-- 编排归属：`AiReviewController` 直接注入领域服务，不存在兼容 facade。随机战双 Call 在 `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` → `TacticalReviewPromptBuilder` → Call #2）；团队复盘在 `TeamReplayAnalysisService.analyzeTeam` → `analyzeTeamContexts`（timeline hard gate）→ `callSingleTeamContext` → `callStructuredTeamReview`，contract 失败时恰好一次 `recoverTeamReview`（`SINGLE_TEAM_BATTLE_RECOVERY`）。Team Call #2 的结果契约是 `TeamAiReviewResult` + `TeamAiReviewResultParser`（含确定性 salvage / normalization）；生产链没有第三次模型调用、没有 Team Autopsy、没有 legacy envelope / claims validator。
+- 单文件策略：`POST /api/ai/reviews` wire request 只承载一场战斗（一个 `battle` + 一个 `projection`）；`AiReviewRequestConverter` 验证投影后才生成内部 `AiReviewRequest.reconstruction`，结构上不存在多文件/多视角批量形态；旧多文件批量端点 `/process`、`/reconstruct-batch` 已无 Controller 映射，批量分析模式 `MULTI_*` 已删除。
+- AI Review HTTP 边界：`review.controller` 下的 Submission / Cancellation Controller 只负责 HTTP transport 聚合；请求体解码与 `ReplayReconstruction` 装配由 `AiReviewRequestConverter` 负责，scope / capability / worker admission 由 Submission Service 负责，执行期 SSE、指标、结构化日志、错误分类与清理由 Execution Service 负责，取消由 Cancellation Service 负责。PLAYER / TEAM 分析分派由 `AiReviewAnalysisService` 负责；PLAYER 编排由 `PlayerAiReviewService` 负责，TEAM 主流程由 `TeamReplayAnalysisService` 负责。Controller 不直接依赖领域分析器、worker、取消注册表、指标或 request context。随机战双 Call 在 `TacticalReviewHarness.analyzeWithPrior`（Call #1 `PreBattleStrategicService` → `EvidenceSkillEngine` → `TacticalReviewPromptBuilder` → Call #2）；团队复盘在 `TeamReplayAnalysisService.analyzeTeam` → `analyzeTeamContexts`（timeline hard gate）→ `callSingleTeamContext` → `callStructuredTeamReview`，contract 失败时恰好一次 `recoverTeamReview`（`SINGLE_TEAM_BATTLE_RECOVERY`）。Team Call #2 的结果契约是 `TeamAiReviewResult` + `TeamAiReviewResultParser`（含确定性 salvage / normalization）；生产链没有第三次模型调用、没有 Team Autopsy、没有 legacy envelope / claims validator。
 - Team AI Review v0.6 只升级 prompt 的 tactical reasoning order 与 causal contract：先权威事实/信息状态/目标义务，再 local participation、episode propagation 与 HP 下游验证；v0.5 wire schema 保持不变，不新增 LLM call、Team Autopsy、后端 tactical semantic validator 或第二套 episode 模型。
 - transport 唯一生产实现：`SpringAiChatGateway`（Spring AI OpenAI-compatible → api.deepseek.com）；业务只依赖 `AiChatGateway` 接口。Prompt 文本单一来源 `wotb-ai/src/main/resources/prompts/**/*.zh.md`（`common/`、`player/`、`prebattle/`、`team/`、`tactical-skills/`；`AiPromptLibrary.zh("player/tactical" 等 key)` 按 `classpath:/prompts/<key>.zh.md` 加载，如 `player/fallback`、`player/single`、`player/tactical`、`prebattle/system`、`prebattle/user-header`、`prebattle/confidence-legend`、`team/single`、`team/reasoning-contract`；md 支持 `{{key}}` 占位包含（`AiPromptLibrary` 加载时递归展开，公共规则块在 `prompts/common/*.zh.md` 复用，循环包含 fail loud）；展开后 md 内 ZH 规则片段与 Java 常量必须逐字一致（`PromptRuleContractTest` 强制），否则 EN/RU `.replace` 锚点静默失效、残留中文规则段）。
 - 超时链：worker 整体 1100s（`AI_REVIEW_WORKER_OVERALL_DEADLINE_SEC`）→ 单次 AI call 315s；SSE `SseEmitter` 1120s 对齐 nginx；改任何一层都要同步 `AiTimeoutChainContractTest` 与 deploy 校验。
@@ -77,3 +81,7 @@ AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载�
 - Agent 执行 targeted/module/full test 时不得主动解除 `ai-live` exclusion；只有用户明确要求运行 real AI probe 时，才可同时显式选择测试、清空 `-Dai.probe.excludedGroups=` 并通过环境变量提供 key。
 - 不得把真实 API key 写入 repo、test resource、命令记录或日志；普通 CI 不注入 DeepSeek secret，也不新增 paid/live AI job。
 - `AiEvalHarnessTest`、prompt contract/eval 和 fake/mock/loopback gateway tests 是 deterministic 测试，不属于 `ai-live`，继续随普通 CI 执行。
+
+## CSV 共享语法能力
+
+Tournament CSV syntax/encoding 使用 `wotb.web.util.csv.CsvDecoder`；该共享 decoder 只处理严格 UTF-8/RFC4180 字节与 ordered string records，错误保持中性。文件限制、HTTP 错误映射、header 和业务校验仍归调用方。Apache Commons CSV 已在 `wotb-web` 声明，禁止再引入解析依赖。

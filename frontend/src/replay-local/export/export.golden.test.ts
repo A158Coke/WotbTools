@@ -4,7 +4,7 @@
  * golden：`tools/parity/JavaExportDump.java` 对每个批次跑服务端同一条导出链路
  * （finalizeBatch → ReplayExportJobService 的 aggregate / each 分支 → ExcelExporter），
  * 把 xlsx 用 POI 读回归一化。这里用同一批输入走 finalizeBatch → exportAggregateXlsx / exportEachZip，
- * 把真实字节（zip 解包后）用 exceljs 读回、按同一规则归一化（normalize.ts），断言完全相等。
+ * 把真实字节（zip 解包后）用 exceljs 读回、按同一规则归一化（normalize.test.ts），断言完全相等。
  */
 
 import { unzipSync } from 'fflate'
@@ -14,7 +14,7 @@ import { entriesFor, goldenBatches, goldenTankopedia as tankopedia } from '../__
 import javaExport from '../__golden__/java-export.json'
 import { finalizeBatch } from '../compute/index.js'
 import { exportAggregateXlsx, exportEachZip, parseTeamNames, type ExportOptions } from './index.js'
-import { normalizeXlsx, type NormalizedWorkbook } from './normalize.js'
+import { normalizeXlsx, type NormalizedWorkbook } from './normalize.test.js'
 import { columnLetter } from './format.js'
 
 interface GoldenWorkbook {
@@ -36,7 +36,7 @@ const golden = javaExport as unknown as {
   batches: Record<string, GoldenBatch>
 }
 
-/** golden 的样式下标 → 样式串（与 normalize.ts 的输出形状一致）。 */
+/** golden 的样式下标 → 样式串（与 normalize.test.ts 的输出形状一致）。 */
 function expand(id: string): NormalizedWorkbook {
   const wb = golden.workbooks[id]
   return {

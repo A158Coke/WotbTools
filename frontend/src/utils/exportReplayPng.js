@@ -111,6 +111,9 @@ export function downloadBlob(blob, filename) {
     a.href = url
     a.download = filename
     a.style.display = 'none'
+    // Download-activation contract: this attribute marks the only programmatic click the
+    // onboarding click guard lets through (the anchor is hidden and never a pointer target).
+    a.setAttribute('data-app-download', '')
     let appended = false
 
     function cleanup() {

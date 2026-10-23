@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent, effectScope, nextTick, reactive, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, useRoute } from 'vue-router'
-import legacyCard from '../../../contracts/http/fixtures/creator-card.json'
-const card = { ...legacyCard, type: 'UP' as const, externalId: legacyCard.bilibiliUid, targetUrl: legacyCard.homepageUrl, imageUrl: legacyCard.avatarUrl, categories: legacyCard.categories.map(value => ({ ...value, type: 'UP' as const })) }
+import videoCard from '../../../contracts/http/fixtures/recommendation-card.json'
+const card = { ...videoCard, id: 1, type: 'UP' as const, externalId: '123', targetUrl: 'https://space.bilibili.com/123', imageUrl: null, categories: [{ id: 1, name: 'Published', type: 'UP' as const }] }
 import { useCreators } from './useCreators.js'
 vi.mock('./useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: true }) }) }))
 function fixture() {
@@ -12,7 +12,7 @@ function fixture() {
   const online = ref(true), auth = { authenticated: ref(false), authInitState: ref('unauthenticated'), tokenParsed: ref(null) }
   const route = reactive({ path: '/', query: { view: 'creators', lang: 'ru' } as Record<string, string>, hash: '#list' })
   const api = { listRecommendationCategories: vi.fn(async () => card.categories), listRecommendations: vi.fn(async () => [card]) }
-  const availability = { recommendationsSupported: ref(true), typeAvailable: () => true, publicCategories: ref(card.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}) }
+  const availability = { typeAvailable: () => true, publicCategories: ref(card.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}) }
   const router = { push: vi.fn(async () => {}), replace: vi.fn(async (location: any) => { route.query = location.query }) }, scope = effectScope()
   const owner = scope.run(() => useCreators({ type, api, auth, route, router, availability, network: () => ({ available: online.value }) } as any))!
   return { type, owner, api, auth, online, route, router, scope, availability }
@@ -22,7 +22,7 @@ describe('public creator directory ownership', () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/?view=creators&creatorCategory=1&keep=yes#list'); await router.isReady()
     const auth = { authenticated: ref(false), authInitState: ref('unauthenticated'), tokenParsed: ref(null) }
-    const availability = { recommendationsSupported: ref(true), publicCategories: ref([{ id: 1, name: 'UP', type: 'UP' }, { id: 5, name: 'Video', type: 'VIDEO' }]), contentKnown: ref(true), loading: ref(false), error: ref(null), refresh: vi.fn(async () => {}) }
+    const availability = { publicCategories: ref([{ id: 1, name: 'UP', type: 'UP' }, { id: 5, name: 'Video', type: 'VIDEO' }]), contentKnown: ref(true), loading: ref(false), error: ref(null), refresh: vi.fn(async () => {}) }
     const api = { listRecommendations: vi.fn(async () => []) }
     const Child = defineComponent({ props: ['type'], setup(props) { useCreators({ type: () => props.type, auth, availability, api } as any); return () => null } })
     const Parent = defineComponent({ components: { Child }, setup() { const route = useRoute(); const type = computed(() => route.query.view === 'recommended-videos' ? 'VIDEO' : 'UP'); return { type, shown: computed(() => availability.publicCategories.value.some(category => category.type === type.value)) } }, template: '<Child v-if="shown" :type="type" />' })
@@ -58,7 +58,7 @@ describe('public creator directory ownership', () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
     await router.push('/?view=creators&creatorCategory=99&lang=ru#list'); await router.isReady()
     const auth = { authenticated: ref(false), authInitState: ref('idle'), tokenParsed: ref<unknown>(null) }
-    const availability = { recommendationsSupported: ref(true), typeAvailable: () => true, publicCategories: ref(card.categories), contentKnown: ref(true), loading: ref(false), error: ref(null), refresh: vi.fn(async () => {}) }
+    const availability = { typeAvailable: () => true, publicCategories: ref(card.categories), contentKnown: ref(true), loading: ref(false), error: ref(null), refresh: vi.fn(async () => {}) }
     const api = { listRecommendations: vi.fn(async () => []) }
     const host = mount(defineComponent({ setup() { useCreators({ auth, availability, api } as any); return () => null } }), { global: { plugins: [router] } })
     try {
@@ -69,7 +69,7 @@ describe('public creator directory ownership', () => {
       // Match useAuth.projectSession ordering: identity is projected before the settled state.
       if (settledState === 'authenticated') {
         auth.authenticated.value = true
-        auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+        auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
       }
       auth.authInitState.value = settledState; await flushPromises()
       expect(router.currentRoute.value.query.creatorCategory).toBe(settledState === 'authenticated' ? '99' : undefined)
@@ -94,7 +94,7 @@ describe('public creator directory ownership', () => {
     const f = fixture(); f.availability.contentKnown.value = false; f.route.query.creatorCategory = '99'; await flushPromises()
     expect(f.router.replace).not.toHaveBeenCalled()
     f.auth.authenticated.value = true; f.auth.authInitState.value = 'authenticated'
-    f.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } } as any
+    f.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } } as any
     f.availability.contentKnown.value = true; await flushPromises(); expect(f.router.replace).not.toHaveBeenCalled()
     f.auth.tokenParsed.value = null; await flushPromises(); expect(f.router.replace).toHaveBeenCalledTimes(1); f.scope.stop()
   })
@@ -103,7 +103,7 @@ describe('public creator directory ownership', () => {
     let old!: (value: typeof card[]) => void
     f.api.listRecommendations.mockReturnValueOnce(new Promise(resolve => { old = resolve }))
     f.route.query.creatorCategory = '1'; await flushPromises()
-    const oldSignal = (f.api.listRecommendations.mock.calls.at(-1) as any)[3] as AbortSignal
+    const oldSignal = (f.api.listRecommendations.mock.calls.at(-1) as any)[2] as AbortSignal
     f.api.listRecommendations.mockResolvedValueOnce([{ ...card, id: 2 }]); await f.owner.refresh()
     old([card]); await flushPromises()
     expect(oldSignal.aborted).toBe(true); expect(f.owner.creators.value.map(value => value.id)).toEqual([2]); f.scope.stop()

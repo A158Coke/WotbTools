@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, defineComponent, nextTick, ref } from 'vue'
-import { defineLazyModule, reloadForFreshBundle } from './lazyModule.js'
+import { defineLazyModule, reloadForFreshBundle, tryReloadForFreshBundle } from './lazyModule.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -255,5 +255,114 @@ describe('reloadForFreshBundle', () => {
     reloadForFreshBundle()
     expect(reload).toHaveBeenCalledTimes(1)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('tryReloadForFreshBundle contract', () => {
+  function reloadTarget(
+    { readThrows = false, writeThrows = false }: { readThrows?: boolean; writeThrows?: boolean } = {},
+  ) {
+    const values = new Map<string, string>()
+    const reload = vi.fn()
+    return {
+      reload,
+      target: {
+        sessionStorage: {
+          getItem: (key: string) => {
+            if (readThrows) throw new Error('storage read denied')
+            return values.get(key) ?? null
+          },
+          setItem: (key: string, value: string) => {
+            if (writeThrows) throw new Error('storage write denied')
+            values.set(key, value)
+          },
+        },
+        location: { reload },
+      },
+    }
+  }
+
+  it('manual：guard 持久化成功 → 调用 beforeReload + reload 一次，返回 true', () => {
+    const { target, reload } = reloadTarget()
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target)).toBe(true)
+    expect(beforeReload).toHaveBeenCalledTimes(1)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(beforeReload.mock.invocationCallOrder[0])
+      .toBeLessThan(reload.mock.invocationCallOrder[0])
+  })
+
+  it('manual：storage 不可用仍 reload（保留用户主动恢复）', () => {
+    const { target, reload } = reloadTarget({ writeThrows: true })
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target)).toBe(true)
+    expect(beforeReload).toHaveBeenCalledTimes(1)
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('manual：60 秒 cooldown 内 → false，不调用 beforeReload / reload', () => {
+    const { target, reload } = reloadTarget()
+    expect(tryReloadForFreshBundle(() => {}, target)).toBe(true)
+    reload.mockClear()
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target)).toBe(false)
+    expect(beforeReload).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('automatic：guard 持久化成功 → preventDefault hook + reload 一次，返回 true', () => {
+    const { target, reload } = reloadTarget()
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target, { requirePersistentGuard: true })).toBe(true)
+    expect(beforeReload).toHaveBeenCalledTimes(1)
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(beforeReload.mock.invocationCallOrder[0])
+      .toBeLessThan(reload.mock.invocationCallOrder[0])
+  })
+
+  it('automatic：storage 写入失败 → false，不调用 beforeReload / reload', () => {
+    const { target, reload } = reloadTarget({ writeThrows: true })
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target, { requirePersistentGuard: true })).toBe(false)
+    expect(beforeReload).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('automatic：storage 读取失败 → false，不调用 beforeReload / reload', () => {
+    const { target, reload } = reloadTarget({ readThrows: true })
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target, { requirePersistentGuard: true })).toBe(false)
+    expect(beforeReload).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('automatic：已有 cooldown → false，不调用 beforeReload / reload', () => {
+    const { target, reload } = reloadTarget()
+    expect(tryReloadForFreshBundle(() => {}, target, { requirePersistentGuard: true })).toBe(true)
+    reload.mockClear()
+    const beforeReload = vi.fn()
+    expect(tryReloadForFreshBundle(beforeReload, target, { requirePersistentGuard: true })).toBe(false)
+    expect(beforeReload).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('返回值与真实 reload 次数严格对应（true ⇔ 1 次，false ⇔ 0 次）', () => {
+    const cases: Array<{
+      options?: { requirePersistentGuard?: boolean }
+      storage?: { readThrows?: boolean; writeThrows?: boolean }
+      expected: boolean
+    }> = [
+      { storage: {}, expected: true },
+      { storage: { writeThrows: true }, expected: true },
+      { options: { requirePersistentGuard: true }, storage: {}, expected: true },
+      { options: { requirePersistentGuard: true }, storage: { writeThrows: true }, expected: false },
+      { options: { requirePersistentGuard: true }, storage: { readThrows: true }, expected: false },
+    ]
+    for (const { options, storage, expected } of cases) {
+      const { target, reload } = reloadTarget(storage)
+      const result = tryReloadForFreshBundle(() => {}, target, options)
+      expect(result).toBe(expected)
+      expect(reload).toHaveBeenCalledTimes(expected ? 1 : 0)
+    }
   })
 })

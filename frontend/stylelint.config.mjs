@@ -1,4 +1,4 @@
-// 设计语言守护规则：docs/frontend/design-language.md §12。
+// 设计语言守护规则：docs/frontend/design-language.md。
 // 新文件立即严格检查；迁移前的旧文件列在 stylelint.legacy.json（基线），迁完一个删一个。
 import { readFileSync } from 'node:fs'
 

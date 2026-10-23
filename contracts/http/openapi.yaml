@@ -168,7 +168,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-      description: Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+      description: Requires content-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
   /api/admin/recommendations/{id}:
     get:
       operationId: getRecommendationDetail
@@ -304,7 +304,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-      description: Requires tournament-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
+      description: Requires content-admin. Type is required and immutable on update; categories must have the same type. UP identifiers are normalized positive decimal UIDs. VIDEO identifiers are trimmed case-sensitive BV identifiers and levelId must be null. KEEP and REMOVE require no image; REPLACE requires exactly one PNG/JPEG image. expectedVersion is null on creation and the loaded version on update. Stale writes return CREATOR_CONFIG_CONFLICT; duplicate VIDEO identifiers return RECOMMENDATION_ID_ALREADY_EXISTS. Unknown payload fields are rejected.
     delete:
       operationId: deleteRecommendation
       summary: deleteRecommendation
@@ -502,97 +502,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
       description: Delete only a category of the required type. Referenced categories are rejected with CREATOR_CATEGORY_IN_USE.
-  /api/creators/categories:
-    get:
-      operationId: listCreatorCategories
-      summary: listCreatorCategories
-      description: >-
-        Returns only categories linked to at least one creator, ordered by ID.
-        The same public subset is returned to anonymous users and every authenticated role.
-        An empty array means the directory has no populated categories. Administrators use
-        /api/admin/creators/metadata for the complete dictionary, including empty categories.
-        This semantic is advertised by the creators-content-visibility-v1 health capability;
-        older backends advertising only creators-v1 may return the complete dictionary.
-      security: []
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CreatorCategory"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/creators:
-    get:
-      operationId: listCreators
-      summary: listCreators
-      description: Legacy UP-only directory. VIDEO records are never returned by creator endpoints.
-      security: []
-      parameters:
-        - name: categoryId
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CreatorCard"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
   /api/creators/avatars/{avatarId}:
     get:
       operationId: getCreatorAvatar
@@ -635,360 +544,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/admin/creators:
-    post:
-      operationId: createCreator
-      summary: createCreator
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-                - payload
-              properties:
-                payload:
-                  $ref: "#/components/schemas/CreatorSaveRequest"
-                avatar:
-                  type: string
-                  format: binary
-                  description: One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
-            encoding:
-              payload:
-                contentType: application/json
-      responses:
-        "201":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorDetail"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "413":
-          description: "FILE_TOO_LARGE: image input exceeds the configured limits"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Avatar storage unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-      description: "Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft."
-  /api/admin/creators/{id}:
-    get:
-      operationId: getCreatorDetail
-      summary: getCreatorDetail
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorDetail"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-    put:
-      operationId: updateCreator
-      summary: updateCreator
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-                - payload
-              properties:
-                payload:
-                  $ref: "#/components/schemas/CreatorSaveRequest"
-                avatar:
-                  type: string
-                  format: binary
-                  description: One PNG/JPEG file, at most 10 MiB; required only for REPLACE. The server stores a thumbnail with longest edge at most 256px.
-            encoding:
-              payload:
-                contentType: application/json
-      responses:
-        "200":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorDetail"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "413":
-          description: "FILE_TOO_LARGE: image input exceeds the configured limits"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: Avatar storage unavailable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-      description: "Requires tournament-admin. Saves directory fields and optional avatar in one multipart request. KEEP and REMOVE require no avatar file; REPLACE requires exactly one. UID is trimmed and leading zeros removed; all-zero UID and duplicate normalized UID are rejected. Unknown payload fields are rejected. expectedVersion is required: null for creation, or the version of the loaded detail for update. Concurrent changes return CREATOR_CONFIG_CONFLICT without applying the submitted draft."
-    delete:
-      operationId: deleteCreator
-      summary: deleteCreator
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-        - name: expectedVersion
-          in: query
-          required: true
-          schema:
-            type: integer
-            minimum: 0
-          description: The version from the public card captured before confirming removal; stale versions return CREATOR_CONFIG_CONFLICT.
-      responses:
-        "204":
-          description: Completed
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/categories:
-    post:
-      operationId: createCreatorCategory
-      summary: createCreatorCategory
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreatorNameRequest"
-      responses:
-        "201":
-          description: Creator result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorCategory"
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/categories/{id}:
-    delete:
-      operationId: deleteCreatorCategory
-      summary: deleteCreatorCategory
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        "204":
-          description: Completed
-        "400":
-          description: Invalid input
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Forbidden
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: Not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/levels:
+  /api/admin/recommendations/levels:
     post:
       operationId: createCreatorLevel
       summary: createCreatorLevel
@@ -1037,7 +593,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/levels/{id}:
+  /api/admin/recommendations/levels/{id}:
     delete:
       operationId: deleteCreatorLevel
       summary: deleteCreatorLevel
@@ -1079,32 +635,6 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "409":
           description: Configuration or resource conflict
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/creators/metadata:
-    get:
-      operationId: getCreatorMetadata
-      summary: Get creator management dictionaries and avatar upload availability
-      description: Returns complete category and level dictionaries, including entries not linked to any creator.
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Creator management metadata
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CreatorMetadata"
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: Tournament administrator required
           content:
             application/json:
               schema:
@@ -1846,6 +1376,13 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: includeCanonicalStandings
+          in: query
+          required: false
+          description: Return pre-clear daily facts for authenticated canonical CSV export.
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Tournament result
@@ -2981,6 +2518,24 @@ paths:
                   format: binary
                 permit:
                   type: string
+  /api/hof:
+    get:
+      operationId: listHallOfFame
+      summary: List the public Hall of Fame records
+      parameters:
+        - { name: battleType, in: query, required: false, schema: { $ref: '#/components/schemas/HallOfFameBattleType' } }
+        - { name: tankId, in: query, required: false, schema: { type: integer, format: int64 } }
+        - { name: nation, in: query, required: false, schema: { type: string } }
+        - { name: vehicleType, in: query, required: false, schema: { type: string } }
+        - { name: tier, in: query, required: false, schema: { type: integer } }
+        - { name: nickname, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, default: 1, minimum: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200':
+          description: Hall of Fame page
+          content: { application/json: { schema: { $ref: '#/components/schemas/HallOfFamePage' } } }
+        '400': { description: Invalid filter, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/hof/hundred:
     get:
       operationId: listHundredLeaderboard
@@ -3319,42 +2874,6 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LegacyBroadcastIndex"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/tournament-broadcasts/v2:
-    get:
-      operationId: "getBroadcastIndexV2"
-      summary: "get Broadcast Index"
-      parameters:
-        -
-          name: "server"
-          in: "query"
-          required: false
-          schema:
-            $ref: "#/components/schemas/BroadcastServer"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
                 $ref: "#/components/schemas/BroadcastIndex"
         "400":
           description: "Invalid input"
@@ -3377,44 +2896,6 @@ paths:
   "/api/tournament-broadcasts/seasons/{seasonId}":
     get:
       operationId: "getBroadcastSeason"
-      summary: "get Broadcast Season"
-      parameters:
-        -
-          name: "seasonId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LegacyBroadcastSeasonView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/tournament-broadcasts/v2/seasons/{seasonId}":
-    get:
-      operationId: "getBroadcastSeasonV2"
       summary: "get Broadcast Season"
       parameters:
         -
@@ -3469,45 +2950,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LegacyBroadcastCategoryView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/tournament-broadcasts/v2/categories/{categoryId}":
-    get:
-      operationId: "getBroadcastCategoryV2"
-      summary: "get Broadcast Category"
-      parameters:
-        -
-          name: "categoryId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BroadcastCategoryView"
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
         "400":
           description: "Invalid input"
           content:
@@ -3588,56 +3031,6 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/LegacyBroadcastSeasonCreate"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LegacyBroadcastSeasonView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/admin/tournament-broadcasts/v2/seasons:
-    post:
-      operationId: "createBroadcastSeasonV2"
-      summary: "create Broadcast Season"
-      security:
-        -
-          bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
               $ref: "#/components/schemas/BroadcastSeasonCreate"
       responses:
         "200":
@@ -3697,128 +3090,6 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/LegacyBroadcastSeasonUpdate"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LegacyBroadcastSeasonView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-    delete:
-      operationId: "deleteBroadcastSeason"
-      summary: "delete Broadcast Season"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "seasonId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-        -
-          name: "expectedVersion"
-          in: "query"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 0
-            maximum: 9007199254740991
-        -
-          name: "confirm"
-          in: "query"
-          required: true
-          schema:
-            type: "boolean"
-            const: true
-      responses:
-        "204":
-          description: "Deleted"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/seasons/{seasonId}":
-    put:
-      operationId: "updateBroadcastSeasonV2"
-      summary: "update Broadcast Season"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "seasonId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
               $ref: "#/components/schemas/BroadcastSeasonUpdate"
       responses:
         "200":
@@ -3858,7 +3129,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApiError"
     delete:
-      operationId: "deleteBroadcastSeasonV2"
+      operationId: "deleteBroadcastSeason"
       summary: "delete Broadcast Season"
       security:
         -
@@ -3973,121 +3244,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/seasons/{seasonId}/deletion-preview":
-    get:
-      operationId: "previewBroadcastSeasonDeletionV2"
-      summary: "preview Broadcast Season Deletion"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "seasonId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BroadcastDeletionPreview"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
   "/api/admin/tournament-broadcasts/seasons/{seasonId}/categories":
     post:
       operationId: "createBroadcastCategory"
-      summary: "create Broadcast Category"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "seasonId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BroadcastCategoryCreate"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/LegacyBroadcastSeasonView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/seasons/{seasonId}/categories":
-    post:
-      operationId: "createBroadcastCategoryV2"
       summary: "create Broadcast Category"
       security:
         -
@@ -4172,66 +3331,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LegacyBroadcastCategoryView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/categories/{categoryId}/nodes":
-    post:
-      operationId: "createBroadcastNodeV2"
-      summary: "create Broadcast Node"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "categoryId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/BroadcastNodeCreate"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BroadcastCategoryView"
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
         "400":
           description: "Invalid input"
           content:
@@ -4265,59 +3365,6 @@ paths:
   "/api/admin/tournament-broadcasts/nodes/{nodeId}/deletion-preview":
     get:
       operationId: "previewBroadcastNodeDeletion"
-      summary: "preview Broadcast Node Deletion"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "nodeId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BroadcastDeletionPreview"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/nodes/{nodeId}/deletion-preview":
-    get:
-      operationId: "previewBroadcastNodeDeletionV2"
       summary: "preview Broadcast Node Deletion"
       security:
         -
@@ -4432,70 +3479,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/nodes/{nodeId}":
-    delete:
-      operationId: "deleteBroadcastNodeV2"
-      summary: "delete Broadcast Node"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "nodeId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-        -
-          name: "expectedVersion"
-          in: "query"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 0
-            maximum: 9007199254740991
-        -
-          name: "confirm"
-          in: "query"
-          required: true
-          schema:
-            type: "boolean"
-            const: true
-      responses:
-        "204":
-          description: "Deleted"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
   "/api/admin/tournament-broadcasts/nodes/{nodeId}/replays":
     post:
       operationId: "createBroadcastReplay"
@@ -4521,7 +3504,7 @@ paths:
               required: ["payload"]
               properties:
                 payload:
-                  $ref: "#/components/schemas/LegacyBroadcastReplaySave"
+                  $ref: "#/components/schemas/BroadcastTimedReplaySave"
                 cover:
                   type: "string"
                   format: "binary"
@@ -4534,94 +3517,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LegacyBroadcastCategoryView"
-        "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
-          description: "Authentication required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "403":
-          description: "Real site administrator required"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "413":
-          description: "Upload too large"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "502":
-          description: "Cover storage request failed"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "503":
-          description: "Cover storage is not configured"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/nodes/{nodeId}/replays":
-    post:
-      operationId: "createBroadcastReplayV2"
-      summary: "create Broadcast Replay"
-      security:
-        -
-          bearerAuth: []
-      parameters:
-        -
-          name: "nodeId"
-          in: "path"
-          required: true
-          schema:
-            type: "integer"
-            minimum: 1
-            maximum: 9007199254740991
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: "object"
-              required: ["payload"]
-              properties:
-                payload:
-                  $ref: "#/components/schemas/BroadcastReplaySave"
-                cover:
-                  type: "string"
-                  format: "binary"
-            encoding:
-              payload:
-                contentType: "application/json"
-      responses:
-        "200":
-          description: "Public broadcast directory data"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/BroadcastCategoryView"
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
         "400":
           description: "Invalid input"
           content:
@@ -4695,7 +3591,7 @@ paths:
               required: ["payload"]
               properties:
                 payload:
-                  $ref: "#/components/schemas/LegacyBroadcastReplaySave"
+                  $ref: "#/components/schemas/BroadcastTimedReplaySave"
                 cover:
                   type: "string"
                   format: "binary"
@@ -4708,7 +3604,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LegacyBroadcastCategoryView"
+                $ref: "#/components/schemas/BroadcastTimedCategoryView"
         "400":
           description: "Invalid input"
           content:
@@ -4820,152 +3716,151 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  "/api/admin/tournament-broadcasts/v2/replays/{replayId}":
-    put:
-      operationId: "updateBroadcastReplayV2"
-      summary: "update Broadcast Replay"
-      security:
-        -
-          bearerAuth: []
+
+  /api/tournament-broadcasts/seasons/{seasonId}/contents:
+    get:
+      operationId: getBroadcastSeasonContents
+      summary: Read all broadcast categories and roots in one tournament snapshot
       parameters:
-        -
-          name: "replayId"
-          in: "path"
+        - name: seasonId
+          in: path
           required: true
           schema:
-            type: "integer"
+            type: integer
             minimum: 1
             maximum: 9007199254740991
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: "object"
-              required: ["payload"]
-              properties:
-                payload:
-                  $ref: "#/components/schemas/BroadcastReplaySave"
-                cover:
-                  type: "string"
-                  format: "binary"
-            encoding:
-              payload:
-                contentType: "application/json"
       responses:
         "200":
-          description: "Public broadcast directory data"
+          description: Public broadcast directory data
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BroadcastCategoryView"
+                $ref: "#/components/schemas/BroadcastSeasonContents"
         "400":
-          description: "Invalid input"
+          description: Invalid input
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "404":
-          description: "Not found"
+          description: Not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "409":
-          description: "The season changed or the root already exists"
+          description: The season changed or the root already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournament-broadcasts/categories/{categoryId}/deletion-preview:
+    get:
+      operationId: previewBroadcastCategoryDeletion
+      summary: Preview deletion of an entire broadcast category
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9007199254740991
+      responses:
+        "200":
+          description: Public broadcast directory data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BroadcastDeletionPreview"
+        "400":
+          description: Invalid input
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "401":
-          description: "Authentication required"
+          description: Authentication required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "403":
-          description: "Real site administrator required"
+          description: Real site administrator required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "413":
-          description: "Upload too large"
+        "404":
+          description: Not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "502":
-          description: "Cover storage request failed"
+        "409":
+          description: The season changed or the root already exists
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-        "503":
-          description: "Cover storage is not configured"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
+  /api/admin/tournament-broadcasts/categories/{categoryId}:
     delete:
-      operationId: "deleteBroadcastReplayV2"
-      summary: "delete Broadcast Replay"
+      operationId: deleteBroadcastCategory
+      summary: Delete a category, all its roots and replays after versioned confirmation
       security:
-        -
-          bearerAuth: []
+        - bearerAuth: []
       parameters:
-        -
-          name: "replayId"
-          in: "path"
+        - name: categoryId
+          in: path
           required: true
           schema:
-            type: "integer"
+            type: integer
             minimum: 1
             maximum: 9007199254740991
-        -
-          name: "expectedVersion"
-          in: "query"
+        - name: expectedVersion
+          in: query
           required: true
           schema:
-            type: "integer"
+            type: integer
             minimum: 0
             maximum: 9007199254740991
-        -
-          name: "confirm"
-          in: "query"
+        - name: confirm
+          in: query
           required: true
           schema:
-            type: "boolean"
+            type: boolean
             const: true
       responses:
         "204":
-          description: "Deleted"
+          description: Deleted
         "400":
-          description: "Invalid input"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
-          description: "Not found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
-          description: "The season changed or the root already exists"
+          description: Invalid input
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "401":
-          description: "Authentication required"
+          description: Authentication required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
         "403":
-          description: "Real site administrator required"
+          description: Real site administrator required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: The season changed or the root already exists
           content:
             application/json:
               schema:
@@ -5304,20 +4199,6 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-    CreatorCategory:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - name
-      properties:
-        id:
-          type: integer
-          minimum: 1
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
     CreatorLevel:
       type: object
       additionalProperties: false
@@ -5342,194 +4223,6 @@ components:
           type: string
           minLength: 1
           maxLength: 100
-    CreatorCard:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - bilibiliUid
-        - name
-        - description
-        - homepageUrl
-        - avatarUrl
-        - categories
-        - level
-        - score
-        - createdAt
-        - version
-      properties:
-        id:
-          type: integer
-          minimum: 1
-        bilibiliUid:
-          type: string
-          pattern: ^[1-9][0-9]{0,19}$
-          maxLength: 20
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
-        description:
-          type:
-            - string
-            - "null"
-          maxLength: 2000
-        homepageUrl:
-          type: string
-          format: uri
-          pattern: ^https://space\.bilibili\.com/[1-9][0-9]{0,19}$
-          maxLength: 47
-        avatarUrl:
-          type:
-            - string
-            - "null"
-        categories:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreatorCategory"
-          minItems: 1
-        level:
-          oneOf:
-            - $ref: "#/components/schemas/CreatorLevel"
-            - type: "null"
-        score:
-          type: integer
-          enum:
-            - 2
-            - 4
-            - 6
-            - 8
-            - 10
-        createdAt:
-          type: string
-          format: date-time
-        version:
-          type: integer
-          minimum: 0
-    CreatorSaveRequest:
-      type: object
-      additionalProperties: false
-      required:
-        - bilibiliUid
-        - name
-        - description
-        - categoryIds
-        - levelId
-        - stars
-        - avatarAction
-        - expectedVersion
-      properties:
-        bilibiliUid:
-          type: string
-          pattern: ^\s*(?=0*[1-9])[0-9]{1,20}\s*$
-          description: Positive decimal UID of at most 20 digits; surrounding whitespace and leading zeros are normalized by the server.
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
-        description:
-          type:
-            - string
-            - "null"
-          maxLength: 2000
-        categoryIds:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: integer
-            minimum: 1
-        levelId:
-          type:
-            - integer
-            - "null"
-          minimum: 1
-        stars:
-          type: integer
-          minimum: 1
-          maximum: 5
-        avatarAction:
-          type: string
-          enum:
-            - KEEP
-            - REPLACE
-            - REMOVE
-        expectedVersion:
-          type:
-            - integer
-            - "null"
-          minimum: 0
-    CreatorDetail:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - bilibiliUid
-        - name
-        - description
-        - categoryIds
-        - levelId
-        - stars
-        - avatarUrl
-        - version
-      properties:
-        id:
-          type: integer
-          minimum: 1
-        bilibiliUid:
-          type: string
-          pattern: ^[1-9][0-9]{0,19}$
-          maxLength: 20
-        name:
-          type: string
-          minLength: 1
-          maxLength: 100
-        description:
-          type:
-            - string
-            - "null"
-          maxLength: 2000
-        categoryIds:
-          type: array
-          minItems: 1
-          uniqueItems: true
-          items:
-            type: integer
-            minimum: 1
-        levelId:
-          type:
-            - integer
-            - "null"
-          minimum: 1
-        stars:
-          type: integer
-          minimum: 1
-          maximum: 5
-        avatarUrl:
-          type:
-            - string
-            - "null"
-        version:
-          type: integer
-          minimum: 0
-    CreatorMetadata:
-      type: object
-      additionalProperties: false
-      required:
-        - categories
-        - levels
-        - avatarUploadsAvailable
-      properties:
-        categories:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreatorCategory"
-        levels:
-          type: array
-          items:
-            $ref: "#/components/schemas/CreatorLevel"
-        avatarUploadsAvailable:
-          type: boolean
     BackendHealth:
       type: object
       additionalProperties: true
@@ -5544,11 +4237,12 @@ components:
           minimum: 0
         capabilities:
           description: >-
-            recommendations-v1 enables typed UP/VIDEO endpoints. Additive technical capability markers, independent of directory contents and read
-            without querying the creator database. creators-v1 enables the creator APIs;
-            creators-content-visibility-v1 additionally guarantees that the public categories
-            endpoint returns only populated categories. New clients must not infer content
-            availability from the complete dictionary returned by legacy creators-v1 backends.
+            recommendations-v1 enables the UP/VIDEO recommendation APIs and their populated
+            public categories. Technical capability markers are independent of directory
+            contents and read without querying the database; clients fetch public categories
+            to decide which recommendation types have content. broadcast-season-contents-v1
+            enables the consistent season contents endpoint and version-confirmed category
+            deletion; frontend deployment requires this marker before replacing live containers.
           type: array
           items:
             type: string
@@ -5736,6 +4430,85 @@ components:
             $ref: "#/components/schemas/BroadcastCategory"
         coverUploadAvailable:
           type: "boolean"
+    BroadcastTimeZone:
+      type: string
+      enum:
+        - Asia/Shanghai
+        - America/Los_Angeles
+        - Europe/Berlin
+        - Europe/Moscow
+    BroadcastReplayStart:
+      type: object
+      additionalProperties: false
+      required:
+        - replayId
+        - startsAt
+      properties:
+        replayId:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        startsAt:
+          type: string
+          format: date-time
+    BroadcastSeasonContents:
+      type: object
+      additionalProperties: false
+      required:
+        - season
+        - categories
+        - nodes
+        - defaultTimeZone
+        - replayStarts
+        - coverUploadAvailable
+      properties:
+        season:
+          $ref: "#/components/schemas/BroadcastSeason"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastCategory"
+        coverUploadAvailable:
+          type: boolean
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadcastNode"
+        defaultTimeZone:
+          $ref: "#/components/schemas/BroadcastTimeZone"
+        replayStarts:
+          type: array
+          description: Only replays with a known start instant are included.
+          items:
+            $ref: "#/components/schemas/BroadcastReplayStart"
+    BroadcastTimedCategoryView:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+        - defaultTimeZone
+        - replayStarts
+      properties:
+        data:
+          $ref: "#/components/schemas/BroadcastCategoryView"
+        defaultTimeZone:
+          $ref: "#/components/schemas/BroadcastTimeZone"
+        replayStarts:
+          type: array
+          description: Only replays with a known start instant are included.
+          items:
+            $ref: "#/components/schemas/BroadcastReplayStart"
+    BroadcastTimedReplaySave:
+      type: object
+      additionalProperties: false
+      required: [replay, startsAt]
+      properties:
+        replay:
+          $ref: "#/components/schemas/BroadcastReplaySave"
+        startsAt:
+          type: [string, 'null']
+          format: date-time
+          description: Explicit null clears the time. When present, its date in the server tournament timezone must equal replay.matchDate.
     BroadcastCategoryView:
       type: "object"
       additionalProperties: false
@@ -5914,6 +4687,12 @@ components:
           items:
             $ref: "#/components/schemas/ObservabilityEvent"
     ObservabilityEvent:
+      description: Event-family discriminated union. Android download clicks use an exact tuple and cannot carry replay-parse-only fields.
+      oneOf:
+        - $ref: "#/components/schemas/GenericObservabilityEvent"
+        - $ref: "#/components/schemas/AndroidDownloadClickEvent"
+    GenericObservabilityEvent:
+      description: All product telemetry except the dedicated Android download click event.
       type: object
       additionalProperties: false
       required: [event_id, event, platform, feature, occurred_at]
@@ -5949,6 +4728,27 @@ components:
           type: string
           format: uuid
           description: Allowed only for failed replay_parse.
+    AndroidDownloadClickEvent:
+      description: One click on the final "下载 APK" button on /download/android. Intent only; never implies a completed transfer or installation.
+      type: object
+      additionalProperties: false
+      required: [event_id, event, platform, feature, occurred_at]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        event:
+          type: string
+          enum: [android_download_click]
+        platform:
+          type: string
+          enum: [web]
+        feature:
+          type: string
+          enum: [android_download]
+        occurred_at:
+          type: string
+          format: date-time
     TournamentEvent:
       type: object
       additionalProperties: false
@@ -6732,6 +5532,10 @@ components:
           type: boolean
         standings:
           $ref: "#/components/schemas/TournamentStandings"
+        canonicalStandings:
+          allOf:
+            - $ref: "#/components/schemas/TournamentStandings"
+          description: Optional authenticated admin import/export facts before sanctions and clear overlays; absent on older servers.
     TournamentHistoricalState:
       type: object
       additionalProperties: false
@@ -7111,6 +5915,37 @@ components:
         vehicleId: { type: [integer, 'null'], format: int64 }
         vehicleName: { type: [string, 'null'] }
         items: { type: array, items: { $ref: '#/components/schemas/HundredLeaderboardItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalItems: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    HallOfFameBattleType:
+      type: string
+      enum: [RANDOM, RATING]
+    HallOfFameRecord:
+      type: object
+      description: Public page item from /api/hof; rank is always assigned in page context.
+      additionalProperties: false
+      required: [id, rank, tankId, tankName, nickname, damageDealt, battleType, mapName, version, battleTime, createdAt, replayAvailable]
+      properties:
+        id: { type: integer, format: int64 }
+        rank: { type: integer }
+        tankId: { type: integer, format: int64 }
+        tankName: { type: string }
+        nickname: { type: string }
+        damageDealt: { type: integer }
+        battleType: { $ref: '#/components/schemas/HallOfFameBattleType' }
+        mapName: { type: [string, 'null'] }
+        version: { type: [string, 'null'] }
+        battleTime: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        replayAvailable: { type: boolean }
+    HallOfFamePage:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/HallOfFameRecord' } }
         page: { type: integer }
         size: { type: integer }
         totalItems: { type: integer, format: int64 }
@@ -8053,260 +6888,3 @@ components:
         - UPSTREAM_UNAVAILABLE
         - UPSTREAM_TIMEOUT
         - RATE_LIMITED
-
-    LegacyBroadcastSeason:
-      type: "object"
-      additionalProperties: false
-      required: ["id", "server", "year", "name", "startDate", "createdAt", "version", "rootCount", "replayCount"]
-      properties:
-        id:
-          type: "integer"
-          minimum: 1
-          maximum: 9007199254740991
-        server:
-          $ref: "#/components/schemas/BroadcastServer"
-        year:
-          type: "integer"
-          minimum: 1
-          maximum: 9999
-        name:
-          type: "string"
-          minLength: 1
-          maxLength: 100
-        startDate:
-          type: ["string", "null"]
-          format: "date"
-        createdAt:
-          type: "string"
-          format: "date-time"
-        version:
-          type: "integer"
-          minimum: 0
-          maximum: 9007199254740991
-        rootCount:
-          type: "integer"
-          minimum: 0
-          maximum: 2147483647
-        replayCount:
-          type: "integer"
-          minimum: 0
-          maximum: 2147483647
-    LegacyBroadcastReplay:
-      type: "object"
-      additionalProperties: false
-      required: ["id", "nodeId", "title", "url", "matchDate", "dayNumber", "groupLabel", "groupNumber", "bracket", "teams", "perspective", "coverId"]
-      properties:
-        id:
-          type: "integer"
-          minimum: 1
-          maximum: 9007199254740991
-        nodeId:
-          type: "integer"
-          minimum: 1
-          maximum: 9007199254740991
-        title:
-          type: "string"
-          minLength: 1
-          maxLength: 200
-        url:
-          type: "string"
-          minLength: 1
-          maxLength: 2048
-          pattern: "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
-        matchDate:
-          type: "string"
-          format: "date"
-        dayNumber:
-          type: "integer"
-          minimum: 1
-          maximum: 2147483647
-        groupLabel:
-          type: ["string", "null"]
-          minLength: 1
-          maxLength: 100
-        groupNumber:
-          type: ["integer", "null"]
-          minimum: 1
-          maximum: 4
-        bracket:
-          anyOf:
-            -
-              $ref: "#/components/schemas/BroadcastBracket"
-            -
-              type: "null"
-        teams:
-          type: "array"
-          minItems: 2
-          maxItems: 4
-          items:
-            type: "string"
-            minLength: 1
-            maxLength: 100
-        perspective:
-          $ref: "#/components/schemas/BroadcastPerspective"
-        coverId:
-          type: ["string", "null"]
-          format: "uuid"
-    LegacyBroadcastNode:
-      type: "object"
-      additionalProperties: false
-      required: ["id", "categoryId", "roundNumber", "format", "replays"]
-      properties:
-        id:
-          type: "integer"
-          minimum: 1
-          maximum: 9007199254740991
-        categoryId:
-          type: "integer"
-          minimum: 1
-          maximum: 9007199254740991
-        roundNumber:
-          type: ["integer", "null"]
-          minimum: 1
-          maximum: 5
-        format:
-          anyOf:
-            -
-              $ref: "#/components/schemas/BroadcastFormat"
-            -
-              type: "null"
-        replays:
-          type: "array"
-          items:
-            $ref: "#/components/schemas/LegacyBroadcastReplay"
-    LegacyBroadcastIndex:
-      type: "object"
-      additionalProperties: false
-      required: ["servers", "seasons", "coverUploadAvailable"]
-      properties:
-        servers:
-          type: "array"
-          minItems: 5
-          maxItems: 5
-          uniqueItems: true
-          items:
-            $ref: "#/components/schemas/BroadcastServer"
-        seasons:
-          type: "array"
-          items:
-            $ref: "#/components/schemas/LegacyBroadcastSeason"
-        coverUploadAvailable:
-          type: "boolean"
-    LegacyBroadcastSeasonView:
-      type: "object"
-      additionalProperties: false
-      required: ["season", "categories", "coverUploadAvailable"]
-      properties:
-        season:
-          $ref: "#/components/schemas/LegacyBroadcastSeason"
-        categories:
-          type: "array"
-          items:
-            $ref: "#/components/schemas/BroadcastCategory"
-        coverUploadAvailable:
-          type: "boolean"
-    LegacyBroadcastCategoryView:
-      type: "object"
-      additionalProperties: false
-      required: ["season", "category", "nodes", "coverUploadAvailable"]
-      properties:
-        season:
-          $ref: "#/components/schemas/LegacyBroadcastSeason"
-        category:
-          $ref: "#/components/schemas/BroadcastCategory"
-        nodes:
-          type: "array"
-          items:
-            $ref: "#/components/schemas/LegacyBroadcastNode"
-        coverUploadAvailable:
-          type: "boolean"
-    LegacyBroadcastSeasonCreate:
-      type: "object"
-      additionalProperties: false
-      required: ["server", "year", "name", "startDate"]
-      properties:
-        server:
-          $ref: "#/components/schemas/BroadcastServer"
-        year:
-          type: "integer"
-          minimum: 1
-          maximum: 9999
-        name:
-          type: "string"
-          minLength: 1
-          maxLength: 100
-        startDate:
-          type: ["string", "null"]
-          format: "date"
-    LegacyBroadcastSeasonUpdate:
-      type: "object"
-      additionalProperties: false
-      required: ["expectedVersion", "year", "name", "startDate"]
-      properties:
-        expectedVersion:
-          type: "integer"
-          minimum: 0
-          maximum: 9007199254740991
-        year:
-          type: "integer"
-          minimum: 1
-          maximum: 9999
-        name:
-          type: "string"
-          minLength: 1
-          maxLength: 100
-        startDate:
-          type: ["string", "null"]
-          format: "date"
-    LegacyBroadcastReplaySave:
-      type: "object"
-      additionalProperties: false
-      required: ["expectedVersion", "title", "url", "matchDate", "dayNumber", "groupLabel", "groupNumber", "bracket", "teams", "perspective", "coverAction"]
-      properties:
-        expectedVersion:
-          type: "integer"
-          minimum: 0
-          maximum: 9007199254740991
-        title:
-          type: "string"
-          minLength: 1
-          maxLength: 200
-        url:
-          type: "string"
-          minLength: 1
-          maxLength: 2048
-          pattern: "^[hH][tT][tT][pP][sS]?://[^\\s]+$"
-        matchDate:
-          type: "string"
-          format: "date"
-        dayNumber:
-          type: "integer"
-          minimum: 1
-          maximum: 2147483647
-        groupLabel:
-          type: ["string", "null"]
-          minLength: 1
-          maxLength: 100
-        groupNumber:
-          type: ["integer", "null"]
-          minimum: 1
-          maximum: 4
-        bracket:
-          anyOf:
-            -
-              $ref: "#/components/schemas/BroadcastBracket"
-            -
-              type: "null"
-        teams:
-          type: "array"
-          minItems: 2
-          maxItems: 4
-          items:
-            type: "string"
-            minLength: 1
-            maxLength: 100
-        perspective:
-          $ref: "#/components/schemas/BroadcastPerspective"
-        coverAction:
-          type: "string"
-          enum: ["KEEP", "REMOVE", "REPLACE"]

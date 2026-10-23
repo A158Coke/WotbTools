@@ -5,10 +5,10 @@ import { ref, computed } from 'vue'
 import { CREATOR_AVAILABILITY_KEY } from '../shared/creatorAvailability.js'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import legacyCard from '../../../contracts/http/fixtures/creator-card.json'
-const card = { ...legacyCard, type: 'UP' as const, externalId: legacyCard.bilibiliUid, targetUrl: legacyCard.homepageUrl, imageUrl: legacyCard.avatarUrl, categories: legacyCard.categories.map(value => ({ ...value, type: 'UP' as const })) }
-import legacyDetail from '../../../contracts/http/fixtures/creator-detail.json'
-const detail = { ...legacyDetail, type: 'UP' as const, externalId: legacyDetail.bilibiliUid, imageUrl: legacyDetail.avatarUrl }
+import videoCard from '../../../contracts/http/fixtures/recommendation-card.json'
+const card = { ...videoCard, id: 1, type: 'UP' as const, externalId: '123', targetUrl: 'https://space.bilibili.com/123', imageUrl: null, categories: [{ id: 1, name: 'Published', type: 'UP' as const }] }
+import videoDetail from '../../../contracts/http/fixtures/recommendation-detail.json'
+const detail = { ...videoDetail, id: 1, type: 'UP' as const, externalId: '123', categoryIds: [1], imageUrl: null }
 import { getRecommendationMetadata, listRecommendationCategories, listRecommendations, removeRecommendation, saveRecommendation } from '../api/creators.js'
 import { ApiError } from '../utils/http.js'
 import { confirm } from '../composables/useConfirm.js'
@@ -31,11 +31,11 @@ vi.mock('../api/creators.js', async original => ({ ...await original<typeof impo
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   vi.clearAllMocks(); state.cards = [structuredClone(card) as RecommendationCard]; state.categories = structuredClone(card.categories); state.online = ref(true)
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'admin', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => 1 }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'admin', realm_access: { roles: ['content-admin'] } }), authEpoch: () => 1 }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 
-function availability() { return { recommendationsSupported: ref(true), typeAvailable: () => true, publicCategories: computed(() => state.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}), refreshPublicCategories: vi.fn(async () => {}) } }
+function availability() { return { typeAvailable: () => true, publicCategories: computed(() => state.categories), loading: ref(false), error: ref(null), contentKnown: ref(true), refresh: vi.fn(async () => {}), refreshPublicCategories: vi.fn(async () => {}) } }
 async function publicPage(query = '') {
   state.auth.tokenParsed.value.realm_access.roles = []
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
@@ -184,7 +184,7 @@ describe('creator public page management readiness', () => {
     resolveMetadata({ type: 'UP', categories: card.categories, levels: [], imageUploadsAvailable: false }); await flushPromises()
     expect((save.element as HTMLButtonElement).disabled).toBe(false)
     await wrapper.get('[data-testid=creator-form]').trigger('submit'); await flushPromises()
-    expect(saveRecommendation).toHaveBeenCalledWith(card.id, expect.objectContaining({ externalId: detail.externalId, imageAction: 'KEEP' }), null, true, expect.any(AbortSignal))
+    expect(saveRecommendation).toHaveBeenCalledWith(card.id, expect.objectContaining({ externalId: detail.externalId, imageAction: 'KEEP' }), null, expect.any(AbortSignal))
     expect(wrapper.find('[data-testid=creator-editor-dialog]').exists()).toBe(false)
   })
   it('disables card management until slow metadata settles, then permits a confirmed removal', async () => {
@@ -204,7 +204,7 @@ describe('creator public page management readiness', () => {
     expect((remove.element as HTMLButtonElement).disabled).toBe(false)
     ;(remove.element as HTMLButtonElement).click(); await flushPromises()
     expect(confirm).toHaveBeenCalledTimes(1)
-    expect(removeRecommendation).toHaveBeenCalledWith(card.id, 'UP', card.version, true, expect.any(AbortSignal))
+    expect(removeRecommendation).toHaveBeenCalledWith(card.id, 'UP', card.version, expect.any(AbortSignal))
     expect(wrapper.find(`[data-testid=creator-card-${card.id}]`).exists()).toBe(false)
   })
   it('captures the card version before confirmation and does not replace a newer list version when removing', async () => {
@@ -219,7 +219,7 @@ describe('creator public page management readiness', () => {
     await wrapper.get('[data-testid=creator-refresh]').trigger('click'); await flushPromises()
     vi.mocked(removeRecommendation).mockRejectedValueOnce(new ApiError({ errorCode: 'CREATOR_CONFIG_CONFLICT', status: 409 }))
     accept(true); await flushPromises()
-    expect(removeRecommendation).toHaveBeenCalledWith(card.id, 'UP', card.version, true, expect.any(AbortSignal))
+    expect(removeRecommendation).toHaveBeenCalledWith(card.id, 'UP', card.version, expect.any(AbortSignal))
     expect(wrapper.find(`[data-testid=creator-card-${card.id}]`).exists()).toBe(true)
   })
 })
