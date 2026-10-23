@@ -84,7 +84,7 @@ const displayNodes = computed(() => state.nodes.map(node => ({ ...node, label: n
 
 const sections = computed(() => state.categories.map(category => ({ ...category,
   nodes: displayNodes.value.filter(node => node.categoryId === category.id),
-})))
+})).filter(section => state.allowed || section.nodes.some(node => node.replays.length > 0)))
 watch(() => state.contextKey, () => { expanded.value = new Set(); failedCovers.value = new Set() })
 watch([() => state.loading, () => state.categoryId], async ([loading, categoryId]) => {
   if (loading || !categoryId || !state.category) return
