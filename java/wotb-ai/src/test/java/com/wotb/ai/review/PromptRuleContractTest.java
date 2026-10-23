@@ -222,9 +222,20 @@ class PromptRuleContractTest {
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不作为判失误的依据"));
         // Random teammates are not trusted by default; reliance is judged by the information at decision time.
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("7. 野队队友不可靠"));
-        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("判的是依赖本身，不看队友后来有没有来"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("判的是依赖本身，不得从队友后来没来或数据缺失反推"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("7. Random teammates are unreliable"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("7. Союзники в случайном бою ненадёжны"));
+        // Teammate support is proven only by positive evidence; partial coverage or missing hits never prove absence.
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("位置或距离单独不够"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不得从队友后来没来或数据缺失反推"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("也没有交火证据的队友"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("或 CURRENT 位置显示能打到"));
+        for (final String rule : List.of(PlayerPromptRules.SOLO_STANDARD_RULE,
+                PlayerPromptRules.SOLO_STANDARD_RULE_EN, PlayerPromptRules.SOLO_STANDARD_RULE_RU)) {
+            assertTrue(rule.contains("OBSERVED_DAMAGE_IS_PARTIAL"), "partial coverage guard missing");
+        }
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("position or distance alone is not enough"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("одной позиции или дистанции недостаточно"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("而你对它没有造成伤害"));
         assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("写明应该回击它"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("never as grounds for a mistake"));
