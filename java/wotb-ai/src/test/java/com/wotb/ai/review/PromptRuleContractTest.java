@@ -166,6 +166,10 @@ class PromptRuleContractTest {
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("with no sustained damage required"));
         assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("постоянный урон не требуется"));
         assertTrue(zh.contains("对方只剩 1 辆或极少数车"));
+        // RULE-011's 5 m figure is not a verified threshold.
+        for (final String rule : List.of(zh, TeamPromptLocalizer.COACH_STANDARD_RULE_EN, TeamPromptLocalizer.COACH_STANDARD_RULE_RU)) {
+            assertFalse(rule.contains("5 米以上") || rule.contains("at least 5 m") || rule.contains("минимум на 5 м"));
+        }
         assertFalse(zh.contains("010 多打一时优先全歼"));
         // Support: a hit proves a firing line; no hit never proves no support. Only human-confirmed roles carry a verdict.
         assertTrue(zh.contains("没有命中不能反推没有支援"));
@@ -214,6 +218,12 @@ class PromptRuleContractTest {
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("本身不证明前压是错的"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("前压前至少两条威胁已经 CURRENT 或可靠的 LAST_KNOWN"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("它的方向对你已经已知"));
+        // Rule 5 judges sustained exposure only; no damage is a trade result, never proof the player did not respond.
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不作为判失误的依据"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("而你对它没有造成伤害"));
+        assertFalse(PlayerPromptRules.SOLO_STANDARD_RULE.contains("写明应该回击它"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("never as grounds for a mistake"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("не служит основанием для ошибки"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("does not by itself prove the advance was wrong"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("сами по себе не доказывают, что выезд был ошибкой"));
         assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("No damage record does not mean no shot was fired"));
