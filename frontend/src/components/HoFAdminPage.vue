@@ -8,7 +8,7 @@ import { useAuth } from '../composables/useAuth.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorCodeLabel, apiErrorLabel, formatDateTimeMinute, replayValueLabel } from '../utils/display.js'
 import { HUNDRED_VEHICLES } from '../utils/hundredVehicles.js'
-import * as api from '../utils/api.js'
+import * as api from '../api/hall-of-fame.js'
 import { Check, Download, Trash2, X } from 'lucide-vue-next'
 import AppDialog from './AppDialog.vue'
 

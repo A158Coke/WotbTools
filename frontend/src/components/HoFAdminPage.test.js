@@ -56,7 +56,7 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-vi.mock('../utils/api.js', () => hofAdminApi)
+vi.mock('../api/hall-of-fame.js', () => hofAdminApi)
 vi.mock('../utils/helpers.js', () => ({ mapLabel: () => '' }))
 vi.mock('../utils/display.js', () => ({
   apiErrorLabel: (t, te, e) => (e?.code ? 'err:' + e.code : 'api-error'),

@@ -64,7 +64,7 @@ frontend/src/replay-local/
 | 2D 战局回放 | `components/BattlePlaybackPanel.vue` | 共享 playback session → `parseLocalPlaybackOffThread` → canonical Worker（三切面 → canonical facts）；线程设施失败才退回主线程 |
 | AI 复盘 | `components/AiReviewWorkspacePane.vue` | 目标文件本机 `buildLocalAiReviewInput` → `AiReviewRequest`（gzip）→ ai-service |
 | 3D 回放 / 射击分析 | `components/Replay3DPane.vue`、`components/ReplayShotsPane.vue`（回放工作台能力面板）、`scene/*` | 直接消费 WASM 时序 / 射击切面 |
-| 名人堂 / 百场 / 三环提交 | `utils/api.js` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
+| 名人堂 / 百场 / 三环提交 | `api/hall-of-fame.ts` → `replay-local/submissionFacts.ts` | 本机解析得到 `Battle` 事实 JSON（`facts` 字段）+ 原始回放（证据附件） |
 | 账号验证 | `ProfilePage.vue` | 本机解析出录像者 accountId，提交给 `POST /api/users/wotb-account/verify-replay` |
 | Android | `useNativeReplayImport.js` | Native 只交接字节；本机分析完成后 ACK pending |
 

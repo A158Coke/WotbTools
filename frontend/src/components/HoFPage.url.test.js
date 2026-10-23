@@ -48,7 +48,7 @@ vi.mock('../composables/useAuth.js', () => ({
   })
 }))
 
-vi.mock('../utils/api.js', () => lbApi)
+vi.mock('../api/hall-of-fame.js', () => lbApi)
 
 const layout = vi.hoisted(() => ({ compact: false }))
 vi.mock('../composables/useBreakpoint.js', async () => {

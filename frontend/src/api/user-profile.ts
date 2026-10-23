@@ -1,15 +1,16 @@
+import type { components } from './generated/http-contract.js'
 // 用户域 transport（profile / wotb-account）。
 import { useAuth } from '../composables/useAuth.js'
 import { apiErrorFromResponse, apiFetch } from '../utils/http.js'
 
-async function userJsonHeaders() {
+async function userJsonHeaders(): Promise<Record<string, string>> {
   const { token, ensureToken } = useAuth()
   await ensureToken(30)
   const accessToken = token()
   return accessToken ? { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` } : { 'Content-Type': 'application/json' }
 }
 
-async function userHandle(r) {
+async function userHandle(r: Response) {
   if (r.status === 401) {
     const { login } = useAuth()
     login()
@@ -20,12 +21,12 @@ async function userHandle(r) {
   return r.json()
 }
 
-export async function getUserProfile() {
+export async function getUserProfile(): Promise<components['schemas']['UserProfile'] | null> {
   return userHandle(await apiFetch('/api/users/profile', { headers: await userJsonHeaders() }))
 }
 
 /** canonical owner 是全局 business bootstrap（useBusinessUserBootstrap），页面不自行调用。 */
-export async function ensureUserProfile() {
+export async function ensureUserProfile(): Promise<components['schemas']['UserProfile'] | null> {
   return userHandle(await apiFetch('/api/users/profile', { method: 'PUT', headers: await userJsonHeaders() }))
 }
 
@@ -37,7 +38,7 @@ export async function deleteUserWotbAccount() {
   return userHandle(await apiFetch('/api/users/wotb-account', { method: 'DELETE', headers: await userJsonHeaders() }))
 }
 
-export async function verifyUserWotbAccountFromReplay(recorderAccountId) {
+export async function verifyUserWotbAccountFromReplay(recorderAccountId: number) {
   return userHandle(await apiFetch('/api/users/wotb-account/verify-replay', {
     method: 'POST', headers: await userJsonHeaders(), body: JSON.stringify({ recorderAccountId }),
   }))
