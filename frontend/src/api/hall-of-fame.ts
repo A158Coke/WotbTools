@@ -4,9 +4,23 @@ import { Feature } from '../app/featureCapabilities.js'
 import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { useAuth } from '../composables/useAuth.js'
 import { appendReplayFacts, replayFactsJson } from '../replay-local/submissionFacts.js'
-import { hallOfFamePageValidator } from './generated/contract-validators.js'
+import * as validators from './generated/contract-validators.js'
 
-type HallOfFamePage = components['schemas']['HallOfFamePage']
+type Schemas = components['schemas']
+type HallOfFamePage = Schemas['HallOfFamePage']
+type BulkDeleteModerationRequest = Schemas['BulkDeleteModerationRequest']
+
+async function readHofJson<T>(response: Response, validate: (value: unknown) => boolean): Promise<T> {
+  let value: unknown
+  try {
+    value = await response.json()
+  } catch (error) {
+    if (error instanceof SyntaxError) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+    throw error
+  }
+  if (!validate(value)) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
+  return value as T
+}
 
 function requireHofOnline() {
   if (!useFeatureGate().requireFeature(Feature.HALL_OF_FAME)) {
@@ -45,9 +59,7 @@ async function downloadResponse(response: Response, fallbackName: string) {
 export async function hofList(params = {}): Promise<HallOfFamePage> {
   requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof', params)))
-  const page = await r.json()
-  if (!hallOfFamePageValidator(page)) throw new ApiError({ errorCode: 'INVALID_RESPONSE', retryable: false })
-  return page
+  return readHofJson<HallOfFamePage>(r, validators.hallOfFamePageValidator)
 }
 
 /** 公开单场车辆选项：当前名人堂实际存在的车辆及稳定分类码。 */
@@ -152,11 +164,11 @@ export async function hofAdminDelete(id) {
  * 批量 hard delete 记录：单场删除语义不涉及 reason，只提交 ids。
  * 逐条独立事务 → 允许 partial success（{requested,deleted,failed,results:[{id,deleted,errorCode}]}）。
  */
-export async function hofAdminBulkDeleteRecords(ids) {
+export async function hofAdminBulkDeleteRecords(ids: Schemas['BulkDeleteRecordsRequest']['ids']): Promise<Schemas['BulkDeleteResult']> {
   const r = await hofAdminRequest('/api/admin/hof/records/bulk-delete', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
   })
-  return r.json()
+  return readHofJson<Schemas['BulkDeleteResult']>(r, validators.bulkDeleteResultValidator)
 }
 
 /** 管理后台下载 replay（复用统一下载机制）。 */
@@ -199,17 +211,17 @@ async function hofAuthRequest(url: string, options: RequestInit = {}) {
 }
 
 /** 百场公开排行榜（匿名）：nation / vehicleType / vehicleId 可选并取交集。 */
-export async function hofHundredList(params = {}) {
+export async function hofHundredList(params = {}): Promise<Schemas['HundredLeaderboardPage']> {
   requireHofOnline()
   const r = await requireOk(await apiFetch(withQuery('/api/hof/hundred', params)))
-  return r.json()
+  return readHofJson<Schemas['HundredLeaderboardPage']>(r, validators.hundredLeaderboardPageValidator)
 }
 
 /**
  * 百场提交（需登录，multipart）：
  * formData 包含 vehicleId / averageDamage / battleCount / screenshot(base64) / replays(×5)。
  */
-export async function hofHundredSubmit(formData) {
+export async function hofHundredSubmit(formData: FormData): Promise<Schemas['HundredCreateResult']> {
   requireHofOnline()
   const { token, ensureToken, login } = useAuth()
   await appendReplayFacts(formData)
@@ -226,39 +238,40 @@ export async function hofHundredSubmit(formData) {
     throw await apiErrorFromResponse(r)
   }
   await requireOk(r)
-  return r.json()
+  return readHofJson<Schemas['HundredCreateResult']>(r, validators.hundredCreateResultValidator)
 }
 
 /** 用户撤销自己的 PENDING submission。 */
-export async function hofHundredCancel(id) {
+export async function hofHundredCancel(id): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAuthRequest(`/api/hof/hundred/submissions/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
-  return r.json()
+  return readHofJson<Schemas['HundredSubmissionSummary']>(r, validators.hundredSubmissionSummaryValidator)
 }
 
 /** 个人中心百场状态：{current, pending, rejected}。 */
-export async function hofHundredMyStatus() {
+export async function hofHundredMyStatus(): Promise<Schemas['HundredUserStatus']> {
   const r = await hofAuthRequest('/api/users/hundred/status')
-  return r.json()
+  return readHofJson<Schemas['HundredUserStatus']>(r, validators.hundredUserStatusValidator)
 }
 
 // ── 百场管理后台（/api/admin/hof/hundred/**，HoF-admin / wotbtools-admin）──
 
 /** 百场审核列表：status / nation / vehicleType / vehicleId 可独立使用并取交集。 */
-export async function hofAdminHundredList(params = {}) {
+export async function hofAdminHundredList(params = {}): Promise<Schemas['HundredAdminPage']> {
   const r = await hofAdminRequest(withQuery('/api/admin/hof/hundred/submissions', params))
-  return r.json()
+  return readHofJson<Schemas['HundredAdminPage']>(r, validators.hundredAdminPageValidator)
 }
 
 /** 百场审核详情（proofScreenshot 仅 PENDING 返回；终态已清理）。 */
-export async function hofAdminHundredDetail(id) {
+export async function hofAdminHundredDetail(id): Promise<Schemas['HundredAdminDetail']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}`)
-  return r.json()
+  return readHofJson<Schemas['HundredAdminDetail']>(r, validators.hundredAdminDetailValidator)
 }
 
 /** 百场审核证据列表（admin-only）：slot/originalFilename/fileSize/arenaId/sha256。旧记录可能为空。 */
-export async function hofAdminHundredReplays(submissionId) {
+export async function hofAdminHundredReplays(submissionId): Promise<Schemas['HundredReplayEvidence'][]> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(submissionId)}/replays`)
-  return r.json()
+  return readHofJson<Schemas['HundredReplayEvidence'][]>(r, value =>
+    Array.isArray(value) && value.every(item => validators.hundredReplayEvidenceValidator(item)))
 }
 
 /**
@@ -273,35 +286,35 @@ export async function hofAdminHundredReplayDownload(submissionId, replayId) {
 }
 
 /** APPROVE：管理员只改变状态，成绩由后端的冻结 submission 值决定。 */
-export async function hofAdminHundredApprove(id) {
+export async function hofAdminHundredApprove(id): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
   })
-  return r.json()
+  return readHofJson<Schemas['HundredSubmissionSummary']>(r, validators.hundredSubmissionSummaryValidator)
 }
 
 /** REJECT：{rejectReason, rejectReasonText?}（原因强制）。 */
-export async function hofAdminHundredReject(id, body) {
+export async function hofAdminHundredReject(id, body: Schemas['HundredRejectRequest']): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/reject`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
-  return r.json()
+  return readHofJson<Schemas['HundredSubmissionSummary']>(r, validators.hundredSubmissionSummaryValidator)
 }
 
 /** 删除 CURRENT：{deleteReason, deleteReasonText?}（原因强制）。 */
-export async function hofAdminHundredDelete(id, body) {
+export async function hofAdminHundredDelete(id, body: Schemas['HundredDeleteRequest']): Promise<Schemas['HundredSubmissionSummary']> {
   const r = await hofAdminRequest(`/api/admin/hof/hundred/submissions/${encodeURIComponent(id)}/delete`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
-  return r.json()
+  return readHofJson<Schemas['HundredSubmissionSummary']>(r, validators.hundredSubmissionSummaryValidator)
 }
 
 /** 批量删除 CURRENT：{ids, reason, reasonText?}；非 CURRENT 逐条失败于 HUNDRED_NOT_CURRENT。 */
-export async function hofAdminBulkDeleteHundred(ids, body) {
+export async function hofAdminBulkDeleteHundred(ids: BulkDeleteModerationRequest['ids'], body: Omit<BulkDeleteModerationRequest, 'ids'>): Promise<Schemas['BulkDeleteResult']> {
   const r = await hofAdminRequest('/api/admin/hof/hundred/submissions/bulk-delete', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
   })
-  return r.json()
+  return readHofJson<Schemas['BulkDeleteResult']>(r, validators.bulkDeleteResultValidator)
 }
 
 // ── 名人堂「三环」（/api/hof/mark3，人工审核）────────────────────────────
@@ -391,9 +404,9 @@ export async function hofAdminMark3Delete(id, body) {
 }
 
 /** 批量删除 CURRENT：{ids, reason, reasonText?}；非 CURRENT 逐条失败于 MARK3_NOT_CURRENT。 */
-export async function hofAdminBulkDeleteMark3(ids, body) {
+export async function hofAdminBulkDeleteMark3(ids: BulkDeleteModerationRequest['ids'], body: Omit<BulkDeleteModerationRequest, 'ids'>): Promise<Schemas['BulkDeleteResult']> {
   const r = await hofAdminRequest('/api/admin/hof/mark3/submissions/bulk-delete', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...body }),
   })
-  return r.json()
+  return readHofJson<Schemas['BulkDeleteResult']>(r, validators.bulkDeleteResultValidator)
 }

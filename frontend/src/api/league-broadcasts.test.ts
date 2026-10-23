@@ -178,3 +178,21 @@ describe('broadcast HTTP boundary', () => {
     expect(state.fetch).not.toHaveBeenCalled()
   })
 })
+
+describe('league-broadcasts JSON decode failures', () => {
+  const reads = [['json', (signal?: AbortSignal) => listBroadcasts(undefined, signal)], ['timed category', (signal?: AbortSignal) => createBroadcastNode(2, { expectedVersion: 0, roundNumber: 1, format: null }, signal)], ['season contents', (signal?: AbortSignal) => getBroadcastSeasonContents(1, signal)]] as const
+  it.each(reads)('normalizes malformed %s JSON without exposing the body', async (_, read) => {
+    state.fetch.mockResolvedValueOnce(new Response('{private malformed body'))
+    await expect(read()).rejects.toMatchObject({ name: 'ApiError', errorCode: 'INVALID_RESPONSE', retryable: false, errorMsg: null, details: {} })
+  })
+  it.each(reads)('preserves %s body cancellation and transport failures', async (_, read) => {
+    const signal = new AbortController().signal
+    for (const error of [new DOMException('aborted', 'AbortError'), new TypeError('body stream failed')]) {
+      const response = new Response()
+      vi.spyOn(response, 'json').mockRejectedValueOnce(error)
+      state.fetch.mockResolvedValueOnce(response)
+      await expect(read(signal)).rejects.toBe(error)
+      expect(state.fetch).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({ signal }))
+    }
+  })
+})
