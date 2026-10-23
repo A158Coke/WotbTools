@@ -107,7 +107,7 @@ class PromptRuleContractTest {
                 assertFalse(localized.contains("=== 伤害语义（强制） ==="), lang + " 残留中文伤害语义");
                 assertFalse(localized.contains("=== 证据逻辑与术语（强制） ==="), lang + " 残留中文证据逻辑");
                 assertFalse(localized.contains("=== 语言规则（强制） ==="), lang + " 残留中文语言规则");
-                assertFalse(localized.contains("=== 随机战个人复盘规范 v1.0（Coach Lab） ==="), lang + " 残留中文个人复盘规范");
+                assertFalse(localized.contains("=== 随机战个人复盘规范 v1.1（Coach Lab） ==="), lang + " 残留中文个人复盘规范");
             }
         }
     }
@@ -124,7 +124,7 @@ class PromptRuleContractTest {
             assertFalse(localized.contains("=== 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ==="), lang + " 残留中文占点规则");
             assertFalse(localized.contains("=== 信息与视野战术技能 v0.2 ==="), lang + " 残留中文信息技能");
             assertFalse(localized.contains("=== 局部战场与传播战术技能 v0.2 ==="), lang + " 残留中文局部技能");
-            assertFalse(localized.contains("=== 争霸赛复盘规范 v1.0（Coach Lab，最高优先级） ==="), lang + " 残留中文复盘规范");
+            assertFalse(localized.contains("=== 争霸赛复盘规范 v1.1（Coach Lab） ==="), lang + " 残留中文复盘规范");
             assertFalse(localized.contains("=== 团队推理顺序与质量约束（强制） ==="),
                     lang + " 残留中文 reasoning contract");
         }
@@ -152,19 +152,55 @@ class PromptRuleContractTest {
     }
 
     @Test
+    void coachStandardRulesKeepPreconditionsAndDoNotOverrideReasoning() {
+        final String zh = TeamPromptLocalizer.COACH_STANDARD_RULE;
+        assertTrue(zh.contains("只在列出的前提都有当时证据"));
+        assertTrue(zh.contains("前提缺证据或命中例外时不套用规则"));
+        assertFalse(zh.contains("最高优先级") || zh.contains("以本规范为准"), "压缩规则不得声明覆盖其他模块");
+        // RULE-003 / RULE-010 keep the preconditions the Coach Book states.
+        assertTrue(zh.contains("第二个方向的敌车当时 CURRENT") && zh.contains("自身血量只够再吃 2–3 发") && zh.contains("有撤离路线"));
+        assertTrue(zh.contains("唯一在点里卡点或拒止的车"));
+        assertTrue(zh.contains("对方只剩 1 辆或极少数车"));
+        assertFalse(zh.contains("010 多打一时优先全歼"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_EN.contains("only when every listed precondition is supported"));
+        assertTrue(TeamPromptLocalizer.COACH_STANDARD_RULE_RU.contains("только когда каждая перечисленная предпосылка подтверждена"));
+        for (final String rule : List.of(TeamPromptLocalizer.COACH_STANDARD_RULE_EN, TeamPromptLocalizer.COACH_STANDARD_RULE_RU)) {
+            assertFalse(rule.contains("highest priority") || rule.contains("высший приоритет"));
+        }
+    }
+
+    @Test
     void soloStandardIsInjectedIntoRandomBattlePromptsInAllLanguages() {
         final String single = AiPromptLibrary.zh("player/single");
         final String fallback = AiPromptLibrary.zh("player/fallback");
         final String tactical = AiPromptLibrary.zh("player/tactical");
         for (final String zh : List.of(single, fallback, tactical)) {
-            assertTrue(zh.contains("=== 随机战个人复盘规范 v1.0（Coach Lab） ==="));
-            assertTrue(zh.contains("4. 残血先收"));
+            assertTrue(zh.contains("=== 随机战个人复盘规范 v1.1（Coach Lab） ==="));
+            assertTrue(zh.contains("5. 谁在打你先处理谁"));
             assertTrue(PlayerPromptRules.localizePlayerSystemPrompt(zh, AllowedLanguage.EN)
-                    .contains("4. Finish low-HP tanks first"));
+                    .contains("5. Deal first with whoever is shooting you"));
             assertTrue(PlayerPromptRules.localizePlayerSystemPrompt(zh, AllowedLanguage.RU)
-                    .contains("4. Сначала добивайте танки с малым HP"));
+                    .contains("5. Сначала разберитесь с тем, кто по вам стреляет"));
         }
         // Team review keeps its own supremacy standard; the solo standard is random-battle only.
         assertFalse(AiPromptLibrary.zh("team/single").contains("随机战个人复盘规范"));
+    }
+
+    @Test
+    void soloStandardUsesOnlyProductionEvidenceAndNoSamplePrior() {
+        // ClientAiReviewProjection marks SHOT_LIFECYCLE / TARGETING / AMMUNITION unavailable: no rule may need
+        // shot timing, aimed target or reload state, and tournament sample statistics are not a prior.
+        for (final String rule : List.of(PlayerPromptRules.SOLO_STANDARD_RULE,
+                PlayerPromptRules.SOLO_STANDARD_RULE_EN, PlayerPromptRules.SOLO_STANDARD_RULE_RU)) {
+            for (final String banned : List.of("90%", "81%", "八成", "两成", "80%", "20%",
+                    "装好就打", "残血先收", "装填周期", "消耗品",
+                    "Fire as soon as", "Finish low-HP", "consumable")) {
+                assertFalse(rule.contains(banned), "solo-standard 不应包含：" + banned);
+            }
+        }
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("没有伤害记录不等于没开炮"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE.contains("不得把它当成本局的先验"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_EN.contains("No damage record does not mean no shot was fired"));
+        assertTrue(PlayerPromptRules.SOLO_STANDARD_RULE_RU.contains("Отсутствие записи урона не значит, что выстрела не было"));
     }
 }

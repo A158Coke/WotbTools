@@ -204,7 +204,7 @@ AI 提示词正文维护在 `java/wotb-ai/src/main/resources/prompts/` 下的 `.
 | tactical-skills/position-tempo | `prompts/tactical-skills/position-tempo.zh.md` | `TeamPromptLocalizer.POSITION_TEMPO_SKILL_RULE` |
 | tactical-skills/hp-trades | `prompts/tactical-skills/hp-trades.zh.md` | `TeamPromptLocalizer.HP_TRADES_SKILL_RULE` |
 | tactical-skills/mode-objectives | `prompts/tactical-skills/mode-objectives.zh.md` | `TeamPromptLocalizer.MODE_OBJECTIVES_SKILL_RULE` |
-| tactical-skills/coach-standard | `prompts/tactical-skills/coach-standard.zh.md` | `TeamPromptLocalizer.COACH_STANDARD_RULE`（Coach Lab 争霸赛复盘规范，最高优先级，由 `team/single` 紧跟 `team/reasoning-contract` include） |
+| tactical-skills/coach-standard | `prompts/tactical-skills/coach-standard.zh.md` | `TeamPromptLocalizer.COACH_STANDARD_RULE`（Coach Lab 争霸赛复盘规范，判定格式加条件规则，由 `team/single` 紧跟 `team/reasoning-contract` include） |
 | tactical-skills/solo-standard | `prompts/tactical-skills/solo-standard.zh.md` | `PlayerPromptRules.SOLO_STANDARD_RULE`（Coach Lab 随机战个人复盘规范，由 `player/single`、`player/fallback`、`player/tactical` 紧跟 `common/evidence-logic` include） |
 
 编辑约定：
@@ -221,23 +221,23 @@ Team Review 不接受战术地图计划，也没有语音/通信证据。模型�
 
 `TeamAiContextCompiler` 复用 canonical timeline 的已验证事件，额外输出 `OBJECTIVE_STATE_TIMELINE`：已解码的实时基地 owner/capturing/progress 与 Supremacy points。该段只输出中立事实；缺少状态不等于没有占点/没有点数，基地和点数的战术意义仍由 LLM 解释。模式模块中的 Supremacy +40 击杀价值、约 750–800/800+ 点数压力梯度，以及 Assault 约 100 秒完整捕获、70–80 秒警戒区，均是 LLM 的经验参考，不是精确阈值状态机。Golden cases (`team-tactical-skill-v01-a` 至 `h`) 扩展覆盖信息状态、局部传播、基地/点数主动权和反捷径约束。
 
-### Coach Lab 争霸赛复盘规范 v1.0
+### Coach Lab 争霸赛复盘规范 v1.1
 
-Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach-standard`：2026 国服夏季赛四强 34 局逐局人工复盘沉淀的规范（完整出处 `docs/ai-coach/`）。它与上面 v0.2 六个模块冲突时以它为准，六个模块作补充：
+Team `Call #2` 在 `team/reasoning-contract` 之后注入 `tactical-skills/coach-standard`：2026 国服夏季赛四强 34 局逐局人工复盘沉淀的规范（完整出处 `docs/ai-coach/`）。
 
-- 每个改变局势的关键决策只给 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），写进 v0.5 结果的 `summary` 与 `episodes[].analysis`，不新增字段、不新增 LLM call、不产生后端 verdict label。
+- 每个改变局势的关键决策只给 失误 / 正确 / 无法判定（无法判定写明缺哪条数据），写进 v0.5 结果的 `summary` 与 `episodes[].analysis`，不新增字段、不新增 LLM call、不产生后端 verdict label。这一判定格式取代 v0.2 模块里“宁可少下结论”的措辞。
 - 开局布置窗口不逐车判、因果去重、逐车细节、单车牵制与送的区分、计分顺序决定的均势局不编造根因。
 - 点位几何、地形高低差与炮线、点数账。`OBJECTIVE_STATE_TIMELINE` 提供 `SUPREMACY_POINTS` 时用它做点数账；`CAPTURE_RULE` 8a 的“比分未解码”限制只适用于没有该段的时段。
 - 车辆定位按版本（11.19 国服 SPHT = 肉车为人工确认，其余待确认）；`team/reasoning-contract` 的“vehicle class 只是能力因素”只适用于表外车型。
-- RULE-001–020 速查与常见错误清单。
+- RULE-001–020 是**条件规则**：每条带 `docs/ai-coach/rules.md` 的关键前提与例外，只在前提都有当时证据时适用；前提缺证据或命中例外时不套用，回到 reasoning contract 的炮线、遮挡、到位时间、目标与安全路线推理。规范不声明覆盖其他模块，与证据边界规则冲突时证据边界优先。
 
-### Coach Lab 随机战个人复盘规范 v1.0
+### Coach Lab 随机战个人复盘规范 v1.1
 
-随机战个人复盘（`player/single`、`player/fallback`、`player/tactical`）在 `common/evidence-logic` 之后注入 `tactical-skills/solo-standard`：同一批 34 局回放按野队视角只评录像者本人，再用全量数据统计（324 发炮、246 发有伤害的挨打）归纳出的规范（完整出处 `docs/ai-coach/solo-standard.md`）。
+随机战个人复盘（`player/single`、`player/fallback`、`player/tactical`）在 `common/evidence-logic` 之后注入 `tactical-skills/solo-standard`。完整规范 `docs/ai-coach/solo-standard.md` 是 Coach Lab 用 34 局赛事回放（3 名录像者）和离线脚本（能读完整开炮、装填、朝向数据）归纳的；生产 prompt 只取当前 `ClientAiReviewProjection` 能判定的部分：
 
-- 操作占八成、意识占两成；队友站位不归玩家负责。判定同样只用 失误 / 正确 / 无法判定。
-- 基线：命中约 90%、击穿约 81%，扣分主要在目标选择与时机：残血先收、谁在打你先处理谁、别在对方装好弹时冒头、车头车尾、装好就打、一次只露给一辆车。
-- 缺敌方实时血量、视野、装填或配件数据时判“无法判定”；与证据边界规则冲突时证据边界优先。
+- 投影把 `SHOT_LIFECYCLE`、`TARGETING`、`AMMUNITION` 标为 unavailable，只有命中造成的伤害事件。依赖开炮时间、瞄准目标、装填或消耗品的规则（残血先收、别在对方装好弹时冒头、装好就打、消耗品）不进生产 prompt；prompt 明确“没有伤害记录不等于没开炮”。
+- 只保留两条：同一敌车约 40 秒内命中 3 发以上而玩家一直留在它的炮线里、且对它无伤害记录；约 2 秒内被两辆不同敌车命中、且是玩家主动前压进去的。
+- 赛事样本的命中率、击穿率和“操作 80% / 意识 20%”权重只是研究背景，不进生产 prompt；枪法和击穿只按本局证据判断。
 
 ### AI 复盘评估 harness（golden cases + lessons）
 
