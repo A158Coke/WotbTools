@@ -8,7 +8,7 @@ import { useFeatureGate } from '../composables/useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
 import { apiErrorCodeLabel, apiErrorLabel } from '../utils/display.js'
 import { ApiError } from '../utils/http.js'
-import * as api from '../utils/api.js'
+import * as api from '../api/admin-users.js'
 import AppDialog from './AppDialog.vue'
 
 const { t, te } = useI18n()

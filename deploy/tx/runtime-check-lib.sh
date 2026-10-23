@@ -1,5 +1,22 @@
 # Read-only production runtime and end-to-end checks. Sourced by runtime-check.sh.
 
+# A healthy old backend is not enough for a frontend using newly added endpoints.
+# Shared by both frontend hosts; missing/malformed/legacy health fails closed.
+assert_frontend_backend_capabilities() {
+  python3 -c '
+import json, sys
+try:
+    health = json.load(sys.stdin)
+    capabilities = health.get("capabilities") if isinstance(health, dict) else None
+    ready = health.get("status") == "ok" and isinstance(capabilities, list) and "broadcast-season-contents-v1" in capabilities
+except (ValueError, AttributeError):
+    ready = False
+if not ready:
+    raise SystemExit("Business API lacks broadcast-season-contents-v1; keep the existing frontend and rerun after the backend is ready.")
+print("frontend-backend-capabilities: PASS")
+'
+}
+
 # Validate rendered Compose ports for all core services, or one selected owner.
 # Exact TCP tuples reject extra/public bindings and preserve local administration.
 assert_tx_service_ports() {

@@ -1,7 +1,8 @@
 // 击穿判定移植测试：上游 src/wargaming/penetration.rs 单测逐例对齐。
 // 上游 Rust 判定语义变更时，本文件与 penetration.js 同版本跟随——两仓不变量保持同源。
 import { describe, it, expect } from 'vitest'
-import { calculate, isPrimary, ArmorSection } from './penetration.js'
+import { calculate, isPrimary, ArmorSection, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
+import { penetrationChance, resolveCardChance } from './armorInspectorChance.js'
 
 function hit(section, thickness, point, extra = {}) {
   return {
@@ -94,9 +95,9 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(Math.abs(r2.layers[0].effective - 87.18)).toBeLessThan(0.1)
   })
 
-  it('外部模块在前的层链：模块不消耗首层转正资格，其后间隙甲仍转正——review 2026-10-13 用例（2026-10-17 更新）', () => {
-    // 20mm 履带（flat）→ 40mm 间隙甲@75°（首个**实际装甲层**：不跳弹，但保留 2× 增强转正）
-    // → 100mm 主装甲@0°（第二实际装甲层：裸 LOS），AP 100/200/5°。
+  it('外部模块在前的层链：模块不参与转正，其后每层仍独立转正', () => {
+    // 20mm 履带（flat）→ 40mm 间隙甲@75°（自身 2× 增强转正）
+    // → 100mm 主装甲@0°（第二层也独立转正；角度0，等效仍100），AP 100/200/5°。
     // 模块 20 + 间隙甲 40/cos(75−8.75)°≈99.32 + 主装甲 100 = 219.32 > 200 → BLOCKED。
     // 旧规则把模块计入首层 → 间隙甲裸 LOS 154.55、总 274.55（同样 BLOCKED，但数值不同）。
     const a = 75 * Math.PI / 180
@@ -114,8 +115,9 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     expect(r.result).toBe('BLOCKED')
   })
 
-  it('多块重叠间隙板：首层转正、其后裸 LOS——两块 20mm@60° + 100mm 主装甲（review 2026-10-13）', () => {
-    // AP 口径 100、穿深 164、转正 5°：层等效 = 27.1268（首层 2× 增强转正）+ 40（裸 LOS）+ 100 → BLOCKED。
+  it('多块重叠间隙板：每块都按自身厚度重新转正——两块 20mm@60° + 100mm 主装甲（BlitzKit）', () => {
+    // AP 口径 100、穿深 164、转正 5°：两块间隙板各自 2× 增强转正 17.5° →
+    // eff = 27.1268 + 27.1268，主装甲 100 @0° = 100；总 154.25 < 164 → PENETRATION。
     const a = 60 * Math.PI / 180
     const normal = [Math.sin(a), Math.cos(a), 0]
     const hits = [
@@ -125,15 +127,14 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     ]
     const r = calculate(req('ap', 164.0, 100.0, hits, { normalization_deg: 5 }))
     expect(Math.abs(r.layers[0].effective - 27.1268)).toBeLessThan(0.02)
-    expect(Math.abs(r.layers[1].effective - 40)).toBeLessThan(0.02)
+    expect(Math.abs(r.layers[1].effective - 27.1268)).toBeLessThan(0.02)
     expect(Math.abs(r.layers[2].effective - 100)).toBeLessThan(0.02)
-    expect(r.result).toBe('BLOCKED')
+    expect(r.result).toBe('PENETRATION')
   })
 
-  it('normalization_applies_only_to_first_armor_layer', () => {
-    // WG 语义（用户 2026-10-13 裁示）：转正只作用于首个装甲层，击穿第一层后不再转正。
-    // 层0 = 间隙板 20mm（30° 入射，2× overmatch 增强转正 17.5°）→ eff0 = 20/cos(12.5°)
-    // 层1 = 主装甲 100mm（同 30°）→ 不转正 eff1 = 100/cos(30°)；逐层转正（旧行为）给 100/cos(25°)
+  it('normalization_per_layer', () => {
+    // BlitzKit：每个非外部层都独立转正。层0 间隙 20mm@30°（2× 增强 17.5°）→ eff0=20/cos12.5°；
+    // 层1 主装甲 100mm@30° 也用自身 5° 转正 → eff1=100/cos25°，不是裸 LOS 100/cos30°。
     const a = 30 * Math.PI / 180
     const normal = [Math.sin(a), Math.cos(a), 0]
     const hits = [
@@ -143,15 +144,14 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
     const r = calculate(req('ap', 500.0, 100.0, hits, { normalization_deg: 5 }))
     expect(r.layers).toHaveLength(2)
     expect(Math.abs(r.layers[0].effective - 20.0 / Math.cos(12.5 * Math.PI / 180))).toBeLessThan(0.05)
-    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(a))).toBeLessThan(0.05)
-    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(25 * Math.PI / 180))).toBeGreaterThan(1.0)
+    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(25 * Math.PI / 180))).toBeLessThan(0.05)
+    expect(Math.abs(r.layers[1].effective - 100.0 / Math.cos(30 * Math.PI / 180))).toBeGreaterThan(1.0)
   })
 
-  it('external_module_does_not_consume_first_armor_normalization', () => {
-    // 用户 2026-10-17 裁示：动能弹击穿外部模块后不跳弹，但仍要考虑转正/口径碾压。
+  it('external_module_does_not_participate_in_normalization', () => {
+    // 动能弹击穿外部模块后不跳弹；模块是 flat 消耗，不参与 normalization。
     // 履带 20mm（flat）→ 主装甲 100mm @75°，口径 100、转正 5°、穿深 400。
-    // 模块不消耗首层转正资格：主装甲仍按 75°−5°=70° 计 → eff=100/cos70°≈292.38，余 380 → 穿透。
-    // 旧规则（layerIndex>0 → 0）eff=100/cos75°≈386.37 → 380 被挡——本用例有判别力。
+    // 主装甲独立按 75°−5°=70° 计 → eff=100/cos70°≈292.38，余 380 → 穿透。
     const a = 75 * Math.PI / 180
     const normal = [Math.sin(a), Math.cos(a), 0]
     const hits = [
@@ -264,13 +264,15 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   it('distance_decay_he_is_exempt', () => {
     // HE 豁免（客户端 flag 分支 = kind==kHighExplosive）：远 300 仍给 near。
     const r = calculate(
-      req('he', 400.0, 100.0, [hit(ArmorSection.HULL, 250.0, [0, 0, 0])], {
+      req('he', 400.0, 100.0, [hit(ArmorSection.HULL, 50.0, [0, 0, 0])], {
         distance_m: 1000,
         penetration_far: 300.0,
+        explosion_radius: 5.0,
       }),
     )
     expect(Math.abs(r.layers[0].remaining_before - 400)).toBeLessThan(1e-3)
-    expect(r.result).toBe('PENETRATION')
+    // HE 的伤害形态是溅射界（满伤由外层概率表达）；距离衰减只影响 remaining_before。
+    expect(r.result).toBe('SPLASH')
   })
 
   it('distance_decay_heat_flat_when_far_equals_near', () => {
@@ -302,30 +304,200 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   })
 
   it('he_track_only_splashes_like_game', () => {
-    // HE 仅命中履带：游戏判有伤害(GB109 shot2 实测掉血 126)。履带 flat 20mm 参与衰减:
-    // final = 0.5·100·(1-0/5) - 1.1·(20+min(100,20)) = 50 - 44 = +6 → SPLASH
+    // HE 仅命中履带：单射线兜底用 func7695 同公式；射向 [0,1,0] 与板法线
+    // 同向 → base = 0.1m。upper = 0.5·400·1.25·0.98-20 = 225；
+    // lower = 0.5·400·0.75·0.98-20 = 127
     const r = calculate(req('he', 100.0, 150.0, [hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0])], { explosion_radius: 5.0 }))
     expect(r.result).toBe('SPLASH')
-    expect(r.damage).toBeGreaterThan(0.0)
+    expect(r.damage).toBeCloseTo(176.0, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 127.0,
+      splash_max: 225.0,
+      splash_avg: 176.0,
+      samples: 1,
+      best: null,
+      best_lower: null,
+      source: 'single-ray',
+      degraded: true,
+    })
   })
 
-  it('he_splash_formula_matches_blitzkit', () => {
-    // HE：履带(20mm flat) → 主装甲(100mm, 0°)。
-    // totalSpaced = 20；dist = 1；final = 0.5·400·(1-1/5) - 1.1·(100 + 20)
+  it('he_zero_or_missing_explosion_radius_fails_closed', () => {
+    // 半径缺失/0 时不允许回退满伤：即使存在正厚度 Primary 与概率链，
+    // 也必须保持 BLOCKED / 0 damage / 无 he 数据，供 UI 走确定性 fail-closed 卡。
+    const hits = [hit(ArmorSection.HULL, 100.0, [0, 0, 0])]
+    for (const radius of [0, undefined]) {
+      const r = calculate(req('he', 300.0, 150.0, hits, { explosion_radius: radius }))
+      expect(r.result).toBe('BLOCKED')
+      expect(r.damage).toBe(0)
+      expect(r.he).toBeNull()
+      expect(r.probability_layers.length).toBeGreaterThan(0)
+      expect(hasPrimaryLayer(r.probability_layers)).toBe(true)
+    }
+  })
+
+  it('he_splash_fallback_uses_func7695_formula', () => {
+    // HE：履带(20mm) → 主装甲(100mm, 0°)；名义层厚 120，d = 0.1 + 1m。
+    // upper = 0.5·400·1.25·0.78 - 120 = 75；lower = 0.5·400·0.75·0.78 - 120 → 0
     const rq = req('he', 250.0, 150.0, [
       hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
       hit(ArmorSection.HULL, 100.0, [0, 0, 1.0]),
     ], { explosion_radius: 5.0 })
     const r = calculate(rq)
-    const expectDmg = 0.5 * 400.0 * (1.0 - 1.0 / 5.0) - 1.1 * (100.0 + 20.0)
     expect(r.result).toBe('SPLASH')
-    expect(Math.abs(r.damage - expectDmg)).toBeLessThan(1e-3)
+    expect(r.damage).toBeCloseTo(37.5, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 75.0,
+      splash_avg: 37.5,
+      samples: 1,
+      source: 'single-ray',
+      degraded: true,
+    })
   })
 
-  it('he_single_primary_penetration_full_damage', () => {
+  it('he_splash_sampler_overrides_legacy_formula', () => {
+    // tankViewer 的 800 射线采样结果优先：Armor Inspector func7695 的
+    // he_min/he_max 是两个 roll 界的最大值，avg 取中点；旧 1.1 公式不再参与。
+    const r = calculate(req('he', 39.0, 76.0, [hit(ArmorSection.HULL, 50.0, [0, 0, 0])], {
+      explosion_radius: 1.09,
+      damage: 200.0,
+      he_splash: { min: 21.59, max: 69.32, avg: 45.455, samples: 325 },
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(45.455, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 21.59,
+      splash_max: 69.32,
+      splash_avg: 45.455,
+      full_damage: 200.0,
+      samples: 325,
+      source: 'sampler',
+    })
+  })
+
+  it('he_splash_zero_samples_is_authoritative_zero', () => {
+    // 60TP 炮口命中：炮弹在 z≈-8.27m，60TP 主装最前缘 ≤3.62m，R=3.66m——
+    // 800 条射线在半径内只碰到炮管（模块），func7695 全部 skip。
+    // 这是确定的零溅射，不是“采样器不可用”，不得回退单射线公式造出 285.5。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash: { min: 0, max: 0, avg: 0, samples: 0 },
+    }))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 0,
+      splash_avg: 0,
+      samples: 0,
+      source: 'sampler',
+    })
+    expect(r.he.unavailable).toBeUndefined()
+  })
+
+  it('he_splash_error_is_explicit_error_without_fallback', () => {
+    // 采样器跑不了（碰撞包/网格/入参）：显式 ERROR，禁止拿单射线 285.5 冒充。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash_error: 'collision-grid:grid-too-dense',
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({
+      splash_min: 0,
+      splash_max: 0,
+      splash_avg: 0,
+      samples: 0,
+      source: 'sampler',
+      unavailable: true,
+      reason: 'collision-grid:grid-too-dense',
+    })
+  })
+
+  it('he_without_sampler_keeps_upstream_single_ray_contract', () => {
+    // 无采样器的调用方（上游纯函数 / /api/penetrate）仍按上游单射线契约给值，
+    // 但必须标记 degraded——客户端正常路径不会消费这条结果。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.GUN_BARREL, 70.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.he).toMatchObject({ samples: 1, source: 'single-ray', degraded: true })
+  })
+
+  it('he_splash_malformed_result_is_explicit_error', () => {
+    // 采样器给了对象但缺字段/NaN：输出不可信 → ERROR，不得静默落回单射线。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+      he_splash: { min: 0, max: 0 },   // 缺 avg / samples
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'sampler:invalid-result', samples: 0 })
+  })
+
+  it('he_invalid_hit_thickness_fails_closed', () => {
+    // 板厚 NaN/负数不是 0mm 板：单射线路径也不能拿 ||0 把伤害抬高。
+    const r = calculate(req('he', 80.0, 152.4, [hit(ArmorSection.HULL, Number.NaN, [0, 0, 0])], {
+      explosion_radius: 3.66,
+      damage: 720.0,
+    }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'invalid-hit-thickness' })
+  })
+
+  it('he_missing_hit_normal_fails_closed', () => {
+    // 0.1m 起点偏移的层距离依赖首板法线；缺法线时不能拿 [0,1,0] 猜。
+    const r = calculate(req('he', 80.0, 152.4, [
+      hit(ArmorSection.HULL, 100.0, [0, 0, 0], { normal: undefined }),
+    ], { explosion_radius: 3.66, damage: 720.0 }))
+    expect(r.result).toBe('ERROR')
+    expect(r.damage).toBe(0)
+    expect(r.he).toMatchObject({ unavailable: true, reason: 'missing-hit-normal' })
+  })
+
+  it('he_single_primary_uses_splash_bounds_not_full_damage', () => {
+    // HE 的单层主装不再走旧 BlitzKit“穿透=满伤”分支：func7695 的口径始终是
+    // 0.75/1.25 两个溅射界；满伤由外层击穿概率表达。d=0.1m（正入射），100mm：
+    // upper = 245-100 = 145；lower = 147-100 = 47；avg = 96
     const r = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], { explosion_radius: 5.0 }))
-    expect(r.result).toBe('PENETRATION')
-    expect(r.damage).toBe(400.0)
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(96.0, 3)
+    expect(r.he).toMatchObject({
+      splash_min: 47.0,
+      splash_max: 145.0,
+      splash_avg: 96.0,
+      samples: 1,
+    })
+  })
+
+  it('he_fallback_distance_uses_shot_normal_cos', () => {
+    // 兜底层距离与采样器同口径：base = 0.1×|cos(shot, plateNormal)|。
+    // 60° 入射 → base=0.05；100mm/R=5：upper=250·0.99-100=147.5，
+    // lower=150·0.99-100=48.5，avg=98。
+    const h = hit(ArmorSection.HULL, 100.0, [0, 0, 0], {
+      normal: [Math.sin(Math.PI / 3), Math.cos(Math.PI / 3), 0.0],
+    })
+    const r = calculate(req('he', 300.0, 150.0, [h], { explosion_radius: 5.0 }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.damage).toBeCloseTo(98.0, 3)
+    expect(r.he).toMatchObject({ splash_min: 48.5, splash_max: 147.5, splash_avg: 98.0 })
+  })
+
+  it('he_fallback_applies_enhanced_armor_coefficient', () => {
+    // 强化装甲 +4%：100mm → 104mm。d=0.1/R=5：
+    // upper=250·0.98-104=141，lower=150·0.98-104=43，avg=92。
+    const r = calculate(req('he', 300.0, 150.0, [hit(ArmorSection.HULL, 100.0, [0, 0, 0])], {
+      explosion_radius: 5.0,
+      enhanced_armor: true,
+    }))
+    expect(r.result).toBe('SPLASH')
+    expect(r.he).toMatchObject({ splash_min: 43.0, splash_max: 141.0, splash_avg: 92.0 })
   })
 
   it('out_ray_without_primary_returns_no_shot', () => {
@@ -354,6 +526,175 @@ describe('penetration（上游 penetration.rs 单测移植）', () => {
   })
 })
 
+describe('probability_layers（到首个 Primary 为止的完整概率链，供 Armor Inspector 概率模型）', () => {
+  it('确定性在间隙甲处截断时，概率链仍保留其后的主装甲', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    // 确定性：100mm 间隙甲等厚不穿透 → 只留下间隙甲层。
+    expect(r.result).toBe('BLOCKED')
+    expect(r.layers.map(l => l.part_name)).toEqual(['spaced'])
+    // 概率：完整路径含间隙甲 + 主装甲；1× 消耗后剩余 0，主装甲 0%。
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+  })
+
+  it('外部模块耗尽时概率链仍含其后主装甲，概率为 0（P10 遇 20mm 履带）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 10.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.layers.map(l => l.part_name)).toEqual(['chassis'])
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(0)
+  })
+
+  it('概率链停在首个 Primary：其后的车体/履带命中不参与', () => {
+    const hits = [
+      hit(ArmorSection.HULL, 30.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(1)
+    expect(r.probability_layers.map(l => l.section)).toEqual(['hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBe(1)
+  })
+
+  it('Super Conqueror 炮塔相邻点击：首个 Primary 后的车体底板/履带不参与概率', () => {
+    // 用户 2026-10-18 调试快照：板10(20) + 板9(225) 确定性击穿；其后的
+    // Hull Plate 8(5) 与右侧履带(25) 曾把概率从 19% 压到 0（相邻点击 19% vs 0%）。
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [-0.7413889015023738, 2.2819733858516886, -1.653710476213479], {
+        plate_id: '10',
+        normal: [-0.6347682297419488, 0.4539353516594762, -0.6253095161790361],
+        part_name: 'Turret Plate 10',
+      }),
+      hit(ArmorSection.TURRET, 225.0, [-0.6509577896549565, 2.2321983421923504, -1.5360089235660648], {
+        plate_id: '9',
+        normal: [-0.4742724340731611, 0.5729971269861682, -0.6683860791069156],
+        part_name: 'Turret Plate 9',
+      }),
+      hit(ArmorSection.HULL, 5.0, [0.09604195528521053, 1.821035146713257, -0.5637436488115966], {
+        plate_id: '8', normal: [0, 1, 0], part_name: 'Hull Plate 8',
+      }),
+      hit(ArmorSection.CHASSIS, 25.0, [1.1176708936691284, 1.32302562660276, 0.6897291210208113], {
+        plate_id: 'rightTrack', normal: [-1, 0, 0], part_name: 'Track (Right)',
+      }),
+    ]
+    const r = calculate(req('ap', 252.0, 120.0, hits, {
+      view_dir: [-0.5776371359476701, 0.3179427198635244, -0.7518296123856505],
+      normalization_deg: 5,
+    }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(2)
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'turret'])
+    // 1× 区间：[239.4,264.6] −20 → [219.4,244.6]；板9 eff≈229.64 →
+    // Φ((232−229.64)/4.2) ≈ 0.713（不再被后方车体/履带耗尽）。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.713, 2)
+  })
+
+  it('外部模块在间隙甲之前：模块 flat 先平移间隙甲 CDF（chassis20→spaced80→hull1）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 80.0, [0, 0, 1]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 2]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
+    // [95,105] −20 → [75,85]；spaced80 → 50%；再平移 [−5,5]；hull1 → Φ(−0.6)=0.274253。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1371265, 6)
+  })
+
+  it('前置模块厚于穿深但区间仍有正向尾部：保留负均值（P199/chassis200/spaced1/hull1）', () => {
+    const hits = [
+      hit(ArmorSection.CHASSIS, 200.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 1.0, [0, 0, 1]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 2]),
+    ]
+    const r = calculate(req('ap', 199.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.probability_layers.map(l => l.section)).toEqual(['chassis', 'spaced', 'hull'])
+    // [189.05,208.95] −200 = [−10.95,8.95]（均值−1，区间未耗尽）；spaced1 →
+    // Φ(−0.6030)≈0.2732；hull1 → Φ(−0.9045)≈0.1829；乘积≈4.9966%。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.049966, 5)
+  })
+
+  it('HE 命中首个 Primary 仍有击穿浮动（100 HE vs 102mm → 约 11.5%）', () => {
+    const r = calculate(req('he', 100.0, 100.0, [hit(ArmorSection.HULL, 102.0, [0, 0, 0])], {
+      explosion_radius: 3.0,
+    }))
+    // 名义溅射结果仍由 SPLASH/BLOCKED 分支持有；概率链单独给出击穿机会。
+    expect(r.result).toBe('SPLASH')
+    expect(r.probability_layers.map(l => l.section)).toEqual(['hull'])
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.1150697, 5)
+  })
+
+  it('HEAT 名义耗尽但区间仍有正尾：gap 衰减后继续概率链（spaced100→0.1m→hull1）', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 100.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 1.0, [0, 0, 0.1]),
+    ]
+    const r = calculate(req('heat', 100.0, 100.0, hits))
+    expect(r.result).toBe('BLOCKED')
+    expect(r.probability_layers.map(l => l.section)).toContain('gap')
+    expect(r.probability_layers.map(l => l.section)).toContain('hull')
+    // [95,105] → spaced100 CDF 0.5 → [−5,5]；gap 0.1m ×0.95 → [−4.75,4.75]；
+    // hull1 → Φ(−1/(9.5/6)) ≈ 0.2638；乘积 ≈ 13.1915483%。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeCloseTo(0.131915, 4)
+  })
+
+  it('同一块板的重合三角形命中只算一层（射线掠过四边形对角线）', () => {
+    const hits = [
+      hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),
+      hit(ArmorSection.SPACED, 30.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0, 1]),
+    ]
+    const r = calculate(req('ap', 100.0, 100.0, hits))
+    expect(r.probability_layers.map(l => l.section)).toEqual(['spaced', 'hull'])
+  })
+
+  it('Super Conqueror 首上：20mm 间隙板 + 155mm 主甲 @42°，252AP 等效厚度足够 → 穿透', () => {
+    // 用户实车截图：layer13 eff≈21.5（20mm 首层 2×口径增强转正）+ layer1
+    // eff≈194（155mm 第二层仍独立套 5° 转正），252 − 21.5 > 194 → 穿透。
+    const a = 42 * Math.PI / 180
+    const normal = [Math.sin(a), Math.cos(a), 0]
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [0, 0, 0], { normal }),
+      hit(ArmorSection.HULL, 155.0, [0, 0, 1], { normal }),
+    ]
+    const r = calculate(req('ap', 252.0, 120.0, hits, { normalization_deg: 5 }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.layers).toHaveLength(2)
+    expect(r.layers.every(l => l.penetrated)).toBe(true)
+    expect(r.damage).toBe(400.0)
+    expect(Math.abs(r.layers[0].effective - 21.5)).toBeLessThan(0.2)
+    // 155mm @42° 是第二层，但 BlitzKit 仍对它独立套用 5° 转正：155/cos37° ≈ 194.1mm。
+    expect(Math.abs(r.layers[1].effective - 194.1)).toBeLessThan(2.0)
+    // 1× 概率区间也必须给出穿透，不能是 0%：252−21.5=230.5 >194。
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeGreaterThan(0.999)
+  })
+
+  it('Super Conqueror 截图角度：20mm@49° + 155mm@48°，252AP 每层独立转正后穿透', () => {
+    const a1 = 49 * Math.PI / 180
+    const a2 = 48 * Math.PI / 180
+    const hits = [
+      hit(ArmorSection.SPACED, 20.0, [0, 0, 0], { normal: [Math.sin(a1), Math.cos(a1), 0] }),
+      hit(ArmorSection.HULL, 155.0, [0, 0, 1], { normal: [Math.sin(a2), Math.cos(a2), 0] }),
+    ]
+    const r = calculate(req('ap', 252.0, 120.0, hits, { normalization_deg: 5 }))
+    // 层0：20mm 首层 2× 增强转正 21° → 22.65；层1：155mm 独立 5° → 155/cos43°≈211.9。
+    expect(Math.abs(r.layers[0].effective - 22.65)).toBeLessThan(0.2)
+    expect(Math.abs(r.layers[1].effective - 211.9)).toBeLessThan(0.5)
+    expect(r.result).toBe('PENETRATION')
+    expect(penetrationChance(r.probability_penetration, r.probability_layers)).toBeGreaterThan(0.999)
+  })
+})
+
 // 点击判定的触发面（查看器相机点击路径依赖）：射线未触达 Primary 时，末层就是间隙甲/外部模块
 // 自身 —— 末层规则照样给出 PENETRATION + 全额伤害，所以这种栈必须由查看器拦下
 //（BlitzKit 的 shoot() 也只挂在 Primary 网格上，不由它们触发）。
@@ -371,5 +712,142 @@ describe('isPrimary（Primary = 击穿判定的触发面；spaced/外部模块�
     const r = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])]))
     expect(r.result).toBe('PENETRATION')
     expect(r.damage).toBe(400.0)
+  })
+})
+
+describe('hasPrimaryLayer（概率卡前置条件）', () => {
+  it('链上存在正厚度 Primary 才允许概率模式', () => {
+    expect(hasPrimaryLayer([
+      { section: ArmorSection.CHASSIS, thickness: 30 },
+      { section: ArmorSection.HULL, thickness: 100 },
+    ])).toBe(true)
+  })
+
+  it('纯外部模块或 0mm Primary 链不得进入概率模式', () => {
+    expect(hasPrimaryLayer([
+      { section: ArmorSection.CHASSIS, thickness: 100 },
+      { section: ArmorSection.GUN_BARREL, thickness: 60 },
+    ])).toBe(false)
+    expect(hasPrimaryLayer([{ section: ArmorSection.HULL, thickness: 0 }])).toBe(true)
+    expect(hasPrimaryLayer([])).toBe(false)
+  })
+})
+
+describe('matchHitsByOccurrence（同名装甲板按命中次序匹配）', () => {
+  it('重复同名板各匹配各自的命中点；gap 层无对应 hit', () => {
+    const hits = [
+      { partName: 'screen', point: [1, 0, 0] },
+      { partName: 'screen', point: [2, 0, 0] },
+      { partName: 'hull', point: [3, 0, 0] },
+    ]
+    const layers = [
+      { part_name: 'screen' },
+      { part_name: 'Gap 0.50m' },
+      { part_name: 'screen' },
+      { part_name: 'hull' },
+    ]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBeNull()
+    expect(matched[2]).toBe(hits[1])
+    expect(matched[3]).toBe(hits[2])
+  })
+
+  it('无匹配时返回 null，不重复消费同一命中', () => {
+    const hits = [{ partName: 'screen', point: [1, 0, 0] }]
+    const layers = [{ part_name: 'screen' }, { part_name: 'screen' }, { part_name: 'unknown' }]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBeNull()
+    expect(matched[2]).toBeNull()
+  })
+
+  it('先按判定规则过滤重合三角形，再做 occurrence 匹配', () => {
+    const hits = [
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [0, 0, 0] },
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [0, 0, 0] },
+      { section: ArmorSection.SPACED, plate_id: '2', partName: 'screen', point: [1, 0, 0] },
+      { section: ArmorSection.HULL, plate_id: '1', partName: 'hull', point: [2, 0, 0] },
+    ]
+    const layers = [{ part_name: 'screen' }, { part_name: 'screen' }, { part_name: 'hull' }]
+    const matched = matchHitsByOccurrence(layers, hits)
+    expect(matched[0]).toBe(hits[0])
+    expect(matched[1]).toBe(hits[2])
+    expect(matched[2]).toBe(hits[3])
+  })
+})
+
+describe('require_primary（射击复现无主装甲链门禁）', () => {
+  const track = [hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0])]
+
+  it('纯外部模块：默认仍按 BlitzKit 末层给 PEN；射击复现门禁为 BLOCKED/0 伤', () => {
+    const base = calculate(req('ap', 100.0, 100.0, track))
+    expect(base.result).toBe('PENETRATION')
+    expect(base.damage).toBe(400.0)
+    expect(base.blocked_no_primary).toBe(false)
+    const gated = calculate(req('ap', 100.0, 100.0, track, { require_primary: true }))
+    expect(gated.result).toBe('BLOCKED')
+    expect(gated.damage).toBe(0)
+    expect(gated.blocked_no_primary).toBe(true)
+    expect(gated.layers).toHaveLength(1)
+    // 卡片不能用概率链把 BLOCKED/0 回填成「可能击穿 + 满伤」。
+    expect(resolveCardChance({
+      heInfo: null, heChance: 0, probabilityMode: false,
+      overallChance: null, rawChance: 0.73, allowChance: false,
+    })).toEqual({ chance: 0, unavailable: true })
+  })
+
+  it('无主装甲阻断覆盖原结果已 BLOCKED 的临界厚度（99/100/101mm）', () => {
+    for (const thickness of [99, 100, 101]) {
+      const r = calculate(req('ap', 100, 100, [hit(ArmorSection.SPACED, thickness, [0, 0, 0])], {
+        require_primary: true,
+      }))
+      expect(r.blocked_no_primary, `spaced ${thickness}mm`).toBe(true)
+      expect(r.result).toBe('BLOCKED')
+      expect(r.damage).toBe(0)
+    }
+  })
+
+  it('纯间隙甲：同样被门禁拦下；有主装甲的链不受影响', () => {
+    const spaced = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])], { require_primary: true }))
+    expect(spaced.result).toBe('BLOCKED')
+    expect(spaced.damage).toBe(0)
+    expect(spaced.blocked_no_primary).toBe(true)
+
+    const withPrimary = calculate(req('ap', 200.0, 100.0, [
+      hit(ArmorSection.CHASSIS, 20.0, [0, 0, 0]),
+      hit(ArmorSection.HULL, 100.0, [0, 0.6, 0]),
+    ], { require_primary: true }))
+    expect(withPrimary.result).toBe('PENETRATION')
+    expect(withPrimary.damage).toBe(400.0)
+    expect(withPrimary.blocked_no_primary).toBe(false)
+  })
+
+  it('间隙甲跳弹保留 RICOCHET（门禁只拦“无主装甲的击穿”）', () => {
+    const a = 75 * Math.PI / 180
+    const h = hit(ArmorSection.SPACED, 100.0, [0, 0, 0], {
+      normal: [0.0, Math.cos(a), Math.sin(a)],
+    })
+    const r = calculate(req('ap', 300.0, 100.0, [h], { require_primary: true }))
+    expect(r.result).toBe('RICOCHET')
+    expect(r.blocked_no_primary).toBe(false)
+  })
+
+  it('HE 不受门禁影响（溅射仍按 800 射线/单射线语义）', () => {
+    const r = calculate(req('he', 80.0, 100.0, track, {
+      require_primary: true,
+      damage: 400.0,
+      explosion_radius: 3.0,
+    }))
+    expect(r.result).not.toBe('BLOCKED')
+    expect(r.blocked_no_primary).toBe(false)
+  })
+
+  it('0mm Primary 是合法主装甲，不触发门禁', () => {
+    const r = calculate(req('ap', 100.0, 100.0, [hit(ArmorSection.HULL, 0.0, [0, 0, 0])], {
+      require_primary: true,
+    }))
+    expect(r.result).toBe('PENETRATION')
+    expect(r.blocked_no_primary).toBe(false)
   })
 })

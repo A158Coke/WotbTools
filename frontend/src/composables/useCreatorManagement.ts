@@ -1,7 +1,7 @@
 import type { MaybeRefOrGetter } from 'vue'
 import { computed, onScopeDispose, ref, watch, toValue } from 'vue'
 import * as api from '../api/creators.js'
-import { useAuth, tournamentAdminAllowed } from './useAuth.js'
+import { useAuth, contentAdminAllowed } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
 import type { CreatorAvailability } from '../shared/creatorAvailability.js'
@@ -12,9 +12,8 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
   const transport = deps.api ?? api, auth = deps.auth ?? useAuth(), gate = useFeatureGate()
   const availability = deps.availability ?? useCreatorAvailability()
   const type = computed(() => toValue(deps.type) ?? 'UP')
-  const typed = () => availability.recommendationsSupported.value
   const network = computed(deps.network ?? (() => gate.availability(Feature.CREATORS)))
-  const allowed = computed(() => tournamentAdminAllowed(auth) && auth.authInitState.value === 'authenticated' && availability.typeAvailable(type.value))
+  const allowed = computed(() => contentAdminAllowed(auth) && auth.authInitState.value === 'authenticated' && availability.typeAvailable(type.value))
   const categories = ref<api.RecommendationCategory[]>([]), levels = ref<api.CreatorLevel[]>([])
   const avatarUploadsAvailable = ref(false), metadataLoaded = ref(false), detail = ref<api.RecommendationDetail | null>(null)
   const loading = ref(false), busy = ref(false), editorLoading = ref(false), editorOpen = ref(false)
@@ -39,7 +38,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     const gen = generation, epoch = auth.authEpoch(), signal = controller.signal, readGen = ++readGeneration
     loading.value = true; error.value = null
     try {
-      const metadata = await transport.getRecommendationMetadata(type.value, typed(), signal)
+      const metadata = await transport.getRecommendationMetadata(type.value, signal)
       if (owns(gen, epoch) && readGen === readGeneration) { categories.value = metadata.categories; levels.value = metadata.levels; avatarUploadsAvailable.value = metadata.imageUploadsAvailable; metadataLoaded.value = true }
     } catch (value) { if (owns(gen, epoch) && readGen === readGeneration) error.value = value }
     finally { if (owns(gen, epoch) && readGen === readGeneration) loading.value = false }
@@ -54,7 +53,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     loading.value = false
     editorOpen.value = true; editorLoading.value = true; detail.value = null; editorError.value = null
     try {
-      const [metadata, value] = await Promise.all([transport.getRecommendationMetadata(type.value, typed(), signal), transport.getRecommendationDetail(id, type.value, typed(), signal)])
+      const [metadata, value] = await Promise.all([transport.getRecommendationMetadata(type.value, signal), transport.getRecommendationDetail(id, type.value, signal)])
       if (owns(gen, epoch) && editGen === editorGeneration && readGen === readGeneration) {
         categories.value = metadata.categories; levels.value = metadata.levels; avatarUploadsAvailable.value = metadata.imageUploadsAvailable; metadataLoaded.value = true; detail.value = value
       }
@@ -89,7 +88,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     const id = editing ? detail.value?.id : null
     if (editing && !id) return false
     const gen = generation, epoch = auth.authEpoch(), context = { draftGeneration: draftEpoch.value, epoch, editing }
-    const success = await mutation(async signal => { await transport.saveRecommendation(id ?? null, value, avatar, typed(), signal) }, editing)
+    const success = await mutation(async signal => { await transport.saveRecommendation(id ?? null, value, avatar, signal) }, editing)
     if (success && ownsForm(context)) savedForm = context
     if (success && owns(gen, epoch)) notice.value = 'saved'
     return success
@@ -101,7 +100,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
   }
   async function remove(id: number, expectedVersion: number) {
     const gen = generation, epoch = auth.authEpoch()
-    const success = await mutation(async signal => { await transport.removeRecommendation(id, type.value, expectedVersion, typed(), signal) })
+    const success = await mutation(async signal => { await transport.removeRecommendation(id, type.value, expectedVersion, signal) })
     if (success && owns(gen, epoch)) notice.value = 'removed'
     return success && owns(gen, epoch)
   }
@@ -109,7 +108,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     if (kind === 'levels' && type.value !== 'UP') return false
     const gen = generation, epoch = auth.authEpoch()
     const success = await mutation(async signal => {
-      const value = kind === 'categories' ? await transport.addRecommendationCategory(type.value, name.trim(), typed(), signal) : await transport.addCreatorLevel(name.trim(), signal)
+      const value = kind === 'categories' ? await transport.addRecommendationCategory(type.value, name.trim(), signal) : await transport.addCreatorLevel(name.trim(), signal)
       if (!owns(gen, epoch)) return
       if (kind === 'categories') categories.value = [...categories.value, value as api.RecommendationCategory]; else levels.value = [...levels.value, value]
     })
@@ -120,7 +119,7 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     if (kind === 'levels' && type.value !== 'UP') return false
     const gen = generation, epoch = auth.authEpoch()
     const success = await mutation(async signal => {
-      if (kind === 'categories') { await transport.removeRecommendationCategory(id, type.value, typed(), signal); if (owns(gen, epoch)) categories.value = categories.value.filter(value => value.id !== id) }
+      if (kind === 'categories') { await transport.removeRecommendationCategory(id, type.value, signal); if (owns(gen, epoch)) categories.value = categories.value.filter(value => value.id !== id) }
       else { await transport.removeCreatorLevel(id, signal); if (owns(gen, epoch)) levels.value = levels.value.filter(value => value.id !== id) }
     })
     if (success && owns(gen, epoch)) notice.value = 'removed'
@@ -130,13 +129,12 @@ export function useCreatorManagement(deps: { type?: MaybeRefOrGetter<api.Recomme
     invalidate(); categories.value = []; levels.value = []; avatarUploadsAvailable.value = false; metadataLoaded.value = false
     if (allowed.value && network.value.available) void refresh()
   }, { immediate: true })
-  watch([() => network.value.available, availability.recommendationsSupported], ([available, typed], [, previousTyped]) => {
-    if (!available || typed !== previousTyped) {
+  watch(() => network.value.available, available => {
+    if (!available) {
       generation++; readGeneration++; editorGeneration++; controller.abort(); controller = new AbortController()
       loading.value = false; busy.value = false; editorLoading.value = false
-      if (!available) return
+      return
     }
-    // A transport upgrade uses the same neutral model and must not discard an active UP draft.
     // A temporary disconnect cancels work without discarding this account's drafts or selected image.
     if (editorOpen.value && !detail.value && editingId != null) void editCreator(editingId)
     else void refresh()

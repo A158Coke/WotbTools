@@ -22,14 +22,14 @@ let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => {
   vi.clearAllMocks()
   state.epoch = 1
-  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['tournament-admin'] } }), authEpoch: () => state.epoch }
+  state.auth = { authenticated: ref(true), authInitState: ref('authenticated'), tokenParsed: ref({ sub: 'a', realm_access: { roles: ['content-admin'] } }), authEpoch: () => state.epoch }
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 async function host(stub = true) {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
   await router.push('/?view=creators-config&keep=yes#form'); await router.isReady()
   wrapper = mount(CreatorsConfigPage, { global: { plugins: [router, createI18n({ legacy: false, locale: 'zh', messages })],
-    provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { recommendationsSupported: ref(true), typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) } },
+    provide: { [CREATOR_AVAILABILITY_KEY as symbol]: { typeAvailable: () => true, refreshPublicCategories: vi.fn(async () => {}) } },
     stubs: stub ? { CreatorForm: { template: '<div />' } } : {} } })
   await flushPromises(); return router
 }
@@ -79,7 +79,7 @@ describe('creator configuration drafts', () => {
     const input = wrapper!.get(`[data-testid=creator-new-${kind}]`), form = input.element.closest('form')!
     expect(input.attributes('maxlength')).toBeUndefined()
     await input.setValue('😀'.repeat(100)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
-    expect(add).toHaveBeenCalledWith(...(kind === 'category' ? ['UP', '😀'.repeat(100), true, expect.any(AbortSignal)] : ['😀'.repeat(100), expect.any(AbortSignal)]))
+    expect(add).toHaveBeenCalledWith(...(kind === 'category' ? ['UP', '😀'.repeat(100), expect.any(AbortSignal)] : ['😀'.repeat(100), expect.any(AbortSignal)]))
     await input.setValue('😀'.repeat(101)); form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     expect(add).toHaveBeenCalledTimes(1)
     expect(wrapper!.find('[role=alert]').exists()).toBe(true)
@@ -89,7 +89,7 @@ describe('creator configuration drafts', () => {
     await flushPromises()
     await wrapper!.get('[data-testid=creator-new-category]').setValue('Account A private category')
     await wrapper!.get('[data-testid=creator-new-level]').setValue('Account A private level')
-    state.epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['tournament-admin'] } }
+    state.epoch++; state.auth.tokenParsed.value = { sub: 'b', realm_access: { roles: ['content-admin'] } }
     await flushPromises()
     expect((wrapper!.get('[data-testid=creator-new-category]').element as HTMLInputElement).value).toBe('')
     expect((wrapper!.get('[data-testid=creator-new-level]').element as HTMLInputElement).value).toBe('')

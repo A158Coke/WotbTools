@@ -2,7 +2,7 @@
 //
 // 历史回归：showcase-regressions.css（main.js 最后加载）曾把 .hof-admin-tabs 从 sticky 改成
 // relative，而 showcase-rankings.css 的 top 偏移仍在，Tab 条滑到筛选栏下面（生产「百场审核
-// Tab 不可见」）。根因是同一元素有多个样式 owner。迁到设计语言 token 后（design-language §13），
+// Tab 不可见」）。根因是同一元素有多个样式 owner。迁到设计语言 token 后（design-language），
 // 组件 scoped 样式是唯一 owner；这里只锁定「全局样式表不再触碰这些内部元素」这一归属约束，
 // 真实布局几何仍由浏览器级测试覆盖。
 

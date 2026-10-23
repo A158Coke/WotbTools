@@ -1,10 +1,29 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { KeepAlive, defineComponent, h, onUnmounted } from 'vue'
 import BattlePicker from './BattlePicker.vue'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key, locale: { value: 'en' } }) }))
+
+// useBreakpoint 在模块级共享 matchMedia 监听：用一个可控 viewport 模拟 compact / expanded，
+// 不重载模块（Teleport 判定直接消费同一份 tier）。
+let viewportWidth = 1280
+const mediaListeners = []
+function setViewportWidth(width) {
+  viewportWidth = width
+  for (const listener of mediaListeners) listener()
+}
+vi.stubGlobal('matchMedia', (query) => {
+  const minWidth = /min-width:\s*(\d+)px/.exec(query)
+  return {
+    media: query,
+    get matches() { return minWidth ? viewportWidth >= Number(minWidth[1]) : false },
+    addEventListener: (_event, listener) => mediaListeners.push(listener),
+  }
+})
+beforeEach(() => setViewportWidth(1280))
 
 function options(count) {
   return Array.from({ length: count }, (_, i) => ({
@@ -28,6 +47,8 @@ async function open() {
 }
 
 const optionValues = () => wrapper.findAll('[data-testid="battle-picker-option"]').map(o => o.attributes('data-value'))
+const panelElement = () => document.querySelector('[data-testid="battle-picker-panel"]')
+const documentOptions = () => Array.from(document.querySelectorAll('[data-testid="battle-picker-option"]'))
 
 describe('BattlePicker', () => {
   it('触发按钮显示当前场次；打开后标记选中项', async () => {
@@ -107,5 +128,96 @@ describe('BattlePicker', () => {
     const search = wrapper.get('[data-testid="battle-picker-search"]')
     expect(search.element.value).toBe('')
     expect(search.attributes('aria-activedescendant')).toMatch(/-5$/)
+  })
+
+  it('桌面端保持 trigger 下方 dropdown：overlay 仍在组件 DOM 内', async () => {
+    mountPicker({ options: options(3), modelValue: 'r0' })
+    await open()
+    expect(panelElement()).not.toBeNull()
+    expect(panelElement().closest('.battle-picker')).toBe(wrapper.element)
+  })
+
+  it('手机端把遮罩与 sheet teleport 到 body：两场都可见，点击 Battle 2 正确 emit', async () => {
+    setViewportWidth(390)
+    mountPicker({ options: options(2), modelValue: 'r0' })
+    await open()
+    const sheet = panelElement()
+    expect(sheet).not.toBeNull()
+    expect(sheet.parentElement).toBe(document.body)
+    expect(sheet.closest('.battle-picker')).toBeNull()
+    expect(document.querySelector('.picker-scrim').parentElement).toBe(document.body)
+    expect(documentOptions().map(option => option.textContent)).toEqual([
+      expect.stringContaining('Battle 1'),
+      expect.stringContaining('Battle 2'),
+    ])
+    // 点击 sheet 内 option 前的 pointerdown 不能被 document outside handler 当成外部点击。
+    const second = documentOptions()[1]
+    second.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(panelElement()).not.toBeNull()
+    second.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([['r1']])
+    expect(panelElement()).toBeNull()
+  })
+
+  it('手机端点击 scrim 关闭并清理 teleported sheet', async () => {
+    setViewportWidth(390)
+    mountPicker({ options: options(2), modelValue: 'r0' })
+    await open()
+    document.querySelector('.picker-scrim').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await flushPromises()
+    expect(panelElement()).toBeNull()
+    expect(document.querySelector('.picker-scrim')).toBeNull()
+  })
+
+  it('手机端点击 sheet 外部仍会关闭', async () => {
+    setViewportWidth(390)
+    mountPicker({ options: options(2), modelValue: 'r0' })
+    await open()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(panelElement()).toBeNull()
+  })
+
+  it('KeepAlive 停用（离开 Replay 页面）时关闭 teleported sheet', async () => {
+    setViewportWidth(390)
+    // 模拟真实层级：KeepAlive 缓存的是 ReplayWorkspace，BattlePicker 是其后代（不是缓存根）；
+    // 切换 currentView 触发 deactivate，而不是卸载整棵子树。
+    const unmounted = []
+    const WorkspaceLike = defineComponent({
+      name: 'WorkspaceLike',
+      setup() {
+        onUnmounted(() => unmounted.push('workspace'))
+        return () => h(BattlePicker, { options: options(2), modelValue: 'r0', ariaLabel: 'Choose battle' })
+      },
+    })
+    const OtherView = defineComponent({ name: 'OtherView', setup: () => () => h('div', { 'data-test': 'other-view' }) })
+    const Host = defineComponent({
+      props: { workspace: { type: Boolean, default: true } },
+      setup(hostProps) {
+        return () => h(KeepAlive, null, () => (hostProps.workspace ? h(WorkspaceLike) : h(OtherView)))
+      },
+    })
+    wrapper = mount(Host, { attachTo: document.body })
+    await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+    await flushPromises()
+    expect(panelElement()).not.toBeNull()
+    await wrapper.setProps({ workspace: false })
+    await flushPromises()
+    expect(unmounted).toEqual([])
+    expect(panelElement()).toBeNull()
+  })
+
+  it('手机端 unmount 移除 document pointerdown 监听并清理 teleported sheet', async () => {
+    setViewportWidth(390)
+    const removeListener = vi.spyOn(document, 'removeEventListener')
+    mountPicker({ options: options(2), modelValue: 'r0' })
+    await open()
+    wrapper.unmount()
+    wrapper = undefined
+    expect(removeListener).toHaveBeenCalledWith('pointerdown', expect.any(Function))
+    removeListener.mockRestore()
+    expect(panelElement()).toBeNull()
   })
 })

@@ -4,7 +4,7 @@
 
 - **Web 版**：Spring Boot 4 后端，Vue 3 前端。**服务器没有 parser**：回放解析（上游 Rust Core WASM）与汇总 / 评分 / 导出 / 2D 数据都在浏览器完成，后端只负责存储、去重、授权、名人堂记录与 AI 编排（见 `../docs/architecture/replay-pipeline.md`）。
 
-当前 Web 版已实现。路线图见 [docs/ROADMAP.md](../docs/ROADMAP.md)。
+当前 Web 版已实现。
 
 ## 模块
 
@@ -25,7 +25,7 @@
 [功能契约](../docs/features/league-broadcasts.md)，可选 COS 封面配置和回收见
 [运维说明](../docs/operations/league-broadcast-covers.md)。
 
-bilibili UP 推荐使用独立 `creator` 域，公开目录为 `/api/creators`；管理员在 `/api/admin/creators/**` 使用 `tournament-admin` 维护UID、整星、字典与站点头像。
+bilibili UP/视频推荐使用独立 `creator` 域，公开目录为 `/api/recommendations`；管理员在 `/api/admin/recommendations/**` 使用 `content-admin` 维护 UID/BV、整星、分类、UP 等级与图片。旧 UP-only CRUD/格式适配已移除，既有图片仍由 `/api/creators/avatars/{id}` 读取；该角色不授予积分赛管理，`tournament-admin` 也不拥有内容管理权限。
 V35创建简版目录与无上传者的图片回收台账。UID字符串唯一、主页自动生成；星级默认3，显示分数为星级×2。
 头像随表单一次multipart提交，压到最长边256px，仅存小图；UTC+8每日04:00回收未引用满24小时的图片。
 头像与联赛封面共用COS client/凭据、独立namespace；完整规则见 [UP recommendations](../docs/features/bilibili-creators.md)。
@@ -115,11 +115,16 @@ AI Review 已从 Business Backend 拆出，运行在 Yecao 的独立无状态 `a
 战局回放（2D）的数据在浏览器本机生成（`frontend/src/replay-local/playback`）；AI 复盘只消费客户端投影，
 服务端不再有重建器（恢复 AI 复盘时基于上游 `parseAiReview` 重建投影）。
 
+代码按独立运行时归属在 `com.wotb.ai`：`config`、`gateway`、`prompt`、`review` 和 `tournament`。
+Gateway 由 Review 与 Tournament 共用，两项 feature 保持隔离；Spring 从 `AiServiceApplication`
+根包自然扫描。Maven 依赖方向为 `wotb-ai → wotb-core`，不依赖 `wotb-web`。
+
 - `POST /api/ai/reviews`（独立 `ai-service`）— JSON body `AiReviewRequest = {locale, correlationId, battle, projection}`
   （唯一事实源 `contracts/http/openapi.yaml`，required 恰为这四个字段；**没有** `schemaVersion`）：
   `locale` 白名单 `zh-CN`/`en-US`/`ru-RU`，`correlationId` 为 canonical UUID，`battle` 与 `projection`
-  分别是客户端 canonical 结算事实与 AI 投影（`ClientAiReviewProjection`）。`AiReviewController` 只校验
-  locale + correlationId，投影/战斗结构不合法统一 → `INVALID_AI_REQUEST`。客户端负责解析与事实投影，
+  分别是客户端 canonical 结算事实与 AI 投影（`ClientAiReviewProjection`）。处理链为
+  `AiReviewSubmissionController` → `AiReviewRequestConverter` → `AiReviewSubmissionService`；locale 与
+  correlationId 校验后，投影/战斗结构不合法统一 → `INVALID_AI_REQUEST`。客户端负责解析与事实投影，
   服务端不读 processing dataset。稳定错误码：`INVALID_AI_REQUEST` / `UNKNOWN_LOCALE` /
   `INVALID_CORRELATION_ID` / `DUPLICATE_CORRELATION_ID`（409）/
   `UNSUPPORTED_BATTLE_CATEGORY`（422）/ `AI_REQUEST_TOO_LARGE`（413，16 MiB 上限，gzip 解压后同样受限）/
@@ -169,7 +174,7 @@ AI 上游与数据错误只向 API 返回稳定英文码（含 `AI_TIMEOUT`、`A
 - `DELETE /api/users/wotb-account` — 解绑；WARGAMING source 资料返回只读错误（ASIA 为 400 `ASIA_PROFILE_READONLY`，EU/NA 为 400 `WARGAMING_PROFILE_READONLY`）。
 - **用回放验证** — `POST /api/users/wotb-account/verify-replay`（body `{recorderAccountId}`）：个人主页按钮在浏览器本机解析回放（服务器没有 parser），只提交录像者数值 accountId；与当前绑定账号**数值相等**才把 `wotb_account_verified_at` 置为首次验证时间（已验证则原样返回）；不一致 409 `REPLAY_RECORDER_MISMATCH`，未绑定 400 `WOTB_ACCOUNT_NOT_BOUND`，缺录像者 400 `REPLAY_RECORDER_REQUIRED`。录像者 accountId 来自客户端，已验证状态只用于主页徽章、不授予权限。换绑（`(wotb_server, wotb_account_id)` 任一变化）与解绑会清空验证，与账号身份无关的编辑（如昵称）不清空。列由 `V12__add_wotb_asia_fields.sql` 引入。
 
-资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见 [docs/auth/wargaming-asia-login.md](../docs/auth/wargaming-asia-login.md) 与部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md)。
+资料 DTO 含 `wotbAccountSource`（MANUAL/WARGAMING）与 `wotbAccountVerifiedAt`（ISO 时间或 null）。JWT claims 由 Keycloak realm 的 5 个 protocol mapper 提供（另含 `displayName→displayName`；业务 claims 为 `region→wotb_region`、`wotb.account_id→wotb_account_id`、`wotb.nickname→wotb_nickname`、`wotb.verified→wotb_verified(boolean)`）；WG 登录所需 `WG_APPLICATION_ID` 仅注入 Keycloak，backend 不再调用 WG stats。详见部署手册 [docs/auth/wargaming-asia-deployment.md](../docs/auth/wargaming-asia-deployment.md) 与业务契约 [docs/features/user-profile.md](../docs/features/user-profile.md)。
 
 ### 管理后台：用户管理（`/api/admin/users/**`，需 `wotbtools-admin`）
 

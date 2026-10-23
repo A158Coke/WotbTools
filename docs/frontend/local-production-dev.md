@@ -2,7 +2,7 @@
 
 本地可以只运行 Vue/Vite 前端，并通过 Vite 开发代理把相对 `/api` 请求转发到生产站点。这样可以使用本地未发布的前端代码验证生产后端和生产 Keycloak 登录链路。
 
-> 本机测试的完整 runbook（引擎产物 / 资产面 / admin 旁路 / 自检探针 / 故障对照）见
+> 本机测试的完整 runbook（引擎产物 / 资产面 / 认证门禁 / 自检探针 / 故障对照）见
 > [`local-testing.md`](local-testing.md)；本文件只覆盖「连接生产后端」这条链路与其安全边界。
 
 ## 本机资产面（3D 回放 / 车模 / 地图测试必读）
@@ -31,8 +31,8 @@
    ```
 
 3. `npm run dev`，打开 `http://localhost:5173/?view=agent-replay`（个人回放需普通账号登录；官方示例可匿名使用，均仍需连通性可用）。
-   真管理入口（`admin-users` / `hof-admin`）按需加 `&admin=1`：管理视图可达性由角色决定，
-   dev 构建下该参数把 admin 角色视为已持有，见 [`local-testing.md`](./local-testing.md) §4。
+   真管理入口（`admin-users` / `hof-admin` 等）必须使用已经授予对应 realm role 的测试账号；
+   dev URL 参数不会提升权限，见 [`local-testing.md`](./local-testing.md) §4。
 
 Web 优先级与坑：`?assets=<URL>` > `localStorage.wotb_asset_base` > `VITE_ASSET_BASE_URL`。
 在 URL 上带过一次非空 `?assets=` 会持久化到 localStorage 并**盖住** `.env.local`；要回到默认，
@@ -66,6 +66,7 @@ npm run dev
 
 - 前端继续复用现有生产 Keycloak 配置：`https://auth.wotbtools.com` / realm `wotbtools` / client `wotbtools-web`。
 - `http://localhost:5173/*` 必须已在 Keycloak client 的 Redirect URIs 中允许；登录完成后回到本地前端当前视图。
+- 管理权限只来自当前 access token 的 `realm_access.roles`；本地开发与 production-remote 模式都没有 URL 角色旁路。
 - `production-remote` 启动时手机标题栏与平板 / 桌面侧栏会显示非模态环境提示，提醒当前 `/api` 请求指向生产后端。
 - 生产后端上的真实用户、回放和业务操作会产生真实影响；仅使用明确获准的账号和数据，不上传测试或敏感数据。
 - 该模式是开发服务器代理，不代表生产前端 bundle 或生产部署配置发生变化。

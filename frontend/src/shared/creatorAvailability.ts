@@ -3,7 +3,6 @@ import type { RecommendationCategory, RecommendationType } from '../api/creators
 
 export interface CreatorAvailability {
   available: Readonly<Ref<boolean>>
-  recommendationsSupported: Readonly<Ref<boolean>>
   typeAvailable: (type: RecommendationType) => boolean
   typeVisible: (type: RecommendationType) => boolean
   loading: Readonly<Ref<boolean>>

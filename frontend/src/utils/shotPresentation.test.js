@@ -6,6 +6,10 @@ describe('shotResultBadge recorded facts', () => {
   it.each([undefined, 0, 255])('a recorded target with unknown result %s remains unknown', (game_hit_result) => {
     expect(shotResultBadge({ target_eid: 7, game_hit_result }, t)).toEqual({ text: 'agentShots.res_hit_unknown', tone: 'warning' })
   })
+  it('result=4 is unverified, not Track/Ricochet/PEN', () => {
+    expect(shotResultBadge({ target_eid: 7, game_hit_result: 4, damage: 0 }, t)).toEqual({ text: 'agentShots.res_result_unverified', tone: 'warning' })
+    expect(shotResultBadge({ target_eid: 7, game_hit_result: 4, damage: 569 }, t)).toEqual({ text: 'agentShots.res_result_unverified', tone: 'warning' })
+  })
   it('uses hit flags before the fallback result and distinguishes a missing target', () => {
     expect(shotResultBadge({ target_eid: 7, hit_flags: 16, game_hit_result: 1 }, t).text).toBe('agentShots.res_pen')
     expect(shotResultBadge({ target_eid: null, game_hit_result: 255 }, t).text).toBe('agentShots.res_miss')

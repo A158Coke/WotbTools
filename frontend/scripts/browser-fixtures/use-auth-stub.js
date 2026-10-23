@@ -184,6 +184,12 @@ export function tournamentAdminAllowed(auth = useAuth()) {
   return auth.authenticated.value && Array.isArray(roles)
     && roles.includes('tournament-admin')
 }
+export function contentAdminAllowed(auth = useAuth()) {
+  const roles = auth.tokenParsed.value?.realm_access?.roles
+  return auth.authenticated.value && Array.isArray(roles)
+    && roles.includes('content-admin')
+}
+const isContentAdmin = computed(() => contentAdminAllowed({ authenticated, tokenParsed }))
 /** 与真实 composable 一致：展示名优先 displayName claim，preferred_username 只作兜底。 */
 function displayName() { return tokenParsed.value?.displayName || tokenParsed.value?.preferred_username || '' }
 function token() { return authenticated.value ? 'fixture-access-token' : '' }
@@ -203,6 +209,7 @@ export function useAuth() {
     isAdmin,
     isHofAdmin,
     isTournamentAdmin,
+    isContentAdmin,
     isLeagueBroadcastAdmin,
     authEpoch: () => generation,
     token,

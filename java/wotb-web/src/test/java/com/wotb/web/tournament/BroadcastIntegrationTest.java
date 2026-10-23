@@ -1,7 +1,8 @@
 package com.wotb.web.tournament;
 
 import com.wotb.web.tournament.dto.BroadcastDtos;
-import com.wotb.web.tournament.dto.BroadcastLegacyDtos;
+import com.wotb.web.tournament.mapper.BroadcastMapper;
+import com.wotb.web.tournament.service.BroadcastCoverService;
 import com.wotb.web.tournament.service.BroadcastCosStorage;
 import com.wotb.web.tournament.service.BroadcastService;
 import com.wotb.web.util.apierror.ApiErrorCode;
@@ -17,6 +18,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -24,18 +26,22 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,7 +63,9 @@ class BroadcastIntegrationTest {
     }
     @Autowired BroadcastService service;
     @Autowired JdbcTemplate jdbc;
+    @Autowired BroadcastCoverService covers;
     @MockitoBean BroadcastCosStorage storage;
+    @MockitoSpyBean BroadcastMapper mapper;
     private long seasonId;
     @BeforeEach void setup() {
         jdbc.update("delete from tournament_broadcast_replay"); jdbc.update("delete from tournament_broadcast_node");
@@ -102,74 +110,21 @@ class BroadcastIntegrationTest {
         final BroadcastDtos.Season maximum = service.createSeason(new BroadcastDtos.SeasonCreate("CN",2026,"中".repeat(100),"e".repeat(100),"р".repeat(100),null)).season();
         assertEquals(100,maximum.nameZh().length()); assertEquals(100,maximum.nameEn().length()); assertEquals(100,maximum.nameRu().length());
     }
-    @Test void legacySeasonWritesPreserveTranslationsAndShareVersionLocksWithV2() {
-        final long id = service.legacyCreateSeason(new BroadcastLegacyDtos.SeasonCreate("CN",2025," Original ",null)).season().id();
-        assertEquals("Original",service.season(id).season().nameZh()); assertEquals("Original",service.season(id).season().nameEn());
-        service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(0,2025,"Renamed",null));
-        assertEquals("Renamed",service.season(id).season().nameZh()); assertEquals("Renamed",service.season(id).season().nameEn());
-        service.updateSeason(id,new BroadcastDtos.SeasonUpdate(1,2025,"已翻译","English","Русский",null));
-        final var renamed = service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(2,2025,"New English",null));
-        assertEquals("New English",renamed.season().name()); assertEquals(3,renamed.season().version());
-        assertEquals("已翻译",service.season(id).season().nameZh()); assertEquals("Русский",service.season(id).season().nameRu());
-        assertCode(ApiErrorCode.BROADCAST_VERSION_CONFLICT,()->service.legacyUpdateSeason(id,new BroadcastLegacyDtos.SeasonUpdate(2,2025,"Stale",null)));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateSeason(new BroadcastLegacyDtos.SeasonCreate("CN",2025," ",null)));
-        assertEquals("New English",service.legacyIndex("CN").seasons().stream().filter(value -> value.id()==id).findFirst().orElseThrow().name());
-    }
-    @Test void legacyReplayProjectionAndWritesUseTheRealCategoryWithoutGuessingGroups() {
-        final long points = service.legacyCreateCategory(seasonId,new BroadcastDtos.CategoryCreate(version(),"POINTS")).categories().getFirst().id();
-        final long root = service.legacyCreateNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
-        final var saved = service.legacyCreateReplay(root,legacyRequest("42",null,null),null).nodes().getFirst().replays().getFirst();
-        assertEquals("42",saved.groupLabel()); assertNull(saved.groupNumber());
-        assertEquals(42,service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
-        service.legacyUpdateReplay(saved.id(),legacyRequest("13",null,null),null);
-        assertEquals("13",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
-        for (final String label : new String[]{null,""," ","x".repeat(101)}) {
-            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest(label,null,null),null));
-        }
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest("1",1,null),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(root,legacyRequest("1",null,"DEFAULT"),null));
-        jdbc.update("update tournament_broadcast_replay set group_number=null,legacy_group_label='Group A' where id=?",saved.id());
-        assertEquals("Group A",service.legacyCategory(points).nodes().getFirst().replays().getFirst().groupLabel());
-        assertNull(service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
-        final long semis = category("SEMI_FINALS");
-        final long semiRoot = service.legacyCreateNode(semis,new BroadcastDtos.NodeCreate(version(),null,null)).nodes().getFirst().id();
-        final var knockout = service.legacyCreateReplay(semiRoot,legacyRequest(null,4,"WINNERS"),null).nodes().getFirst().replays().getFirst();
-        assertNull(knockout.groupLabel()); assertEquals(4,knockout.groupNumber());
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(semiRoot,legacyRequest("2",2,"DEFAULT"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(semiRoot,legacyRequest(null,5,"DEFAULT"),null));
-        final long quarters = category("QUARTER_FINALS");
-        final long rrRoot = service.legacyCreateNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).nodes().getFirst().id();
-        assertNull(service.legacyCreateReplay(rrRoot,legacyRequest(null,null,null),null).nodes().getFirst().replays().getFirst().groupLabel());
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest("2",null,null),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.legacyCreateReplay(rrRoot,legacyRequest(null,1,null),null));
-    }
-    @Test void legacyTextGroupsRemainEditableWhileV2RequiresExplicitNumbers() {
+    @Test void historicalGroupSpellingsSurviveUnrelatedEditsAndClearWhenTheGroupChanges() {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
-        final var original = service.legacyCreateReplay(root,legacyRequest("Group A",null,null),null).nodes().getFirst().replays().getFirst();
-        assertEquals("Group A",original.groupLabel()); assertNull(original.groupNumber());
-        assertEquals("Group A",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,original.id()));
-        final var edited = service.legacyUpdateReplay(original.id(),new BroadcastLegacyDtos.ReplaySave(version(),"Edited title",original.url(),original.matchDate(),
-                original.dayNumber(),"Group A",null,null,original.teams(),original.perspective(),"KEEP"),null).nodes().getFirst().replays().getFirst();
-        assertEquals("Edited title",edited.title()); assertEquals("Group A",edited.groupLabel());
-        final var v2 = service.category(points).nodes().getFirst().replays().getFirst();
-        assertNull(v2.groupNumber()); assertEquals("Edited title",v2.title());
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("No numeric group","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.updateReplay(original.id(),request("Unrelated title change","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
-        for (final String label : List.of("0","-1","2147483648","9".repeat(100),"Group 1","1e3","A")) {
-            final var view = service.legacyCreateReplay(root,legacyRequest(label,null,null),null);
-            final var saved = view.nodes().getFirst().replays().getLast();
-            assertEquals(label,saved.groupLabel()); assertNull(saved.groupNumber());
-            assertEquals(label,jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,saved.id()));
-            assertNull(jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,saved.id()));
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        for (final Integer number : new Integer[]{null,42}) {
+            final var replay = service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Historical","2026-10-15",1,number,null,List.of("A","B"),"KEEP"),null),null)
+                    .data().nodes().getFirst().replays().getLast();
+            final String spelling = number == null ? "Group A" : "00042";
+            jdbc.update("update tournament_broadcast_replay set legacy_group_label=? where id=?",spelling,replay.id());
+            service.updateReplay(replay.id(),new BroadcastDtos.TimedReplaySave(request("Title edit","2026-10-15",1,number,null,List.of("A","B"),"KEEP"),null),null);
+            assertEquals(spelling,jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay.id()));
+            final Integer changed = number == null ? 2 : null;
+            service.updateReplay(replay.id(),new BroadcastDtos.TimedReplaySave(request("Group change","2026-10-15",1,changed,null,List.of("A","B"),"KEEP"),null),null);
+            assertEquals(changed,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,replay.id()));
+            assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay.id()));
         }
-        final var numeric = service.legacyCreateReplay(root,legacyRequest("00042",null,null),null).nodes().getFirst().replays().getLast();
-        assertEquals("42",numeric.groupLabel()); assertNull(numeric.groupNumber());
-        assertEquals(42,jdbc.queryForObject("select group_number from tournament_broadcast_replay where id=?",Integer.class,numeric.id()));
-        assertEquals("00042",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,numeric.id()));
-    }
-    private BroadcastLegacyDtos.ReplaySave legacyRequest(final String label, final Integer number, final String bracket) {
-        return new BroadcastLegacyDtos.ReplaySave(version(),"Title","https://example.org/legacy",LocalDate.of(2026,10,15),1,label,number,bracket,List.of("A","B"),"POV","KEEP");
     }
     @Test void v38UpgradePreservesLegacyNamesAndLocalizedEdits() {
         jdbc.execute("create database broadcast_names_upgrade");
@@ -221,96 +176,97 @@ class BroadcastIntegrationTest {
             assertEquals(labels.length+1,upgrade.queryForObject("select count(*) from tournament_broadcast_replay",Integer.class));
         } finally { jdbc.execute("drop database broadcast_groups_upgrade with (force)"); }
     }
-    @Test void legacyUnparsedGroupRemainsReadableAndRequiresExplicitCorrectionOnSave() {
+    @Test void legacyUnparsedGroupRemainsReadableUntilExplicitNumberReplacement() {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
-        final long replay = service.createReplay(root,request("Legacy","2026-10-15",1,1,null,List.of("A","B"),"KEEP"),null).nodes().getFirst().replays().getFirst().id();
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        final long replay = service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Legacy","2026-10-15",1,1,null,List.of("A","B"),"KEEP"),null),null).data().nodes().getFirst().replays().getFirst().id();
         jdbc.update("update tournament_broadcast_replay set group_number=null,legacy_group_label='A' where id=?",replay);
-        assertNull(service.category(points).nodes().getFirst().replays().getFirst().groupNumber());
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.updateReplay(replay,request("Legacy","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
-        assertEquals(2,service.updateReplay(replay,request("Legacy","2026-10-15",1,2,null,List.of("A","B"),"KEEP"),null).nodes().getFirst().replays().getFirst().groupNumber());
+        assertNull(service.category(points).data().nodes().getFirst().replays().getFirst().groupNumber());
+        assertNull(service.updateReplay(replay,new BroadcastDtos.TimedReplaySave(request("Legacy","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null),null).data().nodes().getFirst().replays().getFirst().groupNumber());
         assertEquals("A",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay));
+        assertEquals(2,service.updateReplay(replay,new BroadcastDtos.TimedReplaySave(request("Legacy","2026-10-15",1,2,null,List.of("A","B"),"KEEP"),null),null).data().nodes().getFirst().replays().getFirst().groupNumber());
+        assertNull(jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,replay));
     }
     @Test void explicitCategoriesAreReusedAndNodesEnforceFiveOneOneWithoutImplicitCreation() {
         assertTrue(service.season(seasonId).categories().isEmpty());
         final long points = category("POINTS");
         assertEquals(points,service.createCategory(seasonId,new BroadcastDtos.CategoryCreate(version(),"POINTS")).categories().getFirst().id());
-        assertTrue(service.category(points).nodes().isEmpty());
+        assertTrue(service.category(points).data().nodes().isEmpty());
         for (int round=1;round<=5;round++) { service.createNode(points,new BroadcastDtos.NodeCreate(version(),round,null)); }
-        assertEquals(5,service.category(points).nodes().size());
+        assertEquals(5,service.category(points).data().nodes().size());
         assertCode(ApiErrorCode.BROADCAST_NODE_CONFLICT,()->service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)));
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createNode(points,new BroadcastDtos.NodeCreate(version(),6,null)));
         final long quarters = category("QUARTER_FINALS");
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,null)));
-        final long quarterRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).nodes().getFirst().id();
+        final long quarterRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).data().nodes().getFirst().id();
         assertCode(ApiErrorCode.BROADCAST_NODE_CONFLICT,()->service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"KNOCKOUT")));
         final long semis = category("SEMI_FINALS");
         service.createNode(semis,new BroadcastDtos.NodeCreate(version(),null,null));
         assertCode(ApiErrorCode.BROADCAST_NODE_CONFLICT,()->service.createNode(semis,new BroadcastDtos.NodeCreate(version(),null,null)));
         service.deleteNode(quarterRoot,version(),true);
-        assertTrue(service.category(quarters).nodes().isEmpty());
-        assertEquals("KNOCKOUT",service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"KNOCKOUT")).nodes().getFirst().format());
+        assertTrue(service.category(quarters).data().nodes().isEmpty());
+        assertEquals("KNOCKOUT",service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"KNOCKOUT")).data().nodes().getFirst().format());
     }
     @Test void replayFieldsFollowRootTypeAndSortOnlyByActualDate() {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),5,null)).nodes().getFirst().id();
-        service.createReplay(root,request("Later","2026-10-16",1,42,null,List.of("Followed","Two"),"KEEP"),null);
-        service.createReplay(root,request("Earlier","2026-10-15",20,12,null,List.of("Followed","Two","Three","Four"),"KEEP"),null);
-        final List<BroadcastDtos.Replay> saved = service.category(points).nodes().getFirst().replays();
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),5,null)).data().nodes().getFirst().id();
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Later","2026-10-16",1,42,null,List.of("Followed","Two"),"KEEP"),null),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Earlier","2026-10-15",20,12,null,List.of("Followed","Two","Three","Four"),"KEEP"),null),null);
+        final List<BroadcastDtos.Replay> saved = service.category(points).data().nodes().getFirst().replays();
         assertEquals(List.of("Earlier","Later"),saved.stream().map(BroadcastDtos.Replay::title).toList());
         assertEquals(12,saved.getFirst().groupNumber()); assertEquals(42,saved.getLast().groupNumber());
-        assertEquals(20,saved.getFirst().dayNumber()); assertEquals(5,service.category(points).nodes().getFirst().roundNumber());
+        assertEquals(20,saved.getFirst().dayNumber()); assertEquals(5,service.category(points).data().nodes().getFirst().roundNumber());
         assertEquals("Followed",saved.getFirst().teams().getFirst()); assertEquals(4,saved.getFirst().teams().size());
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("Bad","2026-10-15",1,1,"DEFAULT",List.of("A","B"),"KEEP"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("Bad","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("Bad","2026-10-15",0,null,null,List.of("A","B"),"KEEP"),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-15",1,1,"DEFAULT",List.of("A","B"),"KEEP"),null),null));
+
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-15",0,null,null,List.of("A","B"),"KEEP"),null),null));
         for (final Integer group : List.of(0,-1)) {
-            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,request("Bad","2026-10-15",1,group,null,List.of("A","B"),"KEEP"),null));
+            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-15",1,group,null,List.of("A","B"),"KEEP"),null),null));
         }
-        service.createReplay(root,request("Maximum group","2026-10-17",1,Integer.MAX_VALUE,null,List.of("A","B"),"KEEP"),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Maximum group","2026-10-17",1,Integer.MAX_VALUE,null,List.of("A","B"),"KEEP"),null),null);
         final BroadcastDtos.ReplaySave uppercase = new BroadcastDtos.ReplaySave(version(),"Uppercase scheme","HTTPS://example.org/video",
                 LocalDate.of(2026,10,17),2,1,null,List.of("A","B"),"POV","KEEP");
-        assertEquals("HTTPS://example.org/video",service.createReplay(root,uppercase,null).nodes().getFirst().replays().getLast().url());
+        assertEquals("HTTPS://example.org/video",service.createReplay(root,new BroadcastDtos.TimedReplaySave(uppercase,null),null).data().nodes().getFirst().replays().getLast().url());
         final long semis = category("SEMI_FINALS");
-        final long semiRoot = service.createNode(semis,new BroadcastDtos.NodeCreate(version(),null,null)).nodes().getFirst().id();
-        service.createReplay(semiRoot,request("Final","2026-10-17",9,4,"LOSERS",List.of("A","B","C","D"),"KEEP"),null);
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(semiRoot,request("Bad","2026-10-17",9,5,"LOSERS",List.of("A","B"),"KEEP"),null));
+        final long semiRoot = service.createNode(semis,new BroadcastDtos.NodeCreate(version(),null,null)).data().nodes().getFirst().id();
+        service.createReplay(semiRoot,new BroadcastDtos.TimedReplaySave(request("Final","2026-10-17",9,4,"LOSERS",List.of("A","B","C","D"),"KEEP"),null),null);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(semiRoot,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-17",9,5,"LOSERS",List.of("A","B"),"KEEP"),null),null));
         final long quarters = category("QUARTER_FINALS");
-        final long quarterRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).nodes().getFirst().id();
-        service.createReplay(quarterRoot,request("Round robin","2026-10-18",8,null,null,List.of("A","B"),"KEEP"),null);
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(quarterRoot,request("Bad","2026-10-18",8,1,"DEFAULT",List.of("A","B"),"KEEP"),null));
+        final long quarterRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).data().nodes().getFirst().id();
+        service.createReplay(quarterRoot,new BroadcastDtos.TimedReplaySave(request("Round robin","2026-10-18",8,null,null,List.of("A","B"),"KEEP"),null),null);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(quarterRoot,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-18",8,1,"DEFAULT",List.of("A","B"),"KEEP"),null),null));
         service.deleteNode(quarterRoot,version(),true);
-        final long knockoutRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"KNOCKOUT")).nodes().getFirst().id();
-        service.createReplay(knockoutRoot,request("Knockout","2026-10-18",8,2,"WINNERS",List.of("A","B"),"KEEP"),null);
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(knockoutRoot,request("Bad","2026-10-18",8,null,null,List.of("A","B"),"KEEP"),null));
+        final long knockoutRoot = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"KNOCKOUT")).data().nodes().getFirst().id();
+        service.createReplay(knockoutRoot,new BroadcastDtos.TimedReplaySave(request("Knockout","2026-10-18",8,2,"WINNERS",List.of("A","B"),"KEEP"),null),null);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(knockoutRoot,new BroadcastDtos.TimedReplaySave(request("Bad","2026-10-18",8,null,null,List.of("A","B"),"KEEP"),null),null));
     }
     @Test void invalidReplayInputNeverUploadsOrCreatesPartialBusinessData() throws Exception {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
         final MockMultipartFile image = png();
         final BroadcastDtos.ReplaySave unsafe = new BroadcastDtos.ReplaySave(version(),"Title","javascript:alert(1)",
                 LocalDate.of(2026,10,16),1,1,null,List.of("A","B"),"POV","REPLACE");
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,unsafe,image));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,
-                request("Title","2026-10-16",1,1,null,List.of("A"," "),"KEEP"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,
-                request("Title","2026-10-16",1,1,null,List.of("A"),"KEEP"),null));
-        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,
-                request("Title","2026-10-16",1,1,null,List.of("A","B"),"KEEP"),image));
-        assertTrue(service.category(points).nodes().getFirst().replays().isEmpty());
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(unsafe,null),image));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                request("Title","2026-10-16",1,1,null,List.of("A"," "),"KEEP"),null),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                request("Title","2026-10-16",1,1,null,List.of("A"),"KEEP"),null),null));
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                request("Title","2026-10-16",1,1,null,List.of("A","B"),"KEEP"),null),image));
+        assertTrue(service.category(points).data().nodes().getFirst().replays().isEmpty());
         verify(storage,never()).put(anyString(),any());
     }
     @Test void deletionPreviewCannotAuthorizeChangesAddedAfterConfirmation() {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
         final BroadcastDtos.DeletionPreview stale = service.nodeDeletionPreview(root);
-        service.createReplay(root,request("Replay","2026-10-16",1,1,null,List.of("A","B"),"KEEP"),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Replay","2026-10-16",1,1,null,List.of("A","B"),"KEEP"),null),null);
         assertCode(ApiErrorCode.BROADCAST_VERSION_CONFLICT,()->service.deleteNode(root,stale.expectedVersion(),true));
         assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.deleteSeason(seasonId,version(),false));
         final BroadcastDtos.DeletionPreview current = service.seasonDeletionPreview(seasonId);
         assertEquals(1,current.rootCount()); assertEquals(1,current.replayCount());
         service.deleteNode(root,version(),true);
-        assertEquals(1,service.season(seasonId).categories().size()); assertTrue(service.category(points).nodes().isEmpty());
+        assertEquals(1,service.season(seasonId).categories().size()); assertTrue(service.category(points).data().nodes().isEmpty());
         service.deleteSeason(seasonId,version(),true);
         assertCode(ApiErrorCode.RESOURCE_NOT_FOUND,()->service.season(seasonId));
         assertEquals(0,jdbc.queryForObject("select count(*) from tournament_broadcast_category",Integer.class));
@@ -328,26 +284,196 @@ class BroadcastIntegrationTest {
             assertTrue(ready.await(10,TimeUnit.SECONDS)); start.countDown();
             assertTrue(first.get(20,TimeUnit.SECONDS) ^ second.get(20,TimeUnit.SECONDS));
         }
-        assertEquals(1,service.category(points).nodes().size());
+        assertEquals(1,service.category(points).data().nodes().size());
     }
     @Test void failedReplacementKeepsOldReplayAndCoverAndSuccessfulRemovalRetainsCleanupMetadata() throws Exception {
         final long points = category("POINTS");
-        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).nodes().getFirst().id();
-        final BroadcastDtos.Replay initial = service.createReplay(root,
-                request("Original","2026-10-16",1,1,null,List.of("A","B"),"REPLACE"),png()).nodes().getFirst().replays().getFirst();
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        final BroadcastDtos.Replay initial = service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                request("Original","2026-10-16",1,1,null,List.of("A","B"),"REPLACE"),null),png()).data().nodes().getFirst().replays().getFirst();
         assertTrue(initial.coverId() != null);
         final MockMultipartFile replacement = png();
         doThrow(new ApiException(ApiErrorCode.BROADCAST_STORAGE_ERROR)).when(storage).put(anyString(),any());
-        assertCode(ApiErrorCode.BROADCAST_STORAGE_ERROR,()->service.updateReplay(initial.id(),
-                request("Changed","2026-10-16",1,1,null,List.of("A","B"),"REPLACE"),replacement));
-        final BroadcastDtos.Replay preserved = service.category(points).nodes().getFirst().replays().getFirst();
+        assertCode(ApiErrorCode.BROADCAST_STORAGE_ERROR,()->service.updateReplay(initial.id(),new BroadcastDtos.TimedReplaySave(
+                request("Changed","2026-10-16",1,1,null,List.of("A","B"),"REPLACE"),null),replacement));
+        final BroadcastDtos.Replay preserved = service.category(points).data().nodes().getFirst().replays().getFirst();
         assertEquals("Original",preserved.title()); assertEquals(initial.coverId(),preserved.coverId());
-        final BroadcastDtos.Replay removed = service.updateReplay(initial.id(),
-                request("Removed","2026-10-16",1,1,null,List.of("A","B"),"REMOVE"),null).nodes().getFirst().replays().getFirst();
+        final BroadcastDtos.Replay removed = service.updateReplay(initial.id(),new BroadcastDtos.TimedReplaySave(
+                request("Removed","2026-10-16",1,1,null,List.of("A","B"),"REMOVE"),null),null).data().nodes().getFirst().replays().getFirst();
         assertNull(removed.coverId());
         assertTrue(jdbc.queryForObject("select unreferenced_at is not null from tournament_broadcast_cover where id=?",Boolean.class,initial.coverId()));
         service.deleteSeason(seasonId,version(),true);
         assertTrue(jdbc.queryForObject("select season_id is null from tournament_broadcast_cover where id=?",Boolean.class,initial.coverId()));
+    }
+    @Test void timedReplayRoundTripsAndExplicitNullClearsTheTime() {
+        final long points = category("POINTS");
+        final var nodeView = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null));
+        assertEquals("Europe/Moscow",nodeView.defaultTimeZone()); assertTrue(nodeView.replayStarts().isEmpty());
+        final long root = nodeView.data().nodes().getFirst().id();
+        final Instant start = Instant.parse("2026-10-15T22:30:00Z");
+        final var saved = service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                request("Timed","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),start),null);
+        final long id = saved.replayStarts().getFirst().replayId();
+        assertEquals(start,saved.replayStarts().getFirst().startsAt());
+        assertEquals(start,service.category(points).replayStarts().getFirst().startsAt());
+        assertEquals(start,jdbc.queryForObject("select match_starts_at from tournament_broadcast_replay where id=?",java.sql.Timestamp.class,id).toInstant());
+        final var cleared = service.updateReplay(id,new BroadcastDtos.TimedReplaySave(request("Date only","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        assertTrue(cleared.replayStarts().isEmpty()); assertNull(jdbc.queryForObject("select match_starts_at from tournament_broadcast_replay where id=?",java.sql.Timestamp.class,id));
+        assertNull(cleared.data().nodes().getFirst().replays().getFirst().groupNumber());
+    }
+    @Test void timedValidationUsesServerCalendarAcrossDstAndRejectsConflictsBeforeCoverUpload() throws Exception {
+        final List<String[]> examples = List.of(
+                new String[]{"CN","Asia/Shanghai","2026-01-01T00:30:00+08:00","2026-01-01"},
+                new String[]{"ASIA","Asia/Shanghai","2026-07-01T19:00:00+08:00","2026-07-01"},
+                new String[]{"NA","America/Los_Angeles","2026-07-02T01:00:00Z","2026-07-01"},
+                new String[]{"NA","America/Los_Angeles","2026-01-02T02:00:00Z","2026-01-01"},
+                new String[]{"EU","Europe/Berlin","2026-06-30T22:30:00Z","2026-07-01"},
+                new String[]{"EU","Europe/Berlin","2025-12-31T23:30:00Z","2026-01-01"});
+        for (final String[] example : examples) {
+            seasonId = service.createSeason(new BroadcastDtos.SeasonCreate(example[0],2026,"Event","Event",null,null)).season().id();
+            final long points = category("POINTS");
+            final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+            final Instant start = java.time.OffsetDateTime.parse(example[2]).toInstant();
+            final var valid = service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Timed",example[3],1,null,null,List.of("A","B"),"KEEP"),start),null);
+            assertEquals(example[1],valid.defaultTimeZone()); assertEquals(start,valid.replayStarts().getFirst().startsAt());
+            final long id = valid.replayStarts().getFirst().replayId();
+            final var stale = request("Stale",example[3],1,null,null,List.of("A","B"),"KEEP");
+            service.updateReplay(id,new BroadcastDtos.TimedReplaySave(stale,start),null);
+            assertCode(ApiErrorCode.BROADCAST_VERSION_CONFLICT,()->service.updateReplay(id,new BroadcastDtos.TimedReplaySave(stale,null),null));
+            final MockMultipartFile image = png();
+            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.updateReplay(id,new BroadcastDtos.TimedReplaySave(
+                    request("Wrong date",LocalDate.parse(example[3]).plusDays(1).toString(),1,null,null,List.of("A","B"),"REPLACE"),start),image));
+            assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.updateReplay(id,new BroadcastDtos.TimedReplaySave(
+                    request("Out of range",example[3],1,null,null,List.of("A","B"),"KEEP"),Instant.MAX),null));
+            assertEquals(start,service.category(points).replayStarts().getFirst().startsAt());
+        }
+        verify(storage,never()).put(anyString(),any());
+    }
+    @Test void timedOrderingKeepsDateOnlyRecordsStableWithoutInventingMidnight() {
+        final long points = category("POINTS"); final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Unknown one","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Late","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),Instant.parse("2026-10-16T17:00:00Z")),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Unknown two","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Early","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),Instant.parse("2026-10-16T10:00:00Z")),null);
+        assertEquals(List.of("Early","Late","Unknown one","Unknown two"),service.category(points).data().nodes().getFirst().replays().stream().map(BroadcastDtos.Replay::title).toList());
+        assertEquals(2,service.category(points).replayStarts().size());
+    }
+    @Test void optionalGroupsRoundTripAcrossAllWritableCategoryFormats() {
+        for (final String type : List.of("POINTS","SEMI_FINALS","QUARTER_FINALS")) {
+            final long category = category(type);
+            final long root = service.createNode(category,new BroadcastDtos.NodeCreate(version(),"POINTS".equals(type) ? 1 : null,"QUARTER_FINALS".equals(type) ? "KNOCKOUT" : null)).data().nodes().getFirst().id();
+            final String bracket = "POINTS".equals(type) ? null : "DEFAULT";
+            final var view = service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("No group","2026-10-16",1,null,bracket,List.of("A","B"),"KEEP"),null),null);
+            assertNull(view.data().nodes().getFirst().replays().getFirst().groupNumber());
+            assertNull(service.category(category).data().nodes().getFirst().replays().getFirst().groupNumber());
+            for (final Integer number : List.of(0,-1)) {
+                assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.createReplay(root,new BroadcastDtos.TimedReplaySave(request("Invalid group","2026-10-16",1,number,bracket,List.of("A","B"),"KEEP"),null),null));
+            }
+        }
+    }
+    @Test void seasonContentsIncludesEmptyCategoriesAndAllNodesWithExistingOrderingAndTimes() {
+        final var empty = service.seasonContents(seasonId);
+        assertTrue(empty.categories().isEmpty()); assertTrue(empty.nodes().isEmpty()); assertTrue(empty.replayStarts().isEmpty());
+        final long quarters = category("QUARTER_FINALS");
+        final long points = category("POINTS");
+        final long semis = category("SEMI_FINALS");
+        final long fifth = service.createNode(points,new BroadcastDtos.NodeCreate(version(),5,null)).data().nodes().getFirst().id();
+        final long first = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        final long quarter = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).data().nodes().getFirst().id();
+        service.createReplay(first,new BroadcastDtos.TimedReplaySave(request("Unknown one","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        service.createReplay(first,new BroadcastDtos.TimedReplaySave(request("Late","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),Instant.parse("2026-10-16T17:00:00Z")),null);
+        service.createReplay(first,new BroadcastDtos.TimedReplaySave(request("Unknown two","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+        service.createReplay(first,new BroadcastDtos.TimedReplaySave(request("Early","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),Instant.parse("2026-10-16T10:00:00Z")),null);
+        service.createReplay(quarter,new BroadcastDtos.TimedReplaySave(request("Earlier day","2026-10-15",1,null,null,List.of("A","B"),"KEEP"),Instant.parse("2026-10-15T10:00:00Z")),null);
+        final var contents = service.seasonContents(seasonId);
+        assertEquals(List.of(quarters,points,semis),contents.categories().stream().map(BroadcastDtos.Category::id).toList());
+        assertEquals(List.of(quarter,first,fifth),contents.nodes().stream().map(BroadcastDtos.Node::id).toList());
+        assertEquals(service.category(points).data().nodes(),contents.nodes().stream().filter(node -> node.categoryId() == points).toList());
+        assertEquals(List.of("Early","Late","Unknown one","Unknown two"),contents.nodes().get(1).replays().stream().map(BroadcastDtos.Replay::title).toList());
+        assertEquals(List.of(Instant.parse("2026-10-15T10:00:00Z"),Instant.parse("2026-10-16T10:00:00Z"),Instant.parse("2026-10-16T17:00:00Z")),
+                contents.replayStarts().stream().map(BroadcastDtos.ReplayStart::startsAt).toList());
+        assertEquals(3,contents.season().rootCount()); assertEquals(5,contents.season().replayCount());
+        assertEquals(version(),contents.season().version()); assertEquals("Europe/Moscow",contents.defaultTimeZone());
+        assertTrue(contents.coverUploadAvailable());
+        assertCode(ApiErrorCode.RESOURCE_NOT_FOUND,()->service.seasonContents(Long.MAX_VALUE));
+    }
+    @Test void seasonContentsRetainsOneSnapshotWhenAnAdministratorCommitsDuringTheRead() throws Exception {
+        final long points = category("POINTS");
+        final long root = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        final long initialVersion = version();
+        final CountDownLatch snapshotRead = new CountDownLatch(1);
+        final CountDownLatch continueRead = new CountDownLatch(1);
+        final AtomicBoolean firstRead = new AtomicBoolean(true);
+        doAnswer(call -> {
+            final Object result = call.callRealMethod();
+            if (firstRead.compareAndSet(true,false)) {
+                snapshotRead.countDown(); assertTrue(continueRead.await(10,TimeUnit.SECONDS));
+            }
+            return result;
+        }).when(mapper).node(any(),any());
+        try (final var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            final var read = executor.submit(() -> service.seasonContents(seasonId));
+            try {
+                assertTrue(snapshotRead.await(10,TimeUnit.SECONDS));
+                service.createReplay(root,new BroadcastDtos.TimedReplaySave(
+                        request("Concurrent","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null);
+            } finally { continueRead.countDown(); }
+            final var contents = read.get(10,TimeUnit.SECONDS);
+            assertEquals(initialVersion,contents.season().version());
+            assertEquals(1,contents.season().rootCount()); assertEquals(0,contents.season().replayCount());
+            assertTrue(contents.nodes().getFirst().replays().isEmpty());
+        } finally { continueRead.countDown(); }
+        assertEquals(1,service.seasonContents(seasonId).nodes().getFirst().replays().size());
+    }
+    @Test void deletingAnEmptyCategoryRequiresConfirmationAndUpdatesTheSeasonVersion() {
+        final long points = category("POINTS");
+        final var preview = service.categoryDeletionPreview(points);
+        assertEquals(new BroadcastDtos.DeletionPreview(seasonId,version(),0,0),preview);
+        assertCode(ApiErrorCode.INVALID_ARGUMENT,()->service.deleteCategory(points,preview.expectedVersion(),false));
+        assertEquals(1,service.seasonContents(seasonId).categories().size());
+        service.deleteCategory(points,preview.expectedVersion(),true);
+        assertEquals(preview.expectedVersion()+1,version());
+        assertTrue(service.seasonContents(seasonId).categories().isEmpty());
+        assertCode(ApiErrorCode.RESOURCE_NOT_FOUND,()->service.categoryDeletionPreview(points));
+    }
+    @Test void deletingACategoryRemovesAllItsRoundsButPreservesOtherCategoriesAndReferencedCovers() throws Exception {
+        final long points = category("POINTS");
+        final long first = service.createNode(points,new BroadcastDtos.NodeCreate(version(),1,null)).data().nodes().getFirst().id();
+        final long fifth = service.createNode(points,new BroadcastDtos.NodeCreate(version(),5,null)).data().nodes().getLast().id();
+        final var archived = service.createReplay(first,new BroadcastDtos.TimedReplaySave(request("Removed","2026-10-16",1,null,null,List.of("A","B"),"REPLACE"),null),png()).data().nodes().getFirst().replays().getFirst();
+        final var shared = service.createReplay(fifth,new BroadcastDtos.TimedReplaySave(request("Shared","2026-10-16",1,null,null,List.of("A","B"),"REPLACE"),null),png()).data().nodes().getLast().replays().getFirst();
+        final long quarters = category("QUARTER_FINALS");
+        final long quarter = service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN")).data().nodes().getFirst().id();
+        final var survivor = service.createReplay(quarter,new BroadcastDtos.TimedReplaySave(request("Preserved","2026-10-16",1,null,null,List.of("A","B"),"KEEP"),null),null).data().nodes().getFirst().replays().getFirst();
+        // Legacy/shared references must remain safe even though new uploads use one replay per cover.
+        jdbc.update("update tournament_broadcast_replay set cover_id=?,legacy_group_label='Archived original' where id=?",shared.coverId(),survivor.id());
+        final var preserved = service.category(quarters).data().nodes();
+        final var preview = service.categoryDeletionPreview(points);
+        assertEquals(2,preview.rootCount()); assertEquals(2,preview.replayCount());
+        service.deleteCategory(points,preview.expectedVersion(),true);
+        assertEquals(preserved,service.category(quarters).data().nodes());
+        assertEquals("Archived original",jdbc.queryForObject("select legacy_group_label from tournament_broadcast_replay where id=?",String.class,survivor.id()));
+        assertEquals(List.of(quarters),service.seasonContents(seasonId).categories().stream().map(BroadcastDtos.Category::id).toList());
+        assertEquals(1,service.seasonContents(seasonId).season().rootCount()); assertEquals(1,service.seasonContents(seasonId).season().replayCount());
+        assertEquals(preview.expectedVersion()+1,version());
+        assertTrue(jdbc.queryForObject("select unreferenced_at is not null from tournament_broadcast_cover where id=?",Boolean.class,archived.coverId()));
+        assertNull(jdbc.queryForObject("select unreferenced_at from tournament_broadcast_cover where id=?",java.sql.Timestamp.class,shared.coverId()));
+        covers.cleanup();
+        verify(storage,never()).delete(anyString());
+        jdbc.update("update tournament_broadcast_cover set unreferenced_at=now()-interval '25 hours' where id=?",archived.coverId());
+        covers.cleanup();
+        assertFalse(jdbc.queryForObject("select exists(select 1 from tournament_broadcast_cover where id=?)",Boolean.class,archived.coverId()));
+        assertTrue(jdbc.queryForObject("select exists(select 1 from tournament_broadcast_cover where id=?)",Boolean.class,shared.coverId()));
+        verify(storage).delete("league-broadcasts/covers/"+archived.coverId());
+    }
+    @Test void categoryDeletionRejectsAPreviewInvalidatedByAnEditInAnotherCategory() {
+        final long points = category("POINTS");
+        final long quarters = category("QUARTER_FINALS");
+        final var preview = service.categoryDeletionPreview(points);
+        service.createNode(quarters,new BroadcastDtos.NodeCreate(version(),null,"ROUND_ROBIN"));
+        assertCode(ApiErrorCode.BROADCAST_VERSION_CONFLICT,()->service.deleteCategory(points,preview.expectedVersion(),true));
+        assertEquals(2,service.seasonContents(seasonId).categories().size());
+        assertEquals(1,service.seasonContents(seasonId).nodes().size());
     }
     private long category(final String type) {
         return service.createCategory(seasonId,new BroadcastDtos.CategoryCreate(version(),type)).categories().stream()

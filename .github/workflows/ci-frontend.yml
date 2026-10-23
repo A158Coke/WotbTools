@@ -114,6 +114,9 @@ jobs:
             script: test:browser-broadcasts
           - label: Creator recommendations
             script: test:browser-creators
+          # 首页 reduced-motion：真实浏览器媒体查询 + computed style + hover，而不是源码正则。
+          - label: Home reduced motion
+            script: test:browser-home
           # 场景材质着色器编译门禁（真 three.js + headless Chrome）：编译失败在页面上
           # 只表现为“物体不渲染”，普通单测/source 断言抓不到；覆盖 ST/lightmap/decal
           # 的 alphaBlend 路由与共享地面 shader。

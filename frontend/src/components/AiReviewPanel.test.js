@@ -505,6 +505,20 @@ describe('AiReviewPanel failure states', () => {
     expect(partial.text()).toContain('recon.partial_incomplete')
     vi.unstubAllGlobals()
   })
+
+  it('完成后只保留格式化报告，不再并列显示原始流正文', async () => {
+    // #679 回归：done 之后 partialAnalysis 仍非空，曾把原始 Markdown 与格式化报告同时展示。
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseFromFrames(
+      sseFrame('call2_token', { delta: '## 复盘\n**关键转折**' }),
+      sseFrame('done', { analysis: '## 复盘\n**关键转折**', preBattleSection: '' }),
+    )))
+    const wrapper = mountPanel({ projection: projectionA })
+    await wrapper.find('.ai-analyze').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.result-stub').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="ai-partial"]').exists()).toBe(false)
+    vi.unstubAllGlobals()
+  })
 })
 
 // ---- 投影 identity 必须进入 AI request ownership ----

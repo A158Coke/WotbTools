@@ -40,6 +40,8 @@ const props = defineProps({
   replayContext: { type: Object, default: null },
   /** Workspace presentation state（dataViewMode/currentBattleIndex 等）；独立使用时为空。 */
   workspaceContext: { type: Object, default: null },
+  /** Workspace capability 是否为 data；embedded 时由 v-show 控制，false 时关闭 Teleport 到 body 的 picker。 */
+  active: { type: Boolean, default: true },
 })
 const { locale, t, te } = useI18n()
 const replay = props.replayContext || useReplay()
@@ -587,6 +589,7 @@ function openRatingDocs() {
           />
           <BattlePicker
             v-if="!isSummaryView && pickerOptions.length > 1"
+            :visible="active"
             :options="pickerOptions"
             :model-value="currentSourceId"
             :aria-label="$t('workspace.battle_picker')"

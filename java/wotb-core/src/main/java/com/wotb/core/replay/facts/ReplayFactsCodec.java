@@ -28,7 +28,7 @@ import java.util.Map;
  * 原生处理。
  *
  * <p>只保留解码方向：AI Review 的写入侧（stored facts）已随 artifact 一起移除，standalone
- * ai-service（{@code com.wotb.ai.AiReviewController}）只消费客户端投影的请求体。</p>
+ * ai-service 消费客户端投影请求。</p>
  */
 public final class ReplayFactsCodec {
 

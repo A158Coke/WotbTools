@@ -1,50 +1,42 @@
 # WotbTools 项目历史
 
-本文记录 WotbTools 的主要产品、架构与工程演进。它不是逐版本变更日志，也不试图重复 Git 已经保存的实现细节；重点记录当时为什么做出关键选择、这些选择解决了什么问题，以及它们如何影响后续设计。
+本文记录 WotbTools 的**产品/业务演进**：用户可见或商业能力为何引入、变化、退役，以及产品方向决策。它不是逐版本变更日志，也不是技术架构史；技术/架构演进见 [`docs/architecture/TECHNICAL_EVOLUTION.md`](docs/architecture/TECHNICAL_EVOLUTION.md)。
 
-Git Commit 与 Pull Request 是历史证据的事实源；本文是项目演进叙事的事实源。日期按关键决策进入主线的时间记录。
+Git Commit 与 Pull Request 是历史证据的事实源；本文是产品/业务演进叙事的事实源。日期按关键决策进入主线的时间记录。
 
 ---
 
 ## 2026-06-23 — 从 Replay 数据提取器开始
 
-WotbTools 最初源于一个 Python 编写的 WoT Blitz Replay 数据提取工具，目标是解析 `.wotbreplay` 文件、汇总玩家战斗数据，并提供 Excel 导出与可视化能力。
+WotbTools 最初是一个 Replay 数据提取工具，目标是解析 `.wotbreplay`、汇总玩家战斗数据，并提供 Excel 导出与可视化能力。
 
-项目建立 Git 仓库后，很快将主要实现迁移到 Java 21，并建立共享的 `wotb-core`，将 Replay 解析、数据聚合和导出能力与具体交付方式分离。
+项目建立 Git 仓库后很快把主要实现转入 Java，并将 Replay 解析、数据聚合和导出能力做成可长期维护的共享核心。
 
-早期同时尝试了 Web 和基于 Spring Boot + Vue + jpackage 的本地离线版本。离线版本是一次短期产品方向探索，随后项目选择 Web 作为主要发展方向。
+早期同时尝试了 Web 和本地离线桌面版本。离线版本是一次短期产品方向探索，随后项目选择 Web 作为主要发展方向。
 
-**Git 证据：** `6edb2d36`、`05049a7e`、`00fc0713`。
+## 2026-06-24 — 从最终战果扩展到战斗过程
 
-## 2026-06-24 — Event Stream 从死亡时间与存活时间开始
+WotbTools 最初主要展示一场战斗的最终结算。项目第一次深入读取战斗过程数据，直接目的是回答玩家活了多久、何时死亡，从而得到 survival time；随后这条能力继续扩展到更多战斗过程信息。
 
-WotbTools 最初主要读取 Replay 中的最终战斗结果。项目第一次深入解析 Event Stream 的直接目的，是确定玩家的死亡时间，从而得到 survival time，而不是一开始就为了 AI Review 建立完整战斗重建。
+这些早期过程数据后来成为 Rating、Battle Reconstruction、AI Review 与 Battle Playback 的共同基础。到 7 月建立 Battle Reconstruction 与 AI Review 时，早期的事件读取能力才进一步发展成系统性的战斗过程与 Evidence 模型。
 
-事件流随后继续扩展到更多战斗过程信息，并逐渐成为后续 Rating、Reconstruction、AI Review 与 Playback 可以继续利用的数据基础。到 7 月建立 Battle Reconstruction 与 AI Review 时，这条早期事件流能力才进一步发展成系统性的战斗过程与 Evidence 模型。
-
-同期项目也首次尝试从 Replay 原始数据计算玩家表现 Rating。这不是后来赛事 Rating 的直接实现，但建立了“从原始战斗事实推导表现评价”的早期思路。
-
-**Git 证据：** `87857033`、`f21cec8c`、`33bfe19a`、`7ef93090`、`483244e3`、`13677236`、`4741dd08`。
+同期项目也首次尝试从回放原始数据计算玩家表现 Rating。这不是后来赛事 Rating 的直接实现，但建立了“从实际战斗过程推导表现评价”的早期产品思路。
 
 ## 2026-06-25～06-27 — 从工具转向长期运行的 Web 服务
 
 项目将前端和后端逐渐分离为独立服务，为长期 Web 版本建立基础，离线版本随后退出主要发展路线。
 
-排行榜需求首先推动了持久化能力落地。跨 Replay 长期保存和查询成绩不能依赖一次性文件处理，因此项目引入 PostgreSQL、Hibernate 和 Flyway，数据库开始成为长期业务状态的一部分。
+排行榜需求首先推动持久化能力落地。跨 Replay 长期保存和查询成绩不能依赖一次性文件处理，数据库因此成为长期业务状态的一部分。
 
-随着账号绑定和用户资料出现，项目又需要稳定的用户身份，因此引入 Keycloak。WotbTools 从匿名 Replay 工具开始拥有长期身份边界，数据库和身份系统也为之后更复杂的业务能力提供了基础。
+随着账号绑定和用户资料出现，项目又需要稳定的用户身份，WotbTools 从匿名 Replay 工具开始拥有长期身份边界。数据库和身份系统也为之后更复杂的业务能力提供了基础。
 
-**Git 证据：** `81135740`、`fcbd9ce7`、`65b49772`、`62faf6ef`、`51339c00`、`58fca7a7`、`93aafb8e`、`2095fa23`、`6e31c809`、`0bef1090`、`fb47bc78`、`79806fa2`、`ae417d5f`、`331f5d31`、`71b52b89`。
-
-## 2026-06-28～07-03 — 用户体系、代练业务与 Keycloak 扩展
+## 2026-06-28～07-03 — 用户体系、代练业务与 QQ 登录
 
 Keycloak 引入后，项目继续建设用户资料和 WoT Blitz 账号绑定，身份开始从“谁能登录”进入业务模型。
 
-同期项目探索 Replay 分析之外的玩家服务，引入 Coaching 与代练业务。代练并非单一页面，而逐渐形成请求、状态、人员分配、用户关系和后台管理等完整流程。数据库、身份和权限系统开始服务有状态业务，产品一度从 Replay 工具向更综合的平台扩展。
+同期项目探索 Replay 分析之外的玩家服务，引入 Coaching 与代练业务。代练并非单一页面，而逐渐形成请求、状态、人员分配、用户关系和后台管理等完整流程，产品一度从 Replay 工具向更综合的平台扩展。
 
-为了降低目标用户的登录门槛，项目开始支持 QQ 登录。现成方案不能完全满足需求后，项目开发和调整 Keycloak Identity Provider，使 Keycloak 从外部认证组件进一步成为拥有自定义身份扩展和映射逻辑的平台组件。
-
-**Git 证据：** `47fbae0a`、`63ca1a2a`、`a5d0b788`、`252a0a74`、`d2671e5a`、`d6e6f708`、`439a8a2f`、`6fb53ac7`、`e538d4a6`、`c8ffac93`、`7f54a536`。
+为了降低目标用户的登录门槛，项目增加 QQ 登录入口，让中国区用户不必再注册一套独立账号。登录方式因此成为产品用户体系的一部分，而不只是一个技术接入点。
 
 ## 2026-07-05～07-14 — Rating V2 实验与用户业务深化
 
@@ -54,67 +46,27 @@ Rating V2 不应理解为后来赛事 Rating 的直接前身；它是基于早�
 
 同期项目开放用户注册，并继续完善代练业务中的角色、人员资料、用户删除数据清理、并发和审计等能力。此时 WotbTools 同时探索 Replay 数据分析、不同评价体系以及玩家服务等多个产品方向。
 
-**Git 证据：** `ae4cefee`、`b0698264`、`dcb04ac8`、`429d3a59`、`67b71dd2`、`09ebd1d9`、`5726e9f0`、`ce2601c0`、`57460d43`、`046798c2`。
+## 2026-07-22～07-26 — AI 战术复盘首次上线，并确立“AI 解释事实”边界
 
-## 2026-07-22～07-26 — Reconstruction 建立，并首次形成 Evidence → AI Review 链路
+在战斗过程数据的基础上，项目进一步建立 Battle Reconstruction，让回放从“提取数据”走向“重建战斗如何发生”。
 
-在此前开始解析 Replay Event Stream 后，项目进一步建立 Battle Reconstruction。Replay Packet 被解码为领域事件，并通过 `BattleStateReconstructor` 重建战场状态、参与者、事件时间线和时间点 Snapshot。Replay 解析由单纯提取过程数据开始转向重建“战斗是如何发生的”。
+Reconstruction 建立后，项目立即开始实验 AI 战术复盘。第一版 DeepSeek AI Review 首先以管理员灰度能力上线，随后扩展到批量 Replay：项目开始区分“文件数量”和“真正的分析单元”，并支持随机战的个人视角、训练房和赛事的团队视角。
 
-Reconstruction 建立后，项目立即开始实验 AI 战术复盘。第一版 DeepSeek AI Review 将重建结果转换为紧凑的战斗上下文，并首先以管理员灰度能力上线。
+实际逆向很快暴露出一条关键边界：能够从回放解码某个字段，并不意味着已经知道它的游戏语义。项目因此停止将未经证明的数值直接解释为血量或伤害，并明确区分证据来源——`battle_results.dat` 中的最终结算负责伤害、承伤、助攻、击杀、生存和胜负等权威事实；Reconstruction 负责位置、移动、事件顺序和战斗过程等可观察信息。AI 只能解释这些数据，不能自行创造事实。
 
-实际逆向很快暴露出关键边界：能够从 Event Stream 解码某个字段，并不意味着已经知道它的游戏语义。项目因此停止将未经证明的 Type 7 数值直接解释为血量或伤害，开始区分证据来源：`battle_results.dat` 中的最终结算负责伤害、承伤、助攻、击杀、生存和胜负等权威事实；Reconstruction 负责位置、移动、事件顺序和战斗过程等可观察信息。AI 只能解释这些数据，而不能自行创造事实。
+**这一阶段确立了 AI 复盘的产品信任边界：事实先行，AI 解释事实。**
 
-AI Review 随后扩展到批量 Replay。项目开始通过 Battle Identity、重复检测、Perspective Group 和 Representative Replay 区分“文件数量”和“真正的分析单元”。随机战采用个人视角，训练房和赛事则开始采用团队视角；同一场战斗的双方 Replay 保持独立 Perspective，而不是合并成事后全知视角。
+## 2026-08-05～08-06 — 从开放注册转为受控第三方登录
 
-到 07-26，AI 输入开始摆脱 Replay 的底层表示：Team Number 转换为 `FRIENDLY / ENEMY / UNKNOWN`，坐标获得有效性状态，时间统一为 Battle-relative Time，成员身份和地图位置也通过共享 Resolver 转换为领域语义。
+随着更多功能要求登录，项目不希望继续开放普通用户自注册，而是通过受控 Identity Provider 管理用户入口。中国区使用 QQ；海外玩家选择与 WoT Blitz 用户身份更相关的 Wargaming，而不是通用社交登录。Wargaming 登录随后覆盖 ASIA、EU 和 NA，并将可信的游戏账号信息同步到业务 Profile。
 
-**这一阶段建立了后来 AI 架构的基本方向：Replay Event Stream 用于 Reconstruction，权威结算与重建信息共同形成 Evidence，经过稳定领域语义转换后再交给 AI。**
+登录模型因此逐渐形成：普通用户通过 Identity Provider 进入，管理员仍保留管理入口；身份提供方不仅负责认证，也开始为后续游戏身份绑定提供可信来源。
 
-**Git 证据：** `91c6f5c4`、`01412d57`、`a9e21024`、`ab3c5a0d`、`4997f459`、`88946cca`、`c5e7c9dc`。
+## 2026-08-06～08-09 — AI 复盘引入游戏知识与地图语义
 
-## 2026-08-02～08-04 — 建立生产可观测能力
+Reconstruction 可以描述战斗过程，但不能独立解释车辆能力、地图战术和阵容含义。项目因此开始为 AI 建立游戏领域知识：车辆数据覆盖实际版本与新车，地图位置映射到战术区域、路线和关系。
 
-随着 AI Review 带来长耗时调用、外部服务依赖、超时和失败路径，单纯判断“服务是否在线”已经不足以理解生产状态。
-
-项目引入 Grafana、Prometheus、Loki 和 Alloy，对 Replay 解析、AI Review、服务运行状态以及关键队列和失败路径建立观测，并持续修正指标边界和语义。
-
-生产运维开始从“容器是否启动”转向“功能是否真正工作、调用停在哪里、失败发生在哪一层”。
-
-**Git 证据：** `5f4cdc2a`、`d9459530`、`4cd46ffc`、`1356752f`、`cc00b5f7`、`de46255c`、`f6a4b165`、`422fa4a0`、`e357b786`、`f91df447`、`b7474a6`。
-
-## 2026-08-05～08-06 — 建立面向国内外玩家的受控 IdP 登录体系
-
-随着更多功能要求登录，项目不希望继续开放普通用户自注册，而是希望通过受控 Identity Provider 管理用户入口。
-
-中国区使用 QQ；海外玩家则选择与 WoT Blitz 用户身份更相关的 Wargaming，而不是通用社交登录。Wargaming Provider 随后扩展到 ASIA、EU 和 NA，并将可信的游戏账号信息同步到业务 Profile。
-
-因此登录模型逐渐形成：普通用户通过 IdP 进入，管理员仍保留管理入口；身份提供方不仅负责认证，也开始为后续游戏身份绑定提供可信来源。
-
-**Git 证据：** `abaf07eb`、`edeb12a2`、`ad115e16`、`a634630f`、`83fe572c`、`ef69eb7c`、`0465a929`、`07f84759`、`b7c7c44a`、`23d28f20`。
-
-## 2026-08-06 — 生产部署首次建立不可变 Release 与自动回滚
-
-持续运行真实生产服务后，Docker `latest` Tag 已无法可靠回答“生产究竟运行哪一个源码版本”。项目因此首次将 Backend、Frontend 和 Keycloak 的生产镜像统一绑定到 Git Commit SHA，并通过 `DEPLOYED_SHA` 记录当前生产版本。
-
-部署成功的定义也从“容器启动”扩展为关键应用路径通过健康检查。新版本启动或健康检查失败时，部署流程恢复此前保存的 Compose 和 Release SHA，并重新验证恢复后的服务。
-
-不可变 Release 很快暴露出与增量构建的冲突：如果只构建发生变化的组件，就无法保证三个组件都存在同一个 `sha-<commit>` Artifact。项目选择 Release 完整性优先，每次生产发布统一构建完整 SHA Artifact Set。
-
-部署配置随后采用 Candidate → Promotion：新的 Compose 先写入 `docker-compose.next.yml` 并验证镜像可获取，成功后才替换生产配置。回滚目标也不再简单等于“上一份 Compose”，只有引用的镜像确实存在时才允许覆盖此前保存的恢复目标。
-
-**这一阶段首次建立后来 Release Contract 的核心思想：生产版本必须具有不可变身份，发布必须经过运行时验证，而回滚目标必须是已经证明可恢复的状态。**
-
-**Git 证据：** `9460f5b4`、`9fea9a47`、`42b42904`。
-
-## 2026-08-06～08-09 — 为 AI Review 建立游戏知识与战术语义
-
-Reconstruction 可以描述战斗过程，但不能独立解释车辆能力、地图战术和阵容含义。项目因此开始为 AI 建立游戏领域知识。
-
-车辆数据最初来自 Wargaming 官方数据，随后为了覆盖实际版本和新车逐步切换到 BlitzKit；地图位置也开始映射到战术区域、路线和关系。
-
-从此 AI Review 的输入逐渐分成两个层次：Replay Evidence 描述“实际发生了什么”，游戏知识和地图语义帮助解释“这些事实意味着什么”。外部知识只能解释 Evidence，不能覆盖或改写 Replay 已经证明的事实。
-
-**Git 证据：** `dadc1d74`、`c610b117`、`2828f1ab`、`0f1e3fac`、`c2777fde`、`31c65495`、`4e879886`、`c084ad29`、`60d13a34`、`8ecb5dde`、`16e48910`、`318637ee`、`d4fe6616`、`e56b70af`、`0916f0ab`、`dc372c14`。
+从此 AI 复盘的输入分成两个层次：Replay Evidence 描述“实际发生了什么”，游戏知识和地图语义帮助解释“这些事实意味着什么”。外部知识只能解释 Evidence，不能覆盖或改写 Replay 已经证明的事实。
 
 ## 2026-08-11～08-16 — Reconstruction 发展为可视化战局回放
 
@@ -124,533 +76,81 @@ Playback 因此成为 Reconstruction 的人类可见验证面：如果重建事�
 
 随着逆向深入，项目也更明确地区分 Observed、Derived 和 Unknown。无法从 Replay 证明的信息保持未知，而不是为了视觉完整性填充猜测。车辆视觉资源则逐渐复用 BlitzKit。
 
-架构由单一 AI 消费者扩展为共享事实层：
-
-`Replay → Parser → Reconstruction → Battle Playback / Evidence → AI Review`
-
-**Git 证据：** `c656095d`、`90748589`、`a0a17ac6`、`1ee0c1a1`、`46153376`、`febaf5ba`、`91cb82a4`、`2c9aebf6`、`b5734cca`、`efd7170a`、`c5082716`、`e7dfc0d5`。
-
-## 2026-08-12～08-20 — AI Review 从 Prompt 调试走向 Evidence Contract
-
-随着 AI Review 复杂度提高，仅通过 Prompt 要求模型“不要幻觉”已经不足以保证结果可靠。
-
-项目开始建立 Evaluation Harness、Golden Cases 和回归验证，将知识状态逐渐转化为可执行契约；Canonical BattleTimeline 开始统一 AI 所依赖的事实，并逐步建立 Claim 与 Evidence 的绑定。
-
-Backend 与 LLM 的责任边界因此被明确：
-
-**Backend 决定事实，LLM 负责解释事实。**
-
-AI Review 从 Prompt 驱动功能逐渐发展为具有 Evidence、来源、Knowledge State、质量门禁和回归体系的系统。
-
-**Git 证据：** `a795c603`、`f85c3315`、`84b20edb`、`d78e35a5`、`8f831eee`、`d0607b3c`、`6eb8c10b`、`0f91c15b`、`c13282e2`、`99569147`、`99b40298`、`f5c3ba08`、`04aa4708`、`00503cfd`。
-
-## 2026-08-17～08-18 — Leaderboard 演化为 Hall of Fame，并建立可审核的数据提交机制
+## 2026-08-17～08-18 — Leaderboard 演化为 Hall of Fame，并建立可审核的提交机制
 
 早期排行榜主要从上传 Replay 的结果自动生成成绩。随着功能发展为 Hall of Fame，并开始保存百场、三环等不同荣誉，仅保存最终分数已经不足以支撑长期可信度。
 
-项目开始保留原始 Replay，使成绩能够追溯到证据；百场等能力进一步采用一组 Replay Evidence 加管理员人工审核的流程。
+项目开始保留原始 Replay，使成绩能够追溯到证据；百场等能力进一步采用一组 Replay Evidence 加管理员人工审核的流程。数据提交从“只看结果”转向“结果必须可追溯、可审核”，公开成绩因此同时包含自动提取与人工确认。
 
-数据模型因此从“保存结果”转向：
-
-`提交 → Evidence → Review → Decision`
-
-数据库和存储系统开始共同管理原始证据生命周期，而不只是最终业务结果。
-
-**Git 证据：** `ebf2b4e6`、`674ae143`、`dc3f07db`、`03743d20`、`1bbcd9ab`、`f2b41bfd`、`4c643627`、`d2d3dd6b`、`62436731`、`03d2ed20`、`0590c1ae`、`69299717`。
-
-## 2026-08-27～08-29 — Replay 研究收敛为生产级协议与事实模型
-
-随着 AI、Playback 和 Rating 都依赖 Replay，分散的启发式解析、重复推导和未经证明的协议语义开始成为系统性风险。
-
-项目将长期逆向研究收敛为生产协议模型，明确区分已确认事实、版本限定语义、遗留启发式和未知状态，并逐步为死亡、血量、AoI、移动、射击和结算等事实建立单一权威来源。
-
-版本兼容也从简单的“支持某个 Replay 版本”转向按能力记录证据。Battle Playback V2 进一步尝试重建“在时间 t 当时能够知道什么”，避免利用后来才出现的信息污染过去的视角。
-
-核心链路逐渐稳定为：
-
-`Replay Binary → Protocol Decoder → Canonical Replay Facts → Reconstruction → Canonical BattleTimeline → Evidence → AI Review`
-
-以及：
-
-`Canonical Replay Facts → Battle Playback Projection → 用户可见状态`
-
-**Git 证据：** `a0a5bc49`、`d0b83a2f`、`435573a2`、`04facd45`、`033bd1b4`、`13162e0e`、`a7e4147f`、`68cddcf4`、`4258de67`、`0c435a7f`、`07aeb908`、`b5182ae1`、`9c480296`、`2f78e06a`。
+Hall of Fame 的长期荣誉也提出一个产品问题：成绩究竟属于登录 WotbTools 的账号，还是属于实际参加战斗的 WoT Blitz 玩家。项目最终选择让荣誉归属于实际游戏身份，而不是某一种登录方式。
 
 ## 2026-08-29～08-30 — Android Thin Client
 
 Web 继续作为主要产品和业务实现，Android 客户端被明确设计为 Thin Client，而不是第二套 Replay、AI 或 Playback 实现。
 
-Native 层只处理 Web 难以直接完成的设备能力：接收 `.wotbreplay`、临时缓存、Web 与 Android Bridge、安装和更新。Native Bridge 同时建立 capability check 和安全边界。
+Native 层只处理 Web 难以直接完成的设备能力：接收 `.wotbreplay`、临时缓存、Web 与 Android Bridge、安装和更新。APK 签名、版本和自动发布能力使客户端真正具备分发条件。
 
-APK 签名、版本和自动发布能力使客户端真正具备分发条件。与项目早期桌面版不同，这次客户端重新进入产品体系时没有复制核心业务逻辑。
-
-**Git 证据：** `97aad637`、`c6b84b3d`、`90ee4add`、`9e7f9ea1`、`c7cd81b3`、`718815c8`、`80dcb0d3`、`cad8d130`、`d3144461`、`da8b355b`。
+与项目早期桌面版不同，这次客户端重新进入产品体系时没有复制核心业务逻辑。
 
 ## 2026-08-29～08-31 — Replay Workspace 统一 Replay 工作流
 
-Data、AI Review、Battle Playback 等能力此前各自维护 Replay 上下文，逐渐产生重复上传、状态不同步和异步竞态。
+Data、AI Review、Battle Playback 等能力此前各自维护 Replay 上下文，用户需要重复上传，状态也容易不同步。Replay Workspace 将这些能力统一到共享的当前战斗上下文，并明确“Replay 可以解析”不代表“所有高级能力都可用”。
 
-Replay Workspace 将这些能力统一到共享的当前战斗上下文，并通过 Capability Model 明确“Replay 可以解析”不代表“所有高级能力都可用”。
-
-这次整合也推动前端明确共享状态 ownership、修复异步竞态，并逐步采用 Vue Router 和 TypeScript 管理核心 Replay 域。后两者是实现手段，而不是独立的产品历史节点。
-
-**Git 证据：** `62f2e7ac`、`f30ef415`、`b54be83c`、`a22b2508`、`9a5e50e1`、`ad3bbbea`、`ec956315`、`cc89e760`、`82f8a422`、`ba0ca608`、`8f9b4b93`、`578deb22`。
-
-## 2026-08-31 — 国内访问问题推动双服务器架构探索
-
-最初生产环境运行在 yecaoyun 香港服务器。国内用户访问香港环境不稳定后，项目增加腾讯云国内服务器。
-
-这带来新的问题：既然两台付费服务器已经同时存在，如何让两边资源都参与生产，而不是让其中一台长期闲置或只承担简单代理。
-
-项目因此开始探索 Control / Execution 分离、异步 Job Contract 和跨服务器任务分配，并为未来 Object Storage 与 Worker 建立边界。
-
-这一阶段仍然只是架构与代码责任划分，RabbitMQ、对象存储和远程 Worker 尚未形成真实生产执行链。
-
-**Git 证据：** `d4d9a459`、`c8482c91`、`d2a823ed`、`ff311c87`、`ad4eff6a`。
+这次整合改善了同一场战斗在多个能力之间的连续体验，也为后来“选择一次文件、切换多个能力”的工作台方向奠定基础。
 
 ## 2026-09-05～09-06 — League Rating 形成训练赛与赛事表现评价体系
 
 项目重新建立面向训练房和锦标赛的表现评价体系。它继承早期“从 Replay Facts 推导玩家表现”的一般思想，但不是 Rating V2 的直接后续实现。
 
-League Rating 明确限制在训练和赛事等结构化竞技场景，随机战隐藏。评分只依赖 Canonical Replay Facts，并接受部分事实为 UNKNOWN。
-
-V4.1 建立单场评分，随后 V5 探索批量聚合，V6 将个人和队伍聚合模型收敛。赛事 Replay Corpus 用于研究和校准，但并未被定义为冻结的 Golden Dataset。
-
-**Git 证据：** `1d53a09e`、`fd4fefed`、`130a13a8`、`863add73`、`98d78d86`。
+League Rating 明确限制在训练和赛事等结构化竞技场景，随机战不展示。评分接受部分事实为 UNKNOWN，不为了给出分数而补造信息。V4.1 建立单场评分，随后 V5 探索批量聚合，V6 收敛个人和队伍聚合模型。赛事 Replay Corpus 用于研究和校准，但并未被定义为冻结的 Golden Dataset。
 
 ## 2026-09-05～09-06 — Team AI Review 从结果归责转向战术因果复盘
 
 早期 Team Autopsy 曾探索战斗总结以及 culprit / MVP 等结果归责。新的 Team AI Tactical Review 改变了目标：不再强制寻找责任人或错误，而是解释团队战术过程和因果链。
 
-Strategic Prior 只作为非权威基线，不能被 AI 描述为队伍真实制定的计划；Replay 也不能证明语音沟通、指挥责任、心理状态等信息。
-
-团队复盘逐渐采用从 Information / Vision、Objectives、Local Engagements、Position / Tempo 到 Team Execution、HP / Trades 的推理链，并严格区分 CURRENT、LAST_KNOWN 和 UNSEEN。
+Strategic Prior 只作为非权威基线，不能被 AI 描述为队伍真实制定的计划；Replay 也不能证明语音沟通、指挥责任、心理状态等信息。团队复盘因此严格区分当前可见、最后已知和完全未观测的信息，缺失就保持未知。
 
 Backend 继续只提供事实，不提前生成 BAD_PUSH、GOOD_TRADE 等战术结论。Team Autopsy 后来退出生产，但作为这一产品方向的早期探索保留在历史中。
 
-**Git 证据：** `6071f416`、`cba4d666`、`4c5ead50`、`1368a877`、`efb2ab89`、`a0b89bbe`、`a42b647a`、`07afeeba`。
-
-## 2026-09-05～09-07 — 可观测性进入事故诊断与发布安全机制
-
-最初的可观测系统主要用于观察生产指标和日志。随着真实生产故障增加，项目开始要求一次事故能够从用户看到的错误标识一路追踪到 Backend、Replay Processing、AI 上游调用、验证和最终失败。
-
-生产事故面板因此引入 errorId、correlationId、jobId 等筛选，并能够按时间查看单次 Incident 生命周期。CI 同时开始验证真实 Docker emitter → Alloy → Loki 数据链，避免“配置文件存在但生产日志链实际不可用”。
-
-可观测性随后进入发布门禁。生产部署不仅检查应用健康，也验证 Metrics、Prometheus Target、Loki Stream、Grafana Datasource 和 Dashboard 等运行链路。
-
-在一次生产恢复问题后，回滚权威进一步从简单 Previous Deployment 收敛为经过完整验证的 Last Known Good。LKG 保存已验证的部署树、Compose、SHA，后来又加入 Capability Metadata；缺少可靠 LKG 时默认 Fail Closed，而不是盲目把时间上较旧的版本当作可恢复版本。
-
-同时项目开始区分 Application Availability 与 Observability Availability：观测栈故障需要报告和修复，但不能在应用本身健康时错误地阻止建立恢复基线或导致不必要的业务回滚。
-
-**这一阶段使 Observability 从“查看生产”进入“证明生产状态、定位事故并参与安全发布与恢复”的工程机制。**
-
-**Git 证据：** `3269cc31`、`f803fc84`、`69cb6e2b`、`8e8cd8fb`、`39d2dcb3`、`bef1d91d`、`4d0db653`、`d559e899`、`761b358e`。
-
 ## 2026-09-05 — 从完整 3D 地图探索收敛到 2.5D 战术回放
 
-项目曾认真研究和提取真实地图 3D / Terrain 数据，但最终确认 Battle Playback 真正需要的是可靠地形事实，而不是复制完整游戏场景。
+项目曾认真研究和提取真实地图 3D / Terrain 数据，但最终确认 Battle Playback 真正需要的是可靠地形事实，而不是复制完整游戏场景。因此产品方向收敛到 2.5D 战术回放：保留权威地形高度，车辆继续使用 2D Hull / Turret 资产；Pitch 和 Roll 可以根据地形派生用于表现，但不能声称 Replay 记录了车辆完整 3D 姿态。
 
-因此保留权威 Terrain Heightfield，车辆继续使用 2D Hull / Turret 资产；Pitch 和 Roll 可以根据地形派生用于表现，但不能声称 Replay 记录了车辆完整 3D 姿态。
+29 张地图同时进行 AI 超分辨率处理，保留原始来源并要求几何结构不能改变。达到源素材细节上限后停止继续放大。这再次强化一条产品原则：事实模型与派生表现必须分离。
 
-29 张地图同时进行 AI 超分辨率处理，保留原始来源并要求几何结构不能改变，通过人工和自动 Gate 验证。达到源素材细节上限后停止继续放大。
+## 2026-09-22 — 游戏身份增加“已验证”标记
 
-这再次强化项目的一条通用原则：事实模型与派生表现必须分离。
+Hall of Fame 的长期荣誉让“成绩属于实际玩家”成为产品要求，但“用户绑定了某个游戏账号”仍不等于系统有证据证明该账号属于当前用户。项目因此增加用户可见的“已验证”游戏身份标记。
 
-**Git 证据：** `778d13c3`、`5249e724`、`5e196c0d`、`85dcb9e9`、`245c1535`。
+验证证据可以来自可信的登录声明，也可以来自用户本人处理过的 Replay；无法可靠证明时保持未验证。昵称相同、账号出现在同局玩家列表等间接信息不能作为验证依据。更换区服或账号会清除验证，昵称变化不会。
 
-## 2026-09-09 — 国内生产节点进入基础设施代码管理，生产发布开始采用不可变 Artifact
+验证被设计为旁路能力：验证失败不能让已经成功的 Replay 处理失败。游戏身份由此同时回答两个产品问题：账号是谁，以及为什么相信这个账号属于当前用户。
 
-腾讯云已有资源开始通过 OpenTofu 纳入声明式管理。已有 COS 采用 discover → declare → manual import → no-changes 的方式接管，而不是重建；腾讯 Lighthouse 和防火墙也进入基础设施代码管理。
+## 2026-09-23 — 代练业务退出产品范围
 
-发布体系同时继续演进。PR CI 负责质量门禁，Build 冻结 Source Commit 并生成不可变 SHA Image，Deploy 只消费已经产生的 Artifact，而不是部署时重新决定源码和镜像。
+在双服务器迁移和复杂度审计后，项目结束早期代练产品方向：相关前后端、数据结构与权限被完整移除。代练作为曾经真实存在的产品探索保留在历史中，但不再属于当前产品。
 
-定向组件发布和回滚开始出现，但这一阶段仍然属于国内生产节点与 Release Pipeline 的生产化准备，并不意味着双服务器 Worker 架构已经完成。
+## 2026-10-03 — 回放能力从“多个页面”收敛为一个回放工作台
 
-**Git 证据：** `29b3dc87`、`3a5c12c7`、`0167aefe`、`348d892d`、`cdccf816`、`4a6b5fcc`、`6c6e30ce`、`efa976da`。
+回放的数据表、2D 战局、3D 回放与射击分析此前是彼此独立的产品面：3D 与射击各自是一个页面、各自带一个文件选择器，用户要看同一场战斗的不同侧面就得重复选文件，而每个页面也各自持有一份“当前回放”的理解。随着 3D 与射击从内测走向可用，这个形态成为主要摩擦点。
 
-## 2026-09-09～09-10 — Replay 后端建立可替换执行边界，并开始证据驱动的性能工程
+项目把五个能力（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）收进同一个工作台：选择一次文件，能力之间切换不重新选文件、不重建会话，也不产生第二份 selection。工作台成为唯一的能力编排者。
 
-原本集中在 `wotb-web` 的职责被拆分为 `wotb-result`、`wotb-playback`、`wotb-replay-coordinator`、`wotb-replay-processing` 和 `wotb-ai` 等 Maven Feature Module，但此时仍运行在同一个 Spring Boot 应用、JVM 和容器中。
+文件入口收敛为全站唯一的投放面；旧深链（`agent-replay` / `agent-shots`）继续有效，但只是工作台能力的入口，不再是独立页面。装甲查看器保持独立：它属于坦克百科，工作台复用其引擎而不复用其页面导航模型。
 
-Coordinator 开始拥有 Job Lifecycle / Processing State，Processing 负责执行，两者通过 `ReplayProcessingDispatcher` Port 连接。Dispatcher Request 被限制为稳定的 value-only contract，不携带本地路径、Spring Object 或 callback，为未来远程执行准备边界。
-
-此时实现仍然是 `LocalReplayProcessingDispatcher`，尚未接入消息队列或远程 Worker。
-
-性能优化也开始使用 Benchmark、JFR 和 Fingerprint 证明变化没有改变 Canonical Replay Facts；CPU 解析使用受限 Platform Worker，AI 等待则使用受控 Virtual Thread。
-
-**Git 证据：** `8c6e8c9e`、`bfe14714`、`c85b9a27`、`678d83e5`、`68c8a581`、`2d4112ba`。
-
-## 2026-09-10 — Hall of Fame 推动网站身份与游戏身份正式解耦
-
-Hall of Fame 长期保存百场和三环成绩后，项目必须回答成绩究竟属于登录 WotbTools 的账号，还是属于实际参加战斗的 WoT Blitz 玩家。
-
-早期实现仍让 Keycloak 用户身份参与成绩归属。如果用户更换登录方式、Keycloak 用户被删除后重新登录，即使绑定相同游戏账号，历史成绩也可能无法自然重新关联。
-
-项目因此将百场和三环的 canonical owner 从 Keycloak 身份迁移到游戏身份。最初只使用 WotB Account ID，Review 随后发现不同区服可能存在相同 Account ID，因此最终定义为 **`(区服, WotB Account ID)`**。
-
-从此三层身份模型逐渐明确：
-
-- Keycloak `sub`：认证身份；
-- `user_profile`：WotbTools 业务用户投影；
-- `(wotb_server, wotb_account_id)`：实际游戏身份。
-
-Profile API 同时收敛为幂等 Ensure 语义，使认证用户能够自动补齐业务 Profile，并通过数据库事实处理并发初始化。
-
-V22 数据迁移最初尝试自动解决历史 ownership 冲突，但 Review 发现这可能擅自改变成绩状态或删除 Evidence，最终改为 Fail-Fast：无法可靠确定区服或存在 ownership 冲突时停止迁移并输出诊断，由管理员根据真实业务历史处理。
-
-当时百场和三环已经采用复合游戏身份，但单场 Hall of Fame 仍只使用 Account ID，是尚未解决的遗留边界。
-
-**Git 证据：** `e5550a0e`、`8fac89ff`、`6e9da442`、`79d1fe50`、`ed737605`、`ef9c49d9`。
-
-## 2026-09-10 — Android 外部 Replay 导入形成可重放、身份绑定的处理协议
-
-Android Thin Client 支持从系统文件管理器直接打开 Replay 后，认证流程与 Replay Processing 生命周期之间的边界暴露出来：未登录 Replay 可能进入部分处理流程，Replay 导航也可能与 Keycloak 登录抢占 WebView。
-
-项目首先规定认证流程拥有最高导航优先级。认证期间 Replay 进入 Pending Queue；Pending Replay 获得持久化 `pendingId`，可以跨 Android Process Death 恢复。
-
-Replay 只有在服务器真正接受 Processing Request 并返回 Job 后才 ACK。ACK 使用基于 `pendingId` 的 compare-and-clear，避免旧 ACK 删除后来到达的新 Replay。
-
-为关闭“服务器已接受、客户端在 ACK 前退出”的失败窗口，`pendingId` 同时作为 `operationId` 传入后端，并以 **`(authenticated subject, operationId)`** 建立幂等身份。并发状态最终收敛为 `ABSENT → IN_FLIGHT → COMMITTED(jobId)`；只有 Dispatcher 真正接受任务后才 COMMITTED。
-
-Replay Export 也统一进入认证边界，避免通过导出接口绕过受保护 Dataset。
-
-**Git 证据：** `166000d4`、`cdd122b8`、`f4eeaac7`、`4915e820`、`96448fc0`。
-
-## 2026-09-11～09-13 — 生产发布从 Workflow 流程收敛为可验证的 Release Contract
-
-Build 与 Deploy 分离后，项目继续消除二者之间的隐式状态。Build 为冻结 Source Commit 生成权威 `deployment-manifest`，记录源码身份、不可变镜像和部署目标。
-
-Deploy 只消费成功 Build 产生的 Manifest，checkout 精确 Source SHA，并按照 Manifest 发布；不再重新计算源码差异、选择镜像或决定部署哪些服务。
-
-Last Known Good 也从简单历史副本发展为包含 Deployment Tree、Compose、Release SHA 和数据库 Schema Version 的恢复状态。回滚前验证当前数据库 Schema 是否仍被旧 Backend 支持；无法证明兼容时标记 `ROLLBACK UNSAFE`，而不是自动数据库降级或强行启动旧应用。
-
-健康检查逐渐使用独立 health-probe 从生产网络验证 Backend、Frontend 和 Keycloak；Application Availability 与 Observability Availability 被划分为不同故障域。定向发布失败只恢复对应组件，不回退其他已经独立成功的服务。
-
-同期 Android 采用 Version-as-Code，Native Bridge 建立显式协议版本和 Breaking Change Gate。
-
-**Git 证据：** `7aacc0b6`、`2f945221`、`fc9a54c1`、`e9a1e25a`、`85af3bd7`、`8466c29c`、`7a136e6f`、`7537656c`。
-
-## 2026-09-16～09-19 — 腾讯云从基础设施节点发展为可切换的生产运行面
-
-腾讯云 Lighthouse 此前已经进入 OpenTofu 管理，但实际生产仍主要围绕 yecaoyun。随着国内迁移推进，TX 开始建设为能够承接真实流量的独立生产运行面。
-
-Production Release Manifest 加入按环境划分的 `targetServices`，使同一 Release 可以明确声明哪些服务部署到 yecaoyun、哪些部署到 TX。
-
-迁移采用渐进方式：TX 先建立 Frontend、Keycloak、Caddy 等入口和身份能力，原 yecaoyun Backend 暂时继续承担业务处理。TX 通过 WireGuard 访问仅绑定隧道地址的 yecaoyun Backend。
-
-只读 Pre-Cutover Gate 验证 TX Runtime、Keycloak、IdP、Android Web Association、Release Identity 和 WireGuard Backend 链路，只能报告 `PRE_CUTOVER_READY`，明确禁止自动修改 DNS 或关闭旧生产。
-
-TX Keycloak 随后由独立 OpenTofu Root 管理 Realm、Client、Role、Mapper、IdP 和 Backend Admin API Service Account。Backend 使用最小权限 Service Account；IdP 的结构由 IaC 管理，但运行时 enabled 状态保留为 Operator Ownership。
-
-官方 QQ Provider 开始进入 TX 构建和配置体系，但外部条件未完成时原 Juhe QQ 仍作为兼容路径。Wargaming Provider 同样进入迁移验证。
-
-到 09-19，TX 建立独立 Business PostgreSQL Runtime。Compose 管理数据库进程，OpenTofu 管理 Database、Role 和 Grant，Flyway 继续作为业务 Schema 的唯一 Owner。此时只能确认 TX 已具备接管条件，不能据此认定 DNS、历史数据和全部生产流量已经切换。
-
-**Git 证据：** `81097302`、`ec4ac3ed`、`966181da`、`0249e288`、`3045211f`、`3e53101c`、`6c71a581`、`6a5e17ed`、`050d423a`。
-
-## 2026-09-19 — 双服务器异步执行基础设施开始真实落地
-
-此前的双服务器设计已经定义 metadata-only Job Contract、Control / Execution 边界和 Object Storage Port，但尚未对应真实跨服务器基础设施。
-
-TX 首先部署独立 RabbitMQ Runtime。AMQP 只绑定 WireGuard 地址，Management API 只绑定 loopback；RabbitMQ 可以独立部署和验证。
-
-Compose 负责 Runtime，OpenTofu 管理 VHost、用户、权限、Exchange、Queue 和 Binding。任务拓扑形成 `wotb.jobs` Exchange、Parser Queue、Retry Queue 和 DLQ，并通过 TTL + Dead Letter Exchange 实现延迟重试。Retry Counter 和 Job State 仍属于 PostgreSQL。
-
-Control API 与 Parser Worker 使用独立 RabbitMQ Identity 和最小权限。真实 AMQP Contract Test 验证 Dispatch、Retry、DLQ 和越权拒绝。
-
-同期 yecaoyun 建立独立 MinIO Runtime，API 仅通过 WireGuard 暴露，Console 仅本机访问。RabbitMQ 负责小型控制消息，MinIO 准备承载 Replay 等大型 Artifact。
-
-这一阶段仍只是基础设施落地，尚不能认定生产 Replay 已经通过远程 Worker 执行。
-
-**Git 证据：** `a81267b5`、`6e9db9dd`、`00456b8f`、`6c22b98d`、`5da8926b`、`ad826cbf`。
-
-## 2026-09-20～09-22 — Replay Processing 正式进入跨服务器分布式执行
-
-Replay Processing Job、Source 和 Operation 的权威状态首先迁入 PostgreSQL，使 Job Lifecycle 和 `operationId` 幂等能够跨 Control API 重启和跨进程恢复。PostgreSQL 只保存任务状态，不保存 Replay Binary、Processed Dataset 或执行上下文。
-
-此前定义的 Object Storage Port 获得 MinIO Production Adapter。TX Control Plane 与 Yecao Parser Worker 使用独立 MinIO Identity，共享受限的 `temp/jobs/<jobId>/...` Workspace。
-
-`ReplayProcessingDispatcher` 获得 RabbitMQ 远程实现。只有 Broker Confirm 且消息可路由后任务才视为真正接受，延续 Android Replay Operation Protocol 对 Commit Point 的定义。
-
-Yecao 部署独立 Parser Worker，负责消费 Parser Request、读取 Replay Artifact、执行 `processFull` 和 Reconstruction、写回 Derived Artifact 并报告结果。Worker 只负责一次 Attempt；Retry 和完整 Job Lifecycle 仍由 Control Plane 决定。
-
-TX Business API 成为 Replay Control Plane，负责用户请求、PostgreSQL 权威状态、MinIO、RabbitMQ Dispatch、Worker Outcome、Retry 和 Batch Finalization，而不再承担 Replay Parsing。
-
-Dataset 和 Artifact 读取也收敛到统一存储边界，使 AI Review、Battle Playback 和 Export 可以跨 Runtime 复用同一 Derived Dataset。
-
-09-22，项目删除 `ReplayParseScheduler`、`LocalReplayProcessingDispatcher`、`LocalReplayProcessingExecutor` 和 Local Dataset 等旧执行路径，不再维护 Local / Distributed 双模式。
-
-生产 Replay Pipeline 至此形成：
-
-`用户 → TX Business API → PostgreSQL / MinIO / RabbitMQ → Yecao Parser Worker → MinIO Derived Dataset → TX 消费能力`
-
-**Git 证据：** `04e02e76`、`6b915712`、`21378900`、`f2bea028`、`89d1d372`、`5f3781d2`、`90a09492`、`d79d2340`、`d4bb20db`。
-
-## 2026-09-20～09-23 — 腾讯云正式接管生产，双服务器职责完成收敛
-
-分布式 Replay Processing 准备完成后，项目执行实际生产切换。Business API 迁入 TX，与 Frontend、Keycloak、Business PostgreSQL 和 RabbitMQ 一起组成新的主生产运行面。
-
-TX 的镜像交付同时迁入 Tencent TCR。期间探索过 GHCR 复制、主机复制和 OCI 传输等方案，最终收敛为 CI 使用 BuildKit 直接发布 TCR；Registry 可以变化，但 Commit SHA 继续作为不可变 Release Identity。
-
-DNS 随后正式切换到 TX。完成 Cutover 后，yecaoyun 上原有 PostgreSQL、Keycloak、Backend、Frontend 和相关恢复路径被删除。Yecao 最终保留 Parser Worker、MinIO 和观测能力，不再直接暴露完整应用。
-
-稳定职责变为：TX 负责公网入口、身份、业务 API、权威业务数据库、Replay Control Plane 和 RabbitMQ；Yecao 通过 WireGuard 作为 Replay Execution / Artifact 节点。
-
-随着生产拓扑稳定，Local Replay Execution、Memory Job Authority、未进入正式架构的 `wotb-control` POC 和迁移期 Cutover Machinery 被主动删除。
-
-同期复杂度审计也结束了早期代练产品方向：Backend、Frontend、数据库结构和 Keycloak Role 被完整移除。代练作为曾经真实存在的产品探索保留在历史中，但不再属于当前产品。
-
-`PRE_CUTOVER_READY`、DNS Cutover 状态和一次性迁移数据检查最终退出，长期有效的检查收敛为真实 Runtime 健康验证。
-
-**Git 证据：** `6942f2c7`、`532542ae`、`ad02b09c`、`a39fc7b8`、`2adf1e07`、`036eef8e`、`86d9fe50`。
-
-## 2026-09-22 — 游戏身份从“绑定”进一步发展为“可验证身份”
-
-Hall of Fame 已经推动项目使用 `(区服, WotB Account ID)` 表示实际游戏身份，但“用户绑定某个账号”仍不等于“系统有证据证明用户控制该账号”，尤其是 QQ 登录无法证明中国区游戏账号归属。
-
-项目因此直接利用 Replay 作为身份 Evidence。用户正常处理 Replay 后，系统复用 Canonical Replay Parser 提取真正的录像者 Account ID；只有录像者与当前绑定游戏身份相符时才标记为已验证。
-
-昵称相同、账号出现在同局玩家列表、或无法可靠识别录像者，都不能作为验证依据。
-
-验证接入 READY Dataset 的共享读取边界，不建立第二套 Replay Parser 或专用上传流程。它同时被设计为旁路能力：验证失败不能让已经成功的 Replay Processing 失败。
-
-`user_profile.wotb_account_verified_at` 表示当前绑定游戏身份的验证状态。更换区服或 Account ID 会清除验证，昵称变化不会。Wargaming 登录可以通过可信 IdP Claims 建立验证，手工绑定则可以通过本人 Replay 获得验证。
-
-游戏身份由此同时包含两个问题：**账号是谁，以及为什么相信这个账号属于当前用户。**
-
-**Git 证据：** `314e3fb1`。
-
-## 2026-09-23 — Android QQ 登录回程不再把 Verified App Link 当唯一机制
-
-Android QQ 登录的认证连续性此前完全依赖 Verified App Link：QQ 原生登录完成后，Keycloak broker callback 必须经 App Link 回到原 WebView。部分 OEM / 浏览器环境暴露了这一机制的兼容性差异 —— 同一份 manifest 与 assetlinks 在不同设备上得到不同的 domain verification 结果，QQ 的原生回程也可能落到系统浏览器，而浏览器与 WebView 不是同一个 cookie jar，原认证事务因此无法恢复。
-
-本次开始把两件事分开处理：**domain verification 的健康诊断**（只诊断、不阻塞登录，并给出一次可操作的恢复提示）与 **native-return ownership**（把回程从「只能靠 App Link」推进到可由 App 自有回程承担；具体机制与 scheme 尚未决定，需真机取证与单独的安全评审）。在取得真机 URI 形状证据之前，生产行为保持不变：继续沿用 QQ 原始握手 URI，Verified App Link 仍是当前唯一在产的回程路径，但不再是设计中唯一被依赖的机制。
-
-**Git 证据：** `ef3022e9`（阶段一，PR #375）。
-
-## 2026-09-23 — 聚合数据 QQ Provider 正式退役，QQ 身份只保留官方通道
-
-QQ 登录长期存在两套并行实现：早期用于快速接入的聚合数据（第三方聚合登录平台）Provider，以及后来以获得官方批准为目标的 QQ Connect Provider。在官方通道完成审核并接管生产登录后，前者作为兼容路径被保留了一段时间 —— 它仍在镜像里被构建、在 Android 的 App Link 白名单里被登记、在部署校验里被当作回退分支。
-
-这次把兼容路径彻底移除：SPI 模块、镜像构建与装载、CI 与影响域清单、Android 的旧回调路径与旧参数校验、以及各层「防止它复活」的拒绝名单一起收敛。Keycloak 生产 realm 此前已不存在该 Provider 的实例，因此这次收敛没有 realm 侧变更，也没有用户数据迁移。
-
-退役后 QQ 身份只有一条通道：官方 `idp-qq` broker callback，镜像中只有官方 QQ 与 Wargaming 两个自定义 Provider。这条演进的原则是：临时兼容路径一旦完成历史使命就必须删除，而不是留在生产系统里继续被构建、被部署、被信任。
-
-**Git 证据：** `58afb59f`。
-
-## 2026-09-30 — AI 复盘拆分为独立无状态服务，运行职责离开业务后端
-
-AI 复盘此前完全运行在业务后端内：先由服务端的回放处理流水线把回放变成派生事实数据集，AI 再读取其中一份 AI 专用的事实文件完成分析与复盘。浏览器端的三维回放已经改为本地解析（工作台内的战局回放当时仍消费服务端数据集），AI 却仍依赖这条服务端数据集链路，于是同一个回放长期存在两套事实来源。
-
-这次把 AI 复盘按同样的客户端事实模型重建：回放仍然只解析一次，AI 复盘改为消费客户端已经掌握的事实投影出的请求，由部署在 Yecao 宿主的独立无状态服务承担确定性分析与模型编排，并以流式事件返回结果。该服务不持有数据库、对象存储或任何历史记录，只保留请求存活期间的取消与准入状态；业务后端不再参与 AI 请求，也不再保存 AI 供应商的配置与密钥。
-
-对外入口收敛到既有公网入口下的 `/api/ai/**`，经两台服务器之间的私有链路转发到该服务，服务自身不暴露公网端口。旧的、依赖服务端数据集与 AI 专用事实文件的接口按 breaking change 直接移除，不保留兼容端点。在客户端事实投影完成之前，AI 复盘页面对用户保持「维护中」。
-
-**这次拆分把 AI 复盘的运行职责从「业务后端 + 回放数据集」中彻底剥离：事实由客户端投影，分析由独立服务完成，业务后端只承担它自己的业务。**
-
-**Git 证据：** `cec5b6f9`、`c24e7b06`、`9fef1540`、`615d79fa`。
-
-## 2026-09-30 — 前端镜像发布从「一步完成」变为「分段有界」
-
-前端镜像发布长期把构建、缓存导出、镜像导出与 registry 上传合并在同一个 CI 步骤里。这个步骤没有自己的超时：一次前端变更触发的发布在 registry 上传阶段静默停留了一个多小时，最终被下一次 main 合并取消，同一形态随后再次复现。事后无法从 CI 界面判断卡在编译、缓存导出还是 registry 上传——因为这几件事共享一个步骤，没有各自的边界与时间线。
-
-这次按「构建 → 校验 → 发布 → 晋升」拆开：构建只在本地产出镜像，不再直接写 registry；内容校验（源码身份、资产源、三维回放 WASM 产物、期望静态文件）前移到任何 registry 写入之前，校验对象是即将被推送的那份字节；immutable tag 的上传成为独立步骤，带每次尝试的超时与有界瞬态重试——registry 内容寻址使重试只补传未完成的层，既不重建镜像也不重复构建；发布后只验证 registry 上的 digest 就是本次发布的那一个。每个网络边界都有步级超时，因此不再存在「静默等待到作业上限」的形态。
-
-同时明确两条边界：生产发布仍按部署位置选择 registry（TX 工作负载用腾讯云 TCR，Yecao 工作负载用 GHCR），不因为一次 registry 抖动就引入第二条跨境传输链路；前端发布也不再写入外部构建缓存，因为缓存导出与镜像上传同量级、却在步骤内无法单独设界，而它换来的只是重跑一次前端构建。
-
----
-
-## 2026-09-30 — 客户端解析权威转向上游 Agent Rust Core
-
-项目此前在仓库内新建了 `replay-engine/`，把 Java 解析器逐层移植到 Rust（容器与包流 framing、各类包解码、Rating 与汇总），并用 Java 生成的 golden 文件逐项做 parity 校验，目标是让 Web 与 Android 共用一份客户端解析权威。
-
-与此同时，贡献者维护的上游 WoT-Blitz-Agent 已经有一套完整的 Rust Core：同样面向 `.wotbreplay`，并以三个独立 WASM 入口（结算、时序、射击复现）对外提供能力，三维回放与射击复现已经在浏览器里直接消费它。同一个仓库维护两份 Rust 解析器，会重新制造「同一回放两套事实来源」的问题。
-
-因此这次决定以上游 Agent Rust Core 作为唯一的客户端解析权威：仓库内的 `replay-engine/` 移植退役，WotbTools 只按锁定的版本与 sha256 消费上游 Release 的 WASM 产物，并通过独立的消费契约对表。服务端 Replay Processing 链路在客户端 parity 全部通过之前继续服务 Replay Workspace、战局回放、导出与 Hall of Fame。
-
-**解析权威从「在仓库内再造一份」变为「消费一个上游、锁定版本、以契约对表」。**
-
-**Git 证据：** `4ad54b58`（仓库内 Rust 移植达成 Java parity）、`af7ca594`（退役 `replay-engine/`、接入上游 WASM 产物）、`82f1e26c`（#397 合入主线）。
-
-## 2026-10-02 — 服务端 Replay Parser 退役，客户端解析成为唯一生产路径
-
-09-30 确立“以上游 Agent Rust Core 作为唯一客户端解析权威”后，#447 完成了真正的 production cutover：WotbTools 将上游 `WoT-Blitz-Agent` 的 WASM Release 作为唯一 Replay 字节解析器，当前发布锁定在 `deploy/agent/source.json`（当时为 `v0.3.8` / `f35baa46…`，同时校验 Release asset SHA-256）。Web 与 Android WebView 都在用户设备本地解析 `.wotbreplay`，失败时不再回退服务端 parser。
-
-客户端随后承担过去由 Java Replay Processing 链路完成的确定性工作：结算事实、批次去重、League Rating、统计指标、xlsx/zip 导出、2D Playback，以及供 AI Review 使用的 canonical projection。WotbTools 在 `frontend/src/replay-local/canonical` 保留自己的领域语义边界；上游 Agent facet 是 version-gated 输入，不直接等同于 WotbTools canonical truth。
-
-服务端 Replay Processing 因此退出生产架构。Java parser 与相关 Maven 模块、Processing Job / Dataset 端点、Parser Worker、RabbitMQ delivery、MinIO temporary workspace 以及对应 processing tables / deployment / CI / IaC 被删除。TX Business API 回到业务职责：认证后的业务写入、持久状态、Hall of Fame 记录与证据附件、结构校验和去重；Yecao 不再承担 Replay execution，保留独立 AI Service 与观测运行面。
-
-Hall of Fame 的信任模型也随之明确：客户端提交的 Replay facts **有意视为不可信输入**，服务端只验证结构，不重新解析文件；真实性由原始 Replay 证据附件与管理员审核承担。个人主页的“用回放验证”同样只影响已验证徽章，不进入授权边界。
-
-同一天，Replay 研究治理进一步区分了两类 provenance：**production artifact snapshot** 与 **research source snapshot**。前者由 `deploy/agent/source.json` 锁定真正运行的 Agent Release；后者在外部交叉验证文档中锁定具体 upstream commit / blob。Agent 是生产解析器的提供方，不因此自动成为 WotbTools 协议语义 authority；外部研究结论仍需在 WotbTools 语料或受控探针上独立复现后才能提升 canonical evidence state。
-
-**Git 证据：** `0dc4767e`（#447 合入主线）；上游 Release `v0.3.8` commit `f35baa46`。
-
-## 2026-10-02 — 3D Playback 接入上游实时装填遥测
-
-服务端 Replay Parser 退役后，3D Playback 继续作为 Agent `PlaybackData` 的专用客户端消费者。
-上游 `WoT-Blitz-Agent v0.3.9` 增加 `reloads` 与 `reload_effective` 两个 additive facet：
-前者保留本方车辆的装填相位与服务器剩余发数快照，后者提供 method 35 的当前有效完整装填时长。
-WotbTools 将 production pin 从 v0.3.8 升到 v0.3.9，并继续通过 Release artifact SHA-256 固定运行字节。
-
-这次接入没有把装填相位提升成跨产品 canonical ReplayFacts。3D 只在客户端按已交叉验证的 OTM
-语义解释所需子集：整夹装填、弹鼓逐发补槽、夹内推弹间隔和服务器弹量快照；seek 通过纯时间函数
-重建状态，不维护累加计时器。协议没有敌方装填遥测，因此敌方不绘制装填条，缺失数据保持 unknown。
-
-这条变化延续了客户端解析后的边界：**上游 Agent 扩展原始能力，WotbTools 在具体 consumer 内
-建立经过证据约束的呈现语义；专用渲染事实不会因为 UI 需要而自动变成全局领域 authority。**
-
-**Git 证据：** PR #451；upstream `v0.3.9` / `b4e50e13`。
-
-## 2026-10-02 — Agent 产物身份改为 content-addressed
-
-上游 WASM 此前一直以**固定 URL** `/wasm/wotb_replay_wasm.js` 伺服。前端 build 换了，
-浏览器却可能仍持有旧 Agent 产物：同一个页面用旧引擎解析新回放，症状要等到 AI Review
-报 `ai_review.poses 缺失` 才暴露——修复也因此容易被误判成 parser 或 validator 的问题。
-
-修复不是加 `?v=<commit>` 查询串：wasm-bindgen wrapper 会自行加载 `_bg.wasm`，只给 JS
-加版本参数无法为「JS + WASM」建立统一 identity。这次把产物落位改成**目录即身份**：
-`common/assets/wasm/<upstream commit>/`，运行时固定访问 `/wasm/<commit>/…`，
-`deploy/agent/source.json` 仍是唯一 identity SSOT，build 期由 Vite 注入
-`__AGENT_WASM_COMMIT__` / `__AGENT_WASM_RELEASE__`，装载前先校验产物 `fingerprint.json`
-的 commit 与 tag，不一致抛 `AgentWasmVersionMismatchError`（fail closed）。
-
-由此得到的长期性质：**URL 就是内容身份**。新 Agent 换新 URL，旧 URL 永不覆盖，
-`/wasm/<40 位 commit>/` 可以放心长期 `immutable` 缓存——「普通刷新即生效」不再依赖
-强制 no-cache；stable 路径被废除并由测试、Docker build 与 TX 发布校验三处断言不存在。
-
-同一次排查暴露了第二个独立缺陷：**"没有证据"被渲染成"满弹"**。生产上 3D 装填条一直显示为
-一根不动的白条，根因是错版引擎给出 `reloads = 0`，而客户端把"无遥测"兜底成 `full()`。
-修复后无遥测一律读作 unknown 并隐藏整条装填 UI，只有"有遥测且状态算出来是满弹"才画满条。
-两条 fail-closed 是两个层面：URL identity 保证 UI 拿到的是本 build 的引擎，遥测语义保证
-UI 不会把未知说成满弹。生产 pin 同时升到 `v0.3.10`（`5029e103…`）：同一 replay 的装填遥测
-从 0 条恢复为 121 条，作者车 28 条，装填条随真实相位推进。
-
-**Git 证据：** `deploy/agent/source.json`、`scripts/fetch-agent-wasm.sh`、
-`frontend/src/api/agent-replay-facets.ts`、`frontend/src/scene/reloadBar.js`。
-
-## 2026-10-03 — 回放能力从「三个页面三次上传」收敛为一个回放工作台
-
-回放的数据表、2D 战局、3D 回放与射击分析此前是彼此独立的产品面：3D 与射击各自是一个页面、各自
-带一个文件选择器，用户要看同一场战斗的不同侧面就得重复选文件，而每个页面也各自持有一份「当前回放」
-的理解。这个形态在 3D 与射击从内测走向可用后成为主要摩擦点。
-
-这次把五个能力（数据 / 2D 回放 / 3D 回放 / 射击分析 / AI 复盘）收进同一个工作台：选择一次文件，
-能力之间切换不重新选文件、不重建会话，也不产生第二份 selection。工作台成为唯一的能力编排者，
-各能力面板按首次激活懒加载（Three.js、装甲与射击数据不进首屏包），切走只停渲染不销毁会话——
-3D 场景切回时保留时间轴与相机。
-
-文件入口收敛为全站唯一的投放面，3D 与射击不再自带上传控件；旧深链（`agent-replay` /
-`agent-shots`）继续有效，但只是工作台能力的入口，不再是独立页面。装甲查看器保持独立：它属于
-坦克百科，工作台复用其引擎（击穿判定、坦克资产、标记调色板）而不复用其页面导航模型。
-
-AI 复盘同时被明确为**正式能力**而不是管理员内测项：普通登录用户即可使用，未登录由登录引导承接；
-只有 3D 回放与射击分析仍受管理员开关约束。**产品边界因此从「哪个页面」变成「哪个能力」。**
-
-**Git 证据：** `frontend/src/app/viewRegistry.js`、`frontend/src/components/ReplayWorkspace.vue`、
-`frontend/src/components/{Replay3DPane,ReplayShotsPane,FileDrop}.vue`、`frontend/src/composables/useReplaySession.ts`。
-
-## 2026-10-03 — Android 认证 owner 从 WebView 迁到 Native
-
-Android 壳此前一直沿用 Web 的认证链：Keycloak 登录页、IdP 跳转、broker callback 全部发生在同一个
-WebView 里，认证状态因此由「一个被当作浏览器用的客户端」持有。为了让它在这种形态下可用，仓库积累了
-一整层只服务于该形态的代码：provider hostname 的精确 allowlist、QQ native handoff 与
-`schemacallback` 改写骨架、broker callback 的 Verified App Link 路由、App Link 健康诊断与 OEM
-recovery 提示，以及贯穿 WebView navigation 的 `inAuthFlow` 状态机。
-
-Android 2.0 把认证 owner 换成 Native：AppAuth（RFC 8252）+ 外部 user-agent + Authorization Code +
-PKCE S256 对 Keycloak 取 token，QQ / Wargaming ASIA / EU / NA 仍由 Keycloak 做 identity brokering。
-结果是上面那一层**全部被删除**，而不是被重构 —— Native 侧只认识 Keycloak 的一个 client
-（`wotbtools-android`），根本不认识 IdP：`idp-qq`、`wargaming-*` 只是 Keycloak 的内部 alias，
-增删 IdP、临时关闭某地区、更换 provider 都不再需要发 APK。
-
-认证身份与业务身份的边界也随之更清楚：PKCE verifier、授权码、refresh token、state/nonce 与刷新
-生命周期全部留在 Native（Keystore AES-GCM 加密持久化），WebView 只通过 Native Bridge 拿到短生命
-周期 access token、登录状态、access token 解码后的 claims 与过期时间。前端 `useAuth` 从
-「Auth == keycloak-js」变成 AuthProvider 抽象：浏览器仍走 keycloak-js（行为不变），Android 走
-Bridge v2 的 `native-auth`；Android 壳若报告 bridge v1，前端只会显式失败并提示更新，
-**绝不**回退到 WebView 里跑 keycloak-js。
-
-代价与配套：Native Bridge 升到 v2（新增 `auth*` 方法、`native-auth` 能力、异步 reply 与
-`wotbtoolsOnAuthChanged` 事件），认证改造因此是一次强制更新 cutover —— 旧客户端由
-`version.json:minSupportedVersionCode` 收敛，`version.json` 仍是唯一的发布 commit point，并在
-发布前先探测 Keycloak 侧的 runtime client 是否真的可用。Replay ingress 也顺势与认证彻底解耦：
-登录不再是 replay 的前置条件，登录过程中收到回放不再需要让出 navigation。
-
-**Git 证据：** `contracts/android-native-bridge.json`、`android/app/src/main/java/com/wotbtools/app/auth/`、
-`frontend/src/platform/{browserAuthProvider,androidAuthProvider}.js`、`infra/tofu/keycloak/client.tf`。
-
-## 2026-10-03 — 前端交付从「入口页缓存」推进到「按代码块降级」
-
-SPA 的产物文件名带内容哈希，而部署是整目录替换：`index.html` 早已固定 `no-store`，让刷新立刻拿到新版本，
-但一个**还开着的页面**不会因为部署而重新加载。它随后按需加载某个代码块时，请求的是自己那份旧 bundle 记下的
-文件名——服务器上已经没有这个文件。此前这条路径没有任何错误边界：动态加载失败会把整个工作台的渲染打断，
-用户看到的是「能力不可用」，而实际上请求从未发出，服务器侧也没有任何记录。
-
-这次把懒加载从「一个动态 import」改成显式的可用性边界：加载失败变成一个**可见、可解释、可操作**的状态，
-页面其余部分照常工作（回放数据与其他分析功能不受影响）；主操作是重新加载（内容哈希决定旧地址不可恢复），
-次要操作是重试，只覆盖网络瞬断这类可原地恢复的情况。失败态是持久的——切走再切回仍然显示，不会因为重新
-进入就悄悄消失成一个空白面板。代价是每个懒加载能力都要带上这一层边界，收益是「部署」不再是一次能让活跃
-页面变砖的事件。
-
-边界内部的恢复协议也不是「再 import 一次」：框架的异步组件会把失败的加载 promise 记住，重复调用同一代
-loader 或重新挂载同一份组件定义都只会拿到那个已经失败的 promise，于是错误提示消失了、内容却永远回不来。
-真正的恢复必须换一代异步组件定义，这个 generation 归边界自己所有，调用方不需要（也不应该）参与。
-
-同时补齐 AI 复盘的失败态分类：服务繁忙、服务不可达、超时、返回格式异常、用户取消、未配置各自独立成态，
-并明确区分「登录门禁」「已登录但缺权限」「AI 输入准备失败」——它们不在同一条链上，补救动作也不同。
-权限缺失不再静默隐藏入口，而是说明缺什么以及下一步找谁；用户主动取消不算错误，也不再顺手给一个「重试」，
-未归类的原始异常只进诊断日志、不进界面文案。
-
-**Git 证据：** `frontend/src/utils/lazyModule.ts`、
-`frontend/src/components/{ReplayWorkspace,AiReviewPanel,AiReviewWorkspacePane}.vue`、
-`frontend/src/types/ai-review.ts`。
-
-## 2026-10-04 — Playback 从「固定尺寸的三栏」收敛成共享的 fluid shell
-
-`#489` 确立了正确的 topology：2D 与 3D 是同一个 Playback 产品的两个 renderer，Team 1 固定左、
-Team 2 固定右、Stage 保持正方形、Details 是整个战场 workspace 级的可拖动浮窗。但它的尺寸仍是
-按断点各写一套固定值：名册车道恒宽，正方形边长按 `100dvh - 170px` 一类的视口扣减估算。结果是
-desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小，而 roster 继续膨胀。
-
-这一轮把 sizing 的 authority 换成「可用空间」：车道宽度是相对 Playback workspace 的
-`clamp(最小可用, 流体, 最大可用)`，正方形边长由中心列可用宽度与**实测**可用高度共同决定，
-而可用高度由视口容量减去实测的 persistent HUD 与 Transport 得出——刻意不读根元素的内容高度，
-否则 Stage 会把自己撑大形成自指。断点只决定结构，尺寸由空间决定；`playback-pc.css` /
-`playback-tablet.css` / `playback-mobile-fullscreen.css` / `playback-fullscreen-form-contract.css`
-随之删除，`playback-workspace.css` 成为共享宏几何的唯一 owner。
-
-同时收口了二级面的语义：2D 与 3D 共用同一套 primary composition
-（`-5 / 播放 / +5 / 当前倍速 / 全屏 / Display`），倍速改为按需展开；**Display 是锚定在 ⚙ 上的
-配置面（不可拖动），Details 是可拖动的上下文浮窗**。这两者此前混在「常驻左栏 / 抽屉 /
-右侧详情列」里——同一个面既承担导航又承担设置，还各自持久化 pane 宽度与折叠状态。
-现在那套模型整体移除，随之删掉了对应的持久化偏好。
-
-**产品边界因此从「一个页面有几个面板」变成「一个战场加两个语义不同的浮面」。**
-
-**Git 证据：** `frontend/src/styles/playback-workspace.css`、
-`frontend/src/components/{PlaybackTransport,PlaybackDisplaySurface,BattlePlayback,Replay3DPane}.vue`、
-`frontend/scripts/browser-{playback-layout,workspace-interaction}.mjs`。
+AI 复盘同时被明确为**正式能力**而不是管理员内测项：普通登录用户即可使用，未登录由登录引导承接；只有 3D 回放与射击分析仍受管理员开关约束。**产品边界因此从“哪个页面”变成“哪个能力”。**
 
 ## 2026-10-03 — 回放能力面向普通登录用户开放
 
 回放工作台的五种能力统一为公开可发现：数据与 2D 回放匿名可用，3D 回放、射击分析 / 复现与 AI 复盘登录后可用。管理员不再拥有额外的回放能力。匿名深链保留原目标并显示登录引导；射击到装甲查看器的复现场景对普通登录用户完整开放，登录返回保留场景参数。
 
-## 2026-10-02～10-05 — Komodo 从运维旁路发展为生产控制面，TX2 进入真实 Frontend 生产池
+## 2026-10-04 — Playback 从“固定尺寸的三栏”收敛成共享的 fluid shell
 
-第三台服务器 TX2 加入后，项目没有直接把生产负载搬过去，而是先建设主机与控制面的长期边界。Komodo Core 部署在 Yecao，并通过 WireGuard 与各节点的 outbound Periphery 通信；Periphery 生命周期仍由仓库里的独立 owner workflow 管理，避免控制面故障时连 agent 自身都无法恢复。
+2D 与 3D 是同一个 Playback 产品的两个 renderer，Team 1 固定左、Team 2 固定右、Stage 保持正方形、Details 是整个战场 workspace 级的可拖动浮窗。但此前尺寸仍按断点各写一套固定值：名册车道恒宽，正方形边长按视口扣减估算，导致 desktop / fullscreen 的中央空间利用率低、大屏上 Stage 反而偏小，而 roster 继续膨胀。
 
-随后 `infra/komodo/resources/` 建立声明式 ResourceSync：Yecao、TX1、TX2 三台 Server 与同步资源由 Git 保存期望状态，Komodo 负责计算 diff 与提供 runtime visibility。危险自动化保持关闭，ResourceSync 不拥有删除资源、Webhook 自动部署或所有基础设施；它更接近“生产运行资源的声明式控制层”，而不是新的万能 IaC 或 Release Authority。
+这一轮把 sizing 的 authority 换成“可用空间”：断点只决定结构，尺寸由空间决定。2D 与 3D 共用同一套 primary composition，倍速改为按需展开；Display 是锚定在 ⚙ 上的配置面，Details 是可拖动的上下文浮窗。此前混在“常驻左栏 / 抽屉 / 右侧详情列”里的模型整体移除，对应的持久化偏好也随之删除。
 
-在真正迁移 workload 前，TX2 又通过独立 `production-worker` owner 完成 Docker Compose、TCR 凭据、镜像拉取、WireGuard 与 Periphery 回归等主机前置条件。项目因此明确区分 **host ready** 与 **workload ready**：服务器能承载生产负载，不等于任何业务已经切换过去。
-
-K7C 才完成第一次真实 workload cutover。Frontend 现在由两个实例共同提供生产服务：TX1 约 20%，TX2 约 80%，由仍运行在 TX1 的 Caddy 做 weighted round-robin 与 `/version.json` active health check。Business API、Keycloak、PostgreSQL 与 AI placement 在这次切换中保持不变。
-
-Frontend 发布也因此从“一台主机上的容器”升级为多实例 Artifact Contract：TX1 构建并发布不可变 TCR artifact，TX1 与 TX2 最终运行同一 digest；TX2 不从 TX1 当前容器复制镜像状态。Sponsor 配置、Sponsor 资源与当前 Android 下载面等 host-owned runtime content，则按独立契约复制到 TX2 自己的本地 runtime root。（2026-10-09 起 Sponsor QR 改为 pin 住的发布资产、构建期注入并随 Frontend 镜像与 APK 一起发布，不再属于 host-owned runtime content。）
-
-**这一步把此前“TX 是一台生产服务器”的理解改成了“TX1 拥有公网入口与核心业务 authority，TX1/TX2 共同承担 Frontend runtime，Yecao 承担 AI、Observability 与 Komodo Core”。Frontend 已有 workload redundancy，但 TX1 Caddy 仍是公网入口单点。**
-
-**Git 证据：** `619f0d60`（TX2 Periphery）、`ad3a07ef`（声明式 Komodo ResourceSync）、`01633609`（TX2 production-worker ready）；K7C production acceptance runs `37236109552`、`37283193116`、`37283700560`。
+**产品边界因此从“一个页面有几个面板”变成“一个战场加两个语义不同的浮面”。**
 
 ## 2026-10-05 — 积分赛从人工表格转向可审核的发布流程
 
@@ -660,76 +160,43 @@ Frontend 发布也因此从“一台主机上的容器”升级为多实例 Arti
 
 ## 2026-10-06 — 装甲查看器向匿名用户开放
 
-装甲查看器是回放能力中最后一块仍要求登录的拼图。此次把 `agent-armor` 的 ViewHost 登录门撤掉：匿名深链直接挂载装甲页面，场景参数原样保留；Tankopedia 详情页的入口卡从 admin-only 改为对全员开放，匿名用户第一次拥有了从产品界面进入装甲查看器的路径。至此装甲查看器与「数据 / 2D」一样完全公开，3D 回放、射击分析 / 复现与 AI 复盘仍保持登录后使用，锦标赛管理页的登录门不变。
+装甲查看器是回放能力中最后一块仍要求登录的拼图。此次把 `agent-armor` 的登录门撤掉：匿名深链直接挂载装甲页面，场景参数原样保留；Tankopedia 详情页的入口卡从 admin-only 改为对全员开放，匿名用户第一次拥有了从产品界面进入装甲查看器的路径。至此装甲查看器与“数据 / 2D”一样完全公开，3D 回放、射击分析 / 复现与 AI 复盘仍保持登录后使用，锦标赛管理页的登录门不变。
 
+## 2026-10-07 — 3D 回放画质分为四档，照顾不同设备
 
-## 2026-10-07 — 3D 回放从「逐节点绘制」走向实例化批渲染，画质分档重划
+3D 回放此前是整条链路里渲染成本最高的表面。项目把画质从三档重划为四档——低（盒代理 + 小地图）/ 中（真车模 + 俯视烘焙底图 + 抗锯齿）/ 高（场景 GLB + 分层地表）/ 极致（填充率拉满）。每档跨一个真实成本断崖，而不是均匀调参，让不同设备都能选择可接受的画质。
 
-3D 回放此前是整条链路里唯一还在为「每棵树、每块石头各画一次」付账的表面：地图导出器把每个实例做成独立节点（malinovka 3096 节点），GLTFLoader 又逐节点建 Mesh——同一份共享几何被拆成数千次 draw call 与同量级的场景图遍历。本次在装载后按（几何, 材质）合批为 InstancedMesh（draw call 3096→141），倒树与损毁换模改逐实例矩阵驱动（与旧 pivot 装配逐值等价，随机位姿测试锁定），静态子树矩阵整体冻结；拾取归属随之改按（批次, 实例槽位）编址。
+四档服务的是用户设备性能差异：低档降低渲染细节与成本，高档尽量还原游戏画面。各档不改变回放事实、时间线与可见性语义。
 
-同一专项把画质从三档重划为四档——低（盒代理 + 小地图）/ 中（真车模 + 俯视烘焙底图 + 抗锯齿）/ 高（场景 GLB + 分层地表）/ 极致（填充率拉满），每档跨一个真实成本断崖而非均匀调参；并落地 GPU 俯视烘焙管线（烘焙页与 3D 运行时共用同一材质实现，烘出的底图即「从正上方看的极致档画面」）。上游解析器同步发布 v0.4.0（确定性收口：无证据 = null 而非 0、击杀原因 255 哨兵），前端先合适配再切 pin，随本条目同一 PR 进入生产链路。
-
-**Git 证据：** 3D 回放性能与画质专项 PR #555（实例化合批、四档重分档、俯视烘焙底图、动态分辨率与性能偏好）；WASM pin v0.4.0 PR #558；上游 release `dd5aafe`（v0.4.0）。
----
+上游解析器同步发布 v0.4.0，前端先完成适配再切换生产依赖。
 
 ## 2026-10-10 — 从功能入口走向真实页面上的使用引导
 
 网站加入可跳过、可重开的真实页面教学，用一份公开示例串起数据、2D、标记、防遮、3D 与射击复现。匿名用户也能完整探索官方示例，自己的回放保持既有登录边界；完成状态按账号同步，普通内容更新与重新邀请分开。
 
-## 当前架构形成的三条长期主线
-
-回看整个演进过程，WotbTools 的变化并不是简单的功能累积，而主要沿三条长期主线收敛。
-
-### Replay 与 Evidence
-
-`最终战果 → Event Stream → Reconstruction → Canonical Replay Facts → Client Projections → Playback / AI / Rating / Hall of Fame → Identity Evidence`
-
-Replay 从上传文件逐渐成为多个业务域共同依赖的事实证据来源。当前实现由用户设备上的锁定 Agent WASM 负责字节解析，再由 WotbTools canonical 层建立领域事实与消费投影。长期原则是：**没有证据就保持未知；AI 解释证据，而不创造证据。**
-
-### 生产运行架构
-
-`单体 Web → Observability → Immutable Release → Release Contract → 双服务器 → Control / Execution Boundary → RabbitMQ + MinIO → Distributed Replay Processing → TX / Yecao 稳定职责 → Client-side Replay Parsing → Parser Worker / RabbitMQ / MinIO Replay Pipeline 退役 → Komodo 声明式控制面 → TX2 production-worker → TX1/TX2 Frontend active-active`
-
-生产架构从单服务器应用逐步发展为具有明确状态权威、Artifact 边界、消息协议、恢复契约和跨节点职责的系统；当 Replay execution 迁回客户端后，曾经必要的跨云解析基础设施被主动删除。当前 TX1 保留公网入口、身份、Business API 与业务数据库 authority，TX1/TX2 共同承担 Frontend runtime；Yecao 保留独立 AI Service、Observability 与 Komodo Core。Komodo 管理运行控制面，但不取代 Git-reviewed release identity、immutable artifact 与各 owner workflow。
-
-### 身份模型
-
-`Keycloak Login → IdP-only → QQ / Wargaming → Authentication Identity ≠ Business User ≠ Game Identity → Verified Game Identity → Android Native Auth Owner`
-
-身份系统从登录功能逐渐发展为认证身份、业务用户和游戏身份相互解耦，并通过可信 IdP Claims 或 Replay Evidence 证明游戏账号归属。Android 2.0 又进一步把移动端认证生命周期从 WebView 移到 Native AppAuth / PKCE，Web 与 Android 可以共享同一个 Keycloak 身份边界，但不再共享同一种客户端认证实现。
-
----
-
-本文只记录具有长期产品、架构或工程意义的变化。UI 微调、普通缺陷修复、实现重构以及一次性迁移细节由 Git 历史保存，不在这里重复维护。
-
-
----
-
 ## 2026-10-05～10-12 — 从功能增长转向真实用户的易用性与交付体验
 
-本节追加记录这一周尚未完整归档的进展，代码基线为 `675df5e1`（PR #589）。此前条目保留各自时间点的语境；本节说明后续变化。这里的动机来自维护者确认，实现范围以已合并代码为准，不把源码版本当作线上发布证明。
+这一周的变化集中在真实用户的使用与交付体验。此前条目保留各自时间点的语境；下面的动机来自维护者确认，实现范围以已合并代码为准，不把源码版本当作线上发布证明。
 
-### 流量增长先暴露下载瓶颈，随后推动发布提速
+### 下载流量推动发布与分发方式调整
 
-宣传带来访问增长后，先出现的是 APK 下载挤占 TX 公网带宽、影响网站访问。项目先将 APK 公网下载转向分发副本，并让 Android 的远端 3D 资产由 Native 代理直连对象存储，减少大文件经过业务公网入口的流量。之后才继续优化发布上传：APK 先进入分发副本，再由两台 origin 拉取并核验，避免每次发布都经过耗时的大文件直推。
+宣传带来访问增长后，先出现的是 APK 下载挤占公网带宽、影响网站访问。项目先将 APK 公网下载转向分发副本，并让 Android 的远端 3D 资产由 Native 代理直连对象存储，减少大文件经过业务公网入口。之后继续优化发布上传：APK 先进入分发副本，再由两台 origin 拉取并核验，避免每次发布都经过耗时的大文件直推。
 
-分发副本不是版本权威。不可变 APK 的身份、校验与最终发布仍由原有发布契约决定。**Git 证据：** PR #545、#547、#564。
+分发副本不是版本权威。不可变 APK 的身份、校验与最终发布仍由原有发布契约决定。
 
 ### 界面易用性与真实页面教学成为同一条改进主线
 
 用户频繁询问如何登录、如何下载 APK、如何使用功能，暴露出产品缺乏普遍适用的教程与引导。全站 UI 现代化因此不只是视觉调整：统一导航、布局与控件，并兼顾桌面、手机和 Android，也是降低理解成本的一部分。
 
-真实页面教学与官方示例进一步让用户边操作边认识功能。示例降低初次体验的准备门槛，而个人回放继续遵守原本的认证边界。前文已记录教学能力，本节补充其直接动机。另有用户反馈文件夹导入失败，推动 Android 目录导入修复；这次工作不等同于保存默认目录或持久化目录授权。
+真实页面教学与官方示例进一步让用户边操作边认识功能。示例降低初次体验的准备门槛，而个人回放继续遵守原本的认证边界。前文已记录教学能力，这里补充其直接动机。另有用户反馈文件夹导入失败，推动 Android 目录导入修复；这次工作不等同于保存默认目录或持久化目录授权。
 
-**Git 证据：** PR #568、#579、#580、#576。
+交付失败也按用户可理解的状态呈现：懒加载失败、AI 服务繁忙、不可达、超时、返回异常、用户取消与权限不足各自给出可操作的下一步，而不是把“能力不可用”当成同一个错误。
 
 ### 长期登录重在恢复使用，而不是制定年度重登规则
 
-用户反馈短时间内反复登录、重新打开网站需要再次扫码，推动 Web 会话恢复与 Keycloak 会话策略一起调整。目标是持续使用时延续会话，闲置 30 天后过期；Web 通过 broker 登录后的持久会话与 SSO 恢复减少重复扫码，Android 继续由 Native 管理自己的认证生命周期。
+用户反馈短时间内反复登录、重新打开网站需要再次扫码，推动 Web 会话恢复与登录策略一起调整。目标是持续使用时延续会话，闲置 30 天后过期；Web 通过 broker 登录后的持久会话与 SSO 恢复减少重复扫码，Android 继续由 Native 管理自己的认证生命周期。
 
-当前配置采用 365 天绝对上限。维护者将其作为足够长的可配置上限使用，并没有为“一年后强制重登”作出独立产品决定；长期使用体验才是这次取舍的重点。随后 Web 登录回程顺序也收敛为先完成认证处理、再初始化路由。
-
-**Git 证据：** PR #541、#570。
+当前配置采用 365 天绝对上限。维护者将其作为足够长的可配置上限使用，并没有为“一年后强制重登”作出独立产品决定；长期使用体验才是这次取舍的重点。
 
 ### 小资源随产品发布，赛事功能围绕实际社区协作发展
 
@@ -737,90 +204,64 @@ Sponsor 的两张二维码图片体积很小，单独配置资源分发所增加
 
 积分赛后续扩展则服务于国服联赛社区管理组：方便记录成绩、生成和导出积分表。历史成绩导入、季赛导出与联赛专属管理员权限，围绕这一实际工作流展开，AI 继续只辅助识别，积分计算与正式发布仍受规则和人工审核约束。
 
-**Git 证据：** PR #574、#577、#583；#540、#542、#543、#554。
-
 ### 3D 还原继续向客户端规则收敛，同时照顾不同设备
 
 四档画质的主要目的，是适配用户设备性能差异：低档降低渲染细节与成本，高档尽量还原游戏画面，各档不改变回放事实与时间一致性。这一原则延续了前文记录的实例化与画质专项。
 
 后续地形与履带印工作进一步明确了“尽可能还原，但考虑性能”的方向。自创补偿不断引出新问题后，地形撤销额外修补判据，回到客户端细分规则；履带印从通用路径贴图演进为客户端槽位模型，并补齐倒带、出生时间与 AoI 空洞的处理。还原不能靠让当前画面看起来合理来替代可验证的行为。
 
-**Git 证据：** PR #581、#586、#587、#589。代码基线的 Agent pin 为 v0.4.4；这只说明源码锁定的引擎，不单独证明 APK 已发布。
+## 2026-10-14 — 3D 还原继续以可验证的回放事实为准
 
+独立炮塔的回放也延续这一原则：分离、飞行和落地取自录像中真实的实体及完整姿态，原车的炮塔和主炮随之分开，倒带可以恢复完整车模。低血量死亡不会自动生成飞头，缺少记录时保留未知；场景还原继续以可验证的回放事实为依据。
 
-## 2026-10-14 — 炮塔分离以独立实体记录还原
+## 2026-10-15 — 射击检视数据更新不再依赖前端发版
 
-独立炮塔的回放也延续了这一原则：分离、飞行和落地取自录像中真实的实体及完整姿态，原车的炮塔和主炮随之分开，倒带可以恢复完整车模。低血量死亡不会自动生成飞头，缺少记录时保留未知；场景还原继续以可验证的回放事实为依据。
+射击检视的弹种与搭载数据此前内嵌在前端，随游戏版本更新会静默过期——每轮游戏平衡改动都要重新构建、发版才能生效。改为运行期直读资产包后，数据更新只依赖资产发布，不再绑定前端发版。
 
-## 2026-10-15 — 射击检视数据改为资产包直读，前端不再内嵌数据
-
-射击检视的两份内嵌数据（`frontend/src/scene/shellKinds.json` 弹种反解表与
-`common/shot-tank-data.json` 搭载输入快照）随游戏版本更新会静默过期——每轮游戏
-平衡改动都要前端重新构建、发版才能生效。改为运行期直读资产包：弹种表取
-`/data/shellKinds.json`（上游以 `dump-shell-kinds` 随 tanks.pb 同批生成、随包发布），
-搭载输入由 `fetchShotTankData` 对 `tank/{id}.json` 做 config 顺序 + `pitch_limits` +
-`shell_global_ids` 的紧凑投影。数据更新从此只依赖 COS 差分上传，不依赖前端发版。
-
-行为契约保持：解析仍在本地 WASM；资产源未配置或请求失败时弹种走槽位/id 兜底、
-俯仰如实降级；弹种表与解析并行取用，列表发布不被资产请求挂起阻塞（表到位后原地
-补齐，与搭载配置注解同一异步增强模式）。旧文件与更新脚本删除，Android 随 bundle
-内容变化递增 `wotbVersion`。
-
-**同日加固（评审驱动）**：①俯仰锚定表是解析期入参（无法事后补齐），改为**有界等待**
-（1.5s）——到期用已到的部分表继续解析，单个资产请求挂起不再拖死整条列表；②迟到弹表
-的原地补齐改经响应式视图写入（原写原始数组绕过 Vue 代理，不触发重绘）；两条均配
-"老行为必红"的回归用例（变异测试验证过）。③封面图展示裁剪：客户端封面画布留白近半
-（坦克锚定左上），坦克百科改按上游随包分发的逐车内容框（`tank_images/crops.json`）
-做 `translate/scale` 缩放定位，视觉对齐旧紧裁口径——不改图标字节，数据更新继续只走
-COS。
+行为契约保持：解析仍在用户设备本地完成；资产未配置或请求失败时，弹种走槽位/编号兜底，俯仰如实降级。旧的内嵌数据与更新脚本删除。
 
 ## 2026-10-15 — Android 3.0：App 自带 GeckoView，不再依赖手机的系统 WebView
 
-Android 9 等旧设备上，系统 WebView 版本由 ROM 决定：页面样式错乱，渲染进程一崩整个 App 跟着退出。
-3.0 改为 APK 自带并固定版本的 GeckoView：用户运行的就是发布前验收过的引擎。APK 内的前端、本机 WASM
-解析、原生登录与回放导入全部保留；页面改由 App 自己的本机服务（固定 loopback 端口 `127.0.0.1:21653`）
-提供，Native Bridge 经内置扩展传递、RPC 不变（bridge v3 只是 origin 与 transport 的替换）。页面引擎崩溃
-从「App 闪退」变成可自动恢复、可诊断的故障。代价是 APK 体积约十倍、引擎安全补丁需要靠发版跟进，
-以及 2.x 页面偏好在升级时重置一次。
+Android 9 等旧设备上，系统 WebView 版本由 ROM 决定：页面样式错乱，渲染进程一崩整个 App 跟着退出。3.0 改为 APK 自带并固定版本的 GeckoView：用户运行的就是发布前验收过的引擎。APK 内的前端、本机 WASM 解析、原生登录与回放导入全部保留；页面由 App 自己的本机服务提供，Native Bridge 的 RPC 不变，只是 origin 与 transport 替换。页面引擎崩溃从“App 闪退”变成可自动恢复、可诊断的故障。代价是 APK 体积约十倍、引擎安全补丁需要靠发版跟进，以及 2.x 页面偏好在升级时重置一次。
 
-## 2026-10-16 — 安全日志留存半年，但普通日志仍然只留 7 天
+## 2026-10-16 — 安全合规要求安全日志留存半年，普通日志仍然只留 7 天
 
-公安自评估要求认证与访问类安全日志留存不少于六个月。把 Loki 的 retention 从 7 天直接
-改成半年是最省事的做法，代价是 product telemetry、AI 用量、APK 下载计数一起被养半年
-——为了填表反过来扩大数据收集。改为按 stream 分档：Loki 默认仍是 `168h`，只有带
-`compliance="security"` 标签的流走 `4560h`（190 天），标签由 TX Alloy 产生，普通车道
-一律拿不到它。查询回看窗口放宽到 190 天，但单次查询长度仍限制在 7 天——取证按窗口分段，
-不让一次全范围查询把 Yecao 那台小机器打爆。
+公安自评估要求认证与访问类安全日志留存不少于六个月。把全部日志一起留半年，会同时把产品遥测、AI 用量和 APK 下载计数一起保留，为了填表反而扩大数据收集。项目因此只让安全日志按合规时长留存，普通日志仍保留 7 天。
 
-安全日志只有三类：Keycloak 的受控 realm events（登录/登出/第三方身份提供者登录的成功与
-失败，以及管理动作）、Caddy 对 `/api/*` 的访问记录、认证域的访问记录。首页、JS/CSS、
-图片、WASM、APK 下载完全不写安全访问日志（站点级 `log_skip`），不是「先写出来再让 Loki
-丢掉」。脱敏在写 stdout 之前完成：删掉原始 uri（连同整个 query string）、全部请求头与
-全部响应头，再用 `log_append` 只写回 path 与 User-Agent，所以 token、Authorization、
-Cookie 不可能出现在一条保存 190 天的日志里；Keycloak 侧 `admin_events_details_enabled`
-保持 false，管理动作只留「谁做了什么」，不留完整 resource representation。
+留存范围只覆盖认证、访问与管理动作，不记录首页、静态资源、WASM 和 APK 下载，也不采用“先写出来再让日志系统丢掉”的方式。技术边界与验收步骤见 [`docs/operations/security-log-retention.md`](docs/operations/security-log-retention.md)。
 
-两个反直觉的实现事实值得记下来，它们各自都能让整条链路静默失效：① Keycloak 的
-`jboss-logging` listener **不**受 realm `enabled_event_types` 约束（那只过滤数据库里的
-event store），所以「只保留需要的事件」这件事必须在 Alloy 的 selector 上收窄，两边清单
-由 CI 断言逐一对应；② 成功事件（含全部 admin event）默认只记到 DEBUG，不把
-`org.keycloak.events` 抬到 debug，半年留存里就只剩登录失败、看不到任何成功登录证据。
-两者都配了真实运行时证明：Keycloak 的 applied realm 与 stdout 事件行、以及
-Docker → Alloy → Loki 的打标/不打标断言。
-
-同时把现有 Contact 页面正式定义为问题反馈、投诉与举报渠道（中英俄三语同步），不新增
-工单后台。边界、查询方法与验收步骤见 `docs/operations/security-log-retention.md`。
+同时把现有 Contact 页面正式定义为问题反馈、投诉与举报渠道（中英俄三语同步），不新增工单后台。
 
 ## 2026-10-17 — 从成绩工具延伸到内容创作者推荐
 
-网站增加面向访客的 bilibili UP 推荐目录，让玩家按内容类别发现回放、实况、联赛和教学创作者。
-目录由管理员维护，推荐星级与可选实力评估明确属于网站的编辑判断；不引入收藏奖励、投票池或
-用户画像，避免把一个低流量的内容入口扩展成社交系统。
+网站增加面向访客的 bilibili UP 推荐目录，让玩家按内容类别发现回放、实况、联赛和教学创作者。目录由管理员维护，推荐星级与可选实力评估明确属于网站的编辑判断；不引入收藏奖励、投票池或用户画像，避免把一个低流量的内容入口扩展成社交系统。
 
-可选头像归站点资料所有，随表单保存为小图，不依附上传者账号；失去引用后定期回收。
-推荐入口与联赛积分榜、直播回放并列，前端仅在后端明确提供目录能力后展示，使独立发布的页面
-与业务服务可以逐步上线。多人维护采用版本冲突检查，避免较早打开的表单覆盖已经更新的资料。
+可选头像归站点资料所有，随表单保存为小图，不依附上传者账号；失去引用后定期回收。推荐入口与联赛积分榜、直播回放并列，前端仅在后端明确提供目录能力后展示，使独立发布的页面与业务服务可以逐步上线。多人维护采用版本冲突检查，避免较早打开的表单覆盖已经更新的资料。
 
-推荐目录随后扩展为“推荐UP”和“优秀作品”两种内容入口。作品以BV号标识，不绑定作者关系，
-与UP共用管理表单、手动星级和站点图片机制；分类按类型独立维护。访客只看到已有内容的类型和分类，
-管理员仍能从空目录录入第一条记录。旧客户端保留UP目录能力，新客户端通过明确的接口能力逐步启用作品推荐。
+推荐目录随后扩展为“推荐UP”和“优秀作品”两种内容入口。作品以 BV 号标识，不绑定作者关系，与 UP 共用管理表单、手动星级和站点图片机制；分类按类型独立维护。访客只看到已有内容的类型和分类，管理员仍能从空目录录入第一条记录。旧客户端保留 UP 目录能力，新客户端通过明确的接口能力逐步启用作品推荐。
+
+## 2026-10-18 — 推荐内容管理从联赛权限中独立出来
+
+推荐目录上线时沿用了联赛积分榜的 `tournament-admin` 角色，把“联赛管理员”和“内容管理员”当成同一个身份。内容类型从 UP 扩到优秀作品后，这个合并让两个本应无关的业务域互相授权：联赛管理员可以修改推荐内容，内容管理员也自动看到联赛管理入口。
+
+这次为推荐内容新增独立的领域角色 `content-admin`：后台接口、前端入口与浏览器验收全部只认这个角色；全站管理员仍通过 Keycloak 复合角色同时获得两个域，应用代码不重复做 super-admin 判断。`tournament-admin` 不再保留任何内容管理能力，`content-admin` 也不能进入联赛、名人堂、用户或其它后台。开发用的 `?admin=1` 旁路明确不覆盖这两个业务角色。
+
+## 长期产品主线
+
+回看整个演进过程，WotbTools 的产品方向主要沿几条主线收敛。
+
+### 从结果工具到可解释、可验证的战斗分析
+
+Replay 从“生成成绩的上传文件”变成用户可以在本地查看、回放和复盘的对象。产品始终坚持：没有证据就保持未知；AI 解释证据，而不创造证据；可视化必须能被人用来检验重建事实。
+
+### 从单次分析到长期记录与社区服务
+
+Hall of Fame、League Rating、积分赛和内容推荐把一次性的战斗分析延伸到长期荣誉、赛事协作和内容发现。社区与管理员的工作流——证据审核、共享草稿、发布确认、角色分工——成为产品的一部分，而不是附带的运营工具。
+
+### 从功能堆叠到低门槛、多端可用
+
+用户反复询问如何登录、下载和使用功能，推动产品把能力收进统一工作台、开放匿名入口、增加真实页面教学，并把 Android 做成复用 Web 能力的 Thin Client。产品边界从“哪个页面”逐步转为“哪个能力、对谁开放”。
+
+---
+
+本文只记录具有长期产品与业务意义的变化：用户可见能力、商业决策、社区工作流与产品方向。UI 微调、普通缺陷修复、实现重构、发布流水线与一次性迁移细节由 Git 历史保存；技术/架构演进见 [`docs/architecture/TECHNICAL_EVOLUTION.md`](docs/architecture/TECHNICAL_EVOLUTION.md)。

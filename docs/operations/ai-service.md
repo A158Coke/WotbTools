@@ -1,6 +1,11 @@
-# Yecao AI Service（预部署阶段）
+# Yecao AI Service
 
-`ai-service` 是 `java/wotb-ai` 构建的独立 Spring Boot 进程，镜像为 `ghcr.io/a158coke/ai-service`。服务只在 Yecao 部署与验证，TX 网关已有更具体的 `/api/ai/**` 反代路由指向它的 WireGuard 端点（不重写 path，SSE 1120s）；前端 AI Review 已解除「维护中」（提交 `83884790`，前端无维护门），个人随机战与训练房/联赛团队复盘都走正式生产链（`TacticalReviewHarness` / `TeamReplayAnalysisService`），输入为客户端 canonical AI projection，语义 parity 由 `ClientAiProjectionParityTest` 守护。AI provider 配置与 secret 只属于本服务的 Yecao 运行时（`deploy/docker-compose.prod.yml`）：TX 业务编排（`deploy/tx/business-api.compose.yml`、`deploy/tx/deploy.sh`、`business-api.yml`）已不再携带任何 `AI_*` 变量或 key，只保留 `/api/ai/**` 到本服务 WireGuard 端点的 ingress 路由。
+`ai-service` 是 `java/wotb-ai` 构建的独立 Spring Boot 进程，镜像为 `ghcr.io/a158coke/ai-service`，生产运行在 Yecao。TX 网关的 `/api/ai/**` 反代到它的 WireGuard 端点（不重写 path，SSE 1120s）；前端 AI Review 是正式开放能力（无维护门），个人随机战与训练房/联赛团队复盘都走生产链（`TacticalReviewHarness` / `TeamReplayAnalysisService`），输入为客户端 canonical AI projection，语义 parity 由 `ClientAiProjectionParityTest` 守护。AI provider 配置与 secret 只属于本服务的 Yecao 运行时（`deploy/docker-compose.prod.yml`）：TX 业务编排（`deploy/tx/business-api.compose.yml`、`deploy/tx/deploy.sh`、`business-api.yml`）不携带任何 `AI_*` 变量或 key，只保留 `/api/ai/**` 到本服务 WireGuard 端点的 ingress 路由。
+
+Java 包所有权以 `com.wotb.ai` 为根，包含 `config`、`gateway`、`prompt`、`review` 与 `tournament`；
+Review 与 Tournament 共享 gateway 能力并保持 feature 隔离。`AiServiceApplication` 使用根包自然扫描。
+
+AI Review HTTP 边界分布在 `review.controller` / `review.converter` / `review.service`：Submission Controller 仅聚合 request converter 与 submission service；Cancellation Controller 仅调用 cancellation service。Converter 负责受限 body 解码、wire validation 与客户端投影到内部 request 的装配；Submission Service 负责 scope / capability 判定、取消注册、SSE session 与 worker admission；Execution Service 负责 worker runtime、SSE 事件、Review metrics、structured logs、错误分类与清理；Analysis Service 路由到 Player Review 或既有 `TeamReplayAnalysisService`。`UNKNOWN` battle category 在创建 SSE 与 worker admission 前返回 HTTP 422。
 
 ## 发布与边界
 

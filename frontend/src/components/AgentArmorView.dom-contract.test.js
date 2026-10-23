@@ -48,7 +48,11 @@ describe('armor destroyed scene async ownership', () => {
     ]) {
       const start = kernel.indexOf(step)
       expect(start, step).toBeGreaterThan(-1)
-      expect(kernel.slice(start + step.length).trimStart().startsWith('if (destroyed) return;'), step).toBe(true)
+      const guard = kernel.slice(start + step.length).trimStart()
+      expect(
+        guard.startsWith('if (destroyed) return;') || guard.startsWith('if (destroyed || contextLost) return;'),
+        step,
+      ).toBe(true)
     }
   })
 })
@@ -71,10 +75,37 @@ describe('armor adjacent-shot teardown ownership', () => {
 // FOV 50°→6.4238°，受击锚点 NDC-y 0.317→2.633（出视锥）。
 describe('dolly-zoom world-overview scope guard', () => {
   const kernel = read('../scene/tankViewer.js')
-  it('animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态以 k=1 幂等还原原生', () => {
+  it('animate 按 worldOverviewMode 门控（命中/脱靶 world 同置）；关闭态还原原生 50°', () => {
     expect(kernel).toMatch(/applyLongRangeCompensation\(!worldOverviewMode\)/)
     expect(kernel).not.toMatch(/applyLongRangeCompensation\(!window\.__worldPenMode\)/)   // 旧门控仅命中置位，MISS 漏置
-    expect(kernel).toMatch(/const k = enabled \? Math\.max\(1, d \/ DOLLY_REF_DIST\) : 1;/)
+    expect(kernel).toMatch(/if \(!enabled\) \{[\s\S]*?fov = OVERVIEW_BASE_FOV;[\s\S]*?near = 0\.1;[\s\S]*?far = Math\.max\(1000, d \* 3\);/)
+  })
+  it('单车装甲检视与 shot replay 共用 Armor Inspector 实测标定', () => {
+    expect(kernel).toMatch(/const ARMOR_REF_DIST = 15;/)
+    expect(kernel).toMatch(/const ARMOR_BASE_FOV = 18\.75;/)
+    expect(kernel).toMatch(/const ARMOR_MAX_FOV = 40;/)
+    expect(kernel).toMatch(/const ARMOR_MIN_FOV = 0\.5;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_GAIN = 0\.028;/)
+    expect(kernel).toMatch(/const ARMOR_FAR_PRODUCT_MAX = 3\.8;/)
+    expect(kernel).toMatch(/const ARMOR_PRODUCT_SCALE = 1\.1;/)
+    expect(kernel).toMatch(/camera\.position\.set\(0, 0, -ARMOR_REF_DIST\);/)
+    expect(kernel).toMatch(/controls\.minDistance = 3;/)
+    expect(kernel).toMatch(/controls\.maxDistance = 500;/)
+    expect(kernel).toMatch(/fov = dollyZoomFov\(d, true, ARMOR_BASE_FOV, ARMOR_REF_DIST, ARMOR_MIN_FOV, ARMOR_MAX_FOV, ARMOR_FAR_PRODUCT_GAIN, ARMOR_FAR_PRODUCT_MAX, ARMOR_PRODUCT_SCALE\);/)
+    expect(kernel).toMatch(/near = 0\.05 \* d;/)
+    expect(kernel).toMatch(/far = d \+ 30;/)
+    expect(kernel).toMatch(/controls\.target\.set\(aimCenter\.x, aimCenter\.y, aimCenter\.z\);/)
+    expect(kernel).toMatch(/camera\.position\.set\(aimCenter\.x, aimCenter\.y, aimCenter\.z - ARMOR_REF_DIST\);/)
+    expect(kernel).toMatch(/controls\.target\.set\(0, P\.ty, 0\);/)
+    expect(kernel).toMatch(/const camView = QP\.get\('camview'\) \|\| \(CAMERA_VIEW_PRESETS\.has\(view\) \? view : null\);/)
+  })
+  it('场景风格跟随网页 UI：透明画布、无地面网格、半球光主题表面色', () => {
+    const view = read('./AgentArmorView.vue')
+    expect(kernel).not.toContain('GridHelper')
+    expect(kernel).toContain('scene.background = null;')
+    expect(kernel).toContain('antialias: true, alpha: true')
+    expect(kernel).toContain("readThemeColor('--color-surface-2'")
+    expect(view).toContain('background: var(--color-canvas);')
   })
   it('worldOverviewMode 命中/脱靶分支同置、每发重置（MISS 早返回回归）', () => {
     // 脱靶分支入口置位（结构锚点：isMiss 分支首行）——此前 MISS 在弹道标注后提前返回，漏置
@@ -84,7 +115,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 命中 world 路径同置（紧随穿透判定标志）
     expect(kernel).toMatch(/window\.__worldPenMode = true;\s*worldOverviewMode = true;/)
     // 每发进入射击复现重置
-    expect(kernel).toMatch(/window\.__worldPenMode = false;\s*worldOverviewMode = false;/)
+    expect(kernel).toMatch(/window\.__worldPenMode = false;[\s\S]{0,160}worldOverviewMode = false;/)
   })
   it('mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）', async () => {
     const { mirrorShotData } = await import('../scene/tankViewer.js')
@@ -104,12 +135,89 @@ describe('dolly-zoom world-overview scope guard', () => {
     const { dollyZoomFov } = await import('../scene/tankViewer.js')
     expect(dollyZoomFov(30, true)).toBeCloseTo(50, 6)       // 基准距离 = 原生视角
     expect(dollyZoomFov(249.3, false)).toBeCloseTo(50, 6)   // world 总览恒原生
+    // 默认参数（base 50/ref30）：d<30 也走 dolly-zoom（shot 旧 0-30m 原生分支已移除）。
+    expect(dollyZoomFov(15, true)).toBeGreaterThan(50)
+    // 单车装甲检视 / shot replay：15m/18.75° 基准，d<15 变宽；6.5m 处 40° 封顶；
+    // product 从 15m 的 ≈2.477 随距离 +0.0128/m 增大（28.35m≈2.648），远距车体略小；
+    // product 封顶 2.8（500m 仍 2.8，比 15m 小约 12%），不再让车体尺寸完全恒定。
+    const armorFov = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.0128, 2.8)
+    expect(armorFov(15)).toBeCloseTo(18.75, 6)
+    expect(armorFov(6.5)).toBeCloseTo(40, 6)
+    const armorProduct = (d) => Math.min(2.8, Math.tan(18.75 * Math.PI / 360) * 15 + Math.max(0, d - 15) * 0.0128)
+    const armorFov30 = 2 * Math.atan(armorProduct(30) / 30) * 180 / Math.PI
+    expect(armorFov(30)).toBeCloseTo(armorFov30, 6)
+    expect(armorFov(30)).toBeLessThan(11)
+    expect(armorFov(28.35)).toBeCloseTo(10.67, 1)       // Armor Inspector 实测点
+    expect(armorFov(28.35)).toBeLessThan(armorFov(15))  // 远距车体略小
+    expect(armorFov(8.94)).toBeGreaterThan(18.75)
+    expect(armorFov(8.94)).toBeLessThan(40)
+    const armorFov500 = 2 * Math.atan(2.8 / 500) * 180 / Math.PI
+    expect(armorFov(500)).toBeCloseTo(armorFov500, 6)
+    expect(armorFov(500)).toBeGreaterThan(0.5)
+    expect(armorFov(500)).toBeLessThan(0.7)
+    expect(armorFov(500)).toBeLessThan(armorFov(15))
+    // 显示缩放：production 调用传 ARMOR_PRODUCT_SCALE=1.1；15m/500m 的屏幕角尺寸整体缩小 1/1.1。
+    const armorFovScaled = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.0128, 2.8, 1.1)
+    for (const d of [15, 500]) {
+      const base = armorFov(d)
+      const scaled = armorFovScaled(d)
+      expect(scaled).toBeGreaterThan(base)
+      expect(Math.tan(scaled * Math.PI / 360) / Math.tan(base * Math.PI / 360)).toBeCloseTo(1.1, 6)
+    }
+    // 生产显示 profile：+0.028/m、封顶 3.8、整体 ×1.1；车体随距离缩放明显强于实测参考。
+    const productionFov = (d) => dollyZoomFov(d, true, 18.75, 15, 0.5, 40, 0.028, 3.8, 1.1)
+    const productAt = (d) => Math.tan(productionFov(d) * Math.PI / 360) * d
+    expect(productionFov(15)).toBeCloseTo(20.59, 1)             // 1.1 整体缩放后的实际默认 FOV
+    expect(productAt(30) / productAt(15)).toBeGreaterThan(1.1)   // 30m 约小 14%
+    expect(productAt(100) / productAt(15)).toBeGreaterThan(1.4)  // 100m 约小 35%
+    expect(productAt(500)).toBeCloseTo(productAt(100), 6)        // 远距封顶
+    expect(dollyZoomFov(15, false)).toBeCloseTo(50, 6)
     const fovOn = dollyZoomFov(249.3, true)
     expect(fovOn).toBeCloseTo(6.4238, 2)                    // reviewer 实测值（k=8.31）
     // 垂直 NDC-y = tan(偏心角)/tan(fov/2)：同一 8.41° 偏心锚点，原生在视锥内、误套补偿越界
     const ndcY = (offDeg, fovDeg) => Math.tan(offDeg * Math.PI / 180) / Math.tan(fovDeg * Math.PI / 360)
     expect(ndcY(8.41, 50)).toBeLessThan(1)                  // ≈0.317（reviewer 实测）
     expect(ndcY(8.41, fovOn)).toBeGreaterThan(2)            // ≈2.63（越界）
+  })
+  it('WebGL context lost 显示带 GPU 信息的错误态，retry 重建 renderer', () => {
+    expect(kernel).toMatch(/addEventListener\('webglcontextlost', reportContextLost\)/)
+    expect(kernel).toMatch(/addEventListener\('webglcontextrestored', reportContextRestored\)/)
+    expect(kernel).toMatch(/event\.preventDefault\(\)/)
+    expect(kernel).toMatch(/UNMASKED_RENDERER_WEBGL/)
+    expect(kernel).toMatch(/contextLost = true/)
+    expect(kernel).toMatch(/if \(destroyed \|\| contextLost \|\| !initDone/)
+    expect(kernel).toMatch(/if \(contextLost && !\(state && state\.contextLost\)\) return;/)
+    expect(kernel).toMatch(/loadGen\+\+;\s*targetLoadGen\+\+;\s*shooterLoadGen\+\+;/)
+    expect(kernel).toMatch(/function animate\(\) \{\s*if \(destroyed \|\| contextLost\) return;/)
+    expect(kernel).toMatch(/reportLoad\(\{ state: 'error', message: contextLostMessage\(\), contextLost: true \}\)/)
+    expect(kernel).toMatch(/function isContextLost\(\) \{ return contextLost; \}/)
+    expect(kernel).toMatch(/return \{ destroy, retry, selectTank, canPick, isContextLost \};/)
+    const view = read('./AgentArmorView.vue')
+    expect(view).toMatch(/function startViewer\(preserveSelection = false\)/)
+    expect(view).toMatch(/if \(!preserveSelection\) \{/)
+    expect(view).toMatch(/selectedShooterId\.value = null/)
+    expect(view).toMatch(/selectedTargetId\.value = null/)
+    expect(view).toMatch(/preserveSelection && selectedTargetId\.value != null/)
+    expect(view).toMatch(/previous\?\.isContextLost\?\.\(\) === true/)
+  })
+})
+
+// 结果卡片是 position:fixed，left/top 是视口坐标；投影必须基于画布实际矩形。
+// 若用 window.innerWidth/Height，页面/容器滚动或窗口缩放时画布移动而卡片停在旧视口位置。
+describe('traj-info canvas anchoring', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('按画布 getBoundingClientRect 投影，而不是视口尺寸', () => {
+    const start = kernel.indexOf('function updateTrajInfoPos()')
+    expect(start).toBeGreaterThan(-1)
+    const end = kernel.indexOf('div.style.transform', start)
+    expect(end).toBeGreaterThan(start)
+    const fn = kernel.slice(start, end)
+    expect(fn).toMatch(/getElementById\('canvas-container'\)/)
+    expect(fn).toMatch(/getBoundingClientRect\(\)/)
+    expect(fn).toMatch(/const x = rect\.left \+ \(v\.x \* 0\.5 \+ 0\.5\) \* rect\.width;/)
+    expect(fn).toMatch(/const y = rect\.top \+ \(-v\.y \* 0\.5 \+ 0\.5\) \* rect\.height;/)
+    expect(fn).not.toMatch(/\(v\.x \* 0\.5 \+ 0\.5\) \* window\.innerWidth/)
+    expect(fn).not.toMatch(/\(-v\.y \* 0\.5 \+ 0\.5\) \* window\.innerHeight/)
   })
 })
 
@@ -124,70 +232,110 @@ describe('engagement-distance result line localization', () => {
   it('labels 装配与三语键在位（en/ru 结果卡不再出中文）', () => {
     expect(view).toContain("shotDistance: t('armor.distance')")
     expect(view).toContain("distanceUnit: t('armor.distance_unit')")
+    expect(view).toContain("effectivePenetration: t('armor.effective_penetration')")
+    expect(view).toContain("shotAvgShort: t('armor.avg_short')")
+    expect(kernel).toContain('L.shotAvgShort')
     const locales = JSON.parse(read('../locales/feature-messages.json'))
     expect(locales.en.armor.distance).toBe('Engagement distance')
     expect(locales.ru.armor.distance).toBe('Дистанция боя')
     expect(locales.en.armor.distance_unit).toBe('m')
     expect(locales.ru.armor.distance_unit).toBe('м')
+    expect(locales.zh.armor.effective_penetration).toBe('有效穿深')
+    expect(locales.en.armor.effective_penetration).toBe('Effective penetration')
+    expect(locales.ru.armor.effective_penetration).toBe('Эффективное пробитие')
+    expect(locales.zh.armor.avg_short).toBe('平均')
+    expect(locales.en.armor.avg_short).toBe('avg')
+    expect(locales.ru.armor.avg_short).toBe('сред.')
   })
 })
 
-// 间隙板首层跳弹上屏（用户 2026-10-13 报告）：SPACED_FRAG 写 G=间隙甲层标记，PBR_FRAG 据此
-// 区分「间隙甲已消耗首层」与「只穿外部模块」；主装甲在后者仍保留首层转正（用户 2026-10-17）。
+// 间隙板首层跳弹上屏：SPACED_FRAG 写 G=间隙甲层标记；主装甲独立套用自身 normalization/2×
+// （BlitzKit 逐层规则）。PBR 直接累加逐层 normalized R，状态通道只负责最近层跳弹/续飞。
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
   const kernel = read('../scene/tankViewer.js')
   const pen = read('../scene/penetration.js')
-  it('无阈值首层：厚度通道零身份推断（全板裸 LOS），状态通道独占最近层并携带转正差额（review 2026-10-13 blocker）', () => {
+  it('逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
     const state = kernel.slice(kernel.indexOf('const SPACED_STATE_FRAG'), kernel.indexOf('function spacedCommonUniforms'))
-    // 厚度通道：只写裸 LOS + 间隙甲层标记 G（外部模块只写 R/coverage，G 恒 0）；
-    // 不得含任何首层身份/容差推断（任何"距最近层 < δ"都会被合法小层距击穿）
-    expect(thickness).toMatch(/float losThick = thickness \/ max\(cos\(angle\), 1e-6\);/)
-    expect(thickness).toMatch(/gl_FragColor = vec4\(losThick \/ penetration, 1\.0, 0\.0, 1\.0\);/)
+    // 厚度通道：每块间隙板独立计算 2×/normalization 后的 finalThick；不得含深度/首层推断。
+    expect(thickness).toMatch(/bool twoCal = caliber > thickness \* 2\.0 && thickness > 0\.0;/)
+    expect(thickness).toMatch(/float finalNorm = twoCal/)
+    // 掠射角余弦必须有 1e-6 下界（与 resolveLayerGeometry 一致），防 inf/负厚度。
+    expect(thickness).toMatch(/float finalThick = thickness \/ max\(cos\(max\(0\.0, angle - finalNorm\)\), 1e-6\);/)
+    expect(thickness).toMatch(/gl_FragColor = vec4\(finalThick \/ penetration, 1\.0, 0\.0, 1\.0\);/)
+    // 跳弹只在 RT1 最近板状态通道判定；RT0 不得把后续高倾角板写成 R=1。
+    expect(thickness).not.toMatch(/angle >= ricochet/)
     expect(thickness).not.toMatch(/isFirstSpaced|linState|stateD|camNear|camFar|0\.05/)
-    // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码 / B=转正差额
+    // 状态通道：精确最近层独占（NoBlending+depthWrite）+ R=跳弹标志 / G=续飞编码；
+    // B 不承载转正差额（R 已逐层归一化）；它传递可在 8-bit RT 往返的续飞退出码。
     expect(state).toMatch(/rcContinue\(wPosR, reflR, penetration \* RC_RICO_MUL/)
-    expect(state).toMatch(/float delta = max\(0\.0, losThick - normThick\) \/ max\(penetration, 1\.0\);/)
-    expect(state).not.toMatch(/delta = clamp\(/)   // 差额不上钳：>1 须精确参与 r−b 恒等（review 2026-10-13 P2）
-    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, delta, 0\.0\);/)
+    expect(state).not.toMatch(/losThick|normThick|delta/)
+    expect(state).toMatch(/gl_FragColor = vec4\(ricocheted \? 1\.0 : 0\.0, bCode, rcDiag \/ 255\.0, 0\.0\);/)
+    expect(kernel).toMatch(/rcDiag = floor\(spacedState\.b \* 255\.0 \+ 0\.5\);/)
+    // 名义被挡但概率 1–99%：G 编码概率带而不是硬红 1.0；PBR 就地续飞同理。
+    expect(state).toMatch(/float pct = floor\(p \* 100\.0 \+ 0\.5\);/)
+    expect(state).toMatch(/bCode = \(pct >= 1\.0 && pct <= 99\.0\) \? 0\.2 \+ 0\.6 \* p : 1\.0;/)
+    expect(kernel).toMatch(/if \(pct >= 1\.0 && pct <= 99\.0\) penChance = p;/)
+    const packSrc = read('../scene/armorCollisionPack.js')
+    expect(packSrc).toMatch(/pct >= 1 && pct <= 99 \? p : 0/)
     expect(kernel).toMatch(/function spacedStateMaterial[\s\S]{0,420}?depthWrite: true, depthTest: true, blending: THREE\.NoBlending,/)
-    // 外部模块状态：只写 A=1，RGB 保留（模块在前的间隙甲转正差额不被覆盖）；自定义混合
-    // RGB src=0/dst=1、A src=1/dst=0——单一来源，PBR 用 A 抑制其后间隙板跳弹。
+    // 外部模块状态：只写 A=1，RGB 保留；自定义混合 RGB src=0/dst=1、A src=1/dst=0；
+    // PBR 用 A 抑制其后间隙板跳弹。
     expect(kernel).toMatch(/function moduleStateMaterial\(clip\)/)
     expect(kernel).toMatch(/blendSrc: THREE\.ZeroFactor, blendDst: THREE\.OneFactor/)
     expect(kernel).toMatch(/blendSrcAlpha: THREE\.OneFactor, blendDstAlpha: THREE\.ZeroFactor/)
     const stateScene = kernel.slice(kernel.indexOf('function buildSpacedStateScene'), kernel.indexOf('function buildPrimaryArmorScene'))
     expect(stateScene).toMatch(/primaryMeshes\.forEach/)
     expect(stateScene).toMatch(/addClone\(spacedStateScene, node, moduleStateMaterial\(/)
-    // PBR：差额修正总消费（8 位回退格式下 R 饱和时禁止在其上退差额）；跳弹分支只解读状态
-    expect(kernel).toMatch(/highp float totalConsume = \(spacedSatGuard > 0\.5 && rawTotal >= 1\.0\)/)
+    // PBR：RT0.R 已是逐层 normalized effective；直接累加，不再用 RT1.B 做最近层差额。
+    expect(kernel).toMatch(/highp float totalConsume = spacedSatBlocked \? 1\.0 : max\(0\.0, rawTotal\);/)
+    // B 的唯一消费者是上方锁定的诊断解码，不参与厚度或穿深计算。
+    expect(kernel.match(/spacedState\.b/g)).toHaveLength(1)
     expect(kernel).toMatch(/float spacedThick = totalConsume \* penetration;/)
     expect(kernel).toMatch(/bool moduleInFront = spacedState\.a > 0\.5;/)
     expect(kernel).toMatch(/bool gapRicochet = underSpaced && spacedState\.r > 0\.5 && !moduleInFront;/)
-    // 外部模块不是装甲层：G 未置位时主装甲仍是首层 → 保留转正/2×口径增强转正；
+    // BlitzKit：主装甲无论前面有无间隙甲，都独立套用自身 normalization/2×；
     // 3× overmatch 只表示真实口径规则，跳弹抑制另外由 underSpaced 承担。
-    expect(kernel).toMatch(/bool hasSpacedArmor = spacedData\.g > 0\.0;/)
+    expect(kernel).not.toMatch(/hasSpacedArmor/)
     expect(kernel).toMatch(/bool threeCal = caliber > thickness \* 3\.0;/)
     expect(kernel).not.toMatch(/bool threeCal = caliber > thickness \* 3\.0 \|\| underSpaced;/)
     expect(kernel).toMatch(/bool noRicochet = threeCal \|\| underSpaced;/)
-    expect(kernel).toMatch(/float norm = hasSpacedArmor \? 0\.0/)
+    expect(kernel).toMatch(/float norm = twoCal/)
+    // 间隙甲作为整体参与 CDF（单层精确；GPU additive 只有聚合厚度）；外部模块 B=flat。
+    expect(kernel).toMatch(/gl_FragColor = vec4\(thickness \/ penetration, 0\.0, thickness \/ penetration, 1\.0\);/)
+    expect(kernel).toMatch(/if \(spacedEff > 0\.0\)/)
     const gapStart = kernel.indexOf('if (gapRicochet) {')
     expect(gapStart).toBeGreaterThan(-1)
     const gapSeg = kernel.slice(gapStart, gapStart + 900)
     expect(gapSeg).toMatch(/float code = spacedState\.g;/)
     expect(gapSeg).not.toContain('rcContinue')
   })
-  it('管线消费模型 = Σ裸LOS − 最近层差额（含 0.02m 合法小层距反例；review 2026-10-13 blocker）', () => {
-    // 两块 20mm@60°（相隔 0.02m——任何深度邻近阈值都会被它击穿）+ 100mm 主装甲@0°，AP 100/164/5°。
-    // 测试侧镜像管线代数：RT0 = Σ裸LOS；RT1.B = 最近层(裸−转正)/pen；PBR 做差 →
-    // 总消费 = 转正首层 + 其余裸 LOS，与 CPU 同判（27.1268 + 40 + 100 → BLOCKED）。
-    const raw = 20 / Math.cos(60 * Math.PI / 180)
+  it('热力图用 flat vNormal 面法线 + highp 视线方向（移动端 mediump 回归）', () => {
+    // 装甲几何在 loadModels 中 toNonIndexed + computeVertexNormals ⇒ 每个三角形的
+    // vNormal 已是几何面法线，与点击判定 hit.face.normal 同源。3.13.0 的
+    // dFdx/dFdy(vViewPos) 在移动端 mediump(fp16) 下逐像素导数量化/退化，导致热力图错乱
+    // （2026-10-19 修复）；这里锁定三个热力图 shader 都使用 flat vNormal。
+    // 视线方向必须 highp：500 m 处 mediump length(vViewPos) 在平方时溢出，角度会坏。
+    expect(kernel).toMatch(/toNonIndexed\(\)/)
+    expect(kernel).toMatch(/computeVertexNormals\(\)/)
+    expect([...kernel.matchAll(/highp vec3 nFace = normalize\(vNormal\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/varying highp vec3 vViewPos;/g)]).toHaveLength(4)
+    expect([...kernel.matchAll(/highp vec3 viewDir = normalize\(vViewPos\);/g)]).toHaveLength(3)
+    expect([...kernel.matchAll(/highp float angle = acos\(/g)]).toHaveLength(3)
+    expect(kernel).not.toMatch(/dFdx\(vViewPos\)/)
+    expect(kernel).not.toMatch(/length\(vViewPos\)/)
+    expect(kernel).toMatch(/highp vec3 nVR = nFace;/)
+    expect(kernel).not.toMatch(/extensions: \{ derivatives: true \},/)
+  })
+  it('管线消费模型 = Σ逐层归一化等效厚度（两块间隙板都转正；BlitzKit）', () => {
+    // 两块 20mm@60°（相隔 0.02m）+ 100mm 主装甲@0°，AP 100/164/5°。
+    // 每块间隙板 2× 增强转正 17.5° → 27.1268；RT0 累加两层的 finalThick/P；
+    // 总 27.1268×2 + 100 = 154.25 < 164 → PENETRATION（不再只看最近层差额）。
     const twoCalNorm = (1.4 * 5 * 100) / (2 * 20)
-    const normFirst = 20 / Math.cos(Math.max(0, 60 - twoCalNorm) * Math.PI / 180)
-    expect(Math.abs(normFirst - 27.1268)).toBeLessThan(0.02)
-    const pipeline = (raw + raw) - (raw - normFirst)
-    expect(Math.abs(pipeline - (normFirst + raw))).toBeLessThan(1e-9)
-    expect(pipeline + 100).toBeGreaterThan(164)   // → BLOCKED（与 CPU/点击链同判）
+    const normEach = 20 / Math.cos(Math.max(0, 60 - twoCalNorm) * Math.PI / 180)
+    expect(Math.abs(normEach - 27.1268)).toBeLessThan(0.02)
+    const pipeline = normEach + normEach
+    expect(pipeline + 100).toBeLessThan(164)   // → PENETRATION（与 CPU/点击链同判）
   })
   it('累计格式：半浮点 RT 保留 >1 累计 + 能力检测 + 8 位回退饱和守卫（review 2026-10-13 P2）', () => {
     const rtFn = kernel.slice(kernel.indexOf('function spacedRTFloatCapable'), kernel.indexOf('function syncPenetrationRT'))
@@ -201,51 +349,124 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/spacedSatGuard: \{ value: 0 \},/)
     expect(kernel).toMatch(/spacedSatGuard\.value = rtIsFloat \? 0 : 1;/)
     expect(kernel).toMatch(/const rtIsFloat = spacedRTFloatCapable\(\);/)
+    // 8 位 R 饱和 = 真实累计厚度未知，必须 fail-closed，不能当成恰好一份穿深算 CDF。
+    expect(kernel).toMatch(/spacedSatBlocked = spacedSatGuard > 0\.5 && rawTotal >= 1\.0;/)
+    expect(kernel).toMatch(/if \(spacedSatBlocked\) \{/)
   })
-  it('饱和回归：Σ裸LOS/pen>1 按实际 RT 格式逐次混合——半浮点不翻、8 位翻转（review 2026-10-13 P2）', () => {
-    // 评论场景：两块 40mm 间隙甲均 @69°（相隔 0.2m）+ 25mm 主装甲 @0°，AP 100/210/5°。
-    // CPU：首层 twoCal 转正 8.75° → 80.609975；次层裸 LOS 111.617124；210−80.609975−111.617124
-    // = 17.772901 < 25 → BLOCKED。Σ裸LOS/pen = 223.234249/210 = 1.063020 > 1。
-    const pen = 210
-    const raw = 40 / Math.cos(69 * Math.PI / 180)                    // 111.617124
-    const twoCalNormDeg = (1.4 * 5 * 100) / (2 * 40)                 // 8.75°（与源码 twoCal 同式）
-    const normFirst = 40 / Math.cos((69 - twoCalNormDeg) * Math.PI / 180)
-    expect(Math.abs(raw - 111.617124)).toBeLessThan(1e-3)
-    expect(Math.abs(normFirst - 80.609975)).toBeLessThan(1e-3)
-    const rawSumRatio = (raw + raw) / pen
-    expect(rawSumRatio).toBeGreaterThan(1)                           // 覆盖 Σ裸LOS/pen > 1
-    expect(normFirst + raw + 25).toBeGreaterThan(pen)                // 与点击链同判 BLOCKED
-    const delta = (raw - normFirst) / pen
-    // 逐次混合模拟：src 写入时量化到 RT 格式，dst = 量化(dst + src)（固定功能逐片元混合语义）。
+  it('累计格式：逐层 normalized R 可 >1；8 位饱和按整穿深保守处理', () => {
+    // 两块 40mm 间隙甲均 @69°（相隔 0.2m）+ 25mm 主装甲 @0°，AP 100/100/5°。
+    // 每层 2× 转正 8.75° → 80.609975mm；Σ normalized / pen = 161.22/100 = 1.6122 > 1。
+    const pen = 100
+    const twoCalNormDeg = (1.4 * 5 * 100) / (2 * 40)                 // 8.75°
+    const normEach = 40 / Math.cos((69 - twoCalNormDeg) * Math.PI / 180)
+    expect(Math.abs(normEach - 80.609975)).toBeLessThan(1e-3)
+    const sumRatio = (normEach + normEach) / pen
+    expect(sumRatio).toBeGreaterThan(1)                              // 逐层 normalized R 可 >1
+    expect(normEach + normEach + 25).toBeGreaterThan(pen)            // 与点击链同判 BLOCKED
+    // 8 位：逐次 additive 先钳到 1；PBR 的 saturated guard 按整穿深计，保守为 BLOCKED。
     const q8 = (x) => Math.round(Math.min(1, Math.max(0, x)) * 255) / 255
-    const q16 = (x) => { const s = Math.pow(2, Math.floor(Math.log2(Math.abs(x))) - 10); return Math.round(x / s) * s }
-    const accumulate = (q) => { let acc = 0; for (let i = 0; i < 2; i++) acc = q(acc + q(raw / pen)); return acc }
-    const acc8 = accumulate(q8)
-    expect(acc8).toBe(1.0)                                           // 8 位：累计先钳到 1，超额丢失
-    const rem8 = pen - Math.max(0, acc8 - q8(delta)) * pen
-    expect(Math.abs(rem8 - 31.294118)).toBeLessThan(0.05)            // 在饱和 R 上退差额 → 翻成击穿（评论数值）
-    expect(rem8).toBeGreaterThan(25)
-    const remFallback = pen - 1.0 * pen                              // 回退守卫：饱和 R 不退差额（按整穿深计）
-    expect(remFallback).toBeLessThan(25)                             // 保守侧：绝不把饱和翻成击穿
-    const acc16 = accumulate(q16)
-    expect(Math.abs(acc16 - rawSumRatio)).toBeLessThan(0.002)        // 半浮点（实际格式）：保留 >1 总量
-    const rem16 = pen - Math.max(0, acc16 - q16(delta)) * pen
-    expect(Math.abs(rem16 - 17.772901)).toBeLessThan(0.15)           // 与 CPU 17.772901 同判（fp16 逐次舍入 ≪0.1mm）
+    const accumulate = (q) => { let acc = 0; for (let i = 0; i < 2; i++) acc = q(acc + q(normEach / pen)); return acc }
+    expect(accumulate(q8)).toBe(1.0)
+    const rem8 = pen - Math.max(0, Math.min(1, accumulate(q8))) * pen
+    expect(rem8).toBeLessThan(25)
+    // 半浮点：保留 >1 总量，同样被两层间隙甲耗尽。
+    const rem16 = pen - (normEach + normEach)
     expect(rem16).toBeLessThan(25)
   })
-  it('rcContinue 双实现：转正仅首个实际装甲层（armorIdx == 0 / armorIdx === 0）', () => {
+  it('rcContinue 双实现：每个非外部层独立转正（BlitzKit）', () => {
     const packSrc = read('../scene/armorCollisionPack.js')
-    // 外部模块是 flat 消耗，不计入 armorIdx（用户 2026-10-17）；旧 hitIdx 口径已删除。
-    expect(packSrc).toMatch(/int armorIdx = 0;/)
-    expect(packSrc).not.toMatch(/hitIdx/)
-    expect(packSrc).toMatch(/highp float normR = \(armorIdx == 0\)/)
-    expect(packSrc).toMatch(/const normR = armorIdx === 0/)
+    expect(packSrc).not.toMatch(/armorIdx|hitIdx/)
+    expect(packSrc).toMatch(/float normR = twoCal/)
+    expect(packSrc).toMatch(/const normR = twoCal/)
   })
-  it('点击链：转正只作用于首个实际装甲层（armorLayerCount === 0）', () => {
-    expect(pen).toMatch(/const effNormalization = armorLayerCount === 0 \? normalization : 0\.0/)
-    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| layerIndex > 0 \|\| !allowRicochet/)
+  it('点击链：每个非外部层独立转正（BlitzKit）', () => {
+    // 几何规则已收敛到 resolveLayerGeometry，确定性与概率链共用。
+    expect(pen).toMatch(/function resolveLayerGeometry\(ah, thickness, ctx\)/)
+    expect(pen).toMatch(/const effNormalization = normalization/)
+    expect(pen).not.toMatch(/armorLayerCount/)
+    expect(pen).toMatch(/const noRicochet = threeCalibersRule \|\| ctx\.layerIndex > 0 \|\| !ctx\.allowRicochet/)
     // overmatch 字段只报真实 3× 口径，不再用 layerIndex/allow_ricochet 冒充
-    expect(pen).toMatch(/const threeCalibersRule = caliber > thickness \* 3\.0\r?\n/)
+    expect(pen).toMatch(/const threeCalibersRule = ctx\.caliber > thickness \* 3\.0\r?\n/)
+  })
+  it('主热力图按确定性 1× 等效厚度消耗（与判定一致，不再用 3× 概率模型）', () => {
+    expect(kernel).toMatch(/pMin -= totalConsume \* penetration;/)
+    expect(kernel).toMatch(/pMax -= totalConsume \* penetration;/)
+    expect(kernel).not.toMatch(/3\.0 \* spacedEff/)
+    expect(kernel).toMatch(/highp float sigma = max\(\(pMax - pMin\) \/ 6\.0, 1e-4\);/)
+  })
+  it('AP/APCR/HEAT 使用概率链统一判定；HE/跳弹保留确定性分支', () => {
+    // 概率 0/100 不得覆盖确定性 PENETRATION/BLOCKED；否则 252AP 打
+    // 21.5+207mm 的确定性穿透会被 3× 概率误判成未击穿。
+    expect(kernel).not.toMatch(/chanceOutcome/)
+    expect(kernel).toMatch(/title = partial \? L\.mayPenetrate : L\.resultName\(st\);/)
+    // 统一概率行：所有弹种同一口径（0%/1–99%/100%），不再按 partial 生成 chanceHtml。
+    expect(kernel).toMatch(/L\.shotPenChance\}: \$\{formatProbabilityPercent\(cardChance\)\}%/)
+    // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
+    expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
+    expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true && !blockedNoPrimary;/)
+    // 无主装甲阻断是终态：概率/满伤不得回填。
+    expect(kernel).toMatch(/allowChance = allowChance && !blockedNoPrimary/)
+    expect(kernel).toMatch(/!isHE && !blockedNoPrimary/)
+    expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
+    expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
+    // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。
+    expect(kernel).toMatch(/const heFirstPrimary = isHE && hitsForCheck\.length > 0/)
+    expect(kernel).toMatch(/heFirstPrimary && hasProbabilityChain\s*\n\s*&& hasPrimaryLayer\(res\.probability_layers\)/)
+    expect(kernel).toMatch(/heFirstPrimary && hePenChance > 0/)
+    // 概率链与确定性链同一收集边界：停在首个 Primary（含），不把其后的车体/履带算进去。
+    expect(pen).toMatch(/const probabilityHits = collectFilteredHits\(req\.hits\)/)
+    expect(pen).not.toMatch(/collectFilteredHits\(req\.hits, false\)/)
+    expect(pen).toMatch(/buildProbabilityLayers\(probabilityHits, \{/)
+  })
+  it('HE 零/缺失 explosion_radius 不进入 generic probability card', () => {
+    // 计算层已 fail-closed（BLOCKED / 0 damage / res.he=null）；UI 的概率卡还必须
+    // 要求合法 splash data，否则 first Primary + chain 会把结果覆盖成
+    // May penetrate / PENETRATION full damage。
+    expect(kernel).toMatch(/heInfo != null && heRadius > 0 && heFirstPrimary && hePenChance > 0/)
+    expect(kernel).not.toMatch(/\(!isHE \|\| \(heFirstPrimary && hePenChance > 0\)\)/)
+  })
+
+  it('HE 采样三态：samples:0 是权威零伤害、he_splash_error 显式 ERROR，不落单射线兜底', () => {
+    // 判定层：采样结果（含 samples:0）优先；采样器跑不了时 ERROR，绝不回退单射线。
+    expect(pen).toContain('he_splash_error')
+    expect(pen).toMatch(/\(heData && heData\.unavailable\)\s*\n?\s*\?\s*'ERROR'/)
+    expect(pen).toContain("source: 'sampler'")
+    expect(pen).toContain('unavailable: true')
+    expect(pen).toContain("source: 'single-ray'")
+    // 视图层：三种失败原因都上抛 reason，网格失败不再静默。
+    expect(kernel).toContain('he_splash_error: heSplashError')
+    expect(kernel).toContain("'collision-pack:'")
+    expect(kernel).toContain("'collision-grid:'")
+    expect(kernel).toContain("'sampler:invalid-input'")
+    expect(kernel).toContain('heInfo.unavailable')
+    expect(kernel).toContain('L.heSamplingUnavailable')
+  })
+
+  it('判定输入缺数据时 fail-closed：无 120mm 静默默认、未知弹种不落到 HE', () => {
+    expect(kernel).not.toMatch(/sh\.caliber \|\| 120/)
+    expect(kernel).not.toContain('shooterCaliber = 120')
+    expect(kernel).toContain('function resolveCaliberFor')
+    expect(kernel).toContain('resolveCaliberFor(sh)')
+    expect(kernel).toContain('未知弹种必须 fail-closed')
+    expect(kernel).toContain('resolveShotCaliber() > 0')
+  })
+
+  it('爆炸弹间隙甲/模块耗尽穿深时仍走 SPLASH/BLOCKED 分支，不落进贯穿 CDF', () => {
+    // review 2026-10-18：100mm HE 打 100mm 间隙甲 + 1mm 主甲，rem<=0 时
+    // 不能落到通用高斯贯穿 CDF；canSplash 必须独立于 rem>0 处理。
+    expect(kernel).not.toMatch(/isExplosive && rem > 0\.0/)
+    expect(kernel).toMatch(/if \(isExplosive\) \{/)
+    // HE canSplash 强制非贯穿；HEAT 仍做 gap 衰减并进入 CDF（区间正尾可穿）。
+    expect(kernel).toMatch(/else \{\s*\/\/ HEAT gap decay/)
+    expect(kernel).not.toMatch(/HEAT 被间隙甲耗尽/)
+  })
+  it('单间隙层 + 前置外部模块：间隙甲 CDF 使用模块平移后的区间', () => {
+    // review 2026-10-18 反例：chassis20 → spaced80 → hull1，卡片 13.7%；
+    // 旧 shader 用原始 penetration 算间隙层 CDF，得到 27.4%。
+    // 均值保留符号：模块厚于穿深时仍可能有正向尾部，不得 max(0, ·) 截断。
+    expect(kernel).toMatch(/spacedProbBase = moduleInFront \? \(penetration - moduleFlat\) : penetration;/)
+    expect(kernel).not.toMatch(/max\(0\.0, penetration - moduleFlat\)/)
+    expect(kernel).toMatch(/aiNormalCdf\(\(spacedProbBase - spacedEff\)/)
   })
 })
 
@@ -253,6 +474,33 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // TankCatalogMenu）：卡片图按逐车内容框缩放定位，盒比例是变换数学的契约——组件常数
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
+describe('production gun_mask clip wiring (2026-10-21)', () => {
+  const kernel = read('../scene/tankViewer.js')
+  it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
+    const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
+    expect(occurrences).toHaveLength(2)
+    expect(kernel).toContain('rcClipEnabled: rcUniforms.rcClipEnabled')
+    expect(kernel).toContain('rcUniforms.rcClipPlane.value.set(')
+    expect(kernel).toContain('rcUniforms.rcClipEnabled.value = true;')
+    expect(kernel).toContain('clipPlane: gunClipPlane')
+  })
+  it('无效 HE 概率行走 resolveCardChance fail-closed', () => {
+    expect(kernel).toContain('resolveCardChance({')
+    expect(kernel).toContain('const { chance: cardChance } = resolveCardChance({')
+  })
+  it('非跳弹的 0mm 板不显示“跳弹 (-25% 穿深)”子标签', () => {
+    expect(kernel).toContain("sub = l.ricochet ? L.shotRicochetSeg : '';")
+  })
+  it('跳弹续飞 1–99% 的中段卡片显示满伤，而不是确定性 0', () => {
+    expect(kernel).toContain(': (chancePartial ? dmgVal : dmgDealt));')
+  })
+  it('跳弹续飞 1–99% 时最终段装甲板按概率链累计 chance 着色（可能击穿）', () => {
+    expect(kernel).toContain('const partialEval = !probabilityMode && chancePartial')
+    expect(kernel).toContain('const partialChance = probabilityMode ? null : nextPartialChance(l);')
+    expect(kernel).toContain('partialChance != null')
+  })
+})
+
 describe('tank-picker cover crop wiring (shared TankCatalogMenu)', () => {
   const menu = read('./TankCatalogMenu.vue')
 

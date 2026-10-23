@@ -92,6 +92,14 @@ settlement 秒值，使用 `[0, +5s]` directional 窗口，无法建立窗口即
   settlementLifeTimeSec / settlementDeathReasonRaw / settled stat facts。非 Rating identity
   （rosterComplete、#201 evidence、clan、killer/resultEntity、live provenance）不参与指纹，
   不会改变 League 身份。
+- **已知限制（全部副本冲突）**：当批次只有一个 arenaId 且其全部副本互相冲突时，`collectLeague()`
+  会记录 `CONFLICTING_REPLAYS_FOR_ARENA` 并丢弃该场全部战斗，随后 `finalizeBatch()` 在错误可展示前
+  抛 `NO_VALID_REPLAYS`。当前 UI/导出只看到 `NO_VALID_REPLAYS`，看不到具体 arena 冲突原因。
+  当前没有用户可见的冲突明细，只能调试内部批次计算。维护者不要把该批次误判为文件损坏或无可解析回放。
+- **已知限制（clan tag 未归一化）**：`battleFacts.ts` 原样转发 `clan_tag`，`autoName()` 做字面比较，`teamKey()` 因此把 `CHRD` 与 `CHRD ` 视为不同战队；混合批次可能生成重复战队汇总或覆盖 key。golden fixtures 已包含带 padding 的形式；当前未做 trim/normalize。
+- **已知限制（导出失败标签）**：`export/sheets.ts:failureLabel()` 未覆盖 `LEAGUE_ARENA_ID_MISSING` / `LEAGUE_INVALID_TEAM` / `LEAGUE_DUPLICATE_ACCOUNT_ID` / `LEAGUE_MISSING_TANK` / `LEAGUE_INVALID_STAT_FACTS`；这些失败在中文战斗列表 sheet 中会显示原始 error code。已有本地化描述，但导出映射尚未接上。
+- **已知限制（车辆用量并列排序）**：`aggVehicleUsage()` 在 battles 数相同时当前按 tankId 的十进制字符串排序；例如 `100` 会排在 `20` 前，可能不符合 numeric ascending contract。该排序差异仍存在，运行时 comparator 尚未修复。
+- **已知限制（已退役但仍在计算的字段）**：`finalize.ts:populateBattle()` 仍计算并写入 `contribution` / `kast` / `impact`，但当前没有生产 reader；这些字段与计算属于清理债务，不属于当前评分/展示契约。
 
 ## 七维度公式（合计 1000）
 
@@ -154,13 +162,13 @@ Exchange: 180 × (0.30T + 0.70G)
           efficiency = O / (O + received) × participation（零安全）
 Blocked:  50 × (0.70T + 0.30G)
 RC:       winner survived = 75；dead + enemy death ∈ [playerDeath, playerDeath+5s] = 50；否则 0
-Shooting: rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
+射击：rawAcc = hits/shots；rawPen = pens/hits（zero-safe，clamp [0,1]）
           softAcc = 0.9×Wilson95%(hits,shots) + 0.1×rawAcc
           softPen = 0.9×Wilson95%(pens,hits) + 0.1×rawPen
           conf = 0.3×softAcc + 0.7×softPen
           score = 110 × min(1, conf/0.70) × min(1, dmg/teamAvgDamage)
 
-Winner final = min(1000, base × 1.05)；Loser final = base
+胜者 final = min(1000, base × 1.05)；败者 final = base
 单场 Team Rating = 本队 7 人 finalRating 算术平均；batch（选手/战队）= pooled sum/count + prior
 Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 killer attribution
 禁止：Tankopedia HP normalization / role bonus / LOSER_TOP4 / dual algorithm / 调参
@@ -216,7 +224,9 @@ Trade：directional [0, +5s]（敌方不早于玩家，边界包含）；不是 
   `victory_points_seized` / `traded_deaths` / `account_id` / `tank_id` 已随 B6 从公共列与
   Excel 移除，导出层不再输出；`survival_avg` 已改名 `survival_time_avg`。
   账号 / 车辆 ID 仍作为响应行的结构化身份字段（`accountId` / `vehicleId`）保留，
-  但不再是可导出列。
+  但不再是公共导出列。
+- **例外（原始字段 worksheet）**：单场 / `mode=each` 的「原始字段」worksheet 仍按原始输入写
+  `account_id`；它不是公共列，也不进入汇总，但分享工作簿前应视为包含账号标识。
 - 普通模式 Excel 保持现状（同样只导出 canonical 字段集）。
 - League 单场工作簿：玩家数据（身份 + 单场 stats + Rating 关键原始字段 + 占点得分
   + 七维度实际分/满分/百分比 + 总 Rating）、战斗信息（含双方战队 Rating、全场 MVP、

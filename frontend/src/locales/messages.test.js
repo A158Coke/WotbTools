@@ -10,9 +10,17 @@ describe('locale message composition', () => {
       expect(messages[locale].agentReplay.expand_toolbar).toBeTruthy()
     }
   })
+  it('labels every league team-summary column key in all locales', () => {
+    // #671 回归：表头由 `league.summary.<column key>` 拼出，缺 key 就会把内部 key 直接显示给用户。
+    for (const locale of ['zh', 'en', 'ru']) {
+      for (const key of ['rated_battles', 'league_observed_mean']) {
+        expect(messages[locale].league.summary[key], `${locale} league.summary.${key}`).toBeTruthy()
+      }
+    }
+  })
   it('contains creator forms, manual ratings, assessment and canonical errors in all locales', () => {
     for (const locale of ['zh', 'en', 'ru']) {
-      for (const key of ['title', 'configTitle', 'uid', 'assessmentDisclaimer', 'starsHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()
+      for (const key of ['title', 'configTitle', 'loginRequired', 'adminRequired', 'uid', 'assessmentDisclaimer', 'starsHint', 'avatarUnavailable']) expect(messages[locale].creators[key], `${locale} ${key}`).toBeTruthy()
       expect(messages[locale].featureOffline.creators).toBeTruthy()
       for (const code of API_ERROR_CODES.filter(code => code.startsWith('CREATOR_'))) expect(messages[locale].api_errors[code], `${locale} ${code}`).toBeTruthy()
     }

@@ -39,7 +39,7 @@ function page() {
     await nextTick()
     await flushPromises()
   }
-  const exportItem = async (format: 'xlsx' | 'pdf') => {
+  const exportItem = async (format: 'xlsx' | 'csv' | 'pdf') => {
     await wrapper.get('[data-testid="tournament-export"]').trigger('click')
     await wrapper.get(`[data-testid="tournament-export-${format}"]`).trigger('click')
   }
@@ -140,6 +140,14 @@ describe('public tournament summary', () => {
 })
 
 describe('public tournament export lifecycle', () => {
+  it('keeps CSV export out of the anonymous public board', async () => {
+    const p = page(); await flushPromises()
+    await p.wrapper.get('[data-testid="tournament-export"]').trigger('click')
+    expect(p.wrapper.find('[data-testid="tournament-export-csv"]').exists()).toBe(false)
+    expect(p.wrapper.find('[data-testid="tournament-csv-hint"]').exists()).toBe(false)
+    p.wrapper.unmount()
+  })
+
   it('ignores an older initial event list after a reconnect search has completed', async () => {
     let finishOld!: (value: TournamentEvent[]) => void
     state.list.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))

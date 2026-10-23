@@ -1,0 +1,246 @@
+package com.wotb.ai.review;
+
+import com.wotb.core.replay.evidence.EvidenceSkillContext;
+import com.wotb.core.replay.evidence.EvidenceSkillEngine;
+import com.wotb.core.replay.evidence.EvidenceSkillResult;
+import com.wotb.core.replay.feature.DefaultPlayerBattleFeatureExtractor;
+import com.wotb.core.replay.feature.PlayerBattleFeatureSet;
+import com.wotb.core.replay.processing.RecorderEntityMapping;
+import com.wotb.core.model.Battle;
+import com.wotb.core.replay.reconstruction.ReplayReconstruction;
+import com.wotb.core.replay.timeline.BattleTimeline;
+import com.wotb.core.replay.timeline.BattleTimelineBuilder;
+import com.wotb.core.replay.timeline.BattleTimelineResult;
+import com.wotb.core.replay.timeline.TimelinePerspective;
+import com.wotb.ai.gateway.AiChatGateway;
+import com.wotb.ai.gateway.AiChatRequest;
+import com.wotb.ai.gateway.AiRequestContext;
+import com.wotb.ai.gateway.AiUpstreamException;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.function.LongSupplier;
+
+/**
+ * AI Review Harness 双 Call 编排器：
+ * Call #1（赛前战略基线）→ Backend Evidence Skills → Call #2（Tactical Review）。
+ * <p>随机战斗个人复盘（PLAYER_FOCUSED）的唯一编排入口，不评判 MVP/战犯；
+ * 团队复盘（TEAM_PERSPECTIVE，训练房/联赛）由 {@link TeamReplayAnalysisService}
+ * 独立编排（含 canonical timeline hard gate）。</p>
+ * <p>降级阶梯：非 ZH / 特征不可用 / Call #1 失败 / 无证据 → 旧路径（保持现有单 Call
+ * 路径为兜底，用户可感知行为不倒退）。</p>
+ * <p><b>hard reject</b>（canonical timeline 不可用）：无重建 /
+ * 录像者未解析 / canonical timeline 不可用 → 抛 {@code AiTimelineUnusableException}，
+ * <b>不</b>走旧路径、<b>不</b>调用 LLM（禁止 settlement-only fallback）。</p>
+ */
+@Service
+public class TacticalReviewHarness {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(TacticalReviewHarness.class);
+
+    /** Call #2 前保留的安全余量（秒），避免恰好在 endpoint deadline 边缘结束。 */
+    static final int SAFETY_MARGIN_SEC = 10;
+    /** Call #1 失败后进入旧路径 fallback 所需的最小剩余预算（秒）。 */
+    static final int FALLBACK_MIN_REMAINING_SEC = 60;
+    /** 前端/后端/nginx 的请求生命周期上限（秒），用于理论最坏时间断言。 */
+    static final int ENDPOINT_DEADLINE_SEC = 1100;
+
+    /**
+     * Harness 运行结果：复盘文本 + 本次执行实际使用的 Call #1 prior。
+     * <p>{@code preBattlePrior} 仅在 ZH + 全部前置满足 + Call #1 成功时非 null
+     * （fallback / 非 ZH / 失败均为 null），供上层渲染用户可见的赛前预测区块。</p>
+     */
+    public record HarnessOutcome(AnalyzeResult result, PreBattleStrategicPrior preBattlePrior) {
+    }
+
+    private final PlayerReplayAnalysisService playerService;
+    private final PreBattleStrategicService preBattleService;
+    private final AiChatGateway gateway;
+    private final AiReplayAnalysisConfig config;
+    private final LongSupplier nanoTimeSource;
+    private final EvidenceSkillEngine skillEngine = new EvidenceSkillEngine();
+    private final MeterRegistry meterRegistry;
+
+    @Autowired
+    public TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
+                                 final PreBattleStrategicService preBattleService,
+                                 final AiChatGateway gateway,
+                                 final AiReplayAnalysisConfig config,
+                                 @Autowired(required = false) final MeterRegistry meterRegistry) {
+        this(playerService, preBattleService, gateway, config, System::nanoTime, meterRegistry);
+    }
+
+    TacticalReviewHarness(final PlayerReplayAnalysisService playerService,
+                          final PreBattleStrategicService preBattleService,
+                          final AiChatGateway gateway,
+                          final AiReplayAnalysisConfig config,
+                          final LongSupplier nanoTimeSource,
+                          final MeterRegistry meterRegistry) {
+        this.playerService = playerService;
+        this.preBattleService = preBattleService;
+        this.gateway = gateway;
+        this.config = config;
+        this.nanoTimeSource = nanoTimeSource;
+        this.meterRegistry = meterRegistry;
+    }
+
+    /**
+     * 运行双 Call Harness 并暴露本次执行实际使用的 Call #1 prior
+     * （仅 ZH 全路径成功时非 null，供上层渲染用户可见赛前预测区块）；
+     * 通过 {@code listener} 广播阶段事件（call1_start/call1_done/evidence_done）
+     * 与 Call #2 主复盘 token 增量（call2_token）。
+     */
+    public HarnessOutcome analyzeWithPrior(final Battle battle,
+                                           final ReplayReconstruction reconstruction,
+                                           final AllowedLanguage language,
+                                           final AiReviewStreamListener listener) {
+        final long startNanos = budgetStartNanos();
+        if (remainingSeconds(startNanos) < SAFETY_MARGIN_SEC) {
+            // 预算起点回溯到提交时刻（now + overall）：排队计入剩余预算，
+            // 启动时剩余不足直接干净失败 AI_TIMEOUT。
+            LOGGER.info("Harness overall deadline exhausted before start, aborting with AI_TIMEOUT");
+            throw new AiUpstreamException("AI_TIMEOUT", 504, AiRequestContext.correlationId());
+        }
+        if (language != AllowedLanguage.ZH) {
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "NON_ZH", listener), null);
+        }
+        if (battle == null) {
+            throw new IllegalArgumentException("NO_BATTLE_DATA");
+        }
+        if (!preBattleService.isConfigured()) {
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "AI_NOT_CONFIGURED", listener), null);
+        }
+        // 无 canonical timeline 可用 → 拒绝 AI Review（不走 settlement-only fallback）
+        if (reconstruction == null) {
+            LOGGER.info("Harness rejecting AI review: NO_RECONSTRUCTION (timeline unusable)");
+            throw new AiTimelineUnusableException("NO_RECONSTRUCTION");
+        }
+        final RecorderEntityMapping recorder = AnalysisUnitAssembler.findRecorder(battle, reconstruction);
+        if (!recorder.resolved()) {
+            LOGGER.info("Harness rejecting AI review: RECORDER_UNRESOLVED (timeline unusable)");
+            throw new AiTimelineUnusableException("RECORDER_UNRESOLVED");
+        }
+        final BattleTimelineResult timelineResult = BattleTimelineBuilder.build(
+                battle, reconstruction,
+                TimelinePerspective.personal(recorder.accountId(), recorder.team()));
+        if (!timelineResult.usable()) {
+            LOGGER.info("Harness rejecting AI review: timeline unusable: {}",
+                    timelineResult.validation().errors());
+            throw new AiTimelineUnusableException(timelineResult.validation().errors());
+        }
+        final BattleTimeline timeline = timelineResult.timeline();
+        final PlayerBattleFeatureSet features;
+        try {
+            features = new DefaultPlayerBattleFeatureExtractor().extract(
+                    reconstruction, recorder, battle);
+        } catch (final RuntimeException e) {
+            LOGGER.info("Harness feature extraction failed, falling back: {}", e.getMessage());
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "FEATURES_FAILED", listener), null);
+        }
+        if (!features.hasFeatures()) {
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "FEATURES_UNAVAILABLE", listener), null);
+        }
+
+        final PreBattleStrategicPrior prior = preBattleService.analyze(battle, listener);
+        if (prior == null) {
+            if (remainingSeconds(startNanos) < FALLBACK_MIN_REMAINING_SEC) {
+                LOGGER.info("Harness prior unavailable and budget insufficient, aborting with AI_TIMEOUT");
+                throw new AiUpstreamException(
+                        "AI_TIMEOUT", null, AiRequestContext.correlationId());
+            }
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "PRE_BATTLE_UNAVAILABLE", listener), null);
+        }
+        LOGGER.info("Harness prior obtained: hypotheses={} matchups={} winConditions={}",
+                prior.hypotheses().size(),
+                prior.keyMatchups().size(),
+                prior.strategicWinConditions().size());
+
+        final EvidenceSkillResult evidence = skillEngine.run(new EvidenceSkillContext(
+                battle, reconstruction, features, recorder));
+        listener.onStage("evidence_done");
+        if (!evidence.hasContent()) {
+            return new HarnessOutcome(fallback(battle, reconstruction, language, "NO_EVIDENCE", listener), null);
+        }
+
+        final TacticalReviewPromptBuilder.PreparedHarnessPrompt prepared =
+                TacticalReviewPromptBuilder.prepare(
+                        prior,
+                        evidence,
+                        battle,
+                        reconstruction,
+                        timeline,
+                        features,
+                        recorder,
+                        config.estimator(),
+                        config.singleReplayMaxInputTokens(),
+                        config.contextWindowTokens(),
+                        config.maxOutputTokens(),
+                        config.promptSafetyMarginTokens());
+        AiPromptBudgetGuard.enforce(
+                prepared.estimatedInputTokens(),
+                config.singleReplayMaxInputTokens(),
+                config.contextWindowTokens(),
+                config.maxOutputTokens(),
+                config.promptSafetyMarginTokens());
+        // Context 可观测性：记录低基数 section token 估算与完成计数
+        if (meterRegistry != null && prepared.sectionTokens() != null) {
+            prepared.sectionTokens().forEach((section, tokens) ->
+                    meterRegistry.counter(
+                            "wotb_ai_review_context_section_tokens", "section", section)
+                            .increment(tokens));
+        }
+        final AiChatRequest request = new AiChatRequest(
+                prepared.systemPrompt(),
+                prepared.userContent(),
+                config.model(),
+                null,
+                config.maxOutputTokens(),
+                config.call2ThinkingEnabled(),
+                config.call2ThinkingEnabled() ? config.reasoningEffort() : null,
+                null,
+                "TACTICAL_REVIEW_HARNESS",
+                (int) Math.min(Math.max(1L, remainingSeconds(startNanos) - SAFETY_MARGIN_SEC),
+                        Integer.MAX_VALUE));
+        final String text = gateway.stream(request, listener::onToken).completionText();
+        count("used");
+        LOGGER.info("Harness review used: {}", prepared.budgetSummary());
+        return new HarnessOutcome(new AnalyzeResult(text), prior);
+    }
+
+    private AnalyzeResult fallback(final Battle battle,
+                                   final ReplayReconstruction reconstruction,
+                                   final AllowedLanguage language,
+                                   final String reason,
+                                   final AiReviewStreamListener listener) {
+        LOGGER.info("Harness fell back to old path: {}", reason);
+        count(reason);
+        return playerService.analyzePlayerOrFallback(battle, reconstruction, language, listener);
+    }
+
+    private void count(final String reason) {
+        if (meterRegistry != null) {
+            meterRegistry.counter("wotb_ai_review_harness_total", "result", reason).increment();
+        }
+    }
+
+    /**
+     * 剩余请求预算（秒）：整体 deadline = 配置的 callTimeoutSec；
+     * 有 worker 整体 deadline 时预算起点回溯到提交时刻（排队计入预算），
+     * 无 deadline（直接调用）时用当前时间。
+     */
+    private long budgetStartNanos() {
+        final Long deadline = AiRequestContext.overallDeadlineNanos();
+        if (deadline == null) {
+            return nanoTimeSource.getAsLong();
+        }
+        return deadline - config.callTimeoutSec() * 1_000_000_000L;
+    }
+
+    private long remainingSeconds(final long startNanos) {
+        final long elapsedNanos = nanoTimeSource.getAsLong() - startNanos;
+        return Math.max(0L, config.callTimeoutSec() - elapsedNanos / 1_000_000_000L);
+    }
+}

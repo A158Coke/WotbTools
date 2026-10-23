@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({ online: null as any, auth: null as any }))
 vi.mock('./useFeatureGate.js', () => ({ useFeatureGate: () => ({ availability: () => ({ available: state.online.value }) }) }))
 vi.mock('./useAuth.js', async original => ({ ...await original<typeof import('./useAuth.js')>(), useAuth: () => state.auth }))
 vi.mock('../api/creators.js', () => ({ getCreatorAvailability: vi.fn(), listRecommendationCategories: vi.fn() }))
-const supported = { supported: true, contentVisibilitySupported: true, recommendationsSupported: false }
+const supported = { supported: true }
 const Child = defineComponent({ setup: () => useCreatorAvailability(), template: '<button :disabled="loading" @click="refresh">{{available}}/{{directoryVisible}}/{{contentKnown}}</button>' })
 let owner: ReturnType<typeof provideCreatorAvailability>
 const Host = defineComponent({ setup() { owner = provideCreatorAvailability() }, components: { Child }, template: '<Child />' })
@@ -22,29 +22,45 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.useRealTimers() })
 describe('creator capability and content owner', () => {
   it('derives only-video, first publication and last removal from a single typed snapshot', async () => {
-    vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true, contentVisibilitySupported: true, recommendationsSupported: true })
+    vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true })
     vi.mocked(listRecommendationCategories).mockResolvedValueOnce([{ id: 2, name: 'Video', type: 'VIDEO' }])
     wrapper = mount(Host); await flushPromises()
     expect(owner.typeVisible('VIDEO')).toBe(true); expect(owner.typeVisible('UP')).toBe(false)
     expect(owner.directoryVisible.value).toBe(true)
-    expect(listRecommendationCategories).toHaveBeenCalledWith(true, expect.any(AbortSignal))
+    expect(listRecommendationCategories).toHaveBeenCalledWith(expect.any(AbortSignal))
     vi.mocked(listRecommendationCategories).mockResolvedValueOnce([]); await owner.refreshPublicCategories()
     expect(owner.directoryVisible.value).toBe(false)
     state.auth.authenticated.value = true; state.auth.authInitState.value = 'authenticated'
-    state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
     expect(owner.typeVisible('VIDEO')).toBe(true); expect(owner.typeVisible('UP')).toBe(true)
-    vi.mocked(getCreatorAvailability).mockResolvedValueOnce(supported); await owner.refresh()
+    vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: false }); await owner.refresh()
     expect(owner.typeAvailable('VIDEO')).toBe(false); expect(owner.typeVisible('VIDEO')).toBe(false)
-    expect(owner.typeAvailable('UP')).toBe(true)
+    expect(owner.typeAvailable('UP')).toBe(false)
   })
-  it('keeps legacy dictionaries closed to the public while allowing only a ready real administrator', async () => {
-    vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: true, contentVisibilitySupported: false, recommendationsSupported: false })
+  it('keeps empty content types visible to content-admin but not to tournament-admin, HoF-admin or site-admin', async () => {
+    vi.mocked(getCreatorAvailability).mockResolvedValue({ supported: true })
+    vi.mocked(listRecommendationCategories).mockResolvedValueOnce([])
     wrapper = mount(Host); await flushPromises()
-    expect(wrapper.text()).toBe('true/false/false'); expect(listRecommendationCategories).not.toHaveBeenCalled()
-    state.auth.authenticated.value = true; state.auth.tokenParsed.value = { realm_access: { roles: ['tournament-admin'] } }
-    state.auth.authInitState.value = 'initializing'; await flushPromises(); expect(owner.directoryVisible.value).toBe(false)
-    state.auth.authInitState.value = 'authenticated'; await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
-    state.auth.tokenParsed.value.realm_access.roles = ['wotbtools-admin']; await flushPromises(); expect(owner.directoryVisible.value).toBe(false)
+    state.auth.authenticated.value = true; state.auth.authInitState.value = 'authenticated'
+    for (const role of ['tournament-admin', 'HoF-admin', 'wotbtools-admin', 'wotbtools-user']) {
+      state.auth.tokenParsed.value = { realm_access: { roles: [role] } }
+      await flushPromises()
+      expect(owner.typeVisible('UP'), role).toBe(false)
+      expect(owner.typeVisible('VIDEO'), role).toBe(false)
+    }
+    state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
+    await flushPromises()
+    expect(owner.typeVisible('UP')).toBe(true)
+    expect(owner.typeVisible('VIDEO')).toBe(true)
+  })
+  it('keeps both types unavailable without the current capability and makes no directory requests', async () => {
+    vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: false })
+    wrapper = mount(Host); await flushPromises()
+    expect(wrapper.text()).toBe('false/false/false'); expect(listRecommendationCategories).not.toHaveBeenCalled()
+    state.auth.authenticated.value = true; state.auth.tokenParsed.value = { realm_access: { roles: ['content-admin'] } }
+    state.auth.authInitState.value = 'authenticated'; await flushPromises()
+    expect(owner.typeAvailable('UP')).toBe(false); expect(owner.typeAvailable('VIDEO')).toBe(false)
+    expect(owner.directoryVisible.value).toBe(false)
     await owner.refresh(); expect(owner.directoryVisible.value).toBe(true); expect(owner.contentKnown.value).toBe(true)
   })
   it('distinguishes initial failure, confirmed empty and nonempty content, preserving snapshots on transient failure', async () => {
@@ -73,7 +89,7 @@ describe('creator capability and content owner', () => {
     let finish!: (value: { id: number; name: string; type: 'UP' | 'VIDEO' }[]) => void
     vi.mocked(listRecommendationCategories).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
     wrapper = mount(Host); await flushPromises()
-    const oldSignal = vi.mocked(listRecommendationCategories).mock.calls[0][1]!
+    const oldSignal = vi.mocked(listRecommendationCategories).mock.calls[0][0]!
     const pending = owner.refreshPublicCategories(); expect(owner.refresh()).toBe(pending)
     await pending; expect(oldSignal.aborted).toBe(true); expect(owner.directoryVisible.value).toBe(true)
     finish([]); await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
@@ -86,7 +102,7 @@ describe('creator capability and content owner', () => {
     const oldSignal = vi.mocked(getCreatorAvailability).mock.calls[0][0]!
     state.online.value = false; await flushPromises(); expect(oldSignal.aborted).toBe(true)
     state.online.value = true; await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
-    finish({ supported: false, contentVisibilitySupported: false, recommendationsSupported: false }); await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
+    finish({ supported: false }); await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
     state.online.value = false; await flushPromises(); expect(owner.directoryVisible.value).toBe(true)
   })
   it('times out even an abort-ignoring transport, then retries and aborts on unmount', async () => {
@@ -100,7 +116,7 @@ describe('creator capability and content owner', () => {
   })
   it('observes a confirmed rollback instead of retaining a stale public snapshot', async () => {
     wrapper = mount(Host); await flushPromises()
-    vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: false, contentVisibilitySupported: false, recommendationsSupported: false }); await owner.refresh()
+    vi.mocked(getCreatorAvailability).mockResolvedValueOnce({ supported: false }); await owner.refresh()
     expect(owner.available.value).toBe(false); expect(owner.contentKnown.value).toBe(false); expect(owner.publicCategories.value).toEqual([])
   })
 })

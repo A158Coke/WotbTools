@@ -1,6 +1,7 @@
 package com.wotb.web.tournament;
 
 import com.wotb.web.tournament.dto.TournamentDtos;
+import com.wotb.web.tournament.converter.TournamentCsvConverter;
 import com.wotb.web.tournament.entity.TournamentAudit;
 import com.wotb.web.tournament.repository.TournamentAuditRepository;
 import com.wotb.web.tournament.repository.TournamentClanRepository;
@@ -59,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
 class TournamentIntegrationTest {
+    private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Path EVIDENCE_ROOT;
     static {
         try { EVIDENCE_ROOT = Files.createTempDirectory("wotb-tournament-it-"); }
@@ -96,7 +98,7 @@ class TournamentIntegrationTest {
         service.expectedGroups(id,1,1,new TournamentDtos.ExpectedGroupsRequest(1,0,1));
     }
     @Test void migrationAndHibernateValidateActualJsonbMappingsAndUniqueEventIdentity() {
-        assertEquals("40",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
+        assertEquals("44",jdbc.queryForObject("select version from flyway_schema_history where success order by installed_rank desc limit 1",String.class));
         assertEquals("array",jdbc.queryForObject("select jsonb_typeof(days) from tournament_rule where event_id=? and round_number=1",String.class,id));
         assertEquals(5,service.config(id).rounds().size());
         final ApiException error=assertThrows(ApiException.class,()->service.create("admin",new TournamentDtos.CreateRequest(2026,"CN","FIRE_CUP",5,2,List.of("Day 1","Day 2"))));
@@ -134,6 +136,114 @@ class TournamentIntegrationTest {
         assertEquals(ApiErrorCode.TOURNAMENT_VERSION_CONFLICT, assertThrows(ApiException.class,
                 () -> service.importCsv("csv-admin", id, initialVersion, original, preview.sourceSha256(), true, "csv-day-one")).errorCode());
         assertEquals(snapshot, service.publicStandings(id));
+    }
+    @Test void canonicalTournamentCsvFixturesRoundTripThroughPreviewImportAndPublicStandings() throws Exception {
+        final var fourEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "SUMMER", 4, 2, List.of("Day 1", "Day 2"))).event();
+        final var fiveEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "NA", "SUMMER", 5, 3, List.of("Day 1", "Day 2", "Day 3"))).event();
+        final var cases = List.of(
+                new Object[] {fourEvent, "4x2.csv", "canonical-4x2"},
+                new Object[] {fiveEvent, "5x3.csv", "canonical-5x3"});
+        for (final Object[] testCase : cases) {
+            final var event = (TournamentDtos.Event) testCase[0];
+            final String filename = (String) testCase[1];
+            final String idempotencyKey = (String) testCase[2];
+            final byte[] bytes = Files.readAllBytes(Path.of("../../common/fixtures/tournament/csv", filename));
+            final var file = new MockMultipartFile("file", filename, "text/csv", bytes);
+            final var version = service.config(event.id()).event().version();
+            final var preview = service.previewCsv(event.id(), version, file);
+            final var imported = service.importCsv("csv-admin", event.id(), version, file, preview.sourceSha256(), true, idempotencyKey);
+            final var actual = service.publicStandings(event.id());
+            assertEquals(imported.standings().rows(), actual.rows());
+            assertEquals(3, actual.rows().size());
+            if (filename.equals("4x2.csv")) {
+                assertCanonicalFacts(actual, "-KSR-", java.util.Arrays.asList(100L, null, 0L, 50L, null, 25L, 10L, 15L), 200);
+                assertCanonicalFacts(actual, "雪,豹*", java.util.Arrays.asList(0L, 0L, null, 0L, 0L, null, 0L, 0L), 0);
+                assertCanonicalFacts(actual, "=SUM(A1:A2)", java.util.Arrays.asList(1L, null, null, null, null, null, null, 1L), 2);
+            } else {
+                assertCanonicalFacts(actual, "ALPHA*", java.util.Arrays.asList(100L, null, 0L, 50L, null, 25L, 10L, 15L, null, 20L, 0L, 30L, null, 40L, 10L), 300);
+                assertCanonicalFacts(actual, "雪,豹*", java.util.Arrays.asList(0L, 100L, null, 0L, 100L, null, 0L, 100L, null, 0L, 100L, null, 0L, 100L, null), 500);
+                assertCanonicalFacts(actual, "=CMD+1", java.util.Arrays.asList(1L, null, null, null, null, null, null, null, null, null, null, null, null, null, null), 1);
+            }
+        }
+    }
+    @Test void canonicalCsvRoundTripPreservesUnderlyingScoresAcrossActiveClearOverlays() throws Exception {
+        final var initialCsv = csv(csvText("A,900,,,,,,,,,,900\n"));
+        var version = service.config(id).event().version();
+        var preview = service.previewCsv(id, version, initialCsv);
+        service.importCsv("admin", id, version, initialCsv, preview.sourceSha256(), true, "initial-900");
+        service.clearPoints("admin", id, new TournamentDtos.ClearRequest(service.config(id).event().version(), 1, 1, "A", "sanction", false));
+        assertCanonicalCsvPreservesClearAndRestore(id, "historical-csv", 900);
+
+        final long groupEvent = service.create("admin", new TournamentDtos.CreateRequest(2026, "EU", "FIRE_CUP", 5, 2, List.of("Day 1", "Day 2"))).event().id();
+        final var config = service.config(groupEvent);
+        service.saveRules("admin", groupEvent, 1, new TournamentDtos.RuleRequest(config.event().version(), config.rounds().getFirst().rulesVersion(), ruleDays(900)));
+        final var groupDay = service.day(groupEvent, 1, 1);
+        service.expectedGroups(groupEvent, 1, 1, new TournamentDtos.ExpectedGroupsRequest(groupDay.eventVersion(), groupDay.version(), 1));
+        save(groupEvent, 1, 1, List.of(group(groupEvent, 1, 1, 1, 0, "A", "B", "C")), List.of("A", "B", "C"));
+        publish(groupEvent, 1, 1, "publish-900-group");
+        service.clearPoints("admin", groupEvent, new TournamentDtos.ClearRequest(service.config(groupEvent).event().version(), 1, 1, "A", "sanction", false));
+        assertCanonicalCsvPreservesClearAndRestore(groupEvent, "published-groups", 900);
+    }
+    private void assertCanonicalCsvPreservesClearAndRestore(final long eventId, final String key, final long score) throws Exception {
+        final TournamentDtos.DayView adminDay = JSON.treeToValue(JSON.valueToTree(service.day(eventId, 1, 1, true)), TournamentDtos.DayView.class);
+        assertEquals(0L, point(adminDay.standings(), "A"));
+        assertEquals(score, point(adminDay.canonicalStandings(), "A"));
+        final var canonicalFile = canonicalCsv(adminDay.canonicalStandings());
+        final var preview = service.previewCsv(eventId, adminDay.eventVersion(), canonicalFile);
+        service.importCsv("admin", eventId, preview.eventVersion(), canonicalFile, preview.sourceSha256(), true, "round-trip-" + key);
+        assertEquals(0L, point(service.publicStandings(eventId), "A"), "clear overlay remains active after import");
+        assertTrue(days.findByEventIdAndRoundNumberAndDayNumber(eventId, 1, 1).orElseThrow().clearedClans.contains("A"));
+        service.clearPoints("admin", eventId, new TournamentDtos.ClearRequest(service.config(eventId).event().version(), 1, 1, "A", "restore", true));
+        assertEquals(score, point(service.publicStandings(eventId), "A"), "restoring the clear reveals the original score");
+    }
+    private long point(final TournamentDtos.Standings standings, final String tag) {
+        return standings.rows().stream().filter(row -> row.clanTag().equals(tag)).findFirst().orElseThrow()
+                .rounds().getFirst().days().getFirst().points();
+    }
+    private MockMultipartFile canonicalCsv(final TournamentDtos.Standings standings) throws Exception {
+        final List<String> headers = new ArrayList<>(List.of("军团标签"));
+        for (int round = 1; round <= standings.event().roundCount(); round++) {
+            for (int day = 1; day <= standings.event().daysPerRound(); day++) { headers.add("R" + round + "D" + day); }
+        }
+        headers.add("总积分");
+        final StringWriter output = new StringWriter();
+        final CSVFormat format = CSVFormat.RFC4180.builder().setRecordSeparator("\r\n").get();
+        try (final CSVPrinter printer = new CSVPrinter(output, format)) {
+            printer.printRecord(headers);
+            for (final var row : standings.rows()) {
+                final List<Object> cells = new ArrayList<>(); cells.add(row.clanTag());
+                for (int round = 1; round <= standings.event().roundCount(); round++) {
+                    final int roundNumber = round;
+                    final var roundPoints = row.rounds().stream().filter(value -> value.roundNumber() == roundNumber).findFirst().orElseThrow();
+                    for (int day = 1; day <= standings.event().daysPerRound(); day++) {
+                        final int dayNumber = day;
+                        final var dayPoints = roundPoints.days().stream().filter(value -> value.dayNumber() == dayNumber).findFirst().orElseThrow();
+                        cells.add(dayPoints.points() == null ? "" : dayPoints.points());
+                    }
+                }
+                cells.add(row.totalPoints()); printer.printRecord(cells);
+            }
+        }
+        final byte[] bytes = output.toString().getBytes(StandardCharsets.UTF_8);
+        final var decoded = new com.wotb.web.util.csv.CsvDecoder().decode(bytes);
+        assertEquals(standings.rows().size(), TournamentCsvConverter.convert(decoded, standings.event().roundCount(), standings.event().daysPerRound()).size());
+        return new MockMultipartFile("file", "canonical.csv", "text/csv", bytes);
+    }
+    private static void assertCanonicalFacts(final TournamentDtos.Standings standings, final String clanTag,
+                                             final List<Long> expectedPoints, final long expectedTotal) {
+        final TournamentDtos.StandingRow row = standings.rows().stream().filter(value -> value.clanTag().equals(clanTag)).findFirst().orElseThrow();
+        assertEquals(expectedPoints, points(standings, clanTag));
+        assertEquals(expectedTotal, row.totalPoints());
+    }
+    private static List<Long> points(final TournamentDtos.Standings standings, final String tag) {
+        return standings.rows().stream()
+                .filter(row -> row.clanTag().equals(tag))
+                .findFirst()
+                .orElseThrow()
+                .rounds().stream()
+                .flatMap(round -> round.days().stream())
+                .map(TournamentDtos.DayPoints::points)
+                .toList();
     }
     @Test void csvReplacementRemovesOmittedClansAndOldGroupsWhilePreservingExplicitClears() throws Exception {
         final var batch = group(id, 1, 1, 1, 0, "A", "B", "C");

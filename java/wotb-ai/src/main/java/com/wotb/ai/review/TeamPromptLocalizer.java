@@ -1,0 +1,1152 @@
+package com.wotb.ai.review;
+
+import com.wotb.ai.prompt.AiPromptLibrary;
+
+/**
+ * 团队 Prompt 规则与多语言常量：TEAM 专用分析/赛前基线/九宫格规则、中英俄措辞，
+ * localizeTeamSystemPrompt 与 single/multi 两个 system prompt。
+ * <p>从 {@link TeamReplayAnalysisService} 拆出，纯常量/纯函数工具类。</p>
+ */
+final class TeamPromptLocalizer {
+
+    private TeamPromptLocalizer() {
+    }
+
+    static final String TEAM_ANALYSIS_RULE = """
+
+            === 团队复盘规则（强制，仅训练房/联赛团队复盘） ===
+            分析主体是 teamDisplayLabel 标识的整支队伍（无可靠军团标签时称「我方」），不是任何个人。
+            对手称为「对方队伍」（opponentDisplayLabel 有值时用该标签，无值时称「对方」）。
+            录像者只用于确定 perspective（分析视角），不得围绕录像者个人组织团队复盘，也不得把他的个人表现当作队伍结论。
+            禁止把整支队伍称为「你」，本文不使用第二人称。
+            如需提及双方名称，只能使用 backend 提供的 teamDisplayLabel / opponentDisplayLabel（无值时用我方/对方）；
+            禁止自创「X 对阵 Y」标题；「主要军团/对方队伍」等只是通用措辞，不是 proper noun 队名。
+            对方关键威胁是【可选】内容：只有对核心复盘确有价值时才指出 1-3 辆对方关键威胁
+               （对核心结论、关键决策窗口、已确认团队问题或对应训练建议有实际帮助）；不逐车作文；
+               没有明显关键威胁或对核心复盘没有帮助时直接省略，不得为了结构完整强行选一个；
+               对方数据不足时不得猜测，缺失本身保持内部 UNKNOWN——只有该缺失直接影响核心判断、
+               因果判断或训练建议时，才按全局选择性 UNKNOWN 规则自然说明。
+            """;
+
+    /** Team 专用：EN 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    static final String TEAM_ANALYSIS_RULE_EN = """
+
+                        === TEAM REVIEW RULES (mandatory, training room / clan battle team review only) ===
+                        The subject of the review is the entire team identified by teamDisplayLabel (or "our team" when no reliable clan tag exists), not any individual player.
+                        Refer to the opponents as "the opposing team" (use opponentDisplayLabel when provided, otherwise "the opposing team").
+                        The recorder is used only to determine the perspective; do not organize the team review around the
+                        recorder as an individual, and do not present his personal performance as team conclusions.
+                        Never address the whole team as "you"; do not use the second person in this review.
+                        When naming either side, use only the backend-provided teamDisplayLabel / opponentDisplayLabel (fall back to "our team"/"the opposing team" when empty);
+                        never invent an "X vs Y" title; "the main clan / the opposing team" are generic wording, not proper-noun team names.
+                        Opposing threats are optional content: only point out 1-3 enemy vehicles when they genuinely help
+                        the core review (they matter to the core conclusion, a key decision window, a confirmed team problem,
+                        or the corresponding training advice); never write a tank-by-tank essay of the whole lineup; if there
+                        is no clear key threat or it does not help the core review, omit it entirely — never force a threat
+                        pick for structural completeness. When opposing data is insufficient, do not guess; the gap stays
+                        internal UNKNOWN — only explain naturally when the gap directly affects the core judgment, causal
+                        judgment, or training advice, per the global selective-UNKNOWN rule.
+            """;
+
+    /** Team 专用：RU 团队规则（替换 TEAM_ANALYSIS_RULE）。 */
+    static final String TEAM_ANALYSIS_RULE_RU = """
+
+                        === ПРАВИЛА КОМАНДНОГО РАЗБОРА (обязательно, только командный разбор тренировочного боя или клановой игры) ===
+                        Объект разбора — вся команда, обозначенная teamDisplayLabel (или «наша команда», если надёжного кланового тега нет), а не отдельный игрок.
+                        Противников называйте «команда противника» (при наличии opponentDisplayLabel — этим тегом, иначе «команда противника»).
+                        Рекордер используется только для определения перспективы; не стройте командный разбор вокруг рекордера
+                        как личности и не выдавайте его личные действия за выводы о команде.
+                        Не обращайтесь ко всей команде как к «вы»; в этом разборе не используйте второе лицо.
+                        При упоминании сторон используйте только предоставленные бэкендом teamDisplayLabel / opponentDisplayLabel (при отсутствии — «наша команда»/«команда противника»);
+                        не выдумывайте заголовок «X против Y»; «главный клан / команда противника» — лишь общие слова, а не собственные имена команд.
+                        Угрозы противника — опциональное содержание: указывайте 1–3 машины противника, только если они действительно
+                        важны для основного разбора (для ключевого вывода, ключевого окна решений, подтверждённой проблемы команды
+                        или соответствующей рекомендации); не разбирайте каждую машину отдельно; если явной ключевой угрозы нет или она
+                        не помогает основному разбору, опустите её полностью — не подбирайте угрозу ради полноты структуры. При недостатке
+                        данных о противнике не угадывайте; пробел остаётся внутренним UNKNOWN — объясняйте естественно, только если он
+                        напрямую влияет на ключевой вывод, причинно-следственный вывод или рекомендацию, согласно правилу глобального
+                        селективного UNKNOWN.
+            """;
+
+    /** Team 专用：内部证据 ≠ 用户输出模板。 */
+    static final String TEAM_INTERNAL_VS_USER_FACING_RULE = """
+
+            === 内部证据与用户正文的关系（强制） ===
+            输入中的 AUTHORITATIVE_*、OBSERVED_*、TACTICAL TIMELINE、TEAM REVIEW FOCUS WINDOWS、
+            GROUNDING FACTS、primaryDiagnosis、claims、evidenceIds、E1xx、EVIDENCE LIMITATIONS、
+            FACT、SUPPORTED INFERENCE、UNKNOWN、confidence、provenance、canonical 等标签全部是
+            【后台推理材料】，不是用户输出模板：
+            1. 先内部读懂 → 判断 → 用自然的 WoT Blitz 教练语言说出结论；正文默认不得主动复述这些标签
+               或解释证据体系（不写「根据 canonical timeline」「根据权威结算」「根据事件流观测子集」
+               「从 evidence limitation 看」「根据后端确定性证据」）。
+            2. 正文不得出现「UNKNOWN」「FACT」「SUPPORTED INFERENCE」「PARTIAL」「AUTHORITATIVE_*」
+               「OBSERVED_*」「E101」「E102」「evidenceIds」「primaryDiagnosis」等机器标签；
+               表达不确定性用自然中文（如「这个原因单靠回放看不死」）。
+            3. 避免「综上所述」「从多维度数据来看」等审计腔；像懂 WoT Blitz 的真人队友/教练：语言直接、避免重复，但关键战术因果必须完整展开。
+            """;
+
+    static final String TEAM_INTERNAL_VS_USER_FACING_RULE_EN = """
+
+                        === INTERNAL EVIDENCE VS USER-FACING PROSE (mandatory) ===
+                        The labels in the input — AUTHORITATIVE_*, OBSERVED_*, TACTICAL TIMELINE, TEAM REVIEW FOCUS WINDOWS,
+                        GROUNDING FACTS, primaryDiagnosis, claims, evidenceIds, E1xx, EVIDENCE LIMITATIONS,
+                        FACT, SUPPORTED INFERENCE, UNKNOWN, confidence, provenance, canonical —
+                        are all INTERNAL REASONING MATERIAL, not user-output templates:
+                        1. First read internally, then judge, then state the result in natural WoT Blitz coaching language; the body must NOT
+                           echo these labels or explain the evidence system by default (never write "according to the canonical timeline",
+                           "according to the authoritative settlement", "based on the observed event subset", "from the evidence limitation perspective",
+                           "based on backend deterministic evidence").
+                        2. The body must not contain machine labels such as UNKNOWN, FACT, SUPPORTED INFERENCE, PARTIAL, AUTHORITATIVE_*, OBSERVED_*,
+                           E101, evidenceIds, primaryDiagnosis;
+                           express uncertainty in natural language (e.g. "the replay alone cannot pin down this cause").
+                        3. Avoid audit-report phrasing such as "in summary" / "from a multi-dimensional view"; sound like a real WoT Blitz
+                           teammate/coach: direct, avoid repetition, but fully explain key tactical causality.
+            """;
+
+    static final String TEAM_INTERNAL_VS_USER_FACING_RULE_RU = """
+
+                        === ВНУТРЕННИЕ СВИДЕТЕЛЬСТВА И ТЕКСТ ДЛЯ ПОЛЬЗОВАТЕЛЯ (обязательно) ===
+                        Метки во входе — AUTHORITATIVE_*, OBSERVED_*, TACTICAL TIMELINE, TEAM REVIEW FOCUS WINDOWS,
+                        GROUNDING FACTS, primaryDiagnosis, claims, evidenceIds, E1xx, EVIDENCE LIMITATIONS,
+                        FACT, SUPPORTED INFERENCE, UNKNOWN, confidence, provenance, canonical —
+                        это ВНУТРЕННИЙ МАТЕРИАЛ ДЛЯ РАССУЖДЕНИЙ, а не шаблон вывода:
+                        1. Сначала прочитайте внутри, затем оцените, затем изложите результат естественным тренерским языком WoT Blitz; в тексте по умолчанию
+                           нельзя повторять эти метки или объяснять систему доказательств (не пишите «согласно canonical таймлайну»,
+                           «согласно авторитетному итогу», «по наблюдаемому подмножеству событий», «с точки зрения ограничений доказательств»,
+                           «по детерминированным данным бэкенда»).
+                        2. В тексте не должно быть машинных меток вроде UNKNOWN, FACT, SUPPORTED INFERENCE, PARTIAL, AUTHORITATIVE_*, OBSERVED_*,
+                           E101, evidenceIds, primaryDiagnosis;
+                           неопределённость выражайте естественно (например, «по одному реплею эту причину не установить»).
+                        3. Избегайте канцелярских оборотов вроде «резюмируя» / «с многомерной точки зрения»; звучите как живой товарищ/тренер
+                           по WoT Blitz: прямо, без повторов, но с полным объяснением ключевых тактических причин и следствий.
+            """;
+
+    /** 质量 harness 使用的结构性推理顺序；不是新增战术 verdict。 */
+    static final String TEAM_REASONING_CONTRACT_RULE =
+            AiPromptLibrary.zh("team/reasoning-contract");
+
+    static final String TEAM_REASONING_CONTRACT_RULE_EN = """
+
+                        === TEAM REVIEW V0.6 REASONING ORDER AND CAUSAL QUALITY CONTRACT (mandatory) ===
+                        This is a reasoning-quality upgrade, not an architecture or schema redesign. Keep the v0.5 Structured TeamAiReviewResult; do not add an LLM call, Team Autopsy, backend tactical semantic validator, or second TacticalEpisode model.
+                        Reason internally in this order before producing JSON: 1) read authoritative facts; 2) establish the information state; 3) identify remaining uncertainty; 4) evaluate objective obligation; 5) identify pivotal local engagements; 6) determine effective local participation; 7) trace the tactical transition; 8) trace propagation; 9) use HP/damage/deaths as downstream validation; 10) select training targets; 11) select individual candidates only if episode-grounded; 12) produce the structured JSON.
+                        For each key window, distinguish Known, Remaining uncertainty, and CURRENT / LAST_KNOWN / UNSEEN. New observation must state which uncertainty was removed or reduced and its Decision impact. UNSEEN means absence of evidence, not an empty lane or no enemy.
+                        Evaluate objective obligation with base ownership, current points, point growth, remaining time, alive vehicles, map position, and usable firepower: say who must act, who can wait, and who bears base or time pressure. A points lead is not an automatic push order and a points deficit is not an automatic charge.
+                        For local engagements, distinguish actual participants, potential participants, and alive vehicles that cannot influence the window. Judge effective local participation with line of fire, terrain/obstruction, time-to-influence, mobility, target availability, crossfire, enemy fixation, objective contribution, and a safe path. Distance is evidence, not a supportability verdict.
+                        Build each selected episode as State before -> Change -> Immediate local consequence -> Propagation. A nearby sequence of deaths is not automatically one causal episode; if direct propagation is not supported, say that the replay cannot confirm it. After the first loss, check which firing line or restraint disappeared, which enemy gun was freed, which angle became unsustainable, and whether mutual support changed; do not guess when the evidence is missing.
+                        HP, damage, and deaths are downstream validation signals, not the default episode-discovery entry point. Use an HP advantage as a primary diagnosis only when the reasoning explains how HP became time, space, fixation, objective control, or team fire.
+                        Training recommendations must use Trigger -> Decision target -> Training goal and must follow the battle's explained causal chain; usually give 2-4 high-quality items, fewer for a simple stomp, and never pad the count.
+                        Review focus and high contributor are optional, must be selected from an expanded tactical episode, and must not be reselected from the settlement leaderboard. With no structural tactical evidence or decision/execution question, omit them. Vehicle roles follow the version roles of the Supremacy review standard; for vehicles not listed, vehicle class is only a capability factor. Opposing intent must be described only through observable effects.
+                        Keep complete causal explanations without a timeline dump. Do not add fixed Information, Objectives, Local, or Propagation user-facing sections; these are internal reasoning structure. Express uncertainty naturally, but still give every key decision a verdict of mistake / correct / cannot determine (naming the missing data) as the Supremacy review standard requires, and do not assume voice commands or a communications system.
+            """;
+
+    static final String TEAM_REASONING_CONTRACT_RULE_RU = """
+
+                        === ПОРЯДОК РАССУЖДЕНИЯ КОМАНДНОГО РАЗБОРА V0.6 И КОНТРАКТ ПРИЧИННОСТИ (обязательно) ===
+                        Это обновление качества рассуждений, а не redesign архитектуры или schema. Сохраняйте v0.5 Structured TeamAiReviewResult; не добавляйте новый LLM call, Team Autopsy, семантический тактический валидатор бэкенда или вторую модель TacticalEpisode.
+                        Сначала рассуждайте в таком порядке: 1) authoritative facts; 2) состояние информации; 3) remaining uncertainty; 4) objective obligation; 5) ключевые локальные столкновения; 6) effective local participation; 7) тактический переход; 8) propagation; 9) HP/урон/гибели как downstream validation; 10) цели обучения; 11) кандидаты на личные разделы только из episode; 12) structured JSON.
+                        В каждом важном окне различайте Known, Remaining uncertainty и CURRENT / LAST_KNOWN / UNSEEN. Новое наблюдение должно указывать, какая неопределённость снята или уменьшена и каков Decision impact. UNSEEN означает отсутствие доказательства, а не пустой фланг или отсутствие противника.
+                        Оценивайте objective obligation по принадлежности баз, текущим очкам, росту очков, оставшемуся времени, живым машинам, позиции и доступному огню: кто обязан действовать, кто может ждать и кто несёт давление базы или времени. Преимущество по очкам не означает автоматическую атаку, а отставание не означает автоматический штурм.
+                        В локальном бою различайте фактических участников, потенциальных участников и живые машины, неспособные повлиять на это окно. Effective local participation оценивайте по линии огня, преградам, time-to-influence, мобильности, доступным целям, перекрёстному огню, фиксации противника, вкладу в цель и безопасному маршруту. Расстояние — evidence, а не verdict о возможности поддержки.
+                        Стройте каждый выбранный episode как State before -> Change -> Immediate local consequence -> Propagation. Близкая по времени серия гибелей не становится автоматически одним причинным эпизодом; если прямой перенос не подтверждён, скажите, что реплей не позволяет его установить. После первой потери проверьте исчезнувшую линию огня или сдерживание, освобождённую пушку противника, неустойчивый угол и изменение взаимной поддержки; при отсутствии данных не угадывайте.
+                        HP, урон и гибели — downstream validation, а не начальная точка поиска episode. Ставьте преимущество по HP в основной диагноз только если объяснено, как HP превратился во время, пространство, фиксацию, контроль цели или командный огонь.
+                        Каждая рекомендация должна иметь Trigger -> Decision target -> Training goal и следовать из причинной цепочки этой битвы; обычно давайте 2–4 качественных пункта, для простого разгрома можно меньше, количество не заполняйте искусственно.
+                        Фокус проверки и ценный игрок опциональны, выбираются из уже раскрытого тактического episode и не выбираются заново из settlement leaderboard. Без структурных тактических доказательств или вопроса решения/исполнения их нужно опустить. Роли машин следуют версионным ролям стандарта разбора Supremacy; для машин вне списка класс машины — только фактор возможностей. Намерения противника описывайте только через наблюдаемые эффекты.
+                        Сохраняйте полное причинное объяснение без timeline dump. Не добавляйте фиксированные пользовательские разделы Information, Objectives, Local или Propagation: это внутренняя структура рассуждения. Неопределённость выражайте естественно, но всё равно давайте каждому ключевому решению вердикт ошибка / верно / невозможно определить (называя недостающие данные), как требует стандарт разбора Supremacy, и не предполагайте голосовые команды или систему связи.
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE = """
+
+            === 团队复盘输出结构（强制） ===
+            主正文是【自由组织的自然复盘】，不是固定章节模板：禁止机械输出
+            「核心结论」「关键决策窗口」「可确认的团队问题」「训练建议」等固定小标题结构。
+            正文以「## 团队复盘」为主标题，按关键性自由组织，不设硬性段数或固定篇幅：
+            简单局可以更短；复杂局允许充分展开；不需要为了格式完整凑段数。
+            主因可以只有一个，不要为了凑结构制造不存在的问题；但一个主因不等于正文只能讲一件事。
+            必须保留解释该主因所需的 Information、Objectives、local engagements、cross-local propagation、
+            position/tempo 和次级关键 episode。
+            训练建议（如给出）每一条必须明确对应前面的一个「可确认问题」或主判断；禁止通用教练式空话。
+            输入中的 TEAM REVIEW FOCUS WINDOWS 只是「这里最值得集中分析」的内部 attention 提示，
+            不要求逐窗口输出标题；自然语言可以直接写「这局真正崩掉是在1分52秒后面那二十秒」。
+            对方关键威胁（可选）：只在确实有价值时提 1-3 辆；禁止逐车分析对方全部阵容。
+            长度目标：普通 7v7 约 1200–2200 字；复杂赛事/训练局允许约 2500–3500 字；
+            简单一边倒可以明显更短。这是软目标，不是硬 minimum 或 maximum；禁止为了达到字数填充，
+            但也不得为了“简洁”删掉会改变战术判断的信息。
+            数字筛选：输出只保留支撑核心判断的数字（如关键窗口减员比、人数变化）；
+            总伤害/总承伤/总助攻/总格挡/双方逐车数据由 UI/后端展示，正文不得重复罗列。
+            不单独建立「数据完整性/证据限制」章节；不重复结算结果；禁止把复盘写成时间线流水账。
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE_EN = """
+
+                        === TEAM REVIEW OUTPUT STRUCTURE (mandatory) ===
+                        The main body is a FREE-FORM natural review, not a fixed-section template: never mechanically output
+                        fixed headings such as "Core Conclusion", "Key Decision Windows", "Confirmed Team Problems",
+                        "Training Recommendations".
+                        Write the body under the main heading "## Team Review", organizing it by importance without a hard paragraph
+                        count or fixed length: a simple battle may be shorter; a complex battle may expand as needed; never pad paragraphs
+                        just to fill a structure.
+                        The primary cause may be the only primary cause; never invent a problem just to fill the structure.
+                        However, one primary cause does not mean the body may discuss only one thing: retain the Information,
+                        Objectives, local engagements, cross-local propagation, position/tempo, and secondary key episodes needed
+                        to explain that cause.
+                        Each training recommendation (if any) must map to a confirmed problem or the primary diagnosis above;
+                        no generic coaching filler.
+                        TEAM REVIEW FOCUS WINDOWS in the input are an internal attention hint ("this is where to focus"),
+                        not a per-window heading requirement; in natural language you may simply write
+                        "This battle really collapsed in the twenty seconds after 1m52s."
+                        Opposing threats (optional): name only 1-3 vehicles when genuinely useful; never write a
+                        tank-by-tank essay of the whole opposing lineup.
+                        Length target: about 1200-2200 Chinese characters for an ordinary 7v7; about 2500-3500 is allowed for a
+                        complex competitive/training battle; a simple one-sided battle may be much shorter. This is a soft target,
+                        not a hard minimum or maximum: never pad to reach a length, but do not omit information that changes a tactical judgment for brevity.
+                        Number filtering: keep only the numbers that support the core judgment (e.g. kill ratios,
+                        population changes in the key window); total damage/received/assisted/blocked and per-vehicle
+                        data are shown by the UI/backend — do not re-list them.
+                        Do not create a separate "data completeness / evidence limitations" section; do not repeat the
+                        settlement; never turn the review into a timeline log.
+            """;
+
+    static final String TEAM_OUTPUT_STRUCTURE_RULE_RU = """
+
+                        === СТРУКТУРА КОМАНДНОГО РАЗБОРА (обязательно) ===
+                        Основной текст — свободно организованный естественный разбор, а не шаблон фиксированных разделов: запрещено
+                        механически выводить фиксированные подзаголовки вроде «Ключевой вывод», «Ключевые окна решений»,
+                        «Подтверждённые проблемы команды», «Рекомендации».
+                        Пишите текст под главным заголовком «## Командный разбор», организуя его по важности без жёсткого числа абзацев
+                        или фиксированного объёма: простой бой может быть короче; сложный можно раскрыть подробнее; не добирайте абзацы ради структуры.
+                        Основная причина может быть только одной; не выдумывайте проблему ради заполнения структуры.
+                        Однако одна основная причина не означает, что в тексте можно обсуждать только один аспект: сохраняйте
+                        информацию, цели, локальные бои, перенос между локальными боями, позицию/темп и вторичные ключевые эпизоды,
+                        необходимые для объяснения этой причины.
+                        Каждая тренировочная рекомендация (если она есть) должна соответствовать подтверждённой проблеме
+                        или основному диагнозу выше; никаких общих тренерских шаблонов.
+                        TEAM REVIEW FOCUS WINDOWS во входе — внутренняя подсказка внимания («здесь стоит сосредоточить анализ»),
+                        а не требование выводить заголовки по каждому окну; естественным языком можно просто написать
+                        «Этот бой реально развалился в двадцать секунд после 1 мин 52 с».
+                        Угрозы противника (опционально): называйте 1–3 машины, только если это действительно полезно;
+                        не разбирайте каждую машину противника отдельно.
+                        Целевой объём: примерно 1200–2200 китайских знаков для обычного боя 7 на 7; примерно 2500–3500 допустимо
+                        для сложного соревновательного/тренировочного боя; простой односторонний бой может быть намного короче.
+                        Это мягкая цель, а не жёсткий минимум или максимум: не добавляйте текст ради объёма, но не опускайте ради краткости
+                        сведения, меняющие тактический вывод.
+                        Фильтр цифр: оставляйте только цифры, поддерживающие ключевой вывод (например, соотношение потерь,
+                        изменение числа машин в ключевом окне); общий урон/полученный урон/ассист/блок и данные по каждой
+                        машине показывает UI/бэкенд — не перечисляйте их.
+                        Не создавайте отдельный раздел «полнота данных / ограничения доказательств»; не повторяйте итог;
+                        не превращайте разбор в лог таймлайна.
+            """;
+
+    /** Team 专用（Natural Coach 轮）：唯一主判断（PRIMARY DIAGNOSIS）契约。 */
+    static final String TEAM_PRIMARY_DIAGNOSIS_RULE = """
+
+            === 主判断（Primary Diagnosis，强制） ===
+            你必须选出且只选出一个 PRIMARY DIAGNOSIS：它表示本场最重要的结论，不等于必须找出错误。
+            结论可以是 TEAM_EXECUTION_PROBLEM、INDIVIDUAL_EXECUTION_PROBLEM、KEY_SUCCESS_FACTOR、
+            OPPONENT_EXECUTED_BETTER 或 NO_SIGNIFICANT_CONFIRMED_ERROR；不要机械输出这些英文枚举，
+            title 和 reasoning 用自然教练语言表达即可。
+            只有证据支持时才指出团队执行问题、个人执行问题或战术决策问题；证据不足就跳过该判断。
+            如果当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误，只能表达为「当前可确认/可观察证据中，没有发现足以作为主要问题的明显执行失误」或等价的证据边界结论；
+            这表示 NO_SIGNIFICANT_CONFIRMED_ERROR（没有确认的重大错误），不表示证明本场不存在任何错误；不得为了填满字段制造轮转、沟通、地图意识或协调问题。
+            多个解释均可能成立时，选择最符合已知证据的单一结论；不要把无法观察的赛前计划、语音 call、
+            沟通、谁下令或谁忽略指令当作原因。不能证明最细节的因果链时，保留可证明的上层执行现象，
+            不要用猜测填补空白。
+            """;
+
+    static final String TEAM_PRIMARY_DIAGNOSIS_RULE_EN = """
+
+                        === PRIMARY DIAGNOSIS (mandatory) ===
+                        You must choose exactly one PRIMARY DIAGNOSIS: it is the battle's most important conclusion, not a
+                        requirement to find an error. It may be a team-execution problem, an individual-execution problem,
+                        a key success factor, the opponent executing better, or no significant confirmed error; express the
+                        result in natural coaching language rather than mechanically printing enum names.
+                        Name a team, individual, or decision problem only when the evidence supports it. If the currently
+                        confirmed/observable evidence contains no clear execution error important enough to lead the review,
+                        say exactly that or an equivalent evidence-bounded conclusion. This means no confirmed significant error;
+                        it does not prove that the battle contained no errors. When supported, note that the opponent handled
+                        an observed phase more effectively. Never invent a rotation, communication, map-awareness, or coordination
+                        problem just to fill this field.
+                        Do not treat an unknown pre-battle plan, voice call, communication, commander order, or ignored order as
+                        a cause. When the finest causal chain is unprovable, retain the observable execution pattern and skip the
+                        unsupported explanation.
+            """;
+
+    static final String TEAM_PRIMARY_DIAGNOSIS_RULE_RU = """
+
+                        === ОСНОВНОЙ ДИАГНОЗ (PRIMARY DIAGNOSIS, обязательно) ===
+                        Вы должны выбрать ровно один PRIMARY DIAGNOSIS: это самый важный вывод боя, а не обязательное требование
+                        найти ошибку. Это может быть проблема командного исполнения, индивидуального исполнения, ключевой фактор
+                        успеха, более эффективное исполнение противника или отсутствие существенной подтверждённой ошибки; выражайте
+                        результат естественным тренерским языком, не печатайте имена enum механически.
+                        Называйте проблему команды, игрока или решения только при наличии подтверждающих данных. Если в текущих
+                        подтверждённых/наблюдаемых данных не найдено явной ошибки исполнения, достаточно важной для главного вывода,
+                        скажите именно это или используйте эквивалентную формулировку с границами доказательств. Это означает отсутствие
+                        подтверждённой существенной ошибки, но не доказывает отсутствие любых ошибок в бою. Если подтверждено, отметьте,
+                        что противник эффективнее обработал наблюдаемую фазу. Не выдумывайте ротацию, коммуникацию, осведомлённость о карте или
+                        координацию только для заполнения поля.
+                        Не выдавайте неизвестный предбоевой план, голосовой call, коммуникацию, приказ командира или его игнорирование
+                        за причину. Если детальная причинная цепочка недоказуема, оставьте наблюдаемую картину исполнения и пропустите
+                        неподтверждённое объяснение.
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE = """
+            === 证据契约（强制）：FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+            1. FACT（事实）：只能来自权威结算、权威阵容、已验证的 canonical timeline 与后端确定性证据。
+               例如「1分52秒至2分12秒，本方连续损失3辆，对方同期损失1辆」。
+            2. SUPPORTED INFERENCE（有支撑的推断）：必须有明确 FACT 支撑、不超出当前能力、不把相关性写成确定因果，
+               措辞保守。允许：「更符合…」「从当前证据看…」「可以确认的是…」「较可能意味着…」「无法进一步证明其具体原因…」。
+            3. UNKNOWN（未知）是正常答案，不是失败答案——它是合法内部状态。只有以下情况才向用户自然说明无法确定：
+               a. 不说明就会把相关性误写成确定因果；
+               b. 这个未知直接影响核心结论；
+               c. 这个未知直接影响训练建议；
+               d. 用户自然会关心这个关键原因。
+               其他未知静默，不要逐条列出（如装填时间、LOS、玩家心理、全部地形——本来不需要分析就完全不要提）。
+               需要表达时用自然中文（如「这个原因单靠回放看不死」），不出现 UNKNOWN/PARTIAL 等机器标签。
+            4. RECOMMENDATION（建议）：必须从可确认问题反推、对应本局真实失败、不创造精确数字、不形成通用规则。
+            5. 没有对应后端证据时，禁止输出以下断言或其同义改写：
+                a. 视野/点亮/侦察类：允许一般战术解释——「分散可以扩大地图信息覆盖」「这种打法的潜在价值是更早确认敌方主力方向」「分路是以局部兵力密度换取空间/信息覆盖」；
+                  禁止无专门 visibility evidence 的具体归因——「A 点亮了 B」「A 提供了具体视野」「A 获得了侦察收益」「敌人是被 A 发现的」「开局散开就是图控/拿视野」；
+                  「敌方主力确认后本方没有及时合流」是本场具体结论，不是一般战术解释——必须满足「重新集中推断规则」的证据要求才能写（见该规则）；
+                b. 地形/掩体/LOS 类：「没有掩体」「没有掩体切割」「卡住掩体」「卖头」「hull-down」「对方有无遮挡射界」；
+                c. 位置感类：「位置感很好」「位置感差」；
+                d. 结算→时间线因果类：如「几乎每一波伤害都有他」「助攻高说明为队友提供输出窗口」「队友没有保护他」；
+                e. 必然性类：「必然导致」「必然被逐个击破」「必然被逐个收走」；
+                f. 精确数字类：禁止创造「15米」「25米」「三分之一血」「连续两炮」「5秒」等精确阈值，除非由后端提供、
+                   项目所有者登记的业务规则或已验证的车辆战术参数提供；改用非伪精确表达，如「低血量成员应减少继续承担
+                   第一接触火力」「有血量的队友应考虑承担下一轮交换」「目标切换应减少火力分散」；
+                g. 残局万能规则类：禁止「2v4/3v5 就必须立刻离开当前掩体向地图另一端转移」；残局决策取决于地图、位置、
+                   车型、血量、点数、时间与敌方分布，证据不足时只能描述观察到的行为并写明无法确定最优转场方向。
+                h. 车辆角色类：禁止自创「薄皮输出型」「前排坦克」「肉盾」「狙击车」等角色标签；角色只能来自后端提供的
+                   结构化字段（vehicleClass / 已验证的坦克战术 Profile 标签），后端未提供时只写坦克名称与车种；
+            6. 禁止为了结构完整凑数量：没有 3 个问题不要凑 3 个；没有 5 条建议不要凑 5 条；没有值得分析的 7 辆敌车不要
+                逐车作文；没有足够强的 positive 证据时不得硬写「做得好的团队行为」。
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE_EN = """
+
+                        === EVIDENCE CONTRACT (mandatory): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+                        1. FACT: only from the authoritative battle result, the authoritative roster/settlement, the validated canonical timeline, and backend-derived deterministic evidence.
+                           Example: "From 1m 52s to 2m 12s, your team lost 3 tanks in a row while the opposing team lost 1."
+                        2. SUPPORTED INFERENCE: must be backed by explicit FACTs, stay within current capabilities, never present correlation as proven causation, and use conservative wording.
+                           Allowed: "is more consistent with...", "based on the current evidence...", "what can be confirmed is...", "likely means...", "the specific cause cannot be proven further...".
+                        3. UNKNOWN is a normal answer, not a failure — it is a legitimate internal state. Explain an unknown to the user only when:
+                           a. not saying so would mislead correlation into causation;
+                           b. this unknown directly affects the core conclusion;
+                           c. this unknown directly affects the training advice;
+                           d. the user would naturally care about this key cause.
+                           Keep all other unknowns silent — do not list them (e.g. reload times, LOS, player psychology, all terrain: if you did not need to analyze them, do not mention them at all).
+                           When you do need to express uncertainty, use natural language (e.g. "the replay alone cannot pin down this cause"); never emit machine labels like UNKNOWN/PARTIAL in the body.
+                        4. RECOMMENDATION: must derive from a confirmed problem, correspond to the real failure in this battle, never invent precise numbers, and never form universal rules.
+                        5. Without corresponding backend evidence, the following claims (or equivalent rewording) are forbidden:
+                           a. Vision/spotting/recon: general tactical interpretation is allowed — "spreading can widen map information coverage", "the potential value of this play is confirming the enemy's main force direction earlier", "splitting trades local force density for spatial/information coverage";
+                  without dedicated visibility evidence, specific attribution is forbidden — "A spotted B", "A provided specific vision", "A gained recon benefit", "the enemy was found by A", "an opening spread is map control / vision gathering";
+                  "after the enemy main force was confirmed, the team did not regroup in time" is a battle-specific conclusion, not a general interpretation — it may only be written when the REGROUPING INFERENCE RULE evidence requirements are met (see that rule);
+                           b. Terrain/cover/LOS: "no cover", "no cover cutting", "held cover", "hull-down", "the enemy had an unobstructed firing angle";
+                           c. Positioning sense: "great positioning sense", "poor positioning sense";
+                           d. Turning settlement aggregates into timeline causation: "he was in every wave of damage", "high assisted damage proves he created firing windows for teammates", "teammates did not protect him";
+                           e. Certainty: "inevitably led to", "inevitably picked off one by one";
+                           f. Precise numbers: never invent thresholds such as "15m", "25m", "one third HP", "two consecutive hits", "5 seconds", unless provided by the backend, a registered business rule of the project owner, or a verified tank tactical profile parameter.
+                              Use non-false-precision phrasing instead: "low-HP members should stop absorbing first-contact fire", "teammates with HP should consider taking the next trade", "switching targets should reduce split fire";
+                           g. Endgame universal rules: never issue commands like "in a 2v4 or 3v5 you must immediately leave cover and rotate to the other end of the map"; endgame decisions depend on map, position, tank composition, HP, points, time and enemy distribution — with insufficient evidence, only describe observed behavior and state that the optimal rotation cannot be determined.
+               h. Vehicle roles: never invent role labels such as "thin-skinned damage dealer", "frontline tank", "meat shield", "sniper"; roles may only come from backend-provided structured fields (vehicleClass / verified tank tactical profile labels); when the backend provides none, write only the tank name and class;
+                        6. Never pad for structural completeness: do not force 3 problems, 5 recommendations, or a tank-by-tank essay of 7 enemy vehicles when there is not enough to analyze; without strong positive evidence, do not force a "what the team did well" section.
+            """;
+
+    static final String TEAM_EVIDENCE_CONTRACT_RULE_RU = """
+
+                        === КОНТРАКТ ДОКАЗАТЕЛЬСТВ (обязательно): FACT / SUPPORTED INFERENCE / UNKNOWN / FORBIDDEN ===
+                        1. FACT (факт): только из авторитетного результата боя, авторитетного состава, проверенного canonical таймлайна и детерминированных свидетельств бэкенда.
+                           Пример: «С 1 мин 52 с по 2 мин 12 с ваша команда потеряла 3 машины подряд, а противник — 1».
+                        2. SUPPORTED INFERENCE (подтверждённый вывод): должен опираться на явные FACT, не выходить за текущие возможности, не превращать корреляцию в доказанную причинность и использовать сдержанные формулировки.
+                           Допустимо: «более соответствует…», «по текущим данным…», «можно подтвердить, что…», «вероятно, означает…», «конкретную причину далее доказать нельзя…».
+                        3. UNKNOWN (неизвестно) — нормальный ответ, а не провал: это легитимное внутреннее состояние. Объясняйте неизвестное пользователю, только когда:
+                           a. умолчание превратило бы корреляцию в причинность;
+                           b. это неизвестное напрямую влияет на ключевой вывод;
+                           c. это неизвестное напрямую влияет на рекомендации;
+                           d. пользователю естественно захочется узнать эту ключевую причину.
+                           Остальные неизвестные держите молча — не перечисляйте их (например, время перезарядки, линию огня, психологию игрока, весь рельеф: если это не нужно было анализировать, вообще не упоминайте).
+                           Когда нужно выразить неопределённость, используйте естественный язык (например, «по одному реплею эту причину не установить»); не выводите в тексте машинные метки вроде UNKNOWN/PARTIAL.
+                        4. RECOMMENDATION (рекомендация): должна выводиться из подтверждённой проблемы, соответствовать реальному провалу в этом бою, не выдумывать точных цифр и не формулировать универсальные правила.
+                        5. Без соответствующих доказательств бэкенда запрещены следующие утверждения (или их пересказ):
+                           a. Обзор/засвет/разведка: допустима общая тактическая интерпретация — «рассредоточение может расширить покрытие карты информацией», «потенциальная ценность этого хода — раньше подтвердить направление главных сил противника», «разделение меняет плотность локальных сил на пространственное/информационное покрытие»;
+                  без специальных visibility evidence запрещена конкретная атрибуция — «A засветил B», «A обеспечил конкретный обзор», «A получил разведывательную выгоду», «врага обнаружил A», «рассредоточение на старте = контроль карты / сбор обзора»;
+                  «после подтверждения главных сил противника команда не перегруппировалась вовремя» — конкретный вывод по этому бою, а не общая интерпретация: его можно писать только при выполнении требований ПРАВИЛА ВЫВОДА О ПЕРЕГРУППИРОВКЕ (см. это правило);
+                           b. Рельеф/укрытия/линия огня: «нет укрытий», «нет работы по укрытиям», «держал укрытие», «игра с башни», «hull-down», «у противника был свободный угол обстрела»;
+                           c. Чувство позиции: «отличное чувство позиции», «плохое чувство позиции»;
+                           d. Итоги → причинность таймлайна: «он был в каждой волне урона», «высокий урон с ассистом доказывает, что он создавал окна для союзников», «союзники его не прикрывали»;
+                           e. Неизбежность: «неизбежно привело к», «неизбежно добили по одному»;
+                           f. Точные цифры: не выдумывайте пороги вроде «15 м», «25 м», «треть ОЗ», «два попадания подряд», «5 секунд», если их не дал бэкенд, не зарегистрировал владелец проекта как бизнес-правило или не подтвердил проверенный тактический профиль машины.
+                              Используйте формулировки без ложной точности: «участники с низким ОЗ должны перестать принимать первый огонь», «союзники с ОЗ должны рассмотреть следующий размен», «смена целей должна уменьшить распыление огня»;
+                           g. Универсальные правила концовки: запрещены приказы вроде «при 2v4/3v5 немедленно уйти из укрытия и ротироваться на другой конец карты»; решения концовки зависят от карты, позиции, состава машин, ОЗ, очков, времени и распределения противника — при недостатке доказательств описывайте только наблюдаемое поведение и указывайте, что оптимальное направление ротации определить нельзя.
+               h. Роли машин: не выдумывайте ярлыки вроде «тонкобронная машина поддержки», «танк первой линии», «танк-мясник», «снайпер»; роли могут браться только из структурированных полей бэкенда (vehicleClass / проверенные метки тактического профиля машины); если бэкенд их не дал, пишите только название и класс машины;
+                        6. Не добирайте объём ради полноты структуры: нет 3 проблем — не пишите 3; нет 5 рекомендаций — не пишите 5; нет смысла разбирать 7 машин противника — не пишите про каждую; без достаточно сильных положительных доказательств не вставляйте раздел «что команда сделала хорошо».
+            """;
+
+    /** Team 专用：Call #1 赛前战略基线的使用规则（强制；EN/RU 本地化时替换）。 */
+    static final String TEAM_PRIOR_RULE = """
+
+            === 赛前战略基线（Call #1）使用规则（强制） ===
+            输入可能包含 PRE-BATTLE STRATEGIC PRIOR：仅基于地图、双方阵容、双方总血量与坦克战术属性的
+            赛前先验判断（含分阶段预期打法），未读取任何战斗结果。
+            它只是战略基线和可能性空间，不是队伍实际制定或执行过的战术计划。
+            其中 TEAM_A=你的队伍（teamDisplayLabel，无值时称「我方」）、TEAM_B=对方队伍；没有该段时不得编造基线。
+            可以用它理解阵容特征、潜在优劣和合理选项，也可以帮助解释某个已观察交换为何代价较高；
+            不得仅因为实际执行偏离基线就判错。先看实际发生的时序、局部人数、位置、血量和目标压力，
+            再判断是否存在证据支持的执行或决策问题，不得把未知计划、call 或沟通原因补写出来。""";
+
+    static final String TEAM_PRIOR_RULE_EN = """
+
+            === PRE-BATTLE STRATEGIC PRIOR (Call #1) USAGE RULE (mandatory) ===
+            The input may include a PRE-BATTLE STRATEGIC PRIOR: a pre-battle judgment based only on the map,
+            both lineups, total HP and tank tactical attributes (including staged expected play), with no battle results read.
+            It is a strategic baseline and possibility space, not the team's actual planned or called strategy.
+            In it, TEAM_A = your team (teamDisplayLabel, or "our team" when empty) and TEAM_B = the opposing team; if the section is absent, never fabricate a baseline.
+            Use it to understand lineup characteristics, plausible strengths/weaknesses and why an observed exchange may have been costly;
+            deviation from it is not automatically an error. Judge actual timing, local numbers, positions, HP and objective pressure first,
+            then decide whether an execution or decision problem is supported. Never fill in an unknown plan, call, or communication cause.""";
+
+    static final String TEAM_PRIOR_RULE_RU = """
+
+            === ПРАВИЛО ПРЕДБОЕВОЙ БАЗЫ (Call #1) (обязательно) ===
+            Во входе может быть PRE-BATTLE STRATEGIC PRIOR — предбоевое суждение только по карте, составам,
+            суммарному HP и тактическим атрибутам машин (включая поэтапный ожидаемый план), без чтения результатов боя.
+            Это стратегическая база и пространство возможностей, а не фактический план или приказ команды.
+            В ней TEAM_A = ваша команда (teamDisplayLabel, при отсутствии — «наша команда»), TEAM_B = команда противника; если секции нет, базу выдумывать нельзя.
+            Используйте её для понимания состава, возможных сильных/слабых сторон и цены наблюдаемого размена;
+            отклонение от базы не является автоматически ошибкой. Сначала оценивайте фактические время, локальные силы,
+            позиции, HP и давление на цель, затем решайте, подтверждена ли проблема исполнения или решения. Не додумывайте
+            неизвестный план, call или причину, связанную с коммуникацией.""";
+
+    /** Team 专用：九宫格 region 与真实距离的关系规则（强制；EN/RU 本地化时替换）。 */
+    static final String TEAM_REGION_RULE = """
+
+            === 九宫格 region 与距离规则（强制） ===
+            九宫格 region（1-9）只用于描述方位，region 相邻或编号差不代表实际距离；
+            脱节/距离/掩护判断必须使用后端提供的 canonical 距离（米，
+            如 deathProximityMeters 阵亡时刻与主力质心距离），禁止用 region 编号差推断距离。""";
+
+    static final String TEAM_REGION_RULE_EN = """
+
+            === NINE-GRID REGION VS DISTANCE RULE (mandatory) ===
+            Nine-grid regions (1-9) describe direction only; adjacent regions or a region-number
+            difference do NOT imply actual distance. Detachment/distance/cover judgments must use
+            the backend-provided canonical distance in meters (e.g. deathProximityMeters, the
+            distance to the main-body centroid at death); never infer distance from region numbers.""";
+
+    static final String TEAM_REGION_RULE_RU = """
+
+            === ПРАВИЛО ОБЛАСТЕЙ СЕТКИ И РАССТОЯНИЙ (обязательно) ===
+            Области сетки 1–9 описывают только направление; соседство областей или разница номеров
+            НЕ означает реальное расстояние. Оценки отрыва/дистанции/прикрытия должны использовать
+            предоставленное бэкендом каноническое расстояние в метрах (например, deathProximityMeters —
+            дистанция до центра масс своей группы в момент гибели); запрещено делать вывод о дистанции
+            по номерам областей.""";
+
+    /** Team 专用：阵型纵深（纯几何深度三分位）与区域覆盖测量规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String FORMATION_DEPTH_RULE = """
+            === 阵型深度与区域覆盖测量规则（强制） ===
+            FORMATION_DEPTH 段是确定性几何/测量证据，用于理解阵型纵深与区域覆盖（哪些区域双方有位置存在与火力覆盖分数）：
+            1. GEOMETRIC_FORWARD / GEOMETRIC_MIDDLE / GEOMETRIC_REAR 是本队成员沿「本队质心 → 敌方质心」轴按深度三分位的纯几何分类
+               （GEOMETRIC_FORWARD=最靠前三分位、GEOMETRIC_REAR=最靠后三分位）；描述阵型时用自然中文（如「靠前、居中、靠后」），
+               不得改判成员排位，也不得把三分位直接写成「前排抗线、中排输出、后排支援」等战术角色断言；
+               车种/装甲等 tank profile 只是成员静态属性事实，该车处于这个纵深是否合理由你综合地图、阵容与战局判断。
+            2. REGION_COVERAGE_MEASUREMENTS 是九宫格区域的「确定性测量」——每区输出 ownPositionPresence / enemyPositionPresence（基于 resolved 位置状态的车辆存在数，每辆存活车辆计 1，不是位置包数量）、ownWeightedCoverageScore / enemyWeightedCoverageScore（按双方距离加权火力覆盖分 F=Σ 火力权重/(1+距离/100)）与 ratio（双方分数比）；coverage completeness 说明双方存活车辆是否拥有「当前」位置参考（己方位置持续有效为 CURRENT；敌方最后观测超过当前阈值时为 LAST_KNOWN，不得当作当前精确位置；CURRENT 不完整时只输出 ownPositionPresence 与 ENEMY_LAST_KNOWN_POSITION_REFERENCES，不输出分数对比）。这些只是火力覆盖+位置几何的确定性测量：是否意味着哪方「实际控制/压制/放弃了某区」由你综合位置、交火、点数压力自行判断；不得断言「控制/占领了某区」，也不得表述为占领点得分、实时比分或地图语义区域名。
+            3. 未提供 FORMATION_DEPTH 段时（位置观测不足）禁止编造纵深或区域覆盖。
+            4. 区域只能引用证据中的 GRID_REGION_1~9 编号，禁止用裸坐标重新划区。""";
+
+    static final String FORMATION_DEPTH_RULE_EN = """
+
+            === FORMATION DEPTH AND REGION COVERAGE MEASUREMENTS RULE (mandatory) ===
+            The FORMATION_DEPTH section is deterministic geometric/measurement evidence for understanding the formation depth and region coverage (which regions have positional presence and fire-coverage scores on each side):
+            1. GEOMETRIC_FORWARD / GEOMETRIC_MIDDLE / GEOMETRIC_REAR classify own-team members into pure geometric depth terciles along the "own centroid → enemy centroid" axis (GEOMETRIC_FORWARD = most-forward tercile, GEOMETRIC_REAR = most-rear tercile); describe the formation in natural language (e.g. "forward, middle, rear") and do not re-judge member positions, and never turn the terciles into tactical-role assertions such as "front line holds, middle line outputs, back line supports"; vehicle class / armor and other tank-profile facts are just static attributes of the members — whether a vehicle being at that depth is sensible is your judgement from the map, the lineups and the battle.
+            2. REGION_COVERAGE_MEASUREMENTS is a "deterministic measurement" of the nine-grid regions — each region carries ownPositionPresence / enemyPositionPresence (vehicle counts based on resolved position states; each surviving vehicle counts 1, not position-packet counts), ownWeightedCoverageScore / enemyWeightedCoverageScore (distance-weighted fire coverage F=Σ fire weight/(1+distance/100)) and ratio (the score ratio); coverage completeness states whether both sides' surviving vehicles have "current" position references (own-side positions stay CURRENT while the state is active; an enemy observation older than the current threshold is LAST_KNOWN and must not be treated as an exact current position; when CURRENT references are incomplete only ownPositionPresence and ENEMY_LAST_KNOWN_POSITION_REFERENCES are emitted, never score comparisons). These are only deterministic measurements of fire coverage + position geometry: whether they mean either side "actually controls / pressures / abandoned a region" is your judgement from position, engagements and points pressure — never claim a region is truly "controlled/captured", and never present it as capture points, a live score, or named tactical map areas.
+            3. If the FORMATION_DEPTH section is absent (insufficient position observation), never fabricate formation depth or region coverage.
+            4. Reference regions only by the GRID_REGION_1~9 ids in the evidence; never re-derive regions from raw coordinates.""";
+
+    static final String FORMATION_DEPTH_RULE_RU = """
+
+            === ПРАВИЛО ГЛУБИНЫ СТРОЯ И ИЗМЕРЕНИЙ ПОКРЫТИЯ ОБЛАСТЕЙ (обязательно) ===
+            Секция FORMATION_DEPTH — детерминированные геометрические/измерительные данные для понимания глубины строя и покрытия областей (в каких регионах есть позиционное присутствие и баллы огневого покрытия у каждой стороны):
+            1. GEOMETRIC_FORWARD / GEOMETRIC_MIDDLE / GEOMETRIC_REAR классифицируют участников своей команды по чисто геометрическим терцилям глубины вдоль оси «центроид своей команды → центроид противника» (GEOMETRIC_FORWARD = самый передний терциль, GEOMETRIC_REAR = самый задний); описывайте строй естественным языком (например, «впереди, в середине, сзади») и не пересматривайте позиции участников, а также не превращайте терцили в утверждения о тактических ролях вроде «передняя линия держит, средняя наносит урон, задняя поддерживает»; класс машины / броня и другие факты тактического профиля — лишь статические атрибуты участников, а уместность машины на такой глубине вы оцениваете сами по карте, составам и ходу боя.
+            2. REGION_COVERAGE_MEASUREMENTS — «детерминированные измерения» по девятисекторным областям: каждая область несёт ownPositionPresence / enemyPositionPresence (число машин на основе разрешённых состояний позиций; каждая живая машина считается как 1, а не количество позиционных пакетов), ownWeightedCoverageScore / enemyWeightedCoverageScore (дистанционно-взвешенное огневое покрытие F=Σ огневой вес/(1+дистанция/100)) и ratio (отношение баллов); coverage completeness указывает, есть ли у живых машин обеих сторон «текущие» позиционные ссылки (позиция союзника остаётся CURRENT, пока состояние активно; наблюдение противника старше текущего порога — LAST_KNOWN, его нельзя выдавать за точную текущую позицию; при неполных CURRENT-ссылках выводятся только ownPositionPresence и ENEMY_LAST_KNOWN_POSITION_REFERENCES, без сравнения баллов). Это лишь детерминированные измерения огневого покрытия и геометрии позиций: означает ли это, что какая-то сторона «фактически контролирует/давит/оставила область», решаете вы по позициям, перестрелкам и давлению по очкам — запрещено утверждать, что область реально «контролируется/захвачена», и выдавать это за очки захвата, живой счёт или именованные тактические зоны карты.
+            3. Если секция FORMATION_DEPTH отсутствует (недостаточно наблюдений позиций), запрещено выдумывать глубину строя или покрытие областей.
+            4. Зоны можно указывать только по идентификаторам GRID_REGION_1~9 из свидетельств; запрещено переопределять зоны по сырым координатам.""";
+
+    /** Team 专用：相对纵深/血量（确定性测量）规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。 */
+    static final String RELATIVE_DEPTH_HP_RULE = """
+            === 相对纵深/血量测量规则（强制·中性测量） ===
+            RELATIVE_DEPTH_HP_MEASUREMENT 段是确定性测量（成员与参考成员的位置/血量比率/距敌距离差/已观察攻击事件/覆盖率/tank profile 静态事实）：
+            1. 参考成员（reference）由后端按<b>纯几何算法</b>选择：本阶段距观测敌方最近的存活本方成员（无位置参考时不输出）；
+               成员血量比率 ≥ 参考成员 × 1.2 且距敌比参考成员更远时才会被列出（salience 筛选，只决定哪些成员值得关注）。
+               该筛选不是战术判定——成员是否避战/利用队友掩护输出/保持安全输出距离/合理站位，由你综合位置、输出、掉血、战局自行推断，
+               不得把该段直接写成「吸血/避战」结论，也不得把 reference 理解成「扛线队友」之类的战术角色。
+            2. 输出观测受事件流覆盖约束：coverage=PARTIAL 时 observedAttackEvents=0 只表示「已观察攻击事件=0」，
+               <b>禁止</b>据此推断「无输出/避战」，也不得把 0 事件当作负面贡献依据。
+            3. HP_RATIO_UNKNOWN（血量数据不足）只提供位置关系与已观察攻击事件事实，禁止据此判定吸血/避战。
+            4. 团队复盘可以指出成员「长时间与参考成员保持距离差异且输出贡献低」等观察组合，但必须用「基于测量」的措辞，
+               不得超出证据断言玩家意图，也不得把 salience 次数当作负面分级。
+            5. 输出高不等于贡献高：评价贡献时综合输出/损失血量/位置测量，但不得引用「吸血程度」作为已算好的权威标签——那是 LLM 的推断。
+            6. 未提供本段时（位置/血量观测不足）禁止编造。""";
+
+    static final String RELATIVE_DEPTH_HP_RULE_EN = """
+
+            === RELATIVE DEPTH / HP MEASUREMENT RULE (mandatory · neutral measurements) ===
+            The RELATIVE_DEPTH_HP_MEASUREMENT section contains deterministic measurements (member vs reference position / HP ratios / distance gaps to the enemy / observed attack events / coverage / static tank-profile facts):
+            1. The reference member is chosen by the backend with a pure geometric algorithm: the alive own-team member nearest to the observed enemy in this phase (nothing is emitted without position references); a member is listed only when its HP ratio ≥ the reference member × 1.2 and it is farther from the enemy than the reference (salience filter — it only decides who deserves attention).
+               The filter is not a tactical judgement — whether a member avoided engagement, used a teammate's cover to output, kept a safe output distance, or was positioned sensibly is your inference from position, output, HP loss and the battle — never turn this section into a direct "HP-hoarding / avoidance" verdict, and never read "reference" as a tactical role like "front-line carrier".
+            2. Output observation respects event-stream coverage: with coverage=PARTIAL, observedAttackEvents=0 only means "observed attack events = 0" — never infer "no output / avoidance" from it, and never treat the zero count as negative-contribution evidence.
+            3. HP_RATIO_UNKNOWN (insufficient HP data) provides only positional-relation and observed-attack-event facts — never judge avoidance or HP-hoarding from it.
+            4. The team review may point out observed combinations such as "kept a distance gap from the reference member for a long time with low output contribution", but must phrase them as measurement-based — never assert player intent beyond the evidence, and never treat the salience count as a negative grade.
+            5. High damage is not equal to high contribution: weigh output / HP loss / position measurements when evaluating contribution, but never cite a precomputed "behind-line degree" as an authoritative label — that is your inference.
+            6. When this section is absent (insufficient position/HP observation), never fabricate it.""";
+
+    static final String RELATIVE_DEPTH_HP_RULE_RU = """
+
+            === ПРАВИЛО ИЗМЕРЕНИЙ ОТНОСИТЕЛЬНОЙ ГЛУБИНЫ / ОЗ (обязательное · нейтральные измерения) ===
+            Секция RELATIVE_DEPTH_HP_MEASUREMENT содержит детерминированные измерения (позиция участника и эталонного члена / доли ОЗ / разница дистанций до противника / наблюдаемые события атаки / полнота покрытия / статические факты тактического профиля):
+            1. Эталонный член (reference) выбирается бэкендом по чисто геометрическому алгоритму: ближайший к наблюдаемому противнику живой член своей команды в этой фазе (без позиционных ссылок секция не выводится); участник выводится только если его доля ОЗ ≥ доли эталона × 1.2 и он дальше от противника, чем эталон (salience filter — лишь решает, кто заслуживает внимания).
+               Фильтр не является тактическим суждением — избегает ли участник боя, использует ли прикрытие союзника для стрельбы, держит ли безопасную дистанцию или стоит разумно, выводите сами из позиции, выхода, потери ОЗ и хода боя; не превращайте секцию в прямой вердикт «накопление ОЗ / избегание» и не читайте «reference» как тактическую роль вроде «держащий фронт».
+            2. Наблюдение выхода уважает полноту событий: при coverage=PARTIAL значение observedAttackEvents=0 означает только «наблюдаемых событий атаки = 0» — запрещено выводить «без выхода/избегание боя» и использовать нулевой счёт как негативное свидетельство вклада.
+            3. HP_RATIO_UNKNOWN (недостаточно данных об ОЗ) даёт только факты о позиционных отношениях и наблюдаемых событиях атаки — запрещено судить об избегании или накоплении ОЗ по ним.
+            4. Командный разбор может указывать наблюдаемые комбинации вроде «долго держал дистанцию до эталонного члена при низком вкладе по урону», но обязан формулировать их как основанные на измерениях — не утверждать намерения игрока сверх свидетельств и не превращать количество фаз (salience) в негативную оценку.
+            5. Высокий урон ≠ высокий вклад: оценивая вклад, взвешивайте урон / потерю ОЗ / позиционные измерения, но никогда не ссылайтесь на заранее вычисленную «степень игры за спиной» как на авторитетный ярлык — это ваше умозаключение.
+            6. Если секция отсутствует (недостаточно наблюдений позиций/ОЗ), запрещено её выдумывать.""";
+
+    /** 数据不足时的输出措辞（UNKNOWN selective，不再 blanket 强制写明）。 */
+    static final String ZH_CANNOT_DETERMINE_RULE =
+            "UNKNOWN 是合法内部状态：只有不说明会误写成确定因果、或该未知直接影响核心结论/训练建议、"
+                    + "或用户自然会关心这个关键原因时，才自然说明「无法从当前回放数据确定」；其他未知静默，不要逐条列出。";
+    static final String EN_CANNOT_DETERMINE_RULE =
+            "UNKNOWN is a legitimate internal state: only when failing to say so would mislead correlation "
+                    + "into causation, or when the unknown directly affects the core conclusion / training advice, "
+                    + "or when the user would naturally care about this key cause, naturally say that it \"cannot be "
+                    + "determined from the current replay data\"; otherwise keep unknowns silent — do not list them.";
+    static final String RU_CANNOT_DETERMINE_RULE =
+            "UNKNOWN — легитимное внутреннее состояние: только если умолчание привело бы к выдаче корреляции "
+                    + "за причинность, или это неизвестное напрямую влияет на ключевой вывод / рекомендации, "
+                    + "или пользователь естественно захочет узнать эту ключевую причину, — естественно скажите, что "
+                    + "«по данным реплея это определить нельзя»; остальные неизвестные не перечисляйте.";
+
+    /** Team 专用：空间分离证据使用规则（ZH；与 prompts/team/single.zh.md 内文本逐字一致）。
+     *  <p>Backend Evidence Boundary：SPATIAL_SEPARATION_EVIDENCE 是观察事实与确定性派生测量，
+     *  不是战术 verdict；拖延/脱节/图控/有效牵制等判断由 LLM 完成。</p> */
+    static final String SEPARATION_EVIDENCE_RULE = """
+
+            === 空间分离证据使用规则（强制） ===
+            1. 后端 SPATIAL_SEPARATION_EVIDENCE 段提供的是【观察事实与确定性派生测量】（空间分离窗口、
+               距离、距离增长、静止占比、移动覆盖、局部观察敌我数量、窗口内承伤/输出、阵亡、主力簇位移、
+               其他队友窗口内活动），不是战术 verdict。判断「拖延 / 脱节 / 图控 / 有效牵制 / 局部兵力不足 /
+               交换是否值得」是你（LLM）的职责：把这些事实组合起来，得出 supported tactical inference。
+            2. 开局分散（OPENING_SPREAD）只表示「开局阶段队伍形成了空间分离结构」，是中性结构分类；
+               可以分析「地图信息覆盖 ↔ 局部兵力集中度」的 trade-off，但不得把「可能获得更多地图信息」说成「已经点亮了谁/提供了具体侦察收益」；
+               开局分散不是天然正确也不是天然错误，不能仅凭分散判为脱节，也不能仅凭分散判为图控/拿视野。
+            3. 只有专门且经过验证的 visibility/spotting evidence 才允许写「点亮了」「提供了视野」「侦察到了」等具体归因；
+               没有这种 evidence 时，具体视野收益保持内部 UNKNOWN：不得声称具体点亮/侦察收益，
+               也不得自动追加「实际视野收益无法确认」——仅当该未知影响核心判断时才自然说明（符合全局选择性 UNKNOWN 条件）。
+            4. 判断空间分离成员的战术含义时，综合：空间分离窗口的距离/距离增长/静止占比、局部观察敌我数量、
+               敌方已知信息、窗口内交换结果（承伤/输出/阵亡）、主力簇位移与其他队友窗口内活动、以及后续
+               重新集中的时序。只基于可观测行为（位置、移动、交火、占点）判定行为模式，不得把行为模式说成
+               玩家心理意图；正文不得出现「簇/质心/候选/规则候选/PARTIAL」等内部术语，一律转成自然中文；
+               禁止声称「A 的行为导致 B 获利」的因果。
+            5. 数据不足时不得猜测：移动覆盖不足 → movementState=UNKNOWN；部分重叠交火无法可靠归属时后端
+               不输出该窗口；OBSERVED_DAMAGE_IS_PARTIAL 时不得用「没有观察到」证明未接火/未承伤。缺失本身
+               保持内部 UNKNOWN——仅当该未知直接影响核心判断、因果判断或训练建议时才自然说明。
+            6. 开局分散的质量取决于拿到信息后是否及时响应：敌方主力方向确认后本方是否及时合流/收缩/转场、
+               被接敌一侧的局部人数关系、另一侧支援能否及时赶到；分散获得的信息价值是否抵得上局部兵力不足的代价。
+            """;
+    static final String SEPARATION_EVIDENCE_RULE_EN = """
+
+            === SPATIAL SEPARATION EVIDENCE USAGE RULES (mandatory) ===
+            1. The backend SPATIAL_SEPARATION_EVIDENCE section provides OBSERVATIONS and DETERMINISTIC DERIVED
+               MEASUREMENTS (separation windows, distance, distance growth, stationary ratio, movement coverage,
+               locally observed friendly/enemy counts, in-window damage received/dealt, deaths, main-cluster
+               displacement, other teammates' in-window activity) — NOT tactical verdicts. Judging "delay /
+               detachment / map control / effective holding / local force shortage / whether a trade was worth it"
+               is YOUR (the LLM's) job: combine these facts into a supported tactical inference.
+            2. An opening spread (OPENING_SPREAD) only means "the team formed a spatially separated structure
+               during the opening phase" — a neutral structural classification. You may analyze the trade-off of
+               "information/spatial coverage ↔ local force concentration", but you may NOT present "possibly
+               gaining more map information" as "already spotted someone / provided specific recon benefit";
+               an opening spread is neither inherently correct nor inherently wrong — do not call it detachment
+               merely because the team is spread out, and do not call it map control / vision gathering either.
+            3. Only dedicated, validated visibility/spotting evidence allows specific claims like "spotted",
+               "provided vision", "recon'd"; without such evidence, the specific vision benefit stays internal UNKNOWN:
+               never claim specific spotting/recon benefits and never automatically append "its actual vision benefit
+               cannot be confirmed" — explain naturally only when that unknown affects the core judgment (the global
+               selective-UNKNOWN condition).
+            4. When judging the tactical meaning of a spatially separated member, weigh together: the separation
+               window's distance / distance growth / stationary ratio, locally observed friendly/enemy counts,
+               known enemy information, the in-window trade result (damage received/dealt/deaths), main-cluster
+               displacement and other teammates' in-window activity, and the timing of later regrouping. Judge
+               behavior patterns only from observable behavior (position, movement, engagements, capture points);
+               never describe a behavior pattern as the player's mental intent. Never echo internal terms such as
+               cluster/centroid/candidate/PARTIAL; use natural language. Never claim causation ("A's play caused
+               B's profit").
+            5. Do not guess when data is insufficient: insufficient movement coverage → movementState=UNKNOWN;
+               when an engagement cannot be reliably attributed (partial overlap) the backend does not emit that
+               window; under OBSERVED_DAMAGE_IS_PARTIAL never use "not observed" to prove "no contact / no damage".
+               Gaps stay internal UNKNOWN — explain naturally only when a gap directly affects the core judgment,
+               causal judgment, or training advice (the global selective-UNKNOWN condition).
+            6. The quality of an opening spread depends on how the team responded once information arrived: after
+               the enemy's main force direction was confirmed, did the team regroup/contract/rotate in time, what
+               were the local force relations on the contacted side, and could the other side support in time; was
+               the information value of the spread worth the cost of local force scarcity.
+            """;
+    static final String SEPARATION_EVIDENCE_RULE_RU = """
+
+            === ПРАВИЛА ИСПОЛЬЗОВАНИЯ ДОКАЗАТЕЛЬСТВ ПРОСТРАНСТВЕННОГО ОТДЕЛЕНИЯ (обязательно) ===
+            1. Секция SPATIAL_SEPARATION_EVIDENCE на бэкенде предоставляет НАБЛЮДЕНИЯ и ДЕТЕРМИНИРОВАННЫЕ
+               ПРОИЗВОДНЫЕ ИЗМЕРЕНИЯ (окна отделения, дистанция, рост дистанции, доля неподвижности,
+               покрытие движения, локально наблюдаемое число союзников/противников, полученный/нанесённый
+               урон в окне, гибель, смещение главной группы, активность других союзников в окне) — а НЕ тактические вердикты.
+               Оценка «задержка / отрыв / контроль карты / эффективное удержание /
+               нехватка локальных сил / стоило ли размениваться» — это ВАША (LLM) задача: объедините эти
+               факты в подтверждённый тактический вывод.
+            2. Рассредоточение на старте (OPENING_SPREAD) означает лишь «в начальной фазе команда образовала
+               пространственно разделённую структуру» — нейтральная структурная классификация. Вы можете
+               анализировать размен «покрытие информацией/пространством ↔ концентрация локальных сил», но НЕ
+               можете выдавать «возможно, получили больше информации о карте» за «уже засветил кого-то / дал
+               конкретную разведывательную выгоду»; рассредоточение на старте не является ни изначально
+               правильным, ни изначально ошибочным — не называйте его отрывом только из-за рассредоточения и
+               не называйте его контролем карты / сбором обзора.
+            3. Только специальные проверенные visibility/spotting evidence позволяют писать конкретные
+               утверждения вроде «засветил», «обеспечивал обзор», «разведал»; без таких evidence конкретная
+               обзорная выгода остаётся внутренним UNKNOWN: не утверждайте конкретный засвет/разведку и не
+               добавляйте автоматически «его фактическую обзорную выгоду подтвердить нельзя» — объясняйте
+               естественно, только если это неизвестное влияет на ключевой вывод (условие глобального
+               селективного UNKNOWN).
+            4. Оценивая тактический смысл отделившегося члена, взвесьте вместе: дистанцию/рост дистанции/долю
+               неподвижности окна отделения, локально наблюдаемое число союзников/противников, известную
+               информацию о противнике, результат размена в окне (полученный/нанесённый урон, гибель), смещение
+               главной группы и активность других союзников в окне, а также время последующей перегруппировки.
+               Оценивайте только наблюдаемые паттерны поведения (позиция, движение, перестрелки, захват точек);
+               не выдавайте паттерн поведения за психологические намерения игрока. Не используйте внутренние
+               термины (кластер/центроид/кандидат/PARTIAL); излагайте естественно. Запрещено утверждать
+               причинность («действие A принесло выгоду B»).
+            5. Не угадывайте при нехватке данных: недостаточное покрытие движения → movementState=UNKNOWN;
+               когда перестрелку нельзя надёжно отнести к окну (частичное пересечение), бэкенд не выводит это
+               окно; при OBSERVED_DAMAGE_IS_PARTIAL не используйте «не наблюдалось» как доказательство
+               «нет контакта / нет урона». Пробелы остаются внутренним UNKNOWN — объясняйте естественно,
+               только если пробел напрямую влияет на ключевой вывод, причинно-следственный вывод или
+               рекомендацию (условие глобального селективного UNKNOWN).
+            6. Качество рассредоточения зависит от реакции после получения информации: после подтверждения
+               направления главных сил противника успела ли команда вовремя перегруппироваться/сжаться/
+               ротироваться, каково было локальное соотношение сил на стороне контакта и успела ли подойти
+               поддержка с другой стороны; стоила ли информационная ценность рассредоточения цены нехватки
+               локальных сил.
+            """;
+    /** Team 专用：重新集中/合流是本场具体结论，必须有证据。 */
+    static final String TEAM_REGROUP_INFERENCE_RULE = """
+
+            === 重新集中推断规则（强制：本场具体结论必须有证据） ===
+            「对方主力方向确认后本方没有及时合流/重新集中」是本场具体结论，不是一般战术解释：
+            只有同时满足以下条件才允许作为 supported inference 输出：
+            1. 当时已有足够的敌方已知信息支持「对方主力方向已经基本确认」（例如敌方最后已知位置段显示
+               该方向已观察到大部分敌车，未知车辆数量较少）；
+            2. 本方仍存在多个显著分离的集群；
+            3. 后续一段时间内两个己方集群没有明显靠近或形成支援；
+            4. 首次关键交火/减员发生在其中一个集群。
+            满足时措辞：「对方主力方向已经比较明确后，本方仍保持分散，重新集中的速度不够。」
+            敌方位置未知数量较多时（例如已知 4 辆、未知 3 辆），只能说「这一侧当时至少已经观察到 4 辆敌车，
+            其余 3 辆的位置还不明确」，禁止说「对方 7 辆主力已经集中在这一侧」。
+            后面才获得/亮出的敌方信息不得回填到更早的判断窗口（anti-future-leak）。
+            """;
+
+    static final String TEAM_REGROUP_INFERENCE_RULE_EN = """
+
+                        === REGROUPING INFERENCE RULE (mandatory: battle-specific conclusions need evidence) ===
+                        "After the enemy's main force direction was confirmed, the team did not regroup in time" is a
+                        battle-specific conclusion, not a general tactical interpretation. It may only be written as a
+                        supported inference when ALL of the following hold:
+                        1. enough enemy-known information existed at that time to support "the enemy's main force direction was basically confirmed"
+                           (e.g. the enemy last-known-position section shows most enemy vehicles observed on that direction, with few unknown vehicles);
+                        2. our team still had several significantly separated clusters;
+                        3. over the following period, the two own clusters did not clearly approach or support each other;
+                        4. the first key engagement / losses happened in one of those clusters.
+                        When satisfied, phrase it as: "after the enemy's main force direction became fairly clear, our team stayed spread out and regrouped too slowly."
+                        When many enemy positions are unknown (e.g. 4 known, 3 unknown), only write "at least 4 enemy vehicles were observed on this side at that time; the positions of the other 3 were still unclear" —
+                        never write "all 7 enemy vehicles of the main force were already concentrated on this side".
+                        Information revealed/obtained later must not be back-filled into an earlier judgment window (anti-future-leak).
+            """;
+
+    static final String TEAM_REGROUP_INFERENCE_RULE_RU = """
+
+                        === ПРАВИЛО ВЫВОДА О ПЕРЕГРУППИРОВКЕ (обязательно: конкретные выводы по бою требуют доказательств) ===
+                        «После подтверждения направления главных сил противника команда не перегруппировалась вовремя» —
+                        конкретный вывод по этому бою, а не общая тактическая интерпретация. Его можно писать как подтверждённый
+                        вывод только при одновременном выполнении всех условий:
+                        1. к тому моменту было достаточно известной информации о противнике, чтобы подтвердить «направление главных сил в основном определено»
+                           (например, секция последних известных позиций противника показывает большинство вражеских машин на этом направлении, неизвестных машин мало);
+                        2. наша команда всё ещё имела несколько заметно разделённых групп;
+                        3. в последующий период две свои группы явно не сближались и не поддерживали друг друга;
+                        4. первый ключевой бой / потери произошли в одной из этих групп.
+                        При выполнении формулируйте так: «после того как направление главных сил противника стало достаточно ясным, наша команда осталась рассредоточенной и перегруппировалась слишком медленно».
+                        Когда позиций противника неизвестно много (например, известно 4, неизвестно 3), пишите только «на этой стороне в тот момент наблюдалось как минимум 4 машины противника; позиции остальных 3 были неясны» —
+                        запрещено писать «все 7 машин главных сил противника уже сосредоточились на этой стороне».
+                        Информация, полученная/проявившаяся позже, не должна переноситься в более раннее окно оценки (anti-future-leak).
+            """;
+
+    static final String CAPTURE_RULE = """
+
+            === 争霸赛占点规则（强制，训练房/联赛恒为争霸赛） ===
+            1. 集中推进可能减少分散的地图覆盖；是否实际造成侦察/视野损失必须有对应 evidence（不得仅凭集中断言失去视野），复盘必须权衡集中与分散的代价。
+            2. result 行的胜负来源以 resultSource 为准，只有三级证据，BATTLE_RESULTS 存在时最高优先级：
+               a. BATTLE_RESULTS：来自 battle_results#winnerTeam 的权威结算；LLM 不得用事件流、存活数或点数覆盖胜方；
+               b. SURVIVOR_SETTLEMENT：结算存活状态推导（一方全员阵亡）；非 battle result 权威，不得伪装成权威结算；
+               c. 无权威胜方（winnerTeam 缺失）时：仅当 rosterComplete=true 且一方全员阵亡，才可用 SURVIVOR_SETTLEMENT
+                  按完整结算存活状态推导全歼胜方；双方均有存活时胜方未知，禁止比较占点字段推断胜方。
+               d. 结算阵容不完整（SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true）时，逐人/双方
+                  占点分均为部分数据：禁止用残缺点数推断胜方或「时间耗尽/达到 1000 分」结束方式，点数结束方式只能写「点数判定」。
+            3. 全歼语义按存活情况双向判定（与 resultSource 无关）：
+               a. 本方获胜且对方 survivors=0 → 写「全歼敌方获胜」；
+               b. 本方落败且本方 survivors=0 → 写「被敌方全歼落败」；
+               c. 双方均有存活车辆时，才允许进入点数结束方式判断（争霸赛所有模式均为固定 7 分钟/420 秒、胜利点数上限 1000 分的业务规则——项目所有者确认，游戏不提供时长调整；arenaBonusType 只证明战斗类别，不直接解码出 420s/1000）：
+                  战斗时长未到 7 分钟 → 结束原因为「某一方达到 1000 分导致提前结束」：权威胜方存在时写「达到 1000 分提前获胜」，胜利方终局比分=1000（1000 分上限业务约定），失败方比分未知；
+                  胜方缺失时只写「某一方达到 1000 分导致提前结束，具体胜方未知」，双方终局比分未知；
+                  时长 ≥7 分钟 → 权威胜方存在时写「时间耗尽后以点数优势获胜」，必须写「时间耗尽」；胜方缺失时只写「时间耗尽点数判定，具体胜方未知」，双方终局比分未知；
+                  无法证明时限时只写「点数判定」，终局比分未知，不得编造。
+            4. 禁止把失败方被全歼写成「全歼敌方获胜」；禁止把点数胜负写成全歼或常规胜利；禁止用 <1000 的中间比分作为获胜理由。
+            5. 占点分/占领分（victoryPointsEarned/Seized）是逐人结算字段：其精确定义及是否包含被动占点增长、击杀夺分等调整仍未证明，
+               不代表时间线也不是终局比分；每据点每 tick 产分与 tick 间隔均未解码（无任何已验证的 tick 产分规则），
+               禁止用 tick 数或占点分计算终局比分；不得把总量说成某时刻占领进度，也不得把 victoryPointsEarned 合计
+               或任何公式计算结果冒充终局比分。
+            6. 地图占领点区域（CONTAINS_CONTROL_POINT）只用于描述方位，未提供时不得声称谁在占点。
+            7. 击杀夺分（业务规则，项目所有者确认）：争霸赛每击杀一辆敌方坦克，击杀方夺取对方 40 分补充自身，被击杀方损失 40 分；
+               该规则只作叙述口径（「击毁车辆通常会改变双方点数」），结算字段是否已包含该调整未经证明，
+               禁止自行用「占点分 + 40×击杀 − 40×阵亡」等公式计算结果并当作事实输出；
+               只有权威胜方存在且标准规则下提前结束时，胜利方终局比分才=1000（1000 分上限业务约定），其余终局比分一律未知；
+               禁止用不含击杀夺分的中间比分解释获胜，禁止编造失败方精确比分。
+            8. 点数局势与攻防姿态（只基于可证明信号）：
+               a. 输入提供 OBJECTIVE_STATE_TIMELINE 的 SUPREMACY_POINTS 实时点数时，以它为准做点数账（争霸赛复盘规范第 12 条），下面的未解码限制只适用于没有该段的时段；没有实时点数时，终局前任意时刻的绝对比分未解码（实时比分/占点进度/被动占点增长均无证据），禁止编造任何中间比分、
+                  精确领先幅度或「此刻领先多少分」式断言。击杀夺分时间线只表达「击杀换分项」的累计净差值，
+                  是部分可证明信号，不是整体点数：禁止把击杀换分项净劣势/优势直接写成整体点数落后/领先；
+                  终局点数落败只能描述终局结果，禁止反推早期任意时刻的整体点数状态。判断点数压力只能用
+                  POINTS_SITUATION 段的可证明信号（击杀夺分时间线、占领点区域位置存在、进入控制点区域窗口）与终局结算/结束方式。
+               b. 条件式分析（允许，须写明前提）：若双方未通过占点取得更大的点数积累（占点积累不可观测），
+                  击杀换分项净劣势的一方通常承受更大点数压力，净优势的一方压力更小——这只提示「点数压力方向」，
+                  是否应该抢点/防守拉交叉由你综合局势自行推断，不得把「净劣势 ⇒ 需要进攻抢点」写成固定结论。
+                  必须先说明这是基于击杀换分项与占点存在信号的推断，不得说成整体比分领先/落后。
+               c. 进攻推进大概率付出掉血代价：评价进攻方掉血必须结合点数压力情境——为抢点/进攻付出的掉血未必是失误；
+                  无点数压力时的无谓掉血、无交换的单方面掉血才是问题。
+               d. 进入控制点区域窗口（CONTROL_REGION_ENTRY_WINDOWS）只表达「车辆从控制点区域外移动进入控制点区域」
+                  这一结构事实，本身不证明进攻/抢点/防守/转场，也不证明战术正确/错误。防守方对进入车辆造成的伤害
+                  只是可观测的换血事实；是否构成「过路费不足 / 防守失误」必须由你综合击杀换分信号、区域位置存在、
+                  局部人数、战局时间、伤害、阵亡与后续移动自行形成 supported tactical inference，
+                  不得把「进入窗口 + 低伤害」固定映射成「必须指出防守方失误」。
+                  伤害数字不可用（OBSERVED_DAMAGE_IS_PARTIAL）时只做定性描述，不得报数字。
+               e. 信号不足或矛盾时不得硬下「落后/领先」结论，该判断保持内部 UNKNOWN——仅当符合全局选择性 UNKNOWN 条件时才自然说明。""";
+
+    static final String CAPTURE_RULE_EN = """
+
+            === SUPREMACY CAPTURE RULES (mandatory; training room / clan battles are always supremacy) ===
+            1. A concentrated push may reduce distributed map coverage; whether it actually caused spotting/vision loss must have corresponding evidence (never claim vision loss from concentration alone); always weigh the cost of concentrating vs spreading.
+            2. The win/loss line must be read with resultSource; there are only three evidence levels, and BATTLE_RESULTS has the highest priority when present:
+               a. BATTLE_RESULTS: authoritative settlement from battle_results#winnerTeam; never override the winner with event-stream observations, survival counts, or points;
+               b. SURVIVOR_SETTLEMENT: derived from settlement survival state (one team fully destroyed); not an authoritative battle-result winner, never present it as one;
+               c. Without an authoritative winner (winnerTeam missing): only when rosterComplete=true and one team is fully destroyed may you derive the annihilation winner via SURVIVOR_SETTLEMENT from the complete settlement survival state; when both teams have survivors the winner is unknown — never infer it by comparing capture-point fields.
+               d. When the settlement roster is incomplete (SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true), the per-player and team capture-point totals are partial data: never infer the winner or a "time expired / reached 1000 points" end condition from partial points; the points end condition can only be written as "points decision".
+            3. Annihilation wording is bidirectional and based on survivors (independent of resultSource):
+               a. Your team wins and the opposing team has 0 survivors → write "won by annihilating the enemy team";
+               b. Your team loses and your team has 0 survivors → write "lost, annihilated by the enemy team";
+               c. Only when both teams have surviving vehicles may you judge the points end condition (every Supremacy mode uses the fixed 7-minute / 420-second duration and a 1000-point victory cap — business rules confirmed by the project owner; the game offers no battle-duration setting, and arenaBonusType only proves the battle category, it does not decode 420s/1000):
+                  battle shorter than 7 minutes → the end reason is "a team reached 1000 points, ending the battle early"; with an authoritative winner write "won by reaching 1000 points early" and the winning team's final score is 1000 (the 1000-point cap, a business convention), the losing team's score is unknown;
+                  without an authoritative winner write only "a team reached 1000 points, ending the battle early; the winning team is unknown" and both final scores are unknown;
+                  duration >= 7 minutes → with an authoritative winner write "won on points after time expired" — always write "time expired"; without one, write only "points decision after time expired, the winning team is unknown" and both final scores are unknown;
+                  when the time limit cannot be proven, only write "points decision" and the final score is unknown — never invent it.
+            4. Never write "won by annihilating the enemy team" when your own team was annihilated; never present a points win as annihilation or a regular win; never use a mid-match score below 1000 as the reason for winning.
+            5. victoryPointsEarned / victoryPointsSeized are per-player settlement fields whose exact meaning and whether they already include passive accumulation or kill steals is unproven; they are not a timeline and not the final score. Capture scoring business rule (confirmed by the project owner): No per-base per-tick scoring rule has been verified, and the tick interval is undecoded, so never compute a final score from tick counts or capture points. Never present the totals as capture progress at a specific moment and never pass off the victoryPointsEarned sum or any formula result as the final score.
+            6. Capture-point areas (CONTAINS_CONTROL_POINT) only describe direction; when not provided, never claim who is capturing.
+            7. Kill steals (business rule, confirmed by the project owner): in Supremacy every destroyed enemy tank steals 40 points from the enemy team and adds them to the killer's team, while the team that lost the tank loses 40 points; this rule is a narrative guideline only ("destroying vehicles usually changes both teams' points") — whether the settlement fields already include this adjustment is unproven, so never compute "capture points + 40×kills − 40×deaths" yourself and present the result as fact; only with an authoritative winner and a rule-provable early end is the winning team's final score 1000 (the 1000-point cap, a business convention) — all other final scores are unknown; never explain the win with a score that omits kill steals and never invent the losing team's exact score.
+            8. Points situation and attack/defense posture (provable signals only):
+               a. When the input provides realtime SUPREMACY_POINTS in OBJECTIVE_STATE_TIMELINE, use them for the points accounting (Supremacy review standard item 12); the undecoded restriction below applies only to periods without that section. Without realtime points, the absolute score at any moment before the end is undecoded (live score, capture progress, and passive accumulation have no evidence); never invent any mid-match score, an exact lead margin, or claims like "currently behind by X points". The kill-steal timeline expresses only the cumulative net delta of the "kill-steal component" — a partial provable signal, not the overall score: never present a net kill-steal deficit/lead as an overall points disadvantage/advantage; a final points loss describes only the final result — never retro-infer the overall points state at any earlier moment. Judge points pressure only from the provable signals in the POINTS_SITUATION section (kill-steal timeline, capture-point area presence, control-region entry windows) and the final settlement / end condition.
+               b. Conditional analysis is allowed but must state its premise: if neither team accumulated more points through captures (capture accumulation is not observable), the team with a net kill-steal deficit usually bears greater points pressure and the team with a net kill-steal lead bears less — this only hints at the direction of points pressure; whether to push and capture or defend with crossfire is your inference from the whole situation, never write "net deficit ⇒ must push to capture" as a fixed rule. When judging attack/capture/defense play, always state first that this is an inference based on the kill-steal component and capture-presence signals — never present it as an overall score lead/deficit.
+               c. Attacking pushes usually cost HP: judge an attacker's HP loss together with the points-pressure context — HP paid for a capture/push is not necessarily a mistake; pointless HP loss under no pressure, or one-sided loss without any trade, is the problem.
+               d. The control-region entry window (CONTROL_REGION_ENTRY_WINDOWS) only expresses the structural fact that vehicles moved from outside a control-point area into it — it does not by itself prove attack, capture, defense, rotation, or tactical rightness/wrongness. The damage the defenders deal to the entering vehicles is only an observable HP-exchange fact; whether it means "the toll was insufficient / a defensive mistake" must be your supported tactical inference from the kill-steal signal, control-region presence, local numbers, battle time, damage, deaths and subsequent movement — never map "entry window + low damage" to a mandatory "defensive mistake" verdict. When damage numbers are unavailable (OBSERVED_DAMAGE_IS_PARTIAL), describe qualitatively only and never report numbers.
+               e. When signals are insufficient or contradictory, never force a "behind/ahead" conclusion — keep that judgment internal UNKNOWN and explain naturally only when the global selective-UNKNOWN condition applies.""";
+
+    static final String CAPTURE_RULE_RU = """
+
+            === ПРАВИЛА ЗАХВАТА (обязательно; тренировочные бои и клановые бои — всегда supremacy) ===
+            1. Концентрированное продвижение может уменьшить распределённое покрытие карты; действительно ли оно привело к потере обзора/разведки — должно подтверждаться evidence (нельзя утверждать потерю обзора только из-за концентрации); всегда взвешивайте цену концентрации против рассредоточения.
+            2. Строку result следует читать вместе с resultSource; существует только три уровня доказательности, и при наличии BATTLE_RESULTS он имеет высший приоритет:
+               a. BATTLE_RESULTS: авторитетный итог из battle_results#winnerTeam; не подменяйте победителя наблюдениями из потока событий, числом выживших или очками;
+               b. SURVIVOR_SETTLEMENT: вывод по статусу выживших из итогов (одна команда полностью уничтожена); это не авторитетное поле победителя battle result, не выдавайте его за таковое;
+               c. Без авторитетного победителя (winnerTeam отсутствует): только при rosterComplete=true и полном уничтожении одной из команд можно вывести победителя полного уничтожения через SURVIVOR_SETTLEMENT из полного состояния выживших; когда в обеих командах есть выжившие, победитель неизвестен — не выводите его сравнением полей захвата.
+               d. Когда состав расчёта неполон (SETTLEMENT_ROSTER_INCOMPLETE=true / pointsTotalsUnavailable=true), суммы очков захвата по игрокам и командам являются частичными данными: запрещено выводить победителя или условие завершения «время истекло / набрано 1000 очков» по неполным очкам; условие завершения по очкам можно писать только как «решение по очкам».
+            3. Формулировка полного уничтожения двунаправленна и зависит от выживших (независимо от resultSource):
+               a. Ваша команда победила, а у противника 0 выживших → напишите «победа полным уничтожением противника»;
+               b. Ваша команда проиграла, а в вашей команде 0 выживших → напишите «поражение — противник полностью уничтожил вашу команду»;
+               c. Только когда в обеих командах есть выжившие машины, оценивайте завершение по очкам (во всех режимах Supremacy действует фиксированная длительность 7 минут / 420 секунд и предел победы 1000 очков — бизнес-правила, подтверждённые владельцем проекта; в игре нет настройки длительности боя, а arenaBonusType лишь доказывает категорию боя и не декодирует 420с/1000):
+                  бой короче 7 минут → причина завершения «одна из команд достигла 1000 очков, бой завершён досрочно»; при авторитетном победителе напишите «победа досрочно по достижении 1000 очков», итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), счёт проигравшего неизвестен;
+                  без авторитетного победителя напишите только «одна из команд достигла 1000 очков, бой завершён досрочно; победитель неизвестен», оба итоговых счёта неизвестны;
+                  длительность ≥7 минут → при авторитетном победителе напишите «победа по очкам после истечения времени» — обязательно укажите «время истекло»; без него напишите только «решение по очкам после истечения времени, победитель неизвестен», оба итоговых счёта неизвестны;
+                  если лимит времени недоказуем, пишите только «решение по очкам», итоговый счёт неизвестен — не выдумывайте его.
+            4. Не пишите «победа полным уничтожением противника», когда полностью уничтожена ваша команда; не выдавайте победу по очкам за уничтожение или обычную победу; не используйте промежуточный счёт ниже 1000 как причину победы.
+            5. victoryPointsEarned / victoryPointsSeized — посчётные поля расчёта, чьё точное значение и включены ли уже очки за фраги или пассивное накопление не доказаны; это не таймлайн и не итоговый счёт. Бизнес-правило начисления за захват (подтверждено владельцем проекта): Никакое правило начисления очков за базу за тик не проверено, интервал тика не декодирован, поэтому не вычисляйте итоговый счёт из числа тиков или очков захвата. Не выдавайте суммы за прогресс захвата в конкретный момент и не выдавайте сумму victoryPointsEarned или любой результат формулы за итоговый счёт.
+            6. Области точек захвата (CONTAINS_CONTROL_POINT) описывают только направление; если они не предоставлены, не утверждайте, кто захватывает.
+            7. Очки за фраги (бизнес-правило, подтверждённое владельцем проекта): в Supremacy каждый уничтоженный вражеский танк отнимает у вражеской команды 40 очков и добавляет их команде убийцы, а команда, потерявшая машину, теряет 40 очков; это правило — только ориентир для описания («уничтожение машин обычно меняет очки обеих команд»): включена ли эта поправка в поля расчёта, не доказано, поэтому запрещено самому вычислять «очки захвата + 40×фраги − 40×потери» и выдавать результат за факт; только при авторитетном победителе и доказуемом по правилам досрочном завершении итоговый счёт победителя = 1000 (предел 1000 очков, деловое соглашение), все остальные итоговые счета неизвестны; запрещено объяснять победу счётом без очков за фраги и выдумывать точный счёт проигравшей команды.
+            8. Ситуация по очкам и стойка атаки/обороны (только доказуемые сигналы):
+               a. Если вход содержит очки SUPREMACY_POINTS в реальном времени в OBJECTIVE_STATE_TIMELINE, используйте их для расчёта очков (пункт 12 стандарта разбора Supremacy); ограничение «не декодирован» ниже действует только для периодов без этого раздела. Без реальных очков абсолютный счёт в любой момент до конца боя не декодирован (живой счёт, прогресс захвата и пассивное накопление не имеют доказательств); запрещено выдумывать любой промежуточный счёт, точный отрыв или утверждения вида «сейчас позади на X очков». Таймлайн очков за фраги выражает только накопленную чистую разницу «компоненты очков за фраги» — частичный доказуемый сигнал, а не общий счёт: запрещено выдавать чистый минус/плюс по очкам за фраги за общее отставание/преимущество по очкам; поражение по очкам описывает только итоговый результат — запрещено обратно выводить общее состояние по очкам на любой ранний момент. Оценивайте давление по очкам только по доказуемым сигналам секции POINTS_SITUATION (таймлайн очков за фраги, присутствие в зонах точек захвата, окна входа в зоны контроля) и итогу расчёта / условию завершения.
+               b. Условный анализ разрешён, но обязан указывать предпосылку: если ни одна команда не накопила больше очков захватом (накопление за захват ненаблюдаемо), команда с чистым минусом по очкам за фраги обычно испытывает большее давление по очкам, а команда с плюсом — меньшее; это лишь указывает направление давления — нужно ли атаковать и захватывать точки или обороняться с перекрёстным огнём, выводите сами из всей обстановки, не превращайте «минус ⇒ обязательно атаковать и захватывать» в фиксированное правило. Сначала обязательно укажите, что это вывод на основе компоненты очков за фраги и сигналов присутствия на точках, — не выдавайте его за общий счёт впереди/позади.
+               c. Атакующее продвижение обычно стоит HP: оценивайте потерю HP атакующего вместе с давлением по очкам — HP, отданные за захват/атаку, не обязательно ошибка; бесполезная потеря HP без давления или односторонняя потеря без размена — проблема.
+               d. Окно входа в зону контроля (CONTROL_REGION_ENTRY_WINDOWS) выражает лишь структурный факт — машины переместились извне зоны точки захвата внутрь неё; само по себе оно не доказывает атаку, захват, оборону, ротацию или тактическую правильность/ошибочность. Урон, который обороняющиеся наносят входящим машинам, — лишь наблюдаемый факт обмена HP; означает ли он «недостаточную плату за проезд / ошибку обороны» — ваше supported tactical inference из сигнала очков за фраги, присутствия в зонах контроля, локальных чисел, времени боя, урона, потерь и последующего движения — никогда не превращайте «окно входа + низкий урон» в обязательный вердикт «ошибка обороны». Когда цифры урона недоступны (OBSERVED_DAMAGE_IS_PARTIAL), описывайте только качественно и не называйте чисел.
+               e. При недостаточных или противоречивых сигналах не навязывайте вывод «позади/впереди» — оставьте это суждение внутренним UNKNOWN и объясняйте естественно только при выполнении условия глобального селективного UNKNOWN.""";
+
+    /** Coach Lab 争霸赛复盘规范：人工复核沉淀的最高优先级规则，由 team/single 紧跟 reasoning contract include。 */
+    static final String COACH_STANDARD_RULE = AiPromptLibrary.zh("tactical-skills/coach-standard");
+
+    static final String COACH_STANDARD_RULE_EN = """
+
+            === SUPREMACY REVIEW STANDARD v1.0 (Coach Lab, highest priority) ===
+            Source: a game-by-game human review of all 34 games of the 2026 China-server summer top-four playoffs (client 11.19); every item was scored or corrected by a human coach. When this standard conflicts with other rules or skill modules in this prompt, this standard wins and the others supplement it. Output still uses the v0.5 structured result; put verdicts in summary and in each episode's analysis.
+
+            I. Verdicts (mandatory)
+            1. Every decision that changed the battle gets exactly one of three verdicts: mistake / correct / cannot determine. Do not use in-between words such as "questionable", "debatable" or "to be observed". "Cannot determine" must name the missing data (for example enemy positions UNSEEN in a window, or no LOS).
+            2. A mistake must state the trigger (what was CURRENT / LAST_KNOWN at the time), the window (until when it could still be changed), the action that should have been taken, why it is better (points, HP and numbers accounting), and the cost. A correct verdict also gives its reason and accounting.
+            3. Use only the information available at the time (CURRENT / LAST_KNOWN / UNSEEN); never judge a decision by its outcome. A good result does not make a decision correct, and a numbers advantage does not oblige an attack.
+            4. From the start until about 5 seconds after the first enemy is spotted is the opening setup: judge the overall setup only, never individual vehicles.
+            5. Causal de-duplication: only the root cause is a mistake; the empty bases, forced target switches and later losses it causes are propagation and are not judged again.
+            6. For each key local fight give per-vehicle details: who stayed in crossfire on low HP, who split fire and lost a trade, who exploited the enemy focusing someone else, whether flank firing lines really reached the fight, and whether front and back lines were placed correctly; when the evidence has them, include hits, damage, distance and height difference.
+            7. For a lone vehicle's death, first ask what it bought: holding several enemies while dealing damage throughout, so teammates win numbers elsewhere or keep income -> correct (fixing); moving forward on its own into a known multi-enemy direction and feeding a many-on-one -> mistake.
+            8. If income and points stay identical all game, there are almost no kills and the result is decided by tick order, say that the result came down to tick order and do not invent a tactical root cause.
+
+            II. Check every battle
+            9. Describe positions only with grid regions GRID_REGION 1-9, never compass directions.
+            10. Terrain: find key high and low ground; read the height difference of hits as shooter height minus target height. Whether support existed depends on whether teammates actually hit the attacker, not on distance. Without height or LOS evidence, state the evidence boundary.
+            11. Base geometry: distances between bases and from both spawns and main bodies to each base; identify the isolated base and the paired bases.
+            12. Points accounting: start at 300, first to 1000; a kill is +40 for the killer and -40 for the loser; a base with an enemy inside does not produce; hits reset capture progress. When OBJECTIVE_STATE_TIMELINE provides realtime points, rebuild the points curve and income rate from it (confirm points per second per base from the growth, never a fixed formula) and compare options by both teams' remaining time to 1000 at current income; without realtime points never invent a score.
+            13. Vehicle roles depend on the version: in 11.19 (China server) SPHT is the tank (human-confirmed) and should stand in front to take the first wave. Other roles are inferred from data and await human confirmation: Kranvagn and FV215b lean to damage dealing behind or beside the tank; Maus blocks the most; Vickers Light is the light tank for scouting, stealing bases and finishing low-HP targets from the flank. For vehicles not listed or other versions, judge only by capabilities such as HP and blocked damage.
+
+            III. Tactical rules (numbers match the Coach Lab rules)
+            - 001 A kill is an 80-point swing (+40 for us, -40 for them). With one base's income r points/s (measured from the replay per item 12, not inferred from the base count), one kill equals 80/r seconds of one base's income as score difference, or 40/r seconds counting only our own +40: about 32 / 16 seconds at r = 2.5 and about 53 / 27 seconds at r = 1.5.
+            - 002 A base with an enemy inside does not produce: entering an opponent's producing base cuts their income.
+            - 003 When crossfire forms, a low-HP vehicle leaves at once (exception: item 7).
+            - 004 Nominal numbers are not effective participants.
+            - 005 Do not assault a deep crossfire: list how many directions the attacker is hit from and the depth, and judge whether the fight should have been taken, not the trade result.
+            - 008 During a committed attack, capturing slows the tempo; an empty base during the attack is not judged separately.
+            - 009 In the endgame, enter the opponent's only income base to freeze them.
+            - 010 When many against one, finish the annihilation first.
+            - 011 Take high ground; do not sit under enemy high ground; do not leave teammates' firing lines for a low-HP target; do not give up a high position overlooking a key point to join a fight elsewhere.
+            - 012 Close-range trading spots are held by the vehicle that can absorb damage.
+            - 013 When the enemy light tank is shooting you, deal with it first; losing the light-tank duel costs later firing lines and pulling ability.
+            - 014 With no enemy fire nearby, take the empty base first.
+            - 015 With an income lead, do not attack into the opponent's defensive area; attacking is fine when numbers and HP are both clearly superior and the opponent is spread out.
+            - 016 Steal or hold the isolated base with one durable vehicle and keep the main body on the side of the two paired bases; opening with the whole team on the isolated base is also a coherent plan, so judge the second step. The vehicle holding the isolated base must be able to hold contesting enemies alone.
+            - 017 Behind on HP in the endgame, regroup and fight many-on-one; ahead on HP, hunt isolated vehicles.
+            - 018 Receiving a push: the tank in front takes the first wave, damage dealers cross fire from at least two directions, and a second position is kept behind; an attacker facing a crossfire that is already CURRENT does not push straight in, especially not downhill.
+            - 019 Focus fire in team fights: kill one vehicle before switching targets; count kills, not only damage.
+            - 020 Behind or level on income and behind on points, convert the advantage into bases (take one more base, interrupt the opponent's capture, freeze their income), not into chasing low-HP vehicles for kills.
+
+            IV. Common errors (all rejected by the human review)
+            Avoiding a verdict with "questionable"; saying more bases means an income lead without checking contest state; replacing the points accounting with a "must defend" instinct; judging the consequences of the root cause separately; judging the opening setup as individual mistakes; using distance instead of firing lines to judge support; judging a lone vehicle that held several enemies as failing to retreat; missing the light-tank duel; ignoring front and back lines; calling a wrong attack a neutral trade because damage was even; looking at damage without kills.
+            """;
+
+    static final String COACH_STANDARD_RULE_RU = """
+
+            === СТАНДАРТ РАЗБОРА SUPREMACY v1.0 (Coach Lab, высший приоритет) ===
+            Источник: покадровый ручной разбор всех 34 боёв плей-офф топ-4 летнего турнира китайского сервера 2026 года (клиент 11.19); каждый пункт оценён или исправлен тренером-человеком. Если этот стандарт противоречит другим правилам или модулям навыков этого промпта, действует этот стандарт, остальное его дополняет. Вывод по-прежнему в структуре v0.5; вердикты пишите в summary и в analysis каждого episode.
+
+            I. Вердикты (обязательно)
+            1. Каждое решение, изменившее бой, получает ровно один из трёх вердиктов: ошибка / верно / невозможно определить. Не используйте промежуточные слова вроде «сомнительно», «спорно», «нужно понаблюдать». «Невозможно определить» обязано назвать недостающие данные (например, позиции противника UNSEEN в окне или нет LOS).
+            2. Для ошибки укажите триггер (что было CURRENT / LAST_KNOWN в тот момент), окно (до какого момента можно было исправить), нужное действие, почему это лучше (расчёт очков, HP и численности) и цену. Для верного решения тоже дайте причину и расчёт.
+            3. Используйте только информацию того момента (CURRENT / LAST_KNOWN / UNSEEN); не оценивайте решение по результату. Хороший результат не делает решение верным, а численное преимущество не обязывает атаковать.
+            4. От начала боя примерно до 5 секунд после первого засвета противника — стартовая расстановка: оценивайте только расстановку в целом, не отдельные машины.
+            5. Причинная дедупликация: ошибкой считается только первопричина; вызванные ею пустые базы, вынужденная смена цели и последующие потери — это распространение, их не оценивают повторно.
+            6. В каждом ключевом локальном бою давайте детали по машинам: кто с малым HP остался под перекрёстным огнём, кто распылил огонь и проиграл перестрелку, кто воспользовался тем, что противник фокусирует другого, действительно ли фланговые линии огня достали до боя, правильно ли расставлены передняя и задняя линии; при наличии данных указывайте попадания, урон, дистанцию и перепад высот.
+            7. При гибели одиночной машины сначала спросите, что она купила: удержание нескольких противников с постоянным уроном, благодаря которому союзники получают численный перевес в другом месте или сохраняют доход, — верно (фиксация); самостоятельный выход вперёд в известное направление нескольких противников и слив в бою один против многих — ошибка.
+            8. Если доход и очки весь бой одинаковы, фрагов почти нет и исход решает порядок начисления, так и скажите и не выдумывайте тактическую первопричину.
+
+            II. Проверяйте в каждом бою
+            9. Позиции описывайте только квадратами GRID_REGION 1–9, без сторон света.
+            10. Рельеф: найдите ключевые высоты и низины; перепад высот попадания — высота стрелка минус высота цели. Была ли поддержка, определяется тем, попадали ли союзники по атакующему, а не дистанцией. Без данных о высоте или LOS укажите границу доказательств.
+            11. Геометрия баз: расстояния между базами, от обоих респаунов и основных сил до каждой базы; определите изолированную базу и парные базы.
+            12. Расчёт очков: старт 300, побеждает первый до 1000; фраг — +40 убившему и −40 потерявшему; база с противником внутри не приносит очков; попадания сбрасывают прогресс захвата. Если OBJECTIVE_STATE_TIMELINE даёт очки в реальном времени, восстанавливайте по нему кривую очков и скорость дохода (очки в секунду за базу подтверждайте по росту, без фиксированной формулы) и сравнивайте варианты по оставшемуся времени обеих команд до 1000 при текущем доходе; без реальных очков не выдумывайте счёт.
+            13. Роли машин зависят от версии: в 11.19 (китайский сервер) SPHT — танк (подтверждено человеком), он должен стоять впереди и принимать первую волну. Остальные роли выведены из данных и ждут подтверждения: Kranvagn и FV215b скорее машины урона позади или сбоку от танка; Maus блокирует больше всех; Vickers Light — лёгкий танк для разведки, кражи баз и добивания с фланга. Для машин вне списка и других версий судите только по возможностям, таким как HP и заблокированный урон.
+
+            III. Тактические правила (номера соответствуют правилам Coach Lab)
+            - 001 Фраг — качели в 80 очков (+40 нам, -40 противнику). При доходе одной базы r очков/с (измеряется по реплею согласно пункту 12, а не по числу баз) один фраг в разнице счёта равен доходу одной базы за 80/r секунд, а только по нашим +40 — за 40/r секунд: около 32 / 16 секунд при r = 2,5 и около 53 / 27 секунд при r = 1,5.
+            - 002 База с противником внутри не приносит очков: заход в доходную базу противника режет его доход.
+            - 003 Когда сложился перекрёстный огонь, машина с малым HP сразу уходит (исключение — пункт 7).
+            - 004 Номинальная численность — не эффективные участники.
+            - 005 Не штурмуйте глубокий перекрёстный огонь: перечислите, со скольких направлений и с какой глубиной бьют по атакующему, и оценивайте, стоило ли принимать бой, а не результат размена.
+            - 008 При начатой атаке захват замедляет темп; пустая база во время атаки отдельно не оценивается.
+            - 009 В эндшпиле заезжайте в единственную доходную базу противника, чтобы заморозить его.
+            - 010 Многие против одного — сначала добейте до полного уничтожения.
+            - 011 Занимайте высоты; не стойте под вражеской высотой; не выходите из линий огня союзников ради цели с малым HP; не отдавайте высоту над ключевой точкой ради боя в другом месте.
+            - 012 Позиции ближней перестрелки держит машина, способная принять урон.
+            - 013 Если вражеский ЛТ стреляет по вам, сначала займитесь им; проигранная дуэль ЛТ стоит последующих линий огня и возможности растягивать.
+            - 014 Если рядом нет огня противника, сначала занимайте пустую базу.
+            - 015 При преимуществе в доходе не атакуйте в оборону противника; атака допустима, когда численность и HP явно больше, а противник разбросан.
+            - 016 Изолированную базу крадёт или держит одна живучая машина, основные силы стоят со стороны двух парных баз; старт всей командой на изолированной базе тоже цельный план — оценивайте второй шаг. Машина на изолированной базе должна в одиночку выдерживать претендентов.
+            - 017 Отставая по HP в эндшпиле, собирайтесь и деритесь многие против одного; опережая по HP, охотьтесь за одиночками.
+            - 018 Приём натиска: танк впереди принимает первую волну, машины урона ведут перекрёстный огонь минимум с двух направлений, позади сохраняется вторая позиция; атакующий перед уже CURRENT позицией перекрёстного огня не идёт в лоб, особенно вниз.
+            - 019 Фокус огня в командном бою: добейте одну машину, потом меняйте цель; считайте фраги, а не только урон.
+            - 020 При меньшем или равном доходе и отставании по очкам превращайте преимущество в базы (ещё одна база, сброс захвата противника, заморозка его дохода), а не в погоню за фрагами по машинам с малым HP.
+
+            IV. Частые ошибки (все отклонены при ручном разборе)
+            Уход от вердикта словом «сомнительно»; утверждение, что больше баз — значит больше дохода, без проверки спорных баз; замена расчёта очков инстинктом «надо защищать»; отдельная оценка последствий первопричины; оценка стартовой расстановки как личных ошибок; оценка поддержки по дистанции вместо линий огня; оценка одиночной машины, державшей нескольких противников, как «не отступила»; пропуск дуэли ЛТ; игнорирование передней и задней линий; оценка ошибочной атаки как нейтрального размена из-за равного урона; оценка урона без учёта фрагов.
+            """;
+
+    /** Team Tactical Skill v0.2：模块锚点由 AiPromptLibrary 提供，EN/RU 替换保持单一资源入口。 */
+    static final String INFORMATION_VISION_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/information-vision");
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/local-engagements");
+    static final String TEAM_EXECUTION_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/team-execution");
+    static final String POSITION_TEMPO_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/position-tempo");
+    static final String HP_TRADES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/hp-trades");
+    static final String MODE_OBJECTIVES_SKILL_RULE = AiPromptLibrary.zh("tactical-skills/mode-objectives");
+
+    static final String INFORMATION_VISION_SKILL_RULE_EN = """
+
+            === INFORMATION AND VISION TACTICAL SKILL v0.2 ===
+            This is the first reasoning layer for team review, not a backend verdict. Reconstruct what was known in each key window before using later outcomes; skip the inference when evidence is insufficient.
+            1. Separate CURRENT (reliable current position/visibility evidence), LAST_KNOWN (last reliable position after current evidence was lost), and UNSEEN/UNRESOLVED (no reliable position in the current phase). A marker disappearing does not prove departure; no marker does not prove an empty lane. Do not write LAST_KNOWN as the enemy's current location.
+            2. Use confirmed enemy counts, directions, last-known positions, and not-yet-seen vehicles to infer a credible local-number window. Seeing only a few enemies move to one lane does not prove that another lane is empty.
+            3. Trace whether information was used: information update -> interpretation of deployment/risk -> team action -> local result. Without dedicated visibility evidence, do not claim that a specific vehicle spotted a specific enemy.
+            4. LAST_KNOWN remains a risk signal until new evidence supports a rotation. When judging entry into that area, first check whether the action respected the information available at that time.
+            5. A free player is not defined by vehicle class. Check whether the vehicle confirmed deployment, constrained a lane, exposed a numbers gap, limited rotation, or supplied reliable information to the main group/objective. Distance from the main group alone is not detachment.
+            """;
+
+    static final String INFORMATION_VISION_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ИНФОРМАЦИИ И ОБЗОРА v0.2 ===
+            Это первый слой рассуждения командного разбора, а не вердикт бэкенда. Сначала восстановите, что было известно в каждом важном окне, и только затем используйте поздний результат; при недостатке данных пропускайте вывод.
+            1. Разделяйте CURRENT (надёжные текущие данные о позиции/видимости), LAST_KNOWN (последняя надёжная позиция после потери текущих данных) и UNSEEN/UNRESOLVED (в текущей фазе надёжной позиции нет). Исчезновение отметки не доказывает уход; отсутствие отметки не доказывает пустую линию. LAST_KNOWN нельзя выдавать за текущую позицию противника.
+            2. Используйте подтверждённое число противников, направления, последние известные позиции и ещё не обнаруженные машины для оценки достоверного окна локальных сил. Если на линии видны лишь несколько машин, это не доказывает, что другая линия пуста.
+            3. Прослеживайте использование информации: обновление информации → интерпретация расстановки/риска → действие команды → локальный результат. Без специального доказательства обзора не утверждайте, что конкретная машина обнаружила конкретного противника.
+            4. LAST_KNOWN остаётся сигналом риска, пока новые данные не подтверждают ротацию. При оценке входа в зону сначала проверяйте, учитывало ли действие доступную тогда информацию.
+            5. Свободная машина не определяется классом. Проверяйте, подтвердила ли она расстановку, ограничила линию, выявила нехватку сил, ограничила ротацию или дала главной группе/цели надёжную информацию. Одно лишь расстояние от главной группы не означает отрыв.
+            """;
+
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE_EN = """
+
+            === LOCAL ENGAGEMENTS AND PROPAGATION TACTICAL SKILL v0.2 ===
+            A 7v7 battle is not automatically one team fight. First identify simultaneous local engagements from meter-level positions, actual firing/support distance, movement, contacts, formation clusters, and objective location; then explain the global result.
+            1. A local may be a main front, flank fight, outnumbered distant fight, objective contest, high-ground hold, or free-player information line. Do not partition only by the 3x3 grid.
+            2. A local is not a closed box. Check which external vehicles can affect it through fire, immobilization, fixing a target, forcing exposure, blocking retreat, or crossfire; two visible pairs do not automatically mean a 2v2.
+            3. Ask who created the kill condition, not only who fired the final shot. Spotting requires dedicated evidence; fixing, forcing position, blocking escape, crossfire, high ground, or forcing a turret turn may be enabling actions. If not evidenced, describe only the observable structure.
+            4. After a local resolves, trace propagation: friendly/enemy vehicles released, information or fire crossing locals, space gained, and whether objective/points obligations changed. Later main-front HP loss may be the result of this propagation.
+            5. Count effective local strength as vehicles that can fire now or arrive soon. An outside vehicle may hold several enemies and create a temporary advantage, but the time window before those enemies are released matters.
+            """;
+
+    static final String LOCAL_ENGAGEMENTS_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ЛОКАЛЬНЫХ СТОЛКНОВЕНИЙ И РАСПРОСТРАНЕНИЯ v0.2 ===
+            Бой 7 на 7 не является автоматически одним общим сражением. Сначала определяйте одновременные локальные столкновения по позициям в метрах, реальной дальности огня/поддержки, движению, контактам, кластерам построения и расположению цели; затем объясняйте общий результат.
+            1. Локальной может быть главная линия, фланговая схватка, дальний неравный бой, спор за цель, удержание высоты или информационная линия свободной машины. Не делите бой только по сетке 3×3.
+            2. Локальная схватка не является закрытой коробкой. Проверяйте внешние машины, способные повлиять огнём, фиксацией цели, вынуждением открыться, блокировкой отхода или перекрёстным огнём; две пары машин не автоматически означают 2 на 2.
+            3. Спрашивайте, кто создал условие для уничтожения, а не только кто сделал последний выстрел. Обнаружение требует специального доказательства; фиксация, вынуждение сменить позицию, перекрытие отхода, перекрёстный огонь, высота или вынужденный поворот башни могут быть enabling actions. Без данных описывайте только наблюдаемую структуру.
+            4. После завершения локального боя прослеживайте распространение: освобождённые машины союзника/противника, переход информации или огня между локальными боями, полученное пространство и изменение обязанностей по цели/очкам. Последующая потеря HP на главной линии может быть результатом этого распространения.
+            5. Считайте локальные эффективные силы как машины, способные стрелять сейчас или быстро войти в бой. Внешняя машина может удерживать нескольких противников и создать временное преимущество, но важно, когда это окно закончится.
+            """;
+
+    static final String TEAM_EXECUTION_SKILL_RULE_EN = """
+
+            === TEAM EXECUTION TACTICAL SKILL v0.2 ===
+            This is a compact training-room/clan-battle reasoning reference, not a backend verdict rule. Use information, objectives, and local state before judging execution; when evidence is insufficient, skip the inference.
+            1. Review observable execution, never treat an unknown pre-battle plan, voice, call, or mental intent as fact.
+            2. Check entry timing, who could actually participate in the engagement, effective local numbers, and formation coherence; total roster count is not current effective strength, and the latest arrival is not automatically responsible.
+            3. Identify the commitment point: after crossing exposed ground, with forward vehicles committed and reachable cover ahead, stopping may fragment the formation more than completing the action. New enemies do not mechanically require retreat.
+            4. Use half-commit only when the observable combination is present: not continuing, not successfully disengaging, and not forming a useful firing position. Otherwise describe the observed timing, positions, and exchange.
+            5. After commitment, value action completeness and synchronization; do not split forward, rear, and side members into pieces that can be handled separately.
+            6. Treat information updates as tactical triggers: compare what was known before, what appeared, how risk changed, and whether the response adapted. Never use later enemy positions to rewrite an earlier window. After an action, check whether it changed a neighboring local, objective obligation, or points initiative.
+            Separate execution/mechanical errors (miss, provable non-penetration, poor physical follow-up, half-completed movement, unnecessary exposure) from decision problems (costly second attack, abandoning valuable position for a low-value kill, staying on a dead lane, or failing to react to a major information update). Do not assign a cause without evidence.
+            """;
+
+    static final String TEAM_EXECUTION_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК КОМАНДНОГО ИСПОЛНЕНИЯ v0.2 ===
+            Это компактный ориентир для тренировочного/кланового разбора, а не вердикт бэкенда. Сначала используйте информацию, цели и локальное состояние; при недостатке данных пропускайте вывод.
+            1. Разбирайте наблюдаемое исполнение, не выдавая неизвестный предбоевой план, голос, call или намерение за факт.
+            2. Проверяйте время входа, кто реально мог участвовать в столкновении, эффективные локальные силы и целостность строя; общее число машин не равно текущим силам, самый поздний участник не автоматически виноват.
+            3. Определяйте точку commitment: после перехода открытого участка, когда передние машины уже вошли, а впереди есть достижимое укрытие, остановка может сильнее раздробить строй, чем завершение действия. Новые враги не означают обязательный отход.
+            4. Называйте half-commit только при наблюдаемом сочетании: действие не продолжается, безопасного выхода нет и полезная огневая позиция не создана. Иначе описывайте только время, позиции и обмен.
+            5. После commitment важны завершённость действия и синхронность; не разделяйте передних, задних и боковых участников на части для раздельного уничтожения.
+            6. Считайте обновление информации тактическим триггером: сравнивайте, что было известно, что появилось, как изменился риск и адаптировалась ли команда. Не переносите поздние позиции противника в раннее окно. После действия проверяйте его влияние на соседний локальный бой, обязанность по цели или инициативу по очкам.
+            Разделяйте ошибки исполнения/механики (промах, доказанный непробитый выстрел, слабое физическое следование, незавершённое движение, лишняя открытость) и проблемы решения (дорогая вторая атака, отказ от ценой позиции ради дешёвого фрага, оставание на пустой линии или отсутствие реакции на важную информацию). Без данных причину не приписывайте.
+            """;
+
+    static final String POSITION_TEMPO_SKILL_RULE_EN = """
+
+            === POSITION AND TEMPO TACTICAL SKILL v0.2 ===
+            Position value usually exceeds the value of one kill. Judge space with the information, local engagement, and objective obligation available at that time before using HP or kill results; a kill is not automatically profitable if it costs the retreat path, a viable position, formation coherence, continued contribution, or time from the main fight.
+            1. A geometrically strong position may have low current value. Combine confirmed enemy information, main-battle location, current output, and opportunity cost; potential value is not realized value.
+            2. Before judging a hold or rotation, ask whether the vehicle can disengage safely. If pressure is distant and rotation can produce value soon, rotation may be better; if pressure is close and leaving exposes the vehicle, delaying the enemy may be the better remaining action.
+            3. Compare the marginal value of staying with time-to-value after rotation. A successful lane need not chase every retreating enemy; if the enemy has re-established a strong defense, a second attack is costly, and the team gained important objective value, preserve the position and transfer the advantage.
+            4. One defender is not automatically an effective line. Check whether it can delay, exchange, preserve depth, and retreat between positions; leaving a lane that cannot stop a multi-vehicle push may create tempo rather than be an error.
+            5. Stationary time is not inactivity by itself. Holding a stronger position without objective/time pressure may be correct when the enemy must expose itself first; discuss a stalled attack only when all locals stop gaining space while the enemy keeps producing stable pressure.
+            6. After entering commitment, reassess whether continuing can create space: if yes, concentrate effective strength to finish; if not, seek a real disengage. The worst state is neither finishing nor exiting: a half-commit.
+            """;
+
+    static final String POSITION_TEMPO_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК ПОЗИЦИИ И ТЕМПА v0.2 ===
+            Ценность позиции обычно выше ценности одного фрага. Сначала оценивайте пространство с учётом доступной тогда информации, локального боя и обязанности по цели; фраг не автоматически выгоден, если ради него потеряны путь отхода, рабочая позиция, целостность строя, дальнейший вклад или время главного боя.
+            1. Геометрически сильная позиция может быть малоценной сейчас. Учитывайте подтверждённую информацию о противнике, место главного боя, текущий вклад и цену оставания; потенциальная ценность не равна реализованной.
+            2. Перед оценкой удержания или ротации спросите, может ли машина безопасно выйти. При далёком давлении и быстрой пользе от ротации она может быть лучше; при близком давлении и опасном уходе лучшее оставшееся действие может быть задержкой противника.
+            3. Сравнивайте предельную пользу оставания со временем до пользы после ротации. Успешную линию не нужно продолжать до уничтожения каждого отходящего; при восстановленной обороне врага, дорогой второй атаке и уже полученной ценности цели сохраняйте позицию и переносите преимущество.
+            4. Один защитник не автоматически образует линию. Проверяйте способность задерживать, размениваться, сохранять глубину и отходить между позициями; уход с линии, которую не остановить нескольким машинам, может создать темп, а не быть ошибкой.
+            5. Само по себе стояние не означает бездействие. Удержание сильной позиции без давления цели/времени может быть верным, если противник должен первым открыться; обсуждайте остановленную атаку лишь когда все локальные бои перестали получать пространство, а противник продолжает стабильно давить.
+            6. После входа в commitment заново решайте, создаёт ли продолжение пространство: если да, концентрируйте эффективные силы и завершайте действие; если нет, ищите настоящий отход. Худшее состояние — не завершить и не выйти: half-commit.
+            """;
+
+    static final String HP_TRADES_SKILL_RULE_EN = """
+
+            === HP AND GUN-TRADE TACTICAL SKILL v0.2 ===
+            HP, damage, and deaths are result/validation signals for position and decisions, not the default episode-discovery entry point. Default to reliable damage with no unnecessary HP loss, but judge an exchange by future gun value, not vehicle count alone.
+            1. A controlled extra HP cost for an immediately confirmable kill may be worthwhile because a live enemy gun is removed; roughly 1.2x is an experienced-player reference, never a backend threshold or GOOD_TRADE verdict.
+            2. Compare remaining HP, survival likelihood, current position, mobility, future rotation value, and important role. A 1-for-1 is not inherently equal; do not treat low-value enemy and high-value friendly guns as equivalent.
+            3. HP is a team resource: a high-HP member may absorb necessary damage to preserve a low-HP friendly gun, but high HP does not mean it must always lead and it should not lose HP deliberately when safe damage exists.
+            4. In a stable endgame, preserve multiple firing lines when possible; sacrificing a high-HP vehicle merely to create action may be worse than making the opponent act first. Later HP loss alone does not prove an earlier position or decision was wrong; return to information, space, local structure, and objective pressure.
+            """;
+
+    static final String HP_TRADES_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК HP И РАЗМЕНА ОГНЕВЫХ ЕДИНИЦ v0.2 ===
+            HP, урон и смерти — сигналы результата/проверки позиции и решений, а не начальная точка поиска эпизодов. По умолчанию выбирайте надёжный урон без лишней потери HP, но оценивайте размен по будущей ценности огневых единиц, а не только по числу машин.
+            1. Контролируемая дополнительная цена HP за немедленно подтверждаемый фраг может окупаться удалением живой пушки противника; примерно 1,2× — ориентир опытного игрока, не порог бэкенда и не вердикт GOOD_TRADE.
+            2. Сравнивайте оставшийся HP, вероятность выживания, текущую позицию, мобильность, будущую ценность ротации и важную роль. Размен 1 к 1 не равен автоматически; слабую машину противника и ценную машину союзника нельзя считать равными.
+            3. HP — ресурс команды: машина с большим HP может принять необходимый урон, сохранив союзную машину с малым HP, но большой запас HP не означает обязательный первый номер и не требует намеренно терять HP при безопасном уроне.
+            4. В стабильном эндшпиле по возможности сохраняйте несколько линий огня; жертва здоровой машины ради действия может быть хуже, чем заставить противника ошибиться первым. Последующая потеря HP сама по себе не доказывает ошибку позиции или решения; возвращайтесь к информации, пространству, локальной структуре и давлению цели.
+            """;
+
+    static final String MODE_OBJECTIVES_SKILL_RULE_EN = """
+
+            === MODE AND OBJECTIVE TACTICAL SKILL v0.2 ===
+            Judge objective pressure with mode, the realtime base network, observed capture state, realtime points, time, effective local numbers, and kill opportunities; never apply “base capture seen => defend immediately”.
+            1. In Supremacy, a kill removes an enemy gun and carries about +40 points of value. Below roughly 750 points kills usually remain high priority; roughly 750–800 is a warning zone; around 800+ objective pressure grows materially. These are experience gradients, not a 749/750/800 state machine.
+            2. Even in the warning zone, a kill confirmable in about 1–2 seconds may beat an objective action; a target requiring 10–15 seconds of pursuit has different value. Never present an unproven live total or score formula as fact.
+            3. In Assault, uninterrupted full capture of the single large base takes about 100 seconds. At roughly 25–40 seconds, do not mechanically override a strong local kill opportunity; around 70–80 seconds is a meaningful warning region, while reset feasibility still matters.
+            4. Analyze base ownership, capture progress, and points together with position: who controls which base, who can affect another, time-to-value, growth, and remaining time determine who has the obligation to change the situation. More bases does not always mean defend, and entering an attack does not always mean continue.
+            5. All thresholds are prioritization heuristics, not verdict rules. Return to actual evidence for the trade-off between objective, kills, position, and HP. When realtime state is missing, do not reconstruct early score from kill-steal deltas or the final result.
+            """;
+
+    static final String MODE_OBJECTIVES_SKILL_RULE_RU = """
+
+            === ТАКТИЧЕСКИЙ НАВЫК РЕЖИМОВ И ЦЕЛЕЙ v0.2 ===
+            Оценивайте давление цели с учётом режима, сети баз в реальном времени, наблюдаемого прогресса захвата, текущих очков, времени, эффективных локальных сил и возможностей фрага; не применяйте правило «увидел захват базы — немедленно защищай».
+            1. В Supremacy фраг удаляет пушку противника и даёт около +40 очков ценности. Ниже примерно 750 очков фраги обычно сохраняют высокий приоритет; примерно 750–800 — зона предупреждения; около 800+ давление цели заметно возрастает. Это градиент опыта, а не автомат состояний 749/750/800.
+            2. Даже в зоне предупреждения фраг, подтверждаемый примерно за 1–2 секунды, может быть важнее действия у цели; цель, требующая 10–15 секунд погони, имеет другую ценность. Не выдавайте недоказанный текущий счёт или формулу очков за факт.
+            3. В Assault непрерывный полный захват одной большой базы занимает около 100 секунд. При прогрессе примерно 25–40 секунд не отбрасывайте автоматически сильную локальную возможность фрага; около 70–80 секунд — существенная зона предупреждения, но всё ещё важна реальная возможность сбросить захват.
+            4. Анализируйте принадлежность базы, прогресс захвата и очки вместе с позицией: кто контролирует какую базу, кто может повлиять на другую, время до ценности, скорость роста и остаток времени определяют обязанность изменить ситуацию. Большее число баз не означает вечную оборону, а вход в атаку не означает обязательное продолжение.
+            5. Все пороги — эвристика расстановки приоритетов, а не вердикты. Возвращайтесь к фактам при выборе между целью, фрагом, позицией и HP. При отсутствии реального состояния не восстанавливайте ранний счёт по компоненте очков за фраги или итоговому результату.
+            """;
+
+    /**
+     * 组装团队 system prompt：ZH 返回原样；EN/RU 在中文基座上替换中文输出强制句
+     * （输出语言、时间格式、语言规则与团队规则）。
+     */
+    static String localizeTeamSystemPrompt(final String zhPrompt, final AllowedLanguage language) {
+        if (language == null || language == AllowedLanguage.ZH) {
+            return zhPrompt;
+        }
+        final boolean en = language == AllowedLanguage.EN;
+        return zhPrompt
+                .replace("请用简体中文输出：",
+                        en ? PlayerPromptRules.EN_OUTPUT_INTRO
+                                : PlayerPromptRules.RU_OUTPUT_INTRO)
+                .replace(PlayerPromptRules.ZH_TIME_RULE,
+                        en ? PlayerPromptRules.EN_TIME_RULE
+                                : PlayerPromptRules.RU_TIME_RULE)
+                .replace(PlayerPromptRules.COMMON_CHINESE_LANGUAGE_RULE,
+                        en ? PlayerPromptRules.COMMON_LANGUAGE_RULE_EN
+                                : PlayerPromptRules.COMMON_LANGUAGE_RULE_RU)
+                .replace(PlayerPromptRules.ZH_UNKNOWN_FIELD_RULE,
+                        en ? PlayerPromptRules.EN_UNKNOWN_FIELD_RULE
+                                : PlayerPromptRules.RU_UNKNOWN_FIELD_RULE)
+                .replace(ZH_CANNOT_DETERMINE_RULE,
+                        en ? EN_CANNOT_DETERMINE_RULE : RU_CANNOT_DETERMINE_RULE)
+                .replace(TEAM_ANALYSIS_RULE,
+                        en ? TEAM_ANALYSIS_RULE_EN : TEAM_ANALYSIS_RULE_RU)
+                .replace(PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE,
+                        en ? PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE_EN
+                                : PlayerPromptRules.COMMON_DAMAGE_SEMANTICS_RULE_RU)
+                .replace(PlayerPromptRules.HP_LOSS_TIME_RULE,
+                        en ? PlayerPromptRules.HP_LOSS_TIME_RULE_EN
+                                : PlayerPromptRules.HP_LOSS_TIME_RULE_RU)
+                .replace(PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE,
+                        en ? PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_EN
+                                : PlayerPromptRules.COMMON_EVIDENCE_LOGIC_RULE_RU)
+                .replace(INFORMATION_VISION_SKILL_RULE,
+                        en ? INFORMATION_VISION_SKILL_RULE_EN : INFORMATION_VISION_SKILL_RULE_RU)
+                .replace(LOCAL_ENGAGEMENTS_SKILL_RULE,
+                        en ? LOCAL_ENGAGEMENTS_SKILL_RULE_EN : LOCAL_ENGAGEMENTS_SKILL_RULE_RU)
+                .replace(TEAM_EXECUTION_SKILL_RULE,
+                        en ? TEAM_EXECUTION_SKILL_RULE_EN : TEAM_EXECUTION_SKILL_RULE_RU)
+                .replace(POSITION_TEMPO_SKILL_RULE,
+                        en ? POSITION_TEMPO_SKILL_RULE_EN : POSITION_TEMPO_SKILL_RULE_RU)
+                .replace(HP_TRADES_SKILL_RULE,
+                        en ? HP_TRADES_SKILL_RULE_EN : HP_TRADES_SKILL_RULE_RU)
+                .replace(MODE_OBJECTIVES_SKILL_RULE,
+                        en ? MODE_OBJECTIVES_SKILL_RULE_EN : MODE_OBJECTIVES_SKILL_RULE_RU)
+                .replace(COACH_STANDARD_RULE,
+                        en ? COACH_STANDARD_RULE_EN : COACH_STANDARD_RULE_RU)
+                .replace(TEAM_PRIOR_RULE,
+                        en ? TEAM_PRIOR_RULE_EN : TEAM_PRIOR_RULE_RU)
+                .replace(TEAM_REGION_RULE,
+                        en ? TEAM_REGION_RULE_EN : TEAM_REGION_RULE_RU)
+                .replace(SEPARATION_EVIDENCE_RULE,
+                        en ? SEPARATION_EVIDENCE_RULE_EN : SEPARATION_EVIDENCE_RULE_RU)
+                .replace(CAPTURE_RULE,
+                        en ? CAPTURE_RULE_EN : CAPTURE_RULE_RU)
+                .replace(RELATIVE_DEPTH_HP_RULE,
+                        en ? RELATIVE_DEPTH_HP_RULE_EN : RELATIVE_DEPTH_HP_RULE_RU)
+                .replace(FORMATION_DEPTH_RULE,
+                        en ? FORMATION_DEPTH_RULE_EN : FORMATION_DEPTH_RULE_RU)
+                .replace(TEAM_OUTPUT_STRUCTURE_RULE,
+                        en ? TEAM_OUTPUT_STRUCTURE_RULE_EN : TEAM_OUTPUT_STRUCTURE_RULE_RU)
+                .replace(TEAM_PRIMARY_DIAGNOSIS_RULE,
+                        en ? TEAM_PRIMARY_DIAGNOSIS_RULE_EN : TEAM_PRIMARY_DIAGNOSIS_RULE_RU)
+                .replace(TEAM_EVIDENCE_CONTRACT_RULE,
+                        en ? TEAM_EVIDENCE_CONTRACT_RULE_EN : TEAM_EVIDENCE_CONTRACT_RULE_RU)
+                .replace(TEAM_INTERNAL_VS_USER_FACING_RULE,
+                        en ? TEAM_INTERNAL_VS_USER_FACING_RULE_EN : TEAM_INTERNAL_VS_USER_FACING_RULE_RU)
+                .replace(TEAM_REASONING_CONTRACT_RULE,
+                        en ? TEAM_REASONING_CONTRACT_RULE_EN : TEAM_REASONING_CONTRACT_RULE_RU)
+                .replace(TEAM_REGROUP_INFERENCE_RULE,
+                        en ? TEAM_REGROUP_INFERENCE_RULE_EN : TEAM_REGROUP_INFERENCE_RULE_RU)
+                .replace(TEAM_STRUCTURED_RESULT_RULE_ZH,
+                        en ? TEAM_STRUCTURED_RESULT_RULE_EN : TEAM_STRUCTURED_RESULT_RULE_RU);
+    }
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_ZH = """
+
+            === Team AI Review v0.5 结构化结果（最终输出契约） ===
+            只输出一个 JSON object，不输出 Markdown heading，不输出旧的 reviewMarkdown/claims envelope：
+            {
+              "summary": {"verdict": "...", "primaryDiagnosis": "..."},
+              "episodes": [{"id": "E1", "startSec": 0, "endSec": 30, "title": "...", "analysis": "...", "playerKeys": ["P1"]}],
+              "trainingSuggestions": [{"title": "...", "content": "...", "episodeId": "E1"}],
+              "reviewFocus": [{"playerKey": "P1", "episodeId": "E1", "reason": "..."}],
+              "highContributors": [{"playerKey": "P2", "episodeId": "E1", "reason": "..."}]
+            }
+            episodes 最多 6 条，reviewFocus 与 highContributors 各最多 2 条；所有数组必须存在，可为空。
+            episodeId 必须引用已有 episode，playerKey 必须来自当前队伍名册；trainingSuggestions 的 episodeId 可为 null。
+            startSec/endSec 无法确定时使用 null。Markdown 只能出现在字段值内部；页面标题和层级由前端控制。
+            以上 v0.5 契约覆盖本提示中较早的旧 envelope 输出说明；不要调用或模拟 Team Autopsy。
+            """;
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_EN = """
+
+            === Team AI Review v0.5 structured result (final output contract) ===
+            Output exactly one JSON object. Do not output Markdown headings or the old reviewMarkdown/claims envelope:
+            {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
+            episodes: at most 6; reviewFocus and highContributors: at most 2 each; every array is required and may be empty.
+            episodeId must reference an existing episode and playerKey must be from the current roster; trainingSuggestions episodeId may be null.
+            Use null for unknown startSec/endSec. Markdown is allowed only inside field values; the frontend owns page headings and hierarchy.
+            This v0.5 contract overrides earlier envelope instructions; do not call or simulate Team Autopsy.
+            """;
+
+    private static final String TEAM_STRUCTURED_RESULT_RULE_RU = """
+
+            === Team AI Review v0.5 структурированный результат (итоговый контракт) ===
+            Выводите ровно один JSON object. Не выводите Markdown-заголовки и старый envelope reviewMarkdown/claims:
+            {"summary":{"verdict":"...","primaryDiagnosis":"..."},"episodes":[{"id":"E1","startSec":0,"endSec":30,"title":"...","analysis":"...","playerKeys":["P1"]}],"trainingSuggestions":[{"title":"...","content":"...","episodeId":"E1"}],"reviewFocus":[{"playerKey":"P1","episodeId":"E1","reason":"..."}],"highContributors":[{"playerKey":"P2","episodeId":"E1","reason":"..."}]}
+            episodes: не более 6; reviewFocus и highContributors: не более 2 каждого; каждый массив обязателен и может быть пустым.
+            episodeId должен ссылаться на существующий episode, playerKey — на текущий roster; episodeId в trainingSuggestions может быть null.
+            Если startSec/endSec неизвестны, используйте null. Markdown разрешён только внутри значений полей; заголовки и иерархию задаёт frontend.
+            Этот контракт v0.5 заменяет более ранние инструкции envelope; не вызывайте и не имитируйте Team Autopsy.
+            """;
+
+    static final String SINGLE_TEAM_PROMPT = AiPromptLibrary.zh("team/single");
+
+}

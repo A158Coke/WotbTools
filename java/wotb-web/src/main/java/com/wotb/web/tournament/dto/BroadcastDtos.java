@@ -7,6 +7,11 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
 import tools.jackson.databind.annotation.JsonDeserialize;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.ValueDeserializer;
+import java.time.format.DateTimeParseException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,7 +28,29 @@ public final class BroadcastDtos {
     public record Node(long id, long categoryId, Integer roundNumber, String format, List<Replay> replays) { }
     public record Index(List<String> servers, List<Season> seasons, boolean coverUploadAvailable) { }
     public record SeasonView(Season season, List<Category> categories, boolean coverUploadAvailable) { }
+    public record SeasonContents(Season season, List<Category> categories, List<Node> nodes,
+                                 String defaultTimeZone, List<ReplayStart> replayStarts, boolean coverUploadAvailable) { }
     public record CategoryView(Season season, Category category, List<Node> nodes, boolean coverUploadAvailable) { }
+    public record ReplayStart(long replayId, Instant startsAt) { }
+    public record TimedCategoryView(CategoryView data, String defaultTimeZone, List<ReplayStart> replayStarts) { }
+    public record TimedReplaySave(
+            @JsonProperty(required = true) @JsonSetter(nulls = Nulls.FAIL) ReplaySave replay,
+            @JsonProperty(required = true) @JsonDeserialize(using = StartInstantInput.class) Instant startsAt) {
+        @JsonAnySetter public void unknown(final String name, final Object value) { throw new IllegalArgumentException("Unexpected broadcast request property"); }
+    }
+    /** Unlike Jackson's general Instant reader, this input accepts only an ISO date-time string or explicit null. */
+    public static final class StartInstantInput extends ValueDeserializer<Instant> {
+        @Override
+        public Instant deserialize(final JsonParser parser, final DeserializationContext context) {
+            if (!parser.hasToken(JsonToken.VALUE_STRING)) {
+                return context.reportInputMismatch(Instant.class, "Expected an ISO date-time string");
+            }
+            try { return Instant.parse(parser.getString()); }
+            catch (final DateTimeParseException failure) {
+                return context.reportInputMismatch(Instant.class, "Expected an ISO date-time string with offset");
+            }
+        }
+    }
     public record DeletionPreview(long seasonId, long expectedVersion, long rootCount, long replayCount) { }
     public record SeasonCreate(
             @JsonProperty(required = true) String server,

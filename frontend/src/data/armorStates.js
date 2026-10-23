@@ -5,7 +5,7 @@
  * 车辆 XML 的 `<extras><armorsStatesController>`（2026-10-13，
  * 协议定案见上游 `investigation/blitz-client-protocol-and-replay.md` §8.6 与
  * `docs/index.md` 待发版条目）。**游戏版本更新后需重新生成**——本文件是
- * game-version 数据的前端 vendored 常量（仅 6 车 / ~2KB，不值得走 COS 资产包渠道）。
+ * game-version 数据的前端 vendored 常量（仅 6 车 / ~2KB，不值得走远端资产包渠道）。
  *
  * 运行时语义（上游 PlaybackData / AiReviewFacet 的 additive 字段 `armor_states`）：
  * Vehicle 实体 propID 16 `armorsStates` 载荷 = `[u8 n][n × u32 LE 状态描述符]`

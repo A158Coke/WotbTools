@@ -47,12 +47,7 @@
       "login_required": "请先登录 WotBTools 账号后再下载 Android 安装包"
     },
     "home": {
-      "replayParse": "回放解析",
-      "replayParseDesc": "批量解析回放，查看汇总、单场数据与 League Rating。",
-      "aiReview": "AI 复盘",
-      "aiReviewDesc": "上传单场回放，AI Review 生成战术复盘与改进建议。需登录。",
-      "battlePlayback": "战局重建",
-      "battlePlaybackDesc": "通过地图、时间轴、车辆状态、HP 与战斗事件重现整场战斗。"
+      "replayParse": "回放解析"
     },
     "upload": {
       "clear_confirm": "清空后需要重新解析，确定清空？",
@@ -314,6 +309,7 @@
       "phase_shell_data": "弹药数据",
       "picker_loading": "正在初始化，完成后可选择车辆。",
       "load_failed": "{phase} 加载失败：{msg}",
+      "context_lost": "3D 渲染上下文已丢失（GPU/驱动重置），请重试。",
       "shell_unavailable": "弹药数据缺失或无效，无法进行击穿判定。",
       "tier": "等级",
       "type": "类型",
@@ -340,12 +336,24 @@
       "angle": "入射角",
       "effective": "等效装甲",
       "penetration": "穿深",
+      "may_penetrate": "可能击穿",
       "result": "结果",
       "turret": "炮塔",
       "gun": "炮管",
       "hint": "拖动车体旋转 · 滚轮缩放 · 拖炮塔/炮管瞄准 · 点击查看装甲",
       "hint_touch": "单指拖车体旋转 · 双指缩放 · 拖炮塔/炮管瞄准 · 点击查看装甲",
       "shot_damage": "伤害",
+      "penetration_chance": "击穿概率",
+      "penetration_damage": "击穿伤害",
+      "splash_damage": "溅射伤害",
+      "sampling_unavailable": "溅射采样不可用",
+      "no_primary_blocked": "仅命中履带/炮管/间隙甲，按未击穿处理",
+      "min_damage": "最小伤害",
+      "max_damage": "最大伤害",
+      "avg_damage": "平均伤害",
+      "avg_short": "平均",
+      "splash_radius": "溅射半径",
+      "best_sample": "最佳样本",
       "shot_ricochet_seg": "跳弹（-25% 穿深）",
       "shot_loss": "损耗",
       "shot_nominal": "名义",
@@ -402,7 +410,20 @@
         "touch_pan": "双指拖动"
       },
       "distance": "交战距离",
-      "distance_unit": "米"
+      "effective_penetration": "有效穿深",
+      "distance_unit": "米",
+      "direct_hit": "直接命中",
+      "expected_damage": "期望伤害",
+      "best_sample_upper": "最佳样本（上界）",
+      "best_sample_lower": "最佳样本（下界）",
+      "sections": {
+        "hull": "车体",
+        "turret": "炮塔",
+        "gun": "炮盾",
+        "spaced": "间隙甲",
+        "chassis": "履带",
+        "gun_barrel": "炮管"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "管理分区",
@@ -674,7 +695,7 @@
       "title": "联赛直播回放",
       "navTitle": "直播回放",
       "serversTitle": "选择服务器",
-      "seasonsTitle": "季赛",
+      "seasonsTitle": "赛事",
       "categoriesTitle": "子赛事分类",
       "nodesTitle": "子赛事",
       "back": "返回上一级",
@@ -689,8 +710,8 @@
       "enter": "进入 {name}",
       "expand": "展开 {name}",
       "collapse": "收起 {name}",
-      "newSeason": "新增季赛",
-      "editSeason": "编辑季赛",
+      "newSeason": "新增赛事",
+      "editSeason": "编辑赛事",
       "newCategory": "新增子赛事分类",
       "newNode": "新增子赛事",
       "newReplay": "新增直播回放",
@@ -704,6 +725,10 @@
       "category": "子赛事分类",
       "round": "第几轮",
       "roundLabel": "第 {round} 轮积分赛",
+      "roundShortLabel": "第 {round} 轮",
+      "roundCount": "{count} 轮",
+      "newRound": "新增轮次",
+      "manage": "管理",
       "format": "八强赛赛制",
       "immutable": "创建后轮次或赛制不可修改；需要变更时删除根节点后重建。",
       "titleField": "标题",
@@ -714,7 +739,6 @@
       "matchDate": "比赛日期",
       "groupNumber": "小组号",
       "groupNumberLabel": "第{number}组",
-      "groupNumberPending": "组号待补",
       "bracket": "组别",
       "teams": "队伍（2–4 支）",
       "followedTeam": "追随的队伍（必填）",
@@ -727,15 +751,18 @@
       "removeCover": "移除现有封面",
       "restoreCover": "保留现有封面",
       "coverAlt": "{title} 的封面",
-      "noSeasons": "此服务器还没有季赛。",
-      "noCategories": "此季赛还没有子赛事分类。",
+      "noSeasons": "此服务器还没有赛事。",
+      "noCategories": "此赛事还没有子赛事分类。",
       "noNodes": "此分类还没有子赛事根节点。",
       "noReplays": "此根节点还没有直播回放。",
-      "noMoreCategories": "该季赛已包含全部分类。",
+      "noMoreCategories": "该赛事已包含全部分类。",
       "nodeLimit": "此分类已创建全部允许的根节点。",
       "replayCount": "{count} 条回放",
-      "seasonDeleteTitle": "删除季赛",
+      "seasonDeleteTitle": "删除赛事",
       "seasonDeleteMessage": "将删除 {nodes} 个子赛事根节点和 {replays} 条直播回放。确认删除？",
+      "categoryDeleteTitle": "删除整个子赛事分类",
+      "categoryDeleteMessage": "将删除「{title}」及其 {nodes} 个根节点、{replays} 条直播回放。确认删除？",
+      "deleteCategory": "删除整个分类",
       "nodeDeleteTitle": "删除子赛事",
       "nodeDeleteMessage": "将一并删除该节点下 {replays} 条直播回放；所属分类保留。确认删除？",
       "replayDeleteTitle": "删除直播回放",
@@ -769,11 +796,34 @@
         "LOSERS": "败者组"
       },
       "perspectives": {
-        "POV": "POV",
-        "OBSERVER": "上帝视角"
+        "POV": "个人视角",
+        "OBSERVER": "观战视角"
       },
       "following": "追随 {team}",
-      "reloadEditor": "重新载入（放弃当前输入）"
+      "reloadEditor": "重新载入（放弃当前输入）",
+      "displayTimeZone": "显示时区",
+      "serverTimeZone": "区服 · {zone}",
+      "matchTime": "具体时间",
+      "matchTimeHint": "未知时留空，仅显示比赛日期。",
+      "inputTimeZone": "录入时区",
+      "inputTimeZoneHint": "默认北京时间；切换时区会换算已填写的日期与时间。",
+      "noGroup": "不分组",
+      "timeZones": {
+        "Asia/Shanghai": "北京时间 (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "太平洋时间 PT (PST/PDT)",
+        "Europe/Berlin": "中欧时间 (CET/CEST)",
+        "Europe/Moscow": "莫斯科时间 (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · 北京时间",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · 莫斯科"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "目录已被其他管理员修改，请刷新后重新检查并保存。",
@@ -831,12 +881,7 @@
       "login_required": "Please sign in to your WotBTools account before downloading the Android package"
     },
     "home": {
-      "replayParse": "Replay Analysis",
-      "replayParseDesc": "Batch-parse replays and inspect summaries, battles, and League Rating.",
-      "aiReview": "AI Review",
-      "aiReviewDesc": "Upload a single replay and AI Review returns a tactical debrief with improvement tips. Sign-in required.",
-      "battlePlayback": "Battle Reconstruction",
-      "battlePlaybackDesc": "Reconstruct the battle with maps, timeline, vehicle state, HP, and events."
+      "replayParse": "Replay Analysis"
     },
     "upload": {
       "clear_confirm": "Clearing removes the parsed results. Clear anyway?",
@@ -1098,6 +1143,7 @@
       "phase_shell_data": "shell data",
       "picker_loading": "Initializing. Vehicle selection will be available shortly.",
       "load_failed": "Failed to load {phase}: {msg}",
+      "context_lost": "3D rendering context was lost (GPU/driver reset). Please retry.",
       "shell_unavailable": "Shell data is missing or invalid. Penetration cannot be calculated.",
       "tier": "Tier",
       "type": "Type",
@@ -1124,12 +1170,24 @@
       "angle": "Angle",
       "effective": "Effective",
       "penetration": "Penetration",
+      "may_penetrate": "May penetrate",
       "result": "Result",
       "turret": "Turret",
       "gun": "Gun",
       "hint": "Drag hull to orbit · Scroll to zoom · Drag turret/gun to aim · Click for armor",
       "hint_touch": "Drag hull to orbit · Pinch to zoom · Drag turret/gun to aim · Tap for armor",
       "shot_damage": "damage",
+      "penetration_chance": "Penetration chance",
+      "penetration_damage": "Penetration damage",
+      "splash_damage": "Splash damage",
+      "sampling_unavailable": "Splash sampling unavailable",
+      "no_primary_blocked": "Only external modules/gaps hit; treated as non-penetration",
+      "min_damage": "Min damage",
+      "max_damage": "Max damage",
+      "avg_damage": "Avg damage",
+      "avg_short": "avg",
+      "splash_radius": "Splash radius",
+      "best_sample": "Best sample",
       "shot_ricochet_seg": "ricochet (-25% penetration)",
       "shot_loss": "loss",
       "shot_nominal": "nominal",
@@ -1186,7 +1244,20 @@
         "touch_pan": "Two-finger drag"
       },
       "distance": "Engagement distance",
-      "distance_unit": "m"
+      "effective_penetration": "Effective penetration",
+      "distance_unit": "m",
+      "direct_hit": "Direct hit",
+      "expected_damage": "Expected damage",
+      "best_sample_upper": "Best sample (upper)",
+      "best_sample_lower": "Best sample (lower)",
+      "sections": {
+        "hull": "Hull",
+        "turret": "Turret",
+        "gun": "Gun mantlet",
+        "spaced": "Spaced armor",
+        "chassis": "Track",
+        "gun_barrel": "Gun barrel"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "Admin sections",
@@ -1214,7 +1285,7 @@
       "accountProfile": "Account data needs a connection.",
       "adminUsers": "User management needs a connection to read Keycloak and local profiles.",
       "syncPaused": "Offline: syncing is paused.",
-      "leagueBroadcasts": "League broadcasts require an internet connection. Reconnect to browse and manage them."
+      "leagueBroadcasts": "Tournament broadcasts require an internet connection. Reconnect to browse and manage them."
     },
     "connectivityNotice": {
       "unknownTitle": "Network status unavailable",
@@ -1455,10 +1526,10 @@
       "aiLoginRequired": "AI sample reviews also require sign-in"
     },
     "leagueBroadcasts": {
-      "title": "League broadcast replays",
+      "title": "Tournament broadcast replays",
       "navTitle": "Broadcasts",
       "serversTitle": "Choose a server",
-      "seasonsTitle": "Seasons",
+      "seasonsTitle": "Tournaments",
       "categoriesTitle": "Competition categories",
       "nodesTitle": "Competition stages",
       "back": "Back to parent",
@@ -1473,8 +1544,8 @@
       "enter": "Open {name}",
       "expand": "Expand {name}",
       "collapse": "Collapse {name}",
-      "newSeason": "Add season",
-      "editSeason": "Edit season",
+      "newSeason": "Add Tournament",
+      "editSeason": "Edit Tournament",
       "newCategory": "Add category",
       "newNode": "Add stage",
       "newReplay": "Add broadcast replay",
@@ -1487,8 +1558,12 @@
       "startDate": "Start date (optional)",
       "category": "Category",
       "round": "Round",
-      "roundLabel": "Points round {round}",
-      "format": "Quarterfinal format",
+      "roundLabel": "Prove Your Skill #{round}",
+      "roundShortLabel": "Round {round}",
+      "roundCount": "Rounds: {count}",
+      "newRound": "Add round",
+      "manage": "Manage",
+      "format": "Top 8 format",
       "immutable": "Round and format are fixed after creation. Delete and recreate the stage to change them.",
       "titleField": "Title",
       "shortTitle": "A short title is enough",
@@ -1498,7 +1573,6 @@
       "matchDate": "Match date",
       "groupNumber": "Group number",
       "groupNumberLabel": "Group {number}",
-      "groupNumberPending": "Group number pending",
       "bracket": "Bracket",
       "teams": "Teams (2–4)",
       "followedTeam": "Team followed by this replay (required)",
@@ -1511,15 +1585,18 @@
       "removeCover": "Remove existing cover",
       "restoreCover": "Keep existing cover",
       "coverAlt": "Cover for {title}",
-      "noSeasons": "No seasons for this server yet.",
-      "noCategories": "No categories in this season yet.",
+      "noSeasons": "No tournaments for this server yet.",
+      "noCategories": "No categories in this tournament yet.",
       "noNodes": "No stages in this category yet.",
       "noReplays": "No broadcast replays in this stage yet.",
-      "noMoreCategories": "This season already has all categories.",
+      "noMoreCategories": "This tournament already has all categories.",
       "nodeLimit": "All available stages have been created.",
       "replayCount": "Replays: {count}",
-      "seasonDeleteTitle": "Delete season",
-      "seasonDeleteMessage": "Delete this season, its {nodes} stages and {replays} broadcast replays?",
+      "seasonDeleteTitle": "Delete Tournament",
+      "seasonDeleteMessage": "Delete this tournament, its {nodes} stages and {replays} broadcast replays?",
+      "categoryDeleteTitle": "Delete entire competition category",
+      "categoryDeleteMessage": "Delete “{title}”, its {nodes} stages and {replays} broadcast replays?",
+      "deleteCategory": "Delete entire category",
       "nodeDeleteTitle": "Delete stage",
       "nodeDeleteMessage": "Delete this stage and its {replays} broadcast replays? The category will remain.",
       "replayDeleteTitle": "Delete broadcast replay",
@@ -1539,9 +1616,9 @@
         "LESTA": "Lesta"
       },
       "categories": {
-        "POINTS": "Points competition",
-        "QUARTER_FINALS": "Quarterfinals",
-        "SEMI_FINALS": "Semifinals"
+        "POINTS": "Prove Your Skill",
+        "QUARTER_FINALS": "Top 8",
+        "SEMI_FINALS": "Top 4"
       },
       "formats": {
         "ROUND_ROBIN": "Round robin",
@@ -1557,7 +1634,30 @@
         "OBSERVER": "Observer"
       },
       "following": "Following {team}",
-      "reloadEditor": "Reload (discard current inputs)"
+      "reloadEditor": "Reload (discard current inputs)",
+      "displayTimeZone": "Display time zone",
+      "serverTimeZone": "Server · {zone}",
+      "matchTime": "Start time",
+      "matchTimeHint": "Leave blank if unknown; only the match date is shown.",
+      "inputTimeZone": "Input time zone",
+      "inputTimeZoneHint": "Defaults to Beijing time. Switching zones converts the entered date and time.",
+      "noGroup": "No group",
+      "timeZones": {
+        "Asia/Shanghai": "Beijing (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Pacific Time (PST/PDT)",
+        "Europe/Berlin": "Central Europe (CET/CEST)",
+        "Europe/Moscow": "Moscow (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Beijing",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Moscow"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Another administrator changed this catalogue. Refresh and review before saving.",
@@ -1615,12 +1715,7 @@
       "login_required": "Войдите в аккаунт WotBTools перед загрузкой Android-пакета"
     },
     "home": {
-      "replayParse": "Анализ реплеев",
-      "replayParseDesc": "Пакетная обработка реплеев, сводки, бои и League Rating.",
-      "aiReview": "ИИ-разбор",
-      "aiReviewDesc": "Загрузите один реплей — AI Review составит тактический разбор и советы. Нужен вход.",
-      "battlePlayback": "Реконструкция боя",
-      "battlePlaybackDesc": "Восстановление боя по карте, таймлайну, состоянию техники, HP и событиям."
+      "replayParse": "Анализ реплеев"
     },
     "upload": {
       "clear_confirm": "Очистка удалит результаты разбора. Очистить?",
@@ -1882,6 +1977,7 @@
       "phase_shell_data": "данные снарядов",
       "picker_loading": "Инициализация. Выбор техники скоро станет доступен.",
       "load_failed": "Не удалось загрузить {phase}: {msg}",
+      "context_lost": "Контекст 3D-рендеринга потерян (сброс GPU/драйвера). Повторите попытку.",
       "shell_unavailable": "Данные снаряда отсутствуют или некорректны. Расчёт пробития невозможен.",
       "tier": "Уровень",
       "type": "Тип",
@@ -1908,12 +2004,24 @@
       "angle": "Угол",
       "effective": "Приведённая",
       "penetration": "Пробитие",
+      "may_penetrate": "Возможное пробитие",
       "result": "Результат",
       "turret": "Башня",
       "gun": "Орудие",
       "hint": "Корпус — обзор · Колесо — масштаб · Башня/орудие — наведение · Клик — броня",
       "hint_touch": "Корпус — обзор · Щипок — масштаб · Башня/орудие — наведение · Тап — броня",
       "shot_damage": "урон",
+      "penetration_chance": "Вероятность пробития",
+      "penetration_damage": "Урон при пробитии",
+      "splash_damage": "Урон осколками",
+      "sampling_unavailable": "Расчёт осколков недоступен",
+      "no_primary_blocked": "Попадание только во внешние модули/зазоры — считается непробитием",
+      "min_damage": "Мин. урон",
+      "max_damage": "Макс. урон",
+      "avg_damage": "Средний урон",
+      "avg_short": "сред.",
+      "splash_radius": "Радиус разлёта",
+      "best_sample": "Лучший образец",
       "shot_ricochet_seg": "рикошет (-25% пробития)",
       "shot_loss": "потеря",
       "shot_nominal": "номинал",
@@ -1970,7 +2078,20 @@
         "touch_pan": "Движение двумя пальцами"
       },
       "distance": "Дистанция боя",
-      "distance_unit": "м"
+      "effective_penetration": "Эффективное пробитие",
+      "distance_unit": "м",
+      "direct_hit": "Прямое попадание",
+      "expected_damage": "Ожидаемый урон",
+      "best_sample_upper": "Лучший образец (верхняя граница)",
+      "best_sample_lower": "Лучший образец (нижняя граница)",
+      "sections": {
+        "hull": "Корпус",
+        "turret": "Башня",
+        "gun": "Маска орудия",
+        "spaced": "Экран",
+        "chassis": "Гусеница",
+        "gun_barrel": "Ствол орудия"
+      }
     },
     "hofAdmin": {
       "tabsLabel": "Разделы администрирования",
@@ -1998,7 +2119,7 @@
       "accountProfile": "Для данных аккаунта нужно подключение.",
       "adminUsers": "Для управления пользователями нужно подключение к Keycloak и локальным профилям.",
       "syncPaused": "Нет сети: синхронизация приостановлена.",
-      "leagueBroadcasts": "Для трансляций лиги нужен интернет. Подключитесь для просмотра и управления."
+      "leagueBroadcasts": "Для трансляций турниров нужен интернет. Подключитесь для просмотра и управления."
     },
     "connectivityNotice": {
       "unknownTitle": "Не удалось определить состояние сети",
@@ -2239,10 +2360,10 @@
       "aiLoginRequired": "Для ИИ-разбора примера тоже нужен вход"
     },
     "leagueBroadcasts": {
-      "title": "Записи трансляций лиги",
+      "title": "Записи трансляций турниров",
       "navTitle": "Трансляции",
       "serversTitle": "Выберите сервер",
-      "seasonsTitle": "Сезоны",
+      "seasonsTitle": "Турниры",
       "categoriesTitle": "Категории соревнования",
       "nodesTitle": "Этапы соревнования",
       "back": "На уровень выше",
@@ -2257,8 +2378,8 @@
       "enter": "Открыть {name}",
       "expand": "Развернуть {name}",
       "collapse": "Свернуть {name}",
-      "newSeason": "Добавить сезон",
-      "editSeason": "Изменить сезон",
+      "newSeason": "Добавить турнир",
+      "editSeason": "Изменить турнир",
       "newCategory": "Добавить категорию",
       "newNode": "Добавить этап",
       "newReplay": "Добавить запись трансляции",
@@ -2271,8 +2392,12 @@
       "startDate": "Дата начала (необязательно)",
       "category": "Категория",
       "round": "Раунд",
-      "roundLabel": "Раунд {round} по очкам",
-      "format": "Формат четвертьфинала",
+      "roundLabel": "Путь мастерства №{round}",
+      "roundShortLabel": "Раунд {round}",
+      "roundCount": "Раундов: {count}",
+      "newRound": "Добавить раунд",
+      "manage": "Управление",
+      "format": "Формат Топ-8",
       "immutable": "После создания раунд и формат неизменны. Для изменения удалите и создайте этап заново.",
       "titleField": "Заголовок",
       "shortTitle": "Достаточно короткого заголовка",
@@ -2282,7 +2407,6 @@
       "matchDate": "Дата матча",
       "groupNumber": "Номер группы",
       "groupNumberLabel": "Группа {number}",
-      "groupNumberPending": "Номер группы не указан",
       "bracket": "Сетка",
       "teams": "Команды (2–4)",
       "followedTeam": "Команда, за которой следует запись (обязательно)",
@@ -2295,15 +2419,18 @@
       "removeCover": "Удалить текущую обложку",
       "restoreCover": "Сохранить текущую обложку",
       "coverAlt": "Обложка: {title}",
-      "noSeasons": "Для этого сервера пока нет сезонов.",
-      "noCategories": "В этом сезоне пока нет категорий.",
+      "noSeasons": "Для этого сервера пока нет турниров.",
+      "noCategories": "В этом турнире пока нет категорий.",
       "noNodes": "В этой категории пока нет этапов.",
       "noReplays": "На этом этапе пока нет записей.",
-      "noMoreCategories": "В сезоне уже есть все категории.",
+      "noMoreCategories": "В этом турнире уже есть все категории.",
       "nodeLimit": "Все допустимые этапы уже созданы.",
       "replayCount": "Записей: {count}",
-      "seasonDeleteTitle": "Удалить сезон",
-      "seasonDeleteMessage": "Удалить сезон, его этапы ({nodes}) и записи трансляций ({replays})?",
+      "seasonDeleteTitle": "Удалить турнир",
+      "seasonDeleteMessage": "Удалить турнир, его этапы ({nodes}) и записи трансляций ({replays})?",
+      "categoryDeleteTitle": "Удалить категорию соревнований целиком",
+      "categoryDeleteMessage": "Удалить «{title}», этапы ({nodes}) и записи трансляций ({replays})?",
+      "deleteCategory": "Удалить категорию целиком",
       "nodeDeleteTitle": "Удалить этап",
       "nodeDeleteMessage": "Удалить этап и его записи ({replays})? Категория сохранится.",
       "replayDeleteTitle": "Удалить запись трансляции",
@@ -2323,9 +2450,9 @@
         "LESTA": "Леста"
       },
       "categories": {
-        "POINTS": "Соревнование по очкам",
-        "QUARTER_FINALS": "Четвертьфинал",
-        "SEMI_FINALS": "Полуфинал"
+        "POINTS": "Путь мастерства",
+        "QUARTER_FINALS": "Топ-8",
+        "SEMI_FINALS": "Топ-4"
       },
       "formats": {
         "ROUND_ROBIN": "Круговой турнир",
@@ -2337,11 +2464,34 @@
         "LOSERS": "Нижняя сетка"
       },
       "perspectives": {
-        "POV": "POV",
-        "OBSERVER": "Наблюдатель"
+        "POV": "От лица игрока",
+        "OBSERVER": "От лица наблюдателя"
       },
       "following": "Следуя за {team}",
-      "reloadEditor": "Загрузить заново (сбросить ввод)"
+      "reloadEditor": "Загрузить заново (сбросить ввод)",
+      "displayTimeZone": "Часовой пояс отображения",
+      "serverTimeZone": "Сервер · {zone}",
+      "matchTime": "Время начала",
+      "matchTimeHint": "Если время неизвестно, оставьте поле пустым: будет показана только дата матча.",
+      "inputTimeZone": "Часовой пояс ввода",
+      "inputTimeZoneHint": "По умолчанию — пекинское время. При смене пояса введённые дата и время пересчитываются.",
+      "noGroup": "Без группы",
+      "timeZones": {
+        "Asia/Shanghai": "Пекин (UTC+8)",
+        "UTC": "UTC",
+        "America/Los_Angeles": "Тихоокеанское время (PST/PDT)",
+        "Europe/Berlin": "Центральная Европа (CET/CEST)",
+        "Europe/Moscow": "Москва (UTC+3)"
+      },
+      "inputOffsets": {
+        "480": "UTC+08:00 · Пекин",
+        "0": "UTC+00:00",
+        "-480": "UTC−08:00 · PST",
+        "-420": "UTC−07:00 · PDT",
+        "60": "UTC+01:00 · CET",
+        "120": "UTC+02:00 · CEST",
+        "180": "UTC+03:00 · Москва"
+      }
     },
     "api_errors": {
       "BROADCAST_VERSION_CONFLICT": "Другой администратор изменил каталог. Обновите и проверьте данные.",

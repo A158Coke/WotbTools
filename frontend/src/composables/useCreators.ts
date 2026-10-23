@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import * as api from '../api/creators.js'
 import type { CreatorAvailability } from '../shared/creatorAvailability.js'
 import { useCreatorAvailability } from './useCreatorAvailability.js'
-import { useAuth, tournamentAdminAllowed } from './useAuth.js'
+import { useAuth, contentAdminAllowed } from './useAuth.js'
 import { useFeatureGate } from './useFeatureGate.js'
 import { Feature } from '../app/featureCapabilities.js'
 
@@ -26,7 +26,7 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
   const listLoading = ref(false), listError = ref<unknown>(null)
   const loading = computed(() => listLoading.value || availability.loading.value)
   const error = computed(() => listError.value ?? availability.error.value)
-  const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && tournamentAdminAllowed(auth))
+  const adminAllowed = computed(() => auth.authInitState.value === 'authenticated' && contentAdminAllowed(auth))
   // Public content can arrive before check-sso; do not destroy an administrator's deep link while identity is pending.
   const invalidCategory = computed(() => routeMatchesType.value && !['idle', 'initializing'].includes(auth.authInitState.value)
     && !adminAllowed.value && availability.contentKnown.value && categoryId.value !== null
@@ -40,7 +40,7 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
     controller = new AbortController()
     const gen = ++generation, signal = controller.signal
     listLoading.value = true; listError.value = null
-    inFlight = transport.listRecommendations(type.value, categoryId.value, availability.recommendationsSupported.value, signal).then(cards => {
+    inFlight = transport.listRecommendations(type.value, categoryId.value, signal).then(cards => {
       if (gen === generation && !signal.aborted) creators.value = cards
     }).catch(value => { if (gen === generation && !signal.aborted) listError.value = value })
       .finally(() => { if (gen === generation) { listLoading.value = false; inFlight = null } })
@@ -66,7 +66,7 @@ export function useCreators(deps: { type?: MaybeRefOrGetter<api.RecommendationTy
   }
   function selectCategory(id: number | null) { return router.push(categoryLocation(id)) }
   watch(invalidCategory, value => { if (value) { cancel(); creators.value = []; void reconcileCategory() } }, { immediate: true, flush: 'sync' })
-  watch([routeMatchesType, type, categoryId, () => network.value.available, adminAllowed, () => auth.tokenParsed.value?.sub, availability.recommendationsSupported], () => {
+  watch([routeMatchesType, type, categoryId, () => network.value.available, adminAllowed, () => auth.tokenParsed.value?.sub], () => {
     cancel()
     if (categoryId.value !== activeCategory || creators.value.some(value => value.type !== type.value)) { creators.value = []; activeCategory = categoryId.value }
     void loadList()

@@ -113,7 +113,7 @@ class SecurityConfigTest {
                     .andExpect(status().isForbidden());
         }
         mvc.perform(get("/api/admin/tournaments/probe")).andExpect(status().isUnauthorized());
-        for (final String role : List.of("HoF-admin", "wotbtools-user", "wotbtools-admin")) {
+        for (final String role : List.of("HoF-admin", "wotbtools-user", "wotbtools-admin", "content-admin")) {
             mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
                     .andExpect(status().isForbidden());
         }
@@ -121,6 +121,37 @@ class SecurityConfigTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/admin/tournaments/probe").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_wotbtools-admin"), new SimpleGrantedAuthority("ROLE_tournament-admin"))))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * 内容域与积分赛域彻底分离：`content-admin` 只管理推荐内容，`tournament-admin` 绝不回头获得
+     * 内容权限；`wotbtools-admin` 单独出现也不放行，只有 Keycloak 展开 composite 后同时带上
+     * `content-admin` 才成立。
+     */
+    @Test
+    void contentRealmRoleOnlyGrantsContentManagement() throws Exception {
+        final JwtDecoder decoder = context.getBean(JwtDecoder.class);
+        final Jwt token = Jwt.withTokenValue("content-token").header("alg", "none").subject("content-admin")
+                .claim("realm_access", Map.of("roles", List.of("content-admin"))).build();
+        when(decoder.decode("content-token")).thenReturn(token);
+
+        for (final String path : List.of("/api/admin/recommendations/probe")) {
+            mvc.perform(get(path)).andExpect(status().isUnauthorized());
+            mvc.perform(get(path).header("Authorization", "Bearer content-token")).andExpect(status().isOk());
+            for (final String role : List.of("wotbtools-user", "HoF-admin", "tournament-admin", "wotbtools-admin")) {
+                mvc.perform(get(path).with(jwt().authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+                        .andExpect(status().isForbidden());
+            }
+            mvc.perform(get(path).with(jwt().authorities(
+                            new SimpleGrantedAuthority("ROLE_wotbtools-admin"),
+                            new SimpleGrantedAuthority("ROLE_content-admin"))))
+                    .andExpect(status().isOk());
+        }
+
+        for (final String path : List.of("/api/admin/tournaments/probe", "/api/admin/hof/probe",
+                "/api/admin/users/probe", "/api/admin/other/probe", "/api/admin/creators/probe")) {
+            mvc.perform(get(path).header("Authorization", "Bearer content-token")).andExpect(status().isForbidden());
+        }
     }
 
     /**
@@ -313,6 +344,7 @@ class SecurityConfigTest {
                 "/api/admin/hof/probe",
                 "/api/admin/hof/audit",
                 "/api/admin/tournaments/probe",
+                "/api/admin/recommendations/probe",
                 "/static-probe"
         })
         String probe() {

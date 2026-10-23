@@ -16,6 +16,7 @@ from android_contract import (
     auth_surface,
     contract_result,
     parse_version,
+    remote_asset_origin,
     runtime_path,
     validate_frontend_sources,
     validate_native_sources,
@@ -44,6 +45,35 @@ assert runtime_path("android/app/build.gradle.kts")
 assert not runtime_path("android/gradle.properties")
 assert not runtime_path("android/app/src/test/java/com/wotbtools/app/MainActivityTest.kt")
 assert not runtime_path("docs/android/release-process.md")
+current_asset_proxy = root / "android/app/src/main/java/com/wotbtools/app/AgentAssetProxy.kt"
+assert remote_asset_origin(current_asset_proxy) == "https://assets.wotbtools.com"
+with tempfile.TemporaryDirectory() as temp:
+    legacy_proxy = Path(temp) / "AgentAssetProxy.kt"
+    legacy_proxy.write_text(
+        'private const val COS_BASE = "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"\n',
+        encoding="utf-8",
+    )
+    assert remote_asset_origin(legacy_proxy) == "https://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"
+    legacy_proxy.write_text('private const val COS_BASE = "https://unreviewed.example/assets"\n', encoding="utf-8")
+    try:
+        remote_asset_origin(legacy_proxy)
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError("unreviewed staged asset origins must fail closed")
+    for malformed in (
+        'private const val COS_BASE = "http://wotbtools-assets-1478073677.cos.ap-shanghai.myqcloud.com"\n',
+        'private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com/"\n',
+        'private const val REMOTE_ASSET_BASE = " https://assets.wotbtools.com"\n',
+        'private const val REMOTE_ASSET_BASE = "https://assets.wotbtools.com "\n',
+    ):
+        legacy_proxy.write_text(malformed, encoding="utf-8")
+        try:
+            remote_asset_origin(legacy_proxy)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError(f"malformed staged asset origin must fail closed: {malformed!r}")
 validate_native_sources(base := json.loads((root / "contracts/android-native-bridge.json").read_text()), [
     str(root / "android/app/src/main/java/com/wotbtools/app/NativeBridge.kt"),
     str(root / "android/app/src/main/java/com/wotbtools/app/MainActivity.kt"),
