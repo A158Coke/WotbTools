@@ -281,6 +281,14 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
             updateHeHeatmapUniforms();
             disposeHeSplashVisual();
         }
+        // showShotError 的持久错误行：World View HUD 重建 #turret-controls 时
+        // 会覆盖它，所以错误消息保存在模块状态并在每次重建时重新插入。
+        let shotReplayError = '';
+        function shotErrorHtml() {
+            if (!shotReplayError) return '';
+            return '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>'
+                + '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + escapeText(shotReplayError) + '</div>';
+        }
 
         // ===== HE 溅射可视化：只标注一个半径球面 =====
         // 800 方向采样不再画线；方向化信息交给热力图染色（best 方向白色高亮）。
@@ -3058,6 +3066,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                      // world 穿透判定标志每次进入射击复现重置（防上次会话残留）
                      window.__worldPenMode = false;
                      window.__segBoxMissing = false;
+                     shotReplayError = '';
                      worldOverviewMode = false;   // 命中/脱靶分支各自置位（见下）
                      // 片元交叉验证上下文（doPenetrationCheck 读取）：世界模式同样提供 segment 解码字段
                      window.__shotCtx = Object.assign({}, window.__shotCtx || {}, {
@@ -3436,7 +3445,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                             // 信息面板：落点/材质 + 弹种
                             const st2 = document.getElementById('turret-controls');
                             const flgM = s.hit_flags || 0;
-                            if (st2) { st2.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
+                            if (st2) { st2.innerHTML = shotErrorHtml() + '<div class="ctrl-row"><b>World View — Shot #' + s.index + ' (脱靶)</b></div>' +
                                 (function() {
                                     const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
                                     return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
@@ -4150,7 +4159,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                                 }
                             }
                         }
-                        if (st) { st.innerHTML = '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
+                        if (st) { st.innerHTML = shotErrorHtml() + '<div class="ctrl-row"><b>World View — Shot #' + s.index + '</b></div>' +
                             (function() {
                                 const t4 = s.is_author ? '作者' : (s.shooter_team === 'enemy' ? '敌方' : (s.shooter_team === 'ally' ? '我方' : ''));
                                 return '<div class="ctrl-row">Shooter: <b style="color:var(--yellow);">' + (s.shooter_name || '—') + '</b>' + (t4 ? ' · ' + t4 : '') + '</div>' +
@@ -5229,13 +5238,13 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         // 射击复现错误面板（模块级：doPenetrationCheck 等顶层函数也要调用）
         function showShotError(msg) {
             if (destroyed) return;
+            shotReplayError = msg;
             console.error('[shot-replay] ' + msg);
             const st = document.getElementById('turret-controls');
             if (st) {
                 // 世界模式调试关闭时该面板被收纳——错误必须强制可见
                 st.style.display = 'block';
-                st.innerHTML = '<div class="ctrl-row" style="color:var(--red);"><b>射击复现错误</b></div>' +
-                    '<div class="ctrl-row" style="color:var(--red);font-size:11px;">' + msg + '</div>';
+                st.innerHTML = shotErrorHtml();
             }
         }
 
@@ -5940,6 +5949,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
         }
         function showTrajectory(firstPoint, result, totalEff, layers, penVal, dmgVal, modDmgVal, distVal, trajOrigin, dmgDealt, probabilityLayers = null, probabilityPen = null, allowChance = true, options = {}) {
             if (destroyed) return;
+            shotReplayError = '';
             const blockedNoPrimary = options.blockedNoPrimary === true;
             const probabilityMode = options.probabilityMode === true && !blockedNoPrimary;
             // 无主装甲门禁的 BLOCKED/0 是终态：不能再用概率链的 rawChance/chancePartial

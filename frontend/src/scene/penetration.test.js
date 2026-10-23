@@ -797,6 +797,17 @@ describe('require_primary（射击复现无主装甲链门禁）', () => {
     })).toEqual({ chance: 0, unavailable: true })
   })
 
+  it('无主装甲阻断覆盖原结果已 BLOCKED 的临界厚度（99/100/101mm）', () => {
+    for (const thickness of [99, 100, 101]) {
+      const r = calculate(req('ap', 100, 100, [hit(ArmorSection.SPACED, thickness, [0, 0, 0])], {
+        require_primary: true,
+      }))
+      expect(r.blocked_no_primary, `spaced ${thickness}mm`).toBe(true)
+      expect(r.result).toBe('BLOCKED')
+      expect(r.damage).toBe(0)
+    }
+  })
+
   it('纯间隙甲：同样被门禁拦下；有主装甲的链不受影响', () => {
     const spaced = calculate(req('ap', 300.0, 100.0, [hit(ArmorSection.SPACED, 10.0, [0, 0, 0])], { require_primary: true }))
     expect(spaced.result).toBe('BLOCKED')
