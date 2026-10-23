@@ -23,6 +23,10 @@ npm run api:fixture
 
 `api:generate` 生成 `src/api/generated/http-contract.ts`、Playback JSON Schema、error-code registry 与 Ajv standalone ESM validators；生成文件不得手改。`api:check` 通过重新生成并检查 git diff，作为 drift gate。`api:fixture` 使用生产形状 fixture 验证 required、nullable、enum 和 `$ref`。Ajv 只在生成时编译 schema，运行时执行 generated validator，不使用 eval/new Function，兼容 Android 严格 CSP。校验只在数据边界报告安全诊断元数据，不把响应体、token 或 schema 内部细节展示给用户。
 
+生成脚本按显式 schema 名单导出运行时 validator；仅存在 generated TypeScript 类型不代表网络数据已经校验。用户资料/绑定、管理用户、公开单场榜、百场与三种名人堂批量删除，以及积分赛、推荐、联赛直播的 JSON 在各自 `src/api/` owner 内从 `unknown` 开始校验。JSON 语法错误与 schema 校验失败均映射为 `INVALID_RESPONSE`、`retryable=false`；取消和 transport 错误保留原语义。未纳入这些边界的 JSON 不因其它领域已接入 validator 而自动获得保护。
+
+`contracts/http/fixtures/business-boundaries.json` 保存匿名固定的 DTO/mapper 序列化样本，`wotb-web` 的 `ApiContractTest` 对照真实 Java 生产类型验证字段与空值，`api:fixture` 对同一份样本验证 OpenAPI。API 单测通过真实响应体与 generated validator 验证调用接线，不 mock validator；数组在没有整包 validator 时使用数组检查与 generated item validator。合法 optional/nullable 字段不得在 wire 校验时填充默认值。
+
 标准迁移顺序是：
 
 ```text
@@ -33,6 +37,8 @@ OpenAPI → generated FE transport → BE serialization/mapper → runtime valid
 不生成 Java DTO、完整前端 API client 或 Android model；这能避免 codegen 与真实分层形成第二个 authority。
 
 ## Compatibility rules
+
+- 管理用户列表的 `profileCreatedAt` 按 RFC 3339 输出，producer 使用 `ISO_OFFSET_DATE_TIME` 保证整分钟时间也包含秒；不以省略秒的字符串放宽 `date-time` 契约。需要修正 producer 序列化时，先发布 producer，再发布依赖该契约的严格 consumer。
 
 - Domain enum 与 wire enum 必须显式映射。客户端 Playback 投影输出契约中的 `HIGH/MEDIUM/LOW/UNKNOWN`，不得同时接受两套值来掩盖 producer violation。
 - 服务端 Playback 端点、持久化 artifact 与 `ReplayArtifactWriter` 已退役；当前数据由客户端 `replay-local/playback` 生成并经 generated validator 校验。历史 artifact 的 normalization 不再是当前运行链路。
