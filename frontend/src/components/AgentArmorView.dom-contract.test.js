@@ -115,7 +115,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 命中 world 路径同置（紧随穿透判定标志）
     expect(kernel).toMatch(/window\.__worldPenMode = true;\s*worldOverviewMode = true;/)
     // 每发进入射击复现重置
-    expect(kernel).toMatch(/window\.__worldPenMode = false;\s*worldOverviewMode = false;/)
+    expect(kernel).toMatch(/window\.__worldPenMode = false;[\s\S]{0,160}worldOverviewMode = false;/)
   })
   it('mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）', async () => {
     const { mirrorShotData } = await import('../scene/tankViewer.js')
@@ -403,7 +403,10 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
     expect(kernel).toMatch(/L\.shotPenChance\}: \$\{formatProbabilityPercent\(cardChance\)\}%/)
     // AP/APCR/HEAT：完整概率链作为唯一层链，层点用累计概率色，概率>0 显示伤害。
     expect(kernel).toMatch(/evaluateProbabilityChain\(chancePen, probLayers\)/)
-    expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true;/)
+    expect(kernel).toMatch(/const probabilityMode = options\.probabilityMode === true && !blockedNoPrimary;/)
+    // 无主装甲阻断是终态：概率/满伤不得回填。
+    expect(kernel).toMatch(/allowChance = allowChance && !blockedNoPrimary/)
+    expect(kernel).toMatch(/!isHE && !blockedNoPrimary/)
     expect(kernel).toMatch(/probabilityColorCss\(layerChance\)/)
     expect(kernel).toMatch(/hasChance \? dmgVal : 0/)
     // HE 命中首个 Primary 也走概率卡；非 Primary 的间隙/模块保留首面爆炸分支。

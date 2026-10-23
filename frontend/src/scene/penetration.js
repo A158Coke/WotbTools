@@ -655,7 +655,7 @@ export function calculate(req) {
     }
   }
 
-  const result = ricochet
+  let result = ricochet
     ? 'RICOCHET'
     : (heData && heData.unavailable)
       ? 'ERROR'
@@ -667,8 +667,24 @@ export function calculate(req) {
             ? 'BLOCKED'
             : '-'
 
+  // 射击复现的“无主装甲链”门禁（require_primary）：射线只命中履带/炮管/间隙甲时，
+  // 末层规则会给出 PENETRATION + 全额伤害，但服务器对这类 hit 的 result=1/2/4、damage=0。
+  // 查看器相机点击仍沿用 BlitzKit 末层语义（默认 false）；射击复现请求 true，
+  // 无 Primary（hull/turret/gun，0mm 也算）且非 HE/非跳弹 → BLOCKED、0 伤害。
+  // 只要 require_primary 命中“无 Primary”链就阻断，**不要求原结果已经是 PENETRATION**：
+  // 原结果可能已被唯一间隙甲挡住（BLOCKED/0），但卡片概率链仍会把它回填成
+  // “可能击穿 + 满伤”。无主装甲的定义不依赖确定性末层是否恰好穿透。
+  const blockedNoPrimary = req.require_primary === true && !isHe && !ricochet
+    && !hasPrimaryLayer(probabilityLayers)
+  if (blockedNoPrimary) {
+    result = 'BLOCKED'
+    resultDamage = 0
+  }
+
   return {
     result,
+    // 无主装甲门禁命中：消费方必须禁用概率/满伤回填，不能只读 result/damage。
+    blocked_no_primary: blockedNoPrimary,
     total_effective: totalEffective,
     layers,
     probability_layers: probabilityLayers,

@@ -206,6 +206,7 @@ function startViewer(preserveSelection = false) {
             directHit: t('armor.direct_hit'),
             expectedDamage: t('armor.expected_damage'),
             heSamplingUnavailable: t('armor.sampling_unavailable'),
+            noPrimaryBlocked: t('armor.no_primary_blocked'),
             heBestSampleUpper: t('armor.best_sample_upper'),
             heBestSampleLower: t('armor.best_sample_lower'),
             sectionName: (section) => {
@@ -393,6 +394,7 @@ onBeforeUnmount(() => {
         </div>
         </div>
         <div id="traj-info" style="display:none;"></div>
+        <div id="shot-replay-error" role="alert" aria-live="assertive" style="display:none;"></div>
         <div id="turret-controls">
             <div class="ctrl-row"><label>{{ $t('armor.turret') }}</label><span id="turret-val">0°</span></div>
             <div class="ctrl-row"><label>{{ $t('armor.gun') }}</label><span id="gun-val">0°</span></div>
@@ -568,6 +570,7 @@ onBeforeUnmount(() => {
 .armor-view #click-info .bounce { color: var(--red); }
 .armor-view #click-info .ricochet { color: var(--orange); }
 .armor-view #traj-info { position: fixed; z-index: var(--z-header); pointer-events: none; }
+.armor-view #shot-replay-error { position: fixed; z-index: var(--pb-z-modal); inset-block-start: calc(var(--space-5) + 48px); inset-inline: var(--space-4); margin-inline: auto; max-inline-size: 30rem; padding: var(--space-2) var(--space-3); background: var(--tooltip-bg); border-left: 4px solid var(--red); border-radius: var(--radius-md); color: var(--red); font: var(--type-caption); box-shadow: var(--elevation-2); pointer-events: none; }
 .armor-view .armor-back { position: absolute; z-index: calc(var(--z-sticky) + 1); inset-block-start: var(--space-5); inset-inline-start: var(--space-5); display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--panel); color: var(--txt); }
 .armor-view .armor-tools { display: none; }
 .armor-view .armor-bottom-controls { display: contents; }
