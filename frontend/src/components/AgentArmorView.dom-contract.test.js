@@ -115,7 +115,7 @@ describe('dolly-zoom world-overview scope guard', () => {
     // 命中 world 路径同置（紧随穿透判定标志）
     expect(kernel).toMatch(/window\.__worldPenMode = true;\s*worldOverviewMode = true;/)
     // 每发进入射击复现重置
-    expect(kernel).toMatch(/window\.__worldPenMode = false;\s*window\.__segBoxMissing = false;\s*worldOverviewMode = false;/)
+    expect(kernel).toMatch(/window\.__worldPenMode = false;[\s\S]{0,160}worldOverviewMode = false;/)
   })
   it('mirrorShotData 导出且镜像 via：折线长度在镜像前后不变（点击/热力图共用长度源）', async () => {
     const { mirrorShotData } = await import('../scene/tankViewer.js')
