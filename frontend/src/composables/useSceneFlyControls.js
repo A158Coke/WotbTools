@@ -19,7 +19,7 @@ import { onBeforeUnmount, onMounted } from 'vue'
  *  用户实测两轮校准：[0.5..16] 与 [1..60] 均反馈"太慢/没反应"——回放地图 ±300m、
  *  初始机位数百米外，日常巡航需要 10m/s 量级才可感；精细贴地仍留低速档。 */
 export const FLY_SPEEDS = Object.freeze([2, 6, 15, 40, 90, 200])
-export const DEFAULT_FLY_SPEED_INDEX = 2   // 档 2 = 15 m/s（默认即可感的巡航速度）
+export const DEFAULT_FLY_SPEED_INDEX = 3   // 档 3 = 15 m/s（默认即可感的巡航速度）
 
 export function isFlySpeedIndex(n) {
   return Number.isInteger(n) && n >= 1 && n <= FLY_SPEEDS.length
