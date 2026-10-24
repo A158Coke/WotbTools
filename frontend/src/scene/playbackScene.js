@@ -882,16 +882,20 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           camera, renderer, scene, controls, terrainMesh,
           groundLayers, heightField, heightMeta, terrainSpan: terrainSpanOf(),
           stale, disposeObject3D, noteAsset, sampleHeight,
-          onRefineMaskBuilt: () => { terrainLodPrev = null; maybeRebuildTerrainLod(); },
+          // 掩码先写入宿主绑定再重建 LOD（评审 P2：否则首次重建拿到空掩码、
+          // terrainLodPrev 置当前后不再失效，走廊细分在初始视角丢失）
+          onRefineMaskBuilt: (mask) => { terrainRefineMask = mask; terrainLodPrev = null; maybeRebuildTerrainLod(); },
           destructDocPromise,
         });
+        // stale 判定先于一切 writes 发布（评审 P1：stale 结果不得写回宿主——
+        // 会覆盖新会话的 mapScenery/动画材质/遮挡表；过期资源已由模块就地回收）
+        if (asm.stale) return;
         const w = asm.writes;
         if ('waterTexDispose' in w) waterTexDispose = w.waterTexDispose;
         if ('animLayerMats' in w) animLayerMats = w.animLayerMats;
         if ('mapScenery' in w) mapScenery = w.mapScenery;
         if ('terrainRefineMask' in w) terrainRefineMask = w.terrainRefineMask;
         if ('occlGrid' in w) occlGrid = w.occlGrid;
-        if (asm.stale) return;
         destructPickList = w.destructPickList;
         meshOwner = w.meshOwner;
         destruct = w.destruct;

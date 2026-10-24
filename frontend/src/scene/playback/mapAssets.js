@@ -134,12 +134,14 @@ export async function assembleMapScenery(gltf, ctx) {
       meshes: sceneryMeshes, field: ctx.heightField,
       n: ctx.heightMeta?.size || 512, span: ctx.heightMeta?.span || 600,
     });
-    if (built) {
-      writes.terrainRefineMask = built.mask;
-      if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
-      // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）
-      if (ctx.terrainMesh && ctx.camera && ctx.controls) ctx.onRefineMaskBuilt();
-    }
+      if (built) {
+        writes.terrainRefineMask = built.mask;
+        if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
+        // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）。
+        // mask 经回调参数交给宿主**先写入 terrainRefineMask 再重建**（评审 P2：宿主绑定
+        // 仍为 null 时重建会拿到空掩码，且 terrainLodPrev 置当前后不再失效——走廊细分丢失）
+        if (ctx.terrainMesh && ctx.camera && ctx.controls) ctx.onRefineMaskBuilt(built.mask);
+      }
   } catch (e) { console.warn('走廊掩码构建失败（地形保持客户端口径）:', e); }
 
   // 天穹在材质转换段已换成 makeSkyMaterial 的无限远实现（此前整节点隐藏 →
@@ -239,7 +241,15 @@ export async function assembleMapScenery(gltf, ctx) {
   const destructDoc = await ctx.destructDocPromise;
   // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
   //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
-  if (ctx.stale()) return { stale: true, writes };
+  if (ctx.stale()) {
+    // 中途过期（评审 P1）：本段已挂进场景的资源**就地回收、不发布任何 writes**——
+    // stale 结果写回宿主会覆盖 B 的 mapScenery/动画材质/遮挡表/走廊掩码，且 A 的
+    // group 会叠在 B 的场景上、后续 teardown 还会漏掉它。animLayerMats 的材质随
+    // mapScenery 子树一并释放；terrainRefineMask/occlGrid 是纯数据，无需 GPU 回收。
+    if (writes.mapScenery) { ctx.scene.remove(writes.mapScenery); ctx.disposeObject3D(writes.mapScenery); }
+    if (writes.waterTexDispose) { writes.waterTexDispose.dispose(); }
+    return { stale: true, writes: {} };
+  }
   if (DEBUG) window.__destructStage = destructDoc
     ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
     : 'doc-missing';
