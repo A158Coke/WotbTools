@@ -86,6 +86,14 @@ describe('formatPickReport', () => {
 const sceneSrc = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
   .replace(/\/\/[^\n]*/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
+// 拾取报告器 2026-10-24 出仓 playback/pickReport.js（工厂 + ctx 快照），守卫随实现迁移
+const pickSrc = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+// 场景装配块（含可破坏物发布时序）2026-10-24 出仓 playback/mapAssets.js，守卫随实现迁移
+const mapAssetsSrc = readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8')
+  .replace(/\/\/[^\n]*/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('buildMeshOwnerMap', () => {
   // 评审复现场景：6m 倒树的树梢命中点 (6,0) 离邻树 id=8 的根部更近——
@@ -136,13 +144,13 @@ describe('拾取接线（源码级守卫）', () => {
     expect(reportAt).toBeLessThan(clearAt)
   })
   it('拾取实例：meshOwner 精确归属优先，距离仅兜底', () => {
-    const at = sceneSrc.indexOf('const owner = (meshOwner && hit.instanceId != null)')
+    const at = pickSrc.indexOf('const owner = (ctx.meshOwner && hit.instanceId != null)')
     expect(at).toBeGreaterThan(-1)
-    const order = sceneSrc.slice(at, at + 500)
-    expect(order).toMatch(/meshOwner && hit\.instanceId != null/)
+    const order = pickSrc.slice(at, at + 500)
+    expect(order).toMatch(/ctx\.meshOwner && hit\.instanceId != null/)
     expect(order).toMatch(/meshOwnerKey\(hit\.object, hit\.instanceId\)/)
-    const meshOwnerAt = order.indexOf('meshOwner.get(meshOwnerKey(hit.object, hit.instanceId))')
-    const fallbackAt = order.indexOf('nearestInstance(destructPickList')
+    const meshOwnerAt = order.indexOf('ctx.meshOwner.get(meshOwnerKey(hit.object, hit.instanceId))')
+    const fallbackAt = order.indexOf('nearestInstance(ctx.destructPickList')
     expect(meshOwnerAt).toBeGreaterThan(-1)
     expect(fallbackAt).toBeGreaterThan(meshOwnerAt)
   })
@@ -155,9 +163,9 @@ describe('拾取接线（源码级守卫）', () => {
     expect(body).toMatch(/meshOwner = null;/)
   })
   it('destructibles await 之后先核会话（stale）再发布清单', () => {
-    const awaitAt = sceneSrc.indexOf('const destructDoc = await destructDocPromise')
-    const staleAt = sceneSrc.indexOf('if (stale()) return;', awaitAt)
-    const publishAt = sceneSrc.indexOf('destructPickList = destructDoc.instances')
+    const awaitAt = mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise')
+    const staleAt = mapAssetsSrc.indexOf('if (ctx.stale()) return { stale: true, writes };', awaitAt)
+    const publishAt = mapAssetsSrc.indexOf('destructPickList = destructDoc.instances')
     expect(awaitAt).toBeGreaterThan(-1)
     expect(staleAt).toBeGreaterThan(awaitAt)
     expect(publishAt).toBeGreaterThan(staleAt)
@@ -203,11 +211,11 @@ describe('拾取报告诊断行接线（playbackScene 源级守卫）', () => {
   // 2026-10-11 回归：诊断变量曾声明在 `if (heightField && heightMeta)` 块内、return 在块外
   // 引用 ⇒ ReferenceError: render is not defined ⇒ 整个拾取面板"点击没反应"。锁定共声明。
   it('terrain / render 诊断变量在 buildPickReport 函数作用域共声明（return 可达）', () => {
-    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    const src = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
     expect(src).toMatch(/let terrain = null;\s*\r?\n\s*let render = null;/)
   })
   it('拾取失败必须可见（禁止静默 catch）', () => {
-    const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+    const src = readFileSync(resolve(here, 'playback/pickReport.js'), 'utf8')
     expect(src).toMatch(/showPickPanel\(`\[scene-pick\] failed:/)
   })
 })
