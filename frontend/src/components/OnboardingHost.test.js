@@ -322,6 +322,30 @@ describe('OnboardingHost', () => {
     expect(document.querySelector('[data-testid="onboarding-layer"]')).not.toBeNull()
   })
 
+  it('lets the auto-opened Display own the first Escape on the declutter step', async () => {
+    // 防遮控件住在 Display 面里，教程进入这一步会自动打开它，焦点随之落到面板的关闭按钮上。
+    // 第一次 Escape 必须交给 Display 自己关，教程保持当前步骤，不能直接记成 SKIPPED。
+    const panel = document.createElement('section')
+    panel.setAttribute('role', 'dialog')
+    panel.dataset.tour = 'playback-display-options'
+    document.body.append(panel)
+    button('playback-declutter', panel)
+    const close = button('display-close', panel)
+    const closePanel = vi.fn(() => panel.remove())
+    panel.addEventListener('keydown', event => { if (event.key === 'Escape') closePanel() })
+    const guide = controller('tour')
+    guide.topic.value = 'core'
+    guide.index.value = 4
+    expect(guide.currentStage.value.anchor).toBe('playback-declutter')
+    render(guide)
+    await settle()
+    close.focus()
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(closePanel).toHaveBeenCalledTimes(1)
+    expect(guide.skip).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="onboarding-layer"]')).not.toBeNull()
+  })
+
   it('lets the real export download activation through while blocking background clicks', async () => {
     // #680 回归：downloadBlob 在 body 上点击隐藏 anchor；引导的背景点击隔离不能取消这次程序化下载。
     const originalCreate = URL.createObjectURL

@@ -32,6 +32,11 @@
 
 `BattlePlayback.vue` 是单一编排入口，负责时间、视图、选择与事件命令；展示层拆为 `BattlePlaybackHud.vue`（双方 HP、权威点数与权威基地状态）、`BattleMap.vue`（SVG、坦克标记、炮线、标注及瞬时反馈）、`PlaybackControls.vue`（紧凑播放控制，内部复用 `PlaybackTransport.vue`）、`PlaybackTimeline.vue`（纯进度条）、`AnnotationToolbar.vue`（折叠式标注工具）、`PlaybackSidePanel.vue`（Battle / Vehicle / Display / Events 面板）和 `VehicleDetailsPanel.vue`（当前车辆详情，内部使用 `V2VehicleInspector.vue`）。`PlaybackMobileOverlay.vue` 只管理移动端 controls 的显隐，不拥有 playback state。
 
+**控件归属：地图盒里不放常驻 UI。** 呈现类开关（一键防遮、名册显隐、HP 档位、重置视图、事件、隐藏 UI）
+都在 gear 锚定的 Display 面里；手机横屏的「标记模式」入口由 `PlaybackTransport.vue` 的控制条承载
+（`annotationEnabled` prop），不占额外行高。依据：地图是主内容，而手机横屏下它只有不到 100px
+（实测 740×360 为 96×96），放任何常驻控件都会违反 `docs/frontend/design-language.md` §5 的遮挡契约。
+
 `utils/playbackVehicleState.ts` 负责将 canonical V2 track 投影为 marker state，`utils/playbackClock.ts` 提供播放时间/倍速纯函数。拆分不新增数据源、不改变 V2 query-at-time、anti-future-leak 或既有 tank-marker 资产契约。
 
 测试按同一责任边界组织：地图/标记/手势、控制、时间线和详情面板分别由对应 focused suite 覆盖，时钟与车辆投影由纯函数 suite 覆盖；共享 replay fixture 位于 testing-only 的 `playbackTestHarness.js`。`BattlePlayback.test.js` 与 `BattlePlayback.integration.test.js` 只保留跨组件/domain 的编排回归，不重复 focused suite 已覆盖的 presentation 断言。

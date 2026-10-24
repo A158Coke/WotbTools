@@ -1479,14 +1479,17 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const time = wrapper.vm.currentTime
     const selected = wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    // #727：名册开关只在 Display 面里（地图上不再放常驻控件），所以先从 gear 打开那块面
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="pb-toggle-roster"]').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('[data-test="pb-show-roster"]').setValue(false)
+    await flushPromises()
+    expect(wrapper.get('[data-test="pb-show-roster"]').element.checked).toBe(false)
     expect(wrapper.classes()).not.toContain('pb-roster-lanes')
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(0)
     expect(wrapper.find('[data-test="pb-info"]').exists()).toBe(true)
     expect(wrapper.vm.currentTime).toBe(time)
-    await wrapper.get('[data-test="pb-toggle-roster"]').trigger('click')
+    await wrapper.get('[data-test="pb-show-roster"]').setValue(true)
     await flushPromises()
     expect(wrapper.findAll('[data-test="pb-roster-row"]')).toHaveLength(3)
     expect(wrapper.getComponent({ name: 'BattleMap' }).props('selectedAccountId')).toBe(selected)
@@ -1502,6 +1505,9 @@ describe('PR4 Blocker 2 — Fullscreen（原生 API + resize 契约）', () => {
     const map = wrapper.getComponent({ name: 'BattleMap' })
     const beforeFacts = map.props('vehicleStates').map(state => ({ id: state.vehicle.accountId, hp: map.props('hpFor')(state.vehicle), pos: state.pos, destroyed: state.destroyed }))
     const time = wrapper.vm.currentTime
+    // #727：一键防遮只在 Display 面里
+    await wrapper.get('[data-test="pb-secondary-entry"]').trigger('click')
+    await flushPromises()
     await wrapper.get('[data-test="pb-declutter"]').trigger('click')
     expect(wrapper.get('[data-test="pb-declutter"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.findAll('.pb-label-player')).toHaveLength(0)
