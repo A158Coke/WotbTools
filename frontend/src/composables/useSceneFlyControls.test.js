@@ -1,8 +1,12 @@
+// @vitest-environment happy-dom
 // 键盘自由视角（useSceneFlyControls.tickFly）的纯推进语义锁：
 // 朝向基准 / 水平投影（俯视不钻地）/ QE 世界系升降 / 速率倍乘 / dt=0 零位移 /
-// follow 由调用方短路（内核 flyTick 职责，此处不测）/ top 模式 QE 忽略。
-import { describe, expect, it } from 'vitest'
-import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, isTextEntryTarget } from './useSceneFlyControls.js'
+// follow 由调用方短路（内核 flyTick 职责，此处不测）/ top 模式 QE 忽略；
+// 以及面板失活时飞行循环必须自停并清键（评审 P2）。
+import { describe, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
+import { mount } from '@vue/test-utils'
+import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, isTextEntryTarget, useSceneFlyControls } from './useSceneFlyControls.js'
 
 // 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
 //（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。
@@ -96,5 +100,42 @@ describe('tickFly 位移语义', () => {
     expect(still.tick(1)).toBe(false)
     const zeroDt = makeRig(['KeyW'])
     expect(zeroDt.tick(0)).toBe(false)
+  })
+})
+
+// 评审 P2：isActive 此前只在 keydown 检查——按住 W 用鼠标切到 2D/数据页签
+// （v-show 隐藏，不触发 window.blur，也还没 keyup），隐藏的 3D 相机持续前进。
+describe('飞行循环的生命周期（评审 P2）', () => {
+  it('面板失活：下一帧即停推进并清空按键，重新激活不会自己继续飞', async () => {
+    let active = true
+    const calls = []
+    const api = {
+      flyTick: (_dt, pressed) => { calls.push(pressed.size); return true },
+      invalidate: () => {},
+    }
+    const Comp = defineComponent({
+      setup() {
+        useSceneFlyControls({
+          setFlySpeed: () => {},
+          isActive: () => active,
+          canFly: () => true,
+          getSceneApi: () => api,
+        })
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Comp)
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' }))
+    await vi.waitFor(() => expect(calls.length).toBeGreaterThan(0), { timeout: 1000 })
+    active = false
+    await new Promise((r) => setTimeout(r, 80))     // 已排队的帧在此窗口内被丢弃
+    const stopped = calls.length
+    await new Promise((r) => setTimeout(r, 120))
+    expect(calls.length).toBe(stopped)               // 失活后不再推进
+    active = true
+    await new Promise((r) => setTimeout(r, 120))
+    expect(calls.length).toBe(stopped)               // 按键已清空：不自恢复
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' }))
+    wrapper.unmount()
   })
 })

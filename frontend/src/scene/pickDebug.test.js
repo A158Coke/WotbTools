@@ -163,17 +163,18 @@ describe('拾取接线（源码级守卫）', () => {
     expect(body).toMatch(/destructPickList = null;/)
     expect(body).toMatch(/meshOwner = null;/)
   })
-  it('destructibles await 之后先核会话（stale）再发布清单', () => {
+  it('destructibles await 之后先核会话（stale）再发布清单；stale 不自行摘除宿主资源', () => {
     const awaitAt = mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise')
-    // 评审 P1 后：stale 分支先就地回收挂载资源（remove/dispose）再返回空 writes——
-    // 守卫同时锁「先核会话」与「不发布 stale 结果」两个不变量
+    // 评审 P1 复核后：挂载即归属宿主（onSceneryMounted），stale 分支只返回空 writes，
+    // 不得再 remove/dispose 已交给宿主的布景（B 解析失败时宿主仍保留 A）。
     const staleAt = mapAssetsSrc.indexOf('if (ctx.stale()) {', awaitAt)
-    const disposeAt = mapAssetsSrc.indexOf('ctx.scene.remove(writes.mapScenery);', awaitAt)
     const publishAt = mapAssetsSrc.indexOf('destructPickList = destructDoc.instances')
     expect(awaitAt).toBeGreaterThan(-1)
     expect(staleAt).toBeGreaterThan(awaitAt)
-    expect(disposeAt).toBeGreaterThan(staleAt)
     expect(publishAt).toBeGreaterThan(staleAt)
+    const staleBranch = mapAssetsSrc.slice(staleAt, staleAt + 900)
+    expect(staleBranch).toMatch(/return \{ stale: true, writes: \{\} \}/)
+    expect(staleBranch).not.toMatch(/ctx\.scene\.remove\(writes\.mapScenery\)/)
   })
 })
 
