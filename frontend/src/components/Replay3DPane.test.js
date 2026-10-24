@@ -207,6 +207,22 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
+  it('实时帧率角标：store.fps/frameMs 驱动文本，未就绪显示占位', async () => {
+    mockWebGL('webgl2')
+    const wrapper = mountPane()
+    await start(wrapper)
+    const { store } = playback.api
+    store.fps = 59.8
+    store.frameMs = 16.7
+    await flush()
+    expect(wrapper.get('[data-testid="replay3d-fps"]').text()).toBe('59.8 FPS · 16.7 ms')
+    store.fps = 0
+    store.frameMs = 0
+    await flush()
+    expect(wrapper.get('[data-testid="replay3d-fps"]').text()).toBe('— FPS')
+    wrapper.unmount()
+  })
+
   it('核心资产降级显示非阻塞状态，不把加载完成伪装成健康', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()

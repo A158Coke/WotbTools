@@ -62,6 +62,7 @@ import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计�
 import { FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
 import { createLoadProgress } from './loadProgress.js'
+import { createFrameMeter } from './frameMeter.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
@@ -2991,11 +2992,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let frameDirty = true;
   function invalidate() { frameDirty = true; }
 
+  // 实时帧率（FPS 覆盖层）：rAF 回调间隔的 500ms 窗口均值，每窗口写一次 store
+  //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
+  const frameMeter = createFrameMeter();
+
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
     if (paused) { rafId = 0; return; }   // 停帧：不排队下一帧，场景与状态原样保留
     rafId = requestAnimationFrame(animate);
+    const fpsStats = frameMeter.sample(performance.now());
+    if (fpsStats) { store.fps = fpsStats.fps; store.frameMs = fpsStats.frameMs; }
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
@@ -3283,6 +3290,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 尚未创建时只排下一帧并安全返回。否则「待开播切走 → 切回 → Start」会进入
       // paused=false / renderer!=null / rafId=0 的死态，场景 ready 但时间与画面都不再推进。
       if (clock) clock.getDelta();   // 已初始化时丢弃暂停期间累积的 dt
+      frameMeter.reset();            // 恢复后重新起窗：暂停间隙不得计入帧间隔
       if (!rafId) animate();
     }
   }
