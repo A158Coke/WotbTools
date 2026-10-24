@@ -23,6 +23,7 @@ import com.wotb.web.mark3.service.Mark3Mapper;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileMapper;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.util.apierror.ApiErrorResponse;
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -54,6 +55,9 @@ class ApiContractTest {
         profile.setUsername("fixture-login");
         // 整分钟也必须保留秒，避免 OffsetDateTime.toString() 输出不符合 RFC 3339 的分钟精度。
         ReflectionTestUtils.setField(profile, "createdAt", OffsetDateTime.parse("2026-10-01T12:00:00Z"));
+        final UserProfileSnapshot profileSnapshot = new UserProfileSnapshot(
+                7L, "fixture-user", null, null, null, "CN",
+                OffsetDateTime.parse("2026-10-01T12:00:00Z"), null);
         final AdminUserMapper admin = new AdminUserMapper();
         final UserRepresentation keycloak = new UserRepresentation();
         keycloak.setId("fixture-user");
@@ -81,10 +85,10 @@ class ApiContractTest {
         final List<WireCase> cases = new ArrayList<>(List.of(
                 new WireCase("UserProfile", new UserProfileMapper().toDto(profile)),
                 new WireCase("AdminUserPage", new AdminUserPageDto(
-                        List.of(admin.toListItem(keycloak, null), admin.toListItem(null, profile)), 0, 25, 2, 1)),
+                        List.of(admin.toListItem(keycloak, null), admin.toListItem(null, profileSnapshot)), 0, 25, 2, 1)),
                 new WireCase("AdminUserDetail", admin.toDetailDto("fixture-user", null,
                         admin.toKeycloakDto(keycloak, null), List.of())),
-                new WireCase("AdminUserDetail", admin.toDetailDto("fixture-user", admin.toProfileDto(profile),
+                new WireCase("AdminUserDetail", admin.toDetailDto("fixture-user", admin.toProfileDto(profileSnapshot),
                         null, List.of("KEYCLOAK_USER_MISSING"))),
                 new WireCase("DeleteUsersResponse", new DeleteUsersResponse(2, 1, 1, List.of(
                         new DeleteUserResult("fixture-user", true, null),

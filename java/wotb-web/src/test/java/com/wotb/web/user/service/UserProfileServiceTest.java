@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -153,6 +154,35 @@ class UserProfileServiceTest {
         profile.setWotbAccountSource("MANUAL");
         profile.setWotbAccountVerifiedAt(verifiedAt);
         return profile;
+    }
+
+    @Test
+    void crossDomainSnapshotMapsOnlyProfileValues() {
+        final UserProfile profile = cnProfile(123L, "Player", null);
+        profile.setDisplayName("Display Name");
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        final UserProfileSnapshot snapshot = service.findSnapshotByKeycloakUserId("kc-user").orElseThrow();
+
+        assertEquals(profile.getId(), snapshot.id());
+        assertEquals("kc-user", snapshot.keycloakUserId());
+        assertEquals("Display Name", snapshot.displayName());
+        assertEquals(123L, snapshot.wotbAccountId());
+        assertEquals("Player", snapshot.wotbNickname());
+        assertEquals("CN", snapshot.wotbServer());
+    }
+
+    @Test
+    void administrationDeleteLoadsAndFlushesEntityInsideUserDomain() {
+        final UserProfile profile = cnProfile(123L, "Player", null);
+        when(repository.findByKeycloakUserId("kc-user")).thenReturn(Optional.of(profile));
+
+        service.deleteForAdministration("kc-user");
+
+        final var order = inOrder(repository);
+        order.verify(repository).findByKeycloakUserId("kc-user");
+        order.verify(repository).delete(profile);
+        order.verify(repository).flush();
     }
 
     // ── ensure：canonical provisioning（无 profile 时创建） ────────────────
