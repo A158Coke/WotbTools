@@ -3,9 +3,12 @@ package com.wotb.web.architecture;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.wotb.web.user.entity.UserProfile;
+import org.junit.jupiter.api.Test;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
@@ -21,6 +24,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * wotb-web 架构契约（对应 {@code java/AGENTS.md} 与 {@code docs/DEVELOPER_GUIDE.md}）：
@@ -53,6 +57,12 @@ class WebArchitectureTest {
             .should().dependOnClassesThat().resideInAnyPackage(
                     "com.wotb.web..repository..",
                     "com.wotb.web..entity..");
+
+    @ArchTest
+    static final ArchRule ONLY_USER_DOMAIN_MAY_DEPEND_ON_USER_PROFILE_ENTITY = noClasses()
+            .that().resideInAPackage("com.wotb.web..")
+            .and().resideOutsideOfPackage("com.wotb.web.user..")
+            .should().dependOnClassesThat().resideInAnyPackage("com.wotb.web.user.entity..");
 
     @ArchTest
     static final ArchRule SERVICES_USE_ONLY_OWN_DOMAIN_REPOSITORIES = classes()
@@ -96,6 +106,19 @@ class WebArchitectureTest {
     @ArchTest
     static void webClassesAreAnalyzed(final JavaClasses classes) {
         assertTrue(classes.size() > 100, "ArchUnit 未导入足量 com.wotb.web 主类: " + classes.size());
+    }
+
+    @Test
+    void userProfileOwnershipRuleRejectsCrossDomainDependency() {
+        final JavaClasses fixture = new ClassFileImporter()
+                .importClasses(CrossDomainUserProfileDependencyFixture.class, UserProfile.class);
+
+        assertThrows(AssertionError.class,
+                () -> ONLY_USER_DOMAIN_MAY_DEPEND_ON_USER_PROFILE_ENTITY.check(fixture));
+    }
+
+    private static final class CrossDomainUserProfileDependencyFixture {
+        private UserProfile profile;
     }
 
     private static String[] domainAndSharedPatterns() {

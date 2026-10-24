@@ -21,8 +21,8 @@ import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.user.service.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -113,17 +113,17 @@ public class Mark3SubmissionService {
             final List<String> proofScreenshots,
             final List<MultipartFile> replays,
             final List<String> replayFacts) {
-        final UserProfile profile = userProfileService.findEntityByKeycloakUserId(userId)
+        final UserProfileSnapshot profile = userProfileService.findSnapshotByKeycloakUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
-        final Long gameId = profile.getWotbAccountId();
+        final Long gameId = profile.wotbAccountId();
         if (gameId == null || gameId <= 0) {
             throw new IllegalArgumentException("MARK3_PROFILE_GAME_ID_REQUIRED");
         }
-        if (!StringUtils.hasText(profile.getWotbNickname())) {
+        if (!StringUtils.hasText(profile.wotbNickname())) {
             throw new IllegalArgumentException("MARK3_PROFILE_NICKNAME_REQUIRED");
         }
         // canonical owner 含区服：(CN, 123456) 与 (EU, 123456) 是两个不同账号。
-        final String wotbServer = profile.getWotbServer();
+        final String wotbServer = profile.wotbServer();
         requireClaimedValues(claimedBattleCount, claimedAverageDamage, claimedWinRate);
         final BigDecimal normalizedWinRate = normalizeWinRate(claimedWinRate, "MARK3_INVALID_WIN_RATE");
         final TankInfo vehicle = requireTierTenVehicle(vehicleId);
@@ -137,7 +137,7 @@ public class Mark3SubmissionService {
 
         try {
             return capacityLimiter.execute(() -> createSubmissionWithinReplayCapacity(
-                    vehicleId, gameId, wotbServer, vehicle.name(), profile.getWotbNickname().trim(),
+                    vehicleId, gameId, wotbServer, vehicle.name(), profile.wotbNickname().trim(),
                     claimedBattleCount, claimedAverageDamage, normalizedWinRate,
                     normalizedScreenshots, replays, battles));
         } catch (final RuntimeException e) {
