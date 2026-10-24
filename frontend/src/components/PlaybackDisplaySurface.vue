@@ -7,6 +7,20 @@ const panel = ref(null)
 const placement = ref({})
 let observer
 
+/** 最近的 `overflow: hidden/clip` 祖先链的上下界：它们会真的裁掉内容（可滚动祖先不算，那是可滚动触达）。 */
+function clipBounds(element) {
+  let top = -Infinity
+  let bottom = Infinity
+  for (let node = element; node && node !== document.documentElement; node = node.parentElement) {
+    const overflowY = getComputedStyle(node).overflowY
+    if (overflowY !== 'hidden' && overflowY !== 'clip') continue
+    const rect = node.getBoundingClientRect()
+    top = Math.max(top, rect.top)
+    bottom = Math.min(bottom, rect.bottom)
+  }
+  return { top, bottom }
+}
+
 function measure() {
   if (!props.open || props.portrait || !props.host || !props.anchor || !panel.value) return
   const host = props.host.getBoundingClientRect()
@@ -20,8 +34,12 @@ function measure() {
   const paddingLeft = parseFloat(style.paddingLeft) || 0
   const paddingTop = parseFloat(style.paddingTop) || 0
   const paddingRight = parseFloat(style.paddingRight) || 0
-  const viewportTop = Math.max(host.top, 0)
-  const viewportBottom = Math.min(host.bottom, window.innerHeight)
+  // 可用区不只被视口限制，还被**裁剪祖先**限制：工作台根是 `overflow: hidden`，宿主内容比它高时
+  // （全屏横屏 844×390 实测如此）面板即使落在视口内也会被根的 overflow 切掉下半部分，
+  // 里面的选项看得见却点不到。所以先把裁剪链的上下界并进来。
+  const clip = clipBounds(props.host)
+  const viewportTop = Math.max(host.top, clip.top, 0)
+  const viewportBottom = Math.min(host.bottom, clip.bottom, window.innerHeight)
   // 锚点也要先夹进可见交集：宿主整块位于视口之外时（矮横屏把工作台推到首屏下方就是这样），
   // 锚点本身在视口外，按它算「可用空间」会得出一个屏幕外的答案（实测 above=300 而可见只有 111）。
   const anchorTop = Math.min(Math.max(anchor.top, viewportTop), Math.max(viewportTop, viewportBottom))
@@ -127,13 +145,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 瞬态交互面必须压过常驻控制条（§5 瞬态优先）：此前用 `--pb-z-modal`(9) 看似很高，
+   但手机 transport overlay 是裸 25，实测 Display surface 被它盖住、重叠区的点击落到
+   传输按钮上。层序由 token 阶梯保证，不靠加大数值。 */
 .pb-display-surface {
   position: absolute;
-  z-index: var(--pb-z-modal);
+  z-index: var(--pb-z-transient);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   inline-size: min(100% - var(--space-4), clamp(18rem, 32cqw, 28rem));
+  /* 高度必须收在宿主工作台内：工作台是 `overflow: hidden`，面一旦更高，下半部分的选项会被
+     直接裁掉（实测全屏横屏 844×390：HP 档位 / 防遮 / 重置视图 / 事件 / 隐藏 UI 五项不可达）。
+     收住高度后由自身 `overflow: auto` 承接，变成"可滚动触达"。 */
+  max-block-size: calc(100% - var(--space-4));
   padding: var(--space-3);
   overflow: auto;
   border: 1px solid var(--color-border-subtle);
