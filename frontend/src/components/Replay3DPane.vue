@@ -39,6 +39,7 @@ import SegmentedControl from './SegmentedControl.vue'
 import AppButton from './AppButton.vue'
 import { mapLabel } from '../utils/helpers.js'
 import { PLAYBACK_SPEEDS, PLAYBACK_STEP_SECONDS, isInteractiveTarget, usePlaybackTransport } from '../composables/usePlaybackTransport.js'
+import { useSceneFlyControls } from '../composables/useSceneFlyControls.js'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { ChevronDown, ChevronUp, PanelLeftClose, PanelLeftOpen, ScanEye, TriangleAlert } from 'lucide-vue-next'
 
@@ -198,6 +199,14 @@ const transport = usePlaybackTransport({
   isReady: () => store.hasData,
   // 工作台切到别的能力时不再劫持空格 / 方向键（2D 回放面板同时激活会争抢）
   isActive: () => props.active,
+})
+// 键盘自由视角（WASD 平移 / Q 升 E 降 / 1–6 速率）：PC 键盘用户的分析飞行。
+// 键位与播放传输并行不冲突；速率写场景（store.flySpeed），位移在场景 flyTick 推进。
+const fly = useSceneFlyControls({
+  setFlySpeed: (n) => sceneApi?.setFlySpeed(n),
+  isActive: () => props.active,
+  canFly: () => !!sceneApi && store.hasData && !props.blockedReason,
+  getSceneApi: () => sceneApi,
 })
 // 审计 3D-23：渲染器创建前做 WebGL 预检；不支持时不初始化场景，整块换成说明
 const webgl = detectWebGL()
@@ -425,6 +434,7 @@ function destroyScene() {
   abortParse()   // 场景销毁 = 解析任务一并撤下（在途解析不得再占 Worker 队列）
   selectedEid.value = null
   detailsOpen.value = false
+  fly.stopLoop()   // 场景销毁：飞行循环停 + 按键清空（重建后按住键需重新按下）
   if (!sceneApi) return
   sceneApi.destroy?.()
   sceneApi = null
@@ -443,6 +453,7 @@ function ensureScene() {
   if (sceneApi || !props.active || !shouldHaveScene()) return false
   sceneApi = initPlayback(stage.value, store, labelOverlay.value, { onVehicleSelect: handleSceneSelect })
   sceneApi?.setPaused?.(!props.active)
+  sceneApi?.setFlySpeed?.(fly.flySpeedIndex())   // 新场景补推当前飞行速率档（重建不丢档）
   pushLabelPrefs();   // 新场景默认吃共享偏好（含"隐藏全部 UI"的当前状态）
   return true
 }

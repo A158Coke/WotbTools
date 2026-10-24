@@ -65,6 +65,7 @@ import { createLoadProgress } from './loadProgress.js'
 import { advancePlaybackTime } from '../utils/playbackClock'
 import { activeEntityAt, resolveReplayClock } from '../replay-local/canonical/facts'
 import { isPlaybackSpeed } from '../composables/usePlaybackTransport.js'
+import { isFlySpeedIndex, FLY_SPEEDS, DEFAULT_FLY_SPEED_INDEX, advanceFly as tickFlyImpl } from '../composables/useSceneFlyControls.js'
 import { poseFromYPR, yprScene, cloneDetachedTurret, neutralizeDefaultMetalness, dropDuplicateGunMasks } from './glbRig.js'
 import {
   clampTravel, rateLimitTravel, spinStep, treadScrollStep, groundDropLocal,
@@ -392,6 +393,176 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 的 `|| dead` 保留。
     return spansContainAt(VIS_BY_EID.get(v.def.eid) ?? v.def.coverage, t);
   }
+  // ---------- 自由飞行的 FPS 视角接管（用户裁定：旋转中心 = 镜头自身） ----------
+  // **接管态 = CAM === 'free'（派生，非独立状态）**——独立布尔会被任何路径漏设/
+  // 误清（表现 = FPS 转头与 OrbitControls 环绕/pan 漂移交替，用户实测两轮）。
+  // 自由模式下：
+  //   · 左键拖拽 = 转视角（yaw/pitch 直接作用在相机朝向上）；
+  //   · 滚轮 = 改飞行视距（flyDist——保留"拉近拉远"的操作记忆，不改变朝向）；
+  //   · WASD/QE = 平移相机（flyTick → advanceFly，target 重钉 cam+dir×flyDist）。
+  // 事件在 **container capture 阶段**拦截：祖先 capture 先于 canvas 的 target 阶段，
+  // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
+  // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
+  const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
+  // 接管条件 = 自由模式 ∧ 精细指针（PC）。触屏（手机/平板）保留 OrbitControls：
+  // 单指环绕 / 双指捏合是移动端既有的唯一缩放途径，FPS 接管会把它们一起吞掉。
+  const FLY_POINTER_FINE = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(pointer: fine)').matches
+    : true;
+  const flyMode = () => CAM === 'free' && FLY_POINTER_FINE;
+  // [fly] 埋点常开（console.debug 在默认过滤级别不可见，F12 勾选 Verbose 可查；
+  // 排障零成本且不影响性能——每拖拽会话只输出个位数行）
+  const flyDbg = (tag, extra) => {
+    console.debug(`[fly] ${tag}`, extra !== undefined ? extra : '',
+      `cam=${CAM} enabled=${controls ? controls.enabled : '?'} yaw=${flyLook.yaw.toFixed(2)} pitch=${flyLook.pitch.toFixed(2)} dist=${flyLook.dist.toFixed(0)}`);
+  };
+  let flyMoveLastLog = 0;
+
+  /** 从当前相机→target 向量反解 yaw/pitch（进入自由模式的朝向基准）。
+   *  顶视（top→free）反解出 pitch≈±π/2 会让 WASD 的水平投影 fwdLen≈0（无法移动）——
+   *  |pitch| 接近天顶/天底时回落到斜俯视（保留 yaw）：从正俯视过渡到斜俯视是自然的
+   *  模式切换，换来飞行立即可用。 */
+  function flyLookSyncFromCamera(tag = null) {
+    const dx = controls.target.x - camera.position.x;
+    const dy = controls.target.y - camera.position.y;
+    const dz = controls.target.z - camera.position.z;
+    const dist = Math.hypot(dx, dy, dz) || 1;
+    flyLook.dist = dist;
+    flyLook.yaw = Math.atan2(-dx, -dz);              // yaw：绕 y（0 = 看 -z）
+    const rawPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
+    // 天顶/天底附近回落到斜俯视：**保持原朝向的上下符号**（俯视=向下看，pitch 仍为负）。
+    // 旧实现 `-0.6*sign(rawPitch)` 把俯视翻成仰视（target 跑到地图上空、WASD 水平分量为 0）。
+    flyLook.pitch = Math.abs(rawPitch) > Math.PI / 2 - 0.25
+      ? 0.6 * Math.sign(rawPitch || 1)
+      : rawPitch;
+    if (tag) flyDbg(`sync(${tag})`);   // 逐帧对齐（tick）不埋点，防按住键时刷屏
+  }
+  /** 相机被**外部路径**改过（初始视野 fit / 名册跟随退出 / 钳制）后，flyLook 会与
+   *  实际 cam→target 不一致——交互起点先对齐，否则首帧拖拽/飞行会把 target 跳到
+   *  旧朝向×旧视距上（用户实测：进入自由后第一次拖拽视距从 570 变 284）。 */
+  function flyLookSyncIfStale(tag) {
+    if (!controls || flyLook.active) return;
+    const cp = Math.cos(flyLook.pitch);
+    const ex = camera.position.x - Math.sin(flyLook.yaw) * cp * flyLook.dist;
+    const ey = camera.position.y + Math.sin(flyLook.pitch) * flyLook.dist;
+    const ez = camera.position.z - Math.cos(flyLook.yaw) * cp * flyLook.dist;
+    const d = Math.hypot(ex - controls.target.x, ey - controls.target.y, ez - controls.target.z);
+    if (d > 0.05) flyLookSyncFromCamera(tag);
+  }
+  /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
+  function flyLookApplyMode(mode) {
+    if (mode === 'free' && FLY_POINTER_FINE) {
+      if (controls) {
+        controls.enabled = false;
+        controls.enableDamping = false;
+        flyLookSyncFromCamera('enter free');   // 进入自由：以当前视野为基准（top 的天顶朝向在此回落）
+      }
+    } else {
+      if (controls) {
+        controls.enabled = true;
+        controls.enableDamping = true;
+        controls.__flyDist = null;
+      }
+    }
+  }
+  function flyLookApply() {
+    const cp = Math.cos(flyLook.pitch);
+    const dir = { x: -Math.sin(flyLook.yaw) * cp, y: Math.sin(flyLook.pitch), z: -Math.cos(flyLook.yaw) * cp };
+    controls.target.set(
+      camera.position.x + dir.x * flyLook.dist,
+      camera.position.y + dir.y * flyLook.dist,
+      camera.position.z + dir.z * flyLook.dist,
+    );
+  }
+
+  // ---- container capture 拦截（祖先 capture 先于 canvas target 阶段）----
+  //（SCENE_CLICK_SLOP_PX / emptyDownAt 沿用原选中语义的声明——同一闭包作用域）
+  function onFlyCaptureDown(e) {
+    if (!controls) return;
+    if (flyMode()) {
+      // 进入自由模式：OrbitControls 让位（enabled=false 后其处理器自忽略，
+      // capture 先行是双保险）；本处理器接管拖拽 + 单击选中
+      if (controls.enabled) controls.enabled = false;
+      flyLookSyncIfStale('drag');
+      flyDbg('down', `button=${e.button}`);
+      if (e.button === 0) {
+        flyLook.active = true;
+        flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
+        // 指针捕获：拖出画布仍能收到 move/up。否则画布外松键会留下「幽灵拖拽」
+        // （回到画布不按键也在转头）。
+        try { container.setPointerCapture(e.pointerId); } catch (_) {}
+        // 单击判定起点（eid 在 up 时统一 raycast——单击 ≤SLOP 时 up≈down 位置，等价）
+        emptyDownAt = { x: e.clientX, y: e.clientY };
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    // 非 free：恢复 OrbitControls 并走原选中语义（onScenePointerDown 由 renderer 接线）
+    if (!controls.enabled) controls.enabled = true;
+  }
+  function onFlyCaptureMove(e) {
+    if (!flyMode() || !flyLook.active) return;
+    // 已无按键 = 在画布外松了键（捕获没拿到 up）：结束拖拽，且不当作单击
+    if (!e.buttons) { flyLook.active = false; emptyDownAt = null; return; }
+    const now = performance.now();
+    const logThis = now - flyMoveLastLog > 400;
+    if (logThis) flyMoveLastLog = now;
+    const events = e.getCoalescedEvents?.().length ? e.getCoalescedEvents() : [e];
+    for (const ev of events) {
+      const dx = ev.clientX - flyLook.lastX, dy = ev.clientY - flyLook.lastY;
+      flyLook.lastX = ev.clientX; flyLook.lastY = ev.clientY;
+      const k = 0.0032;   // rad/px（与常见 FPS 灵敏度同量级）
+      flyLook.yaw -= dx * k;
+      flyLook.pitch = Math.max(-Math.PI / 2 + 0.02, Math.min(Math.PI / 2 - 0.02, flyLook.pitch - dy * k));
+    }
+    flyLookApply();
+    if (logThis) flyDbg('move(applied)');
+    invalidate();
+    e.stopPropagation();   // flyMode 下 OrbitControls 与场景单击语义都不再需要
+  }
+  function onFlyCaptureUp(e) {
+    if (!flyMode()) return;
+    try { container.releasePointerCapture(e.pointerId); } catch (_) {}
+    // 单击判定（≤SLOP）与拖拽转头共存：按下记录起点、抬起位移 ≤SLOP 才算单击
+    const wasActive = flyLook.active;
+    flyLook.active = false;
+    if (!wasActive || e.button !== 0) return;
+    const moved = Math.hypot(e.clientX - (emptyDownAt?.x ?? e.clientX), e.clientY - (emptyDownAt?.y ?? e.clientY));
+    emptyDownAt = null;
+    if (moved <= SCENE_CLICK_SLOP_PX) {
+      // 单击：up 位置统一 raycast（命中车辆 → eid；空处 → null）
+      const r = container.getBoundingClientRect();
+      const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      raycaster.setFromCamera(nd, camera);
+      const hits = raycaster.intersectObjects(V.map(v => v.group), true);
+      let eid = null;
+      if (hits.length) {
+        let o = hits[0].object;
+        while (o && !o.userData.eid) o = o.parent;
+        if (o) eid = o.userData.eid;
+      }
+      flyDbg('click', `eid=${eid}`);
+      onVehicleSelect?.(eid, e);
+    }
+    e.stopPropagation();
+  }
+  function onFlyCaptureWheel(e) {
+    if (!flyMode()) return;
+    // 滚轮改视距（不转视角、不平移）：缩放记忆保留
+    flyLookSyncIfStale('wheel');
+    flyLook.dist = Math.max(2, Math.min(800, flyLook.dist * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
+    flyLookApply();
+    invalidate();
+    e.preventDefault();
+    e.stopPropagation();
+    flyDbg('wheel', `dist=${flyLook.dist.toFixed(0)}`);
+  }
+  function onFlyCaptureCancel() {
+    flyLook.active = false;
+    emptyDownAt = null;
+  }
+
   // ---------- 场景 ----------
   function initScene() {
     // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
@@ -406,6 +577,15 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     controls = core.controls; clock = core.clock; raycaster = core.raycaster;
     hemiLight = core.hemiLight; sunLight = core.sunLight;
     dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
+    // FPS 飞行接管（capture 阶段挂 container——先于 canvas 的 target 阶段，
+    // OrbitControls 物理收不到 flyMode 下的事件；down/up 的 renderer 接线仍服务
+    // 非 free 模式的选中语义）
+    container.addEventListener('pointerdown', onFlyCaptureDown, true);
+    container.addEventListener('pointermove', onFlyCaptureMove, true);
+    container.addEventListener('pointerup', onFlyCaptureUp, true);
+    container.addEventListener('pointercancel', onFlyCaptureCancel, true);
+    container.addEventListener('wheel', onFlyCaptureWheel, { capture: true, passive: false });
+    if (CAM === 'free') flyLookApplyMode('free');   // 初始 CAM 可能已是 'free'（默认值）
   }
   function onResize() {
     if (!renderer) return;
@@ -422,6 +602,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const SCENE_CLICK_SLOP_PX = 4;
   let emptyDownAt = null;
   function onScenePointerDown(e) {
+    // （free 模式的事件在 container capture 已拦截——此处只服务 OrbitControls 路径）
     if (e.button !== 0) return;
     if (PICK_DEBUG) pickDownAt = { x: e.clientX, y: e.clientY };   // 调试拾取独立记录（车辆命中路径也出报告）
     const r = container.getBoundingClientRect();
@@ -432,9 +613,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       let o = hits[0].object;
       while (o && !o.userData.eid) o = o.parent;
       emptyDownAt = null;
-      if (o) onVehicleSelect?.(o.userData.eid, e);
+      // 车辆命中：选中延迟到 pointerup 判定（拖拽转头 ≠ 点击选中——飞行动作下
+      // 按下即选会把"路过"的车辆选上；≤SLOP 才算单击，与空处单击同口径）
+      if (o) { emptyDownAt = { x: e.clientX, y: e.clientY, eid: o.userData.eid, event: e }; }
     } else {
-      emptyDownAt = { x: e.clientX, y: e.clientY };
+      emptyDownAt = { x: e.clientX, y: e.clientY, eid: null };
     }
   }
   function onScenePointerUp(e) {
@@ -448,9 +631,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     }
     if (!emptyDownAt) return;
     const moved = Math.hypot(e.clientX - emptyDownAt.x, e.clientY - emptyDownAt.y);
+    const down = emptyDownAt;
     emptyDownAt = null;
-    // eid = null：宿主语义「选中被清空/点击其它地方」→ 隐藏详情窗（保留选中高亮由宿主决定）
-    if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(null, e);
+    // 单击判定（≤SLOP）对自由飞行与 OrbitControls 路径同一口径：
+    // 车辆命中 → 选中该 eid；空处 → 上报 null（宿主隐藏详情窗）。拖拽（>SLOP）不触发。
+    if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(down.eid ?? null, e);
   }
 
   // ---------- 点击拾取调试（PICK_DEBUG；报告器在 playback/pickReport.js，纯函数在 pickDebug.js） ----------
@@ -494,7 +679,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function clampCameraTarget() {
     if (FOLLOW_EID) return;   // 跟随中：target 钉在坦克上（坦克恒在图内），不钳制
     const { cx, cz, ext } = WORLD_CENTER;
-    const lim = ext * 1.1;
+    // 钳制框 = max(世界范围, ext*1.1)：视野保护（拖到天边只剩背景色）不得反过来吞掉
+    // 键盘飞行的位移（评审发现：ext 小的图上 lim≈±10，每帧把 target 拉回、WASD 挪不动
+    // ——飞行需要覆盖整个地形 ±300 + 余量；拖拽保护语义仍保留，只是框必须够大）
+    const lim = Math.max(ext * 1.1, 340);
     const t = controls.target;
     const nx = Math.min(cx + lim, Math.max(cx - lim, t.x));
     const nz = Math.min(cz + lim, Math.max(cz - lim, t.z));
@@ -2802,7 +2990,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       } else followAnchor = null;
     } else followAnchor = null;
     clampCameraTarget();
-    const cameraMoved = controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
+    // flyMode 接管期间 OrbitControls.update() 必须完全停跑：enabled=false 只挡输入
+    // 事件、update 照常执行——其内部球面状态会按 target/相机重算，与 flyLook 的
+    // target 重钉互相污染（表现 = 拖拽行为在 FPS 转头与 OrbitControls 环绕之间漂移、
+    // WASD 位移被球面拉回吞掉）。相机推进由 flyTick 全权负责。
+    // flyMode 接管不变量（每帧断言）：enabled 意外被拉回 true 的同一帧压回 false，
+    // 杜绝"FPS 转头与环绕/pan 漂移交替"的整类状态漂移。
+    if (flyMode() && controls.enabled) controls.enabled = false;
+    const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
     // render）。此前空闲也满速重绘，是移动端发热与笔记本耗电的第一来源。
@@ -3096,10 +3291,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function setCam(mode) {
     CAM = mode;
     store.cam = mode;
+    flyLookApplyMode(mode);   // OrbitControls 侧状态迁移（free=接管；其他=恢复原生）
     // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
     // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
     if (!controls) { invalidate(); return; }
-    controls.enabled = true;
+    // free 接管期间 controls.enabled 必须保持 false（OrbitControls 的 pan/rotate
+    // 无生效路径）——不得在此无条件拉回 true（top→free 复活拖曳移动的根因）
+    controls.enabled = !flyMode();
     invalidate();
     if (mode === 'top') {
       FOLLOW_EID = 0;
@@ -3116,6 +3314,35 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   // 只接受档位表内的值：面板按钮与 URL 参数都不该把场景带进"1.37×"这种未定义速度
   function setSpeed(s) { if (!isPlaybackSpeed(s)) return; SPEED = s; store.speed = s; }
+
+  // ---------- 键盘自由视角（WASD/QE 飞行）----------
+  // 速率档 1–6（与播放速度档独立）：场景只存展示值并失效一帧（暂停时改档也出帧）；
+  // 位移推进本体在 composables/useSceneFlyControls.tickFly（Replay3DPane 逐帧调用，
+  // 相机数学不进内核——OrbitControls 的 target 随位移平移，其余控制语义不变）。
+  function setFlySpeed(n) {
+    if (!isFlySpeedIndex(n)) return;
+    store.flySpeed = FLY_SPEEDS[n - 1];
+    store.flySpeedIndex = n;
+    invalidate();
+  }
+  // 键盘飞行一帧（Replay3DPane 的 useSceneFlyControls 循环逐帧调用）：follow 不接管
+  //（跟随语义 = 车体锚定）；位移并入按需渲染判定（暂停时按键也出帧）。dt ≤ 0 零位移。
+  // pressed = 调用方（composable 实例）维护的按下键集合——按键态不进内核（pane 持有）。
+  function flyTick(dt, pressed) {
+    // top（正俯视）不飞行：WASD 在俯视下无水平分量（fwdLen≈0）、QE 被忽略，
+    // 且接管会把 pitch 反解到 ±π/2 钳死——从 top 切回 free 后"无法移动"的根因。
+    if (!controls || !DATA || !flyMode() || !(dt > 0) || !pressed?.size) return false;
+    // 相机可能被非飞行路径改过（初始 fit / 跟随退出）：首帧对齐朝向基准，防 target 跳变
+    flyLookSyncIfStale('tick');
+    // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
+    // 这里只做平移推进 + target 重钉。
+    const moved = tickFlyImpl(pressed, dt, camera, controls, CAM, store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX]);
+    if (moved) {
+      flyLookApply();                                // 平移后重钉 target = cam + dir×dist
+      clampCameraTarget();
+    }
+    return moved;
+  }
 
   // 键盘（空格 / ←→）由页面经 usePlaybackTransport 统一处理（与 2D 同一套键位与输入框防误触），
   // 场景内核不再自挂全局 keydown：原实现不区分输入框，会吞掉文本框里的空格。
@@ -3518,6 +3745,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     togglePlay: () => setPlaying(!PLAYING),
     setPlaying,
     setSpeed,
+    setFlySpeed,
+    flyTick,
+    invalidate,
     seekFraction: (frac) => { if (DATA) seekTo(START + frac * (END - START)); },
     // 共用播放控件（PlaybackTransport）按绝对秒 seek / 跳秒；seekTo 自带 [START, END] 夹取（准备 / 倒计时阶段回不去）
     seekTime: (t) => { if (DATA) seekTo(t); },
@@ -3577,6 +3807,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     qualityPresets: QUALITY_PRESETS,
     destroy() {
       destroyed = true;
+      flyLookApplyMode('follow');   // 恢复 controls 原生状态（实例随即销毁，防残 handedness）
       loadGeneration++;
       sessionEpoch++;
       store.loading = false;
@@ -3590,6 +3821,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       cancelAnimationFrame(rafId);   // 显式取消：不等下一帧的 destroyed 自然退出
       teardownSession();             // 会话资源（车辆/地图/特效/GLB 模板）全量 dispose
       removeEventListener('resize', onResize);
+      // container 由宿主复用（场景销毁 ≠ 舞台销毁）：capture 拦截必须摘除，
+      // 否则重建场景后同一事件被多份闭包重复消费（拖拽增量翻倍）。
+      try { container.removeEventListener('pointerdown', onFlyCaptureDown, true); } catch (_) {}
+      try { container.removeEventListener('pointermove', onFlyCaptureMove, true); } catch (_) {}
+      try { container.removeEventListener('pointerup', onFlyCaptureUp, true); } catch (_) {}
+      try { container.removeEventListener('pointercancel', onFlyCaptureCancel, true); } catch (_) {}
+      try { container.removeEventListener('wheel', onFlyCaptureWheel, true); } catch (_) {}
       sizeObserver?.disconnect();
       sizeObserver = null;
       if (DEBUG) {
