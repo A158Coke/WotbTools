@@ -17,7 +17,7 @@ import { createMapView } from '../utils/mapView'
 import { activeTerrainRelief, projectTerrainPoint, unprojectTerrainPoint } from '../utils/terrainReliefProjection.js'
 import BattleMap from './BattleMap.vue'
 import AnnotationToolbar from './AnnotationToolbar.vue'
-import { PencilRuler, PanelLeftClose, PanelLeftOpen, ScanEye } from 'lucide-vue-next'
+import { PencilRuler, ScanEye } from 'lucide-vue-next'
 import BattlePlaybackHud from './BattlePlaybackHud.vue'
 import PlaybackControls from './PlaybackControls.vue'
 import PlaybackDisplaySurface from './PlaybackDisplaySurface.vue'
@@ -1079,6 +1079,16 @@ function closeAnnotation() {
 // The workspace's guide requests real actions; drawing and clock state stay here.
 defineExpose({
   pause,
+  displayOpened: () => displayOpen.value,
+  // 教程要高亮的「一键防遮」在 Display 面里（#727 之后地图上不再放常驻控件），
+  // 所以它必须能被 onboarding 的 display surface 打开 / 收回。
+  openDisplay: () => {
+    if (displayOpen.value) return false
+    // 浮层形态要锚在 gear 上；gear 属于 PlaybackTransport，这里按 DOM 契约取它。
+    toggleDisplay(pbRoot.value?.querySelector('[data-test="pb-secondary-entry"]') || null)
+    return true
+  },
+  closeDisplay: () => { displayOpen.value = false },
   annotationsOpen: () => annotationOpen.value,
   openAnnotations: () => {
     if (annotationOpen.value) return false
@@ -2281,18 +2291,6 @@ const mapStyle = computed(() => ({
         <PlaybackRoster :gun-marks="gunMarks" :teams="rosterTeams.left" :friendly-team="friendlyTeam" :destroyed="destroyedNow" :health="rosterHealth" :reload="rosterReload" :selected-id="selectedAccountId" :compact="formFactor === 'mobile'" @select="selectFromRoster" />
       </div>
       <div class="pb-map-stage" ref="mapStageEl">
-        <div v-if="!uiHidden" class="pb-quick-actions pb-map-quick-actions">
-          <button v-if="phoneLandscape && !annotationOpen" type="button" class="pb-quick-action pb-annotation-entry" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-pressed="false" @click="toggleAnnotation">
-            <PencilRuler :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.annot.mode') }}
-          </button>
-          <button type="button" class="pb-quick-action" data-test="pb-toggle-roster" :aria-expanded="uiPrefs.showRoster" @click="uiPrefs.showRoster = !uiPrefs.showRoster">
-            <component :is="uiPrefs.showRoster ? PanelLeftClose : PanelLeftOpen" :size="18" aria-hidden="true" />
-            {{ $t(uiPrefs.showRoster ? 'recon.map.playback.hide_rosters' : 'recon.map.playback.show_rosters') }}
-          </button>
-          <button type="button" class="pb-quick-action" data-test="pb-declutter" data-tour="playback-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter()">
-            <ScanEye :size="18" aria-hidden="true" /> {{ $t('recon.map.playback.declutter') }}
-          </button>
-        </div>
         <BattleMap
           data-tour="playback-map"
           ref="mapComponent"
@@ -2389,6 +2387,8 @@ const mapStyle = computed(() => ({
           :fullscreen-supported="fullscreenSupported"
           :is-fullscreen="isFullscreen"
           :display-open="displayOpen"
+          :annotation-enabled="phoneLandscape && !annotationOpen"
+          @toggle-annotation="toggleAnnotation"
           :format-clock="formatClock"
           @toggle-play="transport.togglePlay()"
           @step="step"
@@ -2478,6 +2478,12 @@ const mapStyle = computed(() => ({
         <SegmentedControl v-model="hpPrefs.mode" :options="hpModeOptions" :aria-label="$t('recon.map.playback.hp_mode')" />
         <p v-if="hpPrefs.mode === 'ring'" class="pb-display-heading">{{ $t('recon.map.playback.hp_ring_hint') }}</p>
         <div class="pb-panel-tools" data-test="pb-panel-tools">
+          <!-- §5 遮挡契约：呈现类开关收在这块已有的瞬态面里，地图上不再放常驻控件。
+               实测 740×360 下 `.pb-map` 只有 96×96，任何 44×44 的常驻入口都会占掉 10.7%
+               并压进中心保护区，所以这些开关没有"放在地图角上"的合规位置。 -->
+          <button type="button" class="pb-tool-row" data-test="pb-declutter" data-tour="playback-declutter" :aria-pressed="declutterActive" :title="$t('recon.map.playback.declutter_hint')" @click="toggleDeclutter()">
+            <ScanEye :size="16" aria-hidden="true" /> {{ $t('recon.map.playback.declutter') }}
+          </button>
           <button type="button" class="pb-tool-row" data-test="pb-panel-reset" @click="resetView()">
             <span aria-hidden="true">⟲</span> {{ $t('recon.map.playback.reset_view') }}
           </button>
@@ -2550,7 +2556,9 @@ const mapStyle = computed(() => ({
   text-align: start;
   cursor: pointer;
 }
-.pb-display-close { inline-size: auto; align-self: flex-end; color: var(--color-text-secondary); }
+/* 关闭行是最小命中区的下限所在（§5 可见即可达）：`inline-size: auto` 会收缩到 42px，
+   触控档要求 44×44，所以显式给下限。 */
+.pb-display-close { inline-size: auto; min-inline-size: var(--hit-min); min-block-size: var(--hit-min); align-self: flex-end; color: var(--color-text-secondary); }
 .pb-panel-tools { display: grid; gap: var(--space-1); }
 .pb-ui-restore { position: absolute; inset-block-start: var(--space-2); inset-inline-end: var(--space-2); z-index: var(--pb-z-modal); min-block-size: var(--hit-min); padding: var(--space-2); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-text-primary); font: var(--type-caption); }
 
@@ -2558,7 +2566,7 @@ const mapStyle = computed(() => ({
   position: absolute;
   top: 50%;
   left: 50%;
-  z-index: 30;
+  z-index: var(--pb-z-hud);
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-md);
   background: var(--color-scrim);
@@ -2610,7 +2618,7 @@ const mapStyle = computed(() => ({
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  z-index: 45;
+  z-index: var(--pb-z-hud);
   pointer-events: none;
 }
 .pb-feed-item {
