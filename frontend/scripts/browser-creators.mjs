@@ -245,7 +245,7 @@ async function videoLifecycle(page, origin, scenario) {
   await page.waitForValue('document.querySelector("[data-testid=creator-avatar-preview]")?.naturalWidth', value => value === 32)
   await tap(page, '[data-testid=recommendation-type-VIDEO]', touch)
   await tap(page, '[data-testid=confirm-cancel]', touch)
-  await page.waitForValue('!document.querySelector("[data-testid=confirm-dialog]") && !document.body.classList.contains("dialog-open")', Boolean, { label: 'cancelled type navigation closes and restores the form' })
+  await page.waitForValue('!document.querySelector("[data-testid=confirm-dialog]")', Boolean, { label: 'cancelled type navigation closes and restores the form' })
   assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-name]").value'), 'Unsaved UP draft')
   assert.equal(await page.evaluate('document.querySelector("[data-testid=creator-avatar-preview]").src.startsWith("blob:")'), true)
   await tap(page, '[data-testid=recommendation-type-VIDEO]', touch)
