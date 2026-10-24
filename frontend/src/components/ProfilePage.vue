@@ -9,14 +9,13 @@ import { Feature } from '../app/featureCapabilities.js'
 import { whenBusinessUserSettled } from '../composables/useBusinessUserBootstrap.js'
 import {
   deleteUserWotbAccount,
-  getUserHofRecords,
   getUserProfile,
   syncUserWotbAccountFromLogin,
   updateUserWotbAccount,
   verifyUserWotbAccountFromReplay
 } from '../api/user-profile.js'
 import { replayRecorderAccountId } from '../replay-local/submissionFacts.js'
-import { hofHundredCancel, hofHundredMyStatus } from '../api/hall-of-fame.js'
+import { getUserHofRecords, hofHundredCancel, hofHundredMyStatus } from '../api/hall-of-fame.js'
 import { mapLabel } from '../utils/helpers.js'
 import { apiErrorLabel } from '../utils/display.js'
 import { copyText } from '../utils/clipboard.js'
