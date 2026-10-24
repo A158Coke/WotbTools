@@ -97,12 +97,6 @@
 
   /* 间距与圆角已迁至 tokens/scale.css（--space-*、--radius-*）。 */
 
-  /* Z-index 层级（deprecated → tokens/scale.css 的 --z-*） */
-  --z-topbar: 100;
-  --z-modal: 200;
-  --z-panel: 260;
-  --z-fullscreen: 300;
-
   /* Typography（deprecated → tokens/scale.css 的 --type-*） */
   --font-xs: 11px;
   --font-sm: 12px;

@@ -63,6 +63,47 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 
 目的：避免先看到实现后产生 confirmation bias，让 finding 来自真实产品体验。
 
+### 例外：渲染几何探针（occlusion / reachability）
+
+**只有这一类判定允许读浏览器的渲染结果**：怀疑「某个东西被挡住了 / 看得见却点不到 / 被裁掉了」时，
+可以在页面里执行**只读几何探针**——`getBoundingClientRect()`、`document.elementFromPoint(x, y)`、
+与几何相关的 computed style（`overflow`、`position`、`z-index`）。
+
+仍然禁止：读业务源码、读应用内部 state、读 Network / localStorage / IndexedDB、
+用 force click / 隐藏 DOM 操作 / 直接改状态让受阻流程「通过」。探针只用来**量已经看到的现象**，
+不用来反推实现。
+
+**为什么要开这个口**：这一类缺陷是 #727 连续两次漏测的直接原因。本 playbook 早就写着
+「固定 panel 是否挡住关键控件」「modal / drawer / toast 是否遮挡主流程」，但判定通道被限制成
+「让 agent 目视判断截图」——部分遮挡、矮横屏下被切掉半截的浮层、以及「渲染了但指针到不了」
+在截图上看不出来。缺的不是检查项，是仪器。
+
+可直接复制到 QA 浏览器会话里执行（判定口径与阈值的 owner 是
+`docs/frontend/design-language.md` §5「遮挡与可达」，本文件不复制数值）：
+
+```js
+// 1) 常驻控件遮挡主内容多少：primary 换成该页主内容选择器，persistent 换成常驻面
+;(() => {
+  const area = r => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top)
+  const inter = (a, b) => area({ left: Math.max(a.left, b.left), right: Math.min(a.right, b.right),
+    top: Math.max(a.top, b.top), bottom: Math.min(a.bottom, b.bottom) })
+  const primary = document.querySelector('<主内容选择器>').getBoundingClientRect()
+  return [...document.querySelectorAll('<常驻面选择器>')].map(el => {
+    const r = el.getBoundingClientRect()
+    return { el: el.className, pct: +(inter(primary, r) / area(primary) * 100).toFixed(2) }
+  })
+})()
+
+// 2) 可见选项到底点不点得到：返回「中心点命中的是谁」
+;(() => [...document.querySelectorAll('<选项选择器>')].map(el => {
+  const r = el.getBoundingClientRect()
+  const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+  return { el: el.className, size: [Math.round(r.width), Math.round(r.height)],
+    inViewport: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
+    ownsHit: !!hit && (el === hit || el.contains(hit)), hit: hit && hit.className }
+}))()
+```
+
 允许使用仓库中**测试输入文件**，但不要阅读其内部内容来辅助判断 UI：
 
 - `common/fixtures/replays/random-battle-example.wotbreplay`
@@ -182,6 +223,25 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 
 优先发现**真实用户能撞到的问题**，不要为了制造 bug 做不合理的极端输入。
 
+### 遮挡 / 可达矩阵（必做，不只看静止初始态）
+
+静止截图测不出这一类缺陷：浮层一旦展开，常驻控件与瞬态面的关系才暴露出来。每个有浮层的模块
+至少跑完下面的组合，手机**竖屏与横屏各一轮**（横屏最容易暴露：可用高度小，主内容被压到很小）：
+
+| 组合 | 要判定什么 |
+|---|---|
+| 常驻工具栏 + 菜单/下拉打开 | 瞬态面是否压过常驻控件；展开部分是否被工具栏盖住 |
+| sticky 表头 + 下拉打开 | 下拉是否被吸顶元素盖住或被表格容器 `overflow` 裁掉 |
+| 列表/名册展开 + 浮层打开 | 两者是否互相遮挡；浮层是否还在可用视口内 |
+| 底部控制条 + sheet/下拉打开 | 底栏是否盖住 sheet 的选项；safe area 内是否有不可点区域 |
+| drawer / modal + 背景 sticky | 背景的 sticky/fixed 是否穿到浮层上面 |
+| 断点切换（竖→横、改窗口） | 切换后浮层是否仍在视口内、是否被重新裁掉 |
+| 全屏态 + 浮层打开 | 浮层是否超出全屏容器并被它的 `overflow` 切掉 |
+
+每个组合都要落到**探针数值**（上面 §1 例外里的两段），而不是「看起来没问题」。
+主内容指该页的主任务内容：地图 / canvas / 3D 视口、表格与结果列表、图表、表单与复盘正文、
+搜索与百科内容。
+
 操作前看可见文字或可访问性信息，选对角色再执行；不要连续猜 locator。定位失败、自动滚动和短暂空白本身不构成产品 bug。遇到动作超时，先截图和查看当前 UI；不使用 force click、隐藏 DOM 操作或直接改内部状态让受阻流程“通过”。步骤切换后等待新标题或预期反馈，再评估稳定布局；需要测试加载中操作时单独记录该分支。
 
 ## 5. Finding 门槛
@@ -209,6 +269,25 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 - **Needs investigation**：异常出现，但证据不足或复现不稳定。
 
 不要把纯审美偏好、理论性能猜测、源码 smell 当产品 bug。
+
+**遮挡 / 可达类的证据口径**：探针数值本身就是证据，**不要求「肉眼一眼看出来」**。
+「常驻控件覆盖主内容 X%」「选项中心点命中的是另一个元素」「选项被祖先 overflow 裁掉」
+「选项落在可用视口外且无法滚动触达」「触控命中区小于 44×44」都属于 Visual/layout problem，
+按正常门槛复现两次并记录数值即可，不因为「看着还能用」降级或丢弃。
+
+### Named regression case：#727（2D 手机端遮挡）
+
+这一条必须在每轮涉及回放的 QA 里实际跑到，因为它是本 playbook 两次漏测的那一类：
+
+1. 导入 fixture → 打开 2D；
+2. viewport 切到手机横屏（如 740×360）与竖屏（390×844）；
+3. 对地图跑 §1 例外的探针 1（primary = 地图容器，persistent = 页面上所有 `fixed`/`sticky`/浮动控件）；
+4. 打开 gear 的显示面板，跑探针 2（选项 = 面板内所有按钮/复选框），并跑探针 1 看面板与控制条的关系；
+5. 进全屏横屏再跑一遍第 4 步。
+
+判定：常驻控件不得实质遮挡地图（阈值见 design-language §5），显示面板必须压过底部控制条，
+面板里每个可见选项都必须命中自身、不被裁掉、落在可用视口内或可滚动触达。
+**任何一项不满足就是 confirmed Visual/layout bug**，不是「移动端就这样」。
 
 ## 6. 运行日志与覆盖矩阵
 
@@ -313,7 +392,9 @@ UI/UX finding 还需说明用户要完成什么任务、具体阻力、可用绕
 - 至少做过一次 repeat/switch/navigation 类状态扰动；
 - 所有 reported bug 都达到复现门槛；
 - 明确列出成功覆盖与未覆盖范围；
-- 没有把源码推测混入黑盒 finding。
+- 没有把源码推测混入黑盒 finding；
+- 有浮层的模块都跑过 §4 的遮挡 / 可达矩阵（手机竖屏 + 横屏），并留下探针数值；
+  矩阵未执行 → 不得称本轮清单执行完毕。
 - UI/UX 场景已实际操作教程目标控件，完成一次教程外任务，并验证退出/恢复；跳过的功能明确列为未测，不能因为教程显示完成就算功能通过。
 
 如果长流程受时间/上下文限制，保存功能清单、当前进度、证据路径和下一项用例，并继续或可恢复交接；只可称部分执行，不能把“已验证 finding + coverage matrix”当作全量结束。不得为数量降低证据标准。

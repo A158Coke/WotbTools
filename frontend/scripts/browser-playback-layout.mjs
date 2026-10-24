@@ -4,9 +4,13 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
+import { OCCLUSION_LIMITS, assertDocumentedLimits, measureOcclusion } from './browser-occlusion.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
+
+// 规则 owner 是 design-language §5：文档与门禁的数值必须一致，任一侧漂移就失败。
+assertDocumentedLimits()
 
 const chrome = findChrome()
 const cssPaths = [
@@ -41,11 +45,13 @@ if (battleMapSource.includes('screenOffsetToSvgDelta')
 const faustAssetUrl = pathToFileURL(resolve(frontendRoot, 'src/assets/maps/faust.webp')).href
 
 const scenarios = [
-  { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc' },
-  { name: 'tablet-1024x768', form: 'tablet', width: 1024, height: 768, check: 'tablet' },
-  { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile' },
-  { name: 'phone-landscape-740x360', form: 'mobile', width: 740, height: 360, check: 'wide' },
-  { name: 'phone-landscape-844x390', form: 'mobile', width: 844, height: 390, check: 'wide' },
+  { name: 'pc-1600x900', form: 'pc', width: 1600, height: 900, check: 'pc', occlusion: true },
+  { name: 'tablet-1024x768', form: 'tablet', width: 1024, height: 768, check: 'tablet', occlusion: true },
+  { name: 'mobile-390x844', form: 'mobile', width: 390, height: 844, check: 'mobile', occlusion: true },
+  { name: 'phone-landscape-740x360', form: 'mobile', width: 740, height: 360, check: 'wide', occlusion: true },
+  { name: 'phone-landscape-844x390', form: 'mobile', width: 844, height: 390, check: 'wide', occlusion: true },
+  // 负向对照：同一形态下故意加一块盖住地图的常驻控件，断言遮挡探针**必须**失败。
+  { name: 'occlusion-negative-740x360', form: 'mobile', width: 740, height: 360, check: 'wide', occlusion: true, occlusionNegative: true },
   { name: 'wide-fullscreen-1792x922', form: 'pc', width: 1792, height: 922, check: 'wide', fullscreen: true },
   // Form differences must not override the shared geometry.
   { name: 'pc-isolated-at-1024', form: 'pc', width: 1024, height: 768, check: 'pc-isolated' },
@@ -63,6 +69,13 @@ const scenarios = [
   // it survives a responsive transition, the form contract must keep HUD top + controller bottom.
   { name: 'mobile-fullscreen-forced-side-slots', form: 'mobile', width: 882, height: 344, check: 'fullscreen-mobile', fullscreen: true, sideSlots: true, controlsInRail: false, controlsVisible: true },
 ]
+
+// 负向对照：故意重新引入一块盖住主内容的常驻控件。门禁断言探针对它**失败**——
+// 这是「这套门禁真的能发现 #727 这类问题」的唯一证据，没有它，断言只是对当前实现的同义重复。
+function negativeOverlayMarkup(scenario) {
+  if (!scenario.occlusionNegative) return ''
+  return '<div class="pb-quick-actions pb-occlusion-negative" data-test="pb-occlusion-negative" style="position:absolute;inset-block-start:30%;inset-inline-start:10%;inline-size:60%;block-size:30%;background:#333"></div>'
+}
 
 function fixtureHtml(scenario) {
   const fullscreen = !!scenario.fullscreen
@@ -133,6 +146,7 @@ ${productionCss}
   </section>
     ${lanes ? '<aside class="pb-team-lane pb-team-lane-left">Team 1</aside><aside class="pb-team-lane pb-team-lane-right">Team 2</aside>' : ''}
     <div class="pb-map-stage">
+      ${negativeOverlayMarkup(scenario)}
       <div class="pb-map"${scenario.check === 'true-position' ? ' style="width:390px;height:387px"' : ''}><div class="pb-viewport"${scenario.check === 'raster' ? ' style="aspect-ratio:769 / 763"' : scenario.check === 'true-position' ? ' style="width:400%;aspect-ratio:769 / 763;transform:translate(-585px,-580.5px)"' : ''}>
         ${scenario.check === 'raster' ? `<img class="pb-basemap" data-test="pb-basemap" src="${faustAssetUrl}" alt=""><svg class="pb-svg" viewBox="0 0 769 763"><rect x="0" y="0" width="769" height="763"></rect></svg><div class="pb-markers" data-test="pb-markers"></div>` : scenario.check === 'true-position' ? `<svg class="pb-svg" viewBox="0 0 769 763"><circle class="pb-true-anchor" cx="384.5" cy="381.5" r="2"></circle></svg><div class="pb-markers"><div class="pb-marker" style="left:50%;top:50%"></div></div>` : ''}
       </div></div>
@@ -614,7 +628,26 @@ try {
     await page.goto(pathToFileURL(htmlPath).href)
     const encoded = await page.waitForValue('document.body && document.body.dataset.result', (value) => !!value,
       { label: `${scenario.name} result` })
+    // 遮挡判定（design-language §5）：常驻控件不得实质遮挡主内容。必须在真实浏览器里量，
+    // 因为它取决于真实布局与绘制结果，而不是声明值。
+    const occlusion = scenario.occlusion
+      ? await measureOcclusion(page, {
+        primary: '.pb-map',
+        persistent: ['.pb-map-quick-actions', '.pb-quick-action', '.pb-occlusion-negative'],
+      })
+      : null
     await browser.client.send('Target.closeTarget', { targetId })
+    if (occlusion) {
+      const negative = !!scenario.occlusionNegative
+      if (!negative && occlusion.failures.length) {
+        throw new Error(`${scenario.name} 遮挡契约（design-language §5，上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）:
+- ${occlusion.failures.join('\n- ')}`)
+      }
+      if (negative && !occlusion.failures.length) {
+        throw new Error(`${scenario.name}: 负向对照必须失败——故意盖住主内容 ${occlusion.totalPct}% 却通过了，说明遮挡探针发现不了 #727 这类问题`)
+      }
+      console.log(`[browser-layout] ${scenario.name} occlusion ${negative ? 'NEGATIVE-OK' : 'OK'} total=${occlusion.totalPct}% items=${JSON.stringify(occlusion.items.map((i) => [i.label, i.pct]))}`)
+    }
     const result = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'))
     if (result.width !== scenario.width || result.height !== scenario.height) {
       throw new Error(`${scenario.name}: requested ${scenario.width}x${scenario.height} but the page measured ${result.width}x${result.height}`)
