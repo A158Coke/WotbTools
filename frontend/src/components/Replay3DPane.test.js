@@ -207,17 +207,26 @@ afterEach(() => {
 })
 
 describe('Replay3DPane', () => {
-  it('实时帧率角标：store.fps/frameMs 驱动文本，未就绪显示占位', async () => {
+  it('实时帧率角标：平均/峰值帧时驱动文本，顿挫时变警示色，空闲显示占位', async () => {
     mockWebGL('webgl2')
     const wrapper = mountPane()
     await start(wrapper)
     const { store } = playback.api
     store.fps = 59.8
     store.frameMs = 16.7
+    store.framePeakMs = 16.9
     await flush()
-    expect(wrapper.get('[data-testid="replay3d-fps"]').text()).toBe('59.8 FPS · 16.7 ms')
+    const badge = wrapper.get('[data-testid="replay3d-fps"]')
+    expect(badge.text()).toBe('59.8 FPS · 16.7/16.9 ms')
+    expect(badge.classes()).not.toContain('pb-fps-low')
+    // 平均仍高、但窗口内最差一帧 > 2.5× 平均：顿挫可见（色变）
+    store.framePeakMs = 52
+    await flush()
+    expect(wrapper.get('[data-testid="replay3d-fps"]').classes()).toContain('pb-fps-low')
+    expect(wrapper.get('[data-testid="replay3d-fps"]').text()).toBe('59.8 FPS · 16.7/52.0 ms')
     store.fps = 0
     store.frameMs = 0
+    store.framePeakMs = 0
     await flush()
     expect(wrapper.get('[data-testid="replay3d-fps"]').text()).toBe('— FPS')
     wrapper.unmount()
