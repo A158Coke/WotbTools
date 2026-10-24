@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
+import { OCCLUSION_LIMITS, measureOcclusion, measurePaintOrder, measureReachability } from './browser-occlusion.mjs'
 
 /**
  * Browser-level interaction regression for the Replay Workspace capability tabs and the
@@ -2458,6 +2459,13 @@ async function runMultiFileWorkspaceScenario(env) {
     check(failures, Math.abs(sheet.bottom - sheet.viewportHeight) <= 1, `mobile battle picker sheet must end at viewport bottom: ${JSON.stringify(sheet)}`)
     check(failures, sheet.bottomOverTabBar, `app tab bar paints over the battle picker sheet: ${JSON.stringify(sheet)}`)
     check(failures, sheet.optionInViewport, `Battle 2 option is outside the viewport: ${JSON.stringify(sheet)}`)
+    // §5 可见即可达：逐个选项判定真实命中 / 裁剪 / 视口 / 触控命中区，而不是只看第二场那一项。
+    const sheetReach = await measureReachability(page, {
+      options: ['[data-testid="battle-picker-option"]'],
+      touch: true,
+    })
+    for (const failure of sheetReach.failures) check(failures, false, `battle picker sheet 可达性: ${failure}`)
+    check(failures, sheetReach.sampled > 0, 'battle picker sheet 可达性断言空跑：没有任何选项被实际命中采样')
     await hit('[data-testid="battle-picker-option"][data-value="r1"]', { touch: true })
     await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
@@ -2701,6 +2709,47 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
         `wide Display must be an anchored overlay: ${JSON.stringify(display)}`)
     }
   }
+  // —— #727 瞬态优先 + 可见即可达（design-language §5「遮挡与可达」）——
+  // 绘制次序只能用重叠区的真实命中证明：z-index 数值本身证明不了任何事（只在同一层叠上下文可比）。
+  if (display) {
+    const PAINT_PAIR = { above: '[data-testid="display-panel"]', below: '[data-test="pb-transport-slot"]' }
+    const paint = await measurePaintOrder(page, PAINT_PAIR)
+    // 空跑守卫按形态逐场景判定，而不是整轮聚合（聚合会让按名字单跑竖屏、或 CI 分片只分到竖屏时误报）：
+    // 宽档 / 横屏的 Display 锚在 gear 上，gear 就在常驻传输条里，两者按契约必然重叠——那正是
+    // 「瞬态面压过常驻控件」要判定的区域，没重叠说明这条断言在该形态上空跑了。
+    // 竖屏的 Display 是紧跟传输条的流内静态面，按契约本来就不重叠。
+    if (layout !== 'portrait') {
+      check(failures, paint.overlaps,
+        'wide Display 是锚在 gear 上的浮层，应与常驻传输条重叠，实际没有：瞬态优先断言在这个形态上空跑了')
+    }
+    if (paint.overlaps) {
+      for (const failure of paint.failures) check(failures, false, `Display 必须压过常驻传输条: ${failure}`)
+      // 负向对照：把常驻传输条强行提回 #727 之前的裸 25，探针必须报错。
+      await page.evaluate(`(() => {
+        const style = document.createElement('style')
+        style.id = 'occlusion-negative-control'
+        style.textContent = '.pb-mobile-overlay, .pb-mobile-overlay-transient { z-index: 25 !important }'
+        document.head.appendChild(style)
+        return true
+      })()`)
+      let negative
+      try {
+        negative = await measurePaintOrder(page, PAINT_PAIR)
+      } finally {
+        // 注入的样式必须无条件撤掉：留下来会把后续断言全部染成"常驻条在上面"。
+        await page.evaluate(`document.getElementById('occlusion-negative-control')?.remove()`)
+      }
+      check(failures, negative.failures.length > 0,
+        `负向对照必须失败：常驻传输条提回 z-index 25 后探针仍然通过，说明它发现不了 #727 这类遮挡 ${JSON.stringify(negative)}`)
+    }
+    const reach = await measureReachability(page, {
+      options: ['[data-testid="display-panel"] button'],
+      touch: !!scenario.touch,
+    })
+    for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
+    check(failures, reach.sampled > 0, 'Display 可达性断言空跑：没有任何选项被实际命中采样')
+  }
+
   await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
   await delay(200)
   const closed = await page.evaluate(`(() => ({
@@ -2726,6 +2775,19 @@ async function runWorkspace2DScenario(env, scenario) {
   await page.goto(`${env.origin}/scripts/browser-fixtures/playback-controls.html?duration=60&players=7&recorder=${scenario.recorder || 1}&marks=1`)
   await page.waitFor(() => !!document.querySelector('[data-test="pb-roster-row"]'), { label: '2D roster rows' })
   await delay(300)
+
+  // —— #727 主内容遮挡（design-language §5）：常驻 quick actions 不得实质占住地图 ——
+  // 这里量的是真实应用（不是夹具）：真实 locale 文字宽度 + 真实布局决定占比。
+  const mapOcclusion = await measureOcclusion(page, {
+    primary: '.pb-map',
+    // 2D 的主内容是地图：HUD / 常驻传输条 / 任何浮动控件都不得实质压住它。
+    // 选择器覆盖"所有常驻面"，这样以后谁再往地图上加常驻控件都会被这条断言挡住。
+    persistent: ['.pb-map-quick-actions', '.pb-quick-action', '.pb-mobile-overlay-content', '.pb-hud', '.pb-kill-feed'],
+  })
+  console.log(`[browser-interaction] ${scenario.name} occlusion map=${mapOcclusion.primary ? `${mapOcclusion.primary.w}x${mapOcclusion.primary.h}` : '?'} total=${mapOcclusion.totalPct}%`)
+  for (const failure of mapOcclusion.failures) {
+    check(failures, false, `地图遮挡（上限 ${OCCLUSION_LIMITS.maxPrimaryCoveragePct}%）: ${failure}`)
+  }
 
   if (scenario.fullscreen) {
     await page.evaluate(`document.querySelector('[data-test="pb-fullscreen"]').scrollIntoView({ block: 'center' })`)
@@ -2996,7 +3058,8 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
       statuses: count('.pb-vehicle .pb-recorder-badge, .pb-vehicle .pb-death, .pb-vehicle .pb-selected-mark'),
       roster: count('[data-test="pb-roster-row"]'),
       active: document.querySelector('[data-test="pb-declutter"]')?.getAttribute('aria-pressed'),
-      expanded: document.querySelector('[data-test="pb-toggle-roster"]')?.getAttribute('aria-expanded'),
+      // 2D 的名册开关是 Display 面里的复选框（#727 后地图上不再有常驻 quick actions）
+      expanded: document.querySelector('[data-test="pb-show-roster"]') ? String(document.querySelector('[data-test="pb-show-roster"]').checked) : undefined,
       time: document.querySelector('[data-test="pb-time"]')?.textContent,
       overflow: document.documentElement.scrollWidth > innerWidth + 1,
     }
@@ -3026,18 +3089,26 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
     `HP ring must surround its marker and disable reload: ${JSON.stringify(ringGeometry)}`)
   await tap('[data-testid="pb-hp-mode-bar"]')
   await page.waitForValue(state, value => value.rings === before.rings && value.hp === before.hp, { label: 'bar mode restored' })
-  await tap('[data-test="pb-secondary-entry"]')
+  // #727 之后，防遮与名册开关都在 Display 面里（地图上不再放常驻控件），所以先确保面是开着的。
+  const ensureDisplayOpen = async () => {
+    const open = await page.evaluate(`!!document.querySelector('[data-testid="display-panel"]')`)
+    if (!open) await tap('[data-test="pb-secondary-entry"]')
+    await page.waitFor(() => !!document.querySelector('[data-testid="display-panel"]'), { label: 'Display surface open' })
+  }
+  await ensureDisplayOpen()
   await tap('[data-test="pb-declutter"]')
   const clean = await page.waitForValue(state, s => s.active === 'true', { label: 'declutter applied' })
   check(failures, clean.markers > 0 && clean.icons === clean.markers && clean.tanks > 0,
     `declutter must render tank classes and tank names: ${JSON.stringify(clean)}`)
   check(failures, clean.players === 0 && clean.hp === 0 && clean.rings > 0 && clean.reload === 0 && clean.statuses === 0,
     `declutter must retain HP rings and remove player names, bars and status decorations: ${JSON.stringify(clean)}`)
+  await ensureDisplayOpen()
   await tap('[data-test="pb-declutter"]')
   const restored = await page.waitForValue(state, s => s.active === 'false', { label: 'declutter restored' })
   check(failures, ['icons', 'hp', 'rings', 'players', 'reload', 'statuses'].every(key => before[key] === restored[key]),
     `declutter must restore the previous presentation: before=${JSON.stringify(before)} after=${JSON.stringify(restored)}`)
-  await tap('[data-test="pb-toggle-roster"]')
+  await ensureDisplayOpen()
+  await tap('[data-test="pb-show-roster"]')
   const hidden = await page.waitForValue(state, s => s.expanded === 'false' && s.roster === 0, { label: 'roster hidden' })
   check(failures, hidden.mapWidth >= before.mapWidth - 1 && !hidden.overflow, 'hiding teams must preserve or expand the usable map without overflow')
   // Height-constrained square maps cannot grow further; width-constrained maps must.
@@ -3047,9 +3118,14 @@ async function checkPlaybackDeclutter(page, failures, scenario) {
   if (before.stageWidth && Math.abs(before.mapWidth - before.stageWidth) <= 2 && hidden.stageWidth > before.stageWidth + 1) {
     check(failures, hidden.mapWidth > before.mapWidth + 1, 'a width-constrained map must grow when the team lanes collapse')
   }
-  await tap('[data-test="pb-toggle-roster"]')
+  await ensureDisplayOpen()
+  await tap('[data-test="pb-show-roster"]')
   const shown = await page.waitForValue(state, s => s.expanded === 'true' && s.roster === before.roster, { label: 'roster restored' })
   check(failures, shown.time === before.time, 'display shortcuts must not change playback time')
+  // 这些开关现在都在 Display 面里：离开时把面关回去，否则它会挡住后续场景的地图交互
+  // （`@pointerdown.stop` 会吃掉标记拖拽）。
+  await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
+  await page.waitFor(() => !document.querySelector('[data-testid="display-panel"]'), { label: 'Display surface closed' })
 }
 
 async function checkAnnotationMode(page, failures, scenario) {

@@ -34,6 +34,8 @@ function harness({ view = 'home', invite = false, files = false } = {}) {
   controller.registerWorkspace({ hasFiles: () => selected.value, busy: () => busy.value,
     selectionIdentity: () => revision.value, loadDemo, chooseOwnReplay, setCapability })
   controller.registerSurface('playback', { ready: () => true, prepare, cleanup })
+  // 防遮这一步的目标控件在 Display 面里，它有自己的 surface（prepare 负责把面打开）。
+  controller.registerSurface('display', { ready: () => true, prepare, cleanup })
   return { controller, wrapper, route, canInvite, selected, revision, busy, loadDemo, chooseOwnReplay, setCapability, prepare, cleanup }
 }
 function cache() { return JSON.parse(localStorage.getItem(ONBOARDING_STORAGE_KEY) || '{"receipts":{}}').receipts }
@@ -700,6 +702,23 @@ describe('real lesson lifecycle', () => {
     h.controller.next()
     await flushPromises()
     expect(h.controller.index.value).toBe(1)
+    h.wrapper.unmount()
+  })
+
+  it('waits for the Display surface before preparing the declutter step', async () => {
+    // 冷启动恢复到防遮这一步时，回放视图可能还没挂上：此时 prepare 打开 Display 会落空，
+    // 之后也不会再重试，锚点永远出不来。必须等 display surface ready 之后再 prepare。
+    const h = harness()
+    const ready = ref(false), openDisplay = vi.fn()
+    h.controller.registerSurface('display', { ready: () => ready.value, prepare: openDisplay })
+    h.controller.start()
+    await h.controller.begin()
+    for (let i = 0; i < 4; i++) { h.controller.next(); await flushPromises() }
+    expect(h.controller.currentStage.value.anchor).toBe('playback-declutter')
+    expect(openDisplay).not.toHaveBeenCalled()
+    ready.value = true
+    await flushPromises()
+    expect(openDisplay).toHaveBeenCalledTimes(1)
     h.wrapper.unmount()
   })
 
