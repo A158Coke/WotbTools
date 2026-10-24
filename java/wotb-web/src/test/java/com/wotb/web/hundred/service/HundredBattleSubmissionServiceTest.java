@@ -7,6 +7,8 @@ import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
 import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replayfile.HallOfFameStorageException;
+import com.wotb.web.replay.exception.ReplayBusyException;
+import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.testsupport.ReplayFactsJson;
 import com.wotb.web.user.service.UserProfileService;
 import com.wotb.web.user.service.UserProfileSnapshot;
@@ -40,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,14 +79,17 @@ class HundredBattleSubmissionServiceTest {
     @Mock
     org.springframework.transaction.PlatformTransactionManager transactionManager;
 
+    ReplayCapacityLimiter capacityLimiter;
+
     HundredBattleSubmissionService service;
 
     @BeforeEach
     void setUp() {
+        capacityLimiter = new ReplayCapacityLimiter(2);
         // 真实 mapper（无依赖），便于断言返回 DTO；Service 构造器注入，无 Spring。
         service = new HundredBattleSubmissionService(
                 repository, new HundredBattleMapper(), userProfileService, evidenceService,
-                replayHashLock, transactionManager);
+                capacityLimiter, replayHashLock, transactionManager);
         // 未触发终态保存的用例不报 UnnecessaryStubbing（lenient）；已触发时返回入参避免 mapper 吃 null。
         org.mockito.Mockito.lenient().when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         // saveAndFlush 返回带 id 的实体：createSubmission 需要 submission.getId() 供 evidence attach（无 DB 的真实 id）。
@@ -249,6 +255,37 @@ class HundredBattleSubmissionServiceTest {
         assertThat(s.isReplayGameIdMatch()).isTrue();
         assertThat(s.isReplayVehicleMatch()).isTrue();
         assertThat(s.isReplayDistinctBattles()).isTrue();
+    }
+
+    @Test
+    void rejectsWhenReplayCapacityIsOccupiedBeforeReadingOrPersistingEvidence() throws Exception {
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        final List<MultipartFile> files = fiveReplays();
+        final List<String> replayFacts = facts(files);
+        final List<MultipartFile> observedFiles = files.stream()
+                .map(file -> (MultipartFile) spy(file))
+                .toList();
+        final ReplayCapacityLimiter singlePermitLimiter = new ReplayCapacityLimiter(1);
+        final HundredBattleSubmissionService limitedService = new HundredBattleSubmissionService(
+                repository, new HundredBattleMapper(), userProfileService, evidenceService,
+                singlePermitLimiter, replayHashLock, transactionManager);
+
+        assertThatThrownBy(() -> singlePermitLimiter.execute(() -> limitedService.createSubmission(
+                USER, TIER10_VEHICLE, 4200, 136, "data:image/png;base64,AAAA", observedFiles, replayFacts)))
+                .isInstanceOf(ReplayBusyException.class)
+                .hasMessage("REPLAY_BUSY");
+
+        for (final MultipartFile file : observedFiles) {
+            verify(file, never()).getBytes();
+        }
+        verify(evidenceService, never()).storeAll(anyList());
+        verify(evidenceService, never()).attach(anyLong(), anyList());
+        verify(evidenceService, never()).cleanupStoredFiles(anyList());
+        verify(repository, never()).saveAndFlush(any());
+        verify(transactionManager, never()).getTransaction(any());
+        verify(replayHashLock, never()).runWithLocksResult(anyList(), any());
+        verify(repository, never()).findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+                anyString(), anyLong(), anyLong(), anyString());
     }
 
     @Test
@@ -515,7 +552,7 @@ class HundredBattleSubmissionServiceTest {
         service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
 
-        verify(repository).existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
+        verify(repository, org.mockito.Mockito.times(2)).existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "PENDING");
         verify(repository).findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT");

@@ -33,6 +33,7 @@ const clockOffset = ref<number | null>(null)
 const onboarding = inject(ONBOARDING_KEY, null)
 const playbackView = ref<InstanceType<typeof BattlePlayback> | null>(null)
 let guideOpenedAnnotations = false
+let guideOpenedDisplay = false
 const mapPlaybackV2 = ref<BattlePlaybackDataset | null>(null)
 const reloadTelemetry = ref<PlaybackReloadTelemetry | null>(null)
 const result = ref<AgentBattleResult | null>(null)
@@ -140,6 +141,7 @@ onBeforeUnmount(() => {
   parseSeq++
   onboarding?.registerSurface('playback', null)
   onboarding?.registerSurface('annotations', null)
+  onboarding?.registerSurface('display', null)
 })
 onMounted(() => {
   onboarding?.registerSurface('playback', {
@@ -152,6 +154,20 @@ onMounted(() => {
         await nextTick()
         mapSeek.value = OFFICIAL_DEMO.cue.playbackSeconds
       }
+    },
+  })
+  // 「一键防遮」等呈现开关住在 Display 面里（#727 之后地图上不再放常驻控件），
+  // 所以指向它们的教程阶段必须先把那块面打开，anchor 才解析得到。
+  onboarding?.registerSurface('display', {
+    ready: () => props.active && !!mapPlaybackV2.value && !!playbackView.value,
+    failed: () => ['ERROR', 'UNAVAILABLE'].includes(playbackV2State.value) || !!props.blockedReason,
+    prepare: async () => {
+      guideOpenedDisplay = playbackView.value?.openDisplay() === true || guideOpenedDisplay
+      await nextTick()
+    },
+    cleanup: () => {
+      if (guideOpenedDisplay) playbackView.value?.closeDisplay()
+      guideOpenedDisplay = false
     },
   })
   onboarding?.registerSurface('annotations', {

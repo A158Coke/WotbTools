@@ -16,6 +16,7 @@ import com.wotb.web.hundred.enums.HundredBattleStatus;
 import com.wotb.web.hof.dto.BulkDeleteItemResult;
 import com.wotb.web.hof.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
+import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.replayfile.ReplayUploadValidator;
 import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replayfile.ReplayFileNames;
@@ -85,6 +86,7 @@ public class HundredBattleSubmissionService {
     private final HundredBattleMapper mapper;
     private final UserProfileService userProfileService;
     private final HundredReplayEvidenceService evidenceService;
+    private final ReplayCapacityLimiter capacityLimiter;
     private final ReplayHashLock replayHashLock;
     private final TransactionTemplate transactionTemplate;
     private final Tankopedia tankopedia = Tankopedia.load();
@@ -94,12 +96,14 @@ public class HundredBattleSubmissionService {
             final HundredBattleMapper mapper,
             final UserProfileService userProfileService,
             final HundredReplayEvidenceService evidenceService,
+            final ReplayCapacityLimiter capacityLimiter,
             final ReplayHashLock replayHashLock,
             final PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.mapper = mapper;
         this.userProfileService = userProfileService;
         this.evidenceService = evidenceService;
+        this.capacityLimiter = capacityLimiter;
         this.replayHashLock = replayHashLock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -159,8 +163,34 @@ public class HundredBattleSubmissionService {
         // 并发竞态仍由 DB partial unique index 兜底（见 createLocked 内 saveAndFlush 的 catch）。
         requireNoPending(wotbServer, gameId, vehicleId);
 
-        // 硬门禁：5 个 replay 全部解析成功 + gameId/vehicleId 匹配 + 5 场不同 battle。
-        // 解析循环同时收集证据持久化所需数据（每文件只读一次字节；originalFilename 仅用于展示）。
+        try {
+            return capacityLimiter.execute(() -> createSubmissionWithinReplayCapacity(
+                    vehicleId, gameId, wotbServer, claimedAverageDamage, claimedBattleCount,
+                    proofScreenshot, vehicle.name(), profile.wotbNickname().trim(), replays, battles));
+        } catch (final RuntimeException e) {
+            throw e;
+        } catch (final Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** 许可内执行 replay bytes 读取、校验、hash、落盘及事务提交的完整重型生命周期。 */
+    private HundredCreateResult createSubmissionWithinReplayCapacity(
+            final long vehicleId,
+            final long gameId,
+            final String wotbServer,
+            final int claimedAverageDamage,
+            final int claimedBattleCount,
+            final String proofScreenshot,
+            final String vehicleName,
+            final String nickname,
+            final List<MultipartFile> replays,
+            final List<Battle> battles) {
+        // cheap preflight 后可能有并发请求已创建 PENDING；在读取五份 replay 前再次检查。
+        requireNoPending(wotbServer, gameId, vehicleId);
+
+        // 硬门禁：5 个 replay 全部匹配 gameId/vehicleId 且 arenaId 不重复。
+        // 每个文件只读一次 bytes；文件名仅用于展示。
         final Set<String> arenaIds = new HashSet<>();
         final List<HundredReplayEvidenceService.PendingReplay> pendingReplays = new ArrayList<>();
         int slot = 0;
@@ -206,7 +236,7 @@ public class HundredBattleSubmissionService {
                 .toList();
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
                 vehicleId, gameId, wotbServer, claimedAverageDamage, claimedBattleCount,
-                proofScreenshot, vehicle.name(), profile.wotbNickname().trim(), pendingReplays, hashes));
+                proofScreenshot, vehicleName, nickname, pendingReplays, hashes));
     }
 
     /** WG 用户首次提交可能尚未访问 ProfilePage，先按可信登录身份创建 Profile。 */

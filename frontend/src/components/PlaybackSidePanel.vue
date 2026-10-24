@@ -76,7 +76,7 @@ watch(() => props.panel, (panel, previousPanel) => {
 </template>
 
 <style scoped>
-.pb-side-panel-shell { position: relative; z-index: 40; }
+.pb-side-panel-shell { position: relative; z-index: var(--pb-z-transient); }
 .pb-side-panel-hint { display: grid; place-items: center; min-height: 140px; padding: 12px; text-align: center; color: var(--text-muted); font-size: .82rem; line-height: 1.5; }
 .pb-side-panel-hint p { margin: 0; max-width: 24ch; }
 .pb-panel-launcher { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -86,13 +86,13 @@ watch(() => props.panel, (panel, previousPanel) => {
 .pb-side-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: var(--text-heading); }
 .pb-panel-close { min-width: 30px; padding: 0; font-size: 1.2rem; line-height: 1; }
 @media (768px <= width < 1200px) {
-  .pb-side-panel { top: calc(100% + 6px); right: 0; width: min(340px, calc(100vw - 16px)); max-height: min(68vh, 560px); z-index: var(--z-modal); }
+  .pb-side-panel { top: calc(100% + 6px); right: 0; width: min(340px, calc(100vw - 16px)); max-height: min(68vh, 560px); z-index: var(--pb-z-transient); }
 }
 @media (width < 768px) {
   .pb-panel-launcher { display: none; position: absolute; top: 8px; right: 8px; justify-content: flex-end; max-width: calc(100% - 16px); }
   .pb-side-panel-shell:has(.pb-side-panel) .pb-panel-launcher { display: flex; }
   .pb-panel-tab { min-height: 36px; }
-  .pb-side-panel { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: auto; max-height: min(75dvh, 620px); padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; z-index: var(--z-modal); }
+  .pb-side-panel { position: fixed; top: auto; right: 0; bottom: 0; left: 0; width: auto; max-height: min(75dvh, 620px); padding: 12px 12px calc(12px + env(safe-area-inset-bottom)); border-radius: 12px 12px 0 0; z-index: var(--pb-z-transient); }
   .pb-side-panel-shell:has(.pb-side-panel)::after { position: fixed; inset: 0; z-index: -1; content: ''; background: color-mix(in srgb, var(--bg) 35%, transparent); }
 }
 </style>
