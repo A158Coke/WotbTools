@@ -135,10 +135,11 @@ describe('拾取接线（源码级守卫）', () => {
   it('onScenePointerUp 先处理调试拾取再走选中语义', () => {
     const at = sceneSrc.indexOf('function onScenePointerUp')
     expect(at).toBeGreaterThan(-1)
-    const body = sceneSrc.slice(at, at + 700)
+    const body = sceneSrc.slice(at, at + 900)
     expect(body).toMatch(/movedPick <= SCENE_CLICK_SLOP_PX\) reportPick\(e\)/)
     const reportAt = body.indexOf('reportPick(e)')
-    const clearAt = body.indexOf("onVehicleSelect?.(null, e)")
+    // 自由飞行接管后选中 = up 判定（eid ?? null 经统一入口 onVehicleSelect 上报）
+    const clearAt = body.indexOf('onVehicleSelect?.(down.eid ?? null, e)')
     expect(reportAt).toBeGreaterThan(-1)
     expect(clearAt).toBeGreaterThan(-1)
     expect(reportAt).toBeLessThan(clearAt)

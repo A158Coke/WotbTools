@@ -1353,13 +1353,19 @@ describe('scene vehicle selection intent', () => {
     container.querySelector('canvas').setPointerCapture = vi.fn()
     container.querySelector('canvas').releasePointerCapture = vi.fn()
     const beforeCamera = window.__camera.position.clone()
-    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
+    // 自由飞行接管后（2026-10-24）：选中在 pointerup 判定（≤SLOP 才算单击——
+    // 按下即选会把"拖拽转头路过"的车辆选上）；右键不触发
+    const canvas0 = container.querySelector('canvas')
+    canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 0, clientX: 10, clientY: 10 }))
+    expect(onVehicleSelect).not.toHaveBeenCalled()      // down 不再立即选中
+    canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 0, clientX: 10, clientY: 10 }))
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
     expect(onVehicleSelect.mock.calls[0][1]?.clientX).toBe(10)
     expect(store.cam).toBe('free')
     expect(window.__camera.position.equals(beforeCamera)).toBe(true)
-    container.querySelector('canvas').dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
+    canvas0.dispatchEvent(new MouseEvent('pointerdown', { button: 2 }))
+    canvas0.dispatchEvent(new MouseEvent('pointerup', { button: 2 }))
     expect(onVehicleSelect).toHaveBeenCalledTimes(1)
   })
 
