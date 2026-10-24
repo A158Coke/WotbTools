@@ -45,6 +45,7 @@ const makeCtx = (over = {}) => {
     stale: () => false, disposeObject3D,
     noteAsset: vi.fn(), sampleHeight: () => 0,
     onRefineMaskBuilt: vi.fn(),
+    onSceneryMounted: vi.fn(),
     destructDocPromise: Promise.resolve(null),
     ...over,
   }
@@ -52,24 +53,31 @@ const makeCtx = (over = {}) => {
 }
 
 describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
-  it('destructibles 延迟期间会话被取代：已挂载资源就地回收、writes 不发布', async () => {
+  it('destructibles 悬挂期间 reset/切场：挂载即归属（lateResolve 之前可释放），stale 不再发布', async () => {
     const { ctx, scene, disposeObject3D, gltf } = makeCtx()
     let lateResolve
     ctx.destructDocPromise = new Promise((res) => { lateResolve = res })
     const run = assembleMapScenery(gltf, ctx)
     // 装配的同步续体在 resolveSceneryExtras 的微任务后运行：flush 一拍再断言
-    // （此时 group 已入 scene、occGrid 已建，destructibles 仍挂起）
     await Promise.resolve()
     await Promise.resolve()
     expect(scene.children.length).toBe(1)
     const staleGroup = scene.children[0]
+    // —— lateResolve 之前的窗口（评审 P1 复核的核心诉求）——
+    // ① 挂载即归属：宿主（teardownSession）在 destructibles 仍悬挂时即拿到引用
+    expect(ctx.onSceneryMounted).toHaveBeenCalledWith(staleGroup, null)
+    // ② 此时 reset/切场：宿主 teardown 释放已归属资源（无需等请求返回）
+    scene.remove(staleGroup)
+    disposeObject3D(staleGroup)
+    expect(scene.children.length).toBe(0)
+    // —— 迟到的 destructibles 此时才返回：stale、不发布、不二次释放 ——
     ctx.stale = () => true
     lateResolve({ instances: [] })
     const asm = await run
     expect(asm.stale).toBe(true)
     expect(asm.writes).toEqual({})                    // 不发布任何 stale 结果
-    expect(scene.children.length).toBe(0)             // A 的 group 已摘除
-    expect(disposeObject3D).toHaveBeenCalledWith(staleGroup)
+    expect(scene.children.length).toBe(0)             // 无叠影
+    expect(disposeObject3D).toHaveBeenCalledTimes(1)   // parent 守卫：不双重 dispose
   })
 
   it('正常路径：destructPickList/meshOwner/destruct 随 writes 发布', async () => {
@@ -77,6 +85,7 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     ctx.destructDocPromise = Promise.resolve({ instances: [{ id: 1, pos: [0, 0, 0] }] })
     const asm = await assembleMapScenery(gltf, ctx)
     expect(asm.stale).toBe(false)
+    expect(ctx.onSceneryMounted).toHaveBeenCalledTimes(1)   // 正常路径同样挂载即归属
     expect(asm.writes.destructPickList).toEqual([{ id: 1, pos: [0, 0, 0] }])
     expect(asm.writes.destruct).toBeTruthy()           // events + instances 齐 ⇒ 状态机随 writes 发布
     expect(asm.writes.destruct.states).toBeInstanceOf(Array)

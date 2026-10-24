@@ -122,6 +122,10 @@ export async function assembleMapScenery(gltf, ctx) {
   mapScenery.add(gltf.scene);
   ctx.scene.add(mapScenery);
   writes.mapScenery = mapScenery;
+  // 挂载即归属当前会话（评审 P1 复核）：group/水面纹理在 destructibles 悬挂期间也必须
+  // 被 teardownSession 认领（宿主绑定立即拿到引用，恢复原闭包「装配即赋值」语义）——
+  // 否则 reset/切场时这些资源无人释放，直到（可能永不）resolve 的请求返回。
+  ctx.onSceneryMounted(mapScenery, waterCoast ? waterCoast.heightTex : null);
 
   // ---- 贴地薄构件走廊掩码（B：走廊强制细分）----
   // 实现（类判据/足迹取样/掩码生成）在共享模块 groundPass.buildCorridorRefineMask——
@@ -242,12 +246,14 @@ export async function assembleMapScenery(gltf, ctx) {
   // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
   //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
   if (ctx.stale()) {
-    // 中途过期（评审 P1）：本段已挂进场景的资源**就地回收、不发布任何 writes**——
-    // stale 结果写回宿主会覆盖 B 的 mapScenery/动画材质/遮挡表/走廊掩码，且 A 的
-    // group 会叠在 B 的场景上、后续 teardown 还会漏掉它。animLayerMats 的材质随
-    // mapScenery 子树一并释放；terrainRefineMask/occlGrid 是纯数据，无需 GPU 回收。
-    if (writes.mapScenery) { ctx.scene.remove(writes.mapScenery); ctx.disposeObject3D(writes.mapScenery); }
-    if (writes.waterTexDispose) { writes.waterTexDispose.dispose(); }
+    // 中途过期（评审 P1）：挂载资源已在 onSceneryMounted 时归属宿主（teardownSession
+    // 可见、切场时即释放）；stale 结果**不发布任何 writes**（覆盖新会话状态）。
+    // parent 守卫做防御性回收：资源仍在场景（宿主未及 teardown 的路径）才摘除+释放，
+    // 已被 teardown 认领释放的不再二次 dispose。
+    if (writes.mapScenery && writes.mapScenery.parent === ctx.scene) {
+      ctx.scene.remove(writes.mapScenery);
+      ctx.disposeObject3D(writes.mapScenery);
+    }
     return { stale: true, writes: {} };
   }
   if (DEBUG) window.__destructStage = destructDoc

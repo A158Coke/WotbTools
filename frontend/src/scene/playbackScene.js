@@ -885,6 +885,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
           // 掩码先写入宿主绑定再重建 LOD（评审 P2：否则首次重建拿到空掩码、
           // terrainLodPrev 置当前后不再失效，走廊细分在初始视角丢失）
           onRefineMaskBuilt: (mask) => { terrainRefineMask = mask; terrainLodPrev = null; maybeRebuildTerrainLod(); },
+          // 挂载即归属（评审 P1 复核）：destructibles 悬挂期间 reset/切场，
+          // teardownSession 也能看到并释放这批资源（原闭包在此点即时赋值的语义）
+          onSceneryMounted: (group, waterTex) => { mapScenery = group; if (waterTex) waterTexDispose = waterTex; },
           destructDocPromise,
         });
         // stale 判定先于一切 writes 发布（评审 P1：stale 结果不得写回宿主——
