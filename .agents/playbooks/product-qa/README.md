@@ -94,15 +94,27 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
   })
 })()
 
-// 2) 可见选项到底点不点得到：返回「中心点命中的是谁」
+// 2) 可见选项到底点不点得到：在选项盒内多点采样，返回「点不到自身的采样点命中了谁」。
+//    中心点露着不等于可达——底部被切掉 10px、被兄弟元素盖住一角都要算失败。
+//    命中选项的**祖先**也算失败：那说明指针穿透了它（例如 pointer-events: none）。
 ;(() => [...document.querySelectorAll('<选项选择器>')].map(el => {
   const r = el.getBoundingClientRect()
-  const hit = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2)
+  const pts = []
+  for (const fx of [0.25, 0.5, 0.75]) for (const fy of [0.25, 0.5, 0.75]) pts.push([r.left + r.width * fx, r.top + r.height * fy])
+  pts.push([r.left + r.width / 2, r.top + 2], [r.left + r.width / 2, r.bottom - 2], [r.left + 2, r.top + r.height / 2], [r.right - 2, r.top + r.height / 2])
+  const missed = pts.filter(([x, y]) => x >= 0 && y >= 0 && x < innerWidth && y < innerHeight).map(([x, y]) => {
+    const hit = document.elementFromPoint(x, y)
+    return hit && (hit === el || el.contains(hit)) ? null : { at: [Math.round(x - r.left), Math.round(y - r.top)], hit: hit && hit.className }
+  }).filter(Boolean)
   return { el: el.className, size: [Math.round(r.width), Math.round(r.height)],
+    pointerEvents: getComputedStyle(el).pointerEvents,
     inViewport: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth,
-    ownsHit: !!hit && (el === hit || el.contains(hit)), hit: hit && hit.className }
+    reachable: missed.length === 0 && getComputedStyle(el).pointerEvents !== 'none', missed }
 }))()
 ```
+
+探针 2 不判断「是否可滚动触达」：选项滚出了它所在的可滚动容器时，先把它滚进来再测；
+滚动容器本身被外层裁掉才是缺陷。
 
 允许使用仓库中**测试输入文件**，但不要阅读其内部内容来辅助判断 UI：
 
@@ -271,7 +283,7 @@ Product QA finding 需要开发时，路由固定为：Product QA → confirmed 
 不要把纯审美偏好、理论性能猜测、源码 smell 当产品 bug。
 
 **遮挡 / 可达类的证据口径**：探针数值本身就是证据，**不要求「肉眼一眼看出来」**。
-「常驻控件覆盖主内容 X%」「选项中心点命中的是另一个元素」「选项被祖先 overflow 裁掉」
+「常驻控件覆盖主内容 X%」「选项有采样点命中了别的元素或它的祖先」「选项被祖先 overflow 裁掉（含部分裁掉）」
 「选项落在可用视口外且无法滚动触达」「触控命中区小于 44×44」都属于 Visual/layout problem，
 按正常门槛复现两次并记录数值即可，不因为「看着还能用」降级或丢弃。
 
