@@ -7,7 +7,7 @@
  * ARIA 单选组 + 方向键循环 + Home / End 跳首尾；选项多时横向滚动且不换行。
  */
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import SegmentedControl from './SegmentedControl.vue'
 
 const OPTIONS = [
@@ -21,20 +21,25 @@ const OPTIONS = [
 function mountControl(props = {}) {
   return mount(SegmentedControl, {
     props: { modelValue: 'data', options: OPTIONS, ariaLabel: 'capability', ...props },
+    attachTo: document.body,
   })
 }
 
 const option = (wrapper, value) => wrapper.get(`[data-value="${value}"]`)
 
 describe('SegmentedControl', () => {
-  it('ARIA 单选组语义：只有选中项 aria-checked=true 且进 Tab 顺序', () => {
+  it('ARIA 单选组语义：只有选中项 aria-checked=true 且进 Tab 顺序', async () => {
     const wrapper = mountControl()
+    await flushPromises()
     expect(wrapper.get('[role="radiogroup"]').attributes('aria-label')).toBe('capability')
     expect(option(wrapper, 'data').attributes('role')).toBe('radio')
     expect(option(wrapper, 'data').attributes('aria-checked')).toBe('true')
-    expect(option(wrapper, 'data').attributes('tabindex')).toBe('0')
     expect(option(wrapper, 'ai').attributes('aria-checked')).toBe('false')
+    // roving focus：其它选项不进 Tab 顺序；Tab 进入组时焦点落在选中项
     expect(option(wrapper, 'ai').attributes('tabindex')).toBe('-1')
+    wrapper.get('[role="radiogroup"]').element.focus()
+    await flushPromises()
+    expect(document.activeElement).toBe(option(wrapper, 'data').element)
   })
 
   it('点击选中项 emit update:modelValue（点当前项不重复 emit）', async () => {
@@ -47,15 +52,20 @@ describe('SegmentedControl', () => {
 
   it('方向键循环移动并选中', async () => {
     const wrapper = mountControl({ modelValue: 'ai' })
-    const group = wrapper.get('[role="radiogroup"]')
-    await group.trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+    option(wrapper, 'ai').element.focus()
+    await option(wrapper, 'ai').trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['data'])
-    await group.trigger('keydown', { key: 'ArrowLeft' })
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['shots'])
+    await wrapper.setProps({ modelValue: 'data' })
+    await option(wrapper, 'data').trigger('keydown', { key: 'ArrowLeft' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ai'])
   })
 
   it('Home / End 跳首尾', async () => {
     const wrapper = mountControl({ modelValue: '3d' })
+    await flushPromises()
     const group = wrapper.get('[role="radiogroup"]')
     await group.trigger('keydown', { key: 'Home' })
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['data'])

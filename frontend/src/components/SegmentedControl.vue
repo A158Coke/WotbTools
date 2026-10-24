@@ -1,6 +1,12 @@
 <script setup>
 // 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
-// Home / End 跳首尾（WAI-ARIA 单选组的标准键盘模型）；溢出策略由 scrollable / wrap 显式选择。
+// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；Home / End 跳首尾选中是 WotbTools 在其上保留的行为。
+// 选中指示器用 motion shared layout 在选项间平滑移动；溢出策略由 scrollable / wrap 显式选择。
+import { useId } from 'vue'
+import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
+import { Motion } from 'motion-v'
+import { motionTransition } from '../shared/motion/motionPolicy'
+
 const props = defineProps({
   modelValue: { type: String, required: true },
   /** [{ value, label, testid?, data? }]；data 是附加到按钮上的 data-* 键值（如 data-cap） */
@@ -13,57 +19,53 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const optionEl = (value) => `[data-value="${CSS.escape(value)}"]`
+const indicatorId = `segmented-indicator-${useId()}`
 
 function select(value) {
   if (value !== props.modelValue) emit('update:modelValue', value)
 }
 
-function moveTo(value, event) {
-  select(value)
-  event.currentTarget.querySelector(optionEl(value))?.focus()
-}
-
 function onKeydown(event) {
-  const keys = props.options.map(option => option.value)
-  const index = keys.indexOf(props.modelValue)
-  const target = {
-    ArrowRight: keys[(index + 1) % keys.length],
-    ArrowDown: keys[(index + 1) % keys.length],
-    ArrowLeft: keys[(index - 1 + keys.length) % keys.length],
-    ArrowUp: keys[(index - 1 + keys.length) % keys.length],
-    Home: keys[0],
-    End: keys[keys.length - 1],
-  }[event.key]
+  const target = { Home: props.options[0], End: props.options[props.options.length - 1] }[event.key]
   if (!target) return
   event.preventDefault()
-  moveTo(target, event)
+  select(target.value)
+  event.currentTarget.querySelector(`[data-value="${CSS.escape(target.value)}"]`)?.focus()
 }
 </script>
 
 <template>
-  <div
+  <RadioGroupRoot
     class="segmented"
     :class="{ 'is-scrollable': scrollable && !wrap, 'is-wrapping': wrap }"
-    role="radiogroup"
+    :model-value="modelValue"
     :aria-label="ariaLabel"
+    :required="false"
+    @update:model-value="select"
     @keydown="onKeydown"
   >
-    <button
+    <RadioGroupItem
       v-for="option in options"
       :key="option.value"
-      type="button"
-      role="radio"
+      as="button"
+      :value="option.value"
       class="segmented-option"
       :class="{ 'is-active': option.value === modelValue }"
-      :aria-checked="option.value === modelValue"
-      :tabindex="option.value === modelValue ? 0 : -1"
       :data-value="option.value"
       :data-testid="option.testid"
       v-bind="option.data"
-      @click="select(option.value)"
-    >{{ option.label }}</button>
-  </div>
+    >
+      <Motion
+        v-if="option.value === modelValue"
+        tag="span"
+        class="segmented-indicator"
+        :layout-id="indicatorId"
+        :transition="motionTransition('base')"
+        aria-hidden="true"
+      />
+      <span class="segmented-label">{{ option.label }}</span>
+    </RadioGroupItem>
+  </RadioGroupRoot>
 </template>
 
 <style scoped>
@@ -94,6 +96,7 @@ function onKeydown(event) {
 }
 
 .segmented-option {
+  position: relative;
   flex: none;
   min-height: var(--control-h-sm);
   padding: 0 var(--space-3);
@@ -107,11 +110,20 @@ function onKeydown(event) {
 }
 
 .segmented-option.is-active {
-  background: var(--color-surface-1);
-  box-shadow: var(--elevation-1);
   color: var(--color-text-primary);
   font-weight: 600;
 }
+
+/* 选中底板：shared layout 元素在选项之间移动；label 叠在它上面 */
+.segmented-indicator {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-1);
+  box-shadow: var(--elevation-1);
+}
+
+.segmented-label { position: relative; }
 
 .segmented-option:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 
