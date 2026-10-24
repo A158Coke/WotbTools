@@ -252,7 +252,9 @@ describe('engagement-distance result line localization', () => {
 // 间隙板首层跳弹上屏：SPACED_FRAG 写 G=间隙甲层标记；主装甲独立套用自身 normalization/2×
 // （BlitzKit 逐层规则）。PBR 直接累加逐层 normalized R，状态通道只负责最近层跳弹/续飞。
 describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
-  const kernel = read('../scene/tankViewer.js')
+  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：着色器模式断言
+  // 拼接读取两份源（not.toMatch 同时约束两侧；RT/注入点等留在 tankViewer 的代码两处都可命中）
+  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
   const pen = read('../scene/penetration.js')
   it('逐层归一化：SPACED_FRAG 写每层最终等效厚度，PBR 直接累加', () => {
     const thickness = kernel.slice(kernel.indexOf('const SPACED_FRAG'), kernel.indexOf('const SPACED_STATE_FRAG'))
@@ -475,7 +477,8 @@ describe('gap-armor first-layer ricochet surfacing (heatmap)', () => {
 // 与 .tp-media 的 aspect-ratio 必须一致，且盒子不再用固定高度（固定高会让比例随卡片
 // 宽度漂移、内容框换算失准）。
 describe('production gun_mask clip wiring (2026-10-21)', () => {
-  const kernel = read('../scene/tankViewer.js')
+  // 穿透材质族 2026-10-24 出仓 viewer/armorShaders.js（Step B2）：uniform 注入断言拼接读取两份源
+  const kernel = read('../scene/tankViewer.js') + '\n' + read('../scene/viewer/armorShaders.js')
   it('PBR 与间隙甲状态材质都注入同一 rcClipPlane/rcClipEnabled，且每帧同步 gunClipPlane', () => {
     const occurrences = [...kernel.matchAll(/rcClipPlane:\s*rcUniforms\.rcClipPlane/g)]
     expect(occurrences).toHaveLength(2)

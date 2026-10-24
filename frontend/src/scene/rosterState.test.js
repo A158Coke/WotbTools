@@ -127,16 +127,18 @@ describe('rosterState · 物理队伍分组', () => {
 describe('rosterState · 投影接线守卫', () => {
   const here = dirname(fileURLToPath(import.meta.url))
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
+  // 名册桥接 2026-10-24 出仓 playback/hudFeed.js（Step A5），投影守卫随实现迁移
+  const feedSrc = readFileSync(resolve(here, 'playback/hudFeed.js'), 'utf8').replace(/\/\/[^\n]*/g, '')
 
   it('名册 HP 由 projectRoster 投影，死亡判据复用场景 resolver', () => {
-    const at = src.indexOf('function updateRoster()')
-    const body = src.slice(at, at + 900)
-    expect(body).toMatch(/projectRoster\(V, T, deathAt\)/)
+    const at = feedSrc.indexOf('function updateRoster()')
+    const body = feedSrc.slice(at, at + 900)
+    expect(body).toMatch(/projectRoster\(getV\(\), getT\(\), deathAt\)/)
     expect(body).not.toMatch(/rosterEntry/)
   })
 
   it('teardown 清空名册与 eid → 行 索引（会话切换不留旧行）', () => {
-    expect(src).toMatch(/rosterRowsByEid\.clear\(\)/)
+    expect(feedSrc).toMatch(/rosterRowsByEid\.clear\(\)/)
   })
 })
 

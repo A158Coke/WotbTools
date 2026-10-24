@@ -22,6 +22,8 @@ const strip = (s) => s.replace(/\r\n/g, '\n')   // LF 归一（CRLF 检出下 LF
   .replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
 const gpSrc = strip(readFileSync(resolve(here, 'groundPass.js'), 'utf8'))
 const src = strip(readFileSync(resolve(here, 'playbackScene.js'), 'utf8'))
+// 场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），运行时侧装配守卫随实现迁移
+const mapAssetsSrc = strip(readFileSync(resolve(here, 'playback/mapAssets.js'), 'utf8'))
 const bakeSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-overhead.mjs'), 'utf8'))
 const bakeLayersSrc = strip(readFileSync(resolve(here, '..', '..', 'scripts', 'bake-ground-layers.js'), 'utf8'))
 
@@ -40,7 +42,7 @@ describe('地面 pass SSOT（groundPass.js）：两侧消费同一份，本地�
     expect(src).toMatch(/from '\.\/groundPass\.js'/)
     expect(src).toMatch(/buildGroundGeometry\(\{/)
     expect(src).toMatch(/makeGroundMaterial\(\{/)
-    expect(src).toMatch(/waterCoast = makeWaterCoast\(\{/)
+    expect(mapAssetsSrc).toMatch(/waterCoast = makeWaterCoast\(\{/)
     expect(src).toMatch(/const need = groundLayerKeys\(L\);/)
     expect(src).toMatch(/setupGroundTextures\(texs, ani\);/)
     expect(src).toMatch(/const \{ field, meta: tmeta, metaStatus, binStatus \} = await loadTerrain\(\{/)
@@ -134,8 +136,8 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
     expect(gpSrc).toMatch(/Math\.abs\(box\.min\.y - t\) <= 1\.0/)
     expect(gpSrc).toMatch(/const mask = buildRefineMask\(pts, n, span, marginTexels\);/)
     // 运行时：调用共享实现并把掩码喂进构建器（留宿主接线与 DEBUG 钩子）
-    expect(src).toMatch(/const built = buildCorridorRefineMask\(\{/)
-    expect(src).toMatch(/terrainRefineMask = built\.mask;/)
+    expect(mapAssetsSrc).toMatch(/const built = buildCorridorRefineMask\(\{/)
+    expect(mapAssetsSrc).toMatch(/terrainRefineMask = built\.mask;/)
     expect(src).toMatch(/refineMask: terrainRefineMask,/)
     expect(src).toMatch(/terrainRefineMask = null;/)
     // 烘焙：同一实现 + 同一收集口径（onMesh 的 water 标记）；次序=掩码先于实例化合批
@@ -175,9 +177,9 @@ describe('地面 pass 烘焙接入面（与 3D 档同源）', () => {
 
   it('材质装配先于 qFrame 挂载（两侧同序；PR #621 review P2：水下判定按 GLB z-up 世界包围盒）', () => {
     // 源码顺序：运行时 assemble → mapScenery 挂载；烘焙 assemble → group 挂载 → 世界矩阵 → 走廊掩码
-    const rtAsm = src.indexOf('assembleSceneryMaterials(gltf, {')
+    const rtAsm = mapAssetsSrc.indexOf('assembleSceneryMaterials(gltf, {')
     expect(rtAsm).toBeGreaterThan(0)
-    expect(src.indexOf('mapScenery.add(gltf.scene)')).toBeGreaterThan(rtAsm)
+    expect(mapAssetsSrc.indexOf('mapScenery.add(gltf.scene)')).toBeGreaterThan(rtAsm)
     const bkAsm = bakeSrc.indexOf('assembleSceneryMaterials(gltf, {')
     const bkMount = bakeSrc.indexOf('group.add(gltf.scene)')
     expect(bkAsm).toBeGreaterThan(0)
