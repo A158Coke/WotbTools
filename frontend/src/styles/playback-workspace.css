@@ -219,7 +219,7 @@
 }
 .battle-playback.playback-workspace .pb-main > .pb-sidebar.pb-floating {
   position: absolute;
-  z-index: var(--pb-z-modal);
+  z-index: var(--pb-z-transient);
 }
 .battle-playback.playback-workspace .pb-team-lane-left { grid-column: 1; }
 .battle-playback.playback-workspace .pb-team-lane-right { grid-column: 3; }
