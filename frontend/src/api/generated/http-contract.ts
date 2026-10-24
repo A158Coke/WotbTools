@@ -3463,6 +3463,15 @@ export interface operations {
                     "application/json": components["schemas"]["HofUploadResponse"];
                 };
             };
+            /** @description Replay evidence capacity is full */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     listMark3Leaderboard: {
@@ -3520,6 +3529,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Mark3CreateResult"];
+                };
+            };
+            /** @description Replay evidence capacity is full */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
