@@ -117,8 +117,7 @@ class HofOwnershipLifecycleInvariantTest {
 
         // 2) 删除 A 的 IAM 侧资料 —— AdminUserService.deleteOneInternal 的本地步骤，
         //    也是「删除 Keycloak 用户」唯一会触达 HoF 的路径
-        final UserProfile removed = userProfileRepository.findByKeycloakUserId("kc-user-a").orElseThrow();
-        userProfileService.deleteForAdministration(removed);
+        userProfileService.deleteForAdministration("kc-user-a");
 
         // 3) 不变量：HoF 数据一行都不能少
         assertEquals(1, recordRepository.count(), "删除 Keycloak 用户不得删除单场记录");
