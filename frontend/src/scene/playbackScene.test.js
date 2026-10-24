@@ -1426,6 +1426,39 @@ describe('scene vehicle selection intent', () => {
     canvas.dispatchEvent(ev('pointerup', 220, 0))
   })
 
+  // 回归（2026-10-25 用户实测）：旧滚轮只改 flyLook.dist——target 沿视线挪、相机不动，
+  // 画面毫无变化。滚轮语义 = 沿视线推拉相机（dolly）：相机与 target 同步平移，
+  // 视角与视距不变；下滚后退、上滚前进。
+  it('滚轮缩放：沿视线推拉相机，视角与视距不变', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'wheel-zoom.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const aim0 = controls.target.clone().sub(cam.position).normalize()   // 飞行基准 = cam→target
+    const dist0 = cam.position.distanceTo(controls.target)
+    const wheel = (deltaY) => {
+      canvas.dispatchEvent(new WheelEvent('wheel', { deltaY, clientX: 100, clientY: 100, bubbles: true, cancelable: true }))
+    }
+    const p0 = cam.position.clone()
+    wheel(100)                                                   // 下滚 = 后退
+    const back = cam.position.clone().sub(p0)
+    expect(back.length()).toBeGreaterThan(1)
+    expect(back.dot(aim0)).toBeLessThan(0)                       // 位移沿视线反方向
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)  // 视距不变
+    const aim1 = controls.target.clone().sub(cam.position).normalize()
+    expect(aim1.dot(aim0)).toBeCloseTo(1, 4)                     // 视角不变
+    expect(cam.getWorldDirection(new THREE.Vector3()).dot(aim1)).toBeCloseTo(1, 4)  // 朝向仍对准 target
+    const p1 = cam.position.clone()
+    wheel(-100)                                                  // 上滚 = 前进
+    expect(cam.position.clone().sub(p1).dot(aim0)).toBeGreaterThan(0)
+  })
+
   // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
   // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
   // 语义改为「自由模式恒接管」，触屏用同一套手势。
@@ -1455,7 +1488,7 @@ describe('scene vehicle selection intent', () => {
     canvas.dispatchEvent(touch('pointerup', 180, 0))
   })
 
-  it('双指捏合改飞行视距（触屏缩放），且不转头', async () => {
+  it('双指捏合：沿视线推拉相机（缩放），视角与视距不变', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const store = createPlaybackStore()
     const container = mountContainer()
@@ -1467,7 +1500,7 @@ describe('scene vehicle selection intent', () => {
     const cam = window.__camera
     const controls = window.__controls
     const dist0 = cam.position.distanceTo(controls.target)
-    const dir0 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    const aim0 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
     const touch = (type, x, buttons, pointerId) => {
       const e = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
       Object.defineProperty(e, 'pointerType', { value: 'touch' })
@@ -1476,12 +1509,16 @@ describe('scene vehicle selection intent', () => {
     }
     canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
     canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 两指距 200px
-    canvas.dispatchEvent(touch('pointermove', 500, 1, 9))   // 两指距 400px → 视距减半
-    const dist1 = cam.position.distanceTo(controls.target)
-    expect(dist1).toBeCloseTo(dist0 / 2, 1)
+    const p0 = cam.position.clone()
+    canvas.dispatchEvent(touch('pointermove', 500, 1, 9))   // 两指距 400px → 推近
+    expect(cam.position.clone().sub(p0).dot(aim0)).toBeGreaterThan(1)   // 沿视线前进
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)  // 视距不变
+    const p1 = cam.position.clone()
+    canvas.dispatchEvent(touch('pointermove', 300, 1, 9))   // 收拢 → 后退
+    expect(cam.position.clone().sub(p1).dot(aim0)).toBeLessThan(0)
     const dir1 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
-    expect(dir1.dot(dir0)).toBeCloseTo(1, 3)
-    canvas.dispatchEvent(touch('pointerup', 500, 0, 9))
+    expect(dir1.dot(aim0)).toBeCloseTo(1, 4)               // 视角不变
+    canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
     canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
   })
 })

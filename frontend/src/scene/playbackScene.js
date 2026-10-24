@@ -399,7 +399,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 误清（表现 = FPS 转头与 OrbitControls 环绕/pan 漂移交替，用户实测两轮）。
   // 自由模式下：
   //   · 左键拖拽 = 转视角（yaw/pitch 直接作用在相机朝向上）；
-  //   · 滚轮 = 改飞行视距（flyDist——保留"拉近拉远"的操作记忆，不改变朝向）；
+  //   · 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义——推近/拉远，视角与视距不变）；
   //   · WASD/QE = 平移相机（flyTick → advanceFly，target 重钉 cam+dir×flyDist）。
   // 事件在 **container capture 阶段**拦截：祖先 capture 先于 canvas 的 target 阶段，
   // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
@@ -485,6 +485,24 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 只改 target 不 lookAt，拖拽时 target 在动、画面却完全不转（用户实测）。
     camera.lookAt(controls.target);
   }
+  /** 沿当前视线推拉相机（OrbitControls 的 dolly 语义 = 滚轮/捏合缩放）：相机与 target
+   *  同步平移，视角与视距保持不变。step > 0 前进（推近），step < 0 后退（拉远）。
+   *  只改 flyLook.dist 而相机不动是没有画面变化的（用户实测「滚轮没有缩放」）。 */
+  function flyDolly(step) {
+    if (!step) return;
+    const cp = Math.cos(flyLook.pitch);
+    const dx = -Math.sin(flyLook.yaw) * cp;
+    const dy = Math.sin(flyLook.pitch);
+    const dz = -Math.cos(flyLook.yaw) * cp;
+    camera.position.x += dx * step;
+    camera.position.y += dy * step;
+    camera.position.z += dz * step;
+    controls.target.x += dx * step;
+    controls.target.y += dy * step;
+    controls.target.z += dz * step;
+    camera.lookAt(controls.target);
+    invalidate();
+  }
 
   // ---- container capture 拦截（祖先 capture 先于 canvas target 阶段）----
   //（SCENE_CLICK_SLOP_PX / emptyDownAt 沿用原选中语义的声明——同一闭包作用域）
@@ -499,9 +517,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (e.pointerType === 'touch') {
         flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (flyPointers.size >= 2) {
-          // 双指 = 捏合改视距；本次手势不再转头、也算不上单击
+          // 双指 = 捏合缩放（沿视线推拉相机）；本次手势不再转头、也算不上单击
           const [a, b] = [...flyPointers.values()];
-          flyPinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, dist0: flyLook.dist };
+          flyPinch = { lastD: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
           flyLook.active = false;
           emptyDownAt = null;
         } else {
@@ -536,9 +554,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (flyPointers.size >= 2 && flyPinch) {
         const [a, b] = [...flyPointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        flyLook.dist = Math.max(2, Math.min(800, flyPinch.dist0 * flyPinch.d0 / d));
-        flyLookApply();
-        invalidate();
+        // 双指捏合 = 沿视线推拉相机：按指距的**增量**比例前进/后退（分开 = 推近）。
+        // 增量式（而非相对起点的绝对值）避免每次 move 重复累计。
+        const f = Math.max(-0.5, Math.min(0.5, (d - flyPinch.lastD) / flyPinch.lastD));
+        flyPinch.lastD = d;
+        flyDolly(flyLook.dist * f);
         e.stopPropagation();
         return;
       }
@@ -601,14 +621,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   function onFlyCaptureWheel(e) {
     if (!flyMode()) return;
-    // 滚轮改视距（不转视角、不平移）：缩放记忆保留
+    // 滚轮 = 沿视线推拉相机（OrbitControls 的 dolly 语义）：相机与 target 一起前进/后退，
+    // 视角与视距保持不变。旧实现只改 flyLook.dist 而相机不动——target 只沿视线挪，
+    // 画面毫无变化（用户实测「滚轮没有缩放」）。
     flyLookSyncIfStale('wheel');
-    flyLook.dist = Math.max(2, Math.min(800, flyLook.dist * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
-    flyLookApply();
-    invalidate();
+    // 线性步进（对 |deltaY| 对称，往返可精确抵消）：一格鼠标滚轮（deltaY≈100）≈12% 视距；
+    // 触控板的小 delta 逐次累积；单次上限 30%，防一帧飞越半个地图。
+    const f = Math.max(-0.3, Math.min(0.3, -e.deltaY * 0.0012));
+    flyDolly(flyLook.dist * f);
     e.preventDefault();
     e.stopPropagation();
-    flyDbg('wheel', `dist=${flyLook.dist.toFixed(0)}`);
+    flyDbg('wheel', `step=${(flyLook.dist * f).toFixed(1)}`);
   }
   function onFlyCaptureCancel(e) {
     flyLook.active = false;
