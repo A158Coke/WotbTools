@@ -1399,6 +1399,33 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
   })
 
+  // 回归（2026-10-24 用户实测）：拖拽只改 target 不改相机朝向 ⇒ 画面不转。
+  // free 模式跳过 controls.update()（它的 lookAt 是平时更新朝向的地方），
+  // 必须由 flyLookApply / animate 显式 lookAt(target)。
+  it('鼠标拖拽转头：相机位不动、朝向与 target 对齐', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'mouse-look.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const cam0 = cam.position.clone()
+    const dir0 = cam.getWorldDirection(new THREE.Vector3())
+    const ev = (type, x, buttons) => new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+    canvas.dispatchEvent(ev('pointerdown', 100, 1))
+    canvas.dispatchEvent(ev('pointermove', 220, 1))
+    const dir1 = cam.getWorldDirection(new THREE.Vector3())
+    expect(cam.position.equals(cam0)).toBe(true)                 // 旋转中心 = 相机自身
+    expect(dir1.angleTo(dir0)).toBeGreaterThan(0.2)              // 朝向确实转了（≈120px×0.0032）
+    const toTgt = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(dir1.dot(toTgt)).toBeCloseTo(1, 3)                    // 朝向 = 看向 target
+    canvas.dispatchEvent(ev('pointerup', 220, 0))
+  })
+
   // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
   // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
   // 语义改为「自由模式恒接管」，触屏用同一套手势。
