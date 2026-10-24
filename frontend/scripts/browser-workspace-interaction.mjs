@@ -2489,10 +2489,6 @@ async function runMultiFileWorkspaceScenario(env) {
  *
  * 每个横屏场景都断言页面实测视口与请求一致（不把回退成竖屏的视口算作横屏覆盖）。
  */
-// #727 瞬态优先断言的空跑守卫：至少要有一个场景真的让 Display 与常驻传输条重叠，
-// 否则「瞬态面压过常驻控件」这条断言从未被执行过，绿色毫无意义。
-let displayPaintOverlapSeen = 0
-
 const WORKSPACE_2D_SCENARIOS = [
   { name: 'ws2d-375x812-portrait-coarse', width: 375, height: 812, touch: true, layout: 'portrait' },
   { name: 'ws2d-390x844-portrait-coarse', width: 390, height: 844, touch: true, layout: 'portrait' },
@@ -2718,8 +2714,15 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
   if (display) {
     const PAINT_PAIR = { above: '[data-testid="display-panel"]', below: '[data-test="pb-transport-slot"]' }
     const paint = await measurePaintOrder(page, PAINT_PAIR)
+    // 空跑守卫按形态逐场景判定，而不是整轮聚合（聚合会让按名字单跑竖屏、或 CI 分片只分到竖屏时误报）：
+    // 宽档 / 横屏的 Display 锚在 gear 上，gear 就在常驻传输条里，两者按契约必然重叠——那正是
+    // 「瞬态面压过常驻控件」要判定的区域，没重叠说明这条断言在该形态上空跑了。
+    // 竖屏的 Display 是紧跟传输条的流内静态面，按契约本来就不重叠。
+    if (layout !== 'portrait') {
+      check(failures, paint.overlaps,
+        'wide Display 是锚在 gear 上的浮层，应与常驻传输条重叠，实际没有：瞬态优先断言在这个形态上空跑了')
+    }
     if (paint.overlaps) {
-      displayPaintOverlapSeen += 1
       for (const failure of paint.failures) check(failures, false, `Display 必须压过常驻传输条: ${failure}`)
       // 负向对照：把常驻传输条强行提回 #727 之前的裸 25，探针必须报错。
       await page.evaluate(`(() => {
@@ -3459,16 +3462,6 @@ try {
       })
       if (scenario.name.startsWith('onboarding-')) console.error(`[browser-interaction-progress] ${scenario.name} FAILED: ${error.message}`)
     }
-  }
-
-  // 空跑守卫：ws2d 场景跑过，就必须真的有一次 Display / 传输条重叠被判定过。
-  if (selected.some(({ scenario }) => scenario.name.startsWith('ws2d-'))) {
-    results.push({
-      name: 'occlusion-transient-precedence-coverage',
-      failures: displayPaintOverlapSeen > 0 ? []
-        : ['没有任何 ws2d 场景让 Display 与常驻传输条重叠：「瞬态面压过常驻控件」这条断言全程空跑'],
-      viewport: 'aggregate',
-    })
   }
 
   const tabletRoster = results.find((result) => result.name === 'roster-geometry-1024x768-tablet')?.geometry
