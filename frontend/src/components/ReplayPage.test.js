@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, ref, computed, toRaw, watch, onMounted, onUnmounted } from 'vue'
 import ReplayPage from './ReplayPage.vue'
 import { NAVIGATE_VIEW_KEY } from '../shared/navigation.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { setUiProfile } from '../composables/useUiProfile.js'
 
 const i18n = vi.hoisted(() => ({
@@ -260,6 +261,7 @@ function mountPage(overrides = {}) {
       mocks: { $t: i18n.t },
       provide: {
         [NAVIGATE_VIEW_KEY]: navigate,
+        [DIALOG_INLINE_KEY]: true,
       },
       stubs: {
         ColumnPicker: { template: '<div class="col-picker-stub" />' },

@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { nextTick } from 'vue'
 import { messages } from '../locales/messages.js'
+import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import TournamentPointsPage from './TournamentPointsPage.vue'
 import TournamentEventSelect from './TournamentEventSelect.vue'
 import TournamentPointsTable from './TournamentPointsTable.vue'
@@ -33,7 +34,7 @@ const board = (index = 0, empty = false): TournamentStandings => ({
 })
 function page() {
   const i18n = createI18n({ legacy: false, locale: 'zh', messages: messages as Record<string, any> })
-  const wrapper = mount(TournamentPointsPage, { global: { plugins: [i18n] } })
+  const wrapper = mount(TournamentPointsPage, { global: { plugins: [i18n], provide: { [DIALOG_INLINE_KEY]: true } } })
   const selected = async (id: number | null = 7) => {
     wrapper.findComponent(TournamentEventSelect).vm.$emit('update:modelValue', id)
     await nextTick()

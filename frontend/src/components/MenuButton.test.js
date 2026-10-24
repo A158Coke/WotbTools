@@ -15,51 +15,64 @@ function mountMenu(props = {}) {
   wrapper = mount(MenuButton, { props: { label: 'Export', items: ITEMS, ...props }, attrs: { 'data-testid': 'menu' }, attachTo: document.body })
   return wrapper
 }
-afterEach(() => wrapper?.unmount())
+afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; document.body.removeAttribute('style') })
 
 const trigger = () => wrapper.get('[data-testid="menu"]')
-const enabledItems = () => wrapper.findAll('[role="menuitem"]:not([disabled])').map(i => i.element)
+const menu = () => document.querySelector('[role="menu"]')
+const item = testid => document.querySelector(`[data-testid="${testid}"]`)
+const key = (target, name) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+async function press(target, name) { key(target, name); await flushPromises() }
+async function openByClick() {
+  trigger().element.click()
+  await flushPromises()
+}
 
 describe('MenuButton', () => {
-  it('透传属性落在触发按钮上；点击打开并聚焦第一个可用项', async () => {
+  it('透传属性落在触发按钮上；点击打开后菜单出现，触发按钮 aria-expanded=true', async () => {
     mountMenu()
     expect(trigger().element.tagName).toBe('BUTTON')
     expect(trigger().attributes('aria-haspopup')).toBe('menu')
-    await trigger().trigger('click')
-    await flushPromises()
+    await openByClick()
+    expect(menu()).not.toBeNull()
+    expect(menu().getAttribute('aria-label')).toBe('Export')
     expect(trigger().attributes('aria-expanded')).toBe('true')
-    expect(document.activeElement).toBe(enabledItems()[0])
   })
 
-  it('方向键跳过禁用项并循环；Esc 关闭并把焦点还给触发按钮', async () => {
+  it('键盘打开聚焦第一个可用项；方向键跳过禁用项并循环；Esc 关闭并把焦点还给触发按钮', async () => {
     mountMenu()
-    await trigger().trigger('keydown', { key: 'ArrowDown' })
-    await flushPromises()
-    const menu = wrapper.get('[role="menu"]')
-    await menu.trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(wrapper.get('[data-testid="item-png"]').element)
-    await menu.trigger('keydown', { key: 'ArrowDown' })
-    expect(document.activeElement).toBe(wrapper.get('[data-testid="item-aggregate"]').element)
-    await menu.trigger('keydown', { key: 'Escape' })
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    trigger().element.focus()
+    await press(trigger().element, 'ArrowDown')
+    expect(document.activeElement).toBe(item('item-aggregate'))
+    await press(menu(), 'ArrowDown')
+    expect(document.activeElement).toBe(item('item-png'))
+    await press(menu(), 'ArrowDown')
+    expect(document.activeElement).toBe(item('item-aggregate'))
+    await press(menu(), 'Home')
+    expect(document.activeElement).toBe(item('item-aggregate'))
+    await press(menu(), 'End')
+    expect(document.activeElement).toBe(item('item-png'))
+    await press(menu(), 'Escape')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(menu()).toBeNull()
     expect(document.activeElement).toBe(trigger().element)
   })
 
   it('选择项发出 key 并关闭；禁用项不发出', async () => {
     mountMenu()
-    await trigger().trigger('click')
+    await openByClick()
+    expect(item('item-each').getAttribute('data-disabled')).not.toBeNull()
+    item('item-each').click()
     await flushPromises()
-    await wrapper.get('[data-testid="item-each"]').trigger('click')
     expect(wrapper.emitted('select')).toBeUndefined()
-    await wrapper.get('[data-testid="item-png"]').trigger('click')
+    item('item-png').click()
+    await flushPromises()
     expect(wrapper.emitted('select')).toEqual([['png']])
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    expect(menu()).toBeNull()
   })
 
   it('整体禁用时不能打开', async () => {
     mountMenu({ disabled: true })
-    await trigger().trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="menu"]').exists()).toBe(false)
+    await openByClick()
+    expect(menu()).toBeNull()
   })
 })

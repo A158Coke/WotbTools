@@ -6,6 +6,7 @@ import { inject, nextTick, ref, watch } from 'vue'
 import { DialogClose, DialogContent, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 import { X } from 'lucide-vue-next'
+import AppTooltip from './AppTooltip.vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -71,7 +72,7 @@ watch(() => props.open, (open) => {
 
 <template>
   <DialogRoot :open="open" @update:open="onUpdateOpen">
-    <DialogPortal :disabled="inline" :force-mount="keepMounted || undefined">
+    <DialogPortal :disabled="inline" force-mount>
       <div
         v-if="open || keepMounted"
         v-show="open"
@@ -94,9 +95,11 @@ watch(() => props.open, (open) => {
         >
           <header class="dialog-head">
             <DialogTitle class="dialog-title">{{ title }}</DialogTitle>
-            <DialogClose class="dialog-close" :aria-label="$t('app.close')">
-              <X :size="20" aria-hidden="true" />
-            </DialogClose>
+            <AppTooltip :label="$t('app.close')">
+              <DialogClose class="dialog-close" :aria-label="$t('app.close')">
+                <X :size="20" aria-hidden="true" />
+              </DialogClose>
+            </AppTooltip>
           </header>
           <div class="dialog-body"><slot /></div>
           <footer v-if="$slots.actions" class="dialog-actions"><slot name="actions" /></footer>
