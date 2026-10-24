@@ -28,12 +28,14 @@ describe('occlusionCells（标签遮挡候选格：线段经过的 16m 格）', 
 
 describe('标签遮挡：只对候选格做 raycast（禁止整场景递归检测）', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
+  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.js'), 'utf8')
   it('源码护栏：不再对 mapScenery 全量 intersectObject，改用候选列表 intersectObjects', () => {
     expect(src).not.toMatch(/intersectObject\(mapScenery, true\)/)
     expect(src).toMatch(/raycaster\.intersectObjects\(cands, false\)/)
     expect(src).toMatch(/OCCL_MAX_CANDIDATES/)
     // 候选表在场景加载时构建、换场时失效
-    expect(src).toMatch(/occlGrid = occGrid;/)
+    expect(mapAssetsSrc).toMatch(/occlGrid = occGrid;/)
     expect(src).toMatch(/occlGrid = null;/)
   })
   it('折线点表必须镜像 x（游戏系 → 场景系）——镜像丢失 = 轨迹画到地图对侧', () => {
@@ -89,8 +91,10 @@ describe('occlusionFootprintCells（occGrid 登记：足印 AABB 全枚举）', 
 
 describe('场景源码护栏：评审 P0 修复的接线锁定', () => {
   const src = readFileSync(resolve(__dirname, 'playbackScene.js'), 'utf8')
+  // 候选表登记随场景装配块 2026-10-24 出仓 playback/mapAssets.js（Step A3），守卫随实现迁移
+  const mapAssetsSrc = readFileSync(resolve(__dirname, 'playback/mapAssets.js'), 'utf8')
   it('occGrid 登记必须用足印全枚举，不得用线段遍历', () => {
-    expect(src).toMatch(/occlusionFootprintCells\(e\.x - r, e\.y - r, e\.x \+ r, e\.y \+ r, OCCL_CELL\)/)
+    expect(mapAssetsSrc).toMatch(/occlusionFootprintCells\(e\.x - r, e\.y - r, e\.x \+ r, e\.y \+ r, OCCL_CELL\)/)
     expect(src).not.toMatch(/occlusionCells\(wx - r/)
   })
   it('时间轴回退必须显式清树终态 settled（否则重播不重写触地旋转）', () => {

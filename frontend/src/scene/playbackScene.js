@@ -26,39 +26,38 @@ import {
   CLIENT_NORMAL_CAMERA_FOV_H,
   terrainLodState, terrainLodStale,
 } from './terrainMesh.js'
-import { buildDestructibleIndex, foldDestructibleStates, fallStopAngle, treeFrame } from './destructibles.js'
-import { collectInstanceEntries, groupInstanceBatches, buildInstancedMesh, buildStandaloneLightmappedMeshes, writeHiddenInstance, fallMatrix, refreshBatchSphere, hasTransparentMaterial } from './sceneryInstancing.js'
+import { treeFrame } from './destructibles.js'
+import { writeHiddenInstance, fallMatrix } from './sceneryInstancing.js'
 import { createDynRes } from './dynRes.js'
-import { applyMaterialTextureAnisotropy, clearSceneryMatCache } from './sceneryMaterials.js'
+import { clearSceneryMatCache } from './sceneryMaterials.js'
 // 地面 pass SSOT（2026-10-14 抽层，用户裁示"直接完全照搬 3D 回放的代码"）：地形数据/几何、
-// 分层地表材质、水面海岸线资源与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
+// 分层地表材质与俯视烘焙共用同一份——此前烘焙不渲染地面，底图用客户端自带
 // 地图图，与 3D 档实时分层渲染在夜图/带 lm 图上差异显著（见该模块头部）
-import { loadTerrain, buildGroundGeometry, makeGroundMaterial, makeWaterCoast,
-         groundLayerKeys, setupGroundTextures, buildCorridorRefineMask } from './groundPass.js'
-// 装配规则 SSOT（2026-10-14 抽层）：水面语义判定与俯视烘焙共用同一份——
-// 此前烘焙自持一份名字启发式、未随本文件的"材质标记权威"修复同步而漂移（见该模块头部）
-import { sceneHasSkyFlags, strictSurfacesOf, isWaterNode as isWaterNodeRule } from './sceneryAssemblyRules.js'
-// 场景装配 SSOT（extras 贴图解 + 逐节点材质分派；2026-10-14 抽层——本文件与俯视烘焙
-// 共用同一份，用户裁示"直接用它的代码"）：下方引用其 resolve/makeTexResolvers/assemble
-import { resolveSceneryExtras, makeTexResolvers, assembleSceneryMaterials } from './sceneryAssembly.js'
+import { loadTerrain, buildGroundGeometry, makeGroundMaterial,
+         groundLayerKeys, setupGroundTextures } from './groundPass.js'
+// 装配规则 / 场景装配 / 水面海岸线 / 走廊掩码 / 可破坏物索引 的消费随场景装配块
+//（2026-10-24 Step A3）整体移至 playback/mapAssets.js；本文件只留地面装载与运行期消费。
+import { assembleMapScenery } from './playback/mapAssets.js'
 // 逐图光照 SSOT（2026-10-14 抽层）：光照应用与俯视烘焙共用同一份——烘焙此前自持固定日光
 // 常量（白 3.0 + 半球 2.4 + ACES 1.15），未随逐图光照落地而同步（见该模块头部）
-import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore,
-         DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY, DEFAULT_SUN_INTENSITY } from './mapLighting.js'
-import { nameChainOf, nearestInstance, chainVisible, buildMeshOwnerMap, meshOwnerKey, stateVisualLabel, formatPickReport } from './pickDebug.js'
+import { applyMapLighting as applyMapLightingCore, resetMapLighting as resetMapLightingCore } from './mapLighting.js'
+//（pickDebug 的纯函数随拾取报告器移入 playback/pickReport.js；buildMeshOwnerMap 随场景
+// 装配块移入 playback/mapAssets.js）
 import { collectMaterialTextures } from './materialDispose.js'
 import { applyTankDestroyedVisual, destroyedVisualAmount, disposeTankDestroyedVisual, prepareTankDestroyedVisual } from './tankDestroyedVisual.js'
 import { lifeAt, defLifeAt } from '../utils/battlePlaybackV2.ts'
-import { pruneForeignVariantsDetailed } from './variantFilter.js'
+//（pruneForeignVariantsDetailed 随场景装配块移入 playback/mapAssets.js）
 import { sampleDetachedPose, spansContainAt } from './trackInterp.js'
 import { sampleVehiclePoseGame, visibilitySpansByEid } from '../replay-local/pose/vehiclePose.js'
 import { pathPointsOf, legSecsOf, legEndTimes, pointAtInto, legArcEnds, arcAtTime, pointAtArcInto } from './shotPath.js'
 import { impactKind } from './impactKind.js'
-import { FX_BUDGETS, TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
-import { ROSTER_GROUPS, applyRosterRuntime, buildRosterRows, hpPercentText, projectRoster } from './rosterState.js'
+import { TRACER_STREAK_M, createBattleFx, muzzleTipOf, trailOpacityAt } from './battleFx.js'
+//（ROSTER_GROUPS/applyRosterRuntime/buildRosterRows/projectRoster 随名册桥接出仓
+// playback/hudFeed.js；hpPercentText 仍为本文件 HUD 消费）
+import { hpPercentText } from './rosterState.js'
 import { createReloadStateResolver, resolveMountedConfig } from './reloadBar.js'
 import { pointsAt } from './supremacyPoints.js'
-import { perspectiveScore, teamHpTotals } from './teamHpTotals.js'
+import { teamHpTotals } from './teamHpTotals.js'   //（perspectiveScore 随计分桥接出仓 playback/hudFeed.js）
 // 战斗反馈时长：与 2D 共用同一组 canonical 常量（SSOT，避免两处各自漂移）
 import { FLASH_MS, FLOAT_DMG_MS, GHOST_MS } from '../utils/battlePlayback.js'
 import { playableBounds } from '../data/playableBounds.js'
@@ -81,10 +80,20 @@ import {
   TREAD_FALLBACK, TREAD_RING,
 } from './treadMarks.js'
 import { assetProvider } from './assetProvider.js'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { createSceneCore } from './playback/renderer.js'
+// 内核拆分（2026-10-24，docs/current-plan.md Step A1 + 模式验证）：常量/纯函数/画质表
+// 出仓到 ./playback/，点击拾取调试与边界带出仓为工厂；公开 API 经本文件 re-export，
+// 导入方（Replay3DPane / 测试）零改动。
+import { GRID_DT, ASSET_CONCURRENCY, mapLimit } from './playback/util.js'
+import { QUALITY_PRESETS } from './playback/quality.js'
+import { tracerSpanSecs, occlusionCells, occlusionFootprintCells } from './playback/pure.js'
+import { createPickReporter } from './playback/pickReport.js'
+import { createBoundaryBand, BOUNDARY_THICK } from './playback/boundary.js'
+import { createBaseMarkers } from './playback/bases.js'
+import { createHudFeed } from './playback/hudFeed.js'
 
-const GRID_DT = 0.1
+export { QUALITY_PRESETS, tracerSpanSecs, occlusionCells, occlusionFootprintCells }
 
 // 兜底灯光（读不到 lighting.json 时用，= 上游硬编码时代的两盏灯，保证无数据也不变样）
 // 出屏口径（A2）：客户端发布版**没有任何 filmic 出屏曲线**。证据（客户端 Materials/Shaders
@@ -106,92 +115,11 @@ const GRID_DT = 0.1
 // 兜底灯光常量与逐图光照应用体自 2026-10-14 起在共享模块 mapLighting.js（SSOT，与俯视烘焙
 // 同一份）：DEFAULT_HEMI_* / DEFAULT_SUN_INTENSITY 见文件头导入。
 
-// 资产加载并发上限：全串行（9 张地表贴图 / 逐张 await）白等网络往返；无限并发
-// （14 台坦克 GLB 同时 fetch + 主线程 parse）会把主线程解析排满。取 4。
-const ASSET_CONCURRENCY = 4
+// 资产加载并发上限与有限并发映射在 ./playback/util.js（ASSET_CONCURRENCY / mapLimit）。
 
-/** 有限并发映射（保持结果顺序）；用于资产下载/解析 */
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length)
-  let next = 0
-  const worker = async () => {
-    for (;;) {
-      const i = next++
-      if (i >= items.length) return
-      out[i] = await fn(items[i], i)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return out
-}
-
-// 四档渲染预设（面板与场景共用；桌面默认高清，Tauri/移动 WebView 默认均衡）。
-// 抗锯齿/DPR/场景资源在渲染器与场景首次创建时一次性定型，加载后改档需整页刷新。
-// 档位阶梯 = 相邻档各跨一个真实成本断崖：
-//   流畅→均衡：车辆盒代理 → 真 GLB（最大的视觉跃迁，手机终于有真车模）；
-//   均衡→高清：场景 GLB + 分层地表（最大的下载/显存跃迁；P1 实例化后高清档
-//              draw call 已可控，均衡档跳过它把 11–67MB 下载留给 Wi-Fi/桌面）；
-//   高清→极致：纯填充率税（DPR 2 + 地形 512），服务 4K/Retina 台式机。
-// 均衡档 MSAA 开 + DPR 1.25：几何边缘上低 DPR + MSAA 优于高 DPR 无 AA。
-// 均衡档地面 = **俯视烘焙底图**（4096²，上游资产管线 tools/bake_ground_roofs.py
-// 把场景 GLB 的屋顶/树冠/草丛正交俯视烘进地形图——2026-10-07 用户需求：无 3D
-// 建筑的档位也要看到真实场景俯视内容；下载 ~5-6MB/图）。
-// 2026-10-07 重分档（原三档）：旧「中」 paying 场景 GLB 却无 AA/分层，帧成本≈旧高
-// 而观感更差；旧值语义漂移随发版说明，localStorage 旧键名全部兼容无需迁移。
-// treadMarks / forceGlb（2026-10-11 用户裁示）：履带印只在高清/极致提供，且这两档
-// **强制** GLB 真实车模——印记的左右轨距取自 suspension 解析的模型实测 halfW，
-// 低模回落常数与之不同，允许中途切车模会让同一车前后的印记轨距突变。
-// fx（2026-10-13）：3D 战斗特效预算（粒子批次容量与各元素数量），数值表在 battleFx.js 的 FX_BUDGETS；
-// 信息类特效（曳光、光迹、命中火光、爆炸闪光）四档都有，氛围特效按档裁剪。
-export const QUALITY_PRESETS = {
-  low:   { label: '流畅', antialias: false, maxDpr: 1,    scenery: false, groundLayers: false, anisotropy: 1, terrainSeg: 192, allowGlb: false, treadMarks: false, forceGlb: false, fx: FX_BUDGETS.low },
-  mid:   { label: '均衡', antialias: true,  maxDpr: 1.25, scenery: false, groundLayers: false, anisotropy: 2, terrainSeg: 256, allowGlb: true,  treadMarks: false, forceGlb: false, fx: FX_BUDGETS.mid },
-  high:  { label: '高清', antialias: true,  maxDpr: 1.5,  scenery: true,  groundLayers: true,  anisotropy: 4, terrainSeg: 384, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.high },
-  ultra: { label: '极致', antialias: true,  maxDpr: 2,    scenery: true,  groundLayers: true,  anisotropy: 8, terrainSeg: 512, allowGlb: true,  treadMarks: true,  forceGlb: true, fx: FX_BUDGETS.ultra },
-}
-
-/**
- * 飞行段时长（秒）= **真实飞行时长**（`shots[].flight_secs` = |终点−炮口|/弹速）。
- * 只做 1 帧下限：防退化数据（0/负数/非有限）造成零时长与除零；**不做"最小显示时长"**
- * —— 曾用 0.22s 下限"保证可见性"，实测 68% 的射击真飞行时长 <0.22s（J39 样本 155 发：
- * 中位 0.16s、p10 0.04s，弹速 560~1658 m/s），那些炮弹被拖慢最多 11×，与客户端不一致。
- */
-export function tracerSpanSecs(flightSecs) {
-  const oneFrame = 1 / 60
-  return Number.isFinite(flightSecs) && flightSecs > oneFrame ? flightSecs : oneFrame
-}
-
-/** 线段经过的格子键（2D DDA；纯函数，单测锁定；用于标签遮挡的候选格选取） */
-export function occlusionCells(ax, ay, bx, by, cell = 16) {
-  const out = new Set();
-  const dx = bx - ax, dy = by - ay;
-  const len = Math.hypot(dx, dy);
-  const steps = Math.max(1, Math.ceil(len / (cell / 2)));
-  for (let i = 0; i <= steps; i++) {
-    const k = i / steps;
-    out.add(`${Math.floor((ax + dx * k) / cell)},${Math.floor((ay + dy * k) / cell)}`);
-  }
-  return out;
-}
-
-/** 遮挡物足印覆盖的**全部**格子（AABB 全枚举；纯函数，单测锁定；occGrid 登记专用）。
- *  与 occlusionCells（线段 DDA 遍历，检测时选候选格）是两个概念，不可互用：登记若走
- *  线段遍历（从包围盒角到角），只有对角线经过的格子入表，大建筑/大网格的非对角线
- *  覆盖格子全部缺失——穿那些格子的相机→标签射线在候选表里查不到该遮挡物，标签
- *  隔楼可见（false-visible）。每轴格数钳制 64（16m 格 × 64 ≈ 1km，远超静态建筑
- *  尺度；防病态大包围球把登记表撑爆）。 */
-export function occlusionFootprintCells(minX, minY, maxX, maxY, cell = 16) {
-  let gx0 = Math.floor(minX / cell), gx1 = Math.floor(maxX / cell);
-  let gy0 = Math.floor(minY / cell), gy1 = Math.floor(maxY / cell);
-  const MAX_SPAN = 64;
-  if (gx1 - gx0 >= MAX_SPAN) { const c = Math.floor((gx0 + gx1) / 2); gx0 = c - (MAX_SPAN >> 1); gx1 = gx0 + MAX_SPAN - 1; }
-  if (gy1 - gy0 >= MAX_SPAN) { const c = Math.floor((gy0 + gy1) / 2); gy0 = c - (MAX_SPAN >> 1); gy1 = gy0 + MAX_SPAN - 1; }
-  const out = [];
-  for (let gx = gx0; gx <= gx1; gx++) {
-    for (let gy = gy0; gy <= gy1; gy++) out.push(`${gx},${gy}`);
-  }
-  return out;
-}
+// 四档渲染预设（QUALITY_PRESETS，含档位语义注释）在 ./playback/quality.js；
+// 纯函数 tracerSpanSecs / occlusionCells / occlusionFootprintCells 在 ./playback/pure.js
+//（本文件 re-export，导入方零改动）。
 
 export function initPlayback(container, store, labelOverlay = null, { onVehicleSelect } = {}) {
   // ---------- 全局状态 ----------
@@ -222,7 +150,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   const TRACER_ENEMY = 0xff5a45;     // 亮红（同色相提亮 #98322a）
       // mapBases[资产面 map key]（基地几何；loadMapImage 解析后缓存）
   let currentMapKey = null;        // 资产面 map key（playableBounds 表索引）
-  let boundaryGroup = null;        // 地图边界带（会话拥有）
   let V = [];                      // 车辆运行时 {def, group, turretG, gunPivot, labelAnchor, meshHull, glb}
   let T = 0, PLAYING = false, SPEED = store.speed;
   // 战斗时间轴 [START, END]：引擎是唯一权威（store.startTime / store.duration 只是发布）。0 = 开战，与 2D 同一个时钟：
@@ -234,7 +161,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // Derived identity index only; ReplaySession still owns every canonical life fact.
   let lifeTracks = null, lifeTracksByAccount = new Map();
   let CAM = 'free', FOLLOW_EID = 0;
-  let shotPtr = 0, killPtr = 0;
+  let shotPtr = 0;   //（killPtr 随击杀 feed 出仓 playback/hudFeed.js）
   const tracers = [];
   const pendingMuzzles = [];   // 本 tick 开火、待炮管姿态摆完再定位的炮口特效（见 flushMuzzles）
   let renderer = null, scene, camera, controls, clock, raycaster;
@@ -278,7 +205,6 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   let meshOwner = null;          // mesh → 实例 精确归属（buildMeshOwnerMap，拾取主路径）
   let groundMesh = null, gridHelper = null;           // buildWorld 的占位地面/网格（会话拥有）
   let destroyed = false;
-  let kfId = 0;
   // 会话代数：loadData/teardown 各自递增，全部异步续体持旧代数即失效
   let sessionGen = 0;
   /** 加载令牌：只有新的 loadData 递增，用于判定「谁是最新一次加载」（见 loadData 注释） */
@@ -468,78 +394,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   // ---------- 场景 ----------
   function initScene() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x11161d);
-    if (DEBUG) window.__scene = scene;   // 诊断钩子（仅显式 ?debug，destroy 时清除）
-    // SPA 壳内渲染：视口尺寸取容器（main 区域），而非整窗（顶部导航占 67px）
-    camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.5, 4000);
-    camera.position.set(0, 180, 220);
-    // 对数深度：客户端（贴地 TPS）可视地面恒在 ~200m 内，线性深度足够；回放查看器
-    // 允许 600–1000m 俯瞰——该距离线性 24bit 深度分辨率 4–12cm，与贴地装饰（铁轨
-    // 路基/冰面等场景薄板，按游戏精确高程导出）同重建地形间 ±3–30cm 的交叠带同
-    // 量级 → 远景俯视成片 z-fighting（碎色块、转动闪烁；拉近即消失）。对数深度把
-    // 远距离分辨率提至亚毫米，交叠带恢复确定性深度序。两个自定义 ShaderMaterial
-    // 需手动挂 logdepthbuf 代码块（内建材质自动注入）；?logdepth=0 可关闭（A/B 与
-    // 真机回滚，见 LOGDEPTH 注释）。
-    // powerPreference：多 GPU 设备（核显 + RTX 等独显）上 Windows 按 per-app 分配
-    // GPU，Chrome 缺省可能落在核显——3D 回放是本页唯一的重负载任务，显式请求
-    // 高性能独显（移动端/单 GPU 设备该提示被忽略，无副作用）。
-    renderer = new THREE.WebGLRenderer({
-      antialias: Q.antialias,
-      logarithmicDepthBuffer: LOGDEPTH,
-      powerPreference: 'high-performance',
+    // 创建核心（渲染器/相机/控件/灯光/resize+pointer 接线）在 playback/renderer.js
+    //（2026-10-24 Step A2 出仓；状态所有权仍在本闭包——解构写回可变绑定）
+    const core = createSceneCore({
+      container, quality: Q, logdepth: LOGDEPTH, dynres: DYNRES, debug: DEBUG,
+      envTexture, envMultiplier,
+      onResize, onPointerDown: onScenePointerDown, onPointerUp: onScenePointerUp,
+      setFollow,
     });
-    rendererCaps = { logdepth: LOGDEPTH, dynres: DYNRES };   // 实际装配快照（复用渲染器时校验偏好是否仍一致）
-    // 着色器预热（`renderer.compile`）：three 在**首次渲染某材质**时才编译程序，编译会阻塞
-    // 数十~数百 ms，落在"战斗第一次开火/命中"的那一帧就是用户实测的"打起来就卡"。
-    // 场景就绪后立即编译在用材质（含地面分层着色器/FX 池），成本挪到加载阶段（那时本来在等资产）。
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    const baseDpr = Math.min(devicePixelRatio, Q.maxDpr);
-    renderer.setPixelRatio(baseDpr);
-    // 动态分辨率（?dynres=1 显式开启，A/B 与回滚同 ?logdepth 惯例）：持续超预算
-    // 降 pixel ratio、有余量升回档位上限。档位 DPR 无下调空间（baseDpr ≤ 1）时
-    // 跳过装配——降无可降。
-    dynResCtl = DYNRES && baseDpr > 1
-      ? createDynRes({ ceilDpr: baseDpr })
-      : null;
-    if (DEBUG) window.__renderer = renderer;   // 诊断钩子（renderer 创建后才可引用；仅 ?debug）
-    if (DEBUG) window.__camera = camera;       // 诊断钩子：跟随相机定位（创建后引用）
-    // three r165+ 恒为物理光照单位（Lambert 除以 π），旧强度会让建筑/车模暗到发黑
-    // 出屏口径（客户端证据见文件头）：线性 × 曝光 1.0 → sRGB 编码 = 客户端 legacy 材质直出口径。
-    // 不设 ?tonemap/?exposure 旋钮：客户端曝光是屏幕级自动曝光、无静态值可抄，引入替代参数只会
-    // 得到"需要手工调才能看对"的状态（2026-10-10 按该原则撤掉）。
-    renderer.toneMapping = THREE.LinearToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    container.appendChild(renderer.domElement);
-    controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.02;
-    if (DEBUG) window.__controls = controls;   // 诊断钩子（controls 创建后才可引用）
-    if (DEBUG) window.__setFollow = setFollow;   // 诊断钩子：跟随问题定位（函数声明提升）
-    clock = new THREE.Clock();
-    raycaster = new THREE.Raycaster();
-    // 兜底灯光（旧包/无 lighting.json 时用；有逐图数据时 applyMapLighting 覆盖方向/色/强度）。
-    // 兜底值 = 上游硬编码时代的两盏灯，保持"读不到数据也不变样"。
-    hemiLight = new THREE.HemisphereLight(DEFAULT_HEMI_SKY, DEFAULT_HEMI_GROUND, DEFAULT_HEMI_INTENSITY);
-    scene.add(hemiLight);
-    sunLight = new THREE.DirectionalLight(0xffffff, DEFAULT_SUN_INTENSITY);
-    sunLight.position.set(120, 260, 80);
-    scene.add(sunLight);
-    scene.add(sunLight.target);      // 平行光只认 position→target 方向；target 必须在场景图里
-    sunLight.target.position.set(0, 0, 0);
-    // 逐图 IBL 若在场景创建前就已加载（资产阶段早于 initScene），在此补挂
-    if (envTexture) {
-      scene.environment = envTexture;
-      scene.environmentIntensity = envMultiplier;
-    }
-    addEventListener('resize', onResize);
-    if (typeof ResizeObserver !== 'undefined') {
-      sizeObserver = new ResizeObserver(onResize);
-      sizeObserver.observe(container);
-    }
-    // 点选意图上报宿主；相机跟随由显式控件设置。
-    // pointerup 用于「空处单击」判定（拖拽相机 ≠ 点击其它地方，见 onScenePointerUp）。
-    renderer.domElement.addEventListener('pointerdown', onScenePointerDown);
-    renderer.domElement.addEventListener('pointerup', onScenePointerUp);
+    scene = core.scene; camera = core.camera; renderer = core.renderer;
+    controls = core.controls; clock = core.clock; raycaster = core.raycaster;
+    hemiLight = core.hemiLight; sunLight = core.sunLight;
+    dynResCtl = core.dynResCtl; sizeObserver = core.sizeObserver; rendererCaps = core.rendererCaps;
   }
   function onResize() {
     if (!renderer) return;
@@ -587,190 +453,19 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (moved <= SCENE_CLICK_SLOP_PX) onVehicleSelect?.(null, e);
   }
 
-  // ---------- 点击拾取调试（PICK_DEBUG；纯函数在 pickDebug.js） ----------
-  let pickMarker = null;
-  let pickPanel = null;
+  // ---------- 点击拾取调试（PICK_DEBUG；报告器在 playback/pickReport.js，纯函数在 pickDebug.js） ----------
   let pickDownAt = null;
-  function reportPick(e) {
-    try {
-      const r = container.getBoundingClientRect();
-      const nd = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-      raycaster.setFromCamera(nd, camera);
-      const roots = [mapScenery, terrainMesh, groundMesh, ...V.map((v) => v.group)].filter(Boolean);
-      const hits = roots.length ? raycaster.intersectObjects(roots, true) : [];
-      // Raycaster 不过滤 visible：隐藏 D_ 损毁网格/sky/隐藏父节点下的车辆会被
-      // 命中——按整条祖先链可见性取最近可见命中，否则报告指向画面里没有的模型
-      const hit = hits.find((h) => chainVisible(h.object)) || null;
-      const rep = buildPickReport(hit);
-      const text = formatPickReport(rep);
-      console.log(text);
-      try { window.__pbPick = rep; window.__pbPickText = text; } catch (_) {}
-      try { window.__pbPickMesh = hit ? hit.object : null; } catch (_) {}   // 诊断：命中网格本体（控制台实时改材质用）
-      showPickPanel(text);
-      if (hit) movePickMarker(hit.point);
-    } catch (err) {
-      // 失败必须可见（禁止静默）：面板直接显示错误，否则表现为"点击没反应"难排查
-      console.warn('[scene-pick] failed:', err);
-      try { showPickPanel(`[scene-pick] failed: ${(err && (err.stack || err.message)) || err}`); } catch (_) {}
-    }
-  }
-  function buildPickReport(hit) {
-    if (!hit) return { clock: T, kind: 'empty', err: 'no hit（天空/空处）' };
-    // 车辆归属：沿父链找 userData.eid（车辆拾取与既有选中逻辑同式）
-    let o = hit.object, eid = 0;
-    while (o) { if (o.userData && o.userData.eid) { eid = o.userData.eid; break; } o = o.parent; }
-    if (eid) {
-      const v = V.find((x) => x.def.eid === eid);
-      return { clock: T, kind: 'vehicle', vehicle: v ? v.def : { eid } };
-    }
-    const onTerrain = (() => {
-      let n = hit.object;
-      while (n) { if (n === terrainMesh || n === groundMesh) return true; n = n.parent; }
-      return false;
-    })();
-    if (onTerrain) return { clock: T, kind: 'terrain', node: hit.object.name || 'terrain' };
-    // 场景网格：世界点击点 → 游戏场景系（= gltf.scene 局部系 = destructibles pos 系）
-    let scenePt = null;
-    if (mapScenery) {
-      try { scenePt = mapScenery.worldToLocal(hit.point.clone()).toArray(); } catch (_) {}
-    }
-    const chain = nameChainOf(hit.object, mapScenery || null);
-    const mat = hit.object.material;
-    const matName = Array.isArray(mat) ? mat.map((m) => m?.name || '?').join('|') : (mat?.name || '');
-    // 实例归属：命中网格的精确归属优先（meshOwner——6m 倒树的树梢按「属于哪棵
-    // 树」归到树上，而非按表面点到锚点的距离错联邻树）；无归属网格才按位置兜底。
-    // 动画状态是可选叠加，按实例身份关联
-    // 实例归属：合批后命中 = 批次 InstancedMesh + instanceId——按复合键查归属表
-    //（值携带原节点名：合批后原 Mesh 已摘除，报告仍报真实物体名）；无表项才按位置兜底
-    const owner = (meshOwner && hit.instanceId != null)
-      ? meshOwner.get(meshOwnerKey(hit.object, hit.instanceId)) : null;
-    const inst = (owner && owner.inst)
-      || (scenePt ? nearestInstance(destructPickList, scenePt[0], scenePt[1], 3) : null);
-    const st = inst ? (destruct?.states || []).find((x) => x.inst === inst) || null : null;
-    // 地形诊断行（2026-10-11 塌陷排查工具）：命中点正下方的真值高度 / 渲染网格高度。
-    // 渲染网格 = 沿 −y 对 terrainMesh 单独再打一发（与画面里的地形同一几何）。
-    // ⚠️ 两个诊断变量都声明在 if 外——return 在 if 外引用它们（作用域错误曾致
-    // ReferenceError: render is not defined，表现为"点击无反应"）。
-    let terrain = null;
-    let render = null;
-    if (heightField && heightMeta) {
-      try {
-        const n = heightMeta.size || 512;
-        const span = terrainSpanOf();
-        // truth = 真值场在命中点的**双线性插值**（与网格的连续表面对同一口径）——
-        // 不能拿最近格点值当基准：坡面上连续点 vs 格点值的差是比法误差，不是渲染缺陷
-        //（2026-10-11 plant wall_03 Δ=+0.234 假警报的教训：该点在两格点之间、坡度 1 m/texel）。
-        const fx = (hit.point.x / span + 0.5) * n;
-        const fz = (hit.point.z / span + 0.5) * n;
-        const j0 = Math.min(Math.max(Math.floor(fx), 0), n - 1), j1 = Math.min(j0 + 1, n - 1);
-        const i0 = Math.min(Math.max(Math.floor(fz), 0), n - 1), i1 = Math.min(i0 + 1, n - 1);
-        const tx = Math.min(Math.max(fx - j0, 0), 1), tz = Math.min(Math.max(fz - i0, 0), 1);
-        const H = (i, j) => heightField[Math.min(i, n - 1) * n + Math.min(j, n - 1)];
-        const truth = (H(i0, j0) * (1 - tx) + H(i0, j1) * tx) * (1 - tz)
-                    + (H(i1, j0) * (1 - tx) + H(i1, j1) * tx) * tz;
-        const jj = Math.min(Math.max(Math.round(fx), 0), n - 1);
-        const ii = Math.min(Math.max(Math.round(fz), 0), n - 1);
-        let meshH = null;
-        if (terrainMesh) {
-          const rc = new THREE.Raycaster(
-            new THREE.Vector3(hit.point.x, 600, hit.point.z), new THREE.Vector3(0, -1, 0));
-          const th = rc.intersectObject(terrainMesh, false);
-          if (th.length) meshH = th[0].point.y;
-        }
-        const build = terrainMesh?.geometry?.userData?.terrainBuild || null;
-        terrain = {
-          truth,
-          meshH,
-          sizeAt: build ? build.sizeAt[ii * n + jj] : null,
-          morph: build ? build.morphRaw[ii * n + jj] : null,
-          quads: build ? build.quads : null,
-          overBudget: build ? build.overBudget : null,
-        };
-      } catch (_) { terrain = null; }
-    }
-    // 渲染身份诊断（2026-10-11 "表面可拾取但不可见"排查）：命中对象的运行时渲染状态。
-    // 可拾取（射线只查对象可见链）与可见（材质/实例矩阵/剔除共同决定）在这里现形。
-    // ⚠️ 不依赖 heightField/heightMeta——terrain 下载失败/元数据缺失/降级时（恰是最值得排障的
-    // 一类场景）本段仍必须出报告（2026-10-11 PR 评审 P3：此前被错误地包在 terrain 可用性里）。
-    try {
-      const o = hit.object;
-      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
-      const worldPos = new THREE.Vector3();
-      o.getWorldPosition(worldPos);
-      let instScale = null;
-      if (o.isInstancedMesh && hit.instanceId != null) {
-        const im = new THREE.Matrix4();
-        o.getMatrixAt(hit.instanceId, im);
-        instScale = new THREE.Vector3().setFromMatrixScale(im).toArray();
-      }
-      render = {
-        type: o.type,
-        name: o.name || null,
-        matName: mats.map((x) => x.name || '?').join('|') || null,
-        matType: mats.map((x) => x.type).join('|') || null,
-        matVisible: mats.map((x) => x.visible).join(',') || null,
-        transparent: mats.map((x) => x.transparent).join(',') || null,
-        opacity: mats.map((x) => Number(x.opacity != null ? x.opacity : 1)).join(',') || null,
-        alphaTest: mats.map((x) => x.alphaTest || 0).join(',') || null,
-        depthWrite: mats.map((x) => x.depthWrite).join(',') || null,
-        objVisible: o.visible,
-        frustumCulled: o.frustumCulled,
-        instanceId: hit.instanceId != null ? hit.instanceId : null,
-        instScale,
-        world: [worldPos.x, worldPos.y, worldPos.z].map((v) => Number(v.toFixed(1))),
-        sphere: o.geometry && o.geometry.boundingSphere ? {
-          c: [o.geometry.boundingSphere.center.x, o.geometry.boundingSphere.center.y,
-            o.geometry.boundingSphere.center.z].map((v) => Number(v.toFixed(1))),
-          r: Number(o.geometry.boundingSphere.radius.toFixed(1)),
-        } : null,
-      };
-    } catch (_) { render = null; }
-    return {
-      clock: T,
-      kind: 'scenery',
-      node: owner?.name || chain[0] || hit.object.name || hit.object.type,
-      chain: chain.length > 1 ? chain : undefined,
-      world: hit.point.toArray(),
-      scene: scenePt || undefined,
-      material: matName || undefined,
-      inst: inst || null,
-      serverIdKnown: !!(inst && inst.serverId),
-      vis: st ? stateVisualLabel(st) : null,
-      terrain,
-      render,
-    };
-  }
-  function showPickPanel(text) {
-    if (!pickPanel) {
-      pickPanel = document.createElement('pre');
-      pickPanel.style.cssText = 'position:absolute;top:8px;left:8px;z-index:30;max-width:52ch;'
-        + 'padding:8px 10px;margin:0;background:rgba(10,12,16,.86);color:#cfe3ff;'
-        + 'font:11px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;'
-        + 'border:1px solid rgba(120,160,255,.35);border-radius:6px;pointer-events:none;';
-      container.appendChild(pickPanel);
-    }
-    pickPanel.textContent = text;
-  }
-  function movePickMarker(p) {
-    if (!pickMarker) {
-      pickMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.5, 12, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.9,
-                                      toneMapped: false }),
-      );
-      pickMarker.renderOrder = 999;
-    }
-    pickMarker.position.copy(p);
-    scene.add(pickMarker);
-  }
+  const pickReporter = createPickReporter();
+  // 事件时刻的 ctx 快照（闭包内均为可变绑定，工厂创建期捕获会过期——契约见 pickReport.js 头注释）
+  const pickCtx = () => ({
+    clock: T, vehicles: V, scenery: mapScenery, terrainMesh, groundMesh,
+    destruct, destructPickList, meshOwner, heightField, heightMeta,
+    camera, raycaster, container, scene, terrainSpan: terrainSpanOf(),
+  });
+  function reportPick(e) { pickReporter.reportPick(e, pickCtx()); }
+  // 报告组装/面板/标记的实现自 2026-10-24 起在 playback/pickReport.js（工厂 + ctx 快照）。
 
-  // ---------- 地图边界带 ----------
-  // 边界 = 游戏内实际战场范围（playableBoundsMeters），比真实地图 worldBounds(±300) 小。
-  // 边界线是连续带（不是离散分段标注）：沿闭合矩形按 BOUNDARY_STEP 采样、逐顶点贴地，
-  // 起伏地形上不被埋掉。与上游 Agent 同式（上游表按数字 map_id，本表按 mapCode）。
-  const BOUNDARY_COLOR = 0xff2f2f;
-  const BOUNDARY_THICK = 1.8;   // 带宽（米）
-  const BOUNDARY_STEP = 2.0;    // 采样步长（米）：越小越贴合地形
+  // ---------- 地图边界带（几何在 playback/boundary.js 工厂；本处只留可玩范围解析） ----------
 
   // 优先 terrain meta 的 playableBounds（打包器从场景 MapBorderComponent 提取，新地图自带）；
   // 否则回退 mapCode 表。两者皆缺 → null（不画，不用车辆范围猜）
@@ -782,74 +477,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
              hx: (sxMax - sxMin) / 2, hz: (pb.yMax - pb.yMin) / 2 };
   }
 
-  function clearBoundary() {
-    if (!boundaryGroup) return;
-    const old = boundaryGroup.userData.sharedMaterial;
-    if (old) old.dispose();
-    scene.remove(boundaryGroup);
-    disposeObject3D(boundaryGroup);
-    boundaryGroup = null;
-  }
-
-  // 边界只认权威可玩范围（playableBounds）：**fail-closed**——拿不到就不画。
-  // 车辆范围 / 地形 span / worldBounds 都不是「游戏内红色战场边界」的证据，
-  // 不得作为兜底（历史实现曾用车辆 ext 与 terrain span 兜底，会凭空画出一条
-  // 与玩法不符的边界）。
-  function buildBoundary(bounds, thick) {
-    clearBoundary();
-    if (!bounds) return;
-    const { cx, cz, hx, hz } = bounds;
-    const x0 = cx - hx, x1 = cx + hx, z0 = cz - hz, z1 = cz + hz;
-    // 闭合路径（顺时针四条边，角点精确落在 (±hx, ±hz)）
-    const path = [];
-    const push = (ax, az, bx, bz) => {
-      const len = Math.hypot(bx - ax, bz - az);
-      const n = Math.max(2, Math.ceil(len / BOUNDARY_STEP));
-      for (let i = 0; i < n; i++) {
-        const t = i / n;
-        path.push([ax + (bx - ax) * t, az + (bz - az) * t]);
-      }
-    };
-    push(x0, z0, x1, z0);   // 北
-    push(x1, z0, x1, z1);   // 东
-    push(x1, z1, x0, z1);   // 南
-    push(x0, z1, x0, z0);   // 西
-    const N = path.length;
-    const pos = new Float32Array(N * 2 * 3);
-    const idx = [];
-    const half = thick / 2;
-    for (let i = 0; i < N; i++) {
-      const [px, pz] = path[i];
-      const [nx2, nz2] = path[(i + 1) % N];
-      const [ox, oz] = path[(i - 1 + N) % N];
-      let tx = nx2 - ox, tz = nz2 - oz;               // 切线 → 水平面内左法线
-      const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
-      const lx = -tz, lz = tx;
-      const y = groundY(px, pz) + 0.06;               // 贴地面（随地形起伏）
-      pos[i * 6] = px + lx * half; pos[i * 6 + 1] = y; pos[i * 6 + 2] = pz + lz * half;
-      pos[i * 6 + 3] = px - lx * half; pos[i * 6 + 4] = y; pos[i * 6 + 5] = pz - lz * half;
-    }
-    for (let i = 0; i < N; i++) {
-      const j = (i + 1) % N;
-      idx.push(i * 2, i * 2 + 1, j * 2, i * 2 + 1, j * 2 + 1, j * 2);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    // 标记/反馈层约定：`toneMapped: false` 字面色直出——逐图曝光（toneMappingExposure =
-    // 基准太阳强度/该图强度）只服务受光内容，不得让 UI 语义色的标记随图变深
-    //（2026-10-11 用户报"作者圆环与边界红线在加了光照后变深"：山地图 expo≈0.21 会压到 1/5）。
-    const mat = new THREE.MeshBasicMaterial({
-      color: BOUNDARY_COLOR, side: THREE.DoubleSide, toneMapped: false,
-      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // 防与地形 z-fighting
-    });
-    const g = new THREE.Group();
-    g.add(new THREE.Mesh(geo, mat));
-    g.userData.sharedMaterial = mat;
-    boundaryGroup = g;
-    scene.add(g);
-  }
+  // 边界带工厂（boundaryGroup 由工厂私有持有；几何与 fail-closed 语义见 playback/boundary.js。
+  // getScene 因 scene 在 initScene 才创建；groundY / disposeObject3D 是闭包内函数声明，
+  // 创建期引用安全——调用时才求值）
+  const boundaryBand = createBoundaryBand({ getScene: () => scene, disposeObject3D, groundY });
+  function buildBoundary(bounds, thick) { boundaryBand.build(bounds, thick); }
 
   // 相机距离钳制（禁止无限 zoom-out）：min/max 基于 world extent，初值实测后再调
   function applyCameraClamp() {
@@ -1242,321 +874,27 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       }
       if (!gltf || !gltf.scene) noteAsset('scenery', 'failed', 'scenery.glb 加载/解析失败（建筑/场景缺失）');
       if (gltf && gltf.scene) {
-        // 包级天空标记必须在**变体裁剪之前**采样：变体组里的唯一 sky 节点被裁掉后，
-        // 再从缩减场景重算会退化为 false 并误启 /sky/ 名字 fallback（烘焙同理）。
-        const skyFlagsAvailable = sceneHasSkyFlags(gltf.scene);
-        const variantMappingIncomplete = gltf.scene.userData?.variantMappingIncomplete === true;
-        // 变体裁剪（must 在材质转换/网格索引/遮挡登记之前）：多变体地图
-        // （Dead Rail 等 9 图）的场景 GLB 按 space 共享，组外布景不剔除即成
-        // 幻影物体——游戏一局只激活 LabelComponent 变体组中的一组。映射与
-        // 节点标签由导出器随 GLB extras 下发；有变体节点但没有可用映射时
-        // 消费端 fail-closed（隐藏全部带标记节点），不再全量渲染。
-        const variantPrune = pruneForeignVariantsDetailed(gltf.scene, DATA.meta.map_id);
-        const prunedVariants = variantPrune.removed;
-        if (prunedVariants && DEBUG) window.__prunedVariantNodes = prunedVariants;
-        if (variantMappingIncomplete || variantPrune.failClosed) {
-          // fail-closed 裁剪（映射缺失/当前 map_id 不在映射，或导出器标记映射不完整）
-          // 隐藏了变体节点：这是场景内容缺失，必须进入降级状态，不能只留 console.warn。
-          noteAsset('scenery', 'variant-fail-closed', variantMappingIncomplete
-            ? '导出器标记变体映射不完整，已 fail-closed 隐藏带标记节点'
-            : '变体映射缺失/未知，已隐藏全部带标记节点');
-        }
-        // extras 贴图预解析（mask/lightmap/detail/env/water/decal）——共享模块同一实现
-        const sceneryExtras = await resolveSceneryExtras(gltf);
-        if (stale()) { disposeObject3D(gltf.scene); return; }
-        const strictSurfaces = strictSurfacesOf(gltf.scene);
-        const isWaterNode = (name, mat) => isWaterNodeRule(name, mat, { strictSurfaces });
-        // 材质→贴图解析器（键 = gltf.parser.associations 的材质下标）：装配模块同源的
-        // makeTexResolvers，六个槽同表（mask/lm/detail/env/water/decal）
-        const { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf } =
-          makeTexResolvers(gltf, sceneryExtras);
-        // 退化几何隔离（旧版导出器撕裂批次）已删除：按 (三角形/顶点) 比率逐网格
-        // 判废是内容统计启发式，无法区分"旧导出器损坏"与合法高比率网格，且会静默
-        // 删掉数据。树批次撕裂已由导出器修正；若未来再出现几何损坏，应由导出器写
-        // 语义标记或 fail-closed 报错，不得在消费端按比率猜。
-        // 场景网格清单（材质转换段顺带收集；`water` = 任一材质带 extras.water ⇒ 水面/水下片）：
-        // 供"贴地薄构件走廊掩码"的类筛选用——必须在"实例化合批"之前取样（合批会换掉逐节点 Mesh）。
-        // 见 terrainRefineMask 声明处的方案说明。
-        const sceneryMeshes = [];
-        // 水面"海岸线"（客户端 water-fp.sl 的 coastLine，见 makeWaterMaterial 注释）用的共享资源：
-        // 高度场（真值，与地形网格/深度缓冲同一份）做成可线性滤波的浮点纹理。
-        // 资源构造在共享模块 groundPass.makeWaterCoast（俯视烘焙同一份）；本处只探测
-        // 深度位深（上下文实测）与相机 near/far，并登记会话 teardown 释放。
-        let waterCoast = null;
-        if (heightField && heightMeta) {
-          try {
-            const hn = heightMeta.size || 512;
-            if (heightField.length === hn * hn) {
-              // 深度分辨率（海岸线淡出阈值的量纲）：由**上下文实测**的深度位深推 ulp，
-              // near/far 取相机实际值（本渲染器 0.5/4000）——阈值全程无手调常数。
-              let depthBits = 24;
-              try {
-                const glc = renderer && renderer.getContext && renderer.getContext();
-                const b = glc && glc.getParameter && glc.getParameter(glc.DEPTH_BITS);
-                if (Number.isFinite(b) && b >= 16 && b <= 32) depthBits = b;
-              } catch (e) { /* 取不到按 24bit 缺省 */ }
-              waterCoast = makeWaterCoast({
-                field: heightField, n: hn, span: terrainSpanOf(),
-                near: camera && Number.isFinite(camera.near) ? camera.near : 0.5,
-                far: camera && Number.isFinite(camera.far) ? camera.far : 4000,
-                depthBits,
-              });
-              waterTexDispose = waterCoast.heightTex;    // 会话 teardown 释放
-              // 诊断钩子（同一 ?debug 惯例）：确认"水面用的高度场/跨度"真的下发到了水面材质——
-              // 用于把"画面没变化"区分为"页面跑的是旧包"与"另因"（控制台可读，不需目视）。
-              if (DEBUG) window.__waterCoast = { present: true, span: waterCoast.mapSpan, materials: 0 };
-            }
-          } catch (e) { console.warn('水面海岸线高度场创建失败（按不淡出继续）:', e); }
-        }
-        // ---- 逐节点材质分派（SSOT：src/scene/sceneryAssembly.js，与俯视烘焙同一份）----
-        // 内含：水面片收集/underWater 判据 → 天空穹（材质标记先于名字）→ 水/贴花/光照图
-        // （+env+detail）/混合层掩码/水下/convMat → 水面深度修整；onMesh 钩子即走廊掩码取样
-        // （必须在实例化合批前，本函数正处该阶段）。
-        const { animLayerMats: assembledAnimMats } = assembleSceneryMaterials(gltf, {
-          strictSurfaces,
-          masks: { maskTexOf, lmTexOf, detailTexOf, envTexOf, waterTexOf, decalTexOf },
-          groundLayers, waterCoast, debug: DEBUG,
-          onMesh: (o, waterMarked) => { sceneryMeshes.push({ o, water: waterMarked }); },
-          skyFlagsAvailable,
+        // 装配（变体裁剪 → 材质分派 → 合批 → 可破坏物槽位 → 矩阵冻结）在
+        // playback/mapAssets.js（2026-10-24 Step A3 出仓；ctx 快照 + 增量 writes，
+        // stale 语义与原闭包逐段赋值 + 中途 return 一致——见该模块头注释）
+        const asm = await assembleMapScenery(gltf, {
+          DATA, Q, DEBUG,
+          camera, renderer, scene, controls, terrainMesh,
+          groundLayers, heightField, heightMeta, terrainSpan: terrainSpanOf(),
+          stale, disposeObject3D, noteAsset, sampleHeight,
+          onRefineMaskBuilt: () => { terrainLodPrev = null; maybeRebuildTerrainLod(); },
+          destructDocPromise,
         });
-
-        // 动画混合层材质（uTime 每帧写回放秒数）由装配模块登记返回；暂停即停、seek 后相位确定。
-        animLayerMats = assembledAnimMats;
-        if (DEBUG) window.__animLayerMats = animLayerMats.length;
-
-        // 场景 GLB 贴图各向异性：地面（分层地表）早按画质档设了，场景侧此前漏设 ——
-        // 掠射角下建筑/道路贴图发糊并随镜头闪烁。逐纹理设一次（同贴图跨材质共享）。
-        const aniso = Math.min(Q.anisotropy, renderer.capabilities.getMaxAnisotropy());
-        const anisoTextures = applyMaterialTextureAnisotropy(gltf.scene, aniso);
-        if (DEBUG) window.__sceneryAniso = { value: aniso, textures: anisoTextures };
-
-        mapScenery = new THREE.Group();
-        mapScenery.rotation.order = 'YXZ';
-        mapScenery.rotation.set(-Math.PI / 2, Math.PI, 0);
-        mapScenery.add(gltf.scene);
-        scene.add(mapScenery);
-
-        // ---- 贴地薄构件走廊掩码（B：走廊强制细分）----
-        // 实现（类判据/足迹取样/掩码生成）在共享模块 groundPass.buildCorridorRefineMask——
-        // 俯视烘焙同一份（2026-10-14 用户报"轨道被下方地形遮挡"：烘焙此前未接入本机制）。
-        // 必须在"实例化合批"之前做（合批会换掉逐节点 Mesh）；掩码只影响细分层级、不改高度值；
-        // GLB 先于/后于地形加载都成立（后到时重建时取用）。
-        if (sceneryMeshes.length && heightField) try {
-          mapScenery.updateMatrixWorld(true);
-          const built = buildCorridorRefineMask({
-            meshes: sceneryMeshes, field: heightField,
-            n: heightMeta?.size || 512, span: heightMeta?.span || 600,
-          });
-          if (built) {
-            terrainRefineMask = built.mask;
-            if (DEBUG) window.__terrainRefineMask = { meshes: built.candidates, texels: built.texels };
-            // 地形通常已先建好（地面段在前）⇒ 立刻重算一次（terrainLodStale(null,…) 恒真）
-            if (terrainMesh && camera && controls) { terrainLodPrev = null; maybeRebuildTerrainLod(); }
-          }
-        } catch (e) { console.warn('走廊掩码构建失败（地形保持客户端口径）:', e); }
-
-        // 天穹在材质转换段已换成 makeSkyMaterial 的无限远实现（此前整节点隐藏 →
-        // 背景纯色 0x11161d）。草地仍无：导出器不生成草系统网格（GLB 内只有
-        // dec_*_grass 静态装饰），见审计文档 P2。
-
-        // ---- 实例化合批（场景侧减负主刀）----
-        // 导出器把每个实例导成独立节点，但**节点级共享 mesh/几何**（实测 malinovka
-        // 3096 节点 / 142 唯一几何，~21× 复用）。GLTFLoader 逐节点建 Mesh → 每帧
-        // draw call ≈ 节点数、场景图双遍历（updateMatrixWorld + projectObject）同量级，
-        // 是中/高档场景侧最大的 CPU 开销。按 (geometry, material) 合并为 InstancedMesh：
-        // 几何**零拷贝**复用，draw call 与场景图规模一起降到批次数。
-        // 天空与水体不参与：天穹每图只有 1–2 个节点、无复用收益，且它已关视锥剔除
-        // （顶点被当方向、包围球只是 ~10m 小球），入批只让剔除语义更绕；水面是全场
-        // 唯一真透明物，保持独立节点让 three 按相机距离做透明排序（合批会把整批
-        // 退化成一个排序单位）。
-        gltf.scene.updateMatrixWorld(true);
-        // 天穹排除按装配期语义标记（extras.sky 或旧包名字 fallback 都会打标）；
-        // 不得再用 /sky/i 猜名字——新包天穹名可能不含 sky，旧实现会把它合批后丢失
-        // frustumCulled=false 的无限远语义。
-        const allEntries = collectInstanceEntries(gltf.scene);
-        const batchable = (e) =>
-          !(e.node.userData && e.node.userData.isSky)
-          && !isWaterNode(e.name, e.material)
-          && !hasTransparentMaterial(e.material);
-        const entries = allEntries.filter(batchable);
-        // 透明材质保留独立排序单位；其中带逐节点光照图变换的用单实例 InstancedMesh，
-        // 以保留 aLm 变换（普通 Mesh 的非实例分支会按原始 uv1 采错 atlas 区域）。
-        buildStandaloneLightmappedMeshes(allEntries.filter((e) =>
-          !batchable(e)
-          && hasTransparentMaterial(e.material)
-          && !(e.node.userData && e.node.userData.isSky)
-          && !isWaterNode(e.name, e.material)), gltf.scene);
-        // 可破坏匹配索引（旧 meshGrid 语义）：展平位置 → entry，2cm 半径邻域查找
-        const meshGrid = new Map();
-        const gridKey = (x, y) => `${Math.round(x / 2)},${Math.round(y / 2)}`;
-        for (const e of entries) {
-          const k = gridKey(e.x, e.y);
-          (meshGrid.get(k) || meshGrid.set(k, []).get(k)).push(e);
-        }
-        // 宫格分块：8×8（600m 图 → 75m/格）——整批跨全图的包围球会失去逐实例
-        // 视锥剔除（镜头看半张图，视野外的实例也全量提交；林荫图极致档实测卡顿
-        // 的主因）。分片后每片包围球局部化，剔除恢复到格粒度。
-        // span 取地形 sidecar（地面段已装载）；缺失回退 600（与 python 管线一致）
-        const cellSize = Math.max(75, (heightMeta?.span || 600) / 8);
-        const batches = groupInstanceBatches(entries, cellSize);
-        for (const b of batches) b.items.forEach((e, i) => { e.batch = b; e.idx = i; });
-        for (const b of batches) { b.mesh = buildInstancedMesh(b); gltf.scene.add(b.mesh); }
-        // 原节点摘除：几何/材质已由批次持有（GPU 只上传批次侧），原 Mesh 不再进渲染图
-        for (const e of entries) e.node.removeFromParent();
-        // D_ 损毁态实例初始隐藏：实例化后没有逐实例 visible，用「远处 + 微缩」矩阵
-        // （精确零矩阵是奇异矩阵，raycast 求逆走 NaN 路径，见 writeHiddenInstance）。
-        for (const e of entries) {
-          if (e.name && e.name.startsWith('D_')) { writeHiddenInstance(e.batch.mesh, e.idx); e.hidden = true; }
-        }
-        // 隐藏槽位落位后重算批次球：可见实例用当前矩阵、隐藏的 D_ 槽位用 base
-        // 位姿计入覆盖——three 的 union 会把 y=-1e6 的隐藏矩阵撑爆半径（剔除
-        // 全失效），而只按可见重算又会让全 D_ 批次空球、损毁激活后被整批剔除
-        // （评审二轮/五轮两次指出的两个方向）
-        for (const b of batches) refreshBatchSphere(b.mesh, b, (e) => e.hidden);
-        // 标签遮挡候选格（16m，见 occlusionCells 注释）：登记粒度 = 批次。射线候选走
-        // InstancedMesh 逐实例球测（成本 ≈ 候选实例数 × 球测，配合 far 钳制与 4ms 预算
-        // 化轮转可控）。足印仍按**合法实例**逐一枚举（occlusionFootprintCells 语义不变；
-        // hidden 实例在 y=-1e6，不得参与，否则足印撑爆全图）。无名字的 mesh 与旧行为
-        // 一致：可渲染但既不匹配可破坏物、也不当遮挡候选。
-        // 匹配半径 **2cm**（导出器把同一实例的全部批次放在同一坐标上：实测 99.8% 实例
-        // 的完好网格在 1cm 内、成对 D_ 网格在 5mm 内）——早期用 1.5m 半径会把**邻近实例**
-        // 的网格一起卷进来（malinovka 579 棵树里 22 棵会拖走邻居几何：一棵树倒，旁边草丛
-        // 跟着转）。半径收紧后邻居不再误配；无对应网格 = 该物体不在 GLB（不渲染）。
-        const MESH_MATCH_R = 0.02;
-        const occGrid = new Map();
-        for (const b of batches) {
-          if (!b.geometry.boundingSphere) b.geometry.computeBoundingSphere();
-          const r = b.geometry.boundingSphere ? b.geometry.boundingSphere.radius : 0;
-          for (const e of b.items) {
-            if (e.hidden || !e.name) continue;
-            const c = occlusionFootprintCells(e.x - r, e.y - r, e.x + r, e.y + r, OCCL_CELL);
-            for (const key of c) {
-              const list = occGrid.get(key);
-              if (list) { if (!list.includes(b.mesh)) list.push(b.mesh); }
-              else occGrid.set(key, [b.mesh]);
-            }
-          }
-        }
-        occlGrid = occGrid;   // 遮挡检测的候选表（旧会话的由 teardown 置 null）
-        const findMeshes = (px, py, wantDestroyed, r = MESH_MATCH_R) => {
-          const out = [];
-          const gx = Math.round(px / 2), gy = Math.round(py / 2);
-          for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-            for (const e of meshGrid.get(`${gx + dx},${gy + dy}`) || []) {
-              const destroyedMesh = e.name.startsWith('D_');
-              if (destroyedMesh === wantDestroyed && Math.hypot(e.x - px, e.y - py) <= r) out.push(e);
-            }
-          }
-          return out;
-        };
-        const destructDoc = await destructDocPromise;
-        // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
-        //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
-        if (stale()) return;
-        if (DEBUG) window.__destructStage = destructDoc
-          ? (Array.isArray(DATA.destructible_events) ? `events-${DATA.destructible_events.length}` : 'no-events-old-wasm')
-          : 'doc-missing';
-        if (destructDoc && Array.isArray(destructDoc.instances)) {
-          destructPickList = destructDoc.instances;   // 守卫内发布（拾取用全量清单）
-          meshOwner = buildMeshOwnerMap(destructPickList, findMeshes);
-        }
-        if (destructDoc && Array.isArray(DATA.destructible_events)) {
-          const areasByEid = new Map((DATA.destructible_areas || []).map((a) => [a.eid, a]));
-          const index = buildDestructibleIndex(destructDoc);
-          const states = foldDestructibleStates(DATA.destructible_events, areasByEid, index);
-          // 可破坏物**槽位化**：不再重挂 pivot——状态持 { mesh, idx, base } 槽位。
-          // 树倒 = T(p)·R·T(−p)·base 逐实例矩阵（与旧 pivot 装配逐值等价，等价性由
-          // sceneryInstancing.test.js 随机位姿锁定）；建筑换模 = 完好/损毁槽位在 base
-          // 与隐藏矩阵之间翻转。pivot 原点/树高/停止角公式与旧实现逐项一致。
-          const slotOf = (e) => ({ mesh: e.batch.mesh, idx: e.idx, base: e.matrix });
-          for (const st of states) {
-            const [px, py] = st.inst.pos;
-            if (st.prop === 3) {
-              const hits = findMeshes(px, py, false);
-              if (!hits.length) continue;
-              const pivotZ = hits[0].z;
-              // 树高 = 各网格几何在 pivot 局部系（z 上）的上界 + 网格自身 z 偏移（= 0，
-              // 同实例批次同锚点）——倒伏时长 T ∝ √(L/g) 用它（见 destructibles.js）。
-              let heightM = 0;
-              for (const h of hits) {
-                const geo = h.geometry;
-                if (!geo) continue;
-                if (!geo.boundingBox) geo.computeBoundingBox();
-                const bb = geo.boundingBox;
-                if (bb) heightM = Math.max(heightM, (bb.max.z ?? 0) + (h.z - pivotZ));
-              }
-              st.slots = hits.map(slotOf);
-              st.heightM = heightM;
-              st.pivotPos = { x: px, y: py, z: pivotZ };
-              st.fallQuat = { w: 1 };   // settled 自校验读的倒伏旋转（destructibles.js）
-              st.upright = true;
-              // 停止角 = 树干沿倒向**触地**的角度（客户端"停在地形上"，因而随位置/倒向变化）。
-              // 高度场在**世界系**（见 rebuildGround 注释：世界 x = −场景局部 x），而 pivot 在
-              // gltf.scene 局部系（z 上）→ 采样用 (lx, ly) → (世界 −lx, 世界 lz=ly)。
-              // 无高度场（2D 资源平面）→ sampleHeight 恒 0，此时按平坦地面（90°）。
-              st.stopRad = heightField
-                ? fallStopAngle(st.fallDir, st.pivotPos, heightM, (lx, ly) => sampleHeight(-lx, ly))
-                : Math.PI / 2;
-            } else {
-              st.intactSlots = findMeshes(px, py, false).map(slotOf);
-              st.deadSlots = findMeshes(px, py, true).map(slotOf);
-            }
-          }
-          destruct = { states, ptr: 0, lastT: -1, animating: false };
-          // 动态批次包围球保守扩张（评审 P2 二轮修正）：树倒 = 绕基点旋转，树梢会
-          // 伸出 buildInstancedMesh 按直立位算的包围球。扩张量必须计入**槽位实际
-          // 变换**——heightM 是原型几何高度，导出节点带非均匀缩放（erlenberg
-          // Spruce2 ≈ [3.1, 2.39, 2.39]）时实高可差数倍，未缩放扩张不保守（倒下
-          // 仍漏剔除/漏拾取）。正确量 = 几何球经 s.base 变换后的世界球（含缩放），
-          // 再算该球到 pivot 的最远距离 = |center−pivot| + radius；hidden 槽位
-          // （y=-1e6）不参与。
-          for (const st of states) {
-            if (st.prop !== 3 || !st.slots) continue;
-            for (const s of st.slots) {
-              const sph = s.mesh.boundingSphere;
-              if (!sph) continue;
-              if (!s.mesh.geometry.boundingSphere) s.mesh.geometry.boundingSphere = sph.clone();
-              const geo = s.mesh.geometry.boundingSphere;
-              // 几何球经 base 变换：center 仿射变换，radius 按最大轴缩放（保守）
-              const e = s.base.elements;
-              const cx = e[0] * geo.center.x + e[4] * geo.center.y + e[8] * geo.center.z + e[12];
-              const cy = e[1] * geo.center.x + e[5] * geo.center.y + e[9] * geo.center.z + e[13];
-              const cz = e[2] * geo.center.x + e[6] * geo.center.y + e[10] * geo.center.z + e[14];
-              const sx = Math.hypot(e[0], e[1], e[2]);
-              const sy = Math.hypot(e[4], e[5], e[6]);
-              const sz = Math.hypot(e[8], e[9], e[10]);
-              const r = geo.radius * Math.max(sx, sy, sz);
-              // 倒伏最远触及（以**批次球心**度量，评审四轮）：旋转保点到 pivot
-              // 的距离 → 任一倒角下，树体所有点到 pivot 的距离 ≤ |p−c_geom|+r；
-              // 到批次球心 c 的距离再 +|c−p|（多树共批时 c 与树位相差可达半格宽，
-              // 漏掉这一项 = 单棵树测试过、同批双树反例仍 0 命中）。
-              const dGeo = Math.hypot(cx - st.pivotPos.x, cy - st.pivotPos.y, cz - st.pivotPos.z);
-              const dCenter = Math.hypot(
-                sph.center.x - st.pivotPos.x,
-                sph.center.y - st.pivotPos.y,
-                sph.center.z - st.pivotPos.z);
-              const need = dCenter + dGeo + r + 2;
-              if (need > sph.radius) sph.radius = need;
-            }
-          }
-          if (DEBUG) window.__destructStage = `ready states=${destruct.states.length}`;
-          if (DEBUG) window.__destructDebug = () => ({
-            events: (DATA.destructible_events || []).length,
-            states: destruct.states.length,
-            trees: destruct.states.filter((st) => st.slots).length,
-            swaps: destruct.states.filter((st) => st.intactSlots).length,
-            ptr: destruct.ptr,
-          });
-        }
-        // ---- 静态子树矩阵冻结 ----
-        // 场景 GLB 至此全部定型（合批 + 可破坏槽位装配完成）：先 bake 一遍世界矩阵，再关
-        // 全树 matrixAutoUpdate（three 对 autoUpdate 节点每帧**无条件**重 compose）。批次
-        // 自身变换恒为单位阵；运行期唯一的变换写入是实例矩阵（树倒/换模翻转），它不走
-        // 节点 matrix 路径、不受冻结影响（instanceMatrix.needsUpdate 局部上传）。
-        mapScenery.updateMatrixWorld(true);
-        gltf.scene.traverse((o) => { o.matrixAutoUpdate = false; });
-        mapScenery.matrixAutoUpdate = false;   // 根组旋转已 bake，永不再变；保持 true 会让
-                                               // 每帧置脏 + force 传播把冻结整个击穿
+        const w = asm.writes;
+        if ('waterTexDispose' in w) waterTexDispose = w.waterTexDispose;
+        if ('animLayerMats' in w) animLayerMats = w.animLayerMats;
+        if ('mapScenery' in w) mapScenery = w.mapScenery;
+        if ('terrainRefineMask' in w) terrainRefineMask = w.terrainRefineMask;
+        if ('occlGrid' in w) occlGrid = w.occlGrid;
+        if (asm.stale) return;
+        destructPickList = w.destructPickList;
+        meshOwner = w.meshOwner;
+        destruct = w.destruct;
       }
       }
     } catch (e) {
@@ -1689,245 +1027,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     return t === f ? COLOR_FRIENDLY : COLOR_ENEMY;
   }
 
-  // ---------- 基地（争霸 A–D / 单基地）：贴地标记 ----------
-  // 几何来自 mapBases[key]（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像）；
-  // 状态口径与 2D 地图、顶部基地状态条共用 utils/baseStatus.js（seek 折叠：clock ≤ t 的最后一条）。
-  // 地上只画两样，全部贴着地形：
-  //   · 圆环：当前归属色（友绿 / 敌红 / 中立白）；
-  //   · 圆盘：淡归属底色 + 按占领进度从下往上"灌水"（占领方颜色）+ 圆心字母（单基地为旗帜）。
-  // 圆盘贴图随相机水平朝向转正——平躺在地上，但从任何方向看字都是正的。空中不再有 HUD。
-  // 颜色取自设计语言阵营 token（design-language §3.3：2D、3D 共用），读不到时用同值兜底。
-  const BASE_TEX = 256;
-  const BASE_COLOR_FALLBACK = { friendly: '#5cc280', enemy: '#f2786d', neutral: '#f5f5f5', objective: '#ffc24b', onNeutral: '#1c1f1d' };
-  let baseObjects = [];   // { baseId, kind, gx, gz, r, ring, disc, canvas, ctx, tex, stateKey, uvDir, ringHex }
-  let baseColors = BASE_COLOR_FALLBACK;
-  let supremacyBaseIds = [];   // 本场出现过的争霸基地（轨迹 ∪ 几何），状态条按它列出
-  let lastBaseViewsKey = '';
-
-  function readBaseColors() {
-    if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') return BASE_COLOR_FALLBACK;
-    const cs = getComputedStyle(document.documentElement);
-    const read = (name, fallback) => (cs.getPropertyValue(name) || '').trim() || fallback;
-    return {
-      friendly: read('--color-team-ally', BASE_COLOR_FALLBACK.friendly),
-      enemy: read('--color-team-enemy', BASE_COLOR_FALLBACK.enemy),
-      neutral: read('--color-team-neutral', BASE_COLOR_FALLBACK.neutral),
-      objective: read('--color-objective', BASE_COLOR_FALLBACK.objective),
-      onNeutral: read('--color-on-team-neutral', BASE_COLOR_FALLBACK.onNeutral),
-    };
-  }
-
-  // ---------- 单基地目标（Assault / Encounter）----------
-  // 几何来自 mapBases[key].assault（客户端 .sc2 提取，世界坐标；scene x = −游戏 x 镜像），
-  // 状态来自 Agent 契约 v2 的 assault_objective_present / assault_bases（wrapper8/root8）。
-  //
-  // 语义红线（docs/research/replay/assault-base-state.md）：单基地的 owner/capturing 恒为
-  // null，静态 scene 的 `team` 字段语义 UNKNOWN——一律不据此上色/推断归属；环与 HUD 用中性
-  // 色，进度条用呈现强调色（仅表示"有占领进度"，不代表阵营）。半径不做车辆距离推算。
-  //
-  // 目标存在性判据：assault_objective_present 优先（上游 v0.3.11 = **目标族存在性**：
-  // wrapper8 目标族 field2==1 且 field1∈{1,2} 出现即 true，不要求进度字段），旧产物
-  // 回退"有进度广播"。存在性只是前提——真正落地的标记还要求该地图 verified semantics
-  // 给出**唯一**单基地 controlpoint（多 candidate fail-closed，见 buildBases）。
-  const ASSAULT_RADIUS_FALLBACK = 20;      // 客户端 scene 常不声明 radius：20m 仅呈现兜底
-  const ASSAULT_PROGRESS_COLOR = 0xffc24b; // 呈现强调色（非阵营语义）
-  function assaultHasObjective() {
-    if (DATA.assault_objective_present === true) return true;
-    if (DATA.assault_objective_present === undefined) {
-      return !!(DATA.assault_bases && DATA.assault_bases.length);
-    }
-    return false;
-  }
-
-  function clearBases() {
-    for (const b of baseObjects) {
-      scene.remove(b.ring); b.ring.geometry.dispose(); b.ring.material.dispose();
-      scene.remove(b.disc); b.disc.geometry.dispose(); b.disc.material.dispose(); b.tex.dispose();
-    }
-    baseObjects = [];
-    supremacyBaseIds = [];
-    lastBaseViewsKey = '';
-    store.baseViews = [];
-  }
-
-  function addBaseMarker(baseId, kind, gx, gz, r) {
-    const ring = new THREE.Mesh(
-      makeGroundedRing(gx, gz, r),
-      new THREE.MeshBasicMaterial({ color: baseColors.neutral, side: THREE.DoubleSide,
-                                    transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false,
-                                    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-    scene.add(ring);
-    const canvas = document.createElement('canvas'); canvas.width = BASE_TEX; canvas.height = BASE_TEX;
-    const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
-    const disc = new THREE.Mesh(
-      makeGroundedDisc(gx, gz, r * 0.9),
-      new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false,
-                                    toneMapped: false,
-                                    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-    scene.add(disc);
-    const b = { baseId, kind, gx, gz, r, ring, disc, canvas, ctx: canvas.getContext('2d'), tex,
-                stateKey: undefined, uvDir: null, ringHex: null,
-                // 地形异步就绪后：按新高度场重建贴地环带与圆盘
-                reground: () => {
-                  ring.geometry.dispose(); ring.geometry = makeGroundedRing(gx, gz, r);
-                  disc.geometry.dispose(); disc.geometry = makeGroundedDisc(gx, gz, r * 0.9);
-                  b.uvDir = null;
-                } };
-    baseObjects.push(b);
-  }
-
-  function buildBases() {
-    clearBases();
-    baseColors = readBaseColors();
-    const tracks = DATA.supremacy_bases || [];
-    if (tracks.length) {
-      // 非争霸场次不画（不靠静态几何猜模式）；无几何的地图不猜坐标，但状态条照样列出
-      const seen = new Set(tracks.map((tr) => SUPREMACY_BASE_IDS[tr.base_id]).filter(Boolean));
-      const pts = (currentMapBases && currentMapBases.supremacy) || [];
-      for (const p of pts) {
-        if (!SUPREMACY_BASE_IDS.includes(p.baseId)) continue;
-        seen.add(p.baseId);
-        addBaseMarker(p.baseId, 'supremacy', -p.x, p.y, p.radius || 15);
-      }
-      supremacyBaseIds = SUPREMACY_BASE_IDS.filter((id) => seen.has(id));
-    }
-    if (assaultHasObjective()) {
-      const pts = (currentMapBases && currentMapBases.assault) || [];
-      // 多 candidate 无证据 fail-closed（与 2D basesAt 同式）：几何不唯一就不画地面标记
-      if (pts.length === 1) addBaseMarker(ASSAULT_BASE_ID, 'assault', -pts[0].x, pts[0].y, pts[0].radius || ASSAULT_RADIUS_FALLBACK);
-    }
-  }
-
-  function regroundBases() {
-    for (const b of baseObjects) b.reground();
-  }
-
-  /** 当前时刻的基地视图模型（与 2D 同一口径），状态条与贴地标记共用 */
-  function baseViewsAt(t) {
-    const ft = DATA.meta.friendly_team;
-    const views = [];
-    if (supremacyBaseIds.length) {
-      for (const state of foldSupremacyTransitions(DATA.supremacy_bases, t)) {
-        if (supremacyBaseIds.includes(state.baseId)) views.push(baseView(state, ft));
-      }
-    }
-    if (assaultHasObjective()) views.push(baseView(foldAssaultProgress(DATA.assault_bases, t), ft));
-    return views;
-  }
-
-  function drawBaseDecal(b, view) {
-    const ctx = b.ctx, S = BASE_TEX, c = S / 2, R = S / 2 - 2;
-    const owner = baseColors[view.owner];
-    ctx.clearRect(0, 0, S, S);
-    ctx.save();
-    ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
-    ctx.globalAlpha = 0.2; ctx.fillStyle = owner; ctx.fillRect(0, 0, S, S);
-    const fillColor = view.kind === 'assault' ? baseColors.objective : (view.capturing ? baseColors[view.capturing] : null);
-    if (fillColor && view.progress != null) {
-      // 从下往上"灌水"（下 = 靠近相机一侧，贴图随视角转正）
-      const h = 2 * R * (view.progress / 100);
-      ctx.globalAlpha = 0.5; ctx.fillStyle = fillColor; ctx.fillRect(0, c + R - h, S, h);
-    }
-    ctx.restore();
-    ctx.globalAlpha = 1;
-    ctx.lineJoin = 'round'; ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(0,0,0,.6)';
-    if (view.kind === 'supremacy') {
-      ctx.font = 'bold 132px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.strokeText(b.baseId, c, c + 6); ctx.fillStyle = owner; ctx.fillText(b.baseId, c, c + 6);
-    } else {
-      // 旗帜（单基地没有字母）：旗杆 + 三角旗
-      ctx.beginPath(); ctx.moveTo(c - 26, c + 54); ctx.lineTo(c - 26, c - 54);
-      ctx.lineTo(c + 42, c - 30); ctx.lineTo(c - 26, c - 6);
-      ctx.stroke(); ctx.strokeStyle = baseColors.neutral; ctx.lineWidth = 8; ctx.stroke();
-    }
-    b.tex.needsUpdate = true;
-  }
-
-  function updateBases() {
-    if (!DATA) return;
-    const views = baseViewsAt(T);
-    const key = views.map((v) => v.baseId + ':' + v.owner + '/' + v.capturing + '/' + v.progress).join('|');
-    if (key !== lastBaseViewsKey) { lastBaseViewsKey = key; store.baseViews = views; }
-    for (const b of baseObjects) {
-      const view = views.find((v) => v.baseId === b.baseId);
-      if (!view) continue;
-      const stateKey = view.owner + '/' + view.capturing + '/' + view.progress;
-      if (b.stateKey !== stateKey) { b.stateKey = stateKey; drawBaseDecal(b, view); }
-      const ringHex = baseColors[view.owner];
-      if (b.ringHex !== ringHex) { b.ring.material.color.set(ringHex); b.ringHex = ringHex; }
-      // 贴图转正：字母"上"指向远离相机的方向；水平朝向变化超过约 2° 才重算 UV
-      const dx = b.gx - camera.position.x, dz = b.gz - camera.position.z;
-      const len = Math.hypot(dx, dz);
-      if (len < 1e-3) continue;
-      const ux = dx / len, uz = dz / len;
-      if (!b.uvDir || ux * b.uvDir[0] + uz * b.uvDir[1] < 0.9994) {
-        orientDisc(b.disc.geometry, ux, uz);
-        b.uvDir = [ux, uz];
-      }
-    }
-  }
-
-  // 逐顶点贴地圆盘（极坐标网格，中心 + rings 圈）。offsets 记录每个顶点相对圆心的归一化偏移，
-  // UV 由 orientDiscUv 按观察方向旋转计算，几何本身不随视角重建。
-  function makeGroundedDisc(gx, gz, radius, rings = 10, seg = 48) {
-    const count = 1 + rings * seg;
-    const pos = new Float32Array(count * 3);
-    const offsets = new Float32Array(count * 2);
-    pos[0] = gx; pos[1] = groundY(gx, gz) + 0.05; pos[2] = gz;
-    let k = 1;
-    for (let i = 1; i <= rings; i++) {
-      const rr = (i / rings) * radius;
-      for (let j = 0; j < seg; j++) {
-        const a = (j / seg) * Math.PI * 2;
-        const dx = Math.cos(a) * rr, dz = Math.sin(a) * rr;
-        pos[k * 3] = gx + dx; pos[k * 3 + 1] = groundY(gx + dx, gz + dz) + 0.05; pos[k * 3 + 2] = gz + dz;
-        offsets[k * 2] = dx / radius; offsets[k * 2 + 1] = dz / radius;
-        k++;
-      }
-    }
-    const idx = [];
-    for (let j = 0; j < seg; j++) idx.push(0, 1 + j, 1 + ((j + 1) % seg));
-    for (let i = 1; i < rings; i++) {
-      const a0 = 1 + (i - 1) * seg, b0 = 1 + i * seg;
-      for (let j = 0; j < seg; j++) {
-        const j1 = (j + 1) % seg;
-        idx.push(a0 + j, b0 + j, b0 + j1, a0 + j, b0 + j1, a0 + j1);
-      }
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(count * 2), 2));
-    geo.setIndex(idx);
-    geo.userData.offsets = offsets;
-    return geo;
-  }
-
-  function orientDisc(geo, ux, uz) {
-    orientDiscUv(geo.userData.offsets, geo.attributes.uv.array, ux, uz);
-    geo.attributes.uv.needsUpdate = true;
-  }
-
-  // 逐顶点贴地圆环（与地面/边界同构：起伏地形上平面圆环会被坡地埋掉）
-  function makeGroundedRing(gx, gz, radius, seg = 72) {
-    const pos = new Float32Array((seg + 1) * 2 * 3);
-    const idx = [];
-    for (let i = 0; i <= seg; i++) {
-      const a = (i / seg) * Math.PI * 2;
-      const ca = Math.cos(a), sa = Math.sin(a);
-      const xo = gx + ca * radius, zo = gz + sa * radius;
-      const xi = gx + ca * radius * 0.9, zi = gz + sa * radius * 0.9;
-      pos[i * 6] = xo; pos[i * 6 + 1] = groundY(xo, zo) + 0.08; pos[i * 6 + 2] = zo;
-      pos[i * 6 + 3] = xi; pos[i * 6 + 4] = groundY(xi, zi) + 0.08; pos[i * 6 + 5] = zi;
-    }
-    for (let i = 0; i < seg; i++) {
-      idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    return geo;
-  }
+  // ---------- 基地（争霸 A–D / 单基地）贴地标记（实现在 playback/bases.js；快照式工厂） ----------
+  //（原节的语义注释与 fail-closed 判据随实现迁往该模块头）
+  const bases = createBaseMarkers({
+    getScene: () => scene, getCamera: () => camera,
+    getData: () => DATA, getMapBases: () => currentMapBases,
+    store, groundY,
+  });
+  function buildBases() { bases.build(); }
+  function clearBases() { bases.clear(); }
+  function regroundBases() { bases.reground(); }
+  function updateBases() { bases.update(T); }
 
   function groundY(x, z) {
     return sampleHeight(x, z) + 0.12;
@@ -1956,7 +1066,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // **打起来后间歇性整页卡死**（暂停时 `updateLabels` 不跑 → 立刻不卡，恢复播放过一会再卡）。
   // 现在改为：加载场景时把每个可见静态网格按**世界位置 + 包围球半径**登记进粗格
   // （16m），检测时只对"相机→锚点线段经过的格子"里的网格做 raycast。
-  const OCCL_CELL = 16;
+  //（登记循环随场景装配块在 playback/mapAssets.js，格长常量 OCCL_CELL 亦在其内）
   /** 场景遮挡候选（加载期构建；null = 未建/旧路径） */
   let occlGrid = null;
   /** 单次检测的候选上限：超限直接判"不遮挡"（fail-open，宁可少淡一个标签也不掉帧） */
@@ -3455,101 +2565,22 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     dmgPtr = 0; burstPtr = 0;                 // 游标重置：seek 后不补播历史动画
   }
 
-  // ---------- 击杀 feed / 计分 ----------
-  function feedEntry(k) {
-    const gen = sessionGen;
-    const name = (eid) => { const v = V.find((x) => x.def.eid === eid);
-      return v ? (v.def.nickname || 'Unknown') : eid === 0 ? '环境' : String(eid); };
-    const causeMap = { 0: '', 1: '（火焰）', 2: '（撞击）', 3: '（环境）', 5: '（溺水）' };
-    const text = k.killer_eid !== 0
-      ? `${name(k.killer_eid)} 击毁 ${name(k.victim_eid)}`
-      : `${name(k.victim_eid)}${causeMap[k.cause] || '阵亡'}`;
-    const entry = { id: ++kfId, kill: k.killer_eid !== 0, killer: name(k.killer_eid), victim: name(k.victim_eid), text };
-    store.killfeed.push(entry);
-    setTimeout(() => {
-      if (gen !== sessionGen) return;   // 会话已切换：条目已随 teardown 清空，不动新会话
-      const i = store.killfeed.findIndex((x) => x.id === entry.id);
-      if (i >= 0) store.killfeed.splice(i, 1);
-    }, 8000);
-  }
-  function advanceKills() {
-    while (killPtr < DATA.kills.length && DATA.kills[killPtr].t <= T) {
-      feedEntry(DATA.kills[killPtr]);
-      killPtr++;
-    }
-  }
-  function rebuildFeed() {
-    store.killfeed = [];
-    const recent = DATA.kills.filter((k) => k.t <= T).slice(-6);
-    for (const k of recent) feedEntry(k);
-    killPtr = 0;
-    while (killPtr < DATA.kills.length && DATA.kills[killPtr].t <= T) killPtr++;
-  }
-  // 比分：击杀升序 → 单调游标增量推进（此前每 tick 全量扫描 + 每击杀一次 V.find，随击倒数增长）
-  let scorePtr = 0, score1 = 0, score2 = 0;
-  function resetScore() { scorePtr = 0; score1 = 0; score2 = 0; }
-  function updateScore() {
-    while (scorePtr < DATA.kills.length && DATA.kills[scorePtr].t <= T) {
-      const k = DATA.kills[scorePtr++];
-      const victim = V.find((x) => x.def.eid === k.victim_eid);
-      if (!victim) continue;
-      if (victim.def.team === 1) score2++; else if (victim.def.team === 2) score1++;
-    }
-    // 上屏前映射到阵营视角：击杀计数是物理队伍（score1 = team 1），而顶栏布局是
-    // 「己方 HP | 己方比分 : 敌方比分 | 敌方 HP」——不映射在 `friendly_team = 2` 时左右相反。
-    const perspective = perspectiveScore(score1, score2, DATA.meta.friendly_team);
-    if (store.scoreFriend !== perspective.scoreFriend) store.scoreFriend = perspective.scoreFriend;
-    if (store.scoreEnemy !== perspective.scoreEnemy) store.scoreEnemy = perspective.scoreEnemy;
-  }
-
-  // ---------- 名册 ----------
-  // 静态身份（eid / 物理 team / 昵称 / 车型）与运行时状态（hp / 阵亡 / 跟随）**分开放**：
-  // 前者只在会话开始时建一次，后者每次投影都按当前 T 重算（见 scene/rosterState.js）。
-  // 名册的物理阵营色由呈现层按 `team` 取语义 token（--color-team-1/2），内核不再下发颜色——
-  // 否则「Team 1 是什么颜色」会有两份事实源。
-  const rosterRowsByEid = new Map();
-  function buildRoster() {
-    store.friendlyTeam = [1, 2].includes(DATA.meta.friendly_team) ? DATA.meta.friendly_team : null;
-    const groups = buildRosterRows(V);
-    rosterRowsByEid.clear();
-    for (const key of ROSTER_GROUPS) {
-      store.roster[key] = groups[key].map((row) => applyRosterRuntime(
-        { ...row },
-        { hp: 0, maxHp: 0, dead: false, followed: false, reload: null },
-      ));
-      // 索引登记的必须是**响应式代理**（读回 store 得到的行），不能是上面的原始对象：
-      // store 只存原始对象、读取时才包代理，直接改原始对象 Vue 收不到通知——名册就会
-      // 停在旧 HP，直到别的状态（如选中行）碰巧触发重绘。
-      for (const row of store.roster[key]) rosterRowsByEid.set(row.eid, row);
-    }
-  }
-  /**
-   * 把当前 T 的运行时状态投影进名册行（只在值真的变了时写，避免无谓的 VDOM patch）。
-   * 只由 writeHud 调用，**不逐帧**：与顶栏总血量同一个 T、同一 ≤10Hz 节拍；seek / 会话开始 /
-   * 停播 / 换相机（跟随目标）强制补写。resolver 每次返回新的 reload 数组，若逐帧投影，
-   * 名册会每帧重绘。
-   *
-   * `reload` 复用**场景自己的** reload resolver（`reloadStateAt`，与车辆名牌同一事实源），
-   * 不在名册里另起一套解释——弹容 N 由 resolver 从回放 facet 车辆的 `burst_size`
-   * （实际搭载配置，解析面钉定）取默认；2D 名册走的是
-   * `createReloadStateResolver(reloadTelemetry)`，两边是同一个 resolver 家族、同一套弹夹语义。
-   */
-  function updateRoster() {
-    const projected = projectRoster(V, T, deathAt);
-    for (const v of V) {
-      const e = rosterRowsByEid.get(v.def.eid);
-      const p = projected.get(v.def.eid);
-      if (!e || !p) continue;
-      applyRosterRuntime(e, {
-        hp: p.hp,
-        maxHp: p.maxHp,
-        dead: p.dead,
-        followed: FOLLOW_EID === v.def.eid,
-        // 阵亡不展示 reload（与名牌同一判据：destroyed 时不显示次级瞬时状态）
-        reload: p.dead ? null : reloadStateAt(v.def.eid, T),
-      });
-    }
-  }
+  // ---------- 击杀 feed / 计分 / 名册（实现在 playback/hudFeed.js；快照式工厂） ----------
+  //（原节的语义注释——响应式代理登记、阵营视角映射、resolver 单源——随实现迁往该模块）
+  const hudFeed = createHudFeed({
+    store, getData: () => DATA, getT: () => T, getV: () => V,
+    getSessionGen: () => sessionGen, deathAt,
+    // reloadStateAt 是闭包 let（startPlayback 里重赋值为真实 resolver）——按 getter
+    // 注入，工厂不得按值捕获初始空箭头（名册 reload 列会永远为 null）
+    getReloadStateAt: () => reloadStateAt,
+    getFollowEid: () => FOLLOW_EID,
+  });
+  function advanceKills() { hudFeed.advanceKills(); }
+  function rebuildFeed() { hudFeed.rebuildFeed(); }
+  function resetScore() { hudFeed.resetScore(); }
+  function updateScore() { hudFeed.updateScore(); }
+  function buildRoster() { hudFeed.buildRoster(); }
+  function updateRoster() { hudFeed.updateRoster(); }
 
   // ---------- 主循环 ----------
   const tmpV = new THREE.Vector3();
@@ -4150,16 +3181,9 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     destruct = null;
     destructPickList = null;
     meshOwner = null;
-    // 拾取调试残留（标记网格 + 面板 DOM）随会话回收
-    if (pickMarker) { scene.remove(pickMarker); disposeObject3D(pickMarker); pickMarker = null; }
-    if (pickPanel) { pickPanel.remove(); pickPanel = null; }
-    if (boundaryGroup) {
-      const shared = boundaryGroup.userData.sharedMaterial;
-      if (shared) shared.dispose();
-      scene.remove(boundaryGroup);
-      disposeObject3D(boundaryGroup);
-      boundaryGroup = null;
-    }
+    // 拾取调试残留（标记网格 + 面板 DOM）与边界带随会话回收（实现在 playback/ 工厂）
+    pickReporter.dispose({ scene, disposeObject3D });
+    boundaryBand.clear();
     currentMapKey = null;
     clearBases();   // 基地贴地标记（圆环 + 圆盘贴图）随会话释放
     currentMapBases = null;
@@ -4231,7 +3255,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // （或 file=null / 被阻断 / 组件卸载之后）HUD 与播放传输仍会按「已就绪」渲染，
     // 而底层 DATA/车辆/贴图已经 dispose。destroy 与 loadData 的替换路径都经过这里。
     store.hasData = false;
-    T = 0; shotPtr = 0; killPtr = 0;
+    T = 0; shotPtr = 0; hudFeed.resetKillPtr();
     winnerShown = false;
     FOLLOW_EID = 0; followAnchor = null;
     store.killfeed = [];
@@ -4245,7 +3269,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     store.roster.team1 = [];
     store.roster.team2 = [];
     store.roster.unknown = [];
-    rosterRowsByEid.clear();
+    hudFeed.resetRoster();   // eid → 名册行 索引清空（实现在 playback/hudFeed.js）
   }
 
   async function loadData(source) {
@@ -4429,7 +3453,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     [START, END] = battleRange();
     T = START;
     burstPtr = firstIndexAfter(burstEvents, T);
-    shotPtr = 0; killPtr = 0;
+    shotPtr = 0; hudFeed.resetKillPtr();
     if (DEBUG) window.__pbV = V;   // 调试钩子：控制台可查每车 GLB/位姿状态（仅 ?debug）
     prewarmShaders();
     // 会话常量一次写清（此前每 tick 重写，值不变不会触发响应式，但语义上属会话级）

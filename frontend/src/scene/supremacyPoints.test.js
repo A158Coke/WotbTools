@@ -71,17 +71,21 @@ describe('playbackScene 的 HUD 状态接线（防回归）', () => {
     expect(td).toMatch(/store\.pointsFriend = null; store\.pointsEnemy = null;/)
     // 基地视图模型随贴地标记一起清空（clearBases 内 store.baseViews = []）
     expect(td).toMatch(/clearBases\(\);/)
-    expect(src.slice(src.indexOf('function clearBases'))).toMatch(/store\.baseViews = \[\];/)
+    // 基地贴地标记 2026-10-24 出仓 playback/bases.js（Step A4），清空断言随实现迁移
+    const basesSrc = readFileSync(resolve(here, 'playback/bases.js'), 'utf8')
+    expect(basesSrc.slice(basesSrc.indexOf('function clearBases'))).toMatch(/store\.baseViews = \[\];/)
   })
 })
 
 describe('中立 / 未知阵营色（PR #411 非阻塞：green / red / white）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 基地色 token 兜底 2026-10-24 随基地系统出仓 playback/bases.js，守卫随实现迁移
+  const basesSrc = readFileSync(resolve(here, 'playback/bases.js'), 'utf8')
 
   it('中立与阵营未知收敛到 white（不再用灰）', () => {
     // 基地中立色走阵营 token --color-team-neutral，兜底同为白色
-    expect(src).toMatch(/neutral: '#f5f5f5'/)
-    expect(src).toMatch(/--color-team-neutral/)
+    expect(basesSrc).toMatch(/neutral: '#f5f5f5'/)
+    expect(basesSrc).toMatch(/--color-team-neutral/)
     expect(src).toMatch(/if \(t === 0 \|\| f === 0\) return COLOR_UNKNOWN;/)
     expect(src).not.toMatch(/BASE_NEUTRAL = 0x9aa5b1/)
     expect(src).not.toMatch(/return 0x8a94a3;/)
