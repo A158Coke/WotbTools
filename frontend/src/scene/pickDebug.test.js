@@ -164,10 +164,14 @@ describe('拾取接线（源码级守卫）', () => {
   })
   it('destructibles await 之后先核会话（stale）再发布清单', () => {
     const awaitAt = mapAssetsSrc.indexOf('const destructDoc = await ctx.destructDocPromise')
-    const staleAt = mapAssetsSrc.indexOf('if (ctx.stale()) return { stale: true, writes };', awaitAt)
+    // 评审 P1 后：stale 分支先就地回收挂载资源（remove/dispose）再返回空 writes——
+    // 守卫同时锁「先核会话」与「不发布 stale 结果」两个不变量
+    const staleAt = mapAssetsSrc.indexOf('if (ctx.stale()) {', awaitAt)
+    const disposeAt = mapAssetsSrc.indexOf('ctx.scene.remove(writes.mapScenery);', awaitAt)
     const publishAt = mapAssetsSrc.indexOf('destructPickList = destructDoc.instances')
     expect(awaitAt).toBeGreaterThan(-1)
     expect(staleAt).toBeGreaterThan(awaitAt)
+    expect(disposeAt).toBeGreaterThan(staleAt)
     expect(publishAt).toBeGreaterThan(staleAt)
   })
 })
