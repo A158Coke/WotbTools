@@ -404,12 +404,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // OrbitControls（挂 canvas）物理上收不到左键拖拽/滚轮。选中/拾取语义不变
   // （位移 ≤ SLOP 仍算单击，在 capture 处理器内联）。切回跟随/top 或销毁时恢复 controls。
   const flyLook = { active: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0, dist: 30 };
-  // 接管条件 = 自由模式 ∧ 精细指针（PC）。触屏（手机/平板）保留 OrbitControls：
-  // 单指环绕 / 双指捏合是移动端既有的唯一缩放途径，FPS 接管会把它们一起吞掉。
-  const FLY_POINTER_FINE = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia('(pointer: fine)').matches
-    : true;
-  const flyMode = () => CAM === 'free' && FLY_POINTER_FINE;
+  // 接管态 = 自由模式（派生）。**不按输入设备开关**：`(pointer: fine)` 之类的能力
+  // 探测在触屏笔记本 / 平板模式下会报 coarse，把整条接管链关掉（用户实测：WASD 全灭、
+  // 拖拽退回 OrbitControls）。触屏走同一套手势：单指拖拽 = 转头，双指捏合 = 改视距。
+  const flyMode = () => CAM === 'free';
+  // 触屏多点手势状态：pointerId → 最新坐标；pinch = 双指捏合起点（d0 指距 / dist0 视距）
+  const flyPointers = new Map();
+  let flyPinch = null;
   // [fly] 埋点常开（console.debug 在默认过滤级别不可见，F12 勾选 Verbose 可查；
   // 排障零成本且不影响性能——每拖拽会话只输出个位数行）
   const flyDbg = (tag, extra) => {
@@ -451,13 +452,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   }
   /** free↔其他模式切换的 OrbitControls 侧状态迁移（enabled/damping/惯性清理）。 */
   function flyLookApplyMode(mode) {
-    if (mode === 'free' && FLY_POINTER_FINE) {
+    if (mode === 'free') {
       if (controls) {
         controls.enabled = false;
         controls.enableDamping = false;
         flyLookSyncFromCamera('enter free');   // 进入自由：以当前视野为基准（top 的天顶朝向在此回落）
       }
     } else {
+      // 离开自由：手势状态一并清空（触屏指针表 / 捏合起点 / 转头态）
+      flyPointers.clear();
+      flyPinch = null;
+      flyLook.active = false;
+      emptyDownAt = null;
       if (controls) {
         controls.enabled = true;
         controls.enableDamping = true;
@@ -484,16 +490,28 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // capture 先行是双保险）；本处理器接管拖拽 + 单击选中
       if (controls.enabled) controls.enabled = false;
       flyLookSyncIfStale('drag');
-      flyDbg('down', `button=${e.button}`);
-      if (e.button === 0) {
+      flyDbg('down', `button=${e.button} type=${e.pointerType || 'mouse'}`);
+      if (e.pointerType === 'touch') {
+        flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (flyPointers.size >= 2) {
+          // 双指 = 捏合改视距；本次手势不再转头、也算不上单击
+          const [a, b] = [...flyPointers.values()];
+          flyPinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, dist0: flyLook.dist };
+          flyLook.active = false;
+          emptyDownAt = null;
+        } else {
+          flyLook.active = true;
+          flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
+          emptyDownAt = { x: e.clientX, y: e.clientY };
+        }
+      } else if (e.button === 0) {
         flyLook.active = true;
         flyLook.lastX = e.clientX; flyLook.lastY = e.clientY;
-        // 指针捕获：拖出画布仍能收到 move/up。否则画布外松键会留下「幽灵拖拽」
-        // （回到画布不按键也在转头）。
-        try { container.setPointerCapture(e.pointerId); } catch (_) {}
-        // 单击判定起点（eid 在 up 时统一 raycast——单击 ≤SLOP 时 up≈down 位置，等价）
         emptyDownAt = { x: e.clientX, y: e.clientY };
       }
+      // 指针捕获：拖出画布仍能收到 move/up。否则画布外松键会留下「幽灵拖拽」
+      // （回到画布不按键也在转头）。
+      try { container.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -502,7 +520,21 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     if (!controls.enabled) controls.enabled = true;
   }
   function onFlyCaptureMove(e) {
-    if (!flyMode() || !flyLook.active) return;
+    if (!flyMode()) return;
+    if (e.pointerType === 'touch') {
+      if (!flyPointers.has(e.pointerId)) return;
+      flyPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (flyPointers.size >= 2 && flyPinch) {
+        const [a, b] = [...flyPointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        flyLook.dist = Math.max(2, Math.min(800, flyPinch.dist0 * flyPinch.d0 / d));
+        flyLookApply();
+        invalidate();
+        e.stopPropagation();
+        return;
+      }
+    }
+    if (!flyLook.active) return;
     // 已无按键 = 在画布外松了键（捕获没拿到 up）：结束拖拽，且不当作单击
     if (!e.buttons) { flyLook.active = false; emptyDownAt = null; return; }
     const now = performance.now();
@@ -524,6 +556,17 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   function onFlyCaptureUp(e) {
     if (!flyMode()) return;
     try { container.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (e.pointerType === 'touch') {
+      flyPointers.delete(e.pointerId);
+      if (flyPointers.size < 2) flyPinch = null;
+      // 双指手势收尾（还剩一指 / 刚结束）：不把它当单击，也不继续转头
+      if (flyPinch === null && flyPointers.size > 0) {
+        flyLook.active = false;
+        emptyDownAt = null;
+        e.stopPropagation();
+        return;
+      }
+    }
     // 单击判定（≤SLOP）与拖拽转头共存：按下记录起点、抬起位移 ≤SLOP 才算单击
     const wasActive = flyLook.active;
     flyLook.active = false;
@@ -558,9 +601,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     e.stopPropagation();
     flyDbg('wheel', `dist=${flyLook.dist.toFixed(0)}`);
   }
-  function onFlyCaptureCancel() {
+  function onFlyCaptureCancel(e) {
     flyLook.active = false;
     emptyDownAt = null;
+    if (e) flyPointers.delete(e.pointerId);
+    if (flyPointers.size < 2) flyPinch = null;
   }
 
   // ---------- 场景 ----------

@@ -1398,6 +1398,65 @@ describe('scene vehicle selection intent', () => {
     expect(onVehicleSelect).toHaveBeenCalledOnce()
     expect(onVehicleSelect.mock.calls[0][0]).toBe(11)
   })
+
+  // 回归（2026-10-24 用户实测）：曾按 `(pointer: fine)` 决定是否接管，触屏笔记本 /
+  // 平板模式报 coarse ⇒ 自由模式整条接管链失效（WASD 全灭、拖拽退回 OrbitControls）。
+  // 语义改为「自由模式恒接管」，触屏用同一套手势。
+  it('自由模式接管与指针能力无关：touch 拖拽同样转头且相机不动', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-look.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const cam0 = cam.position.clone()
+    const tgt0 = controls.target.clone()
+    const touch = (type, x, buttons, pointerId = 7) => {
+      const e = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'pointerType', { value: 'touch' })
+      Object.defineProperty(e, 'pointerId', { value: pointerId })
+      return e
+    }
+    canvas.dispatchEvent(touch('pointerdown', 100, 1))
+    canvas.dispatchEvent(touch('pointermove', 180, 1))
+    expect(cam.position.equals(cam0)).toBe(true)          // 旋转中心 = 相机自身
+    expect(controls.target.equals(tgt0)).toBe(false)      // 朝向确实转了
+    canvas.dispatchEvent(touch('pointerup', 180, 0))
+  })
+
+  it('双指捏合改飞行视距（触屏缩放），且不转头', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const store = createPlaybackStore()
+    const container = mountContainer()
+    api = initPlayback(container, store, null, { onVehicleSelect: vi.fn() })
+    created.push(api)
+    await api.loadData({ kind: 'local', file: new File(['x'], 'touch-pinch.wotbreplay') })
+    api.setCam('free')
+    const canvas = container.querySelector('canvas')
+    const cam = window.__camera
+    const controls = window.__controls
+    const dist0 = cam.position.distanceTo(controls.target)
+    const dir0 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    const touch = (type, x, buttons, pointerId) => {
+      const e = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons, bubbles: true, cancelable: true })
+      Object.defineProperty(e, 'pointerType', { value: 'touch' })
+      Object.defineProperty(e, 'pointerId', { value: pointerId })
+      return e
+    }
+    canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
+    canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 两指距 200px
+    canvas.dispatchEvent(touch('pointermove', 500, 1, 9))   // 两指距 400px → 视距减半
+    const dist1 = cam.position.distanceTo(controls.target)
+    expect(dist1).toBeCloseTo(dist0 / 2, 1)
+    const dir1 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(dir1.dot(dir0)).toBeCloseTo(1, 3)
+    canvas.dispatchEvent(touch('pointerup', 500, 0, 9))
+    canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
+  })
 })
 
 describe('scene container geometry', () => {
