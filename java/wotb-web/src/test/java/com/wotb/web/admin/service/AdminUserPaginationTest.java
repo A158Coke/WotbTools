@@ -3,8 +3,8 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.AdminUserPageDto;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.data.domain.PageImpl;
@@ -137,10 +137,8 @@ class AdminUserPaginationTest {
         return user;
     }
 
-    private static UserProfile profile(final String keycloakUserId, final Long wotbAccountId) {
-        final UserProfile profile = new UserProfile();
-        profile.setKeycloakUserId(keycloakUserId);
-        profile.setWotbAccountId(wotbAccountId);
-        return profile;
+    private static UserProfileSnapshot profile(final String keycloakUserId, final Long wotbAccountId) {
+        return new UserProfileSnapshot(1L, keycloakUserId, null, wotbAccountId,
+                null, null, null, null);
     }
 }

@@ -76,18 +76,18 @@ public class AdminUserLog {
 
     public static AdminUserLog started(
             final String targetKeycloakUserId,
-            final com.wotb.web.user.entity.UserProfile profile,
+            final com.wotb.web.user.service.UserProfileSnapshot profile,
             final String adminKeycloakUserId,
             final String adminUsername) {
         final AdminUserLog log = new AdminUserLog();
         log.operation = "DELETE_USER";
         log.targetKeycloakUserId = targetKeycloakUserId;
         if (profile != null) {
-            log.targetProfileId = profile.getId();
-            log.targetDisplayName = profile.getDisplayName();
-            log.targetWotbAccountId = profile.getWotbAccountId();
-            log.targetWotbNickname = profile.getWotbNickname();
-            log.targetWotbServer = profile.getWotbServer();
+            log.targetProfileId = profile.id();
+            log.targetDisplayName = profile.displayName();
+            log.targetWotbAccountId = profile.wotbAccountId();
+            log.targetWotbNickname = profile.wotbNickname();
+            log.targetWotbServer = profile.wotbServer();
         }
         log.adminKeycloakUserId = adminKeycloakUserId;
         log.adminUsername = adminUsername;

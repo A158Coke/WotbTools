@@ -5,8 +5,8 @@ import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -68,7 +68,7 @@ class AdminUserDeleteTest {
 
     @Test
     void deletingASingleUserIsJustAListOfSizeOne() {
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
 
         final DeleteUsersResponse response = service().deleteUsers(List.of("kc-a"), true, adminJwt());
 
@@ -82,14 +82,14 @@ class AdminUserDeleteTest {
 
     @Test
     void reportsPerUserResultAndNeverPartiallyDeletesTheFailedUser() {
-        final UserProfile profileA = profile("kc-a");
-        final UserProfile profileB = profile("kc-b");
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.of(profileA));
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-b")).thenReturn(Optional.of(profileB));
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-c")).thenReturn(Optional.empty());
+        final UserProfileSnapshot profileA = profile("kc-a");
+        final UserProfileSnapshot profileB = profile("kc-b");
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.of(profileA));
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-b")).thenReturn(Optional.of(profileB));
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-c")).thenReturn(Optional.empty());
         // kc-b 的本地资料删除因依赖被拒 → 该用户必须整体失败
         doThrow(new DataIntegrityViolationException("fk"))
-                .when(userProfileService).deleteForAdministration(profileB);
+                .when(userProfileService).deleteForAdministration("kc-b");
 
         final DeleteUsersResponse response = service().deleteUsers(
                 List.of("kc-a", "kc-b", "kc-c"), true, adminJwt());
@@ -117,7 +117,7 @@ class AdminUserDeleteTest {
 
     @Test
     void rejectsSelfDeleteForThatEntryOnlyWithoutFailingTheRequest() {
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
 
         final DeleteUsersResponse response = service().deleteUsers(
                 List.of("admin-sub", "kc-a"), true, adminJwt());
@@ -152,7 +152,7 @@ class AdminUserDeleteTest {
 
     @Test
     void deduplicatesIdsSoTheSameUserIsNotDeletedTwice() {
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("kc-a")).thenReturn(Optional.empty());
 
         final DeleteUsersResponse response = service().deleteUsers(
                 List.of("kc-a", " kc-a ", "kc-a"), true, adminJwt());
@@ -162,11 +162,9 @@ class AdminUserDeleteTest {
         verify(keycloakAdminUserService).deleteUser("kc-a");
     }
 
-    private static UserProfile profile(final String keycloakUserId) {
-        final UserProfile profile = new UserProfile();
-        profile.setKeycloakUserId(keycloakUserId);
-        profile.setWotbAccountId(100L);
-        return profile;
+    private static UserProfileSnapshot profile(final String keycloakUserId) {
+        return new UserProfileSnapshot(1L, keycloakUserId, null, 100L,
+                null, null, null, null);
     }
 
     private static Jwt adminJwt() {

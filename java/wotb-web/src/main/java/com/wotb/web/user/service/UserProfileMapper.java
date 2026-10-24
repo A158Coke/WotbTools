@@ -9,6 +9,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserProfileMapper implements Mapper<UserProfile, UserProfileDto> {
 
+    public UserProfileSnapshot toSnapshot(final UserProfile profile) {
+        return new UserProfileSnapshot(
+                profile.getId(), profile.getKeycloakUserId(), profile.getDisplayName(),
+                profile.getWotbAccountId(), profile.getWotbNickname(), profile.getWotbServer(),
+                profile.getCreatedAt(), profile.getUpdatedAt());
+    }
+
     public OnboardingReceiptDto toOnboardingReceipt(final UserProfile profile) {
         return new OnboardingReceiptDto(profile.getOnboardingCoreEpoch(), profile.getOnboardingDisposition());
     }

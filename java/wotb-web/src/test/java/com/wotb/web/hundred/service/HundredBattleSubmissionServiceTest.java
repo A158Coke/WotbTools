@@ -8,8 +8,8 @@ import com.wotb.web.hundred.entity.HundredBattleSubmission;
 import com.wotb.web.hundred.repository.HundredBattleSubmissionRepository;
 import com.wotb.web.replayfile.HallOfFameStorageException;
 import com.wotb.web.testsupport.ReplayFactsJson;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.user.service.WotbAccountIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -107,14 +107,9 @@ class HundredBattleSubmissionServiceTest {
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private static UserProfile profile() {
-        final UserProfile p = new UserProfile();
-        p.setId(1L);
-        p.setKeycloakUserId(USER);
-        p.setWotbServer(WOTB_SERVER);
-        p.setWotbAccountId(GAME_ID);
-        p.setWotbNickname("PlayerOne");
-        return p;
+    private static UserProfileSnapshot profile() {
+        return new UserProfileSnapshot(1L, USER, "PlayerOne", GAME_ID,
+                "PlayerOne", WOTB_SERVER, null, null);
     }
 
     /** 当前绑定身份 = 记录的 canonical owner（同区服、同账号）。 */
@@ -122,16 +117,14 @@ class HundredBattleSubmissionServiceTest {
         return new WotbAccountIdentity(WOTB_SERVER, GAME_ID);
     }
 
-    private static UserProfile profileWithoutGameId() {
-        final UserProfile p = profile();
-        p.setWotbAccountId(null);
-        return p;
+    private static UserProfileSnapshot profileWithoutGameId() {
+        return new UserProfileSnapshot(1L, USER, "PlayerOne", null,
+                "PlayerOne", WOTB_SERVER, null, null);
     }
 
-    private static UserProfile profileWithoutNickname() {
-        final UserProfile p = profile();
-        p.setWotbNickname(null);
-        return p;
+    private static UserProfileSnapshot profileWithoutNickname() {
+        return new UserProfileSnapshot(1L, USER, "PlayerOne", GAME_ID,
+                null, WOTB_SERVER, null, null);
     }
 
     /** 构造一个 battle：唯一玩家 accountId=GAME_ID、tankId=TIER10_VEHICLE。 */
@@ -232,7 +225,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void validSubmissionCreatesPendingWithFrozenSnapshot() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
@@ -260,7 +253,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void trustedWgUserCanSubmitBeforeVisitingProfilePage() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER))
+        when(userProfileService.findSnapshotByKeycloakUserId(USER))
                 .thenReturn(Optional.empty(), Optional.of(profile()));
         when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(true);
 
@@ -270,13 +263,13 @@ class HundredBattleSubmissionServiceTest {
         assertThat(result.status()).isEqualTo("PENDING");
 
         verify(userProfileService).syncFromLogin(USER);
-        verify(userProfileService, org.mockito.Mockito.times(2)).findEntityByKeycloakUserId(USER);
+        verify(userProfileService, org.mockito.Mockito.times(2)).findSnapshotByKeycloakUserId(USER);
         verify(repository).saveAndFlush(any());
     }
 
     @Test
     void nonWgUserWithoutProfileStillGetsProfileNotFound() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.empty());
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.empty());
         when(userProfileService.hasTrustedWargamingIdentity()).thenReturn(false);
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -290,7 +283,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsWhenProfileMissingGameId() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutGameId()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutGameId()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
@@ -300,7 +293,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsWhenProfileMissingNickname() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutNickname()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profileWithoutNickname()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
@@ -310,7 +303,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsInvalidClaimValues() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 0, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
@@ -324,7 +317,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsNonTierXVehicle() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER7_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
@@ -334,7 +327,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsUnknownVehicle() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, 999999L, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays())))
@@ -344,7 +337,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsMissingScreenshot() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "  ", fiveReplays(), facts(fiveReplays())))
@@ -354,7 +347,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsInvalidScreenshotData() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "not-a-data-url", fiveReplays(), facts(fiveReplays())))
@@ -364,7 +357,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsOversizedScreenshot() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         final String huge = "data:image/png;base64," + "x".repeat(5_500_000);
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -375,7 +368,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsReplayCountBelowFive() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", replays(3), facts(replays(3))))
@@ -385,7 +378,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsReplayCountAboveFive() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", replays(7), facts(replays(7))))
@@ -395,7 +388,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsMissingReplayFacts() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 服务器没有 parser：facts 必填，且与回放一一对应
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -412,7 +405,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsReplayFactsCountMismatch() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(replays(4, "a1", "a2", "a3", "a4"))))
@@ -424,7 +417,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsInvalidReplayFacts() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), invalidFacts(fiveReplays())))
@@ -445,7 +438,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsWrongGameIdInReplay() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(),
@@ -457,7 +450,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsWrongVehicleInReplay() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(),
@@ -469,7 +462,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void rejectsDuplicateBattleAmongFiveReplays() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 第二份与第一份同 arena（a2 重复）→ 不是 5 场不同 battle
         final List<MultipartFile> files = replays(5, "a1", "a2", "a2", "a3", "a4");
@@ -486,7 +479,7 @@ class HundredBattleSubmissionServiceTest {
     void rejectsWhenSameUserSameVehicleAlreadyPending() {
         // PENDING cheap check 在 replay parse 之前：不解析任何 replay 即拒绝。
         // ownership 已改为 canonical owner（profile 的 (wotbServer, wotbAccountId)），不再按 Keycloak id 查询。
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "PENDING"))
                 .thenReturn(true);
@@ -500,7 +493,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void allowsDifferentVehicleWhenAnotherPendingExists() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         // IS-7 (385) 已有 PENDING（本次提交的是另一辆车，该 stub 只表达「另一辆车已有 PENDING」的场景前提）
         org.mockito.Mockito.lenient()
                 .when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
@@ -517,7 +510,7 @@ class HundredBattleSubmissionServiceTest {
     void createScopesUniquenessAndCurrentLookupsToTheBoundServer() throws Exception {
         // 归属维度含区服：同一个 WotB 账号 ID 在 CN / EU 是两个账号，
         // 因此 create 的 PENDING 预检与 CURRENT 门槛都必须带上 profile 的区服。
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
@@ -530,7 +523,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void mapsPendingUniqueIndexRaceToConflict() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("uk_hundred_battle_pending_user_vehicle"));
 
@@ -546,7 +539,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void currentGateAllowsStrictlyHigherScore() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
@@ -558,7 +551,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void currentGateRejectsEqualScore() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
@@ -572,7 +565,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void currentGateRejectsLowerScore() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.findByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(Optional.of(currentSubmission(4000)));
@@ -585,7 +578,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void noCurrentWithHistoricalDeletedOrSupersededAllowsRestart() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // CURRENT 不存在（历史 DELETED/SUPERSEDED 由 repository 查询自然排除）
         service.createSubmission(USER, TIER10_VEHICLE, 4000, 136,
@@ -1157,7 +1150,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void createFailureNeverPersistsSubmission() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 第 2 份与第 1 份同 arena → 失败；已解析的前面文件不应产生任何持久化
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -1172,7 +1165,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void validSubmissionStoresAndAttachesAllFiveEvidence() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
                 "data:image/png;base64,AAAA", fiveReplays(), facts(fiveReplays()));
@@ -1211,7 +1204,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void validationFailureNeverStoresOrAttachesEvidence() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 第 2 份与第 1 份同 arena → 硬门禁失败，整单拒绝
         assertThatThrownBy(() -> service.createSubmission(USER, TIER10_VEHICLE, 4200, 136,
@@ -1226,7 +1219,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void storageFailureAbortsSubmissionWithoutPersisting() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         doThrow(new HallOfFameStorageException("REPLAY_STORAGE_FULL",
                 org.springframework.http.HttpStatus.INSUFFICIENT_STORAGE, "disk full"))
                 .when(evidenceService).storeAll(anyList());
@@ -1241,7 +1234,7 @@ class HundredBattleSubmissionServiceTest {
 
     @Test
     void pendingUniqueRaceCleansUpStoredFiles() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("uk_hundred_battle_pending_user_vehicle"));
 
