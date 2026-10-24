@@ -212,7 +212,7 @@ KILL / DAMAGE / DESTROYED 事件多重集（含 `observedHpLoss`）与掉血明�
 ### 运行时与资源
 
 - **解析**：3D 解析在 Worker 内跑（`scene/playbackParse.worker.ts`，失败自动回退主线程），同一文件（名 + 长 + mtime + 采样指纹）的解析结果缓存最近 3 场；解析只构建一次 canonical facts。
-- **渲染节拍**：按需刷新（暂停且无在飞特效、相机静止时不重绘）；HUD / 进度条 / 名册按约 10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。
+- **渲染节拍**：按需刷新（暂停且无在飞特效、相机静止时不重绘）；HUD / 进度条 / 名册按约 10Hz 写 store（3D 平滑度来自场景时钟，seek 时立即补写一次）。**实时帧率角标**：舞台右上角常驻 `FPS · ms`（`scene/frameMeter.js` 对 rAF 回调间隔做 500ms 窗口统计，每窗口写一次 `store.fps / store.frameMs`，frameMs 含本帧渲染耗时；面板暂停恢复时重新起窗，避免把暂停间隙算进帧间隔；`隐藏全部 UI`（`H`）时一并隐藏；`pointer-events:none`，不拦截场景拖拽）。
 - **特效与资产**：战斗特效（曳光 / 光迹 / 开火 / 命中 / 爆炸 / 残骸烟）由 `scene/battleFx.js` 合批与池化，仅在会话结束时整体 dispose；资产加载有限并发（`ASSET_CONCURRENCY = 4`，地表贴图与坦克 GLB）。
 - **场景内核**：`frontend/src/scene/playbackScene.js` 是上游冻结 Agent 前端的同源分叉；上游已停止维护，本仓按需移植其场景渲染实现（材质实例去重、叶卡 / 伪透明 / 水体管线、曝光修整等，见 `scene/sceneryMaterials.test.js` 的源码级接线守卫）。上游若有新的渲染修复，需要人工比对移植，不会自动同步。
 - **资产降级**：核心资产缺失 / 失败时 3D 面板显示非阻塞降级提示（`scene3d-asset-degraded`），`hasData=true` 不单独代表健康加载完成；地面 / 地形 / 场景 / 光照等 404 或解析失败写入 `store.assetIssues` 并置 `store.assetDegraded`；变体映射缺失 / `variantMappingIncomplete` 标记导致的 fail-closed 裁剪同样计入降级。

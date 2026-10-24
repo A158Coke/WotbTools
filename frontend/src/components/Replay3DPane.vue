@@ -184,6 +184,9 @@ const showTopbar = computed(() => !uiHidden.value && uiPrefs.showTopbar)
 const showRoster = computed(() => !uiHidden.value && uiPrefs.showRoster)
 const showKillfeed = computed(() => !uiHidden.value && uiPrefs.showKillfeed)
 const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
+// 实时帧率角标（用户需求：拖动/飞行卡顿的量化依据）；隐藏全部 UI 时一并隐藏
+const showFps = computed(() => !uiHidden.value && store.hasData)
+const fpsText = computed(() => (store.fps > 0 ? `${store.fps.toFixed(1)} FPS · ${store.frameMs.toFixed(1)} ms` : '— FPS'))
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -630,6 +633,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
+          <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': store.fps > 0 && store.fps < 45 }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>
 
@@ -943,6 +947,25 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 .stage-square > .scene { flex: 1; }
 .stage-square > .scene { position: absolute; inset: 0; }
 .pb-stage { container-type: size; }
+
+/* 实时帧率角标（拖拽/飞行卡顿量化）：不拦截场景指针输入，隐藏全部 UI 时一起隐藏 */
+.pb-fps {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  z-index: 5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-surface-1) 78%, transparent);
+  color: var(--color-text-secondary);
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+/* 掉帧提示：<45 FPS 变琥珀色（颜色走 token，浅色档同样跟随） */
+.pb-fps-low { color: var(--color-warning); }
 
 /* HUD 面板外观（位置交给各自的容器规则，不再默认绝对定位） */
 .panel {
