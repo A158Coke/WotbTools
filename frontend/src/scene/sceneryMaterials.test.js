@@ -1156,7 +1156,9 @@ describe('播放时钟与速度档位（对齐上游的纯函数入口）', () =
     expect(animate).toMatch(/\|\| frameDirty/)
     expect(animate).toMatch(/tracers\.length > 0 \|\| \(battleFx && battleFx\.active\(\)\)/)
     expect(animate).toMatch(/ghostByEid\.size > 0 \|\| flashByEid\.size > 0;/)
-    expect(animate).toMatch(/if \(!busy\) return;/)
+    // 跳帧分支：空闲时只做帧率角标归零，随后 return（不跑 tick / 标签 / render）
+    expect(animate).toMatch(/if \(!busy\) \{(?:.|\n){0,600}?return;/)
+    expect(animate.indexOf('frameDirty = false;')).toBeGreaterThan(animate.indexOf('if (!busy) {'))
   })
 })
 

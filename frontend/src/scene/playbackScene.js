@@ -3018,14 +3018,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 实时帧率（FPS 覆盖层）：rAF 回调间隔的 500ms 窗口均值，每窗口写一次 store
   //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
   const frameMeter = createFrameMeter();
+  let lastRenderAt = 0;
 
   let winnerShown = false;
   function animate() {
     if (destroyed) return;
     if (paused) { rafId = 0; return; }   // 停帧：不排队下一帧，场景与状态原样保留
     rafId = requestAnimationFrame(animate);
-    const fpsStats = frameMeter.sample(performance.now());
-    if (fpsStats) { store.fps = fpsStats.fps; store.frameMs = fpsStats.frameMs; }
     if (!renderer) return;   // 渲染器惰性创建（首次 startPlayback）：数据加载完成前无场景可渲染
     const dt = Math.min(clock.getDelta(), 0.1);
     if (DATA && PLAYING) {
@@ -3095,7 +3094,24 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || (destruct && destruct.animating)
       || tracers.length > 0 || (battleFx && battleFx.active())
       || ghostByEid.size > 0 || flashByEid.size > 0;
-    if (!busy) return;
+    if (!busy) {
+      // 空闲（暂停静止）：超过 0.6s 没有渲染就把角标归零（显示 —），
+      // 别让上一段拖拽/播放的旧帧率一直冒充“当前”。
+      if (store.fps && performance.now() - lastRenderAt > 600) {
+        store.fps = 0; store.frameMs = 0; store.framePeakMs = 0;
+        frameMeter.reset();
+      }
+      return;
+    }
+    lastRenderAt = performance.now();
+    // 只统计**真正渲染的帧**：按需渲染下 rAF 每帧都跑（暂停静止也跑），数回调会得到
+    // 120 FPS 这种与画面无关的数——用户实测「卡顿和显示的帧率不符」正是这个。
+    const fpsStats = frameMeter.sample(lastRenderAt);
+    if (fpsStats) {
+      store.fps = fpsStats.fps;
+      store.frameMs = fpsStats.frameMs;
+      store.framePeakMs = fpsStats.peakMs;
+    }
     frameDirty = false;
     // 动态分辨率调整必须在**渲染前**（黑闪根因）：canvas width/height 赋值会清空
     // drawing buffer——若在渲染后调整，合成器在下一帧渲染前取到空 buffer 即黑帧。

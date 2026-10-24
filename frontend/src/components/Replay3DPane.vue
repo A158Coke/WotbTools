@@ -184,9 +184,14 @@ const showTopbar = computed(() => !uiHidden.value && uiPrefs.showTopbar)
 const showRoster = computed(() => !uiHidden.value && uiPrefs.showRoster)
 const showKillfeed = computed(() => !uiHidden.value && uiPrefs.showKillfeed)
 const showBaseStatus = computed(() => !uiHidden.value && uiPrefs.showBaseStatus)
-// 实时帧率角标（用户需求：拖动/飞行卡顿的量化依据）；隐藏全部 UI 时一并隐藏
+// 实时帧率角标（用户需求：拖动/飞行卡顿的量化依据）；隐藏全部 UI 时一并隐藏。
+// 只统计真正渲染的帧；`平均/峰值` 让“平均还行但有顿挫”可见。
 const showFps = computed(() => !uiHidden.value && store.hasData)
-const fpsText = computed(() => (store.fps > 0 ? `${store.fps.toFixed(1)} FPS · ${store.frameMs.toFixed(1)} ms` : '— FPS'))
+const fpsText = computed(() => (store.fps > 0
+  ? `${store.fps.toFixed(1)} FPS · ${store.frameMs.toFixed(1)}/${store.framePeakMs.toFixed(1)} ms`
+  : '— FPS'))
+const fpsJanky = computed(() => store.fps > 0
+  && (store.fps < 45 || (store.framePeakMs > 0 && store.framePeakMs > store.frameMs * 2.5)))
 
 const store = createPlaybackStore()
 const stage = ref(null)
@@ -633,7 +638,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
         <div class="stage-square">
           <div ref="stage" class="scene"></div>
           <PlaybackVehicleLabels3D :gun-marks="gunMarks" ref="labelOverlay" :label-prefs="labelPrefs" :hp-prefs="hpPrefs" :marker-prefs="markerPrefs" :selected-eid="selectedEid" :hidden="uiHidden || !store.hasData" @select="handleSceneSelect" />
-          <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': store.fps > 0 && store.fps < 45 }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
+          <div v-if="showFps" class="pb-fps" :class="{ 'pb-fps-low': fpsJanky }" data-testid="replay3d-fps" aria-hidden="true">{{ fpsText }}</div>
         </div>
       </div>
 
