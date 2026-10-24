@@ -20,8 +20,8 @@ import com.wotb.web.replayfile.ReplayUploadValidator;
 import com.wotb.web.replayfile.ClientReplayFacts;
 import com.wotb.web.replayfile.ReplayFileNames;
 import com.wotb.web.replayfile.ReplayHashLock;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.user.service.WotbAccountIdentity;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -132,16 +132,16 @@ public class HundredBattleSubmissionService {
                                                 final String proofScreenshot,
                                                 final List<MultipartFile> replays,
                                                 final List<String> replayFacts) {
-        final UserProfile profile = findProfileForSubmission(userId);
-        final Long gameId = profile.getWotbAccountId();
+        final UserProfileSnapshot profile = findProfileForSubmission(userId);
+        final Long gameId = profile.wotbAccountId();
         if (gameId == null || gameId <= 0) {
             throw new IllegalArgumentException("HUNDRED_PROFILE_GAME_ID_REQUIRED");
         }
-        if (!StringUtils.hasText(profile.getWotbNickname())) {
+        if (!StringUtils.hasText(profile.wotbNickname())) {
             throw new IllegalArgumentException("HUNDRED_PROFILE_NICKNAME_REQUIRED");
         }
         // canonical owner 含区服：(CN, 123456) 与 (EU, 123456) 是两个不同账号。
-        final String wotbServer = profile.getWotbServer();
+        final String wotbServer = profile.wotbServer();
         if (claimedAverageDamage <= 0 || claimedBattleCount <= 0) {
             throw new IllegalArgumentException("HUNDRED_INVALID_CLAIM");
         }
@@ -206,12 +206,12 @@ public class HundredBattleSubmissionService {
                 .toList();
         return replayHashLock.runWithLocksResult(hashes, () -> createLocked(
                 vehicleId, gameId, wotbServer, claimedAverageDamage, claimedBattleCount,
-                proofScreenshot, vehicle.name(), profile.getWotbNickname().trim(), pendingReplays, hashes));
+                proofScreenshot, vehicle.name(), profile.wotbNickname().trim(), pendingReplays, hashes));
     }
 
     /** WG 用户首次提交可能尚未访问 ProfilePage，先按可信登录身份创建 Profile。 */
-    private UserProfile findProfileForSubmission(final String userId) {
-        final UserProfile existing = userProfileService.findEntityByKeycloakUserId(userId).orElse(null);
+    private UserProfileSnapshot findProfileForSubmission(final String userId) {
+        final UserProfileSnapshot existing = userProfileService.findSnapshotByKeycloakUserId(userId).orElse(null);
         if (existing != null) {
             return existing;
         }
@@ -219,7 +219,7 @@ public class HundredBattleSubmissionService {
             throw new IllegalArgumentException("PROFILE_NOT_FOUND");
         }
         userProfileService.syncFromLogin(userId);
-        return userProfileService.findEntityByKeycloakUserId(userId)
+        return userProfileService.findSnapshotByKeycloakUserId(userId)
                 .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
     }
 

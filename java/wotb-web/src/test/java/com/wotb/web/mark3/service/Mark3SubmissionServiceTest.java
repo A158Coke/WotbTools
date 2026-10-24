@@ -8,8 +8,8 @@ import com.wotb.web.mark3.repository.Mark3SubmissionRepository;
 import com.wotb.web.replay.exception.ReplayBusyException;
 import com.wotb.web.replay.service.ReplayCapacityLimiter;
 import com.wotb.web.testsupport.ReplayFactsJson;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.user.service.WotbAccountIdentity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -98,7 +98,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void validManualSubmissionFreezesClaimsAndBothScreenshots() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         final var result = service.createSubmission(
                 USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
                 List.of(IMAGE_ONE, IMAGE_TWO), fiveReplays(), facts(fiveReplays()));
@@ -123,7 +123,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void currentRecordBlocksNewSubmissionBeforeReplayParsing() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         // ownership/canonical owner 改为 (区服, WotB 账号)：预检按 profile 的区服 + 账号查询
         when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
@@ -197,7 +197,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void rejectsWinRateWithMoreThanTwoDecimalPlaces() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         assertThatThrownBy(() -> service.createSubmission(
                 USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.251"),
@@ -208,7 +208,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void acceptsDataUrlProducedFromAFourMiBImage() throws Exception {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         final int encodedPayloadChars = ((4 * 1024 * 1024 + 2) / 3) * 4;
         final String screenshot = "data:image/png;base64," + "A".repeat(encodedPayloadChars);
         service.createSubmission(
@@ -234,7 +234,7 @@ class Mark3SubmissionServiceTest {
                 return "released";
             }));
             assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
-            when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+            when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
             assertThatThrownBy(() -> limitedService.createSubmission(
                     USER, TIER10_VEHICLE, 123, 3_456, new BigDecimal("55.25"),
@@ -254,7 +254,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void rechecksActiveSubmissionInsideCapacityBeforeParsing() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
         when(repository.existsByWotbServerAndWotbAccountIdAndVehicleIdAndStatus(
                 WOTB_SERVER, GAME_ID, TIER10_VEHICLE, "CURRENT"))
                 .thenReturn(false, true);
@@ -271,7 +271,7 @@ class Mark3SubmissionServiceTest {
     @Test
     void releasesGlobalReplayCapacityAfterReplayValidationFailure() throws Exception {
         final Mark3SubmissionService limitedService = newService(new ReplayCapacityLimiter(1));
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 容量许可内失败（首个回放的 facts 不含本人账号）→ 许可必须释放，下一次提交仍可进入
         final List<String> firstForeign = new ArrayList<>(facts(fiveReplays()));
@@ -293,7 +293,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void rejectsMissingOrMiscountedReplayFactsBeforePersistence() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         // 服务器没有 parser：facts 必填且与回放一一对应
         for (final List<String> facts : java.util.Arrays.asList(null, List.<String>of(),
@@ -310,7 +310,7 @@ class Mark3SubmissionServiceTest {
 
     @Test
     void rejectsInvalidReplayFactsBeforePersistence() {
-        when(userProfileService.findEntityByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
+        when(userProfileService.findSnapshotByKeycloakUserId(USER)).thenReturn(Optional.of(profile()));
 
         final List<String> broken = new ArrayList<>(facts(fiveReplays()));
         final Battle noTank = battle("a4");
@@ -497,14 +497,9 @@ class Mark3SubmissionServiceTest {
                 evidenceService, replayHashLock, transactionManager);
     }
 
-    private static UserProfile profile() {
-        final UserProfile profile = new UserProfile();
-        profile.setId(1L);
-        profile.setKeycloakUserId(USER);
-        profile.setWotbServer(WOTB_SERVER);
-        profile.setWotbAccountId(GAME_ID);
-        profile.setWotbNickname("PlayerOne");
-        return profile;
+    private static UserProfileSnapshot profile() {
+        return new UserProfileSnapshot(1L, USER, "PlayerOne", GAME_ID,
+                "PlayerOne", WOTB_SERVER, null, null);
     }
 
     /** 当前绑定身份 = 记录的 canonical owner（同区服、同账号）。 */

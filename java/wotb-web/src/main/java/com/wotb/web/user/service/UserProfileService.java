@@ -86,10 +86,10 @@ public class UserProfileService {
                         : new WotbAccountIdentity(profile.getWotbServer(), profile.getWotbAccountId()));
     }
 
-    /** 供其他业务域编排使用的内部实体查询。 */
+    /** 供其他业务域读取用户资料值，不暴露持久化实体。 */
     @Transactional(readOnly = true)
-    public Optional<UserProfile> findEntityByKeycloakUserId(final String keycloakUserId) {
-        return repository.findByKeycloakUserId(keycloakUserId);
+    public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserId(final String keycloakUserId) {
+        return repository.findByKeycloakUserId(keycloakUserId).map(mapper::toSnapshot);
     }
 
     /** 当前 JWT 是否为可用于 WG 资料同步的可信 ASIA/EU/NA 身份。 */
@@ -99,8 +99,8 @@ public class UserProfileService {
 
     /** 供跨域写操作串行化用户删除与换绑。 */
     @Transactional
-    public Optional<UserProfile> findEntityByKeycloakUserIdForUpdate(final String keycloakUserId) {
-        return repository.findByKeycloakUserIdForUpdate(keycloakUserId);
+    public Optional<UserProfileSnapshot> findSnapshotByKeycloakUserIdForUpdate(final String keycloakUserId) {
+        return repository.findByKeycloakUserIdForUpdate(keycloakUserId).map(mapper::toSnapshot);
     }
 
     /**
@@ -108,24 +108,26 @@ public class UserProfileService {
      * 返回 {@link Page} 以便调用方拿到权威 totalElements/totalPages，不做内存伪造分页。
      */
     @Transactional(readOnly = true)
-    public Page<UserProfile> searchForAdministration(final String query, final Pageable pageable) {
+    public Page<UserProfileSnapshot> searchForAdministration(final String query, final Pageable pageable) {
         return StringUtils.hasText(query)
-                ? repository.searchAdminUsers(query.trim(), pageable)
-                : repository.findAll(pageable);
+                ? repository.searchAdminUsers(query.trim(), pageable).map(mapper::toSnapshot)
+                : repository.findAll(pageable).map(mapper::toSnapshot);
     }
 
     /** 按 Keycloak sub 批量取本地资料；跨域编排（admin）用，禁止逐用户查询。 */
     @Transactional(readOnly = true)
-    public List<UserProfile> findByKeycloakUserIdIn(final Collection<String> keycloakUserIds) {
+    public List<UserProfileSnapshot> findByKeycloakUserIdIn(final Collection<String> keycloakUserIds) {
         if (keycloakUserIds == null || keycloakUserIds.isEmpty()) {
             return List.of();
         }
-        return repository.findByKeycloakUserIdIn(keycloakUserIds);
+        return repository.findByKeycloakUserIdIn(keycloakUserIds).stream().map(mapper::toSnapshot).toList();
     }
 
     /** 管理端删除入口；flush 让约束异常在调用方补偿范围内暴露。 */
     @Transactional
-    public void deleteForAdministration(final UserProfile profile) {
+    public void deleteForAdministration(final String keycloakUserId) {
+        final UserProfile profile = repository.findByKeycloakUserId(keycloakUserId)
+                .orElseThrow(() -> new IllegalArgumentException("PROFILE_NOT_FOUND"));
         repository.delete(profile);
         repository.flush();
     }

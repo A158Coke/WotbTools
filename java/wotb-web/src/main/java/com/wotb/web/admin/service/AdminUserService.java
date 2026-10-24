@@ -10,8 +10,8 @@ import com.wotb.web.admin.exception.AdminBadRequestException;
 import com.wotb.web.admin.exception.AdminConflictException;
 import com.wotb.web.admin.exception.AdminInternalException;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import com.wotb.web.util.ErrorCode;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -122,7 +122,7 @@ public class AdminUserService {
         final long total = byIdentityProvider
                 ? keycloakAdminUserService.countUsersByIdpAlias(idpAlias.trim(), query)
                 : keycloakAdminUserService.countUsers(query);
-        final Map<String, UserProfile> profiles = profilesByKeycloakId(
+        final Map<String, UserProfileSnapshot> profiles = profilesByKeycloakId(
                 keycloakUsers.stream().map(UserRepresentation::getId).toList());
         final List<AdminUserListItemDto> items = keycloakUsers.stream()
                 .map(keycloakUser -> mapper.toListItem(keycloakUser, profiles.get(keycloakUser.getId())))
@@ -137,19 +137,19 @@ public class AdminUserService {
      * 批量查询的能力（见 docs/auth/keycloak-admin-user-search.md）。默认页大小使该代价有界。</p>
      */
     private AdminUserPageDto localSegment(final String query, final int page, final int size) {
-        final Page<UserProfile> rows = userProfileService.searchForAdministration(
+        final Page<UserProfileSnapshot> rows = userProfileService.searchForAdministration(
                 query, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
         final List<AdminUserListItemDto> items = rows.getContent().stream()
                 .map(profile -> mapper.toListItem(
-                        keycloakAdminUserService.getUser(profile.getKeycloakUserId()), profile))
+                        keycloakAdminUserService.getUser(profile.keycloakUserId()), profile))
                 .toList();
         return new AdminUserPageDto(items, page, size, rows.getTotalElements(), rows.getTotalPages());
     }
 
-    private Map<String, UserProfile> profilesByKeycloakId(final List<String> keycloakUserIds) {
+    private Map<String, UserProfileSnapshot> profilesByKeycloakId(final List<String> keycloakUserIds) {
         return userProfileService.findByKeycloakUserIdIn(keycloakUserIds).stream()
                 .collect(Collectors.toMap(
-                        UserProfile::getKeycloakUserId, Function.identity(), (first, second) -> first));
+                        UserProfileSnapshot::keycloakUserId, Function.identity(), (first, second) -> first));
     }
 
     private static String normalizeSegment(final String segment) {
@@ -175,8 +175,8 @@ public class AdminUserService {
      */
     @Transactional(readOnly = true)
     public AdminUserDetailDto getUser(final String keycloakUserId) {
-        final Optional<UserProfile> profileOpt = userProfileService
-                .findEntityByKeycloakUserId(keycloakUserId);
+        final Optional<UserProfileSnapshot> profileOpt = userProfileService
+                .findSnapshotByKeycloakUserId(keycloakUserId);
 
         final AdminUserDetailDto.ProfileDto profileDto;
         profileDto = profileOpt.map(mapper::toProfileDto).orElse(null);
@@ -277,9 +277,9 @@ public class AdminUserService {
                     ErrorCode.CANNOT_DELETE_SELF.getDefaultMessage());
         }
 
-        final Optional<UserProfile> profileOpt = userProfileService
-                .findEntityByKeycloakUserIdForUpdate(targetKeycloakUserId);
-        final UserProfile profile = profileOpt.orElse(null);
+        final Optional<UserProfileSnapshot> profileOpt = userProfileService
+                .findSnapshotByKeycloakUserIdForUpdate(targetKeycloakUserId);
+        final UserProfileSnapshot profile = profileOpt.orElse(null);
         final AdminUserLog log = logPersister.save(
                 AdminUserLog.started(targetKeycloakUserId, profile,
                         adminKeycloakUserId, adminUsername));
@@ -289,7 +289,7 @@ public class AdminUserService {
         // 先验证并 flush 本地删除，避免数据库约束失败后才删除 Keycloak 用户。
         if (profile != null) {
             try {
-                userProfileService.deleteForAdministration(profile);
+                userProfileService.deleteForAdministration(targetKeycloakUserId);
                 localDeleted = true;
             } catch (final DataIntegrityViolationException e) {
                 log.markFailedLocalDelete(ErrorCode.USER_HAS_DEPENDENCIES.name(), e.getMessage());
