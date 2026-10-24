@@ -11,7 +11,7 @@ function makeRig(pressedKeys, { cam = [0, 20, 30], target = [0, 0, 0] } = {}) {
   const camera = { position: { x: cam[0], y: cam[1], z: cam[2] } }
   const controls = { target: { x: target[0], y: target[1], z: target[2] } }
   function tick(dt, mode = 'free') {
-    return advanceFly(pressed, dt, camera, controls, mode, FLY_SPEEDS[0])   // 恒档 1 = 1 m/s
+    return advanceFly(pressed, dt, camera, controls, mode, FLY_SPEEDS[0])   // 恒档 1 = 2 m/s
   }
   return { camera, controls, tick }
 }
