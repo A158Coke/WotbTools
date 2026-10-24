@@ -63,6 +63,7 @@ paths:
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file, facts], properties: { file: { type: string, format: binary }, facts: { type: string } } } } } }
       responses:
         '200': { description: 成功响应, content: { application/json: { schema: { $ref: '#/components/schemas/HofUploadResponse' } } } }
+        '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/hof/mark3:
     get:
       operationId: listMark3Leaderboard
@@ -84,6 +85,7 @@ paths:
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [vehicleId, battleCount, averageDamage, winRate, replays, proofScreenshots, facts], properties: { vehicleId: { type: integer, format: int64 }, battleCount: { type: integer }, averageDamage: { type: integer }, winRate: { type: number }, replays: { type: array, items: { type: string, format: binary } }, proofScreenshots: { type: array, items: { type: string } }, facts: { type: array, items: { type: string } } } } } } }
       responses:
         '200': { description: 成功响应, content: { application/json: { schema: { $ref: '#/components/schemas/Mark3CreateResult' } } } }
+        '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/hof/mark3/submissions/{id}/cancel:
     post:
       operationId: cancelMark3Submission
@@ -2730,6 +2732,7 @@ paths:
         '200': { description: Pending submission, content: { application/json: { schema: { $ref: '#/components/schemas/HundredCreateResult' } } } }
         '400': { description: Invalid submission, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
         '401': { description: Authentication required, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
+        '503': { description: Replay evidence capacity is full, content: { application/json: { schema: { $ref: '#/components/schemas/ApiError' } } } }
   /api/hof/hundred/submissions/{id}/cancel:
     post:
       operationId: cancelHundredSubmission
