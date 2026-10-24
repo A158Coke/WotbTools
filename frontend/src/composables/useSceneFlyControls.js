@@ -10,10 +10,25 @@ import { onBeforeUnmount, onMounted } from 'vue'
  * - 暴露 tickFly(dt, camera, controls, mode)：以相机朝向为基准推进一帧位移，
  *   返回是否发生位移——调用方把它并入按需渲染的 cameraMoved 判定（暂停时也要出帧）。
  *
- * 键位与播放传输（空格 / ←→，usePlaybackTransport）并行不冲突；输入框/按钮聚焦
- * 时不劫持（同一 isInteractiveTarget 守卫）。跟随（follow）模式不接管——跟随语义
- * 是车体锚定；top（正俯视）下 WASD 生效、QE 忽略（防穿地，正俯视下升降无意义）。
+ * 键位与播放传输（空格 / ←→，usePlaybackTransport）并行不冲突；**只跳过文本输入**
+ * （INPUT 文本类 / TEXTAREA / SELECT / contentEditable）——按钮不跳过：模式按钮点击后
+ * 仍持有焦点，若按 BUTTON 跳过，用户「点过自由按钮再按 WASD」会全部失效（实测）。
+ * 跟随（follow）模式不接管——跟随语义是车体锚定；top（正俯视）下 WASD 生效、QE 忽略。
  */
+
+/** 焦点是否落在**文本输入**目标上（只有这类目标需要让出键盘）。
+ *  按钮 / 链接 / 滑杆等不消费 WASD/QE/数字键，继续响应飞行。 */
+export function isTextEntryTarget(target) {
+  if (!target) return false
+  if (target.isContentEditable) return true
+  const tag = target.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (tag === 'INPUT') {
+    const type = (target.type || 'text').toLowerCase()
+    return !['button', 'checkbox', 'radio', 'range', 'submit', 'reset', 'color', 'file'].includes(type)
+  }
+  return false
+}
 
 /** 视角移动速率档（1–6 选择；与播放速度档独立）：米/秒。
  *  用户实测两轮校准：[0.5..16] 与 [1..60] 均反馈"太慢/没反应"——回放地图 ±300m、
@@ -99,17 +114,11 @@ export function useSceneFlyControls(adapter) {
 
   function flySpeed() { return FLY_SPEEDS[speedIndex - 1] }
 
-  // 键盘事件落在可输入 / 可操作控件上时不劫持（与 usePlaybackTransport 同一守卫语义）
-  const isInteractiveTarget = (target) => {
-    if (!target) return false
-    if (target.isContentEditable) return true
-    return ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName)
-  }
-
+  // 文本输入目标不劫持（按钮持有焦点时照常响应——模式按钮点击后焦点不会自动离开）
   function handleKeydown(event) {
     if (adapter.isActive && !adapter.isActive()) return
     if (adapter.canFly && !adapter.canFly()) return
-    if (isInteractiveTarget(event.target)) return
+    if (isTextEntryTarget(event.target)) return
     if (event.code === 'Space' || event.key === ' ') return   // 播放传输的键，不碰
     if (/^Digit[1-6]$/.test(event.code)) {
       event.preventDefault()
@@ -208,5 +217,5 @@ export function useSceneFlyControls(adapter) {
     })
   }
 
-  return { tickFly, flySpeed, flySpeedIndex: () => speedIndex, isInteractiveTarget, startLoop, stopLoop }
+  return { tickFly, flySpeed, flySpeedIndex: () => speedIndex, isTextEntryTarget, startLoop, stopLoop }
 }
