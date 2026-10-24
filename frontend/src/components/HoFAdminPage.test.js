@@ -6,6 +6,12 @@ import { ref } from 'vue'
 import HoFAdminPage from './HoFAdminPage.vue'
 import { DIALOG_INLINE_KEY } from '../shared/dialog.js'
 
+// Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
+async function pressEscape() {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await flushPromises()
+}
+
 const api = vi.hoisted(() => ({
   login: vi.fn(() => Promise.resolve(undefined))
 }))
@@ -941,7 +947,7 @@ describe('HoFAdminPage', () => {
     expect(dialog.attributes('aria-modal')).toBe('true')
     expect(wrapper.find('#' + dialog.attributes('aria-labelledby')).text()).toBe('hundredAdmin.details')
 
-    await dialog.trigger('keydown', { key: 'Escape' })
+    await pressEscape()
     expect(wrapper.find('.hof-review-modal').exists()).toBe(false)
   })
 
@@ -951,7 +957,7 @@ describe('HoFAdminPage', () => {
     await wrapper.find('.hundred-proof').trigger('click')
     const lightbox = wrapper.find('.screenshot-zoom [role="dialog"]')
     expect(lightbox.exists()).toBe(true)
-    await lightbox.trigger('keydown', { key: 'Escape' })
+    await pressEscape()
     expect(wrapper.find('.screenshot-zoom').exists()).toBe(false)
     expect(wrapper.find('.hof-review-modal').exists()).toBe(true)
   })

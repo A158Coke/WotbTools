@@ -8,6 +8,12 @@ import { ConnectivityState } from '../platform/connectivity.js'
 import { useConnectivity } from '../composables/useConnectivity.js'
 import { useConnectivityNotice } from '../composables/useConnectivityNotice.js'
 
+// Reka 的 Esc 由 document 级监听处理（最上层对话框响应）
+async function pressEscape() {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await flushPromises()
+}
+
 const api = vi.hoisted(() => ({
   searchUsers: vi.fn(),
   getUser: vi.fn(),
@@ -367,7 +373,7 @@ describe('AdminUsersPage', () => {
     expect(dialog.attributes('aria-modal')).toBe('true')
     expect(dialog.text()).toContain('kc-a-name')
 
-    await dialog.trigger('keydown', { key: 'Escape' })
+    await pressEscape()
     expect(wrapper.find('.detail-modal').exists()).toBe(false)
   })
 
@@ -379,7 +385,7 @@ describe('AdminUsersPage', () => {
     const dialog = wrapper.find('.confirm-modal')
     expect(dialog.attributes('role')).toBe('dialog')
     expect(dialog.classes()).toContain('is-danger')
-    await dialog.trigger('keydown', { key: 'Escape' })
+    await pressEscape()
     expect(wrapper.find('.confirm-modal').exists()).toBe(false)
     expect(api.deleteUsers).not.toHaveBeenCalled()
   })
