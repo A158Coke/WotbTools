@@ -163,7 +163,7 @@ class HofBulkDeleteTest {
 
     private HundredBattleSubmissionService hundredService() {
         return new HundredBattleSubmissionService(hundredRepository, hundredMapper, userProfileService,
-                hundredEvidence, replayHashLock, txManager);
+                hundredEvidence, replayCapacityLimiter, replayHashLock, txManager);
     }
 
     private Mark3SubmissionService mark3Service() {
