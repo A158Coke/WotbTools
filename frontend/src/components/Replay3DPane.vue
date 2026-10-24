@@ -951,7 +951,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
 /* 实时帧率角标（拖拽/飞行卡顿量化）：不拦截场景指针输入，隐藏全部 UI 时一起隐藏 */
 .pb-fps {
   position: absolute;
-  inset-block-start: var(--space-2);
+  inset-block-end: var(--space-2);
   inset-inline-end: var(--space-2);
   z-index: var(--pb-z-hud);
   padding: 2px 6px;
