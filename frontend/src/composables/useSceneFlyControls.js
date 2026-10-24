@@ -159,6 +159,10 @@ export function useSceneFlyControls(adapter) {
   let ivId = 0
   let lastT = 0
   function stepFly() {
+    // 面板失活 / 不可飞行（切到 2D / 数据页签：v-show 隐藏，不触发 window.blur）：
+    // 立即停双驱动并清空按键——否则按住 W 切页签，隐藏的 3D 相机仍持续前进、
+    // 切回后视角已漂移（评审 P2：isActive 此前只在 keydown 检查）。
+    if (adapter.isActive?.() === false || adapter.canFly?.() === false) { stopLoop(); return }
     const now = performance.now()
     const dt = lastT ? Math.min((now - lastT) / 1000, 0.1) : 0
     lastT = now

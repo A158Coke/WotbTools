@@ -246,14 +246,11 @@ export async function assembleMapScenery(gltf, ctx) {
   // 会话守卫先于一切清单/诊断读取：A 的迟到响应不得覆盖 B 已装载的清单
   //（实测竞态：B 的相同网格点击报告从 id=202 变成 id=101）
   if (ctx.stale()) {
-    // 中途过期（评审 P1）：挂载资源已在 onSceneryMounted 时归属宿主（teardownSession
-    // 可见、切场时即释放）；stale 结果**不发布任何 writes**（覆盖新会话状态）。
-    // parent 守卫做防御性回收：资源仍在场景（宿主未及 teardown 的路径）才摘除+释放，
-    // 已被 teardown 认领释放的不再二次 dispose。
-    if (writes.mapScenery && writes.mapScenery.parent === ctx.scene) {
-      ctx.scene.remove(writes.mapScenery);
-      ctx.disposeObject3D(writes.mapScenery);
-    }
+    // 中途过期（评审 P1 复核）：挂载时已通过 onSceneryMounted **无条件归属宿主**，
+    // 此后生命周期（含释放）只由宿主 teardown 负责——这里不得自行摘除/释放。
+    // 反例（评审给出的实际回归）：A 的 destructibles 悬挂期间开始加载 B（epoch 前进），
+    // A 返回时被判 stale；若 B 随后解析失败，宿主不会 teardown（A 仍是当前会话），
+    // 自行摘除会让 A 的布景消失而地形/其它对象仍在。stale 只丢弃结果、不碰资源。
     return { stale: true, writes: {} };
   }
   if (DEBUG) window.__destructStage = destructDoc

@@ -53,7 +53,7 @@ const makeCtx = (over = {}) => {
 }
 
 describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
-  it('destructibles 悬挂期间 reset/切场：挂载即归属（lateResolve 之前可释放），stale 不再发布', async () => {
+  it('destructibles 悬挂期间 reset/切场：挂载即归属（lateResolve 之前可释放），stale 不发布也不自行摘除', async () => {
     const { ctx, scene, disposeObject3D, gltf } = makeCtx()
     let lateResolve
     ctx.destructDocPromise = new Promise((res) => { lateResolve = res })
@@ -62,22 +62,24 @@ describe('assembleMapScenery 会话竞态（评审 P1/P2）', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(scene.children.length).toBe(1)
-    const staleGroup = scene.children[0]
-    // —— lateResolve 之前的窗口（评审 P1 复核的核心诉求）——
+    const mountedGroup = scene.children[0]
     // ① 挂载即归属：宿主（teardownSession）在 destructibles 仍悬挂时即拿到引用
-    expect(ctx.onSceneryMounted).toHaveBeenCalledWith(staleGroup, null)
-    // ② 此时 reset/切场：宿主 teardown 释放已归属资源（无需等请求返回）
-    scene.remove(staleGroup)
-    disposeObject3D(staleGroup)
-    expect(scene.children.length).toBe(0)
-    // —— 迟到的 destructibles 此时才返回：stale、不发布、不二次释放 ——
+    expect(ctx.onSceneryMounted).toHaveBeenCalledWith(mountedGroup, null)
+    // ② 迟到的 destructibles 返回时已 stale：只丢弃结果，**不碰宿主资源**。
+    //   评审回归分支：A stale 返回 → B 解析失败 → 宿主不 teardown A；此处若自行
+    //   摘除，A 的布景消失而地形/其它对象仍在。释放只由宿主负责。
     ctx.stale = () => true
     lateResolve({ instances: [] })
     const asm = await run
     expect(asm.stale).toBe(true)
     expect(asm.writes).toEqual({})                    // 不发布任何 stale 结果
-    expect(scene.children.length).toBe(0)             // 无叠影
-    expect(disposeObject3D).toHaveBeenCalledTimes(1)   // parent 守卫：不双重 dispose
+    expect(scene.children.length).toBe(1)             // 布景仍归宿主所有
+    expect(disposeObject3D).not.toHaveBeenCalled()    // stale 路径不释放
+    // ③ 宿主 teardown（切场成功 / reset）时才摘除并释放一次
+    scene.remove(mountedGroup)
+    disposeObject3D(mountedGroup)
+    expect(scene.children.length).toBe(0)
+    expect(disposeObject3D).toHaveBeenCalledTimes(1)
   })
 
   it('正常路径：destructPickList/meshOwner/destruct 随 writes 发布', async () => {
