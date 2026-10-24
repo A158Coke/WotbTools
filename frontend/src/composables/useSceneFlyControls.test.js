@@ -2,7 +2,7 @@
 // 朝向基准 / 水平投影（俯视不钻地）/ QE 世界系升降 / 速率倍乘 / dt=0 零位移 /
 // follow 由调用方短路（内核 flyTick 职责，此处不测）/ top 模式 QE 忽略。
 import { describe, expect, it } from 'vitest'
-import { FLY_SPEEDS, isFlySpeedIndex, advanceFly } from './useSceneFlyControls.js'
+import { FLY_SPEEDS, isFlySpeedIndex, advanceFly, isTextEntryTarget } from './useSceneFlyControls.js'
 
 // 测试桩：构造 camera/controls 与 pressed 集合，直接调**生产实现** advanceFly
 //（此前复制生产实现到桩里，Q/E 翻转时桩漏改导致测试与实现脱钩——已改为单一实现）。
@@ -24,6 +24,22 @@ describe('fly controls 速率档表', () => {
     expect(isFlySpeedIndex(0)).toBe(false)
     expect(isFlySpeedIndex(7)).toBe(false)
     expect(isFlySpeedIndex(2.5)).toBe(false)
+  })
+})
+
+// 回归（2026-10-24 用户实测）：模式按钮点击后仍持有焦点；曾把 BUTTON 一并当交互目标
+// 跳过，导致「点过自由/跟随按钮之后 WASD 全部无反应」。只有文本输入才让出键盘。
+describe('fly 键盘守卫只让出文本输入', () => {
+  it('按钮 / 链接 / 滑杆不拦截；文本类输入拦截', () => {
+    expect(isTextEntryTarget({ tagName: 'BUTTON' })).toBe(false)
+    expect(isTextEntryTarget({ tagName: 'A' })).toBe(false)
+    expect(isTextEntryTarget({ tagName: 'INPUT', type: 'range' })).toBe(false)
+    expect(isTextEntryTarget({ tagName: 'INPUT', type: 'text' })).toBe(true)
+    expect(isTextEntryTarget({ tagName: 'INPUT' })).toBe(true)
+    expect(isTextEntryTarget({ tagName: 'TEXTAREA' })).toBe(true)
+    expect(isTextEntryTarget({ tagName: 'SELECT' })).toBe(true)
+    expect(isTextEntryTarget({ isContentEditable: true })).toBe(true)
+    expect(isTextEntryTarget(null)).toBe(false)
   })
 })
 

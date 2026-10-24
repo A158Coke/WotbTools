@@ -411,11 +411,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 触屏多点手势状态：pointerId → 最新坐标；pinch = 双指捏合起点（d0 指距 / dist0 视距）
   const flyPointers = new Map();
   let flyPinch = null;
-  // [fly] 埋点常开（console.debug 在默认过滤级别不可见，F12 勾选 Verbose 可查；
-  // 排障零成本且不影响性能——每拖拽会话只输出个位数行）
+  // [fly] 埋点：?debug 下走 console.info（默认级别可见，排障不用勾 Verbose）；
+  // 非 debug 走 console.debug（默认隐藏）。每次交互只输出个位数行。
   const flyDbg = (tag, extra) => {
-    console.debug(`[fly] ${tag}`, extra !== undefined ? extra : '',
-      `cam=${CAM} enabled=${controls ? controls.enabled : '?'} yaw=${flyLook.yaw.toFixed(2)} pitch=${flyLook.pitch.toFixed(2)} dist=${flyLook.dist.toFixed(0)}`);
+    const line = `[fly] ${tag} ${extra !== undefined ? extra : ''} cam=${CAM} enabled=${controls ? controls.enabled : '?'} yaw=${flyLook.yaw.toFixed(2)} pitch=${flyLook.pitch.toFixed(2)} dist=${flyLook.dist.toFixed(0)}`;
+    if (DEBUG) console.info(line); else console.debug(line);
   };
   let flyMoveLastLog = 0;
 
@@ -512,6 +512,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       // 指针捕获：拖出画布仍能收到 move/up。否则画布外松键会留下「幽灵拖拽」
       // （回到画布不按键也在转头）。
       try { container.setPointerCapture(e.pointerId); } catch (_) {}
+      // 画布交互夺回键盘焦点：preventDefault 挡住了浏览器的焦点迁移，若不主动 blur，
+      // 点过「自由」按钮后焦点仍留在该按钮上——空格 / ←→（播放传输）会落给按钮。
+      const ae = document.activeElement;
+      if (ae && ae !== document.body && typeof ae.blur === 'function') ae.blur();
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -3373,6 +3377,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // 键盘飞行一帧（Replay3DPane 的 useSceneFlyControls 循环逐帧调用）：follow 不接管
   //（跟随语义 = 车体锚定）；位移并入按需渲染判定（暂停时按键也出帧）。dt ≤ 0 零位移。
   // pressed = 调用方（composable 实例）维护的按下键集合——按键态不进内核（pane 持有）。
+  let flyWasMoving = false;
   function flyTick(dt, pressed) {
     // top（正俯视）不飞行：WASD 在俯视下无水平分量（fwdLen≈0）、QE 被忽略，
     // 且接管会把 pitch 反解到 ±π/2 钳死——从 top 切回 free 后"无法移动"的根因。
@@ -3381,10 +3386,14 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     flyLookSyncIfStale('tick');
     // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
     // 这里只做平移推进 + target 重钉。
-    const moved = tickFlyImpl(pressed, dt, camera, controls, CAM, store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX]);
+    const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
+    const moved = tickFlyImpl(pressed, dt, camera, controls, CAM, speed);
     if (moved) {
       flyLookApply();                                // 平移后重钉 target = cam + dir×dist
       clampCameraTarget();
+      if (!flyWasMoving) { flyDbg('fly', `keys=${[...pressed].join('+')} speed=${speed}`); flyWasMoving = true; }
+    } else {
+      flyWasMoving = false;
     }
     return moved;
   }
