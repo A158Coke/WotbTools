@@ -479,6 +479,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       camera.position.y + dir.y * flyLook.dist,
       camera.position.z + dir.z * flyLook.dist,
     );
+    // 相机朝向必须显式重算：free 模式跳过 controls.update()（它的球面状态会与
+    // target 重钉互相污染），而 update() 正是平时调用 camera.lookAt(target) 的地方——
+    // 只改 target 不 lookAt，拖拽时 target 在动、画面却完全不转（用户实测）。
+    camera.lookAt(controls.target);
   }
 
   // ---- container capture 拦截（祖先 capture 先于 canvas target 阶段）----
@@ -3046,6 +3050,10 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // flyMode 接管不变量（每帧断言）：enabled 意外被拉回 true 的同一帧压回 false，
     // 杜绝"FPS 转头与环绕/pan 漂移交替"的整类状态漂移。
     if (flyMode() && controls.enabled) controls.enabled = false;
+    // free 接管期间 update() 不跑，它的 lookAt(target) 也随之缺席——相机朝向由本行
+    // 维持（target 是权威：拖拽 / 平移 / 缩放都会先重钉 target）。不补这一步，
+    // 拖拽只改 target 不改朝向，画面不转（用户实测）。
+    if (flyMode()) camera.lookAt(controls.target);
     const cameraMoved = flyMode() ? false : controls.update();   // three 的 update() 返回相机是否变化（阻尼/交互）
     // ---------- 按需渲染（脏帧）----------
     // 暂停且没有在飞特效、相机也静止时，跳过整帧工作（标签/基地/transient 重算 + 全屏
