@@ -11,6 +11,7 @@ const { isPhone } = usePlaybackPhoneForm()
 const props = defineProps({
   playing: Boolean,
   displayOpen: Boolean,
+  annotationEnabled: Boolean,
   speed: { type: Number, default: 1 },
   currentTime: { type: Number, default: 0 },
   duration: { type: Number, default: 0 },
@@ -21,7 +22,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'toggle-play', 'step', 'set-speed', 'toggle-fullscreen',
-  'toggle-panels', 'drag-start', 'drag-end', 'seek',
+  'toggle-panels', 'drag-start', 'drag-end', 'seek', 'toggle-annotation',
 ])
 </script>
 
@@ -31,6 +32,8 @@ const emit = defineEmits([
     :is-fullscreen="props.isFullscreen"
     :display-open="props.displayOpen"
     display-enabled
+    :annotation-enabled="props.annotationEnabled"
+    @toggle-annotation="emit('toggle-annotation')"
     @toggle-fullscreen="emit('toggle-fullscreen')"
     @toggle-display="emit('toggle-panels', $event)"
     :playing="props.playing"

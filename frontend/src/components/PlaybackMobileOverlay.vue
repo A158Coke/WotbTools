@@ -156,7 +156,7 @@ defineExpose({ reveal, hide, open, transientFullscreen })
 .pb-mobile-overlay-transient {
   position: absolute;
   inset: 0;
-  z-index: 25;
+  z-index: var(--pb-z-controls);
   pointer-events: none;
   opacity: 0;
   transition: opacity .18s ease;
@@ -176,7 +176,7 @@ defineExpose({ reveal, hide, open, transientFullscreen })
 }
 
 @media (width < 768px) {
-  .pb-mobile-overlay { position: absolute; inset: 0; z-index: 25; display: block; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
+  .pb-mobile-overlay { position: absolute; inset: 0; z-index: var(--pb-z-controls); display: block; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
   .pb-mobile-overlay-visible { opacity: 1; }
   .pb-mobile-overlay-visible .pb-mobile-overlay-content { pointer-events: auto; }
   .pb-mobile-overlay-content { position: absolute; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); left: 8px; display: grid; gap: 5px; padding: 7px; border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--bg-card2) 78%, transparent); backdrop-filter: blur(8px); pointer-events: none; }

@@ -1,7 +1,7 @@
 <script setup>
 // Shared primary composition: −5 / Play / +5 / current speed / Fullscreen / Display.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Maximize2, Minimize2, Pause, Play, SlidersHorizontal } from 'lucide-vue-next'
+import { Maximize2, Minimize2, Pause, Play, PencilRuler, SlidersHorizontal } from 'lucide-vue-next'
 import PlaybackTimeline from './PlaybackTimeline.vue'
 import { formatPlaybackClock } from '../utils/playbackClock'
 import { PLAYBACK_SPEEDS } from '../composables/usePlaybackTransport.js'
@@ -14,6 +14,9 @@ const props = defineProps({
   isFullscreen: Boolean,
   displayOpen: Boolean,
   displayEnabled: Boolean,
+  /** 标记模式入口：只有需要它的形态才挂（手机横屏没有独立的模式行，入口必须落在控制条里，
+      而不是浮在地图上——实测 740×360 的地图只有 96×96，放不下任何合规的常驻控件）。 */
+  annotationEnabled: Boolean,
   speed: { type: Number, default: 1 },
   speeds: { type: Array, default: () => PLAYBACK_SPEEDS },
   currentTime: { type: Number, default: 0 },
@@ -27,7 +30,7 @@ const props = defineProps({
   formatClock: { type: Function, default: formatPlaybackClock },
 })
 
-const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display'])
+const emit = defineEmits(['toggle-play', 'step', 'set-speed', 'seek', 'scrub-start', 'scrub-end', 'toggle-fullscreen', 'toggle-display', 'toggle-annotation'])
 
 /** 紧凑档的速度菜单开合；选中或点空白即收起（与 MenuButton 同口径的渐进披露） */
 const speedOpen = ref(false)
@@ -107,6 +110,9 @@ const total = computed(() => Number(props.duration) - Number(props.startTime))
     </div>
     <button v-if="props.fullscreenSupported" type="button" class="pb-btn pb-fullscreen-btn" data-test="pb-fullscreen" data-testid="playback-fullscreen" :aria-pressed="props.isFullscreen" :aria-label="$t(props.isFullscreen ? 'recon.map.playback.exit_fullscreen' : 'recon.map.playback.enter_fullscreen')" @click="emit('toggle-fullscreen')">
       <component :is="props.isFullscreen ? Minimize2 : Maximize2" :size="16" aria-hidden="true" />
+    </button>
+    <button v-if="props.annotationEnabled" type="button" class="pb-btn" data-test="pb-annotation-entry" data-tour="playback-annotation-entry" :aria-label="$t('recon.map.playback.annot.mode')" :title="$t('recon.map.playback.annot.mode')" @click="emit('toggle-annotation')">
+      <PencilRuler :size="16" aria-hidden="true" />
     </button>
     <button v-if="props.displayEnabled" ref="gearEl" type="button" class="pb-btn pb-secondary-entry" data-test="pb-secondary-entry" data-testid="display-toggle" data-tour="playback-display" :aria-expanded="props.displayOpen" aria-haspopup="dialog" :aria-label="$t('recon.map.playback.panel_display')" @click="emit('toggle-display', gearEl)">
       <SlidersHorizontal :size="16" aria-hidden="true" />

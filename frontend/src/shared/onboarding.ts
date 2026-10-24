@@ -23,7 +23,7 @@ export interface OnboardingSurface {
   setGuideInset?(pixels: number): void
 }
 
-export type OnboardingSurfaceId = 'playback' | 'annotations' | '3d' | 'shots' | 'armor'
+export type OnboardingSurfaceId = 'playback' | 'annotations' | 'display' | '3d' | 'shots' | 'armor'
 
 export interface OnboardingContext {
   start(topic?: OnboardingTopic): void

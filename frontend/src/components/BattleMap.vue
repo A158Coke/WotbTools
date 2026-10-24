@@ -332,7 +332,9 @@ function onTwoFingerTouch(event) {
 .pb-annot-unit-ring { fill: var(--color-surface-1); }
 .pb-annot-unit-label { font: var(--type-caption); font-weight: 700; paint-order: stroke; stroke: var(--color-surface-1); stroke-width: 3; stroke-linejoin: round; }
 
-.pb-map { position: relative; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
+/* 场景自成局部层叠上下文（§5）：地图内部的反馈层 / 文本输入 / 车辆标记各自的叠放只在
+   这里比较，不会越过工作台的 HUD / 控制条 / 瞬态面刻度。 */
+.pb-map { position: relative; isolation: isolate; margin: 0 auto; width: 66.7%; overflow: hidden; aspect-ratio: var(--pb-map-aspect, 1 / 1); }
 /* user-select: none —— 车辆标记 / 名牌 / 标注文字不可被选中：鼠标拖动平移或画标注、触屏长按都不该出现蓝色选区 */
 .pb-viewport { position: absolute; inset: 0 auto auto 0; width: 100%; transform-origin: 0 0; touch-action: none; aspect-ratio: var(--pb-map-aspect, 1 / 1); user-select: none; }
 .pb-viewport.pb-touch-pan { touch-action: pan-y; }

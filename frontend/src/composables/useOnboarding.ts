@@ -69,7 +69,7 @@ const annotations = step('annotations', 'playback', [
   stage('playback-annotation-entry', 'annotationEntry', { surface: 'annotations', advanceOnReady: true }),
   stage('playback-annotation-tools', 'annotationTools', { surface: 'annotations', interactionAnchor: 'playback-map' }),
 ])
-const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'playback', prepare: true })])
+const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'display', prepare: true })])
 const replay3d = step('3d', '3d', [
   stage('replay3d-start', 'replay3dStart', { surface: '3d', advanceOnReady: true }),
   stage('replay3d-camera', 'replay3dCamera', { surface: '3d', interactionAnchor: 'replay3d-workspace' }),

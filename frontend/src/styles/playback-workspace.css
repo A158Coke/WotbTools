@@ -5,19 +5,16 @@
    approximately 25 / 50 / 25 columns while the Stage maximizes its available square. */
 .playback-workspace {
   container-type: inline-size;
+  /* 工作台是自己的局部层叠上下文（§5）：内部 `--pb-z-*` 的 1–9 只在这里比较，不与根层的
+     AppTopBar / AppTabBar / 侧栏竞争；需要越出工作台的浮层必须 Teleport 到 body。
+     没有这一行时 1–9 会和组件里的裸 25/30/40/45 在页面外壳的上下文里裸比大小，
+     文档声明的"局部刻度"并不成立（实测：Display surface 的 9 被 transport 的 25 盖住）。 */
+  isolation: isolate;
   --pb-lane-w: var(--pb-roster-min);
 }
 
 /* Direct, always-reachable presentation actions share the existing preference owner. */
 .pb-quick-actions { display: flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; }
-.pb-map-quick-actions {
-  position: absolute;
-  inset-block-start: var(--space-1);
-  inset-inline-start: var(--space-1);
-  max-inline-size: calc(100% - var(--space-2));
-  z-index: var(--pb-z-hud);
-  pointer-events: none;
-}
 .pb-quick-action {
   display: inline-flex;
   align-items: center;

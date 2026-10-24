@@ -218,9 +218,49 @@ Playback 车辆标签由同一个 `PlaybackVehicleLabel.vue` 渲染；2D 地图�
 
 **动效**：`--duration-fast: 120ms`（hover、按下）· `--duration-base: 200ms`（展开、切换）· `--duration-slow: 300ms`（sheet、抽屉进出）· `--ease-standard: cubic-bezier(.2, 0, 0, 1)`。`prefers-reduced-motion: reduce` 时三个时长都归零。
 
-回放、3D 等组件内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。
+场景型工作台（2D / 3D 回放、装甲查看器）内部的叠放用 `isolation: isolate` 建立局部层叠上下文，内部只用 1–9，不参与全局竞争。**隔离必须真的写出来**：`position: relative` 与 `overflow: hidden` 都不建立层叠上下文，少了 `isolation: isolate` 时局部的 1–9 会和页面里任何裸 z-index 在外壳的上下文里裸比大小，"局部刻度"只是错觉。当前隔离点：`.playback-workspace`（工作台根）与 `.pb-map`（2D 场景）。
 
-需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
+局部阶梯按下面的概念层序排列，token 见 `tokens/scale.css`：`--pb-z-canvas: 1` → `--pb-z-hud: 5` → `--pb-z-scrim: 6` → `--pb-z-controls: 7` → `--pb-z-transient: 8` → `--pb-z-modal: 9`。
+
+需要越过该局部上下文的顶级浮层（手机底部 sheet、dialog、从工作台内部打开的菜单）必须 Teleport 到 `body`；提高 z-index 不会离开局部层叠上下文，仍会被根层 `AppTabBar` / 侧栏盖住。Teleport 出去的浮层不继承父级的 `display: none` / KeepAlive 停用，父级必须在 capability 隐藏或 `onDeactivated()` 时主动关闭。
+
+### 遮挡与可达（occlusion / reachability）
+
+层级只决定「谁盖住谁」，不决定「盖住多少」和「还点不点得到」。下面三条和 z-index 刻度同级，是**可判定**的规则，由 `npm run test:browser-layout`（几何）与 `npm run test:browser-interaction`（真实命中）守护。
+
+**1. 主内容遮挡。** 常驻 UI（`fixed` / `sticky` / 浮动控件 / 工具栏 / 底栏 / 侧板）不得实质遮挡该页的主任务内容——地图 / canvas / 3D 视口、表格与结果列表、图表、表单与复盘正文、搜索与百科内容。判定：
+
+- 常驻控件与主内容盒的交集 **≤ 主内容面积的 5%**；
+- 且**不得压入主内容的中心 60% 盒**。
+
+交互本身要求的覆盖（打开的 sheet / dialog / 菜单）不受此限——它们是瞬态面，由规则 2 管。
+
+**例外：game-style overlay HUD。** 3D 回放的 HUD、名册车道与控制条按产品设计就浮在场景上
+（游戏同款布局，`.pb-root` 的常驻层都是 `position: absolute`），不适用上面的 5% 面积上限；
+它们仍须满足"不得压入主内容中心区"与规则 3 的可达性。2D 的地图不是这种形态：它的常驻控件
+归控制条，地图盒里不放常驻 UI。
+
+> 5% 的来历：2D 手机横屏实测基线，三个文字 quick action 在 740×360 下占地图 9.52%、844×390 下 6.94%（绝对像素恒定 ≈5.2–5.7k px²，视口越小占比越高）；收成单个图标入口后在 244px 地图上约 3.25%、竖屏约 1.27%。阈值取在两者之间，双向都有余量。
+
+**2. 瞬态优先。** 瞬态交互面激活时必须压过同一上下文里的常驻控件。概念层序：
+
+1. 页面 / 主内容
+2. 页面 HUD / 上下文装饰
+3. 常驻工具栏 / sticky 控件
+4. 菜单 / 下拉 / popover / 选择器 / tooltip
+5. drawer / modal / sheet
+6. 关键通知层（如有）
+
+**不得用「给一个很大的 z-index」收尾**。先核实层叠上下文、containing block、transform / filter / opacity、`overflow` 裁剪与组件归属：跨上下文时提高数值无效，正确做法是 Teleport；同上下文时按上面的 token 阶梯取值。
+
+**3. 可见即可达。** 可见的交互选项必须真的能点到。以下任一条成立即不合格：被其它元素覆盖、被祖先 `overflow` 裁剪、落在可用视口外、被 sticky / fixed 控件挡住、落在 safe area 内、或者看得见但指针到不了（例如 `pointer-events: none`，指针穿透落到祖先上）。
+
+- **部分**覆盖与**部分**裁剪同样不合格：中心点露着不等于可达，按钮底部被切掉 10px 也是缺陷。容差 2px，只放过边框、阴影级别的亚像素误差。
+- 裁剪只沿 containing block 链计算：`position: fixed / absolute` 的元素逃出了中间那些祖先，它们的 `overflow` 裁不到它；滚出可滚动容器属于「可滚动触达」，此时要求的是滚动容器本身不被外层裁掉。
+- 判定用浏览器真实命中测试：在选项盒内多点采样 `elementFromPoint`，只有命中选项自身或其后代才算点得到——命中它的祖先恰恰说明指针穿透了它。门禁里的真实点击另以输入事件记录佐证。
+- 触控档最小命中区见上表（44×44）。
+
+**4. 适用形态。** 上面三条必须在手机竖屏、手机横屏、平板与桌面都成立，并覆盖**状态组合**（工具栏 + 菜单开、sticky 表头 + 下拉开、名册展开 + 浮层开、底栏 + sheet 开、drawer + 背景 sticky、断点切换），不只是静止初始态。
 
 ---
 

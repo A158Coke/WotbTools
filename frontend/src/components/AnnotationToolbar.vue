@@ -118,7 +118,7 @@ const tools = [
 .pb-annot-compact .pb-annot-secondary { border: 0; padding: 0; }
 .pb-annot-compact .pb-annot-context { order: -1; padding: 0; }
 .pb-annot-compact .pb-annot-context > span, .pb-annot-compact .pb-annot-close-label { display: none; }
-.pb-annot-compact .pb-annot-close { position: sticky; inset-inline-start: 0; order: -2; z-index: var(--z-sticky); min-inline-size: var(--control-h-md); margin-inline-start: 0; }
+.pb-annot-compact .pb-annot-close { position: sticky; inset-inline-start: 0; order: -2; z-index: var(--pb-z-hud); min-inline-size: var(--control-h-md); margin-inline-start: 0; }
 @media (width < 768px) {
   .pb-annotation-toolbar:not(.pb-annot-compact) { padding: var(--space-2); }
   .pb-annot-btn, .pb-annot-color { min-height: var(--control-h-md); }
