@@ -2742,8 +2742,19 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       check(failures, negative.failures.length > 0,
         `负向对照必须失败：常驻传输条提回 z-index 25 后探针仍然通过，说明它发现不了 #727 这类遮挡 ${JSON.stringify(negative)}`)
     }
+    // 详情面板与 Display 同时开着时，Display 必须在上：Display 在外点时即关闭，所以两者同时可见时
+    // 它一定是更晚打开的那个，被详情面板盖住就是"刚打开的面看不见"。
+    // 竖屏的详情是流内块、不是浮层；只有宽档 / 横屏才有两块浮动面板叠在一起的状态组合。
+    // 实测全部宽档 / 横屏形态两者都重叠（夹具开场即选中车辆），所以那里必须重叠——否则这条断言空跑。
+    if (layout !== 'portrait') {
+      const detailsPaint = await measurePaintOrder(page, { above: '[data-testid="display-panel"]', below: '[data-test="pb-info"]' })
+      check(failures, detailsPaint.overlaps === true,
+        `宽档 Display 应与车辆详情面板重叠（夹具开场即选中车辆），实际没有：Display / 详情面板次序断言空跑了 ${JSON.stringify(detailsPaint)}`)
+      for (const failure of detailsPaint.failures) check(failures, false, `Display 必须压过车辆详情面板: ${failure}`)
+    }
+    // 选项不只是按钮：显示开关是 label 包着的复选框，只查 button 会漏掉整块被盖住的复选框区
     const reach = await measureReachability(page, {
-      options: ['[data-testid="display-panel"] button'],
+      options: ['[data-testid="display-panel"] button', '[data-testid="display-panel"] label'],
       touch: !!scenario.touch,
     })
     for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
