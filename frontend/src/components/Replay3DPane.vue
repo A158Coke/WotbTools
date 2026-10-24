@@ -953,12 +953,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', onViewportResize))
   position: absolute;
   inset-block-start: var(--space-2);
   inset-inline-end: var(--space-2);
-  z-index: 5;
+  z-index: var(--pb-z-hud);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-surface-1) 78%, transparent);
   color: var(--color-text-secondary);
-  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: var(--type-caption);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   user-select: none;
