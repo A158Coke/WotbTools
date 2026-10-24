@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { findChrome, launchChromeForCdp } from './browser-chrome.mjs'
 import { Page } from './browser-page.mjs'
-import { OCCLUSION_LIMITS, assertDocumentedLimits, measureOcclusion } from './browser-occlusion.mjs'
+import { OCCLUSION_LIMITS, assertDocumentedLimits, measureOcclusion, measureReachability } from './browser-occlusion.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendRoot = resolve(here, '..')
@@ -75,6 +75,33 @@ const scenarios = [
 function negativeOverlayMarkup(scenario) {
   if (!scenario.occlusionNegative) return ''
   return '<div class="pb-quick-actions pb-occlusion-negative" data-test="pb-occlusion-negative" style="position:absolute;inset-block-start:30%;inset-inline-start:10%;inline-size:60%;block-size:30%;background:#333"></div>'
+}
+
+// 可达性探针自测夹具（PR #747 review）。每个元素对应一种判定，期望写在下面的断言里：
+// 三个负向样本的**中心点都露着**——这正是只看中心点的探针会放过的那一类。
+// 两个正向样本防止修过头：可滚动触达不是缺陷；fixed 元素不受非 containing block 祖先的
+// overflow 裁剪（CSS 规定它逃出去了），把它判成"被裁掉"就是误报。
+function reachabilitySelfTestHtml() {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font: 12px sans-serif; padding: 8px; }
+  .t { display: block; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: #4a7; }
+  .slot { margin-block-end: 12px; }
+</style></head><body>
+  <div class="slot"><button id="r-ok" class="t">ok</button></div>
+  <div class="slot" style="overflow: hidden; height: 32px"><button id="r-clip12" class="t">clip</button></div>
+  <div class="slot" style="cursor: pointer"><button id="r-pe-none" class="t" style="pointer-events: none">pe</button></div>
+  <div class="slot" style="position: relative">
+    <button id="r-cover12" class="t">cover</button>
+    <div style="position: absolute; inset-inline: 0; inset-block-start: 32px; block-size: 12px; background: #000"></div>
+  </div>
+  <div class="slot" style="overflow: auto; height: 60px"><div style="height: 200px"></div><button id="r-scroll" class="t">scroll</button></div>
+  <div class="slot" style="overflow: hidden; width: 10px; height: 10px">
+    <button id="r-fixed" class="t" style="position: fixed; left: 400px; top: 20px">fixed</button>
+  </div>
+</body></html>`
 }
 
 function fixtureHtml(scenario) {
@@ -711,6 +738,40 @@ try {
     `phone landscape center must remain the widest column: ${JSON.stringify(phoneLandscape)}`)
   if (contractFailures.length) {
     throw new Error(`workspace column ownership contract:\n- ${contractFailures.join('\n- ')}`)
+  }
+
+  // —— 可达性探针自测：探针自己必须能发现 #727 这一类问题，同时不能误伤 ——
+  // 只看中心点、或者把「命中了祖先」算成可达的探针，对部分裁剪 / 部分覆盖 / pointer-events 穿透
+  // 全都会给出绿色。这里用确定性夹具逐项锁定判定方向。
+  {
+    const htmlPath = resolve(temp, 'reachability-self-test.html')
+    writeFileSync(htmlPath, reachabilitySelfTestHtml(), 'utf8')
+    const { targetId, sessionId } = await browser.openPage()
+    const selfTestPage = new Page(browser.client, sessionId)
+    await selfTestPage.enable()
+    await selfTestPage.emulate({ width: 600, height: 600, touch: false, deviceScaleFactor: 1 })
+    await selfTestPage.goto(pathToFileURL(htmlPath).href)
+    const expectations = [
+      ['#r-ok', 'pass', '完整可见'],
+      ['#r-scroll', 'pass', '滚出可滚动容器 = 可滚动触达'],
+      ['#r-fixed', 'pass', 'fixed 逃出非 containing block 祖先的 overflow'],
+      ['#r-clip12', 'fail', 'overflow:hidden 裁掉底部 12px，中心仍露出'],
+      ['#r-pe-none', 'fail', 'pointer-events:none，命中落到祖先'],
+      ['#r-cover12', 'fail', '兄弟元素盖住底部 12px，中心仍露出'],
+    ]
+    const selfTestFailures = []
+    for (const [selector, expected, why] of expectations) {
+      const { failures } = await measureReachability(selfTestPage, { options: [selector], touch: true })
+      const actual = failures.length ? 'fail' : 'pass'
+      if (actual !== expected) {
+        selfTestFailures.push(`${selector}（${why}）应判 ${expected}，实际 ${actual}${failures.length ? `: ${failures.join(' | ')}` : ''}`)
+      }
+    }
+    await browser.client.send('Target.closeTarget', { targetId })
+    if (selfTestFailures.length) {
+      throw new Error(`可达性探针自测失败——探针会漏判或误报 #727 这一类问题:\n- ${selfTestFailures.join('\n- ')}`)
+    }
+    console.log('[browser-layout] reachability-self-test OK（部分裁剪 / 部分覆盖 / pointer-events 穿透均判失败；可滚动触达与逃出 overflow 的 fixed 均判通过）')
   }
 
   // —— 3D 伤害数字覆盖层：真实组件 + 真实 CSS 的浏览器几何 / 跟随 / 出屏 / 镜像门禁 ——

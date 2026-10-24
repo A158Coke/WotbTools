@@ -2465,6 +2465,7 @@ async function runMultiFileWorkspaceScenario(env) {
       touch: true,
     })
     for (const failure of sheetReach.failures) check(failures, false, `battle picker sheet 可达性: ${failure}`)
+    check(failures, sheetReach.sampled > 0, 'battle picker sheet 可达性断言空跑：没有任何选项被实际命中采样')
     await hit('[data-testid="battle-picker-option"][data-value="r1"]', { touch: true })
     await page.waitForValue(roster, value => !!value && value !== firstRoster, { timeout: 60_000, label: 'second battle after mobile sheet selection' })
     check(failures, await page.evaluate(`!!document.querySelector('[data-testid="battle-picker-panel"]')`) === false,
@@ -2743,6 +2744,7 @@ async function checkDisplaySurface(page, failures, layout, scenario) {
       touch: !!scenario.touch,
     })
     for (const failure of reach.failures) check(failures, false, `Display 选项可达性: ${failure}`)
+    check(failures, reach.sampled > 0, 'Display 可达性断言空跑：没有任何选项被实际命中采样')
   }
 
   await page.evaluate(`document.querySelector('[data-testid="display-close"]')?.click()`)
