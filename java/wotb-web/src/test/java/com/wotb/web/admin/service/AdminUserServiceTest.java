@@ -3,8 +3,8 @@ package com.wotb.web.admin.service;
 import com.wotb.web.admin.dto.DeleteUsersResponse;
 import com.wotb.web.admin.entity.AdminUserLog;
 import com.wotb.web.config.KeycloakAdminUserService;
-import com.wotb.web.user.entity.UserProfile;
 import com.wotb.web.user.service.UserProfileService;
+import com.wotb.web.user.service.UserProfileSnapshot;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -29,11 +29,12 @@ class AdminUserServiceTest {
         final UserProfileService userProfileService = mock(UserProfileService.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
         final AdminUserLogPersister logPersister = logPersister();
-        final UserProfile profile = new UserProfile();
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("target"))
+        final UserProfileSnapshot profile = new UserProfileSnapshot(1L, "target", null, null,
+                null, null, null, null);
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("target"))
                 .thenReturn(Optional.of(profile));
         doThrow(new DataIntegrityViolationException("foreign key"))
-                .when(userProfileService).deleteForAdministration(profile);
+                .when(userProfileService).deleteForAdministration("target");
         final AdminUserService service = service(userProfileService, logPersister, keycloakService);
 
         final DeleteUsersResponse response = service.deleteUsers(List.of("target"), true, adminJwt());
@@ -49,15 +50,16 @@ class AdminUserServiceTest {
         final UserProfileService userProfileService = mock(UserProfileService.class);
         final KeycloakAdminUserService keycloakService = mock(KeycloakAdminUserService.class);
         final AdminUserLogPersister logPersister = logPersister();
-        final UserProfile profile = new UserProfile();
-        when(userProfileService.findEntityByKeycloakUserIdForUpdate("target"))
+        final UserProfileSnapshot profile = new UserProfileSnapshot(1L, "target", null, null,
+                null, null, null, null);
+        when(userProfileService.findSnapshotByKeycloakUserIdForUpdate("target"))
                 .thenReturn(Optional.of(profile));
         final AdminUserService service = service(userProfileService, logPersister, keycloakService);
 
         service.deleteUsers(List.of("target"), true, adminJwt());
 
         final InOrder order = inOrder(userProfileService, keycloakService);
-        order.verify(userProfileService).deleteForAdministration(profile);
+        order.verify(userProfileService).deleteForAdministration("target");
         order.verify(keycloakService).deleteUser("target");
     }
 
