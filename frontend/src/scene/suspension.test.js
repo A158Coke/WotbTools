@@ -139,23 +139,34 @@ describe('花纹滚动：每米 V = 网格实测 dV/ds（≠ 客户端形式常�
     expect(treadScrollStep(0.42, 2, 0.8)).toBeCloseTo(0.42 + 1.6, 9)
   })
 
-  it('沿带斜率测量：线性数据取精确斜率；图集换行（跳变）不污染', () => {
+  it('沿带斜率测量：幅值 = |斜率| 中位（符号由底段走向 chainBottomRunDir 定）；图集换行与双行反向都不污染', () => {
+    // 2026-10-24 语义更新（Grille 15 样本 19217）：图集双行的 V 推进方向相反
+    // （下行 +1.24 / 上行 −1.25 V/m），带符号中位互相抵消 = 0 ⇒ 恒停滚。
+    // 幅值中位对两族相等（同一物理滚动速度）⇒ 取 |斜率| 中位，方向交给调用方。
     const lin = [];
     for (let s = 0; s < 15; s += 0.2) lin.push([s, -0.6 * s]);            // dV/ds = −0.6
-    expect(measureBeltUvSlope(lin).slope).toBeCloseTo(-0.6, 6)
+    expect(measureBeltUvSlope(lin).slope).toBeCloseTo(0.6, 6)
     expect(measureBeltUvSlope(lin).ok).toBe(true)
     const wrap = [];
     for (let s = 0; s < 15; s += 0.2) {
       const v = -0.6 * s;
       wrap.push([s, v - Math.floor(v / 9) * 9]);                          // 每 9 V 换行
     }
-    expect(measureBeltUvSlope(wrap).slope).toBeCloseTo(-0.6, 6)
+    expect(measureBeltUvSlope(wrap).slope).toBeCloseTo(0.6, 6)
+    // 双行反向（图集两行对称铺设）：幅值仍 = 0.6（任一行物理速度相同）
+    const dual = [];
+    for (let s = 0; s < 15; s += 0.2) {
+      dual.push([s, (-0.6 * s) - Math.floor((-0.6 * s) / 9) * 9]);        // 行 A
+      dual.push([s, (0.6 * s) - Math.floor((0.6 * s) / 9) * 9]);          // 行 B（反向）
+    }
+    expect(measureBeltUvSlope(dual).slope).toBeCloseTo(0.6, 6)
+    expect(measureBeltUvSlope(dual).ok).toBe(true)
   })
 
-  it('同一弧长上的横向重复行（桶内取中位）与样本不足的 fail-closed', () => {
+  it('同一弧长上的横向重复行（桶内去重）与样本不足的 fail-closed', () => {
     const rows = [];
     for (let s = 0; s < 6; s += 0.25) { for (const _ of [0, 1, 2]) rows.push([s, -0.5 * s]); }
-    expect(measureBeltUvSlope(rows).slope).toBeCloseTo(-0.5, 6)
+    expect(measureBeltUvSlope(rows).slope).toBeCloseTo(0.5, 6)
     expect(measureBeltUvSlope([[0, 0], [1, -0.5]]).ok).toBe(false)        // 样本太少
   })
 
