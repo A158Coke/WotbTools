@@ -705,6 +705,23 @@ describe('real lesson lifecycle', () => {
     h.wrapper.unmount()
   })
 
+  it('waits for the Display surface before preparing the declutter step', async () => {
+    // 冷启动恢复到防遮这一步时，回放视图可能还没挂上：此时 prepare 打开 Display 会落空，
+    // 之后也不会再重试，锚点永远出不来。必须等 display surface ready 之后再 prepare。
+    const h = harness()
+    const ready = ref(false), openDisplay = vi.fn()
+    h.controller.registerSurface('display', { ready: () => ready.value, prepare: openDisplay })
+    h.controller.start()
+    await h.controller.begin()
+    for (let i = 0; i < 4; i++) { h.controller.next(); await flushPromises() }
+    expect(h.controller.currentStage.value.anchor).toBe('playback-declutter')
+    expect(openDisplay).not.toHaveBeenCalled()
+    ready.value = true
+    await flushPromises()
+    expect(openDisplay).toHaveBeenCalledTimes(1)
+    h.wrapper.unmount()
+  })
+
   it('cleans a canceled surface wait so a late ready signal never runs its command', async () => {
     const h = harness({ files: true })
     const ready = ref(false), prepare = vi.fn()

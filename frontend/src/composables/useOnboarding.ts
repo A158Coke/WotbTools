@@ -60,6 +60,10 @@ export interface GuideStep {
   view?: string
   stages: GuideStage[]
 }
+// prepare 之前必须先等 ready 的 surface：它们的 ready() 表示"回放视图已挂上、可以被准备"。
+// 'annotations' 不在此列——它的 ready() 表示目标状态已达成（工具条已打开），只能在 prepare 之后成立。
+const SURFACES_READY_BEFORE_PREPARE = new Set<OnboardingSurfaceId>(['playback', 'display'])
+
 const stage = (anchor: string, copy: string, extra: Partial<GuideStage> = {}): GuideStage => ({ anchor, copy, ...extra })
 const step = (id: string, capability: ReplayCapability, stages: GuideStage[]): GuideStep => ({ id, capability, stages })
 const demo = step('demo', 'data', [stage('workspace-demo', 'demo')])
@@ -69,7 +73,9 @@ const annotations = step('annotations', 'playback', [
   stage('playback-annotation-entry', 'annotationEntry', { surface: 'annotations', advanceOnReady: true }),
   stage('playback-annotation-tools', 'annotationTools', { surface: 'annotations', interactionAnchor: 'playback-map' }),
 ])
-const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'display', prepare: true })])
+// 防遮控件住在 Display 面里：prepare 打开那块面，interactionAnchor 把整块面纳入交互 / 焦点范围
+// （面打开时焦点落在它的关闭按钮上，第一次 Escape 必须交给面自己关，而不是被教程吞掉）。
+const declutter = step('declutter', 'playback', [stage('playback-declutter', 'declutter', { surface: 'display', prepare: true, interactionAnchor: 'playback-display-options' })])
 const replay3d = step('3d', '3d', [
   stage('replay3d-start', 'replay3dStart', { surface: '3d', advanceOnReady: true }),
   stage('replay3d-camera', 'replay3dCamera', { surface: '3d', interactionAnchor: 'replay3d-workspace' }),
@@ -586,7 +592,7 @@ export function useOnboarding(options: {
         const id = currentStage.surface
         const owner = await waitForValue(() => {
           const surface = surfaces.value[id]
-          return surface && (id !== 'playback' || surface.ready() || surface.failed?.()) ? surface : null
+          return surface && (!SURFACES_READY_BEFORE_PREPARE.has(id) || surface.ready() || surface.failed?.()) ? surface : null
         }, signal)
         if (!owns()) return
         if (id !== 'shots' && owner.failed?.()) throw new Error('GUIDE_SURFACE_UNAVAILABLE')
