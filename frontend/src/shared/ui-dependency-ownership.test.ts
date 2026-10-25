@@ -17,6 +17,7 @@ const OWNERS: Record<string, string[]> = {
   ],
   'motion-v': [
     'App.vue',
+    'components/AgentTankopedia.vue',
     'components/FilterChips.vue',
     'components/SegmentedControl.vue',
   ],
