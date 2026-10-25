@@ -122,9 +122,43 @@ describe('BattlePicker', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
   })
 
+  it('桌面端 Tab / Shift+Tab 不被困在面板里：关闭面板并把焦点放回触发按钮', async () => {
+    mountPicker({ options: options(8), modelValue: 'r2' })
+    await open()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    searchInput().dispatchEvent(tab)
+    await flushPromises()
+    expect(panelElement()).toBeNull()
+    expect(document.activeElement).toBe(triggerButton().element)
+    await open()
+    searchInput().dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(panelElement()).toBeNull()
+    expect(document.activeElement).toBe(triggerButton().element)
+  })
+
+  it('手机端选中另一场或按 Esc 后，焦点回到场次按钮', async () => {
+    setViewportWidth(390)
+    mountPicker({ options: options(3), modelValue: 'r0' })
+    triggerButton().element.focus()
+    await open()
+    documentOptions()[1].click()
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(document.activeElement).toBe(triggerButton().element)
+
+    await open()
+    await pressKey(document.activeElement, 'Escape')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(panelElement()).toBeNull()
+    expect(document.activeElement).toBe(triggerButton().element)
+  })
+
   it('点击组件外部关闭', async () => {
     mountPicker({ options: options(3), modelValue: 'r0' })
     await open()
+    // Reka 在下一个宏任务才注册 document 级 outside 监听
+    await new Promise(resolve => setTimeout(resolve, 10))
     document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
     await flushPromises()
     expect(panelElement()).toBeNull()

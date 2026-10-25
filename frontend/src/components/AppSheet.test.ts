@@ -44,6 +44,19 @@ describe('AppSheet', () => {
     expect(sheet()).toBeNull()
   })
 
+  it('关闭后焦点回到打开前的元素（没有 DrawerTrigger 也成立）', async () => {
+    mountSheet()
+    const opener = document.getElementById('opener')!
+    opener.focus()
+    opener.click()
+    await flushPromises()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(sheet()).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('遮罩使用 sheet 层 token 并随 sheet 关闭', async () => {
     mountSheet()
     document.getElementById('opener')!.click()

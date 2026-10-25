@@ -2,12 +2,14 @@
 // 手机底部 sheet（design-language §7 Sheet）：模态、焦点陷阱、Esc / 点遮罩 / 下滑关闭、portal 由 Reka Drawer 提供；
 // 这里统一 WotbTools 的层级（--z-sheet）、遮罩（--color-scrim）、安全区、紧凑尺寸与 reduced-motion。
 // 不启用 snap points（目前没有产品场景）。
-import { inject } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { DrawerContent, DrawerOverlay, DrawerPortal, DrawerRoot, DrawerTitle } from 'reka-ui'
 import { DIALOG_INLINE_KEY } from '../shared/dialog'
 
-defineProps<{
+const props = defineProps<{
   open: boolean
+  /** 关闭后焦点回到的元素；缺省回到打开前的焦点元素（Drawer 没有 DrawerTrigger 时 Reka 不会自己恢复） */
+  returnFocusTo?: HTMLElement | null
   /** 可访问名称；默认只给辅助技术，页面用自己的表头时不会出现两个标题 */
   title: string
   /** 同时显示 AppSheet 自己的标题行 */
@@ -19,6 +21,12 @@ defineOptions({ inheritAttrs: false })
 // 与 AppDialog 同口径：组件测试 / fullscreen 宿主内原地渲染
 const inline = inject(DIALOG_INLINE_KEY, false)
 
+const opener = ref<HTMLElement | null>(null)
+watch(() => props.open, (open) => {
+  if (open) opener.value = document.activeElement instanceof HTMLElement ? document.activeElement : null
+}, { immediate: true, flush: 'sync' })
+const finalFocus = computed(() => props.returnFocusTo ?? opener.value ?? undefined)
+
 function onUpdateOpen(value: boolean) {
   if (!value) emit('close')
 }
@@ -29,7 +37,7 @@ function onUpdateOpen(value: boolean) {
     <DrawerPortal :disabled="inline" force-mount>
       <template v-if="open">
         <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
-        <DrawerContent class="sheet" v-bind="$attrs">
+        <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
           <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
           <div class="sheet-body"><slot /></div>
         </DrawerContent>
