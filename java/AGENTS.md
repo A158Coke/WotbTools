@@ -28,7 +28,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 
 ## 模块边界（真实职责）
 
-- **wotb-core**：纯 Java 库，**无 Spring Web/Boot 与容器注解依赖**（`spring-core` 工具类
+- **wotb-core**：纯 Java 库，**无 Spring Web/Boot、HTTP transport DTO 与容器注解依赖**（`spring-core` 工具类
   `StringUtils`/`Resource` 允许）。顶层包只有 `ai/ model/ ref/ replay/ util/`：
   `ref/`（车辆库/地图名/显示名查表）、`model/`（record 模型；不得反向依赖上层包）、
   `replay/` 内含 `event/ evidence/ facts/ feature/ map/ processing/ projection/ reconstruction/
@@ -38,7 +38,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
   （+ `hundred/ mark3/ tournament/`），每域内 `controller/ service/ entity/ repository/ dto/`
   （+ `mapper/ enums/ exception/` 按需）；共享例外包：`config/`（含 KeycloakAdminUserService）、
   `util/`、`exceptionhandler/`（GlobalExceptionHandler）、`replayfile/`（跨域回放文件存储/锁/DTO）。
-  禁止层分包。
+  禁止层分包。Hundred 与 Mark3 的公开 leaderboard、admin read/query、moderation transitions 由各自域内 service owner 承载；submission service 持有 create/cancel 与 replay hash/storage 生命周期，不建立跨域基类。
 - **架构测试（ArchUnit）**：`wotb-core/src/test/java/com/wotb/core/architecture/CoreArchitectureTest.java`
   与 `wotb-web/src/test/java/com/wotb/web/architecture/WebArchitectureTest.java` 随 `mvn test` 自动执行，
   守护上两条边界（依赖方向、domain 分包、禁字段注入/Lombok、顶层包无循环）；改动包结构/跨域依赖时
@@ -63,6 +63,7 @@ regression tests 即可，PR CI 负责最终发现遗漏影响。同一任务内
 `wotb-ai` 根包 `com.wotb.ai` 由 `AiServiceApplication` 自然扫描；AI-owned 代码按 `config/`、
 `gateway/`、`prompt/`、`review/`、`tournament/` 归属。Gateway 供 Review 与 Tournament 共用，
 Review 与 Tournament 是隔离的兄弟 feature；本 Maven module 只依赖 `wotb-core`，不依赖 `wotb-web`。
+Core 不拥有 `com.wotb.web.*` transport 类型；AI HTTP error response 由 `wotb-ai` 自有包声明，Web response 由 `wotb-web` 自有包声明。
 
 AI Review 由 `java/wotb-ai` 产出的独立无状态 Yecao `ai-service` 承载（无数据库 / MinIO / Business Backend 依赖）。TX ingress 现以 `location ^~ /api/ai/` 把 `/api/ai/**` 反代到 WireGuard 上的 `10.20.0.2:8089`（服务无公网端口、不重写 path）；取消为 `POST /api/ai/reviews/{correlationId}/cancel`。Business Backend 不再承载或代理 AI 请求：旧 `/api/replay/analyze` 端点与 dataset-backed `AiReplayReviewService` 已删除；AI 链路不再依赖 `ReplayProcessingResult` / `ReplayPerspectiveGroup` / `processingJobId` / `sourceId` / `ai-facts.json` / Dataset lease，输入是客户端 canonical AI projection（`AiReviewRequest = {locale, correlationId, battle, projection}`，required 恰为这四个字段），由 `ClientAiProjectionAdapter`（`wotb-core` `replay/projection`）装配成内存 `ReplayReconstruction`。前端已无维护门（提交 `83884790` 解除；`ai_maintenance` 三语 key 无消费者），AI tab / 深链直接挂载 `AiReviewPanel.vue`。部署与超时边界见 `docs/operations/ai-service.md` 与 `docs/architecture/ai-review.md`。
 
