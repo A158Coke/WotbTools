@@ -36,9 +36,7 @@ import {
 // 穿透材质族（PBR 热力图/间隙甲双通道/外部模块层 + 跳弹续飞共享 uniforms）2026-10-24
 // 出仓 viewer/armorShaders.js（current-plan.md Step B2）；材质语义注释随实现迁往该模块
 import {
-    PBR_VERT, PBR_FRAG, rcUniforms, resUniform,
-    penetrationMaterial, externalMaterial, spacedMaterial, spacedStateMaterial, moduleStateMaterial,
-    emptySpacedTexture,
+    PBR_VERT, PBR_FRAG, createArmorShaderContext,
 } from './viewer/armorShaders.js'
 // 点击判定的触发面分类（Primary = 主装甲板）；与判定本体同源，勿在此复制一份板面清单
 import { isPrimary, hasPrimaryLayer, matchHitsByOccurrence } from './penetration.js'
@@ -133,6 +131,15 @@ export function mirrorShotData(s) {
 }
 
 export function initTankViewer({ labels = {}, onLoadState = null, onTankList = null, onTankSelection = null, initialTankId = null, initialShooterId = null } = {}) {
+        // 穿透材质族的**每实例**运行态（分辨率/跳弹 uniforms/占位纹理 + 绑定它们的材质工厂）。
+        // 不能是模块单例：两个 viewer 生命周期重叠时，A 的更新/重建/清理会直接改到 B 的 uniforms
+        //（评审 P1）。解构命名与拆分前一致，消费点零改动。
+        const armorShaders = createArmorShaderContext();
+        const {
+            rcUniforms, resUniform,
+            penetrationMaterial, externalMaterial, spacedMaterial, spacedStateMaterial, moduleStateMaterial,
+            emptySpacedTexture,
+        } = armorShaders;
         resetViewerGlobals();
         const L = {
             loading: 'Loading tank model...',
@@ -5960,6 +5967,7 @@ export function initTankViewer({ labels = {}, onLoadState = null, onTankList = n
                     renderer.domElement.parentNode.removeChild(renderer.domElement);
                 }
             }
+            try { armorShaders.dispose(); } catch (_) {}   // context 私有占位纹理（材质已随场景释放）
         }
 
         function isContextLost() { return contextLost; }

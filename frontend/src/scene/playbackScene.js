@@ -519,7 +519,8 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
         if (flyPointers.size >= 2) {
           // 双指 = 捏合缩放（沿视线推拉相机）；本次手势不再转头、也算不上单击
           const [a, b] = [...flyPointers.values()];
-          flyPinch = { lastD: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+          const d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+          flyPinch = { d0, lastD: d0 };
           flyLook.active = false;
           emptyDownAt = null;
         } else {
@@ -554,9 +555,11 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       if (flyPointers.size >= 2 && flyPinch) {
         const [a, b] = [...flyPointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        // 双指捏合 = 沿视线推拉相机：按指距的**增量**比例前进/后退（分开 = 推近）。
-        // 增量式（而非相对起点的绝对值）避免每次 move 重复累计。
-        const f = Math.max(-0.5, Math.min(0.5, (d - flyPinch.lastD) / flyPinch.lastD));
+        // 双指捏合 = 沿视线推拉相机：dx/x 以**手势起始指距 d0** 为基准（分开 = 推近）。
+        // 用 d0 而不是上一次指距作分母，增量沿手势求和 = dist·(d−d0)/d0，严格可逆：
+        // 200→250→200 精确回位，同一手势被拆成不同数量的 pointermove 结果也一致
+        //（评审 P2：除以 lastD 是 25% 前进 / 20% 后退，往返会净漂移）。
+        const f = Math.max(-0.5, Math.min(0.5, (d - flyPinch.lastD) / flyPinch.d0));
         flyPinch.lastD = d;
         flyDolly(flyLook.dist * f);
         e.stopPropagation();
@@ -3019,6 +3022,7 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   //（每帧只多两次减法；窗口边界才触发一次响应式写入）。暂停 / 恢复时重新起窗。
   const frameMeter = createFrameMeter();
   let lastRenderAt = 0;
+  let fpsIdle = false;   // 场景进入空闲（!busy）后置位；恢复渲染前 re-起窗
 
   let winnerShown = false;
   function animate() {
@@ -3095,14 +3099,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
       || tracers.length > 0 || (battleFx && battleFx.active())
       || ghostByEid.size > 0 || flashByEid.size > 0;
     if (!busy) {
-      // 空闲（暂停静止）：超过 0.6s 没有渲染就把角标归零（显示 —），
-      // 别让上一段拖拽/播放的旧帧率一直冒充“当前”。
-      if (store.fps && performance.now() - lastRenderAt > 600) {
+      // 空闲（场景确实停画，而不是渲染很慢）：显式重起统计窗，避免把空闲间隙
+      // 算成一帧；超过 0.6s 把角标归零（显示 —），别让旧帧率冒充“当前”。
+      // 注意判定只在这里做——PLAYING 期间即使 300ms/帧也照常计入长帧（评审 P2）。
+      const now = performance.now();
+      const since = lastRenderAt ? now - lastRenderAt : Infinity;
+      if (since > 250 && !fpsIdle) { frameMeter.reset(); fpsIdle = true; }
+      if (store.fps && since > 600) {
         store.fps = 0; store.frameMs = 0; store.framePeakMs = 0;
-        frameMeter.reset();
       }
       return;
     }
+    if (fpsIdle) { frameMeter.reset(); fpsIdle = false; }   // 恢复渲染：全新窗口
     lastRenderAt = performance.now();
     // 只统计**真正渲染的帧**：按需渲染下 rAF 每帧都跑（暂停静止也跑），数回调会得到
     // 120 FPS 这种与画面无关的数——用户实测「卡顿和显示的帧率不符」正是这个。

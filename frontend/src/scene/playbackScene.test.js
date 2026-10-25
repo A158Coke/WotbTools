@@ -1488,7 +1488,7 @@ describe('scene vehicle selection intent', () => {
     canvas.dispatchEvent(touch('pointerup', 180, 0))
   })
 
-  it('双指捏合：沿视线推拉相机（缩放），视角与视距不变', async () => {
+  it('双指捏合：沿视线推拉相机，且手势往返精确回位（评审 P2）', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const store = createPlaybackStore()
     const container = mountContainer()
@@ -1499,6 +1499,7 @@ describe('scene vehicle selection intent', () => {
     const canvas = container.querySelector('canvas')
     const cam = window.__camera
     const controls = window.__controls
+    const start = cam.position.clone()
     const dist0 = cam.position.distanceTo(controls.target)
     const aim0 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
     const touch = (type, x, buttons, pointerId) => {
@@ -1507,19 +1508,34 @@ describe('scene vehicle selection intent', () => {
       Object.defineProperty(e, 'pointerId', { value: pointerId })
       return e
     }
-    canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
-    canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 两指距 200px
+    // 一次完整手势：两指从 200px 起，依次移动到 xs（第二指），再回到 200px 收势
+    const gesture = (xs) => {
+      canvas.dispatchEvent(touch('pointerdown', 100, 1, 7))
+      canvas.dispatchEvent(touch('pointerdown', 300, 1, 9))   // 指距 200px（= d0）
+      for (const x of xs) canvas.dispatchEvent(touch('pointermove', x, 1, 9))
+      canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
+      canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
+    }
+    // 分开 → 推近；回到原指距 → 精确回位（不是 25% 前进 / 20% 后退的漂移）
+    gesture([350, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 同一手势拆成更多 pointermove：结果一致
+    gesture([325, 350, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 大间距（触发 ±0.5 单事件上限）同样可逆
+    gesture([500, 300])
+    expect(cam.position.distanceTo(start)).toBeCloseTo(0, 4)
+    // 中途分开时确实沿视线前进，且视距/视角不变
     const p0 = cam.position.clone()
-    canvas.dispatchEvent(touch('pointermove', 500, 1, 9))   // 两指距 400px → 推近
-    expect(cam.position.clone().sub(p0).dot(aim0)).toBeGreaterThan(1)   // 沿视线前进
-    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)  // 视距不变
-    const p1 = cam.position.clone()
-    canvas.dispatchEvent(touch('pointermove', 300, 1, 9))   // 收拢 → 后退
-    expect(cam.position.clone().sub(p1).dot(aim0)).toBeLessThan(0)
-    const dir1 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
-    expect(dir1.dot(aim0)).toBeCloseTo(1, 4)               // 视角不变
-    canvas.dispatchEvent(touch('pointerup', 300, 0, 9))
-    canvas.dispatchEvent(touch('pointerup', 100, 0, 7))
+    gesture([350])
+    expect(cam.position.clone().sub(p0).dot(aim0)).toBeGreaterThan(0.5)
+    expect(cam.position.distanceTo(controls.target)).toBeCloseTo(dist0, 3)
+    const aim1 = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(aim1.dot(aim0)).toBeCloseTo(1, 4)
+    // 补一个完整往返：从当前位置分开再收回，精确回位（相对该手势起点）
+    const pForward = cam.position.clone()
+    gesture([350, 300])
+    expect(cam.position.distanceTo(pForward)).toBeCloseTo(0, 4)
   })
 })
 
