@@ -118,6 +118,8 @@ watch(() => props.open, (open) => {
   place-items: center;
   padding: var(--space-4);
   background: var(--color-scrim);
+  /* Reka 模态在打开期间把 body 设为 pointer-events: none；遮罩点击关闭需要它自己恢复命中 */
+  pointer-events: auto;
 }
 
 .dialog {
