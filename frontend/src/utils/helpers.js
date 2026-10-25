@@ -114,9 +114,7 @@ const COL_GROUP_CAT = {
 const MAP_FALLBACK_LOCALE = 'zh'
 
 function currentMapLocale(locale) {
-  if (locale) return locale
-  if (typeof localStorage !== 'undefined') return localStorage.getItem('wotb-lang')
-  return MAP_FALLBACK_LOCALE
+  return locale || MAP_FALLBACK_LOCALE
 }
 
 export function fmtDuration(s, t) {

@@ -1,15 +1,16 @@
 package com.wotb.web.hundred.controller;
 
 import com.wotb.web.config.ApiPaths;
-import com.wotb.web.hof.dto.BulkDeleteModerationRequest;
-import com.wotb.web.hof.dto.BulkDeleteResultDto;
+import com.wotb.web.hundred.dto.BulkDeleteModerationRequest;
+import com.wotb.web.hundred.dto.BulkDeleteResultDto;
 import com.wotb.web.hundred.dto.HundredAdminDetailDto;
 import com.wotb.web.hundred.dto.HundredAdminPageDto;
 import com.wotb.web.hundred.dto.HundredDeleteRequest;
 import com.wotb.web.hundred.dto.HundredRejectRequest;
 import com.wotb.web.hundred.dto.HundredReplayEvidenceDto;
 import com.wotb.web.hundred.dto.HundredSubmissionSummaryDto;
-import com.wotb.web.hundred.service.HundredBattleSubmissionService;
+import com.wotb.web.hundred.service.HundredAdminQueryService;
+import com.wotb.web.hundred.service.HundredModerationService;
 import com.wotb.web.hundred.service.HundredReplayEvidenceService;
 import com.wotb.web.replayfile.ReplayDownload;
 import com.wotb.web.util.JwtUtil;
@@ -37,12 +38,15 @@ import java.util.List;
 @RequestMapping(ApiPaths.HOF_HUNDRED_ADMIN)
 public class HundredBattleAdminController {
 
-    private final HundredBattleSubmissionService service;
+    private final HundredModerationService moderationService;
+    private final HundredAdminQueryService queryService;
     private final HundredReplayEvidenceService evidenceService;
 
-    public HundredBattleAdminController(final HundredBattleSubmissionService service,
+    public HundredBattleAdminController(final HundredModerationService moderationService,
+                                        final HundredAdminQueryService queryService,
                                         final HundredReplayEvidenceService evidenceService) {
-        this.service = service;
+        this.moderationService = moderationService;
+        this.queryService = queryService;
         this.evidenceService = evidenceService;
     }
 
@@ -55,13 +59,13 @@ public class HundredBattleAdminController {
             @RequestParam(name = "vehicleId", required = false) final Long vehicleId,
             @RequestParam(name = "page", defaultValue = "1") final int page,
             @RequestParam(name = "size", defaultValue = "50") final int size) {
-        return service.adminList(status, nation, vehicleType, vehicleId, page, size);
+        return queryService.adminList(status, nation, vehicleType, vehicleId, page, size);
     }
 
     /** 审核详情：MANUAL PENDING 可返回截图；WG 来源返回官方快照；终态无文件证据。 */
     @GetMapping("/submissions/{id}")
     public HundredAdminDetailDto detail(@PathVariable final long id) {
-        return service.adminDetail(id);
+        return queryService.adminDetail(id);
     }
 
     /**
@@ -93,14 +97,14 @@ public class HundredBattleAdminController {
     /** APPROVE：只变更状态；排名值由冻结的 submission 数据决定，旧 CURRENT → SUPERSEDED。 */
     @PostMapping("/submissions/{id}/approve")
     public HundredSubmissionSummaryDto approve(@PathVariable final long id) {
-        return service.approve(JwtUtil.requireUserId(), id);
+        return moderationService.approve(JwtUtil.requireUserId(), id);
     }
 
     /** REJECT：原因强制（OTHER 必须填文本）。 */
     @PostMapping("/submissions/{id}/reject")
     public HundredSubmissionSummaryDto reject(@PathVariable final long id,
                                               @RequestBody final HundredRejectRequest body) {
-        return service.reject(JwtUtil.requireUserId(), id,
+        return moderationService.reject(JwtUtil.requireUserId(), id,
                 body.rejectReason(), body.rejectReasonText());
     }
 
@@ -108,7 +112,7 @@ public class HundredBattleAdminController {
     @PostMapping("/submissions/{id}/delete")
     public HundredSubmissionSummaryDto delete(@PathVariable final long id,
                                               @RequestBody final HundredDeleteRequest body) {
-        return service.deleteCurrent(JwtUtil.requireUserId(), id,
+        return moderationService.deleteCurrent(JwtUtil.requireUserId(), id,
                 body.deleteReason(), body.deleteReasonText());
     }
 
@@ -118,7 +122,7 @@ public class HundredBattleAdminController {
      */
     @PostMapping("/submissions/bulk-delete")
     public BulkDeleteResultDto bulkDelete(@RequestBody final BulkDeleteModerationRequest body) {
-        return service.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
+        return moderationService.bulkDeleteCurrent(JwtUtil.requireUserId(), body.normalizedIds(),
                 body.reason(), body.reasonText());
     }
 }

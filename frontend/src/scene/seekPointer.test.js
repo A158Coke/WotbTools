@@ -64,9 +64,11 @@ describe('playbackScene.seekTo 的游标接线（防回归）', () => {
 
 describe('边界 fail-closed（PR #411 P0-2）', () => {
   const src = readFileSync(resolve(here, 'playbackScene.js'), 'utf8')
+  // 边界带 2026-10-24 出仓 playback/boundary.js（工厂持有 boundaryGroup），守卫随实现迁移
+  const bandSrc = readFileSync(resolve(here, 'playback/boundary.js'), 'utf8')
 
   it('buildBoundary 对空边界只清理不绘制', () => {
-    expect(src).toMatch(/function buildBoundary\(bounds, thick\) \{\s*clearBoundary\(\);\s*if \(!bounds\) return;/)
+    expect(bandSrc).toMatch(/function build\(bounds, thick\) \{\s*clear\(\);\s*if \(!bounds\) return;/)
   })
 
   it('调用点一律传权威 playableBoundsFor()，不再有车辆/地形范围兜底', () => {

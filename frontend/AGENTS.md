@@ -41,6 +41,7 @@
 - 业务 HTTP endpoint 由 `src/api/**` 唯一持有；组件/composable 只调用领域 API，不重造鉴权、上传、错误解析、endpoint 字符串或 dataset identity 逻辑。`utils/http.ts` 持有共享 transport、Android URL/credentials、错误归一化与 path→feature 防御映射；静态资产、WASM fingerprint、示例回放和 Native/WebView 资源 fetch 不属于业务 API 规则。`src/api/http-ownership.test.ts` 守护生产 endpoint literal 的归属。
 - `src/api/replay-capabilities.ts` 只提供共享 Bearer/transport helper（`ReplayAuthSession` / `optionalBearer` / `authedReplayPost`），供 `/api/ai/**` 调用方复用；AI wire 组装在 `src/api/ai-review.ts`。相关 panel 不得重新出现 `authedFetch` 或直接 `apiFetch`。
 - 后端 API 保持稳定英文 key/data 契约；用户文案、显示名和错误本地化留在 locale/display 层。
+- UI reactive locale 的唯一运行时 owner 是 Vue i18n；`src/i18n/locale-preference.js` 独占 `wotb-lang` storage key 的读取、规范化与持久化。组件通过 i18n locale 更新语言，不直接访问该 key。纯显示 helper 必须接收显式 locale，缺省时只用固定 fallback，不读取 browser storage。
 - 路由历史、深链和 Back/Forward 由 Vue Router 所有；组件不得手写 `history.pushState`、`replaceState` 或 `popstate`。
 
 ## Third-party UI primitives
