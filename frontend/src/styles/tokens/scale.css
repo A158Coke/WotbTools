@@ -140,6 +140,8 @@
        spacing value. The bounds used to be 9rem/14rem: the ceiling was wide enough that the
        roster kept absorbing new viewport width instead of handing it to the battlefield. */
     --pb-roster-min: 9rem;
+    /* 手机横屏传输条合成一行时，时间轴可被按钮挤到的最小可拖宽度 */
+    --pb-timeline-min-w: 120px;
     --pb-roster-max: 11rem;
     --pb-workspace-fallback-h: 80dvh;
 
@@ -183,6 +185,12 @@
   @media (width >= 1200px) {
     :root { --gutter: 32px; }
     :root:not([data-sidebar="collapsed"]) { --sidebar-w: var(--sidebar-full-w); }
+  }
+
+  /* 沉浸态（shared/shellChrome）：AppShell 不渲染顶栏 / Tab 栏时，吸顶与高度预算同步归零 */
+  :root[data-shell-chrome="immersive"] {
+    --header-h: 0px;
+    --tabbar-h: 0px;
   }
 
   @media (pointer: coarse) {
