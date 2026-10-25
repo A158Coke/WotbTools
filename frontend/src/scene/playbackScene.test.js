@@ -1361,12 +1361,18 @@ describe('Free Camera terrain floor', () => {
   it('uses the Top mode default camera height as the Free hard ceiling', async () => {
     stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 20, zmax: 20 })
     source.loadPlaybackData.mockResolvedValue(minimalData())
-    const { api } = createScene()
+    const { api, store } = createScene()
     await api.loadData({ kind: 'local', file: new File(['terrain'], 'terrain-top-ceiling.wotbreplay') })
     const cam = window.__camera
     const controls = window.__controls
     api.setCam('top')
     const topHeight = cam.position.y
+    expect(store.cam).toBe('free')
+    expect(controls.enabled).toBe(false)
+    expect(controls.target.x).toBeCloseTo(0, 3)
+    expect(controls.target.z).toBeCloseTo(0, 3)
+    expect(controls.target.y).toBe(0)
+    expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
     api.setCam('free')
 
     cam.position.y = topHeight - 0.1
@@ -1467,7 +1473,7 @@ describe('Free Camera terrain floor', () => {
     canvas.dispatchEvent(touch('pointerup', 100, 7))
   })
 
-  it('does not create a world-zero floor without terrain or outside the heightfield span; Top stays unchanged', async () => {
+  it('does not create a world-zero floor without terrain or outside the heightfield span', async () => {
     source.loadPlaybackData.mockResolvedValue(minimalData())
     const noTerrain = createScene()
     await noTerrain.api.loadData({ kind: 'local', file: new File(['empty'], 'no-terrain.wotbreplay') })

@@ -3437,9 +3437,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     invalidate();
   }
   function setCam(mode) {
-    CAM = mode;
-    store.cam = mode;
-    flyLookApplyMode(mode);   // OrbitControls 侧状态迁移（free=接管；其他=恢复原生）
+    // Top 是一次性战术总览动作，不是可持续相机模式。俯视快照完成后立刻回到
+    // Free 状态，让键盘、鼠标与触屏控制从同一帧起可用。
+    const topAction = mode === 'top';
+    const nextMode = topAction ? 'free' : mode;
+    CAM = nextMode;
+    store.cam = nextMode;
+    flyLookApplyMode(topAction ? 'follow' : nextMode); // 先清理飞行手势，再接管 Free
     // 场景未初始化（renderer 惰性创建，首次 startPlayback 才有 controls）：只记录模式，
     // 初始化后由 animate 按 CAM/FOLLOW_EID 逐帧生效——名册点击可先于首帧发生。
     if (!controls) { invalidate(); return; }
@@ -3447,12 +3451,18 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
     // 无生效路径）——不得在此无条件拉回 true（top→free 复活拖曳移动的根因）
     controls.enabled = !flyMode();
     invalidate();
-    if (mode === 'top') {
+    if (topAction) {
       FOLLOW_EID = 0;
       const { cx, cz } = WORLD_CENTER;
       camera.position.set(cx, topCameraDefaultHeight(), cz + 0.01);
       controls.target.set(cx, 0, cz);
-    } else if (mode === 'free') {
+      // 保留直下俯视的实际画面，同时为下一次自由飞行准备可用的水平朝向。
+      flyLookSyncFromCamera('top overview');
+      flyLook.yaw = 0;
+      flyLook.pitch = -0.6;
+      flyLook.dist = Math.hypot(controls.target.x - camera.position.x, controls.target.y - camera.position.y, controls.target.z - camera.position.z);
+      controls.enabled = false;
+    } else if (nextMode === 'free') {
       FOLLOW_EID = 0;
       constrainFreeCameraAltitude();
     }
@@ -3480,15 +3490,13 @@ export function initPlayback(container, store, labelOverlay = null, { onVehicleS
   // pressed = 调用方（composable 实例）维护的按下键集合——按键态不进内核（pane 持有）。
   let flyWasMoving = false;
   function flyTick(dt, pressed) {
-    // top（正俯视）不飞行：WASD 在俯视下无水平分量（fwdLen≈0）、QE 被忽略，
-    // 且接管会把 pitch 反解到 ±π/2 钳死——从 top 切回 free 后"无法移动"的根因。
     if (!controls || !DATA || !flyMode() || !(dt > 0) || !pressed?.size) return false;
     // 相机可能被非飞行路径改过（初始 fit / 跟随退出）：首帧对齐朝向基准，防 target 跳变
     flyLookSyncIfStale('tick');
     // 接管（enabled/damping/朝向反解）由 flyLookApplyMode 在模式切换时完成；
     // 这里只做平移推进 + target 重钉。
     const speed = store.flySpeed || FLY_SPEEDS[DEFAULT_FLY_SPEED_INDEX];
-    const moved = tickFlyImpl(pressed, dt, camera, controls, CAM, speed);
+    const moved = tickFlyImpl(pressed, dt, camera, controls, speed);
     if (moved) {
       flyLookApply();                                // 平移后重钉 target = cam + dir×dist
       clampCameraTarget();
