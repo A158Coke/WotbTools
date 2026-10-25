@@ -65,6 +65,7 @@
 - 3D 名册没有「临时名册面」：竖屏走纵向流，其余一律两侧常驻车道（见上表）。`uiPrefs.showRoster` 是唯一的呈现偏好，隐藏不能清空名册、selection、follow 或播放时刻。
 - `Replay3DPane` 独占 selected vehicle；场景 raycast 执行选择并打开共享 `VehicleDetailsPanel.vue`；3D roster 行执行明确的跟随命令。相机模式与 follow target 独立，Follow 必须显式请求，Free/Top 不清 selection。2D / 3D 共用 canonical evidence；3D 在 canonical 就绪前保留场景身份 / 权威 HP / 阵亡基础子集，就绪后按账号增强统计、日志与装备状态（见文末 canonical parity），不伪造缺失伤害统计；详情开关不重建场景或重新解析。（`selected` 与 `followed` 是独立状态；3D 行点击选择并跟随，场景点击打开详情。）
 
+- Free 相机低于地形表面时会被地形约束托起；其绝对 Y 硬上限与当前 replay 的俯视默认高度相同。缺少有效高度场或位于覆盖范围外时不施加地面约束，Follow / Top 行为保持原样。
 - 多文件选择、当前 battle 选择和 capability 切换都由 Workspace facade 协调；session 以 `selectionRevision` 与 `sourceId`（`r{文件序号}`）作为唯一 identity。
 - 场次选择器（数据模式在 `ReplayPage` 工具栏、四个单场能力在面板上方）只展示选项并调用 Workspace 的 `selectBattle(sourceId)`；权威 `currentBattleId` 仍由 `useReplaySession` 持有。用户 tab 命令先更新 Workspace capability，再通过注入的 `navigate(view)` 写入 URL；外部 URL 只通过 `initialCapability` 初始化/同步 Workspace，避免 router 与 tab watcher 互相回写。五种能力对匿名、普通登录用户与管理员永久可见，`wotbtools-admin` 不改变能力集合；匿名直达 `?view=agent-replay|agent-shots` 保持目标能力，个人回放由能力层显示登录门禁，已验证的官方示例可匿名进入。
 - AI 复盘是**正式能力**（普通用户可见，未登录由 AuthGate 引导登录）：联网能力先经 `useFeatureGate` 判定，离线/unknown/degraded/service-unavailable 先给 connectivity 提示，绝不启动登录；在线且未登录沿用 native/browser auth。可用深链挂载 AI 面板（`AiReviewWorkspacePane.vue` → `AiReviewPanel.vue`），受登录门控与客户端投影可用性约束。切换 capability 不重新分析数据模式的结果。

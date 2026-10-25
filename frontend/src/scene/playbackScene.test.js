@@ -147,6 +147,25 @@ afterEach(async () => {
   window.history.replaceState(null, '', '/')
 })
 
+function stubTerrainAssets({ values = [0, 65535, 0, 65535], zmin = 0, zmax = 30 } = {}) {
+  source.resolveMapKey.mockResolvedValue('probe_map')
+  source.mapStaticUrl.mockImplementation((kind) => ['terrain', 'terrain-meta'].includes(kind) ? `/assets/${kind}` : null)
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (String(url).endsWith('terrain-meta')) return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        size: 2, span: 600, zmin, zmax, terrainLayout: 2,
+        worldBounds: { min: [-300, -300, zmin], max: [300, 300, zmax] },
+      }),
+    }
+    if (String(url).endsWith('/terrain')) return {
+      ok: true, status: 200, arrayBuffer: async () => new Uint16Array(values).buffer,
+    }
+    return { ok: false, status: 404 }
+  }))
+}
+
 function createScene(existingStore = null) {
   const store = existingStore ?? createPlaybackStore()
   api = initPlayback(mountContainer(), store)
@@ -1335,6 +1354,163 @@ describe('playbackScene 资产发布顺序', () => {
     expect(store.assetStage).toBe(false)
     expect(store.assetProgress).toBeNull()
     created = []
+  })
+})
+
+describe('Free Camera terrain floor', () => {
+  it('uses the Top mode default camera height as the Free hard ceiling', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 20, zmax: 20 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'terrain-top-ceiling.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    api.setCam('top')
+    const topHeight = cam.position.y
+    api.setCam('free')
+
+    cam.position.y = topHeight - 0.1
+    controls.target.y = topHeight - 5.1
+    cam.lookAt(controls.target)
+    api.setFlySpeed(6)
+    expect(api.flyTick(0.1, new Set(['KeyQ']))).toBe(true)
+    expect(cam.position.y).toBeCloseTo(topHeight, 5)
+
+    const canvas = document.querySelector('canvas')
+    cam.position.y = topHeight - 0.1
+    controls.target.y = topHeight - 5.1
+    canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    expect(cam.position.y).toBeCloseTo(topHeight, 5)
+
+    cam.position.y = topHeight - 0.1
+    controls.target.y = topHeight - 5.1
+    const touch = (type, x, pointerId) => {
+      const event = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'pointerType', { value: 'touch' })
+      Object.defineProperty(event, 'pointerId', { value: pointerId })
+      return event
+    }
+    canvas.dispatchEvent(touch('pointerdown', 100, 7))
+    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointermove', 260, 9))
+    expect(cam.position.y).toBeCloseTo(topHeight, 5)
+    canvas.dispatchEvent(touch('pointerup', 260, 9))
+    canvas.dispatchEvent(touch('pointerup', 100, 7))
+
+    cam.position.y = topHeight + 50
+    controls.target.y = topHeight + 45
+    const beforeClamp = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    api.setCam('free')
+    expect(cam.position.y).toBeCloseTo(topHeight, 5)
+    const afterClamp = new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+    expect(afterClamp.dot(beforeClamp)).toBeCloseTo(1, 8)
+  })
+
+  it('constrains mode entry, high-speed fly, uphill fly, wheel and pinch while preserving view direction', async () => {
+    stubTerrainAssets()
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['terrain'], 'terrain-floor.wotbreplay') })
+    const cam = window.__camera
+    const controls = window.__controls
+    const dir = () => new THREE.Vector3().subVectors(controls.target, cam.position).normalize()
+
+    api.setCam('top')
+    cam.position.set(-30, 20, 0)
+    controls.target.set(-20, 15, 0)
+    const entryDir = dir()
+    api.setCam('free')
+    expect(cam.position.y).toBeCloseTo(27.5, 5)
+    expect(dir().dot(entryDir)).toBeCloseTo(1, 8)
+    cam.position.y = 45
+    controls.target.y += 17.5
+    api.setCam('free')
+    expect(cam.position.y).toBe(45)
+
+    cam.position.set(-30, 45, 0)
+    controls.target.set(-20, 40, 0)
+    api.setFlySpeed(6)
+    const descentDir = dir()
+    expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
+    expect(cam.position.y).toBeCloseTo(27.5, 5)
+    expect(dir().dot(descentDir)).toBeCloseTo(1, 8)
+    for (let i = 0; i < 3; i++) {
+      expect(api.flyTick(0.1, new Set(['KeyE']))).toBe(true)
+      expect(cam.position.y).toBeCloseTo(27.5, 5)
+    }
+
+    cam.position.set(-30, 28, 0)
+    controls.target.set(-20, 28, 0)
+    expect(api.flyTick(0.1, new Set(['KeyW']))).toBe(true)
+    expect(cam.position.x).toBeCloseTo(-10, 5)
+    expect(cam.position.y).toBeGreaterThanOrEqual(29.5)
+
+    cam.position.set(-30, 27.51, 0)
+    controls.target.set(-20, 22.51, 0)
+    const canvas = document.querySelector('canvas')
+    canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))
+    expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
+
+    cam.position.set(-30, 27.51, 0)
+    controls.target.set(-20, 22.51, 0)
+    const touch = (type, x, pointerId) => {
+      const event = new MouseEvent(type, { button: 0, clientX: x, clientY: 300, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'pointerType', { value: 'touch' })
+      Object.defineProperty(event, 'pointerId', { value: pointerId })
+      return event
+    }
+    canvas.dispatchEvent(touch('pointerdown', 100, 7))
+    canvas.dispatchEvent(touch('pointerdown', 300, 9))
+    canvas.dispatchEvent(touch('pointermove', 340, 9))
+    expect(cam.position.y).toBeGreaterThanOrEqual(27.5)
+    canvas.dispatchEvent(touch('pointerup', 340, 9))
+    canvas.dispatchEvent(touch('pointerup', 100, 7))
+  })
+
+  it('does not create a world-zero floor without terrain or outside the heightfield span; Top stays unchanged', async () => {
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const noTerrain = createScene()
+    await noTerrain.api.loadData({ kind: 'local', file: new File(['empty'], 'no-terrain.wotbreplay') })
+    const cam = window.__camera
+    noTerrain.api.setCam('top')
+    const topHeight = cam.position.y
+    cam.position.y = -10
+    noTerrain.api.setCam('free')
+    expect(cam.position.y).toBe(-10)
+    cam.position.y = topHeight + 50
+    noTerrain.api.setCam('free')
+    expect(cam.position.y).toBeCloseTo(topHeight, 5)
+    noTerrain.api.destroy()
+    created = []
+
+    stubTerrainAssets({ values: [10, 10, 10, 10], zmin: 10, zmax: 10 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const withTerrain = createScene()
+    await withTerrain.api.loadData({ kind: 'local', file: new File(['terrain'], 'terrain-boundary.wotbreplay') })
+    const terrainCam = window.__camera
+    withTerrain.api.setCam('top')
+    const topPosition = terrainCam.position.clone()
+    expect(topPosition.y).toBeGreaterThan(10)
+    terrainCam.position.set(300, -10, 0)
+    withTerrain.api.setCam('free')
+    expect(terrainCam.position.y).toBe(-10)
+    expect(terrainCam.position.x).toBe(300)
+    terrainCam.position.y = 500
+    withTerrain.api.setCam('free')
+    expect(terrainCam.position.y).toBeCloseTo(topPosition.y, 5)
+
+    withTerrain.api.setCam('follow')
+    terrainCam.position.set(0, -10, 0)
+    expect(withTerrain.api.flyTick(0.1, new Set(['KeyE']))).toBe(false)
+    expect(terrainCam.position.y).toBe(-10)
+  })
+
+  it('applies the floor once when terrain is published after the initial Free scene', async () => {
+    stubTerrainAssets({ values: [0, 0, 0, 0], zmin: 400, zmax: 400 })
+    source.loadPlaybackData.mockResolvedValue(minimalData())
+    const { api } = createScene()
+    await api.loadData({ kind: 'local', file: new File(['late-terrain'], 'late-terrain.wotbreplay') })
+    expect(window.__camera.position.y).toBeGreaterThanOrEqual(400.5)
   })
 })
 
