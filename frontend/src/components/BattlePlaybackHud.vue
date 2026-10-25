@@ -191,6 +191,7 @@ const baseViews = computed(() => props.baseStates.map((state) => baseView(state,
 .pb-hud-compact .pb-hud-team { grid-template-columns: auto minmax(0, 1fr); gap: var(--space-2); }
 .pb-hud-compact .pb-hud-value { grid-row: 1; grid-column: 1; justify-self: start; white-space: nowrap; overflow-wrap: normal; }
 .pb-hud-compact .pb-hud-track { grid-row: 1; grid-column: 2; }
+.pb-hud-compact .pb-hud-enemy { grid-template-columns: minmax(0, 1fr) auto; }
 .pb-hud-compact .pb-hud-enemy .pb-hud-value { grid-column: 2; justify-self: end; }
 .pb-hud-compact .pb-hud-enemy .pb-hud-track { grid-column: 1; }
 .pb-hud-compact .pb-hud-center { display: flex; align-items: center; justify-content: center; gap: var(--space-2); }
