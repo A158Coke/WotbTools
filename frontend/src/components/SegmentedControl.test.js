@@ -63,6 +63,14 @@ describe('SegmentedControl', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ai'])
   })
 
+  it('普通重新聚焦（Tab / 程序性）不改写受控值：只有方向键 / Home / End 的焦点移动才选中', async () => {
+    const wrapper = mountControl({ modelValue: 'ai' })
+    await flushPromises()
+    option(wrapper, 'data').element.focus()
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+
   it('Home / End 跳首尾', async () => {
     const wrapper = mountControl({ modelValue: '3d' })
     await flushPromises()
