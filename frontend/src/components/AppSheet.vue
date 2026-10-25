@@ -37,13 +37,11 @@ function onUpdateOpen(value: boolean) {
 <template>
   <DrawerRoot :open="open" @update:open="onUpdateOpen">
     <DrawerPortal :to="portalTo ?? undefined" :disabled="inline" force-mount>
-      <template v-if="open">
-        <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
-        <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
-          <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
-          <div class="sheet-body"><slot /></div>
-        </DrawerContent>
-      </template>
+      <DrawerOverlay class="sheet-scrim" data-testid="sheet-scrim" />
+      <DrawerContent class="sheet" :final-focus="finalFocus" v-bind="$attrs">
+        <DrawerTitle class="sheet-title" :class="{ 'is-hidden': !visibleTitle }">{{ title }}</DrawerTitle>
+        <div class="sheet-body"><slot /></div>
+      </DrawerContent>
     </DrawerPortal>
   </DrawerRoot>
 </template>
@@ -54,8 +52,8 @@ function onUpdateOpen(value: boolean) {
   inset: 0;
   z-index: var(--z-sheet);
   background: var(--color-scrim);
-  animation: sheet-scrim-in var(--duration-slow) var(--ease-standard);
 }
+.sheet-scrim[data-state="open"] { animation: sheet-scrim-in var(--duration-slow) var(--ease-standard); }
 
 .sheet {
   position: fixed;
@@ -74,8 +72,9 @@ function onUpdateOpen(value: boolean) {
   outline: 0;
   /* 下滑关闭手势由 Reka 写入位移变量 */
   transform: translateY(var(--drawer-swipe-movement-y, 0px));
-  animation: sheet-in var(--duration-slow) var(--ease-standard);
 }
+/* 进场动画只挂在 open 态：Reka Presence 看到退场仍有 animation 会等一个不会再来的 animationend，sheet 就卸不掉 */
+.sheet[data-state="open"] { animation: sheet-in var(--duration-slow) var(--ease-standard); }
 
 .sheet-title { margin: 0 0 var(--space-3); font: var(--type-h3); }
 /* 仅辅助技术可见（页面自带可见表头时） */

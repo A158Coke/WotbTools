@@ -428,6 +428,14 @@ if (props.autofocus) nextTick(() => searchInput.value?.focus?.())
 
 .is-sheet .tp-field { min-inline-size: 0; }
 
+/* 筛选内容随 AppSheet portal 到 body，脱离了上面 .is-dialog 与 AgentArmorView 的 #tank-picker 44px 保底：
+   在随内容一起传送的元素上自带保底（含 AppButton 等子组件内部按钮）。 */
+.tp-filters.is-sheet :deep(button),
+.tp-filters.is-sheet :deep(select),
+.tp-filters.is-sheet :deep(input) {
+  min-block-size: 44px;
+}
+
 /* ---------- 结果区与卡片网格 ---------- */
 .tp-results { min-block-size: 0; }
 .tp-results.is-dialog-results {
