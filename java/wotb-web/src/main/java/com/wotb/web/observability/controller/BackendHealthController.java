@@ -1,4 +1,4 @@
-package com.wotb.web.replay.controller;
+package com.wotb.web.observability.controller;
 
 import com.wotb.core.ref.Tankopedia;
 import com.wotb.web.config.ApiPaths;
@@ -13,7 +13,7 @@ import java.util.List;
  * 服务器没有 parser：回放解析 / 汇总 / 导出全部在客户端完成，这里不再有回放处理端点。
  */
 @RestController
-public class ReplayController {
+public class BackendHealthController {
 
     @GetMapping(ApiPaths.HEALTH)
     public Object health() {
