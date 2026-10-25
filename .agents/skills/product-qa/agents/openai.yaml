@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product QA"
+  short_description: "以真实用户身份黑盒审查 WotbTools（默认全站 production），产出 Confirmed findings；不拥有 commit/PR"
+  default_prompt: "Use $product-qa to run Product QA against https://wotbtools.com."

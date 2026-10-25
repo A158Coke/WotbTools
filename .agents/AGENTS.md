@@ -120,7 +120,7 @@
 - 在付款/赞助页面或代码中硬编码个人收款信息
 - 用推测值冒充权威方向/可见性（回放数据只信已证明的解码，见 `docs/research/replay/protocol.md`）
 
-## Skills（.agents/skills/，只有四个 lifecycle Skills）
+## Skills（.agents/skills/，四个 lifecycle Skills + 一个 operational 入口）
 
 1. **designer** — deeply define the work；完整 pipeline authority 在 `.agents/skills/designer/SKILL.md`，产出 approved `docs/current-plan.md`。
 2. **executor** — execute approved plan、targeted validation、review-with-docs PASS 后 commit/push/open PR、merge 后 cleanup。
@@ -128,6 +128,10 @@
 4. **review-with-docs** — 验证 implementation against plan + repository reality + canonical docs + runtime evidence；唯一 final quality gate。
 
 Domain implementation playbooks、检查单与工具指南在 `.agents/playbooks/`，由四个 lifecycle Skills 按需加载；它们不是顶层 Skill，不参与生命周期选择。
+
+5. **product-qa**（operational 入口，不属于 lifecycle）— `.agents/skills/product-qa/SKILL.md` 只指向 Product QA playbook，让 Claude Code、Codex 等 harness 能按名字调用；流程与规则的唯一正文仍是 `.agents/playbooks/product-qa/README.md`。
+
+`.agents/skills/` 是跨 harness 的 canonical 位置：Codex 等直接读取它（`agents/openai.yaml` 提供展示元数据），Claude Code 通过本机 `.claude/skills` → `.agents/skills` 的符号链接（不入库）发现同一批 Skill。
 
 Product QA 是独立的 operational product-audit playbook（`.agents/playbooks/product-qa/`）：周期性或用户显式触发，默认目标 production `https://wotbtools.com`；不加入 implementation lifecycle，不属于 `review-with-docs` 的 gate，不拥有 commit/push/PR/merge/final implementation PASS。findings 进入 GitHub Issue / `designer`。
 
