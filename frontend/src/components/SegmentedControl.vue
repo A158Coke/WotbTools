@@ -1,7 +1,8 @@
 <script setup>
 // 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
-// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；「移动焦点即选中」（方向键 / Home / End）由这里保证，
-// 不依赖 Reka 对 keydown / keyup 时序的判断。Tab 进入组时焦点落在已选项上，不会改变选择。
+// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；「方向键 / Home / End 移动焦点即选中」由这里保证，
+// 不依赖 Reka 对 keydown / keyup 时序的判断。只有这些导航键引起的焦点移动才提交选择：
+// Tab / 鼠标 / 程序性的重新聚焦（包括聚焦到外部值变化后仍带旧 tab stop 的选项）不能改写受控值。
 // 选中指示器用 motion shared layout 在选项间平滑移动；溢出策略由 scrollable / wrap 显式选择。
 import { useId } from 'vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
@@ -26,6 +27,18 @@ function select(value) {
   if (value !== props.modelValue) emit('update:modelValue', value)
 }
 
+const NAVIGATION_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
+// 导航键 keydown 之后、同一轮 microtask 内发生的 focus 才算「由方向键移动」
+let navigating = false
+function markNavigation(event) {
+  if (!NAVIGATION_KEYS.includes(event.key)) return
+  navigating = true
+  setTimeout(() => { navigating = false }, 0)
+}
+function selectOnNavigationFocus(value) {
+  if (navigating) select(value)
+}
+
 function onKeydown(event) {
   const target = { Home: props.options[0], End: props.options[props.options.length - 1] }[event.key]
   if (!target) return
@@ -43,6 +56,7 @@ function onKeydown(event) {
     :aria-label="ariaLabel"
     :required="false"
     @update:model-value="select"
+    @keydown.capture="markNavigation"
     @keydown="onKeydown"
   >
     <RadioGroupItem
@@ -55,7 +69,7 @@ function onKeydown(event) {
       :data-value="option.value"
       :data-testid="option.testid"
       v-bind="option.data"
-      @focus="select(option.value)"
+      @focus="selectOnNavigationFocus(option.value)"
     >
       <Motion
         v-if="option.value === modelValue"
