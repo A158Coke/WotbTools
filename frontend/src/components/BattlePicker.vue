@@ -165,7 +165,8 @@ onDeactivated(() => setOpen(false))
 .picker-label { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .picker-meta { overflow: hidden; color: var(--color-text-secondary); font: var(--type-caption); text-overflow: ellipsis; white-space: nowrap; }
 
-.picker-panel {
+/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
+:deep(.picker-panel) {
   z-index: var(--z-menu);
   width: 360px;
   max-width: calc(100% - var(--space-4));
@@ -175,10 +176,7 @@ onDeactivated(() => setOpen(false))
   background: var(--color-surface-3);
   box-shadow: var(--elevation-2);
 }
-.picker-panel[data-state="open"] { animation: picker-in var(--duration-fast) var(--ease-standard); }
-.picker-panel[data-state="closed"] { animation: picker-out var(--duration-fast) var(--ease-standard); }
-@keyframes picker-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
-@keyframes picker-out { to { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
+:deep(.picker-panel[data-state="open"]) { animation: wotb-picker-in var(--duration-fast) var(--ease-standard); }
 
 .picker-listbox { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-1); max-height: 420px; }
 
@@ -223,3 +221,9 @@ onDeactivated(() => setOpen(false))
   .picker-trigger { justify-content: space-between; }
 }
 </style>
+
+<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会；退场不加 CSS 动画——Reka Presence 会等 animationend，没有退场动画时才立即卸载 -->
+<style>
+@keyframes wotb-picker-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
+</style>
+

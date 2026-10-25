@@ -1388,7 +1388,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
 
       </div>
       </DefineSingleFilters>
-      <AppSheet v-if="isCompact" :open="filterSheet === 'single'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseSingleFilters /></AppSheet>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'single'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseSingleFilters /></AppSheet>
       <ReuseSingleFilters v-else />
       <p v-if="selectedTankId && !isCompact" class="lb-filter-hint">
         {{ $t('hof.filter_tank') }}: <strong>{{ selectedTankLabel }}</strong>
@@ -1528,7 +1528,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </div>
       </div>
       </DefineHundredFilters>
-      <AppSheet v-if="isCompact" :open="filterSheet === 'hundred'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseHundredFilters /></AppSheet>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'hundred'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseHundredFilters /></AppSheet>
       <ReuseHundredFilters v-else />
 
       <p v-if="h100VehicleId && !isCompact" class="lb-filter-hint">
@@ -1644,7 +1644,7 @@ watch(() => hofAvailability.value.available, (available, previous) => {
       </div>
       </div>
       </DefineMark3Filters>
-      <AppSheet v-if="isCompact" :open="filterSheet === 'mark3'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseMark3Filters /></AppSheet>
+      <AppSheet v-if="isCompact" :portal-to="boardTop" :open="filterSheet === 'mark3'" :title="$t('filters.title')" @close="closeFilterSheet"><ReuseMark3Filters /></AppSheet>
       <ReuseMark3Filters v-else />
 
       <p v-if="mark3VehicleId && !isCompact" class="lb-filter-hint">

@@ -73,7 +73,8 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 .menu-trigger:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-outline-offset); }
 .menu-trigger:disabled { cursor: not-allowed; opacity: .5; }
 
-.menu {
+/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
+:deep(.menu) {
   z-index: var(--z-menu);
   display: grid;
   min-width: 200px;
@@ -84,10 +85,7 @@ const inline = inject(DIALOG_INLINE_KEY, false)
   box-shadow: var(--elevation-2);
 }
 
-.menu[data-state="open"] { animation: menu-in var(--duration-fast) var(--ease-standard); }
-.menu[data-state="closed"] { animation: menu-out var(--duration-fast) var(--ease-standard); }
-@keyframes menu-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
-@keyframes menu-out { to { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
+:deep(.menu[data-state="open"]) { animation: wotb-menu-in var(--duration-fast) var(--ease-standard); }
 
 .menu-item {
   outline: 0;
@@ -112,3 +110,9 @@ const inline = inject(DIALOG_INLINE_KEY, false)
   .menu-item:not([data-disabled]):hover { background: var(--color-surface-2); }
 }
 </style>
+
+<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会；退场不加 CSS 动画——Reka Presence 会等 animationend，没有退场动画时才立即卸载 -->
+<style>
+@keyframes wotb-menu-in { from { opacity: 0; transform: translateY(calc(var(--space-1) * -1)); } }
+</style>
+

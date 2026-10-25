@@ -22,7 +22,8 @@ withDefaults(defineProps<{
 </template>
 
 <style scoped>
-.app-tooltip {
+/* Popper 内容有外层 wrapper：scoped 属性落在 wrapper 上，面板元素本身要用 :deep 命中 */
+:deep(.app-tooltip) {
   z-index: var(--z-tooltip);
   max-width: 320px;
   padding: var(--space-1) var(--space-2);
@@ -35,7 +36,12 @@ withDefaults(defineProps<{
   pointer-events: none;
 }
 
-.app-tooltip[data-state="delayed-open"],
-.app-tooltip[data-state="instant-open"] { animation: tooltip-in var(--duration-fast) var(--ease-standard); }
-@keyframes tooltip-in { from { opacity: 0; } }
+:deep(.app-tooltip[data-state="delayed-open"]),
+:deep(.app-tooltip[data-state="instant-open"]) { animation: wotb-tooltip-in var(--duration-fast) var(--ease-standard); }
 </style>
+
+<!-- Popper 内容的进场 keyframes：scoped 会改写名字而 :deep 规则里的引用不会 -->
+<style>
+@keyframes wotb-tooltip-in { from { opacity: 0; } }
+</style>
+

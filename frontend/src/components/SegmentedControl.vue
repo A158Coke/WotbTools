@@ -1,6 +1,7 @@
 <script setup>
 // 同一内容的呈现方式切换（design-language §7）：单选组，方向键在选项间移动并选中。
-// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；Home / End 跳首尾选中是 WotbTools 在其上保留的行为。
+// roving focus 与 radiogroup 语义由 Reka RadioGroup 提供；「移动焦点即选中」（方向键 / Home / End）由这里保证，
+// 不依赖 Reka 对 keydown / keyup 时序的判断。Tab 进入组时焦点落在已选项上，不会改变选择。
 // 选中指示器用 motion shared layout 在选项间平滑移动；溢出策略由 scrollable / wrap 显式选择。
 import { useId } from 'vue'
 import { RadioGroupItem, RadioGroupRoot } from 'reka-ui'
@@ -54,6 +55,7 @@ function onKeydown(event) {
       :data-value="option.value"
       :data-testid="option.testid"
       v-bind="option.data"
+      @focus="select(option.value)"
     >
       <Motion
         v-if="option.value === modelValue"
