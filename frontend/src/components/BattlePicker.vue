@@ -31,6 +31,9 @@ const inline = inject(DIALOG_INLINE_KEY, false)
 const SEARCH_THRESHOLD = 6
 const open = ref(false)
 const query = ref('')
+const root = ref(null)
+// 触发按钮由 PopoverTrigger as-child 接管 ref，这里从容器里取
+const triggerEl = computed(() => root.value?.querySelector('.picker-trigger') ?? null)
 // 桌面面板与手机 sheet 共用同一份列表模板
 const [DefineBody, ReuseBody] = createReusableTemplate()
 
@@ -52,6 +55,14 @@ function choose(value) {
   setOpen(false)
   // Listbox 单选里再次点击当前项会取消选择（value 为空）；场次不允许为空
   if (value != null && value !== props.modelValue) emit('update:modelValue', value)
+}
+
+// 桌面面板是非模态的：Tab 不能被 Reka 的循环 FocusScope 困在面板里。
+// 关闭面板并把焦点放回触发按钮，键盘用户从按钮继续 Tab / Shift+Tab。
+function onPanelTab(event) {
+  event.preventDefault()
+  setOpen(false)
+  triggerEl.value?.focus()
 }
 
 watch(() => props.visible, (visible) => {
@@ -97,7 +108,7 @@ onDeactivated(() => setOpen(false))
     </ListboxRoot>
   </DefineBody>
 
-  <div class="battle-picker">
+  <div ref="root" class="battle-picker">
     <PopoverRoot :open="open" @update:open="setOpen">
       <PopoverTrigger as-child>
         <button
@@ -117,13 +128,13 @@ onDeactivated(() => setOpen(false))
       </PopoverTrigger>
 
       <PopoverPortal v-if="!isCompact" :disabled="inline">
-        <PopoverContent class="picker-panel" align="start" :side-offset="4" data-testid="battle-picker-panel">
+        <PopoverContent class="picker-panel" align="start" :side-offset="4" data-testid="battle-picker-panel" @keydown.capture.tab.stop="onPanelTab">
           <ReuseBody />
         </PopoverContent>
       </PopoverPortal>
     </PopoverRoot>
 
-    <AppSheet v-if="isCompact" :open="open" :title="ariaLabel" class="picker-sheet" data-testid="battle-picker-panel" @close="setOpen(false)">
+    <AppSheet v-if="isCompact" :open="open" :title="ariaLabel" :return-focus-to="triggerEl" class="picker-sheet" data-testid="battle-picker-panel" @close="setOpen(false)">
       <ReuseBody />
     </AppSheet>
   </div>
